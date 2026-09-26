@@ -1160,6 +1160,66 @@
       "configuration": [
         "search_path=\"\""
       ]
+    },
+    "update_lead_atomic_v52": {
+      "kind": "function_contract",
+      "namespace": "public",
+      "functionName": "update_lead_atomic",
+      "signature": "public.update_lead_atomic(uuid,uuid,uuid,jsonb)",
+      "expected": "280399813af918fba2fd6c2ae342521a34d1d244fc2e498d89a6321b28ef7398",
+      "acl": [
+        [
+          "postgres",
+          "postgres",
+          "EXECUTE",
+          false
+        ],
+        [
+          "service_role",
+          "postgres",
+          "EXECUTE",
+          false
+        ]
+      ],
+      "securityDefiner": false,
+      "returnsSet": false,
+      "volatility": "v",
+      "returnType": "public.leads",
+      "configuration": [
+        "search_path=\"\""
+      ]
+    },
+    "follow_up_lead_atomic_v52": {
+      "kind": "function_contract",
+      "namespace": "public",
+      "functionName": "follow_up_lead_atomic",
+      "signature": "public.follow_up_lead_atomic(uuid,uuid,uuid,uuid,jsonb)",
+      "expected": "6ac2a8528529fdcb0ce1cddc8d850b12ebba3d4a69a63a9391786d5ce9a7db97",
+      "acl": [
+        [
+          "postgres",
+          "postgres",
+          "EXECUTE",
+          false
+        ],
+        [
+          "service_role",
+          "postgres",
+          "EXECUTE",
+          false
+        ]
+      ],
+      "securityDefiner": false,
+      "returnsSet": false,
+      "volatility": "v",
+      "returnType": "public.leads",
+      "configuration": [
+        "search_path=\"\""
+      ]
+    },
+    "lead_follow_up_receipts_v52": {
+      "kind": "lead_follow_up_receipts_v52",
+      "expected": "462f09c7accac5da5215efb0c2a365e824b1bc4810fce42eef090e17e5603192"
     }
   },
   "states": {
@@ -1383,6 +1443,25 @@
         },
         "invoice_retry_closeout_manifest_v34": {
           "expected": "0:70e87b852a84f9fcad61413ea8660fdf9d5adcb028ec03427f30d815e42526b6"
+        }
+      }
+    },
+    "v52": {
+      "extends": "v51",
+      "append": [
+        "update_lead_atomic_v52",
+        "follow_up_lead_atomic_v52",
+        "lead_follow_up_receipts_v52"
+      ],
+      "overrides": {
+        "resource_ownership_manifest_v31": {
+          "expected": "0:05b12dc113b08ceaa688c6c22998361f004825d328ad5604e70441b275287a38"
+        },
+        "operational_manifest_v11": {
+          "expected": "d700057ec9e59987ec9af3f76e3f2b533b695817256b25c82a7c04c58cdc634e"
+        },
+        "operational_manifest_v12": {
+          "expected": "e1f6a01862d6fa5c1f68320c9333401c5641e96b9cc8fdbc5cf995e6d11b3f16"
         }
       }
     }

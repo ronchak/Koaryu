@@ -1846,3 +1846,84 @@ test("a pending recurring class cannot be submitted twice, and its confirmed for
     await browser.close();
   }
 });
+
+test("keyed follow-up preserves confirmed results through renewal and a stale lead read", async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await fixturePage(browser);
+    await page.evaluate(() => {
+      fixture.read = fixture.store.refreshLeads();
+      fixture.command = {
+        operation_id: "3d606900-5b93-4b00-85a8-09afaa549d54",
+        next_stage: "trial_scheduled",
+      };
+      fixture.save = fixture.store.followUpLead("lead-1", fixture.command);
+    });
+    await page.waitForFunction(() => fixture.writes.length === 1);
+    assert.deepEqual(
+      await page.evaluate(() => ({ path: fixture.writes[0].path, body: fixture.writes[0].body })),
+      {
+        path: "/leads/lead-1/follow-up",
+        body: {
+          operation_id: "3d606900-5b93-4b00-85a8-09afaa549d54",
+          next_stage: "trial_scheduled",
+        },
+      },
+    );
+    await page.evaluate(() =>
+      fixture.emit("TOKEN_REFRESHED", { ...fixture.session, access_token: "synthetic-renewed" }),
+    );
+    await page.waitForFunction(() => fixture.store.token === "synthetic-renewed");
+    await page.evaluate(() =>
+      fixture.writes[0].resolve({
+        ...fixture.lead,
+        stage: "trial_scheduled",
+        follow_up_date: null,
+      }),
+    );
+    await page.evaluate(() => fixture.save);
+    await page.evaluate(() => fixture.leadReads[0]([fixture.lead]));
+    await page.waitForFunction(() => fixture.leadReads.length === 2);
+    assert.equal(await page.evaluate(() => fixture.store.leads[0].stage), "trial_scheduled");
+    await page.evaluate(() =>
+      fixture.leadReads[1]([{ ...fixture.lead, stage: "trial_scheduled", follow_up_date: null }]),
+    );
+    await page.evaluate(() => fixture.read);
+    assert.equal(await page.evaluate(() => fixture.writes.length), 1);
+    await page.evaluate(() => fixture.root.unmount());
+  } finally {
+    await browser.close();
+  }
+});
+
+test("keyed follow-up cannot restore lead data or navigate after sign-out", async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await fixturePage(browser, { leadController: true });
+    await page.evaluate(() => {
+      // fixture.local is an insecure synthetic origin; supply its missing UUID primitive.
+      crypto.randomUUID ??= () => "3d606900-5b93-4b00-85a8-09afaa549d54";
+      fixture.save = fixture.leadController.handleMarkContacted(
+        { ...fixture.lead, stage: "offer_sent" },
+        true,
+      );
+    });
+    await page.waitForFunction(() => fixture.writes.length === 1);
+    await page.evaluate(() => fixture.emit("SIGNED_OUT", null));
+    await page.waitForFunction(() => !fixture.store.identityReady);
+    await page.evaluate(() =>
+      fixture.writes[0].resolve({
+        ...fixture.lead,
+        stage: "enrolled",
+        converted_student_id: "student-new",
+      }),
+    );
+    await page.evaluate(() => fixture.save);
+    assert.deepEqual(await page.evaluate(() => fixture.store.leads), []);
+    assert.deepEqual(await page.evaluate(() => fixture.redirects ?? []), ["/login"]);
+    assert.equal(await page.evaluate(() => fixture.leadController.actionMessage), null);
+    await page.evaluate(() => fixture.root.unmount());
+  } finally {
+    await browser.close();
+  }
+});

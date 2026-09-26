@@ -33,6 +33,7 @@ export default function LeadsPage() {
     addLead,
     updateLead,
     convertLeadToStudent,
+    followUpLead,
     leadsLoaded,
     leadsLoadError,
     refreshLeads,
@@ -63,7 +64,10 @@ export default function LeadsPage() {
     addLead,
     baseLeads,
     convertLeadToStudent,
+    followUpLead,
     currentRole,
+    identityGeneration,
+    identityReady,
     isPreviewMode,
     programs,
     today,
@@ -160,7 +164,8 @@ export default function LeadsPage() {
               canConvertLeads={controller.canConvertLeads}
               canManageLeads={controller.canManageLeads}
               leads={controller.model.obligationLedgerLeads}
-              pendingLeadId={controller.pendingLeadId}
+              pendingLeadIds={controller.pendingLeadIds}
+              unknownFollowUpLeadIds={controller.unknownFollowUpLeadIds}
               programById={programById}
               selectedLeadId={selectedLead?.id ?? null}
               staffById={staffById}
@@ -185,7 +190,7 @@ export default function LeadsPage() {
               lead={selectedLead}
               leadActionError={controller.leadActionError}
               leadActionMessage={controller.actionMessage}
-              pendingLeadId={controller.pendingLeadId}
+              pendingLeadIds={controller.pendingLeadIds}
               programById={programById}
               today={today}
               onAssignStaff={controller.handleAssignedStaff}
@@ -194,6 +199,8 @@ export default function LeadsPage() {
               onDismissError={controller.dismissLeadActionError}
               onDismissMessage={controller.dismissActionMessage}
               onFollowUpValueChange={controller.setFollowUpInputValue}
+              followUpOutcomeUnknown={controller.unknownFollowUpLeadIds.has(selectedLead.id)}
+              onRetryFollowUp={controller.handleRetryFollowUp}
               onMarkContacted={controller.handleMarkContacted}
               onMarkLost={controller.handleMarkLost}
               onRetryActivities={controller.retrySelectedLeadActivities}

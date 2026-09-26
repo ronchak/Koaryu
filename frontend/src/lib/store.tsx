@@ -1620,6 +1620,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const {
     addLead,
     convertLeadToStudent,
+    followUpLead,
     deleteLead,
     refreshLeads,
     updateLead,
@@ -1903,6 +1904,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     addLead: useReconciledProjectionCommand(addLead, beginProjectionCommand),
     updateLead: useReconciledProjectionCommand(updateLead, beginProjectionCommand),
     deleteLead: useReconciledProjectionCommand(deleteLead, beginProjectionCommand),
+    followUpLead: useReconciledProjectionCommand(followUpLead, beginProjectionCommand),
     convertLeadToStudent: useReconciledProjectionCommand(convertLeadToStudent, beginProjectionCommand),
     toggleCheckIn: useReconciledProjectionCommand(toggleCheckIn, beginProjectionCommand),
     promoteStudent: useReconciledProjectionCommand(promoteStudent, beginProjectionCommand),
@@ -1933,6 +1935,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     clearStudioData,
     clearSubscriptionRequired,
     convertLeadToStudent: reconciledCommands.convertLeadToStudent,
+    followUpLead: reconciledCommands.followUpLead,
     createProgram: reconciledCommands.createProgram,
     currentLadderId,
     currentRole,

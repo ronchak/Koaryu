@@ -211,12 +211,12 @@ if [[ ${#verification_files[@]} -eq 0 ]]; then
   echo "ERROR: No contract files found in $VERIFICATION_DIR" >&2
   exit 1
 fi
-if [[ ${#migration_files[@]} -ne 146 ]]; then
-  echo "ERROR: Expected the canonical 146-migration chain, found ${#migration_files[@]}." >&2
+if [[ ${#migration_files[@]} -ne 147 ]]; then
+  echo "ERROR: Expected the canonical 147-migration chain, found ${#migration_files[@]}." >&2
   exit 1
 fi
-if [[ ${#verification_files[@]} -ne 54 ]]; then
-  echo "ERROR: Expected the canonical 54-contract inventory, found ${#verification_files[@]}." >&2
+if [[ ${#verification_files[@]} -ne 55 ]]; then
+  echo "ERROR: Expected the canonical 55-contract inventory, found ${#verification_files[@]}." >&2
   exit 1
 fi
 if [[ ! -f "$VERIFICATION_DIR/schedule_window_read_contract.sql" ]]; then
@@ -737,6 +737,10 @@ SQL
     run_interruptible python3 "$ROOT_DIR/scripts/verify-v50-v51-restore-contract.py" \
       "$PG_DUMP" "$PG_RESTORE" "$CREATEDB" "$PSQL" "$SOCKET_DIR" "$PG_PORT" "$TEMP_DIR" "$ROOT_DIR"
   fi
+  if [[ "$migration_filename" == "20260926194918_lead_commands_v52.sql" ]]; then
+    run_interruptible python3 "$ROOT_DIR/scripts/verify-v51-v52-restore-contract.py" \
+      "$PG_DUMP" "$PG_RESTORE" "$CREATEDB" "$PSQL" "$SOCKET_DIR" "$PG_PORT" "$TEMP_DIR" "$ROOT_DIR"
+  fi
   echo "[migration $migration_index/$migration_total] RUN $migration_filename"
   if run_interruptible "$PSQL" "${psql_args[@]}" \
     --single-transaction \
@@ -1064,7 +1068,7 @@ if [[ "$schedule_window_manifest" != "0:f4c66d3098dcb3210ac6cc92e1831eebaf9f2ed7
 fi
 echo "[schedule-window manifest] PASS read RPC definition and ACL signal"
 
-echo "[V51 readiness] RUN exact final migration and manifest signal"
+echo "[V52 readiness] RUN exact final migration and manifest signal"
 operational_readiness="$({
   cd "$ROOT_DIR"
   node --input-type=module --eval \
@@ -1076,26 +1080,26 @@ if (
     "import { validateOperationalReadiness } from './scripts/studio-comp-migration-rollout.mjs'; validateOperationalReadiness(process.argv[1]);" \
     "$operational_readiness"
 ); then
-  echo "[V51 readiness] PASS exact final migration and manifest signal"
+  echo "[V52 readiness] PASS exact final migration and manifest signal"
 else
   status=$?
-  echo "[V51 readiness] actual=$operational_readiness" >&2
-  echo "[V51 readiness] FAIL exact final migration and manifest signal (exit $status)" >&2
+  echo "[V52 readiness] actual=$operational_readiness" >&2
+  echo "[V52 readiness] FAIL exact final migration and manifest signal (exit $status)" >&2
   exit "$status"
 fi
 
-echo "[V51 release] RUN exact read definitions and privileges"
-v51_release_manifest="$({
+echo "[V52 release] RUN exact read definitions and privileges"
+v52_release_manifest="$({
   cd "$ROOT_DIR"
   node --input-type=module --eval \
-    "import { V51_RELEASE_MANIFEST_SQL } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(V51_RELEASE_MANIFEST_SQL);"
+    "import { V52_RELEASE_MANIFEST_SQL } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(V52_RELEASE_MANIFEST_SQL);"
 } | "$PSQL" "${psql_args[@]}" --tuples-only --no-align)"
-expected_v51_release_manifest="$(cd "$ROOT_DIR" && node --input-type=module --eval "import { EXPECTED_V51_RELEASE_MANIFEST } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(EXPECTED_V51_RELEASE_MANIFEST);")"
-if [[ "$v51_release_manifest" != "$expected_v51_release_manifest" ]]; then
-  echo "[V51 release] FAIL exact read definitions and privileges: $v51_release_manifest" >&2
+expected_v52_release_manifest="$(cd "$ROOT_DIR" && node --input-type=module --eval "import { EXPECTED_V52_RELEASE_MANIFEST } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(EXPECTED_V52_RELEASE_MANIFEST);")"
+if [[ "$v52_release_manifest" != "$expected_v52_release_manifest" ]]; then
+  echo "[V52 release] FAIL exact read definitions and privileges: $v52_release_manifest" >&2
   exit 1
 fi
-echo "[V51 release] PASS exact read definitions and privileges"
+echo "[V52 release] PASS exact read definitions and privileges"
 
 assert_history_index_rejects() {
   local label="$1"
@@ -1109,13 +1113,13 @@ assert_history_index_rejects() {
     (
       cd "$ROOT_DIR"
       node --input-type=module --eval \
-        "import { V51_RELEASE_MANIFEST_SQL } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(V51_RELEASE_MANIFEST_SQL);"
+        "import { V52_RELEASE_MANIFEST_SQL } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(V52_RELEASE_MANIFEST_SQL);"
     )
-    printf ';\nSELECT (SELECT ready FROM public.koaryu_release_schema_preflight_v32()) OR (SELECT ready FROM public.koaryu_release_schema_preflight_v31()) OR (SELECT ready FROM public.koaryu_release_schema_preflight_v30()) OR (SELECT ready FROM public.koaryu_release_schema_preflight_v29()) OR (SELECT ready FROM public.koaryu_release_schema_preflight_v28()) OR (SELECT ready FROM public.koaryu_release_schema_preflight_v27()) OR (SELECT ready FROM public.koaryu_release_schema_preflight_v26()) OR (SELECT ready FROM public.koaryu_release_schema_preflight_v25()) OR (SELECT ready FROM public.koaryu_release_schema_preflight_v24()) OR (SELECT ready FROM public.koaryu_release_schema_preflight_v23()) OR (SELECT ready FROM public.koaryu_release_schema_preflight_v22()) OR (SELECT ready FROM public.koaryu_release_schema_preflight_v21()) OR (SELECT ready FROM public.koaryu_release_schema_preflight_v20()) OR (SELECT ready FROM public.koaryu_release_schema_preflight_v19()) OR (SELECT ready FROM public.koaryu_release_schema_preflight_v18());\nROLLBACK;\n'
+    printf ';\nSELECT (SELECT ready FROM public.koaryu_release_schema_preflight_v33()) OR (SELECT ready FROM public.koaryu_release_schema_preflight_v32()) OR (SELECT ready FROM public.koaryu_release_schema_preflight_v31()) OR (SELECT ready FROM public.koaryu_release_schema_preflight_v30()) OR (SELECT ready FROM public.koaryu_release_schema_preflight_v29()) OR (SELECT ready FROM public.koaryu_release_schema_preflight_v28()) OR (SELECT ready FROM public.koaryu_release_schema_preflight_v27()) OR (SELECT ready FROM public.koaryu_release_schema_preflight_v26()) OR (SELECT ready FROM public.koaryu_release_schema_preflight_v25()) OR (SELECT ready FROM public.koaryu_release_schema_preflight_v24()) OR (SELECT ready FROM public.koaryu_release_schema_preflight_v23()) OR (SELECT ready FROM public.koaryu_release_schema_preflight_v22()) OR (SELECT ready FROM public.koaryu_release_schema_preflight_v21()) OR (SELECT ready FROM public.koaryu_release_schema_preflight_v20()) OR (SELECT ready FROM public.koaryu_release_schema_preflight_v19()) OR (SELECT ready FROM public.koaryu_release_schema_preflight_v18());\nROLLBACK;\n'
   } | "$PSQL" "${psql_args[@]}" --tuples-only --no-align --quiet)"
   raw_manifest="$(printf '%s\n' "$result" | sed -n '1p')"
   any_ready="$(printf '%s\n' "$result" | sed -n '2p')"
-  if [[ "$raw_manifest" == "$expected_v51_release_manifest" || "$any_ready" != "f" ]]; then
+  if [[ "$raw_manifest" == "$expected_v52_release_manifest" || "$any_ready" != "f" ]]; then
     echo "[Billing history negative] FAIL $label: $result" >&2
     exit 1
   fi
@@ -1154,7 +1158,7 @@ else
   exit "$status"
 fi
 
-echo "[V51 semantics] RUN final semantic chain and retained backend contracts"
+echo "[V52 semantics] RUN final semantic chain and retained backend contracts"
 while IFS='|' read -r query_export expected_export; do
   actual="$({
     cd "$ROOT_DIR"
@@ -1164,18 +1168,21 @@ while IFS='|' read -r query_export expected_export; do
   expected="$(cd "$ROOT_DIR" && node --input-type=module --eval \
     "import * as m from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(m[process.argv[1]]);" "$expected_export")"
   if [[ "$actual" != "$expected" ]]; then
-    echo "[V51 semantics] FAIL $query_export" >&2
+    echo "[V52 semantics] FAIL $query_export" >&2
     exit 1
   fi
-done <<'V51_CHECKS'
+done <<'V52_CHECKS'
+V52_LEAD_UPDATE_STATE_SQL|EXPECTED_V52_LEAD_UPDATE_STATE
+V52_LEAD_FOLLOW_UP_STATE_SQL|EXPECTED_V52_LEAD_FOLLOW_UP_STATE
+V52_LEAD_RECEIPT_STATE_SQL|EXPECTED_V52_LEAD_RECEIPT_STATE
 V51_CLOSEOUT_STATE_SQL|EXPECTED_V51_CLOSEOUT_STATE
 V50_OPERATIONAL_READINESS_SQL|EXPECTED_V50_OPERATIONAL_READINESS
-V30_OPERATIONAL_CONTRACT_SQL|EXPECTED_V51_V30_OPERATIONAL_CONTRACT
-V30_REPLAY_REPAIRS_MANIFEST_SQL|EXPECTED_V51_V30_REPLAY_REPAIRS_MANIFEST
+V30_OPERATIONAL_CONTRACT_SQL|EXPECTED_V52_V30_OPERATIONAL_CONTRACT
+V30_REPLAY_REPAIRS_MANIFEST_SQL|EXPECTED_V52_V30_REPLAY_REPAIRS_MANIFEST
 V50_INVOICE_FACTS_STATE_SQL|EXPECTED_V50_INVOICE_FACTS_STATE
 V50_ATTENTION_STATE_SQL|EXPECTED_V50_ATTENTION_STATE
-V29_OPERATIONAL_MANIFEST_SQL|EXPECTED_V51_OPERATIONAL_MANIFEST_V10
-V30_OPERATIONAL_MANIFEST_SQL|EXPECTED_V51_OPERATIONAL_MANIFEST_V11
+V29_OPERATIONAL_MANIFEST_SQL|EXPECTED_V52_OPERATIONAL_MANIFEST_V10
+V30_OPERATIONAL_MANIFEST_SQL|EXPECTED_V52_OPERATIONAL_MANIFEST_V11
 V49_OPERATIONAL_READINESS_SQL|EXPECTED_V49_OPERATIONAL_READINESS
 V50_COLLECTION_FACTS_STATE_SQL|EXPECTED_V50_COLLECTION_FACTS_STATE
 V50_PAYER_READ_STATE_SQL|EXPECTED_V50_PAYER_READ_STATE
@@ -1190,21 +1197,22 @@ V44_OPERATIONAL_READINESS_SQL|EXPECTED_V44_OPERATIONAL_READINESS
 V43_OPERATIONAL_READINESS_SQL|EXPECTED_V43_OPERATIONAL_READINESS
 V42_OPERATIONAL_READINESS_SQL|EXPECTED_V42_OPERATIONAL_READINESS
 V41_OPERATIONAL_READINESS_SQL|EXPECTED_V41_OPERATIONAL_READINESS
-CRITICAL_SURFACE_MANIFEST_SQL|EXPECTED_V51_CRITICAL_SURFACE_MANIFEST
+CRITICAL_SURFACE_MANIFEST_SQL|EXPECTED_V52_CRITICAL_SURFACE_MANIFEST
 V40_OPERATIONAL_READINESS_SQL|EXPECTED_V40_OPERATIONAL_READINESS
 V39_OPERATIONAL_READINESS_SQL|EXPECTED_V39_OPERATIONAL_READINESS
 V40_RANK_COMMAND_STATE_SQL|EXPECTED_V40_RANK_COMMAND_STATE
 V38_OPERATIONAL_READINESS_SQL|EXPECTED_V38_OPERATIONAL_READINESS
 V37_OPERATIONAL_READINESS_SQL|EXPECTED_V37_OPERATIONAL_READINESS
-V31_EXPECTATION_STATE_SQL|EXPECTED_V51_EXPECTATION_STATE
-V31_RESOURCE_OWNERSHIP_MANIFEST_SQL|EXPECTED_V51_RESOURCE_OWNERSHIP_MANIFEST
-V31_OPERATIONAL_CONTRACT_SQL|EXPECTED_V51_OPERATIONAL_CONTRACT
-V31_OPERATIONAL_MANIFEST_SQL|EXPECTED_V51_OPERATIONAL_MANIFEST_V12
-V51_CHECKS
-echo "[V51 semantics] PASS final semantic chain and retained backend contracts"
+V31_EXPECTATION_STATE_SQL|EXPECTED_V52_EXPECTATION_STATE
+V31_RESOURCE_OWNERSHIP_MANIFEST_SQL|EXPECTED_V52_RESOURCE_OWNERSHIP_MANIFEST
+V31_OPERATIONAL_CONTRACT_SQL|EXPECTED_V52_OPERATIONAL_CONTRACT
+V31_OPERATIONAL_MANIFEST_SQL|EXPECTED_V52_OPERATIONAL_MANIFEST_V12
+V52_CHECKS
+echo "[V52 semantics] PASS final semantic chain and retained backend contracts"
 
 # Each payment writer has independent raw facts and an inherited preflight check.
 readiness_snapshot_sql="SELECT jsonb_build_array(
+  (SELECT to_jsonb(r) FROM public.koaryu_release_schema_preflight_v33() r),
   (SELECT to_jsonb(r) FROM public.koaryu_release_schema_preflight_v32() r),
   (SELECT to_jsonb(r) FROM public.koaryu_release_schema_preflight_v31() r),
   (SELECT to_jsonb(r) FROM public.koaryu_release_schema_preflight_v30() r),
@@ -1221,7 +1229,7 @@ readiness_snapshot_sql="SELECT jsonb_build_array(
   (SELECT to_jsonb(r) FROM public.koaryu_release_schema_preflight_v19() r),
   (SELECT to_jsonb(r) FROM public.koaryu_release_schema_preflight_v18() r));"
 readiness_before="$($PSQL "${psql_args[@]}" --tuples-only --no-align --quiet --command="$readiness_snapshot_sql")"
-current_readiness_sql="SELECT to_jsonb(r) FROM public.koaryu_release_schema_preflight_v32() r;"
+current_readiness_sql="SELECT to_jsonb(r) FROM public.koaryu_release_schema_preflight_v33() r;"
 current_readiness_before="$($PSQL "${psql_args[@]}" --tuples-only --no-align --quiet --command="$current_readiness_sql")"
 assert_payment_writer_rejects() {
   local label="$1" mutation_sql="$2" writer_query="$3" expected_writer="$4" expected_failure="$5"
@@ -1239,7 +1247,7 @@ assert_payment_writer_rejects() {
 DO $check$
 DECLARE version INTEGER; result RECORD;
     versions INTEGER[] := CASE WHEN current_setting('koaryu.check_compatibility')::BOOLEAN
-        THEN ARRAY[32,31,30,29,28,27,26,25,24,23,22,21,20,19,18] ELSE ARRAY[32] END;
+        THEN ARRAY[33,32,31,30,29,28,27,26,25,24,23,22,21,20,19,18] ELSE ARRAY[33] END;
 BEGIN
   FOREACH version IN ARRAY versions LOOP
     EXECUTE format('SELECT * FROM public.koaryu_release_schema_preflight_v%s()',version) INTO result;
@@ -1295,6 +1303,8 @@ changed body|UPDATE pg_proc SET prosrc=prosrc||chr(10)||'-- injected drift' WHER
 unexpected overload|$overload
 MUTATIONS
  done <<'WRITERS'
+lead update|public.update_lead_atomic(uuid,uuid,uuid,jsonb)|V52_LEAD_UPDATE_STATE_SQL|EXPECTED_V52_LEAD_UPDATE_STATE|update_lead_atomic_v52|DEFINER|STABLE|CREATE FUNCTION public.update_lead_atomic(TEXT) RETURNS JSONB LANGUAGE SQL AS 'SELECT ''{}''::JSONB';
+lead follow-up|public.follow_up_lead_atomic(uuid,uuid,uuid,uuid,jsonb)|V52_LEAD_FOLLOW_UP_STATE_SQL|EXPECTED_V52_LEAD_FOLLOW_UP_STATE|follow_up_lead_atomic_v52|DEFINER|STABLE|CREATE FUNCTION public.follow_up_lead_atomic(TEXT) RETURNS JSONB LANGUAGE SQL AS 'SELECT ''{}''::JSONB';
 activation|public.begin_billing_enrollment_activation_v1(uuid,uuid,uuid,text,text,text,text,integer,uuid,bigint,uuid,text,text)|V48_ACTIVATION_STATE_SQL|EXPECTED_V48_ACTIVATION_STATE|activation_begin_v48|INVOKER|STABLE|CREATE FUNCTION public.begin_billing_enrollment_activation_v1(TEXT) RETURNS JSONB LANGUAGE SQL AS 'SELECT ''{}''::JSONB';
 payer balance|public.recompute_billing_payer_balance_v1(uuid,uuid)|V41_PAYER_BALANCE_STATE_SQL|EXPECTED_V50_PAYER_BALANCE_STATE|payer_balance_rpc_v41|INVOKER|STABLE|CREATE FUNCTION public.recompute_billing_payer_balance_v1(TEXT,TEXT) RETURNS VOID LANGUAGE plpgsql AS $$ BEGIN RETURN; END; $$;
 external payment|public.record_external_payment_v1(uuid,uuid,uuid,integer,text,text,text,text,text)|V43_EXTERNAL_PAYMENT_STATE_SQL|EXPECTED_V43_EXTERNAL_PAYMENT_STATE|external_payment_rpc_v43|DEFINER|STABLE|CREATE FUNCTION public.record_external_payment_v1(TEXT) RETURNS JSONB LANGUAGE SQL AS 'SELECT ''{}''::JSONB';
@@ -1306,6 +1316,19 @@ invoice facts|public.billing_invoice_collection_facts_v1(uuid,uuid,date)|V50_INV
 attention count|public.billing_attention_count_v1(uuid,date)|V50_ATTENTION_STATE_SQL|EXPECTED_V50_ATTENTION_STATE|billing_attention_count_v50|DEFINER|VOLATILE|CREATE FUNCTION public.billing_attention_count_v1(TEXT) RETURNS INTEGER LANGUAGE SQL AS 'SELECT 0';
 WRITERS
 
+
+receipt_query="$(cd "$ROOT_DIR" && node --input-type=module --eval "import { V52_LEAD_RECEIPT_STATE_SQL as q } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(q);")"
+expected_receipt="$(cd "$ROOT_DIR" && node --input-type=module --eval "import { EXPECTED_V52_LEAD_RECEIPT_STATE as q } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(q);")"
+while IFS='|' read -r label mutation; do
+  assert_payment_writer_rejects "lead receipt: $label" "$mutation" "$receipt_query" "$expected_receipt" lead_follow_up_operations_v52
+ done <<'RECEIPT_MUTATIONS'
+RLS disabled|ALTER TABLE public.lead_follow_up_operations DISABLE ROW LEVEL SECURITY;
+browser grant|GRANT SELECT ON public.lead_follow_up_operations TO authenticated;
+column grant|GRANT SELECT(result) ON public.lead_follow_up_operations TO authenticated;
+missing ownership constraint|ALTER TABLE public.lead_follow_up_operations DROP CONSTRAINT lead_follow_up_operations_lead_id_fkey;
+missing primary key|ALTER TABLE public.lead_follow_up_operations DROP CONSTRAINT lead_follow_up_operations_pkey;
+unexpected policy|CREATE POLICY unexpected ON public.lead_follow_up_operations FOR SELECT TO authenticated USING (true);
+RECEIPT_MUTATIONS
 
 terms_query="$(cd "$ROOT_DIR" && node --input-type=module --eval "import { V49_SUBSCRIPTION_TERMS_STATE_SQL as q } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(q);")"
 expected_terms="$(cd "$ROOT_DIR" && node --input-type=module --eval "import { EXPECTED_V49_SUBSCRIPTION_TERMS_STATE as q } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(q);")"
@@ -2036,6 +2059,9 @@ run_interruptible python3 "$ROOT_DIR/scripts/verify-billing-command-concurrency.
 
 echo "[concurrency] RUN rank transition replay and commit ordering"
 run_interruptible python3 "$ROOT_DIR/scripts/verify-student-write-concurrency.py" "$PSQL" "$SOCKET_DIR" "$PG_PORT"
+
+echo "[lead concurrency] RUN atomic stage and keyed follow-up commands"
+run_interruptible python3 "$ROOT_DIR/scripts/verify-lead-command-concurrency.py" "$PSQL" "$SOCKET_DIR" "$PG_PORT"
 
 echo "[concurrency] RUN student profile/rank-plan lock ordering"
 if run_interruptible bash \

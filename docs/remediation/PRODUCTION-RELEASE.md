@@ -1,3 +1,24 @@
+# V52 candidate, not released
+
+The lead-command candidate resolves OPS1-03, FSH2-03 and FSH2-04. It requires migration `20260926194918_lead_commands_v52.sql` after exact V51. No hosted migration or application deployment is recorded for this candidate. The completed V50 execution record below is historical and does not authorize V51 or V52.
+
+| State | Migration count | Head | Full preflight |
+| --- | ---: | --- | --- |
+| V51 predecessor | 146 | `20260925030000` | V32 |
+| V52 candidate | 147 | `20260926194918` | V33 |
+
+V51 and V52 are separate release actions. Generate each packet from its exact reviewed candidate, use `--one-migration`, and obtain fresh target inspection, token, backup/restore evidence and owner authorization. Production migration apply remains human-only in a real interactive terminal. Never submit its confirmation through an agent terminal. No preview build may be promoted to production.
+
+V52 adds service-only atomic lead edits and keyed follow-ups, preserving ordinary stage/null semantics and the existing enrollment conversion. The migration changes no existing lead/customer rows. Candidate verification includes the full 147-migration replay, 55 SQL contracts, 13 lead concurrency cases and a V51-to-V52 canonical/logical restore continuation. Local synthetic restore evidence is not a production recovery snapshot. The private operator's exact release/image mappings must be verified for the selected candidate before any backup is reused.
+
+The V32 compatibility response is available only after full V52 verification, preserving the previous backend's database-first readiness. An older application still uses split lead commands and does not gain the new atomicity or idempotency guarantees. Drain those requests before serving the new application. There is no approved down-migration or automated hosted restore. A rollback needs separate compatibility review; owner-directed snapshot restoration may lose later writes and follow-up receipts. Never discard receipts to make a retry run again.
+
+The browser retains an unknown follow-up's frozen key and target for explicit retry while its controller and access identity remain mounted. Server receipts persist and can replay the same key across sessions, but browser reload/remount loses the local retry record. This candidate does not claim reload-safe browser retry. No durable browser recovery store is introduced.
+
+The exact candidate SHA, file manifest, provider state and release approval belong in a fresh private packet after review and merge. See [cutover gates](../cutover-gates.md) for the current state checks and [services](../services.md) for provider ownership.
+
+---
+
 # Completed V50 production release
 
 **Completed September 20, 2026. Do not rerun this apply.** Both application pairs serve `dce52efff1d28358eca421769d00791b60045c6c`; both databases are V50. [Verification](production-release-verification.md) records exact execution and comparisons.

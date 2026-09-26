@@ -11,9 +11,11 @@ from app.schemas.lead import (
     LeadActivityCreate,
     LeadActivityResponse,
     LeadConvert,
+    LeadFollowUpRequest,
 )
 from app.services.studio_scope import ensure_staff_user_in_studio
 from app.services.program_service import ProgramService
+from app.services.program_records import program_error
 from app.services.supabase_rpc import execute_required_rpc, first_rpc_row
 from app.services.lead_reads import fetch_lead_rows
 
@@ -96,57 +98,62 @@ class LeadService:
         update_dict = data.model_dump(exclude_unset=True)
         if not update_dict:
             raise HTTPException(status_code=400, detail="No fields to update")
-        ensure_staff_user_in_studio(
-            self.supabase,
-            update_dict.get("assigned_staff_id"),
-            studio_id,
-            "Assigned staff member not found in this studio",
-        )
-        ProgramService(self.supabase).ensure_program_active(
-            studio_id, update_dict.get("program_id")
+        return self._execute_lead_command(
+            "update_lead_atomic",
+            {
+                "p_studio_id": studio_id,
+                "p_actor_id": actor_id,
+                "p_lead_id": lead_id,
+                "p_patch": update_dict,
+            },
         )
 
-        # Log stage change
-        if "stage" in update_dict:
-            old_lead = await self.get_lead(lead_id, studio_id)
-            if old_lead.stage != update_dict["stage"]:
-                self.supabase.table("lead_activities").insert(
-                    {
-                        "studio_id": studio_id,
-                        "lead_id": lead_id,
-                        "activity_type": "stage_change",
-                        "description": f"Stage changed from {old_lead.stage} to {update_dict['stage']}",
-                        "created_by": actor_id,
-                    }
-                ).execute()
+    async def follow_up_lead(
+        self, lead_id: str, data: LeadFollowUpRequest, studio_id: str, actor_id: str
+    ) -> LeadResponse:
+        # SQL resolves defaults under the row lock and replays the original result.
+        # Pre-reading the lead here would race a concurrent update or command retry.
+        return self._execute_lead_command(
+            "follow_up_lead_atomic",
+            {
+                "p_studio_id": studio_id,
+                "p_actor_id": actor_id,
+                "p_lead_id": lead_id,
+                "p_operation_id": str(data.operation_id),
+                "p_request": {"next_stage": data.next_stage},
+            },
+        )
 
+    def _execute_lead_command(self, name: str, params: dict) -> LeadResponse:
         try:
-            result = (
-                self.supabase.table("leads")
-                .update(update_dict)
-                .eq("id", lead_id)
-                .eq("studio_id", studio_id)
-                .execute()
-            )
+            result = execute_required_rpc(self.supabase, name, params)
         except PostgrestAPIError as exc:
-            if (
-                exc.code not in OPTIONAL_MEMBERSHIP_SCHEMA_ERROR_CODES
-                or "program_id" not in update_dict
-            ):
+            if exc.code == "P0001" and exc.message == "PROGRAM_INACTIVE":
+                try:
+                    program_id = str(uuid.UUID(exc.details))
+                except (ValueError, TypeError, AttributeError):
+                    raise exc
+                raise program_error(
+                    409,
+                    "PROGRAM_INACTIVE",
+                    "Archived programs cannot be used for new records.",
+                    program_id=program_id,
+                ) from exc
+            error = {
+                "22023": (400, "Invalid lead command"),
+                "42501": (403, "Not authorized to perform this lead command"),
+                "P0002": (404, "Lead or related record not found in this studio"),
+            }.get(exc.code)
+            if exc.code == "23505" and exc.message == "Follow-up operation identity conflict.":
+                error = (409, "This operation conflicts with a recorded lead command")
+            if error is None:
                 raise
-            update_dict.pop("program_id", None)
-            if not update_dict:
-                return await self.get_lead(lead_id, studio_id)
-            result = (
-                self.supabase.table("leads")
-                .update(update_dict)
-                .eq("id", lead_id)
-                .eq("studio_id", studio_id)
-                .execute()
-            )
-        if not result.data:
-            raise HTTPException(status_code=404, detail="Lead not found")
-        return LeadResponse(**result.data[0])
+            # Database/provider details can contain private record values.
+            raise HTTPException(status_code=error[0], detail=error[1]) from exc
+        row = first_rpc_row(result)
+        if row is None:
+            raise HTTPException(status_code=500, detail="Failed to complete lead command")
+        return LeadResponse(**row)
 
     async def get_activities(self, lead_id: str, studio_id: str) -> list[LeadActivityResponse]:
         result = (

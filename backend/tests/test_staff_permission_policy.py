@@ -121,6 +121,7 @@ AFFECTED_ROUTE_DEPENDENCIES = {
         ("POST", "/leads"),
         ("PATCH", "/leads/{lead_id}"),
         ("POST", "/leads/{lead_id}/activities"),
+        ("POST", "/leads/{lead_id}/follow-up"),
     ),
 }
 

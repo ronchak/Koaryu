@@ -1130,6 +1130,11 @@ export interface ApiLeadCreate {
   notes?: string | null;
 }
 
+export interface ApiLeadFollowUpRequest {
+  operation_id: string;
+  next_stage?: "inquiry" | "trial_scheduled" | "trial_completed" | "offer_sent" | "enrolled" | "closed_lost" | null;
+}
+
 export interface ApiLeadResponse {
   id: string;
   studio_id: string;

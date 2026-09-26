@@ -9,10 +9,15 @@ import {
 import { refreshLiveLeadDataset } from "@/lib/store-lead-refresh-model";
 import { localId } from "@/lib/store-storage";
 import type { BeginLiveAuthRequest, StoreRef } from "@/lib/store-action-types";
-import type { BeltLadder, BeltRank, Lead, Program, Student } from "@/types";
+import type { BeltLadder, BeltRank, Lead, LeadStage, Program, Student } from "@/types";
 
 import type { ResourceScope } from "@/lib/store-resource-scope";
 import { canCommitLiveMutation } from "@/lib/store-action-types";
+
+export interface LeadFollowUpCommand {
+  operation_id: string;
+  next_stage: LeadStage | null;
+}
 
 interface UseStoreLeadActionsOptions {
   leadMutationScopeRef: StoreRef<ResourceScope>;
@@ -226,10 +231,60 @@ export function useStoreLeadActions({
     ],
   );
 
+  const followUpLead = useCallback(
+    async (leadId: string, command: LeadFollowUpCommand): Promise<Lead> => {
+      if (isPreviewMode) {
+        if (command.next_stage === "enrolled") {
+          return (await convertLeadToStudent(leadId)).lead;
+        }
+        const lead = leadsRef.current.find((item) => item.id === leadId);
+        if (!lead) throw new Error("Lead not found");
+        const result = { ...lead, stage: command.next_stage ?? lead.stage, follow_up_date: null };
+        persistLeads(leadsRef.current.map((item) => (item.id === leadId ? result : item)));
+        return result;
+      }
+
+      const liveRequest = beginLiveAuthRequest();
+      const finishMutation = beginLeadMutation();
+      try {
+        const result = await api.post<Lead>(
+          `/leads/${leadId}/follow-up`,
+          command,
+          liveRequest.token,
+        );
+        if (!canCommitLiveMutation(liveRequest)) return result;
+        setLeads((current) => current.map((item) => (item.id === leadId ? result : item)));
+        if (command.next_stage === "enrolled") {
+          try {
+            await refreshStudents();
+          } catch (error) {
+            console.error("Failed to refresh students after lead follow-up", error);
+          }
+          if (canCommitLiveMutation(liveRequest)) onStudentMutation();
+        }
+        return result;
+      } finally {
+        finishMutation();
+      }
+    },
+    [
+      beginLeadMutation,
+      beginLiveAuthRequest,
+      convertLeadToStudent,
+      isPreviewMode,
+      leadsRef,
+      onStudentMutation,
+      persistLeads,
+      refreshStudents,
+      setLeads,
+    ],
+  );
+
   return {
     addLead,
     convertLeadToStudent,
     deleteLead,
+    followUpLead,
     refreshLeads,
     updateLead,
   };

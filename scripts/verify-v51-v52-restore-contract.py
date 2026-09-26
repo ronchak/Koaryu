@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prove current invoice collection facts survive V49 restore without rewriting retained financial rows."""
+"""Prove retained V51 lead rows survive logical restore and V52 atomic updates and keyed follow-up replay."""
 import hashlib
 import json
 import os
@@ -9,26 +9,21 @@ import sys
 
 from local_postgres_verification import ACL_SQL, CONSTRAINT_SQL, PAIR_PATH, LocalPostgres, normalization_plan, require
 
-MIGRATION = "20260920154441_billing_due_date_facts_v50.sql"
-TABLES = ("auth.users", "public.staff_profiles", "public.studios", "public.staff_roles",
-          "public.billing_payers", "public.billing_invoices", "public.billing_payments", "public.audit_logs")
+MIGRATION = "20260926194918_lead_commands_v52.sql"
+TABLES = ("auth.users", "public.studios", "public.staff_roles", "public.programs", "public.leads", "public.lead_activities")
 SEED_SQL = """
 BEGIN;
 DO $seed$
-DECLARE actor UUID := gen_random_uuid(); studio UUID := gen_random_uuid();
-    future_payer UUID := gen_random_uuid(); written_off_payer UUID := gen_random_uuid();
+DECLARE actor UUID := gen_random_uuid(); studio UUID := gen_random_uuid(); lead UUID := gen_random_uuid();
 BEGIN
     INSERT INTO auth.users(id,aud,role,email,raw_app_meta_data,raw_user_meta_data,created_at,updated_at)
     VALUES(actor,'authenticated','authenticated',actor||'@example.invalid','{}','{}',now(),now());
-    INSERT INTO public.studios(id,name,slug,owner_id,timezone)
-    VALUES(studio,'Due-date restore',studio::TEXT,actor,'UTC');
+    INSERT INTO public.studios(id,name,slug,owner_id) VALUES(studio,'Lead restore',studio::TEXT,actor);
     INSERT INTO public.staff_roles(studio_id,user_id,role) VALUES(studio,actor,'admin');
-    INSERT INTO public.billing_payers(id,studio_id,display_name,balance_cents,billing_status) VALUES
-        (future_payer,studio,'Legacy future',100,'past_due'),
-        (written_off_payer,studio,'Legacy uncollectible',200,'past_due');
-    INSERT INTO public.billing_invoices(studio_id,payer_id,status,amount_due_cents,amount_remaining_cents,due_date,external) VALUES
-        (studio,future_payer,'open',100,100,'2040-06-16',true),
-        (studio,written_off_payer,'uncollectible',200,200,'2040-06-01',true);
+    INSERT INTO public.leads(id,studio_id,first_name,last_name,source,stage,follow_up_date,notes)
+    VALUES(lead,studio,'Lead','Restore','walk_in','inquiry',CURRENT_DATE,'Retained lead');
+    INSERT INTO public.lead_activities(studio_id,lead_id,activity_type,description,created_by)
+    VALUES(studio,lead,'note','Retained contact history',actor);
 END;
 $seed$;
 SELECT 'seeded';
@@ -46,16 +41,17 @@ def main(arguments):
     shared = Path(__file__).with_name("local_postgres_verification.py")
     shared_hash = hashlib.sha256(shared.read_bytes()).hexdigest()
     names = [
-        "V49_OPERATIONAL_READINESS_SQL", "EXPECTED_V49_OPERATIONAL_READINESS",
-        "V49_CATALOG_STATE_SQL", "EXPECTED_V49_CATALOG_STATE", "EXPECTED_V49_RESTORED_CATALOG_STATE",
-        "V49_RELEASE_MANIFEST_SQL", "EXPECTED_V49_RELEASE_MANIFEST",
-        "V31_EXPECTATION_STATE_SQL", "EXPECTED_V49_EXPECTATION_STATE",
-        "V31_RESOURCE_OWNERSHIP_MANIFEST_SQL", "EXPECTED_V49_RESOURCE_OWNERSHIP_MANIFEST",
-        "V31_OPERATIONAL_CONTRACT_SQL", "EXPECTED_V49_OPERATIONAL_CONTRACT",
-        "V31_OPERATIONAL_MANIFEST_SQL", "EXPECTED_V49_OPERATIONAL_MANIFEST_V12",
-        "V49_SUBSCRIPTION_TERMS_STATE_SQL", "EXPECTED_V49_SUBSCRIPTION_TERMS_STATE",
-        "V41_PAYER_BALANCE_STATE_SQL", "EXPECTED_V41_PAYER_BALANCE_STATE",
+        "V51_OPERATIONAL_READINESS_SQL", "EXPECTED_V51_OPERATIONAL_READINESS",
+        "V51_CATALOG_STATE_SQL", "EXPECTED_V51_CATALOG_STATE", "EXPECTED_V51_RESTORED_CATALOG_STATE",
+        "V51_RELEASE_MANIFEST_SQL", "EXPECTED_V51_RELEASE_MANIFEST",
+        "V31_EXPECTATION_STATE_SQL", "EXPECTED_V51_EXPECTATION_STATE",
+        "V31_RESOURCE_OWNERSHIP_MANIFEST_SQL", "EXPECTED_V51_RESOURCE_OWNERSHIP_MANIFEST",
+        "V31_OPERATIONAL_CONTRACT_SQL", "EXPECTED_V51_OPERATIONAL_CONTRACT",
+        "V31_OPERATIONAL_MANIFEST_SQL", "EXPECTED_V51_OPERATIONAL_MANIFEST_V12",
+        "V51_CLOSEOUT_STATE_SQL", "EXPECTED_V51_CLOSEOUT_STATE",
+        "FINAL_OPERATIONAL_READINESS_SQL", "EXPECTED_OPERATIONAL_READINESS",
         "V50_OPERATIONAL_READINESS_SQL", "EXPECTED_V50_OPERATIONAL_READINESS",
+        "V49_OPERATIONAL_READINESS_SQL", "EXPECTED_V49_OPERATIONAL_READINESS",
         "V48_OPERATIONAL_READINESS_SQL", "EXPECTED_V48_OPERATIONAL_READINESS",
         "V47_OPERATIONAL_READINESS_SQL", "EXPECTED_V47_OPERATIONAL_READINESS",
         "V46_OPERATIONAL_READINESS_SQL", "EXPECTED_V46_OPERATIONAL_READINESS",
@@ -68,12 +64,12 @@ def main(arguments):
         "V39_OPERATIONAL_READINESS_SQL", "EXPECTED_V39_OPERATIONAL_READINESS",
         "V38_OPERATIONAL_READINESS_SQL", "EXPECTED_V38_OPERATIONAL_READINESS",
         "V37_OPERATIONAL_READINESS_SQL", "EXPECTED_V37_OPERATIONAL_READINESS",
-        "V50_CATALOG_STATE_SQL", "EXPECTED_V50_CATALOG_STATE", "EXPECTED_V50_RESTORED_CATALOG_STATE",
-        "V50_RELEASE_MANIFEST_SQL", "EXPECTED_V50_RELEASE_MANIFEST",
-        "V31_EXPECTATION_STATE_SQL", "EXPECTED_V50_EXPECTATION_STATE",
-        "V31_RESOURCE_OWNERSHIP_MANIFEST_SQL", "EXPECTED_V50_RESOURCE_OWNERSHIP_MANIFEST",
-        "V31_OPERATIONAL_CONTRACT_SQL", "EXPECTED_V50_OPERATIONAL_CONTRACT",
-        "V31_OPERATIONAL_MANIFEST_SQL", "EXPECTED_V50_OPERATIONAL_MANIFEST_V12",
+        "V52_CATALOG_STATE_SQL", "EXPECTED_V52_CATALOG_STATE", "EXPECTED_V52_RESTORED_CATALOG_STATE",
+        "V52_RELEASE_MANIFEST_SQL", "EXPECTED_V52_RELEASE_MANIFEST",
+        "V31_EXPECTATION_STATE_SQL", "EXPECTED_V52_EXPECTATION_STATE",
+        "V31_RESOURCE_OWNERSHIP_MANIFEST_SQL", "EXPECTED_V52_RESOURCE_OWNERSHIP_MANIFEST",
+        "V31_OPERATIONAL_CONTRACT_SQL", "EXPECTED_V52_OPERATIONAL_CONTRACT",
+        "V31_OPERATIONAL_MANIFEST_SQL", "EXPECTED_V52_OPERATIONAL_MANIFEST_V12",
         "V41_PAYER_BALANCE_STATE_SQL", "EXPECTED_V50_PAYER_BALANCE_STATE",
         "V50_COLLECTION_FACTS_STATE_SQL", "EXPECTED_V50_COLLECTION_FACTS_STATE",
         "V50_PAYER_READ_STATE_SQL", "EXPECTED_V50_PAYER_READ_STATE",
@@ -82,11 +78,17 @@ def main(arguments):
         "V43_EXTERNAL_PAYMENT_STATE_SQL", "EXPECTED_V43_EXTERNAL_PAYMENT_STATE",
         "V44_LOCAL_PLAN_STATE_SQL", "EXPECTED_V44_LOCAL_PLAN_STATE",
         "V44_CLEAR_STATE_SQL", "EXPECTED_V44_CLEAR_STATE",
+        "V49_SUBSCRIPTION_TERMS_STATE_SQL", "EXPECTED_V49_SUBSCRIPTION_TERMS_STATE",
         "V50_INVOICE_FACTS_STATE_SQL", "EXPECTED_V50_INVOICE_FACTS_STATE",
         "V50_ATTENTION_STATE_SQL", "EXPECTED_V50_ATTENTION_STATE",
-        "CRITICAL_SURFACE_MANIFEST_SQL", "EXPECTED_V50_CRITICAL_SURFACE_MANIFEST",
-        "V29_OPERATIONAL_MANIFEST_SQL", "EXPECTED_V50_OPERATIONAL_MANIFEST_V10",
-        "V30_OPERATIONAL_MANIFEST_SQL", "EXPECTED_V50_OPERATIONAL_MANIFEST_V11",
+        "CRITICAL_SURFACE_MANIFEST_SQL", "EXPECTED_V52_CRITICAL_SURFACE_MANIFEST",
+        "V29_OPERATIONAL_MANIFEST_SQL", "EXPECTED_V52_OPERATIONAL_MANIFEST_V10",
+        "V30_OPERATIONAL_MANIFEST_SQL", "EXPECTED_V52_OPERATIONAL_MANIFEST_V11",
+        "V30_OPERATIONAL_CONTRACT_SQL", "EXPECTED_V51_V30_OPERATIONAL_CONTRACT",
+        "V30_REPLAY_REPAIRS_MANIFEST_SQL", "EXPECTED_V51_V30_REPLAY_REPAIRS_MANIFEST",
+        "V52_LEAD_UPDATE_STATE_SQL", "EXPECTED_V52_LEAD_UPDATE_STATE",
+        "V52_LEAD_FOLLOW_UP_STATE_SQL", "EXPECTED_V52_LEAD_FOLLOW_UP_STATE",
+        "V52_LEAD_RECEIPT_STATE_SQL", "EXPECTED_V52_LEAD_RECEIPT_STATE",
     ]
     module = (root / "scripts/studio-comp-migration-rollout.mjs").as_uri()
     pinned = json.loads(local.run(["node", "--input-type=module", "--eval",
@@ -107,41 +109,36 @@ def main(arguments):
             fields.append(f"'{table}',(SELECT COALESCE(jsonb_agg({value} ORDER BY to_jsonb(t)->>'id',"
                           f"to_jsonb(t)::TEXT COLLATE \"C\"),'[]'::JSONB) FROM {table} t)")
         return json.loads(local.sql(database, "SET TIME ZONE 'UTC'; SELECT jsonb_build_object(" + ",".join(fields) + ");"))
-    contract_path = root / "supabase/verification/billing_payer_balance_v41.sql"
-    contract_bytes = contract_path.read_bytes()
 
     def semantics(database):
-        return {signature: local.sql(database, f"SELECT {signature};") for signature in ["private.koaryu_release_critical_surface_manifest_v16()","private.koaryu_release_critical_surface_manifest_v17()"]}
+        return {signature: local.sql(database, f"SELECT {signature};") for signature in ["private.koaryu_release_critical_surface_manifest_v16()"]}
 
     def predecessor(database, restored=False):
-        check(database, "V49_OPERATIONAL_READINESS_SQL", "EXPECTED_V49_OPERATIONAL_READINESS")
-        check(database, "V49_CATALOG_STATE_SQL", "EXPECTED_V49_RESTORED_CATALOG_STATE" if restored else "EXPECTED_V49_CATALOG_STATE")
-        check(database, "V49_RELEASE_MANIFEST_SQL", "EXPECTED_V49_RELEASE_MANIFEST")
-        check(database, "V31_EXPECTATION_STATE_SQL", "EXPECTED_V49_EXPECTATION_STATE")
-        check(database, "V31_RESOURCE_OWNERSHIP_MANIFEST_SQL", "EXPECTED_V49_RESOURCE_OWNERSHIP_MANIFEST")
-        check(database, "V31_OPERATIONAL_CONTRACT_SQL", "EXPECTED_V49_OPERATIONAL_CONTRACT")
-        check(database, "V31_OPERATIONAL_MANIFEST_SQL", "EXPECTED_V49_OPERATIONAL_MANIFEST_V12")
-        check(database, "V49_SUBSCRIPTION_TERMS_STATE_SQL", "EXPECTED_V49_SUBSCRIPTION_TERMS_STATE")
-        check(database, "V41_PAYER_BALANCE_STATE_SQL", "EXPECTED_V41_PAYER_BALANCE_STATE")
-        require(local.sql(database, "SELECT count(*)=144 AND max(version)='20260920052705' FROM supabase_migrations.schema_migrations;") == "t",
-                "Restore requires the actual V49 history")
-        require(local.sql(database, "SELECT to_regprocedure('public.koaryu_release_schema_preflight_v31()') IS NULL AND to_regprocedure('public.billing_payer_balance_facts_v1(uuid,uuid,date)') IS NULL AND to_regprocedure('public.list_billing_payers_v1(uuid,uuid,date)') IS NULL AND to_regprocedure('public.billing_invoice_collection_facts_v1(uuid,uuid,date)') IS NULL AND to_regprocedure('public.billing_attention_count_v1(uuid,date)') IS NULL;") == "t",
-                "Restore predecessor already contains V50 functions")
+        check(database, "V51_OPERATIONAL_READINESS_SQL", "EXPECTED_V51_OPERATIONAL_READINESS")
+        check(database, "V51_CATALOG_STATE_SQL", "EXPECTED_V51_RESTORED_CATALOG_STATE" if restored else "EXPECTED_V51_CATALOG_STATE")
+        check(database, "V51_RELEASE_MANIFEST_SQL", "EXPECTED_V51_RELEASE_MANIFEST")
+        check(database, "V31_EXPECTATION_STATE_SQL", "EXPECTED_V51_EXPECTATION_STATE")
+        check(database, "V31_RESOURCE_OWNERSHIP_MANIFEST_SQL", "EXPECTED_V51_RESOURCE_OWNERSHIP_MANIFEST")
+        check(database, "V31_OPERATIONAL_CONTRACT_SQL", "EXPECTED_V51_OPERATIONAL_CONTRACT")
+        check(database, "V31_OPERATIONAL_MANIFEST_SQL", "EXPECTED_V51_OPERATIONAL_MANIFEST_V12")
+        check(database, "V51_CLOSEOUT_STATE_SQL", "EXPECTED_V51_CLOSEOUT_STATE")
+        require(local.sql(database, "SELECT count(*)=146 AND max(version)='20260925030000' FROM supabase_migrations.schema_migrations;") == "t",
+                "Restore requires the actual V51 history")
+        require(local.sql(database, "SELECT to_regprocedure('public.koaryu_release_schema_preflight_v33()') IS NULL AND to_regprocedure('public.update_lead_atomic(uuid,uuid,uuid,jsonb)') IS NULL AND to_regprocedure('public.follow_up_lead_atomic(uuid,uuid,uuid,uuid,jsonb)') IS NULL;") == "t",
+                "Restore predecessor already contains V52 functions")
 
     predecessor("postgres")
     hashes = {p.name: hashlib.sha256(p.read_bytes()).hexdigest()
               for p in sorted((root / "supabase/migrations").glob("*.sql"))}
-    require(len(hashes) == 147 and list(hashes)[-4:] == [
-        "20260920052705_subscription_unknown_terms_v49.sql", MIGRATION,
-        "20260925030000_invoice_closeout_lock_order_v51.sql",
-        "20260926194918_lead_commands_v52.sql"], "Unexpected migration inventory")
+    require(len(hashes) == 147 and list(hashes)[-2:] == [
+        "20260925030000_invoice_closeout_lock_order_v51.sql", MIGRATION], "Unexpected migration inventory")
     migration = root / "supabase/migrations" / MIGRATION
     mapping_bytes = PAIR_PATH.read_bytes()
     pairs = json.loads(mapping_bytes)
-    source = f"koaryu_v50_source_{os.getpid()}"
-    restored = f"koaryu_v50_restore_{os.getpid()}"
-    canonical = f"koaryu_v50_canonical_{os.getpid()}"
-    dump = temporary / f"v49-before-v50-{os.getpid()}.dump"
+    source = f"koaryu_v52_source_{os.getpid()}"
+    restored = f"koaryu_v52_restore_{os.getpid()}"
+    canonical = f"koaryu_v52_canonical_{os.getpid()}"
+    dump = temporary / f"v51-before-v52-{os.getpid()}.dump"
     owned, outcomes = [], {}
     try:
         for database, template in [(source, "postgres"), (restored, "template0")]:
@@ -150,9 +147,9 @@ def main(arguments):
             local.sql(database, f'ALTER DATABASE {database} SET search_path TO "$user",public,extensions;')
         seed = local.sql(source, SEED_SQL)
         before = snapshot(source)
-        require(seed == "seeded" and len(before["public.billing_invoices"]) == 2
-                and all(row["billing_status"] == "past_due" for row in before["public.billing_payers"]),
-                "Legacy cached-status fixture is incomplete")
+        require(seed == "seeded" and len(before["public.leads"]) == 1
+                and len(before["public.lead_activities"]) == 1,
+                "Retained lead and activity fixture is incomplete")
         predecessor(source)
         expected_semantics = semantics(source)
         constraints, acls = json.loads(local.sql(source, CONSTRAINT_SQL)), json.loads(local.sql(source, ACL_SQL))
@@ -181,6 +178,8 @@ def main(arguments):
                        f"--command=INSERT INTO supabase_migrations.schema_migrations(version,name) VALUES('{version}','{name}');"])
             require(snapshot(database) == before, "Migration changed retained rows before continuation")
             checks = [
+                ("FINAL_OPERATIONAL_READINESS_SQL", "EXPECTED_OPERATIONAL_READINESS"),
+                ("V51_OPERATIONAL_READINESS_SQL", "EXPECTED_V51_OPERATIONAL_READINESS"),
                 ("V50_OPERATIONAL_READINESS_SQL", "EXPECTED_V50_OPERATIONAL_READINESS"),
                 ("V49_OPERATIONAL_READINESS_SQL", "EXPECTED_V49_OPERATIONAL_READINESS"),
                 ("V48_OPERATIONAL_READINESS_SQL", "EXPECTED_V48_OPERATIONAL_READINESS"),
@@ -195,12 +194,12 @@ def main(arguments):
                 ("V39_OPERATIONAL_READINESS_SQL", "EXPECTED_V39_OPERATIONAL_READINESS"),
                 ("V38_OPERATIONAL_READINESS_SQL", "EXPECTED_V38_OPERATIONAL_READINESS"),
                 ("V37_OPERATIONAL_READINESS_SQL", "EXPECTED_V37_OPERATIONAL_READINESS"),
-                ("V50_CATALOG_STATE_SQL", "EXPECTED_V50_RESTORED_CATALOG_STATE" if is_restored else "EXPECTED_V50_CATALOG_STATE"),
-                ("V50_RELEASE_MANIFEST_SQL", "EXPECTED_V50_RELEASE_MANIFEST"),
-                ("V31_EXPECTATION_STATE_SQL", "EXPECTED_V50_EXPECTATION_STATE"),
-                ("V31_RESOURCE_OWNERSHIP_MANIFEST_SQL", "EXPECTED_V50_RESOURCE_OWNERSHIP_MANIFEST"),
-                ("V31_OPERATIONAL_CONTRACT_SQL", "EXPECTED_V50_OPERATIONAL_CONTRACT"),
-                ("V31_OPERATIONAL_MANIFEST_SQL", "EXPECTED_V50_OPERATIONAL_MANIFEST_V12"),
+                ("V52_CATALOG_STATE_SQL", "EXPECTED_V52_RESTORED_CATALOG_STATE" if is_restored else "EXPECTED_V52_CATALOG_STATE"),
+                ("V52_RELEASE_MANIFEST_SQL", "EXPECTED_V52_RELEASE_MANIFEST"),
+                ("V31_EXPECTATION_STATE_SQL", "EXPECTED_V52_EXPECTATION_STATE"),
+                ("V31_RESOURCE_OWNERSHIP_MANIFEST_SQL", "EXPECTED_V52_RESOURCE_OWNERSHIP_MANIFEST"),
+                ("V31_OPERATIONAL_CONTRACT_SQL", "EXPECTED_V52_OPERATIONAL_CONTRACT"),
+                ("V31_OPERATIONAL_MANIFEST_SQL", "EXPECTED_V52_OPERATIONAL_MANIFEST_V12"),
                 ("V41_PAYER_BALANCE_STATE_SQL", "EXPECTED_V50_PAYER_BALANCE_STATE"),
                 ("V50_COLLECTION_FACTS_STATE_SQL", "EXPECTED_V50_COLLECTION_FACTS_STATE"),
                 ("V50_PAYER_READ_STATE_SQL", "EXPECTED_V50_PAYER_READ_STATE"),
@@ -212,23 +211,50 @@ def main(arguments):
                 ("V49_SUBSCRIPTION_TERMS_STATE_SQL", "EXPECTED_V49_SUBSCRIPTION_TERMS_STATE"),
                 ("V50_INVOICE_FACTS_STATE_SQL", "EXPECTED_V50_INVOICE_FACTS_STATE"),
                 ("V50_ATTENTION_STATE_SQL", "EXPECTED_V50_ATTENTION_STATE"),
-                ("CRITICAL_SURFACE_MANIFEST_SQL", "EXPECTED_V50_CRITICAL_SURFACE_MANIFEST"),
-                ("V29_OPERATIONAL_MANIFEST_SQL", "EXPECTED_V50_OPERATIONAL_MANIFEST_V10"),
-                ("V30_OPERATIONAL_MANIFEST_SQL", "EXPECTED_V50_OPERATIONAL_MANIFEST_V11"),
+                ("CRITICAL_SURFACE_MANIFEST_SQL", "EXPECTED_V52_CRITICAL_SURFACE_MANIFEST"),
+                ("V29_OPERATIONAL_MANIFEST_SQL", "EXPECTED_V52_OPERATIONAL_MANIFEST_V10"),
+                ("V30_OPERATIONAL_MANIFEST_SQL", "EXPECTED_V52_OPERATIONAL_MANIFEST_V11"),
+                ("V30_OPERATIONAL_CONTRACT_SQL", "EXPECTED_V51_V30_OPERATIONAL_CONTRACT"),
+                ("V30_REPLAY_REPAIRS_MANIFEST_SQL", "EXPECTED_V51_V30_REPLAY_REPAIRS_MANIFEST"),
+                ("V51_CLOSEOUT_STATE_SQL", "EXPECTED_V51_CLOSEOUT_STATE"),
+                ("V52_LEAD_UPDATE_STATE_SQL", "EXPECTED_V52_LEAD_UPDATE_STATE"),
+                ("V52_LEAD_FOLLOW_UP_STATE_SQL", "EXPECTED_V52_LEAD_FOLLOW_UP_STATE"),
+                ("V52_LEAD_RECEIPT_STATE_SQL", "EXPECTED_V52_LEAD_RECEIPT_STATE"),
             ]
             values = {query: check(database, query, expected) for query, expected in checks}
             require(semantics(database) == expected_semantics, "Upgrade or continuation changed declared semantic manifests")
             studio = before["public.studios"][0]["id"]
-            rows = json.loads(local.sql(database,
-                f"SELECT jsonb_agg(p ORDER BY p->>'display_name') FROM public.list_billing_payers_v1('{studio}',NULL,'2040-06-15') p;"))
-            require([(row["billing_status"], row["balance_cents"], row["overdue_balance_cents"], row["uncollectible_balance_cents"])
-                     for row in rows] == [("outstanding",100,0,0),("uncollectible",200,0,200)],
-                    "Current reads reused legacy delinquency or conflated uncollectible invoices")
-            require(snapshot(database) == before, "Read projection rewrote retained financial rows")
-            local.sql(database, contract_bytes.decode("utf8"))
-            require(contract_path.read_bytes() == contract_bytes, "Payer contract changed during verification")
-            require(snapshot(database) == before, "Payer contract did not roll back its fixture changes")
-            outcomes["payer_contract_sha256"] = hashlib.sha256(contract_bytes).hexdigest()
+            actor = before["public.staff_roles"][0]["user_id"]
+            lead = before["public.leads"][0]["id"]
+            # Roll back the proof so every retained source row can be compared exactly.
+            proof = local.sql(database, f"""
+BEGIN;
+SET LOCAL ROLE service_role;
+SELECT public.update_lead_atomic('{studio}','{actor}','{lead}', '{{"stage":"trial_scheduled"}}');
+DO $proof$
+DECLARE operation UUID := gen_random_uuid(); first_result public.leads; replay public.leads;
+BEGIN
+    SELECT * INTO first_result FROM public.follow_up_lead_atomic(
+        '{studio}','{actor}','{lead}',operation,'{{"next_stage":"trial_completed"}}');
+    SELECT * INTO replay FROM public.follow_up_lead_atomic(
+        '{studio}','{actor}','{lead}',operation,'{{"next_stage":"trial_completed"}}');
+    IF to_jsonb(first_result) IS DISTINCT FROM to_jsonb(replay)
+       OR replay.stage <> 'trial_completed' OR replay.follow_up_date IS NOT NULL
+       OR (SELECT count(*) FROM public.lead_follow_up_operations WHERE operation_id=operation) <> 1
+       OR (SELECT count(*) FROM public.lead_activities WHERE lead_id='{lead}' AND activity_type='stage_change') <> 2
+       OR (SELECT count(*) FROM public.lead_activities WHERE lead_id='{lead}' AND activity_type='follow_up') <> 1 THEN
+        RAISE EXCEPTION 'Restored V52 command result, history or replay mismatch';
+    END IF;
+END;
+$proof$;
+ROLLBACK;
+SELECT 'continued';
+""")
+            require(proof.splitlines()[-1] == "continued", "Lead command continuation failed")
+            require(snapshot(database) == before, "Lead command rollback changed retained rows")
+            require(local.sql(database, "SELECT count(*) FROM public.lead_follow_up_operations;") == "0",
+                    "Rolled-back follow-up receipt survived")
+            outcomes[("restored_" if is_restored else "canonical_") + "lead_command"] = "replayed and rolled back"
             require({query: check(database, query, expected) for query, expected in checks} == values,
                     "Continuation changed the attested state")
             require(semantics(database) == expected_semantics, "Upgrade or continuation changed declared semantic manifests")
@@ -248,8 +274,8 @@ def main(arguments):
             "business_before_sha256": hashlib.sha256(json.dumps(before, sort_keys=True).encode()).hexdigest(),
             "constraint_pairs": len(pairs), "billing_replays": 6, "acl_representations": len(statements) - 6,
         }
-        (temporary / "v49-v50-restore-evidence.json").write_text(json.dumps(evidence, indent=2) + "\n")
-        print("[restored V50] PASS retained rows, legacy caller readiness and current due-date facts on canonical/restored copies", flush=True)
+        (temporary / "v51-v52-restore-evidence.json").write_text(json.dumps(evidence, indent=2) + "\n")
+        print("[restored V52] PASS retained leads and activities, atomic updates, keyed follow-up replay and rollback on canonical/restored copies", flush=True)
     finally:
         errors = []
         for database in reversed(owned):

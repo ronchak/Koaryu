@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api, CommandOutcomeUnknown } from "@/lib/api";
 import { hasStaffPermission } from "@/lib/staff-permissions";
@@ -18,16 +18,23 @@ import {
 } from "@/lib/leads-page-model";
 import type { Lead, LeadActivity, LeadStage, LostReason, Program, StaffRoleName } from "@/types";
 
+import type { LeadFollowUpCommand } from "@/lib/store-lead-actions";
+
+type LeadOperation = { scope: string; followUp?: LeadFollowUpCommand; unknown: boolean };
+
 type LeadActivityStatus = "idle" | "loading" | "ready" | "error";
 
 type LeadStoreActions = {
   addLead: (data: Partial<Lead>) => Promise<void>;
   convertLeadToStudent: (leadId: string) => Promise<{ lead: Lead; studentId: string | null }>;
+  followUpLead: (leadId: string, command: LeadFollowUpCommand) => Promise<Lead>;
   updateLead: (id: string, data: Partial<Lead>) => Promise<void>;
 };
 
 type LeadsPageControllerOptions = LeadStoreActions & {
   baseLeads: Lead[];
+  identityGeneration: number;
+  identityReady: boolean;
   currentRole: StaffRoleName | null;
   isPreviewMode: boolean;
   programs: Program[];
@@ -40,6 +47,9 @@ export function useLeadsPageController({
   baseLeads,
   convertLeadToStudent,
   currentRole,
+  followUpLead,
+  identityGeneration,
+  identityReady,
   isPreviewMode,
   programs,
   today,
@@ -55,7 +65,15 @@ export function useLeadsPageController({
   const [addLeadOutcomeUnknown, setAddLeadOutcomeUnknown] = useState(false);
   const [isAddingLead, setIsAddingLead] = useState(false);
   const [addLeadError, setAddLeadError] = useState<string | null>(null);
-  const [pendingLeadId, setPendingLeadId] = useState<string | null>(null);
+  const scope = `${identityGeneration}:${identityReady}:${currentRole}:${isPreviewMode}`;
+  const scopeRef = useRef<string | null>(scope);
+  const selectedLeadIdRef = useRef(selectedLeadId);
+  const ownersRef = useRef(new Map<string, LeadOperation>());
+  const [pendingLeadIds, setPendingLeadIds] = useState<ReadonlySet<string>>(new Set());
+  const [unknownFollowUpLeadIds, setUnknownFollowUpLeadIds] = useState<ReadonlySet<string>>(
+    new Set(),
+  );
+  const [renderedScope, setRenderedScope] = useState(scope);
   const [leadActionError, setLeadActionError] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [followUpDrafts, setFollowUpDrafts] = useState<Record<string, string>>({});
@@ -66,6 +84,69 @@ export function useLeadsPageController({
   const [selectedLeadActivityStatus, setSelectedLeadActivityStatus] =
     useState<LeadActivityStatus>("idle");
   const [activityRefreshKey, setActivityRefreshKey] = useState(0);
+
+  // Reset rendered state when access changes. In-flight closures retain their own
+  // owner and cannot clear work claimed in the replacement scope.
+  if (renderedScope !== scope) {
+    setRenderedScope(scope);
+    setPendingLeadIds(new Set());
+    setUnknownFollowUpLeadIds(new Set());
+    setOptimisticLeads({});
+    setFollowUpDrafts({});
+    setSelectedLeadActivities([]);
+    setSelectedLeadActivityError(null);
+    setSelectedLeadActivityStatus("idle");
+    setSelectedLeadId(null);
+    setLeadActionError(null);
+    setActionMessage(null);
+  }
+  useLayoutEffect(() => {
+    scopeRef.current = scope;
+    selectedLeadIdRef.current = selectedLeadId;
+    return () => {
+      scopeRef.current = null;
+    };
+  }, [scope, selectedLeadId]);
+
+  function ownsLead(leadId: string, owner: LeadOperation) {
+    return scopeRef.current === owner.scope && ownersRef.current.get(leadId) === owner;
+  }
+
+  function claimLead(leadId: string, followUp?: LeadFollowUpCommand, retry = false) {
+    if (!canManageLeads || !identityReady || scopeRef.current !== scope) return null;
+    const existing = ownersRef.current.get(leadId);
+    if (existing?.scope === scope && !(retry && existing.unknown)) return null;
+    const owner: LeadOperation = { scope, followUp, unknown: false };
+    ownersRef.current.set(leadId, owner);
+    setPendingLeadIds((current) => new Set(current).add(leadId));
+    setUnknownFollowUpLeadIds((current) => {
+      const next = new Set(current);
+      next.delete(leadId);
+      return next;
+    });
+    setLeadActionError(null);
+    setActionMessage(null);
+    return owner;
+  }
+
+  function finishLead(leadId: string, owner: LeadOperation) {
+    if (!ownsLead(leadId, owner)) return;
+    setOptimisticLeads((current) => removeOptimisticLeadUpdate(current, leadId));
+    if (owner.unknown) return;
+    ownersRef.current.delete(leadId);
+    setPendingLeadIds((current) => {
+      const next = new Set(current);
+      next.delete(leadId);
+      return next;
+    });
+  }
+
+  function closeCompletedLead(leadId: string, studentId?: string | null) {
+    if (selectedLeadIdRef.current !== null && selectedLeadIdRef.current !== leadId) return;
+    selectedLeadIdRef.current = null;
+    setSelectedLeadId(null);
+    if (studentId) router.push(`/students/${studentId}`);
+  }
 
   const dataset = useMemo(
     () => buildLeadsDatasetModel({ baseLeads, optimisticLeads, programs, today }),
@@ -85,11 +166,12 @@ export function useLeadsPageController({
         signal: requestController.signal,
       })
       .then((activities) => {
+        if (requestController.signal.aborted) return;
         setSelectedLeadActivities(activities);
         setSelectedLeadActivityStatus("ready");
       })
       .catch((error: unknown) => {
-        if (error instanceof Error && error.name === "AbortError") return;
+        if (requestController.signal.aborted) return;
         setSelectedLeadActivityError(
           error instanceof Error ? error.message : "Could not load lead activity.",
         );
@@ -108,7 +190,12 @@ export function useLeadsPageController({
   }
 
   function clearSelectedLead() {
-    if (!pendingLeadId) {
+    if (
+      !selectedLeadId ||
+      !pendingLeadIds.has(selectedLeadId) ||
+      unknownFollowUpLeadIds.has(selectedLeadId)
+    ) {
+      selectedLeadIdRef.current = null;
       setSelectedLeadId(null);
       setSelectedLeadActivities([]);
       setSelectedLeadActivityError(null);
@@ -132,6 +219,7 @@ export function useLeadsPageController({
 
   function selectLead(leadId: string) {
     setLeadActionError(null);
+    selectedLeadIdRef.current = leadId;
     setSelectedLeadId(leadId);
     setSelectedLeadActivities([]);
     if (isPreviewMode) {
@@ -163,37 +251,30 @@ export function useLeadsPageController({
       ...current,
       [lead.id]: optimisticLead,
     }));
-
-    return () => {
-      setOptimisticLeads((current) => removeOptimisticLeadUpdate(current, lead.id));
-    };
   }
 
   async function handleConvertLead(lead: Lead) {
     if (!canManageLeads || !canConvertLeads) return;
 
-    setLeadActionError(null);
-    setPendingLeadId(lead.id);
-    const rollbackOptimisticLead = beginOptimisticLeadUpdate(lead, {
+    const owner = claimLead(lead.id);
+    if (!owner) return;
+    beginOptimisticLeadUpdate(lead, {
       stage: "enrolled",
       follow_up_date: null,
     });
 
     try {
       const { studentId } = await convertLeadToStudent(lead.id);
-      setSelectedLeadId(null);
-
-      if (studentId) {
-        router.push(`/students/${studentId}`);
-      }
+      if (!ownsLead(lead.id, owner)) return;
+      closeCompletedLead(lead.id, studentId);
     } catch (error) {
+      if (!ownsLead(lead.id, owner)) return;
       console.error("Failed to convert lead", error);
       setLeadActionError(
         error instanceof Error ? error.message : "Could not convert this lead into a student.",
       );
     } finally {
-      rollbackOptimisticLead();
-      setPendingLeadId(null);
+      finishLead(lead.id, owner);
     }
   }
 
@@ -223,25 +304,23 @@ export function useLeadsPageController({
     options?: { closeAfterSuccess?: boolean },
   ) {
     if (!canManageLeads) return;
-    setLeadActionError(null);
-    setActionMessage(null);
-    setPendingLeadId(lead.id);
-    const rollbackOptimisticLead = beginOptimisticLeadUpdate(lead, updates);
+    const owner = claimLead(lead.id);
+    if (!owner) return;
+    beginOptimisticLeadUpdate(lead, updates);
 
     try {
       await updateLead(lead.id, updates);
+      if (!ownsLead(lead.id, owner)) return;
       setActionMessage(buildLeadUpdateSuccessMessage(lead, updates));
-      if (options?.closeAfterSuccess) {
-        setSelectedLeadId(null);
-      }
+      if (options?.closeAfterSuccess) closeCompletedLead(lead.id);
     } catch (error) {
+      if (!ownsLead(lead.id, owner)) return;
       console.error("Failed to update lead", error);
       setLeadActionError(
         error instanceof Error ? error.message : "Could not save lead changes. Please try again.",
       );
     } finally {
-      rollbackOptimisticLead();
-      setPendingLeadId(null);
+      finishLead(lead.id, owner);
     }
   }
 
@@ -268,30 +347,11 @@ export function useLeadsPageController({
     }
 
     const nextStage = PIPELINE_STAGES[currentIndex + direction]?.id;
-    if (!nextStage || nextStage === lead.stage || pendingLeadId === lead.id) {
+    if (!nextStage || nextStage === lead.stage) {
       return;
     }
 
     await handleStageSelection(lead, nextStage);
-  }
-
-  async function logFollowUpActivity(leadId: string, description: string) {
-    if (!canManageLeads || isPreviewMode || !token) {
-      return;
-    }
-
-    const activity = await api.post<LeadActivity>(
-      `/leads/${leadId}/activities`,
-      {
-        activity_type: "follow_up",
-        description,
-      },
-      token,
-    );
-    if (selectedLeadId === leadId) {
-      setSelectedLeadActivities((current) => [activity, ...current]);
-      setSelectedLeadActivityStatus("ready");
-    }
   }
 
   async function handleRescheduleLead(lead: Lead) {
@@ -305,58 +365,51 @@ export function useLeadsPageController({
     await handleLeadUpdate(lead, { follow_up_date: nextDate });
   }
 
-  async function handleMarkContacted(lead: Lead, advanceStage: boolean) {
-    if (!canManageLeads) return;
-    const nextStage = advanceStage ? getNextStage(lead.stage) : null;
-    if (nextStage === "enrolled" && !canConvertLeads) return;
-
-    setLeadActionError(null);
-    setActionMessage(null);
-    setPendingLeadId(lead.id);
-    const rollbackOptimisticLead = beginOptimisticLeadUpdate(lead, {
-      stage: nextStage ?? lead.stage,
+  async function runFollowUp(lead: Lead, command: LeadFollowUpCommand, retry = false) {
+    if (command.next_stage === "enrolled" && !canConvertLeads) return;
+    const owner = claimLead(lead.id, command, retry);
+    if (!owner) return;
+    beginOptimisticLeadUpdate(lead, {
+      stage: command.next_stage ?? lead.stage,
       follow_up_date: null,
     });
-
     try {
-      await logFollowUpActivity(
-        lead.id,
-        advanceStage && nextStage
-          ? `Lead contacted and moved to ${getStageLabel(nextStage)}.`
-          : "Lead contacted.",
-      );
-
-      if (advanceStage && nextStage === "enrolled") {
-        const { studentId } = await convertLeadToStudent(lead.id);
-        setSelectedLeadId(null);
-        if (studentId) {
-          router.push(`/students/${studentId}`);
-        }
-        return;
-      }
-
-      await updateLead(lead.id, {
-        stage: nextStage ?? lead.stage,
-        follow_up_date: null,
-      });
+      const result = await followUpLead(lead.id, command);
+      if (!ownsLead(lead.id, owner)) return;
+      if (command.next_stage === "enrolled")
+        closeCompletedLead(lead.id, result.converted_student_id);
       setActionMessage(
-        advanceStage && nextStage
-          ? `${fullName(lead)} moved to ${getStageLabel(nextStage)}.`
+        command.next_stage
+          ? `${fullName(lead)} moved to ${getStageLabel(command.next_stage)}.`
           : `${fullName(lead)} marked contacted.`,
       );
-
-      if (selectedLeadId === lead.id && !advanceStage) {
-        setSelectedLeadId(lead.id);
-      }
+      if (selectedLeadIdRef.current === lead.id) setActivityRefreshKey((current) => current + 1);
     } catch (error) {
-      console.error("Failed to update follow-up", error);
+      if (!ownsLead(lead.id, owner)) return;
+      if (retry || error instanceof CommandOutcomeUnknown) {
+        owner.unknown = true;
+        setUnknownFollowUpLeadIds((current) => new Set(current).add(lead.id));
+      }
       setLeadActionError(
         error instanceof Error ? error.message : "Could not complete that follow-up action.",
       );
     } finally {
-      rollbackOptimisticLead();
-      setPendingLeadId(null);
+      finishLead(lead.id, owner);
     }
+  }
+
+  async function handleMarkContacted(lead: Lead, advanceStage: boolean) {
+    if (!canManageLeads) return;
+    await runFollowUp(lead, {
+      operation_id: crypto.randomUUID(),
+      next_stage: advanceStage ? getNextStage(lead.stage) : null,
+    });
+  }
+
+  async function handleRetryFollowUp(lead: Lead) {
+    const owner = ownersRef.current.get(lead.id);
+    if (owner?.scope !== scope || !owner.unknown || !owner.followUp) return;
+    await runFollowUp(lead, owner.followUp, true);
   }
 
   function handleMarkLost(lead: Lead, lostReason: LostReason) {
@@ -389,6 +442,7 @@ export function useLeadsPageController({
     handleAssignedStaff,
     handleConvertLead,
     handleMarkContacted,
+    handleRetryFollowUp,
     handleMarkLost,
     handleKeyboardMoveLead,
     handleRescheduleLead,
@@ -398,7 +452,8 @@ export function useLeadsPageController({
     leadActionError,
     model,
     openAddLeadModal,
-    pendingLeadId,
+    pendingLeadIds,
+    unknownFollowUpLeadIds,
     retrySelectedLeadActivities,
     selectedLeadActivities,
     selectedLeadActivityError,
