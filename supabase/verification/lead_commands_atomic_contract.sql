@@ -19,6 +19,8 @@ DECLARE
     lead UUID := gen_random_uuid();
     second_lead UUID := gen_random_uuid();
     operation UUID := gen_random_uuid();
+    conversion_operation UUID := gen_random_uuid();
+    conversion_result JSONB;
     result public.leads;
     original_result JSONB;
     before_row JSONB;
@@ -198,7 +200,8 @@ BEGIN
     EXCEPTION WHEN unique_violation THEN failed := TRUE;
     END;
     IF NOT failed THEN RAISE EXCEPTION 'Changed actor/tenant disclosed receipt'; END IF;
-    SELECT * INTO result FROM public.follow_up_lead_atomic(studio,actor,lead,gen_random_uuid(),'{"next_stage":"enrolled"}');
+    SELECT * INTO result FROM public.follow_up_lead_atomic(studio,actor,lead,conversion_operation,'{"next_stage":"enrolled"}');
+    conversion_result := to_jsonb(result);
     IF result.stage IS DISTINCT FROM 'enrolled' OR result.converted_student_id IS NULL
        OR (SELECT count(*) FROM public.students WHERE id=result.converted_student_id) <> 1
        OR (SELECT count(*) FROM public.student_program_memberships WHERE student_id=result.converted_student_id) <> 1
@@ -233,6 +236,36 @@ BEGIN
         RAISE EXCEPTION 'Default program/date conversion semantics changed';
     END IF;
 
+    -- Ordinary backward edits stay allowed after conversion. Completed-key replay
+    -- returns its original result; a new enrollment intent cannot claim success.
+    PERFORM public.update_lead_atomic(studio,actor,lead,'{"stage":"offer_sent","follow_up_date":"2030-01-01"}');
+    SELECT to_jsonb(l) INTO before_row FROM public.leads l WHERE id=lead;
+    SELECT jsonb_build_array((SELECT count(*) FROM public.lead_activities),
+        (SELECT count(*) FROM public.lead_follow_up_operations),
+        (SELECT count(*) FROM public.students),(SELECT count(*) FROM public.student_program_memberships),
+        (SELECT count(*) FROM public.guardians),(SELECT count(*) FROM public.student_guardians),
+        (SELECT count(*) FROM public.audit_logs)) INTO before_counts;
+    SELECT * INTO result FROM public.follow_up_lead_atomic(studio,actor,lead,conversion_operation,'{"next_stage":"enrolled"}');
+    IF to_jsonb(result) IS DISTINCT FROM conversion_result
+       OR before_row IS DISTINCT FROM (SELECT to_jsonb(l) FROM public.leads l WHERE id=lead) THEN
+        RAISE EXCEPTION 'Converted-key replay must precede current-stage rejection';
+    END IF;
+    failed := FALSE;
+    BEGIN
+        PERFORM public.follow_up_lead_atomic(studio,actor,lead,gen_random_uuid(),'{"next_stage":"enrolled"}');
+    EXCEPTION WHEN SQLSTATE 'P0001' THEN
+        IF SQLERRM <> 'LEAD_ALREADY_CONVERTED' THEN RAISE; END IF;
+        failed := TRUE;
+    END;
+    SELECT jsonb_build_array((SELECT count(*) FROM public.lead_activities),
+        (SELECT count(*) FROM public.lead_follow_up_operations),
+        (SELECT count(*) FROM public.students),(SELECT count(*) FROM public.student_program_memberships),
+        (SELECT count(*) FROM public.guardians),(SELECT count(*) FROM public.student_guardians),
+        (SELECT count(*) FROM public.audit_logs)) INTO after_counts;
+    IF NOT failed OR before_row IS DISTINCT FROM (SELECT to_jsonb(l) FROM public.leads l WHERE id=lead)
+       OR before_counts IS DISTINCT FROM after_counts THEN
+        RAISE EXCEPTION 'Already-converted lead follow-up must not claim an enrollment it did not perform';
+    END IF;
 END;
 $test$;
 ROLLBACK;

@@ -1162,17 +1162,17 @@ export const V51_RELEASE_MANIFEST_SQL = releaseManifestSql(V51_FUNCTIONS, "v51_r
 const V52_FUNCTIONS = Object.freeze([
   ...V51_FUNCTIONS.map(row => row[0] === "public.koaryu_release_schema_preflight_v32()"
     ? [row[0], "4faf203cfb3bdbb52cea0771be67e4df9a9096421de60632961c763864d6b3b3", ...row.slice(2)] : row),
-  ["public.koaryu_release_schema_preflight_v33()", "079e111ed1b075b0575bb74f906024d71f3afe883d443604f140dc68575b7c77", ...V51_FUNCTIONS.at(-1).slice(2)],
+  ["public.koaryu_release_schema_preflight_v33()", "122e4fd0edeb368417660522b3cc26684a6376ea10d5b861d97441c0484cc172", ...V51_FUNCTIONS.at(-1).slice(2)],
 ]);
 export const EXPECTED_V52_RELEASE_MANIFEST = releaseManifest(V52_FUNCTIONS);
 export const V52_RELEASE_MANIFEST_SQL = releaseManifestSql(V52_FUNCTIONS, "v52_release_manifest");
 export const V52_LEAD_RECEIPT_STATE_SQL = `WITH context AS MATERIALIZED (SELECT pg_catalog.set_config('search_path','pg_catalog',true))
 SELECT encode(extensions.digest(convert_to((${LEAD_RECEIPT_FACTS_SQL.replace("FROM pg_catalog.pg_class relation WHERE", "FROM context CROSS JOIN pg_catalog.pg_class relation WHERE")})::TEXT,'UTF8'),'sha256'),'hex') AS lead_receipt_state`;
-export const EXPECTED_V52_LEAD_RECEIPT_STATE = "462f09c7accac5da5215efb0c2a365e824b1bc4810fce42eef090e17e5603192";
+export const EXPECTED_V52_LEAD_RECEIPT_STATE = "796b4c0fe4d033966248b78138776b6695dfbc80bdab7e0e9026b6c9745318cb";
 export const V52_LEAD_UPDATE_STATE_SQL = singleFunctionStateSql("update_lead_atomic", "lead_update_state");
 export const EXPECTED_V52_LEAD_UPDATE_STATE = "1:728a1bf008c2fa7efc4621c2b8b88f95331764cb02e37292e23bd9d027fc95e5";
 export const V52_LEAD_FOLLOW_UP_STATE_SQL = singleFunctionStateSql("follow_up_lead_atomic", "lead_follow_up_state");
-export const EXPECTED_V52_LEAD_FOLLOW_UP_STATE = "1:aea30ef38f63fd9e58dce3dee78098c1fa24f4dfbfc7dc1431f096719cc6f955";
+export const EXPECTED_V52_LEAD_FOLLOW_UP_STATE = "1:429d6f327cfecd9cb8db4fc7a9394cbe37072d5e4cef099f1df46adf09919d21";
 
 export const EXPECTED_V43_EXTERNAL_PAYMENT_STATE = "1:93859bf89d63e3569c5a399123f72a546d5cb5190a70867923eee65657359645";
 export const EXPECTED_V41_PAYER_BALANCE_STATE = "1:dc4c48e566bb5fd800fc2f088ccc944c5bc4fafc6b04517bf43005b4d2504c2c";

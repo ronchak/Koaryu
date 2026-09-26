@@ -319,3 +319,44 @@ def test_unknown_program_marker_or_invalid_uuid_remains_server_error(
         with pytest.raises(APIError) as result:
             invoke_command(TableBackedSupabase(), command)
     assert result.value is error
+
+
+def test_enrolled_follow_up_on_previously_converted_lead_returns_conflict_without_local_effects():
+    row = lead_row(stage="offer_sent", converted_student_id="student-1")
+    supabase = TableBackedSupabase({"leads": [dict(row)], "lead_activities": []})
+    error = APIError(
+        {
+            "code": "P0001",
+            "message": "LEAD_ALREADY_CONVERTED",
+            "details": "private provider details",
+            "hint": None,
+        }
+    )
+    with patch("app.services.lead_service.execute_required_rpc", side_effect=error):
+        with pytest.raises(HTTPException) as result:
+            asyncio.run(
+                LeadService(supabase).follow_up_lead(
+                    "lead-1", follow_up_request(next_stage="enrolled"), "studio-1", "actor-1"
+                )
+            )
+    assert result.value.status_code == 409
+    assert result.value.detail == "This lead has already been converted."
+    assert supabase.tables["leads"] == [row]
+    assert supabase.tables["lead_activities"] == []
+    assert not supabase.query_log
+
+
+@pytest.mark.parametrize(
+    "code,message",
+    [
+        ("P0001", "LEAD_ALREADY_CONVERTED_UNEXPECTED"),
+        ("XX000", "LEAD_ALREADY_CONVERTED"),
+        ("23505", "LEAD_ALREADY_CONVERTED"),
+    ],
+)
+def test_unknown_already_converted_marker_or_code_remains_server_error(code, message):
+    error = provider_error(code, message)
+    with patch("app.services.lead_service.execute_required_rpc", side_effect=error):
+        with pytest.raises(APIError) as result:
+            invoke_command(TableBackedSupabase(), "follow_up")
+    assert result.value is error

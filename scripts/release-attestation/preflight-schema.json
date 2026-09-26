@@ -1194,7 +1194,7 @@
       "namespace": "public",
       "functionName": "follow_up_lead_atomic",
       "signature": "public.follow_up_lead_atomic(uuid,uuid,uuid,uuid,jsonb)",
-      "expected": "6ac2a8528529fdcb0ce1cddc8d850b12ebba3d4a69a63a9391786d5ce9a7db97",
+      "expected": "669c93c2bdcb27b854decffee039ce6204a09a7094a506fa33d9651cc6b36165",
       "acl": [
         [
           "postgres",
@@ -1219,7 +1219,7 @@
     },
     "lead_follow_up_receipts_v52": {
       "kind": "lead_follow_up_receipts_v52",
-      "expected": "462f09c7accac5da5215efb0c2a365e824b1bc4810fce42eef090e17e5603192"
+      "expected": "796b4c0fe4d033966248b78138776b6695dfbc80bdab7e0e9026b6c9745318cb"
     }
   },
   "states": {

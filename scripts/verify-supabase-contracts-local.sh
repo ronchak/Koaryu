@@ -1242,7 +1242,7 @@ assert_payment_writer_rejects() {
   fi
   echo "[payment writer negative] RUN $label"
   raw="$({
-    printf "BEGIN;\nSET LOCAL koaryu.writer_failure = '%s';\nSET LOCAL koaryu.check_compatibility = '%s';\n%s\n%s\n" "$expected_failure" "$check_compatibility" "$mutation_sql" "$writer_query"
+    printf "BEGIN;\nSET LOCAL koaryu.writer_failure = '%s';\nSET LOCAL koaryu.check_compatibility = '%s';\n%s\n%s\n;\n" "$expected_failure" "$check_compatibility" "$mutation_sql" "$writer_query"
     cat <<'SQL'
 DO $check$
 DECLARE version INTEGER; result RECORD;

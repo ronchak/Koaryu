@@ -139,6 +139,10 @@ class LeadService:
                     "Archived programs cannot be used for new records.",
                     program_id=program_id,
                 ) from exc
+            if exc.code == "P0001" and exc.message == "LEAD_ALREADY_CONVERTED":
+                raise HTTPException(
+                    status_code=409, detail="This lead has already been converted."
+                ) from exc
             error = {
                 "22023": (400, "Invalid lead command"),
                 "42501": (403, "Not authorized to perform this lead command"),

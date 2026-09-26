@@ -29,7 +29,7 @@ CREATE TABLE public.lead_follow_up_operations (
     completed_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 ALTER TABLE public.lead_follow_up_operations ENABLE ROW LEVEL SECURITY;
-CREATE POLICY lead_follow_up_operations_membership_guard ON public.lead_follow_up_operations
+CREATE POLICY reject_ambiguous_staff_membership_access ON public.lead_follow_up_operations
     AS RESTRICTIVE FOR ALL TO authenticated
     USING ((SELECT private.has_unambiguous_studio_membership()))
     WITH CHECK ((SELECT private.has_unambiguous_studio_membership()));
@@ -217,6 +217,11 @@ BEGIN
         v_start := (CURRENT_TIMESTAMP AT TIME ZONE v_timezone)::date;
         SELECT * INTO v_result FROM public.convert_lead_to_student_atomic(p_studio_id,p_actor_id,p_lead_id,
             v_student,v_program,'active',v_start,v_guardian,v_link);
+        -- Ordinary edits may move a converted lead backwards. Preserve conversion's
+        -- existing boundary instead of claiming an advancement it did not perform.
+        IF v_lead.converted_student_id IS NOT NULL AND v_result.stage IS DISTINCT FROM 'enrolled' THEN
+            RAISE EXCEPTION USING ERRCODE='P0001', MESSAGE='LEAD_ALREADY_CONVERTED';
+        END IF;
         -- The existing conversion replay returns without clearing a newly scheduled follow-up.
         UPDATE public.leads SET follow_up_date=NULL WHERE id=p_lead_id AND studio_id=p_studio_id
         RETURNING * INTO v_result;
@@ -1213,7 +1218,7 @@ BEGIN
           AND p.prorettype='public.leads'::REGTYPE AND NOT p.proretset
           AND p.proconfig=ARRAY['search_path=""']::TEXT[]
           AND encode(extensions.digest(convert_to(pg_catalog.pg_get_functiondef(p.oid),'UTF8'),'sha256'),'hex')
-              = '6ac2a8528529fdcb0ce1cddc8d850b12ebba3d4a69a63a9391786d5ce9a7db97'
+              = '669c93c2bdcb27b854decffee039ce6204a09a7094a506fa33d9651cc6b36165'
           AND (SELECT jsonb_agg(jsonb_build_array(
                 CASE WHEN a.grantee=0 THEN 'PUBLIC' ELSE pg_catalog.pg_get_userbyid(a.grantee)::TEXT END,
                 pg_catalog.pg_get_userbyid(a.grantor)::TEXT,a.privilege_type,a.is_grantable)
@@ -1258,7 +1263,7 @@ BEGIN
                 WHERE trigger_row.tgrelid=relation.oid AND NOT trigger_row.tgisinternal))
         FROM pg_catalog.pg_class relation WHERE relation.oid=pg_catalog.to_regclass('public.lead_follow_up_operations')
           AND relation.relkind='r')::TEXT,'UTF8'),'sha256'),'hex'))
-       IS DISTINCT FROM '462f09c7accac5da5215efb0c2a365e824b1bc4810fce42eef090e17e5603192' THEN
+       IS DISTINCT FROM '796b4c0fe4d033966248b78138776b6695dfbc80bdab7e0e9026b6c9745318cb' THEN
         v_failures:=array_append(v_failures,'lead_follow_up_operations_v52');
     END IF;
  RETURN QUERY SELECT cardinality(v_failures) = 0,
