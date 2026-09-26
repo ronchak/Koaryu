@@ -910,10 +910,10 @@
       "title": "Lead history records a stage change before the stage is saved",
       "cluster": "lead_and_schedule_commands",
       "disposition": "fixed",
-      "reason": "V52 routes the tenant-scoped allowlisted PATCH through update_lead_atomic. It locks the lead before deriving the prior stage, then writes the requested fields and transition history in one transaction. No RPC fallback or stale-stage policy was added. Candidate implementation only; no hosted apply or deployment.",
+      "reason": "V52 routes the tenant-scoped allowlisted PATCH through update_lead_atomic. It locks the lead before deriving the prior stage, then writes the requested fields and transition history in one transaction. No RPC fallback or stale-stage policy was added. Candidate implementation only; no hosted apply or deployment. Referenced actor/assignee Auth rows and the studio parent are acquired before membership/lead locks, preserving account-cleanup ordering.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "e3beb1deb15dbf2015164f05a28d6e5c50a1c711",
+      "verified_against": "9a22216dad4b928839371cde91841c7022f8413a",
       "source_paths": [
         "backend/app/services/lead_service.py"
       ],
@@ -927,17 +927,17 @@
       "current_evidence": [
         {
           "path": "backend/app/services/lead_service.py",
-          "line": 95,
+          "line": 101,
           "observation": "Every nonempty PATCH calls the required atomic RPC, preserving omitted versus explicit-null fields."
         },
         {
           "path": "supabase/migrations/20260926194918_lead_commands_v52.sql",
-          "line": 67,
+          "line": 93,
           "observation": "The tenant lead is locked before the prior stage is read; update and history share the transaction."
         }
       ],
       "next_change": "No further implementation for this finding. Complete candidate review and exact-head gates; V52 needs its own separately authorized database apply and application release.",
-      "validation_plan": "SQL failure injection covers lead update and activity insertion rollback. Real PostgreSQL sessions prove committed and rolled-back prior-stage ordering and no-op history. Actual original-service and update-first/log-second mutation reproductions are retained privately.",
+      "validation_plan": "SQL failure injection covers lead update and activity insertion rollback. Real PostgreSQL sessions prove committed and rolled-back prior-stage ordering and no-op history. Actual original-service and update-first/log-second mutation reproductions are retained privately. Account cleanup commit/rollback and explicit Auth-before-child-lock probes pass; the late-Auth-lock variant reproduces a deadlock.",
       "scope_constraints": [
         "Atomic lead conversion",
         "Lead-management and conversion permission boundaries",
@@ -945,7 +945,8 @@
       ],
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
       "normalization_track": "Astra",
-      "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra."
+      "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra.",
+      "verification": "Local verification at 9a22216dad4b928839371cde91841c7022f8413a: all 147 migrations and 55 SQL contracts in the PostgreSQL replay with canonical/logical restore continuation, 31 lead and 29 billing concurrency cases; 1,999 backend tests and 5,501 subtests; 959 frontend tests, production build, touched lint, types and formatting. Original failures and named wrong implementations were exercised. Candidate only; independent review, exact-head CI and a separately authorized V52 release remain required."
     },
     {
       "id": "OPS1-04",
@@ -10529,10 +10530,10 @@
       "title": "A lead follow-up writes successful history before the stage change succeeds",
       "cluster": "lead_and_schedule_commands",
       "disposition": "fixed",
-      "reason": "The follow-up UI sends one keyed command with its displayed explicit target. V52 commits contact history, follow-up clearing, requested stage or nested existing conversion, and the original result receipt together. Same-key requests serialize and replay; actor/tenant/lead/payload mismatches conflict. Unknown outcomes retain the frozen key and target in the mounted controller. Reload/remount recovery is not claimed. Candidate implementation only; no hosted apply or deployment.",
+      "reason": "The follow-up UI sends one keyed command with its displayed explicit target. V52 commits contact history, follow-up clearing, requested stage or nested existing conversion, and the original result receipt together. Same-key requests serialize and replay; actor/tenant/lead/payload mismatches conflict. Unknown outcomes retain the frozen key and target in the mounted controller. Reload/remount recovery is not claimed. Candidate implementation only; no hosted apply or deployment. Explicit receipt recovery preserves newer observed UI data and reconciles through the guarded loader without holding the confirmed row behind an unrelated mutation.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "e3beb1deb15dbf2015164f05a28d6e5c50a1c711",
+      "verified_against": "9a22216dad4b928839371cde91841c7022f8413a",
       "source_paths": [
         "frontend/src/lib/leads-page-controller.ts",
         "backend/app/services/lead_service.py"
@@ -10547,17 +10548,17 @@
       "current_evidence": [
         {
           "path": "frontend/src/lib/leads-page-controller.ts",
-          "line": 368,
+          "line": 383,
           "observation": "Follow-up dispatch uses one command and retains its frozen payload on unknown outcomes."
         },
         {
           "path": "supabase/migrations/20260926194918_lead_commands_v52.sql",
-          "line": 111,
+          "line": 137,
           "observation": "The service-only follow-up RPC binds the receipt to actor, tenant, lead and canonical request and calls the existing conversion in its transaction."
         }
       ],
       "next_change": "No further implementation for this finding. Complete candidate review and exact-head gates; V52 needs its own separately authorized database apply and application release.",
-      "validation_plan": "SQL injected update, history and receipt failures roll back contact and all nested conversion effects. Same-key replay and concurrency, conflicts, UUID parity, permissions and program/date defaults pass focused tests. Mounted lost-response retry rejects new-key and recomputed-target mutations; atomic-PATCH-only mutation leaves duplicate contact evidence and is rejected.",
+      "validation_plan": "SQL injected update, history and receipt failures roll back contact and all nested conversion effects. Same-key replay and concurrency, conflicts, UUID parity, permissions and program/date defaults pass focused tests. Mounted lost-response retry rejects new-key and recomputed-target mutations; atomic-PATCH-only mutation leaves duplicate contact evidence and is rejected. Mounted stale-receipt, failed-refresh and unrelated-row cases reject applying the old receipt, restaging it optimistically or awaiting the global refresh.",
       "scope_constraints": [
         "Confirmed contact facts",
         "Conversion permission and atomicity",
@@ -10566,7 +10567,8 @@
       ],
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
       "normalization_track": "Astra",
-      "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra."
+      "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra.",
+      "verification": "Local verification at 9a22216dad4b928839371cde91841c7022f8413a: all 147 migrations and 55 SQL contracts in the PostgreSQL replay with canonical/logical restore continuation, 31 lead and 29 billing concurrency cases; 1,999 backend tests and 5,501 subtests; 959 frontend tests, production build, touched lint, types and formatting. Original failures and named wrong implementations were exercised. Candidate only; independent review, exact-head CI and a separately authorized V52 release remain required."
     },
     {
       "id": "FSH2-04",
@@ -10576,7 +10578,7 @@
       "reason": "The controller synchronously claims each lead in a ref and renders a pending set. Every row mutation shares that owner, different leads remain concurrent, and only the completing current identity may clear its optimistic/pending state or change notices/navigation. An unresolved follow-up blocks conflicting same-lead actions and exposes explicit same-command retry. Candidate implementation only; no deployment.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "e3beb1deb15dbf2015164f05a28d6e5c50a1c711",
+      "verified_against": "9a22216dad4b928839371cde91841c7022f8413a",
       "source_paths": [
         "frontend/src/lib/leads-page-controller.ts",
         "frontend/src/components/leads/lead-pipeline-board.tsx"
@@ -10588,12 +10590,12 @@
       "current_evidence": [
         {
           "path": "frontend/src/lib/leads-page-controller.ts",
-          "line": 115,
+          "line": 119,
           "observation": "The synchronous per-lead claim rejects same-turn and cross-control duplicates while allowing another lead."
         },
         {
           "path": "frontend/src/lib/leads-page-controller.ts",
-          "line": 132,
+          "line": 135,
           "observation": "Completion checks the operation owner and current access scope before removing optimistic or pending state."
         }
       ],
@@ -10607,7 +10609,8 @@
       ],
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
       "normalization_track": "Astra",
-      "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra."
+      "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra.",
+      "verification": "Local verification at 9a22216dad4b928839371cde91841c7022f8413a: all 147 migrations and 55 SQL contracts in the PostgreSQL replay with canonical/logical restore continuation, 31 lead and 29 billing concurrency cases; 1,999 backend tests and 5,501 subtests; 959 frontend tests, production build, touched lint, types and formatting. Original failures and named wrong implementations were exercised. Candidate only; independent review, exact-head CI and a separately authorized V52 release remain required."
     },
     {
       "id": "FSH2-05",
