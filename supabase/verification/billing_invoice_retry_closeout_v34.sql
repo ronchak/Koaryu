@@ -12,8 +12,9 @@ BEGIN
      OR cardinality(v_ready.security_failures) IS DISTINCT FROM 0 THEN
     RAISE EXCEPTION 'V34 readiness contract mismatch: %',row_to_json(v_ready);
   END IF;
+  -- V51 moves the existing-key retry behind the V31 writer's invoice lock order.
   IF private.koaryu_release_invoice_retry_closeout_manifest_v34()
-      IS DISTINCT FROM '0:d054ae0cf5ce43ce2c241ca628e0724b5239bd696c323ba9c817b8bd21ee0eec' THEN
+      IS DISTINCT FROM '0:70e87b852a84f9fcad61413ea8660fdf9d5adcb028ec03427f30d815e42526b6' THEN
     RAISE EXCEPTION 'V34 closeout manifest mismatch.';
   END IF;
   -- Generated pinned readiness owns operational-version compatibility checks.

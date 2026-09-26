@@ -106,7 +106,7 @@ def main(arguments):
     predecessor("postgres")
     hashes = {p.name: hashlib.sha256(p.read_bytes()).hexdigest()
               for p in sorted((root / "supabase/migrations").glob("*.sql"))}
-    require(len(hashes) == 145 and list(hashes)[-10:] == [
+    require(len(hashes) == 146 and list(hashes)[-11:] == [
         "20260908183744_serialize_billing_payer_balance_v41.sql", MIGRATION,
         "20260910093958_external_payment_command_ownership_v43.sql",
         "20260910135133_local_plan_write_ownership_v44.sql",
@@ -115,7 +115,8 @@ def main(arguments):
         "20260914055301_refund_completion_locking_v47.sql",
         "20260920035023_enrollment_activation_execution_v48.sql",
         "20260920052705_subscription_unknown_terms_v49.sql",
-        "20260920154441_billing_due_date_facts_v50.sql"], "Unexpected migration inventory")
+        "20260920154441_billing_due_date_facts_v50.sql",
+        "20260925030000_invoice_closeout_lock_order_v51.sql"], "Unexpected migration inventory")
     migration = root / "supabase/migrations" / MIGRATION
     mapping_bytes = PAIR_PATH.read_bytes()
     pairs = json.loads(mapping_bytes)

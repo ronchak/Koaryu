@@ -1365,6 +1365,26 @@
         "payer_read_projection_v50",
         "billing_attention_count_v50"
       ]
+    },
+    "v51": {
+      "extends": "v50",
+      "overrides": {
+        "resource_ownership_manifest_v31": {
+          "expected": "0:7eeca9f2e7003fd235eb60c70b65afd3ac17b9893dd582c6c9b6c9ab13ba61f2"
+        },
+        "operational_contract_v30": {
+          "expected": "0:80b98274fd3e19fc0f578d7f6a79a5279275687fc92c373226d495152bdcd67d"
+        },
+        "operational_manifest_v11": {
+          "expected": "fd84fac705af709620f3529f5769bb171cd21ece256c9862cf42152733703ad5"
+        },
+        "operational_manifest_v12": {
+          "expected": "9c715f1b254ed82df63e645327be0da48e5ef0d5a8d6f44a2eeb27d687fa8e58"
+        },
+        "invoice_retry_closeout_manifest_v34": {
+          "expected": "0:70e87b852a84f9fcad61413ea8660fdf9d5adcb028ec03427f30d815e42526b6"
+        }
+      }
     }
   }
 }
