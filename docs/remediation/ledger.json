@@ -913,7 +913,7 @@
       "reason": "V52 routes the tenant-scoped allowlisted PATCH through update_lead_atomic. It locks the lead before deriving the prior stage, then writes the requested fields and transition history in one transaction. No RPC fallback or stale-stage policy was added. Candidate implementation only; no hosted apply or deployment. Auth parents and all required staff memberships are locked before the studio row. Studio row contention raises a specific retryable conflict before lead effects, avoiding the reproduced staff-administration cycle while retaining Auth cleanup protection.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "1f54a69eaa4b4770b462782ec14fdb1b6a73785e",
+      "verified_against": "213e703211d135b27af8eef4561c173a99f29fc9",
       "source_paths": [
         "backend/app/services/lead_service.py"
       ],
@@ -946,7 +946,7 @@
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
       "normalization_track": "Astra",
       "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra.",
-      "verification": "Local verification at 1f54a69eaa4b4770b462782ec14fdb1b6a73785e: all 147 migrations and 55 SQL contracts with canonical/logical restore continuation, 67 lead and 29 billing concurrency cases; 2,009 backend tests and 5,501 subtests; unchanged frontend bytes retain their 959-test, build, lint, type and formatting results. The admin-archive deadlock found in independent review is reproduced before correction and covered with archive/demotion, Auth cleanup, studio contention and real data-clear schedules. Blocking studio-lock and blanket error-mapping variants are rejected. This is candidate verification, not a hosted V52 release."
+      "verification": "Frontend verification at 213e703211d135b27af8eef4561c173a99f29fc9: 965 tests, build, lint, typecheck and formatting passed. Thirteen recovery cases preserve row ownership until an independent current-row read, retain confirmed recovery after read failure, handle authorized absence, and reject stale publication after a newer same-row write. Five actual wrong implementations were rejected. Backend, SQL and release-tool bytes match independently reviewed 1f54a69eaa4b4770b462782ec14fdb1b6a73785e: 2,009 backend tests and 5,501 subtests; full 147-migration/55-contract replay, canonical/logical restore and 67 lead/29 billing/15 student concurrency cases. Candidate verification only; V52 is not released to staging or production."
     },
     {
       "id": "OPS1-04",
@@ -10530,10 +10530,10 @@
       "title": "A lead follow-up writes successful history before the stage change succeeds",
       "cluster": "lead_and_schedule_commands",
       "disposition": "fixed",
-      "reason": "The follow-up UI sends one keyed command with its displayed explicit target. V52 commits contact history, follow-up clearing, requested stage or nested existing conversion, and the original result receipt together. Same-key requests serialize and replay; actor/tenant/lead/payload mismatches conflict. Unknown outcomes retain the frozen key and target in the mounted controller. Reload/remount recovery is not claimed. Candidate implementation only; no hosted apply or deployment. Explicit receipt recovery preserves newer observed UI data and reconciles through the guarded loader without holding the confirmed row behind an unrelated mutation.",
+      "reason": "The UI sends one keyed follow-up with its displayed explicit target. V52 commits contact history, follow-up clearing, the requested stage or existing conversion, and the immutable receipt together. Same-key requests replay without new effects; mismatched identity or payload conflicts. Recovery keeps the frozen key, target and row reservation until an independent current-row read succeeds or establishes absence. Failed reads preserve known data and distinguish a confirmed save from a lost confirmation. Newer same-row publications invalidate older reads; unrelated leads remain independent. Browser reload/remount loses the local retry record; no durable browser recovery store is introduced. Candidate implementation only.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "1f54a69eaa4b4770b462782ec14fdb1b6a73785e",
+      "verified_against": "213e703211d135b27af8eef4561c173a99f29fc9",
       "source_paths": [
         "frontend/src/lib/leads-page-controller.ts",
         "backend/app/services/lead_service.py"
@@ -10548,7 +10548,7 @@
       "current_evidence": [
         {
           "path": "frontend/src/lib/leads-page-controller.ts",
-          "line": 383,
+          "line": 393,
           "observation": "Follow-up dispatch uses one command and retains its frozen payload on unknown outcomes."
         },
         {
@@ -10558,7 +10558,7 @@
         }
       ],
       "next_change": "No further implementation for this finding. Complete candidate review and exact-head gates; V52 needs its own separately authorized database apply and application release.",
-      "validation_plan": "SQL injected update, history and receipt failures roll back contact and all nested conversion effects. Same-key replay and concurrency, conflicts, UUID parity, permissions and program/date defaults pass focused tests. Mounted lost-response retry rejects new-key and recomputed-target mutations; atomic-PATCH-only mutation leaves duplicate contact evidence and is rejected. Mounted stale-receipt, failed-refresh and unrelated-row cases reject applying the old receipt, restaging it optimistically or awaiting the global refresh.",
+      "validation_plan": "SQL injected update, history and receipt failures roll back contact and all nested conversion effects. Same-key replay and concurrency, conflicts, UUID parity, permissions and program/date defaults pass focused tests. Mounted lost-response retry rejects new-key and recomputed-target mutations; atomic-PATCH-only mutation leaves duplicate contact evidence and is rejected. Mounted stale-receipt, failed-refresh and unrelated-row cases reject applying the old receipt, restaging it optimistically or awaiting the global refresh. No-intervening-read recovery keeps both POST and PATCH controls reserved; failed reads, token churn, same-key reopening, authoritative 404 and newer same-row publication are exercised through the actual mounted provider/controller. Fire-and-forget, global waits, premature release and stale publication variants fail.",
       "scope_constraints": [
         "Confirmed contact facts",
         "Conversion permission and atomicity",
@@ -10568,17 +10568,17 @@
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
       "normalization_track": "Astra",
       "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra.",
-      "verification": "Local verification at 1f54a69eaa4b4770b462782ec14fdb1b6a73785e: all 147 migrations and 55 SQL contracts with canonical/logical restore continuation, 67 lead and 29 billing concurrency cases; 2,009 backend tests and 5,501 subtests; unchanged frontend bytes retain their 959-test, build, lint, type and formatting results. The admin-archive deadlock found in independent review is reproduced before correction and covered with archive/demotion, Auth cleanup, studio contention and real data-clear schedules. Blocking studio-lock and blanket error-mapping variants are rejected. This is candidate verification, not a hosted V52 release."
+      "verification": "Frontend verification at 213e703211d135b27af8eef4561c173a99f29fc9: 965 tests, build, lint, typecheck and formatting passed. Thirteen recovery cases preserve row ownership until an independent current-row read, retain confirmed recovery after read failure, handle authorized absence, and reject stale publication after a newer same-row write. Five actual wrong implementations were rejected. Backend, SQL and release-tool bytes match independently reviewed 1f54a69eaa4b4770b462782ec14fdb1b6a73785e: 2,009 backend tests and 5,501 subtests; full 147-migration/55-contract replay, canonical/logical restore and 67 lead/29 billing/15 student concurrency cases. Candidate verification only; V52 is not released to staging or production."
     },
     {
       "id": "FSH2-04",
       "title": "One pending lead ID cannot protect concurrent lead actions",
       "cluster": "lead_and_schedule_commands",
       "disposition": "fixed",
-      "reason": "The controller synchronously claims each lead in a ref and renders a pending set. Every row mutation shares that owner, different leads remain concurrent, and only the completing current identity may clear its optimistic/pending state or change notices/navigation. An unresolved follow-up blocks conflicting same-lead actions and exposes explicit same-command retry. Candidate implementation only; no deployment.",
+      "reason": "The controller synchronously claims each existing lead in a ref and renders per-lead pending/recovery state. Row mutations share that owner, different leads remain concurrent, and obsolete access scopes cannot clear current work or change navigation. Unknown and confirmed-but-unreconciled follow-ups retain their frozen command and row reservation. The recovery read is independent of unrelated lead mutations, and a provider-scoped row-publication guard prevents an older read from replacing a newer confirmed row. Candidate implementation only; no staging or production release.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "1f54a69eaa4b4770b462782ec14fdb1b6a73785e",
+      "verified_against": "213e703211d135b27af8eef4561c173a99f29fc9",
       "source_paths": [
         "frontend/src/lib/leads-page-controller.ts",
         "frontend/src/components/leads/lead-pipeline-board.tsx"
@@ -10590,12 +10590,12 @@
       "current_evidence": [
         {
           "path": "frontend/src/lib/leads-page-controller.ts",
-          "line": 119,
+          "line": 128,
           "observation": "The synchronous per-lead claim rejects same-turn and cross-control duplicates while allowing another lead."
         },
         {
           "path": "frontend/src/lib/leads-page-controller.ts",
-          "line": 135,
+          "line": 145,
           "observation": "Completion checks the operation owner and current access scope before removing optimistic or pending state."
         }
       ],
@@ -10610,7 +10610,7 @@
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
       "normalization_track": "Astra",
       "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra.",
-      "verification": "Local verification at 1f54a69eaa4b4770b462782ec14fdb1b6a73785e: all 147 migrations and 55 SQL contracts with canonical/logical restore continuation, 67 lead and 29 billing concurrency cases; 2,009 backend tests and 5,501 subtests; unchanged frontend bytes retain their 959-test, build, lint, type and formatting results. The admin-archive deadlock found in independent review is reproduced before correction and covered with archive/demotion, Auth cleanup, studio contention and real data-clear schedules. Blocking studio-lock and blanket error-mapping variants are rejected. This is candidate verification, not a hosted V52 release."
+      "verification": "Frontend verification at 213e703211d135b27af8eef4561c173a99f29fc9: 965 tests, build, lint, typecheck and formatting passed. Thirteen recovery cases preserve row ownership until an independent current-row read, retain confirmed recovery after read failure, handle authorized absence, and reject stale publication after a newer same-row write. Five actual wrong implementations were rejected. Backend, SQL and release-tool bytes match independently reviewed 1f54a69eaa4b4770b462782ec14fdb1b6a73785e: 2,009 backend tests and 5,501 subtests; full 147-migration/55-contract replay, canonical/logical restore and 67 lead/29 billing/15 student concurrency cases. Candidate verification only; V52 is not released to staging or production."
     },
     {
       "id": "FSH2-05",
