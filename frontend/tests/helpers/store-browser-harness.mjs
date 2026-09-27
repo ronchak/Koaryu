@@ -56,6 +56,7 @@ export function createCommonJsPacker(stubs) {
 export function bundle(
   mode,
   {
+    identityLifecycle = false,
     preview = false,
     pagedRoster = true,
     layout = false,
@@ -185,8 +186,40 @@ export function bundle(
         }
       : {}),
   };
+  if (identityLifecycle) {
+    Object.assign(stubs, {
+      "@/components/icons/martial-arts-belt": `exports.MartialArtsBelt=()=>null;`,
+      "lucide-react": `module.exports=new Proxy({},{get:()=>()=>null});`,
+      "@/components/header": `exports.Header=()=>null;`,
+      "@/components/belt-tracker/belt-tracker-shell": `exports.BeltTrackerShell=({children})=>children;`,
+      "@/components/belt-tracker/belt-tracker-dialogs": `exports.BeltTrackerDialogs=()=>null;`,
+      "@/components/belt-tracker/rank-plan-panel": `exports.RankPlanPanel=()=>null;`,
+      "@/components/intent-prefetch-link": `exports.IntentPrefetchLink=({children,href})=>require('react').createElement('a',{href},children);`,
+      "./belt-tracker.module.css": `module.exports={};`,
+      "./sliding-segmented-control.module.css": `module.exports={};`,
+    });
+  }
   if (realApi) delete stubs["@/lib/api"];
   const { add, modules } = createCommonJsPacker(stubs);
+  if (identityLifecycle) {
+    const react = add("react");
+    const dom = add("react-dom/client");
+    const store = add("@/lib/store");
+    const belt = add("@/app/(dashboard)/belt-tracker/page");
+    const reports = add("@/components/reports/reports-data-exports-panel");
+    const dashboard = add("@/lib/dashboard-page-controller");
+    const provider = layout
+      ? `require(${add("@/app/(dashboard)/layout")}).default`
+      : "StoreProvider";
+    const transport = add(resolve(frontend, "src/lib/api.ts"));
+    const authority = add("@/lib/access-identity");
+    return `(()=>{const process={env:{NODE_ENV:"production",NEXT_PUBLIC_PREVIEW_MODE:${preview ? '"true"' : '"false"'},NEXT_PUBLIC_API_URL:'http://fixture.local/api/v1'}};const modules=[${modules.join(",")}],cache={};function require(id){if(cache[id])return cache[id].exports;const module=cache[id]={exports:{}};modules[id](module,module.exports,require);return module.exports;}const React=require(${react});const {StoreProvider,useStore}=require(${store});window.fixture.api.download=require(${transport}).api.download;window.fixture.publishAccessIdentity=require(${authority}).publishAccessIdentity;const syntheticGet=window.fixture.api.get;window.fixture.api.get=(path,...args)=>path.startsWith("/belts/eligibility?")?require(${transport}).api.get(path,...args):syntheticGet(path,...args);
+function Reports(){const s=useStore();return React.createElement(require(${reports}).ReportsDataExportsPanel,{token:window.fixture.missingToken?null:s.token,currentRole:s.currentRole,isPreviewMode:s.isPreviewMode});}
+function Dashboard(){const s=useStore();const c=require(${dashboard}).useDashboardPageController({beltStore:s,config:s,dashboardStore:s,leadStore:s,programsStore:s,scheduleStore:s,studentsStore:s,studioStore:s});window.fixture.dashboard=c;return null;}
+function Observer(){window.fixture.store=useStore();return null;}
+function App(){const [scope,setScope]=React.useState(0);const [panel,setPanel]=React.useState(window.fixture.view);window.fixture.panel=setPanel;window.fixture.layout=on=>setScope(n=>on?Math.abs(n)+1:-Math.abs(n)-1);return scope<0?null:React.createElement(${provider},{key:scope},React.createElement(Observer),panel==='belt'?React.createElement(require(${belt}).default):panel==='reports'?React.createElement(Reports):panel==='dashboard'?React.createElement(Dashboard):null);}
+window.fixture.root=require(${dom}).createRoot(document.getElementById('root'));window.fixture.root.render(React.createElement(App));})();`;
+  }
   if (operationsComponents) {
     const react = add("react");
     const dom = add("react-dom/client");

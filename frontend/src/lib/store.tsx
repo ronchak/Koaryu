@@ -111,6 +111,7 @@ import {
   type AuthProfileResponse,
   type BootstrapResponse,
 } from "@/lib/store-bootstrap-model";
+import { invalidateAccessIdentity, publishAccessIdentity } from "@/lib/access-identity";
 import { withCurrentLiveAuthRead } from "@/lib/store-action-types";
 import { routeForMembershipStatus } from "@/lib/auth-route-model";
 import {
@@ -708,6 +709,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [setPrograms, setProgramsLoaded, resetProgramScope, resetStaffScope, destructivelyResetScheduleCoordinator, setSessions, updateCurrentLadderId]);
 
   const resetLiveStudioState = useCallback(() => {
+    invalidateAccessIdentity();
     identityEpochRef.current += 1;
     authGenerationRef.current = nextLiveStudioDataResetGeneration(authGenerationRef.current);
     dashboardSummaryRequestSeqRef.current += 1;
@@ -728,8 +730,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const commitAuthoritativeAuthProfile = useCallback((
     authProfile: AuthProfileResponse,
-    legalNameRead?: { revision: number; epoch: number }
+    legalNameRead?: { revision: number; epoch: number },
+    accessAllowed = true,
   ) => {
+    publishAccessIdentity(authProfile, accessAllowed);
     authoritativeStudioIdRef.current = authProfile.studio_id ?? null;
     const identity = `${authProfile.user.id}:${authProfile.studio_id ?? ""}:${authProfile.role ?? ""}`;
     const preserveLegalName = legalNameRead !== undefined
@@ -762,12 +766,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     authProfile: AuthProfileResponse,
     sessionUser: { id: string; email?: string | null; user_metadata?: { full_name?: string | null } }
   ) => {
+    invalidateAccessIdentity();
     identityEpochRef.current += 1;
     authGenerationRef.current = nextLiveStudioDataResetGeneration(authGenerationRef.current);
     dashboardSummaryRequestSeqRef.current += 1;
 
     authUserIdRef.current = sessionUser.id;
-    commitAuthoritativeAuthProfile(authProfile);
+    commitAuthoritativeAuthProfile(authProfile, undefined, false);
     syncStoredStudioSessionCookies(
       sessionUser.id,
       authProfile.studio_id,
@@ -793,6 +798,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [commitAuthoritativeAuthProfile, resetLiveStudioState, router]);
 
   const markSubscriptionRequired = useCallback(() => {
+    invalidateAccessIdentity();
     identityEpochRef.current += 1;
     authGenerationRef.current = nextLiveStudioDataResetGeneration(authGenerationRef.current);
     dashboardSummaryRequestSeqRef.current += 1;
@@ -989,13 +995,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const fetchEligibilityForLadder = useCallback(async (
     ladderId?: string | null,
-    options?: { signal?: AbortSignal }
+    options?: { signal?: AbortSignal; token?: string }
   ): Promise<EligibilityEntry[]> => {
     if (isPreviewMode) {
       return previewEligibilityForLadder(ladderId);
     }
 
-    const authToken = tokenRef.current;
+    const authToken = options?.token ?? tokenRef.current;
     if (!authToken) {
       throw new Error("Not authenticated");
     }
@@ -1020,7 +1026,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const isCurrentEligibilityRequest = () =>
       requestSeq === eligibilityRequestSeqRef.current &&
       currentLadderIdRef.current === ladderId &&
-      (!liveRequest || liveRequest.isCurrent());
+      (!liveRequest || liveRequest.isSameIdentity());
+    const readOwnedEligibility = () => isPreviewMode
+      ? fetchEligibilityForLadder(ladderId)
+      : withCurrentLiveAuthRead(() => {
+        // An older ladder must not begin a replay under a newer ladder or identity.
+        if (!isCurrentEligibilityRequest()) throw new Error("Eligibility request superseded.");
+        return beginLiveAuthRequest();
+      }, request => fetchEligibilityForLadder(ladderId, { token: request.token }), () => {});
     setEligibilityLoadError(null);
 
     if (!ladderId) {
@@ -1036,7 +1049,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         setEligibilityPendingLadderId(null);
       }
 
-      void fetchEligibilityForLadder(ladderId)
+      void readOwnedEligibility()
         .then((rows) => {
           if (!isCurrentEligibilityRequest()) {
             return;
@@ -1058,7 +1071,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setEligibilityPendingLadderId(ladderId);
 
     try {
-      const rows = await fetchEligibilityForLadder(ladderId);
+      const rows = await readOwnedEligibility();
       if (isCurrentEligibilityRequest()) {
         commitEligibilityRows(ladderId, rows);
         setEligibilityLoadError(null);
@@ -1420,7 +1433,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           || event === "USER_UPDATED"
           || (!authoritativeIdentityRef.current && tokenRef.current !== session.access_token);
         if (needsInitialization) {
-          resetLiveStudioState();
+          // A new provider may receive INITIAL_SESSION before getSession resolves.
+          // It has no local data to discard; mounting is not an access revocation.
+          if (authUserIdRef.current || event !== "INITIAL_SESSION") resetLiveStudioState();
           // Do not await a Supabase operation inside its auth notification lock.
           void initializeLive(session);
           return;

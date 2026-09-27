@@ -8959,13 +8959,15 @@
       "id": "FC2-08",
       "title": "Report downloads lack an explicit identity-lifetime owner",
       "cluster": "presentation_and_dead_interfaces",
-      "disposition": "pending",
-      "reason": "The export still offers a completed blob without checking current identity. The old deferral assumed new download infrastructure was necessary; existing signal/session boundaries can support a bounded correction while ordinary navigation behavior stays unchanged.",
+      "disposition": "fixed",
+      "reason": "A request-scoped identity lifetime uses authoritative profile/access publications and an SDK auth listener through ordinary panel/layout navigation and provider remounts. Observed identity/access replacement invalidates monotonically, aborts early and suppresses file handoff even after API resolution. Same-identity renewal remains allowed. Profile-only observations cannot grant subscription access. Candidate only; not deployed.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
+      "verified_against": "bf1b269adae46bf5f0f88e3a74ac443c2dc5ea41",
       "source_paths": [
         "frontend/src/components/reports/reports-data-exports-panel.tsx",
+        "frontend/src/lib/access-identity.ts",
+        "frontend/src/lib/store.tsx",
         "frontend/src/lib/api.ts"
       ],
       "pull_requests": [],
@@ -8974,23 +8976,33 @@
       "collapse_with": [],
       "current_evidence": [
         {
-          "path": "frontend/src/components/reports/reports-data-exports-panel.tsx",
-          "line": 227,
-          "observation": "The download remains owned by the mounted component closure and uses the token captured at invocation."
+          "path": "frontend/src/lib/access-identity.ts",
+          "line": 25,
+          "observation": "Authoritative identity/access observations change a browser-memory revision; equal remount observations preserve it and profile-only observations cannot grant access."
+        },
+        {
+          "path": "frontend/src/lib/access-identity.ts",
+          "line": 50,
+          "observation": "Capture verifies the initiating rendered scope and retains an operation-scoped Auth subscription until dispose."
+        },
+        {
+          "path": "frontend/src/lib/store.tsx",
+          "line": 775,
+          "observation": "Subscription-required bootstrap commits the profile with access explicitly denied after invalidating the prior scope."
         },
         {
           "path": "frontend/src/components/reports/reports-data-exports-panel.tsx",
-          "line": 250,
-          "observation": "Success unconditionally creates and clicks the download link."
+          "line": 228,
+          "observation": "The actual row handler captures the current scope before dispatch and supplies its signal to the existing 60-second download."
         },
         {
-          "path": "frontend/src/lib/api.ts",
-          "line": 387,
-          "observation": "The download API already accepts an AbortSignal and timeout."
+          "path": "frontend/src/components/reports/reports-data-exports-panel.tsx",
+          "line": 243,
+          "observation": "A final identity check precedes object-URL/file handoff; finally disposes the listener and settles only the current UI operation."
         }
       ],
-      "next_change": "Preserve completion of an authorized download across ordinary navigation, but cancel or suppress file handoff after sign-out/studio/user replacement. Reuse existing API signal and current identity access; do not build a download-task framework or change backend export authorization.",
-      "validation_plan": "A delayed authorized export may complete after ordinary navigation, but must not offer its file after sign-out or identity/studio replacement. Verify cleanup and current-role gate preservation using the actual download handler.",
+      "next_change": "Implementation complete in this candidate. Independent review, exact-head CI and guarded merge remain; deployment requires separate owner authorization.",
+      "validation_plan": "Completed local mounted regression and wrong-fix proofs, full frontend tests, lint, formatting, type check and production build. No hosted validation; independent review and exact-head CI remain.",
       "scope_constraints": [
         "server authorization",
         "report role gates",
@@ -8999,7 +9011,8 @@
       ],
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
       "normalization_track": "Astra",
-      "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra."
+      "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra.",
+      "verification": "identity-lifetime-mounted.test.mjs mounts the real export panel and dashboard layout with real API download timeout/signal handling and deferred bodies. It covers ordinary navigation/remount, renewal, INITIAL_SESSION ordering, post-unmount sign-out/user/studio/role/access and USER_UPDATED invalidation, A-to-B-to-A observations, stale workspace responses, late handoff checks, timeout/error/listener cleanup, new-download usability, filename/URL/anchor cleanup, tenant headers and gates. Tests reject actual mounted-only, exact-token, component-local-ref and abort-only source variants. Actual 402-to-profile bootstrap and stale rendered-scope cases also prove denied/new identities cannot lend access. Final full frontend suite passed 976/976. See docs/verification/identity-lifetime.md; no remote-revocation polling or hosted claim."
     },
     {
       "id": "FC2-09",
@@ -11020,12 +11033,12 @@
       "id": "FSH3-01",
       "title": "Token renewal can leave promotion eligibility permanently loading",
       "cluster": "read_and_mutation_ownership",
-      "disposition": "pending",
-      "reason": "An uncached eligibility request still clears pending only while its original token is current. Renewal invalidates that condition, and initial-load owners refuse to restart while pending.",
+      "disposition": "fixed",
+      "reason": "Eligibility retains one selected-ladder/request-sequence/access-identity owner across at most three token-specific read attempts. Only that owner can retry or settle pending, error and cached rows. Cached background reads, forced reads, null/preview behavior and student-mutation invalidation retain their existing semantics. Candidate only; not deployed.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
-      "verification": "Current source and relevant callers inspected; see current_evidence and prior merged implementation evidence. No runtime test or hosted activity during normalization.",
+      "verified_against": "bf1b269adae46bf5f0f88e3a74ac443c2dc5ea41",
+      "verification": "identity-lifetime-mounted.test.mjs mounts the real StoreProvider and Belt Tracker page/controller/panel plus the Dashboard controller. Real API reads consume deferred success and expired-token HTTP401 responses. It proves renewal recovery, ordinary errors and the Retry UI, bounded exhaustion, A/B and replay supersession, identity/access resets, cache revalidation, status-mutation invalidation, force/null/preview paths and lazy promotions loading. The pre-change suite failed; actual same-identity-only, unconditional-finally and unbounded-retry source mutations also failed. Final full frontend suite passed 976/976. See docs/verification/identity-lifetime.md; synthetic external I/O, no hosted claim.",
       "source_paths": [
         "frontend/src/lib/store.tsx",
         "frontend/src/lib/belt-tracker-page-controller.ts"
@@ -11039,27 +11052,32 @@
       "current_evidence": [
         {
           "path": "frontend/src/lib/store.tsx",
-          "line": 1020,
-          "observation": "Eligibility ownership requires liveRequest.isCurrent."
+          "line": 1026,
+          "observation": "The eligibility owner requires the same request sequence, selected ladder and authoritative access identity, independent of token renewal."
         },
         {
           "path": "frontend/src/lib/store.tsx",
-          "line": 1057,
-          "observation": "Pending is set before fetch and cleared only inside current-request success/failure branches."
+          "line": 1030,
+          "observation": "The bounded live-read helper checks that owner before each attempt and passes the attempt token explicitly."
         },
         {
           "path": "frontend/src/lib/store.tsx",
-          "line": 1080,
-          "observation": "Belt Tracker initial loading is blocked by any pending eligibility request."
+          "line": 1047,
+          "observation": "Cached rows publish immediately; background revalidation uses the same guarded read owner."
         },
         {
           "path": "frontend/src/lib/store.tsx",
-          "line": 1439,
-          "observation": "Renewal advances auth generation; explicit token-change reconciliation covers schedule."
+          "line": 1074,
+          "observation": "Success and error settle rows and pending state only for the still-current eligibility operation."
+        },
+        {
+          "path": "frontend/tests/identity-lifetime-mounted.test.mjs",
+          "line": 217,
+          "observation": "Mounted Belt Tracker cases recover real API success and HTTP401 failure after token renewal; later cases exercise the Dashboard caller."
         }
       ],
-      "next_change": "Add bounded same-identity eligibility read replay with request-owned pending/error settlement and scope/ladder invalidation.",
-      "validation_plan": "Renew during uncached success and failure; verify eventual ready/error, then supersede with another ladder and ensure old completion cannot clear its pending state.",
+      "next_change": "Implementation complete in this candidate. Independent review, exact-head CI and guarded merge remain; deployment requires separate owner authorization.",
+      "validation_plan": "Completed local mounted regression and wrong-fix proofs, full frontend tests, lint, formatting, type check and production build. No hosted validation; independent review and exact-head CI remain.",
       "scope_constraints": "Preserve tenant/access resets, eligibility rules, cache behavior and promotion authorization.",
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
       "normalization_track": "Astra",
@@ -13216,16 +13234,16 @@
     }
   },
   "current_counts": {
-    "fixed": 147,
+    "fixed": 149,
     "rejected_after_verification": 1,
-    "pending": 115,
+    "pending": 113,
     "deferred_intentionally": 11,
     "resolved_indirectly": 2,
     "deferred_pending_owner_action": 1,
     "obsolete": 1
   },
   "current_pending_tracks": {
-    "Sol": 91,
+    "Sol": 89,
     "Astra": 24
   },
   "execution_policy": {
@@ -13238,14 +13256,14 @@
   },
   "current_disposition_tracks": {
     "fixed": {
-      "Sol": 120,
+      "Sol": 122,
       "Astra": 27
     },
     "rejected_after_verification": {
       "Sol": 1
     },
     "pending": {
-      "Sol": 91,
+      "Sol": 89,
       "Astra": 24
     },
     "deferred_intentionally": {
