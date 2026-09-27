@@ -33,7 +33,7 @@ interface LeadDetailInspectorProps {
   leadActionError: string | null;
   leadActionMessage: string | null;
   pendingLeadIds: ReadonlySet<string>;
-  followUpOutcomeUnknown: boolean;
+  followUpRecovery: "unknown" | "confirmed" | null;
   onRetryFollowUp: (lead: Lead) => void | Promise<void>;
   programById: Map<string, Program>;
   today: string;
@@ -63,7 +63,7 @@ export function LeadDetailInspector({
   leadActionError,
   leadActionMessage,
   pendingLeadIds,
-  followUpOutcomeUnknown,
+  followUpRecovery,
   onRetryFollowUp,
   programById,
   today,
@@ -111,7 +111,7 @@ export function LeadDetailInspector({
       ref={inspectorRef}
       className={styles.inspector}
       aria-labelledby="lead-detail-title"
-      aria-busy={(isPending && !followUpOutcomeUnknown) || undefined}
+      aria-busy={(isPending && !followUpRecovery) || undefined}
       tabIndex={-1}
       onKeyDown={(event) => {
         if (event.key !== "Escape") return;
@@ -128,7 +128,7 @@ export function LeadDetailInspector({
         <button
           type="button"
           onClick={handleClose}
-          disabled={isPending && !followUpOutcomeUnknown}
+          disabled={isPending && !followUpRecovery}
           aria-label="Close lead details"
           className={styles.inspectorClose}
         >
@@ -288,11 +288,15 @@ export function LeadDetailInspector({
             </div>
           ) : null}
 
-          {canManageLeads && followUpOutcomeUnknown && (
+          {canManageLeads && followUpRecovery && (
             <div role="status" className="space-y-2">
-              <p>Confirmation was lost. Retry the original follow-up before changing this lead.</p>
+              <p>
+                {followUpRecovery === "confirmed"
+                  ? "Follow-up saved. Refresh current lead details before making another change."
+                  : "Confirmation was lost. Retry the original follow-up before changing this lead."}
+              </p>
               <Button variant="secondary" size="sm" onClick={() => void onRetryFollowUp(lead)}>
-                Retry follow-up
+                {followUpRecovery === "confirmed" ? "Refresh lead details" : "Retry follow-up"}
               </Button>
             </div>
           )}

@@ -21,7 +21,7 @@ interface LeadPipelineBoardProps {
   canManageLeads: boolean;
   leads: Lead[];
   pendingLeadIds: ReadonlySet<string>;
-  unknownFollowUpLeadIds: ReadonlySet<string>;
+  recoveringLeadIds: ReadonlySet<string>;
   programById: Map<string, Program>;
   selectedLeadId: string | null;
   staffById: Map<string, StaffMember>;
@@ -97,7 +97,7 @@ export function LeadPipelineBoard({
   canManageLeads,
   leads,
   pendingLeadIds,
-  unknownFollowUpLeadIds,
+  recoveringLeadIds,
   programById,
   selectedLeadId,
   staffById,
@@ -186,7 +186,7 @@ export function LeadPipelineBoard({
                         type="button"
                         data-lead-id={lead.id}
                         className={styles.queueLead}
-                        disabled={isPending && !unknownFollowUpLeadIds.has(lead.id)}
+                        disabled={isPending && !recoveringLeadIds.has(lead.id)}
                         aria-pressed={isSelected}
                         onClick={() => onSelectLead(lead.id)}
                       >

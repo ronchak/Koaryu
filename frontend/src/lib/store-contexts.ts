@@ -40,7 +40,11 @@ import type {
   ScheduleTemplateCreateResult,
   SessionAttendanceRefreshResult,
 } from "@/lib/schedule-store-model";
-import type { LeadFollowUpCommand, LeadFollowUpOptions } from "@/lib/store-lead-actions";
+import type {
+  LeadFollowUpCommand,
+  LeadFollowUpOptions,
+  LeadFollowUpResult,
+} from "@/lib/store-lead-actions";
 import type { StudentListQuery } from "@/lib/student-list-page";
 import type { DemoResetResponse, StudioDataClearResponse } from "@/lib/studio-store-model";
 import type { DatasetLoadStatus } from "@/lib/page-dataset-readiness";
@@ -120,7 +124,7 @@ export interface StoreContextValue {
     leadId: string,
     command: LeadFollowUpCommand,
     options?: LeadFollowUpOptions,
-  ) => Promise<Lead>;
+  ) => Promise<LeadFollowUpResult>;
   convertLeadToStudent: (leadId: string) => Promise<{ lead: Lead; studentId: string | null }>;
 
   beltLadders: BeltLadder[];

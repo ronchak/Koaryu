@@ -18,9 +18,18 @@ import {
 } from "@/lib/leads-page-model";
 import type { Lead, LeadActivity, LeadStage, LostReason, Program, StaffRoleName } from "@/types";
 
-import type { LeadFollowUpCommand, LeadFollowUpOptions } from "@/lib/store-lead-actions";
+import type {
+  LeadFollowUpCommand,
+  LeadFollowUpOptions,
+  LeadFollowUpResult,
+} from "@/lib/store-lead-actions";
 
-type LeadOperation = { scope: string; followUp?: LeadFollowUpCommand; unknown: boolean };
+type FollowUpRecovery = "unknown" | "confirmed";
+type LeadOperation = {
+  scope: string;
+  followUp?: LeadFollowUpCommand;
+  recovery: FollowUpRecovery | null;
+};
 
 type LeadActivityStatus = "idle" | "loading" | "ready" | "error";
 
@@ -31,7 +40,7 @@ type LeadStoreActions = {
     leadId: string,
     command: LeadFollowUpCommand,
     options?: LeadFollowUpOptions,
-  ) => Promise<Lead>;
+  ) => Promise<LeadFollowUpResult>;
   updateLead: (id: string, data: Partial<Lead>) => Promise<void>;
 };
 
@@ -74,9 +83,9 @@ export function useLeadsPageController({
   const selectedLeadIdRef = useRef(selectedLeadId);
   const ownersRef = useRef(new Map<string, LeadOperation>());
   const [pendingLeadIds, setPendingLeadIds] = useState<ReadonlySet<string>>(new Set());
-  const [unknownFollowUpLeadIds, setUnknownFollowUpLeadIds] = useState<ReadonlySet<string>>(
-    new Set(),
-  );
+  const [followUpRecoveries, setFollowUpRecoveries] = useState<
+    ReadonlyMap<string, FollowUpRecovery>
+  >(new Map());
   const [renderedScope, setRenderedScope] = useState(scope);
   const [leadActionError, setLeadActionError] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
@@ -94,7 +103,7 @@ export function useLeadsPageController({
   if (renderedScope !== scope) {
     setRenderedScope(scope);
     setPendingLeadIds(new Set());
-    setUnknownFollowUpLeadIds(new Set());
+    setFollowUpRecoveries(new Map());
     setOptimisticLeads({});
     setFollowUpDrafts({});
     setSelectedLeadActivities([]);
@@ -119,12 +128,12 @@ export function useLeadsPageController({
   function claimLead(leadId: string, followUp?: LeadFollowUpCommand, retry = false) {
     if (!canManageLeads || !identityReady || scopeRef.current !== scope) return null;
     const existing = ownersRef.current.get(leadId);
-    if (existing?.scope === scope && !(retry && existing.unknown)) return null;
-    const owner: LeadOperation = { scope, followUp, unknown: false };
+    if (existing?.scope === scope && !(retry && existing.recovery)) return null;
+    const owner: LeadOperation = { scope, followUp, recovery: null };
     ownersRef.current.set(leadId, owner);
     setPendingLeadIds((current) => new Set(current).add(leadId));
-    setUnknownFollowUpLeadIds((current) => {
-      const next = new Set(current);
+    setFollowUpRecoveries((current) => {
+      const next = new Map(current);
       next.delete(leadId);
       return next;
     });
@@ -136,7 +145,7 @@ export function useLeadsPageController({
   function finishLead(leadId: string, owner: LeadOperation) {
     if (!ownsLead(leadId, owner)) return;
     setOptimisticLeads((current) => removeOptimisticLeadUpdate(current, leadId));
-    if (owner.unknown) return;
+    if (owner.recovery) return;
     ownersRef.current.delete(leadId);
     setPendingLeadIds((current) => {
       const next = new Set(current);
@@ -197,7 +206,7 @@ export function useLeadsPageController({
     if (
       !selectedLeadId ||
       !pendingLeadIds.has(selectedLeadId) ||
-      unknownFollowUpLeadIds.has(selectedLeadId)
+      followUpRecoveries.has(selectedLeadId)
     ) {
       selectedLeadIdRef.current = null;
       setSelectedLeadId(null);
@@ -371,6 +380,7 @@ export function useLeadsPageController({
 
   async function runFollowUp(lead: Lead, command: LeadFollowUpCommand, retry = false) {
     if (command.next_stage === "enrolled" && !canConvertLeads) return;
+    const previousRecovery = retry ? ownersRef.current.get(lead.id)?.recovery : null;
     const owner = claimLead(lead.id, command, retry);
     if (!owner) return;
     if (!retry) {
@@ -381,9 +391,21 @@ export function useLeadsPageController({
     }
     try {
       const result = await followUpLead(lead.id, command, { replay: retry });
-      if (!ownsLead(lead.id, owner)) return;
-      if (command.next_stage === "enrolled")
-        closeCompletedLead(lead.id, result.converted_student_id);
+      if (!ownsLead(lead.id, owner) || result.reconciliation === "stale") return;
+      if (result.reconciliation === "required") {
+        owner.recovery = "confirmed";
+        setFollowUpRecoveries((current) => new Map(current).set(lead.id, "confirmed"));
+        setActionMessage(`${fullName(lead)} follow-up saved.`);
+        setLeadActionError(result.reconciliationError);
+        return;
+      }
+      if (!result.currentLead) {
+        closeCompletedLead(lead.id);
+        setActionMessage("Follow-up confirmed. This lead is no longer available.");
+        return;
+      }
+      if (command.next_stage === "enrolled" && result.currentLead.stage === "enrolled")
+        closeCompletedLead(lead.id, result.currentLead.converted_student_id);
       setActionMessage(
         retry
           ? `${fullName(lead)} follow-up confirmed.`
@@ -395,11 +417,16 @@ export function useLeadsPageController({
     } catch (error) {
       if (!ownsLead(lead.id, owner)) return;
       if (retry || error instanceof CommandOutcomeUnknown) {
-        owner.unknown = true;
-        setUnknownFollowUpLeadIds((current) => new Set(current).add(lead.id));
+        owner.recovery = previousRecovery === "confirmed" ? "confirmed" : "unknown";
+        const recovery = owner.recovery;
+        setFollowUpRecoveries((current) => new Map(current).set(lead.id, recovery));
       }
       setLeadActionError(
-        error instanceof Error ? error.message : "Could not complete that follow-up action.",
+        previousRecovery === "confirmed"
+          ? "The follow-up is saved, but current details could not be refreshed. Try again."
+          : error instanceof Error
+            ? error.message
+            : "Could not complete that follow-up action.",
       );
     } finally {
       finishLead(lead.id, owner);
@@ -416,7 +443,7 @@ export function useLeadsPageController({
 
   async function handleRetryFollowUp(lead: Lead) {
     const owner = ownersRef.current.get(lead.id);
-    if (owner?.scope !== scope || !owner.unknown || !owner.followUp) return;
+    if (owner?.scope !== scope || !owner.recovery || !owner.followUp) return;
     await runFollowUp(lead, owner.followUp, true);
   }
 
@@ -461,7 +488,8 @@ export function useLeadsPageController({
     model,
     openAddLeadModal,
     pendingLeadIds,
-    unknownFollowUpLeadIds,
+    followUpRecoveries,
+    recoveringLeadIds: new Set(followUpRecoveries.keys()),
     retrySelectedLeadActivities,
     selectedLeadActivities,
     selectedLeadActivityError,

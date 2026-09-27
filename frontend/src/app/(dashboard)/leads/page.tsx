@@ -165,7 +165,7 @@ export default function LeadsPage() {
               canManageLeads={controller.canManageLeads}
               leads={controller.model.obligationLedgerLeads}
               pendingLeadIds={controller.pendingLeadIds}
-              unknownFollowUpLeadIds={controller.unknownFollowUpLeadIds}
+              recoveringLeadIds={controller.recoveringLeadIds}
               programById={programById}
               selectedLeadId={selectedLead?.id ?? null}
               staffById={staffById}
@@ -199,7 +199,7 @@ export default function LeadsPage() {
               onDismissError={controller.dismissLeadActionError}
               onDismissMessage={controller.dismissActionMessage}
               onFollowUpValueChange={controller.setFollowUpInputValue}
-              followUpOutcomeUnknown={controller.unknownFollowUpLeadIds.has(selectedLead.id)}
+              followUpRecovery={controller.followUpRecoveries.get(selectedLead.id) ?? null}
               onRetryFollowUp={controller.handleRetryFollowUp}
               onMarkContacted={controller.handleMarkContacted}
               onMarkLost={controller.handleMarkLost}

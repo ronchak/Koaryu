@@ -1,6 +1,6 @@
-import { useCallback, type Dispatch, type SetStateAction } from "react";
+import { useCallback, useRef, type Dispatch, type SetStateAction } from "react";
 
-import { api } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
 import {
   applyLeadUpdate,
   buildPreviewLead,
@@ -12,12 +12,17 @@ import type { BeginLiveAuthRequest, StoreRef } from "@/lib/store-action-types";
 import type { BeltLadder, BeltRank, Lead, LeadStage, Program, Student } from "@/types";
 
 import type { ResourceScope } from "@/lib/store-resource-scope";
-import { canCommitLiveMutation } from "@/lib/store-action-types";
+import { canCommitLiveMutation, withCurrentLiveAuthRead } from "@/lib/store-action-types";
 
 export interface LeadFollowUpCommand {
   operation_id: string;
   next_stage: LeadStage | null;
 }
+
+export type LeadFollowUpResult =
+  | { lead: Lead; currentLead: Lead | null; reconciliation: "ready" }
+  | { lead: Lead; reconciliation: "required"; reconciliationError: string }
+  | { lead: Lead; reconciliation: "stale" };
 
 export interface LeadFollowUpOptions {
   replay?: boolean;
@@ -62,6 +67,23 @@ export function useStoreLeadActions({
   setLeadsLoadError,
   studentsRef,
 }: UseStoreLeadActionsOptions) {
+  // This provider outlives page controllers. Fence each row's publications so an
+  // old controller's held read cannot replace a newer owner's confirmed write.
+  const leadPublicationsRef = useRef(new Map<string, symbol>());
+  const publishLead = useCallback(
+    (leadId: string, lead: Lead | null) => {
+      const publication = Symbol();
+      leadPublicationsRef.current.set(leadId, publication);
+      setLeads((current) => {
+        if (leadPublicationsRef.current.get(leadId) !== publication) return current;
+        return lead
+          ? current.map((item) => (item.id === leadId ? lead : item))
+          : current.filter((item) => item.id !== leadId);
+      });
+    },
+    [setLeads],
+  );
+
   const addLead = useCallback(
     async (data: Partial<Lead>) => {
       if (isPreviewMode) {
@@ -99,12 +121,12 @@ export function useStoreLeadActions({
         if (!canCommitLiveMutation(liveRequest)) {
           return;
         }
-        setLeads((current) => current.map((lead) => (lead.id === id ? result : lead)));
+        publishLead(id, result);
       } finally {
         finishMutation();
       }
     },
-    [beginLeadMutation, beginLiveAuthRequest, isPreviewMode, leadsRef, persistLeads, setLeads],
+    [beginLeadMutation, beginLiveAuthRequest, isPreviewMode, leadsRef, persistLeads, publishLead],
   );
 
   const deleteLead = useCallback(
@@ -121,12 +143,12 @@ export function useStoreLeadActions({
         if (!canCommitLiveMutation(liveRequest)) {
           return;
         }
-        setLeads((current) => current.filter((lead) => lead.id !== id));
+        publishLead(id, null);
       } finally {
         finishMutation();
       }
     },
-    [beginLeadMutation, beginLiveAuthRequest, isPreviewMode, leadsRef, persistLeads, setLeads],
+    [beginLeadMutation, beginLiveAuthRequest, isPreviewMode, leadsRef, persistLeads, publishLead],
   );
 
   const refreshLeads = useCallback(async (): Promise<Lead[]> => {
@@ -201,7 +223,7 @@ export function useStoreLeadActions({
           };
         }
 
-        setLeads((current) => current.map((item) => (item.id === leadId ? result : item)));
+        publishLead(leadId, result);
         try {
           await refreshStudents();
         } catch (error) {
@@ -230,7 +252,7 @@ export function useStoreLeadActions({
       persistStudents,
       programsRef,
       refreshStudents,
-      setLeads,
+      publishLead,
       studentsRef,
     ],
   );
@@ -240,52 +262,94 @@ export function useStoreLeadActions({
       leadId: string,
       command: LeadFollowUpCommand,
       options?: LeadFollowUpOptions,
-    ): Promise<Lead> => {
+    ): Promise<LeadFollowUpResult> => {
       if (isPreviewMode) {
         if (command.next_stage === "enrolled") {
-          return (await convertLeadToStudent(leadId)).lead;
+          const { lead } = await convertLeadToStudent(leadId);
+          return { lead, currentLead: lead, reconciliation: "ready" };
         }
         const lead = leadsRef.current.find((item) => item.id === leadId);
         if (!lead) throw new Error("Lead not found");
         const result = { ...lead, stage: command.next_stage ?? lead.stage, follow_up_date: null };
         persistLeads(leadsRef.current.map((item) => (item.id === leadId ? result : item)));
-        return result;
+        return { lead: result, currentLead: result, reconciliation: "ready" };
       }
 
       const liveRequest = beginLiveAuthRequest();
+      const mutationScope = leadMutationScopeRef.current;
       const finishMutation = beginLeadMutation();
+      const ownsMutation = () =>
+        canCommitLiveMutation(liveRequest) && leadMutationScopeRef.current === mutationScope;
       try {
         const result = await api.post<Lead>(
           `/leads/${leadId}/follow-up`,
           command,
           liveRequest.token,
         );
-        if (!canCommitLiveMutation(liveRequest)) return result;
+        if (!ownsMutation()) return { lead: result, reconciliation: "stale" };
+        const refreshConvertedStudents = async () => {
+          if (!ownsMutation()) return;
+          try {
+            await refreshStudents();
+          } catch (error) {
+            console.error("Failed to refresh students after lead follow-up", error);
+          }
+          if (ownsMutation()) onStudentMutation();
+        };
         if (options?.replay) {
-          // The immutable receipt may predate a later observed edit. Only the
-          // guarded loader may reconcile current data. Release this mutation
-          // first, and do not keep this row pending while other rows finish.
-          finishMutation();
-          void refreshLeads().catch((error) => {
-            console.error("Failed to refresh leads after confirmed follow-up replay", error);
-          });
-        } else {
-          setLeads((current) => current.map((item) => (item.id === leadId ? result : item)));
-        }
-        if (command.next_stage === "enrolled") {
-          const refreshConvertedStudents = async () => {
-            if (!canCommitLiveMutation(liveRequest)) return;
-            try {
-              await refreshStudents();
-            } catch (error) {
-              console.error("Failed to refresh students after lead follow-up", error);
+          if (command.next_stage === "enrolled") void refreshConvertedStudents();
+          // A receipt is historical. Read this row after confirmation while the
+          // mutation fence keeps list snapshots out. This GET does not wait for
+          // unrelated lead mutations, and a read failure is not a failed write.
+          try {
+            const observed = await withCurrentLiveAuthRead(
+              beginLiveAuthRequest,
+              async (request) => {
+                const publication = leadPublicationsRef.current.get(leadId);
+                let currentLead: Lead | null;
+                try {
+                  currentLead = await api.get<Lead>(`/leads/${leadId}`, request.token);
+                } catch (error) {
+                  if (!(error instanceof ApiError) || error.status !== 404) throw error;
+                  currentLead = null;
+                }
+                return { currentLead, request, publication };
+              },
+              () => undefined,
+            );
+            if (!ownsMutation()) return { lead: result, reconciliation: "stale" };
+            if (!observed.request.isCurrent()) {
+              return {
+                lead: result,
+                reconciliation: "required",
+                reconciliationError:
+                  "The session changed while loading current lead details. Refresh them to continue.",
+              };
             }
-            if (canCommitLiveMutation(liveRequest)) onStudentMutation();
-          };
-          if (options?.replay) void refreshConvertedStudents();
-          else await refreshConvertedStudents();
+            if (leadPublicationsRef.current.get(leadId) !== observed.publication) {
+              return {
+                lead: result,
+                reconciliation: "required",
+                reconciliationError:
+                  "This lead changed while its details were loading. Refresh them to continue.",
+              };
+            }
+            const { currentLead } = observed;
+            publishLead(leadId, currentLead);
+            return { lead: result, currentLead, reconciliation: "ready" };
+          } catch {
+            if (!ownsMutation()) return { lead: result, reconciliation: "stale" };
+            return {
+              lead: result,
+              reconciliation: "required",
+              reconciliationError:
+                "Could not load current lead details. Refresh them before making another change.",
+            };
+          }
         }
-        return result;
+        publishLead(leadId, result);
+        if (command.next_stage === "enrolled") await refreshConvertedStudents();
+        return { lead: result, currentLead: result, reconciliation: "ready" };
       } finally {
         finishMutation();
       }
@@ -295,12 +359,12 @@ export function useStoreLeadActions({
       beginLiveAuthRequest,
       convertLeadToStudent,
       isPreviewMode,
+      leadMutationScopeRef,
       leadsRef,
       onStudentMutation,
       persistLeads,
-      refreshLeads,
       refreshStudents,
-      setLeads,
+      publishLead,
     ],
   );
 

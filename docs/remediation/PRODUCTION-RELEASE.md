@@ -15,6 +15,8 @@ The V32 compatibility response is available only after full V52 verification, pr
 
 The browser retains an unknown follow-up's frozen key and target for explicit retry while its controller and access identity remain mounted. Server receipts persist and can replay the same key across sessions, but browser reload/remount loses the local retry record. This candidate does not claim reload-safe browser retry. No durable browser recovery store is introduced.
 
+After replay confirms the command, the browser keeps that lead reserved until a separate current-row read succeeds. That read does not wait for unrelated lead mutations. A read failure preserves the known row and the original command for recovery, with a saved-but-refresh-needed message. An authorized current-row 404 removes only that lead. The historical receipt never replaces current display data, and enrollment roster refresh remains nonblocking. Account for these pending recovery reads when draining clients before an application rollback.
+
 The exact candidate SHA, file manifest, provider state and release approval belong in a fresh private packet after review and merge. See [cutover gates](../cutover-gates.md) for the current state checks and [services](../services.md) for provider ownership.
 
 ---
