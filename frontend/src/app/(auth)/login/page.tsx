@@ -1,5 +1,6 @@
 "use client";
 
+import { publishAccessIdentity } from "@/lib/access-identity";
 import { Suspense, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -61,6 +62,7 @@ export default function LoginPage() {
         session.access_token,
         { omitStudioHeader: true }
       ));
+      publishAccessIdentity(authProfile);
       syncStoredStudioSessionCookies(
         session.user.id,
         authProfile.studio_id,

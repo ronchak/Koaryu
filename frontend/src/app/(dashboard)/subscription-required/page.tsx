@@ -1,5 +1,6 @@
 "use client";
 
+import { publishAccessIdentity } from "@/lib/access-identity";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowUpRight, CheckCircle2, CreditCard, Loader2, ShieldCheck } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -107,6 +108,7 @@ export default function SubscriptionRequiredPage() {
           }),
         );
         if (!mounted) return;
+        publishAccessIdentity(profile);
         setAuthProfile(profile);
         syncStoredStudioSessionCookies(
           session.user.id,

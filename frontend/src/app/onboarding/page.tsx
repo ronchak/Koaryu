@@ -1,5 +1,6 @@
 "use client";
 
+import { invalidateAccessIdentity } from "@/lib/access-identity";
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
@@ -169,6 +170,7 @@ export default function OnboardingPage() {
       );
       idempotencyKeyRef.current = null;
       clearStoredIdempotencyKey();
+      invalidateAccessIdentity();
       setStudioStateCookie(session.user.id, true);
       setActiveStudioIdCookie(studio.id);
 

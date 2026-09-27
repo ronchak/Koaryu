@@ -318,3 +318,13 @@ and allowlisted `Server-Timing` measurements.
 
 The synthetic mounted-test startup trace records fixture workspace/controller
 readiness. It does not prove deployed route usability or measure deployed backend memory.
+
+## Eligibility and report identity lifetime
+
+Eligibility keeps its selected-ladder request owner during token renewal and may
+replay a read at most twice. A changed ladder or access identity invalidates the
+old owner. CSV exports may finish across ordinary panel or dashboard navigation
+and same-identity token renewal. Observed sign-out, user/studio/role replacement,
+USER_UPDATED, or access reset suppresses file handoff. The request releases its
+Auth listener when it settles. See [identity lifetime verification](../docs/verification/identity-lifetime.md)
+for the mounted regression coverage and its limits.

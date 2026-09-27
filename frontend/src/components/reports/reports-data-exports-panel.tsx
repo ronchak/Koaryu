@@ -1,6 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useStudioStore } from "@/lib/store";
+import { captureAccessIdentity } from "@/lib/access-identity";
 import { Download, FileText } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -188,9 +190,17 @@ export function ReportsDataExportsPanel({
   token: string | null;
   currentRole: StaffRoleName | null;
 }) {
+  const { currentUserId, currentStudioId } = useStudioStore();
   const [exportingReportId, setExportingReportId] = useState<string | null>(null);
   const [exportMessage, setExportMessage] = useState("");
   const [exportError, setExportError] = useState("");
+
+  const mounted = useRef(true);
+  const activeDownload = useRef<ReturnType<typeof captureAccessIdentity> | null>(null);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
 
   async function handleDownloadReport(report: ExportReport) {
     setExportError("");
@@ -213,18 +223,36 @@ export function ReportsDataExportsPanel({
       return;
     }
 
-    setExportingReportId(report.id);
+    let owner: ReturnType<typeof captureAccessIdentity> | null = null;
     try {
+      owner = captureAccessIdentity({ userId: currentUserId, studioId: currentStudioId, role: currentRole }, () => {
+        if (!mounted.current || activeDownload.current !== owner) return;
+        activeDownload.current = null;
+        setExportingReportId(null);
+        setExportError("");
+        setExportMessage("");
+      });
+      activeDownload.current = owner;
+      if (!owner.isCurrent()) return;
+      setExportingReportId(report.id);
       const { blob, filename } = await api.download(`/reports/exports/${report.id}`, token, {
+        signal: owner.signal,
         timeoutMs: 60000,
         timeoutMessage: "CSV export is taking longer than expected. Please try again.",
       });
+      if (!owner.isCurrent()) return;
       downloadBlob(blob, filename || fallbackCsvFilename(report.id));
-      setExportMessage(`${report.title} CSV downloaded.`);
+      if (mounted.current && activeDownload.current === owner) setExportMessage(`${report.title} CSV downloaded.`);
     } catch (error) {
-      setExportError(error instanceof Error ? error.message : "CSV export failed.");
+      if (mounted.current && (!owner || (owner.isCurrent() && activeDownload.current === owner))) {
+        setExportError(error instanceof Error ? error.message : "CSV export failed.");
+      }
     } finally {
-      setExportingReportId(null);
+      owner?.dispose();
+      if (mounted.current && activeDownload.current === owner) {
+        activeDownload.current = null;
+        setExportingReportId(null);
+      }
     }
   }
 
