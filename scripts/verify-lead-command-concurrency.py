@@ -391,6 +391,141 @@ FOR EACH ROW EXECUTE FUNCTION public.koaryu_test_lead_assignment_barrier();""")
                 check_auth_outcome(ids, kind, deleted=False, changed=True)
                 passed(case, blocking=blocking, probe_sqlstate="55P03")
 
+        def admin_fixture():
+            ids = auth_fixture()
+            # The real orphan guard requires another confirmed active admin.
+            sql(f"UPDATE auth.users SET email_confirmed_at=now() WHERE id='{ids['actor']}'; "
+                f"UPDATE public.staff_roles SET role='admin' WHERE user_id='{ids['actor2']}';")
+            return ids
+
+        def hold_staff(ids, name):
+            holder = session(name,
+                f"SELECT to_jsonb(s) FROM public.staff_roles s WHERE user_id='{ids['actor2']}' "
+                f"AND studio_id='{ids['studio']}' FOR UPDATE;", hold=True, role="postgres")
+            await_result(holder)
+            return holder
+
+        for kind in ("actor_patch", "actor_follow_up", "assignee_patch"):
+            for change in ("archive", "demotion"):
+                for command_first in (False, True):
+                    for rollback in (False, True):
+                        ids = admin_fixture()
+                        case = (f"{kind}_{change}_{'command_first' if command_first else 'admin_first'}_"
+                                f"{'rollback' if rollback else 'commit'}")
+                        change_sql = ("archived_at=now()" if change == "archive" else "role='instructor'")
+                        change_sql = (f"UPDATE public.staff_roles SET {change_sql} "
+                                      f"WHERE user_id='{ids['actor2']}' AND studio_id='{ids['studio']}';")
+                        if command_first:
+                            writer = session(case + "_writer", auth_command(ids, kind), hold=True)
+                            await_result(writer)
+                            admin = session(case + "_admin", change_sql + " SELECT '{}'::jsonb;", role="postgres")
+                            blocking = observed_blocker(writer, admin)
+                            settle(writer, rollback=rollback)
+                            finish(admin)
+                            changed = not rollback
+                            staff_changed = True
+                        else:
+                            # The holder owns the staff row before calling the
+                            # actual archive/demotion trigger. A lead command
+                            # that holds studio while waiting here deadlocks.
+                            admin = hold_staff(ids, case + "_admin")
+                            writer = session(case + "_writer", auth_command(ids, kind))
+                            blocking = observed_blocker(admin, writer)
+                            admin["process"].stdin.write(change_sql + "\n")
+                            settle(admin, rollback=rollback)
+                            # Active instructors remain valid assignees.
+                            changed = rollback or (kind == "assignee_patch" and change == "demotion")
+                            if changed:
+                                finish(writer)
+                            else:
+                                expected = ("P0002", "Assigned staff not found for studio") if kind == "assignee_patch" else (
+                                    "42501", "Lead management permission required")
+                                finish(writer, expected_error=expected)
+                            staff_changed = not rollback
+                        state = check_auth_outcome(ids, kind, deleted=False, changed=changed)
+                        actual_staff = json.loads(sql(
+                            f"SELECT jsonb_build_object('role',role,'archived',archived_at IS NOT NULL) "
+                            f"FROM public.staff_roles WHERE user_id='{ids['actor2']}' AND studio_id='{ids['studio']}';"))
+                        require(actual_staff == {
+                            "role": "instructor" if change == "demotion" and staff_changed else "admin",
+                            "archived": change == "archive" and staff_changed,
+                        }, f"Staff writer did not settle as intended: {actual_staff}")
+                        passed(case, blocking=blocking, activities=state["activities"], staff=actual_staff)
+
+        # A demotion to front desk still permits both lead commands.
+        for kind in ("actor_patch", "actor_follow_up"):
+            ids = admin_fixture()
+            case = f"{kind}_admin_to_front_desk_remains_authorized"
+            admin = hold_staff(ids, case + "_admin")
+            writer = session(case + "_writer", auth_command(ids, kind))
+            blocking = observed_blocker(admin, writer)
+            admin["process"].stdin.write(
+                f"UPDATE public.staff_roles SET role='front_desk' WHERE user_id='{ids['actor2']}';\n")
+            settle(admin)
+            finish(writer)
+            check_auth_outcome(ids, kind, deleted=False, changed=True)
+            passed(case, blocking=blocking)
+
+        for kind in ("actor_patch", "actor_follow_up", "assignee_patch"):
+            for rollback in (False, True):
+                ids = auth_fixture()
+                case = f"{kind}_studio_busy_{'rollback' if rollback else 'commit'}"
+                before = facts(ids)
+                holder = session(case + "_holder",
+                    f"SELECT to_jsonb(s) FROM public.studios s WHERE id='{ids['studio']}' FOR UPDATE;",
+                    hold=True, role="postgres")
+                await_result(holder)
+                writer = session(case + "_writer", auth_command(ids, kind))
+                finish(writer, expected_error=("P0001", "LEAD_STUDIO_BUSY"))
+                require("ERROR:  P0001: LEAD_STUDIO_BUSY" in writer["errors"],
+                        "Studio contention did not return the exact domain error")
+                require(holder["process"].poll() is None and facts(ids) == before,
+                        "Studio contention waited for settlement or committed partial effects")
+                settle(holder, rollback=rollback)
+                # Reuse the exact follow-up operation key and requested target.
+                retried = session(case + "_retry", auth_command(ids, kind))
+                finish(retried)
+                state = check_auth_outcome(ids, kind, deleted=False, changed=True)
+                passed(case, error="LEAD_STUDIO_BUSY", activities=state["activities"])
+
+        def cleared_facts(ids):
+            tables = ("leads", "lead_activities", "lead_follow_up_operations", "students",
+                      "student_program_memberships", "guardians", "programs")
+            counts = ",".join(f"'{table}',(SELECT count(*) FROM public.{table} WHERE studio_id='{ids['studio']}')"
+                              for table in tables)
+            # Membership/link identities are deterministic for this synthetic
+            # conversion, so this also detects an orphan link after student deletion.
+            namespace = UUID("27c8322f-a4e4-46d7-bfae-018f6b638858")
+            student = str(uuid5(namespace, f"{ids['studio']}:{ids['lead']}:student"))
+            return json.loads(sql(f"SELECT jsonb_build_object({counts},'student_guardians',"
+                                  f"(SELECT count(*) FROM public.student_guardians WHERE student_id='{student}'));"))
+
+        for command_first in (False, True):
+            for rollback in (False, True):
+                ids = auth_fixture()
+                case = f"enrolled_clear_{'command_first' if command_first else 'clear_first'}_{'rollback' if rollback else 'commit'}"
+                command = follow(ids, ids["operation"], "enrolled", actor="actor2")
+                clear = f"SELECT public.clear_studio_operational_data_atomic('{ids['studio']}',false); SELECT '{{}}'::jsonb;"
+                first = session(case + "_first", command if command_first else clear, hold=True)
+                await_result(first)
+                second = session(case + "_second", clear if command_first else command)
+                blocking = observed_blocker(first, second)
+                settle(first, rollback=rollback)
+                if not command_first and not rollback:
+                    finish(second, expected_error=("P0002", "Lead not found for studio"))
+                else:
+                    finish(second)
+                if not command_first and rollback:
+                    state = facts(ids)
+                    require(state["lead"]["stage"] == "enrolled" and state["receipts"] == 1
+                            and len(state["activities"]) == 2
+                            and all(state[key] == 1 for key in ("students", "memberships", "guardians", "links", "audits")),
+                            f"Clear rollback did not permit one complete conversion: {state}")
+                else:
+                    state = cleared_facts(ids)
+                    require(all(count == 0 for count in state.values()), f"Operational clear left command effects: {state}")
+                passed(case, blocking=blocking, facts=state)
+
         evidence = {"script_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
                     "local_tools_sha256": hashlib.sha256(Path(__file__).with_name("local_postgres_verification.py").read_bytes()).hexdigest(),
                     "cases": results}

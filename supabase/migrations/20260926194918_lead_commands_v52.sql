@@ -72,13 +72,26 @@ BEGIN
             RAISE EXCEPTION USING ERRCODE='P0002', MESSAGE='Assigned staff not found for studio.';
         END IF;
     END IF;
-    PERFORM 1 FROM public.studios WHERE id=p_studio_id FOR KEY SHARE;
     PERFORM 1 FROM public.staff_roles
     WHERE studio_id=p_studio_id AND user_id=p_actor_id
       AND archived_at IS NULL AND role IN ('admin','front_desk') FOR SHARE;
     IF NOT FOUND THEN
         RAISE EXCEPTION USING ERRCODE='42501', MESSAGE='Lead management permission required.';
     END IF;
+    IF v_assigned_user IS NOT NULL THEN
+        PERFORM 1 FROM public.staff_roles WHERE user_id=v_assigned_user
+            AND studio_id=p_studio_id AND archived_at IS NULL FOR SHARE;
+        IF NOT FOUND THEN
+            RAISE EXCEPTION USING ERRCODE='P0002', MESSAGE='Assigned staff not found for studio.';
+        END IF;
+    END IF;
+    -- Staff administration locks membership before studio. Fail before lead
+    -- effects if a parent-first writer already owns the studio row.
+    BEGIN
+        PERFORM 1 FROM public.studios WHERE id=p_studio_id FOR KEY SHARE NOWAIT;
+    EXCEPTION WHEN lock_not_available THEN
+        RAISE EXCEPTION USING ERRCODE='P0001', MESSAGE='LEAD_STUDIO_BUSY';
+    END;
     IF p_patch IS NULL OR jsonb_typeof(p_patch) <> 'object' OR p_patch='{}'::jsonb THEN
         RAISE EXCEPTION USING ERRCODE='22023', MESSAGE='A nonempty lead patch is required.';
     END IF;
@@ -105,13 +118,6 @@ BEGIN
         END IF;
         IF v_program.archived_at IS NOT NULL THEN
             RAISE EXCEPTION USING ERRCODE='P0001', MESSAGE='PROGRAM_INACTIVE', DETAIL=v_program.id::text;
-        END IF;
-    END IF;
-    IF p_patch ? 'assigned_staff_id' AND v_update.assigned_staff_id IS NOT NULL THEN
-        PERFORM 1 FROM public.staff_roles WHERE user_id=v_update.assigned_staff_id
-            AND studio_id=p_studio_id AND archived_at IS NULL FOR SHARE;
-        IF NOT FOUND THEN
-            RAISE EXCEPTION USING ERRCODE='P0002', MESSAGE='Assigned staff not found for studio.';
         END IF;
     END IF;
     UPDATE public.leads SET
@@ -167,13 +173,18 @@ BEGIN
     ) THEN
         RAISE EXCEPTION USING ERRCODE='42501', MESSAGE='Lead management permission required.';
     END IF;
-    PERFORM 1 FROM public.studios WHERE id=p_studio_id FOR KEY SHARE;
     PERFORM 1 FROM public.staff_roles
     WHERE studio_id=p_studio_id AND user_id=p_actor_id
       AND archived_at IS NULL AND role IN ('admin','front_desk') FOR SHARE;
     IF NOT FOUND THEN
         RAISE EXCEPTION USING ERRCODE='42501', MESSAGE='Lead management permission required.';
     END IF;
+    -- Use the same membership-before-studio order as staff administration.
+    BEGIN
+        PERFORM 1 FROM public.studios WHERE id=p_studio_id FOR KEY SHARE NOWAIT;
+    EXCEPTION WHEN lock_not_available THEN
+        RAISE EXCEPTION USING ERRCODE='P0001', MESSAGE='LEAD_STUDIO_BUSY';
+    END;
     IF p_operation_id IS NULL OR p_request IS NULL OR jsonb_typeof(p_request) <> 'object' THEN
         RAISE EXCEPTION USING ERRCODE='22023', MESSAGE='A keyed follow-up request is required.';
     END IF;
@@ -1236,7 +1247,7 @@ BEGIN
           AND p.prorettype='public.leads'::REGTYPE AND NOT p.proretset
           AND p.proconfig=ARRAY['search_path=""']::TEXT[]
           AND encode(extensions.digest(convert_to(pg_catalog.pg_get_functiondef(p.oid),'UTF8'),'sha256'),'hex')
-              = '7ffdcf9c76f7c58e0efb097a14488a983f6bffc0b83f783525c37560bebd7803'
+              = '141eff02dc1b430336270aee0aa48e281f42b8e1a82b2656bfd4e31b58b615cb'
           AND (SELECT jsonb_agg(jsonb_build_array(
                 CASE WHEN a.grantee=0 THEN 'PUBLIC' ELSE pg_catalog.pg_get_userbyid(a.grantee)::TEXT END,
                 pg_catalog.pg_get_userbyid(a.grantor)::TEXT,a.privilege_type,a.is_grantable)
@@ -1257,7 +1268,7 @@ BEGIN
           AND p.prorettype='public.leads'::REGTYPE AND NOT p.proretset
           AND p.proconfig=ARRAY['search_path=""']::TEXT[]
           AND encode(extensions.digest(convert_to(pg_catalog.pg_get_functiondef(p.oid),'UTF8'),'sha256'),'hex')
-              = '9e7582870528a42eb72a0df78a032f306cd26b0d25d3d84517a8faea09043566'
+              = '128596070e145066d03b1289ef37ef791c8ad46cf3176ba4241448bcae4dc348'
           AND (SELECT jsonb_agg(jsonb_build_array(
                 CASE WHEN a.grantee=0 THEN 'PUBLIC' ELSE pg_catalog.pg_get_userbyid(a.grantee)::TEXT END,
                 pg_catalog.pg_get_userbyid(a.grantor)::TEXT,a.privilege_type,a.is_grantable)

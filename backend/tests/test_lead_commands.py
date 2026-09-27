@@ -360,3 +360,46 @@ def test_unknown_already_converted_marker_or_code_remains_server_error(code, mes
         with pytest.raises(APIError) as result:
             invoke_command(TableBackedSupabase(), "follow_up")
     assert result.value is error
+
+
+@pytest.mark.parametrize("command", ["patch", "follow_up"])
+def test_studio_busy_domain_error_is_a_safe_retryable_conflict(command):
+    supabase = TableBackedSupabase()
+    error = APIError(
+        {
+            "code": "P0001",
+            "message": "LEAD_STUDIO_BUSY",
+            "details": "private lock details",
+            "hint": "private provider hint",
+        }
+    )
+    with patch("app.services.lead_service.execute_required_rpc", side_effect=error) as rpc:
+        with pytest.raises(HTTPException) as result:
+            invoke_command(supabase, command)
+    assert result.value.status_code == 409
+    assert result.value.detail == "The studio is being updated. Please retry this lead action."
+    rpc.assert_called_once()
+    assert not supabase.query_log
+
+
+@pytest.mark.parametrize("command", ["patch", "follow_up"])
+@pytest.mark.parametrize(
+    "code,message",
+    [
+        ("P0001", "LEAD_STUDIO_BUSY_UNEXPECTED"),
+        ("55P03", "LEAD_STUDIO_BUSY"),
+        ("55P03", "could not obtain lock on another relation"),
+        ("XX000", "LEAD_STUDIO_BUSY"),
+    ],
+)
+def test_unknown_studio_busy_marker_or_provider_lock_error_remains_server_error(
+    command, code, message
+):
+    supabase = TableBackedSupabase()
+    error = provider_error(code, message)
+    with patch("app.services.lead_service.execute_required_rpc", side_effect=error) as rpc:
+        with pytest.raises(APIError) as result:
+            invoke_command(supabase, command)
+    assert result.value is error
+    rpc.assert_called_once()
+    assert not supabase.query_log

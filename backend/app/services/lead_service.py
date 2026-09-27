@@ -143,6 +143,11 @@ class LeadService:
                 raise HTTPException(
                     status_code=409, detail="This lead has already been converted."
                 ) from exc
+            if exc.code == "P0001" and exc.message == "LEAD_STUDIO_BUSY":
+                raise HTTPException(
+                    status_code=409,
+                    detail="The studio is being updated. Please retry this lead action.",
+                ) from exc
             error = {
                 "22023": (400, "Invalid lead command"),
                 "42501": (403, "Not authorized to perform this lead command"),

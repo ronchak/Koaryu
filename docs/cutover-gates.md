@@ -115,7 +115,7 @@ reviewed PostgreSQL 17 CHECK/default-ACL representation differences, and verifie
 business-data preservation and old/new caller continuation. These are local
 contract proofs, not production backup evidence. Candidate verification requires the
 V47-to-V48, V48-to-V49, V49-to-V50, V50-to-V51 and V51-to-V52 canonical and logical restore continuations, all 147 migrations and 55 SQL
-contracts, all 29 cases in `scripts/verify-billing-command-concurrency.py`, and all 31 cases in `scripts/verify-lead-command-concurrency.py`.
+contracts, all 29 cases in `scripts/verify-billing-command-concurrency.py`, and all 67 cases in `scripts/verify-lead-command-concurrency.py`.
 The renamed runner uses the existing concurrency helpers and adds no new framework.
 Earlier restore proofs remain in force. The operator's backup helper and
 release/image mappings must be updated and verified for the actual candidate

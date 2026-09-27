@@ -1162,7 +1162,7 @@ export const V51_RELEASE_MANIFEST_SQL = releaseManifestSql(V51_FUNCTIONS, "v51_r
 const V52_FUNCTIONS = Object.freeze([
   ...V51_FUNCTIONS.map(row => row[0] === "public.koaryu_release_schema_preflight_v32()"
     ? [row[0], "4faf203cfb3bdbb52cea0771be67e4df9a9096421de60632961c763864d6b3b3", ...row.slice(2)] : row),
-  ["public.koaryu_release_schema_preflight_v33()", "4c55547e18d1a120df583ada369c6b0ad44c396d0d811fcd28b1855d72525aa9", ...V51_FUNCTIONS.at(-1).slice(2)],
+  ["public.koaryu_release_schema_preflight_v33()", "6d4ffebf30a7b2997051762b7c3fcb5ad1339e9ff959ae7aa90951e590ff5cfa", ...V51_FUNCTIONS.at(-1).slice(2)],
 ]);
 export const EXPECTED_V52_RELEASE_MANIFEST = releaseManifest(V52_FUNCTIONS);
 export const V52_RELEASE_MANIFEST_SQL = releaseManifestSql(V52_FUNCTIONS, "v52_release_manifest");
@@ -1170,9 +1170,9 @@ export const V52_LEAD_RECEIPT_STATE_SQL = `WITH context AS MATERIALIZED (SELECT 
 SELECT encode(extensions.digest(convert_to((${LEAD_RECEIPT_FACTS_SQL.replace("FROM pg_catalog.pg_class relation WHERE", "FROM context CROSS JOIN pg_catalog.pg_class relation WHERE")})::TEXT,'UTF8'),'sha256'),'hex') AS lead_receipt_state`;
 export const EXPECTED_V52_LEAD_RECEIPT_STATE = "796b4c0fe4d033966248b78138776b6695dfbc80bdab7e0e9026b6c9745318cb";
 export const V52_LEAD_UPDATE_STATE_SQL = singleFunctionStateSql("update_lead_atomic", "lead_update_state");
-export const EXPECTED_V52_LEAD_UPDATE_STATE = "1:4fec3c4fc09fbff13cec587973ac128b6d2e7f26e2e28633b4e8f4fa7633cfd5";
+export const EXPECTED_V52_LEAD_UPDATE_STATE = "1:4680c463ab0e871a7ac7fd431ed1ddc62315181aa574de69138b4c59ee04c8da";
 export const V52_LEAD_FOLLOW_UP_STATE_SQL = singleFunctionStateSql("follow_up_lead_atomic", "lead_follow_up_state");
-export const EXPECTED_V52_LEAD_FOLLOW_UP_STATE = "1:aa252cfc157db9db3cf4544a86ea8c1a4306e76312d750cd871590226a865fe6";
+export const EXPECTED_V52_LEAD_FOLLOW_UP_STATE = "1:87bedc88398a35bf913fe520b510aac264708490327aea4381f37120534a035a";
 
 export const EXPECTED_V43_EXTERNAL_PAYMENT_STATE = "1:93859bf89d63e3569c5a399123f72a546d5cb5190a70867923eee65657359645";
 export const EXPECTED_V41_PAYER_BALANCE_STATE = "1:dc4c48e566bb5fd800fc2f088ccc944c5bc4fafc6b04517bf43005b4d2504c2c";

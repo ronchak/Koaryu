@@ -1166,7 +1166,7 @@
       "namespace": "public",
       "functionName": "update_lead_atomic",
       "signature": "public.update_lead_atomic(uuid,uuid,uuid,jsonb)",
-      "expected": "7ffdcf9c76f7c58e0efb097a14488a983f6bffc0b83f783525c37560bebd7803",
+      "expected": "141eff02dc1b430336270aee0aa48e281f42b8e1a82b2656bfd4e31b58b615cb",
       "acl": [
         [
           "postgres",
@@ -1194,7 +1194,7 @@
       "namespace": "public",
       "functionName": "follow_up_lead_atomic",
       "signature": "public.follow_up_lead_atomic(uuid,uuid,uuid,uuid,jsonb)",
-      "expected": "9e7582870528a42eb72a0df78a032f306cd26b0d25d3d84517a8faea09043566",
+      "expected": "128596070e145066d03b1289ef37ef791c8ad46cf3176ba4241448bcae4dc348",
       "acl": [
         [
           "postgres",
