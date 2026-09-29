@@ -76,9 +76,12 @@ export function useStudentDetailPageController({
   const scope = `${studioStore.identityGeneration}:${id}`;
   const [editScope, setEditScope] = useState<string | null>(null);
   const showEdit = editScope === scope;
-  const currentScope = useRef(scope);
+  const currentScope = useRef<string | null>(scope);
   useEffect(() => {
     currentScope.current = scope;
+    return () => {
+      if (currentScope.current === scope) currentScope.current = null;
+    };
   }, [scope]);
   const detailRevision = useRef(0);
   const [hydration, setHydration] = useState<{ scope: string; student: Student } | null>(null);

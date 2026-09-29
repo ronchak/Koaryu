@@ -2184,6 +2184,42 @@ async function replaceStudentDetailIdentity(page) {
   );
 }
 
+test("an archived student cannot navigate from an unmounted detail page", async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await fixturePage(browser, {
+      path: "/students/student-1",
+      detailController: true,
+    });
+    await mountOwnedStudentDetail(page);
+    await page.evaluate(() => {
+      fixture.detail.onShowDeleteConfirm();
+      fixture.archive = fixture.detail.onDeleteStudent();
+    });
+    await page.waitForFunction(() =>
+      fixture.writes.some((write) => write.path === "/students/bulk/archive"),
+    );
+    await page.evaluate(() => fixture.unmountDetail());
+    await flush(page);
+    await page.evaluate(() =>
+      fixture.writes
+        .find((write) => write.path === "/students/bulk/archive")
+        .resolve({ updated: 1 }),
+    );
+    await page.evaluate(() => fixture.archive);
+    assert.deepEqual(await page.evaluate(() => fixture.redirects ?? []), []);
+    assert.equal(
+      await page.evaluate(() =>
+        fixture.store.students.some((student) => student.id === "student-1"),
+      ),
+      false,
+    );
+    await page.evaluate(() => fixture.root.unmount());
+  } finally {
+    await browser.close();
+  }
+});
+
 test("identity replacement drops old edit and archive dialogs without closing new ones", async () => {
   const browser = await chromium.launch();
   try {
