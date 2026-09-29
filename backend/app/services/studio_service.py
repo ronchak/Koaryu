@@ -55,7 +55,7 @@ class StudioService:
         self, studio_id: str, data: StudioUpdate, user_id: str
     ) -> StudioResponse:
         """Update studio settings."""
-        update_data = data.model_dump(exclude_none=True)
+        update_data = data.model_dump(exclude_unset=True)
 
         if not update_data:
             raise HTTPException(

@@ -1,4 +1,4 @@
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from typing import Any, Optional
 from supabase import Client
 from fastapi import HTTPException
@@ -309,9 +309,26 @@ class ScheduleService:
     async def update_template(
         self, template_id: str, data: ClassTemplateUpdate, studio_id: str, actor_id: str
     ) -> ClassTemplateResponse:
-        update_dict = data.model_dump(exclude_none=True)
+        update_dict = data.model_dump(exclude_unset=True)
         if not update_dict:
             raise HTTPException(status_code=400, detail="No fields to update")
+        current = (
+            self.supabase.table("class_templates")
+            .select("start_time, end_time, start_date, end_date")
+            .eq("id", template_id)
+            .eq("studio_id", studio_id)
+            .limit(1)
+            .execute()
+        )
+        if not current.data:
+            raise HTTPException(status_code=404, detail="Template not found")
+        merged = {**current.data[0], **update_dict}
+        if time.fromisoformat(merged["end_time"]) <= time.fromisoformat(merged["start_time"]):
+            raise HTTPException(status_code=400, detail="End time must be after start time")
+        if merged["end_date"] and date.fromisoformat(merged["end_date"]) < date.fromisoformat(
+            merged["start_date"]
+        ):
+            raise HTTPException(status_code=400, detail="End date cannot be before start date")
         ensure_staff_user_in_studio(
             self.supabase,
             update_dict.get("instructor_id"),

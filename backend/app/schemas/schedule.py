@@ -78,6 +78,13 @@ class ClassTemplateUpdate(BaseModel):
     capacity: Optional[int] = Field(default=None, gt=0)
     is_active: Optional[bool] = None
 
+    @field_validator("name", "day_of_week", "start_time", "end_time", "start_date", "is_active")
+    @classmethod
+    def reject_required_null(cls, value):
+        if value is None:
+            raise ValueError("This field cannot be null")
+        return value
+
     @field_validator("start_time", "end_time")
     @classmethod
     def validate_time_format(cls, value: Optional[str]) -> Optional[str]:

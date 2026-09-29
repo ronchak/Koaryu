@@ -2,9 +2,12 @@ import asyncio
 import unittest
 from datetime import date, timedelta
 
-from fastapi import HTTPException
+from fastapi import FastAPI, HTTPException
+from fastapi.testclient import TestClient
 
-from app.schemas.schedule import AttendanceCheckIn
+from app.api.v1.endpoints import schedule as schedule_endpoint
+from app.core.deps import get_current_user_id, get_roster_schedule_manager_studio_id, get_supabase
+from app.schemas.schedule import AttendanceCheckIn, ClassTemplateUpdate
 from app.services.schedule_attendance_actions import (
     ATTENDANCE_LIST_RANGE_MAX_DAYS,
     ATTENDANCE_SESSION_IDS_MAX,
@@ -218,6 +221,175 @@ def schedule_window_payload(
 
 
 class ScheduleServiceTest(unittest.TestCase):
+    def test_template_patch_endpoint_parses_clear_and_rejects_required_null(self):
+        template = template_row("template-1", "Youth Basics")
+        template.update({"end_date": "2026-06-30", "capacity": 10})
+        supabase = FakeSupabase({"class_templates": [template], "audit_logs": []})
+        app = FastAPI()
+        app.include_router(schedule_endpoint.router)
+        app.dependency_overrides[get_current_user_id] = lambda: "actor-1"
+        app.dependency_overrides[get_roster_schedule_manager_studio_id] = lambda: "studio-1"
+        app.dependency_overrides[get_supabase] = lambda: supabase
+        client = TestClient(app)
+
+        cleared = client.patch(
+            "/schedule/templates/template-1", json={"end_date": None, "name": "Adults"}
+        )
+        invalid = client.patch("/schedule/templates/template-1", json={"is_active": None})
+        empty = client.patch("/schedule/templates/template-1", json={})
+
+        self.assertEqual(cleared.status_code, 200, cleared.text)
+        self.assertIsNone(cleared.json()["end_date"])
+        self.assertEqual(cleared.json()["name"], "Adults")
+        self.assertEqual(invalid.status_code, 422)
+        self.assertEqual(empty.status_code, 400)
+        writes = [
+            q
+            for q in supabase.query_log
+            if q["table"] == "class_templates" and q["update"] is not None
+        ]
+        self.assertEqual(len(writes), 1)
+        self.assertEqual(writes[0]["update"], {"end_date": None, "name": "Adults"})
+
+    def test_template_explicit_null_clears_end_date(self):
+        template = template_row("template-1", "Youth Basics")
+        template["end_date"] = "2026-06-30"
+        supabase = FakeSupabase({"class_templates": [template], "audit_logs": []})
+
+        result = asyncio.run(
+            ScheduleService(supabase).update_template(
+                "template-1", ClassTemplateUpdate(end_date=None), "studio-1", "actor-1"
+            )
+        )
+
+        self.assertIsNone(result.end_date)
+        self.assertIsNone(template["end_date"])
+        self.assertEqual(supabase.tables["audit_logs"][0]["metadata"], {"end_date": None})
+
+    def test_template_mixed_clear_and_edit_preserves_omitted_fields(self):
+        template = template_row("template-1", "Youth Basics")
+        template.update({"instructor_id": "old-staff", "program_id": "old-program", "capacity": 10})
+        supabase = FakeSupabase({"class_templates": [template], "audit_logs": []})
+
+        result = asyncio.run(
+            ScheduleService(supabase).update_template(
+                "template-1",
+                ClassTemplateUpdate(
+                    instructor_id=None, program_id=None, capacity=None, name="Adults"
+                ),
+                "studio-1",
+                "actor-1",
+            )
+        )
+
+        self.assertEqual(result.name, "Adults")
+        self.assertIsNone(result.instructor_id)
+        self.assertIsNone(result.program_id)
+        self.assertIsNone(result.capacity)
+        self.assertEqual(result.start_time, "09:00")
+        self.assertEqual(
+            supabase.tables["audit_logs"][0]["metadata"],
+            {
+                "name": "Adults",
+                "instructor_id": None,
+                "program_id": None,
+                "capacity": None,
+            },
+        )
+        self.assertFalse(any(q["table"] in {"staff_roles", "programs"} for q in supabase.query_log))
+
+    def test_template_rejects_invalid_merged_windows_before_write(self):
+        for payload in (
+            {"start_time": "10:00"},
+            {"end_time": "08:00"},
+            {"end_date": "2026-05-23"},
+            {"start_date": "2026-06-01"},
+        ):
+            with self.subTest(payload=payload):
+                template = template_row("template-1", "Youth Basics")
+                template["end_date"] = "2026-05-31"
+                supabase = FakeSupabase({"class_templates": [template], "audit_logs": []})
+                with self.assertRaises(HTTPException) as context:
+                    asyncio.run(
+                        ScheduleService(supabase).update_template(
+                            "template-1", ClassTemplateUpdate(**payload), "studio-1", "actor-1"
+                        )
+                    )
+                self.assertEqual(context.exception.status_code, 400)
+                self.assertFalse(any(q["update"] is not None for q in supabase.query_log))
+
+    def test_template_scoped_miss_does_not_write(self):
+        template = template_row("template-1", "Youth Basics")
+        template["studio_id"] = "studio-2"
+        supabase = FakeSupabase({"class_templates": [template], "audit_logs": []})
+        with self.assertRaises(HTTPException) as context:
+            asyncio.run(
+                ScheduleService(supabase).update_template(
+                    "template-1", ClassTemplateUpdate(name="Changed"), "studio-1", "actor-1"
+                )
+            )
+        self.assertEqual(context.exception.status_code, 404)
+        self.assertFalse(any(q["update"] is not None for q in supabase.query_log))
+
+    def test_template_replacement_checks_staff_and_program_tenant(self):
+        for payload, expected_table in (
+            ({"instructor_id": "other-staff"}, "staff_roles"),
+            ({"program_id": "other-program"}, "programs"),
+        ):
+            with self.subTest(payload=payload):
+                supabase = FakeSupabase(
+                    {
+                        "class_templates": [template_row("template-1", "Youth Basics")],
+                        "staff_roles": [],
+                        "programs": [],
+                        "audit_logs": [],
+                    }
+                )
+                with self.assertRaises(HTTPException) as context:
+                    asyncio.run(
+                        ScheduleService(supabase).update_template(
+                            "template-1", ClassTemplateUpdate(**payload), "studio-1", "actor-1"
+                        )
+                    )
+                self.assertEqual(context.exception.status_code, 404)
+                self.assertTrue(any(q["table"] == expected_table for q in supabase.query_log))
+                self.assertFalse(any(q["update"] is not None for q in supabase.query_log))
+
+    def test_template_accepts_staff_and_program_from_same_studio(self):
+        supabase = FakeSupabase(
+            {
+                "class_templates": [template_row("template-1", "Youth Basics")],
+                "staff_roles": [
+                    {
+                        "id": "role-1",
+                        "studio_id": "studio-1",
+                        "user_id": "staff-1",
+                        "archived_at": None,
+                    }
+                ],
+                "programs": [
+                    {
+                        "id": "program-1",
+                        "studio_id": "studio-1",
+                        "archived_at": None,
+                    }
+                ],
+                "audit_logs": [],
+            }
+        )
+
+        result = asyncio.run(
+            ScheduleService(supabase).update_template(
+                "template-1",
+                ClassTemplateUpdate(instructor_id="staff-1", program_id="program-1"),
+                "studio-1",
+                "actor-1",
+            )
+        )
+
+        self.assertEqual(result.instructor_id, "staff-1")
+        self.assertEqual(result.program_id, "program-1")
+
     def test_schedule_window_is_one_rpc_with_no_table_hydration(self):
         supabase = RpcBackedSupabase()
         supabase._rpc_schedule_window_read = lambda _params: schedule_window_payload()
