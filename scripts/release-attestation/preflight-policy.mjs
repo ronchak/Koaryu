@@ -368,3 +368,46 @@ export function render_import_receipts_v45(check) {
         v_failures:=array_append(v_failures,${sqlLiteral(check.id)});
     END IF;`;
 }
+
+// The receipt schema is independently pinned, including column grants and policies.
+export const LEAD_RECEIPT_FACTS_SQL = `SELECT jsonb_build_object(
+            'owner',pg_catalog.pg_get_userbyid(relation.relowner),
+            'rls',relation.relrowsecurity,'force_rls',relation.relforcerowsecurity,
+            'columns',(SELECT jsonb_agg(jsonb_build_array(attribute.attname,
+                pg_catalog.format_type(attribute.atttypid,attribute.atttypmod),attribute.attnotnull,
+                pg_catalog.pg_get_expr(default_value.adbin,default_value.adrelid),
+                attribute.attidentity,attribute.attgenerated,attribute.attacl IS NULL) ORDER BY attribute.attnum)
+                FROM pg_catalog.pg_attribute attribute
+                LEFT JOIN pg_catalog.pg_attrdef default_value
+                  ON default_value.adrelid=attribute.attrelid AND default_value.adnum=attribute.attnum
+                WHERE attribute.attrelid=relation.oid AND attribute.attnum>0 AND NOT attribute.attisdropped),
+            'acl',(SELECT jsonb_agg(jsonb_build_array(
+                CASE WHEN acl.grantee=0 THEN 'PUBLIC' ELSE pg_catalog.pg_get_userbyid(acl.grantee)::TEXT END,
+                pg_catalog.pg_get_userbyid(acl.grantor)::TEXT,acl.privilege_type,acl.is_grantable)
+                ORDER BY CASE WHEN acl.grantee=0 THEN 'PUBLIC' ELSE pg_catalog.pg_get_userbyid(acl.grantee)::TEXT END COLLATE "C",
+                         acl.privilege_type,acl.is_grantable)
+                FROM pg_catalog.aclexplode(COALESCE(relation.relacl,pg_catalog.acldefault('r',relation.relowner))) acl),
+            'constraints',(SELECT jsonb_agg(jsonb_build_array(constraint_row.conname,constraint_row.contype,
+                constraint_row.convalidated,constraint_row.condeferrable,constraint_row.condeferred,
+                pg_catalog.pg_get_constraintdef(constraint_row.oid)) ORDER BY constraint_row.conname COLLATE "C")
+                FROM pg_catalog.pg_constraint constraint_row WHERE constraint_row.conrelid=relation.oid),
+            'indexes',(SELECT jsonb_agg(jsonb_build_array(index_relation.relname,index_row.indisvalid,
+                index_row.indisready,index_row.indisunique,index_row.indisprimary,pg_catalog.pg_get_indexdef(index_row.indexrelid))
+                ORDER BY index_relation.relname COLLATE "C")
+                FROM pg_catalog.pg_index index_row JOIN pg_catalog.pg_class index_relation ON index_relation.oid=index_row.indexrelid
+                WHERE index_row.indrelid=relation.oid),
+            'policies',(SELECT jsonb_agg(jsonb_build_array(policy.polname,policy.polcmd,policy.polpermissive,
+                (SELECT jsonb_agg(pg_catalog.pg_get_userbyid(role_oid)::TEXT ORDER BY pg_catalog.pg_get_userbyid(role_oid)::TEXT COLLATE "C") FROM unnest(policy.polroles) role_oid),
+                pg_catalog.pg_get_expr(policy.polqual,policy.polrelid),pg_catalog.pg_get_expr(policy.polwithcheck,policy.polrelid)) ORDER BY policy.polname COLLATE "C")
+                FROM pg_catalog.pg_policy policy WHERE policy.polrelid=relation.oid),
+            'no_user_triggers',NOT EXISTS(SELECT 1 FROM pg_catalog.pg_trigger trigger_row
+                WHERE trigger_row.tgrelid=relation.oid AND NOT trigger_row.tgisinternal))
+        FROM pg_catalog.pg_class relation WHERE relation.oid=pg_catalog.to_regclass('public.lead_follow_up_operations')
+          AND relation.relkind='r'`;
+
+export function render_lead_follow_up_receipts_v52(check) {
+  return `    IF (SELECT encode(extensions.digest(convert_to((${LEAD_RECEIPT_FACTS_SQL})::TEXT,'UTF8'),'sha256'),'hex'))
+       IS DISTINCT FROM ${sqlLiteral(check.expected)} THEN
+        v_failures:=array_append(v_failures,'lead_follow_up_operations_v52');
+    END IF;`;
+}

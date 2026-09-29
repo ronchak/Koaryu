@@ -27,6 +27,7 @@ export function StudentDetailPageContent({
   isLoadingStudent,
   isPhotoSaving,
   isSaving,
+  isStudentCommandPending,
   loadError,
   photoError,
   photoPreviewUrl,
@@ -84,12 +85,22 @@ export function StudentDetailPageContent({
           <ArrowLeft className="w-3.5 h-3.5" />
           Back to students
         </Button>
-        <Button variant="secondary" size="sm" onClick={onShowEdit} disabled={!detailReady}>
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={onShowEdit}
+          disabled={!detailReady || isStudentCommandPending}
+        >
           <Pencil className="w-3.5 h-3.5" />
           Edit
         </Button>
         {canManageRoster ? (
-          <Button variant="danger" size="sm" onClick={onShowDeleteConfirm} disabled={!detailReady}>
+          <Button
+            variant="danger"
+            size="sm"
+            onClick={onShowDeleteConfirm}
+            disabled={!detailReady || isStudentCommandPending}
+          >
             <Trash2 className="w-3.5 h-3.5" />
             Archive
           </Button>
@@ -159,6 +170,7 @@ export function StudentDetailPageContent({
                       variant="danger"
                       size="sm"
                       isLoading={isDeleting}
+                      disabled={isStudentCommandPending}
                       onClick={onDeleteStudent}
                     >
                       <Trash2 className="w-3.5 h-3.5" />
@@ -178,6 +190,7 @@ export function StudentDetailPageContent({
               photoPreviewUrl={photoPreviewUrl}
               photoError={photoError}
               isPhotoSaving={isPhotoSaving}
+              isCommandPending={isStudentCommandPending}
               onPhotoSelected={onPhotoSelected}
               onDeletePhoto={onDeletePhoto}
               isCurrentHold={detail.isCurrentHold}

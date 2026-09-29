@@ -33,6 +33,8 @@ export default function LeadsPage() {
     addLead,
     updateLead,
     convertLeadToStudent,
+    followUpLead,
+    leadOperations,
     leadsLoaded,
     leadsLoadError,
     refreshLeads,
@@ -64,7 +66,11 @@ export default function LeadsPage() {
     baseLeads,
     convertLeadToStudent,
     currentRole,
+    followUpLead,
+    identityGeneration,
+    identityReady,
     isPreviewMode,
+    leadOperations,
     programs,
     today,
     token,
@@ -160,7 +166,8 @@ export default function LeadsPage() {
               canConvertLeads={controller.canConvertLeads}
               canManageLeads={controller.canManageLeads}
               leads={controller.model.obligationLedgerLeads}
-              pendingLeadId={controller.pendingLeadId}
+              pendingLeadIds={controller.pendingLeadIds}
+              recoveringLeadIds={controller.recoveringLeadIds}
               programById={programById}
               selectedLeadId={selectedLead?.id ?? null}
               staffById={staffById}
@@ -185,7 +192,9 @@ export default function LeadsPage() {
               lead={selectedLead}
               leadActionError={controller.leadActionError}
               leadActionMessage={controller.actionMessage}
-              pendingLeadId={controller.pendingLeadId}
+              pendingLeadIds={controller.pendingLeadIds}
+              followUpRecovery={controller.followUpRecoveries.get(selectedLead.id) ?? null}
+              onRetryFollowUp={controller.handleRetryFollowUp}
               programById={programById}
               today={today}
               onAssignStaff={controller.handleAssignedStaff}

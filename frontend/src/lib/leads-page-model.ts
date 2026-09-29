@@ -1,4 +1,5 @@
 import type { Lead, LeadSource, LeadStage, LostReason, Program } from "@/types";
+import { differenceInLocalDateKeys } from "./date.ts";
 
 export const PIPELINE_STAGES: { id: LeadStage; label: string; hex: string }[] = [
   { id: "inquiry", label: "Inquiry", hex: "var(--accent)" },
@@ -24,8 +25,6 @@ export const LOST_REASON_LABELS: Record<LostReason, string> = {
   no_response: "No response",
   other: "Other",
 };
-
-const DAY_MS = 1000 * 60 * 60 * 24;
 
 interface LeadsPageModelInput {
   baseLeads: Lead[];
@@ -94,8 +93,7 @@ export function getFollowUpStatusLabel(date: string, today: string) {
     return "Due today";
   }
 
-  const diffMs = new Date(`${today}T00:00:00`).getTime() - new Date(`${date}T00:00:00`).getTime();
-  const diffDays = Math.floor(diffMs / DAY_MS);
+  const diffDays = differenceInLocalDateKeys(date, today);
 
   if (diffDays > 0) {
     return `${diffDays}d overdue`;

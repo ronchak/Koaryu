@@ -58,6 +58,7 @@ export default function ContactSupportPage() {
   );
   const [recentTicketsError, setRecentTicketsError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const submittingRef = useRef(false);
   const [formError, setFormError] = useState("");
   const pageContext = useMemo(() => {
     if (typeof window === "undefined") {
@@ -81,7 +82,7 @@ export default function ContactSupportPage() {
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      if (searchParams.get("topic") === "bug") {
+      if (!submittingRef.current && searchParams.get("topic") === "bug") {
         setTopic("bug_report");
       }
     }, 0);
@@ -210,6 +211,7 @@ export default function ContactSupportPage() {
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (submittingRef.current) return;
     if (!token) {
       setFormError("You need to be signed in to send support requests.");
       return;
@@ -226,6 +228,7 @@ export default function ContactSupportPage() {
       return;
     }
 
+    submittingRef.current = true;
     setIsSubmitting(true);
     setFormError("");
     setCreatedTicket(null);
@@ -274,6 +277,7 @@ export default function ContactSupportPage() {
     } catch (error) {
       setFormError(error instanceof Error ? error.message : "Could not send support request.");
     } finally {
+      submittingRef.current = false;
       setIsSubmitting(false);
     }
   }
@@ -291,7 +295,10 @@ export default function ContactSupportPage() {
               <span className="font-medium text-text-primary">Topic</span>
               <select
                 value={topic}
-                onChange={(event) => setTopic(event.target.value as SupportTicketTopic)}
+                disabled={isSubmitting}
+                onChange={(event) => {
+                  if (!submittingRef.current) setTopic(event.target.value as SupportTicketTopic);
+                }}
                 className="px-3 py-2 text-sm"
               >
                 {topicOptions.map((option) => (
@@ -306,7 +313,10 @@ export default function ContactSupportPage() {
                 <span className="font-medium text-text-primary">Subject</span>
                 <input
                   value={subject}
-                  onChange={(event) => setSubject(event.target.value)}
+                  disabled={isSubmitting}
+                  onChange={(event) => {
+                    if (!submittingRef.current) setSubject(event.target.value);
+                  }}
                   placeholder="Short summary"
                   className="px-3 py-2 text-sm"
                   minLength={3}
@@ -319,7 +329,11 @@ export default function ContactSupportPage() {
                 <span className="font-medium text-text-primary">Priority</span>
                 <select
                   value={severity}
-                  onChange={(event) => setSeverity(event.target.value as SupportTicketSeverity)}
+                  disabled={isSubmitting}
+                  onChange={(event) => {
+                    if (!submittingRef.current)
+                      setSeverity(event.target.value as SupportTicketSeverity);
+                  }}
                   className="px-3 py-2 text-sm"
                 >
                   {severityOptions.map((option) => (
@@ -334,7 +348,10 @@ export default function ContactSupportPage() {
               <span className="font-medium text-text-primary">Details</span>
               <textarea
                 value={details}
-                onChange={(event) => setDetails(event.target.value)}
+                disabled={isSubmitting}
+                onChange={(event) => {
+                  if (!submittingRef.current) setDetails(event.target.value);
+                }}
                 placeholder="What were you trying to do? What happened instead?"
                 className="min-h-32 px-3 py-2 text-sm"
                 minLength={10}
@@ -352,7 +369,10 @@ export default function ContactSupportPage() {
                 <input
                   type="url"
                   value={currentPage}
-                  onChange={(event) => setCurrentPage(event.target.value)}
+                  disabled={isSubmitting}
+                  onChange={(event) => {
+                    if (!submittingRef.current) setCurrentPage(event.target.value);
+                  }}
                   placeholder={pageContext.pageUrl || "https://app.koaryu.com/schedule"}
                   className="min-h-11 px-3 py-2 text-sm"
                 />
@@ -362,7 +382,10 @@ export default function ContactSupportPage() {
                   <span className="font-medium text-text-primary">Expected result</span>
                   <textarea
                     value={expectedResult}
-                    onChange={(event) => setExpectedResult(event.target.value)}
+                    disabled={isSubmitting}
+                    onChange={(event) => {
+                      if (!submittingRef.current) setExpectedResult(event.target.value);
+                    }}
                     className="min-h-24 px-3 py-2 text-sm"
                   />
                 </label>
@@ -370,7 +393,10 @@ export default function ContactSupportPage() {
                   <span className="font-medium text-text-primary">Actual result</span>
                   <textarea
                     value={actualResult}
-                    onChange={(event) => setActualResult(event.target.value)}
+                    disabled={isSubmitting}
+                    onChange={(event) => {
+                      if (!submittingRef.current) setActualResult(event.target.value);
+                    }}
                     className="min-h-24 px-3 py-2 text-sm"
                   />
                 </label>

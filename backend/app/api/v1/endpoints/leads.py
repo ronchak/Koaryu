@@ -15,8 +15,10 @@ from app.schemas.lead import (
     LeadActivityCreate,
     LeadActivityResponse,
     LeadConvert,
+    LeadFollowUpRequest,
 )
 from app.services.lead_service import LeadService
+from app.services.studio_scope import resolve_lead_conversion_manager_staff_role_for_user
 
 router = APIRouter(prefix="/leads", tags=["leads"])
 
@@ -133,6 +135,30 @@ async def convert_lead(
 ):
     async def _provider_operation(client):
         return await LeadService(client).convert_to_student(lead_id, data, studio_id, user_id)
+
+    return await run_supabase_operation(
+        supabase,
+        _provider_operation,
+        lane="interactive",
+    )
+
+
+@router.post("/{lead_id}/follow-up", response_model=LeadResponse)
+async def follow_up_lead(
+    lead_id: str,
+    data: LeadFollowUpRequest,
+    user_id: str = Depends(get_current_user_id),
+    studio_id: str = Depends(get_lead_manager_studio_id),
+    supabase: ProviderDependency = Depends(get_supabase),
+):
+    async def _provider_operation(client):
+        if data.next_stage == "enrolled":
+            # Enrollment retains its separate permission boundary even while the
+            # current role sets happen to match ordinary lead management.
+            resolve_lead_conversion_manager_staff_role_for_user(
+                client, user_id, studio_id, require_platform_subscription=True
+            )
+        return await LeadService(client).follow_up_lead(lead_id, data, studio_id, user_id)
 
     return await run_supabase_operation(
         supabase,

@@ -188,6 +188,7 @@ export function StudentRosterTable({
   handleSort,
   inactivityByStudentId,
   inactivityThreshold,
+  isBulkCommandPending,
   onOpenStudent,
   onFocusStudent,
   onHoverStudent,
@@ -205,6 +206,7 @@ export function StudentRosterTable({
   handleSort: (key: SortKey) => void;
   inactivityByStudentId: ReadonlyMap<string, string>;
   inactivityThreshold: number | null;
+  isBulkCommandPending: boolean;
   onOpenStudent: (studentId: string) => void;
   onFocusStudent: (studentId: string) => void;
   onHoverStudent?: (studentId: string) => void;
@@ -223,6 +225,7 @@ export function StudentRosterTable({
             type="checkbox"
             checked={allSelected}
             onChange={toggleSelectAll}
+            disabled={isBulkCommandPending}
             className={styles.checkboxControl}
           />
           {allSelected ? "Deselect all visible students" : "Select all visible students"}
@@ -238,6 +241,7 @@ export function StudentRosterTable({
                     type="checkbox"
                     checked={allSelected}
                     onChange={toggleSelectAll}
+                    disabled={isBulkCommandPending}
                     className={styles.checkboxControl}
                   />
                   <span className="sr-only">
@@ -255,7 +259,8 @@ export function StudentRosterTable({
                 type="button"
                 onClick={() => handleSort("name")}
                 aria-label={getSortButtonLabel("name", "name", sortKey, sortDir)}
-                className="flex items-center gap-1 cursor-pointer"
+                disabled={isBulkCommandPending}
+                className="flex items-center gap-1 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Name
                 <SortIcon col="name" sortKey={sortKey} sortDir={sortDir} />
@@ -270,7 +275,8 @@ export function StudentRosterTable({
                 type="button"
                 onClick={() => handleSort("status")}
                 aria-label={getSortButtonLabel("status", "status", sortKey, sortDir)}
-                className="flex items-center gap-1 cursor-pointer"
+                disabled={isBulkCommandPending}
+                className="flex items-center gap-1 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Status
                 <SortIcon col="status" sortKey={sortKey} sortDir={sortDir} />
@@ -308,7 +314,8 @@ export function StudentRosterTable({
                   sortKey,
                   sortDir,
                 )}
-                className="flex items-center gap-1 cursor-pointer"
+                disabled={isBulkCommandPending}
+                className="flex items-center gap-1 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Member since
                 <SortIcon col="membership_start_date" sortKey={sortKey} sortDir={sortDir} />
@@ -352,6 +359,7 @@ export function StudentRosterTable({
                         checked={isSelected}
                         onClick={stopStudentSelectionPropagation}
                         onChange={() => toggleSelect(student.id)}
+                        disabled={isBulkCommandPending}
                         className={styles.checkboxControl}
                       />
                       <span className="sr-only">
@@ -541,6 +549,7 @@ export function StudentRosterFooter({
   filteredCount,
   hasNextPage,
   hasPreviousPage,
+  isBulkCommandPending,
   isPagedLoading,
   onNextPage,
   onPreviousPage,
@@ -555,6 +564,7 @@ export function StudentRosterFooter({
   filteredCount: number;
   hasNextPage: boolean;
   hasPreviousPage: boolean;
+  isBulkCommandPending: boolean;
   isPagedLoading: boolean;
   onNextPage: () => void;
   onPreviousPage: () => void;
@@ -583,7 +593,7 @@ export function StudentRosterFooter({
             variant="secondary"
             size="sm"
             onClick={onPreviousPage}
-            disabled={!hasPreviousPage || isPagedLoading}
+            disabled={!hasPreviousPage || isPagedLoading || isBulkCommandPending}
           >
             <ChevronLeft aria-hidden="true" className="h-3.5 w-3.5" />
             Previous
@@ -595,7 +605,7 @@ export function StudentRosterFooter({
             variant="secondary"
             size="sm"
             onClick={onNextPage}
-            disabled={!hasNextPage || isPagedLoading}
+            disabled={!hasNextPage || isPagedLoading || isBulkCommandPending}
           >
             Next
             <ChevronRight aria-hidden="true" className="h-3.5 w-3.5" />

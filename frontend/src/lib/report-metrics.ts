@@ -119,6 +119,7 @@ export function subtractReportDays(dateString: string, days: number) {
 
 export function calculateAttendanceMetrics(sessionRows: ReportSessionMetricRow[]) {
   let totalAttendance = 0;
+  let attendanceWithCapacity = 0;
   let totalCapacity = 0;
   let sessionsWithCapacity = 0;
 
@@ -126,6 +127,7 @@ export function calculateAttendanceMetrics(sessionRows: ReportSessionMetricRow[]
     totalAttendance += session.attendees;
 
     if (session.capacity && session.capacity > 0) {
+      attendanceWithCapacity += session.attendees;
       totalCapacity += session.capacity;
       sessionsWithCapacity += 1;
     }
@@ -135,7 +137,7 @@ export function calculateAttendanceMetrics(sessionRows: ReportSessionMetricRow[]
     totalAttendance,
     totalCapacity,
     sessionsWithCapacity,
-    utilizationRate: totalCapacity > 0 ? totalAttendance / totalCapacity : null,
+    utilizationRate: totalCapacity > 0 ? attendanceWithCapacity / totalCapacity : null,
     averageAttendance: sessionRows.length > 0 ? totalAttendance / sessionRows.length : 0,
   };
 }
@@ -151,6 +153,7 @@ export function buildProgramAttendanceRows(
       label: string;
       sessions: number;
       attendance: number;
+      attendanceWithCapacity: number;
       capacity: number;
     }
   >();
@@ -163,6 +166,7 @@ export function buildProgramAttendanceRows(
       label: getProgramLabel(programId),
       sessions: 0,
       attendance: 0,
+      attendanceWithCapacity: 0,
       capacity: 0,
     };
 
@@ -170,6 +174,7 @@ export function buildProgramAttendanceRows(
     row.attendance += session.attendees;
 
     if (session.capacity && session.capacity > 0) {
+      row.attendanceWithCapacity += session.attendees;
       row.capacity += session.capacity;
     }
 

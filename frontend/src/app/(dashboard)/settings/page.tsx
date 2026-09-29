@@ -60,6 +60,7 @@ function AdminSettingsContent() {
   const [nameDraft, setNameDraft] = useState("");
   const [hasEditedName, setHasEditedName] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const savingRef = useRef(false);
   const [isResettingDemo, setIsResettingDemo] = useState(false);
   const [isClearingData, setIsClearingData] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -125,6 +126,7 @@ function AdminSettingsContent() {
   }, [isPreviewMode, token]);
 
   async function handleSave() {
+    if (savingRef.current) return;
     const nextName = name.trim();
 
     if (!nextName) {
@@ -132,6 +134,7 @@ function AdminSettingsContent() {
       return;
     }
 
+    savingRef.current = true;
     setIsSaving(true);
     setError("");
     setSaved(false);
@@ -153,6 +156,7 @@ function AdminSettingsContent() {
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Failed to save settings");
     } finally {
+      savingRef.current = false;
       setIsSaving(false);
     }
   }
@@ -269,7 +273,9 @@ function AdminSettingsContent() {
                   name="studio_name"
                   type="text"
                   value={name}
+                  disabled={isSaving}
                   onChange={(e) => {
+                    if (savingRef.current) return;
                     setHasEditedName(true);
                     setNameDraft(e.target.value);
                   }}

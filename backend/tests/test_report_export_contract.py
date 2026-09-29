@@ -152,7 +152,21 @@ class ReportExportContractTest(unittest.TestCase):
                 self.assertTrue(actual.endswith(b"\r\n"))
                 self.assertFalse(actual.startswith(b"\xef\xbb\xbf"))
 
-    def test_formula_fixture_keeps_canceled_and_missing_session_semantics(self):
+    def test_formula_fixture_excludes_invalid_sessions_and_keeps_missing_session_visit(self):
+        sessions = {session["id"]: session for session in INTELLIGENCE_FIXTURE["sessions"]}
+        self.assertEqual("canceled", sessions["session-canceled"]["status"])
+        self.assertIsNotNone(sessions["session-deleted"]["deleted_at"])
+        self.assertNotIn("session-does-not-exist", sessions)
+        self.assertIn(
+            {
+                "id": "attendance-deleted",
+                "session_id": "session-deleted",
+                "student_id": "student-2",
+                "status": "present",
+                "checked_in_at": "2026-05-31T18:00:00Z",
+            },
+            INTELLIGENCE_FIXTURE["attendance"],
+        )
         self.assertIn(
             {
                 "id": "attendance-canceled",
@@ -173,12 +187,14 @@ class ReportExportContractTest(unittest.TestCase):
             },
             INTELLIGENCE_FIXTURE["attendance"],
         )
-        self.assertIn("visits_30_days,3,", EXPECTED_INTELLIGENCE_CSV["owner_kpi_summary"])
+        self.assertIn("visits_30_days,2,", EXPECTED_INTELLIGENCE_CSV["owner_kpi_summary"])
+        self.assertIn("unique_attendees_30_days,1,", EXPECTED_INTELLIGENCE_CSV["owner_kpi_summary"])
         self.assertIn(
-            ",2026-05-29,3,1,1,0,1,past_due,", EXPECTED_INTELLIGENCE_CSV["quiet_churn_watchlist"]
+            "student-2,Amazing Grace Hopper,active,2026-05-01,,,0,0,0,0,past_due,",
+            EXPECTED_INTELLIGENCE_CSV["quiet_churn_watchlist"],
         )
         self.assertIn(
-            ",2,1,2,20,2,2,2,0,2.0,", EXPECTED_INTELLIGENCE_CSV["schedule_utilization_demand"]
+            ",2,1,1,10,1,1,1,0,1.0,", EXPECTED_INTELLIGENCE_CSV["schedule_utilization_demand"]
         )
 
     def test_csv_byte_contract_covers_special_values_and_injection_prefixes(self):

@@ -1,11 +1,14 @@
 import asyncio
 import unittest
 
-from fastapi import HTTPException
+from fastapi import FastAPI, HTTPException
+from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
 from app.schemas.studio import StudioCreate, StudioUpdate
 from app.api.v1.endpoints.studios import update_current_studio
+from app.api.v1.endpoints import studios as studios_endpoint
+from app.core.deps import get_current_user_id, get_requested_studio_id, get_supabase
 from app.services.studio_service import StudioService
 from tests.fakes.supabase import RpcBackedSupabase
 
@@ -86,8 +89,149 @@ class StudioSchemaTest(unittest.TestCase):
 
         self.assertIn("Studio name is required", str(context.exception))
 
+    def test_studio_update_rejects_null_required_fields(self):
+        for field in ("name", "timezone", "owner_id"):
+            with self.subTest(field=field), self.assertRaises(ValidationError):
+                StudioUpdate.model_validate({field: None})
+
+    def test_studio_update_keeps_explicit_logo_clear(self):
+        self.assertEqual(StudioUpdate().model_dump(exclude_unset=True), {})
+        self.assertEqual(
+            StudioUpdate(logo_url=None).model_dump(exclude_unset=True), {"logo_url": None}
+        )
+
 
 class StudioServiceTest(unittest.TestCase):
+    def test_studio_patch_endpoint_clears_logo_and_rejects_owner_null(self):
+        supabase = FakeSupabase()
+        supabase.tables["studios"] = [
+            {
+                "id": "studio_1",
+                "name": "River City",
+                "slug": "river-city",
+                "owner_id": "owner_1",
+                "logo_url": "https://example.test/logo.png",
+                "timezone": "UTC",
+                "created_at": "2026-05-23T00:00:00+00:00",
+                "updated_at": "2026-05-23T00:00:00+00:00",
+            }
+        ]
+        supabase.tables["staff_roles"] = [
+            {
+                "id": "role_1",
+                "studio_id": "studio_1",
+                "user_id": "admin_1",
+                "role": "admin",
+            }
+        ]
+        supabase.tables["studio_subscriptions"] = [
+            {
+                "studio_id": "studio_1",
+                "status": "active",
+                "comped": False,
+                "trial_end": None,
+            }
+        ]
+        app = FastAPI()
+        app.include_router(studios_endpoint.router)
+        app.dependency_overrides[get_current_user_id] = lambda: "admin_1"
+        app.dependency_overrides[get_requested_studio_id] = lambda: "studio_1"
+        app.dependency_overrides[get_supabase] = lambda: supabase
+        client = TestClient(app)
+
+        cleared = client.patch("/studios/current", json={"logo_url": None})
+        invalid = client.patch("/studios/current", json={"owner_id": None})
+
+        self.assertEqual(cleared.status_code, 200, cleared.text)
+        self.assertIsNone(cleared.json()["logo_url"])
+        self.assertEqual(invalid.status_code, 422)
+        self.assertEqual(supabase.tables["studios"][0]["owner_id"], "owner_1")
+        writes = [
+            q for q in supabase.query_log if q["table"] == "studios" and q["update"] is not None
+        ]
+        self.assertEqual(len(writes), 1)
+        self.assertEqual(writes[0]["update"], {"logo_url": None})
+
+    def test_studio_logo_clear_with_name_change_preserves_other_fields(self):
+        supabase = FakeSupabase()
+        studio = {
+            "id": "studio_1",
+            "name": "River City",
+            "slug": "river-city",
+            "owner_id": "owner_1",
+            "logo_url": "https://example.test/logo.png",
+            "timezone": "UTC",
+            "created_at": "2026-05-23T00:00:00+00:00",
+            "updated_at": "2026-05-23T00:00:00+00:00",
+        }
+        supabase.tables["studios"] = [studio]
+
+        result = asyncio.run(
+            StudioService(supabase).update_studio(
+                "studio_1", StudioUpdate(logo_url=None, name="New Name"), "owner_1"
+            )
+        )
+
+        self.assertIsNone(result.logo_url)
+        self.assertEqual(result.name, "New Name")
+        self.assertEqual(result.timezone, "UTC")
+        self.assertEqual(
+            supabase.tables["audit_logs"][0]["metadata"], {"logo_url": None, "name": "New Name"}
+        )
+
+    def test_studio_empty_update_is_rejected_without_write(self):
+        supabase = FakeSupabase()
+        with self.assertRaises(HTTPException) as context:
+            asyncio.run(
+                StudioService(supabase).update_studio("studio_1", StudioUpdate(), "owner_1")
+            )
+        self.assertEqual(context.exception.status_code, 400)
+        self.assertFalse(supabase.query_log)
+
+    def test_studio_logo_clear_scoped_miss_does_not_write(self):
+        supabase = FakeSupabase()
+        with self.assertRaises(HTTPException) as context:
+            asyncio.run(
+                StudioService(supabase).update_studio(
+                    "missing", StudioUpdate(logo_url=None), "owner_1"
+                )
+            )
+        self.assertEqual(context.exception.status_code, 404)
+        self.assertEqual(supabase.tables["audit_logs"], [])
+
+    def test_studio_update_validates_non_null_owner_transfer(self):
+        supabase = FakeSupabase()
+        supabase.tables["studios"] = [
+            {
+                "id": "studio_1",
+                "name": "River City",
+                "slug": "river-city",
+                "owner_id": "owner_1",
+                "logo_url": None,
+                "timezone": "UTC",
+                "created_at": "2026-05-23T00:00:00+00:00",
+                "updated_at": "2026-05-23T00:00:00+00:00",
+            }
+        ]
+        supabase.tables["staff_roles"] = [
+            {
+                "id": "role_1",
+                "studio_id": "studio_1",
+                "user_id": "admin_2",
+                "role": "admin",
+                "archived_at": None,
+            }
+        ]
+
+        result = asyncio.run(
+            StudioService(supabase).update_studio(
+                "studio_1", StudioUpdate(owner_id="admin_2"), "owner_1"
+            )
+        )
+
+        self.assertEqual(result.owner_id, "admin_2")
+        self.assertEqual(supabase.tables["audit_logs"][0]["metadata"], {"owner_id": "admin_2"})
+
     def test_create_studio_uses_atomic_rpc_with_idempotency_key(self):
         supabase = FakeSupabase()
         supabase.rpc_result_data = [

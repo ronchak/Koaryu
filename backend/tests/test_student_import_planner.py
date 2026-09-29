@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from app.schemas.student import CsvImportOptions
 from app.services.student_import_planner import StudentImportPlanner
 from tests.fakes.supabase import TableBackedSupabase
@@ -86,6 +88,79 @@ def test_planner_resolves_belt_name_inside_selected_program_ladder():
     assert planned_rows[0]["is_valid"]
     assert planned_rows[0]["resolved_program_id"] == "program_bjj"
     assert planned_rows[0]["resolved_belt_rank_id"] == "rank_bjj_white"
+
+
+@pytest.mark.parametrize("belt_value", ["Green", "66666666-6666-4666-8666-666666666666"])
+def test_planner_requires_explicit_program_for_unique_scoped_belt(belt_value):
+    program_id = "33333333-3333-4333-8333-333333333333"
+    rank_id = "66666666-6666-4666-8666-666666666666"
+    planner = StudentImportPlanner(
+        TableBackedSupabase(
+            {
+                "programs": [{"id": program_id, "studio_id": "studio", "name": "BJJ"}],
+                "belt_ladders": [
+                    {
+                        "id": "ladder_bjj",
+                        "studio_id": "studio",
+                        "name": "BJJ Ladder",
+                        "program_id": program_id,
+                    },
+                    {
+                        "id": "ladder_unscoped",
+                        "studio_id": "studio",
+                        "name": "General Ladder",
+                        "program_id": None,
+                    },
+                ],
+                "belt_ranks": [
+                    {
+                        "id": rank_id,
+                        "studio_id": "studio",
+                        "name": "Green",
+                        "ladder_id": "ladder_bjj",
+                    },
+                    {
+                        "id": "rank_general",
+                        "studio_id": "studio",
+                        "name": "White",
+                        "ladder_id": "ladder_unscoped",
+                    },
+                ],
+            }
+        )
+    )
+    mapping = {
+        "First": "legal_first_name",
+        "Last": "legal_last_name",
+        "Program": "program_id",
+        "Belt": "current_belt_rank_id",
+    }
+    row = {"First": "Aiko", "Last": "Tanaka", "Belt": belt_value}
+
+    preview, planned_rows = planner.prepare_import([row], mapping, "studio", CsvImportOptions())
+    assert preview.error_rows == 1
+    assert not planned_rows[0]["is_valid"]
+    assert planned_rows[0]["resolved_belt_rank_id"] == rank_id
+    assert any(
+        issue.field == "program_id"
+        and issue.severity == "error"
+        and "Program" in issue.message
+        and "map" in issue.message.lower()
+        for issue in planned_rows[0]["issues"]
+    )
+
+    _, selected_rows = planner.prepare_import(
+        [{**row, "Program": "BJJ"}], mapping, "studio", CsvImportOptions()
+    )
+    assert selected_rows[0]["is_valid"]
+    assert selected_rows[0]["resolved_program_id"] == program_id
+    assert selected_rows[0]["resolved_belt_rank_id"] == rank_id
+
+    _, unscoped_rows = planner.prepare_import(
+        [{**row, "Belt": "White"}], mapping, "studio", CsvImportOptions()
+    )
+    assert unscoped_rows[0]["is_valid"]
+    assert unscoped_rows[0]["resolved_belt_rank_id"] == "rank_general"
 
 
 def test_planner_truthfully_describes_unresolved_belt_starting_rank_behavior():

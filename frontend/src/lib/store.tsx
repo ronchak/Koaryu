@@ -93,6 +93,7 @@ import { useStoreProgramActions } from "@/lib/store-program-actions";
 import { useStoreScheduleActions } from "@/lib/store-schedule-actions";
 import { useStoreStaffActions } from "@/lib/store-staff-actions";
 import { useStoreStudentBulkActions } from "@/lib/store-student-bulk-actions";
+import { normalizeStudentIds } from "@/lib/student-store-model";
 import { useStoreStudentImportActions } from "@/lib/store-student-import-actions";
 import { useStoreStudentPhotoActions } from "@/lib/store-student-photo-actions";
 import { useStoreStudentRosterActions } from "@/lib/store-student-roster-actions";
@@ -135,6 +136,44 @@ export {
   useStudentStore,
   useStudioStore,
 } from "@/lib/store-contexts";
+
+export const STUDENT_COMMAND_BUSY_MESSAGE =
+  "Another change to this student is still saving. Try again when it finishes.";
+
+// Profile, photo, archive and bulk tag/status commands all rewrite student facts, so one command
+// owns each student until it settles. Ownership is taken before the first await
+// and a conflicting command is refused instead of issuing an overlapping write.
+// Reservations belong to one identity epoch: a replaced identity cannot hold or
+// release the next identity's reservation, while token renewal keeps the epoch.
+function useStudentCommandOwnership<Args extends unknown[], Result>(
+  command: (...args: Args) => Promise<Result>,
+  studentIds: (...args: Args) => string[],
+  ownersRef: React.RefObject<Map<string, symbol>>,
+  identityEpochRef: React.RefObject<number>,
+): (...args: Args) => Promise<Result> {
+  return useCallback(
+    async (...args: Args) => {
+      const epoch = identityEpochRef.current;
+      const keys = [...new Set(studentIds(...args))].map((id) => `${epoch}:${id}`);
+      if (keys.some((key) => ownersRef.current.has(key))) {
+        throw new Error(STUDENT_COMMAND_BUSY_MESSAGE);
+      }
+      const owner = Symbol("student-command");
+      keys.forEach((key) => ownersRef.current.set(key, owner));
+      try {
+        return await command(...args);
+      } finally {
+        keys.forEach((key) => {
+          if (ownersRef.current.get(key) === owner) ownersRef.current.delete(key);
+        });
+      }
+    },
+    [command, identityEpochRef, ownersRef, studentIds],
+  );
+}
+const singleStudentCommandIds = (studentId: string) => [studentId];
+const archiveStudentCommandIds = (studentIds: string[]) => studentIds;
+const bulkStudentCommandIds = (studentIds: string[]) => normalizeStudentIds(studentIds);
 
 // ── Provider ─────────────────────────────────────────────────────────────────
 export function StoreProvider({ children }: { children: ReactNode }) {
@@ -1636,6 +1675,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     addLead,
     convertLeadToStudent,
     deleteLead,
+    followUpLead,
+    leadOperations,
     refreshLeads,
     updateLead,
   } = useStoreLeadActions({
@@ -1918,6 +1959,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     addLead: useReconciledProjectionCommand(addLead, beginProjectionCommand),
     updateLead: useReconciledProjectionCommand(updateLead, beginProjectionCommand),
     deleteLead: useReconciledProjectionCommand(deleteLead, beginProjectionCommand),
+    followUpLead: useReconciledProjectionCommand(followUpLead, beginProjectionCommand),
     convertLeadToStudent: useReconciledProjectionCommand(convertLeadToStudent, beginProjectionCommand),
     toggleCheckIn: useReconciledProjectionCommand(toggleCheckIn, beginProjectionCommand),
     promoteStudent: useReconciledProjectionCommand(promoteStudent, beginProjectionCommand),
@@ -1931,6 +1973,45 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     addTemplate: useReconciledProjectionCommand(addTemplate, beginProjectionCommand),
     setBeltRanks: useReconciledProjectionCommand(setBeltRanks, beginProjectionCommand),
   };
+  const studentCommandOwnersRef = useRef(new Map<string, symbol>());
+  const ownedStudentCommands = {
+    updateStudent: useStudentCommandOwnership(
+      reconciledCommands.updateStudent,
+      singleStudentCommandIds,
+      studentCommandOwnersRef,
+      identityEpochRef,
+    ),
+    deleteStudents: useStudentCommandOwnership(
+      reconciledCommands.deleteStudents,
+      archiveStudentCommandIds,
+      studentCommandOwnersRef,
+      identityEpochRef,
+    ),
+    uploadStudentPhoto: useStudentCommandOwnership(
+      uploadStudentPhoto,
+      singleStudentCommandIds,
+      studentCommandOwnersRef,
+      identityEpochRef,
+    ),
+    deleteStudentPhoto: useStudentCommandOwnership(
+      deleteStudentPhoto,
+      singleStudentCommandIds,
+      studentCommandOwnersRef,
+      identityEpochRef,
+    ),
+    bulkAddTagsToStudents: useStudentCommandOwnership(
+      bulkAddTagsToStudents,
+      bulkStudentCommandIds,
+      studentCommandOwnersRef,
+      identityEpochRef,
+    ),
+    bulkUpdateStudentStatus: useStudentCommandOwnership(
+      reconciledCommands.bulkUpdateStudentStatus,
+      bulkStudentCommandIds,
+      studentCommandOwnersRef,
+      identityEpochRef,
+    ),
+  };
 
   const contextValues = useStoreContextValues({
     addLead: reconciledCommands.addLead,
@@ -1943,8 +2024,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     beltLadders,
     beltLaddersLoadError,
     beltRanks,
-    bulkAddTagsToStudents,
-    bulkUpdateStudentStatus: reconciledCommands.bulkUpdateStudentStatus,
+    bulkAddTagsToStudents: ownedStudentCommands.bulkAddTagsToStudents,
+    bulkUpdateStudentStatus: ownedStudentCommands.bulkUpdateStudentStatus,
     clearStudioData,
     clearSubscriptionRequired,
     convertLeadToStudent: reconciledCommands.convertLeadToStudent,
@@ -1959,19 +2040,21 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     refreshDashboardSummary,
     deleteLead: reconciledCommands.deleteLead,
     deleteSession: reconciledCommands.deleteSession,
-    deleteStudentPhoto,
-    deleteStudents: reconciledCommands.deleteStudents,
+    deleteStudentPhoto: ownedStudentCommands.deleteStudentPhoto,
+    deleteStudents: ownedStudentCommands.deleteStudents,
     demoteStudent: reconciledCommands.demoteStudent,
     eligibility,
     eligibilityLadderId,
     eligibilityLoadError,
     eligibilityPendingLadderId,
+    followUpLead: reconciledCommands.followUpLead,
     importStudents: reconciledCommands.importStudents,
     inviteStaff,
     isPreviewMode,
     businessDate,
     studioTimezone,
     ladderName,
+    leadOperations,
     leads,
     leadsLoaded,
     leadsLoadError,
@@ -2028,10 +2111,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     updateProgram: reconciledCommands.updateProgram,
     updateStaffLegalName,
     updateStaffRole,
-    updateStudent: reconciledCommands.updateStudent,
+    updateStudent: ownedStudentCommands.updateStudent,
     updateUserLegalName,
     updateUserName,
-    uploadStudentPhoto,
+    uploadStudentPhoto: ownedStudentCommands.uploadStudentPhoto,
     userEmail: currentUser?.email || "",
     userName: currentUser?.full_name || "",
     legalFirstName: currentUser?.legal_first_name ?? "",

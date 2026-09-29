@@ -21,13 +21,12 @@ import {
   formatReportPercent,
   subtractReportDays,
 } from "@/lib/report-metrics";
-import { toLocalDateKey } from "@/lib/date";
 import { loadedDataset, resolvePageDatasetReadiness } from "@/lib/page-dataset-readiness";
 import { useConfigStore, useLeadStore, useProgramStore, useScheduleStore, useStudioStore } from "@/lib/store";
 import { BarChart3, Calendar, TrendingUp, Users } from "lucide-react";
 
 export default function ReportsPage() {
-  const { isPreviewMode, token } = useConfigStore();
+  const { businessDate, isPreviewMode, token } = useConfigStore();
   const { leads, leadsLoadError, leadsLoaded, refreshLeads } = useLeadStore();
   const { programs, programsLoadError, programsLoaded, refreshPrograms } = useProgramStore();
   const {
@@ -39,11 +38,12 @@ export default function ReportsPage() {
     "idle" | "loading" | "ready" | "error"
   >("idle");
   const [reportScheduleError, setReportScheduleError] = useState<string | null>(null);
+  const [reportScheduleReadyDate, setReportScheduleReadyDate] = useState<string | null>(null);
   const reportScheduleRequestSeqRef = useRef(0);
-  const reportScheduleRange = useMemo(() => {
-    const today = toLocalDateKey();
-    return { startDate: subtractReportDays(today, 29), endDate: today };
-  }, []);
+  const reportScheduleRange = useMemo(
+    () => ({ startDate: subtractReportDays(businessDate, 29), endDate: businessDate }),
+    [businessDate]
+  );
   const refreshReportSchedule = useCallback(async () => {
     const requestSequence = reportScheduleRequestSeqRef.current + 1;
     reportScheduleRequestSeqRef.current = requestSequence;
@@ -56,6 +56,7 @@ export default function ReportsPage() {
         "read"
       );
       if (reportScheduleRequestSeqRef.current === requestSequence) {
+        setReportScheduleReadyDate(reportScheduleRange.endDate);
         setReportScheduleStatus("ready");
       }
     } catch (error) {
@@ -95,13 +96,21 @@ export default function ReportsPage() {
     uniqueAttendees,
     visibleSessionRows,
   } = useMemo(
-    () => buildReportsPageModel({ attendance, leads, programs, sessions }),
-    [attendance, leads, programs, sessions]
+    () => buildReportsPageModel({ attendance, leads, programs, sessions, today: businessDate }),
+    [attendance, businessDate, leads, programs, sessions]
   );
   const datasetReadiness = resolvePageDatasetReadiness([
     loadedDataset({ error: leadsLoadError, label: "Leads", loaded: leadsLoaded }),
     loadedDataset({ error: programsLoadError, label: "Programs", loaded: programsLoaded }),
-    { error: reportScheduleError, label: "Schedule", status: reportScheduleStatus },
+    {
+      error: reportScheduleError,
+      label: "Schedule",
+      // A window loaded for an earlier studio day is not ready for the current one.
+      status:
+        reportScheduleStatus === "ready" && reportScheduleReadyDate !== businessDate
+          ? "loading"
+          : reportScheduleStatus,
+    },
   ]);
   const retryReportsDatasets = useCallback(() => {
     void Promise.allSettled([
@@ -317,7 +326,7 @@ export default function ReportsPage() {
                           fallback={row.label}
                         />
                         <p className="text-xs text-text-secondary mt-2">
-                          {row.sessions} sessions · {row.capacity > 0 ? `${formatReportPercent(row.attendance / row.capacity)} utilization` : "No capacity tracked"}
+                          {row.sessions} sessions · {row.capacity > 0 ? `${formatReportPercent(row.attendanceWithCapacity / row.capacity)} utilization` : "No capacity tracked"}
                         </p>
                       </div>
                       <p className="shrink-0 text-base font-semibold tabular-nums text-text-primary">

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { describe, it } from "node:test";
 
 import {
@@ -83,6 +84,41 @@ describe("leads page model", () => {
     assert.equal(getFollowUpStatusLabel("2026-05-24", "2026-05-24"), "Due today");
     assert.equal(getFollowUpStatusLabel("2026-05-22", "2026-05-24"), "2d overdue");
     assert.equal(getFollowUpStatusLabel("2026-05-26", "2026-05-24"), "Due May 26");
+  });
+
+  it("counts overdue follow-ups by calendar date across spring daylight saving time", () => {
+    const modelUrl = new URL("../src/lib/leads-page-model.ts", import.meta.url).href;
+    const child = spawnSync(
+      process.execPath,
+      [
+        "--experimental-strip-types",
+        "--input-type=module",
+        "--eval",
+        [
+          `import { getFollowUpStatusLabel } from ${JSON.stringify(modelUrl)};`,
+          "const localDayMs = new Date(2026, 2, 9).getTime() - new Date(2026, 2, 8).getTime();",
+          "console.log(JSON.stringify({",
+          "  localDayHours: localDayMs / 3600000,",
+          '  priorDay: getFollowUpStatusLabel("2026-03-08", "2026-03-09"),',
+          '  twoDaysPrior: getFollowUpStatusLabel("2026-03-07", "2026-03-09"),',
+          '  sameDay: getFollowUpStatusLabel("2026-03-09", "2026-03-09"),',
+          '  nextDay: getFollowUpStatusLabel("2026-03-10", "2026-03-09"),',
+          "}));",
+        ].join("\n"),
+      ],
+      {
+        encoding: "utf8",
+        env: { ...process.env, TZ: "America/Los_Angeles" },
+      },
+    );
+
+    assert.equal(child.status, 0, child.stderr);
+    const labels = JSON.parse(child.stdout);
+    assert.equal(labels.localDayHours, 23);
+    assert.equal(labels.priorDay, "1d overdue");
+    assert.equal(labels.twoDaysPrior, "2d overdue");
+    assert.equal(labels.sameDay, "Due today");
+    assert.equal(labels.nextDay, "Due Mar 10");
   });
 
   it("builds lead pipeline buckets and follow-up queues outside the route", () => {

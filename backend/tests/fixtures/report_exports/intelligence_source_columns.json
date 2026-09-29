@@ -11,7 +11,7 @@
   },
   "quiet_churn_watchlist": {
     "students": ["id", "studio_id", "legal_first_name", "legal_last_name", "preferred_name", "status", "membership_start_date", "deleted_at", "created_at"],
-    "sessions": ["id", "studio_id", "program_id", "instructor_id", "name", "status", "date", "capacity"],
+    "sessions": ["id", "studio_id", "program_id", "instructor_id", "name", "status", "date", "capacity", "deleted_at"],
     "attendance": ["id", "studio_id", "session_id", "student_id", "status", "checked_in_at"],
     "billing_enrollments": ["id", "studio_id", "student_id", "status", "billing_status", "payer_id", "created_at"],
     "billing_payers": ["id", "studio_id", "billing_status"],
@@ -20,13 +20,13 @@
   "first_90_days_onboarding": {
     "students": ["id", "studio_id", "legal_first_name", "legal_last_name", "preferred_name", "status", "membership_start_date", "deleted_at", "created_at"],
     "leads": ["id", "studio_id", "converted_student_id", "source"],
-    "sessions": ["id", "studio_id", "program_id", "instructor_id", "name", "status", "date", "capacity"],
+    "sessions": ["id", "studio_id", "program_id", "instructor_id", "name", "status", "date", "capacity", "deleted_at"],
     "attendance": ["id", "studio_id", "session_id", "student_id", "status", "checked_in_at"]
   },
   "lead_quality_after_enrollment": {
     "students": ["id", "studio_id", "status", "membership_start_date", "deleted_at", "created_at"],
     "leads": ["id", "studio_id", "source", "stage", "converted_student_id"],
-    "sessions": ["id", "studio_id", "program_id", "instructor_id", "name", "status", "date", "capacity"],
+    "sessions": ["id", "studio_id", "program_id", "instructor_id", "name", "status", "date", "capacity", "deleted_at"],
     "attendance": ["id", "studio_id", "session_id", "student_id", "status", "checked_in_at"],
     "invoices": ["id", "studio_id", "student_id"],
     "payments": ["id", "studio_id", "invoice_id", "status", "amount_cents"]
@@ -38,8 +38,8 @@
     "belt_ladders": ["id", "studio_id", "program_id"],
     "belt_ranks": ["id", "studio_id", "ladder_id", "name", "display_order", "min_classes", "min_months", "requires_approval"],
     "promotions": ["id", "studio_id", "student_id", "student_program_membership_id", "program_id", "promoted_at"],
-    "sessions": ["id", "studio_id", "program_id", "instructor_id", "name", "status", "date", "capacity"],
-    "attendance": ["id", "studio_id", "session_id", "student_id", "status", "checked_in_at"]
+    "sessions": ["id", "studio_id", "program_id", "instructor_id", "name", "status", "date", "capacity", "deleted_at"],
+    "attendance": ["id", "studio_id", "session_id", "student_id", "status", "checked_in_at", "counts_toward_eligibility"]
   },
   "revenue_leakage": {
     "students": ["id", "studio_id", "legal_first_name", "legal_last_name", "preferred_name", "status", "membership_start_date", "deleted_at", "created_at"],
@@ -59,14 +59,14 @@
     "student_guardians": ["id", "student_id", "guardian_id"],
     "billing_enrollments": ["id", "studio_id", "student_id", "payer_id", "status", "billing_status", "created_at"],
     "billing_payers": ["id", "studio_id", "display_name", "email", "phone", "billing_status", "balance_cents"],
-    "sessions": ["id", "studio_id", "program_id", "instructor_id", "name", "status", "date", "capacity"],
+    "sessions": ["id", "studio_id", "program_id", "instructor_id", "name", "status", "date", "capacity", "deleted_at"],
     "attendance": ["id", "studio_id", "session_id", "student_id", "status", "checked_in_at"]
   },
   "lifecycle_segmentation": {
     "students": ["id", "studio_id", "legal_first_name", "legal_last_name", "preferred_name", "status", "membership_start_date", "deleted_at", "created_at"],
     "billing_enrollments": ["id", "studio_id", "student_id", "status", "billing_status", "payer_id", "created_at"],
     "billing_payers": ["id", "studio_id", "billing_status"],
-    "sessions": ["id", "studio_id", "program_id", "instructor_id", "name", "status", "date", "capacity"],
+    "sessions": ["id", "studio_id", "program_id", "instructor_id", "name", "status", "date", "capacity", "deleted_at"],
     "attendance": ["id", "studio_id", "session_id", "student_id", "status", "checked_in_at"]
   },
   "instructor_staff_impact": {

@@ -51,6 +51,13 @@ class StudioUpdate(BaseModel):
     logo_url: Optional[str] = None
     owner_id: Optional[str] = None
 
+    @field_validator("name", "timezone", "owner_id")
+    @classmethod
+    def reject_required_null(cls, value):
+        if value is None:
+            raise ValueError("This field cannot be null")
+        return value
+
     @field_validator("name")
     @classmethod
     def validate_name(cls, value: Optional[str]) -> Optional[str]:

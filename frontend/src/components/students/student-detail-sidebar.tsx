@@ -25,6 +25,7 @@ interface StudentDetailSidebarProps {
   photoPreviewUrl: string | null;
   photoError: string | null;
   isPhotoSaving: boolean;
+  isCommandPending: boolean;
   onPhotoSelected: (file: File) => PhotoSelectResult;
   onDeletePhoto: () => Promise<void> | void;
   isCurrentHold: boolean;
@@ -69,6 +70,7 @@ export function StudentDetailSidebar({
   photoPreviewUrl,
   photoError,
   isPhotoSaving,
+  isCommandPending,
   onPhotoSelected,
   onDeletePhoto,
   isCurrentHold,
@@ -106,6 +108,7 @@ export function StudentDetailSidebar({
             type="file"
             accept="image/jpeg,image/png,image/webp"
             className="hidden"
+            disabled={isCommandPending}
             onChange={(event) => {
               const selectedFile = event.currentTarget.files?.[0];
               if (!selectedFile) return;
@@ -122,6 +125,7 @@ export function StudentDetailSidebar({
             variant="secondary"
             size="sm"
             isLoading={isPhotoSaving}
+            disabled={isCommandPending}
             onClick={() => photoInputRef.current?.click()}
           >
             <Camera className="w-3.5 h-3.5" />
@@ -131,7 +135,7 @@ export function StudentDetailSidebar({
             <Button
               variant="ghost"
               size="sm"
-              disabled={isPhotoSaving}
+              disabled={isPhotoSaving || isCommandPending}
               onClick={() => {
                 void onDeletePhoto();
               }}

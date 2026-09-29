@@ -5,13 +5,15 @@ from typing import Any, Optional
 from app.services.report_intelligence_helpers import (
     OPEN_LEAD_STAGES,
     _attendance_events,
-    _count_events,
+    _belt_credit_candidates,
+    _belt_credit_count,
+    _belt_credit_promotion,
+    _belt_credit_promotion_instant,
     _hygiene_row,
     _index_many,
     _index_one,
     _is_active_student,
     _parse_date,
-    _promotion_lookup,
     _student_name,
     _student_start_date,
 )
@@ -19,17 +21,18 @@ from app.services.student_age import is_minor_on_date
 
 
 def build_belt_momentum_testing_pipeline(
-    data: dict[str, list[dict[str, Any]]], today: date
+    data: dict[str, list[dict[str, Any]]], today: date, *, timezone: str = "UTC"
 ) -> list[dict[str, Any]]:
-    events = _attendance_events(data)
+    belt_credit_candidates = _belt_credit_candidates(data)
     students_by_id = _index_one(data.get("students", []), "id")
     programs_by_id = _index_one(data.get("programs", []), "id")
     ranks_by_id = _index_one(data.get("belt_ranks", []), "id")
     ranks_by_ladder = _index_many(data.get("belt_ranks", []), "ladder_id")
+    ladders_by_id = _index_one(data.get("belt_ladders", []), "id")
     ladders_by_program = {
         row.get("program_id"): row for row in data.get("belt_ladders", []) if row.get("program_id")
     }
-    latest_promotions = _promotion_lookup(data)
+    promotions_by_student = _index_many(data.get("promotions", []), "student_id")
     rows: list[dict[str, Any]] = []
 
     memberships = [row for row in data.get("memberships", []) if row.get("status") == "active"]
@@ -75,26 +78,32 @@ def build_belt_momentum_testing_pipeline(
             )
             next_rank = siblings[0] if siblings else None
 
-        promo_key = (
-            membership.get("id")
-            or f"student:{student.get('id')}:{membership.get('program_id') or ''}"
-        )
+        # One operationally matched promotion anchors both the exact credit
+        # boundary and the calendar-day display.
         latest_promotion = (
-            latest_promotions.get(promo_key)
-            or latest_promotions.get(
-                f"student:{student.get('id')}:{membership.get('program_id') or ''}"
+            _belt_credit_promotion(
+                promotions_by_student.get(student["id"], []),
+                membership_id=membership.get("id") or None,
+                program_id=membership.get("program_id"),
             )
             or {}
         )
         rank_start = (
-            latest_promotion.get("promoted_at_date")
+            _parse_date(latest_promotion.get("promoted_at"), timezone=timezone)
             or _parse_date(membership.get("started_at"))
-            or _student_start_date(student)
+            or _student_start_date(student, timezone=timezone)
         )
-        classes_since = (
-            _count_events(events, student_id=student["id"], start=rank_start, end=today)
-            if rank_start
-            else _count_events(events, student_id=student["id"], end=today)
+        target_ladder_id = (
+            next_rank.get("ladder_id")
+            if next_rank
+            else current_rank.get("ladder_id")
+            if current_rank
+            else None
+        )
+        classes_since = _belt_credit_count(
+            belt_credit_candidates.get(student["id"], []),
+            promotion_instant=_belt_credit_promotion_instant(latest_promotion),
+            ladder_program_id=(ladders_by_id.get(target_ladder_id) or {}).get("program_id"),
         )
         days_at_rank = (today - rank_start).days if rank_start else ""
         required_classes = int(next_rank.get("min_classes") or 0) if next_rank else 0
@@ -152,9 +161,9 @@ def build_belt_momentum_testing_pipeline(
 
 
 def build_schedule_utilization_demand(
-    data: dict[str, list[dict[str, Any]]], today: date
+    data: dict[str, list[dict[str, Any]]], today: date, *, timezone: str = "UTC"
 ) -> list[dict[str, Any]]:
-    events = _attendance_events(data)
+    events = _attendance_events(data, timezone=timezone)
     programs_by_id = _index_one(data.get("programs", []), "id")
     attendance_by_session = events.events_by_session
     grouped: dict[str, dict[str, Any]] = {}
@@ -180,6 +189,7 @@ def build_schedule_utilization_demand(
                 "sessions_canceled": 0,
                 "sessions_with_capacity": 0,
                 "total_capacity": 0,
+                "attendance_with_capacity": 0,
                 "total_attendance": 0,
                 "unique_students": set(),
                 "attendance_last_30_days": 0,
@@ -193,9 +203,11 @@ def build_schedule_utilization_demand(
         row["total_attendance"] += len(attendees)
         for event in attendees:
             row["unique_students"].add(event.get("student_id"))
-        if session.get("capacity"):
+        capacity = int(session.get("capacity") or 0)
+        if session.get("status") != "canceled" and capacity > 0:
             row["sessions_with_capacity"] += 1
-            row["total_capacity"] += int(session.get("capacity") or 0)
+            row["total_capacity"] += capacity
+            row["attendance_with_capacity"] += len(attendees)
         if session_date >= today - timedelta(days=29):
             row["attendance_last_30_days"] += len(attendees)
         else:
@@ -204,7 +216,7 @@ def build_schedule_utilization_demand(
     for row in grouped.values():
         scheduled = int(row["sessions_scheduled"])
         capacity = int(row["total_capacity"])
-        utilization = round(int(row["total_attendance"]) / capacity, 4) if capacity else ""
+        utilization = round(int(row["attendance_with_capacity"]) / capacity, 4) if capacity else ""
         avg_attendance = round(
             int(row["total_attendance"]) / max(1, scheduled - int(row["sessions_canceled"])), 2
         )
@@ -217,7 +229,11 @@ def build_schedule_utilization_demand(
             recommendation = "demand_rising"
         rows.append(
             {
-                **{key: value for key, value in row.items() if key != "unique_students"},
+                **{
+                    key: value
+                    for key, value in row.items()
+                    if key not in {"unique_students", "attendance_with_capacity"}
+                },
                 "unique_students": len(row["unique_students"]),
                 "average_attendance": avg_attendance,
                 "average_capacity": round(capacity / int(row["sessions_with_capacity"]), 2)
@@ -233,9 +249,9 @@ def build_schedule_utilization_demand(
 
 
 def build_instructor_staff_impact(
-    data: dict[str, list[dict[str, Any]]], today: date
+    data: dict[str, list[dict[str, Any]]], today: date, *, timezone: str = "UTC"
 ) -> list[dict[str, Any]]:
-    events = _attendance_events(data)
+    events = _attendance_events(data, timezone=timezone)
     leads_by_staff = _index_many(data.get("leads", []), "assigned_staff_id")
     rows_by_staff: dict[str, dict[str, Any]] = defaultdict(
         lambda: {
@@ -245,6 +261,7 @@ def build_instructor_staff_impact(
             "unique_students_90_days": set(),
             "sessions_with_capacity": 0,
             "total_capacity": 0,
+            "attendance_with_capacity": 0,
         }
     )
     attendance_by_session = events.events_by_session
@@ -266,9 +283,11 @@ def build_instructor_staff_impact(
         row["total_attendance_90_days"] += len(attendees)
         for event in attendees:
             row["unique_students_90_days"].add(event.get("student_id"))
-        if session.get("capacity"):
+        capacity = int(session.get("capacity") or 0)
+        if capacity > 0:
             row["sessions_with_capacity"] += 1
-            row["total_capacity"] += int(session.get("capacity") or 0)
+            row["total_capacity"] += capacity
+            row["attendance_with_capacity"] += len(attendees)
     rows = []
     for staff_id, row in rows_by_staff.items():
         staff_leads = leads_by_staff.get(staff_id, [])
@@ -288,7 +307,9 @@ def build_instructor_staff_impact(
                 "average_attendance_per_class": round(attendance / classes, 2) if classes else 0,
                 "unique_students_90_days": len(row["unique_students_90_days"]),
                 "sessions_with_capacity": row["sessions_with_capacity"],
-                "utilization_rate": round(attendance / capacity, 4) if capacity else "",
+                "utilization_rate": round(int(row["attendance_with_capacity"]) / capacity, 4)
+                if capacity
+                else "",
                 "assigned_leads": len(staff_leads),
                 "assigned_leads_enrolled_or_converted": enrolled,
                 "assigned_lead_conversion_rate": round(enrolled / len(staff_leads), 4)

@@ -15,9 +15,12 @@ import type {
   StudioStoreContextValue,
 } from "@/lib/store-contexts";
 import { hasStaffPermission } from "@/lib/staff-permissions";
+import { STUDENT_COMMAND_BUSY_MESSAGE } from "@/lib/store";
 import type { BeltLadder, Promotion, Student, StudentUpdate } from "@/types";
 
 const EMPTY_PROMOTION_HISTORY: Promotion[] = [];
+
+type StudentCommandKind = "archive" | "photo" | "profile";
 
 type StudentDetailPageControllerOptions = {
   beltStore: Pick<
@@ -70,12 +73,15 @@ export function useStudentDetailPageController({
     promotionHistoryByStudent,
   } = beltStore;
 
-  const [showEdit, setShowEdit] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
   const scope = `${studioStore.identityGeneration}:${id}`;
-  const currentScope = useRef(scope);
+  const [editScope, setEditScope] = useState<string | null>(null);
+  const showEdit = editScope === scope;
+  const currentScope = useRef<string | null>(scope);
   useEffect(() => {
     currentScope.current = scope;
+    return () => {
+      if (currentScope.current === scope) currentScope.current = null;
+    };
   }, [scope]);
   const detailRevision = useRef(0);
   const [hydration, setHydration] = useState<{ scope: string; student: Student } | null>(null);
@@ -96,24 +102,68 @@ export function useStudentDetailPageController({
   const [isLoadingFallbackBeltLadders, setIsLoadingFallbackBeltLadders] = useState(false);
   const [isLoadingPromotionHistory, setIsLoadingPromotionHistory] = useState(false);
   const [beltLoadError, setBeltLoadError] = useState<string | null>(null);
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [isDeleting, setIsDeleting] = useState(false);
-  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [deleteConfirmScope, setDeleteConfirmScope] = useState<string | null>(null);
+  const showDeleteConfirm = deleteConfirmScope === scope;
+  const [deleteErrorState, setDeleteErrorState] = useState<{
+    scope: string;
+    message: string;
+  } | null>(null);
+  const deleteError = deleteErrorState?.scope === scope ? deleteErrorState.message : null;
   const [actionMessage, setActionMessage] = useState<string | null>(null);
-  const [photoPreviewUrl, setPhotoPreviewUrl] = useState<string | null>(null);
+  const [photoPreview, setPhotoPreview] = useState<{ scope: string; url: string } | null>(null);
+  const photoPreviewUrl = photoPreview?.scope === scope ? photoPreview.url : null;
   const [photoError, setPhotoError] = useState<string | null>(null);
-  const [isPhotoSaving, setIsPhotoSaving] = useState(false);
+  // One profile, photo or archive command owns this student until its store
+  // write and detail hydration settle. The ref refuses a same-tick repeat that
+  // the pending state has not rendered yet. Every completion is fenced to the
+  // scope that started it, so a replaced identity or student cannot change the
+  // current page's notices, pending flags, preview or route.
+  const commandOwnersRef = useRef(new Map<string, symbol>());
+  const [pendingCommands, setPendingCommands] = useState<ReadonlyMap<string, StudentCommandKind>>(
+    () => new Map(),
+  );
+  const [archivedScope, setArchivedScope] = useState<string | null>(null);
+  const pendingCommand = pendingCommands.get(scope);
+  const isStudentCommandPending = pendingCommand !== undefined;
+  const isSaving = pendingCommand === "profile";
+  const isPhotoSaving = pendingCommand === "photo";
+  const isDeleting = pendingCommand === "archive" || archivedScope === scope;
+  const beginStudentCommand = (kind: StudentCommandKind) => {
+    if (commandOwnersRef.current.has(scope)) return null;
+    const ownerScope = scope;
+    const owner = Symbol(kind);
+    commandOwnersRef.current.set(ownerScope, owner);
+    setPendingCommands((current) => new Map(current).set(ownerScope, kind));
+    return {
+      isCurrent: () => currentScope.current === ownerScope,
+      scope: ownerScope,
+      release: () => {
+        if (commandOwnersRef.current.get(ownerScope) !== owner) return;
+        commandOwnersRef.current.delete(ownerScope);
+        setPendingCommands((current) => {
+          const next = new Map(current);
+          next.delete(ownerScope);
+          return next;
+        });
+      },
+    };
+  };
+  // The effect below revokes a preview URL once no state refers to it, so a
+  // command only clears the preview it created.
+  const clearOwnedPhotoPreview = (url: string) =>
+    setPhotoPreview((current) => (current?.url === url ? null : current));
 
   const listStudent = useMemo(() => students.find((student) => student.id === id), [id, students]);
   const cachedPromotionHistory = promotionHistoryByStudent[id];
 
+  const ownedPhotoPreviewUrl = photoPreview?.url ?? null;
   useEffect(() => {
     return () => {
-      if (photoPreviewUrl) {
-        URL.revokeObjectURL(photoPreviewUrl);
+      if (ownedPhotoPreviewUrl) {
+        URL.revokeObjectURL(ownedPhotoPreviewUrl);
       }
     };
-  }, [photoPreviewUrl]);
+  }, [ownedPhotoPreviewUrl]);
 
   useEffect(() => {
     let mounted = true;
@@ -275,64 +325,79 @@ export function useStudentDetailPageController({
 
   async function handleEdit(data: StudentUpdate) {
     if (!student || !detailReady) return;
+    const command = beginStudentCommand("profile");
+    if (!command) throw new Error(STUDENT_COMMAND_BUSY_MESSAGE);
     detailRevision.current += 1;
-    setIsSaving(true);
     setActionMessage(null);
     try {
       const updated = await updateStudent(id, data);
-      setHydratedStudent(updated);
-      setShowEdit(false);
-      setActionMessage("Student profile updated.");
+      if (command.isCurrent()) {
+        setHydratedStudent(updated);
+        setEditScope(null);
+        setActionMessage("Student profile updated.");
+      }
     } finally {
-      setIsSaving(false);
+      command.release();
     }
   }
 
   async function handleDeleteStudent() {
     if (!canManageRoster || !detailReady) return;
+    const command = beginStudentCommand("archive");
+    if (!command) return;
 
-    setIsDeleting(true);
-    setDeleteError(null);
+    setDeleteErrorState(null);
 
     try {
       await deleteStudents([id]);
-      router.push(returnTo);
+      if (command.isCurrent()) {
+        setArchivedScope(command.scope);
+        router.push(returnTo);
+      }
     } catch (error) {
-      setDeleteError(error instanceof Error ? error.message : "Failed to archive student.");
-      setIsDeleting(false);
+      if (command.isCurrent()) {
+        setDeleteErrorState({
+          scope: command.scope,
+          message: error instanceof Error ? error.message : "Failed to archive student.",
+        });
+      }
+    } finally {
+      command.release();
     }
   }
 
   async function handlePhotoSelected(file: File): Promise<boolean> {
     if (!canManageRoster || !detailReady) return false;
+    const command = beginStudentCommand("photo");
+    if (!command) return false;
     const validationError = validateStudentPhotoFile(file);
     if (validationError) {
       setPhotoError(validationError);
+      command.release();
       return false;
     }
 
     detailRevision.current += 1;
-    const nextPreviewUrl = URL.createObjectURL(file);
-    setPhotoPreviewUrl((current) => {
-      if (current) URL.revokeObjectURL(current);
-      return nextPreviewUrl;
-    });
+    const previewUrl = URL.createObjectURL(file);
+    setPhotoPreview({ scope: command.scope, url: previewUrl });
     setPhotoError(null);
     setActionMessage(null);
-    setIsPhotoSaving(true);
 
     try {
       const updated = await uploadStudentPhoto(id, file);
-      setHydratedStudent(updated);
-      setActionMessage("Student photo updated.");
-      setPhotoPreviewUrl((current) => {
-        if (current) URL.revokeObjectURL(current);
-        return null;
-      });
+      if (command.isCurrent()) {
+        setHydratedStudent(updated);
+        setActionMessage("Student photo updated.");
+      }
     } catch (error) {
-      setPhotoError(error instanceof Error ? error.message : "Failed to update student photo.");
+      if (command.isCurrent()) {
+        setPhotoError(error instanceof Error ? error.message : "Failed to update student photo.");
+      }
     } finally {
-      setIsPhotoSaving(false);
+      // The stored photo stays authoritative; a settled or rejected upload's
+      // preview is no longer shown.
+      clearOwnedPhotoPreview(previewUrl);
+      command.release();
     }
 
     return true;
@@ -340,24 +405,26 @@ export function useStudentDetailPageController({
 
   async function handleDeletePhoto() {
     if (!canManageRoster || !detailReady) return;
+    const command = beginStudentCommand("photo");
+    if (!command) return;
     detailRevision.current += 1;
 
     setPhotoError(null);
     setActionMessage(null);
-    setIsPhotoSaving(true);
 
     try {
       const updated = await deleteStudentPhoto(id);
-      setHydratedStudent(updated);
-      setActionMessage("Student photo removed.");
-      setPhotoPreviewUrl((current) => {
-        if (current) URL.revokeObjectURL(current);
-        return null;
-      });
+      if (command.isCurrent()) {
+        setHydratedStudent(updated);
+        setActionMessage("Student photo removed.");
+        setPhotoPreview((current) => (current?.scope === command.scope ? null : current));
+      }
     } catch (error) {
-      setPhotoError(error instanceof Error ? error.message : "Failed to remove student photo.");
+      if (command.isCurrent()) {
+        setPhotoError(error instanceof Error ? error.message : "Failed to remove student photo.");
+      }
     } finally {
-      setIsPhotoSaving(false);
+      command.release();
     }
   }
 
@@ -377,6 +444,7 @@ export function useStudentDetailPageController({
         !student && !loadError && (!studentsLoaded || isLoadingStudent || !detailReady),
       isPhotoSaving,
       isSaving,
+      isStudentCommandPending,
       loadError,
       photoError,
       photoPreviewUrl,
@@ -387,11 +455,11 @@ export function useStudentDetailPageController({
       student,
       onBackToStudents: () => router.push(returnTo),
       onCancelDelete: () => {
-        setShowDeleteConfirm(false);
-        setDeleteError(null);
+        setDeleteConfirmScope(null);
+        setDeleteErrorState(null);
       },
       onCloseEdit: () => {
-        if (!isSaving) setShowEdit(false);
+        if (!isSaving) setEditScope(null);
       },
       onRetryDetail: () => setRetryNonce((value) => value + 1),
       onDeletePhoto: handleDeletePhoto,
@@ -400,10 +468,10 @@ export function useStudentDetailPageController({
       onEdit: handleEdit,
       onPhotoSelected: handlePhotoSelected,
       onShowDeleteConfirm: () => {
-        if (detailReady) setShowDeleteConfirm(true);
+        if (detailReady && !isStudentCommandPending) setDeleteConfirmScope(scope);
       },
       onShowEdit: () => {
-        if (detailReady) setShowEdit(true);
+        if (detailReady && !isStudentCommandPending) setEditScope(scope);
       },
     },
   };

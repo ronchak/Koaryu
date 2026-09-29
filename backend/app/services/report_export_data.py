@@ -103,6 +103,7 @@ INTELLIGENCE_INPUT_COLUMNS: Mapping[str, Mapping[str, tuple[str, ...]]] = _manif
                 "status",
                 "date",
                 "capacity",
+                "deleted_at",
             ),
         ),
         (
@@ -161,6 +162,7 @@ INTELLIGENCE_INPUT_COLUMNS: Mapping[str, Mapping[str, tuple[str, ...]]] = _manif
                 "status",
                 "date",
                 "capacity",
+                "deleted_at",
             ),
         ),
         (
@@ -187,6 +189,7 @@ INTELLIGENCE_INPUT_COLUMNS: Mapping[str, Mapping[str, tuple[str, ...]]] = _manif
                 "status",
                 "date",
                 "capacity",
+                "deleted_at",
             ),
         ),
         (
@@ -262,11 +265,20 @@ INTELLIGENCE_INPUT_COLUMNS: Mapping[str, Mapping[str, tuple[str, ...]]] = _manif
                 "status",
                 "date",
                 "capacity",
+                "deleted_at",
             ),
         ),
         (
             "attendance",
-            _columns("id", "studio_id", "session_id", "student_id", "status", "checked_in_at"),
+            _columns(
+                "id",
+                "studio_id",
+                "session_id",
+                "student_id",
+                "status",
+                "checked_in_at",
+                "counts_toward_eligibility",
+            ),
         ),
     ),
     revenue_leakage=(
@@ -382,6 +394,7 @@ INTELLIGENCE_INPUT_COLUMNS: Mapping[str, Mapping[str, tuple[str, ...]]] = _manif
                 "status",
                 "date",
                 "capacity",
+                "deleted_at",
             ),
         ),
         (
@@ -428,6 +441,7 @@ INTELLIGENCE_INPUT_COLUMNS: Mapping[str, Mapping[str, tuple[str, ...]]] = _manif
                 "status",
                 "date",
                 "capacity",
+                "deleted_at",
             ),
         ),
         (

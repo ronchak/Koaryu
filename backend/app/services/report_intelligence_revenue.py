@@ -15,7 +15,7 @@ from app.services.report_intelligence_helpers import (
 
 
 def build_revenue_leakage(
-    data: dict[str, list[dict[str, Any]]], today: date
+    data: dict[str, list[dict[str, Any]]], today: date, *, timezone: str = "UTC"
 ) -> list[dict[str, Any]]:
     students_by_id = _index_one(data.get("students", []), "id")
     active_students = [
@@ -106,7 +106,7 @@ def build_revenue_leakage(
 
     for payment in data.get("payments", []):
         if payment.get("status") == "failed" and (
-            _parse_date(payment.get("created_at")) or today
+            _parse_date(payment.get("created_at"), timezone=timezone) or today
         ) >= today - timedelta(days=29):
             invoice = invoices_by_id.get(payment.get("invoice_id")) or {}
             rows.append(
@@ -134,9 +134,9 @@ def build_revenue_leakage(
 
 
 def build_family_account_health(
-    data: dict[str, list[dict[str, Any]]], today: date
+    data: dict[str, list[dict[str, Any]]], today: date, *, timezone: str = "UTC"
 ) -> list[dict[str, Any]]:
-    events = _attendance_events(data)
+    events = _attendance_events(data, timezone=timezone)
     students_by_id = _index_one(data.get("students", []), "id")
     enrollments_by_payer = _index_many(data.get("billing_enrollments", []), "payer_id")
     payers = data.get("billing_payers", [])

@@ -27,7 +27,15 @@ EXPECTED_COLUMNS = json.loads(FIXTURE_PATH.read_text(encoding="utf-8"))
 # Explicitly bounded to relations reachable from the report source vocabulary.
 # This is a review contract, not a general schema parser.
 SOURCE_VOCABULARY_COLUMNS = {
-    "attendance": {"id", "studio_id", "session_id", "student_id", "status", "checked_in_at"},
+    "attendance": {
+        "id",
+        "studio_id",
+        "session_id",
+        "student_id",
+        "status",
+        "checked_in_at",
+        "counts_toward_eligibility",
+    },
     "belt_ladders": {"id", "studio_id", "program_id"},
     "belt_ranks": {
         "id",
@@ -163,6 +171,8 @@ class ReportExportDataBudgetTest(unittest.TestCase):
                         for key, columns in INTELLIGENCE_INPUT_COLUMNS[report_id].items()
                     },
                 )
+                if "attendance" in expected_sources:
+                    self.assertTrue({"status", "deleted_at"} <= set(expected_sources["sessions"]))
 
     def test_each_intelligence_report_queries_only_declared_relations_and_columns(self):
         catalog = build_report_catalog(ReportExportService)
@@ -220,12 +230,13 @@ class ReportExportDataBudgetTest(unittest.TestCase):
         students = [{"id": f"student-{index}", "studio_id": "studio-1"} for index in range(25_000)]
         relationships = [
             {"id": f"link-{index}", "student_id": f"student-{index}", "guardian_id": "guardian-1"}
-            for index in range(25_000)
+            for index in range(24_999)
         ]
 
         success_service = ReportExportService(
             TableBackedSupabase(
                 {
+                    "studios": [{"id": "studio-1", "timezone": "UTC"}],
                     "students": students,
                     "student_guardians": relationships,
                 }
@@ -247,6 +258,7 @@ class ReportExportDataBudgetTest(unittest.TestCase):
         failure_service = ReportExportService(
             TableBackedSupabase(
                 {
+                    "studios": [{"id": "studio-1", "timezone": "UTC"}],
                     "students": students,
                     "student_guardians": relationships,
                 }

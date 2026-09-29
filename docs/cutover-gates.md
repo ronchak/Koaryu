@@ -107,20 +107,21 @@ only after old Python plan split-write requests drain. V40 rank, V41 payer balan
 V42 catalog and semantics, and V43 external-payment facts remain unchanged. The old
 V41 and V43 split callers must still drain for those guarantees.
 
-The local verifier executes each logical restore continuation from V38 through V51.
+The local verifier executes each logical restore continuation from V38 through V53.
 Each uses a real synthetic dump and a new local restore database, accepts only the
 reviewed PostgreSQL 17 CHECK/default-ACL representation differences, and verifies
 business-data preservation and old/new caller continuation. These are local
 contract proofs, not production backup evidence. Candidate verification requires the
-V47-to-V48, V48-to-V49, V49-to-V50 and V50-to-V51 canonical and logical restore continuations, all 146 migrations and 54 SQL
-contracts, and all 29 cases in `scripts/verify-billing-command-concurrency.py`.
+V52-to-V53 canonical and logical restore continuation, all 148 migrations and 56 SQL
+contracts, all 29 cases in `scripts/verify-billing-command-concurrency.py`, and
+all 67 cases in `scripts/verify-lead-command-concurrency.py`.
 The renamed runner uses the existing concurrency helpers and adds no new framework.
 Earlier restore proofs remain in force. The operator's backup helper and
 release/image mappings must be updated and verified for the actual candidate
 before an authorized hosted rollout. Old V38 approvals and mappings are not reusable.
 
 Exact V31 through V37 remain state-bound forward-recovery points. They may
-resume only their immutable suffix through V51; hybrid histories, catalogs or
+resume only their immutable suffix through V53; hybrid histories, catalogs or
 readiness results are refused. A predecessor before V38 also needs the historical
 billing-index migration. Its ordinary index builds hold write locks that can delay
 billing and webhook writes until that transaction finishes. Plan that write pause
@@ -130,7 +131,7 @@ Migration 119 keeps the historical V24 response. The Payments chain retains its
 version-bound compatibility consumers. V47 adds full preflight V28 and makes V27
 return the V46 tuple only after the complete new state verifies. The existing chain
 retains V45 through V37 responses, including the historical V38/V19 consumer. The
-candidate backend requires exact V51, 146 migrations, through full preflight V32. V51 retains V31 compatibility, so the released V50 backend stays ready, only after verifying the complete V51 state. V50 retains V30 compatibility only after verifying the complete V50 state. V48 introduced V29; V49 retains V29 compatibility only after verifying the complete V49 state. Compatibility preserves old
+candidate backend requires exact V53, 148 migrations, through full preflight V34. V53 retains V33 compatibility, so a V52 backend stays ready only after verifying the complete V53 state. V51 retains V31 compatibility after its complete state verifies. V50 retains V30 compatibility only after verifying the complete V50 state. V48 introduced V29; V49 retains V29 compatibility only after verifying the complete V49 state. Compatibility preserves old
 readiness; it does not restore retired import behavior or give old split writers
 the new transactional guarantees.
 The temporary V22 and
@@ -145,26 +146,26 @@ look for it is wrong. `"status": "ready"` *is* the proof the attestation matched
 If migration 113 commits and migration 114 does not, stop. No approved
 application is eligible to serve at that partially migrated history. During the historical V24 release,
 the prior `709239` application required V16 and that release candidate required V24.
-The current candidate requires V51. Older V2 consumers from
+The current candidate requires V53. Older V2 consumers from
 before verified history boundary
 `d63a5116c0a47f1933f15360cd5db7b66237bb80` can report ready through migration
 110's exact V17 compatibility guard, but none is an approved recovery artifact.
 Exclude both `709239`/V16 and every pre-boundary V2-consuming SHA from the
 post-110 rollback set. A database still at exact 110 must classify `state=staff-identity` and use its
-state-bound inspection token. The tool must select migrations 111 through 146 in
+state-bound inspection token. The tool must select migrations 111 through 148 in
 their immutable order. A separately approved disaster recovery to the proved
 restored V22 snapshot must classify exact `state=restored-v22` and select only
-migrations 116 through 146. Use the generated remaining-file list and its source
+migrations 116 through 148. Use the generated remaining-file list and its source
 manifest; do not maintain a second manual list. These are hypothetical recovery
 cases, not the current live state. Only the authorized operator runs production
-apply. Candidate promotion remains blocked until migration 146,
-`20260925030000_invoice_closeout_lock_order_v51.sql`, produces exact V51 readiness
-through `koaryu_release_schema_preflight_v32()` and the final raw catalog/provider
-fingerprint. Require 146 migrations, head `20260925030000`, and manifest
-`release-db-attestation-v51`. That raw evidence must independently attest the
+apply. Candidate promotion remains blocked until migration 148,
+`20260929152445_dashboard_roster_inactivity_v53.sql`, produces exact V53 readiness
+through `koaryu_release_schema_preflight_v34()` and the final raw catalog/provider
+fingerprint. Require 148 migrations, head `20260929152445`, and manifest
+`release-db-attestation-v53`. That raw evidence must independently attest the
 retained plan RPC and demo-clear facts, import receipts, refund ownership,
 the V48 activation, V49 subscription terms, V50 invoice facts, V51 closeout lock
-order, and V51 release facts. V40 rank-command,
+order, V52 lead commands and V53 dashboard definition. V40 rank-command,
 V42 catalog and semantic and V43 external-payment pins remain unchanged. V50 updates the V41 balance function to consume the shared date rule while preserving its serialization.
 
 The V33 retry-hash capture stays enabled throughout the database-first rolling
@@ -234,7 +235,7 @@ A fresh pre-apply backup and verified disposable restore are mandatory. Stop on 
 
 Executable changes retain exact-head CI and independent review. Documentation-only closeout uses focused verification and review without a required full-suite wait. Preserve branch protections, the guarded merge and production auto-deploy off readback. Tenant isolation, authorization, payment safety and idempotency remain unchanged. The existing prohibition on running contract or migration SQL against production remains. Only the guarded rollout tool's authorized apply is an exception for migrations; contract SQL is never allowed. No historical financial backfill.
 
-Private operator guidance must agree with this policy. The [proposed operator-policy diff](remediation/operator-governance-proposal.patch) is reviewable; the private runbooks remain unchanged. The owner's explicit authorization governs this run while those notes await alignment.
+The owner reaffirmed this coordinating-agent authority on September 29, 2026. The global Home Server instructions and private release/authentication runbooks now agree with this policy; their stale human-only migration restriction has been removed. The [earlier operator-policy proposal](remediation/operator-governance-proposal.patch) is historical. Existing script-specific billing terminal gates and all technical release gates remain.
 
 ## Traps that will not refuse you
 
