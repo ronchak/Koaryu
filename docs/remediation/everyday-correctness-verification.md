@@ -33,7 +33,7 @@ Fresh independent Opus backend/business-SQL review at `ea95a2463b424dd252d7572b1
 
 The combined backend at `151066c47710e18922fd2ea111e05a0eb56f10b3` passed all 2,052 tests, full formatting and generated API types. Release-workflow, generated-attestation, environment-example and support-privacy gates passed at `4d279736b55209de837f47f44003ca2386360728`; their inputs are unchanged by the import correction.
 
-Release acceptance also requires the complete strict V53 local chain, deterministic performance gate and exact-head Release candidate gate. The PR and private run record bind those results to the delivery candidate. Focused or diagnostic runs do not replace them. The complete local chain started at `4d279736b55209de837f47f44003ca2386360728`; later app-only and documentation changes preserve the exact scripts, Supabase and generated-readiness Git objects.
+Release acceptance also requires the complete strict V53 local chain, deterministic performance gate and exact-head Release candidate gate. The PR and private run record bind those results to the delivery candidate. Focused or diagnostic runs do not replace them. The first CI run caught a contract-test version list that ended at V52. At V53, obsolete readiness functions correctly refused the current schema, but the test selected its older success branch. Adding the exact V53 count/head tuple preserves every refusal assertion. The original local run was intentionally stopped and cleaned up after V48 restore proof; it is not a full pass. The corrected candidate requires a fresh complete strict local chain and new exact-head CI.
 
 ## Limits
 
