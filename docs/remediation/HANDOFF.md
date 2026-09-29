@@ -21,6 +21,8 @@ Derived from the individual findings in [the ledger](ledger.json) by `npm run ge
 
 ## September 29 everyday correctness
 
+Released to production and staging as `55a652a6e4f368b07286181ffa8e2401f4b9c467` on V53/148. [Completed release record](everyday-correctness-release.md) includes exact deployments, recovery proof, preserved rows and workflow verification.
+
 Sixteen original audit observations and PROGRAM-IMPORT-01 are fixed in the integrated candidate. Lead commands and history commit atomically; overlapping form/student/roster saves retain their owner; optional schedule fields can be cleared; reports and exports use consistent attendance, capacity and calendar rules; dashboard inactivity matches the roster; import preview requires Program for a program-specific belt. [Verification](everyday-correctness-verification.md) records the exact local artifacts, tests and limits. Hosted deployment identity and recovery evidence belong to the separate release record.
 
 The owner reaffirmed autonomous root-coordinator production migration authority on September29 and removed the stale human-only terminal rule from the global/private instructions. Every technical release gate remains, including fresh backup/restore and the 30-second pause before each production migration. Subagents have no production authority.

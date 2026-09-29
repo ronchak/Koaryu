@@ -9,7 +9,7 @@ nothing noticed when it stopped serving.
 one, add it here in the same change. If you find one that is not here, either
 document it or delete it.
 
-Inventory baseline: 2026-08-24. September 20 release readback: both databases are V50, 145 migrations. Production frontend/backend now serve PR240 candidate `fe2a37bf97bb87897b3f8e03d83611c81d69b9c0`. Staging was last verified at Microsoft sign-in candidate `cd2fb0ef0d2655f8f3192e85e93c1c5a95c78225` and was not changed or reverified for PR240. See [Microsoft SSO verification](microsoft-sso-setup.md#september-20-release-verification). Both web services are active; the staging billing cron remains suspended. Production auto-deploy remains off. See [the completed verification](remediation/production-release-verification.md).
+Inventory baseline: 2026-08-24. September 29 release readback: production and staging databases are V53, 148 migrations, head `20260929152445`. Both frontend/backend pairs serve `55a652a6e4f368b07286181ffa8e2401f4b9c467`. Both web services are active, production auto-deploy remains off, and the staging billing cron is restored to its original settings and suspended. See [the completed everyday correctness release](remediation/everyday-correctness-release.md).
 
 ## Quick map
 
@@ -125,6 +125,8 @@ provider mutation keep their durable idempotency identity. Render bills cron exe
 minimum for the service. The production web service keeps
 `BILLING_TRANSITION_SCHEDULER_ENABLED=false`; no production cron exists in this
 release task.
+
+Render service resume can build the current tracked branch even when auto-deploy is off. Pin and inspect that branch before resuming, then verify the actual deployed SHA. The September 29 production resume built the intended release from `main`; do not assume resume restores the previously serving artifact.
 
 The two web services track **different branches**. Render auto-deploy is off for the
 staging web service and cron, so deploy each from the exact reviewed commit and read
