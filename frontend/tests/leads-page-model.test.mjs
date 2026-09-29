@@ -85,6 +85,13 @@ describe("leads page model", () => {
     assert.equal(getFollowUpStatusLabel("2026-05-26", "2026-05-24"), "Due May 26");
   });
 
+  it("counts overdue follow-ups by calendar date across spring daylight saving time", () => {
+    assert.equal(getFollowUpStatusLabel("2026-03-08", "2026-03-09"), "1d overdue");
+    assert.equal(getFollowUpStatusLabel("2026-03-07", "2026-03-09"), "2d overdue");
+    assert.equal(getFollowUpStatusLabel("2026-03-09", "2026-03-09"), "Due today");
+    assert.equal(getFollowUpStatusLabel("2026-03-10", "2026-03-09"), "Due Mar 10");
+  });
+
   it("builds lead pipeline buckets and follow-up queues outside the route", () => {
     const leads = [
       lead({ id: "future", stage: "inquiry", follow_up_date: "2026-05-26" }),
