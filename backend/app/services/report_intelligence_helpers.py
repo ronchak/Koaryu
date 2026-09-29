@@ -3,6 +3,7 @@ from collections import defaultdict
 from datetime import date, datetime, timedelta
 from typing import Any, Optional
 
+from app.services.belt_eligibility import BeltEligibilityCalculator, attendance_earns_belt_credit
 
 ACTIVE_STUDENT_STATUSES = {"active", "trialing"}
 OPEN_LEAD_STAGES = {"inquiry", "trial_scheduled", "trial_completed", "offer_sent"}
@@ -246,20 +247,76 @@ def _active_billing_for_student(
     return enrollment, payer, status or "unknown"
 
 
-def _promotion_lookup(data: dict[str, list[dict[str, Any]]]) -> dict[str, dict[str, Any]]:
-    latest: dict[str, dict[str, Any]] = {}
-    for promotion in data.get("promotions", []):
-        key = (
-            promotion.get("student_program_membership_id")
-            or f"student:{promotion.get('student_id')}:{promotion.get('program_id') or ''}"
-        )
-        promoted_at = _parse_date(promotion.get("promoted_at"))
-        if not key or not promoted_at:
+def _belt_credit_candidates(
+    data: dict[str, list[dict[str, Any]]],
+) -> dict[str, list[tuple[dict[str, Any], dict[str, Any]]]]:
+    """Attendance rows joined to live class sessions, grouped by student.
+
+    Mirrors the operational eligibility inner join, so unlike the general
+    attendance index a visit whose session row is missing earns no belt credit.
+    """
+    sessions_by_id = _index_one(data.get("sessions", []), "id")
+    candidates: dict[str, list[tuple[dict[str, Any], dict[str, Any]]]] = defaultdict(list)
+    for record in data.get("attendance", []):
+        if record.get("status") == "absent" or not record.get("student_id"):
             continue
-        previous = latest.get(key)
-        if not previous or promoted_at > previous["promoted_at_date"]:
-            latest[key] = {**promotion, "promoted_at_date": promoted_at}
+        session = sessions_by_id.get(record.get("session_id"))
+        if not session or session.get("deleted_at") is not None:
+            continue
+        if session.get("status") == "canceled":
+            continue
+        candidates[record["student_id"]].append((record, session))
+    return candidates
+
+
+def _belt_credit_promotion(
+    promotions: list[dict[str, Any]],
+    *,
+    membership_id: Optional[str],
+    program_id: Optional[str],
+) -> Optional[dict[str, Any]]:
+    """Latest promotion for one student context, matched like operational eligibility."""
+    latest: Optional[dict[str, Any]] = None
+    latest_instant: Optional[datetime] = None
+    for promotion in promotions:
+        if not (
+            (membership_id and promotion.get("student_program_membership_id") == membership_id)
+            or (program_id and promotion.get("program_id") == program_id)
+            or (not membership_id and not promotion.get("program_id"))
+        ):
+            continue
+        promoted_at = promotion.get("promoted_at")
+        if not promoted_at:
+            # Operational ordering is promoted_at DESC, which puts NULL first and
+            # leaves the context without a lower bound.
+            return promotion
+        instant = BeltEligibilityCalculator._parse_datetime(promoted_at)
+        if latest_instant is None or instant > latest_instant:
+            latest, latest_instant = promotion, instant
     return latest
+
+
+def _belt_credit_promotion_instant(promotion: dict[str, Any]) -> Optional[datetime]:
+    promoted_at = promotion.get("promoted_at")
+    return BeltEligibilityCalculator._parse_datetime(promoted_at) if promoted_at else None
+
+
+def _belt_credit_count(
+    candidates: list[tuple[dict[str, Any], dict[str, Any]]],
+    *,
+    promotion_instant: Optional[datetime],
+    ladder_program_id: Optional[str],
+) -> int:
+    return sum(
+        1
+        for record, session in candidates
+        if attendance_earns_belt_credit(
+            record,
+            session,
+            promotion_instant=promotion_instant,
+            ladder_program_id=ladder_program_id,
+        )
+    )
 
 
 def _student_risk(

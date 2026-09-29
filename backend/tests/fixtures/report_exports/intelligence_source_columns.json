@@ -39,7 +39,7 @@
     "belt_ranks": ["id", "studio_id", "ladder_id", "name", "display_order", "min_classes", "min_months", "requires_approval"],
     "promotions": ["id", "studio_id", "student_id", "student_program_membership_id", "program_id", "promoted_at"],
     "sessions": ["id", "studio_id", "program_id", "instructor_id", "name", "status", "date", "capacity", "deleted_at"],
-    "attendance": ["id", "studio_id", "session_id", "student_id", "status", "checked_in_at"]
+    "attendance": ["id", "studio_id", "session_id", "student_id", "status", "checked_in_at", "counts_toward_eligibility"]
   },
   "revenue_leakage": {
     "students": ["id", "studio_id", "legal_first_name", "legal_last_name", "preferred_name", "status", "membership_start_date", "deleted_at", "created_at"],

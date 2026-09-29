@@ -9,6 +9,32 @@ from fastapi import HTTPException
 from app.schemas.belt import EligibilityEntry
 
 
+def attendance_earns_belt_credit(
+    row: dict[str, Any],
+    class_session: dict[str, Any],
+    *,
+    promotion_instant: Optional[datetime],
+    ladder_program_id: Optional[str],
+) -> bool:
+    """Whether a non-absent visit to a live class session counts toward one context.
+
+    Callers must already have excluded absent rows and missing, deleted or
+    canceled sessions. Promotion bounds compare exact instants, not dates.
+    """
+    if row.get("counts_toward_eligibility") is False:
+        return False
+    if promotion_instant:
+        checked_in_at = row.get("checked_in_at")
+        if (
+            not checked_in_at
+            or BeltEligibilityCalculator._parse_datetime(checked_in_at) < promotion_instant
+        ):
+            return False
+    if ladder_program_id and class_session.get("program_id") != ladder_program_id:
+        return False
+    return True
+
+
 class BeltEligibilityCalculator:
     def __init__(self, supabase: Any):
         self.supabase = supabase
@@ -180,22 +206,16 @@ class BeltEligibilityCalculator:
                     continue
 
                 for context in contexts:
-                    promotion_date = parsed_promotion_dates.get(context["context_key"])
-                    if promotion_date:
-                        checked_in_at = row.get("checked_in_at")
-                        if (
-                            not checked_in_at
-                            or self._parse_datetime(checked_in_at) < promotion_date
-                        ):
-                            continue
-
                     ladder_program_id = (ladder_meta.get(context["target_ladder_id"]) or {}).get(
                         "program_id"
                     )
-                    if ladder_program_id and class_session.get("program_id") != ladder_program_id:
-                        continue
-
-                    attendance_counts[context["context_key"]] += 1
+                    if attendance_earns_belt_credit(
+                        row,
+                        class_session,
+                        promotion_instant=parsed_promotion_dates.get(context["context_key"]),
+                        ladder_program_id=ladder_program_id,
+                    ):
+                        attendance_counts[context["context_key"]] += 1
 
         for student_id_chunk in self._chunked(unbounded_student_ids):
             process_attendance_rows(

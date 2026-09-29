@@ -270,7 +270,15 @@ INTELLIGENCE_INPUT_COLUMNS: Mapping[str, Mapping[str, tuple[str, ...]]] = _manif
         ),
         (
             "attendance",
-            _columns("id", "studio_id", "session_id", "student_id", "status", "checked_in_at"),
+            _columns(
+                "id",
+                "studio_id",
+                "session_id",
+                "student_id",
+                "status",
+                "checked_in_at",
+                "counts_toward_eligibility",
+            ),
         ),
     ),
     revenue_leakage=(

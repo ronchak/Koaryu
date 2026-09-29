@@ -5,13 +5,15 @@ from typing import Any, Optional
 from app.services.report_intelligence_helpers import (
     OPEN_LEAD_STAGES,
     _attendance_events,
-    _count_events,
+    _belt_credit_candidates,
+    _belt_credit_count,
+    _belt_credit_promotion,
+    _belt_credit_promotion_instant,
     _hygiene_row,
     _index_many,
     _index_one,
     _is_active_student,
     _parse_date,
-    _promotion_lookup,
     _student_name,
     _student_start_date,
 )
@@ -21,15 +23,16 @@ from app.services.student_age import is_minor_on_date
 def build_belt_momentum_testing_pipeline(
     data: dict[str, list[dict[str, Any]]], today: date
 ) -> list[dict[str, Any]]:
-    events = _attendance_events(data)
+    belt_credit_candidates = _belt_credit_candidates(data)
     students_by_id = _index_one(data.get("students", []), "id")
     programs_by_id = _index_one(data.get("programs", []), "id")
     ranks_by_id = _index_one(data.get("belt_ranks", []), "id")
     ranks_by_ladder = _index_many(data.get("belt_ranks", []), "ladder_id")
+    ladders_by_id = _index_one(data.get("belt_ladders", []), "id")
     ladders_by_program = {
         row.get("program_id"): row for row in data.get("belt_ladders", []) if row.get("program_id")
     }
-    latest_promotions = _promotion_lookup(data)
+    promotions_by_student = _index_many(data.get("promotions", []), "student_id")
     rows: list[dict[str, Any]] = []
 
     memberships = [row for row in data.get("memberships", []) if row.get("status") == "active"]
@@ -75,26 +78,32 @@ def build_belt_momentum_testing_pipeline(
             )
             next_rank = siblings[0] if siblings else None
 
-        promo_key = (
-            membership.get("id")
-            or f"student:{student.get('id')}:{membership.get('program_id') or ''}"
-        )
+        # One operationally matched promotion anchors both the exact credit
+        # boundary and the calendar-day display.
         latest_promotion = (
-            latest_promotions.get(promo_key)
-            or latest_promotions.get(
-                f"student:{student.get('id')}:{membership.get('program_id') or ''}"
+            _belt_credit_promotion(
+                promotions_by_student.get(student["id"], []),
+                membership_id=membership.get("id") or None,
+                program_id=membership.get("program_id"),
             )
             or {}
         )
         rank_start = (
-            latest_promotion.get("promoted_at_date")
+            _parse_date(latest_promotion.get("promoted_at"))
             or _parse_date(membership.get("started_at"))
             or _student_start_date(student)
         )
-        classes_since = (
-            _count_events(events, student_id=student["id"], start=rank_start, end=today)
-            if rank_start
-            else _count_events(events, student_id=student["id"], end=today)
+        target_ladder_id = (
+            next_rank.get("ladder_id")
+            if next_rank
+            else current_rank.get("ladder_id")
+            if current_rank
+            else None
+        )
+        classes_since = _belt_credit_count(
+            belt_credit_candidates.get(student["id"], []),
+            promotion_instant=_belt_credit_promotion_instant(latest_promotion),
+            ladder_program_id=(ladders_by_id.get(target_ladder_id) or {}).get("program_id"),
         )
         days_at_rank = (today - rank_start).days if rank_start else ""
         required_classes = int(next_rank.get("min_classes") or 0) if next_rank else 0

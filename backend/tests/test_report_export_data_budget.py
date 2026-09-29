@@ -27,7 +27,15 @@ EXPECTED_COLUMNS = json.loads(FIXTURE_PATH.read_text(encoding="utf-8"))
 # Explicitly bounded to relations reachable from the report source vocabulary.
 # This is a review contract, not a general schema parser.
 SOURCE_VOCABULARY_COLUMNS = {
-    "attendance": {"id", "studio_id", "session_id", "student_id", "status", "checked_in_at"},
+    "attendance": {
+        "id",
+        "studio_id",
+        "session_id",
+        "student_id",
+        "status",
+        "checked_in_at",
+        "counts_toward_eligibility",
+    },
     "belt_ladders": {"id", "studio_id", "program_id"},
     "belt_ranks": {
         "id",
