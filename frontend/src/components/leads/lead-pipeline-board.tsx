@@ -20,7 +20,8 @@ interface LeadPipelineBoardProps {
   canConvertLeads: boolean;
   canManageLeads: boolean;
   leads: Lead[];
-  pendingLeadId: string | null;
+  pendingLeadIds: ReadonlySet<string>;
+  recoveringLeadIds: ReadonlySet<string>;
   programById: Map<string, Program>;
   selectedLeadId: string | null;
   staffById: Map<string, StaffMember>;
@@ -95,7 +96,8 @@ export function LeadPipelineBoard({
   canConvertLeads,
   canManageLeads,
   leads,
-  pendingLeadId,
+  pendingLeadIds,
+  recoveringLeadIds,
   programById,
   selectedLeadId,
   staffById,
@@ -171,7 +173,7 @@ export function LeadPipelineBoard({
                   const owner = lead.assigned_staff_id
                     ? staffById.get(lead.assigned_staff_id)
                     : null;
-                  const isPending = pendingLeadId === lead.id;
+                  const isPending = pendingLeadIds.has(lead.id);
                   const isSelected = selectedLeadId === lead.id;
                   return (
                     <li
@@ -184,7 +186,7 @@ export function LeadPipelineBoard({
                         type="button"
                         data-lead-id={lead.id}
                         className={styles.queueLead}
-                        disabled={isPending}
+                        disabled={isPending && !recoveringLeadIds.has(lead.id)}
                         aria-pressed={isSelected}
                         onClick={() => onSelectLead(lead.id)}
                       >

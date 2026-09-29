@@ -32,7 +32,9 @@ interface LeadDetailInspectorProps {
   lead: Lead;
   leadActionError: string | null;
   leadActionMessage: string | null;
-  pendingLeadId: string | null;
+  pendingLeadIds: ReadonlySet<string>;
+  followUpRecovery: "unknown" | "confirmed" | null;
+  onRetryFollowUp: (lead: Lead) => void | Promise<void>;
   programById: Map<string, Program>;
   today: string;
   onAssignStaff: (lead: Lead, assignedStaffId: string | null) => void | Promise<void>;
@@ -60,7 +62,9 @@ export function LeadDetailInspector({
   lead,
   leadActionError,
   leadActionMessage,
-  pendingLeadId,
+  pendingLeadIds,
+  followUpRecovery,
+  onRetryFollowUp,
   programById,
   today,
   onAssignStaff,
@@ -76,7 +80,7 @@ export function LeadDetailInspector({
   onStageSelection,
 }: LeadDetailInspectorProps) {
   const inspectorRef = useRef<HTMLElement>(null);
-  const isPending = pendingLeadId === lead.id;
+  const isPending = pendingLeadIds.has(lead.id);
   const nextStage = getNextStage(lead.stage);
   const [lostReason, setLostReason] = useState<LostReason>(lead.lost_reason ?? "other");
   const detailStageOptions =
@@ -107,7 +111,7 @@ export function LeadDetailInspector({
       ref={inspectorRef}
       className={styles.inspector}
       aria-labelledby="lead-detail-title"
-      aria-busy={isPending || undefined}
+      aria-busy={(isPending && !followUpRecovery) || undefined}
       tabIndex={-1}
       onKeyDown={(event) => {
         if (event.key !== "Escape") return;
@@ -124,7 +128,7 @@ export function LeadDetailInspector({
         <button
           type="button"
           onClick={handleClose}
-          disabled={isPending}
+          disabled={isPending && !followUpRecovery}
           aria-label="Close lead details"
           className={styles.inspectorClose}
         >
@@ -283,6 +287,19 @@ export function LeadDetailInspector({
               </Button>
             </div>
           ) : null}
+
+          {canManageLeads && followUpRecovery && (
+            <div role="status" className="space-y-2">
+              <p>
+                {followUpRecovery === "confirmed"
+                  ? "Follow-up saved. Refresh current lead details before making another change."
+                  : "Confirmation was lost. Retry the original follow-up before changing this lead."}
+              </p>
+              <Button variant="secondary" size="sm" onClick={() => void onRetryFollowUp(lead)}>
+                {followUpRecovery === "confirmed" ? "Refresh lead details" : "Retry follow-up"}
+              </Button>
+            </div>
+          )}
 
           {canManageLeads && lead.stage !== "closed_lost" && lead.stage !== "enrolled" && (
             <div className="flex flex-wrap gap-2">
