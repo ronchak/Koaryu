@@ -224,6 +224,37 @@ describe("reports page model", () => {
     assert.equal(model.uniqueAttendees, 2);
   });
 
+  it("keeps uncapped visits in reports without adding them to utilization", () => {
+    const model = buildReportsPageModel({
+      attendance: [],
+      leads: [],
+      programs: [program()],
+      sessions: [
+        session({ id: "capped", attendance_count: 12, capacity: 20 }),
+        session({ id: "unknown-capacity", attendance_count: 8, capacity: null }),
+        session({ id: "zero-capacity", attendance_count: 5, capacity: 0 }),
+        session({ id: "old", date: "2026-04-24", attendance_count: 100 }),
+        session({ id: "canceled", status: "canceled", attendance_count: 100 }),
+      ],
+      today: "2026-05-24",
+    });
+
+    assert.equal(model.attendanceMetrics.totalAttendance, 25);
+    assert.equal(model.attendanceMetrics.averageAttendance, 25 / 3);
+    assert.equal(model.attendanceMetrics.utilizationRate, 12 / 20);
+    assert.equal(model.programAttendanceRows[0].attendance, 25);
+    assert.equal(model.programAttendanceRows[0].attendanceWithCapacity, 12);
+    assert.equal(model.programAttendanceRows[0].capacity, 20);
+    assert.deepEqual(
+      model.sessionRows.map((row) => [row.id, row.utilization]),
+      [
+        ["capped", 12 / 20],
+        ["unknown-capacity", null],
+        ["zero-capacity", null],
+      ],
+    );
+  });
+
   it("sorts program lead rows by volume and label", () => {
     const rows = buildReportProgramLeadRows({
       leads: [

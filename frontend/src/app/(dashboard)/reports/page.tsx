@@ -317,7 +317,7 @@ export default function ReportsPage() {
                           fallback={row.label}
                         />
                         <p className="text-xs text-text-secondary mt-2">
-                          {row.sessions} sessions · {row.capacity > 0 ? `${formatReportPercent(row.attendance / row.capacity)} utilization` : "No capacity tracked"}
+                          {row.sessions} sessions · {row.capacity > 0 ? `${formatReportPercent(row.attendanceWithCapacity / row.capacity)} utilization` : "No capacity tracked"}
                         </p>
                       </div>
                       <p className="shrink-0 text-base font-semibold tabular-nums text-text-primary">
