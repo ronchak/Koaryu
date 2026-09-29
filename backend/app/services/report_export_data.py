@@ -103,6 +103,7 @@ INTELLIGENCE_INPUT_COLUMNS: Mapping[str, Mapping[str, tuple[str, ...]]] = _manif
                 "status",
                 "date",
                 "capacity",
+                "deleted_at",
             ),
         ),
         (
@@ -161,6 +162,7 @@ INTELLIGENCE_INPUT_COLUMNS: Mapping[str, Mapping[str, tuple[str, ...]]] = _manif
                 "status",
                 "date",
                 "capacity",
+                "deleted_at",
             ),
         ),
         (
@@ -187,6 +189,7 @@ INTELLIGENCE_INPUT_COLUMNS: Mapping[str, Mapping[str, tuple[str, ...]]] = _manif
                 "status",
                 "date",
                 "capacity",
+                "deleted_at",
             ),
         ),
         (
@@ -262,6 +265,7 @@ INTELLIGENCE_INPUT_COLUMNS: Mapping[str, Mapping[str, tuple[str, ...]]] = _manif
                 "status",
                 "date",
                 "capacity",
+                "deleted_at",
             ),
         ),
         (
@@ -382,6 +386,7 @@ INTELLIGENCE_INPUT_COLUMNS: Mapping[str, Mapping[str, tuple[str, ...]]] = _manif
                 "status",
                 "date",
                 "capacity",
+                "deleted_at",
             ),
         ),
         (
@@ -428,6 +433,7 @@ INTELLIGENCE_INPUT_COLUMNS: Mapping[str, Mapping[str, tuple[str, ...]]] = _manif
                 "status",
                 "date",
                 "capacity",
+                "deleted_at",
             ),
         ),
         (

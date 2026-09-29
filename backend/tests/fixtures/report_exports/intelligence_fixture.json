@@ -63,11 +63,13 @@
   "sessions": [
     {"id": "session-1", "name": "Adult Jiu-Jitsu", "date": "2026-05-30", "start_time": "18:00", "program_id": "program-1", "instructor_id": "staff-1", "capacity": 10, "status": "scheduled", "deleted_at": null},
     {"id": "session-canceled", "name": "Adult Jiu-Jitsu", "date": "2026-05-29", "start_time": "18:00", "program_id": "program-1", "instructor_id": "staff-1", "capacity": 10, "status": "canceled", "deleted_at": null},
-    {"id": "session-old", "name": "Adult Jiu-Jitsu", "date": "2026-03-01", "start_time": "18:00", "program_id": "program-1", "instructor_id": "staff-1", "capacity": 10, "status": "scheduled", "deleted_at": null}
+    {"id": "session-old", "name": "Adult Jiu-Jitsu", "date": "2026-03-01", "start_time": "18:00", "program_id": "program-1", "instructor_id": "staff-1", "capacity": 10, "status": "scheduled", "deleted_at": null},
+    {"id": "session-deleted", "name": "Adult Jiu-Jitsu", "date": "2026-05-31", "start_time": "18:00", "program_id": "program-1", "instructor_id": "staff-1", "capacity": 10, "status": "scheduled", "deleted_at": "2026-06-01T00:00:00Z"}
   ],
   "attendance": [
     {"id": "attendance-1", "session_id": "session-1", "student_id": "student-1", "status": "present", "checked_in_at": "2026-05-30T18:00:00Z"},
     {"id": "attendance-canceled", "session_id": "session-canceled", "student_id": "student-2", "status": "present", "checked_in_at": "2026-05-29T18:00:00Z"},
+    {"id": "attendance-deleted", "session_id": "session-deleted", "student_id": "student-2", "status": "present", "checked_in_at": "2026-05-31T18:00:00Z"},
     {"id": "attendance-missing-session", "session_id": "session-does-not-exist", "student_id": "student-1", "status": "present", "checked_in_at": "2026-05-28T18:00:00Z"}
   ],
   "belt_ladders": [

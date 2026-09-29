@@ -11,10 +11,16 @@ from app.services.report_intelligence_helpers import (
 
 
 class ReportIntelligenceAttendanceIndexTest(unittest.TestCase):
-    def test_canceled_and_missing_session_events_keep_authoritative_semantics(self):
+    def test_invalid_sessions_are_excluded_but_missing_sessions_keep_timestamp_fallback(self):
         data = {
             "sessions": [
                 {"id": "canceled", "date": "2026-05-29", "status": "canceled", "name": "Canceled"},
+                {
+                    "id": "deleted",
+                    "date": "2026-05-27",
+                    "status": "scheduled",
+                    "deleted_at": "2026-05-31T00:00:00Z",
+                },
                 {"id": "normal", "date": "2026-05-30", "status": "scheduled", "name": "Normal"},
             ],
             "attendance": [
@@ -30,6 +36,13 @@ class ReportIntelligenceAttendanceIndexTest(unittest.TestCase):
                     "student_id": "student-1",
                     "status": "present",
                     "checked_in_at": "2026-05-29T18:00:00Z",
+                },
+                {
+                    "id": "deleted-event",
+                    "session_id": "deleted",
+                    "student_id": "student-1",
+                    "status": "present",
+                    "checked_in_at": "2026-05-27T18:00:00Z",
                 },
                 {
                     "id": "missing-event",
@@ -50,22 +63,19 @@ class ReportIntelligenceAttendanceIndexTest(unittest.TestCase):
 
         index = _attendance_events(data)
 
+        self.assertEqual(["missing-event", "normal-event"], [event["id"] for event in index])
+        self.assertEqual(date(2026, 5, 28), index.events[0]["event_date"])
+        self.assertEqual("missing", index.events[0]["session_id"])
         self.assertEqual(
-            ["canceled-event", "missing-event", "normal-event"], [event["id"] for event in index]
-        )
-        self.assertEqual(date(2026, 5, 29), index.events[0]["event_date"])
-        self.assertEqual("canceled", index.events[0]["session_status"])
-        self.assertEqual(date(2026, 5, 28), index.events[1]["event_date"])
-        self.assertEqual("missing", index.events[1]["session_id"])
-        self.assertEqual(
-            3,
+            2,
             _count_events(
                 index, student_id="student-1", start=date(2026, 5, 28), end=date(2026, 5, 30)
             ),
         )
         self.assertEqual(date(2026, 5, 28), _last_first_visit(index, "student-1", first=True))
         self.assertEqual(date(2026, 5, 30), _last_event_date(index, "student-1"))
-        self.assertEqual(1, len(index.events_by_session["canceled"]))
+        self.assertNotIn("canceled", index.events_by_session)
+        self.assertNotIn("deleted", index.events_by_session)
         self.assertEqual(1, len(index.events_by_session["normal"]))
 
     def test_student_risk_queries_scale_with_students_not_attendance_rows(self):

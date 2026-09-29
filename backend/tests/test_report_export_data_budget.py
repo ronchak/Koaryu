@@ -163,6 +163,8 @@ class ReportExportDataBudgetTest(unittest.TestCase):
                         for key, columns in INTELLIGENCE_INPUT_COLUMNS[report_id].items()
                     },
                 )
+                if "attendance" in expected_sources:
+                    self.assertTrue({"status", "deleted_at"} <= set(expected_sources["sessions"]))
 
     def test_each_intelligence_report_queries_only_declared_relations_and_columns(self):
         catalog = build_report_catalog(ReportExportService)

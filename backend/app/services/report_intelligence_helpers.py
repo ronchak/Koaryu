@@ -128,6 +128,8 @@ class AttendanceEventIndex:
             if record.get("status") == "absent":
                 continue
             session = sessions_by_id.get(record.get("session_id")) or {}
+            if session.get("status") == "canceled" or session.get("deleted_at") is not None:
+                continue
             event_date = _parse_date(session.get("date")) or _parse_date(
                 record.get("checked_in_at")
             )
