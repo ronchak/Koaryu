@@ -655,10 +655,20 @@ def build_import_row_plan(
 
     resolved_program_id = plan.get("resolved_program_id")
     resolved_belt_rank_id = plan.get("resolved_belt_rank_id")
-    if resolved_program_id and resolved_belt_rank_id and belt_rank_lookup:
+    if resolved_belt_rank_id and belt_rank_lookup:
         belt_meta = belt_rank_lookup["rank_meta"].get(resolved_belt_rank_id) or {}
         belt_program_id = belt_meta.get("program_id")
-        if belt_program_id and belt_program_id != resolved_program_id:
+        if belt_program_id and not resolved_program_id:
+            row_issues.append(
+                make_import_issue(
+                    "program_required_for_belt",
+                    "This Current Belt belongs to a program. Map or select the matching Program before importing this row.",
+                    field="program_id",
+                    value=raw_program,
+                    suggested_action="Map or select the Program that owns this Current Belt.",
+                )
+            )
+        elif belt_program_id and belt_program_id != resolved_program_id:
             row_issues.append(
                 make_import_issue(
                     "belt_program_mismatch",

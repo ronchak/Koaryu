@@ -7,6 +7,7 @@ from fastapi import HTTPException
 
 from app.schemas.student import CsvImportOptions, CsvImportResult
 from app.services.student_import_executor import StudentImportExecutor
+from app.services.student_service import StudentService
 from tests.fakes.supabase import TableBackedSupabase
 
 RUN = "44444444-4444-4444-8444-444444444444"
@@ -83,6 +84,50 @@ def finish(params):
         "execution_status": "completed_with_warnings",
     }
     return [{"updated": True, "run_row": {"result_json": saved}}]
+
+
+@pytest.mark.parametrize("belt_value", ["Green", "66666666-6666-4666-8666-666666666666"])
+def test_scoped_belt_without_program_preview_and_execution_write_no_student(belt_value):
+    db = ScriptedImportDb()
+    db.tables["belt_ladders"] = [
+        {"id": "ladder_bjj", "studio_id": STUDIO, "program_id": OTHER, "name": "BJJ"}
+    ]
+    db.tables["belt_ranks"] = [
+        {
+            "id": "66666666-6666-4666-8666-666666666666",
+            "studio_id": STUDIO,
+            "ladder_id": "ladder_bjj",
+            "name": "Green",
+        }
+    ]
+    row = {"First": "Ava", "Last": "Nguyen", "Belt": belt_value}
+    before = deepcopy(db.tables)
+
+    preview = StudentService(db).validate_import_rows([row], MAPPING, CsvImportOptions(), STUDIO)
+    assert preview.error_rows == 1 and preview.valid_rows == 0
+    assert any(
+        issue.code == "program_required_for_belt" and issue.field == "program_id"
+        for issue in preview.errors[0].issues
+    )
+    assert not db.calls
+    assert db.tables == before
+    assert all(
+        not query["insert"] and not query["update"] and not query["upsert"]
+        for query in db.query_log
+    )
+
+    db.responses = [
+        ("claim_student_import_run_v2", claim()),
+        ("finish_student_import_run", finish),
+    ]
+    result = db.execute_import([row])
+    assert result.error_rows == 1 and result.imported_count == 0
+    assert [name for name, _ in db.calls] == [
+        "claim_student_import_run_v2",
+        "finish_student_import_run",
+    ]
+    assert db.tables == before
+    assert not db.responses
 
 
 def test_unknown_row_failure_retries_same_key_and_preloads_original_outcomes():
