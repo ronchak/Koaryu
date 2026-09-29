@@ -235,7 +235,7 @@ A fresh pre-apply backup and verified disposable restore are mandatory. Stop on 
 
 Executable changes retain exact-head CI and independent review. Documentation-only closeout uses focused verification and review without a required full-suite wait. Preserve branch protections, the guarded merge and production auto-deploy off readback. Tenant isolation, authorization, payment safety and idempotency remain unchanged. The existing prohibition on running contract or migration SQL against production remains. Only the guarded rollout tool's authorized apply is an exception for migrations; contract SQL is never allowed. No historical financial backfill.
 
-Private operator guidance must agree with this policy. The [proposed operator-policy diff](remediation/operator-governance-proposal.patch) is reviewable; the private runbooks remain unchanged. The owner's explicit authorization governs this run while those notes await alignment.
+The owner reaffirmed this coordinating-agent authority on September 29, 2026. The global Home Server instructions and private release/authentication runbooks now agree with this policy; their stale human-only migration restriction has been removed. The [earlier operator-policy proposal](remediation/operator-governance-proposal.patch) is historical. Existing script-specific billing terminal gates and all technical release gates remain.
 
 ## Traps that will not refuse you
 

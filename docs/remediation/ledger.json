@@ -2,7 +2,7 @@
   "schema_version": 1,
   "mission": "Controlled Koaryu reliability and maintainability remediation",
   "audit_sha": "c5742fe393a8bfb3a1faddb1f488e46a00bd5091",
-  "last_reconciled_main": "62f44b9fc24ed68d1367af2017167a4c49e8ed89",
+  "last_reconciled_main": "ba45fbf3392a7ebf2ec5c4e9bd52e596f1cc0fab",
   "audit_catalogue_sha256": "c838a67bcb1070dd3004fa0bb54663abbd293b400ac7c78f6263e20962ff8d54",
   "dispositions": [
     "pending",
@@ -909,11 +909,11 @@
       "id": "OPS1-03",
       "title": "Lead history records a stage change before the stage is saved",
       "cluster": "lead_and_schedule_commands",
-      "disposition": "pending",
-      "reason": "Ordinary stage updates still commit activity before updating the lead. Failure leaves false history; concurrent updates can record stale prior stages.",
+      "disposition": "fixed",
+      "reason": "V52 owns lead edit/history and keyed follow-up effects atomically. Provider-lifetime per-row UI ownership retains the exact UUID/target through remount and unknown outcomes, with current-row reconciliation and real absent-lead HTTP semantics.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
+      "verified_against": "151066c47710e18922fd2ea111e05a0eb56f10b3",
       "source_paths": [
         "backend/app/services/lead_service.py"
       ],
@@ -926,17 +926,12 @@
       ],
       "current_evidence": [
         {
-          "path": "backend/app/services/lead_service.py",
-          "line": 104,
-          "observation": "Stage-change activity is inserted before the separate lead update at line 114."
-        },
-        {
-          "path": "backend/app/api/v1/endpoints/leads.py",
-          "line": 77,
-          "observation": "The authorized PATCH endpoint still invokes this service path."
+          "path": "docs/remediation/everyday-correctness-verification.md",
+          "line": 10,
+          "observation": "V52 owns lead edit/history and keyed follow-up effects atomically. Provider-lifetime per-row UI ownership retains the exact UUID/target through remount and unknown outcomes, with current-row reconciliation and real absent-lead HTTP semantics."
         }
       ],
-      "next_change": "Commit the tenant-scoped lead update and transition history in one transaction, deriving the prior stage under a row lock. Coordinate with the separate follow-up command boundary.",
+      "next_change": "None for this finding. Deployment requires the separate exact-candidate release gates.",
       "validation_plan": "Inject update failure and assert no transition history commits; exercise concurrent transitions against a disposable database.",
       "scope_constraints": [
         "Atomic lead conversion",
@@ -945,7 +940,8 @@
       ],
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
       "normalization_track": "Astra",
-      "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra."
+      "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra.",
+      "verification": "Reviewed integrated source and meaningful regression tests; combined frontend 1,033 tests and backend 2,052 tests pass. V52/V53 focused strict SQL restore and concurrency proof pass. Full-chain, performance and exact-head CI remain mandatory release gates. See docs/remediation/everyday-correctness-verification.md and the candidate PR."
     },
     {
       "id": "OPS1-04",
@@ -1090,12 +1086,12 @@
       "id": "OPS1-07",
       "title": "Exported belt readiness uses different attendance rules from the belt screen",
       "cluster": "business_dates_and_metrics",
-      "disposition": "pending",
-      "reason": "The available belt export still counts student-wide visits using calendar-date boundaries, while operational eligibility applies program, credit and exact promotion-time rules.",
+      "disposition": "fixed",
+      "reason": "Belt export shares operational credit rules, program scope, exact promotion/check-in instants and one selected promotion, while keeping date-only display math separate.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
-      "verification": "Current source and relevant callers inspected; see current_evidence. No new runtime tests or hosted operations during normalization.",
+      "verified_against": "151066c47710e18922fd2ea111e05a0eb56f10b3",
+      "verification": "Reviewed integrated source and meaningful regression tests; combined frontend 1,033 tests and backend 2,052 tests pass. V52/V53 focused strict SQL restore and concurrency proof pass. Full-chain, performance and exact-head CI remain mandatory release gates. See docs/remediation/everyday-correctness-verification.md and the candidate PR.",
       "source_paths": [
         "backend/app/services/report_intelligence_operations.py",
         "backend/app/services/report_export_data.py",
@@ -1109,22 +1105,12 @@
       ],
       "current_evidence": [
         {
-          "path": "backend/app/services/report_intelligence_operations.py",
-          "line": 63,
-          "observation": "classes_since uses a date-truncated rank boundary and student-only event counting."
-        },
-        {
-          "path": "backend/app/services/report_export_data.py",
-          "line": 84,
-          "observation": "The belt report attendance projection omits counts_toward_eligibility."
-        },
-        {
-          "path": "backend/app/services/belt_eligibility.py",
-          "line": 167,
-          "observation": "Operational eligibility rejects excluded credit and applies promotion timestamp and ladder-program filters."
+          "path": "docs/remediation/everyday-correctness-verification.md",
+          "line": 13,
+          "observation": "Belt export shares operational credit rules, program scope, exact promotion/check-in instants and one selected promotion, while keeping date-only display math separate."
         }
       ],
-      "next_change": "Supply required credit/session facts and reuse or extract operational eligibility counting for the export. Keep display-day calculations separate from exact promotion boundaries.",
+      "next_change": "None for this finding. Deployment requires the separate exact-candidate release gates.",
       "validation_plan": "Export/screen parity for cross-program attendance, explicit false credit and attendance before versus after a same-day promotion.",
       "scope_constraints": "Preserve approval requirements, membership semantics and export access/budgets. Do not change program dates or invent enrollment ordering.",
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
@@ -1135,12 +1121,12 @@
       "id": "OPS1-08",
       "title": "Intelligence attendance totals still count canceled or deleted classes",
       "cluster": "business_dates_and_metrics",
-      "disposition": "pending",
-      "reason": "The shared intelligence index still accepts attendance attached to canceled or deleted sessions, affecting derived visit and risk metrics.",
+      "disposition": "fixed",
+      "reason": "Intelligence consumers fetch session deletion facts and exclude known canceled/deleted visits. Reasoned goldens and operational parity tests preserve general missing-session fallback but not nonexistent-session belt credit.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
-      "verification": "Current source and relevant callers inspected; see current_evidence. No new runtime tests or hosted operations during normalization.",
+      "verified_against": "151066c47710e18922fd2ea111e05a0eb56f10b3",
+      "verification": "Reviewed integrated source and meaningful regression tests; combined frontend 1,033 tests and backend 2,052 tests pass. V52/V53 focused strict SQL restore and concurrency proof pass. Full-chain, performance and exact-head CI remain mandatory release gates. See docs/remediation/everyday-correctness-verification.md and the candidate PR.",
       "source_paths": [
         "backend/app/services/report_intelligence_helpers.py",
         "backend/app/services/report_export_data.py",
@@ -1154,22 +1140,12 @@
       ],
       "current_evidence": [
         {
-          "path": "backend/app/services/report_intelligence_helpers.py",
-          "line": 122,
-          "observation": "Index construction rejects absent records but never rejects canceled/deleted sessions."
-        },
-        {
-          "path": "backend/app/services/report_export_data.py",
-          "line": 56,
-          "observation": "The churn report session projection omits deleted_at; several other index consumers do likewise."
-        },
-        {
-          "path": "backend/app/services/schedule_service.py",
-          "line": 547,
-          "observation": "Session deletion updates deleted_at and status to canceled while retaining attendance."
+          "path": "docs/remediation/everyday-correctness-verification.md",
+          "line": 13,
+          "observation": "Intelligence consumers fetch session deletion facts and exclude known canceled/deleted visits. Reasoned goldens and operational parity tests preserve general missing-session fallback but not nonexistent-session belt credit."
         }
       ],
-      "next_change": "Fetch status/deleted_at for every intelligence index consumer and reject known canceled/deleted sessions centrally.",
+      "next_change": "None for this finding. Deployment requires the separate exact-candidate release gates.",
       "validation_plan": "One shared fixture comparing valid, canceled and deleted attendance across owner visits, churn and belt export.",
       "scope_constraints": "Preserve raw historical exports, tenant scoping and credit-specific rules. Do not silently redefine missing-session fallback.",
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
@@ -1224,12 +1200,12 @@
       "id": "OPS1-10",
       "title": "Exports calculate business-day windows using the server timezone",
       "cluster": "business_dates_and_metrics",
-      "disposition": "pending",
-      "reason": "Exports still use server today and represented timestamp dates, independently of the authorized studio's calendar.",
+      "disposition": "fixed",
+      "reason": "Authorized exports resolve one budgeted studio calendar and thread its timezone into timestamp-derived windows/displays, preserving literal date fields and absolute belt-credit instants.",
       "audit_importance": "low",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
-      "verification": "Current source and relevant callers inspected; see current_evidence. No new runtime tests or hosted operations during normalization.",
+      "verified_against": "151066c47710e18922fd2ea111e05a0eb56f10b3",
+      "verification": "Reviewed integrated source and meaningful regression tests; combined frontend 1,033 tests and backend 2,052 tests pass. V52/V53 focused strict SQL restore and concurrency proof pass. Full-chain, performance and exact-head CI remain mandatory release gates. See docs/remediation/everyday-correctness-verification.md and the candidate PR.",
       "source_paths": [
         "backend/app/services/report_export_service.py",
         "backend/app/services/report_intelligence_helpers.py",
@@ -1244,22 +1220,12 @@
       ],
       "current_evidence": [
         {
-          "path": "backend/app/services/report_export_service.py",
-          "line": 191,
-          "observation": "Default today is date.today(); intelligence builders receive this value."
-        },
-        {
-          "path": "backend/app/services/report_intelligence_helpers.py",
-          "line": 24,
-          "observation": "Timestamp parsing takes .date() without conversion into studio time."
-        },
-        {
-          "path": "backend/app/api/v1/endpoints/reports.py",
-          "line": 44,
-          "observation": "The active route constructs the service without an explicit date or timezone."
+          "path": "docs/remediation/everyday-correctness-verification.md",
+          "line": 12,
+          "observation": "Authorized exports resolve one budgeted studio calendar and thread its timezone into timestamp-derived windows/displays, preserving literal date fields and absolute belt-credit instants."
         }
       ],
-      "next_change": "After studio authorization, resolve its business date/timezone once and pass them through export builders; distinguish date-only values from timestamp conversion.",
+      "next_change": "None for this finding. Deployment requires the separate exact-candidate release gates.",
       "validation_plan": "Fixed instant with server/studio dates differing; verify window edges and timestamp-derived dates while session dates remain unchanged.",
       "scope_constraints": "Preserve export authorization, resource budgets, family-level financial attribution and confirmed provider facts. No financial backfill.",
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
@@ -1494,11 +1460,11 @@
       "id": "OPS2-02",
       "title": "Schedule template edits cannot clear optional fields",
       "cluster": "lead_and_schedule_commands",
-      "disposition": "pending",
-      "reason": "Template and studio services still discard explicit nulls accepted by their update schemas. This is an API defect; current schedule UI exposure is limited.",
+      "disposition": "fixed",
+      "reason": "Explicit null clears are preserved separately from omissions; required nulls are rejected, merged template time/date constraints checked, and studio owner-transfer checks retained.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
+      "verified_against": "151066c47710e18922fd2ea111e05a0eb56f10b3",
       "source_paths": [
         "backend/app/services/schedule_service.py",
         "backend/app/schemas/schedule.py",
@@ -1512,22 +1478,12 @@
       ],
       "current_evidence": [
         {
-          "path": "backend/app/services/schedule_service.py",
-          "line": 307,
-          "observation": "exclude_none removes clear requests for end_date, instructor_id, program_id and capacity."
-        },
-        {
-          "path": "backend/app/schemas/schedule.py",
-          "line": 75,
-          "observation": "The update model accepts null for those fields."
-        },
-        {
-          "path": "backend/app/services/studio_service.py",
-          "line": 64,
-          "observation": "Studio updates also drop null, preventing logo_url clearing."
+          "path": "docs/remediation/everyday-correctness-verification.md",
+          "line": 9,
+          "observation": "Explicit null clears are preserved separately from omissions; required nulls are rejected, merged template time/date constraints checked, and studio owner-transfer checks retained."
         }
       ],
-      "next_change": "Serialize explicitly supplied fields, allow null only for clearable columns, and validate existing time/date constraints against the merged template. Apply the same omission distinction to logo_url.",
+      "next_change": "None for this finding. Deployment requires the separate exact-candidate release gates.",
       "validation_plan": "Service cases for omitted/null/value updates, mixed clear-and-edit payloads, required-field null rejection and unchanged owner-transfer enforcement.",
       "scope_constraints": [
         "Owner-transfer authorization",
@@ -1537,7 +1493,8 @@
       ],
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
       "normalization_track": "Astra",
-      "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra."
+      "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra.",
+      "verification": "Reviewed integrated source and meaningful regression tests; combined frontend 1,033 tests and backend 2,052 tests pass. V52/V53 focused strict SQL restore and concurrency proof pass. Full-chain, performance and exact-head CI remain mandatory release gates. See docs/remediation/everyday-correctness-verification.md and the candidate PR."
     },
     {
       "id": "OPS2-03",
@@ -3786,12 +3743,12 @@
       "id": "BT1-01",
       "title": "Report golden files preserve inconsistent attendance and belt-credit rules",
       "cluster": "business_dates_and_metrics",
-      "disposition": "pending",
-      "reason": "Current goldens and consuming assertions still preserve canceled-session visits and belt credit. Earlier rank-test cleanup did not remove this gap.",
+      "disposition": "fixed",
+      "reason": "Intelligence consumers fetch session deletion facts and exclude known canceled/deleted visits. Reasoned goldens and operational parity tests preserve general missing-session fallback but not nonexistent-session belt credit.",
       "audit_importance": "medium",
       "evidence_role": "supporting",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
-      "verification": "Current source and relevant callers inspected; see current_evidence. No new runtime tests or hosted operations during normalization.",
+      "verified_against": "151066c47710e18922fd2ea111e05a0eb56f10b3",
+      "verification": "Reviewed integrated source and meaningful regression tests; combined frontend 1,033 tests and backend 2,052 tests pass. V52/V53 focused strict SQL restore and concurrency proof pass. Full-chain, performance and exact-head CI remain mandatory release gates. See docs/remediation/everyday-correctness-verification.md and the candidate PR.",
       "source_paths": [
         "backend/tests/fixtures/report_exports/intelligence_fixture.json",
         "backend/tests/fixtures/report_exports/intelligence_expected_csv.json",
@@ -3807,22 +3764,12 @@
       ],
       "current_evidence": [
         {
-          "path": "backend/tests/test_report_export_contract.py",
-          "line": 163,
-          "observation": "A named test explicitly preserves canceled/missing-session semantics and three owner visits."
-        },
-        {
-          "path": "backend/tests/fixtures/report_exports/intelligence_expected_csv.json",
-          "line": 6,
-          "observation": "The canceled-session student receives one class toward rank progression."
-        },
-        {
-          "path": "backend/tests/test_belt_service.py",
-          "line": 133,
-          "observation": "Operational eligibility's current scenario excludes canceled and deleted sessions."
+          "path": "docs/remediation/everyday-correctness-verification.md",
+          "line": 13,
+          "observation": "Intelligence consumers fetch session deletion facts and exclude known canceled/deleted visits. Reasoned goldens and operational parity tests preserve general missing-session fallback but not nonexistent-session belt credit."
         }
       ],
-      "next_change": "Correct canceled/deleted-session and eligibility-credit golden values with OPS1-07/08. Keep the existing missing-session fallback separate until its real contract is traced; do not infer that it should be deleted merely because other sessions are excluded.",
+      "next_change": "None for this finding. Deployment requires the separate exact-candidate release gates.",
       "validation_plan": "Focused report contract and eligibility scenarios using the same attendance facts.",
       "scope_constraints": "Keep CSV byte formatting, formula-injection protection and independent semantic assertions; do not merely regenerate goldens from current output.",
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
@@ -4823,11 +4770,11 @@
       "id": "BT3-06",
       "title": "Lead tests cover atomic conversion but not ordinary stage-change failure",
       "cluster": "lead_and_schedule_commands",
-      "disposition": "pending",
-      "reason": "Dedicated service tests still exercise conversion rather than ordinary stage-update failure. This supports the unresolved lead atomicity defect, not a separate implementation project.",
+      "disposition": "fixed",
+      "reason": "V52 owns lead edit/history and keyed follow-up effects atomically. Provider-lifetime per-row UI ownership retains the exact UUID/target through remount and unknown outcomes, with current-row reconciliation and real absent-lead HTTP semantics.",
       "audit_importance": "medium",
       "evidence_role": "supporting",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
+      "verified_against": "151066c47710e18922fd2ea111e05a0eb56f10b3",
       "source_paths": [
         "backend/tests/test_lead_service.py",
         "backend/app/services/lead_service.py"
@@ -4841,17 +4788,12 @@
       ],
       "current_evidence": [
         {
-          "path": "backend/tests/test_lead_service.py",
-          "line": 145,
-          "observation": "The two test methods cover deterministic conversion repair and minor conversion."
-        },
-        {
-          "path": "backend/app/services/lead_service.py",
-          "line": 104,
-          "observation": "Ordinary update still inserts history before saving the lead."
+          "path": "docs/remediation/everyday-correctness-verification.md",
+          "line": 10,
+          "observation": "V52 owns lead edit/history and keyed follow-up effects atomically. Provider-lifetime per-row UI ownership retains the exact UUID/target through remount and unknown outcomes, with current-row reconciliation and real absent-lead HTTP semantics."
         }
       ],
-      "next_change": "Add ordinary-transition rollback and concurrent-prior-stage coverage with OPS1-03; include follow-up retry coverage with FSH2-03.",
+      "next_change": "None for this finding. Deployment requires the separate exact-candidate release gates.",
       "validation_plan": "Ensure the regression fails against the current split-write behavior and passes only when committed state and history agree.",
       "scope_constraints": [
         "Existing conversion tests",
@@ -4860,7 +4802,8 @@
       ],
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
       "normalization_track": "Astra",
-      "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra."
+      "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra.",
+      "verification": "Reviewed integrated source and meaningful regression tests; combined frontend 1,033 tests and backend 2,052 tests pass. V52/V53 focused strict SQL restore and concurrency proof pass. Full-chain, performance and exact-head CI remain mandatory release gates. See docs/remediation/everyday-correctness-verification.md and the candidate PR."
     },
     {
       "id": "BT3-07",
@@ -6837,12 +6780,12 @@
       "id": "FT2-01",
       "title": "Utilization tests make an incorrect business calculation the expected result",
       "cluster": "business_dates_and_metrics",
-      "disposition": "pending",
-      "reason": "The utilization tests still require the unmatched numerator and denominator. They remain supporting evidence for the unfixed production calculation.",
+      "disposition": "fixed",
+      "reason": "Reports and affected CSV utilization use attendance from the same positive-capacity eligible sessions as the denominator, preserving uncapped totals and true over-capacity percentages.",
       "audit_importance": "medium",
       "evidence_role": "supporting",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
-      "verification": "Current source and relevant callers inspected; see current_evidence. No new runtime tests or hosted operations during normalization.",
+      "verified_against": "151066c47710e18922fd2ea111e05a0eb56f10b3",
+      "verification": "Reviewed integrated source and meaningful regression tests; combined frontend 1,033 tests and backend 2,052 tests pass. V52/V53 focused strict SQL restore and concurrency proof pass. Full-chain, performance and exact-head CI remain mandatory release gates. See docs/remediation/everyday-correctness-verification.md and the candidate PR.",
       "source_paths": [
         "frontend/tests/report-metrics.test.mjs"
       ],
@@ -6854,17 +6797,12 @@
       ],
       "current_evidence": [
         {
-          "path": "frontend/tests/report-metrics.test.mjs",
-          "line": 17,
-          "observation": "Expected utilization is 25/20 although only 12 attendees belong to the capped session."
-        },
-        {
-          "path": "frontend/tests/report-metrics.test.mjs",
-          "line": 47,
-          "observation": "The program scenario expects 5.5 from capped and uncapped attendance combined."
+          "path": "docs/remediation/everyday-correctness-verification.md",
+          "line": 11,
+          "observation": "Reports and affected CSV utilization use attendance from the same positive-capacity eligible sessions as the denominator, preserving uncapped totals and true over-capacity percentages."
         }
       ],
-      "next_change": "Alongside FSH2-05, expect 12/20 overall and 10/20 for the program fixture; retain all-session attendance and average assertions.",
+      "next_change": "None for this finding. Deployment requires the separate exact-candidate release gates.",
       "validation_plan": "Focused report metrics tests including uncapped-only sessions and legitimate attendance above a known cap.",
       "scope_constraints": "Do not clamp utilization to 100% or discard uncapped attendance from totals.",
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
@@ -7362,12 +7300,12 @@
       "id": "FR1-02",
       "title": "Route-level saves repeat the lost-draft ownership defect",
       "cluster": "read_and_mutation_ownership",
-      "disposition": "pending",
-      "reason": "Studio-name and support inputs remain editable during submission, while successful completion resets their drafts unconditionally.",
+      "disposition": "fixed",
+      "reason": "Submitted settings/support drafts and same-tick submissions share synchronous ownership; controls stay locked until settlement and failure retains the submitted draft.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
-      "verification": "Current source and relevant callers inspected; see current_evidence and prior merged implementation evidence. No runtime test or hosted activity during normalization.",
+      "verified_against": "151066c47710e18922fd2ea111e05a0eb56f10b3",
+      "verification": "Reviewed integrated source and meaningful regression tests; combined frontend 1,033 tests and backend 2,052 tests pass. V52/V53 focused strict SQL restore and concurrency proof pass. Full-chain, performance and exact-head CI remain mandatory release gates. See docs/remediation/everyday-correctness-verification.md and the candidate PR.",
       "source_paths": [
         "frontend/src/app/(dashboard)/settings/page.tsx",
         "frontend/src/app/(dashboard)/help/contact/page.tsx"
@@ -7381,17 +7319,12 @@
       ],
       "current_evidence": [
         {
-          "path": "frontend/src/app/(dashboard)/settings/page.tsx",
-          "line": 140,
-          "observation": "Save completion restores the submitted name and clears dirty state; the input at line 267 remains enabled."
-        },
-        {
-          "path": "frontend/src/app/(dashboard)/help/contact/page.tsx",
-          "line": 208,
-          "observation": "Success clears all text fields; subject/details inputs remain editable during submission."
+          "path": "docs/remediation/everyday-correctness-verification.md",
+          "line": 7,
+          "observation": "Submitted settings/support drafts and same-tick submissions share synchronous ownership; controls stay locked until settlement and failure retains the submitted draft."
         }
       ],
-      "next_change": "Freeze each submitted form's draft-mutating controls until settlement, or clear only the submitted revision. Retain drafts on failure.",
+      "next_change": "None for this finding. Deployment requires the separate exact-candidate release gates.",
       "validation_plan": "Delay each save, attempt newer typing, then resolve success and rejection; verify no accepted draft is silently discarded.",
       "scope_constraints": "Do not alter support routing, owner support-address decisions, mail infrastructure or studio authorization.",
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
@@ -9432,12 +9365,12 @@
       "id": "FC3-01",
       "title": "Roster bulk actions can overlap and close one another\u2019s panels",
       "cluster": "read_and_mutation_ownership",
-      "disposition": "pending",
-      "reason": "Bulk actions still have separate pending flags while selection and panel switching remain unrestricted. Earlier completion can close a newer panel or clear newer selection.",
+      "disposition": "fixed",
+      "reason": "One scoped bulk command captures IDs and payload, blocks competing controls, preserves partial/failure retry context and cannot publish into a replacement identity.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
-      "verification": "Current source and relevant callers inspected; see current_evidence and prior merged implementation evidence. No runtime test or hosted activity during normalization.",
+      "verified_against": "151066c47710e18922fd2ea111e05a0eb56f10b3",
+      "verification": "Reviewed integrated source and meaningful regression tests; combined frontend 1,033 tests and backend 2,052 tests pass. V52/V53 focused strict SQL restore and concurrency proof pass. Full-chain, performance and exact-head CI remain mandatory release gates. See docs/remediation/everyday-correctness-verification.md and the candidate PR.",
       "source_paths": [
         "frontend/src/components/students/student-roster-controls.tsx",
         "frontend/src/components/students/student-roster-page-content.tsx",
@@ -9449,27 +9382,12 @@
       "collapse_with": [],
       "current_evidence": [
         {
-          "path": "frontend/src/lib/students-page-controller.ts",
-          "line": 779,
-          "observation": "Selection changes have no bulk-operation guard."
-        },
-        {
-          "path": "frontend/src/lib/students-page-controller.ts",
-          "line": 824,
-          "observation": "Archive success clears selection and panel unconditionally."
-        },
-        {
-          "path": "frontend/src/lib/students-page-controller.ts",
-          "line": 867,
-          "observation": "Tag success clears the draft and panel without checking ownership."
-        },
-        {
-          "path": "frontend/src/components/students/student-roster-controls.tsx",
-          "line": 183,
-          "observation": "Toolbar allows changing action panels during another action."
+          "path": "docs/remediation/everyday-correctness-verification.md",
+          "line": 8,
+          "observation": "One scoped bulk command captures IDs and payload, blocks competing controls, preserves partial/failure retry context and cannot publish into a replacement identity."
         }
       ],
-      "next_change": "Introduce one synchronous bulk command owner with a captured selection/payload. Guard competing commands, selection and panel changes until owned settlement.",
+      "next_change": "None for this finding. Deployment requires the separate exact-candidate release gates.",
       "validation_plan": "Delay tags on A, attempt status/archive on B, then resolve or reject A; verify one owned command and preserved failure context.",
       "scope_constraints": "Preserve partial-result reporting, tenant checks, archive semantics and derived/paged roster refresh behavior.",
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
@@ -10541,11 +10459,11 @@
       "id": "FSH2-03",
       "title": "A lead follow-up writes successful history before the stage change succeeds",
       "cluster": "lead_and_schedule_commands",
-      "disposition": "pending",
-      "reason": "Mark Contacted and Advance still records successful advancement before a separate update or conversion. Fixing ordinary backend stage updates alone would leave this failure boundary.",
+      "disposition": "fixed",
+      "reason": "V52 owns lead edit/history and keyed follow-up effects atomically. Provider-lifetime per-row UI ownership retains the exact UUID/target through remount and unknown outcomes, with current-row reconciliation and real absent-lead HTTP semantics.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
+      "verified_against": "151066c47710e18922fd2ea111e05a0eb56f10b3",
       "source_paths": [
         "frontend/src/lib/leads-page-controller.ts",
         "backend/app/services/lead_service.py"
@@ -10559,17 +10477,12 @@
       ],
       "current_evidence": [
         {
-          "path": "frontend/src/lib/leads-page-controller.ts",
-          "line": 404,
-          "observation": "The activity claims the lead moved before conversion at line 412 or update at line 420."
-        },
-        {
-          "path": "backend/app/services/lead_service.py",
-          "line": 158,
-          "observation": "Activity POST independently inserts a row without an operation key."
+          "path": "docs/remediation/everyday-correctness-verification.md",
+          "line": 10,
+          "observation": "V52 owns lead edit/history and keyed follow-up effects atomically. Provider-lifetime per-row UI ownership retains the exact UUID/target through remount and unknown outcomes, with current-row reconciliation and real absent-lead HTTP semantics."
         }
       ],
-      "next_change": "Introduce one operation-keyed follow-up command covering contact history, follow-up clearing and requested advancement. Reuse atomic conversion within the enrolled path.",
+      "next_change": "None for this finding. Deployment requires the separate exact-candidate release gates.",
       "validation_plan": "Fail advancement after contact processing, retry the same operation and simulate a lost response; assert truthful history and no duplicate command effects.",
       "scope_constraints": [
         "Confirmed contact facts",
@@ -10579,17 +10492,18 @@
       ],
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
       "normalization_track": "Astra",
-      "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra."
+      "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra.",
+      "verification": "Reviewed integrated source and meaningful regression tests; combined frontend 1,033 tests and backend 2,052 tests pass. V52/V53 focused strict SQL restore and concurrency proof pass. Full-chain, performance and exact-head CI remain mandatory release gates. See docs/remediation/everyday-correctness-verification.md and the candidate PR."
     },
     {
       "id": "FSH2-04",
       "title": "One pending lead ID cannot protect concurrent lead actions",
       "cluster": "lead_and_schedule_commands",
-      "disposition": "pending",
-      "reason": "Different rows can start actions while pending state holds one ID. A second action replaces the first ID, and either completion clears pending state for the other.",
+      "disposition": "fixed",
+      "reason": "V52 owns lead edit/history and keyed follow-up effects atomically. Provider-lifetime per-row UI ownership retains the exact UUID/target through remount and unknown outcomes, with current-row reconciliation and real absent-lead HTTP semantics.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
+      "verified_against": "151066c47710e18922fd2ea111e05a0eb56f10b3",
       "source_paths": [
         "frontend/src/lib/leads-page-controller.ts",
         "frontend/src/components/leads/lead-pipeline-board.tsx"
@@ -10600,22 +10514,12 @@
       "collapse_with": [],
       "current_evidence": [
         {
-          "path": "frontend/src/lib/leads-page-controller.ts",
-          "line": 274,
-          "observation": "Every update replaces pendingLeadId; finally clears it unconditionally at line 292."
-        },
-        {
-          "path": "frontend/src/lib/leads-page-controller.ts",
-          "line": 178,
-          "observation": "Optimistic cleanup removes by lead ID without an operation identity."
-        },
-        {
-          "path": "frontend/src/components/leads/lead-pipeline-board.tsx",
-          "line": 149,
-          "observation": "Only controls matching the scalar pending ID are disabled."
+          "path": "docs/remediation/everyday-correctness-verification.md",
+          "line": 10,
+          "observation": "V52 owns lead edit/history and keyed follow-up effects atomically. Provider-lifetime per-row UI ownership retains the exact UUID/target through remount and unknown outcomes, with current-row reconciliation and real absent-lead HTTP semantics."
         }
       ],
-      "next_change": "Track operations per lead, synchronously prevent duplicate same-lead submissions, and clear pending/optimistic state only for the completing operation.",
+      "next_change": "None for this finding. Deployment requires the separate exact-candidate release gates.",
       "validation_plan": "Hold actions for A and B, settle them in both orders, and attempt another A action while its first request remains pending.",
       "scope_constraints": [
         "Allowed cross-row concurrency",
@@ -10625,18 +10529,19 @@
       ],
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
       "normalization_track": "Astra",
-      "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra."
+      "execution_ownership": "Sol implements application, documentation or maintenance scope. Any necessary database change must be separately owned by Astra.",
+      "verification": "Reviewed integrated source and meaningful regression tests; combined frontend 1,033 tests and backend 2,052 tests pass. V52/V53 focused strict SQL restore and concurrency proof pass. Full-chain, performance and exact-head CI remain mandatory release gates. See docs/remediation/everyday-correctness-verification.md and the candidate PR."
     },
     {
       "id": "FSH2-05",
       "title": "Report capacity utilization combines incompatible populations",
       "cluster": "business_dates_and_metrics",
-      "disposition": "pending",
-      "reason": "Overall and program utilization still divide all attendance by capacity from only capped sessions.",
+      "disposition": "fixed",
+      "reason": "Reports and affected CSV utilization use attendance from the same positive-capacity eligible sessions as the denominator, preserving uncapped totals and true over-capacity percentages.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
-      "verification": "Current source and relevant callers inspected; see current_evidence. No new runtime tests or hosted operations during normalization.",
+      "verified_against": "151066c47710e18922fd2ea111e05a0eb56f10b3",
+      "verification": "Reviewed integrated source and meaningful regression tests; combined frontend 1,033 tests and backend 2,052 tests pass. V52/V53 focused strict SQL restore and concurrency proof pass. Full-chain, performance and exact-head CI remain mandatory release gates. See docs/remediation/everyday-correctness-verification.md and the candidate PR.",
       "source_paths": [
         "frontend/src/lib/report-metrics.ts",
         "frontend/tests/report-metrics.test.mjs"
@@ -10649,22 +10554,12 @@
       ],
       "current_evidence": [
         {
-          "path": "frontend/src/lib/report-metrics.ts",
-          "line": 138,
-          "observation": "Overall utilization uses totalAttendance/totalCapacity despite capacity being accumulated conditionally."
-        },
-        {
-          "path": "frontend/src/lib/report-metrics.ts",
-          "line": 166,
-          "observation": "Program rows similarly accumulate all attendance but only positive capacities."
-        },
-        {
-          "path": "frontend/src/app/(dashboard)/reports/page.tsx",
-          "line": 320,
-          "observation": "The program display directly divides row.attendance by row.capacity."
+          "path": "docs/remediation/everyday-correctness-verification.md",
+          "line": 11,
+          "observation": "Reports and affected CSV utilization use attendance from the same positive-capacity eligible sessions as the denominator, preserving uncapped totals and true over-capacity percentages."
         }
       ],
-      "next_change": "Accumulate attendanceWithCapacity for overall and program rows, and use it in utilization displays while preserving total attendance and averages. Keep the existing null result when no positive capacity is available, and do not clamp legitimate over-capacity percentages.",
+      "next_change": "None for this finding. Deployment requires the separate exact-candidate release gates.",
       "validation_plan": "Mixed capped/uncapped examples yield 60% and 50%; uncapped-only yields no utilization; true overcapacity remains above 100%.",
       "scope_constraints": "Keep all-session totals, ranking inputs and existing session validity rules; do not clamp percentages.",
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
@@ -10675,12 +10570,12 @@
       "id": "FSH2-06",
       "title": "Reports and lead overdue labels use conflicting calendar rules",
       "cluster": "business_dates_and_metrics",
-      "disposition": "pending",
-      "reason": "Both gaps remain: report fetch/display windows use independent browser dates, and lead overdue labels floor elapsed milliseconds across DST.",
+      "disposition": "fixed",
+      "reason": "Report requests/display use one studio business date with rollover and stale-read fences; lead overdue labels use calendar-date arithmetic, including self-contained DST proof.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
-      "verification": "Current source and relevant callers inspected; see current_evidence. No new runtime tests or hosted operations during normalization.",
+      "verified_against": "151066c47710e18922fd2ea111e05a0eb56f10b3",
+      "verification": "Reviewed integrated source and meaningful regression tests; combined frontend 1,033 tests and backend 2,052 tests pass. V52/V53 focused strict SQL restore and concurrency proof pass. Full-chain, performance and exact-head CI remain mandatory release gates. See docs/remediation/everyday-correctness-verification.md and the candidate PR.",
       "source_paths": [
         "frontend/src/lib/report-metrics.ts",
         "frontend/src/app/(dashboard)/reports/page.tsx",
@@ -10695,22 +10590,12 @@
       ],
       "current_evidence": [
         {
-          "path": "frontend/src/app/(dashboard)/reports/page.tsx",
-          "line": 43,
-          "observation": "The browser-local fetched range is memoized for the component lifetime."
-        },
-        {
-          "path": "frontend/src/app/(dashboard)/reports/page.tsx",
-          "line": 98,
-          "observation": "Model recomputation omits today, invoking a fresh browser-date default."
-        },
-        {
-          "path": "frontend/src/lib/leads-page-model.ts",
-          "line": 99,
-          "observation": "Follow-up labels divide local-midnight elapsed milliseconds by DAY_MS; shared date-key arithmetic already exists."
+          "path": "docs/remediation/everyday-correctness-verification.md",
+          "line": 12,
+          "observation": "Report requests/display use one studio business date with rollover and stale-read fences; lead overdue labels use calendar-date arithmetic, including self-contained DST proof."
         }
       ],
-      "next_change": "Derive both report ranges from businessDate and refresh on its change. Replace follow-up elapsed-time arithmetic with differenceInLocalDateKeys.",
+      "next_change": "None for this finding. Deployment requires the separate exact-candidate release gates.",
       "validation_plan": "Studio/browser date disagreement, mounted business-date rollover with matching fetched/model ranges, and a one-calendar-day spring-DST follow-up.",
       "scope_constraints": "Preserve request sequencing, identity/readiness guards and lead stages. Do not introduce grace periods or alter invoice classification.",
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
@@ -11087,12 +10972,12 @@
       "id": "FSH3-02",
       "title": "Concurrent photo and profile saves can replace newer student details with an older response",
       "cluster": "read_and_mutation_ownership",
-      "disposition": "pending",
-      "reason": "Photo and profile responses still replace complete student records without shared mutation ownership. Detail hydration takes precedence over the store, so an older response can restore stale fields.",
+      "disposition": "fixed",
+      "reason": "Provider-scoped per-student owners serialize photo/profile/archive/bulk writes across page controllers and token renewal; identity and unmount fences protect hydration, previews, dialogs and navigation.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
-      "verification": "Current source and relevant callers inspected; see current_evidence and prior merged implementation evidence. No runtime test or hosted activity during normalization.",
+      "verified_against": "151066c47710e18922fd2ea111e05a0eb56f10b3",
+      "verification": "Reviewed integrated source and meaningful regression tests; combined frontend 1,033 tests and backend 2,052 tests pass. V52/V53 focused strict SQL restore and concurrency proof pass. Full-chain, performance and exact-head CI remain mandatory release gates. See docs/remediation/everyday-correctness-verification.md and the candidate PR.",
       "source_paths": [
         "frontend/src/lib/student-detail-page-controller.ts",
         "frontend/src/components/students/student-detail-page-content.tsx",
@@ -11104,27 +10989,12 @@
       "collapse_with": [],
       "current_evidence": [
         {
-          "path": "frontend/src/lib/student-detail-page-controller.ts",
-          "line": 252,
-          "observation": "Local hydration wins over the store; profile and photo completions replace that hydration."
-        },
-        {
-          "path": "frontend/src/lib/store-student-photo-actions.ts",
-          "line": 77,
-          "observation": "Photo completion commits the full Student without a per-student mutation ordering guard."
-        },
-        {
-          "path": "frontend/src/lib/store-student-roster-actions.ts",
-          "line": 140,
-          "observation": "Profile completion independently replaces the full Student."
-        },
-        {
-          "path": "frontend/src/components/students/student-detail-page-content.tsx",
-          "line": 86,
-          "observation": "Edit/archive controls ignore isPhotoSaving."
+          "path": "docs/remediation/everyday-correctness-verification.md",
+          "line": 8,
+          "observation": "Provider-scoped per-student owners serialize photo/profile/archive/bulk writes across page controllers and token renewal; identity and unmount fences protect hydration, previews, dialogs and navigation."
         }
       ],
-      "next_change": "Coordinate photo/profile/lifecycle commands per student across store and detail hydration. Serialize conflicting commands or reconcile after all overlapping writes settle.",
+      "next_change": "None for this finding. Deployment requires the separate exact-candidate release gates.",
       "validation_plan": "Delay an older photo response until after profile success; check both detail and store retain final server facts, including identity replacement.",
       "scope_constraints": "Do not infer server commit order from request start order; preserve permissions, unknown outcomes and independent program dates.",
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
@@ -11838,12 +11708,12 @@
       "id": "DM3-01",
       "title": "Dashboard and roster disagree about when a student last attended",
       "cluster": "business_dates_and_metrics",
-      "disposition": "pending",
-      "reason": "Active dashboard and roster functions still assign different attendance dates to the same backdated entry; cache freshness cannot resolve the mismatch.",
+      "disposition": "fixed",
+      "reason": "Dashboard inactivity now uses the same maximum nonfuture class participation date and UTC fallback as the roster; V53 and the retained paginated Python reference preserve status, hold, start-date and tenant gates.",
       "audit_importance": "medium",
       "evidence_role": "observation",
-      "verified_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
-      "verification": "Current source and relevant callers inspected; see current_evidence. No new runtime tests or hosted operations during normalization.",
+      "verified_against": "151066c47710e18922fd2ea111e05a0eb56f10b3",
+      "verification": "Reviewed integrated source and meaningful regression tests; combined frontend 1,033 tests and backend 2,052 tests pass. V52/V53 focused strict SQL restore and concurrency proof pass. Full-chain, performance and exact-head CI remain mandatory release gates. See docs/remediation/everyday-correctness-verification.md and the candidate PR.",
       "source_paths": [
         "supabase/migrations/20260820012533_dashboard_fact_rpc.sql",
         "supabase/migrations/20260820025759_roster_read_rpc.sql",
@@ -11858,27 +11728,12 @@
       "collapse_with": [],
       "current_evidence": [
         {
-          "path": "supabase/migrations/20260820012533_dashboard_fact_rpc.sql",
-          "line": 103,
-          "observation": "Dashboard inactivity uses MAX(checked_in_at), later converted to studio date."
-        },
-        {
-          "path": "supabase/migrations/20260820025759_roster_read_rpc.sql",
-          "line": 210,
-          "observation": "Roster inactivity prefers class_session.date and excludes future participation dates."
-        },
-        {
-          "path": "backend/app/services/schedule_attendance_actions.py",
-          "line": 183,
-          "observation": "Attendance entry supplies no explicit check-in timestamp; the database defaults it to now."
-        },
-        {
-          "path": "backend/app/services/dashboard_summary_actions.py",
-          "line": 79,
-          "observation": "The dashboard inactivity action links directly to the roster's inactiveDays=14 filter."
+          "path": "docs/remediation/everyday-correctness-verification.md",
+          "line": 14,
+          "observation": "Dashboard inactivity now uses the same maximum nonfuture class participation date and UTC fallback as the roster; V53 and the retained paginated Python reference preserve status, hold, start-date and tenant gates."
         }
       ],
-      "next_change": "Align inactivity with the existing class-participation date contract, retaining explicit fallback semantics and future-date exclusion. Update current RPC definitions through a new migration and align the retained reference.",
+      "next_change": "None for this finding. Deployment requires the separate exact-candidate release gates.",
       "validation_plan": "Local cross-RPC scenario with a class 20 days ago entered today, a future class and an ordinary same-day entry; compare dashboard count with roster IDs.",
       "scope_constraints": "Do not rewrite checked_in_at, alter belt promotion timestamp rules, invent date-ordering constraints or weaken tenant/RPC gates. No production SQL.",
       "normalized_against": "66e8240a5d4ed3a21af74e60ee6aa8574cd9c703",
@@ -13139,19 +12994,26 @@
       "title": "Import preview accepts a program-specific belt without a Program, but execution rejects it",
       "track": "Astra",
       "root_cause": "import_reference_ownership",
-      "disposition": "pending",
-      "reason": "Separate product policy remains pending after PR178. Program-specific belt selection without a mapped Program is refused before student or membership writes. Wind-down explicitly excludes selecting a new policy; this refusal does not block the bounded retry correction.",
-      "verified_against": "f942dad3509a2e2cc9b55d546c2d22e097f77abe",
+      "disposition": "fixed",
+      "reason": "Under the September29 owner-authorized policy, preview requires Program for a resolved program-specific belt by name or UUID, matching execution. Explicit matching programs and unscoped belts remain valid; invalid rows make no student or membership writes.",
+      "verified_against": "151066c47710e18922fd2ea111e05a0eb56f10b3",
       "source_paths": [
         "backend/app/services/student_import_plan_rows.py",
         "backend/app/services/student_import_executor.py",
         "supabase/migrations/20260613090000_harden_student_import_tenant_conflicts.sql"
       ],
-      "verification": "Pinned139migrations; planner valid with no issues, resolved_program_id null and matched program-specific rank. Original actualSQL rejects with current-belt/program mismatch; zero students and memberships persisted. See import-retry-ownership-plan.md.",
-      "next_change": "Obtain the owner choice for Program-omitted imports before changing customer-visible behavior. Do not infer a program from the belt or claim this policy was settled.",
+      "verification": "Reviewed integrated source and meaningful regression tests; combined frontend 1,033 tests and backend 2,052 tests pass. V52/V53 focused strict SQL restore and concurrency proof pass. Full-chain, performance and exact-head CI remain mandatory release gates. See docs/remediation/everyday-correctness-verification.md and the candidate PR.",
+      "next_change": "None for this finding. Deployment requires the separate exact-candidate release gates.",
       "pull_requests": [],
       "normalization_track": "Astra",
-      "execution_ownership": "Astra implements database/migration/SQL verification work; Sol implements any backend/frontend portion."
+      "execution_ownership": "Astra implements database/migration/SQL verification work; Sol implements any backend/frontend portion.",
+      "current_evidence": [
+        {
+          "path": "docs/remediation/everyday-correctness-verification.md",
+          "line": 16,
+          "observation": "Under the September29 owner-authorized policy, preview requires Program for a resolved program-specific belt by name or UUID, matching execution. Explicit matching programs and unscoped belts remain valid; invalid rows make no student or membership writes."
+        }
+      ]
     },
     {
       "id": "PROGRAM-ACTIVATION-01",
@@ -13234,17 +13096,17 @@
     }
   },
   "current_counts": {
-    "fixed": 149,
+    "fixed": 165,
     "rejected_after_verification": 1,
-    "pending": 113,
+    "pending": 97,
     "deferred_intentionally": 11,
     "resolved_indirectly": 2,
     "deferred_pending_owner_action": 1,
     "obsolete": 1
   },
   "current_pending_tracks": {
-    "Sol": 89,
-    "Astra": 24
+    "Sol": 74,
+    "Astra": 23
   },
   "execution_policy": {
     "updated": "2026-09-20",
@@ -13256,15 +13118,15 @@
   },
   "current_disposition_tracks": {
     "fixed": {
-      "Sol": 122,
-      "Astra": 27
+      "Sol": 137,
+      "Astra": 28
     },
     "rejected_after_verification": {
       "Sol": 1
     },
     "pending": {
-      "Sol": 89,
-      "Astra": 24
+      "Sol": 74,
+      "Astra": 23
     },
     "deferred_intentionally": {
       "Sol": 7,
