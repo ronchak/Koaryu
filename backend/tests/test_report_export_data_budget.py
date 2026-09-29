@@ -230,12 +230,13 @@ class ReportExportDataBudgetTest(unittest.TestCase):
         students = [{"id": f"student-{index}", "studio_id": "studio-1"} for index in range(25_000)]
         relationships = [
             {"id": f"link-{index}", "student_id": f"student-{index}", "guardian_id": "guardian-1"}
-            for index in range(25_000)
+            for index in range(24_999)
         ]
 
         success_service = ReportExportService(
             TableBackedSupabase(
                 {
+                    "studios": [{"id": "studio-1", "timezone": "UTC"}],
                     "students": students,
                     "student_guardians": relationships,
                 }
@@ -257,6 +258,7 @@ class ReportExportDataBudgetTest(unittest.TestCase):
         failure_service = ReportExportService(
             TableBackedSupabase(
                 {
+                    "studios": [{"id": "studio-1", "timezone": "UTC"}],
                     "students": students,
                     "student_guardians": relationships,
                 }

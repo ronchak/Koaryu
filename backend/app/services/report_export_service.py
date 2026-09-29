@@ -16,7 +16,7 @@ from app.services.report_export_budget import (
     ReportExportBudget,
     ReportExportBudgetSnapshot,
 )
-from app.services.report_export_data import ReportExportDataFetcher
+from app.services.report_export_data import INTELLIGENCE_INPUT_COLUMNS, ReportExportDataFetcher
 from app.services.report_intelligence import (
     build_belt_momentum_testing_pipeline,
     build_data_hygiene_readiness,
@@ -32,7 +32,7 @@ from app.services.report_intelligence import (
 )
 from app.services.staff_service import StaffService
 from app.services.student_age import is_minor_on_date
-from app.services.studio_business_date import studio_today_for_studio
+from app.services.studio_business_date import studio_today, studio_today_for_studio
 
 REPORT_EXPORT_ROLE_RANK = {
     "front_desk": 10,
@@ -63,6 +63,12 @@ class ReportExportArtifact:
 
     def stream(self) -> "_ReportExportSpoolIterator":
         return _ReportExportSpoolIterator(self.spool)
+
+
+@dataclass(frozen=True)
+class _ReportCalendar:
+    today: date
+    timezone: str
 
 
 class ReportExportArtifactLease:
@@ -194,6 +200,7 @@ class ReportExportService:
         self._student_today = today
         self.budget = budget or ReportExportBudget()
         self._active_report: Optional[CsvReport] = None
+        self._intelligence_calendar: Optional[_ReportCalendar] = None
 
     def list_reports(self) -> list[CsvReport]:
         return list(REPORTS.values())
@@ -259,12 +266,23 @@ class ReportExportService:
         studio_id: str,
     ) -> ReportExportArtifact:
         self.budget.check_elapsed()
+        calendar = None
+        if report.id in INTELLIGENCE_INPUT_COLUMNS:
+            if self._student_today is not None:
+                calendar = _ReportCalendar(self._student_today, "UTC")
+            else:
+                studio = self._single_row("studios", "timezone", studio_id)
+                if not studio:
+                    raise RuntimeError("Studio timezone could not be loaded.")
+                calendar = _ReportCalendar(*studio_today(studio.get("timezone")))
         spool = tempfile.SpooledTemporaryFile(
             max_size=EXPORT_SPOOL_MAX_MEMORY_BYTES,
             mode="w+b",
         )
         previous_report = self._active_report
+        previous_calendar = self._intelligence_calendar
         self._active_report = report
+        self._intelligence_calendar = calendar
         try:
             rows = (
                 report.custom_builder(self, studio_id)
@@ -276,6 +294,7 @@ class ReportExportService:
             raise
         finally:
             self._active_report = previous_report
+            self._intelligence_calendar = previous_calendar
 
         try:
             self.budget.check_elapsed()
@@ -310,53 +329,66 @@ class ReportExportService:
         )
 
     def _build_owner_kpi_summary_rows(self, studio_id: str) -> list[dict[str, Any]]:
-        return build_owner_kpi_summary(self._fetch_intelligence_dataset(studio_id), self.today)
+        return build_owner_kpi_summary(
+            self._fetch_intelligence_dataset(studio_id), self._report_today()
+        )
 
     def _build_quiet_churn_watchlist_rows(self, studio_id: str) -> list[dict[str, Any]]:
-        return build_quiet_churn_watchlist(self._fetch_intelligence_dataset(studio_id), self.today)
+        return build_quiet_churn_watchlist(
+            self._fetch_intelligence_dataset(studio_id), self._report_today()
+        )
 
     def _build_first_90_days_onboarding_rows(self, studio_id: str) -> list[dict[str, Any]]:
         return build_first_90_days_onboarding(
-            self._fetch_intelligence_dataset(studio_id), self.today
+            self._fetch_intelligence_dataset(studio_id), self._report_today()
         )
 
     def _build_lead_quality_after_enrollment_rows(self, studio_id: str) -> list[dict[str, Any]]:
         return build_lead_quality_after_enrollment(
-            self._fetch_intelligence_dataset(studio_id), self.today
+            self._fetch_intelligence_dataset(studio_id), self._report_today()
         )
 
     def _build_belt_momentum_testing_pipeline_rows(self, studio_id: str) -> list[dict[str, Any]]:
         return build_belt_momentum_testing_pipeline(
-            self._fetch_intelligence_dataset(studio_id), self.today
+            self._fetch_intelligence_dataset(studio_id), self._report_today()
         )
 
     def _build_revenue_leakage_rows(self, studio_id: str) -> list[dict[str, Any]]:
-        return build_revenue_leakage(self._fetch_intelligence_dataset(studio_id), self.today)
+        return build_revenue_leakage(
+            self._fetch_intelligence_dataset(studio_id), self._report_today()
+        )
 
     def _build_schedule_utilization_demand_rows(self, studio_id: str) -> list[dict[str, Any]]:
         return build_schedule_utilization_demand(
-            self._fetch_intelligence_dataset(studio_id), self.today
+            self._fetch_intelligence_dataset(studio_id), self._report_today()
         )
 
     def _build_family_account_health_rows(self, studio_id: str) -> list[dict[str, Any]]:
-        return build_family_account_health(self._fetch_intelligence_dataset(studio_id), self.today)
+        return build_family_account_health(
+            self._fetch_intelligence_dataset(studio_id), self._report_today()
+        )
 
     def _build_lifecycle_segmentation_rows(self, studio_id: str) -> list[dict[str, Any]]:
-        return build_lifecycle_segmentation(self._fetch_intelligence_dataset(studio_id), self.today)
+        return build_lifecycle_segmentation(
+            self._fetch_intelligence_dataset(studio_id), self._report_today()
+        )
 
     def _build_instructor_staff_impact_rows(self, studio_id: str) -> list[dict[str, Any]]:
         return build_instructor_staff_impact(
-            self._fetch_intelligence_dataset(studio_id), self.today
+            self._fetch_intelligence_dataset(studio_id), self._report_today()
         )
 
     def _build_data_hygiene_readiness_rows(self, studio_id: str) -> list[dict[str, Any]]:
         data = self._fetch_intelligence_dataset(studio_id)
         reference_date = (
-            self._current_student_date(studio_id)
+            self._report_today()
             if any(student.get("date_of_birth") for student in data.get("students", []))
             else None
         )
         return build_data_hygiene_readiness(data, reference_date)
+
+    def _report_today(self) -> date:
+        return self._intelligence_calendar.today if self._intelligence_calendar else self.today
 
     def _current_student_date(self, studio_id: str) -> date:
         if self._student_today is not None:
