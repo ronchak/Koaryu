@@ -511,6 +511,80 @@
       "state": "v51",
       "query": "V51_CLOSEOUT_STATE_SQL",
       "expected": "EXPECTED_V51_CLOSEOUT_STATE"
+    },
+    "readiness-v52": {
+      "kind": "readiness",
+      "state": "v52",
+      "finalAlias": true
+    },
+    "catalog-v52": {
+      "kind": "catalog",
+      "state": "v52",
+      "queryState": "v52"
+    },
+    "release-v52": {
+      "kind": "release",
+      "state": "v52"
+    },
+    "expectation-v52": {
+      "kind": "export",
+      "state": "v52",
+      "query": "V31_EXPECTATION_STATE_SQL",
+      "expected": "EXPECTED_V52_EXPECTATION_STATE"
+    },
+    "resource-v52": {
+      "kind": "export",
+      "state": "v52",
+      "query": "V31_RESOURCE_OWNERSHIP_MANIFEST_SQL",
+      "expected": "EXPECTED_V52_RESOURCE_OWNERSHIP_MANIFEST"
+    },
+    "contract-v52": {
+      "kind": "export",
+      "state": "v52",
+      "query": "V31_OPERATIONAL_CONTRACT_SQL",
+      "expected": "EXPECTED_V52_OPERATIONAL_CONTRACT"
+    },
+    "operational-v52": {
+      "kind": "export",
+      "state": "v52",
+      "query": "V31_OPERATIONAL_MANIFEST_SQL",
+      "expected": "EXPECTED_V52_OPERATIONAL_MANIFEST_V12"
+    },
+    "lead-receipts-v52": {
+      "kind": "export",
+      "state": "v52",
+      "query": "V52_LEAD_RECEIPT_STATE_SQL",
+      "expected": "EXPECTED_V52_LEAD_RECEIPT_STATE"
+    },
+    "lead-update-v52": {
+      "kind": "export",
+      "state": "v52",
+      "query": "V52_LEAD_UPDATE_STATE_SQL",
+      "expected": "EXPECTED_V52_LEAD_UPDATE_STATE"
+    },
+    "lead-follow-up-v52": {
+      "kind": "export",
+      "state": "v52",
+      "query": "V52_LEAD_FOLLOW_UP_STATE_SQL",
+      "expected": "EXPECTED_V52_LEAD_FOLLOW_UP_STATE"
+    },
+    "critical-v52": {
+      "kind": "export",
+      "state": "v52",
+      "query": "CRITICAL_SURFACE_MANIFEST_SQL",
+      "expected": "EXPECTED_V52_CRITICAL_SURFACE_MANIFEST"
+    },
+    "operational10-v52": {
+      "kind": "export",
+      "state": "v52",
+      "query": "V29_OPERATIONAL_MANIFEST_SQL",
+      "expected": "EXPECTED_V52_OPERATIONAL_MANIFEST_V10"
+    },
+    "operational11-v52": {
+      "kind": "export",
+      "state": "v52",
+      "query": "V30_OPERATIONAL_MANIFEST_SQL",
+      "expected": "EXPECTED_V52_OPERATIONAL_MANIFEST_V11"
     }
   },
   "cases": {
@@ -2370,6 +2444,270 @@
       ],
       "passLines": [
         "[restored V51] PASS retained closeout claims, legacy caller readiness and lock-ordered replay on canonical/restored copies"
+      ]
+    },
+    "v52": {
+      "format": "forward",
+      "docstring": "Prove retained V51 lead rows survive logical restore and V52 atomic updates and keyed follow-up replay.",
+      "exports": [
+        [
+          "readiness-v51.query",
+          "readiness-v51.expected"
+        ],
+        [
+          "catalog-v51.query",
+          "catalog-v51.expected",
+          "catalog-v51.restored"
+        ],
+        [
+          "release-v51.query",
+          "release-v51.expected"
+        ],
+        [
+          "expectation-v51.query",
+          "expectation-v51.expected"
+        ],
+        [
+          "resource-v51.query",
+          "resource-v51.expected"
+        ],
+        [
+          "contract-v51.query",
+          "contract-v51.expected"
+        ],
+        [
+          "operational-v51.query",
+          "operational-v51.expected"
+        ],
+        [
+          "closeout-v51.query",
+          "closeout-v51.expected"
+        ],
+        [
+          "readiness-v52.query",
+          "readiness-v52.expected"
+        ],
+        [
+          "readiness-v50.query",
+          "readiness-v50.expected"
+        ],
+        [
+          "readiness-v49.query",
+          "readiness-v49.expected"
+        ],
+        [
+          "readiness-v48.query",
+          "readiness-v48.expected"
+        ],
+        [
+          "readiness-v47.query",
+          "readiness-v47.expected"
+        ],
+        [
+          "readiness-v46.query",
+          "readiness-v46.expected"
+        ],
+        [
+          "readiness-v45.query",
+          "readiness-v45.expected"
+        ],
+        [
+          "readiness-v44.query",
+          "readiness-v44.expected"
+        ],
+        [
+          "readiness-v43.query",
+          "readiness-v43.expected"
+        ],
+        [
+          "readiness-v42.query",
+          "readiness-v42.expected"
+        ],
+        [
+          "readiness-v41.query",
+          "readiness-v41.expected"
+        ],
+        [
+          "readiness-v40.query",
+          "readiness-v40.expected"
+        ],
+        [
+          "readiness-v39.query",
+          "readiness-v39.expected"
+        ],
+        [
+          "readiness-v38.query",
+          "readiness-v38.expected"
+        ],
+        [
+          "readiness-v37.query",
+          "readiness-v37.expected"
+        ],
+        [
+          "catalog-v52.query",
+          "catalog-v52.expected",
+          "catalog-v52.restored"
+        ],
+        [
+          "release-v52.query",
+          "release-v52.expected"
+        ],
+        [
+          "expectation-v52.query",
+          "expectation-v52.expected"
+        ],
+        [
+          "resource-v52.query",
+          "resource-v52.expected"
+        ],
+        [
+          "contract-v52.query",
+          "contract-v52.expected"
+        ],
+        [
+          "operational-v52.query",
+          "operational-v52.expected"
+        ],
+        [
+          "payer-v50.query",
+          "payer-v50.expected"
+        ],
+        [
+          "collection-facts-v50.query",
+          "collection-facts-v50.expected"
+        ],
+        [
+          "payer-read-v50.query",
+          "payer-read-v50.expected"
+        ],
+        [
+          "landing-v50.query",
+          "landing-v50.expected"
+        ],
+        [
+          "rank-v40.query",
+          "rank-v40.expected"
+        ],
+        [
+          "external-payment-v43.query",
+          "external-payment-v43.expected"
+        ],
+        [
+          "local-plan-v44.query",
+          "local-plan-v44.expected"
+        ],
+        [
+          "plan-clear-v44.query",
+          "plan-clear-v44.expected"
+        ],
+        [
+          "terms-v49.query",
+          "terms-v49.expected"
+        ],
+        [
+          "invoice-facts-v50.query",
+          "invoice-facts-v50.expected"
+        ],
+        [
+          "attention-v50.query",
+          "attention-v50.expected"
+        ],
+        [
+          "critical-v52.query",
+          "critical-v52.expected"
+        ],
+        [
+          "operational10-v52.query",
+          "operational10-v52.expected"
+        ],
+        [
+          "operational11-v52.query",
+          "operational11-v52.expected"
+        ],
+        [
+          "contract30-v51.query",
+          "contract30-v51.expected"
+        ],
+        [
+          "replay-v51.query",
+          "replay-v51.expected"
+        ],
+        [
+          "lead-update-v52.query",
+          "lead-update-v52.expected"
+        ],
+        [
+          "lead-follow-up-v52.query",
+          "lead-follow-up-v52.expected"
+        ],
+        [
+          "lead-receipts-v52.query",
+          "lead-receipts-v52.expected"
+        ]
+      ],
+      "predecessor": [
+        "readiness-v51",
+        "catalog-v51",
+        "release-v51",
+        "expectation-v51",
+        "resource-v51",
+        "contract-v51",
+        "operational-v51",
+        "closeout-v51"
+      ],
+      "checks": [
+        "readiness-v52",
+        "readiness-v51",
+        "readiness-v50",
+        "readiness-v49",
+        "readiness-v48",
+        "readiness-v47",
+        "readiness-v46",
+        "readiness-v45",
+        "readiness-v44",
+        "readiness-v43",
+        "readiness-v42",
+        "readiness-v41",
+        "readiness-v40",
+        "readiness-v39",
+        "readiness-v38",
+        "readiness-v37",
+        "catalog-v52",
+        "release-v52",
+        "expectation-v52",
+        "resource-v52",
+        "contract-v52",
+        "operational-v52",
+        "payer-v50",
+        "collection-facts-v50",
+        "payer-read-v50",
+        "landing-v50",
+        "rank-v40",
+        "external-payment-v43",
+        "local-plan-v44",
+        "plan-clear-v44",
+        "terms-v49",
+        "invoice-facts-v50",
+        "attention-v50",
+        "critical-v52",
+        "operational10-v52",
+        "operational11-v52",
+        "contract30-v51",
+        "replay-v51",
+        "closeout-v51",
+        "lead-update-v52",
+        "lead-follow-up-v52",
+        "lead-receipts-v52"
+      ],
+      "absentFunctions": [
+        "public.update_lead_atomic(uuid,uuid,uuid,jsonb)",
+        "public.follow_up_lead_atomic(uuid,uuid,uuid,uuid,jsonb)"
+      ],
+      "semanticManifests": [
+        "private.koaryu_release_critical_surface_manifest_v16()"
+      ],
+      "passLines": [
+        "[restored V52] PASS retained leads and activities, atomic updates, keyed follow-up replay and rollback on canonical/restored copies"
       ]
     }
   }

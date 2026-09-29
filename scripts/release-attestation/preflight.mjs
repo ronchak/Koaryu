@@ -37,11 +37,12 @@ export function renderPreflight(state) {
     if (typeof render !== "function") throw new Error(`Unknown preflight policy: ${check.kind}`);
     return render(check);
   });
-  return renderDirectPreflight(state, [
+  const rendered = renderDirectPreflight(state, [
     renderDirectHistory(state, {
       sequenceFailures: ["migration_history_sequence_v31", "migration_history_sequence_v30"],
       pendingLineWidths: [4, 4, 4, 4, 4, 4, 4, 4, 4, 2],
     }),
     ...checks,
   ], { separateTerminator: state.id === "v39" || state.id === "v40" });
+  return state.id === "v52" ? rendered.replace(/^[ \t]+$/gm, "") : rendered;
 }
