@@ -1,4 +1,6 @@
-from pydantic import BaseModel
+from uuid import UUID
+
+from pydantic import BaseModel, ConfigDict
 from typing import Literal, Optional
 
 
@@ -101,3 +103,10 @@ class LeadConvert(BaseModel):
     status: LeadConvertStudentStatus = "active"
     membership_start_date: Optional[str] = None
     program_id: Optional[str] = None
+
+
+class LeadFollowUpRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    operation_id: UUID
+    next_stage: Optional[LeadStage] = None
