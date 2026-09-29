@@ -189,6 +189,7 @@ def build_schedule_utilization_demand(
                 "sessions_canceled": 0,
                 "sessions_with_capacity": 0,
                 "total_capacity": 0,
+                "attendance_with_capacity": 0,
                 "total_attendance": 0,
                 "unique_students": set(),
                 "attendance_last_30_days": 0,
@@ -202,9 +203,11 @@ def build_schedule_utilization_demand(
         row["total_attendance"] += len(attendees)
         for event in attendees:
             row["unique_students"].add(event.get("student_id"))
-        if session.get("capacity"):
+        capacity = int(session.get("capacity") or 0)
+        if session.get("status") != "canceled" and capacity > 0:
             row["sessions_with_capacity"] += 1
-            row["total_capacity"] += int(session.get("capacity") or 0)
+            row["total_capacity"] += capacity
+            row["attendance_with_capacity"] += len(attendees)
         if session_date >= today - timedelta(days=29):
             row["attendance_last_30_days"] += len(attendees)
         else:
@@ -213,7 +216,7 @@ def build_schedule_utilization_demand(
     for row in grouped.values():
         scheduled = int(row["sessions_scheduled"])
         capacity = int(row["total_capacity"])
-        utilization = round(int(row["total_attendance"]) / capacity, 4) if capacity else ""
+        utilization = round(int(row["attendance_with_capacity"]) / capacity, 4) if capacity else ""
         avg_attendance = round(
             int(row["total_attendance"]) / max(1, scheduled - int(row["sessions_canceled"])), 2
         )
@@ -226,7 +229,11 @@ def build_schedule_utilization_demand(
             recommendation = "demand_rising"
         rows.append(
             {
-                **{key: value for key, value in row.items() if key != "unique_students"},
+                **{
+                    key: value
+                    for key, value in row.items()
+                    if key not in {"unique_students", "attendance_with_capacity"}
+                },
                 "unique_students": len(row["unique_students"]),
                 "average_attendance": avg_attendance,
                 "average_capacity": round(capacity / int(row["sessions_with_capacity"]), 2)
@@ -254,6 +261,7 @@ def build_instructor_staff_impact(
             "unique_students_90_days": set(),
             "sessions_with_capacity": 0,
             "total_capacity": 0,
+            "attendance_with_capacity": 0,
         }
     )
     attendance_by_session = events.events_by_session
@@ -275,9 +283,11 @@ def build_instructor_staff_impact(
         row["total_attendance_90_days"] += len(attendees)
         for event in attendees:
             row["unique_students_90_days"].add(event.get("student_id"))
-        if session.get("capacity"):
+        capacity = int(session.get("capacity") or 0)
+        if capacity > 0:
             row["sessions_with_capacity"] += 1
-            row["total_capacity"] += int(session.get("capacity") or 0)
+            row["total_capacity"] += capacity
+            row["attendance_with_capacity"] += len(attendees)
     rows = []
     for staff_id, row in rows_by_staff.items():
         staff_leads = leads_by_staff.get(staff_id, [])
@@ -297,7 +307,9 @@ def build_instructor_staff_impact(
                 "average_attendance_per_class": round(attendance / classes, 2) if classes else 0,
                 "unique_students_90_days": len(row["unique_students_90_days"]),
                 "sessions_with_capacity": row["sessions_with_capacity"],
-                "utilization_rate": round(attendance / capacity, 4) if capacity else "",
+                "utilization_rate": round(int(row["attendance_with_capacity"]) / capacity, 4)
+                if capacity
+                else "",
                 "assigned_leads": len(staff_leads),
                 "assigned_leads_enrolled_or_converted": enrolled,
                 "assigned_lead_conversion_rate": round(enrolled / len(staff_leads), 4)

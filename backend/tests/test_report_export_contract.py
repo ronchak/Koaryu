@@ -194,7 +194,7 @@ class ReportExportContractTest(unittest.TestCase):
             EXPECTED_INTELLIGENCE_CSV["quiet_churn_watchlist"],
         )
         self.assertIn(
-            ",2,1,2,20,1,1,1,0,1.0,", EXPECTED_INTELLIGENCE_CSV["schedule_utilization_demand"]
+            ",2,1,1,10,1,1,1,0,1.0,", EXPECTED_INTELLIGENCE_CSV["schedule_utilization_demand"]
         )
 
     def test_csv_byte_contract_covers_special_values_and_injection_prefixes(self):
