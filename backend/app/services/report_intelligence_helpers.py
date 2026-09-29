@@ -1,7 +1,8 @@
 from bisect import bisect_left, bisect_right
 from collections import defaultdict
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone as utc_timezone
 from typing import Any, Optional
+from zoneinfo import ZoneInfo
 
 from app.services.belt_eligibility import BeltEligibilityCalculator, attendance_earns_belt_credit
 
@@ -13,32 +14,36 @@ OPEN_INVOICE_STATUSES = {"open", "uncollectible", "partially_refunded"}
 MISSING = "missing"
 
 
-def _parse_date(value: Any) -> Optional[date]:
+def _parse_date(value: Any, *, timezone: str = "UTC") -> Optional[date]:
     if not value:
         return None
     if isinstance(value, datetime):
-        return value.date()
+        instant = value if value.tzinfo else value.replace(tzinfo=utc_timezone.utc)
+        return instant.astimezone(ZoneInfo(timezone)).date()
     if isinstance(value, date):
         return value
     text = str(value).replace("Z", "+00:00")
     try:
-        return datetime.fromisoformat(text).date()
+        return date.fromisoformat(text)
     except ValueError:
         try:
-            return date.fromisoformat(text[:10])
+            return _parse_date(datetime.fromisoformat(text), timezone=timezone)
         except ValueError:
-            return None
+            try:
+                return date.fromisoformat(text[:10])
+            except ValueError:
+                return None
 
 
-def _days_since(value: Any, today: date) -> Optional[int]:
-    parsed = _parse_date(value)
+def _days_since(value: Any, today: date, *, timezone: str = "UTC") -> Optional[int]:
+    parsed = _parse_date(value, timezone=timezone)
     if not parsed:
         return None
     return (today - parsed).days
 
 
-def _date_key(value: Any) -> str:
-    parsed = _parse_date(value)
+def _date_key(value: Any, *, timezone: str = "UTC") -> str:
+    parsed = _parse_date(value, timezone=timezone)
     return parsed.isoformat() if parsed else ""
 
 
@@ -49,9 +54,9 @@ def _student_name(student: dict[str, Any]) -> str:
     return f"{first} {last}".strip()
 
 
-def _student_start_date(student: dict[str, Any]) -> Optional[date]:
+def _student_start_date(student: dict[str, Any], *, timezone: str = "UTC") -> Optional[date]:
     return _parse_date(student.get("membership_start_date")) or _parse_date(
-        student.get("created_at")
+        student.get("created_at"), timezone=timezone
     )
 
 
@@ -112,6 +117,7 @@ class AttendanceEventIndex:
         cls,
         data: dict[str, list[dict[str, Any]]],
         *,
+        timezone: str = "UTC",
         operation_counter: Optional[dict[str, int]] = None,
     ) -> "AttendanceEventIndex":
         sessions_by_id = {row.get("id"): row for row in data.get("sessions", [])}
@@ -132,7 +138,7 @@ class AttendanceEventIndex:
             if session.get("status") == "canceled" or session.get("deleted_at") is not None:
                 continue
             event_date = _parse_date(session.get("date")) or _parse_date(
-                record.get("checked_in_at")
+                record.get("checked_in_at"), timezone=timezone
             )
             if not event_date:
                 continue
@@ -204,9 +210,12 @@ class AttendanceEventIndex:
 def _attendance_events(
     data: dict[str, list[dict[str, Any]]],
     *,
+    timezone: str = "UTC",
     operation_counter: Optional[dict[str, int]] = None,
 ) -> AttendanceEventIndex:
-    return AttendanceEventIndex.from_data(data, operation_counter=operation_counter)
+    return AttendanceEventIndex.from_data(
+        data, timezone=timezone, operation_counter=operation_counter
+    )
 
 
 def _count_events(
@@ -406,15 +415,19 @@ def _index_many(rows: list[dict[str, Any]], key: str) -> dict[str, list[dict[str
     return grouped
 
 
-def _latest_by(rows: list[dict[str, Any]], key: str, date_key: str) -> dict[str, dict[str, Any]]:
+def _latest_by(
+    rows: list[dict[str, Any]], key: str, date_key: str, *, timezone: str = "UTC"
+) -> dict[str, dict[str, Any]]:
     latest: dict[str, dict[str, Any]] = {}
     for row in rows:
         group_key = row.get(key)
-        row_date = _parse_date(row.get(date_key))
+        row_date = _parse_date(row.get(date_key), timezone=timezone)
         if not group_key or not row_date:
             continue
         previous = latest.get(group_key)
-        if not previous or row_date > (_parse_date(previous.get(date_key)) or date.min):
+        if not previous or row_date > (
+            _parse_date(previous.get(date_key), timezone=timezone) or date.min
+        ):
             latest[group_key] = row
     return latest
 

@@ -26,9 +26,9 @@ from app.services.report_intelligence_helpers import (
 
 
 def build_owner_kpi_summary(
-    data: dict[str, list[dict[str, Any]]], today: date
+    data: dict[str, list[dict[str, Any]]], today: date, *, timezone: str = "UTC"
 ) -> list[dict[str, Any]]:
-    events = _attendance_events(data)
+    events = _attendance_events(data, timezone=timezone)
     students = data.get("students", [])
     active_students = [student for student in students if _is_active_student(student)]
     leads = data.get("leads", [])
@@ -75,12 +75,13 @@ def build_owner_kpi_summary(
         int(row.get("amount_cents") or 0)
         for row in payments
         if row.get("status") == "failed"
-        and (_parse_date(row.get("created_at")) or today) >= today - timedelta(days=29)
+        and (_parse_date(row.get("created_at"), timezone=timezone) or today)
+        >= today - timedelta(days=29)
     )
     new_students_30 = sum(
         1
         for student in students
-        if (start_date := _student_start_date(student))
+        if (start_date := _student_start_date(student, timezone=timezone))
         and start_date >= today - timedelta(days=29)
         and not student.get("deleted_at")
     )
@@ -92,7 +93,8 @@ def build_owner_kpi_summary(
     new_leads_30 = sum(
         1
         for lead in leads
-        if (_parse_date(lead.get("created_at")) or today) >= today - timedelta(days=29)
+        if (_parse_date(lead.get("created_at"), timezone=timezone) or today)
+        >= today - timedelta(days=29)
     )
 
     return [
@@ -160,12 +162,14 @@ def build_owner_kpi_summary(
 
 
 def build_quiet_churn_watchlist(
-    data: dict[str, list[dict[str, Any]]], today: date
+    data: dict[str, list[dict[str, Any]]], today: date, *, timezone: str = "UTC"
 ) -> list[dict[str, Any]]:
-    events = _attendance_events(data)
+    events = _attendance_events(data, timezone=timezone)
     enrollments_by_student = _index_many(data.get("billing_enrollments", []), "student_id")
     payers_by_id = _index_one(data.get("billing_payers", []), "id")
-    promotions_by_student = _latest_by(data.get("promotions", []), "student_id", "promoted_at")
+    promotions_by_student = _latest_by(
+        data.get("promotions", []), "student_id", "promoted_at", timezone=timezone
+    )
     rows: list[dict[str, Any]] = []
     for student in data.get("students", []):
         if not _is_active_student(student):
@@ -189,8 +193,10 @@ def build_quiet_churn_watchlist(
                 "billing_status": risk["billing_status"],
                 "billing_enrollment_id": risk["billing_enrollment_id"],
                 "payer_id": risk["payer_id"],
-                "last_promotion_at": _date_key(promotion.get("promoted_at")),
-                "days_since_last_promotion": _days_since(promotion.get("promoted_at"), today),
+                "last_promotion_at": _date_key(promotion.get("promoted_at"), timezone=timezone),
+                "days_since_last_promotion": _days_since(
+                    promotion.get("promoted_at"), today, timezone=timezone
+                ),
                 "risk_score": risk["risk_score"],
                 "risk_flags": risk["risk_flags"],
             }
@@ -199,9 +205,9 @@ def build_quiet_churn_watchlist(
 
 
 def build_first_90_days_onboarding(
-    data: dict[str, list[dict[str, Any]]], today: date
+    data: dict[str, list[dict[str, Any]]], today: date, *, timezone: str = "UTC"
 ) -> list[dict[str, Any]]:
-    events = _attendance_events(data)
+    events = _attendance_events(data, timezone=timezone)
     leads_by_student = _index_one(
         [lead for lead in data.get("leads", []) if lead.get("converted_student_id")],
         "converted_student_id",
@@ -210,7 +216,7 @@ def build_first_90_days_onboarding(
     for student in data.get("students", []):
         if student.get("deleted_at"):
             continue
-        start_date = _student_start_date(student)
+        start_date = _student_start_date(student, timezone=timezone)
         if not start_date:
             continue
         days_since_start = (today - start_date).days
@@ -266,9 +272,9 @@ def build_first_90_days_onboarding(
 
 
 def build_lead_quality_after_enrollment(
-    data: dict[str, list[dict[str, Any]]], today: date
+    data: dict[str, list[dict[str, Any]]], today: date, *, timezone: str = "UTC"
 ) -> list[dict[str, Any]]:
-    events = _attendance_events(data)
+    events = _attendance_events(data, timezone=timezone)
     students_by_id = _index_one(data.get("students", []), "id")
     invoices_by_id = _index_one(data.get("invoices", []), "id")
     payments_by_student: dict[str, int] = defaultdict(int)
@@ -307,7 +313,7 @@ def build_lead_quality_after_enrollment(
         row["converted_students_with_records"] += 1
         if _is_active_student(student):
             row["active_converted_students"] += 1
-        start_date = _student_start_date(student)
+        start_date = _student_start_date(student, timezone=timezone)
         if start_date:
             row["first_30_day_visits"] += _count_events(
                 events,
@@ -345,9 +351,9 @@ def build_lead_quality_after_enrollment(
 
 
 def build_lifecycle_segmentation(
-    data: dict[str, list[dict[str, Any]]], today: date
+    data: dict[str, list[dict[str, Any]]], today: date, *, timezone: str = "UTC"
 ) -> list[dict[str, Any]]:
-    events = _attendance_events(data)
+    events = _attendance_events(data, timezone=timezone)
     enrollments_by_student = _index_many(data.get("billing_enrollments", []), "student_id")
     payers_by_id = _index_one(data.get("billing_payers", []), "id")
     rows = []
@@ -355,7 +361,7 @@ def build_lifecycle_segmentation(
         if student.get("deleted_at"):
             continue
         risk = _student_risk(student, events, enrollments_by_student, payers_by_id, today)
-        start_date = _student_start_date(student)
+        start_date = _student_start_date(student, timezone=timezone)
         days_since_start = (today - start_date).days if start_date else ""
         segment, reason = _lifecycle_segment(student, risk, days_since_start)
         rows.append(

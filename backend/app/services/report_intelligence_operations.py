@@ -21,7 +21,7 @@ from app.services.student_age import is_minor_on_date
 
 
 def build_belt_momentum_testing_pipeline(
-    data: dict[str, list[dict[str, Any]]], today: date
+    data: dict[str, list[dict[str, Any]]], today: date, *, timezone: str = "UTC"
 ) -> list[dict[str, Any]]:
     belt_credit_candidates = _belt_credit_candidates(data)
     students_by_id = _index_one(data.get("students", []), "id")
@@ -89,9 +89,9 @@ def build_belt_momentum_testing_pipeline(
             or {}
         )
         rank_start = (
-            _parse_date(latest_promotion.get("promoted_at"))
+            _parse_date(latest_promotion.get("promoted_at"), timezone=timezone)
             or _parse_date(membership.get("started_at"))
-            or _student_start_date(student)
+            or _student_start_date(student, timezone=timezone)
         )
         target_ladder_id = (
             next_rank.get("ladder_id")
@@ -161,9 +161,9 @@ def build_belt_momentum_testing_pipeline(
 
 
 def build_schedule_utilization_demand(
-    data: dict[str, list[dict[str, Any]]], today: date
+    data: dict[str, list[dict[str, Any]]], today: date, *, timezone: str = "UTC"
 ) -> list[dict[str, Any]]:
-    events = _attendance_events(data)
+    events = _attendance_events(data, timezone=timezone)
     programs_by_id = _index_one(data.get("programs", []), "id")
     attendance_by_session = events.events_by_session
     grouped: dict[str, dict[str, Any]] = {}
@@ -249,9 +249,9 @@ def build_schedule_utilization_demand(
 
 
 def build_instructor_staff_impact(
-    data: dict[str, list[dict[str, Any]]], today: date
+    data: dict[str, list[dict[str, Any]]], today: date, *, timezone: str = "UTC"
 ) -> list[dict[str, Any]]:
-    events = _attendance_events(data)
+    events = _attendance_events(data, timezone=timezone)
     leads_by_staff = _index_many(data.get("leads", []), "assigned_staff_id")
     rows_by_staff: dict[str, dict[str, Any]] = defaultdict(
         lambda: {

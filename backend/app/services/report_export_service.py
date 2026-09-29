@@ -330,52 +330,72 @@ class ReportExportService:
 
     def _build_owner_kpi_summary_rows(self, studio_id: str) -> list[dict[str, Any]]:
         return build_owner_kpi_summary(
-            self._fetch_intelligence_dataset(studio_id), self._report_today()
+            self._fetch_intelligence_dataset(studio_id),
+            self._report_today(),
+            timezone=self._report_timezone(),
         )
 
     def _build_quiet_churn_watchlist_rows(self, studio_id: str) -> list[dict[str, Any]]:
         return build_quiet_churn_watchlist(
-            self._fetch_intelligence_dataset(studio_id), self._report_today()
+            self._fetch_intelligence_dataset(studio_id),
+            self._report_today(),
+            timezone=self._report_timezone(),
         )
 
     def _build_first_90_days_onboarding_rows(self, studio_id: str) -> list[dict[str, Any]]:
         return build_first_90_days_onboarding(
-            self._fetch_intelligence_dataset(studio_id), self._report_today()
+            self._fetch_intelligence_dataset(studio_id),
+            self._report_today(),
+            timezone=self._report_timezone(),
         )
 
     def _build_lead_quality_after_enrollment_rows(self, studio_id: str) -> list[dict[str, Any]]:
         return build_lead_quality_after_enrollment(
-            self._fetch_intelligence_dataset(studio_id), self._report_today()
+            self._fetch_intelligence_dataset(studio_id),
+            self._report_today(),
+            timezone=self._report_timezone(),
         )
 
     def _build_belt_momentum_testing_pipeline_rows(self, studio_id: str) -> list[dict[str, Any]]:
         return build_belt_momentum_testing_pipeline(
-            self._fetch_intelligence_dataset(studio_id), self._report_today()
+            self._fetch_intelligence_dataset(studio_id),
+            self._report_today(),
+            timezone=self._report_timezone(),
         )
 
     def _build_revenue_leakage_rows(self, studio_id: str) -> list[dict[str, Any]]:
         return build_revenue_leakage(
-            self._fetch_intelligence_dataset(studio_id), self._report_today()
+            self._fetch_intelligence_dataset(studio_id),
+            self._report_today(),
+            timezone=self._report_timezone(),
         )
 
     def _build_schedule_utilization_demand_rows(self, studio_id: str) -> list[dict[str, Any]]:
         return build_schedule_utilization_demand(
-            self._fetch_intelligence_dataset(studio_id), self._report_today()
+            self._fetch_intelligence_dataset(studio_id),
+            self._report_today(),
+            timezone=self._report_timezone(),
         )
 
     def _build_family_account_health_rows(self, studio_id: str) -> list[dict[str, Any]]:
         return build_family_account_health(
-            self._fetch_intelligence_dataset(studio_id), self._report_today()
+            self._fetch_intelligence_dataset(studio_id),
+            self._report_today(),
+            timezone=self._report_timezone(),
         )
 
     def _build_lifecycle_segmentation_rows(self, studio_id: str) -> list[dict[str, Any]]:
         return build_lifecycle_segmentation(
-            self._fetch_intelligence_dataset(studio_id), self._report_today()
+            self._fetch_intelligence_dataset(studio_id),
+            self._report_today(),
+            timezone=self._report_timezone(),
         )
 
     def _build_instructor_staff_impact_rows(self, studio_id: str) -> list[dict[str, Any]]:
         return build_instructor_staff_impact(
-            self._fetch_intelligence_dataset(studio_id), self._report_today()
+            self._fetch_intelligence_dataset(studio_id),
+            self._report_today(),
+            timezone=self._report_timezone(),
         )
 
     def _build_data_hygiene_readiness_rows(self, studio_id: str) -> list[dict[str, Any]]:
@@ -389,6 +409,9 @@ class ReportExportService:
 
     def _report_today(self) -> date:
         return self._intelligence_calendar.today if self._intelligence_calendar else self.today
+
+    def _report_timezone(self) -> str:
+        return self._intelligence_calendar.timezone if self._intelligence_calendar else "UTC"
 
     def _current_student_date(self, studio_id: str) -> date:
         if self._student_today is not None:
