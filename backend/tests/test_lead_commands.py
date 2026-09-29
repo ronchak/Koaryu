@@ -19,6 +19,7 @@ from app.core.deps import (
     get_lead_manager_studio_id,
     get_supabase,
 )
+from app.core.error_handlers import register_error_handlers
 from app.schemas import lead as schemas
 from app.services.lead_service import LeadService
 from tests.fakes.supabase import FakeResult, TableBackedSupabase
@@ -416,6 +417,7 @@ class CardinalityLeadQuery:
         self.fault = fault
         self.filters = []
         self.bound = None
+        self.single_row = False
 
     def select(self, columns):
         assert columns == "*"
@@ -430,14 +432,27 @@ class CardinalityLeadQuery:
         return self
 
     def single(self):
-        raise APIError(
-            {"code": "PGRST116", "message": "JSON object requested, multiple (or no) rows returned"}
-        )
+        self.single_row = True
+        return self
 
     def execute(self):
         if self.fault:
             raise self.fault
-        return type("Result", (), {"data": self.rows[: self.bound] if self.bound else self.rows})()
+        rows = [
+            row for row in self.rows if all(row.get(key) == value for key, value in self.filters)
+        ]
+        if self.bound is not None:
+            rows = rows[: self.bound]
+        if self.single_row:
+            if len(rows) != 1:
+                raise APIError(
+                    {
+                        "code": "PGRST116",
+                        "message": "JSON object requested, multiple (or no) rows returned",
+                    }
+                )
+            return type("Result", (), {"data": rows[0]})()
+        return type("Result", (), {"data": rows})()
 
 
 class CardinalityLeadClient:
@@ -455,6 +470,7 @@ class CardinalityLeadClient:
 def test_get_lead_cardinality_from_service_through_http(rows, status):
     provider = CardinalityLeadClient(rows)
     app = FastAPI()
+    register_error_handlers(app)
     app.include_router(leads.router)
     app.dependency_overrides[get_current_studio_id] = lambda: "studio-1"
     app.dependency_overrides[get_supabase] = lambda: provider
@@ -462,6 +478,11 @@ def test_get_lead_cardinality_from_service_through_http(rows, status):
     assert response.status_code == status
     if status == 200:
         assert response.json()["id"] == "lead-1"
+    else:
+        assert response.json()["error"]["status_code"] == status
+        assert response.json()["error"]["code"] == (
+            "not_found" if status == 404 else "internal_server_error"
+        )
     assert provider.query.filters == [("id", "lead-1"), ("studio_id", "studio-1")]
     assert provider.query.bound == 2
 
@@ -471,7 +492,11 @@ def test_get_lead_provider_fault_is_server_error(code):
     error = APIError({"code": code, "message": "private failure"})
     provider = CardinalityLeadClient([], error)
     app = FastAPI()
+    register_error_handlers(app)
     app.include_router(leads.router)
     app.dependency_overrides[get_current_studio_id] = lambda: "studio-1"
     app.dependency_overrides[get_supabase] = lambda: provider
-    assert TestClient(app, raise_server_exceptions=False).get("/leads/lead-1").status_code == 500
+    response = TestClient(app, raise_server_exceptions=False).get("/leads/lead-1")
+    assert response.status_code == 500
+    assert response.json()["error"]["code"] == "internal_server_error"
+    assert "private failure" not in response.text
