@@ -44,5 +44,5 @@ export function renderPreflight(state) {
     }),
     ...checks,
   ], { separateTerminator: state.id === "v39" || state.id === "v40" });
-  return state.id === "v52" ? rendered.replace(/^[ \t]+$/gm, "") : rendered;
+  return ["v52", "v53"].includes(state.id) ? rendered.replace(/^[ \t]+$/gm, "") : rendered;
 }

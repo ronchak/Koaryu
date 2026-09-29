@@ -1220,6 +1220,15 @@
     "lead_follow_up_receipts_v52": {
       "kind": "lead_follow_up_receipts_v52",
       "expected": "796b4c0fe4d033966248b78138776b6695dfbc80bdab7e0e9026b6c9745318cb"
+    },
+    "dashboard_summary_facts_v53": {
+      "kind": "function-hash",
+      "signature": "public.dashboard_summary_facts(uuid,text,text,date,text)",
+      "expected": "350a7ffbea0fab5fe570d6243a5b22fa0ed6d528053bebf5ccfb2f6e7433cec6",
+      "hashSource": "definition",
+      "failures": [
+        "dashboard_summary_facts_v53"
+      ]
     }
   },
   "states": {
@@ -1462,6 +1471,23 @@
         },
         "operational_manifest_v12": {
           "expected": "e1f6a01862d6fa5c1f68320c9333401c5641e96b9cc8fdbc5cf995e6d11b3f16"
+        }
+      }
+    },
+    "v53": {
+      "extends": "v52",
+      "append": [
+        "dashboard_summary_facts_v53"
+      ],
+      "overrides": {
+        "resource_ownership_manifest_v31": {
+          "expected": "0:0e4771e8f65ee37aa926d32969bb4188de219ec725f1137261fa1cc7125e7067"
+        },
+        "operational_manifest_v11": {
+          "expected": "ca52395c369ff3e9846f242de058d62e915cdb25e8908ca5b392740b18dd4e68"
+        },
+        "operational_manifest_v12": {
+          "expected": "c8003c26fa60c33ae3ca58a5a622c33fe6e2abc7de80e7a0974b67da5b075d7f"
         }
       }
     }

@@ -1,12 +1,11 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { test } from 'node:test';
-import { CURRENT_RELEASE, releaseState } from './release-attestation/states.mjs';
+import { releaseState } from './release-attestation/states.mjs';
 import { MIGRATION_VERSIONS } from './release-attestation/generated-history.mjs';
 import { renderPreflight } from './release-attestation/preflight.mjs';
 
 test('V52 binds the full lead commands preflight after V51', () => {
-  assert.equal(CURRENT_RELEASE, 'v52');
   const state = releaseState('v52', MIGRATION_VERSIONS);
   assert.equal(state.predecessor, 'v51');
   assert.equal(state.count, 147);

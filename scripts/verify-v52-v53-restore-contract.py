@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prove retained invoice closeout claims survive V50 restore and replay after the lock-order repair without rewriting rows."""
+"""Prove retained attendance survives V52 restore and V53 dashboard inactivity matches roster IDs on canonical and restored copies."""
 import hashlib
 import json
 import os
@@ -9,41 +9,34 @@ import sys
 
 from local_postgres_verification import ACL_SQL, CONSTRAINT_SQL, PAIR_PATH, LocalPostgres, normalization_plan, require
 
-MIGRATION = "20260925030000_invoice_closeout_lock_order_v51.sql"
-TABLES = ("auth.users", "public.studios", "public.staff_roles", "public.studio_payment_accounts",
-          "public.billing_payers", "public.billing_invoices", "public.billing_invoice_mutation_owners",
-          "public.billing_provider_operations", "public.billing_provider_operation_resources",
-          "public.billing_provider_operation_resource_aliases")
+MIGRATION = "20260929152445_dashboard_roster_inactivity_v53.sql"
+TABLES = ("auth.users", "public.studios", "public.students", "public.class_sessions", "public.attendance")
 SEED_SQL = """
 BEGIN;
 DO $seed$
-DECLARE actor UUID := gen_random_uuid(); studio UUID := gen_random_uuid(); payer UUID := gen_random_uuid();
-    finalized UUID := gen_random_uuid(); voiding UUID := gen_random_uuid(); claim JSONB;
+DECLARE owner UUID := gen_random_uuid(); studio UUID := gen_random_uuid(); other UUID := gen_random_uuid();
+    delayed UUID := gen_random_uuid(); recent UUID := gen_random_uuid(); future_student UUID := gen_random_uuid();
+    quiet_other UUID := gen_random_uuid(); delayed_class UUID := gen_random_uuid(); recent_class UUID := gen_random_uuid();
+    future_class UUID := gen_random_uuid();
 BEGIN
     INSERT INTO auth.users(id,aud,role,email,raw_app_meta_data,raw_user_meta_data,created_at,updated_at)
-    VALUES(actor,'authenticated','authenticated',actor||'@example.invalid','{}','{}',now(),now());
-    INSERT INTO public.studios(id,name,slug,owner_id) VALUES(studio,'Closeout restore',studio::TEXT,actor);
-    INSERT INTO public.staff_roles(studio_id,user_id,role) VALUES(studio,actor,'admin');
-    INSERT INTO public.studio_payment_accounts(studio_id,stripe_connected_account_id,metadata)
-    VALUES(studio,'acct_v51restore',jsonb_build_object('connect_account_generation',1));
-    INSERT INTO public.billing_payers(id,studio_id,display_name,stripe_account_id,stripe_customer_id,connect_account_generation)
-    VALUES(payer,studio,'Closeout payer','acct_v51restore','cus_v51restore',1);
-    INSERT INTO public.billing_invoices(id,studio_id,payer_id,invoice_type,status,amount_due_cents,amount_paid_cents,
-        amount_remaining_cents,currency,stripe_invoice_id,stripe_account_id,stripe_customer_id,collection_method,metadata) VALUES
-        (finalized,studio,payer,'manual','draft',500,0,500,'usd','in_'||replace(finalized::TEXT,'-',''),
-         'acct_v51restore','cus_v51restore','send_invoice',jsonb_build_object('connect_account_generation',1)),
-        (voiding,studio,payer,'manual','open',700,0,700,'usd','in_'||replace(voiding::TEXT,'-',''),
-         'acct_v51restore','cus_v51restore','send_invoice',jsonb_build_object('connect_account_generation',1));
-    claim := public.claim_billing_invoice_closeout_operation_v1(studio,actor,'invoice.finalize','invoice_finalize',
-        finalized,payer,'restore-finalize',repeat('e',64),'acct_v51restore',1,gen_random_uuid(),30);
-    UPDATE public.billing_provider_operations SET state='completed',provider_request_attempt_count=1,
-        provider_object_id='in_'||replace(finalized::TEXT,'-',''),provider_succeeded_at=clock_timestamp(),
-        projected_at=clock_timestamp(),completed_at=clock_timestamp(),result_code='invoice_closeout_completed',
-        lease_owner=NULL,lease_acquired_at=NULL,lease_expires_at=NULL,revision=revision+1
-    WHERE id=(claim->'operation'->>'id')::UUID;
-    UPDATE public.billing_invoices SET status='open' WHERE id=finalized;
-    PERFORM public.claim_billing_invoice_closeout_operation_v1(studio,actor,'invoice.void','invoice_void',
-        voiding,payer,'restore-void',repeat('f',64),'acct_v51restore',1,gen_random_uuid(),30);
+    VALUES(owner,'authenticated','authenticated',owner||'@example.invalid','{}','{}',now(),now());
+    INSERT INTO public.studios(id,name,slug,owner_id,timezone) VALUES
+        (studio,'Inactivity restore',studio::TEXT,owner,'UTC'),
+        (other,'Other inactivity restore',other::TEXT,owner,'UTC');
+    INSERT INTO public.students(id,studio_id,legal_first_name,legal_last_name,status,membership_start_date,created_at) VALUES
+        (delayed,studio,'Delayed','Entry','active','2026-01-01','2026-01-01 12:00+00'),
+        (recent,studio,'Recent','Class','active','2026-01-01','2026-01-01 12:00+00'),
+        (future_student,studio,'Future','Only','active','2026-01-01','2026-01-01 12:00+00'),
+        (quiet_other,other,'Other','Quiet','active','2026-01-01','2026-01-01 12:00+00');
+    INSERT INTO public.class_sessions(id,studio_id,name,date,start_time,end_time,status,capacity) VALUES
+        (delayed_class,studio,'Delayed entry','2026-04-30','10:00','11:00','scheduled',10),
+        (recent_class,studio,'Recent class','2026-05-19','10:00','11:00','scheduled',10),
+        (future_class,studio,'Future class','2026-05-23','10:00','11:00','scheduled',10);
+    INSERT INTO public.attendance(studio_id,session_id,student_id,status,checked_in_at) VALUES
+        (studio,delayed_class,delayed,'present','2026-05-20 12:00+00'),
+        (studio,recent_class,recent,'present','2026-01-10 12:00+00'),
+        (studio,future_class,future_student,'present','2026-05-20 12:00+00');
 END;
 $seed$;
 SELECT 'seeded';
@@ -61,16 +54,32 @@ def main(arguments):
     shared = Path(__file__).with_name("local_postgres_verification.py")
     shared_hash = hashlib.sha256(shared.read_bytes()).hexdigest()
     names = [
-        "V50_OPERATIONAL_READINESS_SQL", "EXPECTED_V50_OPERATIONAL_READINESS",
-        "V50_CATALOG_STATE_SQL", "EXPECTED_V50_CATALOG_STATE", "EXPECTED_V50_RESTORED_CATALOG_STATE",
-        "V50_RELEASE_MANIFEST_SQL", "EXPECTED_V50_RELEASE_MANIFEST",
-        "V31_EXPECTATION_STATE_SQL", "EXPECTED_V50_EXPECTATION_STATE",
-        "V31_RESOURCE_OWNERSHIP_MANIFEST_SQL", "EXPECTED_V50_RESOURCE_OWNERSHIP_MANIFEST",
-        "V31_OPERATIONAL_CONTRACT_SQL", "EXPECTED_V50_OPERATIONAL_CONTRACT",
-        "V31_OPERATIONAL_MANIFEST_SQL", "EXPECTED_V50_OPERATIONAL_MANIFEST_V12",
-        "V41_PAYER_BALANCE_STATE_SQL", "EXPECTED_V50_PAYER_BALANCE_STATE",
-        "V51_CLOSEOUT_STATE_SQL", "EXPECTED_V50_CLOSEOUT_STATE",
+        "V52_OPERATIONAL_READINESS_SQL", "EXPECTED_V52_OPERATIONAL_READINESS",
+        "V52_CATALOG_STATE_SQL", "EXPECTED_V52_CATALOG_STATE", "EXPECTED_V52_RESTORED_CATALOG_STATE",
+        "V52_RELEASE_MANIFEST_SQL", "EXPECTED_V52_RELEASE_MANIFEST",
+        "V31_EXPECTATION_STATE_SQL", "EXPECTED_V52_EXPECTATION_STATE",
+        "V31_RESOURCE_OWNERSHIP_MANIFEST_SQL", "EXPECTED_V52_RESOURCE_OWNERSHIP_MANIFEST",
+        "V31_OPERATIONAL_CONTRACT_SQL", "EXPECTED_V52_OPERATIONAL_CONTRACT",
+        "V31_OPERATIONAL_MANIFEST_SQL", "EXPECTED_V52_OPERATIONAL_MANIFEST_V12",
+        "CRITICAL_SURFACE_MANIFEST_SQL", "EXPECTED_V52_CRITICAL_SURFACE_MANIFEST",
+        "V29_OPERATIONAL_MANIFEST_SQL", "EXPECTED_V52_OPERATIONAL_MANIFEST_V10",
+        "V30_OPERATIONAL_MANIFEST_SQL", "EXPECTED_V52_OPERATIONAL_MANIFEST_V11",
+        "V52_LEAD_UPDATE_STATE_SQL", "EXPECTED_V52_LEAD_UPDATE_STATE",
+        "V52_LEAD_FOLLOW_UP_STATE_SQL", "EXPECTED_V52_LEAD_FOLLOW_UP_STATE",
+        "V52_LEAD_RECEIPT_STATE_SQL", "EXPECTED_V52_LEAD_RECEIPT_STATE",
+        "FINAL_OPERATIONAL_READINESS_SQL", "EXPECTED_OPERATIONAL_READINESS",
+        "V53_CATALOG_STATE_SQL", "EXPECTED_V53_CATALOG_STATE", "EXPECTED_V53_RESTORED_CATALOG_STATE",
+        "V53_RELEASE_MANIFEST_SQL", "EXPECTED_V53_RELEASE_MANIFEST",
+        "V31_EXPECTATION_STATE_SQL", "EXPECTED_V53_EXPECTATION_STATE",
+        "V31_RESOURCE_OWNERSHIP_MANIFEST_SQL", "EXPECTED_V53_RESOURCE_OWNERSHIP_MANIFEST",
+        "V31_OPERATIONAL_CONTRACT_SQL", "EXPECTED_V53_OPERATIONAL_CONTRACT",
+        "V31_OPERATIONAL_MANIFEST_SQL", "EXPECTED_V53_OPERATIONAL_MANIFEST_V12",
+        "CRITICAL_SURFACE_MANIFEST_SQL", "EXPECTED_V53_CRITICAL_SURFACE_MANIFEST",
+        "V29_OPERATIONAL_MANIFEST_SQL", "EXPECTED_V53_OPERATIONAL_MANIFEST_V10",
+        "V30_OPERATIONAL_MANIFEST_SQL", "EXPECTED_V53_OPERATIONAL_MANIFEST_V11",
+        "V53_DASHBOARD_DEFINITION_STATE_SQL", "EXPECTED_V53_DASHBOARD_DEFINITION_SHA256",
         "V51_OPERATIONAL_READINESS_SQL", "EXPECTED_V51_OPERATIONAL_READINESS",
+        "V50_OPERATIONAL_READINESS_SQL", "EXPECTED_V50_OPERATIONAL_READINESS",
         "V49_OPERATIONAL_READINESS_SQL", "EXPECTED_V49_OPERATIONAL_READINESS",
         "V48_OPERATIONAL_READINESS_SQL", "EXPECTED_V48_OPERATIONAL_READINESS",
         "V47_OPERATIONAL_READINESS_SQL", "EXPECTED_V47_OPERATIONAL_READINESS",
@@ -84,12 +93,7 @@ def main(arguments):
         "V39_OPERATIONAL_READINESS_SQL", "EXPECTED_V39_OPERATIONAL_READINESS",
         "V38_OPERATIONAL_READINESS_SQL", "EXPECTED_V38_OPERATIONAL_READINESS",
         "V37_OPERATIONAL_READINESS_SQL", "EXPECTED_V37_OPERATIONAL_READINESS",
-        "V51_CATALOG_STATE_SQL", "EXPECTED_V51_CATALOG_STATE", "EXPECTED_V51_RESTORED_CATALOG_STATE",
-        "V51_RELEASE_MANIFEST_SQL", "EXPECTED_V51_RELEASE_MANIFEST",
-        "V31_EXPECTATION_STATE_SQL", "EXPECTED_V51_EXPECTATION_STATE",
-        "V31_RESOURCE_OWNERSHIP_MANIFEST_SQL", "EXPECTED_V51_RESOURCE_OWNERSHIP_MANIFEST",
-        "V31_OPERATIONAL_CONTRACT_SQL", "EXPECTED_V51_OPERATIONAL_CONTRACT",
-        "V31_OPERATIONAL_MANIFEST_SQL", "EXPECTED_V51_OPERATIONAL_MANIFEST_V12",
+        "V41_PAYER_BALANCE_STATE_SQL", "EXPECTED_V50_PAYER_BALANCE_STATE",
         "V50_COLLECTION_FACTS_STATE_SQL", "EXPECTED_V50_COLLECTION_FACTS_STATE",
         "V50_PAYER_READ_STATE_SQL", "EXPECTED_V50_PAYER_READ_STATE",
         "V50_LANDING_STATE_SQL", "EXPECTED_V50_LANDING_STATE",
@@ -100,9 +104,6 @@ def main(arguments):
         "V49_SUBSCRIPTION_TERMS_STATE_SQL", "EXPECTED_V49_SUBSCRIPTION_TERMS_STATE",
         "V50_INVOICE_FACTS_STATE_SQL", "EXPECTED_V50_INVOICE_FACTS_STATE",
         "V50_ATTENTION_STATE_SQL", "EXPECTED_V50_ATTENTION_STATE",
-        "CRITICAL_SURFACE_MANIFEST_SQL", "EXPECTED_V50_CRITICAL_SURFACE_MANIFEST",
-        "V29_OPERATIONAL_MANIFEST_SQL", "EXPECTED_V50_OPERATIONAL_MANIFEST_V10",
-        "V30_OPERATIONAL_MANIFEST_SQL", "EXPECTED_V51_OPERATIONAL_MANIFEST_V11",
         "V30_OPERATIONAL_CONTRACT_SQL", "EXPECTED_V51_V30_OPERATIONAL_CONTRACT",
         "V30_REPLAY_REPAIRS_MANIFEST_SQL", "EXPECTED_V51_V30_REPLAY_REPAIRS_MANIFEST",
         "V51_CLOSEOUT_STATE_SQL", "EXPECTED_V51_CLOSEOUT_STATE",
@@ -127,38 +128,37 @@ def main(arguments):
                           f"to_jsonb(t)::TEXT COLLATE \"C\"),'[]'::JSONB) FROM {table} t)")
         return json.loads(local.sql(database, "SET TIME ZONE 'UTC'; SELECT jsonb_build_object(" + ",".join(fields) + ");"))
 
-    def semantics(database):
-        return {signature: local.sql(database, f"SELECT {signature};") for signature in ["private.koaryu_release_critical_surface_manifest_v16()","private.koaryu_release_critical_surface_manifest_v17()"]}
-
     def predecessor(database, restored=False):
-        check(database, "V50_OPERATIONAL_READINESS_SQL", "EXPECTED_V50_OPERATIONAL_READINESS")
-        check(database, "V50_CATALOG_STATE_SQL", "EXPECTED_V50_RESTORED_CATALOG_STATE" if restored else "EXPECTED_V50_CATALOG_STATE")
-        check(database, "V50_RELEASE_MANIFEST_SQL", "EXPECTED_V50_RELEASE_MANIFEST")
-        check(database, "V31_EXPECTATION_STATE_SQL", "EXPECTED_V50_EXPECTATION_STATE")
-        check(database, "V31_RESOURCE_OWNERSHIP_MANIFEST_SQL", "EXPECTED_V50_RESOURCE_OWNERSHIP_MANIFEST")
-        check(database, "V31_OPERATIONAL_CONTRACT_SQL", "EXPECTED_V50_OPERATIONAL_CONTRACT")
-        check(database, "V31_OPERATIONAL_MANIFEST_SQL", "EXPECTED_V50_OPERATIONAL_MANIFEST_V12")
-        check(database, "V41_PAYER_BALANCE_STATE_SQL", "EXPECTED_V50_PAYER_BALANCE_STATE")
-        check(database, "V51_CLOSEOUT_STATE_SQL", "EXPECTED_V50_CLOSEOUT_STATE")
-        require(local.sql(database, "SELECT count(*)=145 AND max(version)='20260920154441' FROM supabase_migrations.schema_migrations;") == "t",
-                "Restore requires the actual V50 history")
-        require(local.sql(database, "SELECT to_regprocedure('public.koaryu_release_schema_preflight_v32()') IS NULL;") == "t",
-                "Restore predecessor already contains V51 functions")
+        check(database, "V52_OPERATIONAL_READINESS_SQL", "EXPECTED_V52_OPERATIONAL_READINESS")
+        check(database, "V52_CATALOG_STATE_SQL", "EXPECTED_V52_RESTORED_CATALOG_STATE" if restored else "EXPECTED_V52_CATALOG_STATE")
+        check(database, "V52_RELEASE_MANIFEST_SQL", "EXPECTED_V52_RELEASE_MANIFEST")
+        check(database, "V31_EXPECTATION_STATE_SQL", "EXPECTED_V52_EXPECTATION_STATE")
+        check(database, "V31_RESOURCE_OWNERSHIP_MANIFEST_SQL", "EXPECTED_V52_RESOURCE_OWNERSHIP_MANIFEST")
+        check(database, "V31_OPERATIONAL_CONTRACT_SQL", "EXPECTED_V52_OPERATIONAL_CONTRACT")
+        check(database, "V31_OPERATIONAL_MANIFEST_SQL", "EXPECTED_V52_OPERATIONAL_MANIFEST_V12")
+        check(database, "CRITICAL_SURFACE_MANIFEST_SQL", "EXPECTED_V52_CRITICAL_SURFACE_MANIFEST")
+        check(database, "V29_OPERATIONAL_MANIFEST_SQL", "EXPECTED_V52_OPERATIONAL_MANIFEST_V10")
+        check(database, "V30_OPERATIONAL_MANIFEST_SQL", "EXPECTED_V52_OPERATIONAL_MANIFEST_V11")
+        check(database, "V52_LEAD_UPDATE_STATE_SQL", "EXPECTED_V52_LEAD_UPDATE_STATE")
+        check(database, "V52_LEAD_FOLLOW_UP_STATE_SQL", "EXPECTED_V52_LEAD_FOLLOW_UP_STATE")
+        check(database, "V52_LEAD_RECEIPT_STATE_SQL", "EXPECTED_V52_LEAD_RECEIPT_STATE")
+        require(local.sql(database, "SELECT count(*)=147 AND max(version)='20260926194918' FROM supabase_migrations.schema_migrations;") == "t",
+                "Restore requires the actual V52 history")
+        require(local.sql(database, "SELECT to_regprocedure('public.koaryu_release_schema_preflight_v34()') IS NULL;") == "t",
+                "Restore predecessor already contains V53 functions")
 
     predecessor("postgres")
     hashes = {p.name: hashlib.sha256(p.read_bytes()).hexdigest()
               for p in sorted((root / "supabase/migrations").glob("*.sql"))}
-    require(len(hashes) == 148 and list(hashes)[-4:] == [
-        "20260920154441_billing_due_date_facts_v50.sql", MIGRATION,
-        "20260926194918_lead_commands_v52.sql",
-        "20260929152445_dashboard_roster_inactivity_v53.sql"], "Unexpected migration inventory")
+    require(len(hashes) == 148 and list(hashes)[-2:] == [
+        "20260926194918_lead_commands_v52.sql", MIGRATION], "Unexpected migration inventory")
     migration = root / "supabase/migrations" / MIGRATION
     mapping_bytes = PAIR_PATH.read_bytes()
     pairs = json.loads(mapping_bytes)
-    source = f"koaryu_v51_source_{os.getpid()}"
-    restored = f"koaryu_v51_restore_{os.getpid()}"
-    canonical = f"koaryu_v51_canonical_{os.getpid()}"
-    dump = temporary / f"v50-before-v51-{os.getpid()}.dump"
+    source = f"koaryu_v53_source_{os.getpid()}"
+    restored = f"koaryu_v53_restore_{os.getpid()}"
+    canonical = f"koaryu_v53_canonical_{os.getpid()}"
+    dump = temporary / f"v52-before-v53-{os.getpid()}.dump"
     owned, outcomes = [], {}
     try:
         for database, template in [(source, "postgres"), (restored, "template0")]:
@@ -167,13 +167,15 @@ def main(arguments):
             local.sql(database, f'ALTER DATABASE {database} SET search_path TO "$user",public,extensions;')
         seed = local.sql(source, SEED_SQL)
         before = snapshot(source)
-        require(seed == "seeded"
-                and sorted(row["state"] for row in before["public.billing_provider_operations"]) == ["completed", "started"]
-                and len(before["public.billing_provider_operation_resource_aliases"]) == 2
-                and len(before["public.billing_invoice_mutation_owners"]) == 2,
-                "Terminal and nonterminal closeout claim fixture is incomplete")
+        require(seed == "seeded" and len(before["public.students"]) == 4
+                and len(before["public.attendance"]) == 3,
+                "Retained student and attendance fixture is incomplete")
+        studio = next(row["id"] for row in before["public.studios"] if row["name"] == "Inactivity restore")
+        old_dashboard = json.loads(local.sql(source, f"SELECT public.dashboard_summary_facts('{studio}', 'billing_hidden', 'UTC', DATE '2026-05-20', 'dashboard-summary-v1');"))
+        old_roster = json.loads(local.sql(source, f"SELECT public.list_student_roster('{studio}', NULL, NULL, NULL, 14, NULL, DATE '2026-05-20', 'name', 'asc', 200, NULL, NULL, NULL);"))
+        require(old_dashboard["inactivity"]["watch_14"] != old_roster["total"],
+                "V52 source no longer reproduces the delayed-entry dashboard mismatch")
         predecessor(source)
-        expected_semantics = semantics(source)
         constraints, acls = json.loads(local.sql(source, CONSTRAINT_SQL)), json.loads(local.sql(source, ACL_SQL))
         local.run([pg_dump, *local.connection, f"--dbname={source}", "--format=custom", f"--file={dump}"])
         dump_hash = hashlib.sha256(dump.read_bytes()).hexdigest()
@@ -200,6 +202,18 @@ def main(arguments):
                        f"--command=INSERT INTO supabase_migrations.schema_migrations(version,name) VALUES('{version}','{name}');"])
             require(snapshot(database) == before, "Migration changed retained rows before continuation")
             checks = [
+                ("FINAL_OPERATIONAL_READINESS_SQL", "EXPECTED_OPERATIONAL_READINESS"),
+                ("V53_CATALOG_STATE_SQL", "EXPECTED_V53_RESTORED_CATALOG_STATE" if is_restored else "EXPECTED_V53_CATALOG_STATE"),
+                ("V53_RELEASE_MANIFEST_SQL", "EXPECTED_V53_RELEASE_MANIFEST"),
+                ("V31_EXPECTATION_STATE_SQL", "EXPECTED_V53_EXPECTATION_STATE"),
+                ("V31_RESOURCE_OWNERSHIP_MANIFEST_SQL", "EXPECTED_V53_RESOURCE_OWNERSHIP_MANIFEST"),
+                ("V31_OPERATIONAL_CONTRACT_SQL", "EXPECTED_V53_OPERATIONAL_CONTRACT"),
+                ("V31_OPERATIONAL_MANIFEST_SQL", "EXPECTED_V53_OPERATIONAL_MANIFEST_V12"),
+                ("CRITICAL_SURFACE_MANIFEST_SQL", "EXPECTED_V53_CRITICAL_SURFACE_MANIFEST"),
+                ("V29_OPERATIONAL_MANIFEST_SQL", "EXPECTED_V53_OPERATIONAL_MANIFEST_V10"),
+                ("V30_OPERATIONAL_MANIFEST_SQL", "EXPECTED_V53_OPERATIONAL_MANIFEST_V11"),
+                ("V53_DASHBOARD_DEFINITION_STATE_SQL", "EXPECTED_V53_DASHBOARD_DEFINITION_SHA256"),
+                ("V52_OPERATIONAL_READINESS_SQL", "EXPECTED_V52_OPERATIONAL_READINESS"),
                 ("V51_OPERATIONAL_READINESS_SQL", "EXPECTED_V51_OPERATIONAL_READINESS"),
                 ("V50_OPERATIONAL_READINESS_SQL", "EXPECTED_V50_OPERATIONAL_READINESS"),
                 ("V49_OPERATIONAL_READINESS_SQL", "EXPECTED_V49_OPERATIONAL_READINESS"),
@@ -215,12 +229,6 @@ def main(arguments):
                 ("V39_OPERATIONAL_READINESS_SQL", "EXPECTED_V39_OPERATIONAL_READINESS"),
                 ("V38_OPERATIONAL_READINESS_SQL", "EXPECTED_V38_OPERATIONAL_READINESS"),
                 ("V37_OPERATIONAL_READINESS_SQL", "EXPECTED_V37_OPERATIONAL_READINESS"),
-                ("V51_CATALOG_STATE_SQL", "EXPECTED_V51_RESTORED_CATALOG_STATE" if is_restored else "EXPECTED_V51_CATALOG_STATE"),
-                ("V51_RELEASE_MANIFEST_SQL", "EXPECTED_V51_RELEASE_MANIFEST"),
-                ("V31_EXPECTATION_STATE_SQL", "EXPECTED_V51_EXPECTATION_STATE"),
-                ("V31_RESOURCE_OWNERSHIP_MANIFEST_SQL", "EXPECTED_V51_RESOURCE_OWNERSHIP_MANIFEST"),
-                ("V31_OPERATIONAL_CONTRACT_SQL", "EXPECTED_V51_OPERATIONAL_CONTRACT"),
-                ("V31_OPERATIONAL_MANIFEST_SQL", "EXPECTED_V51_OPERATIONAL_MANIFEST_V12"),
                 ("V41_PAYER_BALANCE_STATE_SQL", "EXPECTED_V50_PAYER_BALANCE_STATE"),
                 ("V50_COLLECTION_FACTS_STATE_SQL", "EXPECTED_V50_COLLECTION_FACTS_STATE"),
                 ("V50_PAYER_READ_STATE_SQL", "EXPECTED_V50_PAYER_READ_STATE"),
@@ -232,36 +240,31 @@ def main(arguments):
                 ("V49_SUBSCRIPTION_TERMS_STATE_SQL", "EXPECTED_V49_SUBSCRIPTION_TERMS_STATE"),
                 ("V50_INVOICE_FACTS_STATE_SQL", "EXPECTED_V50_INVOICE_FACTS_STATE"),
                 ("V50_ATTENTION_STATE_SQL", "EXPECTED_V50_ATTENTION_STATE"),
-                ("CRITICAL_SURFACE_MANIFEST_SQL", "EXPECTED_V50_CRITICAL_SURFACE_MANIFEST"),
-                ("V29_OPERATIONAL_MANIFEST_SQL", "EXPECTED_V50_OPERATIONAL_MANIFEST_V10"),
-                ("V30_OPERATIONAL_MANIFEST_SQL", "EXPECTED_V51_OPERATIONAL_MANIFEST_V11"),
                 ("V30_OPERATIONAL_CONTRACT_SQL", "EXPECTED_V51_V30_OPERATIONAL_CONTRACT"),
                 ("V30_REPLAY_REPAIRS_MANIFEST_SQL", "EXPECTED_V51_V30_REPLAY_REPAIRS_MANIFEST"),
                 ("V51_CLOSEOUT_STATE_SQL", "EXPECTED_V51_CLOSEOUT_STATE"),
             ]
             values = {query: check(database, query, expected) for query, expected in checks}
-            require(semantics(database) == expected_semantics, "Upgrade or continuation changed declared semantic manifests")
-            # Retained terminal and in-flight closeout claims keep replaying their original operation.
-            studio = before["public.studios"][0]["id"]
-            actor = before["public.staff_roles"][0]["user_id"]
-            payer = before["public.billing_payers"][0]["id"]
-            operations = {row["operation_type"]: row for row in before["public.billing_provider_operations"]}
-            for kind, resource_type, key, digest in [("invoice.finalize", "invoice_finalize", "restore-finalize", "e" * 64),
-                                                     ("invoice.void", "invoice_void", "restore-void", "f" * 64)]:
-                operation = operations[kind]
-                invoice = next(row["resource_id"] for row in before["public.billing_provider_operation_resources"]
-                               if row["operation_id"] == operation["id"])
-                replay = json.loads(local.sql(database,
-                    "BEGIN; SELECT public.claim_billing_invoice_closeout_operation_v1("
-                    f"'{studio}','{actor}','{kind}','{resource_type}','{invoice}','{payer}','{key}','{digest}',"
-                    "'acct_v51restore',1,gen_random_uuid(),30); ROLLBACK;"))
-                require(replay["outcome"] == "replay" and replay["operation"]["id"] == operation["id"],
-                        f"Retained {kind} closeout claim did not replay after the upgrade")
-                outcomes[("restored_" if is_restored else "canonical_") + kind] = replay["outcome"]
-            require(snapshot(database) == before, "Closeout replay rewrote retained claims")
+            studio = next(row["id"] for row in before["public.studios"] if row["name"] == "Inactivity restore")
+            other = next(row["id"] for row in before["public.studios"] if row["name"] == "Other inactivity restore")
+            for target, expected in [(studio, {14: 2, 30: 1, 90: 1}), (other, {14: 1, 30: 1, 90: 1})]:
+                dashboard = json.loads(local.sql(database, f"SELECT public.dashboard_summary_facts('{target}', 'billing_hidden', 'UTC', DATE '2026-05-20', 'dashboard-summary-v1');"))
+                for window, count in expected.items():
+                    roster = json.loads(local.sql(database, f"SELECT public.list_student_roster('{target}', NULL, NULL, NULL, {window}, NULL, DATE '2026-05-20', 'name', 'asc', 200, NULL, NULL, NULL);"))
+                    ids = {item["id"] for item in roster["items"]}
+                    require(len(ids) == count and roster["total"] == count and roster["has_next"] is False
+                            and dashboard["inactivity"][f"watch_{window}"] == count,
+                            f"V53 dashboard/roster inactivity {window} mismatch after restore")
+                if target == studio:
+                    expected_names = {row["legal_first_name"] for row in before["public.students"]
+                                      if row["studio_id"] == studio and row["legal_first_name"] in {"Delayed", "Future"}}
+                    roster = json.loads(local.sql(database, f"SELECT public.list_student_roster('{studio}', NULL, NULL, NULL, 14, NULL, DATE '2026-05-20', 'name', 'asc', 200, NULL, NULL, NULL);"))
+                    actual_names = {row["legal_first_name"] for row in before["public.students"] if row["id"] in {item["id"] for item in roster["items"]}}
+                    require(actual_names == expected_names, "V53 14-day roster identities changed")
+            require(snapshot(database) == before, "V53 read continuation changed retained rows")
+            outcomes[("restored_" if is_restored else "canonical_") + "dashboard_roster"] = "exact 14/30/90 parity"
             require({query: check(database, query, expected) for query, expected in checks} == values,
                     "Continuation changed the attested state")
-            require(semantics(database) == expected_semantics, "Upgrade or continuation changed declared semantic manifests")
             outcomes["restored" if is_restored else "canonical"] = values
         predecessor("postgres")
         predecessor(source)
@@ -274,12 +277,12 @@ def main(arguments):
         evidence = {
             "migrations": hashes, "dump_sha256": dump_hash, "helper_sha256": source_hash,
             "local_tools_sha256": shared_hash, "mapping_sha256": hashlib.sha256(mapping_bytes).hexdigest(),
-            "tools": versions, "queries": pinned, "outcomes": outcomes, "semantics": expected_semantics,
+            "tools": versions, "queries": pinned, "outcomes": outcomes,
             "business_before_sha256": hashlib.sha256(json.dumps(before, sort_keys=True).encode()).hexdigest(),
             "constraint_pairs": len(pairs), "billing_replays": 6, "acl_representations": len(statements) - 6,
         }
-        (temporary / "v50-v51-restore-evidence.json").write_text(json.dumps(evidence, indent=2) + "\n")
-        print("[restored V51] PASS retained closeout claims, legacy caller readiness and lock-ordered replay on canonical/restored copies", flush=True)
+        (temporary / "v52-v53-restore-evidence.json").write_text(json.dumps(evidence, indent=2) + "\n")
+        print("[restored V53] PASS retained attendance, exact dashboard/roster inactivity parity and V52 compatibility on canonical/restored copies", flush=True)
     finally:
         errors = []
         for database in reversed(owned):
