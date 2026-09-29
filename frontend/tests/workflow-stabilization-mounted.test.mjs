@@ -2494,3 +2494,216 @@ test("same-identity token renewal keeps a pending student command's ownership", 
     await browser.close();
   }
 });
+
+const storedStudentFacts = (page) =>
+  page.evaluate(() => {
+    const stored = fixture.store.students.find((s) => s.id === "student-1");
+    return { photo: stored?.photo_url, tags: stored?.tags, status: stored?.status };
+  });
+
+test("a pending student photo refuses roster bulk writes for that student only", async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await fixturePage(browser, {
+      path: "/students/student-1",
+      detailController: true,
+    });
+    await mountOwnedStudentDetail(page);
+    await page.evaluate(() => {
+      fixture.photo = fixture.detail.onPhotoSelected(fixture.photoFile());
+    });
+    await page.waitForFunction(() => fixture.photoWrites.length === 1);
+    // Leave detail for the roster while the photo request stays pending.
+    await page.evaluate(() => {
+      fixture.unmountDetail();
+      fixture.navigate("/students");
+      fixture.attempts = {
+        tags: fixture.store.bulkAddTagsToStudents([" student-1 ", "student-2"], ["vip"], {
+          refreshMode: "local",
+        }),
+        status: fixture.store.bulkUpdateStudentStatus(["student-2", "student-1"], "paused", {
+          refreshMode: "local",
+        }),
+      };
+    });
+    await flush(page);
+    assert.deepEqual(
+      await page.evaluate(() => fixture.studentWrites("student-1")),
+      ["PHOTO /students/student-1/photo"],
+      "a bulk write may not overlap the student's pending photo",
+    );
+    assert.deepEqual(await page.evaluate(() => fixture.studentWrites("student-2")), []);
+    const busy = /another change to this student is still saving/i;
+    assert.match(await page.evaluate(() => fixture.outcome(fixture.attempts.tags)), busy);
+    assert.match(await page.evaluate(() => fixture.outcome(fixture.attempts.status)), busy);
+
+    // The refused all-or-none bulk command left no reservation on student-2.
+    await page.evaluate(() => {
+      fixture.other = fixture.store.updateStudent("student-2", { legal_first_name: "Other" });
+    });
+    await page.waitForFunction(() => fixture.studentWrites("student-2").length === 1);
+    await page.evaluate(() =>
+      fixture.writes
+        .find((w) => w.path === "/students/student-2")
+        .resolve({ ...fixture.student, id: "student-2", legal_first_name: "Other" }),
+    );
+    await page.evaluate(() => fixture.other);
+
+    // Same-identity token renewal keeps the photo's ownership against bulk writes.
+    await page.evaluate(() =>
+      fixture.emit("TOKEN_REFRESHED", { ...fixture.session, access_token: "synthetic-renewed" }),
+    );
+    await page.waitForFunction(() => fixture.store.token === "synthetic-renewed");
+    assert.match(
+      await page.evaluate(() =>
+        fixture.outcome(
+          fixture.store.bulkAddTagsToStudents(["student-1"], ["vip"], { refreshMode: "local" }),
+        ),
+      ),
+      busy,
+    );
+    assert.equal(await page.evaluate(() => fixture.studentWrites("student-1").length), 1);
+
+    await page.evaluate(() =>
+      fixture.photoWrites[0].resolve({
+        ...fixture.student,
+        photo_path: "students/student-1/a.png",
+        photo_url: "https://synthetic.invalid/a.png",
+      }),
+    );
+    await page.waitForFunction(
+      () =>
+        fixture.store.students.find((s) => s.id === "student-1")?.photo_url ===
+        "https://synthetic.invalid/a.png",
+    );
+    await page.evaluate(() => Promise.resolve(fixture.photo).catch(() => undefined));
+
+    await page.evaluate(() => {
+      fixture.tags = fixture.store.bulkAddTagsToStudents(["student-1"], ["vip"], {
+        refreshMode: "local",
+      });
+    });
+    await page.waitForFunction(() => fixture.writes.some((w) => w.path === "/students/bulk/tags"));
+    await page.evaluate(() =>
+      fixture.writes.find((w) => w.path === "/students/bulk/tags").resolve({ updated: 1 }),
+    );
+    await page.evaluate(() => fixture.tags);
+    await page.evaluate(() => {
+      fixture.status = fixture.store.bulkUpdateStudentStatus(["student-1"], "paused", {
+        refreshMode: "local",
+      });
+    });
+    await page.waitForFunction(() =>
+      fixture.writes.some((w) => w.path === "/students/bulk/status"),
+    );
+    await page.evaluate(() =>
+      fixture.writes.find((w) => w.path === "/students/bulk/status").resolve({ updated: 1 }),
+    );
+    await page.evaluate(() => fixture.status);
+    assert.deepEqual(await storedStudentFacts(page), {
+      photo: "https://synthetic.invalid/a.png",
+      tags: ["vip"],
+      status: "paused",
+    });
+    assert.deepEqual(await page.evaluate(() => fixture.studentWrites("student-1")), [
+      "PHOTO /students/student-1/photo",
+      "WRITE /students/bulk/tags",
+      "WRITE /students/bulk/status",
+    ]);
+    await page.evaluate(() => fixture.root.unmount());
+  } finally {
+    await browser.close();
+  }
+});
+
+test("a pending roster bulk write refuses the student's photo and keeps retry context", async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await fixturePage(browser, {
+      path: "/students",
+      detailController: true,
+      rosterController: true,
+    });
+    await mountOwnedStudentDetail(page);
+    await page.evaluate(() => fixture.mountRoster());
+    await page.waitForFunction(() => fixture.roster?.filtered.length === 1);
+    await page.evaluate(() => fixture.roster.onToggleSelect("student-1"));
+    await flush(page);
+    await page.evaluate(() => fixture.roster.onToggleBulkPanel("tags"));
+    await flush(page);
+    await page.evaluate(() => fixture.roster.onTagInputChange("vip"));
+    await flush(page);
+    await page.evaluate(() => {
+      fixture.bulk = fixture.roster.onAddTags();
+    });
+    await page.waitForFunction(() => fixture.writes.some((w) => w.path === "/students/bulk/tags"));
+    await page.evaluate(() => {
+      fixture.attempts = {
+        detailPhoto: fixture.detail.onPhotoSelected(fixture.photoFile()),
+        storeUpload: fixture.store.uploadStudentPhoto("student-1", fixture.photoFile()),
+        storeStatus: fixture.store.bulkUpdateStudentStatus(["student-1"], "paused"),
+      };
+    });
+    await flush(page);
+    assert.deepEqual(
+      await page.evaluate(() => fixture.studentWrites("student-1")),
+      ["WRITE /students/bulk/tags"],
+      "only the owning bulk write may start while it is pending",
+    );
+    const busy = /another change to this student is still saving/i;
+    assert.match(await page.evaluate(() => fixture.outcome(fixture.attempts.storeUpload)), busy);
+    assert.match(await page.evaluate(() => fixture.outcome(fixture.attempts.storeStatus)), busy);
+    assert.notEqual(
+      await page.evaluate(() => fixture.outcome(fixture.attempts.detailPhoto)),
+      "pending",
+    );
+    const rosterContext = () =>
+      page.evaluate(() => ({
+        selected: [...fixture.roster.selectedIds],
+        panel: fixture.roster.activeBulkPanel,
+        tagInput: fixture.roster.tagInput,
+        pending: fixture.roster.isBulkCommandPending,
+        error: fixture.roster.bulkActionError,
+      }));
+    assert.deepEqual(await rosterContext(), {
+      selected: ["student-1"],
+      panel: "tags",
+      tagInput: "vip",
+      pending: true,
+      error: null,
+    });
+
+    await page.evaluate(() =>
+      fixture.writes.find((w) => w.path === "/students/bulk/tags").resolve({ updated: 0 }),
+    );
+    await page.evaluate(() => fixture.bulk);
+    await page.waitForFunction(() => !fixture.roster.isBulkCommandPending);
+    assert.deepEqual(await rosterContext(), {
+      selected: ["student-1"],
+      panel: "tags",
+      tagInput: "vip",
+      pending: false,
+      error: "Added tags to 0 of 1 selected students. Some students may no longer be available.",
+    });
+
+    // Settlement released the student, so a photo may now write.
+    await page.evaluate(() => {
+      fixture.upload = fixture.store.uploadStudentPhoto("student-1", fixture.photoFile());
+    });
+    await page.waitForFunction(() => fixture.photoWrites.length === 1);
+    await page.evaluate(() =>
+      fixture.photoWrites[0].resolve({
+        ...fixture.student,
+        photo_url: "https://synthetic.invalid/after-bulk.png",
+      }),
+    );
+    await page.evaluate(() => fixture.upload);
+    assert.equal(
+      (await storedStudentFacts(page)).photo,
+      "https://synthetic.invalid/after-bulk.png",
+    );
+    await page.evaluate(() => fixture.root.unmount());
+  } finally {
+    await browser.close();
+  }
+});

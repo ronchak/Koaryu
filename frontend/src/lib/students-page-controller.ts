@@ -86,6 +86,12 @@ type StudentsPageControllerOptions = {
   >;
 };
 
+// One bulk roster write owns the selection, panel and payload until it settles.
+type StudentRosterBulkCommand =
+  | { kind: "delete"; ids: string[]; scope: string }
+  | { kind: "tags"; ids: string[]; tags: string[]; scope: string }
+  | { kind: "status"; ids: string[]; status: StudentStatus; scope: string };
+
 function useDebouncedValue<T>(value: T, delayMs: number) {
   const [debounced, setDebounced] = useState(value);
 
@@ -148,6 +154,13 @@ export function useStudentsPageController({
   );
 
   const returnScope = `${studioStore.currentUserId}:${currentStudioId}:${config.currentRole}:${identityGeneration}`;
+  const currentRosterScope = useRef<string | null>(returnScope);
+  useEffect(() => {
+    currentRosterScope.current = returnScope;
+    return () => {
+      if (currentRosterScope.current === returnScope) currentRosterScope.current = null;
+    };
+  }, [returnScope]);
   const [initialReturn] = useState(() =>
     loadRosterReturn(returnScope, safeStudentsReturn(`/students?${searchParams}`)),
   );
@@ -177,9 +190,12 @@ export function useStudentsPageController({
   const [showForm, setShowForm] = useState(false);
   const [isAdding, setIsAdding] = useState(false);
   const [activeBulkPanel, setActiveBulkPanel] = useState<StudentRosterBulkPanel | null>(null);
-  const [isDeleting, setIsDeleting] = useState(false);
-  const [isAddingTags, setIsAddingTags] = useState(false);
-  const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
+  const [pendingBulkCommand, setPendingBulkCommand] = useState<StudentRosterBulkCommand | null>(
+    null,
+  );
+  const bulkCommandOwnerRef = useRef<StudentRosterBulkCommand | null>(null);
+  const currentPendingBulkCommand =
+    pendingBulkCommand?.scope === returnScope ? pendingBulkCommand : null;
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [bulkActionError, setBulkActionError] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
@@ -440,7 +456,16 @@ export function useStudentsPageController({
     if (window.location.pathname !== "/students") return;
     const browserHref = safeStudentsReturn(`/students${window.location.search}`);
     if (browserHref !== lastRosterHrefRef.current) {
+      // Keep the selected command's retry context if browser history changes mid-write.
+      if (currentPendingBulkCommand) {
+        window.history.replaceState(window.history.state, "", rosterHref);
+        return;
+      }
       const timer = window.setTimeout(() => {
+        if (bulkCommandOwnerRef.current?.scope === returnScope) {
+          window.history.replaceState(window.history.state, "", rosterHref);
+          return;
+        }
         const params = new URLSearchParams(browserHref.split("?")[1]);
         lastRosterHrefRef.current = browserHref;
         setSearch((params.get("q") ?? "").slice(0, 200));
@@ -468,20 +493,24 @@ export function useStudentsPageController({
       lastRosterHrefRef.current = rosterHref;
       window.history.replaceState(window.history.state, "", rosterHref);
     }
-  }, [incomingRosterHref, resetRosterPaging, rosterHref]);
+  }, [currentPendingBulkCommand, incomingRosterHref, resetRosterPaging, returnScope, rosterHref]);
 
-  const requestRosterPage = useCallback((requestedPage: number, requestedCursor: string | null) => {
-    pageRef.current = requestedPage;
-    pagedCursorRef.current = requestedCursor;
-    setPage(requestedPage);
-    setIsPagedLoading(true);
-    setPagedLoadError(null);
-    setSelectedIds(new Set());
-    setActiveBulkPanel(null);
-    setDeleteError(null);
-    setBulkActionError(null);
-    setPageRequestNonce((current) => current + 1);
-  }, []);
+  const requestRosterPage = useCallback(
+    (requestedPage: number, requestedCursor: string | null) => {
+      if (bulkCommandOwnerRef.current?.scope === returnScope) return;
+      pageRef.current = requestedPage;
+      pagedCursorRef.current = requestedCursor;
+      setPage(requestedPage);
+      setIsPagedLoading(true);
+      setPagedLoadError(null);
+      setSelectedIds(new Set());
+      setActiveBulkPanel(null);
+      setDeleteError(null);
+      setBulkActionError(null);
+      setPageRequestNonce((current) => current + 1);
+    },
+    [returnScope],
+  );
 
   const loadPagedStudents = useCallback(
     async (options?: { recoverEmpty?: boolean; signal?: AbortSignal }) => {
@@ -672,15 +701,29 @@ export function useStudentsPageController({
     newStudentsParam,
     usesDerivedRosterFilters,
   ]);
+  const rosterIdentityKey = JSON.stringify([identityGeneration, currentStudioId]);
   const previousPagingResetKeyRef = useRef(pagingResetKey);
+  const previousRosterIdentityKeyRef = useRef(rosterIdentityKey);
   useEffect(() => {
     if (previousPagingResetKeyRef.current === pagingResetKey) return;
+    // A replaced tenant or identity always drops the old selection. Same-identity
+    // query changes wait for a pending bulk command; settlement reruns this effect.
+    const identityChanged = previousRosterIdentityKeyRef.current !== rosterIdentityKey;
+    if (!identityChanged && currentPendingBulkCommand) return;
     const timer = window.setTimeout(() => {
+      if (!identityChanged && bulkCommandOwnerRef.current?.scope === returnScope) return;
       previousPagingResetKeyRef.current = pagingResetKey;
+      previousRosterIdentityKeyRef.current = rosterIdentityKey;
       resetRosterPaging();
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [pagingResetKey, resetRosterPaging]);
+  }, [
+    currentPendingBulkCommand,
+    pagingResetKey,
+    resetRosterPaging,
+    returnScope,
+    rosterIdentityKey,
+  ]);
 
   useEffect(() => {
     if (usesDerivedRosterFilters) {
@@ -762,7 +805,25 @@ export function useStudentsPageController({
     usesDerivedRosterFilters,
   });
 
+  function acquireBulkCommand(command: StudentRosterBulkCommand) {
+    if (bulkCommandOwnerRef.current?.scope === command.scope) return false;
+    bulkCommandOwnerRef.current = command;
+    setPendingBulkCommand(command);
+    return true;
+  }
+
+  function releaseBulkCommand(command: StudentRosterBulkCommand) {
+    if (bulkCommandOwnerRef.current !== command) return;
+    bulkCommandOwnerRef.current = null;
+    setPendingBulkCommand(null);
+  }
+
+  const isBulkCommandOwned = () => bulkCommandOwnerRef.current?.scope === returnScope;
+  const isCurrentBulkCommand = (command: StudentRosterBulkCommand) =>
+    currentRosterScope.current === command.scope && bulkCommandOwnerRef.current === command;
+
   function handleSort(key: SortKey) {
+    if (isBulkCommandOwned()) return;
     resetRosterPaging();
     if (sortKey === key) {
       setSortDir((direction) => (direction === "asc" ? "desc" : "asc"));
@@ -819,16 +880,19 @@ export function useStudentsPageController({
     ]),
   );
 
-  async function reloadVisibleRosterAfterMutation(context: string) {
+  async function reloadVisibleRosterAfterMutation(context: string, isCurrent?: () => boolean) {
     try {
       await reloadVisibleRoster({ recoverEmpty: !usesDerivedRosterFilters });
     } catch (error) {
       console.error(`Failed to refresh students after ${context}`, error);
-      setActionMessage((current) => withStudentRosterRefreshWarning(current));
+      if (!isCurrent || isCurrent()) {
+        setActionMessage((current) => withStudentRosterRefreshWarning(current));
+      }
     }
   }
 
   function toggleSelect(id: string) {
+    if (isBulkCommandOwned()) return;
     setDeleteError(null);
     setBulkActionError(null);
     setActionMessage(null);
@@ -847,6 +911,7 @@ export function useStudentsPageController({
   }
 
   function toggleSelectAll() {
+    if (isBulkCommandOwned()) return;
     setDeleteError(null);
     setBulkActionError(null);
     setActionMessage(null);
@@ -859,6 +924,7 @@ export function useStudentsPageController({
   }
 
   function toggleBulkPanel(panel: StudentRosterBulkPanel) {
+    if (isBulkCommandOwned()) return;
     setDeleteError(null);
     setBulkActionError(null);
     setActionMessage(null);
@@ -866,21 +932,28 @@ export function useStudentsPageController({
   }
 
   async function handleDeleteSelected() {
-    if (!canManageRoster || selectedIds.size === 0) return;
+    if (!canManageRoster || isBulkCommandOwned() || selectedIds.size === 0) return;
 
-    setIsDeleting(true);
+    const command: StudentRosterBulkCommand = {
+      kind: "delete",
+      ids: Array.from(selectedIds),
+      scope: returnScope,
+    };
+    if (!acquireBulkCommand(command)) return;
     setDeleteError(null);
 
     try {
-      const deleteCount = selectedIds.size;
-      await deleteStudents(Array.from(selectedIds));
+      const deleteCount = command.ids.length;
+      await deleteStudents(command.ids);
+      if (!isCurrentBulkCommand(command)) return;
       setSelectedIds(new Set());
       setActiveBulkPanel(null);
       setActionMessage(
         `${deleteCount} ${deleteCount === 1 ? "student was" : "students were"} removed from the active roster.`,
       );
-      await reloadVisibleRosterAfterMutation("delete");
+      await reloadVisibleRosterAfterMutation("delete", () => isCurrentBulkCommand(command));
     } catch (error) {
+      if (!isCurrentBulkCommand(command)) return;
       setDeleteError(
         error instanceof Error ? error.message : "Failed to archive selected students.",
       );
@@ -890,12 +963,12 @@ export function useStudentsPageController({
         });
       }
     } finally {
-      setIsDeleting(false);
+      releaseBulkCommand(command);
     }
   }
 
   async function handleAddTags() {
-    if (!canManageRoster || selectedIds.size === 0) return;
+    if (!canManageRoster || isBulkCommandOwned() || selectedIds.size === 0) return;
 
     const tags = parseBulkTagsInput(tagInput);
 
@@ -904,19 +977,28 @@ export function useStudentsPageController({
       return;
     }
 
-    setIsAddingTags(true);
+    const command: StudentRosterBulkCommand = {
+      kind: "tags",
+      ids: Array.from(selectedIds),
+      tags,
+      scope: returnScope,
+    };
+    if (!acquireBulkCommand(command)) return;
     setBulkActionError(null);
 
     try {
-      const result = await bulkAddTagsToStudents(Array.from(selectedIds), tags, {
+      const result = await bulkAddTagsToStudents(command.ids, command.tags, {
         refreshMode: usesDerivedRosterFilters ? "full" : "local",
       });
-      if (result.updated !== selectedIds.size) {
+      if (!isCurrentBulkCommand(command)) return;
+      if (result.updated !== command.ids.length) {
         setBulkActionError(
-          `Added tags to ${result.updated} of ${selectedIds.size} selected students. Some students may no longer be available.`,
+          `Added tags to ${result.updated} of ${command.ids.length} selected students. Some students may no longer be available.`,
         );
         if (!usesDerivedRosterFilters) {
-          await reloadVisibleRosterAfterMutation("partial bulk tag update");
+          await reloadVisibleRosterAfterMutation("partial bulk tag update", () =>
+            isCurrentBulkCommand(command),
+          );
         }
         return;
       }
@@ -926,9 +1008,12 @@ export function useStudentsPageController({
         `Tags added to ${result.updated} ${result.updated === 1 ? "student" : "students"}.`,
       );
       if (!usesDerivedRosterFilters) {
-        await reloadVisibleRosterAfterMutation("bulk tag update");
+        await reloadVisibleRosterAfterMutation("bulk tag update", () =>
+          isCurrentBulkCommand(command),
+        );
       }
     } catch (error) {
+      if (!isCurrentBulkCommand(command)) return;
       setBulkActionError(error instanceof Error ? error.message : "Failed to add tags.");
       if (!usesDerivedRosterFilters) {
         void reloadVisibleRoster({ recoverEmpty: true }).catch((refreshError) => {
@@ -936,37 +1021,49 @@ export function useStudentsPageController({
         });
       }
     } finally {
-      setIsAddingTags(false);
+      releaseBulkCommand(command);
     }
   }
 
   async function handleBulkStatusUpdate() {
-    if (!canManageRoster || selectedIds.size === 0) return;
+    if (!canManageRoster || isBulkCommandOwned() || selectedIds.size === 0) return;
 
-    setIsUpdatingStatus(true);
+    const command: StudentRosterBulkCommand = {
+      kind: "status",
+      ids: Array.from(selectedIds),
+      status: bulkStatus,
+      scope: returnScope,
+    };
+    if (!acquireBulkCommand(command)) return;
     setBulkActionError(null);
 
     try {
-      const result = await bulkUpdateStudentStatus(Array.from(selectedIds), bulkStatus, {
+      const result = await bulkUpdateStudentStatus(command.ids, command.status, {
         refreshMode: usesDerivedRosterFilters ? "full" : "local",
       });
-      if (result.updated !== selectedIds.size) {
+      if (!isCurrentBulkCommand(command)) return;
+      if (result.updated !== command.ids.length) {
         setBulkActionError(
-          `Updated ${result.updated} of ${selectedIds.size} selected students. Some students may no longer be available.`,
+          `Updated ${result.updated} of ${command.ids.length} selected students. Some students may no longer be available.`,
         );
         if (!usesDerivedRosterFilters) {
-          await reloadVisibleRosterAfterMutation("partial bulk status update");
+          await reloadVisibleRosterAfterMutation("partial bulk status update", () =>
+            isCurrentBulkCommand(command),
+          );
         }
         return;
       }
       setActiveBulkPanel(null);
       setActionMessage(
-        `Status changed to ${bulkStatus} for ${result.updated} ${result.updated === 1 ? "student" : "students"}.`,
+        `Status changed to ${command.status} for ${result.updated} ${result.updated === 1 ? "student" : "students"}.`,
       );
       if (!usesDerivedRosterFilters) {
-        await reloadVisibleRosterAfterMutation("bulk status update");
+        await reloadVisibleRosterAfterMutation("bulk status update", () =>
+          isCurrentBulkCommand(command),
+        );
       }
     } catch (error) {
+      if (!isCurrentBulkCommand(command)) return;
       setBulkActionError(error instanceof Error ? error.message : "Failed to update status.");
       if (!usesDerivedRosterFilters) {
         void reloadVisibleRoster({ recoverEmpty: true }).catch((refreshError) => {
@@ -974,7 +1071,7 @@ export function useStudentsPageController({
         });
       }
     } finally {
-      setIsUpdatingStatus(false);
+      releaseBulkCommand(command);
     }
   }
 
@@ -1012,13 +1109,14 @@ export function useStudentsPageController({
       inactivityByStudentId,
       inactivityThreshold,
       isAdding,
-      isAddingTags,
-      isDeleting,
+      isAddingTags: currentPendingBulkCommand?.kind === "tags",
+      isBulkCommandPending: currentPendingBulkCommand !== null,
+      isDeleting: currentPendingBulkCommand?.kind === "delete",
       isInitialRosterLoading,
       isNewStudentYtd,
       isPagedLoading,
       isRosterRefreshing,
-      isUpdatingStatus,
+      isUpdatingStatus: currentPendingBulkCommand?.kind === "status",
       newStudentDays,
       newStudentStartDate,
       onAddStudent: () => {
@@ -1026,22 +1124,28 @@ export function useStudentsPageController({
       },
       onAddStudentSubmit: handleAddStudent,
       onAddTags: handleAddTags,
-      onBulkStatusChange: setBulkStatus,
+      onBulkStatusChange: (status: StudentStatus) => {
+        if (!isBulkCommandOwned()) setBulkStatus(status);
+      },
       onBulkStatusUpdate: handleBulkStatusUpdate,
       onCancelDelete: () => {
+        if (isBulkCommandOwned()) return;
         setActiveBulkPanel(null);
         setDeleteError(null);
       },
       onCancelStatus: () => {
+        if (isBulkCommandOwned()) return;
         setActiveBulkPanel(null);
         setBulkActionError(null);
       },
       onCancelTags: () => {
+        if (isBulkCommandOwned()) return;
         setActiveBulkPanel(null);
         setBulkActionError(null);
         setTagInput("");
       },
       onClearFilters: () => {
+        if (isBulkCommandOwned()) return;
         lastInputNormalizedSearchRef.current = "";
         setSearch("");
         setStatusFilter("");
@@ -1059,7 +1163,13 @@ export function useStudentsPageController({
         if (canManageRoster) router.push("/students/import");
       },
       onNextPage: () => {
-        if (usesDerivedRosterFilters || isPagedLoading || !pagedHasNext || !pagedNextCursor) {
+        if (
+          isBulkCommandOwned() ||
+          usesDerivedRosterFilters ||
+          isPagedLoading ||
+          !pagedHasNext ||
+          !pagedNextCursor
+        ) {
           return;
         }
         requestRosterPage(pageRef.current + 1, pagedNextCursor);
@@ -1079,6 +1189,7 @@ export function useStudentsPageController({
       },
       onPreviousPage: () => {
         if (
+          isBulkCommandOwned() ||
           usesDerivedRosterFilters ||
           isPagedLoading ||
           !pagedHasPrevious ||
@@ -1089,6 +1200,7 @@ export function useStudentsPageController({
         requestRosterPage(Math.max(1, pageRef.current - 1), pagedPreviousCursor);
       },
       onProgramFilterChange: (value: string) => {
+        if (isBulkCommandOwned()) return;
         setProgramFilter(value);
         resetRosterPaging();
       },
@@ -1098,6 +1210,7 @@ export function useStudentsPageController({
         });
       },
       onSearchChange: (value: string) => {
+        if (isBulkCommandOwned()) return;
         const previousNormalizedSearch = lastInputNormalizedSearchRef.current;
         const nextNormalizedSearch = normalizeStudentListSearch(value);
         lastInputNormalizedSearchRef.current = nextNormalizedSearch;
@@ -1108,10 +1221,13 @@ export function useStudentsPageController({
       },
       onSort: handleSort,
       onStatusFilterChange: (value: StudentRosterStatusFilter | "") => {
+        if (isBulkCommandOwned()) return;
         setStatusFilter(value);
         resetRosterPaging();
       },
-      onTagInputChange: setTagInput,
+      onTagInputChange: (value: string) => {
+        if (!isBulkCommandOwned()) setTagInput(value);
+      },
       onToggleBulkPanel: toggleBulkPanel,
       onToggleSelect: toggleSelect,
       onToggleSelectAll: toggleSelectAll,

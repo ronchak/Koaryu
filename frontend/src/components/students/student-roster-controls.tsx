@@ -104,6 +104,7 @@ export function StudentRosterNotices({
 export function StudentRosterToolbar({
   activeBulkPanel,
   canManageRoster,
+  isBulkCommandPending,
   isRosterRefreshing,
   onProgramFilterChange,
   onSearchChange,
@@ -120,6 +121,7 @@ export function StudentRosterToolbar({
 }: {
   activeBulkPanel: StudentRosterBulkPanel | null;
   canManageRoster: boolean;
+  isBulkCommandPending: boolean;
   isRosterRefreshing: boolean;
   onProgramFilterChange: (value: string) => void;
   onSearchChange: (value: string) => void;
@@ -144,6 +146,7 @@ export function StudentRosterToolbar({
           placeholder="Search students..."
           value={search}
           onChange={(event) => onSearchChange(event.target.value)}
+          disabled={isBulkCommandPending}
           className={styles.rosterSearchInput}
         />
       </div>
@@ -155,6 +158,7 @@ export function StudentRosterToolbar({
           onChange={(event) =>
             onStatusFilterChange(event.target.value as StudentRosterStatusFilter | "")
           }
+          disabled={isBulkCommandPending}
           className={styles.rosterFilterSelect}
         >
           {STATUS_OPTIONS.map((option) => (
@@ -168,6 +172,7 @@ export function StudentRosterToolbar({
           aria-label="Filter by program"
           value={programFilter}
           onChange={(event) => onProgramFilterChange(event.target.value)}
+          disabled={isBulkCommandPending}
           className={styles.rosterFilterSelect}
         >
           <option value="">All programs</option>
@@ -188,6 +193,7 @@ export function StudentRosterToolbar({
           aria-label="Sort students by"
           value={sortKey}
           onChange={(event) => onSort(event.target.value as SortKey)}
+          disabled={isBulkCommandPending}
           className={styles.rosterFilterSelect}
         >
           <option value="name">Name</option>
@@ -199,6 +205,7 @@ export function StudentRosterToolbar({
           type="button"
           aria-label={`Sort ${sortDir === "asc" ? "descending" : "ascending"}`}
           onClick={() => onSort(sortKey)}
+          disabled={isBulkCommandPending}
           className={styles.mobileSortDirection}
         >
           {sortDir === "asc" ? "Ascending" : "Descending"}
@@ -218,7 +225,8 @@ export function StudentRosterToolbar({
           <button
             type="button"
             onClick={() => onToggleBulkPanel("tags")}
-            className={`min-h-11 px-2 text-xs cursor-pointer ${
+            disabled={isBulkCommandPending}
+            className={`min-h-11 px-2 text-xs cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 ${
               activeBulkPanel === "tags"
                 ? "text-accent"
                 : "text-text-secondary hover:text-text-primary"
@@ -229,7 +237,8 @@ export function StudentRosterToolbar({
           <button
             type="button"
             onClick={() => onToggleBulkPanel("status")}
-            className={`min-h-11 px-2 text-xs cursor-pointer ${
+            disabled={isBulkCommandPending}
+            className={`min-h-11 px-2 text-xs cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 ${
               activeBulkPanel === "status"
                 ? "text-accent"
                 : "text-text-secondary hover:text-text-primary"
@@ -240,7 +249,8 @@ export function StudentRosterToolbar({
           <button
             type="button"
             onClick={() => onToggleBulkPanel("delete")}
-            className="min-h-11 px-2 text-xs text-danger hover:text-danger/80 cursor-pointer"
+            disabled={isBulkCommandPending}
+            className="min-h-11 px-2 text-xs text-danger hover:text-danger/80 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
           >
             Archive
           </button>
@@ -256,6 +266,7 @@ export function StudentRosterBulkActionPanels({
   bulkStatus,
   deleteError,
   isAddingTags,
+  isBulkCommandPending,
   isDeleting,
   isUpdatingStatus,
   onAddTags,
@@ -274,6 +285,7 @@ export function StudentRosterBulkActionPanels({
   bulkStatus: StudentStatus;
   deleteError: string | null;
   isAddingTags: boolean;
+  isBulkCommandPending: boolean;
   isDeleting: boolean;
   isUpdatingStatus: boolean;
   onAddTags: () => void;
@@ -306,16 +318,27 @@ export function StudentRosterBulkActionPanels({
                   placeholder="vip, leadership, needs-follow-up"
                   value={tagInput}
                   onChange={(event) => onTagInputChange(event.target.value)}
-                  disabled={isAddingTags}
+                  disabled={isBulkCommandPending}
                   error={bulkActionError || undefined}
                 />
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <Button variant="ghost" size="sm" onClick={onCancelTags} disabled={isAddingTags}>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={onCancelTags}
+                disabled={isBulkCommandPending}
+              >
                 Cancel
               </Button>
-              <Button variant="primary" size="sm" isLoading={isAddingTags} onClick={onAddTags}>
+              <Button
+                variant="primary"
+                size="sm"
+                isLoading={isAddingTags}
+                disabled={isBulkCommandPending}
+                onClick={onAddTags}
+              >
                 Add tag
               </Button>
             </div>
@@ -346,7 +369,7 @@ export function StudentRosterBulkActionPanels({
                   id="bulk-status"
                   value={bulkStatus}
                   onChange={(event) => onBulkStatusChange(event.target.value as StudentStatus)}
-                  disabled={isUpdatingStatus}
+                  disabled={isBulkCommandPending}
                   className="mt-1 w-full px-3 py-2 text-sm bg-surface-raised border border-border rounded-[14px] text-text-primary focus:border-accent focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {STATUS_OPTIONS.filter((option) => option.value).map((option) => (
@@ -365,7 +388,7 @@ export function StudentRosterBulkActionPanels({
                 variant="ghost"
                 size="sm"
                 onClick={onCancelStatus}
-                disabled={isUpdatingStatus}
+                disabled={isBulkCommandPending}
               >
                 Cancel
               </Button>
@@ -373,6 +396,7 @@ export function StudentRosterBulkActionPanels({
                 variant="primary"
                 size="sm"
                 isLoading={isUpdatingStatus}
+                disabled={isBulkCommandPending}
                 onClick={onBulkStatusUpdate}
               >
                 Change status
@@ -403,10 +427,21 @@ export function StudentRosterBulkActionPanels({
               {deleteError ? <p className="text-xs text-danger mt-2">{deleteError}</p> : null}
             </div>
             <div className="flex items-center gap-2">
-              <Button variant="ghost" size="sm" onClick={onCancelDelete} disabled={isDeleting}>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={onCancelDelete}
+                disabled={isBulkCommandPending}
+              >
                 Cancel
               </Button>
-              <Button variant="danger" size="sm" isLoading={isDeleting} onClick={onDeleteSelected}>
+              <Button
+                variant="danger"
+                size="sm"
+                isLoading={isDeleting}
+                disabled={isBulkCommandPending}
+                onClick={onDeleteSelected}
+              >
                 <Trash2 className="w-3.5 h-3.5" />
                 Archive
               </Button>

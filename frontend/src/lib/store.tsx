@@ -93,6 +93,7 @@ import { useStoreProgramActions } from "@/lib/store-program-actions";
 import { useStoreScheduleActions } from "@/lib/store-schedule-actions";
 import { useStoreStaffActions } from "@/lib/store-staff-actions";
 import { useStoreStudentBulkActions } from "@/lib/store-student-bulk-actions";
+import { normalizeStudentIds } from "@/lib/student-store-model";
 import { useStoreStudentImportActions } from "@/lib/store-student-import-actions";
 import { useStoreStudentPhotoActions } from "@/lib/store-student-photo-actions";
 import { useStoreStudentRosterActions } from "@/lib/store-student-roster-actions";
@@ -139,7 +140,7 @@ export {
 export const STUDENT_COMMAND_BUSY_MESSAGE =
   "Another change to this student is still saving. Try again when it finishes.";
 
-// Profile, photo and archive responses each carry a full Student, so one command
+// Profile, photo, archive and bulk tag/status commands all rewrite student facts, so one command
 // owns each student until it settles. Ownership is taken before the first await
 // and a conflicting command is refused instead of issuing an overlapping write.
 // Reservations belong to one identity epoch: a replaced identity cannot hold or
@@ -172,6 +173,7 @@ function useStudentCommandOwnership<Args extends unknown[], Result>(
 }
 const singleStudentCommandIds = (studentId: string) => [studentId];
 const archiveStudentCommandIds = (studentIds: string[]) => studentIds;
+const bulkStudentCommandIds = (studentIds: string[]) => normalizeStudentIds(studentIds);
 
 // ── Provider ─────────────────────────────────────────────────────────────────
 export function StoreProvider({ children }: { children: ReactNode }) {
@@ -1994,6 +1996,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       studentCommandOwnersRef,
       identityEpochRef,
     ),
+    bulkAddTagsToStudents: useStudentCommandOwnership(
+      bulkAddTagsToStudents,
+      bulkStudentCommandIds,
+      studentCommandOwnersRef,
+      identityEpochRef,
+    ),
+    bulkUpdateStudentStatus: useStudentCommandOwnership(
+      reconciledCommands.bulkUpdateStudentStatus,
+      bulkStudentCommandIds,
+      studentCommandOwnersRef,
+      identityEpochRef,
+    ),
   };
 
   const contextValues = useStoreContextValues({
@@ -2007,8 +2021,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     beltLadders,
     beltLaddersLoadError,
     beltRanks,
-    bulkAddTagsToStudents,
-    bulkUpdateStudentStatus: reconciledCommands.bulkUpdateStudentStatus,
+    bulkAddTagsToStudents: ownedStudentCommands.bulkAddTagsToStudents,
+    bulkUpdateStudentStatus: ownedStudentCommands.bulkUpdateStudentStatus,
     clearStudioData,
     clearSubscriptionRequired,
     convertLeadToStudent: reconciledCommands.convertLeadToStudent,

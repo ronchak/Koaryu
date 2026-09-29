@@ -69,6 +69,7 @@ type StudentRosterPageContentProps = {
   inactivityThreshold: number | null;
   isAdding: boolean;
   isAddingTags: boolean;
+  isBulkCommandPending: boolean;
   isDeleting: boolean;
   isInitialRosterLoading: boolean;
   isNewStudentYtd: boolean;
@@ -143,6 +144,7 @@ export function StudentRosterPageContent({
   inactivityThreshold,
   isAdding,
   isAddingTags,
+  isBulkCommandPending,
   isDeleting,
   isInitialRosterLoading,
   isNewStudentYtd,
@@ -240,6 +242,7 @@ export function StudentRosterPageContent({
         <StudentRosterToolbar
           activeBulkPanel={activeBulkPanel}
           canManageRoster={canManageRoster}
+          isBulkCommandPending={isBulkCommandPending}
           isRosterRefreshing={isRosterRefreshing}
           onProgramFilterChange={onProgramFilterChange}
           onSearchChange={onSearchChange}
@@ -262,6 +265,7 @@ export function StudentRosterPageContent({
             bulkStatus={bulkStatus}
             deleteError={deleteError}
             isAddingTags={isAddingTags}
+            isBulkCommandPending={isBulkCommandPending}
             isDeleting={isDeleting}
             isUpdatingStatus={isUpdatingStatus}
             onAddTags={onAddTags}
@@ -302,6 +306,7 @@ export function StudentRosterPageContent({
                   handleSort={onSort}
                   inactivityByStudentId={inactivityByStudentId}
                   inactivityThreshold={inactivityThreshold}
+                  isBulkCommandPending={isBulkCommandPending}
                   onFocusStudent={setFocusedStudentId}
                   onHoverStudent={isQuickViewVisible ? setFocusedStudentId : undefined}
                   onOpenStudent={onOpenStudent}
@@ -328,6 +333,7 @@ export function StudentRosterPageContent({
 
         <StudentRosterFooter
           filteredCount={filtered.length}
+          isBulkCommandPending={isBulkCommandPending}
           isPagedLoading={isPagedLoading}
           onNextPage={onNextPage}
           onPreviousPage={onPreviousPage}
