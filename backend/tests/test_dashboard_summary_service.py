@@ -19,6 +19,7 @@ from app.services.dashboard_summary_service import (
     PRIVATE_VARY,
     DashboardSummaryService,
 )
+from app.services.dashboard_summary_attendance import DashboardSummaryAttendanceMetrics
 from app.services.dashboard_summary_store import DashboardSummaryStore
 from tests.fakes.supabase import RpcBackedSupabase, TableBackedSupabase
 
@@ -82,6 +83,313 @@ def auth_response(role="admin", studio_id="studio-1"):
 
 
 class DashboardSummaryServiceTest(unittest.TestCase):
+    def test_inactivity_uses_roster_participation_dates_and_one_attendance_read(self):
+        today = date(2026, 5, 20)
+        cases = [
+            (
+                "delayed",
+                "active",
+                "2026-01-01",
+                "2026-05-20T18:00:00Z",
+                "2026-04-30",
+                "studio-1",
+                "present",
+            ),
+            (
+                "future-only",
+                "active",
+                "2026-01-01",
+                "2026-05-20T18:00:00Z",
+                "2026-05-23",
+                "studio-1",
+                "present",
+            ),
+            (
+                "future-history",
+                "active",
+                "2026-01-01",
+                "2026-03-01T18:00:00Z",
+                "2026-03-01",
+                "studio-1",
+                "late",
+            ),
+            (
+                "same-day",
+                "active",
+                "2026-01-01",
+                "2026-05-20T17:00:00Z",
+                "2026-05-20",
+                "studio-1",
+                "present",
+            ),
+            (
+                "old-entry",
+                "active",
+                "2026-01-01",
+                "2026-01-10T18:00:00Z",
+                "2026-05-15",
+                "studio-1",
+                "present",
+            ),
+            (
+                "missing-session",
+                "active",
+                "2026-01-01",
+                "2026-05-06T19:00:00-07:00",
+                None,
+                None,
+                "present",
+            ),
+            (
+                "other-session",
+                "active",
+                "2026-01-01",
+                "2026-05-07T02:00:00Z",
+                "2026-04-01",
+                "studio-2",
+                "present",
+            ),
+            (
+                "old-visit",
+                "active",
+                "2026-05-10",
+                "2026-01-15T18:00:00Z",
+                "2026-01-15",
+                "studio-1",
+                "present",
+            ),
+            (
+                "absent",
+                "active",
+                "2026-01-01",
+                "2026-05-18T18:00:00Z",
+                "2026-05-18",
+                "studio-1",
+                "absent",
+            ),
+            (
+                "canceled",
+                "active",
+                "2026-01-01",
+                "2026-05-17T18:00:00Z",
+                "2026-05-17",
+                "studio-1",
+                "excused",
+            ),
+            (
+                "boundary-30",
+                "active",
+                "2026-01-01",
+                "2026-04-20T18:00:00Z",
+                "2026-04-20",
+                "studio-1",
+                "present",
+            ),
+            (
+                "boundary-90",
+                "active",
+                "2026-01-01",
+                "2026-02-19T18:00:00Z",
+                "2026-02-19",
+                "studio-1",
+                "present",
+            ),
+            (
+                "inside-90",
+                "active",
+                "2026-01-01",
+                "2026-02-20T18:00:00Z",
+                "2026-02-20",
+                "studio-1",
+                "present",
+            ),
+            (
+                "paused",
+                "paused",
+                "2026-01-01",
+                "2026-01-05T18:00:00Z",
+                "2026-01-05",
+                "studio-1",
+                "present",
+            ),
+            (
+                "hold",
+                "active",
+                "2026-01-01",
+                "2026-01-05T18:00:00Z",
+                "2026-01-05",
+                "studio-1",
+                "present",
+            ),
+            (
+                "other-attendance",
+                "active",
+                "2026-01-01",
+                "2026-05-20T12:00:00Z",
+                "2026-05-20",
+                "studio-2",
+                "present",
+            ),
+        ]
+        students = [
+            {
+                "id": label,
+                "status": status,
+                "membership_start_date": start_date,
+                "created_at": "2026-01-01T12:00:00Z",
+                "hold_start_date": "2026-05-01" if label == "hold" else None,
+                "hold_end_date": None,
+            }
+            for label, status, start_date, *_rest in cases
+            if label != "other-attendance"
+        ]
+        students.extend(
+            [
+                {
+                    "id": "created-fallback",
+                    "status": "trialing",
+                    "membership_start_date": None,
+                    "created_at": "2026-05-06T02:00:00Z",
+                },
+                {
+                    "id": "recent-start",
+                    "status": "trialing",
+                    "membership_start_date": "2026-05-10",
+                    "created_at": "2026-01-01T12:00:00Z",
+                },
+            ]
+        )
+        attendance = [
+            {
+                "id": label,
+                "studio_id": "studio-2" if label == "other-attendance" else "studio-1",
+                "student_id": "same-day" if label == "other-attendance" else label,
+                "status": status,
+                "checked_in_at": checked_in_at,
+                "class_sessions": {"date": class_date, "studio_id": session_studio}
+                if class_date
+                else None,
+            }
+            for label, _student_status, _start_date, checked_in_at, class_date, session_studio, status in cases
+        ]
+        attendance.append(
+            {
+                "id": "future-history-later",
+                "studio_id": "studio-1",
+                "student_id": "future-history",
+                "status": "present",
+                "checked_in_at": "2026-05-20T19:00:00Z",
+                "class_sessions": {"date": "2026-05-25", "studio_id": "studio-1"},
+            }
+        )
+        fake = FakeSupabase({"attendance": attendance})
+        metrics = DashboardSummaryAttendanceMetrics(DashboardSummaryStore(fake))
+
+        counts = metrics.inactivity_counts(
+            "studio-1",
+            students,
+            today,
+            date(2026, 5, 6),
+            date(2026, 4, 20),
+            date(2026, 2, 19),
+            "America/Los_Angeles",
+        )
+
+        self.assertEqual((counts.watch_14, counts.watch_30, counts.watch_90), (9, 7, 4))
+        self.assertEqual(len(fake.log), 1)
+        query = fake.log[0]
+        self.assertEqual(query["table"], "attendance")
+        self.assertEqual(
+            query["columns"], "student_id, checked_in_at, class_sessions(date,studio_id)"
+        )
+        self.assertEqual(query["range"], (0, 999))
+        self.assertEqual(query["orders"], (("id", False),))
+        self.assertEqual(
+            query["filters"],
+            (
+                ("eq", "studio_id", "studio-1"),
+                ("in", "student_id", {row["id"] for row in students} - {"paused", "hold"}),
+                ("neq", "status", "absent"),
+            ),
+        )
+
+        expected_windows = {
+            "delayed": (1, 0, 0),
+            "future-only": (1, 1, 1),
+            "future-history": (1, 1, 0),
+            "same-day": (0, 0, 0),
+            "old-entry": (0, 0, 0),
+            "missing-session": (0, 0, 0),
+            "other-session": (0, 0, 0),
+            "old-visit": (1, 1, 1),
+            "absent": (1, 1, 1),
+            "canceled": (0, 0, 0),
+            "boundary-30": (1, 1, 0),
+            "boundary-90": (1, 1, 1),
+            "inside-90": (1, 1, 0),
+            "paused": (0, 0, 0),
+            "hold": (0, 0, 0),
+            "created-fallback": (1, 0, 0),
+            "recent-start": (0, 0, 0),
+        }
+        for student in students:
+            with self.subTest(student=student["id"]):
+                case_fake = FakeSupabase({"attendance": attendance})
+                case_metrics = DashboardSummaryAttendanceMetrics(DashboardSummaryStore(case_fake))
+                case_counts = case_metrics.inactivity_counts(
+                    "studio-1",
+                    [student],
+                    today,
+                    date(2026, 5, 6),
+                    date(2026, 4, 20),
+                    date(2026, 2, 19),
+                    "America/Los_Angeles",
+                )
+                self.assertEqual(
+                    (case_counts.watch_14, case_counts.watch_30, case_counts.watch_90),
+                    expected_windows[student["id"]],
+                )
+
+    def test_inactivity_attendance_pages_keep_the_latest_participation(self):
+        attendance = [
+            {
+                "id": f"a-{index:04d}",
+                "studio_id": "studio-1",
+                "student_id": "student-1",
+                "status": "present",
+                "checked_in_at": "2026-01-01T00:00:00Z",
+                "class_sessions": {"date": "2026-01-01", "studio_id": "studio-1"},
+            }
+            for index in range(1000)
+        ]
+        attendance.append(
+            {
+                "id": "a-1000",
+                "studio_id": "studio-1",
+                "student_id": "student-1",
+                "status": "present",
+                "checked_in_at": "2026-01-01T00:00:00Z",
+                "class_sessions": {"date": "2026-05-20", "studio_id": "studio-1"},
+            }
+        )
+        fake = FakeSupabase({"attendance": attendance})
+        metrics = DashboardSummaryAttendanceMetrics(DashboardSummaryStore(fake))
+
+        counts = metrics.inactivity_counts(
+            "studio-1",
+            [{"id": "student-1", "status": "active", "membership_start_date": "2026-01-01"}],
+            date(2026, 5, 20),
+            date(2026, 5, 6),
+            date(2026, 4, 20),
+            date(2026, 2, 19),
+            "America/Los_Angeles",
+        )
+
+        self.assertEqual((counts.watch_14, counts.watch_30, counts.watch_90), (0, 0, 0))
+        self.assertEqual(len(fake.log), 2)
+        self.assertEqual([entry["range"] for entry in fake.log], [(0, 999), (1000, 1999)])
+        self.assertTrue(all(entry["orders"] == (("id", False),) for entry in fake.log))
+
     def test_summary_get_has_no_body_and_private_headers_include_cookie(self):
         self.assertEqual(PRIVATE_VARY, "Authorization, X-Studio-Id, Cookie")
         self.assertEqual(PRIVATE_CACHE_CONTROL, "no-store, private")

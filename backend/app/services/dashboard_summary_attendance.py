@@ -1,6 +1,5 @@
 from datetime import date, datetime, time as datetime_time, timedelta, timezone
 from typing import Any, Optional
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from app.schemas.dashboard_summary import (
     DashboardSummaryInactivityCounts,
@@ -28,29 +27,13 @@ class DashboardSummaryAttendanceMetrics:
         return date.fromisoformat(str(value)[:10])
 
     @staticmethod
-    def _as_start_of_day(value: date, timezone_name: Optional[str]) -> str:
-        try:
-            zone = ZoneInfo(timezone_name or "UTC")
-        except (ZoneInfoNotFoundError, ValueError):
-            zone = timezone.utc
-        return (
-            datetime.combine(value, datetime_time.min, tzinfo=zone)
-            .astimezone(timezone.utc)
-            .isoformat()
-        )
-
-    @staticmethod
-    def _timestamp_to_studio_date(value: Any, timezone_name: Optional[str]) -> Optional[date]:
+    def _timestamp_to_utc_date(value: Any) -> Optional[date]:
         if not value:
             return None
-        try:
-            zone = ZoneInfo(timezone_name or "UTC")
-        except (ZoneInfoNotFoundError, ValueError):
-            zone = timezone.utc
         parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
         if parsed.tzinfo is None:
             parsed = parsed.replace(tzinfo=timezone.utc)
-        return parsed.astimezone(zone).date()
+        return parsed.astimezone(timezone.utc).date()
 
     @staticmethod
     def _studio_weekday(value: date) -> int:
@@ -214,22 +197,31 @@ class DashboardSummaryAttendanceMetrics:
         for student_id_chunk in self._chunked(student_ids):
             attendance_rows = self.store.fetch_rows(
                 "attendance",
-                "student_id, checked_in_at",
+                "student_id, checked_in_at, class_sessions(date,studio_id)",
                 lambda query, student_id_chunk=student_id_chunk: (
                     query.eq("studio_id", studio_id)
                     .in_("student_id", student_id_chunk)
                     .neq("status", "absent")
-                    .gte("checked_in_at", self._as_start_of_day(lookback_90, timezone_name))
-                    .order("checked_in_at", desc=True)
                 ),
             )
             for row in attendance_rows:
                 student_id = row.get("student_id")
-                checked_in_on = self._timestamp_to_studio_date(
-                    row.get("checked_in_at"), timezone_name
+                session = row.get("class_sessions")
+                session_date = (
+                    self._parse_date(session.get("date"))
+                    if isinstance(session, dict) and session.get("studio_id") == studio_id
+                    else None
                 )
-                if student_id and checked_in_on and student_id not in last_attendance_by_student:
-                    last_attendance_by_student[student_id] = checked_in_on
+                participation_date = session_date or self._timestamp_to_utc_date(
+                    row.get("checked_in_at")
+                )
+                if (
+                    student_id
+                    and participation_date
+                    and participation_date <= today
+                    and participation_date > last_attendance_by_student.get(student_id, date.min)
+                ):
+                    last_attendance_by_student[student_id] = participation_date
 
         watch_14 = 0
         watch_30 = 0
