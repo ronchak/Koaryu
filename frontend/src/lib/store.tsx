@@ -136,6 +136,43 @@ export {
   useStudioStore,
 } from "@/lib/store-contexts";
 
+export const STUDENT_COMMAND_BUSY_MESSAGE =
+  "Another change to this student is still saving. Try again when it finishes.";
+
+// Profile, photo and archive responses each carry a full Student, so one command
+// owns each student until it settles. Ownership is taken before the first await
+// and a conflicting command is refused instead of issuing an overlapping write.
+// Reservations belong to one identity epoch: a replaced identity cannot hold or
+// release the next identity's reservation, while token renewal keeps the epoch.
+function useStudentCommandOwnership<Args extends unknown[], Result>(
+  command: (...args: Args) => Promise<Result>,
+  studentIds: (...args: Args) => string[],
+  ownersRef: React.RefObject<Map<string, symbol>>,
+  identityEpochRef: React.RefObject<number>,
+): (...args: Args) => Promise<Result> {
+  return useCallback(
+    async (...args: Args) => {
+      const epoch = identityEpochRef.current;
+      const keys = [...new Set(studentIds(...args))].map((id) => `${epoch}:${id}`);
+      if (keys.some((key) => ownersRef.current.has(key))) {
+        throw new Error(STUDENT_COMMAND_BUSY_MESSAGE);
+      }
+      const owner = Symbol("student-command");
+      keys.forEach((key) => ownersRef.current.set(key, owner));
+      try {
+        return await command(...args);
+      } finally {
+        keys.forEach((key) => {
+          if (ownersRef.current.get(key) === owner) ownersRef.current.delete(key);
+        });
+      }
+    },
+    [command, identityEpochRef, ownersRef, studentIds],
+  );
+}
+const singleStudentCommandIds = (studentId: string) => [studentId];
+const archiveStudentCommandIds = (studentIds: string[]) => studentIds;
+
 // ── Provider ─────────────────────────────────────────────────────────────────
 export function StoreProvider({ children }: { children: ReactNode }) {
   const isPreviewMode = process.env.NEXT_PUBLIC_PREVIEW_MODE === "true";
@@ -1931,6 +1968,33 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     addTemplate: useReconciledProjectionCommand(addTemplate, beginProjectionCommand),
     setBeltRanks: useReconciledProjectionCommand(setBeltRanks, beginProjectionCommand),
   };
+  const studentCommandOwnersRef = useRef(new Map<string, symbol>());
+  const ownedStudentCommands = {
+    updateStudent: useStudentCommandOwnership(
+      reconciledCommands.updateStudent,
+      singleStudentCommandIds,
+      studentCommandOwnersRef,
+      identityEpochRef,
+    ),
+    deleteStudents: useStudentCommandOwnership(
+      reconciledCommands.deleteStudents,
+      archiveStudentCommandIds,
+      studentCommandOwnersRef,
+      identityEpochRef,
+    ),
+    uploadStudentPhoto: useStudentCommandOwnership(
+      uploadStudentPhoto,
+      singleStudentCommandIds,
+      studentCommandOwnersRef,
+      identityEpochRef,
+    ),
+    deleteStudentPhoto: useStudentCommandOwnership(
+      deleteStudentPhoto,
+      singleStudentCommandIds,
+      studentCommandOwnersRef,
+      identityEpochRef,
+    ),
+  };
 
   const contextValues = useStoreContextValues({
     addLead: reconciledCommands.addLead,
@@ -1959,8 +2023,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     refreshDashboardSummary,
     deleteLead: reconciledCommands.deleteLead,
     deleteSession: reconciledCommands.deleteSession,
-    deleteStudentPhoto,
-    deleteStudents: reconciledCommands.deleteStudents,
+    deleteStudentPhoto: ownedStudentCommands.deleteStudentPhoto,
+    deleteStudents: ownedStudentCommands.deleteStudents,
     demoteStudent: reconciledCommands.demoteStudent,
     eligibility,
     eligibilityLadderId,
@@ -2028,10 +2092,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     updateProgram: reconciledCommands.updateProgram,
     updateStaffLegalName,
     updateStaffRole,
-    updateStudent: reconciledCommands.updateStudent,
+    updateStudent: ownedStudentCommands.updateStudent,
     updateUserLegalName,
     updateUserName,
-    uploadStudentPhoto,
+    uploadStudentPhoto: ownedStudentCommands.uploadStudentPhoto,
     userEmail: currentUser?.email || "",
     userName: currentUser?.full_name || "",
     legalFirstName: currentUser?.legal_first_name ?? "",

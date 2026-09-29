@@ -1846,3 +1846,615 @@ test("a pending recurring class cannot be submitted twice, and its confirmed for
     await browser.close();
   }
 });
+
+async function mountOwnedStudentDetail(page) {
+  await page.evaluate(() => {
+    fixture.photoWrites = [];
+    fixture.api.postForm = (path, _body, token) => {
+      fixture.events.push(path);
+      return new Promise((resolve, reject) =>
+        fixture.photoWrites.push({ path, token, resolve, reject }),
+      );
+    };
+    fixture.studentWrites = (id) => [
+      ...fixture.photoWrites.filter((w) => w.path.includes(id)).map((w) => `PHOTO ${w.path}`),
+      ...fixture.writes
+        .filter((w) => w.path.includes(id) || w.body?.student_ids?.includes(id))
+        .map((w) => `WRITE ${w.path}`),
+    ];
+    fixture.outcome = (promise) =>
+      Promise.race([
+        Promise.resolve(promise).then(
+          () => "ok",
+          (error) => error.message,
+        ),
+        new Promise((resolve) => setTimeout(() => resolve("pending"), 300)),
+      ]);
+    fixture.photoFile = () => new File(["p"], "photo.png", { type: "image/png" });
+    fixture.createdUrls = [];
+    fixture.revokedUrls = [];
+    const createObjectURL = URL.createObjectURL.bind(URL);
+    const revokeObjectURL = URL.revokeObjectURL.bind(URL);
+    URL.createObjectURL = (file) => {
+      const url = createObjectURL(file);
+      fixture.createdUrls.push(url);
+      return url;
+    };
+    URL.revokeObjectURL = (url) => {
+      fixture.revokedUrls.push(url);
+      revokeObjectURL(url);
+    };
+    fixture.mountDetail();
+  });
+  await page.waitForFunction(() => fixture.details.length === 1);
+  await page.evaluate(() => fixture.details[0].resolve(fixture.student));
+  await page.waitForFunction(() => fixture.detail.detailReady);
+}
+
+const detailFacts = (page) =>
+  page.evaluate(() => {
+    const stored = fixture.store.students.find((s) => s.id === "student-1");
+    return {
+      detailName: fixture.detail.student.legal_first_name,
+      detailPhoto: fixture.detail.student.photo_url,
+      detailTags: fixture.detail.student.tags,
+      storedName: stored?.legal_first_name,
+      storedPhoto: stored?.photo_url,
+      pending: fixture.detail.isStudentCommandPending,
+    };
+  });
+
+test("a pending student photo owns detail and store commands until it settles", async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await fixturePage(browser, {
+      path: "/students/student-1",
+      detailController: true,
+    });
+    await mountOwnedStudentDetail(page);
+    await page.evaluate(() => {
+      fixture.photo = fixture.detail.onPhotoSelected(fixture.photoFile());
+      fixture.repeat = fixture.detail.onPhotoSelected(fixture.photoFile());
+      fixture.attempts = {
+        detailEdit: fixture.detail.onEdit({ legal_first_name: "Overlap" }),
+        detailArchive: fixture.detail.onDeleteStudent(),
+        detailRemovePhoto: fixture.detail.onDeletePhoto(),
+        storeEdit: fixture.store.updateStudent("student-1", { legal_first_name: "Store" }),
+        storeArchive: fixture.store.deleteStudents(["student-2", "student-1"]),
+        storeRemovePhoto: fixture.store.deleteStudentPhoto("student-1"),
+        storeUpload: fixture.store.uploadStudentPhoto("student-1", fixture.photoFile()),
+      };
+    });
+    await flush(page);
+    assert.deepEqual(
+      await page.evaluate(() => fixture.studentWrites("student-1")),
+      ["PHOTO /students/student-1/photo"],
+      "only the owning photo command may write while it is pending",
+    );
+    assert.deepEqual(await page.evaluate(() => fixture.studentWrites("student-2")), []);
+    const outcomes = await page.evaluate(async () =>
+      Object.fromEntries(
+        await Promise.all(
+          Object.entries(fixture.attempts).map(async ([name, promise]) => [
+            name,
+            await fixture.outcome(promise),
+          ]),
+        ),
+      ),
+    );
+    const busy = /another change to this student is still saving/i;
+    assert.match(outcomes.detailEdit, busy);
+    assert.equal(outcomes.detailArchive, "ok");
+    assert.equal(outcomes.detailRemovePhoto, "ok");
+    for (const name of ["storeEdit", "storeArchive", "storeRemovePhoto", "storeUpload"])
+      assert.match(outcomes[name], busy, name);
+    assert.equal(await page.evaluate(() => fixture.repeat), false);
+    assert.equal(await page.evaluate(() => fixture.detail.showDeleteConfirm), false);
+    assert.equal(await page.evaluate(() => typeof fixture.detail.photoPreviewUrl), "string");
+    assert.equal((await detailFacts(page)).pending, true);
+
+    // An unrelated student is not blocked, including one named in the refused archive.
+    await page.evaluate(() => {
+      fixture.other = fixture.store.updateStudent("student-2", { legal_first_name: "Other" });
+    });
+    await page.waitForFunction(() => fixture.studentWrites("student-2").length === 1);
+    await page.evaluate(() =>
+      fixture.writes
+        .find((w) => w.path === "/students/student-2")
+        .resolve({ ...fixture.student, id: "student-2", legal_first_name: "Other" }),
+    );
+    await page.evaluate(() => fixture.other);
+
+    await page.evaluate(() =>
+      fixture.photoWrites[0].resolve({
+        ...fixture.student,
+        photo_path: "students/student-1/a.png",
+        photo_url: "https://synthetic.invalid/a.png",
+      }),
+    );
+    assert.equal(await page.evaluate(() => fixture.photo), true);
+    await page.waitForFunction(() => !fixture.detail.isStudentCommandPending);
+    assert.deepEqual(await detailFacts(page), {
+      detailName: "Ari",
+      detailPhoto: "https://synthetic.invalid/a.png",
+      detailTags: [],
+      storedName: "Ari",
+      storedPhoto: "https://synthetic.invalid/a.png",
+      pending: false,
+    });
+    assert.equal(await page.evaluate(() => fixture.detail.photoPreviewUrl), null);
+    assert.equal(await page.evaluate(() => fixture.detail.actionMessage), "Student photo updated.");
+
+    await page.evaluate(() => {
+      fixture.nextEdit = fixture.detail.onEdit({ legal_first_name: "Bea" });
+    });
+    await page.waitForFunction(() => fixture.studentWrites("student-1").length === 2);
+    await page.evaluate(() =>
+      fixture.writes
+        .find((w) => w.path === "/students/student-1")
+        .resolve({
+          ...fixture.student,
+          legal_first_name: "Bea",
+          photo_path: "students/student-1/a.png",
+          photo_url: "https://synthetic.invalid/a.png",
+          tags: ["server-record"],
+        }),
+    );
+    await page.evaluate(() => fixture.nextEdit);
+    await page.waitForFunction(() => !fixture.detail.isStudentCommandPending);
+    assert.deepEqual(await detailFacts(page), {
+      detailName: "Bea",
+      detailPhoto: "https://synthetic.invalid/a.png",
+      detailTags: ["server-record"],
+      storedName: "Bea",
+      storedPhoto: "https://synthetic.invalid/a.png",
+      pending: false,
+    });
+    assert.deepEqual(await page.evaluate(() => fixture.studentWrites("student-1")), [
+      "PHOTO /students/student-1/photo",
+      "WRITE /students/student-1",
+    ]);
+    await page.evaluate(() => fixture.root.unmount());
+  } finally {
+    await browser.close();
+  }
+});
+
+test("a rejected student photo releases ownership without hydrating failed facts", async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await fixturePage(browser, {
+      path: "/students/student-1",
+      detailController: true,
+    });
+    await mountOwnedStudentDetail(page);
+    await page.evaluate(() => {
+      fixture.photo = fixture.detail.onPhotoSelected(fixture.photoFile());
+    });
+    await page.waitForFunction(() => fixture.detail.isStudentCommandPending);
+    await page.evaluate(() => {
+      fixture.overlap = fixture.outcome(fixture.detail.onEdit({ legal_first_name: "Overlap" }));
+    });
+    assert.match(await page.evaluate(() => fixture.overlap), /still saving/i);
+    await page.evaluate(() => fixture.photoWrites[0].reject(Error("Synthetic upload failure")));
+    await page.evaluate(() => fixture.photo);
+    await page.waitForFunction(() => !fixture.detail.isStudentCommandPending);
+    assert.equal(await page.evaluate(() => fixture.detail.photoError), "Synthetic upload failure");
+    assert.equal(await page.evaluate(() => fixture.detail.photoPreviewUrl), null);
+    assert.deepEqual(await detailFacts(page), {
+      detailName: "Ari",
+      detailPhoto: null,
+      detailTags: [],
+      storedName: "Ari",
+      storedPhoto: null,
+      pending: false,
+    });
+
+    await page.evaluate(() => {
+      fixture.nextEdit = fixture.detail.onEdit({ legal_first_name: "Cai" });
+    });
+    await page.waitForFunction(() => fixture.studentWrites("student-1").length === 2);
+    await page.evaluate(() =>
+      fixture.writes
+        .find((w) => w.path === "/students/student-1")
+        .resolve({ ...fixture.student, legal_first_name: "Cai" }),
+    );
+    await page.evaluate(() => fixture.nextEdit);
+    assert.equal((await detailFacts(page)).detailName, "Cai");
+    assert.equal((await detailFacts(page)).storedName, "Cai");
+
+    await page.evaluate(() => {
+      fixture.detail.onShowDeleteConfirm();
+    });
+    await page.waitForFunction(() => fixture.detail.showDeleteConfirm);
+    await page.evaluate(() => {
+      fixture.archive = fixture.detail.onDeleteStudent();
+    });
+    await page.waitForFunction(() => fixture.studentWrites("student-1").length === 3);
+    assert.equal(
+      await page.evaluate(() => fixture.outcome(fixture.store.updateStudent("student-1", {}))),
+      "Another change to this student is still saving. Try again when it finishes.",
+    );
+    await page.evaluate(() =>
+      fixture.writes.find((w) => w.path === "/students/bulk/archive").resolve({ updated: 1 }),
+    );
+    await page.evaluate(() => fixture.archive);
+    assert.deepEqual(await page.evaluate(() => fixture.redirects), ["/students"]);
+    assert.equal(
+      await page.evaluate(() => fixture.store.students.some((s) => s.id === "student-1")),
+      false,
+    );
+    assert.deepEqual(await page.evaluate(() => fixture.studentWrites("student-1")), [
+      "PHOTO /students/student-1/photo",
+      "WRITE /students/student-1",
+      "WRITE /students/bulk/archive",
+    ]);
+    await page.evaluate(() => fixture.root.unmount());
+  } finally {
+    await browser.close();
+  }
+});
+
+test("an identity replacement cannot hydrate or duplicate a pending student command", async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await fixturePage(browser, {
+      path: "/students/student-1",
+      detailController: true,
+    });
+    await mountOwnedStudentDetail(page);
+    await page.evaluate(() => {
+      fixture.edit = fixture.detail.onEdit({ legal_first_name: "Stale" });
+    });
+    await page.waitForFunction(() => fixture.studentWrites("student-1").length === 1);
+    const generation = await page.evaluate(() => fixture.store.identityGeneration);
+    await page.evaluate(() => {
+      fixture.auth.user.id = "user-b";
+      fixture.emit("SIGNED_IN", {
+        ...fixture.session,
+        access_token: "synthetic-b",
+        user: { id: "user-b" },
+      });
+    });
+    await page.waitForFunction(
+      (previous) => fixture.store.identityGeneration !== previous && fixture.store.identityReady,
+      generation,
+    );
+    await page.waitForFunction(() => fixture.details.length === 2);
+    await page.evaluate(() =>
+      fixture.details[1].resolve({ ...fixture.student, legal_first_name: "Fresh" }),
+    );
+    await page.waitForFunction(
+      () => fixture.detail.detailReady && fixture.detail.student.legal_first_name === "Fresh",
+    );
+    assert.equal(await page.evaluate(() => fixture.detail.isStudentCommandPending), false);
+    assert.deepEqual(await page.evaluate(() => fixture.studentWrites("student-1")), [
+      "WRITE /students/student-1",
+    ]);
+
+    await page.evaluate(() =>
+      fixture.writes
+        .find((w) => w.path === "/students/student-1")
+        .resolve({ ...fixture.student, legal_first_name: "Stale" }),
+    );
+    await page.evaluate(() => fixture.edit);
+    await flush(page);
+    assert.equal((await detailFacts(page)).detailName, "Fresh");
+    assert.notEqual((await detailFacts(page)).storedName, "Stale");
+
+    await page.evaluate(() => {
+      fixture.nextEdit = fixture.detail.onEdit({ legal_first_name: "Next" });
+    });
+    await page.waitForFunction(() => fixture.studentWrites("student-1").length === 2);
+    const nextWrite = await page.evaluate(() => {
+      const write = fixture.writes.filter((w) => w.path === "/students/student-1").at(-1);
+      write.resolve({ ...fixture.student, legal_first_name: "Next" });
+      return write.body;
+    });
+    assert.deepEqual(nextWrite, { legal_first_name: "Next" });
+    await page.evaluate(() => fixture.nextEdit);
+    assert.equal((await detailFacts(page)).detailName, "Next");
+    await page.evaluate(() => fixture.root.unmount());
+  } finally {
+    await browser.close();
+  }
+});
+
+async function replaceStudentDetailIdentity(page) {
+  const generation = await page.evaluate(() => fixture.store.identityGeneration);
+  const detailReads = await page.evaluate(() => fixture.details.length);
+  await page.evaluate(() => {
+    fixture.auth.user.id = "user-b";
+    fixture.emit("SIGNED_IN", {
+      ...fixture.session,
+      access_token: "synthetic-b",
+      user: { id: "user-b" },
+    });
+  });
+  await page.waitForFunction(
+    (previous) => fixture.store.identityGeneration !== previous && fixture.store.identityReady,
+    generation,
+  );
+  await page.waitForFunction((count) => fixture.details.length > count, detailReads);
+  await page.evaluate(() =>
+    fixture.details.at(-1).resolve({ ...fixture.student, legal_first_name: "Fresh" }),
+  );
+  await page.waitForFunction(
+    () => fixture.detail.detailReady && fixture.detail.student.legal_first_name === "Fresh",
+  );
+}
+
+test("identity replacement drops old edit and archive dialogs without closing new ones", async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await fixturePage(browser, {
+      path: "/students/student-1",
+      detailController: true,
+    });
+    await mountOwnedStudentDetail(page);
+    await page.evaluate(() => {
+      fixture.detail.onShowEdit();
+      fixture.detail.onShowDeleteConfirm();
+      fixture.oldEdit = fixture.detail.onEdit({ legal_first_name: "Old draft" });
+    });
+    await page.waitForFunction(() => fixture.studentWrites("student-1").length === 1);
+    assert.equal(await page.evaluate(() => fixture.detail.showEdit), true);
+    assert.equal(await page.evaluate(() => fixture.detail.showDeleteConfirm), true);
+
+    await replaceStudentDetailIdentity(page);
+    assert.deepEqual(
+      await page.evaluate(() => ({
+        edit: fixture.detail.showEdit,
+        confirm: fixture.detail.showDeleteConfirm,
+        freshName: fixture.detail.detail.editInitialData.legal_first_name,
+      })),
+      { edit: false, confirm: false, freshName: "Fresh" },
+    );
+
+    await page.evaluate(() => {
+      fixture.detail.onShowEdit();
+      fixture.detail.onShowDeleteConfirm();
+    });
+    await page.waitForFunction(() => fixture.detail.showEdit && fixture.detail.showDeleteConfirm);
+    await page.evaluate(() =>
+      fixture.writes[0].resolve({ ...fixture.student, legal_first_name: "Old draft" }),
+    );
+    await page.evaluate(() => fixture.oldEdit);
+    await flush(page);
+    assert.equal(await page.evaluate(() => fixture.detail.showEdit), true);
+    assert.equal(await page.evaluate(() => fixture.detail.showDeleteConfirm), true);
+    assert.equal(
+      await page.evaluate(() => fixture.detail.detail.editInitialData.legal_first_name),
+      "Fresh",
+    );
+    assert.equal(await page.evaluate(() => fixture.detail.actionMessage), null);
+    await page.evaluate(() => fixture.root.unmount());
+  } finally {
+    await browser.close();
+  }
+});
+
+for (const previous of ["photo success", "photo rejection", "archive success"])
+  test(`identity B owns its student while identity A's ${previous} settles`, async () => {
+    const browser = await chromium.launch();
+    try {
+      const page = await fixturePage(browser, {
+        path: "/students/student-1",
+        detailController: true,
+      });
+      await mountOwnedStudentDetail(page);
+      if (previous === "archive success") {
+        await page.evaluate(() => fixture.detail.onShowDeleteConfirm());
+        await page.waitForFunction(() => fixture.detail.showDeleteConfirm);
+        await page.evaluate(() => {
+          fixture.commandA = fixture.detail.onDeleteStudent();
+        });
+      } else {
+        await page.evaluate(() => {
+          fixture.commandA = fixture.detail.onPhotoSelected(fixture.photoFile());
+        });
+      }
+      await page.waitForFunction(() => fixture.studentWrites("student-1").length === 1);
+      const urlA = await page.evaluate(() => fixture.createdUrls[0] ?? null);
+
+      await replaceStudentDetailIdentity(page);
+      await page.evaluate(() => {
+        fixture.commandB = fixture.detail.onPhotoSelected(fixture.photoFile());
+      });
+      await flush(page);
+      assert.equal(
+        await page.evaluate(
+          () => fixture.photoWrites.filter((w) => w.token === "synthetic-b").length,
+        ),
+        1,
+        "identity B can start its own command for the same student ID",
+      );
+      const urlB = await page.evaluate(() => fixture.detail.photoPreviewUrl);
+      assert.equal(typeof urlB, "string");
+      assert.notEqual(urlB, urlA);
+      const busy = /still saving/i;
+      assert.match(
+        await page.evaluate(() =>
+          fixture.outcome(fixture.detail.onEdit({ legal_first_name: "X" })),
+        ),
+        busy,
+      );
+      assert.match(
+        await page.evaluate(() => fixture.outcome(fixture.store.updateStudent("student-1", {}))),
+        busy,
+      );
+
+      await page.evaluate((previous) => {
+        const write = previous === "archive success" ? fixture.writes[0] : fixture.photoWrites[0];
+        if (previous === "photo rejection") write.reject(Error("Synthetic A failure"));
+        else if (previous === "archive success") write.resolve({ updated: 1 });
+        else
+          write.resolve({
+            ...fixture.student,
+            legal_first_name: "Stale",
+            photo_url: "https://synthetic.invalid/stale.png",
+          });
+      }, previous);
+      await page.evaluate(() => Promise.resolve(fixture.commandA).catch(() => {}));
+      await flush(page);
+
+      const during = await page.evaluate(() => ({
+        preview: fixture.detail.photoPreviewUrl,
+        photoSaving: fixture.detail.isPhotoSaving,
+        pending: fixture.detail.isStudentCommandPending,
+        photoError: fixture.detail.photoError,
+        deleteError: fixture.detail.deleteError,
+        actionMessage: fixture.detail.actionMessage,
+        redirects: fixture.redirects ?? [],
+      }));
+      assert.deepEqual(during, {
+        preview: urlB,
+        photoSaving: true,
+        pending: true,
+        photoError: null,
+        deleteError: null,
+        actionMessage: null,
+        redirects: [],
+      });
+      assert.deepEqual(await detailFacts(page), {
+        detailName: "Fresh",
+        detailPhoto: null,
+        detailTags: [],
+        storedName: "Ari",
+        storedPhoto: null,
+        pending: true,
+      });
+      assert.match(
+        await page.evaluate(() => fixture.outcome(fixture.store.updateStudent("student-1", {}))),
+        busy,
+        "A's settlement cannot release B's reservation",
+      );
+      const revokedDuring = await page.evaluate(() => fixture.revokedUrls);
+      assert.equal(revokedDuring.includes(urlB), false);
+      assert.equal(
+        await page.evaluate(() => fixture.studentWrites("student-1").length),
+        2,
+        "no third write while B owns the student",
+      );
+
+      await page.evaluate(() =>
+        fixture.photoWrites
+          .find((w) => w.token === "synthetic-b")
+          .resolve({
+            ...fixture.student,
+            legal_first_name: "Fresh",
+            photo_url: "https://synthetic.invalid/b.png",
+          }),
+      );
+      assert.equal(await page.evaluate(() => fixture.commandB), true);
+      await page.waitForFunction(() => !fixture.detail.isStudentCommandPending);
+      assert.deepEqual(await detailFacts(page), {
+        detailName: "Fresh",
+        detailPhoto: "https://synthetic.invalid/b.png",
+        detailTags: [],
+        storedName: "Fresh",
+        storedPhoto: "https://synthetic.invalid/b.png",
+        pending: false,
+      });
+      assert.equal(await page.evaluate(() => fixture.detail.photoPreviewUrl), null);
+      assert.equal(
+        await page.evaluate(() => fixture.detail.actionMessage),
+        "Student photo updated.",
+      );
+      const revoked = await page.evaluate(() => fixture.revokedUrls);
+      const created = await page.evaluate(() => fixture.createdUrls);
+      assert.deepEqual(
+        [...revoked].sort(),
+        [...created].sort(),
+        "each owned preview URL is revoked exactly once",
+      );
+
+      await page.evaluate(() => {
+        fixture.third = fixture.detail.onEdit({ legal_first_name: "Third" });
+      });
+      await page.waitForFunction(() => fixture.studentWrites("student-1").length === 3);
+      await page.evaluate(() =>
+        fixture.writes
+          .filter((w) => w.path === "/students/student-1")
+          .at(-1)
+          .resolve({
+            ...fixture.student,
+            legal_first_name: "Third",
+            photo_url: "https://synthetic.invalid/b.png",
+          }),
+      );
+      await page.evaluate(() => fixture.third);
+      assert.equal((await detailFacts(page)).detailName, "Third");
+      assert.equal((await detailFacts(page)).storedName, "Third");
+      assert.deepEqual(await page.evaluate(() => fixture.redirects ?? []), []);
+      await page.evaluate(() => fixture.root.unmount());
+    } finally {
+      await browser.close();
+    }
+  });
+
+test("same-identity token renewal keeps a pending student command's ownership", async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await fixturePage(browser, {
+      path: "/students/student-1",
+      detailController: true,
+    });
+    await mountOwnedStudentDetail(page);
+    await page.evaluate(() => {
+      fixture.photo = fixture.detail.onPhotoSelected(fixture.photoFile());
+    });
+    await page.waitForFunction(() => fixture.photoWrites.length === 1);
+    const generation = await page.evaluate(() => fixture.store.identityGeneration);
+    await page.evaluate(() =>
+      fixture.emit("TOKEN_REFRESHED", { ...fixture.session, access_token: "synthetic-renewed" }),
+    );
+    await page.waitForFunction(() => fixture.store.token === "synthetic-renewed");
+    assert.equal(await page.evaluate(() => fixture.store.identityGeneration), generation);
+    assert.equal(await page.evaluate(() => fixture.detail.isStudentCommandPending), true);
+    assert.match(
+      await page.evaluate(() => fixture.outcome(fixture.store.updateStudent("student-1", {}))),
+      /still saving/i,
+    );
+    assert.equal(await page.evaluate(() => fixture.outcome(fixture.detail.onDeletePhoto())), "ok");
+    assert.equal(await page.evaluate(() => fixture.studentWrites("student-1").length), 1);
+
+    await page.evaluate(() =>
+      fixture.photoWrites[0].resolve({
+        ...fixture.student,
+        photo_url: "https://synthetic.invalid/renewed.png",
+      }),
+    );
+    assert.equal(await page.evaluate(() => fixture.photo), true);
+    await page.waitForFunction(() => !fixture.detail.isStudentCommandPending);
+    assert.deepEqual(await detailFacts(page), {
+      detailName: "Ari",
+      detailPhoto: "https://synthetic.invalid/renewed.png",
+      detailTags: [],
+      storedName: "Ari",
+      storedPhoto: "https://synthetic.invalid/renewed.png",
+      pending: false,
+    });
+    assert.equal(await page.evaluate(() => fixture.detail.photoPreviewUrl), null);
+    assert.equal(await page.evaluate(() => fixture.detail.actionMessage), "Student photo updated.");
+
+    await page.evaluate(() => {
+      fixture.nextEdit = fixture.detail.onEdit({ legal_first_name: "Renewed" });
+    });
+    await page.waitForFunction(() => fixture.studentWrites("student-1").length === 2);
+    await page.evaluate(() =>
+      fixture.writes
+        .find((w) => w.path === "/students/student-1")
+        .resolve({
+          ...fixture.student,
+          legal_first_name: "Renewed",
+          photo_url: "https://synthetic.invalid/renewed.png",
+        }),
+    );
+    await page.evaluate(() => fixture.nextEdit);
+    assert.equal((await detailFacts(page)).detailName, "Renewed");
+    await page.evaluate(() => fixture.root.unmount());
+  } finally {
+    await browser.close();
+  }
+});
