@@ -2,7 +2,7 @@
 
 The release is complete. Production and staging frontend/backend pairs serve `55a652a6e4f368b07286181ffa8e2401f4b9c467` on V53, 148 migrations, head `20260929152445`, manifest `release-db-attestation-v53`. Both web services are active with auto-deploy off. The staging billing cron has its original branch and five-minute schedule restored and remains suspended.
 
-[PR253](https://github.com/ronchak/Koaryu/pull/253) merged as this release SHA. Its tree equals tested head `da27f15ed404b682d6f5bc2da759f87e04d0c74a`. [Exact-head CI](https://github.com/ronchak/Koaryu/actions/runs/36602895637) passed all jobs. This documentation closeout does not require redeploying its own later SHA.
+[PR253](https://github.com/ronchak/Koaryu/pull/253) merged as this release SHA. Its tree equals tested head `da27f15ed404b682d6f5bc2da759f87e04d0c74a`. [Exact-head CI](https://github.com/ronchak/Koaryu/actions/runs/36602895637) passed all jobs. The later closeout and dependency-maintenance commit is not deployed; the served release remains this SHA.
 
 ## Delivered behavior and proof
 
@@ -38,3 +38,9 @@ A fresh production-target Git build created frontend `dpl_AtSRDMutB91JprFhUFDShq
 The pre-chain snapshot is a verified recovery point, not an approved down-migration or automated hosted restore. Restoring it can lose later writes. The database archive contains Storage metadata, not object bytes. The private backup helper currently has reviewed source mappings through V50; a future V53 backup must add and verify the actual V53/image mapping. Do not reuse this release's tokens or proof as authority for a later state.
 
 Private operator commands, raw fingerprints, row hashes, credentials and provider responses remain outside the repository under `/Users/openclaw/Koaryu Releases/20260929-everyday-correctness`. The final usage meter and organization record are in the private run closeout.
+
+## Dependency maintenance after release
+
+The closeout PR's fresh audit detected CVE-2026-102274 in PyJWT 2.13.0 after the application candidate's earlier audit had passed. [PR254](https://github.com/ronchak/Koaryu/pull/254) updates only the PyJWT input pin and both hash locks to 2.14.0 alongside these release records. No other dependency version changed. The [upstream advisory](https://github.com/jpadilla/pyjwt/security/advisories/GHSA-w6j9-cwv2-h6wq) concerns malformed keys aborting whole-JWK-set parsing. Koaryu selects one matching key and normalizes construction errors; independent review found no demonstrated application path to that failure.
+
+The isolated Python 3.11 environment passed installation, dependency consistency, reproducible lock generation, both dependency audits, 32 direct security tests, 11 authentication tests and all 2,052 backend tests. This maintenance update remains separate from the deployed release and awaits a future application deployment. No emergency second rollout was warranted for this specific advisory.
