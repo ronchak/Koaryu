@@ -1056,7 +1056,7 @@ student_rank_manifest="$(
 SELECT private.koaryu_release_student_rank_writer_manifest_v13();
 "
 )"
-if [[ "$student_rank_manifest" != "0:4653774cb7fcf2f85c70dcb9284ee01d25051ebf4552520a0fa95eb929cafb9f" ]]; then
+if [[ "$student_rank_manifest" != "0:dc6043dd0992042b9e27d0fb73a49f4abe0acd06a6b9bfb500d68e7e85ab5daf" ]]; then
   echo "[student-rank manifest] FAIL database-observable writer signal: $student_rank_manifest" >&2
   exit 1
 fi

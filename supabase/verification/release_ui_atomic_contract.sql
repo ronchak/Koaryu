@@ -18,7 +18,7 @@ BEGIN
     SELECT * INTO v FROM public.koaryu_release_schema_preflight_v35();
     SELECT * INTO previous FROM public.koaryu_release_schema_preflight_v34();
     IF v.ready IS DISTINCT FROM FALSE OR previous.ready IS DISTINCT FROM FALSE
-       OR NOT ('student_profile_facts_v54' = ANY(v.security_failures)) THEN
+       OR ('student_profile_facts_v54' = ANY(v.security_failures)) IS DISTINCT FROM TRUE THEN
         RAISE EXCEPTION 'V54 or V53 compatibility accepted a disabled birthdate trigger.';
     END IF;
 END;
@@ -29,7 +29,7 @@ DO $v54_acl_negative$
 DECLARE v RECORD;
 BEGIN
     SELECT * INTO v FROM public.koaryu_release_schema_preflight_v35();
-    IF v.ready IS DISTINCT FROM FALSE OR NOT ('student_profile_facts_v54' = ANY(v.security_failures)) THEN
+    IF v.ready IS DISTINCT FROM FALSE OR ('student_profile_facts_v54' = ANY(v.security_failures)) IS DISTINCT FROM TRUE THEN
         RAISE EXCEPTION 'V54 accepted changed student helper EXECUTE grants.';
     END IF;
 END;
