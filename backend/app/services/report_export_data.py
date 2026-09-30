@@ -482,6 +482,7 @@ INTELLIGENCE_INPUT_COLUMNS: Mapping[str, Mapping[str, tuple[str, ...]]] = _manif
                 "status",
                 "deleted_at",
                 "date_of_birth",
+                "is_minor",
                 "emergency_contact_name",
                 "program_id",
                 "current_belt_rank_id",
