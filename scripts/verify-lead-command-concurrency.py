@@ -249,6 +249,57 @@ COMMIT;""")
             require(retried == saved and facts(ids) == after_edit, "Lost-response retry changed effects or returned a newer result")
             passed(case, blocking=blocking, activities=state["activities"], receipts=state["receipts"])
 
+        # Restoration changes only the lead stage. Competing direct conversions and
+        # new/replayed follow-up intents must not repeat the student write chain.
+        for kind in ("same_key", "new_key", "direct", "mixed"):
+            for rollback in (False, True):
+                ids = fixture()
+                sql("SET ROLE service_role; " + follow(ids, str(uuid4()), "enrolled"))
+                sql("SET ROLE service_role; " + patch(ids, "offer_sent"))
+                sql(f"UPDATE public.programs SET archived_at=now() WHERE id='{ids['program']}';")
+                before = facts(ids)
+                require(sql(f"SELECT is_minor AND date_of_birth IS NULL FROM public.students "
+                            f"WHERE id='{before['lead']['converted_student_id']}';") == "t",
+                        "Restoration fixture lost V54 explicit minor knowledge without a DOB")
+                conversion_facts = f"""SELECT jsonb_build_array(
+ (SELECT jsonb_agg(to_jsonb(s) ORDER BY id) FROM public.students s WHERE studio_id='{ids['studio']}'),
+ (SELECT jsonb_agg(to_jsonb(m) ORDER BY id) FROM public.student_program_memberships m WHERE studio_id='{ids['studio']}'),
+ (SELECT jsonb_agg(to_jsonb(g) ORDER BY id) FROM public.guardians g WHERE studio_id='{ids['studio']}'),
+ (SELECT jsonb_agg(to_jsonb(l) ORDER BY id) FROM public.student_guardians l WHERE student_id='{before['lead']['converted_student_id']}'),
+ (SELECT jsonb_agg(to_jsonb(a) ORDER BY id) FROM public.audit_logs a WHERE studio_id='{ids['studio']}'));"""
+                retained = sql(conversion_facts)
+                operation = str(uuid4())
+                direct = (f"SELECT to_jsonb(r) FROM public.convert_lead_to_student_atomic("
+                          f"'{ids['studio']}','{ids['actor']}','{ids['lead']}',"
+                          "NULL,NULL,NULL,NULL,NULL,NULL) r;")
+                first_command = direct if kind in ("direct", "mixed") else follow(ids, operation, "enrolled")
+                second_command = direct if kind == "direct" else follow(
+                    ids, operation if kind == "same_key" else str(uuid4()), "enrolled")
+                case = f"restore_{kind}_{'rollback' if rollback else 'commit'}"
+                first = session(case + "_first", first_command, hold=True)
+                await_result(first)
+                second = session(case + "_second", second_command)
+                blocking = observed_blocker(first, second, operation=kind == "same_key")
+                require(facts(ids) == before and sql(conversion_facts) == retained,
+                        "Uncommitted restoration changed visible lead or conversion facts")
+                settle(first, rollback=rollback)
+                result = finish(second)
+                state = facts(ids)
+                contacts = 0 if kind == "direct" else 2 if kind == "new_key" and not rollback else 1
+                require(result == state["lead"] and state["lead"]["stage"] == "enrolled"
+                        and state["lead"]["follow_up_date"] is None
+                        and state["lead"]["converted_student_id"] == before["lead"]["converted_student_id"],
+                        f"Concurrent restoration lost the original enrollment identity: {state}")
+                require(state["receipts"] == before["receipts"] + contacts
+                        and len(state["activities"]) == len(before["activities"]) + contacts + 1
+                        and state["activities"].count(["stage_change", "Stage changed from offer_sent to enrolled"]) == 1,
+                        f"Concurrent restoration duplicated history or operation receipts: {state}")
+                require(all(state[key] == before[key] for key in
+                            ("students", "memberships", "guardians", "links", "audits"))
+                        and sql(conversion_facts) == retained,
+                        "Concurrent restoration changed existing student or enrollment records")
+                passed(case, blocking=blocking, receipts=state["receipts"], activities=state["activities"])
+
         ids = fixture()
         first = session("different_leads_a", follow(ids, str(uuid4()), "trial_scheduled"), hold=True)
         await_result(first)

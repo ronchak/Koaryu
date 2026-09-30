@@ -237,7 +237,7 @@ BEGIN
     END IF;
 
     -- Ordinary backward edits stay allowed after conversion. Completed-key replay
-    -- returns its original result; a new enrollment intent cannot claim success.
+    -- returns its original result; a new enrollment intent restores the same student.
     PERFORM public.update_lead_atomic(studio,actor,lead,'{"stage":"offer_sent","follow_up_date":"2030-01-01"}');
     SELECT to_jsonb(l) INTO before_row FROM public.leads l WHERE id=lead;
     SELECT jsonb_build_array((SELECT count(*) FROM public.lead_activities),
@@ -250,22 +250,154 @@ BEGIN
        OR before_row IS DISTINCT FROM (SELECT to_jsonb(l) FROM public.leads l WHERE id=lead) THEN
         RAISE EXCEPTION 'Converted-key replay must precede current-stage rejection';
     END IF;
-    failed := FALSE;
-    BEGIN
-        PERFORM public.follow_up_lead_atomic(studio,actor,lead,gen_random_uuid(),'{"next_stage":"enrolled"}');
-    EXCEPTION WHEN SQLSTATE 'P0001' THEN
-        IF SQLERRM <> 'LEAD_ALREADY_CONVERTED' THEN RAISE; END IF;
-        failed := TRUE;
-    END;
-    SELECT jsonb_build_array((SELECT count(*) FROM public.lead_activities),
-        (SELECT count(*) FROM public.lead_follow_up_operations),
-        (SELECT count(*) FROM public.students),(SELECT count(*) FROM public.student_program_memberships),
-        (SELECT count(*) FROM public.guardians),(SELECT count(*) FROM public.student_guardians),
-        (SELECT count(*) FROM public.audit_logs)) INTO after_counts;
-    IF NOT failed OR before_row IS DISTINCT FROM (SELECT to_jsonb(l) FROM public.leads l WHERE id=lead)
-       OR before_counts IS DISTINCT FROM after_counts THEN
-        RAISE EXCEPTION 'Already-converted lead follow-up must not claim an enrollment it did not perform';
+    -- Restoration succeeds even when the original program is now archived.
+    UPDATE public.programs SET archived_at=now() WHERE id=(before_row->>'program_id')::uuid;
+    operation := gen_random_uuid();
+    SELECT * INTO result FROM public.follow_up_lead_atomic(studio,actor,lead,operation,'{"next_stage":"enrolled"}');
+    IF result.stage IS DISTINCT FROM 'enrolled' OR result.follow_up_date IS NOT NULL
+       OR result.converted_student_id IS DISTINCT FROM (conversion_result->>'converted_student_id')::uuid
+       OR (SELECT count(*) FROM public.lead_activities) <> (before_counts->>0)::integer+2
+       OR (SELECT count(*) FROM public.lead_follow_up_operations) <> (before_counts->>1)::integer+1 THEN
+        RAISE EXCEPTION 'New enrollment intent did not restore converted lead exactly once';
+    END IF;
+    before_row := to_jsonb(result);
+    PERFORM public.follow_up_lead_atomic(studio,actor,lead,operation,'{"next_stage":"enrolled"}');
+    IF before_row IS DISTINCT FROM (SELECT to_jsonb(l) FROM public.leads l WHERE id=lead)
+       OR (SELECT count(*) FROM public.lead_activities) <> (before_counts->>0)::integer+2
+       OR (SELECT count(*) FROM public.lead_follow_up_operations) <> (before_counts->>1)::integer+1 THEN
+        RAISE EXCEPTION 'Restoration receipt retry duplicated history or effects';
+    END IF;
+    -- Null interest also bypasses default-program creation on restoration.
+    PERFORM public.update_lead_atomic(studio,actor,lead,'{"stage":"offer_sent","program_id":null,"follow_up_date":"2030-02-01"}');
+    SELECT * INTO result FROM public.follow_up_lead_atomic(studio,actor,lead,gen_random_uuid(),'{"next_stage":"enrolled"}');
+    IF result.stage IS DISTINCT FROM 'enrolled' OR result.follow_up_date IS NOT NULL OR result.program_id IS NOT NULL
+       OR result.converted_student_id IS DISTINCT FROM (conversion_result->>'converted_student_id')::uuid
+       OR (SELECT count(*) FROM public.students) <> (before_counts->>2)::integer
+       OR (SELECT count(*) FROM public.student_program_memberships) <> (before_counts->>3)::integer
+       OR (SELECT count(*) FROM public.guardians) <> (before_counts->>4)::integer
+       OR (SELECT count(*) FROM public.student_guardians) <> (before_counts->>5)::integer
+       OR (SELECT count(*) FROM public.audit_logs) <> (before_counts->>6)::integer THEN
+        RAISE EXCEPTION 'Restoration duplicated a conversion effect';
     END IF;
 END;
 $test$;
+
+-- Explicit minor knowledge and permanent conversion identity must survive both
+-- restoration entry points, including retries and tenant lookup failures.
+DO $combined$
+DECLARE
+    actor UUID := gen_random_uuid();
+    other_actor UUID := gen_random_uuid();
+    studio UUID := gen_random_uuid();
+    other_studio UUID := gen_random_uuid();
+    program UUID := gen_random_uuid();
+    lead UUID := gen_random_uuid();
+    student UUID := gen_random_uuid();
+    guardian UUID := gen_random_uuid();
+    link UUID := gen_random_uuid();
+    operation UUID := gen_random_uuid();
+    result public.leads;
+    retained JSONB;
+    current_facts JSONB;
+    before_tenant_failure JSONB;
+    stages INTEGER;
+    entry_point TEXT;
+    failed BOOLEAN;
+BEGIN
+    INSERT INTO auth.users(id,aud,role,email,raw_app_meta_data,raw_user_meta_data,created_at,updated_at)
+    SELECT id,'authenticated','authenticated',id::text || '@example.invalid','{}','{}',now(),now()
+    FROM unnest(ARRAY[actor,other_actor]) id;
+    INSERT INTO public.studios(id,name,slug,owner_id) VALUES
+        (studio,'Combined conversion',studio::text,actor),
+        (other_studio,'Other combined',other_studio::text,other_actor);
+    INSERT INTO public.staff_roles(studio_id,user_id,role) VALUES
+        (studio,actor,'admin'),(other_studio,other_actor,'admin');
+    INSERT INTO public.programs(id,studio_id,name) VALUES (program,studio,'Combined program');
+    INSERT INTO public.leads(id,studio_id,first_name,last_name,stage,program_id,is_minor,guardian_name,follow_up_date)
+    VALUES (lead,studio,'Explicit','Minor','offer_sent',program,TRUE,'Existing Parent',DATE '2030-01-01');
+    SELECT * INTO result FROM public.convert_lead_to_student_atomic(
+        studio,actor,lead,student,program,'active',CURRENT_DATE,guardian,link);
+    IF result.converted_student_id IS DISTINCT FROM student OR result.stage IS DISTINCT FROM 'enrolled'
+       OR result.follow_up_date IS NOT NULL
+       OR NOT EXISTS(SELECT 1 FROM public.students WHERE id=student AND is_minor IS TRUE AND date_of_birth IS NULL)
+       OR (SELECT count(*) FROM public.students WHERE studio_id=studio) <> 1
+       OR (SELECT count(*) FROM public.student_program_memberships WHERE student_id=student) <> 1
+       OR (SELECT count(*) FROM public.guardians WHERE studio_id=studio) <> 1
+       OR (SELECT count(*) FROM public.student_guardians WHERE student_id=student) <> 1
+       OR (SELECT count(*) FROM public.audit_logs WHERE entity_id=lead AND action='lead.converted') <> 1 THEN
+        RAISE EXCEPTION 'Combined conversion lost explicit minority or duplicated conversion facts';
+    END IF;
+    SELECT jsonb_build_array(
+        (SELECT jsonb_agg(to_jsonb(s) ORDER BY id) FROM public.students s WHERE studio_id=studio),
+        (SELECT jsonb_agg(to_jsonb(m) ORDER BY id) FROM public.student_program_memberships m WHERE studio_id=studio),
+        (SELECT jsonb_agg(to_jsonb(g) ORDER BY id) FROM public.guardians g WHERE studio_id=studio),
+        (SELECT jsonb_agg(to_jsonb(l) ORDER BY id) FROM public.student_guardians l WHERE student_id=student),
+        (SELECT jsonb_agg(to_jsonb(a) ORDER BY id) FROM public.audit_logs a WHERE studio_id=studio)
+    ) INTO retained;
+    FOREACH entry_point IN ARRAY ARRAY['convert','follow-up'] LOOP
+        SELECT count(*) INTO stages FROM public.lead_activities WHERE lead_id=lead AND activity_type='stage_change';
+        PERFORM public.update_lead_atomic(studio,actor,lead,
+            '{"stage":"offer_sent","program_id":null,"follow_up_date":"2030-02-01"}');
+        IF (SELECT count(*) FROM public.lead_activities WHERE lead_id=lead AND activity_type='stage_change') <> stages+1 THEN
+            RAISE EXCEPTION 'Ordinary backward edit must write exactly one stage change';
+        END IF;
+        IF entry_point='convert' THEN
+            SELECT * INTO result FROM public.convert_lead_to_student_atomic(
+                studio,actor,lead,gen_random_uuid(),NULL,'inactive',DATE '2035-01-01',gen_random_uuid(),gen_random_uuid());
+            PERFORM public.convert_lead_to_student_atomic(studio,actor,lead,NULL,NULL,NULL,NULL,NULL,NULL);
+            -- Clearing a follow-up while already enrolled changes no stage history.
+            PERFORM public.update_lead_atomic(studio,actor,lead,'{"follow_up_date":"2030-03-01"}');
+            SELECT * INTO result FROM public.convert_lead_to_student_atomic(studio,actor,lead,NULL,NULL,NULL,NULL,NULL,NULL);
+        ELSE
+            SELECT * INTO result FROM public.follow_up_lead_atomic(studio,actor,lead,operation,'{"next_stage":"enrolled"}');
+            PERFORM public.follow_up_lead_atomic(studio,actor,lead,operation,'{"next_stage":"enrolled"}');
+            PERFORM public.update_lead_atomic(studio,actor,lead,'{"follow_up_date":"2030-03-01"}');
+            SELECT * INTO result FROM public.follow_up_lead_atomic(studio,actor,lead,gen_random_uuid(),'{"next_stage":"enrolled"}');
+        END IF;
+        SELECT jsonb_build_array(
+            (SELECT jsonb_agg(to_jsonb(s) ORDER BY id) FROM public.students s WHERE studio_id=studio),
+            (SELECT jsonb_agg(to_jsonb(m) ORDER BY id) FROM public.student_program_memberships m WHERE studio_id=studio),
+            (SELECT jsonb_agg(to_jsonb(g) ORDER BY id) FROM public.guardians g WHERE studio_id=studio),
+            (SELECT jsonb_agg(to_jsonb(l) ORDER BY id) FROM public.student_guardians l WHERE student_id=student),
+            (SELECT jsonb_agg(to_jsonb(a) ORDER BY id) FROM public.audit_logs a WHERE studio_id=studio)
+        ) INTO current_facts;
+        IF result.stage IS DISTINCT FROM 'enrolled' OR result.follow_up_date IS NOT NULL
+           OR result.converted_student_id IS DISTINCT FROM student OR result.program_id IS NOT NULL
+           OR current_facts IS DISTINCT FROM retained
+           OR NOT EXISTS(SELECT 1 FROM public.students WHERE id=student AND is_minor IS TRUE AND date_of_birth IS NULL)
+           OR (SELECT count(*) FROM public.lead_activities WHERE lead_id=lead AND activity_type='stage_change') <> stages+2 THEN
+            RAISE EXCEPTION 'Combined % restoration changed conversion facts or stage history',entry_point;
+        END IF;
+    END LOOP;
+    IF (SELECT count(*) FROM public.lead_activities WHERE lead_id=lead AND activity_type='stage_change') <> 5
+       OR (SELECT count(*) FROM public.lead_activities WHERE lead_id=lead AND description='Stage changed from offer_sent to enrolled') <> 2
+       OR (SELECT count(*) FROM public.lead_activities WHERE lead_id=lead AND description='Stage changed from enrolled to offer_sent') <> 2 THEN
+        RAISE EXCEPTION 'Combined restore must record exactly one activity per actual stage change';
+    END IF;
+    SELECT jsonb_build_array(
+        (SELECT to_jsonb(l) FROM public.leads l WHERE id=lead),
+        (SELECT jsonb_agg(to_jsonb(a) ORDER BY id) FROM public.lead_activities a),
+        (SELECT jsonb_agg(to_jsonb(o) ORDER BY operation_id) FROM public.lead_follow_up_operations o)
+    ) INTO before_tenant_failure;
+    FOREACH entry_point IN ARRAY ARRAY['convert','follow-up'] LOOP
+        failed := FALSE;
+        BEGIN
+            IF entry_point='convert' THEN
+                PERFORM public.convert_lead_to_student_atomic(other_studio,other_actor,lead,NULL,NULL,NULL,NULL,NULL,NULL);
+            ELSE
+                PERFORM public.follow_up_lead_atomic(other_studio,other_actor,lead,gen_random_uuid(),'{"next_stage":"enrolled"}');
+            END IF;
+        EXCEPTION WHEN SQLSTATE 'P0001' OR SQLSTATE 'P0002' THEN
+            IF SQLERRM <> 'Lead not found for studio.' THEN RAISE; END IF;
+            failed := TRUE;
+        END;
+        IF NOT failed OR before_tenant_failure IS DISTINCT FROM jsonb_build_array(
+            (SELECT to_jsonb(l) FROM public.leads l WHERE id=lead),
+            (SELECT jsonb_agg(to_jsonb(a) ORDER BY id) FROM public.lead_activities a),
+            (SELECT jsonb_agg(to_jsonb(o) ORDER BY operation_id) FROM public.lead_follow_up_operations o)) THEN
+            RAISE EXCEPTION 'Cross-tenant % restoration wrote lead state, activity or receipt',entry_point;
+        END IF;
+    END LOOP;
+END;
+$combined$;
 ROLLBACK;
