@@ -131,13 +131,14 @@ def main(arguments):
     predecessor("postgres")
     hashes = {p.name: hashlib.sha256(p.read_bytes()).hexdigest()
               for p in sorted((root / "supabase/migrations").glob("*.sql"))}
-    require(len(hashes) == 148 and list(hashes)[-7:] == [
+    require(len(hashes) == 149 and list(hashes)[-8:] == [
         "20260914055301_refund_completion_locking_v47.sql", MIGRATION,
         "20260920052705_subscription_unknown_terms_v49.sql",
         "20260920154441_billing_due_date_facts_v50.sql",
         "20260925030000_invoice_closeout_lock_order_v51.sql",
         "20260926194918_lead_commands_v52.sql",
-        "20260929152445_dashboard_roster_inactivity_v53.sql"], "Unexpected migration inventory")
+        "20260929152445_dashboard_roster_inactivity_v53.sql",
+        "20260930024404_student_profile_qa_v54.sql"], "Unexpected migration inventory")
     migration = root / "supabase/migrations" / MIGRATION
     mapping_bytes = PAIR_PATH.read_bytes()
     pairs = json.loads(mapping_bytes)

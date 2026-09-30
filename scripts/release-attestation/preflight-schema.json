@@ -1229,6 +1229,10 @@
       "failures": [
         "dashboard_summary_facts_v53"
       ]
+    },
+    "student_profile_facts_v54": {
+      "kind": "student_profile_facts_v54",
+      "expected": "a4a2ca735c811b996bc80a80508786e4df63fc02a3691dd394c420459d990774"
     }
   },
   "states": {
@@ -1488,6 +1492,26 @@
         },
         "operational_manifest_v12": {
           "expected": "c8003c26fa60c33ae3ca58a5a622c33fe6e2abc7de80e7a0974b67da5b075d7f"
+        }
+      }
+    },
+    "v54": {
+      "extends": "v53",
+      "append": [
+        "student_profile_facts_v54"
+      ],
+      "overrides": {
+        "resource_ownership_manifest_v31": {
+          "expected": "0:cc83187a494c1f05ac0abb2bdb77ad9bf63764f4e2962c15f32004b8ae01fc91"
+        },
+        "operational_manifest_v12": {
+          "expected": "7a59a108e5aa8e9ef9311956bbec7de7784e718d246557ce3909221f91f0956e"
+        },
+        "import_rank_manifest_v45": {
+          "expected": "0:dc6043dd0992042b9e27d0fb73a49f4abe0acd06a6b9bfb500d68e7e85ab5daf"
+        },
+        "import_rank_manifest_definition_v45": {
+          "expected": "feed7c0421cbeb5bcb2555837dd1c244367f180c8a884380f2f281ef919c82ee"
         }
       }
     }
