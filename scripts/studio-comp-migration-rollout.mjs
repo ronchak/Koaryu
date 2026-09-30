@@ -189,7 +189,7 @@ export const EXPECTED_V54_EXPECTATION_STATE = "1:6c37c8835ef489cb97b31279765682c
 export const EXPECTED_V54_RESOURCE_OWNERSHIP_MANIFEST = "0:cc83187a494c1f05ac0abb2bdb77ad9bf63764f4e2962c15f32004b8ae01fc91";
 export const EXPECTED_V54_OPERATIONAL_CONTRACT = "0:d4d730c0911b63e8fe9cd13ed5f42b156430062f6f9aa547cabafaf3e3aed94d";
 export const EXPECTED_V54_OPERATIONAL_MANIFEST_V12 = "7a59a108e5aa8e9ef9311956bbec7de7784e718d246557ce3909221f91f0956e";
-export const EXPECTED_V54_STUDENT_PROFILE_STATE = "a4a2ca735c811b996bc80a80508786e4df63fc02a3691dd394c420459d990774";
+export const EXPECTED_V54_STUDENT_PROFILE_STATE = "9c677c2dc39dd42bda08c1da53826d94dd876d687dbaf920a2597be8a8e8b586";
 
 export const V53_DASHBOARD_DEFINITION_STATE_SQL = "SELECT encode(extensions.digest(convert_to(pg_catalog.pg_get_functiondef(\'public.dashboard_summary_facts(uuid,text,text,date,text)\'::REGPROCEDURE),\'UTF8\'),\'sha256\'),\'hex\') AS dashboard_definition_state;";
 
@@ -1210,7 +1210,7 @@ export const V53_RELEASE_MANIFEST_SQL = releaseManifestSql(V53_FUNCTIONS, "v53_r
 const V54_FUNCTIONS = Object.freeze([
   ...V53_FUNCTIONS.map(row => row[0] === "public.koaryu_release_schema_preflight_v34()"
     ? [row[0], "07d7649d81e3003ad237a79fc90577cd497f888f4c045a9f3c846e7f5949e568", ...row.slice(2)] : row),
-  ["public.koaryu_release_schema_preflight_v35()", "4ace14d9d62a4f6d303402434314f8cb386c895a307d5c7dadb8d890d878b792", ...V53_FUNCTIONS.at(-1).slice(2)],
+  ["public.koaryu_release_schema_preflight_v35()", "69a374912298547b8b29899125b3ddc77b79bf61568b5ffae00dc01085db1e06", ...V53_FUNCTIONS.at(-1).slice(2)],
 ]);
 export const EXPECTED_V54_RELEASE_MANIFEST = releaseManifest(V54_FUNCTIONS);
 export const V54_RELEASE_MANIFEST_SQL = releaseManifestSql(V54_FUNCTIONS, "v54_release_manifest");

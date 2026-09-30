@@ -808,4 +808,200 @@ BEGIN
 END;
 $$;
 
+-- Compare both installed triggers against the original slow definition. The
+-- temporary tables isolate trigger errors from the students table's FK, so a
+-- missing studio must still produce the helper's exact error on dated rows.
+CREATE FUNCTION pg_temp.slow_student_business_date(p_studio_id UUID)
+RETURNS DATE LANGUAGE plpgsql AS $$
+DECLARE v_timezone TEXT;
+BEGIN
+    SELECT COALESCE(NULLIF(timezone, ''), 'UTC') INTO v_timezone
+    FROM public.studios WHERE id = p_studio_id;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Student studio not found.' USING ERRCODE = '23503';
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_catalog.pg_timezone_names WHERE name = v_timezone) THEN
+        v_timezone := 'UTC';
+    END IF;
+    RETURN (CURRENT_TIMESTAMP AT TIME ZONE v_timezone)::DATE;
+END;
+$$;
+-- CURRENT_TIMESTAMP is fixed for this transaction, and the studio timezone
+-- stays fixed within each case group. Compute the exact slow reference once
+-- per group instead of repeating its catalog scan for every operation/flag.
+CREATE TEMP TABLE reference_student_business_dates (
+    studio_id UUID PRIMARY KEY, business_date DATE
+) ON COMMIT DROP;
+CREATE FUNCTION pg_temp.reference_student_business_date(p_studio_id UUID)
+RETURNS DATE LANGUAGE plpgsql AS $$
+DECLARE v_today DATE;
+BEGIN
+    SELECT business_date INTO v_today FROM pg_temp.reference_student_business_dates
+    WHERE studio_id = p_studio_id;
+    IF NOT FOUND THEN
+        RETURN pg_temp.slow_student_business_date(p_studio_id);
+    END IF;
+    RETURN v_today;
+END;
+$$;
+CREATE FUNCTION pg_temp.slow_set_student_is_minor()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+DECLARE v_today DATE;
+BEGIN
+    IF NEW.date_of_birth IS NOT NULL THEN
+        v_today := pg_temp.reference_student_business_date(NEW.studio_id);
+        NEW.is_minor := pg_catalog.isfinite(NEW.date_of_birth)
+            AND NEW.date_of_birth <= v_today
+            AND NEW.date_of_birth > ((v_today - INTERVAL '18 years')::DATE);
+    ELSIF TG_OP = 'UPDATE' AND OLD.date_of_birth IS NOT NULL THEN
+        v_today := pg_temp.reference_student_business_date(NEW.studio_id);
+        NEW.is_minor := pg_catalog.isfinite(OLD.date_of_birth)
+            AND OLD.date_of_birth <= v_today
+            AND OLD.date_of_birth > ((v_today - INTERVAL '18 years')::DATE);
+    ELSE
+        NEW.is_minor := COALESCE(NEW.is_minor, false);
+    END IF;
+    RETURN NEW;
+END;
+$$;
+CREATE FUNCTION pg_temp.slow_validate_student_birth_date()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+BEGIN
+    IF NEW.date_of_birth IS NULL THEN RETURN NEW; END IF;
+    IF TG_OP = 'UPDATE' THEN
+        IF NEW.date_of_birth IS NOT DISTINCT FROM OLD.date_of_birth
+           AND NEW.studio_id IS NOT DISTINCT FROM OLD.studio_id THEN RETURN NEW; END IF;
+    END IF;
+    IF NOT pg_catalog.isfinite(NEW.date_of_birth)
+       OR NEW.date_of_birth > pg_temp.reference_student_business_date(NEW.studio_id) THEN
+        RAISE EXCEPTION 'Date of birth cannot be in the future.'
+            USING ERRCODE = '23514', CONSTRAINT = 'students_birth_date_not_future';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+CREATE TEMP TABLE repaired_student_dates (
+    studio_id UUID, date_of_birth DATE, is_minor BOOLEAN, notes TEXT
+) ON COMMIT DROP;
+CREATE TEMP TABLE reference_student_dates (LIKE repaired_student_dates) ON COMMIT DROP;
+CREATE TRIGGER set_students_is_minor BEFORE INSERT OR UPDATE ON repaired_student_dates
+FOR EACH ROW EXECUTE FUNCTION public.set_student_is_minor();
+CREATE TRIGGER validate_students_birth_date BEFORE INSERT OR UPDATE OF date_of_birth, studio_id ON repaired_student_dates
+FOR EACH ROW EXECUTE FUNCTION public.validate_student_birth_date();
+CREATE TRIGGER set_students_is_minor BEFORE INSERT OR UPDATE ON reference_student_dates
+FOR EACH ROW EXECUTE FUNCTION pg_temp.slow_set_student_is_minor();
+CREATE TRIGGER validate_students_birth_date BEFORE INSERT OR UPDATE OF date_of_birth, studio_id ON reference_student_dates
+FOR EACH ROW EXECUTE FUNCTION pg_temp.slow_validate_student_birth_date();
+
+DO $$
+DECLARE
+    v_owner UUID := gen_random_uuid();
+    v_studio UUID := gen_random_uuid();
+    v_missing UUID := gen_random_uuid();
+    v_target UUID;
+    v_utc DATE := (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')::DATE;
+    v_timezone TEXT;
+    v_session TEXT;
+    v_dob DATE;
+    v_op TEXT;
+    v_table TEXT;
+    v_initial BOOLEAN;
+    v_minor BOOLEAN;
+    v_stored_dob DATE;
+    v_state TEXT;
+    v_constraint TEXT;
+    v_message TEXT;
+    v_outcome JSONB;
+    v_reference JSONB;
+    v_cases INTEGER := 0;
+BEGIN
+    INSERT INTO auth.users(id,aud,role,email,raw_app_meta_data,raw_user_meta_data)
+    VALUES(v_owner,'authenticated','authenticated',v_owner::TEXT||'@example.invalid','{}','{}');
+    INSERT INTO public.studios(id,name,slug,owner_id,timezone)
+    VALUES(v_studio,'Differential student dates',v_studio::TEXT,v_owner,'UTC');
+    FOREACH v_session IN ARRAY ARRAY['Pacific/Kiritimati','Etc/GMT+12'] LOOP
+        PERFORM set_config('TimeZone',v_session,true);
+        FOREACH v_timezone IN ARRAY ARRAY['UTC','Pacific/Kiritimati','Etc/GMT+12',
+            'America/Los_Angeles','Asia/Kolkata','Not/AZone','',NULL] LOOP
+            UPDATE public.studios SET timezone = v_timezone WHERE id = v_studio;
+            TRUNCATE pg_temp.reference_student_business_dates;
+            INSERT INTO pg_temp.reference_student_business_dates
+            VALUES(v_studio,pg_temp.slow_student_business_date(v_studio));
+            FOREACH v_target IN ARRAY ARRAY[v_studio,v_missing] LOOP
+                FOR v_dob IN
+                    SELECT v_utc + n FROM generate_series(-3,3) n
+                    UNION SELECT ((v_utc - INTERVAL '18 years')::DATE) + n FROM generate_series(-3,3) n
+                    UNION SELECT d FROM (VALUES (DATE '2008-02-29'),(DATE '2012-02-29'),
+                        (DATE '2024-02-29'),('infinity'::DATE),('-infinity'::DATE),(NULL::DATE)) dates(d)
+                LOOP
+                    FOREACH v_initial IN ARRAY ARRAY[TRUE,FALSE,NULL] LOOP
+                        FOREACH v_op IN ARRAY ARRAY['insert','dob-update','unrelated-update','unchanged-dob-update','remove-dob','studio-update'] LOOP
+                            v_reference := NULL;
+                            FOREACH v_table IN ARRAY ARRAY['reference_student_dates','repaired_student_dates'] LOOP
+                                EXECUTE format('TRUNCATE pg_temp.%I',v_table);
+                                IF v_op <> 'insert' THEN
+                                    -- Seed legacy invalid DOBs and deliberately stale flags.
+                                    -- This also proves removal uses OLD DOB rather than OLD.is_minor.
+                                    EXECUTE format('ALTER TABLE pg_temp.%I DISABLE TRIGGER USER',v_table);
+                                    EXECUTE format('INSERT INTO pg_temp.%I VALUES ($1,$2,$3,NULL)',v_table)
+                                        USING CASE WHEN v_op='studio-update' THEN v_studio ELSE v_target END,
+                                              CASE WHEN v_op='dob-update' THEN NULL ELSE v_dob END,v_initial;
+                                    EXECUTE format('ALTER TABLE pg_temp.%I ENABLE TRIGGER USER',v_table);
+                                END IF;
+                                v_minor := NULL; v_stored_dob := NULL;
+                                v_state := '00000'; v_constraint := ''; v_message := '';
+                                BEGIN
+                                    CASE v_op
+                                        WHEN 'insert' THEN
+                                            EXECUTE format('INSERT INTO pg_temp.%I VALUES ($1,$2,$3,NULL) RETURNING is_minor,date_of_birth',v_table)
+                                                INTO v_minor,v_stored_dob USING v_target,v_dob,v_initial;
+                                        WHEN 'dob-update' THEN
+                                            EXECUTE format('UPDATE pg_temp.%I SET date_of_birth=$1 RETURNING is_minor,date_of_birth',v_table)
+                                                INTO v_minor,v_stored_dob USING v_dob;
+                                        WHEN 'unrelated-update' THEN
+                                            EXECUTE format('UPDATE pg_temp.%I SET notes=''unrelated'' RETURNING is_minor,date_of_birth',v_table)
+                                                INTO v_minor,v_stored_dob;
+                                        WHEN 'unchanged-dob-update' THEN
+                                            EXECUTE format('UPDATE pg_temp.%I SET date_of_birth=date_of_birth RETURNING is_minor,date_of_birth',v_table)
+                                                INTO v_minor,v_stored_dob;
+                                        WHEN 'remove-dob' THEN
+                                            EXECUTE format('UPDATE pg_temp.%I SET date_of_birth=NULL RETURNING is_minor,date_of_birth',v_table)
+                                                INTO v_minor,v_stored_dob;
+                                        WHEN 'studio-update' THEN
+                                            EXECUTE format('UPDATE pg_temp.%I SET studio_id=$1 RETURNING is_minor,date_of_birth',v_table)
+                                                INTO v_minor,v_stored_dob USING v_target;
+                                    END CASE;
+                                EXCEPTION WHEN OTHERS THEN
+                                    GET STACKED DIAGNOSTICS v_state = RETURNED_SQLSTATE,
+                                        v_constraint = CONSTRAINT_NAME,v_message = MESSAGE_TEXT;
+                                END;
+                                IF v_state NOT IN ('00000','23503','23514') THEN
+                                    RAISE EXCEPTION 'Unexpected differential error: %, %',v_state,v_message;
+                                END IF;
+                                IF v_state = '23503' AND v_message IS DISTINCT FROM 'Student studio not found.' THEN
+                                    RAISE EXCEPTION 'Missing-studio error changed: %',v_message;
+                                END IF;
+                                IF v_state = '23514' AND (v_constraint IS DISTINCT FROM 'students_birth_date_not_future'
+                                    OR v_message IS DISTINCT FROM 'Date of birth cannot be in the future.') THEN
+                                    RAISE EXCEPTION 'Future-DOB error changed: %, %',v_constraint,v_message;
+                                END IF;
+                                v_outcome := jsonb_build_array(v_state,v_constraint,v_message,v_minor,v_stored_dob);
+                                IF v_table='reference_student_dates' THEN
+                                    v_reference := v_outcome;
+                                ELSIF v_outcome IS DISTINCT FROM v_reference THEN
+                                    RAISE EXCEPTION 'Student date differential mismatch: session=%, tz=%, missing=%, DOB=%, flag=%, op=%, reference=%, actual=%',
+                                        v_session,v_timezone,v_target=v_missing,v_dob,v_initial,v_op,v_reference,v_outcome;
+                                END IF;
+                            END LOOP;
+                            v_cases := v_cases + 1;
+                        END LOOP;
+                    END LOOP;
+                END LOOP;
+            END LOOP;
+        END LOOP;
+    END LOOP;
+    RAISE NOTICE 'Student date differential PASS: % cases including missing studio, non-finite DOB, stale flags and session timezone independence.',v_cases;
+END;
+$$;
+
 ROLLBACK;

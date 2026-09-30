@@ -56,6 +56,9 @@ LANGUAGE plpgsql
 SECURITY INVOKER
 SET search_path = ''
 AS $$
+DECLARE
+    v_utc_date DATE := (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')::DATE;
+    v_future BOOLEAN;
 BEGIN
     IF NEW.date_of_birth IS NULL THEN
         RETURN NEW;
@@ -66,8 +69,25 @@ BEGIN
             RETURN NEW;
         END IF;
     END IF;
-    IF NOT pg_catalog.isfinite(NEW.date_of_birth)
-       OR NEW.date_of_birth > public.student_business_date(NEW.studio_id) THEN
+    IF NOT pg_catalog.isfinite(NEW.date_of_birth) THEN
+        v_future := TRUE;
+    ELSE
+        -- Preserve the helper's missing-studio error even outside the window.
+        PERFORM 1 FROM public.studios WHERE id = NEW.studio_id;
+        IF NOT FOUND THEN
+            RAISE EXCEPTION 'Student studio not found.' USING ERRCODE = '23503';
+        END IF;
+        -- Current timezone offsets fit within UTC +/-1 day. Two days leave
+        -- a conservative margin; only the ambiguous dates need the catalog.
+        IF NEW.date_of_birth <= v_utc_date - 2 THEN
+            v_future := FALSE;
+        ELSIF NEW.date_of_birth > v_utc_date + 2 THEN
+            v_future := TRUE;
+        ELSE
+            v_future := NEW.date_of_birth > public.student_business_date(NEW.studio_id);
+        END IF;
+    END IF;
+    IF v_future THEN
         RAISE EXCEPTION 'Date of birth cannot be in the future.'
             USING ERRCODE = '23514', CONSTRAINT = 'students_birth_date_not_future';
     END IF;
@@ -93,21 +113,37 @@ SET search_path = pg_catalog
 AS $$
 DECLARE
     v_today DATE;
+    v_utc_date DATE := (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')::DATE;
+    v_dob DATE;
 BEGIN
     IF NEW.date_of_birth IS NOT NULL THEN
-        v_today := public.student_business_date(NEW.studio_id);
-        NEW.is_minor := pg_catalog.isfinite(NEW.date_of_birth)
-            AND NEW.date_of_birth <= v_today
-            AND NEW.date_of_birth > ((v_today - INTERVAL '18 years')::date);
+        v_dob := NEW.date_of_birth;
     ELSIF TG_OP = 'UPDATE' AND OLD.date_of_birth IS NOT NULL THEN
         -- Removing a DOB retains its current known classification, not a
         -- possibly stale stored flag from before the eighteenth birthday.
-        v_today := public.student_business_date(NEW.studio_id);
-        NEW.is_minor := pg_catalog.isfinite(OLD.date_of_birth)
-            AND OLD.date_of_birth <= v_today
-            AND OLD.date_of_birth > ((v_today - INTERVAL '18 years')::date);
+        v_dob := OLD.date_of_birth;
     ELSE
         NEW.is_minor := COALESCE(NEW.is_minor, false);
+        RETURN NEW;
+    END IF;
+    PERFORM 1 FROM public.studios WHERE id = NEW.studio_id;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Student studio not found.' USING ERRCODE = '23503';
+    END IF;
+    -- The eighteenth-birthday cutoff is monotonic, including leap days.
+    -- Compare both ends of the conservative UTC date window before looking
+    -- up the studio timezone. Retained future/non-finite DOBs stay nonminor.
+    IF NOT pg_catalog.isfinite(v_dob)
+       OR v_dob > v_utc_date + 2
+       OR v_dob <= (((v_utc_date - 2) - INTERVAL '18 years')::DATE) THEN
+        NEW.is_minor := FALSE;
+    ELSIF v_dob <= v_utc_date - 2
+          AND v_dob > (((v_utc_date + 2) - INTERVAL '18 years')::DATE) THEN
+        NEW.is_minor := TRUE;
+    ELSE
+        v_today := public.student_business_date(NEW.studio_id);
+        NEW.is_minor := v_dob <= v_today
+            AND v_dob > ((v_today - INTERVAL '18 years')::DATE);
     END IF;
     RETURN NEW;
 END;
@@ -1943,7 +1979,7 @@ BEGIN
         LEFT JOIN pg_catalog.pg_trigger trigger_row
           ON trigger_row.tgrelid=pg_catalog.to_regclass('public.students') AND trigger_row.tgname=required.name)
     ))::TEXT,'UTF8'),'sha256'),'hex'))
-       IS DISTINCT FROM 'a4a2ca735c811b996bc80a80508786e4df63fc02a3691dd394c420459d990774' THEN
+       IS DISTINCT FROM '9c677c2dc39dd42bda08c1da53826d94dd876d687dbaf920a2597be8a8e8b586' THEN
         v_failures:=array_append(v_failures,'student_profile_facts_v54');
     END IF;
  RETURN QUERY SELECT cardinality(v_failures) = 0,

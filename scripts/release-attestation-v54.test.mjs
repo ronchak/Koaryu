@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import { test } from "node:test";
 import { execFileSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { CURRENT_RELEASE, releaseState } from "./release-attestation/states.mjs";
 import { MIGRATION_VERSIONS } from "./release-attestation/generated-history.mjs";
 import { renderPreflight } from "./release-attestation/preflight.mjs";
@@ -33,7 +34,7 @@ test("student profile facts cover installed definitions, complete ACLs and both 
 });
 
 test("restore comparison accepts only source minor correction and refuses other retained row changes", () => {
-  const fixture = new URL("./release-attestation/fixtures/python-v54-business.py.inc", import.meta.url).pathname;
+  const fixture = fileURLToPath(new URL("./release-attestation/fixtures/python-v54-business.py.inc", import.meta.url));
   const script = `import json,copy\nfrom pathlib import Path\nnamespace={"json":json,"require":lambda condition,message: condition or (_ for _ in ()).throw(AssertionError(message))}\nexec(Path(${JSON.stringify(fixture)}).read_text(),namespace)\ncheck=namespace["verify_upgrade_snapshot"]\nbefore={"public.students":[{"id":"s","studio_id":"dojo","date_of_birth":None,"is_minor":False,"updated_at":"2026-01-01","legal_first_name":"Minor"},{"id":"adult","studio_id":"dojo","date_of_birth":"2000-01-01","is_minor":False,"updated_at":"2026-01-01"}],"public.leads":[{"converted_student_id":"s","studio_id":"dojo","is_minor":True},{"converted_student_id":"adult","studio_id":"dojo","is_minor":True}],"public.guardians":[{"id":"g","first_name":"Guardian"}]}\nafter=copy.deepcopy(before);after["public.students"][0].update(is_minor=True,updated_at="2026-09-30")\nassert check(before,after)\nassert not check(before,before)\nfor table,field,value in [("public.students","legal_first_name","Changed"),("public.guardians","first_name","Changed")]:\n changed=copy.deepcopy(after);changed[table][0][field]=value;assert not check(before,changed)\nchanged=copy.deepcopy(after);changed["public.students"][1]["is_minor"]=True;assert not check(before,changed)\nprint("verified")\n`;
   assert.equal(execFileSync("python3", ["-c", script], { encoding: "utf8" }).trim(), "verified");
 });

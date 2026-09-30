@@ -3418,7 +3418,7 @@ describe("studio-comp migration rollout guard", () => {
       ["v50", "20260925030000_invoice_closeout_lock_order_v51.sql", "9308174041fe8d1bb35b785218a2fd84e848913540a57b653989f8f0c48b3295", "v51"],
       ["v51", "20260926194918_lead_commands_v52.sql", "9f12ac8aac1cf1d310655c6aedc1a665c43e633a1a846e213e9ab77937590b93", "v52"],
       ["v52", "20260929152445_dashboard_roster_inactivity_v53.sql", "b68c9c093295a91692f9fea8cf42b9d22e12fa113beca6d7517f6a323896db33", "v53"],
-      ["v53", "20260930024404_student_profile_qa_v54.sql", "7b0c1c2998e0eb3c0eeab5d79ee0fd7f5d2a8a780a796c95f8f36ea39bd3ab07", "post"],
+      ["v53", "20260930024404_student_profile_qa_v54.sql", "795549cc3a3f1a35f9b59ce0e6a00ccda9766b78288c0c09ee75b94d6912dc1d", "post"],
     ];
     for (const [state, filename, manifestSha256, expectedAfterState] of transitions) {
       const selected = oneMigrationPacket(packet, state);
