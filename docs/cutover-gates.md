@@ -41,11 +41,13 @@ manifest in `EXPECTED_RELEASE_MANIFEST_VERSION`. Successful checks are reused fo
 30 seconds; failures are never cached.
 The cache lives in `backend/app/services/release_schema_readiness.py`.
 
-The completed V50 release is recorded in [PRODUCTION-RELEASE.md](remediation/PRODUCTION-RELEASE.md) and [verification](remediation/production-release-verification.md). Production and staging are V50, 145 migrations; production serves PR240 candidate `fe2a37bf97bb87897b3f8e03d83611c81d69b9c0`; staging was last verified at Microsoft sign-in candidate `cd2fb0ef0d2655f8f3192e85e93c1c5a95c78225` and was not changed or reverified for PR240, with no migration added. See [Microsoft SSO verification](microsoft-sso-setup.md#september-20-release-verification). The staging billing cron remains suspended. Future releases need a new exact-candidate packet and fresh target evidence. Do not reuse completed inspection tokens or recovery evidence as approval of a new state.
+The completed September 20, 2026 V50 release is recorded in [PRODUCTION-RELEASE.md](remediation/PRODUCTION-RELEASE.md) and [verification](remediation/production-release-verification.md). At that readback, production and staging were V50, 145 migrations; production served PR240 candidate `fe2a37bf97bb87897b3f8e03d83611c81d69b9c0`; staging had last been verified at Microsoft sign-in candidate `cd2fb0ef0d2655f8f3192e85e93c1c5a95c78225` and was not changed or reverified for PR240, with no migration added. See [Microsoft SSO verification](microsoft-sso-setup.md#september-20-release-verification). The staging billing cron remained suspended. Future releases need a new exact-candidate packet and fresh target evidence. Do not reuse completed inspection tokens or recovery evidence as approval of a new state.
+
+For the combined V55 candidate, the coordinator's September 30, 2026 read-only baseline reports both hosted databases at V53, 148 migrations, head `20260929152445`, and production serving `55a652a`. V55 is the candidate's required release state, not a completed hosted rollout. Reinspect live state before any release action.
 
 V48 separates stable activation intent from its atomically owned first execution quantity, preserving already-attempted provider recovery. V49 permits unknown subscription currency/cadence without invented defaults. Neither migration rewrites historical rows. V51 changes only the invoice closeout claim's lock order: an existing-key finalize or void retry now takes the V31 writer's invoice, payer and mutation-owner locks before its alias, resource and operation locks, removing the deadlock with a concurrent new-key claim. It rewrites no rows. After new version-2 receipts or null subscription terms exist, readiness compatibility alone does not authorize an older backend rollback. Use the packet's recovery limits.
 
-V50 makes overdue status a current business-date fact shared by Billing and Dashboard reads. It preserves stored payer enum compatibility and changes no customer rows. The previous V49 application remains schema/readiness-compatible for the database-first window; the new backend requires V50. See the packet for recovery limits.
+V50 makes overdue status a current business-date fact shared by Billing and Dashboard reads. It preserves stored payer enum compatibility and changes no customer rows. The previous V49 application remains schema/readiness-compatible for the database-first window; the V50 backend requires V50. See the packet for recovery limits.
 
 ## Retained migration compatibility
 
@@ -107,24 +109,32 @@ only after old Python plan split-write requests drain. V40 rank, V41 payer balan
 V42 catalog and semantics, and V43 external-payment facts remain unchanged. The old
 V41 and V43 split callers must still drain for those guarantees.
 
-The local verifier executes each logical restore continuation from V38 through V54.
+The local verifier executes each logical restore continuation from V38 through V55.
 Each uses a real synthetic dump and a new local restore database, accepts only the
 reviewed PostgreSQL 17 CHECK/default-ACL representation differences, and verifies
 business-data preservation and old/new caller continuation. These are local
 contract proofs, not production backup evidence. Candidate verification requires the
-V53-to-V54 canonical and logical restore continuation, all 149 migrations and 56 SQL
+V54-to-V55 canonical and logical restore continuation in
+`scripts/verify-v54-v55-restore-contract.py`, all 150 migrations and 56 SQL
 contracts, all 29 cases in `scripts/verify-billing-command-concurrency.py`, and
-all 67 cases in `scripts/verify-lead-command-concurrency.py`.
+all 75 cases in `scripts/verify-lead-command-concurrency.py`. Eight V55 lead
+cases cover competing direct restorations, same/new follow-up keys and mixed
+restoration callers after an archived-program backward edit, under both commit
+and rollback, without another student, membership, guardian or conversion audit.
 The renamed runner uses the existing concurrency helpers and adds no new framework.
 V54 also proves the intended source-lead minor backfill, preserves adult DOB precedence and
 unrelated records, and exercises guardian corrections and future-DOB rejection on both restored
-and canonical copies. New candidate declarations do not change any deployed release identity.
+and canonical copies. V55 changes no retained business rows. Its restore proof
+preserves converted lead/student/guardian/membership and audit facts, restores
+enrollment with archived or null program interest, preserves explicit minor
+knowledge without a DOB, and proves exact retries on canonical and logically
+restored copies. New candidate declarations do not change any deployed release identity.
 Earlier restore proofs remain in force. The operator's backup helper and
 release/image mappings must be updated and verified for the actual candidate
 before an authorized hosted rollout. Old V38 approvals and mappings are not reusable.
 
 Exact V31 through V37 remain state-bound forward-recovery points. They may
-resume only their immutable suffix through V54; hybrid histories, catalogs or
+resume only their immutable suffix through V55; hybrid histories, catalogs or
 readiness results are refused. A predecessor before V38 also needs the historical
 billing-index migration. Its ordinary index builds hold write locks that can delay
 billing and webhook writes until that transaction finishes. Plan that write pause
@@ -134,7 +144,7 @@ Migration 119 keeps the historical V24 response. The Payments chain retains its
 version-bound compatibility consumers. V47 adds full preflight V28 and makes V27
 return the V46 tuple only after the complete new state verifies. The existing chain
 retains V45 through V37 responses, including the historical V38/V19 consumer. The
-candidate backend requires exact V54, 149 migrations, through full preflight V35. V54 retains V34 compatibility, so a V53 backend stays ready only after verifying the complete V54 state. V53 retains V33 compatibility, so a V52 backend stays ready only after verifying the complete V53 state. V51 retains V31 compatibility after its complete state verifies. V50 retains V30 compatibility only after verifying the complete V50 state. V48 introduced V29; V49 retains V29 compatibility only after verifying the complete V49 state. Compatibility preserves old
+candidate backend requires exact V55, 150 migrations, through full preflight V36. V55 retains V35 compatibility, so a V54 backend stays ready only after verifying the complete V55 state. V54 retains V34 compatibility, so a V53 backend stays ready only after verifying the complete V54 state. V53 retains V33 compatibility, so a V52 backend stays ready only after verifying the complete V53 state. V51 retains V31 compatibility after its complete state verifies. V50 retains V30 compatibility only after verifying the complete V50 state. V48 introduced V29; V49 retains V29 compatibility only after verifying the complete V49 state. Compatibility preserves old
 readiness; it does not restore retired import behavior or give old split writers
 the new transactional guarantees.
 The temporary V22 and
@@ -149,27 +159,31 @@ look for it is wrong. `"status": "ready"` *is* the proof the attestation matched
 If migration 113 commits and migration 114 does not, stop. No approved
 application is eligible to serve at that partially migrated history. During the historical V24 release,
 the prior `709239` application required V16 and that release candidate required V24.
-The current candidate requires V54. Older V2 consumers from
+The current candidate requires V55. Older V2 consumers from
 before verified history boundary
 `d63a5116c0a47f1933f15360cd5db7b66237bb80` can report ready through migration
 110's exact V17 compatibility guard, but none is an approved recovery artifact.
 Exclude both `709239`/V16 and every pre-boundary V2-consuming SHA from the
 post-110 rollback set. A database still at exact 110 must classify `state=staff-identity` and use its
-state-bound inspection token. The tool must select migrations 111 through 149 in
+state-bound inspection token. The tool must select migrations 111 through 150 in
 their immutable order. A separately approved disaster recovery to the proved
 restored V22 snapshot must classify exact `state=restored-v22` and select only
-migrations 116 through 149. Use the generated remaining-file list and its source
+migrations 116 through 150. Use the generated remaining-file list and its source
 manifest; do not maintain a second manual list. These are hypothetical recovery
 cases, not the current live state. Only the authorized operator runs production
-apply. Candidate promotion remains blocked until migration 149,
-`20260930024404_student_profile_qa_v54.sql`, produces exact V54 readiness
-through `koaryu_release_schema_preflight_v35()` and the final raw catalog/provider
-fingerprint. Require 149 migrations, head `20260930024404`, and manifest
-`release-db-attestation-v54`. That raw evidence must independently attest the
+apply. Candidate promotion remains blocked until migration 150,
+`20260930192626_converted_lead_enrollment_v55.sql`, produces exact V55 readiness
+through `koaryu_release_schema_preflight_v36()` and the final raw catalog/provider
+fingerprint. Require 150 migrations, head `20260930192626`, and manifest
+`release-db-attestation-v55`. That raw evidence must independently attest the
 retained plan RPC and demo-clear facts, import receipts, refund ownership,
 the V48 activation, V49 subscription terms, V50 invoice facts, V51 closeout lock
-order, V52 lead commands, V53 dashboard definition and V54 student function/trigger facts. V40 rank-command and V43 external-payment pins remain unchanged. V54 changes the
-student writer catalog function facts; the other V53 catalog facts remain fixed. V50 updates the V41 balance function to consume the shared date rule while preserving its serialization.
+order, V52 lead commands with V55 conversion/follow-up definition pins, V53
+dashboard definition and the retained V54 student writer/age function/trigger facts.
+V40 rank-command and V43 external-payment pins remain unchanged. V54 changed the
+student writer catalog function facts; the other V53 business catalog facts remained fixed.
+V55 changes the conversion and follow-up function facts and the student inventory pin
+covering conversion. V54 student writer/age rules and the other business facts remain fixed. V50 updates the V41 balance function to consume the shared date rule while preserving its serialization.
 
 The V33 retry-hash capture stays enabled throughout the database-first rolling
 deploy. Do not call `finalize_billing_invoice_retry_hash_capture_v33` during the

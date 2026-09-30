@@ -179,20 +179,37 @@ jobs:
   database:
     name: Supabase migration and contract suite
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # V55 isolated suite ~105 min + prior 30-min assembled Supabase budget + installation, runner, and future restore margin.
+    timeout-minutes: 180
 
     steps:
       - name: Check out exact candidate head
         uses: actions/checkout@v7
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
 
       - name: Assert exact candidate head
         env:
           EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
 
+      - name: Install PostgreSQL 17 for disposable restore proofs
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl --fail --silent --show-error -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          . /etc/os-release
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt ${VERSION_CODENAME}-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update
+          sudo apt-get install -y postgresql-17 postgresql-client-17
+
+      - name: Run isolated migration, restore, and concurrency proofs
+        env:
+          KOARYU_PG_BIN_DIR: /usr/lib/postgresql/17/bin
+        run: npm run check:supabase-contracts-local
+
       - name: Set up Supabase CLI
+        id: supabase-cli
         uses: supabase/setup-cli@ab058987d8d6c725971f6cf9d0b5c98467e30bd1 # v1
         with:
           version: 2.111.0
@@ -221,7 +238,7 @@ jobs:
         run: scripts/verify-student-profile-rank-plan-concurrency.sh
 
       - name: Stop disposable database
-        if: ${{ always() }}
+        if: ${{ always() && steps.supabase-cli.outcome == 'success' }}
         run: supabase stop --no-backup
 
   performance-regression:

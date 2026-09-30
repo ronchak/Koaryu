@@ -46,7 +46,7 @@ Start here for repo-wide rules, then prefer the nearest package-level `AGENTS.md
 - Verify a pinned deployed Render/Vercel pair reports one exact SHA: `npm run verify:deployed-release -- --environment <staging|production> --expected-sha <full-sha> --frontend-origin <pinned-origin> --backend-api <pinned-api-v1>`
 - Capture privacy-safe dashboard timing evidence only after exact-SHA verification: `npm run capture:dashboard-performance -- <same release args> --storage-state <absolute-private-path>`
 - Verify all migrations and contract SQL on ephemeral PostgreSQL 17: `npm run check:supabase-contracts-local`
-- Inspect the next V38-to-V54 migration: `node scripts/studio-comp-migration-rollout.mjs --target <staging|production> --mode inspect --one-migration --candidate-sha <full-sha>`
+- Inspect the next V38-to-V55 migration: `node scripts/studio-comp-migration-rollout.mjs --target <staging|production> --mode inspect --one-migration --candidate-sha <full-sha>`
 - Stripe Connect smoke check: `npm run dev:stripe-connect-smoke`
 
 ## Monorepo Rules
@@ -73,6 +73,7 @@ Start here for repo-wide rules, then prefer the nearest package-level `AGENTS.md
 - For frontend-only changes, prefer `cd frontend && npm run lint -- <paths>` and other narrow checks before full builds.
 - For backend-only changes, prefer `cd backend && venv/bin/python -m pytest <tests>`.
 - For developing and reviewing contract SQL, default to `npm run check:supabase-contracts-local`. It applies the complete migration chain and every file under `supabase/verification/` to an ephemeral PostgreSQL 17 cluster without Docker, network access, a cloud project, or `.env` files.
+- The release-candidate database job also runs this local PostgreSQL 17 suite, including logical restore and concurrency proofs, before the assembled Supabase checks.
 - For database changes, apply files not yet in local history with `supabase migration up --local`. If a changed migration may already be applied locally, first confirm the database is disposable and use `supabase db reset --local`; then run `supabase db lint --local --fail-on error` and force local helpers with `SUPABASE_DB_TARGET=local`. Use linked checks only for an explicitly intended release inspection after the linked project has the migrations.
 - For release-shaped or cross-cutting changes, combine the relevant frontend, backend, and Supabase checks.
 - Every release-candidate PR must also receive the exact-head `Release candidate gate`; use `scripts/merge-release-pr.sh` with recorded head and base SHAs after the strict `main` ruleset is active.

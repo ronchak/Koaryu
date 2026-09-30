@@ -14,7 +14,9 @@ directly and verifies it before running:
 - frontend tests, lint, production build, and high-severity runtime audit;
 - backend dependency consistency, hash-lock drift, vulnerability audit, tests,
   and generated API contract verification;
-- a fresh local migration replay, database lint, and the broad Supabase contract
+- an isolated PostgreSQL 17 migration replay, logical restore continuations and
+  concurrency proofs through `npm run check:supabase-contracts-local`, followed by
+  assembled local Supabase migration replay, database lint, and the broad contract
   suite;
 - an exact SQL-contract inventory check and real concurrent opposite-direction
   Connect mapping/exclusion transactions against the ephemeral database;
@@ -23,8 +25,9 @@ directly and verifies it before running:
 
 The Supabase contracts run through PostgreSQL `psql` with `ON_ERROR_STOP=1`.
 This preserves transaction and multi-statement behavior that the Supabase CLI
-prepared-statement query path cannot execute reliably. Local checks resolve the
-disposable database URL through `supabase status`. Intentional linked checks
+prepared-statement query path cannot execute reliably. The assembled local Supabase
+checks resolve the disposable database URL through `supabase status`. The isolated
+PostgreSQL 17 suite uses only its private disposable Unix-socket cluster. Intentional linked checks
 must provide a private `SUPABASE_DB_URL`; never print or commit it.
 The shared runner restricts that URL to the pinned staging project on session
 port 5432 with TLS and no routing overrides. Production contract execution is
