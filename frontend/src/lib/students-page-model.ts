@@ -284,6 +284,8 @@ export function buildStudentRows(
   return students.map((sourceStudent) => {
     const student = withCurrentMinorStatus(sourceStudent, businessDate);
     const activeMemberships = student.program_memberships || [];
+    const primaryGuardian =
+      student.guardians.find((guardian) => guardian.is_primary_contact) ?? student.guardians[0];
     return {
       student,
       displayName: displayName(student),
@@ -301,7 +303,7 @@ export function buildStudentRows(
           .join(" ")
           .toLowerCase(),
       },
-      contact: student.email || student.phone || student.guardians[0]?.email || "\u2014",
+      contact: student.email || student.phone || primaryGuardian?.email || "\u2014",
       visibleTags: student.tags.slice(0, 2),
       hiddenTagCount: Math.max(0, student.tags.length - 2),
     };
