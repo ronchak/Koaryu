@@ -184,7 +184,7 @@ describe("student store model", () => {
     assert.equal(february.is_minor, true);
     assert.equal(march.is_minor, false);
     assert.equal(cleared.date_of_birth, null);
-    assert.equal(cleared.is_minor, false);
+    assert.equal(cleared.is_minor, true);
     assert.equal(draft.legal_first_name, "Draft name");
     assert.equal(source.is_minor, true);
   });

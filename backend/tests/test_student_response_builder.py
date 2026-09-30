@@ -97,7 +97,36 @@ class StudentResponseBuilderTenantScopeTest(unittest.TestCase):
             )
 
         studio_date.assert_not_called()
-        self.assertFalse(responses[0].is_minor)
+        self.assertTrue(responses[0].is_minor)
+
+    def test_known_adult_dob_overrides_explicit_minor_flag_but_keeps_guardians(self):
+        builder = StudentResponseBuilder(TableBackedSupabase({}), photo_store=None)
+        guardian = builder.guardian_row_to_response(
+            {"id": "guardian_1", "first_name": "Mina", "last_name": "Stone"}
+        )
+        response = builder.row_to_response(
+            self.student_row(date_of_birth="2000-01-01", is_minor=True),
+            guardians=[guardian],
+            memberships=[],
+            photo_url=None,
+            today=date(2026, 9, 30),
+        )
+        self.assertFalse(response.is_minor)
+        self.assertEqual(response.guardians, [guardian])
+
+    def test_missing_dob_without_minor_flag_does_not_infer_age_from_guardian(self):
+        builder = StudentResponseBuilder(TableBackedSupabase({}), photo_store=None)
+        guardian = builder.guardian_row_to_response(
+            {"id": "guardian_1", "first_name": "Mina", "last_name": "Stone"}
+        )
+        response = builder.row_to_response(
+            self.student_row(date_of_birth=None, is_minor=None),
+            guardians=[guardian],
+            memberships=[],
+            photo_url=None,
+        )
+        self.assertFalse(response.is_minor)
+        self.assertEqual(response.guardians, [guardian])
 
     def test_guardian_hydration_filters_joined_guardian_by_student_studio(self):
         supabase = TableBackedSupabase(

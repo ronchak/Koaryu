@@ -113,7 +113,7 @@ export function StudentDetailSections({
         </FolioLeaf>
       ) : null}
 
-      {student.is_minor ? (
+      {student.is_minor || primaryGuardian ? (
         <FolioLeaf eyebrow="Guardian" title="Primary guardian">
           {primaryGuardian ? (
             <>

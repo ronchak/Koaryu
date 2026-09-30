@@ -301,11 +301,7 @@ export function buildStudentRows(
           .join(" ")
           .toLowerCase(),
       },
-      contact:
-        student.email ||
-        student.phone ||
-        (student.is_minor && student.guardians[0]?.email) ||
-        "\u2014",
+      contact: student.email || student.phone || student.guardians[0]?.email || "\u2014",
       visibleTags: student.tags.slice(0, 2),
       hiddenTagCount: Math.max(0, student.tags.length - 2),
     };

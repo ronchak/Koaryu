@@ -21,7 +21,7 @@ def prepare_student_write_payload(payload: dict, *, for_creation: bool) -> dict:
         payload["is_minor"] = is_minor_from_date_of_birth(date_of_birth)
         payload["date_of_birth"] = str(date_of_birth)
     elif for_creation:
-        payload["is_minor"] = False
+        payload.setdefault("is_minor", False)
 
     if payload.get("membership_start_date"):
         if isinstance(payload["membership_start_date"], str):

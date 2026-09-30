@@ -7,7 +7,7 @@ import type {
   StudentStatus,
   StudentUpdate,
 } from "@/types";
-import { isMinorOnDate } from "./student-age.ts";
+import { isMinorOnDate, withCurrentMinorStatus } from "./student-age.ts";
 
 export function normalizeStudentIds(studentIds: string[]): string[] {
   return Array.from(new Set(studentIds.map((studentId) => studentId.trim()).filter(Boolean)));
@@ -192,7 +192,7 @@ export function applyPreviewStudentUpdate(
   const nowIso = now.toISOString();
   const hasProgramUpdate = Object.hasOwn(data, "program_ids") || Object.hasOwn(data, "program_id");
   const baseStudent = {
-    ...student,
+    ...withCurrentMinorStatus(student, businessDate),
     ...data,
     legal_first_name: data.legal_first_name ?? student.legal_first_name,
     legal_last_name: data.legal_last_name ?? student.legal_last_name,
@@ -200,7 +200,7 @@ export function applyPreviewStudentUpdate(
     tags: data.tags ?? student.tags,
     updated_at: nowIso,
   };
-  baseStudent.is_minor = isMinorOnDate(baseStudent.date_of_birth, businessDate);
+  baseStudent.is_minor = withCurrentMinorStatus(baseStudent, businessDate).is_minor;
 
   if (!hasProgramUpdate) {
     return baseStudent;

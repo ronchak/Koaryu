@@ -190,9 +190,6 @@ class StudentService:
         )
         page = fetch_student_roster_page(self.supabase, query, cursor=cursor)
         dated_items = [item for item in page.items if item.date_of_birth]
-        for item in page.items:
-            if not item.date_of_birth:
-                item.is_minor = False
         if dated_items:
             reference_date = studio_today_for_studio(self.supabase, studio_id)
             for item in dated_items:

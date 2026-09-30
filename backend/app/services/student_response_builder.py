@@ -237,7 +237,7 @@ class StudentResponseBuilder:
             photo_url = self.photo_store.create_signed_url(photo_path)
 
         date_of_birth = row.get("date_of_birth")
-        is_minor = False
+        is_minor = bool(row.get("is_minor"))
         if date_of_birth:
             reference_date = today or studio_today_for_studio(self.supabase, row["studio_id"])
             is_minor = is_minor_on_date(date_of_birth, reference_date)
