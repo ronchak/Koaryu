@@ -8,6 +8,7 @@ import type {
   StudentUpdate,
 } from "@/types";
 import { isMinorOnDate, withCurrentMinorStatus } from "./student-age.ts";
+import { assertStudentBirthDate } from "./student-birth-date.ts";
 
 export function normalizeStudentIds(studentIds: string[]): string[] {
   return Array.from(new Set(studentIds.map((studentId) => studentId.trim()).filter(Boolean)));
@@ -93,6 +94,7 @@ export function buildPreviewStudent(
     businessDate?: string;
   },
 ): Student {
+  assertStudentBirthDate(data.date_of_birth, businessDate);
   const selectedProgramIds = data.program_ids?.length
     ? data.program_ids
     : data.program_id
@@ -189,6 +191,7 @@ export function applyPreviewStudentUpdate(
     businessDate?: string;
   },
 ): Student {
+  assertStudentBirthDate(data.date_of_birth, businessDate);
   const nowIso = now.toISOString();
   const hasProgramUpdate = Object.hasOwn(data, "program_ids") || Object.hasOwn(data, "program_id");
   const baseStudent = {

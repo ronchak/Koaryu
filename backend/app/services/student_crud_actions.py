@@ -15,6 +15,7 @@ from app.schemas.student import (
     StudentUpdate,
 )
 from app.services.student_program_memberships import StudentProgramMembershipStore
+from app.services.student_birth_date import validate_student_birth_date
 from app.services.studio_business_date import studio_today_for_studio
 from app.services.studio_scope import ensure_optional_studio_record
 from app.services.supabase_rpc import execute_required_rpc, first_rpc_row
@@ -64,6 +65,7 @@ class StudentCrudActions:
             if student_dict.get("date_of_birth")
             else None
         )
+        validate_student_birth_date(student_dict.get("date_of_birth"), response_today)
 
         result = execute_required_rpc(
             self.supabase,
@@ -127,6 +129,7 @@ class StudentCrudActions:
             if update_dict.get("date_of_birth") is not None or "date_of_birth" not in update_dict
             else None
         )
+        validate_student_birth_date(update_dict.get("date_of_birth"), response_today)
         try:
             result = execute_required_rpc(
                 self.supabase,

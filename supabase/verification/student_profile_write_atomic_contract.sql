@@ -598,4 +598,99 @@ BEGIN
 
 END $$;
 
+-- DOB validation applies to every insert path, including import RPCs, and uses
+-- the studio calendar rather than the session timezone. Retained invalid rows
+-- can still receive unrelated profile edits or have the DOB explicitly cleared.
+DO $$
+DECLARE
+    v_owner UUID := gen_random_uuid();
+    v_studio UUID := gen_random_uuid();
+    v_program UUID := gen_random_uuid();
+    v_student UUID := gen_random_uuid();
+    v_legacy UUID := gen_random_uuid();
+    v_today DATE;
+    v_future DATE;
+    v_actual DATE;
+    v_rejected BOOLEAN;
+    v_constraint TEXT;
+    v_timezone TEXT;
+BEGIN
+    INSERT INTO auth.users (id, aud, role, email, raw_app_meta_data, raw_user_meta_data)
+    VALUES (v_owner, 'authenticated', 'authenticated',
+            'dob-' || replace(v_owner::TEXT, '-', '') || '@example.invalid', '{}', '{}');
+    INSERT INTO public.studios (id, name, slug, owner_id, timezone)
+    VALUES (v_studio, 'Student DOB Contract', 'dob-' || replace(v_studio::TEXT, '-', ''),
+            v_owner, 'America/Los_Angeles');
+    INSERT INTO public.programs (id, studio_id, name) VALUES (v_program, v_studio, 'DOB Program');
+
+    FOREACH v_timezone IN ARRAY ARRAY['America/Los_Angeles', 'Pacific/Kiritimati', 'UTC'] LOOP
+        UPDATE public.studios SET timezone = v_timezone WHERE id = v_studio;
+        v_today := public.student_business_date(v_studio);
+        IF v_today IS DISTINCT FROM (CURRENT_TIMESTAMP AT TIME ZONE v_timezone)::DATE THEN
+            RAISE EXCEPTION 'Student business date differs from studio calendar.';
+        END IF;
+        INSERT INTO public.students (studio_id, legal_first_name, legal_last_name, date_of_birth)
+        VALUES (v_studio, 'Today', 'Allowed', v_today),
+               (v_studio, 'Past leap day', 'Allowed', '2008-02-29'),
+               (v_studio, 'Unknown', 'Allowed', NULL);
+        FOREACH v_future IN ARRAY ARRAY[v_today + 1, (v_today + INTERVAL '1 year')::DATE] LOOP
+            v_rejected := FALSE;
+            BEGIN
+                INSERT INTO public.students (studio_id, legal_first_name, legal_last_name, date_of_birth)
+                VALUES (v_studio, 'Future', 'Rejected', v_future);
+            EXCEPTION WHEN check_violation THEN
+                GET STACKED DIAGNOSTICS v_constraint = CONSTRAINT_NAME;
+                IF v_constraint IS DISTINCT FROM 'students_birth_date_not_future' THEN RAISE; END IF;
+                v_rejected := TRUE;
+            END;
+            IF NOT v_rejected THEN RAISE EXCEPTION 'Future birth date insert must fail.'; END IF;
+        END LOOP;
+    END LOOP;
+
+    -- Fail closed for a missing studio, and use the same UTC fallback as API reads.
+    UPDATE public.studios SET timezone = 'Invalid/Timezone' WHERE id = v_studio;
+    v_today := public.student_business_date(v_studio);
+    IF v_today IS DISTINCT FROM (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')::DATE THEN
+        RAISE EXCEPTION 'Invalid studio timezone must fall back to UTC.';
+    END IF;
+
+    INSERT INTO public.students (id, studio_id, legal_first_name, legal_last_name, date_of_birth)
+    VALUES (v_student, v_studio, 'Profile', 'DOB', v_today);
+    v_rejected := FALSE;
+    BEGIN
+        PERFORM public.write_student_profile_v2_atomic(
+            v_student, v_studio, v_owner,
+            jsonb_build_object('date_of_birth', (v_today + 1)::TEXT), NULL, '[]', FALSE, 'student.updated'
+        );
+    EXCEPTION WHEN check_violation THEN
+        GET STACKED DIAGNOSTICS v_constraint = CONSTRAINT_NAME;
+        IF v_constraint IS DISTINCT FROM 'students_birth_date_not_future' THEN RAISE; END IF;
+        v_rejected := TRUE;
+    END;
+    IF NOT v_rejected THEN RAISE EXCEPTION 'Atomic profile must reject future birth dates.'; END IF;
+    SELECT date_of_birth INTO v_actual FROM public.students WHERE id = v_student;
+    IF v_actual IS DISTINCT FROM v_today THEN RAISE EXCEPTION 'Rejected DOB update changed student.'; END IF;
+    IF EXISTS (SELECT 1 FROM public.audit_logs WHERE entity_id = v_student) THEN
+        RAISE EXCEPTION 'Rejected DOB update left an audit write.';
+    END IF;
+
+    -- Emulate a retained pre-migration row without rewriting any real records.
+    ALTER TABLE public.students DISABLE TRIGGER validate_students_birth_date;
+    INSERT INTO public.students (id, studio_id, legal_first_name, legal_last_name, date_of_birth)
+    VALUES (v_legacy, v_studio, 'Retained', 'DOB', v_today + 1);
+    ALTER TABLE public.students ENABLE TRIGGER validate_students_birth_date;
+    UPDATE public.students SET notes = 'Unrelated edit', date_of_birth = date_of_birth WHERE id = v_legacy;
+    SELECT date_of_birth INTO v_actual FROM public.students WHERE id = v_legacy;
+    IF v_actual IS DISTINCT FROM v_today + 1 THEN RAISE EXCEPTION 'Retained DOB was silently rewritten.'; END IF;
+    UPDATE public.students SET date_of_birth = NULL WHERE id = v_legacy;
+    SELECT date_of_birth INTO v_actual FROM public.students WHERE id = v_legacy;
+    IF v_actual IS NOT NULL THEN RAISE EXCEPTION 'Explicit DOB clearing failed.'; END IF;
+
+    IF has_function_privilege('anon', 'public.student_business_date(uuid)', 'EXECUTE')
+       OR has_function_privilege('authenticated', 'public.student_business_date(uuid)', 'EXECUTE')
+       OR NOT has_function_privilege('service_role', 'public.student_business_date(uuid)', 'EXECUTE') THEN
+        RAISE EXCEPTION 'Student business-date helper privileges changed.';
+    END IF;
+END $$;
+
 ROLLBACK;

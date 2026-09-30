@@ -1,6 +1,7 @@
 "use client";
 
 import { CommandOutcomeUnknown } from "../../lib/command-outcome.ts";
+import { studentBirthDateError } from "../../lib/student-birth-date.ts";
 import { useCallback, useRef, useState, type FormEvent } from "react";
 import type { GuardianCreate, StudentCreate, StudentStatus, StudentUpdate } from "@/types";
 
@@ -145,11 +146,14 @@ export function buildInitialStudentFormFields(
 
 export function validateStudentFormFields(
   fields: StudentFormFields,
-  options?: { includeLifecycleFields?: boolean },
+  options?: { includeLifecycleFields?: boolean; businessDate?: string },
 ): StudentFormValidation | null {
   if (!fields.legalFirst.trim() || !fields.legalLast.trim()) {
     return { message: "First name and last name are required.", tab: "info" };
   }
+
+  const birthDateError = studentBirthDateError(fields.dob, options?.businessDate);
+  if (birthDateError) return { message: birthDateError, tab: "info" };
 
   if (options?.includeLifecycleFields !== false && fields.holdEnd && !fields.holdStart) {
     return { message: "Add a hold start date before setting a hold end date.", tab: "info" };
@@ -287,6 +291,7 @@ export function useStudentFormState(options: UseStudentFormStateOptions) {
 
     const validation = validateStudentFormFields(fields, {
       includeLifecycleFields: options.includeLifecycleFields,
+      businessDate: options.businessDate,
     });
     if (validation) {
       setError(validation.message);

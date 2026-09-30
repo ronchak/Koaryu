@@ -12,6 +12,7 @@ import {
   type StudentFormInitialData,
 } from "@/components/students/student-form-state";
 import { useProgramStore, useConfigStore } from "@/lib/store";
+import { studentBirthDateError } from "@/lib/student-birth-date";
 import { X } from "lucide-react";
 
 interface StudentFormBaseProps {
@@ -131,6 +132,8 @@ export function StudentForm(props: StudentFormProps) {
                   label="Date of birth"
                   type="date"
                   value={fields.dob}
+                  max={businessDate}
+                  error={studentBirthDateError(fields.dob, businessDate)}
                   onChange={(e) => setField("dob", e.target.value)}
                 />
                 {canManageLifecycle ? (

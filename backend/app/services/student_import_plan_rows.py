@@ -337,6 +337,7 @@ def build_import_row_plan(
     options: CsvImportOptions,
     program_lookup: Optional[dict[str, Any]] = None,
     belt_rank_lookup: Optional[dict[str, Any]] = None,
+    business_date: Optional[date] = None,
 ) -> dict[str, Any]:
     mapped: dict = {}
     row_issues: list[CsvImportIssue] = []
@@ -420,6 +421,19 @@ def build_import_row_plan(
             )
         elif parsed_date:
             mapped[field_name] = parsed_date
+            if (
+                field_name == "date_of_birth"
+                and business_date
+                and parsed_date > business_date.isoformat()
+            ):
+                row_issues.append(
+                    make_import_issue(
+                        "future_date_of_birth",
+                        "Date of birth cannot be in the future.",
+                        field=field_name,
+                        value=parsed_date,
+                    )
+                )
 
     raw_program = mapped.get("program_id") if isinstance(mapped.get("program_id"), str) else None
     if program_lookup and mapped.get("program_id"):
