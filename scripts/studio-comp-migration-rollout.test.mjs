@@ -4133,6 +4133,12 @@ describe("V52 lead command migration cutover with retained predecessors", () => 
     ]) assert.throws(() => classifyStateSnapshot(v52Snapshot(packet, change), packet));
   });
 
+  it("normalizes the schema search path before both student facts branches execute", () => {
+    assert.match(V54_STUDENT_PROFILE_STATE_SQL, /WITH context AS MATERIALIZED/);
+    assert.equal(V54_STUDENT_PROFILE_STATE_SQL.match(/FROM context CROSS JOIN \(VALUES/g)?.length, 2);
+    assert.ok(!V54_STUDENT_PROFILE_STATE_SQL.includes("FROM (VALUES"));
+  });
+
   it("keeps V53 as an exact predecessor and requires the V54 student facts", () => {
     const packet = candidatePacket();
     assert.deepEqual(classifyStateSnapshot(v53Snapshot(packet), packet), { state: "v53", providerFingerprint: null });

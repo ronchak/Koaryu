@@ -1218,7 +1218,7 @@ export const V54_RELEASE_MANIFEST_SQL = releaseManifestSql(V54_FUNCTIONS, "v54_r
 export const V54_STUDENT_PROFILE_STATE_SQL = `WITH context AS MATERIALIZED (
   SELECT pg_catalog.set_config('search_path','pg_catalog',true)
 )
-SELECT encode(extensions.digest(convert_to((${STUDENT_PROFILE_FACTS_V54_SQL})::TEXT,'UTF8'),'sha256'),'hex') AS student_profile_state
+SELECT encode(extensions.digest(convert_to((${STUDENT_PROFILE_FACTS_V54_SQL.replaceAll("FROM (VALUES", "FROM context CROSS JOIN (VALUES")})::TEXT,'UTF8'),'sha256'),'hex') AS student_profile_state
 FROM context`;
 
 export const V52_LEAD_RECEIPT_STATE_SQL = `WITH context AS MATERIALIZED (SELECT pg_catalog.set_config('search_path','pg_catalog',true))
