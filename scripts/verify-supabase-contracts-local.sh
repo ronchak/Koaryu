@@ -1224,6 +1224,7 @@ echo "[V54 semantics] PASS final semantic chain and retained backend contracts"
 
 # Each payment writer has independent raw facts and an inherited preflight check.
 readiness_snapshot_sql="SELECT jsonb_build_array(
+  (SELECT to_jsonb(r) FROM public.koaryu_release_schema_preflight_v35() r),
   (SELECT to_jsonb(r) FROM public.koaryu_release_schema_preflight_v34() r),
   (SELECT to_jsonb(r) FROM public.koaryu_release_schema_preflight_v33() r),
   (SELECT to_jsonb(r) FROM public.koaryu_release_schema_preflight_v32() r),
@@ -1242,7 +1243,7 @@ readiness_snapshot_sql="SELECT jsonb_build_array(
   (SELECT to_jsonb(r) FROM public.koaryu_release_schema_preflight_v19() r),
   (SELECT to_jsonb(r) FROM public.koaryu_release_schema_preflight_v18() r));"
 readiness_before="$($PSQL "${psql_args[@]}" --tuples-only --no-align --quiet --command="$readiness_snapshot_sql")"
-current_readiness_sql="SELECT to_jsonb(r) FROM public.koaryu_release_schema_preflight_v34() r;"
+current_readiness_sql="SELECT to_jsonb(r) FROM public.koaryu_release_schema_preflight_v35() r;"
 current_readiness_before="$($PSQL "${psql_args[@]}" --tuples-only --no-align --quiet --command="$current_readiness_sql")"
 assert_payment_writer_rejects() {
   local label="$1" mutation_sql="$2" writer_query="$3" expected_writer="$4" expected_failure="$5"
@@ -1260,7 +1261,7 @@ assert_payment_writer_rejects() {
 DO $check$
 DECLARE version INTEGER; result RECORD;
     versions INTEGER[] := CASE WHEN current_setting('koaryu.check_compatibility')::BOOLEAN
-        THEN ARRAY[33,32,31,30,29,28,27,26,25,24,23,22,21,20,19,18] ELSE ARRAY[33] END;
+        THEN ARRAY[35,34,33,32,31,30,29,28,27,26,25,24,23,22,21,20,19,18] ELSE ARRAY[35] END;
 BEGIN
   FOREACH version IN ARRAY versions LOOP
     EXECUTE format('SELECT * FROM public.koaryu_release_schema_preflight_v%s()',version) INTO result;
