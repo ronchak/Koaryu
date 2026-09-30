@@ -1233,6 +1233,66 @@
     "student_profile_facts_v54": {
       "kind": "student_profile_facts_v54",
       "expected": "9c677c2dc39dd42bda08c1da53826d94dd876d687dbaf920a2597be8a8e8b586"
+    },
+    "student_profile_facts_v55": {
+      "kind": "student_profile_facts_v55",
+      "expected": "fad46920fe7205c3de8d9a3cf04994de52c257e3dd5d1d1b66710566470a4029"
+    },
+    "follow_up_lead_atomic_v55": {
+      "kind": "function_contract",
+      "namespace": "public",
+      "functionName": "follow_up_lead_atomic",
+      "signature": "public.follow_up_lead_atomic(uuid,uuid,uuid,uuid,jsonb)",
+      "expected": "f36021e09be3f208ba2d538e25efae1c97862b06c72f283755dd0db5f9ed3f30",
+      "acl": [
+        [
+          "postgres",
+          "postgres",
+          "EXECUTE",
+          false
+        ],
+        [
+          "service_role",
+          "postgres",
+          "EXECUTE",
+          false
+        ]
+      ],
+      "securityDefiner": false,
+      "returnsSet": false,
+      "volatility": "v",
+      "returnType": "public.leads",
+      "configuration": [
+        "search_path=\"\""
+      ]
+    },
+    "convert_lead_to_student_atomic_v55": {
+      "kind": "function_contract",
+      "namespace": "public",
+      "functionName": "convert_lead_to_student_atomic",
+      "signature": "public.convert_lead_to_student_atomic(uuid,uuid,uuid,uuid,uuid,text,date,uuid,uuid)",
+      "expected": "1bb565ea30d71939049387d0d34ab89c6656c5c76bc07aedf60e95b55acef011",
+      "acl": [
+        [
+          "postgres",
+          "postgres",
+          "EXECUTE",
+          false
+        ],
+        [
+          "service_role",
+          "postgres",
+          "EXECUTE",
+          false
+        ]
+      ],
+      "securityDefiner": false,
+      "returnsSet": false,
+      "volatility": "v",
+      "returnType": "public.leads",
+      "configuration": [
+        "search_path=public, pg_temp"
+      ]
     }
   },
   "states": {
@@ -1514,6 +1574,16 @@
           "expected": "feed7c0421cbeb5bcb2555837dd1c244367f180c8a884380f2f281ef919c82ee"
         }
       }
+    },
+    "v55": {
+      "extends": "v54",
+      "replace": {
+        "student_profile_facts_v54": "student_profile_facts_v55",
+        "follow_up_lead_atomic_v52": "follow_up_lead_atomic_v55"
+      },
+      "append": [
+        "convert_lead_to_student_atomic_v55"
+      ]
     }
   }
 }

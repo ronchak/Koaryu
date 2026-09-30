@@ -3,7 +3,7 @@ import fs from "node:fs";
 import { test } from "node:test";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { CURRENT_RELEASE, releaseState } from "./release-attestation/states.mjs";
+import { releaseState } from "./release-attestation/states.mjs";
 import { MIGRATION_VERSIONS } from "./release-attestation/generated-history.mjs";
 import { renderPreflight } from "./release-attestation/preflight.mjs";
 import { STUDENT_PROFILE_FACTS_V54_SQL } from "./release-attestation/preflight-policy.mjs";
@@ -11,7 +11,6 @@ import { STUDENT_PROFILE_FACTS_V54_SQL } from "./release-attestation/preflight-p
 const migration = fs.readFileSync(new URL("../supabase/migrations/20260930024404_student_profile_qa_v54.sql", import.meta.url), "utf8");
 
 test("V54 has one exact successor and a guarded V53 compatibility consumer", () => {
-  assert.equal(CURRENT_RELEASE, "v54");
   const state = releaseState("v54", MIGRATION_VERSIONS);
   assert.equal(state.predecessor, "v53");
   assert.equal(state.count, 149);

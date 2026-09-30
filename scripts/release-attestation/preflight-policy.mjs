@@ -460,3 +460,8 @@ export function render_student_profile_facts_v54(check) {
         v_failures:=array_append(v_failures,${sqlLiteral(check.id)});
     END IF;`;
 }
+
+// V55 retains the student write/age inventory while pinning the new conversion
+// definition independently of the historical V54 declaration.
+export const STUDENT_PROFILE_FACTS_V55_SQL = STUDENT_PROFILE_FACTS_V54_SQL;
+export const render_student_profile_facts_v55 = render_student_profile_facts_v54;

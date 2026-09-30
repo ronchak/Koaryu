@@ -49,3 +49,43 @@ assert_payment_writer_rejects test "SELECT 1;" "$query" expected required_failur
     }
   });
 }
+
+
+test("V55 keeps both restore steps, exact inventory and the complete readiness/lead probes", () => {
+  assert.match(verifier, /migration_files\[@\].*-ne 150/);
+  assert.match(verifier, /verification_files\[@\].*-ne 56/);
+  for (const text of [
+    "verify-v53-v54-restore-contract.py", "verify-v54-v55-restore-contract.py",
+    "[V55 readiness]", "[V55 release]", "[V55 semantics]",
+    "V54_OPERATIONAL_READINESS_SQL|EXPECTED_V54_OPERATIONAL_READINESS",
+    "V55_LEAD_CONVERSION_STATE_SQL|EXPECTED_V55_LEAD_CONVERSION_STATE",
+    "V55_LEAD_FOLLOW_UP_STATE_SQL|EXPECTED_V55_LEAD_FOLLOW_UP_STATE",
+    "ARRAY[36,35,34,33,32,31,30,29,28,27,26,25,24,23,22,21,20,19,18]",
+    "verify-lead-command-concurrency.py",
+  ]) assert.ok(verifier.includes(text), text);
+  assert.ok(verifier.indexOf('if [[ "$migration_filename" == "20260930192626')
+    < verifier.indexOf('echo "[migration $migration_index/$migration_total] RUN'));
+  const leadSuite = fs.readFileSync(new URL("./verify-lead-command-concurrency.py", import.meta.url), "utf8");
+  assert.ok(leadSuite.includes("len(results) == 75"));
+  assert.ok(leadSuite.includes("len({row[\"case\"] for row in results}) == 75"));
+});
+
+
+test("final V55 semantics uses only V55 pins for changed lead/student definitions", () => {
+  const block = /done <<'V55_CHECKS'\n([\s\S]*?)\nV55_CHECKS/.exec(verifier)?.[1];
+  assert.ok(block, "The final semantic loop must exist");
+  for (const historical of ["V52_LEAD_FOLLOW_UP_STATE", "V54_STUDENT_PROFILE_STATE"]) {
+    assert.ok(!block.includes(historical), historical);
+  }
+  for (const pair of [
+    "V55_STUDENT_PROFILE_STATE_SQL|EXPECTED_V55_STUDENT_PROFILE_STATE",
+    "V55_LEAD_CONVERSION_STATE_SQL|EXPECTED_V55_LEAD_CONVERSION_STATE",
+    "V55_LEAD_FOLLOW_UP_STATE_SQL|EXPECTED_V55_LEAD_FOLLOW_UP_STATE",
+  ]) assert.ok(block.includes(pair), pair);
+  const uiContract = fs.readFileSync(new URL("../supabase/verification/release_ui_atomic_contract.sql", import.meta.url), "utf8");
+  assert.equal(uiContract.match(/'student_profile_facts_v55'/g)?.length, 2);
+  assert.ok(!uiContract.includes("'student_profile_facts_v54'"));
+  assert.ok(uiContract.includes("public.koaryu_release_schema_preflight_v35()"));
+  assert.ok(uiContract.includes("public.koaryu_release_schema_preflight_v34()"));
+  assert.ok(uiContract.includes("(149,'20260930024404'), (150,'20260930192626')"));
+});

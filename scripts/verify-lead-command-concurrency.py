@@ -577,6 +577,9 @@ FOR EACH ROW EXECUTE FUNCTION public.koaryu_test_lead_assignment_barrier();""")
                     require(all(count == 0 for count in state.values()), f"Operational clear left command effects: {state}")
                 passed(case, blocking=blocking, facts=state)
 
+        require(len(results) == 75 and len({row["case"] for row in results}) == 75,
+                "Expected all 75 distinct lead command concurrency cases")
+        print("[lead command concurrency] PASS 75 cases", flush=True)
         evidence = {"script_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
                     "local_tools_sha256": hashlib.sha256(Path(__file__).with_name("local_postgres_verification.py").read_bytes()).hexdigest(),
                     "cases": results}
