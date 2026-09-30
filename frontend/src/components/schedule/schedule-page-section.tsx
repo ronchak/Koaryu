@@ -19,6 +19,7 @@ import {
   formatScheduleDateKey,
   getScheduleTimeCanvasBounds,
   getScheduleWeekDates,
+  getVisibleScheduleSummary,
   layoutScheduleTimeItems,
   SCHEDULE_CANVAS_PIXELS_PER_HOUR,
   type SchedulePageView,
@@ -144,6 +145,16 @@ export function SchedulePageSection({
         ? templates.filter((template) => template.program_id === programFilter)
         : templates,
     [programFilter, templates],
+  );
+  const visibleSummary = useMemo(
+    () =>
+      getVisibleScheduleSummary({
+        currentDate,
+        view,
+        sessions: filteredSessions,
+        templates: filteredTemplates,
+      }),
+    [currentDate, view, filteredSessions, filteredTemplates],
   );
 
   const sessionsByDate = useMemo(() => groupSessionsByDate(filteredSessions), [filteredSessions]);
@@ -400,13 +411,13 @@ export function SchedulePageSection({
           <div className="rounded-[10px] bg-surface-raised px-4 py-3">
             <p className="text-xs font-medium text-muted">Scheduled</p>
             <p className="mt-1 text-lg font-semibold tabular-nums text-text-primary">
-              {hasLoadedRange ? filteredSessions.length : "Pending"}
+              {hasLoadedRange ? visibleSummary.scheduled : "Pending"}
             </p>
           </div>
           <div className="rounded-[10px] bg-surface-raised px-4 py-3">
             <p className="text-xs font-medium text-muted">Recurring slots</p>
             <p className="mt-1 text-lg font-semibold tabular-nums text-text-primary">
-              {hasLoadedRange ? filteredTemplates.length : "Pending"}
+              {hasLoadedRange ? visibleSummary.recurringSlots : "Pending"}
             </p>
           </div>
           <div className="rounded-[10px] bg-surface-raised px-4 py-3">
