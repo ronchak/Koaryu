@@ -4800,7 +4800,7 @@ export function classifyStateSnapshot(snapshot, packet, expectedProviderFingerpr
     if (v40CompatibilityReadiness !== EXPECTED_V40_OPERATIONAL_READINESS) {
       throw new RolloutError("Compatibility V40 readiness did not match the previous backend contract.");
     }
-    if (v41PayerBalanceState !== (isPredecessor && !isV50 && !isV51 && !isV52 ? EXPECTED_V41_PAYER_BALANCE_STATE : EXPECTED_V50_PAYER_BALANCE_STATE)) {
+    if (v41PayerBalanceState !== (isPredecessor && !isV50 && !isV51 && !isV52 && !isV53 ? EXPECTED_V41_PAYER_BALANCE_STATE : EXPECTED_V50_PAYER_BALANCE_STATE)) {
       throw new RolloutError("V41 payer balance facts mismatch.");
     }
     if (isV41) {

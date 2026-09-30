@@ -151,7 +151,8 @@
       "functionSet": "student-writer-returns",
       "parent": "private.koaryu_release_student_rank_writer_manifest_v11()",
       "expectedParent": "0:d1f6f4860761c34c91500447eb7efa014b1d35c87a338e2bdcd188805edcb1b8",
-      "format": "catalog"
+      "format": "catalog",
+      "sourceSha256": "6a7efe0cbb4bdbc187e02ad467caebc233017af859c33ea1ec1483cdad5562c9"
     }
   ]
 }

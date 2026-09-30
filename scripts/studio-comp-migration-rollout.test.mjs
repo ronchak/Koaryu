@@ -3418,7 +3418,7 @@ describe("studio-comp migration rollout guard", () => {
       ["v50", "20260925030000_invoice_closeout_lock_order_v51.sql", "9308174041fe8d1bb35b785218a2fd84e848913540a57b653989f8f0c48b3295", "v51"],
       ["v51", "20260926194918_lead_commands_v52.sql", "9f12ac8aac1cf1d310655c6aedc1a665c43e633a1a846e213e9ab77937590b93", "v52"],
       ["v52", "20260929152445_dashboard_roster_inactivity_v53.sql", "b68c9c093295a91692f9fea8cf42b9d22e12fa113beca6d7517f6a323896db33", "v53"],
-      ["v53", "20260930024404_student_profile_qa_v54.sql", "da555c5ab79f231bd15a8f6cfc2cbf5c4f006beaee6f162649c593c87964d506", "post"],
+      ["v53", "20260930024404_student_profile_qa_v54.sql", "7b0c1c2998e0eb3c0eeab5d79ee0fd7f5d2a8a780a796c95f8f36ea39bd3ab07", "post"],
     ];
     for (const [state, filename, manifestSha256, expectedAfterState] of transitions) {
       const selected = oneMigrationPacket(packet, state);
@@ -4236,7 +4236,7 @@ describe("V52 lead command migration cutover with retained predecessors", () => 
       { v31OperationalContract: EXPECTED_V39_OPERATIONAL_CONTRACT_V31 },
       { v31OperationalManifest: EXPECTED_V39_OPERATIONAL_MANIFEST_V12 },
     ]) assert.throws(() => classifyStateSnapshot(postSnapshot(packet, change), packet), JSON.stringify(change));
-    for (const field of [`v53_release=${EXPECTED_V54_RELEASE_MANIFEST};`, `v53_dashboard=${EXPECTED_V53_DASHBOARD_DEFINITION_SHA256};`, `v52_update=${EXPECTED_V52_LEAD_UPDATE_STATE};`, `v52_follow_up=${EXPECTED_V52_LEAD_FOLLOW_UP_STATE};`, `v52_receipts=${EXPECTED_V52_LEAD_RECEIPT_STATE};`, `v51_closeout=${EXPECTED_V51_CLOSEOUT_STATE};`, `v50_collection=${EXPECTED_V50_COLLECTION_FACTS_STATE};`, `v50_payer_read=${EXPECTED_V50_PAYER_READ_STATE};`, `v50_landing=${EXPECTED_V50_LANDING_STATE};`, `v50_invoice_facts=${EXPECTED_V50_INVOICE_FACTS_STATE};`, `v50_attention=${EXPECTED_V50_ATTENTION_STATE};`, `v49_terms=${EXPECTED_V49_SUBSCRIPTION_TERMS_STATE};`, `v48_activation=${EXPECTED_V48_ACTIVATION_STATE};`, `v44_plan=${EXPECTED_V44_LOCAL_PLAN_STATE};`, `v44_clear=${EXPECTED_V44_CLEAR_STATE};`, `v43_external=${EXPECTED_V43_EXTERNAL_PAYMENT_STATE};`, `v41_balance=${EXPECTED_V50_PAYER_BALANCE_STATE};`, `v40_rank=${EXPECTED_V40_RANK_COMMAND_STATE};`]) {
+    for (const field of [`v54_release=${EXPECTED_V54_RELEASE_MANIFEST};`, `v54_student=${EXPECTED_V54_STUDENT_PROFILE_STATE};`, `v53_dashboard=${EXPECTED_V53_DASHBOARD_DEFINITION_SHA256};`, `v52_update=${EXPECTED_V52_LEAD_UPDATE_STATE};`, `v52_follow_up=${EXPECTED_V52_LEAD_FOLLOW_UP_STATE};`, `v52_receipts=${EXPECTED_V52_LEAD_RECEIPT_STATE};`, `v51_closeout=${EXPECTED_V51_CLOSEOUT_STATE};`, `v50_collection=${EXPECTED_V50_COLLECTION_FACTS_STATE};`, `v50_payer_read=${EXPECTED_V50_PAYER_READ_STATE};`, `v50_landing=${EXPECTED_V50_LANDING_STATE};`, `v50_invoice_facts=${EXPECTED_V50_INVOICE_FACTS_STATE};`, `v50_attention=${EXPECTED_V50_ATTENTION_STATE};`, `v49_terms=${EXPECTED_V49_SUBSCRIPTION_TERMS_STATE};`, `v48_activation=${EXPECTED_V48_ACTIVATION_STATE};`, `v44_plan=${EXPECTED_V44_LOCAL_PLAN_STATE};`, `v44_clear=${EXPECTED_V44_CLEAR_STATE};`, `v43_external=${EXPECTED_V43_EXTERNAL_PAYMENT_STATE};`, `v41_balance=${EXPECTED_V50_PAYER_BALANCE_STATE};`, `v40_rank=${EXPECTED_V40_RANK_COMMAND_STATE};`]) {
       assert.throws(() => approvedProviderFingerprintVariants(validFingerprint.replace(field, "")));
     }
     assert.throws(() => approvedProviderFingerprintVariants(validFingerprint.replace(
