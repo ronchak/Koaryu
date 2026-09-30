@@ -194,6 +194,48 @@ export function applyPreviewStudentUpdate(
   assertStudentBirthDate(data.date_of_birth, businessDate);
   const nowIso = now.toISOString();
   const hasProgramUpdate = Object.hasOwn(data, "program_ids") || Object.hasOwn(data, "program_id");
+  if (Object.hasOwn(data, "guardians") && data.guardians == null) {
+    throw new Error("Guardians must be an array.");
+  }
+  const guardianIds = (data.guardians ?? [])
+    .filter((patch) => patch.id != null)
+    .map((patch) => patch.id);
+  if (new Set(guardianIds).size !== guardianIds.length) {
+    throw new Error("Duplicate guardian id in student write.");
+  }
+  const guardians = [...student.guardians];
+  for (const patch of data.guardians ?? []) {
+    if (Object.hasOwn(patch, "id")) {
+      const index = guardians.findIndex((guardian) => guardian.id === patch.id);
+      if (index < 0) throw new Error("Guardian is not linked to this student.");
+      if (
+        (Object.hasOwn(patch, "first_name") && !patch.first_name?.trim()) ||
+        (Object.hasOwn(patch, "last_name") && patch.last_name == null) ||
+        (Object.hasOwn(patch, "is_primary_contact") && patch.is_primary_contact == null)
+      )
+        throw new Error("Guardian names and primary contact flag cannot be empty.");
+      const existing = guardians[index];
+      guardians[index] = {
+        ...existing,
+        ...patch,
+        id: existing.id,
+        first_name: patch.first_name?.trim() ?? existing.first_name,
+        last_name: patch.last_name?.trim() ?? existing.last_name,
+        is_primary_contact: patch.is_primary_contact ?? existing.is_primary_contact,
+      };
+    } else {
+      if (!patch.first_name?.trim() || patch.last_name == null) {
+        throw new Error("Guardian first name is required; last name must be a string.");
+      }
+      guardians.push({
+        ...patch,
+        id: idFactory(),
+        first_name: patch.first_name.trim(),
+        last_name: patch.last_name.trim(),
+        is_primary_contact: patch.is_primary_contact ?? false,
+      });
+    }
+  }
   const baseStudent = {
     ...withCurrentMinorStatus(student, businessDate),
     ...data,
@@ -202,6 +244,7 @@ export function applyPreviewStudentUpdate(
     status: data.status ?? student.status,
     tags: data.tags ?? student.tags,
     updated_at: nowIso,
+    guardians,
   };
   baseStudent.is_minor = withCurrentMinorStatus(baseStudent, businessDate).is_minor;
 
@@ -261,4 +304,28 @@ export function applyPreviewStudentUpdate(
     current_belt_rank_id: memberships[0]?.current_belt_rank_id,
     program_memberships: memberships,
   };
+}
+
+// Synchronize only the contacts actually edited; an ordinary profile save must
+// not overwrite another cached student's newer shared contact details.
+export function applyStudentProfileResponse(
+  students: Student[],
+  saved: Student,
+  data: StudentUpdate,
+): Student[] {
+  const changedIds = new Set((data.guardians ?? []).map((guardian) => guardian.id));
+  const contacts = new Map(
+    saved.guardians
+      .filter((guardian) => changedIds.has(guardian.id))
+      .map((guardian) => [guardian.id, guardian]),
+  );
+  return students.map((student) => {
+    if (student.studio_id !== saved.studio_id) return student;
+    if (student.id === saved.id) return saved;
+    if (!contacts.size) return student;
+    return {
+      ...student,
+      guardians: student.guardians.map((guardian) => contacts.get(guardian.id) ?? guardian),
+    };
+  });
 }

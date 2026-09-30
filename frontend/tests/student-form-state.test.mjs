@@ -162,7 +162,18 @@ describe("student form state", () => {
         email: "",
         phone: " 555-0100 ",
       },
-      { current_belt_rank_id: "rank-a" },
+      {
+        current_belt_rank_id: "rank-a",
+        guardians: [
+          {
+            id: "guardian-1",
+            first_name: "Kenji",
+            last_name: "Tanaka",
+            email: "kenji@example.com",
+            is_primary_contact: true,
+          },
+        ],
+      },
     );
 
     assert.equal(payload.legal_first_name, "Aiko");
@@ -239,4 +250,54 @@ describe("student form state", () => {
     assert.equal(Object.hasOwn(updatePayload, "current_belt_rank_id"), false);
     assert.equal(updatePayload.preferred_name, null);
   });
+});
+
+it("adds a single-name guardian to an existing student and keeps saved identities", () => {
+  const initial = { legal_first_name: "Aiko", legal_last_name: "Tanaka", guardians: [] };
+  const fields = { ...buildInitialStudentFormFields(initial), guardianFirst: " Kenji " };
+  assert.equal(validateStudentFormFields(fields), null);
+  assert.deepEqual(buildStudentUpdatePayload(fields, initial).guardians, [
+    {
+      first_name: "Kenji",
+      last_name: "",
+      email: null,
+      phone: null,
+      relation: null,
+      is_primary_contact: true,
+    },
+  ]);
+});
+
+it("patches only changed fields of the primary guardian and preserves secondary links", () => {
+  const initial = {
+    legal_first_name: "Aiko",
+    legal_last_name: "Tanaka",
+    guardians: [
+      { id: "other", first_name: "Other", last_name: "Parent", is_primary_contact: false },
+      {
+        id: "primary",
+        first_name: "Kenji",
+        last_name: "",
+        email: "old@example.com",
+        phone: "555-1234",
+        is_primary_contact: true,
+      },
+    ],
+  };
+  const fields = buildInitialStudentFormFields(initial);
+  assert.equal(fields.guardianFirst, "Kenji");
+  assert.equal(validateStudentFormFields(fields, { hasGuardian: true }), null);
+  assert.equal(Object.hasOwn(buildStudentUpdatePayload(fields, initial), "guardians"), false);
+  assert.deepEqual(
+    buildStudentUpdatePayload({ ...fields, guardianPhone: "555-0199", guardianEmail: "" }, initial)
+      .guardians,
+    [{ id: "primary", phone: "555-0199", email: null }],
+  );
+  assert.equal(
+    validateStudentFormFields(
+      { ...fields, guardianFirst: "", guardianPhone: "" },
+      { hasGuardian: true },
+    ).tab,
+    "guardian",
+  );
 });

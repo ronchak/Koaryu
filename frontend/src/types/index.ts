@@ -91,6 +91,7 @@ export type StudioUpdate = ApiContracts.ApiStudioUpdate;
 export type StudentStatus = ApiContracts.ApiStudentResponse["status"];
 export type Guardian = ApiContracts.ApiGuardianResponse;
 export type GuardianCreate = ApiContracts.ApiGuardianCreate;
+export type GuardianWrite = ApiContracts.ApiGuardianWrite;
 export type StudentProgramMembership = ApiContracts.ApiStudentProgramMembershipResponse;
 export type Student = ApiContracts.ApiStudentResponse;
 export type StudentListResponse = ApiContracts.ApiStudentListResponse;

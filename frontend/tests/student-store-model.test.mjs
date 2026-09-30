@@ -12,6 +12,7 @@ import {
 import {
   applyAddedTagsToStudents,
   applyPreviewStudentUpdate,
+  applyStudentProfileResponse,
   applyStatusToStudents,
   buildPreviewStudent,
   normalizeStudentIds,
@@ -453,4 +454,83 @@ describe("student store model", () => {
       assert.equal(updated.program_memberships[1].started_at, membership_start_date);
     }
   });
+});
+
+it("persists guardian add and patch through the real edit mapping without replacing other contacts", () => {
+  const original = student("s");
+  const options = { idFactory: () => "g1" };
+  const addInitial = buildStudentEditInitialData(original, []);
+  const addFields = { ...buildInitialStudentFormFields(addInitial), guardianFirst: "Kenji" };
+  const added = applyPreviewStudentUpdate(
+    original,
+    buildStudentFormSubmitPayload(addFields, addInitial),
+    [],
+    options,
+  );
+  assert.equal(added.guardians[0].id, "g1");
+  assert.equal(added.guardians[0].last_name, "");
+  const siblingContact = {
+    id: "g2",
+    first_name: "Other",
+    last_name: "Parent",
+    is_primary_contact: false,
+  };
+  const source = { ...added, guardians: [...added.guardians, siblingContact] };
+  const editInitial = buildStudentEditInitialData(source, []);
+  assert.equal(editInitial.guardians[0].id, "g1");
+  const edited = applyPreviewStudentUpdate(
+    source,
+    buildStudentFormSubmitPayload(
+      { ...buildInitialStudentFormFields(editInitial), guardianPhone: "555-1234" },
+      editInitial,
+    ),
+    [],
+    options,
+  );
+  assert.equal(edited.guardians[0].id, "g1");
+  assert.equal(edited.guardians[0].phone, "555-1234");
+  assert.deepEqual(edited.guardians[1], siblingContact);
+  assert.deepEqual(
+    applyPreviewStudentUpdate(edited, { guardians: [] }, [], options).guardians,
+    edited.guardians,
+  );
+  assert.deepEqual(
+    applyPreviewStudentUpdate(edited, { notes: "Other edit" }, [], options).guardians,
+    edited.guardians,
+  );
+  assert.throws(
+    () =>
+      applyPreviewStudentUpdate(
+        edited,
+        { guardians: [{ id: "foreign", phone: "x" }] },
+        [],
+        options,
+      ),
+    /not linked/,
+  );
+  assert.throws(() => applyPreviewStudentUpdate(edited, { guardians: null }, [], options), /array/);
+});
+
+it("updates shared preview/live contacts only for edited IDs within the current studio", () => {
+  const contact = {
+    id: "g",
+    first_name: "Kenji",
+    last_name: "",
+    phone: "old",
+    is_primary_contact: true,
+  };
+  const source = student("source", { guardians: [contact] });
+  const sibling = student("sibling", { guardians: [contact] });
+  const foreign = student("foreign", { studio_id: "other", guardians: [contact] });
+  const saved = { ...source, guardians: [{ ...contact, phone: "new" }] };
+  const rows = applyStudentProfileResponse([source, sibling, foreign], saved, {
+    guardians: [{ id: "g", phone: "new" }],
+  });
+  assert.equal(rows[0].guardians[0].phone, "new");
+  assert.equal(rows[1].guardians[0].phone, "new");
+  assert.equal(rows[2].guardians[0].phone, "old");
+  assert.equal(
+    applyStudentProfileResponse([source, sibling], saved, { notes: "only student" })[1],
+    sibling,
+  );
 });

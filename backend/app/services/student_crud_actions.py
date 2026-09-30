@@ -103,8 +103,13 @@ class StudentCrudActions:
     async def update_student(
         self, student_id: str, data: StudentUpdate, studio_id: str, actor_id: str
     ) -> StudentResponse:
-        update_dict = data.model_dump(exclude_unset=True)
-        if not update_dict:
+        update_dict = data.model_dump(exclude_unset=True, exclude={"guardians"})
+        guardians = (
+            [guardian.model_dump(mode="json", exclude_unset=True) for guardian in data.guardians]
+            if data.guardians is not None
+            else []
+        )
+        if not update_dict and not guardians:
             raise HTTPException(status_code=400, detail="No fields to update")
         program_ids_were_set = "program_ids" in update_dict or "program_id" in update_dict
         program_ids = None
@@ -140,7 +145,7 @@ class StudentCrudActions:
                     "p_actor_id": actor_id,
                     "p_student": update_dict,
                     "p_program_ids": program_ids,
-                    "p_guardians": [],
+                    "p_guardians": guardians,
                     "p_replace_programs": program_ids is not None,
                     "p_audit_action": "student.updated",
                 },

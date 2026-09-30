@@ -692,5 +692,120 @@ BEGIN
         RAISE EXCEPTION 'Student business-date helper privileges changed.';
     END IF;
 END $$;
+-- Guardian additions and patches remain one transaction with profile/audit writes.
+DO $$
+DECLARE
+    v_owner UUID := gen_random_uuid();
+    v_other_owner UUID := gen_random_uuid();
+    v_studio UUID := gen_random_uuid();
+    v_other_studio UUID := gen_random_uuid();
+    v_student UUID := gen_random_uuid();
+    v_sibling UUID := gen_random_uuid();
+    v_guardian UUID;
+    v_secondary UUID := gen_random_uuid();
+    v_foreign UUID := gen_random_uuid();
+    v_unlinked UUID := gen_random_uuid();
+    v_result RECORD;
+    v_before_student JSONB;
+    v_before_guardian JSONB;
+    v_before_audit INTEGER;
+    v_invalid JSONB;
+    v_failed BOOLEAN;
+BEGIN
+    IF has_function_privilege('authenticated', 'public.write_student_profile_v2_atomic(uuid,uuid,uuid,jsonb,uuid[],jsonb,boolean,text)', 'EXECUTE')
+       OR has_function_privilege('anon', 'public.write_student_profile_v2_atomic(uuid,uuid,uuid,jsonb,uuid[],jsonb,boolean,text)', 'EXECUTE') THEN
+        RAISE EXCEPTION 'Guardian write must remain unavailable to browser roles.';
+    END IF;
+    INSERT INTO auth.users (id, aud, role, email, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
+    VALUES (v_owner, 'authenticated', 'authenticated', v_owner::TEXT || '@example.invalid', '{}', '{}', now(), now()),
+           (v_other_owner, 'authenticated', 'authenticated', v_other_owner::TEXT || '@example.invalid', '{}', '{}', now(), now());
+    INSERT INTO public.studios (id, owner_id, name, slug)
+    VALUES (v_studio, v_owner, 'Guardian Test', v_studio::TEXT), (v_other_studio, v_other_owner, 'Guardian Other', v_other_studio::TEXT);
+    INSERT INTO public.students (id, studio_id, legal_first_name, legal_last_name, status)
+    VALUES (v_student, v_studio, 'Student', 'One', 'active'), (v_sibling, v_studio, 'Student', 'Two', 'active');
+
+    -- Add a missing guardian, including the supported single-name contact case.
+    SELECT * INTO v_result FROM public.write_student_profile_v2_atomic(
+        v_student, v_studio, v_owner, '{}'::JSONB, NULL,
+        '[{"first_name":"Kenji","last_name":"","phone":"old","is_primary_contact":true}]'::JSONB, FALSE, 'student.updated'
+    );
+    v_guardian := (v_result.result_guardians->0->>'id')::UUID;
+    IF v_guardian IS NULL OR v_result.result_guardians->0->>'last_name' IS DISTINCT FROM ''
+       OR NOT EXISTS (SELECT 1 FROM public.student_guardians WHERE student_id = v_student AND guardian_id = v_guardian) THEN
+        RAISE EXCEPTION 'Missing guardian add/snapshot persistence.';
+    END IF;
+
+    INSERT INTO public.guardians (id, studio_id, first_name, last_name, is_primary_contact)
+    VALUES (v_secondary, v_studio, 'Other', 'Parent', FALSE), (v_unlinked, v_studio, 'Unlinked', 'Contact', FALSE),
+           (v_foreign, v_other_studio, 'Foreign', 'Contact', TRUE);
+    INSERT INTO public.student_guardians (student_id, guardian_id)
+    VALUES (v_student, v_secondary), (v_sibling, v_guardian);
+
+    SELECT * INTO v_result FROM public.write_student_profile_v2_atomic(
+        v_student, v_studio, v_owner, '{"notes":"ordinary edit"}'::JSONB
+    );
+    IF jsonb_array_length(v_result.result_guardians) IS DISTINCT FROM 2 THEN
+        RAISE EXCEPTION 'Omitted guardians must preserve all contacts.';
+    END IF;
+    SELECT * INTO v_result FROM public.write_student_profile_v2_atomic(
+        v_student, v_studio, v_owner, '{}'::JSONB, NULL,
+        jsonb_build_array(jsonb_build_object('id', v_guardian, 'phone', 'new', 'email', NULL)), FALSE, 'student.updated'
+    );
+    IF NOT EXISTS (SELECT 1 FROM public.guardians WHERE id = v_guardian AND phone = 'new' AND email IS NULL AND first_name = 'Kenji' AND last_name = '' AND is_primary_contact)
+       OR (SELECT count(*) FROM public.student_guardians WHERE guardian_id = v_guardian) IS DISTINCT FROM 2::BIGINT
+       OR NOT EXISTS (SELECT 1 FROM public.student_guardians WHERE student_id = v_student AND guardian_id = v_secondary)
+       OR NOT EXISTS (SELECT 1 FROM jsonb_array_elements(v_result.result_guardians) g WHERE g->>'id' = v_guardian::TEXT AND g->>'phone' = 'new') THEN
+        RAISE EXCEPTION 'Contact patch must preserve identity, omitted fields, sibling/secondary links and committed snapshot.';
+    END IF;
+
+    SELECT to_jsonb(s) INTO v_before_student FROM public.students s WHERE id = v_student;
+    SELECT to_jsonb(g) INTO v_before_guardian FROM public.guardians g WHERE id = v_guardian;
+    SELECT count(*) INTO v_before_audit FROM public.audit_logs WHERE entity_id = v_student;
+    FOR v_invalid IN SELECT value FROM jsonb_array_elements(jsonb_build_array(
+        'null'::JSONB, '{}'::JSONB, '[null]'::JSONB, '[{"id":null,"phone":"bad"}]'::JSONB,
+        '[{"first_name":"","last_name":""}]'::JSONB,
+        jsonb_build_array(jsonb_build_object('id', v_guardian, 'first_name', NULL)),
+        jsonb_build_array(jsonb_build_object('id', v_guardian, 'is_primary_contact', NULL)),
+        jsonb_build_array(jsonb_build_object('id', v_unlinked, 'phone', 'bad')),
+        jsonb_build_array(jsonb_build_object('id', v_foreign, 'phone', 'bad')),
+        jsonb_build_array(jsonb_build_object('id', v_guardian, 'phone', 'one'), jsonb_build_object('id', v_guardian, 'phone', 'two'))
+    )) LOOP
+        v_failed := FALSE;
+        BEGIN
+            PERFORM public.write_student_profile_v2_atomic(v_student, v_studio, v_owner, '{"notes":"must rollback"}'::JSONB, NULL, v_invalid, FALSE, 'student.updated');
+        EXCEPTION WHEN SQLSTATE '22023' THEN
+            v_failed := TRUE;
+        END;
+        IF NOT v_failed THEN RAISE EXCEPTION 'Invalid guardian payload must fail with 22023: %', v_invalid; END IF;
+        IF (SELECT to_jsonb(s) FROM public.students s WHERE id = v_student) IS DISTINCT FROM v_before_student
+           OR (SELECT to_jsonb(g) FROM public.guardians g WHERE id = v_guardian) IS DISTINCT FROM v_before_guardian
+           OR (SELECT count(*) FROM public.audit_logs WHERE entity_id = v_student) IS DISTINCT FROM v_before_audit::BIGINT THEN
+            RAISE EXCEPTION 'Failed guardian patch must roll back the complete write.';
+        END IF;
+    END LOOP;
+    IF NOT EXISTS (SELECT 1 FROM public.guardians WHERE id = v_foreign AND phone IS NULL) THEN
+        RAISE EXCEPTION 'Cross-studio contact was changed.';
+    END IF;
+
+    EXECUTE format('CREATE TRIGGER guardian_audit_failure BEFORE INSERT ON public.audit_logs FOR EACH ROW EXECUTE FUNCTION pg_temp.reject_student_write_audit(%L)', v_student::TEXT);
+    v_failed := FALSE;
+    BEGIN
+        PERFORM public.write_student_profile_v2_atomic(v_student, v_studio, v_owner, '{"notes":"must rollback"}'::JSONB, NULL,
+            jsonb_build_array(jsonb_build_object('id', v_guardian, 'phone', 'must rollback'), jsonb_build_object('first_name', 'New', 'last_name', '')),
+            FALSE, 'student.updated');
+    EXCEPTION WHEN SQLSTATE 'P0001' THEN
+        IF SQLERRM IS DISTINCT FROM 'forced student write audit failure' THEN RAISE; END IF;
+        v_failed := TRUE;
+    END;
+    IF NOT v_failed THEN RAISE EXCEPTION 'Expected audit failure.'; END IF;
+    IF (SELECT to_jsonb(s) FROM public.students s WHERE id = v_student) IS DISTINCT FROM v_before_student
+       OR (SELECT to_jsonb(g) FROM public.guardians g WHERE id = v_guardian) IS DISTINCT FROM v_before_guardian
+       OR (SELECT count(*) FROM public.student_guardians WHERE student_id = v_student) IS DISTINCT FROM 2::BIGINT
+       OR EXISTS (SELECT 1 FROM public.guardians WHERE studio_id = v_studio AND first_name = 'New') THEN
+        RAISE EXCEPTION 'Audit failure must roll back contact add/patch, links and profile.';
+    END IF;
+    DROP TRIGGER guardian_audit_failure ON public.audit_logs;
+END;
+$$;
 
 ROLLBACK;

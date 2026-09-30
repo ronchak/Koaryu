@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from typing import Literal, Optional, get_args
 from datetime import date
 from uuid import UUID
@@ -22,6 +22,35 @@ class GuardianCreate(BaseModel):
     phone: Optional[str] = None
     relation: Optional[str] = None
     is_primary_contact: bool = False
+
+
+class GuardianWrite(BaseModel):
+    """Add a guardian or patch an already-linked shared contact. No link removal."""
+
+    model_config = ConfigDict(extra="forbid")
+    id: Optional[UUID] = None
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    relation: Optional[str] = None
+    is_primary_contact: Optional[bool] = None
+
+    @model_validator(mode="after")
+    def validate_guardian_write(self):
+        if "id" in self.model_fields_set and self.id is None:
+            raise ValueError("Guardian id cannot be null")
+        for name in ("first_name", "last_name"):
+            if self.id is None or name in self.model_fields_set:
+                value = getattr(self, name)
+                if value is None or (not value.strip() and name == "first_name"):
+                    raise ValueError("Guardian first name is required; last name must be a string")
+                setattr(self, name, value.strip())
+        if "is_primary_contact" in self.model_fields_set and self.is_primary_contact is None:
+            raise ValueError("Guardian primary contact flag cannot be null")
+        if self.id is not None and self.model_fields_set == {"id"}:
+            raise ValueError("Provide guardian fields to update")
+        return self
 
 
 class GuardianResponse(BaseModel):
@@ -119,6 +148,20 @@ class StudentUpdate(BaseModel):
     current_belt_rank_id: Optional[str] = None
     notes: Optional[str] = None
     tags: Optional[list[str]] = None
+
+    guardians: Optional[list[GuardianWrite]] = Field(
+        default=None,
+        description="Add or patch linked shared guardian contacts. Omission or an empty array preserves all contacts and links; null is invalid.",
+    )
+
+    @model_validator(mode="after")
+    def validate_guardians(self):
+        if "guardians" in self.model_fields_set and self.guardians is None:
+            raise ValueError("Guardians must be an array; omit it to preserve existing guardians")
+        ids = [guardian.id for guardian in self.guardians or [] if guardian.id is not None]
+        if len(ids) != len(set(ids)):
+            raise ValueError("Duplicate guardian id in student write")
+        return self
 
 
 class StudentResponse(BaseModel):
