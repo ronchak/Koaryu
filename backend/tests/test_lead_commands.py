@@ -327,7 +327,9 @@ def test_unknown_program_marker_or_invalid_uuid_remains_server_error(
     assert result.value is error
 
 
-def test_enrolled_follow_up_on_previously_converted_lead_returns_conflict_without_local_effects():
+def test_legacy_already_converted_error_remains_a_safe_conflict_without_local_effects():
+    # Older database releases may still return this marker during rollout. Current
+    # restoration behavior is covered by the real PostgreSQL contract suite.
     row = lead_row(stage="offer_sent", converted_student_id="student-1")
     supabase = TableBackedSupabase({"leads": [dict(row)], "lead_activities": []})
     error = APIError(

@@ -4,9 +4,11 @@ import uuid
 from typing import Optional
 from unittest.mock import patch
 
+import pytest
+
 from app.schemas.lead import LeadConvert
 from app.services.lead_service import CONVERSION_NAMESPACE, LeadService
-from tests.fakes.supabase import RpcBackedSupabase
+from tests.fakes.supabase import FakeResult, RpcBackedSupabase, TableBackedSupabase
 
 
 class FakeProgramService:
@@ -46,6 +48,47 @@ def lead_row(**overrides):
     }
     row.update(overrides)
     return row
+
+
+@pytest.mark.parametrize("stage", ["offer_sent", "closed_lost", "enrolled"])
+@pytest.mark.parametrize("program_id", [None, "archived-program"])
+def test_existing_conversion_restores_through_rpc_without_new_enrollment(stage, program_id):
+    row = lead_row(stage=stage, converted_student_id="existing-student", program_id=program_id)
+    restored = {**row, "stage": "enrolled", "follow_up_date": None}
+    supabase = TableBackedSupabase({"leads": [row]})
+    with (
+        patch("app.services.lead_service.ProgramService") as program_service,
+        patch(
+            "app.services.lead_service.execute_required_rpc", return_value=FakeResult(restored)
+        ) as rpc,
+    ):
+        service = LeadService(supabase)
+        for _ in range(2):
+            result = asyncio.run(
+                service.convert_to_student(
+                    "lead-1", LeadConvert(program_id="requested-new-program"), "studio-1", "actor-1"
+                )
+            )
+            assert result.stage == "enrolled"
+            assert result.converted_student_id == "existing-student"
+            assert result.follow_up_date is None
+        program_service.assert_not_called()
+    assert rpc.call_count == 2
+    assert rpc.call_args.args == (
+        supabase,
+        "convert_lead_to_student_atomic",
+        {
+            "p_studio_id": "studio-1",
+            "p_actor_id": "actor-1",
+            "p_lead_id": "lead-1",
+            "p_student_id": "existing-student",
+            "p_program_id": program_id,
+            "p_status": "active",
+            "p_membership_start_date": None,
+            "p_guardian_id": None,
+            "p_student_guardian_id": None,
+        },
+    )
 
 
 class FakeLeadConversionSupabase(RpcBackedSupabase):

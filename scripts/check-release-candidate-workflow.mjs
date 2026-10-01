@@ -13,6 +13,7 @@ const requiredSnippets = [
   "Static and secret analysis",
   "Release candidate gate",
   "scripts/verify-supabase-contracts.sh",
+  "npm run check:supabase-contracts-local",
   "scripts/verify-connect-identity-concurrency.sh",
   "scripts/verify-core-checkout-accept-reserve-concurrency.sh",
   "scripts/verify-student-profile-rank-plan-concurrency.sh",

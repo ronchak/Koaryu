@@ -709,6 +709,80 @@
       "state": "v54",
       "query": "V54_STUDENT_PROFILE_STATE_SQL",
       "expected": "EXPECTED_V54_STUDENT_PROFILE_STATE"
+    },
+    "readiness-v55": {
+      "kind": "readiness",
+      "state": "v55",
+      "finalAlias": true
+    },
+    "catalog-v55": {
+      "kind": "catalog",
+      "state": "v55",
+      "queryState": "v55"
+    },
+    "release-v55": {
+      "kind": "release",
+      "state": "v55"
+    },
+    "expectation-v55": {
+      "kind": "export",
+      "state": "v55",
+      "query": "V31_EXPECTATION_STATE_SQL",
+      "expected": "EXPECTED_V55_EXPECTATION_STATE"
+    },
+    "resource-v55": {
+      "kind": "export",
+      "state": "v55",
+      "query": "V31_RESOURCE_OWNERSHIP_MANIFEST_SQL",
+      "expected": "EXPECTED_V55_RESOURCE_OWNERSHIP_MANIFEST"
+    },
+    "contract-v55": {
+      "kind": "export",
+      "state": "v55",
+      "query": "V31_OPERATIONAL_CONTRACT_SQL",
+      "expected": "EXPECTED_V55_OPERATIONAL_CONTRACT"
+    },
+    "operational-v55": {
+      "kind": "export",
+      "state": "v55",
+      "query": "V31_OPERATIONAL_MANIFEST_SQL",
+      "expected": "EXPECTED_V55_OPERATIONAL_MANIFEST_V12"
+    },
+    "critical-v55": {
+      "kind": "export",
+      "state": "v55",
+      "query": "CRITICAL_SURFACE_MANIFEST_SQL",
+      "expected": "EXPECTED_V55_CRITICAL_SURFACE_MANIFEST"
+    },
+    "operational10-v55": {
+      "kind": "export",
+      "state": "v55",
+      "query": "V29_OPERATIONAL_MANIFEST_SQL",
+      "expected": "EXPECTED_V55_OPERATIONAL_MANIFEST_V10"
+    },
+    "operational11-v55": {
+      "kind": "export",
+      "state": "v55",
+      "query": "V30_OPERATIONAL_MANIFEST_SQL",
+      "expected": "EXPECTED_V55_OPERATIONAL_MANIFEST_V11"
+    },
+    "student-profile-v55": {
+      "kind": "export",
+      "state": "v55",
+      "query": "V55_STUDENT_PROFILE_STATE_SQL",
+      "expected": "EXPECTED_V55_STUDENT_PROFILE_STATE"
+    },
+    "lead-conversion-v55": {
+      "kind": "export",
+      "state": "v55",
+      "query": "V55_LEAD_CONVERSION_STATE_SQL",
+      "expected": "EXPECTED_V55_LEAD_CONVERSION_STATE"
+    },
+    "lead-follow-up-v55": {
+      "kind": "export",
+      "state": "v55",
+      "query": "V55_LEAD_FOLLOW_UP_STATE_SQL",
+      "expected": "EXPECTED_V55_LEAD_FOLLOW_UP_STATE"
     }
   },
   "cases": {
@@ -3449,6 +3523,304 @@
       "upgradeSnapshotCheck": "verify_upgrade_snapshot",
       "passLines": [
         "[restored V54] PASS scoped minor backfill, guardian editing, future DOB rejection and V53 compatibility on canonical/restored copies"
+      ]
+    },
+    "v55": {
+      "format": "forward",
+      "docstring": "Prove V54 converted lead rows survive logical restore and V55 restores enrollment with archived or null program interest, exact retries and explicit minor knowledge.",
+      "exports": [
+        [
+          "readiness-v54.query",
+          "readiness-v54.expected"
+        ],
+        [
+          "catalog-v54.query",
+          "catalog-v54.expected",
+          "catalog-v54.restored"
+        ],
+        [
+          "release-v54.query",
+          "release-v54.expected"
+        ],
+        [
+          "expectation-v54.query",
+          "expectation-v54.expected"
+        ],
+        [
+          "resource-v54.query",
+          "resource-v54.expected"
+        ],
+        [
+          "contract-v54.query",
+          "contract-v54.expected"
+        ],
+        [
+          "operational-v54.query",
+          "operational-v54.expected"
+        ],
+        [
+          "critical-v54.query",
+          "critical-v54.expected"
+        ],
+        [
+          "operational10-v54.query",
+          "operational10-v54.expected"
+        ],
+        [
+          "operational11-v54.query",
+          "operational11-v54.expected"
+        ],
+        [
+          "student-profile-v54.query",
+          "student-profile-v54.expected"
+        ],
+        [
+          "readiness-v55.query",
+          "readiness-v55.expected"
+        ],
+        [
+          "catalog-v55.query",
+          "catalog-v55.expected",
+          "catalog-v55.restored"
+        ],
+        [
+          "release-v55.query",
+          "release-v55.expected"
+        ],
+        [
+          "expectation-v55.query",
+          "expectation-v55.expected"
+        ],
+        [
+          "resource-v55.query",
+          "resource-v55.expected"
+        ],
+        [
+          "contract-v55.query",
+          "contract-v55.expected"
+        ],
+        [
+          "operational-v55.query",
+          "operational-v55.expected"
+        ],
+        [
+          "critical-v55.query",
+          "critical-v55.expected"
+        ],
+        [
+          "operational10-v55.query",
+          "operational10-v55.expected"
+        ],
+        [
+          "operational11-v55.query",
+          "operational11-v55.expected"
+        ],
+        [
+          "student-profile-v55.query",
+          "student-profile-v55.expected"
+        ],
+        [
+          "dashboard-v53.query",
+          "dashboard-v53.expected"
+        ],
+        [
+          "readiness-v52.query",
+          "readiness-v52.expected"
+        ],
+        [
+          "readiness-v51.query",
+          "readiness-v51.expected"
+        ],
+        [
+          "readiness-v50.query",
+          "readiness-v50.expected"
+        ],
+        [
+          "readiness-v49.query",
+          "readiness-v49.expected"
+        ],
+        [
+          "readiness-v48.query",
+          "readiness-v48.expected"
+        ],
+        [
+          "readiness-v47.query",
+          "readiness-v47.expected"
+        ],
+        [
+          "readiness-v46.query",
+          "readiness-v46.expected"
+        ],
+        [
+          "readiness-v45.query",
+          "readiness-v45.expected"
+        ],
+        [
+          "readiness-v44.query",
+          "readiness-v44.expected"
+        ],
+        [
+          "readiness-v43.query",
+          "readiness-v43.expected"
+        ],
+        [
+          "readiness-v42.query",
+          "readiness-v42.expected"
+        ],
+        [
+          "readiness-v41.query",
+          "readiness-v41.expected"
+        ],
+        [
+          "readiness-v40.query",
+          "readiness-v40.expected"
+        ],
+        [
+          "readiness-v39.query",
+          "readiness-v39.expected"
+        ],
+        [
+          "readiness-v38.query",
+          "readiness-v38.expected"
+        ],
+        [
+          "readiness-v37.query",
+          "readiness-v37.expected"
+        ],
+        [
+          "payer-v50.query",
+          "payer-v50.expected"
+        ],
+        [
+          "collection-facts-v50.query",
+          "collection-facts-v50.expected"
+        ],
+        [
+          "payer-read-v50.query",
+          "payer-read-v50.expected"
+        ],
+        [
+          "landing-v50.query",
+          "landing-v50.expected"
+        ],
+        [
+          "rank-v40.query",
+          "rank-v40.expected"
+        ],
+        [
+          "external-payment-v43.query",
+          "external-payment-v43.expected"
+        ],
+        [
+          "local-plan-v44.query",
+          "local-plan-v44.expected"
+        ],
+        [
+          "plan-clear-v44.query",
+          "plan-clear-v44.expected"
+        ],
+        [
+          "terms-v49.query",
+          "terms-v49.expected"
+        ],
+        [
+          "invoice-facts-v50.query",
+          "invoice-facts-v50.expected"
+        ],
+        [
+          "attention-v50.query",
+          "attention-v50.expected"
+        ],
+        [
+          "contract30-v51.query",
+          "contract30-v51.expected"
+        ],
+        [
+          "replay-v51.query",
+          "replay-v51.expected"
+        ],
+        [
+          "closeout-v51.query",
+          "closeout-v51.expected"
+        ],
+        [
+          "readiness-v53.query",
+          "readiness-v53.expected"
+        ],
+        [
+          "lead-conversion-v55.query",
+          "lead-conversion-v55.expected"
+        ],
+        [
+          "lead-follow-up-v55.query",
+          "lead-follow-up-v55.expected"
+        ]
+      ],
+      "predecessor": [
+        "readiness-v54",
+        "catalog-v54",
+        "release-v54",
+        "expectation-v54",
+        "resource-v54",
+        "contract-v54",
+        "operational-v54",
+        "critical-v54",
+        "operational10-v54",
+        "operational11-v54",
+        "student-profile-v54"
+      ],
+      "checks": [
+        "readiness-v55",
+        "catalog-v55",
+        "release-v55",
+        "expectation-v55",
+        "resource-v55",
+        "contract-v55",
+        "operational-v55",
+        "critical-v55",
+        "operational10-v55",
+        "operational11-v55",
+        "student-profile-v55",
+        "dashboard-v53",
+        "readiness-v52",
+        "readiness-v51",
+        "readiness-v50",
+        "readiness-v49",
+        "readiness-v48",
+        "readiness-v47",
+        "readiness-v46",
+        "readiness-v45",
+        "readiness-v44",
+        "readiness-v43",
+        "readiness-v42",
+        "readiness-v41",
+        "readiness-v40",
+        "readiness-v39",
+        "readiness-v38",
+        "readiness-v37",
+        "payer-v50",
+        "collection-facts-v50",
+        "payer-read-v50",
+        "landing-v50",
+        "rank-v40",
+        "external-payment-v43",
+        "local-plan-v44",
+        "plan-clear-v44",
+        "terms-v49",
+        "invoice-facts-v50",
+        "attention-v50",
+        "contract30-v51",
+        "replay-v51",
+        "closeout-v51",
+        "readiness-v54",
+        "readiness-v53",
+        "lead-conversion-v55",
+        "lead-follow-up-v55"
+      ],
+      "absentFunctions": [],
+      "semanticManifests": [],
+      "passLines": [
+        "[restored V55] PASS exact retained rows, archived/null-program enrollment, exact retries and explicit-minor preservation on canonical/restored copies"
       ]
     }
   }

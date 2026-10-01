@@ -17,6 +17,10 @@ DECLARE
     v_link UUID := gen_random_uuid();
     v_converted public.leads%ROWTYPE;
     v_count INTEGER;
+    v_students_before JSONB;
+    v_related_before JSONB;
+    v_restored_before JSONB;
+    v_failed BOOLEAN := FALSE;
 BEGIN
     IF to_regprocedure('public.convert_lead_to_student_atomic(uuid, uuid, uuid, uuid, uuid, text, date, uuid, uuid)') IS NULL THEN
         RAISE EXCEPTION 'Missing public.convert_lead_to_student_atomic(uuid, uuid, uuid, uuid, uuid, text, date, uuid, uuid).';
@@ -260,6 +264,63 @@ BEGIN
     IF v_count <> 1 THEN
         RAISE EXCEPTION 'Retrying converted lead duplicated the student.';
     END IF;
+
+    -- The conversion identity survives backward edits. Restoration must ignore
+    -- new conversion inputs, preserve all student data and tolerate no program.
+    SELECT jsonb_agg(to_jsonb(s) ORDER BY id) INTO v_students_before FROM public.students s;
+    SELECT jsonb_build_array(
+        (SELECT jsonb_agg(to_jsonb(m) ORDER BY id) FROM public.student_program_memberships m),
+        (SELECT jsonb_agg(to_jsonb(g) ORDER BY id) FROM public.guardians g),
+        (SELECT jsonb_agg(to_jsonb(l) ORDER BY id) FROM public.student_guardians l),
+        (SELECT jsonb_agg(to_jsonb(a) ORDER BY id) FROM public.audit_logs a)
+    ) INTO v_related_before;
+    UPDATE public.leads SET stage='offer_sent',follow_up_date=DATE '2030-01-01',program_id=NULL
+    WHERE id=v_lead;
+    SELECT * INTO v_converted FROM public.convert_lead_to_student_atomic(
+        v_studio,v_owner,v_lead,gen_random_uuid(),NULL,'inactive',DATE '2035-01-01',NULL,NULL);
+    IF v_converted.stage IS DISTINCT FROM 'enrolled'
+       OR v_converted.converted_student_id IS DISTINCT FROM v_student
+       OR v_converted.follow_up_date IS NOT NULL OR v_converted.program_id IS NOT NULL
+       OR (SELECT count(*) FROM public.lead_activities WHERE lead_id=v_lead AND activity_type='stage_change') <> 2
+       OR (SELECT count(*) FROM public.lead_activities WHERE lead_id=v_lead
+           AND description='Stage changed from offer_sent to enrolled') <> 1 THEN
+        RAISE EXCEPTION 'Converted lead did not restore enrolled state and one stage activity';
+    END IF;
+    v_restored_before := to_jsonb(v_converted);
+    PERFORM public.convert_lead_to_student_atomic(v_studio,v_owner,v_lead,NULL,NULL,NULL,NULL,NULL,NULL);
+    IF v_restored_before IS DISTINCT FROM (SELECT to_jsonb(l) FROM public.leads l WHERE id=v_lead)
+       OR (SELECT count(*) FROM public.lead_activities WHERE lead_id=v_lead) <> 2 THEN
+        RAISE EXCEPTION 'Enrolled restoration retry must be a complete no-op';
+    END IF;
+    -- Clearing a newly scheduled follow-up is not another stage transition.
+    UPDATE public.leads SET follow_up_date=DATE '2030-02-01' WHERE id=v_lead;
+    PERFORM public.convert_lead_to_student_atomic(v_studio,v_owner,v_lead,NULL,NULL,NULL,NULL,NULL,NULL);
+    IF (SELECT follow_up_date FROM public.leads WHERE id=v_lead) IS NOT NULL
+       OR (SELECT count(*) FROM public.lead_activities WHERE lead_id=v_lead) <> 2 THEN
+        RAISE EXCEPTION 'Enrolled follow-up clearing duplicated stage history';
+    END IF;
+    -- An archived original program must not prevent lead-stage restoration.
+    UPDATE public.programs SET archived_at=now() WHERE id=v_program;
+    UPDATE public.leads SET stage='closed_lost',program_id=v_program WHERE id=v_lead;
+    PERFORM public.convert_lead_to_student_atomic(v_studio,v_owner,v_lead,NULL,v_program,NULL,NULL,NULL,NULL);
+    IF (SELECT stage FROM public.leads WHERE id=v_lead) IS DISTINCT FROM 'enrolled'
+       OR (SELECT count(*) FROM public.lead_activities WHERE lead_id=v_lead) <> 3
+       OR v_students_before IS DISTINCT FROM (SELECT jsonb_agg(to_jsonb(s) ORDER BY id) FROM public.students s)
+       OR v_related_before IS DISTINCT FROM (SELECT jsonb_build_array(
+           (SELECT jsonb_agg(to_jsonb(m) ORDER BY id) FROM public.student_program_memberships m),
+           (SELECT jsonb_agg(to_jsonb(g) ORDER BY id) FROM public.guardians g),
+           (SELECT jsonb_agg(to_jsonb(l) ORDER BY id) FROM public.student_guardians l),
+           (SELECT jsonb_agg(to_jsonb(a) ORDER BY id) FROM public.audit_logs a))) THEN
+        RAISE EXCEPTION 'Restoration changed student, membership, guardian or conversion audit facts';
+    END IF;
+    -- Tenant lookup must still fail before restoration.
+    BEGIN
+        PERFORM public.convert_lead_to_student_atomic(v_other_studio,v_other_owner,v_lead,NULL,NULL,NULL,NULL,NULL,NULL);
+    EXCEPTION WHEN SQLSTATE 'P0001' THEN
+        IF SQLERRM <> 'Lead not found for studio.' THEN RAISE; END IF;
+        v_failed := TRUE;
+    END;
+    IF NOT v_failed THEN RAISE EXCEPTION 'Cross-studio restoration was allowed'; END IF;
 
     INSERT INTO public.students (
         id,

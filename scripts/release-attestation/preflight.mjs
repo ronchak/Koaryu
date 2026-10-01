@@ -14,6 +14,12 @@ function declaredChecks(id, ancestors = []) {
       if (!Object.hasOwn(schema.checks, key)) throw new Error(`Unknown preflight check: ${key}`);
       return { id: key, ...schema.checks[key] };
     });
+  for (const [key, replacement] of Object.entries(declaration.replace ?? {})) {
+    const index = checks.findIndex(check => check.id === key);
+    if (index < 0) throw new Error(`Cannot replace missing preflight check: ${key}`);
+    if (!Object.hasOwn(schema.checks, replacement)) throw new Error(`Unknown replacement preflight check: ${replacement}`);
+    checks[index] = { id: replacement, ...schema.checks[replacement] };
+  }
   for (const [key, changes] of Object.entries(declaration.overrides ?? {})) {
     const index = checks.findIndex(check => check.id === key);
     if (index < 0) throw new Error(`Cannot override missing preflight check: ${key}`);

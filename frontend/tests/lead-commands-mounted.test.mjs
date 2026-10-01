@@ -83,13 +83,16 @@ async function settle(p, index, { unknown = false, fail = false } = {}) {
       else {
         const id = w.path.split("/")[2],
           lead = f.leads.find((l) => l.id === id),
-          stage = w.body.next_stage ?? w.body.stage ?? lead.stage;
+          stage = w.path.endsWith("/convert")
+            ? "enrolled"
+            : (w.body.next_stage ?? w.body.stage ?? lead.stage);
         w.resolve({
           ...lead,
           ...w.body,
           stage,
           follow_up_date: null,
-          converted_student_id: stage === "enrolled" ? "student-" + id : null,
+          converted_student_id:
+            lead.converted_student_id ?? (stage === "enrolled" ? "student-" + id : null),
         });
       }
     },
@@ -349,3 +352,72 @@ test("board conversion still opens the new student when no inspector is selected
     await browser.close();
   }
 });
+
+for (const preview of [false, true]) {
+  for (const control of ["dropdown", "arrow", "convert", "follow-up"]) {
+    test(`${preview ? "preview" : "live"} converted lead restores enrollment via ${control} without another student`, async () => {
+      const browser = await chromium.launch();
+      try {
+        const p = await mount(browser, { preview, stage: "offer_sent" });
+        await p.getByRole("button", { name: "Move A Lead to the next stage", exact: true }).click();
+        if (!preview) await settle(p, 0);
+        await flush(p);
+        const studentId = await p.evaluate(() => f.leads[0].converted_student_id);
+        assert.ok(studentId);
+        const studentsBefore = await p.evaluate(() => f.students ?? []);
+
+        for (let attempt = 0; attempt < 2; attempt++) {
+          await p.locator('[data-lead-id="a"]').click();
+          let writeIndex = await p.evaluate(() => f.writes.length);
+          await p.getByLabel("Stage", { exact: true }).selectOption("offer_sent");
+          if (!preview) await settle(p, writeIndex);
+          await flush(p);
+          assert.equal(await p.evaluate(() => f.leads[0].converted_student_id), studentId);
+
+          writeIndex = await p.evaluate(() => f.writes.length);
+          if (control === "dropdown") {
+            await p.getByLabel("Stage", { exact: true }).selectOption("enrolled");
+          } else if (control === "arrow") {
+            await p.getByRole("button", { name: "Close lead details", exact: true }).click();
+            await p
+              .getByRole("button", { name: "Move A Lead to the next stage", exact: true })
+              .click();
+          } else {
+            await p
+              .getByRole("button", {
+                name: control === "convert" ? "Convert to student" : "Convert now",
+                exact: true,
+              })
+              .click();
+          }
+          if (!preview) {
+            await p.waitForFunction((index) => f.writes.length > index, writeIndex);
+            assert.equal(
+              await p.evaluate((index) => f.writes[index].path, writeIndex),
+              control === "follow-up" ? "/leads/a/follow-up" : "/leads/a/convert",
+            );
+            await settle(p, writeIndex);
+          }
+          await flush(p);
+          assert.equal(await p.evaluate(() => f.c.leadActionError), null);
+          assert.equal(await p.evaluate(() => f.leads[0].stage), "enrolled");
+          assert.equal(await p.evaluate(() => f.leads[0].follow_up_date), null);
+          assert.equal(await p.evaluate(() => f.leads[0].converted_student_id), studentId);
+          assert.equal(await p.evaluate(() => f.c.model.enrolledCount), 1);
+          if (preview) assert.deepEqual(await p.evaluate(() => f.students), studentsBefore);
+        }
+        // A repeated completed conversion is also safe outside page controls.
+        const writeIndex = await p.evaluate(() => f.writes.length);
+        await p.evaluate(() => {
+          void f.actions.convertLeadToStudent("a");
+        });
+        if (!preview) await settle(p, writeIndex);
+        await flush(p);
+        assert.equal(await p.evaluate(() => f.leads[0].converted_student_id), studentId);
+        if (preview) assert.deepEqual(await p.evaluate(() => f.students), studentsBefore);
+      } finally {
+        await browser.close();
+      }
+    });
+  }
+}
