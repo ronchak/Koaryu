@@ -152,6 +152,22 @@ $$;
 REVOKE ALL ON FUNCTION public.set_student_is_minor() FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.set_student_is_minor() TO service_role;
 
+-- V53 also accepts databases without the legacy age function and trigger.
+-- Install only a missing trigger; existing drift must fail the final facts check.
+DO $minor_trigger$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_catalog.pg_trigger
+        WHERE tgrelid = pg_catalog.to_regclass('public.students')
+          AND tgname = 'set_students_is_minor'
+    ) THEN
+        CREATE TRIGGER set_students_is_minor
+        BEFORE INSERT OR UPDATE ON public.students
+        FOR EACH ROW EXECUTE FUNCTION public.set_student_is_minor();
+    END IF;
+END;
+$minor_trigger$;
+
 -- Repair only explicit source-lead knowledge for the same converted student and
 -- studio. Students with a known DOB keep their age-derived status.
 UPDATE public.students AS student

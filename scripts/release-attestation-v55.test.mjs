@@ -50,7 +50,9 @@ test("V55 student and lead facts retain full definitions, ACLs and minor binding
   assert.equal(schema.checks.student_profile_facts_v54.expected, "9c677c2dc39dd42bda08c1da53826d94dd876d687dbaf920a2597be8a8e8b586");
   assert.equal(schema.checks.follow_up_lead_atomic_v52.expected, "128596070e145066d03b1289ef37ef791c8ad46cf3176ba4241448bcae4dc348");
   const historical = fs.readFileSync(fileURLToPath(new URL("../supabase/migrations/20260930024404_student_profile_qa_v54.sql", import.meta.url)));
-  assert.equal(createHash("sha256").update(historical).digest("hex"), "06b3a319cac0410184a455479ab2b731a51a90225f4cd2503df859b8851e57b9");
+  // V54 was deliberately repaired after its production apply rolled back.
+  // This source identity changed for the missing-only trigger repair, not for V55 business SQL.
+  assert.equal(createHash("sha256").update(historical).digest("hex"), "7bc935faabaf3c26e34d94e2ea91be62ddde68f610ef3a990f04e4bdc36deebe");
 });
 
 test("V55 restore requires exact retained rows and proves archived/null enrollment and minor preservation on both copies", () => {

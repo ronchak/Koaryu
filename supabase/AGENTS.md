@@ -43,6 +43,7 @@ Use this file for work under `supabase/`. Fall back to the repo root `AGENTS.md`
 - The verification helpers use `psql` with `ON_ERROR_STOP=1` so multi-statement transactional contracts are not routed through the Supabase CLI prepared-statement query path.
 - Review and run the relevant SQL in `supabase/verification/` when changing RLS, RPCs, billing, support, or belt-ladder behavior.
 - Negative SQL tests must check the intended SQLSTATE/error and raise test failures outside the expected-error handler. Use `IS DISTINCT FROM` for nullable result assertions. Create fixture rows inside the rollback transaction instead of skipping behavior when an unrelated studio is absent.
+- The V53-to-V54 restore proof also derives synthetic missing legacy age function/trigger fixtures from V53 history and upgrades their canonical and logical restores through V55. Keep the existing correct trigger identity unchanged. Disabled or wrongly bound existing triggers must fail V54's strict installed facts check and roll back catalog, history, ACL and retained-row changes. These fixtures contain no production data.
 - Treat a local reset as destructive too: use `supabase db reset --local` only against a confirmed disposable local database. Run linked lint/contracts only for an explicitly intended release inspection after the linked migrations are present.
 
 ## Done Checklist
