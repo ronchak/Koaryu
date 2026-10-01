@@ -3466,7 +3466,7 @@ describe("studio-comp migration rollout guard", () => {
       ["v50", "20260925030000_invoice_closeout_lock_order_v51.sql", "9308174041fe8d1bb35b785218a2fd84e848913540a57b653989f8f0c48b3295", "v51"],
       ["v51", "20260926194918_lead_commands_v52.sql", "9f12ac8aac1cf1d310655c6aedc1a665c43e633a1a846e213e9ab77937590b93", "v52"],
       ["v52", "20260929152445_dashboard_roster_inactivity_v53.sql", "b68c9c093295a91692f9fea8cf42b9d22e12fa113beca6d7517f6a323896db33", "v53"],
-      ["v53", "20260930024404_student_profile_qa_v54.sql", "795549cc3a3f1a35f9b59ce0e6a00ccda9766b78288c0c09ee75b94d6912dc1d", "v54"],
+      ["v53", "20260930024404_student_profile_qa_v54.sql", "ca12f2b920bf8661dd47d04b13eb5f39de264f22943159dd1e5862e12c59cb61", "v54"],
       ["v54", "20260930192626_converted_lead_enrollment_v55.sql", "fc6bfd9b249ec888ae860d4f0d2952e0dc5a18f4801dd8f1049c2c2f33e9e573", "post"],
     ];
     for (const [state, filename, manifestSha256, expectedAfterState] of transitions) {

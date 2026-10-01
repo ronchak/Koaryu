@@ -50,3 +50,9 @@ SELECT 'continued';
             require(proof.splitlines()[-1] == "continued", "V54 profile continuation failed")
             require(snapshot(database) == after, "V54 continuation rollback changed retained rows")
             outcomes[("restored_" if is_restored else "canonical_") + "student_profile"] = "minor and guardian edits retained, future DOB rejected"
+            if not is_restored:
+                require(local.sql(database, MINOR_TRIGGER_SQL) == local.sql(source, MINOR_TRIGGER_SQL),
+                        "V54 replaced or altered the existing correct trigger")
+                outcomes["legacy_trigger_shapes"] = verify_legacy_trigger_shapes(
+                    local, root, temporary, source, owned, before, snapshot, predecessor,
+                    checks, pinned, hashes, pg_dump, pg_restore, createdb, psql)

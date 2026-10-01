@@ -32,6 +32,17 @@ test("student profile facts cover installed definitions, complete ACLs and both 
   }
 });
 
+test("the deliberate V54 repair installs only an absent legacy trigger before its scoped backfill", () => {
+  const block = migration.match(/DO \$minor_trigger\$[\s\S]*?\$minor_trigger\$;/)?.[0];
+  assert.ok(block);
+  assert.match(block, /IF NOT EXISTS \(\s*SELECT 1 FROM pg_catalog\.pg_trigger\s*WHERE tgrelid = pg_catalog\.to_regclass\('public\.students'\)\s*AND tgname = 'set_students_is_minor'\s*\) THEN/);
+  assert.match(block, /CREATE TRIGGER set_students_is_minor\s*BEFORE INSERT OR UPDATE ON public\.students\s*FOR EACH ROW EXECUTE FUNCTION public\.set_student_is_minor\(\);/);
+  assert.doesNotMatch(block, /DROP|ALTER|OR REPLACE|tgenabled|tgfoid|tgtype|tgisinternal/i);
+  assert.ok(migration.indexOf("GRANT EXECUTE ON FUNCTION public.set_student_is_minor() TO service_role;") < migration.indexOf(block));
+  assert.ok(migration.indexOf(block) < migration.indexOf("UPDATE public.students AS student"));
+  assert.match(migration, /IS DISTINCT FROM '9c677c2dc39dd42bda08c1da53826d94dd876d687dbaf920a2597be8a8e8b586'/);
+});
+
 test("restore comparison accepts only source minor correction and refuses other retained row changes", () => {
   const fixture = fileURLToPath(new URL("./release-attestation/fixtures/python-v54-business.py.inc", import.meta.url));
   const script = `import json,copy\nfrom pathlib import Path\nnamespace={"json":json,"require":lambda condition,message: condition or (_ for _ in ()).throw(AssertionError(message))}\nexec(Path(${JSON.stringify(fixture)}).read_text(),namespace)\ncheck=namespace["verify_upgrade_snapshot"]\nbefore={"public.students":[{"id":"s","studio_id":"dojo","date_of_birth":None,"is_minor":False,"updated_at":"2026-01-01","legal_first_name":"Minor"},{"id":"adult","studio_id":"dojo","date_of_birth":"2000-01-01","is_minor":False,"updated_at":"2026-01-01"}],"public.leads":[{"converted_student_id":"s","studio_id":"dojo","is_minor":True},{"converted_student_id":"adult","studio_id":"dojo","is_minor":True}],"public.guardians":[{"id":"g","first_name":"Guardian"}]}\nafter=copy.deepcopy(before);after["public.students"][0].update(is_minor=True,updated_at="2026-09-30")\nassert check(before,after)\nassert not check(before,before)\nfor table,field,value in [("public.students","legal_first_name","Changed"),("public.guardians","first_name","Changed")]:\n changed=copy.deepcopy(after);changed[table][0][field]=value;assert not check(before,changed)\nchanged=copy.deepcopy(after);changed["public.students"][1]["is_minor"]=True;assert not check(before,changed)\nprint("verified")\n`;
@@ -41,6 +52,9 @@ test("restore comparison accepts only source minor correction and refuses other 
 test("V54 logical restore upgrades canonical and restored copies and exercises guarded continuation", () => {
   const script = fs.readFileSync(new URL("./verify-v53-v54-restore-contract.py", import.meta.url), "utf8");
   for (const text of ["for database, is_restored", "normalization_plan", "verify_upgrade_snapshot(before, snapshot(database))", "V54_STUDENT_PROFILE_STATE_SQL", "V53_OPERATIONAL_READINESS_SQL", "Restored profile accepted a future birth date", "Restored profile did not add a guardian", "Restore proof edited its source rows"]) {
+    assert.ok(script.includes(text), text);
+  }
+  for (const text of ["verify_legacy_trigger_shapes", "Missing legacy objects fixture is incomplete", "DISABLE TRIGGER set_students_is_minor", "public.update_updated_at_column()", "student_profile_facts_v54", "Failed V54 committed catalog, history, ACL or row changes", "V54 replaced or altered the existing correct trigger", "Missing-shape V55 changed retained rows or the V54 trigger", "EXPECTED_V55_RESTORED_CATALOG_STATE"]) {
     assert.ok(script.includes(text), text);
   }
 });
