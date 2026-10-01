@@ -40,7 +40,7 @@ async function assertSummary(page, scheduled, recurringSlots, label, scope = "Al
   await expect(values).toHaveText([label, String(scheduled), String(recurringSlots), scope]);
 }
 
-async function mount(browser) {
+async function mount(browser, { parallelSeries = false } = {}) {
   const page = await browser.newPage();
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));
@@ -87,6 +87,13 @@ async function mount(browser) {
       ],
     };
   });
+  if (parallelSeries) {
+    await page.evaluate(() => {
+      const base = { ...fixture.templates[0], start_date: "2026-10-06", end_date: "2026-10-06" };
+      fixture.templates = [base, { ...base, id: "parallel", program_id: "judo" }];
+      fixture.sessions = [{ ...fixture.sessions[1], status: "scheduled" }];
+    });
+  }
   await page.addScriptTag({ content: bundle() });
   return { page, errors };
 }
@@ -153,6 +160,39 @@ test("rendered recurring total matches cancellation and deletion behavior of the
     );
     await assertSummary(page, 0, 1, "Tuesday, October 6, 2026");
     await expect(page.locator('[data-time-canvas-block="template"]')).toHaveCount(1);
+    assert.deepEqual(errors, []);
+  } finally {
+    await browser.close();
+  }
+});
+
+test("parallel series with identical names and times retain their own visible recurring slots", async () => {
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const { page, errors } = await mount(browser, { parallelSeries: true });
+    await assertSummary(page, 1, 1, "September 2026");
+    await expect(page.getByLabel("Pending template slot: Karate at 9:00 AM")).toHaveCount(1);
+
+    await page.evaluate(() => fixture.setDate([2026, 9, 6, 12]));
+    for (const [view, label] of [
+      ["Week", "October 4 – October 10, 2026"],
+      ["Day", "Tuesday, October 6, 2026"],
+    ]) {
+      await page.getByRole("button", { name: view, exact: true }).click();
+      await assertSummary(page, 1, 1, label);
+      await expect(page.locator('[data-time-canvas-visible="template:parallel"]')).toHaveCount(1);
+      await expect(page.locator('[data-time-canvas-visible="session:oct"]')).toHaveCount(1);
+      await page.getByLabel("Filter schedule by program").selectOption("karate");
+      await assertSummary(page, 1, 0, label, "Karate");
+      await page.getByLabel("Filter schedule by program").selectOption("judo");
+      await assertSummary(page, 0, 1, label, "Judo");
+      await page.getByLabel("Filter schedule by program").selectOption("");
+      await assertSummary(page, 1, 1, label);
+    }
+
+    await page.evaluate(() => fixture.setSessions([]));
+    await assertSummary(page, 0, 2, "Tuesday, October 6, 2026");
+    await expect(page.locator('[data-time-canvas-block="template"]')).toHaveCount(2);
     assert.deepEqual(errors, []);
   } finally {
     await browser.close();

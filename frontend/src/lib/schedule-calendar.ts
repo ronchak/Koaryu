@@ -171,10 +171,12 @@ export function getConflictingSessionIds(sessions: ClassSession[]) {
 }
 
 function sessionMatchesTemplate(session: ClassSession, template: ClassTemplate) {
-  if (session.template_id && session.template_id === template.id) {
-    return true;
+  if (session.template_id) {
+    return session.template_id === template.id;
   }
 
+  // Only unlinked legacy sessions need the name/time fallback. A linked session
+  // must not hide another recurring series that happens to share its details.
   return (
     session.name === template.name &&
     session.start_time === template.start_time &&
