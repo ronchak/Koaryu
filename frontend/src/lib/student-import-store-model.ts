@@ -11,6 +11,7 @@ import type {
 import { resolvePreviewImportStudentIds } from "./csv-import.ts";
 import { findPreviewStartingRankId } from "./student-store-model.ts";
 import { isMinorOnDate } from "./student-age.ts";
+import { parseStudentImportBirthDate, studentBirthDateError } from "./student-birth-date.ts";
 
 export const CSV_IMPORT_STATUS_ALIASES: Record<string, StudentStatus> = {
   current: "active",
@@ -289,6 +290,26 @@ export function buildPreviewStudentImportResult({
   for (const [index, row] of rows.entries()) {
     const mapped = buildMappedImportRow(row, mapping, targetCounts);
     const rowIssues: PreviewImportRowIssue[] = [];
+    const parsedBirthDate = mapped.date_of_birth
+      ? parseStudentImportBirthDate(mapped.date_of_birth)
+      : undefined;
+    const birthDateError =
+      parsedBirthDate === null
+        ? "Enter a valid date of birth."
+        : studentBirthDateError(parsedBirthDate, businessDate);
+    if (birthDateError) {
+      rowIssues.push({
+        code:
+          parsedBirthDate && parsedBirthDate > businessDate
+            ? "future_date_of_birth"
+            : "invalid_date_of_birth",
+        severity: "error",
+        field: "date_of_birth",
+        value: mapped.date_of_birth,
+        message: birthDateError,
+      });
+    }
+    if (parsedBirthDate) mapped.date_of_birth = parsedBirthDate;
 
     if (!mapped.legal_first_name) {
       rowIssues.push({

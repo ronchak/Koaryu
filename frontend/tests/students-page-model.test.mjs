@@ -137,6 +137,100 @@ describe("students page model", () => {
     assert.match(rows[0].searchFields.programs, /adults/);
   });
 
+  describe("roster row contact", () => {
+    const guardians = [
+      {
+        id: "secondary",
+        first_name: "Sam",
+        last_name: "Lane",
+        email: "secondary@example.invalid",
+        is_primary_contact: false,
+      },
+      {
+        id: "primary",
+        first_name: "Pat",
+        last_name: "Lane",
+        email: "primary@example.invalid",
+        phone: "555-0102",
+        is_primary_contact: true,
+      },
+    ];
+
+    for (const { ageGroup, dateOfBirth, isMinor } of [
+      { ageGroup: "an adult", dateOfBirth: "1990-05-24", isMinor: false },
+      { ageGroup: "a minor", dateOfBirth: "2010-05-24", isMinor: true },
+    ]) {
+      it(`uses the primary guardian email when second for ${ageGroup}`, () => {
+        const [row] = buildStudentRows(
+          [student("student-1", { date_of_birth: dateOfBirth, is_minor: isMinor, guardians })],
+          [],
+          "2026-05-24",
+        );
+
+        assert.equal(row.student.is_minor, isMinor);
+        assert.equal(row.contact, "primary@example.invalid");
+        assert.equal(row.searchFields.email, "");
+      });
+    }
+
+    it("prefers the student's own email over their phone and guardian email", () => {
+      const [row] = buildStudentRows(
+        [student("student-1", { email: "Student@example.invalid", phone: "555-0101", guardians })],
+        [],
+        "2026-05-24",
+      );
+
+      assert.equal(row.contact, "Student@example.invalid");
+      assert.equal(row.searchFields.email, "student@example.invalid");
+    });
+
+    it("prefers the student's own phone over the guardian email", () => {
+      const [row] = buildStudentRows(
+        [student("student-1", { phone: "555-0101", guardians })],
+        [],
+        "2026-05-24",
+      );
+
+      assert.equal(row.contact, "555-0101");
+    });
+
+    it("uses the first guardian email when no guardian is primary", () => {
+      const [row] = buildStudentRows(
+        [
+          student("student-1", {
+            guardians: guardians.map((guardian) => ({ ...guardian, is_primary_contact: false })),
+          }),
+        ],
+        [],
+        "2026-05-24",
+      );
+
+      assert.equal(row.contact, "secondary@example.invalid");
+    });
+
+    it("shows a dash when the student has no contact or guardians", () => {
+      const [row] = buildStudentRows([student("student-1")], [], "2026-05-24");
+
+      assert.equal(row.contact, "\u2014");
+    });
+
+    it("shows a dash when the primary guardian has no email despite another email or phone", () => {
+      const [row] = buildStudentRows(
+        [
+          student("student-1", {
+            guardians: guardians.map((guardian) =>
+              guardian.is_primary_contact ? { ...guardian, email: null } : guardian,
+            ),
+          }),
+        ],
+        [],
+        "2026-05-24",
+      );
+
+      assert.equal(row.contact, "\u2014");
+    });
+  });
+
   it("applies local roster filters only for derived roster views", () => {
     const rows = buildStudentRows(
       [

@@ -10,6 +10,7 @@ import {
 import { buildPreviewStudentListPage, type StudentListQuery } from "@/lib/student-list-page";
 import {
   applyPreviewStudentUpdate,
+  applyStudentProfileResponse,
   buildPreviewStudent,
   normalizeStudentIds,
 } from "@/lib/student-store-model";
@@ -130,12 +131,13 @@ export function useStoreStudentRosterActions({
           });
           return updatedStudent;
         });
-        persistStudents(next);
         if (!updatedStudent) {
           throw new Error("Student not found.");
         }
+        const savedStudent = updatedStudent as Student;
+        persistStudents(applyStudentProfileResponse(next, savedStudent, data));
         onStudentMutation();
-        return updatedStudent;
+        return savedStudent;
       }
 
       studentMutationEpochRef.current += 1;
@@ -145,10 +147,9 @@ export function useStoreStudentRosterActions({
         return result;
       }
       studentMutationEpochRef.current += 1;
-      commitStudents(
-        (current) => current.map((student) => (student.id === id ? result : student)),
-        { mayBePartial: studentsMayBePartial },
-      );
+      commitStudents((current) => applyStudentProfileResponse(current, result, data), {
+        mayBePartial: studentsMayBePartial,
+      });
       onStudentMutation();
       return result;
     },

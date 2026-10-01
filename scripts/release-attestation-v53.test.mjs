@@ -9,7 +9,7 @@ import { renderPreflight } from './release-attestation/preflight.mjs';
 const migration = fs.readFileSync(new URL('../supabase/migrations/20260929152445_dashboard_roster_inactivity_v53.sql', import.meta.url), 'utf8');
 
 test('V53 follows the exact V52 history and guards the dashboard definition', () => {
-  assert.equal(CURRENT_RELEASE, 'v53');
+  assert.equal(CURRENT_RELEASE, 'v54');
   const state = releaseState('v53', MIGRATION_VERSIONS);
   assert.equal(state.predecessor, 'v52');
   assert.equal(state.count, 148);

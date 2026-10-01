@@ -340,14 +340,12 @@ def build_data_hygiene_readiness(
         student_id = student.get("id")
         active = _is_active_student(student)
         date_of_birth = student.get("date_of_birth")
-        if date_of_birth and today is None:
-            raise RuntimeError("Student date context is required for hygiene readiness.")
-        if (
-            date_of_birth
-            and today is not None
-            and is_minor_on_date(date_of_birth, today)
-            and not guardians_by_student.get(student_id)
-        ):
+        is_minor = bool(student.get("is_minor"))
+        if date_of_birth:
+            if today is None:
+                raise RuntimeError("Student date context is required for hygiene readiness.")
+            is_minor = is_minor_on_date(date_of_birth, today)
+        if is_minor and not guardians_by_student.get(student_id):
             rows.append(
                 _hygiene_row(
                     "minor_without_guardian",

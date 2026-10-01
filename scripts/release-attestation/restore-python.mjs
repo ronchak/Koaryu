@@ -347,6 +347,10 @@ if __name__ == "__main__":
 function validateForward(spec, target, previous, versions) {
   if (target.count !== previous.count + 1) throw new Error("Forward restore requires one migration after its predecessor");
   if (!Array.isArray(spec.absentFunctions)) throw new Error("Forward restore must declare absentFunctions, even if empty");
+  if (spec.upgradeSnapshotCheck !== undefined &&
+      (typeof spec.upgradeSnapshotCheck !== "string" || !/^[a-z_][a-z0-9_]*$/.test(spec.upgradeSnapshotCheck))) {
+    throw new Error("Forward upgrade snapshot check must be a fixture function name");
+  }
   const signatures = [...spec.absentFunctions, ...(spec.semanticManifests ?? [])];
   if (signatures.some(value => typeof value !== "string" || !/^[a-z_][a-z0-9_]*\.[a-z_][a-z0-9_]*\([a-z0-9_., \[\]]*\)$/.test(value))) {
     throw new Error("Forward restore requires schema-qualified function signatures");
@@ -430,7 +434,11 @@ export function renderPythonRestore(id, filenames, versions) {
   blocks.push(applyMigration(balance));
   const noBackfill = forward ? "Migration changed retained rows before continuation" : membership ? "V39 migration rewrote business rows" : balance
     ? "V41 changed retained rows before explicit repair" : "V40 changed pre-existing business facts";
-  blocks.push(`${balance ? "            " : "        "}require(${balance ? "snapshot(database)" : "json.loads(sql(restored, SNAPSHOT_SQL))"} == before, ${quote(noBackfill)})`);
+  const upgradedSnapshot = balance ? "snapshot(database)" : "json.loads(sql(restored, SNAPSHOT_SQL))";
+  const snapshotCheck = forward && spec.upgradeSnapshotCheck
+    ? `${spec.upgradeSnapshotCheck}(before, ${upgradedSnapshot})`
+    : `${upgradedSnapshot} == before`;
+  blocks.push(`${balance ? "            " : "        "}require(${snapshotCheck}, ${quote(noBackfill)})`);
   if (spec.format === "rank") blocks.push(fixture(id, "legacy-proof").trimEnd());
   blocks.push(outcomeChecks(spec, versions));
   if (semantics) blocks.push(preserveSemantics());

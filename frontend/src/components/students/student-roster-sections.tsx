@@ -470,7 +470,8 @@ export function StudentRosterReadingRail({
 
   const { student } = row;
   const studentName = getStudentName(row);
-  const guardian = student.is_minor ? student.guardians[0] : null;
+  const guardian =
+    student.guardians.find((item) => item.is_primary_contact) ?? student.guardians[0];
 
   return (
     <aside className={styles.studentReadingRail} aria-labelledby="student-reading-title">

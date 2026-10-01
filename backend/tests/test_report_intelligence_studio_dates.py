@@ -10,7 +10,10 @@ from app.services.report_intelligence_growth import (
     build_quiet_churn_watchlist,
 )
 from app.services.report_intelligence_helpers import _attendance_events
-from app.services.report_intelligence_operations import build_belt_momentum_testing_pipeline
+from app.services.report_intelligence_operations import (
+    build_belt_momentum_testing_pipeline,
+    build_data_hygiene_readiness,
+)
 from app.services.report_intelligence_revenue import build_revenue_leakage
 from tests.test_report_belt_momentum_credit import report_dataset
 
@@ -20,6 +23,77 @@ TIMEZONE = "America/Los_Angeles"
 
 
 class IntelligenceStudioDatesTest(unittest.TestCase):
+    def test_hygiene_without_dob_uses_stored_minor_status_without_date_context(self):
+        data = {
+            "students": [
+                {"id": "minor", "status": "active", "date_of_birth": None, "is_minor": True},
+                {"id": "linked", "status": "active", "date_of_birth": None, "is_minor": True},
+                {"id": "adult", "status": "active", "date_of_birth": None, "is_minor": False},
+                {"id": "unknown", "status": "active", "date_of_birth": None, "is_minor": None},
+                {"id": "missing", "status": "active"},
+                {"id": "inactive", "status": "inactive", "is_minor": True},
+                {
+                    "id": "deleted",
+                    "status": "active",
+                    "is_minor": True,
+                    "deleted_at": "2026-05-01T00:00:00Z",
+                },
+            ],
+            "student_guardians": [{"student_id": "linked", "guardian_id": "guardian"}],
+        }
+
+        for today in (None, TODAY):
+            with self.subTest(today=today):
+                rows = build_data_hygiene_readiness(data, today)
+                self.assertEqual(
+                    {
+                        row["student_id"]
+                        for row in rows
+                        if row["issue_type"] == "minor_without_guardian"
+                    },
+                    {"minor", "inactive"},
+                )
+                self.assertFalse(any(row["student_id"] == "deleted" for row in rows))
+
+    def test_hygiene_dob_overrides_stored_minor_status(self):
+        rows = build_data_hygiene_readiness(
+            {
+                "students": [
+                    {
+                        "id": "adult",
+                        "status": "active",
+                        "date_of_birth": "2008-06-01",
+                        "is_minor": True,
+                    },
+                    {
+                        "id": "child",
+                        "status": "active",
+                        "date_of_birth": "2008-06-02",
+                        "is_minor": False,
+                    },
+                    {
+                        "id": "inactive-child",
+                        "status": "inactive",
+                        "date_of_birth": "2010-06-01",
+                        "is_minor": False,
+                    },
+                ]
+            },
+            TODAY,
+        )
+
+        self.assertEqual(
+            {row["student_id"] for row in rows if row["issue_type"] == "minor_without_guardian"},
+            {"child", "inactive-child"},
+        )
+
+    def test_hygiene_with_dob_requires_date_context(self):
+        with self.assertRaisesRegex(RuntimeError, "Student date context is required"):
+            build_data_hygiene_readiness(
+                {"students": [{"id": "dated", "date_of_birth": "2010-06-01", "is_minor": True}]},
+                None,
+            )
+
     def test_missing_session_timestamp_uses_studio_day_and_session_date_stays_literal(self):
         events = _attendance_events(
             {

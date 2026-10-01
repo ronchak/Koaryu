@@ -154,10 +154,36 @@ BEGIN
       AND studio_id = v_studio
       AND program_id = v_program
       AND membership_start_date = DATE '2026-06-01'
-      AND tags = ARRAY['converted-lead']::TEXT[];
+      AND tags = ARRAY['converted-lead']::TEXT[]
+      AND date_of_birth IS NULL
+      AND is_minor IS TRUE;
 
     IF v_count <> 1 THEN
         RAISE EXCEPTION 'Lead conversion did not create the expected student.';
+    END IF;
+
+    -- Unrelated profile edits and explicit empty DOB retain source knowledge.
+    PERFORM public.write_student_profile_v2_atomic(
+        v_student, v_studio, v_owner, '{"notes":"Edited","date_of_birth":null}'::JSONB,
+        NULL, '[]'::JSONB, FALSE, 'student.updated'
+    );
+    PERFORM public.write_student_profile_v2_atomic(
+        v_student, v_studio, v_owner, '{"phone":"555-0101"}'::JSONB,
+        NULL, '[]'::JSONB, FALSE, 'student.updated'
+    );
+    IF (SELECT is_minor FROM public.students WHERE id = v_student) IS DISTINCT FROM TRUE
+       OR NOT EXISTS (SELECT 1 FROM public.student_guardians WHERE student_id = v_student AND guardian_id = v_guardian) THEN
+        RAISE EXCEPTION 'Profile save lost converted minor knowledge or guardian ownership.';
+    END IF;
+
+    -- A known adult DOB wins, including after later removal of the DOB.
+    UPDATE public.students SET date_of_birth = DATE '2000-01-01', is_minor = TRUE WHERE id = v_student;
+    IF (SELECT is_minor FROM public.students WHERE id = v_student) IS DISTINCT FROM FALSE THEN
+        RAISE EXCEPTION 'Known adult DOB did not take precedence over saved minor flag.';
+    END IF;
+    UPDATE public.students SET date_of_birth = NULL WHERE id = v_student;
+    IF (SELECT is_minor FROM public.students WHERE id = v_student) IS DISTINCT FROM FALSE THEN
+        RAISE EXCEPTION 'Removing adult DOB resurrected stale minor knowledge.';
     END IF;
 
     SELECT COUNT(*)
