@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import { isLiveAuthRequestCurrent } from "../src/lib/store-bootstrap-model.ts";
+import { bootstrapDatasets } from "../src/lib/bootstrap-route.ts";
+import { isCompleteScheduleRoster } from "../src/lib/schedule-page-model.ts";
 import {
   buildSubscriptionAccessRestoreState,
   applyLiveStudioDataResetRefs,
@@ -12,6 +14,19 @@ import {
 } from "../src/lib/store-reset-model.ts";
 
 describe("store auth reset model", () => {
+  it("keeps an auth-cleared roster incomplete when the next route omits students", () => {
+    for (const view of ["schedule", "settings", "leads", "reports", "training"]) {
+      assert.equal(bootstrapDatasets(view).has("students"), false);
+      const reset = buildSignedOutStudioResetState();
+      assert.deepEqual(reset.students, []);
+      assert.equal(
+        isCompleteScheduleRoster(reset),
+        false,
+        `${view} must load a new roster after an authentication reset`,
+      );
+    }
+  });
+
   it("returns every gated dataset to loading when subscription access is restored", () => {
     assert.deepEqual(buildSubscriptionAccessRestoreState(), {
       subscriptionRequired: false,
@@ -40,7 +55,7 @@ describe("store auth reset model", () => {
     assert.equal(reset.programsLoadError, null);
     assert.equal(reset.dashboardSummary, null);
     assert.equal(reset.dashboardSummaryLoaded, true);
-    assert.equal(reset.studentsLoaded, true);
+    assert.equal(reset.studentsLoaded, false);
     assert.equal(reset.studentsLoadError, null);
     assert.equal(reset.studentsLastLoadedAt, null);
     assert.equal(reset.studentsMayBePartial, false);
@@ -133,7 +148,7 @@ describe("store auth reset model", () => {
     assert.equal(reset.subscriptionRequired, true);
     assert.equal(reset.staffLoaded, true);
     assert.equal(reset.programsLoaded, true);
-    assert.equal(reset.studentsLoaded, true);
+    assert.equal(reset.studentsLoaded, false);
     assert.equal(reset.staffLoadError, SUBSCRIPTION_REQUIRED_MESSAGE);
     assert.equal(reset.programsLoadError, SUBSCRIPTION_REQUIRED_MESSAGE);
     assert.equal(reset.studentsLoadError, SUBSCRIPTION_REQUIRED_MESSAGE);

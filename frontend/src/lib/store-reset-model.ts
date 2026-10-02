@@ -112,7 +112,9 @@ export function buildSignedOutStudioResetState(): LiveStudioDataResetState {
     dashboardSummary: null,
     dashboardSummaryLoaded: true,
     students: [],
-    studentsLoaded: true,
+    // Auth recovery and identity changes reuse this reset. A cleared cache is
+    // not an authoritative empty roster, even when the next bootstrap omits it.
+    studentsLoaded: false,
     studentsLoadError: null,
     studentsLastLoadedAt: null,
     studentsMayBePartial: false,
