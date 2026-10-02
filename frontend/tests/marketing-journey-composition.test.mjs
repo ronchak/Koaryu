@@ -46,10 +46,14 @@ describe("Journey server composition", () => {
 
 describe("Journey scrolling and accessibility", () => {
   it("scrolls natively without intercepting wheel, touch, or keyboard input", () => {
-    assert.doesNotMatch(
-      controllerSource,
-      /addEventListener\("(?:wheel|touchstart|touchmove|touchend|keydown)"/,
-    );
+    // Input listeners may only observe: every one is passive and nothing prevents defaults.
+    const inputListeners = [
+      ...controllerSource.matchAll(
+        /addEventListener\("(?:wheel|touchstart|touchmove|touchend|keydown)",[^)]*\)/g,
+      ),
+    ].map(([listener]) => listener);
+    assert.ok(inputListeners.length > 0);
+    for (const listener of inputListeners) assert.match(listener, /\{ passive: true \}/);
     assert.doesNotMatch(controllerSource, /preventDefault\(/);
     assert.match(controllerSource, /addEventListener\("scroll", schedule, \{ passive: true \}\)/);
     assert.doesNotMatch(journeyCss, /overflow:\s*hidden;[\s\S]{0,40}height:\s*100dvh/);

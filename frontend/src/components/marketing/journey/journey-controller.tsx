@@ -20,6 +20,13 @@ const SCROLLED_THRESHOLD_PX = 8;
 /** On phones the masthead steps aside while reading down and returns on any upward scroll. */
 const MASTHEAD_HIDE_AFTER_PX = 160;
 const MASTHEAD_DIRECTION_PX = 6;
+/**
+ * Scrolls the visitor did not make (snap corrections, momentum settling) must
+ * not toggle the masthead, so direction follows their latest gesture for this long.
+ */
+const GESTURE_MEMORY_MS = 3000;
+const DOWN_KEYS = new Set(["ArrowDown", "PageDown", "End", " "]);
+const UP_KEYS = new Set(["ArrowUp", "PageUp", "Home"]);
 const COMPACT_QUERY = "(max-width: 820px)";
 
 interface JourneyControllerProps {
@@ -66,6 +73,31 @@ export function JourneyController({ children }: JourneyControllerProps) {
     let layerHeight = 0;
     let lastScrollY = window.scrollY;
     let mastheadHidden = false;
+    let gestureDirection = 0;
+    let gestureAt = Number.NEGATIVE_INFINITY;
+    let touchY: number | null = null;
+
+    // These listeners only observe which way the visitor is moving; they never block input.
+    const noteGesture = (direction: number) => {
+      gestureDirection = direction;
+      gestureAt = performance.now();
+    };
+    const onWheel = (event: WheelEvent) => {
+      if (event.deltaY) noteGesture(Math.sign(event.deltaY));
+    };
+    const onTouchStart = (event: TouchEvent) => {
+      touchY = event.touches[0]?.clientY ?? null;
+    };
+    const onTouchMove = (event: TouchEvent) => {
+      const y = event.touches[0]?.clientY;
+      if (touchY === null || y === undefined || Math.abs(y - touchY) < 4) return;
+      noteGesture(y < touchY ? 1 : -1);
+      touchY = y;
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (DOWN_KEYS.has(event.key)) noteGesture(1);
+      else if (UP_KEYS.has(event.key)) noteGesture(-1);
+    };
 
     const measure = () => {
       const chapters = Array.from(root.querySelectorAll<HTMLElement>("[data-journey-chapter]"));
@@ -110,7 +142,9 @@ export function JourneyController({ children }: JourneyControllerProps) {
       if (!compactQuery.matches || scrollY < MASTHEAD_HIDE_AFTER_PX) {
         mastheadHidden = false;
       } else if (Math.abs(delta) > MASTHEAD_DIRECTION_PX) {
-        mastheadHidden = delta > 0;
+        const direction = Math.sign(delta);
+        const recentGesture = performance.now() - gestureAt < GESTURE_MEMORY_MS;
+        if (!recentGesture || direction === gestureDirection) mastheadHidden = direction > 0;
       }
       // Small steps accumulate until they show a direction, so slow scrolling counts too.
       if (Math.abs(delta) > MASTHEAD_DIRECTION_PX) lastScrollY = scrollY;
@@ -154,11 +188,19 @@ export function JourneyController({ children }: JourneyControllerProps) {
     resizeObserver.observe(root);
     resizeObserver.observe(layer);
     window.addEventListener("scroll", schedule, { passive: true });
+    window.addEventListener("wheel", onWheel, { passive: true });
+    window.addEventListener("touchstart", onTouchStart, { passive: true });
+    window.addEventListener("touchmove", onTouchMove, { passive: true });
+    window.addEventListener("keydown", onKeyDown, { passive: true });
     motionQuery.addEventListener("change", schedule);
     return () => {
       window.cancelAnimationFrame(frameRequest);
       resizeObserver.disconnect();
       window.removeEventListener("scroll", schedule);
+      window.removeEventListener("wheel", onWheel);
+      window.removeEventListener("touchstart", onTouchStart);
+      window.removeEventListener("touchmove", onTouchMove);
+      window.removeEventListener("keydown", onKeyDown);
       motionQuery.removeEventListener("change", schedule);
     };
   }, []);
