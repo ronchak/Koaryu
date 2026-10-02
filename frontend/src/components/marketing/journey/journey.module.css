@@ -20,12 +20,15 @@
 .sceneLayer {
   position: fixed;
   z-index: 0;
-  inset: 0 0 auto;
+  top: 0;
+  left: 0;
+  /* Explicit viewport units: WebKit narrows inset-sized fixed layers by its scrollbar. */
+  width: 100vw;
   /* The large viewport keeps the artwork still while mobile toolbars move. */
   height: 100lvh;
   overflow: hidden;
   pointer-events: none;
-  contain: strict;
+  contain: layout paint;
 }
 
 .sceneLayer::after {
