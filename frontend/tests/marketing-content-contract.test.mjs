@@ -39,66 +39,48 @@ function assertPlainJsonValue(value, path = "landingPageContent") {
 }
 
 describe("marketing content contract", () => {
-  it("keeps the complete Journey in exact chapter order with plain JSON-safe values", () => {
-    const expectedStops = [
-      ["welcome", 0.025, "hero"],
-      ["the-problem", 0.1, "problem"],
-      ["studio-view", 0.235, "morning"],
-      ["product", 0.288, "product-intro"],
-      ["features", 0.52, "features"],
-      ["use-cases", 0.64, "use-cases"],
-      ["signals-gather", 0.802, "transition"],
-      ["explore", 0.892, "explore"],
-      ["class-ready", 0.952, "transition"],
-      ["pricing", 1, "pricing"],
-      ["about", 1, "about"],
-      ["faq", 1, "faq"],
-      ["stillness", 1, "transition"],
-      ["begin", 1, "final"],
-    ];
-
+  it("keeps the Journey in exact chapter order with plain JSON-safe values", () => {
     assert.deepEqual(
       landingPageContent.chapters.map(({ id, scene, kind }) => [id, scene, kind]),
-      expectedStops,
+      [
+        ["welcome", 0, "hero"],
+        ["the-problem", 0.1, "problem"],
+        ["product", 0.3, "product"],
+        ["features", 0.5, "features"],
+        ["pricing", 0.72, "pricing"],
+        ["faq", 0.86, "faq"],
+        ["begin", 1, "final"],
+      ],
     );
     assert.deepEqual(JSON.parse(JSON.stringify(landingPageContent)), landingPageContent);
     assertPlainJsonValue(landingPageContent);
   });
 
-  it("preserves direct destinations and makes current product limits explicit", () => {
+  it("preserves direct destinations and states current product limits once, plainly", () => {
     assert.deepEqual(
       chapter("features").rows.map((row) => row.detail.href),
       [
         "/features/student-management",
         "/features/belt-tracking",
         "/features/attendance",
+        "/use-cases/trial-to-enrollment",
+        "/use-cases/spreadsheets-to-studio-crm",
         "/features/billing",
       ],
     );
     assert.deepEqual(
-      chapter("use-cases").rows.map((row) => row.detail.href),
-      [
-        "/use-cases/spreadsheets-to-studio-crm",
-        "/use-cases/student-retention",
-        "/use-cases/trial-to-enrollment",
-        "/use-cases/tuition-cleanup",
-        "/use-cases/belt-test-readiness",
-      ],
+      chapter("features").links.map((link) => link.href),
+      ["/features", "/use-cases"],
     );
-    assert.deepEqual(
-      chapter("explore").routes.map((route) => route.href),
-      ["/features", "/use-cases", "/features/student-management#families"],
-    );
-    assert.equal(chapter("features").rows.length, 4);
-    assert.equal(chapter("use-cases").rows.length, 5);
-    assert.equal(chapter("explore").routes.length, 3);
-    assert.equal(chapter("pricing").facts.length, 3);
     assert.equal(chapter("pricing").setupAction.href, "/signup");
-    assert.equal(chapter("about").principles.length, 3);
-    assert.equal(chapter("about").link.href, "/features#fit");
     assert.deepEqual(
-      chapter("faq").groups.map((group) => group.items.length),
-      [3, 3, 4, 4, 4, 3],
+      chapter("faq").groups.map((group) => [group.id, group.items.length]),
+      [
+        ["faq-fit", 3],
+        ["faq-daily", 3],
+        ["faq-pricing", 2],
+        ["faq-limits", 2],
+      ],
     );
     assert.deepEqual(
       chapter("begin").footerLinks.map((link) => link.href),
@@ -111,10 +93,19 @@ describe("marketing content contract", () => {
     assert.match(serialized, /class-count, time-at-rank and instructor-approval requirements/);
     assert.match(serialized, /requires separate activation and is not generally available/);
     assert.match(serialized, /0\.5% per successful charge, plus Stripe fees/);
-    assert.match(serialized, /Instructors cannot access billing/);
-    assert.match(serialized, /Illustrative studio morning/);
-    assert.equal(chapter("studio-view").examples.length, 3);
+    assert.match(serialized, /cannot access billing/);
+    assert.match(serialized, /no multi-location dashboard/);
+    assert.match(serialized, /doesn't send automated email or SMS reminders/);
+    assert.match(serialized, /new billing exports are unavailable/);
+    assert.match(serialized, /shown with sample studio data/);
     assert.doesNotMatch(serialized, /already sorted|Koaryu’s now|web-first|Very convenient/);
+
+    // Limits live in the FAQ; the selling chapters say what Koaryu does.
+    const limitsCopy = /not generally available|requires separate activation/;
+    for (const id of ["welcome", "product", "features", "pricing", "begin"]) {
+      assert.doesNotMatch(JSON.stringify(chapter(id)), limitsCopy, id);
+    }
+    assert.equal(serialized.match(/not generally available/g)?.length, 1);
   });
 
   it("derives every authoritative public price representation from one fact", () => {

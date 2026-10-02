@@ -35,9 +35,11 @@ new Function("require", "module", "exports", compiledScene)(
   sceneModule,
   sceneModule.exports,
 );
-const { JourneyScene } = sceneModule.exports;
-const renderScene = (progress) =>
-  renderToStaticMarkup(React.createElement(JourneyScene, { progress }));
+const { JourneyScene, STUDENT_SEATS, applySceneState, sceneState } = sceneModule.exports;
+const landscape = model.frameForDimensions(1600, 1000);
+const renderScene = (initialProgress) =>
+  renderToStaticMarkup(React.createElement(JourneyScene, { initialProgress }));
+const shown = (state, key) => Boolean(state[key]) && state[key].display !== "none";
 
 describe("Journey scene geometry", () => {
   it("keeps renderer inputs, phase boundaries, and easing curves", () => {
@@ -46,50 +48,19 @@ describe("Journey scene geometry", () => {
     assert.equal(model.clamp(Number.NaN), 0);
     assert.equal(model.easeIn(0.5), 0.125);
     assert.equal(model.easeOut(0.5), 0.875);
-    assert.equal(model.easeInOut(0.25), 0.125);
     assert.equal(model.easeInOut(0.5), 0.5);
-    assert.equal(model.easeInOut(0.75), 0.875);
     assert.deepEqual(model.SCENE_PHASES, {
       mountains: [0, 0.1],
-      drop: [0.1, 0.212],
-      settle: [0.212, 0.288],
-      portal: [0.288, 0.52],
-      door: [0.404, 0.52],
-      through: [0.516, 0.64],
-      sky: [0.6, 0.7],
-      clouds: [0.66, 0.802],
-      morph: [0.802, 0.892],
-      floor: [0.892, 0.952],
-      students: [0.952, 1],
+      drop: [0.1, 0.22],
+      settle: [0.22, 0.3],
+      push: [0.3, 0.5],
+      door: [0.34, 0.5],
+      students: [0.54, 0.96],
     });
   });
 
-  it("generates stable bounded clouds and weave geometry", () => {
-    assert.deepEqual(model.createCloudGeometry(), model.createCloudGeometry());
-    assert.notDeepEqual(model.createCloudGeometry(), model.createCloudGeometry(1208));
-    assert.equal(model.CLOUD_GEOMETRY.length, 42);
-    assert.equal(model.PLANK_GEOMETRY.length, 256);
-    assert.equal(Object.isFrozen(model.CLOUD_GEOMETRY), true);
-    assert.equal(Object.isFrozen(model.PLANK_GEOMETRY), true);
-    assert.equal(model.makeCloudPath(31), model.makeCloudPath(31));
-    assert.notEqual(model.makeCloudPath(31), model.makeCloudPath(32));
-    for (const cloud of model.CLOUD_GEOMETRY) assert.match(cloud.path, /^M.*Z$/);
-    for (const plank of model.PLANK_GEOMETRY) {
-      assert.equal(plank.uv.length, 8);
-      assert.equal(plank.flat.length, 8);
-      assert.equal(plank.cloud.length, 8);
-      for (const point of [...plank.uv, ...plank.flat, ...plank.cloud]) {
-        assert.equal(Number.isFinite(point.x), true);
-        assert.equal(Number.isFinite(point.y), true);
-      }
-    }
-  });
-
-  it("keeps landscape and portrait frame geometry", () => {
-    assert.equal(model.SCENE_WIDTH, 1600);
-    assert.equal(model.SCENE_HEIGHT, 1000);
-    assert.deepEqual(model.SCENE_OVERSCAN, { x: -520, y: -740, width: 2640, height: 2480 });
-    assert.deepEqual(model.frameForDimensions(1600, 1000), {
+  it("keeps landscape and portrait frames, with the class narrowed on phones", () => {
+    assert.deepEqual(landscape, {
       viewBox: "0 0 1600 1000",
       visibleHalfWidth: 800,
       studentSpread: 1,
@@ -98,26 +69,85 @@ describe("Journey scene geometry", () => {
     const portrait = model.frameForDimensions(390, 844);
     assert.equal(portrait.viewBox, "0 -500 1600 2000");
     assert.equal(portrait.variant, "portrait");
-    assert.ok(portrait.studentSpread >= 0.34 && portrait.studentSpread < 1);
+    assert.ok(portrait.studentSpread >= 0.6 && portrait.studentSpread < 1);
   });
 });
 
-describe("Journey scene rendered SVG", () => {
-  it("keeps the dojo until the open doorway covers the mobile viewport", () => {
-    const mobile = (progress) =>
-      renderToStaticMarkup(
-        React.createElement(JourneyScene, {
-          progress,
-          compact: true,
-          frame: model.frameForDimensions(393, 617),
-        }),
-      );
-    assert.match(mobile(0.59), /data-scene-layer="dojo"/);
-    assert.doesNotMatch(mobile(0.615), /data-scene-layer="dojo"/);
-    assert.match(mobile(0.615), /data-scene-layer="sky"/);
-    assert.match(renderScene(0.615), /data-scene-layer="dojo"/);
-    assert.doesNotMatch(mobile(0.52), /filter="url\(#[^"]*lifted/);
-    assert.match(renderScene(0.52), /filter="url\(#[^"]*lifted/);
+describe("Journey scene story", () => {
+  it("falls from the hills into a closed dojo, opens the door, then seats the class", () => {
+    const hero = sceneState(0, landscape);
+    assert.ok(shown(hero, "mountains"));
+    assert.ok(!shown(hero, "dojo"));
+
+    const problem = sceneState(0.1, landscape);
+    assert.ok(shown(problem, "curtain-closed"), "the dark interlude covers the frame");
+    assert.ok(!shown(problem, "mountains"));
+
+    const product = sceneState(0.3, landscape);
+    assert.ok(shown(product, "dojo"));
+    assert.ok(!shown(product, "curtain-open"));
+    assert.equal(product["door-right"].transform, "translate(0 0)");
+
+    const features = sceneState(0.5, landscape);
+    assert.equal(features["door-right"].transform, "translate(185 0)");
+    assert.ok(STUDENT_SEATS.every((_, index) => !shown(features, `student-${index}`)));
+
+    const closing = sceneState(1, landscape);
+    assert.ok(STUDENT_SEATS.every((_, index) => shown(closing, `student-${index}`)));
+    assert.ok(STUDENT_SEATS.every((_, index) => closing[`student-${index}`].opacity === "1"));
+  });
+
+  it("seats students in order and never produces invalid attributes", () => {
+    let visible = 0;
+    for (let step = 0; step <= 200; step += 1) {
+      const state = sceneState(step / 200, model.frameForDimensions(390, 844));
+      const serialized = JSON.stringify(state);
+      assert.doesNotMatch(serialized, /NaN|Infinity|undefined/);
+      const count = STUDENT_SEATS.filter((_, index) => shown(state, `student-${index}`)).length;
+      assert.ok(count >= visible, "students never leave as the story advances");
+      visible = count;
+    }
+    assert.equal(visible, STUDENT_SEATS.length);
+  });
+
+  it("dresses the class in a range of belts and natural hair and skin tones", () => {
+    const belts = new Set(STUDENT_SEATS.map((seat) => seat.belt));
+    assert.ok(belts.size >= 5);
+    assert.doesNotMatch(sceneSource, /#B08E2A/i, "the olive-yellow head tone is retired");
+  });
+});
+
+describe("Journey scene rendering", () => {
+  it("renders once with server attributes and writes only changed attributes per frame", () => {
+    const html = renderScene(0);
+    assert.match(html, /data-scene-dynamic="dojo"[^>]*display="none"/);
+    assert.match(html, /data-scene-dynamic="mountain-sun"[^>]*transform="translate\(1128 248\)/);
+
+    const writes = [];
+    const element = {
+      attributes: new Map([["opacity", "1"]]),
+      getAttribute(name) {
+        return this.attributes.get(name) ?? null;
+      },
+      setAttribute(name, value) {
+        writes.push([name, value]);
+        this.attributes.set(name, value);
+      },
+    };
+    const root = { querySelector: () => element };
+    const cache = new Map();
+    applySceneState(root, { a: { opacity: "1", transform: "scale(2)" } }, cache);
+    applySceneState(root, { a: { opacity: "1", transform: "scale(2)" } }, cache);
+    assert.deepEqual(writes, [["transform", "scale(2)"]]);
+  });
+
+  it("uses baked materials instead of live noise filters", () => {
+    assert.doesNotMatch(
+      sceneSource,
+      /<fe(?:Turbulence|DisplacementMap|DiffuseLighting|DropShadow)/,
+    );
+    assert.match(sceneSource, /\/marketing\/crumple\.webp/);
+    assert.match(sceneSource, /\/marketing\/washi\.webp/);
   });
 
   it("is decorative, pointer-inert, and uses valid local references", () => {
@@ -133,37 +163,21 @@ describe("Journey scene rendered SVG", () => {
     for (const reference of references) assert.ok(ids.includes(reference), reference);
   });
 
-  it("keeps IDs unique between instances and deterministic geometry", () => {
+  it("keeps IDs unique between instances and clamps progress", () => {
     const pair = renderToStaticMarkup(
       React.createElement(
         "div",
         null,
-        React.createElement(JourneyScene, { progress: 0.7 }),
-        React.createElement(JourneyScene, { progress: 0.7 }),
+        React.createElement(JourneyScene, { initialProgress: 0.7 }),
+        React.createElement(JourneyScene, { initialProgress: 0.7 }),
       ),
     );
     const ids = [...pair.matchAll(/\sid="([^"]+)"/g)].map((match) => match[1]);
     assert.equal(new Set(ids).size, ids.length);
-    const paths = (html) => [...html.matchAll(/<path[^>]* d="([^"]+)"/g)].map((match) => match[1]);
-    assert.deepEqual(paths(renderScene(0.7)), paths(renderScene(0.7)));
-  });
-
-  it("renders connected layers at representative progress states", () => {
-    const rendered = [0.025, 0.18, 0.48, 0.7, 0.85, 0.93, 1].map(renderScene).join("\n");
-    assert.doesNotMatch(rendered, /NaN|Infinity/);
-    for (const layer of [
-      "mountains",
-      "curtain",
-      "dojo",
-      "sky",
-      "clouds",
-      "weave-floor",
-      "room",
-      "students",
-    ]) {
-      assert.match(rendered, new RegExp(`data-scene-layer="${layer}"`));
-    }
     assert.match(renderScene(-1), /data-scene-progress="0"/);
     assert.match(renderScene(2), /data-scene-progress="1"/);
+    for (const layer of ["mountains", "curtain", "dojo", "doorway", "students"]) {
+      assert.match(renderScene(1), new RegExp(`data-scene-layer="${layer}"`));
+    }
   });
 });

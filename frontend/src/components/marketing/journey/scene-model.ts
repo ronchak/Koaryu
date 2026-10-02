@@ -10,16 +10,11 @@ export const SCENE_OVERSCAN = Object.freeze({
 
 export const SCENE_PHASES = Object.freeze({
   mountains: Object.freeze([0, 0.1] as const),
-  drop: Object.freeze([0.1, 0.212] as const),
-  settle: Object.freeze([0.212, 0.288] as const),
-  portal: Object.freeze([0.288, 0.52] as const),
-  door: Object.freeze([0.404, 0.52] as const),
-  through: Object.freeze([0.516, 0.64] as const),
-  sky: Object.freeze([0.6, 0.7] as const),
-  clouds: Object.freeze([0.66, 0.802] as const),
-  morph: Object.freeze([0.802, 0.892] as const),
-  floor: Object.freeze([0.892, 0.952] as const),
-  students: Object.freeze([0.952, 1] as const),
+  drop: Object.freeze([0.1, 0.22] as const),
+  settle: Object.freeze([0.22, 0.3] as const),
+  push: Object.freeze([0.3, 0.5] as const),
+  door: Object.freeze([0.34, 0.5] as const),
+  students: Object.freeze([0.54, 0.96] as const),
 });
 
 export type ScenePoint = Readonly<{ x: number; y: number }>;
@@ -73,7 +68,8 @@ export function frameForDimensions(viewportWidth: number, viewportHeight: number
   const aspect = width / height;
   const viewBoxHeight = clamp(SCENE_WIDTH / aspect, SCENE_HEIGHT, 2000);
   const visibleHalfWidth = Math.min(SCENE_WIDTH / 2, (viewBoxHeight / 2) * aspect);
-  const studentSpread = clamp((visibleHalfWidth - 210) / (SCENE_WIDTH / 2 - 210), 0.34, 1);
+  // Narrow crops pull the seated class toward the center so nobody is cut off.
+  const studentSpread = clamp(visibleHalfWidth / 540, 0.6, 1);
 
   return Object.freeze({
     viewBox: `0 ${round2(SCENE_HEIGHT / 2 - viewBoxHeight / 2)} ${SCENE_WIDTH} ${round2(viewBoxHeight)}`,
@@ -134,44 +130,6 @@ export function polygonPoints(points: readonly ScenePoint[]): string {
   return points.map(({ x, y }) => `${round2(x)},${round2(y)}`).join(" ");
 }
 
-export interface CloudGeometry {
-  readonly seed: number;
-  readonly x: number;
-  readonly y: number;
-  readonly scale: number;
-  readonly tier: number;
-  readonly direction: -1 | 1;
-  readonly tone: number;
-  readonly arrival: number;
-  readonly drift: number;
-  readonly path: string;
-}
-
-export interface PlankGeometry {
-  readonly uv: readonly ScenePoint[];
-  readonly flat: readonly ScenePoint[];
-  readonly cloud: readonly ScenePoint[];
-  readonly rowPosition: number;
-  readonly horizontalOrder: number;
-  readonly verticalOrder: number;
-  readonly normalizedDepth: number;
-  readonly tone: number;
-}
-
-export const WEAVE_COLUMNS = 16;
-export const WEAVE_ROWS = 16;
-export const PLANK_LENGTH = 2.02;
-export const PLANK_WIDTH = 0.7;
-export const COLUMN_STEP = PLANK_LENGTH / Math.SQRT2;
-export const ROW_STEP = PLANK_WIDTH * Math.SQRT2;
-export const U_SPAN = WEAVE_COLUMNS * COLUMN_STEP;
-export const V_SPAN = WEAVE_ROWS * ROW_STEP;
-export const FLOOR_FAR = 168;
-export const FLOOR_NEAR = 960;
-export const HALF_FAR = 990;
-export const HALF_NEAR = 2500;
-const EDGE_POINTS = 4;
-
 export function makeCloudPath(seed: number): string {
   const random = mulberry32(seed);
   const width = 380 + random() * 560;
@@ -201,132 +159,3 @@ export function makeCloudPath(seed: number): string {
 
   return smoothPath([...top, ...bottom], true, 0.9);
 }
-
-export function createCloudGeometry(seed = 1207): readonly CloudGeometry[] {
-  const random = mulberry32(seed);
-  const clouds: Omit<CloudGeometry, "path">[] = [];
-
-  for (let index = 0; index < 42; index += 1) {
-    const tier = index < 13 ? 0 : index < 29 ? 1 : 2;
-    const scale = [0.72, 1.1, 1.7][tier]! * (0.8 + random() * 0.5);
-    const cloudSeed = Math.floor(random() * 99999);
-    clouds.push({
-      seed: cloudSeed,
-      x: -180 + random() * (SCENE_WIDTH + 360),
-      y: -110 + random() * (SCENE_HEIGHT + 240),
-      scale,
-      tier,
-      direction: random() < 0.5 ? -1 : 1,
-      tone: Math.min(4, tier + (random() < 0.5 ? 0 : 1)),
-      arrival: random() ** 0.9 * 0.6,
-      drift: (0.35 + random() * 0.9) * [0.4, 0.8, 1.5][tier]!,
-    });
-  }
-
-  return Object.freeze(
-    clouds
-      .sort((a, b) => a.tier - b.tier)
-      .map((cloud) => Object.freeze({ ...cloud, path: makeCloudPath(cloud.seed) })),
-  );
-}
-
-export function flatWeavePoint(u: number, v: number): ScenePoint {
-  return {
-    x: (u / U_SPAN) * (SCENE_WIDTH + 420) - 210,
-    y: (v / V_SPAN) * (SCENE_HEIGHT + 520) - 260,
-  };
-}
-
-export function floorPoint(u: number, v: number, horizon: number): ScenePoint {
-  const depth = v / V_SPAN;
-  const vertical = mix(FLOOR_FAR, FLOOR_NEAR, depth);
-  const halfWidth = mix(HALF_FAR, HALF_NEAR, depth);
-  return {
-    x: SCENE_WIDTH / 2 + (u / U_SPAN - 0.5) * 2 * halfWidth,
-    y: horizon + vertical,
-  };
-}
-
-export function createPlankGeometry(seed = 88041): readonly PlankGeometry[] {
-  const random = mulberry32(seed);
-  const planks: PlankGeometry[] = [];
-
-  for (let column = 0; column < WEAVE_COLUMNS; column += 1) {
-    for (let row = 0; row < WEAVE_ROWS; row += 1) {
-      const direction = column % 2 === 0 ? 1 : -1;
-      const angle = (direction * Math.PI) / 4;
-      const cosine = Math.cos(angle);
-      const sine = Math.sin(angle);
-      const columnPosition = column * COLUMN_STEP + COLUMN_STEP * 0.5;
-      const rowPosition = row * ROW_STEP + (column % 2 ? ROW_STEP * 0.5 : 0);
-      const uv: ScenePoint[] = [];
-
-      for (let index = 0; index < EDGE_POINTS; index += 1) {
-        const progress = -0.5 + index / (EDGE_POINTS - 1);
-        uv.push({
-          x: columnPosition + progress * PLANK_LENGTH * cosine + (PLANK_WIDTH / 2) * sine,
-          y: rowPosition + progress * PLANK_LENGTH * sine - (PLANK_WIDTH / 2) * cosine,
-        });
-      }
-      for (let index = EDGE_POINTS - 1; index >= 0; index -= 1) {
-        const progress = -0.5 + index / (EDGE_POINTS - 1);
-        uv.push({
-          x: columnPosition + progress * PLANK_LENGTH * cosine - (PLANK_WIDTH / 2) * sine,
-          y: rowPosition + progress * PLANK_LENGTH * sine + (PLANK_WIDTH / 2) * cosine,
-        });
-      }
-
-      const flat = uv.map((point) => flatWeavePoint(point.x, point.y));
-      const center = flatWeavePoint(columnPosition, rowPosition);
-      const ribbonCenterX =
-        SCENE_WIDTH / 2 + (center.x - SCENE_WIDTH / 2) * 1.72 + (random() - 0.5) * 140;
-      const ribbonCenterY = center.y * 0.94 + 34 + (random() - 0.5) * 46;
-      const ribbonWidth = 540 + random() * 520;
-      const ribbonHeight = 34 + random() * 40;
-      const phase = random() * Math.PI * 2;
-      const amplitude = 20 + random() * 26;
-      const waveY = (x: number) =>
-        Math.sin(x * 0.0042 + phase) * amplitude +
-        Math.sin(x * 0.0013 + phase * 1.7) * amplitude * 1.25;
-      const cloud: ScenePoint[] = [];
-
-      for (let index = 0; index < EDGE_POINTS; index += 1) {
-        const progress = -0.5 + index / (EDGE_POINTS - 1);
-        const x = ribbonCenterX + progress * ribbonWidth;
-        cloud.push({ x, y: ribbonCenterY - ribbonHeight / 2 + waveY(x) });
-      }
-      for (let index = EDGE_POINTS - 1; index >= 0; index -= 1) {
-        const progress = -0.5 + index / (EDGE_POINTS - 1);
-        const x = ribbonCenterX + progress * ribbonWidth;
-        cloud.push({ x, y: ribbonCenterY + ribbonHeight / 2 + waveY(x) });
-      }
-
-      planks.push({
-        uv,
-        flat,
-        cloud,
-        rowPosition,
-        horizontalOrder: center.x / SCENE_WIDTH,
-        verticalOrder: center.y / SCENE_HEIGHT,
-        normalizedDepth: rowPosition / V_SPAN,
-        tone: Math.min(4, Math.floor(random() * 3) + (row % 2)),
-      });
-    }
-  }
-
-  return Object.freeze(
-    planks
-      .sort((a, b) => a.rowPosition - b.rowPosition)
-      .map((plank) =>
-        Object.freeze({
-          ...plank,
-          uv: Object.freeze(plank.uv.map((point) => Object.freeze(point))),
-          flat: Object.freeze(plank.flat.map((point) => Object.freeze(point))),
-          cloud: Object.freeze(plank.cloud.map((point) => Object.freeze(point))),
-        }),
-      ),
-  );
-}
-
-export const CLOUD_GEOMETRY = createCloudGeometry();
-export const PLANK_GEOMETRY = createPlankGeometry();

@@ -1,85 +1,121 @@
+/*
+ * The landing page is an ordinary scrolling document. A fixed illustration sits
+ * behind it and follows the scroll position; nothing here intercepts input.
+ */
+
+[data-koaryu-marketing].landingRoot::after {
+  /* The scene layer carries its own baked grain. */
+  display: none;
+}
+
 .journey {
+  --journey-gutter: clamp(20px, 6vw, 96px);
+  --journey-masthead: 76px;
+  --koaryu-curtain: #3a2c19;
+
   position: relative;
-  min-height: 100dvh;
   color: var(--koaryu-ink);
-  background: var(--koaryu-paper);
 }
 
-.sceneLayer,
-.pager,
-.rail,
-.liveStatus,
-.menuButton {
-  display: none;
+.sceneLayer {
+  position: fixed;
+  z-index: 0;
+  inset: 0 0 auto;
+  /* The large viewport keeps the artwork still while mobile toolbars move. */
+  height: 100lvh;
+  overflow: hidden;
+  pointer-events: none;
+  contain: strict;
 }
 
-.topbar {
+.sceneLayer::after {
+  position: absolute;
+  inset: 0;
+  content: "";
+  background:
+    radial-gradient(ellipse 72% 72% at 50% 48%, rgb(255 255 255) 55%, rgb(214 204 188) 100%),
+    url("/marketing/scene-grain.webp") 0 0 / 360px 360px;
+  /* Both layers are baked once; multiplying them costs one composite per frame. */
+  background-blend-mode: multiply;
+  mix-blend-mode: multiply;
+}
+
+/* Skip link and masthead */
+
+.skipLink {
+  position: absolute;
+  z-index: 40;
+  top: 8px;
+  left: 20px;
+  padding: 14px 18px;
+  color: var(--koaryu-paper);
+  background: var(--koaryu-ink);
+  transform: translateY(-150%);
+}
+
+.skipLink:focus {
+  transform: translateY(0);
+}
+
+.masthead {
   position: sticky;
-  z-index: 12;
+  z-index: 30;
   top: 0;
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  gap: 24px;
-  align-items: center;
-  min-height: 68px;
-  padding: 10px clamp(20px, 3.2vw, 52px);
-  border-bottom: 1px solid var(--koaryu-line);
-  color: var(--koaryu-ink);
-  background: var(--koaryu-sheet);
+  border-bottom: 1px solid transparent;
+  transition:
+    background-color 220ms ease,
+    border-color 220ms ease;
 }
 
-.primaryNav {
-  display: flex;
-  gap: clamp(14px, 2.2vw, 34px);
-  align-items: center;
-  justify-content: center;
+.journey[data-scrolled="true"] .masthead {
+  border-bottom-color: var(--koaryu-line);
+  background: rgb(247 243 233 / 94%);
 }
 
-.signIn {
-  justify-self: end;
-}
-
-.mobileNav {
-  display: none;
-}
+/* Chapters */
 
 .storyRegion {
+  position: relative;
+  z-index: 1;
   display: block;
+  margin-top: calc(var(--journey-masthead) * -1);
+}
+
+.storyRegion:focus {
+  outline: none;
 }
 
 .chapter {
   position: relative;
   display: grid;
-  min-height: max(600px, 82dvh);
-  padding: clamp(72px, 9vw, 132px) clamp(20px, 7vw, 112px);
+  min-height: 100svh;
+  padding: calc(var(--journey-masthead) + clamp(32px, 7vh, 88px)) var(--journey-gutter)
+    clamp(48px, 10vh, 120px);
   align-items: center;
-  scroll-margin-top: 68px;
-  border-bottom: 1px solid var(--koaryu-rule-soft);
-  overflow: clip;
+  scroll-margin-top: 0;
 }
 
 .chapter[data-ink="light"] {
   color: var(--koaryu-ink-light);
-  background: var(--koaryu-deep-brown);
 }
 
-.chapter[data-placement="upper"] {
+/* Without JavaScript the scene stays on its first frame, so dark chapters bring their own ground. */
+.journey:not([data-enhanced="true"]) .chapter[data-ink="light"] {
+  background: var(--koaryu-curtain);
+}
+
+.chapter[data-kind="faq"] {
   align-items: start;
 }
 
 .heroCopy,
 .problemCopy,
-.transitionCopy,
-.plane,
-.framedPlane,
-.faqShell {
+.sheet {
   width: min(100%, 1180px);
   margin-inline: auto;
 }
 
-.heroCopy {
-  max-width: 1100px;
-}
+/* Type */
 
 .kicker {
   margin: 0 0 14px;
@@ -88,19 +124,19 @@
   line-height: 1.25;
   letter-spacing: 0.18em;
   text-transform: uppercase;
-  opacity: 0.76;
+  opacity: 0.72;
 }
 
 .heroHeading,
 .statementHeading,
-.planeHeading {
+.sheetHeading {
   margin: 0;
   text-wrap: balance;
 }
 
 .heroHeading {
   max-width: 11ch;
-  font-size: clamp(58px, 9vw, 134px);
+  font-size: clamp(54px, 9vw, 134px);
   font-weight: 720;
   line-height: 0.88;
   letter-spacing: -0.045em;
@@ -111,28 +147,28 @@
 }
 
 .statementHeading {
-  max-width: 17ch;
-  font-size: clamp(42px, 6.8vw, 92px);
+  max-width: 14ch;
+  font-size: clamp(42px, 6.4vw, 92px);
   font-weight: 660;
   line-height: 0.94;
   letter-spacing: -0.04em;
 }
 
-.planeHeading {
-  max-width: 17ch;
-  font-size: clamp(34px, 3.5vw, 50px);
+.sheetHeading {
+  max-width: 18ch;
+  font-size: clamp(32px, 3.4vw, 50px);
   font-weight: 675;
-  line-height: 0.94;
-  letter-spacing: -0.044em;
+  line-height: 0.98;
+  letter-spacing: -0.04em;
 }
 
 .lede {
-  max-width: 58ch;
-  margin: 22px 0 0;
-  font-size: clamp(14px, 1.45vw, 19px);
+  max-width: 54ch;
+  margin: 20px 0 0;
+  font-size: clamp(15px, 1.4vw, 19px);
   font-weight: 470;
   line-height: 1.55;
-  opacity: 0.76;
+  opacity: 0.78;
 }
 
 .actions {
@@ -143,1432 +179,509 @@
 }
 
 .action {
-  min-width: 150px;
+  min-width: 156px;
 }
 
-.scrollHint {
-  margin: 44px 0 0;
-  font-size: 11px;
+.textLink {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  min-height: 44px;
+  color: inherit;
+  font-size: 14px;
   font-weight: 650;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  opacity: 0.72;
+  text-decoration: none;
 }
+
+.textLink span {
+  transition: transform 200ms ease;
+}
+
+.textLink:hover span {
+  transform: translateX(3px);
+}
+
+/* Hero */
+
+.heroCopy {
+  padding-bottom: 6vh;
+}
+
+.heroCopy .lede {
+  max-width: 46ch;
+}
+
+/* Problem */
 
 .problemCopy {
   display: grid;
   grid-template-columns: minmax(0, 1.15fr) minmax(260px, 0.72fr);
-  gap: clamp(48px, 9vw, 130px);
+  gap: clamp(40px, 8vw, 120px);
   align-items: end;
 }
 
 .problemResponse {
-  padding-bottom: 8px;
-  font-size: clamp(15px, 1.55vw, 21px);
+  font-size: clamp(16px, 1.55vw, 21px);
   line-height: 1.55;
-  opacity: 0.76;
 }
 
 .problemResponse p {
   margin: 0;
+  opacity: 0.84;
 }
 
 .problemAside {
-  margin-top: 28px !important;
-  font-size: 13px;
+  margin-top: 24px !important;
+  font-size: 14px;
   font-style: italic;
-  opacity: 0.82;
+  opacity: 0.66 !important;
 }
 
-.plane,
-.framedPlane {
-  padding: clamp(22px, 2.5vw, 32px);
+/* Sheets: paper cards that sit on the scene */
+
+.sheet {
+  padding: clamp(24px, 3vw, 44px);
+  border: 1px solid var(--koaryu-rule-soft);
+  border-radius: 10px;
   color: var(--koaryu-ink);
   background: var(--koaryu-sheet);
-}
-
-.plane {
-  border-block: 1px solid var(--koaryu-rule);
-}
-
-.framedPlane {
-  max-width: 680px;
-  border: 1px solid var(--koaryu-rule);
-  border-radius: 9px;
   box-shadow:
-    12px 12px 0 rgb(39 28 13 / 13%),
-    0 30px 76px rgb(36 24 10 / 24%);
+    0 1px 0 rgb(255 255 255 / 50%) inset,
+    0 30px 70px rgb(36 24 10 / 18%);
 }
 
-.darkPlane {
-  margin-left: 0;
-  color: var(--koaryu-ink-light);
-  background: var(--koaryu-deep-brown);
-  --koaryu-action-label: var(--koaryu-deep-brown);
-}
-
-.morningPlane {
-  max-width: 720px;
-  margin-left: 0;
-}
-
-.proofBlock {
+.sheetHeader {
   display: grid;
-  grid-template-columns: minmax(90px, 0.25fr) minmax(0, 1fr);
-  gap: 24px;
-  margin-top: 30px;
-  padding-top: 20px;
-  border-top: 1px solid var(--koaryu-rule-soft);
-  font-size: 14px;
-  line-height: 1.5;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 24px clamp(32px, 5vw, 72px);
+  align-items: end;
 }
 
-.proofBlock p {
+.sheetHeader .lede {
   margin: 0;
 }
 
-.rowLabel {
-  font-size: 10px;
-  font-weight: 720;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  opacity: 0.76;
+.sheetLinks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 28px;
+  margin-top: 18px;
 }
 
-.ledgerPlane {
+/* Product */
+
+.productSheet {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.72fr) minmax(0, 1.5fr);
+  gap: clamp(28px, 4vw, 56px);
+  align-items: center;
+}
+
+.highlights {
+  display: grid;
+  gap: 14px;
+  margin: 28px 0 0;
+  padding-top: 22px;
+  border-top: 1px solid var(--koaryu-rule-soft);
+}
+
+.highlights div {
+  display: grid;
+  gap: 3px;
+}
+
+.highlights dt {
+  font-size: 14px;
+  font-weight: 680;
+}
+
+.highlights dd {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  opacity: 0.72;
+}
+
+.productFigure {
+  margin: 0;
+}
+
+.productFrame {
+  overflow: hidden;
+  border: 1px solid var(--koaryu-rule);
+  border-radius: 8px;
+  background: var(--koaryu-sheet-raised);
+  box-shadow: 0 18px 44px rgb(36 24 10 / 16%);
+}
+
+.productFrame img {
+  display: block;
   width: 100%;
-  max-width: 780px;
-  margin-left: 0;
+  height: auto;
 }
 
-.ledgerList,
-.bandList,
-.routeList,
-.statementList,
-.priceFacts,
-.faqList {
+.productFigure figcaption {
+  margin-top: 10px;
+  font-size: 12px;
+  opacity: 0.62;
+}
+
+/* Features */
+
+.featuresSheet {
+  max-width: 1120px;
+}
+
+.featureGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 32px 0 0;
   padding: 0;
-  margin: 24px 0 0;
+  border-top: 1px solid var(--koaryu-rule-soft);
   list-style: none;
 }
 
-.ledgerRow {
-  display: grid;
-  grid-template-columns: minmax(100px, 0.35fr) minmax(0, 1fr);
-  gap: 14px;
-  padding: 13px 0;
-  border-top: 1px solid var(--koaryu-rule-soft);
+.featureGrid li {
+  padding: 22px 24px 24px 0;
+  border-bottom: 1px solid var(--koaryu-rule-soft);
 }
 
-.ledgerRow h3,
-.ledgerRow p,
-.bandRow h3,
-.bandRow p {
+.featureGrid li:not(:nth-child(3n + 1)) {
+  padding-left: 24px;
+  border-left: 1px solid var(--koaryu-rule-soft);
+}
+
+.featureGrid h3 {
   margin: 0;
+  font-size: 16px;
+  font-weight: 680;
 }
 
-.ledgerRow h3,
-.bandRow h3,
-.statementList dt,
-.priceFacts dt {
-  font-size: 13px;
-  font-weight: 710;
-  line-height: 1.35;
-  letter-spacing: -0.01em;
-}
-
-.ledgerRow a,
-.bandRow a,
-.routeRow a,
-.planeLink,
-.finalLinks a,
-.faqIndex a {
+.featureGrid h3 a {
   color: inherit;
   text-decoration: none;
 }
 
-.ledgerRow h3 a,
-.bandRow h3 a {
-  display: inline-flex;
-  min-height: 44px;
-  align-items: center;
+.featureGrid h3 a::after {
+  content: " →";
+  opacity: 0;
+  transition: opacity 200ms ease;
 }
 
-.ledgerRow p,
-.bandRow p,
-.statementList dd,
-.priceFacts dd {
-  font-size: 12.5px;
-  line-height: 1.48;
-  opacity: 0.76;
+.featureGrid h3 a:hover::after,
+.featureGrid h3 a:focus-visible::after {
+  opacity: 0.7;
 }
 
-.planeLink {
-  display: inline-flex;
-  gap: 8px;
-  align-items: center;
-  min-height: 44px;
-  margin-top: 14px;
-  font-size: 12px;
-  font-weight: 700;
+.featureGrid p {
+  margin: 8px 0 0;
+  font-size: 14px;
+  line-height: 1.55;
+  opacity: 0.74;
 }
 
-.planeLink span,
-.routeRow a > span:last-child {
-  transition: transform 180ms ease;
+/* Pricing */
+
+.chapter[data-kind="pricing"] {
+  justify-items: start;
 }
 
-.planeLink:hover span,
-.routeRow a:hover > span:last-child {
-  transform: translateX(3px);
-}
-
-.bandPlane {
-  align-self: end;
-}
-
-.bandHeading {
-  display: flex;
-  gap: 28px;
-  align-items: end;
-  justify-content: space-between;
-}
-
-.bandList {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  border-top: 1px solid var(--koaryu-rule-soft);
-}
-
-.bandRow {
-  min-width: 0;
-  padding: 18px 16px;
-  border-left: 1px solid var(--koaryu-rule-soft);
-}
-
-.bandRow:first-child {
-  padding-left: 0;
-  border-left: 0;
-}
-
-.bandRow p {
-  margin-top: 8px;
-}
-
-.transitionCopy {
-  max-width: 1100px;
-  margin-left: 0;
-}
-
-.mapPlane {
-  width: 100%;
-  max-width: 780px;
-  margin-right: 0;
-}
-
-.routeRow {
-  border-top: 1px solid var(--koaryu-rule-soft);
-}
-
-.routeRow a {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 18px;
-  align-items: center;
-  min-height: 74px;
-  padding: 12px 0;
-}
-
-.routeRow strong,
-.routeRow a > span:first-child > span,
-.routeRow small {
-  display: block;
-}
-
-.routeRow strong {
-  font-size: 15px;
-  font-weight: 650;
-}
-
-.routeRow a > span:first-child > span {
-  margin-top: 4px;
-  font-size: 12.5px;
-  line-height: 1.45;
-  opacity: 0.76;
-}
-
-.routeRow small {
-  margin-top: 7px;
-  font-size: 10px;
-  font-weight: 720;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  opacity: 0.76;
-}
-
-.pricePlane {
-  width: 100%;
-  max-width: 620px;
-  margin-left: 0;
+.priceSheet {
+  width: min(100%, 420px);
+  margin-inline: max(0px, calc((100% - 1180px) / 2)) auto;
 }
 
 .price {
-  margin: 30px 0 0;
-  font-size: clamp(74px, 9vw, 124px);
+  margin: 26px 0 0;
+  font-size: clamp(72px, 8vw, 108px);
   font-weight: 720;
-  line-height: 0.78;
-  letter-spacing: -0.07em;
+  line-height: 0.9;
+  letter-spacing: -0.05em;
 }
 
 .pricePeriod {
-  margin: 14px 0 0;
-  font-size: 13px;
-  opacity: 0.76;
+  margin: 8px 0 0;
+  font-size: 14px;
+  opacity: 0.7;
 }
 
-.priceFacts > div,
-.statementList > div {
-  padding: 13px 0;
-  border-top: 1px solid var(--koaryu-rule-soft);
-}
-
-.priceFacts dd,
-.statementList dd,
-.priceFacts dt,
-.statementList dt {
-  margin: 0;
-}
-
-.priceFacts dd,
-.statementList dd {
-  margin-top: 5px;
-}
-
-.aboutPlane {
-  width: 100%;
-  max-width: 780px;
-  margin-left: 0;
-}
-
-.faqShell {
-  width: 100%;
-  max-width: 800px;
-  margin-left: 0;
-}
-
-.faqIndex {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px 16px;
-  margin-bottom: 10px;
-}
-
-.faqIndex a {
-  display: inline-flex;
-  min-width: 24px;
-  align-items: center;
-  justify-content: center;
-  min-height: 44px;
-  border-bottom: 2px solid transparent;
-  font-size: 10px;
-  font-weight: 720;
-  letter-spacing: 0.11em;
-  text-transform: uppercase;
-  opacity: 0.76;
-}
-
-.faqIndex a[aria-current="true"] {
-  border-bottom-color: currentColor;
-  opacity: 1;
-}
-
-.faqGroup + .faqGroup {
-  margin-top: 42px;
-  padding-top: 42px;
-  border-top: 1px solid var(--koaryu-rule);
-}
-
-.faqItem {
-  border-top: 1px solid var(--koaryu-rule-soft);
-}
-
-.faqQuestion {
+.priceFacts {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 16px;
-  align-items: center;
-  width: 100%;
-  min-height: 44px;
-  padding: 11px 1px;
-  border: 0;
-  color: inherit;
-  background: transparent;
-  font: 650 13px/1.35 inherit;
-  text-align: left;
-  cursor: pointer;
+  gap: 14px;
+  margin: 24px 0 28px;
+  padding-top: 20px;
+  border-top: 1px solid var(--koaryu-rule-soft);
 }
 
-.faqIcon {
-  font-size: 18px;
-  font-weight: 400;
-  opacity: 0.64;
-  transition: transform 250ms ease;
+.priceFacts div {
+  display: grid;
+  gap: 3px;
 }
 
-.faqAnswer {
-  padding: 0 28px 14px 1px;
+.priceFacts dt {
+  font-size: 14px;
+  font-weight: 680;
 }
 
-.faqAnswer p {
+.priceFacts dd {
   margin: 0;
-  font-size: 12.5px;
+  font-size: 14px;
   line-height: 1.5;
-  opacity: 0.76;
+  opacity: 0.72;
 }
 
-.finalPlane {
-  margin-inline: auto;
-  text-align: center;
-  background: var(--koaryu-sheet-raised);
-  box-shadow:
-    10px 10px 0 rgb(59 47 28 / 9%),
-    0 28px 70px rgb(49 36 17 / 15%);
+.priceNote {
+  margin: 18px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  opacity: 0.66;
 }
 
-.finalPlane .planeHeading,
-.finalPlane .lede {
-  margin-inline: auto;
+.priceNote a {
+  color: inherit;
 }
 
-.finalPlane .actions {
-  justify-content: center;
+/* FAQ */
+
+.faqSheet {
+  max-width: 1120px;
 }
 
-.finalLinks {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 18px;
-  justify-content: center;
+.faqGroups {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px clamp(28px, 4vw, 56px);
   margin-top: 28px;
 }
 
-.finalLinks a {
+.faqGroup {
+  scroll-margin-top: calc(var(--journey-masthead) + 24px);
+}
+
+.faqGroup h3 {
+  margin: 16px 0 4px;
+  font-size: 11px;
+  font-weight: 730;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  opacity: 0.62;
+}
+
+.faqItem {
+  border-bottom: 1px solid var(--koaryu-rule-soft);
+}
+
+.faqItem summary {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 52px;
+  padding: 10px 0;
+  font-size: 15px;
+  font-weight: 560;
+  line-height: 1.35;
+  list-style: none;
+  cursor: pointer;
+}
+
+.faqItem summary::-webkit-details-marker {
+  display: none;
+}
+
+.faqItem summary:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
+
+.faqIcon {
+  position: relative;
+  flex: 0 0 auto;
+  width: 11px;
+  height: 11px;
+}
+
+.faqIcon::before,
+.faqIcon::after {
+  position: absolute;
+  top: 5px;
+  left: 0;
+  width: 11px;
+  height: 1.5px;
+  content: "";
+  background: currentColor;
+  transition: transform 200ms ease;
+}
+
+.faqIcon::after {
+  transform: rotate(90deg);
+}
+
+.faqItem[open] .faqIcon::after {
+  transform: rotate(0deg);
+}
+
+.faqItem p {
+  max-width: 62ch;
+  margin: 0 0 18px;
+  font-size: 14px;
+  line-height: 1.6;
+  opacity: 0.78;
+}
+
+/* Closing: the card sits high so the assembled class and the open door stay in view. */
+
+.chapter[data-kind="final"] {
+  align-items: start;
+}
+
+.finalSheet {
+  width: min(100%, 620px);
+  text-align: center;
+}
+
+.finalSheet .sheetHeading {
+  max-width: none;
+}
+
+.finalSheet .lede {
+  margin-inline: auto;
+}
+
+.finalSheet .actions {
+  justify-content: center;
+}
+
+.footer {
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  margin-top: 28px;
+  padding-top: 14px;
+  border-top: 1px solid var(--koaryu-rule-soft);
+  font-size: 13px;
+}
+
+.footer nav {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0 20px;
+}
+
+.footer a {
   display: inline-flex;
   align-items: center;
   min-height: 44px;
+  color: inherit;
+  text-decoration: none;
+  opacity: 0.74;
+}
+
+.footer a:hover {
+  opacity: 1;
+}
+
+.footer p {
+  margin: 0;
   font-size: 12px;
-  opacity: 0.76;
+  opacity: 0.56;
 }
 
-.copyright {
-  margin: 18px 0 0;
-  font-size: 11px;
-  opacity: 0.76;
-}
-
-.journey a:focus-visible,
-.journey button:focus-visible,
-.faqPanel:focus-visible {
+.textLink:focus-visible,
+.featureGrid a:focus-visible,
+.footer a:focus-visible,
+.priceNote a:focus-visible {
   outline: 2px solid currentColor;
-  outline-offset: 4px;
-}
-
-.faqPanel:focus-visible {
   outline-offset: 3px;
 }
 
-/* Fixed positioning, hidden chapters, scene staging, and overflow lock are
-   intentionally unavailable until the client controller sets this marker. */
-.journey[data-enhanced="true"] {
-  height: 100dvh;
-  min-height: 0;
-  overflow: hidden;
-  overscroll-behavior: none;
-}
+/* Responsive */
 
-.journey[data-enhanced="true"] .sceneLayer {
-  position: absolute;
-  z-index: 0;
-  inset: 0;
-  display: block;
-  overflow: hidden;
-}
-
-.journey[data-enhanced="true"] .topbar {
-  position: absolute;
-  z-index: 10;
-  inset: 0 0 auto;
-  color: var(--journey-chrome-color, var(--koaryu-ink));
-  background: transparent;
-  border-bottom-color: transparent;
-  transition: color 550ms ease;
-}
-
-.journey[data-enhanced="true"] .storyRegion {
-  position: absolute;
-  z-index: 2;
-  inset: 0;
-}
-
-.journey[data-enhanced="true"] .chapter {
-  position: absolute;
-  inset: 0;
-  min-height: 0;
-  padding: max(86px, env(safe-area-inset-top)) clamp(20px, 7vw, 112px)
-    max(70px, env(safe-area-inset-bottom));
-  border: 0;
-  color: var(--koaryu-ink);
-  background: transparent;
-  opacity: 0;
-  visibility: hidden;
-  pointer-events: none;
-  transform: translate3d(0, 12px, 0);
-  transition: none;
-}
-
-.journey[data-enhanced="true"] .chapter[aria-hidden="false"] {
-  z-index: 3;
-  opacity: 1;
-  visibility: visible;
-  pointer-events: auto;
-  transform: translate3d(0, 0, 0);
-  transition:
-    opacity 340ms cubic-bezier(0.16, 1, 0.3, 1) 260ms,
-    transform 340ms cubic-bezier(0.16, 1, 0.3, 1) 260ms,
-    visibility 0s;
-}
-
-.journey[data-enhanced="true"] .chapter[data-ink="light"] {
-  color: var(--koaryu-ink-light);
-}
-
-.journey[data-enhanced="true"] .chapter[data-kind="morning"] {
-  transition-delay: 0ms;
-  transition-duration: 200ms;
-}
-
-.journey[data-enhanced="true"] .chapter[data-kind="problem"] {
-  transition-delay: 660ms;
-}
-
-.journey[data-enhanced="true"] .chapter[data-placement="upper"] {
-  padding-top: clamp(110px, 14vh, 165px);
-}
-
-.journey[data-enhanced="true"] .ledgerPlane {
-  width: min(450px, 42%);
-  max-width: none;
-}
-
-.journey[data-enhanced="true"] .mapPlane {
-  width: min(500px, 46%);
-  max-width: none;
-}
-
-.journey[data-enhanced="true"] .pricePlane {
-  width: min(370px, 35%);
-  max-width: none;
-}
-
-.journey[data-enhanced="true"] .aboutPlane {
-  width: min(540px, 49%);
-  max-width: none;
-}
-
-.journey[data-enhanced="true"] .faqShell {
-  width: min(560px, 48%);
-  max-width: none;
-}
-
-.journey[data-enhanced="true"] .chapter[data-chapter-id="stillness"]::before {
-  position: absolute;
-  z-index: -1;
-  inset: 0;
-  content: "";
-  background: radial-gradient(
-    circle at 52% 58%,
-    rgb(248 225 179 / 42%),
-    rgb(123 86 35 / 8%) 44%,
-    rgb(48 34 18 / 18%)
-  );
-  animation: closing-wash 900ms cubic-bezier(0.16, 1, 0.3, 1) both;
-}
-
-@keyframes closing-wash {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
-.journey[data-enhanced="true"] .scrollHint {
-  animation: hint-bob 1800ms ease-in-out infinite;
-}
-
-@keyframes hint-bob {
-  50% {
-    transform: translateY(5px);
-  }
-}
-
-.journey[data-enhanced="true"] .faqPanel {
-  max-height: min(66dvh, 590px);
-  overflow: auto;
-  scrollbar-gutter: stable;
-  scrollbar-width: thin;
-  overscroll-behavior: contain;
-  touch-action: pan-y;
-}
-
-.journey[data-enhanced="true"] .faqGroup {
-  display: none;
-  margin: 0;
-  padding: 0;
-  border: 0;
-}
-
-.journey[data-enhanced="true"] .faqGroup[aria-hidden="false"] {
-  display: block;
-  animation: faq-group-in 220ms cubic-bezier(0.22, 0.75, 0.2, 1) both;
-}
-
-@keyframes faq-group-in {
-  from {
-    opacity: 0.58;
-    transform: translate3d(0, 6px, 0);
-  }
-  to {
-    opacity: 1;
-    transform: translate3d(0, 0, 0);
-  }
-}
-
-.journey[data-enhanced="true"] .faqAnswer {
-  max-height: 0;
-  padding-bottom: 0;
-  overflow: hidden;
-  opacity: 0;
-  transition:
-    max-height 420ms ease,
-    opacity 300ms ease,
-    padding-bottom 420ms ease;
-}
-
-.journey[data-enhanced="true"] .faqItem[data-open="true"] .faqAnswer {
-  max-height: min(40dvh, 320px);
-  padding-bottom: 14px;
-  opacity: 1;
-}
-
-.journey[data-enhanced="true"] .faqQuestion[aria-expanded="true"] .faqIcon {
-  transform: rotate(45deg);
-}
-
-.journey[data-enhanced="true"] .pager,
-.journey[data-enhanced="true"] .rail,
-.journey[data-enhanced="true"] .liveStatus {
-  position: absolute;
-  z-index: 11;
-  display: flex;
-}
-
-.pager {
-  left: clamp(14px, 2vw, 30px);
-  bottom: max(18px, env(safe-area-inset-bottom));
-  gap: 10px;
-  color: var(--journey-chrome-color, var(--koaryu-ink));
-}
-
-.pager button {
-  width: 44px;
-  height: 44px;
-  padding: 0;
-  border: 1px solid currentColor;
-  border-radius: 50%;
-  color: inherit;
-  background: transparent;
-  font: 600 16px/1 inherit;
-  cursor: pointer;
-  opacity: 0.76;
-}
-
-.pager button:disabled {
-  cursor: default;
-  opacity: 0.24;
-}
-
-.rail {
-  top: 50%;
-  right: 4px;
-  flex-direction: column;
-  transform: translateY(-50%);
-  color: var(--journey-chrome-color, var(--koaryu-ink));
-}
-
-.rail button {
-  display: grid;
-  width: 44px;
-  height: 24px;
-  padding: 0;
-  place-items: center;
-  border: 0;
-  color: inherit;
-  background: transparent;
-  cursor: pointer;
-}
-
-.rail button span {
-  display: block;
-  width: 4px;
-  height: 4px;
-  border-radius: 50%;
-  background: currentColor;
-  opacity: 0.32;
-  transition:
-    width 180ms ease,
-    height 180ms ease,
-    opacity 180ms ease;
-}
-
-.rail button[aria-current="step"] span {
-  width: 6px;
-  height: 6px;
-  opacity: 0.96;
-}
-
-.rail button:focus-visible {
-  outline-width: 1px;
-  outline-offset: -4px;
-}
-
-.liveStatus {
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
-}
-
-@media (max-width: 1000px) {
-  .journey[data-enhanced="true"] .chapter {
-    padding-inline: 50px;
+@media (max-width: 1024px) {
+  .productSheet {
+    grid-template-columns: minmax(0, 1fr);
   }
 
-  .journey[data-enhanced="true"] .ledgerPlane {
-    width: min(450px, 52%);
+  .featureGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .journey[data-enhanced="true"] .mapPlane {
-    width: min(500px, 56%);
-  }
-
-  .journey[data-enhanced="true"] .pricePlane {
-    width: min(370px, 45%);
-  }
-
-  .journey[data-enhanced="true"] .aboutPlane,
-  .journey[data-enhanced="true"] .faqShell {
-    width: min(560px, 60%);
-  }
-}
-
-@media (max-width: 820px), (max-width: 1024px) and (max-height: 500px) {
-  .topbar {
-    grid-template-columns: auto minmax(0, 1fr) auto;
-  }
-
-  .primaryNav {
-    justify-content: end;
-    flex-wrap: wrap;
-  }
-
-  .journey[data-enhanced="true"] .topbar {
-    grid-template-columns: auto 1fr auto auto;
-    gap: 10px;
-    padding-inline: 14px;
-  }
-
-  .journey[data-enhanced="true"] .primaryNav {
-    display: none;
-  }
-
-  .journey[data-enhanced="true"] .menuButton {
-    display: inline-grid;
-  }
-
-  .journey[data-enhanced="true"] .mobileNav {
-    position: absolute;
-    top: calc(100% + 4px);
-    right: 14px;
-    display: grid;
-    width: min(280px, calc(100vw - 28px));
-    padding: 12px 18px;
-    border: 1px solid var(--koaryu-rule);
-    border-radius: 8px;
-    color: var(--koaryu-ink);
-    background: var(--koaryu-sheet);
-    box-shadow:
-      8px 8px 0 rgb(45 34 18 / 8%),
-      0 18px 50px rgb(45 34 18 / 15%);
-    opacity: 0;
-    visibility: hidden;
-    pointer-events: none;
-    transform: translateY(-8px);
-    transition:
-      opacity 200ms ease,
-      transform 200ms ease,
-      visibility 0s linear 200ms;
-  }
-
-  .journey[data-enhanced="true"][data-menu-open="true"] .mobileNav {
-    opacity: 1;
-    visibility: visible;
-    pointer-events: auto;
-    transform: translateY(0);
-    transition:
-      opacity 200ms ease,
-      transform 200ms ease,
-      visibility 0s;
-  }
-
-  .journey[data-enhanced="true"] .chapter {
-    padding: max(82px, env(safe-area-inset-top)) 20px max(66px, env(safe-area-inset-bottom));
-  }
-
-  .journey[data-enhanced="true"] .ledgerPlane,
-  .journey[data-enhanced="true"] .mapPlane,
-  .journey[data-enhanced="true"] .pricePlane,
-  .journey[data-enhanced="true"] .aboutPlane,
-  .journey[data-enhanced="true"] .faqShell {
-    width: 100%;
-    max-width: 560px;
-    margin-inline: auto;
-  }
-
-  .journey[data-enhanced="true"] .bandList {
-    grid-template-columns: 1fr;
-  }
-
-  .journey[data-enhanced="true"] .bandRow,
-  .journey[data-enhanced="true"] .bandRow:first-child {
-    display: grid;
-    grid-template-columns: minmax(120px, 0.4fr) minmax(0, 1fr);
-    gap: 14px;
-    padding: 10px 0;
-    border-top: 1px solid var(--koaryu-rule-soft);
+  .featureGrid li:not(:nth-child(3n + 1)) {
+    padding-left: 0;
     border-left: 0;
   }
 
-  .journey[data-enhanced="true"] .bandRow p {
-    margin: 0;
-  }
-
-  .journey[data-enhanced="true"] .problemCopy {
-    grid-template-columns: 1fr;
-    gap: 28px;
-  }
-
-  .journey[data-enhanced="true"] .pager {
-    left: 50%;
-    bottom: max(10px, env(safe-area-inset-bottom));
-    transform: translateX(-50%);
+  .featureGrid li:nth-child(2n) {
+    padding-left: 24px;
+    border-left: 1px solid var(--koaryu-rule-soft);
   }
 }
 
-@media (max-width: 560px) {
-  .topbar {
-    padding-inline: 16px;
-  }
-
-  .primaryNav {
-    gap: 8px 16px;
+@media (max-width: 820px) {
+  .journey {
+    --journey-masthead: 68px;
   }
 
   .chapter {
-    min-height: 0;
-    padding: 68px 18px;
+    min-height: 92svh;
+    padding-inline: 16px;
   }
 
-  .heroHeading {
-    font-size: clamp(50px, 16vw, 72px);
-  }
-
-  .statementHeading {
-    font-size: clamp(38px, 12vw, 62px);
-  }
-
-  .planeHeading {
-    font-size: clamp(30px, 9.5vw, 44px);
+  .chapter[data-kind="hero"],
+  .chapter[data-kind="problem"] {
+    min-height: 100svh;
+    padding-inline: 22px;
   }
 
   .problemCopy,
-  .proofBlock,
-  .ledgerRow,
-  .bandHeading {
-    grid-template-columns: 1fr;
+  .sheetHeader,
+  .faqGroups {
+    grid-template-columns: minmax(0, 1fr);
   }
 
-  .bandHeading {
-    display: grid;
+  .problemCopy {
+    gap: 28px;
+    align-items: start;
   }
 
-  .bandList {
-    grid-template-columns: 1fr;
+  .featureGrid {
+    grid-template-columns: minmax(0, 1fr);
   }
 
-  .bandRow,
-  .bandRow:first-child {
-    padding: 14px 0;
-    border-top: 1px solid var(--koaryu-rule-soft);
+  .featureGrid li,
+  .featureGrid li:nth-child(2n) {
+    padding: 18px 0;
     border-left: 0;
+  }
+
+  .priceSheet {
+    width: 100%;
+  }
+
+  .chapter[data-kind="final"] {
+    padding-top: calc(var(--journey-masthead) + 16px);
+  }
+
+  .footer nav {
+    gap: 0 14px;
   }
 
   .actions {
     display: grid;
   }
 
-  .action {
-    width: 100%;
-  }
-
-  .journey[data-enhanced="true"] .faqPanel {
-    max-height: calc(100dvh - 174px);
-  }
-
-  .journey[data-enhanced="true"] .chapter {
-    padding-inline: 20px 48px;
-  }
-
-  .journey[data-enhanced="true"] .ledgerPlane {
-    padding: 18px 20px;
-  }
-
-  .journey[data-enhanced="true"] .ledgerPlane .kicker {
-    margin-bottom: 10px;
-  }
-
-  .journey[data-enhanced="true"] .ledgerPlane .planeHeading {
-    font-size: clamp(30px, 9vw, 40px);
-  }
-
-  .journey[data-enhanced="true"] .ledgerPlane .supportingLede {
-    margin-top: 11px;
-    font-size: 13px;
-  }
-
-  .journey[data-enhanced="true"] .ledgerPlane .ledgerList {
-    margin-top: 13px;
-  }
-
-  .journey[data-enhanced="true"] .ledgerPlane .ledgerRow {
-    gap: 4px;
-    padding-block: 9px;
-  }
-
-  .journey[data-enhanced="true"] .ledgerPlane .ledgerRow p {
-    font-size: 12px;
-    line-height: 1.42;
-  }
-
-  .journey[data-enhanced="true"] .ledgerPlane .planeLink {
-    margin-top: 6px;
-  }
-
-  .journey[data-enhanced="true"] .faqIndex {
-    gap: 2px 12px;
-  }
-
-  .journey[data-enhanced="true"] .faqIndex a {
-    min-height: 44px;
-  }
-}
-
-@media (min-width: 821px) and (max-height: 800px) {
-  .journey[data-enhanced="true"] .ledgerPlane .supportingLede,
-  .journey[data-enhanced="true"] .mapPlane .supportingLede,
-  .journey[data-enhanced="true"] .aboutPlane .supportingLede {
-    display: none;
-  }
-
-  .journey[data-enhanced="true"] .plane {
-    padding-block: 20px;
-  }
-}
-
-/* Server chapter fallback during the responsive handoff. The hydrated compact
-   controller replaces this tree with MobileJourneyChapter. */
-@media (max-width: 820px), (max-width: 1024px) and (max-height: 500px) {
-  .journey[data-enhanced="true"] .chapter,
-  .journey[data-enhanced="true"] .chapter[data-placement="upper"] {
-    inset: max(68px, env(safe-area-inset-top)) 0 max(68px, calc(env(safe-area-inset-bottom) + 58px));
-    display: flex;
-    flex-direction: column;
-    align-items: stretch;
-    padding: 18px 48px 24px 20px;
-    overflow-x: hidden;
-    overflow-y: auto;
-    overscroll-behavior-y: contain;
-    touch-action: pan-y pinch-zoom;
-    scrollbar-width: thin;
-    scroll-padding-block: 18px;
-    transform: none;
-  }
-
-  .journey[data-enhanced="true"] .chapter > * {
-    flex: 0 0 auto;
-    width: 100%;
-    max-width: 560px;
-    margin-block: auto;
-    margin-inline: auto;
-  }
-
-  .journey[data-enhanced="true"] .chapter[aria-hidden="false"] {
-    transition:
-      opacity 220ms ease 60ms,
-      visibility 0s;
-    transform: none;
-  }
-
-  .journey[data-enhanced="true"] .chapter[data-kind="problem"] {
-    transition-delay: 160ms;
-  }
-
-  .journey[data-enhanced="true"] .plane,
-  .journey[data-enhanced="true"] .framedPlane,
-  .journey[data-enhanced="true"] .ledgerPlane {
-    padding: 22px 20px;
-  }
-
-  .journey[data-enhanced="true"] .bandPlane {
-    align-self: auto;
-  }
-  .journey[data-enhanced="true"] .bandHeading {
-    display: block;
-  }
-
-  .journey[data-enhanced="true"] .bandList,
-  .journey[data-enhanced="true"] .bandRow,
-  .journey[data-enhanced="true"] .bandRow:first-child,
-  .journey[data-enhanced="true"] .ledgerRow {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 4px;
-  }
-
-  .journey[data-enhanced="true"] .bandRow,
-  .journey[data-enhanced="true"] .bandRow:first-child,
-  .journey[data-enhanced="true"] .ledgerRow {
-    padding-block: 12px;
-  }
-
-  .journey[data-enhanced="true"] .ledgerRow p,
-  .journey[data-enhanced="true"] .bandRow p,
-  .journey[data-enhanced="true"] .priceFacts dd,
-  .journey[data-enhanced="true"] .statementList dd,
-  .journey[data-enhanced="true"] .faqAnswer p,
-  .journey[data-enhanced="true"] .routeRow a > span > span {
-    display: block;
-    font-size: 14px;
-    line-height: 1.5;
-  }
-
-  .journey[data-enhanced="true"] .ledgerPlane .supportingLede,
-  .journey[data-enhanced="true"] .mapPlane .supportingLede,
-  .journey[data-enhanced="true"] .aboutPlane .supportingLede {
-    display: block;
-  }
-  .journey[data-enhanced="true"] .faqShell {
-    height: auto;
-  }
-  .journey[data-enhanced="true"] .faqPanel {
-    max-height: none;
-    overflow: visible;
-    scrollbar-gutter: auto;
-  }
-  .journey[data-enhanced="true"] .faqItem[data-open="true"] .faqAnswer {
-    max-height: none;
-  }
-
-  .journey[data-enhanced="true"] .pager button {
-    color: var(--koaryu-ink);
-    background: var(--koaryu-sheet);
-    opacity: 1;
-  }
-  .journey[data-enhanced="true"] .pager button:disabled {
-    opacity: 0.4;
-  }
-  .journey[data-enhanced="true"] .scrollHint {
-    margin-top: 24px;
-  }
-}
-
-@media (max-width: 560px) {
-  .journey[data-enhanced="true"] .heroHeading {
-    font-size: clamp(44px, 14vw, 64px);
-  }
-  .journey[data-enhanced="true"] .heroCopy .lede {
-    font-size: 14px;
-    line-height: 1.5;
-  }
-  .journey[data-enhanced="true"] .heroCopy .actions {
-    margin-top: 22px;
-  }
-}
-
-.mobileFaqTopic,
-.mobileHint,
-.mobileProgress {
-  display: none;
-}
-
-/* Mobile has a consistent frame of its own. Desktop rules above stay intact. */
-@media (max-width: 820px), (max-width: 1024px) and (max-height: 500px) {
-  .journey[data-enhanced="true"] .topbar {
-    grid-template-columns: minmax(0, 1fr) auto auto;
-    gap: 16px;
-    min-height: 64px;
-    padding: 10px 16px;
-    border: 0;
-    color: var(--journey-mobile-header-color, var(--koaryu-ink));
-    background: transparent;
-    transition: none;
-  }
-
-  .journey[data-enhanced="true"] .primaryNav {
-    display: none;
-  }
-  .journey[data-enhanced="true"] .mobileNav {
-    border: 0;
-    right: 16px;
-    width: min(360px, calc(100vw - 32px));
-    max-height: calc(100dvh - 160px);
-    overflow-y: auto;
-    overscroll-behavior: contain;
-    touch-action: pan-y;
-  }
-  .journey[data-enhanced="true"] .signIn {
-    grid-column: 2;
-    grid-row: 1;
-    opacity: 1;
-  }
-  .journey[data-enhanced="true"] .menuButton {
-    display: inline-grid;
-    grid-column: 3;
-    grid-row: 1;
-    border-radius: 8px;
-    border: 0;
-  }
-
-  .journey[data-enhanced="true"] .chapter,
-  .journey[data-enhanced="true"] .chapter[data-placement="upper"] {
-    inset: max(64px, env(safe-area-inset-top)) 0 max(88px, calc(env(safe-area-inset-bottom) + 80px));
-    padding: 18px 16px 22px;
-    scroll-padding-block: 18px;
-    mask-image: linear-gradient(
-      to bottom,
-      transparent,
-      #000 10px,
-      #000 calc(100% - 10px),
-      transparent
-    );
-  }
-
-  .journey[data-enhanced="true"] .chapter > * {
-    margin-block: 0;
-  }
-  .journey[data-enhanced="true"] .chapter > .heroCopy,
-  .journey[data-enhanced="true"] .chapter > .problemCopy,
-  .journey[data-enhanced="true"] .chapter > .transitionCopy {
-    margin-block: auto;
-  }
-  .journey[data-enhanced="true"] .chapter[data-placement="upper"] > .transitionCopy {
-    margin-block: 28px 0;
-  }
-
-  .journey[data-enhanced="true"] .plane,
-  .journey[data-enhanced="true"] .framedPlane,
-  .journey[data-enhanced="true"] .ledgerPlane {
-    padding: 22px;
-    border: 0;
-    border-radius: 12px;
-    box-shadow: 0 4px 16px rgb(45 34 18 / 7%);
-  }
-
-  .journey[data-enhanced="true"] .planeHeading,
-  .journey[data-enhanced="true"] .ledgerPlane .planeHeading {
-    max-width: none;
-    font-size: clamp(28px, 8vw, 36px);
-    line-height: 1.06;
-    letter-spacing: -0.035em;
-    text-wrap: pretty;
-  }
-  .journey[data-enhanced="true"] .heroHeading {
-    font-size: clamp(44px, 13vw, 62px);
-    line-height: 0.98;
-  }
-  .journey[data-enhanced="true"] .heroCopy .action:nth-child(2) {
-    background: var(--koaryu-paper);
-  }
-  .journey[data-enhanced="true"] .heroCopy .scrollHint {
-    color: var(--koaryu-paper);
-    opacity: 1;
-  }
-  .journey[data-enhanced="true"] .desktopHint {
-    display: none;
-  }
-  .journey[data-enhanced="true"] .mobileHint {
-    display: inline;
-  }
-
-  .journey[data-enhanced="true"] .kicker,
-  .journey[data-enhanced="true"] .ledgerPlane .kicker {
-    margin-bottom: 12px;
-    font-size: 10px;
-    letter-spacing: 0.14em;
-  }
-  .journey[data-enhanced="true"] .lede,
-  .journey[data-enhanced="true"] .ledgerPlane .supportingLede {
-    margin-top: 14px;
-    font-size: 15px;
-    line-height: 1.5;
-    opacity: 0.85;
-  }
-  .journey[data-enhanced="true"] .proofBlock {
-    grid-template-columns: 1fr;
-    gap: 10px;
-    margin-top: 22px;
-    padding-top: 16px;
-  }
-  .journey[data-enhanced="true"] .ledgerList,
-  .journey[data-enhanced="true"] .ledgerPlane .ledgerList,
-  .journey[data-enhanced="true"] .bandList,
-  .journey[data-enhanced="true"] .routeList {
-    margin-top: 18px;
-  }
-  .journey[data-enhanced="true"] .ledgerRow,
-  .journey[data-enhanced="true"] .ledgerPlane .ledgerRow,
-  .journey[data-enhanced="true"] .bandRow,
-  .journey[data-enhanced="true"] .bandRow:first-child {
-    gap: 0;
-    padding-block: 8px 14px;
-  }
-  .journey[data-enhanced="true"] .ledgerRow h3,
-  .journey[data-enhanced="true"] .bandRow h3 {
-    font-size: 15px;
-  }
-  .journey[data-enhanced="true"] .ledgerRow p,
-  .journey[data-enhanced="true"] .bandRow p {
-    opacity: 0.85;
-  }
-  .journey[data-enhanced="true"] .routeRow a {
-    gap: 14px;
-    padding-block: 16px;
-  }
-  .journey[data-enhanced="true"] .routeRow strong {
-    font-size: 16px;
-    line-height: 1.35;
-  }
-  .journey[data-enhanced="true"] .routeRow small {
-    font-size: 10px;
-    letter-spacing: 0.06em;
-  }
-  .journey[data-enhanced="true"] .price {
-    margin-top: 24px;
-    font-size: 80px;
-  }
-  .journey[data-enhanced="true"] .planeLink {
-    margin-top: 10px;
-    font-size: 13px;
-  }
-
-  .journey[data-enhanced="true"] .faqIndex {
-    display: none;
-  }
-  .journey[data-enhanced="true"] .mobileFaqTopic {
-    display: grid;
-    gap: 7px;
-    margin-bottom: 16px;
-    padding: 14px 18px;
-    border: 0;
-    border-radius: 12px;
-    color: var(--koaryu-ink);
-    background: var(--koaryu-paper);
-  }
-  .mobileFaqTopic > span {
-    font-size: 10px;
-    font-weight: 700;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-  }
-  .mobileFaqTopic select {
-    width: 100%;
-    min-height: 44px;
-    padding: 8px 12px;
-    border: 0;
-    border-radius: 7px;
-    font: inherit;
-    font-size: 16px;
-    color: var(--koaryu-ink);
-    background: var(--koaryu-sheet-raised);
-  }
-  .journey[data-enhanced="true"] .faqQuestion {
-    padding-block: 15px;
-    gap: 14px;
-    font-family: inherit;
-    font-size: 15px;
-    font-weight: 650;
-    line-height: 1.4;
-  }
-  .journey[data-enhanced="true"] .faqAnswer {
-    padding-right: 14px;
-  }
-
-  .journey[data-enhanced="true"] .rail {
-    display: none;
-  }
-  .journey[data-enhanced="true"] .pager {
-    inset: auto 0 0;
-    display: grid;
-    grid-template-columns: 44px minmax(0, 1fr) 44px;
-    gap: 18px;
-    align-items: center;
-    min-height: max(76px, calc(env(safe-area-inset-bottom) + 68px));
-    padding: 10px 20px max(12px, env(safe-area-inset-bottom));
-    border: 0;
-    color: var(--journey-mobile-footer-color, var(--koaryu-ink));
-    background: transparent;
-    transform: none;
-  }
-  .journey[data-enhanced="true"] .pager > button {
-    border: 0;
-    color: inherit;
-    background: transparent;
-    opacity: 1;
-  }
-  .journey[data-enhanced="true"] .pager > button:disabled {
-    opacity: 0.3;
-  }
-  .mobileProgress {
-    display: grid;
-    min-width: 0;
-    text-align: center;
-  }
-  .mobileProgress > span {
-    font-size: 10px;
-    font-weight: 700;
-    letter-spacing: 0.12em;
-  }
-  .mobileProgress select {
-    width: 100%;
-    min-height: 44px;
-    padding: 4px 20px 4px 4px;
-    border: 0;
-    font: inherit;
-    font-size: 16px;
-    font-weight: 600;
-    color: inherit;
-    background: transparent;
-    text-align: center;
-    text-overflow: ellipsis;
-  }
-  .mobileProgress option {
-    color: var(--koaryu-ink);
-    background: var(--koaryu-paper);
-  }
-}
-
-@media (max-width: 820px), (max-width: 1024px) and (max-height: 500px) {
-  .journey[data-enhanced="true"][data-compact="true"] {
-    --mobile-header-height: 65px;
-    --mobile-footer-height: max(82px, calc(env(safe-area-inset-bottom) + 70px));
-    position: fixed;
-    inset: var(--journey-viewport-top, 0px) 0 auto;
-    width: 100%;
-    height: var(--journey-viewport-height, 100dvh);
-    touch-action: pan-x pinch-zoom;
-    overscroll-behavior: none;
-  }
-  .journey[data-enhanced="true"][data-zoomed="true"] {
-    touch-action: auto;
-  }
-  .journey[data-enhanced="true"] .topbar {
-    height: var(--mobile-header-height);
-    min-height: 0;
-  }
-  .journey[data-enhanced="true"] .pager {
-    height: var(--mobile-footer-height);
-    min-height: 0;
-  }
-  .journey[data-enhanced="true"] .mobileNav {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    max-height: none;
-    overflow: visible;
-  }
-}
-@media (max-width: 820px) and (max-height: 600px),
-  (min-width: 821px) and (max-width: 1024px) and (max-height: 500px) {
-  .journey[data-enhanced="true"][data-compact="true"] {
-    --mobile-header-height: 57px;
-    --mobile-footer-height: max(68px, calc(env(safe-area-inset-bottom) + 64px));
-  }
-  .journey[data-enhanced="true"] .topbar {
-    padding-block: 6px;
-  }
-  .journey[data-enhanced="true"] .pager {
-    padding-block: 4px max(4px, env(safe-area-inset-bottom));
-  }
-}
-
-/* The short mobile crop puts the pale room behind Daily admin's light copy.
-   Shade the scene itself so the artwork and transparent navigation stay visible. */
-.journey[data-enhanced="true"][data-compact="true"] .sceneLayer::after {
-  position: absolute;
-  z-index: 1;
-  inset: 0;
-  content: "";
-  pointer-events: none;
-  background: rgb(25 18 8 / 68%);
-  opacity: 0;
-  transition: opacity 360ms ease;
-}
-
-.journey[data-enhanced="true"][data-compact="true"][data-active-chapter="the-problem"]
-  .sceneLayer::after {
-  opacity: 1;
-  transition: none;
-}
-
-.journey[data-enhanced="true"][data-compact="true"][data-active-chapter="the-problem"] .topbar {
-  color: var(--koaryu-ink-light);
-}
-
-@media (pointer: coarse) {
-  .rail button {
-    width: 44px;
-    height: 24px;
+  .heroCopy .actions {
+    max-width: 360px;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .journey *,
-  .journey *::before,
-  .journey *::after {
-    scroll-behavior: auto !important;
-    animation-delay: 0ms !important;
-    animation-duration: 1ms !important;
-    animation-iteration-count: 1 !important;
-    transition-delay: 0ms !important;
-    transition-duration: 1ms !important;
-  }
-
-  .journey[data-enhanced="true"] .chapter[aria-hidden="false"] {
-    opacity: 1;
-    visibility: visible;
-    transform: none;
+  .masthead,
+  .textLink span,
+  .featureGrid h3 a::after,
+  .faqIcon::before,
+  .faqIcon::after {
+    transition: none;
   }
 }

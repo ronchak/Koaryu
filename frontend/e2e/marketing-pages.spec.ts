@@ -164,7 +164,7 @@ test("document navigation and guide links work before JavaScript", async ({ brow
   }
 });
 
-test("a marketing detail releases the landing lock and Back restores the journey", async ({
+test("a guide opened from the landing page returns to the same section on Back", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 393, height: 617 });
@@ -173,17 +173,11 @@ test("a marketing detail releases the landing lock and Back restores the journey
   await expect(page.locator("[data-enhanced]")).toHaveAttribute("data-enhanced", "true");
   await page.locator('a[href="/features/student-management"]:visible').click();
   await expect(page).toHaveURL(`${origin}/features/student-management`);
-  await expect(page.locator("html")).not.toHaveAttribute("data-koaryu-mobile-journey", "true");
   await page.locator("footer").scrollIntoViewIfNeeded();
   expect(await page.evaluate(() => scrollY)).toBeGreaterThan(0);
   await page.goBack();
   await expect(page).toHaveURL(`${origin}/#features`);
-  await expect(page.locator("html")).toHaveAttribute("data-koaryu-mobile-journey", "true");
-  await expect(page.locator("[data-active-chapter]")).toHaveAttribute(
-    "data-active-chapter",
-    "features",
-  );
-  expect(await page.evaluate(() => scrollY)).toBe(0);
+  await expect(page.locator("#features")).toBeInViewport();
 });
 
 test("legal pages retain readable documents and shared navigation", async ({ page }) => {

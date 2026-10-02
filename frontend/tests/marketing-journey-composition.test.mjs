@@ -8,96 +8,77 @@ function source(path) {
   return readFileSync(new URL(path, import.meta.url), "utf8");
 }
 
-const landingSource = source("../src/components/marketing/landing-page.tsx");
 const chapterSource = source("../src/components/marketing/journey/journey-chapters.tsx");
 const controllerSource = source("../src/components/marketing/journey/journey-controller.tsx");
 const journeyCss = source("../src/components/marketing/journey/journey.module.css");
+
 describe("Journey server composition", () => {
-  it("maps the canonical 14 chapters once into semantic initial HTML", () => {
-    assert.equal(landingPageContent.chapters.length, 14);
+  it("maps the seven chapters once into semantic initial HTML", () => {
     assert.deepEqual(
       landingPageContent.chapters.map(({ id }) => id),
-      [
-        "welcome",
-        "the-problem",
-        "studio-view",
-        "product",
-        "features",
-        "use-cases",
-        "signals-gather",
-        "explore",
-        "class-ready",
-        "pricing",
-        "about",
-        "faq",
-        "stillness",
-        "begin",
-      ],
+      ["welcome", "the-problem", "product", "features", "pricing", "faq", "begin"],
     );
     assert.match(chapterSource, /landingPageContent\.chapters\.map/);
     assert.match(chapterSource, /<section[\s\S]*id=\{chapter\.id\}/);
-    assert.match(chapterSource, /data-journey-chapter=""/);
-    assert.match(chapterSource, /<h1/);
-    assert.match(chapterSource, /<h2/);
-    assert.match(chapterSource, /<ul/);
-    assert.match(chapterSource, /<dl/);
-    assert.match(chapterSource, /<nav/);
+    assert.match(chapterSource, /data-scene=\{chapter\.scene\}/);
+    assert.match(chapterSource, /<main id="main-content"/);
+    for (const element of ["<h1", "<h2", "<h3", "<ul", "<dl", "<nav", "<details", "<summary"]) {
+      assert.ok(chapterSource.includes(element), element);
+    }
     assert.doesNotMatch(chapterSource, /const\s+(?:FEATURE|FAQ|PRICE|ABOUT)_/);
+  });
+
+  it("shows the real product with its sample-data caption", () => {
+    const product = landingPageContent.chapters.find((chapter) => chapter.kind === "product");
+    assert.ok(product);
+    assert.match(product.image.src, /^\/marketing\/product\/.+\.webp$/);
+    assert.match(product.image.caption, /sample studio data/);
+    assert.match(chapterSource, /<Image[\s\S]*alt=\{chapter\.image\.alt\}/);
   });
 });
 
-describe("Journey progressive enhancement and accessibility", () => {
-  it("keeps initial chapters in ordinary flow and gates all cinematic staging", () => {
-    const defaultChapter = journeyCss.match(/\.chapter\s*\{(?<body>[\s\S]*?)\n\}/);
-    assert.ok(defaultChapter?.groups?.body);
-    assert.match(defaultChapter.groups.body, /position:\s*relative/);
+describe("Journey scrolling and accessibility", () => {
+  it("scrolls natively without intercepting wheel, touch, or keyboard input", () => {
     assert.doesNotMatch(
-      defaultChapter.groups.body,
-      /position:\s*(?:fixed|absolute)|opacity:\s*0|visibility:\s*hidden|pointer-events:\s*none/,
+      controllerSource,
+      /addEventListener\("(?:wheel|touchstart|touchmove|touchend|keydown)"/,
     );
-
-    const enhancedRoot = journeyCss.match(
-      /\.journey\[data-enhanced="true"\]\s*\{(?<body>[\s\S]*?)\n\}/,
-    );
-    assert.ok(enhancedRoot?.groups?.body);
-    assert.match(enhancedRoot.groups.body, /height:\s*100dvh/);
-    assert.match(enhancedRoot.groups.body, /overflow:\s*hidden/);
-    assert.match(
-      journeyCss,
-      /\.journey\[data-enhanced="true"\] \.chapter\s*\{[\s\S]*position:\s*absolute;[\s\S]*visibility:\s*hidden;/,
-    );
-    assert.match(journeyCss, /\.journey\[data-enhanced="true"\] \.chapter\[aria-hidden="false"\]/);
-    assert.doesNotMatch(chapterSource, /\binert(?:=|\s)/);
+    assert.doesNotMatch(controllerSource, /preventDefault\(/);
+    assert.match(controllerSource, /addEventListener\("scroll", schedule, \{ passive: true \}\)/);
+    assert.doesNotMatch(journeyCss, /overflow:\s*hidden;[\s\S]{0,40}height:\s*100dvh/);
   });
 
-  it("activates inert, live, focus, hit-area, FAQ, and reduced-motion contracts", () => {
-    assert.match(controllerSource, /chapter\.inert = !active/);
-    assert.match(controllerSource, /chapter\.setAttribute\("aria-hidden"/);
-    assert.match(controllerSource, /aria-live="polite"/);
-    assert.match(controllerSource, /aria-current=\{index === pageIndex \? "step"/);
-    assert.match(chapterSource, /aria-expanded="true"/);
-    assert.match(chapterSource, /aria-controls=\{answerId\}/);
-    assert.match(journeyCss, /\.pager button\s*\{[\s\S]*width:\s*44px;[\s\S]*height:\s*44px;/);
-    assert.match(journeyCss, /\.rail button\s*\{[\s\S]*width:\s*44px;[\s\S]*height:\s*24px;/);
-    assert.match(journeyCss, /outline:\s*2px solid currentColor/);
-    assert.match(journeyCss, /@media \(prefers-reduced-motion: reduce\)/);
-    assert.match(journeyCss, /animation-delay:\s*0ms !important/);
-    assert.match(journeyCss, /transition-delay:\s*0ms !important/);
-    assert.match(controllerSource, /matchMedia\("\(prefers-reduced-motion: reduce\)"\)/);
-    assert.match(controllerSource, /reducedMotionRef\.current/);
-    assert.match(controllerSource, /topic\.tabIndex = active \? 0 : -1/);
-    assert.match(controllerSource, /nextFaqTopicIndex\(/);
-    assert.match(controllerSource, /\.querySelector<HTMLElement>\(`\[data-faq-topic=/);
-    assert.match(journeyCss, /\.faqIndex a\s*\{[^}]*min-width:\s*24px;[^}]*min-height:\s*44px;/s);
+  it("keeps chapters in ordinary flow with a fixed, decorative scene behind them", () => {
+    const chapter = journeyCss.match(/\n\.chapter\s*\{(?<body>[\s\S]*?)\n\}/);
+    assert.ok(chapter?.groups?.body);
+    assert.match(chapter.groups.body, /position:\s*relative/);
+    assert.doesNotMatch(chapter.groups.body, /opacity:\s*0|visibility:\s*hidden|pointer-events/);
     assert.match(
       journeyCss,
-      /@media \(max-width: 560px\)[\s\S]*\.journey\[data-enhanced="true"\] \.chapter\s*\{[\s\S]*padding-inline:\s*20px 48px;/,
+      /\.sceneLayer\s*\{[\s\S]*position:\s*fixed;[\s\S]*pointer-events:\s*none;/,
     );
-    assert.match(journeyCss, /\.rail button\s*\{[\s\S]*width:\s*44px;[\s\S]*height:\s*24px;/);
+    assert.match(controllerSource, /className=\{styles\.sceneLayer\} aria-hidden="true"/);
+  });
+
+  it("gives dark chapters their own ground before the scene is enhanced", () => {
+    assert.match(
+      journeyCss,
+      /\.journey:not\(\[data-enhanced="true"\]\) \.chapter\[data-ink="light"\]\s*\{[^}]*background/,
+    );
+  });
+
+  it("offers a skip link, visible focus, and reduced-motion still frames", () => {
+    assert.match(controllerSource, /href="#main-content"/);
+    assert.match(journeyCss, /outline:\s*2px solid currentColor/);
+    assert.match(journeyCss, /@media \(prefers-reduced-motion: reduce\)/);
+    assert.match(controllerSource, /matchMedia\("\(prefers-reduced-motion: reduce\)"\)/);
+    assert.match(controllerSource, /nearestAnchorScene\(/);
+    assert.match(journeyCss, /\.footer a\s*\{[^}]*min-height:\s*44px/);
+    assert.match(journeyCss, /\.faqItem summary\s*\{[^}]*min-height:\s*52px/);
   });
 
   it("uses only scoped marketing materials and no external runtime", () => {
-    const completeSource = `${landingSource}\n${chapterSource}\n${controllerSource}\n${journeyCss}`;
+    const completeSource = `${chapterSource}\n${controllerSource}\n${journeyCss}`;
     assert.doesNotMatch(
       completeSource,
       /var\(--(?:bg|surface|border|text-[\w-]+|accent)|\b(?:bg-bg|bg-surface|text-text-primary|text-text-secondary|border-border|text-accent)\b/,
@@ -105,12 +86,6 @@ describe("Journey progressive enhancement and accessibility", () => {
     assert.doesNotMatch(
       completeSource,
       /from\s+["']https?:|\bsrc=["']https?:|unpkg|<script|@font-face|url\(["']?https?:/i,
-    );
-    assert.match(journeyCss, /chapter\[data-chapter-id="stillness"\]::before/);
-    assert.equal(
-      journeyCss.match(/radial-gradient\(/g)?.length,
-      1,
-      "closing stillness is the only full-frame wash",
     );
   });
 });
