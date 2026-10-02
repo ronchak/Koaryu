@@ -86,9 +86,14 @@
   transform: none;
 }
 
-/* In-page links travel through the story instead of cutting to it. */
+/*
+ * In-page links travel through the story instead of cutting to it. When a
+ * scroll comes to rest near a chapter, it settles onto it; long chapters and
+ * the open interludes still scroll freely.
+ */
 :global(html):has(.journey) {
   scroll-behavior: smooth;
+  scroll-snap-type: y proximity;
 }
 
 /* Chapters */
@@ -108,6 +113,7 @@
   position: relative;
   display: grid;
   min-height: 100svh;
+  scroll-snap-align: start;
   padding: calc(var(--journey-masthead) + clamp(32px, 7vh, 88px)) var(--journey-gutter)
     clamp(48px, 10vh, 120px);
   align-items: center;

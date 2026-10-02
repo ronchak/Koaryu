@@ -75,6 +75,12 @@ describe("Journey scrolling and accessibility", () => {
     assert.match(controllerSource, /className=\{styles\.sceneLayer\} aria-hidden="true"/);
   });
 
+  it("settles gently onto chapters without trapping long ones", () => {
+    assert.match(journeyCss, /scroll-snap-type:\s*y proximity/);
+    assert.doesNotMatch(journeyCss, /scroll-snap-type:\s*y mandatory/);
+    assert.match(journeyCss, /\n\.chapter\s*\{[^}]*scroll-snap-align:\s*start;/);
+  });
+
   it("gives dark chapters their own ground before the scene is enhanced", () => {
     assert.match(
       journeyCss,
