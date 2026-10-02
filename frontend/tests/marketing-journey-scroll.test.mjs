@@ -4,10 +4,12 @@ import { describe, it } from "node:test";
 import { landingPageContent } from "../src/lib/landing-page-content.ts";
 import {
   LANDING_HASH_ALIASES,
-  anchorsForLayout,
-  nearestAnchorScene,
+  TRANSITION_END,
+  TRANSITION_START,
+  keyframesForLayout,
   progressForScroll,
   resolveLegacyHash,
+  stillFrame,
 } from "../src/components/marketing/journey/scroll-model.ts";
 
 const anchors = [
@@ -37,32 +39,66 @@ describe("Journey scroll model", () => {
     assert.equal(progressForScroll(250, bottom), 0.43);
   });
 
-  it("snaps to the nearest chapter's still frame for reduced motion", () => {
-    assert.equal(nearestAnchorScene(350, anchors), 0);
-    assert.equal(nearestAnchorScene(450, anchors), 0.1);
-    assert.equal(nearestAnchorScene(5000, anchors), 0.3);
+  it("shows only chapter still frames for reduced motion", () => {
+    const scenes = [0, 0.1, 0.3, 0.5];
+    assert.equal(stillFrame(0.04, scenes), 0);
+    assert.equal(stillFrame(0.06, scenes), 0.1);
+    assert.equal(stillFrame(0.21, scenes), 0.3);
+    assert.equal(stillFrame(0.9, scenes), 0.5);
   });
 
-  it("centers chapters, clamps to the scrollable range, and keeps anchors increasing", () => {
-    const result = anchorsForLayout(
+  it("holds each chapter while it is read and moves only while the gap crosses the screen", () => {
+    const keyframes = keyframesForLayout(
       [
-        { top: 0, height: 900, scene: 0 },
-        { top: 900, height: 900, scene: 0.1 },
-        { top: 1800, height: 1400, scene: 0.86 },
-        { top: 3200, height: 600, scene: 1 },
+        { scene: 0, gapCenter: 1300 },
+        { scene: 0.1, gapCenter: 2900 },
+        { scene: 0.3, gapCenter: Number.POSITIVE_INFINITY },
       ],
-      900,
-      2900,
+      1000,
+      5000,
     );
-    assert.deepEqual(result, [
+    assert.equal(TRANSITION_START, 0.85);
+    assert.equal(TRANSITION_END, 0.15);
+    assert.deepEqual(keyframes, [
       { scrollY: 0, scene: 0 },
-      { scrollY: 900, scene: 0.1 },
-      { scrollY: 2050, scene: 0.86 },
-      { scrollY: 2900, scene: 1 },
+      { scrollY: 450, scene: 0 },
+      { scrollY: 1150, scene: 0.1 },
+      { scrollY: 2050, scene: 0.1 },
+      { scrollY: 2750, scene: 0.3 },
     ]);
+    // Reading the first two chapters moves nothing.
+    assert.equal(progressForScroll(200, keyframes), 0);
+    assert.equal(progressForScroll(1600, keyframes), 0.1);
+    // Halfway through a gap, the story is halfway through its beat.
+    assert.ok(Math.abs(progressForScroll(800, keyframes) - 0.05) < 1e-9);
+    assert.equal(progressForScroll(4000, keyframes), 0.3);
+  });
+
+  it("clamps keyframes to the scrollable range without ever decreasing", () => {
+    const keyframes = keyframesForLayout(
+      [
+        { scene: 0, gapCenter: 300 },
+        { scene: 0.5, gapCenter: 900 },
+        { scene: 1, gapCenter: Number.POSITIVE_INFINITY },
+      ],
+      1000,
+      600,
+    );
+    const positions = keyframes.map(({ scrollY }) => scrollY);
+    assert.deepEqual(
+      positions,
+      [...positions].sort((a, b) => a - b),
+    );
+    assert.ok(positions.every((position) => position >= 0 && position <= 600));
+    assert.equal(progressForScroll(600, keyframes), 1);
+    assert.deepEqual(keyframesForLayout([], 1000, 600), []);
   });
 
   it("orders chapter scenes so scrolling down always moves the story forward", () => {
+    const withInterludes = landingPageContent.chapters
+      .filter((chapter) => "interludeAfter" in chapter && chapter.interludeAfter)
+      .map(({ id }) => id);
+    assert.deepEqual(withInterludes, ["welcome", "the-problem", "product", "features"]);
     const scenes = landingPageContent.chapters.map(({ scene }) => scene);
     assert.deepEqual(
       scenes,

@@ -39,8 +39,13 @@ export interface LandingSummaryRow {
 export interface JourneyBaseChapter {
   id: JourneyChapterId;
   title: string;
-  /** Scene progress shown while this chapter is centered in the viewport. */
+  /** Scene progress held while this chapter is being read. */
   scene: number;
+  /**
+   * Leaves an open stretch of scroll after this chapter where the scene plays
+   * unobstructed: the story's turning points happen there, not behind a card.
+   */
+  interludeAfter?: boolean;
   kind: JourneyChapterKind;
   ink: JourneyInk;
 }
@@ -74,6 +79,8 @@ export interface JourneyProductChapter extends Omit<JourneyBaseChapter, "kind"> 
     height: number;
     alt: string;
     caption: string;
+    /** The same screen in the app's phone layout, shown on narrow viewports. */
+    mobile: { src: string; width: number; height: number };
   };
   highlights: readonly ProductHighlight[];
 }
@@ -272,6 +279,7 @@ export const landingPageContent = {
       id: "welcome",
       title: "Run the school. Teach the art.",
       scene: 0,
+      interludeAfter: true,
       kind: "hero",
       ink: "dark",
       kicker: "For independent martial arts schools",
@@ -286,6 +294,7 @@ export const landingPageContent = {
       id: "the-problem",
       title: "Your studio is not a spreadsheet.",
       scene: 0.1,
+      interludeAfter: true,
       kind: "problem",
       ink: "light",
       question:
@@ -296,6 +305,7 @@ export const landingPageContent = {
       id: "product",
       title: "Know who is ready for their next belt.",
       scene: 0.3,
+      interludeAfter: true,
       kind: "product",
       ink: "dark",
       kicker: "The belt tracker",
@@ -306,6 +316,7 @@ export const landingPageContent = {
         height: 1500,
         alt: "Koaryu belt tracker listing students by current rank, with classes attended and time at rank toward the next belt.",
         caption: "Belt tracker, shown with sample studio data.",
+        mobile: { src: "/marketing/product/belt-tracker-mobile.webp", width: 780, height: 1520 },
       },
       highlights: [
         {
@@ -322,6 +333,7 @@ export const landingPageContent = {
       id: "features",
       title: "Everything between classes.",
       scene: 0.5,
+      interludeAfter: true,
       kind: "features",
       ink: "dark",
       kicker: "What's inside",

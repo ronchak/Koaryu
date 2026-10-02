@@ -29,6 +29,7 @@
   overflow: hidden;
   pointer-events: none;
   contain: layout paint;
+  will-change: transform;
 }
 
 .sceneLayer::after {
@@ -67,12 +68,27 @@
   border-bottom: 1px solid transparent;
   transition:
     background-color 220ms ease,
-    border-color 220ms ease;
+    border-color 220ms ease,
+    transform 260ms ease;
 }
 
 .journey[data-scrolled="true"] .masthead {
   border-bottom-color: var(--koaryu-line);
   background: rgb(247 243 233 / 94%);
+}
+
+.journey[data-masthead-hidden="true"] .masthead {
+  transform: translateY(-101%);
+}
+
+/* Keyboard focus always brings the masthead back. */
+.journey .masthead:focus-within {
+  transform: none;
+}
+
+/* In-page links travel through the story instead of cutting to it. */
+:global(html):has(.journey) {
+  scroll-behavior: smooth;
 }
 
 /* Chapters */
@@ -98,8 +114,17 @@
   scroll-margin-top: 0;
 }
 
+.chapter:not([data-kind="hero"], [data-kind="problem"], [data-kind="final"]) {
+  min-height: 80svh;
+}
+
 .chapter[data-ink="light"] {
   color: var(--koaryu-ink-light);
+}
+
+/* An open stretch of scroll where the scene plays the story's next beat unobstructed. */
+.interlude {
+  height: 60svh;
 }
 
 /* Without JavaScript the scene stays on its first frame, so dark chapters bring their own ground. */
@@ -599,6 +624,31 @@
   outline-offset: 3px;
 }
 
+/* Cards rise into place as they enter, driven by scroll position on the compositor. */
+
+@keyframes sheetRise {
+  from {
+    opacity: 0;
+    transform: translateY(48px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .sheet,
+    .problemCopy {
+      animation: sheetRise linear both;
+      animation-timeline: view();
+      animation-range: entry 0% entry 70%;
+    }
+  }
+}
+
 /* Responsive */
 
 @media (max-width: 1024px) {
@@ -664,6 +714,26 @@
 
   .chapter[data-kind="final"] {
     padding-top: calc(var(--journey-masthead) + 16px);
+  }
+
+  .chapter:not([data-kind="hero"], [data-kind="problem"], [data-kind="final"]) {
+    min-height: auto;
+  }
+
+  .interlude {
+    height: 48svh;
+  }
+
+  /* The phone screenshot sits in a simple device frame at a readable size. */
+  .productFrame {
+    width: min(100%, 300px);
+    margin-inline: auto;
+    border: 7px solid var(--koaryu-ink);
+    border-radius: 32px;
+  }
+
+  .productFigure figcaption {
+    text-align: center;
   }
 
   .footer nav {

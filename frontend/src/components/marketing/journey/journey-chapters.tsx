@@ -1,5 +1,6 @@
-import Image from "next/image";
+import { getImageProps } from "next/image";
 import Link from "next/link";
+import { Fragment } from "react";
 
 import {
   landingPageContent,
@@ -95,18 +96,44 @@ function ProductChapter({ chapter }: { chapter: JourneyProductChapter }) {
         </dl>
       </div>
       <figure className={styles.productFigure}>
-        <div className={styles.productFrame}>
-          <Image
-            src={chapter.image.src}
-            width={chapter.image.width}
-            height={chapter.image.height}
-            alt={chapter.image.alt}
-            sizes="(max-width: 820px) 92vw, 760px"
-          />
-        </div>
+        <ProductPicture image={chapter.image} />
         <figcaption>{chapter.image.caption}</figcaption>
       </figure>
     </article>
+  );
+}
+
+/** Desktop shows the full belt tracker; phones show the same screen in the app's phone layout. */
+function ProductPicture({ image }: { image: JourneyProductChapter["image"] }) {
+  const {
+    props: { srcSet: desktopSrcSet },
+  } = getImageProps({
+    src: image.src,
+    width: image.width,
+    height: image.height,
+    alt: "",
+    sizes: "(max-width: 1180px) 60vw, 760px",
+  });
+  const { props: mobileProps } = getImageProps({
+    src: image.mobile.src,
+    width: image.mobile.width,
+    height: image.mobile.height,
+    alt: image.alt,
+    sizes: "300px",
+  });
+  return (
+    <div className={styles.productFrame}>
+      <picture>
+        <source
+          media="(min-width: 821px)"
+          srcSet={desktopSrcSet}
+          width={image.width}
+          height={image.height}
+        />
+        {/* eslint-disable-next-line jsx-a11y/alt-text -- alt arrives in the art-directed props from getImageProps */}
+        <img {...mobileProps} />
+      </picture>
+    </div>
   );
 }
 
@@ -234,19 +261,23 @@ export function JourneyChapters() {
   return (
     <main id="main-content" tabIndex={-1} className={styles.storyRegion}>
       {landingPageContent.chapters.map((chapter) => (
-        <section
-          key={chapter.id}
-          id={chapter.id}
-          className={styles.chapter}
-          data-journey-chapter=""
-          data-chapter-id={chapter.id}
-          data-kind={chapter.kind}
-          data-ink={chapter.ink}
-          data-scene={chapter.scene}
-          aria-label={chapter.kind === "hero" ? undefined : chapter.title}
-        >
-          <ChapterContent chapter={chapter} />
-        </section>
+        <Fragment key={chapter.id}>
+          <section
+            id={chapter.id}
+            className={styles.chapter}
+            data-journey-chapter=""
+            data-chapter-id={chapter.id}
+            data-kind={chapter.kind}
+            data-ink={chapter.ink}
+            data-scene={chapter.scene}
+            aria-label={chapter.kind === "hero" ? undefined : chapter.title}
+          >
+            <ChapterContent chapter={chapter} />
+          </section>
+          {"interludeAfter" in chapter && chapter.interludeAfter ? (
+            <div className={styles.interlude} data-journey-interlude="" aria-hidden="true" />
+          ) : null}
+        </Fragment>
       ))}
     </main>
   );

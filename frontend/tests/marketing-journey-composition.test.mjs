@@ -28,12 +28,19 @@ describe("Journey server composition", () => {
     assert.doesNotMatch(chapterSource, /const\s+(?:FEATURE|FAQ|PRICE|ABOUT)_/);
   });
 
+  it("leaves open interludes for the story's turning points", () => {
+    assert.match(chapterSource, /data-journey-interlude="" aria-hidden="true"/);
+    assert.match(journeyCss, /\.interlude\s*\{[^}]*height:\s*60svh/);
+  });
+
   it("shows the real product with its sample-data caption", () => {
     const product = landingPageContent.chapters.find((chapter) => chapter.kind === "product");
     assert.ok(product);
     assert.match(product.image.src, /^\/marketing\/product\/.+\.webp$/);
     assert.match(product.image.caption, /sample studio data/);
-    assert.match(chapterSource, /<Image[\s\S]*alt=\{chapter\.image\.alt\}/);
+    assert.match(product.image.mobile.src, /^\/marketing\/product\/.+-mobile\.webp$/);
+    assert.match(chapterSource, /<source[\s\S]*media="\(min-width: 821px\)"/);
+    assert.match(chapterSource, /alt: image\.alt/);
   });
 });
 
@@ -67,12 +74,25 @@ describe("Journey scrolling and accessibility", () => {
     );
   });
 
+  it("reveals cards on the compositor only where supported and motion is welcome", () => {
+    assert.match(
+      journeyCss,
+      /@supports \(animation-timeline: view\(\)\)\s*\{\s*@media \(prefers-reduced-motion: no-preference\)/,
+    );
+  });
+
+  it("keeps the phone masthead reachable", () => {
+    assert.match(journeyCss, /\.journey\[data-masthead-hidden="true"\] \.masthead/);
+    assert.match(journeyCss, /\.masthead:focus-within\s*\{[^}]*transform:\s*none/);
+    assert.match(controllerSource, /details\[open\]/);
+  });
+
   it("offers a skip link, visible focus, and reduced-motion still frames", () => {
     assert.match(controllerSource, /href="#main-content"/);
     assert.match(journeyCss, /outline:\s*2px solid currentColor/);
     assert.match(journeyCss, /@media \(prefers-reduced-motion: reduce\)/);
     assert.match(controllerSource, /matchMedia\("\(prefers-reduced-motion: reduce\)"\)/);
-    assert.match(controllerSource, /nearestAnchorScene\(/);
+    assert.match(controllerSource, /stillFrame\(/);
     assert.match(journeyCss, /\.footer a\s*\{[^}]*min-height:\s*44px/);
     assert.match(journeyCss, /\.faqItem summary\s*\{[^}]*min-height:\s*52px/);
   });

@@ -1,10 +1,18 @@
 import { landingPageContent } from "../../../lib/landing-page-content.ts";
 
-/** A scroll position at which the scene shows a chapter's progress. */
-export interface SceneAnchor {
+/** A scroll position and the scene progress shown there; the scene interpolates between them. */
+export interface SceneKeyframe {
   readonly scrollY: number;
   readonly scene: number;
 }
+
+/**
+ * A transition plays while the gap between two chapters crosses the middle
+ * of the screen: from when the gap's center is this far down the viewport...
+ */
+export const TRANSITION_START = 0.85;
+/** ...until it is this far down. Outside these windows the scene holds still. */
+export const TRANSITION_END = 0.15;
 
 const FAQ_GROUP_IDS: readonly string[] = landingPageContent.chapters.flatMap((chapter) =>
   chapter.kind === "faq" ? chapter.groups.map((group) => group.id) : [],
@@ -51,55 +59,74 @@ export function resolveLegacyHash(hash: string): string | null {
   return (LANDING_HASH_ALIASES as Readonly<Record<string, string>>)[id] ?? null;
 }
 
-/** Interpolates scene progress between the chapters on either side of the scroll position. */
-export function progressForScroll(scrollY: number, anchors: readonly SceneAnchor[]): number {
-  const first = anchors[0];
+/** Interpolates scene progress between the keyframes on either side of the scroll position. */
+export function progressForScroll(scrollY: number, keyframes: readonly SceneKeyframe[]): number {
+  const first = keyframes[0];
   if (!first) return 0;
   if (scrollY <= first.scrollY) return first.scene;
-  for (let index = 1; index < anchors.length; index += 1) {
-    const next = anchors[index]!;
+  for (let index = 1; index < keyframes.length; index += 1) {
+    const next = keyframes[index]!;
     if (scrollY <= next.scrollY) {
       // Short closing chapters can share the bottom of the page; the last one wins.
       if (scrollY === next.scrollY) {
         let last = index;
-        while (anchors[last + 1]?.scrollY === scrollY) last += 1;
-        return anchors[last]!.scene;
+        while (keyframes[last + 1]?.scrollY === scrollY) last += 1;
+        return keyframes[last]!.scene;
       }
-      const previous = anchors[index - 1]!;
+      const previous = keyframes[index - 1]!;
       const span = next.scrollY - previous.scrollY;
       const fraction = span > 0 ? (scrollY - previous.scrollY) / span : 1;
       return previous.scene + (next.scene - previous.scene) * fraction;
     }
   }
-  return anchors[anchors.length - 1]!.scene;
+  return keyframes[keyframes.length - 1]!.scene;
 }
 
-/** Reduced motion shows each chapter's still frame instead of scrubbing between them. */
-export function nearestAnchorScene(scrollY: number, anchors: readonly SceneAnchor[]): number {
-  let nearest = anchors[0];
-  for (const anchor of anchors) {
-    if (!nearest || Math.abs(anchor.scrollY - scrollY) < Math.abs(nearest.scrollY - scrollY)) {
-      nearest = anchor;
-    }
+/** Reduced motion shows only chapter still frames, switching at each transition's midpoint. */
+export function stillFrame(progress: number, scenes: readonly number[]): number {
+  let nearest = scenes[0] ?? 0;
+  for (const scene of scenes) {
+    if (Math.abs(scene - progress) < Math.abs(nearest - progress)) nearest = scene;
   }
-  return nearest?.scene ?? 0;
+  return nearest;
+}
+
+export interface ChapterLayout {
+  /** Scene progress held while the chapter is read. */
+  readonly scene: number;
+  /**
+   * Document position of the center of the gap after this chapter: the middle
+   * of its interlude, or the next chapter's top edge when there is none.
+   */
+  readonly gapCenter: number;
 }
 
 /**
- * Each chapter's anchor is the scroll position that centers it in the viewport.
- * Anchors are clamped to the scrollable range and kept increasing.
+ * Builds keyframes that hold each chapter's scene while it is read and move
+ * the story only while the gap to the next chapter crosses the viewport.
+ * Keyframes are clamped to the scrollable range and never decrease.
  */
-export function anchorsForLayout(
-  chapters: readonly { readonly top: number; readonly height: number; readonly scene: number }[],
+export function keyframesForLayout(
+  chapters: readonly ChapterLayout[],
   viewportHeight: number,
   maxScroll: number,
-): SceneAnchor[] {
-  const anchors: SceneAnchor[] = [];
-  for (const chapter of chapters) {
-    const centered = chapter.top + chapter.height / 2 - viewportHeight / 2;
-    const previous = anchors[anchors.length - 1]?.scrollY ?? -Infinity;
-    const scrollY = Math.max(previous, Math.min(maxScroll, Math.max(0, centered)));
-    anchors.push({ scrollY, scene: chapter.scene });
+): SceneKeyframe[] {
+  const keyframes: SceneKeyframe[] = [];
+  const push = (scrollY: number, scene: number) => {
+    const previous = keyframes[keyframes.length - 1]?.scrollY ?? 0;
+    keyframes.push({
+      scrollY: Math.max(previous, Math.min(maxScroll, Math.max(0, scrollY))),
+      scene,
+    });
+  };
+  const first = chapters[0];
+  if (!first) return keyframes;
+  push(0, first.scene);
+  for (let index = 0; index < chapters.length - 1; index += 1) {
+    const chapter = chapters[index]!;
+    const next = chapters[index + 1]!;
+    push(chapter.gapCenter - viewportHeight * TRANSITION_START, chapter.scene);
+    push(chapter.gapCenter - viewportHeight * TRANSITION_END, next.scene);
   }
-  return anchors;
+  return keyframes;
 }

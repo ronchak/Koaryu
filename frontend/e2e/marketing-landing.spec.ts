@@ -141,3 +141,79 @@ test("the product screenshot loads with its sample-data caption", async ({ page 
     .toBeGreaterThan(0);
   await expect(page.getByText("Belt tracker, shown with sample studio data.")).toBeVisible();
 });
+
+test("the scene holds still while a chapter is read and moves only between chapters", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openLanding(page);
+  await centerChapter(page, "features");
+  await expect.poll(() => sceneProgress(page)).toBe(0.5);
+
+  // Reading within the chapter: the artwork receives no writes at all.
+  await page.evaluate(() => {
+    const svg = document.querySelector("svg[data-scene-progress]")!;
+    const observer = new MutationObserver((records) => {
+      (window as unknown as { sceneWrites: number }).sceneWrites += records.length;
+    });
+    (window as unknown as { sceneWrites: number }).sceneWrites = 0;
+    observer.observe(svg, { attributes: true, subtree: true });
+  });
+  for (const step of [-120, 80, 120, -60]) {
+    await page.mouse.wheel(0, step);
+    await page.waitForTimeout(120);
+  }
+  await page.waitForTimeout(300);
+  expect(
+    await page.evaluate(() => (window as unknown as { sceneWrites: number }).sceneWrites),
+  ).toBe(0);
+  expect(await sceneProgress(page)).toBe(0.5);
+
+  // Scrolling into the gap after the chapter plays the next beat.
+  await page.locator("[data-journey-interlude]").nth(3).scrollIntoViewIfNeeded();
+  await page.evaluate(() => {
+    const gap = document.querySelectorAll("[data-journey-interlude]")[3]!;
+    const box = gap.getBoundingClientRect();
+    window.scrollTo({
+      top: box.top + window.scrollY + box.height / 2 - innerHeight / 2,
+      behavior: "instant",
+    });
+  });
+  await expect.poll(() => sceneProgress(page)).toBeGreaterThan(0.5);
+  expect(await sceneProgress(page)).toBeLessThan(0.72);
+});
+
+test("on phones the masthead steps aside while reading down and returns on scroll up", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await openLanding(page);
+  const journey = page.locator("[data-masthead-hidden]");
+  await page.mouse.move(195, 400);
+  for (let step = 0; step < 6; step += 1) await page.mouse.wheel(0, 200);
+  await expect(journey).toHaveAttribute("data-masthead-hidden", "true");
+  await page.mouse.wheel(0, -120);
+  await expect(journey).toHaveAttribute("data-masthead-hidden", "false");
+  await expect(page.getByRole("link", { name: "Sign in" })).toBeInViewport();
+
+  // The desktop masthead always stays.
+  await page.setViewportSize({ width: 1280, height: 800 });
+  for (let step = 0; step < 6; step += 1) await page.mouse.wheel(0, 200);
+  await expect(journey).toHaveAttribute("data-masthead-hidden", "false");
+});
+
+test("phones get the phone layout of the product", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await openLanding(page, "#product");
+  const image = page.locator("#product img");
+  await expect
+    .poll(() => image.evaluate((node: HTMLImageElement) => node.currentSrc))
+    .toContain("belt-tracker-mobile");
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.reload();
+  await expect
+    .poll(() => image.evaluate((node: HTMLImageElement) => node.currentSrc))
+    .toMatch(
+      /belt-tracker\.webp|belt-tracker\.webp&|url=%2Fmarketing%2Fproduct%2Fbelt-tracker\.webp/,
+    );
+});
