@@ -13,6 +13,7 @@ Use this file for work under `supabase/`. Fall back to the repo root `AGENTS.md`
 ## Migration Rules
 
 - Add new migrations instead of rewriting old applied migrations.
+- When adding a release version, extend exact-version fixtures in `verification/release_ui_atomic_contract.sql` and run that complete contract on the final schema. Generated attestation checks do not replace its manually maintained obsolete-readiness cases.
 - Use timestamped migration filenames that match the existing convention.
 - Keep schema, RLS, RPC, trigger, and index changes in migrations, not ad hoc notes.
 - When changing behavior that already has a verification SQL file, update or add the matching verification artifact.

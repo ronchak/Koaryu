@@ -7,9 +7,9 @@ Preserve working behavior and safeguards while removing verified accidental comp
 
 ## Current position
 
-The September 23 Astra/Opus experiment merged FC1-06 in [PR242](https://github.com/ronchak/Koaryu/pull/242) and FSH1-11 in [PR245](https://github.com/ronchak/Koaryu/pull/245); Opus 5.5 implemented those two and Astra reviewed and merged them. A follow-up Claude run corrected and merged FSH2-07 and FC1-03 in [PR243](https://github.com/ronchak/Koaryu/pull/243) as `62f44b9fc24ed68d1367af2017167a4c49e8ed89`. All three PRs are on main and **not deployed**. Production and staging remain at the recorded releases below. The original execution tracks remain historical ledger assignments. See [the handoff](docs/remediation/HANDOFF.md#september-23-astraopus-experiment).
+The last completed release verification, October 1, 2026 Pacific, recorded production and staging frontend/backend pairs at `0cf345be94f31eefbfa80be80bed3a8670680bf2` after [PR258](https://github.com/ronchak/Koaryu/pull/258). Both databases were exact V55, 150 migrations, head `20260930192626`. Both web services were active with auto-deploy off; the staging billing cron was restored and suspended. See the [October 1 release record](docs/remediation/october-1-release-verification.md). This documentation refresh did not repeat hosted verification.
 
-The seven queued corrections are live in V50, 145 migrations. The production frontend/backend pair serves `fe2a37bf97bb87897b3f8e03d83611c81d69b9c0` after the September 23 PR240 frontend release, which changed no database state. Staging was last verified at `cd2fb0ef0d2655f8f3192e85e93c1c5a95c78225` in [Microsoft SSO verification](docs/microsoft-sso-setup.md#september-20-release-verification) and was not reverified in that release. The single production V50 apply preserved all 2,684 tracked original rows, backed by a fresh verified V49 backup/restore. No live billing activation or historical financial backfill occurred. See [verification](docs/remediation/production-release-verification.md) and [HANDOFF](docs/remediation/HANDOFF.md), which records the PR240 release and the FR1-04 closeout.
+That release includes the September 29 everyday-correctness fixes and September 23 fixes from [PR242](https://github.com/ronchak/Koaryu/pull/242), [PR245](https://github.com/ronchak/Koaryu/pull/245) and [PR243](https://github.com/ronchak/Koaryu/pull/243). The [September 29 release record](docs/remediation/everyday-correctness-release.md) preserves its V53 deployment and recovery evidence. The earlier V50 production pair `fe2a37bf97bb87897b3f8e03d83611c81d69b9c0` and staging pair `cd2fb0ef0d2655f8f3192e85e93c1c5a95c78225` are historical records. The original execution tracks remain historical ledger assignments. [The handoff](docs/remediation/HANDOFF.md) preserves those earlier runs.
 
 PR222 fixes fabricated billing zeroes. PR223 preserves confirmed rank saves through token renewal and protects pending program/student drafts. PR224 preserves attendance across program promotion boundaries; PR225 honors weekly template dates. PR226 separates outstanding, overdue and uncollectible invoice facts. PR227 derives current minor status without rewriting stored rows. All seven requested findings are fixed. [The record](docs/remediation/queued-findings-verification.md) includes exact heads, review, tests and limits.
 
@@ -34,9 +34,11 @@ All 278 retained audit observations now have an individual disposition, reason, 
 
 ## September 29 everyday correctness
 
+Released to production and staging as `55a652a6e4f368b07286181ffa8e2401f4b9c467` on V53/148. [Completed release record](docs/remediation/everyday-correctness-release.md) includes exact deployments, recovery proof, preserved rows and workflow verification.
+
 Sixteen original audit observations and PROGRAM-IMPORT-01 are fixed in the integrated candidate. Lead commands and history commit atomically; overlapping form/student/roster saves retain their owner; optional schedule fields can be cleared; reports and exports use consistent attendance, capacity and calendar rules; dashboard inactivity matches the roster; import preview requires Program for a program-specific belt. [Verification](docs/remediation/everyday-correctness-verification.md) records the exact local artifacts, tests and limits. Hosted deployment identity and recovery evidence belong to the separate release record.
 
-The owner reaffirmed autonomous root-coordinator production migration authority on September29 and removed the stale human-only terminal rule from the global/private instructions. Every technical release gate remains, including fresh backup/restore and the 30-second pause before each production migration. Subagents have no production authority.
+The owner reaffirmed autonomous root-coordinator production migration authority on September 29 and removed the stale human-only terminal rule from the global/private instructions. Every technical release gate remains, including fresh backup/restore and the 30-second pause before each production migration. Subagents have no production authority.
 
 
 Tracks now describe the owner’s wind-down assignment: Sol owns all application work; Astra personally owns database work. Mixed findings name Astra for the database portion and Sol for application files. Historical normalization tracks remain in the ledger.
@@ -51,7 +53,7 @@ PR162 is merged. Its final head `6ce90feffcf0bfa341ae71a7176bffe7b0c2317d` recei
 
 [PR179](https://github.com/ronchak/Koaryu/pull/179), merged as `7113d13`, enforces USD at new tuition financial writes and retires the unused pricing path. Historical financial attempts, exact replay and provider references remain protected. Empty provider headers do not authorize new non-USD amounts. Mixed-currency reporting remains deliberately deferred. PR220 subsequently corrected unknown subscription facts; family attribution remains separately tracked. See [verification](docs/remediation/tuition-currency-verification.md).
 
-## Current release run
+## Historical release run, September 19–20
 
 The September 19–20 allocation is 40 additional weekly percentage points from a 5%-used baseline. It covered the initial V48–V49 release, then the owner's seven queued findings and one batched V50 release. Fresh Sol tasks implemented application items, the coordinator reviewed every result, and every PR had its own independent reviewer. Database work, integration and production execution remained with Astra. All seven queued items landed; none was dropped. The handoff records the latest meter and remaining program.
 
