@@ -1,4 +1,8 @@
-# Koaryu handoff, September 29, 2026
+# Koaryu remediation handoff
+
+## Last completed release verification, October 1, 2026 Pacific
+
+Production and staging frontend/backend pairs were verified at `0cf345be94f31eefbfa80be80bed3a8670680bf2` after PR258. Both databases were exact V55, 150 migrations, head `20260930192626`; both web services were active with auto-deploy off. The staging billing cron had its original branch and five-minute schedule restored and was suspended. See the [October 1 release record](october-1-release-verification.md) for the completed V54/V55 rollout, subsequent application-only release and verification limits. This documentation refresh did not repeat hosted checks; rederive live state before another release.
 
 ## Current ledger counts
 
@@ -19,11 +23,15 @@ Derived from the individual findings in [the ledger](ledger.json) by `npm run ge
 97 audit observations are pending: 23 Astra and 74 Sol. These are observations, not ticket or PR counts. 7 program findings, tracked separately: 6 fixed, 1 deferred intentionally.
 <!-- ledger-counts:end -->
 
+The sections below preserve earlier runs. Their deployment and finding statuses describe those closeouts; the last completed release summary above supersedes their deployed identities.
+
 ## September 29 everyday correctness
+
+Released to production and staging as `55a652a6e4f368b07286181ffa8e2401f4b9c467` on V53/148. [Completed release record](everyday-correctness-release.md) includes exact deployments, recovery proof, preserved rows and workflow verification.
 
 Sixteen original audit observations and PROGRAM-IMPORT-01 are fixed in the integrated candidate. Lead commands and history commit atomically; overlapping form/student/roster saves retain their owner; optional schedule fields can be cleared; reports and exports use consistent attendance, capacity and calendar rules; dashboard inactivity matches the roster; import preview requires Program for a program-specific belt. [Verification](everyday-correctness-verification.md) records the exact local artifacts, tests and limits. Hosted deployment identity and recovery evidence belong to the separate release record.
 
-The owner reaffirmed autonomous root-coordinator production migration authority on September29 and removed the stale human-only terminal rule from the global/private instructions. Every technical release gate remains, including fresh backup/restore and the 30-second pause before each production migration. Subagents have no production authority.
+The owner reaffirmed autonomous root-coordinator production migration authority on September 29 and removed the stale human-only terminal rule from the global/private instructions. Every technical release gate remains, including fresh backup/restore and the 30-second pause before each production migration. Subagents have no production authority.
 
 
 ## September 23 Astra/Opus experiment
@@ -32,7 +40,7 @@ The bounded implementation experiment stopped dispatching at 98% Codex usage, fr
 
 - FC1-06: [PR242](https://github.com/ronchak/Koaryu/pull/242), merge `23856d2ee5dbddde6ef4079ddf7ca4b5337f36e1`, locks the display-name input during save and preserves the draft after failure. Worker full suite: 910/910; coordinator focused tests: 11/11.
 - FSH1-11: [PR245](https://github.com/ronchak/Koaryu/pull/245), merge `f403732274cad520eadf113f479ee44ac736379d`, filters Quick Actions using existing permissions/navigation policy and binds icons to action identity. Worker full suite: 910/910; coordinator focused tests: 20/20. The rebase retained the identical patch and passed new exact-head CI.
-- These two findings alone move to fixed, which then made the derived ledger counts 142 fixed and 120 pending; the September 24 follow-up has the current counts. They are merged into main, **not deployed**. No production or staging deployment, database apply, migration, backup/restore, billing activation, or hosted fixture mutation occurred. GitHub/Vercel PR checks created ordinary preview builds. Production auto-deploy remains off. Release needs separate owner authorization after the postmortem.
+- These two findings alone moved to fixed, which then made the derived ledger counts 142 fixed and 120 pending. Later runs changed those totals; the current derived counts are above. At the September 23 closeout they were merged into main and not yet deployed. They subsequently shipped in the September 29 release. No production or staging deployment, database apply, migration, backup/restore, billing activation, or hosted fixture mutation occurred in this experiment. GitHub/Vercel PR checks created ordinary preview builds. Production auto-deploy remained off; release required separate owner authorization.
 - PR241 was merged first as prerequisite bookkeeping for the already-released FR1-04 fix; it is not Opus implementation throughput.
 - [PR243](https://github.com/ronchak/Koaryu/pull/243), FSH2-07 + FC1-03, was left open at the cutoff. Coordinator initial review missed duplicate post-create materialization, which GitHub review caught after green CI. The follow-up below corrected and merged it.
 - [PR244](https://github.com/ronchak/Koaryu/pull/244), FR1-08, is closed unmerged. Coordinator review required mounted tests of both live React callers; the correction session hit the Claude session limit before completing that proof. Its partial test remains in the worktree. FSH3-05 also stopped at the Claude limit with uncommitted tests and no implementation PR. Neither finding is closed in the ledger.
@@ -42,9 +50,9 @@ Private measurement and operator evidence: `/Users/openclaw/Koaryu Releases/2026
 
 ## September 24 PR243 follow-up
 
-A solo Claude run corrected PR243 and merged it with the guarded script as `62f44b9fc24ed68d1367af2017167a4c49e8ed89`. That merge commit's tree matches the tested head `c400c84`, whose exact-head CI passed. The store's mutation finish is now the only owner of the post-create materialization. It replays after a token renewal and shares one outcome across concurrent schedule writes. A confirmed create closes its form at once, and the controller only reports the refresh outcome as a non-blocking notice. Two independent review rounds and a final verification review ran; the Codex PR bot was usage-limited and did not review the new heads. FSH2-07 and FC1-03 move to fixed; see [the current counts](#current-ledger-counts). This is merged, **not deployed**. No deployment, database, or provider action occurred. Private run evidence: `/Users/openclaw/Koaryu Releases/2026-09-23-claude-run/`.
+A solo Claude run corrected PR243 and merged it with the guarded script as `62f44b9fc24ed68d1367af2017167a4c49e8ed89`. That merge commit's tree matches the tested head `c400c84`, whose exact-head CI passed. The store's mutation finish is now the only owner of the post-create materialization. It replays after a token renewal and shares one outcome across concurrent schedule writes. A confirmed create closes its form at once, and the controller only reports the refresh outcome as a non-blocking notice. Two independent review rounds and a final verification review ran; the Codex PR bot was usage-limited and did not review the new heads. FSH2-07 and FC1-03 moved to fixed; see [the current counts](#current-ledger-counts). At the September 24 closeout this was merged and not yet deployed; it subsequently shipped in the September 29 release. No deployment, database, or provider action occurred in this follow-up. Private run evidence: `/Users/openclaw/Koaryu Releases/2026-09-23-claude-run/`.
 
-## PR #240 production release
+## Historical PR #240 production release
 
 Owner ronchak authorized Codex root coordinator to squash-merge and release PR #240, then resolve its two outstanding review findings. PR #240 merged at 2026-09-23T11:54:08Z as `fe2a37bf97bb87897b3f8e03d83611c81d69b9c0`. Its tree matches the passing candidate `d9f2a53bfc5f684b6090e7c5791f234a3ce3fbce`. [Candidate CI](https://github.com/ronchak/Koaryu/actions/runs/35856600323) passed all checks. The guarded merge retained its head/base, CI, and Render auto-deploy checks; a private copy changed only the merge method to the owner-requested squash.
 

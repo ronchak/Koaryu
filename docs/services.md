@@ -9,7 +9,7 @@ nothing noticed when it stopped serving.
 one, add it here in the same change. If you find one that is not here, either
 document it or delete it.
 
-Inventory baseline: 2026-08-24. September 20, 2026 historical release readback: both databases were V50, 145 migrations. Production frontend/backend served PR240 candidate `fe2a37bf97bb87897b3f8e03d83611c81d69b9c0`. Staging had last been verified at Microsoft sign-in candidate `cd2fb0ef0d2655f8f3192e85e93c1c5a95c78225` and was not changed or reverified for PR240. See [Microsoft SSO verification](microsoft-sso-setup.md#september-20-release-verification). At that readback, both web services were active; the staging billing cron remained suspended and production auto-deploy was off. Reinspect live state for future releases; the combined V55 candidate gates are in [Cutover Gates](cutover-gates.md). See [the completed verification](remediation/production-release-verification.md).
+Inventory baseline: 2026-08-24. The last completed release verification, October 1, 2026 Pacific, recorded production and staging frontend/backend pairs at `0cf345be94f31eefbfa80be80bed3a8670680bf2` and both databases at exact V55, 150 migrations, head `20260930192626`. Both web services were active with auto-deploy off; the staging billing cron was restored to its original branch and five-minute schedule and suspended. See [the October 1 release record](remediation/october-1-release-verification.md). This documentation refresh did not repeat hosted verification. Reinspect live state for future releases and follow [Cutover Gates](cutover-gates.md).
 
 ## Quick map
 
@@ -125,6 +125,8 @@ provider mutation keep their durable idempotency identity. Render bills cron exe
 minimum for the service. The production web service keeps
 `BILLING_TRANSITION_SCHEDULER_ENABLED=false`; no production cron exists in this
 release task.
+
+Render service resume can build the current tracked branch even when auto-deploy is off. Pin and inspect that branch before resuming, then verify the actual deployed SHA. The September 29 production resume built the intended release from `main`; do not assume resume restores the previously serving artifact.
 
 The two web services track **different branches**. Render auto-deploy is off for the
 staging web service and cron, so deploy each from the exact reviewed commit and read
