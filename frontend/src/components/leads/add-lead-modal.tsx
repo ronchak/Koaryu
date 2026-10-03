@@ -5,13 +5,15 @@ import { Button } from "@/components/ui/button";
 import { DismissibleNotice } from "@/components/ui/dismissible-notice";
 import { ModalFrame } from "@/components/ui/modal-frame";
 import { SOURCE_LABELS } from "@/lib/leads-page-model";
-import type { Lead, LeadSource, Program } from "@/types";
+import type { Lead, LeadSource, Program, StaffMember } from "@/types";
 import { X } from "lucide-react";
 
 interface AddLeadModalProps {
   activePrograms: Program[];
+  activeStaff: StaffMember[];
   addLeadError: string | null;
   isAddingLead: boolean;
+  isOutcomeUnknown?: boolean;
   programById: Map<string, Program>;
   selectedProgramId: string | null;
   today: string;
@@ -23,8 +25,10 @@ interface AddLeadModalProps {
 
 export function AddLeadModal({
   activePrograms,
+  activeStaff,
   addLeadError,
   isAddingLead,
+  isOutcomeUnknown = false,
   programById,
   selectedProgramId,
   today,
@@ -42,12 +46,14 @@ export function AddLeadModal({
   return (
     <ModalFrame
       rootClassName="p-4"
-      panelClassName="max-h-[85vh] w-full max-w-md overflow-y-auto border border-border bg-bg p-5 sm:p-6"
+      panelClassName="max-h-[85vh] w-full max-w-md overflow-y-auto rounded-[18px] bg-bg p-4 shadow-[var(--product-shadow-lifted)]"
       ariaLabelledBy="add-lead-title"
       onBackdropClick={closeIfIdle}
     >
       <div className="flex items-center justify-between mb-6">
-        <h2 id="add-lead-title" className="text-base font-semibold text-text-primary">Add new lead</h2>
+        <h2 id="add-lead-title" className="text-base font-semibold text-text-primary">
+          Add new lead
+        </h2>
         <button
           type="button"
           onClick={closeIfIdle}
@@ -72,15 +78,12 @@ export function AddLeadModal({
             program_interest: selectedProgramId
               ? programById.get(selectedProgramId)?.name
               : undefined,
-            follow_up_date:
-              (formData.get("follow_up_date") as string) || undefined,
+            follow_up_date: (formData.get("follow_up_date") as string) || undefined,
+            assigned_staff_id: (formData.get("assigned_staff_id") as string) || undefined,
             is_minor: formData.get("is_minor") === "on",
-            guardian_name:
-              (formData.get("guardian_name") as string) || undefined,
-            guardian_email:
-              (formData.get("guardian_email") as string) || undefined,
-            guardian_phone:
-              (formData.get("guardian_phone") as string) || undefined,
+            guardian_name: (formData.get("guardian_name") as string) || undefined,
+            guardian_email: (formData.get("guardian_email") as string) || undefined,
+            guardian_phone: (formData.get("guardian_phone") as string) || undefined,
             notes: (formData.get("notes") as string) || undefined,
           });
         }}
@@ -118,18 +121,22 @@ export function AddLeadModal({
           </div>
         </div>
         <div className="flex flex-col gap-1.5">
-          <label htmlFor="lead-email" className="text-sm text-text-secondary font-medium">Email</label>
+          <label htmlFor="lead-email" className="text-sm text-text-secondary font-medium">
+            Email
+          </label>
           <input
             id="lead-email"
             name="email"
             type="email"
             disabled={isAddingLead}
-            className="w-full px-3 py-2 text-sm bg-surface-raised border border-border rounded-[6px] text-text-primary placeholder:text-muted focus:border-accent focus:outline-none"
+            className="w-full px-3 py-2 text-sm bg-surface-raised border border-border rounded-[14px] text-text-primary placeholder:text-muted focus:border-accent focus:outline-none"
           />
         </div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div className="flex flex-col gap-1.5">
-            <label htmlFor="lead-phone" className="text-sm text-text-secondary font-medium">Phone</label>
+            <label htmlFor="lead-phone" className="text-sm text-text-secondary font-medium">
+              Phone
+            </label>
             <input
               id="lead-phone"
               name="phone"
@@ -139,7 +146,9 @@ export function AddLeadModal({
             />
           </div>
           <div className="flex flex-col gap-1.5">
-            <label htmlFor="lead-source" className="text-sm text-text-secondary font-medium">Source</label>
+            <label htmlFor="lead-source" className="text-sm text-text-secondary font-medium">
+              Source
+            </label>
             <select
               id="lead-source"
               name="source"
@@ -175,8 +184,26 @@ export function AddLeadModal({
             type="date"
             defaultValue={today}
             disabled={isAddingLead}
-            className="w-full px-3 py-2 text-sm bg-surface-raised border border-border rounded-[6px] text-text-primary placeholder:text-muted focus:border-accent focus:outline-none"
+            className="w-full px-3 py-2 text-sm bg-surface-raised border border-border rounded-[14px] text-text-primary placeholder:text-muted focus:border-accent focus:outline-none"
           />
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <label htmlFor="lead-assigned-staff" className="text-sm text-text-secondary font-medium">
+            Assigned staff
+          </label>
+          <select
+            id="lead-assigned-staff"
+            name="assigned_staff_id"
+            disabled={isAddingLead}
+            className="min-h-11 w-full border border-border bg-surface-raised px-3 py-2 text-sm text-text-primary focus:border-accent focus:outline-none"
+          >
+            <option value="">Unassigned</option>
+            {activeStaff.map((member) => (
+              <option key={member.id} value={member.id}>
+                {member.full_name || member.email}
+              </option>
+            ))}
+          </select>
         </div>
         <label className="flex items-center gap-2 text-sm text-text-secondary">
           <input
@@ -194,7 +221,7 @@ export function AddLeadModal({
             name="guardian_name"
             placeholder="Guardian name"
             disabled={isAddingLead}
-            className="w-full px-3 py-2 text-sm bg-surface-raised border border-border rounded-[6px] text-text-primary placeholder:text-muted focus:border-accent focus:outline-none"
+            className="w-full px-3 py-2 text-sm bg-surface-raised border border-border rounded-[14px] text-text-primary placeholder:text-muted focus:border-accent focus:outline-none"
           />
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <input
@@ -216,7 +243,9 @@ export function AddLeadModal({
           </div>
         </div>
         <div className="flex flex-col gap-1.5">
-          <label htmlFor="lead-notes" className="text-sm text-text-secondary font-medium">Notes</label>
+          <label htmlFor="lead-notes" className="text-sm text-text-secondary font-medium">
+            Notes
+          </label>
           <textarea
             id="lead-notes"
             name="notes"
@@ -226,16 +255,15 @@ export function AddLeadModal({
           />
         </div>
         <div className="flex flex-wrap justify-end gap-2 pt-2">
-          <Button
-            variant="ghost"
-            size="sm"
-            type="button"
-            disabled={isAddingLead}
-            onClick={onClose}
-          >
+          <Button variant="ghost" size="sm" type="button" disabled={isAddingLead} onClick={onClose}>
             Cancel
           </Button>
-          <Button variant="primary" size="sm" type="submit" disabled={isAddingLead}>
+          <Button
+            variant="primary"
+            size="sm"
+            type="submit"
+            disabled={isAddingLead || isOutcomeUnknown}
+          >
             {isAddingLead ? "Saving..." : "Add lead"}
           </Button>
         </div>

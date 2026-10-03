@@ -1,22 +1,9 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import {
-  buildRankFamilyIndex,
-} from "../src/lib/dashboard-kpi-breakdowns.ts";
-import {
-  formatMoney,
-  requirementGroupItems,
-  statusTone,
-} from "../src/lib/billing-page-utils.ts";
+import { formatMoney, requirementGroupItems, statusTone } from "../src/lib/billing-page-utils.ts";
 import { buildBillingPageModel } from "../src/lib/billing-page-model.ts";
-import {
-  clearPreviewStorage,
-  KEYS,
-  load,
-  localId,
-  save,
-} from "../src/lib/store-storage.ts";
+import { clearPreviewStorage, KEYS, load, localId, save } from "../src/lib/store-storage.ts";
 import { buildPreviewStudentListPage } from "../src/lib/student-list-page.ts";
 
 function withMockStorage(callback) {
@@ -92,7 +79,7 @@ describe("frontend extracted helper behavior", () => {
           ],
         },
       ],
-      { programId: "program-b", sortKey: "name" }
+      { programId: "program-b", sortKey: "name" },
     );
 
     assert.equal(result.total, 1);
@@ -102,17 +89,14 @@ describe("frontend extracted helper behavior", () => {
   it("preserves billing metric, lookup, and formatting helper behavior", () => {
     assert.equal(formatMoney(12900), "$129");
     assert.match(statusTone("past_due"), /text-danger/);
-    assert.deepEqual(
-      requirementGroupItems(["company.tax_id"])[1],
-      {
-        id: "business-details",
-        label: "Business or legal details",
-        description: "Studio legal address, phone, tax ID, and ownership confirmation.",
-        matches: ["company.", "individual.address.", "individual.phone", "individual.id_number"],
-        dueFields: ["company.tax_id"],
-        complete: false,
-      }
-    );
+    assert.deepEqual(requirementGroupItems(["company.tax_id"])[1], {
+      id: "business-details",
+      label: "Business or legal details",
+      description: "Studio legal address, phone, tax ID, and ownership confirmation.",
+      matches: ["company.", "individual.address.", "individual.phone", "individual.id_number"],
+      dueFields: ["company.tax_id"],
+      complete: false,
+    });
 
     const model = buildBillingPageModel({
       billingMetricsAsOf: new Date("2026-05-15T12:00:00Z"),
@@ -121,10 +105,13 @@ describe("frontend extracted helper behavior", () => {
         period_end: "2026-06-01T00:00:00Z",
         timezone: "UTC",
         payment_count: 1,
+        gross_paid_amount_cents: 12900,
+        refunded_amount_cents: 0,
+        disputed_amount_cents: 0,
         stripe_net_amount_cents: 12900,
         external_net_amount_cents: 0,
         net_amount_cents: 12900,
-        scope: "payment_cohort_net_of_cumulative_refunds",
+        scope: "payment_cohort_net_of_confirmed_adjustments",
         disclosure: "test cohort",
       },
       billingConnect: {
@@ -174,12 +161,18 @@ describe("frontend extracted helper behavior", () => {
           processed_at: "2026-05-01T00:00:00Z",
         },
       ],
-      billingPlans: [{ id: "plan_1", studio_id: "studio_1", name: "Monthly", amount_cents: 12900, programs: [] }],
-      billingSubscriptions: [{ id: "sub_1", studio_id: "studio_1", payer_id: "payer_1", status: "active" }],
+      billingPlans: [
+        { id: "plan_1", studio_id: "studio_1", name: "Monthly", amount_cents: 12900, programs: [] },
+      ],
+      billingSubscriptions: [
+        { id: "sub_1", studio_id: "studio_1", payer_id: "payer_1", status: "active" },
+      ],
       isPreviewMode: false,
       previewEnrollments: [],
       programs: [],
-      students: [{ id: "student_1", legal_first_name: "Ari", legal_last_name: "Lane", status: "active" }],
+      students: [
+        { id: "student_1", legal_first_name: "Ari", legal_last_name: "Lane", status: "active" },
+      ],
     });
 
     assert.equal(model.paidRevenue, 12900);
@@ -187,33 +180,6 @@ describe("frontend extracted helper behavior", () => {
     assert.equal(model.payerNameById.get("payer_1"), "Lane Family");
     assert.equal(model.studentNameById.get("student_1"), "Ari Lane");
     assert.equal(model.paymentsReady, true);
-  });
-
-  it("preserves dashboard belt-family indexing outside the route", () => {
-    const rankFamilyById = buildRankFamilyIndex([
-      {
-        id: "ladder_1",
-        name: "Adults",
-        program_id: "program_1",
-        ranks: [
-          { id: "white", name: "White Belt", is_tip: false, display_order: 1 },
-          { id: "tip-1", name: "White Tip", is_tip: true, display_order: 2 },
-        ],
-      },
-    ], new Map([["program_1", { id: "program_1", name: "Adults", color_hex: "#335577", sort_order: 1 }]]));
-
-    assert.deepEqual(
-      {
-        sectionLabel: rankFamilyById.get("tip-1")?.sectionLabel,
-        groupLabel: rankFamilyById.get("tip-1")?.groupLabel,
-        exactLabel: rankFamilyById.get("tip-1")?.exactLabel,
-      },
-      {
-        sectionLabel: "Adults",
-        groupLabel: "White Belt",
-        exactLabel: "White Tip",
-      }
-    );
   });
 
   it("preserves preview storage behavior without touching non-Koaryu keys", () => {

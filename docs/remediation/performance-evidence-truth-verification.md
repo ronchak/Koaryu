@@ -1,0 +1,11 @@
+# Performance evidence-truth verification
+
+Base `6ab6ad33349641856ae0fb8b0c3735fa2ee6d9d0`; final implementation `419119bf1dc4ea05a38749e294401a78369c6014`. Fixes CTA1-09, CTA2-01, BT1-07 and FT2-09. BT3-07 remains blocked; the previous BT4-01 RSS correction was not touched.
+
+One declared map now classifies workspace, bootstrap and summary resources for both outer capture and browser extraction. Workspace has no Server-Timing header and remains optional diagnostic evidence. Bootstrap/summary successful-response, resource and timing requirements are unchanged. Unknown origins, writes, provider-refresh reads, raw URLs/IDs and invalid metrics remain blocked.
+
+The fixture makes six successful calls and one deliberately denied call. Successful slow-call counts cannot exceed the old threshold 20, so that performance criterion is removed. The count remains descriptive validated evidence. All retained budgets and profile cardinalities match base exactly. Peak RSS still measures the whole fixture process, including setup and the legacy semantic reference, with its existing cap. Synthetic fixture readiness is named separately from real authenticated capture.
+
+Nine files total 3,913→3,941 lines and 153,838→155,591 bytes. Five test/fixture files total 2,423→2,443 lines and 92,614→93,471 bytes. Validator cases go 13→12 by deleting the impossible slow-count threshold case; existing cases now cover workspace without timing headers and a consistent all-slow elapsed-time failure. No new case, phrase-locking assertion, generic helper or measurement framework was added. The extra fixture lines describe the newly observed workspace resource explicitly.
+
+Coordinator passed 12 validator and 16 capture cases, checked retained limits and ran the clean exact-SHA regression gate for source `17b27fddb4d817b616505cf93af11989603d5d8e` across all three profiles. Later changes only clarified documentation and the synthetic negative example. Implementer also passed 36 mounted workflow cases, two backend fixture tests and three subtests, lint/format/syntax/JSON checks. Fresh independent review and final-head CI remain required. No hosted capture, provider/auth operation, application behavior change, dependency, SQL or database work occurred.

@@ -32,10 +32,7 @@ describe("belt ladder sync operation receipts", () => {
     };
 
     persistPendingBeltLadderSync("studio-1", "ladder-1", pending, storage);
-    assert.deepEqual(
-      loadPendingBeltLadderSync("studio-1", "ladder-1", storage),
-      pending,
-    );
+    assert.deepEqual(loadPendingBeltLadderSync("studio-1", "ladder-1", storage), pending);
     assert.equal(loadPendingBeltLadderSync("studio-2", "ladder-1", storage), null);
 
     clearPendingBeltLadderSync("studio-1", "ladder-1", storage);

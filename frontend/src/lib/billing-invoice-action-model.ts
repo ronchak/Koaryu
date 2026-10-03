@@ -1,26 +1,43 @@
 export type InvoiceRetryRequestKeyStore = Map<string, string>;
 
+export type InvoiceOperationIdentity = {
+  userId: string;
+  studioId: string;
+};
+
+export type InvoiceOperationType =
+  "invoice.create" | "invoice.finalize" | "invoice.retry" | "invoice.void";
+
 type StorageLike = Pick<Storage, "getItem" | "setItem" | "removeItem">;
+const INVOICE_OPERATION_STORAGE_PREFIX = "koaryu.billing.invoice-operation.v1";
 
-const INVOICE_RETRY_STORAGE_PREFIX = "koaryu:billing-invoice-retry";
-
-export function getOrCreateInvoiceRetryRequestKey(
-  keys: InvoiceRetryRequestKeyStore,
-  invoiceId: string,
-  createKey: () => string
-) {
-  const existing = keys.get(invoiceId);
-  if (existing) return existing;
-  const requestKey = createKey();
-  keys.set(invoiceId, requestKey);
-  return requestKey;
+function isBounded(value: string, maximumBytes: number) {
+  return (
+    value.length > 0 &&
+    value === value.trim() &&
+    !/[\u0000-\u001f\u007f]/.test(value) &&
+    new TextEncoder().encode(value).byteLength <= maximumBytes
+  );
 }
 
-export function clearInvoiceRetryRequestKey(
-  keys: InvoiceRetryRequestKeyStore,
-  invoiceId: string
+function operationStorageKey(
+  identity: InvoiceOperationIdentity,
+  operation: InvoiceOperationType,
+  targetId: string,
 ) {
-  keys.delete(invoiceId);
+  const parts = [identity.userId, identity.studioId, operation, targetId];
+  if (parts.some((part) => !isBounded(part, 255))) return null;
+  return [INVOICE_OPERATION_STORAGE_PREFIX, ...parts.map((part) => encodeURIComponent(part))].join(
+    ":",
+  );
+}
+
+function operationMemoryKey(
+  identity: InvoiceOperationIdentity | null,
+  operation: InvoiceOperationType,
+  targetId: string,
+) {
+  return [identity?.userId ?? "", identity?.studioId ?? "", operation, targetId].join("\u0000");
 }
 
 function browserStorage(): StorageLike | null {
@@ -32,72 +49,87 @@ function browserStorage(): StorageLike | null {
   }
 }
 
-function storageKey(storageScope: string) {
-  return `${INVOICE_RETRY_STORAGE_PREFIX}:${storageScope}`;
+export function createInvoiceOperationRequestKey() {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID();
+  }
+  return `invoice-operation-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
-function loadStoredKeys(storageScope: string, storage: StorageLike): Record<string, string> {
-  try {
-    const parsed = JSON.parse(storage.getItem(storageKey(storageScope)) || "{}") as unknown;
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
-    return Object.fromEntries(
-      Object.entries(parsed).filter(
-        (entry): entry is [string, string] => typeof entry[1] === "string" && entry[1].length > 0
-      )
-    );
-  } catch {
-    return {};
-  }
-}
-
-export function getOrCreatePersistedInvoiceRetryRequestKey(
-  storageScope: string,
-  invoiceId: string,
-  createKey: () => string,
-  storage: StorageLike | null = browserStorage(),
-  fallbackKeys?: InvoiceRetryRequestKeyStore
-) {
-  const fallbackKey = `${storageScope}:${invoiceId}`;
-  const fallbackValue = fallbackKeys?.get(fallbackKey);
-  if (fallbackValue) return fallbackValue;
-  if (!storage) {
-    const requestKey = createKey();
-    fallbackKeys?.set(fallbackKey, requestKey);
-    return requestKey;
-  }
-  const keys = loadStoredKeys(storageScope, storage);
-  if (keys[invoiceId]) {
-    fallbackKeys?.set(fallbackKey, keys[invoiceId]);
-    return keys[invoiceId];
+export function resolvePersistedInvoiceOperationRequestKey({
+  createKey = createInvoiceOperationRequestKey,
+  identity,
+  keysByTarget,
+  operation,
+  startNewRequest = false,
+  storage = browserStorage() ?? undefined,
+  targetId,
+}: {
+  createKey?: () => string;
+  identity: InvoiceOperationIdentity | null;
+  keysByTarget: InvoiceRetryRequestKeyStore;
+  operation: InvoiceOperationType;
+  startNewRequest?: boolean;
+  storage?: StorageLike;
+  targetId: string;
+}) {
+  const memoryKey = operationMemoryKey(identity, operation, targetId);
+  const existing = keysByTarget.get(memoryKey);
+  if (existing && !startNewRequest) return existing;
+  const persistedKey = identity ? operationStorageKey(identity, operation, targetId) : null;
+  if (!startNewRequest && storage && persistedKey) {
+    try {
+      const persisted = storage.getItem(persistedKey);
+      if (persisted && isBounded(persisted, 255)) {
+        keysByTarget.set(memoryKey, persisted);
+        return persisted;
+      }
+    } catch {
+      // Continue with the exact scoped in-memory key.
+    }
   }
   const requestKey = createKey();
-  keys[invoiceId] = requestKey;
-  fallbackKeys?.set(fallbackKey, requestKey);
-  try {
-    storage.setItem(storageKey(storageScope), JSON.stringify(keys));
-  } catch {}
+  if (!isBounded(requestKey, 255)) {
+    throw new Error("Invoice operation request key is invalid.");
+  }
+  keysByTarget.set(memoryKey, requestKey);
+  if (storage && persistedKey) {
+    try {
+      storage.setItem(persistedKey, requestKey);
+    } catch {
+      // The exact scoped in-memory key remains available for this page lifetime.
+    }
+  }
   return requestKey;
 }
 
-export function clearPersistedInvoiceRetryRequestKey(
-  storageScope: string,
-  invoiceId: string,
-  storage: StorageLike | null = browserStorage(),
-  fallbackKeys?: InvoiceRetryRequestKeyStore
-) {
-  fallbackKeys?.delete(`${storageScope}:${invoiceId}`);
-  if (!storage) return;
-  const keys = loadStoredKeys(storageScope, storage);
-  delete keys[invoiceId];
-  try {
-    if (Object.keys(keys).length === 0) {
-      storage.removeItem(storageKey(storageScope));
-    } else {
-      storage.setItem(storageKey(storageScope), JSON.stringify(keys));
+export function clearPersistedInvoiceOperationRequestKey({
+  identity,
+  keysByTarget,
+  operation,
+  storage = browserStorage() ?? undefined,
+  targetId,
+}: {
+  identity: InvoiceOperationIdentity | null;
+  keysByTarget: InvoiceRetryRequestKeyStore;
+  operation: InvoiceOperationType;
+  storage?: StorageLike;
+  targetId: string;
+}) {
+  keysByTarget.delete(operationMemoryKey(identity, operation, targetId));
+  const persistedKey = identity ? operationStorageKey(identity, operation, targetId) : null;
+  if (storage && persistedKey) {
+    try {
+      storage.removeItem(persistedKey);
+    } catch {
+      // The exact scoped in-memory key is already cleared.
     }
-  } catch {}
+  }
 }
 
-export function shouldRetainInvoiceRetryRequestKey(status: number | null) {
-  return status === null || status >= 500;
+export function buildInvoiceOperationRequest(requestKey: string) {
+  if (!isBounded(requestKey, 255)) {
+    throw new Error("Invoice operation request key is invalid.");
+  }
+  return { headers: { "Idempotency-Key": requestKey } };
 }

@@ -1,8 +1,8 @@
 import unittest
 
 from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.testclient import TestClient
 from pydantic import BaseModel
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -16,16 +16,19 @@ from app.core.error_handlers import (
     unhandled_exception_handler,
 )
 from app.main import app
+from app.schemas.student import StudentRosterCursorErrorResponse
 
 
 class ErrorResponseTest(unittest.TestCase):
     def setUp(self):
         self.client = TestClient(app)
+        self.original_dependency_overrides = app.dependency_overrides.copy()
         app.dependency_overrides[get_current_user_id] = lambda: "validation-contract-user"
         app.dependency_overrides[get_supabase] = lambda: object()
 
     def tearDown(self):
         app.dependency_overrides.clear()
+        app.dependency_overrides.update(self.original_dependency_overrides)
 
     def assert_public_validation_detail(self, response):
         payload = response.json()
@@ -55,24 +58,39 @@ class ErrorResponseTest(unittest.TestCase):
         response = TestClient(test_app).get("/missing")
 
         self.assertEqual(response.status_code, 404)
-        self.assertEqual(response.json(), {
-            "detail": "Student not found.",
-            "error": {"code": "not_found", "status_code": 404},
-        })
+        self.assertEqual(
+            response.json(),
+            {
+                "detail": "Student not found.",
+                "error": {"code": "not_found", "status_code": 404},
+            },
+        )
 
     def test_http_exception_preserves_structured_detail_payloads(self):
         test_app = FastAPI()
         register_error_handlers(test_app)
+        expected_detail = {
+            "code": "stale_cursor",
+            "message": "The roster changed while this page was open.",
+            "recover_to": "nearest_prior",
+        }
 
-        @test_app.get("/structured")
+        @test_app.get(
+            "/structured",
+            responses={409: {"model": StudentRosterCursorErrorResponse}},
+        )
         async def structured():
-            raise HTTPException(status_code=409, detail={"failed": 1})
+            raise HTTPException(status_code=409, detail=expected_detail)
 
         response = TestClient(test_app).get("/structured")
 
         self.assertEqual(response.status_code, 409)
-        self.assertEqual(response.json()["detail"], {"failed": 1})
-        self.assertEqual(response.json()["error"], {"code": "conflict", "status_code": 409})
+        payload = response.json()
+        self.assertEqual(payload["detail"], expected_detail)
+        self.assertEqual(payload["error"], {"code": "conflict", "status_code": 409})
+        self.assertEqual(
+            StudentRosterCursorErrorResponse.model_validate(payload).model_dump(), payload
+        )
 
     def test_http_exception_keeps_bodyless_statuses_empty(self):
         for status_code in (204, 304):
@@ -108,14 +126,19 @@ class ErrorResponseTest(unittest.TestCase):
         response = TestClient(test_app).post("/payload", json={})
 
         self.assertEqual(response.status_code, 422)
-        self.assertEqual(response.json(), {
-            "detail": [{
-                "loc": ["body", "name"],
-                "msg": "Field required",
-                "type": "missing",
-            }],
-            "error": {"code": "validation_error", "status_code": 422},
-        })
+        self.assertEqual(
+            response.json(),
+            {
+                "detail": [
+                    {
+                        "loc": ["body", "name"],
+                        "msg": "Field required",
+                        "type": "missing",
+                    }
+                ],
+                "error": {"code": "validation_error", "status_code": 422},
+            },
+        )
 
     def test_main_app_validation_errors_preserve_missing_field_details(self):
         response = self.client.post("/api/v1/support/tickets", json={})
@@ -149,11 +172,16 @@ class ErrorResponseTest(unittest.TestCase):
 
         self.assertEqual(response.status_code, 422)
         self.assert_public_validation_detail(response)
-        self.assertEqual(response.json()["detail"], [{
-            "loc": ["body", "browser_context"],
-            "msg": "Input should be a valid dictionary",
-            "type": "dict_type",
-        }])
+        self.assertEqual(
+            response.json()["detail"],
+            [
+                {
+                    "loc": ["body", "browser_context"],
+                    "msg": "Input should be a valid dictionary",
+                    "type": "dict_type",
+                }
+            ],
+        )
         self.assertNotIn(synthetic_secret, response.text)
 
     def test_main_app_validation_errors_drop_rejected_body_and_error_context(self):
@@ -166,11 +194,64 @@ class ErrorResponseTest(unittest.TestCase):
 
         self.assertEqual(response.status_code, 422)
         self.assert_public_validation_detail(response)
-        self.assertEqual(response.json()["detail"], [{
-            "loc": ["body"],
-            "msg": "Value error, A status change or note is required.",
-            "type": "value_error",
-        }])
+        self.assertEqual(
+            response.json()["detail"],
+            [
+                {
+                    "loc": ["body"],
+                    "msg": "Value error, A status change or note is required.",
+                    "type": "value_error",
+                }
+            ],
+        )
+        self.assertNotIn(synthetic_secret, response.text)
+
+    def test_main_app_validation_errors_handle_malformed_json_without_echoing_body(self):
+        synthetic_secret = "sk_live_TEST_DO_NOT_USE_validation_json"
+
+        response = self.client.post(
+            "/api/v1/support/tickets",
+            content='{"credential": "' + synthetic_secret + '",}',
+            headers={"Content-Type": "application/json"},
+        )
+
+        self.assertEqual(response.status_code, 422)
+        self.assert_public_validation_detail(response)
+        error = response.json()["detail"][0]
+        self.assertEqual(error["type"], "json_invalid")
+        self.assertEqual(error["msg"], "JSON decode error")
+        self.assertEqual(error["loc"][0], "body")
+        self.assertIsInstance(error["loc"][1], int)
+        self.assertNotIn(synthetic_secret, response.text)
+
+    def test_main_app_query_validation_preserves_bounds_without_error_context(self):
+        response = self.client.get("/api/v1/internal/support/tickets", params={"limit": 0})
+
+        self.assertEqual(response.status_code, 422)
+        self.assert_public_validation_detail(response)
+        self.assertEqual(
+            response.json()["detail"],
+            [
+                {
+                    "loc": ["query", "limit"],
+                    "msg": "Input should be greater than or equal to 1",
+                    "type": "greater_than_equal",
+                }
+            ],
+        )
+
+    def test_main_app_path_validation_does_not_echo_rejected_path_value(self):
+        synthetic_secret = "sk_live_TEST_DO_NOT_USE_validation_path"
+
+        response = self.client.patch(
+            "/api/v1/internal/support/tickets/" + synthetic_secret,
+            json={"status": "open"},
+        )
+
+        self.assertEqual(response.status_code, 422)
+        self.assert_public_validation_detail(response)
+        self.assertEqual(response.json()["detail"][0]["loc"], ["path", "ticket_id"])
+        self.assertEqual(response.json()["detail"][0]["type"], "uuid_parsing")
         self.assertNotIn(synthetic_secret, response.text)
 
     def test_unhandled_errors_return_user_safe_message(self):
@@ -184,10 +265,13 @@ class ErrorResponseTest(unittest.TestCase):
         response = TestClient(test_app, raise_server_exceptions=False).get("/boom")
 
         self.assertEqual(response.status_code, 500)
-        self.assertEqual(response.json(), {
-            "detail": "Internal server error.",
-            "error": {"code": "internal_server_error", "status_code": 500},
-        })
+        self.assertEqual(
+            response.json(),
+            {
+                "detail": "Internal server error.",
+                "error": {"code": "internal_server_error", "status_code": 500},
+            },
+        )
         self.assertNotIn("sk_live_secret", response.text)
 
     def test_unhandled_errors_preserve_cors_for_allowed_browser_origin(self):
@@ -239,14 +323,17 @@ class ErrorResponseTest(unittest.TestCase):
         self.assertNotIn("input", validation_detail["properties"])
         self.assertNotIn("ctx", validation_detail["properties"])
         self.assertEqual(
-            schema["paths"]["/api/v1/auth/me"]["get"]["responses"]["default"]["content"]
-            ["application/json"]["schema"]["$ref"],
+            schema["paths"]["/api/v1/auth/me"]["get"]["responses"]["default"]["content"][
+                "application/json"
+            ]["schema"]["$ref"],
             "#/components/schemas/ErrorResponse",
         )
 
     def test_main_app_registers_normalized_error_handlers(self):
         self.assertIs(app.exception_handlers[StarletteHTTPException], http_exception_handler)
-        self.assertIs(app.exception_handlers[RequestValidationError], request_validation_exception_handler)
+        self.assertIs(
+            app.exception_handlers[RequestValidationError], request_validation_exception_handler
+        )
         self.assertIs(app.exception_handlers[Exception], unhandled_exception_handler)
 
 

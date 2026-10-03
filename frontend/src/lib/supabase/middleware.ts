@@ -10,10 +10,10 @@ import {
 } from "@/lib/studio-state-cookie";
 import { canAccessBillingRoute, isBillingRoute } from "@/lib/billing-route-access";
 import { ACCOUNT_ARCHIVED_ROUTE, resolveMembershipRoute } from "@/lib/auth-route-model";
-import {
-  parseAuthProfileResponse,
-  type AuthProfileResponse,
-} from "@/lib/store-bootstrap-model";
+import type { AuthProfileResponse } from "@/lib/store-bootstrap-model";
+import { AuthProfileRequestError, requestAuthProfile } from "@/lib/auth-profile-request";
+import { requestAuthUser } from "@/lib/auth-user-request";
+import { navigationRecoveryPath } from "@/lib/navigation-recovery";
 
 const PUBLIC_STATUS_ROUTES = new Set(["/404", "/500", "/502", "/503", "/504"]);
 
@@ -22,7 +22,7 @@ function setStudioStateCookie(
   request: NextRequest,
   userId: string,
   hasStudio: boolean,
-  membershipStatus: StudioMembershipStatus
+  membershipStatus: StudioMembershipStatus,
 ) {
   response.cookies.set(
     STUDIO_STATE_COOKIE,
@@ -32,7 +32,7 @@ function setStudioStateCookie(
       maxAge: STUDIO_STATE_COOKIE_MAX_AGE_SECONDS,
       sameSite: "lax",
       secure: request.nextUrl.protocol === "https:",
-    }
+    },
   );
 }
 
@@ -45,11 +45,7 @@ function clearStudioStateCookie(response: NextResponse, request: NextRequest) {
   });
 }
 
-function setActiveStudioCookie(
-  response: NextResponse,
-  request: NextRequest,
-  studioId: string
-) {
+function setActiveStudioCookie(response: NextResponse, request: NextRequest, studioId: string) {
   response.cookies.set(ACTIVE_STUDIO_COOKIE, studioId, {
     path: "/",
     maxAge: 60 * 60 * 24 * 30,
@@ -71,6 +67,12 @@ function copyResponseCookies(source: NextResponse, target: NextResponse) {
   for (const cookie of source.cookies.getAll()) {
     const { name, value, ...options } = cookie;
     target.cookies.set(name, value, options);
+  }
+  // SSR's refresh cookies and cache-prevention headers are one contract,
+  // including when the final response redirects to login or onboarding.
+  for (const name of ["cache-control", "expires", "pragma"]) {
+    const value = source.headers.get(name);
+    if (value !== null) target.headers.set(name, value);
   }
 }
 
@@ -95,38 +97,43 @@ export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({
     request,
   });
+  const authSignal = AbortSignal.any([request.signal, AbortSignal.timeout(8_000)]);
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
+      global: {
+        fetch: (input, init) =>
+          fetch(input, {
+            ...init,
+            signal: AbortSignal.any([authSignal, ...(init?.signal ? [init.signal] : [])]),
+          }),
+      },
       cookies: {
         getAll() {
           return request.cookies.getAll();
         },
-        setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value }) =>
-            request.cookies.set(name, value)
-          );
+        setAll(cookiesToSet, headers) {
+          if (authSignal.aborted) return;
+          cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
+          const previousResponse = supabaseResponse;
           supabaseResponse = NextResponse.next({
             request,
           });
+          copyResponseCookies(previousResponse, supabaseResponse);
           cookiesToSet.forEach(({ name, value, options }) =>
-            supabaseResponse.cookies.set(name, value, options)
+            supabaseResponse.cookies.set(name, value, options),
+          );
+          Object.entries(headers).forEach(([name, value]) =>
+            supabaseResponse.headers.set(name, value),
           );
         },
       },
-    }
+    },
   );
 
-  // Refresh session — this will call setAll if the session needs refreshing
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  const isAuthRoute =
-    pathname.startsWith("/login")
-    || pathname.startsWith("/signup");
+  const isAuthRoute = pathname.startsWith("/login") || pathname.startsWith("/signup");
   const isOnboardingRoute = pathname.startsWith("/onboarding");
   const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "");
   let authProfile: AuthProfileResponse | null = null;
@@ -138,7 +145,7 @@ export async function updateSession(request: NextRequest) {
       clearSearch?: boolean;
       clearActiveStudio?: boolean;
       clearStudioState?: boolean;
-    }
+    },
   ) {
     const url = request.nextUrl.clone();
     url.pathname = path;
@@ -158,9 +165,25 @@ export async function updateSession(request: NextRequest) {
   }
 
   function serviceUnavailable() {
-    return redirectTo("/503");
+    const url = request.nextUrl.clone();
+    url.pathname = "/503";
+    url.search = "";
+    url.searchParams.set("returnTo", navigationRecoveryPath(pathname + request.nextUrl.search));
+    const response = NextResponse.redirect(url);
+    copyResponseCookies(supabaseResponse, response);
+    response.headers.set("Cache-Control", "private, no-store, max-age=0");
+    // No raw path, query, identity, or provider error enters this event.
+    console.warn("[koaryu:navigation]", { event: "auth_unavailable" });
+    return response;
   }
 
+  let user;
+  try {
+    user = await requestAuthUser(() => supabase.auth.getUser(), authSignal);
+  } catch {
+    request.signal.throwIfAborted();
+    return serviceUnavailable();
+  }
   if (!user) {
     clearStudioStateCookie(supabaseResponse, request);
     clearActiveStudioCookie(supabaseResponse, request);
@@ -171,9 +194,7 @@ export async function updateSession(request: NextRequest) {
   }
   const authenticatedUserId = user.id;
 
-  const studioStateCookie = parseStudioStateCookie(
-    request.cookies.get(STUDIO_STATE_COOKIE)?.value
-  );
+  const studioStateCookie = parseStudioStateCookie(request.cookies.get(STUDIO_STATE_COOKIE)?.value);
   let hasStudio: boolean | null =
     studioStateCookie?.userId === authenticatedUserId ? studioStateCookie.hasStudio : null;
   membershipStatus =
@@ -192,7 +213,7 @@ export async function updateSession(request: NextRequest) {
       request,
       authenticatedUserId,
       hasStudio,
-      profile.membership_status
+      profile.membership_status,
     );
     if (hasStudio && profile.studio_id) {
       setActiveStudioCookie(supabaseResponse, request, profile.studio_id);
@@ -211,23 +232,14 @@ export async function updateSession(request: NextRequest) {
     }
 
     try {
-      const authMeResponse = await fetch(`${apiBaseUrl}/auth/me`, {
-        headers: {
-          Authorization: `Bearer ${session.access_token}`,
-        },
-        cache: "no-store",
-      });
-
-      if (authMeResponse.status === 401 || authMeResponse.status === 403) {
+      cacheAuthProfile(await requestAuthProfile(apiBaseUrl, session.access_token, request.signal));
+    } catch (error) {
+      if (
+        error instanceof AuthProfileRequestError &&
+        (error.status === 401 || error.status === 403)
+      ) {
         return redirectTo("/login", { clearStudioState: true });
       }
-
-      if (!authMeResponse.ok) {
-        throw new Error(`/auth/me returned ${authMeResponse.status}`);
-      }
-
-      cacheAuthProfile(parseAuthProfileResponse(await authMeResponse.json()));
-    } catch (error) {
       console.error("Failed to resolve current user's studio in middleware", error);
       return serviceUnavailable();
     }
@@ -248,7 +260,8 @@ export async function updateSession(request: NextRequest) {
     });
     if (membershipRedirect) {
       return redirectTo(membershipRedirect, {
-        clearActiveStudio: membershipStatus === "archived" || membershipRedirect === ACCOUNT_ARCHIVED_ROUTE,
+        clearActiveStudio:
+          membershipStatus === "archived" || membershipRedirect === ACCOUNT_ARCHIVED_ROUTE,
       });
     }
   }
@@ -268,23 +281,16 @@ export async function updateSession(request: NextRequest) {
       }
 
       try {
-        const authMeResponse = await fetch(`${apiBaseUrl}/auth/me`, {
-          headers: {
-            Authorization: `Bearer ${session.access_token}`,
-          },
-          cache: "no-store",
-        });
-
-        if (authMeResponse.status === 401 || authMeResponse.status === 403) {
+        cacheAuthProfile(
+          await requestAuthProfile(apiBaseUrl, session.access_token, request.signal),
+        );
+      } catch (error) {
+        if (
+          error instanceof AuthProfileRequestError &&
+          (error.status === 401 || error.status === 403)
+        ) {
           return redirectTo("/login", { clearStudioState: true });
         }
-
-        if (!authMeResponse.ok) {
-          throw new Error(`/auth/me returned ${authMeResponse.status}`);
-        }
-
-        cacheAuthProfile(parseAuthProfileResponse(await authMeResponse.json()));
-      } catch (error) {
         console.error("Failed to resolve billing route authorization", error);
         return serviceUnavailable();
       }
@@ -301,7 +307,8 @@ export async function updateSession(request: NextRequest) {
       });
       if (membershipRedirect) {
         return redirectTo(membershipRedirect, {
-          clearActiveStudio: membershipStatus === "archived" || membershipRedirect === ACCOUNT_ARCHIVED_ROUTE,
+          clearActiveStudio:
+            membershipStatus === "archived" || membershipRedirect === ACCOUNT_ARCHIVED_ROUTE,
         });
       }
     }

@@ -30,6 +30,8 @@ Use this file for work under `backend/`. Fall back to the repo root `AGENTS.md` 
 - Start local API: `cd backend && venv/bin/python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8001`
 - Run all tests: `cd backend && venv/bin/python -m pytest tests`
 - Run targeted tests: `cd backend && venv/bin/python -m pytest tests/test_health_endpoints.py`
+- Format Python: `cd backend && venv/bin/python -m ruff format .`
+- Check Python formatting: `cd backend && venv/bin/python -m ruff format --check .`
 
 The local backend runs on `http://127.0.0.1:8001`.
 
@@ -42,10 +44,13 @@ The local backend runs on `http://127.0.0.1:8001`.
 - Do not commit real values from `backend/.env` or other local secret files.
 - Prefer keeping HTTP concerns in endpoints and domain logic in services.
 - When changing a service contract, update the dependent schema, endpoint, and targeted tests together.
+- Keep `BillingService` as the public billing entry and composition point.
+- Give billing managers, projectors, and workflows their concrete collaborators. Do not pass an opaque `BillingService` or owner object, add a private forwarding facade, or import `billing_service` back into billing components.
+- Keep shared billing rules in the component that owns them, including authorization, tenant isolation, payment and idempotency checks, and database safeguards. This boundary does not prohibit focused private helpers or legitimate owner IDs.
 
 ## Production And Deployment Constraints
 
-- Keep `render.yaml`, `backend/Procfile`, `backend/runtime.txt`, the direct dependency input, and the hash-pinned runtime lock aligned when changing startup behavior.
+- Keep `render.yaml`, `backend/Dockerfile`, `backend/scripts/start-render.sh`, `backend/runtime.txt`, the direct dependency input, and the hash-pinned runtime lock aligned when changing startup behavior.
 - The production app intentionally fails fast when critical Supabase, Stripe, or frontend configuration is invalid. Do not relax those guards casually.
 - Be careful with support-ticket and account-deletion flows; they are internal operational surfaces protected by shared secrets.
 
@@ -72,3 +77,7 @@ The local backend runs on `http://127.0.0.1:8001`.
 - Repo overview: `README.md`
 - Render deployment runbook: `docs/render-backend-deployment.md`
 - Support triage runbook: `docs/support-triage.md`
+
+## Release readiness metadata
+
+`app/services/generated_release_readiness.py` is generated from the shared release declarations. Update the declaration and regenerate with the repository-root release-attestation tool; do not hand-edit its version, pending list or RPC name. Run `npm run check:release-attestation` and the focused readiness tests. See `scripts/release-attestation/README.md`.

@@ -92,17 +92,22 @@ describe("preview belt eligibility", () => {
         student("other-program", {
           program_id: "program-karate",
           current_belt_rank_id: null,
-          program_memberships: [{
-            ...student("other-program").program_memberships[0],
-            program_id: "program-karate",
-            current_belt_rank_id: null,
-          }],
+          program_memberships: [
+            {
+              ...student("other-program").program_memberships[0],
+              program_id: "program-karate",
+              current_belt_rank_id: null,
+            },
+          ],
         }),
       ],
       nowMs: Date.parse("2026-05-31T00:00:00.000Z"),
     });
 
-    assert.deepEqual(rows.map((row) => row.student_id), ["new-student"]);
+    assert.deepEqual(
+      rows.map((row) => row.student_id),
+      ["new-student"],
+    );
     assert.deepEqual(rows[0], {
       student_id: "new-student",
       student_program_membership_id: "new-student-membership",
@@ -165,20 +170,22 @@ describe("preview belt eligibility", () => {
       beltLadders: [ladder],
       beltRanks: ranks,
       students: [student("seeded")],
-      seedRows: [{
-        student_id: "seeded",
-        student_name: "Seeded Student",
-        current_rank_id: "white",
-        next_rank_id: "yellow",
-        classes_since_promo: 12,
-        classes_required: 10,
-        days_at_rank: 90,
-        days_required: 60,
-        classes_met: true,
-        time_met: true,
-        needs_approval: true,
-        is_eligible: false,
-      }],
+      seedRows: [
+        {
+          student_id: "seeded",
+          student_name: "Seeded Student",
+          current_rank_id: "white",
+          next_rank_id: "yellow",
+          classes_since_promo: 12,
+          classes_required: 10,
+          days_at_rank: 90,
+          days_required: 60,
+          classes_met: true,
+          time_met: true,
+          needs_approval: true,
+          is_eligible: false,
+        },
+      ],
     });
 
     assert.equal(rows[0].classes_since_promo, 12);
@@ -193,22 +200,24 @@ describe("preview belt eligibility", () => {
       beltLadders: [ladder],
       beltRanks: ranks,
       students: [student("promoted")],
-      seedRows: [{
-        student_id: "promoted",
-        student_program_membership_id: "promoted-membership",
-        program_id: "program-bjj",
-        student_name: "Promoted Student",
-        current_rank_id: "white",
-        next_rank_id: "yellow",
-        classes_since_promo: 12,
-        classes_required: 10,
-        days_at_rank: 90,
-        days_required: 60,
-        classes_met: true,
-        time_met: true,
-        needs_approval: true,
-        is_eligible: false,
-      }],
+      seedRows: [
+        {
+          student_id: "promoted",
+          student_program_membership_id: "promoted-membership",
+          program_id: "program-bjj",
+          student_name: "Promoted Student",
+          current_rank_id: "white",
+          next_rank_id: "yellow",
+          classes_since_promo: 12,
+          classes_required: 10,
+          days_at_rank: 90,
+          days_required: 60,
+          classes_met: true,
+          time_met: true,
+          needs_approval: true,
+          is_eligible: false,
+        },
+      ],
       promotionHistoryByStudent: {
         promoted: [
           {
@@ -251,22 +260,31 @@ describe("preview belt eligibility", () => {
       setItem: (key, value) => values.set(key, value),
       removeItem: (key) => values.delete(key),
       key: (index) => [...values.keys()][index] ?? null,
-      get length() { return values.size; },
+      get length() {
+        return values.size;
+      },
       clear: () => values.clear(),
     };
 
     try {
       const promotedAt = "2026-06-01T00:00:00.000Z";
-      const cache = setPromotionHistoryCacheItems({}, "reloaded", [{
-        id: "persisted-promotion",
-        studio_id: "mock-studio",
-        student_id: "reloaded",
-        student_program_membership_id: "reloaded-membership",
-        program_id: "program-bjj",
-        from_rank_id: null,
-        to_rank_id: "white",
-        promoted_at: promotedAt,
-      }], Date.parse(promotedAt));
+      const cache = setPromotionHistoryCacheItems(
+        {},
+        "reloaded",
+        [
+          {
+            id: "persisted-promotion",
+            studio_id: "mock-studio",
+            student_id: "reloaded",
+            student_program_membership_id: "reloaded-membership",
+            program_id: "program-bjj",
+            from_rank_id: null,
+            to_rank_id: "white",
+            promoted_at: promotedAt,
+          },
+        ],
+        Date.parse(promotedAt),
+      );
       save(KEYS.promotionHistory, cache);
       const reloadedCache = load(KEYS.promotionHistory, {});
 

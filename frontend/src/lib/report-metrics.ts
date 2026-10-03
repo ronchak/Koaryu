@@ -1,5 +1,30 @@
 import type { AttendanceRecord, ClassSession, Lead, LeadSource, LeadStage, Program } from "@/types";
 
+export type ReportExportMinimumRole = "admin" | "front_desk";
+
+export const FRONT_DESK_REPORT_EXPORT_IDS = [
+  "programs",
+  "belt_ladders",
+  "belt_ranks",
+  "class_templates",
+  "class_sessions",
+  "attendance",
+] as const;
+
+export function getReportExportMinimumRole(reportId: string): ReportExportMinimumRole {
+  return (FRONT_DESK_REPORT_EXPORT_IDS as readonly string[]).includes(reportId)
+    ? "front_desk"
+    : "admin";
+}
+
+export function canRunReportExport(
+  role: "admin" | "front_desk" | "instructor" | null | undefined,
+  reportId: string,
+) {
+  if (role === "admin") return true;
+  return role === "front_desk" && getReportExportMinimumRole(reportId) === "front_desk";
+}
+
 export type ReportSessionMetricRow = {
   attendees: number;
   capacity?: number | null;
@@ -94,6 +119,7 @@ export function subtractReportDays(dateString: string, days: number) {
 
 export function calculateAttendanceMetrics(sessionRows: ReportSessionMetricRow[]) {
   let totalAttendance = 0;
+  let attendanceWithCapacity = 0;
   let totalCapacity = 0;
   let sessionsWithCapacity = 0;
 
@@ -101,6 +127,7 @@ export function calculateAttendanceMetrics(sessionRows: ReportSessionMetricRow[]
     totalAttendance += session.attendees;
 
     if (session.capacity && session.capacity > 0) {
+      attendanceWithCapacity += session.attendees;
       totalCapacity += session.capacity;
       sessionsWithCapacity += 1;
     }
@@ -110,7 +137,7 @@ export function calculateAttendanceMetrics(sessionRows: ReportSessionMetricRow[]
     totalAttendance,
     totalCapacity,
     sessionsWithCapacity,
-    utilizationRate: totalCapacity > 0 ? totalAttendance / totalCapacity : null,
+    utilizationRate: totalCapacity > 0 ? attendanceWithCapacity / totalCapacity : null,
     averageAttendance: sessionRows.length > 0 ? totalAttendance / sessionRows.length : 0,
   };
 }
@@ -119,13 +146,17 @@ export function buildProgramAttendanceRows(
   sessionRows: ReportProgramSessionMetricRow[],
   getProgramLabel: (programId: string | null) => string,
 ) {
-  const rows = new Map<string, {
-    programId: string | null;
-    label: string;
-    sessions: number;
-    attendance: number;
-    capacity: number;
-  }>();
+  const rows = new Map<
+    string,
+    {
+      programId: string | null;
+      label: string;
+      sessions: number;
+      attendance: number;
+      attendanceWithCapacity: number;
+      capacity: number;
+    }
+  >();
 
   for (const session of sessionRows) {
     const programId = session.program_id || null;
@@ -135,6 +166,7 @@ export function buildProgramAttendanceRows(
       label: getProgramLabel(programId),
       sessions: 0,
       attendance: 0,
+      attendanceWithCapacity: 0,
       capacity: 0,
     };
 
@@ -142,6 +174,7 @@ export function buildProgramAttendanceRows(
     row.attendance += session.attendees;
 
     if (session.capacity && session.capacity > 0) {
+      row.attendanceWithCapacity += session.attendees;
       row.capacity += session.capacity;
     }
 
@@ -167,7 +200,7 @@ export function buildReportLeadMetrics(leads: Lead[]) {
       counts[source] = { total: 0, active: 0, enrolled: 0 };
       return counts;
     },
-    {} as Record<LeadSource, { total: number; active: number; enrolled: number }>
+    {} as Record<LeadSource, { total: number; active: number; enrolled: number }>,
   );
 
   for (const lead of leads) {
@@ -247,9 +280,7 @@ export function buildReportSessionRows({
   return sessions
     .filter(
       (session) =>
-        session.status !== "canceled" &&
-        session.date >= lookbackStart &&
-        session.date <= today
+        session.status !== "canceled" && session.date >= lookbackStart && session.date <= today,
     )
     .map((session) => {
       const attendees = attendanceBySession.get(session.id) ?? session.attendance_count ?? 0;
@@ -283,8 +314,11 @@ export function countUniqueReportAttendees({
 }) {
   const sessionIds = new Set(
     sessions
-      .filter((session) => session.date >= lookbackStart && session.date <= today)
-      .map((session) => session.id)
+      .filter(
+        (session) =>
+          session.status !== "canceled" && session.date >= lookbackStart && session.date <= today,
+      )
+      .map((session) => session.id),
   );
   const studentIds = new Set<string>();
 

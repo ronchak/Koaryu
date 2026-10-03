@@ -1,7 +1,8 @@
 "use client";
 
 import { Fragment } from "react";
-import Link from "next/link";
+import { IntentPrefetchLink as Link } from "@/components/intent-prefetch-link";
+import { MartialArtsBelt } from "@/components/icons/martial-arts-belt";
 import { ProgressBar, RankBadge } from "@/components/belt-tracker/rank-visuals";
 import { Button } from "@/components/ui/button";
 import { DismissibleNotice } from "@/components/ui/dismissible-notice";
@@ -9,7 +10,6 @@ import { isEligibilityEntryReady, type EligibilityGroup } from "@/lib/belt-track
 import type { BeltRank, EligibilityEntry } from "@/types";
 import {
   AlertTriangle,
-  Award,
   Check,
   ChevronDown,
   ChevronRight,
@@ -18,6 +18,7 @@ import {
   Settings,
   Users,
 } from "lucide-react";
+import styles from "./belt-tracker.module.css";
 
 type EligibilityPanelProps = {
   canConfigureBelts: boolean;
@@ -33,6 +34,7 @@ type EligibilityPanelProps = {
   onDismissEligibilityLoadError: () => void;
   onDismissLadderError: () => void;
   onDismissProgramsLoadError: () => void;
+  onRetryEligibility: () => void;
   onStartPromotion: (entry: EligibilityEntry) => void;
   onStartDemotion: (entry: EligibilityEntry) => void;
   onToggleGroup: (groupKey: string) => void;
@@ -57,6 +59,7 @@ export function EligibilityPanel({
   onDismissEligibilityLoadError,
   onDismissLadderError,
   onDismissProgramsLoadError,
+  onRetryEligibility,
   onStartPromotion,
   onStartDemotion,
   onToggleGroup,
@@ -66,232 +69,321 @@ export function EligibilityPanel({
   previousRankByCurrentRankId,
   selectedProgramName,
 }: EligibilityPanelProps) {
+  const hasRetainedEligibility = eligibilityGroups.length > 0;
+  const decisionCounts = eligibilityGroups.reduce(
+    (counts, group) => {
+      group.entries.forEach((entry) => {
+        if (!isEligibilityEntryReady(entry)) counts.progress += 1;
+        else if (entry.needs_approval) counts.approval += 1;
+        else counts.ready += 1;
+      });
+      return counts;
+    },
+    { approval: 0, progress: 0, ready: 0 },
+  );
+
   return (
-    <div className="flex-1 overflow-x-auto">
+    <div
+      id="belt-panel-eligibility"
+      role="tabpanel"
+      aria-labelledby="belt-tab-eligibility"
+      className={`flex-1 min-w-0 ${styles.eligibilityWorkspace}`}
+    >
       {ladderError && (
-        <div className="mx-8 mt-6">
+        <div>
           <DismissibleNotice tone="danger" onDismiss={onDismissLadderError}>
             {ladderError}
           </DismissibleNotice>
         </div>
       )}
       {programsLoadError && !isProgramsLoadErrorDismissed && (
-        <div className="mx-8 mt-6">
+        <div>
           <DismissibleNotice tone="danger" onDismiss={onDismissProgramsLoadError}>
             {programsLoadError}
           </DismissibleNotice>
         </div>
       )}
       {eligibilityLoadError && !isEligibilityLoading && !isEligibilityLoadErrorDismissed && (
-        <div className="mx-8 mt-6">
+        <div>
           <DismissibleNotice tone="danger" onDismiss={onDismissEligibilityLoadError}>
             {eligibilityLoadError}
           </DismissibleNotice>
         </div>
       )}
+      {eligibilityLoadError && !isEligibilityLoading ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3" role="status">
+          <p className="text-sm text-text-secondary">
+            {hasRetainedEligibility
+              ? "Showing the last loaded eligibility. Current eligibility is unavailable."
+              : "Student eligibility is unavailable."}
+          </p>
+          <Button variant="secondary" size="sm" onClick={onRetryEligibility}>
+            Retry
+          </Button>
+        </div>
+      ) : null}
 
       {isEligibilityLoading ? (
-        <div className="flex flex-col items-center justify-center py-20 text-center">
-          <Clock className="w-8 h-8 text-muted mb-3 animate-pulse" />
-          <p className="text-sm text-text-secondary">
+        <div className={styles.eligibilitySkeleton} role="status">
+          <p className="sr-only">
             Loading eligibility for {selectedProgramName || "this program"}...
           </p>
+          {Array.from({ length: 7 }).map((_, row) => (
+            <div key={row} className={styles.eligibilitySkeletonRow} aria-hidden="true">
+              {Array.from({ length: 6 }).map((__, column) => (
+                <span key={column} className={styles.eligibilitySkeletonBar} />
+              ))}
+            </div>
+          ))}
         </div>
-      ) : eligibilityGroups.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-20 text-center">
-          <Award className="w-8 h-8 text-muted mb-3" />
-          <p className="text-sm text-text-secondary">
-            {selectedProgramName
-              ? `No active students are ready in ${selectedProgramName} yet.`
-              : "No active students to evaluate."}
-          </p>
-          <div className="mt-4 flex items-center gap-3">
-            {canConfigureBelts ? (
-              <Button variant="secondary" size="sm" onClick={onConfigureRanks}>
-                <Settings className="w-3.5 h-3.5" />
-                Configure ranks
+      ) : eligibilityLoadError && !hasRetainedEligibility ? null : eligibilityGroups.length ===
+        0 ? (
+        <div className={styles.panelState}>
+          <div className={styles.panelStateInner}>
+            <span className={styles.panelStateIcon} aria-hidden="true">
+              <MartialArtsBelt />
+            </span>
+            <h2 className={styles.panelStateTitle}>No students to evaluate</h2>
+            <p className="text-sm text-text-secondary">
+              {selectedProgramName
+                ? `There are no active students to evaluate in ${selectedProgramName} yet.`
+                : "No active students to evaluate."}
+            </p>
+            <div className="mt-4 flex flex-wrap items-center justify-center gap-3">
+              {canConfigureBelts ? (
+                <Button variant="secondary" size="sm" onClick={onConfigureRanks}>
+                  <Settings className="w-3.5 h-3.5" />
+                  Configure ranks
+                </Button>
+              ) : null}
+              <Button variant="primary" size="sm" onClick={onViewStudents}>
+                <Users className="w-3.5 h-3.5" />
+                View students
               </Button>
-            ) : null}
-            <Button variant="primary" size="sm" onClick={onViewStudents}>
-              <Users className="w-3.5 h-3.5" />
-              View students
-            </Button>
+            </div>
           </div>
         </div>
       ) : (
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-border">
-              <th className="px-6 py-3 text-left text-xs font-medium text-text-secondary">Student</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary">Current Rank</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary">Next Rank</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary w-44">Classes</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary w-44">Time at Rank</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary">Status</th>
-              <th className="px-4 py-3"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {eligibilityGroups.map((group) => {
-              const isCollapsed = collapsedGroups.has(group.key);
+        <>
+          <div className={styles.decisionRegister} aria-label="Promotion decision summary">
+            <div data-readiness="ready">
+              <span>Ready</span>
+              <strong>{decisionCounts.ready}</strong>
+            </div>
+            <div data-readiness="approval">
+              <span>Approval</span>
+              <strong>{decisionCounts.approval}</strong>
+            </div>
+            <div data-readiness="progress">
+              <span>Progress</span>
+              <strong>{decisionCounts.progress}</strong>
+            </div>
+          </div>
+          <div className={styles.eligibilityTableFrame}>
+            <table className={styles.eligibilityTable}>
+              <caption className="sr-only">Promotion readiness grouped by current rank</caption>
+              <thead>
+                <tr className="border-b border-border">
+                  <th className="px-6 py-3 text-left text-xs font-medium text-text-secondary">
+                    Student
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary">
+                    Current Rank
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary">
+                    Next Rank
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary w-44">
+                    Classes
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary w-44">
+                    Time at Rank
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary">
+                    Status
+                  </th>
+                  <th className="px-4 py-3"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {eligibilityGroups.map((group) => {
+                  const isCollapsed = collapsedGroups.has(group.key);
 
-              return (
-                <Fragment key={group.key}>
-                  <tr className="border-b border-border bg-surface-raised/60">
-                    <td colSpan={7} className="px-4 py-3">
-                      <button
-                        type="button"
-                        onClick={() => onToggleGroup(group.key)}
-                        className="flex w-full items-center justify-between gap-4 text-left cursor-pointer"
-                      >
-                        <div className="flex items-center gap-3">
-                          {isCollapsed
-                            ? <ChevronRight className="w-4 h-4 text-muted" />
-                            : <ChevronDown className="w-4 h-4 text-muted" />}
-                          {group.rank && group.color
-                            ? (
-                              <RankBadge
-                                name={group.label}
-                                color={group.color}
-                                isTip={group.rank.is_tip}
-                                tipColor={group.rank.tip_color_hex ?? undefined}
-                              />
-                            )
-                            : (
-                              <span className="inline-flex items-center rounded-[4px] border border-border px-2 py-0.5 text-xs font-medium text-text-secondary">
-                                {group.label}
-                              </span>
-                            )}
-                          <span className="text-xs text-muted">
-                            {group.entries.length} student{group.entries.length === 1 ? "" : "s"}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-3 text-xs">
-                          {group.eligibleCount > 0 && (
-                            <span className="text-success">{group.eligibleCount} eligible</span>
-                          )}
-                          {group.approvalCount > 0 && (
-                            <span className="text-warning">{group.approvalCount} need approval</span>
-                          )}
-                        </div>
-                      </button>
-                    </td>
-                  </tr>
-                  {!isCollapsed && group.entries.map((entry) => {
-                    const allMet = isEligibilityEntryReady(entry);
-                    const currentRank = entry.current_rank_id ? rankById.get(entry.current_rank_id) : undefined;
-                    const nextRank = entry.next_rank_id ? rankById.get(entry.next_rank_id) : undefined;
-                    const previousRank = entry.current_rank_id
-                      ? previousRankByCurrentRankId.get(entry.current_rank_id)
-                      : undefined;
-                    return (
-                      <tr
-                        key={`${entry.student_program_membership_id ?? entry.program_id ?? "legacy"}-${entry.student_id}`}
-                        className="border-b border-border hover:bg-surface-raised/50 transition-colors"
-                      >
-                        <td className="px-6 py-3">
-                          <Link
-                            href={`/students/${entry.student_id}`}
-                            className="inline-flex rounded-[4px] font-medium text-text-primary transition-colors hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70 focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
+                  return (
+                    <Fragment key={group.key}>
+                      <tr className={styles.rankGroupHeader}>
+                        <td colSpan={7} className="px-4 py-3">
+                          <button
+                            type="button"
+                            onClick={() => onToggleGroup(group.key)}
+                            className="flex w-full items-center justify-between gap-4 text-left cursor-pointer"
                           >
-                            {entry.student_name}
-                          </Link>
-                        </td>
-                        <td className="px-4 py-3">
-                          {entry.current_rank_name && entry.current_rank_color
-                            ? (
-                              <RankBadge
-                                name={entry.current_rank_name}
-                                color={entry.current_rank_color}
-                                isTip={currentRank?.is_tip}
-                                tipColor={currentRank?.tip_color_hex ?? undefined}
-                              />
-                            )
-                            : <span className="text-xs text-muted">Unranked</span>}
-                        </td>
-                        <td className="px-4 py-3">
-                          {entry.next_rank_name && entry.next_rank_color
-                            ? (
-                              <RankBadge
-                                name={entry.next_rank_name}
-                                color={entry.next_rank_color}
-                                isTip={nextRank?.is_tip}
-                                tipColor={nextRank?.tip_color_hex ?? undefined}
-                              />
-                            )
-                            : <span className="text-xs text-muted">{"\u2014"}</span>}
-                        </td>
-                        <td className="px-4 py-3">
-                          <ProgressBar
-                            current={entry.classes_since_promo}
-                            required={entry.classes_required}
-                            met={entry.classes_met}
-                          />
-                        </td>
-                        <td className="px-4 py-3">
-                          <ProgressBar
-                            current={entry.days_at_rank}
-                            required={entry.days_required}
-                            met={entry.time_met}
-                          />
-                        </td>
-                        <td className="px-4 py-3">
-                          {allMet
-                            ? entry.needs_approval
-                              ? (
-                                <span className="flex items-center gap-1 text-xs text-warning">
-                                  <AlertTriangle className="w-3 h-3" />Needs approval
+                            <div className="flex items-center gap-3">
+                              {isCollapsed ? (
+                                <ChevronRight className="w-4 h-4 text-muted" />
+                              ) : (
+                                <ChevronDown className="w-4 h-4 text-muted" />
+                              )}
+                              {group.rank && group.color ? (
+                                <RankBadge
+                                  name={group.label}
+                                  color={group.color}
+                                  isTip={group.rank.is_tip}
+                                  tipColor={group.rank.tip_color_hex ?? undefined}
+                                />
+                              ) : (
+                                <span className="inline-flex items-center rounded-[10px] border border-border px-2 py-0.5 text-xs font-medium text-text-secondary">
+                                  {group.label}
                                 </span>
-                              )
-                              : (
-                                <span className="flex items-center gap-1 text-xs text-success">
-                                  <Check className="w-3 h-3" />Eligible
-                                </span>
-                              )
-                            : (
-                              <span className="flex items-center gap-1 text-xs text-muted">
-                                <Clock className="w-3 h-3" />In progress
+                              )}
+                              <span className="text-xs text-muted">
+                                {group.entries.length} student
+                                {group.entries.length === 1 ? "" : "s"}
                               </span>
-                            )}
-                        </td>
-                        <td className="px-4 py-3">
-                          {canPromoteStudents ? (
-                            <div className="flex flex-wrap gap-2">
-                              {previousRank ? (
-                                <Button
-                                  variant="secondary"
-                                  size="sm"
-                                  onClick={() => onStartDemotion(entry)}
-                                >
-                                  <ChevronDown className="w-3 h-3" />Demote
-                                </Button>
-                              ) : null}
-                              {allMet ? (
-                                <Button
-                                  variant="primary"
-                                  size="sm"
-                                  disabled={!entry.next_rank_id}
-                                  onClick={() => {
-                                    if (!entry.next_rank_id) {
-                                      return;
-                                    }
-                                    onStartPromotion(entry);
-                                  }}
-                                >
-                                  <ChevronUp className="w-3 h-3" />Promote
-                                </Button>
-                              ) : null}
                             </div>
-                          ) : null}
+                            <div className="flex items-center gap-3 text-xs">
+                              {group.eligibleCount > 0 && (
+                                <span className="text-success">{group.eligibleCount} eligible</span>
+                              )}
+                              {group.approvalCount > 0 && (
+                                <span className="text-warning">
+                                  {group.approvalCount} need approval
+                                </span>
+                              )}
+                            </div>
+                          </button>
                         </td>
                       </tr>
-                    );
-                  })}
-                </Fragment>
-              );
-            })}
-          </tbody>
-        </table>
+                      {!isCollapsed &&
+                        group.entries.map((entry) => {
+                          const allMet = isEligibilityEntryReady(entry);
+                          const currentRank = entry.current_rank_id
+                            ? rankById.get(entry.current_rank_id)
+                            : undefined;
+                          const nextRank = entry.next_rank_id
+                            ? rankById.get(entry.next_rank_id)
+                            : undefined;
+                          const previousRank = entry.current_rank_id
+                            ? previousRankByCurrentRankId.get(entry.current_rank_id)
+                            : undefined;
+                          return (
+                            <tr
+                              key={`${entry.student_program_membership_id ?? entry.program_id ?? "legacy"}-${entry.student_id}`}
+                              data-readiness={
+                                allMet ? (entry.needs_approval ? "approval" : "ready") : "progress"
+                              }
+                              className="border-b border-border hover:bg-surface-raised/50 transition-colors"
+                            >
+                              <th scope="row" data-label="Student" className="px-6 py-3 text-left">
+                                <Link
+                                  href={`/students/${entry.student_id}`}
+                                  className="inline-flex rounded-[10px] font-medium text-text-primary transition-colors hover:text-accent"
+                                >
+                                  {entry.student_name}
+                                </Link>
+                              </th>
+                              <td data-label="Current rank" className="px-4 py-3">
+                                {entry.current_rank_name && entry.current_rank_color ? (
+                                  <RankBadge
+                                    name={entry.current_rank_name}
+                                    color={entry.current_rank_color}
+                                    isTip={currentRank?.is_tip}
+                                    tipColor={currentRank?.tip_color_hex ?? undefined}
+                                  />
+                                ) : (
+                                  <span className="text-xs text-muted">Unranked</span>
+                                )}
+                              </td>
+                              <td data-label="Next rank" className="px-4 py-3">
+                                {entry.next_rank_name && entry.next_rank_color ? (
+                                  <RankBadge
+                                    name={entry.next_rank_name}
+                                    color={entry.next_rank_color}
+                                    isTip={nextRank?.is_tip}
+                                    tipColor={nextRank?.tip_color_hex ?? undefined}
+                                  />
+                                ) : (
+                                  <span className="text-xs text-muted">{"\u2014"}</span>
+                                )}
+                              </td>
+                              <td data-label="Classes" className="px-4 py-3">
+                                <ProgressBar
+                                  label="Class requirement progress"
+                                  current={entry.classes_since_promo}
+                                  required={entry.classes_required}
+                                  met={entry.classes_met}
+                                />
+                              </td>
+                              <td data-label="Time at rank" className="px-4 py-3">
+                                <ProgressBar
+                                  label="Time requirement progress"
+                                  current={entry.days_at_rank}
+                                  required={entry.days_required}
+                                  met={entry.time_met}
+                                />
+                              </td>
+                              <td data-label="Readiness" className="px-4 py-3">
+                                {allMet ? (
+                                  entry.needs_approval ? (
+                                    <span className="flex items-center gap-1 text-xs text-warning">
+                                      <AlertTriangle className="w-3 h-3" />
+                                      Needs approval
+                                    </span>
+                                  ) : (
+                                    <span className="flex items-center gap-1 text-xs text-success">
+                                      <Check className="w-3 h-3" />
+                                      Eligible
+                                    </span>
+                                  )
+                                ) : (
+                                  <span className="flex items-center gap-1 text-xs text-muted">
+                                    <Clock className="w-3 h-3" />
+                                    In progress
+                                  </span>
+                                )}
+                              </td>
+                              <td data-label="Actions" className="px-4 py-3">
+                                {canPromoteStudents ? (
+                                  <div className="flex flex-wrap gap-2">
+                                    {previousRank ? (
+                                      <Button
+                                        variant="secondary"
+                                        size="sm"
+                                        onClick={() => onStartDemotion(entry)}
+                                      >
+                                        <ChevronDown className="w-3 h-3" />
+                                        Demote
+                                      </Button>
+                                    ) : null}
+                                    {allMet ? (
+                                      <Button
+                                        variant="primary"
+                                        size="sm"
+                                        disabled={!entry.next_rank_id}
+                                        onClick={() => {
+                                          if (!entry.next_rank_id) {
+                                            return;
+                                          }
+                                          onStartPromotion(entry);
+                                        }}
+                                      >
+                                        <ChevronUp className="w-3 h-3" />
+                                        Promote
+                                      </Button>
+                                    ) : null}
+                                  </div>
+                                ) : null}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                    </Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
     </div>
   );

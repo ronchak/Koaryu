@@ -10,9 +10,19 @@ import {
   MOCK_SESSIONS,
   MOCK_STUDENTS,
 } from "@/lib/mock-data";
-import { DEMO_STUDIO_NAME, MOCK_BELT_LADDERS, MOCK_PROGRAMS, MOCK_STAFF_MEMBERS } from "@/lib/preview-studio-data";
+import {
+  DEMO_STUDIO_NAME,
+  MOCK_BELT_LADDERS,
+  MOCK_PROGRAMS,
+  MOCK_STAFF_MEMBERS,
+} from "@/lib/preview-studio-data";
 import type { AuthUserProfile } from "@/lib/store-bootstrap-model";
-import type { BeginLiveAuthRequest, StoreRef } from "@/lib/store-action-types";
+import {
+  canCommitLiveMutation,
+  type BeginLiveAuthRequest,
+  type StoreRef,
+} from "@/lib/store-action-types";
+import { beginResourceMutation, type ResourceScope } from "@/lib/store-resource-scope";
 import { KEYS, clearPreviewStorage, save } from "@/lib/store-storage";
 import {
   buildPreviewDemoResetResponse,
@@ -56,7 +66,13 @@ interface UseStoreStudioActionsOptions {
   persistPrograms: (next: Program[]) => void;
   sessionsRef: StoreRef<ClassSession[]>;
   setCurrentUser: Dispatch<SetStateAction<AuthUserProfile | null>>;
-  setStaffProfilesAvailable: Dispatch<SetStateAction<boolean>>;
+  staffScopeRef: StoreRef<ResourceScope>;
+  resetStaffScope: () => void;
+  updateStaffLegalName: (
+    userId: string,
+    firstName: string,
+    lastName: string,
+  ) => Promise<StaffLegalNameResponse>;
   setStaffLoadError: Dispatch<SetStateAction<string | null>>;
   setStaffLoaded: Dispatch<SetStateAction<boolean>>;
   setStaffMembers: Dispatch<SetStateAction<StaffMember[]>>;
@@ -78,7 +94,9 @@ export function useStoreStudioActions({
   persistPrograms,
   sessionsRef,
   setCurrentUser,
-  setStaffProfilesAvailable,
+  staffScopeRef,
+  resetStaffScope,
+  updateStaffLegalName,
   setStaffLoadError,
   setStaffLoaded,
   setStaffMembers,
@@ -87,113 +105,106 @@ export function useStoreStudioActions({
   studioName,
   supabase,
 }: UseStoreStudioActionsOptions) {
-  const setStudioName = useCallback(async (name: string) => {
-    if (isPreviewMode) {
+  const setStudioName = useCallback(
+    async (name: string) => {
+      if (isPreviewMode) {
+        setStudioNameState(name);
+        save(KEYS.studioName, name);
+        return;
+      }
+
+      const liveRequest = beginLiveAuthRequest();
+      await api.patch("/studios/current", { name }, liveRequest.token);
+      if (!liveRequest.isCurrent()) {
+        return;
+      }
       setStudioNameState(name);
-      save(KEYS.studioName, name);
-      return;
-    }
+    },
+    [beginLiveAuthRequest, isPreviewMode, setStudioNameState],
+  );
 
-    const liveRequest = beginLiveAuthRequest();
-    await api.patch("/studios/current", { name }, liveRequest.token);
-    if (!liveRequest.isCurrent()) {
-      return;
-    }
-    setStudioNameState(name);
-  }, [beginLiveAuthRequest, isPreviewMode, setStudioNameState]);
+  const updateUserName = useCallback(
+    async (name: string) => {
+      const nextName = name.trim();
+      if (!nextName) {
+        throw new Error("Display name is required.");
+      }
 
-  const updateUserName = useCallback(async (name: string) => {
-    const nextName = name.trim();
-    if (!nextName) {
-      throw new Error("Display name is required.");
-    }
+      if (isPreviewMode) {
+        setCurrentUser((current) => (current ? { ...current, full_name: nextName } : current));
+        return;
+      }
 
-    if (isPreviewMode) {
-      setCurrentUser((current) => current ? { ...current, full_name: nextName } : current);
-      return;
-    }
+      const request = beginLiveAuthRequest();
+      const scope = staffScopeRef.current;
+      const finish = beginResourceMutation(scope);
+      try {
+        const { error } = await supabase.auth.updateUser({ data: { full_name: nextName } });
+        if (error) throw new Error(error.message || "Failed to update profile.");
+        // USER_UPDATED intentionally resets access before the SDK resolves.
+        if (staffScopeRef.current !== scope || !canCommitLiveMutation(request)) return;
+        setCurrentUser((current) => (current ? { ...current, full_name: nextName } : current));
+        setStaffMembers((current) =>
+          current.map((member) =>
+            activeUserId && member.user_id === activeUserId
+              ? { ...member, full_name: nextName, updated_at: new Date().toISOString() }
+              : member,
+          ),
+        );
+      } finally {
+        finish();
+      }
+    },
+    [
+      activeUserId,
+      beginLiveAuthRequest,
+      isPreviewMode,
+      setCurrentUser,
+      setStaffMembers,
+      staffScopeRef,
+      supabase,
+    ],
+  );
 
-    const liveRequest = beginLiveAuthRequest();
+  const updateUserLegalName = useCallback(
+    async (firstName: string, lastName: string): Promise<void> => {
+      if (!activeUserId) {
+        throw new Error("Current user identity is required.");
+      }
 
-    const { error } = await supabase.auth.updateUser({
-      data: { full_name: nextName },
-    });
+      const payload: StaffLegalNameUpdate = {
+        legal_first_name: firstName,
+        legal_last_name: lastName,
+      };
 
-    if (error) {
-      throw new Error(error.message || "Failed to update profile.");
-    }
-    if (!liveRequest.isCurrent()) {
-      return;
-    }
+      if (isPreviewMode) {
+        setCurrentUser((current) =>
+          current && current.id === activeUserId
+            ? {
+                ...current,
+                legal_first_name: payload.legal_first_name,
+                legal_last_name: payload.legal_last_name,
+              }
+            : current,
+        );
+        setStaffMembers((current) =>
+          current.map((member) =>
+            member.user_id === activeUserId
+              ? {
+                  ...member,
+                  legal_first_name: payload.legal_first_name,
+                  legal_last_name: payload.legal_last_name,
+                }
+              : member,
+          ),
+        );
+        return;
+      }
 
-    setCurrentUser((current) => current ? { ...current, full_name: nextName } : current);
-    setStaffMembers((current) =>
-      current.map((member) =>
-        activeUserId && member.user_id === activeUserId
-          ? { ...member, full_name: nextName, updated_at: new Date().toISOString() }
-          : member
-      )
-    );
-  }, [activeUserId, beginLiveAuthRequest, isPreviewMode, setCurrentUser, setStaffMembers, supabase]);
-
-  const updateUserLegalName = useCallback(async (firstName: string, lastName: string): Promise<void> => {
-    if (!activeUserId) {
-      throw new Error("Current user identity is required.");
-    }
-
-    const payload: StaffLegalNameUpdate = {
-      legal_first_name: firstName,
-      legal_last_name: lastName,
-    };
-
-    if (isPreviewMode) {
-      setCurrentUser((current) => current && current.id === activeUserId
-        ? {
-            ...current,
-            legal_first_name: payload.legal_first_name,
-            legal_last_name: payload.legal_last_name,
-          }
-        : current);
-      setStaffMembers((current) => current.map((member) =>
-        member.user_id === activeUserId
-          ? {
-              ...member,
-              legal_first_name: payload.legal_first_name,
-              legal_last_name: payload.legal_last_name,
-            }
-          : member
-      ));
-      return;
-    }
-
-    const liveRequest = beginLiveAuthRequest();
-    const response = await api.patch<StaffLegalNameResponse>(
-      `/staff/${activeUserId}/legal-name`,
-      payload,
-      liveRequest.token
-    );
-    if (!liveRequest.isCurrent()) {
-      return;
-    }
-
-    setCurrentUser((current) => current && current.id === response.user_id
-      ? {
-          ...current,
-          legal_first_name: response.legal_first_name,
-          legal_last_name: response.legal_last_name,
-        }
-      : current);
-    setStaffProfilesAvailable(true);
-    setStaffMembers((current) => current.map((member) =>
-      member.user_id === response.user_id
-        ? {
-            ...member,
-            legal_first_name: response.legal_first_name,
-            legal_last_name: response.legal_last_name,
-          }
-        : member
-    ));
-  }, [activeUserId, beginLiveAuthRequest, isPreviewMode, setCurrentUser, setStaffMembers, setStaffProfilesAvailable]);
+      await updateStaffLegalName(activeUserId, firstName, lastName);
+    },
+    [activeUserId, isPreviewMode, setCurrentUser, setStaffMembers, updateStaffLegalName],
+  );
 
   const resetDemoData = useCallback(async (): Promise<DemoResetResponse> => {
     if (isPreviewMode) {
@@ -222,6 +233,7 @@ export function useStoreStudioActions({
       save(KEYS.attendance, previewResponse.attendance);
       save(KEYS.subRankTerm, MOCK_BELT_LADDER.sub_rank_term || "Stripe");
       save(KEYS.ladderName, MOCK_BELT_LADDER.name);
+      resetStaffScope();
       setStaffMembers(MOCK_STAFF_MEMBERS);
       setStaffLoaded(true);
       setStaffLoadError(null);
@@ -233,18 +245,13 @@ export function useStoreStudioActions({
 
     const liveRequest = beginLiveAuthRequest();
 
-    const response = await api.post<DemoResetResponse>(
-      "/demo/reset",
-      {},
-      liveRequest.token,
-      {
-        headers: {
-          [DESTRUCTIVE_ACTION_HEADER]: DEMO_RESET_DESTRUCTIVE_ACTION,
-        },
-        timeoutMs: 60000,
-        timeoutMessage: "Demo reset is taking longer than expected. Please try again in a moment.",
-      }
-    );
+    const response = await api.post<DemoResetResponse>("/demo/reset", {}, liveRequest.token, {
+      headers: {
+        [DESTRUCTIVE_ACTION_HEADER]: DEMO_RESET_DESTRUCTIVE_ACTION,
+      },
+      timeoutMs: 60000,
+      timeoutMessage: "Demo reset is taking longer than expected. Please try again in a moment.",
+    });
     if (!liveRequest.isCurrent()) {
       return response;
     }
@@ -258,6 +265,7 @@ export function useStoreStudioActions({
     setStaffLoadError,
     setStaffLoaded,
     setStaffMembers,
+    resetStaffScope,
   ]);
 
   const clearStudioData = useCallback(async (): Promise<StudioDataClearResponse> => {
@@ -282,7 +290,8 @@ export function useStoreStudioActions({
         [DESTRUCTIVE_ACTION_HEADER]: CLEAR_STUDIO_DATA_DESTRUCTIVE_ACTION,
       },
       timeoutMs: 60000,
-      timeoutMessage: "Studio data clear is taking longer than expected. Please try again in a moment.",
+      timeoutMessage:
+        "Studio data clear is taking longer than expected. Please try again in a moment.",
     });
     if (!liveRequest.isCurrent()) {
       return response;

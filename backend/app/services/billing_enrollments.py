@@ -1,76 +1,48 @@
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 from fastapi import HTTPException, status
 from postgrest.exceptions import APIError as PostgrestAPIError
+from supabase import Client
 
+from app.core.config import Settings
 from app.schemas.billing import (
+    BillingEnrollmentPageResponse,
+    BillingEnrollmentScheduledTransitionResponse,
     BillingSubscriptionResponse,
     StudentBillingEnrollmentCreate,
     StudentBillingEnrollmentResponse,
     StudentBillingEnrollmentUpdate,
 )
-from app.services.billing_enrollment_stripe_lifecycle import BillingEnrollmentStripeLifecycle
+from app.services.billing_enrollment_activation import BillingEnrollmentActivationWorkflow
+from app.services.billing_enrollment_records import BillingEnrollmentRecords
+from app.services.billing_enrollment_transitions import BillingEnrollmentTransitionWorkflow
+from app.services.billing_audit import record_billing_audit
+from app.services.billing_connect_accounts import BillingConnectAccountStore
+from app.services.billing_payers import recompute_payer_balance
+from app.services.billing_read_pages import read_billing_page_rows
+from app.services.supabase_rpc import execute_required_rpc, rpc_rows
 from app.services.stripe_service import StripeService
 
 
+SCHEDULED_TRANSITION_READ_BATCH_SIZE = 300
+
+
 class BillingEnrollmentManager:
-    def __init__(self, billing_service: Any, *, stripe_service_cls: type[StripeService] = StripeService):
-        self.billing_service = billing_service
-        self.stripe_service_cls = stripe_service_cls
-
-    @property
-    def supabase(self):
-        return self.billing_service.supabase
-
-    def _ensure_record_in_studio(self, *args, **kwargs) -> None:
-        self.billing_service._ensure_record_in_studio(*args, **kwargs)
-
-    def _get_row_or_404(self, *args, **kwargs):
-        return self.billing_service._get_row_or_404(*args, **kwargs)
-
-    def _ensure_connect_ready(self, studio_id: str) -> dict[str, Any]:
-        return self.billing_service._ensure_connect_ready(studio_id)
-
-    def _sync_plan_price(self, plan: dict[str, Any], account: dict[str, Any]) -> dict[str, Any]:
-        return self.billing_service._sync_plan_price(plan, account)
-
-    def _sync_payer_customer(self, payer: dict[str, Any], account: dict[str, Any]) -> dict[str, Any]:
-        return self.billing_service._sync_payer_customer(payer, account)
-
-    def _payer_autopay_authorized(self, payer: dict[str, Any]) -> bool:
-        return self.billing_service._payer_autopay_authorized(payer)
-
-    def _recompute_payer_balance(self, studio_id: str, payer_id: Optional[str]) -> None:
-        self.billing_service._recompute_payer_balance(studio_id, payer_id)
-
-    def _audit(self, studio_id: str, actor_id: str, action: str, entity_id: str, metadata: dict[str, Any]) -> None:
-        self.billing_service._audit(studio_id, actor_id, action, entity_id, metadata)
-
-    def _idempotency_key(self, *parts: str) -> str:
-        return self.billing_service._idempotency_key(*parts)
-
-    def _application_fee_percent(self, account: dict[str, Any]) -> float:
-        return self.billing_service._application_fee_percent(account)
-
-    def _application_fee_amount(self, amount_cents: int, account: dict[str, Any]) -> int:
-        return self.billing_service._application_fee_amount(amount_cents, account)
-
-    def _project_subscription(self, subscription: Any, account_id: str) -> Optional[dict[str, Any]]:
-        return self.billing_service._project_subscription(subscription, account_id)
-
-    def _update_invoice_from_stripe(
+    def __init__(
         self,
-        invoice_id: str,
-        studio_id: str,
-        stripe_invoice: Any,
-        account_id: str,
-    ) -> dict[str, Any]:
-        return self.billing_service._update_invoice_from_stripe(invoice_id, studio_id, stripe_invoice, account_id)
-
-    def _stripe_account_for_enrollment_subscription(self, enrollment: dict[str, Any]) -> Optional[str]:
-        return self.billing_service._stripe_account_for_enrollment_subscription(enrollment)
+        supabase: Client,
+        connect_accounts: BillingConnectAccountStore,
+        settings: Settings,
+        *,
+        stripe_service_cls: type[StripeService] = StripeService,
+    ):
+        self.supabase = supabase
+        self.connect_accounts = connect_accounts
+        self.settings = settings
+        self.stripe_service_cls = stripe_service_cls
+        self.records = BillingEnrollmentRecords(supabase)
 
     async def list_subscriptions(self, studio_id: str) -> list[BillingSubscriptionResponse]:
         result = (
@@ -92,10 +64,30 @@ class BillingEnrollmentManager:
             .limit(300)
             .execute()
         )
-        return [StudentBillingEnrollmentResponse(**row) for row in (result.data or [])]
+        return self._enrollment_responses_with_scheduled_transitions(
+            result.data or [],
+            studio_id,
+        )
 
-    async def list_student_billing(self, student_id: str, studio_id: str) -> list[StudentBillingEnrollmentResponse]:
-        self._ensure_record_in_studio("students", student_id, studio_id, "Student not found.")
+    async def list_enrollments_page(
+        self, studio_id: str, cursor: str | None, limit: int
+    ) -> BillingEnrollmentPageResponse:
+        # Keyset pages replace the capped list; each page carries its own transitions.
+        rows, next_cursor, complete = read_billing_page_rows(
+            self.supabase, studio_id, "enrollments", cursor, limit
+        )
+        return BillingEnrollmentPageResponse(
+            items=self._enrollment_responses_with_scheduled_transitions(rows, studio_id),
+            next_cursor=next_cursor,
+            complete=complete,
+        )
+
+    async def list_student_billing(
+        self, student_id: str, studio_id: str
+    ) -> list[StudentBillingEnrollmentResponse]:
+        self.records.ensure_record_in_studio(
+            "students", student_id, studio_id, "Student not found."
+        )
         result = (
             self.supabase.table("student_billing_enrollments")
             .select("*")
@@ -104,7 +96,58 @@ class BillingEnrollmentManager:
             .order("created_at", desc=True)
             .execute()
         )
-        return [StudentBillingEnrollmentResponse(**row) for row in (result.data or [])]
+        return self._enrollment_responses_with_scheduled_transitions(
+            result.data or [],
+            studio_id,
+        )
+
+    def _enrollment_responses_with_scheduled_transitions(
+        self,
+        rows: list[dict[str, Any]],
+        studio_id: str,
+    ) -> list[StudentBillingEnrollmentResponse]:
+        if not rows:
+            return []
+        enrollment_ids = [str(row["id"]) for row in rows]
+        expected_enrollment_ids = set(enrollment_ids)
+        scheduled_by_enrollment: dict[
+            str,
+            BillingEnrollmentScheduledTransitionResponse,
+        ] = {}
+        for start in range(0, len(enrollment_ids), SCHEDULED_TRANSITION_READ_BATCH_SIZE):
+            result = execute_required_rpc(
+                self.supabase,
+                "list_billing_enrollment_scheduled_transitions_v1",
+                {
+                    "p_studio_id": studio_id,
+                    "p_enrollment_ids": enrollment_ids[
+                        start : start + SCHEDULED_TRANSITION_READ_BATCH_SIZE
+                    ],
+                },
+            )
+            for transition in rpc_rows(result):
+                enrollment_id = transition.get("enrollment_id")
+                if (
+                    not isinstance(enrollment_id, str)
+                    or enrollment_id not in expected_enrollment_ids
+                    or enrollment_id in scheduled_by_enrollment
+                ):
+                    raise RuntimeError(
+                        "Scheduled enrollment transition state could not be verified."
+                    )
+                scheduled_by_enrollment[enrollment_id] = (
+                    BillingEnrollmentScheduledTransitionResponse(
+                        intent_id=transition.get("intent_id"),
+                        revision=transition.get("revision"),
+                    )
+                )
+        return [
+            StudentBillingEnrollmentResponse(
+                **row,
+                scheduled_period_end_transition=scheduled_by_enrollment.get(str(row["id"])),
+            )
+            for row in rows
+        ]
 
     async def add_student_billing_enrollment(
         self,
@@ -113,17 +156,36 @@ class BillingEnrollmentManager:
         actor_id: str,
     ) -> StudentBillingEnrollmentResponse:
         if not data.student_id:
-            raise HTTPException(status_code=400, detail="Student is required for billing enrollment.")
-        self._ensure_record_in_studio("students", data.student_id, studio_id, "Student not found.")
-        self._ensure_record_in_studio("billing_plans", data.billing_plan_id, studio_id, "Billing plan not found.")
+            raise HTTPException(
+                status_code=400, detail="Student is required for billing enrollment."
+            )
+        self.records.ensure_record_in_studio(
+            "students", data.student_id, studio_id, "Student not found."
+        )
+        self.records.ensure_record_in_studio(
+            "billing_plans", data.billing_plan_id, studio_id, "Billing plan not found."
+        )
         if data.payer_id:
-            self._ensure_record_in_studio("billing_payers", data.payer_id, studio_id, "Payer not found.")
-        plan = self._get_row_or_404("billing_plans", data.billing_plan_id, studio_id, "Billing plan not found.")
-        if data.collection_mode != "external" and plan.get("billing_interval") == "fixed_term" and not data.end_date:
+            self.records.ensure_record_in_studio(
+                "billing_payers", data.payer_id, studio_id, "Payer not found."
+            )
+        plan = self.records.get_row_or_404(
+            "billing_plans", data.billing_plan_id, studio_id, "Billing plan not found."
+        )
+        if (
+            data.collection_mode != "external"
+            and plan.get("billing_interval") == "fixed_term"
+            and not data.end_date
+        ):
             raise HTTPException(status_code=400, detail="Fixed-term billing requires an end date.")
         row = data.model_dump(exclude_none=True)
         row["studio_id"] = studio_id
-        row.setdefault("billing_status", "externally_paid" if data.collection_mode == "external" else "no_payment_method")
+        if data.collection_mode != "external":
+            row["status"] = "pending"
+        row.setdefault(
+            "billing_status",
+            "externally_paid" if data.collection_mode == "external" else "no_payment_method",
+        )
         try:
             result = self.supabase.table("student_billing_enrollments").insert(row).execute()
         except PostgrestAPIError as exc:
@@ -136,16 +198,21 @@ class BillingEnrollmentManager:
         if not result.data:
             raise HTTPException(status_code=500, detail="Failed to add student billing enrollment.")
         enrollment = result.data[0]
-        if data.collection_mode != "external":
-            enrollment = self._activate_stripe_enrollment(enrollment, plan, studio_id, actor_id=actor_id)
-        else:
-            self._recompute_payer_balance(studio_id, data.payer_id)
-        self._audit(studio_id, actor_id, "billing.student_enrollment_created", result.data[0]["id"], {
-            "student_id": data.student_id,
-            "billing_plan_id": data.billing_plan_id,
-            "payer_id": data.payer_id,
-            "collection_mode": data.collection_mode,
-        })
+        if data.collection_mode == "external":
+            recompute_payer_balance(self.supabase, studio_id, data.payer_id)
+        record_billing_audit(
+            self.supabase,
+            studio_id,
+            actor_id,
+            "billing.student_enrollment_created",
+            result.data[0]["id"],
+            {
+                "student_id": data.student_id,
+                "billing_plan_id": data.billing_plan_id,
+                "payer_id": data.payer_id,
+                "collection_mode": data.collection_mode,
+            },
+        )
         return StudentBillingEnrollmentResponse(**enrollment)
 
     async def update_enrollment(
@@ -155,19 +222,28 @@ class BillingEnrollmentManager:
         studio_id: str,
         actor_id: str,
     ) -> StudentBillingEnrollmentResponse:
-        current = self._get_row_or_404("student_billing_enrollments", enrollment_id, studio_id, "Billing enrollment not found.")
+        current = self.records.get_row_or_404(
+            "student_billing_enrollments", enrollment_id, studio_id, "Billing enrollment not found."
+        )
         update = data.model_dump(exclude_unset=True)
+        if current.get("collection_mode") != "external" or (
+            "collection_mode" in update and update.get("collection_mode") != "external"
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "Provider-backed enrollment changes require a named supported workflow. "
+                    "Generic update is unavailable."
+                ),
+            )
         if update.get("billing_plan_id"):
-            self._ensure_record_in_studio("billing_plans", update["billing_plan_id"], studio_id, "Billing plan not found.")
+            self.records.ensure_record_in_studio(
+                "billing_plans", update["billing_plan_id"], studio_id, "Billing plan not found."
+            )
         if update.get("payer_id"):
-            self._ensure_record_in_studio("billing_payers", update["payer_id"], studio_id, "Payer not found.")
-        stripe_rewire = any(key in update for key in ("billing_plan_id", "payer_id", "collection_mode"))
-        if stripe_rewire and self._enrollment_has_stripe_link(current):
-            current = self._mark_enrollment_stripe_detach_pending(current, "rewire")
-            self._detach_enrollment_from_subscription(current)
-            update.update(self._detached_enrollment_fields(current))
-            next_collection_mode = update.get("collection_mode") or current.get("collection_mode")
-            update["billing_status"] = "externally_paid" if next_collection_mode == "external" else "upcoming"
+            self.records.ensure_record_in_studio(
+                "billing_payers", update["payer_id"], studio_id, "Payer not found."
+            )
         if update:
             result = (
                 self.supabase.table("student_billing_enrollments")
@@ -179,10 +255,14 @@ class BillingEnrollmentManager:
             if not result.data:
                 raise HTTPException(status_code=404, detail="Billing enrollment not found.")
             current = result.data[0]
-        if stripe_rewire and current.get("collection_mode") != "external" and current.get("status") in {"pending", "active"}:
-            plan = self._get_row_or_404("billing_plans", current["billing_plan_id"], studio_id, "Billing plan not found.")
-            current = self._activate_stripe_enrollment(current, plan, studio_id, actor_id=actor_id)
-        self._audit(studio_id, actor_id, "billing.student_enrollment_updated", enrollment_id, {"changes": update})
+        record_billing_audit(
+            self.supabase,
+            studio_id,
+            actor_id,
+            "billing.student_enrollment_updated",
+            enrollment_id,
+            {"changes": update},
+        )
         return StudentBillingEnrollmentResponse(**current)
 
     async def set_enrollment_status(
@@ -192,17 +272,17 @@ class BillingEnrollmentManager:
         studio_id: str,
         actor_id: str,
     ) -> StudentBillingEnrollmentResponse:
-        current = self._get_row_or_404("student_billing_enrollments", enrollment_id, studio_id, "Billing enrollment not found.")
+        current = self.records.get_row_or_404(
+            "student_billing_enrollments", enrollment_id, studio_id, "Billing enrollment not found."
+        )
+        if current.get("collection_mode") != "external":
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "Provider-backed pause, resume, and cancellation require named supported workflows."
+                ),
+            )
         update: dict[str, Any] = {"status": status_value}
-        if status_value in {"paused", "canceled", "ended"}:
-            if self._enrollment_has_stripe_link(current):
-                current = self._mark_enrollment_stripe_detach_pending(current, status_value)
-            self._detach_enrollment_from_subscription(current)
-            update.update(self._detached_enrollment_fields(current))
-            update["billing_status"] = "externally_paid" if current.get("collection_mode") == "external" else "upcoming"
-        if status_value == "active" and current.get("collection_mode") != "external" and not current.get("stripe_subscription_item_id"):
-            plan = self._get_row_or_404("billing_plans", current["billing_plan_id"], studio_id, "Billing plan not found.")
-            current = self._activate_stripe_enrollment({**current, "status": "active"}, plan, studio_id, actor_id=actor_id)
         result = (
             self.supabase.table("student_billing_enrollments")
             .update(update)
@@ -212,86 +292,83 @@ class BillingEnrollmentManager:
         )
         if not result.data:
             raise HTTPException(status_code=404, detail="Billing enrollment not found.")
-        self._audit(studio_id, actor_id, f"billing.student_enrollment_{status_value}", enrollment_id, {})
-        return StudentBillingEnrollmentResponse(**result.data[0])
-    def _stripe_lifecycle(self) -> BillingEnrollmentStripeLifecycle:
-        return BillingEnrollmentStripeLifecycle(self)
-
-    def _activate_stripe_enrollment(
-        self,
-        enrollment: dict[str, Any],
-        plan: dict[str, Any],
-        studio_id: str,
-        actor_id: Optional[str] = None,
-    ) -> dict[str, Any]:
-        return self._stripe_lifecycle()._activate_stripe_enrollment(enrollment, plan, studio_id, actor_id=actor_id)
-
-    def _find_or_create_billing_subscription(
-        self,
-        enrollment: dict[str, Any],
-        plan: dict[str, Any],
-        payer: dict[str, Any],
-        account: dict[str, Any],
-    ) -> dict[str, Any]:
-        return self._stripe_lifecycle()._find_or_create_billing_subscription(enrollment, plan, payer, account)
-
-    def _enrollment_has_stripe_link(self, enrollment: dict[str, Any]) -> bool:
-        return self._stripe_lifecycle()._enrollment_has_stripe_link(enrollment)
-
-    def _mark_enrollment_stripe_attach_pending(
-        self,
-        enrollment: dict[str, Any],
-        reason: str,
-    ) -> dict[str, Any]:
-        return self._stripe_lifecycle()._mark_enrollment_stripe_attach_pending(enrollment, reason)
-
-    def _attached_enrollment_fields(self, enrollment: dict[str, Any], update: dict[str, Any]) -> dict[str, Any]:
-        return self._stripe_lifecycle()._attached_enrollment_fields(enrollment, update)
-
-    def _mark_enrollment_stripe_detach_pending(
-        self,
-        enrollment: dict[str, Any],
-        reason: str,
-    ) -> dict[str, Any]:
-        return self._stripe_lifecycle()._mark_enrollment_stripe_detach_pending(enrollment, reason)
-
-    def _detached_enrollment_fields(self, enrollment: dict[str, Any]) -> dict[str, Any]:
-        return self._stripe_lifecycle()._detached_enrollment_fields(enrollment)
-
-    def _detach_enrollment_from_subscription(self, enrollment: dict[str, Any]) -> None:
-        self._stripe_lifecycle()._detach_enrollment_from_subscription(enrollment)
-
-    def _create_paid_in_full_invoice(
-        self,
-        enrollment: dict[str, Any],
-        plan: dict[str, Any],
-        payer: dict[str, Any],
-        account: dict[str, Any],
-        *,
-        actor_id: str,
-    ) -> None:
-        self._stripe_lifecycle()._create_paid_in_full_invoice(enrollment, plan, payer, account, actor_id=actor_id)
-
-    def _subscription_item_id_for_group_plan(self, studio_id: str, group_id: str, plan_id: str) -> Optional[str]:
-        return self._stripe_lifecycle()._subscription_item_id_for_group_plan(studio_id, group_id, plan_id)
-
-    def _active_enrollment_count_for_subscription_item(
-        self,
-        studio_id: str,
-        group_id: Optional[str],
-        item_id: Optional[str],
-        *,
-        exclude_enrollment_id: Optional[str] = None,
-    ) -> int:
-        return self._stripe_lifecycle()._active_enrollment_count_for_subscription_item(
+        record_billing_audit(
+            self.supabase,
             studio_id,
-            group_id,
-            item_id,
-            exclude_enrollment_id=exclude_enrollment_id,
+            actor_id,
+            f"billing.student_enrollment_{status_value}",
+            enrollment_id,
+            {},
+        )
+        return StudentBillingEnrollmentResponse(**result.data[0])
+
+    async def activate_enrollment(
+        self,
+        enrollment_id: str,
+        studio_id: str,
+        actor_id: str,
+        idempotency_key: str | None = None,
+    ) -> StudentBillingEnrollmentResponse:
+        return BillingEnrollmentActivationWorkflow(
+            self.records,
+            self.connect_accounts,
+            self.settings,
+            stripe_service_cls=self.stripe_service_cls,
+        ).activate(enrollment_id, studio_id, actor_id, idempotency_key)
+
+    async def schedule_period_end(
+        self,
+        enrollment_id: str,
+        studio_id: str,
+        actor_id: str,
+        idempotency_key: str | None,
+        reason_code: str,
+    ) -> dict[str, Any]:
+        return BillingEnrollmentTransitionWorkflow(
+            self.records,
+            self.connect_accounts,
+            stripe_service_cls=self.stripe_service_cls,
+        ).schedule_period_end(enrollment_id, studio_id, actor_id, idempotency_key, reason_code)
+
+    async def revoke_scheduled_transition(
+        self,
+        transition_intent_id: str,
+        expected_revision: int,
+        studio_id: str,
+        actor_id: str,
+        idempotency_key: str | None,
+        reason_code: str,
+    ) -> dict[str, Any]:
+        return BillingEnrollmentTransitionWorkflow(
+            self.records,
+            self.connect_accounts,
+            stripe_service_cls=self.stripe_service_cls,
+        ).revoke_scheduled(
+            transition_intent_id,
+            expected_revision,
+            studio_id,
+            actor_id,
+            idempotency_key,
+            reason_code,
         )
 
-    def _update_enrollment(self, enrollment_id: str, studio_id: str, update: dict[str, Any]) -> dict[str, Any]:
-        return self._stripe_lifecycle()._update_enrollment(enrollment_id, studio_id, update)
+    async def cancel_immediate(
+        self,
+        enrollment_id: str,
+        studio_id: str,
+        actor_id: str,
+        idempotency_key: str | None,
+        reason_code: str,
+    ) -> dict[str, Any]:
+        return BillingEnrollmentTransitionWorkflow(
+            self.records,
+            self.connect_accounts,
+            stripe_service_cls=self.stripe_service_cls,
+        ).cancel_immediate(enrollment_id, studio_id, actor_id, idempotency_key, reason_code)
 
-    def _subscription_item_id_for_enrollment(self, subscription: Any, enrollment_id: str) -> Optional[str]:
-        return self._stripe_lifecycle()._subscription_item_id_for_enrollment(subscription, enrollment_id)
+    async def process_due_transitions(self, *, worker_id: str, limit: int) -> dict[str, int]:
+        return BillingEnrollmentTransitionWorkflow(
+            self.records,
+            self.connect_accounts,
+            stripe_service_cls=self.stripe_service_cls,
+        ).process_due(worker_id=worker_id, limit=limit)

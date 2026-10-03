@@ -9,8 +9,10 @@ import {
   type StudentRankWithContext,
 } from "@/components/students/student-rank-badge";
 import { Button } from "@/components/ui/button";
+import { calendarAge } from "@/lib/student-age";
 import type { BeltRank, Program, Student } from "@/types";
 import { Camera, X } from "lucide-react";
+import styles from "./student-records.module.css";
 
 type PhotoSelectResult = boolean | void | Promise<boolean | void>;
 
@@ -23,6 +25,7 @@ interface StudentDetailSidebarProps {
   photoPreviewUrl: string | null;
   photoError: string | null;
   isPhotoSaving: boolean;
+  isCommandPending: boolean;
   onPhotoSelected: (file: File) => PhotoSelectResult;
   onDeletePhoto: () => Promise<void> | void;
   isCurrentHold: boolean;
@@ -32,6 +35,7 @@ interface StudentDetailSidebarProps {
   promotionCount: number;
   isLoadingBeltData: boolean;
   beltLoadError: string | null;
+  businessDate: string;
 }
 
 function formatDate(d?: string | null) {
@@ -52,10 +56,9 @@ function formatDateTime(d?: string | null) {
   });
 }
 
-function calculateAge(dob?: string | null): string {
-  if (!dob) return "—";
-  const diff = Date.now() - new Date(dob).getTime();
-  return `${Math.floor(diff / (1000 * 60 * 60 * 24 * 365.25))} yrs`;
+function calculateAge(dob: string | null | undefined, businessDate: string): string {
+  const age = calendarAge(dob, businessDate);
+  return age === null ? "—" : `${age} yrs`;
 }
 
 export function StudentDetailSidebar({
@@ -67,6 +70,7 @@ export function StudentDetailSidebar({
   photoPreviewUrl,
   photoError,
   isPhotoSaving,
+  isCommandPending,
   onPhotoSelected,
   onDeletePhoto,
   isCurrentHold,
@@ -76,18 +80,19 @@ export function StudentDetailSidebar({
   promotionCount,
   isLoadingBeltData,
   beltLoadError,
+  businessDate,
 }: StudentDetailSidebarProps) {
   const photoInputRef = useRef<HTMLInputElement | null>(null);
+  const beltFactsLoading = isLoadingBeltData && !beltLoadError;
+  const beltFactsUnavailable = Boolean(beltLoadError);
 
   return (
-    <div className="col-span-1 min-w-0 space-y-4">
-      <div className="bg-surface border border-border rounded-[6px] p-5 text-center">
-        <StudentAvatar
-          student={student}
-          size="lg"
-          src={photoPreviewUrl}
-          className="mx-auto mb-3"
-        />
+    <aside
+      className={`col-span-1 min-w-0 space-y-4 ${styles.identityRail}`}
+      aria-label="Student identity and current context"
+    >
+      <div className="rounded-[14px] bg-surface p-4 text-center shadow-[var(--product-shadow-card)]">
+        <StudentAvatar student={student} size="lg" src={photoPreviewUrl} className="mx-auto mb-3" />
         <p className="font-semibold text-text-primary text-base">{fullName}</p>
         {student.legal_first_name !== student.preferred_name && student.preferred_name && (
           <p className="text-xs text-muted mt-0.5">
@@ -103,6 +108,7 @@ export function StudentDetailSidebar({
             type="file"
             accept="image/jpeg,image/png,image/webp"
             className="hidden"
+            disabled={isCommandPending}
             onChange={(event) => {
               const selectedFile = event.currentTarget.files?.[0];
               if (!selectedFile) return;
@@ -119,6 +125,7 @@ export function StudentDetailSidebar({
             variant="secondary"
             size="sm"
             isLoading={isPhotoSaving}
+            disabled={isCommandPending}
             onClick={() => photoInputRef.current?.click()}
           >
             <Camera className="w-3.5 h-3.5" />
@@ -128,7 +135,7 @@ export function StudentDetailSidebar({
             <Button
               variant="ghost"
               size="sm"
-              disabled={isPhotoSaving}
+              disabled={isPhotoSaving || isCommandPending}
               onClick={() => {
                 void onDeletePhoto();
               }}
@@ -143,29 +150,23 @@ export function StudentDetailSidebar({
         ) : isPhotoSaving ? (
           <p className="text-xs text-muted mt-2">Updating photo...</p>
         ) : null}
-        {isCurrentHold && (
-          <p className="text-xs text-warning mt-2">Currently on hold</p>
-        )}
-        {student.is_minor && (
-          <p className="text-xs text-warning mt-2">Minor</p>
-        )}
+        {isCurrentHold && <p className="text-xs text-warning mt-2">Currently on hold</p>}
+        {student.is_minor && <p className="text-xs text-warning mt-2">Minor</p>}
         {activeProgramIds.length > 0 && (
           <div className="mt-3 flex flex-wrap justify-center gap-1.5">
             {activeProgramIds.map((programId) => {
               const program = programs.find((item) => item.id === programId);
-              return program ? (
-                <ProgramBadge key={programId} program={program} />
-              ) : null;
+              return program ? <ProgramBadge key={programId} program={program} /> : null;
             })}
           </div>
         )}
       </div>
 
-      <div className="bg-surface border border-border rounded-[6px] p-4 space-y-2">
+      <div className="border-y border-border bg-surface p-4 space-y-2">
         <div className="flex justify-between text-sm">
           <span className="text-muted text-xs">Age</span>
           <span className="text-text-primary font-mono text-xs">
-            {calculateAge(student.date_of_birth)}
+            {calculateAge(student.date_of_birth, businessDate)}
           </span>
         </div>
         <div className="flex justify-between text-sm">
@@ -185,7 +186,7 @@ export function StudentDetailSidebar({
         )}
       </div>
 
-      <div className="bg-surface border border-border rounded-[6px] p-4 space-y-3">
+      <div className="border-y border-border bg-surface p-4 space-y-3">
         <div>
           <p className="text-xs font-medium text-text-secondary mb-2">Current belt</p>
           {currentRank ? (
@@ -198,6 +199,10 @@ export function StudentDetailSidebar({
               />
               <span className="text-xs text-muted">{currentRank.ladderName}</span>
             </div>
+          ) : beltFactsUnavailable ? (
+            <p className="text-sm text-text-secondary">Rank unavailable</p>
+          ) : beltFactsLoading ? (
+            <p className="text-sm text-text-secondary">Loading rank…</p>
           ) : (
             <p className="text-sm text-text-secondary">No rank assigned</p>
           )}
@@ -206,28 +211,40 @@ export function StudentDetailSidebar({
         <div className="flex justify-between text-sm">
           <span className="text-muted text-xs">Next rank</span>
           <span className="text-text-primary text-xs">
-            {nextRank ? (
+            {beltFactsUnavailable ? (
+              "Unavailable"
+            ) : beltFactsLoading ? (
+              "Loading…"
+            ) : nextRank ? (
               <StudentRankBadge
                 name={nextRank.name}
                 colorHex={nextRank.color_hex}
                 isTip={nextRank.is_tip}
                 tipColorHex={nextRank.tip_color_hex ?? undefined}
               />
-            ) : currentRank ? "Top of ladder" : "—"}
+            ) : currentRank ? (
+              "Top of ladder"
+            ) : (
+              "—"
+            )}
           </span>
         </div>
 
         <div className="flex justify-between text-sm">
           <span className="text-muted text-xs">Last promotion</span>
           <span className="text-text-primary font-mono text-xs">
-            {formatDateTime(latestPromotionAt)}
+            {beltFactsUnavailable
+              ? "Unavailable"
+              : beltFactsLoading
+                ? "Loading…"
+                : formatDateTime(latestPromotionAt)}
           </span>
         </div>
 
         <div className="flex justify-between text-sm">
           <span className="text-muted text-xs">Recorded promotions</span>
           <span className="text-text-primary font-mono text-xs">
-            {promotionCount}
+            {beltFactsUnavailable ? "Unavailable" : beltFactsLoading ? "Loading…" : promotionCount}
           </span>
         </div>
 
@@ -239,13 +256,13 @@ export function StudentDetailSidebar({
       </div>
 
       {student.tags.length > 0 && (
-        <div className="bg-surface border border-border rounded-[6px] p-4">
+        <div className="border-y border-border bg-surface p-4">
           <p className="text-xs font-medium text-text-secondary mb-2">Tags</p>
           <div className="flex flex-wrap gap-1.5">
             {student.tags.map((tag) => (
               <span
                 key={tag}
-                className="px-2 py-0.5 text-xs bg-surface-raised border border-border rounded-[4px] text-text-secondary"
+                className="px-2 py-0.5 text-xs bg-surface-raised border border-border rounded-[10px] text-text-secondary"
               >
                 {tag}
               </span>
@@ -253,6 +270,6 @@ export function StudentDetailSidebar({
           </div>
         </div>
       )}
-    </div>
+    </aside>
   );
 }

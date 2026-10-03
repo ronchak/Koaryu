@@ -1,27 +1,21 @@
 "use client";
 
+import { useResumeRefresh } from "@/lib/use-resume-refresh";
+
 import { useCallback, useEffect, useMemo } from "react";
-import { buildKpiBreakdowns, buildRankFamilyIndex } from "@/lib/dashboard-kpi-breakdowns";
 import { canViewDashboardBilling } from "@/lib/dashboard-billing-summary";
-import {
-  buildDashboardPageComposition,
-  formatDashboardTodayLabel,
-} from "@/lib/dashboard-page-composition";
+import { buildDashboardPageComposition } from "@/lib/dashboard-page-composition";
 import {
   buildDashboardBeltStats,
-  buildDashboardChurnStats,
   buildDashboardInactivityStats,
   buildDashboardLeadStats,
-  buildDashboardNewStudentStats,
   buildDashboardOperationalStats,
-  buildDashboardProgramBuckets,
   buildDashboardRecentStudentRows,
   buildDashboardStudentStats,
   buildDashboardTestReadinessStats,
   countDashboardTodaySessions,
 } from "@/lib/dashboard-page-model";
 import { subtractDays } from "@/lib/dashboard-page-utils";
-import { toLocalDateKey } from "@/lib/date";
 import { markPerformance } from "@/lib/performance";
 import {
   dashboardSummaryDataset,
@@ -30,6 +24,11 @@ import {
   resolvePageDatasetReadiness,
 } from "@/lib/page-dataset-readiness";
 import { buildStudentInactivityRows } from "@/lib/student-insights";
+import { buildDashboardWidgetViewModels } from "@/lib/dashboard-widget-view-models";
+import {
+  type DashboardWidgetId,
+  normalizeDashboardWidgetRole,
+} from "@/lib/dashboard-widget-catalog";
 import type {
   BeltsStoreContextValue,
   ConfigStoreContextValue,
@@ -45,15 +44,23 @@ type DashboardPageControllerOptions = {
   beltStore: Pick<
     BeltsStoreContextValue,
     | "beltLadders"
+    | "beltLaddersLoadError"
     | "beltRanks"
     | "currentLadderId"
+    | "loadEligibilityForLadder"
     | "eligibility"
     | "eligibilityLadderId"
     | "eligibilityLoadError"
     | "eligibilityPendingLadderId"
   >;
-  config: Pick<ConfigStoreContextValue, "currentRole" | "isPreviewMode">;
-  dashboardStore: Pick<DashboardStoreContextValue, "dashboardSummary" | "dashboardSummaryLoaded">;
+  config: Pick<ConfigStoreContextValue, "businessDate" | "currentRole" | "isPreviewMode">;
+  dashboardStore: Pick<
+    DashboardStoreContextValue,
+    | "dashboardSummary"
+    | "dashboardSummaryLoaded"
+    | "dashboardSummaryLoadError"
+    | "refreshDashboardSummary"
+  >;
   leadStore: Pick<
     LeadsStoreContextValue,
     "leads" | "leadsLoaded" | "leadsLoadError" | "refreshLeads"
@@ -64,13 +71,21 @@ type DashboardPageControllerOptions = {
   >;
   scheduleStore: Pick<
     ScheduleStoreContextValue,
-    "attendance" | "refreshSchedule" | "scheduleLoadError" | "scheduleStatus" | "sessions" | "templates"
+    | "attendance"
+    | "refreshSchedule"
+    | "scheduleLoadError"
+    | "scheduleStatus"
+    | "sessions"
+    | "templates"
   >;
   studentsStore: Pick<
     StudentsStoreContextValue,
     "refreshStudents" | "students" | "studentsLoaded" | "studentsLoadError" | "studentsMayBePartial"
   >;
-  studioStore: Pick<StudioStoreContextValue, "currentUserId" | "studioName" | "userName">;
+  studioStore: Pick<
+    StudioStoreContextValue,
+    "identityGeneration" | "currentStudioId" | "currentUserId" | "studioName"
+  >;
 };
 
 export function useDashboardPageController({
@@ -84,38 +99,54 @@ export function useDashboardPageController({
   studioStore,
 }: DashboardPageControllerOptions) {
   const {
-    beltLadders,
     beltRanks,
+    beltLaddersLoadError,
     currentLadderId,
+    loadEligibilityForLadder,
     eligibility,
     eligibilityLadderId,
-    eligibilityLoadError,
+    eligibilityLoadError: eligibilityReadError,
     eligibilityPendingLadderId,
   } = beltStore;
+  const eligibilityLoadError = beltLaddersLoadError || eligibilityReadError;
   const { currentRole, isPreviewMode } = config;
-  const { dashboardSummary, dashboardSummaryLoaded } = dashboardStore;
+  const {
+    dashboardSummary,
+    dashboardSummaryLoaded,
+    dashboardSummaryLoadError,
+    refreshDashboardSummary,
+  } = dashboardStore;
   const { leads, leadsLoaded, leadsLoadError, refreshLeads } = leadStore;
   const { programs, programsLoaded, programsLoadError, refreshPrograms } = programsStore;
-  const {
-    attendance,
-    refreshSchedule,
-    scheduleLoadError,
-    scheduleStatus,
-    sessions,
-    templates,
-  } = scheduleStore;
-  const {
-    refreshStudents,
-    students,
-    studentsLoaded,
-    studentsLoadError,
-    studentsMayBePartial,
-  } = studentsStore;
-  const { currentUserId, studioName, userName } = studioStore;
+  const { attendance, refreshSchedule, scheduleLoadError, scheduleStatus, sessions, templates } =
+    scheduleStore;
+  const { refreshStudents, students, studentsLoaded, studentsLoadError, studentsMayBePartial } =
+    studentsStore;
+  const { identityGeneration, currentStudioId, currentUserId, studioName } = studioStore;
 
   const summary = isPreviewMode ? null : dashboardSummary;
   const hasDashboardSummary = Boolean(summary);
-  const datasetReadiness = resolvePageDatasetReadiness([
+  const normalizedRole = normalizeDashboardWidgetRole(currentRole);
+  const isDashboardIdentityReady = Boolean(
+    currentUserId.trim() && currentStudioId?.trim() && normalizedRole,
+  );
+  const summaryReadiness = dashboardSummaryDataset({
+    hasSummary: hasDashboardSummary,
+    isPreviewMode,
+    loaded: dashboardSummaryLoaded,
+  });
+  const beltEligibilityReadiness = eligibilityDataset({
+    currentLadderId,
+    error: eligibilityLoadError,
+    loadedLadderId: eligibilityLadderId,
+    pendingLadderId: eligibilityPendingLadderId,
+  });
+  const setupReadiness = resolvePageDatasetReadiness([
+    loadedDataset({
+      error: beltLaddersLoadError,
+      label: "Belt plans",
+      loaded: !beltLaddersLoadError,
+    }),
     loadedDataset({ error: studentsLoadError, label: "Student roster", loaded: studentsLoaded }),
     loadedDataset({ error: programsLoadError, label: "Programs", loaded: programsLoaded }),
     loadedDataset({ error: leadsLoadError, label: "Leads", loaded: leadsLoaded }),
@@ -124,28 +155,37 @@ export function useDashboardPageController({
       label: "Schedule",
       status: scheduleStatus,
     },
-    dashboardSummaryDataset({
-      hasSummary: hasDashboardSummary,
-      isPreviewMode,
-      loaded: dashboardSummaryLoaded,
-    }),
-    eligibilityDataset({
-      currentLadderId,
-      error: eligibilityLoadError,
-      loadedLadderId: eligibilityLadderId,
-      pendingLadderId: eligibilityPendingLadderId,
-    }),
+    summaryReadiness,
   ]);
-  const isInitialDashboardLoading = datasetReadiness.status === "loading";
+  const datasetReadiness = resolvePageDatasetReadiness([
+    { label: "Dashboard data", ...setupReadiness },
+    beltEligibilityReadiness,
+  ]);
+  const onVisibleWidgetsChange = useCallback(
+    (ids: DashboardWidgetId[]) => {
+      if (
+        !ids.includes("promotions_due") ||
+        !currentLadderId ||
+        eligibilityLadderId === currentLadderId ||
+        eligibilityPendingLadderId ||
+        eligibilityLoadError
+      )
+        return;
+      void loadEligibilityForLadder(currentLadderId).catch(() => undefined);
+    },
+    [
+      currentLadderId,
+      eligibilityLadderId,
+      eligibilityPendingLadderId,
+      eligibilityLoadError,
+      loadEligibilityForLadder,
+    ],
+  );
+  const isInitialDashboardLoading = !isDashboardIdentityReady;
   const hasPartialStudentSample = !isPreviewMode && studentsMayBePartial;
   const rosterSummaryPending = hasPartialStudentSample && !summary;
   const shouldShowLocalStudentDetails = !hasPartialStudentSample;
-  const today = toLocalDateKey();
-  const displayedToday = summary?.today ?? today;
-  const todayLabel = useMemo(
-    () => formatDashboardTodayLabel(displayedToday),
-    [displayedToday]
-  );
+  const today = config.businessDate;
   const canSeeBilling = canViewDashboardBilling({ currentRole, summary });
   const studentCount = students.length;
   const sessionCount = sessions.length;
@@ -160,108 +200,88 @@ export function useDashboardPageController({
   }, [summary]);
 
   const retryDashboardDatasets = useCallback(() => {
-    if (
-      (!isPreviewMode && dashboardSummaryLoaded && !dashboardSummary)
-      || eligibilityLoadError
-    ) {
-      window.location.reload();
-      return;
-    }
-
     void Promise.allSettled([
+      refreshDashboardSummary(),
+      loadEligibilityForLadder(currentLadderId, { force: true }),
       refreshStudents(),
       refreshPrograms({ includeArchived: true }),
       refreshLeads(),
       refreshSchedule(),
     ]);
   }, [
-    dashboardSummary,
-    dashboardSummaryLoaded,
-    eligibilityLoadError,
-    isPreviewMode,
+    currentLadderId,
+    loadEligibilityForLadder,
+    refreshDashboardSummary,
     refreshLeads,
     refreshPrograms,
     refreshSchedule,
     refreshStudents,
   ]);
+  useResumeRefresh(retryDashboardDatasets);
 
-  const lookback14 = useMemo(() => subtractDays(today, 14), [today]);
+  useEffect(() => {
+    if (!isPreviewMode && isDashboardIdentityReady) {
+      void refreshDashboardSummary({ reason: "visit" }).catch(() => undefined);
+    }
+  }, [isDashboardIdentityReady, isPreviewMode, refreshDashboardSummary, today]);
+
   const lookback30 = useMemo(() => subtractDays(today, 30), [today]);
-  const lookback90 = useMemo(() => subtractDays(today, 90), [today]);
-  const yearStart = useMemo(() => `${today.slice(0, 4)}-01-01`, [today]);
-  const programById = useMemo(
-    () => new Map(programs.map((program) => [program.id, program])),
-    [programs]
-  );
-  const rankNameById = useMemo(
-    () => new Map(
-      (beltLadders.length > 0 ? beltLadders.flatMap((ladder) => ladder.ranks) : beltRanks)
-        .map((rank) => [rank.id, rank.name])
-    ),
-    [beltLadders, beltRanks]
-  );
-  const rankFamilyById = useMemo(
-    () => buildRankFamilyIndex(beltLadders, programById),
-    [beltLadders, programById]
-  );
 
-  const studentStats = useMemo(() => buildDashboardStudentStats(students, today), [students, today]);
+  const studentStats = useMemo(
+    () => buildDashboardStudentStats(students, today),
+    [students, today],
+  );
   const leadStats = useMemo(() => buildDashboardLeadStats(leads, today), [leads, today]);
-  const todaySessions = useMemo(() => countDashboardTodaySessions(sessions, today), [sessions, today]);
+  const todaySessions = useMemo(
+    () => countDashboardTodaySessions(sessions, today),
+    [sessions, today],
+  );
   const beltStats = useMemo(() => buildDashboardBeltStats(beltRanks), [beltRanks]);
   const inactivityRows = useMemo(
     () => buildStudentInactivityRows(students, sessions, attendance, today),
-    [attendance, sessions, students, today]
+    [attendance, sessions, students, today],
   );
-  const inactivityStats = useMemo(() => buildDashboardInactivityStats(inactivityRows), [inactivityRows]);
-  const newStudentStats = useMemo(
-    () => buildDashboardNewStudentStats(students, today, lookback14, lookback30, lookback90, yearStart),
-    [lookback14, lookback30, lookback90, students, today, yearStart]
+  const inactivityStats = useMemo(
+    () => buildDashboardInactivityStats(inactivityRows),
+    [inactivityRows],
   );
   const operationalStats = useMemo(
     () => buildDashboardOperationalStats(attendance, sessions, lookback30, today),
-    [attendance, lookback30, sessions, today]
+    [attendance, lookback30, sessions, today],
   );
-  const churnStats = useMemo(() => buildDashboardChurnStats(students), [students]);
-  const testReadinessStats = useMemo(() => buildDashboardTestReadinessStats(eligibility), [eligibility]);
+  const testReadinessStats = useMemo(
+    () => buildDashboardTestReadinessStats(eligibility),
+    [eligibility],
+  );
 
   const dashboardComposition = useMemo(
-    () => buildDashboardPageComposition({
-      canSeeBilling,
-      isPreviewMode,
-      localStats: {
-        studentStats,
-        leadStats,
-        todaySessions,
-        beltStats,
-        inactivityStats,
-        newStudentStats,
-        operationalStats,
-        churnStats,
-        testReadinessStats,
-      },
-      ownerName: userName || null,
-      ownerSeedKey: currentUserId || userName || null,
-      programs,
-      rosterSummaryPending,
-      sessionCount,
-      shouldShowLocalStudentDetails,
-      studentCount,
-      summary,
-      templateCount,
-      todayDateKey: displayedToday,
-      todayLabel,
-    }),
+    () =>
+      buildDashboardPageComposition({
+        canSeeBilling,
+        isPreviewMode,
+        localStats: {
+          studentStats,
+          leadStats,
+          todaySessions,
+          beltStats,
+          inactivityStats,
+          operationalStats,
+          testReadinessStats,
+        },
+        programs,
+        rosterSummaryPending,
+        sessionCount,
+        shouldShowLocalStudentDetails,
+        studentCount,
+        summary,
+        templateCount,
+      }),
     [
       beltStats,
       canSeeBilling,
-      churnStats,
-      currentUserId,
-      displayedToday,
       inactivityStats,
       isPreviewMode,
       leadStats,
-      newStudentStats,
       operationalStats,
       programs,
       rosterSummaryPending,
@@ -272,56 +292,98 @@ export function useDashboardPageController({
       summary,
       templateCount,
       testReadinessStats,
-      todayLabel,
       todaySessions,
-      userName,
-    ]
+    ],
   );
-  const kpiBreakdowns = useMemo(() => {
-    return buildKpiBreakdowns({
-      attendance,
-      eligibility,
-      lookback30,
-      programById,
-      rankFamilyById,
-      rankNameById,
-      sessions,
-      students,
-      today,
-    });
-  }, [attendance, eligibility, lookback30, programById, rankFamilyById, rankNameById, sessions, students, today]);
 
   const recentStudentRows = useMemo(
-    () => buildDashboardRecentStudentRows(summary?.recent_students, students, hasPartialStudentSample),
-    [hasPartialStudentSample, students, summary?.recent_students]
+    () =>
+      buildDashboardRecentStudentRows(summary?.recent_students, students, hasPartialStudentSample),
+    [hasPartialStudentSample, students, summary?.recent_students],
   );
-  const programBuckets = useMemo(
-    () => buildDashboardProgramBuckets(programs, programById, students, leads, sessions, today),
-    [leads, programById, programs, sessions, students, today]
+  const widgetViewModels = useMemo(
+    () =>
+      buildDashboardWidgetViewModels({
+        isPreviewMode,
+        dashboardSummary: summary,
+        dashboardSummaryLoaded,
+        datasetLoadError: setupReadiness.error,
+        allDatasetEvidenceReady: setupReadiness.status === "ready",
+        canSeeBilling,
+        canSeeLeads: normalizedRole === "admin" || normalizedRole === "front_desk",
+        role: normalizedRole,
+        hasDashboardSummary,
+        hasPartialStudentSample,
+        studentsLoaded,
+        studentsLoadError,
+        leadsLoaded,
+        leadsLoadError,
+        scheduleStatus,
+        scheduleLoadError,
+        eligibilityReady: beltEligibilityReadiness.status === "ready",
+        eligibilityLoadError,
+        today,
+        students,
+        leads,
+        sessions,
+        eligibility,
+        recentStudentRows,
+        composition: dashboardComposition,
+      }),
+    [
+      dashboardComposition,
+      summary,
+      dashboardSummaryLoaded,
+      setupReadiness.error,
+      setupReadiness.status,
+      eligibility,
+      eligibilityLoadError,
+      hasDashboardSummary,
+      hasPartialStudentSample,
+      isPreviewMode,
+      leads,
+      leadsLoadError,
+      leadsLoaded,
+      recentStudentRows,
+      scheduleLoadError,
+      scheduleStatus,
+      sessions,
+      students,
+      studentsLoadError,
+      studentsLoaded,
+      today,
+      canSeeBilling,
+      normalizedRole,
+      beltEligibilityReadiness.status,
+    ],
   );
-  const studioDescription = studioName || (
-    isInitialDashboardLoading ? "Loading studio..." : "Your studio at a glance."
-  );
+
+  const studioDescription =
+    studioName || (isInitialDashboardLoading ? "Loading studio..." : "Your studio at a glance.");
 
   return {
     contentProps: {
       canSeeBilling,
-      dashboardComposition,
-      datasetLoadError: datasetReadiness.error,
+      currentRole,
+      identityGeneration,
+      onVisibleWidgetsChange,
+      currentStudioId,
+      currentUserId,
+      datasetLoadError: dashboardSummaryLoadError || datasetReadiness.error,
+      isDashboardDataReady: datasetReadiness.status === "ready",
       hasDashboardSummary,
       hasPartialStudentSample,
+      isDashboardIdentityReady,
       isInitialDashboardLoading,
-      kpiBreakdowns,
       lookback30,
-      programBuckets,
-      programById,
       recentStudentRows,
       retryDashboardDatasets,
       rosterSummaryPending,
       shouldShowLocalStudentDetails,
       studioDescription,
       today,
-      todayLabel,
+      isPreviewMode,
+      widgetViewModels,
     },
   };
 }

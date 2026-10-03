@@ -1,8 +1,105 @@
-import type { AttendanceRecord, ClassSession, Student } from "@/types";
+import type { AttendanceRecord, ClassSession, ClassTemplate, Student } from "@/types";
+import {
+  buildEntriesForDate,
+  groupSessionsByDate,
+  groupTemplatesByDay,
+  parseCalendarDate,
+} from "./schedule-calendar.ts";
+import { withCurrentMinorStatus } from "./student-age.ts";
 
 export type SchedulePageView = "month" | "week" | "day";
 
+export type ScheduleTimeItem = {
+  id: string;
+  start_time: string;
+  end_time: string;
+};
+
+export type ScheduleTimeBlock<T extends ScheduleTimeItem> = {
+  item: T;
+  startMinute: number;
+  endMinute: number;
+  lane: number;
+  laneCount: number;
+  overlaps: boolean;
+};
+
 export const DEFAULT_SCHEDULE_PAGE_VIEW: SchedulePageView = "month";
+
+export const SCHEDULE_CANVAS_PIXELS_PER_HOUR = 72;
+
+export function scheduleTimeToMinute(value: string) {
+  const [hoursText = "0", minutesText = "0"] = value.split(":");
+  const hours = Number(hoursText);
+  const minutes = Number(minutesText);
+  if (!Number.isFinite(hours) || !Number.isFinite(minutes)) {
+    return 0;
+  }
+  return Math.max(0, Math.min(24 * 60, hours * 60 + minutes));
+}
+
+export function getScheduleTimeCanvasBounds(items: ReadonlyArray<ScheduleTimeItem>) {
+  const defaultStart = 6 * 60;
+  const defaultEnd = 22 * 60;
+  if (items.length === 0) {
+    return { startMinute: defaultStart, endMinute: defaultEnd };
+  }
+
+  const earliest = Math.min(...items.map((item) => scheduleTimeToMinute(item.start_time)));
+  const latest = Math.max(...items.map((item) => scheduleTimeToMinute(item.end_time)));
+  return {
+    startMinute: Math.min(defaultStart, Math.floor(earliest / 60) * 60),
+    endMinute: Math.max(defaultEnd, Math.ceil(latest / 60) * 60),
+  };
+}
+
+export function layoutScheduleTimeItems<T extends ScheduleTimeItem>(
+  items: ReadonlyArray<T>,
+): ScheduleTimeBlock<T>[] {
+  const sorted: ScheduleTimeBlock<T>[] = items
+    .map((item) => {
+      const startMinute = scheduleTimeToMinute(item.start_time);
+      return {
+        item,
+        startMinute,
+        endMinute: Math.max(startMinute + 15, scheduleTimeToMinute(item.end_time)),
+        lane: 0,
+        laneCount: 1,
+        overlaps: false,
+      };
+    })
+    .sort(
+      (a, b) =>
+        a.startMinute - b.startMinute ||
+        a.endMinute - b.endMinute ||
+        a.item.id.localeCompare(b.item.id),
+    );
+
+  let groupStart = 0;
+  while (groupStart < sorted.length) {
+    let groupEnd = groupStart + 1;
+    let latestEnd = sorted[groupStart].endMinute;
+    while (groupEnd < sorted.length && sorted[groupEnd].startMinute < latestEnd) {
+      latestEnd = Math.max(latestEnd, sorted[groupEnd].endMinute);
+      groupEnd += 1;
+    }
+
+    const laneEnds: number[] = [];
+    for (let index = groupStart; index < groupEnd; index += 1) {
+      const block = sorted[index];
+      const availableLane = laneEnds.findIndex((endMinute) => endMinute <= block.startMinute);
+      block.lane = availableLane === -1 ? laneEnds.length : availableLane;
+      laneEnds[block.lane] = block.endMinute;
+    }
+    for (let index = groupStart; index < groupEnd; index += 1) {
+      sorted[index].laneCount = laneEnds.length;
+      sorted[index].overlaps = laneEnds.length > 1;
+    }
+    groupStart = groupEnd;
+  }
+
+  return sorted;
+}
 
 export type SessionAttendanceRefreshState = {
   sessionId: string | null;
@@ -19,12 +116,10 @@ export function clearSessionAttendanceRefresh(): SessionAttendanceRefreshState {
 
 export function isSessionAttendanceReady(
   state: SessionAttendanceRefreshState,
-  selectedSessionId: string | null
+  selectedSessionId: string | null,
 ) {
   return Boolean(
-    selectedSessionId &&
-    state.sessionId === selectedSessionId &&
-    state.status === "ready"
+    selectedSessionId && state.sessionId === selectedSessionId && state.status === "ready",
   );
 }
 
@@ -70,7 +165,7 @@ export async function runSessionAttendanceRefresh({
 }
 
 export function createAttendanceToggleQueue(
-  onPendingChange: (pendingIds: ReadonlySet<string>) => void
+  onPendingChange: (pendingIds: ReadonlySet<string>) => void,
 ) {
   const tails = new Map<string, Promise<void>>();
 
@@ -150,6 +245,43 @@ export function getVisibleScheduleRange(currentDate: Date, view: SchedulePageVie
   };
 }
 
+export function getVisibleScheduleSummary({
+  currentDate,
+  view,
+  sessions,
+  templates,
+}: {
+  currentDate: Date;
+  view: SchedulePageView;
+  sessions: ClassSession[];
+  templates: ClassTemplate[];
+}) {
+  const range = getVisibleScheduleRange(currentDate, view);
+  const visibleSessions = sessions.filter(
+    (session) => session.date >= range.start && session.date <= range.end,
+  );
+  const sessionsByDate = groupSessionsByDate(visibleSessions);
+  const templatesByDay = groupTemplatesByDay(templates);
+  let recurringSlots = 0;
+
+  // Count the same unmaterialized recurring occurrences the calendar displays.
+  // Generated sessions, including cancellations, already occupy their slot.
+  for (
+    const date = parseCalendarDate(range.start);
+    formatScheduleDateKey(date) <= range.end;
+    date.setDate(date.getDate() + 1)
+  ) {
+    recurringSlots += buildEntriesForDate({
+      date,
+      sessionsByDate,
+      templatesByDay,
+      showTemplatePlaceholders: true,
+    }).filter((entry) => entry.kind === "template").length;
+  }
+
+  return { scheduled: visibleSessions.length, recurringSlots };
+}
+
 export function navigateScheduleDate(currentDate: Date, view: SchedulePageView, direction: number) {
   const next = new Date(currentDate);
   if (view === "day") {
@@ -167,21 +299,15 @@ export function navigateScheduleDate(currentDate: Date, view: SchedulePageView, 
   return next;
 }
 
-export function recurringClassOverlapsRange(
-  recurrence: { startDate: string; endDate?: string | null },
-  visibleRange: { start: string; end: string }
-) {
-  return recurrence.startDate <= visibleRange.end
-    && (!recurrence.endDate || recurrence.endDate >= visibleRange.start);
-}
-
-export function getActiveScheduleStudents(students: Student[]) {
-  return students.filter((student) => student.status === "active" || student.status === "trialing");
+export function getActiveScheduleStudents(students: Student[], businessDate: string) {
+  return students
+    .filter((student) => student.status === "active" || student.status === "trialing")
+    .map((student) => withCurrentMinorStatus(student, businessDate));
 }
 
 export function getScheduleSessionAttendance(
   attendance: AttendanceRecord[],
-  session: Pick<ClassSession, "id"> | null
+  session: Pick<ClassSession, "id"> | null,
 ) {
   if (!session) {
     return [];

@@ -1,3 +1,4 @@
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
@@ -15,6 +16,8 @@ from app.core.config import (
 )
 from app.db.supabase import (
     DeadlineBoundSupabaseClient,
+    SupabaseClientCleanupError,
+    close_supabase_client,
     create_operational_alert_supabase_client,
     create_supabase_client,
 )
@@ -166,9 +169,7 @@ def test_exact_environment_target_matrix_rejects_other_pairs(
 
 
 @pytest.mark.parametrize("proxy_key", PROXY_ENVIRONMENT_KEYS)
-def test_factory_rejects_uppercase_and_lowercase_proxy_variants(
-    monkeypatch, proxy_key
-):
+def test_factory_rejects_uppercase_and_lowercase_proxy_variants(monkeypatch, proxy_key):
     _clear_proxy_environment(monkeypatch)
     monkeypatch.setenv(proxy_key, "http://proxy.invalid:8080")
     monkeypatch.setenv("NO_PROXY", "localhost,127.0.0.1")
@@ -219,9 +220,7 @@ def test_no_proxy_wildcard_does_not_bypass_proxy_refusal(monkeypatch):
 
 
 @pytest.mark.parametrize("bundle_key", CA_BUNDLE_ENVIRONMENT_KEYS)
-def test_factory_rejects_ca_bundle_and_certificate_overrides(
-    monkeypatch, bundle_key
-):
+def test_factory_rejects_ca_bundle_and_certificate_overrides(monkeypatch, bundle_key):
     _clear_proxy_environment(monkeypatch)
     monkeypatch.setenv(bundle_key, "/tmp/untrusted-ca-bundle")
     settings = Settings(
@@ -254,3 +253,69 @@ def test_operating_system_proxy_is_rejected_without_logging_value(monkeypatch):
         ).validate_runtime_configuration()
 
     assert proxy_value not in str(error.value)
+
+
+def test_close_supabase_client_closes_only_initialized_transports():
+    closed: list[str] = []
+
+    class Auth:
+        def close(self):
+            closed.append("auth")
+
+        def sign_out(self):
+            raise AssertionError("auth state must not be mutated")
+
+    class LazyClient:
+        auth = Auth()
+        _postgrest = None
+        _storage = None
+        _functions = None
+
+        @property
+        def postgrest(self):
+            raise AssertionError("postgrest must not be initialized")
+
+        @property
+        def storage(self):
+            raise AssertionError("storage must not be initialized")
+
+        @property
+        def functions(self):
+            raise AssertionError("functions must not be initialized")
+
+    close_supabase_client(LazyClient())
+
+    assert closed == ["auth"]
+
+
+def test_close_supabase_client_attempts_all_transports_and_aggregates_failures():
+    closed: list[str] = []
+
+    class Closable:
+        def __init__(self, name: str, *, failure: BaseException | None = None):
+            self.name = name
+            self.failure = failure
+
+        def close(self):
+            closed.append(self.name)
+            if self.failure:
+                raise self.failure
+
+        def aclose(self):
+            self.close()
+
+    auth_failure = OSError("auth close failed")
+    client = SimpleNamespace(
+        auth=Closable("auth", failure=auth_failure),
+        _postgrest=Closable("postgrest"),
+        _storage=Closable("storage"),
+        _functions=SimpleNamespace(_client=Closable("functions")),
+    )
+
+    with pytest.raises(SupabaseClientCleanupError) as raised:
+        close_supabase_client(client)
+
+    assert closed == ["auth", "postgrest", "storage", "functions"]
+    assert raised.value.failures == (auth_failure,)
+    assert raised.value.causes == (auth_failure,)
+    assert raised.value.__cause__ is auth_failure

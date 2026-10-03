@@ -2,6 +2,10 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
+from fastapi import HTTPException, status
+from supabase import Client
+
+from app.services.billing_connect_accounts import BillingConnectAccountStore
 from app.services.billing_invoice_projection import _stripe_id, subscription_period_bounds
 from app.services.billing_webhook_event_state import (
     SUBSCRIPTION_STATUS_ORDER,
@@ -12,29 +16,62 @@ from app.services.billing_webhook_event_state import (
 )
 
 
-class BillingSubscriptionWebhookProjector:
-    def __init__(self, billing_service: Any):
-        self.billing_service = billing_service
+def _subscription_item_facts(
+    subscription: dict[str, Any],
+) -> tuple[Optional[str], Optional[str]]:
+    items = subscription.get("items")
+    if (
+        not isinstance(items, dict)
+        or items.get("has_more") is not False
+        or not isinstance(items.get("data"), list)
+    ):
+        return None, None
 
-    @property
-    def supabase(self):
-        return self.billing_service.supabase
+    item_rows = items["data"]
+    currencies: set[Optional[str]] = set()
+    billing_intervals: set[Optional[str]] = set()
+    supported_intervals = {
+        ("week", 1): "weekly",
+        ("week", 2): "biweekly",
+        ("month", 1): "monthly",
+        ("year", 1): "annual",
+    }
+    for item in item_rows:
+        price = item.get("price") if isinstance(item, dict) else None
+        if not isinstance(price, dict):
+            currencies.add(None)
+            billing_intervals.add(None)
+            continue
 
-    def _resolve_stripe_event_studio_id(
-        self,
-        account_id: Optional[str],
-        *,
-        metadata_studio_id: Optional[str] = None,
-        local_studio_id: Optional[str] = None,
-    ) -> Optional[str]:
-        return self.billing_service._resolve_stripe_event_studio_id(
-            account_id,
-            metadata_studio_id=metadata_studio_id,
-            local_studio_id=local_studio_id,
+        raw_currency = price.get("currency")
+        currencies.add(
+            raw_currency.strip().lower()
+            if isinstance(raw_currency, str) and raw_currency.strip()
+            else None
         )
 
-    def _row_matches_stripe_account(self, row: dict[str, Any], account_id: Optional[str]) -> bool:
-        return self.billing_service._row_matches_stripe_account(row, account_id)
+        recurring = price.get("recurring")
+        raw_interval = recurring.get("interval") if isinstance(recurring, dict) else None
+        interval_count = recurring.get("interval_count") if isinstance(recurring, dict) else None
+        interval = (
+            supported_intervals.get((raw_interval.strip().lower(), interval_count))
+            if isinstance(raw_interval, str)
+            and raw_interval.strip()
+            and type(interval_count) is int
+            and interval_count > 0
+            else None
+        )
+        billing_intervals.add(interval)
+
+    currency = next(iter(currencies)) if len(currencies) == 1 else None
+    billing_interval = next(iter(billing_intervals)) if len(billing_intervals) == 1 else None
+    return currency, billing_interval
+
+
+class BillingSubscriptionWebhookProjector:
+    def __init__(self, supabase: Client, connect_accounts: BillingConnectAccountStore):
+        self.supabase = supabase
+        self.connect_accounts = connect_accounts
 
     def project_subscription(
         self,
@@ -45,7 +82,7 @@ class BillingSubscriptionWebhookProjector:
     ) -> Optional[dict[str, Any]]:
         metadata = subscription.get("metadata") or {}
         local = self.find_subscription_for_stripe(subscription, account_id)
-        studio_id = self._resolve_stripe_event_studio_id(
+        studio_id = self.connect_accounts.resolve_stripe_event_studio_id(
             account_id,
             metadata_studio_id=metadata.get("studio_id"),
             local_studio_id=(local or {}).get("studio_id"),
@@ -55,7 +92,11 @@ class BillingSubscriptionWebhookProjector:
             return local
         if local and is_stale_stripe_event(local, event_created):
             return local
-        status_value = "canceled" if event_type == "customer.subscription.deleted" else subscription.get("status", "active")
+        status_value = (
+            "canceled"
+            if event_type == "customer.subscription.deleted"
+            else subscription.get("status", "active")
+        )
         if local and is_same_second_status_regression(
             local.get("last_stripe_event_created"),
             event_created,
@@ -64,6 +105,7 @@ class BillingSubscriptionWebhookProjector:
             status_order=SUBSCRIPTION_STATUS_ORDER,
         ):
             return local
+        currency, billing_interval = _subscription_item_facts(subscription)
         period_start, period_end = subscription_period_bounds(subscription)
         update = {
             "studio_id": studio_id,
@@ -72,29 +114,56 @@ class BillingSubscriptionWebhookProjector:
             "stripe_customer_id": _stripe_id(subscription.get("customer")),
             "stripe_subscription_id": _stripe_id(subscription),
             "status": status_value,
-            "current_period_start": timestamp(period_start) or (local or {}).get("current_period_start"),
+            "current_period_start": timestamp(period_start)
+            or (local or {}).get("current_period_start"),
             "current_period_end": timestamp(period_end) or (local or {}).get("current_period_end"),
             "cancel_at_period_end": bool(subscription.get("cancel_at_period_end")),
             "application_fee_percent": subscription.get("application_fee_percent"),
-            "last_stripe_event_created": event_created if event_created is not None else (local or {}).get("last_stripe_event_created"),
+            "last_stripe_event_created": event_created
+            if event_created is not None
+            else (local or {}).get("last_stripe_event_created"),
         }
         if local:
-            query = self.supabase.table("billing_subscriptions").update(update).eq("id", local["id"])
+            if local.get("currency") is None and currency is not None:
+                update["currency"] = currency
+            if local.get("billing_interval") is None and billing_interval is not None:
+                update["billing_interval"] = billing_interval
+            query = (
+                self.supabase.table("billing_subscriptions").update(update).eq("id", local["id"])
+            )
             query = add_stripe_event_created_guard(query, event_created)
+            if "currency" in update:
+                query = query.is_("currency", "null")
+            if "billing_interval" in update:
+                query = query.is_("billing_interval", "null")
             result = query.execute()
+            if not result.data and ("currency" in update or "billing_interval" in update):
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail=(
+                        "Billing subscription facts changed during webhook processing. "
+                        "Retry the webhook."
+                    ),
+                )
             if not result.data and event_created is not None:
                 return local
             row = result.data[0] if result.data else {**local, **update}
         else:
-            update.update({
-                "collection_mode": "autopay" if subscription.get("collection_method") == "charge_automatically" else "invoice_link",
-                "billing_interval": "monthly",
-                "currency": "usd",
-            })
+            update.update(
+                {
+                    "collection_mode": "autopay"
+                    if subscription.get("collection_method") == "charge_automatically"
+                    else "invoice_link",
+                    "billing_interval": billing_interval,
+                    "currency": currency,
+                }
+            )
             result = self.supabase.table("billing_subscriptions").insert(update).execute()
             row = result.data[0] if result.data else update
         if status_value == "canceled":
-            self._detach_enrollments_for_canceled_subscription(row, subscription, account_id, event_created)
+            self._detach_enrollments_for_canceled_subscription(
+                row, subscription, account_id, event_created
+            )
             return row
         self.project_subscription_items(subscription, row)
         return row
@@ -108,18 +177,38 @@ class BillingSubscriptionWebhookProjector:
         local_id = metadata.get("billing_subscription_id")
         studio_id = metadata.get("studio_id")
         if local_id and studio_id:
-            result = self.supabase.table("billing_subscriptions").select("*").eq("id", local_id).eq("studio_id", studio_id).limit(1).execute()
-            if result.data and self._row_matches_stripe_account(result.data[0], account_id):
+            result = (
+                self.supabase.table("billing_subscriptions")
+                .select("*")
+                .eq("id", local_id)
+                .eq("studio_id", studio_id)
+                .limit(1)
+                .execute()
+            )
+            if result.data and self.connect_accounts.row_matches_stripe_account(
+                result.data[0], account_id
+            ):
                 return result.data[0]
         stripe_id = _stripe_id(subscription)
         if not stripe_id:
             return None
-        query = self.supabase.table("billing_subscriptions").select("*").eq("stripe_subscription_id", stripe_id).limit(1)
-        query = query.eq("stripe_account_id", account_id) if account_id else query.is_("stripe_account_id", "null")
+        query = (
+            self.supabase.table("billing_subscriptions")
+            .select("*")
+            .eq("stripe_subscription_id", stripe_id)
+            .limit(1)
+        )
+        query = (
+            query.eq("stripe_account_id", account_id)
+            if account_id
+            else query.is_("stripe_account_id", "null")
+        )
         result = query.execute()
         return result.data[0] if result.data else None
 
-    def project_subscription_items(self, subscription: dict[str, Any], group: dict[str, Any]) -> None:
+    def project_subscription_items(
+        self, subscription: dict[str, Any], group: dict[str, Any]
+    ) -> None:
         items = (subscription.get("items") or {}).get("data") or []
         for item in items:
             metadata = item.get("metadata") or {}
@@ -128,11 +217,19 @@ class BillingSubscriptionWebhookProjector:
                 "billing_subscription_id": group.get("id"),
                 "stripe_subscription_id": _stripe_id(subscription),
                 "stripe_subscription_item_id": _stripe_id(item),
-                "billing_status": "current" if subscription.get("status") in {"active", "trialing"} else "past_due",
+                "billing_status": "current"
+                if subscription.get("status") in {"active", "trialing"}
+                else "past_due",
             }
             if enrollment_id:
-                self.supabase.table("student_billing_enrollments").update(update).eq("id", enrollment_id).eq("studio_id", group["studio_id"]).in_("status", ["pending", "active"]).execute()
-            self.supabase.table("student_billing_enrollments").update(update).eq("studio_id", group["studio_id"]).eq("billing_subscription_id", group.get("id")).eq("stripe_subscription_item_id", _stripe_id(item)).in_("status", ["pending", "active"]).execute()
+                self.supabase.table("student_billing_enrollments").update(update).eq(
+                    "id", enrollment_id
+                ).eq("studio_id", group["studio_id"]).in_("status", ["pending", "active"]).execute()
+            self.supabase.table("student_billing_enrollments").update(update).eq(
+                "studio_id", group["studio_id"]
+            ).eq("billing_subscription_id", group.get("id")).eq(
+                "stripe_subscription_item_id", _stripe_id(item)
+            ).in_("status", ["pending", "active"]).execute()
 
     def _detach_enrollments_for_canceled_subscription(
         self,

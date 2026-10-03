@@ -1,30 +1,34 @@
 "use client";
+import { useResumeRefresh } from "@/lib/use-resume-refresh";
 
-import { useEffect, useMemo, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
+import { safeStudentsReturn } from "@/lib/student-roster-location";
+import { withCurrentMinorStatus } from "./student-age";
 import { api } from "@/lib/api";
-import { toLocalDateKey } from "@/lib/date";
-import {
-  buildStudentDetailModel,
-  validateStudentPhotoFile,
-} from "@/lib/student-detail-page-model";
+import { buildStudentDetailModel, validateStudentPhotoFile } from "@/lib/student-detail-page-model";
 import type {
   BeltsStoreContextValue,
   ConfigStoreContextValue,
   ProgramsStoreContextValue,
   StudentsStoreContextValue,
+  StudioStoreContextValue,
 } from "@/lib/store-contexts";
 import { hasStaffPermission } from "@/lib/staff-permissions";
+import { STUDENT_COMMAND_BUSY_MESSAGE } from "@/lib/store";
 import type { BeltLadder, Promotion, Student, StudentUpdate } from "@/types";
 
 const EMPTY_PROMOTION_HISTORY: Promotion[] = [];
+
+type StudentCommandKind = "archive" | "photo" | "profile";
 
 type StudentDetailPageControllerOptions = {
   beltStore: Pick<
     BeltsStoreContextValue,
     "beltLadders" | "loadPromotionHistory" | "promotionHistoryByStudent"
   >;
-  config: Pick<ConfigStoreContextValue, "currentRole" | "isPreviewMode" | "token">;
+  studioStore: Pick<StudioStoreContextValue, "identityGeneration">;
+  config: Pick<ConfigStoreContextValue, "businessDate" | "currentRole" | "isPreviewMode" | "token">;
   programsStore: Pick<ProgramsStoreContextValue, "programs">;
   studentsStore: Pick<
     StudentsStoreContextValue,
@@ -40,17 +44,19 @@ type StudentDetailPageControllerOptions = {
 export function useStudentDetailPageController({
   beltStore,
   config,
+  studioStore,
   programsStore,
   studentsStore,
 }: StudentDetailPageControllerOptions) {
   const params = useParams();
   const router = useRouter();
+  const returnTo = safeStudentsReturn(useSearchParams().get("returnTo"));
   const id = params.id as string;
   const { isPreviewMode, token } = config;
   const canManageRoster = hasStaffPermission(config.currentRole, "manage_roster_bulk");
   const canManageStudentLifecycle = hasStaffPermission(
     config.currentRole,
-    "manage_student_lifecycle"
+    "manage_student_lifecycle",
   );
   const {
     deleteStudentPhoto,
@@ -67,9 +73,25 @@ export function useStudentDetailPageController({
     promotionHistoryByStudent,
   } = beltStore;
 
-  const [showEdit, setShowEdit] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
-  const [hydratedStudent, setHydratedStudent] = useState<Student | null>(null);
+  const scope = `${studioStore.identityGeneration}:${id}`;
+  const [editScope, setEditScope] = useState<string | null>(null);
+  const showEdit = editScope === scope;
+  const currentScope = useRef<string | null>(scope);
+  useEffect(() => {
+    currentScope.current = scope;
+    return () => {
+      if (currentScope.current === scope) currentScope.current = null;
+    };
+  }, [scope]);
+  const detailRevision = useRef(0);
+  const [hydration, setHydration] = useState<{ scope: string; student: Student } | null>(null);
+  const hydratedStudent = hydration?.scope === scope ? hydration.student : null;
+  const setHydratedStudent = (student: Student) => {
+    if (currentScope.current === scope) setHydration({ scope, student });
+  };
+  const [retryNonce, setRetryNonce] = useState(0);
+  const historyRetryNonceRef = useRef(0);
+  useResumeRefresh(() => setRetryNonce((value) => value + 1));
   const [isLoadingStudent, setIsLoadingStudent] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [fallbackBeltLadders, setFallbackBeltLadders] = useState<BeltLadder[]>([]);
@@ -80,60 +102,76 @@ export function useStudentDetailPageController({
   const [isLoadingFallbackBeltLadders, setIsLoadingFallbackBeltLadders] = useState(false);
   const [isLoadingPromotionHistory, setIsLoadingPromotionHistory] = useState(false);
   const [beltLoadError, setBeltLoadError] = useState<string | null>(null);
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [isDeleting, setIsDeleting] = useState(false);
-  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [deleteConfirmScope, setDeleteConfirmScope] = useState<string | null>(null);
+  const showDeleteConfirm = deleteConfirmScope === scope;
+  const [deleteErrorState, setDeleteErrorState] = useState<{
+    scope: string;
+    message: string;
+  } | null>(null);
+  const deleteError = deleteErrorState?.scope === scope ? deleteErrorState.message : null;
   const [actionMessage, setActionMessage] = useState<string | null>(null);
-  const [photoPreviewUrl, setPhotoPreviewUrl] = useState<string | null>(null);
+  const [photoPreview, setPhotoPreview] = useState<{ scope: string; url: string } | null>(null);
+  const photoPreviewUrl = photoPreview?.scope === scope ? photoPreview.url : null;
   const [photoError, setPhotoError] = useState<string | null>(null);
-  const [isPhotoSaving, setIsPhotoSaving] = useState(false);
-
-  const listStudent = useMemo(
-    () => students.find((student) => student.id === id),
-    [id, students]
+  // One profile, photo or archive command owns this student until its store
+  // write and detail hydration settle. The ref refuses a same-tick repeat that
+  // the pending state has not rendered yet. Every completion is fenced to the
+  // scope that started it, so a replaced identity or student cannot change the
+  // current page's notices, pending flags, preview or route.
+  const commandOwnersRef = useRef(new Map<string, symbol>());
+  const [pendingCommands, setPendingCommands] = useState<ReadonlyMap<string, StudentCommandKind>>(
+    () => new Map(),
   );
+  const [archivedScope, setArchivedScope] = useState<string | null>(null);
+  const pendingCommand = pendingCommands.get(scope);
+  const isStudentCommandPending = pendingCommand !== undefined;
+  const isSaving = pendingCommand === "profile";
+  const isPhotoSaving = pendingCommand === "photo";
+  const isDeleting = pendingCommand === "archive" || archivedScope === scope;
+  const beginStudentCommand = (kind: StudentCommandKind) => {
+    if (commandOwnersRef.current.has(scope)) return null;
+    const ownerScope = scope;
+    const owner = Symbol(kind);
+    commandOwnersRef.current.set(ownerScope, owner);
+    setPendingCommands((current) => new Map(current).set(ownerScope, kind));
+    return {
+      isCurrent: () => currentScope.current === ownerScope,
+      scope: ownerScope,
+      release: () => {
+        if (commandOwnersRef.current.get(ownerScope) !== owner) return;
+        commandOwnersRef.current.delete(ownerScope);
+        setPendingCommands((current) => {
+          const next = new Map(current);
+          next.delete(ownerScope);
+          return next;
+        });
+      },
+    };
+  };
+  // The effect below revokes a preview URL once no state refers to it, so a
+  // command only clears the preview it created.
+  const clearOwnedPhotoPreview = (url: string) =>
+    setPhotoPreview((current) => (current?.url === url ? null : current));
+
+  const listStudent = useMemo(() => students.find((student) => student.id === id), [id, students]);
   const cachedPromotionHistory = promotionHistoryByStudent[id];
 
+  const ownedPhotoPreviewUrl = photoPreview?.url ?? null;
   useEffect(() => {
     return () => {
-      if (photoPreviewUrl) {
-        URL.revokeObjectURL(photoPreviewUrl);
+      if (ownedPhotoPreviewUrl) {
+        URL.revokeObjectURL(ownedPhotoPreviewUrl);
       }
     };
-  }, [photoPreviewUrl]);
+  }, [ownedPhotoPreviewUrl]);
 
   useEffect(() => {
     let mounted = true;
     const controller = new AbortController();
 
     async function loadStudent() {
-      if (isPreviewMode || !token) {
-        if (mounted) {
-          setHydratedStudent(null);
-          setLoadError(null);
-          setIsLoadingStudent(false);
-        }
-        return;
-      }
-
-      if (listStudent) {
-        if (mounted) {
-          setHydratedStudent(null);
-          setLoadError(null);
-          setIsLoadingStudent(false);
-        }
-        return;
-      }
-
-      if (!studentsLoaded) {
-        if (mounted) {
-          setHydratedStudent(null);
-          setLoadError(null);
-          setIsLoadingStudent(false);
-        }
-        return;
-      }
-
+      if (isPreviewMode || !token) return;
+      const revision = detailRevision.current;
       setIsLoadingStudent(true);
       setLoadError(null);
 
@@ -141,8 +179,8 @@ export function useStudentDetailPageController({
         const result = await api.get<Student>(`/students/${id}`, token, {
           signal: controller.signal,
         });
-        if (mounted) {
-          setHydratedStudent(result);
+        if (mounted && currentScope.current === scope && detailRevision.current === revision) {
+          setHydration({ scope, student: result });
         }
       } catch (error) {
         if (error instanceof Error && error.name === "AbortError") {
@@ -164,7 +202,7 @@ export function useStudentDetailPageController({
       mounted = false;
       controller.abort();
     };
-  }, [id, isPreviewMode, listStudent, studentsLoaded, token]);
+  }, [id, isPreviewMode, retryNonce, scope, token]);
 
   useEffect(() => {
     let mounted = true;
@@ -186,9 +224,7 @@ export function useStudentDetailPageController({
         setFallbackBeltLadders(laddersResult);
       } catch (error) {
         if (mounted) {
-          setBeltLoadError(
-            error instanceof Error ? error.message : "Failed to load belt ladder"
-          );
+          setBeltLoadError(error instanceof Error ? error.message : "Failed to load belt ladder");
         }
       } finally {
         if (mounted) {
@@ -224,8 +260,11 @@ export function useStudentDetailPageController({
       setBeltLoadError(null);
 
       try {
+        const force = historyRetryNonceRef.current !== retryNonce;
+        historyRetryNonceRef.current = retryNonce;
         const promotionsResult = await loadPromotionHistoryForStudent(id, {
           signal: controller.signal,
+          force,
         });
 
         if (mounted) {
@@ -236,9 +275,7 @@ export function useStudentDetailPageController({
           return;
         }
         if (mounted) {
-          setBeltLoadError(
-            error instanceof Error ? error.message : "Failed to load belt history"
-          );
+          setBeltLoadError(error instanceof Error ? error.message : "Failed to load belt history");
         }
       } finally {
         if (mounted) {
@@ -253,16 +290,26 @@ export function useStudentDetailPageController({
       mounted = false;
       controller.abort();
     };
-  }, [cachedPromotionHistory, id, isPreviewMode, loadPromotionHistoryForStudent, token]);
+  }, [
+    cachedPromotionHistory,
+    id,
+    isPreviewMode,
+    loadPromotionHistoryForStudent,
+    retryNonce,
+    token,
+  ]);
 
-  const student = hydratedStudent?.id === id ? hydratedStudent : listStudent;
-  const promotionHistory = promotionHistoryState?.studentId === id
-    ? promotionHistoryState.items
-    : EMPTY_PROMOTION_HISTORY;
-  const beltLadders = storeBeltLadders.length > 0 ? storeBeltLadders : fallbackBeltLadders;
-  const isLoadingBeltData = isLoadingPromotionHistory || (
-    beltLadders.length === 0 && isLoadingFallbackBeltLadders
+  const sourceStudent = hydratedStudent ?? listStudent;
+  const student = useMemo(
+    () => (sourceStudent ? withCurrentMinorStatus(sourceStudent, config.businessDate) : undefined),
+    [config.businessDate, sourceStudent],
   );
+  const detailReady = isPreviewMode ? Boolean(student) : Boolean(hydratedStudent);
+  const promotionHistory =
+    promotionHistoryState?.studentId === id ? promotionHistoryState.items : EMPTY_PROMOTION_HISTORY;
+  const beltLadders = storeBeltLadders.length > 0 ? storeBeltLadders : fallbackBeltLadders;
+  const isLoadingBeltData =
+    isLoadingPromotionHistory || (beltLadders.length === 0 && isLoadingFallbackBeltLadders);
   const detail = useMemo(
     () =>
       student
@@ -270,93 +317,114 @@ export function useStudentDetailPageController({
             beltLadders,
             promotionHistory,
             student,
-            today: toLocalDateKey(),
+            today: config.businessDate,
           })
         : null,
-    [beltLadders, promotionHistory, student]
+    [beltLadders, config.businessDate, promotionHistory, student],
   );
 
   async function handleEdit(data: StudentUpdate) {
-    if (!student) return;
-    setIsSaving(true);
+    if (!student || !detailReady) return;
+    const command = beginStudentCommand("profile");
+    if (!command) throw new Error(STUDENT_COMMAND_BUSY_MESSAGE);
+    detailRevision.current += 1;
     setActionMessage(null);
     try {
       const updated = await updateStudent(id, data);
-      setHydratedStudent(updated);
-      setShowEdit(false);
-      setActionMessage("Student profile updated.");
+      if (command.isCurrent()) {
+        setHydratedStudent(updated);
+        setEditScope(null);
+        setActionMessage("Student profile updated.");
+      }
     } finally {
-      setIsSaving(false);
+      command.release();
     }
   }
 
   async function handleDeleteStudent() {
-    if (!canManageRoster) return;
+    if (!canManageRoster || !detailReady) return;
+    const command = beginStudentCommand("archive");
+    if (!command) return;
 
-    setIsDeleting(true);
-    setDeleteError(null);
+    setDeleteErrorState(null);
 
     try {
       await deleteStudents([id]);
-      router.push("/students");
+      if (command.isCurrent()) {
+        setArchivedScope(command.scope);
+        router.push(returnTo);
+      }
     } catch (error) {
-      setDeleteError(error instanceof Error ? error.message : "Failed to archive student.");
-      setIsDeleting(false);
+      if (command.isCurrent()) {
+        setDeleteErrorState({
+          scope: command.scope,
+          message: error instanceof Error ? error.message : "Failed to archive student.",
+        });
+      }
+    } finally {
+      command.release();
     }
   }
 
   async function handlePhotoSelected(file: File): Promise<boolean> {
+    if (!canManageRoster || !detailReady) return false;
+    const command = beginStudentCommand("photo");
+    if (!command) return false;
     const validationError = validateStudentPhotoFile(file);
     if (validationError) {
       setPhotoError(validationError);
+      command.release();
       return false;
     }
 
-    const nextPreviewUrl = URL.createObjectURL(file);
-    setPhotoPreviewUrl((current) => {
-      if (current) URL.revokeObjectURL(current);
-      return nextPreviewUrl;
-    });
+    detailRevision.current += 1;
+    const previewUrl = URL.createObjectURL(file);
+    setPhotoPreview({ scope: command.scope, url: previewUrl });
     setPhotoError(null);
     setActionMessage(null);
-    setIsPhotoSaving(true);
 
     try {
       const updated = await uploadStudentPhoto(id, file);
-      setHydratedStudent(updated);
-      setActionMessage("Student photo updated.");
-      setPhotoPreviewUrl((current) => {
-        if (current) URL.revokeObjectURL(current);
-        return null;
-      });
+      if (command.isCurrent()) {
+        setHydratedStudent(updated);
+        setActionMessage("Student photo updated.");
+      }
     } catch (error) {
-      setPhotoError(error instanceof Error ? error.message : "Failed to update student photo.");
+      if (command.isCurrent()) {
+        setPhotoError(error instanceof Error ? error.message : "Failed to update student photo.");
+      }
     } finally {
-      setIsPhotoSaving(false);
+      // The stored photo stays authoritative; a settled or rejected upload's
+      // preview is no longer shown.
+      clearOwnedPhotoPreview(previewUrl);
+      command.release();
     }
 
     return true;
   }
 
   async function handleDeletePhoto() {
-    if (!canManageRoster) return;
+    if (!canManageRoster || !detailReady) return;
+    const command = beginStudentCommand("photo");
+    if (!command) return;
+    detailRevision.current += 1;
 
     setPhotoError(null);
     setActionMessage(null);
-    setIsPhotoSaving(true);
 
     try {
       const updated = await deleteStudentPhoto(id);
-      setHydratedStudent(updated);
-      setActionMessage("Student photo removed.");
-      setPhotoPreviewUrl((current) => {
-        if (current) URL.revokeObjectURL(current);
-        return null;
-      });
+      if (command.isCurrent()) {
+        setHydratedStudent(updated);
+        setActionMessage("Student photo removed.");
+        setPhotoPreview((current) => (current?.scope === command.scope ? null : current));
+      }
     } catch (error) {
-      setPhotoError(error instanceof Error ? error.message : "Failed to remove student photo.");
+      if (command.isCurrent()) {
+        setPhotoError(error instanceof Error ? error.message : "Failed to remove student photo.");
+      }
     } finally {
-      setIsPhotoSaving(false);
+      command.release();
     }
   }
 
@@ -364,15 +432,19 @@ export function useStudentDetailPageController({
     contentProps: {
       actionMessage,
       beltLoadError,
+      businessDate: config.businessDate,
       canManageRoster,
       canManageStudentLifecycle,
       deleteError,
       detail,
+      detailReady,
       isDeleting,
       isLoadingBeltData,
-      isLoadingStudent: !student && (!studentsLoaded || isLoadingStudent),
+      isLoadingStudent:
+        !student && !loadError && (!studentsLoaded || isLoadingStudent || !detailReady),
       isPhotoSaving,
       isSaving,
+      isStudentCommandPending,
       loadError,
       photoError,
       photoPreviewUrl,
@@ -381,19 +453,26 @@ export function useStudentDetailPageController({
       showDeleteConfirm,
       showEdit,
       student,
-      onBackToStudents: () => router.push("/students"),
+      onBackToStudents: () => router.push(returnTo),
       onCancelDelete: () => {
-        setShowDeleteConfirm(false);
-        setDeleteError(null);
+        setDeleteConfirmScope(null);
+        setDeleteErrorState(null);
       },
-      onCloseEdit: () => setShowEdit(false),
+      onCloseEdit: () => {
+        if (!isSaving) setEditScope(null);
+      },
+      onRetryDetail: () => setRetryNonce((value) => value + 1),
       onDeletePhoto: handleDeletePhoto,
       onDeleteStudent: handleDeleteStudent,
       onDismissActionMessage: () => setActionMessage(null),
       onEdit: handleEdit,
       onPhotoSelected: handlePhotoSelected,
-      onShowDeleteConfirm: () => setShowDeleteConfirm(true),
-      onShowEdit: () => setShowEdit(true),
+      onShowDeleteConfirm: () => {
+        if (detailReady && !isStudentCommandPending) setDeleteConfirmScope(scope);
+      },
+      onShowEdit: () => {
+        if (detailReady && !isStudentCommandPending) setEditScope(scope);
+      },
     },
   };
 }

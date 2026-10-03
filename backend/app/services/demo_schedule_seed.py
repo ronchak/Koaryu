@@ -42,12 +42,52 @@ class DemoScheduleSeeder:
     ) -> None:
         now = self._timestamp()
         template_specs = [
-            ("kids-bjj-today", "Kids BJJ Fundamentals", 0, "16:00", "16:45", program_ids["bjj_core"], 20),
+            (
+                "kids-bjj-today",
+                "Kids BJJ Fundamentals",
+                0,
+                "16:00",
+                "16:45",
+                program_ids["bjj_core"],
+                20,
+            ),
             ("adult-nogi-today", "Adult No-Gi", 0, "18:00", "19:30", program_ids["bjj_core"], 28),
-            ("morning-fundamentals", "Morning BJJ Fundamentals", 0, "06:30", "07:30", program_ids["bjj_core"], 18),
-            ("tae-kwon-do-tomorrow", "Tae Kwon Do Fundamentals", 1, "17:30", "18:30", program_ids["tae_kwon_do"], 24),
-            ("competition-prep", "Competition Prep", 2, "17:00", "18:30", program_ids["bjj_core"], 16),
-            ("family-open-mat", "Family Open Mat", 5, "10:00", "11:30", program_ids["bjj_core"], 30),
+            (
+                "morning-fundamentals",
+                "Morning BJJ Fundamentals",
+                0,
+                "06:30",
+                "07:30",
+                program_ids["bjj_core"],
+                18,
+            ),
+            (
+                "tae-kwon-do-tomorrow",
+                "Tae Kwon Do Fundamentals",
+                1,
+                "17:30",
+                "18:30",
+                program_ids["tae_kwon_do"],
+                24,
+            ),
+            (
+                "competition-prep",
+                "Competition Prep",
+                2,
+                "17:00",
+                "18:30",
+                program_ids["bjj_core"],
+                16,
+            ),
+            (
+                "family-open-mat",
+                "Family Open Mat",
+                5,
+                "10:00",
+                "11:30",
+                program_ids["bjj_core"],
+                30,
+            ),
         ]
         template_rows = []
         for key, name, day_offset, start, end, program_id, capacity in template_specs:
@@ -72,7 +112,26 @@ class DemoScheduleSeeder:
 
         sessions: list[dict[str, Any]] = []
 
-        historical_offsets = [-96, -90, -84, -78, -72, -66, -60, -54, -48, -42, -36, -30, -24, -18, -12, -8, -4, -2]
+        historical_offsets = [
+            -96,
+            -90,
+            -84,
+            -78,
+            -72,
+            -66,
+            -60,
+            -54,
+            -48,
+            -42,
+            -36,
+            -30,
+            -24,
+            -18,
+            -12,
+            -8,
+            -4,
+            -2,
+        ]
         for index, offset in enumerate(historical_offsets):
             sessions.append(
                 {
@@ -108,18 +167,60 @@ class DemoScheduleSeeder:
             )
 
         today_sessions = [
-            ("today-morning", "Morning BJJ Fundamentals", "06:30", "07:30", program_ids["bjj_core"], 18, "morning-fundamentals"),
-            ("today-kids", "Kids BJJ Fundamentals", "16:00", "16:45", program_ids["bjj_core"], 20, "kids-bjj-today"),
-            ("today-adult", "Adult No-Gi", "18:00", "19:30", program_ids["bjj_core"], 28, "adult-nogi-today"),
-            ("today-tae-kwon-do", "Tae Kwon Do Fundamentals", "19:45", "20:30", program_ids["tae_kwon_do"], 24, None),
-            ("future-open-mat", "Family Open Mat", "10:00", "11:30", program_ids["bjj_core"], 30, "family-open-mat"),
+            (
+                "today-morning",
+                "Morning BJJ Fundamentals",
+                "06:30",
+                "07:30",
+                program_ids["bjj_core"],
+                18,
+                "morning-fundamentals",
+            ),
+            (
+                "today-kids",
+                "Kids BJJ Fundamentals",
+                "16:00",
+                "16:45",
+                program_ids["bjj_core"],
+                20,
+                "kids-bjj-today",
+            ),
+            (
+                "today-adult",
+                "Adult No-Gi",
+                "18:00",
+                "19:30",
+                program_ids["bjj_core"],
+                28,
+                "adult-nogi-today",
+            ),
+            (
+                "today-tae-kwon-do",
+                "Tae Kwon Do Fundamentals",
+                "19:45",
+                "20:30",
+                program_ids["tae_kwon_do"],
+                24,
+                None,
+            ),
+            (
+                "future-open-mat",
+                "Family Open Mat",
+                "10:00",
+                "11:30",
+                program_ids["bjj_core"],
+                30,
+                "family-open-mat",
+            ),
         ]
         for key, name, start, end, program_id, capacity, template_key in today_sessions:
             sessions.append(
                 {
                     "id": self._id(studio_id, f"session:{key}"),
                     "studio_id": studio_id,
-                    "template_id": self._id(studio_id, f"template:{template_key}") if template_key else None,
+                    "template_id": self._id(studio_id, f"template:{template_key}")
+                    if template_key
+                    else None,
                     "name": name,
                     "date": self._date(5 if key == "future-open-mat" else 0),
                     "start_time": start,
@@ -200,7 +301,9 @@ class DemoScheduleSeeder:
                         "studio_id": studio_id,
                         "session_id": session_id,
                         "student_id": student_ids[student_key],
-                        "status": "late" if index == count - 2 and student_key in {"aiko", "marcus"} else "present",
+                        "status": "late"
+                        if index == count - 2 and student_key in {"aiko", "marcus"}
+                        else "present",
                         "checked_in_at": self._timestamp(historical_offsets[-count + index], 18, 5),
                         "checked_in_by": None,
                     }
@@ -224,8 +327,12 @@ class DemoScheduleSeeder:
                         "studio_id": studio_id,
                         "session_id": session_id,
                         "student_id": student_ids[student_key],
-                        "status": "late" if index == count - 1 and student_key in {"chloe", "miles"} else "present",
-                        "checked_in_at": self._timestamp(tkd_historical_offsets[-count + index], 17, 40),
+                        "status": "late"
+                        if index == count - 1 and student_key in {"chloe", "miles"}
+                        else "present",
+                        "checked_in_at": self._timestamp(
+                            tkd_historical_offsets[-count + index], 17, 40
+                        ),
                         "checked_in_by": None,
                     }
                 )
@@ -274,7 +381,13 @@ class DemoScheduleSeeder:
                     "status": status_value,
                     "checked_in_at": self._timestamp(
                         0,
-                        6 if session_key == "today-morning" else 16 if session_key == "today-kids" else 19 if session_key == "today-tae-kwon-do" else 18,
+                        6
+                        if session_key == "today-morning"
+                        else 16
+                        if session_key == "today-kids"
+                        else 19
+                        if session_key == "today-tae-kwon-do"
+                        else 18,
                         10,
                     ),
                     "checked_in_by": None,

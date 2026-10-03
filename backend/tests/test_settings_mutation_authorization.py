@@ -97,17 +97,21 @@ def _supabase_for_cross_user_legal_name(role: str) -> TableBackedSupabase:
                 },
             ],
             "studio_subscriptions": [_active_subscription()],
-            "staff_profiles": [{
-                "user_id": target_id,
-                "legal_first_name": "Existing",
-                "legal_last_name": "Name",
-            }],
-            "audit_logs": [{
-                "id": "existing-audit",
-                "studio_id": STUDIO_ID,
-                "actor_id": "existing-actor",
-                "action": "existing.action",
-            }],
+            "staff_profiles": [
+                {
+                    "user_id": target_id,
+                    "legal_first_name": "Existing",
+                    "legal_last_name": "Name",
+                }
+            ],
+            "audit_logs": [
+                {
+                    "id": "existing-audit",
+                    "studio_id": STUDIO_ID,
+                    "actor_id": "existing-actor",
+                    "action": "existing.action",
+                }
+            ],
         }
     )
 

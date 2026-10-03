@@ -13,6 +13,7 @@ from app.schemas.billing import (
     BillingPayerCreate,
     BillingPayerResponse,
     BillingPayerUpdate,
+    BillingPaymentResponse,
     BillingReconcileRequest,
     BillingRefundCreate,
     ExportJobCreate,
@@ -38,12 +39,32 @@ def payer_payload(**overrides):
 
 
 class BillingPayerResponseTest(unittest.TestCase):
+    def test_collection_facts_default_to_unavailable_and_keep_supported_values(self):
+        unavailable = BillingPayerResponse(**payer_payload())
+        self.assertIsNone(unavailable.overdue_balance_cents)
+        self.assertIsNone(unavailable.uncollectible_balance_cents)
+
+        for billing_status in ("outstanding", "uncollectible"):
+            with self.subTest(billing_status=billing_status):
+                payer = BillingPayerResponse(
+                    **payer_payload(
+                        billing_status=billing_status,
+                        overdue_balance_cents=0,
+                        uncollectible_balance_cents=725,
+                    )
+                )
+                self.assertEqual(payer.billing_status, billing_status)
+                self.assertEqual(payer.overdue_balance_cents, 0)
+                self.assertEqual(payer.uncollectible_balance_cents, 725)
+
     def test_card_brand_aliases_to_card_payment_method_type(self):
-        payer = BillingPayerResponse(**payer_payload(
-            default_payment_method_id="pm_1",
-            default_payment_method_brand="visa",
-            default_payment_method_last4="4242",
-        ))
+        payer = BillingPayerResponse(
+            **payer_payload(
+                default_payment_method_id="pm_1",
+                default_payment_method_brand="visa",
+                default_payment_method_last4="4242",
+            )
+        )
 
         self.assertEqual(payer.stripe_payment_method_id, "pm_1")
         self.assertEqual(payer.stripe_payment_method_brand, "visa")
@@ -51,25 +72,97 @@ class BillingPayerResponseTest(unittest.TestCase):
         self.assertEqual(payer.stripe_payment_method_type, "card")
 
     def test_non_card_default_method_keeps_method_type_alias(self):
-        payer = BillingPayerResponse(**payer_payload(
-            default_payment_method_id="pm_link",
-            default_payment_method_brand="link",
-        ))
+        payer = BillingPayerResponse(
+            **payer_payload(
+                default_payment_method_id="pm_link",
+                default_payment_method_brand="link",
+            )
+        )
 
         self.assertEqual(payer.stripe_payment_method_brand, "link")
         self.assertEqual(payer.stripe_payment_method_type, "link")
 
     def test_explicit_payment_method_type_is_not_overwritten(self):
-        payer = BillingPayerResponse(**payer_payload(
-            default_payment_method_id="pm_bank",
-            default_payment_method_brand="visa",
-            stripe_payment_method_type="us_bank_account",
-        ))
+        payer = BillingPayerResponse(
+            **payer_payload(
+                default_payment_method_id="pm_bank",
+                default_payment_method_brand="visa",
+                stripe_payment_method_type="us_bank_account",
+            )
+        )
 
         self.assertEqual(payer.stripe_payment_method_type, "us_bank_account")
 
 
+class BillingPaymentResponseTest(unittest.TestCase):
+    def test_exposes_distinct_adjustment_accounting_for_collected_payment(self):
+        payment = BillingPaymentResponse(
+            id="payment_1",
+            studio_id="studio_1",
+            stripe_charge_id="ch_1",
+            status="disputed",
+            amount_cents=200,
+            refunded_amount_cents=75,
+            disputed_amount_cents=125,
+            created_at="2026-08-25T00:00:00Z",
+            updated_at="2026-08-25T00:00:00Z",
+        )
+
+        self.assertEqual(payment.gross_paid_amount_cents, 200)
+        self.assertEqual(payment.net_collected_amount_cents, 0)
+        self.assertEqual(payment.refundable_amount_cents, 0)
+
+    def test_failed_attempt_is_not_reported_as_gross_paid_or_refundable(self):
+        payment = BillingPaymentResponse(
+            id="payment_1",
+            studio_id="studio_1",
+            status="failed",
+            amount_cents=200,
+            created_at="2026-08-25T00:00:00Z",
+            updated_at="2026-08-25T00:00:00Z",
+        )
+
+        self.assertEqual(payment.gross_paid_amount_cents, 0)
+        self.assertEqual(payment.net_collected_amount_cents, 0)
+        self.assertEqual(payment.refundable_amount_cents, 0)
+
+
 class BillingRequestSchemaTest(unittest.TestCase):
+    def test_plan_update_preserves_omission_null_and_values(self):
+        self.assertEqual(BillingPlanUpdate().model_dump(exclude_unset=True), {})
+        cases = (
+            ("name", "Core", False),
+            ("amount_cents", 0, False),
+            ("currency", "usd", False),
+            ("billing_interval", "weekly", False),
+            ("signup_fee_cents", 0, False),
+            ("trial_days", 0, False),
+            ("proration_behavior", "next_cycle", False),
+            ("description", "Membership", True),
+            ("freeze_behavior", "pause", True),
+            ("cancellation_policy", "Notice required", True),
+            ("tax_behavior", "inclusive", True),
+            ("program_ids", ["program_1", "program_1"], True),
+        )
+        for field, value, nullable in cases:
+            with self.subTest(field=field):
+                payload = {field: value}
+                self.assertEqual(
+                    BillingPlanUpdate(**payload).model_dump(exclude_unset=True), payload
+                )
+                if nullable:
+                    self.assertEqual(
+                        BillingPlanUpdate(**{field: None}).model_dump(exclude_unset=True),
+                        {field: None},
+                    )
+                else:
+                    with self.assertRaises(ValidationError):
+                        BillingPlanUpdate(**{field: None})
+        self.assertEqual(
+            BillingPlanUpdate(program_ids=[]).model_dump(exclude_unset=True),
+            {"program_ids": []},
+        )
+
     def test_connect_onboarding_request_rejects_checkout_fields(self):
         with self.assertRaises(ValidationError) as context:
             ConnectOnboardingLinkRequest(success_url="https://app.koaryu.test/billing")
@@ -160,6 +253,38 @@ class BillingRequestSchemaTest(unittest.TestCase):
         self.assertIsNone(payment.payer_id)
         self.assertIsNone(payment.invoice_id)
 
+    def test_invoice_due_date_enforces_format_and_stripe_collection_method(self):
+        invoice = BillingInvoiceCreate(
+            payer_id="payer_1",
+            due_date="2099-09-15",
+        )
+        self.assertEqual(invoice.due_date, "2099-09-15")
+        self.assertEqual(
+            BillingInvoiceCreate(
+                payer_id="payer_1",
+                due_date="2000-01-01",
+            ).due_date,
+            "2000-01-01",
+        )
+
+        invalid_cases = (
+            {"due_date": "2026-99-99"},
+            {"collection_mode": "autopay", "due_date": "2099-09-15"},
+        )
+        for payload in invalid_cases:
+            with self.subTest(payload=payload), self.assertRaises(ValidationError):
+                BillingInvoiceCreate(payer_id="payer_1", **payload)
+
+    def test_refund_reason_accepts_only_stripe_create_values(self):
+        for reason in ("duplicate", "fraudulent", "requested_by_customer"):
+            with self.subTest(reason=reason):
+                self.assertEqual(BillingRefundCreate(reason=reason).reason, reason)
+
+        with self.assertRaises(ValidationError) as context:
+            BillingRefundCreate(reason="expired_uncaptured_charge")
+
+        self.assertIn("Input should be", str(context.exception))
+
     def test_public_billing_mutation_schemas_reject_extra_fields(self):
         cases = [
             (BillingReconcileRequest, {"object_type": "invoice", "unexpected": True}),
@@ -168,9 +293,23 @@ class BillingRequestSchemaTest(unittest.TestCase):
             (BillingPayerCreate, {"display_name": "Avery", "unexpected": True}),
             (BillingPayerUpdate, {"phone": "555-0100", "unexpected": True}),
             (BillingPayerAutopaySetupRequest, {"terms_accepted": True, "unexpected": True}),
-            (BillingInvoiceItemCreate, {"description": "Tuition", "amount_cents": 1000, "unexpected": True}),
-            (BillingInvoiceCreate, {"payer_id": "payer_1", "amount_cents": 1000, "unexpected": True}),
-            (ExternalPaymentCreate, {"payer_id": "payer_1", "amount_cents": 500, "external_method": "cash", "unexpected": True}),
+            (
+                BillingInvoiceItemCreate,
+                {"description": "Tuition", "amount_cents": 1000, "unexpected": True},
+            ),
+            (
+                BillingInvoiceCreate,
+                {"payer_id": "payer_1", "amount_cents": 1000, "unexpected": True},
+            ),
+            (
+                ExternalPaymentCreate,
+                {
+                    "payer_id": "payer_1",
+                    "amount_cents": 500,
+                    "external_method": "cash",
+                    "unexpected": True,
+                },
+            ),
             (ExportJobCreate, {"export_type": "billing_payments", "unexpected": True}),
             (BillingRefundCreate, {"amount_cents": 500, "unexpected": True}),
         ]
@@ -186,10 +325,12 @@ class BillingRequestSchemaTest(unittest.TestCase):
         for field_name in ("autopay_status", "billing_status"):
             with self.subTest(field_name=field_name):
                 with self.assertRaises(ValidationError) as context:
-                    BillingPayerUpdate.model_validate({
-                        "phone": "555-0100",
-                        field_name: "enabled" if field_name == "autopay_status" else "current",
-                    })
+                    BillingPayerUpdate.model_validate(
+                        {
+                            "phone": "555-0100",
+                            field_name: "enabled" if field_name == "autopay_status" else "current",
+                        }
+                    )
 
                 self.assertIn("Extra inputs are not permitted", str(context.exception))
 

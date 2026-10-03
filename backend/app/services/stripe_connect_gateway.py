@@ -120,7 +120,9 @@ def stripe_v2_request(
             timeout=30,
         )
     except httpx.HTTPError as exc:
-        raise _StripeV2RequestError(code=None, message="Stripe Accounts v2 request failed.") from exc
+        raise _StripeV2RequestError(
+            code=None, message="Stripe Accounts v2 request failed."
+        ) from exc
 
     try:
         data = response.json()
@@ -134,7 +136,11 @@ def stripe_v2_request(
     if response.status_code >= 400:
         error = data.get("error") if isinstance(data, dict) else None
         code = error.get("code") if isinstance(error, dict) else None
-        message = error.get("message") if isinstance(error, dict) else "Stripe Accounts v2 request failed."
+        message = (
+            error.get("message")
+            if isinstance(error, dict)
+            else "Stripe Accounts v2 request failed."
+        )
         raise _StripeV2RequestError(
             code=code,
             message=message,
@@ -222,7 +228,9 @@ class StripeConnectGateway:
         logo_file_id: Optional[str] = None,
         idempotency_key: Optional[str] = None,
     ) -> Any:
-        self._authorize_mutation("connect_account.branding.update", studio_id=studio_id, account_id=account_id)
+        self._authorize_mutation(
+            "connect_account.branding.update", studio_id=studio_id, account_id=account_id
+        )
         branding = {
             "primary_color": primary_color,
             "secondary_color": secondary_color,
@@ -253,7 +261,9 @@ class StripeConnectGateway:
             return stripe.Account.modify(
                 account_id,
                 settings={"branding": branding},
-                **self._request_options(idempotency_key=idempotency_key or f"koaryu-connect-branding-{account_id}"),
+                **self._request_options(
+                    idempotency_key=idempotency_key or f"koaryu-connect-branding-{account_id}"
+                ),
             )
         except Exception as exc:
             if self._is_stripe_exception(exc):
@@ -281,8 +291,11 @@ class StripeConnectGateway:
                 operation="connect_onboarding_link.create",
                 studio_id=studio_id,
                 account_id=account_id,
-                idempotency_key=(bootstrap_context.initial_link_idempotency_key
-                                 if bootstrap_context else idempotency_key),
+                idempotency_key=(
+                    bootstrap_context.initial_link_idempotency_key
+                    if bootstrap_context
+                    else idempotency_key
+                ),
                 bootstrap_context=bootstrap_context,
             )
         except _StripeV2RequestError as exc:
@@ -348,7 +361,9 @@ class StripeConnectGateway:
             if dashboard_type == "full" or account_type == "standard":
                 return self._account_holder_dashboard_url()
 
-            return self._create_legacy_dashboard_login_url(account_id=account_id, studio_id=studio_id)
+            return self._create_legacy_dashboard_login_url(
+                account_id=account_id, studio_id=studio_id
+            )
         except Exception as exc:
             if self._is_stripe_exception(exc):
                 self._raise_connect_account_error(exc, "open the connected account dashboard")
@@ -422,11 +437,13 @@ class StripeConnectGateway:
                     "card_payments": {"requested": True},
                     "transfers": {"requested": True},
                 },
-                **self._request_options(idempotency_key=(
-                    bootstrap_context.account_create_idempotency_key
-                    if bootstrap_context
-                    else f"koaryu-connect-account-{studio_id}-g{account_generation}"
-                )),
+                **self._request_options(
+                    idempotency_key=(
+                        bootstrap_context.account_create_idempotency_key
+                        if bootstrap_context
+                        else f"koaryu-connect-account-{studio_id}-g{account_generation}"
+                    )
+                ),
             )
         except Exception as exc:
             if self._is_stripe_exception(exc):
@@ -456,7 +473,10 @@ class StripeConnectGateway:
                 "The stored Stripe connected account is no longer accessible. "
                 "Reconnect Stripe Payments before opening Stripe-hosted billing tools."
             )
-        elif "does not have access to account" in message or "Application access may have been revoked" in message:
+        elif (
+            "does not have access to account" in message
+            or "Application access may have been revoked" in message
+        ):
             detail = (
                 "This Stripe account cannot access the stored connected account. "
                 "Reconnect Stripe Payments so Koaryu can create a connected account "

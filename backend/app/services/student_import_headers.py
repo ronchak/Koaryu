@@ -31,10 +31,9 @@ def compact_header(header: str) -> str:
 def is_payment_status_header(header: str) -> bool:
     tokens = set(normalize_header(header).split())
     compact = compact_header(header)
-    return (
-        "status" in tokens
-        and bool(tokens & CSV_PAYMENT_STATUS_TOKENS)
-    ) or any(f"{token}status" in compact for token in CSV_PAYMENT_STATUS_TOKENS)
+    return ("status" in tokens and bool(tokens & CSV_PAYMENT_STATUS_TOKENS)) or any(
+        f"{token}status" in compact for token in CSV_PAYMENT_STATUS_TOKENS
+    )
 
 
 RAW_CSV_FIELD_ALIASES: dict[str, str] = {

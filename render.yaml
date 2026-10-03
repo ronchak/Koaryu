@@ -1,12 +1,12 @@
 services:
   - type: web
     name: koaryu
-    runtime: python
+    runtime: docker
     plan: starter
-    region: ohio
+    region: oregon
     rootDir: backend
-    buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
     healthCheckPath: /health/ready
     autoDeployTrigger: 'off'
     envVars:
@@ -25,7 +25,7 @@ services:
       - key: STRIPE_MODE
         value: live
       - key: LIVE_BILLING_ENABLED
-        value: "false"
+        value: "true"
       - key: CORE_SELF_CHECKOUT_ENABLED
         value: "true"
       - key: SUPABASE_URL
@@ -50,6 +50,10 @@ services:
         sync: false
       - key: ACCOUNT_DELETION_WORKER_SECRET
         sync: false
+      - key: BILLING_TRANSITION_WORKER_SECRET
+        sync: false
+      - key: BILLING_TRANSITION_SCHEDULER_ENABLED
+        value: "false"
       - key: OPERATIONAL_ALERTS_ENABLED
         value: "false"
       - key: OPERATIONAL_ALERT_WORKER_SECRET
@@ -89,12 +93,13 @@ services:
   # database catches up.
   - type: web
     name: koaryu-staging
-    runtime: python
+    runtime: docker
     plan: free
-    region: ohio
+    region: oregon
+    branch: staging
     rootDir: backend
-    buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
     healthCheckPath: /health/ready
     autoDeployTrigger: 'off'
     envVars:
@@ -145,9 +150,36 @@ services:
         sync: false
       - key: ACCOUNT_DELETION_WORKER_SECRET
         sync: false
+      - key: BILLING_TRANSITION_WORKER_SECRET
+        sync: false
+      - key: BILLING_TRANSITION_SCHEDULER_ENABLED
+        value: "true"
       - key: OPERATIONAL_ALERTS_ENABLED
         value: "false"
       - key: OPERATIONAL_ALERT_WORKER_SECRET
         sync: false
       - key: SUPPORT_TRIAGE_SECRET
         sync: false
+
+  - type: cron
+    name: koaryu-billing-transitions-staging
+    runtime: docker
+    plan: starter
+    region: oregon
+    branch: staging
+    rootDir: backend
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    dockerCommand: python -m app.services.billing_transition_cron
+    schedule: "*/5 * * * *"
+    autoDeployTrigger: 'off'
+    envVars:
+      - key: ENVIRONMENT
+        value: staging
+      - key: KOARYU_BACKEND_API_URL
+        value: https://koaryu-staging.onrender.com/api/v1
+      - key: BILLING_TRANSITION_WORKER_SECRET
+        fromService:
+          type: web
+          name: koaryu-staging
+          envVarKey: BILLING_TRANSITION_WORKER_SECRET

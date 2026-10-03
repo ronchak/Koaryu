@@ -1,12 +1,18 @@
-from pydantic import BaseModel
+from uuid import UUID
+
+from pydantic import BaseModel, ConfigDict
 from typing import Literal, Optional
 
 
 # ---- Lead ----
 
 LeadSource = Literal["walk_in", "referral", "social", "search", "website", "other"]
-LeadStage = Literal["inquiry", "trial_scheduled", "trial_completed", "offer_sent", "enrolled", "closed_lost"]
-LeadMutationStage = Literal["inquiry", "trial_scheduled", "trial_completed", "offer_sent", "closed_lost"]
+LeadStage = Literal[
+    "inquiry", "trial_scheduled", "trial_completed", "offer_sent", "enrolled", "closed_lost"
+]
+LeadMutationStage = Literal[
+    "inquiry", "trial_scheduled", "trial_completed", "offer_sent", "closed_lost"
+]
 LostReason = Literal["no_show", "price_objection", "timing", "no_response", "other"]
 LeadConvertStudentStatus = Literal["active", "trialing", "inactive", "paused", "canceled"]
 
@@ -74,6 +80,7 @@ class LeadResponse(BaseModel):
 
 # ---- Lead Activity ----
 
+
 class LeadActivityCreate(BaseModel):
     activity_type: str  # note, stage_change, email, call, meeting, follow_up
     description: Optional[str] = None
@@ -91,7 +98,15 @@ class LeadActivityResponse(BaseModel):
 
 # ---- Conversion ----
 
+
 class LeadConvert(BaseModel):
     status: LeadConvertStudentStatus = "active"
     membership_start_date: Optional[str] = None
     program_id: Optional[str] = None
+
+
+class LeadFollowUpRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    operation_id: UUID
+    next_stage: Optional[LeadStage] = None

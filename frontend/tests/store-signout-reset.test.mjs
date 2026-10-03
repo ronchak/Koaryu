@@ -164,26 +164,38 @@ describe("store auth reset model", () => {
       requestGeneration: 3,
     };
 
-    assert.equal(isLiveAuthRequestCurrent({
-      ...request,
-      currentToken: "token-a",
-      currentGeneration: 3,
-    }), true);
-    assert.equal(isLiveAuthRequestCurrent({
-      ...request,
-      currentToken: "token-b",
-      currentGeneration: 3,
-    }), false);
-    assert.equal(isLiveAuthRequestCurrent({
-      ...request,
-      currentToken: "token-a",
-      currentGeneration: 4,
-    }), false);
-    assert.equal(isLiveAuthRequestCurrent({
-      ...request,
-      currentToken: null,
-      currentGeneration: 4,
-    }), false);
+    assert.equal(
+      isLiveAuthRequestCurrent({
+        ...request,
+        currentToken: "token-a",
+        currentGeneration: 3,
+      }),
+      true,
+    );
+    assert.equal(
+      isLiveAuthRequestCurrent({
+        ...request,
+        currentToken: "token-b",
+        currentGeneration: 3,
+      }),
+      false,
+    );
+    assert.equal(
+      isLiveAuthRequestCurrent({
+        ...request,
+        currentToken: "token-a",
+        currentGeneration: 4,
+      }),
+      false,
+    );
+    assert.equal(
+      isLiveAuthRequestCurrent({
+        ...request,
+        currentToken: null,
+        currentGeneration: 4,
+      }),
+      false,
+    );
   });
 
   it("keeps subscription-required resets tokenful but stale-commit safe", () => {
@@ -193,17 +205,23 @@ describe("store auth reset model", () => {
     const reset = buildSubscriptionRequiredStudioResetState();
 
     assert.equal(reset.subscriptionRequired, true);
-    assert.equal(isLiveAuthRequestCurrent({
-      requestToken,
-      requestGeneration,
-      currentToken: requestToken,
-      currentGeneration: subscriptionRequiredGeneration,
-    }), false);
-    assert.equal(isLiveAuthRequestCurrent({
-      requestToken,
-      requestGeneration: subscriptionRequiredGeneration,
-      currentToken: requestToken,
-      currentGeneration: subscriptionRequiredGeneration,
-    }), true);
+    assert.equal(
+      isLiveAuthRequestCurrent({
+        requestToken,
+        requestGeneration,
+        currentToken: requestToken,
+        currentGeneration: subscriptionRequiredGeneration,
+      }),
+      false,
+    );
+    assert.equal(
+      isLiveAuthRequestCurrent({
+        requestToken,
+        requestGeneration: subscriptionRequiredGeneration,
+        currentToken: requestToken,
+        currentGeneration: subscriptionRequiredGeneration,
+      }),
+      true,
+    );
   });
 });

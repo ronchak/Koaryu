@@ -1,13 +1,6 @@
 import type { ReactNode } from "react";
 import type { LeadSource } from "@/types";
-import {
-  ExternalLink,
-  Globe,
-  MapPin,
-  Megaphone,
-  Search,
-  Users,
-} from "lucide-react";
+import { ExternalLink, Globe, MapPin, Megaphone, Search, Users } from "lucide-react";
 
 export const LEAD_SOURCE_ICONS: Record<LeadSource, ReactNode> = {
   walk_in: <MapPin className="w-3 h-3" />,

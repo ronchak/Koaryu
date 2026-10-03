@@ -50,7 +50,7 @@ export interface ScheduleSessionDetailModalProps {
   onToggleAttendance: (
     sessionId: string,
     studentId: string,
-    studentName: string
+    studentName: string,
   ) => Promise<void> | void;
   onDeleteSession: (session: ClassSession) => Promise<void> | void;
   onDeleteSeries?: (session: ClassSession) => Promise<void> | void;
@@ -61,13 +61,6 @@ const STATUS_ICON: Record<AttendanceStatus, ReactNode> = {
   late: <Clock className="w-3.5 h-3.5 text-warning" />,
   excused: <AlertCircle className="w-3.5 h-3.5 text-muted" />,
   absent: <X className="w-3.5 h-3.5 text-danger" />,
-};
-
-const STATUS_ACCENT: Record<AttendanceStatus, string> = {
-  present: "bg-success",
-  late: "bg-warning",
-  excused: "bg-muted",
-  absent: "bg-danger",
 };
 
 export function ScheduleSessionDetailModal({
@@ -110,23 +103,20 @@ export function ScheduleSessionDetailModal({
 
   const attendanceSummary = useMemo(
     () => buildSessionAttendanceSummary(attendance, students, open),
-    [attendance, open, students]
+    [attendance, open, students],
   );
 
   const attendanceByStudentId = useMemo(
     () => buildAttendanceByStudentId(attendance, open),
-    [attendance, open]
+    [attendance, open],
   );
 
   const rosterSections = useMemo(
     () => buildSessionRosterSections({ open, session, students, programs, attendanceByStudentId }),
-    [attendanceByStudentId, open, programs, session, students]
+    [attendanceByStudentId, open, programs, session, students],
   );
 
-  const sessionLabels = useMemo(
-    () => buildSessionLabels(open, session),
-    [open, session]
-  );
+  const sessionLabels = useMemo(() => buildSessionLabels(open, session), [open, session]);
 
   if (!open || !session || !sessionLabels) {
     return null;
@@ -141,6 +131,13 @@ export function ScheduleSessionDetailModal({
     rosterComplete: isStudentRosterComplete,
     rosterLoading: isLoadingStudentRoster,
   });
+  const attendanceCommitCopy = !attendanceCountersReady
+    ? "Attendance unavailable until the complete roster and class records load."
+    : pendingAttendanceStudentIds.size > 0
+      ? `Saving ${pendingAttendanceStudentIds.size} ${pendingAttendanceStudentIds.size === 1 ? "student" : "students"}…`
+      : attendanceError
+        ? "Last attendance change rolled back. Review the error, then try that row again."
+        : "Saved as marked. Each row saves immediately.";
   const isRecurring = Boolean(activeSession.template_id);
   const canDeleteSeries = Boolean(isRecurring && onDeleteSeries);
   const isDeleting = deleteInFlight !== null;
@@ -149,106 +146,106 @@ export function ScheduleSessionDetailModal({
     ? programs.find((program) => program.id === activeSession.program_id)
     : null;
   const programColor = activeProgram?.color_hex || "var(--accent)";
+  const emptyRosterMessage = isLoadingStudentRoster
+    ? "Loading the student roster."
+    : studentRosterError
+      ? "The student roster is unavailable."
+      : !isStudentRosterComplete
+        ? "The student roster is incomplete. Attendance will be available after all students load."
+        : "No active students. Add students first to take attendance.";
 
-  function renderRosterRows(
-    rows: SessionRosterRow[],
-    options?: { markDropIns?: boolean }
-  ) {
-    return rows.map(({ student, attendanceRecord, studentName, initials, programs: studentPrograms }) => {
-      const isCheckedIn = attendanceRecord && attendanceRecord.status !== "absent";
-      const statusColor = attendanceRecord ? STATUS_ACCENT[attendanceRecord.status] : "";
-
-      return (
-        <button
-          key={student.id}
-          data-attendance-student-id={student.id}
-          disabled={!attendanceCountersReady || pendingAttendanceStudentIds.has(student.id)}
-          onClick={async () => {
-            await onToggleAttendance(activeSession.id, student.id, studentName);
-          }}
-          className={`group relative w-full text-left transition-colors cursor-pointer disabled:cursor-not-allowed disabled:opacity-60 overflow-hidden ${
-            attendanceRecord
-              ? "bg-surface-raised"
-              : "bg-surface hover:bg-surface-raised/60"
-          }`}
-        >
-          {/* Left status accent bar */}
-          <span
-            className={`absolute left-0 top-0 bottom-0 w-[3px] ${
-              attendanceRecord ? statusColor : "bg-transparent group-hover:bg-border"
+  function renderRosterRows(rows: SessionRosterRow[], options?: { markDropIns?: boolean }) {
+    return rows.map(
+      ({ student, attendanceRecord, studentName, initials, programs: studentPrograms }) => {
+        const isCheckedIn = attendanceRecord && attendanceRecord.status !== "absent";
+        return (
+          <button
+            key={student.id}
+            data-attendance-student-id={student.id}
+            disabled={!attendanceCountersReady || pendingAttendanceStudentIds.has(student.id)}
+            onClick={async () => {
+              await onToggleAttendance(activeSession.id, student.id, studentName);
+            }}
+            className={`group relative w-full text-left transition-colors cursor-pointer disabled:cursor-not-allowed disabled:opacity-60 overflow-hidden ${
+              attendanceRecord ? "bg-surface-raised" : "bg-surface hover:bg-surface-raised/60"
             }`}
-          />
-
-          <div className="flex items-center justify-between gap-3 py-3 pl-4 pr-3">
-            <div className="flex min-w-0 items-center gap-3">
-              {/* Avatar */}
-              <div className={`flex h-8 w-8 flex-shrink-0 items-center justify-center border ${
-                isCheckedIn
-                  ? "border-success/30 bg-success/10"
-                  : attendanceRecord?.status === "absent"
-                    ? "border-danger/30 bg-danger/10"
-                    : "border-border bg-surface-raised"
-              }`}>
-                {isCheckedIn ? (
-                  <Check className="w-3.5 h-3.5 text-success" />
-                ) : attendanceRecord?.status === "absent" ? (
-                  <X className="w-3.5 h-3.5 text-danger" />
-                ) : (
-                  <span className="text-[10px] font-semibold text-text-secondary">
-                    {initials}
-                  </span>
-                )}
-              </div>
-
-              <div className="min-w-0">
-                <div className="flex items-center gap-2">
-                  <p className="truncate text-sm font-medium text-text-primary">{studentName}</p>
-                  {(options?.markDropIns || attendanceRecord?.is_cross_program) && (
-                    <span className="border border-warning/30 bg-warning/10 px-1.5 py-0.5 text-[10px] font-medium text-warning shrink-0">
-                      Drop-in
+          >
+            <div className="flex items-center justify-between gap-3 px-3 py-3">
+              <div className="flex min-w-0 items-center gap-3">
+                {/* Avatar */}
+                <div
+                  className={`flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-[10px] ${
+                    isCheckedIn
+                      ? "border-success/30 bg-success/10"
+                      : attendanceRecord?.status === "absent"
+                        ? "border-danger/30 bg-danger/10"
+                        : "border-border bg-surface-raised"
+                  }`}
+                >
+                  {isCheckedIn ? (
+                    <Check className="w-3.5 h-3.5 text-success" />
+                  ) : attendanceRecord?.status === "absent" ? (
+                    <X className="w-3.5 h-3.5 text-danger" />
+                  ) : (
+                    <span className="text-[10px] font-semibold text-text-secondary">
+                      {initials}
                     </span>
                   )}
-                  {student.is_minor && (
-                    <span className="text-[10px] text-muted shrink-0">Minor</span>
+                </div>
+
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <p className="truncate text-sm font-medium text-text-primary">{studentName}</p>
+                    {(options?.markDropIns || attendanceRecord?.is_cross_program) && (
+                      <span className="shrink-0 rounded-full bg-warning/10 px-1.5 py-0.5 text-xs font-medium text-warning">
+                        Drop-in
+                      </span>
+                    )}
+                    {student.is_minor && (
+                      <span className="text-[10px] text-muted shrink-0">Minor</span>
+                    )}
+                  </div>
+                  {studentPrograms.length > 0 && (
+                    <p className="mt-0.5 text-[10px] text-muted truncate">
+                      {studentPrograms
+                        .slice(0, 2)
+                        .map((p) => p.name)
+                        .join(" · ")}
+                    </p>
                   )}
                 </div>
-                {studentPrograms.length > 0 && (
-                  <p className="mt-0.5 text-[10px] text-muted truncate">
-                    {studentPrograms.slice(0, 2).map((p) => p.name).join(" · ")}
-                  </p>
+              </div>
+
+              {/* Status indicator */}
+              <div className="flex items-center gap-2 shrink-0">
+                {attendanceRecord ? (
+                  <>
+                    {STATUS_ICON[attendanceRecord.status]}
+                    <span
+                      className={`text-xs font-medium ${
+                        attendanceRecord.status === "present"
+                          ? "text-success"
+                          : attendanceRecord.status === "late"
+                            ? "text-warning"
+                            : attendanceRecord.status === "absent"
+                              ? "text-danger"
+                              : "text-muted"
+                      }`}
+                    >
+                      {attendanceRecord.status}
+                    </span>
+                  </>
+                ) : (
+                  <span className="text-[11px] text-muted group-hover:text-text-secondary transition-colors">
+                    Check in
+                  </span>
                 )}
               </div>
             </div>
-
-            {/* Status indicator */}
-            <div className="flex items-center gap-2 shrink-0">
-              {attendanceRecord ? (
-                <>
-                  {STATUS_ICON[attendanceRecord.status]}
-                  <span
-                    className={`text-[11px] font-medium uppercase tracking-wide ${
-                      attendanceRecord.status === "present"
-                        ? "text-success"
-                        : attendanceRecord.status === "late"
-                          ? "text-warning"
-                          : attendanceRecord.status === "absent"
-                            ? "text-danger"
-                            : "text-muted"
-                    }`}
-                  >
-                    {attendanceRecord.status}
-                  </span>
-                </>
-              ) : (
-                <span className="text-[11px] text-muted group-hover:text-text-secondary transition-colors">
-                  Check in
-                </span>
-              )}
-            </div>
-          </div>
-        </button>
-      );
-    });
+          </button>
+        );
+      },
+    );
   }
 
   async function handleDelete(scope: ScheduleSessionDeleteScope) {
@@ -263,7 +260,7 @@ export function ScheduleSessionDetailModal({
   return (
     <ModalFrame
       rootClassName="p-4"
-      panelClassName="flex w-full max-w-xl max-h-[85vh] flex-col overflow-hidden border border-border bg-bg"
+      panelClassName="flex max-h-[85vh] w-full max-w-xl flex-col overflow-hidden rounded-[18px] bg-bg"
       ariaLabelledBy="schedule-session-detail-title"
       onBackdropClick={() => {
         if (!isDeleting) {
@@ -272,214 +269,215 @@ export function ScheduleSessionDetailModal({
         }
       }}
     >
-        {/* ── Program color top accent ── */}
-        <span
-          className="block h-[3px] w-full shrink-0"
-          style={{ backgroundColor: programColor }}
-        />
-
-        {/* ── Header ── */}
-        <div className="flex items-start justify-between gap-4 border-b border-border px-6 py-5">
-          <div className="min-w-0">
-            <div className="flex items-center gap-3">
-              <h2
-                id="schedule-session-detail-title"
-                className="text-lg font-bold text-text-primary truncate"
-              >
-                {activeSession.name}
-              </h2>
-              <span className="border border-border bg-surface-raised px-2 py-0.5 text-[10px] font-medium uppercase tracking-widest text-text-secondary shrink-0">
-                {SESSION_STATUS_LABELS[session.status]}
-              </span>
-            </div>
-            <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-text-secondary">
-              <span className="inline-flex items-center gap-1.5">
-                <Calendar className="w-3 h-3 text-muted" />
-                {sessionLabels.date}
-              </span>
-              <span className="inline-flex items-center gap-1.5">
-                <Clock className="w-3 h-3 text-muted" />
-                {sessionLabels.startTime} – {sessionLabels.endTime}
-              </span>
-              {hasClassProgram && (
-                <span className="inline-flex items-center gap-1.5">
-                  <span
-                    className="w-2 h-2 shrink-0"
-                    style={{ backgroundColor: programColor }}
-                  />
-                  {activeProgram?.name || "Program"}
-                </span>
-              )}
-              {isRecurring && (
-                <span className="inline-flex items-center gap-1.5">
-                  <Repeat2 className="w-3 h-3 text-muted" />
-                  Recurring
-                </span>
-              )}
-            </div>
+      {/* ── Header ── */}
+      <div className="flex items-start justify-between gap-4 border-b border-border p-4">
+        <div className="min-w-0">
+          <div className="flex items-center gap-3">
+            <h2
+              id="schedule-session-detail-title"
+              className="truncate text-lg font-semibold text-text-primary"
+            >
+              {activeSession.name}
+            </h2>
+            <span className="shrink-0 rounded-full bg-surface-raised px-2 py-0.5 text-xs font-medium text-text-secondary">
+              {SESSION_STATUS_LABELS[session.status]}
+            </span>
           </div>
-
-          <button
-            onClick={() => {
-              if (!isDeleting) {
-                setDeleteConfirmSessionId(null);
-                onClose();
-              }
-            }}
-            disabled={isDeleting}
-            className="p-1.5 text-muted transition-colors hover:bg-surface-raised hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-50 shrink-0"
-            aria-label="Close session details"
-          >
-            <X className="h-4 w-4" />
-          </button>
+          <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-text-secondary">
+            <span className="inline-flex items-center gap-1.5">
+              <Calendar className="w-3 h-3 text-muted" />
+              {sessionLabels.date}
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <Clock className="w-3 h-3 text-muted" />
+              {sessionLabels.startTime} – {sessionLabels.endTime}
+            </span>
+            {hasClassProgram && (
+              <span className="inline-flex items-center gap-1.5">
+                <span className="w-2 h-2 shrink-0" style={{ backgroundColor: programColor }} />
+                {activeProgram?.name || "Program"}
+              </span>
+            )}
+            {isRecurring && (
+              <span className="inline-flex items-center gap-1.5">
+                <Repeat2 className="w-3 h-3 text-muted" />
+                Recurring
+              </span>
+            )}
+          </div>
         </div>
 
-        {/* ── Stat bar ── */}
-        <div
-          className="grid grid-cols-3 border-b border-border bg-surface divide-x divide-border shrink-0"
-          aria-busy={!attendanceCountersReady}
-          data-testid="attendance-summary"
+        <button
+          onClick={() => {
+            if (!isDeleting) {
+              setDeleteConfirmSessionId(null);
+              onClose();
+            }
+          }}
+          disabled={isDeleting}
+          className="shrink-0 rounded-[10px] p-1.5 text-muted transition-colors hover:bg-surface-raised hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-50"
+          aria-label="Close session details"
         >
-          <div className="px-4 py-3.5 text-center">
-            <p className="text-2xl font-bold font-mono text-text-primary leading-none">
-              <span data-testid="attendance-present-count">
-                {attendanceCountersReady ? presentCount : "—"}
-              </span>
-              {attendanceCountersReady && activeSession.capacity ? (
-                <span className="text-sm font-normal text-muted">/{activeSession.capacity}</span>
-              ) : null}
-            </p>
-            <p className="text-[10px] text-muted uppercase tracking-widest mt-1.5">present</p>
-          </div>
-          <div className="px-4 py-3.5 text-center">
-            <p
-              className="text-2xl font-bold font-mono text-text-primary leading-none"
-              data-testid="attendance-absent-count"
-            >
-              {attendanceCountersReady ? absentCount : "—"}
-            </p>
-            <p className="text-[10px] text-muted uppercase tracking-widest mt-1.5">absent</p>
-          </div>
-          <div className="px-4 py-3.5 text-center">
-            <p
-              className="text-2xl font-bold font-mono text-text-primary leading-none"
-              data-testid="attendance-unmarked-count"
-            >
-              {attendanceCountersReady ? unmarkedCount : "—"}
-            </p>
-            <p className="text-[10px] text-muted uppercase tracking-widest mt-1.5">unmarked</p>
-          </div>
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+
+      {/* ── Stat bar ── */}
+      <div
+        className="grid shrink-0 grid-cols-3 gap-2 border-b border-border bg-surface p-2"
+        aria-busy={!attendanceCountersReady}
+        data-testid="attendance-summary"
+      >
+        <div className="rounded-[10px] bg-surface-raised px-4 py-3 text-center">
+          <p className="text-2xl font-semibold tabular-nums text-text-primary leading-none">
+            <span data-testid="attendance-present-count">
+              {attendanceCountersReady ? presentCount : "—"}
+            </span>
+            {attendanceCountersReady && activeSession.capacity ? (
+              <span className="text-sm font-normal text-muted">/{activeSession.capacity}</span>
+            ) : null}
+          </p>
+          <p className="mt-1.5 text-xs text-muted">Present</p>
         </div>
+        <div className="rounded-[10px] bg-surface-raised px-4 py-3 text-center">
+          <p
+            className="text-2xl font-semibold tabular-nums text-text-primary leading-none"
+            data-testid="attendance-absent-count"
+          >
+            {attendanceCountersReady ? absentCount : "—"}
+          </p>
+          <p className="mt-1.5 text-xs text-muted">Absent</p>
+        </div>
+        <div className="rounded-[10px] bg-surface-raised px-4 py-3 text-center">
+          <p
+            className="text-2xl font-semibold tabular-nums text-text-primary leading-none"
+            data-testid="attendance-unmarked-count"
+          >
+            {attendanceCountersReady ? unmarkedCount : "—"}
+          </p>
+          <p className="mt-1.5 text-xs text-muted">Unmarked</p>
+        </div>
+      </div>
 
-        {/* ── Scrollable content ── */}
-        <div className="flex-1 overflow-y-auto">
+      {/* ── Scrollable content ── */}
+      <div className="flex-1 overflow-y-auto">
+        {/* Notes */}
+        {activeSession.notes ? (
+          <div className="border-b border-border px-4 py-3">
+            <p className="text-xs font-medium text-muted">Notes</p>
+            <p className="mt-1 text-sm text-text-secondary">{activeSession.notes}</p>
+          </div>
+        ) : null}
 
-          {/* Notes */}
-          {activeSession.notes ? (
-            <div className="border-b border-border px-6 py-3">
-              <p className="text-[10px] font-medium uppercase tracking-widest text-muted">Notes</p>
-              <p className="mt-1 text-sm text-text-secondary">{activeSession.notes}</p>
-            </div>
-          ) : null}
+        {attendanceError ? (
+          <div className="px-6 pt-4">
+            <DismissibleNotice tone="danger" onDismiss={() => onDismissAttendanceError?.()}>
+              {attendanceError}
+            </DismissibleNotice>
+          </div>
+        ) : null}
 
-          {attendanceError ? (
-            <div className="px-6 pt-4">
-              <DismissibleNotice
-                tone="danger"
-                onDismiss={() => onDismissAttendanceError?.()}
+        {studentRosterError ? (
+          <div className="px-6 pt-4">
+            <DismissibleNotice tone="danger" onDismiss={() => onDismissStudentRosterError?.()}>
+              {studentRosterError}
+            </DismissibleNotice>
+          </div>
+        ) : null}
+
+        {/* ── Roster ── */}
+        <div className="p-4">
+          <div className="mb-4 flex items-center justify-between gap-4">
+            <div>
+              <p className="text-sm font-semibold text-text-primary">Attendance</p>
+              <p
+                className="mt-1 text-xs text-text-secondary"
+                role="status"
+                aria-live="polite"
+                data-attendance-commit-state={
+                  !attendanceCountersReady
+                    ? "unavailable"
+                    : pendingAttendanceStudentIds.size > 0
+                      ? "saving"
+                      : attendanceError
+                        ? "rollback-error"
+                        : "saved"
+                }
               >
-                {attendanceError}
-              </DismissibleNotice>
+                {attendanceCommitCopy}
+              </p>
+              {attendanceCountersReady ? (
+                <p className="mt-1 text-[11px] text-muted">
+                  Select a student to cycle attendance status.
+                </p>
+              ) : null}
             </div>
-          ) : null}
+            <span className="text-xs tabular-nums text-muted">
+              {attendanceCountersReady
+                ? `${presentCount}${activeSession.capacity ? `/${activeSession.capacity}` : ""} in`
+                : "Attendance counts unavailable"}
+            </span>
+          </div>
 
-          {studentRosterError ? (
-            <div className="px-6 pt-4">
-              <DismissibleNotice
-                tone="danger"
-                onDismiss={() => onDismissStudentRosterError?.()}
-              >
-                {studentRosterError}
-              </DismissibleNotice>
+          {students.length === 0 ? (
+            <div className="rounded-[10px] bg-surface px-4 py-10 text-center">
+              <Users className="mx-auto mb-2 h-5 w-5 text-muted" />
+              <p className="text-xs text-muted">{emptyRosterMessage}</p>
             </div>
-          ) : null}
-
-          {/* ── Roster ── */}
-          <div className="px-6 py-5">
-            <div className="mb-4 flex items-center justify-between gap-4">
+          ) : (
+            <div className="space-y-5">
+              {/* Class program students */}
               <div>
-                <p className="text-sm font-semibold text-text-primary">Attendance</p>
-                <p className="mt-0.5 text-xs text-muted">
-                  {!attendanceCountersReady
-                    ? "Attendance is unavailable until the complete roster and class records load."
-                    : "Tap any student to toggle check-in"}
-                </p>
-              </div>
-              <span className="text-xs text-muted font-mono">
-                {attendanceCountersReady
-                  ? `${presentCount}${activeSession.capacity ? `/${activeSession.capacity}` : ""} in`
-                  : "Attendance counts unavailable"}
-              </span>
-            </div>
-
-            {students.length === 0 ? (
-              <div className="border border-border bg-surface px-4 py-10 text-center">
-                <Users className="mx-auto mb-2 h-5 w-5 text-muted" />
-                <p className="text-xs text-muted">
-                  No active students. Add students first to take attendance.
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-5">
-                {/* Class program students */}
-                <div>
-                  {hasClassProgram && (
-                    <div className="mb-2 flex items-center justify-between gap-3">
-                      <p className="text-[11px] font-medium uppercase tracking-widest text-muted">
-                        {activeProgram?.name || "Program"} students
-                      </p>
-                      <span className="text-[11px] text-muted font-mono">{rosterSections.classProgramRows.length}</span>
-                    </div>
-                  )}
-
-                  {rosterSections.classProgramRows.length > 0 ? (
-                    <div className="border border-border divide-y divide-border/60">
-                      {renderRosterRows(rosterSections.classProgramRows)}
-                    </div>
-                  ) : (
-                    <div className="border border-border bg-surface-raised/40 px-4 py-4 text-xs text-muted">
-                      No active students are assigned to this class program yet.
-                    </div>
-                  )}
-                </div>
-
-                {/* Drop-ins */}
                 {hasClassProgram && (
-                  <div>
-                    <div className="mb-2 flex items-center justify-between gap-3">
-                      <p className="text-[11px] font-medium uppercase tracking-widest text-muted">
-                        Other program drop-ins
-                      </p>
-                      <span className="text-[11px] text-muted font-mono">{rosterSections.otherProgramRows.length}</span>
-                    </div>
-                    {rosterSections.otherProgramRows.length > 0 ? (
-                      <div className="border border-border divide-y divide-border/60">
-                        {renderRosterRows(rosterSections.otherProgramRows, { markDropIns: true })}
-                      </div>
-                    ) : (
-                      <div className="border border-border bg-surface-raised/40 px-4 py-4 text-xs text-muted">
-                        No other active students available for drop-in attendance.
-                      </div>
-                    )}
+                  <div className="mb-2 flex items-center justify-between gap-3">
+                    <p className="text-xs font-medium text-muted">
+                      {activeProgram?.name || "Program"} students
+                    </p>
+                    <span className="text-xs tabular-nums text-muted">
+                      {rosterSections.classProgramRows.length}
+                    </span>
+                  </div>
+                )}
+
+                {rosterSections.classProgramRows.length > 0 ? (
+                  <div className="divide-y divide-border/60 overflow-hidden rounded-[10px] bg-surface-raised/30">
+                    {renderRosterRows(rosterSections.classProgramRows)}
+                  </div>
+                ) : (
+                  <div className="rounded-[10px] bg-surface-raised/40 px-4 py-4 text-xs text-muted">
+                    No active students are assigned to this class program yet.
                   </div>
                 )}
               </div>
-            )}
-          </div>
 
-          {/* ── Delete zone ── */}
-          {canManageSchedule ? <div className="border-t border-border px-6 py-5">
-            <div className="border border-danger/15 bg-danger/[0.03] px-4 py-4">
+              {/* Drop-ins */}
+              {hasClassProgram && (
+                <div>
+                  <div className="mb-2 flex items-center justify-between gap-3">
+                    <p className="text-xs font-medium text-muted">Other program drop-ins</p>
+                    <span className="text-xs tabular-nums text-muted">
+                      {rosterSections.otherProgramRows.length}
+                    </span>
+                  </div>
+                  {rosterSections.otherProgramRows.length > 0 ? (
+                    <div className="divide-y divide-border/60 overflow-hidden rounded-[10px] bg-surface-raised/30">
+                      {renderRosterRows(rosterSections.otherProgramRows, { markDropIns: true })}
+                    </div>
+                  ) : (
+                    <div className="rounded-[10px] bg-surface-raised/40 px-4 py-4 text-xs text-muted">
+                      No other active students available for drop-in attendance.
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* ── Delete zone ── */}
+        {canManageSchedule ? (
+          <div className="border-t border-border p-4">
+            <div className="rounded-[14px] bg-danger/[0.03] p-4">
               <div className="flex items-start justify-between gap-4">
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
@@ -519,17 +517,13 @@ export function ScheduleSessionDetailModal({
                 )}
               </div>
 
-              {deleteError ? (
-                <p className="mt-3 text-xs text-danger">{deleteError}</p>
-              ) : null}
+              {deleteError ? <p className="mt-3 text-xs text-danger">{deleteError}</p> : null}
 
               {showDeleteConfirm ? (
                 <div className="mt-4 space-y-3 border-t border-danger/15 pt-4">
-                  <p className="text-[11px] font-medium uppercase tracking-widest text-muted">
-                    Confirm deletion
-                  </p>
+                  <p className="text-xs font-medium text-muted">Confirm deletion</p>
 
-                  <div className="border border-border bg-bg/50 px-4 py-3">
+                  <div className="rounded-[10px] bg-bg/50 px-4 py-3">
                     <p className="text-sm font-medium text-text-primary">Delete this class</p>
                     <p className="mt-1 text-xs text-muted">
                       Removes the selected occurrence and keeps the rest of the schedule intact.
@@ -549,10 +543,11 @@ export function ScheduleSessionDetailModal({
                   </div>
 
                   {canDeleteSeries ? (
-                    <div className="border border-danger/20 bg-danger/10 px-4 py-3">
+                    <div className="rounded-[10px] bg-danger/10 px-4 py-3">
                       <p className="text-sm font-medium text-text-primary">Stop this series</p>
                       <p className="mt-1 text-xs text-muted">
-                        Removes this class and future recurring sessions that belong to the same series.
+                        Removes this class and future recurring sessions that belong to the same
+                        series.
                       </p>
                       <div className="mt-3 flex justify-end">
                         <Button
@@ -572,8 +567,9 @@ export function ScheduleSessionDetailModal({
                 </div>
               ) : null}
             </div>
-          </div> : null}
-        </div>
+          </div>
+        ) : null}
+      </div>
     </ModalFrame>
   );
 }

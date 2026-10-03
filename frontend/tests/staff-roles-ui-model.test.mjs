@@ -39,14 +39,8 @@ describe("staff roles UI model", () => {
       archived_at: "2026-08-16T00:00:00.000Z",
     });
 
-    assert.deepEqual(
-      filterStaffMembersForDisplay([active, archived], false),
-      [active]
-    );
-    assert.deepEqual(
-      filterStaffMembersForDisplay([active, archived], true),
-      [active, archived]
-    );
+    assert.deepEqual(filterStaffMembersForDisplay([active, archived], false), [active]);
+    assert.deepEqual(filterStaffMembersForDisplay([active, archived], true), [active, archived]);
   });
 
   it("uses the server-owned confirmation identity without deriving it from legal or email fields", () => {
@@ -92,7 +86,7 @@ describe("staff roles UI model", () => {
     const secondActiveAdmin = member("second-active-admin", { role: "admin" });
     assert.equal(
       isLastActiveAdmin([activeAdmin, secondActiveAdmin, archivedAdmin], activeAdmin),
-      false
+      false,
     );
   });
 });

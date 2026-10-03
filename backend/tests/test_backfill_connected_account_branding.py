@@ -69,13 +69,17 @@ def args(*, execute: bool) -> SimpleNamespace:
 class BackfillConnectedAccountBrandingTest(unittest.TestCase):
     def test_dry_run_makes_no_stripe_provider_calls(self):
         with (
-            patch.object(backfill_connected_account_branding, "_parse_args", return_value=args(execute=False)),
+            patch.object(
+                backfill_connected_account_branding, "_parse_args", return_value=args(execute=False)
+            ),
             patch.object(
                 backfill_connected_account_branding,
                 "get_supabase_client",
                 return_value=FakeSupabase(ROWS),
             ),
-            patch.object(backfill_connected_account_branding, "StripeService") as stripe_service_class,
+            patch.object(
+                backfill_connected_account_branding, "StripeService"
+            ) as stripe_service_class,
         ):
             backfill_connected_account_branding.main()
 
@@ -86,7 +90,9 @@ class BackfillConnectedAccountBrandingTest(unittest.TestCase):
     def test_execute_uploads_and_updates_branding_per_studio(self):
         stripe_service = FakeStripeService()
         with (
-            patch.object(backfill_connected_account_branding, "_parse_args", return_value=args(execute=True)),
+            patch.object(
+                backfill_connected_account_branding, "_parse_args", return_value=args(execute=True)
+            ),
             patch.object(
                 backfill_connected_account_branding,
                 "get_supabase_client",

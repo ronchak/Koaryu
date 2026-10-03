@@ -9,13 +9,17 @@ from app.services.report_export_catalog_operations import build_operations_repor
 from app.services.report_export_catalog_types import CsvReport
 
 
-def build_report_catalog(report_service_cls: Any) -> dict[str, CsvReport]:
-    complete_catalog = {
+def build_complete_report_catalog(report_service_cls: Any) -> dict[str, CsvReport]:
+    return {
         **build_intelligence_report_catalog(report_service_cls),
         **build_core_table_report_catalog(report_service_cls),
         **build_billing_table_report_catalog(report_service_cls),
         **build_operations_report_catalog(report_service_cls),
     }
+
+
+def build_report_catalog(report_service_cls: Any) -> dict[str, CsvReport]:
+    complete_catalog = build_complete_report_catalog(report_service_cls)
     return {
         report_id: report
         for report_id, report in complete_catalog.items()

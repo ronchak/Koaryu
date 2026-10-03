@@ -1,7 +1,13 @@
 <svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <rect x="6" y="6" width="52" height="52" rx="12" fill="#D6B25E" />
-  <path
-    d="M23 16H29V28.75L38.5 18H45.75L35.25 30.25L46.25 48H39L31 35.75L29 38V48H23V16Z"
-    fill="#0B0D10"
-  />
+  <rect x="3" y="3" width="58" height="58" rx="14" fill="#2D2212" />
+  <g>
+    <rect x="16" y="16" width="32" height="32" fill="#F7F3E9" />
+    <path d="M48 16H38L48 26V16Z" fill="#56431F" />
+    <path d="M38 16H26L48 38V26L38 16Z" fill="#CFAE60" />
+    <path d="M26 16H16V24L40 48H48V38L26 16Z" fill="#9B7E4F" />
+    <path d="M16 24V34L30 48H40L16 24Z" fill="#F7F3E9" />
+    <path d="M16 34V42L22 48H30L16 34Z" fill="#C6B183" />
+    <path d="M16 42V48H22L16 42Z" fill="#CFAE60" />
+    <path d="M38 16L48 26M26 16L48 38M16 24L40 48M16 34L30 48M16 42L22 48" stroke="#2D2212" stroke-width="1" />
+  </g>
 </svg>

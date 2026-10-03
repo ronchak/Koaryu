@@ -1,20 +1,16 @@
 from datetime import date, datetime, timezone
 from typing import Optional
 
+from app.services.student_age import is_minor_on_date
+
 
 def is_minor_from_date_of_birth(date_of_birth: Optional[date]) -> bool:
-    if not date_of_birth:
-        return False
-
     today = datetime.now(timezone.utc).date()
-    age = today.year - date_of_birth.year
-    if (today.month, today.day) < (date_of_birth.month, date_of_birth.day):
-        age -= 1
-    return age < 18
+    return is_minor_on_date(date_of_birth, today)
 
 
-def prepare_student_write_payload(payload: dict, *, set_default_is_minor: bool) -> dict:
-    if payload.get("tags") is None:
+def prepare_student_write_payload(payload: dict, *, for_creation: bool) -> dict:
+    if payload.get("tags") is None and (for_creation or "tags" in payload):
         payload["tags"] = []
 
     date_of_birth = payload.get("date_of_birth")
@@ -24,8 +20,8 @@ def prepare_student_write_payload(payload: dict, *, set_default_is_minor: bool) 
     if date_of_birth:
         payload["is_minor"] = is_minor_from_date_of_birth(date_of_birth)
         payload["date_of_birth"] = str(date_of_birth)
-    elif set_default_is_minor:
-        payload["is_minor"] = False
+    elif for_creation:
+        payload.setdefault("is_minor", False)
 
     if payload.get("membership_start_date"):
         if isinstance(payload["membership_start_date"], str):

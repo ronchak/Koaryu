@@ -1,14 +1,18 @@
+import logging
 import os
 import re
 
 from fastapi import APIRouter, HTTPException, Response, status
-from starlette.concurrency import run_in_threadpool
 
 from app.core.config import get_settings
-from app.services.release_schema_readiness import assert_hosted_release_schema_ready
+from app.services import process_rss_observability
+from app.services.release_schema_readiness import (
+    assert_hosted_release_schema_ready_cached,
+)
 from app.services.stripe_mutation_policy import configured_stripe_mode
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 COMMIT_SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 
 
@@ -27,9 +31,7 @@ def _set_health_headers(response: Response) -> None:
     response.headers["Cache-Control"] = "no-store, max-age=0"
 
 
-def _health_payload(
-    state: str, *, configured_mode: str | None = None
-) -> dict[str, str | None]:
+def _health_payload(state: str, *, configured_mode: str | None = None) -> dict[str, str | None]:
     payload = {
         "status": state,
         "version": "1.0.0",
@@ -60,11 +62,24 @@ async def health_ready(response: Response):
     """Return readiness after rechecking hosted configuration and database head."""
     _set_health_headers(response)
     try:
+        process_rss_observability.observe_process_rss()
+    except Exception:
+        # The observer is private best-effort instrumentation. It must never
+        # change the existing fail-closed readiness contract.
+        pass
+    try:
         settings = get_settings()
         settings.validate_runtime_configuration()
         if settings.ENVIRONMENT.strip().lower() in {"production", "staging"}:
-            await run_in_threadpool(assert_hosted_release_schema_ready)
+            await assert_hosted_release_schema_ready_cached()
     except Exception as exc:
+        # The 503 body stays deliberately generic because it is public. The
+        # cause only ever reaches the operator through this log line, so a
+        # readiness failure is diagnosable without guessing at the config.
+        logger.exception(
+            "Readiness check failed; serving 503",
+            extra={"environment": os.environ.get("ENVIRONMENT", "").strip().lower()},
+        )
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Runtime configuration is not ready.",

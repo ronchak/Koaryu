@@ -33,9 +33,9 @@ function isPublicAddress(answer: { address: string; family: number }): answer is
   }
   const kind = parsed.kind();
   if (
-    (answer.family === 4 && kind !== "ipv4")
-    || (answer.family === 6 && kind !== "ipv6")
-    || (kind === "ipv6" && (parsed as ipaddr.IPv6).isIPv4MappedAddress())
+    (answer.family === 4 && kind !== "ipv4") ||
+    (answer.family === 6 && kind !== "ipv6") ||
+    (kind === "ipv6" && (parsed as ipaddr.IPv6).isIPv4MappedAddress())
   ) {
     return false;
   }
@@ -48,10 +48,10 @@ export async function resolvePinnedHttpsTarget(
 ): Promise<PinnedTarget> {
   const url = new URL(rawUrl);
   if (
-    url.protocol !== "https:"
-    || url.username
-    || url.password
-    || url.port && url.port !== "443"
+    url.protocol !== "https:" ||
+    url.username ||
+    url.password ||
+    (url.port && url.port !== "443")
   ) {
     throw new Error("pinned HTTPS target is invalid");
   }
@@ -79,18 +79,21 @@ export function createPinnedLookup(target: PinnedTarget): LookupFunction {
       callback(new Error("pinned HTTPS lookup hostname changed"), "", 0);
       return;
     }
-    const requestedFamily = options.family === "IPv4"
-      ? 4
-      : options.family === "IPv6" ? 6 : options.family;
-    const candidates = requestedFamily === 4 || requestedFamily === 6
-      ? target.answers.filter((answer) => answer.family === requestedFamily)
-      : target.answers;
+    const requestedFamily =
+      options.family === "IPv4" ? 4 : options.family === "IPv6" ? 6 : options.family;
+    const candidates =
+      requestedFamily === 4 || requestedFamily === 6
+        ? target.answers.filter((answer) => answer.family === requestedFamily)
+        : target.answers;
     if (!candidates.length) {
       callback(new Error("pinned HTTPS lookup has no address for the requested family"), "", 0);
       return;
     }
     if (typeof options === "object" && options?.all) {
-      callback(null, candidates.map((answer) => ({ ...answer })));
+      callback(
+        null,
+        candidates.map((answer) => ({ ...answer })),
+      );
       return;
     }
     callback(null, candidates[0].address, candidates[0].family);
@@ -149,42 +152,51 @@ export async function pinnedHttpsRequest({
       if (error) reject(error);
       else if (response) resolve(response);
     };
-    const request = requestImpl(target.url, {
-      method,
-      headers,
-      agent: false,
-      lookup,
-      servername: target.hostname,
-      rejectUnauthorized: true,
-      signal: AbortSignal.timeout(remainingMs),
-    }, (response) => {
-      const chunks: Buffer[] = [];
-      let length = 0;
-      response.on("data", (chunk: Buffer | Uint8Array | string) => {
-        const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-        length += bytes.length;
-        if (length > maxResponseBytes) {
-          response.destroy();
-          request.destroy();
-          finish(new Error("pinned HTTPS response exceeded the safe limit"));
-          return;
-        }
-        chunks.push(bytes);
-      });
-      response.on("error", (error) => finish(error));
-      response.on("end", () => {
-        const normalizedHeaders = Object.fromEntries(
-          Object.entries(response.headers).flatMap(([name, value]) => (
-            value === undefined ? [] : [[name.toLowerCase(), Array.isArray(value) ? value.join(", ") : String(value)]]
-          )),
-        );
-        finish(undefined, Object.freeze({
-          status: response.statusCode ?? 0,
-          headers: Object.freeze(normalizedHeaders),
-          body: Buffer.concat(chunks),
-        }));
-      });
-    });
+    const request = requestImpl(
+      target.url,
+      {
+        method,
+        headers,
+        agent: false,
+        lookup,
+        servername: target.hostname,
+        rejectUnauthorized: true,
+        signal: AbortSignal.timeout(remainingMs),
+      },
+      (response) => {
+        const chunks: Buffer[] = [];
+        let length = 0;
+        response.on("data", (chunk: Buffer | Uint8Array | string) => {
+          const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+          length += bytes.length;
+          if (length > maxResponseBytes) {
+            response.destroy();
+            request.destroy();
+            finish(new Error("pinned HTTPS response exceeded the safe limit"));
+            return;
+          }
+          chunks.push(bytes);
+        });
+        response.on("error", (error) => finish(error));
+        response.on("end", () => {
+          const normalizedHeaders = Object.fromEntries(
+            Object.entries(response.headers).flatMap(([name, value]) =>
+              value === undefined
+                ? []
+                : [[name.toLowerCase(), Array.isArray(value) ? value.join(", ") : String(value)]],
+            ),
+          );
+          finish(
+            undefined,
+            Object.freeze({
+              status: response.statusCode ?? 0,
+              headers: Object.freeze(normalizedHeaders),
+              body: Buffer.concat(chunks),
+            }),
+          );
+        });
+      },
+    );
     request.on("error", (error) => finish(error));
     request.end(body);
   });

@@ -1,33 +1,68 @@
 from __future__ import annotations
 
-import asyncio
-import hashlib
-import json
 import unittest
-from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
-from fastapi import HTTPException
-
-from app.schemas.billing import (
-    BillingInvoiceCreate,
-    BillingPayerAutopaySetupRequest,
-    BillingReconcileRequest,
-    BillingInvoiceResponse,
-    ExternalPaymentCreate,
-    StudentBillingEnrollmentCreate,
-    StudentBillingEnrollmentResponse,
-    StudentBillingEnrollmentUpdate,
-)
 from app.services.billing_service import BillingService
-from app.services.stripe_service import StripeService
-from app.services.stripe_service import _StripeV2RequestError
+from tests.fakes.billing_balance import BillingBalanceRpcMixin
+from tests.fakes.billing_provider_operations import BillingProviderOperationRpcMixin
+from tests.fakes.billing_reads import BillingReadRpcMixin
 from tests.fakes.supabase import RpcBackedSupabase
 
 
-class _FakeSupabase(RpcBackedSupabase):
+class _FakeSupabase(
+    BillingBalanceRpcMixin, BillingReadRpcMixin, BillingProviderOperationRpcMixin, RpcBackedSupabase
+):
     def __init__(self, tables):
         super().__init__(tables)
+        self.initialize_billing_provider_operations()
+        self.lose_provider_in_flight_response_once = False
+        self.race_invoice_retry_resource_claim_once = False
+
+    def _rpc_transition_billing_provider_operation_v1(self, params: dict):
+        result = super()._rpc_transition_billing_provider_operation_v1(params)
+        if (
+            self.lose_provider_in_flight_response_once
+            and params["p_operation_type"] == "invoice.retry"
+            and params["p_to_state"] == "provider_request_in_flight"
+        ):
+            self.lose_provider_in_flight_response_once = False
+            raise RuntimeError("lost provider in-flight transition response")
+        return result
+
+    def _rpc_claim_billing_provider_operation_resource_v1(self, params: dict):
+        if self.race_invoice_retry_resource_claim_once:
+            self.race_invoice_retry_resource_claim_once = False
+            winner_params = {
+                **params,
+                "p_caller_request_key": "winning-key",
+            }
+            winner = super()._rpc_claim_billing_provider_operation_resource_v1(winner_params)
+            operation = winner["operation"]
+            super()._rpc_transition_billing_provider_operation_v1(
+                {
+                    "p_operation_id": operation["id"],
+                    "p_studio_id": operation["studio_id"],
+                    "p_actor_id": operation["actor_id"],
+                    "p_operation_type": operation["operation_type"],
+                    "p_caller_request_key": operation["caller_request_key"],
+                    "p_request_sha256": operation["request_sha256"],
+                    "p_stripe_connected_account_id": operation["stripe_connected_account_id"],
+                    "p_connect_account_generation": operation["connect_account_generation"],
+                    "p_lease_owner": winner_params["p_lease_owner"],
+                    "p_expected_revision": operation["revision"],
+                    "p_to_state": "provider_request_in_flight",
+                    "p_provider_object_id": None,
+                    "p_provider_secondary_object_id": None,
+                    "p_provider_request_id": None,
+                    "p_result_code": "invoice_retry_started",
+                    "p_result_summary": "invoice_retry_mode:pay",
+                    "p_error_code": None,
+                    "p_error_summary": None,
+                    "p_reconciliation_reason_code": None,
+                }
+            )
+        return super()._rpc_claim_billing_provider_operation_resource_v1(params)
 
     def _rpc_claim_billing_subscription_quantity_sync(self, params: dict) -> list[dict]:
         subscription = next(
@@ -44,21 +79,25 @@ class _FakeSupabase(RpcBackedSupabase):
         metadata = dict(subscription.get("metadata") or {})
         current = metadata.get("stripe_quantity_sync_lock")
         if current and current.get("token") != params["p_lock_token"]:
-            return [{
-                "claimed": False,
-                "lock_owner": current.get("token"),
-                "locked_at": current.get("locked_at"),
-            }]
+            return [
+                {
+                    "claimed": False,
+                    "lock_owner": current.get("token"),
+                    "locked_at": current.get("locked_at"),
+                }
+            ]
         metadata["stripe_quantity_sync_lock"] = {
             "token": params["p_lock_token"],
             "locked_at": "2026-01-01T00:00:00Z",
         }
         subscription["metadata"] = metadata
-        return [{
-            "claimed": True,
-            "lock_owner": params["p_lock_token"],
-            "locked_at": "2026-01-01T00:00:00Z",
-        }]
+        return [
+            {
+                "claimed": True,
+                "lock_owner": params["p_lock_token"],
+                "locked_at": "2026-01-01T00:00:00Z",
+            }
+        ]
 
     def _rpc_finish_billing_subscription_quantity_sync(self, params: dict) -> bool:
         subscription = next(
@@ -129,6 +168,7 @@ class _FakeStripeService:
     connect_account_calls = []
     onboarding_calls = []
     setup_calls = []
+    setup_response = None
     subscription_update_calls = []
     subscription_create_calls = []
     subscription_item_create_calls = []
@@ -152,16 +192,21 @@ class _FakeStripeService:
 
     def __init__(self, *, supabase=None):
         self.supabase = supabase
-        self.settings = type("Settings", (), {
-            "STRIPE_MODE": "test",
-            "STRIPE_SECRET_KEY": "sk_test_123",
-        })()
+        self.settings = type(
+            "Settings",
+            (),
+            {
+                "STRIPE_MODE": "test",
+                "STRIPE_SECRET_KEY": "sk_test_123",
+            },
+        )()
 
     @classmethod
     def reset(cls):
         cls.connect_account_calls = []
         cls.onboarding_calls = []
         cls.setup_calls = []
+        cls.setup_response = None
         cls.subscription_update_calls = []
         cls.subscription_create_calls = []
         cls.subscription_item_create_calls = []
@@ -197,13 +242,15 @@ class _FakeStripeService:
         idempotency_key=None,
         bootstrap_context=None,
     ):
-        self.__class__.onboarding_calls.append({
-            "account_id": account_id,
-            "refresh_url": refresh_url,
-            "return_url": return_url,
-            "idempotency_key": idempotency_key,
-            "bootstrap_context": bootstrap_context,
-        })
+        self.__class__.onboarding_calls.append(
+            {
+                "account_id": account_id,
+                "refresh_url": refresh_url,
+                "return_url": return_url,
+                "idempotency_key": idempotency_key,
+                "bootstrap_context": bootstrap_context,
+            }
+        )
         return {"url": f"https://connect.stripe.test/setup/{account_id}"}
 
     def retrieve_account(self, *, account_id: str):
@@ -247,11 +294,20 @@ class _FakeStripeService:
         self.__class__.connected_invoice_item_calls.append(payload)
         return {"id": "ii_created"}
 
-    def finalize_connected_invoice(self, *, account_id: str, studio_id: str, invoice_id: str, idempotency_key: str | None = None):
-        self.__class__.finalize_invoice_calls.append({
-            "account_id": account_id,
-            "invoice_id": invoice_id,
-        })
+    def finalize_connected_invoice(
+        self,
+        *,
+        account_id: str,
+        studio_id: str,
+        invoice_id: str,
+        idempotency_key: str | None = None,
+    ):
+        self.__class__.finalize_invoice_calls.append(
+            {
+                "account_id": account_id,
+                "invoice_id": invoice_id,
+            }
+        )
         return self.__class__.finalize_invoice_response or {
             "id": invoice_id,
             "status": "open",
@@ -265,12 +321,16 @@ class _FakeStripeService:
             "created": 200,
         }
 
-    def pay_connected_invoice(self, *, account_id: str, studio_id: str, invoice_id: str, idempotency_key: str):
-        self.__class__.pay_invoice_calls.append({
-            "account_id": account_id,
-            "invoice_id": invoice_id,
-            "idempotency_key": idempotency_key,
-        })
+    def pay_connected_invoice(
+        self, *, account_id: str, studio_id: str, invoice_id: str, idempotency_key: str
+    ):
+        self.__class__.pay_invoice_calls.append(
+            {
+                "account_id": account_id,
+                "invoice_id": invoice_id,
+                "idempotency_key": idempotency_key,
+            }
+        )
         if self.__class__.pay_invoice_error_after_call:
             raise self.__class__.pay_invoice_error_after_call
         return self.__class__.invoice_response or {
@@ -285,11 +345,20 @@ class _FakeStripeService:
             "created": 200,
         }
 
-    def send_connected_invoice(self, *, account_id: str, studio_id: str, invoice_id: str, idempotency_key: str | None = None):
-        self.__class__.send_invoice_calls.append({
-            "account_id": account_id,
-            "invoice_id": invoice_id,
-        })
+    def send_connected_invoice(
+        self,
+        *,
+        account_id: str,
+        studio_id: str,
+        invoice_id: str,
+        idempotency_key: str | None = None,
+    ):
+        self.__class__.send_invoice_calls.append(
+            {
+                "account_id": account_id,
+                "invoice_id": invoice_id,
+            }
+        )
         if self.__class__.send_invoice_error:
             raise self.__class__.send_invoice_error
         return self.__class__.send_invoice_response or self.finalize_connected_invoice(
@@ -298,13 +367,19 @@ class _FakeStripeService:
             invoice_id=invoice_id,
         )
 
-    def retrieve_connected_subscription(self, *, account_id: str, subscription_id: str, expand=None):
+    def retrieve_connected_subscription(
+        self, *, account_id: str, subscription_id: str, expand=None
+    ):
         return self.__class__.subscription_response or {
             "id": subscription_id,
             "status": "active",
             "customer": "cus_1",
             "items": {"data": []},
-            "metadata": {"studio_id": "studio_1", "payer_id": "payer_1", "billing_subscription_id": "subscription_1"},
+            "metadata": {
+                "studio_id": "studio_1",
+                "payer_id": "payer_1",
+                "billing_subscription_id": "subscription_1",
+            },
             "created": 200,
         }
 
@@ -317,12 +392,14 @@ class _FakeStripeService:
             "customer": payload.get("customer_id"),
             "collection_method": payload.get("collection_method"),
             "items": {
-                "data": [{
-                    "id": "si_created",
-                    "metadata": item_metadata,
-                    "current_period_start": 200,
-                    "current_period_end": 300,
-                }],
+                "data": [
+                    {
+                        "id": "si_created",
+                        "metadata": item_metadata,
+                        "current_period_start": 200,
+                        "current_period_end": 300,
+                    }
+                ],
             },
             "metadata": payload.get("metadata") or {},
             "created": 200,
@@ -332,7 +409,9 @@ class _FakeStripeService:
         self.__class__.subscription_item_create_calls.append(payload)
         return {"id": "si_created"}
 
-    def retrieve_connected_payment_intent(self, *, account_id: str, payment_intent_id: str, expand=None):
+    def retrieve_connected_payment_intent(
+        self, *, account_id: str, payment_intent_id: str, expand=None
+    ):
         return self.__class__.payment_intent_response or {
             "id": payment_intent_id,
             "status": "succeeded",
@@ -345,7 +424,18 @@ class _FakeStripeService:
 
     def create_setup_checkout_session(self, **payload):
         self.__class__.setup_calls.append(payload)
-        return {"url": "https://checkout.stripe.test/setup"}
+        return self.__class__.setup_response or {
+            "id": "cs_setup_1",
+            "url": "https://checkout.stripe.test/setup",
+            "expires_at": payload.get("expires_at"),
+        }
+
+    def retrieve_connected_checkout_session(self, *, account_id: str, session_id: str, expand=None):
+        return self.__class__.setup_response or {
+            "id": session_id,
+            "url": "https://checkout.stripe.test/setup",
+            "status": "open",
+        }
 
     def update_connected_subscription_item(self, **payload):
         self.__class__.subscription_item_update_calls.append(payload)
@@ -387,18 +477,13 @@ class _FakeBillingSettings:
     FRONTEND_URL = "https://app.koaryu.test"
 
 
-def _test_invoice_request_hash(data: BillingInvoiceCreate) -> str:
-    payload = data.model_dump(mode="json", exclude_none=True)
-    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
-    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
-
-
-
 class BillingPaymentsLifecycleTestBase(unittest.TestCase):
     def setUp(self):
         _FakeStripe.reset()
         _FakeStripeService.reset()
 
     def service(self) -> BillingService:
-        with patch("app.services.billing_service.get_settings", return_value=_FakeBillingSettings()):
+        with patch(
+            "app.services.billing_service.get_settings", return_value=_FakeBillingSettings()
+        ):
             return BillingService(None)

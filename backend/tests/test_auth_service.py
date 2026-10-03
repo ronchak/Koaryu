@@ -17,10 +17,12 @@ class FakeAuthSupabase(TableBackedSupabase):
         profile_failure=None,
         user_metadata=None,
     ):
-        super().__init__({
-            "staff_profiles": profile_rows or [],
-            "staff_roles": staff_roles or [],
-        })
+        super().__init__(
+            {
+                "staff_profiles": profile_rows or [],
+                "staff_roles": staff_roles or [],
+            }
+        )
         self.auth_user_id = None
         self.auth_user = SimpleNamespace(
             id="user-1",
@@ -41,17 +43,21 @@ class FakeAuthSupabase(TableBackedSupabase):
 class AuthServiceTest(unittest.TestCase):
     def test_existing_profile_returns_names_display_metadata_and_requested_membership(self):
         supabase = FakeAuthSupabase(
-            profile_rows=[{
-                "user_id": "user-1",
-                "legal_first_name": "Aiko",
-                "legal_last_name": "Tanaka",
-            }],
-            staff_roles=[{
-                "user_id": "user-1",
-                "studio_id": "studio-1",
-                "role": "admin",
-                "created_at": "2026-08-15T00:00:00Z",
-            }],
+            profile_rows=[
+                {
+                    "user_id": "user-1",
+                    "legal_first_name": "Aiko",
+                    "legal_last_name": "Tanaka",
+                }
+            ],
+            staff_roles=[
+                {
+                    "user_id": "user-1",
+                    "studio_id": "studio-1",
+                    "role": "admin",
+                    "created_at": "2026-08-15T00:00:00Z",
+                }
+            ],
             user_metadata={
                 "full_name": "Aiko T.",
                 "legal_first_name": "MetadataFirst",
@@ -59,9 +65,7 @@ class AuthServiceTest(unittest.TestCase):
             },
         )
 
-        auth = asyncio.run(
-            AuthService(supabase).get_user_profile("user-1", "studio-1")
-        )
+        auth = asyncio.run(AuthService(supabase).get_user_profile("user-1", "studio-1"))
 
         self.assertTrue(auth.staff_profiles_available)
         self.assertEqual(auth.user.legal_first_name, "Aiko")
@@ -72,8 +76,7 @@ class AuthServiceTest(unittest.TestCase):
         self.assertEqual(supabase.auth_user_id, "user-1")
 
         profile_query = next(
-            query for query in supabase.query_log
-            if query["table"] == "staff_profiles"
+            query for query in supabase.query_log if query["table"] == "staff_profiles"
         )
         self.assertEqual(
             profile_query,
@@ -93,8 +96,7 @@ class AuthServiceTest(unittest.TestCase):
         )
 
         staff_role_query = next(
-            query for query in supabase.query_log
-            if query["table"] == "staff_roles"
+            query for query in supabase.query_log if query["table"] == "staff_roles"
         )
         self.assertEqual(staff_role_query["filters"], (("eq", "user_id", "user-1"),))
 
@@ -110,12 +112,14 @@ class AuthServiceTest(unittest.TestCase):
     def test_missing_staff_profile_schema_codes_return_unavailable_with_null_names(self):
         for code in ("42P01", "42703", "PGRST204", "PGRST205"):
             with self.subTest(code=code):
-                failure = PostgrestAPIError({
-                    "code": code,
-                    "message": "staff_profiles is unavailable",
-                    "details": "",
-                    "hint": "",
-                })
+                failure = PostgrestAPIError(
+                    {
+                        "code": code,
+                        "message": "staff_profiles is unavailable",
+                        "details": "",
+                        "hint": "",
+                    }
+                )
                 supabase = FakeAuthSupabase(
                     profile_failure=failure,
                     user_metadata={"full_name": "Display Name"},
@@ -129,12 +133,14 @@ class AuthServiceTest(unittest.TestCase):
                 self.assertEqual(auth.user.full_name, "Display Name")
 
     def test_unrelated_postgrest_failure_is_reraised(self):
-        failure = PostgrestAPIError({
-            "code": "42501",
-            "message": "permission denied for table staff_profiles",
-            "details": "",
-            "hint": "",
-        })
+        failure = PostgrestAPIError(
+            {
+                "code": "42501",
+                "message": "permission denied for table staff_profiles",
+                "details": "",
+                "hint": "",
+            }
+        )
         supabase = FakeAuthSupabase(profile_failure=failure)
 
         with self.assertRaises(PostgrestAPIError) as raised:

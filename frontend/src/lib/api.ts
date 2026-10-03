@@ -1,3 +1,8 @@
+import { CommandOutcomeUnknown } from "./command-outcome.ts";
+import { beginPendingCommand } from "./pending-commands.ts";
+import { markDashboardFactsChanged } from "./dashboard-freshness.ts";
+import { apiRequestTimeout } from "./request-budget.ts";
+export { CommandOutcomeUnknown } from "./command-outcome.ts";
 import { getActiveStudioIdCookie } from "@/lib/studio-state-cookie";
 import { serializeJsonRequestBody } from "@/lib/api-body";
 import { applyBrowserStudioHeader } from "@/lib/api-studio-header";
@@ -5,9 +10,7 @@ import { buildApiUrl } from "@/lib/api-url";
 
 const SERVER_API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8001/api/v1";
 const USE_API_PROXY = process.env.NEXT_PUBLIC_USE_API_PROXY === "true";
-const BROWSER_API_BASE =
-  USE_API_PROXY ? "/api/proxy" : SERVER_API_BASE;
-const API_TIMEOUT_MS = 12000;
+const BROWSER_API_BASE = USE_API_PROXY ? "/api/proxy" : SERVER_API_BASE;
 
 function apiUrl(path: string) {
   return buildApiUrl(path, {
@@ -20,22 +23,30 @@ function apiUrl(path: string) {
 
 export class ApiError extends Error {
   status: number;
+  readonly detail?: ApiCursorErrorDetail;
 
-  constructor(message: string, status: number) {
+  constructor(message: string, status: number, detail?: ApiCursorErrorDetail) {
     super(message);
     this.name = "ApiError";
     this.status = status;
+    this.detail = detail;
   }
 }
+
+export type ApiCursorErrorDetail = {
+  code: string;
+  message: string;
+  recover_to: "first" | "nearest_prior";
+};
 
 export function isSubscriptionRequiredError(error: unknown) {
   return error instanceof ApiError && error.status === 402;
 }
 
 export function isStaffArchivedError(error: unknown) {
-  return error instanceof ApiError && (
-    /\bSTAFF_ARCHIVED\b/.test(error.message)
-    || /staff account is archived/i.test(error.message)
+  return (
+    error instanceof ApiError &&
+    (/\bSTAFF_ARCHIVED\b/.test(error.message) || /staff account is archived/i.test(error.message))
   );
 }
 
@@ -73,6 +84,8 @@ interface RequestRuntimeOptions {
   timeoutMs?: number | null;
   timeoutMessage: string;
   networkErrorMessage: string;
+  commandTimeoutMessage?: string;
+  commandNetworkMessage?: string;
 }
 
 function buildRequestHeaders({
@@ -99,24 +112,28 @@ function buildRequestHeaders({
   return headers;
 }
 
-async function executeApiRequest(
+async function executeApiRequest<T>(
   path: string,
   init: Omit<RequestInit, "signal">,
   {
     signal,
-    timeoutMs = API_TIMEOUT_MS,
+    timeoutMs = apiRequestTimeout(path, init.method),
     timeoutMessage,
     networkErrorMessage,
-  }: RequestRuntimeOptions
-) {
+    commandTimeoutMessage,
+    commandNetworkMessage,
+  }: RequestRuntimeOptions,
+  consume: (response: Response) => Promise<T>,
+): Promise<T> {
   const controller = new AbortController();
   let abortReason: AbortReason = null;
-  const timeout = timeoutMs == null
-    ? null
-    : setTimeout(() => {
-        abortReason ??= "timeout";
-        controller.abort();
-      }, timeoutMs);
+  const timeout =
+    timeoutMs == null
+      ? null
+      : setTimeout(() => {
+          abortReason ??= "timeout";
+          controller.abort();
+        }, timeoutMs);
   const abortFromCaller = () => {
     abortReason ??= "caller";
     controller.abort();
@@ -128,20 +145,47 @@ async function executeApiRequest(
     signal?.addEventListener("abort", abortFromCaller, { once: true });
   }
 
+  let receivedHeaders = false;
+  let requestId: string | undefined;
+  let dispatched = false;
+  const isCommand = !["GET", "HEAD", "OPTIONS"].includes(init.method ?? "GET");
+  const finishCommand = isCommand ? beginPendingCommand() : undefined;
+  // Some Billing status GETs reconcile provider state. Treat their facts as changed too.
+  const changesFacts = isCommand || path.startsWith("/billing/");
+  if (changesFacts) markDashboardFactsChanged();
   try {
-    return await fetch(apiUrl(path), {
+    dispatched = !controller.signal.aborted;
+    const response = await fetch(apiUrl(path), {
       ...init,
       signal: controller.signal,
     });
+    receivedHeaders = true;
+    const diagnosticId = response.headers.get("x-request-id");
+    if (diagnosticId && /^[a-zA-Z0-9_-]{1,64}$/.test(diagnosticId)) requestId = diagnosticId;
+    return await consume(response);
   } catch (error) {
-    if (error instanceof Error && error.name === "AbortError") {
+    // A transport abort, 5xx response, or lost success body cannot prove rollback.
+    if (isCommand && dispatched && (!(error instanceof ApiError) || error.status >= 500)) {
+      throw new CommandOutcomeUnknown(
+        requestId,
+        abortReason === "timeout"
+          ? commandTimeoutMessage
+          : !receivedHeaders && abortReason === null
+            ? commandNetworkMessage
+            : undefined,
+      );
+    }
+    if (abortReason !== null || (error instanceof Error && error.name === "AbortError")) {
       if (abortReason === "timeout") {
         throw new Error(timeoutMessage);
       }
       throw createAbortError();
     }
+    if (receivedHeaders) throw error;
     throw new Error(networkErrorMessage);
   } finally {
+    finishCommand?.();
+    if (changesFacts) markDashboardFactsChanged();
     if (timeout) {
       clearTimeout(timeout);
     }
@@ -188,25 +232,56 @@ function formatApiErrorDetail(detail: unknown, fallback: string): string {
   return fallback;
 }
 
-async function parseErrorResponse(res: Response): Promise<string> {
+function parseCursorErrorDetail(detail: unknown): ApiCursorErrorDetail | undefined {
+  if (!detail || typeof detail !== "object" || Array.isArray(detail)) {
+    return undefined;
+  }
+
+  const record = detail as Record<string, unknown>;
+  if (
+    typeof record.code !== "string" ||
+    typeof record.message !== "string" ||
+    !record.code.trim() ||
+    !record.message.trim() ||
+    (record.recover_to !== "first" && record.recover_to !== "nearest_prior")
+  ) {
+    return undefined;
+  }
+
+  return {
+    code: record.code,
+    message: record.message,
+    recover_to: record.recover_to,
+  };
+}
+
+interface ParsedApiErrorResponse {
+  message: string;
+  detail?: ApiCursorErrorDetail;
+}
+
+async function parseErrorResponse(res: Response): Promise<ParsedApiErrorResponse> {
   const fallback = `API error: ${res.status}`;
   const contentType = res.headers.get("content-type") || "";
   const rawText = await res.text();
 
   if (!rawText) {
-    return fallback;
+    return { message: fallback };
   }
 
   if (contentType.includes("application/json")) {
     try {
       const parsed = JSON.parse(rawText) as { detail?: unknown };
-      return formatApiErrorDetail(parsed.detail, fallback);
+      return {
+        message: formatApiErrorDetail(parsed.detail, fallback),
+        detail: parseCursorErrorDetail(parsed.detail),
+      };
     } catch {
-      return rawText.trim() || fallback;
+      return { message: rawText.trim() || fallback };
     }
   }
 
-  return rawText.trim() || fallback;
+  return { message: rawText.trim() || fallback };
 }
 
 async function parseSuccessResponse<T>(res: Response): Promise<T> {
@@ -236,7 +311,7 @@ async function apiFetch<T>(path: string, options: ApiOptions = {}): Promise<T> {
     headers: extraHeaders,
     omitStudioHeader = false,
     signal,
-    timeoutMs = API_TIMEOUT_MS,
+    timeoutMs,
     timeoutMessage = "Request timed out. Please try again.",
     networkErrorMessage = "Failed to reach the backend. Please try again.",
   } = options;
@@ -250,7 +325,7 @@ async function apiFetch<T>(path: string, options: ApiOptions = {}): Promise<T> {
     },
   });
 
-  const res = await executeApiRequest(
+  return executeApiRequest(
     path,
     {
       method,
@@ -262,14 +337,17 @@ async function apiFetch<T>(path: string, options: ApiOptions = {}): Promise<T> {
       timeoutMs,
       timeoutMessage,
       networkErrorMessage,
-    }
+      commandTimeoutMessage: options.timeoutMessage,
+      commandNetworkMessage: options.networkErrorMessage,
+    },
+    async (res) => {
+      if (!res.ok) {
+        const parsedError = await parseErrorResponse(res);
+        throw new ApiError(parsedError.message, res.status, parsedError.detail);
+      }
+      return parseSuccessResponse<T>(res);
+    },
   );
-
-  if (!res.ok) {
-    throw new ApiError(await parseErrorResponse(res), res.status);
-  }
-
-  return parseSuccessResponse<T>(res);
 }
 
 async function apiFormFetch<T>(path: string, options: FormApiOptions): Promise<T> {
@@ -280,13 +358,13 @@ async function apiFormFetch<T>(path: string, options: FormApiOptions): Promise<T
     headers: extraHeaders,
     omitStudioHeader = false,
     signal,
-    timeoutMs = API_TIMEOUT_MS,
+    timeoutMs,
     timeoutMessage = "Request timed out. Please try again.",
     networkErrorMessage = "Failed to reach the backend. Please try again.",
   } = options;
   const headers = buildRequestHeaders({ token, headers: extraHeaders, omitStudioHeader });
 
-  const res = await executeApiRequest(
+  return executeApiRequest(
     path,
     {
       method,
@@ -298,23 +376,29 @@ async function apiFormFetch<T>(path: string, options: FormApiOptions): Promise<T
       timeoutMs,
       timeoutMessage,
       networkErrorMessage,
-    }
+      commandTimeoutMessage: options.timeoutMessage,
+      commandNetworkMessage: options.networkErrorMessage,
+    },
+    async (res) => {
+      if (!res.ok) {
+        const parsedError = await parseErrorResponse(res);
+        throw new ApiError(parsedError.message, res.status, parsedError.detail);
+      }
+      return parseSuccessResponse<T>(res);
+    },
   );
-
-  if (!res.ok) {
-    throw new ApiError(await parseErrorResponse(res), res.status);
-  }
-
-  return parseSuccessResponse<T>(res);
 }
 
-async function apiDownload(path: string, options: ApiOptions = {}): Promise<{ blob: Blob; filename: string | null }> {
+async function apiDownload(
+  path: string,
+  options: ApiOptions = {},
+): Promise<{ blob: Blob; filename: string | null }> {
   const {
     token,
     headers: extraHeaders,
     omitStudioHeader = false,
     signal,
-    timeoutMs = API_TIMEOUT_MS,
+    timeoutMs,
     timeoutMessage = "Download timed out. Please try again.",
     networkErrorMessage = "Failed to reach the backend. Please try again.",
   } = options;
@@ -327,7 +411,7 @@ async function apiDownload(path: string, options: ApiOptions = {}): Promise<{ bl
     },
   });
 
-  const res = await executeApiRequest(
+  return executeApiRequest(
     path,
     {
       method: "GET",
@@ -338,42 +422,58 @@ async function apiDownload(path: string, options: ApiOptions = {}): Promise<{ bl
       timeoutMs,
       timeoutMessage,
       networkErrorMessage,
-    }
+      commandTimeoutMessage: options.timeoutMessage,
+      commandNetworkMessage: options.networkErrorMessage,
+    },
+    async (res) => {
+      if (!res.ok) {
+        const parsedError = await parseErrorResponse(res);
+        throw new ApiError(parsedError.message, res.status, parsedError.detail);
+      }
+      const contentDisposition = res.headers.get("content-disposition") || "";
+      const filenameMatch = /filename="?([^"]+)"?/i.exec(contentDisposition);
+      return {
+        blob: await res.blob(),
+        filename: filenameMatch?.[1] ?? null,
+      };
+    },
   );
-
-  if (!res.ok) {
-    throw new ApiError(await parseErrorResponse(res), res.status);
-  }
-
-  const contentDisposition = res.headers.get("content-disposition") || "";
-  const filenameMatch = /filename="?([^"]+)"?/i.exec(contentDisposition);
-  return {
-    blob: await res.blob(),
-    filename: filenameMatch?.[1] ?? null,
-  };
 }
 
 export const api = {
   get: <T>(path: string, token?: string, options?: Omit<ApiOptions, "token" | "method" | "body">) =>
     apiFetch<T>(path, { ...options, token }),
 
-  post: <T>(path: string, body: unknown, token?: string, options?: Omit<ApiOptions, "token" | "method" | "body">) =>
-    apiFetch<T>(path, { ...options, method: "POST", body, token }),
+  post: <T>(
+    path: string,
+    body: unknown,
+    token?: string,
+    options?: Omit<ApiOptions, "token" | "method" | "body">,
+  ) => apiFetch<T>(path, { ...options, method: "POST", body, token }),
 
-  patch: <T>(path: string, body: unknown, token?: string, options?: Omit<ApiOptions, "token" | "method" | "body">) =>
-    apiFetch<T>(path, { ...options, method: "PATCH", body, token }),
+  patch: <T>(
+    path: string,
+    body: unknown,
+    token?: string,
+    options?: Omit<ApiOptions, "token" | "method" | "body">,
+  ) => apiFetch<T>(path, { ...options, method: "PATCH", body, token }),
 
-  delete: <T>(path: string, token?: string, options?: Omit<ApiOptions, "token" | "method" | "body">) =>
-    apiFetch<T>(path, { ...options, method: "DELETE", token }),
+  delete: <T>(
+    path: string,
+    token?: string,
+    options?: Omit<ApiOptions, "token" | "method" | "body">,
+  ) => apiFetch<T>(path, { ...options, method: "DELETE", token }),
 
   postForm: <T>(
     path: string,
     body: FormData,
     token?: string,
-    options?: Omit<FormApiOptions, "token" | "method" | "body">
-  ) =>
-    apiFormFetch<T>(path, { ...options, method: "POST", body, token }),
+    options?: Omit<FormApiOptions, "token" | "method" | "body">,
+  ) => apiFormFetch<T>(path, { ...options, method: "POST", body, token }),
 
-  download: (path: string, token?: string, options?: Omit<ApiOptions, "token" | "method" | "body">) =>
-    apiDownload(path, { ...options, token }),
+  download: (
+    path: string,
+    token?: string,
+    options?: Omit<ApiOptions, "token" | "method" | "body">,
+  ) => apiDownload(path, { ...options, token }),
 };

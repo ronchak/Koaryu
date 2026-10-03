@@ -1,11 +1,11 @@
-import { DashboardLoadingSkeleton } from "@/components/dashboard-loading-skeleton";
+import { RecordsLoading } from "@/components/records/records-loading";
 
 export default function Loading() {
   return (
-    <DashboardLoadingSkeleton
+    <RecordsLoading
       title="Belt Tracker"
       description="Loading belt ladders, eligibility, and promotion context."
-      variant="table"
+      variant="belt"
     />
   );
 }

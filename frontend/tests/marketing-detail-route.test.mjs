@@ -15,12 +15,17 @@ describe("marketing detail route helper", () => {
 
     assert.deepEqual(generateMarketingDetailStaticParams(featurePages).at(0), { slug: page.slug });
     assert.equal(publicMarketingUrl(page.href), `https://koaryu.app${page.href}`);
-    assert.equal(buildMarketingDetailMetadata(page).alternates.canonical, `https://koaryu.app${page.href}`);
-    assert.equal(buildMarketingDetailStructuredData(page, "Koaryu").url, `https://koaryu.app${page.href}`);
+    assert.equal(
+      buildMarketingDetailMetadata(page).alternates.canonical,
+      `https://koaryu.app${page.href}`,
+    );
+    assert.equal(
+      buildMarketingDetailStructuredData(page, "Koaryu").url,
+      `https://koaryu.app${page.href}`,
+    );
     assert.deepEqual(
       relatedMarketingPages(page, getMarketingPageByRef).map((relatedPage) => relatedPage.slug),
-      page.related.map((related) => related.slug)
+      page.related.map((related) => related.slug),
     );
   });
-
 });

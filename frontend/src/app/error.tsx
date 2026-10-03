@@ -14,15 +14,10 @@ export default function Error({
     <ErrorStatusPage
       statusCode="500"
       eyebrow="Unexpected app error"
-      title="Koaryu hit a bad transition."
-      description="The app caught the problem before it could spill into your studio data. Try the route again or head back to the dashboard."
+      title="Something went wrong."
+      description="Try this page again. If the problem continues, return to the dashboard."
       icon={ServerCrash}
       tone="danger"
-      diagnostics={[
-        { label: "App shell", value: "recovered", state: "warn" },
-        { label: "Session", value: "preserved", state: "ok" },
-        { label: "Retry", value: "available", state: "idle" },
-      ]}
       actions={
         <>
           <StatusAction onClick={reset} icon={RefreshCcw}>

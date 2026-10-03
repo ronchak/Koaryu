@@ -1,6 +1,8 @@
 "use client";
+import { useResumeRefresh } from "@/lib/use-resume-refresh";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { markDashboardReadiness } from "@/lib/performance";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   type BillingSetupStep,
@@ -16,6 +18,8 @@ import {
 import { buildBillingPageModel } from "@/lib/billing-page-model";
 import {
   getBillingInitialLoadAction,
+  getBillingTabFromSearch,
+  getBillingUrlForTab,
   getBillingUrlAfterConnectReturn,
   resolveBillingAuxiliaryReadiness,
   shouldSettleBillingLoadEarly,
@@ -23,11 +27,17 @@ import {
 } from "@/lib/billing-page-state";
 import { requirementGroupItems } from "@/lib/billing-page-utils";
 import { useBillingInvoiceController } from "@/lib/billing-invoice-controller";
+import { useBillingRefundController } from "@/lib/billing-refund-controller";
 import {
   areProviderMutationsEnabled,
   canManageRoutineBilling,
+  resolveBillingProviderActionCapabilities,
   resolveBillingProviderCopy,
 } from "@/lib/billing-policy";
+import {
+  billingWorkflowEnabled,
+  enabledBillingWorkflowIds,
+} from "@/lib/billing-workflow-capabilities";
 import { subscriptionPeriodCopy } from "@/lib/billing-period";
 import {
   PREVIEW_CONNECT,
@@ -61,8 +71,13 @@ type BillingPageControllerOptions = {
     | "studentsLoadError"
     | "studentsMayBePartial"
   >;
-  studioStore: Pick<StudioStoreContextValue, "currentRole">;
+  studioStore: Pick<
+    StudioStoreContextValue,
+    "currentRole" | "currentStudioId" | "currentUserId" | "identityGeneration"
+  >;
 };
+
+const LIVE_SUBSCRIPTIONS_NOT_READ: typeof PREVIEW_SUBSCRIPTIONS = [];
 
 export function useBillingPageController({
   config,
@@ -73,7 +88,7 @@ export function useBillingPageController({
   const router = useRouter();
   const searchParams = useSearchParams();
   const { isPreviewMode, token, markSubscriptionRequired } = config;
-  const { currentRole } = studioStore;
+  const { currentRole, currentStudioId, currentUserId, identityGeneration } = studioStore;
   const { programs, programsLoaded, programsLoadError, refreshPrograms } = programsStore;
   const {
     refreshStudents,
@@ -87,9 +102,16 @@ export function useBillingPageController({
     billingInitialLoadAction === "connect-return"
   );
   const skipNextNormalBillingRefreshRef = useRef(false);
-  const [activeTab, setActiveTab] = useState<BillingTab>("overview");
+  const activeTab = getBillingTabFromSearch(searchParams.toString());
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+
+  const changeBillingTab = useCallback((tab: BillingTab) => {
+    const currentSearch = searchParams.toString();
+    if (getBillingTabFromSearch(currentSearch) !== tab) {
+      router.replace(getBillingUrlForTab(currentSearch, tab), { scroll: false });
+    }
+  }, [router, searchParams]);
 
   const canManageKoaryuSubscription = currentRole === "admin";
   const canViewStudioBilling = currentRole === "admin" || currentRole === "front_desk";
@@ -100,14 +122,20 @@ export function useBillingPageController({
     isPreviewMode,
     hasKnownRestrictedRole: isLiveRestricted,
   });
+  const billingIdentity = currentUserId && currentStudioId ? { userId: currentUserId, studioId: currentStudioId } : null;
+  const billingIdentityKey = billingIdentity ? `${currentUserId}:${currentStudioId}:${currentRole}:${identityGeneration}` : null;
   const handleSubscriptionRequired = useCallback(() => {
     markSubscriptionRequired();
     router.replace("/subscription-required");
   }, [markSubscriptionRequired, router]);
   const {
     billingSystemStatus,
+    landing,
+    ensureBilling,
+    hasMoreHistory,
+    isLoadingMore,
+    loadMoreHistory,
     enrollments,
-    exportJobs,
     hasBillingLoadSettled,
     invoices,
     isLoading,
@@ -118,10 +146,12 @@ export function useBillingPageController({
     plans,
     platformBilling,
     refreshBilling,
+    refreshPaymentAfterRefund,
     refreshConnectStatus,
-    setExportJobs,
-    subscriptions,
   } = useBillingDataController({
+    activeTab,
+    identityKey: billingIdentityKey,
+    identity: billingIdentity,
     canManageKoaryuSubscription,
     canViewStudioBilling,
     isPreviewMode,
@@ -131,22 +161,29 @@ export function useBillingPageController({
     shouldSettleEarly,
     token,
   });
-  const coreProviderMutationsEnabled = areProviderMutationsEnabled(
+  const enabledWorkflowIds = enabledBillingWorkflowIds(
+    billingSystemStatus,
+    currentRole,
     isPreviewMode,
-    billingSystemStatus?.mutation_capabilities.core_subscription
   );
-  const connectOnboardingEnabled = areProviderMutationsEnabled(
+  const {
+    connectDashboardEnabled,
+    connectOnboardingEnabled,
+    coreCheckoutEnabled,
+    corePortalEnabled,
+  } = resolveBillingProviderActionCapabilities({
+    enabledWorkflowIds,
     isPreviewMode,
-    billingSystemStatus?.mutation_capabilities.connect_onboarding
-  );
+    role: currentRole,
+  });
   const connectPaymentsEnabled = areProviderMutationsEnabled(
     isPreviewMode,
-    billingSystemStatus?.mutation_capabilities.connect_payments
+    billingWorkflowEnabled(enabledWorkflowIds, "payer.setup", isPreviewMode)
   );
   const billingProviderCopy = resolveBillingProviderCopy({
     isPreviewMode,
     providerMode: billingSystemStatus?.configured_stripe_mode,
-    coreSubscription: coreProviderMutationsEnabled,
+    coreSubscription: coreCheckoutEnabled || corePortalEnabled,
     connectOnboarding: connectOnboardingEnabled,
     connectPayments: connectPaymentsEnabled,
   });
@@ -166,12 +203,13 @@ export function useBillingPageController({
     studentsLoaded,
     studentsMayBePartial,
   });
-  const showBillingLoading = showPrimaryBillingLoading || auxiliaryReadiness.status === "loading";
+  const showBillingLoading = showPrimaryBillingLoading || (!isPreviewMode && isLoading && activeTab !== "overview") || auxiliaryReadiness.status === "loading";
   const billingPlatform = isPreviewMode ? PREVIEW_PLATFORM : platformBilling;
   const billingConnect = isPreviewMode ? PREVIEW_CONNECT : paymentAccount;
   const billingPlans = isPreviewMode ? PREVIEW_PLANS : plans;
   const billingPayers = isPreviewMode ? PREVIEW_PAYERS : payers;
-  const billingSubscriptions = isPreviewMode ? PREVIEW_SUBSCRIPTIONS : subscriptions;
+  // Live subscription totals come from the landing aggregates; the capped list is not read.
+  const billingSubscriptions = isPreviewMode ? PREVIEW_SUBSCRIPTIONS : LIVE_SUBSCRIPTIONS_NOT_READ;
   const billingEnrollments = isPreviewMode ? PREVIEW_ENROLLMENTS : enrollments;
   const billingInvoices = isPreviewMode ? PREVIEW_INVOICES : invoices;
   const billingPayments = isPreviewMode ? PREVIEW_PAYMENTS : payments;
@@ -179,9 +217,22 @@ export function useBillingPageController({
     billingConnect,
     canManageRoutineBilling: canManageRoutineBillingActions,
     isPreviewMode,
+    payerOperationIdentity: billingIdentity,
+    identityKey: billingIdentityKey,
     refreshBilling,
     setError,
-    setExportJobs,
+    setMessage,
+    token,
+    enabledWorkflowIds,
+  });
+  const refundController = useBillingRefundController({
+    enabledWorkflowIds,
+    identity: billingIdentity,
+    identityKey: billingIdentityKey,
+    isPreviewMode,
+    refreshPaymentAfterRefund,
+    role: currentRole,
+    setError,
     setMessage,
     token,
   });
@@ -201,6 +252,12 @@ export function useBillingPageController({
   const canOpenCustomerPortal = canManageKoaryuSubscription && Boolean(billingPlatform?.stripe_customer_id);
   const hasStripeConnectedAccount = Boolean(billingConnect?.stripe_connected_account_id);
   const canOpenStripeDashboard = Boolean(hasStripeConnectedAccount && billingConnect?.status !== "deauthorized");
+  const canResetConnect = Boolean(
+    !isPreviewMode
+      && canManageKoaryuSubscription
+      && hasStripeConnectedAccount
+      && connectOnboardingEnabled
+  );
   const needsConnectOnboarding = Boolean(
     hasStripeConnectedAccount
       && (
@@ -218,6 +275,7 @@ export function useBillingPageController({
     [billingConnect?.requirements_due]
   );
   const billingPageModel = useMemo(() => buildBillingPageModel({
+    billingLandingAggregates: landing?.aggregates,
     billingMetricsAsOf: isPreviewMode ? PREVIEW_BILLING_METRICS_AS_OF : undefined,
     billingPaymentCohortSummary: isPreviewMode ? null : paymentCohortSummary,
     billingConnect,
@@ -232,6 +290,7 @@ export function useBillingPageController({
     programs,
     students,
   }), [
+    landing,
     billingConnect,
     billingEnrollments,
     billingInvoices,
@@ -256,7 +315,6 @@ export function useBillingPageController({
     hasCollectionHistory,
     hasFamilyAccounts,
     hasStudentBilling,
-    koaryuFeeBasis,
     openInvoiceTotal,
     paidRevenue,
     paymentCohortAvailable,
@@ -274,7 +332,7 @@ export function useBillingPageController({
         ? "Review the studio's existing Stripe status without changing provider state."
         : billingProviderCopy.connectPayments,
       complete: paymentsReady,
-      onSelect: () => setActiveTab("overview"),
+      onSelect: () => changeBillingTab("overview"),
       actionLabel: paymentsReady ? "Review status" : "Review setup",
     },
     {
@@ -282,7 +340,7 @@ export function useBillingPageController({
       title: "Review tuition plans",
       description: "Review the studio's existing tuition plans. Plan changes are currently unavailable.",
       complete: hasBillingPlans,
-      onSelect: () => setActiveTab("plans"),
+      onSelect: () => changeBillingTab("plans"),
       actionLabel: "Review plans",
     },
     {
@@ -290,7 +348,7 @@ export function useBillingPageController({
       title: "Review families",
       description: "Review existing payer accounts for parents, guardians, or adult students.",
       complete: hasFamilyAccounts,
-      onSelect: () => setActiveTab("families"),
+      onSelect: () => changeBillingTab("families"),
       actionLabel: "Review families",
     },
     {
@@ -298,7 +356,7 @@ export function useBillingPageController({
       title: "Attach students",
       description: "Connect active students to the right family, tuition plan, collection mode, and billing dates.",
       complete: hasStudentBilling,
-      onSelect: () => setActiveTab("enrollments"),
+      onSelect: () => changeBillingTab("enrollments"),
       actionLabel: "Attach student",
     },
     {
@@ -306,7 +364,7 @@ export function useBillingPageController({
       title: "Review invoices and payments",
       description: "Record payer-level external payments and reconcile existing provider invoices.",
       complete: hasCollectionHistory,
-      onSelect: () => setActiveTab("invoices"),
+      onSelect: () => changeBillingTab("invoices"),
       actionLabel: "Review invoices",
     },
   ], [
@@ -316,18 +374,18 @@ export function useBillingPageController({
     hasStudentBilling,
     paymentsReady,
     billingProviderCopy.connectPayments,
-    setActiveTab,
+    changeBillingTab,
   ]);
   const billingSetupCompleteCount = billingSetupSteps.filter((step) => step.complete).length;
 
   useEffect(() => {
-    if (!programsLoaded) {
+    if (activeTab === "plans" && !programsLoaded) {
       void refreshPrograms({ includeArchived: false }).catch(() => undefined);
     }
-  }, [programsLoaded, refreshPrograms]);
+  }, [activeTab, programsLoaded, refreshPrograms]);
 
   useEffect(() => {
-    if ((studentsLoaded && !studentsMayBePartial) || isPreviewMode) {
+    if (!["enrollments", "invoices"].includes(activeTab) || (studentsLoaded && !studentsMayBePartial) || isPreviewMode) {
       return;
     }
 
@@ -343,7 +401,7 @@ export function useBillingPageController({
     return () => {
       cancelled = true;
     };
-  }, [isPreviewMode, refreshStudents, studentsLoaded, studentsMayBePartial]);
+  }, [activeTab, isPreviewMode, refreshStudents, studentsLoaded, studentsMayBePartial]);
 
   useEffect(() => {
     if (!connectReturnPending || !token || currentRole === null) {
@@ -382,27 +440,33 @@ export function useBillingPageController({
       return;
     }
     const timer = window.setTimeout(() => {
-      void refreshBilling();
+      void ensureBilling();
     }, 0);
     return () => window.clearTimeout(timer);
   }, [
     billingInitialLoadAction,
     connectReturnPending,
     currentRole,
-    refreshBilling,
+    ensureBilling,
     token,
   ]);
 
   const refreshRequiredBillingDatasets = useCallback(async () => {
     const requests: Promise<unknown>[] = [refreshBilling()];
-    if (activeTab === "plans") {
+    if (["plans", "enrollments", "invoices"].includes(activeTab)) {
       requests.push(refreshPrograms({ includeArchived: false }));
     }
-    if (["overview", "enrollments", "invoices"].includes(activeTab)) {
+    if (["enrollments", "invoices"].includes(activeTab)) {
       requests.push(refreshStudents());
     }
     await Promise.allSettled(requests);
   }, [activeTab, refreshBilling, refreshPrograms, refreshStudents]);
+  useResumeRefresh(refreshRequiredBillingDatasets);
+
+  useEffect(() => markDashboardReadiness("billing", identityGeneration, {
+    useful: Boolean(landing) && !showBillingLoading,
+    complete: Boolean(landing?.aggregates) && hasBillingLoadSettled && !showBillingLoading && !error,
+  }), [identityGeneration, landing, hasBillingLoadSettled, showBillingLoading, error]);
 
   const { connectEntityModal, openConnectEntityModal } = useBillingConnectEntityModal({
     isActionLoading: billingActions.isActionLoading,
@@ -420,8 +484,12 @@ export function useBillingPageController({
 
   const invoiceController = useBillingInvoiceController({
     canReconcileInvoices: canManageRoutineBillingActions,
+    canUseWorkflow: billingActions.canUseWorkflow,
     claimAction: billingActions.claimAction,
     isPreviewMode,
+    operationIdentity: currentUserId && currentStudioId
+      ? { userId: currentUserId, studioId: currentStudioId }
+      : null,
     releaseAction: billingActions.releaseAction,
     refreshBilling,
     setError,
@@ -432,6 +500,9 @@ export function useBillingPageController({
   return {
     contentProps: {
       activeTab,
+      hasMoreHistory,
+      isLoadingMore,
+      loadMoreHistory,
       billingSetupCompleteCount,
       billingSetupSteps,
       billingProviderCopy,
@@ -441,12 +512,12 @@ export function useBillingPageController({
       isLoading,
       isRefreshDisabled: isPreviewMode || isLoading || !canViewStudioBilling,
       message,
-      onChangeTab: setActiveTab,
+      onChangeTab: changeBillingTab,
       onDismissError: () => setError(""),
       onDismissMessage: () => setMessage(""),
       onRefresh: () => void refreshRequiredBillingDatasets(),
       showBillingContent:
-        auxiliaryReadiness.status === "ready" && !showPrimaryBillingLoading,
+        auxiliaryReadiness.status === "ready" && !showBillingLoading,
       showBillingLoading,
       tabContentProps: {
         actions: billingActions,
@@ -455,6 +526,7 @@ export function useBillingPageController({
         activeSubscriptionCount,
         activeTab,
         billingConnect,
+        billingObservedAt: isPreviewMode ? PREVIEW_BILLING_METRICS_AS_OF.toISOString() : landing?.observed_at ?? null,
         billingEnrollments,
         billingInvoices,
         billingPayers,
@@ -468,20 +540,22 @@ export function useBillingPageController({
         canManageRoutineBilling: canManageRoutineBillingActions,
         canOpenCustomerPortal,
         canOpenStripeDashboard,
+        canResetConnect,
         canSubmitEnrollmentForm,
         connectActionLabel,
         connectRequirementItems,
         currentMonthPaymentCount,
         externalPaymentTotal,
-        exportJobs,
         failedInvoiceCount,
         hasStripeConnectedAccount,
         isEnrollmentPayerSelectDisabled,
         isPreviewMode,
-        coreProviderMutationsEnabled,
+        coreCheckoutEnabled,
+        corePortalEnabled,
+        connectDashboardEnabled,
         connectOnboardingEnabled,
         invoiceController,
-        koaryuFeeBasis,
+        refundController,
         onConnectClick: handleConnectClick,
         openInvoiceTotal,
         paidRevenue,
@@ -490,7 +564,7 @@ export function useBillingPageController({
         planNameById,
         stripePaymentTotal,
         studentNameById,
-        studentsLoaded: studentsLoaded && !studentsMayBePartial,
+        studentsLoaded: isPreviewMode || Boolean(landing?.aggregates),
       },
     },
   };

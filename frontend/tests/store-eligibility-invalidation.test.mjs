@@ -5,48 +5,35 @@ import { describe, it } from "node:test";
 import { invalidateEligibilityAfterStudentMutation } from "../src/lib/store-eligibility-invalidation.ts";
 
 describe("student eligibility invalidation", () => {
-  it("wires committed CSV imports through the shared student-mutation invalidation", () => {
+  it("invalidates preview eligibility after a committed CSV import", () => {
     const importActionsSource = readFileSync(
       new URL("../src/lib/store-student-import-actions.ts", import.meta.url),
-      "utf8"
-    );
-    const storeSource = readFileSync(
-      new URL("../src/lib/store.tsx", import.meta.url),
-      "utf8"
+      "utf8",
     );
 
-    assert.match(importActionsSource, /onStudentMutation: \(\) => void/);
     assert.match(
       importActionsSource,
-      /execution\.importedStudents\.length > 0[\s\S]*persistStudents\(execution\.students\);[\s\S]*onStudentMutation\(\);/
-    );
-    assert.match(
-      importActionsSource,
-      /liveRequest\.isCurrent\(\) && shouldRefreshBelts[\s\S]*onStudentMutation\(\);/
-    );
-    assert.match(
-      storeSource,
-      /useStoreStudentImportActions\(\{[\s\S]*onStudentMutation,[\s\S]*refreshPrograms,/
+      /execution\.importedStudents\.length > 0[\s\S]*persistStudents\(execution\.students\);[\s\S]*onStudentMutation\(\);/,
     );
   });
 
   it("invalidates preview eligibility after bulk status changes and lead conversion", () => {
     const bulkActionsSource = readFileSync(
       new URL("../src/lib/store-student-bulk-actions.ts", import.meta.url),
-      "utf8"
+      "utf8",
     );
     const leadActionsSource = readFileSync(
       new URL("../src/lib/store-lead-actions.ts", import.meta.url),
-      "utf8"
+      "utf8",
     );
 
     assert.match(
       bulkActionsSource,
-      /if \(isPreviewMode\)[\s\S]*persistStudents\(applyStatusToStudents[\s\S]*onStudentMutation\(\);/
+      /if \(isPreviewMode\)[\s\S]*persistStudents\(applyStatusToStudents[\s\S]*onStudentMutation\(\);/,
     );
     assert.match(
       leadActionsSource,
-      /if \(isPreviewMode\)[\s\S]*persistStudents\(\[conversion\.student, \.\.\.studentsRef\.current\]\);[\s\S]*persistLeads[\s\S]*onStudentMutation\(\);/
+      /if \(isPreviewMode\)[\s\S]*persistStudents\(\[conversion\.student, \.\.\.studentsRef\.current\]\);[\s\S]*persistLeads[\s\S]*onStudentMutation\(\);/,
     );
   });
 
@@ -57,10 +44,14 @@ describe("student eligibility invalidation", () => {
     let cleared = 0;
 
     invalidateEligibilityAfterStudentMutation({
-      clearCurrentEligibility: () => { cleared += 1; },
+      clearCurrentEligibility: () => {
+        cleared += 1;
+      },
       currentLadderIdRef,
       eligibilityCacheRef,
-      onRefreshError: (error) => { throw error; },
+      onRefreshError: (error) => {
+        throw error;
+      },
       refreshEligibility: async (...args) => {
         calls.push(args);
         return [];

@@ -1,5 +1,6 @@
 import type { StudentRosterStatusFilter } from "@/lib/student-list-page";
-import type { Program, Student, StudentListQueryContract } from "@/types";
+import { withCurrentMinorStatus } from "./student-age.ts";
+import type { Program, Student, StudentListQueryContract, StudentRosterRowResponse } from "@/types";
 
 export type SortKey = NonNullable<StudentListQueryContract["sort_by"]>;
 export type SortDir = NonNullable<StudentListQueryContract["sort_dir"]>;
@@ -45,6 +46,7 @@ interface StudentRosterModeInput {
   hasNewStudentFilter: boolean;
   inactivityThreshold: number | null;
   pagedRosterEnabled: boolean;
+  isPreviewMode?: boolean;
 }
 
 interface StudentRosterLoadStateInput {
@@ -75,7 +77,7 @@ interface StudentRosterEmptyStateInput {
 
 export function formatDate(d?: string | null) {
   if (!d) return "\u2014";
-  return new Date(d).toLocaleDateString("en-US", {
+  return new Date(/^\d{4}-\d{2}-\d{2}$/.test(d) ? `${d}T12:00:00` : d).toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",
     year: "numeric",
@@ -132,8 +134,12 @@ export function buildStudentQueryFilterState({
   newStudentsParam,
   today,
 }: StudentQueryFilterInput) {
-  const inactivityThreshold = Number(inactiveDaysParam || "") || null;
-  const newStudentDays = Number(newStudentsParam || "") || null;
+  const parsedInactivityDays = Number(inactiveDaysParam || "");
+  const parsedNewStudentDays = Number(newStudentsParam || "");
+  const inactivityThreshold = [14, 30, 90].includes(parsedInactivityDays)
+    ? parsedInactivityDays
+    : null;
+  const newStudentDays = [14, 30, 90].includes(parsedNewStudentDays) ? parsedNewStudentDays : null;
   const isNewStudentYtd = newStudentsParam === "ytd";
   const hasNewStudentFilter = Boolean(newStudentDays || isNewStudentYtd);
 
@@ -152,12 +158,30 @@ export function buildStudentQueryFilterState({
 }
 
 export function shouldUseDerivedRosterFilters({
-  fullRosterRequested,
-  hasNewStudentFilter,
-  inactivityThreshold,
   pagedRosterEnabled,
+  isPreviewMode = false,
 }: StudentRosterModeInput) {
-  return !pagedRosterEnabled || Boolean(inactivityThreshold || hasNewStudentFilter || fullRosterRequested);
+  // The flag is the rollout fallback.  Once the cursor consumer is enabled,
+  // all live roster filters stay server-owned, including the deep-link modes.
+  return isPreviewMode || !pagedRosterEnabled;
+}
+
+export function buildServerInactivityByStudentId(
+  students: Array<Pick<Student, "id"> & Partial<Pick<StudentRosterRowResponse, "inactivity_days">>>,
+  inactivityThreshold: number | null,
+) {
+  if (!inactivityThreshold) {
+    return new Map<string, string>();
+  }
+
+  return new Map(
+    students.map((student) => [
+      student.id,
+      typeof student.inactivity_days === "number"
+        ? String(student.inactivity_days)
+        : `${inactivityThreshold}+`,
+    ]),
+  );
 }
 
 export function buildStudentRosterLoadState({
@@ -179,18 +203,17 @@ export function buildStudentRosterLoadState({
   studentsMayBePartial,
   usesDerivedRosterFilters,
 }: StudentRosterLoadStateInput) {
-  const dependencyLoadError = programsLoadError
-    || (scheduleRequired && scheduleStatus === "error"
+  const dependencyLoadError =
+    programsLoadError ||
+    (scheduleRequired && scheduleStatus === "error"
       ? scheduleLoadError || "Schedule could not be loaded."
       : null);
-  const dependenciesLoading = !programsLoaded
-    || (scheduleRequired && scheduleStatus !== "ready");
+  const dependenciesLoading = !programsLoaded || (scheduleRequired && scheduleStatus !== "ready");
   const rosterLoadError = usesDerivedRosterFilters ? studentsLoadError : pagedLoadError;
   const activeLoadError = dependencyLoadError || rosterLoadError;
   const isInitialRosterLoading = usesDerivedRosterFilters
-    ? !activeLoadError && (
-      dependenciesLoading || !studentsLoaded || studentsMayBePartial || isDerivedRosterRefreshing
-    )
+    ? !activeLoadError &&
+      (dependenciesLoading || !studentsLoaded || studentsMayBePartial || isDerivedRosterRefreshing)
     : !activeLoadError && (dependenciesLoading || !pagedLoaded);
   const isRosterRefreshing = !usesDerivedRosterFilters && isPagedLoading && pagedLoaded;
   const visibleTotal = usesDerivedRosterFilters ? studentsCount : pagedTotal;
@@ -232,13 +255,14 @@ export function parseBulkTagsInput(value: string) {
       value
         .split(",")
         .map((tag) => tag.trim())
-        .filter(Boolean)
-    )
+        .filter(Boolean),
+    ),
   );
 }
 
 export function withStudentRosterRefreshWarning(currentMessage: string | null) {
-  const warning = "Koaryu could not refresh the visible roster automatically; refresh the page if the list looks stale.";
+  const warning =
+    "Koaryu could not refresh the visible roster automatically; refresh the page if the list looks stale.";
   return currentMessage ? `${currentMessage} ${warning}` : warning;
 }
 
@@ -247,12 +271,21 @@ export function studentStartDate(student: Student) {
 }
 
 export function isCurrentStudent(student: Student) {
-  return student.status === "active" || student.status === "trialing" || student.status === "paused";
+  return (
+    student.status === "active" || student.status === "trialing" || student.status === "paused"
+  );
 }
 
-export function buildStudentRows(students: Student[], programs: Program[]): StudentRosterRow[] {
-  return students.map((student) => {
+export function buildStudentRows(
+  students: Student[],
+  programs: Program[],
+  businessDate: string,
+): StudentRosterRow[] {
+  return students.map((sourceStudent) => {
+    const student = withCurrentMinorStatus(sourceStudent, businessDate);
     const activeMemberships = student.program_memberships || [];
+    const primaryGuardian =
+      student.guardians.find((guardian) => guardian.is_primary_contact) ?? student.guardians[0];
     return {
       student,
       displayName: displayName(student),
@@ -270,11 +303,7 @@ export function buildStudentRows(students: Student[], programs: Program[]): Stud
           .join(" ")
           .toLowerCase(),
       },
-      contact:
-        student.email ||
-        student.phone ||
-        (student.is_minor && student.guardians[0]?.email) ||
-        "\u2014",
+      contact: student.email || student.phone || primaryGuardian?.email || "\u2014",
       visibleTags: student.tags.slice(0, 2),
       hiddenTagCount: Math.max(0, student.tags.length - 2),
     };
@@ -294,7 +323,7 @@ export function filterStudentRows(
     sortKey,
     sortDir,
     usesDerivedRosterFilters,
-  }: StudentRosterFilterOptions
+  }: StudentRosterFilterOptions,
 ) {
   let list = [...studentRows];
 
@@ -310,7 +339,7 @@ export function filterStudentRows(
         row.searchFields.legalLastName.includes(q) ||
         row.searchFields.preferredName.includes(q) ||
         row.searchFields.email.includes(q) ||
-        row.searchFields.programs.includes(q)
+        row.searchFields.programs.includes(q),
     );
   }
 
@@ -319,18 +348,20 @@ export function filterStudentRows(
   }
 
   if (programFilter) {
-    list = list.filter((row) =>
-      (row.student.program_memberships || []).some((membership) =>
-        membership.program_id === programFilter &&
-        membership.status !== "ended" &&
-        !membership.ended_at
-      ) || row.student.program_id === programFilter
+    list = list.filter(
+      (row) =>
+        (row.student.program_memberships || []).some(
+          (membership) =>
+            membership.program_id === programFilter &&
+            membership.status !== "ended" &&
+            !membership.ended_at,
+        ) || row.student.program_id === programFilter,
     );
   }
 
   if (inactivityThreshold) {
     list = list.filter(
-      (row) => (inactivityByStudentId.get(row.student.id) || 0) >= inactivityThreshold
+      (row) => (inactivityByStudentId.get(row.student.id) || 0) >= inactivityThreshold,
     );
   }
 
@@ -352,10 +383,9 @@ export function filterStudentRows(
     } else if (sortKey === "status") {
       cmp = a.student.status.localeCompare(b.student.status);
     } else if (sortKey === "membership_start_date") {
-      cmp =
-        (a.student.membership_start_date || "").localeCompare(
-          b.student.membership_start_date || ""
-        );
+      cmp = (a.student.membership_start_date || "").localeCompare(
+        b.student.membership_start_date || "",
+      );
     } else if (sortKey === "created_at") {
       cmp = a.student.created_at.localeCompare(b.student.created_at);
     }

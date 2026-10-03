@@ -7,13 +7,11 @@ import type {
   StudentStatus,
   StudentUpdate,
 } from "@/types";
-
-const MINOR_AGE_MS = 18 * 365.25 * 24 * 60 * 60 * 1000;
+import { isMinorOnDate, withCurrentMinorStatus } from "./student-age.ts";
+import { assertStudentBirthDate } from "./student-birth-date.ts";
 
 export function normalizeStudentIds(studentIds: string[]): string[] {
-  return Array.from(
-    new Set(studentIds.map((studentId) => studentId.trim()).filter(Boolean))
-  );
+  return Array.from(new Set(studentIds.map((studentId) => studentId.trim()).filter(Boolean)));
 }
 
 export function normalizeTags(tags: string[]): string[] {
@@ -24,7 +22,7 @@ export function applyAddedTagsToStudents(
   studentList: Student[],
   studentIds: string[],
   tagsToAdd: string[],
-  nowIso = new Date().toISOString()
+  nowIso = new Date().toISOString(),
 ): Student[] {
   const studentIdSet = new Set(studentIds);
 
@@ -45,7 +43,7 @@ export function applyStatusToStudents(
   studentList: Student[],
   studentIds: string[],
   status: StudentStatus,
-  nowIso = new Date().toISOString()
+  nowIso = new Date().toISOString(),
 ): Student[] {
   const studentIdSet = new Set(studentIds);
 
@@ -74,8 +72,8 @@ export function findPreviewStartingRankId(
   const ranks = currentRanks.length > 0 ? currentRanks : ladder.ranks || [];
   return [...ranks]
     .filter((rank) => !rank.is_tip)
-    .sort((left, right) =>
-      left.display_order - right.display_order || left.id.localeCompare(right.id)
+    .sort(
+      (left, right) => left.display_order - right.display_order || left.id.localeCompare(right.id),
     )[0]?.id;
 }
 
@@ -87,15 +85,16 @@ export function buildPreviewStudent(
     beltRanks = [],
     idFactory,
     now = new Date(),
-    nowMs = Date.now(),
+    businessDate = now.toISOString().split("T")[0],
   }: {
     beltLadders?: BeltLadder[];
     beltRanks?: BeltRank[];
     idFactory: () => string;
     now?: Date;
-    nowMs?: number;
-  }
+    businessDate?: string;
+  },
 ): Student {
+  assertStudentBirthDate(data.date_of_birth, businessDate);
   const selectedProgramIds = data.program_ids?.length
     ? data.program_ids
     : data.program_id
@@ -109,7 +108,7 @@ export function buildPreviewStudent(
       index === 0 && data.current_belt_rank_id
         ? data.current_belt_rank_id
         : findPreviewStartingRankId(programId, beltLadders, beltRanks),
-    ])
+    ]),
   );
   const newStudent: Student = {
     id: idFactory(),
@@ -118,9 +117,7 @@ export function buildPreviewStudent(
     legal_last_name: data.legal_last_name,
     preferred_name: data.preferred_name,
     date_of_birth: data.date_of_birth,
-    is_minor: data.date_of_birth
-      ? nowMs - new Date(data.date_of_birth).getTime() < MINOR_AGE_MS
-      : false,
+    is_minor: isMinorOnDate(data.date_of_birth, businessDate),
     hold_start_date: data.hold_start_date,
     hold_end_date: data.hold_end_date,
     email: data.email,
@@ -185,24 +182,71 @@ export function applyPreviewStudentUpdate(
     beltRanks = [],
     idFactory,
     now = new Date(),
+    businessDate = now.toISOString().split("T")[0],
   }: {
     beltLadders?: BeltLadder[];
     beltRanks?: BeltRank[];
     idFactory: () => string;
     now?: Date;
-  }
+    businessDate?: string;
+  },
 ): Student {
+  assertStudentBirthDate(data.date_of_birth, businessDate);
   const nowIso = now.toISOString();
   const hasProgramUpdate = Object.hasOwn(data, "program_ids") || Object.hasOwn(data, "program_id");
+  if (Object.hasOwn(data, "guardians") && data.guardians == null) {
+    throw new Error("Guardians must be an array.");
+  }
+  const guardianIds = (data.guardians ?? [])
+    .filter((patch) => patch.id != null)
+    .map((patch) => patch.id);
+  if (new Set(guardianIds).size !== guardianIds.length) {
+    throw new Error("Duplicate guardian id in student write.");
+  }
+  const guardians = [...student.guardians];
+  for (const patch of data.guardians ?? []) {
+    if (Object.hasOwn(patch, "id")) {
+      const index = guardians.findIndex((guardian) => guardian.id === patch.id);
+      if (index < 0) throw new Error("Guardian is not linked to this student.");
+      if (
+        (Object.hasOwn(patch, "first_name") && !patch.first_name?.trim()) ||
+        (Object.hasOwn(patch, "last_name") && patch.last_name == null) ||
+        (Object.hasOwn(patch, "is_primary_contact") && patch.is_primary_contact == null)
+      )
+        throw new Error("Guardian names and primary contact flag cannot be empty.");
+      const existing = guardians[index];
+      guardians[index] = {
+        ...existing,
+        ...patch,
+        id: existing.id,
+        first_name: patch.first_name?.trim() ?? existing.first_name,
+        last_name: patch.last_name?.trim() ?? existing.last_name,
+        is_primary_contact: patch.is_primary_contact ?? existing.is_primary_contact,
+      };
+    } else {
+      if (!patch.first_name?.trim() || patch.last_name == null) {
+        throw new Error("Guardian first name is required; last name must be a string.");
+      }
+      guardians.push({
+        ...patch,
+        id: idFactory(),
+        first_name: patch.first_name.trim(),
+        last_name: patch.last_name.trim(),
+        is_primary_contact: patch.is_primary_contact ?? false,
+      });
+    }
+  }
   const baseStudent = {
-    ...student,
+    ...withCurrentMinorStatus(student, businessDate),
     ...data,
     legal_first_name: data.legal_first_name ?? student.legal_first_name,
     legal_last_name: data.legal_last_name ?? student.legal_last_name,
     status: data.status ?? student.status,
     tags: data.tags ?? student.tags,
     updated_at: nowIso,
+    guardians,
   };
+  baseStudent.is_minor = withCurrentMinorStatus(baseStudent, businessDate).is_minor;
 
   if (!hasProgramUpdate) {
     return baseStudent;
@@ -215,15 +259,17 @@ export function applyPreviewStudentUpdate(
       : ["program-unassigned"];
   const existingMemberships = new Map(
     (student.program_memberships || [])
-      .filter((membership) => (
-        membership.status === "active" || membership.status === "paused"
-      ) && !membership.ended_at)
-      .map((membership) => [membership.program_id, membership])
+      .filter(
+        (membership) =>
+          (membership.status === "active" || membership.status === "paused") &&
+          !membership.ended_at,
+      )
+      .map((membership) => [membership.program_id, membership]),
   );
   const membershipStartWasSupplied = Object.hasOwn(data, "membership_start_date");
   const membershipStart = membershipStartWasSupplied
-    ? data.membership_start_date ?? null
-    : student.membership_start_date ?? nowIso.split("T")[0];
+    ? (data.membership_start_date ?? null)
+    : (student.membership_start_date ?? null);
   const memberships = selectedProgramIds.map((programId, index) => {
     const existing = existingMemberships.get(programId);
     const program = programs.find((item) => item.id === programId);
@@ -242,10 +288,8 @@ export function applyPreviewStudentUpdate(
       program_id: programId,
       program_name: program?.name,
       program_color_hex: program?.color_hex,
-      status: "active" as const,
-      started_at: membershipStartWasSupplied
-        ? membershipStart ?? existing?.started_at ?? null
-        : existing?.started_at ?? membershipStart,
+      status: existing?.status ?? ("active" as const),
+      started_at: existing ? (existing.started_at ?? null) : membershipStart,
       ended_at: null,
       current_belt_rank_id: currentBeltRankId,
       created_at: existing?.created_at ?? nowIso,
@@ -260,4 +304,28 @@ export function applyPreviewStudentUpdate(
     current_belt_rank_id: memberships[0]?.current_belt_rank_id,
     program_memberships: memberships,
   };
+}
+
+// Synchronize only the contacts actually edited; an ordinary profile save must
+// not overwrite another cached student's newer shared contact details.
+export function applyStudentProfileResponse(
+  students: Student[],
+  saved: Student,
+  data: StudentUpdate,
+): Student[] {
+  const changedIds = new Set((data.guardians ?? []).map((guardian) => guardian.id));
+  const contacts = new Map(
+    saved.guardians
+      .filter((guardian) => changedIds.has(guardian.id))
+      .map((guardian) => [guardian.id, guardian]),
+  );
+  return students.map((student) => {
+    if (student.studio_id !== saved.studio_id) return student;
+    if (student.id === saved.id) return saved;
+    if (!contacts.size) return student;
+    return {
+      ...student,
+      guardians: student.guardians.map((guardian) => contacts.get(guardian.id) ?? guardian),
+    };
+  });
 }

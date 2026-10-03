@@ -1,6 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import { useEffect, useState } from "react";
 import { Header } from "@/components/header";
 import {
   StudentRosterBulkActionPanels,
@@ -14,6 +15,7 @@ import {
   StudentRosterFooter,
   StudentRosterLoadError,
   StudentRosterLoading,
+  StudentRosterReadingRail,
   StudentRosterTable,
 } from "@/components/students/student-roster-sections";
 import { Button } from "@/components/ui/button";
@@ -21,14 +23,31 @@ import type { StudentRosterStatusFilter } from "@/lib/student-list-page";
 import type { SortDir, SortKey, StudentRosterRow } from "@/lib/students-page-model";
 import type { Program, StudentCreate, StudentStatus } from "@/types";
 import { Upload, UserPlus } from "lucide-react";
+import styles from "./student-records.module.css";
 
 const StudentForm = dynamic(
   () => import("@/components/students/student-form").then((mod) => mod.StudentForm),
   {
     loading: () => <StudentFormLoading />,
     ssr: false,
-  }
+  },
 );
+
+const QUICK_VIEW_MEDIA_QUERY = "(min-width: 1400px)";
+
+function useQuickViewVisible() {
+  const [isVisible, setIsVisible] = useState(false);
+
+  useEffect(() => {
+    const media = window.matchMedia(QUICK_VIEW_MEDIA_QUERY);
+    const updateVisibility = () => setIsVisible(media.matches);
+    updateVisibility();
+    media.addEventListener("change", updateVisibility);
+    return () => media.removeEventListener("change", updateVisibility);
+  }, []);
+
+  return isVisible;
+}
 
 type StudentRosterPageContentProps = {
   actionMessage: string | null;
@@ -43,11 +62,14 @@ type StudentRosterPageContentProps = {
   filtered: StudentRosterRow[];
   fullRosterRequested: boolean;
   hasActiveFilters: boolean;
+  hasNextPage: boolean;
   hasNewStudentFilter: boolean;
+  hasPreviousPage: boolean;
   inactivityByStudentId: ReadonlyMap<string, string>;
   inactivityThreshold: number | null;
   isAdding: boolean;
   isAddingTags: boolean;
+  isBulkCommandPending: boolean;
   isDeleting: boolean;
   isInitialRosterLoading: boolean;
   isNewStudentYtd: boolean;
@@ -115,11 +137,14 @@ export function StudentRosterPageContent({
   filtered,
   fullRosterRequested,
   hasActiveFilters,
+  hasNextPage,
   hasNewStudentFilter,
+  hasPreviousPage,
   inactivityByStudentId,
   inactivityThreshold,
   isAdding,
   isAddingTags,
+  isBulkCommandPending,
   isDeleting,
   isInitialRosterLoading,
   isNewStudentYtd,
@@ -173,8 +198,12 @@ export function StudentRosterPageContent({
   usesDerivedRosterFilters,
   visibleTotal,
 }: StudentRosterPageContentProps) {
+  const [focusedStudentId, setFocusedStudentId] = useState<string | null>(null);
+  const isQuickViewVisible = useQuickViewVisible();
+  const focusedRow = filtered.find((row) => row.student.id === focusedStudentId) ?? null;
+
   return (
-    <>
+    <div className={`flex min-h-full flex-col ${styles.rosterPrintRoot}`}>
       <Header
         title="Students"
         description={
@@ -197,7 +226,7 @@ export function StudentRosterPageContent({
         ) : null}
       </Header>
 
-      <div className="flex-1 flex flex-col">
+      <div className={`flex-1 flex flex-col ${styles.rosterWorkspace}`}>
         <StudentRosterNotices
           actionMessage={actionMessage}
           fullRosterRequested={fullRosterRequested}
@@ -213,15 +242,19 @@ export function StudentRosterPageContent({
         <StudentRosterToolbar
           activeBulkPanel={activeBulkPanel}
           canManageRoster={canManageRoster}
+          isBulkCommandPending={isBulkCommandPending}
           isRosterRefreshing={isRosterRefreshing}
           onProgramFilterChange={onProgramFilterChange}
           onSearchChange={onSearchChange}
+          onSort={onSort}
           onStatusFilterChange={onStatusFilterChange}
           onToggleBulkPanel={onToggleBulkPanel}
           programFilter={programFilter}
           programs={programs}
           search={search}
           selectedCount={selectedCount}
+          sortDir={sortDir}
+          sortKey={sortKey}
           statusFilter={statusFilter}
         />
 
@@ -232,6 +265,7 @@ export function StudentRosterPageContent({
             bulkStatus={bulkStatus}
             deleteError={deleteError}
             isAddingTags={isAddingTags}
+            isBulkCommandPending={isBulkCommandPending}
             isDeleting={isDeleting}
             isUpdatingStatus={isUpdatingStatus}
             onAddTags={onAddTags}
@@ -247,12 +281,9 @@ export function StudentRosterPageContent({
           />
         ) : null}
 
-        <div className="overflow-x-auto flex-1">
+        <div className={`flex-1 ${styles.rosterViewport}`}>
           {activeLoadError ? (
-            <StudentRosterLoadError
-              activeLoadError={activeLoadError}
-              onRetry={onRetryRosterLoad}
-            />
+            <StudentRosterLoadError activeLoadError={activeLoadError} onRetry={onRetryRosterLoad} />
           ) : isInitialRosterLoading ? (
             <StudentRosterLoading />
           ) : filtered.length === 0 ? (
@@ -265,26 +296,44 @@ export function StudentRosterPageContent({
               onImportCsv={onImportCsv}
             />
           ) : (
-            <StudentRosterTable
-              allSelected={allSelected}
-              canManageRoster={canManageRoster}
-              filtered={filtered}
-              handleSort={onSort}
-              inactivityByStudentId={inactivityByStudentId}
-              inactivityThreshold={inactivityThreshold}
-              onOpenStudent={onOpenStudent}
-              programs={programs}
-              selectedIds={selectedIds}
-              sortDir={sortDir}
-              sortKey={sortKey}
-              toggleSelect={onToggleSelect}
-              toggleSelectAll={onToggleSelectAll}
-            />
+            <div className={styles.rosterWorkbench}>
+              <div className={styles.rosterLedger}>
+                <StudentRosterTable
+                  allSelected={allSelected}
+                  canManageRoster={canManageRoster}
+                  filtered={filtered}
+                  focusedStudentId={focusedRow?.student.id ?? null}
+                  handleSort={onSort}
+                  inactivityByStudentId={inactivityByStudentId}
+                  inactivityThreshold={inactivityThreshold}
+                  isBulkCommandPending={isBulkCommandPending}
+                  onFocusStudent={setFocusedStudentId}
+                  onHoverStudent={isQuickViewVisible ? setFocusedStudentId : undefined}
+                  onOpenStudent={onOpenStudent}
+                  programs={programs}
+                  selectedIds={selectedIds}
+                  sortDir={sortDir}
+                  sortKey={sortKey}
+                  toggleSelect={onToggleSelect}
+                  toggleSelectAll={onToggleSelectAll}
+                />
+              </div>
+              <div className={styles.rosterRailSlot}>
+                <StudentRosterReadingRail
+                  inactivity={
+                    focusedRow ? (inactivityByStudentId.get(focusedRow.student.id) ?? null) : null
+                  }
+                  onOpenStudent={onOpenStudent}
+                  row={focusedRow}
+                />
+              </div>
+            </div>
           )}
         </div>
 
         <StudentRosterFooter
           filteredCount={filtered.length}
+          isBulkCommandPending={isBulkCommandPending}
           isPagedLoading={isPagedLoading}
           onNextPage={onNextPage}
           onPreviousPage={onPreviousPage}
@@ -292,6 +341,8 @@ export function StudentRosterPageContent({
           pageEnd={pageEnd}
           pageStart={pageStart}
           pagedTotal={pagedTotal}
+          hasNextPage={hasNextPage}
+          hasPreviousPage={hasPreviousPage}
           studentsCount={studentsCount}
           totalPages={totalPages}
           usesDerivedRosterFilters={usesDerivedRosterFilters}
@@ -305,6 +356,6 @@ export function StudentRosterPageContent({
           isLoading={isAdding}
         />
       ) : null}
-    </>
+    </div>
   );
 }

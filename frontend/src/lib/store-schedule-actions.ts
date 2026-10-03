@@ -3,15 +3,12 @@ import { useCallback, useRef, type Dispatch, type SetStateAction } from "react";
 import { api } from "@/lib/api";
 import {
   beginScheduleMutationState,
-  buildScheduleRangeRequest,
   compareSessions,
   finishScheduleMutationState,
   getPreviewTemplateSessionDates,
-  isScheduleRangeCommitCurrent,
   isScheduleReadCurrent,
   shouldReconcileSchedule,
   mergeAttendanceForSessions,
-  mergeSessionsForRange,
   normalizeAttendanceRecords,
   runOptimisticAttendanceToggle,
   runScheduleRangeRefreshWithRetry,
@@ -19,12 +16,13 @@ import {
   setScheduleRequestedRangeState,
   updateSessionAttendanceCount,
   type ScheduleCoordinatorState,
+  type ScheduleMutationRefresh,
   type ScheduleRangeRefreshIntent,
+  type ScheduleTemplateCreateResult,
   type SessionAttendanceRefreshResult,
 } from "@/lib/schedule-store-model";
 import type { BeginLiveAuthRequest, StoreRef } from "@/lib/store-action-types";
 import type { DatasetLoadStatus } from "@/lib/page-dataset-readiness";
-import { canMaterializeScheduleRange } from "@/lib/staff-permissions";
 import { localId } from "@/lib/store-storage";
 import type {
   AttendanceRecord,
@@ -33,15 +31,11 @@ import type {
   ClassSessionDeleteScope,
   ClassTemplate,
   ClassTemplateCreate,
-  StaffRoleName,
 } from "@/types";
-
-const SCHEDULE_ATTENDANCE_BULK_THRESHOLD = 3;
 
 interface UseStoreScheduleActionsOptions {
   attendanceRef: StoreRef<AttendanceRecord[]>;
   beginLiveAuthRequest: BeginLiveAuthRequest;
-  currentRole: StaffRoleName | null;
   isPreviewMode: boolean;
   persistAttendance: (next: AttendanceRecord[]) => void;
   persistSessions: (next: ClassSession[]) => void;
@@ -60,7 +54,6 @@ interface UseStoreScheduleActionsOptions {
 export function useStoreScheduleActions({
   attendanceRef,
   beginLiveAuthRequest,
-  currentRole,
   isPreviewMode,
   persistAttendance,
   persistSessions,
@@ -75,7 +68,12 @@ export function useStoreScheduleActions({
   setTemplates,
   templatesRef,
 }: UseStoreScheduleActionsOptions) {
-  const canMaterializeSchedule = canMaterializeScheduleRange(currentRole);
+  const rangeRequestRef = useRef<{
+    identity: object;
+    key: string;
+    promise: Promise<ClassSession[]>;
+    isCurrent: () => boolean;
+  } | null>(null);
   const scheduleMutationWaitersRef = useRef(new Set<() => void>());
 
   const releaseScheduleMutationWaiters = useCallback(() => {
@@ -103,6 +101,50 @@ export function useStoreScheduleActions({
     });
   }, [scheduleCoordinatorRef]);
 
+  // A finish that is not the last in-flight write of its reset epoch waits here for the
+  // single reconciliation that the epoch's last finish runs after every earlier write.
+  const postMutationRefreshWaitersRef = useRef(
+    new Set<{ resetEpoch: number; resolve: (value: ScheduleMutationRefresh) => void }>(),
+  );
+
+  // Waiters registered before a reconciliation starts are covered by it. Later waiters
+  // belong to a write that began afterwards, whose own last finish reconciles again.
+  const takePostMutationRefreshWaiters = useCallback(
+    (includes: (resetEpoch: number) => boolean) => {
+      const waiters = [...postMutationRefreshWaitersRef.current].filter((waiter) =>
+        includes(waiter.resetEpoch),
+      );
+      for (const waiter of waiters) postMutationRefreshWaitersRef.current.delete(waiter);
+      return waiters;
+    },
+    [],
+  );
+
+  const materializeAfterMutation = useCallback(async (): Promise<ScheduleMutationRefresh> => {
+    const maximumAttempts = 3;
+    for (let attempt = 1; attempt <= maximumAttempts; attempt += 1) {
+      const attemptRequest = beginLiveAuthRequest();
+      try {
+        await reconcileSchedule("materialize");
+      } catch (error) {
+        if (!attemptRequest.canRetryAfterTokenChange?.()) throw error;
+      }
+      if (attemptRequest.isCurrent()) {
+        return scheduleCoordinatorRef.current.hasAuthoritativeSnapshot ? "refreshed" : "deferred";
+      }
+      if (!attemptRequest.canRetryAfterTokenChange?.() || attempt === maximumAttempts) {
+        return "deferred";
+      }
+      // A token renewal discarded this attempt, and the renewal's own read may have
+      // satisfied the snapshot. That read cannot stand in for materialization.
+      scheduleCoordinatorRef.current = {
+        ...scheduleCoordinatorRef.current,
+        hasAuthoritativeSnapshot: false,
+      };
+    }
+    return "deferred";
+  }, [beginLiveAuthRequest, reconcileSchedule, scheduleCoordinatorRef]);
+
   const beginScheduleMutation = useCallback(() => {
     const request = beginLiveAuthRequest();
     const generation = scheduleCoordinatorRef.current.generation;
@@ -113,276 +155,277 @@ export function useStoreScheduleActions({
 
     return {
       request,
-      isCurrent: () => request.isCurrent()
-        && scheduleCoordinatorRef.current.generation === generation,
-      finish: async () => {
+      isCurrent: () =>
+        request.isCurrent() && scheduleCoordinatorRef.current.generation === generation,
+      // Callers that report the refresh can wait for the shared outcome when another
+      // write is still in flight; others keep settling as soon as their own write does.
+      finish: async ({ awaitSharedRefresh = false } = {}): Promise<ScheduleMutationRefresh> => {
         if (finished) {
-          return;
+          return "deferred";
         }
         finished = true;
         const beforeFinish = scheduleCoordinatorRef.current;
         const afterFinish = finishScheduleMutationState(beforeFinish, generation);
         scheduleCoordinatorRef.current = afterFinish;
+        if (afterFinish === beforeFinish) {
+          // A reset abandoned this write's epoch; the reset's reload owns the schedule now.
+          for (const waiter of takePostMutationRefreshWaiters(
+            (resetEpoch) => resetEpoch < afterFinish.resetEpoch,
+          )) {
+            waiter.resolve("deferred");
+          }
+          releaseScheduleMutationWaiters();
+          return "deferred";
+        }
+        if (afterFinish.mutationsInFlight > 0) {
+          if (!awaitSharedRefresh) return "deferred";
+          return new Promise<ScheduleMutationRefresh>((resolve) => {
+            postMutationRefreshWaitersRef.current.add({
+              resetEpoch: afterFinish.resetEpoch,
+              resolve,
+            });
+          });
+        }
+        const covered = takePostMutationRefreshWaiters(
+          (resetEpoch) => resetEpoch === afterFinish.resetEpoch,
+        );
+        let outcome: ScheduleMutationRefresh = "deferred";
         try {
-          if (
-            afterFinish !== beforeFinish
-            && shouldReconcileSchedule(afterFinish)
-          ) {
-            await reconcileSchedule("materialize");
+          if (shouldReconcileSchedule(afterFinish)) {
+            outcome = await materializeAfterMutation();
           }
         } catch (error) {
           console.error("Failed to reconcile schedule after a mutation", error);
+          outcome = "failed";
         } finally {
           releaseScheduleMutationWaiters();
+          for (const waiter of covered) waiter.resolve(outcome);
         }
+        return outcome;
       },
     };
   }, [
     beginLiveAuthRequest,
-    reconcileSchedule,
+    materializeAfterMutation,
     releaseScheduleMutationWaiters,
     scheduleCoordinatorRef,
     setScheduleLoadError,
     setScheduleStatus,
+    takePostMutationRefreshWaiters,
   ]);
 
-  const refreshScheduleRange = useCallback(async (
-    startDate: string,
-    endDate: string,
-    intent: ScheduleRangeRefreshIntent
-  ): Promise<ClassSession[]> => {
-    if (isPreviewMode) {
-      return sessionsRef.current.filter((session) => session.date >= startDate && session.date <= endDate);
-    }
-
-    try {
-      return await runScheduleRangeRefreshWithRetry(async () => {
+  const refreshScheduleRange = useCallback(
+    (
+      startDate: string,
+      endDate: string,
+      intent: ScheduleRangeRefreshIntent,
+    ): Promise<ClassSession[]> => {
+      if (isPreviewMode) {
+        return Promise.resolve(
+          sessionsRef.current.filter(
+            (session) => session.date >= startDate && session.date <= endDate,
+          ),
+        );
+      }
       const request = beginLiveAuthRequest();
       const coordinator = scheduleCoordinatorRef.current;
-      const requestSequence = coordinator.rangeRequestSequence + 1;
-      const attendanceRequestSequence = coordinator.attendanceRequestSequence + 1;
+      const key = `${request.token}:${coordinator.generation}:${startDate}:${endDate}:${intent}`;
+      const pending = rangeRequestRef.current;
+      if (pending?.key === key && pending.isCurrent()) return pending.promise;
+
+      // The existing reconciliation queue owns every window read and materialization.
+      // Changing the desired range invalidates older reads before they can commit or retry.
       scheduleCoordinatorRef.current = {
         ...setScheduleRequestedRangeState(coordinator, { startDate, endDate }),
-        attendanceRequestSequence,
-        rangeRequestSequence: requestSequence,
+        hasAuthoritativeSnapshot: false,
+        attendanceRequestSequence: coordinator.attendanceRequestSequence + 1,
+        rangeRequestSequence: coordinator.rangeRequestSequence + 1,
       };
-      const dataRevision = coordinator.dataRevision;
-      const generation = coordinator.generation;
-      const isCurrentRequest = () => isScheduleReadCurrent({
-        authCurrent: request.isCurrent(),
-        currentGeneration: scheduleCoordinatorRef.current.generation,
-        currentDataRevision: scheduleCoordinatorRef.current.dataRevision,
-        currentRequestSequence: scheduleCoordinatorRef.current.rangeRequestSequence,
-        dataRevisionAtStart: dataRevision,
-        generationAtStart: generation,
-        mutationsInFlight: scheduleCoordinatorRef.current.mutationsInFlight,
-        requestSequenceAtStart: requestSequence,
+      const identity = {};
+      // A token renewal invalidates transport results, not the caller's calendar range.
+      // Keep that caller alive only while the authoritative identity and range survive.
+      const isCurrent = () =>
+        (request.isCurrent() || request.canRetryAfterTokenChange?.() === true) &&
+        rangeRequestRef.current?.identity === identity &&
+        scheduleCoordinatorRef.current.requestedRange?.startDate === startDate &&
+        scheduleCoordinatorRef.current.requestedRange?.endDate === endDate;
+      const promise = runScheduleRangeRefreshWithRetry(
+        async () => {
+          if (!isCurrent()) throw new Error("Schedule range refresh was superseded. Please retry.");
+          const attemptRequest = beginLiveAuthRequest();
+          try {
+            await reconcileSchedule(intent);
+          } catch (error) {
+            if (!isCurrent() || !attemptRequest.canRetryAfterTokenChange?.()) throw error;
+          }
+          if (!isCurrent()) throw new Error("Schedule range refresh was superseded. Please retry.");
+          if (!attemptRequest.isCurrent()) {
+            // Replay through the same queue with current auth and the original intent.
+            // A renewal's background read cannot stand in for calendar materialization.
+            scheduleCoordinatorRef.current = {
+              ...scheduleCoordinatorRef.current,
+              hasAuthoritativeSnapshot: false,
+            };
+            return { committed: false, value: [] };
+          }
+          return {
+            committed:
+              scheduleCoordinatorRef.current.hasAuthoritativeSnapshot &&
+              scheduleCoordinatorRef.current.mutationsInFlight === 0,
+            value: sessionsRef.current.filter(
+              (session) => session.date >= startDate && session.date <= endDate,
+            ),
+          };
+        },
+        3,
+        waitForScheduleMutationSettlement,
+      ).finally(() => {
+        if (rangeRequestRef.current?.promise === promise) rangeRequestRef.current = null;
       });
-      const attendanceIsCurrent = () => isScheduleReadCurrent({
-        authCurrent: request.isCurrent(),
-        currentGeneration: scheduleCoordinatorRef.current.generation,
-        currentDataRevision: scheduleCoordinatorRef.current.dataRevision,
-        currentRequestSequence: scheduleCoordinatorRef.current.attendanceRequestSequence,
-        dataRevisionAtStart: dataRevision,
-        generationAtStart: generation,
-        mutationsInFlight: scheduleCoordinatorRef.current.mutationsInFlight,
-        requestSequenceAtStart: attendanceRequestSequence,
-      });
-      const rangeRequest = buildScheduleRangeRequest(
-        startDate,
-        endDate,
-        intent,
-        canMaterializeSchedule
-      );
-      const rangeSessions = rangeRequest.method === "POST"
-        ? await api.post<ClassSession[]>(
-            rangeRequest.path,
-            {},
-            request.token
-          )
-        : await api.get<ClassSession[]>(rangeRequest.path, request.token);
-      const attendanceQuery = rangeSessions.length >= SCHEDULE_ATTENDANCE_BULK_THRESHOLD
-        ? `/schedule/attendance?start_date=${encodeURIComponent(startDate)}&end_date=${encodeURIComponent(endDate)}`
-        : `/schedule/attendance?${rangeSessions
-            .map((sessionItem) => `session_ids=${encodeURIComponent(sessionItem.id)}`)
-            .join("&")}`;
+      rangeRequestRef.current = { identity, key, promise, isCurrent };
+      return promise;
+    },
+    [
+      beginLiveAuthRequest,
+      isPreviewMode,
+      reconcileSchedule,
+      scheduleCoordinatorRef,
+      sessionsRef,
+      waitForScheduleMutationSettlement,
+    ],
+  );
 
-      let attendanceRecords: AttendanceRecord[] | null = [];
-      if (rangeSessions.length > 0) {
-        try {
-          attendanceRecords = normalizeAttendanceRecords(
-            await api.get<AttendanceRecord[]>(attendanceQuery, request.token)
-          );
-        } catch (error) {
-          attendanceRecords = null;
-          console.error("Failed to refresh schedule attendance", error);
-        }
-      }
-
-      if (!isScheduleRangeCommitCurrent(isCurrentRequest(), attendanceIsCurrent())) {
-        return { committed: false, value: rangeSessions };
-      }
-
-      if (attendanceRecords === null) {
-        throw new Error("Schedule attendance could not be loaded.");
-      }
-
-      const replacedSessionIds = Array.from(
-        new Set([
-          ...sessionsRef.current
-            .filter((session) => session.date >= startDate && session.date <= endDate)
-            .map((session) => session.id),
-          ...rangeSessions.map((session) => session.id),
-        ])
-      );
-
-      setSessions((current) => mergeSessionsForRange(current, rangeSessions, startDate, endDate));
-      setAttendance((current) =>
-        mergeAttendanceForSessions(current, attendanceRecords, replacedSessionIds)
-      );
-      return { committed: true, value: rangeSessions };
-      }, 3, waitForScheduleMutationSettlement);
-    } finally {
-      if (shouldReconcileSchedule(scheduleCoordinatorRef.current)) {
-        void reconcileSchedule(intent).catch((error) => {
-          console.error("Failed to reconcile schedule after a range refresh", error);
-        });
-      }
-    }
-  }, [
-    beginLiveAuthRequest,
-    canMaterializeSchedule,
-    isPreviewMode,
-    reconcileSchedule,
-    scheduleCoordinatorRef,
-    sessionsRef,
-    setAttendance,
-    setSessions,
-    waitForScheduleMutationSettlement,
-  ]);
-
-  const refreshSessionAttendance = useCallback(async (
-    sessionId: string
-  ): Promise<SessionAttendanceRefreshResult> => {
-    if (isPreviewMode) {
-      return {
-        committed: true,
-        records: attendanceRef.current.filter((record) => record.session_id === sessionId),
-      };
-    }
-
-    try {
-      while (true) {
-        const request = beginLiveAuthRequest();
-        const coordinator = scheduleCoordinatorRef.current;
-        const requestSequence = coordinator.attendanceRequestSequence + 1;
-        scheduleCoordinatorRef.current = {
-          ...coordinator,
-          attendanceRequestSequence: requestSequence,
+  const refreshSessionAttendance = useCallback(
+    async (sessionId: string): Promise<SessionAttendanceRefreshResult> => {
+      if (isPreviewMode) {
+        return {
+          committed: true,
+          records: attendanceRef.current.filter((record) => record.session_id === sessionId),
         };
-        const dataRevision = coordinator.dataRevision;
-        const generation = coordinator.generation;
-        const records = await api.get<AttendanceRecord[]>(
-          `/schedule/attendance?session_ids=${encodeURIComponent(sessionId)}`,
-          request.token
-        );
-        const normalizedRecords = normalizeAttendanceRecords(records);
-        const current = scheduleCoordinatorRef.current;
-        const authCurrent = request.isCurrent();
-        const generationCurrent = current.generation === generation;
-        if (!isScheduleReadCurrent({
-          authCurrent,
-          currentGeneration: current.generation,
-          currentDataRevision: current.dataRevision,
-          currentRequestSequence: current.attendanceRequestSequence,
-          dataRevisionAtStart: dataRevision,
-          generationAtStart: generation,
-          mutationsInFlight: current.mutationsInFlight,
-          requestSequenceAtStart: requestSequence,
-        })) {
-          if (shouldRetryScheduleReadAfterCoordinatorChange(authCurrent, generationCurrent)) {
-            continue;
+      }
+
+      try {
+        while (true) {
+          const request = beginLiveAuthRequest();
+          const coordinator = scheduleCoordinatorRef.current;
+          const requestSequence = coordinator.attendanceRequestSequence + 1;
+          scheduleCoordinatorRef.current = {
+            ...coordinator,
+            attendanceRequestSequence: requestSequence,
+          };
+          const dataRevision = coordinator.dataRevision;
+          const generation = coordinator.generation;
+          const records = await api.get<AttendanceRecord[]>(
+            `/schedule/attendance?session_ids=${encodeURIComponent(sessionId)}`,
+            request.token,
+          );
+          const normalizedRecords = normalizeAttendanceRecords(records);
+          const current = scheduleCoordinatorRef.current;
+          const authCurrent = request.isCurrent();
+          const generationCurrent = current.generation === generation;
+          if (
+            !isScheduleReadCurrent({
+              authCurrent,
+              currentGeneration: current.generation,
+              currentDataRevision: current.dataRevision,
+              currentRequestSequence: current.attendanceRequestSequence,
+              dataRevisionAtStart: dataRevision,
+              generationAtStart: generation,
+              mutationsInFlight: current.mutationsInFlight,
+              requestSequenceAtStart: requestSequence,
+            })
+          ) {
+            if (shouldRetryScheduleReadAfterCoordinatorChange(authCurrent, generationCurrent)) {
+              continue;
+            }
+            if (current.mutationsInFlight > 0) {
+              await waitForScheduleMutationSettlement();
+              continue;
+            }
+            return { committed: false, records: normalizedRecords };
           }
-          if (current.mutationsInFlight > 0) {
-            await waitForScheduleMutationSettlement();
-            continue;
-          }
-          return { committed: false, records: normalizedRecords };
+          setAttendance((existing) =>
+            mergeAttendanceForSessions(existing, normalizedRecords, [sessionId]),
+          );
+          return { committed: true, records: normalizedRecords };
         }
-        setAttendance((existing) =>
-          mergeAttendanceForSessions(existing, normalizedRecords, [sessionId])
-        );
-        return { committed: true, records: normalizedRecords };
+      } finally {
+        if (shouldReconcileSchedule(scheduleCoordinatorRef.current)) {
+          void reconcileSchedule("materialize").catch((error) => {
+            console.error("Failed to reconcile schedule after an attendance refresh", error);
+          });
+        }
       }
-    } finally {
-      if (shouldReconcileSchedule(scheduleCoordinatorRef.current)) {
-        void reconcileSchedule("materialize").catch((error) => {
-          console.error("Failed to reconcile schedule after an attendance refresh", error);
-        });
-      }
-    }
-  }, [
-    attendanceRef,
-    beginLiveAuthRequest,
-    isPreviewMode,
-    reconcileSchedule,
-    scheduleCoordinatorRef,
-    setAttendance,
-    waitForScheduleMutationSettlement,
-  ]);
+    },
+    [
+      attendanceRef,
+      beginLiveAuthRequest,
+      isPreviewMode,
+      reconcileSchedule,
+      scheduleCoordinatorRef,
+      setAttendance,
+      waitForScheduleMutationSettlement,
+    ],
+  );
 
-  const addTemplate = useCallback(async (data: ClassTemplateCreate): Promise<ClassTemplate> => {
-    if (isPreviewMode) {
-      const startDate = data.start_date || new Date().toISOString().split("T")[0];
-      const newTemplate: ClassTemplate = {
-        id: localId(),
-        studio_id: "mock-studio",
-        name: data.name,
-        day_of_week: data.day_of_week,
-        start_time: data.start_time,
-        end_time: data.end_time,
-        start_date: startDate,
-        end_date: data.end_date,
-        instructor_id: data.instructor_id,
-        program_id: data.program_id,
-        capacity: data.capacity,
-        is_active: true,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      };
-      persistTemplates([...templatesRef.current, newTemplate]);
-
-      const existingKeys = new Set(
-        sessionsRef.current
-          .filter((session) => session.template_id)
-          .map((session) => `${session.template_id}:${session.date}`)
-      );
-      const generatedSessions = getPreviewTemplateSessionDates(newTemplate)
-        .filter((dateValue) => !existingKeys.has(`${newTemplate.id}:${dateValue}`))
-        .map((dateValue) => ({
+  const addTemplate = useCallback(
+    async (data: ClassTemplateCreate): Promise<ScheduleTemplateCreateResult> => {
+      if (isPreviewMode) {
+        const startDate = data.start_date || new Date().toISOString().split("T")[0];
+        const newTemplate: ClassTemplate = {
           id: localId(),
           studio_id: "mock-studio",
-          template_id: newTemplate.id,
-          name: newTemplate.name,
-          date: dateValue,
-          start_time: newTemplate.start_time,
-          end_time: newTemplate.end_time,
-          instructor_id: newTemplate.instructor_id,
-          program_id: newTemplate.program_id,
-          capacity: newTemplate.capacity,
-          status: "scheduled" as const,
+          name: data.name,
+          day_of_week: data.day_of_week,
+          start_time: data.start_time,
+          end_time: data.end_time,
+          start_date: startDate,
+          end_date: data.end_date,
+          instructor_id: data.instructor_id,
+          program_id: data.program_id,
+          capacity: data.capacity,
+          is_active: true,
           created_at: new Date().toISOString(),
-          attendance_count: 0,
-        }));
-      if (generatedSessions.length > 0) {
-        persistSessions([...sessionsRef.current, ...generatedSessions].sort(compareSessions));
-      }
-      return newTemplate;
-    }
+          updated_at: new Date().toISOString(),
+        };
+        persistTemplates([...templatesRef.current, newTemplate]);
 
-    const mutation = beginScheduleMutation();
-    try {
-      const result = await api.post<ClassTemplate>("/schedule/templates", data, mutation.request.token);
+        const existingKeys = new Set(
+          sessionsRef.current
+            .filter((session) => session.template_id)
+            .map((session) => `${session.template_id}:${session.date}`),
+        );
+        const generatedSessions = getPreviewTemplateSessionDates(newTemplate)
+          .filter((dateValue) => !existingKeys.has(`${newTemplate.id}:${dateValue}`))
+          .map((dateValue) => ({
+            id: localId(),
+            studio_id: "mock-studio",
+            template_id: newTemplate.id,
+            name: newTemplate.name,
+            date: dateValue,
+            start_time: newTemplate.start_time,
+            end_time: newTemplate.end_time,
+            instructor_id: newTemplate.instructor_id,
+            program_id: newTemplate.program_id,
+            capacity: newTemplate.capacity,
+            status: "scheduled" as const,
+            created_at: new Date().toISOString(),
+            attendance_count: 0,
+          }));
+        if (generatedSessions.length > 0) {
+          persistSessions([...sessionsRef.current, ...generatedSessions].sort(compareSessions));
+        }
+        return { template: newTemplate, scheduleRefresh: Promise.resolve("refreshed") };
+      }
+
+      const mutation = beginScheduleMutation();
+      let result: ClassTemplate;
+      try {
+        result = await api.post<ClassTemplate>("/schedule/templates", data, mutation.request.token);
+      } catch (error) {
+        await mutation.finish();
+        throw error;
+      }
       if (mutation.isCurrent()) {
         setTemplates((current) =>
           [...current, result].sort((left, right) => {
@@ -391,223 +434,238 @@ export function useStoreScheduleActions({
               return dayCompare;
             }
             return left.start_time.localeCompare(right.start_time);
-          })
+          }),
         );
       }
-      return result;
-    } finally {
-      await mutation.finish();
-    }
-  }, [beginScheduleMutation, isPreviewMode, persistSessions, persistTemplates, sessionsRef, setTemplates, templatesRef]);
+      // The create is confirmed now. This write's finish, or the shared one it waits for,
+      // is the only post-create materialization; callers report it without waiting.
+      return { template: result, scheduleRefresh: mutation.finish({ awaitSharedRefresh: true }) };
+    },
+    [
+      beginScheduleMutation,
+      isPreviewMode,
+      persistSessions,
+      persistTemplates,
+      sessionsRef,
+      setTemplates,
+      templatesRef,
+    ],
+  );
 
-  const addSession = useCallback(async (data: ClassSessionCreate) => {
-    if (isPreviewMode) {
-      const newSession: ClassSession = {
-        id: localId(),
-        studio_id: "mock-studio",
-        name: data.name || "Untitled Class",
-        date: data.date || new Date().toISOString().split("T")[0],
-        start_time: data.start_time || "18:00",
-        end_time: data.end_time || "19:30",
-        capacity: data.capacity,
-        status: "scheduled",
-        created_at: new Date().toISOString(),
-        attendance_count: 0,
-      };
-      persistSessions([...sessionsRef.current, newSession].sort(compareSessions));
-      return;
-    }
-
-    const mutation = beginScheduleMutation();
-    try {
-      const result = await api.post<ClassSession>("/schedule/sessions", data, mutation.request.token);
-      if (mutation.isCurrent()) {
-        setSessions((current) => [...current, result].sort(compareSessions));
-      }
-    } finally {
-      await mutation.finish();
-    }
-  }, [beginScheduleMutation, isPreviewMode, persistSessions, sessionsRef, setSessions]);
-
-  const deleteSession = useCallback(async (
-    sessionId: string,
-    scope: ClassSessionDeleteScope = "session"
-  ) => {
-    const sessionToDelete = sessionsRef.current.find((session) => session.id === sessionId);
-    if (!sessionToDelete) {
-      throw new Error("Class session not found");
-    }
-
-    if (isPreviewMode) {
-      if (scope === "future_series" && sessionToDelete.template_id) {
-        const templateId = sessionToDelete.template_id;
-        persistTemplates(
-          templatesRef.current.map((template) =>
-            template.id === templateId
-              ? {
-                  ...template,
-                  is_active: false,
-                  end_date: sessionToDelete.date,
-                  updated_at: new Date().toISOString(),
-                }
-              : template
-          )
-        );
-        persistSessions(
-          sessionsRef.current.filter(
-            (session) =>
-              session.template_id !== templateId || session.date < sessionToDelete.date
-          )
-        );
-        return;
-      }
-
-      persistSessions(sessionsRef.current.filter((session) => session.id !== sessionId));
-      persistAttendance(attendanceRef.current.filter((record) => record.session_id !== sessionId));
-      return;
-    }
-
-    const mutation = beginScheduleMutation();
-    const query = scope === "future_series" ? "?scope=future_series" : "";
-    try {
-      await api.delete(`/schedule/sessions/${sessionId}${query}`, mutation.request.token);
-      if (!mutation.isCurrent()) {
-        return;
-      }
-
-      if (scope === "future_series" && sessionToDelete.template_id) {
-        const templateId = sessionToDelete.template_id;
-        const removedSessionIds = new Set(
-          sessionsRef.current
-            .filter(
-              (session) =>
-                session.template_id === templateId && session.date >= sessionToDelete.date
-            )
-            .map((session) => session.id)
-        );
-        setTemplates((current) =>
-          current.map((template) =>
-            template.id === templateId
-              ? {
-                  ...template,
-                  is_active: false,
-                  end_date: sessionToDelete.date,
-                }
-              : template
-          )
-        );
-        setSessions((current) =>
-          current.filter(
-            (session) =>
-              session.template_id !== templateId || session.date < sessionToDelete.date
-          )
-        );
-        setAttendance((current) =>
-          current.filter((record) => !removedSessionIds.has(record.session_id))
-        );
-        return;
-      }
-
-      setSessions((current) => current.filter((session) => session.id !== sessionId));
-      setAttendance((current) => current.filter((record) => record.session_id !== sessionId));
-    } finally {
-      await mutation.finish();
-    }
-  }, [
-    attendanceRef,
-    beginScheduleMutation,
-    isPreviewMode,
-    persistAttendance,
-    persistSessions,
-    persistTemplates,
-    sessionsRef,
-    setAttendance,
-    setSessions,
-    setTemplates,
-    templatesRef,
-  ]);
-
-  const toggleCheckIn = useCallback(async (
-    sessionId: string,
-    studentId: string,
-    name: string
-  ) => {
-    const commitAttendance = (
-      update: (current: AttendanceRecord[]) => AttendanceRecord[]
-    ) => {
+  const addSession = useCallback(
+    async (data: ClassSessionCreate) => {
       if (isPreviewMode) {
-        const next = update(attendanceRef.current);
-        attendanceRef.current = next;
-        persistAttendance(next);
-      } else {
-        setAttendance((current) => {
-          const next = update(current);
-          attendanceRef.current = next;
-          return next;
-        });
+        const newSession: ClassSession = {
+          id: localId(),
+          studio_id: "mock-studio",
+          name: data.name || "Untitled Class",
+          date: data.date || new Date().toISOString().split("T")[0],
+          start_time: data.start_time || "18:00",
+          end_time: data.end_time || "19:30",
+          capacity: data.capacity,
+          status: "scheduled",
+          created_at: new Date().toISOString(),
+          attendance_count: 0,
+        };
+        persistSessions([...sessionsRef.current, newSession].sort(compareSessions));
+        return;
       }
-    };
 
-    if (isPreviewMode) {
-      await runOptimisticAttendanceToggle({
-        attendance: attendanceRef.current,
-        checkedInAt: new Date().toISOString(),
-        commitAttendance,
-        commitSessionCountDelta: (delta) => {
-          setSessions((current) => updateSessionAttendanceCount(current, sessionId, delta));
-        },
-        name,
-        optimisticId: localId(),
-        request: async () => null,
-        sessionId,
-        studentId,
-        studioId: "mock-studio",
-      });
-      return;
-    }
+      const mutation = beginScheduleMutation();
+      try {
+        const result = await api.post<ClassSession>(
+          "/schedule/sessions",
+          data,
+          mutation.request.token,
+        );
+        if (mutation.isCurrent()) {
+          setSessions((current) => [...current, result].sort(compareSessions));
+        }
+      } finally {
+        await mutation.finish();
+      }
+    },
+    [beginScheduleMutation, isPreviewMode, persistSessions, sessionsRef, setSessions],
+  );
 
-    const mutation = beginScheduleMutation();
-    const liveRequest = mutation.request;
-    try {
-      await runOptimisticAttendanceToggle({
-        attendance: attendanceRef.current,
-        checkedInAt: new Date().toISOString(),
-        commitAttendance,
-        commitSessionCountDelta: (delta) => {
-          setSessions((current) => updateSessionAttendanceCount(current, sessionId, delta));
-        },
-        isCurrent: mutation.isCurrent,
-        name,
-        optimisticId: `optimistic-${sessionId}-${studentId}`,
-        request: async (nextStatus) => {
-          if (!nextStatus) {
-            await api.delete(
-              `/schedule/attendance?session_id=${encodeURIComponent(sessionId)}&student_id=${encodeURIComponent(studentId)}`,
-              liveRequest.token
-            );
-            return null;
-          }
+  const deleteSession = useCallback(
+    async (sessionId: string, scope: ClassSessionDeleteScope = "session") => {
+      const sessionToDelete = sessionsRef.current.find((session) => session.id === sessionId);
+      if (!sessionToDelete) {
+        throw new Error("Class session not found");
+      }
 
-          return api.post<AttendanceRecord>(
-            "/schedule/attendance",
-            { session_id: sessionId, student_id: studentId, status: nextStatus },
-            liveRequest.token
+      if (isPreviewMode) {
+        if (scope === "future_series" && sessionToDelete.template_id) {
+          const templateId = sessionToDelete.template_id;
+          persistTemplates(
+            templatesRef.current.map((template) =>
+              template.id === templateId
+                ? {
+                    ...template,
+                    is_active: false,
+                    end_date: sessionToDelete.date,
+                    updated_at: new Date().toISOString(),
+                  }
+                : template,
+            ),
           );
-        },
-        sessionId,
-        studentId,
-      });
-    } finally {
-      await mutation.finish();
-    }
-  }, [
-    attendanceRef,
-    beginScheduleMutation,
-    isPreviewMode,
-    persistAttendance,
-    setAttendance,
-    setSessions,
-  ]);
+          persistSessions(
+            sessionsRef.current.filter(
+              (session) =>
+                session.template_id !== templateId || session.date < sessionToDelete.date,
+            ),
+          );
+          return;
+        }
+
+        persistSessions(sessionsRef.current.filter((session) => session.id !== sessionId));
+        persistAttendance(
+          attendanceRef.current.filter((record) => record.session_id !== sessionId),
+        );
+        return;
+      }
+
+      const mutation = beginScheduleMutation();
+      const query = scope === "future_series" ? "?scope=future_series" : "";
+      try {
+        await api.delete(`/schedule/sessions/${sessionId}${query}`, mutation.request.token);
+        if (!mutation.isCurrent()) {
+          return;
+        }
+
+        if (scope === "future_series" && sessionToDelete.template_id) {
+          const templateId = sessionToDelete.template_id;
+          const removedSessionIds = new Set(
+            sessionsRef.current
+              .filter(
+                (session) =>
+                  session.template_id === templateId && session.date >= sessionToDelete.date,
+              )
+              .map((session) => session.id),
+          );
+          setTemplates((current) =>
+            current.map((template) =>
+              template.id === templateId
+                ? {
+                    ...template,
+                    is_active: false,
+                    end_date: sessionToDelete.date,
+                  }
+                : template,
+            ),
+          );
+          setSessions((current) =>
+            current.filter(
+              (session) =>
+                session.template_id !== templateId || session.date < sessionToDelete.date,
+            ),
+          );
+          setAttendance((current) =>
+            current.filter((record) => !removedSessionIds.has(record.session_id)),
+          );
+          return;
+        }
+
+        setSessions((current) => current.filter((session) => session.id !== sessionId));
+        setAttendance((current) => current.filter((record) => record.session_id !== sessionId));
+      } finally {
+        await mutation.finish();
+      }
+    },
+    [
+      attendanceRef,
+      beginScheduleMutation,
+      isPreviewMode,
+      persistAttendance,
+      persistSessions,
+      persistTemplates,
+      sessionsRef,
+      setAttendance,
+      setSessions,
+      setTemplates,
+      templatesRef,
+    ],
+  );
+
+  const toggleCheckIn = useCallback(
+    async (sessionId: string, studentId: string, name: string) => {
+      const commitAttendance = (update: (current: AttendanceRecord[]) => AttendanceRecord[]) => {
+        if (isPreviewMode) {
+          const next = update(attendanceRef.current);
+          attendanceRef.current = next;
+          persistAttendance(next);
+        } else {
+          setAttendance((current) => {
+            const next = update(current);
+            attendanceRef.current = next;
+            return next;
+          });
+        }
+      };
+
+      if (isPreviewMode) {
+        await runOptimisticAttendanceToggle({
+          attendance: attendanceRef.current,
+          checkedInAt: new Date().toISOString(),
+          commitAttendance,
+          commitSessionCountDelta: (delta) => {
+            setSessions((current) => updateSessionAttendanceCount(current, sessionId, delta));
+          },
+          name,
+          optimisticId: localId(),
+          request: async () => null,
+          sessionId,
+          studentId,
+          studioId: "mock-studio",
+        });
+        return;
+      }
+
+      const mutation = beginScheduleMutation();
+      const liveRequest = mutation.request;
+      try {
+        await runOptimisticAttendanceToggle({
+          attendance: attendanceRef.current,
+          checkedInAt: new Date().toISOString(),
+          commitAttendance,
+          commitSessionCountDelta: (delta) => {
+            setSessions((current) => updateSessionAttendanceCount(current, sessionId, delta));
+          },
+          isCurrent: mutation.isCurrent,
+          name,
+          optimisticId: `optimistic-${sessionId}-${studentId}`,
+          request: async (nextStatus) => {
+            if (!nextStatus) {
+              await api.delete(
+                `/schedule/attendance?session_id=${encodeURIComponent(sessionId)}&student_id=${encodeURIComponent(studentId)}`,
+                liveRequest.token,
+              );
+              return null;
+            }
+
+            return api.post<AttendanceRecord>(
+              "/schedule/attendance",
+              { session_id: sessionId, student_id: studentId, status: nextStatus },
+              liveRequest.token,
+            );
+          },
+          sessionId,
+          studentId,
+        });
+      } finally {
+        await mutation.finish();
+      }
+    },
+    [
+      attendanceRef,
+      beginScheduleMutation,
+      isPreviewMode,
+      persistAttendance,
+      setAttendance,
+      setSessions,
+    ],
+  );
 
   return {
     addSession,

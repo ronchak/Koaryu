@@ -1,4 +1,5 @@
 import unittest
+import asyncio
 import base64
 import time
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
@@ -12,7 +13,12 @@ from jwt import InvalidTokenError as JWTError
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec, rsa
 
-from app.core.security import _clear_jwks_cache_for_tests, get_user_id_from_token
+from app.core.security import (
+    _clear_jwks_cache_for_tests,
+    get_user_id_from_token,
+    JWKSRefreshInFlight,
+)
+from app.core.deps import get_current_user_id
 
 
 class FakeResponse:
@@ -130,16 +136,20 @@ class SecurityTokenTest(unittest.TestCase):
             SUPABASE_ALLOW_LEGACY_HS256=True,
         )
 
-        with patch(
-            "app.core.security.get_settings",
-            return_value=settings,
-        ), patch(
-            "app.core.security.jwt.get_unverified_header",
-            return_value={"alg": "HS256"},
-        ), patch(
-            "app.core.security.jwt.decode",
-            return_value={"sub": "user_1", "role": "authenticated"},
-        ) as decode:
+        with (
+            patch(
+                "app.core.security.get_settings",
+                return_value=settings,
+            ),
+            patch(
+                "app.core.security.jwt.get_unverified_header",
+                return_value={"alg": "HS256"},
+            ),
+            patch(
+                "app.core.security.jwt.decode",
+                return_value={"sub": "user_1", "role": "authenticated"},
+            ) as decode,
+        ):
             self.assertEqual(get_user_id_from_token("local-valid-token"), "user_1")
 
         decode.assert_called_once()
@@ -209,13 +219,16 @@ class SecurityTokenTest(unittest.TestCase):
         )
         token, public_jwk = _make_es256_token()
 
-        with patch(
-            "app.core.security.get_settings",
-            return_value=settings,
-        ), patch(
-            "app.core.security.httpx.get",
-            return_value=FakeResponse({"keys": [public_jwk]}),
-        ) as fetch_jwks:
+        with (
+            patch(
+                "app.core.security.get_settings",
+                return_value=settings,
+            ),
+            patch(
+                "app.core.security.httpx.get",
+                return_value=FakeResponse({"keys": [public_jwk]}),
+            ) as fetch_jwks,
+        ):
             self.assertEqual(get_user_id_from_token(token), "user_1")
 
         fetch_jwks.assert_called_once_with(
@@ -231,13 +244,16 @@ class SecurityTokenTest(unittest.TestCase):
         )
         token, public_jwk = _make_rs256_token()
 
-        with patch(
-            "app.core.security.get_settings",
-            return_value=settings,
-        ), patch(
-            "app.core.security.httpx.get",
-            return_value=FakeResponse({"keys": [public_jwk]}),
-        ) as fetch_jwks:
+        with (
+            patch(
+                "app.core.security.get_settings",
+                return_value=settings,
+            ),
+            patch(
+                "app.core.security.httpx.get",
+                return_value=FakeResponse({"keys": [public_jwk]}),
+            ) as fetch_jwks,
+        ):
             self.assertEqual(get_user_id_from_token(token), "user_1")
 
         fetch_jwks.assert_called_once_with(
@@ -253,13 +269,16 @@ class SecurityTokenTest(unittest.TestCase):
         )
         token, public_jwk = _make_es256_token()
 
-        with patch(
-            "app.core.security.get_settings",
-            return_value=settings,
-        ), patch(
-            "app.core.security.httpx.get",
-            return_value=FakeResponse({"keys": [public_jwk]}),
-        ) as fetch_jwks:
+        with (
+            patch(
+                "app.core.security.get_settings",
+                return_value=settings,
+            ),
+            patch(
+                "app.core.security.httpx.get",
+                return_value=FakeResponse({"keys": [public_jwk]}),
+            ) as fetch_jwks,
+        ):
             self.assertEqual(get_user_id_from_token(token), "user_1")
             self.assertEqual(get_user_id_from_token(token), "user_1")
 
@@ -274,13 +293,16 @@ class SecurityTokenTest(unittest.TestCase):
         token, _ = _make_es256_token(kid="new-key")
         _, old_jwk = _make_es256_keypair(kid="old-key")
 
-        with patch(
-            "app.core.security.get_settings",
-            return_value=settings,
-        ), patch(
-            "app.core.security.httpx.get",
-            return_value=FakeResponse({"keys": [old_jwk]}),
-        ) as fetch_jwks:
+        with (
+            patch(
+                "app.core.security.get_settings",
+                return_value=settings,
+            ),
+            patch(
+                "app.core.security.httpx.get",
+                return_value=FakeResponse({"keys": [old_jwk]}),
+            ) as fetch_jwks,
+        ):
             with self.assertRaises(HTTPException) as context:
                 get_user_id_from_token(token)
 
@@ -297,13 +319,16 @@ class SecurityTokenTest(unittest.TestCase):
         second_token, _ = _make_es256_token(kid="unknown-two")
         _, old_jwk = _make_es256_keypair(kid="old-key")
 
-        with patch(
-            "app.core.security.get_settings",
-            return_value=settings,
-        ), patch(
-            "app.core.security.httpx.get",
-            return_value=FakeResponse({"keys": [old_jwk]}),
-        ) as fetch_jwks:
+        with (
+            patch(
+                "app.core.security.get_settings",
+                return_value=settings,
+            ),
+            patch(
+                "app.core.security.httpx.get",
+                return_value=FakeResponse({"keys": [old_jwk]}),
+            ) as fetch_jwks,
+        ):
             for token in (first_token, second_token):
                 with self.assertRaises(HTTPException):
                     get_user_id_from_token(token)
@@ -319,19 +344,23 @@ class SecurityTokenTest(unittest.TestCase):
         old_token, old_jwk = _make_es256_token(kid="old-key")
         new_token, new_jwk = _make_es256_token(kid="new-key")
 
-        with patch(
-            "app.core.security.get_settings",
-            return_value=settings,
-        ), patch(
-            "app.core.security.SUPABASE_JWKS_FORCED_REFRESH_INTERVAL_SECONDS",
-            0,
-        ), patch(
-            "app.core.security.httpx.get",
-            side_effect=[
-                FakeResponse({"keys": [old_jwk]}),
-                FakeResponse({"keys": [new_jwk]}),
-            ],
-        ) as fetch_jwks:
+        with (
+            patch(
+                "app.core.security.get_settings",
+                return_value=settings,
+            ),
+            patch(
+                "app.core.security.SUPABASE_JWKS_FORCED_REFRESH_INTERVAL_SECONDS",
+                0,
+            ),
+            patch(
+                "app.core.security.httpx.get",
+                side_effect=[
+                    FakeResponse({"keys": [old_jwk]}),
+                    FakeResponse({"keys": [new_jwk]}),
+                ],
+            ) as fetch_jwks,
+        ):
             self.assertEqual(get_user_id_from_token(old_token), "user_1")
             self.assertEqual(get_user_id_from_token(new_token), "user_1")
 
@@ -345,13 +374,16 @@ class SecurityTokenTest(unittest.TestCase):
         )
         token, _ = _make_es256_token()
 
-        with patch(
-            "app.core.security.get_settings",
-            return_value=settings,
-        ), patch(
-            "app.core.security.httpx.get",
-            side_effect=RuntimeError("provider unavailable"),
-        ) as fetch_jwks:
+        with (
+            patch(
+                "app.core.security.get_settings",
+                return_value=settings,
+            ),
+            patch(
+                "app.core.security.httpx.get",
+                side_effect=RuntimeError("provider unavailable"),
+            ) as fetch_jwks,
+        ):
             for _ in range(2):
                 with self.assertRaises(HTTPException) as context:
                     get_user_id_from_token(token)
@@ -385,15 +417,19 @@ class SecurityTokenTest(unittest.TestCase):
             self.assertTrue(release_refresh.wait(timeout=2))
             return FakeResponse({"keys": [known_jwk]})
 
-        with patch(
-            "app.core.security.get_settings",
-            return_value=settings,
-        ), patch(
-            "app.core.security.SUPABASE_JWKS_FORCED_REFRESH_INTERVAL_SECONDS",
-            0,
-        ), patch(
-            "app.core.security.httpx.get",
-            side_effect=fetch_jwks,
+        with (
+            patch(
+                "app.core.security.get_settings",
+                return_value=settings,
+            ),
+            patch(
+                "app.core.security.SUPABASE_JWKS_FORCED_REFRESH_INTERVAL_SECONDS",
+                0,
+            ),
+            patch(
+                "app.core.security.httpx.get",
+                side_effect=fetch_jwks,
+            ),
         ):
             self.assertEqual(get_user_id_from_token(known_token), "user_1")
             with ThreadPoolExecutor(max_workers=2) as executor:
@@ -417,7 +453,7 @@ class SecurityTokenTest(unittest.TestCase):
 
         self.assertEqual(call_count, 2)
 
-    def test_concurrent_cold_valid_follower_gets_retryable_unavailable(self):
+    def test_concurrent_cold_follower_releases_worker_with_shared_completion(self):
         settings = SimpleNamespace(
             ENVIRONMENT="production",
             SUPABASE_URL="https://project-ref.supabase.co",
@@ -433,23 +469,26 @@ class SecurityTokenTest(unittest.TestCase):
             self.assertTrue(release_refresh.wait(timeout=2))
             return FakeResponse({"keys": [public_jwk]})
 
-        with patch(
-            "app.core.security.get_settings",
-            return_value=settings,
-        ), patch(
-            "app.core.security.httpx.get",
-            side_effect=fetch_jwks,
-        ) as fetch:
+        with (
+            patch(
+                "app.core.security.get_settings",
+                return_value=settings,
+            ),
+            patch(
+                "app.core.security.httpx.get",
+                side_effect=fetch_jwks,
+            ) as fetch,
+        ):
             with ThreadPoolExecutor(max_workers=2) as executor:
                 leader = executor.submit(get_user_id_from_token, token)
                 self.assertTrue(refresh_started.wait(timeout=1))
                 follower = executor.submit(get_user_id_from_token, token)
-                with self.assertRaises(HTTPException) as context:
+                with self.assertRaises(JWKSRefreshInFlight) as context:
                     follower.result(timeout=0.5)
-                self.assertEqual(context.exception.status_code, 503)
-                self.assertEqual(context.exception.headers, {"Retry-After": "30"})
+                self.assertFalse(context.exception.completion.done())
                 release_refresh.set()
                 self.assertEqual(leader.result(timeout=1), "user_1")
+                self.assertIsNone(context.exception.completion.result(timeout=1))
 
         fetch.assert_called_once()
 
@@ -467,16 +506,17 @@ class SecurityTokenTest(unittest.TestCase):
             headers={"kid": ""},
         )
         fallback_get_user = Mock(side_effect=AssertionError("fallback should not run"))
-        fallback_client = SimpleNamespace(
-            auth=SimpleNamespace(get_user=fallback_get_user)
-        )
+        fallback_client = SimpleNamespace(auth=SimpleNamespace(get_user=fallback_get_user))
 
-        with patch(
-            "app.core.security.get_settings",
-            return_value=settings,
-        ), patch(
-            "app.core.security.get_supabase_client",
-            return_value=fallback_client,
+        with (
+            patch(
+                "app.core.security.get_settings",
+                return_value=settings,
+            ),
+            patch(
+                "app.core.security.get_supabase_client",
+                return_value=fallback_client,
+            ),
         ):
             with self.assertRaises(HTTPException) as context:
                 get_user_id_from_token(token)
@@ -494,22 +534,24 @@ class SecurityTokenTest(unittest.TestCase):
         token, _public_jwk = _make_es256_token(kid="new-key")
         _, old_jwk = _make_es256_keypair(kid="old-key")
         fallback_get_user = Mock(side_effect=AssertionError("fallback should not run"))
-        fallback_client = SimpleNamespace(
-            auth=SimpleNamespace(get_user=fallback_get_user)
-        )
+        fallback_client = SimpleNamespace(auth=SimpleNamespace(get_user=fallback_get_user))
 
-        with patch(
-            "app.core.security.get_settings",
-            return_value=settings,
-        ), patch(
-            "app.core.security.httpx.get",
-            side_effect=[
-                FakeResponse({"keys": [old_jwk]}),
-                FakeResponse({"keys": [old_jwk]}),
-            ],
-        ), patch(
-            "app.core.security.get_supabase_client",
-            return_value=fallback_client,
+        with (
+            patch(
+                "app.core.security.get_settings",
+                return_value=settings,
+            ),
+            patch(
+                "app.core.security.httpx.get",
+                side_effect=[
+                    FakeResponse({"keys": [old_jwk]}),
+                    FakeResponse({"keys": [old_jwk]}),
+                ],
+            ),
+            patch(
+                "app.core.security.get_supabase_client",
+                return_value=fallback_client,
+            ),
         ):
             with self.assertRaises(HTTPException) as context:
                 get_user_id_from_token(token)
@@ -526,19 +568,21 @@ class SecurityTokenTest(unittest.TestCase):
         )
         token, _public_jwk = _make_es256_token()
         fallback_get_user = Mock(side_effect=AssertionError("fallback should not run"))
-        fallback_client = SimpleNamespace(
-            auth=SimpleNamespace(get_user=fallback_get_user)
-        )
+        fallback_client = SimpleNamespace(auth=SimpleNamespace(get_user=fallback_get_user))
 
-        with patch(
-            "app.core.security.get_settings",
-            return_value=settings,
-        ), patch(
-            "app.core.security.httpx.get",
-            side_effect=RuntimeError("provider config leaked"),
-        ), patch(
-            "app.core.security.get_supabase_client",
-            return_value=fallback_client,
+        with (
+            patch(
+                "app.core.security.get_settings",
+                return_value=settings,
+            ),
+            patch(
+                "app.core.security.httpx.get",
+                side_effect=RuntimeError("provider config leaked"),
+            ),
+            patch(
+                "app.core.security.get_supabase_client",
+                return_value=fallback_client,
+            ),
         ):
             with self.assertRaises(HTTPException) as context:
                 get_user_id_from_token(token)
@@ -559,19 +603,21 @@ class SecurityTokenTest(unittest.TestCase):
         )
         token, _public_jwk = _make_es256_token()
         fallback_get_user = Mock(side_effect=AssertionError("fallback should not run"))
-        fallback_client = SimpleNamespace(
-            auth=SimpleNamespace(get_user=fallback_get_user)
-        )
+        fallback_client = SimpleNamespace(auth=SimpleNamespace(get_user=fallback_get_user))
 
-        with patch(
-            "app.core.security.get_settings",
-            return_value=settings,
-        ), patch(
-            "app.core.security.httpx.get",
-            side_effect=RuntimeError("provider config leaked"),
-        ), patch(
-            "app.core.security.get_supabase_client",
-            return_value=fallback_client,
+        with (
+            patch(
+                "app.core.security.get_settings",
+                return_value=settings,
+            ),
+            patch(
+                "app.core.security.httpx.get",
+                side_effect=RuntimeError("provider config leaked"),
+            ),
+            patch(
+                "app.core.security.get_supabase_client",
+                return_value=fallback_client,
+            ),
         ):
             with self.assertRaises(HTTPException) as context:
                 get_user_id_from_token(token)
@@ -593,12 +639,15 @@ class SecurityTokenTest(unittest.TestCase):
         token, public_jwk = _make_es256_token()
         public_jwk["alg"] = "RS256"
 
-        with patch(
-            "app.core.security.get_settings",
-            return_value=settings,
-        ), patch(
-            "app.core.security.httpx.get",
-            return_value=FakeResponse({"keys": [public_jwk]}),
+        with (
+            patch(
+                "app.core.security.get_settings",
+                return_value=settings,
+            ),
+            patch(
+                "app.core.security.httpx.get",
+                return_value=FakeResponse({"keys": [public_jwk]}),
+            ),
         ):
             with self.assertRaises(HTTPException) as context:
                 get_user_id_from_token(token)
@@ -650,12 +699,15 @@ class SecurityTokenTest(unittest.TestCase):
                         _encode_segment("signature"),
                     ]
                 )
-                with patch(
-                    "app.core.security.get_settings",
-                    return_value=settings,
-                ), patch(
-                    "app.core.security.httpx.get",
-                    return_value=FakeResponse({"keys": [malformed_jwk]}),
+                with (
+                    patch(
+                        "app.core.security.get_settings",
+                        return_value=settings,
+                    ),
+                    patch(
+                        "app.core.security.httpx.get",
+                        return_value=FakeResponse({"keys": [malformed_jwk]}),
+                    ),
                 ):
                     with self.assertRaises(HTTPException) as context:
                         get_user_id_from_token(token)
@@ -681,12 +733,15 @@ class SecurityTokenTest(unittest.TestCase):
             with self.subTest(overrides=overrides):
                 _clear_jwks_cache_for_tests()
                 token, public_jwk = _make_es256_token(payload_overrides=overrides)
-                with patch(
-                    "app.core.security.get_settings",
-                    return_value=settings,
-                ), patch(
-                    "app.core.security.httpx.get",
-                    return_value=FakeResponse({"keys": [public_jwk]}),
+                with (
+                    patch(
+                        "app.core.security.get_settings",
+                        return_value=settings,
+                    ),
+                    patch(
+                        "app.core.security.httpx.get",
+                        return_value=FakeResponse({"keys": [public_jwk]}),
+                    ),
                 ):
                     with self.assertRaises(HTTPException) as context:
                         get_user_id_from_token(token)
@@ -700,16 +755,17 @@ class SecurityTokenTest(unittest.TestCase):
             SUPABASE_URL="https://project-ref.supabase.co",
             SUPABASE_JWT_SECRET="jwt-secret",
         )
-        token, public_jwk = _make_es256_token(
-            payload_overrides={"exp": int(time.time()) - 60}
-        )
+        token, public_jwk = _make_es256_token(payload_overrides={"exp": int(time.time()) - 60})
 
-        with patch(
-            "app.core.security.get_settings",
-            return_value=settings,
-        ), patch(
-            "app.core.security.httpx.get",
-            return_value=FakeResponse({"keys": [public_jwk]}),
+        with (
+            patch(
+                "app.core.security.get_settings",
+                return_value=settings,
+            ),
+            patch(
+                "app.core.security.httpx.get",
+                return_value=FakeResponse({"keys": [public_jwk]}),
+            ),
         ):
             with self.assertRaises(HTTPException) as context:
                 get_user_id_from_token(token)
@@ -729,16 +785,17 @@ class SecurityTokenTest(unittest.TestCase):
             algorithm="HS512",
         )
         fallback_get_user = Mock(side_effect=AssertionError("fallback should not run"))
-        fallback_client = SimpleNamespace(
-            auth=SimpleNamespace(get_user=fallback_get_user)
-        )
+        fallback_client = SimpleNamespace(auth=SimpleNamespace(get_user=fallback_get_user))
 
-        with patch(
-            "app.core.security.get_settings",
-            return_value=settings,
-        ), patch(
-            "app.core.security.get_supabase_client",
-            return_value=fallback_client,
+        with (
+            patch(
+                "app.core.security.get_settings",
+                return_value=settings,
+            ),
+            patch(
+                "app.core.security.get_supabase_client",
+                return_value=fallback_client,
+            ),
         ):
             with self.assertRaises(HTTPException) as context:
                 get_user_id_from_token(token)
@@ -761,16 +818,17 @@ class SecurityTokenTest(unittest.TestCase):
             ]
         )
         fallback_get_user = Mock(side_effect=AssertionError("fallback should not run"))
-        fallback_client = SimpleNamespace(
-            auth=SimpleNamespace(get_user=fallback_get_user)
-        )
+        fallback_client = SimpleNamespace(auth=SimpleNamespace(get_user=fallback_get_user))
 
-        with patch(
-            "app.core.security.get_settings",
-            return_value=settings,
-        ), patch(
-            "app.core.security.get_supabase_client",
-            return_value=fallback_client,
+        with (
+            patch(
+                "app.core.security.get_settings",
+                return_value=settings,
+            ),
+            patch(
+                "app.core.security.get_supabase_client",
+                return_value=fallback_client,
+            ),
         ):
             with self.assertRaises(HTTPException) as context:
                 get_user_id_from_token(token)
@@ -786,22 +844,25 @@ class SecurityTokenTest(unittest.TestCase):
             SUPABASE_ALLOW_LEGACY_HS256=True,
         )
         fallback_get_user = Mock(side_effect=AssertionError("fallback should not run"))
-        fallback_client = SimpleNamespace(
-            auth=SimpleNamespace(get_user=fallback_get_user)
-        )
+        fallback_client = SimpleNamespace(auth=SimpleNamespace(get_user=fallback_get_user))
 
-        with patch(
-            "app.core.security.get_settings",
-            return_value=settings,
-        ), patch(
-            "app.core.security.jwt.get_unverified_header",
-            return_value={"alg": "HS256"},
-        ), patch(
-            "app.core.security.jwt.decode",
-            return_value={"sub": "user_1", "role": "service_role"},
-        ), patch(
-            "app.core.security.get_supabase_client",
-            return_value=fallback_client,
+        with (
+            patch(
+                "app.core.security.get_settings",
+                return_value=settings,
+            ),
+            patch(
+                "app.core.security.jwt.get_unverified_header",
+                return_value={"alg": "HS256"},
+            ),
+            patch(
+                "app.core.security.jwt.decode",
+                return_value={"sub": "user_1", "role": "service_role"},
+            ),
+            patch(
+                "app.core.security.get_supabase_client",
+                return_value=fallback_client,
+            ),
         ):
             with self.assertRaises(HTTPException) as context:
                 get_user_id_from_token("wrong-role-token")
@@ -819,15 +880,19 @@ class SecurityTokenTest(unittest.TestCase):
             )
         )
 
-        with patch(
-            "app.core.security.jwt.get_unverified_header",
-            return_value={"alg": "HS256"},
-        ), patch(
-            "app.core.security.jwt.decode",
-            side_effect=JWTError("jwt secret leaked"),
-        ), patch(
-            "app.core.security.get_supabase_client",
-            return_value=fallback_client,
+        with (
+            patch(
+                "app.core.security.jwt.get_unverified_header",
+                return_value={"alg": "HS256"},
+            ),
+            patch(
+                "app.core.security.jwt.decode",
+                side_effect=JWTError("jwt secret leaked"),
+            ),
+            patch(
+                "app.core.security.get_supabase_client",
+                return_value=fallback_client,
+            ),
         ):
             with self.assertRaises(HTTPException) as context:
                 get_user_id_from_token("bad-token")
@@ -844,15 +909,19 @@ class SecurityTokenTest(unittest.TestCase):
             )
         )
 
-        with patch(
-            "app.core.security.jwt.get_unverified_header",
-            return_value={"alg": "HS256"},
-        ), patch(
-            "app.core.security.jwt.decode",
-            side_effect=JWTError("local secret mismatch"),
-        ), patch(
-            "app.core.security.get_supabase_client",
-            return_value=fallback_client,
+        with (
+            patch(
+                "app.core.security.jwt.get_unverified_header",
+                return_value={"alg": "HS256"},
+            ),
+            patch(
+                "app.core.security.jwt.decode",
+                side_effect=JWTError("local secret mismatch"),
+            ),
+            patch(
+                "app.core.security.get_supabase_client",
+                return_value=fallback_client,
+            ),
         ):
             self.assertEqual(get_user_id_from_token("remote-valid-token"), "user_1")
 
@@ -863,22 +932,25 @@ class SecurityTokenTest(unittest.TestCase):
             SUPABASE_JWT_SECRET="jwt-secret",
         )
         fallback_get_user = Mock(side_effect=AssertionError("fallback should not run"))
-        fallback_client = SimpleNamespace(
-            auth=SimpleNamespace(get_user=fallback_get_user)
-        )
+        fallback_client = SimpleNamespace(auth=SimpleNamespace(get_user=fallback_get_user))
 
-        with patch(
-            "app.core.security.get_settings",
-            return_value=settings,
-        ), patch(
-            "app.core.security.jwt.get_unverified_header",
-            return_value={"alg": "HS256"},
-        ), patch(
-            "app.core.security.jwt.decode",
-            side_effect=JWTError("local secret mismatch"),
-        ), patch(
-            "app.core.security.get_supabase_client",
-            return_value=fallback_client,
+        with (
+            patch(
+                "app.core.security.get_settings",
+                return_value=settings,
+            ),
+            patch(
+                "app.core.security.jwt.get_unverified_header",
+                return_value={"alg": "HS256"},
+            ),
+            patch(
+                "app.core.security.jwt.decode",
+                side_effect=JWTError("local secret mismatch"),
+            ),
+            patch(
+                "app.core.security.get_supabase_client",
+                return_value=fallback_client,
+            ),
         ):
             with self.assertRaises(HTTPException) as context:
                 get_user_id_from_token("bad-token")
@@ -886,6 +958,144 @@ class SecurityTokenTest(unittest.TestCase):
         self.assertEqual(context.exception.status_code, 401)
         self.assertEqual(context.exception.detail, "Invalid authentication token")
         fallback_get_user.assert_not_called()
+
+
+class SharedAuthRefreshTest(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        _clear_jwks_cache_for_tests()
+        self.settings = patch(
+            "app.core.security.get_settings",
+            return_value=SimpleNamespace(
+                ENVIRONMENT="production",
+                SUPABASE_URL="https://project-ref.supabase.co",
+                SUPABASE_JWT_SECRET="jwt-secret",
+            ),
+        )
+        self.settings.start()
+        self.addCleanup(self.settings.stop)
+        self.addCleanup(_clear_jwks_cache_for_tests)
+
+    async def asyncSetUp(self):
+        from anyio import to_thread
+
+        self.limiter = to_thread.current_default_thread_limiter()
+        self.original_tokens = self.limiter.total_tokens
+        # One worker fetches keys; all eight followers must release the other.
+        self.limiter.total_tokens = 2
+
+    async def asyncTearDown(self):
+        self.limiter.total_tokens = self.original_tokens
+
+    async def exercise_refresh(self, *, expired=False, fail=False, cancel=False, invalid=False):
+        token, key = _make_es256_token()
+        bad_token, _ = _make_es256_token()  # Same kid, different signing key.
+        if expired:
+            with patch("app.core.security.httpx.get", return_value=FakeResponse({"keys": [key]})):
+                self.assertEqual(
+                    await get_current_user_id(SimpleNamespace(credentials=token)), "user_1"
+                )
+            from app.core import security as module
+
+            with module._jwks_cache_lock:
+                module._jwks_cache["expires_at"] = 0
+                module._jwks_cache["refresh_allowed_at"] = 0
+        started, release = Event(), Event()
+
+        def fetch(_url, *, timeout):
+            started.set()
+            if not release.wait(timeout=2):
+                raise RuntimeError("test refresh was not released")
+            if fail:
+                raise RuntimeError("provider unavailable")
+            return FakeResponse({"keys": [key]})
+
+        follower_waiting = asyncio.Event()
+        original_wrap = asyncio.wrap_future
+
+        def wrap(future):
+            follower_waiting.set()
+            return original_wrap(future)
+
+        with (
+            patch("app.core.security.httpx.get", side_effect=fetch) as fetch_mock,
+            patch(
+                "app.core.deps.asyncio.wrap_future",
+                side_effect=wrap,
+            ),
+        ):
+            leader = asyncio.create_task(get_current_user_id(SimpleNamespace(credentials=token)))
+            self.assertTrue(await asyncio.to_thread(started.wait, 1))
+            followers = [
+                asyncio.create_task(
+                    get_current_user_id(
+                        SimpleNamespace(
+                            credentials=bad_token if invalid else token,
+                        )
+                    )
+                )
+                for _ in range(8)
+            ]
+            try:
+                await asyncio.wait_for(follower_waiting.wait(), 1)
+                self.assertFalse(followers[0].done())
+                if cancel:
+                    followers[0].cancel()
+                    with self.assertRaises(asyncio.CancelledError):
+                        await followers[0]
+                # Follower waiting releases the executor; ordinary worker work runs.
+                from starlette.concurrency import run_in_threadpool
+
+                self.assertEqual(await asyncio.wait_for(run_in_threadpool(lambda: 42), 1), 42)
+            finally:
+                release.set()
+            results = await asyncio.gather(leader, *followers, return_exceptions=True)
+            fetch_mock.assert_called_once()
+        if fail:
+            for result in results:
+                self.assertIsInstance(result, HTTPException)
+                self.assertEqual(result.status_code, 503)
+        else:
+            self.assertEqual(results[0], "user_1")
+            for index, result in enumerate(results[1:]):
+                if cancel and index == 0:
+                    self.assertIsInstance(result, asyncio.CancelledError)
+                elif invalid:
+                    self.assertIsInstance(result, HTTPException)
+                    self.assertEqual(result.status_code, 401)
+                else:
+                    self.assertEqual(result, "user_1")
+
+    async def test_cold_navigation_burst_shares_one_refresh(self):
+        await self.exercise_refresh()
+
+    async def test_expired_cache_navigation_burst_shares_one_refresh(self):
+        await self.exercise_refresh(expired=True)
+
+    async def test_failed_refresh_rejects_every_waiter(self):
+        await self.exercise_refresh(expired=True, fail=True)
+
+    async def test_cancelled_follower_does_not_cancel_shared_refresh(self):
+        await self.exercise_refresh(cancel=True)
+
+    async def test_followers_still_verify_their_own_signatures(self):
+        await self.exercise_refresh(invalid=True)
+
+    async def test_wait_deadline_does_not_cancel_shared_refresh(self):
+        from concurrent.futures import Future
+
+        completion = Future()
+        with (
+            patch("app.core.deps.AUTHENTICATION_WAIT_TIMEOUT_SECONDS", 0.01),
+            patch(
+                "app.core.deps.get_user_id_from_token",
+                side_effect=JWKSRefreshInFlight(completion),
+            ),
+        ):
+            with self.assertRaises(HTTPException) as context:
+                await get_current_user_id(SimpleNamespace(credentials="synthetic-token"))
+        self.assertEqual(context.exception.status_code, 503)
+        self.assertFalse(completion.cancelled())
+        completion.set_result(None)
 
 
 if __name__ == "__main__":

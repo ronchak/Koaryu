@@ -12,9 +12,12 @@ const storeSource = source("../src/lib/store.tsx");
 
 describe("archived membership integration contracts", () => {
   it("parses explicit auth membership status and writes it to middleware cache state", () => {
-    assert.match(middlewareSource, /parseAuthProfileResponse\(await authMeResponse\.json\(\)\)/);
+    assert.match(middlewareSource, /cacheAuthProfile\(await requestAuthProfile\(/);
     assert.match(middlewareSource, /profile\.membership_status/);
-    assert.match(middlewareSource, /serializeStudioStateCookie\(userId, hasStudio, membershipStatus\)/);
+    assert.match(
+      middlewareSource,
+      /serializeStudioStateCookie\(userId, hasStudio, membershipStatus\)/,
+    );
     assert.match(middlewareSource, /resolveMembershipRoute\(/);
     assert.match(middlewareSource, /clearActiveStudioCookie\(supabaseResponse, request\)/);
   });
@@ -31,6 +34,9 @@ describe("archived membership integration contracts", () => {
     assert.match(storeSource, /applyAuthoritativeNoStudioState\(authProfile, session\.user\)/);
     assert.match(storeSource, /authProfile\.membership_status !== "active"/);
     assert.match(storeSource, /routeForMembershipStatus\(authProfile\.membership_status\)/);
-    assert.match(storeSource, /syncStoredStudioSessionCookies\([\s\S]*?authProfile\.membership_status/);
+    assert.match(
+      storeSource,
+      /syncStoredStudioSessionCookies\([\s\S]*?authProfile\.membership_status/,
+    );
   });
 });

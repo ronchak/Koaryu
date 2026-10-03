@@ -2,36 +2,28 @@
 
 ## Product disposition
 
-Koaryu billing is **CONTRACT ONLY**. The supported production behavior is limited to:
+Koaryu Core and Koaryu Payments are separate products with separate authority.
 
-1. Admin and Front Desk viewing billing and reconciliation state.
-2. Admin and Front Desk attaching an **external-only local billing record** to a student.
-3. Admin and Front Desk recording a **payer-level external payment**.
-4. Admin and Front Desk reconciling an existing Stripe-linked invoice through a provider read.
+**Koaryu Core is live in production.** An authenticated studio Admin can start the
+flat-rate Koaryu subscription through Stripe Checkout and open the Stripe customer
+portal. The first eligible Checkout reservation receives one 30-day trial; accepted
+Checkout and subscription events consume that eligibility so a later subscription
+cannot receive another trial. Production currently uses the live, active `$27 USD`
+monthly price. This path is controlled by `CORE_SELF_CHECKOUT_ENABLED` and does not
+grant any Koaryu Payments or tuition authority.
 
-Stripe Connect setup, platform-subscription changes, provider-backed enrollment lifecycle, hosted-invoice mutation, autopay changes, refunds, voids, provider plan or payer synchronization, and exports are currently unsupported. Instructors receive no billing access. Preview-mode actions are demonstrations only and do not change provider state.
+Koaryu Payments has five separate product facts. A workflow may be implemented without
+being available to a studio. The [billing workflow catalog](billing-workflow-catalog.md)
+records whether each named workflow is implemented and which staff roles may use it.
+The environment switch is a separate global interlock. Live provider mutations also
+require an enabled, unexpired grant for the exact studio and every exact operation.
+Commercial availability is a separate product decision again. No current studio grant
+is asserted here, and tuition collection must not be presented as generally available.
 
-Readiness terms used below:
-
-- `READ-ONLY LIVE`: provider or local data can be read; no outbound financial mutation.
-- `LOCAL-ONLY`: supported local database mutation with no Stripe effect.
-- `FAIL-CLOSED`: live outbound Stripe mutation is blocked by the central mutation policy.
-- `HIDDEN`: no ordinary Koaryu UI control.
-- `BROKEN`: implementation exists but does not complete the represented workflow.
-- `DECORATIVE`: preview/demo behavior only.
+Preview-mode actions are demonstrations only and do not change provider state.
+Koaryu Core Checkout remains separate from tuition activation.
 
 ## Authorization contract
-
-| Capability | Admin | Front Desk | Instructor | Product disposition |
-| --- | --- | --- | --- | --- |
-| View billing summaries, plans, payers, enrollments, invoices, and payments | Yes | Yes | No | `READ-ONLY LIVE` |
-| Attach an external-only billing record to a student | Yes | Yes | No | Supported routine, `LOCAL-ONLY` |
-| Record a payer-level external payment | Yes | Yes | No | Supported routine, `LOCAL-ONLY` |
-| Reconcile an existing Stripe-linked invoice | Yes | Yes | No | Supported routine, `READ-ONLY LIVE` |
-| View Koaryu Core subscription detail or email usage through platform endpoints | Yes | No | No | Admin-only read |
-| Stripe Connect setup, reset, sync, or dashboard link | Backend Admin only | No | No | Admin-only and hidden |
-| Plan, payer, autopay, enrollment-lifecycle, invoice-lifecycle, refund, or export writes | Backend Admin only | No | No | Admin-only and hidden/unsupported |
-| Stripe webhooks | Provider signature only | Provider signature only | Provider signature only | Hidden system surface |
 
 Every staff route resolves authoritative `staff_roles` membership before service construction. Unexpected multi-membership fails closed. Instructor denial occurs before client billing code or sensitive billing fetches.
 
@@ -65,114 +57,42 @@ A field the resolver cannot read is treated as a denial, and every denial must b
 
 ## Visible control inventory
 
-| Surface or control | Handler or endpoint | Role | Side effects | Product disposition |
-| --- | --- | --- | --- | --- |
-| Billing route and nested routes | Shared server billing gate | Admin / Front Desk | None | Supported; Instructor receives a non-disclosing denied page |
-| Refresh | Billing data GET set | Admin / Front Desk | Reads local state; Connect status may refresh a local projection from a provider read | Supported read |
-| Tabs and review steps | Client navigation | Admin / Front Desk | None | Supported navigation |
-| Overview metrics and status | Billing list/status GETs | Admin / Front Desk; platform detail Admin | Read and bounded projection repair | Supported read |
-| Koaryu Core checkout | `POST /platform-billing/checkout` | Admin | Stripe customer/session, local pending metadata, audit | Shown only when the exact studio reports the Core mutation capability; live `FAIL-CLOSED` |
-| Customer portal | `POST /platform-billing/portal` | Admin | Stripe portal session and audit; missing-customer repair may create a customer | Shown only when the exact studio reports the Core mutation capability and has a Stripe customer; live `FAIL-CLOSED` |
-| Connect payments | `POST /billing/connect/onboarding-link` | Admin | May create Connect account/link, update local account row, audit | Non-preview control disabled; live `FAIL-CLOSED` |
-| Stripe dashboard | `POST /billing/connect/dashboard-link` | Admin | Creates Stripe login link and audit | Non-preview control disabled; live `FAIL-CLOSED` |
-| Reconnect Stripe | `POST /billing/connect/reset` | Admin | Locally clears the account association and audits | Removed from UI; hidden dangerous action |
-| Tuition plan list | `GET /billing/plans` | Admin / Front Desk | Local read | Supported read |
-| Create or sync plan | Plan mutation endpoints | Admin | Local writes; may create or update Stripe product/price; audit | Removed from UI; hidden, live `FAIL-CLOSED` |
-| Family payer list | `GET /billing/payers` | Admin / Front Desk | Local read | Supported read |
-| Create or sync payer | Payer mutation endpoints | Admin | Local write; may create/update Stripe customer; audit | Removed from UI; hidden, live `FAIL-CLOSED` |
-| Autopay setup or disable | Payer autopay endpoints | Admin | Stripe setup/session or subscription rewiring plus local writes | Removed from UI; hidden, live `FAIL-CLOSED` |
-| Attach external student billing | `POST /billing/enrollments` | Admin / Front Desk | Local enrollment, balance recomputation, audit; no Stripe call | Supported routine, `LOCAL-ONLY` |
-| Enrollment list and provider references | `GET /billing/enrollments` | Admin / Front Desk | Read | Supported read |
-| Enrollment mode, pause, resume, cancel | Enrollment mutation endpoints | Admin | May detach, rewire, or activate provider subscription state plus local writes | Controls removed; hidden/unsupported |
-| Failed-payment queue and invoice list | Invoice and payer GETs | Admin / Front Desk | Read | Supported read |
-| Hosted-invoice link | Existing `hosted_invoice_url` | Admin / Front Desk | Opens an existing provider-hosted page | Supported read-only link |
-| Create, finalize, retry, or void invoice | Invoice mutation endpoints | Admin | Stripe invoice/payment mutation, local projection, audit | Controls removed; hidden, live `FAIL-CLOSED` |
-| Reconcile invoice | `POST /billing/invoices/{id}/reconcile` | Admin / Front Desk | Stripe GET, local projection, balance recomputation, audit | Supported routine, `READ-ONLY LIVE` |
-| Payment list and monthly cohort | Payment GETs | Admin / Front Desk | Read | Supported read |
-| Record external payment | `POST /billing/payments/external` | Admin / Front Desk | Local payer-level payment and audit; no Stripe call | Supported routine, `LOCAL-ONLY` |
-| Billing CSV controls | `POST /billing/exports` | Admin | Creates an export job row and audit; no producer completes it | Removed; endpoint hidden and `BROKEN` |
-| Preview actions | Client preview branches | Preview role | Demo messages/state only | `DECORATIVE`; no provider effect |
+The application derives visible billing actions from the signed-in role and the
+workflow capabilities returned for that studio. The
+[billing workflow catalog](billing-workflow-catalog.md) owns workflow classification,
+roles, provider operations, and prerequisites. The frontend capability and route
+policies enforce those decisions without exposing denial details to Instructors.
+Preview controls remain local demonstrations.
 
 ## Endpoint inventory
 
-### Platform and Connect
-
-| Endpoint | Role | Effects | Disposition |
-| --- | --- | --- | --- |
-| `GET /platform-billing/status` | Admin | Reads and may repair local platform-subscription projection | Admin-only read |
-| `GET /platform-billing/email-usage` | Admin | Local usage read | Admin-only read |
-| `POST /platform-billing/checkout` | Admin | Stripe customer/Checkout Session, pending metadata, audit | Capability-gated; live `FAIL-CLOSED` |
-| `POST /platform-billing/portal` | Admin | Stripe portal session and audit; missing-customer repair may create a customer | Capability- and customer-gated; live `FAIL-CLOSED` |
-| `GET /billing/connect/status` | Admin / Front Desk | Local read; may retrieve Stripe account and refresh projection | Supported read |
-| `POST /billing/connect/onboarding-link` | Admin | Stripe account/link creation, local account projection, audit | Hidden; live `FAIL-CLOSED` |
-| `POST /billing/connect/sync` | Admin | Stripe account read and local projection | Hidden Admin-only reconciliation |
-| `POST /billing/connect/reset` | Admin | Local unlink/reset and audit | Hidden Admin-only dangerous action |
-| `POST /billing/connect/dashboard-link` | Admin | Stripe login-link creation and audit | Hidden; live `FAIL-CLOSED` |
-| `GET /billing/system/status` | Admin | Configuration, account, and webhook-health read | Hidden Admin-only read |
-| `POST /billing/reconcile` | Admin | Broad reconciliation; payer and some paid-object projections can update a provider customer's default payment method | Hidden; mutation-capable branches are live `FAIL-CLOSED` |
-
-### Plans and payers
-
-| Endpoint | Role | Effects | Disposition |
-| --- | --- | --- | --- |
-| `GET /billing/plans` | Admin / Front Desk | Local read | Supported read |
-| `POST /billing/plans` | Admin | Local insert; may create Stripe product/price; audit | Hidden/unsupported |
-| `PATCH /billing/plans/{plan_id}` | Admin | Local update; may replace provider price/product data; audit | Hidden/unsupported |
-| `POST /billing/plans/{plan_id}/archive` | Admin | Local archive and audit | Hidden Admin-only |
-| `POST /billing/plans/{plan_id}/sync` | Admin | Stripe product/price mutation, local projection, audit | Hidden; live `FAIL-CLOSED` |
-| `GET /billing/payers` | Admin / Front Desk | Local read | Supported read |
-| `POST /billing/payers` | Admin | Local insert; may create Stripe customer; audit | Hidden/unsupported |
-| `GET /billing/payers/{payer_id}` | Admin / Front Desk | Local read | Supported read |
-| `PATCH /billing/payers/{payer_id}` | Admin | Local update; may update Stripe customer; audit | Hidden/unsupported |
-| `POST /billing/payers/{payer_id}/sync` | Admin | Stripe customer read/create/update, local projection, audit | Hidden; live `FAIL-CLOSED` |
-| `POST /billing/payers/{payer_id}/autopay/setup-link` | Admin | Terms timestamp, Stripe setup flow, local status, audit | Hidden; live `FAIL-CLOSED` |
-| `POST /billing/payers/{payer_id}/autopay/disable` | Admin | May rewire provider subscriptions and local state; audit | Hidden; unresolved semantics |
-
-### Subscriptions and enrollments
-
-| Endpoint | Role | Effects | Disposition |
-| --- | --- | --- | --- |
-| `GET /billing/subscriptions` | Admin / Front Desk | Local read | Supported read |
-| `GET /billing/enrollments` | Admin / Front Desk | Local read | Supported read |
-| `GET /students/{student_id}/billing` | Admin / Front Desk | Tenant-scoped local read | Supported read |
-| `POST /billing/enrollments` | Admin / Front Desk | External-only local enrollment, balance recomputation, audit | Supported routine |
-| `POST /students/{student_id}/billing/enrollments` | Admin / Front Desk | Same external-only transition, student-scoped | Supported routine |
-| `PATCH /billing/enrollments/{enrollment_id}` | Admin | May detach or activate provider lifecycle and update local state | Hidden/unsupported |
-| `POST /billing/enrollments/{enrollment_id}/pause` | Admin | Provider detachment plus local status and audit | Hidden/unsupported |
-| `POST /billing/enrollments/{enrollment_id}/resume` | Admin | May activate provider subscription plus local status | Hidden/unsupported |
-| `POST /billing/enrollments/{enrollment_id}/cancel` | Admin | Current implementation detaches provider state immediately | Hidden/unsupported; not an ordinary period-end cancellation |
-
-Both enrollment-create routes return `409` before service execution unless `collection_mode` is exactly `external`.
-
-### Invoices, payments, and exports
-
-| Endpoint | Role | Effects | Disposition |
-| --- | --- | --- | --- |
-| `GET /billing/invoices` | Admin / Front Desk | Local read | Supported read |
-| `POST /billing/invoices` | Admin | Creates local and Stripe invoice/items; may finalize/send; audit | Hidden/unsupported |
-| `POST /billing/invoices/{invoice_id}/finalize` | Admin | Finalizes and may email Stripe invoice; local projection | Hidden; live `FAIL-CLOSED` |
-| `POST /billing/invoices/{invoice_id}/retry` | Admin | Stripe payment attempt with durable retry operation | Hidden/unsupported |
-| `POST /billing/invoices/{invoice_id}/void` | Admin | Stripe or local void, balance recomputation, audit | Hidden exceptional action |
-| `POST /billing/invoices/{invoice_id}/reconcile` | Admin / Front Desk | Stripe retrieval only, local projection/balance, audit | Supported routine |
-| `GET /billing/payments` | Admin / Front Desk | Local read | Supported read |
-| `GET /billing/payments/current-month-cohort` | Admin / Front Desk | Local aggregate read | Supported read |
-| `POST /billing/payments/external` | Admin / Front Desk | Payer-only local payment, balance recomputation, audit | Supported routine |
-| `POST /billing/payments/{payment_id}/refund` | Admin | Stripe refund, local projection, audit | Hidden; live `FAIL-CLOSED` |
-| `POST /billing/exports` | Admin | Queues local job and audit only | Hidden; `BROKEN` without worker |
-| `GET /billing/exports/{export_id}` | Admin | Reads queued job | Hidden read |
-
-The external-payment route rejects a missing `payer_id` or any `invoice_id` with `409` before service execution.
-
-### Webhooks
-
-| Endpoint | Authentication | Effects | Disposition |
-| --- | --- | --- | --- |
-| `POST /webhooks/stripe/platform` | Stripe platform signature | Claims event and projects platform state | Hidden system endpoint |
-| `POST /webhooks/stripe/connect` | Stripe Connect signature | Claims and projects account/billing state; an autopay checkout event can update a provider customer's default payment method | Hidden system endpoint; the provider write is live `FAIL-CLOSED` |
-
-Webhook routes read the raw request body, enforce the request-size limit, verify the Stripe signature, and reject configured-mode/livemode mismatch.
+The [billing workflow catalog](billing-workflow-catalog.md) is the maintained inventory
+for mutating billing handlers and provider sinks. Endpoint authorization and tenant
+resolution remain independent checks. Exact-operation live permits are defined in
+[Stripe live billing rollout](stripe-live-billing-rollout.md), while webhook identity,
+projection, and reconciliation rules remain in
+[Stripe live billing reconciliation](stripe-live-billing-reconciliation-v3.md).
+The transition contracts below retain the local and provider safety rules that callers
+must follow.
 
 ## Supported transition contracts
+
+### Local billing plan definition
+
+Admin plan creation and `PATCH /billing/plans/{plan_id}` use
+`write_billing_plan_v1`. One transaction owns the allowlisted scalar changes,
+deduplicated same-studio program links, original-actor audit, and committed response
+snapshot. Program omission retains links, an empty list clears them, and a supplied
+list replaces them. A true no-op changes no status, timestamp, link, or audit row.
+Required fields reject explicit null; omitted fields stay unchanged and nullable text
+may be cleared.
+
+New definitions and financial changes to amount, currency, interval, signup fee, or
+trial days require USD. Existing non-USD records may receive an identical save or
+nonfinancial maintenance without reinterpretation or backfill. Program-only changes
+preserve price readiness. Provider sync, support for new currencies, and aggregate
+currency policy remain separate work. The create UI exists; no shipped edit-plan UI
+calls the supported Admin PATCH API.
 
 ### 1. External-only student billing attachment
 
@@ -197,20 +117,24 @@ Webhook routes read the raw request body, enforce the request-size limit, verify
 
 | Contract field | Value |
 | --- | --- |
-| Source | Same-studio payer, positive amount, currency, external method, optional note |
+| Source | Same-studio payer, positive amount, USD currency, external method, optional note |
 | Target | One payment with `status=externally_recorded`, payer target, and current `processed_at` |
 | Actors | Admin, Front Desk |
 | Inputs | `payer_id`, amount, method, optional note, required `Idempotency-Key`; `invoice_id` forbidden |
 | Effective time | Recorded immediately in local history |
 | Provider action | None |
-| Idempotency | Unique by studio and key; canonical request hash must match. Same key/same request returns the existing payment; same key/different request returns `409` |
-| Pending state | None |
+| Idempotency | Unique by studio and key; canonical request hash must match. Same key/same request returns the original payment and audit; same key/different request returns `409`. Confirmed historical non-USD requests remain replayable, but new non-USD writes are rejected |
+| Pending state | Before POST, the browser stores the exact staff/studio-scoped payload and key, including the normalized note, and pins the original form until matching confirmation. Unavailable, corrupt or failing storage blocks an unprotected submission. Preview does not read or retire live attempts |
 | Webhooks | None expected |
-| Reconciliation | Refresh payment list and UTC-month cohort |
-| Failure and retry | Never claim a charge or invoice settlement. Reuse the same key for the same unchanged request |
-| Audit | `billing.external_payment_recorded` only when the row is first created |
+| Reconciliation | Preserve payment confirmation independently of payment-list and UTC-month-cohort refresh |
+| Failure and retry | Never claim a charge or invoice settlement. Reuse the same key for the same unchanged request. Refresh failure is separate from recording failure; failed retirement preserves the unresolved attempt. Token renewal keeps the same owner, while stale or different-session settlements cannot retire another owner's attempt |
+| Audit | `billing.external_payment_recorded` commits atomically with a new payment and preserves the original actor on replay; there is no historical audit backfill |
 | Recovery | Preserve the record; correction/reversal is a future Admin accounting workflow |
 | Live policy | Supported because it performs no Stripe mutation |
+
+A browser rollback must preserve pending-request recovery or block new recording until
+the unresolved attempt is confirmed. An older frontend does not safely understand the
+new pending-attempt storage contract.
 
 ### 3. Existing-invoice reconciliation
 
@@ -231,15 +155,19 @@ Webhook routes read the raw request body, enforce the request-size limit, verify
 | Recovery | Retry the read; use broad Admin reconciliation only as a bounded support action |
 | Live policy | Supported because the provider operation is read-only |
 
-The domain write and audit insert are not one database transaction. After an ambiguous response, operators refresh before retrying. External-payment replay is key-safe; external-enrollment uniqueness exposes an existing assignment as `409`; invoice reconciliation is convergent.
+Local plan writes and external-payment writes commit their domain record and original-actor audit in one database transaction. Other local workflows may still split domain and audit writes. After an ambiguous response, operators refresh before retrying. External-payment replay is key-safe; external-enrollment uniqueness exposes an existing assignment as `409`; invoice reconciliation is convergent.
 
 ## State-truth, webhook, and audit rules
 
-- A visible success describes only the completed local or read-based transition.
-- Hidden endpoint implementations do not make their transitions supported. Some may perform local writes before a blocked live provider call.
+- A visible success describes the exact operation the server confirmed. It never claims
+  a broader provider or commercial outcome.
+- An implemented workflow appears only when the signed-in role and exact studio
+  capability allow it.
 - No generic enrollment `PATCH` is part of the supported lifecycle.
 - No local success may be presented as a completed Stripe operation.
-- Inbound live webhooks for existing objects remain allowed; outbound live Stripe mutation remains closed.
+- Inbound live webhooks for existing objects remain allowed. Koaryu Core Checkout and
+  customer portal use their separate authority. Connect and tuition mutations require
+  the global interlock plus exact-studio, exact-operation permission.
 - Events are claimed durably by Stripe event ID. Concurrent handling uses a bounded lease and retry response.
 - Unmapped live Connect events are quarantined and retried rather than projected into an unknown studio.
 - Projection preserves tenant/account identity, terminal states, and event ordering.
@@ -250,7 +178,9 @@ The domain write and audit insert are not one database transaction. After an amb
 
 Application deployment, production migration, and live Stripe activation are three independent approvals. On 2026-08-04, the product owner approved live Koaryu Core Checkout and Customer Portal activation. On 2026-08-13, the product owner approved production self-service Core checkout for newly registered studios. On 2026-08-14, the product owner directed the release to continue through production with Core self-checkout and signup enabled. That release authorization includes the two bounded compensating operations required to make Core checkout fail closed: expiring a newly created session that loses its database reservation, and canceling the exact subscription from a Checkout completion whose reservation was invalidated. It does not authorize generic subscription cancellation, refunds, Connect onboarding, Connect payments, tuition collection, or other Stripe mutations.
 
-`CORE_SELF_CHECKOUT_ENABLED` is the production-only interlock for the three user-facing Core operations plus those two exact-object compensations. It requires an exact deployed `RENDER_GIT_COMMIT`, an authenticated studio Admin at the endpoint boundary, and an explicit studio ID at the central Stripe mutation policy. A cancellation is allowed only for the subscription ID rejected by the atomic checkout-acceptance decision. An expiration is allowed only for the session ID returned by a failed publish or stored by the atomic comp invalidation; completed sessions are never expired. A paid invalid completion must first persist a durable `core_checkout_compensations` receipt so cancellation cannot erase the refund/credit work queue. The interlock never authorizes a generic `customer.*` or `subscription.*` operation. `LIVE_BILLING_ENABLED` remains `false` by default and continues to own every Connect or tuition mutation; those operations still require an unexpired exact-studio scope and exact-candidate all-clear reconciliation checkpoint as defined in `stripe-live-billing-rollout.md`.
+On 2026-08-16, Ronak explicitly authorized the required production migration, exact-candidate application deployment, and repository alignment for the already-live global `LIVE_BILLING_ENABLED=true` interlock. That approval creates no studio scope or reconciliation checkpoint and authorizes no provider mutation, tenant financial permission, live Connect or tuition mutation, or live-money action. Those actions require separate approval and remain fail-closed behind the enabled, unexpired exact-studio scope and exact-candidate all-clear reconciliation checkpoint requirements below.
+
+`CORE_SELF_CHECKOUT_ENABLED` is the production-only interlock for the three user-facing Core operations plus those two exact-object compensations. It requires an exact deployed `RENDER_GIT_COMMIT`, an authenticated studio Admin at the endpoint boundary, and an explicit studio ID at the central Stripe mutation policy. A cancellation is allowed only for the subscription ID rejected by the atomic checkout-acceptance decision. An expiration is allowed only for the session ID returned by a failed publish or stored by the atomic comp invalidation; completed sessions are never expired. A paid invalid completion must first persist a durable `core_checkout_compensations` receipt so cancellation cannot erase the refund/credit work queue. The interlock never authorizes a generic `customer.*` or `subscription.*` operation. `LIVE_BILLING_ENABLED` remains `false` by default and in staging, while production intentionally sets it to `true` as the necessary global interlock for Connect and tuition mutations. The production value alone creates no studio scope, reconciliation checkpoint, provider authority, or tenant financial permission. Each operation still requires an enabled, unexpired exact-studio scope and exact-candidate all-clear reconciliation checkpoint as defined in `stripe-live-billing-rollout.md`.
 
 Activation execution must name each exact transition and prove in Stripe test mode:
 
@@ -269,12 +199,14 @@ Approval for one transition never approves another transition or the broader bil
 
 The billing domain meets the current product boundary when:
 
-- only the three named routine transitions are visible and operable;
-- provider/global/exceptional controls are removed, disabled, or truthfully labeled;
+- visible controls match the signed-in role and exact studio workflow capabilities;
+- provider and exceptional controls are absent or truthfully labeled when their exact
+  capability is unavailable;
 - Admin and Front Desk can read billing state;
 - Instructor denial occurs before any billing fetch;
 - external-only and payer-only backend guards run before the billing service;
-- live outbound Stripe mutation remains fail-closed;
+- live Koaryu Payments and tuition mutations fail closed without the required
+  exact-studio, exact-operation permission;
 - preview actions are explicitly demo-only;
 - export controls no longer promise a download;
 - focused permission, idempotency, reconciliation, webhook, and live-fail-close tests pass;

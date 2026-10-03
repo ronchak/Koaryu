@@ -15,13 +15,15 @@ from tests.platform_billing_helpers import PlatformBillingServiceTestCase
 
 
 def lapsed_rows(status: str = "canceled") -> list[dict]:
-    return [{
-        "studio_id": "studio_1",
-        "stripe_subscription_id": "sub_123",
-        "stripe_customer_id": "cus_123",
-        "status": status,
-        "comped": False,
-    }]
+    return [
+        {
+            "studio_id": "studio_1",
+            "stripe_subscription_id": "sub_123",
+            "stripe_customer_id": "cus_123",
+            "status": status,
+            "comped": False,
+        }
+    ]
 
 
 class CountingStripeService:
@@ -103,10 +105,14 @@ class AccessRepairThrottleTest(PlatformBillingServiceTestCase):
 
         CountingStripeService.reported_status = "active"  # payment lands, no webhook
 
-        still_waiting = self.access(service, CountingStripeService, ACCESS_REPAIR_RECHECK_INTERVAL_SECONDS - 1)
+        still_waiting = self.access(
+            service, CountingStripeService, ACCESS_REPAIR_RECHECK_INTERVAL_SECONDS - 1
+        )
         self.assertEqual(still_waiting["status"], "incomplete")
 
-        recovered = self.access(service, CountingStripeService, ACCESS_REPAIR_RECHECK_INTERVAL_SECONDS + 0.1)
+        recovered = self.access(
+            service, CountingStripeService, ACCESS_REPAIR_RECHECK_INTERVAL_SECONDS + 0.1
+        )
         self.assertEqual(recovered["status"], "active")
 
     def test_recheck_window_stays_imperceptible(self):
@@ -237,7 +243,9 @@ class AccessRepairThrottleTest(PlatformBillingServiceTestCase):
 
         with patch(
             "app.services.platform_billing_service.PlatformBillingService._update_subscription_row",
-            side_effect=HTTPException(status_code=404, detail="Koaryu Core billing record not found."),
+            side_effect=HTTPException(
+                status_code=404, detail="Koaryu Core billing record not found."
+            ),
         ):
             with self.assertRaises(HTTPException):
                 self.access(service, CountingStripeService, 0.0)
@@ -277,8 +285,12 @@ class AccessRepairThrottleTest(PlatformBillingServiceTestCase):
         service = self.service(lapsed_rows())
 
         deployment = [
-            HTTPException(status_code=409, detail=platform_billing_service.MISSING_STRIPE_CONFIGURATION_DETAIL),
-            HTTPException(status_code=500, detail="Stripe SDK is not installed. Install backend requirements."),
+            HTTPException(
+                status_code=409, detail=platform_billing_service.MISSING_STRIPE_CONFIGURATION_DETAIL
+            ),
+            HTTPException(
+                status_code=500, detail="Stripe SDK is not installed. Install backend requirements."
+            ),
         ]
         not_deployment = [
             # Our own persistence failure, which happens to share the type.
@@ -344,13 +356,15 @@ class AccessRepairThrottleTest(PlatformBillingServiceTestCase):
 
     def test_throttle_is_scoped_per_studio(self):
         rows = lapsed_rows()
-        rows.append({
-            "studio_id": "studio_2",
-            "stripe_subscription_id": "sub_456",
-            "stripe_customer_id": "cus_456",
-            "status": "canceled",
-            "comped": False,
-        })
+        rows.append(
+            {
+                "studio_id": "studio_2",
+                "stripe_subscription_id": "sub_456",
+                "stripe_customer_id": "cus_456",
+                "status": "canceled",
+                "comped": False,
+            }
+        )
         service = self.service(rows)
 
         self.access(service, CountingStripeService, 0.0)

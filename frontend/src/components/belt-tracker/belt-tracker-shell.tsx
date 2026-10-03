@@ -3,10 +3,10 @@
 import type { ReactNode } from "react";
 import { Header } from "@/components/header";
 import { ProgramPicker } from "@/components/programs/program-picker";
-import { Button } from "@/components/ui/button";
 import { DismissibleNotice } from "@/components/ui/dismissible-notice";
+import { SlidingSegmentedControl } from "@/components/ui/sliding-segmented-control";
 import type { Program } from "@/types";
-import { Award, Settings } from "lucide-react";
+import styles from "./belt-tracker.module.css";
 
 export type BeltTrackerTab = "eligibility" | "ladder";
 
@@ -16,6 +16,7 @@ type BeltTrackerShellProps = {
   canConfigureBelts: boolean;
   children: ReactNode;
   dirty: boolean;
+  isEditing: boolean;
   isSwitchingLadder: boolean;
   onDismissActionMessage: () => void;
   onSelectProgram: (programId: string | null) => void;
@@ -36,6 +37,7 @@ export function BeltTrackerShell({
   canConfigureBelts,
   children,
   dirty,
+  isEditing,
   isSwitchingLadder,
   onDismissActionMessage,
   onSelectProgram,
@@ -44,54 +46,35 @@ export function BeltTrackerShell({
   selectedProgramId,
   tab,
 }: BeltTrackerShellProps) {
+  const visibleTabs = TABS.filter((item) => item.id !== "ladder" || canConfigureBelts);
+
   return (
-    <>
-      <Header
-        title="Belt Tracker"
-        description="Track rank progression and promotion readiness."
-      >
-        {tab === "eligibility" && canConfigureBelts ? (
-          <Button variant="secondary" size="sm" onClick={() => onTabChange("ladder")}>
-            <Settings className="w-3.5 h-3.5" />
-            Configure ranks
-          </Button>
-        ) : tab === "ladder" ? (
-          <Button variant="secondary" size="sm" onClick={() => onTabChange("eligibility")}>
-            <Award className="w-3.5 h-3.5" />
-            View eligibility
-          </Button>
-        ) : null}
-      </Header>
+    <div className={`flex min-h-full flex-col ${styles.beltPage}`}>
+      <Header title="Belt Tracker" />
 
       <div className="flex-1 flex flex-col">
-        <div className="flex items-center gap-4 px-8 py-3 border-b border-border">
-          {TABS.filter((item) => item.id !== "ladder" || canConfigureBelts).map((item) => (
-            <button
-              key={item.id}
-              onClick={() => onTabChange(item.id)}
-              className={`text-sm pb-2 border-b-2 cursor-pointer transition-colors ${
-                tab === item.id
-                  ? "text-text-primary border-accent font-medium"
-                  : "text-text-secondary border-transparent hover:text-text-primary"
-              }`}
-            >
-              {item.label}
-            </button>
-          ))}
-          <div className="ml-auto flex items-center gap-3">
+        <div className={`mx-4 sm:mx-6 lg:mx-8 ${styles.beltControls}`}>
+          <SlidingSegmentedControl
+            activeValue={tab}
+            ariaLabel="Belt tracker view"
+            className={styles.beltTabs}
+            idPrefix="belt-tab"
+            items={visibleTabs.map((item) => ({
+              ...item,
+              controls: `belt-panel-${item.id}`,
+            }))}
+            mode="tabs"
+            onChange={onTabChange}
+          />
+          <div className={styles.beltProgramControl}>
             {beltPrograms.length > 0 ? (
-              <div className="w-64">
+              <div className={styles.beltProgramPicker}>
                 <ProgramPicker
                   programs={beltPrograms}
                   value={selectedProgramId ?? ""}
                   onChange={onSelectProgram}
-                  disabled={dirty || isSwitchingLadder}
+                  disabled={dirty || isEditing || isSwitchingLadder}
                 />
-                {dirty && (
-                  <p className="mt-1 text-[11px] text-warning">
-                    Save or discard changes before switching programs.
-                  </p>
-                )}
               </div>
             ) : (
               <span className="text-xs text-muted">
@@ -101,8 +84,14 @@ export function BeltTrackerShell({
           </div>
         </div>
 
+        {dirty ? (
+          <p className={styles.beltProgramLockNotice}>
+            Save or discard changes before switching programs.
+          </p>
+        ) : null}
+
         {actionMessage ? (
-          <div className="px-8 pt-4">
+          <div className={styles.beltActionNotice}>
             <DismissibleNotice tone="success" onDismiss={onDismissActionMessage}>
               {actionMessage}
             </DismissibleNotice>
@@ -111,6 +100,6 @@ export function BeltTrackerShell({
 
         {children}
       </div>
-    </>
+    </div>
   );
 }

@@ -1,5 +1,8 @@
 import csv
 import json
+import tempfile
+import threading
+from dataclasses import dataclass
 from datetime import date
 from io import StringIO
 from typing import Any, Callable, Optional, Union
@@ -8,7 +11,12 @@ from fastapi import HTTPException, status
 from supabase import Client
 
 from app.services.report_export_catalog import CsvReport, build_report_catalog
-from app.services.report_export_data import ReportExportDataFetcher
+from app.services.report_export_budget import (
+    EXPORT_MAX_OUTPUT_BYTES,
+    ReportExportBudget,
+    ReportExportBudgetSnapshot,
+)
+from app.services.report_export_data import INTELLIGENCE_INPUT_COLUMNS, ReportExportDataFetcher
 from app.services.report_intelligence import (
     build_belt_momentum_testing_pipeline,
     build_data_hygiene_readiness,
@@ -23,11 +31,133 @@ from app.services.report_intelligence import (
     build_schedule_utilization_demand,
 )
 from app.services.staff_service import StaffService
+from app.services.student_age import is_minor_on_date
+from app.services.studio_business_date import studio_today, studio_today_for_studio
 
 REPORT_EXPORT_ROLE_RANK = {
     "front_desk": 10,
     "admin": 20,
 }
+EXPORT_SPOOL_MAX_MEMORY_BYTES = 1 * 1024 * 1024
+EXPORT_STREAM_CHUNK_BYTES = 64 * 1024
+
+
+@dataclass(frozen=True)
+class ReportExportArtifact:
+    """A fully generated report whose backing spool is ready for delivery."""
+
+    spool: Any
+    filename: str
+    emitted_data_rows: int
+    output_bytes: int
+    budget: ReportExportBudgetSnapshot
+    spool_threshold_bytes: int
+    spool_rolled: bool
+
+    @property
+    def spool_closed(self) -> bool:
+        return bool(self.spool.closed)
+
+    def close(self) -> None:
+        self.spool.close()
+
+    def stream(self) -> "_ReportExportSpoolIterator":
+        return _ReportExportSpoolIterator(self.spool)
+
+
+@dataclass(frozen=True)
+class _ReportCalendar:
+    today: date
+    timezone: str
+
+
+class ReportExportArtifactLease:
+    """Transfer or abandon an artifact across the provider worker boundary."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._artifact: Optional[ReportExportArtifact] = None
+        self._abandoned = False
+
+    def offer(self, artifact: ReportExportArtifact) -> bool:
+        with self._lock:
+            if self._abandoned:
+                should_close = True
+            else:
+                self._artifact = artifact
+                should_close = False
+        if should_close:
+            artifact.close()
+            return False
+        return True
+
+    def claim(self, artifact: ReportExportArtifact) -> Optional[ReportExportArtifact]:
+        with self._lock:
+            if self._artifact is artifact:
+                self._artifact = None
+                return artifact
+        return None
+
+    def abandon(self) -> None:
+        with self._lock:
+            self._abandoned = True
+            artifact = self._artifact
+            self._artifact = None
+        if artifact is not None:
+            artifact.close()
+
+
+class _ReportExportSpoolIterator:
+    """Sync iterator for Starlette's bounded threadpool response adapter."""
+
+    def __init__(self, spool: Any) -> None:
+        self._spool = spool
+        self._started = False
+        self._closed = False
+
+    def __iter__(self) -> "_ReportExportSpoolIterator":
+        return self
+
+    def __next__(self) -> bytes:
+        if self._closed:
+            raise StopIteration
+        try:
+            if not self._started:
+                self._spool.seek(0)
+                self._started = True
+            chunk = self._spool.read(EXPORT_STREAM_CHUNK_BYTES)
+            if not chunk:
+                self.close()
+                raise StopIteration
+            return chunk
+        except BaseException:
+            self.close()
+            raise
+
+    def close(self) -> None:
+        if not self._closed:
+            self._closed = True
+            self._spool.close()
+
+
+class _Utf8SpoolWriter:
+    """The text sink used by DictWriter, with byte and elapsed admission."""
+
+    def __init__(self, spool: Any, budget: ReportExportBudget) -> None:
+        self._spool = spool
+        self._budget = budget
+
+    def write(self, value: str) -> int:
+        self._budget.check_elapsed()
+        encoded = value.encode("utf-8")
+        self._budget.consume_output_bytes(len(encoded))
+        written = self._spool.write(encoded)
+        if written != len(encoded):
+            raise OSError("short write while constructing report export")
+        return len(value)
+
+    def flush(self) -> None:
+        return None
 
 
 def _json_text(value: Any) -> str:
@@ -58,9 +188,19 @@ def require_report_export_access(report: CsvReport, role: str) -> None:
 
 
 class ReportExportService:
-    def __init__(self, supabase: Client, *, today: Optional[date] = None):
+    def __init__(
+        self,
+        supabase: Client,
+        *,
+        today: Optional[date] = None,
+        budget: Optional[ReportExportBudget] = None,
+    ):
         self.supabase = supabase
         self.today = today or date.today()
+        self._student_today = today
+        self.budget = budget or ReportExportBudget()
+        self._active_report: Optional[CsvReport] = None
+        self._intelligence_calendar: Optional[_ReportCalendar] = None
 
     def list_reports(self) -> list[CsvReport]:
         return list(REPORTS.values())
@@ -75,55 +215,230 @@ class ReportExportService:
         return report
 
     def _report_data(self) -> ReportExportDataFetcher:
-        return ReportExportDataFetcher(self.supabase)
+        return ReportExportDataFetcher(self.supabase, budget=self.budget)
+
+    @property
+    def budget_snapshot(self) -> ReportExportBudgetSnapshot:
+        return self.budget.snapshot()
 
     async def build_csv(self, report_id: str, studio_id: str) -> tuple[str, str]:
         report = self.get_report(report_id)
         return await self.build_csv_for_report(report, studio_id)
 
-    async def build_csv_for_report(self, report: CsvReport, studio_id: str) -> tuple[str, str]:
-        rows = report.custom_builder(self, studio_id) if report.custom_builder else self._fetch_table_rows(report, studio_id)
-        csv_text = self._write_csv(report.columns, rows)
-        return csv_text, report.filename
+    async def build_csv_artifact_for_report(
+        self,
+        report: CsvReport,
+        studio_id: str,
+    ) -> ReportExportArtifact:
+        # Keep the legacy method as the compatibility seam used by existing
+        # internal tests. The endpoint selects the artifact return path.
+        artifact = await self.build_csv_for_report(
+            report,
+            studio_id,
+            _return_artifact=True,
+        )
+        if not isinstance(artifact, ReportExportArtifact):
+            raise TypeError("report export did not produce a spool artifact")
+        return artifact
+
+    async def build_csv_for_report(
+        self,
+        report: CsvReport,
+        studio_id: str,
+        *,
+        _return_artifact: bool = False,
+    ) -> tuple[str, str] | ReportExportArtifact:
+        artifact = await self._build_csv_artifact_for_report(report, studio_id)
+        if _return_artifact:
+            return artifact
+        try:
+            artifact.spool.seek(0)
+            body = artifact.spool.read(EXPORT_MAX_OUTPUT_BYTES)
+            if len(body) != artifact.output_bytes:
+                raise OSError("report export spool byte count changed during read")
+            return body.decode("utf-8"), artifact.filename
+        finally:
+            artifact.close()
+
+    async def _build_csv_artifact_for_report(
+        self,
+        report: CsvReport,
+        studio_id: str,
+    ) -> ReportExportArtifact:
+        self.budget.check_elapsed()
+        calendar = None
+        if report.id in INTELLIGENCE_INPUT_COLUMNS:
+            if self._student_today is not None:
+                calendar = _ReportCalendar(self._student_today, "UTC")
+            else:
+                studio = self._single_row("studios", "timezone", studio_id)
+                if not studio:
+                    raise RuntimeError("Studio timezone could not be loaded.")
+                calendar = _ReportCalendar(*studio_today(studio.get("timezone")))
+        spool = tempfile.SpooledTemporaryFile(
+            max_size=EXPORT_SPOOL_MAX_MEMORY_BYTES,
+            mode="w+b",
+        )
+        previous_report = self._active_report
+        previous_calendar = self._intelligence_calendar
+        self._active_report = report
+        self._intelligence_calendar = calendar
+        try:
+            rows = (
+                report.custom_builder(self, studio_id)
+                if report.custom_builder
+                else self._fetch_table_rows(report, studio_id)
+            )
+        except BaseException:
+            spool.close()
+            raise
+        finally:
+            self._active_report = previous_report
+            self._intelligence_calendar = previous_calendar
+
+        try:
+            self.budget.check_elapsed()
+            writer = csv.DictWriter(
+                _Utf8SpoolWriter(spool, self.budget),
+                fieldnames=list(report.columns),
+                extrasaction="ignore",
+                lineterminator="\r\n",
+            )
+            writer.writeheader()
+            for row in rows:
+                self.budget.check_output_row()
+                writer.writerow({column: _csv_value(row.get(column)) for column in report.columns})
+                self.budget.consume_output_row()
+                self.budget.check_elapsed()
+
+            self.budget.check_elapsed()
+            snapshot = self.budget.snapshot()
+            spool_rolled = bool(getattr(spool, "_rolled", False))
+        except BaseException:
+            spool.close()
+            raise
+
+        return ReportExportArtifact(
+            spool=spool,
+            filename=report.filename,
+            emitted_data_rows=snapshot.emitted_rows,
+            output_bytes=snapshot.output_bytes,
+            budget=snapshot,
+            spool_threshold_bytes=EXPORT_SPOOL_MAX_MEMORY_BYTES,
+            spool_rolled=spool_rolled,
+        )
 
     def _build_owner_kpi_summary_rows(self, studio_id: str) -> list[dict[str, Any]]:
-        return build_owner_kpi_summary(self._fetch_intelligence_dataset(studio_id), self.today)
+        return build_owner_kpi_summary(
+            self._fetch_intelligence_dataset(studio_id),
+            self._report_today(),
+            timezone=self._report_timezone(),
+        )
 
     def _build_quiet_churn_watchlist_rows(self, studio_id: str) -> list[dict[str, Any]]:
-        return build_quiet_churn_watchlist(self._fetch_intelligence_dataset(studio_id), self.today)
+        return build_quiet_churn_watchlist(
+            self._fetch_intelligence_dataset(studio_id),
+            self._report_today(),
+            timezone=self._report_timezone(),
+        )
 
     def _build_first_90_days_onboarding_rows(self, studio_id: str) -> list[dict[str, Any]]:
-        return build_first_90_days_onboarding(self._fetch_intelligence_dataset(studio_id), self.today)
+        return build_first_90_days_onboarding(
+            self._fetch_intelligence_dataset(studio_id),
+            self._report_today(),
+            timezone=self._report_timezone(),
+        )
 
     def _build_lead_quality_after_enrollment_rows(self, studio_id: str) -> list[dict[str, Any]]:
-        return build_lead_quality_after_enrollment(self._fetch_intelligence_dataset(studio_id), self.today)
+        return build_lead_quality_after_enrollment(
+            self._fetch_intelligence_dataset(studio_id),
+            self._report_today(),
+            timezone=self._report_timezone(),
+        )
 
     def _build_belt_momentum_testing_pipeline_rows(self, studio_id: str) -> list[dict[str, Any]]:
-        return build_belt_momentum_testing_pipeline(self._fetch_intelligence_dataset(studio_id), self.today)
+        return build_belt_momentum_testing_pipeline(
+            self._fetch_intelligence_dataset(studio_id),
+            self._report_today(),
+            timezone=self._report_timezone(),
+        )
 
     def _build_revenue_leakage_rows(self, studio_id: str) -> list[dict[str, Any]]:
-        return build_revenue_leakage(self._fetch_intelligence_dataset(studio_id), self.today)
+        return build_revenue_leakage(
+            self._fetch_intelligence_dataset(studio_id),
+            self._report_today(),
+            timezone=self._report_timezone(),
+        )
 
     def _build_schedule_utilization_demand_rows(self, studio_id: str) -> list[dict[str, Any]]:
-        return build_schedule_utilization_demand(self._fetch_intelligence_dataset(studio_id), self.today)
+        return build_schedule_utilization_demand(
+            self._fetch_intelligence_dataset(studio_id),
+            self._report_today(),
+            timezone=self._report_timezone(),
+        )
 
     def _build_family_account_health_rows(self, studio_id: str) -> list[dict[str, Any]]:
-        return build_family_account_health(self._fetch_intelligence_dataset(studio_id), self.today)
+        return build_family_account_health(
+            self._fetch_intelligence_dataset(studio_id),
+            self._report_today(),
+            timezone=self._report_timezone(),
+        )
 
     def _build_lifecycle_segmentation_rows(self, studio_id: str) -> list[dict[str, Any]]:
-        return build_lifecycle_segmentation(self._fetch_intelligence_dataset(studio_id), self.today)
+        return build_lifecycle_segmentation(
+            self._fetch_intelligence_dataset(studio_id),
+            self._report_today(),
+            timezone=self._report_timezone(),
+        )
 
     def _build_instructor_staff_impact_rows(self, studio_id: str) -> list[dict[str, Any]]:
-        return build_instructor_staff_impact(self._fetch_intelligence_dataset(studio_id), self.today)
+        return build_instructor_staff_impact(
+            self._fetch_intelligence_dataset(studio_id),
+            self._report_today(),
+            timezone=self._report_timezone(),
+        )
 
     def _build_data_hygiene_readiness_rows(self, studio_id: str) -> list[dict[str, Any]]:
-        return build_data_hygiene_readiness(self._fetch_intelligence_dataset(studio_id), self.today)
+        data = self._fetch_intelligence_dataset(studio_id)
+        reference_date = (
+            self._report_today()
+            if any(student.get("date_of_birth") for student in data.get("students", []))
+            else None
+        )
+        return build_data_hygiene_readiness(data, reference_date)
+
+    def _report_today(self) -> date:
+        return self._intelligence_calendar.today if self._intelligence_calendar else self.today
+
+    def _report_timezone(self) -> str:
+        return self._intelligence_calendar.timezone if self._intelligence_calendar else "UTC"
+
+    def _current_student_date(self, studio_id: str) -> date:
+        if self._student_today is not None:
+            return self._student_today
+        self.budget.admit_provider_call()
+        current_date = studio_today_for_studio(self.supabase, studio_id)
+        self.budget.consume_rows(1)
+        return current_date
 
     def _fetch_intelligence_dataset(self, studio_id: str) -> dict[str, list[dict[str, Any]]]:
-        return self._report_data().fetch_intelligence_dataset(studio_id)
+        if self._active_report is None:
+            raise RuntimeError("Intelligence report context is required")
+        return self._report_data().fetch_intelligence_dataset(self._active_report, studio_id)
 
     def _fetch_table_rows(self, report: CsvReport, studio_id: str) -> list[dict[str, Any]]:
-        return self._report_data().fetch_table_rows(report, studio_id)
+        rows = self._report_data().fetch_table_rows(report, studio_id)
+        if report.id != "students":
+            return rows
+        dated_rows = [row for row in rows if row.get("date_of_birth")]
+        projected_rows = [{**row, "is_minor": bool(row.get("is_minor"))} for row in rows]
+        if not dated_rows:
+            return projected_rows
+        reference_date = self._current_student_date(studio_id)
+        for row in projected_rows:
+            if row.get("date_of_birth"):
+                row["is_minor"] = is_minor_on_date(row["date_of_birth"], reference_date)
+        return projected_rows
 
     def _write_csv(self, columns: tuple[str, ...], rows: list[dict[str, Any]]) -> str:
         output = StringIO()
@@ -183,7 +498,9 @@ class ReportExportService:
                 "subscription_comped": subscription.get("comped"),
                 "subscription_metadata": subscription.get("metadata"),
                 "payment_account_status": payment_account.get("status"),
-                "payment_account_stripe_connected_account_id": payment_account.get("stripe_connected_account_id"),
+                "payment_account_stripe_connected_account_id": payment_account.get(
+                    "stripe_connected_account_id"
+                ),
                 "payment_account_charges_enabled": payment_account.get("charges_enabled"),
                 "payment_account_payouts_enabled": payment_account.get("payouts_enabled"),
                 "payment_account_details_submitted": payment_account.get("details_submitted"),
@@ -240,23 +557,17 @@ class ReportExportService:
 
     def _build_staff_rows(self, studio_id: str) -> list[dict[str, Any]]:
         service = StaffService(self.supabase)
-        result = service._list_staff_role_rows(studio_id)
-        role_rows = [
-            row for row in (result.data or []) if row.get("studio_id") == studio_id
-        ]
-        user_ids = list(
-            dict.fromkeys(
-                row["user_id"]
-                for row in role_rows
-                if isinstance(row.get("user_id"), str) and row["user_id"].strip()
-            )
-        )
-        profile_map = (
-            service._get_staff_profiles_for_user_ids(user_ids) if user_ids else {}
-        )
+        dataset = self._report_data().fetch_staff_dataset(studio_id)
+        role_rows = dataset["staff_roles"]
+        profile_map = {
+            row.get("user_id"): row for row in dataset["staff_profiles"] if row.get("user_id")
+        }
+        auth_users = dataset["auth_users"]
         return [
             service._hydrate_staff_member(
-                row, profile=profile_map.get(row.get("user_id"))
+                row,
+                user=auth_users.get(row.get("user_id")),
+                profile=profile_map.get(row.get("user_id")),
             ).model_dump()
             for row in role_rows
         ]

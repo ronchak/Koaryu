@@ -26,7 +26,9 @@ class DemoResetResponseBuilder:
             page=1,
             page_size=200,
         )
-        programs = await ProgramService(self.supabase).list_programs(studio_id, include_archived=True)
+        programs = await ProgramService(self.supabase).list_programs(
+            studio_id, include_archived=True
+        )
         leads = await LeadService(self.supabase).list_leads(studio_id)
         belt_ladders = await BeltService(self.supabase).list_ladders(studio_id)
         primary_belt_ladder = belt_ladders[0] if belt_ladders else None

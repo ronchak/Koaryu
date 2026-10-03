@@ -52,7 +52,9 @@ class StripeWebhookService:
         self.supabase = supabase
         self.settings = get_settings()
 
-    async def handle_platform_webhook(self, payload: bytes, signature: Optional[str]) -> WebhookProcessResponse:
+    async def handle_platform_webhook(
+        self, payload: bytes, signature: Optional[str]
+    ) -> WebhookProcessResponse:
         event = StripeService().construct_webhook_event(
             payload=payload,
             signature=signature,
@@ -61,7 +63,9 @@ class StripeWebhookService:
         account_id = self._event_get(event, "account")
         return self._store_and_process(event, stripe_account_id=account_id, processor="platform")
 
-    async def handle_connect_webhook(self, payload: bytes, signature: Optional[str]) -> WebhookProcessResponse:
+    async def handle_connect_webhook(
+        self, payload: bytes, signature: Optional[str]
+    ) -> WebhookProcessResponse:
         event = StripeService().construct_webhook_event(
             payload=payload,
             signature=signature,
@@ -161,7 +165,11 @@ class StripeWebhookService:
                 detail=detail,
             )
 
-        if processor == "connect" and livemode and not self._is_mapped_connect_account(stripe_account_id):
+        if (
+            processor == "connect"
+            and livemode
+            and not self._is_mapped_connect_account(stripe_account_id)
+        ):
             if self._is_excluded_connect_account(stripe_account_id):
                 if not self._finish_event_processing(row_id, claim_token, "ignored"):
                     raise RuntimeError(
@@ -186,11 +194,15 @@ class StripeWebhookService:
 
         try:
             if processor == "platform":
-                PlatformBillingService(self.supabase).project_subscription_event(event_dict, hydrate_subscription=True)
+                PlatformBillingService(self.supabase).project_subscription_event(
+                    event_dict, hydrate_subscription=True
+                )
             else:
                 BillingService(self.supabase).project_connect_event(event_dict)
             if not self._finish_event_processing(row_id, claim_token, "processed"):
-                raise RuntimeError("Webhook processing lease was lost before the event could be marked processed.")
+                raise RuntimeError(
+                    "Webhook processing lease was lost before the event could be marked processed."
+                )
             return WebhookProcessResponse(status="processed")
         except Exception as exc:
             failure_code = self._failure_code(exc)
@@ -264,15 +276,19 @@ class StripeWebhookService:
         payload: dict[str, Any],
         claim_token: str,
     ) -> tuple[str, Optional[dict[str, Any]]]:
-        result = execute_required_rpc(self.supabase, "claim_stripe_event_for_processing", {
-            "p_stripe_event_id": event_id,
-            "p_stripe_account_id": stripe_account_id,
-            "p_livemode": livemode,
-            "p_type": event_type,
-            "p_payload": payload,
-            "p_processing_token": claim_token,
-            "p_stale_after_seconds": int(WEBHOOK_PROCESSING_STALE_AFTER.total_seconds()),
-        })
+        result = execute_required_rpc(
+            self.supabase,
+            "claim_stripe_event_for_processing",
+            {
+                "p_stripe_event_id": event_id,
+                "p_stripe_account_id": stripe_account_id,
+                "p_livemode": livemode,
+                "p_type": event_type,
+                "p_payload": payload,
+                "p_processing_token": claim_token,
+                "p_stale_after_seconds": int(WEBHOOK_PROCESSING_STALE_AFTER.total_seconds()),
+            },
+        )
         row = first_rpc_row(result) or {}
         return str(row.get("claim_status") or "ignored"), row.get("event_row")
 
@@ -289,20 +305,28 @@ class StripeWebhookService:
             error_reference = uuid.uuid4().hex
         elif status != "failed":
             error_reference = None
-        result = execute_required_rpc(self.supabase, "finish_stripe_event_processing_v2", {
-            "p_event_id": row_id,
-            "p_processing_token": processing_token,
-            "p_status": status,
-            "p_error": error,
-            "p_error_reference": error_reference,
-        })
+        result = execute_required_rpc(
+            self.supabase,
+            "finish_stripe_event_processing_v2",
+            {
+                "p_event_id": row_id,
+                "p_processing_token": processing_token,
+                "p_status": status,
+                "p_error": error,
+                "p_error_reference": error_reference,
+            },
+        )
         row = first_rpc_row(result) or {}
         return bool(row.get("updated"))
 
     @staticmethod
     def _safe_log_value(value: Any) -> str:
         normalized = str(value or "")
-        return normalized if WEBHOOK_LOG_VALUE_PATTERN.fullmatch(normalized) else "redacted_invalid_identifier"
+        return (
+            normalized
+            if WEBHOOK_LOG_VALUE_PATTERN.fullmatch(normalized)
+            else "redacted_invalid_identifier"
+        )
 
     @staticmethod
     def _failure_code(exc: Exception) -> str:

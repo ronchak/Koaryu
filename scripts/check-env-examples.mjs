@@ -10,6 +10,8 @@ const FRONTEND_PLATFORM_KEYS = new Set([
   "VERCEL_ENV",
   "VERCEL_TARGET_ENV",
   "VERCEL_GIT_COMMIT_SHA",
+  "VERCEL_URL",
+  "NEXT_DEPLOYMENT_ID",
 ]);
 
 const backendSecretKeys = [
@@ -46,6 +48,7 @@ const backendPublicKeys = [
   "STRIPE_MODE",
   "LIVE_BILLING_ENABLED",
   "CORE_SELF_CHECKOUT_ENABLED",
+  "BILLING_TRANSITION_SCHEDULER_ENABLED",
   "OPERATIONAL_ALERTS_ENABLED",
   "BILLING_PLATFORM_FEE_BPS",
   "API_V1_PREFIX",
@@ -71,7 +74,6 @@ const frontendPublicKeys = [
 
 const frontendSecretKeys = [
   "NEXT_PUBLIC_SUPABASE_ANON_KEY",
-  "NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY",
   "CRON_SECRET",
   "ACCOUNT_DELETION_WORKER_SECRET",
   "OPERATIONAL_ALERT_WORKER_SECRET",
@@ -96,11 +98,38 @@ const renderCriticalValues = new Map([
   ["SUPABASE_ALLOW_LEGACY_HS256", "false"],
   ["SUPABASE_DEVELOPMENT_PROJECT_REF", ""],
   ["STRIPE_MODE", "live"],
-  ["LIVE_BILLING_ENABLED", "false"],
+  ["LIVE_BILLING_ENABLED", "true"],
   ["CORE_SELF_CHECKOUT_ENABLED", "true"],
+  ["BILLING_TRANSITION_SCHEDULER_ENABLED", "false"],
   ["OPERATIONAL_ALERTS_ENABLED", "false"],
   ["API_V1_PREFIX", "/api/v1"],
 ]);
+const RENDER_DOCKERFILE_PATH = "./Dockerfile";
+const RENDER_DOCKER_CONTEXT = ".";
+const RENDER_ROOT_DIR = "backend";
+const RENDER_PYTHON_IMAGE =
+  "python:3.11.9-slim-bookworm@sha256:8fb099199b9f2d70342674bd9dbccd3ed03a258f26bbd1d556822c6dfc60c317";
+const RENDER_JEMALLOC_VERSION = "5.3.0-1";
+
+// Reusable examples stay fail-closed even where production must deliberately
+// differ. Each exception names both sides so neither value can drift silently.
+const productionRenderExampleDivergences = new Map([
+  ["LIVE_BILLING_ENABLED", { exampleValue: "false", manifestValue: "true" }],
+]);
+
+function isAllowedProductionRenderExampleDivergence(
+  key,
+  manifestValue,
+  exampleValue,
+  criticalValues,
+) {
+  const allowed = productionRenderExampleDivergences.get(key);
+  return (
+    allowed?.manifestValue === manifestValue
+    && allowed.exampleValue === exampleValue
+    && criticalValues.get(key) === manifestValue
+  );
+}
 
 function unique(values) {
   return [...new Set(values)].sort();
@@ -304,6 +333,133 @@ export function validateEnvExample(file, parsed) {
   return failures;
 }
 
+function validateRenderDockerService(block, serviceName) {
+  const failures = [];
+  if (!block) {
+    failures.push(`render.yaml: ${serviceName} service is missing`);
+    return failures;
+  }
+
+  for (const [key, expected] of [
+    ["runtime", "docker"],
+    ["rootDir", RENDER_ROOT_DIR],
+    ["dockerfilePath", RENDER_DOCKERFILE_PATH],
+    ["dockerContext", RENDER_DOCKER_CONTEXT],
+  ]) {
+    if (renderScalar(block, key) !== expected) {
+      failures.push(
+        `render.yaml: ${serviceName} ${key} must equal ${JSON.stringify(expected)}`,
+      );
+    }
+  }
+  for (const nativeKey of ["buildCommand", "startCommand"]) {
+    if (renderScalar(block, nativeKey) !== null) {
+      failures.push(`render.yaml: ${serviceName} must not declare native-runtime ${nativeKey}`);
+    }
+  }
+  if (/^\s*- key:\s*MALLOC_ARENA_MAX\s*$/m.test(block)) {
+    failures.push(
+      `render.yaml: ${serviceName} must not retain the inactive glibc MALLOC_ARENA_MAX setting`,
+    );
+  }
+  return failures;
+}
+
+export function validateRenderDockerRuntime(
+  renderSource,
+  dockerfileSource,
+  startScriptSource,
+) {
+  const failures = [];
+  for (const serviceName of ["koaryu", "koaryu-staging"]) {
+    failures.push(...validateRenderDockerService(
+      renderServiceBlock(renderSource, serviceName),
+      serviceName,
+    ));
+  }
+
+  const activeDockerfileLines = dockerfileSource
+    .split(/\r?\n/)
+    .filter((line) => !line.trim().startsWith("#"));
+  const dockerfileLines = activeDockerfileLines.map((line) => line.trim());
+  const directiveContracts = [
+    {
+      select: (line) => /^FROM\s/i.test(line),
+      expected: `FROM ${RENDER_PYTHON_IMAGE}`,
+      diagnostic: "must contain exactly one reviewed immutable final FROM instruction",
+    },
+    {
+      select: (line) => /^ARG JEMALLOC_VERSION=/i.test(line),
+      expected: `ARG JEMALLOC_VERSION=${RENDER_JEMALLOC_VERSION}`,
+      diagnostic: "must declare the exact jemalloc package version once",
+    },
+    {
+      select: (line) => line.includes("LD_PRELOAD"),
+      expected: "ENV LD_PRELOAD=/usr/local/lib/libjemalloc.so.2",
+      diagnostic: "must declare the exact effective jemalloc preload once",
+    },
+    {
+      select: (line) => /^USER\s/i.test(line),
+      expected: "USER koaryu",
+      diagnostic: "must declare the non-root final user exactly once",
+    },
+    {
+      select: (line) => /^CMD\s/i.test(line),
+      expected: 'CMD ["./scripts/start-render.sh"]',
+      diagnostic: "must declare the allocator-verifying final command exactly once",
+    },
+  ];
+  for (const contract of directiveContracts) {
+    const matches = dockerfileLines.filter(contract.select);
+    if (matches.length !== 1 || matches[0] !== contract.expected) {
+      failures.push(`backend/Dockerfile: ${contract.diagnostic}`);
+    }
+  }
+  if (dockerfileLines.some((line) => /^ENTRYPOINT\s/i.test(line))) {
+    failures.push("backend/Dockerfile: must not override the reviewed command with ENTRYPOINT");
+  }
+  const pinnedJemallocInstall =
+    `&& apt-get install --yes --no-install-recommends "libjemalloc2=\${JEMALLOC_VERSION}" \\`;
+  const jemallocInstallLines = dockerfileLines.filter(
+    (line) => line.includes("apt-get install") && line.includes("libjemalloc2"),
+  );
+  if (
+    jemallocInstallLines.length !== 1
+    || jemallocInstallLines[0] !== pinnedJemallocInstall
+  ) {
+    failures.push("backend/Dockerfile: must install the exact declared jemalloc package version");
+  }
+
+  const startScriptLines = startScriptSource.split(/\r?\n/);
+  if (startScriptLines[0] !== "#!/bin/sh") {
+    failures.push("backend/scripts/start-render.sh: must start with the exact #!/bin/sh shebang");
+  }
+  const activeStartScriptLines = startScriptSource
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line && !line.startsWith("#"));
+  const expectedStartScriptLines = [
+    "set -eu",
+    'if ! grep -Fq "libjemalloc.so.2" /proc/self/maps; then',
+    'echo "jemalloc preload verification failed" >&2',
+    "exit 1",
+    "fi",
+    'echo "jemalloc preload verified"',
+    'exec python -m uvicorn app.main:app --host 0.0.0.0 --port "${PORT:-10000}"',
+  ];
+  if (
+    activeStartScriptLines.length !== expectedStartScriptLines.length
+    || activeStartScriptLines.some(
+      (line, index) => line !== expectedStartScriptLines[index],
+    )
+  ) {
+    failures.push(
+      "backend/scripts/start-render.sh: must preserve the exact active fail-closed startup sequence",
+    );
+  }
+  return failures;
+}
+
 export function validateRenderManifest(
   requiredKeys,
   entries,
@@ -324,8 +480,16 @@ export function validateRenderManifest(
     failures.push(`render.yaml: missing backend setting key(s): ${missing.join(", ")}`);
   }
   for (const [key, expectedValue] of criticalValues) {
-    if (exampleValues.has(key) && exampleValues.get(key) !== expectedValue) {
-      failures.push(`backend/.env.render.example: ${key} must equal ${JSON.stringify(expectedValue)}`);
+    if (!exampleValues.has(key)) {
+      continue;
+    }
+    const exampleValue = exampleValues.get(key);
+    const allowedDivergence = productionRenderExampleDivergences.get(key);
+    const expectedExampleValue = allowedDivergence?.manifestValue === expectedValue
+      ? allowedDivergence.exampleValue
+      : expectedValue;
+    if (exampleValue !== expectedExampleValue) {
+      failures.push(`backend/.env.render.example: ${key} must equal ${JSON.stringify(expectedExampleValue)}`);
     }
   }
   for (const entry of entries) {
@@ -343,7 +507,16 @@ export function validateRenderManifest(
       failures.push(`render.yaml: fixed key ${entry.key} must contain a literal value`);
       continue;
     }
-    if (exampleValues.has(entry.key) && entry.value !== exampleValues.get(entry.key)) {
+    if (
+      exampleValues.has(entry.key)
+      && entry.value !== exampleValues.get(entry.key)
+      && !isAllowedProductionRenderExampleDivergence(
+        entry.key,
+        entry.value,
+        exampleValues.get(entry.key),
+        criticalValues,
+      )
+    ) {
       failures.push(`render.yaml: fixed key ${entry.key} must match backend/.env.render.example`);
     }
     if (criticalValues.has(entry.key) && entry.value !== criticalValues.get(entry.key)) {
@@ -367,6 +540,7 @@ const stagingRenderCriticalValues = new Map([
   ["STRIPE_MODE", "test"],
   ["LIVE_BILLING_ENABLED", "false"],
   ["CORE_SELF_CHECKOUT_ENABLED", "false"],
+  ["BILLING_TRANSITION_SCHEDULER_ENABLED", "true"],
   ["SUPABASE_URL", "https://nxgsektqsgrtyfhawxbc.supabase.co"],
   ["FRONTEND_URL", "https://koaryu-git-staging-ronakchak2569-8303s-projects.vercel.app"],
   ["DEMO_RESET_ENABLED", "false"],
@@ -384,6 +558,9 @@ export function validateStagingRenderService(renderSource, secretKeys) {
   }
   if (renderScalar(block, "healthCheckPath") !== "/health/ready") {
     failures.push("render.yaml: staging healthCheckPath must enforce /health/ready");
+  }
+  if (renderScalar(block, "branch") !== "staging") {
+    failures.push("render.yaml: staging web service branch must equal \"staging\"");
   }
 
   const entries = extractRenderEnvEntries(block);
@@ -412,6 +589,45 @@ export function validateStagingRenderService(renderSource, secretKeys) {
     }
   }
 
+  return failures;
+}
+
+export function validateBillingTransitionCron(renderSource) {
+  const failures = [];
+  const block = renderServiceBlock(renderSource, "koaryu-billing-transitions-staging");
+  if (!block) {
+    return ["render.yaml: staging billing-transition cron is missing"];
+  }
+  if (!/^  - type:\s*cron\s*$/m.test(block)) {
+    failures.push("render.yaml: staging billing-transition service must be a cron job");
+  }
+  for (const [key, expected] of [
+    ["runtime", "docker"],
+    ["plan", "starter"],
+    ["region", "oregon"],
+    ["branch", "staging"],
+    ["rootDir", "backend"],
+    ["dockerfilePath", "./Dockerfile"],
+    ["dockerContext", "."],
+    ["dockerCommand", "python -m app.services.billing_transition_cron"],
+    ["schedule", "*/5 * * * *"],
+    ["autoDeployTrigger", "off"],
+  ]) {
+    if (renderScalar(block, key) !== expected) {
+      failures.push(
+        `render.yaml: staging billing-transition cron ${key} must equal ${JSON.stringify(expected)}`,
+      );
+    }
+  }
+  for (const required of [
+    /- key:\s*ENVIRONMENT\s*\n\s*value:\s*staging/,
+    /- key:\s*KOARYU_BACKEND_API_URL\s*\n\s*value:\s*https:\/\/koaryu-staging\.onrender\.com\/api\/v1/,
+    /- key:\s*BILLING_TRANSITION_WORKER_SECRET\s*\n\s*fromService:\s*\n\s*type:\s*web\s*\n\s*name:\s*koaryu-staging\s*\n\s*envVarKey:\s*BILLING_TRANSITION_WORKER_SECRET/,
+  ]) {
+    if (!required.test(block)) {
+      failures.push("render.yaml: staging billing-transition cron identity or secret reference drifted");
+    }
+  }
   return failures;
 }
 
@@ -736,6 +952,16 @@ export function runEnvExampleCheck() {
     renderExampleValues,
   ));
   failures.push(...validateStagingRenderService(renderSource, backendPlaceholderKeys));
+  failures.push(...validateBillingTransitionCron(renderSource));
+  try {
+    failures.push(...validateRenderDockerRuntime(
+      renderSource,
+      readFileSync(resolve(ROOT, "backend/Dockerfile"), "utf8"),
+      readFileSync(resolve(ROOT, "backend/scripts/start-render.sh"), "utf8"),
+    ));
+  } catch (error) {
+    failures.push(`Render Docker runtime: ${error instanceof Error ? error.message : String(error)}`);
+  }
   let operationalAlertsSource;
   let releaseControlsSource;
   try {

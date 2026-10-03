@@ -49,6 +49,20 @@ class ScheduleSchemaValidationTest(unittest.TestCase):
 
         self.assertIn("Date must use YYYY-MM-DD format", str(context.exception))
 
+    def test_template_update_distinguishes_omitted_and_clearable_fields(self):
+        self.assertEqual(ClassTemplateUpdate().model_dump(exclude_unset=True), {})
+        self.assertEqual(
+            ClassTemplateUpdate(
+                end_date=None, instructor_id=None, program_id=None, capacity=None
+            ).model_dump(exclude_unset=True),
+            {"end_date": None, "instructor_id": None, "program_id": None, "capacity": None},
+        )
+
+    def test_template_update_rejects_null_required_fields(self):
+        for field in ("name", "day_of_week", "start_time", "end_time", "start_date", "is_active"):
+            with self.subTest(field=field), self.assertRaises(ValidationError):
+                ClassTemplateUpdate.model_validate({field: None})
+
     def test_session_create_uses_parsed_time_for_ordering(self):
         with self.assertRaises(ValidationError) as context:
             ClassSessionCreate(

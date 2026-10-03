@@ -2,6 +2,8 @@ import type { Metadata, Viewport } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
 import { ThemeProvider } from "@/components/theme-provider";
 import { WebVitals } from "@/components/web-vitals";
+import { AppResumeGuard } from "@/components/app-resume-guard";
+import { getDeploymentMetadata } from "@/lib/deployment-metadata";
 import { APP_DESCRIPTION, APP_NAME } from "@/lib/constants";
 import "./globals.css";
 
@@ -18,8 +20,7 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 const appTitle = `${APP_NAME} — Martial Arts Studio OS`;
-const appDescription =
-  `${APP_DESCRIPTION} Student CRM, belt progression, scheduling, billing, and more — built for how dojos actually operate.`;
+const appDescription = `${APP_DESCRIPTION} Student CRM, belt progression, scheduling, billing, and more — built for how dojos actually operate.`;
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://koaryu.app"),
@@ -28,10 +29,7 @@ export const metadata: Metadata = {
   description: appDescription,
   manifest: "/manifest.webmanifest",
   icons: {
-    icon: [
-      { url: "/icon.svg", type: "image/svg+xml" },
-      { url: "/favicon.ico" },
-    ],
+    icon: [{ url: "/icon.svg", type: "image/svg+xml" }, { url: "/favicon.ico" }],
     shortcut: [{ url: "/favicon.ico" }],
     apple: [{ url: "/apple-icon.png", sizes: "180x180", type: "image/png" }],
   },
@@ -60,15 +58,15 @@ const themeScript = `
 (() => {
   try {
     const stored = window.localStorage.getItem("koaryu-theme");
-    const preference = stored === "dark" || stored === "light" || stored === "system" ? stored : "system";
+    const preference = stored === "dark" || stored === "light" || stored === "system" ? stored : "light";
     const resolved = preference === "system"
       ? (window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark")
       : preference;
     document.documentElement.dataset.theme = resolved;
     document.documentElement.style.colorScheme = resolved;
   } catch {
-    document.documentElement.dataset.theme = "dark";
-    document.documentElement.style.colorScheme = "dark";
+    document.documentElement.dataset.theme = "light";
+    document.documentElement.style.colorScheme = "light";
   }
 })();
 `;
@@ -81,14 +79,20 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      data-koaryu-data-plane={process.env.NEXT_PUBLIC_PREVIEW_MODE === "true" ? "disposable-preview" : "live"}
-      data-theme="dark"
+      data-koaryu-data-plane={
+        process.env.NEXT_PUBLIC_PREVIEW_MODE === "true" ? "disposable-preview" : "live"
+      }
+      data-theme="light"
       suppressHydrationWarning
       className={`${inter.variable} ${jetbrainsMono.variable} h-full`}
     >
       <body className="min-h-full flex flex-col font-sans antialiased">
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
-        <WebVitals />
+        <WebVitals
+          version={getDeploymentMetadata().commit_sha}
+          environment={getDeploymentMetadata().environment}
+        />
+        <AppResumeGuard loaded={getDeploymentMetadata()} />
         <ThemeProvider>{children}</ThemeProvider>
       </body>
     </html>

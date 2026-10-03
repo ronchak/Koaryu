@@ -31,30 +31,40 @@ import type {
   StaffRoleName,
   Student,
   StudentCreate,
-  StudentListResponse,
+  StudentRosterPageResponse,
   StudentStatus,
   StudentUpdate,
 } from "@/types";
 import type {
   ScheduleRangeRefreshIntent,
+  ScheduleTemplateCreateResult,
   SessionAttendanceRefreshResult,
 } from "@/lib/schedule-store-model";
+import type { LeadFollowUpCommand, LeadOperations } from "@/lib/lead-operation-reservations";
+import type { LeadFollowUpOptions, LeadFollowUpResult } from "@/lib/store-lead-actions";
 import type { StudentListQuery } from "@/lib/student-list-page";
-import type {
-  DemoResetResponse,
-  StudioDataClearResponse,
-} from "@/lib/studio-store-model";
+import type { DemoResetResponse, StudioDataClearResponse } from "@/lib/studio-store-model";
 import type { DatasetLoadStatus } from "@/lib/page-dataset-readiness";
 
 export interface StoreContextValue {
   isPreviewMode: boolean;
+  businessDate: string;
+  studioTimezone: string;
   token: string | null;
+  identityGeneration: number;
+  identityReady: boolean;
+  identityLoadError: string | null;
+  studioLoadError: string | null;
+  beltLaddersLoadError: string | null;
+  retryInitialization: () => void;
   subscriptionRequired: boolean;
   markSubscriptionRequired: () => void;
   clearSubscriptionRequired: () => void;
 
   dashboardSummary: DashboardSummary | null;
   dashboardSummaryLoaded: boolean;
+  dashboardSummaryLoadError: string | null;
+  refreshDashboardSummary: (options?: { reason?: "visit" }) => Promise<void>;
 
   students: Student[];
   studentsLoaded: boolean;
@@ -69,30 +79,32 @@ export interface StoreContextValue {
   bulkAddTagsToStudents: (
     studentIds: string[],
     tags: string[],
-    options?: { refreshMode?: "full" | "local" }
+    options?: { refreshMode?: "full" | "local" },
   ) => Promise<BulkStudentTagUpdateResponse>;
   bulkUpdateStudentStatus: (
     studentIds: string[],
     status: StudentStatus,
-    options?: { refreshMode?: "full" | "local" }
+    options?: { refreshMode?: "full" | "local" },
   ) => Promise<BulkStudentStatusUpdateResponse>;
   importStudents: (
     file: File,
     rows: Record<string, string>[],
     mapping: Record<string, string>,
     options: CsvImportOptions,
-    request?: { importKey?: string }
+    request?: { importKey?: string },
   ) => Promise<CsvImportResult>;
   refreshStudents: () => Promise<Student[]>;
   listStudentsPage: (
     query?: StudentListQuery,
-    options?: { signal?: AbortSignal; timeoutMs?: number | null }
-  ) => Promise<StudentListResponse>;
+    options?: { signal?: AbortSignal; timeoutMs?: number | null },
+  ) => Promise<StudentRosterPageResponse>;
 
   programs: Program[];
   programsLoaded: boolean;
+  programsUsageLoaded: boolean;
+  programsUsageLoadError: string | null;
   programsLoadError: string | null;
-  refreshPrograms: (options?: { includeArchived?: boolean }) => Promise<Program[]>;
+  refreshPrograms: (options?: { includeArchived?: boolean; force?: boolean }) => Promise<Program[]>;
   createProgram: (data: ProgramCreate) => Promise<Program>;
   updateProgram: (id: string, data: ProgramUpdate) => Promise<Program>;
   archiveProgram: (id: string) => Promise<Program>;
@@ -105,17 +117,28 @@ export interface StoreContextValue {
   updateLead: (id: string, data: Partial<Lead>) => Promise<void>;
   deleteLead: (id: string) => Promise<void>;
   refreshLeads: () => Promise<Lead[]>;
+  followUpLead: (
+    leadId: string,
+    command: LeadFollowUpCommand,
+    options?: LeadFollowUpOptions,
+  ) => Promise<LeadFollowUpResult>;
+  leadOperations: LeadOperations;
   convertLeadToStudent: (leadId: string) => Promise<{ lead: Lead; studentId: string | null }>;
 
   beltLadders: BeltLadder[];
   beltRanks: BeltRank[];
   currentLadderId: string | null;
   setCurrentLadder: (ladderId: string) => Promise<void>;
-  setBeltRanks: (ranks: BeltRank[], options?: { subRankTerm?: string }) => Promise<void>;
+  loadEligibilityForLadder: (
+    ladderId?: string | null,
+    options?: { force?: boolean },
+  ) => Promise<EligibilityEntry[]>;
+  setBeltRanks: (
+    ranks: BeltRank[],
+    options: { ladderId: string; subRankTerm?: string },
+  ) => Promise<void>;
   ladderName: string;
-  setLadderName: (name: string) => void;
   subRankTerm: string;
-  setSubRankTerm: (term: string) => Promise<void>;
   eligibility: EligibilityEntry[];
   eligibilityLadderId: string | null;
   eligibilityPendingLadderId: string | null;
@@ -123,19 +146,19 @@ export interface StoreContextValue {
   promotionHistoryByStudent: Record<string, Promotion[]>;
   loadPromotionHistory: (
     studentId: string,
-    options?: { force?: boolean; signal?: AbortSignal }
+    options?: { force?: boolean; signal?: AbortSignal },
   ) => Promise<Promotion[]>;
   demoteStudent: (data: DemoteStudent) => Promise<Promotion>;
   promoteStudent: (data: PromoteStudent) => Promise<Promotion>;
 
   sessions: ClassSession[];
   addSession: (data: ClassSessionCreate) => Promise<void>;
-  addTemplate: (data: ClassTemplateCreate) => Promise<ClassTemplate>;
+  addTemplate: (data: ClassTemplateCreate) => Promise<ScheduleTemplateCreateResult>;
   deleteSession: (sessionId: string, scope?: ClassSessionDeleteScope) => Promise<void>;
   refreshScheduleRange: (
     startDate: string,
     endDate: string,
-    intent: ScheduleRangeRefreshIntent
+    intent: ScheduleRangeRefreshIntent,
   ) => Promise<ClassSession[]>;
   refreshSessionAttendance: (sessionId: string) => Promise<SessionAttendanceRefreshResult>;
   refreshSchedule: () => Promise<void>;
@@ -147,6 +170,7 @@ export interface StoreContextValue {
 
   studioName: string;
   currentUserId: string;
+  currentStudioId: string | null;
   currentRole: StaffRoleName | null;
   userEmail: string;
   userName: string;
@@ -162,7 +186,7 @@ export interface StoreContextValue {
   updateStaffLegalName: (
     userId: string,
     firstName: string,
-    lastName: string
+    lastName: string,
   ) => Promise<StaffLegalNameResponse>;
   refreshStaff: (includeArchived?: boolean) => Promise<StaffMember[]>;
   inviteStaff: (data: StaffInviteCreate) => Promise<StaffMember>;
@@ -171,7 +195,7 @@ export interface StoreContextValue {
   scheduleStaffDeletion: (
     id: string,
     confirmationName: string,
-    reason?: string
+    reason?: string,
   ) => Promise<StaffDeletionRequestResponse>;
   updateStaffRole: (id: string, role: StaffRoleName) => Promise<StaffMember>;
   removeStaff: (id: string) => Promise<void>;
@@ -182,6 +206,8 @@ export interface StoreContextValue {
 export type ConfigStoreContextValue = Pick<
   StoreContextValue,
   | "isPreviewMode"
+  | "businessDate"
+  | "studioTimezone"
   | "token"
   | "subscriptionRequired"
   | "markSubscriptionRequired"
@@ -192,6 +218,8 @@ export type DashboardStoreContextValue = Pick<
   StoreContextValue,
   | "dashboardSummary"
   | "dashboardSummaryLoaded"
+  | "dashboardSummaryLoadError"
+  | "refreshDashboardSummary"
 >;
 export type StudentsStoreContextValue = Pick<
   StoreContextValue,
@@ -215,6 +243,8 @@ export type ProgramsStoreContextValue = Pick<
   StoreContextValue,
   | "programs"
   | "programsLoaded"
+  | "programsUsageLoaded"
+  | "programsUsageLoadError"
   | "programsLoadError"
   | "refreshPrograms"
   | "createProgram"
@@ -231,19 +261,21 @@ export type LeadsStoreContextValue = Pick<
   | "updateLead"
   | "deleteLead"
   | "refreshLeads"
+  | "followUpLead"
+  | "leadOperations"
   | "convertLeadToStudent"
 >;
 export type BeltsStoreContextValue = Pick<
   StoreContextValue,
+  | "beltLaddersLoadError"
   | "beltLadders"
   | "beltRanks"
   | "currentLadderId"
   | "setCurrentLadder"
+  | "loadEligibilityForLadder"
   | "setBeltRanks"
   | "ladderName"
-  | "setLadderName"
   | "subRankTerm"
-  | "setSubRankTerm"
   | "eligibility"
   | "eligibilityLadderId"
   | "eligibilityPendingLadderId"
@@ -270,12 +302,18 @@ export type ScheduleStoreContextValue = Pick<
 >;
 export type StudioStoreContextValue = Pick<
   StoreContextValue,
+  | "studioLoadError"
   | "studioName"
   | "currentUserId"
+  | "currentStudioId"
   | "currentRole"
   | "userEmail"
   | "userName"
   | "staffProfilesAvailable"
+  | "identityGeneration"
+  | "identityReady"
+  | "identityLoadError"
+  | "retryInitialization"
   | "legalFirstName"
   | "legalLastName"
   | "staffMembers"

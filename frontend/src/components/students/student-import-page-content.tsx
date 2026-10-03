@@ -16,11 +16,12 @@ import {
   type StudentImportStage,
 } from "@/lib/student-import-page-model";
 import type { CsvImportOptions, CsvImportResult } from "@/types";
-import { ArrowLeft, ChevronRight } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
+import styles from "./student-records.module.css";
 
 type ImportOptionChangeHandler = <K extends keyof CsvImportOptions>(
   key: K,
-  value: CsvImportOptions[K]
+  value: CsvImportOptions[K],
 ) => Promise<void> | void;
 
 type StudentImportPageContentProps = {
@@ -92,8 +93,8 @@ export function StudentImportPageContent({
 
   if (!canManageRoster) {
     return (
-      <>
-        <Header title="Import Students" description="Bulk roster imports are limited by staff role.">
+      <div className={`flex min-h-full flex-col ${styles.importPage}`}>
+        <Header title="Import Students">
           <Button variant="ghost" size="sm" onClick={onBack}>
             <ArrowLeft className="w-3.5 h-3.5" />
             Back
@@ -102,113 +103,104 @@ export function StudentImportPageContent({
         <div className="flex-1 p-8 text-sm text-text-secondary">
           Only admins and front-desk staff can import students.
         </div>
-      </>
+      </div>
     );
   }
 
   return (
-    <>
-      <Header title="Import Students" description="Import students from a .csv exported from your spreadsheet.">
-        <Button
-          variant="ghost"
-          size="sm"
-          disabled={isLoading}
-          onClick={onBack}
-        >
+    <div className={`flex min-h-full flex-col ${styles.importPage}`}>
+      <Header title="Import Students">
+        <Button variant="ghost" size="sm" disabled={isLoading} onClick={onBack}>
           <ArrowLeft className="w-3.5 h-3.5" />
           Back
         </Button>
       </Header>
 
-      <div className="flex-1 p-8">
-        <div className="max-w-4xl mx-auto">
-          <div className="flex items-center gap-2 mb-8 flex-wrap">
-            {STUDENT_IMPORT_STAGE_STEPS.map((step, index) => (
-              <div key={step.id} className="flex items-center gap-2">
-                <div
-                  className={`flex items-center gap-2 text-sm ${
-                    index < stageIndex
-                      ? "text-success"
-                      : index === stageIndex
-                        ? "text-text-primary"
-                        : "text-muted"
-                  }`}
-                >
-                  <div
-                    className={`w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold ${
-                      index < stageIndex
-                        ? "bg-success/20 text-success"
-                        : index === stageIndex
-                          ? "bg-accent/20 text-accent"
-                          : "bg-surface-raised text-muted"
-                    }`}
-                  >
-                    {index < stageIndex ? "✓" : index + 1}
-                  </div>
-                  {step.label}
-                </div>
-                {index < STUDENT_IMPORT_STAGE_STEPS.length - 1 ? <ChevronRight className="w-3.5 h-3.5 text-border" /> : null}
+      <div className={`flex-1 ${styles.importWorkspace}`}>
+        <div className={styles.importSheet}>
+          <aside className={styles.importIndex} aria-label="Import worksheet progress">
+            <dl className="text-xs">
+              <div className="flex justify-between gap-3">
+                <dt className="text-muted">Source</dt>
+                <dd className="truncate text-text-primary">{fileName || "Awaiting CSV"}</dd>
               </div>
-            ))}
+              <div className="mt-2 flex justify-between gap-3">
+                <dt className="text-muted">Rows</dt>
+                <dd className="font-mono text-text-primary">{rowCount || "—"}</dd>
+              </div>
+            </dl>
+            <div className={styles.importStages}>
+              {STUDENT_IMPORT_STAGE_STEPS.map((step, index) => (
+                <div
+                  key={step.id}
+                  className={styles.importStage}
+                  data-state={
+                    index < stageIndex ? "complete" : index === stageIndex ? "active" : "upcoming"
+                  }
+                  aria-current={index === stageIndex ? "step" : undefined}
+                >
+                  <strong>{String(index + 1).padStart(2, "0")}</strong>
+                  <span>{step.label}</span>
+                </div>
+              ))}
+            </div>
+          </aside>
+
+          <div className={styles.importBody}>
+            {errorMessage ? (
+              <DismissibleNotice tone="danger" onDismiss={onDismissError} className="mb-6">
+                {errorMessage}
+              </DismissibleNotice>
+            ) : null}
+
+            {stage === "upload" ? (
+              <StudentImportUploadStep
+                dragOver={dragOver}
+                fileInputRef={fileInputRef}
+                onDragOverChange={onDragOverChange}
+                onFileSelect={onFileSelect}
+              />
+            ) : null}
+
+            {stage === "map" ? (
+              <StudentImportMappingStep
+                fileName={fileName}
+                headers={headers}
+                isLoading={isLoading}
+                mapping={mapping}
+                rowCount={rowCount}
+                rows={rows}
+                onMappingChange={onMappingChange}
+                onReset={onReset}
+                onValidate={onValidate}
+              />
+            ) : null}
+
+            {stage === "preview" && validationResult ? (
+              <StudentImportPreviewStep
+                activeImportKey={activeImportKey}
+                importKeyError={importKeyError}
+                importOptions={importOptions}
+                isLoading={isLoading}
+                validationResult={validationResult}
+                onBackToMapping={onBackToMapping}
+                onImport={onImport}
+                onOpenBeltTracker={onOpenBeltTracker}
+                onOptionToggle={onOptionToggle}
+              />
+            ) : null}
+
+            {stage === "done" && importResult ? (
+              <StudentImportDonePanel
+                importOptions={submittedImportOptions}
+                importResult={importResult}
+                onImportAnother={onImportAnother}
+                onViewStudents={onViewStudents}
+              />
+            ) : null}
           </div>
-
-          {errorMessage ? (
-            <DismissibleNotice
-              tone="danger"
-              onDismiss={onDismissError}
-              className="mb-6"
-            >
-              {errorMessage}
-            </DismissibleNotice>
-          ) : null}
-
-          {stage === "upload" ? (
-            <StudentImportUploadStep
-              dragOver={dragOver}
-              fileInputRef={fileInputRef}
-              onDragOverChange={onDragOverChange}
-              onFileSelect={onFileSelect}
-            />
-          ) : null}
-
-          {stage === "map" ? (
-            <StudentImportMappingStep
-              fileName={fileName}
-              headers={headers}
-              isLoading={isLoading}
-              mapping={mapping}
-              rowCount={rowCount}
-              rows={rows}
-              onMappingChange={onMappingChange}
-              onReset={onReset}
-              onValidate={onValidate}
-            />
-          ) : null}
-
-          {stage === "preview" && validationResult ? (
-            <StudentImportPreviewStep
-              activeImportKey={activeImportKey}
-              importKeyError={importKeyError}
-              importOptions={importOptions}
-              isLoading={isLoading}
-              validationResult={validationResult}
-              onBackToMapping={onBackToMapping}
-              onImport={onImport}
-              onOpenBeltTracker={onOpenBeltTracker}
-              onOptionToggle={onOptionToggle}
-            />
-          ) : null}
-
-          {stage === "done" && importResult ? (
-            <StudentImportDonePanel
-              importOptions={submittedImportOptions}
-              importResult={importResult}
-              onImportAnother={onImportAnother}
-              onViewStudents={onViewStudents}
-            />
-          ) : null}
         </div>
       </div>
-    </>
+    </div>
   );
 }

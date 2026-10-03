@@ -1,7 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import type { ClassFormSubmitPayload } from "@/lib/class-form-model";
+import { useResumeRefresh } from "@/lib/use-resume-refresh";
+
+import { useEffect, useMemo, useRef, useState } from "react";
+import { toLocalDateKey } from "@/lib/date";
+import type { ClassFormInitialValues, ClassFormSubmitPayload } from "@/lib/class-form-model";
 import {
   beginSessionAttendanceRefresh,
   clearSessionAttendanceRefresh,
@@ -13,11 +16,11 @@ import {
   isCompleteScheduleRoster,
   isSessionAttendanceReady,
   navigateScheduleDate,
-  recurringClassOverlapsRange,
   runSessionAttendanceRefresh,
   type SessionAttendanceRefreshState,
   type SchedulePageView,
 } from "@/lib/schedule-page-model";
+import type { ScheduleTemplateCreateResult } from "@/lib/schedule-store-model";
 import type { ScheduleSessionDeleteScope } from "@/lib/session-detail-model";
 import type {
   ConfigStoreContextValue,
@@ -29,8 +32,8 @@ import { hasStaffPermission } from "@/lib/staff-permissions";
 import type { ClassSession } from "@/types";
 
 type SchedulePageControllerOptions = {
-  config: Pick<ConfigStoreContextValue, "currentRole">;
-  programsStore: Pick<ProgramsStoreContextValue, "programs">;
+  config: Pick<ConfigStoreContextValue, "currentRole" | "businessDate">;
+  programsStore: Pick<ProgramsStoreContextValue, "programs" | "refreshPrograms">;
   scheduleStore: Pick<
     ScheduleStoreContextValue,
     | "addSession"
@@ -57,7 +60,7 @@ export function useSchedulePageController({
 }: SchedulePageControllerOptions) {
   const canManageSchedule = hasStaffPermission(config.currentRole, "manage_schedule");
   const { refreshStudents, students, studentsLoaded, studentsMayBePartial } = studentsStore;
-  const { programs } = programsStore;
+  const { programs, refreshPrograms } = programsStore;
   const {
     attendance,
     sessions,
@@ -69,22 +72,33 @@ export function useSchedulePageController({
     refreshSessionAttendance,
     toggleCheckIn,
   } = scheduleStore;
-  const [currentDate, setCurrentDate] = useState(new Date());
+  const [currentDate, setCurrentDate] = useState(() => new Date(`${config.businessDate}T12:00:00`));
   const [view, setView] = useState<SchedulePageView>(DEFAULT_SCHEDULE_PAGE_VIEW);
   const [programFilter, setProgramFilter] = useState("");
-  const [selectedSession, setSelectedSession] = useState<ClassSession | null>(null);
+  const [selectedSessionSnapshot, setSelectedSession] = useState<ClassSession | null>(null);
+  const selectedSession = selectedSessionSnapshot
+    ? (sessions.find((session) => session.id === selectedSessionSnapshot.id) ?? null)
+    : null;
+  const [classFormInitialValues, setClassFormInitialValues] = useState<ClassFormInitialValues>();
   const [showAddClass, setShowAddClass] = useState(false);
   const [isCreatingClass, setIsCreatingClass] = useState(false);
+  const createClassInFlightRef = useRef(false);
+  const createSequenceRef = useRef(0);
   const [createClassError, setCreateClassError] = useState<string | null>(null);
+  const [rangeLoadAttempt, setRangeLoadAttempt] = useState(0);
+  const [attendanceRefreshAttempt, setAttendanceRefreshAttempt] = useState(0);
+  const resumedRangeRef = useRef<string | null>(null);
+  const [loadedRangeKey, setLoadedRangeKey] = useState<string | null>(null);
+  const [refreshingRangeKey, setRefreshingRangeKey] = useState<string | null>(null);
   const [scheduleLoadError, setScheduleLoadError] = useState<string | null>(null);
   const [attendanceError, setAttendanceError] = useState<string | null>(null);
   const [studentRosterLoadError, setStudentRosterLoadError] = useState<string | null>(null);
   const [isRefreshingStudentRoster, setIsRefreshingStudentRoster] = useState(false);
   const [pendingAttendanceIds, setPendingAttendanceIds] = useState<ReadonlySet<string>>(
-    () => new Set()
+    () => new Set(),
   );
   const [attendanceToggleQueue] = useState(() =>
-    createAttendanceToggleQueue(setPendingAttendanceIds)
+    createAttendanceToggleQueue(setPendingAttendanceIds),
   );
   const [sessionAttendanceRefresh, setSessionAttendanceRefresh] =
     useState<SessionAttendanceRefreshState>(clearSessionAttendanceRefresh);
@@ -94,21 +108,48 @@ export function useSchedulePageController({
 
   const visibleRange = useMemo(
     () => getVisibleScheduleRange(currentDate, view),
-    [currentDate, view]
+    [currentDate, view],
   );
+
+  const visibleRangeKey = `${visibleRange.start}:${visibleRange.end}`;
+  const currentRangeKeyRef = useRef(visibleRangeKey);
+
+  useEffect(() => {
+    currentRangeKeyRef.current = visibleRangeKey;
+  }, [visibleRangeKey]);
+
+  useResumeRefresh(() => {
+    resumedRangeRef.current = visibleRangeKey;
+    setRangeLoadAttempt((value) => value + 1);
+    setAttendanceRefreshAttempt((value) => value + 1);
+    void refreshPrograms({ includeArchived: true }).catch(() => undefined);
+    if (selectedSession) {
+      setIsRefreshingStudentRoster(true);
+      setStudentRosterLoadError(null);
+      void refreshStudents()
+        .catch(() => setStudentRosterLoadError("Could not refresh the attendance roster."))
+        .finally(() => setIsRefreshingStudentRoster(false));
+    }
+  });
 
   useEffect(() => {
     let cancelled = false;
 
     async function loadRange() {
+      const intent = resumedRangeRef.current === visibleRangeKey ? "read" : "materialize";
+      resumedRangeRef.current = null;
       setScheduleLoadError(null);
+      setRefreshingRangeKey(visibleRangeKey);
       try {
-        await refreshScheduleRange(visibleRange.start, visibleRange.end, "materialize");
+        await refreshScheduleRange(visibleRange.start, visibleRange.end, intent);
+        if (!cancelled) setLoadedRangeKey(visibleRangeKey);
       } catch (error) {
         if (!cancelled) {
           console.error("Failed to load schedule range", error);
           setScheduleLoadError("Could not load this calendar range. Please try again.");
         }
+      } finally {
+        if (!cancelled) setRefreshingRangeKey(null);
       }
     }
 
@@ -117,7 +158,13 @@ export function useSchedulePageController({
     return () => {
       cancelled = true;
     };
-  }, [refreshScheduleRange, visibleRange.end, visibleRange.start]);
+  }, [
+    rangeLoadAttempt,
+    refreshScheduleRange,
+    visibleRange.end,
+    visibleRange.start,
+    visibleRangeKey,
+  ]);
 
   useEffect(() => {
     if (!selectedSession) {
@@ -140,15 +187,15 @@ export function useSchedulePageController({
     return () => {
       current = false;
     };
-  }, [refreshSessionAttendance, selectedSession]);
+  }, [attendanceRefreshAttempt, refreshSessionAttendance, selectedSession]);
 
   const activeStudents = useMemo(
-    () => getActiveScheduleStudents(students),
-    [students]
+    () => getActiveScheduleStudents(students, config.businessDate),
+    [config.businessDate, students],
   );
   const selectedSessionAttendance = useMemo(
     () => getScheduleSessionAttendance(attendance, selectedSession),
-    [attendance, selectedSession]
+    [attendance, selectedSession],
   );
 
   function navigate(direction: number) {
@@ -156,14 +203,17 @@ export function useSchedulePageController({
   }
 
   function jumpToToday() {
-    setCurrentDate(new Date());
+    setCurrentDate(new Date(`${config.businessDate}T12:00:00`));
   }
 
   async function handleCreateClass(payload: ClassFormSubmitPayload) {
-    if (!canManageSchedule) return;
+    if (!canManageSchedule || createClassInFlightRef.current) return;
 
+    createClassInFlightRef.current = true;
     setCreateClassError(null);
     setIsCreatingClass(true);
+    const rangeKey = visibleRangeKey;
+    let createdTemplate: ScheduleTemplateCreateResult | null = null;
 
     try {
       if (payload.kind === "single_session") {
@@ -176,7 +226,7 @@ export function useSchedulePageController({
           capacity: payload.capacity,
         });
       } else {
-        await addTemplate({
+        createdTemplate = await addTemplate({
           name: payload.name,
           day_of_week: payload.recurrence.dayOfWeek,
           start_time: payload.startTime,
@@ -186,24 +236,36 @@ export function useSchedulePageController({
           program_id: payload.program_id,
           capacity: payload.capacity,
         });
-
-        if (recurringClassOverlapsRange(payload.recurrence, visibleRange)) {
-          await refreshScheduleRange(visibleRange.start, visibleRange.end, "materialize");
-        }
       }
-      setShowAddClass(false);
-      setActionMessage(
-        payload.kind === "single_session"
-          ? "Class added to the schedule."
-          : "Recurring class created and visible sessions refreshed."
-      );
     } catch (error) {
       console.error("Failed to create class", error);
       setCreateClassError(
-        error instanceof Error ? error.message : "Could not create this class. Please try again."
+        error instanceof Error ? error.message : "Could not create this class. Please try again.",
       );
+      return;
     } finally {
+      createClassInFlightRef.current = false;
       setIsCreatingClass(false);
+    }
+
+    // The create is confirmed. The store owns its follow-up refresh, and a failed
+    // refresh must not reopen the confirmed create as retryable.
+    setShowAddClass(false);
+    if (!createdTemplate) {
+      setActionMessage("Class added to the schedule.");
+      return;
+    }
+    setActionMessage("Recurring class created.");
+    const createSequence = (createSequenceRef.current += 1);
+    const scheduleRefresh = await createdTemplate.scheduleRefresh;
+    // A newer create owns the messages; after navigation the new range's load reports.
+    if (createSequence !== createSequenceRef.current) return;
+    if (scheduleRefresh === "refreshed") {
+      setActionMessage("Recurring class created and visible sessions refreshed.");
+    } else if (scheduleRefresh === "failed" && currentRangeKeyRef.current === rangeKey) {
+      setScheduleLoadError(
+        "Recurring class created, but its visible sessions could not refresh. Retry to load them.",
+      );
     }
   }
 
@@ -228,16 +290,15 @@ export function useSchedulePageController({
     setDeleteInFlight(scope);
 
     try {
-      await deleteSession(
-        selectedSession.id,
-        scope === "series" ? "future_series" : "session"
-      );
+      await deleteSession(selectedSession.id, scope === "series" ? "future_series" : "session");
       setSelectedSession(null);
-      setActionMessage(scope === "series" ? "Recurring class series removed." : "Class removed from the schedule.");
+      setActionMessage(
+        scope === "series" ? "Recurring class series removed." : "Class removed from the schedule.",
+      );
     } catch (error) {
       console.error("Failed to delete session", error);
       setDeleteError(
-        error instanceof Error ? error.message : "Could not delete this class. Please try again."
+        error instanceof Error ? error.message : "Could not delete this class. Please try again.",
       );
     } finally {
       setDeleteInFlight(null);
@@ -245,6 +306,9 @@ export function useSchedulePageController({
   }
 
   function openAddClass() {
+    if (!canManageSchedule) return;
+    const selectedDay = toLocalDateKey(currentDate);
+    setClassFormInitialValues({ date: selectedDay, startDate: selectedDay });
     setCreateClassError(null);
     setShowAddClass(true);
   }
@@ -284,7 +348,9 @@ export function useSchedulePageController({
       actionMessage,
       activeStudents,
       attendanceError,
+      businessDate: config.businessDate,
       canManageSchedule,
+      classFormInitialValues,
       createClassError,
       currentDate,
       deleteError,
@@ -293,12 +359,14 @@ export function useSchedulePageController({
       isRefreshingStudentRoster,
       isSelectedSessionAttendanceReady: isSessionAttendanceReady(
         sessionAttendanceRefresh,
-        selectedSession?.id ?? null
+        selectedSession?.id ?? null,
       ),
       pendingAttendanceIds,
       programFilter,
       programs,
       scheduleLoadError,
+      hasLoadedRange: loadedRangeKey === visibleRangeKey,
+      isRefreshingRange: refreshingRangeKey === visibleRangeKey,
       selectedSession,
       selectedSessionAttendance,
       studentRosterLoadError,
@@ -311,17 +379,19 @@ export function useSchedulePageController({
       templates,
       view,
       onCreateClass: handleCreateClass,
-      onDeleteSelectedSeries: canManageSchedule && selectedSession?.template_id
-        ? async () => {
-            await handleDeleteSelectedSession("series");
-          }
-        : undefined,
+      onDeleteSelectedSeries:
+        canManageSchedule && selectedSession?.template_id
+          ? async () => {
+              await handleDeleteSelectedSession("series");
+            }
+          : undefined,
       onDeleteSelectedSession: async () => {
         await handleDeleteSelectedSession("session");
       },
       onDismissActionMessage: () => setActionMessage(null),
       onDismissAttendanceError: () => setAttendanceError(null),
       onDismissCreateClassError: () => setCreateClassError(null),
+      onRetryRange: () => setRangeLoadAttempt((value) => value + 1),
       onDismissScheduleLoadError: () => setScheduleLoadError(null),
       onDismissStudentRosterLoadError: () => setStudentRosterLoadError(null),
       onJumpToToday: jumpToToday,

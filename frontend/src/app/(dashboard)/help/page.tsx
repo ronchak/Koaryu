@@ -9,10 +9,11 @@ import {
 export default function HelpPage() {
   return (
     <AccountPageShell
+      family="help"
       title="Help center"
       description="Quick answers and support routes for running Koaryu in a real studio."
     >
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+      <div className="border-y border-border divide-y divide-border">
         <AccountLinkTile
           href="/help/get-started"
           icon={BookOpen}
@@ -59,18 +60,19 @@ export default function HelpPage() {
 
       <AccountSection title="Billing support priority">
         <AccountNotice>
-          Admin and Front Desk may review billing and use the supported external-record and invoice-reconciliation
-          actions. Instructors have no billing access. Payment issues should include the studio name, payer name,
-          invoice number if visible, and whether Stripe shows the payment as succeeded or failed. Do not include
-          card data, passwords, API keys, webhook secrets, or raw production exports.
+          Admin and Front Desk may review billing and use the supported external-record and
+          invoice-reconciliation actions. Instructors have no billing access. Payment issues should
+          include the studio name, payer name, invoice number if visible, and whether Stripe shows
+          the payment as succeeded or failed. Do not include card data, passwords, API keys, webhook
+          secrets, or raw production exports.
         </AccountNotice>
       </AccountSection>
 
       <AccountSection title="Support diagnostics">
         <AccountNotice>
-          Use Contact support while signed in. Include the affected page, approximate time, staff role, steps,
-          expected result, and a non-sensitive screenshot when useful. If the support page is unavailable, email
-          support@koaryu.app.
+          Use Contact support while signed in. Include the affected page, approximate time, staff
+          role, steps, expected result, and a non-sensitive screenshot when useful. If the support
+          page is unavailable, email support@koaryu.app.
         </AccountNotice>
       </AccountSection>
     </AccountPageShell>

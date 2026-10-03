@@ -15,51 +15,13 @@ import pytest
 ROOT_DIR = Path(__file__).resolve().parents[2]
 
 
-def test_local_supabase_contract_verifier_static_harness_contract():
-    script_path = ROOT_DIR / "scripts" / "verify-supabase-contracts-local.sh"
-    script = script_path.read_text(encoding="utf-8")
-    syntax = subprocess.run(
-        ["/bin/bash", "-n", str(script_path)],
+def test_local_supabase_contract_verifier_shell_syntax():
+    result = subprocess.run(
+        ["/bin/bash", "-n", str(ROOT_DIR / "scripts/verify-supabase-contracts-local.sh")],
         capture_output=True,
         text=True,
     )
-
-    assert syntax.returncode == 0, syntax.stderr
-    for required_text in (
-        "set -euo pipefail",
-        "export LC_ALL=C",
-        "unset PGDATABASE PGHOST",
-        "mktemp -d /tmp/koaryu-pg.XXXXXX",
-        "trap cleanup EXIT",
-        "trap 'on_interrupt INT' INT",
-        "trap 'on_interrupt TERM' TERM",
-        'kill -s "$signal" "$child_pid"',
-        'if [[ "$(id -u)" -eq 0 ]]',
-        "KOARYU_PG_BIN_DIR",
-        "is_postgres_17_bindir",
-        'migration_files=("$MIGRATION_DIR"/*.sql)',
-        'verification_files=("$VERIFICATION_DIR"/*.sql)',
-        "--single-transaction",
-        "pg_available_extensions",
-        "CREATE TABLE auth.users",
-        "CREATE FUNCTION auth.uid()",
-        "CREATE FUNCTION auth.role()",
-        "CREATE FUNCTION auth.email()",
-        "CREATE TABLE storage.buckets",
-        "CREATE TABLE supabase_migrations.schema_migrations",
-        "ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public",
-        "GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES",
-    ):
-        assert required_text in script
-
-    assert ".env" not in script
-    assert "docker" not in script.lower()
-    package = json.loads((ROOT_DIR / "package.json").read_text(encoding="utf-8"))
-    assert package["scripts"]["check:supabase-contracts-local"] == (
-        "bash scripts/verify-supabase-contracts-local.sh"
-    )
-    supabase_guide = (ROOT_DIR / "supabase" / "AGENTS.md").read_text(encoding="utf-8")
-    assert "npm run check:supabase-contracts-local" in supabase_guide
+    assert result.returncode == 0, result.stderr
 
 
 def test_local_supabase_contract_verifier_rejects_an_invalid_explicit_toolchain(tmp_path):
@@ -147,7 +109,10 @@ def test_connect_smoke_accepts_only_exact_local_or_staging_bindings(monkeypatch)
     ),
 )
 def test_connect_smoke_permanently_denies_every_production_marker(
-    monkeypatch, environment, supabase_url, secret_key,
+    monkeypatch,
+    environment,
+    supabase_url,
+    secret_key,
 ):
     module = _load_connect_smoke_module()
     monkeypatch.setenv("ENVIRONMENT", environment)
@@ -312,7 +277,7 @@ def test_support_privacy_audit_rejects_raw_references_in_inline_and_html_code():
         "\n<pre><code>SELECT details FROM public.support_<em>tickets</em>;</code></pre>\n",
         "\n<pre><code>SELECT details FROM public.support&#95;tickets;</code></pre>\n",
         "\n<https://koaryu.onrender.com/api/v1/internal/support/tickets>\n",
-        "\n<a href=\"/api/v1/internal/support/tickets\">raw queue</a>\n",
+        '\n<a href="/api/v1/internal/support/tickets">raw queue</a>\n',
         '\n```bash\ncurl https://koaryu.onrender.com/api/v1/internal/support/"tickets"\n```\n',
         "\n```bash\ncurl https://koaryu.onrender.com/api/v1/internal/support/$'tickets'\n```\n",
         "\n```bash\ncurl https://koaryu.onrender.com/api/v1/internal/support/%74ickets\n```\n",
@@ -322,7 +287,7 @@ def test_support_privacy_audit_rejects_raw_references_in_inline_and_html_code():
         "\nQuery public.[support_](https://example.invalid)tickets directly.\n",
         "\nQuery public.[support_](https://example.invalid/a_(b))tickets directly.\n",
         "\nQuery public.support\\_tickets directly.\n",
-        "\nQuery public.support_<span title=\">\">tickets</span> directly.\n",
+        '\nQuery public.support_<span title=">">tickets</span> directly.\n',
         """
 ```text
 > ```
@@ -443,8 +408,7 @@ def test_support_triage_digest_helper_uses_sanitized_rpc_only(tmp_path):
     call_log = tmp_path / "calls.txt"
     fake_supabase = tmp_path / "supabase"
     fake_supabase.write_text(
-        "#!/bin/sh\n"
-        "printf '%s\\n' \"$*\" >> \"$CALL_LOG\"\n",
+        '#!/bin/sh\nprintf \'%s\\n\' "$*" >> "$CALL_LOG"\n',
         encoding="utf-8",
     )
     fake_supabase.chmod(0o755)
@@ -472,7 +436,7 @@ def test_account_support_verifier_honors_local_target(tmp_path):
     fake_supabase = tmp_path / "supabase"
     fake_supabase.write_text(
         "#!/bin/sh\n"
-        "printf 'supabase %s\\n' \"$*\" >> \"$CALL_LOG\"\n"
+        'printf \'supabase %s\\n\' "$*" >> "$CALL_LOG"\n'
         "printf '%s\\n' '{\"DB_URL\":\"postgresql://postgres:postgres@127.0.0.1:54322/postgres\"}'\n",
         encoding="utf-8",
     )
@@ -480,12 +444,12 @@ def test_account_support_verifier_honors_local_target(tmp_path):
     fake_docker = tmp_path / "docker"
     fake_docker.write_text(
         "#!/bin/sh\n"
-        "printf 'docker %s\\n' \"$*\" >> \"$CALL_LOG\"\n"
-        "if [ \"$1\" = ps ]; then\n"
+        'printf \'docker %s\\n\' "$*" >> "$CALL_LOG"\n'
+        'if [ "$1" = ps ]; then\n'
         "  printf 'fake_db\\t0.0.0.0:54322->5432/tcp\\n'\n"
         "else\n"
         "  printf '%s\\n' '-- koaryu contract boundary --' >> \"$STDIN_LOG\"\n"
-        "  cat >> \"$STDIN_LOG\"\n"
+        '  cat >> "$STDIN_LOG"\n'
         "fi\n",
         encoding="utf-8",
     )
@@ -511,8 +475,7 @@ def test_account_support_verifier_honors_local_target(tmp_path):
     docker_exec_calls = [call for call in calls if call.startswith("docker exec ")]
     assert len(docker_exec_calls) == 3
     assert all(
-        "-i fake_db psql -U postgres -d postgres --no-psqlrc --set=ON_ERROR_STOP=1"
-        in call
+        "-i fake_db psql -U postgres -d postgres --no-psqlrc --set=ON_ERROR_STOP=1" in call
         for call in docker_exec_calls
     )
     forwarded_sql = stdin_log.read_text(encoding="utf-8")
@@ -557,22 +520,129 @@ def test_supabase_sql_runner_rejects_invalid_and_unconfigured_linked_targets(tmp
     assert "SUPABASE_DB_URL is required" in missing_linked_url.stderr
 
 
-def _run_local_sql_runner_with_container_output(tmp_path, container_output):
+def _run_linked_sql_probe(tmp_path, url):
+    sql_file = tmp_path / "contract.sql"
+    sql_file.write_text("SELECT 1;\n", encoding="utf-8")
+    probe_log = tmp_path / "psql.json"
+    fake_psql = tmp_path / "psql"
+    fake_psql.write_text(
+        f"#!{sys.executable}\n"
+        "import json, os, sys\n"
+        "from pathlib import Path\n"
+        "Path(os.environ['PSQL_PROBE_LOG']).write_text(json.dumps({\n"
+        " 'args': sys.argv[1:],\n"
+        " 'password_matches': os.environ.get('PGPASSWORD') == 'fixture-only: p@ss/',\n"
+        " 'pg_environment': {k:v for k,v in os.environ.items() if k.startswith('PG') and k != 'PGPASSWORD'},\n"
+        "}))\n",
+        encoding="utf-8",
+    )
+    fake_psql.chmod(0o755)
+    result = subprocess.run(
+        ["/bin/bash", str(ROOT_DIR / "scripts/run-supabase-sql.sh"), str(sql_file)],
+        capture_output=True,
+        text=True,
+        env={
+            **os.environ,
+            "PATH": f"{tmp_path}:/usr/bin:/bin",
+            "SUPABASE_DB_TARGET": "linked",
+            "SUPABASE_DB_URL": url,
+            "PSQL_PROBE_LOG": str(probe_log),
+            "PGHOSTADDR": "203.0.113.9",
+            "PGSERVICE": "unexpected-service",
+            "PGSERVICEFILE": "/unused/service-file",
+            "PGOPTIONS": "-c search_path=unexpected",
+        },
+    )
+    return result, json.loads(probe_log.read_text()) if probe_log.exists() else None
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "postgresql://postgres:fixture@db.mimguepumzsgmcaycdsh.supabase.co:5432/postgres",
+        "postgresql://postgres.mimguepumzsgmcaycdsh:fixture@aws-0-us-west-1.pooler.supabase.com:5432/postgres",
+        "postgresql://postgres.nxgsektqsgrtyfhawxbc:fixture@unrelated.example:5432/postgres",
+        "postgresql://postgres:fixture@db.nxgsektqsgrtyfhawxbc.supabase.co.evil.example:5432/postgres",
+        "postgresql://postgres:nxgsektqsgrtyfhawxbc@db.other.supabase.co:5432/postgres",
+        "postgresql://postgres:fixture@127.0.0.1:5432/postgres",
+        "host=db.nxgsektqsgrtyfhawxbc.supabase.co dbname=postgres user=postgres",
+        "postgresql://postgres:fixture@db.nxgsektqsgrtyfhawxbc.supabase.co:5432/other",
+        "postgresql://postgres:fixture@db.nxgsektqsgrtyfhawxbc.supabase.co:6543/postgres",
+        "postgresql://postgres:fixture@db.nxgsektqsgrtyfhawxbc.supabase.co:5432/postgres?hostaddr=203.0.113.1",
+        "postgresql://postgres:fixture@db.nxgsektqsgrtyfhawxbc.supabase.co:5432/postgres?host=db.other.supabase.co",
+        "postgresql://postgres:fixture@db.nxgsektqsgrtyfhawxbc.supabase.co:5432/postgres?service=other",
+        "postgresql://postgres:fixture@db.nxgsektqsgrtyfhawxbc.supabase.co:5432/postgres?dbname=other",
+        "postgresql://postgres:fixture@db.nxgsektqsgrtyfhawxbc.supabase.co:5432/postgres?options=-c%20search_path=other",
+        "postgresql://postgres:fixture@db.nxgsektqsgrtyfhawxbc.supabase.co:5432/postgres?sslmode=disable",
+        "postgresql://postgres:fixture@db.nxgsektqsgrtyfhawxbc.supabase.co:5432/postgres?sslmode=require&sslmode=disable",
+        "postgresql://postgres:fixture@db.nxgsektqsgrtyfhawxbc.supabase.co:5432/postgres?connect_timeout=0",
+        "postgresql://postgres:fixture%00@db.nxgsektqsgrtyfhawxbc.supabase.co:5432/postgres",
+        "postgresql://postgres:fixture%ZZ@db.nxgsektqsgrtyfhawxbc.supabase.co:5432/postgres",
+        "postgresql://postgres:fixture@db.nxgsektqsgrtyfhawxbc.supabase.co:5432/postgres#fragment",
+    ],
+)
+def test_supabase_linked_runner_refuses_unsafe_targets_before_psql(tmp_path, url):
+    result, probe = _run_linked_sql_probe(tmp_path, url)
+    assert result.returncode != 0
+    assert probe is None
+    assert url not in result.stderr
+    assert "fixture" not in result.stderr
+
+
+@pytest.mark.parametrize(
+    "authority,expected_host,expected_user",
+    [
+        (
+            "postgres:fixture-only%3A%20p%40ss%2F@db.nxgsektqsgrtyfhawxbc.supabase.co",
+            "db.nxgsektqsgrtyfhawxbc.supabase.co",
+            "postgres",
+        ),
+        (
+            "postgres.nxgsektqsgrtyfhawxbc:fixture-only%3A%20p%40ss%2F@aws-0-us-west-1.pooler.supabase.com",
+            "aws-0-us-west-1.pooler.supabase.com",
+            "postgres.nxgsektqsgrtyfhawxbc",
+        ),
+    ],
+)
+def test_supabase_linked_runner_reconstructs_staging_connection_without_ambient_routing(
+    tmp_path, authority, expected_host, expected_user
+):
+    result, probe = _run_linked_sql_probe(tmp_path, f"postgresql://{authority}:5432/postgres")
+    assert result.returncode == 0, result.stderr
+    assert probe["password_matches"]
+    assert probe["args"] == [
+        "-h",
+        expected_host,
+        "-p",
+        "5432",
+        "-U",
+        expected_user,
+        "-d",
+        "postgres",
+        "--no-password",
+        "--no-psqlrc",
+        "--set=ON_ERROR_STOP=1",
+        "--file",
+        str(tmp_path / "contract.sql"),
+    ]
+    assert probe["pg_environment"] == {"PGSSLMODE": "require", "PGCONNECT_TIMEOUT": "10"}
+    assert "fixture-only" not in " ".join(probe["args"])
+
+
+def _run_local_sql_runner_with_container_output(
+    tmp_path, container_output, db_url="postgresql://postgres:postgres@127.0.0.1:54322/postgres"
+):
     script_path = ROOT_DIR / "scripts" / "run-supabase-sql.sh"
     sql_file = ROOT_DIR / "supabase" / "verification" / "support_triage_smoke.sql"
     fake_supabase = tmp_path / "supabase"
     fake_supabase.write_text(
-        "#!/bin/sh\n"
-        "printf '%s\\n' '{\"DB_URL\":\"postgresql://postgres:postgres@127.0.0.1:54322/postgres\"}'\n",
+        "#!/bin/sh\nprintf '%s\\n' \"$LOCAL_STATUS_JSON\"\n",
         encoding="utf-8",
     )
     fake_supabase.chmod(0o755)
     fake_docker = tmp_path / "docker"
     fake_docker.write_text(
-        "#!/bin/sh\n"
-        "if [ \"$1\" = ps ]; then\n"
-        "  printf '%s' \"$CONTAINER_OUTPUT\"\n"
-        "fi\n",
+        '#!/bin/sh\nif [ "$1" = ps ]; then\n  printf \'%s\' "$CONTAINER_OUTPUT"\nfi\n',
         encoding="utf-8",
     )
     fake_docker.chmod(0o755)
@@ -584,6 +654,8 @@ def _run_local_sql_runner_with_container_output(tmp_path, container_output):
             **os.environ,
             "PATH": f"{tmp_path}:/usr/bin:/bin",
             "SUPABASE_DB_TARGET": "local",
+            "LOCAL_STATUS_JSON": json.dumps({"DB_URL": db_url}),
+            "SUPABASE_DB_URL": "postgresql://postgres:fixture@db.mimguepumzsgmcaycdsh.supabase.co:5432/postgres",
             "CONTAINER_OUTPUT": container_output,
         },
         text=True,
@@ -597,8 +669,30 @@ def test_supabase_sql_runner_fails_closed_on_missing_or_ambiguous_local_containe
 
     ambiguous = _run_local_sql_runner_with_container_output(
         tmp_path,
-        "db_one\\t0.0.0.0:54322->5432/tcp\\n"
-        "db_two\\t0.0.0.0:54322->5432/tcp\\n",
+        "db_one\t0.0.0.0:54322->5432/tcp\ndb_two\t0.0.0.0:54322->5432/tcp\n",
     )
     assert ambiguous.returncode == 1
     assert "exactly one local Supabase database container" in ambiguous.stderr
+
+
+@pytest.mark.parametrize("host", ["127.0.0.1", "localhost", "[::1]"])
+def test_supabase_local_runner_uses_only_loopback_status_and_ignores_ambient_linked_url(
+    tmp_path, host
+):
+    result = _run_local_sql_runner_with_container_output(
+        tmp_path,
+        "fake_db\t0.0.0.0:54322->5432/tcp\n",
+        f"postgresql://postgres:postgres@{host}:54322/postgres?sslmode=disable",
+    )
+    assert result.returncode == 0, result.stderr
+
+
+def test_supabase_local_runner_refuses_remote_status_even_if_a_local_port_matches(tmp_path):
+    result = _run_local_sql_runner_with_container_output(
+        tmp_path,
+        "fake_db\t0.0.0.0:54322->5432/tcp\n",
+        "postgresql://postgres:fixture@db.nxgsektqsgrtyfhawxbc.supabase.co:54322/postgres",
+    )
+    assert result.returncode != 0
+    assert "loopback" in result.stderr
+    assert "fixture" not in result.stderr

@@ -89,17 +89,20 @@ describe("resolve-once pinned HTTPS", () => {
     for (const answers of answerSets) {
       await context.test(JSON.stringify(answers), async () => {
         let requested = false;
-        await assert.rejects(pinnedHttpsRequest({
-          url: "https://alerts.example.net/check",
-          headers: { Authorization: "Bearer synthetic-secret" },
-          timeoutMs: 1_000,
-          maxResponseBytes: 64,
-          resolveAll: async () => answers,
-          requestImpl: (...args) => {
-            requested = true;
-            return requestHarness()(...args);
-          },
-        }), /only to public addresses/);
+        await assert.rejects(
+          pinnedHttpsRequest({
+            url: "https://alerts.example.net/check",
+            headers: { Authorization: "Bearer synthetic-secret" },
+            timeoutMs: 1_000,
+            maxResponseBytes: 64,
+            resolveAll: async () => answers,
+            requestImpl: (...args) => {
+              requested = true;
+              return requestHarness()(...args);
+            },
+          }),
+          /only to public addresses/,
+        );
         assert.equal(requested, false);
       });
     }
@@ -108,17 +111,20 @@ describe("resolve-once pinned HTTPS", () => {
   it("includes DNS resolution in the total timeout without constructing a request", async () => {
     let requested = false;
     const startedAt = Date.now();
-    await assert.rejects(pinnedHttpsRequest({
-      url: "https://alerts.example.net/check",
-      headers: { Authorization: "Bearer synthetic-secret" },
-      timeoutMs: 20,
-      maxResponseBytes: 64,
-      resolveAll: async () => new Promise(() => {}),
-      requestImpl: (...args) => {
-        requested = true;
-        return requestHarness()(...args);
-      },
-    }), /timed out/);
+    await assert.rejects(
+      pinnedHttpsRequest({
+        url: "https://alerts.example.net/check",
+        headers: { Authorization: "Bearer synthetic-secret" },
+        timeoutMs: 20,
+        maxResponseBytes: 64,
+        resolveAll: async () => new Promise(() => {}),
+        requestImpl: (...args) => {
+          requested = true;
+          return requestHarness()(...args);
+        },
+      }),
+      /timed out/,
+    );
 
     assert.equal(requested, false);
     assert.ok(Date.now() - startedAt < 500);
@@ -138,16 +144,21 @@ describe("resolve-once pinned HTTPS", () => {
       requestImpl: requestHarness({
         status: 302,
         headers: { location: "https://127.0.0.1/credential-sink" },
-        inspect: () => { requests += 1; },
+        inspect: () => {
+          requests += 1;
+        },
       }),
     });
     assert.equal(redirect.status, 302);
     assert.equal(requests, 1);
 
-    await assert.rejects(pinnedHttpsRequest({
-      ...base,
-      maxResponseBytes: 4,
-      requestImpl: requestHarness({ body: "12345" }),
-    }), /exceeded the safe limit/);
+    await assert.rejects(
+      pinnedHttpsRequest({
+        ...base,
+        maxResponseBytes: 4,
+        requestImpl: requestHarness({ body: "12345" }),
+      }),
+      /exceeded the safe limit/,
+    );
   });
 });

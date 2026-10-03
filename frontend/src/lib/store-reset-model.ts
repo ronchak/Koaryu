@@ -78,7 +78,7 @@ export interface LiveStudioDataResetRefs {
 
 export function applyLiveStudioDataResetRefs(
   refs: LiveStudioDataResetRefs,
-  state: LiveStudioDataResetState
+  state: LiveStudioDataResetState,
 ) {
   refs.staffMembers.current = state.staffMembers;
   refs.programs.current = state.programs;

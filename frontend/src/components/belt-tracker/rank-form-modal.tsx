@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { ModalFrame } from "@/components/ui/modal-frame";
 import { resolvePresetBeltName } from "@/lib/belt-tracker-page-model";
 import { Save, X } from "lucide-react";
+import styles from "./belt-tracker.module.css";
 
 const BELT_COLOR_PRESETS = [
   { label: "White", hex: "#FFFFFF" },
@@ -32,7 +33,12 @@ export type RankFormData = {
   requires_approval: boolean;
 };
 
-function ColorPicker({ label, value, onChange, onPresetSelect }: {
+function ColorPicker({
+  label,
+  value,
+  onChange,
+  onPresetSelect,
+}: {
   label: string;
   value: string;
   onChange: (hex: string) => void;
@@ -42,7 +48,9 @@ function ColorPicker({ label, value, onChange, onPresetSelect }: {
 
   return (
     <div>
-      <label className="block text-xs text-text-secondary font-medium mb-2" htmlFor={inputId}>{label}</label>
+      <label className="block text-xs text-text-secondary font-medium mb-2" htmlFor={inputId}>
+        {label}
+      </label>
       <div className="grid grid-cols-6 gap-1.5 mb-2">
         {BELT_COLOR_PRESETS.map((c) => (
           <button
@@ -55,7 +63,7 @@ function ColorPicker({ label, value, onChange, onPresetSelect }: {
               onChange(c.hex);
               onPresetSelect?.(c);
             }}
-            className="w-7 h-7 rounded-[4px] transition-transform hover:scale-110 flex-shrink-0"
+            className="h-11 w-11 flex-shrink-0 rounded-[10px] transition-colors"
             style={{
               backgroundColor: c.hex,
               border: value === c.hex ? "2px solid var(--accent)" : "1px solid var(--border)",
@@ -66,7 +74,10 @@ function ColorPicker({ label, value, onChange, onPresetSelect }: {
         ))}
       </div>
       <div className="flex items-center gap-2">
-        <div className="w-6 h-6 rounded-[3px] border border-border flex-shrink-0" style={{ backgroundColor: value }} />
+        <div
+          className="w-6 h-6 rounded-[8px] border border-border flex-shrink-0"
+          style={{ backgroundColor: value }}
+        />
         <input
           id={inputId}
           type="text"
@@ -79,14 +90,22 @@ function ColorPicker({ label, value, onChange, onPresetSelect }: {
           }}
           maxLength={7}
           placeholder="#FFFFFF"
-          className="flex-1 px-2 py-1 text-xs bg-surface-raised border border-border rounded-[4px] text-text-primary font-mono focus:border-accent focus:outline-none"
+          className="flex-1 px-2 py-1 text-xs bg-surface-raised border border-border rounded-[10px] text-text-primary font-mono focus:border-accent focus:outline-none"
         />
       </div>
     </div>
   );
 }
 
-export function RankFormModal({ initial, onSave, onClose, title, subRankTerm, forceTip, lockType }: {
+export function RankFormModal({
+  initial,
+  onSave,
+  onClose,
+  title,
+  subRankTerm,
+  forceTip,
+  lockType,
+}: {
   initial?: Partial<RankFormData>;
   onSave: (data: RankFormData) => void;
   onClose: () => void;
@@ -114,21 +133,33 @@ export function RankFormModal({ initial, onSave, onClose, title, subRankTerm, fo
 
   return (
     <ModalFrame
-      rootClassName="p-4"
-      panelClassName="bg-bg border border-border rounded-[6px] w-full max-w-sm p-6 overflow-y-auto max-h-[90vh]"
+      rootClassName={`p-4 ${styles.beltDialogRoot}`}
+      panelClassName="bg-bg rounded-[18px] w-full max-w-sm p-4 overflow-y-auto max-h-[90vh] shadow-[var(--product-shadow-lifted)]"
       ariaLabelledBy="rank-form-title"
       onBackdropClick={onClose}
     >
       <div className="flex items-center justify-between mb-5">
-        <h2 id="rank-form-title" className="text-base font-semibold text-text-primary">{title}</h2>
-        <button type="button" aria-label="Close rank form" onClick={onClose} className="text-muted hover:text-text-secondary cursor-pointer">
+        <h2 id="rank-form-title" className="text-base font-semibold text-text-primary">
+          {title}
+        </h2>
+        <button
+          type="button"
+          aria-label="Close rank form"
+          onClick={onClose}
+          className="text-muted hover:text-text-secondary cursor-pointer"
+        >
           <X className="w-4 h-4" />
         </button>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
-          <label htmlFor="rank-form-name" className="block text-xs text-text-secondary font-medium mb-1.5">Rank name</label>
+          <label
+            htmlFor="rank-form-name"
+            className="block text-xs text-text-secondary font-medium mb-1.5"
+          >
+            Rank name
+          </label>
           <input
             id="rank-form-name"
             type="text"
@@ -137,22 +168,29 @@ export function RankFormModal({ initial, onSave, onClose, title, subRankTerm, fo
               setNameWasEdited(true);
               setForm((f) => ({ ...f, name: e.target.value }));
             }}
-            placeholder={form.is_tip ? `e.g. 1 ${subRankTerm}, 2 ${subRankTerm}s` : "e.g. Blue Belt"}
+            placeholder={
+              form.is_tip ? `e.g. 1 ${subRankTerm}, 2 ${subRankTerm}s` : "e.g. Blue Belt"
+            }
             required
-            className="w-full px-3 py-2 text-sm bg-surface-raised border border-border rounded-[6px] text-text-primary placeholder:text-muted focus:border-accent focus:outline-none"
+            className="w-full px-3 py-2 text-sm bg-surface-raised border border-border rounded-[14px] text-text-primary placeholder:text-muted focus:border-accent focus:outline-none"
           />
         </div>
 
         {forceTip === undefined && !lockType && (
           <div>
-            <p id="rank-form-type-label" className="block text-xs text-text-secondary font-medium mb-1.5">Rank type</p>
+            <p
+              id="rank-form-type-label"
+              className="block text-xs text-text-secondary font-medium mb-1.5"
+            >
+              Rank type
+            </p>
             <div className="flex gap-2" role="group" aria-labelledby="rank-form-type-label">
               {([false, true] as const).map((val) => (
                 <button
                   key={String(val)}
                   type="button"
                   onClick={() => setForm((f) => ({ ...f, is_tip: val }))}
-                  className={`flex-1 py-1.5 text-xs rounded-[6px] border transition-colors cursor-pointer ${
+                  className={`flex-1 py-1.5 text-xs rounded-[14px] border transition-colors cursor-pointer ${
                     form.is_tip === val
                       ? "border-accent text-accent bg-accent/10 font-medium"
                       : "border-border text-text-secondary hover:border-text-secondary"
@@ -172,7 +210,8 @@ export function RankFormModal({ initial, onSave, onClose, title, subRankTerm, fo
 
         {lockType && (
           <p className="text-xs text-muted">
-            Rank type is locked after creation. Add a new belt or {subRankTerm.toLowerCase()} instead of converting this one in place.
+            Rank type is locked after creation. Add a new belt or {subRankTerm.toLowerCase()}{" "}
+            instead of converting this one in place.
           </p>
         )}
 
@@ -180,15 +219,17 @@ export function RankFormModal({ initial, onSave, onClose, title, subRankTerm, fo
           label={form.is_tip ? "Belt background color" : "Belt color"}
           value={form.color_hex}
           onChange={(hex) => setForm((f) => ({ ...f, color_hex: hex }))}
-          onPresetSelect={(preset) => setForm((current) => ({
-            ...current,
-            name: resolvePresetBeltName({
-              currentName: current.name,
-              isTip: current.is_tip,
-              nameWasEdited,
-              presetLabel: preset.label,
-            }),
-          }))}
+          onPresetSelect={(preset) =>
+            setForm((current) => ({
+              ...current,
+              name: resolvePresetBeltName({
+                currentName: current.name,
+                isTip: current.is_tip,
+                nameWasEdited,
+                presetLabel: preset.label,
+              }),
+            }))
+          }
         />
 
         {form.is_tip && (
@@ -199,15 +240,11 @@ export function RankFormModal({ initial, onSave, onClose, title, subRankTerm, fo
           />
         )}
 
-        <div className="flex items-center gap-3 p-3 bg-surface-raised rounded-[6px] border border-border">
+        <div className="flex items-center gap-3 p-3 bg-surface-raised rounded-[14px] border border-border">
           <BeltVisual
             rank={{
-              ...form,
-              id: "preview",
-              ladder_id: "",
-              studio_id: "",
-              display_order: 0,
-              created_at: "",
+              color_hex: form.color_hex,
+              is_tip: form.is_tip,
               tip_color_hex: form.is_tip ? form.tip_color_hex : undefined,
             }}
           />
@@ -221,25 +258,35 @@ export function RankFormModal({ initial, onSave, onClose, title, subRankTerm, fo
 
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label htmlFor="rank-form-min-classes" className="block text-xs text-text-secondary font-medium mb-1.5">Min classes</label>
+            <label
+              htmlFor="rank-form-min-classes"
+              className="block text-xs text-text-secondary font-medium mb-1.5"
+            >
+              Min classes
+            </label>
             <input
               id="rank-form-min-classes"
               type="number"
               min={0}
               value={form.min_classes}
               onChange={(e) => setForm((f) => ({ ...f, min_classes: Number(e.target.value) }))}
-              className="w-full px-3 py-2 text-sm bg-surface-raised border border-border rounded-[6px] text-text-primary focus:border-accent focus:outline-none"
+              className="w-full px-3 py-2 text-sm bg-surface-raised border border-border rounded-[14px] text-text-primary focus:border-accent focus:outline-none"
             />
           </div>
           <div>
-            <label htmlFor="rank-form-min-months" className="block text-xs text-text-secondary font-medium mb-1.5">Min months</label>
+            <label
+              htmlFor="rank-form-min-months"
+              className="block text-xs text-text-secondary font-medium mb-1.5"
+            >
+              Min months
+            </label>
             <input
               id="rank-form-min-months"
               type="number"
               min={0}
               value={form.min_months}
               onChange={(e) => setForm((f) => ({ ...f, min_months: Number(e.target.value) }))}
-              className="w-full px-3 py-2 text-sm bg-surface-raised border border-border rounded-[6px] text-text-primary focus:border-accent focus:outline-none"
+              className="w-full px-3 py-2 text-sm bg-surface-raised border border-border rounded-[14px] text-text-primary focus:border-accent focus:outline-none"
             />
           </div>
         </div>
@@ -255,7 +302,9 @@ export function RankFormModal({ initial, onSave, onClose, title, subRankTerm, fo
         </label>
 
         <div className="flex justify-end gap-2 pt-2">
-          <Button type="button" variant="ghost" size="sm" onClick={onClose}>Cancel</Button>
+          <Button type="button" variant="ghost" size="sm" onClick={onClose}>
+            Cancel
+          </Button>
           <Button type="submit" variant="primary" size="sm">
             <Save className="w-3.5 h-3.5" /> Save rank
           </Button>

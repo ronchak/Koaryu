@@ -79,13 +79,14 @@ class StudentListQuery:
             search_pattern = f"%{normalized_search}%"
             query = query.or_(
                 ",".join(
-                    f"{column}.ilike.{search_pattern}"
-                    for column in STUDENT_LIST_SEARCH_COLUMNS
+                    f"{column}.ilike.{search_pattern}" for column in STUDENT_LIST_SEARCH_COLUMNS
                 )
             )
 
         if sort_by == "name":
-            query = query.order("legal_last_name", desc=sort_desc).order("legal_first_name", desc=sort_desc)
+            query = query.order("legal_last_name", desc=sort_desc).order(
+                "legal_first_name", desc=sort_desc
+            )
         else:
             primary_sort_column = STUDENT_LIST_PRIMARY_SORT_COLUMNS.get(sort_by, "created_at")
             query = query.order(primary_sort_column, desc=sort_desc)
@@ -120,7 +121,9 @@ class StudentListQuery:
                 "p_program_id": normalized_program_id,
                 "p_search": search or None,
                 "p_status": status_filter or None,
-                "p_sort_by": sort_by if sort_by in {"name", *STUDENT_LIST_PRIMARY_SORT_COLUMNS.keys()} else "name",
+                "p_sort_by": sort_by
+                if sort_by in {"name", *STUDENT_LIST_PRIMARY_SORT_COLUMNS.keys()}
+                else "name",
                 "p_sort_dir": "desc" if sort_dir == "desc" else "asc",
                 "p_limit": page_size,
                 "p_offset": offset,
@@ -129,11 +132,7 @@ class StudentListQuery:
 
         rows = result.data or []
         total = int((rows[0] or {}).get("total_count") or 0) if rows else 0
-        student_ids = [
-            str(row["student_id"])
-            for row in rows
-            if row.get("student_id")
-        ]
+        student_ids = [str(row["student_id"]) for row in rows if row.get("student_id")]
         return student_ids, total
 
     def _fetch_students_by_page_ids(
@@ -152,13 +151,5 @@ class StudentListQuery:
             .in_("id", student_ids)
             .execute()
         )
-        rows_by_id = {
-            row["id"]: row
-            for row in (result.data or [])
-            if row.get("id")
-        }
-        return [
-            rows_by_id[student_id]
-            for student_id in student_ids
-            if student_id in rows_by_id
-        ]
+        rows_by_id = {row["id"]: row for row in (result.data or []) if row.get("id")}
+        return [rows_by_id[student_id] for student_id in student_ids if student_id in rows_by_id]

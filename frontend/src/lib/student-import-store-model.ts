@@ -10,6 +10,8 @@ import type {
 } from "@/types";
 import { resolvePreviewImportStudentIds } from "./csv-import.ts";
 import { findPreviewStartingRankId } from "./student-store-model.ts";
+import { isMinorOnDate } from "./student-age.ts";
+import { parseStudentImportBirthDate, studentBirthDateError } from "./student-birth-date.ts";
 
 export const CSV_IMPORT_STATUS_ALIASES: Record<string, StudentStatus> = {
   current: "active",
@@ -27,7 +29,6 @@ const VALID_CSV_IMPORT_STATUSES: StudentStatus[] = [
   "paused",
   "canceled",
 ];
-const MINOR_AGE_MS = 18 * 365.25 * 24 * 60 * 60 * 1000;
 const NAME_PARTICLES = new Set([
   "da",
   "das",
@@ -57,7 +58,7 @@ interface BuildPreviewStudentImportResultInput {
   existingStudents: Student[];
   idFactory: () => string;
   now?: () => Date;
-  nowMs?: () => number;
+  businessDate?: string;
 }
 
 export interface PreviewStudentImportExecution {
@@ -106,7 +107,7 @@ function splitCsvImportFullName(rawValue: unknown): { firstName: string; lastNam
 function buildMappedImportRow(
   row: Record<string, string>,
   mapping: Record<string, string>,
-  targetCounts: Record<string, number>
+  targetCounts: Record<string, number>,
 ) {
   const mapped: Record<string, string> = {};
 
@@ -128,17 +129,18 @@ function buildMappedImportRow(
   return mapped;
 }
 
-function buildStatusImportIssues(
-  mapped: Record<string, string>,
-  options: CsvImportOptions,
-) {
+function buildStatusImportIssues(mapped: Record<string, string>, options: CsvImportOptions) {
   const rawStatus = (mapped.status || "").trim().toLowerCase();
   const statusValue = mapped.status || "";
   const rowIssues: PreviewImportRowIssue[] = [];
   let normalizedStatus = rawStatus;
   let normalized = false;
 
-  if (mapped.status && options.status_alias_mode === "normalize" && CSV_IMPORT_STATUS_ALIASES[rawStatus]) {
+  if (
+    mapped.status &&
+    options.status_alias_mode === "normalize" &&
+    CSV_IMPORT_STATUS_ALIASES[rawStatus]
+  ) {
     normalizedStatus = CSV_IMPORT_STATUS_ALIASES[rawStatus];
     mapped.status = normalizedStatus;
     normalized = true;
@@ -169,7 +171,7 @@ function buildImportedPreviewStudent({
   beltRankId,
   idFactory,
   now,
-  nowMs,
+  businessDate,
 }: {
   mapped: Record<string, string>;
   status: StudentStatus;
@@ -177,11 +179,16 @@ function buildImportedPreviewStudent({
   beltRankId?: string;
   idFactory: () => string;
   now: () => Date;
-  nowMs: () => number;
+  businessDate: string;
 }): Student {
-  const tags = mapped.tags ? mapped.tags.split(",").map((tag) => tag.trim()).filter(Boolean) : [];
+  const tags = mapped.tags
+    ? mapped.tags
+        .split(",")
+        .map((tag) => tag.trim())
+        .filter(Boolean)
+    : [];
   const dob = mapped.date_of_birth || undefined;
-  const isMinor = dob ? (nowMs() - new Date(dob).getTime()) < MINOR_AGE_MS : false;
+  const isMinor = isMinorOnDate(dob, businessDate);
   const createdAt = now().toISOString();
   const updatedAt = now().toISOString();
   const studentId = idFactory();
@@ -233,22 +240,27 @@ function buildImportedPreviewStudent({
   };
 }
 
-function buildImportedPreviewGuardians(mapped: Record<string, string>, studentId: string): Guardian[] {
+function buildImportedPreviewGuardians(
+  mapped: Record<string, string>,
+  studentId: string,
+): Guardian[] {
   const guardianName = mapped.guardian_name?.trim();
   if (!guardianName) {
     return [];
   }
 
   const { firstName, lastName } = splitCsvImportFullName(guardianName);
-  return [{
-    id: `${studentId}-guardian-primary`,
-    first_name: firstName || guardianName,
-    last_name: lastName || "",
-    email: mapped.guardian_email || undefined,
-    phone: mapped.guardian_phone || undefined,
-    relation: mapped.guardian_relation || undefined,
-    is_primary_contact: true,
-  }];
+  return [
+    {
+      id: `${studentId}-guardian-primary`,
+      first_name: firstName || guardianName,
+      last_name: lastName || "",
+      email: mapped.guardian_email || undefined,
+      phone: mapped.guardian_phone || undefined,
+      relation: mapped.guardian_relation || undefined,
+      is_primary_contact: true,
+    },
+  ];
 }
 
 export function buildPreviewStudentImportResult({
@@ -261,7 +273,7 @@ export function buildPreviewStudentImportResult({
   existingStudents,
   idFactory,
   now = () => new Date(),
-  nowMs = () => Date.now(),
+  businessDate = now().toISOString().split("T")[0],
 }: BuildPreviewStudentImportResultInput): PreviewStudentImportExecution {
   const importedStudents: Student[] = [];
   const issueRows: CsvImportResult["rows"] = [];
@@ -278,6 +290,26 @@ export function buildPreviewStudentImportResult({
   for (const [index, row] of rows.entries()) {
     const mapped = buildMappedImportRow(row, mapping, targetCounts);
     const rowIssues: PreviewImportRowIssue[] = [];
+    const parsedBirthDate = mapped.date_of_birth
+      ? parseStudentImportBirthDate(mapped.date_of_birth)
+      : undefined;
+    const birthDateError =
+      parsedBirthDate === null
+        ? "Enter a valid date of birth."
+        : studentBirthDateError(parsedBirthDate, businessDate);
+    if (birthDateError) {
+      rowIssues.push({
+        code:
+          parsedBirthDate && parsedBirthDate > businessDate
+            ? "future_date_of_birth"
+            : "invalid_date_of_birth",
+        severity: "error",
+        field: "date_of_birth",
+        value: mapped.date_of_birth,
+        message: birthDateError,
+      });
+    }
+    if (parsedBirthDate) mapped.date_of_birth = parsedBirthDate;
 
     if (!mapped.legal_first_name) {
       rowIssues.push({
@@ -319,8 +351,12 @@ export function buildPreviewStudentImportResult({
         row_number: index + 2,
         data: mapped,
         issues: rowIssues,
-        errors: rowIssues.filter((issue) => issue.severity === "error").map((issue) => issue.message),
-        warnings: rowIssues.filter((issue) => issue.severity === "warning").map((issue) => issue.message),
+        errors: rowIssues
+          .filter((issue) => issue.severity === "error")
+          .map((issue) => issue.message),
+        warnings: rowIssues
+          .filter((issue) => issue.severity === "warning")
+          .map((issue) => issue.message),
         is_valid: isValid,
       });
     }
@@ -328,29 +364,29 @@ export function buildPreviewStudentImportResult({
     if (!isValid) continue;
 
     validRows += 1;
-    const status: StudentStatus = VALID_CSV_IMPORT_STATUSES.includes(statusIssues.normalizedStatus as StudentStatus)
+    const status: StudentStatus = VALID_CSV_IMPORT_STATUSES.includes(
+      statusIssues.normalizedStatus as StudentStatus,
+    )
       ? (statusIssues.normalizedStatus as StudentStatus)
       : "active";
 
-    const resolvedBeltRankId = previewResolution.beltRankId || (
-      previewResolution.programId
-        ? findPreviewStartingRankId(
-          previewResolution.programId,
-          beltLadders,
-          fallbackRanks,
-        )
-        : undefined
-    );
+    const resolvedBeltRankId =
+      previewResolution.beltRankId ||
+      (previewResolution.programId
+        ? findPreviewStartingRankId(previewResolution.programId, beltLadders, fallbackRanks)
+        : undefined);
 
-    importedStudents.push(buildImportedPreviewStudent({
-      mapped,
-      status,
-      programId: previewResolution.programId,
-      beltRankId: resolvedBeltRankId,
-      idFactory,
-      now,
-      nowMs,
-    }));
+    importedStudents.push(
+      buildImportedPreviewStudent({
+        mapped,
+        status,
+        programId: previewResolution.programId,
+        beltRankId: resolvedBeltRankId,
+        idFactory,
+        now,
+        businessDate,
+      }),
+    );
   }
 
   if (normalizedStatusCount > 0) {
@@ -367,9 +403,8 @@ export function buildPreviewStudentImportResult({
   }
 
   return {
-    students: importedStudents.length > 0
-      ? [...importedStudents, ...existingStudents]
-      : existingStudents,
+    students:
+      importedStudents.length > 0 ? [...importedStudents, ...existingStudents] : existingStudents,
     importedStudents,
     result: {
       total_rows: rows.length,

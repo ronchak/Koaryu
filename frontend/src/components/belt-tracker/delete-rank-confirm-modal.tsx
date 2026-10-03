@@ -3,27 +3,36 @@
 import { Button } from "@/components/ui/button";
 import { ModalFrame } from "@/components/ui/modal-frame";
 import { Trash2 } from "lucide-react";
+import styles from "./belt-tracker.module.css";
 
-export function DeleteRankConfirmModal({ name, onConfirm, onCancel }: {
+export function DeleteRankConfirmModal({
+  name,
+  onConfirm,
+  onCancel,
+}: {
   name: string;
   onConfirm: () => void;
   onCancel: () => void;
 }) {
   return (
     <ModalFrame
-      rootClassName="p-4"
-      panelClassName="bg-bg border border-border rounded-[6px] w-full max-w-xs p-6"
+      rootClassName={`p-4 ${styles.beltDialogRoot}`}
+      panelClassName="bg-bg rounded-[18px] w-full max-w-xs p-4 shadow-[var(--product-shadow-lifted)]"
       ariaLabelledBy="delete-rank-title"
       ariaDescribedBy="delete-rank-description"
       onBackdropClick={onCancel}
     >
-      <h2 id="delete-rank-title" className="text-base font-semibold text-text-primary mb-2">Delete rank?</h2>
+      <h2 id="delete-rank-title" className="text-base font-semibold text-text-primary mb-2">
+        Delete rank?
+      </h2>
       <p id="delete-rank-description" className="text-sm text-text-secondary mb-4">
-        <strong className="text-text-primary">{name}</strong> will be permanently removed.
-        Students at this rank may need reassignment.
+        <strong className="text-text-primary">{name}</strong> will be permanently removed. Students
+        at this rank may need reassignment.
       </p>
       <div className="flex justify-end gap-2">
-        <Button variant="ghost" size="sm" onClick={onCancel}>Cancel</Button>
+        <Button variant="ghost" size="sm" onClick={onCancel}>
+          Cancel
+        </Button>
         <Button
           variant="primary"
           size="sm"

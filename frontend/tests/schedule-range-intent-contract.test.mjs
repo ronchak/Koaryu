@@ -11,28 +11,65 @@ const scheduleControllerSource = source("../src/lib/schedule-page-controller.ts"
 const studentsControllerSource = source("../src/lib/students-page-controller.ts");
 const scheduleActionsSource = source("../src/lib/store-schedule-actions.ts");
 const storeSource = source("../src/lib/store.tsx");
+const initialReconciliationSource = storeSource.slice(
+  storeSource.indexOf("const reconcileScheduleAttempt"),
+  storeSource.indexOf("const reconcileSchedule ="),
+);
+const rangeRefreshSource = scheduleActionsSource.slice(
+  scheduleActionsSource.indexOf("const refreshScheduleRange"),
+  scheduleActionsSource.indexOf("const refreshSessionAttendance"),
+);
 
 describe("schedule range intent contracts", () => {
   it("keeps Reports and other analytics callers on the read-only path", () => {
     assert.match(
       reportsPageSource,
-      /refreshScheduleRange\([\s\S]*?reportScheduleRange\.endDate,\s*"read"\s*\)/
+      /refreshScheduleRange\([\s\S]*?reportScheduleRange\.endDate,\s*"read"\s*\)/,
     );
     assert.doesNotMatch(reportsPageSource, /"materialize"/);
     assert.match(
       studentsControllerSource,
-      /refreshScheduleRange\(range\.startDate, range\.endDate, "read"\)/
+      /refreshScheduleRange\(range\.startDate, range\.endDate, "read"\)/,
     );
     assert.match(storeSource, /await reconcileSchedule\("read"\)/);
     assert.match(storeSource, /reconcileSchedule\("read"\)\.catch/);
   });
 
   it("keeps calendar and attendance workflows explicitly materializing recurring sessions", () => {
-    assert.equal(
-      scheduleControllerSource.match(/refreshScheduleRange\([\s\S]*?"materialize"\s*\)/g)?.length,
-      2
+    // Post-create materialization belongs to the store's mutation finish, not a second
+    // controller refresh. The controller observes that owner's outcome instead.
+    assert.doesNotMatch(
+      scheduleControllerSource,
+      /refreshScheduleRange\([\s\S]*?"materialize"\s*\)/,
+    );
+    assert.match(
+      scheduleActionsSource,
+      /scheduleRefresh: mutation\.finish\(\{ awaitSharedRefresh: true \}\)/,
+    );
+    assert.match(scheduleControllerSource, /await createdTemplate\.scheduleRefresh;/);
+    assert.match(scheduleControllerSource, /scheduleRefresh === "failed"/);
+    assert.match(
+      scheduleControllerSource,
+      /resumedRangeRef\.current === visibleRangeKey \? "read" : "materialize"/,
+    );
+    assert.match(
+      scheduleControllerSource,
+      /refreshScheduleRange\(visibleRange\.start, visibleRange\.end, intent\)/,
     );
     assert.match(scheduleActionsSource, /await reconcileSchedule\("materialize"\)/);
-    assert.match(scheduleActionsSource, /reconcileSchedule\("materialize"\)\.catch/);
+    assert.match(rangeRefreshSource, /await reconcileSchedule\(intent\)/);
+  });
+
+  it("uses one schedule-window request instead of templates, sessions, and attendance fan-out", () => {
+    assert.match(rangeRefreshSource, /await reconcileSchedule\(intent\)/);
+    assert.doesNotMatch(rangeRefreshSource, /fetchScheduleWindowRange|api\.get|api\.post/);
+    for (const readPath of [initialReconciliationSource]) {
+      assert.match(readPath, /fetchScheduleWindowRange\(/);
+      assert.match(readPath, /setTemplates\(scheduleWindow\.templates\)/);
+      assert.doesNotMatch(readPath, /Promise\.allSettled/);
+      assert.doesNotMatch(readPath, /\/schedule\/templates/);
+      assert.doesNotMatch(readPath, /\/schedule\/attendance/);
+      assert.doesNotMatch(readPath, /\/schedule\/sessions\?/);
+    }
   });
 });

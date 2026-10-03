@@ -38,7 +38,11 @@ const NAME_PARTICLES = new Set([
 const NAME_SUFFIXES = new Set(["jr", "sr", "ii", "iii", "iv"]);
 
 function normalizeCsvHeader(header: string) {
-  return header.toLowerCase().trim().replace(/[^a-z0-9]+/g, " ").trim();
+  return header
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
 }
 
 function compactCsvHeader(header: string) {
@@ -100,7 +104,9 @@ export function isSkippedBillingImportHeader(header: string) {
   const tokens = new Set(normalizeCsvHeader(header).split(/\s+/).filter(Boolean));
   const compact = compactCsvHeader(header);
 
-  return Array.from(BILLING_IMPORT_TOKENS).some((token) => tokens.has(token) || compact.includes(token));
+  return Array.from(BILLING_IMPORT_TOKENS).some(
+    (token) => tokens.has(token) || compact.includes(token),
+  );
 }
 
 export function getSkippedBillingImportHeaders(headers: string[], mapping: Record<string, string>) {

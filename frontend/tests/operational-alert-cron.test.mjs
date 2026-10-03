@@ -97,11 +97,12 @@ describe("operational alert cron proxy", () => {
     }
   });
 
-  const invoke = (incoming = request()) => handleOperationalAlertCron(incoming, {
-    httpsRequest,
-    localRequest,
-    deadManSender,
-  });
+  const invoke = (incoming = request()) =>
+    handleOperationalAlertCron(incoming, {
+      httpsRequest,
+      localRequest,
+      deadManSender,
+    });
 
   it("is unauthorized before checking configuration", async () => {
     const result = await invoke(request("wrong"));
@@ -197,7 +198,12 @@ describe("operational alert cron proxy", () => {
 
   it("does not send dead-man success for failed, inconsistent, or unrecorded drains", async (context) => {
     const unsafeBodies = [
-      { ...validUpstreamBody(), deliveries_claimed: 2, deliveries_delivered: 0, deliveries_failed: 2 },
+      {
+        ...validUpstreamBody(),
+        deliveries_claimed: 2,
+        deliveries_delivered: 0,
+        deliveries_failed: 2,
+      },
       { ...validUpstreamBody(), deliveries_claimed: 2, deliveries_delivered: 1 },
       { ...validUpstreamBody(), heartbeat_recorded: false },
       { ...validUpstreamBody(), heartbeat_sequence: 0 },
@@ -221,7 +227,9 @@ describe("operational alert cron proxy", () => {
   });
 
   it("fails closed when the independent dead-man rejects the check-in", async () => {
-    deadManSender = async () => { throw new Error("bad receipt"); };
+    deadManSender = async () => {
+      throw new Error("bad receipt");
+    };
     const result = await invoke();
     assert.equal(result.status, 502);
   });

@@ -10,9 +10,12 @@ import {
   isSecretLikeKey,
   parseEnvText,
   validateEnvExample,
+  validateBillingTransitionCron,
   validateOperationalAlertCadence,
   validateProviderDeploymentControls,
+  validateRenderDockerRuntime,
   validateRenderManifest,
+  validateStagingRenderService,
 } from "./check-env-examples.mjs";
 
 const reviewedVercelConfig = {
@@ -36,6 +39,56 @@ This resolves the Vercel funded-plan gate by moving the primary trigger source, 
 Nobody may weaken the five-minute cadence merely to make a preview deploy.
 `;
 
+function stagingRenderSource() {
+  return `
+services:
+  - type: web
+    name: koaryu-staging
+    runtime: docker
+    rootDir: backend
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /health/ready
+    autoDeployTrigger: 'off'
+    envVars:
+      - key: ENVIRONMENT
+        value: staging
+      - key: STRIPE_MODE
+        value: test
+      - key: LIVE_BILLING_ENABLED
+        value: "false"
+      - key: CORE_SELF_CHECKOUT_ENABLED
+        value: "false"
+      - key: SUPABASE_URL
+        value: https://nxgsektqsgrtyfhawxbc.supabase.co
+      - key: FRONTEND_URL
+        value: https://koaryu-git-staging-ronakchak2569-8303s-projects.vercel.app
+      - key: DEMO_RESET_ENABLED
+        value: "false"
+`;
+}
+
+const reviewedDockerfile = `
+FROM python:3.11.9-slim-bookworm@sha256:8fb099199b9f2d70342674bd9dbccd3ed03a258f26bbd1d556822c6dfc60c317
+ARG JEMALLOC_VERSION=5.3.0-1
+RUN apt-get update \\
+    && apt-get install --yes --no-install-recommends "libjemalloc2=\${JEMALLOC_VERSION}" \\
+    && rm -rf /var/lib/apt/lists/*
+ENV LD_PRELOAD=/usr/local/lib/libjemalloc.so.2
+USER koaryu
+CMD ["./scripts/start-render.sh"]
+`;
+
+const reviewedRenderStartScript = `#!/bin/sh
+set -eu
+if ! grep -Fq "libjemalloc.so.2" /proc/self/maps; then
+  echo "jemalloc preload verification failed" >&2
+  exit 1
+fi
+echo "jemalloc preload verified"
+exec python -m uvicorn app.main:app --host 0.0.0.0 --port "\${PORT:-10000}"
+`;
+
 describe("environment example validation", () => {
   it("accepts deliberate placeholders and rejects real-looking secrets", () => {
     assert.equal(isPlaceholderValue("sk_test_your_key"), true);
@@ -51,6 +104,60 @@ describe("environment example validation", () => {
     assert.equal(isSecretLikeKey("SUPABASE_POSTGRES_URL"), true);
     assert.equal(isSecretLikeKey("PRIMARY_DB_CONNECTION_STRING"), true);
     assert.equal(isSecretLikeKey("NEXT_PUBLIC_API_URL"), false);
+  });
+
+  it("rejects a commented package pin followed by an unversioned install", () => {
+    const renderSource = `${stagingRenderSource()}
+  - type: web
+    name: koaryu
+    runtime: docker
+    rootDir: backend
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+`;
+    const exactInstall = reviewedDockerfile
+      .split("\n")
+      .find((line) => line.includes("apt-get install"));
+    assert.ok(exactInstall);
+    const commentedPinDockerfile = reviewedDockerfile.replace(
+      exactInstall,
+      `# ${exactInstall}\nRUN apt-get install --yes --no-install-recommends libjemalloc2`,
+    );
+    const failures = validateRenderDockerRuntime(
+      renderSource,
+      commentedPinDockerfile,
+      reviewedRenderStartScript,
+    );
+    assert.ok(failures.some(
+      (failure) => failure.includes("install the exact declared jemalloc package version"),
+    ));
+  });
+
+  it("rejects an inline-comment package pin followed by an unversioned install", () => {
+    const renderSource = `${stagingRenderSource()}
+  - type: web
+    name: koaryu
+    runtime: docker
+    rootDir: backend
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+`;
+    const exactInstall = reviewedDockerfile
+      .split("\n")
+      .find((line) => line.includes("apt-get install"));
+    assert.ok(exactInstall);
+    const inlineCommentPinDockerfile = reviewedDockerfile.replace(
+      exactInstall,
+      `RUN true # apt-get install --yes --no-install-recommends "libjemalloc2=\${JEMALLOC_VERSION}"\nRUN apt-get install --yes --no-install-recommends libjemalloc2`,
+    );
+    const failures = validateRenderDockerRuntime(
+      renderSource,
+      inlineCommentPinDockerfile,
+      reviewedRenderStartScript,
+    );
+    assert.ok(failures.some(
+      (failure) => failure.includes("install the exact declared jemalloc package version"),
+    ));
   });
 
   it("fails closed when a discovered environment key has no deliberate classification", () => {
@@ -133,6 +240,159 @@ services:
     assert.ok(failures.some((failure) => failure.includes("must not contain a literal value")));
   });
 
+  it("accepts the jemalloc Docker contract for both Render services", () => {
+    const renderSource = `${stagingRenderSource()}
+  - type: web
+    name: koaryu
+    runtime: docker
+    rootDir: backend
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+`;
+    assert.deepEqual(
+      validateRenderDockerRuntime(
+        renderSource,
+        reviewedDockerfile,
+        reviewedRenderStartScript,
+      ),
+      [],
+    );
+  });
+
+  it("rejects native runtime drift, inactive arena config, or an unverified preload", () => {
+    const renderSource = `${stagingRenderSource()}
+  - type: web
+    name: koaryu
+    runtime: python
+    rootDir: wrong
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app
+    dockerfilePath: wrong/Dockerfile
+    dockerContext: backend
+    envVars:
+      - key: MALLOC_ARENA_MAX
+        value: "2"
+`;
+    const failures = validateRenderDockerRuntime(
+      renderSource,
+      "FROM python:3.12",
+      "exec uvicorn",
+    );
+    for (const diagnostic of [
+      "koaryu runtime",
+      "koaryu rootDir",
+      "koaryu dockerfilePath",
+      "koaryu dockerContext",
+      "native-runtime buildCommand",
+      "native-runtime startCommand",
+      "MALLOC_ARENA_MAX",
+      "declare the exact jemalloc package version once",
+      "install the exact declared jemalloc package version",
+      "exact active fail-closed startup sequence",
+    ]) {
+      assert.ok(failures.some((failure) => failure.includes(diagnostic)), diagnostic);
+    }
+  });
+
+  it("rejects commented-out startup guards and direct Uvicorn fallback", () => {
+    const renderSource = `${stagingRenderSource()}
+  - type: web
+    name: koaryu
+    runtime: docker
+    rootDir: backend
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+`;
+    const commentedStartScript = `
+# if ! grep -Fq "libjemalloc.so.2" /proc/self/maps; then
+# exec python -m uvicorn app.main:app --host 0.0.0.0 --port "\${PORT:-10000}"
+python -m uvicorn app.main:app --host 0.0.0.0 --port "\${PORT:-10000}"
+`;
+    const failures = validateRenderDockerRuntime(
+      renderSource,
+      reviewedDockerfile,
+      commentedStartScript,
+    );
+    assert.ok(failures.some(
+      (failure) => failure.includes("exact active fail-closed startup sequence"),
+    ));
+  });
+
+  it("rejects a startup guard whose failure branch no longer exits", () => {
+    const renderSource = `${stagingRenderSource()}
+  - type: web
+    name: koaryu
+    runtime: docker
+    rootDir: backend
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+`;
+    const noExitStartScript = reviewedRenderStartScript.replace("  exit 1\n", "");
+    const failures = validateRenderDockerRuntime(
+      renderSource,
+      reviewedDockerfile,
+      noExitStartScript,
+    );
+    assert.ok(failures.some(
+      (failure) => failure.includes("exact active fail-closed startup sequence"),
+    ));
+  });
+
+  it("rejects a startup script without the executable shell shebang", () => {
+    const renderSource = `${stagingRenderSource()}
+  - type: web
+    name: koaryu
+    runtime: docker
+    rootDir: backend
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+`;
+    const noShebangStartScript = reviewedRenderStartScript.replace(
+      "#!/bin/sh\n",
+      "",
+    );
+    const failures = validateRenderDockerRuntime(
+      renderSource,
+      reviewedDockerfile,
+      noShebangStartScript,
+    );
+    assert.ok(failures.some(
+      (failure) => failure.includes("exact #!/bin/sh shebang"),
+    ));
+  });
+
+  it("rejects later Docker stages or effective directive overrides", () => {
+    const renderSource = `${stagingRenderSource()}
+  - type: web
+    name: koaryu
+    runtime: docker
+    rootDir: backend
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+`;
+    const driftedDockerfile = `${reviewedDockerfile}
+FROM python:3.11.9-slim-bookworm
+ENV LD_PRELOAD=/tmp/libjemalloc.so.2
+USER root
+CMD ["python", "-m", "uvicorn"]
+ENTRYPOINT ["sh", "-c"]
+`;
+    const failures = validateRenderDockerRuntime(
+      renderSource,
+      driftedDockerfile,
+      reviewedRenderStartScript,
+    );
+    for (const diagnostic of [
+      "exactly one reviewed immutable final FROM",
+      "exact effective jemalloc preload once",
+      "non-root final user exactly once",
+      "allocator-verifying final command exactly once",
+      "must not override the reviewed command with ENTRYPOINT",
+    ]) {
+      assert.ok(failures.some((failure) => failure.includes(diagnostic)), diagnostic);
+    }
+  });
+
   it("rejects unsafe critical Render values even when the example drifts with them", () => {
     const unsafeValues = new Map([
       ["ENVIRONMENT", "development"],
@@ -171,6 +431,157 @@ envVars:
       assert.ok(failures.some((failure) => failure.includes(key) && failure.includes("must equal")));
     }
     assert.ok(failures.some((failure) => failure.includes("FRONTEND_URL") && failure.includes("must match")));
+  });
+
+  it("accepts only the exact fail-closed example divergence for production live billing", () => {
+    const entries = extractRenderEnvEntries(`
+envVars:
+  - key: LIVE_BILLING_ENABLED
+    value: "true"
+`);
+
+    assert.deepEqual(validateRenderManifest(
+      ["LIVE_BILLING_ENABLED"],
+      entries,
+      [],
+      new Map([["LIVE_BILLING_ENABLED", "false"]]),
+    ), []);
+
+    const unsafeExampleFailures = validateRenderManifest(
+      ["LIVE_BILLING_ENABLED"],
+      entries,
+      [],
+      new Map([["LIVE_BILLING_ENABLED", "true"]]),
+    );
+    assert.ok(unsafeExampleFailures.some(
+      (failure) => failure.includes("backend/.env.render.example")
+        && failure.includes("LIVE_BILLING_ENABLED")
+        && failure.includes('must equal "false"'),
+    ));
+  });
+
+  it("rejects production live billing disabled even when the example stays fail-closed", () => {
+    const entries = extractRenderEnvEntries(`
+envVars:
+  - key: LIVE_BILLING_ENABLED
+    value: "false"
+`);
+    const failures = validateRenderManifest(
+      ["LIVE_BILLING_ENABLED"],
+      entries,
+      [],
+      new Map([["LIVE_BILLING_ENABLED", "false"]]),
+    );
+
+    assert.ok(failures.some(
+      (failure) => failure.includes("LIVE_BILLING_ENABLED")
+        && failure.includes('must equal "true"'),
+    ));
+  });
+
+  it("rejects live billing enabled on the staging Render service", () => {
+    const renderSource = `
+services:
+  - type: web
+    name: koaryu-staging
+    branch: staging
+    healthCheckPath: /health/ready
+    autoDeployTrigger: 'off'
+    envVars:
+      - key: ENVIRONMENT
+        value: staging
+      - key: STRIPE_MODE
+        value: test
+      - key: LIVE_BILLING_ENABLED
+        value: "true"
+      - key: CORE_SELF_CHECKOUT_ENABLED
+        value: "false"
+      - key: SUPABASE_URL
+        value: https://nxgsektqsgrtyfhawxbc.supabase.co
+      - key: FRONTEND_URL
+        value: https://koaryu-git-staging-ronakchak2569-8303s-projects.vercel.app
+      - key: DEMO_RESET_ENABLED
+        value: "false"
+`;
+    const failures = validateStagingRenderService(renderSource, []);
+
+    assert.ok(failures.some(
+      (failure) => failure.includes("staging LIVE_BILLING_ENABLED")
+        && failure.includes('must equal "false"'),
+    ));
+  });
+
+  it("pins the staging web service to the staging branch", () => {
+    const reviewed = `
+services:
+  - type: web
+    name: koaryu-staging
+    branch: staging
+    healthCheckPath: /health/ready
+    autoDeployTrigger: 'off'
+    envVars:
+      - key: ENVIRONMENT
+        value: staging
+      - key: STRIPE_MODE
+        value: test
+      - key: LIVE_BILLING_ENABLED
+        value: "false"
+      - key: CORE_SELF_CHECKOUT_ENABLED
+        value: "false"
+      - key: BILLING_TRANSITION_SCHEDULER_ENABLED
+        value: "true"
+      - key: SUPABASE_URL
+        value: https://nxgsektqsgrtyfhawxbc.supabase.co
+      - key: FRONTEND_URL
+        value: https://koaryu-git-staging-ronakchak2569-8303s-projects.vercel.app
+      - key: DEMO_RESET_ENABLED
+        value: "false"
+`;
+    assert.deepEqual(validateStagingRenderService(reviewed, []), []);
+    assert.ok(validateStagingRenderService(
+      reviewed.replace("branch: staging", "branch: main"),
+      [],
+    ).some((failure) => failure.includes("branch")));
+    assert.ok(validateStagingRenderService(
+      reviewed.replace("    branch: staging\n", ""),
+      [],
+    ).some((failure) => failure.includes("branch")));
+  });
+
+  it("requires the exact repository-owned staging billing-transition cron", () => {
+    const reviewed = `
+services:
+  - type: cron
+    name: koaryu-billing-transitions-staging
+    runtime: docker
+    plan: starter
+    region: oregon
+    branch: staging
+    rootDir: backend
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    dockerCommand: python -m app.services.billing_transition_cron
+    schedule: "*/5 * * * *"
+    autoDeployTrigger: 'off'
+    envVars:
+      - key: ENVIRONMENT
+        value: staging
+      - key: KOARYU_BACKEND_API_URL
+        value: https://koaryu-staging.onrender.com/api/v1
+      - key: BILLING_TRANSITION_WORKER_SECRET
+        fromService:
+          type: web
+          name: koaryu-staging
+          envVarKey: BILLING_TRANSITION_WORKER_SECRET
+`;
+    assert.deepEqual(validateBillingTransitionCron(reviewed), []);
+    for (const drifted of [
+      reviewed.replace('schedule: "*/5 * * * *"', 'schedule: "0 * * * *"'),
+      reviewed.replace("name: koaryu-staging", "name: koaryu"),
+      reviewed.replace("autoDeployTrigger: 'off'", "autoDeployTrigger: commit"),
+    ]) {
+      assert.ok(validateBillingTransitionCron(drifted).length > 0);
+    }
   });
 
   it("requires manual production promotion while preserving staging and cron controls", () => {

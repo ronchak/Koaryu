@@ -3,12 +3,9 @@ import { describe, it } from "node:test";
 
 import {
   buildDashboardBeltStats,
-  buildDashboardChurnStats,
   buildDashboardInactivityStats,
   buildDashboardLeadStats,
-  buildDashboardNewStudentStats,
   buildDashboardOperationalStats,
-  buildDashboardProgramBuckets,
   buildDashboardRecentStudentRows,
   buildDashboardStudentStats,
   buildDashboardTestReadinessStats,
@@ -45,18 +42,6 @@ function lead(id, overrides = {}) {
   };
 }
 
-function program(id, overrides = {}) {
-  return {
-    id,
-    name: id,
-    sort_order: 0,
-    color_hex: "#22C55E",
-    is_system: false,
-    usage: {},
-    ...overrides,
-  };
-}
-
 function session(id, overrides = {}) {
   return {
     id,
@@ -86,7 +71,7 @@ describe("dashboard page model", () => {
     assert.equal(isDashboardBeltSetupComplete(false, 0, 0), false);
   });
 
-  it("counts roster, lead, belt, inactivity, churn, and readiness stats outside the route", () => {
+  it("counts roster, lead, belt, inactivity, and readiness stats outside the route", () => {
     const students = [
       student("active", { membership_start_date: "2026-05-20" }),
       student("trial-hold", {
@@ -108,43 +93,42 @@ describe("dashboard page model", () => {
       onHoldStudents: 2,
     });
     assert.deepEqual(
-      buildDashboardNewStudentStats(students, "2026-05-24", "2026-05-10", "2026-04-24", "2026-02-23", "2026-01-01"),
-      {
-        new14: 1,
-        new30: 2,
-        new90: 3,
-        newYearToDate: 3,
-      }
-    );
-    assert.deepEqual(buildDashboardChurnStats(students), {
-      inactiveStudents: 1,
-      canceledStudents: 1,
-      churnMarkedStudents: 2,
-      churnRate: 2 / 6,
-    });
-    assert.deepEqual(
-      buildDashboardLeadStats([
-        lead("due", { follow_up_date: "2026-05-24" }),
-        lead("future", { follow_up_date: "2026-05-25" }),
-        lead("enrolled", { stage: "enrolled" }),
-        lead("lost", { stage: "closed_lost" }),
-      ], "2026-05-24"),
+      buildDashboardLeadStats(
+        [
+          lead("due", { follow_up_date: "2026-05-24" }),
+          lead("future", { follow_up_date: "2026-05-25" }),
+          lead("enrolled", { stage: "enrolled" }),
+          lead("lost", { stage: "closed_lost" }),
+        ],
+        "2026-05-24",
+      ),
       {
         activeLeads: 2,
         enrolledLeads: 1,
         dueTodayLeads: 1,
-      }
+      },
     );
-    assert.deepEqual(buildDashboardBeltStats([{ is_tip: false }, { is_tip: true }, { is_tip: true }]), {
-      beltCount: 1,
-      tipCount: 2,
-    });
-    assert.deepEqual(buildDashboardInactivityStats([{ daysInactive: 10 }, { daysInactive: 14 }, { daysInactive: 30 }, { daysInactive: 90 }]), {
-      watch14: 3,
-      watch30: 2,
-      watch90: 1,
-      highestRiskStudents: [{ daysInactive: 14 }, { daysInactive: 30 }, { daysInactive: 90 }],
-    });
+    assert.deepEqual(
+      buildDashboardBeltStats([{ is_tip: false }, { is_tip: true }, { is_tip: true }]),
+      {
+        beltCount: 1,
+        tipCount: 2,
+      },
+    );
+    assert.deepEqual(
+      buildDashboardInactivityStats([
+        { daysInactive: 10 },
+        { daysInactive: 14 },
+        { daysInactive: 30 },
+        { daysInactive: 90 },
+      ]),
+      {
+        watch14: 3,
+        watch30: 2,
+        watch90: 1,
+        highestRiskStudents: [{ daysInactive: 14 }, { daysInactive: 30 }, { daysInactive: 90 }],
+      },
+    );
     assert.deepEqual(
       buildDashboardTestReadinessStats([
         { is_eligible: true },
@@ -154,7 +138,7 @@ describe("dashboard page model", () => {
       {
         readyToTest: 1,
         needsApproval: 1,
-      }
+      },
     );
   });
 
@@ -182,78 +166,41 @@ describe("dashboard page model", () => {
         sessionsWithCapacity: 1,
         utilizationRate: 0.2,
         averageAttendance: 3.5,
-      }
+      },
     );
   });
 
   it("builds recent student rows from summary, local full roster, or partial-roster guardrails", () => {
     assert.deepEqual(
       buildDashboardRecentStudentRows(
-        [{ id: "summary-student", display_name: "Summary Student", status: "active", started_on: null }],
+        [
+          {
+            id: "summary-student",
+            display_name: "Summary Student",
+            status: "active",
+            started_on: null,
+          },
+        ],
         [student("local")],
-        false
+        false,
       ),
-      [{ id: "summary-student", displayName: "Summary Student", status: "active", startedOn: null }]
+      [
+        {
+          id: "summary-student",
+          displayName: "Summary Student",
+          status: "active",
+          startedOn: null,
+        },
+      ],
     );
     assert.deepEqual(buildDashboardRecentStudentRows(null, [student("partial")], true), []);
     assert.deepEqual(
-      buildDashboardRecentStudentRows(null, [student("local", { preferred_name: "Ace", legal_last_name: "Stone" })], false),
-      [{ id: "local", displayName: "Ace Stone", status: "active", startedOn: "2026-05-01" }]
+      buildDashboardRecentStudentRows(
+        null,
+        [student("local", { preferred_name: "Ace", legal_last_name: "Stone" })],
+        false,
+      ),
+      [{ id: "local", displayName: "Ace Stone", status: "active", startedOn: "2026-05-01" }],
     );
-  });
-
-  it("aggregates program buckets from active students, open leads, and today's non-canceled sessions", () => {
-    const programs = [
-      program("kids", { name: "Kids" }),
-      program("archived", { name: "Archived", archived_at: "2026-05-01" }),
-    ];
-    const programById = new Map(programs.map((item) => [item.id, item]));
-    const rows = buildDashboardProgramBuckets(
-      programs,
-      programById,
-      [
-        student("active-kids", {
-          program_memberships: [{ program_id: "kids", status: "active" }],
-        }),
-        student("trial-archived", { status: "trialing", program_id: "archived" }),
-        student("active-unassigned"),
-        student("inactive-kids", { status: "inactive", program_id: "kids" }),
-      ],
-      [
-        lead("lead-kids", { program_id: "kids" }),
-        lead("lead-unknown", { program_interest: "Birthday Trial" }),
-        lead("lead-enrolled", { program_id: "kids", stage: "enrolled" }),
-        lead("lead-lost", { program_id: "kids", stage: "closed_lost" }),
-      ],
-      [
-        session("kids-today", { program_id: "kids" }),
-        session("archived-canceled", { program_id: "archived", status: "canceled" }),
-        session("unassigned-today", { program_id: null }),
-      ],
-      "2026-05-24"
-    );
-
-    const kids = rows.find((row) => row.label === "Kids");
-    const unassigned = rows.find((row) => row.label === "No program");
-    const archived = rows.find((row) => row.label === "Archived");
-
-    assert.deepEqual(kids, {
-      programId: "kids",
-      label: "Kids",
-      activeStudents: 1,
-      trialingStudents: 0,
-      activeLeads: 1,
-      todaySessions: 1,
-    });
-    assert.deepEqual(unassigned, {
-      programId: null,
-      label: "No program",
-      activeStudents: 1,
-      trialingStudents: 0,
-      activeLeads: 1,
-      todaySessions: 1,
-    });
-    assert.equal(archived.trialingStudents, 1);
-    assert.equal(rows[0].label, "Kids");
   });
 });

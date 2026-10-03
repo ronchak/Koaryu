@@ -32,6 +32,10 @@ def reset_access_repair_throttle():
     in whichever test runs next, and that test fails for a reason that has
     nothing to do with what it is checking.
     """
-    platform_billing_service._access_repair_retry_after.clear()
+    with platform_billing_service._access_repair_metadata_lock:
+        platform_billing_service._access_repair_retry_after.clear()
+        platform_billing_service._access_repair_flights.clear()
     yield
-    platform_billing_service._access_repair_retry_after.clear()
+    with platform_billing_service._access_repair_metadata_lock:
+        platform_billing_service._access_repair_retry_after.clear()
+        platform_billing_service._access_repair_flights.clear()

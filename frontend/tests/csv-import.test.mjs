@@ -123,9 +123,9 @@ describe("buildStableImportKey", () => {
           contentHash: "sha256:abc",
           mapping: { "Last Name": "legal_last_name", "First Name": "legal_first_name" },
           options: { nested: { a: false, b: true }, status_alias_mode: "normalize" },
-        }
+        },
       ),
-      true
+      true,
     );
     assert.equal(
       areCsvImportKeyInputsEqual(
@@ -140,9 +140,9 @@ describe("buildStableImportKey", () => {
           contentHash: "sha256:abc",
           mapping: { "First Name": "preferred_name" },
           options: { status_alias_mode: "normalize" },
-        }
+        },
       ),
-      false
+      false,
     );
   });
 });
@@ -155,7 +155,7 @@ describe("withCsvImportRefreshWarning", () => {
         execution_status: "completed",
         non_critical_errors: ["Audit log failed."],
       },
-      "Students request timed out."
+      "Students request timed out.",
     );
 
     assert.equal(result.imported_count, 12);
@@ -173,10 +173,22 @@ describe("formatCsvImportFileSizeLimit", () => {
 
 describe("preview CSV import id resolution", () => {
   it("resolves demo CSV program names to preview program ids", () => {
-    assert.equal(resolvePreviewImportProgramId("Kids Brazilian Jiu-Jitsu", previewPrograms), "program-bjj-core");
-    assert.equal(resolvePreviewImportProgramId("Adult Brazilian Jiu-Jitsu", previewPrograms), "program-bjj-core");
-    assert.equal(resolvePreviewImportProgramId("Tae Kwon Do Fundamentals", previewPrograms), "program-tae-kwon-do");
-    assert.equal(resolvePreviewImportProgramId("program-bjj-core", previewPrograms), "program-bjj-core");
+    assert.equal(
+      resolvePreviewImportProgramId("Kids Brazilian Jiu-Jitsu", previewPrograms),
+      "program-bjj-core",
+    );
+    assert.equal(
+      resolvePreviewImportProgramId("Adult Brazilian Jiu-Jitsu", previewPrograms),
+      "program-bjj-core",
+    );
+    assert.equal(
+      resolvePreviewImportProgramId("Tae Kwon Do Fundamentals", previewPrograms),
+      "program-tae-kwon-do",
+    );
+    assert.equal(
+      resolvePreviewImportProgramId("program-bjj-core", previewPrograms),
+      "program-bjj-core",
+    );
     assert.equal(resolvePreviewImportProgramId("Unknown Program", previewPrograms), undefined);
   });
 
@@ -188,7 +200,7 @@ describe("preview CSV import id resolution", () => {
         beltLadders: previewLadders,
         fallbackRanks: [],
       }),
-      "rank-1"
+      "rank-1",
     );
     assert.equal(
       resolvePreviewImportBeltRankId({
@@ -197,7 +209,7 @@ describe("preview CSV import id resolution", () => {
         beltLadders: previewLadders,
         fallbackRanks: [],
       }),
-      "tkd-rank-1"
+      "tkd-rank-1",
     );
     assert.equal(
       resolvePreviewImportBeltRankId({
@@ -206,7 +218,7 @@ describe("preview CSV import id resolution", () => {
         beltLadders: previewLadders,
         fallbackRanks: [],
       }),
-      "rank-1a"
+      "rank-1a",
     );
   });
 
@@ -221,13 +233,13 @@ describe("preview CSV import id resolution", () => {
 
     assert.equal(result.programId, undefined);
     assert.equal(result.beltRankId, undefined);
-    assert.deepEqual(result.issues.map((issue) => issue.code), [
-      "unresolved_program",
-      "unresolved_belt",
-    ]);
-    assert.deepEqual(result.issues.map((issue) => issue.severity), [
-      "warning",
-      "warning",
-    ]);
+    assert.deepEqual(
+      result.issues.map((issue) => issue.code),
+      ["unresolved_program", "unresolved_belt"],
+    );
+    assert.deepEqual(
+      result.issues.map((issue) => issue.severity),
+      ["warning", "warning"],
+    );
   });
 });

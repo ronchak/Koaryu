@@ -1,4 +1,5 @@
 import type { Promotion } from "@/types";
+import { withCurrentLiveAuthRead, type BeginLiveAuthRequest } from "./store-action-types.ts";
 
 export const PROMOTION_HISTORY_CACHE_TTL_MS = 5 * 60 * 1000;
 
@@ -13,7 +14,7 @@ export type PromotionHistoryRequests = Record<string, Promise<Promotion[]>>;
 export function isPromotionHistoryCacheEntryFresh(
   entry: PromotionHistoryCacheEntry | undefined,
   now = Date.now(),
-  ttlMs = PROMOTION_HISTORY_CACHE_TTL_MS
+  ttlMs = PROMOTION_HISTORY_CACHE_TTL_MS,
 ): boolean {
   return Boolean(entry && now - entry.fetchedAt < ttlMs);
 }
@@ -22,7 +23,7 @@ export function setPromotionHistoryCacheItems(
   cache: PromotionHistoryCache,
   studentId: string,
   items: Promotion[],
-  fetchedAt = Date.now()
+  fetchedAt = Date.now(),
 ): PromotionHistoryCache {
   return {
     ...cache,
@@ -35,43 +36,37 @@ export function setPromotionHistoryCacheItems(
 
 export function getPromotionHistoryCacheItems(
   cache: PromotionHistoryCache,
-  studentId: string
+  studentId: string,
 ): Promotion[] {
   return cache[studentId]?.items ?? [];
 }
 
-export function prependPromotionHistoryItem(
-  items: Promotion[],
-  promotion: Promotion
-): Promotion[] {
+export function prependPromotionHistoryItem(items: Promotion[], promotion: Promotion): Promotion[] {
   return [promotion, ...items.filter((item) => item.id !== promotion.id)];
 }
 
 export function buildPromotionHistoryWithPrependedItem(
   cache: PromotionHistoryCache,
   studentId: string,
-  promotion: Promotion
+  promotion: Promotion,
 ): Promotion[] {
-  return prependPromotionHistoryItem(
-    getPromotionHistoryCacheItems(cache, studentId),
-    promotion
-  );
+  return prependPromotionHistoryItem(getPromotionHistoryCacheItems(cache, studentId), promotion);
 }
 
 export function buildPromotionHistoryWithPrependedItemIfCached(
   cache: PromotionHistoryCache,
   studentId: string,
-  promotion: Promotion
+  promotion: Promotion,
 ): Promotion[] | null {
   const cached = cache[studentId];
   return cached ? prependPromotionHistoryItem(cached.items, promotion) : null;
 }
 
 export function toPromotionHistoryByStudent(
-  cache: PromotionHistoryCache
+  cache: PromotionHistoryCache,
 ): Record<string, Promotion[]> {
   return Object.fromEntries(
-    Object.entries(cache).map(([studentId, entry]) => [studentId, entry.items])
+    Object.entries(cache).map(([studentId, entry]) => [studentId, entry.items]),
   );
 }
 
@@ -135,7 +130,7 @@ export async function loadPromotionHistoryWithCache({
   requests: PromotionHistoryRequests;
   generation: number;
   isGenerationCurrent: (generation: number) => boolean;
-  beginLiveAuthRequest: () => { token: string; isCurrent: () => boolean };
+  beginLiveAuthRequest: BeginLiveAuthRequest;
   fetchPromotionHistory: (studentId: string, token: string) => Promise<Promotion[]>;
   commitCache: (studentId: string, items: Promotion[]) => void;
 }): Promise<Promotion[]> {
@@ -155,23 +150,25 @@ export async function loadPromotionHistoryWithCache({
     return loadPlan.request;
   }
 
-  const liveRequest = beginLiveAuthRequest();
-  const request = fetchPromotionHistory(studentId, liveRequest.token)
-    .then((result) => {
+  const request = withCurrentLiveAuthRead(
+    beginLiveAuthRequest,
+    async (liveRequest) => {
+      const result = await fetchPromotionHistory(studentId, liveRequest.token);
       if (
-        requests[studentId] === request
-        && isGenerationCurrent(generation)
-        && liveRequest.isCurrent()
+        requests[studentId] === request &&
+        isGenerationCurrent(generation) &&
+        liveRequest.isCurrent()
       ) {
         commitCache(studentId, result);
       }
       return result;
-    })
-    .finally(() => {
-      if (requests[studentId] === request) {
-        delete requests[studentId];
-      }
-    });
+    },
+    () => {},
+  ).finally(() => {
+    if (requests[studentId] === request) {
+      delete requests[studentId];
+    }
+  });
 
   requests[studentId] = request;
   return request;

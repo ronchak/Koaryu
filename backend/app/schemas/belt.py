@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field, StringConstraints
 
 # ---- Belt Ladder ----
 
+
 class BeltLadderCreate(BaseModel):
     name: str
     program_id: Optional[str] = None
@@ -30,6 +31,7 @@ class BeltLadderResponse(BaseModel):
 
 
 # ---- Belt Rank ----
+
 
 class BeltRankCreate(BaseModel):
     name: str
@@ -80,6 +82,7 @@ class BeltLadderSyncRequest(BaseModel):
 
 # ---- Promotion ----
 
+
 class PromoteStudent(BaseModel):
     operation_id: Optional[UUID] = None
     student_id: str
@@ -121,6 +124,7 @@ class PromotionResponse(BaseModel):
 
 
 # ---- Eligibility ----
+
 
 class EligibilityEntry(BaseModel):
     student_id: str

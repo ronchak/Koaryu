@@ -2,9 +2,102 @@
 
 ## Studio live billing authorization and reconciliation
 
-`backend/scripts/live_billing_authorizations.py` is the service-role-only status, drift, grant, revoke, account-disposition, and reconciliation-checkpoint tool. Writes are dry-run by default and require exact project plus interactive confirmation. `backend/scripts/stripe_reconciliation_report.py` is a sanitized read-only provider/local reporter. Offline output and the separately labeled staging probe are permanently checkpoint-ineligible; production collection and checkpoint recording each independently pin the exact production `/health/ready` URL and candidate SHA. `scripts/verify-stripe-provider-rehearsal.py` validates exact-candidate test-mode evidence without contacting a provider. See `docs/stripe-live-billing-rollout.md` for the authority split, expiry and candidate binding, the July 20 silence hypotheses, hard six-account/seven-event blockers, secret-rotation gate, and preregistered canary abort/promote criteria.
+`backend/scripts/live_billing_authorizations.py` is the service-role-only status, drift, operation-bounded grant, revoke, account-disposition, and reconciliation-checkpoint tool. Writes are dry-run by default and require exact project plus interactive confirmation. Grants require one repeated singular `--operation` flag per approved operation, in byte-sorted order. `backend/scripts/stripe_reconciliation_report.py` is a sanitized read-only provider/local reporter. Offline output and the separately labeled staging probe are permanently checkpoint-ineligible; production collection and checkpoint recording each independently pin the exact production `/health/ready` URL and candidate SHA. Use `/Users/openclaw/.config/koaryu/evidence/stripe-live-billing-reconciliation-v3.json` for the private report, with directory mode `0700` and file mode `0600`. `scripts/verify-stripe-provider-rehearsal.py` validates separate schema-v4 exact-candidate test-mode evidence without contacting a provider; never overwrite the reconciliation report with it. See `docs/operator-tooling-payments-v3.md` for the schema-v3 commands, `docs/billing-workflow-catalog.md` for application ownership, and `docs/stripe-live-billing-rollout.md` for the broader authority split and canary gates.
 
 This inventory records owner-run tools that can inspect or change Koaryu outside the product UI. Add each future tool as a separate entry with its working directory, interpreter, write boundary, and audit destination.
+
+## Staging payer-sync ambiguity rehearsal
+
+`scripts/rehearse-payer-sync-ambiguity.py` is the attended, staging-only response-loss
+tool for the schema-v4 Stripe rehearsal. It calls the exact candidate's
+`BillingPayerManager`, delegates one connected customer create to the normal guarded
+`StripeService`, durably records the returned customer, then deliberately raises before
+the manager can record provider success. The ordinary payer-sync ambiguity handler owns
+the resulting `reconciliation_required` parent operation. The tool binds and verifies the
+exact customer object returned by create, then authorizes
+`provider_succeeded_reconcile_only` through the V31 parent recovery RPC without a Stripe
+retrieve. It stops before caller replay; the operator must replay the original hosted
+request with the exact same caller key and body. That hosted replay performs the one exact
+customer retrieve, repeats the metadata and test-clock verification, and projects the payer.
+
+The tool refuses production, live Stripe mode, live billing, the production Supabase
+project, a local or runtime SHA mismatch, an already-linked payer, a disabled Connect
+account, a malformed resource identity, a caller key outside the dedicated schema-v4
+prefix, a missing execution latch, or an existing state file in inject mode. Before
+constructing the fault injector it runs the same active-Admin and Koaryu Core access
+resolver as the hosted payer-sync route. The repository must be clean, and the operator
+source must be tracked and byte-identical to the pinned candidate; a matching SHA with dirty
+source is not accepted. It writes only one mode-`0600` recovery record inside an explicitly
+selected mode-`0700` private directory whose path has no symlink components.
+That record contains private provider and operation identifiers but never the raw caller
+key. Every state is authenticated with an independently generated, separately held HMAC
+key of at least 256 bits, uses an exact phase-specific field set, and carries normalized
+create-response evidence so resume can recompute the recovery proof. Preserve it privately
+until the final evidence capture.
+
+Supply the full staging backend environment through the established secret mechanism,
+plus these attended values:
+
+```bash
+export KOARYU_REHEARSAL_EXECUTE=I_UNDERSTAND_THIS_CREATES_ONE_STRIPE_TEST_CUSTOMER
+export KOARYU_REHEARSAL_STUDIO_ID=<staging-studio-uuid>
+export KOARYU_REHEARSAL_ACTOR_ID=<staging-admin-user-uuid>
+export KOARYU_REHEARSAL_PAYER_ID=<new-local-payer-uuid>
+export KOARYU_REHEARSAL_TEST_CLOCK_ID=<connected-test-clock-id>
+export KOARYU_REHEARSAL_PAYER_SYNC_KEY=<caller-owned-schema-v4-payer-sync-key>
+export KOARYU_REHEARSAL_STATE_INTEGRITY_KEY=<independent-random-64-plus-hex-characters>
+install -d -m 0700 <absolute-private-state-directory>
+```
+
+From the repository root, run inject once:
+
+```bash
+backend/venv/bin/python scripts/rehearse-payer-sync-ambiguity.py \
+  --mode inject \
+  --expected-sha <full-candidate-sha> \
+  --state-directory <absolute-private-state-directory> \
+  --state-file <absolute-private-state-directory>/koaryu-payer-ambiguity-<full-candidate-sha>.json \
+  --execute
+```
+
+If the local process stops at `provider_created`, create-response verification did not
+finish and automatic recovery fails closed; stop for attended inspection. If it reaches
+`provider_response_verified` or `reconciliation_required`, do not run inject again. Use resume with
+the same environment, keys, clock, payer, candidate, directory, and file:
+
+```bash
+backend/venv/bin/python scripts/rehearse-payer-sync-ambiguity.py \
+  --mode resume \
+  --expected-sha <full-candidate-sha> \
+  --state-directory <absolute-private-state-directory> \
+  --state-file <absolute-private-state-directory>/koaryu-payer-ambiguity-<full-candidate-sha>.json \
+  --execute
+```
+
+Resume never calls `BillingPayerManager.sync_payer`. It claims and reads the exact parent
+and resource only, revalidates the durable create-response evidence, and performs no Stripe
+read. The tool persists `provider_response_verified` and its proof before calling the recovery RPC.
+If the RPC committed but the final
+state-file write did not, resume verifies the committed recovery fields and persists them
+without retrieving, projecting, or completing the payer.
+
+One process-death interval cannot be made automatically recoverable. Stripe can return a
+customer immediately before the tool fsyncs `provider_created`; an `armed` state after
+suspected success has no trustworthy customer identity. Stripe can also receive or return
+the create response after `provider_created` is durable but before create-response
+verification reaches `provider_response_verified`; resume refuses that unverified phase. Stop for
+attended Stripe inspection and never run inject again; do not guess an object, create
+another customer, or repair the payer.
+
+Success reports `recovery_authorized`, one provider mutation, one captured create response,
+zero operator provider retrieves, zero automatic retries, and
+`hosted_replay_required:true`. Replay the original
+`POST /api/v1/billing/payers/{payer_id}/sync` with the exact same
+`Idempotency-Key` and exact `{"test_clock_id":"clock_..."}` body. Stop if the tool or
+hosted replay reports any other state. The hosted replay's one retrieve is the rehearsal's
+single provider readback. The normal completed provider operation, resource
+claim, payer projection, and audit row are the durable audit trail; the private operator
+record supplies the attended response-loss and readback facts.
 
 ## Database contract verification
 
@@ -20,7 +113,7 @@ It needs no Docker daemon, Supabase CLI login, cloud project, network access, se
 
 The compatibility shim supplies only the PostgreSQL roles, schemas, tables, auth claim helpers, and extension needed by this repository's current migrations and SQL contracts. Use staging when verification depends on the behavior of a full Supabase service rather than PostgreSQL alone.
 
-One divergence is worth naming because it can mislead in **both** directions. The shim's default privileges grant the API roles table CRUD and sequence `USAGE, SELECT`. That matches no Supabase project exactly: older projects grant `ALL` on tables, functions, and sequences, while newly provisioned projects can have automatic Data API grants disabled entirely. So a migration that creates a table without explicit `GRANT` statements can pass here and fail on a new project with `permission denied`, and a contract asserting the API roles *lack* a privilege such as `TRUNCATE` can pass here and fail on an older one. Privilege assertions are the one class of contract this harness cannot settle; verify those against the project era you actually deploy to.
+One divergence is worth naming because it can mislead in **both** directions. The shim's default privileges grant the API roles table CRUD and sequence `USAGE, SELECT`. That matches no Supabase project exactly: older projects grant `ALL` on tables, functions, and sequences, while newly provisioned projects can have automatic Data API grants disabled entirely. So a migration that creates a table without explicit `GRANT` statements can pass here and fail on a new project with `permission denied`, and a contract asserting the API roles *lack* a privilege such as `TRUNCATE` can pass here and fail on an older one. The local harness does prove PostgreSQL's global PUBLIC function default, the final effective ACL state produced by the migration chain, and the rollback-only new-function probe. It does not prove which schema-local defaults a hosted project started with. Verify those hosted defaults and final grants against the project era you deploy to.
 
 The current migration chain is transaction-compatible. The Supabase CLI can run a small class of commands such as `CREATE INDEX CONCURRENTLY` outside its per-file transaction; this harness deliberately fails instead because `psql --single-transaction` cannot reproduce that exception safely. Use the Supabase CLI and the appropriate non-production target if a future migration requires one of those commands.
 
@@ -29,10 +122,29 @@ Use these targets according to their safety boundary:
 | Target | Use |
 | --- | --- |
 | local ephemeral cluster | Default for developing and reviewing contract SQL. |
-| `koaryu-staging` (`nxgsektqsgrtyfhawxbc`) | Cloud verification only when Supabase-specific behavior matters; this project is currently inactive. |
+| `koaryu-staging` (`nxgsektqsgrtyfhawxbc`) | Cloud verification only when Supabase-specific behavior matters, after the candidate migrations are applied. |
 | production (`mimguepumzsgmcaycdsh`) | **Read-only inspection only. Never run contract or migration SQL against it.** |
 
 Contract files create functions and triggers on real tables inside a transaction. Even when a file ends with `ROLLBACK`, it must not be pointed at production. The transaction executes the SQL against the target before rolling it back, and an accidental commit, session loss, or non-transactional statement would cross the production write boundary.
+
+`scripts/run-supabase-sql.sh` defaults to the local Supabase container identified
+by a loopback `supabase status` connection. It ignores an ambient linked URL in
+local mode. Its internal `supabase-sql-target.py` helper restricts linked execution
+to the `postgres` database on port 5432 using either:
+
+- direct host `db.nxgsektqsgrtyfhawxbc.supabase.co`, user `postgres`; or
+- an official `aws-<number>-<region>.pooler.supabase.com` session pooler, user
+  `postgres.nxgsektqsgrtyfhawxbc`.
+
+Supply the password through a privately loaded `SUPABASE_DB_URL`, never a logged
+command or committed file. The helper decodes it into the child environment,
+reconstructs non-secret connection arguments, and clears inherited libpq settings.
+Only `sslmode` and `connect_timeout` URI options are accepted, once each. TLS
+defaults to `require`; `verify-ca` and `verify-full` are also allowed. Connection
+timeout defaults to 10 seconds and accepts 1 through 60. Host/address/service,
+database/user and arbitrary session-option overrides are refused, as are
+transaction-pooler port 6543 and production destinations. These input guards do not
+replace an explicitly intended staging verification or prove its migration state.
 
 Python service-role clients validate both the environment label and the exact
 Supabase target before construction. Production and staging accept only their
@@ -53,25 +165,25 @@ Auth, PostgREST, Storage, and Functions HTTPX clients and exposes no common
 smallest maintainable policy until that dependency boundary changes.
 
 These checks cover the API, shared backend scripts, and the Connect smoke
-helper. Supabase CLI, direct `SUPABASE_DB_URL`, and `psql` operations remain
-outside this Python boundary, so continue resolving their target explicitly.
+helper. The shared SQL runner has the separate staging-only URI guard above.
+Other Supabase CLI and direct `psql` operations remain outside the application
+client boundary, so continue resolving their target explicitly.
 `backend/scripts/comp_studio.py` additionally requires `--expect-project` for
 writes.
 
 ## Studio-comp migration rollout
 
 Use [the specialized rollout packet](studio-comp-migration-rollout.md) to
-generate and inspect the exact production-baseline-to-candidate migration set.
-The runner defaults to read-only inspection, derives an `84 -> N` packet from an
-immutable candidate, and refuses partial history/object states or ambient proxy
+generate and inspect the exact production-baseline-to-candidate migration set. First
+run packet mode for the immutable candidate. Use its generated candidate SHA,
+post-history, pending migrations, source manifest, and integration result instead of a
+copied version or count. Target inspection then supplies the state-bound remainder,
+token, and approval-record body. The runner refuses unaccepted history/object states or ambient proxy
 or TLS trust override variables before credentialed work. It names refused
 variables without printing values and does not treat Supabase version/name
 history as proof of source-file identity.
 
-Agents may not run its production apply mode. Staging inspection must precede a
-dry-run or application, and production application requires a named human,
-durable approval, confirmed restore window, restore decision authority, and the
-approved staging provider fingerprint.
+A named coordinating agent may run production apply under explicit owner authorization and the [announce-and-pause protocol](cutover-gates.md#owner-authorized-release-execution). Staging inspection still precedes dry-run or apply. Production requires the exact owner/release authorization, named executor, deliberate confirmation phrase, durable approval, verified backup/restore, restore decision authority and approved staging fingerprint. Subagents may not execute production releases.
 
 ## Studio platform comp access
 

@@ -1,5 +1,42 @@
 BEGIN;
 
+DO $v54_baseline$
+DECLARE v RECORD;
+BEGIN
+    SELECT * INTO v FROM public.koaryu_release_schema_preflight_v35();
+    IF v.ready IS DISTINCT FROM TRUE OR v.migration_count IS DISTINCT FROM 149
+       OR v.migration_head IS DISTINCT FROM '20260930024404'
+       OR v.manifest_version IS DISTINCT FROM 'release-db-attestation-v54' THEN
+        RAISE EXCEPTION 'V54 exact readiness baseline mismatch: %',row_to_json(v);
+    END IF;
+END;
+$v54_baseline$;
+ALTER TABLE public.students DISABLE TRIGGER validate_students_birth_date;
+DO $v54_trigger_negative$
+DECLARE v RECORD; previous RECORD;
+BEGIN
+    SELECT * INTO v FROM public.koaryu_release_schema_preflight_v35();
+    SELECT * INTO previous FROM public.koaryu_release_schema_preflight_v34();
+    IF v.ready IS DISTINCT FROM FALSE OR previous.ready IS DISTINCT FROM FALSE
+       OR ('student_profile_facts_v55' = ANY(v.security_failures)) IS DISTINCT FROM TRUE THEN
+        RAISE EXCEPTION 'V54 or V53 compatibility accepted a disabled birthdate trigger.';
+    END IF;
+END;
+$v54_trigger_negative$;
+ALTER TABLE public.students ENABLE TRIGGER validate_students_birth_date;
+GRANT EXECUTE ON FUNCTION public.student_business_date(UUID) TO PUBLIC;
+DO $v54_acl_negative$
+DECLARE v RECORD;
+BEGIN
+    SELECT * INTO v FROM public.koaryu_release_schema_preflight_v35();
+    IF v.ready IS DISTINCT FROM FALSE OR ('student_profile_facts_v55' = ANY(v.security_failures)) IS DISTINCT FROM TRUE THEN
+        RAISE EXCEPTION 'V54 accepted changed student helper EXECUTE grants.';
+    END IF;
+END;
+$v54_acl_negative$;
+REVOKE EXECUTE ON FUNCTION public.student_business_date(UUID) FROM PUBLIC;
+
+
 DO $$
 DECLARE
     v_signature TEXT;
@@ -16,7 +53,8 @@ BEGIN
         'public.accept_core_checkout_subscription_atomic(uuid,uuid,bigint,text,text,bigint)',
         'public.set_studio_comp_v2_atomic(uuid,boolean,text,uuid,text,boolean)',
         'public.sync_belt_ladder_ranks_v2(uuid,uuid,uuid,uuid,text,jsonb)',
-        'public.write_student_profile_v2_atomic(uuid,uuid,uuid,jsonb,uuid[],jsonb,boolean,text)'
+        'public.write_student_profile_v2_atomic(uuid,uuid,uuid,jsonb,uuid[],jsonb,boolean,text)',
+        'public.record_student_rank_transition_v3(uuid,uuid,uuid,uuid,uuid,uuid,text,text,uuid)'
     ] LOOP
         v_rpc := to_regprocedure(v_signature);
         IF v_rpc IS NULL THEN
@@ -47,6 +85,8 @@ DECLARE
     v_yellow UUID := gen_random_uuid();
     v_black UUID := gen_random_uuid();
     v_promotion UUID := gen_random_uuid();
+    v_reverse_history UUID := gen_random_uuid();
+    v_history_actor UUID := gen_random_uuid();
     v_checkout RECORD;
     v_publish RECORD;
     v_second_checkout RECORD;
@@ -63,6 +103,7 @@ DECLARE
     v_student_write RECORD;
     v_compensation_recorded BOOLEAN;
     v_compensation_replayed BOOLEAN;
+    v_comp_rejected BOOLEAN := FALSE;
 BEGIN
     INSERT INTO auth.users (
         id, aud, role, email, raw_app_meta_data, raw_user_meta_data, created_at, updated_at
@@ -222,7 +263,39 @@ BEGIN
             (SELECT row_to_json(promotion) FROM public.promotions promotion WHERE id = v_promotion),
             EXISTS(SELECT 1 FROM public.belt_ranks WHERE id = v_yellow);
     END IF;
-    DELETE FROM public.belt_ranks WHERE id IN (v_white, v_yellow);
+    INSERT INTO auth.users (id, aud, role, email, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
+    VALUES (v_history_actor, 'authenticated', 'authenticated',
+        'rank-history-' || replace(v_history_actor::TEXT, '-', '') || '@example.invalid', '{}', '{}', now(), now());
+    INSERT INTO public.promotions (
+        id, studio_id, student_id, from_rank_id, to_rank_id, promoted_by, notes
+    ) VALUES (v_reverse_history, v_studio, v_student, v_yellow, v_white, v_history_actor, 'Reverse snapshot contract');
+    UPDATE public.belt_ranks SET name = 'Renamed ' || name, color_hex = '#123456'
+    WHERE id IN (v_white, v_yellow);
+    UPDATE public.promotions SET notes = 'Unrelated metadata update' WHERE id = v_promotion;
+    DELETE FROM auth.users WHERE id = v_history_actor;
+    IF NOT EXISTS (
+        SELECT 1 FROM public.promotions WHERE id = v_promotion
+          AND from_rank_name_snapshot = 'White Belt' AND from_rank_color_snapshot = '#FFFFFF'
+          AND to_rank_name_snapshot = 'Yellow Belt' AND to_rank_color_snapshot = '#FFFF00'
+    ) OR NOT EXISTS (
+        SELECT 1 FROM public.promotions WHERE id = v_reverse_history AND promoted_by IS NULL
+          AND from_rank_name_snapshot = 'Yellow Belt' AND from_rank_color_snapshot = '#FFFF00'
+          AND to_rank_name_snapshot = 'White Belt' AND to_rank_color_snapshot = '#FFFFFF'
+    ) THEN RAISE EXCEPTION 'Metadata or actor deletion rewrote promotion-time rank facts.'; END IF;
+
+    DELETE FROM public.belt_ranks WHERE id = v_white;
+    IF NOT EXISTS (
+        SELECT 1 FROM public.promotions WHERE id = v_promotion
+          AND from_rank_id IS NULL AND to_rank_id = v_yellow
+          AND from_rank_name_snapshot = 'White Belt' AND from_rank_color_snapshot = '#FFFFFF'
+          AND to_rank_name_snapshot = 'Yellow Belt' AND to_rank_color_snapshot = '#FFFF00'
+    ) OR NOT EXISTS (
+        SELECT 1 FROM public.promotions WHERE id = v_reverse_history
+          AND from_rank_id = v_yellow AND to_rank_id IS NULL
+          AND from_rank_name_snapshot = 'Yellow Belt' AND from_rank_color_snapshot = '#FFFF00'
+          AND to_rank_name_snapshot = 'White Belt' AND to_rank_color_snapshot = '#FFFFFF'
+    ) THEN RAISE EXCEPTION 'Deleting one rank rewrote the surviving side of promotion history.'; END IF;
+    DELETE FROM public.belt_ranks WHERE id = v_yellow;
     IF NOT EXISTS (
         SELECT 1 FROM public.promotions
         WHERE id = v_promotion
@@ -272,10 +345,16 @@ BEGIN
     WHERE studio_id = v_studio;
     BEGIN
         UPDATE public.studio_subscriptions SET comped = TRUE WHERE studio_id = v_studio;
-        RAISE EXCEPTION 'Comp grant crossed an accepted but unprojected subscription.';
     EXCEPTION
-        WHEN SQLSTATE 'P0001' THEN NULL;
+        WHEN SQLSTATE 'P0001' THEN
+            IF SQLERRM IS DISTINCT FROM 'Koaryu Core checkout already completed; reconcile the subscription before granting a comp.' THEN
+                RAISE;
+            END IF;
+            v_comp_rejected := TRUE;
     END;
+    IF v_comp_rejected IS DISTINCT FROM TRUE THEN
+        RAISE EXCEPTION 'Comp grant crossed an accepted but unprojected subscription.';
+    END IF;
     IF EXISTS (
         SELECT 1 FROM public.studio_subscriptions
         WHERE studio_id = v_studio AND comped IS TRUE
@@ -504,25 +583,157 @@ END $$;
 
 DO $$
 DECLARE
-    v_v3 RECORD;
+    v_v7 RECORD;
+    v_v6 RECORD;
+    v_v5 RECORD;
+    v_v4 RECORD;
     v_v2 RECORD;
 BEGIN
     UPDATE supabase_migrations.schema_migrations
     SET version = '20260814170001'
     WHERE version = '20260814170000';
 
-    SELECT * INTO v_v3 FROM public.koaryu_release_schema_preflight_v3();
+    SELECT * INTO v_v7 FROM public.koaryu_release_schema_preflight_v7();
+    SELECT * INTO v_v6 FROM public.koaryu_release_schema_preflight_v6();
+    SELECT * INTO v_v5 FROM public.koaryu_release_schema_preflight_v5();
+    SELECT * INTO v_v4 FROM public.koaryu_release_schema_preflight_v4();
     SELECT * INTO v_v2 FROM public.koaryu_release_schema_preflight_v2();
-    IF v_v3.ready IS TRUE
-       OR NOT ('migration_history_sequence_v18' = ANY(v_v3.security_failures))
+    IF v_v7.ready IS TRUE
+       OR NOT ('migration_history_sequence_v30' = ANY(v_v7.security_failures))
+       OR v_v6.ready IS TRUE
+       OR NOT ('migration_history_sequence_v30' = ANY(v_v6.security_failures))
+       OR v_v5.ready IS TRUE
+       OR NOT ('migration_history_sequence_v30' = ANY(v_v5.security_failures))
+       OR v_v4.ready IS TRUE
+       OR NOT ('migration_history_sequence_v30' = ANY(v_v4.security_failures))
        OR v_v2.ready IS TRUE THEN
-        RAISE EXCEPTION 'Readiness accepted substituted migration history: v3=%, v2=%',
-            row_to_json(v_v3), row_to_json(v_v2);
+        RAISE EXCEPTION 'Readiness accepted substituted migration history: v7=%, v6=%, v5=%, v4=%, v2=%',
+            row_to_json(v_v7), row_to_json(v_v6), row_to_json(v_v5), row_to_json(v_v4), row_to_json(v_v2);
     END IF;
 
     UPDATE supabase_migrations.schema_migrations
     SET version = '20260814170000'
     WHERE version = '20260814170001';
+END $$;
+
+DO $$
+DECLARE
+    v_v7 RECORD;
+    v_v6 RECORD;
+    v_v5 RECORD;
+    v_v4 RECORD;
+    v_current_count INTEGER;
+    v_current_head TEXT;
+BEGIN
+    SELECT count(*)::INTEGER,max(version)
+    INTO v_current_count,v_current_head
+    FROM supabase_migrations.schema_migrations;
+    SELECT * INTO v_v7 FROM public.koaryu_release_schema_preflight_v7();
+    SELECT * INTO v_v6 FROM public.koaryu_release_schema_preflight_v6();
+    SELECT * INTO v_v5 FROM public.koaryu_release_schema_preflight_v5();
+    SELECT * INTO v_v4 FROM public.koaryu_release_schema_preflight_v4();
+    IF (v_current_count=131 AND v_current_head='20260831054918')
+       OR ((v_current_count,v_current_head) IN ((132,'20260902001000'), (133,'20260905022339'), (134,'20260908080420'), (135,'20260908133504'), (136,'20260908183744'), (137,'20260910084231'), (138,'20260910093958'), (139,'20260910135133'), (140,'20260910185031'), (141,'20260914033337'), (142,'20260914055301'), (143,'20260920035023'), (144,'20260920052705'), (145,'20260920154441'), (146,'20260925030000'), (147,'20260926194918'), (148,'20260929152445'), (149,'20260930024404'), (150,'20260930192626'))) THEN
+        IF v_v7.ready IS DISTINCT FROM false
+           OR v_v7.migration_count IS DISTINCT FROM 126
+           OR v_v7.migration_head IS DISTINCT FROM '20260826185651'
+           OR v_v7.security_failures
+              IS DISTINCT FROM ARRAY['operational_contract_v30_expectation']::TEXT[]
+           OR v_v7.manifest_version IS DISTINCT FROM 'release-db-attestation-v26'
+           OR v_v6.ready IS DISTINCT FROM false
+           OR v_v6.migration_count IS DISTINCT FROM 126
+           OR v_v6.migration_head IS DISTINCT FROM '20260826185651'
+           OR v_v6.security_failures
+              IS DISTINCT FROM ARRAY['operational_contract_v30_expectation']::TEXT[]
+           OR v_v6.manifest_version IS DISTINCT FROM 'release-db-attestation-v25'
+           OR v_v5.ready IS DISTINCT FROM false
+           OR v_v5.migration_count IS DISTINCT FROM 126
+           OR v_v5.migration_head IS DISTINCT FROM '20260826185651'
+           OR v_v5.security_failures
+              IS DISTINCT FROM ARRAY['operational_contract_v30_expectation']::TEXT[]
+           OR v_v5.manifest_version IS DISTINCT FROM 'release-db-attestation-v25'
+           OR v_v4.ready IS DISTINCT FROM false
+           OR v_v4.migration_count IS DISTINCT FROM 126
+           OR v_v4.migration_head IS DISTINCT FROM '20260826185651'
+           OR v_v4.security_failures
+              IS DISTINCT FROM ARRAY['operational_contract_v30_expectation']::TEXT[]
+           OR v_v4.manifest_version IS DISTINCT FROM 'release-db-attestation-v24' THEN
+            RAISE EXCEPTION 'Obsolete readiness classification drifted: v7=%, v6=%, v5=%, v4=%',
+                row_to_json(v_v7), row_to_json(v_v6), row_to_json(v_v5), row_to_json(v_v4);
+        END IF;
+    ELSIF v_v7.ready IS DISTINCT FROM true
+       OR v_v7.migration_count <> 121
+       OR v_v7.migration_head <> '20260826030249'
+       OR v_v7.security_failures IS DISTINCT FROM ARRAY[]::TEXT[]
+       OR v_v7.manifest_version <> 'release-db-attestation-v26'
+       OR v_v6.ready IS DISTINCT FROM true
+       OR v_v6.migration_count <> 120
+       OR v_v6.migration_head <> '20260826030234'
+       OR v_v6.security_failures IS DISTINCT FROM ARRAY[]::TEXT[]
+       OR v_v6.manifest_version <> 'release-db-attestation-v25'
+       OR v_v5.ready IS DISTINCT FROM true
+       OR v_v5.migration_count <> 119
+       OR v_v5.migration_head <> '20260825043911'
+       OR v_v5.security_failures IS DISTINCT FROM ARRAY[]::TEXT[]
+       OR v_v5.manifest_version <> 'release-db-attestation-v25'
+       OR v_v4.ready IS DISTINCT FROM true
+       OR v_v4.migration_count <> 117
+       OR v_v4.migration_head <> '20260824190500'
+       OR v_v4.security_failures IS DISTINCT FROM ARRAY[]::TEXT[]
+       OR v_v4.manifest_version <> 'release-db-attestation-v24' THEN
+        RAISE EXCEPTION 'V26 readiness or compatibility drifted: v7=%, v6=%, v5=%, v4=%',
+            row_to_json(v_v7), row_to_json(v_v6), row_to_json(v_v5), row_to_json(v_v4);
+    END IF;
+END $$;
+
+CREATE OR REPLACE FUNCTION private.koaryu_release_operational_contract_v25()
+RETURNS TEXT
+LANGUAGE sql
+STABLE
+SET search_path = pg_catalog
+SET "TimeZone" = 'UTC'
+AS $tampered_contract_fixture$
+SELECT repeat('0', 66)::TEXT
+$tampered_contract_fixture$;
+
+DO $$
+DECLARE
+    v_v7 RECORD;
+    v_v6 RECORD;
+    v_v5 RECORD;
+    v_v4 RECORD;
+BEGIN
+    SELECT * INTO v_v7 FROM public.koaryu_release_schema_preflight_v7();
+    SELECT * INTO v_v6 FROM public.koaryu_release_schema_preflight_v6();
+    SELECT * INTO v_v5 FROM public.koaryu_release_schema_preflight_v5();
+    SELECT * INTO v_v4 FROM public.koaryu_release_schema_preflight_v4();
+    IF v_v7.ready IS DISTINCT FROM false
+       OR NOT (ARRAY[
+            'live_billing_v3_manifest_v25',
+            'operational_contract_v26',
+            'operational_contract_v27'
+       ]::TEXT[] <@ v_v7.security_failures)
+       OR v_v6.ready IS DISTINCT FROM false
+       OR NOT (ARRAY[
+            'live_billing_v3_manifest_v25',
+            'operational_contract_v26',
+            'operational_contract_v27'
+       ]::TEXT[] <@ v_v6.security_failures)
+       OR v_v5.ready IS DISTINCT FROM false
+       OR NOT (ARRAY[
+            'live_billing_v3_manifest_v25',
+            'operational_contract_v26',
+            'operational_contract_v27'
+       ]::TEXT[] <@ v_v5.security_failures)
+       OR v_v4.ready IS DISTINCT FROM false
+       OR NOT (ARRAY[
+            'live_billing_v3_manifest_v25',
+            'operational_contract_v26',
+            'operational_contract_v27'
+       ]::TEXT[] <@ v_v4.security_failures) THEN
+        RAISE EXCEPTION 'V27 compatibility accepted a tampered predecessor operational contract: v7=%, v6=%, v5=%, v4=%',
+            row_to_json(v_v7), row_to_json(v_v6), row_to_json(v_v5), row_to_json(v_v4);
+    END IF;
 END $$;
 
 ROLLBACK;

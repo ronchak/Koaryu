@@ -1,4 +1,5 @@
 import type { StudentListQuery } from "./student-list-page";
+import { navigationTimer } from "./navigation-telemetry.ts";
 
 type PerfDetail = Record<string, string | number | boolean | null | undefined>;
 
@@ -30,8 +31,10 @@ function safeDetail(detail?: PerfDetail) {
 
   return Object.fromEntries(
     Object.entries(detail)
-      .filter(([, value]) => value == null || ["string", "number", "boolean"].includes(typeof value))
-      .map(([key, value]) => [key, value ?? null])
+      .filter(
+        ([, value]) => value == null || ["string", "number", "boolean"].includes(typeof value),
+      )
+      .map(([key, value]) => [key, value ?? null]),
   );
 }
 
@@ -53,6 +56,7 @@ export function markPerformance(name: string, detail?: PerfDetail) {
 
   const markName = `${PREFIX}${name}`;
   try {
+    window.performance.clearMarks?.(markName);
     window.performance.mark(markName);
     logPerformance(name, detail);
   } catch {
@@ -60,7 +64,12 @@ export function markPerformance(name: string, detail?: PerfDetail) {
   }
 }
 
-export function measurePerformance(name: string, startName: string, endName?: string, detail?: PerfDetail) {
+export function measurePerformance(
+  name: string,
+  startName: string,
+  endName?: string,
+  detail?: PerfDetail,
+) {
   if (!canUsePerformance()) {
     return;
   }
@@ -77,6 +86,7 @@ export function measurePerformance(name: string, startName: string, endName?: st
       ...detail,
       duration_ms: latest ? Math.round(latest.duration) : null,
     });
+    window.performance.clearMeasures?.(measureName);
   } catch {
     // Missing marks are acceptable during interrupted navigations.
   }
@@ -100,6 +110,10 @@ export function startPerformanceSpan(name: string, detail?: PerfDetail) {
       const mergedDetail = { ...detail, ...finishDetail, span_id: spanId };
       markPerformance(endName, mergedDetail);
       measurePerformance(`${name}.duration`, startName, endName, mergedDetail);
+      if (canUsePerformance()) {
+        window.performance.clearMarks?.(`${PREFIX}${startName}`);
+        window.performance.clearMarks?.(`${PREFIX}${endName}`);
+      }
     },
   };
 }
@@ -109,4 +123,115 @@ export function startStudentPagePerformanceSpan(query: StudentListQuery = {}) {
     page: query.page || 1,
     page_size: query.pageSize || 50,
   });
+}
+
+export const DASHBOARD_PERFORMANCE_ROUTES = [
+  "dashboard",
+  "students",
+  "schedule",
+  "billing",
+  "settings",
+  "leads",
+  "reports",
+  "belt-tracker",
+] as const;
+export type DashboardPerformanceRoute = (typeof DASHBOARD_PERFORMANCE_ROUTES)[number];
+type DashboardReadiness = Partial<
+  Record<"shell" | "identity" | "useful" | "complete" | "legacyComplete", boolean>
+>;
+let dashboardNavigation: {
+  route: DashboardPerformanceRoute;
+  identityGeneration: number;
+  generation: number;
+  marked: Set<string>;
+} | null = null;
+let dashboardNavigationSequence = 0;
+
+/** Start a route/identity observation without ever recording identity values. */
+export function beginDashboardNavigation(
+  route: DashboardPerformanceRoute,
+  identityGeneration: number,
+) {
+  if (
+    !canUsePerformance() ||
+    !DASHBOARD_PERFORMANCE_ROUTES.includes(route) ||
+    !Number.isSafeInteger(identityGeneration) ||
+    identityGeneration < 0
+  )
+    return;
+  if (
+    dashboardNavigation?.route === route &&
+    dashboardNavigation.identityGeneration === identityGeneration
+  )
+    return;
+  dashboardNavigation = {
+    route,
+    identityGeneration,
+    generation: ++dashboardNavigationSequence,
+    marked: new Set(),
+  };
+  markVisiblePerformance(
+    "koaryu.navigation.started",
+    route,
+    identityGeneration,
+    dashboardNavigation.generation,
+  );
+}
+
+/** Call from a committed React effect; the second frame follows a paint opportunity. */
+export function markDashboardReadiness(
+  route: DashboardPerformanceRoute,
+  identityGeneration: number,
+  readiness: DashboardReadiness,
+) {
+  beginDashboardNavigation(route, identityGeneration);
+  const navigation = dashboardNavigation;
+  if (!navigation || !canUsePerformance()) return () => {};
+  let secondFrame: number | undefined;
+  const firstFrame = window.requestAnimationFrame(() => {
+    secondFrame = window.requestAnimationFrame(() => {
+      if (dashboardNavigation !== navigation || document.visibilityState === "hidden") return;
+      for (const stage of ["shell", "identity", "useful", "complete", "legacyComplete"] as const) {
+        if (!readiness[stage] || navigation.marked.has(stage)) continue;
+        navigation.marked.add(stage);
+        markVisiblePerformance(
+          `koaryu.visible.${stage === "legacyComplete" ? "legacy-complete" : stage}`,
+          route,
+          identityGeneration,
+          navigation.generation,
+        );
+        if (stage === "useful" || stage === "complete") navigationTimer.stage(route, stage);
+      }
+    });
+  });
+  return () => {
+    window.cancelAnimationFrame(firstFrame);
+    if (secondFrame !== undefined) window.cancelAnimationFrame(secondFrame);
+  };
+}
+
+function markVisiblePerformance(
+  name: string,
+  route: DashboardPerformanceRoute,
+  identityGeneration: number,
+  navigationGeneration: number,
+) {
+  try {
+    const previous = window.performance.getEntriesByName?.(name, "mark") ?? [];
+    if (previous.length >= 64) {
+      window.performance.clearMarks(name);
+      for (const entry of previous.slice(-32) as PerformanceMark[]) {
+        window.performance.mark(name, { startTime: entry.startTime, detail: entry.detail });
+      }
+    }
+    window.performance.mark(name, {
+      detail: {
+        route,
+        identity_generation: identityGeneration,
+        navigation_generation: navigationGeneration,
+      },
+    });
+  } catch {
+    // Evidence must remain unavailable if marks are unsupported, without breaking UI.
+  }
 }

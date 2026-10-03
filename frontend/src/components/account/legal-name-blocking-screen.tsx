@@ -4,6 +4,7 @@ import { useState, type FormEvent } from "react";
 import { LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { FocusedOperationsSheet } from "@/components/operations/operations-surface";
 import { useStudioStore } from "@/lib/store";
 import { normalizeLegalNameDraft } from "@/lib/legal-name-model";
 
@@ -47,10 +48,8 @@ export function LegalNameBlockingScreen({
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center px-4 py-8 sm:px-6">
-      <section className="w-full max-w-lg rounded-[6px] border border-border bg-surface p-6 shadow-2xl shadow-black/20 sm:p-8">
+    <FocusedOperationsSheet page="legal-name" eyebrow="Account setup">
         <div className="space-y-2">
-          <p className="text-xs font-medium uppercase tracking-[0.16em] text-accent">Account setup</p>
           <h1 className="text-xl font-semibold text-text-primary">Add your legal name</h1>
           <p className="text-sm leading-relaxed text-text-secondary">
             Enter your legal first and last name. These names are used for studio records and other official Koaryu records.
@@ -100,7 +99,6 @@ export function LegalNameBlockingScreen({
             {isSigningOut ? "Signing out..." : "Sign out"}
           </Button>
         </div>
-      </section>
-    </main>
+    </FocusedOperationsSheet>
   );
 }

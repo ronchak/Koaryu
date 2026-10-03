@@ -1,38 +1,44 @@
 import { useCallback } from "react";
 
+import { canCommitLiveMutation } from "@/lib/store-action-types";
 import { api } from "@/lib/api";
-import { markPerformance, measurePerformance, startStudentPagePerformanceSpan } from "@/lib/performance";
 import {
-  buildPreviewStudentListPage,
-  type StudentListQuery,
-} from "@/lib/student-list-page";
-import { applyPreviewStudentUpdate, buildPreviewStudent } from "@/lib/student-store-model";
+  markPerformance,
+  measurePerformance,
+  startStudentPagePerformanceSpan,
+} from "@/lib/performance";
+import { buildPreviewStudentListPage, type StudentListQuery } from "@/lib/student-list-page";
+import {
+  applyPreviewStudentUpdate,
+  applyStudentProfileResponse,
+  buildPreviewStudent,
+  normalizeStudentIds,
+} from "@/lib/student-store-model";
 import {
   isStudentRosterSnapshotCurrent,
   shouldRetryStudentRosterRefresh,
 } from "@/lib/student-roster-reconciliation";
+import { deleteStudentsAction } from "@/lib/student-bulk-archive-action";
 import type { BeginLiveAuthRequest, StoreRef } from "@/lib/store-action-types";
 import { localId } from "@/lib/store-storage";
-import {
-  fetchAllStudents,
-  fetchStudentPage,
-} from "@/lib/store-student-pages";
+import { fetchAllStudents, fetchStudentPage } from "@/lib/store-student-pages";
 import type {
   BeltLadder,
   BeltRank,
   Program,
   Student,
   StudentCreate,
-  StudentListResponse,
+  StudentRosterPageResponse,
   StudentUpdate,
 } from "@/types";
 
 type CommitStudents = (
   next: Student[] | ((current: Student[]) => Student[]),
-  options?: { mayBePartial?: boolean }
+  options?: { mayBePartial?: boolean },
 ) => void;
 
 interface UseStoreStudentRosterActionsOptions {
+  businessDateRef: StoreRef<string>;
   beginLiveAuthRequest: BeginLiveAuthRequest;
   beltLaddersRef: StoreRef<BeltLadder[]>;
   beltRanksRef: StoreRef<BeltRank[]>;
@@ -51,6 +57,7 @@ interface UseStoreStudentRosterActionsOptions {
 }
 
 export function useStoreStudentRosterActions({
+  businessDateRef,
   beginLiveAuthRequest,
   beltLaddersRef,
   beltRanksRef,
@@ -67,155 +74,140 @@ export function useStoreStudentRosterActions({
   studentsRef,
   token,
 }: UseStoreStudentRosterActionsOptions) {
-  const addStudent = useCallback(async (data: StudentCreate): Promise<Student> => {
-    if (isPreviewMode) {
-      const newStudent = buildPreviewStudent(data, programsRef.current, {
-        beltLadders: beltLaddersRef.current,
-        beltRanks: beltRanksRef.current,
-        idFactory: localId,
-      });
-      persistStudents([newStudent, ...studentsRef.current]);
-      onStudentMutation();
-      return newStudent;
-    }
-
-    studentMutationEpochRef.current += 1;
-    const liveRequest = beginLiveAuthRequest();
-    const result = await api.post<Student>("/students", data, liveRequest.token);
-    if (!liveRequest.isCurrent()) {
-      return result;
-    }
-    commitStudents((current) => [result, ...current], { mayBePartial: studentsMayBePartial });
-    onStudentMutation();
-    return result;
-  }, [
-    beginLiveAuthRequest,
-    beltLaddersRef,
-    beltRanksRef,
-    commitStudents,
-    isPreviewMode,
-    onStudentMutation,
-    persistStudents,
-    programsRef,
-    studentMutationEpochRef,
-    studentsMayBePartial,
-    studentsRef,
-  ]);
-
-  const updateStudent = useCallback(async (id: string, data: StudentUpdate): Promise<Student> => {
-    if (isPreviewMode) {
-      let updatedStudent: Student | null = null;
-      const next = studentsRef.current.map((student) => {
-        if (student.id !== id) {
-          return student;
-        }
-        updatedStudent = applyPreviewStudentUpdate(student, data, programsRef.current, {
+  const addStudent = useCallback(
+    async (data: StudentCreate): Promise<Student> => {
+      if (isPreviewMode) {
+        const newStudent = buildPreviewStudent(data, programsRef.current, {
           beltLadders: beltLaddersRef.current,
           beltRanks: beltRanksRef.current,
           idFactory: localId,
+          businessDate: businessDateRef.current,
         });
-        return updatedStudent;
-      });
-      persistStudents(next);
-      if (!updatedStudent) {
-        throw new Error("Student not found.");
-      }
-      onStudentMutation();
-      return updatedStudent;
-    }
-
-    studentMutationEpochRef.current += 1;
-    const liveRequest = beginLiveAuthRequest();
-    const result = await api.patch<Student>(`/students/${id}`, data, liveRequest.token);
-    if (!liveRequest.isCurrent()) {
-      return result;
-    }
-    commitStudents(
-      (current) => current.map((student) => student.id === id ? result : student),
-      { mayBePartial: studentsMayBePartial }
-    );
-    onStudentMutation();
-    return result;
-  }, [
-    beginLiveAuthRequest,
-    beltLaddersRef,
-    beltRanksRef,
-    commitStudents,
-    isPreviewMode,
-    onStudentMutation,
-    persistStudents,
-    programsRef,
-    studentMutationEpochRef,
-    studentsMayBePartial,
-    studentsRef,
-  ]);
-
-  const deleteStudents = useCallback(async (ids: string[]) => {
-    if (isPreviewMode) {
-      const idSet = new Set(ids);
-      ids.forEach((studentId) => {
-        const photoUrl = previewStudentPhotoUrlsRef.current[studentId];
-        if (photoUrl) {
-          URL.revokeObjectURL(photoUrl);
-          delete previewStudentPhotoUrlsRef.current[studentId];
-        }
-      });
-      const next = studentsRef.current.filter((student) => !idSet.has(student.id));
-      persistStudents(next);
-      onStudentMutation();
-      return;
-    }
-
-    studentMutationEpochRef.current += 1;
-    const liveRequest = beginLiveAuthRequest();
-    try {
-      for (const id of ids) {
-        await api.delete(`/students/${id}`, liveRequest.token);
-      }
-    } catch (error) {
-      if (liveRequest.isCurrent()) {
+        persistStudents([newStudent, ...studentsRef.current]);
         onStudentMutation();
-        try {
-          const mutationEpoch = studentMutationEpochRef.current;
-          const requestSequence = studentRosterRequestSequenceRef.current + 1;
-          studentRosterRequestSequenceRef.current = requestSequence;
-          const nextStudents = await fetchAllStudents(liveRequest.token, { timeoutMs: 30000 });
-          if (isStudentRosterSnapshotCurrent({
-            authCurrent: liveRequest.isCurrent(),
-            currentMutationEpoch: studentMutationEpochRef.current,
-            currentRequestSequence: studentRosterRequestSequenceRef.current,
-            mutationEpochAtStart: mutationEpoch,
-            requestSequence,
-          })) {
-            commitStudents(nextStudents);
-          }
-        } catch (refreshError) {
-          console.error("Failed to refresh students after delete error", refreshError);
-        }
+        return newStudent;
       }
-      throw error;
-    }
-    if (!liveRequest.isCurrent()) {
-      return;
-    }
-    const idSet = new Set(ids);
-    commitStudents(
-      (current) => current.filter((student) => !idSet.has(student.id)),
-      { mayBePartial: studentsMayBePartial }
-    );
-    onStudentMutation();
-  }, [
-    beginLiveAuthRequest,
-    commitStudents,
-    isPreviewMode,
-    onStudentMutation,
-    persistStudents,
-    previewStudentPhotoUrlsRef,
-    studentMutationEpochRef,
-    studentRosterRequestSequenceRef,
-    studentsMayBePartial,
-    studentsRef,
-  ]);
+
+      studentMutationEpochRef.current += 1;
+      const liveRequest = beginLiveAuthRequest();
+      const result = await api.post<Student>("/students", data, liveRequest.token);
+      if (!canCommitLiveMutation(liveRequest)) {
+        return result;
+      }
+      studentMutationEpochRef.current += 1;
+      commitStudents((current) => [result, ...current], { mayBePartial: studentsMayBePartial });
+      onStudentMutation();
+      return result;
+    },
+    [
+      beginLiveAuthRequest,
+      businessDateRef,
+      beltLaddersRef,
+      beltRanksRef,
+      commitStudents,
+      isPreviewMode,
+      onStudentMutation,
+      persistStudents,
+      programsRef,
+      studentMutationEpochRef,
+      studentsMayBePartial,
+      studentsRef,
+    ],
+  );
+
+  const updateStudent = useCallback(
+    async (id: string, data: StudentUpdate): Promise<Student> => {
+      if (isPreviewMode) {
+        let updatedStudent: Student | null = null;
+        const next = studentsRef.current.map((student) => {
+          if (student.id !== id) {
+            return student;
+          }
+          updatedStudent = applyPreviewStudentUpdate(student, data, programsRef.current, {
+            beltLadders: beltLaddersRef.current,
+            beltRanks: beltRanksRef.current,
+            idFactory: localId,
+            businessDate: businessDateRef.current,
+          });
+          return updatedStudent;
+        });
+        if (!updatedStudent) {
+          throw new Error("Student not found.");
+        }
+        const savedStudent = updatedStudent as Student;
+        persistStudents(applyStudentProfileResponse(next, savedStudent, data));
+        onStudentMutation();
+        return savedStudent;
+      }
+
+      studentMutationEpochRef.current += 1;
+      const liveRequest = beginLiveAuthRequest();
+      const result = await api.patch<Student>(`/students/${id}`, data, liveRequest.token);
+      if (!canCommitLiveMutation(liveRequest)) {
+        return result;
+      }
+      studentMutationEpochRef.current += 1;
+      commitStudents((current) => applyStudentProfileResponse(current, result, data), {
+        mayBePartial: studentsMayBePartial,
+      });
+      onStudentMutation();
+      return result;
+    },
+    [
+      beginLiveAuthRequest,
+      businessDateRef,
+      beltLaddersRef,
+      beltRanksRef,
+      commitStudents,
+      isPreviewMode,
+      onStudentMutation,
+      persistStudents,
+      programsRef,
+      studentMutationEpochRef,
+      studentsMayBePartial,
+      studentsRef,
+    ],
+  );
+
+  const deleteStudents = useCallback(
+    async (ids: string[]) => {
+      await deleteStudentsAction({
+        beginLiveAuthRequest,
+        commitStudents,
+        fetchAllStudents,
+        ids,
+        isPreviewMode,
+        isStudentRosterSnapshotCurrent,
+        normalizeStudentIds,
+        onStudentMutation,
+        persistStudents,
+        postArchive: (requestToken, studentIds) =>
+          api.post<{ updated: number }>(
+            "/students/bulk/archive",
+            { student_ids: studentIds },
+            requestToken,
+          ),
+        previewStudentPhotoUrlsRef,
+        revokeObjectURL: (url) => URL.revokeObjectURL(url),
+        studentMutationEpochRef,
+        studentRosterRequestSequenceRef,
+        studentsMayBePartial,
+        studentsRef,
+      });
+    },
+    [
+      beginLiveAuthRequest,
+      commitStudents,
+      isPreviewMode,
+      onStudentMutation,
+      persistStudents,
+      previewStudentPhotoUrlsRef,
+      studentMutationEpochRef,
+      studentRosterRequestSequenceRef,
+      studentsMayBePartial,
+      studentsRef,
+    ],
+  );
 
   const refreshStudents = useCallback(async (): Promise<Student[]> => {
     if (isPreviewMode) {
@@ -239,28 +231,32 @@ export function useStoreStudentRosterActions({
 
       try {
         markPerformance("students.refresh_started");
-        const nextStudents = await fetchAllStudents(request.token, { timeoutMs: 30000 });
+        const nextStudents = await fetchAllStudents(request.token, { timeoutMs: 35000 });
         markPerformance("students.refresh_finished");
         measurePerformance(
           "students.refresh_duration",
           "students.refresh_started",
-          "students.refresh_finished"
+          "students.refresh_finished",
         );
         lastStudents = nextStudents;
-        if (!isStudentRosterSnapshotCurrent({
-          authCurrent: request.isCurrent(),
-          currentMutationEpoch: studentMutationEpochRef.current,
-          currentRequestSequence: studentRosterRequestSequenceRef.current,
-          mutationEpochAtStart: mutationEpoch,
-          requestSequence,
-        })) {
-          if (shouldRetryStudentRosterRefresh({
-            attempt,
+        if (
+          !isStudentRosterSnapshotCurrent({
             authCurrent: request.isCurrent(),
+            currentMutationEpoch: studentMutationEpochRef.current,
             currentRequestSequence: studentRosterRequestSequenceRef.current,
-            maxAttempts,
+            mutationEpochAtStart: mutationEpoch,
             requestSequence,
-          })) {
+          })
+        ) {
+          if (
+            shouldRetryStudentRosterRefresh({
+              attempt,
+              authCurrent: request.isCurrent(),
+              currentRequestSequence: studentRosterRequestSequenceRef.current,
+              maxAttempts,
+              requestSequence,
+            })
+          ) {
             continue;
           }
           return nextStudents;
@@ -268,50 +264,71 @@ export function useStoreStudentRosterActions({
         commitStudents(nextStudents);
         return nextStudents;
       } catch (error) {
-        if (isStudentRosterSnapshotCurrent({
-          authCurrent: request.isCurrent(),
-          currentMutationEpoch: studentMutationEpochRef.current,
-          currentRequestSequence: studentRosterRequestSequenceRef.current,
-          mutationEpochAtStart: mutationEpoch,
-          requestSequence,
-        })) {
-          setStudentsLoadError(
-            error instanceof Error ? error.message : "Failed to load students."
-          );
+        if (
+          isStudentRosterSnapshotCurrent({
+            authCurrent: request.isCurrent(),
+            currentMutationEpoch: studentMutationEpochRef.current,
+            currentRequestSequence: studentRosterRequestSequenceRef.current,
+            mutationEpochAtStart: mutationEpoch,
+            requestSequence,
+          })
+        ) {
+          setStudentsLoadError(error instanceof Error ? error.message : "Failed to load students.");
         }
         throw error;
       }
     }
 
     return lastStudents;
-  }, [beginLiveAuthRequest, commitStudents, isPreviewMode, setStudentsLoadError, studentMutationEpochRef, studentRosterRequestSequenceRef, studentsRef]);
+  }, [
+    beginLiveAuthRequest,
+    commitStudents,
+    isPreviewMode,
+    setStudentsLoadError,
+    studentMutationEpochRef,
+    studentRosterRequestSequenceRef,
+    studentsRef,
+  ]);
 
-  const listStudentsPage = useCallback(async (
-    query: StudentListQuery = {},
-    options?: { signal?: AbortSignal; timeoutMs?: number | null }
-  ): Promise<StudentListResponse> => {
-    if (isPreviewMode) {
-      return buildPreviewStudentListPage(studentsRef.current, query);
-    }
+  const listStudentsPage = useCallback(
+    async (
+      query: StudentListQuery = {},
+      options?: { signal?: AbortSignal; timeoutMs?: number | null },
+    ): Promise<StudentRosterPageResponse> => {
+      if (isPreviewMode) {
+        const previewPage = buildPreviewStudentListPage(studentsRef.current, query);
+        return {
+          items: previewPage.items,
+          total: previewPage.total,
+          page_size: previewPage.page_size,
+          page_ordinal: previewPage.page,
+          has_next: false,
+          next_cursor: null,
+          has_previous: false,
+          previous_cursor: null,
+        };
+      }
 
-    if (!token) {
-      throw new Error("Not authenticated");
-    }
+      if (!token) {
+        throw new Error("Not authenticated");
+      }
 
-    const pageSpan = startStudentPagePerformanceSpan(query);
+      const pageSpan = startStudentPagePerformanceSpan(query);
 
-    try {
-      const result = await fetchStudentPage(token, query, {
-        timeoutMs: 12000,
-        ...options,
-      });
-      pageSpan.finish({ total: result.total });
-      return result;
-    } catch (error) {
-      pageSpan.finish({ error: true });
-      throw error;
-    }
-  }, [isPreviewMode, studentsRef, token]);
+      try {
+        const result = await fetchStudentPage(token, query, {
+          timeoutMs: 12000,
+          ...options,
+        });
+        pageSpan.finish({ total: result.total });
+        return result;
+      } catch (error) {
+        pageSpan.finish({ error: true });
+        throw error;
+      }
+    },
+    [isPreviewMode, studentsRef, token],
+  );
 
   return {
     addStudent,

@@ -89,7 +89,8 @@ class RequestBodyLimitTest(unittest.TestCase):
     def test_valid_multipart_messages_are_replayed_downstream_byte_for_byte(self):
         boundary = b"browser-boundary"
         body = (
-            b"--" + boundary
+            b"--"
+            + boundary
             + b'\r\nContent-Disposition: form-data; name="file"; filename="photo.png"'
             + b"\r\nContent-Type: image/png\r\n\r\n"
             + b"\x89PNG\r\n\x1a\nimage-bytes\r\n--"

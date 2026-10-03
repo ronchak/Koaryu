@@ -65,11 +65,7 @@ class ScheduleAttendanceActions:
 
     @staticmethod
     def attendance_response_from_row(row: dict) -> AttendanceResponse:
-        data = {
-            k: v
-            for k, v in row.items()
-            if k not in {"students", "class_sessions"}
-        }
+        data = {k: v for k, v in row.items() if k not in {"students", "class_sessions"}}
         student = row.get("students", {}) or {}
         first_name = student.get("preferred_name") or student.get("legal_first_name", "")
         name = f"{first_name} {student.get('legal_last_name', '')}"
@@ -221,11 +217,9 @@ class ScheduleAttendanceActions:
         student_id: str,
         studio_id: str,
     ) -> None:
-        self.supabase.table("attendance").delete() \
-            .eq("studio_id", studio_id) \
-            .eq("session_id", session_id) \
-            .eq("student_id", student_id) \
-            .execute()
+        self.supabase.table("attendance").delete().eq("studio_id", studio_id).eq(
+            "session_id", session_id
+        ).eq("student_id", student_id).execute()
 
     async def bulk_check_in(
         self, data: AttendanceBulkCheckIn, studio_id: str, actor_id: str

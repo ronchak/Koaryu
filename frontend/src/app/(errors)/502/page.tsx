@@ -11,11 +11,6 @@ export default function Custom502Page() {
       description="The frontend is available, but the upstream service answered with something the app could not use."
       icon={RadioTower}
       tone="warning"
-      diagnostics={[
-        { label: "Frontend", value: "online", state: "ok" },
-        { label: "Gateway", value: "invalid", state: "warn" },
-        { label: "Backend", value: "check logs", state: "idle" },
-      ]}
       actions={
         <>
           <StatusAction href="/dashboard" icon={Home}>

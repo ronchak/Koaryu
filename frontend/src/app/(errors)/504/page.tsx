@@ -12,11 +12,6 @@ export default function Custom504Page() {
       description="The page is here, but the upstream API did not answer in time. Give it a moment, then retry the dashboard."
       icon={Clock3}
       tone="warning"
-      diagnostics={[
-        { label: "Frontend", value: "online", state: "ok" },
-        { label: "Gateway", value: "waiting", state: "warn" },
-        { label: "Backend", value: "timed out", state: "bad" },
-      ]}
       actions={
         <>
           <StatusAction href="/dashboard" icon={Home}>

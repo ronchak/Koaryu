@@ -9,7 +9,7 @@ nothing noticed when it stopped serving.
 one, add it here in the same change. If you find one that is not here, either
 document it or delete it.
 
-Last verified against live systems: 2026-08-15.
+Inventory baseline: 2026-08-24. September 20, 2026 historical release readback: both databases were V50, 145 migrations. Production frontend/backend served PR240 candidate `fe2a37bf97bb87897b3f8e03d83611c81d69b9c0`. Staging had last been verified at Microsoft sign-in candidate `cd2fb0ef0d2655f8f3192e85e93c1c5a95c78225` and was not changed or reverified for PR240. See [Microsoft SSO verification](microsoft-sso-setup.md#september-20-release-verification). At that readback, both web services were active; the staging billing cron remained suspended and production auto-deploy was off. Reinspect live state for future releases; the combined V55 candidate gates are in [Cutover Gates](cutover-gates.md). See [the completed verification](remediation/production-release-verification.md).
 
 ## Quick map
 
@@ -19,9 +19,44 @@ Last verified against live systems: 2026-08-15.
 | Backend | Render `koaryu` → `koaryu.onrender.com` | Render `koaryu-staging` |
 | Database + Auth | Supabase `mimguepumzsgmcaycdsh` | Supabase `nxgsektqsgrtyfhawxbc` |
 | Payments | Stripe live mode | Stripe test mode |
+| `LIVE_BILLING_ENABLED` | `true` (global interlock only) | `false` |
+| `CORE_SELF_CHECKOUT_ENABLED` | `true` (Koaryu Core only) | `false` |
+| Period-end billing worker | disabled; production cron awaits approval | Render Cron every 5 minutes, suspended September 14 |
+| `OPERATIONAL_ALERTS_ENABLED` | `false` | `false` |
 
-Neither production surface auto-deploys. Both are promoted by hand, on purpose —
+Neither production surface auto-deploys. Both require an explicit owner-authorized release —
 see [Deployment triggers](#deployment-triggers).
+
+## Google identity provider
+
+- Google Cloud project: `Koaryu` (`koaryu-auth-20260920`), created September 20, 2026.
+- One Web application OAuth client serves the production and staging Supabase
+  callback URLs. The client secret belongs in those two Supabase Google-provider
+  configurations and owner-only operator storage, never in frontend variables.
+- Setup and release verification are tracked in [Google SSO setup](google-sso-setup.md).
+  The client is published for external Google accounts and enabled in both
+  Supabase projects. Email confirmation remains required and manual linking off.
+- Google verified and published the display name `koaryu.app`; the live account
+  chooser was checked. Search Console ownership uses the public homepage tag.
+
+## Microsoft identity provider
+
+- Owner account: held in private operator storage.
+- Tenant: `Default Directory`, `koaryuoutlook.onmicrosoft.com`
+  (`88ec6a60-28f5-4ba8-9419-238d02384c6d`), Microsoft Entra ID Free.
+- App display name and verified publisher domain: `koaryu.app`. The separate
+  Microsoft verified-publisher badge is not configured.
+- Application client ID: `dcc03dac-aac6-4b8f-9dc1-74ac1da30832`.
+- Audience: personal Microsoft accounts and accounts in any Entra directory.
+  Enabled in both Supabase projects; real personal and school login verified.
+  Client secret expires March 20, 2027; rotate using the setup runbook.
+- Both exact Supabase Auth callback URLs are registered as Web redirects.
+- Client credentials stay in Supabase and private operator storage; no client
+  secret belongs in the frontend. Setup and verification status are in
+  [Microsoft SSO setup](microsoft-sso-setup.md).
+- App registration and basic Microsoft OAuth use the free identity service. No
+  Azure compute, storage, premium identity license, or pay-as-you-go upgrade is
+  part of this feature. Normal Supabase auth usage limits still apply.
 
 ## GitHub
 
@@ -40,7 +75,15 @@ see [Deployment triggers](#deployment-triggers).
   — pinned in `backend/app/core/config.py` as the only frontend origin a staging
   backend will accept.
 
-Configuration lives in `frontend/vercel.json`.
+Configuration lives in `frontend/vercel.json`. The candidate pins Vercel Functions
+to Portland (`pdx1`), near the existing Oregon backend and database. Deployment
+readback must confirm the region; Routing Middleware may have separate placement.
+
+The existing frontend also accepts sampled, same-origin performance measurements
+at `/api/performance`. It writes allowlisted numeric metrics and build identities
+to existing Vercel runtime logs. There is no separate telemetry service or database;
+retention follows the current provider plan. No business data or user identifiers
+are included. See `docs/verification/navigation-reliability-followup.md`.
 
 ### Vercel cron jobs
 
@@ -55,7 +98,8 @@ enforced by `scripts/check-env-examples.mjs`.
 
 ## Render — backend
 
-Both services are declared in `render.yaml`. Neither auto-deploys.
+Both web services and the staging billing-transition cron are declared in
+`render.yaml`. None auto-deploys.
 
 | | Production | Staging |
 | --- | --- | --- |
@@ -63,15 +107,60 @@ Both services are declared in `render.yaml`. Neither auto-deploys.
 | Service ID | `srv-d7mogk1kh4rs73aq6hqg` | `srv-d98g4kutrd3s73ek0elg` |
 | URL | `https://koaryu.onrender.com` | `https://koaryu-staging.onrender.com` |
 | Tracks branch | `main` | `staging` |
+| Runtime | Docker, Python 3.11.9 + jemalloc | Docker, Python 3.11.9 + jemalloc |
+| Region | Oregon | Oregon |
 | Plan | `starter` (paid) | `free` |
 | Auto-deploy | off | off |
 | Health check | `/health/ready` | `/health/ready` |
 | `ENVIRONMENT` | `production` | `staging` |
 | Stripe mode | `live` | `test` |
 
-The two services track **different branches**. Deploying a commit to staging means
-moving the `staging` branch to it first — `git push origin main:staging` — and
-then triggering a manual deploy, because auto-deploy is off on both.
+`koaryu-billing-transitions-staging` is a starter Render Cron Job that tracks the
+`staging` branch, runs every five minutes, and calls only the protected staging
+transition endpoint. It reuses the staging web service's worker secret through a
+Render service reference. Each run claims at most 25 transitions and waits up to 130
+seconds, beyond the backend bulk lane's 120-second deadline but below the five-minute
+cadence. A lost or failed response is safe to retry because the transition intent and
+provider mutation keep their durable idempotency identity. Render bills cron execution by runtime with a $1 monthly
+minimum for the service. The production web service keeps
+`BILLING_TRANSITION_SCHEDULER_ENABLED=false`; no production cron exists in this
+release task.
+
+The two web services track **different branches**. Render auto-deploy is off for the
+staging web service and cron, so deploy each from the exact reviewed commit and read
+back that deployed SHA. Keep the cron suspended until the exact-candidate backend is
+deployed and `/health/ready` succeeds against the migrated staging database.
+
+Vercel staging is different: `frontend/vercel.json` enables automatic deployment from
+`refs/heads/staging`. Move that ref only after the database, backend readiness, and
+manual cron proof are complete, so the frontend is last. As observed on 2026-08-28,
+`refs/remotes/origin/staging` is
+`ee6137a709e4215efac1319dedd0e55ed2b60e1c`. That is context, not an execution
+assumption. The operator must fetch the current old SHA and candidate ref, bind the
+update to the observed old SHA with `--force-with-lease`, and read the remote ref back
+immediately:
+
+```bash
+PR_HEAD_SHA='<PR_HEAD_SHA>'
+git fetch origin \
+  refs/heads/staging:refs/remotes/origin/staging \
+  refs/heads/codex/koaryu-payments-live:refs/remotes/origin/codex/koaryu-payments-live
+OLD_STAGING_SHA="$(git rev-parse refs/remotes/origin/staging)"
+test "$(git rev-parse refs/remotes/origin/codex/koaryu-payments-live)" = "${PR_HEAD_SHA}"
+git push origin \
+  "${PR_HEAD_SHA}:refs/heads/staging" \
+  --force-with-lease=refs/heads/staging:"${OLD_STAGING_SHA}"
+test "$(git ls-remote --heads origin refs/heads/staging | awk '{print $1}')" = "${PR_HEAD_SHA}"
+```
+
+Abort if any command fails or the readback differs. Never use unchecked `--force`.
+If Render cannot deploy the exact candidate before this move, stop and prove another
+safe provider route. Do not move staging early to make Render see the candidate.
+
+The Render API reported both live services in Oregon on 2026-08-24. Render does
+not support changing an existing service's region. The Oregon declarations in
+`render.yaml` record the existing immutable placement; they do not move or
+replace either service.
 
 The staging service is on the free plan, which sleeps after roughly 15 minutes of
 inactivity. A slow or absent first response is usually spin-up, not a fault. If it
@@ -89,10 +178,11 @@ The production service ID is hardcoded in `scripts/merge-release-pr.sh:14`,
 which reads live auto-deploy state from `https://api.render.com/v1/services/<id>`
 before permitting a release merge. That readback needs `RENDER_API_KEY`.
 
-`/health/ready` fails closed against a database at an unexpected migration. That
-is deliberate, and it is why a backend deployed ahead of its migration will sit
-unhealthy rather than serve. It is also the most likely reason a Render service
-appears to be "down" for no reason.
+The completed V50 release, immutable migration hash and recovery limits are recorded in [the production packet](remediation/PRODUCTION-RELEASE.md) and [verification](remediation/production-release-verification.md). Future releases require a new exact-candidate packet and fresh target/backup evidence. Completed apply commands are history, not authority to run them again. Readiness compatibility does not authorize older backends after new activation receipts or unknown subscription terms have been written.
+
+V41 payer-balance, V43 external-payment and V44 local-plan guarantees require old
+split callers to drain. V45 requires stopping old import callers before migration.
+No historical financial backfill or live billing activation is included.
 
 ## Supabase — database, auth, storage
 
@@ -107,19 +197,25 @@ Both refs are pinned in `backend/app/core/config.py`. The backend refuses to boo
 if `ENVIRONMENT` and `SUPABASE_URL` disagree, so a staging process cannot be
 pointed at production data by editing one variable.
 
-Production is **read-only for agents**. Migrations against production are run by
-a human through `scripts/studio-comp-migration-rollout.mjs`.
+Production inspection is read-only. Only the named coordinating agent or operator may apply migrations through `scripts/studio-comp-migration-rollout.mjs` under explicit owner authorization and the [announce-and-pause protocol](cutover-gates.md#owner-authorized-release-execution). Backup, restore, source and target gates remain mandatory. Production may use explicit operating-session owner authorization without a GitHub comment; a supplied comment is fully validated. Subagents have no production authority; contract SQL is never allowed against production.
 
 ## Stripe — payments
 
 - Production runs in **live** mode; staging and local run in **test** mode.
 - `STRIPE_MODE` must match the secret key prefix (`sk_live_` / `sk_test_`), and
   the backend refuses to start otherwise.
-- `LIVE_BILLING_ENABLED` is `false` and gates Connect onboarding and tuition
-  payments.
+- Production intentionally sets `LIVE_BILLING_ENABLED=true`; staging, local, and
+  reusable environment examples remain `false`. The production value is only the
+  necessary global interlock. It creates no studio scope, reconciliation
+  checkpoint, provider authority, or tenant financial permission. Connect and
+  tuition mutations additionally require the exact enabled, unexpired studio
+  scope and exact-candidate all-clear reconciliation checkpoint.
 - `CORE_SELF_CHECKOUT_ENABLED` is a separate, narrower production-only switch for
-  Core subscription checkout. `config.py` rejects it outside production, so the
-  checkout flow cannot be exercised on staging.
+  Core subscription checkout and the customer portal. `config.py` rejects it
+  outside production, so the checkout flow cannot be exercised on staging. The
+  2026-08-19 read-only provider check found the live `$27 USD` monthly price active,
+  the exact six-event platform endpoint enabled, and one active customer-portal
+  configuration.
 - The approved mutation boundary is documented in `docs/billing-boundary.md`.
 
 ## Operational alerting
@@ -143,7 +239,7 @@ neither can be relaxed by accident.
 track its branch automatically.
 
 **A push to `main` therefore deploys nothing.** Production frontend and backend
-are each promoted by hand after the database is migrated. If production looks
+are each released explicitly after the database is migrated. If production looks
 stale after a merge, that is the expected behaviour, not a fault.
 
 ## Credentials and where they live
@@ -153,22 +249,24 @@ vault.
 
 | Secret | Where it lives |
 | --- | --- |
-| Render API key | macOS Keychain — service `com.koaryu.render.api-key`, account `koaryu-release-automation` |
+| Render API key | Owner-managed file on the OpenClaw Mac: `/Users/openclaw/.config/koaryu/secrets/render-api-key` |
 | Supabase service role / JWT secret | Render dashboard env vars, `sync: false` |
 | Stripe keys and webhook secrets | Render dashboard env vars, `sync: false` |
-| Shared test studio password | macOS Keychain, `Koaryu Shared Core Test - NO BILLING` |
+| Studio-user sign-in material | Private owner authentication guidance outside the repository |
 | Non-secret account references | Obsidian vault, `Codex Memory/` |
 
-The Render key is account-wide, not per-service, and is what
-`scripts/merge-release-pr.sh` needs. Load it into a shell without printing it:
+The Render key is account-wide, not per-service. The guarded merge script needs
+it in `RENDER_API_KEY`. On the OpenClaw Mac, load the owner-managed file without
+printing its value:
 
 ```bash
-export RENDER_API_KEY="$(security find-generic-password -s com.koaryu.render.api-key -w)"
+export RENDER_API_KEY="$(</Users/openclaw/.config/koaryu/secrets/render-api-key)"
 ```
 
-It is stored under a service name that does not contain the string
-`RENDER_API_KEY`, so searching the Keychain for the environment variable's name
-finds nothing and wrongly suggests the key is missing.
+The owner confirmed this location on 2026-09-06. The previously documented Keychain
+entry, service `com.koaryu.render.api-key`, was absent on this Mac. Other machines
+may still use that Keychain entry; do not assume it exists or copy credentials into
+the repository.
 
 ## Known gaps
 

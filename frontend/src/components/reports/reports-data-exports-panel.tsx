@@ -1,11 +1,16 @@
 "use client";
 
-import { useId, useState, type ReactNode } from "react";
-import { Download, FileText, Plus } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { useStudioStore } from "@/lib/store";
+import { captureAccessIdentity } from "@/lib/access-identity";
+import { Download, FileText } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { PanelHeader, StatBadge } from "@/components/reports/reports-page-sections";
 import { api } from "@/lib/api";
 import { toLocalDateKey } from "@/lib/date";
+import { canRunReportExport, getReportExportMinimumRole } from "@/lib/report-metrics";
+import type { StaffRoleName } from "@/types";
 
 type ExportReport = {
   id: string;
@@ -19,7 +24,7 @@ type ExportGroup = {
   reports: ExportReport[];
 };
 
-const EXPORT_GROUPS: ExportGroup[] = [
+export const EXPORT_GROUPS: ExportGroup[] = [
   {
     title: "Owner Intelligence",
     emphasis: true,
@@ -98,95 +103,61 @@ function downloadBlob(blob: Blob, filename: string) {
   URL.revokeObjectURL(url);
 }
 
-function ExportStatBadge({ children }: { children: ReactNode }) {
-  return (
-    <span className="border border-border bg-surface-raised px-2 py-1 text-xs text-text-secondary">
-      {children}
-    </span>
-  );
-}
-
-function ExportPanelHeader({
-  title,
-  subtitle,
-  children,
-}: {
-  title: string;
-  subtitle?: string;
-  children?: ReactNode;
-}) {
-  return (
-    <div className="flex items-start justify-between gap-4 mb-5">
-      <div className="min-w-0">
-        <h2 className="text-sm font-semibold text-text-primary">{title}</h2>
-        {subtitle && (
-          <p className="text-xs text-text-secondary mt-1 leading-relaxed">
-            {subtitle}
-          </p>
-        )}
-      </div>
-      {children}
-    </div>
-  );
-}
-
-function ExportGroupDisclosure({
+function ExportGroupRegister({
   group,
   exportingReportId,
   isPreviewMode,
-  canExportStudioData,
+  currentRole,
   onDownload,
 }: {
   group: ExportGroup;
   exportingReportId: string | null;
   isPreviewMode: boolean;
-  canExportStudioData: boolean;
+  currentRole: StaffRoleName | null;
   onDownload: (report: ExportReport) => void;
 }) {
-  const [isOpen, setIsOpen] = useState(false);
-  const panelId = useId();
   const headerClassName = group.emphasis
-    ? "relative flex w-full cursor-pointer items-start justify-between gap-4 py-4 pl-4 pr-1 text-left before:absolute before:left-0 before:top-4 before:bottom-4 before:w-[2px] before:rounded-full before:bg-accent"
-    : "flex w-full cursor-pointer items-start justify-between gap-4 py-4 text-left";
+    ? "flex min-h-14 w-full items-center justify-between gap-4 rounded-[10px] bg-accent/10 px-3 py-2 text-left"
+    : "flex min-h-14 w-full items-center justify-between gap-4 px-3 py-2 text-left";
 
   return (
-    <section className="faq-item" data-state={isOpen ? "open" : "closed"}>
-      <button
-        type="button"
-        aria-expanded={isOpen}
-        aria-controls={panelId}
-        className={headerClassName}
-        onClick={() => setIsOpen((current) => !current)}
-      >
-        <span className="flex min-w-0 items-start gap-3">
-          <FileText className="mt-0.5 h-4 w-4 shrink-0 text-text-secondary" />
-          <span className="min-w-0">
-            <span className="block text-sm font-semibold text-text-primary">
-              {group.title}
-            </span>
-            <span className="mt-1 block text-xs text-text-secondary">
-              {group.reports.length} CSV export{group.reports.length === 1 ? "" : "s"}
-            </span>
+    <section data-export-group={group.title}>
+      <div className={headerClassName}>
+        <span className="flex min-w-0 items-center gap-3">
+          <FileText className="h-4 w-4 shrink-0 text-text-secondary" />
+          <span className="truncate text-sm font-semibold text-text-primary">{group.title}</span>
+          <span className="shrink-0 rounded-full bg-surface-raised px-2 py-0.5 text-xs text-text-secondary">
+            {group.reports.length} CSV
           </span>
         </span>
-        <Plus className="faq-icon mt-0.5 h-4 w-4 shrink-0 text-accent" />
-      </button>
+      </div>
 
-      <div id={panelId} className="faq-body" aria-hidden={!isOpen}>
-        <div>
-          <div className="divide-y divide-border border-t border-border pb-2">
+          <div className="divide-y divide-border pb-2">
             {group.reports.map((report) => {
               const isExporting = exportingReportId === report.id;
-              const isDisabled = Boolean(exportingReportId) || isPreviewMode || !canExportStudioData;
+              const minimumRole = getReportExportMinimumRole(report.id);
+              const isAuthorized = canRunReportExport(currentRole, report.id);
+              const isDisabled = Boolean(exportingReportId) || isPreviewMode || !isAuthorized;
 
               return (
                 <div
                   key={report.id}
-                  className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between"
+                  className="flex min-h-14 items-center justify-between gap-2 px-3 py-1"
                 >
                   <div className="min-w-0">
-                    <p className="text-sm font-medium text-text-primary">{report.title}</p>
-                    <p className="mt-1 text-xs leading-relaxed text-text-secondary">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <p className="min-w-0 break-words text-sm font-medium text-text-primary sm:truncate" title={report.title}>
+                        {report.title}
+                      </p>
+                      <span
+                        aria-label={`Minimum role: ${minimumRole === "front_desk" ? "Front desk" : "Admin"}${!isAuthorized ? ". Your role cannot download this report." : ""}`}
+                        className="shrink-0 rounded-full bg-surface-raised px-2 py-0.5 text-xs font-medium text-muted"
+                      >
+                        {minimumRole === "front_desk" ? "Front desk" : "Admin"}
+                        {!isAuthorized ? " · Unavailable" : ""}
+                      </span>
+                    </div>
+                    <p className="mt-0.5 truncate text-xs text-text-secondary" title={report.description}>
                       {report.description}
                     </p>
                   </div>
@@ -194,7 +165,7 @@ function ExportGroupDisclosure({
                     type="button"
                     size="sm"
                     variant="secondary"
-                    className="w-full shrink-0 sm:w-[118px]"
+                    className="w-[84px] shrink-0 sm:w-[118px]"
                     isLoading={isExporting}
                     disabled={isDisabled}
                     onClick={() => onDownload(report)}
@@ -206,8 +177,6 @@ function ExportGroupDisclosure({
               );
             })}
           </div>
-        </div>
-      </div>
     </section>
   );
 }
@@ -215,27 +184,37 @@ function ExportGroupDisclosure({
 export function ReportsDataExportsPanel({
   isPreviewMode,
   token,
-  canExportStudioData,
+  currentRole,
 }: {
   isPreviewMode: boolean;
   token: string | null;
-  canExportStudioData: boolean;
+  currentRole: StaffRoleName | null;
 }) {
+  const { currentUserId, currentStudioId } = useStudioStore();
   const [exportingReportId, setExportingReportId] = useState<string | null>(null);
   const [exportMessage, setExportMessage] = useState("");
   const [exportError, setExportError] = useState("");
+
+  const mounted = useRef(true);
+  const activeDownload = useRef<ReturnType<typeof captureAccessIdentity> | null>(null);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
 
   async function handleDownloadReport(report: ExportReport) {
     setExportError("");
     setExportMessage("");
 
-    if (isPreviewMode) {
-      setExportError("Live CSV exports are available when Koaryu is connected to a studio database.");
+    if (!canRunReportExport(currentRole, report.id)) {
+      setExportError(getReportExportMinimumRole(report.id) === "front_desk"
+        ? "Admin or Front desk access is required for this export."
+        : "Admin access is required for this export.");
       return;
     }
 
-    if (!canExportStudioData) {
-      setExportError("Only admins and front desk staff can export studio data.");
+    if (isPreviewMode) {
+      setExportError("Live CSV exports are available when Koaryu is connected to a studio database.");
       return;
     }
 
@@ -244,52 +223,70 @@ export function ReportsDataExportsPanel({
       return;
     }
 
-    setExportingReportId(report.id);
+    let owner: ReturnType<typeof captureAccessIdentity> | null = null;
     try {
+      owner = captureAccessIdentity({ userId: currentUserId, studioId: currentStudioId, role: currentRole }, () => {
+        if (!mounted.current || activeDownload.current !== owner) return;
+        activeDownload.current = null;
+        setExportingReportId(null);
+        setExportError("");
+        setExportMessage("");
+      });
+      activeDownload.current = owner;
+      if (!owner.isCurrent()) return;
+      setExportingReportId(report.id);
       const { blob, filename } = await api.download(`/reports/exports/${report.id}`, token, {
+        signal: owner.signal,
         timeoutMs: 60000,
         timeoutMessage: "CSV export is taking longer than expected. Please try again.",
       });
+      if (!owner.isCurrent()) return;
       downloadBlob(blob, filename || fallbackCsvFilename(report.id));
-      setExportMessage(`${report.title} CSV downloaded.`);
+      if (mounted.current && activeDownload.current === owner) setExportMessage(`${report.title} CSV downloaded.`);
     } catch (error) {
-      setExportError(error instanceof Error ? error.message : "CSV export failed.");
+      if (mounted.current && (!owner || (owner.isCurrent() && activeDownload.current === owner))) {
+        setExportError(error instanceof Error ? error.message : "CSV export failed.");
+      }
     } finally {
-      setExportingReportId(null);
+      owner?.dispose();
+      if (mounted.current && activeDownload.current === owner) {
+        activeDownload.current = null;
+        setExportingReportId(null);
+      }
     }
   }
 
   return (
-    <section className="bg-surface border border-border p-5">
-      <ExportPanelHeader
+    <section className="bg-surface p-4" data-report-appendix="data-exports">
+      <PanelHeader
         title="Data Exports"
         subtitle="Separate CSV downloads for the core records owned by this studio."
       >
-        <ExportStatBadge>
+        <StatBadge>
           {EXPORT_GROUPS.reduce((count, group) => count + group.reports.length, 0)} CSV reports
-        </ExportStatBadge>
-      </ExportPanelHeader>
+        </StatBadge>
+      </PanelHeader>
 
       {exportMessage ? (
-        <div className="mb-4 border border-success/20 bg-success/10 px-4 py-3 text-sm text-success">
+        <div className="mb-4 rounded-[10px] bg-success/10 px-4 py-3 text-sm text-success">
           {exportMessage}
         </div>
       ) : null}
 
       {exportError ? (
-        <div className="mb-4 border border-danger/20 bg-danger/10 px-4 py-3 text-sm text-danger">
+        <div className="mb-4 rounded-[10px] bg-danger/10 px-4 py-3 text-sm text-danger">
           {exportError}
         </div>
       ) : null}
 
-      <div className="divide-y divide-border border-y border-border">
+      <div className="divide-y divide-border">
         {EXPORT_GROUPS.map((group) => (
-          <ExportGroupDisclosure
+          <ExportGroupRegister
             key={group.title}
             group={group}
             exportingReportId={exportingReportId}
             isPreviewMode={isPreviewMode}
-            canExportStudioData={canExportStudioData}
+            currentRole={currentRole}
             onDownload={(report) => void handleDownloadReport(report)}
           />
         ))}

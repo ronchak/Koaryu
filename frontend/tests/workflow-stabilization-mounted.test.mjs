@@ -1,0 +1,3370 @@
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import { chromium } from "@playwright/test";
+import { bundle } from "./helpers/store-browser-harness.mjs";
+
+const flush = (page) =>
+  page.evaluate(
+    () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+  );
+
+async function fixturePage(browser, options = {}) {
+  const page = await browser.newPage({ timezoneId: options.timezone });
+  if (options.now) await page.clock.install({ time: new Date(options.now) });
+  await page.route("**/*", (route) =>
+    route.request().url() === "http://fixture.local/"
+      ? route.fulfill({ contentType: "text/html", body: '<div id="root"></div>' })
+      : route.abort(),
+  );
+  await page.goto("http://fixture.local/");
+  await page.evaluate(() => {
+    const f = (window.fixture = {
+      identityObservations: [],
+      marks: [],
+      timingMarks: [],
+      observations: [],
+      requests: [],
+      events: [],
+      leadReads: [],
+      writes: [],
+      summaries: [],
+      details: [],
+      importSubmissions: [],
+    });
+    f.session = {
+      access_token: "synthetic-a",
+      user: {
+        id: "user-a",
+        email: "a@example.test",
+        legal_first_name: "Synthetic",
+        legal_last_name: "Owner",
+      },
+    };
+    f.auth = {
+      user: f.session.user,
+      studio_id: "studio-a",
+      membership_status: "active",
+      role: "admin",
+      staff_profiles_available: true,
+    };
+    f.summaryResponse = {
+      auth: f.auth,
+      generated_at: "2026-09-12T12:00:00Z",
+      students: {
+        total_students: 250,
+        active_students: 250,
+        trialing_students: 0,
+        on_hold_students: 0,
+      },
+      leads: { active_leads: 0, enrolled_leads: 0, due_today_leads: 0 },
+      schedule: { today_sessions: 0 },
+      belts: { belt_count: 0, tip_count: 0 },
+      inactivity: { watch_14: 0, watch_30: 0, watch_90: 0 },
+      new_students: { new_14: 0, new_30: 0, new_90: 0, new_year_to_date: 0 },
+      operational: {
+        attendance_with_capacity: 0,
+        total_capacity: 0,
+        sessions_tracked: 0,
+        sessions_with_capacity: 0,
+        average_attendance: 0,
+      },
+      churn: { inactive_students: 0, canceled_students: 0, churn_marked_students: 0 },
+      test_readiness: { available: false },
+      billing: { can_view_billing: true },
+      setup: {
+        has_programs: false,
+        has_students: true,
+        has_belt_system: false,
+        has_weekly_classes: false,
+      },
+      recent_students: [],
+      actions: [],
+    };
+    f.student = {
+      id: "student-1",
+      studio_id: "studio-a",
+      legal_first_name: "Ari",
+      legal_last_name: "Lane",
+      status: "active",
+      guardians: [],
+      photo_url: null,
+      programs: [],
+      tags: [],
+    };
+    f.lead = { id: "lead-1", first_name: "Old", last_name: "Lead", status: "new", stage: "new" };
+    f.navigate = (path, search = "") => {
+      f.pathname = path;
+      f.search = search;
+      history.pushState(null, "", path + search);
+      window.dispatchEvent(new Event("fixture:navigate"));
+    };
+    f.supabase = {
+      auth: {
+        getSession: async () => ({ data: { session: f.session } }),
+        onAuthStateChange: (cb) => {
+          f.emit = (event, session) => {
+            f.session = session;
+            cb(event, session);
+          };
+          return { data: { subscription: { unsubscribe() {} } } };
+        },
+      },
+    };
+    f.api = {
+      get: async (path, token) => {
+        f.requests.push({ path, token, atMs: performance.now() });
+        f.events.push(path);
+        if (path === "/dashboard/workspace")
+          return {
+            auth: f.auth,
+            studio: { name: "Synthetic Studio", timezone: "America/Los_Angeles" },
+          };
+        if (path.startsWith("/dashboard/bootstrap") && f.holdFeature)
+          return new Promise((resolve) => {
+            f.featureWaiters ??= [];
+            f.featureWaiters.push(resolve);
+            f.releaseFeature = resolve;
+          });
+        if (path.startsWith("/dashboard/bootstrap"))
+          return {
+            auth: f.auth,
+            studio_name: "Synthetic Studio",
+            students: f.uncached ? [] : [f.student],
+            students_may_be_partial: true,
+            leads: [f.lead],
+            programs: f.programRows ?? [],
+            belt_ladders: [],
+            primary_belt_ladder: null,
+            summary: f.summaryResponse,
+          };
+        if (path.startsWith("/schedule/window"))
+          return { sessions: [], attendance: [], templates: [] };
+        if (path.startsWith("/programs")) return [];
+        if (path.startsWith("/students?")) {
+          if (f.holdRosterRead)
+            return new Promise((resolve) => {
+              f.releaseRosterRead = resolve;
+            });
+          if (f.rosterEmpty)
+            return {
+              items: [],
+              total: 0,
+              page_size: 200,
+              page_ordinal: 1,
+              has_next: false,
+              has_previous: false,
+            };
+          const params = new URL(path, "http://fixture.local").searchParams;
+          const ordinal = Number(
+            params.get("cursor")?.replace("page-", "") ?? params.get("page") ?? 1,
+          );
+          return {
+            items: [f.student],
+            total: 251,
+            page_size: 50,
+            page_ordinal: ordinal,
+            has_next: ordinal < 6,
+            next_cursor: `page-${ordinal + 1}`,
+            has_previous: ordinal > 1,
+            previous_cursor: ordinal > 1 ? `page-${ordinal - 1}` : null,
+          };
+        }
+        if (path === "/leads" && f.autoLeads) return [];
+        if (path === "/leads") return new Promise((resolve) => f.leadReads.push(resolve));
+        if (path.startsWith("/dashboard/summary"))
+          return new Promise((resolve, reject) => f.summaries.push({ resolve, reject }));
+        if (path === "/students/student-1")
+          return new Promise((resolve, reject) => f.details.push({ resolve, reject }));
+        if (path === "/belts/ladders") {
+          if (f.failBeltRefresh) throw Error("Synthetic belt refresh failure");
+          return f.ladder ? [f.ladder] : [];
+        }
+        if (path.startsWith("/belts/eligibility?")) {
+          f.eligibilityReads = (f.eligibilityReads ?? 0) + 1;
+          return f.useNewEligibility
+            ? [{ student_id: "student-new", eligible: true }]
+            : [{ student_id: "student-old", eligible: false }];
+        }
+        if (path.includes("promotions")) return [];
+        throw Error(`Unexpected read ${path}`);
+      },
+      post: (path, body) =>
+        path.startsWith("/schedule/window")
+          ? Promise.resolve({ sessions: [], attendance: [], templates: [] })
+          : new Promise((resolve) => f.writes.push({ path, body, resolve })),
+      postForm: async (path, body, token) => {
+        f.events.push(path);
+        f.importSubmissions.push({ path, token, importKey: body.get("idempotency_key") });
+        return {
+          total_rows: 1,
+          valid_rows: 1,
+          error_rows: 0,
+          non_critical_errors: [],
+          imported_count: 1,
+          reused_result: false,
+          created_programs: [],
+          created_ladders: [],
+          created_belts: [],
+          warnings: [],
+          execution_status: "completed",
+        };
+      },
+      patch: (path, body) => new Promise((resolve) => f.writes.push({ path, body, resolve })),
+      delete: (path) => new Promise((resolve) => f.writes.push({ path, resolve })),
+    };
+  });
+  await page.evaluate(
+    ({ path, holdFeature, uncached, formProgram }) => {
+      if (path) {
+        fixture.pathname = path;
+        history.replaceState(null, "", path);
+      }
+      fixture.holdFeature = holdFeature;
+      fixture.uncached = uncached;
+      if (formProgram)
+        fixture.programRows = [
+          {
+            id: "program-1",
+            name: "Test Program",
+            color_hex: "#38BDF8",
+            archived_at: null,
+            is_system: false,
+          },
+        ];
+    },
+    {
+      path: options.path,
+      holdFeature: options.holdFeature,
+      uncached: options.uncached,
+      formProgram: options.formProgram,
+    },
+  );
+  await page.addScriptTag({ content: bundle(options.mode ?? "production", options) });
+  await page.waitForFunction(() => fixture.store?.identityReady);
+  return page;
+}
+
+test("confirmed live import refreshes selected-ladder eligibility after belt refresh fails", async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await fixturePage(browser);
+    await page.evaluate(() => {
+      fixture.ladder = {
+        id: "ladder-1",
+        name: "Synthetic Ladder",
+        sub_rank_term: "Stripe",
+        ranks: [],
+      };
+      fixture.prime = fixture.store.setCurrentLadder("ladder-1");
+    });
+    await page.waitForFunction(() => fixture.store.eligibilityLadderId === "ladder-1");
+    await page.evaluate(() => fixture.prime);
+    assert.deepEqual(await page.evaluate(() => fixture.store.eligibility), [
+      { student_id: "student-old", eligible: false },
+    ]);
+
+    await page.evaluate(() => {
+      fixture.failBeltRefresh = true;
+      fixture.useNewEligibility = true;
+      fixture.events = [];
+      fixture.import = fixture.store.importStudents(
+        new File(["First Name,Last Name\nNew,Student"], "students.csv", { type: "text/csv" }),
+        [{ "First Name": "New", "Last Name": "Student" }],
+        { "First Name": "legal_first_name", "Last Name": "legal_last_name" },
+        { status_alias_mode: "normalize" },
+        { importKey: "stable-import-key" },
+      );
+    });
+    await page.waitForFunction(() => fixture.store.eligibility[0]?.student_id === "student-new");
+    const result = await page.evaluate(() => fixture.import);
+    assert.equal(result.imported_count, 1);
+    assert.equal(result.execution_status, "completed_with_warnings");
+    assert.match(result.non_critical_errors.at(-1), /Synthetic belt refresh failure/);
+    assert.equal(await page.evaluate(() => fixture.store.eligibilityLadderId), "ladder-1");
+    assert.equal(await page.evaluate(() => fixture.eligibilityReads), 2);
+    assert.deepEqual(
+      await page.evaluate(() => fixture.events.filter((path) => path.startsWith("/belts"))),
+      ["/belts/ladders", "/belts/eligibility?ladder_id=ladder-1"],
+    );
+    assert.deepEqual(await page.evaluate(() => fixture.importSubmissions), [
+      { path: "/students/import/execute", token: "synthetic-a", importKey: "stable-import-key" },
+    ]);
+    await page.evaluate(() => fixture.root.unmount());
+  } finally {
+    await browser.close();
+  }
+});
+
+test("mounted lead actions preserve confirmed edits through token renewal, old GETs, and deletion", async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await fixturePage(browser);
+    await page.evaluate(() => {
+      fixture.read = fixture.store.refreshLeads();
+      fixture.save = fixture.store.updateLead("lead-1", { first_name: "Saved" });
+    });
+    await page.waitForFunction(() => fixture.writes.length === 1);
+    await page.evaluate(() =>
+      fixture.emit("TOKEN_REFRESHED", { ...fixture.session, access_token: "synthetic-renewed" }),
+    );
+    await page.waitForFunction(() => fixture.store.token === "synthetic-renewed");
+    await page.evaluate(() => fixture.writes[0].resolve({ ...fixture.lead, first_name: "Saved" }));
+    await page.waitForFunction(() => fixture.store.leads[0]?.first_name === "Saved");
+    await page.evaluate(() => fixture.leadReads[0]([fixture.lead]));
+    await page.waitForFunction(() => fixture.leadReads.length === 2);
+    assert.equal(await page.evaluate(() => fixture.store.leads[0].first_name), "Saved");
+    await page.evaluate(() => fixture.leadReads[1]([{ ...fixture.lead, first_name: "Saved" }]));
+    await page.evaluate(() => fixture.read);
+    assert.equal(await page.evaluate(() => fixture.writes.length), 1);
+    await page.evaluate(() => {
+      fixture.read = fixture.store.refreshLeads();
+      fixture.remove = fixture.store.deleteLead("lead-1");
+    });
+    await page.waitForFunction(() => fixture.writes.length === 2);
+    await page.evaluate(() => fixture.writes[1].resolve());
+    await page.waitForFunction(() => fixture.store.leads.length === 0);
+    await page.evaluate(() => fixture.leadReads[2]([fixture.lead]));
+    await page.waitForFunction(() => fixture.leadReads.length === 4);
+    await page.evaluate(() => fixture.leadReads[3]([]));
+    await page.evaluate(() => fixture.read);
+    assert.equal(await page.evaluate(() => fixture.store.leads.length), 0);
+    await page.evaluate(() => {
+      fixture.older = fixture.store.refreshLeads();
+      fixture.newer = fixture.store.refreshLeads();
+    });
+    await page.waitForFunction(() => fixture.leadReads.length === 6);
+    await page.evaluate(() =>
+      fixture.leadReads[5]([{ ...fixture.lead, id: "lead-2", first_name: "Newest" }]),
+    );
+    await page.evaluate(() => fixture.newer);
+    await page.evaluate(() => fixture.leadReads[4]([fixture.lead]));
+    await page.evaluate(() => fixture.older);
+    assert.equal(await page.evaluate(() => fixture.store.leads[0].first_name), "Newest");
+    await page.evaluate(() => fixture.root.unmount());
+  } finally {
+    await browser.close();
+  }
+});
+
+test("mounted detail ensures complete cached data, retains it after roster changes, and exposes retry", async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await fixturePage(browser, { detailController: true });
+    await page.evaluate(() => fixture.mountDetail());
+    await page.waitForFunction(() => fixture.details.length === 1);
+    assert.equal(await page.evaluate(() => fixture.detail.detailReady), false);
+    await page.evaluate(() => fixture.details[0].reject(Error("Detail unavailable")));
+    await page.waitForFunction(() => fixture.detail.loadError);
+    assert.equal(await page.evaluate(() => fixture.detail.detailReady), false);
+    await page.evaluate(() => fixture.detail.onRetryDetail());
+    await page.waitForFunction(() => fixture.details.length === 2);
+    await page.evaluate(() =>
+      fixture.details[1].resolve({
+        ...fixture.student,
+        guardians: [
+          {
+            id: "g1",
+            first_name: "Guardian",
+            last_name: "One",
+            is_primary_contact: true,
+          },
+          {
+            id: "g2",
+            first_name: "Guardian",
+            last_name: "Two",
+            is_primary_contact: false,
+          },
+        ],
+        photo_url: "https://synthetic.invalid/photo.png",
+      }),
+    );
+    await page.waitForFunction(() => fixture.detail.detailReady);
+    assert.equal(await page.evaluate(() => fixture.detail.student.guardians.length), 2);
+    await page.evaluate(() => {
+      fixture.save = fixture.store.updateStudent("student-1", { notes: "Changed" });
+    });
+    await page.waitForFunction(() => fixture.writes.length === 1);
+    await page.evaluate(() => fixture.writes[0].resolve({ ...fixture.student, notes: "Changed" }));
+    await page.evaluate(() => fixture.save);
+    assert.equal(await page.evaluate(() => fixture.detail.student.guardians.length), 2);
+    assert.equal(await page.evaluate(() => fixture.details.length), 2);
+    await page.evaluate(() => fixture.root.unmount());
+  } finally {
+    await browser.close();
+  }
+});
+
+test("mounted summary reconciliation preserves saved records and rejects older summary responses", async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await fixturePage(browser);
+    await page.evaluate(() => {
+      fixture.oldSummary = fixture.store.refreshDashboardSummary();
+      fixture.save = fixture.store.updateStudent("student-1", { legal_first_name: "Saved" });
+    });
+    await page.waitForFunction(() => fixture.summaries.length === 1 && fixture.writes.length === 1);
+    await page.evaluate(() =>
+      fixture.writes[0].resolve({ ...fixture.student, legal_first_name: "Saved" }),
+    );
+    await page.waitForFunction(() => fixture.summaries.length === 2);
+    await page.evaluate(() =>
+      fixture.summaries[1].resolve({
+        ...fixture.summaryResponse,
+        students: { ...fixture.summaryResponse.students, total_students: 251 },
+      }),
+    );
+    await page.waitForFunction(
+      () => fixture.store.dashboardSummary.students.total_students === 251,
+    );
+    await page.evaluate(() => fixture.summaries[0].resolve(fixture.summaryResponse));
+    await page.evaluate(() => fixture.oldSummary);
+    assert.equal(
+      await page.evaluate(() => fixture.store.dashboardSummary.students.total_students),
+      251,
+    );
+    await page.evaluate(() => {
+      fixture.refresh = fixture.store.refreshDashboardSummary().catch(() => {});
+    });
+    await page.waitForFunction(() => fixture.summaries.length === 3);
+    await page.evaluate(() => fixture.summaries[2].reject(Error("Offline")));
+    await page.evaluate(() => fixture.refresh);
+    assert.equal(await page.evaluate(() => fixture.store.students[0].legal_first_name), "Saved");
+    assert.equal(
+      await page.evaluate(() => fixture.store.dashboardSummary.students.total_students),
+      251,
+    );
+    assert.match(await page.evaluate(() => fixture.store.dashboardSummaryLoadError), /retained/);
+    await page.evaluate(() => fixture.root.unmount());
+  } finally {
+    await browser.close();
+  }
+});
+
+for (const path of ["/students", "/billing"]) {
+  test(`cold ${path} resolves protected workspace without unrelated feature waits`, async () => {
+    const browser = await chromium.launch();
+    try {
+      const page = await fixturePage(browser, {
+        path,
+        holdFeature: true,
+        layout: true,
+        rosterController: path === "/students",
+      });
+      assert.equal(await page.locator('[data-preview-sidebar="ready"]').count(), 1);
+      if (path === "/students") {
+        await page.evaluate(() => fixture.mountRoster());
+        await page.waitForFunction(() => fixture.roster?.pagedTotal === 251);
+        assert.equal(await page.getByRole("button", { name: "Open student" }).count(), 1);
+      }
+      const requests = await page.evaluate(() => fixture.requests.map((r) => r.path));
+      assert.ok(requests.includes("/dashboard/workspace"));
+      assert.ok(
+        !requests.some(
+          (path) =>
+            path === "/leads" || path.startsWith("/schedule/window") || path.startsWith("/belts"),
+        ),
+      );
+      if (path === "/billing") assert.ok(!requests.some((path) => path.includes("bootstrap")));
+      assert.ok(await page.evaluate(() => fixture.marks.includes("workspace.identity_ready")));
+      console.log(
+        "fixture workspace/controller readiness trace",
+        JSON.stringify(
+          await page.evaluate(() => ({
+            route: fixture.pathname,
+            requests: fixture.requests.map(({ path, atMs }) => ({ path, atMs })),
+            marks: fixture.timingMarks,
+            observedFixtureWorkspaceControllerReadyAtMs: performance.now(),
+          })),
+        ),
+      );
+      await page.evaluate(() => fixture.root.unmount());
+    } finally {
+      await browser.close();
+    }
+  });
+}
+
+for (const mode of ["production", "development"]) {
+  test(`mounted roster keeps later page across credential renewal and detail return (${mode})`, async () => {
+    const browser = await chromium.launch();
+    try {
+      const page = await fixturePage(browser, {
+        mode,
+        path: "/students",
+        rosterController: true,
+        detailController: true,
+      });
+      await page.evaluate(() => fixture.mountRoster());
+      await page.waitForFunction(() => fixture.roster?.pagedTotal === 251);
+      await page.getByRole("textbox", { name: "Search" }).fill("Ari");
+      await page.evaluate(() => fixture.roster.onSort("membership_start_date"));
+      await page.waitForFunction(() =>
+        fixture.requests.some(
+          (r) => r.path.includes("search=Ari") && r.path.includes("sort_by=membership_start_date"),
+        ),
+      );
+      await page.getByRole("button", { name: "Next page" }).click();
+      await page.waitForFunction(() => fixture.roster.page === 2 && !fixture.roster.isPagedLoading);
+      await page.evaluate(() =>
+        fixture.emit("TOKEN_REFRESHED", { ...fixture.session, access_token: "synthetic-renewed" }),
+      );
+      await page.waitForFunction(() => fixture.store.token === "synthetic-renewed");
+      assert.equal(await page.evaluate(() => fixture.roster.page), 2);
+      await page.getByRole("button", { name: "Open student" }).click();
+      await page.evaluate(() => {
+        fixture.search = new URL(fixture.redirects.at(-1), "http://fixture.local").search;
+        fixture.unmountRoster();
+        fixture.mountDetail();
+      });
+      await page.waitForFunction(() => fixture.details.length >= 1);
+      await page.evaluate(() => fixture.details.at(-1).resolve(fixture.student));
+      await page.waitForFunction(() => fixture.detail.detailReady);
+      await page.evaluate(() => fixture.detail.onBackToStudents());
+      await page.evaluate(() => {
+        fixture.search = new URL(fixture.redirects.at(-1), "http://fixture.local").search;
+        fixture.unmountDetail();
+        fixture.mountRoster();
+      });
+      await page.waitForFunction(
+        () => fixture.roster.page === 2 && fixture.roster.pagedTotal === 251,
+      );
+      assert.equal(await page.getByRole("textbox", { name: "Search" }).inputValue(), "Ari");
+      await page.waitForFunction(() => document.activeElement?.textContent === "Open student");
+      await page.evaluate(() => fixture.root.unmount());
+    } finally {
+      await browser.close();
+    }
+  });
+}
+
+test("uncached detail has the same complete guardian and photo result", async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await fixturePage(browser, { detailController: true, uncached: true });
+    await page.evaluate(() => fixture.mountDetail());
+    await page.waitForFunction(() => fixture.details.length === 1);
+    await page.evaluate(() =>
+      fixture.details[0].resolve({
+        ...fixture.student,
+        guardians: [
+          { id: "g1", first_name: "Guardian", last_name: "One", is_primary_contact: true },
+          { id: "g2", first_name: "Guardian", last_name: "Two", is_primary_contact: false },
+        ],
+        photo_url: "https://synthetic.invalid/photo.png",
+      }),
+    );
+    await page.waitForFunction(() => fixture.detail.detailReady);
+    assert.equal(await page.evaluate(() => fixture.detail.student.guardians.length), 2);
+    assert.equal(
+      await page.evaluate(() => fixture.detail.student.photo_url),
+      "https://synthetic.invalid/photo.png",
+    );
+    await page.evaluate(() => fixture.root.unmount());
+  } finally {
+    await browser.close();
+  }
+});
+
+test("credential renewal during feature bootstrap recovers without stranding route loading", async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await fixturePage(browser, { path: "/students", holdFeature: true });
+    await page.waitForFunction(() => fixture.featureWaiters?.length === 1);
+    await page.evaluate(() => {
+      fixture.emit("TOKEN_REFRESHED", { ...fixture.session, access_token: "synthetic-renewed" });
+      fixture.featurePayload = {
+        auth: fixture.auth,
+        students: [fixture.student],
+        leads: [],
+        programs: [],
+        belt_ladders: [],
+        primary_belt_ladder: null,
+      };
+      fixture.featureWaiters[0](fixture.featurePayload);
+    });
+    await page.waitForFunction(() => fixture.featureWaiters.length === 2);
+    await page.evaluate(() => fixture.featureWaiters[1](fixture.featurePayload));
+    await page.waitForFunction(() => fixture.store.studentsLoaded && fixture.store.programsLoaded);
+    assert.equal(await page.evaluate(() => fixture.store.identityReady), true);
+    await page.evaluate(() => fixture.root.unmount());
+  } finally {
+    await browser.close();
+  }
+});
+
+test("cross-studio summary and changed membership between workspace and features cannot commit", async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await fixturePage(browser, { path: "/students", holdFeature: true });
+    await page.evaluate(() => {
+      fixture.read = fixture.store.refreshDashboardSummary().catch(() => {});
+    });
+    await page.waitForFunction(() => fixture.summaries.length === 1);
+    await page.evaluate(() =>
+      fixture.summaries[0].resolve({
+        ...fixture.summaryResponse,
+        auth: { ...fixture.auth, studio_id: "other-studio" },
+        students: { ...fixture.summaryResponse.students, total_students: 999 },
+      }),
+    );
+    await page.evaluate(() => fixture.read);
+    assert.equal(await page.evaluate(() => fixture.store.dashboardSummary), null);
+    await page.evaluate(() =>
+      fixture.releaseFeature({
+        auth: { ...fixture.auth, role: "instructor" },
+        students: [fixture.student],
+        leads: [],
+        programs: [],
+        belt_ladders: [],
+      }),
+    );
+    await page.waitForFunction(() => fixture.store.identityLoadError);
+    assert.equal(await page.evaluate(() => fixture.store.identityReady), false);
+    assert.deepEqual(await page.evaluate(() => fixture.store.students), []);
+    await page.evaluate(() => fixture.root.unmount());
+  } finally {
+    await browser.close();
+  }
+});
+
+test("studio midnight updates day-sensitive context without clearing a form draft", async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await fixturePage(browser, {
+      path: "/students",
+      studentForm: true,
+      now: "2026-09-06T06:59:50Z",
+    });
+    await page.getByRole("button", { name: "Open form", exact: true }).click();
+    await page.getByLabel("Legal first name", { exact: false }).fill("Draft");
+    await page.getByLabel("Legal last name", { exact: false }).fill("Student");
+    assert.equal(await page.evaluate(() => fixture.store.businessDate), "2026-09-05");
+    await page.clock.fastForward(31_000);
+    await page.waitForFunction(() => fixture.store.businessDate === "2026-09-06");
+    assert.equal(await page.getByLabel("Legal first name", { exact: false }).inputValue(), "Draft");
+    assert.equal(
+      await page.getByLabel("Membership start", { exact: true }).inputValue(),
+      "2026-09-05",
+      "an open draft retains its chosen start date",
+    );
+    await page.evaluate(() => {
+      fixture.api.post = async () => {
+        throw Error("Synthetic save rejection");
+      };
+    });
+    await page.getByRole("button", { name: "Add student", exact: true }).click();
+    await page.getByText("Synthetic save rejection", { exact: true }).waitFor();
+    assert.equal(await page.getByLabel("Legal first name", { exact: false }).inputValue(), "Draft");
+    await page.evaluate(() => {
+      fixture.api.post = async () => {
+        throw new fixture.CommandOutcomeUnknown();
+      };
+    });
+    await page.getByRole("button", { name: "Add student", exact: true }).click();
+    await page.getByText(/The request may have been saved/).waitFor();
+    assert.equal(
+      await page.getByRole("button", { name: "Add student", exact: true }).isEnabled(),
+      false,
+    );
+    assert.equal(await page.getByLabel("Legal first name", { exact: false }).inputValue(), "Draft");
+    await page.getByLabel("Legal first name", { exact: false }).press("Escape");
+    assert.equal(await page.getByRole("dialog").count(), 0);
+    assert.equal(await page.evaluate(() => document.activeElement.textContent), "Open form");
+    await page.evaluate(() => fixture.root.unmount());
+  } finally {
+    await browser.close();
+  }
+});
+
+test("submitted student create and edit drafts stay locked and survive rejection", async () => {
+  for (const mode of ["create", "edit"]) {
+    const browser = await chromium.launch();
+    try {
+      const page = await fixturePage(browser, {
+        path: "/students",
+        studentForm: true,
+        formProgram: true,
+      });
+      await page.evaluate(() => {
+        fixture.controlStudentForm = true;
+        fixture.formSubmissions = [];
+      });
+      if (mode === "create") {
+        await page.getByRole("button", { name: "Open form", exact: true }).click();
+        await page.getByLabel("Legal first name", { exact: false }).fill("Create");
+        await page.getByLabel("Legal last name", { exact: false }).fill("Draft");
+      } else {
+        await page.evaluate(() =>
+          fixture.openStudentEdit({
+            legal_first_name: "Edit",
+            legal_last_name: "Draft",
+            status: "active",
+          }),
+        );
+        await page.getByRole("dialog").waitFor();
+        await page.getByLabel("Legal first name", { exact: false }).fill("Edited");
+      }
+      await page.getByLabel("Test Program", { exact: true }).check();
+      const firstName = page.getByLabel("Legal first name", { exact: false });
+      const submittedName = await firstName.inputValue();
+      const submitName = mode === "create" ? "Add student" : "Save changes";
+      await page.getByRole("button", { name: submitName, exact: true }).click();
+      await page.waitForFunction(() => fixture.formSubmissions.length === 1);
+
+      assert.equal(await firstName.isDisabled(), true);
+      assert.equal(await page.getByLabel("Test Program", { exact: true }).isDisabled(), true);
+      assert.equal(
+        await page.getByRole("button", { name: "Contact", exact: true }).isDisabled(),
+        true,
+      );
+      assert.equal(
+        await page.getByRole("button", { name: "Cancel", exact: true }).isDisabled(),
+        true,
+      );
+      assert.equal(
+        await page
+          .getByRole("button", {
+            name: mode === "create" ? "Close add student dialog" : "Close edit student dialog",
+          })
+          .isDisabled(),
+        true,
+      );
+      await page.locator("form").evaluate((form) => {
+        form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+        form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+      });
+      await page.locator(".koaryu-modal-backdrop").dispatchEvent("click");
+      await page.getByRole("dialog").press("Escape");
+      await flush(page);
+      assert.equal(await page.evaluate(() => fixture.formSubmissions.length), 1);
+      assert.equal(await page.getByRole("dialog").count(), 1);
+      assert.equal(await firstName.inputValue(), submittedName);
+      assert.equal(await page.getByLabel("Test Program", { exact: true }).isChecked(), true);
+
+      await page.evaluate(() =>
+        fixture.formSubmissions[0].reject(new Error("Synthetic student rejection")),
+      );
+      await page.getByText("Synthetic student rejection", { exact: true }).waitFor();
+      assert.equal(await firstName.inputValue(), submittedName);
+      assert.equal(await page.getByLabel("Test Program", { exact: true }).isChecked(), true);
+      assert.equal(await firstName.isEnabled(), true);
+      assert.equal(
+        await page.getByRole("button", { name: "Contact", exact: true }).isEnabled(),
+        true,
+      );
+
+      await page.getByRole("button", { name: submitName, exact: true }).click();
+      await page.waitForFunction(() => fixture.formSubmissions.length === 2);
+      await page.evaluate(() => fixture.formSubmissions[1].resolve());
+      await page.getByRole("dialog").waitFor({ state: "detached" });
+      await page.evaluate(() => fixture.root.unmount());
+    } finally {
+      await browser.close();
+    }
+  }
+});
+
+test("a confirmed old write cannot repopulate protected data after sign-out", async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await fixturePage(browser);
+    await page.evaluate(() => {
+      fixture.save = fixture.store.updateLead("lead-1", { first_name: "Saved" });
+    });
+    await page.waitForFunction(() => fixture.writes.length === 1);
+    await page.evaluate(() => fixture.emit("SIGNED_OUT", null));
+    await page.waitForFunction(() => !fixture.store.identityReady);
+    await page.evaluate(() => fixture.writes[0].resolve({ ...fixture.lead, first_name: "Saved" }));
+    await page.evaluate(() => fixture.save);
+    assert.deepEqual(await page.evaluate(() => fixture.store.leads), []);
+    assert.equal(await page.evaluate(() => fixture.store.currentStudioId), null);
+    await page.evaluate(() => fixture.root.unmount());
+  } finally {
+    await browser.close();
+  }
+});
+
+test("archive settlement prevents a current-token roster read from resurrecting the student", async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await fixturePage(browser, { path: "/students" });
+    await page.waitForFunction(() => fixture.store.studentsLoaded);
+    await page.evaluate(() => {
+      fixture.archive = fixture.store.deleteStudents(["student-1"]);
+    });
+    await page.waitForFunction(() => fixture.writes.length === 1);
+    await page.evaluate(() =>
+      fixture.emit("TOKEN_REFRESHED", { ...fixture.session, access_token: "synthetic-renewed" }),
+    );
+    await page.waitForFunction(() => fixture.store.token === "synthetic-renewed");
+    await page.evaluate(() => {
+      fixture.holdRosterRead = true;
+      fixture.read = fixture.store.refreshStudents();
+    });
+    await page.waitForFunction(() => fixture.releaseRosterRead);
+    await page.evaluate(() => fixture.writes[0].resolve({ updated: 1 }));
+    await page.evaluate(() => fixture.archive);
+    await page.waitForFunction(() => fixture.store.students.length === 0);
+    await page.evaluate(() => {
+      fixture.holdRosterRead = false;
+      fixture.rosterEmpty = true;
+      fixture.releaseRosterRead({
+        items: [fixture.student],
+        total: 1,
+        page_size: 200,
+        page_ordinal: 1,
+        has_next: false,
+        has_previous: false,
+      });
+    });
+    await page.evaluate(() => fixture.read);
+    assert.deepEqual(await page.evaluate(() => fixture.store.students), []);
+    await page.evaluate(() => fixture.root.unmount());
+  } finally {
+    await browser.close();
+  }
+});
+
+test("Add class snapshots the selected studio day for both modes and retains an open draft", async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await fixturePage(browser, {
+      path: "/schedule",
+      scheduleController: true,
+      scheduleForm: true,
+      timezone: "Asia/Tokyo",
+      now: "2026-09-06T06:59:50Z",
+    });
+    await page.evaluate(() => fixture.mountSchedule());
+    await page.waitForFunction(() => fixture.controller);
+    await page.evaluate(() => fixture.controller.onOpenAddClass());
+    await page.getByRole("dialog", { name: "Add class" }).waitFor();
+    const defaults = await page
+      .locator('input[type="date"]')
+      .evaluateAll((inputs) => inputs.map((input) => input.value));
+    assert.ok(defaults.includes("2026-09-05"));
+    assert.ok(!defaults.includes("2026-09-06"));
+    await page.getByRole("button", { name: /One-off session/ }).click();
+    assert.deepEqual(
+      await page
+        .locator('input[type="date"]')
+        .evaluateAll((inputs) => inputs.map((input) => input.value)),
+      ["2026-09-05"],
+    );
+    await page.clock.fastForward(31_000);
+    await page.waitForFunction(() => fixture.store.businessDate === "2026-09-06");
+    assert.deepEqual(
+      await page
+        .locator('input[type="date"]')
+        .evaluateAll((inputs) => inputs.map((input) => input.value)),
+      ["2026-09-05"],
+    );
+    await page.evaluate(() => fixture.controller.onCloseAddClass());
+    await page.evaluate(() => fixture.controller.onJumpToToday());
+    await page.evaluate(() => fixture.controller.onOpenAddClass());
+    assert.equal(
+      await page.evaluate(() => fixture.controller.classFormInitialValues.date),
+      "2026-09-06",
+    );
+    await page.evaluate(() => fixture.root.unmount());
+  } finally {
+    await browser.close();
+  }
+});
+
+for (const entry of ["/students", "/billing"]) {
+  for (const destination of ["/leads", "/reports"]) {
+    test(`cold ${entry} then ${destination} loads its previously omitted data`, async () => {
+      const browser = await chromium.launch();
+      try {
+        const page = await fixturePage(browser, { path: entry });
+        if (entry === "/students") await page.waitForFunction(() => fixture.store.studentsLoaded);
+        assert.equal(await page.evaluate(() => fixture.store.leadsLoaded), false);
+        await page.evaluate((path) => {
+          fixture.autoLeads = true;
+          fixture.navigate(path);
+        }, destination);
+        await page.waitForFunction(() => fixture.store.leadsLoaded && fixture.store.programsLoaded);
+        assert.ok(await page.evaluate(() => fixture.requests.some((r) => r.path === "/leads")));
+        await page.evaluate(() => fixture.root.unmount());
+      } finally {
+        await browser.close();
+      }
+    });
+  }
+}
+
+test("the fallback roster loads its first complete dataset after a Billing entry", async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await fixturePage(browser, {
+      path: "/billing",
+      rosterController: true,
+      pagedRoster: false,
+    });
+    assert.equal(await page.evaluate(() => fixture.store.studentsLoaded), false);
+    await page.evaluate(() => {
+      fixture.rosterEmpty = true;
+      fixture.navigate("/students", "?fullRoster=1");
+      fixture.mountRoster();
+    });
+    await page.waitForFunction(() => fixture.store.studentsLoaded && fixture.store.programsLoaded);
+    assert.equal(await page.evaluate(() => fixture.store.studentsMayBePartial), false);
+    await page.evaluate(() => fixture.root.unmount());
+  } finally {
+    await browser.close();
+  }
+});
+
+test("off-dashboard business commands do not fan out into uncached summary reads", async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await fixturePage(browser, { path: "/leads" });
+    await page.waitForFunction(() => fixture.store.leadsLoaded);
+    await page.evaluate(async () => {
+      fixture.api.patch = async () => fixture.lead;
+      for (let i = 0; i < 30; i += 1)
+        await fixture.store.updateLead("lead-1", { notes: `Edit ${i}` });
+    });
+    assert.equal(await page.evaluate(() => fixture.summaries.length), 0);
+    await page.evaluate(() => {
+      fixture.navigate("/dashboard");
+      fixture.summaryRequest = fixture.store.refreshDashboardSummary();
+    });
+    await page.waitForFunction(() => fixture.summaries.length === 1);
+    await page.evaluate(() => fixture.summaries[0].resolve(fixture.summaryResponse));
+    await page.evaluate(() => fixture.summaryRequest);
+    await page.evaluate(() => fixture.root.unmount());
+  } finally {
+    await browser.close();
+  }
+});
+
+test("an unknown lead save stays locked until dismissal, then a new form is usable", async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await fixturePage(browser, { path: "/leads", leadController: true });
+    await page.evaluate(() => {
+      fixture.writeAttempts = 0;
+      fixture.api.post = async () => {
+        fixture.writeAttempts += 1;
+        throw new fixture.CommandOutcomeUnknown();
+      };
+    });
+    await page.getByRole("button", { name: "New lead", exact: true }).click();
+    const dialog = page.getByRole("dialog", { name: "Add new lead" });
+    await dialog.locator('[name="first_name"]').fill("Synthetic");
+    await dialog.locator('[name="last_name"]').fill("Lead");
+    await dialog.getByRole("button", { name: "Add lead", exact: true }).click();
+    await page.waitForFunction(() => fixture.leadController.addLeadOutcomeUnknown);
+    assert.equal(
+      await dialog.getByRole("button", { name: "Add lead", exact: true }).isEnabled(),
+      false,
+    );
+    assert.equal(await page.evaluate(() => fixture.leadController.isAddingLead), false);
+    assert.equal(await page.evaluate(() => fixture.writeAttempts), 1);
+    await dialog.getByRole("button", { name: "Close add lead dialog" }).click();
+    await page.getByRole("button", { name: "New lead", exact: true }).click();
+    assert.equal(
+      await dialog.getByRole("button", { name: "Add lead", exact: true }).isEnabled(),
+      true,
+    );
+    await page.evaluate(() => fixture.root.unmount());
+  } finally {
+    await browser.close();
+  }
+});
+
+for (const path of ["schedule", "settings", "leads", "reports", "belt-tracker"]) {
+  test(`cold ${path} requests only its own bootstrap projection`, async () => {
+    const browser = await chromium.launch();
+    try {
+      const page = await fixturePage(browser, { path: `/${path}` });
+      await page.waitForFunction(() =>
+        fixture.requests.some((r) => r.path.startsWith("/dashboard/bootstrap")),
+      );
+      const expected = path === "belt-tracker" ? "training" : path;
+      assert.equal(
+        await page.evaluate(
+          () => fixture.requests.find((r) => r.path.startsWith("/dashboard/bootstrap")).path,
+        ),
+        `/dashboard/bootstrap?allow_partial=true&view=${expected}`,
+      );
+      if (["schedule", "settings", "leads", "reports", "belt-tracker"].includes(path)) {
+        await page.waitForFunction(() => fixture.store.programsLoaded);
+        assert.equal(await page.evaluate(() => fixture.store.studentsLoaded), false);
+      }
+    } finally {
+      await browser.close();
+    }
+  });
+}
+
+test("same-build resume verifies access before refreshing visible data and retains the mounted form", async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await fixturePage(browser, { path: "/leads", leadController: true });
+    await page.getByRole("button", { name: "New lead" }).click();
+    const input = page.getByRole("textbox").first();
+    await input.fill("Unsaved lead");
+    await page.evaluate(() => {
+      fixture.resumeEvents = 0;
+      window.addEventListener("koaryu:data-refresh", () => fixture.resumeEvents++);
+      window.dispatchEvent(new Event("koaryu:resume"));
+    });
+    await page.waitForFunction(() => fixture.resumeEvents === 1);
+    await expectValue(input, "Unsaved lead");
+    assert.equal(
+      await page.evaluate(
+        () => fixture.requests.filter((r) => r.path === "/dashboard/workspace").length,
+      ),
+      2,
+    );
+    await page.evaluate(() => {
+      fixture.auth = { ...fixture.auth, role: "instructor" };
+      window.dispatchEvent(new Event("koaryu:resume"));
+    });
+    await page.waitForFunction(() => fixture.store.currentRole === "instructor");
+    assert.equal(await page.evaluate(() => fixture.resumeEvents), 1);
+  } finally {
+    await browser.close();
+  }
+});
+
+async function expectValue(input, expected) {
+  assert.equal(await input.inputValue(), expected);
+}
+
+test("explicit refresh supersedes an older cached visit read", async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await fixturePage(browser);
+    await page.evaluate(() => {
+      fixture.visit = fixture.store.refreshDashboardSummary({ reason: "visit" });
+    });
+    await page.waitForFunction(() => fixture.summaries.length === 1);
+    assert.equal(await page.evaluate(() => fixture.requests.at(-1).path), "/dashboard/summary");
+    await page.evaluate(() => {
+      fixture.refresh = fixture.store.refreshDashboardSummary();
+    });
+    await page.waitForFunction(() => fixture.summaries.length === 2);
+    assert.equal(
+      await page.evaluate(() => fixture.requests.at(-1).path),
+      "/dashboard/summary?fresh=true",
+    );
+    await page.evaluate(() =>
+      fixture.summaries[1].resolve({
+        ...fixture.summaryResponse,
+        students: { ...fixture.summaryResponse.students, total_students: 251 },
+      }),
+    );
+    await page.evaluate(() => fixture.refresh);
+    await page.evaluate(() => fixture.summaries[0].resolve(fixture.summaryResponse));
+    await page.evaluate(() => fixture.visit);
+    assert.equal(
+      await page.evaluate(() => fixture.store.dashboardSummary.students.total_students),
+      251,
+    );
+  } finally {
+    await browser.close();
+  }
+});
+
+test("resuming a student detail forces a second promotion-history read", async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await fixturePage(browser, {
+      path: "/students/student-1",
+      detailController: true,
+    });
+    await page.evaluate(() => fixture.mountDetail());
+    await page.waitForFunction(
+      () =>
+        fixture.details.length === 1 && fixture.requests.some((r) => r.path.includes("promotions")),
+    );
+    await page.evaluate(() => fixture.details[0].resolve(fixture.student));
+    const initial = await page.evaluate(
+      () => fixture.requests.filter((r) => r.path.includes("promotions")).length,
+    );
+    await page.evaluate(() => window.dispatchEvent(new Event("koaryu:resume")));
+    await page.waitForFunction(
+      (before) => fixture.requests.filter((r) => r.path.includes("promotions")).length > before,
+      initial,
+    );
+    await page.waitForFunction(() => fixture.details.length === 2);
+    await page.evaluate(() => fixture.details[1].resolve(fixture.student));
+  } finally {
+    await browser.close();
+  }
+});
+
+test("Settings does not start a deferred belt read after its metadata projection", async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await fixturePage(browser, { path: "/settings" });
+    await page.waitForFunction(() => fixture.store.programsLoaded);
+    await page.evaluate(
+      () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+    );
+    assert.equal(
+      await page.evaluate(() => fixture.requests.some((r) => r.path.includes("/belts"))),
+      false,
+    );
+  } finally {
+    await browser.close();
+  }
+});
+
+test("resume access denial clears prior studio records", async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await fixturePage(browser);
+    await page.waitForFunction(() => fixture.store.students.length > 0);
+    await page.evaluate(() => {
+      const original = fixture.api.get;
+      fixture.api.get = (path, ...args) =>
+        path === "/dashboard/workspace"
+          ? Promise.reject(Object.assign(new Error("Studio access revoked"), { status: 403 }))
+          : original(path, ...args);
+      window.dispatchEvent(new Event("koaryu:resume"));
+    });
+    await page.waitForFunction(
+      () => !fixture.store.identityReady && fixture.store.students.length === 0,
+    );
+    assert.equal(
+      await page.evaluate(() => document.cookie.includes("koaryu-active-studio=studio-a")),
+      false,
+    );
+  } finally {
+    await browser.close();
+  }
+});
+
+test("resume verification waits again for a command that started during its read", async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await fixturePage(browser);
+    await page.evaluate(() => {
+      fixture.resumeReads = 0;
+      fixture.resumeEvents = 0;
+      window.addEventListener("koaryu:data-refresh", () => fixture.resumeEvents++);
+      const original = fixture.api.get;
+      fixture.api.get = (path, ...args) =>
+        path === "/dashboard/workspace" && ++fixture.resumeReads === 1
+          ? new Promise((resolve) => {
+              fixture.releaseWorkspace = resolve;
+            })
+          : original(path, ...args);
+      window.dispatchEvent(new Event("koaryu:resume"));
+    });
+    await page.waitForFunction(() => fixture.releaseWorkspace);
+    await page.evaluate(() => {
+      fixture.finishCommand = fixture.beginPendingCommand();
+      fixture.releaseWorkspace({ auth: fixture.auth });
+    });
+    await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(resolve)));
+    assert.equal(await page.evaluate(() => fixture.resumeEvents), 0);
+    await page.evaluate(() => fixture.finishCommand());
+    await page.waitForFunction(() => fixture.resumeEvents === 1);
+    assert.equal(await page.evaluate(() => fixture.resumeReads), 2);
+  } finally {
+    await browser.close();
+  }
+});
+
+test("resume restores externally renewed subscription access", async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await fixturePage(browser);
+    await page.evaluate(() => {
+      fixture.store.markSubscriptionRequired();
+      fixture.navigate("/subscription-required");
+    });
+    await page.waitForFunction(() => fixture.store.subscriptionRequired);
+    await page.evaluate(() => window.dispatchEvent(new Event("koaryu:resume")));
+    await page.waitForFunction(() => !fixture.store.subscriptionRequired);
+    assert.equal(await page.evaluate(() => fixture.redirects.includes("/dashboard")), true);
+  } finally {
+    await browser.close();
+  }
+});
+
+test("detail resume continues after an independent belt-read failure", async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await fixturePage(browser, {
+      path: "/students/student-1",
+      detailController: true,
+    });
+    await page.evaluate(() => fixture.mountDetail());
+    await page.waitForFunction(() => fixture.details.length === 1);
+    await page.evaluate(() => fixture.details[0].resolve(fixture.student));
+    await page.evaluate(() => {
+      const original = fixture.api.get;
+      fixture.api.get = (path, ...args) =>
+        path === "/belts/ladders"
+          ? Promise.reject(new Error("Belt provider unavailable"))
+          : original(path, ...args);
+      window.dispatchEvent(new Event("koaryu:resume"));
+    });
+    await page.waitForFunction(() => fixture.details.length === 2);
+    await page.evaluate(() => fixture.details[1].resolve(fixture.student));
+  } finally {
+    await browser.close();
+  }
+});
+
+test("resumed schedule updates or closes its selected session and refreshes its roster", async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await fixturePage(browser, { path: "/schedule", scheduleController: true });
+    await page.evaluate(() => {
+      fixture.scheduleRow = {
+        id: "session-one",
+        date: fixture.store.businessDate,
+        name: "Before",
+        start_time: "10:00",
+        end_time: "11:00",
+        attendance_count: 0,
+      };
+      const get = fixture.api.get,
+        post = fixture.api.post;
+      const windowData = () => ({
+        sessions: fixture.scheduleRow ? [fixture.scheduleRow] : [],
+        attendance: [],
+        templates: [],
+      });
+      fixture.api.get = (path, ...args) =>
+        path.startsWith("/schedule/window")
+          ? Promise.resolve(windowData())
+          : path.includes("attendance")
+            ? Promise.resolve([])
+            : path.startsWith("/students?")
+              ? Promise.resolve({
+                  items: [fixture.student],
+                  total: 1,
+                  page_size: 200,
+                  page_ordinal: 1,
+                  has_next: false,
+                })
+              : get(path, ...args);
+      fixture.api.post = (path, ...args) =>
+        path.startsWith("/schedule/window") ? Promise.resolve(windowData()) : post(path, ...args);
+      fixture.mountSchedule();
+    });
+    await page.waitForFunction(() =>
+      fixture.controller?.sessions.some((s) => s.id === "session-one"),
+    );
+    await page.evaluate(() => fixture.controller.onOpenSession(fixture.controller.sessions[0]));
+    await page.waitForFunction(() => fixture.controller.selectedSession?.name === "Before");
+    await page.evaluate(() => {
+      fixture.scheduleRow = { ...fixture.scheduleRow, name: "After" };
+      fixture.student = { ...fixture.student, legal_first_name: "Renamed" };
+      window.dispatchEvent(new Event("koaryu:resume"));
+    });
+    await page.waitForFunction(
+      () =>
+        fixture.controller.selectedSession?.name === "After" &&
+        fixture.controller.activeStudents[0]?.legal_first_name === "Renamed",
+    );
+    await page.evaluate(() => {
+      fixture.scheduleRow = null;
+      window.dispatchEvent(new Event("koaryu:resume"));
+    });
+    await page.waitForFunction(() => fixture.controller.selectedSession === null);
+  } finally {
+    await browser.close();
+  }
+});
+
+const syntheticWeeklyTemplate = (businessDate) => ({
+  id: "template-1",
+  studio_id: "studio-a",
+  name: "Synthetic Weekly",
+  day_of_week: 1,
+  start_time: "17:00",
+  end_time: "18:00",
+  start_date: businessDate,
+  is_active: true,
+  created_at: "2026-09-12T12:00:00Z",
+  updated_at: "2026-09-12T12:00:00Z",
+});
+
+// Let any timer-delayed follow-up request surface before counting.
+const settle = async (page) => {
+  await page.waitForTimeout(250);
+  await flush(page);
+};
+
+// Records every schedule window read and materialization with its token, so a test can
+// prove the store is the only post-create refresh owner.
+async function mountCountedSchedule(page) {
+  await page.evaluate(() => {
+    const get = fixture.api.get,
+      post = fixture.api.post;
+    fixture.windowRequests = [];
+    fixture.heldWindows = [];
+    const windowRead = (method, path, token, read) => {
+      fixture.windowRequests.push({ call: `${method} ${path.split("?")[0]}`, token });
+      if (fixture.holdWindow)
+        return new Promise((resolve, reject) =>
+          fixture.heldWindows.push({ release: () => read().then(resolve, reject) }),
+        );
+      return fixture.failWindow
+        ? Promise.reject(new Error("Synthetic schedule window failure"))
+        : read();
+    };
+    fixture.api.get = (path, token, ...rest) =>
+      path.startsWith("/schedule/window")
+        ? windowRead("GET", path, token, () => get(path, token, ...rest))
+        : get(path, token, ...rest);
+    fixture.api.post = (path, body, token, ...rest) =>
+      path.startsWith("/schedule/window")
+        ? windowRead("POST", path, token, () => post(path, body, token, ...rest))
+        : post(path, body, token, ...rest);
+    fixture.mountSchedule();
+  });
+  await page.waitForFunction(() => fixture.controller?.hasLoadedRange);
+}
+
+const windowCallsSince = (page, before) =>
+  page.evaluate((index) => fixture.windowRequests.slice(index), before);
+
+async function startWeeklyCreate(page) {
+  await page.evaluate(() => fixture.controller.onOpenAddClass());
+  await page.waitForFunction(() => fixture.controller.showAddClass);
+  await page.evaluate(() => {
+    fixture.create = fixture.controller.onCreateClass({
+      kind: "weekly_template",
+      name: "Synthetic Weekly",
+      startTime: "17:00",
+      endTime: "18:00",
+      recurrence: { frequency: "weekly", dayOfWeek: 1, startDate: fixture.store.businessDate },
+    });
+  });
+  await page.waitForFunction(() => fixture.writes.some((w) => w.path === "/schedule/templates"));
+}
+
+async function confirmTemplatePost(page) {
+  const before = await page.evaluate(() => fixture.windowRequests.length);
+  const businessDate = await page.evaluate(() => fixture.store.businessDate);
+  await page.evaluate(
+    (template) => fixture.writes.find((w) => w.path === "/schedule/templates").resolve(template),
+    syntheticWeeklyTemplate(businessDate),
+  );
+  return before;
+}
+
+async function createOutcome(page, before) {
+  await page.evaluate(() => fixture.create);
+  await settle(page);
+  return page.evaluate(
+    (index) => ({
+      actionMessage: fixture.controller.actionMessage,
+      createClassError: fixture.controller.createClassError,
+      isCreatingClass: fixture.controller.isCreatingClass,
+      scheduleLoadError: fixture.controller.scheduleLoadError,
+      showAddClass: fixture.controller.showAddClass,
+      templatePosts: fixture.writes.filter((w) => w.path === "/schedule/templates").length,
+      postCreateWindowCalls: fixture.windowRequests.slice(index).map((request) => request.call),
+    }),
+    before,
+  );
+}
+
+test("a confirmed recurring class is materialized once, by the store, before its form closes", async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await fixturePage(browser, { path: "/schedule", scheduleController: true });
+    await mountCountedSchedule(page);
+    await startWeeklyCreate(page);
+    const created = await createOutcome(page, await confirmTemplatePost(page));
+    assert.deepEqual(
+      created.postCreateWindowCalls,
+      ["POST /schedule/window/materialize"],
+      "the store's reconciliation is the only post-create schedule refresh",
+    );
+    assert.equal(created.showAddClass, false);
+    assert.equal(created.isCreatingClass, false);
+    assert.equal(created.createClassError, null);
+    assert.equal(created.scheduleLoadError, null);
+    assert.equal(created.actionMessage, "Recurring class created and visible sessions refreshed.");
+    assert.equal(created.templatePosts, 1);
+    await page.evaluate(() => fixture.root.unmount());
+  } finally {
+    await browser.close();
+  }
+});
+
+test("a confirmed recurring class closes its form when the follow-up refresh fails, and Retry only refreshes", async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await fixturePage(browser, { path: "/schedule", scheduleController: true });
+    await mountCountedSchedule(page);
+    await startWeeklyCreate(page);
+    await page.evaluate(() => {
+      fixture.failWindow = true;
+    });
+    const created = await createOutcome(page, await confirmTemplatePost(page));
+    assert.deepEqual(
+      created.postCreateWindowCalls,
+      ["POST /schedule/window/materialize"],
+      "a failed store reconciliation is not followed by a second post-create refresh",
+    );
+    assert.equal(created.showAddClass, false, "the acknowledged create must close its draft");
+    assert.equal(created.isCreatingClass, false);
+    assert.equal(created.createClassError, null, "a refresh failure is not a creation failure");
+    assert.equal(created.actionMessage, "Recurring class created.");
+    assert.match(created.scheduleLoadError, /created, but its visible sessions could not refresh/i);
+    assert.equal(created.templatePosts, 1);
+
+    const beforeRetry = await page.evaluate(() => {
+      fixture.failWindow = false;
+      const index = fixture.windowRequests.length;
+      fixture.controller.onRetryRange();
+      return index;
+    });
+    await page.waitForFunction(
+      (index) =>
+        fixture.windowRequests.length > index &&
+        fixture.controller.scheduleLoadError === null &&
+        !fixture.controller.isRefreshingRange,
+      beforeRetry,
+    );
+    await settle(page);
+    assert.deepEqual(
+      (await windowCallsSince(page, beforeRetry)).map((request) => request.call),
+      ["POST /schedule/window/materialize"],
+      "Retry materializes the visible range",
+    );
+    assert.equal(
+      await page.evaluate(
+        () => fixture.writes.filter((w) => w.path === "/schedule/templates").length,
+      ),
+      1,
+      "Retry refreshes the range without submitting another template",
+    );
+    assert.equal(await page.evaluate(() => fixture.controller.showAddClass), false);
+    await page.evaluate(() => fixture.root.unmount());
+  } finally {
+    await browser.close();
+  }
+});
+
+async function startHeldSessionWrite(page, name) {
+  const count = await page.evaluate(
+    () => fixture.writes.filter((w) => w.path === "/schedule/sessions").length,
+  );
+  await page.evaluate((key) => {
+    fixture[key] = fixture.store.addSession({
+      name: "Held one-off",
+      date: fixture.store.businessDate,
+      start_time: "09:00",
+      end_time: "10:00",
+    });
+  }, name);
+  await page.waitForFunction(
+    (before) => fixture.writes.filter((w) => w.path === "/schedule/sessions").length > before,
+    count,
+  );
+  return count;
+}
+
+async function resolveSessionWrite(page, index, id) {
+  await page.evaluate(
+    ({ index, id }) =>
+      fixture.writes
+        .filter((w) => w.path === "/schedule/sessions")
+        [index].resolve({ ...fixture.heldSessionTemplate, id }),
+    { index, id },
+  );
+}
+
+async function trackCreateSettlement(page) {
+  await page.evaluate(() => {
+    fixture.heldSessionTemplate = {
+      studio_id: "studio-a",
+      name: "Held one-off",
+      date: fixture.store.businessDate,
+      start_time: "09:00",
+      end_time: "10:00",
+      status: "scheduled",
+      created_at: "2026-09-12T12:00:00Z",
+      attendance_count: 0,
+    };
+    fixture.createSettled = false;
+    void fixture.create.then(() => {
+      fixture.createSettled = true;
+    });
+  });
+}
+
+for (const sharedRefreshFails of [true, false]) {
+  test(`a recurring class confirmed during another schedule write closes, then reports the shared refresh ${sharedRefreshFails ? "failure" : "success"}`, async () => {
+    const browser = await chromium.launch();
+    try {
+      const page = await fixturePage(browser, { path: "/schedule", scheduleController: true });
+      await mountCountedSchedule(page);
+      await startHeldSessionWrite(page, "otherWrite");
+      await startWeeklyCreate(page);
+      await trackCreateSettlement(page);
+      await page.evaluate((fail) => {
+        fixture.failWindow = fail;
+      }, sharedRefreshFails);
+      const before = await confirmTemplatePost(page);
+      await settle(page);
+      assert.deepEqual(
+        await windowCallsSince(page, before),
+        [],
+        "the shared reconciliation waits for the other write to settle",
+      );
+      assert.deepEqual(
+        await page.evaluate(() => ({
+          showAddClass: fixture.controller.showAddClass,
+          isCreatingClass: fixture.controller.isCreatingClass,
+          actionMessage: fixture.controller.actionMessage,
+          createSettled: fixture.createSettled,
+        })),
+        {
+          showAddClass: false,
+          isCreatingClass: false,
+          actionMessage: "Recurring class created.",
+          createSettled: false,
+        },
+        "the confirmed create closes at once while its refresh waits",
+      );
+      await resolveSessionWrite(page, 0, "session-held");
+      await page.evaluate(() => fixture.otherWrite);
+      const created = await createOutcome(page, before);
+      assert.deepEqual(created.postCreateWindowCalls, ["POST /schedule/window/materialize"]);
+      assert.equal(created.createClassError, null);
+      if (sharedRefreshFails) {
+        assert.equal(created.actionMessage, "Recurring class created.");
+        assert.match(
+          created.scheduleLoadError,
+          /created, but its visible sessions could not refresh/i,
+          "the create reports the shared refresh failure instead of dropping it",
+        );
+      } else {
+        assert.equal(
+          created.actionMessage,
+          "Recurring class created and visible sessions refreshed.",
+        );
+        assert.equal(created.scheduleLoadError, null);
+      }
+      await page.evaluate(() => fixture.root.unmount());
+    } finally {
+      await browser.close();
+    }
+  });
+}
+
+test("an earlier write's reconciliation does not settle a create waiting on a later write", async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await fixturePage(browser, { path: "/schedule", scheduleController: true });
+    await mountCountedSchedule(page);
+    await startHeldSessionWrite(page, "firstWrite");
+    await page.evaluate(() => {
+      fixture.holdWindow = true;
+    });
+    const before = await page.evaluate(() => fixture.windowRequests.length);
+    await resolveSessionWrite(page, 0, "session-first");
+    // The first write's own promise includes its held reconciliation, so it is not awaited here.
+    await page.waitForFunction(() => fixture.heldWindows.length === 1);
+    await startHeldSessionWrite(page, "secondWrite");
+    await startWeeklyCreate(page);
+    await trackCreateSettlement(page);
+    await confirmTemplatePost(page);
+    // The first write's reconciliation started before the second write, so it cannot cover it.
+    await page.evaluate(() => {
+      fixture.holdWindow = false;
+      fixture.heldWindows[0].release();
+    });
+    await settle(page);
+    assert.equal(await page.evaluate(() => fixture.createSettled), false);
+    await page.evaluate(() => {
+      fixture.failWindow = true;
+    });
+    await resolveSessionWrite(page, 1, "session-second");
+    await page.evaluate(() => fixture.secondWrite);
+    const created = await createOutcome(page, before);
+    assert.deepEqual(created.postCreateWindowCalls, [
+      "POST /schedule/window/materialize",
+      "POST /schedule/window/materialize",
+    ]);
+    assert.match(created.scheduleLoadError, /created, but its visible sessions could not refresh/i);
+    await page.evaluate(() => fixture.root.unmount());
+  } finally {
+    await browser.close();
+  }
+});
+
+test("a write abandoned by a coordinator reset does not settle a create from the new epoch", async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await fixturePage(browser, { path: "/schedule", scheduleController: true });
+    await mountCountedSchedule(page);
+    await startHeldSessionWrite(page, "abandonedWrite");
+    await page.evaluate(() =>
+      fixture.emit("SIGNED_IN", { ...fixture.session, access_token: "synthetic-reset" }),
+    );
+    await page.waitForFunction(() => fixture.store.token === "synthetic-reset");
+    await startHeldSessionWrite(page, "currentWrite");
+    await startWeeklyCreate(page);
+    await trackCreateSettlement(page);
+    const before = await confirmTemplatePost(page);
+    await resolveSessionWrite(page, 0, "session-abandoned");
+    await page.evaluate(() => fixture.abandonedWrite);
+    await settle(page);
+    assert.equal(await page.evaluate(() => fixture.createSettled), false);
+    await page.evaluate(() => {
+      fixture.failWindow = true;
+    });
+    await resolveSessionWrite(page, 1, "session-current");
+    await page.evaluate(() => fixture.currentWrite);
+    const created = await createOutcome(page, before);
+    assert.deepEqual(created.postCreateWindowCalls, ["POST /schedule/window/materialize"]);
+    assert.match(created.scheduleLoadError, /created, but its visible sessions could not refresh/i);
+    await page.evaluate(() => fixture.root.unmount());
+  } finally {
+    await browser.close();
+  }
+});
+
+test("a create waiting on a write that a reset abandons still settles without a failure", async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await fixturePage(browser, { path: "/schedule", scheduleController: true });
+    await mountCountedSchedule(page);
+    await startHeldSessionWrite(page, "abandonedWrite");
+    await startWeeklyCreate(page);
+    await trackCreateSettlement(page);
+    const before = await confirmTemplatePost(page);
+    await page.evaluate(() =>
+      fixture.emit("SIGNED_IN", { ...fixture.session, access_token: "synthetic-reset" }),
+    );
+    await page.waitForFunction(() => fixture.store.token === "synthetic-reset");
+    await resolveSessionWrite(page, 0, "session-abandoned");
+    await page.waitForFunction(() => fixture.createSettled, null, { timeout: 5000 });
+    const created = await createOutcome(page, before);
+    assert.equal(created.actionMessage, "Recurring class created.");
+    assert.equal(created.scheduleLoadError, null);
+    assert.equal(created.createClassError, null);
+    await page.evaluate(() => fixture.root.unmount());
+  } finally {
+    await browser.close();
+  }
+});
+
+test("other schedule writes settle without waiting for a pending create's refresh", async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await fixturePage(browser, { path: "/schedule", scheduleController: true });
+    await mountCountedSchedule(page);
+    await startWeeklyCreate(page);
+    await startHeldSessionWrite(page, "otherWrite");
+    await trackCreateSettlement(page);
+    await resolveSessionWrite(page, 0, "session-other");
+    assert.equal(
+      await page.evaluate(() =>
+        Promise.race([
+          fixture.otherWrite.then(() => "settled"),
+          new Promise((resolve) => setTimeout(() => resolve("waiting"), 1000)),
+        ]),
+      ),
+      "settled",
+      "a one-off session write does not wait for the template create",
+    );
+    const created = await createOutcome(page, await confirmTemplatePost(page));
+    assert.deepEqual(created.postCreateWindowCalls, ["POST /schedule/window/materialize"]);
+    assert.equal(created.actionMessage, "Recurring class created and visible sessions refreshed.");
+    await page.evaluate(() => fixture.root.unmount());
+  } finally {
+    await browser.close();
+  }
+});
+
+for (const replayFails of [false, true]) {
+  test(`a token renewal during the post-create materialization replays it with current auth (${replayFails ? "replay fails" : "replay succeeds"})`, async () => {
+    const browser = await chromium.launch();
+    try {
+      const page = await fixturePage(browser, { path: "/schedule", scheduleController: true });
+      await mountCountedSchedule(page);
+      await startWeeklyCreate(page);
+      await page.evaluate(() => {
+        fixture.holdWindow = true;
+      });
+      const before = await confirmTemplatePost(page);
+      await page.waitForFunction(() => fixture.heldWindows.length === 1);
+      assert.deepEqual(
+        await page.evaluate(() => [
+          fixture.controller.showAddClass,
+          fixture.controller.isCreatingClass,
+        ]),
+        [false, false],
+        "the confirmed create closes before its refresh settles",
+      );
+      await page.evaluate(() =>
+        fixture.emit("TOKEN_REFRESHED", { ...fixture.session, access_token: "synthetic-renewed" }),
+      );
+      await page.waitForFunction(() => fixture.store.token === "synthetic-renewed");
+      await page.evaluate((fail) => {
+        fixture.holdWindow = false;
+        fixture.failWindow = fail;
+        fixture.heldWindows[0].release();
+      }, replayFails);
+      const created = await createOutcome(page, before);
+      const materializations = (await windowCallsSince(page, before)).filter(
+        (request) => request.call === "POST /schedule/window/materialize",
+      );
+      assert.deepEqual(
+        materializations.map((request) => request.token),
+        ["synthetic-a", "synthetic-renewed"],
+        "the renewal's background read does not stand in for the discarded materialization",
+      );
+      assert.equal(created.showAddClass, false);
+      assert.equal(created.createClassError, null);
+      assert.equal(created.templatePosts, 1);
+      if (replayFails) {
+        assert.equal(created.actionMessage, "Recurring class created.");
+        assert.match(
+          created.scheduleLoadError,
+          /created, but its visible sessions could not refresh/i,
+        );
+      } else {
+        assert.equal(
+          created.actionMessage,
+          "Recurring class created and visible sessions refreshed.",
+        );
+        assert.equal(created.scheduleLoadError, null);
+      }
+      await page.evaluate(() => fixture.root.unmount());
+    } finally {
+      await browser.close();
+    }
+  });
+}
+
+test("a sign-out during the post-create materialization neither replays nor reports a failure", async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await fixturePage(browser, { path: "/schedule", scheduleController: true });
+    await mountCountedSchedule(page);
+    await startWeeklyCreate(page);
+    await page.evaluate(() => {
+      fixture.holdWindow = true;
+    });
+    const before = await confirmTemplatePost(page);
+    await page.waitForFunction(() => fixture.heldWindows.length === 1);
+    await page.evaluate(() => fixture.emit("SIGNED_OUT", null));
+    await page.waitForFunction(() => fixture.store.token === null);
+    await page.evaluate(() => {
+      fixture.holdWindow = false;
+      fixture.heldWindows[0].release();
+    });
+    const created = await createOutcome(page, before);
+    assert.deepEqual(
+      created.postCreateWindowCalls,
+      ["POST /schedule/window/materialize"],
+      "no replay runs without the same signed-in identity",
+    );
+    assert.equal(created.scheduleLoadError, null, "a sign-out is not a refresh failure");
+    assert.equal(created.createClassError, null);
+    assert.equal(created.actionMessage, "Recurring class created.");
+    await page.evaluate(() => fixture.root.unmount());
+  } finally {
+    await browser.close();
+  }
+});
+
+test("a pending recurring class cannot be submitted twice, and its confirmed form is gone", async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await fixturePage(browser, {
+      path: "/schedule",
+      scheduleController: true,
+      scheduleForm: true,
+    });
+    await mountCountedSchedule(page);
+    await page.evaluate(() => fixture.controller.onOpenAddClass());
+    const dialog = page.getByRole("dialog", { name: "Add class" });
+    await dialog.waitFor();
+    await dialog.getByLabel("Class name *").fill("Synthetic Weekly");
+    // Two submissions in one tick read the same render; only a synchronous guard refuses both.
+    await page.evaluate(() => {
+      const controller = fixture.controller;
+      const payload = {
+        kind: "weekly_template",
+        name: "Synthetic Weekly",
+        startTime: "18:00",
+        endTime: "19:30",
+        recurrence: { frequency: "weekly", dayOfWeek: 1, startDate: fixture.store.businessDate },
+      };
+      void controller.onCreateClass(payload);
+      void controller.onCreateClass(payload);
+    });
+    await page.waitForFunction(() => fixture.controller.isCreatingClass);
+    const submit = dialog.getByRole("button", { name: "Create weekly template" });
+    assert.equal(await submit.isDisabled(), true, "the pending submit button is disabled");
+    // A form submission that bypasses the disabled button is still refused.
+    await dialog.locator("form").evaluate((form) => form.requestSubmit());
+    await settle(page);
+    assert.equal(
+      await page.evaluate(
+        () => fixture.writes.filter((w) => w.path === "/schedule/templates").length,
+      ),
+      1,
+    );
+    await page.evaluate(() => {
+      fixture.failWindow = true;
+      fixture.writes
+        .find((w) => w.path === "/schedule/templates")
+        .resolve({
+          id: "template-1",
+          studio_id: "studio-a",
+          name: "Synthetic Weekly",
+          day_of_week: 1,
+          start_time: "18:00",
+          end_time: "19:30",
+          start_date: fixture.store.businessDate,
+          is_active: true,
+          created_at: "2026-09-12T12:00:00Z",
+          updated_at: "2026-09-12T12:00:00Z",
+        });
+    });
+    await dialog.waitFor({ state: "detached" });
+    assert.equal(await page.evaluate(() => fixture.controller.createClassError), null);
+    assert.equal(
+      await page.evaluate(
+        () => fixture.writes.filter((w) => w.path === "/schedule/templates").length,
+      ),
+      1,
+    );
+    await page.evaluate(() => fixture.root.unmount());
+  } finally {
+    await browser.close();
+  }
+});
+
+async function mountOwnedStudentDetail(page) {
+  await page.evaluate(() => {
+    fixture.photoWrites = [];
+    fixture.api.postForm = (path, _body, token) => {
+      fixture.events.push(path);
+      return new Promise((resolve, reject) =>
+        fixture.photoWrites.push({ path, token, resolve, reject }),
+      );
+    };
+    fixture.studentWrites = (id) => [
+      ...fixture.photoWrites.filter((w) => w.path.includes(id)).map((w) => `PHOTO ${w.path}`),
+      ...fixture.writes
+        .filter((w) => w.path.includes(id) || w.body?.student_ids?.includes(id))
+        .map((w) => `WRITE ${w.path}`),
+    ];
+    fixture.outcome = (promise) =>
+      Promise.race([
+        Promise.resolve(promise).then(
+          () => "ok",
+          (error) => error.message,
+        ),
+        new Promise((resolve) => setTimeout(() => resolve("pending"), 300)),
+      ]);
+    fixture.photoFile = () => new File(["p"], "photo.png", { type: "image/png" });
+    fixture.createdUrls = [];
+    fixture.revokedUrls = [];
+    const createObjectURL = URL.createObjectURL.bind(URL);
+    const revokeObjectURL = URL.revokeObjectURL.bind(URL);
+    URL.createObjectURL = (file) => {
+      const url = createObjectURL(file);
+      fixture.createdUrls.push(url);
+      return url;
+    };
+    URL.revokeObjectURL = (url) => {
+      fixture.revokedUrls.push(url);
+      revokeObjectURL(url);
+    };
+    fixture.mountDetail();
+  });
+  await page.waitForFunction(() => fixture.details.length === 1);
+  await page.evaluate(() => fixture.details[0].resolve(fixture.student));
+  await page.waitForFunction(() => fixture.detail.detailReady);
+}
+
+const detailFacts = (page) =>
+  page.evaluate(() => {
+    const stored = fixture.store.students.find((s) => s.id === "student-1");
+    return {
+      detailName: fixture.detail.student.legal_first_name,
+      detailPhoto: fixture.detail.student.photo_url,
+      detailTags: fixture.detail.student.tags,
+      storedName: stored?.legal_first_name,
+      storedPhoto: stored?.photo_url,
+      pending: fixture.detail.isStudentCommandPending,
+    };
+  });
+
+test("a pending student photo owns detail and store commands until it settles", async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await fixturePage(browser, {
+      path: "/students/student-1",
+      detailController: true,
+    });
+    await mountOwnedStudentDetail(page);
+    await page.evaluate(() => {
+      fixture.photo = fixture.detail.onPhotoSelected(fixture.photoFile());
+      fixture.repeat = fixture.detail.onPhotoSelected(fixture.photoFile());
+      fixture.attempts = {
+        detailEdit: fixture.detail.onEdit({ legal_first_name: "Overlap" }),
+        detailArchive: fixture.detail.onDeleteStudent(),
+        detailRemovePhoto: fixture.detail.onDeletePhoto(),
+        storeEdit: fixture.store.updateStudent("student-1", { legal_first_name: "Store" }),
+        storeArchive: fixture.store.deleteStudents(["student-2", "student-1"]),
+        storeRemovePhoto: fixture.store.deleteStudentPhoto("student-1"),
+        storeUpload: fixture.store.uploadStudentPhoto("student-1", fixture.photoFile()),
+      };
+    });
+    await flush(page);
+    assert.deepEqual(
+      await page.evaluate(() => fixture.studentWrites("student-1")),
+      ["PHOTO /students/student-1/photo"],
+      "only the owning photo command may write while it is pending",
+    );
+    assert.deepEqual(await page.evaluate(() => fixture.studentWrites("student-2")), []);
+    const outcomes = await page.evaluate(async () =>
+      Object.fromEntries(
+        await Promise.all(
+          Object.entries(fixture.attempts).map(async ([name, promise]) => [
+            name,
+            await fixture.outcome(promise),
+          ]),
+        ),
+      ),
+    );
+    const busy = /another change to this student is still saving/i;
+    assert.match(outcomes.detailEdit, busy);
+    assert.equal(outcomes.detailArchive, "ok");
+    assert.equal(outcomes.detailRemovePhoto, "ok");
+    for (const name of ["storeEdit", "storeArchive", "storeRemovePhoto", "storeUpload"])
+      assert.match(outcomes[name], busy, name);
+    assert.equal(await page.evaluate(() => fixture.repeat), false);
+    assert.equal(await page.evaluate(() => fixture.detail.showDeleteConfirm), false);
+    assert.equal(await page.evaluate(() => typeof fixture.detail.photoPreviewUrl), "string");
+    assert.equal((await detailFacts(page)).pending, true);
+
+    // An unrelated student is not blocked, including one named in the refused archive.
+    await page.evaluate(() => {
+      fixture.other = fixture.store.updateStudent("student-2", { legal_first_name: "Other" });
+    });
+    await page.waitForFunction(() => fixture.studentWrites("student-2").length === 1);
+    await page.evaluate(() =>
+      fixture.writes
+        .find((w) => w.path === "/students/student-2")
+        .resolve({ ...fixture.student, id: "student-2", legal_first_name: "Other" }),
+    );
+    await page.evaluate(() => fixture.other);
+
+    await page.evaluate(() =>
+      fixture.photoWrites[0].resolve({
+        ...fixture.student,
+        photo_path: "students/student-1/a.png",
+        photo_url: "https://synthetic.invalid/a.png",
+      }),
+    );
+    assert.equal(await page.evaluate(() => fixture.photo), true);
+    await page.waitForFunction(() => !fixture.detail.isStudentCommandPending);
+    assert.deepEqual(await detailFacts(page), {
+      detailName: "Ari",
+      detailPhoto: "https://synthetic.invalid/a.png",
+      detailTags: [],
+      storedName: "Ari",
+      storedPhoto: "https://synthetic.invalid/a.png",
+      pending: false,
+    });
+    assert.equal(await page.evaluate(() => fixture.detail.photoPreviewUrl), null);
+    assert.equal(await page.evaluate(() => fixture.detail.actionMessage), "Student photo updated.");
+
+    await page.evaluate(() => {
+      fixture.nextEdit = fixture.detail.onEdit({ legal_first_name: "Bea" });
+    });
+    await page.waitForFunction(() => fixture.studentWrites("student-1").length === 2);
+    await page.evaluate(() =>
+      fixture.writes
+        .find((w) => w.path === "/students/student-1")
+        .resolve({
+          ...fixture.student,
+          legal_first_name: "Bea",
+          photo_path: "students/student-1/a.png",
+          photo_url: "https://synthetic.invalid/a.png",
+          tags: ["server-record"],
+        }),
+    );
+    await page.evaluate(() => fixture.nextEdit);
+    await page.waitForFunction(() => !fixture.detail.isStudentCommandPending);
+    assert.deepEqual(await detailFacts(page), {
+      detailName: "Bea",
+      detailPhoto: "https://synthetic.invalid/a.png",
+      detailTags: ["server-record"],
+      storedName: "Bea",
+      storedPhoto: "https://synthetic.invalid/a.png",
+      pending: false,
+    });
+    assert.deepEqual(await page.evaluate(() => fixture.studentWrites("student-1")), [
+      "PHOTO /students/student-1/photo",
+      "WRITE /students/student-1",
+    ]);
+    await page.evaluate(() => fixture.root.unmount());
+  } finally {
+    await browser.close();
+  }
+});
+
+test("a rejected student photo releases ownership without hydrating failed facts", async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await fixturePage(browser, {
+      path: "/students/student-1",
+      detailController: true,
+    });
+    await mountOwnedStudentDetail(page);
+    await page.evaluate(() => {
+      fixture.photo = fixture.detail.onPhotoSelected(fixture.photoFile());
+    });
+    await page.waitForFunction(() => fixture.detail.isStudentCommandPending);
+    await page.evaluate(() => {
+      fixture.overlap = fixture.outcome(fixture.detail.onEdit({ legal_first_name: "Overlap" }));
+    });
+    assert.match(await page.evaluate(() => fixture.overlap), /still saving/i);
+    await page.evaluate(() => fixture.photoWrites[0].reject(Error("Synthetic upload failure")));
+    await page.evaluate(() => fixture.photo);
+    await page.waitForFunction(() => !fixture.detail.isStudentCommandPending);
+    assert.equal(await page.evaluate(() => fixture.detail.photoError), "Synthetic upload failure");
+    assert.equal(await page.evaluate(() => fixture.detail.photoPreviewUrl), null);
+    assert.deepEqual(await detailFacts(page), {
+      detailName: "Ari",
+      detailPhoto: null,
+      detailTags: [],
+      storedName: "Ari",
+      storedPhoto: null,
+      pending: false,
+    });
+
+    await page.evaluate(() => {
+      fixture.nextEdit = fixture.detail.onEdit({ legal_first_name: "Cai" });
+    });
+    await page.waitForFunction(() => fixture.studentWrites("student-1").length === 2);
+    await page.evaluate(() =>
+      fixture.writes
+        .find((w) => w.path === "/students/student-1")
+        .resolve({ ...fixture.student, legal_first_name: "Cai" }),
+    );
+    await page.evaluate(() => fixture.nextEdit);
+    assert.equal((await detailFacts(page)).detailName, "Cai");
+    assert.equal((await detailFacts(page)).storedName, "Cai");
+
+    await page.evaluate(() => {
+      fixture.detail.onShowDeleteConfirm();
+    });
+    await page.waitForFunction(() => fixture.detail.showDeleteConfirm);
+    await page.evaluate(() => {
+      fixture.archive = fixture.detail.onDeleteStudent();
+    });
+    await page.waitForFunction(() => fixture.studentWrites("student-1").length === 3);
+    assert.equal(
+      await page.evaluate(() => fixture.outcome(fixture.store.updateStudent("student-1", {}))),
+      "Another change to this student is still saving. Try again when it finishes.",
+    );
+    await page.evaluate(() =>
+      fixture.writes.find((w) => w.path === "/students/bulk/archive").resolve({ updated: 1 }),
+    );
+    await page.evaluate(() => fixture.archive);
+    assert.deepEqual(await page.evaluate(() => fixture.redirects), ["/students"]);
+    assert.equal(
+      await page.evaluate(() => fixture.store.students.some((s) => s.id === "student-1")),
+      false,
+    );
+    assert.deepEqual(await page.evaluate(() => fixture.studentWrites("student-1")), [
+      "PHOTO /students/student-1/photo",
+      "WRITE /students/student-1",
+      "WRITE /students/bulk/archive",
+    ]);
+    await page.evaluate(() => fixture.root.unmount());
+  } finally {
+    await browser.close();
+  }
+});
+
+test("an identity replacement cannot hydrate or duplicate a pending student command", async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await fixturePage(browser, {
+      path: "/students/student-1",
+      detailController: true,
+    });
+    await mountOwnedStudentDetail(page);
+    await page.evaluate(() => {
+      fixture.edit = fixture.detail.onEdit({ legal_first_name: "Stale" });
+    });
+    await page.waitForFunction(() => fixture.studentWrites("student-1").length === 1);
+    const generation = await page.evaluate(() => fixture.store.identityGeneration);
+    await page.evaluate(() => {
+      fixture.auth.user.id = "user-b";
+      fixture.emit("SIGNED_IN", {
+        ...fixture.session,
+        access_token: "synthetic-b",
+        user: { id: "user-b" },
+      });
+    });
+    await page.waitForFunction(
+      (previous) => fixture.store.identityGeneration !== previous && fixture.store.identityReady,
+      generation,
+    );
+    await page.waitForFunction(() => fixture.details.length === 2);
+    await page.evaluate(() =>
+      fixture.details[1].resolve({ ...fixture.student, legal_first_name: "Fresh" }),
+    );
+    await page.waitForFunction(
+      () => fixture.detail.detailReady && fixture.detail.student.legal_first_name === "Fresh",
+    );
+    assert.equal(await page.evaluate(() => fixture.detail.isStudentCommandPending), false);
+    assert.deepEqual(await page.evaluate(() => fixture.studentWrites("student-1")), [
+      "WRITE /students/student-1",
+    ]);
+
+    await page.evaluate(() =>
+      fixture.writes
+        .find((w) => w.path === "/students/student-1")
+        .resolve({ ...fixture.student, legal_first_name: "Stale" }),
+    );
+    await page.evaluate(() => fixture.edit);
+    await flush(page);
+    assert.equal((await detailFacts(page)).detailName, "Fresh");
+    assert.notEqual((await detailFacts(page)).storedName, "Stale");
+
+    await page.evaluate(() => {
+      fixture.nextEdit = fixture.detail.onEdit({ legal_first_name: "Next" });
+    });
+    await page.waitForFunction(() => fixture.studentWrites("student-1").length === 2);
+    const nextWrite = await page.evaluate(() => {
+      const write = fixture.writes.filter((w) => w.path === "/students/student-1").at(-1);
+      write.resolve({ ...fixture.student, legal_first_name: "Next" });
+      return write.body;
+    });
+    assert.deepEqual(nextWrite, { legal_first_name: "Next" });
+    await page.evaluate(() => fixture.nextEdit);
+    assert.equal((await detailFacts(page)).detailName, "Next");
+    await page.evaluate(() => fixture.root.unmount());
+  } finally {
+    await browser.close();
+  }
+});
+
+async function replaceStudentDetailIdentity(page) {
+  const generation = await page.evaluate(() => fixture.store.identityGeneration);
+  const detailReads = await page.evaluate(() => fixture.details.length);
+  await page.evaluate(() => {
+    fixture.auth.user.id = "user-b";
+    fixture.emit("SIGNED_IN", {
+      ...fixture.session,
+      access_token: "synthetic-b",
+      user: { id: "user-b" },
+    });
+  });
+  await page.waitForFunction(
+    (previous) => fixture.store.identityGeneration !== previous && fixture.store.identityReady,
+    generation,
+  );
+  await page.waitForFunction((count) => fixture.details.length > count, detailReads);
+  await page.evaluate(() =>
+    fixture.details.at(-1).resolve({ ...fixture.student, legal_first_name: "Fresh" }),
+  );
+  await page.waitForFunction(
+    () => fixture.detail.detailReady && fixture.detail.student.legal_first_name === "Fresh",
+  );
+}
+
+test("an archived student cannot navigate from an unmounted detail page", async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await fixturePage(browser, {
+      path: "/students/student-1",
+      detailController: true,
+    });
+    await mountOwnedStudentDetail(page);
+    await page.evaluate(() => {
+      fixture.detail.onShowDeleteConfirm();
+      fixture.archive = fixture.detail.onDeleteStudent();
+    });
+    await page.waitForFunction(() =>
+      fixture.writes.some((write) => write.path === "/students/bulk/archive"),
+    );
+    await page.evaluate(() => fixture.unmountDetail());
+    await flush(page);
+    await page.evaluate(() =>
+      fixture.writes
+        .find((write) => write.path === "/students/bulk/archive")
+        .resolve({ updated: 1 }),
+    );
+    await page.evaluate(() => fixture.archive);
+    assert.deepEqual(await page.evaluate(() => fixture.redirects ?? []), []);
+    assert.equal(
+      await page.evaluate(() =>
+        fixture.store.students.some((student) => student.id === "student-1"),
+      ),
+      false,
+    );
+    await page.evaluate(() => fixture.root.unmount());
+  } finally {
+    await browser.close();
+  }
+});
+
+test("identity replacement drops old edit and archive dialogs without closing new ones", async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await fixturePage(browser, {
+      path: "/students/student-1",
+      detailController: true,
+    });
+    await mountOwnedStudentDetail(page);
+    await page.evaluate(() => {
+      fixture.detail.onShowEdit();
+      fixture.detail.onShowDeleteConfirm();
+      fixture.oldEdit = fixture.detail.onEdit({ legal_first_name: "Old draft" });
+    });
+    await page.waitForFunction(() => fixture.studentWrites("student-1").length === 1);
+    assert.equal(await page.evaluate(() => fixture.detail.showEdit), true);
+    assert.equal(await page.evaluate(() => fixture.detail.showDeleteConfirm), true);
+
+    await replaceStudentDetailIdentity(page);
+    assert.deepEqual(
+      await page.evaluate(() => ({
+        edit: fixture.detail.showEdit,
+        confirm: fixture.detail.showDeleteConfirm,
+        freshName: fixture.detail.detail.editInitialData.legal_first_name,
+      })),
+      { edit: false, confirm: false, freshName: "Fresh" },
+    );
+
+    await page.evaluate(() => {
+      fixture.detail.onShowEdit();
+      fixture.detail.onShowDeleteConfirm();
+    });
+    await page.waitForFunction(() => fixture.detail.showEdit && fixture.detail.showDeleteConfirm);
+    await page.evaluate(() =>
+      fixture.writes[0].resolve({ ...fixture.student, legal_first_name: "Old draft" }),
+    );
+    await page.evaluate(() => fixture.oldEdit);
+    await flush(page);
+    assert.equal(await page.evaluate(() => fixture.detail.showEdit), true);
+    assert.equal(await page.evaluate(() => fixture.detail.showDeleteConfirm), true);
+    assert.equal(
+      await page.evaluate(() => fixture.detail.detail.editInitialData.legal_first_name),
+      "Fresh",
+    );
+    assert.equal(await page.evaluate(() => fixture.detail.actionMessage), null);
+    await page.evaluate(() => fixture.root.unmount());
+  } finally {
+    await browser.close();
+  }
+});
+
+for (const previous of ["photo success", "photo rejection", "archive success"])
+  test(`identity B owns its student while identity A's ${previous} settles`, async () => {
+    const browser = await chromium.launch();
+    try {
+      const page = await fixturePage(browser, {
+        path: "/students/student-1",
+        detailController: true,
+      });
+      await mountOwnedStudentDetail(page);
+      if (previous === "archive success") {
+        await page.evaluate(() => fixture.detail.onShowDeleteConfirm());
+        await page.waitForFunction(() => fixture.detail.showDeleteConfirm);
+        await page.evaluate(() => {
+          fixture.commandA = fixture.detail.onDeleteStudent();
+        });
+      } else {
+        await page.evaluate(() => {
+          fixture.commandA = fixture.detail.onPhotoSelected(fixture.photoFile());
+        });
+      }
+      await page.waitForFunction(() => fixture.studentWrites("student-1").length === 1);
+      const urlA = await page.evaluate(() => fixture.createdUrls[0] ?? null);
+
+      await replaceStudentDetailIdentity(page);
+      await page.evaluate(() => {
+        fixture.commandB = fixture.detail.onPhotoSelected(fixture.photoFile());
+      });
+      await flush(page);
+      assert.equal(
+        await page.evaluate(
+          () => fixture.photoWrites.filter((w) => w.token === "synthetic-b").length,
+        ),
+        1,
+        "identity B can start its own command for the same student ID",
+      );
+      const urlB = await page.evaluate(() => fixture.detail.photoPreviewUrl);
+      assert.equal(typeof urlB, "string");
+      assert.notEqual(urlB, urlA);
+      const busy = /still saving/i;
+      assert.match(
+        await page.evaluate(() =>
+          fixture.outcome(fixture.detail.onEdit({ legal_first_name: "X" })),
+        ),
+        busy,
+      );
+      assert.match(
+        await page.evaluate(() => fixture.outcome(fixture.store.updateStudent("student-1", {}))),
+        busy,
+      );
+
+      await page.evaluate((previous) => {
+        const write = previous === "archive success" ? fixture.writes[0] : fixture.photoWrites[0];
+        if (previous === "photo rejection") write.reject(Error("Synthetic A failure"));
+        else if (previous === "archive success") write.resolve({ updated: 1 });
+        else
+          write.resolve({
+            ...fixture.student,
+            legal_first_name: "Stale",
+            photo_url: "https://synthetic.invalid/stale.png",
+          });
+      }, previous);
+      await page.evaluate(() => Promise.resolve(fixture.commandA).catch(() => {}));
+      await flush(page);
+
+      const during = await page.evaluate(() => ({
+        preview: fixture.detail.photoPreviewUrl,
+        photoSaving: fixture.detail.isPhotoSaving,
+        pending: fixture.detail.isStudentCommandPending,
+        photoError: fixture.detail.photoError,
+        deleteError: fixture.detail.deleteError,
+        actionMessage: fixture.detail.actionMessage,
+        redirects: fixture.redirects ?? [],
+      }));
+      assert.deepEqual(during, {
+        preview: urlB,
+        photoSaving: true,
+        pending: true,
+        photoError: null,
+        deleteError: null,
+        actionMessage: null,
+        redirects: [],
+      });
+      assert.deepEqual(await detailFacts(page), {
+        detailName: "Fresh",
+        detailPhoto: null,
+        detailTags: [],
+        storedName: "Ari",
+        storedPhoto: null,
+        pending: true,
+      });
+      assert.match(
+        await page.evaluate(() => fixture.outcome(fixture.store.updateStudent("student-1", {}))),
+        busy,
+        "A's settlement cannot release B's reservation",
+      );
+      const revokedDuring = await page.evaluate(() => fixture.revokedUrls);
+      assert.equal(revokedDuring.includes(urlB), false);
+      assert.equal(
+        await page.evaluate(() => fixture.studentWrites("student-1").length),
+        2,
+        "no third write while B owns the student",
+      );
+
+      await page.evaluate(() =>
+        fixture.photoWrites
+          .find((w) => w.token === "synthetic-b")
+          .resolve({
+            ...fixture.student,
+            legal_first_name: "Fresh",
+            photo_url: "https://synthetic.invalid/b.png",
+          }),
+      );
+      assert.equal(await page.evaluate(() => fixture.commandB), true);
+      await page.waitForFunction(() => !fixture.detail.isStudentCommandPending);
+      assert.deepEqual(await detailFacts(page), {
+        detailName: "Fresh",
+        detailPhoto: "https://synthetic.invalid/b.png",
+        detailTags: [],
+        storedName: "Fresh",
+        storedPhoto: "https://synthetic.invalid/b.png",
+        pending: false,
+      });
+      assert.equal(await page.evaluate(() => fixture.detail.photoPreviewUrl), null);
+      assert.equal(
+        await page.evaluate(() => fixture.detail.actionMessage),
+        "Student photo updated.",
+      );
+      const revoked = await page.evaluate(() => fixture.revokedUrls);
+      const created = await page.evaluate(() => fixture.createdUrls);
+      assert.deepEqual(
+        [...revoked].sort(),
+        [...created].sort(),
+        "each owned preview URL is revoked exactly once",
+      );
+
+      await page.evaluate(() => {
+        fixture.third = fixture.detail.onEdit({ legal_first_name: "Third" });
+      });
+      await page.waitForFunction(() => fixture.studentWrites("student-1").length === 3);
+      await page.evaluate(() =>
+        fixture.writes
+          .filter((w) => w.path === "/students/student-1")
+          .at(-1)
+          .resolve({
+            ...fixture.student,
+            legal_first_name: "Third",
+            photo_url: "https://synthetic.invalid/b.png",
+          }),
+      );
+      await page.evaluate(() => fixture.third);
+      assert.equal((await detailFacts(page)).detailName, "Third");
+      assert.equal((await detailFacts(page)).storedName, "Third");
+      assert.deepEqual(await page.evaluate(() => fixture.redirects ?? []), []);
+      await page.evaluate(() => fixture.root.unmount());
+    } finally {
+      await browser.close();
+    }
+  });
+
+test("same-identity token renewal keeps a pending student command's ownership", async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await fixturePage(browser, {
+      path: "/students/student-1",
+      detailController: true,
+    });
+    await mountOwnedStudentDetail(page);
+    await page.evaluate(() => {
+      fixture.photo = fixture.detail.onPhotoSelected(fixture.photoFile());
+    });
+    await page.waitForFunction(() => fixture.photoWrites.length === 1);
+    const generation = await page.evaluate(() => fixture.store.identityGeneration);
+    await page.evaluate(() =>
+      fixture.emit("TOKEN_REFRESHED", { ...fixture.session, access_token: "synthetic-renewed" }),
+    );
+    await page.waitForFunction(() => fixture.store.token === "synthetic-renewed");
+    assert.equal(await page.evaluate(() => fixture.store.identityGeneration), generation);
+    assert.equal(await page.evaluate(() => fixture.detail.isStudentCommandPending), true);
+    assert.match(
+      await page.evaluate(() => fixture.outcome(fixture.store.updateStudent("student-1", {}))),
+      /still saving/i,
+    );
+    assert.equal(await page.evaluate(() => fixture.outcome(fixture.detail.onDeletePhoto())), "ok");
+    assert.equal(await page.evaluate(() => fixture.studentWrites("student-1").length), 1);
+
+    await page.evaluate(() =>
+      fixture.photoWrites[0].resolve({
+        ...fixture.student,
+        photo_url: "https://synthetic.invalid/renewed.png",
+      }),
+    );
+    assert.equal(await page.evaluate(() => fixture.photo), true);
+    await page.waitForFunction(() => !fixture.detail.isStudentCommandPending);
+    assert.deepEqual(await detailFacts(page), {
+      detailName: "Ari",
+      detailPhoto: "https://synthetic.invalid/renewed.png",
+      detailTags: [],
+      storedName: "Ari",
+      storedPhoto: "https://synthetic.invalid/renewed.png",
+      pending: false,
+    });
+    assert.equal(await page.evaluate(() => fixture.detail.photoPreviewUrl), null);
+    assert.equal(await page.evaluate(() => fixture.detail.actionMessage), "Student photo updated.");
+
+    await page.evaluate(() => {
+      fixture.nextEdit = fixture.detail.onEdit({ legal_first_name: "Renewed" });
+    });
+    await page.waitForFunction(() => fixture.studentWrites("student-1").length === 2);
+    await page.evaluate(() =>
+      fixture.writes
+        .find((w) => w.path === "/students/student-1")
+        .resolve({
+          ...fixture.student,
+          legal_first_name: "Renewed",
+          photo_url: "https://synthetic.invalid/renewed.png",
+        }),
+    );
+    await page.evaluate(() => fixture.nextEdit);
+    assert.equal((await detailFacts(page)).detailName, "Renewed");
+    await page.evaluate(() => fixture.root.unmount());
+  } finally {
+    await browser.close();
+  }
+});
+
+const storedStudentFacts = (page) =>
+  page.evaluate(() => {
+    const stored = fixture.store.students.find((s) => s.id === "student-1");
+    return { photo: stored?.photo_url, tags: stored?.tags, status: stored?.status };
+  });
+
+test("a pending student photo refuses roster bulk writes for that student only", async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await fixturePage(browser, {
+      path: "/students/student-1",
+      detailController: true,
+    });
+    await mountOwnedStudentDetail(page);
+    await page.evaluate(() => {
+      fixture.photo = fixture.detail.onPhotoSelected(fixture.photoFile());
+    });
+    await page.waitForFunction(() => fixture.photoWrites.length === 1);
+    // Leave detail for the roster while the photo request stays pending.
+    await page.evaluate(() => {
+      fixture.unmountDetail();
+      fixture.navigate("/students");
+      fixture.attempts = {
+        tags: fixture.store.bulkAddTagsToStudents([" student-1 ", "student-2"], ["vip"], {
+          refreshMode: "local",
+        }),
+        status: fixture.store.bulkUpdateStudentStatus(["student-2", "student-1"], "paused", {
+          refreshMode: "local",
+        }),
+      };
+    });
+    await flush(page);
+    assert.deepEqual(
+      await page.evaluate(() => fixture.studentWrites("student-1")),
+      ["PHOTO /students/student-1/photo"],
+      "a bulk write may not overlap the student's pending photo",
+    );
+    assert.deepEqual(await page.evaluate(() => fixture.studentWrites("student-2")), []);
+    const busy = /another change to this student is still saving/i;
+    assert.match(await page.evaluate(() => fixture.outcome(fixture.attempts.tags)), busy);
+    assert.match(await page.evaluate(() => fixture.outcome(fixture.attempts.status)), busy);
+
+    // The refused all-or-none bulk command left no reservation on student-2.
+    await page.evaluate(() => {
+      fixture.other = fixture.store.updateStudent("student-2", { legal_first_name: "Other" });
+    });
+    await page.waitForFunction(() => fixture.studentWrites("student-2").length === 1);
+    await page.evaluate(() =>
+      fixture.writes
+        .find((w) => w.path === "/students/student-2")
+        .resolve({ ...fixture.student, id: "student-2", legal_first_name: "Other" }),
+    );
+    await page.evaluate(() => fixture.other);
+
+    // Same-identity token renewal keeps the photo's ownership against bulk writes.
+    await page.evaluate(() =>
+      fixture.emit("TOKEN_REFRESHED", { ...fixture.session, access_token: "synthetic-renewed" }),
+    );
+    await page.waitForFunction(() => fixture.store.token === "synthetic-renewed");
+    assert.match(
+      await page.evaluate(() =>
+        fixture.outcome(
+          fixture.store.bulkAddTagsToStudents(["student-1"], ["vip"], { refreshMode: "local" }),
+        ),
+      ),
+      busy,
+    );
+    assert.equal(await page.evaluate(() => fixture.studentWrites("student-1").length), 1);
+
+    await page.evaluate(() =>
+      fixture.photoWrites[0].resolve({
+        ...fixture.student,
+        photo_path: "students/student-1/a.png",
+        photo_url: "https://synthetic.invalid/a.png",
+      }),
+    );
+    await page.waitForFunction(
+      () =>
+        fixture.store.students.find((s) => s.id === "student-1")?.photo_url ===
+        "https://synthetic.invalid/a.png",
+    );
+    await page.evaluate(() => Promise.resolve(fixture.photo).catch(() => undefined));
+
+    await page.evaluate(() => {
+      fixture.tags = fixture.store.bulkAddTagsToStudents(["student-1"], ["vip"], {
+        refreshMode: "local",
+      });
+    });
+    await page.waitForFunction(() => fixture.writes.some((w) => w.path === "/students/bulk/tags"));
+    await page.evaluate(() =>
+      fixture.writes.find((w) => w.path === "/students/bulk/tags").resolve({ updated: 1 }),
+    );
+    await page.evaluate(() => fixture.tags);
+    await page.evaluate(() => {
+      fixture.status = fixture.store.bulkUpdateStudentStatus(["student-1"], "paused", {
+        refreshMode: "local",
+      });
+    });
+    await page.waitForFunction(() =>
+      fixture.writes.some((w) => w.path === "/students/bulk/status"),
+    );
+    await page.evaluate(() =>
+      fixture.writes.find((w) => w.path === "/students/bulk/status").resolve({ updated: 1 }),
+    );
+    await page.evaluate(() => fixture.status);
+    assert.deepEqual(await storedStudentFacts(page), {
+      photo: "https://synthetic.invalid/a.png",
+      tags: ["vip"],
+      status: "paused",
+    });
+    assert.deepEqual(await page.evaluate(() => fixture.studentWrites("student-1")), [
+      "PHOTO /students/student-1/photo",
+      "WRITE /students/bulk/tags",
+      "WRITE /students/bulk/status",
+    ]);
+    await page.evaluate(() => fixture.root.unmount());
+  } finally {
+    await browser.close();
+  }
+});
+
+test("a pending roster bulk write refuses the student's photo and keeps retry context", async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await fixturePage(browser, {
+      path: "/students",
+      detailController: true,
+      rosterController: true,
+    });
+    await mountOwnedStudentDetail(page);
+    await page.evaluate(() => fixture.mountRoster());
+    await page.waitForFunction(() => fixture.roster?.filtered.length === 1);
+    await page.evaluate(() => fixture.roster.onToggleSelect("student-1"));
+    await flush(page);
+    await page.evaluate(() => fixture.roster.onToggleBulkPanel("tags"));
+    await flush(page);
+    await page.evaluate(() => fixture.roster.onTagInputChange("vip"));
+    await flush(page);
+    await page.evaluate(() => {
+      fixture.bulk = fixture.roster.onAddTags();
+    });
+    await page.waitForFunction(() => fixture.writes.some((w) => w.path === "/students/bulk/tags"));
+    await page.evaluate(() => {
+      fixture.attempts = {
+        detailPhoto: fixture.detail.onPhotoSelected(fixture.photoFile()),
+        storeUpload: fixture.store.uploadStudentPhoto("student-1", fixture.photoFile()),
+        storeStatus: fixture.store.bulkUpdateStudentStatus(["student-1"], "paused"),
+      };
+    });
+    await flush(page);
+    assert.deepEqual(
+      await page.evaluate(() => fixture.studentWrites("student-1")),
+      ["WRITE /students/bulk/tags"],
+      "only the owning bulk write may start while it is pending",
+    );
+    const busy = /another change to this student is still saving/i;
+    assert.match(await page.evaluate(() => fixture.outcome(fixture.attempts.storeUpload)), busy);
+    assert.match(await page.evaluate(() => fixture.outcome(fixture.attempts.storeStatus)), busy);
+    assert.notEqual(
+      await page.evaluate(() => fixture.outcome(fixture.attempts.detailPhoto)),
+      "pending",
+    );
+    const rosterContext = () =>
+      page.evaluate(() => ({
+        selected: [...fixture.roster.selectedIds],
+        panel: fixture.roster.activeBulkPanel,
+        tagInput: fixture.roster.tagInput,
+        pending: fixture.roster.isBulkCommandPending,
+        error: fixture.roster.bulkActionError,
+      }));
+    assert.deepEqual(await rosterContext(), {
+      selected: ["student-1"],
+      panel: "tags",
+      tagInput: "vip",
+      pending: true,
+      error: null,
+    });
+
+    await page.evaluate(() =>
+      fixture.writes.find((w) => w.path === "/students/bulk/tags").resolve({ updated: 0 }),
+    );
+    await page.evaluate(() => fixture.bulk);
+    await page.waitForFunction(() => !fixture.roster.isBulkCommandPending);
+    assert.deepEqual(await rosterContext(), {
+      selected: ["student-1"],
+      panel: "tags",
+      tagInput: "vip",
+      pending: false,
+      error: "Added tags to 0 of 1 selected students. Some students may no longer be available.",
+    });
+
+    // Settlement released the student, so a photo may now write.
+    await page.evaluate(() => {
+      fixture.upload = fixture.store.uploadStudentPhoto("student-1", fixture.photoFile());
+    });
+    await page.waitForFunction(() => fixture.photoWrites.length === 1);
+    await page.evaluate(() =>
+      fixture.photoWrites[0].resolve({
+        ...fixture.student,
+        photo_url: "https://synthetic.invalid/after-bulk.png",
+      }),
+    );
+    await page.evaluate(() => fixture.upload);
+    assert.equal(
+      (await storedStudentFacts(page)).photo,
+      "https://synthetic.invalid/after-bulk.png",
+    );
+    await page.evaluate(() => fixture.root.unmount());
+  } finally {
+    await browser.close();
+  }
+});
+
+test("keyed follow-up preserves confirmed results through renewal and a stale lead read", async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await fixturePage(browser);
+    await page.evaluate(() => {
+      fixture.read = fixture.store.refreshLeads();
+      fixture.command = {
+        operation_id: "3d606900-5b93-4b00-85a8-09afaa549d54",
+        next_stage: "trial_scheduled",
+      };
+      fixture.save = fixture.store.followUpLead("lead-1", fixture.command);
+    });
+    await page.waitForFunction(() => fixture.writes.length === 1);
+    assert.deepEqual(
+      await page.evaluate(() => ({ path: fixture.writes[0].path, body: fixture.writes[0].body })),
+      {
+        path: "/leads/lead-1/follow-up",
+        body: {
+          operation_id: "3d606900-5b93-4b00-85a8-09afaa549d54",
+          next_stage: "trial_scheduled",
+        },
+      },
+    );
+    await page.evaluate(() =>
+      fixture.emit("TOKEN_REFRESHED", { ...fixture.session, access_token: "synthetic-renewed" }),
+    );
+    await page.waitForFunction(() => fixture.store.token === "synthetic-renewed");
+    await page.evaluate(() =>
+      fixture.writes[0].resolve({
+        ...fixture.lead,
+        stage: "trial_scheduled",
+        follow_up_date: null,
+      }),
+    );
+    await page.evaluate(() => fixture.save);
+    await page.evaluate(() => fixture.leadReads[0]([fixture.lead]));
+    await page.waitForFunction(() => fixture.leadReads.length === 2);
+    assert.equal(await page.evaluate(() => fixture.store.leads[0].stage), "trial_scheduled");
+    await page.evaluate(() =>
+      fixture.leadReads[1]([{ ...fixture.lead, stage: "trial_scheduled", follow_up_date: null }]),
+    );
+    await page.evaluate(() => fixture.read);
+    assert.equal(await page.evaluate(() => fixture.writes.length), 1);
+    await page.evaluate(() => fixture.root.unmount());
+  } finally {
+    await browser.close();
+  }
+});
+
+test("keyed follow-up cannot restore lead data or navigate after sign-out", async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await fixturePage(browser, { leadController: true });
+    await page.evaluate(() => {
+      // fixture.local is an insecure synthetic origin; supply its missing UUID primitive.
+      crypto.randomUUID ??= () => "3d606900-5b93-4b00-85a8-09afaa549d54";
+      fixture.save = fixture.leadController.handleMarkContacted(
+        { ...fixture.lead, stage: "offer_sent" },
+        true,
+      );
+    });
+    await page.waitForFunction(() => fixture.writes.length === 1);
+    await page.evaluate(() => fixture.emit("SIGNED_OUT", null));
+    await page.waitForFunction(() => !fixture.store.identityReady);
+    await page.evaluate(() =>
+      fixture.writes[0].resolve({
+        ...fixture.lead,
+        stage: "enrolled",
+        converted_student_id: "student-new",
+      }),
+    );
+    await page.evaluate(() => fixture.save);
+    assert.deepEqual(await page.evaluate(() => fixture.store.leads), []);
+    assert.deepEqual(await page.evaluate(() => fixture.redirects ?? []), ["/login"]);
+    assert.equal(await page.evaluate(() => fixture.leadController.actionMessage), null);
+    await page.evaluate(() => fixture.root.unmount());
+  } finally {
+    await browser.close();
+  }
+});
+
+async function prepareFollowUpReplay(browser, { newerRead = false, enroll = false } = {}) {
+  const page = await fixturePage(browser, { leadController: true, leadControls: true });
+  await page.evaluate(
+    ({ enroll }) => {
+      fixture.uuidSequence = 0;
+      crypto.randomUUID = () =>
+        `00000000-0000-4000-8000-${String(++fixture.uuidSequence).padStart(12, "0")}`;
+      fixture.replayLists = [];
+      fixture.rowReads = [];
+      fixture.commandWrites = [];
+      const get = fixture.api.get;
+      fixture.api.get = (path, token) => {
+        if (path === "/leads")
+          return new Promise((resolve, reject) =>
+            fixture.replayLists.push({ token, resolve, reject }),
+          );
+        if (path === "/leads/lead-1")
+          return new Promise((resolve, reject) =>
+            fixture.rowReads.push({ token, resolve, reject }),
+          );
+        if (path.endsWith("/activities")) return Promise.resolve([]);
+        return get(path, token);
+      };
+      fixture.api.post = (path, body, token) =>
+        new Promise((resolve, reject) =>
+          fixture.commandWrites.push({ method: "POST", path, body, token, resolve, reject }),
+        );
+      fixture.api.patch = (path, body, token) =>
+        new Promise((resolve, reject) =>
+          fixture.commandWrites.push({ method: "PATCH", path, body, token, resolve, reject }),
+        );
+      fixture.initialLead = {
+        ...fixture.lead,
+        first_name: "A",
+        stage: enroll ? "offer_sent" : "inquiry",
+        source: "website",
+        created_at: "2026-09-01T00:00:00Z",
+        follow_up_date: "2026-09-26",
+        assigned_staff_id: null,
+        converted_student_id: null,
+      };
+      fixture.otherLead = {
+        ...fixture.initialLead,
+        id: "lead-2",
+        first_name: "B",
+        stage: "inquiry",
+      };
+      fixture.receipt = {
+        ...fixture.initialLead,
+        stage: enroll ? "enrolled" : "trial_scheduled",
+        converted_student_id: enroll ? "student-old" : null,
+        follow_up_date: null,
+      };
+      fixture.currentLead = {
+        ...fixture.receipt,
+        assigned_staff_id: "staff-current",
+        notes: "Current after replay",
+      };
+      fixture.read = fixture.store.refreshLeads();
+    },
+    { enroll },
+  );
+  await page.waitForFunction(() => fixture.replayLists.length === 1);
+  await page.evaluate(() =>
+    fixture.replayLists[0].resolve([fixture.initialLead, fixture.otherLead]),
+  );
+  await page.evaluate(() => fixture.read);
+  await page.locator('[data-lead-id="lead-1"]').click();
+  await page
+    .getByRole("button", { name: enroll ? "Convert now" : "Move to Trial Scheduled", exact: true })
+    .click();
+  await page.waitForFunction(() => fixture.commandWrites.length === 1);
+  await page.evaluate(() => fixture.commandWrites[0].reject(new fixture.CommandOutcomeUnknown()));
+  await page.getByRole("button", { name: "Retry follow-up", exact: true }).waitFor();
+  if (newerRead) {
+    await page.evaluate(() => {
+      fixture.newerLead = {
+        ...fixture.receipt,
+        stage: "offer_sent",
+        assigned_staff_id: "staff-later",
+        follow_up_date: "2026-10-10",
+      };
+      fixture.read = fixture.store.refreshLeads();
+    });
+    await page.waitForFunction(() => fixture.replayLists.length === 2);
+    await page.evaluate(() =>
+      fixture.replayLists[1].resolve([fixture.newerLead, fixture.otherLead]),
+    );
+    await page.evaluate(() => fixture.read);
+  }
+  return page;
+}
+
+async function confirmFollowUpReplay(page, index = 1, button = "Retry follow-up") {
+  await page.getByRole("button", { name: button, exact: true }).click();
+  await page.waitForFunction((count) => fixture.commandWrites.length === count, index + 1);
+  assert.deepEqual(
+    await page.evaluate((index) => fixture.commandWrites[index].body, index),
+    await page.evaluate(() => fixture.commandWrites[0].body),
+  );
+  await page.evaluate((index) => fixture.commandWrites[index].resolve(fixture.receipt), index);
+  await flush(page);
+}
+
+test("follow-up recovery reserves stale A until its independent row read while B remains pending", async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await prepareFollowUpReplay(browser);
+    await page.getByRole("button", { name: "Move B Lead to the next stage", exact: true }).click();
+    await page.waitForFunction(() => fixture.commandWrites.length === 2);
+    await confirmFollowUpReplay(page, 2);
+    assert.equal(
+      await page.evaluate(() => fixture.leadController.pendingLeadIds.has("lead-1")),
+      true,
+    );
+    assert.equal(
+      await page.evaluate(() => fixture.leadController.pendingLeadIds.has("lead-2")),
+      true,
+    );
+    assert.equal(
+      await page.evaluate(() => fixture.rowReads.length),
+      1,
+      "row GET starts without waiting for B",
+    );
+    assert.equal(
+      await page.getByRole("button", { name: "Move to Trial Scheduled", exact: true }).isDisabled(),
+      true,
+    );
+    await page.evaluate(() => {
+      void fixture.leadController.handleMarkContacted(fixture.store.leads[0], true);
+      void fixture.leadController.handleAssignedStaff(fixture.store.leads[0], "other-staff");
+    });
+    assert.equal(
+      await page.evaluate(() => fixture.commandWrites.length),
+      3,
+      "no fresh command key while row reconciliation is pending",
+    );
+    assert.deepEqual(
+      await page.evaluate(() => fixture.commandWrites.map((write) => write.method)),
+      ["POST", "PATCH", "POST"],
+    );
+    assert.equal(
+      await page.evaluate(
+        () =>
+          fixture.commandWrites.filter(
+            (write) => write.method === "PATCH" && write.path === "/leads/lead-1",
+          ).length,
+      ),
+      0,
+    );
+    await page.evaluate(() => fixture.rowReads[0].resolve(fixture.currentLead));
+    await page.waitForFunction(() => !fixture.leadController.pendingLeadIds.has("lead-1"));
+    assert.deepEqual(
+      await page.evaluate(() => fixture.store.leads[0]),
+      await page.evaluate(() => fixture.currentLead),
+    );
+    assert.equal(
+      await page.evaluate(() => fixture.leadController.pendingLeadIds.has("lead-2")),
+      true,
+    );
+    assert.equal(
+      await page.getByRole("button", { name: "Move to Trial Completed", exact: true }).isDisabled(),
+      false,
+    );
+    assert.equal(
+      await page.evaluate(() => fixture.replayLists.length),
+      1,
+      "recovery does not schedule a global list refresh",
+    );
+    await page.evaluate(() => fixture.root.unmount());
+  } finally {
+    await browser.close();
+  }
+});
+
+for (const newerRead of [false, true])
+  test(`follow-up recovery read failure keeps the saved command reserved and frozen (${newerRead ? "newer observed row" : "no intervening read"})`, async () => {
+    const browser = await chromium.launch();
+    try {
+      const page = await prepareFollowUpReplay(browser, { newerRead });
+      const before = await page.evaluate(() => fixture.store.leads[0]);
+      await confirmFollowUpReplay(page);
+      assert.equal(await page.evaluate(() => fixture.rowReads.length), 1);
+      assert.deepEqual(
+        await page.evaluate(() => fixture.leadController.model.selectedLead),
+        before,
+      );
+      await page.evaluate(() => fixture.rowReads[0].reject(Error("Current lead read unavailable")));
+      await flush(page);
+      assert.deepEqual(await page.evaluate(() => fixture.store.leads[0]), before);
+      assert.equal(
+        await page.evaluate(() => fixture.leadController.pendingLeadIds.has("lead-1")),
+        true,
+      );
+      await page.getByRole("button", { name: "Refresh lead details", exact: true }).waitFor();
+      assert.deepEqual(await page.evaluate(() => fixture.store.leads[0]), before);
+      assert.equal(
+        await page.evaluate(() => fixture.leadController.pendingLeadIds.has("lead-1")),
+        true,
+      );
+      assert.match(await page.locator("aside").innerText(), /Follow-up saved/);
+      assert.doesNotMatch(await page.locator("aside").innerText(), /Confirmation was lost/);
+      assert.equal(
+        await page.getByRole("button", { name: "Mark contacted", exact: true }).isDisabled(),
+        true,
+      );
+      await page.evaluate(() => {
+        void fixture.leadController.handleMarkContacted(fixture.store.leads[0], true);
+        void fixture.leadController.handleAssignedStaff(fixture.store.leads[0], "blocked-staff");
+      });
+      assert.equal(await page.evaluate(() => fixture.commandWrites.length), 2);
+      assert.equal(
+        await page.evaluate(
+          () => fixture.commandWrites.filter((write) => write.method === "PATCH").length,
+        ),
+        0,
+      );
+      await page.getByRole("button", { name: "Close lead details", exact: true }).click();
+      await page.locator('[data-lead-id="lead-1"]').click();
+      await confirmFollowUpReplay(page, 2, "Refresh lead details");
+      assert.equal(await page.evaluate(() => fixture.rowReads.length), 2);
+      await page.evaluate(() => fixture.rowReads[1].resolve(fixture.currentLead));
+      await page.waitForFunction(() => !fixture.leadController.pendingLeadIds.has("lead-1"));
+      assert.deepEqual(
+        await page.evaluate(() => fixture.store.leads[0]),
+        await page.evaluate(() => fixture.currentLead),
+      );
+      assert.equal(await page.evaluate(() => fixture.commandWrites.length), 3);
+      await page.evaluate(() => fixture.root.unmount());
+    } finally {
+      await browser.close();
+    }
+  });
+
+test("follow-up recovery returns the immutable receipt separately from a current row after token renewal", async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await prepareFollowUpReplay(browser, { newerRead: true });
+    await page.evaluate(() => {
+      fixture.replayResultPromise = fixture.store.followUpLead(
+        "lead-1",
+        fixture.commandWrites[0].body,
+        { replay: true },
+      );
+      fixture.replayResultPromise.then((result) => {
+        fixture.replayResult = result;
+      });
+    });
+    await page.waitForFunction(() => fixture.commandWrites.length === 2);
+    await page.evaluate(() => fixture.commandWrites[1].resolve(fixture.receipt));
+    await flush(page);
+    assert.equal(await page.evaluate(() => fixture.rowReads.length), 1);
+    assert.equal(await page.evaluate(() => Boolean(fixture.replayResult)), false);
+    await page.evaluate(() =>
+      fixture.emit("TOKEN_REFRESHED", { ...fixture.session, access_token: "row-renewed" }),
+    );
+    await page.waitForFunction(() => fixture.store.token === "row-renewed");
+    await page.evaluate(() => fixture.rowReads[0].resolve(fixture.receipt));
+    await page.waitForFunction(() => fixture.rowReads.length === 2);
+    assert.equal(await page.evaluate(() => fixture.rowReads[1].token), "row-renewed");
+    assert.deepEqual(
+      await page.evaluate(() => fixture.store.leads[0]),
+      await page.evaluate(() => fixture.newerLead),
+    );
+    await page.evaluate(() => fixture.rowReads[1].resolve(fixture.currentLead));
+    await page.evaluate(() => fixture.replayResultPromise);
+    assert.deepEqual(
+      await page.evaluate(() => fixture.replayResult),
+      await page.evaluate(() => ({
+        lead: fixture.receipt,
+        currentLead: fixture.currentLead,
+        reconciliation: "ready",
+      })),
+    );
+    await page.evaluate(() => fixture.root.unmount());
+  } finally {
+    await browser.close();
+  }
+});
+
+for (const beforeReceipt of [true, false])
+  test(`follow-up recovery ignores replaced access ${beforeReceipt ? "before receipt" : "during row read"}`, async () => {
+    const browser = await chromium.launch();
+    try {
+      const page = await prepareFollowUpReplay(browser);
+      await page.getByRole("button", { name: "Retry follow-up", exact: true }).click();
+      await page.waitForFunction(() => fixture.commandWrites.length === 2);
+      if (!beforeReceipt) {
+        await page.evaluate(() => fixture.commandWrites[1].resolve(fixture.receipt));
+        await flush(page);
+        assert.equal(await page.evaluate(() => fixture.rowReads.length), 1);
+      }
+      await page.evaluate(() => fixture.emit("SIGNED_OUT", null));
+      await page.waitForFunction(() => !fixture.store.identityReady);
+      await page.evaluate(
+        (beforeReceipt) =>
+          beforeReceipt
+            ? fixture.commandWrites[1].resolve(fixture.receipt)
+            : fixture.rowReads[0].resolve(fixture.currentLead),
+        beforeReceipt,
+      );
+      await flush(page);
+      assert.deepEqual(await page.evaluate(() => fixture.store.leads), []);
+      assert.equal(await page.evaluate(() => fixture.leadController.actionMessage), null);
+      assert.deepEqual(await page.evaluate(() => fixture.redirects), ["/login"]);
+      await page.evaluate(() => fixture.root.unmount());
+    } finally {
+      await browser.close();
+    }
+  });
+
+test("follow-up recovery enrollment uses the current row for navigation without waiting on roster refresh", async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await prepareFollowUpReplay(browser, { enroll: true });
+    await page.evaluate(() => {
+      const get = fixture.api.get;
+      fixture.api.get = (path, token) =>
+        path.startsWith("/students?")
+          ? new Promise((_resolve, reject) => {
+              fixture.rejectReplayRoster = reject;
+            })
+          : get(path, token);
+      fixture.currentLead = { ...fixture.currentLead, converted_student_id: "student-current" };
+    });
+    await confirmFollowUpReplay(page);
+    assert.equal(await page.evaluate(() => fixture.rowReads.length), 1);
+    assert.deepEqual(await page.evaluate(() => fixture.redirects ?? []), []);
+    await page.evaluate(() => fixture.rowReads[0].resolve(fixture.currentLead));
+    await page.waitForFunction(() => !fixture.leadController.pendingLeadIds.has("lead-1"));
+    assert.deepEqual(await page.evaluate(() => fixture.redirects), ["/students/student-current"]);
+    await page.waitForFunction(() => Boolean(fixture.rejectReplayRoster));
+    await page.evaluate(() => fixture.rejectReplayRoster(Error("Roster refresh unavailable")));
+    await flush(page);
+    assert.equal(await page.evaluate(() => fixture.leadController.leadActionError), null);
+    await page.evaluate(() => fixture.root.unmount());
+  } finally {
+    await browser.close();
+  }
+});
+
+test("follow-up recovery authoritative 404 removes only that row and cannot navigate to the historical student", async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await prepareFollowUpReplay(browser, { enroll: true });
+    await confirmFollowUpReplay(page);
+    assert.equal(await page.evaluate(() => fixture.rowReads.length), 1);
+    await page.evaluate(() =>
+      fixture.rowReads[0].reject(new fixture.ApiError("Lead not found", 404)),
+    );
+    await page.waitForFunction(() => !fixture.leadController.pendingLeadIds.has("lead-1"));
+    assert.deepEqual(await page.evaluate(() => fixture.store.leads.map((lead) => lead.id)), [
+      "lead-2",
+    ]);
+    assert.equal(await page.evaluate(() => fixture.leadController.model.selectedLead), null);
+    assert.deepEqual(await page.evaluate(() => fixture.redirects ?? []), []);
+    assert.equal(await page.locator('[data-lead-id="lead-1"]').count(), 0);
+    assert.equal(await page.evaluate(() => fixture.commandWrites.length), 2);
+    await page.evaluate(() => fixture.root.unmount());
+  } finally {
+    await browser.close();
+  }
+});
+
+test("follow-up recovery remains saved and reserved after bounded token-renewal exhaustion", async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await prepareFollowUpReplay(browser);
+    await confirmFollowUpReplay(page);
+    assert.equal(await page.evaluate(() => fixture.rowReads.length), 1);
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      await page.evaluate(
+        (attempt) =>
+          fixture.emit("TOKEN_REFRESHED", {
+            ...fixture.session,
+            access_token: `row-renewal-${attempt}`,
+          }),
+        attempt,
+      );
+      await page.waitForFunction(
+        (attempt) => fixture.store.token === `row-renewal-${attempt}`,
+        attempt,
+      );
+      await page.evaluate(
+        (attempt) => fixture.rowReads[attempt].resolve(fixture.currentLead),
+        attempt,
+      );
+      if (attempt < 2)
+        await page.waitForFunction((count) => fixture.rowReads.length === count, attempt + 2);
+    }
+    await page.getByRole("button", { name: "Refresh lead details", exact: true }).waitFor();
+    assert.equal(await page.evaluate(() => fixture.rowReads.length), 3);
+    assert.deepEqual(
+      await page.evaluate(() => fixture.store.leads[0]),
+      await page.evaluate(() => fixture.initialLead),
+    );
+    assert.equal(
+      await page.evaluate(() => fixture.leadController.pendingLeadIds.has("lead-1")),
+      true,
+    );
+    assert.match(await page.locator("aside").innerText(), /Follow-up saved/);
+    await page.evaluate(() => {
+      void fixture.leadController.handleMarkContacted(fixture.store.leads[0], true);
+      void fixture.leadController.handleAssignedStaff(fixture.store.leads[0], "blocked-staff");
+    });
+    assert.equal(await page.evaluate(() => fixture.commandWrites.length), 2);
+    assert.equal(
+      await page.evaluate(
+        () => fixture.commandWrites.filter((write) => write.method === "PATCH").length,
+      ),
+      0,
+    );
+    await confirmFollowUpReplay(page, 2, "Refresh lead details");
+    assert.equal(await page.evaluate(() => fixture.rowReads.length), 4);
+    await page.evaluate(() => fixture.rowReads[3].resolve(fixture.currentLead));
+    await page.waitForFunction(() => !fixture.leadController.pendingLeadIds.has("lead-1"));
+    assert.deepEqual(
+      await page.evaluate(() => fixture.store.leads[0]),
+      await page.evaluate(() => fixture.currentLead),
+    );
+    await page.evaluate(() => fixture.root.unmount());
+  } finally {
+    await browser.close();
+  }
+});
+
+test("follow-up recovery keeps confirmed enrollment roster reconciliation running when the row read fails", async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await prepareFollowUpReplay(browser, { enroll: true });
+    await page.evaluate(() => {
+      const get = fixture.api.get;
+      fixture.api.get = (path, token) =>
+        path.startsWith("/students?")
+          ? new Promise((resolve) => {
+              fixture.resolveReplayRoster = resolve;
+            })
+          : get(path, token);
+    });
+    await confirmFollowUpReplay(page);
+    assert.equal(await page.evaluate(() => fixture.rowReads.length), 1);
+    await page.waitForFunction(() => Boolean(fixture.resolveReplayRoster));
+    await page.evaluate(() => fixture.rowReads[0].reject(Error("Row read unavailable")));
+    await page.getByRole("button", { name: "Refresh lead details", exact: true }).waitFor();
+    assert.equal(
+      await page.evaluate(() => fixture.leadController.pendingLeadIds.has("lead-1")),
+      true,
+    );
+    assert.deepEqual(await page.evaluate(() => fixture.redirects ?? []), []);
+    await page.evaluate(() =>
+      fixture.resolveReplayRoster({
+        items: [{ ...fixture.student, legal_first_name: "Reconciled enrollment" }],
+        total: 1,
+        page_size: 200,
+        page_ordinal: 1,
+        has_next: false,
+        has_previous: false,
+      }),
+    );
+    await page.waitForFunction(() =>
+      fixture.store.students.some(
+        (student) => student.legal_first_name === "Reconciled enrollment",
+      ),
+    );
+    assert.equal(
+      await page.evaluate(() => fixture.leadController.pendingLeadIds.has("lead-1")),
+      true,
+    );
+    assert.match(await page.locator("aside").innerText(), /Follow-up saved/);
+    assert.equal(await page.evaluate(() => fixture.commandWrites.length), 2);
+    await page.evaluate(() => fixture.root.unmount());
+  } finally {
+    await browser.close();
+  }
+});
+
+test("follow-up recovery retains truthful saved status when a later same-key POST loses its response", async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await prepareFollowUpReplay(browser);
+    await confirmFollowUpReplay(page);
+    await page.evaluate(() => fixture.rowReads[0].reject(Error("Row read unavailable")));
+    await page.getByRole("button", { name: "Refresh lead details", exact: true }).click();
+    await page.waitForFunction(() => fixture.commandWrites.length === 3);
+    assert.deepEqual(
+      await page.evaluate(() => fixture.commandWrites[2].body),
+      await page.evaluate(() => fixture.commandWrites[0].body),
+    );
+    await page.evaluate(() => fixture.commandWrites[2].reject(new fixture.CommandOutcomeUnknown()));
+    await page.getByRole("button", { name: "Refresh lead details", exact: true }).waitFor();
+    assert.match(await page.locator("aside").innerText(), /Follow-up saved/);
+    assert.doesNotMatch(
+      await page.locator("aside").innerText(),
+      /may have been saved|Confirmation was lost/,
+    );
+    assert.equal(
+      await page.getByRole("button", { name: "Mark contacted", exact: true }).isDisabled(),
+      true,
+    );
+    await confirmFollowUpReplay(page, 3, "Refresh lead details");
+    await page.evaluate(() => fixture.rowReads[1].resolve(fixture.currentLead));
+    await page.waitForFunction(() => !fixture.leadController.pendingLeadIds.has("lead-1"));
+    assert.equal(await page.evaluate(() => fixture.commandWrites.length), 4);
+    await page.evaluate(() => fixture.root.unmount());
+  } finally {
+    await browser.close();
+  }
+});
+
+test("follow-up recovery row read cannot overwrite a newer same-lead store publication", async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await prepareFollowUpReplay(browser);
+    await confirmFollowUpReplay(page);
+    assert.equal(await page.evaluate(() => fixture.rowReads.length), 1);
+    // A replacement controller shares this StoreProvider. Its confirmed command
+    // reaches this same store boundary while the previous owner's GET is held.
+    await page.evaluate(() => {
+      fixture.replacementLead = {
+        ...fixture.currentLead,
+        stage: "offer_sent",
+        notes: "New owner confirmed",
+      };
+      fixture.replacementWrite = fixture.store.updateLead("lead-1", {
+        stage: "offer_sent",
+        notes: "New owner confirmed",
+      });
+    });
+    await page.waitForFunction(() => fixture.commandWrites.length === 3);
+    assert.equal(await page.evaluate(() => fixture.commandWrites[2].method), "PATCH");
+    await page.evaluate(() => fixture.commandWrites[2].resolve(fixture.replacementLead));
+    await page.evaluate(() => fixture.replacementWrite);
+    assert.deepEqual(
+      await page.evaluate(() => fixture.store.leads[0]),
+      await page.evaluate(() => fixture.replacementLead),
+    );
+    await page.evaluate(() => fixture.rowReads[0].resolve(fixture.currentLead));
+    await flush(page);
+    assert.deepEqual(
+      await page.evaluate(() => fixture.store.leads[0]),
+      await page.evaluate(() => fixture.replacementLead),
+      "old replay GET cannot publish over the replacement owner's confirmed row",
+    );
+    await page.getByRole("button", { name: "Refresh lead details", exact: true }).waitFor();
+    await confirmFollowUpReplay(page, 3, "Refresh lead details");
+    await page.evaluate(() => fixture.rowReads[1].resolve(fixture.replacementLead));
+    await page.waitForFunction(() => !fixture.leadController.pendingLeadIds.has("lead-1"));
+    await page.evaluate(() => fixture.root.unmount());
+  } finally {
+    await browser.close();
+  }
+});
+
+test("follow-up recovery row publication stays independent of confirmed writes to B", async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await prepareFollowUpReplay(browser);
+    await confirmFollowUpReplay(page);
+    await page.evaluate(() => {
+      fixture.otherWrite = fixture.store.updateLead("lead-2", { assigned_staff_id: "staff-b" });
+    });
+    await page.waitForFunction(() => fixture.commandWrites.length === 3);
+    await page.evaluate(() =>
+      fixture.commandWrites[2].resolve({ ...fixture.otherLead, assigned_staff_id: "staff-b" }),
+    );
+    await page.evaluate(() => fixture.otherWrite);
+    await page.evaluate(() => fixture.rowReads[0].resolve(fixture.currentLead));
+    await page.waitForFunction(() => !fixture.leadController.pendingLeadIds.has("lead-1"));
+    assert.deepEqual(
+      await page.evaluate(() => fixture.store.leads[0]),
+      await page.evaluate(() => fixture.currentLead),
+    );
+    assert.equal(await page.evaluate(() => fixture.store.leads[1].assigned_staff_id), "staff-b");
+    assert.equal(await page.evaluate(() => fixture.rowReads.length), 1);
+    await page.evaluate(() => fixture.root.unmount());
+  } finally {
+    await browser.close();
+  }
+});

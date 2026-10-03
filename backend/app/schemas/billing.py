@@ -1,23 +1,76 @@
+import re
+from datetime import date
 from typing import Any, Literal, Optional
 
-from pydantic import AliasChoices, BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
+from pydantic import (
+    AliasChoices,
+    BaseModel,
+    ConfigDict,
+    EmailStr,
+    Field,
+    field_validator,
+    model_validator,
+)
 
 
 BillingRole = Literal["admin", "front_desk"]
-SubscriptionStatus = Literal["comped", "trialing", "active", "past_due", "unpaid", "canceled", "incomplete", "incomplete_expired", "paused"]
-PaymentAccountStatus = Literal["not_connected", "onboarding_incomplete", "charges_enabled", "action_required", "deauthorized"]
+SubscriptionStatus = Literal[
+    "comped",
+    "trialing",
+    "active",
+    "past_due",
+    "unpaid",
+    "canceled",
+    "incomplete",
+    "incomplete_expired",
+    "paused",
+]
+PaymentAccountStatus = Literal[
+    "not_connected", "onboarding_incomplete", "charges_enabled", "action_required", "deauthorized"
+]
 ConnectBusinessEntityType = Literal["company", "individual"]
 BillingPlanStatus = Literal["pending", "active", "archived"]
-BillingInterval = Literal["weekly", "biweekly", "monthly", "annual", "paid_in_full", "fixed_term", "trial"]
+BillingInterval = Literal[
+    "weekly", "biweekly", "monthly", "annual", "paid_in_full", "fixed_term", "trial"
+]
 BillingCollectionMode = Literal["autopay", "invoice_link", "external"]
 BillingEnrollmentStatus = Literal["pending", "active", "paused", "ended", "canceled"]
-BillingSubscriptionStatus = Literal["pending", "trialing", "active", "past_due", "unpaid", "canceled", "incomplete", "incomplete_expired", "paused"]
-PayerBillingStatus = Literal["current", "upcoming", "past_due", "failed", "unpaid", "externally_paid", "no_payment_method", "no_billing_plan"]
+BillingSubscriptionStatus = Literal[
+    "pending",
+    "trialing",
+    "active",
+    "past_due",
+    "unpaid",
+    "canceled",
+    "incomplete",
+    "incomplete_expired",
+    "paused",
+]
+PayerBillingStatus = Literal[
+    "current",
+    "upcoming",
+    "past_due",
+    "failed",
+    "outstanding",
+    "uncollectible",
+    "unpaid",
+    "externally_paid",
+    "no_payment_method",
+    "no_billing_plan",
+]
 AutopayStatus = Literal["not_configured", "pending", "enabled", "disabled"]
-InvoiceStatus = Literal["draft", "open", "paid", "void", "uncollectible", "refunded", "partially_refunded"]
-PaymentStatus = Literal["pending", "processing", "succeeded", "failed", "refunded", "disputed", "externally_recorded"]
+InvoiceStatus = Literal[
+    "draft", "open", "paid", "void", "uncollectible", "refunded", "partially_refunded"
+]
+PaymentStatus = Literal[
+    "pending", "processing", "succeeded", "failed", "refunded", "disputed", "externally_recorded"
+]
+BillingRefundReason = Literal["duplicate", "fraudulent", "requested_by_customer"]
 BillingSystemCheckStatus = Literal["pass", "warn", "fail"]
-BillingReconcileObjectType = Literal["connect_account", "payer", "invoice", "subscription", "payment_intent"]
+BillingReconcileObjectType = Literal[
+    "connect_account", "payer", "invoice", "subscription", "payment_intent"
+]
+STRIPE_TEST_CLOCK_ID_PATTERN = re.compile(r"^clock_[A-Za-z0-9]+$")
 CARD_BRAND_VALUES = {
     "amex",
     "cartes_bancaires",
@@ -29,7 +82,9 @@ CARD_BRAND_VALUES = {
     "unionpay",
     "visa",
 }
-LEGACY_EXTERNAL_STRIPE_SYNC_ERROR_PREFIX = "External payment recorded locally but Stripe sync failed:"
+LEGACY_EXTERNAL_STRIPE_SYNC_ERROR_PREFIX = (
+    "External payment recorded locally but Stripe sync failed:"
+)
 EXTERNAL_STRIPE_SYNC_ERROR_PUBLIC_MESSAGE = (
     "Stripe sync failed after local payment recording. Contact support if it persists."
 )
@@ -39,7 +94,9 @@ def _frontend_payment_method_type(value: dict[str, Any]) -> Optional[str]:
     if not value.get("default_payment_method_id"):
         return None
 
-    explicit_type = value.get("default_payment_method_type") or value.get("stripe_payment_method_type")
+    explicit_type = value.get("default_payment_method_type") or value.get(
+        "stripe_payment_method_type"
+    )
     if explicit_type:
         return str(explicit_type)
 
@@ -134,7 +191,9 @@ class StudioPaymentAccountResponse(BaseModel):
     details_submitted: bool = False
     requirements_due: list[str] = Field(default_factory=list)
     platform_fee_bps: int = 50
-    liability_note: str = "Disputes and chargebacks on Connect direct charges remain the studio's liability."
+    liability_note: str = (
+        "Disputes and chargebacks on Connect direct charges remain the studio's liability."
+    )
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
 
@@ -163,6 +222,14 @@ class BillingMutationCapabilitiesResponse(BaseModel):
     connect_payments: bool = False
 
 
+class BillingWorkflowCapabilityResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    workflow_id: str
+    enabled: bool = False
+    denial_reason_code: Optional[str] = None
+
+
 class BillingSystemStatusResponse(BaseModel):
     studio_id: str
     configured_stripe_mode: Optional[Literal["test", "live"]] = None
@@ -174,6 +241,7 @@ class BillingSystemStatusResponse(BaseModel):
     platform_webhooks: BillingWebhookHealthResponse
     connect_webhooks: BillingWebhookHealthResponse
     mutation_capabilities: BillingMutationCapabilitiesResponse
+    workflow_capabilities: list[BillingWorkflowCapabilityResponse] = Field(default_factory=list)
     checks: list[BillingSystemCheck]
 
 
@@ -224,23 +292,24 @@ class BillingPlanCreate(BaseModel):
 class BillingPlanUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    name: Optional[str] = Field(default=None, min_length=1, max_length=140)
+    # Defaults represent omission; explicitly supplied required columns cannot be null.
+    name: str = Field(default=None, min_length=1, max_length=140)
     description: Optional[str] = None
-    amount_cents: Optional[int] = Field(default=None, ge=0)
-    currency: Optional[str] = None
-    billing_interval: Optional[BillingInterval] = None
+    amount_cents: int = Field(default=None, ge=0)
+    currency: str = Field(default=None)
+    billing_interval: BillingInterval = Field(default=None)
     program_ids: Optional[list[str]] = None
-    signup_fee_cents: Optional[int] = Field(default=None, ge=0)
-    trial_days: Optional[int] = Field(default=None, ge=0)
-    proration_behavior: Optional[str] = None
+    signup_fee_cents: int = Field(default=None, ge=0)
+    trial_days: int = Field(default=None, ge=0)
+    proration_behavior: str = Field(default=None)
     freeze_behavior: Optional[str] = None
     cancellation_policy: Optional[str] = None
     tax_behavior: Optional[str] = None
 
     @field_validator("currency")
     @classmethod
-    def normalize_currency(cls, value: Optional[str]) -> Optional[str]:
-        return value.strip().lower() if value else value
+    def normalize_currency(cls, value: str) -> str:
+        return value.strip().lower()
 
 
 class BillingPlanResponse(BaseModel):
@@ -294,6 +363,17 @@ class BillingPayerUpdate(BaseModel):
     address_zip: Optional[str] = Field(default=None, max_length=20)
 
 
+class BillingPayerSyncRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    test_clock_id: Optional[str] = Field(
+        default=None,
+        min_length=7,
+        max_length=255,
+        pattern=STRIPE_TEST_CLOCK_ID_PATTERN.pattern,
+    )
+
+
 class BillingPayerResponse(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
@@ -324,6 +404,8 @@ class BillingPayerResponse(BaseModel):
     autopay_terms_accepted_at: Optional[str] = None
     billing_status: PayerBillingStatus = "no_payment_method"
     balance_cents: int = 0
+    overdue_balance_cents: Optional[int] = None
+    uncollectible_balance_cents: Optional[int] = None
     created_at: str
     updated_at: str
 
@@ -333,8 +415,12 @@ class BillingPayerResponse(BaseModel):
         if isinstance(value, dict):
             value = dict(value)
             value.setdefault("stripe_payment_method_id", value.get("default_payment_method_id"))
-            value.setdefault("stripe_payment_method_brand", value.get("default_payment_method_brand"))
-            value.setdefault("stripe_payment_method_last4", value.get("default_payment_method_last4"))
+            value.setdefault(
+                "stripe_payment_method_brand", value.get("default_payment_method_brand")
+            )
+            value.setdefault(
+                "stripe_payment_method_last4", value.get("default_payment_method_last4")
+            )
             value.setdefault("stripe_payment_method_type", _frontend_payment_method_type(value))
         return value
 
@@ -345,7 +431,6 @@ class BillingPayerAutopaySetupRequest(BaseModel):
     success_url: Optional[str] = None
     cancel_url: Optional[str] = None
     return_url: Optional[str] = None
-    terms_accepted: bool = False
 
 
 class BillingSubscriptionResponse(BaseModel):
@@ -356,8 +441,8 @@ class BillingSubscriptionResponse(BaseModel):
     stripe_customer_id: Optional[str] = None
     stripe_subscription_id: Optional[str] = None
     collection_mode: BillingCollectionMode = "invoice_link"
-    billing_interval: BillingInterval = "monthly"
-    currency: str = "usd"
+    billing_interval: Optional[BillingInterval] = None
+    currency: Optional[str] = None
     status: BillingSubscriptionStatus = "pending"
     current_period_start: Optional[str] = None
     current_period_end: Optional[str] = None
@@ -383,7 +468,9 @@ class StudentBillingEnrollmentBaseCreate(BaseModel):
     collection_mode: BillingCollectionMode = "invoice_link"
     start_date: Optional[str] = None
     end_date: Optional[str] = None
-    next_bill_on: Optional[str] = Field(default=None, validation_alias=AliasChoices("next_bill_on", "next_bill_date"))
+    next_bill_on: Optional[str] = Field(
+        default=None, validation_alias=AliasChoices("next_bill_on", "next_bill_date")
+    )
 
     model_config = ConfigDict(populate_by_name=True, extra="forbid")
 
@@ -405,12 +492,23 @@ class StudentBillingEnrollmentForStudentCreate(StudentBillingEnrollmentBaseCreat
 class StudentBillingEnrollmentUpdate(BaseModel):
     model_config = ConfigDict(populate_by_name=True, extra="forbid")
 
-    billing_plan_id: Optional[str] = Field(default=None, validation_alias=AliasChoices("billing_plan_id", "plan_id"))
+    billing_plan_id: Optional[str] = Field(
+        default=None, validation_alias=AliasChoices("billing_plan_id", "plan_id")
+    )
     payer_id: Optional[str] = None
     collection_mode: Optional[BillingCollectionMode] = None
     start_date: Optional[str] = None
     end_date: Optional[str] = None
-    next_bill_on: Optional[str] = Field(default=None, validation_alias=AliasChoices("next_bill_on", "next_bill_date"))
+    next_bill_on: Optional[str] = Field(
+        default=None, validation_alias=AliasChoices("next_bill_on", "next_bill_date")
+    )
+
+
+class BillingEnrollmentScheduledTransitionResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    intent_id: str
+    revision: int = Field(ge=1)
 
 
 class StudentBillingEnrollmentResponse(BaseModel):
@@ -433,6 +531,7 @@ class StudentBillingEnrollmentResponse(BaseModel):
     next_bill_date: Optional[str] = None
     stripe_subscription_id: Optional[str] = None
     stripe_subscription_item_id: Optional[str] = None
+    scheduled_period_end_transition: Optional[BillingEnrollmentScheduledTransitionResponse] = None
     created_at: str
     updated_at: str
 
@@ -447,6 +546,37 @@ class StudentBillingEnrollmentResponse(BaseModel):
         return value
 
 
+class BillingEnrollmentTransitionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    reason_code: str = Field(
+        default="staff_requested",
+        min_length=1,
+        max_length=128,
+        pattern=r"^[a-z0-9][a-z0-9_.:-]{0,127}$",
+    )
+
+
+class BillingEnrollmentTransitionRevokeRequest(BillingEnrollmentTransitionRequest):
+    expected_revision: int = Field(ge=1)
+
+
+class BillingEnrollmentTransitionResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    outcome: str
+    requested_caller_request_key: Optional[str] = None
+    intent: dict[str, Any]
+    operation: Optional[dict[str, Any]] = None
+
+
+class BillingEnrollmentTransitionProcessResponse(BaseModel):
+    claimed: int = 0
+    completed: int = 0
+    reconciliation_required: int = 0
+    failed: int = 0
+
+
 class BillingInvoiceItemCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -456,6 +586,26 @@ class BillingInvoiceItemCreate(BaseModel):
     student_id: Optional[str] = None
     enrollment_id: Optional[str] = None
     billing_plan_id: Optional[str] = None
+
+
+def validate_billing_invoice_due_date(
+    value: str | None,
+    *,
+    collection_mode: str,
+) -> str | None:
+    if value is None:
+        return None
+    if collection_mode != "invoice_link":
+        raise ValueError("Invoice due date is only valid for invoice_link collection.")
+    if not isinstance(value, str):
+        raise ValueError("Invoice due date must use YYYY-MM-DD format.")
+    try:
+        parsed = date.fromisoformat(value)
+    except ValueError as exc:
+        raise ValueError("Invoice due date must use YYYY-MM-DD format.") from exc
+    if parsed.isoformat() != value:
+        raise ValueError("Invoice due date must use YYYY-MM-DD format.")
+    return value
 
 
 class BillingInvoiceCreate(BaseModel):
@@ -470,13 +620,21 @@ class BillingInvoiceCreate(BaseModel):
     due_date: Optional[str] = None
     description: Optional[str] = None
     amount_cents: Optional[int] = Field(default=None, ge=0)
-    items: list[BillingInvoiceItemCreate] = Field(default_factory=list)
+    items: list[BillingInvoiceItemCreate] = Field(default_factory=list, max_length=31)
     send_hosted_invoice: bool = False
 
     @field_validator("currency")
     @classmethod
     def normalize_currency(cls, value: str) -> str:
         return value.strip().lower() or "usd"
+
+    @model_validator(mode="after")
+    def validate_due_date(self):
+        self.due_date = validate_billing_invoice_due_date(
+            self.due_date,
+            collection_mode=self.collection_mode,
+        )
+        return self
 
 
 class BillingInvoiceResponse(BaseModel):
@@ -499,6 +657,7 @@ class BillingInvoiceResponse(BaseModel):
     amount_due_cents: int = 0
     amount_paid_cents: int = 0
     amount_remaining_cents: int = 0
+    invoice_receivable_amount_cents: int = 0
     currency: str = "usd"
     hosted_invoice_url: Optional[str] = None
     invoice_pdf: Optional[str] = None
@@ -519,6 +678,9 @@ class BillingInvoiceResponse(BaseModel):
         if isinstance(value, dict):
             value = dict(value)
             value.setdefault("number", value.get("invoice_number"))
+            value.setdefault(
+                "invoice_receivable_amount_cents", value.get("amount_remaining_cents") or 0
+            )
         return value
 
     @field_validator("last_payment_error", mode="before")
@@ -539,9 +701,11 @@ class BillingPaymentResponse(BaseModel):
     stripe_payment_intent_id: Optional[str] = None
     stripe_charge_id: Optional[str] = None
     stripe_account_id: Optional[str] = None
+    connect_account_generation: Optional[int] = None
     stripe_payment_method_id: Optional[str] = None
     status: PaymentStatus
     amount_cents: int
+    gross_paid_amount_cents: int = 0
     currency: str = "usd"
     payment_method_type: Optional[str] = None
     external_method: Optional[str] = None
@@ -551,9 +715,40 @@ class BillingPaymentResponse(BaseModel):
     failure_message: Optional[str] = None
     application_fee_amount_cents: int = 0
     refunded_amount_cents: int = 0
+    disputed_amount_cents: int = 0
+    net_collected_amount_cents: int = 0
+    refundable_amount_cents: int = 0
+    adjustment_reconciliation_required: bool = False
+    adjustment_reconciliation_reason_code: Optional[str] = None
     processed_at: Optional[str] = None
     created_at: str
     updated_at: str
+
+    @model_validator(mode="before")
+    @classmethod
+    def add_adjustment_accounting(cls, value: Any) -> Any:
+        if not isinstance(value, dict):
+            return value
+        normalized = dict(value)
+        gross = (
+            max(0, int(normalized.get("amount_cents") or 0))
+            if normalized.get("status")
+            in {"succeeded", "refunded", "disputed", "externally_recorded"}
+            else 0
+        )
+        refunded = min(gross, max(0, int(normalized.get("refunded_amount_cents") or 0)))
+        disputed = min(
+            max(0, gross - refunded),
+            max(0, int(normalized.get("disputed_amount_cents") or 0)),
+        )
+        net_collected = max(0, gross - refunded - disputed)
+        normalized["gross_paid_amount_cents"] = gross
+        normalized.setdefault("net_collected_amount_cents", net_collected)
+        normalized.setdefault(
+            "refundable_amount_cents",
+            net_collected if normalized.get("stripe_charge_id") else 0,
+        )
+        return normalized
 
 
 class BillingPaymentCohortSummaryResponse(BaseModel):
@@ -561,20 +756,26 @@ class BillingPaymentCohortSummaryResponse(BaseModel):
     period_end: str
     timezone: Literal["UTC"] = "UTC"
     payment_count: int = 0
+    gross_paid_amount_cents: int = 0
+    refunded_amount_cents: int = 0
+    disputed_amount_cents: int = 0
     stripe_net_amount_cents: int = 0
     external_net_amount_cents: int = 0
     net_amount_cents: int = 0
-    scope: Literal["payment_cohort_net_of_cumulative_refunds"] = "payment_cohort_net_of_cumulative_refunds"
+    scope: Literal["payment_cohort_net_of_confirmed_adjustments"] = (
+        "payment_cohort_net_of_confirmed_adjustments"
+    )
     disclosure: str = (
-        "Payments processed in the current UTC month, net of cumulative refunds recorded on those payments. "
-        "Refunds do not expose event dates here, so this is not cash movement or true period-net revenue."
+        "Payments processed in the current UTC month, net of provider-confirmed refunds and balance-reversing "
+        "disputes recorded on those payments. Adjustment event dates are outside this cohort, so this is not "
+        "cash movement or recognized revenue."
     )
 
 
 class ExternalPaymentCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    amount_cents: int = Field(ge=1)
+    amount_cents: int = Field(ge=1, le=2_147_483_647)
     currency: str = "usd"
     payer_id: Optional[str] = None
     invoice_id: Optional[str] = None
@@ -612,7 +813,7 @@ class BillingRefundCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     amount_cents: Optional[int] = Field(default=None, ge=1)
-    reason: Optional[str] = None
+    reason: Optional[BillingRefundReason] = None
 
 
 class BillingRefundResponse(BaseModel):
@@ -623,24 +824,52 @@ class BillingRefundResponse(BaseModel):
     stripe_charge_id: Optional[str] = None
     stripe_payment_intent_id: Optional[str] = None
     stripe_account_id: Optional[str] = None
+    connect_account_generation: Optional[int] = None
     amount_cents: int
     status: str
     reason: Optional[str] = None
+    reconciliation_required: bool = False
+    reconciliation_reason_code: Optional[str] = None
     created_at: str
     updated_at: Optional[str] = None
 
 
-class BillingDisputeResponse(BaseModel):
-    id: str
+class BillingLandingAggregatesResponse(BaseModel):
+    active_student_count: int
+    active_subscription_count: int
+    failed_payer_count: int
+    open_invoice_amount_cents: int
+    has_billing_plans: bool
+    has_family_accounts: bool
+    has_student_billing: bool
+    has_collection_history: bool
+    payment_cohort: BillingPaymentCohortSummaryResponse
+
+
+class BillingLandingResponse(BaseModel):
     studio_id: str
-    payment_id: Optional[str] = None
-    stripe_dispute_id: Optional[str] = None
-    stripe_charge_id: Optional[str] = None
-    stripe_payment_intent_id: Optional[str] = None
-    stripe_account_id: Optional[str] = None
-    amount_cents: int = 0
-    status: str
-    reason: Optional[str] = None
-    liability_owner: str = "studio"
-    created_at: str
-    updated_at: str
+    observed_at: str
+    system_status: BillingSystemStatusResponse | None = None
+    payment_account: StudioPaymentAccountResponse | None = None
+    platform_status: PlatformBillingStatusResponse | None = None
+    financial_access: Literal["available", "subscription_required", "unavailable"]
+    aggregates: BillingLandingAggregatesResponse | None = None
+    errors: list[str] = Field(default_factory=list)
+
+
+class BillingInvoicePageResponse(BaseModel):
+    items: list[BillingInvoiceResponse]
+    next_cursor: str | None = None
+    complete: bool
+
+
+class BillingPaymentPageResponse(BaseModel):
+    items: list[BillingPaymentResponse]
+    next_cursor: str | None = None
+    complete: bool
+
+
+class BillingEnrollmentPageResponse(BaseModel):
+    items: list[StudentBillingEnrollmentResponse]
+    next_cursor: str | None = None
+    complete: bool

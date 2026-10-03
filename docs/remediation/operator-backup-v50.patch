@@ -1,0 +1,11 @@
+--- operator/backup-restore.py
++++ operator/backup-restore.py
+@@ -262,7 +262,7 @@
+         metadata=json.loads((folder/'backup.json').read_text())
+         preflight={(132,'20260902001000'):18,(133,'20260905022339'):19,
+                    (142,'20260914055301'):28,(143,'20260920035023'):29,
+-                   (144,'20260920052705'):30}.get((metadata['count'],metadata['head']))
++                   (144,'20260920052705'):30,(145,'20260920154441'):31}.get((metadata['count'],metadata['head']))
+         if preflight is None: raise RuntimeError('Update the reviewed readiness mapping for this future release')
+         readiness=json.loads(query(f"SET ROLE service_role; SET search_path=pg_catalog; SET TimeZone='UTC'; SELECT row_to_json(t) FROM public.koaryu_release_schema_preflight_v{preflight}() AS t;"))
+         write(attempt,'restored-readiness.json',json.dumps(readiness,sort_keys=True)+'\n')

@@ -88,49 +88,75 @@ class FakeSupabase(RpcBackedSupabase):
         sort_dir = params.get("p_sort_dir") or "asc"
         reverse = sort_dir == "desc"
         if sort_by == "status":
-            rows.sort(key=lambda row: (row.get("legal_last_name") or "", row.get("legal_first_name") or "", row.get("id") or ""))
+            rows.sort(
+                key=lambda row: (
+                    row.get("legal_last_name") or "",
+                    row.get("legal_first_name") or "",
+                    row.get("id") or "",
+                )
+            )
             rows.sort(key=lambda row: row.get("status") or "", reverse=reverse)
         elif sort_by == "membership_start_date":
-            rows.sort(key=lambda row: (row.get("legal_last_name") or "", row.get("legal_first_name") or "", row.get("id") or ""))
+            rows.sort(
+                key=lambda row: (
+                    row.get("legal_last_name") or "",
+                    row.get("legal_first_name") or "",
+                    row.get("id") or "",
+                )
+            )
             rows.sort(key=lambda row: row.get("membership_start_date") or "", reverse=reverse)
         elif sort_by == "created_at":
-            rows.sort(key=lambda row: (row.get("legal_last_name") or "", row.get("legal_first_name") or "", row.get("id") or ""))
+            rows.sort(
+                key=lambda row: (
+                    row.get("legal_last_name") or "",
+                    row.get("legal_first_name") or "",
+                    row.get("id") or "",
+                )
+            )
             rows.sort(key=lambda row: row.get("created_at") or "", reverse=reverse)
         else:
-            rows.sort(key=lambda row: (row.get("legal_last_name") or "", row.get("legal_first_name") or ""), reverse=reverse)
+            rows.sort(
+                key=lambda row: (
+                    row.get("legal_last_name") or "",
+                    row.get("legal_first_name") or "",
+                ),
+                reverse=reverse,
+            )
 
         total = len(rows)
         offset = params.get("p_offset") or 0
         limit = params.get("p_limit") or 50
-        page_rows = rows[offset:offset + limit]
+        page_rows = rows[offset : offset + limit]
         if not page_rows:
             return [{"student_id": None, "total_count": total}]
-        return [
-            {"student_id": row["id"], "total_count": total}
-            for row in page_rows
-        ]
+        return [{"student_id": row["id"], "total_count": total} for row in page_rows]
 
 
 class StudentServiceListTest(unittest.TestCase):
-    def _service(self, rows: list[dict], memberships: Optional[list[dict]] = None) -> tuple[StudentService, FakeSupabase]:
-        supabase = FakeSupabase({
-            "students": rows,
-            "student_program_memberships": memberships or [],
-        })
+    def _service(
+        self, rows: list[dict], memberships: Optional[list[dict]] = None
+    ) -> tuple[StudentService, FakeSupabase]:
+        supabase = FakeSupabase(
+            {
+                "students": rows,
+                "student_program_memberships": memberships or [],
+            }
+        )
         service = StudentService(supabase)
         service.rows_to_responses = lambda selected_rows: [  # type: ignore[method-assign]
-            StudentResponse(**row, guardians=[], program_memberships=[])
-            for row in selected_rows
+            StudentResponse(**row, guardians=[], program_memberships=[]) for row in selected_rows
         ]
         return service, supabase
 
     def test_search_applies_before_pagination_and_count(self):
-        service, _ = self._service([
-            student_row("s-1", "Sam", "Rivera"),
-            student_row("s-2", "Samantha", "Cho"),
-            student_row("s-3", "Alex", "Kim"),
-            student_row("s-4", "Sam", "Other", studio_id="studio-2"),
-        ])
+        service, _ = self._service(
+            [
+                student_row("s-1", "Sam", "Rivera"),
+                student_row("s-2", "Samantha", "Cho"),
+                student_row("s-3", "Alex", "Kim"),
+                student_row("s-4", "Sam", "Other", studio_id="studio-2"),
+            ]
+        )
 
         result = asyncio.run(
             service.list_students(
@@ -153,11 +179,25 @@ class StudentServiceListTest(unittest.TestCase):
                 student_row("s-1", "Mia", "Stone", program_id=PROGRAM_A_ID),
                 student_row("s-2", "Noah", "Vale", program_id=PROGRAM_B_ID),
                 student_row("s-legacy", "Legacy", "Student", program_id=PROGRAM_A_ID),
-                student_row("s-3", "Other", "Tenant", studio_id="studio-2", program_id=PROGRAM_A_ID),
+                student_row(
+                    "s-3", "Other", "Tenant", studio_id="studio-2", program_id=PROGRAM_A_ID
+                ),
             ],
             memberships=[
-                {"studio_id": "studio-1", "student_id": "s-1", "program_id": PROGRAM_A_ID, "status": "active", "ended_at": None},
-                {"studio_id": "studio-2", "student_id": "s-3", "program_id": PROGRAM_A_ID, "status": "active", "ended_at": None},
+                {
+                    "studio_id": "studio-1",
+                    "student_id": "s-1",
+                    "program_id": PROGRAM_A_ID,
+                    "status": "active",
+                    "ended_at": None,
+                },
+                {
+                    "studio_id": "studio-2",
+                    "student_id": "s-3",
+                    "program_id": PROGRAM_A_ID,
+                    "status": "active",
+                    "ended_at": None,
+                },
             ],
         )
 
@@ -172,8 +212,15 @@ class StudentServiceListTest(unittest.TestCase):
 
         self.assertEqual([item.id for item in result.items], ["s-1", "s-legacy"])
         self.assertEqual(result.total, 2)
-        self.assertTrue(any(name == "list_student_ids_for_program_filter" for name, _params in supabase.rpc_calls))
-        self.assertFalse(any(entry["table"] == "student_program_memberships" for entry in supabase.query_log))
+        self.assertTrue(
+            any(
+                name == "list_student_ids_for_program_filter"
+                for name, _params in supabase.rpc_calls
+            )
+        )
+        self.assertFalse(
+            any(entry["table"] == "student_program_memberships" for entry in supabase.query_log)
+        )
 
     def test_program_filter_rpc_only_expands_current_page_ids(self):
         rows = [
@@ -221,16 +268,21 @@ class StudentServiceListTest(unittest.TestCase):
 
         self.assertEqual(result.total, 3)
         self.assertEqual(result.items, [])
-        self.assertFalse(any(
-            entry["table"] == "students" and any(op == "in" and key == "id" for op, key, _value in entry["filters"])
-            for entry in supabase.query_log
-        ))
+        self.assertFalse(
+            any(
+                entry["table"] == "students"
+                and any(op == "in" and key == "id" for op, key, _value in entry["filters"])
+                for entry in supabase.query_log
+            )
+        )
 
     def test_sort_parameters_are_applied_before_range(self):
-        service, _ = self._service([
-            student_row("s-old", "Older", "Student", created_at="2026-01-01T00:00:00Z"),
-            student_row("s-new", "Newer", "Student", created_at="2026-05-01T00:00:00Z"),
-        ])
+        service, _ = self._service(
+            [
+                student_row("s-old", "Older", "Student", created_at="2026-01-01T00:00:00Z"),
+                student_row("s-new", "Newer", "Student", created_at="2026-05-01T00:00:00Z"),
+            ]
+        )
 
         result = asyncio.run(
             service.list_students(
@@ -246,11 +298,13 @@ class StudentServiceListTest(unittest.TestCase):
         self.assertEqual([item.id for item in result.items], ["s-new"])
 
     def test_non_name_sort_uses_primary_direction_and_name_tie_breaks_ascending(self):
-        service, _ = self._service([
-            student_row("s-z", "Zed", "Tie", status="active"),
-            student_row("s-a", "Ava", "Tie", status="active"),
-            student_row("s-p", "Pat", "Ahead", status="paused"),
-        ])
+        service, _ = self._service(
+            [
+                student_row("s-z", "Zed", "Tie", status="active"),
+                student_row("s-a", "Ava", "Tie", status="active"),
+                student_row("s-p", "Pat", "Ahead", status="paused"),
+            ]
+        )
 
         result = asyncio.run(
             service.list_students(
@@ -265,11 +319,13 @@ class StudentServiceListTest(unittest.TestCase):
         self.assertEqual([item.id for item in result.items], ["s-p", "s-a", "s-z"])
 
     def test_program_filter_sort_uses_primary_direction_and_name_tie_breaks_ascending(self):
-        service, _ = self._service([
-            student_row("s-z", "Zed", "Tie", program_id=PROGRAM_A_ID, status="active"),
-            student_row("s-a", "Ava", "Tie", program_id=PROGRAM_A_ID, status="active"),
-            student_row("s-p", "Pat", "Ahead", program_id=PROGRAM_A_ID, status="paused"),
-        ])
+        service, _ = self._service(
+            [
+                student_row("s-z", "Zed", "Tie", program_id=PROGRAM_A_ID, status="active"),
+                student_row("s-a", "Ava", "Tie", program_id=PROGRAM_A_ID, status="active"),
+                student_row("s-p", "Pat", "Ahead", program_id=PROGRAM_A_ID, status="paused"),
+            ]
+        )
 
         result = asyncio.run(
             service.list_students(
@@ -295,10 +351,12 @@ class StudentServiceListTest(unittest.TestCase):
         )
 
     def test_search_preserves_apostrophes_and_accented_names(self):
-        service, _ = self._service([
-            student_row("s-1", "José", "O'Connor"),
-            student_row("s-2", "Renee", "Plain"),
-        ])
+        service, _ = self._service(
+            [
+                student_row("s-1", "José", "O'Connor"),
+                student_row("s-2", "Renee", "Plain"),
+            ]
+        )
 
         result = asyncio.run(
             service.list_students(

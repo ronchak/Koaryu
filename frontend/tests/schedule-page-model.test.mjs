@@ -8,18 +8,19 @@ import {
   DEFAULT_SCHEDULE_PAGE_VIEW,
   formatScheduleDateKey,
   getActiveScheduleStudents,
+  getScheduleTimeCanvasBounds,
   getScheduleSessionAttendance,
   getScheduleWeekDates,
   getVisibleScheduleRange,
   isCompleteScheduleRoster,
   isSessionAttendanceReady,
+  layoutScheduleTimeItems,
   navigateScheduleDate,
-  recurringClassOverlapsRange,
   runSessionAttendanceRefresh,
 } from "../src/lib/schedule-page-model.ts";
 
-function student(id, status) {
-  return { id, status };
+function student(id, status, overrides = {}) {
+  return { id, status, ...overrides };
 }
 
 function deferred() {
@@ -41,18 +42,15 @@ describe("schedule page model", () => {
     const base = new Date(2026, 4, 20, 15);
 
     assert.equal(formatScheduleDateKey(base), "2026-05-20");
-    assert.deepEqual(
-      getScheduleWeekDates(base).map(formatScheduleDateKey),
-      [
-        "2026-05-17",
-        "2026-05-18",
-        "2026-05-19",
-        "2026-05-20",
-        "2026-05-21",
-        "2026-05-22",
-        "2026-05-23",
-      ]
-    );
+    assert.deepEqual(getScheduleWeekDates(base).map(formatScheduleDateKey), [
+      "2026-05-17",
+      "2026-05-18",
+      "2026-05-19",
+      "2026-05-20",
+      "2026-05-21",
+      "2026-05-22",
+      "2026-05-23",
+    ]);
     assert.deepEqual(getVisibleScheduleRange(base, "day"), {
       start: "2026-05-20",
       end: "2026-05-20",
@@ -75,48 +73,85 @@ describe("schedule page model", () => {
     assert.equal(formatScheduleDateKey(navigateScheduleDate(base, "month", 1)), "2026-06-20");
     assert.equal(
       formatScheduleDateKey(navigateScheduleDate(new Date(2026, 0, 31, 12), "month", 1)),
-      "2026-02-28"
+      "2026-02-28",
     );
     assert.equal(
       formatScheduleDateKey(navigateScheduleDate(new Date(2026, 11, 31, 12), "month", -1)),
-      "2026-11-30"
+      "2026-11-30",
     );
   });
 
-  it("checks recurring-class overlap and selected-session attendance outside the route", () => {
-    const visibleRange = { start: "2026-05-17", end: "2026-05-23" };
+  it("lays out duration and overlap on one deterministic time canvas", () => {
+    const items = [
+      { id: "early", start_time: "05:30", end_time: "06:30" },
+      { id: "a", start_time: "09:00", end_time: "10:30" },
+      { id: "b", start_time: "09:30", end_time: "10:00" },
+      { id: "c", start_time: "11:00", end_time: "12:00" },
+      { id: "late", start_time: "21:30", end_time: "22:30" },
+    ];
 
-    assert.equal(
-      recurringClassOverlapsRange({ startDate: "2026-05-01", endDate: "2026-05-18" }, visibleRange),
-      true
-    );
-    assert.equal(
-      recurringClassOverlapsRange({ startDate: "2026-05-24", endDate: null }, visibleRange),
-      false
-    );
+    assert.deepEqual(getScheduleTimeCanvasBounds(items), {
+      startMinute: 5 * 60,
+      endMinute: 23 * 60,
+    });
+    const blocks = layoutScheduleTimeItems(items);
+    const a = blocks.find((block) => block.item.id === "a");
+    const b = blocks.find((block) => block.item.id === "b");
+    const c = blocks.find((block) => block.item.id === "c");
+    assert.equal(a.endMinute - a.startMinute, 90);
+    assert.equal(a.laneCount, 2);
+    assert.equal(b.laneCount, 2);
+    assert.notEqual(a.lane, b.lane);
+    assert.equal(a.overlaps, true);
+    assert.equal(c.laneCount, 1);
+    assert.equal(c.overlaps, false);
+  });
+
+  it("checks selected-session attendance outside the route", () => {
     assert.deepEqual(
       getScheduleSessionAttendance(
         [
           { id: "att-1", session_id: "session-1" },
           { id: "att-2", session_id: "session-2" },
         ],
-        { id: "session-1" }
+        { id: "session-1" },
       ),
-      [{ id: "att-1", session_id: "session-1" }]
+      [{ id: "att-1", session_id: "session-1" }],
     );
-    assert.deepEqual(getScheduleSessionAttendance([{ id: "att-1", session_id: "session-1" }], null), []);
+    assert.deepEqual(
+      getScheduleSessionAttendance([{ id: "att-1", session_id: "session-1" }], null),
+      [],
+    );
   });
 
-  it("keeps only active and trialing students available for attendance", () => {
+  it("keeps attendance status filtering while deriving known ages and preserving explicit minor status without a birth date", () => {
+    const birthday = student("active", "active", {
+      date_of_birth: "2008-05-20",
+      is_minor: true,
+    });
+    const nullDob = student("trialing", "trialing", {
+      date_of_birth: null,
+      is_minor: true,
+    });
+    const source = [
+      birthday,
+      nullDob,
+      student("inactive", "inactive"),
+      student("paused", "paused"),
+    ];
+    const beforeBirthday = getActiveScheduleStudents(source, "2026-05-19");
+    const current = getActiveScheduleStudents(source, "2026-05-20");
+
     assert.deepEqual(
-      getActiveScheduleStudents([
-        student("active", "active"),
-        student("trialing", "trialing"),
-        student("inactive", "inactive"),
-        student("paused", "paused"),
-      ]).map((item) => item.id),
-      ["active", "trialing"]
+      current.map((item) => item.id),
+      ["active", "trialing"],
     );
+    assert.equal(beforeBirthday[0].is_minor, true);
+    assert.equal(beforeBirthday[1].is_minor, true);
+    assert.equal(current[0].is_minor, false);
+    assert.equal(current[1].is_minor, true);
+    assert.equal(birthday.is_minor, true);
+    assert.equal(nullDob.is_minor, true);
   });
 
   it("tracks session attendance refresh through pending and success", async () => {
@@ -150,18 +185,27 @@ describe("schedule page model", () => {
   });
 
   it("requires the roster load to finish before attendance is complete", () => {
-    assert.equal(isCompleteScheduleRoster({
-      studentsLoaded: false,
-      studentsMayBePartial: false,
-    }), false);
-    assert.equal(isCompleteScheduleRoster({
-      studentsLoaded: true,
-      studentsMayBePartial: true,
-    }), false);
-    assert.equal(isCompleteScheduleRoster({
-      studentsLoaded: true,
-      studentsMayBePartial: false,
-    }), true);
+    assert.equal(
+      isCompleteScheduleRoster({
+        studentsLoaded: false,
+        studentsMayBePartial: false,
+      }),
+      false,
+    );
+    assert.equal(
+      isCompleteScheduleRoster({
+        studentsLoaded: true,
+        studentsMayBePartial: true,
+      }),
+      false,
+    );
+    assert.equal(
+      isCompleteScheduleRoster({
+        studentsLoaded: true,
+        studentsMayBePartial: false,
+      }),
+      true,
+    );
   });
 
   it("keeps session attendance unavailable after refresh failure", async () => {
@@ -176,7 +220,7 @@ describe("schedule page model", () => {
         },
         sessionId: "session-1",
       }),
-      /load failed/
+      /load failed/,
     );
     assert.deepEqual(states, [
       { sessionId: "session-1", status: "pending" },
@@ -194,9 +238,7 @@ describe("schedule page model", () => {
       onStateChange: (state) => states.push(state),
       refresh: async () => {
         attempts += 1;
-        return attempts === 1
-          ? { committed: false }
-          : authoritativeRetry.promise;
+        return attempts === 1 ? { committed: false } : authoritativeRetry.promise;
       },
       sessionId: "session-1",
     });

@@ -18,6 +18,11 @@ from typing import Any, Literal, Optional
 
 from fastapi import HTTPException, status
 
+from app.services.billing_workflow_catalog import (
+    LIVE_SCOPE_OPERATIONS,
+    validate_live_authorization_operations,
+)
+
 
 LiveBillingScope = Literal[
     "core_subscription",
@@ -27,10 +32,14 @@ LiveBillingScope = Literal[
 ConnectOnboardingPreflightState = Literal["eligible", "none", "support_required", "denied"]
 
 LIVE_AUTHORIZATION_UNAVAILABLE_DETAIL = "Live Stripe authorization state is unavailable."
-LIVE_SCOPE_REQUIRED_DETAIL = "Live Stripe mutations require an explicit studio or connected-account scope."
+LIVE_SCOPE_REQUIRED_DETAIL = (
+    "Live Stripe mutations require an explicit studio or connected-account scope."
+)
 LIVE_SCOPE_DENIED_DETAIL = "This studio is not authorized for the requested live Stripe operation."
 LIVE_SCOPE_EXPIRED_DETAIL = "This studio's live Stripe authorization has expired."
-LIVE_CONNECT_ACCOUNT_NOT_READY_DETAIL = "This Stripe Connect account is not currently ready for live payments."
+LIVE_CONNECT_ACCOUNT_NOT_READY_DETAIL = (
+    "This Stripe Connect account is not currently ready for live payments."
+)
 LIVE_WEBHOOK_NOT_READY_DETAIL = "Live Stripe webhook delivery proof is not current."
 LIVE_CONNECT_BOOTSTRAP_SUPPORT_DETAIL = (
     "Stripe onboarding recovery requires support before this studio can continue."
@@ -50,15 +59,17 @@ def connect_initial_link_context_sha256(
     refresh_url: str,
     return_url: str,
 ) -> str:
-    return stripe_payload_sha256({
-        "operation": "connect_onboarding_link.create",
-        "studio_id": studio_id,
-        "connect_account_generation": account_generation,
-        "configurations": ["merchant"],
-        "collection_options": {"fields": "eventually_due"},
-        "refresh_url": refresh_url,
-        "return_url": return_url,
-    })
+    return stripe_payload_sha256(
+        {
+            "operation": "connect_onboarding_link.create",
+            "studio_id": studio_id,
+            "connect_account_generation": account_generation,
+            "configurations": ["merchant"],
+            "collection_options": {"fields": "eventually_due"},
+            "refresh_url": refresh_url,
+            "return_url": return_url,
+        }
+    )
 
 
 @dataclass(frozen=True)
@@ -136,14 +147,18 @@ class StudioLiveBillingAuthorizationStore:
             "connect_onboarding_link.create",
         }:
             self._blocked(LIVE_SCOPE_DENIED_DETAIL)
-        if operation == "connect_onboarding_link.create" and bootstrap_context and (
-            not bootstrap_context.bootstrap_id or not account_id or not payload_sha256
+        if (
+            operation == "connect_onboarding_link.create"
+            and bootstrap_context
+            and (not bootstrap_context.bootstrap_id or not account_id or not payload_sha256)
         ):
             self._blocked(LIVE_SCOPE_DENIED_DETAIL)
         try:
+            special_rpc_name: Optional[str] = None
+            special_rpc_params: Optional[dict[str, Any]] = None
             if operation == "connect_account.create" and bootstrap_context:
-                rpc_name = "authorize_connect_onboarding_bootstrap_account_create_v2"
-                rpc_params = {
+                special_rpc_name = "authorize_connect_onboarding_bootstrap_account_create_v2"
+                special_rpc_params = {
                     "p_bootstrap_id": bootstrap_context.bootstrap_id,
                     "p_studio_id": studio_id,
                     "p_candidate_sha": self.expected_candidate_sha,
@@ -152,8 +167,8 @@ class StudioLiveBillingAuthorizationStore:
                     "p_account_create_idempotency_key": bootstrap_context.account_create_idempotency_key,
                 }
             elif operation == "connect_onboarding_link.create" and bootstrap_context:
-                rpc_name = "authorize_connect_onboarding_bootstrap_initial_link_v2"
-                rpc_params = {
+                special_rpc_name = "authorize_connect_onboarding_bootstrap_initial_link_v2"
+                special_rpc_params = {
                     "p_bootstrap_id": bootstrap_context.bootstrap_id,
                     "p_studio_id": studio_id,
                     "p_candidate_sha": self.expected_candidate_sha,
@@ -164,21 +179,118 @@ class StudioLiveBillingAuthorizationStore:
                     "p_initial_link_idempotency_key": bootstrap_context.initial_link_idempotency_key,
                 }
             else:
-                rpc_name = "authorize_studio_live_billing_mutation_atomic"
-                rpc_params = {
-                    "p_studio_id": studio_id,
-                    "p_operation": operation,
-                    "p_scope": scope,
-                    "p_stripe_connected_account_id": account_id,
-                    "p_candidate_sha": self.expected_candidate_sha,
-                }
-            result = self.supabase.rpc(rpc_name, rpc_params).execute()
+                special_rpc_name = None
+            rpc_params = {
+                "p_studio_id": studio_id,
+                "p_operation": operation,
+                "p_scope": scope,
+                "p_stripe_connected_account_id": account_id,
+                "p_candidate_sha": self.expected_candidate_sha,
+            }
+            result = self.supabase.rpc(
+                "authorize_studio_live_billing_mutation_atomic",
+                rpc_params,
+            ).execute()
         except Exception:
             self._blocked(LIVE_AUTHORIZATION_UNAVAILABLE_DETAIL)
         row = result.data[0] if result.data else None
         if not row or row.get("authorized") is not True or row.get("studio_id") != studio_id:
             self._blocked(LIVE_SCOPE_DENIED_DETAIL)
+        if special_rpc_name and special_rpc_params:
+            try:
+                result = self.supabase.rpc(special_rpc_name, special_rpc_params).execute()
+            except Exception:
+                self._blocked(LIVE_AUTHORIZATION_UNAVAILABLE_DETAIL)
+            row = result.data[0] if result.data else None
+            if not row or row.get("authorized") is not True or row.get("studio_id") != studio_id:
+                self._blocked(LIVE_SCOPE_DENIED_DETAIL)
         return studio_id
+
+    def set_authorization_operations(
+        self,
+        *,
+        studio_id: str,
+        scope: LiveBillingScope,
+        enabled: bool,
+        expires_at: Optional[str],
+        reason: str,
+        actor_id: str,
+        allowed_operations: list[str] | tuple[str, ...],
+        actor_email: Optional[str] = None,
+        stripe_connected_account_id: Optional[str] = None,
+    ) -> dict[str, Any]:
+        try:
+            exact_operations = validate_live_authorization_operations(
+                scope,
+                allowed_operations,
+                enabled=enabled,
+            )
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Live billing operation set is invalid.",
+            ) from exc
+        try:
+            result = self.supabase.rpc(
+                "set_studio_live_billing_authorization_operations_v1",
+                {
+                    "p_studio_id": studio_id,
+                    "p_scope": scope,
+                    "p_enabled": enabled,
+                    "p_expires_at": expires_at,
+                    "p_reason": reason,
+                    "p_actor_id": actor_id,
+                    "p_allowed_operations": list(exact_operations),
+                    "p_actor_email": actor_email,
+                    "p_stripe_connected_account_id": stripe_connected_account_id,
+                },
+            ).execute()
+        except HTTPException:
+            raise
+        except Exception:
+            self._blocked(LIVE_AUTHORIZATION_UNAVAILABLE_DETAIL)
+        row = result.data[0] if result.data else None
+        if (
+            not row
+            or row.get("studio_id") != studio_id
+            or row.get("scope") != scope
+            or row.get("enabled") is not enabled
+            or tuple(row.get("allowed_operations") or ()) != exact_operations
+        ):
+            self._blocked(LIVE_AUTHORIZATION_UNAVAILABLE_DETAIL)
+        return row
+
+    def current_allowed_operations(
+        self,
+        *,
+        studio_id: str,
+    ) -> dict[LiveBillingScope, frozenset[str]]:
+        try:
+            rows = (
+                self.supabase.table("studio_live_billing_authorizations")
+                .select("studio_id,scope,enabled,allowed_operations")
+                .eq("studio_id", studio_id)
+                .eq("enabled", True)
+                .execute()
+            ).data or []
+        except Exception:
+            return {}
+        result: dict[LiveBillingScope, frozenset[str]] = {}
+        for row in rows:
+            scope = row.get("scope")
+            if scope not in LIVE_SCOPE_OPERATIONS:
+                continue
+            operations = row.get("allowed_operations")
+            try:
+                exact = validate_live_authorization_operations(
+                    scope,
+                    operations,
+                    enabled=True,
+                )
+            except ValueError:
+                continue
+            result[scope] = frozenset(exact)  # type: ignore[index]
+        return result
 
     def prepare_connect_onboarding_bootstrap(
         self,
@@ -282,9 +394,8 @@ class StudioLiveBillingAuthorizationStore:
         studio_id: str,
         delivery_receipt: str,
     ) -> bool:
-        if (
-            self.expected_candidate_sha is None
-            or not re.fullmatch(r"[A-Za-z0-9_-]{43,128}", delivery_receipt)
+        if self.expected_candidate_sha is None or not re.fullmatch(
+            r"[A-Za-z0-9_-]{43,128}", delivery_receipt
         ):
             self._blocked(LIVE_SCOPE_DENIED_DETAIL)
         receipt_sha256 = hashlib.sha256(delivery_receipt.encode("utf-8")).hexdigest()
@@ -419,11 +530,17 @@ class StudioLiveBillingAuthorizationStore:
         except Exception:
             self._blocked(LIVE_AUTHORIZATION_UNAVAILABLE_DETAIL)
         row = result.data[0] if result.data else None
-        if not row or row.get("studio_id") != studio_id or row.get("stripe_connected_account_id") != account_id:
+        if (
+            not row
+            or row.get("studio_id") != studio_id
+            or row.get("stripe_connected_account_id") != account_id
+        ):
             self._blocked(LIVE_SCOPE_DENIED_DETAIL)
         return row
 
-    def _payment_account(self, *, studio_id: Optional[str], account_id: Optional[str]) -> Optional[dict[str, Any]]:
+    def _payment_account(
+        self, *, studio_id: Optional[str], account_id: Optional[str]
+    ) -> Optional[dict[str, Any]]:
         """Read-only helper retained for studio-specific capability reporting."""
         if not studio_id and not account_id:
             return None
@@ -432,7 +549,11 @@ class StudioLiveBillingAuthorizationStore:
                 "studio_id, stripe_connected_account_id, status, charges_enabled, payouts_enabled, "
                 "details_submitted, requirements_due, metadata"
             )
-            query = query.eq("studio_id", studio_id) if studio_id else query.eq("stripe_connected_account_id", account_id)
+            query = (
+                query.eq("studio_id", studio_id)
+                if studio_id
+                else query.eq("stripe_connected_account_id", account_id)
+            )
             result = query.limit(1).execute()
         except Exception:
             self._blocked(LIVE_AUTHORIZATION_UNAVAILABLE_DETAIL)

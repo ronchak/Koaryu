@@ -10,8 +10,8 @@ import type {
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 function sortRanks(ranks: BeltRank[]): BeltRank[] {
-  return [...ranks].sort((left, right) =>
-    left.display_order - right.display_order || left.id.localeCompare(right.id)
+  return [...ranks].sort(
+    (left, right) => left.display_order - right.display_order || left.id.localeCompare(right.id),
   );
 }
 
@@ -28,9 +28,9 @@ function daysSince(anchor: string | null | undefined, nowMs: number): number {
 }
 
 function activeMemberships(student: Student): StudentProgramMembership[] {
-  return (student.program_memberships || []).filter((membership) =>
-    (membership.status === "active" || membership.status === "paused") &&
-    !membership.ended_at
+  return (student.program_memberships || []).filter(
+    (membership) =>
+      (membership.status === "active" || membership.status === "paused") && !membership.ended_at,
   );
 }
 
@@ -53,8 +53,10 @@ function matchesMembershipContext(
     return membership.program_id === student.program_id;
   }
 
-  return !item.student_program_membership_id &&
-    (!item.program_id || item.program_id === student.program_id);
+  return (
+    !item.student_program_membership_id &&
+    (!item.program_id || item.program_id === student.program_id)
+  );
 }
 
 function latestPromotionAtForRank(
@@ -67,8 +69,10 @@ function latestPromotionAtForRank(
 
   let latest: { promotedAt: string; promotedAtMs: number } | null = null;
   for (const promotion of promotions) {
-    if (promotion.to_rank_id !== currentRankId ||
-        !matchesMembershipContext(promotion, student, membership)) {
+    if (
+      promotion.to_rank_id !== currentRankId ||
+      !matchesMembershipContext(promotion, student, membership)
+    ) {
       continue;
     }
     const promotedAtMs = Date.parse(promotion.promoted_at);
@@ -105,10 +109,7 @@ export function buildPreviewEligibilityForLadder({
   const rankById = new Map(orderedRanks.map((rank) => [rank.id, rank]));
   const entries: EligibilityEntry[] = [];
 
-  const addEntry = (
-    student: Student,
-    membership: StudentProgramMembership | null,
-  ) => {
+  const addEntry = (student: Student, membership: StudentProgramMembership | null) => {
     const programId = membership?.program_id ?? student.program_id;
     const currentRankId = membership
       ? membership.current_belt_rank_id
@@ -130,10 +131,11 @@ export function buildPreviewEligibilityForLadder({
       membership,
       currentRank?.id ?? null,
     );
-    const seed = seedRows.find((row) =>
-      row.student_id === student.id && matchesMembershipContext(row, student, membership)
+    const seed = seedRows.find(
+      (row) => row.student_id === student.id && matchesMembershipContext(row, student, membership),
     );
-    const canReuseSeed = !promotionAnchor &&
+    const canReuseSeed =
+      !promotionAnchor &&
       seed?.current_rank_id === (currentRank?.id ?? null) &&
       seed.next_rank_id === nextRank.id;
     const classesSincePromo = canReuseSeed ? seed.classes_since_promo : 0;

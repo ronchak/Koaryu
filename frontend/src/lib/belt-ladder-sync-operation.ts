@@ -34,11 +34,11 @@ export function loadPendingBeltLadderSync(
     if (!raw) return null;
     const parsed = JSON.parse(raw) as Partial<PendingBeltLadderSync>;
     if (
-      typeof parsed.fingerprint !== "string"
-      || !parsed.request
-      || typeof parsed.request.operation_id !== "string"
-      || typeof parsed.request.sub_rank_term !== "string"
-      || !Array.isArray(parsed.request.ranks)
+      typeof parsed.fingerprint !== "string" ||
+      !parsed.request ||
+      typeof parsed.request.operation_id !== "string" ||
+      typeof parsed.request.sub_rank_term !== "string" ||
+      !Array.isArray(parsed.request.ranks)
     ) {
       storage.removeItem(storageKey(studioId, ladderId));
       return null;
@@ -82,12 +82,9 @@ export function clearPendingBeltLadderSync(
 }
 
 export function isTerminalBeltLadderSyncError(error: unknown): boolean {
-  const status = error instanceof Error
-    ? (error as Error & { status?: unknown }).status
-    : undefined;
-  return typeof status === "number"
-    && status >= 400
-    && status < 500
-    && status !== 408
-    && status !== 429;
+  const status =
+    error instanceof Error ? (error as Error & { status?: unknown }).status : undefined;
+  return (
+    typeof status === "number" && status >= 400 && status < 500 && status !== 408 && status !== 429
+  );
 }

@@ -7,14 +7,15 @@ import {
 } from "../src/lib/student-roster-reconciliation.ts";
 
 describe("student roster reconciliation", () => {
-  const decision = (overrides = {}) => isStudentRosterSnapshotCurrent({
-    authCurrent: true,
-    currentMutationEpoch: 4,
-    currentRequestSequence: 7,
-    mutationEpochAtStart: 4,
-    requestSequence: 7,
-    ...overrides,
-  });
+  const decision = (overrides = {}) =>
+    isStudentRosterSnapshotCurrent({
+      authCurrent: true,
+      currentMutationEpoch: 4,
+      currentRequestSequence: 7,
+      mutationEpochAtStart: 4,
+      requestSequence: 7,
+      ...overrides,
+    });
 
   it("commits an uncontested newest full-roster refresh", () => {
     assert.equal(decision(), true);
@@ -31,14 +32,15 @@ describe("student roster reconciliation", () => {
 });
 
 describe("superseded student roster refresh retry", () => {
-  const retry = (overrides = {}) => shouldRetryStudentRosterRefresh({
-    attempt: 1,
-    authCurrent: true,
-    currentRequestSequence: 7,
-    maxAttempts: 2,
-    requestSequence: 7,
-    ...overrides,
-  });
+  const retry = (overrides = {}) =>
+    shouldRetryStudentRosterRefresh({
+      attempt: 1,
+      authCurrent: true,
+      currentRequestSequence: 7,
+      maxAttempts: 2,
+      requestSequence: 7,
+      ...overrides,
+    });
 
   it("re-fetches when a concurrent mutation superseded the newest request", () => {
     // Without this the caller is told reconciliation succeeded, so a bulk

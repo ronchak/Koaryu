@@ -4,13 +4,16 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { FocusedOperationsSheet } from "@/components/operations/operations-surface";
 import { api } from "@/lib/api";
 import {
   acknowledgeConnectOnboardingBeforeNavigation,
   createConnectOnboardingRequestKey,
 } from "@/lib/billing-connect-delivery";
+import { hasConnectOnboardingCapability } from "@/lib/billing-route-access";
 import { createClient } from "@/lib/supabase/client";
 import type {
+  BillingSystemStatus,
   ConnectOnboardingDeliveryAckResponse,
   ConnectOnboardingLinkResponse,
 } from "@/types";
@@ -32,9 +35,19 @@ export default function StripeConnectRefreshPage() {
     async function refreshStripeLink() {
       try {
         const supabase = createClient();
-        const { data: { session } } = await supabase.auth.getSession();
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
         if (!session) {
           throw new Error("Sign in again to continue Stripe onboarding.");
+        }
+
+        const status = await api.get<BillingSystemStatus>(
+          "/billing/system/status",
+          session.access_token,
+        );
+        if (!hasConnectOnboardingCapability(status)) {
+          throw new Error("Stripe onboarding is not available for the current studio and role.");
         }
 
         const link = await api.post<ConnectOnboardingLinkResponse>(
@@ -47,7 +60,7 @@ export default function StripeConnectRefreshPage() {
           {
             timeoutMs: 30000,
             headers: { "Idempotency-Key": createConnectOnboardingRequestKey() },
-          }
+          },
         );
 
         if (!cancelled) {
@@ -66,7 +79,9 @@ export default function StripeConnectRefreshPage() {
         }
       } catch (err) {
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : "Stripe onboarding could not be refreshed.");
+          setError(
+            err instanceof Error ? err.message : "Stripe onboarding could not be refreshed.",
+          );
         }
       }
     }
@@ -79,8 +94,8 @@ export default function StripeConnectRefreshPage() {
   }, []);
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-bg px-4">
-      <section className="w-full max-w-md rounded-[6px] border border-border bg-surface p-6 text-center">
+    <FocusedOperationsSheet page="connect-refresh" eyebrow="Stripe Connect">
+      <div className="text-center">
         {error ? (
           <>
             <h1 className="text-base font-semibold text-text-primary">Stripe link expired</h1>
@@ -96,7 +111,7 @@ export default function StripeConnectRefreshPage() {
             <p className="text-sm text-muted">Creating a fresh secure onboarding link.</p>
           </div>
         )}
-      </section>
-    </main>
+      </div>
+    </FocusedOperationsSheet>
   );
 }

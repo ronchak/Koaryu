@@ -37,7 +37,6 @@ Frontend environment variables:
 - `NEXT_PUBLIC_API_URL`: backend API base URL, typically `http://localhost:8001/api/v1`
 - `BACKEND_API_URL`: server-only backend API base URL for Next.js API proxy and cron routes; defaults to the public API URL only when this is not set
 - `NEXT_PUBLIC_SITE_URL`: public frontend origin used for auth callback links, typically `https://koaryu.app` in production
-- `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`: Stripe publishable key used by frontend billing flows
 - `CRON_SECRET`: server-only Vercel Cron secret used to authenticate scheduled internal maintenance routes
 - `ACCOUNT_DELETION_WORKER_SECRET`: server-only Vercel value that must match the backend worker secret so the scheduled account-deletion route can call the protected backend processor
 - `NEXT_PUBLIC_USE_API_PROXY` (optional): set to `true` only when browser API calls must route through the Next.js proxy instead of calling `NEXT_PUBLIC_API_URL` directly
@@ -70,7 +69,7 @@ Backend environment variables:
 
 The backend validates the Supabase target before readiness and before every shared service-role client is constructed. Production and staging are pinned to their exact Koaryu projects. Test permits only the canonical local URL or shipped placeholders. Development additionally permits an explicitly pinned hosted project that is neither Koaryu production nor staging. The pinned Supabase client cannot disable environment trust across all of its component transports, so service-role clients fail closed when any HTTP proxy or CA-bundle override is active. `NO_PROXY` does not override that refusal.
 
-When `ENVIRONMENT=production`, the backend requires `STRIPE_MODE=live` with matching `sk_live_` and optional `rk_live_` keys, and fails startup if required Supabase, Stripe, or public frontend configuration is missing, blank, placeholder-shaped, malformed, mode-mismatched, or pointed at a local origin. This prevents test Stripe identifiers from being written into production tenant records. `LIVE_BILLING_ENABLED=true` is rejected until Koaryu has durable scoped authorization for live mutations. A live-mode deployment with the switch off still verifies and reconciles matching live webhooks; outbound Stripe writes remain closed.
+When `ENVIRONMENT=production`, the backend requires `STRIPE_MODE=live` with matching `sk_live_` and optional `rk_live_` keys, and fails startup if required Supabase, Stripe, or public frontend configuration is missing, blank, placeholder-shaped, malformed, mode-mismatched, or pointed at a local origin. This prevents test Stripe identifiers from being written into production tenant records. For Stripe Connect and tuition mutations, `LIVE_BILLING_ENABLED=true` satisfies only the global environment interlock; each operation still requires the exact studio grant and operation permission. Turning that switch off closes those outbound writes while matching live webhooks and provider reads can still reconcile existing state. Koaryu Core uses its separate `CORE_SELF_CHECKOUT_ENABLED` interlock and exact-operation safeguards.
 
 Local defaults in this repo assume:
 
@@ -108,8 +107,7 @@ If you prefer to run each service manually, use the commands below.
 cd frontend
 cp .env.example .env.local
 # Fill in NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY,
-# NEXT_PUBLIC_API_URL, BACKEND_API_URL, NEXT_PUBLIC_SITE_URL,
-# and NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
+# NEXT_PUBLIC_API_URL, BACKEND_API_URL, and NEXT_PUBLIC_SITE_URL
 npm install
 npm run dev
 ```
@@ -130,34 +128,27 @@ uvicorn app.main:app --reload --port 8001
 
 ### Database
 
-Apply the SQL files in `supabase/migrations/` in timestamp order. For a deployment-ready environment, include the current tenant-hardening migrations, especially:
-
-- `20260421000007_harden_tenant_policies.sql`
-- `20260421000008_fix_recursive_staff_roles_policies.sql`
-- `20260613090000_harden_student_import_tenant_conflicts.sql`
-- `20260613093000_atomic_support_ticket_create.sql`
-- `20260613094000_atomic_lead_conversion.sql`
-- `20260613095000_atomic_student_profile_write.sql`
-- `20260613100000_atomic_studio_operational_clear.sql`
-
-If you are using the Supabase SQL Editor instead of the CLI, run every migration file in order rather than only the initial schema.
-
-For linked-project release checks, run:
+For development and SQL review, use the disposable PostgreSQL 17 verifier. It
+replays the complete migration chain and all contracts without Docker, a hosted
+project, credentials or `.env` files:
 
 ```bash
-supabase db lint --linked --fail-on error
-SUPABASE_DB_TARGET=linked scripts/verify-supabase-contracts.sh
+npm run check:supabase-contracts-local
 ```
 
-The verification script defaults to the local database. Use
-`SUPABASE_DB_TARGET=linked scripts/verify-supabase-contracts.sh` only after
-the migrations are applied to the linked project. The backend now requires the worker-claim RPC migrations
-before webhook, account-deletion, or CSV-import workers can run. The contract
-checks cover account/support controls, belt-ladder sync, support triage,
-direct-client write lockdown, worker-claim RPCs, promotion RPCs,
-recurring-session soft delete, student program filtering, atomic student import,
-lead conversion, student profile writes, studio operational clears, and studio
-onboarding. Most behavior checks run inside transactions that roll back.
+When verification needs the assembled local Supabase services, apply unapplied
+migrations with `supabase migration up --local`, then use
+`supabase db lint --local --fail-on error` and
+`SUPABASE_DB_TARGET=local scripts/verify-supabase-contracts.sh` against that
+disposable local stack.
+
+Hosted migrations follow [Cutover Gates](docs/cutover-gates.md), including the
+owner-authorized production apply and announce-and-pause protocol. Never run contract SQL against production, even
+inside a transaction that rolls back. Linked contracts are only for an explicitly
+intended staging verification after staging has the candidate migrations. The SQL
+runner accepts only the pinned Koaryu staging connection and rejects routing
+overrides. See [Operator Tooling](docs/operator-tooling.md) for connection forms
+and private credential handling.
 
 ## Auth, Onboarding, And Tenant Model
 
@@ -176,9 +167,9 @@ Koaryu supports exactly one studio membership per user. Creating or accepting a 
 ## Deployment And Demo Notes
 
 - Backend deployment is currently prepared for Render via `render.yaml`. Create a Render Blueprint from this repo, and use `docs/render-backend-deployment.md` plus `backend/.env.render.example` as the setup checklist.
-- Render starts the FastAPI backend with a single Uvicorn process in production. Keep the root `render.yaml`, `backend/Procfile`, and `docs/render-backend-deployment.md` start commands aligned.
+- Render builds `backend/Dockerfile`, preloads jemalloc, verifies the allocator at startup, and starts one Uvicorn process. Keep `render.yaml`, the Docker startup files, and `docs/render-backend-deployment.md` aligned.
 - Production backend startup validates required Supabase, Stripe, and frontend origin configuration before serving traffic. If Render deploys but the service exits immediately, check the runtime logs for `Production configuration is incomplete`.
-- The Vercel frontend project must define the build-time public variables `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_SITE_URL`, and `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`, plus the server-only `BACKEND_API_URL` for proxy and cron routes, for Production. Add them in Vercel Project Settings or with:
+- The Vercel frontend project must define the build-time public variables `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXT_PUBLIC_API_URL`, and `NEXT_PUBLIC_SITE_URL`, plus the server-only `BACKEND_API_URL` for proxy and cron routes, for Production. Add them in Vercel Project Settings or with:
 
 ```bash
 cd frontend
@@ -188,7 +179,6 @@ vercel env add NEXT_PUBLIC_SUPABASE_ANON_KEY production
 vercel env add NEXT_PUBLIC_API_URL production
 vercel env add BACKEND_API_URL production
 vercel env add NEXT_PUBLIC_SITE_URL production
-vercel env add NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY production
 vercel env add CRON_SECRET production
 vercel env add ACCOUNT_DELETION_WORKER_SECRET production
 ```
@@ -201,7 +191,7 @@ vercel env add ACCOUNT_DELETION_WORKER_SECRET production
 - The informational landing page is intentionally not part of the Supabase auth middleware gate. It paints as static marketing UI, then warms the backend in the background through `/api/proxy/health` so a follow-up visit to login or dashboard has a better chance of finding Render awake.
 - Login, signup, onboarding, subscription-required, and dashboard routes still block on the normal auth/session behavior. Do not add `/` back to the frontend proxy matcher unless the landing page should become auth-aware again.
 - Preview mode is for demos only. Live mode now starts empty for new studios and should be used for deployment verification.
-- The repo does not currently ship seeded example CSV imports or a packaged demo tenant. For demos, prepare a small example CSV and/or a dedicated demo studio ahead of time.
+- The repository ships [a sample student CSV](frontend/public/demo-students.csv) for preview-import checks. It does not include a packaged or hosted demo tenant.
 - Repeated public signups against a shared dev Supabase project can hit Supabase email rate limits. For heavy QA loops, use a dedicated project, stagger signups, or create test users through an admin flow instead of repeated public signup attempts.
 - The demo reset and clear-studio-data tools are intentionally dangerous admin utilities. They preserve Koaryu Core subscription/platform access rows, but they can replace or delete working studio data and now require the target studio ID to be listed in `DEMO_RESET_STUDIO_IDS`.
 - A dojo-floor demo should run on the configured Render starter service only after it is warm, or on a larger always-on backend. Cold starts on small Render instances can make a correct billing flow look broken during the first click.
@@ -217,16 +207,15 @@ vercel env add ACCOUNT_DELETION_WORKER_SECRET production
 - Support requests are stored as tickets, shown back to the user on the support page, and exposed for operator triage at `GET /api/v1/internal/support/tickets` with `X-Internal-Secret: $SUPPORT_TRIAGE_SECRET`. The daily GPT digest uses the Supabase connector against the sanitized `support_triage_digest(50)` RPC instead of raw ticket rows.
 - Internal support triage actions use `PATCH /api/v1/internal/support/tickets/{ticket_id}`. Status updates and notes are written through a transactional Supabase RPC so the ticket row and event trail stay together.
 - See `docs/support-triage.md` for the support queue, privacy rules, status workflow, and daily automation prompt expectations.
+- See `docs/email-domain-authentication.md` for the SPF/DMARC/DKIM records that keep `@koaryu.app` from being spoofed, and for the steps required before the domain may ever send mail.
 
-## Billing Readiness
+## Billing readiness
 
-Koaryu billing is **Contract Only**. Admin and Front Desk may view existing plans, families, student billing records, invoices, and payments. The only supported routine writes are an external-only local student billing attachment, a payer-level external payment record, and read-based reconciliation of an existing Stripe-linked invoice. Instructor access is denied before billing data is fetched.
+Koaryu Core subscription billing and Koaryu Payments tuition workflows have separate controls. The application implements named billing workflows for specific staff roles, but implementation and role permission do not make a workflow commercially available. The environment interlock and an enabled, unexpired exact-studio grant for every required operation must also allow a live provider mutation. Do not assume that any studio has such a grant. See [Billing workflow catalog](docs/billing-workflow-catalog.md) for the maintained workflow classifications and role assignments.
 
-Plan and payer changes, autopay, provider-backed enrollment lifecycle, invoice creation/finalization/retry/void, refunds, exports, Stripe Connect setup, and Koaryu Core checkout/portal are currently unsupported. Non-preview provider-mutation controls are hidden or disabled. Preview actions are demonstrations only and do not change provider state.
+Admin and Front Desk may view existing plans, families, student billing records, invoices, and payments. Instructor access is denied before billing data is fetched. Preview actions are demonstrations only and do not change provider state. Koaryu Payments tuition collection is not generally available unless Koaryu confirms activation for the exact studio.
 
-Keep `LIVE_BILLING_ENABLED=false`. Live outbound Stripe mutation requires transition-specific approval and durable authorization that are not currently available; setting the flag alone is insufficient and hosted configuration rejects it. Inbound signed live webhooks and provider reads may continue to reconcile existing state.
-
-Before presenting the supported surface, verify Render and Vercel are green for the same exact commit, health/readiness checks pass, Instructor denial discloses no billing data, and the three named routine transitions behave as described in [Billing Boundary](docs/billing-boundary.md).
+Before presenting billing behavior, verify Render and Vercel are green for the same exact commit, health/readiness checks pass, Instructor denial discloses no billing data, and each advertised workflow is enabled for the exact studio as described in [Billing Boundary](docs/billing-boundary.md).
 
 ## Recent Live-Mode Improvements
 
@@ -238,7 +227,7 @@ Recent deployment-readiness work in this repo tightened live-mode persistence an
 - lead conversion into students
 - reports and student hold data paths
 - belt ladder and related live persistence
-- Render cold-start behavior by replacing the four-worker Gunicorn command with a single Uvicorn process
+- Render memory behavior by running one Uvicorn process under jemalloc and sampling private process RSS every five minutes
 - landing-page first paint by removing auth middleware from `/` while keeping a non-blocking backend warmup
 - Koaryu Core checkout/portal duplicate-subscription protection and webhook ordering
 - Koaryu Payments autopay authorization, Connect webhook projection, invoice reconciliation, and cancellation cleanup

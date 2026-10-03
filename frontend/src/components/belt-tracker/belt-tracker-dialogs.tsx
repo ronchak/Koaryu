@@ -10,6 +10,7 @@ import { ModalFrame } from "@/components/ui/modal-frame";
 import type { BeltGroup } from "@/lib/belt-tracker-page-model";
 import type { BeltRank, EligibilityEntry } from "@/types";
 import { Award } from "lucide-react";
+import styles from "./belt-tracker.module.css";
 
 type BeltTrackerDialogsProps = {
   addBeltModalOpen: boolean;
@@ -84,13 +85,14 @@ export function BeltTrackerDialogs({
   rankById,
   subRankTerm,
 }: BeltTrackerDialogsProps) {
-  const addTipGroup = addTipForGroup === null ? null : groups[addTipForGroup] ?? null;
+  const addTipGroup = addTipForGroup === null ? null : (groups[addTipForGroup] ?? null);
 
   return (
     <>
       {addBeltModalOpen && (
         <RankFormModal
           title="Add belt"
+          forceTip={false}
           subRankTerm={subRankTerm}
           onSave={onAddBeltSave}
           onClose={onAddBeltClose}
@@ -200,21 +202,19 @@ function PromotionConfirmModal({
   const currentRank = promoteEntry.current_rank_id
     ? rankById.get(promoteEntry.current_rank_id)
     : undefined;
-  const nextRank = promoteEntry.next_rank_id
-    ? rankById.get(promoteEntry.next_rank_id)
-    : undefined;
+  const nextRank = promoteEntry.next_rank_id ? rankById.get(promoteEntry.next_rank_id) : undefined;
 
   return (
     <ModalFrame
-      rootClassName="p-4"
-      panelClassName="bg-bg border border-border rounded-[6px] w-full max-w-sm p-6"
+      rootClassName={`p-4 ${styles.beltDialogRoot}`}
+      panelClassName="bg-bg rounded-[18px] w-full max-w-sm p-4 shadow-[var(--product-shadow-lifted)]"
       ariaLabelledBy="confirm-promotion-title"
       onBackdropClick={onClose}
     >
       <h2 id="confirm-promotion-title" className="text-base font-semibold text-text-primary mb-4">
         Confirm Promotion
       </h2>
-      <div className="bg-surface border border-border rounded-[6px] p-4 mb-4">
+      <div className="bg-surface border border-border rounded-[14px] p-4 mb-4">
         <p className="text-sm text-text-primary font-medium">{promoteEntry.student_name}</p>
         <div className="flex items-center gap-2 mt-2">
           {promoteEntry.current_rank_name && promoteEntry.current_rank_color && (
@@ -237,22 +237,20 @@ function PromotionConfirmModal({
         </div>
       </div>
       <div className="flex flex-col gap-1.5 mb-4">
-        <label htmlFor="promotion-notes" className="text-sm text-text-secondary font-medium">Notes (optional)</label>
+        <label htmlFor="promotion-notes" className="text-sm text-text-secondary font-medium">
+          Notes (optional)
+        </label>
         <textarea
           id="promotion-notes"
           rows={2}
           value={promotionNotes}
           onChange={(event) => onNotesChange(event.target.value)}
           placeholder="e.g. Excellent guard work"
-          className="w-full px-3 py-2 text-sm bg-surface-raised border border-border rounded-[6px] text-text-primary placeholder:text-muted focus:border-accent focus:outline-none resize-none"
+          className="w-full px-3 py-2 text-sm bg-surface-raised border border-border rounded-[14px] text-text-primary placeholder:text-muted focus:border-accent focus:outline-none resize-none"
         />
       </div>
       {promotionError && (
-        <DismissibleNotice
-          tone="danger"
-          onDismiss={onDismissError}
-          className="mb-4"
-        >
+        <DismissibleNotice tone="danger" onDismiss={onDismissError} className="mb-4">
           {promotionError}
         </DismissibleNotice>
       )}

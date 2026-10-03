@@ -11,9 +11,11 @@ export function isStudentRosterSnapshotCurrent({
   mutationEpochAtStart: number;
   requestSequence: number;
 }): boolean {
-  return authCurrent
-    && currentMutationEpoch === mutationEpochAtStart
-    && currentRequestSequence === requestSequence;
+  return (
+    authCurrent &&
+    currentMutationEpoch === mutationEpochAtStart &&
+    currentRequestSequence === requestSequence
+  );
 }
 
 /**
@@ -41,7 +43,5 @@ export function shouldRetryStudentRosterRefresh({
   maxAttempts: number;
   requestSequence: number;
 }): boolean {
-  return attempt < maxAttempts
-    && authCurrent
-    && currentRequestSequence === requestSequence;
+  return attempt < maxAttempts && authCurrent && currentRequestSequence === requestSequence;
 }

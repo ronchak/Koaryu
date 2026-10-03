@@ -10,7 +10,7 @@ export interface StudentInactivityRow {
 
 export function formatInactivityDaysForRange(
   row: StudentInactivityRow,
-  inactivityThreshold: number
+  inactivityThreshold: number,
 ) {
   return row.daysInactive <= inactivityThreshold
     ? String(row.daysInactive)
@@ -25,7 +25,10 @@ function diffInDays(from: string, to: string) {
   return differenceInLocalDateKeys(from, to);
 }
 
-export function isStudentOnHoldNow(student: Pick<Student, "status" | "hold_start_date" | "hold_end_date">, today = todayDateString()) {
+export function isStudentOnHoldNow(
+  student: Pick<Student, "status" | "hold_start_date" | "hold_end_date">,
+  today = todayDateString(),
+) {
   if (student.status === "paused") {
     return true;
   }
@@ -49,7 +52,7 @@ export function buildStudentInactivityRows(
   students: Student[],
   sessions: ClassSession[],
   attendance: AttendanceRecord[],
-  today = todayDateString()
+  today = todayDateString(),
 ): StudentInactivityRow[] {
   const sessionDateById = new Map(sessions.map((session) => [session.id, session.date]));
   const lastAttendanceByStudent = new Map<string, string>();
@@ -71,11 +74,15 @@ export function buildStudentInactivityRows(
   }
 
   return students
-    .filter((student) => student.status === "active" || student.status === "trialing" || student.status === "paused")
+    .filter(
+      (student) =>
+        student.status === "active" || student.status === "trialing" || student.status === "paused",
+    )
     .filter((student) => !isStudentOnHoldNow(student, today))
     .map((student) => {
       const lastAttendanceDate = lastAttendanceByStudent.get(student.id);
-      const referenceDate = lastAttendanceDate || student.membership_start_date || student.created_at.slice(0, 10);
+      const referenceDate =
+        lastAttendanceDate || student.membership_start_date || student.created_at.slice(0, 10);
 
       return {
         student,

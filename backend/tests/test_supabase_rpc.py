@@ -25,24 +25,32 @@ class _RpcSupabase:
 
 class SupabaseRpcTest(unittest.TestCase):
     def test_missing_required_rpc_raises_migration_error(self):
-        supabase = _RpcSupabase(PostgrestAPIError({
-            "code": "PGRST202",
-            "message": "Could not find the function public.claim_student_import_run in the schema cache",
-            "details": "",
-            "hint": "",
-        }))
+        supabase = _RpcSupabase(
+            PostgrestAPIError(
+                {
+                    "code": "PGRST202",
+                    "message": "Could not find the function public.claim_student_import_run in the schema cache",
+                    "details": "",
+                    "hint": "",
+                }
+            )
+        )
 
         with self.assertRaises(RuntimeError) as raised:
             execute_required_rpc(supabase, "claim_student_import_run", {})
         self.assertIn("Apply the database migrations", str(raised.exception))
 
     def test_non_missing_rpc_error_is_not_swallowed(self):
-        supabase = _RpcSupabase(PostgrestAPIError({
-            "code": "42501",
-            "message": "permission denied for function claim_student_import_run",
-            "details": "",
-            "hint": "",
-        }))
+        supabase = _RpcSupabase(
+            PostgrestAPIError(
+                {
+                    "code": "42501",
+                    "message": "permission denied for function claim_student_import_run",
+                    "details": "",
+                    "hint": "",
+                }
+            )
+        )
 
         with self.assertRaises(PostgrestAPIError):
             execute_required_rpc(supabase, "claim_student_import_run", {})

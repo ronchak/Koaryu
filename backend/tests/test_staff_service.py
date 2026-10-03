@@ -14,21 +14,25 @@ from tests.fakes.supabase import TableBackedSupabase
 
 
 def conflict_error() -> PostgrestAPIError:
-    return PostgrestAPIError({
-        "code": "23505",
-        "message": "duplicate key value violates unique constraint",
-        "details": "",
-        "hint": "",
-    })
+    return PostgrestAPIError(
+        {
+            "code": "23505",
+            "message": "duplicate key value violates unique constraint",
+            "details": "",
+            "hint": "",
+        }
+    )
 
 
 def postgrest_error(code: str = "PGRST000") -> PostgrestAPIError:
-    return PostgrestAPIError({
-        "code": code,
-        "message": "postgrest failure",
-        "details": "",
-        "hint": "",
-    })
+    return PostgrestAPIError(
+        {
+            "code": code,
+            "message": "postgrest failure",
+            "details": "",
+            "hint": "",
+        }
+    )
 
 
 def invite_data(
@@ -77,8 +81,7 @@ class FakeAuthAdmin:
             raise postgrest_error()
         self.supabase.auth_users.pop(user_id, None)
         self.supabase.tables["staff_profiles"] = [
-            row for row in self.supabase.tables["staff_profiles"]
-            if row.get("user_id") != user_id
+            row for row in self.supabase.tables["staff_profiles"] if row.get("user_id") != user_id
         ]
 
 
@@ -89,15 +92,19 @@ class FakeAuth:
 
 class FakeSupabase(TableBackedSupabase):
     def __init__(self):
-        super().__init__({
-            "staff_roles": [],
-            "staff_profiles": [{
-                "user_id": "admin_1",
-                "legal_first_name": "Admin",
-                "legal_last_name": "Actor",
-            }],
-            "audit_logs": [],
-        })
+        super().__init__(
+            {
+                "staff_roles": [],
+                "staff_profiles": [
+                    {
+                        "user_id": "admin_1",
+                        "legal_first_name": "Admin",
+                        "legal_last_name": "Actor",
+                    }
+                ],
+                "audit_logs": [],
+            }
+        )
         self.operations = []
         self.next_staff_role_id = 1
         self.invited_user_id = "user_invited"
@@ -146,14 +153,16 @@ class FakeSupabase(TableBackedSupabase):
             if table_name == "audit_logs":
                 actor_profile = next(
                     (
-                        row for row in self.tables["staff_profiles"]
+                        row
+                        for row in self.tables["staff_profiles"]
                         if row.get("user_id") == payload.get("actor_id")
                     ),
                     None,
                 )
                 payload["actor_legal_name"] = (
                     f"{actor_profile['legal_first_name']} {actor_profile['legal_last_name']}"
-                    if actor_profile else None
+                    if actor_profile
+                    else None
                 )
             self.operations.append(("insert", table_name, dict(payload)))
         if table_name == "staff_roles" and self.fail_pending_insert_conflict:
@@ -168,7 +177,9 @@ class FakeSupabase(TableBackedSupabase):
             raise postgrest_error("AUDIT_FAILURE")
 
     def _on_update_query(self, query, rows: list[dict]):
-        self.operations.append(("update", query.name, dict(query.update_payload), list(query.filters)))
+        self.operations.append(
+            ("update", query.name, dict(query.update_payload), list(query.filters))
+        )
         if query.name == "staff_roles" and self.empty_link_attempts > 0:
             self.empty_link_attempts -= 1
             matched = query._matched_rows(rows)
@@ -213,7 +224,9 @@ class StaffServiceInviteTest(unittest.TestCase):
         self.assertLess(operation_names.index("insert"), operation_names.index("auth_invite"))
         self.assertLess(operation_names.index("auth_invite"), operation_names.index("update"))
         self.assertEqual(supabase.tables["staff_roles"][0]["user_id"], "user_invited")
-        self.assertEqual(supabase.tables["staff_roles"][0]["invited_email"], "instructor@example.com")
+        self.assertEqual(
+            supabase.tables["staff_roles"][0]["invited_email"], "instructor@example.com"
+        )
         self.assertEqual(response.user_id, "user_invited")
         self.assertEqual(response.status, "pending")
         self.assertEqual(response.full_name, "Display Instructor")
@@ -240,9 +253,12 @@ class StaffServiceInviteTest(unittest.TestCase):
             ),
             supabase.operations,
         )
-        self.assertEqual(supabase.auth_users["user_invited"].user_metadata, {
-            "full_name": "Display Instructor",
-        })
+        self.assertEqual(
+            supabase.auth_users["user_invited"].user_metadata,
+            {
+                "full_name": "Display Instructor",
+            },
+        )
         self.assertEqual(
             supabase.operations[2],
             (
@@ -288,21 +304,25 @@ class StaffServiceInviteTest(unittest.TestCase):
 
     def test_invite_link_rejects_existing_membership_in_another_studio_and_cleans_up(self):
         supabase = FakeSupabase()
-        supabase.tables["staff_roles"].append({
-            "id": "existing-role",
-            "studio_id": "studio_existing",
-            "user_id": "user_invited",
-            "role": "instructor",
-            "created_at": "2026-07-12T12:00:00+00:00",
-        })
+        supabase.tables["staff_roles"].append(
+            {
+                "id": "existing-role",
+                "studio_id": "studio_existing",
+                "user_id": "user_invited",
+                "role": "instructor",
+                "created_at": "2026-07-12T12:00:00+00:00",
+            }
+        )
         service = StaffService(supabase)
 
         with self.assertRaises(HTTPException) as context:
-            asyncio.run(service.invite_staff(
-                invite_data(),
-                "studio_new",
-                "admin_1",
-            ))
+            asyncio.run(
+                service.invite_staff(
+                    invite_data(),
+                    "studio_new",
+                    "admin_1",
+                )
+            )
 
         self.assertEqual(context.exception.status_code, 409)
         self.assertEqual(context.exception.detail, SINGLE_STUDIO_MEMBERSHIP_DETAIL)
@@ -657,30 +677,36 @@ class StaffServiceInviteTest(unittest.TestCase):
 
     def test_cleanup_is_idempotent_and_does_not_delete_unrelated_rows(self):
         supabase = FakeSupabase()
-        supabase.tables["staff_roles"].extend([
+        supabase.tables["staff_roles"].extend(
+            [
+                {
+                    "id": "invite-role",
+                    "studio_id": "studio_1",
+                    "user_id": "user_invited",
+                    "role": "instructor",
+                },
+                {
+                    "id": "unrelated-role",
+                    "studio_id": "studio_other",
+                    "user_id": "unrelated-user",
+                    "role": "instructor",
+                },
+            ]
+        )
+        supabase.tables["staff_profiles"].append(
             {
-                "id": "invite-role",
-                "studio_id": "studio_1",
                 "user_id": "user_invited",
-                "role": "instructor",
-            },
+                "legal_first_name": "Legal",
+                "legal_last_name": "Instructor",
+            }
+        )
+        supabase.tables["staff_profiles"].append(
             {
-                "id": "unrelated-role",
-                "studio_id": "studio_other",
                 "user_id": "unrelated-user",
-                "role": "instructor",
-            },
-        ])
-        supabase.tables["staff_profiles"].append({
-            "user_id": "user_invited",
-            "legal_first_name": "Legal",
-            "legal_last_name": "Instructor",
-        })
-        supabase.tables["staff_profiles"].append({
-            "user_id": "unrelated-user",
-            "legal_first_name": "Other",
-            "legal_last_name": "User",
-        })
+                "legal_first_name": "Other",
+                "legal_last_name": "User",
+            }
+        )
         supabase.auth_users["user_invited"] = SimpleNamespace(
             id="user_invited",
             email="instructor@example.com",
@@ -702,12 +728,17 @@ class StaffServiceInviteTest(unittest.TestCase):
         service._cleanup_failed_invite_resources(["invite-role"], "studio_1", "user_invited")
         service._cleanup_failed_invite_resources(["invite-role"], "studio_1", "user_invited")
 
-        self.assertEqual(supabase.tables["staff_roles"], [{
-            "id": "unrelated-role",
-            "studio_id": "studio_other",
-            "user_id": "unrelated-user",
-            "role": "instructor",
-        }])
+        self.assertEqual(
+            supabase.tables["staff_roles"],
+            [
+                {
+                    "id": "unrelated-role",
+                    "studio_id": "studio_other",
+                    "user_id": "unrelated-user",
+                    "role": "instructor",
+                }
+            ],
+        )
         self.assertEqual(
             supabase.tables["staff_profiles"],
             [
@@ -748,10 +779,9 @@ class StaffServiceInviteTest(unittest.TestCase):
         service._delete_invited_staff_profile("admin_1")
         service._delete_invited_auth_user("admin_1")
 
-        self.assertFalse(any(
-            row["user_id"] == "admin_1"
-            for row in supabase.tables["staff_profiles"]
-        ))
+        self.assertFalse(
+            any(row["user_id"] == "admin_1" for row in supabase.tables["staff_profiles"])
+        )
         self.assertNotIn("admin_1", supabase.auth_users)
         self.assertEqual(supabase.tables["audit_logs"][0], audit_before_cleanup)
         self.assertEqual(supabase.tables["audit_logs"][0]["actor_legal_name"], "Admin Actor")
@@ -759,16 +789,18 @@ class StaffServiceInviteTest(unittest.TestCase):
     def test_hydrates_pending_staff_role_without_user_id(self):
         service = StaffService(FakeSupabase())
 
-        response = service._hydrate_staff_member({
-            "id": "role_1",
-            "studio_id": "studio_1",
-            "user_id": None,
-            "role": "front_desk",
-            "invited_email": "desk@example.com",
-            "invited_by": "admin_1",
-            "created_at": "2026-05-24T12:00:00+00:00",
-            "updated_at": "2026-05-24T12:00:00+00:00",
-        })
+        response = service._hydrate_staff_member(
+            {
+                "id": "role_1",
+                "studio_id": "studio_1",
+                "user_id": None,
+                "role": "front_desk",
+                "invited_email": "desk@example.com",
+                "invited_by": "admin_1",
+                "created_at": "2026-05-24T12:00:00+00:00",
+                "updated_at": "2026-05-24T12:00:00+00:00",
+            }
+        )
 
         self.assertIsNone(response.user_id)
         self.assertEqual(response.email, "desk@example.com")
@@ -790,10 +822,12 @@ class StaffServiceListTest(unittest.TestCase):
 
     def test_list_staff_attaches_one_bounded_profile_read_and_nulls_missing_names(self):
         supabase = FakeSupabase()
-        supabase.auth_users.update({
-            "user-1": self._user("user-1", "Aiko Display", active=True),
-            "user-2": self._user("user-2", "Missing Profile"),
-        })
+        supabase.auth_users.update(
+            {
+                "user-1": self._user("user-1", "Aiko Display", active=True),
+                "user-2": self._user("user-2", "Missing Profile"),
+            }
+        )
         supabase.tables["staff_roles"] = [
             {
                 "id": "role-1",
@@ -818,11 +852,13 @@ class StaffServiceListTest(unittest.TestCase):
                 "created_at": "2026-08-15T00:02:00+00:00",
             },
         ]
-        supabase.tables["staff_profiles"].append({
-            "user_id": "user-1",
-            "legal_first_name": "Aiko",
-            "legal_last_name": "Tanaka",
-        })
+        supabase.tables["staff_profiles"].append(
+            {
+                "user_id": "user-1",
+                "legal_first_name": "Aiko",
+                "legal_last_name": "Tanaka",
+            }
+        )
 
         response = asyncio.run(StaffService(supabase).list_staff("studio_1"))
 
@@ -837,8 +873,7 @@ class StaffServiceListTest(unittest.TestCase):
         self.assertIsNone(response[2].legal_last_name)
 
         profile_queries = [
-            query for query in supabase.query_log
-            if query["table"] == "staff_profiles"
+            query for query in supabase.query_log if query["table"] == "staff_profiles"
         ]
         self.assertEqual(len(profile_queries), 1)
         self.assertEqual(
@@ -848,14 +883,16 @@ class StaffServiceListTest(unittest.TestCase):
 
     def test_pending_only_roster_never_reads_profiles(self):
         supabase = FakeSupabase()
-        supabase.tables["staff_roles"] = [{
-            "id": "role-pending",
-            "studio_id": "studio_1",
-            "user_id": None,
-            "role": "instructor",
-            "invited_email": "pending@example.com",
-            "created_at": "2026-08-15T00:00:00+00:00",
-        }]
+        supabase.tables["staff_roles"] = [
+            {
+                "id": "role-pending",
+                "studio_id": "studio_1",
+                "user_id": None,
+                "role": "instructor",
+                "invited_email": "pending@example.com",
+                "created_at": "2026-08-15T00:00:00+00:00",
+            }
+        ]
         supabase.table_failures["staff_profiles"] = postgrest_error("UNRELATED_FAILURE")
 
         response = asyncio.run(StaffService(supabase).list_staff("studio_1"))
@@ -869,13 +906,15 @@ class StaffServiceListTest(unittest.TestCase):
             with self.subTest(code=code):
                 supabase = FakeSupabase()
                 supabase.auth_users["user-1"] = self._user("user-1", "Display Name")
-                supabase.tables["staff_roles"] = [{
-                    "id": "role-1",
-                    "studio_id": "studio_1",
-                    "user_id": "user-1",
-                    "role": "instructor",
-                    "created_at": "2026-08-15T00:00:00+00:00",
-                }]
+                supabase.tables["staff_roles"] = [
+                    {
+                        "id": "role-1",
+                        "studio_id": "studio_1",
+                        "user_id": "user-1",
+                        "role": "instructor",
+                        "created_at": "2026-08-15T00:00:00+00:00",
+                    }
+                ]
                 supabase.table_failures["staff_profiles"] = postgrest_error(code)
 
                 response = asyncio.run(StaffService(supabase).list_staff("studio_1"))
@@ -887,13 +926,15 @@ class StaffServiceListTest(unittest.TestCase):
     def test_unrelated_profile_read_error_propagates(self):
         supabase = FakeSupabase()
         supabase.auth_users["user-1"] = self._user("user-1", "Display Name")
-        supabase.tables["staff_roles"] = [{
-            "id": "role-1",
-            "studio_id": "studio_1",
-            "user_id": "user-1",
-            "role": "instructor",
-            "created_at": "2026-08-15T00:00:00+00:00",
-        }]
+        supabase.tables["staff_roles"] = [
+            {
+                "id": "role-1",
+                "studio_id": "studio_1",
+                "user_id": "user-1",
+                "role": "instructor",
+                "created_at": "2026-08-15T00:00:00+00:00",
+            }
+        ]
         failure = postgrest_error("PGRST000")
         supabase.table_failures["staff_profiles"] = failure
 

@@ -73,7 +73,9 @@ def add_stripe_event_created_guard(query: Any, event_created: Optional[int]) -> 
     )
 
 
-def preserve_invoice_terminal_state(update: dict[str, Any], current: dict[str, Any]) -> dict[str, Any]:
+def preserve_invoice_terminal_state(
+    update: dict[str, Any], current: dict[str, Any]
+) -> dict[str, Any]:
     preserved = dict(update)
     for field in (
         "status",

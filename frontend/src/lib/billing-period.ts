@@ -18,7 +18,9 @@ export function formatBillingDate(value?: string | null) {
 
   const dateOnlyMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
   const date = dateOnlyMatch
-    ? new Date(Date.UTC(Number(dateOnlyMatch[1]), Number(dateOnlyMatch[2]) - 1, Number(dateOnlyMatch[3])))
+    ? new Date(
+        Date.UTC(Number(dateOnlyMatch[1]), Number(dateOnlyMatch[2]) - 1, Number(dateOnlyMatch[3])),
+      )
     : new Date(value);
 
   if (Number.isNaN(date.getTime())) return "Not set";
@@ -55,7 +57,10 @@ export function subscriptionPeriodCopy(platform?: BillingPeriodSource | null) {
     };
   }
 
-  if ((platform.status === "active" || platform.status === "trialing") && platform.current_period_end) {
+  if (
+    (platform.status === "active" || platform.status === "trialing") &&
+    platform.current_period_end
+  ) {
     return {
       label: "Current period",
       value: `Renews ${formatBillingDate(platform.current_period_end)}`,

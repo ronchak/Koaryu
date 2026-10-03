@@ -59,15 +59,20 @@ describe("program store model", () => {
       program("a", { name: "Alpha", sort_order: 10 }),
       program("c", { name: "Aardvark", sort_order: 20 }),
     ]);
-    assert.deepEqual(sorted.map((item) => item.id), ["a", "c", "b"]);
+    assert.deepEqual(
+      sorted.map((item) => item.id),
+      ["a", "c", "b"],
+    );
 
     assert.deepEqual(
-      upsertProgram([program("a"), program("b")], program("a", { name: "Updated" }))
-        .map((item) => [item.id, item.name]),
+      upsertProgram([program("a"), program("b")], program("a", { name: "Updated" })).map((item) => [
+        item.id,
+        item.name,
+      ]),
       [
         ["b", "b"],
         ["a", "Updated"],
-      ]
+      ],
     );
   });
 
@@ -76,12 +81,12 @@ describe("program store model", () => {
     const created = buildPreviewProgram(
       { name: "Kids BJJ", description: "Youth classes" },
       [program("existing-1"), program("existing-2")],
-      { idFactory: idFactory(["program-1"]), now }
+      { idFactory: idFactory(["program-1"]), now },
     );
     const createdWithOverrides = buildPreviewProgram(
       { name: "Adults", color_hex: "#111111", sort_order: 5 },
       [],
-      { idFactory: idFactory(["program-2"]), now }
+      { idFactory: idFactory(["program-2"]), now },
     );
     const ladderForProgram = buildPreviewProgramLadder(created, {
       idFactory: idFactory(["ladder-1"]),
@@ -119,28 +124,42 @@ describe("program store model", () => {
           lead_count: 0,
           belt_ladder_count: 1,
         },
-      }
+      },
     );
-    assert.deepEqual([createdWithOverrides.color_hex, createdWithOverrides.sort_order], ["#111111", 5]);
     assert.deepEqual(
-      [ladderForProgram.id, ladderForProgram.program_id, ladderForProgram.name, ladderForProgram.sub_rank_term],
-      ["ladder-1", "program-1", "Kids BJJ", "Stripe"]
+      [createdWithOverrides.color_hex, createdWithOverrides.sort_order],
+      ["#111111", 5],
+    );
+    assert.deepEqual(
+      [
+        ladderForProgram.id,
+        ladderForProgram.program_id,
+        ladderForProgram.name,
+        ladderForProgram.sub_rank_term,
+      ],
+      ["ladder-1", "program-1", "Kids BJJ", "Stripe"],
     );
   });
 
   it("applies preview updates and keeps ladder names coupled to renamed programs", () => {
-    const programs = [program("program-1", { name: "Old" }), program("program-2", { name: "Other" })];
+    const programs = [
+      program("program-1", { name: "Old" }),
+      program("program-2", { name: "Other" }),
+    ];
     const update = applyPreviewProgramUpdate(
       programs,
       "program-1",
       { name: "New", description: null },
-      "2026-05-24T12:00:00.000Z"
+      "2026-05-24T12:00:00.000Z",
     );
 
-    assert.deepEqual(update.programs.map((item) => [item.id, item.name, item.description, item.updated_at]), [
-      ["program-1", "New", null, "2026-05-24T12:00:00.000Z"],
-      ["program-2", "Other", undefined, "2026-05-01T00:00:00.000Z"],
-    ]);
+    assert.deepEqual(
+      update.programs.map((item) => [item.id, item.name, item.description, item.updated_at]),
+      [
+        ["program-1", "New", null, "2026-05-24T12:00:00.000Z"],
+        ["program-2", "Other", undefined, "2026-05-01T00:00:00.000Z"],
+      ],
+    );
     assert.equal(update.updated?.name, "New");
 
     const ladders = applyProgramNameToLadders(
@@ -150,12 +169,15 @@ describe("program store model", () => {
       ],
       "program-1",
       "New",
-      "2026-05-24T12:00:00.000Z"
+      "2026-05-24T12:00:00.000Z",
     );
-    assert.deepEqual(ladders.map((item) => [item.id, item.name, item.updated_at]), [
-      ["ladder-1", "New", "2026-05-24T12:00:00.000Z"],
-      ["ladder-2", "Other", "2026-05-01T00:00:00.000Z"],
-    ]);
+    assert.deepEqual(
+      ladders.map((item) => [item.id, item.name, item.updated_at]),
+      [
+        ["ladder-1", "New", "2026-05-24T12:00:00.000Z"],
+        ["ladder-2", "Other", "2026-05-01T00:00:00.000Z"],
+      ],
+    );
   });
 
   it("applies preview archive and restore state", () => {
@@ -163,22 +185,22 @@ describe("program store model", () => {
       [program("program-1")],
       "program-1",
       true,
-      "2026-05-24T12:00:00.000Z"
+      "2026-05-24T12:00:00.000Z",
     );
     assert.deepEqual(
       [archived.updated?.archived_at, archived.updated?.updated_at],
-      ["2026-05-24T12:00:00.000Z", "2026-05-24T12:00:00.000Z"]
+      ["2026-05-24T12:00:00.000Z", "2026-05-24T12:00:00.000Z"],
     );
 
     const restored = applyPreviewProgramArchiveState(
       archived.programs,
       "program-1",
       false,
-      "2026-05-25T12:00:00.000Z"
+      "2026-05-25T12:00:00.000Z",
     );
     assert.deepEqual(
       [restored.updated?.archived_at, restored.updated?.updated_at],
-      [null, "2026-05-25T12:00:00.000Z"]
+      [null, "2026-05-25T12:00:00.000Z"],
     );
   });
 });

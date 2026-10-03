@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 
 import {
   canAccessBillingRoute,
+  hasConnectOnboardingCapability,
   isBillingRoute,
 } from "../src/lib/billing-route-access.ts";
 
@@ -22,13 +23,30 @@ describe("billing route authorization", () => {
     assert.equal(canAccessBillingRoute("/students", "admin"), false);
   });
 
-  it("keeps Connect reads admin-only while blocking the provider-mutation refresh route", () => {
+  it("keeps Connect routes admin-only, including the provider refresh return", () => {
     assert.equal(canAccessBillingRoute("/billing/connect", "admin"), true);
     assert.equal(canAccessBillingRoute("/billing/connect/status", "admin"), true);
     assert.equal(canAccessBillingRoute("/billing/connect", "front_desk"), false);
-    assert.equal(canAccessBillingRoute("/billing/connect/refresh", "admin"), false);
-    assert.equal(canAccessBillingRoute("/billing/connect/refresh/", "admin"), false);
+    assert.equal(canAccessBillingRoute("/billing/connect/refresh", "admin"), true);
+    assert.equal(canAccessBillingRoute("/billing/connect/refresh/", "admin"), true);
     assert.equal(canAccessBillingRoute("/billing/connect/refresh", "front_desk"), false);
     assert.equal(canAccessBillingRoute("/billing/connect/refresh", "instructor"), false);
+  });
+
+  it("recognizes only the existing enabled onboarding capability", () => {
+    const enabled = {
+      workflow_capabilities: [
+        { workflow_id: "connect.onboarding", enabled: true, denial_reason_code: null },
+      ],
+    };
+    const disabled = {
+      workflow_capabilities: [
+        { workflow_id: "connect.onboarding", enabled: false, denial_reason_code: "not_ready" },
+      ],
+    };
+
+    assert.equal(hasConnectOnboardingCapability(enabled), true);
+    assert.equal(hasConnectOnboardingCapability(disabled), false);
+    assert.equal(hasConnectOnboardingCapability(null), false);
   });
 });

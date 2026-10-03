@@ -11,20 +11,21 @@
     "build": "next build",
     "analyze": "next build --experimental-analyze",
     "start": "next start",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "lint": "eslint",
     "test": "node --experimental-strip-types --test tests/*.test.mjs",
     "test:e2e": "playwright test e2e",
     "test:e2e:preview-smoke": "KOARYU_PREVIEW_SMOKE_E2E=true playwright test e2e/preview-smoke.spec.ts",
     "test:e2e:core-ui": "KOARYU_CORE_UI_E2E=true playwright test e2e/core-ui-polish.spec.ts",
-    "test:e2e:preview-import": "KOARYU_PREVIEW_E2E=true playwright test e2e/student-import-idempotency-key.spec.ts",
-    "test:e2e:live-belt": "KOARYU_LIVE_STATEFUL_E2E=true playwright test e2e/atomic-belt-ladder.spec.ts"
+    "test:e2e:preview-import": "KOARYU_PREVIEW_E2E=true playwright test e2e/student-import-idempotency-key.spec.ts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.10.2",
     "@supabase/supabase-js": "^2.103.3",
     "ipaddr.js": "2.2.0",
     "lucide-react": "^1.8.0",
-    "next": "^16.2.6",
+    "next": "^16.3.6",
     "react": "19.2.4",
     "react-dom": "19.2.4"
   },
@@ -35,12 +36,13 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
-    "eslint-config-next": "^16.2.6",
+    "eslint-config-next": "^16.3.6",
+    "prettier": "3.9.6",
     "tailwindcss": "^4",
     "typescript": "^5"
   },
   "overrides": {
     "postcss": "8.5.23",
-    "sharp": "0.35.3"
+    "sharp": "0.35.4"
   }
 }

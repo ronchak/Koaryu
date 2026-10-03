@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, Query
 from typing import Optional
-from supabase import Client
+from app.core.deps import ProviderDependency, run_supabase_operation
 from app.core.deps import (
     get_current_studio_id,
     get_current_user_id,
@@ -9,10 +9,16 @@ from app.core.deps import (
     get_supabase,
 )
 from app.schemas.schedule import (
-    ClassTemplateCreate, ClassTemplateUpdate, ClassTemplateResponse,
-    ClassSessionCreate, ClassSessionResponse,
+    ClassTemplateCreate,
+    ClassTemplateUpdate,
+    ClassTemplateResponse,
+    ClassSessionCreate,
+    ClassSessionResponse,
     ClassSessionDeleteScopeValue,
-    AttendanceCheckIn, AttendanceResponse, AttendanceBulkCheckIn,
+    AttendanceCheckIn,
+    AttendanceResponse,
+    AttendanceBulkCheckIn,
+    ScheduleWindowResponse,
 )
 from app.services.schedule_service import (
     SCHEDULE_SESSION_LIST_RANGE_MAX_DAYS,
@@ -23,14 +29,91 @@ from app.services.schedule_service import (
 router = APIRouter(prefix="/schedule", tags=["schedule"])
 
 
+# ---- Page read model ----
+
+
+@router.get("/window", response_model=ScheduleWindowResponse)
+async def get_schedule_window(
+    start_date: str = Query(
+        ...,
+        description=(
+            "YYYY-MM-DD inclusive start date. Maximum range is "
+            f"{SCHEDULE_SESSION_LIST_RANGE_MAX_DAYS} days."
+        ),
+    ),
+    end_date: str = Query(
+        ...,
+        description=(
+            "YYYY-MM-DD inclusive end date. Maximum range is "
+            f"{SCHEDULE_SESSION_LIST_RANGE_MAX_DAYS} days."
+        ),
+    ),
+    studio_id: str = Depends(get_current_studio_id),
+    supabase: ProviderDependency = Depends(get_supabase),
+):
+    async def _provider_operation(client):
+        return await ScheduleService(client).read_schedule_window(
+            studio_id,
+            start_date,
+            end_date,
+        )
+
+    return await run_supabase_operation(
+        supabase,
+        _provider_operation,
+        lane="interactive",
+    )
+
+
+@router.post("/window/materialize", response_model=ScheduleWindowResponse)
+async def materialize_schedule_window(
+    start_date: str = Query(
+        ...,
+        description=(
+            "YYYY-MM-DD inclusive start date. Maximum range is "
+            f"{SCHEDULE_SESSION_MATERIALIZATION_RANGE_MAX_DAYS} days."
+        ),
+    ),
+    end_date: str = Query(
+        ...,
+        description=(
+            "YYYY-MM-DD inclusive end date. Maximum range is "
+            f"{SCHEDULE_SESSION_MATERIALIZATION_RANGE_MAX_DAYS} days."
+        ),
+    ),
+    studio_id: str = Depends(get_current_write_studio_id),
+    supabase: ProviderDependency = Depends(get_supabase),
+):
+    async def _provider_operation(client):
+        return await ScheduleService(client).materialize_schedule_window(
+            studio_id,
+            start_date,
+            end_date,
+        )
+
+    return await run_supabase_operation(
+        supabase,
+        _provider_operation,
+        lane="bulk",
+    )
+
+
 # ---- Templates ----
+
 
 @router.get("/templates", response_model=list[ClassTemplateResponse])
 async def list_templates(
     studio_id: str = Depends(get_current_studio_id),
-    supabase: Client = Depends(get_supabase),
+    supabase: ProviderDependency = Depends(get_supabase),
 ):
-    return await ScheduleService(supabase).list_templates(studio_id)
+    async def _provider_operation(client):
+        return await ScheduleService(client).list_templates(studio_id)
+
+    return await run_supabase_operation(
+        supabase,
+        _provider_operation,
+        lane="interactive",
+    )
 
 
 @router.post("/templates", response_model=ClassTemplateResponse, status_code=201)
@@ -38,9 +121,16 @@ async def create_template(
     data: ClassTemplateCreate,
     user_id: str = Depends(get_current_user_id),
     studio_id: str = Depends(get_roster_schedule_manager_studio_id),
-    supabase: Client = Depends(get_supabase),
+    supabase: ProviderDependency = Depends(get_supabase),
 ):
-    return await ScheduleService(supabase).create_template(data, studio_id, user_id)
+    async def _provider_operation(client):
+        return await ScheduleService(client).create_template(data, studio_id, user_id)
+
+    return await run_supabase_operation(
+        supabase,
+        _provider_operation,
+        lane="interactive",
+    )
 
 
 @router.patch("/templates/{template_id}", response_model=ClassTemplateResponse)
@@ -49,9 +139,16 @@ async def update_template(
     data: ClassTemplateUpdate,
     user_id: str = Depends(get_current_user_id),
     studio_id: str = Depends(get_roster_schedule_manager_studio_id),
-    supabase: Client = Depends(get_supabase),
+    supabase: ProviderDependency = Depends(get_supabase),
 ):
-    return await ScheduleService(supabase).update_template(template_id, data, studio_id, user_id)
+    async def _provider_operation(client):
+        return await ScheduleService(client).update_template(template_id, data, studio_id, user_id)
+
+    return await run_supabase_operation(
+        supabase,
+        _provider_operation,
+        lane="interactive",
+    )
 
 
 @router.delete("/templates/{template_id}", status_code=204)
@@ -59,12 +156,20 @@ async def delete_template(
     template_id: str,
     user_id: str = Depends(get_current_user_id),
     studio_id: str = Depends(get_roster_schedule_manager_studio_id),
-    supabase: Client = Depends(get_supabase),
+    supabase: ProviderDependency = Depends(get_supabase),
 ):
-    await ScheduleService(supabase).delete_template(template_id, studio_id, user_id)
+    async def _provider_operation(client):
+        await ScheduleService(client).delete_template(template_id, studio_id, user_id)
+
+    return await run_supabase_operation(
+        supabase,
+        _provider_operation,
+        lane="interactive",
+    )
 
 
 # ---- Sessions ----
+
 
 @router.get("/sessions", response_model=list[ClassSessionResponse])
 async def list_sessions(
@@ -77,9 +182,16 @@ async def list_sessions(
         description=f"YYYY-MM-DD inclusive end date. Maximum range is {SCHEDULE_SESSION_LIST_RANGE_MAX_DAYS} days.",
     ),
     studio_id: str = Depends(get_current_studio_id),
-    supabase: Client = Depends(get_supabase),
+    supabase: ProviderDependency = Depends(get_supabase),
 ):
-    return await ScheduleService(supabase).list_sessions(studio_id, start_date, end_date)
+    async def _provider_operation(client):
+        return await ScheduleService(client).list_sessions(studio_id, start_date, end_date)
+
+    return await run_supabase_operation(
+        supabase,
+        _provider_operation,
+        lane="interactive",
+    )
 
 
 @router.post("/sessions/materialize", response_model=list[ClassSessionResponse])
@@ -99,12 +211,19 @@ async def materialize_session_range(
         ),
     ),
     studio_id: str = Depends(get_current_write_studio_id),
-    supabase: Client = Depends(get_supabase),
+    supabase: ProviderDependency = Depends(get_supabase),
 ):
-    return await ScheduleService(supabase).materialize_session_range(
-        studio_id,
-        start_date,
-        end_date,
+    async def _provider_operation(client):
+        return await ScheduleService(client).materialize_session_range(
+            studio_id,
+            start_date,
+            end_date,
+        )
+
+    return await run_supabase_operation(
+        supabase,
+        _provider_operation,
+        lane="bulk",
     )
 
 
@@ -113,9 +232,16 @@ async def create_session(
     data: ClassSessionCreate,
     user_id: str = Depends(get_current_user_id),
     studio_id: str = Depends(get_roster_schedule_manager_studio_id),
-    supabase: Client = Depends(get_supabase),
+    supabase: ProviderDependency = Depends(get_supabase),
 ):
-    return await ScheduleService(supabase).create_session(data, studio_id, user_id)
+    async def _provider_operation(client):
+        return await ScheduleService(client).create_session(data, studio_id, user_id)
+
+    return await run_supabase_operation(
+        supabase,
+        _provider_operation,
+        lane="interactive",
+    )
 
 
 @router.delete("/sessions/{session_id}", status_code=204)
@@ -124,9 +250,16 @@ async def delete_session(
     scope: ClassSessionDeleteScopeValue = Query("session"),
     user_id: str = Depends(get_current_user_id),
     studio_id: str = Depends(get_roster_schedule_manager_studio_id),
-    supabase: Client = Depends(get_supabase),
+    supabase: ProviderDependency = Depends(get_supabase),
 ):
-    await ScheduleService(supabase).delete_session(session_id, studio_id, user_id, scope)
+    async def _provider_operation(client):
+        await ScheduleService(client).delete_session(session_id, studio_id, user_id, scope)
+
+    return await run_supabase_operation(
+        supabase,
+        _provider_operation,
+        lane="interactive",
+    )
 
 
 @router.post("/sessions/generate-week", response_model=list[ClassSessionResponse])
@@ -134,20 +267,37 @@ async def generate_week(
     week_start: str = Query(..., description="Monday date YYYY-MM-DD"),
     user_id: str = Depends(get_current_user_id),
     studio_id: str = Depends(get_roster_schedule_manager_studio_id),
-    supabase: Client = Depends(get_supabase),
+    supabase: ProviderDependency = Depends(get_supabase),
 ):
-    return await ScheduleService(supabase).generate_sessions_for_week(studio_id, week_start, user_id)
+    async def _provider_operation(client):
+        return await ScheduleService(client).generate_sessions_for_week(
+            studio_id, week_start, user_id
+        )
+
+    return await run_supabase_operation(
+        supabase,
+        _provider_operation,
+        lane="bulk",
+    )
 
 
 # ---- Attendance ----
+
 
 @router.get("/sessions/{session_id}/attendance", response_model=list[AttendanceResponse])
 async def get_attendance(
     session_id: str,
     studio_id: str = Depends(get_current_studio_id),
-    supabase: Client = Depends(get_supabase),
+    supabase: ProviderDependency = Depends(get_supabase),
 ):
-    return await ScheduleService(supabase).get_session_attendance(session_id, studio_id)
+    async def _provider_operation(client):
+        return await ScheduleService(client).get_session_attendance(session_id, studio_id)
+
+    return await run_supabase_operation(
+        supabase,
+        _provider_operation,
+        lane="interactive",
+    )
 
 
 @router.get("/attendance", response_model=list[AttendanceResponse])
@@ -156,13 +306,20 @@ async def list_attendance(
     end_date: Optional[str] = Query(default=None),
     session_ids: Optional[list[str]] = Query(default=None),
     studio_id: str = Depends(get_current_studio_id),
-    supabase: Client = Depends(get_supabase),
+    supabase: ProviderDependency = Depends(get_supabase),
 ):
-    return await ScheduleService(supabase).list_attendance(
-        studio_id,
-        start_date=start_date,
-        end_date=end_date,
-        session_ids=session_ids,
+    async def _provider_operation(client):
+        return await ScheduleService(client).list_attendance(
+            studio_id,
+            start_date=start_date,
+            end_date=end_date,
+            session_ids=session_ids,
+        )
+
+    return await run_supabase_operation(
+        supabase,
+        _provider_operation,
+        lane="interactive",
     )
 
 
@@ -171,9 +328,16 @@ async def check_in(
     data: AttendanceCheckIn,
     user_id: str = Depends(get_current_user_id),
     studio_id: str = Depends(get_current_write_studio_id),
-    supabase: Client = Depends(get_supabase),
+    supabase: ProviderDependency = Depends(get_supabase),
 ):
-    return await ScheduleService(supabase).check_in(data, studio_id, user_id)
+    async def _provider_operation(client):
+        return await ScheduleService(client).check_in(data, studio_id, user_id)
+
+    return await run_supabase_operation(
+        supabase,
+        _provider_operation,
+        lane="interactive",
+    )
 
 
 @router.delete("/attendance", status_code=204)
@@ -181,9 +345,16 @@ async def clear_attendance(
     session_id: str = Query(...),
     student_id: str = Query(...),
     studio_id: str = Depends(get_current_write_studio_id),
-    supabase: Client = Depends(get_supabase),
+    supabase: ProviderDependency = Depends(get_supabase),
 ):
-    await ScheduleService(supabase).clear_attendance(session_id, student_id, studio_id)
+    async def _provider_operation(client):
+        await ScheduleService(client).clear_attendance(session_id, student_id, studio_id)
+
+    return await run_supabase_operation(
+        supabase,
+        _provider_operation,
+        lane="interactive",
+    )
 
 
 @router.post("/attendance/bulk", response_model=list[AttendanceResponse])
@@ -191,6 +362,13 @@ async def bulk_check_in(
     data: AttendanceBulkCheckIn,
     user_id: str = Depends(get_current_user_id),
     studio_id: str = Depends(get_current_write_studio_id),
-    supabase: Client = Depends(get_supabase),
+    supabase: ProviderDependency = Depends(get_supabase),
 ):
-    return await ScheduleService(supabase).bulk_check_in(data, studio_id, user_id)
+    async def _provider_operation(client):
+        return await ScheduleService(client).bulk_check_in(data, studio_id, user_id)
+
+    return await run_supabase_operation(
+        supabase,
+        _provider_operation,
+        lane="bulk",
+    )

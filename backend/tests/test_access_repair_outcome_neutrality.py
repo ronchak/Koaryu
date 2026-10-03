@@ -16,6 +16,7 @@ revision. It was also single-request, so it could not have caught that defect:
 first-request outcomes were identical before and after the throttle existed.
 Committed here with the second-request dimension it was missing.
 """
+
 from __future__ import annotations
 
 import unittest
@@ -82,11 +83,7 @@ def confirming(status_value: str, *, periods: bool, trial_end=None):
 
         def retrieve_subscription(self, subscription_id):
             type(self).calls += 1
-            item = (
-                {"current_period_start": 100, "current_period_end": 200}
-                if periods
-                else {}
-            )
+            item = {"current_period_start": 100, "current_period_end": 200} if periods else {}
             payload = {
                 "id": subscription_id or "sub_123",
                 "customer": "cus_123",
@@ -135,17 +132,19 @@ def split_brain():
             type(self).calls += 1
             if customer_id != "cus_123":
                 return []
-            return [{
-                "id": "sub_from_list",
-                "customer": customer_id,
-                "status": "canceled",
-                # select_core_subscription only considers subscriptions whose
-                # metadata names this studio, so without it nothing is ever
-                # selected and the two endpoints cannot be seen to disagree.
-                "metadata": {"studio_id": "studio_1"},
-                "items": {"data": [{"current_period_start": 100, "current_period_end": 200}]},
-                "cancel_at_period_end": False,
-            }]
+            return [
+                {
+                    "id": "sub_from_list",
+                    "customer": customer_id,
+                    "status": "canceled",
+                    # select_core_subscription only considers subscriptions whose
+                    # metadata names this studio, so without it nothing is ever
+                    # selected and the two endpoints cannot be seen to disagree.
+                    "metadata": {"studio_id": "studio_1"},
+                    "items": {"data": [{"current_period_start": 100, "current_period_end": 200}]},
+                    "cancel_at_period_end": False,
+                }
+            ]
 
     return SplitBrainStripeService
 
@@ -180,7 +179,9 @@ ROW_SHAPES = {
     "active with inverted periods": row(current_period_start=900, current_period_end=100),
     "trialing with no trial_end": row(status="trialing", trial_end=None),
     "active with no subscription id": row(stripe_subscription_id=None),
-    "trialing with no subscription id": row(status="trialing", trial_end=FUTURE, stripe_subscription_id=None),
+    "trialing with no subscription id": row(
+        status="trialing", trial_end=FUTURE, stripe_subscription_id=None
+    ),
     # A second customer id, so the sweep can swap between customers rather than
     # only nulling one. Nulling a customer id only ever switches the
     # missing-subscription guard off, which cannot change an outcome; pointing
@@ -200,7 +201,11 @@ ROW_SHAPES = {
     "null status": row(status=None),
     "garbage status": row(status="wat"),
     "no stripe identifiers at all": row(stripe_subscription_id=None, stripe_customer_id=None),
-    "missing status key": {"studio_id": "studio_1", "stripe_subscription_id": "sub_123", "stripe_customer_id": "cus_123"},
+    "missing status key": {
+        "studio_id": "studio_1",
+        "stripe_subscription_id": "sub_123",
+        "stripe_customer_id": "cus_123",
+    },
     "bare row": {"studio_id": "studio_1"},
 }
 
@@ -248,13 +253,16 @@ def reconciliation_dimension_rows(*, comped: bool):
             f"comped={comped} / subscription_id={has_subscription_id} / "
             f"status={status_value} / {period_label} / {trial_label}"
         )
-        yield label, row(
-            comped=comped,
-            stripe_subscription_id="sub_123" if has_subscription_id else None,
-            status=status_value,
-            current_period_start=periods[0],
-            current_period_end=periods[1],
-            trial_end=trial_end,
+        yield (
+            label,
+            row(
+                comped=comped,
+                stripe_subscription_id="sub_123" if has_subscription_id else None,
+                status=status_value,
+                current_period_start=periods[0],
+                current_period_end=periods[1],
+                trial_end=trial_end,
+            ),
         )
 
 
@@ -352,9 +360,7 @@ class AccessRepairOutcomeNeutralityTest(unittest.TestCase):
                     with self.subTest(f"{before_label} -> {after_label} / {reachability}"):
                         # What the rewritten row is worth on its own.
                         platform_billing_service._access_repair_retry_after.clear()
-                        baseline = self.attempt(
-                            FakeSupabase([dict(after_row)]), stripe_cls, 0.0
-                        )
+                        baseline = self.attempt(FakeSupabase([dict(after_row)]), stripe_cls, 0.0)
 
                         platform_billing_service._access_repair_retry_after.clear()
                         supabase = FakeSupabase([dict(before_row)])
@@ -411,10 +417,7 @@ class AccessRepairOutcomeNeutralityTest(unittest.TestCase):
             "stripe_subscription_id",
             "stripe_customer_id",
         )
-        values = {
-            field: {shape.get(field) for shape in ROW_SHAPES.values()}
-            for field in fields
-        }
+        values = {field: {shape.get(field) for shape in ROW_SHAPES.values()} for field in fields}
 
         confirmations = {
             "canceled+periods": confirming("canceled", periods=True),
@@ -425,44 +428,45 @@ class AccessRepairOutcomeNeutralityTest(unittest.TestCase):
         }
 
         for confirms_label, stripe_cls in confirmations.items():
-          for base_label, base_row in ROW_SHAPES.items():
-            for field in fields:
-                for value in values[field]:
-                    if base_row.get(field) == value:
-                        continue
-                    with self.subTest(f"{base_label} / {field}={value!r} / {confirms_label}"):
-                        platform_billing_service._access_repair_retry_after.clear()
-                        supabase = FakeSupabase([dict(base_row)])
-                        self.attempt(supabase, stripe_cls, 0.0)
-                        if "studio_1" not in platform_billing_service._access_repair_retry_after:
-                            continue  # no window was recorded; nothing to replay
-
-                        # The window fingerprints the row as it stands *after*
-                        # the repair, so the single field has to be changed
-                        # relative to that row. Mutating the pre-repair row
-                        # instead moves several fields at once and every
-                        # fingerprint field covers for every other one.
-                        recorded = dict(supabase.tables["studio_subscriptions"][0])
-                        if recorded.get(field) == value:
+            for base_label, base_row in ROW_SHAPES.items():
+                for field in fields:
+                    for value in values[field]:
+                        if base_row.get(field) == value:
                             continue
-                        mutated = {**recorded, field: value}
+                        with self.subTest(f"{base_label} / {field}={value!r} / {confirms_label}"):
+                            platform_billing_service._access_repair_retry_after.clear()
+                            supabase = FakeSupabase([dict(base_row)])
+                            self.attempt(supabase, stripe_cls, 0.0)
+                            if (
+                                "studio_1"
+                                not in platform_billing_service._access_repair_retry_after
+                            ):
+                                continue  # no window was recorded; nothing to replay
 
-                        supabase.tables["studio_subscriptions"][0].clear()
-                        supabase.tables["studio_subscriptions"][0].update(dict(mutated))
-                        replayed = self.attempt(supabase, stripe_cls, 1.0)
+                            # The window fingerprints the row as it stands *after*
+                            # the repair, so the single field has to be changed
+                            # relative to that row. Mutating the pre-repair row
+                            # instead moves several fields at once and every
+                            # fingerprint field covers for every other one.
+                            recorded = dict(supabase.tables["studio_subscriptions"][0])
+                            if recorded.get(field) == value:
+                                continue
+                            mutated = {**recorded, field: value}
 
-                        platform_billing_service._access_repair_retry_after.clear()
-                        baseline = self.attempt(
-                            FakeSupabase([dict(mutated)]), stripe_cls, 0.0
-                        )
+                            supabase.tables["studio_subscriptions"][0].clear()
+                            supabase.tables["studio_subscriptions"][0].update(dict(mutated))
+                            replayed = self.attempt(supabase, stripe_cls, 1.0)
 
-                        self.assertEqual(
-                            replayed,
-                            baseline,
-                            f"changing {field} alone on {base_label} did not void the "
-                            f"window, so the row was answered under a verdict "
-                            f"recorded for the row it replaced",
-                        )
+                            platform_billing_service._access_repair_retry_after.clear()
+                            baseline = self.attempt(FakeSupabase([dict(mutated)]), stripe_cls, 0.0)
+
+                            self.assertEqual(
+                                replayed,
+                                baseline,
+                                f"changing {field} alone on {base_label} did not void the "
+                                f"window, so the row was answered under a verdict "
+                                f"recorded for the row it replaced",
+                            )
 
     def test_the_throttle_still_bounds_provider_calls_for_every_shape(self):
         """Neutrality must not have been bought by disabling the throttle."""
@@ -485,9 +489,7 @@ class AccessRepairOutcomeNeutralityTest(unittest.TestCase):
         platform_billing_service._access_repair_retry_after.clear()
         stripe_cls.calls = 0
         supabase = FakeSupabase([deepcopy(subscription_row)])
-        original_projection = (
-            platform_billing_service.PlatformBillingService._project_subscription
-        )
+        original_projection = platform_billing_service.PlatformBillingService._project_subscription
 
         def project_like_d12f5b8(service, subscription, *, clear_comp=False):
             update = original_projection(
@@ -518,16 +520,18 @@ class AccessRepairOutcomeNeutralityTest(unittest.TestCase):
             )
 
         window = platform_billing_service._access_repair_retry_after.get("studio_1")
-        throttle = None if window is None else (
-            window.retry_after,
-            window.replay_fault,
-            window.row_fingerprint,
+        throttle = (
+            None
+            if window is None
+            else (
+                window.retry_after,
+                window.replay_fault,
+                window.row_fingerprint,
+            )
         )
         return {
             "outcomes": outcomes,
-            "persisted_row": deepcopy(
-                supabase.tables["studio_subscriptions"][0]
-            ),
+            "persisted_row": deepcopy(supabase.tables["studio_subscriptions"][0]),
             "provider_calls": stripe_cls.calls,
             "throttle": throttle,
         }
@@ -576,9 +580,7 @@ class CompedRepairPreservationTest(unittest.TestCase):
             "app.services.platform_billing_service.get_settings",
             return_value=ProductionSettings(),
         ):
-            return platform_billing_service.PlatformBillingService(
-                FakeSupabase([subscription_row])
-            )
+            return platform_billing_service.PlatformBillingService(FakeSupabase([subscription_row]))
 
     def attempt(self, subscription_row, stripe_cls, *, legacy_period_repair=False):
         supabase = FakeSupabase([deepcopy(subscription_row)])
@@ -597,12 +599,9 @@ class CompedRepairPreservationTest(unittest.TestCase):
             return update
 
         original_guard = (
-            platform_billing_service.PlatformBillingService
-            ._should_repair_subscription_periods
+            platform_billing_service.PlatformBillingService._should_repair_subscription_periods
         )
-        original_projection = (
-            platform_billing_service.PlatformBillingService._project_subscription
-        )
+        original_projection = platform_billing_service.PlatformBillingService._project_subscription
         guard_patch = patch.object(
             platform_billing_service.PlatformBillingService,
             "_should_repair_subscription_periods",
@@ -743,33 +742,37 @@ class CompedRepairPreservationTest(unittest.TestCase):
                             "status": "active",
                             "metadata": {"studio_id": "studio_1"},
                             "items": {
-                                "data": [{
-                                    "current_period_start": 100,
-                                    "current_period_end": 200,
-                                }]
+                                "data": [
+                                    {
+                                        "current_period_start": 100,
+                                        "current_period_end": 200,
+                                    }
+                                ]
                             },
                         }
 
                     def list_customer_subscriptions(self, customer_id):
                         grant_comp()
                         return {
-                            "data": [{
-                                "id": "sub_123",
-                                "customer": customer_id,
-                                "status": "active",
-                                "metadata": {"studio_id": "studio_1"},
-                                "items": {
-                                    "data": [{
-                                        "current_period_start": 100,
-                                        "current_period_end": 200,
-                                    }]
-                                },
-                            }]
+                            "data": [
+                                {
+                                    "id": "sub_123",
+                                    "customer": customer_id,
+                                    "status": "active",
+                                    "metadata": {"studio_id": "studio_1"},
+                                    "items": {
+                                        "data": [
+                                            {
+                                                "current_period_start": 100,
+                                                "current_period_end": 200,
+                                            }
+                                        ]
+                                    },
+                                }
+                            ]
                         }
 
-                self.assertTrue(
-                    hasattr(GrantsDuringProviderCall, provider_method)
-                )
+                self.assertTrue(hasattr(GrantsDuringProviderCall, provider_method))
                 with patch(
                     "app.services.platform_billing_service.StripeService",
                     GrantsDuringProviderCall,
@@ -782,15 +785,12 @@ class CompedRepairPreservationTest(unittest.TestCase):
                 updates = [
                     entry["update"]
                     for entry in service.supabase.query_log
-                    if entry["table"] == "studio_subscriptions"
-                    and entry["update"] is not None
+                    if entry["table"] == "studio_subscriptions" and entry["update"] is not None
                 ]
                 self.assertEqual(len(updates), 1)
                 self.assertNotIn("comped", updates[0])
                 self.assertTrue(repaired["comped"])
-                self.assertTrue(
-                    service.supabase.tables["studio_subscriptions"][0]["comped"]
-                )
+                self.assertTrue(service.supabase.tables["studio_subscriptions"][0]["comped"])
 
     def test_repair_does_not_restore_a_comp_cleared_while_stripe_is_in_flight(self):
         subscription_row = row(
@@ -815,10 +815,12 @@ class CompedRepairPreservationTest(unittest.TestCase):
                     "customer": "cus_123",
                     "status": "active",
                     "items": {
-                        "data": [{
-                            "current_period_start": 100,
-                            "current_period_end": 200,
-                        }]
+                        "data": [
+                            {
+                                "current_period_start": 100,
+                                "current_period_end": 200,
+                            }
+                        ]
                     },
                 }
 
@@ -838,14 +840,11 @@ class CompedRepairPreservationTest(unittest.TestCase):
         update = next(
             entry["update"]
             for entry in service.supabase.query_log
-            if entry["table"] == "studio_subscriptions"
-            and entry["update"] is not None
+            if entry["table"] == "studio_subscriptions" and entry["update"] is not None
         )
         self.assertNotIn("comped", update)
         self.assertFalse(repaired["comped"])
-        self.assertFalse(
-            service.supabase.tables["studio_subscriptions"][0]["comped"]
-        )
+        self.assertFalse(service.supabase.tables["studio_subscriptions"][0]["comped"])
 
     def test_comped_rows_remain_comped_across_the_full_reconciliation_sweep(self):
         for label, subscription_row in reconciliation_dimension_rows(comped=True):
@@ -863,9 +862,7 @@ class CompedRepairPreservationTest(unittest.TestCase):
                         )
 
                     self.assertTrue(persisted["comped"])
-                    self.assertTrue(
-                        service.supabase.tables["studio_subscriptions"][0]["comped"]
-                    )
+                    self.assertTrue(service.supabase.tables["studio_subscriptions"][0]["comped"])
                     self.assertEqual(ReachableStripeService.calls, 0)
 
     def test_comped_outcome_changes_are_explicit_and_expired_trial_stays_denied(self):
@@ -894,12 +891,8 @@ class CompedRepairPreservationTest(unittest.TestCase):
                     legacy_period_repair=True,
                 )
                 self.assertEqual((legacy, current), ("402", "allowed"))
-                self.assertFalse(
-                    legacy_db.tables["studio_subscriptions"][0]["comped"]
-                )
-                self.assertTrue(
-                    current_db.tables["studio_subscriptions"][0]["comped"]
-                )
+                self.assertFalse(legacy_db.tables["studio_subscriptions"][0]["comped"])
+                self.assertTrue(current_db.tables["studio_subscriptions"][0]["comped"])
 
         expired_trial = row(
             comped=True,

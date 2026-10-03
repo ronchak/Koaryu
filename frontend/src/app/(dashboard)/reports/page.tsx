@@ -1,9 +1,11 @@
 "use client";
+import { markDashboardReadiness } from "@/lib/performance";
+import { useResumeRefresh } from "@/lib/use-resume-refresh";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { DashboardLoadingSkeleton } from "@/components/dashboard-loading-skeleton";
 import { DatasetReadinessErrorPanel } from "@/components/dataset-readiness-panel";
 import { Header } from "@/components/header";
+import { OperationsLoading, OperationsSurface } from "@/components/operations/operations-surface";
 import { ProgramBadge } from "@/components/programs/program-picker";
 import { ReportsDataExportsPanel } from "@/components/reports/reports-data-exports-panel";
 import {
@@ -19,13 +21,12 @@ import {
   formatReportPercent,
   subtractReportDays,
 } from "@/lib/report-metrics";
-import { toLocalDateKey } from "@/lib/date";
 import { loadedDataset, resolvePageDatasetReadiness } from "@/lib/page-dataset-readiness";
 import { useConfigStore, useLeadStore, useProgramStore, useScheduleStore, useStudioStore } from "@/lib/store";
 import { BarChart3, Calendar, TrendingUp, Users } from "lucide-react";
 
 export default function ReportsPage() {
-  const { isPreviewMode, token } = useConfigStore();
+  const { businessDate, isPreviewMode, token } = useConfigStore();
   const { leads, leadsLoadError, leadsLoaded, refreshLeads } = useLeadStore();
   const { programs, programsLoadError, programsLoaded, refreshPrograms } = useProgramStore();
   const {
@@ -37,11 +38,12 @@ export default function ReportsPage() {
     "idle" | "loading" | "ready" | "error"
   >("idle");
   const [reportScheduleError, setReportScheduleError] = useState<string | null>(null);
+  const [reportScheduleReadyDate, setReportScheduleReadyDate] = useState<string | null>(null);
   const reportScheduleRequestSeqRef = useRef(0);
-  const reportScheduleRange = useMemo(() => {
-    const today = toLocalDateKey();
-    return { startDate: subtractReportDays(today, 29), endDate: today };
-  }, []);
+  const reportScheduleRange = useMemo(
+    () => ({ startDate: subtractReportDays(businessDate, 29), endDate: businessDate }),
+    [businessDate]
+  );
   const refreshReportSchedule = useCallback(async () => {
     const requestSequence = reportScheduleRequestSeqRef.current + 1;
     reportScheduleRequestSeqRef.current = requestSequence;
@@ -54,6 +56,7 @@ export default function ReportsPage() {
         "read"
       );
       if (reportScheduleRequestSeqRef.current === requestSequence) {
+        setReportScheduleReadyDate(reportScheduleRange.endDate);
         setReportScheduleStatus("ready");
       }
     } catch (error) {
@@ -67,6 +70,8 @@ export default function ReportsPage() {
     }
   }, [refreshScheduleRange, reportScheduleRange.endDate, reportScheduleRange.startDate]);
 
+  useResumeRefresh(() => Promise.allSettled([refreshReportSchedule(), refreshLeads(), refreshPrograms({ includeArchived: true })]));
+
   useEffect(() => {
     const timer = window.setTimeout(() => {
       void refreshReportSchedule().catch((error) => {
@@ -78,8 +83,7 @@ export default function ReportsPage() {
       window.clearTimeout(timer);
     };
   }, [refreshReportSchedule]);
-  const { currentRole } = useStudioStore();
-  const canExportStudioData = currentRole === "admin" || currentRole === "front_desk";
+  const { currentRole, identityReady, identityGeneration } = useStudioStore();
   const {
     attendanceMetrics,
     leadMetrics,
@@ -87,16 +91,26 @@ export default function ReportsPage() {
     programById,
     programLeadRows,
     sessionRows,
+    lookbackStart,
+    today,
     uniqueAttendees,
     visibleSessionRows,
   } = useMemo(
-    () => buildReportsPageModel({ attendance, leads, programs, sessions }),
-    [attendance, leads, programs, sessions]
+    () => buildReportsPageModel({ attendance, leads, programs, sessions, today: businessDate }),
+    [attendance, businessDate, leads, programs, sessions]
   );
   const datasetReadiness = resolvePageDatasetReadiness([
     loadedDataset({ error: leadsLoadError, label: "Leads", loaded: leadsLoaded }),
     loadedDataset({ error: programsLoadError, label: "Programs", loaded: programsLoaded }),
-    { error: reportScheduleError, label: "Schedule", status: reportScheduleStatus },
+    {
+      error: reportScheduleError,
+      label: "Schedule",
+      // A window loaded for an earlier studio day is not ready for the current one.
+      status:
+        reportScheduleStatus === "ready" && reportScheduleReadyDate !== businessDate
+          ? "loading"
+          : reportScheduleStatus,
+    },
   ]);
   const retryReportsDatasets = useCallback(() => {
     void Promise.allSettled([
@@ -106,23 +120,23 @@ export default function ReportsPage() {
     ]);
   }, [refreshLeads, refreshPrograms, refreshReportSchedule]);
 
+  useEffect(() => markDashboardReadiness("reports", identityGeneration, {
+    useful: identityReady && datasetReadiness.status === "ready",
+    complete: identityReady && datasetReadiness.status === "ready",
+  }), [identityReady, identityGeneration, datasetReadiness.status]);
+
   if (datasetReadiness.status === "loading") {
     return (
-      <DashboardLoadingSkeleton
+      <OperationsLoading
+        page="reports"
         title="Reports"
-        description="Loading studio reporting panels and export controls."
-        variant="table"
       />
     );
   }
 
   if (datasetReadiness.status === "error") {
     return (
-      <>
-        <Header
-          title="Reports"
-          description="Live lead funnel, source, and attendance trends for the current studio."
-        />
+      <OperationsSurface page="reports">
         <div className="flex-1 p-6 sm:p-8">
           <div className="max-w-6xl">
             <DatasetReadinessErrorPanel
@@ -132,28 +146,43 @@ export default function ReportsPage() {
             />
           </div>
         </div>
-      </>
+      </OperationsSurface>
     );
   }
 
   return (
-    <>
-      <Header
-        title="Reports"
-        description="Live lead funnel, source, and attendance trends for the current studio."
-      />
+    <OperationsSurface page="reports">
+      <Header title="Reports" />
+      <article className="flex-1 p-4 sm:p-8" data-reports-reading-document="true">
+        <div className="mx-auto max-w-6xl space-y-8">
 
-      <div className="flex-1 p-6 sm:p-8">
-        <div className="max-w-6xl space-y-6">
+          <section className="overflow-hidden bg-surface" aria-label="Report scope and method" data-report-method-sheet="true">
+            <div className="grid sm:grid-cols-3">
+              <div className="border-b border-border px-4 py-4 sm:border-b-0 sm:border-r">
+                <p className="text-xs font-medium text-muted">Lead scope</p>
+                <p className="mt-2 text-sm text-text-primary">Current loaded pipeline snapshot</p>
+              </div>
+              <div className="border-b border-border px-4 py-4 sm:border-b-0 sm:border-r">
+                <p className="text-xs font-medium text-muted">Attendance window</p>
+                <p className="mt-2 text-sm tabular-nums text-text-primary">{formatReportDate(lookbackStart)} – {formatReportDate(today)}</p>
+              </div>
+              <div className="px-4 py-4">
+                <p className="text-xs font-medium text-muted">As of</p>
+                <p className="mt-2 text-sm tabular-nums text-text-primary">{formatReportDate(today)}</p>
+              </div>
+            </div>
+            <p className="border-t border-border px-4 py-3 text-xs leading-5 text-text-secondary">
+              Method: lead figures group the pipeline currently loaded for this studio and are not a 30-day lead cohort. Attendance and utilization use non-canceled sessions dated inside the inclusive 30-calendar-day window; unique attendees use that same session set.
+            </p>
+          </section>
 
-          {/* ── Metric Cards ── */}
-          <div className="grid gap-px bg-border md:grid-cols-2 xl:grid-cols-4">
+          {/* ── Headline comparison figures ── */}
+          <section className="grid gap-2 bg-surface p-2 md:grid-cols-2 xl:grid-cols-[1.2fr_0.8fr_1.2fr_0.8fr]" aria-label="Headline report figures" data-report-figure-band="comparisons">
             <MetricCard
               icon={BarChart3}
               label="Leads Captured"
               value={String(leadMetrics.totalLeads)}
               sub={`${leadMetrics.activePipelineLeads} still active in the funnel`}
-              accent="#8B5CF6"
             />
             <MetricCard
               icon={TrendingUp}
@@ -164,14 +193,12 @@ export default function ReportsPage() {
                   : null
               )}
               sub={`${leadMetrics.enrolledLeads} currently marked enrolled`}
-              accent="#22C55E"
             />
             <MetricCard
               icon={Users}
               label="30-Day Attendance"
               value={String(attendanceMetrics.totalAttendance)}
               sub={`${Math.round(attendanceMetrics.averageAttendance || 0)} average check-ins per class`}
-              accent="#3B82F6"
             />
             <MetricCard
               icon={Calendar}
@@ -182,9 +209,8 @@ export default function ReportsPage() {
                   ? `${attendanceMetrics.sessionsWithCapacity} classes with capacity tracking`
                   : "Add class capacities to unlock utilization"
               }
-              accent="#F59E0B"
             />
-          </div>
+          </section>
 
           {/* ── Lead Funnel + Lead Sources ── */}
           <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
@@ -201,11 +227,11 @@ export default function ReportsPage() {
                   <div key={row.stage}>
                     <div className="flex items-center justify-between text-sm mb-2">
                       <span className="text-text-primary font-medium">{row.label}</span>
-                      <span className="font-mono text-text-secondary">{row.count}</span>
+                      <span className="tabular-nums text-text-secondary">{row.count}</span>
                     </div>
-                    <div className="h-1.5 bg-surface-raised overflow-hidden">
+                    <div className="h-1.5 overflow-hidden rounded-full bg-surface-raised">
                       <div
-                        className="h-full bg-accent transition-[width] duration-150"
+                        className="h-full bg-[var(--operations-cobalt)] transition-[width] duration-150"
                         style={{ width: `${Math.max(row.share * 100, row.count > 0 ? 10 : 0)}%` }}
                       />
                     </div>
@@ -233,7 +259,7 @@ export default function ReportsPage() {
                       </p>
                     </div>
                     <div className="text-right shrink-0">
-                      <p className="text-base font-mono font-semibold text-text-primary">{row.total}</p>
+                      <p className="text-base font-semibold tabular-nums text-text-primary">{row.total}</p>
                       <p className="text-[11px] text-muted mt-0.5">
                         {formatReportPercent(row.conversionRate)} conv.
                       </p>
@@ -270,7 +296,7 @@ export default function ReportsPage() {
                           {row.active} active · {row.enrolled} enrolled
                         </p>
                       </div>
-                      <p className="text-base font-mono font-semibold text-text-primary shrink-0">
+                      <p className="shrink-0 text-base font-semibold tabular-nums text-text-primary">
                         {row.total}
                       </p>
                     </div>
@@ -300,10 +326,10 @@ export default function ReportsPage() {
                           fallback={row.label}
                         />
                         <p className="text-xs text-text-secondary mt-2">
-                          {row.sessions} sessions · {row.capacity > 0 ? `${formatReportPercent(row.attendance / row.capacity)} utilization` : "No capacity tracked"}
+                          {row.sessions} sessions · {row.capacity > 0 ? `${formatReportPercent(row.attendanceWithCapacity / row.capacity)} utilization` : "No capacity tracked"}
                         </p>
                       </div>
-                      <p className="text-base font-mono font-semibold text-text-primary shrink-0">
+                      <p className="shrink-0 text-base font-semibold tabular-nums text-text-primary">
                         {row.attendance}
                       </p>
                     </div>
@@ -317,7 +343,7 @@ export default function ReportsPage() {
           <Panel>
             <PanelHeader
               title="Attendance & Utilization"
-              subtitle="Last 30 days of completed or elapsed classes."
+              subtitle={`Non-canceled sessions dated ${formatReportDate(lookbackStart)} through ${formatReportDate(today)}.`}
             >
               <div className="flex flex-wrap gap-2">
                 <StatBadge>{sessionRows.length} sessions</StatBadge>
@@ -331,10 +357,10 @@ export default function ReportsPage() {
             {sessionRows.length === 0 ? (
               <EmptyState message="No classes have been scheduled in the last 30 days yet, so attendance and utilization metrics are still warming up." />
             ) : (
-              <div className="overflow-x-auto -mx-5">
-                <table className="min-w-full text-sm">
+              <>
+                <table className="hidden min-w-full text-sm sm:table print:table">
                   <thead>
-                    <tr className="border-y border-border text-left text-[11px] uppercase tracking-widest text-muted">
+                    <tr className="border-y border-border text-left text-xs text-muted">
                       <th className="py-3 pl-5 pr-4 font-medium">Class</th>
                       <th className="py-3 pr-4 font-medium">Date</th>
                       <th className="py-3 pr-4 font-medium">Attendance</th>
@@ -354,30 +380,41 @@ export default function ReportsPage() {
                         <td className="py-3.5 pr-4 text-text-secondary">
                           {formatReportDate(session.date)}
                         </td>
-                        <td className="py-3.5 pr-4 font-mono text-text-primary">
+                        <td className="py-3.5 pr-4 tabular-nums text-text-primary">
                           {session.attendees}
                         </td>
-                        <td className="py-3.5 pr-4 font-mono text-text-secondary">
+                        <td className="py-3.5 pr-4 tabular-nums text-text-secondary">
                           {session.capacity ?? "—"}
                         </td>
-                        <td className="py-3.5 pr-5 font-mono text-text-secondary">
+                        <td className="py-3.5 pr-5 tabular-nums text-text-secondary">
                           {formatReportPercent(session.utilization)}
                         </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
-              </div>
+                <div className="divide-y divide-border border-y border-border sm:hidden print:hidden">
+                  {visibleSessionRows.map((session) => (
+                    <dl key={session.id} className="grid grid-cols-2 gap-x-3 gap-y-2 py-4 text-sm">
+                      <div className="col-span-2"><dt className="text-xs text-muted">Class</dt><dd className="mt-1 font-medium text-text-primary">{session.name}</dd></div>
+                      <div><dt className="text-xs text-muted">Date</dt><dd className="mt-1 text-text-secondary">{formatReportDate(session.date)}</dd></div>
+                      <div><dt className="text-xs text-muted">Attendance</dt><dd className="mt-1 tabular-nums text-text-primary">{session.attendees}</dd></div>
+                      <div><dt className="text-xs text-muted">Capacity</dt><dd className="mt-1 tabular-nums text-text-secondary">{session.capacity ?? "—"}</dd></div>
+                      <div><dt className="text-xs text-muted">Utilization</dt><dd className="mt-1 tabular-nums text-text-secondary">{formatReportPercent(session.utilization)}</dd></div>
+                    </dl>
+                  ))}
+                </div>
+              </>
             )}
           </Panel>
 
           <ReportsDataExportsPanel
             isPreviewMode={isPreviewMode}
             token={token}
-            canExportStudioData={canExportStudioData}
+            currentRole={currentRole}
           />
         </div>
-      </div>
-    </>
+      </article>
+    </OperationsSurface>
   );
 }

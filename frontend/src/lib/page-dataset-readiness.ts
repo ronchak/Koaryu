@@ -11,29 +11,6 @@ export type PageDatasetReadiness = {
   status: "loading" | "ready" | "error";
 };
 
-export async function loadIndependentDataset<T>({
-  context,
-  fallback,
-  load,
-  onError,
-  onLoaded,
-}: {
-  context: Promise<unknown>;
-  fallback: T;
-  load: Promise<T>;
-  onError: (error: unknown) => void;
-  onLoaded: (value: T) => void;
-}) {
-  try {
-    const [, value] = await Promise.all([context, load]);
-    onLoaded(value);
-    return value;
-  } catch (error) {
-    onError(error);
-    return fallback;
-  }
-}
-
 export function loadedDataset({
   error,
   label,
@@ -55,7 +32,7 @@ export function loadedDataset({
 }
 
 export function resolvePageDatasetReadiness(
-  requiredDatasets: RequiredDataset[]
+  requiredDatasets: RequiredDataset[],
 ): PageDatasetReadiness {
   const failedDataset = requiredDatasets.find((dataset) => dataset.status === "error");
   if (failedDataset) {
@@ -87,7 +64,7 @@ export function dashboardSummaryDataset({
 
   if (loaded) {
     return {
-      error: "could not be loaded. Reload the page to retry.",
+      error: "could not be loaded. Retry dashboard data to load this section.",
       label: "Dashboard summary",
       status: "error",
     };

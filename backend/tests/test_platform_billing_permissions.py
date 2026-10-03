@@ -13,15 +13,19 @@ class PlatformBillingPermissionsTest(unittest.TestCase):
     def test_non_admin_roles_cannot_fetch_platform_stripe_status(self):
         for role in ("front_desk", "instructor"):
             with self.subTest(role=role):
-                supabase = TableBackedSupabase({
-                    "staff_roles": [{
-                        "id": f"role-{role}",
-                        "studio_id": "studio-1",
-                        "user_id": "user-1",
-                        "role": role,
-                        "created_at": "2026-07-12T12:00:00Z",
-                    }],
-                })
+                supabase = TableBackedSupabase(
+                    {
+                        "staff_roles": [
+                            {
+                                "id": f"role-{role}",
+                                "studio_id": "studio-1",
+                                "user_id": "user-1",
+                                "role": role,
+                                "created_at": "2026-07-12T12:00:00Z",
+                            }
+                        ],
+                    }
+                )
                 app = FastAPI()
                 app.include_router(platform_billing.router)
                 app.dependency_overrides[get_current_user_id] = lambda: "user-1"

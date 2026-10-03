@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from typing import Optional
+from typing import Any, Optional
 
 from supabase import Client
 
 from app.core.config import get_settings
 from app.schemas.billing import (
+    BillingEnrollmentPageResponse,
     BillingInvoiceCreate,
     BillingLinkResponse,
     BillingPaymentResponse,
@@ -44,12 +45,11 @@ from app.services.billing_payments import BillingPaymentManager
 from app.services.billing_reconciliation import BillingReconciliationService
 from app.services.billing_plans import BillingPlanManager
 from app.services.billing_system_status import BillingSystemStatusReporter
-from app.services.billing_private_facade import BillingPrivateFacadeMixin
 from app.services.billing_webhook_projection import BillingWebhookProjector
 from app.services.stripe_service import StripeService
 
 
-class BillingService(BillingPrivateFacadeMixin):
+class BillingService:
     def __init__(self, supabase: Client):
         self.supabase = supabase
         self.settings = get_settings()
@@ -66,12 +66,44 @@ class BillingService(BillingPrivateFacadeMixin):
         return self._connect_account_store
 
     def _webhook_projector(self) -> BillingWebhookProjector:
-        return BillingWebhookProjector(self, stripe_service_cls=StripeService)
+        connect_accounts = self._connect_accounts()
+        return BillingWebhookProjector(
+            self.supabase,
+            connect_accounts,
+            stripe_service_cls=StripeService,
+        )
+
+    def _invoice_manager(self) -> BillingInvoiceManager:
+        return BillingInvoiceManager(
+            self.supabase,
+            self._connect_accounts(),
+            self.settings,
+            stripe_service_cls=StripeService,
+        )
+
+    def _payment_manager(self) -> BillingPaymentManager:
+        return BillingPaymentManager(
+            self.supabase,
+            self._connect_accounts(),
+            stripe_service_cls=StripeService,
+        )
+
+    def _enrollment_manager(self) -> BillingEnrollmentManager:
+        return BillingEnrollmentManager(
+            self.supabase,
+            self._connect_accounts(),
+            self.settings,
+            stripe_service_cls=StripeService,
+        )
+
+    def project_connect_event(self, event: dict[str, Any]) -> None:
+        self._webhook_projector().project_connect_event(event)
 
     def _connect_actions(self) -> BillingConnectActions:
         return BillingConnectActions(
-            self,
+            self.supabase,
             self._connect_accounts(),
+            self.settings,
             stripe_service_cls=StripeService,
         )
 
@@ -109,19 +141,27 @@ class BillingService(BillingPrivateFacadeMixin):
     async def sync_connect_account(self, studio_id: str) -> StudioPaymentAccountResponse:
         return await self._connect_actions().sync_account(studio_id)
 
-    async def reset_connect_account(self, studio_id: str, actor_id: str) -> StudioPaymentAccountResponse:
+    async def reset_connect_account(
+        self, studio_id: str, actor_id: str
+    ) -> StudioPaymentAccountResponse:
         return await self._connect_actions().reset_account(studio_id, actor_id)
 
-    async def create_connect_dashboard_link(self, studio_id: str, actor_id: str) -> BillingLinkResponse:
+    async def create_connect_dashboard_link(
+        self, studio_id: str, actor_id: str
+    ) -> BillingLinkResponse:
         return await self._connect_actions().create_dashboard_link(studio_id, actor_id)
 
-    async def get_system_status(self, studio_id: str) -> BillingSystemStatusResponse:
+    async def get_system_status(
+        self,
+        studio_id: str,
+        actor_role: str = "admin",
+    ) -> BillingSystemStatusResponse:
         return await BillingSystemStatusReporter(
             self.supabase,
             settings=self.settings,
             connect_accounts=self._connect_accounts(),
-            payment_account_loader=self.get_payment_account,
-        ).get_system_status(studio_id)
+            payment_account_loader=self._connect_actions().get_payment_account,
+        ).get_system_status(studio_id, actor_role)
 
     async def reconcile_stripe_object(
         self,
@@ -129,8 +169,17 @@ class BillingService(BillingPrivateFacadeMixin):
         studio_id: str,
         actor_id: str,
     ) -> BillingReconcileResponse:
+        connect_accounts = self._connect_accounts()
+        connect_actions = BillingConnectActions(
+            self.supabase,
+            connect_accounts,
+            self.settings,
+            stripe_service_cls=StripeService,
+        )
         return await BillingReconciliationService(
-            self,
+            self.supabase,
+            connect_accounts,
+            connect_actions,
             stripe_service_cls=StripeService,
         ).reconcile_stripe_object(data, studio_id, actor_id)
 
@@ -141,52 +190,134 @@ class BillingService(BillingPrivateFacadeMixin):
         self._connect_actions().audit_dashboard_opened(studio_id, actor_id)
 
     async def list_plans(self, studio_id: str) -> list[BillingPlanResponse]:
-        return await BillingPlanManager(self, stripe_service_cls=StripeService).list_plans(studio_id)
+        return await BillingPlanManager(
+            self.supabase,
+            self._connect_accounts(),
+            stripe_service_cls=StripeService,
+        ).list_plans(studio_id)
 
-    async def create_plan(self, data: BillingPlanCreate, studio_id: str, actor_id: str) -> BillingPlanResponse:
-        return await BillingPlanManager(self, stripe_service_cls=StripeService).create_plan(data, studio_id, actor_id)
+    async def create_plan(
+        self, data: BillingPlanCreate, studio_id: str, actor_id: str
+    ) -> BillingPlanResponse:
+        return await BillingPlanManager(
+            self.supabase,
+            self._connect_accounts(),
+            stripe_service_cls=StripeService,
+        ).create_plan(data, studio_id, actor_id)
 
-    async def update_plan(self, plan_id: str, data: BillingPlanUpdate, studio_id: str, actor_id: str) -> BillingPlanResponse:
-        return await BillingPlanManager(self, stripe_service_cls=StripeService).update_plan(plan_id, data, studio_id, actor_id)
+    async def update_plan(
+        self, plan_id: str, data: BillingPlanUpdate, studio_id: str, actor_id: str
+    ) -> BillingPlanResponse:
+        return await BillingPlanManager(
+            self.supabase,
+            self._connect_accounts(),
+            stripe_service_cls=StripeService,
+        ).update_plan(plan_id, data, studio_id, actor_id)
 
-    async def sync_plan(self, plan_id: str, studio_id: str, actor_id: str) -> BillingPlanResponse:
-        return await BillingPlanManager(self, stripe_service_cls=StripeService).sync_plan(plan_id, studio_id, actor_id)
+    async def sync_plan(
+        self,
+        plan_id: str,
+        studio_id: str,
+        actor_id: str,
+        idempotency_key: str | None = None,
+    ) -> BillingPlanResponse:
+        return await BillingPlanManager(
+            self.supabase,
+            self._connect_accounts(),
+            stripe_service_cls=StripeService,
+        ).sync_plan(
+            plan_id,
+            studio_id,
+            actor_id,
+            idempotency_key,
+        )
 
-    async def archive_plan(self, plan_id: str, studio_id: str, actor_id: str) -> BillingPlanResponse:
-        return await BillingPlanManager(self, stripe_service_cls=StripeService).archive_plan(plan_id, studio_id, actor_id)
+    async def archive_plan(
+        self, plan_id: str, studio_id: str, actor_id: str
+    ) -> BillingPlanResponse:
+        return await BillingPlanManager(
+            self.supabase,
+            self._connect_accounts(),
+            stripe_service_cls=StripeService,
+        ).archive_plan(plan_id, studio_id, actor_id)
 
     async def list_payers(self, studio_id: str) -> list[BillingPayerResponse]:
-        return await BillingPayerManager(self, stripe_service_cls=StripeService).list_payers(studio_id)
+        return await BillingPayerManager(
+            self.supabase,
+            self._connect_accounts(),
+            self.settings,
+            stripe_service_cls=StripeService,
+        ).list_payers(studio_id)
 
-    async def create_payer(self, data: BillingPayerCreate, studio_id: str, actor_id: str) -> BillingPayerResponse:
-        return await BillingPayerManager(self, stripe_service_cls=StripeService).create_payer(data, studio_id, actor_id)
+    async def create_payer(
+        self, data: BillingPayerCreate, studio_id: str, actor_id: str
+    ) -> BillingPayerResponse:
+        return await BillingPayerManager(
+            self.supabase,
+            self._connect_accounts(),
+            self.settings,
+            stripe_service_cls=StripeService,
+        ).create_payer(data, studio_id, actor_id)
 
     async def get_payer(self, payer_id: str, studio_id: str) -> BillingPayerResponse:
-        return await BillingPayerManager(self, stripe_service_cls=StripeService).get_payer(payer_id, studio_id)
+        return await BillingPayerManager(
+            self.supabase,
+            self._connect_accounts(),
+            self.settings,
+            stripe_service_cls=StripeService,
+        ).get_payer(payer_id, studio_id)
 
-    async def update_payer(self, payer_id: str, data: BillingPayerUpdate, studio_id: str, actor_id: str) -> BillingPayerResponse:
-        return await BillingPayerManager(self, stripe_service_cls=StripeService).update_payer(
+    async def update_payer(
+        self, payer_id: str, data: BillingPayerUpdate, studio_id: str, actor_id: str
+    ) -> BillingPayerResponse:
+        return await BillingPayerManager(
+            self.supabase,
+            self._connect_accounts(),
+            self.settings,
+            stripe_service_cls=StripeService,
+        ).update_payer(
             payer_id,
             data,
             studio_id,
             actor_id,
         )
 
-    async def sync_payer(self, payer_id: str, studio_id: str, actor_id: str) -> BillingPayerResponse:
-        return await BillingPayerManager(self, stripe_service_cls=StripeService).sync_payer(
+    async def sync_payer(
+        self,
+        payer_id: str,
+        studio_id: str,
+        actor_id: str,
+        idempotency_key: str | None = None,
+        test_clock_id: str | None = None,
+    ) -> BillingPayerResponse:
+        return await BillingPayerManager(
+            self.supabase,
+            self._connect_accounts(),
+            self.settings,
+            stripe_service_cls=StripeService,
+        ).sync_payer(
             payer_id,
             studio_id,
             actor_id,
+            idempotency_key,
+            test_clock_id,
         )
 
     async def list_subscriptions(self, studio_id: str) -> list[BillingSubscriptionResponse]:
-        return await BillingEnrollmentManager(self, stripe_service_cls=StripeService).list_subscriptions(studio_id)
+        return await self._enrollment_manager().list_subscriptions(studio_id)
 
     async def list_enrollments(self, studio_id: str) -> list[StudentBillingEnrollmentResponse]:
-        return await BillingEnrollmentManager(self, stripe_service_cls=StripeService).list_enrollments(studio_id)
+        return await self._enrollment_manager().list_enrollments(studio_id)
 
-    async def list_student_billing(self, student_id: str, studio_id: str) -> list[StudentBillingEnrollmentResponse]:
-        return await BillingEnrollmentManager(self, stripe_service_cls=StripeService).list_student_billing(
+    async def list_enrollments_page(
+        self, studio_id: str, cursor: str | None, limit: int
+    ) -> BillingEnrollmentPageResponse:
+        return await self._enrollment_manager().list_enrollments_page(studio_id, cursor, limit)
+
+    async def list_student_billing(
+        self, student_id: str, studio_id: str
+    ) -> list[StudentBillingEnrollmentResponse]:
+        return await self._enrollment_manager().list_student_billing(
             student_id,
             studio_id,
         )
@@ -197,7 +328,7 @@ class BillingService(BillingPrivateFacadeMixin):
         studio_id: str,
         actor_id: str,
     ) -> StudentBillingEnrollmentResponse:
-        return await BillingEnrollmentManager(self, stripe_service_cls=StripeService).add_student_billing_enrollment(
+        return await self._enrollment_manager().add_student_billing_enrollment(
             data,
             studio_id,
             actor_id,
@@ -210,11 +341,73 @@ class BillingService(BillingPrivateFacadeMixin):
         studio_id: str,
         actor_id: str,
     ) -> StudentBillingEnrollmentResponse:
-        return await BillingEnrollmentManager(self, stripe_service_cls=StripeService).update_enrollment(
+        return await self._enrollment_manager().update_enrollment(
             enrollment_id,
             data,
             studio_id,
             actor_id,
+        )
+
+    async def activate_enrollment(
+        self,
+        enrollment_id: str,
+        studio_id: str,
+        actor_id: str,
+        idempotency_key: str | None = None,
+    ) -> StudentBillingEnrollmentResponse:
+        return await self._enrollment_manager().activate_enrollment(
+            enrollment_id,
+            studio_id,
+            actor_id,
+            idempotency_key,
+        )
+
+    async def schedule_enrollment_period_end(
+        self,
+        enrollment_id: str,
+        studio_id: str,
+        actor_id: str,
+        idempotency_key: str | None,
+        reason_code: str,
+    ) -> dict:
+        return await self._enrollment_manager().schedule_period_end(
+            enrollment_id, studio_id, actor_id, idempotency_key, reason_code
+        )
+
+    async def revoke_enrollment_period_end(
+        self,
+        transition_intent_id: str,
+        expected_revision: int,
+        studio_id: str,
+        actor_id: str,
+        idempotency_key: str | None,
+        reason_code: str,
+    ) -> dict:
+        return await self._enrollment_manager().revoke_scheduled_transition(
+            transition_intent_id,
+            expected_revision,
+            studio_id,
+            actor_id,
+            idempotency_key,
+            reason_code,
+        )
+
+    async def cancel_enrollment_immediate(
+        self,
+        enrollment_id: str,
+        studio_id: str,
+        actor_id: str,
+        idempotency_key: str | None,
+        reason_code: str,
+    ) -> dict:
+        return await self._enrollment_manager().cancel_immediate(
+            enrollment_id, studio_id, actor_id, idempotency_key, reason_code
+        )
+
+    async def process_due_enrollment_transitions(self, *, worker_id: str, limit: int = 25) -> dict:
+        return await self._enrollment_manager().process_due_transitions(
+            worker_id=worker_id,
+            limit=limit,
         )
 
     async def set_enrollment_status(
@@ -224,7 +417,7 @@ class BillingService(BillingPrivateFacadeMixin):
         studio_id: str,
         actor_id: str,
     ) -> StudentBillingEnrollmentResponse:
-        return await BillingEnrollmentManager(self, stripe_service_cls=StripeService).set_enrollment_status(
+        return await self._enrollment_manager().set_enrollment_status(
             enrollment_id,
             status_value,
             studio_id,
@@ -237,44 +430,33 @@ class BillingService(BillingPrivateFacadeMixin):
         data: BillingPayerAutopaySetupRequest,
         studio_id: str,
         actor_id: str,
+        request_idempotency_key: str,
     ) -> BillingLinkResponse:
         return await BillingAutopayManager(
-            self,
+            self.supabase,
+            self._connect_accounts(),
+            self.settings,
             stripe_service_cls=StripeService,
-        ).create_autopay_setup_link(payer_id, data, studio_id, actor_id)
+        ).create_autopay_setup_link(
+            payer_id,
+            data,
+            studio_id,
+            actor_id,
+            request_idempotency_key,
+        )
 
-    async def disable_autopay(self, payer_id: str, studio_id: str, actor_id: str) -> BillingPayerResponse:
+    async def disable_autopay(
+        self, payer_id: str, studio_id: str, actor_id: str
+    ) -> BillingPayerResponse:
         return await BillingAutopayManager(
-            self,
+            self.supabase,
+            self._connect_accounts(),
+            self.settings,
             stripe_service_cls=StripeService,
         ).disable_autopay(payer_id, studio_id, actor_id)
 
-    def _disable_payer_autopay_subscriptions(self, payer_id: str, studio_id: str) -> list[str]:
-        return BillingAutopayManager(
-            self,
-            stripe_service_cls=StripeService,
-        )._disable_payer_autopay_subscriptions(payer_id, studio_id)
-
-    def _mark_subscription_autopay_disable_pending(self, subscription: dict[str, Any]) -> dict[str, Any]:
-        return BillingAutopayManager(
-            self,
-            stripe_service_cls=StripeService,
-        )._mark_subscription_autopay_disable_pending(subscription)
-
-    def _disabled_autopay_subscription_fields(self, subscription: dict[str, Any]) -> dict[str, Any]:
-        return BillingAutopayManager(
-            self,
-            stripe_service_cls=StripeService,
-        )._disabled_autopay_subscription_fields(subscription)
-
-    def _connected_account_id_for_studio(self, studio_id: str) -> Optional[str]:
-        return BillingAutopayManager(
-            self,
-            stripe_service_cls=StripeService,
-        )._connected_account_id_for_studio(studio_id)
-
     async def list_invoices(self, studio_id: str) -> list[BillingInvoiceResponse]:
-        return await BillingInvoiceManager(self, stripe_service_cls=StripeService).list_invoices(studio_id)
+        return await self._invoice_manager().list_invoices(studio_id)
 
     async def create_invoice(
         self,
@@ -283,18 +465,25 @@ class BillingService(BillingPrivateFacadeMixin):
         actor_id: str,
         idempotency_key: Optional[str] = None,
     ) -> BillingInvoiceResponse:
-        return await BillingInvoiceManager(self, stripe_service_cls=StripeService).create_invoice(
+        return await self._invoice_manager().create_invoice(
             data,
             studio_id,
             actor_id,
             idempotency_key,
         )
 
-    async def finalize_invoice(self, invoice_id: str, studio_id: str, actor_id: str) -> BillingInvoiceResponse:
-        return await BillingInvoiceManager(self, stripe_service_cls=StripeService).finalize_invoice(
+    async def finalize_invoice(
+        self,
+        invoice_id: str,
+        studio_id: str,
+        actor_id: str,
+        idempotency_key: Optional[str] = None,
+    ) -> BillingInvoiceResponse:
+        return await self._invoice_manager().finalize_invoice(
             invoice_id,
             studio_id,
             actor_id,
+            idempotency_key,
         )
 
     async def retry_invoice_payment(
@@ -304,38 +493,44 @@ class BillingService(BillingPrivateFacadeMixin):
         actor_id: str,
         idempotency_key: Optional[str] = None,
     ) -> BillingInvoiceResponse:
-        return await BillingInvoiceManager(self, stripe_service_cls=StripeService).retry_invoice_payment(
+        return await self._invoice_manager().retry_invoice_payment(
             invoice_id,
             studio_id,
             actor_id,
             idempotency_key,
         )
 
-    async def void_invoice(self, invoice_id: str, studio_id: str, actor_id: str) -> BillingInvoiceResponse:
-        return await BillingInvoiceManager(self, stripe_service_cls=StripeService).void_invoice(
+    async def void_invoice(
+        self,
+        invoice_id: str,
+        studio_id: str,
+        actor_id: str,
+        idempotency_key: Optional[str] = None,
+    ) -> BillingInvoiceResponse:
+        return await self._invoice_manager().void_invoice(
             invoice_id,
             studio_id,
             actor_id,
+            idempotency_key,
         )
 
-    async def reconcile_invoice(self, invoice_id: str, studio_id: str, actor_id: str) -> BillingInvoiceResponse:
-        return await BillingInvoiceManager(self, stripe_service_cls=StripeService).reconcile_invoice(
+    async def reconcile_invoice(
+        self, invoice_id: str, studio_id: str, actor_id: str
+    ) -> BillingInvoiceResponse:
+        return await self._invoice_manager().reconcile_invoice(
             invoice_id,
             studio_id,
             actor_id,
         )
 
     async def list_payments(self, studio_id: str) -> list[BillingPaymentResponse]:
-        return await BillingPaymentManager(self, stripe_service_cls=StripeService).list_payments(studio_id)
+        return await self._payment_manager().list_payments(studio_id)
 
     async def current_month_payment_cohort_summary(
         self,
         studio_id: str,
     ) -> BillingPaymentCohortSummaryResponse:
-        return await BillingPaymentManager(
-            self,
-            stripe_service_cls=StripeService,
-        ).current_month_payment_cohort_summary(studio_id)
+        return await self._payment_manager().current_month_payment_cohort_summary(studio_id)
 
     async def record_external_payment(
         self,
@@ -344,7 +539,7 @@ class BillingService(BillingPrivateFacadeMixin):
         actor_id: str,
         idempotency_key: str | None = None,
     ) -> BillingPaymentResponse:
-        return await BillingPaymentManager(self, stripe_service_cls=StripeService).record_external_payment(
+        return await self._payment_manager().record_external_payment(
             data,
             studio_id,
             actor_id,
@@ -359,7 +554,7 @@ class BillingService(BillingPrivateFacadeMixin):
         actor_id: str,
         idempotency_key: str | None = None,
     ) -> BillingRefundResponse:
-        return await BillingPaymentManager(self, stripe_service_cls=StripeService).refund_payment(
+        return await self._payment_manager().refund_payment(
             payment_id,
             data,
             studio_id,
@@ -367,12 +562,14 @@ class BillingService(BillingPrivateFacadeMixin):
             idempotency_key,
         )
 
-    async def create_export_job(self, data: ExportJobCreate, studio_id: str, actor_id: str) -> ExportJobResponse:
-        return await BillingPaymentManager(self, stripe_service_cls=StripeService).create_export_job(
+    async def create_export_job(
+        self, data: ExportJobCreate, studio_id: str, actor_id: str
+    ) -> ExportJobResponse:
+        return await self._payment_manager().create_export_job(
             data,
             studio_id,
             actor_id,
         )
 
     async def get_export_job(self, export_id: str, studio_id: str) -> ExportJobResponse:
-        return await BillingPaymentManager(self, stripe_service_cls=StripeService).get_export_job(export_id, studio_id)
+        return await self._payment_manager().get_export_job(export_id, studio_id)

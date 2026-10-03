@@ -64,10 +64,7 @@ def error_response_payload(
 
 
 def normalize_validation_errors(errors: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
-    return [
-        PublicValidationError.model_validate(error).model_dump(mode="json")
-        for error in errors
-    ]
+    return [PublicValidationError.model_validate(error).model_dump(mode="json") for error in errors]
 
 
 async def http_exception_handler(_request: Request, exc: StarletteHTTPException) -> Response:

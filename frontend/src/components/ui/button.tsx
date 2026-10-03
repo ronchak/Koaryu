@@ -2,9 +2,13 @@ import {
   cloneElement,
   forwardRef,
   isValidElement,
+  useMemo,
+  type AriaAttributes,
   type ButtonHTMLAttributes,
+  type ForwardedRef,
   type MouseEvent,
   type ReactElement,
+  type Ref,
 } from "react";
 
 type ButtonVariant = "primary" | "secondary" | "danger" | "ghost" | "outline";
@@ -18,16 +22,11 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 const variantStyles: Record<ButtonVariant, string> = {
-  primary:
-    "bg-accent text-accent-contrast hover:bg-accent-hover font-medium",
-  secondary:
-    "bg-surface-raised text-text-primary border border-border hover:bg-surface-hover",
-  danger:
-    "bg-danger/10 text-danger border border-danger/20 hover:bg-danger/20",
-  ghost:
-    "bg-transparent text-text-secondary hover:text-text-primary hover:bg-surface-raised",
-  outline:
-    "bg-transparent text-text-primary border border-border hover:bg-surface-raised",
+  primary: "bg-accent text-accent-contrast hover:bg-accent-hover font-medium",
+  secondary: "bg-surface-raised text-text-primary border border-border hover:bg-surface-hover",
+  danger: "bg-danger/10 text-danger border border-danger/20 hover:bg-danger/20",
+  ghost: "bg-transparent text-text-secondary hover:text-text-primary hover:bg-surface-raised",
+  outline: "bg-transparent text-text-primary border border-border hover:bg-surface-raised",
 };
 
 const sizeStyles: Record<ButtonSize, string> = {
@@ -49,8 +48,21 @@ type ChildElement = ReactElement<{
   className?: string;
   onClick?: (event: MouseEvent<HTMLElement>) => void;
   tabIndex?: number;
-  "aria-disabled"?: boolean;
+  "aria-disabled"?: AriaAttributes["aria-disabled"];
+  ref?: Ref<HTMLElement>;
 }>;
+
+function setRef<T>(ref: Ref<T> | undefined, value: T | null): (() => void) | undefined {
+  if (typeof ref === "function") {
+    const cleanup = ref(value);
+    return typeof cleanup === "function" ? cleanup : () => ref(null);
+  } else if (ref) {
+    ref.current = value;
+    return () => {
+      ref.current = null;
+    };
+  }
+}
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
   (
@@ -62,9 +74,10 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
       className = "",
       disabled,
       children,
+      onClick,
       ...props
     },
-    ref
+    ref,
   ) => {
     const composedClassName = `
       ${baseStyles}
@@ -72,15 +85,34 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
       ${sizeStyles[size]}
       ${className}
     `;
+    const child = isValidElement(children) ? (children as ChildElement) : null;
+    const childRef = child?.props.ref;
+    const composedRef = useMemo(() => {
+      if (!childRef && !ref) return undefined;
 
-    if (asChild && isValidElement(children)) {
-      const child = children as ChildElement;
-      const shouldHandleClick = disabled || isLoading || child.props.onClick || props.onClick;
-      const childProps: Partial<ChildElement["props"]> = {
-        className: `${composedClassName} ${child.props.className ?? ""}`,
-        "aria-disabled": disabled || isLoading || child.props["aria-disabled"],
-        tabIndex: disabled || isLoading ? -1 : child.props.tabIndex,
+      return (node: HTMLElement | null) => {
+        const childCleanup = setRef(childRef, node);
+        const wrapperCleanup = setRef(ref as ForwardedRef<HTMLElement>, node);
+        return () => {
+          childCleanup?.();
+          wrapperCleanup?.();
+        };
       };
+    }, [childRef, ref]);
+
+    if (asChild && child) {
+      const shouldHandleClick = disabled || isLoading || child.props.onClick || onClick;
+      const childProps: Partial<ChildElement["props"]> = {
+        ...props,
+        className: `${composedClassName} ${child.props.className ?? ""}`,
+        "aria-disabled":
+          disabled || isLoading ? true : (props["aria-disabled"] ?? child.props["aria-disabled"]),
+        tabIndex: disabled || isLoading ? -1 : (props.tabIndex ?? child.props.tabIndex),
+      };
+
+      if (composedRef) {
+        childProps.ref = composedRef;
+      }
 
       if (shouldHandleClick) {
         childProps.onClick = (event: MouseEvent<HTMLElement>) => {
@@ -89,7 +121,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
             return;
           }
           child.props.onClick?.(event);
-          props.onClick?.(event as unknown as MouseEvent<HTMLButtonElement>);
+          onClick?.(event as unknown as MouseEvent<HTMLButtonElement>);
         };
       }
 
@@ -101,14 +133,11 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
         ref={ref}
         disabled={disabled || isLoading}
         className={composedClassName}
+        onClick={onClick}
         {...props}
       >
         {isLoading && (
-          <svg
-            className="animate-spin h-3.5 w-3.5"
-            viewBox="0 0 24 24"
-            fill="none"
-          >
+          <svg className="animate-spin h-3.5 w-3.5" viewBox="0 0 24 24" fill="none">
             <circle
               className="opacity-25"
               cx="12"
@@ -127,7 +156,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
         {children}
       </button>
     );
-  }
+  },
 );
 
 Button.displayName = "Button";

@@ -12,7 +12,9 @@ from app.services.platform_billing_helpers import (
 
 class PlatformBillingHelperTest(unittest.TestCase):
     def test_build_idempotency_key_hashes_long_final_stripe_keys(self):
-        key = build_idempotency_key("core-checkout", "studio-" + ("s" * 120), "request-" + ("r" * 255))
+        key = build_idempotency_key(
+            "core-checkout", "studio-" + ("s" * 120), "request-" + ("r" * 255)
+        )
 
         self.assertLessEqual(len(key), MAX_IDEMPOTENCY_KEY_LENGTH)
         self.assertRegex(key, r"^koaryu:core-checkout:[0-9a-f]{64}$")
@@ -29,11 +31,15 @@ class PlatformBillingHelperTest(unittest.TestCase):
         self.assertTrue(key.endswith(":42:00000000-0000-4000-8000-000000000001"))
 
     def test_normalize_idempotency_key_rejects_over_limit_values(self):
-        with self.assertRaises(HTTPException) as context:
-            normalize_idempotency_key("x" * (MAX_IDEMPOTENCY_KEY_LENGTH + 1))
+        for value in (
+            "x" * (MAX_IDEMPOTENCY_KEY_LENGTH + 1),
+            "é" * ((MAX_IDEMPOTENCY_KEY_LENGTH // 2) + 1),
+        ):
+            with self.subTest(value_length=len(value)), self.assertRaises(HTTPException) as context:
+                normalize_idempotency_key(value)
 
-        self.assertEqual(context.exception.status_code, 400)
-        self.assertIn(str(MAX_IDEMPOTENCY_KEY_LENGTH), context.exception.detail)
+            self.assertEqual(context.exception.status_code, 400)
+            self.assertIn(str(MAX_IDEMPOTENCY_KEY_LENGTH), context.exception.detail)
 
 
 if __name__ == "__main__":

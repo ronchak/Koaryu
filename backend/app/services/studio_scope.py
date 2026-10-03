@@ -128,10 +128,7 @@ def resolve_staff_membership_state_for_user(
     membership = None
     if requested_studio_id:
         membership = next(
-            (
-                role for role in roles
-                if role.get("studio_id") == requested_studio_id
-            ),
+            (role for role in roles if role.get("studio_id") == requested_studio_id),
             None,
         )
         if membership is None:
@@ -152,6 +149,7 @@ def resolve_staff_membership_state_for_user(
 def get_platform_subscription_access(supabase: Client, studio_id: str) -> dict:
     from app.services.platform_billing_service import (
         AccessRepairDeferred,
+        AccessRepairInFlight,
         AccessRepairProviderError,
         PlatformBillingService,
     )
@@ -159,6 +157,11 @@ def get_platform_subscription_access(supabase: Client, studio_id: str) -> dict:
     try:
         row = PlatformBillingService(supabase).get_access_status_row(studio_id, strict_repairs=True)
         return _platform_subscription_access_from_row(row)
+    except AccessRepairInFlight:
+        # The async request boundary releases the provider-lane permit, awaits
+        # the leader's completion signal, and retries with this request's own
+        # thread-affine client.
+        raise
     except (AccessRepairProviderError, AccessRepairDeferred) as exc:
         # A provider fault must never upgrade a studio, so local state is
         # consulted here only to deny. When the local row already shows the
@@ -463,23 +466,6 @@ def resolve_lead_manager_staff_role_for_user(
     )
 
 
-def resolve_billing_admin_write_staff_role_for_user(
-    supabase: Client,
-    user_id: str,
-    requested_studio_id: Optional[str] = None,
-    *,
-    require_platform_subscription: bool = False,
-) -> dict:
-    return _resolve_write_staff_role_for_allowed_roles(
-        supabase,
-        user_id,
-        requested_studio_id,
-        allowed_roles={"admin"},
-        detail="Only studio admins can manage billing setup.",
-        require_platform_subscription=require_platform_subscription,
-    )
-
-
 def resolve_billing_routine_write_staff_role_for_user(
     supabase: Client,
     user_id: str,
@@ -515,29 +501,6 @@ def resolve_admin_staff_role_for_user(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only studio admins can manage staff roles.",
-        )
-
-    return membership
-
-
-def resolve_program_manager_staff_role_for_user(
-    supabase: Client,
-    user_id: str,
-    requested_studio_id: Optional[str] = None,
-    *,
-    require_platform_subscription: bool = False,
-) -> dict:
-    membership = resolve_staff_role_for_user(
-        supabase,
-        user_id,
-        requested_studio_id,
-        require_platform_subscription=require_platform_subscription,
-    )
-
-    if membership.get("role") not in {"admin", "front_desk"}:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only studio admins and front desk staff can manage programs.",
         )
 
     return membership

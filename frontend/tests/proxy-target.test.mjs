@@ -28,22 +28,42 @@ describe("buildProxyTargetUrl", () => {
 
   it("rejects route-boundary dot segments", () => {
     assert.throws(
-      () => buildProxyTargetUrl("https://api.example.test/api/v1", "https://app.example.test/api/proxy/../health", ["..", "health"]),
+      () =>
+        buildProxyTargetUrl(
+          "https://api.example.test/api/v1",
+          "https://app.example.test/api/proxy/../health",
+          ["..", "health"],
+        ),
       UnsafeProxyPathError,
     );
     assert.throws(
-      () => buildProxyTargetUrl("https://api.example.test/api/v1", "https://app.example.test/api/proxy/./health", [".", "health"]),
+      () =>
+        buildProxyTargetUrl(
+          "https://api.example.test/api/v1",
+          "https://app.example.test/api/proxy/./health",
+          [".", "health"],
+        ),
       UnsafeProxyPathError,
     );
   });
 
   it("rejects segments that already contain path separators", () => {
     assert.throws(
-      () => buildProxyTargetUrl("https://api.example.test/api/v1", "https://app.example.test/api/proxy/students", ["students/hidden"]),
+      () =>
+        buildProxyTargetUrl(
+          "https://api.example.test/api/v1",
+          "https://app.example.test/api/proxy/students",
+          ["students/hidden"],
+        ),
       UnsafeProxyPathError,
     );
     assert.throws(
-      () => buildProxyTargetUrl("https://api.example.test/api/v1", "https://app.example.test/api/proxy/students", ["students\\hidden"]),
+      () =>
+        buildProxyTargetUrl(
+          "https://api.example.test/api/v1",
+          "https://app.example.test/api/proxy/students",
+          ["students\\hidden"],
+        ),
       UnsafeProxyPathError,
     );
   });

@@ -1,0 +1,467 @@
+import { sqlLiteral } from "./sql.mjs";
+
+export function render_subscription_terms_v49(check) {
+  return `    IF (SELECT count(*) FROM pg_catalog.pg_attribute a
+        LEFT JOIN pg_catalog.pg_attrdef d ON d.adrelid=a.attrelid AND d.adnum=a.attnum
+        WHERE a.attrelid='public.billing_subscriptions'::REGCLASS
+          AND a.attname IN ('currency','billing_interval') AND NOT a.attisdropped
+          AND a.atttypid='text'::REGTYPE AND NOT a.attnotnull AND d.oid IS NULL
+          AND a.attidentity='' AND a.attgenerated='') IS DISTINCT FROM 2 THEN
+        v_failures:=array_append(v_failures,${sqlLiteral(check.id)});
+    END IF;`;
+}
+
+// Named catalog and semantic policies shared by release declarations.
+// Business assertions remain explicit; the generator does not infer them.
+
+export function render_operational_contract_v31(check) {
+  return `    SELECT expected_sha256 INTO v_expected
+    FROM ${check.table}
+    WHERE expectation_key = ${sqlLiteral(check.expectationKey)};
+    IF NOT FOUND
+       OR (SELECT count(*) FROM ${check.table}) <> 1
+       OR ${check.signature}
+            IS DISTINCT FROM '0:' || v_expected THEN
+        v_failures := array_append(v_failures, ${sqlLiteral(check.id)});
+    END IF;`;
+}
+
+export function render_operational_contract_v31_expectation_acl(check) {
+  return `    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_class AS relation
+        JOIN pg_namespace AS namespace ON namespace.oid=relation.relnamespace
+        JOIN pg_roles AS owner ON owner.oid=relation.relowner
+        WHERE namespace.nspname='private'
+          AND relation.relname=${sqlLiteral(check.tableName)}
+          AND relation.relkind='r'
+          AND owner.rolname='postgres'
+          AND relation.relrowsecurity
+    )
+       OR has_table_privilege(
+            'service_role',${sqlLiteral(check.table)},
+            'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER'
+       )
+       OR has_table_privilege(
+            'authenticated',${sqlLiteral(check.table)},
+            'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER'
+       )
+       OR has_table_privilege(
+            'anon',${sqlLiteral(check.table)},
+            'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER'
+       )
+       OR EXISTS (
+            SELECT 1
+            FROM pg_class AS relation
+            CROSS JOIN LATERAL aclexplode(COALESCE(
+                relation.relacl,
+                acldefault('r',relation.relowner)
+            )) AS privilege
+            WHERE relation.oid=${sqlLiteral(check.table)}::REGCLASS
+              AND privilege.grantee<>relation.relowner
+    ) THEN
+        v_failures := array_append(v_failures, ${sqlLiteral(check.id)});
+    END IF;`;
+}
+
+export function render_inherited_operational_contract_expectation_acl(check) {
+  return `    IF EXISTS (
+        WITH required_expectation_tables(table_name) AS (
+            VALUES
+${check.tables.map(name => `                (${sqlLiteral(name)})`).join(",\n")}
+        ), expectation_table_state AS (
+            SELECT
+                required.table_name,
+                relation.oid,
+                relation.relkind,
+                relation.relrowsecurity,
+                owner.rolname AS owner_name,
+                COALESCE((
+                    SELECT count(DISTINCT privilege.privilege_type)
+                    FROM aclexplode(COALESCE(
+                        relation.relacl,
+                        acldefault('r', relation.relowner)
+                    )) AS privilege
+                    WHERE privilege.grantee=relation.relowner
+                      AND NOT privilege.is_grantable
+                      AND privilege.privilege_type IN (
+                          'SELECT','INSERT','UPDATE','DELETE',
+                          'TRUNCATE','REFERENCES','TRIGGER','MAINTAIN'
+                      )
+                ), 0) AS owner_privilege_count,
+                EXISTS (
+                    SELECT 1
+                    FROM aclexplode(COALESCE(
+                        relation.relacl,
+                        acldefault('r', relation.relowner)
+                    )) AS privilege
+                    WHERE privilege.grantee<>relation.relowner
+                       OR privilege.is_grantable
+                       OR privilege.privilege_type NOT IN (
+                          'SELECT','INSERT','UPDATE','DELETE',
+                          'TRUNCATE','REFERENCES','TRIGGER','MAINTAIN'
+                       )
+                ) AS unexpected_privilege
+            FROM required_expectation_tables AS required
+            LEFT JOIN pg_class AS relation
+              ON relation.relname=required.table_name
+             AND relation.relnamespace='private'::REGNAMESPACE
+            LEFT JOIN pg_roles AS owner ON owner.oid=relation.relowner
+        )
+        SELECT 1
+        FROM expectation_table_state
+        WHERE oid IS NULL
+           OR relkind<>'r'
+           OR owner_name<>'postgres'
+           OR NOT relrowsecurity
+           OR owner_privilege_count<>8
+           OR unexpected_privilege
+    ) THEN
+        v_failures := array_append(
+            v_failures,
+            ${sqlLiteral(check.id)}
+        );
+    END IF;`;
+}
+
+export function render_operational_contract_v30_expectation(check) {
+  return `    SELECT expected_sha256 INTO v_expected
+    FROM ${check.table}
+    WHERE expectation_key = ${sqlLiteral(check.expectationKey)};
+    IF NOT FOUND
+       OR (SELECT count(*) FROM ${check.table}) <> 1
+       OR v_expected <> ${sqlLiteral(check.expected)} THEN
+        v_failures := array_append(v_failures, ${sqlLiteral(check.id)});
+    END IF;`;
+}
+
+export function render_operational_contract_v26_expectation(check) {
+  return `    SELECT expected_sha256 INTO v_expected
+    FROM ${check.table}
+    WHERE expectation_key = ${sqlLiteral(check.expectationKey)};
+    IF NOT FOUND
+       OR (SELECT count(*) FROM ${check.table}) <> 1
+       OR v_expected <> ${sqlLiteral(check.expected)}
+       OR has_table_privilege('service_role', '${check.table}', 'SELECT')
+       OR has_table_privilege('authenticated', '${check.table}', 'SELECT')
+       OR has_table_privilege('anon', '${check.table}', 'SELECT') THEN
+        v_failures := array_append(v_failures, ${sqlLiteral(check.id)});
+    END IF;`;
+}
+
+export function render_legacy_authorization_scope_execute(check) {
+  return `    IF has_function_privilege(
+        'service_role',
+        ${sqlLiteral(check.signature)},
+        'EXECUTE'
+    ) THEN
+        v_failures := array_append(v_failures, ${sqlLiteral(check.id)});
+    END IF;`;
+}
+
+export function render_operation_allowlist_constraint(check) {
+  return `    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conrelid = ${sqlLiteral(check.table)}::REGCLASS
+          AND conname = ${sqlLiteral(check.constraint)}
+          AND convalidated
+    ) THEN
+        v_failures := array_append(v_failures, ${sqlLiteral(check.id)});
+    END IF;`;
+}
+
+export function render_operation_allowlist_column(check) {
+  return `    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_attribute AS attribute
+        LEFT JOIN pg_attrdef AS default_value
+          ON default_value.adrelid = attribute.attrelid
+         AND default_value.adnum = attribute.attnum
+        WHERE attribute.attrelid = ${sqlLiteral(check.table)}::REGCLASS
+          AND attribute.attname = ${sqlLiteral(check.column)}
+          AND NOT attribute.attisdropped
+          AND attribute.attnotnull
+          AND format_type(attribute.atttypid, attribute.atttypmod) = ${sqlLiteral(check.type)}
+          AND pg_get_expr(default_value.adbin, default_value.adrelid) = ${sqlLiteral(check.defaultExpression)}
+    ) THEN
+        v_failures := array_append(v_failures, ${sqlLiteral(check.id)});
+    END IF;`;
+}
+
+export function render_operation_allowlist_schedule_semantics(check) {
+  return `    IF ${check.function}(
+            ${sqlLiteral(check.scope)},ARRAY[
+                'connected_subscription_schedule.create',
+                'connected_subscription_schedule.release',
+                'connected_subscription_schedule.update'
+            ]::TEXT[]
+       ) IS DISTINCT FROM true
+       OR ${check.function}(
+            ${sqlLiteral(check.scope)},ARRAY[
+                'connected_subscription_schedule.update',
+                'connected_subscription_schedule.create'
+            ]::TEXT[]
+       ) IS DISTINCT FROM false
+       OR ${check.function}(
+            ${sqlLiteral(check.scope)},ARRAY[
+                'connected_subscription_schedule.create',
+                'connected_subscription_schedule.unknown'
+            ]::TEXT[]
+       ) IS DISTINCT FROM false THEN
+        v_failures := array_append(
+            v_failures,${sqlLiteral(check.id)}
+        );
+    END IF;`;
+}
+
+export function render_stripe_rehearsal_evidence_manifest_v35(check) {
+  return `    IF ${check.signature}
+       IS DISTINCT FROM (SELECT ${check.field} FROM ${check.table}
+                          WHERE singleton) THEN
+      v_failures:=array_append(v_failures,${sqlLiteral(check.id)});
+    END IF;`;
+}
+
+export function render_stripe_rehearsal_evidence_acl_v35(check) {
+  return `    IF has_function_privilege('anon',
+      ${sqlLiteral(check.signature)},'EXECUTE')
+       OR has_function_privilege('authenticated',
+      ${sqlLiteral(check.signature)},'EXECUTE')
+       OR NOT has_function_privilege('service_role',
+      ${sqlLiteral(check.signature)},'EXECUTE') THEN
+      v_failures:=array_append(v_failures,${sqlLiteral(check.id)});
+    END IF;`;
+}
+
+export function render_payer_setup_recovery_manifest_v36(check) {
+  return `    IF ${check.signature}
+    IS DISTINCT FROM (SELECT ${check.field} FROM ${check.table} WHERE singleton) THEN
+   v_failures:=array_append(v_failures,${sqlLiteral(check.id)});
+ END IF;`;
+}
+
+export function render_adjustment_trigger_guard_manifest_v37(check) {
+  return ` IF ${check.signature}
+      IS DISTINCT FROM (
+        SELECT ${check.field}
+        FROM ${check.table}
+        WHERE singleton
+      ) THEN
+     v_failures:=array_append(v_failures,${sqlLiteral(check.id)});
+   END IF;`;
+}
+
+export function render_billing_landing_reads_v38(check) {
+  return `${"   "}
+ IF EXISTS (
+  SELECT 1 FROM (VALUES
+${check.functions.map(row => `  (${sqlLiteral(row.signature)},${sqlLiteral(row.bodyHash)})`).join(",\n")}
+  ) expected(signature,body_hash)
+  LEFT JOIN pg_catalog.pg_proc p ON p.oid=to_regprocedure(expected.signature)
+  WHERE p.oid IS NULL OR p.prosecdef OR p.provolatile<>'s'
+  OR p.proowner <> 'postgres'::regrole OR p.prorettype<>'jsonb'::regtype
+  OR NOT ('search_path=""'=ANY(coalesce(p.proconfig,ARRAY[]::text[])))
+  OR encode(extensions.digest(convert_to(p.prosrc,'UTF8'),'sha256'),'hex')<>expected.body_hash
+  OR NOT has_function_privilege('service_role',p.oid,'EXECUTE')
+  OR EXISTS(SELECT 1 FROM aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) a
+            WHERE a.privilege_type='EXECUTE' AND a.grantee NOT IN ('postgres'::regrole,'service_role'::regrole))
+ ) THEN v_failures:=array_append(v_failures,${sqlLiteral(check.id)}); END IF;`;
+}
+
+export function render_billing_history_indexes_v38(check) {
+  return ` IF EXISTS (
+  SELECT 1 FROM (VALUES
+${check.indexes.map(row => `   (${sqlLiteral(row.name)},${sqlLiteral(row.table)},${sqlLiteral(row.definition)})`).join(",\n")}
+  ) expected(index_name,table_name,definition)
+  LEFT JOIN pg_catalog.pg_class c ON c.oid=to_regclass(expected.index_name)
+  LEFT JOIN pg_catalog.pg_index i ON i.indexrelid=c.oid
+  WHERE c.oid IS NULL OR c.relkind<>'i' OR c.relowner<>'postgres'::regrole
+   OR i.indrelid IS DISTINCT FROM to_regclass(expected.table_name)
+   OR i.indisvalid IS DISTINCT FROM true OR i.indisready IS DISTINCT FROM true
+   OR i.indislive IS DISTINCT FROM true OR i.indisunique IS DISTINCT FROM false
+   OR pg_get_indexdef(i.indexrelid) IS DISTINCT FROM expected.definition
+ ) THEN v_failures:=array_append(v_failures,${sqlLiteral(check.id)}); END IF;`;
+}
+
+export function render_rank_command_manifest_v40_definition(check) {
+  return ` IF EXISTS (
+  SELECT 1 FROM pg_catalog.pg_proc p
+  WHERE p.oid=${sqlLiteral(check.signature)}::REGPROCEDURE
+    AND (p.proowner <> 'postgres'::REGROLE OR p.prosecdef OR p.provolatile <> 's'
+      OR encode(extensions.digest(convert_to(pg_get_functiondef(p.oid),'UTF8'),'sha256'),'hex')
+         IS DISTINCT FROM ${sqlLiteral(check.expected)}
+      OR EXISTS (SELECT 1 FROM aclexplode(COALESCE(p.proacl,acldefault('f',p.proowner))) a
+                 WHERE a.grantee <> p.proowner))
+ ) THEN v_failures:=array_append(v_failures,${sqlLiteral(check.id)}); END IF;`;
+}
+
+export function render_function_contract(check) {
+  if (typeof check.securityDefiner !== "boolean" || typeof check.returnsSet !== "boolean"
+      || !["i", "s", "v"].includes(check.volatility) || !check.configuration?.length) {
+    throw new Error(`Incomplete function contract: ${check.id}`);
+  }
+  return `    IF (SELECT count(*) FROM pg_catalog.pg_proc p
+        JOIN pg_catalog.pg_namespace n ON n.oid=p.pronamespace
+        WHERE n.nspname=${sqlLiteral(check.namespace)} AND p.proname=${sqlLiteral(check.functionName)}) <> 1
+       OR NOT EXISTS (
+        SELECT 1 FROM pg_catalog.pg_proc p
+        WHERE p.oid=pg_catalog.to_regprocedure(${sqlLiteral(check.signature)})
+          AND p.proowner='postgres'::REGROLE AND ${check.securityDefiner ? "" : "NOT "}p.prosecdef AND p.provolatile=${sqlLiteral(check.volatility)}
+          AND p.prorettype=${sqlLiteral(check.returnType)}::REGTYPE AND ${check.returnsSet ? "" : "NOT "}p.proretset
+          AND p.proconfig=ARRAY[${check.configuration.map(sqlLiteral).join(",")}]::TEXT[]
+          AND encode(extensions.digest(convert_to(pg_catalog.pg_get_functiondef(p.oid),'UTF8'),'sha256'),'hex')
+              = ${sqlLiteral(check.expected)}
+          AND (SELECT jsonb_agg(jsonb_build_array(
+                CASE WHEN a.grantee=0 THEN 'PUBLIC' ELSE pg_catalog.pg_get_userbyid(a.grantee)::TEXT END,
+                pg_catalog.pg_get_userbyid(a.grantor)::TEXT,a.privilege_type,a.is_grantable)
+                ORDER BY CASE WHEN a.grantee=0 THEN 'PUBLIC' ELSE pg_catalog.pg_get_userbyid(a.grantee)::TEXT END COLLATE "C",
+                         a.privilege_type,a.is_grantable)
+               FROM pg_catalog.aclexplode(COALESCE(p.proacl,pg_catalog.acldefault('f',p.proowner))) a)
+              = ${sqlLiteral(`[ ${check.acl.map(row => JSON.stringify(row)).join(", ")} ]`)}::JSONB
+       ) THEN
+        v_failures:=array_append(v_failures,${sqlLiteral(check.id)});
+    END IF;`;
+}
+
+export function render_import_receipts_v45(check) {
+  if (!check.receiptState || !check.runFlag) throw new Error("Import receipt schema must be declared");
+  return `    IF (SELECT jsonb_build_object(
+            'owner',pg_catalog.pg_get_userbyid(relation.relowner),
+            'rls',relation.relrowsecurity,'force_rls',relation.relforcerowsecurity,
+            'columns',(SELECT jsonb_agg(jsonb_build_array(attribute.attname,
+                pg_catalog.format_type(attribute.atttypid,attribute.atttypmod),attribute.attnotnull,
+                pg_catalog.pg_get_expr(default_value.adbin,default_value.adrelid),
+                attribute.attidentity,attribute.attgenerated,attribute.attacl IS NULL) ORDER BY attribute.attnum)
+                FROM pg_catalog.pg_attribute attribute
+                LEFT JOIN pg_catalog.pg_attrdef default_value
+                  ON default_value.adrelid=attribute.attrelid AND default_value.adnum=attribute.attnum
+                WHERE attribute.attrelid=relation.oid AND attribute.attnum>0 AND NOT attribute.attisdropped),
+            'acl',(SELECT jsonb_agg(jsonb_build_array(
+                CASE WHEN acl.grantee=0 THEN 'PUBLIC' ELSE pg_catalog.pg_get_userbyid(acl.grantee)::TEXT END,
+                pg_catalog.pg_get_userbyid(acl.grantor)::TEXT,acl.privilege_type,acl.is_grantable)
+                ORDER BY CASE WHEN acl.grantee=0 THEN 'PUBLIC' ELSE pg_catalog.pg_get_userbyid(acl.grantee)::TEXT END COLLATE "C",
+                         acl.privilege_type,acl.is_grantable)
+                FROM pg_catalog.aclexplode(COALESCE(relation.relacl,pg_catalog.acldefault('r',relation.relowner))) acl),
+            'constraints',(SELECT jsonb_agg(jsonb_build_array(constraint_row.conname,constraint_row.contype,
+                constraint_row.convalidated,constraint_row.condeferrable,constraint_row.condeferred,
+                pg_catalog.pg_get_constraintdef(constraint_row.oid)) ORDER BY constraint_row.conname COLLATE "C")
+                FROM pg_catalog.pg_constraint constraint_row WHERE constraint_row.conrelid=relation.oid),
+            'indexes',(SELECT jsonb_agg(jsonb_build_array(index_relation.relname,index_row.indisvalid,
+                index_row.indisready,index_row.indisunique,index_row.indisprimary,pg_catalog.pg_get_indexdef(index_row.indexrelid))
+                ORDER BY index_relation.relname COLLATE "C")
+                FROM pg_catalog.pg_index index_row JOIN pg_catalog.pg_class index_relation ON index_relation.oid=index_row.indexrelid
+                WHERE index_row.indrelid=relation.oid),
+            'no_policies',NOT EXISTS(SELECT 1 FROM pg_catalog.pg_policy policy WHERE policy.polrelid=relation.oid),
+            'no_user_triggers',NOT EXISTS(SELECT 1 FROM pg_catalog.pg_trigger trigger_row
+                WHERE trigger_row.tgrelid=relation.oid AND NOT trigger_row.tgisinternal))
+        FROM pg_catalog.pg_class relation WHERE relation.oid=pg_catalog.to_regclass('private.student_import_receipts')
+          AND relation.relkind='r') IS DISTINCT FROM ${sqlLiteral(JSON.stringify(check.receiptState))}::JSONB
+       OR (SELECT jsonb_build_array(pg_catalog.format_type(attribute.atttypid,attribute.atttypmod),
+                attribute.attnotnull,pg_catalog.pg_get_expr(default_value.adbin,default_value.adrelid),
+                attribute.attidentity,attribute.attgenerated,attribute.attacl IS NULL)
+            FROM pg_catalog.pg_attribute attribute LEFT JOIN pg_catalog.pg_attrdef default_value
+              ON default_value.adrelid=attribute.attrelid AND default_value.adnum=attribute.attnum
+            WHERE attribute.attrelid=pg_catalog.to_regclass('public.student_import_runs')
+              AND attribute.attname='receipts_enabled' AND NOT attribute.attisdropped)
+          IS DISTINCT FROM ${sqlLiteral(JSON.stringify(check.runFlag))}::JSONB THEN
+        v_failures:=array_append(v_failures,${sqlLiteral(check.id)});
+    END IF;`;
+}
+
+// The receipt schema is independently pinned, including column grants and policies.
+export const LEAD_RECEIPT_FACTS_SQL = `SELECT jsonb_build_object(
+            'owner',pg_catalog.pg_get_userbyid(relation.relowner),
+            'rls',relation.relrowsecurity,'force_rls',relation.relforcerowsecurity,
+            'columns',(SELECT jsonb_agg(jsonb_build_array(attribute.attname,
+                pg_catalog.format_type(attribute.atttypid,attribute.atttypmod),attribute.attnotnull,
+                pg_catalog.pg_get_expr(default_value.adbin,default_value.adrelid),
+                attribute.attidentity,attribute.attgenerated,attribute.attacl IS NULL) ORDER BY attribute.attnum)
+                FROM pg_catalog.pg_attribute attribute
+                LEFT JOIN pg_catalog.pg_attrdef default_value
+                  ON default_value.adrelid=attribute.attrelid AND default_value.adnum=attribute.attnum
+                WHERE attribute.attrelid=relation.oid AND attribute.attnum>0 AND NOT attribute.attisdropped),
+            'acl',(SELECT jsonb_agg(jsonb_build_array(
+                CASE WHEN acl.grantee=0 THEN 'PUBLIC' ELSE pg_catalog.pg_get_userbyid(acl.grantee)::TEXT END,
+                pg_catalog.pg_get_userbyid(acl.grantor)::TEXT,acl.privilege_type,acl.is_grantable)
+                ORDER BY CASE WHEN acl.grantee=0 THEN 'PUBLIC' ELSE pg_catalog.pg_get_userbyid(acl.grantee)::TEXT END COLLATE "C",
+                         acl.privilege_type,acl.is_grantable)
+                FROM pg_catalog.aclexplode(COALESCE(relation.relacl,pg_catalog.acldefault('r',relation.relowner))) acl),
+            'constraints',(SELECT jsonb_agg(jsonb_build_array(constraint_row.conname,constraint_row.contype,
+                constraint_row.convalidated,constraint_row.condeferrable,constraint_row.condeferred,
+                pg_catalog.pg_get_constraintdef(constraint_row.oid)) ORDER BY constraint_row.conname COLLATE "C")
+                FROM pg_catalog.pg_constraint constraint_row WHERE constraint_row.conrelid=relation.oid),
+            'indexes',(SELECT jsonb_agg(jsonb_build_array(index_relation.relname,index_row.indisvalid,
+                index_row.indisready,index_row.indisunique,index_row.indisprimary,pg_catalog.pg_get_indexdef(index_row.indexrelid))
+                ORDER BY index_relation.relname COLLATE "C")
+                FROM pg_catalog.pg_index index_row JOIN pg_catalog.pg_class index_relation ON index_relation.oid=index_row.indexrelid
+                WHERE index_row.indrelid=relation.oid),
+            'policies',(SELECT jsonb_agg(jsonb_build_array(policy.polname,policy.polcmd,policy.polpermissive,
+                (SELECT jsonb_agg(pg_catalog.pg_get_userbyid(role_oid)::TEXT ORDER BY pg_catalog.pg_get_userbyid(role_oid)::TEXT COLLATE "C") FROM unnest(policy.polroles) role_oid),
+                pg_catalog.pg_get_expr(policy.polqual,policy.polrelid),pg_catalog.pg_get_expr(policy.polwithcheck,policy.polrelid)) ORDER BY policy.polname COLLATE "C")
+                FROM pg_catalog.pg_policy policy WHERE policy.polrelid=relation.oid),
+            'no_user_triggers',NOT EXISTS(SELECT 1 FROM pg_catalog.pg_trigger trigger_row
+                WHERE trigger_row.tgrelid=relation.oid AND NOT trigger_row.tgisinternal))
+        FROM pg_catalog.pg_class relation WHERE relation.oid=pg_catalog.to_regclass('public.lead_follow_up_operations')
+          AND relation.relkind='r'`;
+
+export function render_lead_follow_up_receipts_v52(check) {
+  return `    IF (SELECT encode(extensions.digest(convert_to((${LEAD_RECEIPT_FACTS_SQL})::TEXT,'UTF8'),'sha256'),'hex'))
+       IS DISTINCT FROM ${sqlLiteral(check.expected)} THEN
+        v_failures:=array_append(v_failures,'lead_follow_up_operations_v52');
+    END IF;`;
+}
+
+// Pin the full installed student write/age contract, including all named ACLs
+// and trigger bindings. Independent callers hash the same raw JSON expression.
+export const STUDENT_PROFILE_FACTS_V54_SQL = `SELECT jsonb_build_object(
+    'functions',(SELECT jsonb_agg(jsonb_build_object(
+        'signature',required.signature,'exists',function.oid IS NOT NULL,
+        'definition',pg_catalog.pg_get_functiondef(function.oid),'body',function.prosrc,
+        'owner',pg_catalog.pg_get_userbyid(function.proowner),'language',language.lanname,
+        'volatility',function.provolatile,'security_definer',function.prosecdef,
+        'strict',function.proisstrict,'parallel',function.proparallel,
+        'config',function.proconfig,'result',pg_catalog.pg_get_function_result(function.oid),
+        'acl',(SELECT jsonb_agg(jsonb_build_array(
+            CASE WHEN acl.grantee=0 THEN 'PUBLIC' ELSE pg_catalog.pg_get_userbyid(acl.grantee)::TEXT END,
+            pg_catalog.pg_get_userbyid(acl.grantor)::TEXT,acl.privilege_type,acl.is_grantable)
+            ORDER BY CASE WHEN acl.grantee=0 THEN 'PUBLIC' ELSE pg_catalog.pg_get_userbyid(acl.grantee)::TEXT END COLLATE "C",
+                pg_catalog.pg_get_userbyid(acl.grantor)::TEXT COLLATE "C",acl.privilege_type,acl.is_grantable)
+            FROM pg_catalog.aclexplode(COALESCE(function.proacl,pg_catalog.acldefault('f',function.proowner))) acl)
+        ) ORDER BY required.signature COLLATE "C")
+        FROM (VALUES
+            ('public.student_business_date(uuid)'),
+            ('public.validate_student_birth_date()'),
+            ('public.set_student_is_minor()'),
+            ('public.convert_lead_to_student_atomic(uuid,uuid,uuid,uuid,uuid,text,date,uuid,uuid)'),
+            ('private.write_student_profile_atomic(uuid,uuid,uuid,jsonb,uuid[],jsonb,boolean,text)')
+        ) required(signature)
+        LEFT JOIN pg_catalog.pg_proc function ON function.oid=pg_catalog.to_regprocedure(required.signature)
+        LEFT JOIN pg_catalog.pg_language language ON language.oid=function.prolang),
+    'triggers',(SELECT jsonb_agg(jsonb_build_object(
+        'name',required.name,'expected_function',required.signature,
+        'exists',trigger_row.oid IS NOT NULL,
+        'binding_matches',trigger_row.tgfoid=pg_catalog.to_regprocedure(required.signature),
+        'definition',pg_catalog.pg_get_triggerdef(trigger_row.oid),
+        'enabled',trigger_row.tgenabled,'type',trigger_row.tgtype,
+        'arguments',encode(trigger_row.tgargs,'hex'),
+        'internal',trigger_row.tgisinternal,'constraint',trigger_row.tgconstraint<>0,
+        'deferrable',trigger_row.tgdeferrable,'initially_deferred',trigger_row.tginitdeferred
+        ) ORDER BY required.name COLLATE "C")
+        FROM (VALUES ('set_students_is_minor','public.set_student_is_minor()'),
+            ('validate_students_birth_date','public.validate_student_birth_date()')) required(name,signature)
+        LEFT JOIN pg_catalog.pg_trigger trigger_row
+          ON trigger_row.tgrelid=pg_catalog.to_regclass('public.students') AND trigger_row.tgname=required.name)
+    )`;
+
+export function render_student_profile_facts_v54(check) {
+  return `    IF (SELECT encode(extensions.digest(convert_to((${STUDENT_PROFILE_FACTS_V54_SQL})::TEXT,'UTF8'),'sha256'),'hex'))
+       IS DISTINCT FROM ${sqlLiteral(check.expected)} THEN
+        v_failures:=array_append(v_failures,${sqlLiteral(check.id)});
+    END IF;`;
+}
+
+// V55 retains the student write/age inventory while pinning the new conversion
+// definition independently of the historical V54 declaration.
+export const STUDENT_PROFILE_FACTS_V55_SQL = STUDENT_PROFILE_FACTS_V54_SQL;
+export const render_student_profile_facts_v55 = render_student_profile_facts_v54;

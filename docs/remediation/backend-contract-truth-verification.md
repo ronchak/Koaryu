@@ -1,0 +1,9 @@
+# Backend contract-truth verification
+
+Base `ae96269273ceaaeb9360420c540820a0954904eb`; implementation `3083b6fcb60241ece7508c112c57af0f2d6d57be`. Fixes ACS1-03, OPS1-11 and BT4-03. BT4-06/BT5-05 and their database prerequisites remain pending.
+
+The student cursor 409 schema now describes the actual nested detail plus existing error metadata, and the existing generator updates frontend types. Runtime endpoint and error-handler files are byte-identical. Export processing differs only in its error text; the nonexistent async-export advice is gone. The handwritten report vocabulary test no longer claims migration evidence. No SQL, authorization, cursor semantics, limits, algorithms, frontend behavior or generator implementation changed.
+
+Seven files total 4,129→4,152 lines and 132,954→133,518 bytes. Four test files total 2,005→2,016 lines and 72,415→72,693 bytes. Cases stay flat. Two duplicated export-message assertions are removed while all status/query/row/byte/spool safeguards remain. The existing real HTTP structured-error case now verifies the complete detail object and validates the emitted envelope against its documented type. This stronger contract check accounts for the extra eleven test lines; no new test case or fixture framework was added.
+
+Coordinator passed 12 error/type-generation cases and two subtests, inspected the complete diff and verified endpoint/error-handler bytes and the export AST. Implementer passed 51 cases and 111 subtests, API type-generation checks, OpenAPI envelope inspection, compilation and Ruff 0.16.7 formatting. The existing pinned Ruff binary was reused because the older copied environment lacked it; no dependency was added. Fresh independent review and exact-head CI remain required before guarded merge. No provider, credential, production or database operation ran.

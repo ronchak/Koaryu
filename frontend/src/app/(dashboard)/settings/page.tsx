@@ -1,26 +1,36 @@
 "use client";
+import { useResumeRefresh } from "@/lib/use-resume-refresh";
 
 import { useEffect, useRef, useState } from "react";
+import { markDashboardReadiness } from "@/lib/performance";
 import { Header } from "@/components/header";
 import { Button } from "@/components/ui/button";
 import { ModalFrame } from "@/components/ui/modal-frame";
+import { OperationsIndex, OperationsSurface } from "@/components/operations/operations-surface";
 import { ProgramsSection } from "@/components/settings/programs-section";
 import { StaffRolesSection } from "@/components/settings/staff-roles-section";
 import { api } from "@/lib/api";
-import { useConfigStore, useStudioStore } from "@/lib/store";
+import { useConfigStore, useStudioStore, useProgramStore } from "@/lib/store";
 import { AlertTriangle, Save, Check, RotateCcw, Trash2 } from "lucide-react";
 import { canAccessSettings } from "./access-policy";
 
 type StudioDataConfirmAction = "demo-reset" | "clear-data" | null;
 
 export default function SettingsPage() {
-  const { currentRole } = useStudioStore();
+  const { currentRole, identityGeneration, identityReady, staffLoaded, staffLoadError, refreshStaff } = useStudioStore();
+  const { programsLoaded, programsUsageLoaded, programsLoadError, programsUsageLoadError, refreshPrograms } = useProgramStore();
+  useResumeRefresh(() => currentRole === "admin" ? Promise.allSettled([refreshStaff(), refreshPrograms({ includeArchived: true })]) : undefined);
+  const completeReady = identityReady && (!canAccessSettings(currentRole)
+    || (staffLoaded && !staffLoadError && programsLoaded && programsUsageLoaded && !programsLoadError && !programsUsageLoadError));
+  useEffect(() => markDashboardReadiness("settings", identityGeneration, {
+    useful: identityReady, complete: completeReady,
+  }), [identityGeneration, identityReady, completeReady]);
 
   return (
-    <>
-      <Header title="Settings" description="Studio configuration and preferences." />
+    <OperationsSurface page="settings">
+      <Header title="Settings" />
       {canAccessSettings(currentRole) ? <AdminSettingsContent /> : <SettingsAccessNotice />}
-    </>
+    </OperationsSurface>
   );
 }
 
@@ -30,7 +40,7 @@ function SettingsAccessNotice() {
       <div className="max-w-3xl">
         <section
           aria-labelledby="settings-access-title"
-          className="rounded-[6px] border border-accent/20 bg-accent/10 p-5"
+          className="rounded-[14px] bg-accent/10 p-4"
         >
           <h2 id="settings-access-title" className="text-sm font-medium text-text-primary">
             Admin access required
@@ -50,6 +60,7 @@ function AdminSettingsContent() {
   const [nameDraft, setNameDraft] = useState("");
   const [hasEditedName, setHasEditedName] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const savingRef = useRef(false);
   const [isResettingDemo, setIsResettingDemo] = useState(false);
   const [isClearingData, setIsClearingData] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -115,6 +126,7 @@ function AdminSettingsContent() {
   }, [isPreviewMode, token]);
 
   async function handleSave() {
+    if (savingRef.current) return;
     const nextName = name.trim();
 
     if (!nextName) {
@@ -122,6 +134,7 @@ function AdminSettingsContent() {
       return;
     }
 
+    savingRef.current = true;
     setIsSaving(true);
     setError("");
     setSaved(false);
@@ -143,6 +156,7 @@ function AdminSettingsContent() {
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Failed to save settings");
     } finally {
+      savingRef.current = false;
       setIsSaving(false);
     }
   }
@@ -236,11 +250,21 @@ function AdminSettingsContent() {
 
   return (
     <>
-      <div className="flex-1 p-8">
-        <div className="max-w-3xl space-y-6">
+      <OperationsIndex
+        label="Settings section index"
+        items={[
+          { href: "#studio", label: "Studio", meta: "Admin-owned identity" },
+          { href: "#programs", label: "Programs", meta: "Curriculum structure" },
+          { href: "#staff-roles", label: "Staff & roles", meta: "Access ownership" },
+          { href: "#data-controls", label: "Data controls", meta: "Restricted workspace actions" },
+        ]}
+      />
+      <div className="flex-1 p-4 sm:p-8" data-settings-folio="admin-ownership">
+        <div className="max-w-5xl space-y-8">
           {/* Studio info */}
-          <section className="bg-surface border border-border rounded-[6px] p-5">
-            <h3 className="text-sm font-medium text-text-primary mb-4">Studio Information</h3>
+          <section id="studio" className="scroll-mt-8 bg-surface p-4" data-settings-owner="studio-admin">
+            <p className="mb-1 text-xs font-medium text-muted">Owned by studio admin · Workspace identity</p>
+            <h2 className="mb-4 text-base font-semibold text-text-primary">Studio information</h2>
             <div className="space-y-4">
               <div className="flex flex-col gap-1.5">
                 <label htmlFor="settings-studio-name" className="text-xs text-text-secondary font-medium">Studio Name</label>
@@ -249,12 +273,14 @@ function AdminSettingsContent() {
                   name="studio_name"
                   type="text"
                   value={name}
+                  disabled={isSaving}
                   onChange={(e) => {
+                    if (savingRef.current) return;
                     setHasEditedName(true);
                     setNameDraft(e.target.value);
                   }}
                   placeholder="My Studio"
-                  className="w-full px-3 py-2 text-sm bg-surface-raised border border-border rounded-[6px] text-text-primary placeholder:text-muted focus:border-accent focus:outline-none"
+                  className="w-full rounded-[10px] border border-border bg-surface-raised px-3 py-2 text-sm text-text-primary placeholder:text-muted"
                 />
               </div>
               <div className="flex items-center gap-2">
@@ -268,14 +294,21 @@ function AdminSettingsContent() {
             </div>
           </section>
 
-          <ProgramsSection />
+          <section id="programs" className="scroll-mt-8" data-settings-owner="program-admin">
+            <p className="px-4 pt-4 text-xs font-medium text-muted">Owned by studio admin · Curriculum structure</p>
+            <ProgramsSection />
+          </section>
 
-          <StaffRolesSection />
+          <section id="staff-roles" className="scroll-mt-8" data-settings-owner="access-admin">
+            <p className="px-4 pt-4 text-xs font-medium text-muted">Owned by studio admin · Staff access</p>
+            <StaffRolesSection />
+          </section>
 
           {/* Data section */}
           {canManageStudioData ? (
-          <section className="rounded-[6px] border border-danger/25 bg-danger/5 p-5">
-            <h3 className="text-sm font-medium text-text-primary mb-1">Studio Data</h3>
+          <section id="data-controls" className="scroll-mt-8 bg-danger/5 p-4" data-settings-owner="restricted-admin">
+            <p className="mb-1 text-xs font-medium text-danger">Restricted admin ownership · Destructive workspace actions</p>
+            <h2 className="mb-1 text-base font-semibold text-text-primary">Studio data</h2>
             <p className="text-xs text-text-secondary mb-4">
               Replace or clear this studio&apos;s working records when preparing a demo or resetting a workspace.
             </p>
@@ -342,7 +375,15 @@ function AdminSettingsContent() {
               </div>
             </div>
           </section>
-          ) : null}
+          ) : (
+            <section id="data-controls" className="scroll-mt-8 bg-surface p-4" data-settings-owner="restricted-admin">
+              <p className="mb-1 text-xs font-medium text-muted">Restricted admin ownership</p>
+              <h2 className="text-base font-semibold text-text-primary">Data controls</h2>
+              <p className="mt-2 text-sm text-text-secondary">
+                Reset and clear actions are unavailable unless this workspace is explicitly allowlisted for demo tooling.
+              </p>
+            </section>
+          )}
         </div>
       </div>
       {confirmDialog ? (
@@ -351,10 +392,10 @@ function AdminSettingsContent() {
           ariaLabelledBy="studio-data-confirm-title"
           ariaDescribedBy="studio-data-confirm-description"
           onBackdropClick={() => setConfirmAction(null)}
-          panelClassName="w-[min(92vw,28rem)] rounded-[6px] border border-border bg-surface p-5 shadow-2xl shadow-black/25"
+          panelClassName="w-[min(92vw,28rem)] rounded-[18px] bg-surface p-4"
         >
           <div className="flex items-start gap-3">
-            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[6px] bg-danger/10 text-danger">
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] bg-danger/10 text-danger">
               <AlertTriangle className="h-4 w-4" />
             </span>
             <div className="min-w-0">

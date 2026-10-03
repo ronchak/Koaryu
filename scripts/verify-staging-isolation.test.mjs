@@ -35,7 +35,6 @@ function validEnvironment() {
     STRIPE_MODE: "test",
     LIVE_BILLING_ENABLED: "false",
     CORE_SELF_CHECKOUT_ENABLED: "false",
-    NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: syntheticCredential("pk_test_", "A"),
     STRIPE_SECRET_KEY: syntheticCredential("sk_test_", "B"),
     STRIPE_RESTRICTED_KEY: syntheticCredential("rk_test_", "C"),
     STRIPE_PLATFORM_WEBHOOK_SECRET: syntheticCredential("whsec_", "D"),
@@ -108,7 +107,6 @@ describe("staging isolation guard", () => {
   });
 
   for (const [name, value] of [
-    ["NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY", "pk_live_deliberate_fixture"],
     ["STRIPE_SECRET_KEY", "sk_live_deliberate_fixture"],
     ["STRIPE_RESTRICTED_KEY", "rk_live_deliberate_fixture"],
   ]) {
@@ -175,7 +173,6 @@ describe("staging isolation guard", () => {
 
   it("rejects incomplete and placeholder Stripe credentials", () => {
     for (const [name, value] of [
-      ["NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY", "pk_test_"],
       ["STRIPE_SECRET_KEY", "sk_test_your_key_goes_here"],
       ["STRIPE_PLATFORM_WEBHOOK_SECRET", "whsec_"],
       ["STRIPE_CONNECT_WEBHOOK_SECRET", "whsec_deliberate_fixture_value"],

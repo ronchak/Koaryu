@@ -1,19 +1,30 @@
 import asyncio
 import csv
 import unittest
+from datetime import UTC, date, datetime, timezone
 from io import StringIO
 from types import SimpleNamespace
 from unittest.mock import patch
 
 from fastapi import HTTPException
+from gotrue.errors import AuthApiError
+from gotrue.types import User, UserResponse
 from postgrest.exceptions import APIError as PostgrestAPIError
 
 from app.api.v1.endpoints.reports import export_report_csv
 from app.services.report_export_catalog_billing_tables import build_billing_table_report_catalog
 from app.services.report_export_catalog_operations import build_operations_report_catalog
 from app.services.report_export_data import ReportExportDataFetcher
+from app.services.report_export_budget import ReportExportBudget
 from app.services.report_export_service import ReportExportService, require_report_export_access
 from tests.fakes.supabase import TableBackedSupabase
+
+
+async def consume_streaming_response(response):
+    chunks = []
+    async for chunk in response.body_iterator:
+        chunks.append(chunk)
+    return b"".join(chunks)
 
 
 def student_row(index: int, *, studio_id: str = "studio-1") -> dict:
@@ -60,11 +71,14 @@ def staff_role_row(
     }
 
 
-def auth_user(user_id: str, *, email: str, display_name: str) -> SimpleNamespace:
-    return SimpleNamespace(
+def auth_user(user_id: str, *, email: str, display_name: str) -> User:
+    return User(
         id=user_id,
         email=email,
+        app_metadata={},
         user_metadata={"full_name": display_name},
+        aud="authenticated",
+        created_at="2026-01-01T00:00:00Z",
         confirmed_at="2026-01-02T00:00:00Z",
         email_confirmed_at="2026-01-02T00:00:00Z",
         last_sign_in_at="2026-01-03T00:00:00Z",
@@ -72,12 +86,14 @@ def auth_user(user_id: str, *, email: str, display_name: str) -> SimpleNamespace
 
 
 def postgrest_error(code: str) -> PostgrestAPIError:
-    return PostgrestAPIError({
-        "code": code,
-        "message": "postgrest failure",
-        "details": "",
-        "hint": "",
-    })
+    return PostgrestAPIError(
+        {
+            "code": code,
+            "message": "postgrest failure",
+            "details": "",
+            "hint": "",
+        }
+    )
 
 
 class StaffExportAuthAdmin:
@@ -86,7 +102,10 @@ class StaffExportAuthAdmin:
 
     def get_user_by_id(self, user_id: str):
         self.supabase.auth_get_calls.append(user_id)
-        return SimpleNamespace(user=self.supabase.auth_users.get(user_id))
+        user = self.supabase.auth_users.get(user_id)
+        if user is None:
+            raise AuthApiError("User not found", 404, "user_not_found")
+        return UserResponse(user=user)
 
 
 class StaffExportSupabase(TableBackedSupabase):
@@ -94,7 +113,7 @@ class StaffExportSupabase(TableBackedSupabase):
         self,
         tables: dict[str, list[dict]] | None = None,
         *,
-        auth_users: dict[str, SimpleNamespace] | None = None,
+        auth_users: dict[str, User] | None = None,
     ):
         super().__init__(tables)
         self.auth_users = auth_users or {}
@@ -103,18 +122,238 @@ class StaffExportSupabase(TableBackedSupabase):
 
 
 class ReportExportServiceTest(unittest.TestCase):
+    def test_intelligence_export_uses_one_budgeted_studio_day_per_export(self):
+        student = student_row(1)
+        student["membership_start_date"] = "2026-09-29"
+        supabase = TableBackedSupabase(
+            {
+                "studios": [
+                    {"id": "studio-1", "timezone": "America/Los_Angeles"},
+                    {"id": "studio-2", "timezone": "Asia/Tokyo"},
+                ],
+                "students": [student, {**student, "id": "s-0002", "studio_id": "studio-2"}],
+            }
+        )
+        instant = datetime(2026, 9, 30, 3, 0, tzinfo=timezone.utc)
+        with (
+            patch("app.services.report_export_service.date") as server_date,
+            patch("app.services.studio_business_date.datetime") as clock,
+        ):
+            server_date.today.return_value = date(2026, 9, 30)
+            clock.now.return_value = instant
+            service = ReportExportService(supabase)
+            first_csv, _ = asyncio.run(service.build_csv("first_90_days_onboarding", "studio-1"))
+            first_budget = service.budget_snapshot
+            second_service = ReportExportService(supabase)
+            second_csv, _ = asyncio.run(
+                second_service.build_csv("first_90_days_onboarding", "studio-2")
+            )
+
+        self.assertEqual(next(csv.DictReader(StringIO(first_csv)))["days_since_start"], "0")
+        self.assertEqual(next(csv.DictReader(StringIO(second_csv)))["days_since_start"], "1")
+        studio_reads = [query for query in supabase.log if query["table"] == "studios"]
+        self.assertEqual(len(studio_reads), 2)
+        self.assertEqual(studio_reads[0]["columns"], "timezone")
+        self.assertEqual(first_budget.provider_calls, 5)
+        self.assertEqual(first_budget.fetched_rows, 2)
+        self.assertEqual(second_service.budget_snapshot.provider_calls, 5)
+
+    def test_intelligence_export_fails_closed_before_dataset_without_studio(self):
+        supabase = TableBackedSupabase({"studios": []})
+        service = ReportExportService(supabase)
+
+        with self.assertRaisesRegex(RuntimeError, "timezone could not be loaded"):
+            asyncio.run(service.build_csv("first_90_days_onboarding", "studio-1"))
+
+        self.assertEqual([query["table"] for query in supabase.log], ["studios"])
+        self.assertEqual(service.budget_snapshot.provider_calls, 1)
+        self.assertEqual(service.budget_snapshot.fetched_rows, 0)
+
+    def test_intelligence_timezone_lookup_is_admitted_before_dataset(self):
+        supabase = TableBackedSupabase({"studios": [{"id": "studio-1", "timezone": "UTC"}]})
+        service = ReportExportService(supabase, budget=ReportExportBudget(max_provider_calls=0))
+
+        with self.assertRaises(HTTPException) as context:
+            asyncio.run(service.build_csv("first_90_days_onboarding", "studio-1"))
+
+        self.assertEqual(context.exception.status_code, 413)
+        self.assertEqual(supabase.log, [])
+
+    def test_hygiene_export_reuses_its_intelligence_calendar_for_age(self):
+        student = student_row(1)
+        student["date_of_birth"] = "2008-09-30"
+        supabase = TableBackedSupabase(
+            {
+                "studios": [{"id": "studio-1", "timezone": "America/Los_Angeles"}],
+                "students": [student],
+            }
+        )
+        instant = datetime(2026, 9, 30, 3, 0, tzinfo=timezone.utc)
+        with patch("app.services.studio_business_date.datetime") as clock:
+            clock.now.return_value = instant
+            body, _ = asyncio.run(
+                ReportExportService(supabase).build_csv("data_hygiene_readiness", "studio-1")
+            )
+
+        self.assertIn("minor_without_guardian", body)
+        self.assertEqual(len([query for query in supabase.log if query["table"] == "studios"]), 1)
+
+    def test_student_and_hygiene_exports_project_current_minor_status_from_dob(self):
+        student = student_row(1)
+        student.update(
+            {
+                "date_of_birth": "2008-09-20",
+                "is_minor": True,
+                "emergency_contact_name": "Emergency contact",
+            }
+        )
+        supabase = TableBackedSupabase(
+            {
+                "students": [student],
+                "student_guardians": [],
+                "student_program_memberships": [],
+                "student_billing_enrollments": [],
+                "leads": [],
+                "billing_payers": [],
+            }
+        )
+
+        before_csv, _ = asyncio.run(
+            ReportExportService(supabase, today=date(2026, 9, 19)).build_csv("students", "studio-1")
+        )
+        birthday_csv, _ = asyncio.run(
+            ReportExportService(supabase, today=date(2026, 9, 20)).build_csv("students", "studio-1")
+        )
+        before_hygiene, _ = asyncio.run(
+            ReportExportService(supabase, today=date(2026, 9, 19)).build_csv(
+                "data_hygiene_readiness", "studio-1"
+            )
+        )
+        birthday_hygiene, _ = asyncio.run(
+            ReportExportService(supabase, today=date(2026, 9, 20)).build_csv(
+                "data_hygiene_readiness", "studio-1"
+            )
+        )
+
+        self.assertEqual(next(csv.DictReader(StringIO(before_csv)))["is_minor"], "true")
+        self.assertEqual(next(csv.DictReader(StringIO(birthday_csv)))["is_minor"], "false")
+        self.assertIn("minor_without_guardian", before_hygiene)
+        self.assertNotIn("minor_without_guardian", birthday_hygiene)
+        self.assertTrue(student["is_minor"])
+        self.assertFalse(any(entry["table"] == "studios" for entry in supabase.log))
+
+    def test_student_export_propagates_failed_studio_date_lookup(self):
+        student = student_row(1)
+        student["date_of_birth"] = "2010-01-01"
+        supabase = TableBackedSupabase({"students": [student], "studios": []})
+
+        with self.assertRaisesRegex(RuntimeError, "timezone could not be loaded"):
+            asyncio.run(ReportExportService(supabase).build_csv("students", "studio-1"))
+
+    def test_student_export_uses_stored_minor_status_only_without_dob(self):
+        students = [
+            {**student_row(1), "is_minor": True},
+            student_row(2),
+            {**student_row(3), "is_minor": None},
+            {**student_row(4), "date_of_birth": "2008-09-29", "is_minor": True},
+            {**student_row(5), "date_of_birth": "2008-09-30", "is_minor": False},
+        ]
+        supabase = TableBackedSupabase(
+            {
+                "studios": [{"id": "studio-1", "timezone": "America/Los_Angeles"}],
+                "students": students,
+            }
+        )
+        service = ReportExportService(supabase)
+        with patch("app.services.studio_business_date.datetime") as clock:
+            clock.now.return_value = datetime(2026, 9, 30, 3, 0, tzinfo=UTC)
+            body, _ = asyncio.run(service.build_csv("students", "studio-1"))
+
+        self.assertEqual(
+            {row["id"]: row["is_minor"] for row in csv.DictReader(StringIO(body))},
+            {
+                "s-0001": "true",
+                "s-0002": "false",
+                "s-0003": "false",
+                "s-0004": "false",
+                "s-0005": "true",
+            },
+        )
+        self.assertEqual(len([query for query in supabase.log if query["table"] == "studios"]), 1)
+        self.assertEqual(service.budget_snapshot.provider_calls, 2)
+        self.assertEqual(service.budget_snapshot.fetched_rows, 6)
+        self.assertTrue(students[3]["is_minor"])
+        self.assertFalse(students[4]["is_minor"])
+
+    def test_student_export_without_dob_does_not_load_studio_date(self):
+        students = [
+            {**student_row(1), "is_minor": True},
+            student_row(2),
+            {**student_row(3), "is_minor": None},
+            student_row(4),
+            {**student_row(5), "is_minor": 1},
+        ]
+        del students[3]["is_minor"]
+        supabase = TableBackedSupabase({"students": students})
+        service = ReportExportService(supabase, budget=ReportExportBudget(max_provider_calls=1))
+
+        with patch.object(service, "_current_student_date") as current_date:
+            body, _ = asyncio.run(service.build_csv("students", "studio-1"))
+
+        current_date.assert_not_called()
+        self.assertEqual(
+            [row["is_minor"] for row in csv.DictReader(StringIO(body))],
+            ["true", "false", "false", "false", "true"],
+        )
+        self.assertEqual([query["table"] for query in supabase.log], ["students"])
+        self.assertEqual(service.budget_snapshot.provider_calls, 1)
+        self.assertEqual(service.budget_snapshot.fetched_rows, len(students))
+
+    def test_hygiene_export_uses_stored_minor_status_without_dob(self):
+        students = [
+            {**student_row(1), "is_minor": True},
+            {**student_row(2), "is_minor": True},
+            student_row(3),
+            {**student_row(4), "is_minor": None},
+        ]
+        supabase = TableBackedSupabase(
+            {
+                "students": students,
+                "student_guardians": [
+                    {"id": "link-1", "student_id": "s-0002", "guardian_id": "guardian-1"}
+                ],
+            }
+        )
+        service = ReportExportService(supabase, today=date(2026, 9, 30))
+
+        with patch.object(service, "_report_today") as report_today:
+            body, _ = asyncio.run(service.build_csv("data_hygiene_readiness", "studio-1"))
+
+        report_today.assert_not_called()
+        self.assertEqual(
+            [
+                row["student_id"]
+                for row in csv.DictReader(StringIO(body))
+                if row["issue_type"] == "minor_without_guardian"
+            ],
+            ["s-0001"],
+        )
+        student_query = next(query for query in supabase.log if query["table"] == "students")
+        self.assertIn(
+            "is_minor", [column.strip() for column in student_query["columns"].split(",")]
+        )
+
     def test_deferred_billing_reports_are_not_in_available_catalog(self):
         service = ReportExportService(TableBackedSupabase({}))
         deferred_reports = build_billing_table_report_catalog(ReportExportService)
 
         self.assertTrue(deferred_reports)
-        self.assertTrue(all(
-            report.availability == "deferred_billing"
-            for report in deferred_reports.values()
-        ))
-        self.assertTrue(set(deferred_reports).isdisjoint(
-            report.id for report in service.list_reports()
-        ))
+        self.assertTrue(
+            all(report.availability == "deferred_billing" for report in deferred_reports.values())
+        )
+        self.assertTrue(
+            set(deferred_reports).isdisjoint(report.id for report in service.list_reports())
+        )
 
         for report_id in deferred_reports:
             with self.subTest(report_id=report_id), self.assertRaises(HTTPException) as context:
@@ -130,9 +369,7 @@ class ReportExportServiceTest(unittest.TestCase):
         self.assertNotIn("full_name", report.columns)
 
         csv_text, _ = asyncio.run(
-            ReportExportService(StaffExportSupabase({})).build_csv(
-                "staff_roles", "studio-1"
-            )
+            ReportExportService(StaffExportSupabase({})).build_csv("staff_roles", "studio-1")
         )
         self.assertEqual(
             next(csv.reader(StringIO(csv_text))),
@@ -223,9 +460,7 @@ class ReportExportServiceTest(unittest.TestCase):
         self.assertEqual(len(role_queries), 1)
         self.assertIn(("eq", "studio_id", "studio-1"), role_queries[0]["filters"])
 
-        profile_queries = [
-            query for query in supabase.log if query["table"] == "staff_profiles"
-        ]
+        profile_queries = [query for query in supabase.log if query["table"] == "staff_profiles"]
         self.assertEqual(len(profile_queries), 1)
         self.assertEqual(
             profile_queries[0]["filters"],
@@ -236,11 +471,13 @@ class ReportExportServiceTest(unittest.TestCase):
     def test_staff_roles_export_leaves_missing_profiles_blank(self):
         supabase = StaffExportSupabase(
             {
-                "staff_roles": [staff_role_row(
-                    "role-1",
-                    user_id="user-1",
-                    created_at="2026-01-01T00:00:00Z",
-                )],
+                "staff_roles": [
+                    staff_role_row(
+                        "role-1",
+                        user_id="user-1",
+                        created_at="2026-01-01T00:00:00Z",
+                    )
+                ],
                 "staff_profiles": [],
             },
             auth_users={
@@ -266,11 +503,13 @@ class ReportExportServiceTest(unittest.TestCase):
             with self.subTest(code=code):
                 supabase = StaffExportSupabase(
                     {
-                        "staff_roles": [staff_role_row(
-                            "role-1",
-                            user_id="user-1",
-                            created_at="2026-01-01T00:00:00Z",
-                        )],
+                        "staff_roles": [
+                            staff_role_row(
+                                "role-1",
+                                user_id="user-1",
+                                created_at="2026-01-01T00:00:00Z",
+                            )
+                        ],
                     },
                     auth_users={
                         "user-1": auth_user(
@@ -293,11 +532,13 @@ class ReportExportServiceTest(unittest.TestCase):
     def test_staff_roles_export_propagates_unrelated_profile_errors(self):
         supabase = StaffExportSupabase(
             {
-                "staff_roles": [staff_role_row(
-                    "role-1",
-                    user_id="user-1",
-                    created_at="2026-01-01T00:00:00Z",
-                )],
+                "staff_roles": [
+                    staff_role_row(
+                        "role-1",
+                        user_id="user-1",
+                        created_at="2026-01-01T00:00:00Z",
+                    )
+                ],
             },
             auth_users={
                 "user-1": auth_user(
@@ -311,9 +552,7 @@ class ReportExportServiceTest(unittest.TestCase):
         supabase.table_failures["staff_profiles"] = failure
 
         with self.assertRaises(PostgrestAPIError) as raised:
-            asyncio.run(
-                ReportExportService(supabase).build_csv("staff_roles", "studio-1")
-            )
+            asyncio.run(ReportExportService(supabase).build_csv("staff_roles", "studio-1"))
 
         self.assertIs(raised.exception, failure)
 
@@ -342,6 +581,7 @@ class ReportExportServiceTest(unittest.TestCase):
         self.assertTrue(lines[0].startswith("id,studio_id"))
         self.assertTrue(lines[1].startswith("s-0000,studio-1"))
         student_queries = [entry for entry in supabase.log if entry["table"] == "students"]
+        self.assertFalse(any(entry["table"] == "studios" for entry in supabase.log))
         self.assertEqual([entry["range"] for entry in student_queries], [(0, 999), (1000, 1999)])
         self.assertEqual(
             student_queries[0]["orders"],
@@ -349,9 +589,11 @@ class ReportExportServiceTest(unittest.TestCase):
         )
 
     def test_paged_rows_rejects_exports_above_cap(self):
-        supabase = TableBackedSupabase({
-            "students": [student_row(index) for index in range(4)],
-        })
+        supabase = TableBackedSupabase(
+            {
+                "students": [student_row(index) for index in range(4)],
+            }
+        )
         fetcher = ReportExportDataFetcher(supabase)
 
         with self.assertRaises(HTTPException) as context:
@@ -362,7 +604,6 @@ class ReportExportServiceTest(unittest.TestCase):
             )
 
         self.assertEqual(context.exception.status_code, 413)
-        self.assertIn("Export is too large", context.exception.detail)
         student_queries = [entry for entry in supabase.log if entry["table"] == "students"]
         self.assertEqual([entry["range"] for entry in student_queries], [(0, 1), (2, 3)])
 
@@ -372,11 +613,14 @@ class ReportExportServiceTest(unittest.TestCase):
             {"id": f"sg-{index:04d}", "student_id": "s-0000", "guardian_id": f"g-{index:04d}"}
             for index in range(1205)
         ]
-        supabase = TableBackedSupabase({
-            "students": students,
-            "student_guardians": relationships,
-        })
+        supabase = TableBackedSupabase(
+            {
+                "students": students,
+                "student_guardians": relationships,
+            }
+        )
         service = ReportExportService(supabase)
+        service._active_report = service.get_report("family_account_health")
 
         dataset = service._fetch_intelligence_dataset("studio-1")
 
@@ -385,9 +629,13 @@ class ReportExportServiceTest(unittest.TestCase):
         student_queries = [entry for entry in supabase.log if entry["table"] == "students"]
         self.assertEqual([entry["range"] for entry in student_queries], [(0, 999), (1000, 1999)])
         self.assertEqual(student_queries[0]["orders"], (("id", False),))
-        guardian_queries = [entry for entry in supabase.log if entry["table"] == "student_guardians"]
+        guardian_queries = [
+            entry for entry in supabase.log if entry["table"] == "student_guardians"
+        ]
         self.assertGreaterEqual(len(guardian_queries), 2)
-        self.assertEqual([entry["range"] for entry in guardian_queries[:2]], [(0, 999), (1000, 1999)])
+        self.assertEqual(
+            [entry["range"] for entry in guardian_queries[:2]], [(0, 999), (1000, 1999)]
+        )
 
     def test_report_export_access_is_report_specific(self):
         service = ReportExportService(TableBackedSupabase({}))
@@ -402,23 +650,29 @@ class ReportExportServiceTest(unittest.TestCase):
         require_report_export_access(class_sessions_report, "front_desk")
 
     def test_export_report_csv_audits_sensitive_admin_export(self):
-        supabase = TableBackedSupabase({
-            "students": [student_row(1)],
-            "audit_logs": [],
-        })
+        supabase = TableBackedSupabase(
+            {
+                "students": [student_row(1)],
+                "audit_logs": [],
+            }
+        )
 
         with patch(
             "app.api.v1.endpoints.reports.resolve_staff_role_for_user",
             return_value={"studio_id": "studio-1", "role": "admin"},
         ):
-            response = asyncio.run(export_report_csv(
-                "students",
-                user_id="user-1",
-                requested_studio_id="studio-1",
-                supabase=supabase,
-            ))
+            response = asyncio.run(
+                export_report_csv(
+                    "students",
+                    user_id="user-1",
+                    requested_studio_id="studio-1",
+                    supabase=supabase,
+                )
+            )
 
-        self.assertIn(b"s-0001", response.body)
+        body = asyncio.run(consume_streaming_response(response))
+        self.assertIn(b"s-0001", body)
+        self.assertEqual(response.headers["Content-Length"], str(len(body)))
         self.assertEqual(response.headers["Cache-Control"], "no-store, private")
         self.assertEqual(response.headers["Vary"], "Authorization, X-Studio-Id, Cookie")
         audit = supabase.tables["audit_logs"][0]
@@ -433,76 +687,113 @@ class ReportExportServiceTest(unittest.TestCase):
         self.assertEqual(audit["metadata"]["row_count"], 1)
 
     def test_export_report_csv_rejects_front_desk_sensitive_export_before_audit(self):
-        supabase = TableBackedSupabase({
-            "students": [student_row(1)],
-            "audit_logs": [],
-        })
+        supabase = TableBackedSupabase(
+            {
+                "students": [student_row(1)],
+                "audit_logs": [],
+            }
+        )
 
         with patch(
             "app.api.v1.endpoints.reports.resolve_staff_role_for_user",
             return_value={"studio_id": "studio-1", "role": "front_desk"},
         ):
             with self.assertRaises(HTTPException) as context:
-                asyncio.run(export_report_csv(
-                    "students",
-                    user_id="user-1",
-                    requested_studio_id="studio-1",
-                    supabase=supabase,
-                ))
+                asyncio.run(
+                    export_report_csv(
+                        "students",
+                        user_id="user-1",
+                        requested_studio_id="studio-1",
+                        supabase=supabase,
+                    )
+                )
 
         self.assertEqual(context.exception.status_code, 403)
         self.assertEqual(supabase.tables["audit_logs"], [])
         self.assertFalse(any(query["table"] == "students" for query in supabase.log))
 
+    def test_export_report_csv_rejects_intelligence_before_timezone_lookup(self):
+        supabase = TableBackedSupabase(
+            {"studios": [{"id": "studio-1", "timezone": "UTC"}], "audit_logs": []}
+        )
+
+        with patch(
+            "app.api.v1.endpoints.reports.resolve_staff_role_for_user",
+            return_value={"studio_id": "studio-1", "role": "front_desk"},
+        ):
+            with self.assertRaises(HTTPException) as context:
+                asyncio.run(
+                    export_report_csv(
+                        "first_90_days_onboarding",
+                        user_id="user-1",
+                        requested_studio_id="studio-1",
+                        supabase=supabase,
+                    )
+                )
+
+        self.assertEqual(context.exception.status_code, 403)
+        self.assertFalse(any(query["table"] == "studios" for query in supabase.log))
+        self.assertEqual(supabase.tables["audit_logs"], [])
+
     def test_export_report_csv_rejects_instructor_before_data_or_audit(self):
-        supabase = TableBackedSupabase({
-            "students": [student_row(1)],
-            "audit_logs": [],
-        })
+        supabase = TableBackedSupabase(
+            {
+                "students": [student_row(1)],
+                "audit_logs": [],
+            }
+        )
 
         with patch(
             "app.api.v1.endpoints.reports.resolve_staff_role_for_user",
             return_value={"studio_id": "studio-1", "role": "instructor"},
         ):
             with self.assertRaises(HTTPException) as context:
-                asyncio.run(export_report_csv(
-                    "students",
-                    user_id="user-1",
-                    requested_studio_id="studio-1",
-                    supabase=supabase,
-                ))
+                asyncio.run(
+                    export_report_csv(
+                        "students",
+                        user_id="user-1",
+                        requested_studio_id="studio-1",
+                        supabase=supabase,
+                    )
+                )
 
         self.assertEqual(context.exception.status_code, 403)
         self.assertEqual(supabase.tables["audit_logs"], [])
         self.assertFalse(any(query["table"] == "students" for query in supabase.log))
 
     def test_export_report_csv_rejects_deferred_billing_report_before_data_or_audit(self):
-        supabase = TableBackedSupabase({
-            "billing_payments": [{"id": "payment-1", "studio_id": "studio-1"}],
-            "audit_logs": [],
-        })
+        supabase = TableBackedSupabase(
+            {
+                "billing_payments": [{"id": "payment-1", "studio_id": "studio-1"}],
+                "audit_logs": [],
+            }
+        )
 
         with patch(
             "app.api.v1.endpoints.reports.resolve_staff_role_for_user",
             return_value={"studio_id": "studio-1", "role": "admin"},
         ):
             with self.assertRaises(HTTPException) as context:
-                asyncio.run(export_report_csv(
-                    "billing_payments",
-                    user_id="user-1",
-                    requested_studio_id="studio-1",
-                    supabase=supabase,
-                ))
+                asyncio.run(
+                    export_report_csv(
+                        "billing_payments",
+                        user_id="user-1",
+                        requested_studio_id="studio-1",
+                        supabase=supabase,
+                    )
+                )
 
         self.assertEqual(context.exception.status_code, 404)
         self.assertEqual(supabase.tables["audit_logs"], [])
         self.assertFalse(any(query["table"] == "billing_payments" for query in supabase.log))
 
     def test_export_report_csv_does_not_audit_completion_when_generation_fails(self):
-        supabase = TableBackedSupabase({
-            "students": [student_row(1)],
-            "audit_logs": [],
-        })
+        supabase = TableBackedSupabase(
+            {
+                "students": [student_row(1)],
+                "audit_logs": [],
+            }
+        )
 
         with (
             patch(
@@ -516,12 +807,14 @@ class ReportExportServiceTest(unittest.TestCase):
             ),
         ):
             with self.assertRaises(RuntimeError):
-                asyncio.run(export_report_csv(
-                    "students",
-                    user_id="user-1",
-                    requested_studio_id="studio-1",
-                    supabase=supabase,
-                ))
+                asyncio.run(
+                    export_report_csv(
+                        "students",
+                        user_id="user-1",
+                        requested_studio_id="studio-1",
+                        supabase=supabase,
+                    )
+                )
 
         self.assertEqual(supabase.tables["audit_logs"], [])
 

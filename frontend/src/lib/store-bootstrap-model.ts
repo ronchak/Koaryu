@@ -2,12 +2,10 @@ import type {
   AuthResponse,
   BeltLadder,
   DashboardBootstrapResponse,
-  DashboardBootstrapStudioSummary,
   DashboardSummary,
   Lead,
   Program,
   Student,
-  StudentListResponse,
   UserProfile,
 } from "@/types";
 
@@ -19,7 +17,7 @@ export type BootstrapResponse = Omit<
 > & {
   auth: AuthProfileResponse;
   students: Student[];
-  students_total?: number;
+  students_total?: number | null;
   students_page_size?: number;
   students_may_be_partial?: boolean;
   programs: Program[];
@@ -34,7 +32,11 @@ export function parseAuthProfileResponse(value: unknown): AuthProfileResponse {
   }
 
   const membershipStatus = (value as { membership_status?: unknown }).membership_status;
-  if (membershipStatus !== "none" && membershipStatus !== "active" && membershipStatus !== "archived") {
+  if (
+    membershipStatus !== "none" &&
+    membershipStatus !== "active" &&
+    membershipStatus !== "archived"
+  ) {
     throw new Error("Auth response is missing explicit membership_status.");
   }
 
@@ -61,16 +63,20 @@ export function buildAuthUserProfile(authProfile: AuthProfileResponse): AuthUser
   return authProfile.user;
 }
 
-export function isStaffProfilesAvailable(authProfile: { staff_profiles_available?: unknown }): boolean {
+export function isStaffProfilesAvailable(authProfile: {
+  staff_profiles_available?: unknown;
+}): boolean {
   return authProfile.staff_profiles_available === true;
 }
 
-export function resolveBootstrapStudioName(data: Pick<BootstrapResponse, "studio_name" | "studio">): string {
+export function resolveBootstrapStudioName(
+  data: Pick<BootstrapResponse, "studio_name" | "studio">,
+): string {
   return data.studio_name || data.studio?.name || "";
 }
 
 export function resolveBootstrapLadders(
-  data: Pick<BootstrapResponse, "belt_ladders" | "primary_belt_ladder">
+  data: Pick<BootstrapResponse, "belt_ladders" | "primary_belt_ladder">,
 ): BeltLadder[] {
   return data.belt_ladders.length > 0
     ? data.belt_ladders
@@ -79,53 +85,24 @@ export function resolveBootstrapLadders(
       : [];
 }
 
-export function buildLegacyBootstrapResponse({
-  auth,
-  studio,
-  studentsPage,
-  programs,
-  leads,
-  beltLadders,
-}: {
-  auth: AuthProfileResponse;
-  studio: DashboardBootstrapStudioSummary;
-  studentsPage: StudentListResponse;
-  programs: Program[];
-  leads: Lead[];
-  beltLadders: BeltLadder[];
-}): BootstrapResponse {
-  return {
-    auth,
-    studio,
-    students: studentsPage.items,
-    students_total: studentsPage.total,
-    students_page_size: studentsPage.page_size,
-    students_may_be_partial: studentsPage.total > studentsPage.items.length,
-    programs,
-    leads,
-    belt_ladders: beltLadders,
-    primary_belt_ladder: beltLadders[0] ?? null,
-  };
-}
-
-export function buildDeferredScheduleDateRange(now = new Date()): {
+export function buildDeferredScheduleDateRange(
+  now = new Date(),
+  businessDate = now.toISOString().slice(0, 10),
+): {
   startDate: string;
   endDate: string;
 } {
-  const start = new Date(now);
-  start.setDate(start.getDate() - 30);
-  const end = new Date(now);
-  end.setDate(end.getDate() + 60);
-
-  return {
-    startDate: start.toISOString().split("T")[0],
-    endDate: end.toISOString().split("T")[0],
+  const shift = (days: number) => {
+    const date = new Date(`${businessDate}T00:00:00Z`);
+    date.setUTCDate(date.getUTCDate() + days);
+    return date.toISOString().slice(0, 10);
   };
+  return { startDate: shift(-30), endDate: shift(60) };
 }
 
 export function isDashboardSummaryForStudio(
   summary: DashboardSummary,
-  studioId: string | null
+  studioId: string | null,
 ): boolean {
   return summary.auth.studio_id === studioId;
 }

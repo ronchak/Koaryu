@@ -16,13 +16,15 @@ const OPTIONS: Array<{
 }> = [
   {
     title: "Billing and payments",
-    description: "Failed payments, webhook issues, Connect requirements, and billing reconciliation alerts.",
+    description:
+      "Failed payments, webhook issues, Connect requirements, and billing reconciliation alerts.",
     icon: CreditCard,
     status: "Planned",
   },
   {
     title: "Students and attendance",
-    description: "Important student lifecycle reminders, attendance gaps, and profile hygiene prompts.",
+    description:
+      "Important student lifecycle reminders, attendance gaps, and profile hygiene prompts.",
     icon: Users,
     status: "Planned",
   },
@@ -34,7 +36,8 @@ const OPTIONS: Array<{
   },
   {
     title: "Security",
-    description: "Suspicious access patterns, high-risk data operations, and account recovery notices.",
+    description:
+      "Suspicious access patterns, high-risk data operations, and account recovery notices.",
     icon: ShieldAlert,
     status: "Always shown when critical",
   },
@@ -56,14 +59,18 @@ export default function NotificationsPage() {
             return (
               <div
                 key={option.title}
-                className="flex w-full items-start gap-3 rounded-[6px] border border-border bg-surface-raised p-4 text-left"
+                className="flex w-full items-start gap-3 border-b border-border bg-surface px-1 py-4 text-left last:border-b-0"
               >
-                <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-[6px] bg-accent/10 text-accent">
+                <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center border-r border-border text-accent">
                   <Icon className="h-4 w-4" />
                 </span>
                 <span className="min-w-0 flex-1">
-                  <span className="block text-sm font-medium text-text-primary">{option.title}</span>
-                  <span className="mt-1 block text-sm text-text-secondary">{option.description}</span>
+                  <span className="block text-sm font-medium text-text-primary">
+                    {option.title}
+                  </span>
+                  <span className="mt-1 block text-sm text-text-secondary">
+                    {option.description}
+                  </span>
                 </span>
                 <span className="mt-1 flex-shrink-0 rounded-[4px] border border-border px-2 py-0.5 text-xs text-text-secondary">
                   {option.status}
@@ -81,9 +88,9 @@ export default function NotificationsPage() {
         <AccountInfoRow label="Push notifications" value="Planned" />
         <div className="mt-4">
           <AccountNotice>
-            Critical security and billing notices may still be shown in-product when Koaryu needs to protect the
-            account or payment flow. User-level delivery preferences will become actionable after notification delivery
-            is implemented.
+            Critical security and billing notices may still be shown in-product when Koaryu needs to
+            protect the account or payment flow. User-level delivery preferences will become
+            actionable after notification delivery is implemented.
           </AccountNotice>
         </div>
       </AccountSection>

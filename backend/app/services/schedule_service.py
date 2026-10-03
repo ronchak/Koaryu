@@ -1,14 +1,20 @@
-from datetime import date, datetime, timedelta, timezone
-from typing import Optional
+from datetime import date, datetime, time, timedelta, timezone
+from typing import Any, Optional
 from supabase import Client
 from fastapi import HTTPException
 from postgrest.exceptions import APIError as PostgrestAPIError
 from pydantic import ValidationError
 from app.schemas.schedule import (
-    ClassTemplateCreate, ClassTemplateUpdate, ClassTemplateResponse,
-    ClassSessionCreate, ClassSessionResponse,
+    ClassTemplateCreate,
+    ClassTemplateUpdate,
+    ClassTemplateResponse,
+    ClassSessionCreate,
+    ClassSessionResponse,
     ClassSessionDeleteScopeValue,
-    AttendanceCheckIn, AttendanceResponse, AttendanceBulkCheckIn,
+    AttendanceCheckIn,
+    AttendanceResponse,
+    AttendanceBulkCheckIn,
+    ScheduleWindowResponse,
 )
 from app.services.studio_scope import (
     ensure_optional_studio_record,
@@ -16,11 +22,12 @@ from app.services.studio_scope import (
 )
 from app.services.program_service import ProgramService
 from app.services.schedule_attendance_actions import ScheduleAttendanceActions
-from app.services.supabase_rpc import execute_required_rpc
+from app.services.supabase_rpc import execute_required_rpc, first_rpc_row
 
 
 SCHEDULE_SESSION_LIST_RANGE_MAX_DAYS = 93
 SCHEDULE_SESSION_MATERIALIZATION_RANGE_MAX_DAYS = 93
+SCHEDULE_WINDOW_CONTRACT_VERSION = "schedule-window-v1"
 CLASS_SESSION_LIST_SELECT = (
     "id, studio_id, template_id, name, date, start_time, end_time, "
     "instructor_id, program_id, capacity, status, notes, created_at"
@@ -102,6 +109,137 @@ class ScheduleService:
             },
         )
 
+    @staticmethod
+    def _validate_schedule_window_response(
+        result: Any,
+        *,
+        studio_id: str,
+        start_date: str,
+        end_date: str,
+    ) -> ScheduleWindowResponse:
+        row = first_rpc_row(result)
+        if row is None:
+            raise HTTPException(
+                status_code=500,
+                detail="Schedule window RPC returned no result. Apply the latest schedule migrations.",
+            )
+        try:
+            window = ScheduleWindowResponse.model_validate(row)
+        except ValidationError as exc:
+            raise HTTPException(
+                status_code=500,
+                detail="Schedule window data is incompatible with the current backend schema. Apply the latest schedule migrations.",
+            ) from exc
+
+        expected_days = (date.fromisoformat(end_date) - date.fromisoformat(start_date)).days + 1
+        if (
+            window.range.start_date != start_date
+            or window.range.end_date != end_date
+            or window.range.day_count != expected_days
+        ):
+            raise HTTPException(
+                status_code=500,
+                detail="Schedule window RPC returned mismatched range metadata.",
+            )
+        if any(item.studio_id != studio_id for item in window.templates):
+            raise HTTPException(
+                status_code=500,
+                detail="Schedule window RPC returned a template for another studio.",
+            )
+        if any(item.studio_id != studio_id for item in window.sessions):
+            raise HTTPException(
+                status_code=500,
+                detail="Schedule window RPC returned a session for another studio.",
+            )
+        if any(item.studio_id != studio_id for item in window.attendance):
+            raise HTTPException(
+                status_code=500,
+                detail="Schedule window RPC returned attendance for another studio.",
+            )
+
+        expected_start = date.fromisoformat(start_date)
+        expected_end = date.fromisoformat(end_date)
+        if any(
+            not expected_start <= ScheduleService._parse_date(item.date) <= expected_end
+            for item in window.sessions
+        ):
+            raise HTTPException(
+                status_code=500,
+                detail="Schedule window RPC returned a session outside the requested date range.",
+            )
+
+        session_ids = {item.id for item in window.sessions}
+        if any(item.session_id not in session_ids for item in window.attendance):
+            raise HTTPException(
+                status_code=500,
+                detail="Schedule window RPC returned attendance outside the requested session range.",
+            )
+        return window
+
+    async def read_schedule_window(
+        self,
+        studio_id: str,
+        start_date: str,
+        end_date: str,
+    ) -> ScheduleWindowResponse:
+        start, end = self._validate_session_date_range(
+            start_date,
+            end_date,
+            max_days=SCHEDULE_SESSION_LIST_RANGE_MAX_DAYS,
+            operation_name="Schedule window",
+        )
+        normalized_start = start.isoformat()
+        normalized_end = end.isoformat()
+        try:
+            result = execute_required_rpc(
+                self.supabase,
+                "schedule_window_read",
+                {
+                    "p_studio_id": studio_id,
+                    "p_start_date": normalized_start,
+                    "p_end_date": normalized_end,
+                    "p_contract_version": SCHEDULE_WINDOW_CONTRACT_VERSION,
+                },
+            )
+            return self._validate_schedule_window_response(
+                result,
+                studio_id=studio_id,
+                start_date=normalized_start,
+                end_date=normalized_end,
+            )
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(
+                status_code=500,
+                detail="Schedule window load failed. Verify schedule schema migrations and backend connectivity.",
+            ) from exc
+
+    async def materialize_schedule_window(
+        self,
+        studio_id: str,
+        start_date: str,
+        end_date: str,
+    ) -> ScheduleWindowResponse:
+        start, end = self._validate_session_date_range(
+            start_date,
+            end_date,
+            max_days=SCHEDULE_SESSION_MATERIALIZATION_RANGE_MAX_DAYS,
+            operation_name="Recurring session materialization",
+        )
+        normalized_start = start.isoformat()
+        normalized_end = end.isoformat()
+        await self._materialize_sessions_for_range(
+            studio_id,
+            normalized_start,
+            normalized_end,
+        )
+        return await self.read_schedule_window(
+            studio_id,
+            normalized_start,
+            normalized_end,
+        )
+
     # ---- Class Templates ----
 
     async def list_templates(self, studio_id: str) -> list[ClassTemplateResponse]:
@@ -143,14 +281,16 @@ class ScheduleService:
             if not result.data:
                 raise HTTPException(status_code=500, detail="Failed to create class template")
 
-            self.supabase.table("audit_logs").insert({
-                "studio_id": studio_id,
-                "actor_id": actor_id,
-                "action": "class_template.created",
-                "entity_type": "class_template",
-                "entity_id": result.data[0]["id"],
-                "metadata": {"name": data.name},
-            }).execute()
+            self.supabase.table("audit_logs").insert(
+                {
+                    "studio_id": studio_id,
+                    "actor_id": actor_id,
+                    "action": "class_template.created",
+                    "entity_type": "class_template",
+                    "entity_id": result.data[0]["id"],
+                    "metadata": {"name": data.name},
+                }
+            ).execute()
 
             return ClassTemplateResponse(**result.data[0])
         except HTTPException:
@@ -169,16 +309,35 @@ class ScheduleService:
     async def update_template(
         self, template_id: str, data: ClassTemplateUpdate, studio_id: str, actor_id: str
     ) -> ClassTemplateResponse:
-        update_dict = data.model_dump(exclude_none=True)
+        update_dict = data.model_dump(exclude_unset=True)
         if not update_dict:
             raise HTTPException(status_code=400, detail="No fields to update")
+        current = (
+            self.supabase.table("class_templates")
+            .select("start_time, end_time, start_date, end_date")
+            .eq("id", template_id)
+            .eq("studio_id", studio_id)
+            .limit(1)
+            .execute()
+        )
+        if not current.data:
+            raise HTTPException(status_code=404, detail="Template not found")
+        merged = {**current.data[0], **update_dict}
+        if time.fromisoformat(merged["end_time"]) <= time.fromisoformat(merged["start_time"]):
+            raise HTTPException(status_code=400, detail="End time must be after start time")
+        if merged["end_date"] and date.fromisoformat(merged["end_date"]) < date.fromisoformat(
+            merged["start_date"]
+        ):
+            raise HTTPException(status_code=400, detail="End date cannot be before start date")
         ensure_staff_user_in_studio(
             self.supabase,
             update_dict.get("instructor_id"),
             studio_id,
             "Instructor not found in this studio",
         )
-        ProgramService(self.supabase).ensure_program_active(studio_id, update_dict.get("program_id"))
+        ProgramService(self.supabase).ensure_program_active(
+            studio_id, update_dict.get("program_id")
+        )
         result = (
             self.supabase.table("class_templates")
             .update(update_dict)
@@ -188,14 +347,16 @@ class ScheduleService:
         )
         if not result.data:
             raise HTTPException(status_code=404, detail="Template not found")
-        self.supabase.table("audit_logs").insert({
-            "studio_id": studio_id,
-            "actor_id": actor_id,
-            "action": "class_template.updated",
-            "entity_type": "class_template",
-            "entity_id": template_id,
-            "metadata": update_dict,
-        }).execute()
+        self.supabase.table("audit_logs").insert(
+            {
+                "studio_id": studio_id,
+                "actor_id": actor_id,
+                "action": "class_template.updated",
+                "entity_type": "class_template",
+                "entity_id": template_id,
+                "metadata": update_dict,
+            }
+        ).execute()
         return ClassTemplateResponse(**result.data[0])
 
     async def delete_template(self, template_id: str, studio_id: str, actor_id: str) -> None:
@@ -209,14 +370,16 @@ class ScheduleService:
         )
         if not result.data:
             raise HTTPException(status_code=404, detail="Template not found")
-        self.supabase.table("audit_logs").insert({
-            "studio_id": studio_id,
-            "actor_id": actor_id,
-            "action": "class_template.deleted",
-            "entity_type": "class_template",
-            "entity_id": template_id,
-            "metadata": {},
-        }).execute()
+        self.supabase.table("audit_logs").insert(
+            {
+                "studio_id": studio_id,
+                "actor_id": actor_id,
+                "action": "class_template.deleted",
+                "entity_type": "class_template",
+                "entity_id": template_id,
+                "metadata": {},
+            }
+        ).execute()
 
     # ---- Class Sessions ----
 
@@ -261,10 +424,12 @@ class ScheduleService:
 
             sessions = []
             for r in result.data or []:
-                sessions.append(ClassSessionResponse(
-                    **r,
-                    attendance_count=attendance_counts.get(r["id"], 0),
-                ))
+                sessions.append(
+                    ClassSessionResponse(
+                        **r,
+                        attendance_count=attendance_counts.get(r["id"], 0),
+                    )
+                )
             return sessions
         except HTTPException:
             raise
@@ -320,18 +485,20 @@ class ScheduleService:
         result = self.supabase.table("class_sessions").insert(row).execute()
         if not result.data:
             raise HTTPException(status_code=500, detail="Failed to create session")
-        self.supabase.table("audit_logs").insert({
-            "studio_id": studio_id,
-            "actor_id": actor_id,
-            "action": "class_session.created",
-            "entity_type": "class_session",
-            "entity_id": result.data[0]["id"],
-            "metadata": {
-                "name": row["name"],
-                "date": row["date"],
-                "template_id": row.get("template_id"),
-            },
-        }).execute()
+        self.supabase.table("audit_logs").insert(
+            {
+                "studio_id": studio_id,
+                "actor_id": actor_id,
+                "action": "class_session.created",
+                "entity_type": "class_session",
+                "entity_id": result.data[0]["id"],
+                "metadata": {
+                    "name": row["name"],
+                    "date": row["date"],
+                    "template_id": row.get("template_id"),
+                },
+            }
+        ).execute()
         return ClassSessionResponse(**result.data[0], attendance_count=0)
 
     async def generate_sessions_for_week(
@@ -347,6 +514,12 @@ class ScheduleService:
         for template in templates:
             days_ahead = (template.day_of_week - self._studio_weekday(start)) % 7
             session_date = start + timedelta(days=days_ahead)
+            template_start = self._parse_date(template.start_date)
+            template_end = self._parse_date(template.end_date) if template.end_date else None
+            if session_date < template_start or (
+                template_end is not None and session_date > template_end
+            ):
+                continue
 
             existing = (
                 self.supabase.table("class_sessions")
@@ -410,10 +583,12 @@ class ScheduleService:
 
         deleted = (
             self.supabase.table("class_sessions")
-            .update({
-                "deleted_at": deleted_at,
-                "status": "canceled",
-            })
+            .update(
+                {
+                    "deleted_at": deleted_at,
+                    "status": "canceled",
+                }
+            )
             .eq("id", session_id)
             .eq("studio_id", studio_id)
             .is_("deleted_at", "null")
@@ -422,20 +597,24 @@ class ScheduleService:
         if not deleted.data:
             raise HTTPException(status_code=409, detail="Failed to delete class session")
 
-        self.supabase.table("audit_logs").insert({
-            "studio_id": studio_id,
-            "actor_id": actor_id,
-            "action": "class_session.deleted",
-            "entity_type": "class_session",
-            "entity_id": session_id,
-            "metadata": {
-                "template_id": session.get("template_id"),
-                "date": session["date"],
-                "name": session["name"],
-            },
-        }).execute()
+        self.supabase.table("audit_logs").insert(
+            {
+                "studio_id": studio_id,
+                "actor_id": actor_id,
+                "action": "class_session.deleted",
+                "entity_type": "class_session",
+                "entity_id": session_id,
+                "metadata": {
+                    "template_id": session.get("template_id"),
+                    "date": session["date"],
+                    "name": session["name"],
+                },
+            }
+        ).execute()
 
-    def _delete_recurring_class_series_atomic(self, session_id: str, studio_id: str, actor_id: str) -> None:
+    def _delete_recurring_class_series_atomic(
+        self, session_id: str, studio_id: str, actor_id: str
+    ) -> None:
         try:
             execute_required_rpc(
                 self.supabase,
@@ -458,7 +637,9 @@ class ScheduleService:
             if "Class template not found" in message:
                 raise HTTPException(status_code=404, detail="Class template not found") from exc
             if "Failed to delete recurring class series" in message:
-                raise HTTPException(status_code=409, detail="Failed to delete recurring class series") from exc
+                raise HTTPException(
+                    status_code=409, detail="Failed to delete recurring class series"
+                ) from exc
             raise
 
     # ---- Attendance ----

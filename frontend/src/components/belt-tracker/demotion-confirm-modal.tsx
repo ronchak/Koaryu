@@ -6,6 +6,7 @@ import { DismissibleNotice } from "@/components/ui/dismissible-notice";
 import { ModalFrame } from "@/components/ui/modal-frame";
 import type { BeltRank, EligibilityEntry } from "@/types";
 import { ChevronDown } from "lucide-react";
+import styles from "./belt-tracker.module.css";
 
 type DemotionConfirmModalProps = {
   entry: EligibilityEntry;
@@ -34,21 +35,19 @@ export function DemotionConfirmModal({
   reason,
   targetRank,
 }: DemotionConfirmModalProps) {
-  const currentRank = entry.current_rank_id
-    ? rankById.get(entry.current_rank_id)
-    : undefined;
+  const currentRank = entry.current_rank_id ? rankById.get(entry.current_rank_id) : undefined;
 
   return (
     <ModalFrame
-      rootClassName="p-4"
-      panelClassName="bg-bg border border-border rounded-[6px] w-full max-w-sm p-6"
+      rootClassName={`p-4 ${styles.beltDialogRoot}`}
+      panelClassName="bg-bg rounded-[18px] w-full max-w-sm p-4 shadow-[var(--product-shadow-lifted)]"
       ariaLabelledBy="confirm-demotion-title"
       onBackdropClick={onClose}
     >
       <h2 id="confirm-demotion-title" className="text-base font-semibold text-text-primary">
         Confirm demotion
       </h2>
-      <div className="my-4 rounded-[6px] border border-border bg-surface p-4">
+      <div className="my-4 rounded-[14px] border border-border bg-surface p-4">
         <p className="text-sm font-medium text-text-primary">{entry.student_name}</p>
         <div className="mt-2 flex items-center gap-2">
           {currentRank ? (
@@ -79,7 +78,7 @@ export function DemotionConfirmModal({
           value={reason}
           onChange={(event) => onReasonChange(event.target.value)}
           placeholder="Explain why this rank correction is needed"
-          className="w-full resize-none rounded-[6px] border border-border bg-surface-raised px-3 py-2 text-sm text-text-primary placeholder:text-muted focus:border-accent focus:outline-none"
+          className="w-full resize-none rounded-[14px] border border-border bg-surface-raised px-3 py-2 text-sm text-text-primary placeholder:text-muted focus:border-accent focus:outline-none"
         />
       </div>
       {error ? (

@@ -2,6 +2,22 @@
 
 All notable Koaryu release changes are tracked here.
 
+## 0.1.3 - 2026-08-19
+
+### Added
+
+- Added a persistent, customizable dashboard with fluid widget movement, resizing, placement, and keyboard-accessible editing controls.
+
+### Fixed
+
+- Corrected overlapping controls and content across dashboard widgets, the Students roster and quick view, Belt Tracker, and Settings staff-role cards.
+- Replaced malformed dashboard remove controls, restored rounded Staff & Roles card corners, and removed redundant workspace status and messaging copy.
+
+### Improved
+
+- Refined the authenticated workspace, Students roster, and Belt Tracker with clearer hierarchy, spacing, responsive behavior, and more polished empty states.
+- Added smoothly sliding selection indicators to Belt Tracker and Schedule segmented controls, including reduced-motion and keyboard support.
+
 ## 0.1.2 - 2026-07-12
 
 ### Added

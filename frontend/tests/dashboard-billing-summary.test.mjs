@@ -3,7 +3,6 @@ import { describe, it } from "node:test";
 
 import {
   canViewDashboardBilling,
-  getDashboardBillingActionKind,
   isDashboardBillingSetupComplete,
   selectDashboardBillingSummary,
 } from "../src/lib/dashboard-billing-summary.ts";
@@ -41,7 +40,7 @@ describe("dashboard billing summary", () => {
         paymentAttentionCount: 2,
         hasPlans: false,
         paymentsReady: false,
-      }
+      },
     );
   });
 
@@ -60,14 +59,14 @@ describe("dashboard billing summary", () => {
         currentRole: "admin",
         summary: hiddenSummary,
       }),
-      false
+      false,
     );
     assert.equal(
       canViewDashboardBilling({
         currentRole: "front_desk",
         summary: null,
       }),
-      true
+      true,
     );
     assert.deepEqual(
       selectDashboardBillingSummary({
@@ -78,7 +77,7 @@ describe("dashboard billing summary", () => {
         paymentAttentionCount: null,
         hasPlans: null,
         paymentsReady: null,
-      }
+      },
     );
   });
 
@@ -92,7 +91,7 @@ describe("dashboard billing summary", () => {
         paymentAttentionCount: 1,
         hasPlans: true,
         paymentsReady: true,
-      }
+      },
     );
     assert.deepEqual(
       selectDashboardBillingSummary({
@@ -103,7 +102,7 @@ describe("dashboard billing summary", () => {
         paymentAttentionCount: null,
         hasPlans: null,
         paymentsReady: null,
-      }
+      },
     );
   });
 
@@ -121,7 +120,7 @@ describe("dashboard billing summary", () => {
           },
         }),
       }),
-      false
+      false,
     );
     assert.equal(
       isDashboardBillingSetupComplete({
@@ -132,42 +131,7 @@ describe("dashboard billing summary", () => {
         },
         summary: null,
       }),
-      true
-    );
-  });
-
-  it("exposes billing actions only for roles that can see billing", () => {
-    const issueSummary = {
-      paymentAttentionCount: 3,
-      hasPlans: true,
-      paymentsReady: true,
-    };
-    const setupSummary = {
-      paymentAttentionCount: null,
-      hasPlans: false,
-      paymentsReady: false,
-    };
-
-    assert.equal(
-      getDashboardBillingActionKind({
-        billingSummary: issueSummary,
-        canSeeBilling: true,
-      }),
-      "payment-issues"
-    );
-    assert.equal(
-      getDashboardBillingActionKind({
-        billingSummary: setupSummary,
-        canSeeBilling: true,
-      }),
-      "payments-setup"
-    );
-    assert.equal(
-      getDashboardBillingActionKind({
-        billingSummary: issueSummary,
-        canSeeBilling: false,
-      }),
-      null
+      true,
     );
   });
 });

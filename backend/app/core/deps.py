@@ -1,14 +1,25 @@
-from typing import Optional
+import asyncio
+import inspect
+import time
+from typing import Any, Awaitable, Callable, Literal, Optional, TypeVar
+
+from httpx import TimeoutException
 
 from fastapi import Depends, Header, HTTPException, Request, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from starlette.concurrency import run_in_threadpool
-from app.core.security import get_user_id_from_token
+from app.core.security import JWKSRefreshInFlight, get_user_id_from_token
+from app.core.request_deadline import request_deadline
 from app.db.supabase import (
     DeadlineBoundSupabaseClient,
     create_operational_alert_supabase_client,
-    create_supabase_client,
 )
+from app.core.provider_lane import (
+    ProviderLaneOperationTimeoutError,
+    ProviderLaneSaturatedError,
+)
+from app.core.provider_runtime import SupabaseProviderRuntime
+from app.services.platform_billing_service import AccessRepairInFlight
 from app.services.studio_scope import (
     resolve_belt_configuration_admin_staff_role_for_user,
     resolve_lead_conversion_manager_staff_role_for_user,
@@ -23,7 +34,13 @@ from supabase import Client
 security = HTTPBearer(auto_error=False)
 ACTIVE_STUDIO_COOKIE = "koaryu-active-studio"
 AUTHENTICATION_REQUIRED_DETAIL = "Invalid authentication token"
+AUTHENTICATION_WAIT_TIMEOUT_SECONDS = 3.0
 OPERATIONAL_ALERT_POSTGREST_TIMEOUT_SECONDS = 1.5
+PROVIDER_CAPACITY_UNAVAILABLE_DETAIL = "Provider capacity is temporarily unavailable."
+PROVIDER_OPERATION_TIMEOUT_DETAIL = "Provider operation timed out."
+ProviderDependency = Client | SupabaseProviderRuntime[Any]
+ProviderLaneName = Literal["interactive", "bulk"]
+ResultT = TypeVar("ResultT")
 
 
 def _authentication_exception() -> HTTPException:
@@ -50,12 +67,85 @@ async def get_current_user_id(
         raise _authentication_exception()
     # JWKS verification can perform a bounded synchronous provider request on a
     # cold cache or key rotation. Keep that I/O off the ASGI event loop.
-    return await run_in_threadpool(get_user_id_from_token, credentials.credentials)
+    timeout = asyncio.timeout(AUTHENTICATION_WAIT_TIMEOUT_SECONDS)
+    try:
+        async with timeout:
+            while True:
+                try:
+                    return await run_in_threadpool(get_user_id_from_token, credentials.credentials)
+                except JWKSRefreshInFlight as pending:
+                    # A disconnected follower must not cancel the shared refresh.
+                    # Always verify this caller's token again after it completes.
+                    await asyncio.shield(asyncio.wrap_future(pending.completion))
+    except TimeoutError:
+        if not timeout.expired():
+            raise
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Authentication keys are temporarily unavailable",
+            headers={"Retry-After": "1"},
+        ) from None
 
 
-async def get_supabase() -> Client:
-    """FastAPI dependency that provides an isolated Supabase admin client."""
-    return create_supabase_client()
+async def get_supabase(request: Request) -> ProviderDependency:
+    """Return the app-owned runtime; tests may override this with a fake Client."""
+    return request.app.state.supabase_provider_runtime
+
+
+async def run_supabase_operation(
+    provider: ProviderDependency,
+    operation: Callable[[Client], ResultT | Awaitable[ResultT]],
+    *,
+    lane: ProviderLaneName = "interactive",
+) -> ResultT:
+    """Run provider work on the owned lane or inline for fake-client overrides."""
+    if isinstance(provider, SupabaseProviderRuntime):
+        remaining = provider.operation_wait_timeout(lane)
+        deadline = request_deadline.get()
+        if deadline is not None:
+            remaining = min(remaining, max(0.0, deadline - time.monotonic()))
+        timeout = asyncio.timeout(remaining)
+        try:
+            async with timeout:
+                run = provider.run_bulk if lane == "bulk" else provider.run_interactive
+                while True:
+                    try:
+                        return await run(operation)
+                    except AccessRepairInFlight as pending:
+                        # Shield the process-wide completion signal from one
+                        # disconnected or timed-out follower. The surrounding
+                        # deadline still bounds this caller's total wait.
+                        await asyncio.shield(asyncio.wrap_future(pending.completion))
+        except ProviderLaneSaturatedError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=PROVIDER_CAPACITY_UNAVAILABLE_DETAIL,
+                headers={"Retry-After": "1"},
+            ) from exc
+        except (ProviderLaneOperationTimeoutError, TimeoutException) as exc:
+            raise HTTPException(
+                status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+                detail=PROVIDER_OPERATION_TIMEOUT_DETAIL,
+                headers={"Retry-After": "1"},
+            ) from exc
+        except TimeoutError as exc:
+            if not timeout.expired():
+                raise
+            provider.record_request_timeout(lane)
+            raise HTTPException(
+                status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+                detail=PROVIDER_OPERATION_TIMEOUT_DETAIL,
+                headers={"Retry-After": "1"},
+            ) from exc
+
+    while True:
+        try:
+            result = operation(provider)
+            if inspect.isawaitable(result):
+                return await result
+            return result
+        except AccessRepairInFlight as pending:
+            await asyncio.shield(asyncio.wrap_future(pending.completion))
 
 
 async def get_operational_alert_supabase() -> DeadlineBoundSupabaseClient:
@@ -85,7 +175,7 @@ async def get_requested_studio_id(
 async def get_current_studio_id(
     user_id: str = Depends(get_current_user_id),
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
-    supabase: Client = Depends(get_supabase),
+    provider: ProviderDependency = Depends(get_supabase),
 ) -> str:
     """
     FastAPI dependency that resolves the studio_id for the current user.
@@ -93,11 +183,14 @@ async def get_current_studio_id(
     user belongs to it. Falls back to a deterministic membership when the
     request does not yet carry active studio state.
     """
-    membership = resolve_staff_role_for_user(
-        supabase,
-        user_id,
-        requested_studio_id,
-        require_platform_subscription=True,
+    membership = await run_supabase_operation(
+        provider,
+        lambda client: resolve_staff_role_for_user(
+            client,
+            user_id,
+            requested_studio_id,
+            require_platform_subscription=True,
+        ),
     )
     return membership["studio_id"]
 
@@ -105,13 +198,16 @@ async def get_current_studio_id(
 async def get_current_write_studio_id(
     user_id: str = Depends(get_current_user_id),
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
-    supabase: Client = Depends(get_supabase),
+    provider: ProviderDependency = Depends(get_supabase),
 ) -> str:
-    membership = resolve_write_staff_role_for_user(
-        supabase,
-        user_id,
-        requested_studio_id,
-        require_platform_subscription=True,
+    membership = await run_supabase_operation(
+        provider,
+        lambda client: resolve_write_staff_role_for_user(
+            client,
+            user_id,
+            requested_studio_id,
+            require_platform_subscription=True,
+        ),
     )
     return membership["studio_id"]
 
@@ -119,26 +215,32 @@ async def get_current_write_studio_id(
 async def get_current_write_staff_role(
     user_id: str = Depends(get_current_user_id),
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
-    supabase: Client = Depends(get_supabase),
+    provider: ProviderDependency = Depends(get_supabase),
 ) -> dict:
-    return resolve_write_staff_role_for_user(
-        supabase,
-        user_id,
-        requested_studio_id,
-        require_platform_subscription=True,
+    return await run_supabase_operation(
+        provider,
+        lambda client: resolve_write_staff_role_for_user(
+            client,
+            user_id,
+            requested_studio_id,
+            require_platform_subscription=True,
+        ),
     )
 
 
 async def get_roster_schedule_manager_studio_id(
     user_id: str = Depends(get_current_user_id),
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
-    supabase: Client = Depends(get_supabase),
+    provider: ProviderDependency = Depends(get_supabase),
 ) -> str:
-    membership = resolve_roster_schedule_manager_staff_role_for_user(
-        supabase,
-        user_id,
-        requested_studio_id,
-        require_platform_subscription=True,
+    membership = await run_supabase_operation(
+        provider,
+        lambda client: resolve_roster_schedule_manager_staff_role_for_user(
+            client,
+            user_id,
+            requested_studio_id,
+            require_platform_subscription=True,
+        ),
     )
     return membership["studio_id"]
 
@@ -146,13 +248,16 @@ async def get_roster_schedule_manager_studio_id(
 async def get_belt_configuration_admin_studio_id(
     user_id: str = Depends(get_current_user_id),
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
-    supabase: Client = Depends(get_supabase),
+    provider: ProviderDependency = Depends(get_supabase),
 ) -> str:
-    membership = resolve_belt_configuration_admin_staff_role_for_user(
-        supabase,
-        user_id,
-        requested_studio_id,
-        require_platform_subscription=True,
+    membership = await run_supabase_operation(
+        provider,
+        lambda client: resolve_belt_configuration_admin_staff_role_for_user(
+            client,
+            user_id,
+            requested_studio_id,
+            require_platform_subscription=True,
+        ),
     )
     return membership["studio_id"]
 
@@ -160,13 +265,16 @@ async def get_belt_configuration_admin_studio_id(
 async def get_promotion_manager_studio_id(
     user_id: str = Depends(get_current_user_id),
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
-    supabase: Client = Depends(get_supabase),
+    provider: ProviderDependency = Depends(get_supabase),
 ) -> str:
-    membership = resolve_promotion_manager_staff_role_for_user(
-        supabase,
-        user_id,
-        requested_studio_id,
-        require_platform_subscription=True,
+    membership = await run_supabase_operation(
+        provider,
+        lambda client: resolve_promotion_manager_staff_role_for_user(
+            client,
+            user_id,
+            requested_studio_id,
+            require_platform_subscription=True,
+        ),
     )
     return membership["studio_id"]
 
@@ -174,13 +282,16 @@ async def get_promotion_manager_studio_id(
 async def get_lead_conversion_manager_studio_id(
     user_id: str = Depends(get_current_user_id),
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
-    supabase: Client = Depends(get_supabase),
+    provider: ProviderDependency = Depends(get_supabase),
 ) -> str:
-    membership = resolve_lead_conversion_manager_staff_role_for_user(
-        supabase,
-        user_id,
-        requested_studio_id,
-        require_platform_subscription=True,
+    membership = await run_supabase_operation(
+        provider,
+        lambda client: resolve_lead_conversion_manager_staff_role_for_user(
+            client,
+            user_id,
+            requested_studio_id,
+            require_platform_subscription=True,
+        ),
     )
     return membership["studio_id"]
 
@@ -188,12 +299,15 @@ async def get_lead_conversion_manager_studio_id(
 async def get_lead_manager_studio_id(
     user_id: str = Depends(get_current_user_id),
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
-    supabase: Client = Depends(get_supabase),
+    provider: ProviderDependency = Depends(get_supabase),
 ) -> str:
-    membership = resolve_lead_manager_staff_role_for_user(
-        supabase,
-        user_id,
-        requested_studio_id,
-        require_platform_subscription=True,
+    membership = await run_supabase_operation(
+        provider,
+        lambda client: resolve_lead_manager_staff_role_for_user(
+            client,
+            user_id,
+            requested_studio_id,
+            require_platform_subscription=True,
+        ),
     )
     return membership["studio_id"]

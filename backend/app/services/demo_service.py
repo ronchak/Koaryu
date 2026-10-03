@@ -57,7 +57,9 @@ class DemoService:
         self.data_access.clear_demo_surface(studio_id)
 
     def _clear_studio_surface(self, studio_id: str, *, include_platform_rows: bool) -> None:
-        self.data_access.clear_studio_surface(studio_id, include_platform_rows=include_platform_rows)
+        self.data_access.clear_studio_surface(
+            studio_id, include_platform_rows=include_platform_rows
+        )
 
     async def clear_studio_data(self, studio_id: str) -> StudioDataClearResponse:
         counts = self._clear_counts(studio_id)
@@ -228,10 +230,16 @@ class DemoService:
 
     async def reset_demo_studio(self, studio_id: str, actor_id: str) -> DemoResetResponse:
         try:
-            self._run_demo_reset_phase("clear_existing_data", lambda: self._clear_demo_surface(studio_id))
-            self._run_demo_reset_phase("update_studio", lambda: self._update_studio_for_demo(studio_id))
+            self._run_demo_reset_phase(
+                "clear_existing_data", lambda: self._clear_demo_surface(studio_id)
+            )
+            self._run_demo_reset_phase(
+                "update_studio", lambda: self._update_studio_for_demo(studio_id)
+            )
             self._seed_demo_surface(studio_id, actor_id)
-            self._run_demo_reset_phase("write_audit_log", lambda: self._write_audit_log(studio_id, actor_id))
+            self._run_demo_reset_phase(
+                "write_audit_log", lambda: self._write_audit_log(studio_id, actor_id)
+            )
         except DemoResetPhaseError as exc:
             original_error = exc.__cause__ or exc
             self._handle_failed_demo_reset(studio_id, actor_id, exc.phase, original_error)

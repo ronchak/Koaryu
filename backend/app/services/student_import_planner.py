@@ -16,77 +16,49 @@ from app.services.student_import_csv import (
 )
 from app.services.student_import_plan_result import build_import_result
 from app.services.student_import_plan_rows import (
-    append_import_note,
     build_import_row_plan,
-    classify_belt_creation_target,
-    normalize_import_status,
-    parse_import_date,
-    resolve_belt_rank_reference,
-    resolve_named_import_reference,
 )
+from app.services.studio_business_date import studio_today_for_studio
 
 
 class StudentImportPlanner:
     def __init__(self, supabase: Optional[Client]):
         self.supabase = supabase
 
-    def parse_import_date(
+    def build_program_lookup(
         self,
-        raw_value: Optional[str],
-        field_label: str,
-    ) -> tuple[Optional[str], Optional[str]]:
-        return parse_import_date(raw_value, field_label)
-
-    def _parse_import_date(
-        self,
-        raw_value: Optional[str],
-        field_label: str,
-    ) -> tuple[Optional[str], Optional[str]]:
-        return self.parse_import_date(raw_value, field_label)
-
-    def build_named_record_lookup(
-        self,
-        table_name: str,
         studio_id: str,
-    ) -> tuple[set[str], dict[str, str], set[str]]:
+        confirmed: Optional[dict[str, dict[str, Any]]] = None,
+    ) -> dict[str, Any]:
         result = (
-            self.supabase.table(table_name)
-            .select("id, name")
+            self.supabase.table("programs")
+            .select("id, name, archived_at")
             .eq("studio_id", studio_id)
             .execute()
         )
-
-        id_lookup: set[str] = set()
+        records = {row["id"]: row for row in result.data or [] if row.get("id")}
+        names: dict[str, list[str]] = defaultdict(list)
+        for record_id, row in records.items():
+            name = normalize_header(row.get("name") or "")
+            if name:
+                names[name].append(record_id)
         name_lookup: dict[str, str] = {}
         ambiguous_names: set[str] = set()
-
-        for row in result.data or []:
-            record_id = row.get("id")
-            record_name = row.get("name")
-            if not record_id or not record_name:
-                continue
-
-            id_lookup.add(record_id)
-            normalized_name = normalize_header(record_name)
-            if not normalized_name:
-                continue
-
-            if normalized_name in name_lookup and name_lookup[normalized_name] != record_id:
-                ambiguous_names.add(normalized_name)
-                name_lookup.pop(normalized_name, None)
-                continue
-
-            if normalized_name not in ambiguous_names:
-                name_lookup[normalized_name] = record_id
-
-        return id_lookup, name_lookup, ambiguous_names
-
-    def _build_named_record_lookup(
-        self,
-        table_name: str,
-        studio_id: str,
-    ) -> tuple[set[str], dict[str, str], set[str]]:
-        return self.build_named_record_lookup(table_name, studio_id)
+        for name, ids in names.items():
+            candidates = [
+                record_id for record_id in ids if not records[record_id].get("archived_at")
+            ] or ids
+            if len(candidates) == 1:
+                name_lookup[name] = candidates[0]
+            else:
+                ambiguous_names.add(name)
+        return {
+            "id_lookup": set(records),
+            "name_lookup": name_lookup,
+            "ambiguous_names": ambiguous_names,
+            "records": records,
+            "confirmed": confirmed or {},
+        }
 
     def build_belt_rank_lookup(self, studio_id: str) -> dict[str, Any]:
         ladders_result = (
@@ -120,11 +92,11 @@ class StudentImportPlanner:
         )
 
         id_lookup: set[str] = set()
-        name_lookup: dict[str, str] = {}
-        ambiguous_names: set[str] = set()
         rank_meta: dict[str, dict[str, Optional[str]]] = {}
         rank_ids_by_name: dict[str, list[str]] = defaultdict(list)
-        program_rank_name_lookup: dict[str, dict[str, list[str]]] = defaultdict(lambda: defaultdict(list))
+        program_rank_name_lookup: dict[str, dict[str, list[str]]] = defaultdict(
+            lambda: defaultdict(list)
+        )
         unscoped_rank_name_lookup: dict[str, list[str]] = defaultdict(list)
 
         for row in result.data or []:
@@ -138,11 +110,6 @@ class StudentImportPlanner:
             normalized_name = normalize_header(record_name)
             if normalized_name:
                 rank_ids_by_name[normalized_name].append(record_id)
-                if normalized_name in name_lookup and name_lookup[normalized_name] != record_id:
-                    ambiguous_names.add(normalized_name)
-                    name_lookup.pop(normalized_name, None)
-                elif normalized_name not in ambiguous_names:
-                    name_lookup[normalized_name] = record_id
 
             ladder = ladder_meta.get(ladder_id, {})
             program_id = ladder.get("program_id")
@@ -158,8 +125,6 @@ class StudentImportPlanner:
 
         return {
             "id_lookup": id_lookup,
-            "name_lookup": name_lookup,
-            "ambiguous_names": ambiguous_names,
             "name_to_rank_ids": {
                 normalized_name: list(rank_ids)
                 for normalized_name, rank_ids in rank_ids_by_name.items()
@@ -181,181 +146,7 @@ class StudentImportPlanner:
             "unscoped_ladder_ids": unscoped_ladder_ids,
             "sole_ladder_id": next(iter(ladder_meta)) if len(ladder_meta) == 1 else None,
             "ladder_count": len(ladder_meta),
-            "rank_count": len(rank_meta),
         }
-
-    def _build_belt_rank_lookup(self, studio_id: str) -> dict[str, Any]:
-        return self.build_belt_rank_lookup(studio_id)
-
-    def resolve_belt_rank_reference(
-        self,
-        raw_value: Optional[str],
-        *,
-        resolved_program_id: Optional[str],
-        raw_program_value: Optional[str],
-        belt_rank_lookup: dict[str, Any],
-    ) -> tuple[Optional[str], Optional[str], Optional[str]]:
-        return resolve_belt_rank_reference(
-            raw_value,
-            resolved_program_id=resolved_program_id,
-            raw_program_value=raw_program_value,
-            belt_rank_lookup=belt_rank_lookup,
-        )
-
-    def _resolve_belt_rank_reference(
-        self,
-        raw_value: Optional[str],
-        *,
-        resolved_program_id: Optional[str],
-        raw_program_value: Optional[str],
-        belt_rank_lookup: dict[str, Any],
-    ) -> tuple[Optional[str], Optional[str], Optional[str]]:
-        return self.resolve_belt_rank_reference(
-            raw_value,
-            resolved_program_id=resolved_program_id,
-            raw_program_value=raw_program_value,
-            belt_rank_lookup=belt_rank_lookup,
-        )
-
-    def classify_belt_creation_target(
-        self,
-        *,
-        resolved_program_id: Optional[str],
-        pending_program_name: Optional[str],
-        raw_program_value: Optional[str],
-        options: CsvImportOptions,
-        belt_rank_lookup: dict[str, Any],
-    ) -> dict[str, Any]:
-        return classify_belt_creation_target(
-            resolved_program_id=resolved_program_id,
-            pending_program_name=pending_program_name,
-            raw_program_value=raw_program_value,
-            options=options,
-            belt_rank_lookup=belt_rank_lookup,
-        )
-
-    def _classify_belt_creation_target(
-        self,
-        *,
-        resolved_program_id: Optional[str],
-        pending_program_name: Optional[str],
-        raw_program_value: Optional[str],
-        options: CsvImportOptions,
-        belt_rank_lookup: dict[str, Any],
-    ) -> dict[str, Any]:
-        return self.classify_belt_creation_target(
-            resolved_program_id=resolved_program_id,
-            pending_program_name=pending_program_name,
-            raw_program_value=raw_program_value,
-            options=options,
-            belt_rank_lookup=belt_rank_lookup,
-        )
-
-    def resolve_named_import_reference(
-        self,
-        raw_value: Optional[str],
-        *,
-        label: str,
-        id_lookup: set[str],
-        name_lookup: dict[str, str],
-        ambiguous_names: set[str],
-    ) -> tuple[Optional[str], Optional[str], Optional[str]]:
-        return resolve_named_import_reference(
-            raw_value,
-            label=label,
-            id_lookup=id_lookup,
-            name_lookup=name_lookup,
-            ambiguous_names=ambiguous_names,
-        )
-
-    def _resolve_named_import_reference(
-        self,
-        raw_value: Optional[str],
-        *,
-        label: str,
-        id_lookup: set[str],
-        name_lookup: dict[str, str],
-        ambiguous_names: set[str],
-    ) -> tuple[Optional[str], Optional[str], Optional[str]]:
-        return self.resolve_named_import_reference(
-            raw_value,
-            label=label,
-            id_lookup=id_lookup,
-            name_lookup=name_lookup,
-            ambiguous_names=ambiguous_names,
-        )
-
-    def append_import_note(self, existing: Optional[str], note: str) -> str:
-        return append_import_note(existing, note)
-
-    def _append_import_note(self, existing: Optional[str], note: str) -> str:
-        return self.append_import_note(existing, note)
-
-    def normalize_import_status(
-        self,
-        raw_value: Optional[str],
-        options: CsvImportOptions,
-        issues: list[CsvImportIssue],
-    ) -> Optional[str]:
-        return normalize_import_status(raw_value, options, issues)
-
-    def _normalize_import_status(
-        self,
-        raw_value: Optional[str],
-        options: CsvImportOptions,
-        issues: list[CsvImportIssue],
-    ) -> Optional[str]:
-        return self.normalize_import_status(raw_value, options, issues)
-
-    def build_import_row_plan(
-        self,
-        raw_row: dict,
-        mapping: dict[str, str],
-        *,
-        options: CsvImportOptions,
-        program_lookup: Optional[tuple[set[str], dict[str, str], set[str]]] = None,
-        belt_rank_lookup: Optional[dict[str, Any]] = None,
-    ) -> dict[str, Any]:
-        return build_import_row_plan(
-            raw_row,
-            mapping,
-            options=options,
-            program_lookup=program_lookup,
-            belt_rank_lookup=belt_rank_lookup,
-        )
-
-    def _build_import_row_plan(
-        self,
-        raw_row: dict,
-        mapping: dict[str, str],
-        *,
-        options: CsvImportOptions,
-        program_lookup: Optional[tuple[set[str], dict[str, str], set[str]]] = None,
-        belt_rank_lookup: Optional[dict[str, Any]] = None,
-    ) -> dict[str, Any]:
-        return self.build_import_row_plan(
-            raw_row,
-            mapping,
-            options=options,
-            program_lookup=program_lookup,
-            belt_rank_lookup=belt_rank_lookup,
-        )
-
-    def build_import_result(
-        self,
-        rows: list[dict[str, Any]],
-        *,
-        total_rows: int,
-    ) -> CsvImportResult:
-        return build_import_result(rows, total_rows=total_rows)
-
-    def _build_import_result(
-        self,
-        rows: list[dict[str, Any]],
-        *,
-        total_rows: int,
-    ) -> CsvImportResult:
-        return self.build_import_result(rows, total_rows=total_rows)
 
     def prepare_import(
         self,
@@ -363,33 +154,61 @@ class StudentImportPlanner:
         mapping: dict[str, str],
         studio_id: Optional[str],
         options: CsvImportOptions,
+        receipts: Optional[dict[str, dict[str, Any]]] = None,
     ) -> tuple[CsvImportResult, list[dict[str, Any]]]:
         validate_csv_import_mapping(mapping)
-        program_lookup = self.build_named_record_lookup("programs", studio_id) if studio_id else None
-        belt_rank_lookup = self.build_belt_rank_lookup(studio_id) if studio_id else None
+        receipts = receipts or {}
+        unfinished = any(str(i) not in receipts.get("student", {}) for i in range(2, len(rows) + 2))
+        has_birth_dates = any(
+            field == "date_of_birth" and any(row.get(column) for row in rows)
+            for column, field in mapping.items()
+        )
+        business_date = (
+            studio_today_for_studio(self.supabase, studio_id)
+            if studio_id and unfinished and has_birth_dates
+            else None
+        )
+        program_lookup = (
+            self.build_program_lookup(studio_id, receipts.get("program"))
+            if studio_id and unfinished
+            else None
+        )
+        belt_rank_lookup = (
+            self.build_belt_rank_lookup(studio_id) if studio_id and unfinished else None
+        )
+        if belt_rank_lookup is not None:
+            belt_rank_lookup["confirmed_ranks"] = {
+                (receipt["context_program_id"], key.split(":", 1)[1]): receipt
+                for key, receipt in receipts.get("rank", {}).items()
+            }
+            unassigned = receipts.get("program", {}).get("__unassigned__", {}).get("program_id")
+            for key, receipt in receipts.get("rank", {}).items():
+                if receipt["context_program_id"] == unassigned:
+                    belt_rank_lookup["confirmed_ranks"][(None, key.split(":", 1)[1])] = receipt
 
         planned_rows: list[dict[str, Any]] = []
         for i, raw_row in enumerate(rows, start=2):
-            row_plan = self.build_import_row_plan(
+            completed = receipts.get("student", {}).get(str(i))
+            if completed is not None:
+                outcome = dict(completed["outcome"])
+                outcome["issues"] = [
+                    CsvImportIssue.model_validate(issue) for issue in outcome["issues"]
+                ]
+                outcome["completed"] = True
+                planned_rows.append(outcome)
+                continue
+            row_plan = build_import_row_plan(
                 raw_row,
                 mapping,
                 options=options,
                 program_lookup=program_lookup,
                 belt_rank_lookup=belt_rank_lookup,
+                business_date=business_date,
             )
             row_plan["row_number"] = i
             planned_rows.append(row_plan)
 
-        return self.build_import_result(planned_rows, total_rows=len(rows)), planned_rows
-
-    def _prepare_import(
-        self,
-        rows: list[dict],
-        mapping: dict[str, str],
-        studio_id: Optional[str],
-        options: CsvImportOptions,
-    ) -> tuple[CsvImportResult, list[dict[str, Any]]]:
-        return self.prepare_import(rows, mapping, studio_id, options)
+        return build_import_result(planned_rows, total_rows=len(rows)), planned_rows
 
     def hydrate_import_result(
         self,
@@ -403,7 +222,7 @@ class StudentImportPlanner:
         imported_count: int = 0,
         idempotency_key: Optional[str] = None,
     ) -> CsvImportResult:
-        result = self.build_import_result(planned_rows, total_rows=total_rows)
+        result = build_import_result(planned_rows, total_rows=total_rows)
         result.created_programs = created_programs or []
         result.created_ladders = created_ladders or []
         result.created_belts = created_belts or []
@@ -411,26 +230,3 @@ class StudentImportPlanner:
         result.imported_count = imported_count
         result.idempotency_key = idempotency_key
         return result
-
-    def _hydrate_import_result(
-        self,
-        planned_rows: list[dict[str, Any]],
-        *,
-        total_rows: int,
-        created_programs: Optional[list[str]] = None,
-        created_ladders: Optional[list[str]] = None,
-        created_belts: Optional[list[str]] = None,
-        imported_without_belt_count: int = 0,
-        imported_count: int = 0,
-        idempotency_key: Optional[str] = None,
-    ) -> CsvImportResult:
-        return self.hydrate_import_result(
-            planned_rows,
-            total_rows=total_rows,
-            created_programs=created_programs,
-            created_ladders=created_ladders,
-            created_belts=created_belts,
-            imported_without_belt_count=imported_without_belt_count,
-            imported_count=imported_count,
-            idempotency_key=idempotency_key,
-        )

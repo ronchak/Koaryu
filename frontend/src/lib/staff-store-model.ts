@@ -52,7 +52,7 @@ export function normalizeStaffInvite(data: StaffInviteCreate): StaffInviteCreate
 
 export function sortStaffMembers(
   members: StaffMember[],
-  currentUserId?: string | null
+  currentUserId?: string | null,
 ): StaffMember[] {
   return [...members].sort((a, b) => {
     if (currentUserId && a.user_id === currentUserId && b.user_id !== currentUserId) return -1;
@@ -79,7 +79,7 @@ export function normalizeStaffConfirmationName(value: string): string {
 
 export function buildStaffDeletionRequest(
   confirmationName: string,
-  reason?: string | null
+  reason?: string | null,
 ): StaffDeletionRequestCreate {
   const payload: StaffDeletionRequestCreate = {
     confirmation_name: normalizeStaffConfirmationName(confirmationName),
@@ -95,24 +95,19 @@ export function countActiveStaffAdmins(members: StaffMember[]): number {
   return members.filter((member) => member.status === "active" && member.role === "admin").length;
 }
 
-export function getPendingInviteRevokeError(
-  members: StaffMember[],
-  id: string
-): string | null {
+export function getPendingInviteRevokeError(members: StaffMember[], id: string): string | null {
   const member = members.find((candidate) => candidate.id === id);
   if (!member) {
     return "Staff member not found.";
   }
-  return member.status === "pending"
-    ? null
-    : "Only pending staff invitations can be revoked.";
+  return member.status === "pending" ? null : "Only pending staff invitations can be revoked.";
 }
 
 export function getStaffLifecyclePreviewError(
   members: StaffMember[],
   id: string,
   action: StaffLifecycleAction,
-  { currentUserId, ownerUserId }: StaffLifecyclePreviewContext = {}
+  { currentUserId, ownerUserId }: StaffLifecyclePreviewContext = {},
 ): string | null {
   const member = members.find((candidate) => candidate.id === id);
   if (!member) {
@@ -128,7 +123,11 @@ export function getStaffLifecyclePreviewError(
   }
 
   if (action === "archive") {
-    if (member.status === "active" && member.role === "admin" && countActiveStaffAdmins(members) <= 1) {
+    if (
+      member.status === "active" &&
+      member.role === "admin" &&
+      countActiveStaffAdmins(members) <= 1
+    ) {
       return "Preview cannot archive the last active admin.";
     }
     return null;
@@ -152,7 +151,7 @@ function applyStaffLifecycleTransition(
   id: string,
   action: "archive" | "unarchive",
   currentUserId?: string | null,
-  nowIso = new Date().toISOString()
+  nowIso = new Date().toISOString(),
 ): { members: StaffMember[]; updated: StaffMember | null } {
   let updated: StaffMember | null = null;
   const nextMembers = members.map((member) => {
@@ -160,9 +159,15 @@ function applyStaffLifecycleTransition(
       return member;
     }
 
-    updated = action === "archive"
-      ? { ...member, status: "archived", archived_at: member.archived_at || nowIso, updated_at: nowIso }
-      : { ...member, status: "active", archived_at: null, updated_at: nowIso };
+    updated =
+      action === "archive"
+        ? {
+            ...member,
+            status: "archived",
+            archived_at: member.archived_at || nowIso,
+            updated_at: nowIso,
+          }
+        : { ...member, status: "active", archived_at: null, updated_at: nowIso };
     return updated;
   });
 
@@ -176,7 +181,7 @@ export function applyStaffArchive(
   members: StaffMember[],
   id: string,
   currentUserId?: string | null,
-  nowIso = new Date().toISOString()
+  nowIso = new Date().toISOString(),
 ) {
   return applyStaffLifecycleTransition(members, id, "archive", currentUserId, nowIso);
 }
@@ -185,7 +190,7 @@ export function applyStaffUnarchive(
   members: StaffMember[],
   id: string,
   currentUserId?: string | null,
-  nowIso = new Date().toISOString()
+  nowIso = new Date().toISOString(),
 ) {
   return applyStaffLifecycleTransition(members, id, "unarchive", currentUserId, nowIso);
 }
@@ -200,7 +205,7 @@ export function buildPreviewStaffDeletionResponse(
   }: {
     now?: Date;
     nowMs?: number;
-  } = {}
+  } = {},
 ): StaffDeletionRequestResponse {
   const requestedAt = now.toISOString();
   const scheduledFor = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
@@ -227,7 +232,7 @@ export function buildPreviewStaffInvite(
   }: {
     now?: Date;
     nowMs?: number;
-  } = {}
+  } = {},
 ): StaffMember {
   const nowIso = now.toISOString();
   const normalized = normalizeStaffInvite(data);
@@ -253,7 +258,7 @@ export function buildPreviewStaffInvite(
 
 export function mergeStaffLegalNameResponse(
   members: StaffMember[],
-  response: StaffLegalNameResponse
+  response: StaffLegalNameResponse,
 ): { members: StaffMember[]; updated: StaffMember | null } {
   let updated: StaffMember | null = null;
   const nextMembers = members.map((member) => {
@@ -276,7 +281,7 @@ export function applyStaffLegalNameUpdate(
   members: StaffMember[],
   userId: string,
   firstName: string,
-  lastName: string
+  lastName: string,
 ): { members: StaffMember[]; updated: StaffMember | null } {
   return mergeStaffLegalNameResponse(members, {
     user_id: userId,
@@ -288,11 +293,11 @@ export function applyStaffLegalNameUpdate(
 export function upsertStaffMember(
   members: StaffMember[],
   nextMember: StaffMember,
-  currentUserId?: string | null
+  currentUserId?: string | null,
 ): StaffMember[] {
   return sortStaffMembers(
     [...members.filter((member) => member.id !== nextMember.id), nextMember],
-    currentUserId
+    currentUserId,
   );
 }
 
@@ -301,7 +306,7 @@ export function applyStaffRoleUpdate(
   id: string,
   role: StaffRoleName,
   currentUserId?: string | null,
-  nowIso = new Date().toISOString()
+  nowIso = new Date().toISOString(),
 ): { members: StaffMember[]; updated: StaffMember | null } {
   let updated: StaffMember | null = null;
   const nextMembers = members.map((member) => {

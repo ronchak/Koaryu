@@ -12,11 +12,16 @@ from app.schemas.billing import (
     BillingMutationCapabilitiesResponse,
     BillingSystemCheck,
     BillingSystemStatusResponse,
+    BillingWorkflowCapabilityResponse,
     BillingWebhookHealthResponse,
     StudioPaymentAccountResponse,
 )
+from app.services.supabase_rpc import execute_required_rpc
+from app.services.billing_workflow_catalog import (
+    LIVE_SCOPE_OPERATIONS,
+    workflow_capabilities_for_role,
+)
 from app.services.billing_connect_accounts import BillingConnectAccountStore
-from app.services.billing_invoice_projection import _to_text
 from app.services.stripe_mutation_policy import (
     StripeMutationPolicy,
     configured_stripe_mode,
@@ -50,16 +55,22 @@ class BillingSystemStatusReporter:
         self.connect_accounts = connect_accounts
         self.payment_account_loader = payment_account_loader
 
-    async def get_system_status(self, studio_id: str) -> BillingSystemStatusResponse:
+    async def get_system_status(
+        self,
+        studio_id: str,
+        actor_role: str = "admin",
+    ) -> BillingSystemStatusResponse:
         checked_at = datetime.now(timezone.utc).isoformat()
         checks: list[BillingSystemCheck] = []
 
         def add_check(name: str, passed: bool, detail: str, *, warn: bool = False) -> None:
-            checks.append(BillingSystemCheck(
-                name=name,
-                status="pass" if passed else ("warn" if warn else "fail"),
-                detail=detail,
-            ))
+            checks.append(
+                BillingSystemCheck(
+                    name=name,
+                    status="pass" if passed else ("warn" if warn else "fail"),
+                    detail=detail,
+                )
+            )
 
         self._add_configuration_checks(add_check, studio_id=studio_id)
 
@@ -100,7 +111,9 @@ class BillingSystemStatusReporter:
             self._add_connect_account_checks(add_check, account_response)
 
         try:
-            self.supabase.table("studio_payment_accounts").select("studio_id").eq("studio_id", studio_id).limit(1).execute()
+            self.supabase.table("studio_payment_accounts").select("studio_id").eq(
+                "studio_id", studio_id
+            ).limit(1).execute()
             add_check("Supabase billing read", True, "Supabase billing tables are reachable.")
         except Exception as exc:
             error_id = uuid4().hex
@@ -115,26 +128,24 @@ class BillingSystemStatusReporter:
                 f"Supabase billing tables are not reachable. Reference: {error_id}",
             )
 
-        platform_webhooks = self.webhook_health(None)
-        connect_webhooks = (
-            self.webhook_health(account_response.stripe_connected_account_id)
-            if account_response.stripe_connected_account_id
-            else BillingWebhookHealthResponse()
+        platform_webhooks, connect_webhooks = self.webhook_health_pair(
+            account_response.stripe_connected_account_id
         )
         self._add_webhook_checks(add_check, platform_webhooks, connect_webhooks)
 
         stripe_mode = configured_stripe_mode(self.settings)
         ready_for_configured_mode = all(check.status == "pass" for check in checks)
+        authorization_store = StudioLiveBillingAuthorizationStore(self.supabase)
         live_payments_authorized = StripeMutationPolicy(
             self.settings,
-            authorization_store=StudioLiveBillingAuthorizationStore(self.supabase),
+            authorization_store=authorization_store,
         ).live_payments_authorized(studio_id=studio_id)
         account_id = account_response.stripe_connected_account_id
         mutation_policy = StripeMutationPolicy(
             self.settings,
-            authorization_store=StudioLiveBillingAuthorizationStore(self.supabase),
+            authorization_store=authorization_store,
         )
-        onboarding_authorization_store = StudioLiveBillingAuthorizationStore(self.supabase)
+        onboarding_authorization_store = authorization_store
         live_billing_enabled = getattr(self.settings, "LIVE_BILLING_ENABLED", False) is True
         onboarding_preflight_state = (
             onboarding_authorization_store.connect_onboarding_preflight_state(
@@ -164,28 +175,60 @@ class BillingSystemStatusReporter:
             )
         mutation_capabilities = BillingMutationCapabilitiesResponse(
             core_subscription=self._mutation_authorized(
-                mutation_policy, "core_checkout_session.create", studio_id, None,
+                mutation_policy,
+                "core_checkout_session.create",
+                studio_id,
+                None,
             ),
             connect_onboarding=connect_onboarding_authorized,
             connect_payments=self._mutation_authorized(
-                mutation_policy, "connected_invoice.create", studio_id, account_id,
+                mutation_policy,
+                "connected_capability.readiness",
+                studio_id,
+                account_id,
             ),
         )
+        allowed_operations = (
+            authorization_store.current_allowed_operations(studio_id=studio_id)
+            if stripe_mode == "live"
+            else {
+                scope: frozenset(operations) for scope, operations in LIVE_SCOPE_OPERATIONS.items()
+            }
+        )
+        workflow_capabilities = [
+            BillingWorkflowCapabilityResponse(**capability)
+            for capability in workflow_capabilities_for_role(
+                actor_role,
+                stripe_mode=stripe_mode,
+                scope_ready={
+                    "core_subscription": mutation_capabilities.core_subscription,
+                    "connect_onboarding": mutation_capabilities.connect_onboarding,
+                    "connect_payments": mutation_capabilities.connect_payments,
+                },
+                allowed_operations=allowed_operations,
+                transition_scheduler_ready=bool(
+                    getattr(
+                        self.settings,
+                        "BILLING_TRANSITION_SCHEDULER_ENABLED",
+                        False,
+                    )
+                ),
+            )
+        ]
         return BillingSystemStatusResponse(
             studio_id=studio_id,
             configured_stripe_mode=stripe_mode,
             ready_for_configured_mode=ready_for_configured_mode,
             live_payments_authorized=live_payments_authorized,
             ready_for_live_payments=(
-                stripe_mode == "live"
-                and live_payments_authorized
-                and ready_for_configured_mode
+                stripe_mode == "live" and live_payments_authorized and ready_for_configured_mode
             ),
             checked_at=checked_at,
             payment_account=account_response,
             platform_webhooks=platform_webhooks,
             connect_webhooks=connect_webhooks,
             mutation_capabilities=mutation_capabilities,
+            workflow_capabilities=workflow_capabilities,
             checks=checks,
         )
 
@@ -202,110 +245,45 @@ class BillingSystemStatusReporter:
         except Exception:
             return False
 
-    def webhook_health(self, account_id: Optional[str]) -> BillingWebhookHealthResponse:
+    def webhook_health_pair(
+        self, account_id: Optional[str]
+    ) -> tuple[BillingWebhookHealthResponse, BillingWebhookHealthResponse]:
         try:
-            latest_processed_query = (
-                self.supabase.table("stripe_events")
-                .select("type, processed_at")
-                .eq("processing_status", "processed")
-                .not_.is_("processed_at", "null")
-                .order("processed_at", desc=True)
-                .limit(1)
+            result = execute_required_rpc(
+                self.supabase,
+                "billing_webhook_health",
+                {
+                    "p_account_id": account_id,
+                    "p_expected_livemode": self._expected_stripe_livemode(),
+                    "p_stale_before": (
+                        datetime.now(timezone.utc) - BILLING_WEBHOOK_PROCESSING_STALE_AFTER
+                    ).isoformat(),
+                },
             )
-            latest_processed_rows = (
-                self._scope_webhook_query(latest_processed_query, account_id).execute().data or []
+            platform = BillingWebhookHealthResponse.model_validate(result.data["platform"])
+            connected = (
+                BillingWebhookHealthResponse.model_validate(result.data[account_id])
+                if account_id
+                else BillingWebhookHealthResponse()
             )
-            latest_processed = latest_processed_rows[0] if latest_processed_rows else None
-            expected_livemode = self._expected_stripe_livemode()
-            pending_count = self._count_webhook_events(
-                account_id,
-                processing_status="pending",
-            )
-            processing_count = self._count_webhook_events(
-                account_id,
-                processing_status="processing",
-            )
-            failed_count = self._count_webhook_events(
-                account_id,
-                processing_status="failed",
-            )
-            stale_processing_count = self._count_webhook_events(
-                account_id,
-                processing_status="processing",
-                processing_started_before=(
-                    datetime.now(timezone.utc) - BILLING_WEBHOOK_PROCESSING_STALE_AFTER
-                ),
-            )
-            stale_processing_count += self._count_webhook_events(
-                account_id,
-                processing_status="processing",
-                processing_started_is_null=True,
-                created_before=(
-                    datetime.now(timezone.utc) - BILLING_WEBHOOK_PROCESSING_STALE_AFTER
-                ),
-            )
-            mode_mismatch_count = (
-                self._count_webhook_events(
-                    account_id,
-                    livemode_not=expected_livemode,
-                )
-                if expected_livemode is not None
-                else 0
-            )
+            return platform, connected
         except Exception as exc:
             error_id = uuid4().hex
             self._log_readiness_exception(
-                "Stripe webhook readiness query failed",
-                exc,
-                error_id=error_id,
+                "Stripe webhook readiness query failed", exc, error_id=error_id
             )
-            return BillingWebhookHealthResponse(
-                stripe_account_id=account_id,
-                failed_count=1,
-                stale_processing_count=0,
-                error_reference=error_id,
+            return (
+                BillingWebhookHealthResponse(failed_count=1, error_reference=error_id),
+                BillingWebhookHealthResponse(
+                    stripe_account_id=account_id, failed_count=1, error_reference=error_id
+                )
+                if account_id
+                else BillingWebhookHealthResponse(),
             )
 
-        return BillingWebhookHealthResponse(
-            stripe_account_id=account_id,
-            latest_processed_at=_to_text((latest_processed or {}).get("processed_at")),
-            latest_event_type=(latest_processed or {}).get("type"),
-            pending_count=pending_count,
-            processing_count=processing_count,
-            failed_count=failed_count,
-            stale_processing_count=stale_processing_count,
-            mode_mismatch_count=mode_mismatch_count,
-        )
-
-    def _count_webhook_events(
-        self,
-        account_id: Optional[str],
-        *,
-        processing_status: Optional[str] = None,
-        processing_started_before: Optional[datetime] = None,
-        processing_started_is_null: bool = False,
-        created_before: Optional[datetime] = None,
-        livemode_not: Optional[bool] = None,
-    ) -> int:
-        query = self.supabase.table("stripe_events").select("id", count="exact").limit(1)
-        query = self._scope_webhook_query(query, account_id)
-        if processing_status is not None:
-            query = query.eq("processing_status", processing_status)
-        if processing_started_before is not None:
-            query = query.lte("processing_started_at", processing_started_before.isoformat())
-        if processing_started_is_null:
-            query = query.is_("processing_started_at", "null")
-        if created_before is not None:
-            query = query.lte("created_at", created_before.isoformat())
-        if livemode_not is not None:
-            query = query.neq("livemode", livemode_not)
-        return int(query.execute().count or 0)
-
-    @staticmethod
-    def _scope_webhook_query(query: Any, account_id: Optional[str]):
-        if account_id:
-            return query.eq("stripe_account_id", account_id)
-        return query.is_("stripe_account_id", "null")
+    def webhook_health(self, account_id: Optional[str]) -> BillingWebhookHealthResponse:
+        platform, connected = self.webhook_health_pair(account_id)
+        return connected if account_id else platform
 
     def _add_configuration_checks(self, add_check: Callable[..., None], *, studio_id: str) -> None:
         stripe_mode = configured_stripe_mode(self.settings)
@@ -337,17 +315,23 @@ class BillingSystemStatusReporter:
         add_check(
             "Koaryu Core price",
             bool(getattr(self.settings, "STRIPE_KOARYU_CORE_PRICE_ID", "")),
-            "Koaryu Core price ID is configured." if getattr(self.settings, "STRIPE_KOARYU_CORE_PRICE_ID", "") else "STRIPE_KOARYU_CORE_PRICE_ID is missing.",
+            "Koaryu Core price ID is configured."
+            if getattr(self.settings, "STRIPE_KOARYU_CORE_PRICE_ID", "")
+            else "STRIPE_KOARYU_CORE_PRICE_ID is missing.",
         )
         add_check(
             "Platform webhook secret",
             bool(getattr(self.settings, "STRIPE_PLATFORM_WEBHOOK_SECRET", "")),
-            "Platform webhook signature secret is configured." if getattr(self.settings, "STRIPE_PLATFORM_WEBHOOK_SECRET", "") else "STRIPE_PLATFORM_WEBHOOK_SECRET is missing.",
+            "Platform webhook signature secret is configured."
+            if getattr(self.settings, "STRIPE_PLATFORM_WEBHOOK_SECRET", "")
+            else "STRIPE_PLATFORM_WEBHOOK_SECRET is missing.",
         )
         add_check(
             "Connect webhook secret",
             bool(getattr(self.settings, "STRIPE_CONNECT_WEBHOOK_SECRET", "")),
-            "Connect webhook signature secret is configured." if getattr(self.settings, "STRIPE_CONNECT_WEBHOOK_SECRET", "") else "STRIPE_CONNECT_WEBHOOK_SECRET is missing.",
+            "Connect webhook signature secret is configured."
+            if getattr(self.settings, "STRIPE_CONNECT_WEBHOOK_SECRET", "")
+            else "STRIPE_CONNECT_WEBHOOK_SECRET is missing.",
         )
 
     def _add_connect_account_checks(
@@ -358,23 +342,32 @@ class BillingSystemStatusReporter:
         add_check(
             "Connect account",
             bool(account_response.stripe_connected_account_id),
-            "Stripe Connect account exists." if account_response.stripe_connected_account_id else "Studio has not connected Stripe Payments.",
+            "Stripe Connect account exists."
+            if account_response.stripe_connected_account_id
+            else "Studio has not connected Stripe Payments.",
         )
         add_check(
             "Connect charges",
             account_response.charges_enabled,
-            "Connected account can accept charges." if account_response.charges_enabled else "Connected account cannot accept charges yet.",
+            "Connected account can accept charges."
+            if account_response.charges_enabled
+            else "Connected account cannot accept charges yet.",
         )
         add_check(
             "Connect payouts",
             account_response.payouts_enabled,
-            "Connected account payouts are enabled." if account_response.payouts_enabled else "Connected account payouts are not enabled yet.",
+            "Connected account payouts are enabled."
+            if account_response.payouts_enabled
+            else "Connected account payouts are not enabled yet.",
             warn=account_response.charges_enabled,
         )
         add_check(
             "Connect requirements",
             not account_response.requirements_due,
-            "No currently due Connect requirements." if not account_response.requirements_due else "Connect has currently due requirements: " + ", ".join(account_response.requirements_due),
+            "No currently due Connect requirements."
+            if not account_response.requirements_due
+            else "Connect has currently due requirements: "
+            + ", ".join(account_response.requirements_due),
         )
 
     def _add_webhook_checks(

@@ -9,14 +9,9 @@ export default function Custom500Page() {
       statusCode="500"
       eyebrow="Server error"
       title="The app stumbled while loading this view."
-      description="This is usually temporary. Your data is protected, and you can retry from the dashboard while the request settles."
+      description="Return to the dashboard or reload this page to try again."
       icon={ServerCrash}
       tone="danger"
-      diagnostics={[
-        { label: "Request", value: "failed", state: "bad" },
-        { label: "App shell", value: "online", state: "ok" },
-        { label: "Recovery", value: "ready", state: "idle" },
-      ]}
       actions={
         <>
           <StatusAction href="/dashboard" icon={Home}>

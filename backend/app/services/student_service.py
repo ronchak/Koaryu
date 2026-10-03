@@ -1,13 +1,25 @@
+from datetime import date
 from typing import Any, Optional
 from supabase import Client
 from fastapi import UploadFile
 from app.schemas.student import (
-    StudentCreate, StudentUpdate, StudentResponse, StudentListResponse,
+    StudentCreate,
+    StudentUpdate,
+    StudentResponse,
+    StudentListResponse,
     GuardianResponse,
-    CsvImportOptions, CsvImportResult,
-    BulkTagUpdate, BulkStatusUpdate,
-    StudentListSortDir, StudentListSortKey, StudentStatus,
-    StudentProgramMembershipCreate, StudentProgramMembershipResponse, StudentProgramMembershipUpdate,
+    CsvImportOptions,
+    CsvImportResult,
+    BulkTagUpdate,
+    BulkStatusUpdate,
+    BulkStudentArchiveRequest,
+    StudentListSortDir,
+    StudentListSortKey,
+    StudentStatus,
+    StudentRosterPageResponse,
+    StudentProgramMembershipCreate,
+    StudentProgramMembershipResponse,
+    StudentProgramMembershipUpdate,
 )
 from app.services.student_bulk_actions import StudentBulkActions
 from app.services.student_crud_actions import StudentCrudActions
@@ -23,6 +35,9 @@ from app.services.student_photo_actions import StudentPhotoActions
 from app.services.student_photo_store import StudentPhotoStore
 from app.services.student_program_memberships import StudentProgramMembershipStore
 from app.services.student_response_builder import PHOTO_URL_UNSET, StudentResponseBuilder
+from app.services.student_roster_query import StudentRosterQuery, fetch_student_roster_page
+from app.services.student_age import is_minor_on_date
+from app.services.studio_business_date import studio_today_for_studio
 from app.services.student_write_payload import (
     prepare_student_write_payload,
 )
@@ -80,15 +95,8 @@ class StudentService:
 
     # ---- Helpers ----
 
-    def _prepare_student_write(self, payload: dict, *, set_default_is_minor: bool) -> dict:
-        return prepare_student_write_payload(payload, set_default_is_minor=set_default_is_minor)
-
-    def _fetch_memberships_for_student(
-        self,
-        student_id: str,
-        studio_id: Optional[str] = None,
-    ) -> list[StudentProgramMembershipResponse]:
-        return self._student_responses().fetch_memberships_for_student(student_id, studio_id)
+    def _prepare_student_write(self, payload: dict, *, for_creation: bool) -> dict:
+        return prepare_student_write_payload(payload, for_creation=for_creation)
 
     def rows_to_responses(
         self,
@@ -96,11 +104,13 @@ class StudentService:
         *,
         include_guardians: bool = True,
         include_photo_urls: bool = True,
+        today: Optional[date] = None,
     ) -> list[StudentResponse]:
         return self._student_responses().rows_to_responses(
             rows,
             include_guardians=include_guardians,
             include_photo_urls=include_photo_urls,
+            today=today,
         )
 
     def row_to_response(
@@ -109,12 +119,14 @@ class StudentService:
         guardians: Optional[list[GuardianResponse]] = None,
         memberships: Optional[list[StudentProgramMembershipResponse]] = None,
         photo_url: Any = PHOTO_URL_UNSET,
+        today: Optional[date] = None,
     ) -> StudentResponse:
         return self._student_responses().row_to_response(
             row,
             guardians=guardians,
             memberships=memberships,
             photo_url=photo_url,
+            today=today,
         )
 
     # ---- CRUD ----
@@ -147,6 +159,49 @@ class StudentService:
             page_size=page_size,
         )
 
+    def list_roster_page(
+        self,
+        studio_id: str,
+        *,
+        full_roster: bool = False,
+        search: Optional[str] = None,
+        status_filter: Optional[StudentStatus] = None,
+        program_id: Optional[str] = None,
+        inactivity_days: Optional[int] = None,
+        new_student_window: Optional[str] = None,
+        today: Optional[date] = None,
+        cursor: Optional[str] = None,
+        page_size: int = 50,
+        sort_by: StudentListSortKey = "name",
+        sort_dir: StudentListSortDir = "asc",
+    ) -> StudentRosterPageResponse:
+        query = StudentRosterQuery.build(
+            studio_id,
+            full_roster=full_roster,
+            search=search,
+            status=status_filter,
+            program_id=program_id,
+            inactivity_days=inactivity_days,
+            new_student_window=new_student_window,
+            today=today,
+            sort_by=sort_by,
+            sort_dir=sort_dir,
+            page_size=page_size,
+        )
+        page = fetch_student_roster_page(self.supabase, query, cursor=cursor)
+        dated_items = [item for item in page.items if item.date_of_birth]
+        if dated_items:
+            reference_date = studio_today_for_studio(self.supabase, studio_id)
+            for item in dated_items:
+                item.is_minor = is_minor_on_date(item.date_of_birth, reference_date)
+        photo_urls = self._student_photos().create_signed_urls(
+            [item.photo_path for item in page.items if item.photo_path]
+        )
+        for item in page.items:
+            if item.photo_path:
+                item.photo_url = photo_urls.get(item.photo_path)
+        return page
+
     async def create_student(
         self, data: StudentCreate, studio_id: str, actor_id: str
     ) -> StudentResponse:
@@ -169,6 +224,24 @@ class StudentService:
     ) -> StudentResponse:
         return await self._student_photo_actions().upload(student_id, studio_id, actor_id, file)
 
+    def upload_validated_student_photo(
+        self,
+        student_id: str,
+        studio_id: str,
+        actor_id: str,
+        content: bytes,
+        content_type: str,
+        extension: str,
+    ) -> StudentResponse:
+        return self._student_photo_actions().upload_validated(
+            student_id,
+            studio_id,
+            actor_id,
+            content,
+            content_type,
+            extension,
+        )
+
     async def delete_student_photo(
         self,
         student_id: str,
@@ -177,9 +250,7 @@ class StudentService:
     ) -> StudentResponse:
         return await self._student_photo_actions().delete(student_id, studio_id, actor_id)
 
-    async def soft_delete_student(
-        self, student_id: str, studio_id: str, actor_id: str
-    ) -> None:
+    async def soft_delete_student(self, student_id: str, studio_id: str, actor_id: str) -> None:
         await self._crud_actions().soft_delete_student(student_id, studio_id, actor_id)
 
     async def list_program_memberships(
@@ -206,7 +277,9 @@ class StudentService:
         studio_id: str,
         actor_id: str,
     ) -> StudentProgramMembershipResponse:
-        return await self._membership_actions().update(student_id, membership_id, data, studio_id, actor_id)
+        return await self._membership_actions().update(
+            student_id, membership_id, data, studio_id, actor_id
+        )
 
     async def remove_program_membership(
         self,
@@ -219,15 +292,18 @@ class StudentService:
 
     # ---- Bulk Actions ----
 
-    async def bulk_update_tags(
-        self, data: BulkTagUpdate, studio_id: str, actor_id: str
-    ) -> int:
+    async def bulk_update_tags(self, data: BulkTagUpdate, studio_id: str, actor_id: str) -> int:
         return await self._bulk_actions().update_tags(data, studio_id, actor_id)
 
     async def bulk_update_status(
         self, data: BulkStatusUpdate, studio_id: str, actor_id: str
     ) -> int:
         return await self._bulk_actions().update_status(data, studio_id, actor_id)
+
+    async def archive_students(
+        self, data: BulkStudentArchiveRequest, studio_id: str, actor_id: str
+    ) -> int:
+        return await self._bulk_actions().archive_students(data, studio_id, actor_id)
 
     # ---- CSV Import ----
 
@@ -251,7 +327,9 @@ class StudentService:
     ) -> CsvImportResult:
         """Validate rows against the mapping. Returns a structured result."""
         effective_options = options or CsvImportOptions()
-        result, _ = self._import_planner().prepare_import(rows, mapping, studio_id, effective_options)
+        result, _ = self._import_planner().prepare_import(
+            rows, mapping, studio_id, effective_options
+        )
         return result
 
     async def execute_import(

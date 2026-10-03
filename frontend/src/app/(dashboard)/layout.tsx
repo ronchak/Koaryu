@@ -2,13 +2,18 @@
 
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { clearActiveStudioIdCookie, clearStudioStateCookie } from "@/lib/studio-state-cookie";
+import { clearStoredStudioSessionCookies } from "@/lib/store-session-cookies";
 import { DashboardRouteTransition } from "@/components/dashboard-route-transition";
+import { DashboardSlugBand } from "@/components/dashboard-shell";
+import { DashboardIdentitySkeleton } from "@/components/dashboard-identity-skeleton";
+import { DashboardShellReadiness } from "@/components/dashboard-shell-readiness";
 import { Sidebar } from "@/components/sidebar";
+import { useTheme } from "@/components/theme-provider";
 import { LegalNameBlockingScreen } from "@/components/account/legal-name-blocking-screen";
-import { StoreProvider, useStudioStore } from "@/lib/store";
+import { StoreProvider, useProgramStore, useStudioStore } from "@/lib/store";
 import { shouldBlockForLegalName } from "@/lib/legal-name-model";
 import { useState } from "react";
+import styles from "@/components/dashboard-shell.module.css";
 
 function DashboardInner({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -16,14 +21,21 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isSigningOut, setIsSigningOut] = useState(false);
   const [signOutError, setSignOutError] = useState("");
+  const { navigationPlacement } = useTheme();
+  const { programsLoaded, programsLoadError, refreshPrograms } = useProgramStore();
   const {
     currentRole,
     legalFirstName,
     legalLastName,
     staffProfilesAvailable,
+    identityReady,
     studioName,
+    studioLoadError,
     userEmail,
     userName,
+    identityLoadError,
+    retryInitialization,
+    identityGeneration,
   } = useStudioStore();
 
   const isLegalNameBlocked = shouldBlockForLegalName({
@@ -42,18 +54,32 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
       if (error) {
         throw error;
       }
-      clearStudioStateCookie();
-      clearActiveStudioIdCookie();
+      clearStoredStudioSessionCookies();
       router.push("/login");
       router.refresh();
     } catch (error) {
-      setSignOutError(error instanceof Error ? error.message : "Could not sign out. Please try again.");
+      setSignOutError(
+        error instanceof Error ? error.message : "Could not sign out. Please try again.",
+      );
       setIsSigningOut(false);
     }
   }
 
   return (
-    <div className="min-h-screen">
+    <div
+      className={styles.shellRoot}
+      data-koaryu-dashboard-shell="true"
+      data-navigation-placement={navigationPlacement}
+      data-spine-collapsed={navigationPlacement === "side" && isSidebarCollapsed ? "true" : "false"}
+    >
+      <a href="#main-content" className={styles.skipLink}>
+        Skip to main content
+      </a>
+      <DashboardShellReadiness
+        identityGeneration={identityGeneration}
+        identityReady={identityReady}
+        shellVisible={!isLegalNameBlocked}
+      />
       {signOutError && (
         <div className="fixed bottom-4 left-1/2 z-[70] w-[calc(100vw-2rem)] max-w-sm -translate-x-1/2 rounded-[6px] border border-danger/25 bg-surface px-4 py-3 text-sm text-text-primary shadow-2xl shadow-black/30">
           <div className="flex items-start justify-between gap-3">
@@ -68,7 +94,13 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
           </div>
         </div>
       )}
-      {isLegalNameBlocked ? (
+      {!identityReady ? (
+        <DashboardIdentitySkeleton
+          placement={navigationPlacement}
+          error={identityLoadError}
+          onRetry={retryInitialization}
+        />
+      ) : isLegalNameBlocked ? (
         <LegalNameBlockingScreen onSignOut={handleSignOut} isSigningOut={isSigningOut} />
       ) : (
         <>
@@ -79,15 +111,38 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
             role={currentRole}
             onSignOut={handleSignOut}
             isSigningOut={isSigningOut}
+            placement={navigationPlacement}
             isCollapsed={isSidebarCollapsed}
             onToggleCollapsed={() => setIsSidebarCollapsed((current) => !current)}
           />
-          <main
-            className={`
-              flex min-h-screen flex-col transition-[margin-left] duration-200 ease-out motion-reduce:transition-none
-              ${isSidebarCollapsed ? "lg:ml-[88px]" : "lg:ml-[240px]"}
-            `}
-          >
+          <main id="main-content" tabIndex={-1} className={styles.main}>
+            <DashboardSlugBand role={currentRole} studioName={studioName} />
+            {studioLoadError && (
+              <div role="alert" className="p-4 text-sm">
+                <p>{studioLoadError}</p>
+                <button
+                  type="button"
+                  onClick={retryInitialization}
+                  className="mt-2 rounded border border-border px-3 py-2"
+                >
+                  Retry studio details
+                </button>
+              </div>
+            )}
+            {!programsLoaded && programsLoadError && (
+              <div role="alert" className="p-4 text-sm">
+                <p>Program options are unavailable. {programsLoadError}</p>
+                <button
+                  type="button"
+                  onClick={() =>
+                    void refreshPrograms({ includeArchived: true }).catch(() => undefined)
+                  }
+                  className="mt-2 rounded border border-border px-3 py-2"
+                >
+                  Retry programs
+                </button>
+              </div>
+            )}
             <DashboardRouteTransition>{children}</DashboardRouteTransition>
           </main>
         </>
@@ -96,11 +151,7 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
   );
 }
 
-export default function DashboardLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   return (
     <StoreProvider>
       <DashboardInner>{children}</DashboardInner>

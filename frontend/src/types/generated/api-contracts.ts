@@ -146,6 +146,40 @@ export interface ApiBeltRankUpdate {
   tip_color_hex?: string | null;
 }
 
+export interface ApiBillingEnrollmentPageResponse {
+  items: ApiStudentBillingEnrollmentResponse[];
+  next_cursor?: string | null;
+  complete: boolean;
+}
+
+export interface ApiBillingEnrollmentScheduledTransitionResponse {
+  intent_id: string;
+  revision: number;
+}
+
+export interface ApiBillingEnrollmentTransitionProcessResponse {
+  claimed: number;
+  completed: number;
+  reconciliation_required: number;
+  failed: number;
+}
+
+export interface ApiBillingEnrollmentTransitionRequest {
+  reason_code?: string;
+}
+
+export interface ApiBillingEnrollmentTransitionResponse {
+  outcome: string;
+  requested_caller_request_key?: string | null;
+  intent: Record<string, unknown>;
+  operation?: Record<string, unknown> | null;
+}
+
+export interface ApiBillingEnrollmentTransitionRevokeRequest {
+  reason_code?: string;
+  expected_revision: number;
+}
+
 export interface ApiBillingInvoiceCreate {
   payer_id: string;
   student_id?: string | null;
@@ -169,6 +203,12 @@ export interface ApiBillingInvoiceItemCreate {
   billing_plan_id?: string | null;
 }
 
+export interface ApiBillingInvoicePageResponse {
+  items: ApiBillingInvoiceResponse[];
+  next_cursor?: string | null;
+  complete: boolean;
+}
+
 export interface ApiBillingInvoiceResponse {
   id: string;
   studio_id: string;
@@ -187,6 +227,7 @@ export interface ApiBillingInvoiceResponse {
   amount_due_cents: number;
   amount_paid_cents: number;
   amount_remaining_cents: number;
+  invoice_receivable_amount_cents: number;
   currency: string;
   hosted_invoice_url?: string | null;
   invoice_pdf?: string | null;
@@ -200,6 +241,29 @@ export interface ApiBillingInvoiceResponse {
   external: boolean;
   created_at: string;
   updated_at: string;
+}
+
+export interface ApiBillingLandingAggregatesResponse {
+  active_student_count: number;
+  active_subscription_count: number;
+  failed_payer_count: number;
+  open_invoice_amount_cents: number;
+  has_billing_plans: boolean;
+  has_family_accounts: boolean;
+  has_student_billing: boolean;
+  has_collection_history: boolean;
+  payment_cohort: ApiBillingPaymentCohortSummaryResponse;
+}
+
+export interface ApiBillingLandingResponse {
+  studio_id: string;
+  observed_at: string;
+  system_status?: ApiBillingSystemStatusResponse | null;
+  payment_account?: ApiStudioPaymentAccountResponse | null;
+  platform_status?: ApiPlatformBillingStatusResponse | null;
+  financial_access: "available" | "subscription_required" | "unavailable";
+  aggregates?: ApiBillingLandingAggregatesResponse | null;
+  errors: string[];
 }
 
 export interface ApiBillingLinkResponse {
@@ -216,7 +280,6 @@ export interface ApiBillingPayerAutopaySetupRequest {
   success_url?: string | null;
   cancel_url?: string | null;
   return_url?: string | null;
-  terms_accepted?: boolean;
 }
 
 export interface ApiBillingPayerCreate {
@@ -256,10 +319,16 @@ export interface ApiBillingPayerResponse {
   autopay_authorized_at?: string | null;
   autopay_disabled_at?: string | null;
   autopay_terms_accepted_at?: string | null;
-  billing_status: "current" | "upcoming" | "past_due" | "failed" | "unpaid" | "externally_paid" | "no_payment_method" | "no_billing_plan";
+  billing_status: "current" | "upcoming" | "past_due" | "failed" | "outstanding" | "uncollectible" | "unpaid" | "externally_paid" | "no_payment_method" | "no_billing_plan";
   balance_cents: number;
+  overdue_balance_cents?: number | null;
+  uncollectible_balance_cents?: number | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface ApiBillingPayerSyncRequest {
+  test_clock_id?: string | null;
 }
 
 export interface ApiBillingPayerUpdate {
@@ -278,11 +347,20 @@ export interface ApiBillingPaymentCohortSummaryResponse {
   period_end: string;
   timezone: "UTC";
   payment_count: number;
+  gross_paid_amount_cents: number;
+  refunded_amount_cents: number;
+  disputed_amount_cents: number;
   stripe_net_amount_cents: number;
   external_net_amount_cents: number;
   net_amount_cents: number;
-  scope: "payment_cohort_net_of_cumulative_refunds";
+  scope: "payment_cohort_net_of_confirmed_adjustments";
   disclosure: string;
+}
+
+export interface ApiBillingPaymentPageResponse {
+  items: ApiBillingPaymentResponse[];
+  next_cursor?: string | null;
+  complete: boolean;
 }
 
 export interface ApiBillingPaymentResponse {
@@ -295,9 +373,11 @@ export interface ApiBillingPaymentResponse {
   stripe_payment_intent_id?: string | null;
   stripe_charge_id?: string | null;
   stripe_account_id?: string | null;
+  connect_account_generation?: number | null;
   stripe_payment_method_id?: string | null;
   status: "pending" | "processing" | "succeeded" | "failed" | "refunded" | "disputed" | "externally_recorded";
   amount_cents: number;
+  gross_paid_amount_cents: number;
   currency: string;
   payment_method_type?: string | null;
   external_method?: string | null;
@@ -307,6 +387,11 @@ export interface ApiBillingPaymentResponse {
   failure_message?: string | null;
   application_fee_amount_cents: number;
   refunded_amount_cents: number;
+  disputed_amount_cents: number;
+  net_collected_amount_cents: number;
+  refundable_amount_cents: number;
+  adjustment_reconciliation_required: boolean;
+  adjustment_reconciliation_reason_code?: string | null;
   processed_at?: string | null;
   created_at: string;
   updated_at: string;
@@ -359,15 +444,15 @@ export interface ApiBillingPlanResponse {
 }
 
 export interface ApiBillingPlanUpdate {
-  name?: string | null;
+  name?: string;
   description?: string | null;
-  amount_cents?: number | null;
-  currency?: string | null;
-  billing_interval?: "weekly" | "biweekly" | "monthly" | "annual" | "paid_in_full" | "fixed_term" | "trial" | null;
+  amount_cents?: number;
+  currency?: string;
+  billing_interval?: "weekly" | "biweekly" | "monthly" | "annual" | "paid_in_full" | "fixed_term" | "trial";
   program_ids?: string[] | null;
-  signup_fee_cents?: number | null;
-  trial_days?: number | null;
-  proration_behavior?: string | null;
+  signup_fee_cents?: number;
+  trial_days?: number;
+  proration_behavior?: string;
   freeze_behavior?: string | null;
   cancellation_policy?: string | null;
   tax_behavior?: string | null;
@@ -389,7 +474,7 @@ export interface ApiBillingReconcileResponse {
 
 export interface ApiBillingRefundCreate {
   amount_cents?: number | null;
-  reason?: string | null;
+  reason?: "duplicate" | "fraudulent" | "requested_by_customer" | null;
 }
 
 export interface ApiBillingRefundResponse {
@@ -400,9 +485,12 @@ export interface ApiBillingRefundResponse {
   stripe_charge_id?: string | null;
   stripe_payment_intent_id?: string | null;
   stripe_account_id?: string | null;
+  connect_account_generation?: number | null;
   amount_cents: number;
   status: string;
   reason?: string | null;
+  reconciliation_required: boolean;
+  reconciliation_reason_code?: string | null;
   created_at: string;
   updated_at?: string | null;
 }
@@ -415,8 +503,8 @@ export interface ApiBillingSubscriptionResponse {
   stripe_customer_id?: string | null;
   stripe_subscription_id?: string | null;
   collection_mode: "autopay" | "invoice_link" | "external";
-  billing_interval: "weekly" | "biweekly" | "monthly" | "annual" | "paid_in_full" | "fixed_term" | "trial";
-  currency: string;
+  billing_interval?: "weekly" | "biweekly" | "monthly" | "annual" | "paid_in_full" | "fixed_term" | "trial" | null;
+  currency?: string | null;
   status: "pending" | "trialing" | "active" | "past_due" | "unpaid" | "canceled" | "incomplete" | "incomplete_expired" | "paused";
   current_period_start?: string | null;
   current_period_end?: string | null;
@@ -445,6 +533,7 @@ export interface ApiBillingSystemStatusResponse {
   platform_webhooks: ApiBillingWebhookHealthResponse;
   connect_webhooks: ApiBillingWebhookHealthResponse;
   mutation_capabilities: ApiBillingMutationCapabilitiesResponse;
+  workflow_capabilities: ApiBillingWorkflowCapabilityResponse[];
   checks: ApiBillingSystemCheck[];
 }
 
@@ -458,6 +547,12 @@ export interface ApiBillingWebhookHealthResponse {
   stale_processing_count: number;
   mode_mismatch_count: number;
   error_reference?: string | null;
+}
+
+export interface ApiBillingWorkflowCapabilityResponse {
+  workflow_id: string;
+  enabled: boolean;
+  denial_reason_code?: string | null;
 }
 
 export interface ApiBody_execute_csv_import_api_v1_students_import_execute_post {
@@ -481,6 +576,10 @@ export interface ApiBody_validate_csv_import_api_v1_students_import_validate_pos
 export interface ApiBulkStatusUpdate {
   student_ids: string[];
   status: "active" | "trialing" | "inactive" | "paused" | "canceled";
+}
+
+export interface ApiBulkStudentArchiveRequest {
+  student_ids: string[];
 }
 
 export interface ApiBulkStudentUpdateResponse {
@@ -682,12 +781,20 @@ export interface ApiCsvParseResponse {
   required_fields: string[];
 }
 
+export interface ApiDashboardBootstrapDatasetErrors {
+  studio?: string | null;
+  students?: string | null;
+  leads?: string | null;
+  belts?: string | null;
+  programs?: string | null;
+}
+
 export interface ApiDashboardBootstrapResponse {
   auth: ApiAuthResponse;
   studio?: ApiDashboardBootstrapStudioSummary | null;
   studio_name?: string | null;
   students: ApiStudentResponse[];
-  students_total: number;
+  students_total?: number | null;
   students_page_size: number;
   students_may_be_partial: boolean;
   programs: ApiProgramResponse[];
@@ -695,6 +802,7 @@ export interface ApiDashboardBootstrapResponse {
   belt_ladders: ApiBeltLadderResponse[];
   primary_belt_ladder?: ApiBeltLadderResponse | null;
   summary?: ApiDashboardSummaryResponse | null;
+  dataset_errors?: ApiDashboardBootstrapDatasetErrors | null;
 }
 
 export interface ApiDashboardBootstrapStudioSummary {
@@ -719,11 +827,18 @@ export interface ApiDashboardSummaryBeltCounts {
   tip_count: number;
 }
 
+export interface ApiDashboardSummaryBillingAmounts {
+  available: boolean;
+  payment_attention_amount_cents?: number | null;
+  due_this_week_amount_cents?: number | null;
+}
+
 export interface ApiDashboardSummaryBillingCounts {
   can_view_billing: boolean;
   payment_attention_count?: number | null;
   has_plans?: boolean | null;
   payments_ready?: boolean | null;
+  amounts?: ApiDashboardSummaryBillingAmounts | null;
 }
 
 export interface ApiDashboardSummaryChurnCounts {
@@ -731,6 +846,13 @@ export interface ApiDashboardSummaryChurnCounts {
   canceled_students: number;
   churn_marked_students: number;
   churn_rate?: number | null;
+}
+
+export interface ApiDashboardSummaryEmergencyContacts {
+  available: boolean;
+  active_students: number;
+  students_with_contact_name: number;
+  students_missing_contact_name: number;
 }
 
 export interface ApiDashboardSummaryInactivityCounts {
@@ -774,6 +896,8 @@ export interface ApiDashboardSummaryResponse {
   generated_at: string;
   today?: string | null;
   timezone?: string | null;
+  today_schedule?: ApiDashboardSummaryTodaySchedule | null;
+  emergency_contacts?: ApiDashboardSummaryEmergencyContacts | null;
   students: ApiDashboardSummaryStudentCounts;
   leads: ApiDashboardSummaryLeadCounts;
   schedule: ApiDashboardSummaryScheduleCounts;
@@ -818,6 +942,28 @@ export interface ApiDashboardSummaryTestReadinessCounts {
   ready_to_test?: number | null;
   needs_approval?: number | null;
   available: boolean;
+}
+
+export interface ApiDashboardSummaryTodaySchedule {
+  available: boolean;
+  expected_counts_available: boolean;
+  rows: ApiDashboardSummaryTodaySession[];
+  overflow_count?: number | null;
+}
+
+export interface ApiDashboardSummaryTodaySession {
+  id: string;
+  start_time: string;
+  end_time: string;
+  name: string;
+  capacity?: number | null;
+  attendance_count: number;
+  expected_count?: number | null;
+}
+
+export interface ApiDashboardWorkspaceResponse {
+  auth: ApiAuthResponse;
+  studio?: ApiDashboardBootstrapStudioSummary | null;
 }
 
 export interface ApiDemoResetCounts {
@@ -940,6 +1086,16 @@ export interface ApiGuardianResponse {
   is_primary_contact: boolean;
 }
 
+export interface ApiGuardianWrite {
+  id?: string | null;
+  first_name?: string | null;
+  last_name?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  relation?: string | null;
+  is_primary_contact?: boolean | null;
+}
+
 export interface ApiHTTPValidationError {
   detail: ApiValidationError[];
   error: ApiErrorMeta;
@@ -982,6 +1138,11 @@ export interface ApiLeadCreate {
   assigned_staff_id?: string | null;
   follow_up_date?: string | null;
   notes?: string | null;
+}
+
+export interface ApiLeadFollowUpRequest {
+  operation_id: string;
+  next_stage?: "inquiry" | "trial_scheduled" | "trial_completed" | "offer_sent" | "enrolled" | "closed_lost" | null;
 }
 
 export interface ApiLeadResponse {
@@ -1138,6 +1299,20 @@ export interface ApiPromotionResponse {
   to_rank_name?: string | null;
 }
 
+export interface ApiScheduleWindowRange {
+  start_date: string;
+  end_date: string;
+  day_count: number;
+}
+
+export interface ApiScheduleWindowResponse {
+  contract_version: "schedule-window-v1";
+  range: ApiScheduleWindowRange;
+  templates: ApiClassTemplateResponse[];
+  sessions: ApiClassSessionResponse[];
+  attendance: ApiAttendanceResponse[];
+}
+
 export interface ApiStaffDeletionRequestCreate {
   confirmation_name: string;
   reason?: string | null;
@@ -1214,13 +1389,14 @@ export interface ApiStudentBillingEnrollmentResponse {
   subscription_id?: string | null;
   collection_mode: "autopay" | "invoice_link" | "external";
   status: "pending" | "active" | "paused" | "ended" | "canceled";
-  billing_status: "current" | "upcoming" | "past_due" | "failed" | "unpaid" | "externally_paid" | "no_payment_method" | "no_billing_plan";
+  billing_status: "current" | "upcoming" | "past_due" | "failed" | "outstanding" | "uncollectible" | "unpaid" | "externally_paid" | "no_payment_method" | "no_billing_plan";
   start_date: string;
   end_date?: string | null;
   next_bill_on?: string | null;
   next_bill_date?: string | null;
   stripe_subscription_id?: string | null;
   stripe_subscription_item_id?: string | null;
+  scheduled_period_end_transition?: ApiBillingEnrollmentScheduledTransitionResponse | null;
   created_at: string;
   updated_at: string;
 }
@@ -1268,6 +1444,11 @@ export interface ApiStudentListQueryContract {
   page_size?: number;
   sort_by?: "name" | "status" | "membership_start_date" | "created_at";
   sort_dir?: "asc" | "desc";
+  cursor?: string | null;
+  full_roster?: boolean;
+  inactivity_days?: number | null;
+  new_students?: "14" | "30" | "90" | "ytd" | null;
+  today?: string | null;
 }
 
 export interface ApiStudentListResponse {
@@ -1343,6 +1524,66 @@ export interface ApiStudentResponse {
   updated_at: string;
 }
 
+export interface ApiStudentRosterCursorErrorDetail {
+  code: string;
+  message: string;
+  recover_to: "first" | "nearest_prior";
+}
+
+export interface ApiStudentRosterCursorErrorResponse {
+  detail: ApiStudentRosterCursorErrorDetail;
+  error: ApiErrorMeta;
+}
+
+export interface ApiStudentRosterPageResponse {
+  items: ApiStudentRosterRowResponse[];
+  total: number;
+  page_size: number;
+  page_ordinal: number;
+  has_next: boolean;
+  next_cursor?: string | null;
+  has_previous: boolean;
+  previous_cursor?: string | null;
+}
+
+export interface ApiStudentRosterRowResponse {
+  id: string;
+  studio_id: string;
+  legal_first_name: string;
+  legal_last_name: string;
+  preferred_name?: string | null;
+  date_of_birth?: string | null;
+  is_minor?: boolean | null;
+  hold_start_date?: string | null;
+  hold_end_date?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  address_line1?: string | null;
+  address_city?: string | null;
+  address_state?: string | null;
+  address_zip?: string | null;
+  emergency_contact_name?: string | null;
+  emergency_contact_phone?: string | null;
+  emergency_contact_relation?: string | null;
+  status: "active" | "trialing" | "inactive" | "paused" | "canceled";
+  membership_start_date?: string | null;
+  program_id?: string | null;
+  current_belt_rank_id?: string | null;
+  photo_path?: string | null;
+  photo_url?: string | null;
+  photo_updated_at?: string | null;
+  notes?: string | null;
+  tags: string[];
+  guardians: ApiGuardianResponse[];
+  program_memberships: ApiStudentProgramMembershipResponse[];
+  created_at: string;
+  updated_at: string;
+  guardian_email?: string | null;
+  last_attendance_date?: string | null;
+  inactivity_days?: number | null;
+  reference_date?: string | null;
+}
+
 export interface ApiStudentUpdate {
   legal_first_name?: string | null;
   legal_last_name?: string | null;
@@ -1366,6 +1607,7 @@ export interface ApiStudentUpdate {
   current_belt_rank_id?: string | null;
   notes?: string | null;
   tags?: string[] | null;
+  guardians?: ApiGuardianWrite[] | null;
 }
 
 export interface ApiStudioCreate {

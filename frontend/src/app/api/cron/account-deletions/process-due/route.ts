@@ -8,10 +8,7 @@ import {
   configuredBackendApiBase,
 } from "../../../../../lib/backend-api-target.ts";
 import { isSafeHeaderSecret } from "../../../../../lib/header-secret.ts";
-import {
-  parsePinnedJson,
-  pinnedHttpsRequest,
-} from "../../../../../lib/pinned-https.ts";
+import { parsePinnedJson, pinnedHttpsRequest } from "../../../../../lib/pinned-https.ts";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -41,11 +38,9 @@ export async function handleAccountDeletionCron(
     return Response.json({ detail: "Unauthorized cron request." }, { status: 401 });
   }
 
-  const environment = [
-    process.env.VERCEL_TARGET_ENV,
-    process.env.VERCEL_ENV,
-    process.env.NODE_ENV,
-  ].map((value) => value?.trim().toLowerCase()).find(Boolean);
+  const environment = [process.env.VERCEL_TARGET_ENV, process.env.VERCEL_ENV, process.env.NODE_ENV]
+    .map((value) => value?.trim().toLowerCase())
+    .find(Boolean);
   const commitSha = process.env.VERCEL_GIT_COMMIT_SHA?.trim().toLowerCase() ?? "";
 
   const backendApiBase = configuredBackendApiBase(environment ?? "");
@@ -57,12 +52,18 @@ export async function handleAccountDeletionCron(
   // is bound to one exact Koaryu backend target.
   const workerSecret = process.env.ACCOUNT_DELETION_WORKER_SECRET ?? "";
   if (!isSafeHeaderSecret(workerSecret, 32)) {
-    return Response.json({ detail: "Account deletion worker secret is not configured." }, { status: 500 });
+    return Response.json(
+      { detail: "Account deletion worker secret is not configured." },
+      { status: 500 },
+    );
   }
 
   if (process.env.OPERATIONAL_ALERTS_ENABLED === "true") {
     if (!environment || !["development", "test", "staging", "production"].includes(environment)) {
-      return Response.json({ detail: "Account deletion dead-man identity was unavailable." }, { status: 500 });
+      return Response.json(
+        { detail: "Account deletion dead-man identity was unavailable." },
+        { status: 500 },
+      );
     }
     try {
       validateDeadManCheckInConfiguration({
@@ -71,7 +72,10 @@ export async function handleAccountDeletionCron(
         commitSha,
       });
     } catch {
-      return Response.json({ detail: "Account deletion dead-man configuration is incomplete." }, { status: 500 });
+      return Response.json(
+        { detail: "Account deletion dead-man configuration is incomplete." },
+        { status: 500 },
+      );
     }
   }
 
@@ -91,13 +95,17 @@ export async function handleAccountDeletionCron(
 
     const body = parsePinnedJson(upstream);
 
-    if (upstream.status >= 200 && upstream.status < 300 && process.env.OPERATIONAL_ALERTS_ENABLED === "true") {
+    if (
+      upstream.status >= 200 &&
+      upstream.status < 300 &&
+      process.env.OPERATIONAL_ALERTS_ENABLED === "true"
+    ) {
       const sequence = Number(upstream.headers["x-koaryu-heartbeat-sequence"]);
       if (
-        !environment
-        || !["development", "test", "staging", "production"].includes(environment)
-        || !Number.isSafeInteger(sequence)
-        || sequence < 1
+        !environment ||
+        !["development", "test", "staging", "production"].includes(environment) ||
+        !Number.isSafeInteger(sequence) ||
+        sequence < 1
       ) {
         return Response.json(
           { detail: "Account deletion dead-man identity was unavailable." },

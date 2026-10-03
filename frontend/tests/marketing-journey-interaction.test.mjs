@@ -18,6 +18,8 @@ import {
   decideTouchChapter,
   nextFaqTopicIndex,
   normalizeWheelDelta,
+  normalizeJourneyChapter,
+  journeyChapterIndices,
   reduceWheelGesture,
   resolveJourneyHash,
   sceneTransitionDuration,
@@ -37,6 +39,24 @@ describe("Journey hash model", () => {
     });
     assert.equal(resolveJourneyHash(""), null);
     assert.equal(resolveJourneyHash("#not-a-journey-stop"), null);
+  });
+
+  it("uses one compact sequence for direct and relative navigation", () => {
+    assert.deepEqual(journeyChapterIndices(true), [0, 1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 13]);
+    assert.equal(journeyChapterIndices(false).length, 14);
+    assert.equal(normalizeJourneyChapter(7, true), 4);
+    assert.equal(normalizeJourneyChapter(7, true, 1), 8);
+    assert.equal(normalizeJourneyChapter(7, true, -1), 6);
+    assert.equal(resolveJourneyHash("#explore", true)?.canonicalHash, "features");
+    assert.equal(resolveJourneyHash("#patterns-form", true)?.canonicalHash, "features");
+    assert.equal(resolveJourneyHash("#explore", false)?.canonicalHash, "explore");
+    assert.equal(normalizeJourneyChapter(12, true), 13);
+    assert.equal(normalizeJourneyChapter(12, true, -1), 11);
+    assert.equal(normalizeJourneyChapter(12, false), 12);
+    assert.equal(resolveJourneyHash("#stillness", true)?.canonicalHash, "begin");
+    assert.equal(resolveJourneyHash("#stillness", true)?.wasAlias, true);
+    assert.equal(decideJourneyHashChange("#stillness", true).resolved.chapterIndex, 13);
+    assert.equal(resolveJourneyHash("#faq-pricing", true)?.faqGroup, 3);
   });
 
   it("resets only an empty hash without writing one and ignores invalid hashes", () => {
@@ -172,18 +192,12 @@ describe("Journey wheel and nested-scroll model", () => {
     assert.equal(canScrollablePanelMove(middle, 1), true);
     assert.equal(canScrollablePanelMove(middle, -1), true);
     assert.equal(
-      canScrollablePanelMove(
-        { scrollTop: 300, scrollHeight: 500, clientHeight: 200 },
-        1
-      ),
-      false
+      canScrollablePanelMove({ scrollTop: 300, scrollHeight: 500, clientHeight: 200 }, 1),
+      false,
     );
     assert.equal(
-      canScrollablePanelMove(
-        { scrollTop: 0, scrollHeight: 500, clientHeight: 200 },
-        -1
-      ),
-      false
+      canScrollablePanelMove({ scrollTop: 0, scrollHeight: 500, clientHeight: 200 }, -1),
+      false,
     );
 
     const consumed = reduceWheelGesture(INITIAL_WHEEL_GESTURE_STATE, {
@@ -219,7 +233,7 @@ describe("Journey keyboard, touch, and motion decisions", () => {
         interactiveTarget: true,
         panel: scrollablePanel,
       }),
-      { action: "none" }
+      { action: "none" },
     );
     assert.deepEqual(
       decideJourneyKey({
@@ -228,7 +242,7 @@ describe("Journey keyboard, touch, and motion decisions", () => {
         interactiveTarget: false,
         panel: scrollablePanel,
       }),
-      { action: "panel-scroll", direction: 1, amount: "page" }
+      { action: "panel-scroll", direction: 1, amount: "page" },
     );
     assert.deepEqual(
       decideJourneyKey({
@@ -242,7 +256,7 @@ describe("Journey keyboard, touch, and motion decisions", () => {
         direction: -1,
         amount: "edge",
         edge: "first",
-      }
+      },
     );
   });
 
@@ -255,7 +269,7 @@ describe("Journey keyboard, touch, and motion decisions", () => {
         rootContainsActive: false,
       }),
       true,
-      "fresh-load body focus must keep global chapter keys live"
+      "fresh-load body focus must keep global chapter keys live",
     );
     assert.equal(
       shouldHandleJourneyKeyboardFocus({
@@ -264,7 +278,7 @@ describe("Journey keyboard, touch, and motion decisions", () => {
         activeIsDocumentElement: false,
         rootContainsActive: true,
       }),
-      true
+      true,
     );
     assert.equal(
       shouldHandleJourneyKeyboardFocus({
@@ -274,7 +288,7 @@ describe("Journey keyboard, touch, and motion decisions", () => {
         rootContainsActive: false,
       }),
       false,
-      "focus outside Journey must retain its own keyboard behavior"
+      "focus outside Journey must retain its own keyboard behavior",
     );
   });
 
@@ -293,7 +307,7 @@ describe("Journey keyboard, touch, and motion decisions", () => {
         interactiveTarget: false,
         panel: null,
       }),
-      { action: "chapter", direction: -1 }
+      { action: "chapter", direction: -1 },
     );
     assert.deepEqual(
       decideJourneyKey({
@@ -302,7 +316,7 @@ describe("Journey keyboard, touch, and motion decisions", () => {
         interactiveTarget: false,
         panel: null,
       }),
-      { action: "chapter-edge", edge: "last" }
+      { action: "chapter-edge", edge: "last" },
     );
     assert.deepEqual(
       decideJourneyKey({
@@ -311,7 +325,7 @@ describe("Journey keyboard, touch, and motion decisions", () => {
         interactiveTarget: false,
         panel: { scrollTop: 300, scrollHeight: 500, clientHeight: 200 },
       }),
-      { action: "chapter", direction: 1 }
+      { action: "chapter", direction: 1 },
     );
   });
 
@@ -323,7 +337,7 @@ describe("Journey keyboard, touch, and motion decisions", () => {
         panelMoved: false,
         panelCanScroll: false,
       }),
-      0
+      0,
     );
     assert.equal(
       decideTouchChapter({
@@ -332,7 +346,7 @@ describe("Journey keyboard, touch, and motion decisions", () => {
         panelMoved: false,
         panelCanScroll: false,
       }),
-      1
+      1,
     );
     assert.equal(
       decideTouchChapter({
@@ -341,7 +355,7 @@ describe("Journey keyboard, touch, and motion decisions", () => {
         panelMoved: false,
         panelCanScroll: false,
       }),
-      -1
+      -1,
     );
     assert.equal(
       decideTouchChapter({
@@ -350,7 +364,7 @@ describe("Journey keyboard, touch, and motion decisions", () => {
         panelMoved: true,
         panelCanScroll: false,
       }),
-      0
+      0,
     );
     assert.equal(
       decideTouchChapter({
@@ -359,7 +373,7 @@ describe("Journey keyboard, touch, and motion decisions", () => {
         panelMoved: false,
         panelCanScroll: true,
       }),
-      0
+      0,
     );
   });
 

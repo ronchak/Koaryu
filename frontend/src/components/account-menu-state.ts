@@ -23,19 +23,22 @@ export function useAccountMenuController() {
   const submenuPanelRef = useRef<HTMLDivElement | null>(null);
   const closeTimerRef = useRef<number | null>(null);
 
-  const updatePosition = useCallback((nextSubmenu: AccountSubmenu = activeSubmenu) => {
-    const trigger = triggerRef.current;
-    if (!trigger || typeof window === "undefined") return;
+  const updatePosition = useCallback(
+    (nextSubmenu: AccountSubmenu = activeSubmenu) => {
+      const trigger = triggerRef.current;
+      if (!trigger || typeof window === "undefined") return;
 
-    setPosition(
-      calculateAccountMenuPosition({
-        triggerRect: trigger.getBoundingClientRect(),
-        viewportWidth: window.innerWidth,
-        viewportHeight: window.innerHeight,
-        hasSubmenu: Boolean(nextSubmenu),
-      })
-    );
-  }, [activeSubmenu]);
+      setPosition(
+        calculateAccountMenuPosition({
+          triggerRect: trigger.getBoundingClientRect(),
+          viewportWidth: window.innerWidth,
+          viewportHeight: window.innerHeight,
+          hasSubmenu: Boolean(nextSubmenu),
+        }),
+      );
+    },
+    [activeSubmenu],
+  );
 
   const closeMenu = useCallback(() => {
     if (closeTimerRef.current) {
@@ -62,11 +65,14 @@ export function useAccountMenuController() {
     window.requestAnimationFrame(() => updatePosition(null));
   }, [updatePosition]);
 
-  const toggleSubmenu = useCallback((next: AccountSubmenu) => {
-    const resolved = activeSubmenu === next ? null : next;
-    setActiveSubmenu(resolved);
-    window.requestAnimationFrame(() => updatePosition(resolved));
-  }, [activeSubmenu, updatePosition]);
+  const toggleSubmenu = useCallback(
+    (next: AccountSubmenu) => {
+      const resolved = activeSubmenu === next ? null : next;
+      setActiveSubmenu(resolved);
+      window.requestAnimationFrame(() => updatePosition(resolved));
+    },
+    [activeSubmenu, updatePosition],
+  );
 
   useEffect(() => {
     return () => {
@@ -116,10 +122,10 @@ export function useAccountMenuController() {
     if (!isOpen) return;
 
     const timer = window.setTimeout(() => {
-      const focusRoot = activeSubmenu ? submenuPanelRef.current ?? panelRef.current : panelRef.current;
-      focusRoot
-        ?.querySelector<HTMLElement>("a[href], button:not([disabled])")
-        ?.focus();
+      const focusRoot = activeSubmenu
+        ? (submenuPanelRef.current ?? panelRef.current)
+        : panelRef.current;
+      focusRoot?.querySelector<HTMLElement>("a[href], button:not([disabled])")?.focus();
     }, 0);
 
     return () => {
@@ -165,12 +171,18 @@ export function useAccountMenuBillingStatus({
     key: string;
     status: PlatformBillingStatus;
   } | null>(null);
-  const billingStatusKey = canViewSubscription && !isPreviewMode && token
-    ? `${token}:${getActiveStudioIdCookie() || "default"}`
-    : null;
+  const billingStatusKey =
+    canViewSubscription && !isPreviewMode && token
+      ? `${token}:${getActiveStudioIdCookie() || "default"}`
+      : null;
 
   useEffect(() => {
-    if (!isOpen || !billingStatusKey || !token || platformBillingSnapshot?.key === billingStatusKey) {
+    if (
+      !isOpen ||
+      !billingStatusKey ||
+      !token ||
+      platformBillingSnapshot?.key === billingStatusKey
+    ) {
       return;
     }
 

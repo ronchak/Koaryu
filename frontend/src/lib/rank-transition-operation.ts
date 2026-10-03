@@ -51,10 +51,7 @@ export function loadPendingRankTransition(
     const raw = storage.getItem(storageKey(kind, studentId));
     if (!raw) return null;
     const parsed = JSON.parse(raw) as Partial<PendingRankTransition>;
-    if (
-      typeof parsed.fingerprint !== "string"
-      || typeof parsed.operationId !== "string"
-    ) {
+    if (typeof parsed.fingerprint !== "string" || typeof parsed.operationId !== "string") {
       storage.removeItem(storageKey(kind, studentId));
       return null;
     }
@@ -86,10 +83,13 @@ export function persistPendingRankTransition(
 export function clearPendingRankTransition(
   kind: RankTransitionKind,
   studentId: string,
+  operationId: string,
   storage: StorageLike | null = browserSessionStorage(),
 ): void {
   if (!storage) return;
   try {
+    const pending = loadPendingRankTransition(kind, studentId, storage);
+    if (pending?.operationId !== operationId) return;
     storage.removeItem(storageKey(kind, studentId));
   } catch {
     // Best-effort browser cleanup only.
@@ -97,12 +97,9 @@ export function clearPendingRankTransition(
 }
 
 export function isTerminalRankTransitionError(error: unknown): boolean {
-  const status = error instanceof Error
-    ? (error as Error & { status?: unknown }).status
-    : undefined;
-  return typeof status === "number"
-    && status >= 400
-    && status < 500
-    && status !== 408
-    && status !== 429;
+  const status =
+    error instanceof Error ? (error as Error & { status?: unknown }).status : undefined;
+  return (
+    typeof status === "number" && status >= 400 && status < 500 && status !== 408 && status !== 429
+  );
 }

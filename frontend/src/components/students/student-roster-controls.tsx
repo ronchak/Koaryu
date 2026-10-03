@@ -4,8 +4,10 @@ import { DismissibleNotice } from "@/components/ui/dismissible-notice";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { StudentRosterStatusFilter } from "@/lib/student-list-page";
+import type { SortDir, SortKey } from "@/lib/students-page-model";
 import type { Program, StudentStatus } from "@/types";
 import { AlertTriangle, Search, Trash2 } from "lucide-react";
+import styles from "./student-records.module.css";
 
 export type StudentRosterBulkPanel = "tags" | "status" | "delete";
 
@@ -78,10 +80,10 @@ export function StudentRosterNotices({
           <DismissibleNotice tone="warning" onDismiss={onDismissRosterQueryNotice}>
             <div className="text-text-primary">
               <p className="text-sm font-medium text-text-primary">
-                Loading the full roster for dashboard details
+                Full roster requested for dashboard details
               </p>
               <p className="mt-0.5 text-xs text-muted">
-                Koaryu is refreshing complete student data so retention and churn details are not based on the bootstrap sample.
+                This request includes all student records needed for retention and churn details.
               </p>
             </div>
           </DismissibleNotice>
@@ -102,85 +104,129 @@ export function StudentRosterNotices({
 export function StudentRosterToolbar({
   activeBulkPanel,
   canManageRoster,
+  isBulkCommandPending,
   isRosterRefreshing,
   onProgramFilterChange,
   onSearchChange,
+  onSort,
   onStatusFilterChange,
   onToggleBulkPanel,
   programFilter,
   programs,
   search,
   selectedCount,
+  sortDir,
+  sortKey,
   statusFilter,
 }: {
   activeBulkPanel: StudentRosterBulkPanel | null;
   canManageRoster: boolean;
+  isBulkCommandPending: boolean;
   isRosterRefreshing: boolean;
   onProgramFilterChange: (value: string) => void;
   onSearchChange: (value: string) => void;
+  onSort: (key: SortKey) => void;
   onStatusFilterChange: (value: StudentRosterStatusFilter | "") => void;
   onToggleBulkPanel: (panel: StudentRosterBulkPanel) => void;
   programFilter: string;
   programs: Program[];
   search: string;
   selectedCount: number;
+  sortDir: SortDir;
+  sortKey: SortKey;
   statusFilter: StudentRosterStatusFilter | "";
 }) {
   return (
-    <div className="flex flex-col items-stretch gap-3 border-b border-border px-4 py-4 sm:px-6 lg:flex-row lg:items-center lg:px-8">
-      <div className="relative w-full flex-1 lg:max-w-xs">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted" />
+    <div className={`mx-4 px-4 py-2 sm:mx-6 lg:mx-8 ${styles.rosterToolbar}`}>
+      <div className={styles.rosterSearchField}>
+        <Search aria-hidden="true" className={styles.rosterSearchIcon} />
         <input
           type="text"
           aria-label="Search students"
           placeholder="Search students..."
           value={search}
           onChange={(event) => onSearchChange(event.target.value)}
-          className="w-full pl-9 pr-3 py-1.5 text-sm bg-surface-raised border border-border rounded-[6px] text-text-primary placeholder:text-muted focus:border-accent focus:outline-none"
+          disabled={isBulkCommandPending}
+          className={styles.rosterSearchInput}
         />
       </div>
 
-      <select
-        aria-label="Filter by status"
-        value={statusFilter}
-        onChange={(event) => onStatusFilterChange(event.target.value as StudentRosterStatusFilter | "")}
-        className="w-full rounded-[6px] border border-border bg-surface-raised px-3 py-1.5 text-sm text-text-primary focus:border-accent focus:outline-none sm:flex-1 lg:w-auto lg:flex-none"
-      >
-        {STATUS_OPTIONS.map((option) => (
-          <option key={option.value} value={option.value}>
-            {option.label}
-          </option>
-        ))}
-      </select>
+      <div className={styles.rosterFilterGroup}>
+        <select
+          aria-label="Filter by status"
+          value={statusFilter}
+          onChange={(event) =>
+            onStatusFilterChange(event.target.value as StudentRosterStatusFilter | "")
+          }
+          disabled={isBulkCommandPending}
+          className={styles.rosterFilterSelect}
+        >
+          {STATUS_OPTIONS.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
 
-      <select
-        aria-label="Filter by program"
-        value={programFilter}
-        onChange={(event) => onProgramFilterChange(event.target.value)}
-        className="w-full rounded-[6px] border border-border bg-surface-raised px-3 py-1.5 text-sm text-text-primary focus:border-accent focus:outline-none sm:flex-1 lg:w-auto lg:flex-none"
-      >
-        <option value="">All programs</option>
-        {programs.filter((program) => !program.archived_at).map((program) => (
-          <option key={program.id} value={program.id}>
-            {program.name}
-          </option>
-        ))}
-      </select>
+        <select
+          aria-label="Filter by program"
+          value={programFilter}
+          onChange={(event) => onProgramFilterChange(event.target.value)}
+          disabled={isBulkCommandPending}
+          className={styles.rosterFilterSelect}
+        >
+          <option value="">All programs</option>
+          {programs
+            .filter((program) => !program.archived_at)
+            .map((program) => (
+              <option key={program.id} value={program.id}>
+                {program.name}
+              </option>
+            ))}
+        </select>
+      </div>
+
+      <div className={styles.mobileSortControl}>
+        <label htmlFor="mobile-roster-sort">Sort</label>
+        <select
+          id="mobile-roster-sort"
+          aria-label="Sort students by"
+          value={sortKey}
+          onChange={(event) => onSort(event.target.value as SortKey)}
+          disabled={isBulkCommandPending}
+          className={styles.rosterFilterSelect}
+        >
+          <option value="name">Name</option>
+          <option value="status">Status</option>
+          <option value="membership_start_date">Member since</option>
+          <option value="created_at">Created</option>
+        </select>
+        <button
+          type="button"
+          aria-label={`Sort ${sortDir === "asc" ? "descending" : "ascending"}`}
+          onClick={() => onSort(sortKey)}
+          disabled={isBulkCommandPending}
+          className={styles.mobileSortDirection}
+        >
+          {sortDir === "asc" ? "Ascending" : "Descending"}
+        </button>
+      </div>
 
       {isRosterRefreshing ? (
-        <span className="text-xs text-muted">Updating roster…</span>
+        <span className={styles.rosterRefreshState}>Updating roster…</span>
       ) : null}
 
       {canManageRoster && selectedCount > 0 ? (
-        <div className="flex flex-wrap items-center gap-2 rounded-[6px] border border-border bg-surface-raised px-3 py-2 lg:ml-auto">
-          <span className="text-xs text-text-secondary">
-            {selectedCount} selected
-          </span>
+        <div
+          className={`flex flex-wrap items-center gap-2 rounded-[14px] border border-border bg-surface-raised px-3 py-2 ${styles.selectionBand}`}
+        >
+          <span className="text-xs text-text-secondary">{selectedCount} selected</span>
           <span className="text-border">|</span>
           <button
             type="button"
             onClick={() => onToggleBulkPanel("tags")}
-            className={`text-xs cursor-pointer ${
+            disabled={isBulkCommandPending}
+            className={`min-h-11 px-2 text-xs cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 ${
               activeBulkPanel === "tags"
                 ? "text-accent"
                 : "text-text-secondary hover:text-text-primary"
@@ -191,7 +237,8 @@ export function StudentRosterToolbar({
           <button
             type="button"
             onClick={() => onToggleBulkPanel("status")}
-            className={`text-xs cursor-pointer ${
+            disabled={isBulkCommandPending}
+            className={`min-h-11 px-2 text-xs cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 ${
               activeBulkPanel === "status"
                 ? "text-accent"
                 : "text-text-secondary hover:text-text-primary"
@@ -202,7 +249,8 @@ export function StudentRosterToolbar({
           <button
             type="button"
             onClick={() => onToggleBulkPanel("delete")}
-            className="text-xs text-danger hover:text-danger/80 cursor-pointer"
+            disabled={isBulkCommandPending}
+            className="min-h-11 px-2 text-xs text-danger hover:text-danger/80 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
           >
             Archive
           </button>
@@ -218,6 +266,7 @@ export function StudentRosterBulkActionPanels({
   bulkStatus,
   deleteError,
   isAddingTags,
+  isBulkCommandPending,
   isDeleting,
   isUpdatingStatus,
   onAddTags,
@@ -236,6 +285,7 @@ export function StudentRosterBulkActionPanels({
   bulkStatus: StudentStatus;
   deleteError: string | null;
   isAddingTags: boolean;
+  isBulkCommandPending: boolean;
   isDeleting: boolean;
   isUpdatingStatus: boolean;
   onAddTags: () => void;
@@ -252,14 +302,15 @@ export function StudentRosterBulkActionPanels({
   if (activeBulkPanel === "tags" && selectedCount > 0) {
     return (
       <div className="px-8 pt-4">
-        <div className="rounded-[6px] border border-accent/20 bg-accent/5 px-4 py-3">
+        <div className="rounded-[14px] border border-accent/20 bg-accent/5 px-4 py-3">
           <div className="flex items-start justify-between gap-4 flex-wrap">
             <div className="min-w-0 flex-1">
               <p className="text-sm font-medium text-text-primary">
                 Add tags to {selectedCount} selected {selectedCount === 1 ? "student" : "students"}
               </p>
               <p className="text-xs text-muted mt-1">
-                Enter one or more comma-separated tags. Existing tags stay in place and duplicates are ignored.
+                Enter one or more comma-separated tags. Existing tags stay in place and duplicates
+                are ignored.
               </p>
               <div className="mt-3 max-w-xl">
                 <Input
@@ -267,7 +318,7 @@ export function StudentRosterBulkActionPanels({
                   placeholder="vip, leadership, needs-follow-up"
                   value={tagInput}
                   onChange={(event) => onTagInputChange(event.target.value)}
-                  disabled={isAddingTags}
+                  disabled={isBulkCommandPending}
                   error={bulkActionError || undefined}
                 />
               </div>
@@ -277,7 +328,7 @@ export function StudentRosterBulkActionPanels({
                 variant="ghost"
                 size="sm"
                 onClick={onCancelTags}
-                disabled={isAddingTags}
+                disabled={isBulkCommandPending}
               >
                 Cancel
               </Button>
@@ -285,6 +336,7 @@ export function StudentRosterBulkActionPanels({
                 variant="primary"
                 size="sm"
                 isLoading={isAddingTags}
+                disabled={isBulkCommandPending}
                 onClick={onAddTags}
               >
                 Add tag
@@ -299,11 +351,12 @@ export function StudentRosterBulkActionPanels({
   if (activeBulkPanel === "status" && selectedCount > 0) {
     return (
       <div className="px-8 pt-4">
-        <div className="rounded-[6px] border border-accent/20 bg-accent/5 px-4 py-3">
+        <div className="rounded-[14px] border border-accent/20 bg-accent/5 px-4 py-3">
           <div className="flex items-start justify-between gap-4 flex-wrap">
             <div className="min-w-0 flex-1">
               <p className="text-sm font-medium text-text-primary">
-                Change status for {selectedCount} selected {selectedCount === 1 ? "student" : "students"}
+                Change status for {selectedCount} selected{" "}
+                {selectedCount === 1 ? "student" : "students"}
               </p>
               <p className="text-xs text-muted mt-1">
                 This updates the membership status for every selected student at once.
@@ -316,8 +369,8 @@ export function StudentRosterBulkActionPanels({
                   id="bulk-status"
                   value={bulkStatus}
                   onChange={(event) => onBulkStatusChange(event.target.value as StudentStatus)}
-                  disabled={isUpdatingStatus}
-                  className="mt-1 w-full px-3 py-2 text-sm bg-surface-raised border border-border rounded-[6px] text-text-primary focus:border-accent focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
+                  disabled={isBulkCommandPending}
+                  className="mt-1 w-full px-3 py-2 text-sm bg-surface-raised border border-border rounded-[14px] text-text-primary focus:border-accent focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {STATUS_OPTIONS.filter((option) => option.value).map((option) => (
                     <option key={option.value} value={option.value}>
@@ -335,7 +388,7 @@ export function StudentRosterBulkActionPanels({
                 variant="ghost"
                 size="sm"
                 onClick={onCancelStatus}
-                disabled={isUpdatingStatus}
+                disabled={isBulkCommandPending}
               >
                 Cancel
               </Button>
@@ -343,6 +396,7 @@ export function StudentRosterBulkActionPanels({
                 variant="primary"
                 size="sm"
                 isLoading={isUpdatingStatus}
+                disabled={isBulkCommandPending}
                 onClick={onBulkStatusUpdate}
               >
                 Change status
@@ -357,7 +411,7 @@ export function StudentRosterBulkActionPanels({
   if ((activeBulkPanel === "delete" || deleteError) && selectedCount > 0) {
     return (
       <div className="px-8 pt-4">
-        <div className="rounded-[6px] border border-danger/20 bg-danger/5 px-4 py-3">
+        <div className="rounded-[14px] border border-danger/20 bg-danger/5 px-4 py-3">
           <div className="flex items-start justify-between gap-4 flex-wrap">
             <div className="min-w-0">
               <div className="flex items-center gap-2">
@@ -367,18 +421,17 @@ export function StudentRosterBulkActionPanels({
                 </p>
               </div>
               <p className="text-xs text-muted mt-1">
-                This removes the selected students from the active roster and cannot be undone from the UI.
+                This removes the selected students from the active roster and cannot be undone from
+                the UI.
               </p>
-              {deleteError ? (
-                <p className="text-xs text-danger mt-2">{deleteError}</p>
-              ) : null}
+              {deleteError ? <p className="text-xs text-danger mt-2">{deleteError}</p> : null}
             </div>
             <div className="flex items-center gap-2">
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={onCancelDelete}
-                disabled={isDeleting}
+                disabled={isBulkCommandPending}
               >
                 Cancel
               </Button>
@@ -386,6 +439,7 @@ export function StudentRosterBulkActionPanels({
                 variant="danger"
                 size="sm"
                 isLoading={isDeleting}
+                disabled={isBulkCommandPending}
                 onClick={onDeleteSelected}
               >
                 <Trash2 className="w-3.5 h-3.5" />

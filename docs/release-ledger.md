@@ -2,6 +2,15 @@
 
 This ledger ties every environment change to an exact commit, database migration head, operator, verification record, and rollback target. Update it in the same PR as release-affecting work; never include secrets or production PII.
 
+## Production release authorization boundary — 2026-08-16
+
+Operator: `Ronak Chakraborty / Codex release orchestrator`
+
+- Ronak explicitly authorized the required production migration, exact-candidate application deployment, and repository alignment for the already-live global `LIVE_BILLING_ENABLED=true` interlock.
+- This authorization creates no studio scope or reconciliation checkpoint and grants no provider authority, tenant financial permission, live Connect or tuition mutation, or live-money action. Each requires separate approval and remains fail-closed behind the exact-studio, exact-scope, unexpired, exact-candidate authorization contract.
+- CTO readback on 2026-08-16 observed production Render with the global interlock set to `true`, zero enabled studio grants, and zero reconciliation checkpoints. This is dated, mutable evidence rather than a permanent invariant; re-read current state before any separately authorized activation.
+- This entry records authorization and observed starting state only. It does not name a final release SHA or claim that a migration, application deployment, checkpoint, grant, provider mutation, or financial action completed.
+
 ## Wave 0 Evidence — 2026-07-10
 
 Operator: `Ronak Chakraborty / Codex session`
@@ -135,7 +144,7 @@ Operator: `Codex release orchestrator`
 - Regeneration rule: after Owner 3/4 migrations integrate, regenerate the exact `84 -> N` packet from the immutable final candidate. Do not reuse the provisional 86-migration post-state.
 - Compatibility boundary: both July files are transaction-compatible additive/replacement DDL, but the pair is not atomic across files. It is schema-compatible with reported production application `6596cc5`; the comp feature is not operationally compatible because that application still clears `comped` directly and never calls the new ordering RPC.
 - Staging state: provider health was read-only confirmed separately; the latest migration-list attempt returned `INVALID_ARGUMENT`, and a prior direct SQL attempt reportedly timed out. Staging inspection must succeed once before any dry-run or application. No retry loop, provider write, contract execution, or Auth fixture occurred in Phase A.
-- Production gate: agents never execute production migration or contract SQL. Human application remains blocked on staging rehearsal/fingerprint, exact final candidate and pending set, explicit approval, confirmed PITR/restore window, and a named restore decision authority.
+- Historical production gate, superseded for migration execution by the [September14 owner-authorization protocol](cutover-gates.md#owner-authorized-release-execution): agents did not execute production migration or contract SQL. Application was blocked on staging rehearsal/fingerprint, exact final candidate and pending set, explicit approval, confirmed PITR/restore window, and a named restore decision authority.
 - Recovery: preserve partial forward state, reinspect, and complete with the pending immutable migration or a new reviewed corrective migration. Do not revert history or drop objects.
 - Runbook: [studio-comp migration rollout](studio-comp-migration-rollout.md).
 
@@ -288,6 +297,154 @@ archive/RLS candidate is recorded in the Migration-111 section that follows.
   catalog values above; no linked or network fallback was used.
 - No commit, push, deployment, linked-project mutation, or external action was
   performed by this worker.
+
+### Production Docker/jemalloc memory cutover — 2026-08-24
+
+- Environment: production Render service `Koaryu` (`srv-d7mogk1kh4rs73aq6hqg`)
+- Application commit: `aed09efcb9559ee76776dbc324abcd370316ff87`
+- Repository migration head at deploy: `20260823193155_revoke_public_function_execute.sql`
+- Applied migration head: 115 / `20260822193000_revoke_client_read_access.sql`
+- Migration comparison: approved restored V22 compatibility; forward V24 convergence pending
+- Deployed at: `2026-08-24T18:56:21.629287Z`
+- Operator: Codex under Ronak's explicit merge and production-change approval
+- Approval/review: PR #130 exact head `dc7c98b34c42e6ea40c77635307b8476584d1900`; OX alpha `GREEN LIGHT`; GitHub Codex no major issues; all required checks green
+- Verification:
+  - Render deploy `dep-da6978ijnfac73a7kv30` reached `live` at the exact merge commit; service readback remained `main`, Docker, `/health/ready`, and auto-deploy off
+  - Production live and ready routes returned the exact merge SHA, environment `production`, and configured Stripe mode `live`
+  - Startup log recorded `jemalloc preload verified`, Uvicorn PID 1, and first RSS `164413440` bytes in the normal band
+- Known gaps: the initial RSS window is warm-up evidence, not a multi-hour leak verdict; production database remains exact restored V22 until guarded V24 convergence
+- Application rollback target: `32d3dd9633861d77507901348ee0890c363adced`
+- Database recovery action: forward-only reviewed migrations 116 and 117; no production migration was run during this deployment
+- Rollback trigger: failed readiness, wrong SHA/runtime/Stripe mode, missing jemalloc assertion, or sustained post-warm-up RSS growth comparable to the prior allocator
+- Rollback verification: exact rollback SHA, native runtime only if deliberately restored, both health routes, live Stripe mode, and fresh RSS instance identity
+- Outcome: successful application cutover; database convergence remains gated
+
+### Production V24 database convergence — 2026-08-24
+
+- Environment: production Supabase `mimguepumzsgmcaycdsh` and Render `Koaryu` (`srv-d7mogk1kh4rs73aq6hqg`)
+- Application commit: `ded46bca0f6e5342e74a503ad6d3aa94defb940c`
+- Repository migration head: `20260824190500_attest_verified_restore_manifest.sql`
+- Applied migration head: 117 / `20260824190500_attest_verified_restore_manifest.sql`
+- Migration comparison: exact restored-production V24 post-state
+- Application deployed at: `2026-08-24T19:59:42.226653Z`; migration apply time not captured; independent verification completed after apply
+- Operator: Codex under Ronak's explicit override authorizing agent-run production apply
+- Approval/review: PR #131 exact head `cdce69359ec18f38f6b1079fab1d3ef23c9e4031`; OX alpha `GREEN LIGHT`; GitHub Codex no major issues; all required checks green
+- Verification:
+  - Human-gated tool re-read `restored-v22`, dry-ran exactly migrations 116 and 117, required the generated exact confirmation phrase, and reached `state=post`
+  - Production V4 returned true at exact 117/head `20260824190500`, 33 versions, no failures, V24, and restored manifest `f9ce359c...`
+  - Final raw fingerprint matched the pinned restored catalog, including scoped-constraint digest `47cacc1c...`; all failure counts were zero
+  - Supabase remained `ACTIVE_HEALTHY` on PostgreSQL `17.6.1.155`; public live/ready returned exact app SHA and live Stripe mode
+  - Security advisors reported a private no-policy info item and leaked-password-protection warning; neither concerns the readiness-only migration 117 or routine-ACL migration 116
+- Known gaps: Supabase performance advisors retain pre-existing unindexed-FK and unused-index notices outside this rollout
+- Application rollback target: `aed09efcb9559ee76776dbc324abcd370316ff87`
+- Database recovery action: forward-only corrective migration if later drift is found; do not rewrite or remove migration history
+- Rollback trigger: failed V24 readiness, wrong restored fingerprint, nonzero catalog failure, or public health/Stripe-mode regression
+- Rollback verification: exact migration history/readiness/fingerprint, both public health routes, and live Stripe mode
+- Outcome: successful V24 convergence; temporary V22/V23 application bridges removed in the follow-up cleanup
+
+### Production V36 billing cutover and V37 canary repair — 2026-09-02
+
+- Environment: production Supabase `mimguepumzsgmcaycdsh`, Render service
+  `srv-d7mogk1kh4rs73aq6hqg`, Vercel project
+  `prj_ROzEAXoVf0NbUn3jNIKEJPWjF9HU`, and live Stripe.
+- Application commit: `69eacbde92656f32274c12791e3393d17a049624`.
+- Repository migration head:
+  `20260902001000_fix_billing_adjustment_trigger_table_guards.sql`.
+- Applied migration head: 132 / `20260902001000`, exact V37 readiness and
+  `release-db-attestation-v37`.
+- Migration comparison: the original V36 rollout advanced production from 117
+  through 131 after PR #139 repaired one explicit connected demo-payer
+  invariant. The live refund canary then exposed a table-polymorphic trigger
+  bug. PR #141 added the forward-only V37 repair, preserved the V36
+  compatibility response, passed staging first, and applied one exact
+  production migration with manifest
+  `c1b35df63a21b031f7c207898d681ef44b5fa2797556809b04c278957bce3bfb`.
+- Deployed at: Render deploy `dep-dabnbb7qj5pc738n0t2g` was live at
+  `2026-09-02T01:03:38Z`; Vercel deployment
+  `dpl_GdLm9rRk37T56t6LdDQKXNXjN8U2` was created at
+  `2026-09-02T01:04:09Z` and reached `READY` before the production aliases
+  resolved to it.
+- Operator: Ronak Chakraborty / Codex release orchestrator under the release
+  goal's explicit production, deployment, Stripe, financial-canary, recovery,
+  and repository authority.
+- Approval/review: PRs #139, #140, and #141 passed their exact-head required
+  checks. PR #141 merged through `scripts/merge-release-pr.sh` after two
+  authenticated Render readbacks confirmed production auto-deploy was off. The
+  V37 production database approval record is
+  `https://github.com/ronchak/Koaryu/pull/138#issuecomment-5502730490`.
+- Verification:
+  - The private production backup
+    `/private/tmp/koaryu-v36-production-backup.6xweva/production-v24.custom.dump`
+    is mode `0600`, 1,750,396 bytes, and SHA-256
+    `d889362d86f99b6e6fc1e0645564186f3bb290985797ab71b7026afd1b62e1ba`.
+    It restored successfully on PostgreSQL 17.6 with representative row counts
+    and schema state matching production. The temporary backup role and restore
+    container were removed.
+  - The 132-migration PostgreSQL 17 verification passed in GitHub, including
+    schema lint, all 49 SQL contracts, the refund/dispute identity-update
+    regression, concurrency checks, and a V30-to-V37 dump/restore proof.
+    Production and staging both report the expected V37 manifest. Production
+    matches the approved restored-catalog variant.
+  - `npm run verify:deployed-release -- --environment production
+    --expected-sha 69eacbde92656f32274c12791e3393d17a049624 --frontend-origin
+    https://koaryu.app --backend-api https://koaryu.onrender.com/api/v1`
+    passed. Both backend readiness paths report production, live Stripe mode,
+    and the exact SHA; `/api/version` reports the same frontend SHA. Production
+    CORS allows `https://koaryu.app`.
+  - Vercel owns `koaryu.app`, `www.koaryu.app`, `koaryu.vercel.app`, and the
+    team production alias at the exact Git SHA. The new deployment had zero
+    runtime error clusters and no warning/error runtime entries. Its only build
+    warning was the existing broad Node engine range.
+  - Render startup verified jemalloc and completed once. Across the
+    `2026-09-02T01:02:30Z` to `01:16:00Z` instance window, 192 application logs
+    contained zero error/fatal labels and zero traceback, exception, or critical
+    messages. One Starlette deprecation warning remains non-blocking.
+  - Browser smoke passed on the public home, privacy, and terms routes and the
+    authenticated dashboard/billing workspace without console warnings or
+    errors. The dashboard resolved to the pilot studio. Billing showed live
+    Stripe, a 6/6 Connect checklist, and the `connect_payments` authorization.
+  - The pilot is `ronaks-gmail-test-dojo-3a199a`, mapped to live account
+    `acct_…FtKEF4k`, generation 1. Charges, payouts, and submitted details are
+    enabled with no requirements due. Exactly one platform and one Connect
+    webhook endpoint are enabled and contract-matched.
+  - The live financial canary created and paid a $0.50 USD invoice through the
+    application flow. PR #140 repaired the zero-application-fee refund path.
+    The final provider charge `ch_…eWh` is fully refunded by `re_…9N9`; the
+    local payment is `refunded` with 50 cents refunded, zero net collected, zero
+    refundable balance, and no reconciliation flags.
+  - V37 repaired the refund/dispute identity trigger. Exact replays of the two
+    previously failed live events (`refund.updated` and
+    `charge.refund.updated`) both converged to `processed` with errors cleared.
+    The post-replay reconciliation matched 27 provider events to 27 local events
+    with zero failed, unprocessed, provider-only, local-only, unmapped, or
+    endpoint-contract failures.
+  - Final checkpoint sequence 6 is
+    `f108c07f-aa5a-45c7-b4ce-cb0ddd907257`, watermark 254, candidate SHA
+    `69eacbde92656f32274c12791e3393d17a049624`, source report SHA-256
+    `afa0ef18a0fa719c3225082cc43bb995c12d5da2552cfe1fc75efc28e3aa84a0`,
+    and expiry `2026-09-02T21:07:59Z`. The pilot `connect_payments` grant is
+    enabled at revision 5 and expires `2026-09-02T13:07:59Z`.
+- Known gaps: the live Setup Checkout did not complete. Stripe required fresh
+  card entry and no authorized PAN/CVC or browser autofill was available. The
+  Session later expired, its SetupIntent was canceled, and the application
+  closed the setup request with `checkout_session_expired` plus a provider-read
+  proof. No autopay consent or saved payment method was fabricated. The
+  explicit-pay financial canary is complete, but Setup Checkout completion must
+  be rerun with a real cardholder present before claiming that gate.
+- Application rollback target:
+  `c2182f658372dfef2438c114a104d62903c3bf84` on Render and Vercel.
+- Database recovery action: forward-only corrective migration for any later
+  contract drift. The verified logical backup is disaster-recovery evidence,
+  not a routine rollback mechanism.
+- Rollback trigger: failed readiness or exact-SHA verification, V37 manifest or
+  provider-fingerprint drift, failed refund replay, reconciliation regression,
+  grant/checkpoint invalidation, or material deployment/runtime errors.
+- Rollback verification: exact provider SHA and aliases, both health routes,
+  live Stripe mode, V37 history/readiness/fingerprint, processed replay events,
+  refund/payment convergence, and a valid pilot checkpoint/grant.
+- Outcome: application, database, live billing pilot, payment, refund, webhook
+  repair, reconciliation, and cleanup are healthy. Release closure remains
+  blocked only on completing a fresh cardholder-driven Setup Checkout.
 
 ## Release Entry Template
 

@@ -1,9 +1,16 @@
-import type { AttendanceRecord, BeltRank, ClassSession, EligibilityEntry, Lead, Program, Student } from "@/types";
+import type {
+  AttendanceRecord,
+  BeltRank,
+  ClassSession,
+  EligibilityEntry,
+  Lead,
+  Student,
+} from "@/types";
 import type { DashboardSummaryRecentStudent } from "@/types/dashboard";
 
 export function isDashboardSetupStepComplete(
   summaryValue: boolean | null | undefined,
-  liveValue: boolean
+  liveValue: boolean,
 ) {
   return summaryValue === true || liveValue;
 }
@@ -11,21 +18,21 @@ export function isDashboardSetupStepComplete(
 export function isDashboardBeltSetupComplete(
   summaryValue: boolean | null | undefined,
   displayedBeltCount: number,
-  localBeltCount: number
+  localBeltCount: number,
 ) {
-  return isDashboardSetupStepComplete(
-    summaryValue,
-    displayedBeltCount > 0 || localBeltCount > 0
-  );
+  return isDashboardSetupStepComplete(summaryValue, displayedBeltCount > 0 || localBeltCount > 0);
 }
 
-function dashboardStudentStartDate(student: { membership_start_date?: string | null; created_at: string }) {
+function dashboardStudentStartDate(student: {
+  membership_start_date?: string | null;
+  created_at: string;
+}) {
   return student.membership_start_date || student.created_at.slice(0, 10);
 }
 
 function isDashboardStudentOnHoldNow(
   student: Pick<Student, "status" | "hold_start_date" | "hold_end_date">,
-  today: string
+  today: string,
 ) {
   if (student.status === "paused") {
     return true;
@@ -117,7 +124,9 @@ export function buildDashboardBeltStats(beltRanks: BeltRank[]) {
   return { beltCount, tipCount };
 }
 
-export function buildDashboardInactivityStats<T extends { daysInactive: number }>(inactivityRows: T[]) {
+export function buildDashboardInactivityStats<T extends { daysInactive: number }>(
+  inactivityRows: T[],
+) {
   let watch14 = 0;
   let watch30 = 0;
   let watch90 = 0;
@@ -144,54 +153,11 @@ export function buildDashboardInactivityStats<T extends { daysInactive: number }
   return { watch14, watch30, watch90, highestRiskStudents };
 }
 
-export function buildDashboardNewStudentStats(
-  students: Student[],
-  today: string,
-  lookback14: string,
-  lookback30: string,
-  lookback90: string,
-  yearStart: string
-) {
-  let new14 = 0;
-  let new30 = 0;
-  let new90 = 0;
-  let newYearToDate = 0;
-
-  for (const student of students) {
-    if (student.status !== "active" && student.status !== "trialing" && student.status !== "paused") {
-      continue;
-    }
-
-    const startDate = dashboardStudentStartDate(student);
-    if (startDate > today) {
-      continue;
-    }
-
-    if (startDate >= lookback14) {
-      new14 += 1;
-    }
-
-    if (startDate >= lookback30) {
-      new30 += 1;
-    }
-
-    if (startDate >= lookback90) {
-      new90 += 1;
-    }
-
-    if (startDate >= yearStart) {
-      newYearToDate += 1;
-    }
-  }
-
-  return { new14, new30, new90, newYearToDate };
-}
-
 export function buildDashboardOperationalStats(
   attendance: AttendanceRecord[],
   sessions: ClassSession[],
   lookback30: string,
-  today: string
+  today: string,
 ) {
   const attendanceBySession = new Map<string, number>();
 
@@ -202,7 +168,7 @@ export function buildDashboardOperationalStats(
 
     attendanceBySession.set(
       record.session_id,
-      (attendanceBySession.get(record.session_id) ?? 0) + 1
+      (attendanceBySession.get(record.session_id) ?? 0) + 1,
     );
   }
 
@@ -213,11 +179,7 @@ export function buildDashboardOperationalStats(
   let sessionsWithCapacity = 0;
 
   for (const session of sessions) {
-    if (
-      session.status === "canceled" ||
-      session.date < lookback30 ||
-      session.date > today
-    ) {
+    if (session.status === "canceled" || session.date < lookback30 || session.date > today) {
       continue;
     }
 
@@ -242,28 +204,6 @@ export function buildDashboardOperationalStats(
   };
 }
 
-export function buildDashboardChurnStats(students: Student[]) {
-  let inactiveStudents = 0;
-  let canceledStudents = 0;
-
-  for (const student of students) {
-    if (student.status === "inactive") {
-      inactiveStudents += 1;
-    } else if (student.status === "canceled") {
-      canceledStudents += 1;
-    }
-  }
-
-  const churnMarkedStudents = inactiveStudents + canceledStudents;
-
-  return {
-    inactiveStudents,
-    canceledStudents,
-    churnMarkedStudents,
-    churnRate: students.length > 0 ? churnMarkedStudents / students.length : null,
-  };
-}
-
 export function buildDashboardTestReadinessStats(eligibility: EligibilityEntry[]) {
   let readyToTest = 0;
   let needsApproval = 0;
@@ -282,7 +222,7 @@ export function buildDashboardTestReadinessStats(eligibility: EligibilityEntry[]
 export function buildDashboardRecentStudentRows(
   summaryRows: DashboardSummaryRecentStudent[] | null | undefined,
   students: Student[],
-  hasPartialStudentSample: boolean
+  hasPartialStudentSample: boolean,
 ) {
   if (summaryRows) {
     return summaryRows.map((student) => ({
@@ -299,99 +239,9 @@ export function buildDashboardRecentStudentRows(
 
   return students.slice(0, 5).map((student) => ({
     id: student.id,
-    displayName: `${student.preferred_name || student.legal_first_name} ${student.legal_last_name}`.trim(),
+    displayName:
+      `${student.preferred_name || student.legal_first_name} ${student.legal_last_name}`.trim(),
     status: student.status,
     startedOn: dashboardStudentStartDate(student),
   }));
-}
-
-export interface DashboardProgramBucket {
-  programId: string | null;
-  label: string;
-  activeStudents: number;
-  trialingStudents: number;
-  activeLeads: number;
-  todaySessions: number;
-}
-
-export function buildDashboardProgramBuckets(
-  programs: Program[],
-  programById: Map<string, Program>,
-  students: Student[],
-  leads: Lead[],
-  sessions: ClassSession[],
-  today: string
-) {
-  const rows = new Map<string, DashboardProgramBucket>();
-
-  for (const program of programs.filter((item) => !item.archived_at)) {
-    rows.set(program.id, {
-      programId: program.id,
-      label: program.name,
-      activeStudents: 0,
-      trialingStudents: 0,
-      activeLeads: 0,
-      todaySessions: 0,
-    });
-  }
-
-  const ensureRow = (programId: string | null, fallback: string) => {
-    const key = programId || "unassigned";
-    const existing = rows.get(key);
-    if (existing) {
-      return existing;
-    }
-
-    const program = programId ? programById.get(programId) : null;
-    const row = {
-      programId,
-      label: program?.name || fallback,
-      activeStudents: 0,
-      trialingStudents: 0,
-      activeLeads: 0,
-      todaySessions: 0,
-    };
-    rows.set(key, row);
-    return row;
-  };
-
-  for (const student of students) {
-    const memberships = student.program_memberships?.filter((membership) => membership.status === "active") ?? [];
-    const programIds = memberships.length > 0
-      ? memberships.map((membership) => membership.program_id)
-      : [student.program_id || null];
-
-    for (const programId of programIds) {
-      const row = ensureRow(programId, "No program");
-      if (student.status === "active") {
-        row.activeStudents += 1;
-      } else if (student.status === "trialing") {
-        row.trialingStudents += 1;
-      }
-    }
-  }
-
-  for (const lead of leads) {
-    if (lead.stage === "closed_lost" || lead.stage === "enrolled") {
-      continue;
-    }
-
-    ensureRow(lead.program_id || null, lead.program_interest || "No program").activeLeads += 1;
-  }
-
-  for (const session of sessions) {
-    if (session.date !== today || session.status === "canceled") {
-      continue;
-    }
-
-    ensureRow(session.program_id || null, "No program").todaySessions += 1;
-  }
-
-  return Array.from(rows.values())
-    .filter((row) => row.activeStudents > 0 || row.trialingStudents > 0 || row.activeLeads > 0 || row.todaySessions > 0)
-    .sort((a, b) =>
-      b.activeStudents + b.trialingStudents + b.activeLeads + b.todaySessions -
-      (a.activeStudents + a.trialingStudents + a.activeLeads + a.todaySessions)
-    )
-    .slice(0, 5);
 }

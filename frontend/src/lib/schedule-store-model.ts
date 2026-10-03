@@ -1,4 +1,10 @@
-import type { AttendanceRecord, AttendanceStatus, ClassSession, ClassTemplate } from "@/types";
+import type {
+  AttendanceRecord,
+  AttendanceStatus,
+  ClassSession,
+  ClassTemplate,
+  ScheduleWindow,
+} from "@/types";
 import { getLatestAttendanceRecord } from "./attendance-record-model.ts";
 
 const ATTENDANCE_TOGGLE_CYCLE: AttendanceStatus[] = ["present", "late", "absent"];
@@ -17,9 +23,7 @@ export interface SessionAttendanceRefreshResult {
 interface RunOptimisticAttendanceToggleOptions {
   attendance: AttendanceRecord[];
   checkedInAt: string;
-  commitAttendance: (
-    update: (current: AttendanceRecord[]) => AttendanceRecord[]
-  ) => void;
+  commitAttendance: (update: (current: AttendanceRecord[]) => AttendanceRecord[]) => void;
   commitSessionCountDelta: (delta: number) => void;
   isCurrent?: () => boolean;
   name: string;
@@ -33,25 +37,29 @@ interface RunOptimisticAttendanceToggleOptions {
 export function getAttendanceToggleTransition(
   attendance: AttendanceRecord[],
   sessionId: string,
-  studentId: string
+  studentId: string,
 ): AttendanceToggleTransition {
-  const existing = getLatestAttendanceRecord(
-    attendance.filter(
-      (record) => record.session_id === sessionId && record.student_id === studentId
-    )
-  ) ?? null;
+  const existing =
+    getLatestAttendanceRecord(
+      attendance.filter(
+        (record) => record.session_id === sessionId && record.student_id === studentId,
+      ),
+    ) ?? null;
   const previousStatus = existing?.status ?? null;
   const currentIndex = existing ? ATTENDANCE_TOGGLE_CYCLE.indexOf(existing.status) : -1;
-  const nextStatus = existing && currentIndex === ATTENDANCE_TOGGLE_CYCLE.length - 1
-    ? null
-    : ATTENDANCE_TOGGLE_CYCLE[(currentIndex + 1 + ATTENDANCE_TOGGLE_CYCLE.length) % ATTENDANCE_TOGGLE_CYCLE.length];
+  const nextStatus =
+    existing && currentIndex === ATTENDANCE_TOGGLE_CYCLE.length - 1
+      ? null
+      : ATTENDANCE_TOGGLE_CYCLE[
+          (currentIndex + 1 + ATTENDANCE_TOGGLE_CYCLE.length) % ATTENDANCE_TOGGLE_CYCLE.length
+        ];
 
   return { existing, nextStatus, previousStatus };
 }
 
 export function shouldRetryScheduleReadAfterCoordinatorChange(
   authCurrent: boolean,
-  generationCurrent: boolean
+  generationCurrent: boolean,
 ) {
   return !authCurrent || !generationCurrent;
 }
@@ -60,10 +68,10 @@ function replaceStudentAttendance(
   current: AttendanceRecord[],
   sessionId: string,
   studentId: string,
-  replacement: AttendanceRecord | null
+  replacement: AttendanceRecord | null,
 ) {
   const next = current.filter(
-    (record) => !(record.session_id === sessionId && record.student_id === studentId)
+    (record) => !(record.session_id === sessionId && record.student_id === studentId),
   );
   if (replacement) {
     next.push(replacement);
@@ -75,11 +83,11 @@ function restoreStudentAttendance(
   current: AttendanceRecord[],
   sessionId: string,
   studentId: string,
-  replacements: AttendanceRecord[]
+  replacements: AttendanceRecord[],
 ) {
   return [
     ...current.filter(
-      (record) => !(record.session_id === sessionId && record.student_id === studentId)
+      (record) => !(record.session_id === sessionId && record.student_id === studentId),
     ),
     ...replacements,
   ];
@@ -99,7 +107,7 @@ export async function runOptimisticAttendanceToggle({
   studioId = "",
 }: RunOptimisticAttendanceToggleOptions) {
   const previousRecords = attendance.filter(
-    (record) => record.session_id === sessionId && record.student_id === studentId
+    (record) => record.session_id === sessionId && record.student_id === studentId,
   );
   const transition = getAttendanceToggleTransition(attendance, sessionId, studentId);
   const { existing, nextStatus } = transition;
@@ -120,17 +128,14 @@ export async function runOptimisticAttendanceToggle({
     : null;
   const hadCountableAttendance = attendance.some(
     (record) =>
-      record.session_id === sessionId
-      && record.student_id === studentId
-      && record.status !== "absent"
+      record.session_id === sessionId &&
+      record.student_id === studentId &&
+      record.status !== "absent",
   );
-  const countDelta = toAttendanceCountDelta(
-    hadCountableAttendance ? "present" : null,
-    nextStatus
-  );
+  const countDelta = toAttendanceCountDelta(hadCountableAttendance ? "present" : null, nextStatus);
 
   commitAttendance((current) =>
-    replaceStudentAttendance(current, sessionId, studentId, optimisticRecord)
+    replaceStudentAttendance(current, sessionId, studentId, optimisticRecord),
   );
   commitSessionCountDelta(countDelta);
 
@@ -145,14 +150,14 @@ export async function runOptimisticAttendanceToggle({
         replaceStudentAttendance(current, sessionId, studentId, {
           ...result,
           student_name: existing?.student_name || name,
-        })
+        }),
       );
     }
     return transition;
   } catch (error) {
     if (isCurrent()) {
       commitAttendance((current) =>
-        restoreStudentAttendance(current, sessionId, studentId, previousRecords)
+        restoreStudentAttendance(current, sessionId, studentId, previousRecords),
       );
       commitSessionCountDelta(-countDelta);
     }
@@ -176,17 +181,10 @@ export type ScheduleDateRange = {
   startDate: string;
 };
 
-export function isScheduleRangeCommitCurrent(
-  rangeCurrent: boolean,
-  attendanceCurrent: boolean
-) {
-  return rangeCurrent && attendanceCurrent;
-}
-
 export async function runScheduleRangeRefreshWithRetry<T>(
   attempt: () => Promise<{ committed: boolean; value: T }>,
   maximumAttempts = 3,
-  waitForStableCoordinator: () => Promise<void> = () => Promise.resolve()
+  waitForStableCoordinator: () => Promise<void> = () => Promise.resolve(),
 ): Promise<T> {
   for (let attemptNumber = 0; attemptNumber < maximumAttempts; attemptNumber += 1) {
     await waitForStableCoordinator();
@@ -200,20 +198,64 @@ export async function runScheduleRangeRefreshWithRetry<T>(
 
 export type ScheduleRangeRefreshIntent = "read" | "materialize";
 
+// The store owns the reconciliation that follows a schedule mutation. Callers observe
+// its outcome instead of starting a second refresh. "deferred" makes no claim: a newer
+// write, coordinator reset or auth change owns the refresh.
+export type ScheduleMutationRefresh = "refreshed" | "failed" | "deferred";
+
+// The create is confirmed when this resolves; its store-owned refresh settles separately.
+export interface ScheduleTemplateCreateResult {
+  template: ClassTemplate;
+  scheduleRefresh: Promise<ScheduleMutationRefresh>;
+}
+
+export interface ScheduleWindowTransport {
+  get<T>(path: string, token: string): Promise<T>;
+  post<T>(path: string, body: unknown, token: string): Promise<T>;
+}
+
 export function buildScheduleRangeRequest(
   startDate: string,
   endDate: string,
   intent: ScheduleRangeRefreshIntent,
-  canMaterialize: boolean
+  canMaterialize: boolean,
 ) {
   const rangeQuery = `start_date=${encodeURIComponent(startDate)}&end_date=${encodeURIComponent(endDate)}`;
   const shouldMaterialize = intent === "materialize" && canMaterialize;
   return {
-    method: shouldMaterialize ? "POST" as const : "GET" as const,
+    method: shouldMaterialize ? ("POST" as const) : ("GET" as const),
     path: shouldMaterialize
-      ? `/schedule/sessions/materialize?${rangeQuery}`
-      : `/schedule/sessions?${rangeQuery}`,
+      ? `/schedule/window/materialize?${rangeQuery}`
+      : `/schedule/window?${rangeQuery}`,
   };
+}
+
+export async function fetchScheduleWindowRange(
+  transport: ScheduleWindowTransport,
+  token: string,
+  startDate: string,
+  endDate: string,
+  intent: ScheduleRangeRefreshIntent,
+  canMaterialize: boolean,
+): Promise<ScheduleWindow> {
+  const request = buildScheduleRangeRequest(startDate, endDate, intent, canMaterialize);
+  return request.method === "POST"
+    ? transport.post<ScheduleWindow>(request.path, {}, token)
+    : transport.get<ScheduleWindow>(request.path, token);
+}
+
+export async function discardSupersededScheduleWindowFailure<T>(
+  request: () => Promise<T>,
+  isCurrent: () => boolean,
+): Promise<T | undefined> {
+  try {
+    return await request();
+  } catch (error) {
+    if (!isCurrent()) {
+      return undefined;
+    }
+    throw error;
+  }
 }
 
 export type ScheduleCoordinatorState = {
@@ -225,6 +267,8 @@ export type ScheduleCoordinatorState = {
   mutationsInFlight: number;
   requestedRange: ScheduleDateRange | null;
   rangeRequestSequence: number;
+  // Advances only on a destructive reset, which abandons every earlier in-flight write.
+  resetEpoch: number;
 };
 
 export function createScheduleCoordinatorState(): ScheduleCoordinatorState {
@@ -237,12 +281,13 @@ export function createScheduleCoordinatorState(): ScheduleCoordinatorState {
     mutationsInFlight: 0,
     requestedRange: null,
     rangeRequestSequence: 0,
+    resetEpoch: 0,
   };
 }
 
 export function resetScheduleCoordinatorState(
   current: ScheduleCoordinatorState,
-  hasAuthoritativeSnapshot = false
+  hasAuthoritativeSnapshot = false,
 ): ScheduleCoordinatorState {
   return {
     attendanceRequestSequence: current.attendanceRequestSequence + 1,
@@ -253,11 +298,12 @@ export function resetScheduleCoordinatorState(
     mutationsInFlight: 0,
     requestedRange: null,
     rangeRequestSequence: current.rangeRequestSequence + 1,
+    resetEpoch: current.resetEpoch + 1,
   };
 }
 
 export function refreshScheduleCoordinatorAuthState(
-  current: ScheduleCoordinatorState
+  current: ScheduleCoordinatorState,
 ): ScheduleCoordinatorState {
   return {
     ...current,
@@ -271,7 +317,7 @@ export function refreshScheduleCoordinatorAuthState(
 
 export function setScheduleRequestedRangeState(
   current: ScheduleCoordinatorState,
-  requestedRange: ScheduleDateRange
+  requestedRange: ScheduleDateRange,
 ): ScheduleCoordinatorState {
   return {
     ...current,
@@ -281,7 +327,7 @@ export function setScheduleRequestedRangeState(
 
 export function resolveScheduleReconciliationRange(
   current: ScheduleCoordinatorState,
-  fallback: ScheduleDateRange
+  fallback: ScheduleDateRange,
 ): ScheduleDateRange {
   return current.requestedRange ?? fallback;
 }
@@ -289,15 +335,13 @@ export function resolveScheduleReconciliationRange(
 export function shouldPreserveScheduleMutationsOnAuthChange(
   event: string,
   currentUserId: string | null,
-  nextUserId: string | null
+  nextUserId: string | null,
 ) {
-  return event === "TOKEN_REFRESHED"
-    && currentUserId !== null
-    && currentUserId === nextUserId;
+  return event === "TOKEN_REFRESHED" && currentUserId !== null && currentUserId === nextUserId;
 }
 
 export function beginScheduleMutationState(
-  current: ScheduleCoordinatorState
+  current: ScheduleCoordinatorState,
 ): ScheduleCoordinatorState {
   const generationMutationCount = current.mutationCountsByGeneration[current.generation] ?? 0;
   return {
@@ -314,7 +358,7 @@ export function beginScheduleMutationState(
 
 export function finishScheduleMutationState(
   current: ScheduleCoordinatorState,
-  generationAtStart: number
+  generationAtStart: number,
 ): ScheduleCoordinatorState {
   const generationMutationCount = current.mutationCountsByGeneration[generationAtStart] ?? 0;
   if (generationMutationCount === 0) {
@@ -335,7 +379,7 @@ export function finishScheduleMutationState(
 }
 
 export function markScheduleCoordinatorSnapshotState(
-  current: ScheduleCoordinatorState
+  current: ScheduleCoordinatorState,
 ): ScheduleCoordinatorState {
   return {
     ...current,
@@ -354,7 +398,7 @@ export type ScheduleReconciliationQueue = {
     shouldRun: () => boolean,
     intent?: ScheduleRangeRefreshIntent,
     isExecutionSafe?: () => boolean,
-    generation?: number
+    generation?: number,
   ): Promise<void>;
   invalidate: (minimumGeneration: number) => void;
 };
@@ -409,7 +453,7 @@ export function createScheduleReconciliationQueue(): ScheduleReconciliationQueue
     shouldRun: () => boolean,
     intent: ScheduleRangeRefreshIntent = "read",
     isExecutionSafe: () => boolean = () => true,
-    generation = 0
+    generation = 0,
   ): Promise<void> {
     if (generation < minimumGeneration) {
       return inFlight ?? Promise.resolve();
@@ -429,9 +473,8 @@ export function createScheduleReconciliationQueue(): ScheduleReconciliationQueue
       }
       // A read can satisfy the shared snapshot guard, but it cannot satisfy a
       // materialization request. Keep the higher-priority request and run it once.
-      const forceRun = generation === activeGeneration
-        && intent === "materialize"
-        && activeIntent === "read";
+      const forceRun =
+        generation === activeGeneration && intent === "materialize" && activeIntent === "read";
       request.forceRun = forceRun;
       enqueuePending(request);
       return inFlight;
@@ -461,10 +504,7 @@ export function createScheduleReconciliationQueue(): ScheduleReconciliationQueue
         const shouldAttempt = currentRequest.forceRun || currentRequest.shouldRun();
         // Priority may override snapshot satisfaction, never mutation settlement.
         if (shouldAttempt && !currentRequest.isExecutionSafe()) {
-          if (
-            pendingRequest
-            && pendingRequest.generation > currentRequest.generation
-          ) {
+          if (pendingRequest && pendingRequest.generation > currentRequest.generation) {
             currentRequest = pendingRequest;
             pendingRequest = null;
             continue;
@@ -495,10 +535,10 @@ export function createScheduleReconciliationQueue(): ScheduleReconciliationQueue
         pendingRequest = null;
         if (nextRequest) {
           if (
-            attemptFailed
-            && currentRequest.intent === "materialize"
-            && nextRequest.intent === "read"
-            && currentRequest.generation === nextRequest.generation
+            attemptFailed &&
+            currentRequest.intent === "materialize" &&
+            nextRequest.intent === "read" &&
+            currentRequest.generation === nextRequest.generation
           ) {
             throw attemptError;
           }
@@ -545,11 +585,13 @@ export function isScheduleReadCurrent({
   mutationsInFlight,
   requestSequenceAtStart,
 }: ScheduleReadFreshness) {
-  return authCurrent
-    && currentGeneration === generationAtStart
-    && mutationsInFlight === 0
-    && currentDataRevision === dataRevisionAtStart
-    && currentRequestSequence === requestSequenceAtStart;
+  return (
+    authCurrent &&
+    currentGeneration === generationAtStart &&
+    mutationsInFlight === 0 &&
+    currentDataRevision === dataRevisionAtStart &&
+    currentRequestSequence === requestSequenceAtStart
+  );
 }
 
 export function isAuthoritativeScheduleReady(current: ScheduleCoordinatorState) {
@@ -580,7 +622,7 @@ export function mergeSessionsForRange(
   current: ClassSession[],
   fetched: ClassSession[],
   startDate: string,
-  endDate: string
+  endDate: string,
 ): ClassSession[] {
   return [
     ...current.filter((session) => session.date < startDate || session.date > endDate),
@@ -591,19 +633,16 @@ export function mergeSessionsForRange(
 export function mergeAttendanceForSessions(
   current: AttendanceRecord[],
   fetched: AttendanceRecord[],
-  replacedSessionIds: string[]
+  replacedSessionIds: string[],
 ): AttendanceRecord[] {
   const replaced = new Set(replacedSessionIds);
-  return [
-    ...current.filter((record) => !replaced.has(record.session_id)),
-    ...fetched,
-  ];
+  return [...current.filter((record) => !replaced.has(record.session_id)), ...fetched];
 }
 
 export function updateSessionAttendanceCount(
   sessionList: ClassSession[],
   sessionId: string,
-  delta: number
+  delta: number,
 ): ClassSession[] {
   if (delta === 0) {
     return sessionList;
@@ -615,13 +654,13 @@ export function updateSessionAttendanceCount(
           ...session,
           attendance_count: Math.max(0, session.attendance_count + delta),
         }
-      : session
+      : session,
   );
 }
 
 export function toAttendanceCountDelta(
   previousStatus: AttendanceStatus | null,
-  nextStatus: AttendanceStatus | null
+  nextStatus: AttendanceStatus | null,
 ) {
   const previousCount = previousStatus && previousStatus !== "absent" ? 1 : 0;
   const nextCount = nextStatus && nextStatus !== "absent" ? 1 : 0;
@@ -637,7 +676,9 @@ export function normalizeAttendanceRecords(records: AttendanceRecord[]): Attenda
 
 export function getPreviewTemplateSessionDates(template: ClassTemplate): string[] {
   const start = parseCalendarDate(template.start_date);
-  const end = template.end_date ? parseCalendarDate(template.end_date) : parseCalendarDate(template.start_date);
+  const end = template.end_date
+    ? parseCalendarDate(template.end_date)
+    : parseCalendarDate(template.start_date);
   if (!template.end_date) {
     end.setDate(end.getDate() + 84);
   }

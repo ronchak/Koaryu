@@ -41,18 +41,39 @@ describe("staff store model", () => {
   it("sorts the current user first, then role, status, and creation date", () => {
     const sorted = sortStaffMembers(
       [
-        staffMember("later-front", { role: "front_desk", status: "active", created_at: "2026-05-04T00:00:00.000Z" }),
-        staffMember("instructor", { role: "instructor", status: "active", created_at: "2026-05-03T00:00:00.000Z" }),
-        staffMember("current", { user_id: "user-current", role: "front_desk", status: "pending", created_at: "2026-05-05T00:00:00.000Z" }),
-        staffMember("admin-pending", { role: "admin", status: "pending", created_at: "2026-05-02T00:00:00.000Z" }),
-        staffMember("admin-active", { role: "admin", status: "active", created_at: "2026-05-06T00:00:00.000Z" }),
+        staffMember("later-front", {
+          role: "front_desk",
+          status: "active",
+          created_at: "2026-05-04T00:00:00.000Z",
+        }),
+        staffMember("instructor", {
+          role: "instructor",
+          status: "active",
+          created_at: "2026-05-03T00:00:00.000Z",
+        }),
+        staffMember("current", {
+          user_id: "user-current",
+          role: "front_desk",
+          status: "pending",
+          created_at: "2026-05-05T00:00:00.000Z",
+        }),
+        staffMember("admin-pending", {
+          role: "admin",
+          status: "pending",
+          created_at: "2026-05-02T00:00:00.000Z",
+        }),
+        staffMember("admin-active", {
+          role: "admin",
+          status: "active",
+          created_at: "2026-05-06T00:00:00.000Z",
+        }),
       ],
-      "user-current"
+      "user-current",
     );
 
     assert.deepEqual(
       sorted.map((member) => member.id),
-      ["current", "admin-active", "admin-pending", "instructor", "later-front"]
+      ["current", "admin-active", "admin-pending", "instructor", "later-front"],
     );
   });
 
@@ -69,7 +90,7 @@ describe("staff store model", () => {
       {
         now: new Date("2026-05-24T12:00:00.000Z"),
         nowMs: 12345,
-      }
+      },
     );
 
     assert.deepEqual(
@@ -102,7 +123,7 @@ describe("staff store model", () => {
         invited_by: "preview-user",
         created_at: "2026-05-24T12:00:00.000Z",
         updated_at: "2026-05-24T12:00:00.000Z",
-      }
+      },
     );
   });
 
@@ -116,30 +137,43 @@ describe("staff store model", () => {
       staffMember("pending", { role: "admin", status: "pending" }),
       staffMember("active", { role: "admin", status: "active" }),
     ]);
-    assert.deepEqual(sorted.map((member) => member.id), ["active", "pending", "archived"]);
+    assert.deepEqual(
+      sorted.map((member) => member.id),
+      ["active", "pending", "archived"],
+    );
     assert.equal(countActiveStaffAdmins(sorted), 1);
   });
 
   it("applies archive and unarchive transitions without dropping the member", () => {
     const members = [
       staffMember("admin", { role: "admin", status: "active" }),
-      staffMember("archived", { role: "admin", status: "archived", archived_at: "2026-05-20T00:00:00.000Z" }),
+      staffMember("archived", {
+        role: "admin",
+        status: "archived",
+        archived_at: "2026-05-20T00:00:00.000Z",
+      }),
     ];
 
     const archived = applyStaffArchive(members, "admin", null, "2026-05-24T12:00:00.000Z");
     assert.equal(archived.updated?.status, "archived");
     assert.equal(archived.updated?.archived_at, "2026-05-24T12:00:00.000Z");
-    assert.deepEqual(archived.members.map((member) => member.id), ["admin", "archived"]);
+    assert.deepEqual(
+      archived.members.map((member) => member.id),
+      ["admin", "archived"],
+    );
 
     const unarchived = applyStaffUnarchive(
       archived.members,
       "archived",
       null,
-      "2026-05-25T12:00:00.000Z"
+      "2026-05-25T12:00:00.000Z",
     );
     assert.equal(unarchived.updated?.status, "active");
     assert.equal(unarchived.updated?.archived_at, null);
-    assert.deepEqual(unarchived.members.map((member) => member.id), ["archived", "admin"]);
+    assert.deepEqual(
+      unarchived.members.map((member) => member.id),
+      ["archived", "admin"],
+    );
   });
 
   it("normalizes confirmation whitespace while retaining case and preserves scheduled deletion state", () => {
@@ -161,7 +195,7 @@ describe("staff store model", () => {
       archived,
       "policy review",
       "owner@example.test",
-      { now: new Date("2026-05-24T12:00:00.000Z"), nowMs: 42 }
+      { now: new Date("2026-05-24T12:00:00.000Z"), nowMs: 42 },
     );
     assert.equal(response.status, "scheduled");
     assert.equal(response.reason, "policy review");
@@ -171,28 +205,38 @@ describe("staff store model", () => {
   });
 
   it("fails preview mutations for the current user, last admin, and unarchived deletion targets", () => {
-    const onlyAdmin = staffMember("owner", { user_id: "current-user", role: "admin", status: "active" });
+    const onlyAdmin = staffMember("owner", {
+      user_id: "current-user",
+      role: "admin",
+      status: "active",
+    });
     assert.match(
-      getStaffLifecyclePreviewError([onlyAdmin], onlyAdmin.id, "archive", { currentUserId: "current-user" }),
-      /current user/
+      getStaffLifecyclePreviewError([onlyAdmin], onlyAdmin.id, "archive", {
+        currentUserId: "current-user",
+      }),
+      /current user/,
     );
 
-    const otherAdmin = staffMember("other", { user_id: "other-user", role: "admin", status: "active" });
+    const otherAdmin = staffMember("other", {
+      user_id: "other-user",
+      role: "admin",
+      status: "active",
+    });
     assert.match(
       getStaffLifecyclePreviewError([otherAdmin], otherAdmin.id, "archive"),
-      /last active admin/
+      /last active admin/,
     );
 
     const activeTarget = staffMember("active-target", { status: "active" });
     assert.match(
       getStaffLifecyclePreviewError([activeTarget], activeTarget.id, "scheduleDeletion"),
-      /archived staff member/
+      /archived staff member/,
     );
 
     const owner = staffMember("owner-target", { user_id: "owner-user", role: "admin" });
     assert.match(
       getStaffLifecyclePreviewError([owner], owner.id, "archive", { ownerUserId: "owner-user" }),
-      /studio owner/
+      /studio owner/,
     );
   });
 
@@ -212,13 +256,16 @@ describe("staff store model", () => {
     const upserted = upsertStaffMember(
       members,
       staffMember("member-1", { role: "admin", status: "active" }),
-      null
+      null,
     );
 
-    assert.deepEqual(upserted.map((member) => [member.id, member.role]), [
-      ["member-1", "admin"],
-      ["member-2", "instructor"],
-    ]);
+    assert.deepEqual(
+      upserted.map((member) => [member.id, member.role]),
+      [
+        ["member-1", "admin"],
+        ["member-2", "instructor"],
+      ],
+    );
   });
 
   it("applies preview role updates and reports missing members", () => {
@@ -232,17 +279,23 @@ describe("staff store model", () => {
       "member-1",
       "admin",
       null,
-      "2026-05-24T12:00:00.000Z"
+      "2026-05-24T12:00:00.000Z",
     );
-    assert.deepEqual(result.members.map((member) => [member.id, member.role, member.updated_at]), [
-      ["member-1", "admin", "2026-05-24T12:00:00.000Z"],
-      ["member-2", "instructor", "2026-05-01T00:00:00.000Z"],
-    ]);
+    assert.deepEqual(
+      result.members.map((member) => [member.id, member.role, member.updated_at]),
+      [
+        ["member-1", "admin", "2026-05-24T12:00:00.000Z"],
+        ["member-2", "instructor", "2026-05-01T00:00:00.000Z"],
+      ],
+    );
     assert.deepEqual([result.updated?.id, result.updated?.role], ["member-1", "admin"]);
 
     const missing = applyStaffRoleUpdate(members, "missing", "admin");
     assert.equal(missing.updated, null);
-    assert.deepEqual(missing.members.map((member) => member.id), ["member-2", "member-1"]);
+    assert.deepEqual(
+      missing.members.map((member) => member.id),
+      ["member-2", "member-1"],
+    );
   });
 
   it("merges legal names by user id without replacing unrelated roster fields", () => {
@@ -286,7 +339,7 @@ describe("staff store model", () => {
           legal_last_name: undefined,
           updated_at: "2026-05-01T00:00:00.000Z",
         },
-      ]
+      ],
     );
 
     const missing = applyStaffLegalNameUpdate(members, "missing-user", "Ari", "Lane");

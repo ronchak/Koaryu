@@ -20,7 +20,6 @@ Required variables:
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`: Supabase anon key for browser and SSR auth
 - `NEXT_PUBLIC_API_URL`: backend API base URL, typically `http://127.0.0.1:8001/api/v1`
 - `NEXT_PUBLIC_SITE_URL`: frontend origin used for auth callback links, typically `http://localhost:4000` locally and `https://koaryu.app` in production
-- `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`: Stripe publishable key for frontend billing flows
 - `BACKEND_API_URL`: server-only backend API base URL for Next.js API proxy and cron routes; defaults to the public API URL only when this is not set
 - `CRON_SECRET`: server-only Vercel Cron secret for scheduled internal maintenance routes
 - `ACCOUNT_DELETION_WORKER_SECRET`: server-only secret used by the Vercel Cron route when it calls the protected Render account-deletion worker
@@ -33,6 +32,15 @@ The `NEXT_PUBLIC_` variables are read during `next build`, so they must also be 
 
 Production deploys should be verified after every dependency update with `npm run lint`, `npm run build`, and a Vercel deployment check. A local build proves the static/runtime bundle compiles, but it does not prove Vercel has the right environment values baked into the deployed build.
 
+## Social sign-in
+
+Login and signup offer Google, then Microsoft, before email. Google configuration
+and required staging checks are in [Google SSO setup](../docs/google-sso-setup.md).
+Both providers use the existing PKCE callback and membership routing. Microsoft
+configuration and required account-type tests are in
+[Microsoft SSO setup](../docs/microsoft-sso-setup.md). Keep production
+`NEXT_PUBLIC_PREVIEW_MODE=false`; provider client secrets belong only in Supabase.
+
 ## Development
 
 ```bash
@@ -41,6 +49,17 @@ npm run dev
 ```
 
 The local dev server runs at [http://localhost:4000](http://localhost:4000).
+
+`next.config.ts` pins both Turbopack and output tracing to the repository root
+so a lockfile above the repository cannot change the workspace root. Keeping the
+tracing root at the monorepo level also preserves Vercel's frontend asset paths.
+
+If development stalls at `Compiling /` while a production build serves normally,
+stop the dev server and move `.next/dev/cache/turbopack` to a temporary directory
+outside the frontend. Restart and test `/` before opening a browser. This isolates
+persisted compiler state without deleting the production build or changing code.
+Keep the old cache until recovery is verified; increasing browser test timeouts
+does not repair a stalled compiler.
 
 ## Build
 
@@ -59,6 +78,16 @@ them touch state. The full e2e command is:
 npm run test:e2e
 ```
 
+The landing-page history regression needs only a running local frontend, with no
+login or database setup. Run it with one browser worker:
+
+```bash
+npx playwright test e2e/marketing-journey-history.spec.ts --workers=1 --max-failures=1
+```
+
+It checks explicit chapter links, Back/Forward, duplicate clicks, and replacement
+of the current history entry during keyboard chapter navigation.
+
 The preview CSV-import check runs against preview mode and uses the checked-in
 demo CSV:
 
@@ -74,18 +103,22 @@ and the public marketing pages, start the frontend with
 npm run test:e2e:preview-smoke
 ```
 
-The belt-ladder check is a live-stateful smoke test. Run it only against a
-disposable account and studio name:
+The mounted belt editor check verifies browser save behavior and repeated rank
+payloads without credentials or a database:
 
 ```bash
-KOARYU_LIVE_STATEFUL_E2E=true \
-KOARYU_E2E_LOGIN_EMAIL=... \
-KOARYU_E2E_LOGIN_PASSWORD=... \
-KOARYU_E2E_STUDIO_NAME="Disposable Belt Ladder Smoke" \
-npm run test:e2e:live-belt
+node --experimental-strip-types --test tests/belt-editor-mounted.test.mjs
 ```
 
-Do not point this check at production accounts or reusable customer data. The test intentionally avoids logging account identifiers.
+From the repository root, the separate local Supabase contract check verifies
+belt-rank persistence:
+
+```bash
+npm run check:supabase-contracts-local
+```
+
+These are independent browser-payload and database-persistence checks, not a
+joined browser-to-database test.
 
 ## Bundle Analysis
 
@@ -97,7 +130,37 @@ This uses Next.js 16's built-in Turbopack analyzer (`next build --experimental-a
 
 ## Performance Rollout
 
-See [docs/performance-rollout.md](../docs/performance-rollout.md) before enabling the v0.1.1 rendering changes in production. The short version: keep `NEXT_PUBLIC_STUDENTS_PAGED_ROSTER=true`, let the dashboard summary load after bootstrap, and use the documented switches only for rollback or short diagnostic windows.
+See [docs/performance-rollout.md](../docs/performance-rollout.md) before enabling the v0.1.1 rendering changes in production. The short version: keep `NEXT_PUBLIC_STUDENTS_PAGED_ROSTER=true`, let the dashboard route own summary loading after workspace access is verified, and use the documented switches only for rollback or short diagnostic windows.
+
+## Authenticated loading
+
+The store initializes once per identity scope. Committing a role does not restart
+bootstrap or the Auth subscription. Token renewal preserves the identity and
+reconciles schedule reads; account/profile scope changes discard the old data.
+An unavailable bootstrap shows a retryable identity error. It does not fan out
+into legacy dataset requests. Deploy a backend with `/dashboard/bootstrap`
+before this frontend; mixed versions without that endpoint are unsupported.
+
+Dashboard panels report their own loading and error states. Summary-backed
+panels can appear before schedule or promotion eligibility finishes. Eligibility
+loads when Promotions Due is selected or Belt Tracker opens. The original
+`data-koaryu-dashboard-data-ready` marker retains its aggregate requirements;
+`data-koaryu-dashboard-selected-data-ready` measures the selected panels, and
+`data-koaryu-dashboard-useful-ready` identifies the first ready data panel.
+Program metadata comes from bootstrap. Settings refreshes usage when opened,
+shows loading or unavailable usage explicitly, and retains successful usage
+while refreshing. Bootstrap rows never establish paginated roster authority.
+
+Schedule initialization and visible calendar ranges use the same reconciliation
+queue. New ranges remain pending until their materialization completes. Refresh
+keeps the current range visible, and obsolete range responses cannot replace a
+newer window or attendance mutation.
+
+The default frontend test suite includes a mounted StoreProvider test in
+Chromium using synthetic external I/O. Install its browser with
+`npx playwright install chromium` before running `npm test`. It exercises both
+production React and development Strict Mode without a running application,
+credentials, or a database.
 
 ## Landing Page And Backend Warmup
 
@@ -120,7 +183,6 @@ vercel env add NEXT_PUBLIC_SUPABASE_URL production
 vercel env add NEXT_PUBLIC_SUPABASE_ANON_KEY production
 vercel env add NEXT_PUBLIC_API_URL production
 vercel env add NEXT_PUBLIC_SITE_URL production
-vercel env add NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY production
 vercel env add BACKEND_API_URL production
 vercel env add CRON_SECRET production
 vercel env add ACCOUNT_DELETION_WORKER_SECRET production
@@ -132,7 +194,7 @@ For production, `NEXT_PUBLIC_API_URL` should point to the deployed Render API ba
 
 `CRON_SECRET` cannot contain leading or trailing whitespace. Vercel rejects cron requests with an invalid bearer header if the secret was pasted with an accidental newline. `ACCOUNT_DELETION_WORKER_SECRET` must exactly match the Render backend value.
 
-After Vercel deploys, smoke-test at least login, dashboard load, Settings, Billing, and the Koaryu Core subscription status from the production domain. These routes exercise Supabase SSR auth, the baked API URL, and the Stripe publishable-key path.
+After Vercel deploys, smoke-test at least login, dashboard load, Settings, Billing, and the Koaryu Core subscription status from the production domain. These routes exercise Supabase SSR auth, the baked API URL, and the billing path.
 
 ## Admin Demo Utilities
 
@@ -146,3 +208,123 @@ Both tools are destructive. They are designed to preserve Koaryu Core subscripti
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+
+Pending staff, program-usage and deferred summary reads recover from token rotation
+through their existing owners, with at most two replays using the current token.
+Identity changes, sign-out and subscription revocation invalidate that recovery.
+Mutations are not replayed. A confirmed missing session or sign-out clears private
+state and replaces the route with `/login`. A transient session error instead hides
+protected content and offers Retry workspace while preserving SDK credentials.
+Null initial-session notifications are confirmed outside the Auth callback lock.
+Subscription denial preserves an already verified identity and legal-name gate so
+the recovery page can render after studio data is cleared.
+
+Bootstrap partial projections are opt-in through `allow_partial=true`. Healthy
+identity and datasets can render even when an independent projection fails;
+missing studio/program/belt metadata remains explicit and retryable. Older
+frontends retain strict failure behavior. A same-identity token renewal keeps an
+in-flight Schedule range caller attached to the existing reconciliation owner;
+it cannot hide the newly reconciled range or replay attendance mutations.
+
+
+## Workflow resource ownership
+
+Belt Tracker owns each rank-plan draft by ladder ID, including both ranks and the
+sub-rank term. Program switching is blocked while a draft or rank editor is open.
+Saving disables rank edits until the request settles. A rejected save retains the
+draft; a confirmed save with a failed refresh reports that the ranks were saved.
+Credential renewal may settle a confirmed write within the same verified identity,
+but sign-out or a changed workspace cannot restore the old identity's data.
+
+Run the synthetic rank-editor browser regression without an application server,
+credentials or a database:
+
+```bash
+node --experimental-strip-types --test tests/belt-editor-mounted.test.mjs
+```
+
+`/dashboard/workspace` establishes authoritative membership, subscription access and
+studio timezone before feature reads. Student detail always ensures a complete
+record independently of the lightweight roster. Dashboard commands reconcile with
+`/dashboard/summary?fresh=true`; a failed refresh keeps known data and reports a
+warning. Token renewal preserves confirmed writes and roster position only within
+the same validated identity scope.
+
+Roster URLs retain bounded filters/sort. One identity-scoped session return record
+retains cursor/scroll/focus for 30 minutes. Unknown write outcomes must not be
+replayed automatically. Automations is a planned feature under Help for the Core
+release. See `docs/verification/workflow-stabilization.md` for evidence and limits.
+
+Run deterministic live-mode workflow checks without any external data plane:
+
+```bash
+node --experimental-strip-types --test tests/workflow-stabilization-mounted.test.mjs
+```
+
+## Refund recovery
+
+When the server enables `payment.refund` for an administrator, Billing keeps the
+original refund receipt until the exact payment's current balance is verified.
+An accepted request whose read fails offers **Refresh payment**, which performs
+only a read and remains available at zero refundable balance. An unconfirmed
+request offers **Retry original refund**, using its original amount and reason.
+Changing a form cannot turn that unresolved request into a new refund. Generic
+tab refresh and cohort totals are not proof that the refunded payment is fresh.
+See [refund completion verification](../docs/remediation/refund-completion-verification.md).
+
+## Navigation authentication recovery
+
+Navigation checks `/auth/me` when studio state needs refreshing and for billing
+access checks. These reads retry once on network failures or HTTP 502/503/504,
+with a four-second deadline per attempt including the response body. A short
+`Retry-After` is honored; longer waits return the unavailable page without an
+early retry. Invalid credentials, denied access, and malformed membership data
+retain their existing handling. Request cancellation stops recovery.
+
+The backend shares an in-progress signing-key refresh across authentication
+requests. Followers await completion asynchronously for at most three seconds,
+then verify their own tokens. Expired keys are never reused to grant access.
+
+### Navigation recovery
+
+Temporary auth-provider errors retain the session and offer a retry of the original
+application destination. Returning to an old build offers a refresh without
+replacing drafts, and blocks that refresh while API saves are pending. See
+[the navigation follow-up](../docs/verification/navigation-reliability-followup.md)
+for lifecycle behavior and the release browser checks.
+
+Ordinary Dashboard revisits may reuse facts for up to the backend cache's 15-second
+TTL. Explicit refresh and post-command reconciliation remain fresh. Commands in
+this browser or another same-origin tab bypass cached facts for 60 seconds.
+Returning to a current build verifies workspace access before refreshing the
+visible route; drafts remain mounted.
+
+Sampled production navigation timings and Web Vitals use the existing Vercel logs
+through `/api/performance`. The schema accepts fixed route labels and numeric
+measurements only. Use the root `npm run summarize:performance` command with a
+private log export to compare releases. Interactive API deadlines are 30 seconds
+end to end on the backend, 34 at the proxy, and 35 in the browser. Bulk operations
+use 120, 125, and 130 seconds respectively for reads. Requests with a body add
+a bounded 60-second proxy upload phase to the browser allowance; CSV import
+and photo uploads use a 190-second browser limit. Staging and preview traffic
+is excluded from production metric collection.
+
+The authenticated dashboard capture records allowlisted HTTP and browser resource
+timings for `/dashboard/workspace`, `/dashboard/bootstrap`, and `/dashboard/summary`
+without retaining URLs, identifiers, or query values. Workspace does not emit
+`Server-Timing`, so its HTTP and resource timings are diagnostics only. Bootstrap
+and summary still require their existing successful responses, resource entries,
+and allowlisted `Server-Timing` measurements.
+
+The synthetic mounted-test startup trace records fixture workspace/controller
+readiness. It does not prove deployed route usability or measure deployed backend memory.
+
+## Eligibility and report identity lifetime
+
+Eligibility keeps its selected-ladder request owner during token renewal and may
+replay a read at most twice. A changed ladder or access identity invalidates the
+old owner. CSV exports may finish across ordinary panel or dashboard navigation
+and same-identity token renewal. Observed sign-out, user/studio/role replacement,
+USER_UPDATED, or access reset suppresses file handoff. The request releases its
+Auth listener when it settles. See [identity lifetime verification](../docs/verification/identity-lifetime.md)
+for the mounted regression coverage and its limits.

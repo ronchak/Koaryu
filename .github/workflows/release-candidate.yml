@@ -40,6 +40,12 @@ jobs:
       - name: Verify candidate workflow coverage
         run: npm run check:release-workflow
 
+      - name: Verify generated release attestations
+        run: npm run check:release-attestation
+
+      - name: Verify derived remediation ledger counts
+        run: npm run check:remediation-ledger
+
       - name: Test exact-SHA deployed-release verifier
         run: node --test scripts/verify-deployed-release.test.mjs
 
@@ -78,6 +84,12 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      - name: Verify frontend formatting
+        run: npm run format:check
+
+      - name: Install Chromium for mounted lifecycle tests
+        run: npx playwright install --with-deps chromium
+
       - name: Run frontend tests
         run: npm test
 
@@ -93,6 +105,24 @@ jobs:
 
       - name: Audit runtime dependencies
         run: npm audit --omit=dev --audit-level=high
+
+      - name: Verify navigation recovery in disposable preview
+        run: |
+          set -a
+          source .env.example
+          set +a
+          export NEXT_PUBLIC_PREVIEW_MODE=true
+          export VERCEL_ENV=production
+          export VERCEL_GIT_COMMIT_SHA=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+          npm run build
+          npm exec -- next start --port 4012 > /tmp/koaryu-navigation-preview.log 2>&1 &
+          navigation_preview_pid=$!
+          trap 'kill "$navigation_preview_pid" 2>/dev/null || true' EXIT
+          for attempt in $(seq 1 30); do
+            if curl --silent --fail http://localhost:4012/api/version > /dev/null; then break; fi
+            sleep 1
+          done
+          KOARYU_PREVIEW_SMOKE_E2E=true KOARYU_PREFETCH_PRODUCTION_E2E=true KOARYU_E2E_FRONTEND_URL=http://localhost:4012 npx playwright test e2e/performance-navigation.spec.ts e2e/navigation-recovery.spec.ts e2e/intent-prefetch.spec.ts e2e/marketing-journey-mobile.spec.ts e2e/marketing-journey-history.spec.ts --workers=1
 
   backend:
     name: Backend tests, contracts, and audit
@@ -128,6 +158,9 @@ jobs:
       - name: Verify dependency consistency
         run: python -m pip check
 
+      - name: Verify backend formatting
+        run: python -m ruff format --check .
+
       - name: Verify hash-pinned dependency locks
         run: |
           python -m piptools compile --quiet --generate-hashes --strip-extras --output-file requirements.txt requirements.in
@@ -146,23 +179,40 @@ jobs:
   database:
     name: Supabase migration and contract suite
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # V55 isolated suite ~105 min + prior 30-min assembled Supabase budget + installation, runner, and future restore margin.
+    timeout-minutes: 180
 
     steps:
       - name: Check out exact candidate head
         uses: actions/checkout@v7
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
 
       - name: Assert exact candidate head
         env:
           EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
 
+      - name: Install PostgreSQL 17 for disposable restore proofs
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl --fail --silent --show-error -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          . /etc/os-release
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt ${VERSION_CODENAME}-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update
+          sudo apt-get install -y postgresql-17 postgresql-client-17
+
+      - name: Run isolated migration, restore, and concurrency proofs
+        env:
+          KOARYU_PG_BIN_DIR: /usr/lib/postgresql/17/bin
+        run: npm run check:supabase-contracts-local
+
       - name: Set up Supabase CLI
+        id: supabase-cli
         uses: supabase/setup-cli@ab058987d8d6c725971f6cf9d0b5c98467e30bd1 # v1
         with:
-          version: 2.95.4
+          version: 2.111.0
 
       - name: Start disposable database
         run: supabase db start
@@ -188,8 +238,51 @@ jobs:
         run: scripts/verify-student-profile-rank-plan-concurrency.sh
 
       - name: Stop disposable database
-        if: ${{ always() }}
+        if: ${{ always() && steps.supabase-cli.outcome == 'success' }}
         run: supabase stop --no-backup
+
+  performance-regression:
+    name: Deterministic performance regression gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out exact candidate head
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Assert exact candidate head
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22.13.0"
+
+      - name: Set up Python
+        id: setup-python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: |
+            backend/requirements.txt
+            performance/dashboard-summary-budget.json
+
+      - name: Install performance fixture runtime dependencies
+        run: python -m pip install -r backend/requirements.txt
+
+      - name: Verify versioned performance gate inputs
+        run: git ls-files --error-unmatch backend/requirements.txt performance/dashboard-summary-budget.json
+
+      - name: Run deterministic dashboard summary gate
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          KOARYU_PERFORMANCE_PYTHON: ${{ steps.setup-python.outputs.python-path }}
+        run: npm run check:performance-regression -- --expected-sha "$EXPECTED_HEAD_SHA"
 
   static-analysis:
     name: Static and secret analysis
@@ -252,6 +345,7 @@ jobs:
       - frontend
       - backend
       - database
+      - performance-regression
       - static-analysis
 
     steps:
@@ -261,10 +355,12 @@ jobs:
           FRONTEND_RESULT: ${{ needs.frontend.result }}
           BACKEND_RESULT: ${{ needs.backend.result }}
           DATABASE_RESULT: ${{ needs.database.result }}
+          PERFORMANCE_REGRESSION_RESULT: ${{ needs.performance-regression.result }}
           STATIC_ANALYSIS_RESULT: ${{ needs.static-analysis.result }}
         run: |
           test "$REPOSITORY_RESULT" = success
           test "$FRONTEND_RESULT" = success
           test "$BACKEND_RESULT" = success
           test "$DATABASE_RESULT" = success
+          test "$PERFORMANCE_REGRESSION_RESULT" = success
           test "$STATIC_ANALYSIS_RESULT" = success

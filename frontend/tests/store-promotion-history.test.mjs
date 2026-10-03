@@ -40,23 +40,26 @@ describe("store promotion history model", () => {
       {},
       "student-1",
       [first],
-      Date.parse("2026-05-24T12:00:00.000Z")
+      Date.parse("2026-05-24T12:00:00.000Z"),
     );
 
     assert.deepEqual(getPromotionHistoryCacheItems(cache, "student-1"), [first]);
     assert.deepEqual(getPromotionHistoryCacheItems(cache, "missing"), []);
     assert.deepEqual(
-      prependPromotionHistoryItem([first, second], updatedFirst).map((item) => [item.id, item.notes]),
+      prependPromotionHistoryItem([first, second], updatedFirst).map((item) => [
+        item.id,
+        item.notes,
+      ]),
       [
         ["promotion-1", "Updated"],
         ["promotion-2", undefined],
-      ]
+      ],
     );
     assert.deepEqual(toPromotionHistoryByStudent(cache), { "student-1": [first] });
-    assert.deepEqual(
-      buildPromotionHistoryWithPrependedItem(cache, "student-1", demotion),
-      [demotion, first]
-    );
+    assert.deepEqual(buildPromotionHistoryWithPrependedItem(cache, "student-1", demotion), [
+      demotion,
+      first,
+    ]);
   });
 
   it("prepends live mutations only when a complete history cache exists", () => {
@@ -67,18 +70,12 @@ describe("store promotion history model", () => {
     });
     const cache = setPromotionHistoryCacheItems({}, "student-1", [existing]);
 
-    assert.deepEqual(
-      buildPromotionHistoryWithPrependedItemIfCached(cache, "student-1", demotion),
-      [demotion, existing]
-    );
-    assert.equal(
-      buildPromotionHistoryWithPrependedItemIfCached({}, "student-1", demotion),
-      null
-    );
-    assert.deepEqual(
-      buildPromotionHistoryWithPrependedItem({}, "student-1", demotion),
-      [demotion]
-    );
+    assert.deepEqual(buildPromotionHistoryWithPrependedItemIfCached(cache, "student-1", demotion), [
+      demotion,
+      existing,
+    ]);
+    assert.equal(buildPromotionHistoryWithPrependedItemIfCached({}, "student-1", demotion), null);
+    assert.deepEqual(buildPromotionHistoryWithPrependedItem({}, "student-1", demotion), [demotion]);
   });
 
   it("resolves cache, in-flight, preview, and live load plans", async () => {
@@ -97,7 +94,7 @@ describe("store promotion history model", () => {
         isPreviewMode: false,
         now: freshNow,
       }),
-      { kind: "cached", items: [cachedPromotion] }
+      { kind: "cached", items: [cachedPromotion] },
     );
 
     const inFlightPlan = resolvePromotionHistoryLoadPlan({
@@ -119,7 +116,7 @@ describe("store promotion history model", () => {
         isPreviewMode: true,
         now: freshNow,
       }),
-      { kind: "preview", items: [cachedPromotion] }
+      { kind: "preview", items: [cachedPromotion] },
     );
 
     assert.deepEqual(
@@ -130,7 +127,7 @@ describe("store promotion history model", () => {
         isPreviewMode: false,
         now: staleNow,
       }),
-      { kind: "live" }
+      { kind: "live" },
     );
   });
 
@@ -205,5 +202,39 @@ describe("store promotion history model", () => {
     assert.deepEqual(await loadPromise, [promotion("stale-promotion")]);
     assert.deepEqual(committed, []);
     assert.equal(requests["student-1"], undefined);
+  });
+
+  it("retries a discarded history read with renewed credentials before resolving", async () => {
+    const requests = {};
+    const committed = [];
+    const tokens = [];
+    let currentToken = "token-1";
+
+    const result = await loadPromotionHistoryWithCache({
+      studentId: "student-1",
+      isPreviewMode: false,
+      cache: {},
+      requests,
+      generation: 1,
+      isGenerationCurrent: () => true,
+      beginLiveAuthRequest: () => {
+        const token = currentToken;
+        return {
+          token,
+          isCurrent: () => token === currentToken,
+          canRetryAfterTokenChange: () => token !== currentToken,
+        };
+      },
+      fetchPromotionHistory: async (_studentId, token) => {
+        tokens.push(token);
+        if (token === "token-1") currentToken = "token-2";
+        return [promotion(token)];
+      },
+      commitCache: (_studentId, items) => committed.push(items),
+    });
+
+    assert.deepEqual(tokens, ["token-1", "token-2"]);
+    assert.deepEqual(result, [promotion("token-2")]);
+    assert.deepEqual(committed, [[promotion("token-2")]]);
   });
 });

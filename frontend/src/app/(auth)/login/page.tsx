@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { publishAccessIdentity } from "@/lib/access-identity";
+import { Suspense, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
@@ -11,6 +12,8 @@ import { parseAuthProfileResponse } from "@/lib/store-bootstrap-model";
 import { syncStoredStudioSessionCookies } from "@/lib/store-session-cookies";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { SocialSignIn } from "@/components/auth/social-sign-in";
+import { CallbackError } from "@/components/auth/callback-error";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -59,6 +62,7 @@ export default function LoginPage() {
         session.access_token,
         { omitStudioHeader: true }
       ));
+      publishAccessIdentity(authProfile);
       syncStoredStudioSessionCookies(
         session.user.id,
         authProfile.studio_id,
@@ -139,6 +143,9 @@ export default function LoginPage() {
         Sign in to your studio
       </h2>
 
+      <Suspense fallback={null}><CallbackError /></Suspense>
+      <SocialSignIn disabled={isLoading} onLoadingChange={setIsLoading} />
+
       {mode === "password" ? (
         <form onSubmit={handlePasswordLogin} className="space-y-4">
           <Input
@@ -166,7 +173,7 @@ export default function LoginPage() {
 
           <Button
             type="submit"
-            variant="primary"
+            variant="secondary"
             size="lg"
             isLoading={isLoading}
             className="w-full"
@@ -192,7 +199,7 @@ export default function LoginPage() {
 
           <Button
             type="submit"
-            variant="primary"
+            variant="secondary"
             size="lg"
             isLoading={isLoading}
             className="w-full"

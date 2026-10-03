@@ -1,4 +1,5 @@
-import type { Lead, LeadSource, LeadStage, Program } from "@/types";
+import type { Lead, LeadSource, LeadStage, LostReason, Program } from "@/types";
+import { differenceInLocalDateKeys } from "./date.ts";
 
 export const PIPELINE_STAGES: { id: LeadStage; label: string; hex: string }[] = [
   { id: "inquiry", label: "Inquiry", hex: "var(--accent)" },
@@ -17,11 +18,16 @@ export const SOURCE_LABELS: Record<LeadSource, string> = {
   other: "Other",
 };
 
-const DAY_MS = 1000 * 60 * 60 * 24;
+export const LOST_REASON_LABELS: Record<LostReason, string> = {
+  no_show: "No-show",
+  price_objection: "Price objection",
+  timing: "Timing",
+  no_response: "No response",
+  other: "Other",
+};
 
 interface LeadsPageModelInput {
   baseLeads: Lead[];
-  draggedLeadId: string | null;
   optimisticLeads: Record<string, Lead>;
   programs: Program[];
   selectedLeadId: string | null;
@@ -30,10 +36,10 @@ interface LeadsPageModelInput {
 
 interface LeadsPageModel {
   activePrograms: Program[];
-  draggedLeadRecord: Lead | null;
   dueTodayCount: number;
   enrolledCount: number;
   followUpQueue: Lead[];
+  obligationLedgerLeads: Lead[];
   leads: Lead[];
   leadsByStage: Partial<Record<LeadStage, Lead[]>>;
   lostLeads: Lead[];
@@ -51,16 +57,8 @@ export function formatDate(value?: string | null, withYear = false) {
     "en-US",
     withYear
       ? { month: "short", day: "numeric", year: "numeric" }
-      : { month: "short", day: "numeric" }
+      : { month: "short", day: "numeric" },
   );
-}
-
-export function timeAgo(value: string, nowMs = Date.now()) {
-  const diff = nowMs - new Date(value).getTime();
-  const days = Math.floor(diff / DAY_MS);
-  if (days === 0) return "Today";
-  if (days === 1) return "Yesterday";
-  return `${days}d ago`;
 }
 
 export function todayDateString(date = new Date()) {
@@ -95,10 +93,7 @@ export function getFollowUpStatusLabel(date: string, today: string) {
     return "Due today";
   }
 
-  const diffMs =
-    new Date(`${today}T00:00:00`).getTime() -
-    new Date(`${date}T00:00:00`).getTime();
-  const diffDays = Math.floor(diffMs / DAY_MS);
+  const diffDays = differenceInLocalDateKeys(date, today);
 
   if (diffDays > 0) {
     return `${diffDays}d overdue`;
@@ -107,22 +102,11 @@ export function getFollowUpStatusLabel(date: string, today: string) {
   return `Due ${formatDate(date)}`;
 }
 
-export function getLeadFollowUpTone(
-  followUpDate: string | null | undefined,
-  today: string
-): "due-today" | "overdue" | null {
-  if (!followUpDate || followUpDate > today) return null;
-  return followUpDate < today ? "overdue" : "due-today";
-}
-
 export function getProgramLabel(lead: Lead, program?: Program | null) {
   return program?.name || lead.program_interest || "No program";
 }
 
-export function mergeOptimisticLeads(
-  baseLeads: Lead[],
-  optimisticLeads: Record<string, Lead>
-) {
+export function mergeOptimisticLeads(baseLeads: Lead[], optimisticLeads: Record<string, Lead>) {
   const merged = new Map<string, Lead>();
 
   baseLeads.forEach((lead) => {
@@ -164,9 +148,26 @@ export function getDueFollowUpQueue(leads: Lead[], today: string) {
         lead.stage !== "closed_lost" &&
         lead.stage !== "enrolled" &&
         !!lead.follow_up_date &&
-        lead.follow_up_date <= today
+        lead.follow_up_date <= today,
     )
     .sort((a, b) => (a.follow_up_date ?? "").localeCompare(b.follow_up_date ?? ""));
+}
+
+export function getObligationLedgerLeads(leads: Lead[]) {
+  return leads
+    .filter((lead) => lead.stage !== "closed_lost")
+    .sort((a, b) => {
+      if (a.stage === "enrolled" && b.stage !== "enrolled") return 1;
+      if (b.stage === "enrolled" && a.stage !== "enrolled") return -1;
+      const aDate = a.follow_up_date ?? "9999-12-31";
+      const bDate = b.follow_up_date ?? "9999-12-31";
+      if (aDate !== bDate) return aDate.localeCompare(bDate);
+
+      const aStage = PIPELINE_STAGES.findIndex((stage) => stage.id === a.stage);
+      const bStage = PIPELINE_STAGES.findIndex((stage) => stage.id === b.stage);
+      if (aStage !== bStage) return aStage - bStage;
+      return fullName(a).localeCompare(fullName(b));
+    });
 }
 
 export function getDueTodayCount(followUpQueue: Lead[], today: string) {
@@ -179,49 +180,57 @@ export function getUpcomingFollowUpCount(leads: Lead[], today: string) {
       lead.stage !== "closed_lost" &&
       lead.stage !== "enrolled" &&
       !!lead.follow_up_date &&
-      lead.follow_up_date > today
+      lead.follow_up_date > today,
   ).length;
 }
 
-export function buildLeadsPageModel({
+export function buildLeadsDatasetModel({
   baseLeads,
-  draggedLeadId,
   optimisticLeads,
   programs,
-  selectedLeadId,
   today,
-}: LeadsPageModelInput): LeadsPageModel {
+}: Omit<LeadsPageModelInput, "selectedLeadId">) {
   const activePrograms = programs.filter((program) => !program.archived_at);
   const programById = new Map(programs.map((program) => [program.id, program]));
   const leads = mergeOptimisticLeads(baseLeads, optimisticLeads);
-  const selectedLead = leads.find((lead) => lead.id === selectedLeadId) ?? null;
-  const draggedLeadRecord = leads.find((lead) => lead.id === draggedLeadId) ?? null;
+  const leadById = new Map(leads.map((lead) => [lead.id, lead]));
   const leadsByStage = groupLeadsByStage(leads);
   const lostLeads = getLostLeads(leads);
   const followUpQueue = getDueFollowUpQueue(leads, today);
+  const obligationLedgerLeads = getObligationLedgerLeads(leads);
   const dueTodayCount = getDueTodayCount(followUpQueue, today);
 
   return {
     activePrograms,
-    draggedLeadRecord,
+    leadById,
     dueTodayCount,
     enrolledCount: leads.filter((lead) => lead.stage === "enrolled").length,
     followUpQueue,
+    obligationLedgerLeads,
     leads,
     leadsByStage,
     lostLeads,
     overdueCount: followUpQueue.length - dueTodayCount,
     programById,
-    selectedLead,
     totalActive: leads.filter((lead) => lead.stage !== "closed_lost").length,
     upcomingFollowUps: getUpcomingFollowUpCount(leads, today),
+  };
+}
+
+export function selectLeadsPageModel(
+  dataset: ReturnType<typeof buildLeadsDatasetModel>,
+  selectedLeadId: string | null,
+): LeadsPageModel {
+  return {
+    ...dataset,
+    selectedLead: selectedLeadId ? (dataset.leadById.get(selectedLeadId) ?? null) : null,
   };
 }
 
 export function getLeadFollowUpInputValue(
   lead: Lead,
   followUpDrafts: Record<string, string>,
-  fallbackDate: string
+  fallbackDate: string,
 ) {
   return followUpDrafts[lead.id] ?? lead.follow_up_date ?? fallbackDate;
 }
@@ -229,7 +238,7 @@ export function getLeadFollowUpInputValue(
 export function buildOptimisticLeadUpdate(
   lead: Lead,
   updates: Partial<Lead>,
-  updatedAt = new Date().toISOString()
+  updatedAt = new Date().toISOString(),
 ) {
   return {
     ...lead,
@@ -238,10 +247,7 @@ export function buildOptimisticLeadUpdate(
   };
 }
 
-export function removeOptimisticLeadUpdate(
-  optimisticLeads: Record<string, Lead>,
-  leadId: string
-) {
+export function removeOptimisticLeadUpdate(optimisticLeads: Record<string, Lead>, leadId: string) {
   if (!(leadId in optimisticLeads)) {
     return optimisticLeads;
   }

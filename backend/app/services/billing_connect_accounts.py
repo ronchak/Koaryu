@@ -1,9 +1,10 @@
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
-from fastapi import HTTPException
+from fastapi import HTTPException, status
 
 from app.schemas.billing import StudioPaymentAccountResponse
+from app.services.billing_fees import platform_fee_bps
 from app.services.billing_invoice_projection import _object_get, _to_text
 from app.services.billing_webhook_event_state import (
     ACCOUNT_STATUS_ORDER,
@@ -32,13 +33,60 @@ class BillingConnectAccountStore:
         )
         if result.data:
             return result.data[0]
-        insert_result = self.supabase.table("studio_payment_accounts").insert({"studio_id": studio_id}).execute()
+        insert_result = (
+            self.supabase.table("studio_payment_accounts")
+            .insert({"studio_id": studio_id})
+            .execute()
+        )
         if not insert_result.data:
             raise HTTPException(status_code=500, detail="Failed to initialize payment account.")
         return insert_result.data[0]
 
+    def ensure_ready(self, studio_id: str) -> dict[str, Any]:
+        account = self.ensure_row(studio_id)
+        if not account.get("stripe_connected_account_id"):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Connect Stripe before using hosted payments.",
+            )
+        account = self.refresh_status(account, strict=True)
+        if not account.get("charges_enabled"):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Stripe Connect charges are not enabled yet.",
+            )
+        return account
+
+    def has_billing_history(self, studio_id: str) -> bool:
+        checks = (
+            ("billing_plans", "stripe_price_id"),
+            ("billing_payers", "stripe_customer_id"),
+            ("billing_subscriptions", "stripe_subscription_id"),
+            ("billing_invoices", "stripe_invoice_id"),
+            ("billing_payments", "stripe_payment_intent_id"),
+            ("billing_refunds", "stripe_refund_id"),
+            ("billing_disputes", "stripe_dispute_id"),
+        )
+        for table, column in checks:
+            result = (
+                self.supabase.table(table)
+                .select("id")
+                .eq("studio_id", studio_id)
+                .not_.is_(column, "null")
+                .limit(1)
+                .execute()
+            )
+            if result.data:
+                return True
+        return False
+
     def update(self, studio_id: str, update: dict[str, Any]) -> dict[str, Any]:
-        result = self.supabase.table("studio_payment_accounts").update(update).eq("studio_id", studio_id).execute()
+        result = (
+            self.supabase.table("studio_payment_accounts")
+            .update(update)
+            .eq("studio_id", studio_id)
+            .execute()
+        )
         if not result.data:
             raise HTTPException(status_code=404, detail="Payment account not found.")
         return result.data[0]
@@ -86,6 +134,35 @@ class BillingConnectAccountStore:
         )
         return result.data[0] if result.data else None
 
+    def resolve_stripe_event_studio_id(
+        self,
+        account_id: Optional[str],
+        *,
+        metadata_studio_id: Optional[str] = None,
+        local_studio_id: Optional[str] = None,
+    ) -> Optional[str]:
+        account = self.by_stripe_account(account_id) if account_id else None
+        account_studio_id = (account or {}).get("studio_id")
+
+        if account_id:
+            trusted_studio_id = account_studio_id or local_studio_id
+        else:
+            trusted_studio_id = local_studio_id or metadata_studio_id
+
+        if not trusted_studio_id:
+            return None
+        for candidate in (account_studio_id, local_studio_id, metadata_studio_id):
+            if candidate and candidate != trusted_studio_id:
+                return None
+        return trusted_studio_id
+
+    @staticmethod
+    def row_matches_stripe_account(row: dict[str, Any], account_id: Optional[str]) -> bool:
+        row_account_id = row.get("stripe_account_id")
+        if account_id:
+            return row_account_id == account_id
+        return row_account_id is None
+
     def refresh_status(self, account: dict[str, Any], *, strict: bool) -> dict[str, Any]:
         account_id = account.get("stripe_connected_account_id")
         if not account_id:
@@ -123,7 +200,11 @@ class BillingConnectAccountStore:
         due = _object_get(requirements, "currently_due") or []
         charges_enabled = bool(_object_get(stripe_account, "charges_enabled"))
         details_submitted = bool(_object_get(stripe_account, "details_submitted"))
-        status_value = "charges_enabled" if charges_enabled else ("action_required" if due else "onboarding_incomplete")
+        status_value = (
+            "charges_enabled"
+            if charges_enabled
+            else ("action_required" if due else "onboarding_incomplete")
+        )
         return {
             "status": status_value,
             "charges_enabled": charges_enabled,
@@ -141,7 +222,9 @@ class BillingConnectAccountStore:
             payouts_enabled=bool(row.get("payouts_enabled")),
             details_submitted=bool(row.get("details_submitted")),
             requirements_due=row.get("requirements_due") or [],
-            platform_fee_bps=row.get("platform_fee_bps") or self.settings.BILLING_PLATFORM_FEE_BPS,
+            platform_fee_bps=platform_fee_bps(
+                row.get("platform_fee_bps"), self.settings.BILLING_PLATFORM_FEE_BPS
+            ),
             created_at=_to_text(row.get("created_at")),
             updated_at=_to_text(row.get("updated_at")),
         )

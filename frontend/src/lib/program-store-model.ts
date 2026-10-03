@@ -17,7 +17,7 @@ export function buildPreviewProgram(
   }: {
     idFactory: () => string;
     now?: Date;
-  }
+  },
 ): Program {
   const nowIso = now.toISOString();
 
@@ -51,7 +51,7 @@ export function buildPreviewProgramLadder(
   }: {
     idFactory: () => string;
     now?: Date;
-  }
+  },
 ): BeltLadder {
   const nowIso = now.toISOString();
 
@@ -71,7 +71,7 @@ export function applyPreviewProgramUpdate(
   programs: Program[],
   id: string,
   data: ProgramUpdate,
-  nowIso = new Date().toISOString()
+  nowIso = new Date().toISOString(),
 ): { programs: Program[]; updated: Program | null } {
   let updated: Program | null = null;
   const nextPrograms = programs.map((program) => {
@@ -97,16 +97,14 @@ export function applyProgramNameToLadders(
   ladders: BeltLadder[],
   programId: string,
   name?: string,
-  nowIso = new Date().toISOString()
+  nowIso = new Date().toISOString(),
 ): BeltLadder[] {
   if (!name) {
     return ladders;
   }
 
   return ladders.map((ladder) =>
-    ladder.program_id === programId
-      ? { ...ladder, name, updated_at: nowIso }
-      : ladder
+    ladder.program_id === programId ? { ...ladder, name, updated_at: nowIso } : ladder,
   );
 }
 
@@ -114,7 +112,7 @@ export function applyPreviewProgramArchiveState(
   programs: Program[],
   id: string,
   archived: boolean,
-  nowIso = new Date().toISOString()
+  nowIso = new Date().toISOString(),
 ): { programs: Program[]; updated: Program | null } {
   let updated: Program | null = null;
   const nextPrograms = programs.map((program) => {

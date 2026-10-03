@@ -31,7 +31,12 @@ export function ProgramPicker({
   const generatedId = useId();
   const controlId =
     id ||
-    `${label.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "program"}-${generatedId.replace(/:/g, "")}`;
+    `${
+      label
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-|-$/g, "") || "program"
+    }-${generatedId.replace(/:/g, "")}`;
   const labelId = `${controlId}-label`;
   const activePrograms = programs.filter((program) => !program.archived_at);
   const selectedValues = values || (value ? [value] : []);
@@ -39,7 +44,9 @@ export function ProgramPicker({
   if (multiple) {
     return (
       <div className="flex flex-col gap-1.5">
-        <span id={labelId} className="text-sm text-text-secondary font-medium">{label}</span>
+        <span id={labelId} className="text-sm text-text-secondary font-medium">
+          {label}
+        </span>
         <div
           role="group"
           aria-labelledby={labelId}
@@ -52,7 +59,10 @@ export function ProgramPicker({
               {activePrograms.map((program) => {
                 const checked = selectedValues.includes(program.id);
                 return (
-                  <label key={program.id} className="flex items-center gap-2 rounded-[4px] px-1 py-1 text-sm text-text-primary">
+                  <label
+                    key={program.id}
+                    className="flex items-center gap-2 rounded-[4px] px-1 py-1 text-sm text-text-primary"
+                  >
                     <input
                       type="checkbox"
                       checked={checked}
@@ -64,9 +74,14 @@ export function ProgramPicker({
                         onChangeMany?.(Array.from(new Set(next)));
                       }}
                     />
-                    <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: program.color_hex }} />
+                    <span
+                      className="h-2.5 w-2.5 rounded-full"
+                      style={{ backgroundColor: program.color_hex }}
+                    />
                     <span>{program.name}</span>
-                    {program.is_system ? <span className="text-xs text-muted">Protected</span> : null}
+                    {program.is_system ? (
+                      <span className="text-xs text-muted">Protected</span>
+                    ) : null}
                   </label>
                 );
               })}
@@ -79,7 +94,9 @@ export function ProgramPicker({
 
   return (
     <div className="flex flex-col gap-1.5">
-      <label htmlFor={controlId} className="text-sm text-text-secondary font-medium">{label}</label>
+      <label htmlFor={controlId} className="text-sm text-text-secondary font-medium">
+        {label}
+      </label>
       <select
         id={controlId}
         value={value || ""}
@@ -107,10 +124,7 @@ export function ProgramBadge({
 }) {
   return (
     <span className="inline-flex items-center gap-1.5 border border-border bg-surface-raised px-2 py-0.5 text-xs text-text-secondary">
-      <span
-        className="h-2 w-2"
-        style={{ backgroundColor: program?.color_hex || "#94A3B8" }}
-      />
+      <span className="h-2 w-2" style={{ backgroundColor: program?.color_hex || "#94A3B8" }} />
       {program?.name || fallback}
     </span>
   );

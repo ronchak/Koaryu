@@ -51,8 +51,8 @@ describe("Next API proxy request boundaries", () => {
     const boundary = "browser-generated-boundary";
     const bytes = new TextEncoder().encode(
       `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="students.csv"\r\n` +
-      "Content-Type: text/csv\r\n\r\nFirst Name,Last Name\r\nAva,Nguyen\r\n" +
-      `--${boundary}--\r\n`
+        "Content-Type: text/csv\r\n\r\nFirst Name,Last Name\r\nAva,Nguyen\r\n" +
+        `--${boundary}--\r\n`,
     );
     let forwarded = null;
     globalThis.fetch = async (url, init) => {
@@ -64,19 +64,17 @@ describe("Next API proxy request boundaries", () => {
     };
 
     const response = await post(
-      requestWithStream(
-        path,
-        [bytes.subarray(0, 19), bytes.subarray(19)],
-        { "content-type": `multipart/form-data; boundary=${boundary}` }
-      ),
-      path
+      requestWithStream(path, [bytes.subarray(0, 19), bytes.subarray(19)], {
+        "content-type": `multipart/form-data; boundary=${boundary}`,
+      }),
+      path,
     );
 
     assert.equal(response.status, 200);
     assert.equal(forwarded.url, "https://backend.example.test/api/v1/students/import/parse");
     assert.equal(
       new Headers(forwarded.init.headers).get("content-type"),
-      `multipart/form-data; boundary=${boundary}`
+      `multipart/form-data; boundary=${boundary}`,
     );
     assert.deepEqual(new Uint8Array(forwarded.init.body), bytes);
   });
@@ -93,7 +91,7 @@ describe("Next API proxy request boundaries", () => {
         "content-length": String(DEFAULT_PROXY_REQUEST_MAX_BYTES + 1),
         "content-type": "application/json",
       }),
-      path
+      path,
     );
 
     assert.equal(response.status, 413);
@@ -111,11 +109,12 @@ describe("Next API proxy request boundaries", () => {
       return new Response();
     };
     const response = await post(
-      requestWithStream(path, [
-        new Uint8Array(DEFAULT_PROXY_REQUEST_MAX_BYTES),
-        new Uint8Array([1]),
-      ], { "content-type": "application/json" }),
-      path
+      requestWithStream(
+        path,
+        [new Uint8Array(DEFAULT_PROXY_REQUEST_MAX_BYTES), new Uint8Array([1])],
+        { "content-type": "application/json" },
+      ),
+      path,
     );
 
     assert.equal(response.status, 413);

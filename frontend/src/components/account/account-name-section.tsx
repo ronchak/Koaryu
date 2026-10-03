@@ -86,7 +86,9 @@ export function AccountNameSection({
             <UserCircle className="h-6 w-6" />
           </div>
           <div className="min-w-0">
-            <p className="truncate text-sm font-medium text-text-primary">{userName || "Name not set"}</p>
+            <p className="truncate text-sm font-medium text-text-primary">
+              {userName || "Name not set"}
+            </p>
             <p className="truncate text-xs text-muted">{userEmail || "Email unavailable"}</p>
           </div>
         </div>
@@ -96,6 +98,8 @@ export function AccountNameSection({
             <span className="font-medium text-text-primary">Display name</span>
             <input
               value={nameValue}
+              // Success clears the edited flag, so typing during a save would be lost.
+              disabled={isSaving}
               onChange={(event) => {
                 setHasEditedName(true);
                 setNameDraft(event.target.value);
@@ -112,9 +116,7 @@ export function AccountNameSection({
           <label className="flex flex-col gap-1.5 text-sm">
             <span className="font-medium text-text-primary">Email</span>
             <input value={userEmail} disabled className="px-3 py-2 text-sm opacity-75" />
-            <span className="text-xs text-muted">
-              Managed by your sign-in provider.
-            </span>
+            <span className="text-xs text-muted">Managed by your sign-in provider.</span>
           </label>
         </div>
 

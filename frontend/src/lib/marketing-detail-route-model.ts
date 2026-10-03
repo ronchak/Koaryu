@@ -46,6 +46,11 @@ export function buildMarketingDetailMetadata(page: MarketingPage): Metadata {
     title: page.metaTitle,
     description: page.description,
     alternates: { canonical: url },
+    twitter: {
+      card: "summary",
+      title: page.metaTitle,
+      description: page.description,
+    },
     openGraph: {
       title: page.metaTitle,
       description: page.description,

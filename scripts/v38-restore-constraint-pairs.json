@@ -1,0 +1,98 @@
+{
+  "public.billing_enrollment_transition_aliases.billing_enrollment_transition_aliases_key_safe": {
+    "identity": "public.billing_enrollment_transition_aliases.billing_enrollment_transition_aliases_key_safe",
+    "source_hash": "e8b7564f64c38a9026580086e624bdaa",
+    "restored_hash": "464b4a2d9c0aeb2e12d329180a56d324",
+    "source_definition": "CHECK ((((octet_length(caller_request_key) >= 1) AND (octet_length(caller_request_key) <= 255)) AND (caller_request_key = btrim(caller_request_key)) AND (caller_request_key !~ '[[:cntrl:]]'::text)))",
+    "restored_definition": "CHECK (((octet_length(caller_request_key) >= 1) AND (octet_length(caller_request_key) <= 255) AND (caller_request_key = btrim(caller_request_key)) AND (caller_request_key !~ '[[:cntrl:]]'::text)))",
+    "replay_definition": "CHECK (octet_length(caller_request_key) BETWEEN 1 AND 255 AND caller_request_key=btrim(caller_request_key) AND caller_request_key !~ '[[:cntrl:]]')"
+  },
+  "public.billing_enrollment_transition_intents.billing_enrollment_transition_intents_provider_key_safe": {
+    "identity": "public.billing_enrollment_transition_intents.billing_enrollment_transition_intents_provider_key_safe",
+    "source_hash": "571cd52971ea2e32bbed2e629b89a792",
+    "restored_hash": "99175a63244f6a32d28bb511616d0cdf",
+    "source_definition": "CHECK (((provider_caller_request_key IS NULL) OR (((octet_length(provider_caller_request_key) >= 1) AND (octet_length(provider_caller_request_key) <= 255)) AND (provider_caller_request_key = btrim(provider_caller_request_key)) AND (provider_caller_request_key !~ '[[:cntrl:]]'::text))))",
+    "restored_definition": "CHECK (((provider_caller_request_key IS NULL) OR ((octet_length(provider_caller_request_key) >= 1) AND (octet_length(provider_caller_request_key) <= 255) AND (provider_caller_request_key = btrim(provider_caller_request_key)) AND (provider_caller_request_key !~ '[[:cntrl:]]'::text))))",
+    "replay_definition": "CHECK (provider_caller_request_key IS NULL OR (octet_length(provider_caller_request_key) BETWEEN 1 AND 255 AND provider_caller_request_key=btrim(provider_caller_request_key) AND provider_caller_request_key !~ '[[:cntrl:]]'))"
+  },
+  "public.billing_payer_payment_consents.billing_payer_payment_consents_provider_id_bytes": {
+    "identity": "public.billing_payer_payment_consents.billing_payer_payment_consents_provider_id_bytes",
+    "source_hash": "193144eea7b539c644eb7f896ca27b99",
+    "restored_hash": "f2b2fbb11eb35d255dee68682e22ff1e",
+    "source_definition": "CHECK ((((octet_length(stripe_checkout_session_id) >= 1) AND (octet_length(stripe_checkout_session_id) <= 255)) AND ((stripe_setup_intent_id IS NULL) OR ((octet_length(stripe_setup_intent_id) >= 1) AND (octet_length(stripe_setup_intent_id) <= 255))) AND ((octet_length(stripe_connected_account_id) >= 1) AND (octet_length(stripe_connected_account_id) <= 255))))",
+    "restored_definition": "CHECK (((octet_length(stripe_checkout_session_id) >= 1) AND (octet_length(stripe_checkout_session_id) <= 255) AND ((stripe_setup_intent_id IS NULL) OR ((octet_length(stripe_setup_intent_id) >= 1) AND (octet_length(stripe_setup_intent_id) <= 255))) AND ((octet_length(stripe_connected_account_id) >= 1) AND (octet_length(stripe_connected_account_id) <= 255))))",
+    "replay_definition": "CHECK (octet_length(stripe_checkout_session_id) BETWEEN 1 AND 255 AND (stripe_setup_intent_id IS NULL OR octet_length(stripe_setup_intent_id) BETWEEN 1 AND 255) AND octet_length(stripe_connected_account_id) BETWEEN 1 AND 255)"
+  },
+  "public.billing_provider_operation_resource_aliases.billing_provider_operation_resource_aliases_key_safe": {
+    "identity": "public.billing_provider_operation_resource_aliases.billing_provider_operation_resource_aliases_key_safe",
+    "source_hash": "e8b7564f64c38a9026580086e624bdaa",
+    "restored_hash": "464b4a2d9c0aeb2e12d329180a56d324",
+    "source_definition": "CHECK ((((octet_length(caller_request_key) >= 1) AND (octet_length(caller_request_key) <= 255)) AND (caller_request_key = btrim(caller_request_key)) AND (caller_request_key !~ '[[:cntrl:]]'::text)))",
+    "restored_definition": "CHECK (((octet_length(caller_request_key) >= 1) AND (octet_length(caller_request_key) <= 255) AND (caller_request_key = btrim(caller_request_key)) AND (caller_request_key !~ '[[:cntrl:]]'::text)))",
+    "replay_definition": "CHECK (octet_length(caller_request_key) BETWEEN 1 AND 255 AND caller_request_key=btrim(caller_request_key) AND caller_request_key !~ '[[:cntrl:]]')"
+  },
+  "public.billing_provider_operation_resources.billing_provider_operation_resources_version_exact": {
+    "identity": "public.billing_provider_operation_resources.billing_provider_operation_resources_version_exact",
+    "source_hash": "aa8559c0cd293b233a0a1a4f0020e3fd",
+    "restored_hash": "2f8904982cf7bec9a0ea301b7adc6232",
+    "source_definition": "CHECK (\nCASE\n    WHEN ((((operation_type = 'payment.refund'::text) AND (resource_type = 'payment'::text)) OR ((operation_type = 'payer.sync'::text) AND (resource_type = 'payer'::text))) OR ((operation_type = 'plan.sync'::text) AND (resource_type = 'plan'::text))) THEN (resource_version_sha256 ~ '^[0-9a-f]{64}$'::text)\n    ELSE (resource_version_sha256 IS NULL)\nEND)",
+    "restored_definition": "CHECK (\nCASE\n    WHEN (((operation_type = 'payment.refund'::text) AND (resource_type = 'payment'::text)) OR ((operation_type = 'payer.sync'::text) AND (resource_type = 'payer'::text)) OR ((operation_type = 'plan.sync'::text) AND (resource_type = 'plan'::text))) THEN (resource_version_sha256 ~ '^[0-9a-f]{64}$'::text)\n    ELSE (resource_version_sha256 IS NULL)\nEND)",
+    "replay_definition": "CHECK (CASE WHEN (operation_type,resource_type) IN (('payment.refund','payment'),('payer.sync','payer'),('plan.sync','plan')) THEN resource_version_sha256 ~ '^[0-9a-f]{64}$' ELSE resource_version_sha256 IS NULL END)"
+  },
+  "public.billing_provider_operation_steps.billing_provider_operation_steps_idempotency_key_safe": {
+    "identity": "public.billing_provider_operation_steps.billing_provider_operation_steps_idempotency_key_safe",
+    "source_hash": "5547a8003bab5f732421bee2aff67d26",
+    "restored_hash": "e9843f56d8a57dbd57e2cbbffa6fc2d1",
+    "source_definition": "CHECK ((((octet_length(stripe_idempotency_key) >= 1) AND (octet_length(stripe_idempotency_key) <= 255)) AND (stripe_idempotency_key !~ '[[:cntrl:]]'::text) AND (stripe_idempotency_key !~* '(https?://|sk_(live|test)_|rk_(live|test)_|whsec_|client_secret|bearer)'::text)))",
+    "restored_definition": "CHECK (((octet_length(stripe_idempotency_key) >= 1) AND (octet_length(stripe_idempotency_key) <= 255) AND (stripe_idempotency_key !~ '[[:cntrl:]]'::text) AND (stripe_idempotency_key !~* '(https?://|sk_(live|test)_|rk_(live|test)_|whsec_|client_secret|bearer)'::text)))",
+    "replay_definition": "CHECK (octet_length(stripe_idempotency_key) BETWEEN 1 AND 255 AND stripe_idempotency_key !~ '[[:cntrl:]]' AND stripe_idempotency_key !~* '(https?://|sk_(live|test)_|rk_(live|test)_|whsec_|client_secret|bearer)')"
+  },
+  "public.operational_alert_audit_events.operational_alert_audit_events_actor_ref_check": {
+    "identity": "public.operational_alert_audit_events.operational_alert_audit_events_actor_ref_check",
+    "source_hash": "0c0e4e41591609c57e03d4c51f36f517",
+    "restored_hash": "6f94cd5d17954d577719f83d301583c8",
+    "source_definition": "CHECK ((((length(btrim(actor_ref)) >= 1) AND (length(btrim(actor_ref)) <= 80)) AND (actor_ref ~ '^[a-z0-9][a-z0-9_.:/-]{0,79}$'::text)))",
+    "restored_definition": "CHECK (((length(btrim(actor_ref)) >= 1) AND (length(btrim(actor_ref)) <= 80) AND (actor_ref ~ '^[a-z0-9][a-z0-9_.:/-]{0,79}$'::text)))",
+    "replay_definition": null
+  },
+  "public.operational_alert_audit_events.operational_alert_audit_events_destination_id_check": {
+    "identity": "public.operational_alert_audit_events.operational_alert_audit_events_destination_id_check",
+    "source_hash": "c6432f451d731219fb092c18095ad513",
+    "restored_hash": "296e9ec82fcb6ade1d0004342960ada6",
+    "source_definition": "CHECK (((destination_id IS NULL) OR (((length(btrim(destination_id)) >= 1) AND (length(btrim(destination_id)) <= 80)) AND (destination_id ~ '^[a-z0-9][a-z0-9_.:/-]{0,79}$'::text))))",
+    "restored_definition": "CHECK (((destination_id IS NULL) OR ((length(btrim(destination_id)) >= 1) AND (length(btrim(destination_id)) <= 80) AND (destination_id ~ '^[a-z0-9][a-z0-9_.:/-]{0,79}$'::text))))",
+    "replay_definition": null
+  },
+  "public.operational_alert_episodes.operational_alert_episodes_backup_destination_id_check": {
+    "identity": "public.operational_alert_episodes.operational_alert_episodes_backup_destination_id_check",
+    "source_hash": "192de50ea453030125db863c1835f83f",
+    "restored_hash": "7e4a4a5b15ef2d30f779d2bd2e1c1a1b",
+    "source_definition": "CHECK ((((length(btrim(backup_destination_id)) >= 1) AND (length(btrim(backup_destination_id)) <= 80)) AND (backup_destination_id ~ '^[a-z0-9][a-z0-9_.:/-]{0,79}$'::text)))",
+    "restored_definition": "CHECK (((length(btrim(backup_destination_id)) >= 1) AND (length(btrim(backup_destination_id)) <= 80) AND (backup_destination_id ~ '^[a-z0-9][a-z0-9_.:/-]{0,79}$'::text)))",
+    "replay_definition": null
+  },
+  "public.operational_alert_episodes.operational_alert_episodes_primary_destination_id_check": {
+    "identity": "public.operational_alert_episodes.operational_alert_episodes_primary_destination_id_check",
+    "source_hash": "7c55944ff8ac98a3f57003f4b93c31f1",
+    "restored_hash": "034c13fc1bfeb6e1e0ebc0fc777e84a4",
+    "source_definition": "CHECK ((((length(btrim(primary_destination_id)) >= 1) AND (length(btrim(primary_destination_id)) <= 80)) AND (primary_destination_id ~ '^[a-z0-9][a-z0-9_.:/-]{0,79}$'::text)))",
+    "restored_definition": "CHECK (((length(btrim(primary_destination_id)) >= 1) AND (length(btrim(primary_destination_id)) <= 80) AND (primary_destination_id ~ '^[a-z0-9][a-z0-9_.:/-]{0,79}$'::text)))",
+    "replay_definition": null
+  },
+  "public.operational_alert_outbox.operational_alert_outbox_destination_id_check": {
+    "identity": "public.operational_alert_outbox.operational_alert_outbox_destination_id_check",
+    "source_hash": "32c7613669425184228e3f961ddf9eaf",
+    "restored_hash": "2aab15e3f432f61fe2a6700a56e1b042",
+    "source_definition": "CHECK ((((length(btrim(destination_id)) >= 1) AND (length(btrim(destination_id)) <= 80)) AND (destination_id ~ '^[a-z0-9][a-z0-9_.:/-]{0,79}$'::text)))",
+    "restored_definition": "CHECK (((length(btrim(destination_id)) >= 1) AND (length(btrim(destination_id)) <= 80) AND (destination_id ~ '^[a-z0-9][a-z0-9_.:/-]{0,79}$'::text)))",
+    "replay_definition": null
+  },
+  "public.operational_alert_outbox.operational_alert_outbox_last_error_code_check": {
+    "identity": "public.operational_alert_outbox.operational_alert_outbox_last_error_code_check",
+    "source_hash": "261c9da782f074cb1073fe6dab8fe4fb",
+    "restored_hash": "ee8da9301b42e09583f12a62a0e19474",
+    "source_definition": "CHECK (((last_error_code IS NULL) OR (((length(btrim(last_error_code)) >= 1) AND (length(btrim(last_error_code)) <= 120)) AND (last_error_code ~ '^[a-z0-9][a-z0-9_.:/-]{0,119}$'::text))))",
+    "restored_definition": "CHECK (((last_error_code IS NULL) OR ((length(btrim(last_error_code)) >= 1) AND (length(btrim(last_error_code)) <= 120) AND (last_error_code ~ '^[a-z0-9][a-z0-9_.:/-]{0,119}$'::text))))",
+    "replay_definition": null
+  }
+}

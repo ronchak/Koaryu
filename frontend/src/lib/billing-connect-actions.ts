@@ -7,10 +7,7 @@ import {
   acknowledgeConnectOnboardingBeforeNavigation,
   createConnectOnboardingRequestKey,
 } from "@/lib/billing-connect-delivery";
-import {
-  connectRefreshUrl,
-  connectReturnUrl,
-} from "@/lib/billing-page-utils";
+import { connectRefreshUrl, connectReturnUrl } from "@/lib/billing-page-utils";
 import type {
   BillingLinkResponse,
   ConnectBusinessEntityType,
@@ -33,10 +30,19 @@ export function useBillingConnectActions(runtime: BillingActionRuntime) {
   async function openBillingLink(
     path: string,
     body: Record<string, string | undefined>,
-    action = "stripe-link"
+    action = "stripe-link",
   ) {
+    const workflowId = path.includes("/checkout")
+      ? "core.subscription.checkout"
+      : path.includes("/portal")
+        ? "core.subscription.portal"
+        : "connect.dashboard";
     if (runtime.isPreviewMode) {
       runtime.setMessage("Demo mode uses Stripe-hosted surfaces in production.");
+      return;
+    }
+    if (!runtime.canUseWorkflow(workflowId)) {
+      runtime.setError("This billing workflow is not available for the current studio and role.");
       return;
     }
     if (!runtime.token || !runtime.claimAction(action)) {
@@ -49,7 +55,7 @@ export function useBillingConnectActions(runtime: BillingActionRuntime) {
         requestKey = coreCheckoutRequestKeyRef.current;
       }
       const link = await api.post<BillingLinkResponse>(path, body, runtime.token, {
-        timeoutMs: 30000,
+        timeoutMs: 35000,
         headers: requestKey ? { "Idempotency-Key": requestKey } : undefined,
       });
       if (action === "checkout") {
@@ -68,6 +74,10 @@ export function useBillingConnectActions(runtime: BillingActionRuntime) {
       runtime.setMessage("Demo mode uses Stripe-hosted surfaces in production.");
       return;
     }
+    if (!runtime.canUseWorkflow("connect.onboarding")) {
+      runtime.setError("Stripe onboarding is not available for the current studio and role.");
+      return;
+    }
     if (!runtime.token || !runtime.claimAction("connect")) {
       return;
     }
@@ -82,7 +92,7 @@ export function useBillingConnectActions(runtime: BillingActionRuntime) {
         },
         runtime.token,
         {
-          timeoutMs: 30000,
+          timeoutMs: 35000,
           headers: { "Idempotency-Key": connectOnboardingRequestKeyRef.current },
         },
       );
@@ -93,7 +103,7 @@ export function useBillingConnectActions(runtime: BillingActionRuntime) {
             "/billing/connect/onboarding-link/acknowledge",
             { receipt },
             runtime.token!,
-            { timeoutMs: 30000 },
+            { timeoutMs: 35000 },
           );
         },
         (url) => window.location.assign(url),
@@ -110,7 +120,9 @@ export function useBillingConnectActions(runtime: BillingActionRuntime) {
     await runtime.postBillingAction<StudioPaymentAccount>({
       action: "connect-reset",
       path: "/billing/connect/reset",
-      successMessage: "Stripe connection cleared. Start onboarding again to connect the active Stripe platform.",
+      successMessage:
+        "Stripe connection cleared. Start onboarding again to connect the active Stripe platform.",
+      workflowId: "connect.reset",
     });
   }
 

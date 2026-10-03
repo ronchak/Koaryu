@@ -1,5 +1,4 @@
 import type {
-  BillingInvoiceCreate,
   BillingPlan,
   BillingPlanCreate,
   BillingPayerCreate,
@@ -8,14 +7,12 @@ import type {
   StudentBillingEnrollmentCreate,
 } from "@/types";
 
-export type BillingFormPayloadResult<T> =
-  | { ok: true; payload: T }
-  | { ok: false; error: string };
+export type BillingFormPayloadResult<T> = { ok: true; payload: T } | { ok: false; error: string };
 
 export type ExternalBillingPaymentPayload = ExternalPaymentCreate;
 
 export function requiresPayerForStudentBillingEnrollment(
-  collectionMode: StudentBillingEnrollment["collection_mode"]
+  collectionMode: StudentBillingEnrollment["collection_mode"],
 ) {
   return collectionMode !== "external";
 }
@@ -34,10 +31,10 @@ export function canSubmitStudentBillingEnrollmentForm({
   planCount: number;
 }) {
   return Boolean(
-    canManageStudioBilling
-      && !isActionLoading
-      && planCount > 0
-      && (!requiresPayerForStudentBillingEnrollment(collectionMode) || payerCount > 0)
+    canManageStudioBilling &&
+    !isActionLoading &&
+    planCount > 0 &&
+    (!requiresPayerForStudentBillingEnrollment(collectionMode) || payerCount > 0),
   );
 }
 
@@ -50,8 +47,10 @@ export function shouldDisableStudentBillingEnrollmentPayerSelect({
   collectionMode: StudentBillingEnrollment["collection_mode"];
   payerCount: number;
 }) {
-  return !canManageStudioBilling
-    || (requiresPayerForStudentBillingEnrollment(collectionMode) && payerCount === 0);
+  return (
+    !canManageStudioBilling ||
+    (requiresPayerForStudentBillingEnrollment(collectionMode) && payerCount === 0)
+  );
 }
 
 function optionalText(value: string) {
@@ -180,47 +179,6 @@ export function buildStudentBillingEnrollmentCreatePayload({
   };
 }
 
-export function buildBillingInvoiceCreatePayload({
-  invoicePayerId,
-  invoiceEnrollmentId,
-  invoiceStudentId,
-  invoiceAmount,
-  invoiceDueDate,
-  invoiceDescription,
-  invoiceSendHosted,
-}: {
-  invoicePayerId: string;
-  invoiceEnrollmentId: string;
-  invoiceStudentId: string;
-  invoiceAmount: string;
-  invoiceDueDate: string;
-  invoiceDescription: string;
-  invoiceSendHosted: boolean;
-}): BillingFormPayloadResult<BillingInvoiceCreate> {
-  const amount = Number(invoiceAmount);
-  if (!invoicePayerId) {
-    return { ok: false, error: "Choose a payer for this invoice." };
-  }
-  if (!Number.isFinite(amount) || amount <= 0) {
-    return { ok: false, error: "Enter a valid invoice amount." };
-  }
-
-  return {
-    ok: true,
-    payload: {
-      payer_id: invoicePayerId,
-      enrollment_id: invoiceEnrollmentId || undefined,
-      student_id: invoiceStudentId || undefined,
-      amount_cents: moneyInputToCents(invoiceAmount),
-      currency: "usd",
-      invoice_type: "tuition",
-      due_date: invoiceDueDate || undefined,
-      description: optionalText(invoiceDescription),
-      send_hosted_invoice: invoiceSendHosted,
-    },
-  };
-}
-
 export function buildExternalBillingPaymentPayload({
   externalPayerId,
   externalAmount,
@@ -232,22 +190,22 @@ export function buildExternalBillingPaymentPayload({
   externalMethod: string;
   externalNote: string;
 }): BillingFormPayloadResult<ExternalBillingPaymentPayload> {
-  const amount = Number(externalAmount);
+  const amountCents = moneyInputToCents(externalAmount);
   if (!externalPayerId) {
     return { ok: false, error: "Choose a payer for this external payment." };
   }
-  if (!Number.isFinite(amount) || amount <= 0) {
+  if (!Number.isSafeInteger(amountCents) || amountCents < 1 || amountCents > 2_147_483_647) {
     return { ok: false, error: "Enter a valid external payment amount." };
   }
-  if (!externalMethod.trim()) {
-    return { ok: false, error: "Enter the external payment method." };
+  if (!externalMethod.trim() || externalMethod.trim().length > 80) {
+    return { ok: false, error: "Enter an external payment method of 1 to 80 characters." };
   }
 
   return {
     ok: true,
     payload: {
       payer_id: externalPayerId,
-      amount_cents: moneyInputToCents(externalAmount),
+      amount_cents: amountCents,
       currency: "usd",
       external_method: externalMethod.trim(),
       note: optionalText(externalNote),

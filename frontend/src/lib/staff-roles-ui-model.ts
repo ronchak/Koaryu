@@ -6,27 +6,18 @@ export function getDisplayedStaffIdentity(member: StaffMember): string {
 
 export function filterStaffMembersForDisplay(
   members: StaffMember[],
-  showArchived: boolean
+  showArchived: boolean,
 ): StaffMember[] {
-  return showArchived
-    ? members
-    : members.filter((member) => member.status !== "archived");
+  return showArchived ? members : members.filter((member) => member.status !== "archived");
 }
 
 export function countActiveAdminMembers(members: StaffMember[]): number {
-  return members.filter(
-    (member) => member.status === "active" && member.role === "admin"
-  ).length;
+  return members.filter((member) => member.status === "active" && member.role === "admin").length;
 }
 
-export function isLastActiveAdmin(
-  members: StaffMember[],
-  member: StaffMember
-): boolean {
+export function isLastActiveAdmin(members: StaffMember[], member: StaffMember): boolean {
   return (
-    member.status === "active"
-    && member.role === "admin"
-    && countActiveAdminMembers(members) <= 1
+    member.status === "active" && member.role === "admin" && countActiveAdminMembers(members) <= 1
   );
 }
 
@@ -34,9 +25,6 @@ export function normalizeStaffConfirmationInput(value: string): string {
   return value.replace(/\s+/g, " ").trim();
 }
 
-export function matchesStaffDeletionConfirmation(
-  member: StaffMember,
-  value: string
-): boolean {
+export function matchesStaffDeletionConfirmation(member: StaffMember, value: string): boolean {
   return normalizeStaffConfirmationInput(value) === getDisplayedStaffIdentity(member);
 }

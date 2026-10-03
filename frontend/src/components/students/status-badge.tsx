@@ -1,9 +1,6 @@
 import type { StudentStatus } from "@/types";
 
-const statusConfig: Record<
-  StudentStatus,
-  { label: string; variant: string; dot: string }
-> = {
+const statusConfig: Record<StudentStatus, { label: string; variant: string; dot: string }> = {
   active: {
     label: "Active",
     variant: "bg-success/10 text-success border-success/20",
@@ -42,7 +39,7 @@ export function StatusBadge({ status }: StatusBadgeProps) {
       className={`
         inline-flex items-center gap-1.5
         px-2 py-0.5 text-xs font-medium font-mono
-        rounded-[4px] border
+        rounded-[10px] border
         ${config.variant}
       `}
     >

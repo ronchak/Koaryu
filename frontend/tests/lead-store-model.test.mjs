@@ -63,7 +63,7 @@ describe("lead store model", () => {
       {
         idFactory: idFactory(["lead-1"]),
         now: new Date("2026-05-24T12:00:00.000Z"),
-      }
+      },
     );
 
     assert.deepEqual(
@@ -90,7 +90,7 @@ describe("lead store model", () => {
         guardian_name: "Dana Stone",
         created_at: "2026-05-24T12:00:00.000Z",
         updated_at: "2026-05-24T12:00:00.000Z",
-      }
+      },
     );
   });
 
@@ -104,13 +104,16 @@ describe("lead store model", () => {
       leads,
       "lead-2",
       { stage: "closed_lost", notes: "Not ready" },
-      "2026-05-24T12:00:00.000Z"
+      "2026-05-24T12:00:00.000Z",
     );
 
-    assert.deepEqual(updated.map((item) => [item.id, item.stage, item.notes, item.updated_at]), [
-      ["lead-1", "inquiry", undefined, "2026-05-01T00:00:00.000Z"],
-      ["lead-2", "closed_lost", "Not ready", "2026-05-24T12:00:00.000Z"],
-    ]);
+    assert.deepEqual(
+      updated.map((item) => [item.id, item.stage, item.notes, item.updated_at]),
+      [
+        ["lead-1", "inquiry", undefined, "2026-05-01T00:00:00.000Z"],
+        ["lead-2", "closed_lost", "Not ready", "2026-05-24T12:00:00.000Z"],
+      ],
+    );
   });
 
   it("converts preview leads into active students with membership and guardian ownership", () => {
@@ -156,17 +159,13 @@ describe("lead store model", () => {
         ],
         idFactory: idFactory(["student-1", "membership-1", "guardian-1"]),
         now: new Date("2026-05-24T12:00:00.000Z"),
-      }
+      },
     );
 
     assert.equal(conversion.studentId, "student-1");
     assert.deepEqual(
-      [
-        conversion.lead.stage,
-        conversion.lead.converted_student_id,
-        conversion.lead.updated_at,
-      ],
-      ["enrolled", "student-1", "2026-05-24T12:00:00.000Z"]
+      [conversion.lead.stage, conversion.lead.converted_student_id, conversion.lead.updated_at],
+      ["enrolled", "student-1", "2026-05-24T12:00:00.000Z"],
     );
     assert.deepEqual(
       {
@@ -194,7 +193,7 @@ describe("lead store model", () => {
         current_belt_rank_id: "kids-white",
         notes: "Trial completed",
         tags: ["converted-lead"],
-      }
+      },
     );
     assert.deepEqual(
       conversion.student.program_memberships?.map((membership) => [
@@ -205,7 +204,7 @@ describe("lead store model", () => {
         membership.program_color_hex,
         membership.current_belt_rank_id,
       ]),
-      [["membership-1", "student-1", "kids", "Kids BJJ", "#F59E0B", "kids-white"]]
+      [["membership-1", "student-1", "kids", "Kids BJJ", "#F59E0B", "kids-white"]],
     );
     assert.deepEqual(
       conversion.student.guardians.map((guardian) => [
@@ -215,7 +214,7 @@ describe("lead store model", () => {
         guardian.email,
         guardian.is_primary_contact,
       ]),
-      [["guardian-1", "Sofia", "Rivera Cruz", "sofia@example.test", true]]
+      [["guardian-1", "Sofia", "Rivera Cruz", "sofia@example.test", true]],
     );
   });
 });

@@ -14,7 +14,9 @@ directly and verifies it before running:
 - frontend tests, lint, production build, and high-severity runtime audit;
 - backend dependency consistency, hash-lock drift, vulnerability audit, tests,
   and generated API contract verification;
-- a fresh local migration replay, database lint, and the broad Supabase contract
+- an isolated PostgreSQL 17 migration replay, logical restore continuations and
+  concurrency proofs through `npm run check:supabase-contracts-local`, followed by
+  assembled local Supabase migration replay, database lint, and the broad contract
   suite;
 - an exact SQL-contract inventory check and real concurrent opposite-direction
   Connect mapping/exclusion transactions against the ephemeral database;
@@ -23,9 +25,13 @@ directly and verifies it before running:
 
 The Supabase contracts run through PostgreSQL `psql` with `ON_ERROR_STOP=1`.
 This preserves transaction and multi-statement behavior that the Supabase CLI
-prepared-statement query path cannot execute reliably. Local checks resolve the
-disposable database URL through `supabase status`. Intentional linked checks
+prepared-statement query path cannot execute reliably. The assembled local Supabase
+checks resolve the disposable database URL through `supabase status`. The isolated
+PostgreSQL 17 suite uses only its private disposable Unix-socket cluster. Intentional linked checks
 must provide a private `SUPABASE_DB_URL`; never print or commit it.
+The shared runner restricts that URL to the pinned staging project on session
+port 5432 with TLS and no routing overrides. Production contract execution is
+prohibited. See `docs/operator-tooling.md` for the accepted connection forms.
 
 Run the static workflow guard locally with:
 
@@ -37,31 +43,83 @@ npm run check:release-workflow
 
 Merging `main` does not authorize an automatic production deployment. `frontend/vercel.json` disables Git deployments for `main` while retaining the persistent `staging` branch and ordinary preview deployments. The production Render service likewise declares `autoDeployTrigger: 'off'` and routes provider health to `/health/ready`.
 
+For current work, generate the exact candidate declaration with
+`node scripts/studio-comp-migration-rollout.mjs --mode packet --candidate-sha
+<full-sha>`. Treat its candidate SHA, post-history, pending migration list, source
+manifest, and integration status as authority. Inspection adds the target's state,
+inspection token, remaining migration list and manifest, and exact approval-record
+body. Do not copy a version, count, head, manifest, fingerprint, or approval claim from
+this document into a new release.
+
+The fixed V24 declarations below describe the completed 2026-08 release. They remain
+historical context only and are not active candidate requirements.
+
 Database promotion precedes application promotion. Hosted readiness calls the
-service-role-only V3 Supabase preflight and requires the exact final migration count
-111, head `20260816012723`, the exact 27-version pending sequence, manifest version
-`release-db-attestation-v18`, the exact zero-invalid-count V17 archive-critical
-semantic manifest `0:05a77426d6e3e1864fe4d1a6beea708cc501b228e670a0309d1420808d2feab8`, and required-object/security proof. That manifest covers
+service-role-only V4 Supabase preflight and requires the exact final migration count
+117, head `20260824190500`, the exact 33-version pending sequence, manifest version
+`release-db-attestation-v24`, the exact zero-invalid-count V18 archive-critical
+semantic manifest `0:cf1b1a4403e539721172d4a8cfec64540e4f5dcec2aab12eafbcfb51fbd84b3a`, and required-object/security proof. The backend reuses a successful preflight for at most 30 seconds to prevent health-probe client churn. It never caches failures, and concurrent probes share one check.
+
+That manifest covers
 `staff_roles.archived_at`, active-only helper bodies/signatures/ACLs, archive-aware
-triggers, and every public RLS table's restrictive membership guard. The post-111
-V16 compatibility assertion is pinned to
+triggers, and every public RLS table's restrictive membership guard.
+
+Staging and production now report ready only at exact 117/V24. The temporary
+production V22 and hosted V23 application bridges were removed after the
+production V24 hosted readback. Historical V22/V23 states remain represented
+only in the guarded operator tool for exact forward-recovery diagnosis.
+
+The post-111 V16 compatibility assertion is pinned to
 `0:48995afbdd6519a199db44c6b947bf629a87569530ba73c81c25b00f72944239`. The
-raw PostgreSQL 17 catalog fingerprint is pinned to
-`column_acls=205:32ad7f660d40de1c75de0e9d50e4c23f3588124e67f3665159f8f2f027617414:0;columns=43:c2f9560d4d2d9742f22edeeb3386b2fce9def1e90290e7986f406d9f7dd0451b:0;constraints=24:d8ae028684234bb1c69447c97e87fc8561ce18f03b7ec10f81a880ba5d813c5c:0;functions=68:164af3cd98d7f26bc74994b4f16529ea988ba0e760aa34d3cebddc4f97c4b625:0;indexes=12:c78635a18852d4cbe8be1bc34861848ba904b06639038c292f84d56ca7be50a7:0;policies=16:259cc99c295d80442450cea438a462efd44748f2ace47456fca13133b52d17b8:0;scoped_constraints=149:a1555af1e8eacb8f03b04c2109dc6966293705307d737e5601996cf81acc06b9:0;scoped_indexes=33:4d401ee4a7e7f104957cb8cc84ad45164d57938ced0c2609259310aa980895f2:0;sequences=3:27451af3027130cfb193bd4eb9f59221773a89e46bcb855a7a809df1b54a7574:0;table_acls=14:d34439755bc5f66626a1626c81f72d583a1b847b70ec02bc07ad127b2a270ddb:0;tables=12:f56508ae1d3c712e7b239a1fe965adf88cec4e7f41f8d6b6db9ffce95f1bb76b:0;triggers=12:61039a9e58e55b3aba5e7e2a40088fd492352560123bc5df30c7966cfd6d9efc:0`. Schema 84, a
-partial 85-109 state, a missing final migration manifest, or any
+V24 preflight accepts exactly the canonical PostgreSQL 17 operational
+semantic/ACL manifest
+`61c8251b04d170bb4777de6c35570d024d6c97897ef1c524bc1adbcff97b7931`
+or the independently proved logical-restore manifest
+`f9ce359c0ebf12039e8dfcb5308cd193ac18aa05cea23dad5b9f5208b0c51233`.
+The raw PostgreSQL 17 catalog fingerprint is pinned to
+`column_acls=205:32ad7f660d40de1c75de0e9d50e4c23f3588124e67f3665159f8f2f027617414:0;columns=43:c2f9560d4d2d9742f22edeeb3386b2fce9def1e90290e7986f406d9f7dd0451b:0;constraints=24:d8ae028684234bb1c69447c97e87fc8561ce18f03b7ec10f81a880ba5d813c5c:0;functions=68:87649166980bfc6164e59482e122793d4b7867bbf360d2f1dbe3021fa151309b:0;indexes=12:c78635a18852d4cbe8be1bc34861848ba904b06639038c292f84d56ca7be50a7:0;policies=16:259cc99c295d80442450cea438a462efd44748f2ace47456fca13133b52d17b8:0;scoped_constraints=149:a1555af1e8eacb8f03b04c2109dc6966293705307d737e5601996cf81acc06b9:0;scoped_indexes=33:4d401ee4a7e7f104957cb8cc84ad45164d57938ced0c2609259310aa980895f2:0;sequences=3:27451af3027130cfb193bd4eb9f59221773a89e46bcb855a7a809df1b54a7574:0;table_acls=14:d71f968d375333515659bd0220224c127cee6e7b3878f9ae36427f7c1561c92c:0;tables=12:f56508ae1d3c712e7b239a1fe965adf88cec4e7f41f8d6b6db9ffce95f1bb76b:0;triggers=12:61039a9e58e55b3aba5e7e2a40088fd492352560123bc5df30c7966cfd6d9efc:0`.
+The independently read-back restored-production catalog is byte-identical in
+every category except the proved logical-restore scoped-constraint digest:
+`scoped_constraints=149:47cacc1ce1d31ca8a7d63158aaa66aaf24452c085015c226f40e810995a6cd18:0`.
+Read-only 2026-08-24 comparison also confirmed identical narrow function state
+`3:421f8574059c8ca45a1a2075ce1e9346:0`, trigger state
+`1:e430c825c094352cd460bd15933a3a43:0`, and V18 critical manifest. The rollout
+tool derives the exact restored production fingerprint from approved canonical
+staging evidence by replacing only that full catalog token; no per-category
+mixing is accepted. A schema-84 state, a partial 85-110 state, a missing final
+migration manifest, or any
 provider/RPC error returns 503, so the new backend cannot be promoted healthy
 against an earlier database head.
+
+Migration 116 reasserts the global default that removes PostgreSQL's automatic
+PUBLIC function EXECUTE grant, removes the schema-local API-role defaults, and
+fails closed if any public routine remains browser-callable. The
+fresh PostgreSQL 17 replay produced the same operational manifest and raw
+catalog fingerprint pinned above because migration `20260711215000` had already
+converged the effective routine ACL state. Migration 116 adds a schema-wide guard and a
+behavioral new-function probe; it does not invent a catalog change where none
+occurred.
+
+Migration 117 advances readiness to V24 without changing product data or
+operational objects. It admits only the two proved zero-failure PostgreSQL 17
+manifests above; a third digest, hybrid history, or object failure remains red.
 
 Migration 109 introduced the candidate V2 checkout-reservation path and retains
 the deployed `origin/main` predecessor reservation (V1) and V2 readiness
 signatures for the mixed-version database-first window. Migration 110 updates
 the V2 compatibility guard: its V7-shaped response reports ready only when the
-candidate V3 preflight proves exact V18 state. Migration 111 adds active-membership
+candidate V3 preflight proves exact 110/V17 state. Migration 111 adds active-membership
 archive authorization, owner/last-admin archive guards, and service-role-only
 staff-role writes; the new backend never uses the compatibility path.
-Exact migration 109/head `20260814213000`/V16 is the single accepted
-`trial-locked` resume state and may continue only with migrations 110 and 111 after a
-fresh inspection and dry-run.
+Exact migration 109/head `20260814213000`/V16 is the accepted `trial-locked`
+resume state for migrations 110 and 111. Exact migration 110/head
+`20260815220402`/V17 is the guarded `staff-identity` resume state for migration
+111 only. Each requires a fresh candidate-bound inspection and exact dry-run.
+No approved application serves at 110: exclude `709239`/V16 and every
+V2-consuming SHA before verified history boundary
+`d63a5116c0a47f1933f15360cd5db7b66237bb80` from rollback. Those older V2
+consumers can report ready through the 110/V17 compatibility guard, but they are
+not approved recovery artifacts.
 
 The local PostgreSQL proof does not certify hosted PostgREST exposed-schema
 configuration or actual schema ACL state. Authenticated operator readback must

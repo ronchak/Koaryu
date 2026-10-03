@@ -34,10 +34,6 @@ export function toCalendarDateKey(date: Date) {
   return `${year}-${month}-${day}`;
 }
 
-export function isSameCalendarDay(left: Date, right: Date) {
-  return toCalendarDateKey(left) === toCalendarDateKey(right);
-}
-
 export function isDateInMonth(date: Date, month: Date) {
   return date.getFullYear() === month.getFullYear() && date.getMonth() === month.getMonth();
 }
@@ -76,11 +72,11 @@ export function buildMonthGrid(month: Date) {
   const gridStart = createLocalDate(
     firstOfMonth.getFullYear(),
     firstOfMonth.getMonth(),
-    firstOfMonth.getDate() - firstOfMonth.getDay()
+    firstOfMonth.getDate() - firstOfMonth.getDay(),
   );
 
   return Array.from({ length: 42 }, (_, index) =>
-    createLocalDate(gridStart.getFullYear(), gridStart.getMonth(), gridStart.getDate() + index)
+    createLocalDate(gridStart.getFullYear(), gridStart.getMonth(), gridStart.getDate() + index),
   );
 }
 
@@ -96,7 +92,7 @@ export function groupSessionsByDate(sessions: ClassSession[]) {
   grouped.forEach((dateSessions, key) => {
     grouped.set(
       key,
-      [...dateSessions].sort((left, right) => left.start_time.localeCompare(right.start_time))
+      [...dateSessions].sort((left, right) => left.start_time.localeCompare(right.start_time)),
     );
   });
 
@@ -117,7 +113,7 @@ export function groupTemplatesByDay(templates: ClassTemplate[]) {
   grouped.forEach((dayTemplates, key) => {
     grouped.set(
       key,
-      [...dayTemplates].sort((left, right) => left.start_time.localeCompare(right.start_time))
+      [...dayTemplates].sort((left, right) => left.start_time.localeCompare(right.start_time)),
     );
   });
 
@@ -147,7 +143,9 @@ function toMinutes(time: string) {
 
 export function getConflictingSessionIds(sessions: ClassSession[]) {
   const conflictingIds = new Set<string>();
-  const sortedSessions = [...sessions].sort((left, right) => left.start_time.localeCompare(right.start_time));
+  const sortedSessions = [...sessions].sort((left, right) =>
+    left.start_time.localeCompare(right.start_time),
+  );
 
   for (let index = 0; index < sortedSessions.length; index += 1) {
     const current = sortedSessions[index];
@@ -172,15 +170,13 @@ export function getConflictingSessionIds(sessions: ClassSession[]) {
   return conflictingIds;
 }
 
-export function getSessionConflictCount(sessions: ClassSession[]) {
-  return getConflictingSessionIds(sessions).size;
-}
-
 function sessionMatchesTemplate(session: ClassSession, template: ClassTemplate) {
-  if (session.template_id && session.template_id === template.id) {
-    return true;
+  if (session.template_id) {
+    return session.template_id === template.id;
   }
 
+  // Only unlinked legacy sessions need the name/time fallback. A linked session
+  // must not hide another recurring series that happens to share its details.
   return (
     session.name === template.name &&
     session.start_time === template.start_time &&
@@ -213,7 +209,9 @@ export function buildEntriesForDate(params: {
         return;
       }
 
-      const hasGeneratedSession = daySessions.some((session) => sessionMatchesTemplate(session, template));
+      const hasGeneratedSession = daySessions.some((session) =>
+        sessionMatchesTemplate(session, template),
+      );
 
       if (!hasGeneratedSession) {
         entries.push({

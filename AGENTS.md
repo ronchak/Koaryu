@@ -34,11 +34,19 @@ Start here for repo-wide rules, then prefer the nearest package-level `AGENTS.md
 - Audit support triage privacy docs/scripts: `npm run audit:support-privacy`
 - Regenerate frontend API contract types: `npm run generate:api-types`
 - Check generated frontend API contract types: `npm run check:api-types`
+- Check backend formatting: `cd backend && venv/bin/python -m ruff format --check .`
+- Check frontend formatting: `cd frontend && npm run format:check`
 - Check candidate-wide workflow coverage: `npm run check:release-workflow`
+- Check generated release statements, restore scripts and readiness metadata: `npm run check:release-attestation`
+- Regenerate remediation ledger counts after changing a finding's disposition or track: `npm run generate:remediation-ledger`
+- Check that ledger, `REMEDIATION.md` and `docs/remediation/HANDOFF.md` counts match the findings: `npm run check:remediation-ledger`
+- Summarize an approved private performance-log export: `npm run summarize:performance < /absolute/private/export.ndjson`
+- Check deterministic performance regression gate: `npm run check:performance-regression -- --expected-sha <full-sha>`
 - Generate or verify the guarded studio-comp database rollout packet: `node scripts/studio-comp-migration-rollout.mjs --mode packet --candidate-sha <full-sha>`
 - Verify a pinned deployed Render/Vercel pair reports one exact SHA: `npm run verify:deployed-release -- --environment <staging|production> --expected-sha <full-sha> --frontend-origin <pinned-origin> --backend-api <pinned-api-v1>`
 - Capture privacy-safe dashboard timing evidence only after exact-SHA verification: `npm run capture:dashboard-performance -- <same release args> --storage-state <absolute-private-path>`
 - Verify all migrations and contract SQL on ephemeral PostgreSQL 17: `npm run check:supabase-contracts-local`
+- Inspect the next V38-to-V55 migration: `node scripts/studio-comp-migration-rollout.mjs --target <staging|production> --mode inspect --one-migration --candidate-sha <full-sha>`
 - Stripe Connect smoke check: `npm run dev:stripe-connect-smoke`
 
 ## Monorepo Rules
@@ -65,6 +73,7 @@ Start here for repo-wide rules, then prefer the nearest package-level `AGENTS.md
 - For frontend-only changes, prefer `cd frontend && npm run lint -- <paths>` and other narrow checks before full builds.
 - For backend-only changes, prefer `cd backend && venv/bin/python -m pytest <tests>`.
 - For developing and reviewing contract SQL, default to `npm run check:supabase-contracts-local`. It applies the complete migration chain and every file under `supabase/verification/` to an ephemeral PostgreSQL 17 cluster without Docker, network access, a cloud project, or `.env` files.
+- The release-candidate database job also runs this local PostgreSQL 17 suite, including logical restore and concurrency proofs, before the assembled Supabase checks.
 - For database changes, apply files not yet in local history with `supabase migration up --local`. If a changed migration may already be applied locally, first confirm the database is disposable and use `supabase db reset --local`; then run `supabase db lint --local --fail-on error` and force local helpers with `SUPABASE_DB_TARGET=local`. Use linked checks only for an explicitly intended release inspection after the linked project has the migrations.
 - For release-shaped or cross-cutting changes, combine the relevant frontend, backend, and Supabase checks.
 - Every release-candidate PR must also receive the exact-head `Release candidate gate`; use `scripts/merge-release-pr.sh` with recorded head and base SHAs after the strict `main` ruleset is active.
@@ -80,12 +89,14 @@ Database verification targets are:
 
 Contract files can create functions and triggers on real tables inside a transaction. A later `ROLLBACK` does not make production an acceptable target: never point contract or migration execution at production.
 
-Exactly two operations may write to production, both human-authorized and both outside the contract/migration-SQL prohibition above:
+Exactly two operations may write to production, both owner-authorized and both outside the contract/migration-SQL prohibition above:
 
-1. **The guarded rollout tool's production apply** (`scripts/studio-comp-migration-rollout.mjs --target production --mode apply`), which a human runs from an interactive terminal.
+1. **The guarded rollout tool's production apply** (`scripts/studio-comp-migration-rollout.mjs --target production --mode apply`), which a named coordinating agent or operator may execute under explicit owner authorization.
 2. **The pre-migration backup role** — a temporary `CREATE ROLE` / `ALTER ROLE` / `DROP ROLE` used to take a verified `pg_dump` before an irreversible migration, because the project has no managed restore path.
 
-Nothing else. Both are described in `docs/cutover-gates.md`.
+Nothing else. Both are described in `docs/cutover-gates.md`. A named coordinating agent may also deploy the backend and promote a production-target frontend build when the owner explicitly authorizes that release. Subagents do not receive production authority.
+
+Before each release action, announce the exact command, its effect and reversibility, and the immediate verification. Pause for 30 seconds before each production migration apply; staging and non-migration actions have no mandatory pause under the revised owner protocol. Use a separate announcement and standalone command for each action. A user interruption stops execution. Record the owner, executor, exact release, actions, timestamps and evidence. Follow the full [announce-and-pause protocol](docs/cutover-gates.md#owner-authorized-release-execution); authorization never waives technical release gates.
 
 ## Safety Boundaries
 

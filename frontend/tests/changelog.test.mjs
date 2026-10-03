@@ -22,9 +22,7 @@ describe("parseChangelog", () => {
     assert.equal(releases.length, 1);
     assert.equal(releases[0].version, "0.1.0");
     assert.equal(releases[0].date, "2026-05-19");
-    assert.deepEqual(releases[0].sections, [
-      { title: "Added", items: ["First live release."] },
-    ]);
+    assert.deepEqual(releases[0].sections, [{ title: "Added", items: ["First live release."] }]);
   });
 
   it("keeps uncategorized bullets under a changed section", () => {
@@ -34,8 +32,6 @@ describe("parseChangelog", () => {
 - Launch item.
 `);
 
-    assert.deepEqual(releases[0].sections, [
-      { title: "Changed", items: ["Launch item."] },
-    ]);
+    assert.deepEqual(releases[0].sections, [{ title: "Changed", items: ["Launch item."] }]);
   });
 });

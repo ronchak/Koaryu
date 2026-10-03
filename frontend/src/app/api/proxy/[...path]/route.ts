@@ -1,5 +1,8 @@
 import type { NextRequest } from "next/server";
-import { buildPrivateProxyHeaders, buildPrivateProxyJsonHeaders } from "../../../../lib/proxy-headers.ts";
+import {
+  buildPrivateProxyHeaders,
+  buildPrivateProxyJsonHeaders,
+} from "../../../../lib/proxy-headers.ts";
 import {
   getProxyRequestBodyError,
   getProxyRequestBodyLimit,
@@ -8,8 +11,11 @@ import {
 import { buildUpstreamProxyRequestHeaders } from "../../../../lib/proxy-request-headers.ts";
 import { buildProxyTargetUrl, UnsafeProxyPathError } from "../../../../lib/proxy-target.ts";
 import { ACTIVE_STUDIO_COOKIE } from "../../../../lib/studio-state-cookie.ts";
+import { fetchProxyUpstream, ProxyUpstreamTimeoutError } from "../../../../lib/proxy-upstream.ts";
+import { proxyRequestTimeout } from "../../../../lib/request-budget.ts";
 
 export const runtime = "nodejs";
+export const maxDuration = 190;
 
 function getBackendApiBase() {
   const rawBackendApiBase = process.env.BACKEND_API_URL ?? process.env.NEXT_PUBLIC_API_URL;
@@ -31,7 +37,7 @@ function getBackendApiBase() {
 
 async function forwardRequest(
   request: NextRequest,
-  context: { params: Promise<{ path: string[] }> }
+  context: { params: Promise<{ path: string[] }> },
 ) {
   try {
     const { path } = await context.params;
@@ -39,14 +45,14 @@ async function forwardRequest(
     if (!backendApiBase) {
       return Response.json(
         { detail: "Backend API URL is not configured." },
-        { status: 503, headers: buildPrivateProxyJsonHeaders() }
+        { status: 503, headers: buildPrivateProxyJsonHeaders() },
       );
     }
 
     const targetUrl = buildProxyTargetUrl(backendApiBase, request.url, path);
     const headers = buildUpstreamProxyRequestHeaders(
       request.headers,
-      request.cookies.get(ACTIVE_STUDIO_COOKIE)?.value
+      request.cookies.get(ACTIVE_STUDIO_COOKIE)?.value,
     );
 
     const init: RequestInit = {
@@ -56,13 +62,15 @@ async function forwardRequest(
     };
 
     if (request.method !== "GET" && request.method !== "HEAD") {
-      init.body = await readBoundedProxyRequestBody(
-        request,
-        getProxyRequestBodyLimit(path)
-      );
+      init.body = await readBoundedProxyRequestBody(request, getProxyRequestBodyLimit(path));
     }
 
-    const upstream = await fetch(targetUrl, init);
+    const upstream = await fetchProxyUpstream(
+      targetUrl,
+      init,
+      request.signal,
+      proxyRequestTimeout(`/${path.join("/")}`, request.method),
+    );
     const responseHeaders = buildPrivateProxyHeaders(upstream.headers);
 
     return new Response(upstream.body, {
@@ -70,18 +78,27 @@ async function forwardRequest(
       headers: responseHeaders,
     });
   } catch (error) {
+    if (error instanceof ProxyUpstreamTimeoutError) {
+      return Response.json(
+        { detail: error.message },
+        { status: 504, headers: buildPrivateProxyJsonHeaders() },
+      );
+    }
+    if (error instanceof Error && error.name === "AbortError") {
+      return new Response(null, { status: 499, headers: buildPrivateProxyJsonHeaders() });
+    }
     const requestBodyError = getProxyRequestBodyError(error);
     if (requestBodyError) {
       return Response.json(
         { detail: requestBodyError.detail },
-        { status: requestBodyError.status, headers: buildPrivateProxyJsonHeaders() }
+        { status: requestBodyError.status, headers: buildPrivateProxyJsonHeaders() },
       );
     }
 
     if (error instanceof UnsafeProxyPathError) {
       return Response.json(
         { detail: "Invalid API proxy path." },
-        { status: 400, headers: buildPrivateProxyJsonHeaders() }
+        { status: 400, headers: buildPrivateProxyJsonHeaders() },
       );
     }
 
@@ -91,42 +108,33 @@ async function forwardRequest(
       {
         detail: "Could not reach the backend API. Confirm the backend server is running.",
       },
-      { status: 502, headers: buildPrivateProxyJsonHeaders() }
+      { status: 502, headers: buildPrivateProxyJsonHeaders() },
     );
   }
 }
 
-export async function GET(
-  request: NextRequest,
-  context: { params: Promise<{ path: string[] }> }
-) {
+export async function GET(request: NextRequest, context: { params: Promise<{ path: string[] }> }) {
   return forwardRequest(request, context);
 }
 
-export async function POST(
-  request: NextRequest,
-  context: { params: Promise<{ path: string[] }> }
-) {
+export async function POST(request: NextRequest, context: { params: Promise<{ path: string[] }> }) {
   return forwardRequest(request, context);
 }
 
 export async function PATCH(
   request: NextRequest,
-  context: { params: Promise<{ path: string[] }> }
+  context: { params: Promise<{ path: string[] }> },
 ) {
   return forwardRequest(request, context);
 }
 
-export async function PUT(
-  request: NextRequest,
-  context: { params: Promise<{ path: string[] }> }
-) {
+export async function PUT(request: NextRequest, context: { params: Promise<{ path: string[] }> }) {
   return forwardRequest(request, context);
 }
 
 export async function DELETE(
   request: NextRequest,
-  context: { params: Promise<{ path: string[] }> }
+  context: { params: Promise<{ path: string[] }> },
 ) {
   return forwardRequest(request, context);
 }

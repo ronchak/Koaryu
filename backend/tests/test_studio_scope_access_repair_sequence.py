@@ -7,6 +7,7 @@ inside a recorded window. These therefore drive the real
 `get_platform_subscription_access`, twice, and compare the authorization answer
 rather than the row it was derived from.
 """
+
 from __future__ import annotations
 
 import unittest
@@ -234,11 +235,13 @@ class AccessRepairSequenceTest(unittest.TestCase):
 
         self.assertEqual(self.attempt(supabase, ConfirmsCanceledStripeService, 0.0), "402")
 
-        supabase.tables["studio_subscriptions"][0].update({
-            "status": "active",
-            "current_period_start": None,
-            "current_period_end": None,
-        })
+        supabase.tables["studio_subscriptions"][0].update(
+            {
+                "status": "active",
+                "current_period_start": None,
+                "current_period_end": None,
+            }
+        )
 
         # Re-verified against Stripe rather than replayed, so the answer comes
         # from what Stripe says and not from an unverified local edit.
@@ -299,11 +302,13 @@ class AccessRepairSequenceTest(unittest.TestCase):
 
         self.assertEqual(self.attempt(supabase, UnreachableStripeService, 0.0), "402")
 
-        supabase.tables["studio_subscriptions"][0].update({
-            "status": "active",
-            "current_period_start": None,
-            "current_period_end": None,
-        })
+        supabase.tables["studio_subscriptions"][0].update(
+            {
+                "status": "active",
+                "current_period_start": None,
+                "current_period_end": None,
+            }
+        )
 
         # Still fails closed, and pays one timeout to learn that, because the
         # row it would have to trust is one no repair has ever verified.
@@ -324,10 +329,12 @@ class AccessRepairSequenceTest(unittest.TestCase):
         self.assertIn("studio_1", platform_billing_service._access_repair_retry_after)
 
         # Webhook projection writes a complete, self-consistent row.
-        supabase.tables["studio_subscriptions"][0].update({
-            "current_period_start": 100,
-            "current_period_end": 200,
-        })
+        supabase.tables["studio_subscriptions"][0].update(
+            {
+                "current_period_start": 100,
+                "current_period_end": 200,
+            }
+        )
 
         self.assertEqual(self.attempt(supabase, UnreachableStripeService, 1.0), "allowed")
         self.assertNotIn("studio_1", platform_billing_service._access_repair_retry_after)

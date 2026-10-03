@@ -10,6 +10,7 @@ from fastapi import HTTPException
 from app.services.stripe_mutation_policy import (
     LIVE_MUTATIONS_DISABLED_DETAIL,
     STRIPE_MODE_MISMATCH_DETAIL,
+    STRIPE_OPERATION_UNSUPPORTED_DETAIL,
     StripeMutationPolicy,
 )
 from app.services.studio_live_billing_authorizations import (
@@ -68,9 +69,7 @@ class _StripeProviderCallVisitor(ast.NodeVisitor):
             else self.module_provider_aliases
         )
         inherited_symbols = (
-            self.direct_symbol_stack[-1]
-            if self.direct_symbol_stack
-            else self.module_direct_symbols
+            self.direct_symbol_stack[-1] if self.direct_symbol_stack else self.module_direct_symbols
         )
         self.provider_alias_stack.append(set(inherited_aliases))
         self.direct_symbol_stack.append(set(inherited_symbols))
@@ -95,7 +94,11 @@ class _StripeProviderCallVisitor(ast.NodeVisitor):
     def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
         module = node.module or ""
         if module == "stripe" or module.startswith("stripe."):
-            target = self.direct_symbol_stack[-1] if self.direct_symbol_stack else self.module_direct_symbols
+            target = (
+                self.direct_symbol_stack[-1]
+                if self.direct_symbol_stack
+                else self.module_direct_symbols
+            )
             for imported in node.names:
                 target.add(imported.asname or imported.name)
         if module.endswith("stripe_connect_gateway"):
@@ -117,17 +120,25 @@ class _StripeProviderCallVisitor(ast.NodeVisitor):
         return {name for target in targets if (name := _dotted_name(target))}
 
     def _track_assignment(self, value: ast.AST, targets: list[ast.AST]) -> None:
-        value_name = _dotted_name(value) or (
-            _dotted_name(value.func) if isinstance(value, ast.Call) else ""
-        ) or ""
+        value_name = (
+            _dotted_name(value)
+            or (_dotted_name(value.func) if isinstance(value, ast.Call) else "")
+            or ""
+        )
         if not value_name:
             return
         target_names = self._target_names(targets)
         if not target_names:
             return
 
-        aliases = self.provider_alias_stack[-1] if self.provider_alias_stack else self.module_provider_aliases
-        direct_symbols = self.direct_symbol_stack[-1] if self.direct_symbol_stack else self.module_direct_symbols
+        aliases = (
+            self.provider_alias_stack[-1]
+            if self.provider_alias_stack
+            else self.module_provider_aliases
+        )
+        direct_symbols = (
+            self.direct_symbol_stack[-1] if self.direct_symbol_stack else self.module_direct_symbols
+        )
         provider_alias = value_name == "$stripe" or value_name in aliases
         provider_symbol = value_name in direct_symbols or any(
             value_name.startswith(f"{alias}.") for alias in aliases | {"$stripe"}
@@ -151,15 +162,9 @@ class _StripeProviderCallVisitor(ast.NodeVisitor):
         if isinstance(value, ast.Call):
             constructor = _dotted_name(value.func) or ""
             terminal = constructor.rsplit(".", 1)[-1]
-            if (
-                terminal in self.httpx_client_constructor_names
-                or (
-                    terminal in {"AsyncClient", "Client"}
-                    and any(
-                        constructor.startswith(f"{alias}.")
-                        for alias in self.httpx_aliases
-                    )
-                )
+            if terminal in self.httpx_client_constructor_names or (
+                terminal in {"AsyncClient", "Client"}
+                and any(constructor.startswith(f"{alias}.") for alias in self.httpx_aliases)
             ):
                 self.httpx_client_aliases.update(target_names)
 
@@ -185,7 +190,9 @@ class _StripeProviderCallVisitor(ast.NodeVisitor):
         function_name = self.function_stack[-1] if self.function_stack else "<module>"
         terminal = called.rsplit(".", 1)[-1]
         aliases = self.provider_alias_stack[-1] if self.provider_alias_stack else {"stripe"}
-        direct_symbols = self.direct_symbol_stack[-1] if self.direct_symbol_stack else self.module_direct_symbols
+        direct_symbols = (
+            self.direct_symbol_stack[-1] if self.direct_symbol_stack else self.module_direct_symbols
+        )
         provider_reference = any(
             called == alias or called.startswith(f"{alias}.")
             for alias in aliases | direct_symbols | {"$stripe"}
@@ -194,24 +201,16 @@ class _StripeProviderCallVisitor(ast.NodeVisitor):
             called in self.httpx_mutation_names
             or (
                 terminal in HTTP_MUTATION_METHODS
-                and any(
-                    called.startswith(f"{alias}.")
-                    for alias in self.httpx_aliases
-                )
+                and any(called.startswith(f"{alias}.") for alias in self.httpx_aliases)
             )
             or (
                 terminal in HTTP_MUTATION_METHODS
-                and any(
-                    called.startswith(f"{alias}.")
-                    for alias in self.httpx_client_aliases
-                )
+                and any(called.startswith(f"{alias}.") for alias in self.httpx_client_aliases)
             )
         )
 
         if (
-            (
-                provider_reference and terminal not in READ_ONLY_STRIPE_METHODS
-            )
+            (provider_reference and terminal not in READ_ONLY_STRIPE_METHODS)
             or httpx_mutation
             or terminal in {"_stripe_v2_patch", "_stripe_v2_post"}
         ):
@@ -296,6 +295,17 @@ class _AuthorizedStore:
 
 
 class StripeMutationPolicyTest(unittest.TestCase):
+    def test_unowned_connected_customer_default_mutation_is_explicitly_unsupported(self):
+        with self.assertRaises(HTTPException) as raised:
+            StripeMutationPolicy(_settings(mode="test")).issue_permit(
+                "connected_customer.default_payment_method.update",
+                studio_id="studio_1",
+                account_id="acct_1",
+            )
+
+        self.assertEqual(raised.exception.status_code, 409)
+        self.assertEqual(raised.exception.detail, STRIPE_OPERATION_UNSUPPORTED_DETAIL)
+
     def test_test_mode_mutations_require_explicit_scope_then_run_without_live_grant(self):
         service = StripeService()
         service.settings = _settings(mode="test")
@@ -303,7 +313,9 @@ class StripeMutationPolicyTest(unittest.TestCase):
         _Customer.calls = []
 
         customer = service.create_customer(
-            name="Test Studio", studio_id="studio_1", metadata={"studio_id": "studio_1"},
+            name="Test Studio",
+            studio_id="studio_1",
+            metadata={"studio_id": "studio_1"},
         )
 
         self.assertEqual(customer["id"], "cus_test")
@@ -331,7 +343,9 @@ class StripeMutationPolicyTest(unittest.TestCase):
         service = StripeService()
         service.settings = _settings(mode="test")
 
-        with patch("app.services.stripe_service.stripe_v2_request", return_value={"id": "acct_test"}) as raw:
+        with patch(
+            "app.services.stripe_service.stripe_v2_request", return_value={"id": "acct_test"}
+        ) as raw:
             result = service.create_connect_account(
                 studio_id="studio_1",
                 business_name="Test Studio",
@@ -362,18 +376,51 @@ class StripeMutationPolicyTest(unittest.TestCase):
         service = StripeService()
         service.settings = _settings(mode="test")
         mismatches = (
-            ("POST", "/v2/core/accounts", {"metadata": {"studio_id": "studio_2"}},
-             "connect_account.create", "studio_1", None),
-            ("POST", "/v2/core/account_links", {"account": "acct_2"},
-             "connect_onboarding_link.create", "studio_1", "acct_1"),
-            ("PATCH", "/v2/core/accounts/acct_2", {"configuration": {}},
-             "connect_account.branding.update", "studio_1", "acct_1"),
-            ("POST", "/v2/core/account_links", {"account": "acct_1", "use_case": {"type": "other"}},
-             "connect_onboarding_link.create", "studio_1", "acct_1"),
-            ("PATCH", "/v2/core/accounts/acct_1", {
-                "configuration": {"merchant": {"capabilities": {"card_payments": {"requested": False}}}},
-                "include": ["configuration.merchant"],
-            }, "connect_account.branding.update", "studio_1", "acct_1"),
+            (
+                "POST",
+                "/v2/core/accounts",
+                {"metadata": {"studio_id": "studio_2"}},
+                "connect_account.create",
+                "studio_1",
+                None,
+            ),
+            (
+                "POST",
+                "/v2/core/account_links",
+                {"account": "acct_2"},
+                "connect_onboarding_link.create",
+                "studio_1",
+                "acct_1",
+            ),
+            (
+                "PATCH",
+                "/v2/core/accounts/acct_2",
+                {"configuration": {}},
+                "connect_account.branding.update",
+                "studio_1",
+                "acct_1",
+            ),
+            (
+                "POST",
+                "/v2/core/account_links",
+                {"account": "acct_1", "use_case": {"type": "other"}},
+                "connect_onboarding_link.create",
+                "studio_1",
+                "acct_1",
+            ),
+            (
+                "PATCH",
+                "/v2/core/accounts/acct_1",
+                {
+                    "configuration": {
+                        "merchant": {"capabilities": {"card_payments": {"requested": False}}}
+                    },
+                    "include": ["configuration.merchant"],
+                },
+                "connect_account.branding.update",
+                "studio_1",
+                "acct_1",
+            ),
         )
 
         with patch("app.services.stripe_service.stripe_v2_request") as raw:
@@ -485,10 +532,12 @@ class StripeMutationPolicyTest(unittest.TestCase):
         service._stripe.assert_not_called()
 
     def test_core_self_checkout_switch_allows_only_named_live_core_operations(self):
-        policy = StripeMutationPolicy(_settings(
-            mode="live",
-            core_self_checkout_enabled=True,
-        ))
+        policy = StripeMutationPolicy(
+            _settings(
+                mode="live",
+                core_self_checkout_enabled=True,
+            )
+        )
 
         for operation in (
             "customer.create",
@@ -503,10 +552,10 @@ class StripeMutationPolicyTest(unittest.TestCase):
                 self.assertEqual(permit.authorization_source, "core_self_checkout")
                 self.assertEqual(permit.studio_id, "studio_1")
 
-        for operation, account_id in (
-            ("customer.update", None),
-            ("connect_account.create", None),
-            ("connected_invoice.pay", "acct_1"),
+        for operation, account_id, expected_detail in (
+            ("customer.update", None, LIVE_SCOPE_REQUIRED_DETAIL),
+            ("connect_account.create", None, LIVE_MUTATIONS_DISABLED_DETAIL),
+            ("connected_invoice.pay", "acct_1", LIVE_MUTATIONS_DISABLED_DETAIL),
         ):
             with self.subTest(operation=operation), self.assertRaises(HTTPException) as raised:
                 policy.issue_permit(
@@ -514,13 +563,15 @@ class StripeMutationPolicyTest(unittest.TestCase):
                     studio_id="studio_1",
                     account_id=account_id,
                 )
-            self.assertEqual(raised.exception.detail, LIVE_MUTATIONS_DISABLED_DETAIL)
+            self.assertEqual(raised.exception.detail, expected_detail)
 
     def test_core_self_checkout_switch_still_requires_explicit_studio_scope(self):
-        policy = StripeMutationPolicy(_settings(
-            mode="live",
-            core_self_checkout_enabled=True,
-        ))
+        policy = StripeMutationPolicy(
+            _settings(
+                mode="live",
+                core_self_checkout_enabled=True,
+            )
+        )
 
         with self.assertRaises(HTTPException) as raised:
             policy.issue_permit("core_checkout_session.create")
@@ -529,17 +580,22 @@ class StripeMutationPolicyTest(unittest.TestCase):
 
     def test_core_self_checkout_switch_cannot_authorize_live_mutations_outside_production(self):
         for environment in ("development", "test", "staging"):
-            policy = StripeMutationPolicy(_settings(
-                mode="live",
-                core_self_checkout_enabled=True,
-                environment=environment,
-            ))
+            policy = StripeMutationPolicy(
+                _settings(
+                    mode="live",
+                    core_self_checkout_enabled=True,
+                    environment=environment,
+                )
+            )
             for operation in (
                 "customer.create",
                 "core_checkout_session.create",
                 "customer_portal_session.create",
             ):
-                with self.subTest(environment=environment, operation=operation), self.assertRaises(HTTPException) as raised:
+                with (
+                    self.subTest(environment=environment, operation=operation),
+                    self.assertRaises(HTTPException) as raised,
+                ):
                     policy.issue_permit(operation, studio_id="studio_1")
                 self.assertEqual(raised.exception.detail, LIVE_MUTATIONS_DISABLED_DETAIL)
 
@@ -562,13 +618,18 @@ class StripeMutationPolicyTest(unittest.TestCase):
 
         self.assertEqual(permit.authorization_source, "durable_live_scope")
         self.assertEqual(permit.studio_id, "studio_1")
-        self.assertEqual(store.calls, [{
-            "operation": "connected_invoice.pay",
-            "scope": "connect_payments",
-            "studio_id": "studio_1",
-            "account_id": "acct_1",
-            "expected_livemode": True,
-        }])
+        self.assertEqual(
+            store.calls,
+            [
+                {
+                    "operation": "connected_invoice.pay",
+                    "scope": "connect_payments",
+                    "studio_id": "studio_1",
+                    "account_id": "acct_1",
+                    "expected_livemode": True,
+                }
+            ],
+        )
 
     def test_live_switch_off_does_not_read_durable_store(self):
         store = _AuthorizedStore()
@@ -615,6 +676,7 @@ class StripeMutationPolicyTest(unittest.TestCase):
             "create_connected_refund",
             "create_connected_subscription",
             "create_connected_subscription_item",
+            "create_connected_subscription_schedule",
             "create_core_checkout_session",
             "create_customer",
             "create_customer_portal_session",
@@ -623,6 +685,7 @@ class StripeMutationPolicyTest(unittest.TestCase):
             "expire_core_checkout_session",
             "finalize_connected_invoice",
             "pay_connected_invoice",
+            "release_connected_subscription_schedule",
             "send_connected_invoice",
             "set_connected_customer_default_payment_method",
             "update_connect_account_branding",
@@ -630,6 +693,7 @@ class StripeMutationPolicyTest(unittest.TestCase):
             "update_connected_product",
             "update_connected_subscription",
             "update_connected_subscription_item",
+            "update_connected_subscription_schedule",
             "upload_branding_file",
             "void_connected_invoice",
         }
@@ -647,7 +711,8 @@ class StripeMutationPolicyTest(unittest.TestCase):
 
     def test_only_first_connect_create_and_link_defer_to_the_validated_provider_sink(self):
         guarded = {
-            name for name in dir(StripeService)
+            name
+            for name in dir(StripeService)
             if getattr(getattr(StripeService, name), "__stripe_sink_guarded__", False)
         }
         self.assertEqual(guarded, {"create_connect_account", "create_connect_onboarding_link"})
@@ -658,7 +723,8 @@ class StripeMutationPolicyTest(unittest.TestCase):
         # must accept a studio argument and connected operations must also
         # accept the exact account at the call boundary.
         for name in (
-            name for name in dir(StripeService)
+            name
+            for name in dir(StripeService)
             if getattr(getattr(StripeService, name), "__stripe_mutation_operation__", None)
         ):
             parameters = inspect.signature(getattr(StripeService, name)).parameters
@@ -671,53 +737,157 @@ class StripeMutationPolicyTest(unittest.TestCase):
                     self.assertIn("account_id", parameters)
 
     def test_raw_stripe_provider_mutation_inventory_is_exact(self):
-        expected_raw_calls = {(f"backend/app/services/{path}", function, call) for path, function, call in {
-            ("stripe_connect_gateway.py", "stripe_v2_request", "httpx.request"),
-            ("stripe_connect_gateway.py", "upload_branding_file", "stripe.File.create"),
-            ("stripe_connect_gateway.py", "update_branding", "self._stripe_v2_patch"),
-            ("stripe_connect_gateway.py", "update_branding", "stripe.Account.modify"),
-            ("stripe_connect_gateway.py", "create_onboarding_link", "self._stripe_v2_post"),
-            ("stripe_connect_gateway.py", "_create_legacy_onboarding_link", "stripe.AccountLink.create"),
-            ("stripe_connect_gateway.py", "_create_legacy_dashboard_login_url", "stripe.Account.create_login_link"),
-            ("stripe_connect_gateway.py", "_create_account_v2", "self._stripe_v2_post"),
-            ("stripe_connect_gateway.py", "_create_account_v1", "stripe.Account.create"),
-            ("stripe_service.py", "create_customer", "stripe.Customer.create"),
-            ("stripe_service.py", "create_connected_customer", "stripe.Customer.create"),
-            ("stripe_service.py", "update_connected_customer", "stripe.Customer.modify"),
-            ("stripe_service.py", "set_connected_customer_default_payment_method", "stripe.Customer.modify"),
-            ("stripe_service.py", "create_connected_product", "stripe.Product.create"),
-            ("stripe_service.py", "update_connected_product", "stripe.Product.modify"),
-            ("stripe_service.py", "create_connected_price", "stripe.Price.create"),
-            ("stripe_service.py", "create_setup_checkout_session", "stripe.checkout.Session.create"),
-            ("stripe_service.py", "create_connected_subscription", "stripe.Subscription.create"),
-            ("stripe_service.py", "create_connected_subscription_item", "stripe.SubscriptionItem.create"),
-            ("stripe_service.py", "update_connected_subscription_item", "stripe.SubscriptionItem.modify"),
-            ("stripe_service.py", "delete_connected_subscription_item", "stripe.SubscriptionItem.delete"),
-            ("stripe_service.py", "update_connected_subscription", "stripe.Subscription.modify"),
-            ("stripe_service.py", "cancel_connected_subscription", "stripe.Subscription.cancel"),
-            ("stripe_service.py", "create_connected_invoice_item", "stripe.InvoiceItem.create"),
-            ("stripe_service.py", "create_connected_invoice", "stripe.Invoice.create"),
-            ("stripe_service.py", "finalize_connected_invoice", "stripe.Invoice.finalize_invoice"),
-            ("stripe_service.py", "send_connected_invoice", "stripe.Invoice.send_invoice"),
-            ("stripe_service.py", "pay_connected_invoice", "stripe.Invoice.pay"),
-            ("stripe_service.py", "void_connected_invoice", "stripe.Invoice.void_invoice"),
-            ("stripe_service.py", "create_connected_refund", "stripe.Refund.create"),
-            ("stripe_service.py", "create_core_checkout_session", "stripe.checkout.Session.create"),
-            ("stripe_service.py", "expire_core_checkout_session", "stripe.checkout.Session.expire"),
-            ("stripe_service.py", "cancel_core_subscription", "stripe.Subscription.cancel"),
-            ("stripe_service.py", "create_customer_portal_session", "stripe.billing_portal.Session.create"),
-        }}
+        expected_raw_calls = {
+            (f"backend/app/services/{path}", function, call)
+            for path, function, call in {
+                ("stripe_connect_gateway.py", "stripe_v2_request", "httpx.request"),
+                ("stripe_connect_gateway.py", "upload_branding_file", "stripe.File.create"),
+                ("stripe_connect_gateway.py", "update_branding", "self._stripe_v2_patch"),
+                ("stripe_connect_gateway.py", "update_branding", "stripe.Account.modify"),
+                ("stripe_connect_gateway.py", "create_onboarding_link", "self._stripe_v2_post"),
+                (
+                    "stripe_connect_gateway.py",
+                    "_create_legacy_onboarding_link",
+                    "stripe.AccountLink.create",
+                ),
+                (
+                    "stripe_connect_gateway.py",
+                    "_create_legacy_dashboard_login_url",
+                    "stripe.Account.create_login_link",
+                ),
+                ("stripe_connect_gateway.py", "_create_account_v2", "self._stripe_v2_post"),
+                ("stripe_connect_gateway.py", "_create_account_v1", "stripe.Account.create"),
+                ("stripe_service.py", "create_customer", "stripe.Customer.create"),
+                ("stripe_service.py", "create_connected_customer", "stripe.Customer.create"),
+                ("stripe_service.py", "update_connected_customer", "stripe.Customer.modify"),
+                (
+                    "stripe_service.py",
+                    "set_connected_customer_default_payment_method",
+                    "stripe.Customer.modify",
+                ),
+                ("stripe_service.py", "create_connected_product", "stripe.Product.create"),
+                ("stripe_service.py", "update_connected_product", "stripe.Product.modify"),
+                ("stripe_service.py", "create_connected_price", "stripe.Price.create"),
+                (
+                    "stripe_service.py",
+                    "create_setup_checkout_session",
+                    "stripe.checkout.Session.create",
+                ),
+                (
+                    "stripe_service.py",
+                    "create_connected_subscription",
+                    "stripe.Subscription.create",
+                ),
+                (
+                    "stripe_service.py",
+                    "create_connected_subscription_schedule",
+                    "stripe.SubscriptionSchedule.create",
+                ),
+                (
+                    "stripe_service.py",
+                    "create_connected_subscription_item",
+                    "stripe.SubscriptionItem.create",
+                ),
+                (
+                    "stripe_service.py",
+                    "update_connected_subscription_item",
+                    "stripe.SubscriptionItem.modify",
+                ),
+                (
+                    "stripe_service.py",
+                    "delete_connected_subscription_item",
+                    "stripe.SubscriptionItem.delete",
+                ),
+                (
+                    "stripe_service.py",
+                    "update_connected_subscription",
+                    "stripe.Subscription.modify",
+                ),
+                (
+                    "stripe_service.py",
+                    "update_connected_subscription_schedule",
+                    "stripe.SubscriptionSchedule.modify",
+                ),
+                (
+                    "stripe_service.py",
+                    "release_connected_subscription_schedule",
+                    "stripe.SubscriptionSchedule.release",
+                ),
+                (
+                    "stripe_service.py",
+                    "cancel_connected_subscription",
+                    "stripe.Subscription.cancel",
+                ),
+                ("stripe_service.py", "create_connected_invoice_item", "stripe.InvoiceItem.create"),
+                ("stripe_service.py", "create_connected_invoice", "stripe.Invoice.create"),
+                (
+                    "stripe_service.py",
+                    "finalize_connected_invoice",
+                    "stripe.Invoice.finalize_invoice",
+                ),
+                ("stripe_service.py", "send_connected_invoice", "stripe.Invoice.send_invoice"),
+                ("stripe_service.py", "pay_connected_invoice", "stripe.Invoice.pay"),
+                ("stripe_service.py", "void_connected_invoice", "stripe.Invoice.void_invoice"),
+                ("stripe_service.py", "create_connected_refund", "stripe.Refund.create"),
+                (
+                    "stripe_service.py",
+                    "create_core_checkout_session",
+                    "stripe.checkout.Session.create",
+                ),
+                (
+                    "stripe_service.py",
+                    "expire_core_checkout_session",
+                    "stripe.checkout.Session.expire",
+                ),
+                ("stripe_service.py", "cancel_core_subscription", "stripe.Subscription.cancel"),
+                (
+                    "stripe_service.py",
+                    "create_customer_portal_session",
+                    "stripe.billing_portal.Session.create",
+                ),
+                (
+                    "billing_enrollment_transitions.py",
+                    "_mutate_provider",
+                    "stripe.update_connected_subscription",
+                ),
+                (
+                    "billing_enrollment_transitions.py",
+                    "_mutate_provider",
+                    "stripe.cancel_connected_subscription",
+                ),
+                (
+                    "billing_enrollment_transitions.py",
+                    "_mutate_provider",
+                    "stripe.delete_connected_subscription_item",
+                ),
+                (
+                    "billing_enrollment_transitions.py",
+                    "_mutate_provider",
+                    "stripe.update_connected_subscription_item",
+                ),
+                (
+                    "billing_enrollment_transitions.py",
+                    "_mutate_provider",
+                    "stripe.release_connected_subscription_schedule",
+                ),
+            }
+        }
         # The source-wide HTTP mutation guard intentionally inventories this
         # test-only webhook smoke request even though its destination is Koaryu,
         # not Stripe. Any new direct HTTP mutation still requires review here.
-        expected_raw_calls.add((
-            "scripts/verify-connect-webhook-smoke.py",
-            "_post",
-            "httpx.post",
-        ))
-        expected_raw_sink_callers = {(f"backend/app/services/{path}", function, call) for path, function, call in {
-            ("stripe_service.py", "_stripe_v2_request", "stripe_v2_request"),
-        }}
+        expected_raw_calls.add(
+            (
+                "scripts/verify-connect-webhook-smoke.py",
+                "_post",
+                "httpx.post",
+            )
+        )
+        expected_raw_sink_callers = {
+            (f"backend/app/services/{path}", function, call)
+            for path, function, call in {
+                ("stripe_service.py", "_stripe_v2_request", "stripe_v2_request"),
+            }
+        }
         expected_gateway_constructors = {
             ("backend/app/services/stripe_service.py", "_connect_gateway", "StripeConnectGateway"),
         }

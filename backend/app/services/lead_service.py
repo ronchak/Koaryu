@@ -1,17 +1,23 @@
 import uuid
-from datetime import date
+from app.services.studio_business_date import studio_today
 from typing import Optional
 from postgrest.exceptions import APIError as PostgrestAPIError
 from supabase import Client
 from fastapi import HTTPException
 from app.schemas.lead import (
-    LeadCreate, LeadUpdate, LeadResponse,
-    LeadActivityCreate, LeadActivityResponse,
+    LeadCreate,
+    LeadUpdate,
+    LeadResponse,
+    LeadActivityCreate,
+    LeadActivityResponse,
     LeadConvert,
+    LeadFollowUpRequest,
 )
 from app.services.studio_scope import ensure_staff_user_in_studio
 from app.services.program_service import ProgramService
+from app.services.program_records import program_error
 from app.services.supabase_rpc import execute_required_rpc, first_rpc_row
+from app.services.lead_reads import fetch_lead_rows
 
 
 CONVERSION_NAMESPACE = uuid.UUID("27c8322f-a4e4-46d7-bfae-018f6b638858")
@@ -25,22 +31,11 @@ class LeadService:
     async def list_leads(
         self, studio_id: str, stage: Optional[str] = None, source: Optional[str] = None
     ) -> list[LeadResponse]:
-        query = (
-            self.supabase.table("leads")
-            .select("*")
-            .eq("studio_id", studio_id)
-            .order("created_at", desc=True)
-        )
-        if stage:
-            query = query.eq("stage", stage)
-        if source:
-            query = query.eq("source", source)
-        result = query.execute()
-        return [LeadResponse(**r) for r in (result.data or [])]
+        return [
+            LeadResponse(**row) for row in fetch_lead_rows(self.supabase, studio_id, stage, source)
+        ]
 
-    async def create_lead(
-        self, data: LeadCreate, studio_id: str, actor_id: str
-    ) -> LeadResponse:
+    async def create_lead(self, data: LeadCreate, studio_id: str, actor_id: str) -> LeadResponse:
         row = data.model_dump()
         ensure_staff_user_in_studio(
             self.supabase,
@@ -61,22 +56,26 @@ class LeadService:
             raise HTTPException(status_code=500, detail="Failed to create lead")
 
         # Log activity
-        self.supabase.table("lead_activities").insert({
-            "studio_id": studio_id,
-            "lead_id": result.data[0]["id"],
-            "activity_type": "note",
-            "description": "Lead created",
-            "created_by": actor_id,
-        }).execute()
+        self.supabase.table("lead_activities").insert(
+            {
+                "studio_id": studio_id,
+                "lead_id": result.data[0]["id"],
+                "activity_type": "note",
+                "description": "Lead created",
+                "created_by": actor_id,
+            }
+        ).execute()
 
-        self.supabase.table("audit_logs").insert({
-            "studio_id": studio_id,
-            "actor_id": actor_id,
-            "action": "lead.created",
-            "entity_type": "lead",
-            "entity_id": result.data[0]["id"],
-            "metadata": {"name": f"{data.first_name} {data.last_name}"},
-        }).execute()
+        self.supabase.table("audit_logs").insert(
+            {
+                "studio_id": studio_id,
+                "actor_id": actor_id,
+                "action": "lead.created",
+                "entity_type": "lead",
+                "entity_id": result.data[0]["id"],
+                "metadata": {"name": f"{data.first_name} {data.last_name}"},
+            }
+        ).execute()
 
         return LeadResponse(**result.data[0])
 
@@ -86,12 +85,17 @@ class LeadService:
             .select("*")
             .eq("id", lead_id)
             .eq("studio_id", studio_id)
-            .single()
+            .limit(2)
             .execute()
         )
-        if not result.data:
+        rows = result.data
+        if not isinstance(rows, list):
+            raise RuntimeError("Lead lookup returned an invalid result")
+        if not rows:
             raise HTTPException(status_code=404, detail="Lead not found")
-        return LeadResponse(**result.data)
+        if len(rows) != 1:
+            raise RuntimeError("Lead lookup returned multiple rows")
+        return LeadResponse(**rows[0])
 
     async def update_lead(
         self, lead_id: str, data: LeadUpdate, studio_id: str, actor_id: str
@@ -99,54 +103,73 @@ class LeadService:
         update_dict = data.model_dump(exclude_unset=True)
         if not update_dict:
             raise HTTPException(status_code=400, detail="No fields to update")
-        ensure_staff_user_in_studio(
-            self.supabase,
-            update_dict.get("assigned_staff_id"),
-            studio_id,
-            "Assigned staff member not found in this studio",
+        return self._execute_lead_command(
+            "update_lead_atomic",
+            {
+                "p_studio_id": studio_id,
+                "p_actor_id": actor_id,
+                "p_lead_id": lead_id,
+                "p_patch": update_dict,
+            },
         )
-        ProgramService(self.supabase).ensure_program_active(studio_id, update_dict.get("program_id"))
 
-        # Log stage change
-        if "stage" in update_dict:
-            old_lead = await self.get_lead(lead_id, studio_id)
-            if old_lead.stage != update_dict["stage"]:
-                self.supabase.table("lead_activities").insert({
-                    "studio_id": studio_id,
-                    "lead_id": lead_id,
-                    "activity_type": "stage_change",
-                    "description": f"Stage changed from {old_lead.stage} to {update_dict['stage']}",
-                    "created_by": actor_id,
-                }).execute()
+    async def follow_up_lead(
+        self, lead_id: str, data: LeadFollowUpRequest, studio_id: str, actor_id: str
+    ) -> LeadResponse:
+        # SQL resolves defaults under the row lock and replays the original result.
+        # Pre-reading the lead here would race a concurrent update or command retry.
+        return self._execute_lead_command(
+            "follow_up_lead_atomic",
+            {
+                "p_studio_id": studio_id,
+                "p_actor_id": actor_id,
+                "p_lead_id": lead_id,
+                "p_operation_id": str(data.operation_id),
+                "p_request": {"next_stage": data.next_stage},
+            },
+        )
 
+    def _execute_lead_command(self, name: str, params: dict) -> LeadResponse:
         try:
-            result = (
-                self.supabase.table("leads")
-                .update(update_dict)
-                .eq("id", lead_id)
-                .eq("studio_id", studio_id)
-                .execute()
-            )
+            result = execute_required_rpc(self.supabase, name, params)
         except PostgrestAPIError as exc:
-            if exc.code not in OPTIONAL_MEMBERSHIP_SCHEMA_ERROR_CODES or "program_id" not in update_dict:
+            if exc.code == "P0001" and exc.message == "PROGRAM_INACTIVE":
+                try:
+                    program_id = str(uuid.UUID(exc.details))
+                except (ValueError, TypeError, AttributeError):
+                    raise exc
+                raise program_error(
+                    409,
+                    "PROGRAM_INACTIVE",
+                    "Archived programs cannot be used for new records.",
+                    program_id=program_id,
+                ) from exc
+            if exc.code == "P0001" and exc.message == "LEAD_ALREADY_CONVERTED":
+                raise HTTPException(
+                    status_code=409, detail="This lead has already been converted."
+                ) from exc
+            if exc.code == "P0001" and exc.message == "LEAD_STUDIO_BUSY":
+                raise HTTPException(
+                    status_code=409,
+                    detail="The studio is being updated. Please retry this lead action.",
+                ) from exc
+            error = {
+                "22023": (400, "Invalid lead command"),
+                "42501": (403, "Not authorized to perform this lead command"),
+                "P0002": (404, "Lead or related record not found in this studio"),
+            }.get(exc.code)
+            if exc.code == "23505" and exc.message == "Follow-up operation identity conflict.":
+                error = (409, "This operation conflicts with a recorded lead command")
+            if error is None:
                 raise
-            update_dict.pop("program_id", None)
-            if not update_dict:
-                return await self.get_lead(lead_id, studio_id)
-            result = (
-                self.supabase.table("leads")
-                .update(update_dict)
-                .eq("id", lead_id)
-                .eq("studio_id", studio_id)
-                .execute()
-            )
-        if not result.data:
-            raise HTTPException(status_code=404, detail="Lead not found")
-        return LeadResponse(**result.data[0])
+            # Database/provider details can contain private record values.
+            raise HTTPException(status_code=error[0], detail=error[1]) from exc
+        row = first_rpc_row(result)
+        if row is None:
+            raise HTTPException(status_code=500, detail="Failed to complete lead command")
+        return LeadResponse(**row)
 
-    async def get_activities(
-        self, lead_id: str, studio_id: str
-    ) -> list[LeadActivityResponse]:
+    async def get_activities(self, lead_id: str, studio_id: str) -> list[LeadActivityResponse]:
         result = (
             self.supabase.table("lead_activities")
             .select("*")
@@ -175,12 +198,31 @@ class LeadService:
     ) -> LeadResponse:
         """Convert a lead into a student record."""
         lead = await self.get_lead(lead_id, studio_id)
-        program_service = ProgramService(self.supabase)
-        program_id = data.program_id or lead.program_id or program_service.get_unassigned_program_id(studio_id)
-        program_service.ensure_program_active(studio_id, program_id)
         if lead.converted_student_id:
-            return lead
-
+            # Restore the pipeline stage under the database row lock. This is not
+            # a new enrollment: do not validate/create a program or change the
+            # existing student's membership, even if its program was archived.
+            return self._execute_lead_command(
+                "convert_lead_to_student_atomic",
+                {
+                    "p_studio_id": studio_id,
+                    "p_actor_id": actor_id,
+                    "p_lead_id": lead_id,
+                    "p_student_id": lead.converted_student_id,
+                    "p_program_id": lead.program_id,
+                    "p_status": data.status,
+                    "p_membership_start_date": data.membership_start_date,
+                    "p_guardian_id": None,
+                    "p_student_guardian_id": None,
+                },
+            )
+        program_service = ProgramService(self.supabase)
+        program_id = (
+            data.program_id
+            or lead.program_id
+            or program_service.get_unassigned_program_id(studio_id)
+        )
+        program_service.ensure_program_active(studio_id, program_id)
         student_id = str(uuid.uuid5(CONVERSION_NAMESPACE, f"{studio_id}:{lead_id}:student"))
         guardian_id = None
         link_id = None
@@ -188,17 +230,32 @@ class LeadService:
             guardian_id = str(uuid.uuid5(CONVERSION_NAMESPACE, f"{studio_id}:{lead_id}:guardian"))
             link_id = str(uuid.uuid5(CONVERSION_NAMESPACE, f"{student_id}:{guardian_id}:link"))
 
-        result = execute_required_rpc(self.supabase, "convert_lead_to_student_atomic", {
-            "p_studio_id": studio_id,
-            "p_actor_id": actor_id,
-            "p_lead_id": lead_id,
-            "p_student_id": student_id,
-            "p_program_id": program_id,
-            "p_status": data.status,
-            "p_membership_start_date": data.membership_start_date or str(date.today()),
-            "p_guardian_id": guardian_id,
-            "p_student_guardian_id": link_id,
-        })
+        membership_start_date = data.membership_start_date
+        if not membership_start_date:
+            studio = (
+                self.supabase.table("studios")
+                .select("timezone")
+                .eq("id", studio_id)
+                .single()
+                .execute()
+            )
+            membership_start_date = studio_today((studio.data or {}).get("timezone"))[0].isoformat()
+
+        result = execute_required_rpc(
+            self.supabase,
+            "convert_lead_to_student_atomic",
+            {
+                "p_studio_id": studio_id,
+                "p_actor_id": actor_id,
+                "p_lead_id": lead_id,
+                "p_student_id": student_id,
+                "p_program_id": program_id,
+                "p_status": data.status,
+                "p_membership_start_date": membership_start_date,
+                "p_guardian_id": guardian_id,
+                "p_student_guardian_id": link_id,
+            },
+        )
         converted = first_rpc_row(result)
         if not converted:
             raise HTTPException(

@@ -10,26 +10,43 @@ Expected service settings:
 
 - Service name: `koaryu`
 - Type: Web Service
-- Runtime: Python
+- Runtime: Docker
 - Plan: `starter`
-- Region: Ohio
+- Region: Oregon
 - Root directory: `backend`
-- Build command: `pip install -r requirements.txt`
-- Start command: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
+- Dockerfile path: `./Dockerfile`
+- Docker context: `.`
+- Start command: the image's `backend/scripts/start-render.sh`
 - Health check path: `/health/ready`
 - Automatic production deploys: off; deploy one reviewed commit explicitly
 
-Render should use Python `3.11`. The backend includes both `backend/runtime.txt` (`python-3.11.9`) and `backend/.python-version` (`3.11`) so Render does not default to a newer Python release that lacks compatible wheels for pinned dependencies.
+The image pins Python `3.11.9` on Debian bookworm. `backend/runtime.txt` and `backend/.python-version` keep non-Docker tools and local development on the same Python line.
 
-The configured `starter` Render service runs a single lightweight Uvicorn process intentionally. Four Gunicorn workers duplicate the FastAPI/Supabase/Stripe import footprint during cold wakeups, which leaves too little headroom on small instances. Keep `render.yaml`, `backend/Procfile`, and `backend/requirements.txt` aligned with this choice; Gunicorn should not be reintroduced unless the service moves to a larger instance and the memory budget is measured again.
+The image installs Debian `libjemalloc2=5.3.0-1`, exposes it through `/usr/local/lib/libjemalloc.so.2`, and sets `LD_PRELOAD` before Python starts. The startup wrapper checks `/proc/self/maps` and exits before Uvicorn if jemalloc is absent. This keeps an image or environment regression from silently falling back to glibc. The old `MALLOC_ARENA_MAX` setting is intentionally absent because it has no effect once jemalloc owns allocation.
+
+The configured `starter` Render service runs a single lightweight Uvicorn process. Four Gunicorn workers duplicate the FastAPI/Supabase/Stripe import footprint during cold wakeups, which leaves too little headroom on small instances. Keep `render.yaml`, `backend/Dockerfile`, `backend/scripts/start-render.sh`, and `backend/requirements.txt` aligned with this choice; Gunicorn should not be reintroduced unless the service moves to a larger instance and the memory budget is measured again.
 
 `render.yaml` intentionally sets `autoDeployTrigger: 'off'`. A merge to `main` must not release the backend before the fixed candidate has passed staging. Trigger the production deploy with the exact approved commit SHA, then read the deployed SHA back from Render before recording the release. Do not re-enable commit auto-deploy as a shortcut.
+
+### Native-to-Docker conversion
+
+Render resolves `dockerfilePath` and `dockerContext` from the service's root directory. With `rootDir: backend`, the Dockerfile path is `./Dockerfile` and the context is `.`. Prove both the path and the runtime conversion on `koaryu-staging` before changing production. The first staging build log must show `backend/Dockerfile`, install `libjemalloc2`, and reach `jemalloc preload verified`. Read the staging service afterward and confirm its runtime is Docker, its branch is `staging`, and its health path remains `/health/ready`.
+
+Current Render documentation supports changing an existing non-static service runtime through the API or a Blueprint sync. If Render refuses the in-place change, stop before touching production and use this fallback:
+
+1. Record the existing service ID, branch, plan, root directory, health path, domains, and environment-variable names. Do not print or copy secret values into the repository or deployment logs.
+2. Rename the existing service with a `-native-backup` suffix. Do not delete it.
+3. Provision a Docker replacement from the exact candidate commit with the original service name and configuration. Re-enter every `sync: false` value through Render's secret controls.
+4. Keep automatic deploys off. Require successful startup, `/health/live`, `/health/ready`, exact commit readback, Stripe mode readback, and `jemalloc preload verified` before routing traffic.
+5. Update `docs/services.md`, pinned service IDs in operator scripts, and any provider URL references in the same change. Keep the old service until the replacement passes the memory observation window and a separate cleanup explicitly authorizes removal.
+
+This fallback changes service IDs and may change the temporary `onrender.com` URL. Do not reuse the old production URL or remove the old service until the replacement URL and dependent Vercel variables have been verified.
 
 For a live dojo-floor demo, use the configured starter service only after it is warm, or use a larger always-on backend. Cold starts on small Render instances can still make the first authenticated or billing click feel broken even when the service is healthy.
 
 ## Config Vars
 
-Render will prompt for values marked `sync: false` in `render.yaml`. Use `backend/.env.render.example` as the checklist.
+Render will prompt for values marked `sync: false` in `render.yaml`. Use `backend/.env.render.example` as the checklist. That reusable example intentionally keeps `LIVE_BILLING_ENABLED=false`; production is the explicit exception below.
 
 Fixed values:
 
@@ -41,7 +58,7 @@ DEMO_RESET_ENABLED=false
 DEMO_RESET_STUDIO_IDS=
 BILLING_PLATFORM_FEE_BPS=50
 STRIPE_MODE=live
-LIVE_BILLING_ENABLED=false
+LIVE_BILLING_ENABLED=true
 CORE_SELF_CHECKOUT_ENABLED=true
 SUPABASE_URL=https://mimguepumzsgmcaycdsh.supabase.co
 SUPABASE_DEVELOPMENT_PROJECT_REF=
@@ -59,6 +76,7 @@ STRIPE_PLATFORM_WEBHOOK_SECRET=
 STRIPE_CONNECT_WEBHOOK_SECRET=
 STRIPE_KOARYU_CORE_PRICE_ID=
 ACCOUNT_DELETION_WORKER_SECRET=
+BILLING_TRANSITION_WORKER_SECRET=
 SUPPORT_TRIAGE_SECRET=
 OPERATIONAL_ALERT_WORKER_SECRET=
 OPERATIONAL_ALERT_PRIMARY_URL=
@@ -79,7 +97,7 @@ Keep `OPERATIONAL_ALERTS_ENABLED=false` in production until the primary/backup h
 
 Koaryu creates connected-account onboarding sessions with Stripe Account Links. Do not add a Connect OAuth client ID to hosted configuration; the OAuth credential is not part of this integration.
 
-Production requires `STRIPE_MODE=live`, an `sk_live_` secret key, and an `rk_live_` restricted key when that optional key is set. Staging separately requires test mode and test-prefixed keys. `CORE_SELF_CHECKOUT_ENABLED=true` authorizes only `customer.create`, `core_checkout_session.create`, and `customer_portal_session.create` for an authenticated studio Admin and explicit studio ID. Keep `LIVE_BILLING_ENABLED=false` until the separately approved per-studio rollout in `stripe-live-billing-rollout.md`; Core self-checkout does not enable Connect onboarding, Connect payments, tuition collection, refunds, or any other live provider mutation. Matching live webhook events continue through signature verification and reconciliation while non-Core outbound live Stripe mutations remain closed. Wrong-mode or malformed-mode events are rejected before storage. The platform route quarantines account-bearing events as `wrong_route_connect_event`; the Connect route quarantines account-less platform-contract events as `wrong_route_platform_event` and other account-less events as `missing_connect_account_context`. These permanent route failures return `400` and never project product state. A live Connect event with a real but unmapped account remains a distinct transient failure: it is durably marked `unmapped_live_connect_account` and returns `503` so Stripe retries after the mapping exists. Unexpected projector failures store a stable `error_reference` and emit an event-linked log containing only sanitized identifiers, the failure class, and that reference.
+Production requires `STRIPE_MODE=live`, an `sk_live_` secret key, and an `rk_live_` restricted key when that optional key is set. Staging separately requires test mode and test-prefixed keys. `CORE_SELF_CHECKOUT_ENABLED=true` authorizes only `customer.create`, `core_checkout_session.create`, and `customer_portal_session.create` for an authenticated studio Admin and explicit studio ID. Production intentionally sets `LIVE_BILLING_ENABLED=true`, but that value is only the necessary global interlock. It creates no studio scope, reconciliation checkpoint, provider authority, or tenant financial permission; every Connect or tuition mutation remains fail-closed without the exact enabled, unexpired studio scope and exact-candidate all-clear reconciliation checkpoint defined in `stripe-live-billing-rollout.md`. Core self-checkout remains a separate bounded path and does not enable Connect onboarding, Connect payments, tuition collection, refunds, or any other live provider mutation. Matching live webhook events continue through signature verification and reconciliation. Wrong-mode or malformed-mode events are rejected before storage. The platform route quarantines account-bearing events as `wrong_route_connect_event`; the Connect route quarantines account-less platform-contract events as `wrong_route_platform_event` and other account-less events as `missing_connect_account_context`. These permanent route failures return `400` and never project product state. A live Connect event with a real but unmapped account remains a distinct transient failure: it is durably marked `unmapped_live_connect_account` and returns `503` so Stripe retries after the mapping exists. Unexpected projector failures store a stable `error_reference` and emit an event-linked log containing only sanitized identifiers, the failure class, and that reference.
 
 ### Hosted Runtime Guard
 
@@ -117,11 +135,12 @@ When `ENVIRONMENT=production` or `ENVIRONMENT=staging`, the service also refuses
 - `STRIPE_CONNECT_WEBHOOK_SECRET`
 - `STRIPE_KOARYU_CORE_PRICE_ID`
 - `ACCOUNT_DELETION_WORKER_SECRET`
+- `BILLING_TRANSITION_WORKER_SECRET`
 - `SUPPORT_TRIAGE_SECRET`
 
 `SUPABASE_URL` must be a public HTTPS URL in production. Production requires the exact canonical `FRONTEND_URL=https://koaryu.app`; paths, query strings, fragments, userinfo, ports, whitespace, and control characters are rejected before CORS or staff-invite redirects use it. Both Stripe webhook-secret settings use the same exact comma-rotation format: nonempty candidates without surrounding whitespace or control characters. Production always requires live Stripe mode and a live secret key; `STRIPE_RESTRICTED_KEY` is optional, but if set it must also be a non-placeholder live key. Production startup rejects test mode and mismatched keys. If `LIVE_BILLING_ENABLED=true` or `CORE_SELF_CHECKOUT_ENABLED=true`, startup additionally requires an exact validated `RENDER_GIT_COMMIT`. The general live-billing flag still requires the matching unexpired checkpoint and studio scope at runtime; the Core flag is limited to the three named self-service operations. If Render shows a successful build followed by a failed runtime start, inspect the deploy logs for the sanitized `<Environment> configuration is incomplete or unsafe` message and fix the named config vars before redeploying.
 
-Staging is production-shaped but test-only. It additionally requires Supabase `nxgsektqsgrtyfhawxbc`, the pinned protected staging frontend origin, `sk_test_`/optional `rk_test_` Stripe keys, `SUPABASE_ALLOW_LEGACY_HS256=false`, `CORE_SELF_CHECKOUT_ENABLED=false`, `DEMO_RESET_ENABLED=false`, and an empty `DEMO_RESET_STUDIO_IDS`. An unknown or misspelled `ENVIRONMENT` fails closed.
+Staging is production-shaped but test-only. It additionally requires Supabase `nxgsektqsgrtyfhawxbc`, the pinned protected staging frontend origin, `sk_test_`/optional `rk_test_` Stripe keys, `SUPABASE_ALLOW_LEGACY_HS256=false`, `LIVE_BILLING_ENABLED=false`, `CORE_SELF_CHECKOUT_ENABLED=false`, `DEMO_RESET_ENABLED=false`, and an empty `DEMO_RESET_STUDIO_IDS`. An unknown or misspelled `ENVIRONMENT` fails closed.
 
 Production access tokens should use the asymmetric key advertised by Supabase JWKS. Keep `SUPABASE_ALLOW_LEGACY_HS256=false`; when a documented migration window requires legacy HS256, set it to `true` and provide a non-placeholder `SUPABASE_JWT_SECRET`, then remove both trust and secret after the last legacy token expires.
 
@@ -135,12 +154,29 @@ Production access tokens should use the asymmetric key advertised by Supabase JW
 
 Account deletion is scheduled from the Vercel frontend project, not as a separate Render Cron service. Vercel Cron calls `/api/cron/account-deletions/process-due` once daily, and that route calls the protected Render backend endpoint with `ACCOUNT_DELETION_WORKER_SECRET`.
 
-If you configure or test the worker manually instead, call the protected endpoint at least daily:
+Enrollment period transitions expose a separate fail-closed backend worker at
+`/api/v1/internal/billing/enrollment-transitions/process-due`, protected by
+`BILLING_TRANSITION_WORKER_SECRET`. The repository declares
+`koaryu-billing-transitions-staging` as a five-minute Render Cron Job. It reuses the
+staging web service secret by Render service reference and posts only to the pinned
+staging origin. Each invocation claims at most 25 transitions and uses a 130-second
+HTTP timeout. That timeout is ten seconds longer than the backend bulk lane's
+120-second request deadline, so the cron receives the backend's retry-safe result,
+and it still expires before the next five-minute invocation. Timed-out or failed
+work is retried through the durable transition intent and provider idempotency key.
+`BILLING_TRANSITION_SCHEDULER_ENABLED` keeps the public scheduling
+route and capability closed unless that environment's worker is intentionally active.
+The production value remains `false`, and no production cron may be created in the
+staging release task. After separate production approval, mirror the staging cron with
+the production origin and production web-service secret, prove one manual run, then
+enable the production flag. Never share one environment's secret with another.
+
+For a manual staging verification, call the same protected endpoint directly:
 
 ```bash
 curl -X POST \
-  -H "X-Internal-Secret: $ACCOUNT_DELETION_WORKER_SECRET" \
-  https://koaryu.onrender.com/api/v1/internal/account-deletions/process-due
+  -H "X-Internal-Secret: $BILLING_TRANSITION_WORKER_SECRET" \
+  https://koaryu-staging.onrender.com/api/v1/internal/billing/enrollment-transitions/process-due
 ```
 
 Support tickets can be polled by an operator:
@@ -177,15 +213,29 @@ curl https://koaryu.onrender.com/health/live
 curl https://koaryu.onrender.com/health/ready
 curl https://koaryu.onrender.com/api/v1/health/live
 curl https://koaryu.onrender.com/api/v1/health/ready
-curl https://koaryu.onrender.com/openapi.json | python3 -m json.tool | grep '"/'
+curl -o /dev/null -w '%{http_code}\n' https://koaryu.onrender.com/openapi.json
 ```
 
-`/health` and `/api/v1/health` remain liveness aliases. Health responses expose only the normalized environment and a validated 40-character `RENDER_GIT_COMMIT`; malformed or absent commit metadata is returned as `null`. In hosted staging and production, readiness rechecks runtime configuration and calls the service-role-only V3 database preflight. It returns 503 unless Supabase reports exactly 111 migrations, head `20260816012723`, the exact twenty-seven-version pending sequence, manifest version `release-db-attestation-v18`, and no required-object/security failure. The V3 contract also requires the exact zero-invalid V17 archive-critical semantic manifest `0:05a77426d6e3e1864fe4d1a6beea708cc501b228e670a0309d1420808d2feab8` to attest `staff_roles.archived_at`, active-only helper bodies/signatures/ACLs, archive-aware triggers, and restrictive policy coverage. The post-111 V16 compatibility assertion is pinned to `0:48995afbdd6519a199db44c6b947bf629a87569530ba73c81c25b00f72944239`. The repository-pinned raw PostgreSQL 17 catalog fingerprint is pinned to `column_acls=205:32ad7f660d40de1c75de0e9d50e4c23f3588124e67f3665159f8f2f027617414:0;columns=43:c2f9560d4d2d9742f22edeeb3386b2fce9def1e90290e7986f406d9f7dd0451b:0;constraints=24:d8ae028684234bb1c69447c97e87fc8561ce18f03b7ec10f81a880ba5d813c5c:0;functions=68:164af3cd98d7f26bc74994b4f16529ea988ba0e760aa34d3cebddc4f97c4b625:0;indexes=12:c78635a18852d4cbe8be1bc34861848ba904b06639038c292f84d56ca7be50a7:0;policies=16:259cc99c295d80442450cea438a462efd44748f2ace47456fca13133b52d17b8:0;scoped_constraints=149:a1555af1e8eacb8f03b04c2109dc6966293705307d737e5601996cf81acc06b9:0;scoped_indexes=33:4d401ee4a7e7f104957cb8cc84ad45164d57938ced0c2609259310aa980895f2:0;sequences=3:27451af3027130cfb193bd4eb9f59221773a89e46bcb855a7a809df1b54a7574:0;table_acls=14:d34439755bc5f66626a1626c81f72d583a1b847b70ec02bc07ad127b2a270ddb:0;tables=12:f56508ae1d3c712e7b239a1fe965adf88cec4e7f41f8d6b6db9ffce95f1bb76b:0;triggers=12:61039a9e58e55b3aba5e7e2a40088fd492352560123bc5df30c7966cfd6d9efc:0`. Migration 109 retains the deployed `origin/main` predecessor reservation (V1) and V2 readiness signatures for the database-first cutover. Migration 110 preserves the V7-shaped V2 response while the candidate advances V3 to V17, and migration 111 advances the exact candidate to V18. Exact migration 109/head `20260814213000`/V16 is the single accepted `trial-locked` resume state and may continue only with migrations 110 and 111 after fresh inspection and dry-run. Missing RPCs, timeouts, provider errors, and earlier schema states all fail closed without exposing provider detail. The repository-pinned raw-catalog verifier remains release authority; the database RPC is an operational signal, not proof against a malicious database administrator. Hosted exposed-schema and schema-ACL readback remain separate operator gates. Stripe network health is not part of this route.
+The schema route must return `404` in hosted staging and production: `/openapi.json`
+is gated to `ENVIRONMENT=development` alongside `/docs` and `/redoc`, so a `200` here
+means the service is running with a development environment and is publishing its
+whole route map. To inspect the deployed route inventory, build the schema from the
+release commit instead with `python3 scripts/generate-api-types.py`, which loads the
+app in process and never touches the network.
+
+`/health` and `/api/v1/health` remain liveness aliases. Health responses expose only the normalized environment and a validated 40-character `RENDER_GIT_COMMIT`; malformed or absent commit metadata is returned as `null`. In hosted staging and production, readiness rechecks runtime configuration on every probe. A successful database preflight is reused for 30 seconds, and concurrent probes share one in-flight check. Failures are never cached. Before each release, generate the exact candidate rollout packet and use its declaration plus the candidate's `release_schema_readiness.py` as the authority for the required version, count, head, manifest, compatibility states, and security facts. Missing RPCs, timeouts, mismatched states, and provider errors fail closed without exposing provider detail. The repository-pinned raw-catalog verifier remains release authority; the database RPC is an operational signal, not proof against a malicious database administrator. Hosted exposed-schema and schema-ACL readback remain separate operator gates. Stripe network health is not part of this route.
+
+Each readiness probe also invokes the private RSS observer. It reads current RSS from `/proc/self/statm` at most once every five minutes and emits a `process_rss_observation` JSON log with the instance ID, commit, byte count, and threshold state. It adds no fields to the public health response. Search Render logs for `jemalloc preload verified` after startup and then for `process_rss_observation` while comparing memory across one instance ID.
 
 Promote the database first. Do not route the new backend to a Supabase project
 until the final staging fingerprint and preflight pass. The exact-head manifest
 includes the billing, Connect delivery, and alert security surfaces; an application
-deploy that reaches schema 84 or any partial 85-109 state remains unhealthy.
+deploy that reaches schema 84 or any partial 85-110 state remains unhealthy.
+No approved application may serve at 110. Exclude `709239`/V16 and every
+V2-consuming SHA before verified history boundary
+`d63a5116c0a47f1933f15360cd5db7b66237bb80` from the rollback set: older V2
+consumers can report ready through the 110/V17 compatibility guard, but they are
+not approved recovery artifacts.
 Local PostgreSQL does not prove hosted PostgREST exposed schemas or actual schema
 ACLs; authenticated operator readback must separately prove `private` is not
 exposed and the hosted schema ACL state matches the approved release gate.
@@ -221,10 +271,13 @@ npm run verify:deployed-release -- \
   --backend-api https://koaryu.onrender.com/api/v1
 ```
 
+The production-shaped startup check must use that same exact deployed 40-character `$RELEASE_SHA` as `RENDER_GIT_COMMIT`; do not substitute a branch or tag.
+
 ```bash
 cd backend
 ENVIRONMENT=production FRONTEND_URL=https://koaryu.app \
-  STRIPE_MODE=live LIVE_BILLING_ENABLED=false \
+  STRIPE_MODE=live LIVE_BILLING_ENABLED=true \
+  RENDER_GIT_COMMIT="$RELEASE_SHA" \
   SUPABASE_URL=https://mimguepumzsgmcaycdsh.supabase.co \
   SUPABASE_SERVICE_ROLE_KEY="$SUPABASE_SERVICE_ROLE_KEY" \
   SUPABASE_ALLOW_LEGACY_HS256=false \
@@ -269,11 +322,11 @@ supabase db lint --linked --fail-on error
 SUPABASE_DB_TARGET=linked scripts/verify-supabase-contracts.sh
 ```
 
-`scripts/verify-supabase-contracts.sh` is the broad database contract check for launch-readiness and defaults to the local database. Use `SUPABASE_DB_TARGET=linked` only after the linked project has received the new migrations. It fails if the support/account controls, direct-client write lockdown, worker-claim RPCs, promotion RPC, recurring-session soft-delete contract, student program filter contract, atomic import/conversion/profile/clear RPCs, atomic onboarding contract, or belt-ladder sync behavior drift from the current migrations. Apply the worker-claim RPC migrations before deploying backend code that processes Stripe webhooks, account deletions, or CSV imports.
+`scripts/verify-supabase-contracts.sh` is the broad database contract check for launch-readiness and defaults to the local database. Use `SUPABASE_DB_TARGET=linked` only after the linked project has received the new migrations. It fails if the support/account controls, direct-client relation read/write lockdown, public-routine EXECUTE lockdown, worker-claim RPCs, promotion RPC, recurring-session soft-delete contract, student program filter contract, atomic import/conversion/profile/clear RPCs, atomic onboarding contract, or belt-ladder sync behavior drift from the current migrations. Apply the worker-claim RPC migrations before deploying backend code that processes Stripe webhooks, account deletions, or CSV imports.
 
 ## Stripe Webhooks
 
-After Render is live, configure Stripe webhook endpoints in the mode declared by `STRIPE_MODE`. Prove the full workflow in Stripe test mode first. A separately approved live-mode deployment may ingest matching signed live events with outbound writes still closed; do not repeat test mutations in live mode or enable live billing until durable scoped authorization is implemented and reviewed.
+After Render is live, configure Stripe webhook endpoints in the mode declared by `STRIPE_MODE`. Prove the full workflow in Stripe test mode first. The already-live global production `LIVE_BILLING_ENABLED=true` interlock may coexist with matching signed live-event ingestion, but it alone authorizes no outbound write; do not activate a studio scope, record a reconciliation checkpoint, repeat test mutations in live mode, or perform a live Connect or tuition mutation without separate approval and the exact runtime authorization.
 
 Treat a Connect delivery that returns `503` because its account mapping is not ready as an operational quarantine, not a successful ignore. Confirm the Stripe account belongs to the intended studio, complete or repair the normal `studio_payment_accounts.stripe_connected_account_id` mapping, and then let Stripe retry or resend the same event from the Dashboard. Confirm the existing `stripe_events` row becomes `processed` with a cleared error. Never add an account mapping from an unverified event payload, and never acknowledge the delivery with `2xx` merely to clear Stripe's retry queue.
 
@@ -382,7 +435,7 @@ Before daily use at a dojo:
 - Open the app on the actual studio device and complete login, dashboard, Students, student detail, Schedule, attendance, Settings, and Help checks.
 - Verify Admin and Front Desk can read existing billing state and use only external-only local attachment, payer-level external-payment recording, and read-based reconciliation of an existing Stripe-linked invoice.
 - Verify an Instructor receives the billing access-denied page before any billing data is shown or fetched.
-- Confirm `LIVE_BILLING_ENABLED=false`; do not connect, sync, charge, refund, retry, void, or otherwise mutate Stripe as part of this checklist.
+- Confirm production reports `LIVE_BILLING_ENABLED=true`, and treat it only as the global interlock. Do not treat that value as evidence that any studio has a scope or checkpoint, and do not connect, sync, charge, refund, retry, void, or otherwise mutate Stripe as part of this checklist.
 - Use the preserved production dataset. Do not reset, replace, clean, or reseed production records.
 - Keep `DEMO_RESET_STUDIO_IDS` empty in production; in demo/staging, list only disposable studio IDs that demo reset or clear-studio-data may target.
 
@@ -393,7 +446,7 @@ The broad authenticated system-status and reconciliation endpoints below are Adm
 Authenticated studio admins can check the broader billing surface with:
 
 ```bash
-curl -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+curl -H "Authorization: Bearer $KOARYU_STUDIO_USER_ACCESS_TOKEN" \
   -H "X-Studio-Id: $STUDIO_ID" \
   https://koaryu.onrender.com/api/v1/billing/system/status
 ```
@@ -404,12 +457,16 @@ If Stripe has the correct state but Koaryu missed or delayed projection, admins 
 
 ```bash
 curl -X POST \
-  -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+  -H "Authorization: Bearer $KOARYU_STUDIO_USER_ACCESS_TOKEN" \
   -H "X-Studio-Id: $STUDIO_ID" \
   -H "Content-Type: application/json" \
   -d '{"object_type":"invoice","stripe_object_id":"in_..."}' \
   https://koaryu.onrender.com/api/v1/billing/reconcile
 ```
+
+`KOARYU_STUDIO_USER_ACCESS_TOKEN` is a signed-in studio user's short-lived access
+token. Acquire it through the supported private authentication guidance. It is not the
+Supabase management token and must not come from an assumed Keychain item.
 
 Supported `object_type` values are `connect_account`, `payer`, `invoice`, `subscription`, and `payment_intent`. Use `payer_id` instead of `stripe_object_id` for payer reconciliation.
 

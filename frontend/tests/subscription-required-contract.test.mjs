@@ -4,7 +4,7 @@ import { describe, it } from "node:test";
 
 const pageSource = readFileSync(
   new URL("../src/app/(dashboard)/subscription-required/page.tsx", import.meta.url),
-  "utf8"
+  "utf8",
 );
 
 describe("subscription-required billing contract", () => {
@@ -12,7 +12,10 @@ describe("subscription-required billing contract", () => {
     assert.match(pageSource, /api\.post<BillingLinkResponse>/);
     assert.match(pageSource, /`\/platform-billing\/\$\{action\}`/);
     assert.match(pageSource, /window\.location\.assign\(link\.url\)/);
-    assert.match(pageSource, /billingSystemStatus\?\.mutation_capabilities\.core_subscription === true/);
+    assert.match(
+      pageSource,
+      /billingSystemStatus\?\.mutation_capabilities\.core_subscription === true/,
+    );
     assert.match(pageSource, /canStartCheckout \?/);
     assert.match(pageSource, /canOpenPortal \?/);
     assert.match(pageSource, /Idempotency-Key/);
@@ -21,8 +24,8 @@ describe("subscription-required billing contract", () => {
     assert.match(pageSource, /api\.get<BillingSystemStatus>/);
     assert.match(pageSource, /if \(profile\.role !== "admin"\) \{\s*return;\s*\}/);
     assert.ok(
-      pageSource.indexOf('profile.role !== "admin"')
-        < pageSource.indexOf('api.get<PlatformBillingStatus>')
+      pageSource.indexOf('profile.role !== "admin"') <
+        pageSource.indexOf("api.get<PlatformBillingStatus>"),
     );
     assert.match(pageSource, /showAdminBillingDetails = isAdmin && billingStatus !== null/);
     assert.match(pageSource, /Billing details are limited to studio administrators/);
@@ -36,8 +39,8 @@ describe("subscription-required billing contract", () => {
     assert.match(pageSource, /profile\.membership_status === "archived"/);
     assert.match(pageSource, /window\.location\.replace\(ACCOUNT_ARCHIVED_ROUTE\)/);
     assert.ok(
-      pageSource.indexOf('profile.membership_status === "archived"')
-        < pageSource.indexOf('profile.membership_status !== "active"')
+      pageSource.indexOf('profile.membership_status === "archived"') <
+        pageSource.indexOf('profile.membership_status !== "active"'),
     );
   });
 });

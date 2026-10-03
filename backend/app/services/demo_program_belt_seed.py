@@ -69,37 +69,41 @@ class DemoProgramBeltSeeder:
         for key, name, color, order, classes, months, approval, is_tip, tip_color in BJJ_RANK_SPECS:
             rank_id = self.id_for(studio_id, f"rank:{key}")
             rank_ids[key] = rank_id
-            rank_rows.append(self._rank_row(
-                studio_id,
-                ladder_id,
-                rank_id,
-                name,
-                color,
-                order,
-                classes,
-                months,
-                approval,
-                is_tip,
-                tip_color,
-                now,
-            ))
+            rank_rows.append(
+                self._rank_row(
+                    studio_id,
+                    ladder_id,
+                    rank_id,
+                    name,
+                    color,
+                    order,
+                    classes,
+                    months,
+                    approval,
+                    is_tip,
+                    tip_color,
+                    now,
+                )
+            )
         for key, name, color, order, classes, months, approval, is_tip, tip_color in TKD_RANK_SPECS:
             rank_id = self.id_for(studio_id, f"rank:{key}")
             rank_ids[key] = rank_id
-            rank_rows.append(self._rank_row(
-                studio_id,
-                tkd_ladder_id,
-                rank_id,
-                name,
-                color,
-                order,
-                classes,
-                months,
-                approval,
-                is_tip,
-                tip_color,
-                now,
-            ))
+            rank_rows.append(
+                self._rank_row(
+                    studio_id,
+                    tkd_ladder_id,
+                    rank_id,
+                    name,
+                    color,
+                    order,
+                    classes,
+                    months,
+                    approval,
+                    is_tip,
+                    tip_color,
+                    now,
+                )
+            )
         self.insert("belt_ranks", rank_rows)
         rank_ids["ladder"] = ladder_id
         rank_ids["tkd_ladder"] = tkd_ladder_id
@@ -121,7 +125,9 @@ class DemoProgramBeltSeeder:
                     "id": self.id_for(studio_id, f"promotion:{student_key}:{to_key}"),
                     "studio_id": studio_id,
                     "student_id": student_ids[student_key],
-                    "student_program_membership_id": self.id_for(studio_id, f"student-program:{student_key}"),
+                    "student_program_membership_id": self.id_for(
+                        studio_id, f"student-program:{student_key}"
+                    ),
                     "program_id": program_ids[program_key],
                     "from_rank_id": rank_ids[from_key] if from_key else None,
                     "to_rank_id": rank_ids[to_key],

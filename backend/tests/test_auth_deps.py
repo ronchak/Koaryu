@@ -5,7 +5,12 @@ from unittest.mock import patch
 
 from fastapi import HTTPException
 
-from app.core.deps import ACTIVE_STUDIO_COOKIE, get_current_user_id, get_requested_studio_id, security
+from app.core.deps import (
+    ACTIVE_STUDIO_COOKIE,
+    get_current_user_id,
+    get_requested_studio_id,
+    security,
+)
 
 
 class AuthDependencyTest(unittest.TestCase):
@@ -41,16 +46,17 @@ class AuthDependencyTest(unittest.TestCase):
             self.assertEqual(token, "valid-token")
             return function(token)
 
-        with patch(
-            "app.core.deps.get_user_id_from_token",
-            return_value="user_1",
-        ) as verify, patch(
-            "app.core.deps.run_in_threadpool",
-            side_effect=fake_run_in_threadpool,
-        ) as run_in_threadpool:
-            user_id = asyncio.run(
-                get_current_user_id(SimpleNamespace(credentials="valid-token"))
-            )
+        with (
+            patch(
+                "app.core.deps.get_user_id_from_token",
+                return_value="user_1",
+            ) as verify,
+            patch(
+                "app.core.deps.run_in_threadpool",
+                side_effect=fake_run_in_threadpool,
+            ) as run_in_threadpool,
+        ):
+            user_id = asyncio.run(get_current_user_id(SimpleNamespace(credentials="valid-token")))
 
         self.assertEqual(user_id, "user_1")
         run_in_threadpool.assert_called_once()

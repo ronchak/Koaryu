@@ -19,12 +19,14 @@ from tests.fakes.supabase import TableBackedSupabase
 
 
 def _conflict_error() -> PostgrestAPIError:
-    return PostgrestAPIError({
-        "code": "23505",
-        "message": "duplicate key value violates unique constraint",
-        "details": "",
-        "hint": "",
-    })
+    return PostgrestAPIError(
+        {
+            "code": "23505",
+            "message": "duplicate key value violates unique constraint",
+            "details": "",
+            "hint": "",
+        }
+    )
 
 
 def _staff_role(user_id: str, role: str, studio_id: str = "studio-a") -> dict:
@@ -38,11 +40,13 @@ def _staff_role(user_id: str, role: str, studio_id: str = "studio-a") -> dict:
 
 
 def _supabase(*roles: dict, profiles: list[dict] | None = None) -> TableBackedSupabase:
-    supabase = TableBackedSupabase({
-        "staff_roles": list(roles),
-        "staff_profiles": list(profiles or []),
-        "audit_logs": [],
-    })
+    supabase = TableBackedSupabase(
+        {
+            "staff_roles": list(roles),
+            "staff_profiles": list(profiles or []),
+            "audit_logs": [],
+        }
+    )
     supabase.unique_constraints["staff_profiles"] = [("user_id",)]
     supabase.unique_conflict_error_factory = lambda _table, _columns: _conflict_error()
     return supabase
@@ -106,11 +110,14 @@ class StaffLegalNameServiceTest(unittest.TestCase):
             last_name=" Tanaka\n Smith ",
         )
 
-        self.assertEqual(response.model_dump(), {
-            "user_id": "user-1",
-            "legal_first_name": "Aiko",
-            "legal_last_name": "Tanaka Smith",
-        })
+        self.assertEqual(
+            response.model_dump(),
+            {
+                "user_id": "user-1",
+                "legal_first_name": "Aiko",
+                "legal_last_name": "Tanaka Smith",
+            },
+        )
         self.assertEqual(len(supabase.tables["staff_profiles"]), 1)
         self.assertEqual(
             supabase.tables["staff_profiles"][0]["legal_first_name"],
@@ -125,10 +132,13 @@ class StaffLegalNameServiceTest(unittest.TestCase):
         self.assertEqual(audit["action"], "staff.profile_created")
         self.assertEqual(audit["entity_type"], "staff_profile")
         self.assertEqual(audit["entity_id"], "user-1")
-        self.assertEqual(audit["metadata"], {
-            "target_user_id": "user-1",
-            "operation": "created",
-        })
+        self.assertEqual(
+            audit["metadata"],
+            {
+                "target_user_id": "user-1",
+                "operation": "created",
+            },
+        )
         self.assertNotIn("Aiko", str(audit["metadata"]))
         self.assertEqual(
             [query["table"] for query in supabase.query_log[:2]],
@@ -146,11 +156,13 @@ class StaffLegalNameServiceTest(unittest.TestCase):
     def test_non_admin_second_self_request_is_denied_without_mutation_or_audit(self):
         supabase = _supabase(
             _staff_role("user-1", "front_desk"),
-            profiles=[{
-                "user_id": "user-1",
-                "legal_first_name": "Aiko",
-                "legal_last_name": "Tanaka",
-            }],
+            profiles=[
+                {
+                    "user_id": "user-1",
+                    "legal_first_name": "Aiko",
+                    "legal_last_name": "Tanaka",
+                }
+            ],
         )
         profiles_before = [dict(row) for row in supabase.tables["staff_profiles"]]
         audits_before = [dict(row) for row in supabase.tables["audit_logs"]]
@@ -174,11 +186,13 @@ class StaffLegalNameServiceTest(unittest.TestCase):
     def test_non_admin_cannot_create_or_update_another_same_studio_member(self):
         for profiles in (
             [],
-            [{
-                "user_id": "user-2",
-                "legal_first_name": "Existing",
-                "legal_last_name": "Name",
-            }],
+            [
+                {
+                    "user_id": "user-2",
+                    "legal_first_name": "Existing",
+                    "legal_last_name": "Name",
+                }
+            ],
         ):
             with self.subTest(profile_exists=bool(profiles)):
                 supabase = _supabase(
@@ -204,11 +218,13 @@ class StaffLegalNameServiceTest(unittest.TestCase):
         supabase = _supabase(
             _staff_role("admin-1", "admin"),
             _staff_role("user-2", "instructor"),
-            profiles=[{
-                "user_id": "admin-1",
-                "legal_first_name": "Admin",
-                "legal_last_name": "Original",
-            }],
+            profiles=[
+                {
+                    "user_id": "admin-1",
+                    "legal_first_name": "Admin",
+                    "legal_last_name": "Original",
+                }
+            ],
         )
 
         self_response = _set_name(
@@ -241,8 +257,7 @@ class StaffLegalNameServiceTest(unittest.TestCase):
         self.assertEqual(update_response.legal_last_name, "Sato")
         self.assertEqual(len(supabase.tables["staff_profiles"]), 2)
         target_profile = next(
-            row for row in supabase.tables["staff_profiles"]
-            if row["user_id"] == "user-2"
+            row for row in supabase.tables["staff_profiles"] if row["user_id"] == "user-2"
         )
         self.assertEqual(target_profile["legal_last_name"], "Sato")
         self.assertEqual(
@@ -261,11 +276,13 @@ class StaffLegalNameServiceTest(unittest.TestCase):
         supabase = _supabase(
             _staff_role("admin-1", "admin"),
             _staff_role("cross-studio-user", "instructor", "studio-b"),
-            profiles=[{
-                "user_id": "cross-studio-user",
-                "legal_first_name": "Cross",
-                "legal_last_name": "Studio",
-            }],
+            profiles=[
+                {
+                    "user_id": "cross-studio-user",
+                    "legal_first_name": "Cross",
+                    "legal_last_name": "Studio",
+                }
+            ],
         )
         profiles_before = [dict(row) for row in supabase.tables["staff_profiles"]]
 
@@ -288,10 +305,13 @@ class StaffLegalNameServiceTest(unittest.TestCase):
                 self.assertEqual(supabase.tables["staff_profiles"], profiles_before)
                 self.assertEqual(supabase.tables["audit_logs"], [])
 
-        self.assertEqual(denials, [
-            (404, STAFF_PROFILE_NOT_FOUND_DETAIL),
-            (404, STAFF_PROFILE_NOT_FOUND_DETAIL),
-        ])
+        self.assertEqual(
+            denials,
+            [
+                (404, STAFF_PROFILE_NOT_FOUND_DETAIL),
+                (404, STAFF_PROFILE_NOT_FOUND_DETAIL),
+            ],
+        )
 
     def test_duplicate_insert_race_returns_conflict_without_updating_winner_or_auditing(self):
         supabase = _supabase(_staff_role("user-1", "instructor"))
@@ -309,11 +329,16 @@ class StaffLegalNameServiceTest(unittest.TestCase):
 
         self.assertEqual(raised.exception.status_code, 409)
         self.assertEqual(raised.exception.detail, STAFF_PROFILE_ALREADY_EXISTS_DETAIL)
-        self.assertEqual(supabase.tables["staff_profiles"], [{
-            "user_id": "user-1",
-            "legal_first_name": "Winner",
-            "legal_last_name": "Name",
-        }])
+        self.assertEqual(
+            supabase.tables["staff_profiles"],
+            [
+                {
+                    "user_id": "user-1",
+                    "legal_first_name": "Winner",
+                    "legal_last_name": "Name",
+                }
+            ],
+        )
         self.assertEqual(supabase.tables["audit_logs"], [])
         self.assertFalse(any(query["update"] for query in supabase.query_log))
         self.assertFalse(any(query["table"] == "audit_logs" for query in supabase.query_log))
@@ -321,11 +346,13 @@ class StaffLegalNameServiceTest(unittest.TestCase):
     @staticmethod
     def _inject_winning_profile(table_name: str, _payloads: list[dict], rows: list[dict]) -> None:
         if table_name == "staff_profiles":
-            rows.append({
-                "user_id": "user-1",
-                "legal_first_name": "Winner",
-                "legal_last_name": "Name",
-            })
+            rows.append(
+                {
+                    "user_id": "user-1",
+                    "legal_first_name": "Winner",
+                    "legal_last_name": "Name",
+                }
+            )
 
 
 class StaffLegalNameEndpointTest(unittest.TestCase):
@@ -337,14 +364,16 @@ class StaffLegalNameEndpointTest(unittest.TestCase):
         test_app.dependency_overrides[get_supabase] = lambda: supabase
 
         route = next(
-            route for route in staff.router.routes
+            route
+            for route in staff.router.routes
             if isinstance(route, APIRoute)
             and route.path == "/staff/{target_user_id}/legal-name"
             and "PATCH" in route.methods
         )
-        self.assertNotIn("resolve_admin_staff_role_for_user", {
-            dependency.call.__name__ for dependency in route.dependant.dependencies
-        })
+        self.assertNotIn(
+            "resolve_admin_staff_role_for_user",
+            {dependency.call.__name__ for dependency in route.dependant.dependencies},
+        )
 
         response = TestClient(test_app).patch(
             "/staff/user-1/legal-name",
@@ -356,14 +385,15 @@ class StaffLegalNameEndpointTest(unittest.TestCase):
         )
 
         self.assertEqual(response.status_code, 200, response.text)
-        self.assertEqual(response.json(), {
-            "user_id": "user-1",
-            "legal_first_name": "Aiko",
-            "legal_last_name": "Tanaka Smith",
-        })
-        self.assertNotIn("studio_subscriptions", {
-            query["table"] for query in supabase.query_log
-        })
+        self.assertEqual(
+            response.json(),
+            {
+                "user_id": "user-1",
+                "legal_first_name": "Aiko",
+                "legal_last_name": "Tanaka Smith",
+            },
+        )
+        self.assertNotIn("studio_subscriptions", {query["table"] for query in supabase.query_log})
 
     def test_unauthenticated_route_remains_controlled_by_current_user_dependency(self):
         test_app = FastAPI()

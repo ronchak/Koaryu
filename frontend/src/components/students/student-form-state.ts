@@ -1,7 +1,15 @@
 "use client";
 
-import { useCallback, useState, type FormEvent } from "react";
-import type { GuardianCreate, StudentCreate, StudentStatus, StudentUpdate } from "@/types";
+import { CommandOutcomeUnknown } from "../../lib/command-outcome.ts";
+import { studentBirthDateError } from "../../lib/student-birth-date.ts";
+import { useCallback, useRef, useState, type FormEvent } from "react";
+import type {
+  GuardianCreate,
+  GuardianWrite,
+  StudentCreate,
+  StudentStatus,
+  StudentUpdate,
+} from "@/types";
 
 export type StudentFormTab = "info" | "contact" | "guardian";
 
@@ -41,7 +49,7 @@ export interface StudentFormFields {
 
 export type StudentFormInitialData = Partial<StudentUpdate> & {
   current_belt_rank_id?: string | null;
-  guardians?: GuardianCreate[];
+  guardians?: (GuardianCreate & { id?: string })[];
   program_id?: string | null;
   program_ids?: string[] | null;
 };
@@ -61,7 +69,10 @@ function textOrNull(value: string): string | null {
 
 function parseTags(value: string): string[] {
   return value
-    ? value.split(",").map((tag) => tag.trim()).filter(Boolean)
+    ? value
+        .split(",")
+        .map((tag) => tag.trim())
+        .filter(Boolean)
     : [];
 }
 
@@ -73,8 +84,9 @@ export function formatPhoneInput(value: string) {
   if (digits.length === 0) return "";
   const isDigitsOnly = /^\d+$/.test(value);
   const isGeneratedDomesticFormat = /^\(\d{3}\)(?: \d{0,3}(?:-\d{0,4})?)?$/.test(value);
-  const isCompleteDomesticFormat = /^[\d\s().-]+$/.test(value)
-    && (digits.length === 10 || (digits.length === 11 && digits.startsWith("1")));
+  const isCompleteDomesticFormat =
+    /^[\d\s().-]+$/.test(value) &&
+    (digits.length === 10 || (digits.length === 11 && digits.startsWith("1")));
   if (!isDigitsOnly && !isGeneratedDomesticFormat && !isCompleteDomesticFormat) {
     return value;
   }
@@ -94,13 +106,23 @@ function formatInitialPhoneInput(value: string) {
   if (!value || value.trimStart().startsWith("+")) return value;
 
   const digits = value.replace(/\D/g, "");
-  const isCompleteDomesticFormat = /^[\d\s().-]+$/.test(value)
-    && (digits.length === 10 || (digits.length === 11 && digits.startsWith("1")));
+  const isCompleteDomesticFormat =
+    /^[\d\s().-]+$/.test(value) &&
+    (digits.length === 10 || (digits.length === 11 && digits.startsWith("1")));
   return isCompleteDomesticFormat ? formatPhoneInput(value) : value;
 }
 
-export function buildInitialStudentFormFields(initialData?: StudentFormInitialData): StudentFormFields {
-  const guardian = initialData?.guardians?.[0];
+export function getEditableGuardian(initialData?: StudentFormInitialData) {
+  return (
+    initialData?.guardians?.find((guardian) => guardian.is_primary_contact) ??
+    initialData?.guardians?.[0]
+  );
+}
+
+export function buildInitialStudentFormFields(
+  initialData?: StudentFormInitialData,
+): StudentFormFields {
+  const guardian = getEditableGuardian(initialData);
 
   return {
     legalFirst: initialData?.legal_first_name || "",
@@ -137,23 +159,40 @@ export function buildInitialStudentFormFields(initialData?: StudentFormInitialDa
 
 export function validateStudentFormFields(
   fields: StudentFormFields,
-  options?: { includeLifecycleFields?: boolean }
+  options?: { includeLifecycleFields?: boolean; businessDate?: string; hasGuardian?: boolean },
 ): StudentFormValidation | null {
   if (!fields.legalFirst.trim() || !fields.legalLast.trim()) {
     return { message: "First name and last name are required.", tab: "info" };
   }
+
+  const birthDateError = studentBirthDateError(fields.dob, options?.businessDate);
+  if (birthDateError) return { message: birthDateError, tab: "info" };
 
   if (options?.includeLifecycleFields !== false && fields.holdEnd && !fields.holdStart) {
     return { message: "Add a hold start date before setting a hold end date.", tab: "info" };
   }
 
   if (
-    options?.includeLifecycleFields !== false
-    && fields.holdStart
-    && fields.holdEnd
-    && fields.holdEnd < fields.holdStart
+    options?.includeLifecycleFields !== false &&
+    fields.holdStart &&
+    fields.holdEnd &&
+    fields.holdEnd < fields.holdStart
   ) {
     return { message: "Hold end date cannot be before the hold start date.", tab: "info" };
+  }
+
+  if (
+    (options?.hasGuardian ||
+      [
+        fields.guardianFirst,
+        fields.guardianLast,
+        fields.guardianEmail,
+        fields.guardianPhone,
+        fields.guardianRelation,
+      ].some((value) => value.trim())) &&
+    !fields.guardianFirst.trim()
+  ) {
+    return { message: "Guardian first name is required.", tab: "guardian" };
   }
 
   return null;
@@ -161,7 +200,7 @@ export function validateStudentFormFields(
 
 export function buildStudentCreatePayload(
   fields: StudentFormFields,
-  initialData?: StudentFormInitialData
+  initialData?: StudentFormInitialData,
 ): StudentCreate {
   return {
     legal_first_name: fields.legalFirst.trim(),
@@ -186,26 +225,25 @@ export function buildStudentCreatePayload(
     emergency_contact_name: textOrUndefined(fields.emergencyName),
     emergency_contact_phone: textOrUndefined(fields.emergencyPhone),
     emergency_contact_relation: textOrUndefined(fields.emergencyRelation),
-    guardians:
-      fields.guardianFirst.trim()
-        ? [
-            {
-              first_name: fields.guardianFirst.trim(),
-              last_name: fields.guardianLast.trim(),
-              email: textOrUndefined(fields.guardianEmail),
-              phone: textOrUndefined(fields.guardianPhone),
-              relation: textOrUndefined(fields.guardianRelation),
-              is_primary_contact: true,
-            },
-          ]
-        : [],
+    guardians: fields.guardianFirst.trim()
+      ? [
+          {
+            first_name: fields.guardianFirst.trim(),
+            last_name: fields.guardianLast.trim(),
+            email: textOrUndefined(fields.guardianEmail),
+            phone: textOrUndefined(fields.guardianPhone),
+            relation: textOrUndefined(fields.guardianRelation),
+            is_primary_contact: true,
+          },
+        ]
+      : [],
   };
 }
 
 export function buildStudentUpdatePayload(
   fields: StudentFormFields,
-  _initialData?: StudentFormInitialData,
-  options?: { includeLifecycleFields?: boolean }
+  initialData?: StudentFormInitialData,
+  options?: { includeLifecycleFields?: boolean },
 ): StudentUpdate {
   const payload: StudentUpdate = {
     legal_first_name: fields.legalFirst.trim(),
@@ -234,45 +272,88 @@ export function buildStudentUpdatePayload(
     payload.program_ids = fields.programIds;
   }
 
+  const guardian = getEditableGuardian(initialData);
+  const initialFields = buildInitialStudentFormFields(initialData);
+  const guardianFields = {
+    first_name: "guardianFirst",
+    last_name: "guardianLast",
+    email: "guardianEmail",
+    phone: "guardianPhone",
+    relation: "guardianRelation",
+  } as const;
+  const changes: GuardianWrite = {};
+  for (const [key, field] of Object.entries(guardianFields)) {
+    if (fields[field].trim() !== initialFields[field].trim()) {
+      Object.assign(changes, {
+        [key]: key === "last_name" ? fields[field].trim() : textOrNull(fields[field]),
+      });
+    }
+  }
+  if (Object.keys(changes).length) {
+    if (guardian?.id) {
+      payload.guardians = [{ id: guardian.id, ...changes }];
+    } else if (fields.guardianFirst.trim()) {
+      payload.guardians = [
+        {
+          first_name: fields.guardianFirst.trim(),
+          last_name: fields.guardianLast.trim(),
+          email: textOrNull(fields.guardianEmail),
+          phone: textOrNull(fields.guardianPhone),
+          relation: textOrNull(fields.guardianRelation),
+          is_primary_contact: true,
+        },
+      ];
+    }
+  }
+
   return payload;
 }
 
 export function buildStudentFormSubmitPayload(
   fields: StudentFormFields,
   initialData?: StudentFormInitialData,
-  options?: { includeLifecycleFields?: boolean }
+  options?: { includeLifecycleFields?: boolean },
 ): StudentCreate | StudentUpdate {
   return initialData
     ? buildStudentUpdatePayload(fields, initialData, options)
     : buildStudentCreatePayload(fields);
 }
 
-type UseStudentFormStateOptions =
-  {
-    initialData?: StudentFormInitialData;
-    includeLifecycleFields?: boolean;
-    onSubmit: (data: StudentCreate | StudentUpdate) => Promise<void> | void;
-  };
+type UseStudentFormStateOptions = {
+  initialData?: StudentFormInitialData;
+  businessDate?: string;
+  includeLifecycleFields?: boolean;
+  onSubmit: (data: StudentCreate | StudentUpdate) => Promise<void> | void;
+};
 
 export function useStudentFormState(options: UseStudentFormStateOptions) {
   const [tab, setTab] = useState<StudentFormTab>("info");
   const [error, setError] = useState("");
+  const [outcomeUnknown, setOutcomeUnknown] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const isSubmittingRef = useRef(false);
   const initialData = options.initialData;
-  const [fields, setFields] = useState(() => buildInitialStudentFormFields(initialData));
+  const [fields, setFields] = useState(() => ({
+    ...buildInitialStudentFormFields(initialData),
+    ...(!initialData && options.businessDate ? { membershipStart: options.businessDate } : {}),
+  }));
 
-  const setField = useCallback(<Field extends keyof StudentFormFields>(
-    field: Field,
-    value: StudentFormFields[Field]
-  ) => {
-    setFields((current) => ({ ...current, [field]: value }));
-  }, []);
+  const setField = useCallback(
+    <Field extends keyof StudentFormFields>(field: Field, value: StudentFormFields[Field]) => {
+      setFields((current) => ({ ...current, [field]: value }));
+    },
+    [],
+  );
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (outcomeUnknown || isSubmittingRef.current) return;
     setError("");
 
     const validation = validateStudentFormFields(fields, {
+      hasGuardian: !!getEditableGuardian(initialData),
       includeLifecycleFields: options.includeLifecycleFields,
+      businessDate: options.businessDate,
     });
     if (validation) {
       setError(validation.message);
@@ -280,19 +361,29 @@ export function useStudentFormState(options: UseStudentFormStateOptions) {
       return;
     }
 
+    isSubmittingRef.current = true;
+    setIsSubmitting(true);
     try {
-      await options.onSubmit(buildStudentFormSubmitPayload(fields, initialData, {
-        includeLifecycleFields: options.includeLifecycleFields,
-      }));
+      await options.onSubmit(
+        buildStudentFormSubmitPayload(fields, initialData, {
+          includeLifecycleFields: options.includeLifecycleFields,
+        }),
+      );
     } catch (err: unknown) {
+      if (err instanceof CommandOutcomeUnknown) setOutcomeUnknown(true);
       setError(err instanceof Error ? err.message : "Failed to add student");
+    } finally {
+      isSubmittingRef.current = false;
+      setIsSubmitting(false);
     }
   }
 
   return {
     error,
+    outcomeUnknown,
     fields,
     handleSubmit,
+    isSubmitting,
     setField,
     setTab,
     tab,

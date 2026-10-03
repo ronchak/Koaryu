@@ -1,0 +1,19 @@
+--- a/RELEASE-RUNBOOK.md
++++ b/RELEASE-RUNBOOK.md
+@@ -71,3 +71,3 @@
+ 
+-For the next migration, use the exact candidate's `scripts/studio-comp-migration-rollout.mjs` packet, staging inspection/dry-run/apply, approved contracts, API-role checks, and production inspection/dry-run. Generate new state-bound approvals and fresh backup evidence. Production apply must be run by a human in a real interactive terminal. Never automate the phrase, allocate an agent PTY, reuse the completed V38 approval, or repair migration history to force acceptance.
++For the next migration, use the exact candidate's `scripts/studio-comp-migration-rollout.mjs` packet, staging inspection/dry-run/apply, approved contracts, API-role checks, and production inspection/dry-run. Generate new state-bound approvals and fresh backup evidence. A named coordinating agent or operator may execute production apply under explicit owner authorization for the intended release. Follow the repository announce-and-pause protocol: announce the exact command, effect, reversibility and immediate verification, wait 60 seconds, then execute that action alone. Use the owner/release authorization, named executor and deliberate exact confirmation phrase required by the current tool. Record its authorization and apply evidence. Never reuse the completed V38 approval or repair migration history to force acceptance. Backup and verified restore, exact-head CI, independent review, guarded merge and all technical gates remain mandatory.
+ 
+--- a/AUTHENTICATION.md
++++ b/AUTHENTICATION.md
+@@ -40,3 +40,3 @@
+ 
+-The wrapper uses the fixed repository `/Users/openclaw/Projects/Koaryu-Repo` and the appropriate working directory for each script. Script arguments retain their existing semantics. Matching environment/project flags are enforced. `--execute` requires a terminal on stdin/stdout/stderr. The child inherits the real terminal; the wrapper never answers prompts or changes the script's approval gates. Permission to load credentials is not authorization to execute an operator mutation. Production writes remain subject to the repository's human-only boundaries.
++The wrapper uses the fixed repository `/Users/openclaw/Projects/Koaryu-Repo` and the appropriate working directory for each script. Script arguments retain their existing semantics. Matching environment/project flags are enforced. `--execute` requires a terminal on stdin/stdout/stderr. The child inherits the real terminal; the wrapper never answers prompts or changes the script's approval gates. Permission to load credentials is not authorization to execute an operator mutation. Production release actions remain subject to explicit owner authorization for a named coordinator, the repository announce-and-pause protocol, and all technical release gates. This wrapper's separate attended financial-mutation restrictions remain unchanged.
+ 
+@@ -46,3 +46,3 @@
+ 
+-This setup does not apply V38, deploy a service, change provider configuration, or grant new production authority. Human gates remain with the repository operator tools.
++This setup does not apply V38, deploy a service, change provider configuration, or grant new production authority. Owner authorization and technical gates remain with the repository operator tools. Named coordinators may execute only the production release actions explicitly authorized by the owner; live billing activation remains separately authorized.
+ 

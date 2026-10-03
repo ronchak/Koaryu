@@ -2,9 +2,103 @@
 
 This runbook separates repository readiness from provider and financial authority. Phase A adds fail-closed code, SQL, owner tooling, and evidence validators. It does **not** enable live billing, change a Stripe object, record a production checkpoint, apply a production migration, rotate a secret, or run a financial canary.
 
+## Current production state — verified 2026-08-19
+
+This snapshot is read-only evidence from the exact deployed backend
+`0bb07b84e5c0a56180c4f291142c8e77e1b9d31a`, production Supabase, and Stripe live
+mode. It records current truth; it does not authorize a mutation or financial canary.
+
+| Surface | Current disposition |
+| --- | --- |
+| Koaryu Core | **Live, technically active, owner acceptance test still pending.** `CORE_SELF_CHECKOUT_ENABLED=true`; the live recurring price is active at `$27 USD` per month; the exact six-event platform endpoint is enabled; one active customer-portal configuration permits customer information updates, payment-method updates, cancellation, and invoice history. Subscription changes are disabled in the portal. |
+| Koaryu Payments | **Closed and safe for demo outreach only when described as unavailable.** `LIVE_BILLING_ENABLED=true` is only the global interlock. There are no `studio_live_billing_authorizations` rows and no recorded reconciliation checkpoint, so live Connect onboarding, tuition collection, autopay, invoice mutation, and refunds remain fail-closed. |
+
+Observed Koaryu Core evidence:
+
+- Stripe has ten live subscription-mode Checkout Sessions: four complete and six
+  expired.
+- Stripe has four live Core subscriptions: one active, one trialing, and two canceled.
+  Production Supabase has the three subscription IDs that still map to local studio
+  rows. The remaining provider-only subscription is canceled and lacks a matching
+  studio reference; classify it as historical cleanup, but it is not an entitled
+  subscription or an outreach blocker.
+- Production has processed live `checkout.session.completed`, subscription lifecycle,
+  and `invoice.paid` platform events. This proves that provider objects and local
+  projection paths have run. It is not a substitute for the owner's controlled
+  signup, Checkout, portal, cancellation, and access-transition acceptance test.
+
+Observed Koaryu Payments evidence:
+
+- Stripe lists three connected accounts. Two are mapped to local studios and the
+  remaining provider account is explicitly excluded. There are zero unresolved
+  accounts, zero unresolved event accounts, and no local mapping absent from Stripe.
+- The reviewed local live-event window contains zero failed and zero non-terminal
+  events. The earlier statement that six accounts and seven failed events blocked
+  checkpointing is obsolete and must not be repeated.
+- One connected account is currently charges-, payouts-, details-, and requirements-
+  ready. The other two are restricted or incomplete. No studio has an enabled live
+  scope, so even the ready account cannot move money through Koaryu.
+- Stripe currently reports one historical `invoice.created` event from 2026-08-08
+  whose deliveries were not all successful. Review and disposition that event before
+  any Koaryu Payments canary; it is not one of the six Koaryu Core platform events.
+
+The production snapshot above predates schema v3 and correctly remained
+`checkpoint_eligible=false`. Its two tooling blockers were:
+
+1. The report uses a fixed event start of 2026-07-13. Stripe only guarantees Event API
+   access for 30 days, so four valid local records from 2026-07-17 can no longer appear
+   in a provider query and are now reported as `local_only` by construction. The
+   reviewed window needed a retention-bounded rolling window with durable continuity.
+2. The report expects the listed Webhook Endpoint object to contain a response-side
+   `connect` boolean. Stripe's current Webhook Endpoint object does not expose that
+   field. The live account instead returns the enabled 23-event connected endpoint
+   with an associated Connect application, and the local database contains processed
+   connected-account events. Replace the classifier with a provider-supported,
+   test-covered endpoint-scope proof.
+
+The integrated 119/V26 repository candidate replaces both assumptions and adds the
+refund/dispute accounting convergence required by the next Payments packet. It uses a
+29-day provider window, explicit bootstrap and predecessor-overlap continuity, and URL
+plus delivery evidence from fields Stripe returns. This is repository evidence only.
+No hosted migration, production checkpoint, grant, or provider change follows from it. See
+`docs/stripe-live-billing-reconciliation-v3.md` for the exact contract.
+
+References: [Stripe Events are API-retrievable for 30 days](https://docs.stripe.com/api/events)
+and [the current Webhook Endpoint response shape](https://docs.stripe.com/api/webhook_endpoints/object).
+
+### Remaining Stripe gates
+
+For Koaryu Core customer use:
+
+1. Run one owner-controlled live acceptance with a fresh studio: signup, Checkout,
+   30-day trial, webhook projection, access, portal, payment-method update, cancellation,
+   and expected access transition. Use an intentional reversible account and record
+   only sanitized IDs and outcomes.
+2. Confirm the support and provider-alert path receives any failed Checkout or webhook
+   notification.
+
+For Koaryu Payments:
+
+1. Merge and deploy the verified 119/V26 reconciliation and adjustment-convergence packet through the normal release gates.
+2. Run the complete provider lifecycle in isolated staging and Stripe test mode.
+3. Produce a fresh, exact-SHA, all-clear production read-only reconciliation and record
+   its checkpoint.
+4. Grant only a named studio and scope, then run the separately approved bounded live
+   financial canary below.
+
+None of the Koaryu Payments gates block a manually onboarded, comped friendly pilot or
+a Koaryu Core-only demo.
+
 ## Authorization model
 
-`LIVE_BILLING_ENABLED` is the global emergency interlock and is necessary but insufficient. Every live Stripe mutation also needs one enabled, unexpired `studio_live_billing_authorizations` row for the exact studio and scope:
+`LIVE_BILLING_ENABLED` is the Koaryu Payments global emergency interlock and is
+necessary but insufficient. Every live Koaryu Payments mutation also needs one
+enabled, unexpired `studio_live_billing_authorizations` row for the exact studio and
+scope. Koaryu Core Checkout, customer portal, and their exact-object compensations are
+the separately authorized `CORE_SELF_CHECKOUT_ENABLED` path documented in
+`billing-boundary.md`; they do not require a Payments checkpoint or studio scope.
+
+The authorization table supports these scopes:
 
 - `core_subscription`
 - `connect_onboarding`
@@ -28,7 +122,21 @@ Only the service-role CLI calls the atomic grant/revoke/audit RPC. There is no p
 
 ## Read-only reconciliation
 
-The reporter inventories every Stripe Connect account visible to the configured read-capable key, then separately lists events at platform scope and in each connected-account context. It reconciles a bounded, reviewed event universe from 2026-07-13 through collection time using exact `(event ID, account ID)` equality. It also reconciles the union of provider accounts, provider-event account IDs, local-event account IDs, and local studio mappings against explicit exclusions. A local mapping absent from the provider account inventory is unresolved rather than self-validating. It reports current endpoint configuration and sanitized failed-event codes/references, never event payloads, and has no mutation call. A live checkpoint requires exactly one enabled endpoint matching each exact production URL/Connect flag, no other enabled endpoint, and respectively the exact six-event and 23-event sets in `render-backend-deployment.md`. Stripe's wildcard event subscription is deliberately rejected because it expands ingestion beyond the reviewed projector contract.
+The schema-v3 reporter inventories every Stripe Connect account visible to the
+configured read-capable key, then separately lists events at platform scope and in
+each connected-account context. It compares exact `(event ID, account ID)` equality
+inside a complete 29-day provider window. The first v3 report must pass an explicit
+local-history bootstrap. Later reports must bind the latest unexpired v3 checkpoint,
+overlap its window by at least 24 hours, and preserve the local ingest watermark.
+
+The contract reconciles the union of provider accounts,
+provider-event account IDs, local-event account IDs, and local studio mappings against
+explicit exclusions; treat a local mapping absent from the provider inventory as
+unresolved; report only sanitized failures; require one exact enabled platform endpoint
+and one exact enabled connected-account endpoint with the six- and 23-event sets in
+`render-backend-deployment.md`; and reject wildcard subscriptions. Endpoint scope is
+proved by exact URLs and separate delivery evidence, not a fabricated response-side
+`connect` field.
 
 Offline fixture validation performs no network access:
 
@@ -100,7 +208,10 @@ account mapping, or record a checkpoint as part of this procedure.
 
 Treat the reported July 20 explanations as hypotheses. If provider events continued but local receipt stopped, investigate endpoint delivery, routing, and signing-secret verification. If both stopped, provider inactivity, mode mismatch, or incomplete collection remain possible. No replay or backfill is allowed from this report. First confirm the exact event-ID uniqueness/claim path and handler projection are idempotent; then obtain a separate replay approval with an event allowlist.
 
-The six currently unmapped live-event accounts and all seven failed live events make `checkpoint_eligible=false`. Do not grant any scope or bind a live authorization until each account is mapped to its rightful studio or explicitly excluded with provenance, and each failed event has an event-specific disposition plus idempotent reconciliation proof. Never blanket-ignore unmapped accounts.
+The historical six-account/seven-failure condition has been cleared as of the dated
+snapshot above. Continue to fail closed on any newly unresolved account or failed
+event. Never blanket-ignore unmapped accounts. A fresh read-only reconciliation remains
+required because a historical cleanup result does not prove current delivery.
 
 ## Owner authorization commands
 
@@ -115,7 +226,9 @@ venv/bin/python scripts/live_billing_authorizations.py grant \
   --slug <studio-slug> \
   --scope connect_payments \
   --stripe-account-id acct_... \
-  --expires-at 2026-08-01T12:00:00Z \
+  --operation <BYTE-SORTED-APPROVED-OPERATION-1> \
+  --operation <BYTE-SORTED-APPROVED-OPERATION-2> \
+  --expires-at <FUTURE-ISO-8601-WITHIN-30-DAYS> \
   --reason "Bounded one-studio canary" \
   --actor <auth-user-id-or-email>
 
@@ -164,7 +277,7 @@ python3 scripts/verify-stripe-provider-rehearsal.py \
   --expected-backend-origin <exact-pinned-staging-origin>
 ```
 
-Evidence schema version 2 is fail-closed. It pins the exact backend origin and `/health/ready` SHA, one studio, one connected account and generation, and separate `platform` and `connect` webhook delivery records. Each delivery record must name the exact platform or Connect endpoint URL, correct Connect flag, an event type from that endpoint's documented contract, Stripe's delivered/2xx result, and a local `processed` readback of the same event ID. The two surfaces must use different event IDs. Platform proof explicitly has no connected-account context; Connect proof must match the rehearsal account and generation. A nonempty global event-ID list, provider-only delivery, local-only readback, or one surface standing in for the other is invalid. Every recorded mutation—including the initial hosted Account Link—must carry its deterministic idempotency key.
+Provider rehearsal evidence uses schema version 4. It pins the exact backend origin and `/health/ready` SHA, one studio, one connected account and generation, and separate `platform` and `connect` webhook delivery records. Each delivery record must name the exact platform or Connect endpoint URL, correct Connect context, an event type from that endpoint's documented contract, Stripe's delivered/2xx result, and a local `processed` readback of the same event ID. The two surfaces must use different event IDs. Platform proof explicitly has no connected-account context; Connect proof must match the rehearsal account and generation. A nonempty global event-ID list, provider-only delivery, local-only readback, or one surface standing in for the other is invalid. Every recorded mutation, including the initial hosted Account Link, must carry its deterministic idempotency key. The schema-v4 template in the capture worksheet remains the source; do not copy it here. Reconciliation checkpoint reports remain schema v3 and use a different private file.
 
 This rehearsal is test mode only. Live money movement remains excluded unless the director separately approves a named payer, amount, consent record, and financial ceiling.
 

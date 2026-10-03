@@ -1,46 +1,79 @@
 "use client";
 
 import { Users } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { formatMoney } from "@/lib/billing-page-utils";
+import { payerSetupActionLabel } from "@/lib/billing-payer-setup-model";
 import type { BillingPayer } from "@/types";
 import { SectionHeader, StatusPill } from "./billing-page-sections";
 
-export function BillingFamiliesTab({ billingPayers }: { billingPayers: BillingPayer[] }) {
+export function BillingFamiliesTab({
+  billingPayers,
+  canUseWorkflow,
+  isActionLoading,
+  isLoadingAction,
+  onAutopayDisable,
+  onAutopaySetup,
+  onPayerSync,
+}: {
+  billingPayers: BillingPayer[];
+  canUseWorkflow: (workflowId: string) => boolean;
+  isActionLoading: boolean;
+  isLoadingAction: (action: string) => boolean;
+  onAutopayDisable: (payerId: string) => void;
+  onAutopaySetup: (payer: BillingPayer) => void;
+  onPayerSync: (payerId: string) => void;
+}) {
   return (
     <div className="space-y-5">
-      <section className="rounded-[6px] border border-border bg-surface p-5">
+      <section className="rounded-[14px] border border-border bg-surface p-4">
         <SectionHeader
           icon={Users}
-          title="Family payer accounts are read-only"
-          description="Koaryu displays existing payer and provider status. Creating or syncing payers and changing autopay are currently unavailable."
+          title="Family payer workflows"
+          description="Sync and payer-owned setup are shown only when the current server capability permits them. Staff cannot accept payment terms for a payer."
         />
       </section>
 
-      <section className="rounded-[6px] border border-border bg-surface">
-        <div className="hidden grid-cols-[1.1fr_1fr_1fr_auto] gap-4 border-b border-border px-4 py-3 text-xs font-medium text-muted md:grid">
+      <section className="overflow-hidden rounded-[14px] border border-border bg-surface">
+        <div className="hidden grid-cols-[1.1fr_1fr_1fr_auto_1.3fr] gap-4 border-b border-border px-4 py-3 text-xs font-medium text-muted md:grid">
           <span>Payer</span>
           <span>Contact</span>
           <span>Stripe</span>
           <span>Autopay</span>
+          <span>Actions</span>
         </div>
         {billingPayers.length === 0 ? (
           <p className="p-4 text-sm text-muted">No payer accounts yet.</p>
         ) : billingPayers.map((payer) => (
-          <div key={payer.id} className="grid min-w-0 grid-cols-1 gap-3 border-b border-border px-4 py-4 text-sm last:border-b-0 md:grid-cols-[1.1fr_1fr_1fr_auto] md:gap-4">
+          <div key={payer.id} className="grid min-w-0 grid-cols-1 gap-3 border-b border-border px-4 py-3 text-sm last:border-b-0 md:min-h-14 md:grid-cols-[1.1fr_1fr_1fr_auto_1.3fr] md:items-center md:gap-4 md:py-2">
             <div className="min-w-0">
-              <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted md:hidden">Payer</p>
+              <p className="mb-1 text-xs font-medium text-muted md:hidden">Payer</p>
               <p className="font-medium text-text-primary">{payer.display_name}</p>
               <div className="mt-1"><StatusPill status={payer.billing_status} /></div>
-              <p className="mt-1 text-xs text-muted">{formatMoney(payer.balance_cents)}</p>
+              <div className="mt-1 space-y-0.5 text-xs text-muted">
+                <p>Outstanding {formatMoney(payer.balance_cents)}</p>
+                <p>
+                  Overdue{" "}
+                  {payer.overdue_balance_cents == null
+                    ? "Unavailable"
+                    : formatMoney(payer.overdue_balance_cents)}
+                </p>
+                <p>
+                  Uncollectible{" "}
+                  {payer.uncollectible_balance_cents == null
+                    ? "Unavailable"
+                    : formatMoney(payer.uncollectible_balance_cents)}
+                </p>
+              </div>
             </div>
             <div className="min-w-0 text-text-secondary">
-              <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted md:hidden">Contact</p>
+              <p className="mb-1 text-xs font-medium text-muted md:hidden">Contact</p>
               <p className="break-words [overflow-wrap:anywhere]">{payer.email || "No email"}</p>
               <p className="text-xs text-muted">{payer.phone || "No phone"}</p>
             </div>
             <div className="min-w-0 text-xs text-muted">
-              <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted md:hidden">Provider</p>
-              <p className="break-words [overflow-wrap:anywhere] md:truncate">{payer.stripe_customer_id || "No Stripe customer"}</p>
+              <p className="mb-1 text-xs font-medium text-muted md:hidden">Provider</p>
+              <p>{payer.stripe_customer_id ? "Provider customer linked" : "Customer not synced"}</p>
               <p className="break-words [overflow-wrap:anywhere] md:truncate">
                 {payer.stripe_payment_method_last4
                   ? `${payer.stripe_payment_method_brand || payer.stripe_payment_method_type || "card"} ending ${payer.stripe_payment_method_last4}`
@@ -50,8 +83,35 @@ export function BillingFamiliesTab({ billingPayers }: { billingPayers: BillingPa
               </p>
             </div>
             <div>
-              <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted md:hidden">Autopay</p>
+              <p className="mb-1 text-xs font-medium text-muted md:hidden">Autopay</p>
               <StatusPill status={payer.autopay_status} />
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {canUseWorkflow("payer.sync") ? (
+                <Button size="sm" disabled={isActionLoading} isLoading={isLoadingAction(`payer-sync:${payer.id}`)} onClick={() => onPayerSync(payer.id)}>
+                  {isLoadingAction(`payer-sync:${payer.id}`) ? "Syncing..." : "Sync payer"}
+                </Button>
+              ) : null}
+              {canUseWorkflow("payer.setup") ? (
+                <Button variant="secondary" size="sm" disabled={isActionLoading} isLoading={isLoadingAction(`autopay-setup:${payer.id}`)} onClick={() => onAutopaySetup(payer)}>
+                  {isLoadingAction(`autopay-setup:${payer.id}`) ? "Preparing..." : payerSetupActionLabel(payer)}
+                </Button>
+              ) : null}
+              {payer.autopay_status === "enabled" && canUseWorkflow("payer.autopay.disable") ? (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled={isActionLoading}
+                  isLoading={isLoadingAction(`autopay-disable:${payer.id}`)}
+                  onClick={() => {
+                    if (window.confirm(`Disable autopay for ${payer.display_name}? Future invoices will no longer use the saved payment method automatically.`)) {
+                      onAutopayDisable(payer.id);
+                    }
+                  }}
+                >
+                  {isLoadingAction(`autopay-disable:${payer.id}`) ? "Disabling..." : "Disable autopay"}
+                </Button>
+              ) : null}
             </div>
           </div>
         ))}

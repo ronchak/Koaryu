@@ -15,29 +15,24 @@ import {
   Users,
 } from "lucide-react";
 import { Header } from "@/components/header";
+import { OperationsSurface } from "@/components/operations/operations-surface";
 import { Button } from "@/components/ui/button";
 import { DismissibleNotice } from "@/components/ui/dismissible-notice";
-import {
-  OverviewPanel,
-  OverviewPanelHeader,
-  SegmentedTabs,
-  SetupStepList,
-  type SegmentedTab,
-  type SetupStep,
-} from "@/components/ui/overview";
+import { SetupStepList, type SetupStep } from "@/components/ui/overview";
 import { SectionHeader } from "./billing-page-sections";
+import { BILLING_TABS, type BillingTab } from "@/lib/billing-page-state";
 
-export type BillingTab = "overview" | "plans" | "families" | "enrollments" | "invoices" | "reports";
+export type { BillingTab } from "@/lib/billing-page-state";
 export type BillingSetupStep = SetupStep;
 
-const BILLING_TABS: SegmentedTab<BillingTab>[] = [
-  { id: "overview", label: "Setup", icon: ListChecks },
-  { id: "plans", label: "Tuition Plans", icon: Receipt },
-  { id: "families", label: "Families", icon: Users },
-  { id: "enrollments", label: "Student Billing", icon: CreditCard },
-  { id: "invoices", label: "Invoices", icon: FileText },
-  { id: "reports", label: "Advanced", icon: Download },
-];
+const BILLING_TAB_PRESENTATION = {
+  overview: { label: "Setup", icon: ListChecks },
+  plans: { label: "Tuition Plans", icon: Receipt },
+  families: { label: "Families", icon: Users },
+  enrollments: { label: "Student Billing", icon: CreditCard },
+  invoices: { label: "Invoices", icon: FileText },
+  reports: { label: "Advanced", icon: Download },
+} as const;
 
 export function BillingPageFrame({
   activeTab,
@@ -75,8 +70,8 @@ export function BillingPageFrame({
   showLoading: boolean;
 }) {
   return (
-    <>
-      <Header title="Billing" description="Koaryu Core, family payments, invoices, and revenue reporting.">
+    <OperationsSurface page="billing">
+      <Header title="Billing">
         <Button
           variant="ghost"
           size="sm"
@@ -89,7 +84,7 @@ export function BillingPageFrame({
         </Button>
       </Header>
 
-      <div className="flex-1 overflow-auto p-6">
+      <div className="flex-1 p-4 sm:p-6" data-billing-ledger="six-views">
         <div className="mx-auto max-w-[1240px] space-y-5">
           {isLiveRestricted ? (
             <BillingAccessLimitedNotice />
@@ -110,7 +105,7 @@ export function BillingPageFrame({
                 showLoading={showLoading}
               />
 
-              <section className="rounded-[6px] border border-warning/40 bg-warning/5 p-4 text-xs text-text-secondary">
+              <section className="rounded-[14px] bg-warning/5 p-4 text-xs text-text-secondary">
                 {billingBoundaryMessage}
               </section>
 
@@ -121,13 +116,13 @@ export function BillingPageFrame({
           )}
         </div>
       </div>
-    </>
+    </OperationsSurface>
   );
 }
 
 export function BillingAccessLimitedNotice() {
   return (
-    <section className="border border-border bg-surface rounded-[6px] p-6">
+    <section className="rounded-[14px] bg-surface p-4">
       <SectionHeader
         icon={ShieldCheck}
         title="Billing access is limited"
@@ -150,21 +145,48 @@ export function BillingSetupNavigation({
 }) {
   return (
     <>
-      <OverviewPanel>
-        <OverviewPanelHeader
-          eyebrow={`${completedStepCount} / ${steps.length} complete`}
-          title="Billing review"
-          description="Review current provider state, plans, and families; attach external billing records; then record external payments or reconcile invoices."
-        />
+      <section className="overflow-hidden bg-surface" data-billing-setup-register="true">
+        <div className="grid border-b border-border px-4 py-4 sm:grid-cols-[minmax(12rem,0.35fr)_1fr] sm:gap-8 sm:px-5">
+          <div>
+            <p className="text-xs font-medium text-muted">
+              {completedStepCount} of {steps.length} ready
+            </p>
+            <h2 className="mt-1 text-base font-semibold text-text-primary">Billing review</h2>
+          </div>
+          <p className="text-xs leading-5 text-text-secondary">
+            Review provider state, plans, and families before posting external payments or
+            reconciling open invoices.
+          </p>
+        </div>
         <SetupStepList steps={steps} />
-      </OverviewPanel>
+      </section>
 
-      <SegmentedTabs
-        tabs={BILLING_TABS}
-        activeTab={activeTab}
-        onChange={onChangeTab}
-        ariaLabel="Billing sections"
-      />
+      <nav
+        className="rounded-[14px] bg-surface p-2 shadow-[var(--product-shadow-card)]"
+        aria-label="Billing views"
+        data-billing-book-index="six-views"
+        data-print-hide="true"
+      >
+        <ol className="grid list-none grid-cols-2 gap-1 p-0 sm:grid-cols-3 xl:grid-cols-6">
+          {BILLING_TABS.map((tab) => {
+            const { icon: Icon, label } = BILLING_TAB_PRESENTATION[tab];
+            const isActive = activeTab === tab;
+            return (
+              <li key={tab}>
+                <button
+                  type="button"
+                  onClick={() => onChangeTab(tab)}
+                  aria-pressed={isActive}
+                  className={`grid min-h-14 w-full grid-cols-[1fr_auto] items-center gap-x-2 rounded-[10px] px-3 py-2 text-left ${isActive ? "bg-accent/10 text-text-primary" : "text-text-secondary hover:bg-surface-raised"}`}
+                >
+                  <strong className="text-xs font-semibold">{label}</strong>
+                  <Icon aria-hidden="true" className="h-3.5 w-3.5 text-muted" />
+                </button>
+              </li>
+            );
+          })}
+        </ol>
+      </nav>
     </>
   );
 }
@@ -185,20 +207,12 @@ export function BillingFeedbackNotices({
   return (
     <>
       {message ? (
-        <DismissibleNotice
-          tone="success"
-          onDismiss={onDismissMessage}
-          className="text-xs"
-        >
+        <DismissibleNotice tone="success" onDismiss={onDismissMessage} className="text-xs">
           {message}
         </DismissibleNotice>
       ) : null}
       {error ? (
-        <DismissibleNotice
-          tone="danger"
-          onDismiss={onDismissError}
-          className="text-xs"
-        >
+        <DismissibleNotice tone="danger" onDismiss={onDismissError} className="text-xs">
           {error}
         </DismissibleNotice>
       ) : null}
@@ -215,7 +229,7 @@ export function BillingFeedbackNotices({
 
 export function BillingPolicyNote() {
   return (
-    <section className="border border-border bg-surface rounded-[6px] p-4">
+    <section className="rounded-[14px] bg-surface p-4">
       <div className="flex flex-wrap items-center gap-3 text-xs text-muted">
         <CheckCircle2 className="h-4 w-4 text-success" />
         <span>No student-count pricing. No staff-count pricing. No feature gates.</span>
