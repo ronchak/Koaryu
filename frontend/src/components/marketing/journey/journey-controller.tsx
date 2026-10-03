@@ -6,6 +6,7 @@ import { MarketingHeader } from "../public-pages";
 import { JourneyScene, type JourneySceneHandle } from "./journey-scene";
 import { SCENE_HEIGHT, SCENE_WIDTH, frameForDimensions } from "./scene-model";
 import {
+  driftForScroll,
   keyframesForLayout,
   progressForScroll,
   resolveLegacyHash,
@@ -28,6 +29,8 @@ const GESTURE_MEMORY_MS = 3000;
 const DOWN_KEYS = new Set(["ArrowDown", "PageDown", "End", " "]);
 const UP_KEYS = new Set(["ArrowUp", "PageUp", "Home"]);
 const COMPACT_QUERY = "(max-width: 820px)";
+/** While a chapter is read its frame drifts this much closer, on the compositor, so it never freezes. */
+const READING_DRIFT_SCALE = 0.04;
 
 interface JourneyControllerProps {
   readonly children: ReactNode;
@@ -71,6 +74,8 @@ export function JourneyController({ children }: JourneyControllerProps) {
     let frameRequest = 0;
     let layerWidth = 0;
     let layerHeight = 0;
+    let maxScroll = 0;
+    let appliedDrift = Number.NaN;
     let lastScrollY = window.scrollY;
     let mastheadHidden = false;
     let gestureDirection = 0;
@@ -103,18 +108,15 @@ export function JourneyController({ children }: JourneyControllerProps) {
       const chapters = Array.from(root.querySelectorAll<HTMLElement>("[data-journey-chapter]"));
       const top = (element: Element) => element.getBoundingClientRect().top + window.scrollY;
       const layout = chapters.map((chapter, index) => {
-        const interlude = chapter.nextElementSibling?.hasAttribute("data-journey-interlude")
-          ? chapter.nextElementSibling
-          : null;
+        const bottom = top(chapter) + chapter.getBoundingClientRect().height;
         const next = chapters[index + 1];
-        const gapCenter = interlude
-          ? top(interlude) + interlude.getBoundingClientRect().height / 2
-          : next
-            ? top(next)
-            : Number.POSITIVE_INFINITY;
-        return { scene: Number(chapter.dataset.scene ?? 0), gapCenter };
+        return {
+          scene: Number(chapter.dataset.scene ?? 0),
+          gapStart: bottom,
+          gapEnd: next ? top(next) : bottom,
+        };
       });
-      const maxScroll = document.documentElement.scrollHeight - window.innerHeight;
+      maxScroll = document.documentElement.scrollHeight - window.innerHeight;
       keyframes = keyframesForLayout(layout, window.innerHeight, maxScroll);
       scenes = layout.map(({ scene }) => scene);
 
@@ -165,6 +167,14 @@ export function JourneyController({ children }: JourneyControllerProps) {
       if (displayed !== applied) {
         applied = displayed;
         sceneRef.current?.setProgress(displayed);
+      }
+      // The held frame drifts with reading instead. A transform on the whole
+      // artwork is composited without repainting the SVG.
+      const drift = motionQuery.matches ? 0 : driftForScroll(scrollY, keyframes, maxScroll);
+      if (Math.abs(drift - appliedDrift) > 0.0005 || Number.isNaN(appliedDrift)) {
+        appliedDrift = drift;
+        const svg = layer.querySelector("svg");
+        if (svg) svg.style.transform = drift ? `scale(${1 + drift * READING_DRIFT_SCALE})` : "";
       }
       if (displayed !== target && !motionQuery.matches) {
         frameRequest = window.requestAnimationFrame(tick);

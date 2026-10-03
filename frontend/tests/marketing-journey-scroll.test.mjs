@@ -6,6 +6,7 @@ import {
   LANDING_HASH_ALIASES,
   TRANSITION_END,
   TRANSITION_START,
+  driftForScroll,
   keyframesForLayout,
   progressForScroll,
   resolveLegacyHash,
@@ -47,39 +48,58 @@ describe("Journey scroll model", () => {
     assert.equal(stillFrame(0.9, scenes), 0.5);
   });
 
-  it("holds each chapter while it is read and moves only while the gap crosses the screen", () => {
+  it("holds each chapter while it is read and plays each beat across the gap after it", () => {
     const keyframes = keyframesForLayout(
       [
-        { scene: 0, gapCenter: 1300 },
-        { scene: 0.1, gapCenter: 2900 },
-        { scene: 0.3, gapCenter: Number.POSITIVE_INFINITY },
+        { scene: 0, gapStart: 1000, gapEnd: 1500 },
+        { scene: 0.1, gapStart: 2500, gapEnd: 3800 },
+        { scene: 0.3, gapStart: 4800, gapEnd: 4800 },
       ],
       1000,
-      5000,
+      9000,
     );
-    assert.equal(TRANSITION_START, 0.85);
-    assert.equal(TRANSITION_END, 0.15);
+    assert.equal(TRANSITION_START, 0.6);
+    assert.equal(TRANSITION_END, 0.4);
     assert.deepEqual(keyframes, [
       { scrollY: 0, scene: 0 },
-      { scrollY: 450, scene: 0 },
-      { scrollY: 1150, scene: 0.1 },
-      { scrollY: 2050, scene: 0.1 },
-      { scrollY: 2750, scene: 0.3 },
+      { scrollY: 400, scene: 0 },
+      { scrollY: 1100, scene: 0.1 },
+      { scrollY: 1900, scene: 0.1 },
+      { scrollY: 3400, scene: 0.3 },
     ]);
     // Reading the first two chapters moves nothing.
     assert.equal(progressForScroll(200, keyframes), 0);
-    assert.equal(progressForScroll(1600, keyframes), 0.1);
+    assert.equal(progressForScroll(1500, keyframes), 0.1);
     // Halfway through a gap, the story is halfway through its beat.
-    assert.ok(Math.abs(progressForScroll(800, keyframes) - 0.05) < 1e-9);
-    assert.equal(progressForScroll(4000, keyframes), 0.3);
+    assert.ok(Math.abs(progressForScroll(750, keyframes) - 0.05) < 1e-9);
+    // A longer interlude gives its beat more scroll.
+    assert.ok(3400 - 1900 > 1100 - 400);
+    assert.equal(progressForScroll(8000, keyframes), 0.3);
+  });
+
+  it("drifts held frames continuously and eases the drift out during each beat", () => {
+    const keyframes = [
+      { scrollY: 0, scene: 0 },
+      { scrollY: 400, scene: 0 },
+      { scrollY: 1100, scene: 0.1 },
+      { scrollY: 1900, scene: 0.1 },
+    ];
+    assert.equal(driftForScroll(0, keyframes, 3000), 0);
+    assert.equal(driftForScroll(200, keyframes, 3000), 0.5);
+    assert.equal(driftForScroll(400, keyframes, 3000), 1);
+    assert.ok(Math.abs(driftForScroll(750, keyframes, 3000) - 0.5) < 1e-9);
+    assert.equal(driftForScroll(1100, keyframes, 3000), 0);
+    assert.equal(driftForScroll(1500, keyframes, 3000), 0.5);
+    assert.ok(Math.abs(driftForScroll(2450, keyframes, 3000) - 0.5) < 1e-9);
+    assert.equal(driftForScroll(100, [], 3000), 0);
   });
 
   it("clamps keyframes to the scrollable range without ever decreasing", () => {
     const keyframes = keyframesForLayout(
       [
-        { scene: 0, gapCenter: 300 },
-        { scene: 0.5, gapCenter: 900 },
-        { scene: 1, gapCenter: Number.POSITIVE_INFINITY },
+        { scene: 0, gapStart: 300, gapEnd: 500 },
+        { scene: 0.5, gapStart: 900, gapEnd: 1200 },
+        { scene: 1, gapStart: 1600, gapEnd: 1600 },
       ],
       1000,
       600,
@@ -95,10 +115,11 @@ describe("Journey scroll model", () => {
   });
 
   it("orders chapter scenes so scrolling down always moves the story forward", () => {
-    const withInterludes = landingPageContent.chapters
-      .filter((chapter) => "interludeAfter" in chapter && chapter.interludeAfter)
-      .map(({ id }) => id);
-    assert.deepEqual(withInterludes, ["welcome", "the-problem", "product", "features"]);
+    const interludes = landingPageContent.chapters.map((chapter) =>
+      "interludeAfter" in chapter ? chapter.interludeAfter : null,
+    );
+    // Every beat gets open space; the long cloud-to-floor sequence gets the most.
+    assert.deepEqual(interludes, [50, 60, 70, 80, 130, 100, null]);
     const scenes = landingPageContent.chapters.map(({ scene }) => scene);
     assert.deepEqual(
       scenes,

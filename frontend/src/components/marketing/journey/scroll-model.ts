@@ -7,12 +7,12 @@ export interface SceneKeyframe {
 }
 
 /**
- * A transition plays while the gap between two chapters crosses the middle
- * of the screen: from when the gap's center is this far down the viewport...
+ * A transition starts when the gap after a chapter rises to this fraction of
+ * the screen height (the chapter is mostly read)...
  */
-export const TRANSITION_START = 0.85;
-/** ...until it is this far down. Outside these windows the scene holds still. */
-export const TRANSITION_END = 0.15;
+export const TRANSITION_START = 0.6;
+/** ...and finishes when the next chapter's top reaches this fraction. */
+export const TRANSITION_END = 0.4;
 
 const FAQ_GROUP_IDS: readonly string[] = landingPageContent.chapters.flatMap((chapter) =>
   chapter.kind === "faq" ? chapter.groups.map((group) => group.id) : [],
@@ -94,17 +94,17 @@ export function stillFrame(progress: number, scenes: readonly number[]): number 
 export interface ChapterLayout {
   /** Scene progress held while the chapter is read. */
   readonly scene: number;
-  /**
-   * Document position of the center of the gap after this chapter: the middle
-   * of its interlude, or the next chapter's top edge when there is none.
-   */
-  readonly gapCenter: number;
+  /** Document position where the gap after this chapter begins (the chapter's bottom). */
+  readonly gapStart: number;
+  /** Document position where the gap ends (the next chapter's top). */
+  readonly gapEnd: number;
 }
 
 /**
- * Builds keyframes that hold each chapter's scene while it is read and move
- * the story only while the gap to the next chapter crosses the viewport.
- * Keyframes are clamped to the scrollable range and never decrease.
+ * Builds keyframes that hold each chapter's scene while it is read and play
+ * the next story beat across the gap that follows it, so longer interludes
+ * give longer beats more scroll. Keyframes stay within the scrollable range
+ * and never decrease.
  */
 export function keyframesForLayout(
   chapters: readonly ChapterLayout[],
@@ -125,8 +125,32 @@ export function keyframesForLayout(
   for (let index = 0; index < chapters.length - 1; index += 1) {
     const chapter = chapters[index]!;
     const next = chapters[index + 1]!;
-    push(chapter.gapCenter - viewportHeight * TRANSITION_START, chapter.scene);
-    push(chapter.gapCenter - viewportHeight * TRANSITION_END, next.scene);
+    push(chapter.gapStart - viewportHeight * TRANSITION_START, chapter.scene);
+    push(chapter.gapEnd - viewportHeight * TRANSITION_END, next.scene);
   }
   return keyframes;
+}
+
+/**
+ * How far through the current hold the reader is (0 to 1), so a held frame can
+ * drift slowly instead of freezing. During a transition it eases back to 0,
+ * keeping the drift continuous into the next hold.
+ */
+export function driftForScroll(
+  scrollY: number,
+  keyframes: readonly SceneKeyframe[],
+  maxScroll: number,
+): number {
+  const fraction = (from: number, to: number) =>
+    to > from ? Math.min(1, Math.max(0, (scrollY - from) / (to - from))) : 1;
+  for (let index = 1; index < keyframes.length; index += 1) {
+    const previous = keyframes[index - 1]!;
+    const next = keyframes[index]!;
+    if (scrollY <= next.scrollY) {
+      const progress = fraction(previous.scrollY, next.scrollY);
+      return previous.scene === next.scene ? progress : 1 - progress;
+    }
+  }
+  const last = keyframes[keyframes.length - 1];
+  return last ? fraction(last.scrollY, maxScroll) : 0;
 }

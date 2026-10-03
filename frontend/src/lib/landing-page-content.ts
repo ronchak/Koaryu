@@ -42,10 +42,11 @@ export interface JourneyBaseChapter {
   /** Scene progress held while this chapter is being read. */
   scene: number;
   /**
-   * Leaves an open stretch of scroll after this chapter where the scene plays
-   * unobstructed: the story's turning points happen there, not behind a card.
+   * Length, in percent of the screen's height, of the open stretch of scroll
+   * after this chapter where the next story beat plays unobstructed. Longer
+   * beats get more room.
    */
-  interludeAfter?: boolean;
+  interludeAfter?: number;
   kind: JourneyChapterKind;
   ink: JourneyInk;
 }
@@ -279,7 +280,7 @@ export const landingPageContent = {
       id: "welcome",
       title: "Run the school. Teach the art.",
       scene: 0,
-      interludeAfter: true,
+      interludeAfter: 50,
       kind: "hero",
       ink: "dark",
       kicker: "For independent martial arts schools",
@@ -294,7 +295,7 @@ export const landingPageContent = {
       id: "the-problem",
       title: "Your studio is not a spreadsheet.",
       scene: 0.1,
-      interludeAfter: true,
+      interludeAfter: 60,
       kind: "problem",
       ink: "light",
       question:
@@ -304,8 +305,8 @@ export const landingPageContent = {
     {
       id: "product",
       title: "Know who is ready for their next belt.",
-      scene: 0.3,
-      interludeAfter: true,
+      scene: 0.288,
+      interludeAfter: 70,
       kind: "product",
       ink: "dark",
       kicker: "The belt tracker",
@@ -332,8 +333,8 @@ export const landingPageContent = {
     {
       id: "features",
       title: "Everything between classes.",
-      scene: 0.5,
-      interludeAfter: true,
+      scene: 0.52,
+      interludeAfter: 80,
       kind: "features",
       ink: "dark",
       kicker: "What's inside",
@@ -347,7 +348,8 @@ export const landingPageContent = {
     {
       id: "pricing",
       title: "One price. Every student.",
-      scene: 0.72,
+      scene: 0.66,
+      interludeAfter: 130,
       kind: "pricing",
       ink: "dark",
       kicker: "Pricing",
@@ -370,7 +372,8 @@ export const landingPageContent = {
     {
       id: "faq",
       title: "Questions owners ask",
-      scene: 0.86,
+      scene: 0.892,
+      interludeAfter: 100,
       kind: "faq",
       ink: "dark",
       kicker: "FAQ",
@@ -387,8 +390,8 @@ export const landingPageContent = {
       footerLinks: [
         { label: "Features", href: "/features" },
         { label: "Workflows", href: "/use-cases" },
-        { label: "Terms of Service", href: "/terms" },
-        { label: "Privacy Policy", href: "/privacy" },
+        { label: "Terms", href: "/terms" },
+        { label: "Privacy", href: "/privacy" },
       ],
       copyright: "© 2026 Koaryu",
     },

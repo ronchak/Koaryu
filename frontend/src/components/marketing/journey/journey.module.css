@@ -124,7 +124,7 @@
 
 /* An open stretch of scroll where the scene plays the story's next beat unobstructed. */
 .interlude {
-  height: 60svh;
+  height: calc(var(--interlude, 60) * 1svh);
 }
 
 /* Without JavaScript the scene stays on its first frame, so dark chapters bring their own ground. */
@@ -712,8 +712,10 @@
     width: 100%;
   }
 
+  /* The closing card tucks under the masthead so the seated class shows beneath it. */
   .chapter[data-kind="final"] {
-    padding-top: calc(var(--journey-masthead) + 16px);
+    min-height: 100svh;
+    padding-top: calc(var(--journey-masthead) + 8px);
   }
 
   .chapter:not([data-kind="hero"], [data-kind="problem"], [data-kind="final"]) {
@@ -721,7 +723,7 @@
   }
 
   .interlude {
-    height: 48svh;
+    height: calc(var(--interlude, 60) * 0.8svh);
   }
 
   /* The phone screenshot sits in a simple device frame at a readable size. */
@@ -737,7 +739,25 @@
   }
 
   .footer nav {
-    gap: 0 14px;
+    gap: 0 12px;
+  }
+
+  .footer a {
+    font-size: 12px;
+    white-space: nowrap;
+  }
+
+  .finalSheet {
+    padding: 22px 18px;
+  }
+
+  .finalSheet .actions {
+    margin-top: 18px;
+  }
+
+  .finalSheet .footer {
+    margin-top: 18px;
+    padding-top: 6px;
   }
 
   .actions {

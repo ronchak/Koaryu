@@ -51,15 +51,20 @@ describe("Journey scene geometry", () => {
     assert.equal(model.easeInOut(0.5), 0.5);
     assert.deepEqual(model.SCENE_PHASES, {
       mountains: [0, 0.1],
-      drop: [0.1, 0.22],
-      settle: [0.22, 0.3],
-      push: [0.3, 0.5],
-      door: [0.34, 0.5],
-      students: [0.54, 0.96],
+      drop: [0.1, 0.212],
+      settle: [0.212, 0.288],
+      portal: [0.288, 0.52],
+      door: [0.404, 0.52],
+      through: [0.516, 0.64],
+      sky: [0.6, 0.7],
+      clouds: [0.66, 0.802],
+      morph: [0.802, 0.892],
+      floor: [0.892, 0.952],
+      students: [0.952, 1],
     });
   });
 
-  it("keeps landscape and portrait frames, with the class narrowed on phones", () => {
+  it("keeps landscape and portrait frames, with the class drawn in on phones", () => {
     assert.deepEqual(landscape, {
       viewBox: "0 0 1600 1000",
       visibleHalfWidth: 800,
@@ -69,30 +74,42 @@ describe("Journey scene geometry", () => {
     const portrait = model.frameForDimensions(390, 844);
     assert.equal(portrait.viewBox, "0 -500 1600 2000");
     assert.equal(portrait.variant, "portrait");
-    assert.ok(portrait.studentSpread >= 0.6 && portrait.studentSpread < 1);
+    assert.ok(portrait.studentSpread >= 0.5 && portrait.studentSpread < 1);
   });
 });
 
 describe("Journey scene story", () => {
-  it("falls from the hills into a closed dojo, opens the door, then seats the class", () => {
-    const hero = sceneState(0, landscape);
-    assert.ok(shown(hero, "mountains"));
-    assert.ok(!shown(hero, "dojo"));
+  it("tells the whole story: hills, dojo, doorway, sky, clouds, woven floor, room, class", () => {
+    const at = (progress) => sceneState(progress, landscape);
+    assert.ok(shown(at(0), "mountains"));
+    assert.ok(!shown(at(0), "dojo"));
+    assert.ok(shown(at(0.1), "curtain-closed"), "the dark interlude covers the frame");
+    assert.ok(!shown(at(0.1), "mountains"));
 
-    const problem = sceneState(0.1, landscape);
-    assert.ok(shown(problem, "curtain-closed"), "the dark interlude covers the frame");
-    assert.ok(!shown(problem, "mountains"));
-
-    const product = sceneState(0.3, landscape);
+    const product = at(0.288);
     assert.ok(shown(product, "dojo"));
-    assert.ok(!shown(product, "curtain-open"));
     assert.equal(product["door-right"].transform, "translate(0 0)");
+    assert.ok(!shown(product, "sky"));
 
-    const features = sceneState(0.5, landscape);
+    const features = at(0.52);
     assert.equal(features["door-right"].transform, "translate(185 0)");
-    assert.ok(STUDENT_SEATS.every((_, index) => !shown(features, `student-${index}`)));
+    assert.ok(shown(features, "sky"), "the sky shows through the open door");
 
-    const closing = sceneState(1, landscape);
+    const pricing = at(0.66);
+    assert.ok(!shown(pricing, "dojo"), "the camera has flown through the door");
+    assert.ok(shown(pricing, "sky"));
+    assert.equal(pricing["sky-sun"].opacity, "1");
+
+    const clouds = at(0.78);
+    assert.ok(shown(clouds, "clouds"));
+
+    const faq = at(0.892);
+    assert.ok(shown(faq, "weave"), "the clouds have woven into a mat");
+    assert.ok(!shown(faq, "plank-shadow-0"), "the woven mat is settled, not mid-morph");
+    assert.ok(!shown(faq, "room"));
+
+    const closing = at(1);
+    assert.ok(shown(closing, "room"));
     assert.ok(STUDENT_SEATS.every((_, index) => shown(closing, `student-${index}`)));
     assert.ok(STUDENT_SEATS.every((_, index) => closing[`student-${index}`].opacity === "1"));
   });
@@ -176,7 +193,16 @@ describe("Journey scene rendering", () => {
     assert.equal(new Set(ids).size, ids.length);
     assert.match(renderScene(-1), /data-scene-progress="0"/);
     assert.match(renderScene(2), /data-scene-progress="1"/);
-    for (const layer of ["mountains", "curtain", "dojo", "doorway", "students"]) {
+    for (const layer of [
+      "mountains",
+      "curtain",
+      "dojo",
+      "sky",
+      "clouds",
+      "weave-floor",
+      "room",
+      "students",
+    ]) {
       assert.match(renderScene(1), new RegExp(`data-scene-layer="${layer}"`));
     }
   });

@@ -29,8 +29,12 @@ describe("Journey server composition", () => {
   });
 
   it("leaves open interludes for the story's turning points", () => {
-    assert.match(chapterSource, /data-journey-interlude="" aria-hidden="true"/);
-    assert.match(journeyCss, /\.interlude\s*\{[^}]*height:\s*60svh/);
+    assert.match(chapterSource, /data-journey-interlude=""\s+aria-hidden="true"/);
+    assert.match(chapterSource, /"--interlude": chapter\.interludeAfter/);
+    assert.match(
+      journeyCss,
+      /\.interlude\s*\{[^}]*height:\s*calc\(var\(--interlude, 60\) \* 1svh\)/,
+    );
   });
 
   it("shows the real product with its sample-data caption", () => {

@@ -45,10 +45,10 @@ describe("marketing content contract", () => {
       [
         ["welcome", 0, "hero"],
         ["the-problem", 0.1, "problem"],
-        ["product", 0.3, "product"],
-        ["features", 0.5, "features"],
-        ["pricing", 0.72, "pricing"],
-        ["faq", 0.86, "faq"],
+        ["product", 0.288, "product"],
+        ["features", 0.52, "features"],
+        ["pricing", 0.66, "pricing"],
+        ["faq", 0.892, "faq"],
         ["begin", 1, "final"],
       ],
     );

@@ -56,7 +56,7 @@ for (const [width, height] of [
       await page.locator(`#${id}`).scrollIntoViewIfNeeded();
       await expect(page.locator(`#${id}`)).toBeInViewport();
     }
-    await expect(page.getByRole("link", { name: "Privacy Policy" })).toBeVisible();
+    await expect(page.locator("#begin").getByRole("link", { name: "Privacy" })).toBeVisible();
     expect(pageErrors).toEqual([]);
   });
 }
@@ -83,9 +83,9 @@ test("reduced motion shows each chapter's still frame", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await openLanding(page);
   await centerChapter(page, "product");
-  await expect.poll(() => sceneProgress(page)).toBe(0.3);
+  await expect.poll(() => sceneProgress(page)).toBe(0.29);
   await centerChapter(page, "pricing");
-  await expect.poll(() => sceneProgress(page)).toBe(0.72);
+  await expect.poll(() => sceneProgress(page)).toBe(0.66);
 });
 
 test("the masthead stays available and gains a ground once the page scrolls", async ({ page }) => {
@@ -148,17 +148,25 @@ test("the scene holds still while a chapter is read and moves only between chapt
   await page.setViewportSize({ width: 1440, height: 900 });
   await openLanding(page);
   await centerChapter(page, "features");
-  await expect.poll(() => sceneProgress(page)).toBe(0.5);
+  await expect.poll(() => sceneProgress(page)).toBe(0.52);
+  // The progress attribute is rounded; let the camera finish its last fraction of easing.
+  await page.waitForTimeout(800);
 
-  // Reading within the chapter: the artwork receives no writes at all.
+  // Reading within the chapter: the artwork receives no writes; only the
+  // composited drift on the root changes, so the frame is alive but cheap.
   await page.evaluate(() => {
     const svg = document.querySelector("svg[data-scene-progress]")!;
-    const observer = new MutationObserver((records) => {
-      (window as unknown as { sceneWrites: number }).sceneWrites += records.length;
-    });
-    (window as unknown as { sceneWrites: number }).sceneWrites = 0;
-    observer.observe(svg, { attributes: true, subtree: true });
+    const tracker = window as unknown as { sceneWrites: number };
+    tracker.sceneWrites = 0;
+    new MutationObserver((records) => {
+      tracker.sceneWrites += records.filter(
+        (record) => !(record.target === svg && record.attributeName === "style"),
+      ).length;
+    }).observe(svg, { attributes: true, subtree: true });
   });
+  const driftBefore = await page
+    .locator("svg[data-scene-progress]")
+    .evaluate((svg) => (svg as SVGElement).style.transform);
   for (const step of [-120, 80, 120, -60]) {
     await page.mouse.wheel(0, step);
     await page.waitForTimeout(120);
@@ -167,7 +175,12 @@ test("the scene holds still while a chapter is read and moves only between chapt
   expect(
     await page.evaluate(() => (window as unknown as { sceneWrites: number }).sceneWrites),
   ).toBe(0);
-  expect(await sceneProgress(page)).toBe(0.5);
+  expect(await sceneProgress(page)).toBe(0.52);
+  const driftAfter = await page
+    .locator("svg[data-scene-progress]")
+    .evaluate((svg) => (svg as SVGElement).style.transform);
+  expect(driftAfter).toMatch(/^scale\(/);
+  expect(driftAfter).not.toBe(driftBefore);
 
   // Scrolling into the gap after the chapter plays the next beat.
   await page.locator("[data-journey-interlude]").nth(3).scrollIntoViewIfNeeded();
@@ -179,8 +192,8 @@ test("the scene holds still while a chapter is read and moves only between chapt
       behavior: "instant",
     });
   });
-  await expect.poll(() => sceneProgress(page)).toBeGreaterThan(0.5);
-  expect(await sceneProgress(page)).toBeLessThan(0.72);
+  await expect.poll(() => sceneProgress(page)).toBeGreaterThan(0.52);
+  expect(await sceneProgress(page)).toBeLessThan(0.66);
 });
 
 test("on phones the masthead steps aside while reading down and returns on scroll up", async ({

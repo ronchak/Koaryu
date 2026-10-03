@@ -1,6 +1,6 @@
 import { getImageProps } from "next/image";
 import Link from "next/link";
-import { Fragment } from "react";
+import { Fragment, type CSSProperties } from "react";
 
 import {
   landingPageContent,
@@ -275,7 +275,12 @@ export function JourneyChapters() {
             <ChapterContent chapter={chapter} />
           </section>
           {"interludeAfter" in chapter && chapter.interludeAfter ? (
-            <div className={styles.interlude} data-journey-interlude="" aria-hidden="true" />
+            <div
+              className={styles.interlude}
+              data-journey-interlude=""
+              aria-hidden="true"
+              style={{ "--interlude": chapter.interludeAfter } as CSSProperties}
+            />
           ) : null}
         </Fragment>
       ))}

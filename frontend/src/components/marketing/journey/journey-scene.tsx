@@ -15,13 +15,21 @@ import {
 
 import styles from "./journey-scene.module.css";
 import {
+  CLOUD_GEOMETRY,
+  FLOOR_FAR,
+  FLOOR_NEAR,
+  PLANK_GEOMETRY,
+  SCENE_HEIGHT,
   SCENE_OVERSCAN,
   SCENE_PHASES,
   SCENE_WIDTH,
+  U_SPAN,
+  V_SPAN,
   clamp,
   easeIn,
   easeInOut,
   easeOut,
+  floorPoint,
   frameForDimensions,
   makeCloudPath,
   mix,
@@ -49,8 +57,17 @@ const PALETTE = Object.freeze({
   tatamiLight: "#CFBA8E",
   tatamiDark: "#A98F5C",
   tatamiEdge: "#E3D6B4",
+  skyHigh: "#F6E9CD",
+  skyMiddle: "#EDD9B2",
+  skyLow: "#DEC79F",
   sun: "#CDB389",
   sunLight: "#DBC49E",
+  cloud: ["#F4E7CC", "#EBD9B9", "#E1CBA5", "#D4B992", "#C4A47C"],
+  bamboo: ["#E1C99E", "#D7BC90", "#CBAE82", "#BEA075", "#B09068"],
+  floor: ["#E2CAA2", "#D9BD95", "#CFB086", "#C4A47A", "#B7956C"],
+  wallHigh: "#DED7CF",
+  wallLow: "#C4BAB0",
+  baseboard: "#B7ACA1",
   gi: "#F3F0E9",
   giShade: "#DCD5C6",
   hair: ["#231C17", "#3B2A20", "#5A3B26", "#2E2A28", "#7A5232", "#8C8478"],
@@ -83,20 +100,33 @@ const VIEW = Object.freeze({
 });
 
 const CURTAIN_TEXTURE_OPACITY = 0.3;
-const PUSH_SCALE = 1.18;
 
 interface SceneIds {
   readonly skyMountain: string;
+  readonly sky: string;
+  readonly wall: string;
+  readonly skyWindow: string;
+  readonly floor: string;
   readonly shoji: string;
   readonly sun: string;
   readonly glow: string;
   readonly crumple: string;
   readonly washi: string;
   readonly back: string;
-  readonly doorway: string;
 }
 
-type DynamicAttribute = "transform" | "opacity" | "d" | "y" | "display";
+type DynamicAttribute =
+  | "transform"
+  | "opacity"
+  | "display"
+  | "d"
+  | "points"
+  | "fill"
+  | "stroke-width"
+  | "x"
+  | "y"
+  | "width"
+  | "height";
 type DynamicAttributes = Readonly<Partial<Record<DynamicAttribute, string>>>;
 /** Every attribute that changes with scroll, keyed by the element's data-scene-dynamic name. */
 export type SceneState = Readonly<Record<string, DynamicAttributes>>;
@@ -235,9 +265,9 @@ function perspectiveLerp(progress: number): number {
 type BeltRank = keyof typeof PALETTE.belt;
 
 interface StudentSeat {
-  /** 0 is the left wall, 1 the right wall. */
-  readonly lane: number;
-  /** Perspective depth: 0 is the camera, 1 the back wall. */
+  /** Across the floor: 0 is the left edge of the weave, 1 the right. */
+  readonly horizontal: number;
+  /** Into the floor: 0 is the far wall, 1 the camera. */
   readonly depth: number;
   readonly hair: number;
   readonly skin: number;
@@ -248,26 +278,80 @@ interface StudentSeat {
   readonly arrival: number;
 }
 
+/** Back row first, so nearer students overlap farther ones. */
 export const STUDENT_SEATS: readonly StudentSeat[] = Object.freeze([
-  { lane: 0.5, depth: 0.8, hair: 0, skin: 1, belt: "black", bun: false, lean: 0.4, arrival: 0 },
-  { lane: 0.3, depth: 0.8, hair: 2, skin: 0, belt: "brown", bun: true, lean: -0.8, arrival: 0.1 },
-  { lane: 0.7, depth: 0.8, hair: 3, skin: 3, belt: "blue", bun: false, lean: 0.9, arrival: 0.2 },
   {
-    lane: 0.4,
-    depth: 0.62,
+    horizontal: 0.5,
+    depth: 0.36,
+    hair: 0,
+    skin: 1,
+    belt: "black",
+    bun: false,
+    lean: 0.4,
+    arrival: 0,
+  },
+  {
+    horizontal: 0.38,
+    depth: 0.36,
+    hair: 2,
+    skin: 0,
+    belt: "brown",
+    bun: true,
+    lean: -0.8,
+    arrival: 0.08,
+  },
+  {
+    horizontal: 0.62,
+    depth: 0.36,
+    hair: 3,
+    skin: 3,
+    belt: "blue",
+    bun: false,
+    lean: 0.9,
+    arrival: 0.16,
+  },
+  {
+    horizontal: 0.44,
+    depth: 0.5,
     hair: 1,
     skin: 2,
     belt: "green",
     bun: false,
     lean: -0.5,
+    arrival: 0.26,
+  },
+  {
+    horizontal: 0.56,
+    depth: 0.5,
+    hair: 4,
+    skin: 4,
+    belt: "yellow",
+    bun: true,
+    lean: 0.7,
     arrival: 0.34,
   },
-  { lane: 0.6, depth: 0.62, hair: 4, skin: 4, belt: "yellow", bun: true, lean: 0.7, arrival: 0.46 },
-  { lane: 0.2, depth: 0.62, hair: 5, skin: 0, belt: "white", bun: false, lean: 1.1, arrival: 0.58 },
-  { lane: 0.8, depth: 0.62, hair: 0, skin: 3, belt: "white", bun: true, lean: -1, arrival: 0.7 },
+  {
+    horizontal: 0.31,
+    depth: 0.5,
+    hair: 5,
+    skin: 0,
+    belt: "white",
+    bun: false,
+    lean: 1.1,
+    arrival: 0.42,
+  },
+  {
+    horizontal: 0.69,
+    depth: 0.5,
+    hair: 0,
+    skin: 3,
+    belt: "white",
+    bun: true,
+    lean: -1,
+    arrival: 0.5,
+  },
 ]);
 
-const STUDENT_SCALE = 1.28;
 const STUDENT_BODY_WIDTH = 112;
 const STUDENT_BODY_HEIGHT = 128;
 const STUDENT_BODY_PATH = smoothPath(
@@ -327,27 +411,39 @@ const Student = memo(function Student({ seat }: { readonly seat: StudentSeat }) 
   );
 });
 
-function studentPlacement(seat: StudentSeat, spread: number) {
-  const depth = seat.depth;
-  const left = mix(VIEW.frontLeft, VIEW.backLeft, depth);
-  const right = mix(VIEW.frontRight, VIEW.backRight, depth);
-  const lane = 0.5 + (seat.lane - 0.5) * spread;
-  return {
-    x: mix(left, right, lane),
-    y: mix(VIEW.frontFloor, VIEW.backFloor, depth),
-    scale: mix(1, (VIEW.backRight - VIEW.backLeft) / (VIEW.frontRight - VIEW.frontLeft), depth),
-  };
-}
-
 // ---------------------------------------------------------------------------
 // Pure state: everything that moves is derived from progress and the frame.
 
+function hexToRgb(hex: string): readonly [number, number, number] {
+  return [
+    Number.parseInt(hex.slice(1, 3), 16),
+    Number.parseInt(hex.slice(3, 5), 16),
+    Number.parseInt(hex.slice(5, 7), 16),
+  ];
+}
+
+function mixColor(from: string, to: string, progress: number): string {
+  const a = hexToRgb(from);
+  const b = hexToRgb(to);
+  return `rgb(${Math.round(mix(a[0], b[0], progress))},${Math.round(mix(a[1], b[1], progress))},${Math.round(mix(a[2], b[2], progress))})`;
+}
+
 function dojoCamera(progress: number) {
   const arrival = easeOut(rangeProgress(progress, SCENE_PHASES.drop[0], SCENE_PHASES.drop[1]));
-  const push = easeInOut(rangeProgress(progress, SCENE_PHASES.push[0], SCENE_PHASES.push[1]));
-  const verticalOffset = mix(-420, 0, arrival) + mix(0, 34, push);
-  const scale = mix(1.34, 1, arrival) * mix(1, PUSH_SCALE, push);
-  return `translate(${VIEW.centerX} ${VIEW.centerY}) scale(${round2(scale)}) translate(${-VIEW.centerX} ${round2(-VIEW.centerY + verticalOffset)})`;
+  const portal = easeInOut(rangeProgress(progress, SCENE_PHASES.portal[0], SCENE_PHASES.portal[1]));
+  const verticalOffset = mix(-420, 0, arrival);
+  const scale =
+    mix(1.34, 1, arrival) *
+    mix(1, 2.015, portal) *
+    mix(1, 5.6, easeIn(rangeProgress(progress, SCENE_PHASES.through[0], SCENE_PHASES.through[1])));
+
+  return {
+    transform: `translate(${VIEW.centerX} ${VIEW.centerY}) scale(${round2(scale)}) translate(${-VIEW.centerX} ${round2(-VIEW.centerY + verticalOffset)})`,
+    project: (x: number, y: number): ScenePoint => ({
+      x: VIEW.centerX + scale * (x - VIEW.centerX),
+      y: VIEW.centerY + scale * (y - VIEW.centerY + verticalOffset),
+    }),
+  };
 }
 
 function curtainEdge(edgeY: number, amplitude: number, closeToward: number): string {
@@ -356,15 +452,17 @@ function curtainEdge(edgeY: number, amplitude: number, closeToward: number): str
 
 const HIDDEN = Object.freeze({ display: "none" });
 const SHOWN = Object.freeze({ display: "inline" });
+const PANEL_WIDTH = 185;
 
 export function sceneState(progress: number, frame: SceneFrame): SceneState {
   const value = clamp(progress);
   const state: Record<string, DynamicAttributes> = {};
+  const camera = dojoCamera(value);
+  const door = easeInOut(rangeProgress(value, SCENE_PHASES.door[0], SCENE_PHASES.door[1]));
+  const slide = mix(0, PANEL_WIDTH, door);
 
-  // Mountains fall away as the dojo ceiling descends over them.
-  // Once the curtain fully covers the frame, the hills are not painted.
-  const mountainsVisible = value < SCENE_PHASES.mountains[1];
-  if (mountainsVisible) {
+  // Hills: they fall away as the dojo's timber descends over them.
+  if (value < SCENE_PHASES.mountains[1]) {
     const local = rangeProgress(value, SCENE_PHASES.mountains[0], SCENE_PHASES.mountains[1] + 0.02);
     const fall = easeIn(local);
     state.mountains = {
@@ -382,17 +480,15 @@ export function sceneState(progress: number, frame: SceneFrame): SceneState {
       };
     });
     RIDGES.forEach((ridge, index) => {
-      const grow = 1 + fall * ridge.scale;
       state[`ridge-${index}`] = {
-        transform: `translate(0 ${round2(-fall * ridge.speed - fall * ridge.scale * 500)}) scale(${round2(grow)})`,
+        transform: `translate(0 ${round2(-fall * ridge.speed - fall * ridge.scale * 500)}) scale(${round2(1 + fall * ridge.scale)})`,
       };
     });
   } else {
     state.mountains = HIDDEN;
   }
 
-  // The curtain is the dojo's own timber: it closes over the hills, then parts
-  // into ceiling and floor as the camera settles inside.
+  // Curtain: closes over the hills, then parts into ceiling and floor.
   const reveal = rangeProgress(value, SCENE_PHASES.drop[0], SCENE_PHASES.drop[1]);
   if (reveal <= 0) {
     const cover = easeIn(
@@ -428,33 +524,185 @@ export function sceneState(progress: number, frame: SceneFrame): SceneState {
     }
   }
 
-  const dojoVisible = value > SCENE_PHASES.mountains[1] - 0.006;
+  // Dojo: the camera settles, the door slides open, and the camera flies through it.
+  const dojoOpacity =
+    1 -
+    easeIn(rangeProgress(value, SCENE_PHASES.through[0] + 0.045, SCENE_PHASES.through[1] - 0.012));
+  let dojoVisible = value > SCENE_PHASES.mountains[1] - 0.006 && dojoOpacity > 0.001;
+  if (dojoVisible && door === 1) {
+    // Once the open doorway covers the frame, none of the room is visible.
+    const [, top, , height] = frame.viewBox.split(" ").map(Number);
+    const openingTop = camera.project(VIEW.doorLeft + 9, VIEW.doorTop + 4);
+    const openingBottom = camera.project(VIEW.doorRight - 9, VIEW.doorBottom - 10);
+    dojoVisible = !(
+      openingTop.x < VIEW.centerX - frame.visibleHalfWidth &&
+      openingBottom.x > VIEW.centerX + frame.visibleHalfWidth &&
+      openingTop.y < top! &&
+      openingBottom.y > top! + height!
+    );
+  }
   if (dojoVisible) {
-    const door = easeInOut(rangeProgress(value, SCENE_PHASES.door[0], SCENE_PHASES.door[1]));
-    const slide = round2(mix(0, 185, door));
-    state.dojo = { display: "inline", transform: dojoCamera(value) };
-    state["door-left"] = { transform: `translate(${-slide} 0)` };
-    state["door-right"] = { transform: `translate(${slide} 0)` };
-
-    const students = rangeProgress(value, SCENE_PHASES.students[0], SCENE_PHASES.students[1]);
-    STUDENT_SEATS.forEach((seat, index) => {
-      const arrival = clamp((students - seat.arrival) / 0.28);
-      if (arrival <= 0) {
-        state[`student-${index}`] = HIDDEN;
-        return;
-      }
-      const eased = easeOut(arrival);
-      const place = studentPlacement(seat, frame.studentSpread);
-      const scale = place.scale * STUDENT_SCALE * mix(0.96, 1, eased);
-      state[`student-${index}`] = {
-        display: "inline",
-        opacity: String(round2(clamp(arrival * 1.6))),
-        transform: `translate(${round2(place.x)} ${round2(place.y + mix(26, 0, eased))}) scale(${round2(scale)}) rotate(${seat.lean})`,
-      };
-    });
+    state.dojo = {
+      display: "inline",
+      transform: camera.transform,
+      opacity: String(round2(dojoOpacity)),
+    };
+    state["door-left"] = { transform: `translate(${round2(-slide)} 0)` };
+    state["door-right"] = { transform: `translate(${round2(slide)} 0)` };
   } else {
     state.dojo = HIDDEN;
   }
+
+  // Sky: seen through the opening door, then entered; clouds gather across it.
+  const skyOpacity =
+    1 - rangeProgress(value, SCENE_PHASES.morph[0] + 0.03, SCENE_PHASES.morph[0] + 0.1);
+  const skyNear = value > SCENE_PHASES.portal[0] - 0.08 && value < SCENE_PHASES.morph[0] + 0.2;
+  if (skyNear && skyOpacity > 0.001 && slide > 0) {
+    const through = rangeProgress(value, SCENE_PHASES.through[0], SCENE_PHASES.through[1]);
+    const sky = rangeProgress(value, SCENE_PHASES.sky[0], SCENE_PHASES.sky[1]);
+    const clouds = rangeProgress(value, SCENE_PHASES.clouds[0], SCENE_PHASES.clouds[1]);
+    const topLeft = camera.project(VIEW.doorLeft + PANEL_WIDTH - slide, VIEW.doorTop);
+    const bottomRight = camera.project(VIEW.doorLeft + PANEL_WIDTH + slide, VIEW.doorBottom);
+    const scale = mix(1, 1.42, easeInOut(through)) * mix(1, 0.72, easeInOut(sky));
+    const rise = mix(0, -230, easeInOut(sky)) + mix(0, -180, easeInOut(clouds));
+    state.sky = { display: "inline", opacity: String(round2(skyOpacity)) };
+    state["sky-window"] = {
+      x: String(round2(topLeft.x)),
+      y: String(round2(topLeft.y)),
+      width: String(round2(bottomRight.x - topLeft.x)),
+      height: String(round2(bottomRight.y - topLeft.y)),
+    };
+    state["sky-camera"] = {
+      transform: `translate(${VIEW.centerX} 520) scale(${round2(scale)}) translate(${-VIEW.centerX} ${round2(-520 + rise)})`,
+    };
+    state["sky-ridges"] = { opacity: String(round2(1 - easeInOut(sky) * 0.9)) };
+    state["sky-sun"] = {
+      transform: `translate(${VIEW.centerX} 430) scale(${round2(1 + easeInOut(sky) * 0.5)})`,
+      opacity: String(
+        round2(
+          1 - rangeProgress(value, SCENE_PHASES.clouds[0] + 0.05, SCENE_PHASES.clouds[1] - 0.03),
+        ),
+      ),
+    };
+    const cloudsOpacity =
+      1 - rangeProgress(value, SCENE_PHASES.morph[0], SCENE_PHASES.morph[0] + 0.045);
+    if (cloudsOpacity > 0.001 && clouds > 0) {
+      state.clouds = { display: "inline", opacity: String(round2(cloudsOpacity)) };
+      CLOUD_GEOMETRY.forEach((cloud, index) => {
+        const cloudProgress = clamp((clouds - cloud.arrival) / 0.26);
+        if (cloudProgress <= 0) {
+          state[`cloud-${index}`] = HIDDEN;
+          return;
+        }
+        const eased = easeOut(cloudProgress);
+        const offsetX = cloud.direction * mix(760, 0, eased) + cloud.drift * clouds * 90;
+        const offsetY = mix(70, 0, eased) - clouds * 46 * cloud.drift;
+        const cloudScale = cloud.scale * mix(0.78, 1, eased);
+        state[`cloud-${index}`] = {
+          display: "inline",
+          transform: `translate(${round2(cloud.x + offsetX)} ${round2(cloud.y + offsetY)}) scale(${round2(cloudScale)})`,
+          opacity: String(round2(clamp(cloudProgress * 2.6))),
+        };
+      });
+    } else {
+      state.clouds = HIDDEN;
+    }
+  } else {
+    state.sky = HIDDEN;
+  }
+
+  // Floor: the clouds lie down into bamboo, the bamboo becomes a woven floor,
+  // and a quiet room rises around it.
+  const floor = rangeProgress(value, SCENE_PHASES.floor[0], SCENE_PHASES.floor[1]);
+  const horizon = mix(-330, 330, easeInOut(floor));
+  const weaveOpacity = clamp(
+    rangeProgress(value, SCENE_PHASES.morph[0] - 0.012, SCENE_PHASES.morph[0] + 0.052),
+  );
+  if (weaveOpacity > 0.001) {
+    const morph = rangeProgress(value, SCENE_PHASES.morph[0], SCENE_PHASES.morph[1]);
+    const morphStagger = 0.46;
+    const floorStagger = 0.34;
+    const shadowOpacity = (1 - clamp(morph * 1.5)) * 0.9;
+    const floorTop = String(round2(mix(-600, horizon + FLOOR_FAR, easeInOut(floor))));
+    state.weave = { display: "inline", opacity: String(round2(weaveOpacity)) };
+    state["weave-clip"] = { y: floorTop };
+    state["weave-ground"] = {
+      y: floorTop,
+      fill: mixColor(PALETTE.cloud[1], PALETTE.floor[2], clamp(morph * 0.6 + floor * 0.4)),
+    };
+    PLANK_GEOMETRY.forEach((plank, index) => {
+      const morphDelay = morphStagger * (0.72 * plank.horizontalOrder + 0.28 * plank.verticalOrder);
+      const plankMorph = easeInOut(clamp((morph - morphDelay) / (1 - morphStagger)));
+      const floorDelay = floorStagger * (1 - plank.normalizedDepth);
+      const plankFloor = easeInOut(clamp((floor - floorDelay) / (1 - floorStagger)));
+      const points = plank.flat.map((flatPoint, pointIndex) => {
+        const cloudPoint = plank.cloud[pointIndex] ?? flatPoint;
+        let x = mix(cloudPoint.x, flatPoint.x, plankMorph);
+        let y = mix(cloudPoint.y, flatPoint.y, plankMorph);
+        if (plankFloor > 0) {
+          const uv = plank.uv[pointIndex] ?? { x: 0, y: 0 };
+          const ground = floorPoint(uv.x, uv.y, horizon);
+          x = mix(x, ground.x, plankFloor);
+          y = mix(y, ground.y, plankFloor);
+        }
+        return { x, y };
+      });
+      const cloudTone = PALETTE.cloud[plank.tone]!;
+      const bambooTone = PALETTE.bamboo[plank.tone]!;
+      const floorTone = PALETTE.floor[plank.tone]!;
+      const pointList = polygonPoints(points);
+      state[`plank-${index}`] = {
+        points: pointList,
+        fill:
+          plankFloor > 0
+            ? mixColor(bambooTone, floorTone, plankFloor)
+            : mixColor(cloudTone, bambooTone, plankMorph),
+        "stroke-width": String(round2(mix(0, 1.5, plankMorph))),
+      };
+      state[`plank-shadow-${index}`] =
+        shadowOpacity > 0.01
+          ? {
+              display: "inline",
+              points: pointList,
+              transform: `translate(0 ${round2(mix(15, 4, plankMorph))})`,
+              opacity: String(round2(shadowOpacity * 0.3)),
+            }
+          : HIDDEN;
+    });
+  } else {
+    state.weave = HIDDEN;
+  }
+
+  const room = rangeProgress(value, SCENE_PHASES.floor[0] + 0.02, SCENE_PHASES.floor[1]);
+  if (room > 0.001) {
+    const floorLine = horizon + FLOOR_FAR;
+    state.room = { display: "inline", opacity: String(round2(room)) };
+    state["room-wall"] = { height: String(round2(900 + floorLine)) };
+    state["room-baseboard"] = { y: String(round2(floorLine - 20)) };
+  } else {
+    state.room = HIDDEN;
+  }
+
+  // The class arrives and sits facing the far wall.
+  const students = rangeProgress(value, SCENE_PHASES.students[0], SCENE_PHASES.students[1]);
+  STUDENT_SEATS.forEach((seat, index) => {
+    const arrival = clamp((students - seat.arrival) / 0.45);
+    if (arrival <= 0) {
+      state[`student-${index}`] = HIDDEN;
+      return;
+    }
+    const eased = easeOut(arrival);
+    const horizontal = 0.5 + (seat.horizontal - 0.5) * frame.studentSpread;
+    const point = floorPoint(horizontal * U_SPAN, seat.depth * V_SPAN, horizon);
+    const depth = mix(FLOOR_FAR, FLOOR_NEAR, seat.depth);
+    // Portrait crops see the room from farther back; seat the class a little larger.
+    const presence = frame.variant === "portrait" ? 1.18 : 1;
+    state[`student-${index}`] = {
+      display: "inline",
+      opacity: String(round2(clamp(arrival * 1.8))),
+      transform: `translate(${round2(point.x)} ${round2(point.y + mix(120, 0, eased))}) scale(${round2((depth / 440) * presence * mix(0.94, 1, eased))}) rotate(${seat.lean})`,
+    };
+  });
 
   return state;
 }
@@ -484,7 +732,12 @@ const InitialSceneState = createContext<SceneState>({});
 
 /** Tags a moving element and seeds its server-rendered attributes. */
 function dynamic(initial: SceneState, key: string) {
-  return { "data-scene-dynamic": key, ...initial[key] };
+  const { "stroke-width": strokeWidth, ...attributes } = initial[key] ?? {};
+  return {
+    "data-scene-dynamic": key,
+    ...attributes,
+    ...(strokeWidth === undefined ? {} : { strokeWidth }),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -495,13 +748,16 @@ function makeIds(reactId: string): SceneIds {
   const id = (name: string) => `${prefix}-${name}`;
   return {
     skyMountain: id("sky-mountain"),
+    sky: id("sky"),
+    wall: id("wall"),
+    skyWindow: id("sky-window"),
+    floor: id("floor"),
     shoji: id("shoji"),
     sun: id("sun"),
     glow: id("glow"),
     crumple: id("crumple"),
     washi: id("washi"),
     back: id("back"),
-    doorway: id("doorway"),
   };
 }
 
@@ -512,6 +768,17 @@ const SceneDefs = memo(function SceneDefs({ ids }: { readonly ids: SceneIds }) {
         <stop offset="0" stopColor="#FBF8F0" />
         <stop offset="0.6" stopColor={PALETTE.mountainSky} />
         <stop offset="1" stopColor="#EFEADD" />
+      </linearGradient>
+      <linearGradient id={ids.sky} x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stopColor="#FCF4E2" />
+        <stop offset="0.42" stopColor={PALETTE.skyHigh} />
+        <stop offset="0.78" stopColor={PALETTE.skyMiddle} />
+        <stop offset="1" stopColor={PALETTE.skyLow} />
+      </linearGradient>
+      <linearGradient id={ids.wall} x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stopColor={PALETTE.wallHigh} />
+        <stop offset="0.7" stopColor="#D3C9C0" />
+        <stop offset="1" stopColor={PALETTE.wallLow} />
       </linearGradient>
       <linearGradient id={ids.shoji} x1="0" y1="0" x2="0" y2="1">
         <stop offset="0" stopColor="#F3EFE5" />
@@ -540,14 +807,6 @@ const SceneDefs = memo(function SceneDefs({ ids }: { readonly ids: SceneIds }) {
           y={VIEW.doorTop - 14}
           width={VIEW.backRight - VIEW.backLeft}
           height={VIEW.doorBottom - VIEW.doorTop + 28}
-        />
-      </clipPath>
-      <clipPath id={ids.doorway}>
-        <rect
-          x={VIEW.doorLeft}
-          y={VIEW.doorTop}
-          width={VIEW.doorRight - VIEW.doorLeft}
-          height={VIEW.doorBottom - VIEW.doorTop}
         />
       </clipPath>
     </defs>
@@ -849,31 +1108,6 @@ function DojoFloor() {
   );
 }
 
-// The hills from the opening, seen again through the open door.
-const DOORWAY_SCALE = (VIEW.doorRight - VIEW.doorLeft) / SCENE_WIDTH;
-
-function DoorwayView({ ids }: { readonly ids: SceneIds }) {
-  return (
-    <g clipPath={`url(#${ids.doorway})`} data-scene-layer="doorway">
-      <g
-        transform={`translate(${VIEW.doorLeft} ${VIEW.doorTop}) scale(${round2(DOORWAY_SCALE * 1000) / 1000})`}
-      >
-        <rect x="0" y="0" width={SCENE_WIDTH} height="1600" fill={`url(#${ids.skyMountain})`} />
-        <g transform="translate(1060 640)">
-          <SunDisc ids={ids} radius={150} />
-        </g>
-        <g transform="translate(0 520)">
-          {RIDGES.map((ridge, index) => (
-            <path key={`door-ridge-${index}`} d={RIDGE_PATHS[index]} fill={ridge.color} />
-          ))}
-        </g>
-      </g>
-    </g>
-  );
-}
-
-const PANEL_WIDTH = 185;
-
 function SlidingDoor({ side, ids }: { readonly side: "left" | "right"; readonly ids: SceneIds }) {
   const initial = useContext(InitialSceneState);
   const x = side === "left" ? VIEW.doorLeft : VIEW.doorLeft + PANEL_WIDTH;
@@ -945,7 +1179,6 @@ const Dojo = memo(function Dojo({ ids }: { readonly ids: SceneIds }) {
         fill={shade(PALETTE.beam, -0.3)}
         opacity="0.9"
       />
-      <DoorwayView ids={ids} />
       <g clipPath={`url(#${ids.back})`}>
         <SlidingDoor side="left" ids={ids} />
         <SlidingDoor side="right" ids={ids} />
@@ -1045,13 +1278,6 @@ const Dojo = memo(function Dojo({ ids }: { readonly ids: SceneIds }) {
         <rect x="0" y="186" width="86" height="14" fill={PALETTE.wood} />
         <rect x="30" y="44" width="26" height="94" rx="6" fill={PALETTE.beam} opacity="0.3" />
       </g>
-      <g data-scene-layer="students">
-        {STUDENT_SEATS.map((seat, index) => (
-          <g key={`student-${index}`} {...dynamic(initial, `student-${index}`)}>
-            <Student seat={seat} />
-          </g>
-        ))}
-      </g>
       {[196, 1338].map((x) => (
         <g key={`post-${x}`}>
           <rect
@@ -1074,6 +1300,154 @@ const Dojo = memo(function Dojo({ ids }: { readonly ids: SceneIds }) {
   );
 });
 
+const FAR_RIDGES = [
+  { color: "#D9C7A6", baseY: 690, amplitude: 34, frequency: 1.4, phase: 0.9 },
+  { color: "#C9B492", baseY: 730, amplitude: 42, frequency: 0.9, phase: 3.4 },
+  { color: "#B49C78", baseY: 780, amplitude: 30, frequency: 1.9, phase: 5.1 },
+] as const;
+
+const FAR_RIDGE_PATHS = Object.freeze(
+  FAR_RIDGES.map(({ baseY, amplitude, frequency, phase }) =>
+    closedRidgePath(baseY, amplitude, frequency, phase, 30),
+  ),
+);
+
+/** The sky beyond the door: seen through the opening, then flown into as the clouds gather. */
+const SkyWorld = memo(function SkyWorld({ ids }: { readonly ids: SceneIds }) {
+  const initial = useContext(InitialSceneState);
+  return (
+    <g {...dynamic(initial, "sky")} data-scene-layer="sky">
+      <clipPath id={ids.skyWindow}>
+        <rect {...dynamic(initial, "sky-window")} />
+      </clipPath>
+      <g clipPath={`url(#${ids.skyWindow})`}>
+        <rect
+          x="-600"
+          y="-600"
+          width={SCENE_WIDTH + 1200}
+          height={SCENE_HEIGHT + 1200}
+          fill={`url(#${ids.sky})`}
+        />
+        <g {...dynamic(initial, "sky-camera")}>
+          <g {...dynamic(initial, "sky-ridges")}>
+            {FAR_RIDGES.map((ridge, index) => (
+              <path
+                key={`far-ridge-${index}`}
+                d={FAR_RIDGE_PATHS[index]}
+                fill={ridge.color}
+                opacity={0.95 - index * 0.05}
+              />
+            ))}
+          </g>
+          <g {...dynamic(initial, "sky-sun")}>
+            <circle r="300" fill={`url(#${ids.glow})`} />
+            <circle cx="9" cy="14" r="88" fill={PALETTE.sun} opacity="0.5" />
+            <circle r="84" fill={`url(#${ids.sun})`} />
+            <circle
+              r="84"
+              fill="none"
+              stroke={shade(PALETTE.sun, -0.2)}
+              strokeWidth="2"
+              opacity="0.35"
+            />
+          </g>
+          <g {...dynamic(initial, "clouds")} data-scene-layer="clouds">
+            {CLOUD_GEOMETRY.map((cloud, index) => {
+              const tone = PALETTE.cloud[cloud.tone]!;
+              return (
+                <g key={`cloud-${index}`} {...dynamic(initial, `cloud-${index}`)}>
+                  <path
+                    d={cloud.path}
+                    transform="translate(2 19)"
+                    fill={shade(tone, -0.42)}
+                    opacity="0.42"
+                  />
+                  <path d={cloud.path} fill={tone} />
+                  <path
+                    d={cloud.path}
+                    transform="translate(0 -5)"
+                    fill={shade(tone, 0.35)}
+                    opacity="0.3"
+                  />
+                </g>
+              );
+            })}
+          </g>
+        </g>
+      </g>
+    </g>
+  );
+});
+
+/** A quiet room rises around the new floor. */
+const RoomWall = memo(function RoomWall({ ids }: { readonly ids: SceneIds }) {
+  const initial = useContext(InitialSceneState);
+  return (
+    <g {...dynamic(initial, "room")} data-scene-layer="room">
+      <rect
+        {...dynamic(initial, "room-wall")}
+        x="-400"
+        y="-900"
+        width={SCENE_WIDTH + 800}
+        fill={`url(#${ids.wall})`}
+      />
+      <rect
+        {...dynamic(initial, "room-baseboard")}
+        x="-400"
+        width={SCENE_WIDTH + 800}
+        height="22"
+        fill={PALETTE.baseboard}
+        opacity="0.55"
+      />
+    </g>
+  );
+});
+
+/** The clouds lie down as bamboo strips and weave themselves into the floor. */
+const Weave = memo(function Weave({ ids }: { readonly ids: SceneIds }) {
+  const initial = useContext(InitialSceneState);
+  const span = { x: -600, width: SCENE_WIDTH + 1200, height: SCENE_HEIGHT + 1200 };
+  return (
+    <g {...dynamic(initial, "weave")} data-scene-layer="weave-floor">
+      <clipPath id={ids.floor}>
+        <rect {...dynamic(initial, "weave-clip")} {...span} />
+      </clipPath>
+      <g clipPath={`url(#${ids.floor})`}>
+        <rect {...dynamic(initial, "weave-ground")} {...span} />
+        {PLANK_GEOMETRY.map((plank, index) => {
+          const bambooTone = PALETTE.bamboo[plank.tone]!;
+          return (
+            <g key={`plank-${index}`}>
+              <polygon
+                {...dynamic(initial, `plank-shadow-${index}`)}
+                fill={shade(PALETTE.cloud[plank.tone]!, -0.45)}
+              />
+              <polygon
+                {...dynamic(initial, `plank-${index}`)}
+                stroke={shade(bambooTone, -0.3)}
+                strokeOpacity="0.42"
+              />
+            </g>
+          );
+        })}
+      </g>
+    </g>
+  );
+});
+
+const Students = memo(function Students() {
+  const initial = useContext(InitialSceneState);
+  return (
+    <g data-scene-layer="students">
+      {STUDENT_SEATS.map((seat, index) => (
+        <g key={`student-${index}`} {...dynamic(initial, `student-${index}`)}>
+          <Student seat={seat} />
+        </g>
+      ))}
+    </g>
+  );
+});
+
 const SceneArtwork = memo(function SceneArtwork() {
   const reactId = useId();
   const ids = useMemo(() => makeIds(reactId), [reactId]);
@@ -1082,8 +1456,12 @@ const SceneArtwork = memo(function SceneArtwork() {
       <SceneDefs ids={ids} />
       <rect {...overscanRect()} fill={PALETTE.paper} />
       <Mountains ids={ids} />
+      <SkyWorld ids={ids} />
       <Dojo ids={ids} />
       <Curtain ids={ids} />
+      <RoomWall ids={ids} />
+      <Weave ids={ids} />
+      <Students />
     </>
   );
 });
