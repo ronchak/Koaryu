@@ -411,3 +411,57 @@ export function render_lead_follow_up_receipts_v52(check) {
         v_failures:=array_append(v_failures,'lead_follow_up_operations_v52');
     END IF;`;
 }
+
+// Pin the full installed student write/age contract, including all named ACLs
+// and trigger bindings. Independent callers hash the same raw JSON expression.
+export const STUDENT_PROFILE_FACTS_V54_SQL = `SELECT jsonb_build_object(
+    'functions',(SELECT jsonb_agg(jsonb_build_object(
+        'signature',required.signature,'exists',function.oid IS NOT NULL,
+        'definition',pg_catalog.pg_get_functiondef(function.oid),'body',function.prosrc,
+        'owner',pg_catalog.pg_get_userbyid(function.proowner),'language',language.lanname,
+        'volatility',function.provolatile,'security_definer',function.prosecdef,
+        'strict',function.proisstrict,'parallel',function.proparallel,
+        'config',function.proconfig,'result',pg_catalog.pg_get_function_result(function.oid),
+        'acl',(SELECT jsonb_agg(jsonb_build_array(
+            CASE WHEN acl.grantee=0 THEN 'PUBLIC' ELSE pg_catalog.pg_get_userbyid(acl.grantee)::TEXT END,
+            pg_catalog.pg_get_userbyid(acl.grantor)::TEXT,acl.privilege_type,acl.is_grantable)
+            ORDER BY CASE WHEN acl.grantee=0 THEN 'PUBLIC' ELSE pg_catalog.pg_get_userbyid(acl.grantee)::TEXT END COLLATE "C",
+                pg_catalog.pg_get_userbyid(acl.grantor)::TEXT COLLATE "C",acl.privilege_type,acl.is_grantable)
+            FROM pg_catalog.aclexplode(COALESCE(function.proacl,pg_catalog.acldefault('f',function.proowner))) acl)
+        ) ORDER BY required.signature COLLATE "C")
+        FROM (VALUES
+            ('public.student_business_date(uuid)'),
+            ('public.validate_student_birth_date()'),
+            ('public.set_student_is_minor()'),
+            ('public.convert_lead_to_student_atomic(uuid,uuid,uuid,uuid,uuid,text,date,uuid,uuid)'),
+            ('private.write_student_profile_atomic(uuid,uuid,uuid,jsonb,uuid[],jsonb,boolean,text)')
+        ) required(signature)
+        LEFT JOIN pg_catalog.pg_proc function ON function.oid=pg_catalog.to_regprocedure(required.signature)
+        LEFT JOIN pg_catalog.pg_language language ON language.oid=function.prolang),
+    'triggers',(SELECT jsonb_agg(jsonb_build_object(
+        'name',required.name,'expected_function',required.signature,
+        'exists',trigger_row.oid IS NOT NULL,
+        'binding_matches',trigger_row.tgfoid=pg_catalog.to_regprocedure(required.signature),
+        'definition',pg_catalog.pg_get_triggerdef(trigger_row.oid),
+        'enabled',trigger_row.tgenabled,'type',trigger_row.tgtype,
+        'arguments',encode(trigger_row.tgargs,'hex'),
+        'internal',trigger_row.tgisinternal,'constraint',trigger_row.tgconstraint<>0,
+        'deferrable',trigger_row.tgdeferrable,'initially_deferred',trigger_row.tginitdeferred
+        ) ORDER BY required.name COLLATE "C")
+        FROM (VALUES ('set_students_is_minor','public.set_student_is_minor()'),
+            ('validate_students_birth_date','public.validate_student_birth_date()')) required(name,signature)
+        LEFT JOIN pg_catalog.pg_trigger trigger_row
+          ON trigger_row.tgrelid=pg_catalog.to_regclass('public.students') AND trigger_row.tgname=required.name)
+    )`;
+
+export function render_student_profile_facts_v54(check) {
+  return `    IF (SELECT encode(extensions.digest(convert_to((${STUDENT_PROFILE_FACTS_V54_SQL})::TEXT,'UTF8'),'sha256'),'hex'))
+       IS DISTINCT FROM ${sqlLiteral(check.expected)} THEN
+        v_failures:=array_append(v_failures,${sqlLiteral(check.id)});
+    END IF;`;
+}
+
+// V55 retains the student write/age inventory while pinning the new conversion
+// definition independently of the historical V54 declaration.
+export const STUDENT_PROFILE_FACTS_V55_SQL = STUDENT_PROFILE_FACTS_V54_SQL;
+export const render_student_profile_facts_v55 = render_student_profile_facts_v54;

@@ -1086,6 +1086,16 @@ export interface ApiGuardianResponse {
   is_primary_contact: boolean;
 }
 
+export interface ApiGuardianWrite {
+  id?: string | null;
+  first_name?: string | null;
+  last_name?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  relation?: string | null;
+  is_primary_contact?: boolean | null;
+}
+
 export interface ApiHTTPValidationError {
   detail: ApiValidationError[];
   error: ApiErrorMeta;
@@ -1597,6 +1607,7 @@ export interface ApiStudentUpdate {
   current_belt_rank_id?: string | null;
   notes?: string | null;
   tags?: string[] | null;
+  guardians?: ApiGuardianWrite[] | null;
 }
 
 export interface ApiStudioCreate {

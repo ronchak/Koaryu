@@ -1,8 +1,15 @@
 "use client";
 
 import { CommandOutcomeUnknown } from "../../lib/command-outcome.ts";
+import { studentBirthDateError } from "../../lib/student-birth-date.ts";
 import { useCallback, useRef, useState, type FormEvent } from "react";
-import type { GuardianCreate, StudentCreate, StudentStatus, StudentUpdate } from "@/types";
+import type {
+  GuardianCreate,
+  GuardianWrite,
+  StudentCreate,
+  StudentStatus,
+  StudentUpdate,
+} from "@/types";
 
 export type StudentFormTab = "info" | "contact" | "guardian";
 
@@ -42,7 +49,7 @@ export interface StudentFormFields {
 
 export type StudentFormInitialData = Partial<StudentUpdate> & {
   current_belt_rank_id?: string | null;
-  guardians?: GuardianCreate[];
+  guardians?: (GuardianCreate & { id?: string })[];
   program_id?: string | null;
   program_ids?: string[] | null;
 };
@@ -105,10 +112,17 @@ function formatInitialPhoneInput(value: string) {
   return isCompleteDomesticFormat ? formatPhoneInput(value) : value;
 }
 
+export function getEditableGuardian(initialData?: StudentFormInitialData) {
+  return (
+    initialData?.guardians?.find((guardian) => guardian.is_primary_contact) ??
+    initialData?.guardians?.[0]
+  );
+}
+
 export function buildInitialStudentFormFields(
   initialData?: StudentFormInitialData,
 ): StudentFormFields {
-  const guardian = initialData?.guardians?.[0];
+  const guardian = getEditableGuardian(initialData);
 
   return {
     legalFirst: initialData?.legal_first_name || "",
@@ -145,11 +159,14 @@ export function buildInitialStudentFormFields(
 
 export function validateStudentFormFields(
   fields: StudentFormFields,
-  options?: { includeLifecycleFields?: boolean },
+  options?: { includeLifecycleFields?: boolean; businessDate?: string; hasGuardian?: boolean },
 ): StudentFormValidation | null {
   if (!fields.legalFirst.trim() || !fields.legalLast.trim()) {
     return { message: "First name and last name are required.", tab: "info" };
   }
+
+  const birthDateError = studentBirthDateError(fields.dob, options?.businessDate);
+  if (birthDateError) return { message: birthDateError, tab: "info" };
 
   if (options?.includeLifecycleFields !== false && fields.holdEnd && !fields.holdStart) {
     return { message: "Add a hold start date before setting a hold end date.", tab: "info" };
@@ -162,6 +179,20 @@ export function validateStudentFormFields(
     fields.holdEnd < fields.holdStart
   ) {
     return { message: "Hold end date cannot be before the hold start date.", tab: "info" };
+  }
+
+  if (
+    (options?.hasGuardian ||
+      [
+        fields.guardianFirst,
+        fields.guardianLast,
+        fields.guardianEmail,
+        fields.guardianPhone,
+        fields.guardianRelation,
+      ].some((value) => value.trim())) &&
+    !fields.guardianFirst.trim()
+  ) {
+    return { message: "Guardian first name is required.", tab: "guardian" };
   }
 
   return null;
@@ -211,7 +242,7 @@ export function buildStudentCreatePayload(
 
 export function buildStudentUpdatePayload(
   fields: StudentFormFields,
-  _initialData?: StudentFormInitialData,
+  initialData?: StudentFormInitialData,
   options?: { includeLifecycleFields?: boolean },
 ): StudentUpdate {
   const payload: StudentUpdate = {
@@ -239,6 +270,40 @@ export function buildStudentUpdatePayload(
     payload.membership_start_date = fields.membershipStart || null;
     payload.program_id = fields.programIds[0] || null;
     payload.program_ids = fields.programIds;
+  }
+
+  const guardian = getEditableGuardian(initialData);
+  const initialFields = buildInitialStudentFormFields(initialData);
+  const guardianFields = {
+    first_name: "guardianFirst",
+    last_name: "guardianLast",
+    email: "guardianEmail",
+    phone: "guardianPhone",
+    relation: "guardianRelation",
+  } as const;
+  const changes: GuardianWrite = {};
+  for (const [key, field] of Object.entries(guardianFields)) {
+    if (fields[field].trim() !== initialFields[field].trim()) {
+      Object.assign(changes, {
+        [key]: key === "last_name" ? fields[field].trim() : textOrNull(fields[field]),
+      });
+    }
+  }
+  if (Object.keys(changes).length) {
+    if (guardian?.id) {
+      payload.guardians = [{ id: guardian.id, ...changes }];
+    } else if (fields.guardianFirst.trim()) {
+      payload.guardians = [
+        {
+          first_name: fields.guardianFirst.trim(),
+          last_name: fields.guardianLast.trim(),
+          email: textOrNull(fields.guardianEmail),
+          phone: textOrNull(fields.guardianPhone),
+          relation: textOrNull(fields.guardianRelation),
+          is_primary_contact: true,
+        },
+      ];
+    }
   }
 
   return payload;
@@ -286,7 +351,9 @@ export function useStudentFormState(options: UseStudentFormStateOptions) {
     setError("");
 
     const validation = validateStudentFormFields(fields, {
+      hasGuardian: !!getEditableGuardian(initialData),
       includeLifecycleFields: options.includeLifecycleFields,
+      businessDate: options.businessDate,
     });
     if (validation) {
       setError(validation.message);

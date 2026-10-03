@@ -1,7 +1,7 @@
 import asyncio
 import csv
 import unittest
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime, timezone
 from io import StringIO
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -249,6 +249,99 @@ class ReportExportServiceTest(unittest.TestCase):
 
         with self.assertRaisesRegex(RuntimeError, "timezone could not be loaded"):
             asyncio.run(ReportExportService(supabase).build_csv("students", "studio-1"))
+
+    def test_student_export_uses_stored_minor_status_only_without_dob(self):
+        students = [
+            {**student_row(1), "is_minor": True},
+            student_row(2),
+            {**student_row(3), "is_minor": None},
+            {**student_row(4), "date_of_birth": "2008-09-29", "is_minor": True},
+            {**student_row(5), "date_of_birth": "2008-09-30", "is_minor": False},
+        ]
+        supabase = TableBackedSupabase(
+            {
+                "studios": [{"id": "studio-1", "timezone": "America/Los_Angeles"}],
+                "students": students,
+            }
+        )
+        service = ReportExportService(supabase)
+        with patch("app.services.studio_business_date.datetime") as clock:
+            clock.now.return_value = datetime(2026, 9, 30, 3, 0, tzinfo=UTC)
+            body, _ = asyncio.run(service.build_csv("students", "studio-1"))
+
+        self.assertEqual(
+            {row["id"]: row["is_minor"] for row in csv.DictReader(StringIO(body))},
+            {
+                "s-0001": "true",
+                "s-0002": "false",
+                "s-0003": "false",
+                "s-0004": "false",
+                "s-0005": "true",
+            },
+        )
+        self.assertEqual(len([query for query in supabase.log if query["table"] == "studios"]), 1)
+        self.assertEqual(service.budget_snapshot.provider_calls, 2)
+        self.assertEqual(service.budget_snapshot.fetched_rows, 6)
+        self.assertTrue(students[3]["is_minor"])
+        self.assertFalse(students[4]["is_minor"])
+
+    def test_student_export_without_dob_does_not_load_studio_date(self):
+        students = [
+            {**student_row(1), "is_minor": True},
+            student_row(2),
+            {**student_row(3), "is_minor": None},
+            student_row(4),
+            {**student_row(5), "is_minor": 1},
+        ]
+        del students[3]["is_minor"]
+        supabase = TableBackedSupabase({"students": students})
+        service = ReportExportService(supabase, budget=ReportExportBudget(max_provider_calls=1))
+
+        with patch.object(service, "_current_student_date") as current_date:
+            body, _ = asyncio.run(service.build_csv("students", "studio-1"))
+
+        current_date.assert_not_called()
+        self.assertEqual(
+            [row["is_minor"] for row in csv.DictReader(StringIO(body))],
+            ["true", "false", "false", "false", "true"],
+        )
+        self.assertEqual([query["table"] for query in supabase.log], ["students"])
+        self.assertEqual(service.budget_snapshot.provider_calls, 1)
+        self.assertEqual(service.budget_snapshot.fetched_rows, len(students))
+
+    def test_hygiene_export_uses_stored_minor_status_without_dob(self):
+        students = [
+            {**student_row(1), "is_minor": True},
+            {**student_row(2), "is_minor": True},
+            student_row(3),
+            {**student_row(4), "is_minor": None},
+        ]
+        supabase = TableBackedSupabase(
+            {
+                "students": students,
+                "student_guardians": [
+                    {"id": "link-1", "student_id": "s-0002", "guardian_id": "guardian-1"}
+                ],
+            }
+        )
+        service = ReportExportService(supabase, today=date(2026, 9, 30))
+
+        with patch.object(service, "_report_today") as report_today:
+            body, _ = asyncio.run(service.build_csv("data_hygiene_readiness", "studio-1"))
+
+        report_today.assert_not_called()
+        self.assertEqual(
+            [
+                row["student_id"]
+                for row in csv.DictReader(StringIO(body))
+                if row["issue_type"] == "minor_without_guardian"
+            ],
+            ["s-0001"],
+        )
+        student_query = next(query for query in supabase.log if query["table"] == "students")
+        self.assertIn(
+            "is_minor", [column.strip() for column in student_query["columns"].split(",")]
+        )
 
     def test_deferred_billing_reports_are_not_in_available_catalog(self):
         service = ReportExportService(TableBackedSupabase({}))

@@ -2,14 +2,14 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { createHash } from 'node:crypto';
 import { test } from 'node:test';
-import { CURRENT_RELEASE, releaseState } from './release-attestation/states.mjs';
+import { releaseState } from './release-attestation/states.mjs';
 import { MIGRATION_VERSIONS } from './release-attestation/generated-history.mjs';
 import { renderPreflight } from './release-attestation/preflight.mjs';
 
 const migration = fs.readFileSync(new URL('../supabase/migrations/20260929152445_dashboard_roster_inactivity_v53.sql', import.meta.url), 'utf8');
 
 test('V53 follows the exact V52 history and guards the dashboard definition', () => {
-  assert.equal(CURRENT_RELEASE, 'v53');
+  assert.equal(releaseState('v53', MIGRATION_VERSIONS).id, 'v53');
   const state = releaseState('v53', MIGRATION_VERSIONS);
   assert.equal(state.predecessor, 'v52');
   assert.equal(state.count, 148);

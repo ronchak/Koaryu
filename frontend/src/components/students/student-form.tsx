@@ -7,11 +7,13 @@ import { ModalFrame } from "@/components/ui/modal-frame";
 import { ProgramPicker } from "@/components/programs/program-picker";
 import {
   formatPhoneInput,
+  getEditableGuardian,
   studentFormTabs,
   useStudentFormState,
   type StudentFormInitialData,
 } from "@/components/students/student-form-state";
 import { useProgramStore, useConfigStore } from "@/lib/store";
+import { studentBirthDateError } from "@/lib/student-birth-date";
 import { X } from "lucide-react";
 
 interface StudentFormBaseProps {
@@ -131,6 +133,8 @@ export function StudentForm(props: StudentFormProps) {
                   label="Date of birth"
                   type="date"
                   value={fields.dob}
+                  max={businessDate}
+                  error={studentBirthDateError(fields.dob, businessDate)}
                   onChange={(e) => setField("dob", e.target.value)}
                 />
                 {canManageLifecycle ? (
@@ -299,9 +303,9 @@ export function StudentForm(props: StudentFormProps) {
             <>
               <div className="p-3 bg-surface-raised rounded-[14px] border border-border mb-4">
                 <p className="text-xs text-text-secondary">
-                  {isEdit
-                    ? "Guardian details are shown for reference during this edit. Student profile fields save from here."
-                    : "Add one parent or guardian if this student is a minor."}
+                  {isEdit && getEditableGuardian(initialData)
+                    ? "Edit this guardian's details. Changes also appear for other students linked to this guardian. Other guardian links are kept."
+                    : "Add one parent or guardian for this student."}
                 </p>
               </div>
               <div className="grid grid-cols-2 gap-3">
@@ -310,14 +314,12 @@ export function StudentForm(props: StudentFormProps) {
                   value={fields.guardianFirst}
                   onChange={(e) => setField("guardianFirst", e.target.value)}
                   placeholder="Kenji"
-                  disabled={isEdit}
                 />
                 <Input
                   label="Guardian last name"
                   value={fields.guardianLast}
                   onChange={(e) => setField("guardianLast", e.target.value)}
                   placeholder="Tanaka"
-                  disabled={isEdit}
                 />
               </div>
               <div className="grid grid-cols-2 gap-3">
@@ -327,7 +329,6 @@ export function StudentForm(props: StudentFormProps) {
                   value={fields.guardianEmail}
                   onChange={(e) => setField("guardianEmail", e.target.value)}
                   placeholder="guardian@email.com"
-                  disabled={isEdit}
                 />
                 <Input
                   label="Phone"
@@ -335,7 +336,6 @@ export function StudentForm(props: StudentFormProps) {
                   value={fields.guardianPhone}
                   onChange={(e) => setField("guardianPhone", formatPhoneInput(e.target.value))}
                   placeholder="(555) 000-0000"
-                  disabled={isEdit}
                 />
               </div>
               <Input
@@ -343,7 +343,6 @@ export function StudentForm(props: StudentFormProps) {
                 value={fields.guardianRelation}
                 onChange={(e) => setField("guardianRelation", e.target.value)}
                 placeholder="Mother, Father, Grandparent..."
-                disabled={isEdit}
               />
             </>
           )}

@@ -123,6 +123,12 @@ class FakeStudentWriteSupabase(RpcBackedSupabase):
                 existing["current_belt_rank_id"] = primary_membership.get("current_belt_rank_id")
 
         for guardian in params.get("p_guardians") or []:
+            if "id" in guardian:
+                existing_guardian = next(
+                    row for row in self.tables["guardians"] if row["id"] == guardian["id"]
+                )
+                existing_guardian.update(guardian)
+                continue
             guardian_row = {
                 "id": f"guardian-{len(self.tables['guardians']) + 1}",
                 "studio_id": params["p_studio_id"],

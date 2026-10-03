@@ -67,7 +67,7 @@ def main(arguments):
         "V52_LEAD_UPDATE_STATE_SQL", "EXPECTED_V52_LEAD_UPDATE_STATE",
         "V52_LEAD_FOLLOW_UP_STATE_SQL", "EXPECTED_V52_LEAD_FOLLOW_UP_STATE",
         "V52_LEAD_RECEIPT_STATE_SQL", "EXPECTED_V52_LEAD_RECEIPT_STATE",
-        "FINAL_OPERATIONAL_READINESS_SQL", "EXPECTED_OPERATIONAL_READINESS",
+        "V53_OPERATIONAL_READINESS_SQL", "EXPECTED_V53_OPERATIONAL_READINESS",
         "V53_CATALOG_STATE_SQL", "EXPECTED_V53_CATALOG_STATE", "EXPECTED_V53_RESTORED_CATALOG_STATE",
         "V53_RELEASE_MANIFEST_SQL", "EXPECTED_V53_RELEASE_MANIFEST",
         "V31_EXPECTATION_STATE_SQL", "EXPECTED_V53_EXPECTATION_STATE",
@@ -150,8 +150,10 @@ def main(arguments):
     predecessor("postgres")
     hashes = {p.name: hashlib.sha256(p.read_bytes()).hexdigest()
               for p in sorted((root / "supabase/migrations").glob("*.sql"))}
-    require(len(hashes) == 148 and list(hashes)[-2:] == [
-        "20260926194918_lead_commands_v52.sql", MIGRATION], "Unexpected migration inventory")
+    require(len(hashes) == 150 and list(hashes)[-4:] == [
+        "20260926194918_lead_commands_v52.sql", MIGRATION,
+        "20260930024404_student_profile_qa_v54.sql",
+        "20260930192626_converted_lead_enrollment_v55.sql"], "Unexpected migration inventory")
     migration = root / "supabase/migrations" / MIGRATION
     mapping_bytes = PAIR_PATH.read_bytes()
     pairs = json.loads(mapping_bytes)
@@ -202,7 +204,7 @@ def main(arguments):
                        f"--command=INSERT INTO supabase_migrations.schema_migrations(version,name) VALUES('{version}','{name}');"])
             require(snapshot(database) == before, "Migration changed retained rows before continuation")
             checks = [
-                ("FINAL_OPERATIONAL_READINESS_SQL", "EXPECTED_OPERATIONAL_READINESS"),
+                ("V53_OPERATIONAL_READINESS_SQL", "EXPECTED_V53_OPERATIONAL_READINESS"),
                 ("V53_CATALOG_STATE_SQL", "EXPECTED_V53_RESTORED_CATALOG_STATE" if is_restored else "EXPECTED_V53_CATALOG_STATE"),
                 ("V53_RELEASE_MANIFEST_SQL", "EXPECTED_V53_RELEASE_MANIFEST"),
                 ("V31_EXPECTATION_STATE_SQL", "EXPECTED_V53_EXPECTATION_STATE"),

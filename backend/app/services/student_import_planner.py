@@ -18,6 +18,7 @@ from app.services.student_import_plan_result import build_import_result
 from app.services.student_import_plan_rows import (
     build_import_row_plan,
 )
+from app.services.studio_business_date import studio_today_for_studio
 
 
 class StudentImportPlanner:
@@ -158,6 +159,15 @@ class StudentImportPlanner:
         validate_csv_import_mapping(mapping)
         receipts = receipts or {}
         unfinished = any(str(i) not in receipts.get("student", {}) for i in range(2, len(rows) + 2))
+        has_birth_dates = any(
+            field == "date_of_birth" and any(row.get(column) for row in rows)
+            for column, field in mapping.items()
+        )
+        business_date = (
+            studio_today_for_studio(self.supabase, studio_id)
+            if studio_id and unfinished and has_birth_dates
+            else None
+        )
         program_lookup = (
             self.build_program_lookup(studio_id, receipts.get("program"))
             if studio_id and unfinished
@@ -193,6 +203,7 @@ class StudentImportPlanner:
                 options=options,
                 program_lookup=program_lookup,
                 belt_rank_lookup=belt_rank_lookup,
+                business_date=business_date,
             )
             row_plan["row_number"] = i
             planned_rows.append(row_plan)

@@ -1,5 +1,42 @@
 BEGIN;
 
+DO $v54_baseline$
+DECLARE v RECORD;
+BEGIN
+    SELECT * INTO v FROM public.koaryu_release_schema_preflight_v35();
+    IF v.ready IS DISTINCT FROM TRUE OR v.migration_count IS DISTINCT FROM 149
+       OR v.migration_head IS DISTINCT FROM '20260930024404'
+       OR v.manifest_version IS DISTINCT FROM 'release-db-attestation-v54' THEN
+        RAISE EXCEPTION 'V54 exact readiness baseline mismatch: %',row_to_json(v);
+    END IF;
+END;
+$v54_baseline$;
+ALTER TABLE public.students DISABLE TRIGGER validate_students_birth_date;
+DO $v54_trigger_negative$
+DECLARE v RECORD; previous RECORD;
+BEGIN
+    SELECT * INTO v FROM public.koaryu_release_schema_preflight_v35();
+    SELECT * INTO previous FROM public.koaryu_release_schema_preflight_v34();
+    IF v.ready IS DISTINCT FROM FALSE OR previous.ready IS DISTINCT FROM FALSE
+       OR ('student_profile_facts_v55' = ANY(v.security_failures)) IS DISTINCT FROM TRUE THEN
+        RAISE EXCEPTION 'V54 or V53 compatibility accepted a disabled birthdate trigger.';
+    END IF;
+END;
+$v54_trigger_negative$;
+ALTER TABLE public.students ENABLE TRIGGER validate_students_birth_date;
+GRANT EXECUTE ON FUNCTION public.student_business_date(UUID) TO PUBLIC;
+DO $v54_acl_negative$
+DECLARE v RECORD;
+BEGIN
+    SELECT * INTO v FROM public.koaryu_release_schema_preflight_v35();
+    IF v.ready IS DISTINCT FROM FALSE OR ('student_profile_facts_v55' = ANY(v.security_failures)) IS DISTINCT FROM TRUE THEN
+        RAISE EXCEPTION 'V54 accepted changed student helper EXECUTE grants.';
+    END IF;
+END;
+$v54_acl_negative$;
+REVOKE EXECUTE ON FUNCTION public.student_business_date(UUID) FROM PUBLIC;
+
+
 DO $$
 DECLARE
     v_signature TEXT;
@@ -596,7 +633,7 @@ BEGIN
     SELECT * INTO v_v5 FROM public.koaryu_release_schema_preflight_v5();
     SELECT * INTO v_v4 FROM public.koaryu_release_schema_preflight_v4();
     IF (v_current_count=131 AND v_current_head='20260831054918')
-       OR ((v_current_count,v_current_head) IN ((132,'20260902001000'), (133,'20260905022339'), (134,'20260908080420'), (135,'20260908133504'), (136,'20260908183744'), (137,'20260910084231'), (138,'20260910093958'), (139,'20260910135133'), (140,'20260910185031'), (141,'20260914033337'), (142,'20260914055301'), (143,'20260920035023'), (144,'20260920052705'), (145,'20260920154441'), (146,'20260925030000'), (147,'20260926194918'), (148,'20260929152445'))) THEN
+       OR ((v_current_count,v_current_head) IN ((132,'20260902001000'), (133,'20260905022339'), (134,'20260908080420'), (135,'20260908133504'), (136,'20260908183744'), (137,'20260910084231'), (138,'20260910093958'), (139,'20260910135133'), (140,'20260910185031'), (141,'20260914033337'), (142,'20260914055301'), (143,'20260920035023'), (144,'20260920052705'), (145,'20260920154441'), (146,'20260925030000'), (147,'20260926194918'), (148,'20260929152445'), (149,'20260930024404'), (150,'20260930192626'))) THEN
         IF v_v7.ready IS DISTINCT FROM false
            OR v_v7.migration_count IS DISTINCT FROM 126
            OR v_v7.migration_head IS DISTINCT FROM '20260826185651'

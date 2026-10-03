@@ -93,6 +93,7 @@ export function buildStudentEditInitialData(
     program_ids: activeProgramIds,
     current_belt_rank_id: student.current_belt_rank_id,
     guardians: student.guardians.map((guardian) => ({
+      id: guardian.id,
       first_name: guardian.first_name,
       last_name: guardian.last_name,
       email: guardian.email,

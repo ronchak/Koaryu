@@ -124,7 +124,7 @@ describe("schedule page model", () => {
     );
   });
 
-  it("keeps only active and trialing students available for attendance", () => {
+  it("keeps attendance status filtering while deriving known ages and preserving explicit minor status without a birth date", () => {
     const birthday = student("active", "active", {
       date_of_birth: "2008-05-20",
       is_minor: true,
@@ -147,8 +147,9 @@ describe("schedule page model", () => {
       ["active", "trialing"],
     );
     assert.equal(beforeBirthday[0].is_minor, true);
+    assert.equal(beforeBirthday[1].is_minor, true);
     assert.equal(current[0].is_minor, false);
-    assert.equal(current[1].is_minor, false);
+    assert.equal(current[1].is_minor, true);
     assert.equal(birthday.is_minor, true);
     assert.equal(nullDob.is_minor, true);
   });

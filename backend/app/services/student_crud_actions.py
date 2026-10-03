@@ -15,6 +15,7 @@ from app.schemas.student import (
     StudentUpdate,
 )
 from app.services.student_program_memberships import StudentProgramMembershipStore
+from app.services.student_birth_date import validate_student_birth_date
 from app.services.studio_business_date import studio_today_for_studio
 from app.services.studio_scope import ensure_optional_studio_record
 from app.services.supabase_rpc import execute_required_rpc, first_rpc_row
@@ -64,6 +65,7 @@ class StudentCrudActions:
             if student_dict.get("date_of_birth")
             else None
         )
+        validate_student_birth_date(student_dict.get("date_of_birth"), response_today)
 
         result = execute_required_rpc(
             self.supabase,
@@ -101,8 +103,13 @@ class StudentCrudActions:
     async def update_student(
         self, student_id: str, data: StudentUpdate, studio_id: str, actor_id: str
     ) -> StudentResponse:
-        update_dict = data.model_dump(exclude_unset=True)
-        if not update_dict:
+        update_dict = data.model_dump(exclude_unset=True, exclude={"guardians"})
+        guardians = (
+            [guardian.model_dump(mode="json", exclude_unset=True) for guardian in data.guardians]
+            if data.guardians is not None
+            else []
+        )
+        if not update_dict and not guardians:
             raise HTTPException(status_code=400, detail="No fields to update")
         program_ids_were_set = "program_ids" in update_dict or "program_id" in update_dict
         program_ids = None
@@ -127,6 +134,7 @@ class StudentCrudActions:
             if update_dict.get("date_of_birth") is not None or "date_of_birth" not in update_dict
             else None
         )
+        validate_student_birth_date(update_dict.get("date_of_birth"), response_today)
         try:
             result = execute_required_rpc(
                 self.supabase,
@@ -137,7 +145,7 @@ class StudentCrudActions:
                     "p_actor_id": actor_id,
                     "p_student": update_dict,
                     "p_program_ids": program_ids,
-                    "p_guardians": [],
+                    "p_guardians": guardians,
                     "p_replace_programs": program_ids is not None,
                     "p_audit_action": "student.updated",
                 },

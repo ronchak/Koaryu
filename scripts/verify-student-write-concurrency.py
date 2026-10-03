@@ -86,21 +86,32 @@ def main(arguments):
 
     def observed_blocker(first, second, same_operation):
         deadline = time.monotonic() + 15
+        rows = []
         while time.monotonic() < deadline:
             require(first["process"].poll() is None and second["process"].poll() is None,
                     "A competing session exited before the lock was observed")
             rows = json.loads(sql("SELECT COALESCE(jsonb_agg(jsonb_build_object('pid',b.pid,'blocker',a.pid,"
-                "'wait',b.wait_event,'type',b.wait_event_type)), '[]'::jsonb) "
+                "'wait',b.wait_event,'type',b.wait_event_type,'state',b.state,"
+                "'blockers',pg_blocking_pids(b.pid))), '[]'::jsonb) "
                 "FROM pg_stat_activity a JOIN pg_stat_activity b ON b.datname=a.datname "
                 f"WHERE a.datname=current_database() AND a.application_name='{first['name']}' "
-                f"AND b.application_name='{second['name']}' AND b.state='active' "
-                "AND a.pid=ANY(pg_blocking_pids(b.pid));"))
-            if rows:
-                require(len(rows) == 1 and rows[0]["type"] == "Lock", "Ambiguous competing lock observation")
-                require(not same_operation or rows[0]["wait"] == "advisory", "Same-key request did not wait on the operation lock")
-                return rows[0]
+                f"AND b.application_name='{second['name']}';"))
+            require(len(rows) <= 1, f"Ambiguous competing session identities: {rows}")
+            if rows and rows[0]["blockers"]:
+                row = rows[0]
+                require(row["blockers"] == [row["blocker"]],
+                        f"Wrong or additional competing blocker: {row}")
+                # Activity fields can be captured before pg_blocking_pids sees
+                # the live lock. Retry until both observations agree, while the
+                # first transaction remains held at its explicit result barrier.
+                if row["state"] == "active" and row["type"] == "Lock":
+                    require(not same_operation or row["wait"] == "advisory",
+                            f"Same-key request did not wait on the operation lock: {row}")
+                    return row
+                print("[student writer concurrency] retry inconsistent lock observation: "
+                      + json.dumps(row), flush=True)
             time.sleep(0.025)
-        raise RuntimeError("Competing request did not reach the required database lock")
+        raise RuntimeError(f"Competing request did not reach the required database lock: {rows}")
 
     def finish(item):
         code = item["process"].wait(timeout=15)

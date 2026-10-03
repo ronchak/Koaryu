@@ -186,11 +186,16 @@ export function useStoreLeadActions({
         throw new Error("Lead not found");
       }
 
-      if (lead.converted_student_id) {
-        throw new Error("This lead has already been converted.");
-      }
-
       if (isPreviewMode) {
+        if (lead.converted_student_id) {
+          const restoredLeads = applyLeadUpdate(leadsRef.current, leadId, {
+            stage: "enrolled",
+            follow_up_date: null,
+          });
+          const restoredLead = restoredLeads.find((item) => item.id === leadId)!;
+          persistLeads(restoredLeads);
+          return { lead: restoredLead, studentId: lead.converted_student_id };
+        }
         const conversion = buildPreviewLeadConversion(lead, programsRef.current, {
           beltLadders: beltLaddersRef.current,
           beltRanks: beltRanksRef.current,

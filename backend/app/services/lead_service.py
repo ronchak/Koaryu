@@ -198,6 +198,24 @@ class LeadService:
     ) -> LeadResponse:
         """Convert a lead into a student record."""
         lead = await self.get_lead(lead_id, studio_id)
+        if lead.converted_student_id:
+            # Restore the pipeline stage under the database row lock. This is not
+            # a new enrollment: do not validate/create a program or change the
+            # existing student's membership, even if its program was archived.
+            return self._execute_lead_command(
+                "convert_lead_to_student_atomic",
+                {
+                    "p_studio_id": studio_id,
+                    "p_actor_id": actor_id,
+                    "p_lead_id": lead_id,
+                    "p_student_id": lead.converted_student_id,
+                    "p_program_id": lead.program_id,
+                    "p_status": data.status,
+                    "p_membership_start_date": data.membership_start_date,
+                    "p_guardian_id": None,
+                    "p_student_guardian_id": None,
+                },
+            )
         program_service = ProgramService(self.supabase)
         program_id = (
             data.program_id
@@ -205,9 +223,6 @@ class LeadService:
             or program_service.get_unassigned_program_id(studio_id)
         )
         program_service.ensure_program_active(studio_id, program_id)
-        if lead.converted_student_id:
-            return lead
-
         student_id = str(uuid.uuid5(CONVERSION_NAMESPACE, f"{studio_id}:{lead_id}:student"))
         guardian_id = None
         link_id = None

@@ -146,6 +146,29 @@ class StudentRosterQueryTest(unittest.TestCase):
         studio_date.assert_called_once_with(client, STUDIO_ID)
         self.assertFalse(result.items[0].is_minor)
 
+    def test_paged_roster_preserves_minor_knowledge_without_dob(self):
+        from app.services.student_service import StudentService
+
+        row = roster_item()
+        row["is_minor"] = True
+        page = StudentRosterPageResponse(
+            items=[row],
+            total=1,
+            page_size=50,
+            page_ordinal=1,
+            has_next=False,
+            has_previous=False,
+        )
+        service = StudentService(FakeSupabase([]))
+        with (
+            patch("app.services.student_service.fetch_student_roster_page", return_value=page),
+            patch("app.services.student_service.studio_today_for_studio") as studio_date,
+            patch.object(service._student_photo_store, "create_signed_urls", return_value={}),
+        ):
+            result = service.list_roster_page(STUDIO_ID)
+        studio_date.assert_not_called()
+        self.assertTrue(result.items[0].is_minor)
+
     def test_empty_paged_roster_does_not_load_date_context(self):
         from app.services.student_service import StudentService
 

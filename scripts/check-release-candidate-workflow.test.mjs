@@ -47,6 +47,17 @@ test("release-candidate workflow rejects a missing required suite", () => {
   );
 });
 
+test("release-candidate workflow requires isolated restore and concurrency proofs", () => {
+  const weakened = workflow.replace(
+    "npm run check:supabase-contracts-local",
+    "npm run omitted-restore-check",
+  );
+  assert.match(
+    validateReleaseCandidateWorkflow(weakened).join("\n"),
+    /npm run check:supabase-contracts-local/,
+  );
+});
+
 test("release-candidate workflow requires the exact-SHA verifier tests", () => {
   const weakened = workflow.replace(
     "node --test scripts/verify-deployed-release.test.mjs",

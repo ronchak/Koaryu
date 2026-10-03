@@ -1,4 +1,10 @@
-import type { AttendanceRecord, ClassSession, Student } from "@/types";
+import type { AttendanceRecord, ClassSession, ClassTemplate, Student } from "@/types";
+import {
+  buildEntriesForDate,
+  groupSessionsByDate,
+  groupTemplatesByDay,
+  parseCalendarDate,
+} from "./schedule-calendar.ts";
 import { withCurrentMinorStatus } from "./student-age.ts";
 
 export type SchedulePageView = "month" | "week" | "day";
@@ -237,6 +243,43 @@ export function getVisibleScheduleRange(currentDate: Date, view: SchedulePageVie
     start: formatScheduleDateKey(weekDates[0]),
     end: formatScheduleDateKey(weekDates[6]),
   };
+}
+
+export function getVisibleScheduleSummary({
+  currentDate,
+  view,
+  sessions,
+  templates,
+}: {
+  currentDate: Date;
+  view: SchedulePageView;
+  sessions: ClassSession[];
+  templates: ClassTemplate[];
+}) {
+  const range = getVisibleScheduleRange(currentDate, view);
+  const visibleSessions = sessions.filter(
+    (session) => session.date >= range.start && session.date <= range.end,
+  );
+  const sessionsByDate = groupSessionsByDate(visibleSessions);
+  const templatesByDay = groupTemplatesByDay(templates);
+  let recurringSlots = 0;
+
+  // Count the same unmaterialized recurring occurrences the calendar displays.
+  // Generated sessions, including cancellations, already occupy their slot.
+  for (
+    const date = parseCalendarDate(range.start);
+    formatScheduleDateKey(date) <= range.end;
+    date.setDate(date.getDate() + 1)
+  ) {
+    recurringSlots += buildEntriesForDate({
+      date,
+      sessionsByDate,
+      templatesByDay,
+      showTemplatePlaceholders: true,
+    }).filter((entry) => entry.kind === "template").length;
+  }
+
+  return { scheduled: visibleSessions.length, recurringSlots };
 }
 
 export function navigateScheduleDate(currentDate: Date, view: SchedulePageView, direction: number) {

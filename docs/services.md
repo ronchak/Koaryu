@@ -9,7 +9,7 @@ nothing noticed when it stopped serving.
 one, add it here in the same change. If you find one that is not here, either
 document it or delete it.
 
-Inventory baseline: 2026-08-24. September 29 release readback: production and staging databases are V53, 148 migrations, head `20260929152445`. Both frontend/backend pairs serve `55a652a6e4f368b07286181ffa8e2401f4b9c467`. Both web services are active, production auto-deploy remains off, and the staging billing cron is restored to its original settings and suspended. See [the completed everyday correctness release](remediation/everyday-correctness-release.md).
+Inventory baseline: 2026-08-24. The last completed release verification, October 1, 2026 Pacific, recorded production and staging frontend/backend pairs at `0cf345be94f31eefbfa80be80bed3a8670680bf2` and both databases at exact V55, 150 migrations, head `20260930192626`. Both web services were active with auto-deploy off; the staging billing cron was restored to its original branch and five-minute schedule and suspended. See [the October 1 release record](remediation/october-1-release-verification.md). This documentation refresh did not repeat hosted verification. Reinspect live state for future releases and follow [Cutover Gates](cutover-gates.md).
 
 ## Quick map
 
