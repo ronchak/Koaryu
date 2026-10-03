@@ -100,12 +100,27 @@ async function fixturePage(browser, options = {}) {
     };
     f.supabase = {
       auth: {
-        getSession: async () => ({ data: { session: f.session } }),
+        getSession: async () => {
+          if (f.coldAuthEvent) {
+            await new Promise((resolve) => {
+              f.releaseInitialSession = resolve;
+            });
+          }
+          return { data: { session: f.session } };
+        },
         onAuthStateChange: (cb) => {
           f.emit = (event, session) => {
             f.session = session;
             cb(event, session);
           };
+          if (f.coldAuthEvent) {
+            // Stored-session recovery can notify before getSession resolves.
+            queueMicrotask(() => {
+              cb(f.coldAuthEvent, f.session);
+              cb("INITIAL_SESSION", f.session);
+              f.releaseInitialSession();
+            });
+          }
           return { data: { subscription: { unsubscribe() {} } } };
         },
       },
@@ -214,13 +229,14 @@ async function fixturePage(browser, options = {}) {
     };
   });
   await page.evaluate(
-    ({ path, holdFeature, uncached, formProgram }) => {
+    ({ path, holdFeature, uncached, formProgram, coldAuthEvent }) => {
       if (path) {
         fixture.pathname = path;
         history.replaceState(null, "", path);
       }
       fixture.holdFeature = holdFeature;
       fixture.uncached = uncached;
+      fixture.coldAuthEvent = coldAuthEvent;
       if (formProgram)
         fixture.programRows = [
           {
@@ -237,6 +253,7 @@ async function fixturePage(browser, options = {}) {
       holdFeature: options.holdFeature,
       uncached: options.uncached,
       formProgram: options.formProgram,
+      coldAuthEvent: options.coldAuthEvent,
     },
   );
   await page.addScriptTag({ content: bundle(options.mode ?? "production", options) });
@@ -1209,6 +1226,162 @@ test("detail resume continues after an independent belt-read failure", async () 
     });
     await page.waitForFunction(() => fixture.details.length === 2);
     await page.evaluate(() => fixture.details[1].resolve(fixture.student));
+  } finally {
+    await browser.close();
+  }
+});
+
+async function coldScheduleFixture(browser, coldAuthEvent = "SIGNED_IN") {
+  const page = await fixturePage(browser, {
+    path: "/schedule",
+    scheduleController: true,
+    coldAuthEvent,
+  });
+  await page.evaluate(() => {
+    fixture.scheduleRow = {
+      id: "cold-session",
+      date: fixture.store.businessDate,
+      name: "Cold roster class",
+      start_time: "10:00",
+      end_time: "11:00",
+      status: "scheduled",
+      attendance_count: 0,
+    };
+    fixture.rosterRows = Array.from({ length: 9 }, (_, index) => ({
+      ...fixture.student,
+      id: `student-${index}`,
+      status: index === 8 ? "paused" : index === 7 ? "trialing" : "active",
+    }));
+    fixture.holdRosterRead = true;
+    const get = fixture.api.get;
+    const post = fixture.api.post;
+    const windowData = () => ({ sessions: [fixture.scheduleRow], attendance: [], templates: [] });
+    fixture.api.get = (path, ...args) => {
+      if (path.startsWith("/schedule/window")) return Promise.resolve(windowData());
+      if (path.startsWith("/schedule/attendance")) return Promise.resolve([]);
+      if (path.startsWith("/students?") && fixture.failRosterRead)
+        return Promise.reject(new Error("Synthetic roster unavailable"));
+      return get(path, ...args);
+    };
+    fixture.api.post = (path, ...args) =>
+      path.startsWith("/schedule/window") ? Promise.resolve(windowData()) : post(path, ...args);
+    fixture.resolveRoster = (empty = false) =>
+      fixture.releaseRosterRead({
+        items: empty ? [] : fixture.rosterRows,
+        total: empty ? 0 : fixture.rosterRows.length,
+        page_size: 200,
+        page_ordinal: 1,
+        has_next: false,
+        next_cursor: null,
+      });
+    fixture.mountSchedule();
+  });
+  await page.waitForFunction(() => fixture.controller?.sessions.length === 1);
+  return page;
+}
+
+for (const coldAuthEvent of ["SIGNED_IN", "TOKEN_REFRESHED"]) {
+  test(`cold ${coldAuthEvent} recovery loads attendance students instead of accepting a cleared roster`, async () => {
+    const browser = await chromium.launch();
+    try {
+      const page = await coldScheduleFixture(browser, coldAuthEvent);
+      assert.equal(await page.evaluate(() => fixture.store.studentsLoaded), false);
+      await page.evaluate(() => fixture.controller.onOpenSession(fixture.controller.sessions[0]));
+      await page.waitForFunction(() => fixture.releaseRosterRead);
+      assert.deepEqual(
+        await page.evaluate(() => ({
+          complete: fixture.controller.isStudentRosterComplete,
+          loading: fixture.controller.isRefreshingStudentRoster,
+          candidates: fixture.controller.activeStudents.length,
+        })),
+        { complete: false, loading: true, candidates: 0 },
+      );
+      const rosterRequests = () =>
+        page.evaluate(() =>
+          fixture.requests.filter((request) => request.path.startsWith("/students?")),
+        );
+      assert.equal(
+        new URL((await rosterRequests())[0].path, "http://fixture.local").searchParams.get(
+          "full_roster",
+        ),
+        "1",
+      );
+      await page.evaluate(() => fixture.resolveRoster());
+      await page.waitForFunction(
+        () =>
+          fixture.controller.isStudentRosterComplete &&
+          !fixture.controller.isRefreshingStudentRoster,
+      );
+      assert.equal(await page.evaluate(() => fixture.controller.activeStudents.length), 8);
+      assert.equal(await page.evaluate(() => fixture.store.students.length), 9);
+      await page.evaluate(() => fixture.controller.onCloseSelectedSession());
+      await page.evaluate(() => fixture.controller.onOpenSession(fixture.controller.sessions[0]));
+      await flush(page);
+      assert.equal((await rosterRequests()).length, 1, "a confirmed complete roster is reused");
+      await page.evaluate(() => fixture.emit("SIGNED_OUT", null));
+      await page.waitForFunction(() => !fixture.store.identityReady);
+      assert.deepEqual(
+        await page.evaluate(() => ({
+          students: fixture.store.students,
+          loaded: fixture.store.studentsLoaded,
+        })),
+        { students: [], loaded: false },
+      );
+    } finally {
+      await browser.close();
+    }
+  });
+}
+
+test("Dashboard navigation after cold Schedule recovery still requests the unloaded roster", async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await fixturePage(browser, { path: "/schedule", coldAuthEvent: "SIGNED_IN" });
+    await page.evaluate(() => {
+      fixture.holdRosterRead = true;
+      fixture.autoLeads = true;
+      fixture.navigate("/dashboard");
+    });
+    await page.waitForFunction(() => fixture.releaseRosterRead);
+    await page.evaluate(() =>
+      fixture.releaseRosterRead({
+        items: [fixture.student],
+        total: 1,
+        page_size: 200,
+        page_ordinal: 1,
+        has_next: false,
+      }),
+    );
+    await page.waitForFunction(() => fixture.store.studentsLoaded);
+    assert.equal(await page.evaluate(() => fixture.store.students.length), 1);
+  } finally {
+    await browser.close();
+  }
+});
+
+test("cold attendance recovery distinguishes failed reads from a confirmed empty roster", async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await coldScheduleFixture(browser);
+    await page.evaluate(() => {
+      fixture.failRosterRead = true;
+      fixture.controller.onOpenSession(fixture.controller.sessions[0]);
+    });
+    await page.waitForFunction(() => fixture.controller.studentRosterLoadError);
+    assert.equal(await page.evaluate(() => fixture.controller.isStudentRosterComplete), false);
+    await page.evaluate(() => fixture.controller.onCloseSelectedSession());
+    await page.evaluate(() => {
+      fixture.failRosterRead = false;
+      fixture.controller.onOpenSession(fixture.controller.sessions[0]);
+    });
+    await page.waitForFunction(() => fixture.releaseRosterRead);
+    await page.evaluate(() => fixture.resolveRoster(true));
+    await page.waitForFunction(
+      () =>
+        fixture.controller.isStudentRosterComplete && !fixture.controller.isRefreshingStudentRoster,
+    );
+    assert.equal(await page.evaluate(() => fixture.controller.activeStudents.length), 0);
+    assert.equal(await page.evaluate(() => fixture.controller.studentRosterLoadError), null);
   } finally {
     await browser.close();
   }
