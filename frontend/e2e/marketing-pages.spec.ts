@@ -170,7 +170,7 @@ test("a guide opened from the landing page returns to the same section on Back",
   await page.setViewportSize({ width: 393, height: 617 });
   await page.route("**/api/proxy/health", (route) => route.fulfill({ json: { status: "ok" } }));
   await page.goto(`${origin}/#features`);
-  await expect(page.locator("[data-enhanced]")).toHaveAttribute("data-enhanced", "true");
+  await expect(page.locator("#features")).toBeInViewport();
   await page.locator('a[href="/features/student-management"]:visible').click();
   await expect(page).toHaveURL(`${origin}/features/student-management`);
   await page.locator("footer").scrollIntoViewIfNeeded();

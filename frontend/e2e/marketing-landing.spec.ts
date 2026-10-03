@@ -7,7 +7,16 @@ if (!["localhost", "127.0.0.1", "[::1]"].includes(frontendTarget.hostname)) {
 }
 
 const ROOT_URL = new URL("/", frontendTarget).toString();
-const CHAPTERS = ["welcome", "the-problem", "product", "features", "pricing", "faq", "begin"];
+const SECTIONS = [
+  "welcome",
+  "the-problem",
+  "studio",
+  "product",
+  "features",
+  "pricing",
+  "faq",
+  "begin",
+];
 
 function collectPageErrors(page: Page) {
   const errors: string[] = [];
@@ -18,19 +27,20 @@ function collectPageErrors(page: Page) {
 async function openLanding(page: Page, hash = "") {
   await page.route("**/api/proxy/health", (route) => route.fulfill({ json: { status: "ok" } }));
   await page.goto(`${ROOT_URL}${hash}`);
-  await expect(page.locator("[data-enhanced]")).toHaveAttribute("data-enhanced", "true");
+  await expect(page.locator("#studio [data-step]")).toBeAttached();
 }
 
-async function sceneProgress(page: Page) {
-  return Number(await page.locator("svg[data-scene-progress]").getAttribute("data-scene-progress"));
-}
-
-async function centerChapter(page: Page, id: string) {
-  await page.evaluate((chapterId) => {
-    const chapter = document.getElementById(chapterId)!;
-    const box = chapter.getBoundingClientRect();
-    window.scrollTo(0, box.top + window.scrollY + box.height / 2 - window.innerHeight / 2);
-  }, id);
+/** Scrolls to a fraction (0 to 1) of the way through a tall, sticky section. */
+async function scrollThrough(page: Page, id: string, fraction: number) {
+  await page.evaluate(
+    ([sectionId, amount]) => {
+      const section = document.getElementById(sectionId as string)!;
+      const top = section.getBoundingClientRect().top + window.scrollY;
+      const range = section.offsetHeight - window.innerHeight;
+      window.scrollTo({ top: top + range * (amount as number), behavior: "instant" });
+    },
+    [id, fraction],
+  );
 }
 
 for (const [width, height] of [
@@ -40,7 +50,7 @@ for (const [width, height] of [
   [1280, 800],
   [1440, 900],
 ]) {
-  test(`every chapter is reachable by ordinary scrolling at ${width} × ${height}`, async ({
+  test(`every section is reachable by ordinary scrolling at ${width} × ${height}`, async ({
     page,
   }) => {
     const pageErrors = collectPageErrors(page);
@@ -52,7 +62,7 @@ for (const [width, height] of [
     await page.mouse.wheel(0, 600);
     await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
 
-    for (const id of CHAPTERS) {
+    for (const id of SECTIONS) {
       await page.locator(`#${id}`).scrollIntoViewIfNeeded();
       await expect(page.locator(`#${id}`)).toBeInViewport();
     }
@@ -61,42 +71,76 @@ for (const [width, height] of [
   });
 }
 
-test("the scene follows the scroll position from the hills to the seated class", async ({
+test("stepping inside: the doors open, then the class is marked and a student is ready", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await openLanding(page);
-  expect(await sceneProgress(page)).toBe(0);
+  const stage = page.locator("#studio [data-step]");
+  const door = page.locator('#studio [data-side="left"]');
 
-  await centerChapter(page, "features");
-  await expect.poll(() => sceneProgress(page)).toBeCloseTo(0.5, 1);
+  await scrollThrough(page, "studio", 0);
+  await expect(stage).toHaveAttribute("data-step", "0");
+  await expect(page.getByText("0 of 5 present")).toBeAttached();
+  const closed = await door.evaluate((node) => node.getBoundingClientRect().right);
+  expect(closed).toBeGreaterThan(600);
 
-  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
-  await expect.poll(() => sceneProgress(page)).toBe(1);
+  await scrollThrough(page, "studio", 0.3);
+  await expect
+    .poll(() => door.evaluate((node) => node.getBoundingClientRect().right))
+    .toBeLessThanOrEqual(1);
 
-  await page.evaluate(() => window.scrollTo(0, 0));
-  await expect.poll(() => sceneProgress(page)).toBe(0);
+  await scrollThrough(page, "studio", 0.55);
+  await expect(stage).toHaveAttribute("data-step", "3");
+  await expect(page.getByText("3 of 5 present")).toBeVisible();
+
+  await scrollThrough(page, "studio", 0.9);
+  await expect(stage).toHaveAttribute("data-step", "6");
+  await expect(page.getByText("5 of 5 present")).toBeVisible();
+  await expect(page.getByText("Maya Chen is ready to test for Yellow belt.")).toBeVisible();
+  await expect(page.locator('#studio li[data-ready="true"]')).toHaveCount(1);
+
+  // Scrolling back up un-marks the class: the demo follows the reader both ways.
+  await scrollThrough(page, "studio", 0.4);
+  await expect(stage).toHaveAttribute("data-step", "1");
 });
 
-test("reduced motion shows each chapter's still frame", async ({ page }) => {
+test("the paperwork gathers into one card as the problem scrolls by", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openLanding(page);
+  const scrap = page.locator("#the-problem [data-kind]").first();
+  const card = page.getByText("One place for all of it.");
+
+  await scrollThrough(page, "the-problem", 0);
+  const scattered = await scrap.boundingBox();
+  expect(
+    Number(await card.evaluate((node) => getComputedStyle(node.parentElement!).opacity)),
+  ).toBeLessThan(0.2);
+
+  await scrollThrough(page, "the-problem", 0.9);
+  await expect
+    .poll(() => scrap.evaluate((node) => Number(getComputedStyle(node).opacity)))
+    .toBeLessThan(0.05);
+  await expect(card).toBeVisible();
+  const gathered = await scrap.boundingBox();
+  expect(Math.abs((gathered?.x ?? 0) - (scattered?.x ?? 0))).toBeGreaterThan(100);
+});
+
+test("reduced motion shows every state still, with the doors already open", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.setViewportSize({ width: 1280, height: 800 });
   await openLanding(page);
-  await centerChapter(page, "product");
-  await expect.poll(() => sceneProgress(page)).toBe(0.29);
-  await centerChapter(page, "pricing");
-  await expect.poll(() => sceneProgress(page)).toBe(0.66);
+  await expect(page.locator('#studio [data-side="left"]')).toBeHidden();
+  await expect(page.getByText("One place for all of it.")).toBeAttached();
+  await scrollThrough(page, "studio", 0.9);
+  await expect(page.getByText("5 of 5 present")).toBeVisible();
 });
 
-test("the masthead stays available and gains a ground once the page scrolls", async ({ page }) => {
+test("the masthead stays available and links into the page", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await openLanding(page);
-  const journey = page.locator("[data-scrolled]");
-  await expect(journey).toHaveAttribute("data-scrolled", "false");
-  await centerChapter(page, "features");
-  await expect(journey).toHaveAttribute("data-scrolled", "true");
+  await scrollThrough(page, "studio", 0.5);
   await expect(page.getByRole("link", { name: "Sign in" })).toBeInViewport();
-
   await page
     .getByRole("navigation", { name: "Primary navigation" })
     .getByRole("link", { name: "Pricing" })
@@ -105,12 +149,12 @@ test("the masthead stays available and gains a ground once the page scrolls", as
   await expect(page.locator("#pricing h2")).toBeInViewport();
 });
 
-test("retired chapter links land on the section that now carries their content", async ({
+test("retired section links land on the section that now carries their content", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   for (const [legacy, current] of [
-    ["studio-view", "product"],
+    ["studio-view", "studio"],
     ["explore", "features"],
     ["about", "faq"],
     ["faq-roadmap", "faq-limits"],
@@ -131,106 +175,22 @@ test("FAQ answers open in place and are findable as ordinary text", async ({ pag
   await expect(page.getByText(/no multi-location dashboard/)).toBeHidden();
 });
 
-test("the product screenshot loads with its sample-data caption", async ({ page }) => {
-  await page.setViewportSize({ width: 1440, height: 900 });
-  await openLanding(page, "#product");
-  const image = page.locator("#product img");
-  await expect(image).toBeVisible();
-  await expect
-    .poll(() => image.evaluate((node: HTMLImageElement) => node.naturalWidth))
-    .toBeGreaterThan(0);
-  await expect(page.getByText("Belt tracker, shown with sample studio data.")).toBeVisible();
-});
-
-test("the scene holds still while a chapter is read and moves only between chapters", async ({
+test("the real product loads: both screens on desktop, the phone layout on phones", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
-  await openLanding(page);
-  await centerChapter(page, "features");
-  await expect.poll(() => sceneProgress(page)).toBe(0.52);
-  // The progress attribute is rounded; let the camera finish its last fraction of easing.
-  await page.waitForTimeout(800);
-
-  // Reading within the chapter: the artwork receives no writes; only the
-  // composited drift on the root changes, so the frame is alive but cheap.
-  await page.evaluate(() => {
-    const svg = document.querySelector("svg[data-scene-progress]")!;
-    const tracker = window as unknown as { sceneWrites: number };
-    tracker.sceneWrites = 0;
-    new MutationObserver((records) => {
-      tracker.sceneWrites += records.filter(
-        (record) => !(record.target === svg && record.attributeName === "style"),
-      ).length;
-    }).observe(svg, { attributes: true, subtree: true });
-  });
-  const driftBefore = await page
-    .locator("svg[data-scene-progress]")
-    .evaluate((svg) => (svg as SVGElement).style.transform);
-  for (const step of [-120, 80, 120, -60]) {
-    await page.mouse.wheel(0, step);
-    await page.waitForTimeout(120);
+  await openLanding(page, "#product");
+  const images = page.locator("#product img");
+  await expect(images).toHaveCount(2);
+  for (const image of await images.all()) {
+    await expect(image).toBeVisible();
+    await expect
+      .poll(() => image.evaluate((node: HTMLImageElement) => node.naturalWidth))
+      .toBeGreaterThan(0);
   }
-  await page.waitForTimeout(300);
-  expect(
-    await page.evaluate(() => (window as unknown as { sceneWrites: number }).sceneWrites),
-  ).toBe(0);
-  expect(await sceneProgress(page)).toBe(0.52);
-  const driftAfter = await page
-    .locator("svg[data-scene-progress]")
-    .evaluate((svg) => (svg as SVGElement).style.transform);
-  expect(driftAfter).toMatch(/^scale\(/);
-  // With snapping, small reading scrolls settle back onto the chapter, so the drift returns too.
-  const snaps = await page.evaluate(
-    () => getComputedStyle(document.documentElement).scrollSnapType !== "none",
-  );
-  if (!snaps) expect(driftAfter).not.toBe(driftBefore);
+  await expect(page.getByText("Belt tracker, shown with sample studio data.")).toBeVisible();
 
-  // Scrolling into the gap after the chapter plays the next beat.
-  await page.locator("[data-journey-interlude]").nth(3).scrollIntoViewIfNeeded();
-  await page.evaluate(() => {
-    const gap = document.querySelectorAll("[data-journey-interlude]")[3]!;
-    const box = gap.getBoundingClientRect();
-    window.scrollTo({
-      top: box.top + window.scrollY + box.height / 2 - innerHeight / 2,
-      behavior: "instant",
-    });
-  });
-  await expect.poll(() => sceneProgress(page)).toBeGreaterThan(0.52);
-  expect(await sceneProgress(page)).toBeLessThan(0.66);
-});
-
-test("on phones the masthead steps aside while reading down and returns on scroll up", async ({
-  page,
-}) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await openLanding(page);
-  const journey = page.locator("[data-masthead-hidden]");
-  await page.mouse.move(195, 400);
-  for (let step = 0; step < 6; step += 1) await page.mouse.wheel(0, 200);
-  await expect(journey).toHaveAttribute("data-masthead-hidden", "true");
-  await page.mouse.wheel(0, -120);
-  await expect(journey).toHaveAttribute("data-masthead-hidden", "false");
-  await expect(page.getByRole("link", { name: "Sign in" })).toBeInViewport();
-
-  // The desktop masthead always stays.
-  await page.setViewportSize({ width: 1280, height: 800 });
-  for (let step = 0; step < 6; step += 1) await page.mouse.wheel(0, 200);
-  await expect(journey).toHaveAttribute("data-masthead-hidden", "false");
-});
-
-test("phones get the phone layout of the product", async ({ page }) => {
-  await page.setViewportSize({ width: 390, height: 844 });
-  await openLanding(page, "#product");
-  const image = page.locator("#product img");
-  await expect
-    .poll(() => image.evaluate((node: HTMLImageElement) => node.currentSrc))
-    .toContain("belt-tracker-mobile");
-  await page.setViewportSize({ width: 1440, height: 900 });
-  await page.reload();
-  await expect
-    .poll(() => image.evaluate((node: HTMLImageElement) => node.currentSrc))
-    .toMatch(
-      /belt-tracker\.webp|belt-tracker\.webp&|url=%2Fmarketing%2Fproduct%2Fbelt-tracker\.webp/,
-    );
+  await expect(images.first()).toBeHidden();
+  await expect(images.last()).toBeVisible();
 });

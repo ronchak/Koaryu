@@ -6,6 +6,7 @@ import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import ts from "typescript";
 import * as model from "../src/components/marketing/journey/scene-model.ts";
+import * as hills from "../src/components/marketing/journey/hills.ts";
 
 const require = createRequire(import.meta.url);
 const sceneSource = readFileSync(
@@ -29,9 +30,11 @@ new Function("require", "module", "exports", compiledScene)(
   (name) =>
     name === "./scene-model"
       ? model
-      : name === "./journey-scene.module.css"
-        ? { scene: "scene" }
-        : require(name),
+      : name === "./hills"
+        ? hills
+        : name === "./journey-scene.module.css"
+          ? { scene: "scene" }
+          : require(name),
   sceneModule,
   sceneModule.exports,
 );
