@@ -43,6 +43,15 @@ configuration and required account-type tests are in
 
 ## Development
 
+Admins can configure the missed-class email rule at `/automations`. Preview the
+current draft before enabling or saving an enabled rule. Paused rules can be
+saved before email setup; pausing keeps the saved message and any unsaved draft.
+Delivery readiness distinguishes disabled, approved-recipient test, and live
+sending. Provider acceptance does not confirm inbox delivery. After a stale or
+uncertain save, check the saved rule before writing again; only **Reload saved
+rule and discard edits** replaces a local draft. Browser preview mode uses sample
+data, makes no automation API calls, and cannot enable or send email.
+
 ```bash
 npm install
 npm run dev

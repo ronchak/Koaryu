@@ -458,6 +458,13 @@ export const api = {
     options?: Omit<ApiOptions, "token" | "method" | "body">,
   ) => apiFetch<T>(path, { ...options, method: "PATCH", body, token }),
 
+  put: <T>(
+    path: string,
+    body: unknown,
+    token?: string,
+    options?: Omit<ApiOptions, "token" | "method" | "body">,
+  ) => apiFetch<T>(path, { ...options, method: "PUT", body, token }),
+
   delete: <T>(
     path: string,
     token?: string,
