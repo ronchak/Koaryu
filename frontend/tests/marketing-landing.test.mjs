@@ -103,10 +103,10 @@ describe("Landing motion and accessibility", () => {
 
   it("keeps decorative art out of the accessibility tree and labels the real product", () => {
     assert.match(sources["hero.tsx"], /className=\{styles\.heroArt\} aria-hidden="true"/);
-    assert.match(sources["problem.tsx"], /className=\{styles\.scrapField\} aria-hidden="true"/);
+    assert.match(sources["problem.tsx"], /className=\{styles\.dojoFrame\} aria-hidden="true"/);
     assert.match(sources["studio.tsx"], /data-side="left" aria-hidden="true"/);
     assert.match(sources["product.tsx"], /alt=\{product\.image\.alt\}/);
-    assert.match(css, /outline: 2px solid currentColor/);
+    assert.match(css, /outline: 2px solid var\(--lantern\)/);
   });
 
   it("ships every scene still it references, wide and tall where phones need a different crop", () => {
@@ -118,11 +118,27 @@ describe("Landing motion and accessibility", () => {
     for (const file of referenced) {
       assert.ok(existsSync(new URL(`marketing/scenes/${file}`, publicDir)), file);
     }
-    for (const scene of ["doorway", "class"]) {
+    for (const scene of ["dojo-night", "doorway", "class"]) {
       assert.ok(
         referenced.includes(`${scene}-wide.webp`) && referenced.includes(`${scene}-tall.webp`),
       );
     }
+  });
+
+  it("sets the page at night: light text on dark, warm light only from lanterns and lit paper", () => {
+    assert.match(css, /--night: #15131c;/);
+    assert.match(css, /--cream: #f1e6d2;/);
+    assert.match(css, /--lantern: #f0b866;/);
+    assert.doesNotMatch(allSource, /Instrument_Serif|font-display/);
+    assert.doesNotMatch(css, /--seal|text-transform: uppercase/);
+    // The shoji carry the class as shadows; the art ships with the page.
+    const publicDir = new URL("../public/", import.meta.url);
+    assert.match(css, /\/marketing\/scenes\/door-shadows-wide\.webp/);
+    assert.ok(existsSync(new URL("marketing/scenes/door-shadows-wide.webp", publicDir)));
+  });
+
+  it("re-renders the roster only when a new beat of the class arrives", () => {
+    assert.match(sources["studio.tsx"], /if \(next !== current\)/);
   });
 
   it("uses only scoped marketing materials and no external runtime", () => {

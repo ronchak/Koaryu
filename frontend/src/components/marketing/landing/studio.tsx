@@ -32,6 +32,10 @@ function StudioBackdrop() {
   );
 }
 
+/**
+ * The 6 PM class. The lit doors slide open, light spills out, and the roster is
+ * marked as the reader scrolls; one student finishes their requirement.
+ */
 export function Studio() {
   const { studio } = landingPageContent;
   const sectionRef = useRef<HTMLElement>(null);
@@ -42,12 +46,18 @@ export function Studio() {
     const section = sectionRef.current;
     if (!section) return;
     let frame = 0;
+    let current = -1;
     const update = () => {
       frame = 0;
       const box = section.getBoundingClientRect();
       const range = box.height - window.innerHeight;
       const progress = range > 0 ? Math.min(1, Math.max(0, -box.top / range)) : 1;
-      setStep(studioStep(progress));
+      const next = studioStep(progress);
+      // Only a new beat of the class re-renders; scrolling within a beat costs nothing.
+      if (next !== current) {
+        current = next;
+        setStep(next);
+      }
     };
     const schedule = () => {
       if (!frame) frame = window.requestAnimationFrame(update);
@@ -77,9 +87,10 @@ export function Studio() {
         <div className={styles.studioShade} aria-hidden="true" />
         <div className={styles.studioContent}>
           <div className={styles.studioCopy}>
-            <p className={styles.kicker}>{studio.kicker}</p>
             <h2 id="studio-title" className={styles.sectionTitle}>
-              {studio.title}
+              {studio.title.split(/(?<=\.) /).map((line) => (
+                <span key={line}>{line}</span>
+              ))}
             </h2>
             <p className={styles.sectionLede}>{studio.lede}</p>
           </div>
@@ -107,7 +118,8 @@ export function Studio() {
                       <span className={styles.rosterName}>
                         {student.name}
                         <span className={styles.rosterBelt} data-belt={student.belt}>
-                          {student.belt} belt
+                          {student.belt.charAt(0).toUpperCase()}
+                          {student.belt.slice(1)} belt
                         </span>
                       </span>
                       <span className={styles.rosterProgress}>
@@ -128,9 +140,7 @@ export function Studio() {
               </ol>
             </div>
             <div className={styles.readyNote} data-visible={ready}>
-              <span className={styles.seal} aria-hidden="true">
-                Ready
-              </span>
+              <span className={styles.readyBelt} data-belt="yellow" aria-hidden="true" />
               <p>
                 <strong>{studio.ready.message}</strong>
                 <span>Class, time-at-rank and approval requirements met.</span>
@@ -139,12 +149,9 @@ export function Studio() {
             <figcaption className={styles.caption}>{studio.caption}</figcaption>
           </figure>
         </div>
-        <div className={styles.shoji} data-side="left" aria-hidden="true">
-          <span>{studio.doors[0]}</span>
-        </div>
-        <div className={styles.shoji} data-side="right" aria-hidden="true">
-          <span>{studio.doors[1]}</span>
-        </div>
+        <div className={styles.spill} aria-hidden="true" />
+        <div className={styles.shoji} data-side="left" aria-hidden="true" />
+        <div className={styles.shoji} data-side="right" aria-hidden="true" />
       </div>
     </section>
   );

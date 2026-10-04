@@ -6,7 +6,7 @@ import { MarketingBrandLink } from "../marketing-primitives";
 import { LandingAction } from "./actions";
 import styles from "./landing.module.css";
 
-/** The open sky from the story, as a quiet band between the product and the price. */
+/** The night sky beyond the dojo door, as a quiet band between the day and the price. */
 export function Breather() {
   return (
     <section className={styles.breather} aria-label="About Koaryu">
@@ -22,36 +22,34 @@ export function Pricing() {
   const { pricing } = landingPageContent;
   return (
     <section id={pricing.id} className={styles.pricing} aria-labelledby="pricing-title">
-      <p className={styles.kicker}>{pricing.kicker}</p>
-      <h2 id="pricing-title" className={styles.sectionTitle}>
-        {pricing.title}
-      </h2>
-      <div className={styles.priceBlock}>
+      <div className={styles.pricingCopy}>
+        <h2 id="pricing-title" className={styles.sectionTitle}>
+          {pricing.title}
+        </h2>
+        <p className={styles.sectionLede}>{pricing.note}</p>
+        <div className={styles.actions}>
+          <LandingAction {...pricing.setupAction} variant="primary" />
+        </div>
+        <p className={styles.paymentsLink}>
+          <Link href={pricing.paymentsLink.href}>{pricing.paymentsLink.label}</Link>
+        </p>
+      </div>
+      <div className={styles.priceCard}>
         <p className={styles.price} data-price-amount={pricing.amount}>
           {pricing.displayPrice}
         </p>
-        <span className={styles.seal} data-size="large" aria-hidden="true">
-          All in
-        </span>
+        <p className={styles.pricePeriod}>{pricing.period}</p>
+        <ul className={styles.included} aria-label="Included">
+          {pricing.included.map((item) => (
+            <li key={item}>{item}</li>
+          ))}
+        </ul>
       </div>
-      <p className={styles.pricePeriod}>{pricing.period}</p>
-      <ul className={styles.included} aria-label="Included">
-        {pricing.included.map((item) => (
-          <li key={item}>{item}</li>
-        ))}
-      </ul>
-      <p className={styles.priceNote}>{pricing.note}</p>
-      <div className={styles.actions} data-align="center">
-        <LandingAction {...pricing.setupAction} variant="primary" />
-      </div>
-      <p className={styles.paymentsLink}>
-        <Link href={pricing.paymentsLink.href}>{pricing.paymentsLink.label}</Link>
-      </p>
     </section>
   );
 }
 
-/** The woven mat from the story, as a strip of floor before the questions. */
+/** The woven mat from the story, lamplit, as a strip of floor before the questions. */
 export function MatBand() {
   return (
     <div className={styles.matBand} aria-hidden="true">
@@ -64,12 +62,9 @@ export function Faq() {
   const { faq } = landingPageContent;
   return (
     <section id={faq.id} className={styles.faq} aria-labelledby="faq-title">
-      <header className={styles.faqHeader}>
-        <p className={styles.kicker}>{faq.kicker}</p>
-        <h2 id="faq-title" className={styles.sectionTitle}>
-          {faq.title}
-        </h2>
-      </header>
+      <h2 id="faq-title" className={styles.sectionTitle}>
+        {faq.title}
+      </h2>
       <div className={styles.faqGroups}>
         {faq.groups.map((group) => (
           <section key={group.id} id={group.id} className={styles.faqGroup}>
@@ -115,12 +110,14 @@ function FinaleArt() {
   );
 }
 
-/** The class, seated. The closing line is written on the wall above them. */
+/** The class, seated in lamplight. The closing line hangs in the dark above them. */
 export function Finale() {
   const { finale } = landingPageContent;
   return (
     <section id={finale.id} className={styles.finale} aria-labelledby="finale-title">
-      <FinaleArt />
+      <div className={styles.finaleScene} aria-hidden="true">
+        <FinaleArt />
+      </div>
       <div className={styles.finaleCopy}>
         <h2 id="finale-title" className={styles.finaleTitle}>
           {finale.title}

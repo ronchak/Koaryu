@@ -48,8 +48,7 @@ describe("marketing content contract", () => {
       ],
       ["welcome", "the-problem", "studio", "product", "features", "pricing", "faq", "begin"],
     );
-    assert.equal(content.problem.scraps.length, 6);
-    assert.deepEqual(content.studio.doors, ["Step", "inside."]);
+    assert.match(content.problem.caption, /sample students/);
     assert.deepEqual(JSON.parse(JSON.stringify(content)), content);
     assertPlainJsonValue(content);
   });

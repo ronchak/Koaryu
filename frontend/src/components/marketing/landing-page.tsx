@@ -1,4 +1,4 @@
-import { Instrument_Serif } from "next/font/google";
+import { Schibsted_Grotesk } from "next/font/google";
 
 import { BackendWarmup } from "@/components/backend-warmup";
 import { Breather, Faq, Finale, MatBand, Pricing } from "@/components/marketing/landing/closing";
@@ -12,17 +12,17 @@ import { Studio } from "@/components/marketing/landing/studio";
 import { MarketingRoot } from "@/components/marketing/marketing-root";
 import { MarketingHeader } from "@/components/marketing/public-pages";
 
-const display = Instrument_Serif({
-  weight: "400",
-  style: ["normal", "italic"],
+const sans = Schibsted_Grotesk({
+  weight: "variable",
   subsets: ["latin"],
-  variable: "--font-display",
+  variable: "--font-evening",
   display: "swap",
 });
 
+/** The landing page, set on a class night: dusk, the lit dojo, the class, the price. */
 export function LandingPage() {
   return (
-    <MarketingRoot layout="document" className={`${styles.root} ${display.variable}`}>
+    <MarketingRoot layout="document" className={`${styles.root} ${sans.variable}`}>
       <BackendWarmup />
       <LegacyHashRedirect />
       <div className={styles.beltProgress} aria-hidden="true" />

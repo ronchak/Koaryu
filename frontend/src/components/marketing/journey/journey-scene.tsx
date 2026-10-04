@@ -32,6 +32,7 @@ import {
   floorPoint,
   frameForDimensions,
   mix,
+  mulberry32,
   polygonPoints,
   rangeProgress,
   round2,
@@ -39,45 +40,65 @@ import {
   type SceneFrame,
   type ScenePoint,
 } from "./scene-model";
-import { MOUNTAIN_WISPS, RIDGES, RIDGE_PATHS, closedRidgePath, ridgeLine } from "./hills";
+import {
+  MOUNTAIN_COLORS,
+  MOUNTAIN_RIMS,
+  MOUNTAIN_WISPS,
+  RIDGES,
+  RIDGE_CRESTS,
+  RIDGE_PATHS,
+  closedRidgePath,
+  ridgeLine,
+} from "./hills";
 
+/**
+ * The world at dusk, around the 6 PM class. Night is cool (indigo sky, blue-black
+ * hills); every light source is warm (the low sun, lanterns, lit paper). Colours
+ * are chosen per surface for how lamplight would fall on it, not tinted globally.
+ */
 const PALETTE = Object.freeze({
-  paper: "#F7F3E9",
-  mountainSky: "#F3F1EA",
-  mountain: ["#EFE2C0", "#E7CC97", "#C9A75E", "#A28341", "#7A612E"],
-  curtain: "#3A2C19",
-  beam: "#56431F",
-  beamLight: "#6B5230",
-  wood: "#9B7E4F",
-  woodPale: "#C6B183",
-  shoji: "#E6E2DA",
-  shojiShadow: "#D3CFC7",
-  tatami: "#C1AA76",
-  tatamiLight: "#CFBA8E",
-  tatamiDark: "#A98F5C",
-  tatamiEdge: "#E3D6B4",
-  skyHigh: "#F6E9CD",
-  skyMiddle: "#EDD9B2",
-  skyLow: "#DEC79F",
-  sun: "#CDB389",
-  sunLight: "#DBC49E",
-  cloud: ["#F4E7CC", "#EBD9B9", "#E1CBA5", "#D4B992", "#C4A47C"],
-  bamboo: ["#E1C99E", "#D7BC90", "#CBAE82", "#BEA075", "#B09068"],
-  floor: ["#E2CAA2", "#D9BD95", "#CFB086", "#C4A47A", "#B7956C"],
-  wallHigh: "#DED7CF",
-  wallLow: "#C4BAB0",
-  baseboard: "#B7ACA1",
-  gi: "#F3F0E9",
-  giShade: "#DCD5C6",
-  hair: ["#231C17", "#3B2A20", "#5A3B26", "#2E2A28", "#7A5232", "#8C8478"],
-  skin: ["#EBCDB1", "#C99872", "#8D5E3E", "#5E4231", "#D9AE8A"],
+  paper: "#15131C",
+  mountainSky: "#3A3354",
+  mountain: MOUNTAIN_COLORS,
+  curtain: "#0E0C13",
+  beam: "#211813",
+  beamLight: "#33241A",
+  wood: "#3B281B",
+  woodPale: "#6B4B33",
+  woodLit: "#5E4029",
+  shoji: "#7A5636",
+  shojiShadow: "#5E412A",
+  tatami: "#5E4529",
+  tatamiLight: "#7D5D36",
+  tatamiDark: "#3A2A19",
+  tatamiEdge: "#8E6B3F",
+  skyHigh: "#1A2142",
+  skyMiddle: "#263259",
+  skyLow: "#3A4572",
+  sun: "#EE9F5C",
+  sunLight: "#FFD9A0",
+  moon: "#DCD3BD",
+  moonLight: "#F6EFDC",
+  lantern: "#FFC977",
+  lanternCore: "#FFF0CF",
+  lanternEdge: "#D9813F",
+  cloud: ["#3D4870", "#343E63", "#2C3555", "#252D49", "#1F263E"],
+  bamboo: ["#B98A52", "#AA7D49", "#9B7041", "#8B6339", "#7B5732"],
+  floor: ["#A47A49", "#956E42", "#87623B", "#795735", "#6B4C2E"],
+  wallHigh: "#1B1519",
+  wallLow: "#5A3F2D",
+  baseboard: "#1E150F",
+  gi: "#EFDDBE",
+  giShade: "#C7AE87",
+  hair: ["#1D1714", "#33241B", "#4E3322", "#26221F", "#6A462B", "#7E766B"],
+  skin: ["#E6C3A1", "#C28F67", "#87583A", "#5A3E2E", "#D3A47E"],
   belt: {
-    white: "#F4F1EA",
-    yellow: "#D9A931",
-    green: "#5F7D3A",
-    blue: "#3E5C7E",
-    brown: "#6B4425",
-    black: "#1F1A16",
+    white: "#F4EDE0",
+    yellow: "#E2B23A",
+    green: "#6A8A3F",
+    blue: "#4A6C94",
+    brown: "#7A4E2B",
+    black: "#151214",
   },
 } as const);
 
@@ -112,6 +133,12 @@ interface SceneIds {
   readonly crumple: string;
   readonly washi: string;
   readonly back: string;
+  readonly moon: string;
+  readonly moonGlow: string;
+  readonly lantern: string;
+  readonly lanternGlow: string;
+  readonly pool: string;
+  readonly backPaper: string;
 }
 
 type DynamicAttribute =
@@ -149,6 +176,91 @@ function overscanRect() {
 
 function perspectiveLerp(progress: number): number {
   return progress / (progress + (1 - progress) * 2.6);
+}
+
+/** Like mixColor, but returns #rrggbb so the result can be shaded further. */
+function mixHex(from: string, to: string, progress: number): string {
+  const a = hexToRgb(from);
+  const b = hexToRgb(to);
+  return `#${[0, 1, 2]
+    .map((channel) =>
+      Math.round(mix(a[channel]!, b[channel]!, progress))
+        .toString(16)
+        .padStart(2, "0"),
+    )
+    .join("")}`;
+}
+
+/** Paper lanterns hung from the ceiling either side of the back doors. */
+const LANTERNS = Object.freeze([
+  { x: 500, y: 336, size: 1 },
+  { x: 1100, y: 336, size: 1 },
+]);
+
+const LANTERN_RIBS = [-0.66, -0.33, 0, 0.33, 0.66] as const;
+
+function Lantern({
+  ids,
+  x,
+  y,
+  size,
+}: {
+  readonly ids: SceneIds;
+  readonly x: number;
+  readonly y: number;
+  readonly size: number;
+}) {
+  const rx = 30 * size;
+  const ry = 40 * size;
+  return (
+    <g transform={`translate(${x} ${y})`}>
+      <circle r={rx * 7} fill={`url(#${ids.lanternGlow})`} style={{ mixBlendMode: "screen" }} />
+      <line x1="0" y1={-ry - 8} x2="0" y2="-1500" stroke="#130D09" strokeWidth={2.2 * size} />
+      <ellipse rx={rx} ry={ry} fill={`url(#${ids.lantern})`} />
+      {LANTERN_RIBS.map((rib) => {
+        const half = rx * Math.sqrt(1 - rib * rib);
+        return (
+          <path
+            key={rib}
+            d={`M${round2(-half)} ${round2(rib * ry)}Q0 ${round2(rib * ry + ry * 0.1)} ${round2(half)} ${round2(rib * ry)}`}
+            stroke={PALETTE.lanternEdge}
+            strokeWidth={1.4 * size}
+            opacity="0.5"
+            fill="none"
+          />
+        );
+      })}
+      <rect x={-rx * 0.6} y={-ry - 8} width={rx * 1.2} height={11 * size} rx="2.5" fill="#24170F" />
+      <rect x={-rx * 0.6} y={ry - 3} width={rx * 1.2} height={11 * size} rx="2.5" fill="#24170F" />
+    </g>
+  );
+}
+
+/** A standing paper floor lamp (andon), lit from inside. */
+function Andon({ ids }: { readonly ids: SceneIds }) {
+  return (
+    <g>
+      <ellipse
+        cx="0"
+        cy="-90"
+        rx="420"
+        ry="360"
+        fill={`url(#${ids.lanternGlow})`}
+        style={{ mixBlendMode: "screen" }}
+      />
+      <ellipse cx="0" cy="8" rx="120" ry="16" fill="#0C0806" opacity="0.4" />
+      <rect x="-30" y="-150" width="60" height="140" fill={`url(#${ids.lantern})`} />
+      <path
+        d="M-30 -150V-10M30 -150V-10M-30 -104H30M-30 -58H30"
+        stroke="#2A1B11"
+        strokeWidth="3"
+        fill="none"
+      />
+      <rect x="-36" y="-158" width="72" height="9" rx="2" fill="#24170F" />
+      <rect x="-36" y="-14" width="72" height="9" rx="2" fill="#24170F" />
+      <path d="M-30 -5V8M30 -5V8" stroke="#24170F" strokeWidth="6" />
+    </g>
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -275,7 +387,7 @@ const Student = memo(function Student({ seat }: { readonly seat: StudentSeat }) 
   const beltPath = `M${-BELT_HALF_WIDTH} ${BELT_Y}Q0 ${BELT_Y + 7} ${BELT_HALF_WIDTH} ${BELT_Y}`;
   return (
     <>
-      <ellipse cx="6" cy="10" rx={STUDENT_BODY_WIDTH * 1.22} ry="22" fill="#5A4528" opacity="0.2" />
+      <ellipse cx="6" cy="10" rx={STUDENT_BODY_WIDTH * 1.22} ry="22" fill="#140C07" opacity="0.4" />
       <path d={STUDENT_BODY_PATH} fill={PALETTE.gi} />
       <path
         d={`M0 ${-STUDENT_BODY_HEIGHT + 8}V${BELT_Y - 6}`}
@@ -569,10 +681,20 @@ export function sceneState(progress: number, frame: SceneFrame): SceneState {
   if (room > 0.001) {
     const floorLine = horizon + FLOOR_FAR;
     state.room = { display: "inline", opacity: String(round2(room)) };
+    state["room-lamps"] = state.room;
     state["room-wall"] = { height: String(round2(900 + floorLine)) };
     state["room-baseboard"] = { y: String(round2(floorLine - 20)) };
+    state["room-shoji"] = { transform: `translate(0 ${round2(floorLine)})` };
+    const lampOffset = Math.max(260, frame.visibleHalfWidth - 150);
+    state["room-lamp-left"] = {
+      transform: `translate(${round2(VIEW.centerX - lampOffset)} ${round2(floorLine + 40)})`,
+    };
+    state["room-lamp-right"] = {
+      transform: `translate(${round2(VIEW.centerX + lampOffset)} ${round2(floorLine + 40)})`,
+    };
   } else {
     state.room = HIDDEN;
+    state["room-lamps"] = HIDDEN;
   }
 
   // The class arrives and sits facing the far wall.
@@ -650,6 +772,12 @@ function makeIds(reactId: string): SceneIds {
     crumple: id("crumple"),
     washi: id("washi"),
     back: id("back"),
+    moon: id("moon"),
+    moonGlow: id("moon-glow"),
+    lantern: id("lantern"),
+    lanternGlow: id("lantern-glow"),
+    pool: id("pool"),
+    backPaper: id("back-paper"),
   };
 }
 
@@ -657,34 +785,66 @@ const SceneDefs = memo(function SceneDefs({ ids }: { readonly ids: SceneIds }) {
   return (
     <defs>
       <linearGradient id={ids.skyMountain} x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0" stopColor="#FBF8F0" />
-        <stop offset="0.6" stopColor={PALETTE.mountainSky} />
-        <stop offset="1" stopColor="#EFEADD" />
+        <stop offset="0" stopColor="#1B1D36" />
+        <stop offset="0.38" stopColor={PALETTE.mountainSky} />
+        <stop offset="0.62" stopColor="#8A5A62" />
+        <stop offset="0.8" stopColor="#D98B5E" />
+        <stop offset="1" stopColor="#F2B677" />
       </linearGradient>
       <linearGradient id={ids.sky} x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0" stopColor="#FCF4E2" />
+        <stop offset="0" stopColor="#0F1329" />
         <stop offset="0.42" stopColor={PALETTE.skyHigh} />
         <stop offset="0.78" stopColor={PALETTE.skyMiddle} />
         <stop offset="1" stopColor={PALETTE.skyLow} />
       </linearGradient>
       <linearGradient id={ids.wall} x1="0" y1="0" x2="0" y2="1">
         <stop offset="0" stopColor={PALETTE.wallHigh} />
-        <stop offset="0.7" stopColor="#D3C9C0" />
+        <stop offset="0.5" stopColor="#2E2220" />
+        <stop offset="0.82" stopColor="#4A3427" />
         <stop offset="1" stopColor={PALETTE.wallLow} />
       </linearGradient>
-      <linearGradient id={ids.shoji} x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0" stopColor="#F3EFE5" />
-        <stop offset="0.52" stopColor="#E8E2D6" />
-        <stop offset="1" stopColor={PALETTE.shojiShadow} />
+      {/* Paper lit from the room side: brightest where a lantern hangs in front of it. */}
+      <radialGradient id={ids.shoji} cx="0.5" cy="0.34" r="0.82">
+        <stop offset="0" stopColor="#D8A367" />
+        <stop offset="0.55" stopColor="#B07E4B" />
+        <stop offset="1" stopColor="#7E5733" />
+      </radialGradient>
+      <linearGradient id={ids.backPaper} x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stopColor="#B88752" />
+        <stop offset="1" stopColor="#8E6239" />
       </linearGradient>
       <radialGradient id={ids.sun} cx="0.42" cy="0.38" r="0.78">
         <stop offset="0" stopColor={PALETTE.sunLight} />
         <stop offset="1" stopColor={PALETTE.sun} />
       </radialGradient>
       <radialGradient id={ids.glow} cx="0.5" cy="0.5" r="0.5">
-        <stop offset="0" stopColor="#FFF6E0" stopOpacity="0.85" />
-        <stop offset="0.5" stopColor="#FBEBCB" stopOpacity="0.3" />
-        <stop offset="1" stopColor="#F6E3BD" stopOpacity="0" />
+        <stop offset="0" stopColor="#FFC98A" stopOpacity="0.7" />
+        <stop offset="0.5" stopColor="#F2A066" stopOpacity="0.22" />
+        <stop offset="1" stopColor="#E08A5A" stopOpacity="0" />
+      </radialGradient>
+      <radialGradient id={ids.moon} cx="0.4" cy="0.36" r="0.8">
+        <stop offset="0" stopColor={PALETTE.moonLight} />
+        <stop offset="1" stopColor={PALETTE.moon} />
+      </radialGradient>
+      <radialGradient id={ids.moonGlow} cx="0.5" cy="0.5" r="0.5">
+        <stop offset="0" stopColor="#C9D3F0" stopOpacity="0.34" />
+        <stop offset="0.45" stopColor="#8F9CCB" stopOpacity="0.12" />
+        <stop offset="1" stopColor="#5D6A9C" stopOpacity="0" />
+      </radialGradient>
+      <radialGradient id={ids.lantern} cx="0.46" cy="0.42" r="0.62">
+        <stop offset="0" stopColor={PALETTE.lanternCore} />
+        <stop offset="0.5" stopColor={PALETTE.lantern} />
+        <stop offset="1" stopColor={PALETTE.lanternEdge} />
+      </radialGradient>
+      <radialGradient id={ids.lanternGlow} cx="0.5" cy="0.5" r="0.5">
+        <stop offset="0" stopColor="#FFC66E" stopOpacity="0.5" />
+        <stop offset="0.35" stopColor="#F2A24F" stopOpacity="0.18" />
+        <stop offset="1" stopColor="#D98236" stopOpacity="0" />
+      </radialGradient>
+      <radialGradient id={ids.pool} cx="0.5" cy="0.5" r="0.5">
+        <stop offset="0" stopColor="#F6B567" stopOpacity="0.42" />
+        <stop offset="0.6" stopColor="#D98E48" stopOpacity="0.12" />
+        <stop offset="1" stopColor="#B87435" stopOpacity="0" />
       </radialGradient>
       {/* Materials are pre-baked by scripts/generate-journey-textures.mjs. */}
       <pattern id={ids.crumple} patternUnits="userSpaceOnUse" width="360" height="360">
@@ -731,12 +891,19 @@ const Mountains = memo(function Mountains({ ids }: { readonly ids: SceneIds }) {
       </g>
       {MOUNTAIN_WISPS.map((wisp, index) => (
         <g key={`wisp-${index}`} {...dynamic(initial, `wisp-${index}`)}>
-          <path d={wisp.path} fill="#FFFFFF" opacity="0.75" />
+          <path d={wisp.path} fill="#E9A07A" opacity="0.62" />
         </g>
       ))}
       {RIDGES.map((ridge, index) => (
         <g key={`ridge-${index}`} {...dynamic(initial, `ridge-${index}`)}>
           <path d={RIDGE_PATHS[index]} fill={ridge.color} />
+          <path
+            d={RIDGE_CRESTS[index]}
+            fill="none"
+            stroke={MOUNTAIN_RIMS[index]}
+            strokeWidth="3"
+            opacity="0.6"
+          />
         </g>
       ))}
     </g>
@@ -875,7 +1042,9 @@ function SideWall({ side, ids }: { readonly side: "left" | "right"; readonly ids
           { x: band.x1, y: mix(band.top1, band.bottom1, 0.94) },
           { x: band.x0, y: mix(band.top0, band.bottom0, 0.94) },
         ];
-        const alternatingShade = index % 2 === 0 ? 0 : 0.045;
+        const alternatingShade = index % 2 === 0 ? 0 : 0.06;
+        // Lamplight falls off toward the camera: the far panels are lit, the near ones dim.
+        const light = index / (SIDE_STOPS.length - 2);
         return (
           <g key={`${side}-${index}`}>
             <polygon
@@ -885,11 +1054,11 @@ function SideWall({ side, ids }: { readonly side: "left" | "right"; readonly ids
                 { x: band.x1, y: band.bottom1 },
                 { x: band.x0, y: band.bottom0 },
               ])}
-              fill={shade(PALETTE.shoji, -alternatingShade)}
+              fill={shade(mixHex("#20160F", "#3E2B1D", light), -alternatingShade)}
             />
             <polygon
               points={polygonPoints(paper)}
-              fill={shade("#EFECE5", -alternatingShade - 0.03)}
+              fill={shade(mixHex("#4A3321", "#A9784A", light), -alternatingShade)}
             />
             <polygon
               points={polygonPoints(paper)}
@@ -936,7 +1105,7 @@ function SideWall({ side, ids }: { readonly side: "left" | "right"; readonly ids
   );
 }
 
-function DojoFloor() {
+function DojoFloor({ ids }: { readonly ids: SceneIds }) {
   const floorPlane = [
     { x: VIEW.frontLeft, y: VIEW.frontFloor },
     { x: VIEW.backLeft, y: VIEW.backFloor },
@@ -989,6 +1158,17 @@ function DojoFloor() {
         fill={PALETTE.tatamiDark}
         opacity="0.5"
       />
+      {/* Pools of lamplight under each lantern. */}
+      {LANTERNS.map((lantern) => (
+        <ellipse
+          key={`pool-${lantern.x}`}
+          cx={lantern.x}
+          cy={760}
+          rx="470"
+          ry="120"
+          fill={`url(#${ids.pool})`}
+        />
+      ))}
       <rect
         x={SCENE_OVERSCAN.x}
         y={VIEW.frontFloor - 4}
@@ -1034,7 +1214,7 @@ const Dojo = memo(function Dojo({ ids }: { readonly ids: SceneIds }) {
     <g {...dynamic(initial, "dojo")} data-scene-layer="dojo">
       <SideWall side="left" ids={ids} />
       <SideWall side="right" ids={ids} />
-      <DojoFloor />
+      <DojoFloor ids={ids} />
       <polygon
         points={polygonPoints([
           { x: VIEW.frontLeft, y: -900 },
@@ -1084,7 +1264,7 @@ const Dojo = memo(function Dojo({ ids }: { readonly ids: SceneIds }) {
               y={VIEW.backTop + 8}
               width={PANEL_WIDTH - 10}
               height={VIEW.doorTop - VIEW.backTop - 16}
-              fill="#EFECE5"
+              fill={`url(#${ids.backPaper})`}
             />
             <rect
               x={x + 5}
@@ -1156,7 +1336,7 @@ const Dojo = memo(function Dojo({ ids }: { readonly ids: SceneIds }) {
         />
       ))}
       <g transform="translate(1216 372)" opacity="0.95">
-        <rect x="0" y="0" width="86" height="200" fill="#EDE7D8" />
+        <rect x="0" y="0" width="86" height="200" fill="#B98E62" />
         <rect
           x="0"
           y="0"
@@ -1168,7 +1348,7 @@ const Dojo = memo(function Dojo({ ids }: { readonly ids: SceneIds }) {
         />
         <rect x="0" y="0" width="86" height="14" fill={PALETTE.wood} />
         <rect x="0" y="186" width="86" height="14" fill={PALETTE.wood} />
-        <rect x="30" y="44" width="26" height="94" rx="6" fill={PALETTE.beam} opacity="0.3" />
+        <rect x="30" y="44" width="26" height="94" rx="6" fill={PALETTE.beam} opacity="0.45" />
       </g>
       {[196, 1338].map((x) => (
         <g key={`post-${x}`}>
@@ -1188,15 +1368,37 @@ const Dojo = memo(function Dojo({ ids }: { readonly ids: SceneIds }) {
           />
         </g>
       ))}
+      {LANTERNS.map((lantern) => (
+        <Lantern key={`lantern-${lantern.x}`} ids={ids} {...lantern} />
+      ))}
     </g>
   );
 });
 
 const FAR_RIDGES = [
-  { color: "#D9C7A6", baseY: 690, amplitude: 34, frequency: 1.4, phase: 0.9 },
-  { color: "#C9B492", baseY: 730, amplitude: 42, frequency: 0.9, phase: 3.4 },
-  { color: "#B49C78", baseY: 780, amplitude: 30, frequency: 1.9, phase: 5.1 },
+  { color: "#2B3253", rim: "#56638F", baseY: 690, amplitude: 34, frequency: 1.4, phase: 0.9 },
+  { color: "#212843", rim: "#434F78", baseY: 730, amplitude: 42, frequency: 0.9, phase: 3.4 },
+  { color: "#181D33", rim: "#353F62", baseY: 780, amplitude: 30, frequency: 1.9, phase: 5.1 },
 ] as const;
+
+const FAR_RIDGE_CRESTS = Object.freeze(
+  FAR_RIDGES.map(({ baseY, amplitude, frequency, phase }) =>
+    smoothPath(ridgeLine(baseY, amplitude, frequency, phase, 30)),
+  ),
+);
+
+/** The first stars over the hills, fixed so every render matches. */
+const STARS = Object.freeze(
+  (() => {
+    const random = mulberry32(6018);
+    return Array.from({ length: 70 }, () => ({
+      x: round2(-300 + random() * (SCENE_WIDTH + 600)),
+      y: round2(-520 + random() ** 1.4 * 1120),
+      r: round2(0.9 + random() ** 3 * 2.4),
+      opacity: round2(0.35 + random() * 0.6),
+    }));
+  })(),
+);
 
 const FAR_RIDGE_PATHS = Object.freeze(
   FAR_RIDGES.map(({ baseY, amplitude, frequency, phase }) =>
@@ -1221,27 +1423,39 @@ const SkyWorld = memo(function SkyWorld({ ids }: { readonly ids: SceneIds }) {
           fill={`url(#${ids.sky})`}
         />
         <g {...dynamic(initial, "sky-camera")}>
-          <g {...dynamic(initial, "sky-ridges")}>
-            {FAR_RIDGES.map((ridge, index) => (
-              <path
-                key={`far-ridge-${index}`}
-                d={FAR_RIDGE_PATHS[index]}
-                fill={ridge.color}
-                opacity={0.95 - index * 0.05}
+          <g data-scene-layer="stars">
+            {STARS.map((star, index) => (
+              <circle
+                key={`star-${index}`}
+                cx={star.x}
+                cy={star.y}
+                r={star.r}
+                fill="#F3EAD6"
+                opacity={star.opacity}
               />
             ))}
           </g>
+          <g {...dynamic(initial, "sky-ridges")}>
+            {FAR_RIDGES.map((ridge, index) => (
+              <g key={`far-ridge-${index}`}>
+                <path d={FAR_RIDGE_PATHS[index]} fill={ridge.color} />
+                <path
+                  d={FAR_RIDGE_CRESTS[index]}
+                  fill="none"
+                  stroke={ridge.rim}
+                  strokeWidth="2.5"
+                  opacity="0.55"
+                />
+              </g>
+            ))}
+          </g>
+          {/* By the time the door opens, the sun has set: the moon is up. */}
           <g {...dynamic(initial, "sky-sun")}>
-            <circle r="300" fill={`url(#${ids.glow})`} />
-            <circle cx="9" cy="14" r="88" fill={PALETTE.sun} opacity="0.5" />
-            <circle r="84" fill={`url(#${ids.sun})`} />
-            <circle
-              r="84"
-              fill="none"
-              stroke={shade(PALETTE.sun, -0.2)}
-              strokeWidth="2"
-              opacity="0.35"
-            />
+            <circle r="330" fill={`url(#${ids.moonGlow})`} />
+            <circle cx="8" cy="12" r="86" fill="#8E95B4" opacity="0.32" />
+            <circle r="80" fill={`url(#${ids.moon})`} />
+            <circle cx="-22" cy="-12" r="19" fill="#CFC5AC" opacity="0.22" />
+            <circle cx="18" cy="20" r="25" fill="#CFC5AC" opacity="0.18" />
           </g>
           <g {...dynamic(initial, "clouds")} data-scene-layer="clouds">
             {CLOUD_GEOMETRY.map((cloud, index) => {
@@ -1255,12 +1469,7 @@ const SkyWorld = memo(function SkyWorld({ ids }: { readonly ids: SceneIds }) {
                     opacity="0.42"
                   />
                   <path d={cloud.path} fill={tone} />
-                  <path
-                    d={cloud.path}
-                    transform="translate(0 -5)"
-                    fill={shade(tone, 0.35)}
-                    opacity="0.3"
-                  />
+                  <path d={cloud.path} transform="translate(0 -5)" fill="#8D9AC8" opacity="0.26" />
                 </g>
               );
             })}
@@ -1289,8 +1498,26 @@ const RoomWall = memo(function RoomWall({ ids }: { readonly ids: SceneIds }) {
         width={SCENE_WIDTH + 800}
         height="22"
         fill={PALETTE.baseboard}
-        opacity="0.55"
+        opacity="0.8"
       />
+      {/* A wall of lit shoji behind the class, under a dark beam. */}
+      <g {...dynamic(initial, "room-shoji")}>
+        <rect x="-400" y="-284" width={SCENE_WIDTH + 800} height="22" fill="#120D0B" />
+        <rect x="-400" y="-264" width={SCENE_WIDTH + 800} height="3" fill="#6E4628" />
+        {Array.from({ length: 14 }, (_, index) => (
+          <Shoji
+            key={`room-shoji-${index}`}
+            x={-495 + index * 185}
+            y={-262}
+            width={185}
+            height={242}
+            columns={3}
+            rows={4}
+            strokeWidth={6}
+            ids={ids}
+          />
+        ))}
+      </g>
     </g>
   );
 });
@@ -1327,6 +1554,21 @@ const Weave = memo(function Weave({ ids }: { readonly ids: SceneIds }) {
   );
 });
 
+/** Two andon stand at the front of the room; their light is what the class sits in. */
+const RoomLamps = memo(function RoomLamps({ ids }: { readonly ids: SceneIds }) {
+  const initial = useContext(InitialSceneState);
+  return (
+    <g {...dynamic(initial, "room-lamps")} data-scene-layer="lamps">
+      <g {...dynamic(initial, "room-lamp-left")}>
+        <Andon ids={ids} />
+      </g>
+      <g {...dynamic(initial, "room-lamp-right")}>
+        <Andon ids={ids} />
+      </g>
+    </g>
+  );
+});
+
 const Students = memo(function Students() {
   const initial = useContext(InitialSceneState);
   return (
@@ -1354,6 +1596,7 @@ const SceneArtwork = memo(function SceneArtwork() {
       <RoomWall ids={ids} />
       <Weave ids={ids} />
       <Students />
+      <RoomLamps ids={ids} />
     </>
   );
 });

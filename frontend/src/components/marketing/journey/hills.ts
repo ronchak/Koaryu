@@ -9,12 +9,26 @@ import {
   type ScenePoint,
 } from "./scene-model.ts";
 
+/**
+ * The hills at dusk, far to near. The farthest ridge is still warm with the
+ * afterglow; each nearer ridge is cooler and darker, and the nearest is the
+ * colour of the night page so the landscape settles straight into it.
+ */
 export const MOUNTAIN_COLORS = Object.freeze([
-  "#EFE2C0",
-  "#E7CC97",
-  "#C9A75E",
-  "#A28341",
-  "#7A612E",
+  "#A8705E",
+  "#7C4F4C",
+  "#553641",
+  "#322435",
+  "#15131C",
+] as const);
+
+/** The light caught along each crest, from the low sun behind the hills. */
+export const MOUNTAIN_RIMS = Object.freeze([
+  "#F4B47C",
+  "#D98A68",
+  "#A9636A",
+  "#6E4A5E",
+  "#3A2C40",
 ] as const);
 
 export interface Ridge {
@@ -104,6 +118,13 @@ export function closedRidgePath(
 ): string {
   return `${smoothPath(ridgeLine(baseY, amplitude, frequency, phase, resolution))}L${SCENE_OVERSCAN.x + SCENE_OVERSCAN.width} 1900 L${SCENE_OVERSCAN.x} 1900 Z`;
 }
+
+/** The open crest line of each ridge, for its rim of light. */
+export const RIDGE_CRESTS = Object.freeze(
+  RIDGES.map(({ baseY, amplitude, frequency, phase }) =>
+    smoothPath(ridgeLine(baseY, amplitude, frequency, phase)),
+  ),
+);
 
 export const RIDGE_PATHS = Object.freeze(
   RIDGES.map(({ baseY, amplitude, frequency, phase }) =>

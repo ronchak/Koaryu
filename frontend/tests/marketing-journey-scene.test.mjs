@@ -137,6 +137,61 @@ describe("Journey scene story", () => {
   });
 });
 
+describe("Evening art", () => {
+  it("sets the story at dusk and night, with lanterns, a moon and a lamplit room", () => {
+    const html = renderScene(0.52);
+    assert.match(sceneSource, /\/\*\*\s*\n \* The world at dusk/);
+    assert.match(html, /data-scene-layer="stars"/);
+    assert.match(renderScene(1), /data-scene-layer="lamps"/);
+    assert.doesNotMatch(
+      sceneSource,
+      /#F7F3E9|#EFECE5|#FBF8F0/i,
+      "no daylight paper left in the scene",
+    );
+    const dusk = sceneState(1, landscape);
+    assert.ok(shown(dusk, "room-lamps"));
+    assert.ok(!shown(sceneState(0.5, landscape), "room-lamps"));
+  });
+
+  it("draws the dojo from outside and the shadows on its doors as decorative, self-contained SVG", async () => {
+    const source = readFileSync(
+      new URL("../src/components/marketing/journey/dojo-exterior.tsx", import.meta.url),
+      "utf8",
+    );
+    const compiled = ts.transpileModule(source, {
+      compilerOptions: {
+        jsx: ts.JsxEmit.ReactJSX,
+        module: ts.ModuleKind.CommonJS,
+        target: ts.ScriptTarget.ES2022,
+        esModuleInterop: true,
+      },
+    }).outputText;
+    const exterior = { exports: {} };
+    new Function("require", "module", "exports", compiled)(
+      (name) =>
+        name.startsWith("./scene-model")
+          ? model
+          : name.startsWith("./hills")
+            ? hills
+            : require(name),
+      exterior,
+      exterior.exports,
+    );
+    for (const element of [
+      React.createElement(exterior.exports.DojoExterior, { variant: "wide" }),
+      React.createElement(exterior.exports.DojoExterior, { variant: "tall" }),
+      React.createElement(exterior.exports.DoorShadows),
+    ]) {
+      const html = renderToStaticMarkup(element);
+      assert.match(html, /^<svg[^>]*aria-hidden="true"/);
+      assert.doesNotMatch(html, /NaN|undefined/);
+      const ids = [...html.matchAll(/\sid="([^"]+)"/g)].map((match) => match[1]);
+      const references = [...html.matchAll(/url\(#([^)]+)\)/g)].map((match) => match[1]);
+      for (const reference of references) assert.ok(ids.includes(reference), reference);
+    }
+  });
+});
+
 describe("Journey scene rendering", () => {
   it("renders once with server attributes and writes only changed attributes per frame", () => {
     const html = renderScene(0);

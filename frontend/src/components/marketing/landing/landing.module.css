@@ -1,36 +1,43 @@
 /*
- * Koaryu landing: paper, ink, and the story world. Scroll-linked motion uses
- * CSS scroll-driven animations, which run on the compositor. Every animated
- * element has a complete static state for browsers without them and for
- * visitors who prefer reduced motion.
+ * Koaryu landing, set on a class night. Night is cool (indigo, blue-black umber);
+ * every light is warm (the low sun, lanterns, lit paper, screens, the call to
+ * action). Scroll-linked motion uses CSS scroll-driven animations, which run on the
+ * compositor. Every animated element has a complete static state for browsers
+ * without them and for visitors who prefer reduced motion.
  */
 
-[data-koaryu-marketing].root {
-  --paper: #f6f1e6;
-  --paper-deep: #efe6d5;
-  --paper-raised: #fbf8f1;
-  --ink: #231b13;
-  --ink-soft: rgb(35 27 19 / 72%);
-  --ink-faint: rgb(35 27 19 / 54%);
-  --rule: rgb(35 27 19 / 13%);
-  --rule-strong: rgb(35 27 19 / 24%);
-  --wood: #9b7e4f;
-  --wood-dark: #6b5230;
-  --seal: #b3432b;
+[data-koaryu-marketing][data-layout].root {
+  --night: #15131c;
+  --night-deep: #0f0e15;
+  --night-raised: #1d1a26;
+  --cream: #f1e6d2;
+  --cream-soft: rgb(241 230 210 / 76%);
+  --cream-faint: rgb(241 230 210 / 58%);
+  --rule: rgb(241 230 210 / 11%);
+  --rule-strong: rgb(241 230 210 / 22%);
+  --lantern: #f0b866;
+  --lantern-deep: #d98a45;
+  --glow: #ffd99a;
   --masthead: 76px;
   --gutter: clamp(20px, 6vw, 96px);
-  --serif: var(--font-display), "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+  --sans: var(--font-evening), -apple-system, "Helvetica Neue", sans-serif;
 
-  color: var(--ink);
-  background-color: var(--paper);
-  background-image: url("/marketing/scene-grain.webp");
-  background-size: 360px 360px;
-  background-blend-mode: multiply;
+  /* The shared header and its phone menu, re-lit for the night. */
+  --koaryu-ink: var(--cream);
+  --koaryu-ink-light: var(--night);
+  --koaryu-sheet: #221f2c;
+  --koaryu-sheet-warm: #2b2735;
+  --koaryu-deep-brown: var(--lantern);
+  --koaryu-paper: var(--night);
+
+  color: var(--cream);
+  background: var(--night);
+  font-family: var(--sans);
   overflow-x: clip;
 }
 
-/* The paper tile above replaces the shared full-page noise overlay. */
-[data-koaryu-marketing].root::after {
+/* The page is lit by its art; the shared paper noise is for daylight pages. */
+[data-koaryu-marketing][data-layout].root::after {
   display: none;
 }
 
@@ -43,18 +50,18 @@
   outline: none;
 }
 
-/* Belt rank progress: white to black across the page. */
 .beltProgress {
   display: none;
 }
 
-/* Masthead */
+/* ---------------------------------------------------------------- Masthead */
 
 .masthead {
   position: sticky;
   z-index: 50;
   top: 0;
-  background: rgb(246 241 230 / 92%);
+  color: var(--cream);
+  background: rgb(21 19 28 / 88%);
   box-shadow: 0 1px 0 var(--rule);
 }
 
@@ -64,8 +71,8 @@
   top: 8px;
   left: 20px;
   padding: 14px 18px;
-  color: var(--paper);
-  background: var(--ink);
+  color: var(--night);
+  background: var(--lantern);
   transform: translateY(-150%);
 }
 
@@ -73,40 +80,40 @@
   transform: translateY(0);
 }
 
-/* Shared type */
+/* ---------------------------------------------------------------- Shared type */
 
-.kicker {
-  margin: 0 0 16px;
-  color: var(--ink-soft);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
+.tagline,
+.label {
+  margin: 0 0 18px;
+  color: var(--lantern);
+  font-size: clamp(14px, 1.1vw, 16px);
+  font-weight: 600;
+  letter-spacing: 0.01em;
 }
 
 .sectionTitle {
-  max-width: 16ch;
+  max-width: 15ch;
   margin: 0;
-  font-family: var(--serif);
-  font-size: clamp(40px, 5.2vw, 76px);
-  font-weight: 400;
-  line-height: 1;
-  letter-spacing: -0.015em;
+  font-size: clamp(38px, 5.2vw, 78px);
+  font-weight: 800;
+  line-height: 0.98;
+  letter-spacing: -0.035em;
   text-wrap: balance;
 }
 
 .sectionLede {
-  max-width: 46ch;
+  max-width: 44ch;
   margin: 22px 0 0;
-  color: var(--ink-soft);
-  font-size: clamp(16px, 1.35vw, 19px);
+  color: var(--cream-soft);
+  font-size: clamp(16px, 1.3vw, 19px);
   line-height: 1.6;
+  text-wrap: pretty;
 }
 
 .caption {
   margin: 14px 0 0;
-  color: var(--ink-faint);
-  font-size: 12px;
+  color: var(--cream-faint);
+  font-size: 13px;
 }
 
 .actions {
@@ -121,10 +128,32 @@
 }
 
 .action {
-  min-width: 164px;
-  min-height: 48px;
+  min-width: 168px;
+  min-height: 50px;
+  padding-inline: 22px;
   border-radius: 999px;
-  font-size: 14px;
+  font-size: 15px;
+  font-weight: 650;
+}
+
+/* Primary actions are the page's lanterns: warm light, dark ink. */
+.action {
+  --koaryu-action-label: #1c130a;
+}
+
+.hero .actions .action:first-child,
+.pricing .action,
+.finale .action {
+  color: var(--lantern);
+  box-shadow:
+    0 0 0 1px rgb(255 217 154 / 30%) inset,
+    0 10px 40px rgb(240 160 80 / 22%);
+}
+
+.hero .actions .action:last-child {
+  color: var(--cream);
+  border-color: rgb(241 230 210 / 40%);
+  background: rgb(21 19 28 / 22%);
 }
 
 .textLink {
@@ -132,13 +161,14 @@
   gap: 6px;
   align-items: center;
   min-height: 44px;
-  color: inherit;
-  font-size: 14px;
+  color: var(--cream);
+  font-size: 15px;
   font-weight: 650;
   text-decoration: none;
 }
 
 .textLink span {
+  color: var(--lantern);
   transition: transform 200ms ease;
 }
 
@@ -146,39 +176,25 @@
   transform: translateX(3px);
 }
 
-/* A red hanko seal. */
-.seal {
-  display: inline-grid;
-  width: 64px;
-  height: 64px;
-  place-items: center;
-  border-radius: 6px;
-  color: var(--paper-raised);
-  background: var(--seal);
-  box-shadow: inset 0 0 0 3px rgb(255 255 255 / 18%);
-  font-family: var(--serif);
-  font-size: 19px;
-  font-style: italic;
-  line-height: 1;
-  transform: rotate(-8deg);
-}
-
-.seal[data-size="large"] {
-  width: 84px;
-  height: 84px;
-  font-size: 23px;
-}
-
-/* ---------------------------------------------------------------- Hero */
+/* ---------------------------------------------------------------- Hero: dusk */
 
 .hero {
   position: relative;
   display: grid;
   min-height: 100svh;
-  padding: calc(var(--masthead) + 6vh) var(--gutter) 18vh;
+  padding: calc(var(--masthead) + 4vh) var(--gutter) 30vh;
   align-items: center;
   overflow: clip;
-  background: linear-gradient(180deg, #fbf8f0 0%, #f3f1ea 60%, #efeadd 100%);
+  background: linear-gradient(
+    180deg,
+    #13152b 0%,
+    #24233f 24%,
+    #45324f 42%,
+    #7d4b5c 55%,
+    #c06f5c 66%,
+    #e89a66 76%,
+    #f2b677 84%
+  );
 }
 
 .heroArt {
@@ -187,26 +203,44 @@
   pointer-events: none;
 }
 
+/* Night coming on: the sky deepens over the sunset as the page scrolls. */
+.heroNight {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, #0c0e20 0%, #171831 45%, #2a2340 70%, #3a2a42 100%);
+  opacity: 0;
+}
+
+.heroStars {
+  position: absolute;
+  inset: 0 0 40%;
+}
+
+.heroStars span {
+  position: absolute;
+  border-radius: 50%;
+  background: #f6eedc;
+}
+
 .heroSun {
   position: absolute;
-  top: 18%;
-  left: 68%;
-  width: clamp(84px, 9vw, 150px);
+  top: 47%;
+  left: 66%;
+  width: clamp(96px, 10vw, 168px);
   aspect-ratio: 1;
   border-radius: 50%;
-  background: radial-gradient(circle at 42% 38%, #dbc49e, #cdb389 78%);
+  background: radial-gradient(circle at 44% 40%, #fff3d6 0%, #ffd08a 42%, #f29a5a 100%);
   box-shadow:
-    8px 12px 0 rgb(205 179 137 / 45%),
-    0 0 0 clamp(40px, 6vw, 90px) rgb(255 246 224 / 38%),
-    0 0 0 clamp(90px, 13vw, 190px) rgb(251 235 203 / 18%);
-  --parallax: 0.55;
+    0 0 0 clamp(24px, 3.4vw, 54px) rgb(255 196 128 / 12%),
+    0 0 0 clamp(60px, 8vw, 128px) rgb(255 170 110 / 7%),
+    0 0 140px 50px rgb(255 160 96 / 30%);
+  --parallax: 0.5;
 }
 
 .heroWisp {
   position: absolute;
   width: clamp(240px, 34vw, 560px);
-  fill: #fff;
-  opacity: 0.68;
+  opacity: 0.55;
   animation: wispDrift 46s ease-in-out infinite alternate;
   animation-delay: calc(var(--wisp) * -11s);
 }
@@ -223,9 +257,21 @@
 
 .heroRidge {
   position: absolute;
-  inset: 0;
+  top: 0;
+  left: 0;
   width: 100%;
   height: 100%;
+}
+
+/* On wide screens the hills sit lower, leaving open sky behind the copy. */
+@media (min-aspect-ratio: 5/4) {
+  .heroRidge {
+    top: 10%;
+  }
+
+  .heroSun {
+    top: 55%;
+  }
 }
 
 .heroCopy {
@@ -237,242 +283,105 @@
 
 .heroTitle {
   margin: 0;
-  font-family: var(--serif);
-  font-size: clamp(58px, 10vw, 156px);
-  font-weight: 400;
-  line-height: 0.9;
-  letter-spacing: -0.02em;
+  font-size: clamp(36px, 11.8vw, 144px);
+  font-weight: 800;
+  line-height: 0.92;
+  letter-spacing: -0.045em;
+  text-shadow: 0 2px 40px rgb(12 10 24 / 35%);
 }
 
 .heroTitle span {
   display: block;
 }
 
-.heroTitleAccent {
-  position: relative;
-  width: fit-content;
-  font-style: italic;
-}
-
-.brush {
-  position: absolute;
-  bottom: -0.12em;
-  left: 1%;
-  /* An SVG keeps its intrinsic width under left/right insets; size it explicitly. */
-  width: 100%;
-  height: 0.22em;
-  overflow: visible;
-  fill: none;
-  stroke: var(--seal);
-  stroke-width: 7;
-  stroke-linecap: round;
-  stroke-dasharray: 640;
-  stroke-dashoffset: 0;
-  opacity: 0.85;
-}
-
 .heroLede {
-  max-width: 44ch;
-  margin: 30px 0 0;
-  color: var(--ink-soft);
+  max-width: 42ch;
+  margin: 28px 0 0;
+  color: rgb(241 230 210 / 84%);
   font-size: clamp(16px, 1.4vw, 20px);
   line-height: 1.55;
+  text-shadow: 0 1px 24px rgb(12 10 24 / 45%);
 }
 
-/* ---------------------------------------------------------------- Problem */
+/* ---------------------------------------------------------------- Problem: the dojo at night */
 
 .problem {
   position: relative;
-  height: 240vh;
-  background: var(--paper);
-  view-timeline-name: --problem;
-  view-timeline-axis: block;
-}
-
-.problemStage {
-  position: sticky;
-  top: 0;
-  height: 100svh;
-  overflow: hidden;
+  padding-top: clamp(60px, 10vh, 120px);
 }
 
 .problemCopy {
-  position: absolute;
-  z-index: 3;
-  top: calc(var(--masthead) + 7vh);
-  right: var(--gutter);
-  left: var(--gutter);
-  text-align: center;
+  position: relative;
+  z-index: 2;
+  width: min(100% - 2 * var(--gutter), 1180px);
+  margin-inline: auto;
 }
 
-.problemTitle {
-  max-width: 15ch;
-  margin: 0 auto;
-  font-family: var(--serif);
-  font-size: clamp(40px, 5.6vw, 84px);
-  font-weight: 400;
-  line-height: 1;
-  letter-spacing: -0.015em;
-  text-wrap: balance;
+.problemCopy .sectionTitle {
+  max-width: 13ch;
 }
 
-.problemTitle em {
-  color: var(--seal);
+.dojo {
+  position: relative;
+  margin: clamp(-150px, -9vw, -40px) 0 0;
 }
 
-.problemLede {
-  max-width: 44ch;
-  margin: 18px auto 0;
-  color: var(--ink-soft);
-  font-size: clamp(15px, 1.3vw, 18px);
-  line-height: 1.55;
+.dojoFrame {
+  position: relative;
+  aspect-ratio: 16 / 10;
+  max-height: 112vh;
+  width: 100%;
+  overflow: hidden;
+  mask-image: linear-gradient(180deg, transparent 0%, #000 24%, #000 82%, transparent 100%);
 }
 
-.scrapField {
+.dojoArt,
+.dojoArt img {
   position: absolute;
   inset: 0;
-  pointer-events: none;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: 50% 60%;
 }
 
-.scrap {
+.dojo .caption {
   position: absolute;
-  top: 64%;
-  left: 50%;
-  width: clamp(150px, 17vw, 236px);
-  padding: 14px 16px;
-  border-radius: 3px;
-  background: #fffdf7;
-  box-shadow:
-    0 1px 0 rgb(35 27 19 / 8%),
-    0 14px 30px rgb(35 27 19 / 14%);
-  translate: -50% -50%;
-  transform: translate(var(--from-x), var(--from-y)) rotate(var(--from-r));
-}
-
-.scrap[data-kind="sheet"] {
-  background-image:
-    linear-gradient(rgb(35 27 19 / 7%) 1px, transparent 1px),
-    linear-gradient(90deg, rgb(35 27 19 / 7%) 1px, transparent 1px);
-  background-size:
-    100% 22px,
-    46px 100%;
-  background-position:
-    0 30px,
-    0 0;
-}
-
-.scrap[data-kind="note"] {
-  width: clamp(130px, 13vw, 180px);
-  border-radius: 1px;
-  background: #f7e7a1;
-  font-family: var(--serif);
-  font-size: clamp(17px, 1.6vw, 22px);
-  font-style: italic;
-}
-
-.scrap[data-kind="receipt"] {
-  width: clamp(130px, 13vw, 176px);
-  background: #fbfaf6;
-  border-bottom: 6px dotted var(--paper);
-  font-family: ui-monospace, "SF Mono", Menlo, monospace;
-  font-size: 12px;
-}
-
-.scrapTitle {
-  margin: 0 0 8px;
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.scrapLine {
-  margin: 0;
-  color: var(--ink-soft);
-  font-size: 12px;
-  line-height: 22px;
-}
-
-.scrapText {
-  margin: 0;
-  line-height: 1.3;
-}
-
-.resolution {
-  position: absolute;
-  z-index: 2;
-  top: 64%;
-  left: 50%;
-  display: grid;
-  justify-items: center;
-  width: min(360px, 82vw);
-  padding: 26px 28px 22px;
-  border: 1px solid var(--rule);
-  border-radius: 14px;
-  background: var(--paper-raised);
-  box-shadow: 0 30px 60px rgb(35 27 19 / 16%);
-  translate: -50% -50%;
-}
-
-.resolutionMark {
-  margin: 0;
-  font-size: 13px;
-  font-weight: 760;
-  letter-spacing: 0.32em;
-  text-transform: uppercase;
-}
-
-.resolutionText {
-  margin: 10px 0 18px;
-  font-family: var(--serif);
-  font-size: 30px;
-  line-height: 1.05;
-  text-align: center;
-}
-
-.resolutionBelts {
-  display: flex;
-  gap: 6px;
-}
-
-.resolutionBelts span {
-  width: 26px;
-  height: 7px;
-  border-radius: 99px;
-  background: var(--belt);
-  box-shadow: inset 0 0 0 1px var(--belt-edge, transparent);
+  right: var(--gutter);
+  bottom: 9%;
 }
 
 /* ---------------------------------------------------------------- Belts */
 
 .root [data-belt="white"] {
-  --belt: #f4f1ea;
-  --belt-edge: #cfc6b4;
+  --belt: #f4ede0;
 }
 
 .root [data-belt="yellow"] {
-  --belt: #d9a931;
+  --belt: #e2b23a;
 }
 
 .root [data-belt="orange"] {
-  --belt: #d9772e;
+  --belt: #e07f34;
 }
 
 .root [data-belt="green"] {
-  --belt: #5f7d3a;
+  --belt: #6a8a3f;
 }
 
 .root [data-belt="blue"] {
-  --belt: #3e5c7e;
+  --belt: #4a6c94;
 }
 
 .root [data-belt="brown"] {
-  --belt: #6b4425;
+  --belt: #7a4e2b;
 }
 
 .root [data-belt="black"] {
-  --belt: #1f1a16;
+  --belt: #0b0a0d;
 }
 
-/* ---------------------------------------------------------------- Studio */
+/* ---------------------------------------------------------------- Studio: the doors open */
 
 .studio {
   position: relative;
@@ -486,7 +395,7 @@
   top: 0;
   height: 100svh;
   overflow: hidden;
-  background: var(--paper-deep);
+  background: var(--night-deep);
 }
 
 .studioBackdrop,
@@ -503,9 +412,10 @@
   inset: 0;
   background: linear-gradient(
     90deg,
-    rgb(246 241 230 / 94%) 0%,
-    rgb(246 241 230 / 82%) 36%,
-    rgb(246 241 230 / 10%) 72%
+    rgb(15 13 20 / 92%) 0%,
+    rgb(15 13 20 / 78%) 34%,
+    rgb(15 13 20 / 20%) 64%,
+    rgb(15 13 20 / 0%) 100%
   );
 }
 
@@ -522,6 +432,14 @@
   padding-top: var(--masthead);
 }
 
+.studioCopy .sectionTitle {
+  max-width: none;
+}
+
+.studioCopy .sectionTitle span {
+  display: block;
+}
+
 .roster {
   margin: 0;
   justify-self: end;
@@ -530,12 +448,12 @@
 
 .rosterCard {
   overflow: hidden;
-  border: 1px solid var(--rule);
+  border: 1px solid rgb(255 217 154 / 16%);
   border-radius: 16px;
-  background: var(--paper-raised);
+  background: rgb(22 19 28 / 94%);
   box-shadow:
-    0 1px 0 rgb(255 255 255 / 60%) inset,
-    0 40px 80px rgb(35 27 19 / 22%);
+    0 1px 0 rgb(255 228 180 / 8%) inset,
+    0 40px 90px rgb(5 4 8 / 55%);
 }
 
 .rosterHeader {
@@ -544,7 +462,7 @@
   gap: 12px;
   padding: 16px 20px;
   border-bottom: 1px solid var(--rule);
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 650;
 }
 
@@ -553,7 +471,7 @@
 }
 
 .rosterCount {
-  color: var(--ink-soft);
+  color: var(--lantern);
   font-variant-numeric: tabular-nums;
 }
 
@@ -578,9 +496,10 @@
 }
 
 .rosterRow[data-ready="true"] {
-  background: #fff3d6;
+  background: linear-gradient(90deg, rgb(240 184 102 / 20%), rgb(240 184 102 / 6%));
 }
 
+/* Marking a student lights a small lantern beside their name. */
 .rosterCheck {
   position: relative;
   width: 22px;
@@ -589,7 +508,8 @@
   border-radius: 50%;
   transition:
     background-color 260ms ease,
-    border-color 260ms ease;
+    border-color 260ms ease,
+    box-shadow 400ms ease;
 }
 
 .rosterCheck::after {
@@ -598,7 +518,7 @@
   left: 7px;
   width: 5px;
   height: 9px;
-  border: solid var(--paper-raised);
+  border: solid #1c130a;
   border-width: 0 2px 2px 0;
   content: "";
   opacity: 0;
@@ -609,8 +529,9 @@
 }
 
 .rosterRow[data-marked="true"] .rosterCheck {
-  border-color: var(--ink);
-  background: var(--ink);
+  border-color: var(--lantern);
+  background: var(--lantern);
+  box-shadow: 0 0 14px rgb(240 184 102 / 55%);
 }
 
 .rosterRow[data-marked="true"] .rosterCheck::after {
@@ -620,20 +541,18 @@
 
 .rosterName {
   display: grid;
-  gap: 3px;
+  gap: 4px;
   font-size: 15px;
-  font-weight: 600;
+  font-weight: 650;
 }
 
 .rosterBelt {
   display: inline-flex;
-  gap: 7px;
+  gap: 8px;
   align-items: center;
-  color: var(--ink-faint);
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  color: var(--cream-faint);
+  font-size: 12px;
+  font-weight: 500;
 }
 
 .rosterBelt::before {
@@ -641,7 +560,7 @@
   height: 6px;
   border-radius: 99px;
   background: var(--belt);
-  box-shadow: inset 0 0 0 1px var(--belt-edge, transparent);
+  box-shadow: 0 0 0 1px rgb(241 230 210 / 18%);
   content: "";
 }
 
@@ -657,14 +576,14 @@
   height: 6px;
   overflow: hidden;
   border-radius: 99px;
-  background: rgb(35 27 19 / 9%);
+  background: rgb(241 230 210 / 10%);
 }
 
 .rosterBar::after {
   position: absolute;
   inset: 0;
   border-radius: inherit;
-  background: var(--wood);
+  background: linear-gradient(90deg, var(--lantern-deep), var(--lantern));
   content: "";
   transform: scaleX(var(--fill));
   transform-origin: left;
@@ -672,46 +591,62 @@
 }
 
 .rosterRow[data-ready="true"] .rosterBar::after {
-  background: var(--seal);
+  background: var(--glow);
 }
 
 .rosterTally {
   min-width: 34px;
-  color: var(--ink-soft);
-  font-size: 12px;
+  color: var(--cream-soft);
+  font-size: 13px;
   font-variant-numeric: tabular-nums;
   text-align: right;
 }
 
 .rosterStatus {
-  color: var(--ink-faint);
-  font-size: 12px;
+  color: var(--cream-faint);
+  font-size: 13px;
   font-weight: 600;
   text-align: right;
 }
 
 .rosterRow[data-marked="true"] .rosterStatus {
-  color: var(--ink);
+  color: var(--cream);
 }
 
 .rosterRow[data-ready="true"] .rosterStatus {
-  color: var(--seal);
+  color: var(--glow);
 }
 
 .readyNote {
   display: flex;
   gap: 16px;
   align-items: center;
-  margin-top: 18px;
+  margin-top: 16px;
   padding: 14px 18px;
+  border: 1px solid rgb(255 217 154 / 22%);
   border-radius: 14px;
-  background: rgb(251 248 241 / 94%);
-  box-shadow: 0 18px 40px rgb(35 27 19 / 14%);
+  background: rgb(36 28 26 / 94%);
+  box-shadow: 0 20px 50px rgb(5 4 8 / 45%);
   opacity: 0;
   transform: translateY(14px);
   transition:
     opacity 400ms ease,
     transform 500ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.readyNote[data-visible="true"] {
+  opacity: 1;
+  transform: none;
+}
+
+/* The belt she is ready to test for. */
+.readyBelt {
+  flex: 0 0 auto;
+  width: 34px;
+  height: 10px;
+  border-radius: 99px;
+  background: var(--belt);
+  box-shadow: 0 0 18px rgb(226 178 58 / 50%);
 }
 
 .readyNote p {
@@ -722,35 +657,17 @@
 }
 
 .readyNote p span {
-  color: var(--ink-soft);
+  color: var(--cream-soft);
   font-size: 13px;
 }
 
-.readyNote[data-visible="true"] {
-  opacity: 1;
-  transform: none;
-}
-
-.readyNote .seal {
-  flex: 0 0 auto;
-  transform: rotate(-8deg) scale(1.6);
-  opacity: 0;
-  transition:
-    transform 420ms cubic-bezier(0.34, 1.4, 0.64, 1) 160ms,
-    opacity 200ms ease 160ms;
-}
-
-.readyNote[data-visible="true"] .seal {
-  opacity: 1;
-  transform: rotate(-8deg) scale(1);
-}
-
-/* Shoji doors: washi panels in a wooden lattice, with the invitation written across them. */
-.shoji {
+/* The lit doors, the light behind them, and the class as shadows on the paper. */
+.shoji,
+.spill {
   display: none;
 }
 
-/* ---------------------------------------------------------------- Product */
+/* ---------------------------------------------------------------- Product: screens in the dark */
 
 .product {
   display: grid;
@@ -759,7 +676,11 @@
   align-items: center;
   width: min(100% - 2 * var(--gutter), 1280px);
   margin: 0 auto;
-  padding: clamp(110px, 16vh, 180px) 0;
+  padding: clamp(120px, 18vh, 200px) 0 clamp(90px, 14vh, 160px);
+}
+
+.productCopy .sectionTitle {
+  max-width: 12ch;
 }
 
 .productFigure {
@@ -768,15 +689,33 @@
 
 .productScreens {
   position: relative;
-  padding: 0 0 10% 8%;
+  padding: 0 0 12% 9%;
+}
+
+/* The light a bright screen throws on a dark room. */
+.productScreens::before {
+  position: absolute;
+  z-index: -1;
+  inset: 4% -6% -4% 0;
+  background: radial-gradient(
+    ellipse 60% 55% at 55% 50%,
+    rgb(255 226 180 / 16%),
+    rgb(255 200 140 / 5%) 55%,
+    transparent 75%
+  );
+  content: "";
 }
 
 .productDesktop {
   overflow: hidden;
-  border: 1px solid var(--rule-strong);
+  border: 1px solid rgb(255 236 204 / 14%);
   border-radius: 12px;
-  background: var(--paper-raised);
-  box-shadow: 0 40px 90px rgb(35 27 19 / 18%);
+  background: #0c0b10;
+  box-shadow:
+    0 0 0 6px #0c0b10,
+    0 0 0 7px rgb(255 236 204 / 8%),
+    0 50px 120px rgb(0 0 0 / 55%),
+    0 0 90px rgb(255 214 160 / 10%);
 }
 
 .productDesktop img,
@@ -792,17 +731,21 @@
   left: 0;
   width: 26%;
   overflow: hidden;
-  border: 7px solid var(--ink);
+  border: 7px solid #0c0b10;
   border-radius: 28px;
-  background: var(--ink);
-  box-shadow: 0 30px 60px rgb(35 27 19 / 30%);
+  background: #0c0b10;
+  box-shadow:
+    0 0 0 1px rgb(255 236 204 / 14%),
+    0 30px 70px rgb(0 0 0 / 60%),
+    0 0 60px rgb(255 214 160 / 12%);
 }
 
 .productFigure .caption {
-  padding-left: 8%;
+  margin-top: 26px;
+  padding-left: 9%;
 }
 
-/* ---------------------------------------------------------------- Day */
+/* ---------------------------------------------------------------- Day: a line of light */
 
 .day {
   display: grid;
@@ -810,7 +753,7 @@
   gap: clamp(40px, 6vw, 110px);
   width: min(100% - 2 * var(--gutter), 1180px);
   margin: 0 auto;
-  padding: clamp(60px, 10vh, 120px) 0 clamp(110px, 16vh, 180px);
+  padding: clamp(60px, 10vh, 120px) 0 clamp(120px, 18vh, 200px);
 }
 
 .dayHeader {
@@ -819,30 +762,43 @@
   align-self: start;
 }
 
+.dayHeader .sectionTitle {
+  max-width: 11ch;
+}
+
 .dayLinks {
   display: flex;
   flex-wrap: wrap;
   gap: 4px 26px;
-  margin-top: 24px;
+  margin-top: 22px;
 }
 
 .dayList {
   position: relative;
   display: grid;
-  gap: clamp(44px, 7vh, 72px);
+  gap: clamp(46px, 7.5vh, 76px);
   margin: 0;
-  padding: 8px 0 8px 46px;
+  padding: 8px 0 8px 52px;
   list-style: none;
 }
 
+.dayTrack,
 .dayLine {
   position: absolute;
-  top: 14px;
-  bottom: 14px;
-  left: 8px;
+  top: 18px;
+  bottom: 18px;
+  left: 10px;
   width: 2px;
   border-radius: 2px;
-  background: var(--ink);
+}
+
+.dayTrack {
+  background: var(--rule);
+}
+
+.dayLine {
+  background: linear-gradient(180deg, var(--glow), var(--lantern) 60%, var(--lantern-deep));
+  box-shadow: 0 0 12px rgb(240 184 102 / 45%);
   transform-origin: top;
 }
 
@@ -850,37 +806,60 @@
   position: relative;
 }
 
-.dayDot {
+/* A paper lantern, lit when the light reaches it. */
+.lantern {
   position: absolute;
-  top: 6px;
-  left: -46px;
-  width: 18px;
-  height: 18px;
-  border: 2px solid var(--ink);
-  border-radius: 50%;
-  background: var(--ink);
+  top: 0;
+  left: -51px;
+  width: 20px;
+  height: 26px;
+  border-radius: 46% / 50%;
+  background: radial-gradient(ellipse at 45% 40%, #fff1cf, var(--lantern) 55%, var(--lantern-deep));
+  box-shadow:
+    0 0 0 3px var(--night),
+    0 0 22px 4px rgb(240 170 90 / 50%);
+}
+
+.lantern::before,
+.lantern::after {
+  position: absolute;
+  left: 5px;
+  width: 10px;
+  height: 3px;
+  border-radius: 1px;
+  background: #2a1c12;
+  content: "";
+}
+
+.lantern::before {
+  top: -2px;
+}
+
+.lantern::after {
+  bottom: -2px;
 }
 
 .dayTime {
-  margin: 0 0 6px;
-  color: var(--seal);
-  font-family: var(--serif);
-  font-size: 22px;
-  font-style: italic;
-  line-height: 1;
+  margin: 0 0 8px;
+  color: var(--lantern);
+  font-size: 15px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
 }
 
 .dayTitle {
   margin: 0;
-  font-size: clamp(19px, 1.6vw, 23px);
-  font-weight: 650;
-  letter-spacing: -0.01em;
+  font-size: clamp(20px, 1.7vw, 25px);
+  font-weight: 750;
+  line-height: 1.2;
+  letter-spacing: -0.015em;
 }
 
 .dayTitle a {
   color: inherit;
   text-decoration: none;
-  background-image: linear-gradient(currentColor, currentColor);
+  background-image: linear-gradient(var(--lantern), var(--lantern));
   background-position: 0 100%;
   background-repeat: no-repeat;
   background-size: 0 1px;
@@ -894,21 +873,22 @@
 
 .dayText {
   max-width: 48ch;
-  margin: 8px 0 0;
-  color: var(--ink-soft);
+  margin: 10px 0 0;
+  color: var(--cream-soft);
   font-size: 16px;
   line-height: 1.6;
 }
 
-/* ---------------------------------------------------------------- Breather */
+/* ---------------------------------------------------------------- Breather: the night sky */
 
 .breather {
   position: relative;
   display: grid;
-  height: 78vh;
-  min-height: 460px;
-  place-items: center;
+  height: 86vh;
+  min-height: 480px;
+  align-items: center;
   overflow: hidden;
+  mask-image: linear-gradient(180deg, transparent, #000 22%, #000 78%, transparent);
 }
 
 .breatherArt {
@@ -918,102 +898,109 @@
 
 .breatherArt img {
   object-fit: cover;
+  object-position: 50% 40%;
 }
 
 .breatherLine {
   position: relative;
-  max-width: 22ch;
-  margin: 0;
-  padding: 0 var(--gutter);
-  font-family: var(--serif);
-  font-size: clamp(36px, 5vw, 72px);
-  line-height: 1.04;
-  text-align: center;
-  text-wrap: balance;
+  width: min(100% - 2 * var(--gutter), 1180px);
+  max-width: none;
+  margin: 0 auto;
+  font-size: clamp(32px, 4.4vw, 64px);
+  font-weight: 800;
+  line-height: 1.02;
+  letter-spacing: -0.035em;
+  text-shadow: 0 2px 30px rgb(10 12 30 / 55%);
 }
 
 /* ---------------------------------------------------------------- Pricing */
 
 .pricing {
   display: grid;
-  justify-items: center;
-  padding: clamp(110px, 16vh, 180px) var(--gutter) clamp(80px, 12vh, 140px);
-  text-align: center;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: clamp(40px, 6vw, 100px);
+  align-items: center;
+  width: min(100% - 2 * var(--gutter), 1180px);
+  margin: 0 auto;
+  padding: clamp(110px, 16vh, 180px) 0 clamp(80px, 12vh, 140px);
 }
 
-.pricing .sectionTitle {
-  max-width: none;
+.pricingCopy .sectionTitle {
+  max-width: 12ch;
 }
 
-.priceBlock {
+.paymentsLink {
+  margin: 20px 0 0;
+  font-size: 14px;
+}
+
+.paymentsLink a {
+  color: var(--cream-soft);
+  text-underline-offset: 4px;
+}
+
+.priceCard {
   position: relative;
-  margin-top: 26px;
+  padding: clamp(32px, 4vw, 52px);
+  border: 1px solid rgb(255 217 154 / 16%);
+  border-radius: 22px;
+  background:
+    radial-gradient(ellipse 80% 60% at 30% 0%, rgb(240 184 102 / 12%), transparent 70%),
+    var(--night-raised);
+  box-shadow: 0 40px 100px rgb(0 0 0 / 40%);
 }
 
 .price {
   margin: 0;
-  font-family: var(--serif);
-  font-size: clamp(120px, 17vw, 240px);
-  line-height: 0.86;
-  letter-spacing: -0.03em;
-}
-
-.priceBlock .seal {
-  position: absolute;
-  top: -4%;
-  left: calc(100% + 14px);
+  font-size: clamp(110px, 13vw, 200px);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  line-height: 0.82;
+  letter-spacing: -0.06em;
 }
 
 .pricePeriod {
-  margin: 10px 0 0;
-  color: var(--ink-soft);
-  font-size: 16px;
+  margin: 18px 0 0;
+  color: var(--cream-soft);
+  font-size: 17px;
 }
 
 .included {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 10px;
-  max-width: 640px;
-  margin: 34px 0 0;
-  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 28px;
+  margin: 30px 0 0;
+  padding: 18px 0 0;
+  border-top: 1px solid var(--rule);
   list-style: none;
-  font-size: 14px;
-  font-weight: 600;
-}
-
-.included li {
-  padding: 8px 14px;
-  border: 1px solid var(--rule-strong);
-  border-radius: 999px;
-  background: rgb(251 248 241 / 70%);
-  white-space: nowrap;
-}
-
-.priceNote {
-  margin: 20px 0 0;
-  color: var(--ink-soft);
   font-size: 15px;
 }
 
-.paymentsLink {
-  margin: 18px 0 0;
-  font-size: 13px;
+.included li {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--rule);
 }
 
-.paymentsLink a {
-  color: var(--ink-soft);
-  text-underline-offset: 3px;
+.included li::before {
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--lantern);
+  box-shadow: 0 0 8px rgb(240 184 102 / 60%);
+  content: "";
 }
 
 /* ---------------------------------------------------------------- Mat & FAQ */
 
 .matBand {
   position: relative;
-  height: 24vh;
-  min-height: 160px;
-  mask-image: linear-gradient(180deg, transparent, #000 28%, #000 72%, transparent);
+  height: 26vh;
+  min-height: 170px;
+  mask-image: linear-gradient(180deg, transparent, #000 32%, #000 68%, transparent);
 }
 
 .matBand img {
@@ -1026,14 +1013,11 @@
   padding: clamp(60px, 10vh, 110px) 0 clamp(110px, 16vh, 170px);
 }
 
-.faqHeader {
-  margin-bottom: 30px;
-}
-
 .faqGroups {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px clamp(32px, 5vw, 72px);
+  margin-top: 26px;
 }
 
 .faqGroup {
@@ -1041,12 +1025,10 @@
 }
 
 .faqGroup h3 {
-  margin: 22px 0 6px;
-  color: var(--ink-faint);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
+  margin: 30px 0 6px;
+  color: var(--lantern);
+  font-size: 15px;
+  font-weight: 650;
 }
 
 .faqItem {
@@ -1058,9 +1040,9 @@
   gap: 18px;
   align-items: center;
   justify-content: space-between;
-  min-height: 56px;
+  min-height: 58px;
   padding: 12px 0;
-  font-size: 16px;
+  font-size: 17px;
   font-weight: 600;
   line-height: 1.35;
   list-style: none;
@@ -1073,9 +1055,9 @@
 
 .faqItem p {
   max-width: 60ch;
-  margin: 0 0 20px;
-  color: var(--ink-soft);
-  font-size: 15px;
+  margin: 0 0 22px;
+  color: var(--cream-soft);
+  font-size: 16px;
   line-height: 1.65;
 }
 
@@ -1084,6 +1066,7 @@
   flex: 0 0 auto;
   width: 12px;
   height: 12px;
+  color: var(--lantern);
 }
 
 .faqIcon::before,
@@ -1106,7 +1089,7 @@
   transform: rotate(0deg);
 }
 
-/* ---------------------------------------------------------------- Finale */
+/* ---------------------------------------------------------------- Finale: the class in lamplight */
 
 .finale {
   position: relative;
@@ -1114,6 +1097,13 @@
   min-height: 100svh;
   grid-template-rows: 1fr auto;
   overflow: hidden;
+}
+
+/* The class sits below the closing line; the dark above them is the night page. */
+.finaleScene {
+  position: absolute;
+  inset: 32svh 0 0;
+  mask-image: linear-gradient(180deg, transparent 0%, #000 24%);
 }
 
 .finaleArt,
@@ -1132,29 +1122,28 @@
   display: grid;
   justify-items: center;
   align-content: start;
-  padding: calc(var(--masthead) + 6vh) var(--gutter) 0;
+  padding: calc(var(--masthead) + 3vh) var(--gutter) 0;
   text-align: center;
 }
 
 .finaleCopy .actions {
-  margin-top: 22px;
+  margin-top: 26px;
 }
 
 .finaleTitle {
   max-width: 22ch;
   margin: 0;
-  font-family: var(--serif);
-  font-size: clamp(48px, 6.4vw, 100px);
-  font-weight: 400;
+  font-size: clamp(44px, 5.8vw, 92px);
+  font-weight: 800;
   line-height: 0.94;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.045em;
   text-wrap: balance;
 }
 
 .finaleLede {
   margin: 18px 0 0;
-  color: var(--ink-soft);
-  font-size: 17px;
+  color: var(--cream-soft);
+  font-size: 18px;
 }
 
 .footer {
@@ -1165,17 +1154,17 @@
   gap: 12px 28px;
   align-items: center;
   justify-content: space-between;
-  padding: 22px var(--gutter);
+  padding: 18px var(--gutter);
   border-top: 1px solid var(--rule);
-  color: var(--ink-soft);
-  background: rgb(246 241 230 / 94%);
-  font-size: 13px;
+  color: var(--cream-soft);
+  background: rgb(15 13 20 / 86%);
+  font-size: 14px;
 }
 
 .footer nav {
   display: flex;
   flex-wrap: wrap;
-  gap: 0 22px;
+  gap: 0 24px;
 }
 
 .footer a {
@@ -1187,7 +1176,7 @@
 }
 
 .footer a:hover {
-  color: var(--ink);
+  color: var(--cream);
 }
 
 .footer p {
@@ -1195,7 +1184,7 @@
 }
 
 .footerBrand {
-  color: var(--ink);
+  color: var(--cream);
 }
 
 /* ---------------------------------------------------------------- Focus */
@@ -1205,7 +1194,7 @@
 .footer a:focus-visible,
 .paymentsLink a:focus-visible,
 .faqItem summary:focus-visible {
-  outline: 2px solid currentColor;
+  outline: 2px solid var(--lantern);
   outline-offset: 3px;
 }
 
@@ -1213,12 +1202,12 @@
 
 @keyframes mastheadGround {
   from {
-    background: rgb(246 241 230 / 0%);
+    background: rgb(21 19 28 / 0%);
     box-shadow: 0 1px 0 transparent;
   }
 
   to {
-    background: rgb(246 241 230 / 92%);
+    background: rgb(21 19 28 / 88%);
     box-shadow: 0 1px 0 var(--rule);
   }
 }
@@ -1239,50 +1228,37 @@
   }
 }
 
+@keyframes sunset {
+  to {
+    transform: translateY(calc(var(--parallax) * 70vh)) scale(0.94);
+    filter: saturate(1.2);
+  }
+}
+
+@keyframes nightfall {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 0.9;
+  }
+}
+
+@keyframes starsOut {
+  from {
+    opacity: 0.15;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
 @keyframes heroCopyAway {
   to {
     opacity: 0;
     transform: translateY(-10vh);
-  }
-}
-
-@keyframes brushDraw {
-  from {
-    stroke-dashoffset: 640;
-  }
-
-  to {
-    stroke-dashoffset: 0;
-  }
-}
-
-@keyframes scrapGather {
-  0% {
-    opacity: 1;
-    transform: translate(var(--from-x), var(--from-y)) rotate(var(--from-r));
-  }
-
-  72% {
-    opacity: 1;
-    transform: translate(0, calc(var(--stack) * -5px)) rotate(calc((var(--stack) - 2.5) * 1.6deg))
-      scale(0.86);
-  }
-
-  100% {
-    opacity: 0;
-    transform: translate(0, calc(var(--stack) * -5px)) scale(0.8);
-  }
-}
-
-@keyframes resolve {
-  from {
-    opacity: 0;
-    transform: translateY(18px) scale(0.92);
-  }
-
-  to {
-    opacity: 1;
-    transform: none;
   }
 }
 
@@ -1298,6 +1274,33 @@
   }
 }
 
+/* Light bursts through the parting doors, then the room settles into view. */
+@keyframes spill {
+  0% {
+    opacity: 0;
+    transform: scaleX(0.04);
+  }
+
+  30% {
+    opacity: 1;
+  }
+
+  100% {
+    opacity: 0;
+    transform: scaleX(1.5);
+  }
+}
+
+@keyframes veil {
+  from {
+    opacity: 1;
+  }
+
+  to {
+    opacity: 0;
+  }
+}
+
 @keyframes rise {
   from {
     opacity: 0;
@@ -1310,7 +1313,7 @@
   }
 }
 
-@keyframes ink {
+@keyframes lightLine {
   from {
     transform: scaleY(0);
   }
@@ -1320,13 +1323,12 @@
   }
 }
 
-@keyframes dotFill {
+@keyframes lanternLight {
   from {
-    background: var(--paper);
-  }
-
-  to {
-    background: var(--ink);
+    background: #2a2532;
+    box-shadow:
+      0 0 0 3px var(--night),
+      0 0 0 0 rgb(240 170 90 / 0%);
   }
 }
 
@@ -1358,7 +1360,7 @@
 }
 
 @media (prefers-reduced-motion: no-preference) {
-  /* The hero settles in on load: kicker, then each line, then the rest. */
+  /* The hero settles in on load: the tagline, then each line, then the rest. */
   .heroCopy > *,
   .heroTitle > span {
     animation: arrive 900ms cubic-bezier(0.22, 1, 0.36, 1) both;
@@ -1384,10 +1386,6 @@
     animation: none;
   }
 
-  .brush {
-    animation: brushDraw 1.3s cubic-bezier(0.65, 0, 0.35, 1) 0.7s both;
-  }
-
   @supports (animation-timeline: view()) {
     .masthead {
       animation: mastheadGround linear both;
@@ -1405,23 +1403,41 @@
       height: 3px;
       background: linear-gradient(
         90deg,
-        #d8d2c6 0 14.28%,
-        #d9a931 14.28% 28.57%,
-        #d9772e 28.57% 42.85%,
-        #5f7d3a 42.85% 57.14%,
-        #3e5c7e 57.14% 71.42%,
-        #6b4425 71.42% 85.71%,
-        #1f1a16 85.71%
+        #f4ede0 0 14.28%,
+        #e2b23a 14.28% 28.57%,
+        #e07f34 28.57% 42.85%,
+        #6a8a3f 42.85% 57.14%,
+        #4a6c94 57.14% 71.42%,
+        #7a4e2b 71.42% 85.71%,
+        #050406 85.71%
       );
+      box-shadow: 0 1px 0 rgb(241 230 210 / 14%);
       animation: beltRank linear both;
       animation-timeline: scroll(root);
     }
 
-    .heroSun,
     .heroRidge {
       animation: sink linear both;
       animation-timeline: scroll(root);
       animation-range: 0 100svh;
+    }
+
+    .heroSun {
+      animation: sunset linear both;
+      animation-timeline: scroll(root);
+      animation-range: 0 80svh;
+    }
+
+    .heroNight {
+      animation: nightfall linear both;
+      animation-timeline: scroll(root);
+      animation-range: 0 100svh;
+    }
+
+    .heroStars {
+      animation: starsOut linear both;
+      animation-timeline: scroll(root);
+      animation-range: 0 70svh;
     }
 
     .heroCopy {
@@ -1430,16 +1446,20 @@
       animation-range: 15svh 75svh;
     }
 
-    .scrap {
-      animation: scrapGather linear both;
-      animation-timeline: --problem;
-      animation-range: contain 0% contain 62%;
+    .problemCopy,
+    .productCopy,
+    .pricingCopy,
+    .priceCard,
+    .faq > .sectionTitle,
+    .faqGroup {
+      animation: rise linear both;
+      animation-timeline: view();
+      animation-range: entry 0% entry 70%;
     }
 
-    .resolution {
-      animation: resolve linear both;
-      animation-timeline: --problem;
-      animation-range: contain 46% contain 70%;
+    .dojoArt {
+      animation: drift linear both;
+      animation-timeline: view();
     }
 
     .shoji {
@@ -1447,82 +1467,125 @@
       z-index: 5;
       top: 0;
       bottom: 0;
-      display: grid;
+      display: block;
       width: 50.5%;
-      place-items: center;
-      border: clamp(10px, 1.2vw, 18px) solid var(--wood-dark);
-      background-color: #eee9de;
+      overflow: hidden;
+      border: clamp(10px, 1.3vw, 20px) solid #24170e;
+      background-color: #f0ae62;
       background-image:
-        linear-gradient(90deg, transparent calc(100% - 6px), var(--wood) 0),
-        linear-gradient(transparent calc(100% - 6px), var(--wood) 0), url("/marketing/washi.webp");
+        url("/marketing/washi.webp"),
+        radial-gradient(ellipse 120% 80% at var(--glow-x) 62%, #ffe8b8, #f7b96a 48%, #cf7d3c 100%);
       background-size:
-        33.34% 100%,
-        100% 16.67%,
-        220px 220px;
-      background-blend-mode: normal, normal, multiply;
-      box-shadow: inset 0 0 60px rgb(107 82 48 / 18%);
+        220px 220px,
+        100% 100%;
+      background-blend-mode: multiply, normal;
+      box-shadow: inset 0 0 80px rgb(120 60 20 / 35%);
       animation-timeline: --studio;
-      animation-range: contain 4% contain 24%;
+      animation-range: contain 6% contain 26%;
       animation-fill-mode: both;
       animation-timing-function: cubic-bezier(0.65, 0, 0.35, 1);
     }
 
+    /* The class, as shadows thrown on the paper. */
+    .shoji::before {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      width: 198%;
+      background: url("/marketing/scenes/door-shadows-wide.webp") 50% 100% / cover no-repeat;
+      content: "";
+      mix-blend-mode: multiply;
+    }
+
+    /* Kumiko lattice and the wooden kick panel at the foot of the door. */
+    .shoji::after {
+      position: absolute;
+      inset: 0;
+      background-image:
+        linear-gradient(0deg, #3b2617 0 9%, #b5733a 9% calc(9% + 3px), transparent 0),
+        linear-gradient(90deg, transparent calc(100% - 6px), #35210f 0),
+        linear-gradient(transparent calc(100% - 6px), #35210f 0);
+      background-size:
+        100% 100%,
+        25% 100%,
+        100% 15.15%;
+      content: "";
+    }
+
     .shoji[data-side="left"] {
+      --glow-x: 100%;
+
       left: 0;
       animation-name: doorLeft;
     }
 
+    .shoji[data-side="left"]::before {
+      left: 0;
+    }
+
     .shoji[data-side="right"] {
+      --glow-x: 0%;
+
       right: 0;
       animation-name: doorRight;
     }
 
-    /* Ink on the paper: a soft washi halo keeps the lattice from crossing the letters. */
-    .shoji span {
-      padding: 0.5em 0.6em;
-      color: var(--ink);
+    .shoji[data-side="right"]::before {
+      right: 0;
+    }
+
+    /* Coming up the path in the dark: the doors brighten as they fill the view. */
+    .studioStage::after {
+      position: absolute;
+      z-index: 6;
+      inset: 0;
+      background: var(--night);
+      content: "";
+      pointer-events: none;
+      animation: veil linear both;
+      animation-timeline: --studio;
+      animation-range: entry 35% entry 100%;
+    }
+
+    .spill {
+      position: absolute;
+      z-index: 4;
+      inset: -10% 0;
+      display: block;
       background: radial-gradient(
-        closest-side,
-        rgb(238 233 222 / 97%) 58%,
-        rgb(238 233 222 / 0%) 100%
+        ellipse 34% 62% at 50% 56%,
+        rgb(255 236 196 / 96%),
+        rgb(255 196 120 / 62%) 38%,
+        rgb(240 150 70 / 0%) 74%
       );
-      font-family: var(--serif);
-      font-size: clamp(54px, 9vw, 150px);
-      line-height: 1;
-    }
-
-    .shoji[data-side="left"] span {
-      justify-self: end;
-      font-style: normal;
-    }
-
-    .shoji[data-side="right"] span {
-      justify-self: start;
-      font-style: italic;
+      pointer-events: none;
+      animation: spill linear both;
+      animation-timeline: --studio;
+      animation-range: contain 8% contain 32%;
     }
 
     .studioContent {
       animation: rise linear both;
       animation-timeline: --studio;
-      animation-range: contain 14% contain 26%;
+      animation-range: contain 20% contain 31%;
     }
 
     .productPhone {
       animation: rise linear both;
       animation-timeline: view();
-      animation-range: entry 0% entry 100%;
+      animation-range: entry 10% entry 100%;
     }
 
     .dayLine {
-      animation: ink linear both;
+      animation: lightLine linear both;
       animation-timeline: view();
-      animation-range: cover 15% cover 75%;
+      animation-range: cover 18% cover 72%;
     }
 
-    .dayDot {
-      animation: dotFill linear both;
+    .lantern {
+      animation: lanternLight linear both;
       animation-timeline: view();
-      animation-range: entry 100% cover 40%;
+      animation-range: entry 100% cover 42%;
     }
 
     .breatherArt {
@@ -1541,12 +1604,16 @@
 /* ---------------------------------------------------------------- Narrow screens */
 
 @media (max-width: 900px) {
+  .studio {
+    height: 380vh;
+  }
+
   .studioShade {
     background: linear-gradient(
       180deg,
-      rgb(246 241 230 / 96%) 0%,
-      rgb(246 241 230 / 88%) 42%,
-      rgb(246 241 230 / 30%) 100%
+      rgb(15 13 20 / 94%) 0%,
+      rgb(15 13 20 / 82%) 46%,
+      rgb(15 13 20 / 40%) 100%
     );
   }
 
@@ -1555,6 +1622,10 @@
     gap: 18px;
     align-content: center;
     width: calc(100% - 32px);
+  }
+
+  .studioCopy .sectionTitle {
+    max-width: 14ch;
   }
 
   .studioCopy .sectionLede {
@@ -1575,7 +1646,7 @@
 
   .rosterHeader {
     padding: 12px 14px;
-    font-size: 12px;
+    font-size: 13px;
   }
 
   .rosterStatus {
@@ -1588,7 +1659,8 @@
   }
 
   .product,
-  .day {
+  .day,
+  .pricing {
     grid-template-columns: minmax(0, 1fr);
   }
 
@@ -1597,63 +1669,61 @@
   }
 
   .productScreens {
-    padding: 0;
-  }
-
-  .productDesktop {
-    display: none;
+    padding: 0 0 18% 14%;
   }
 
   .productPhone {
-    position: relative;
-    width: min(300px, 78vw);
-    margin-inline: auto;
+    width: 34%;
+    border-width: 5px;
+    border-radius: 20px;
+  }
+
+  .productDesktop {
+    border-radius: 8px;
+    box-shadow:
+      0 0 0 4px #0c0b10,
+      0 0 0 5px rgb(255 236 204 / 8%),
+      0 30px 70px rgb(0 0 0 / 55%);
   }
 
   .productFigure .caption {
     padding-left: 0;
-    text-align: center;
   }
 
   .faqGroups {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .priceBlock .seal {
-    top: auto;
-    bottom: 4%;
-    left: calc(100% + 6px);
-    width: 54px;
-    height: 54px;
-    font-size: 16px;
+  .dojoFrame {
+    aspect-ratio: 4 / 5;
+    max-height: none;
+  }
+
+  .dojoArt img {
+    object-position: 50% 66%;
+  }
+
+  .dojo .caption {
+    right: auto;
+    bottom: 6%;
+    left: var(--gutter);
   }
 }
 
 @media (max-width: 560px) {
-  .shoji span {
-    font-size: clamp(34px, 11vw, 54px);
+  .hero {
+    align-items: start;
+    padding-top: calc(var(--masthead) + 9vh);
+  }
+
+  .heroSun {
+    top: 54%;
+    left: 70%;
+    width: 80px;
   }
 
   .finaleTitle {
-    max-width: 10ch;
-  }
-
-  .scrap {
-    width: 42vw;
-    padding: 10px 12px;
-  }
-
-  .scrap[data-kind="note"],
-  .scrap[data-kind="receipt"] {
-    width: 36vw;
-  }
-
-  .resolutionText {
-    font-size: 26px;
-  }
-
-  .studioCopy .kicker {
-    margin-bottom: 8px;
+    max-width: 9ch;
   }
 
   .studioCopy .sectionTitle {
@@ -1666,6 +1736,10 @@
 
   .readyNote p span {
     display: none;
+  }
+
+  .included {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .footer {
