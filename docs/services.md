@@ -134,9 +134,9 @@ and activation; this is not a third verified live cron. The bridge uses a
 seconds left. At most 30 rows are processed per daily invocation; backlog can
 remain for later runs. The backend budgets 25 seconds per batch. Both frontend
 and backend automation worker flags and the backend send flag remain false in
-this candidate. The bridge stops further batches after a failed or unknown send;
-provider acceptance does not prove delivery. The daily schedule does not promise
-all due messages will be sent that day. See
+this candidate. The bridge stops further batches after any `retry_wait`, `failed`,
+or `unknown` outcome; provider acceptance does not prove delivery. The daily
+schedule does not promise all due messages will be sent that day. See
 [missed-class scheduling](missed-class-automation.md#scheduled-work-and-pause-controls).
 
 ## Render — backend

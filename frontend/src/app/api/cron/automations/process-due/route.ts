@@ -148,6 +148,7 @@ export async function handleAutomationCron(
       if (
         !summary.has_more ||
         (summary.enqueued === 0 && summary.processed === 0) ||
+        summary.retry_wait > 0 ||
         summary.failed > 0 ||
         summary.unknown > 0
       ) {

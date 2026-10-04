@@ -277,8 +277,7 @@ describe("missed-class automation cron", () => {
       summary({
         enqueued: 10,
         processed: 10,
-        accepted: 8,
-        retry_wait: 1,
+        accepted: 9,
         skipped: 1,
         has_more: true,
       }),
@@ -303,8 +302,7 @@ describe("missed-class automation cron", () => {
       summary({
         enqueued: 13,
         processed: 26,
-        accepted: 23,
-        retry_wait: 1,
+        accepted: 24,
         skipped: 2,
         has_more: true,
       }),
@@ -350,8 +348,8 @@ describe("missed-class automation cron", () => {
     assert.equal(calls.length, 2);
   });
 
-  it("returns all outcomes truthfully and stops further batches on failed or unknown sends", async () => {
-    for (const outcome of ["failed", "unknown"]) {
+  it("returns all outcomes truthfully and stops further batches on deferred, failed, or unknown sends", async () => {
+    for (const outcome of ["retry_wait", "failed", "unknown"]) {
       calls = [];
       const body = summary({ processed: 3, accepted: 1, skipped: 1, [outcome]: 1, has_more: true });
       httpsRequest = async (options) => {

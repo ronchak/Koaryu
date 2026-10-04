@@ -190,10 +190,10 @@ in `X-Internal-Secret` to
 timeout, and starts another only with at least 30 seconds left. It stops when
 `has_more=false`, both `enqueued` and `processed` are zero, or a response is invalid,
 failed, or ambiguous. It never blindly retries a lost worker response.
-Any returned `failed` or `unknown` count also stops further batches. Counts from
-completed batches remain truthful, including provider acceptance, which does not
-prove inbox delivery. A `retry_wait` count alone permits another batch when
-actionable work and enough time remain.
+Any returned `retry_wait`, `failed`, or `unknown` count also stops further batches.
+Counts and `has_more` from completed batches remain truthful, including provider
+acceptance, which does not prove inbox delivery. The durable outbox owns retries;
+the bridge does not continue processing further batches after a deferred retry.
 
 Each backend call has a 25-second work budget, including credential reads,
 refresh, persistence, and provider submission. No new send begins after its
