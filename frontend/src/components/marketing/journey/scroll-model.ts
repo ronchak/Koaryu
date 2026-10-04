@@ -8,11 +8,14 @@ export interface SceneKeyframe {
 
 /**
  * A transition starts when the gap after a chapter rises to this fraction of
- * the screen height (the chapter is mostly read)...
+ * the screen height (the chapter has been read and is fading away)...
  */
-export const TRANSITION_START = 0.6;
-/** ...and finishes when the next chapter's top reaches this fraction. */
-export const TRANSITION_END = 0.4;
+export const TRANSITION_START = 0.55;
+/**
+ * ...and finishes as the next chapter's top reaches this fraction, so the next
+ * chapter rises in over its finished frame rather than over a moving one.
+ */
+export const TRANSITION_END = 0.75;
 
 const FAQ_GROUP_IDS: readonly string[] = landingPageContent.chapters.flatMap((chapter) =>
   chapter.kind === "faq" ? chapter.groups.map((group) => group.id) : [],
@@ -80,6 +83,26 @@ export function progressForScroll(scrollY: number, keyframes: readonly SceneKeyf
     }
   }
   return keyframes[keyframes.length - 1]!.scene;
+}
+
+export type MastheadTone = "light" | "dark";
+
+/**
+ * Scene progress over which the top edge of the artwork is dark: inside the
+ * hill, then under the dojo ceiling. Wide frames leave the ceiling sooner than
+ * tall ones, which keep more of it in view.
+ */
+export const DARK_TOP_START = 0.08;
+export const DARK_TOP_END = Object.freeze({ wide: 0.385, tall: 0.575 });
+
+/**
+ * The masthead takes the tone of the artwork beneath it, so it reads as part of
+ * the scene. `viewBoxHeight` runs from 1000 (wide screens) to 2000 (phones).
+ */
+export function mastheadTone(progress: number, viewBoxHeight: number): MastheadTone {
+  const tallness = Math.min(1, Math.max(0, (viewBoxHeight - 1000) / 1000));
+  const end = DARK_TOP_END.wide + (DARK_TOP_END.tall - DARK_TOP_END.wide) * tallness;
+  return progress >= DARK_TOP_START && progress <= end ? "dark" : "light";
 }
 
 /** Reduced motion shows only chapter still frames, switching at each transition's midpoint. */

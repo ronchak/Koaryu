@@ -7,6 +7,7 @@ import {
   TRANSITION_END,
   TRANSITION_START,
   driftForScroll,
+  mastheadTone,
   keyframesForLayout,
   progressForScroll,
   resolveLegacyHash,
@@ -58,23 +59,35 @@ describe("Journey scroll model", () => {
       1000,
       9000,
     );
-    assert.equal(TRANSITION_START, 0.6);
-    assert.equal(TRANSITION_END, 0.4);
+    assert.equal(TRANSITION_START, 0.55);
+    assert.equal(TRANSITION_END, 0.75);
     assert.deepEqual(keyframes, [
       { scrollY: 0, scene: 0 },
-      { scrollY: 400, scene: 0 },
-      { scrollY: 1100, scene: 0.1 },
-      { scrollY: 1900, scene: 0.1 },
-      { scrollY: 3400, scene: 0.3 },
+      { scrollY: 450, scene: 0 },
+      { scrollY: 750, scene: 0.1 },
+      { scrollY: 1950, scene: 0.1 },
+      { scrollY: 3050, scene: 0.3 },
     ]);
     // Reading the first two chapters moves nothing.
     assert.equal(progressForScroll(200, keyframes), 0);
     assert.equal(progressForScroll(1500, keyframes), 0.1);
     // Halfway through a gap, the story is halfway through its beat.
-    assert.ok(Math.abs(progressForScroll(750, keyframes) - 0.05) < 1e-9);
+    assert.ok(Math.abs(progressForScroll(600, keyframes) - 0.05) < 1e-9);
     // A longer interlude gives its beat more scroll.
-    assert.ok(3400 - 1900 > 1100 - 400);
+    assert.ok(3050 - 1950 > 750 - 450);
     assert.equal(progressForScroll(8000, keyframes), 0.3);
+  });
+
+  it("gives the masthead the tone of the artwork beneath it", () => {
+    // The hills and the open sky are light; inside the hill and under the dojo ceiling are dark.
+    assert.equal(mastheadTone(0, 1000), "light");
+    assert.equal(mastheadTone(0.1, 1000), "dark");
+    assert.equal(mastheadTone(0.288, 1000), "dark");
+    assert.equal(mastheadTone(0.45, 1000), "light");
+    // Tall screens keep the ceiling in view for longer.
+    assert.equal(mastheadTone(0.52, 2000), "dark");
+    assert.equal(mastheadTone(0.66, 2000), "light");
+    assert.equal(mastheadTone(1, 1600), "light");
   });
 
   it("drifts held frames continuously and eases the drift out during each beat", () => {
@@ -119,7 +132,7 @@ describe("Journey scroll model", () => {
       "interludeAfter" in chapter ? chapter.interludeAfter : null,
     );
     // Every beat gets open space; the long cloud-to-floor sequence gets the most.
-    assert.deepEqual(interludes, [50, 60, 70, 80, 130, 100, null]);
+    assert.deepEqual(interludes, [70, 80, 100, 100, 200, 90, null]);
     const scenes = landingPageContent.chapters.map(({ scene }) => scene);
     assert.deepEqual(
       scenes,

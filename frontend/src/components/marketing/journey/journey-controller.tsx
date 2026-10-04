@@ -8,6 +8,7 @@ import { SCENE_HEIGHT, SCENE_WIDTH, frameForDimensions } from "./scene-model";
 import {
   driftForScroll,
   keyframesForLayout,
+  mastheadTone,
   progressForScroll,
   resolveLegacyHash,
   stillFrame,
@@ -74,6 +75,7 @@ export function JourneyController({ children }: JourneyControllerProps) {
     let frameRequest = 0;
     let layerWidth = 0;
     let layerHeight = 0;
+    let viewBoxHeight = 1000;
     let maxScroll = 0;
     let appliedDrift = Number.NaN;
     let lastScrollY = window.scrollY;
@@ -126,7 +128,9 @@ export function JourneyController({ children }: JourneyControllerProps) {
       if (Math.abs(width - layerWidth) > 1 || Math.abs(height - layerHeight) > 1) {
         layerWidth = width;
         layerHeight = height;
-        setFrame(frameForDimensions(width, height));
+        const nextFrame = frameForDimensions(width, height);
+        viewBoxHeight = Number(nextFrame.viewBox.split(" ")[3]) || 1000;
+        setFrame(nextFrame);
       }
     };
 
@@ -167,6 +171,8 @@ export function JourneyController({ children }: JourneyControllerProps) {
       if (displayed !== applied) {
         applied = displayed;
         sceneRef.current?.setProgress(displayed);
+        const tone = mastheadTone(displayed, viewBoxHeight);
+        if (root.dataset.tone !== tone) root.dataset.tone = tone;
       }
       // The held frame drifts with reading instead. A transform on the whole
       // artwork is composited without repainting the SVG.
@@ -222,10 +228,13 @@ export function JourneyController({ children }: JourneyControllerProps) {
       data-enhanced={enhanced ? "true" : "false"}
       data-scrolled="false"
       data-masthead-hidden="false"
+      data-tone="light"
     >
       <div ref={sceneLayerRef} className={styles.sceneLayer} aria-hidden="true">
         <JourneyScene ref={sceneRef} frame={frame} />
       </div>
+      {/* A belt that ranks up from white to black as the page is read. */}
+      <div className={styles.beltProgress} aria-hidden="true" />
       <a href="#main-content" className={styles.skipLink}>
         Skip to content
       </a>

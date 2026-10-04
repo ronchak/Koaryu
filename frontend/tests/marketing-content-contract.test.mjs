@@ -48,7 +48,7 @@ describe("marketing content contract", () => {
         ["product", 0.288, "product"],
         ["features", 0.52, "features"],
         ["pricing", 0.66, "pricing"],
-        ["faq", 0.892, "faq"],
+        ["faq", 0.952, "faq"],
         ["begin", 1, "final"],
       ],
     );
@@ -58,14 +58,15 @@ describe("marketing content contract", () => {
 
   it("preserves direct destinations and states current product limits once, plainly", () => {
     assert.deepEqual(
-      chapter("features").rows.map((row) => row.detail.href),
+      chapter("features").moments.map((moment) => moment.detail.href),
       [
-        "/features/student-management",
-        "/features/belt-tracking",
-        "/features/attendance",
+        "/use-cases/student-retention",
         "/use-cases/trial-to-enrollment",
-        "/use-cases/spreadsheets-to-studio-crm",
+        "/features/student-management",
+        "/features/attendance",
+        "/features/belt-tracking",
         "/features/billing",
+        "/use-cases/spreadsheets-to-studio-crm",
       ],
     );
     assert.deepEqual(

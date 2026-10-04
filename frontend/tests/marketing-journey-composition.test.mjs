@@ -22,7 +22,7 @@ describe("Journey server composition", () => {
     assert.match(chapterSource, /<section[\s\S]*id=\{chapter\.id\}/);
     assert.match(chapterSource, /data-scene=\{chapter\.scene\}/);
     assert.match(chapterSource, /<main id="main-content"/);
-    for (const element of ["<h1", "<h2", "<h3", "<ul", "<dl", "<nav", "<details", "<summary"]) {
+    for (const element of ["<h1", "<h2", "<h3", "<ol", "<dl", "<nav", "<details", "<summary"]) {
       assert.ok(chapterSource.includes(element), element);
     }
     assert.doesNotMatch(chapterSource, /const\s+(?:FEATURE|FAQ|PRICE|ABOUT)_/);
@@ -43,8 +43,22 @@ describe("Journey server composition", () => {
     assert.match(product.image.src, /^\/marketing\/product\/.+\.webp$/);
     assert.match(product.image.caption, /sample studio data/);
     assert.match(product.image.mobile.src, /^\/marketing\/product\/.+-mobile\.webp$/);
-    assert.match(chapterSource, /<source[\s\S]*media="\(min-width: 821px\)"/);
-    assert.match(chapterSource, /alt: image\.alt/);
+    assert.match(product.image.mobile.alt, /phone layout/);
+    // Both screens carry real descriptions and responsive sizes.
+    assert.match(chapterSource, /alt=\{image\.alt\}/);
+    assert.match(chapterSource, /alt=\{image\.mobile\.alt\}/);
+    assert.equal(chapterSource.match(/sizes="/g)?.length, 2);
+  });
+
+  it("tells the features as a day at the studio with an inked timeline", () => {
+    const features = landingPageContent.chapters.find((chapter) => chapter.kind === "features");
+    assert.ok(features);
+    assert.equal(features.moments.length, 7);
+    assert.equal(features.moments[0].time, "7:30 AM");
+    assert.equal(features.moments.at(-1).time, "Sunday");
+    assert.match(chapterSource, /<ol className=\{styles\.dayList\}>/);
+    assert.match(journeyCss, /view-timeline:\s*--day block/);
+    assert.match(journeyCss, /animation-timeline:\s*--day/);
   });
 });
 

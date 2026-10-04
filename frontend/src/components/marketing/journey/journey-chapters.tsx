@@ -1,4 +1,4 @@
-import { getImageProps } from "next/image";
+import Image from "next/image";
 import Link from "next/link";
 import { Fragment, type CSSProperties } from "react";
 
@@ -41,6 +41,15 @@ function ChapterAction({
   );
 }
 
+/** Sets each sentence of a short title on its own line ("One price." / "Every student."). */
+function SentenceLines({ text }: { text: string }) {
+  return text.split(/(?<=\.)\s+/).map((line) => (
+    <span key={line} className={styles.line}>
+      {line}
+    </span>
+  ));
+}
+
 function TextLink({ href, label }: { href: string; label: string }) {
   return (
     <Link className={styles.textLink} href={href}>
@@ -49,17 +58,18 @@ function TextLink({ href, label }: { href: string; label: string }) {
   );
 }
 
+/** Hero copy arrives in a short stagger on load and drifts away as the camera dives. */
 function HeroChapter({ chapter }: { chapter: JourneyHeroChapter }) {
   return (
     <div className={styles.heroCopy}>
-      <p className={styles.kicker}>{chapter.kicker}</p>
+      <p className={styles.heroKicker}>{chapter.kicker}</p>
       <h1 className={styles.heroHeading}>
         {chapter.headline.map((line) => (
           <span key={line}>{line}</span>
         ))}
       </h1>
-      <p className={styles.lede}>{chapter.lede}</p>
-      <div className={styles.actions}>
+      <p className={`${styles.lede} ${styles.heroLede}`}>{chapter.lede}</p>
+      <div className={`${styles.actions} ${styles.heroActions}`}>
         <ChapterAction {...chapter.actions[0]} variant="primary" />
         <ChapterAction {...chapter.actions[1]} />
       </div>
@@ -69,7 +79,7 @@ function HeroChapter({ chapter }: { chapter: JourneyHeroChapter }) {
 
 function ProblemChapter({ chapter }: { chapter: JourneyProblemChapter }) {
   return (
-    <div className={styles.problemCopy}>
+    <div className={`${styles.problemCopy} ${styles.reveal}`}>
       <h2 className={styles.statementHeading}>{chapter.title}</h2>
       <div className={styles.problemResponse}>
         <p>{chapter.question}</p>
@@ -79,11 +89,12 @@ function ProblemChapter({ chapter }: { chapter: JourneyProblemChapter }) {
   );
 }
 
+/** The real belt tracker: the desktop screen, with the phone layout standing in front of it. */
 function ProductChapter({ chapter }: { chapter: JourneyProductChapter }) {
+  const { image } = chapter;
   return (
-    <article className={`${styles.sheet} ${styles.productSheet}`}>
-      <div className={styles.productCopy}>
-        <p className={styles.kicker}>{chapter.kicker}</p>
+    <div className={styles.productStage}>
+      <article className={`${styles.sheet} ${styles.productSheet}`}>
         <h2 className={styles.sheetHeading}>{chapter.title}</h2>
         <p className={styles.lede}>{chapter.lede}</p>
         <dl className={styles.highlights}>
@@ -94,114 +105,106 @@ function ProductChapter({ chapter }: { chapter: JourneyProductChapter }) {
             </div>
           ))}
         </dl>
-      </div>
+      </article>
       <figure className={styles.productFigure}>
-        <ProductPicture image={chapter.image} />
-        <figcaption>{chapter.image.caption}</figcaption>
+        <div className={styles.productScreens}>
+          <div className={styles.productDesktop}>
+            <Image
+              src={image.src}
+              width={image.width}
+              height={image.height}
+              alt={image.alt}
+              sizes="(max-width: 820px) 150vw, 64vw"
+            />
+          </div>
+          <div className={styles.productPhone}>
+            <Image
+              src={image.mobile.src}
+              width={image.mobile.width}
+              height={image.mobile.height}
+              alt={image.mobile.alt}
+              sizes="(max-width: 820px) 200px, 240px"
+            />
+          </div>
+        </div>
+        <figcaption className={styles.caption}>{image.caption}</figcaption>
       </figure>
-    </article>
-  );
-}
-
-/** Desktop shows the full belt tracker; phones show the same screen in the app's phone layout. */
-function ProductPicture({ image }: { image: JourneyProductChapter["image"] }) {
-  const {
-    props: { srcSet: desktopSrcSet },
-  } = getImageProps({
-    src: image.src,
-    width: image.width,
-    height: image.height,
-    alt: "",
-    sizes: "(max-width: 1180px) 60vw, 760px",
-  });
-  const { props: mobileProps } = getImageProps({
-    src: image.mobile.src,
-    width: image.mobile.width,
-    height: image.mobile.height,
-    alt: image.alt,
-    sizes: "300px",
-  });
-  return (
-    <div className={styles.productFrame}>
-      <picture>
-        <source
-          media="(min-width: 821px)"
-          srcSet={desktopSrcSet}
-          width={image.width}
-          height={image.height}
-        />
-        {/* eslint-disable-next-line jsx-a11y/alt-text -- alt arrives in the art-directed props from getImageProps */}
-        <img {...mobileProps} />
-      </picture>
     </div>
   );
 }
 
+/** Features told as a day at the studio; an ink line draws down the day as it is read. */
 function FeaturesChapter({ chapter }: { chapter: JourneyFeaturesChapter }) {
   return (
-    <article className={`${styles.sheet} ${styles.featuresSheet}`}>
-      <header className={styles.sheetHeader}>
-        <div>
-          <p className={styles.kicker}>{chapter.kicker}</p>
-          <h2 className={styles.sheetHeading}>{chapter.title}</h2>
-        </div>
+    <article className={`${styles.sheet} ${styles.daySheet}`}>
+      <header className={styles.dayHeader}>
+        <h2 className={styles.sheetHeading}>{chapter.title}</h2>
         <p className={styles.lede}>{chapter.lede}</p>
+        <nav className={styles.dayLinks} aria-label="Product guides">
+          {chapter.links.map((link) => (
+            <TextLink key={link.href} {...link} />
+          ))}
+        </nav>
       </header>
-      <ul className={styles.featureGrid}>
-        {chapter.rows.map((row) => (
-          <li key={row.detail.href}>
-            <h3>
-              <Link href={row.detail.href}>{row.title}</Link>
+      <ol className={styles.dayList}>
+        {chapter.moments.map((moment) => (
+          <li key={moment.title} className={styles.dayMoment}>
+            <span className={styles.dayDot} aria-hidden="true" />
+            <p className={styles.dayTime}>{moment.time}</p>
+            <h3 className={styles.dayTitle}>
+              <Link href={moment.detail.href}>{moment.title}</Link>
             </h3>
-            <p>{row.description}</p>
+            <p className={styles.dayText}>{moment.description}</p>
           </li>
         ))}
-      </ul>
-      <nav className={styles.sheetLinks} aria-label="Product guides">
-        {chapter.links.map((link) => (
-          <TextLink key={link.href} {...link} />
-        ))}
-      </nav>
+      </ol>
     </article>
   );
 }
 
+/** The price stands in the open sky, without a card. */
 function PricingChapter({ chapter }: { chapter: JourneyPricingChapter }) {
   return (
-    <article className={`${styles.sheet} ${styles.priceSheet}`}>
-      <p className={styles.kicker}>{chapter.kicker}</p>
-      <h2 className={styles.sheetHeading}>{chapter.title}</h2>
-      <p className={styles.price} data-price-amount={chapter.amount}>
-        {chapter.displayPrice}
-      </p>
-      <p className={styles.pricePeriod}>{chapter.period}</p>
-      <dl className={styles.priceFacts}>
-        {chapter.facts.map((fact) => (
-          <div key={fact.label}>
-            <dt>{fact.label}</dt>
-            <dd>{fact.description}</dd>
-          </div>
-        ))}
-      </dl>
-      <ChapterAction {...chapter.setupAction} variant="primary" />
-      <p className={styles.priceNote}>
-        Collecting tuition online? See <Link href="#faq-pricing">Pricing &amp; payments</Link>.
-      </p>
-    </article>
+    <div className={`${styles.priceCopy} ${styles.reveal}`}>
+      <div className={styles.priceLead}>
+        <h2 className={styles.statementHeading}>
+          <SentenceLines text={chapter.title} />
+        </h2>
+        <p className={styles.price} data-price-amount={chapter.amount}>
+          {chapter.displayPrice}
+          <span className={styles.pricePeriod}>{chapter.period}</span>
+        </p>
+      </div>
+      <div className={styles.priceDetail}>
+        <dl className={styles.priceFacts}>
+          {chapter.facts.map((fact) => (
+            <div key={fact.label}>
+              <dt>{fact.label}</dt>
+              <dd>{fact.description}</dd>
+            </div>
+          ))}
+        </dl>
+        <div className={styles.actions}>
+          <ChapterAction {...chapter.setupAction} variant="primary" />
+        </div>
+        <p className={styles.priceNote}>
+          Collecting tuition online? See <Link href="#faq-pricing">Pricing &amp; payments</Link>.
+        </p>
+      </div>
+    </div>
   );
 }
 
 function FaqChapter({ chapter }: { chapter: JourneyFaqChapter }) {
   return (
     <article className={`${styles.sheet} ${styles.faqSheet}`}>
-      <p className={styles.kicker}>{chapter.kicker}</p>
-      <h2 className={styles.sheetHeading}>{chapter.title}</h2>
+      <h2 className={`${styles.sheetHeading} ${styles.revealRow}`}>{chapter.title}</h2>
       <div className={styles.faqGroups}>
         {chapter.groups.map((group) => (
           <section key={group.id} id={group.id} className={styles.faqGroup}>
-            <h3>{group.title}</h3>
+            <h3 className={styles.revealRow}>{group.title}</h3>
             {group.items.map((item) => (
-              <details key={item.question} className={styles.faqItem}>
+              <details key={item.question} className={`${styles.faqItem} ${styles.revealRow}`}>
                 <summary>
                   <span>{item.question}</span>
                   <span className={styles.faqIcon} aria-hidden="true" />
@@ -216,10 +219,13 @@ function FaqChapter({ chapter }: { chapter: JourneyFaqChapter }) {
   );
 }
 
+/** The closing line is written on the dojo wall, above the seated class. */
 function FinalChapter({ chapter }: { chapter: JourneyFinalChapter }) {
   return (
-    <article className={`${styles.sheet} ${styles.finalSheet}`}>
-      <h2 className={styles.sheetHeading}>{chapter.title}</h2>
+    <div className={styles.finalCopy}>
+      <h2 className={styles.finalHeading}>
+        <SentenceLines text={chapter.title} />
+      </h2>
       <p className={styles.lede}>{chapter.lede}</p>
       <div className={styles.actions}>
         <ChapterAction {...chapter.action} variant="primary" />
@@ -234,7 +240,7 @@ function FinalChapter({ chapter }: { chapter: JourneyFinalChapter }) {
         </nav>
         <p>{chapter.copyright}</p>
       </footer>
-    </article>
+    </div>
   );
 }
 

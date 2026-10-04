@@ -30,12 +30,6 @@ export interface LandingDetailReference {
   title: string;
 }
 
-export interface LandingSummaryRow {
-  title: string;
-  description: string;
-  detail: LandingDetailReference;
-}
-
 export interface JourneyBaseChapter {
   id: JourneyChapterId;
   title: string;
@@ -72,7 +66,6 @@ export interface ProductHighlight {
 
 export interface JourneyProductChapter extends Omit<JourneyBaseChapter, "kind"> {
   kind: "product";
-  kicker: string;
   lede: string;
   image: {
     src: string;
@@ -80,17 +73,24 @@ export interface JourneyProductChapter extends Omit<JourneyBaseChapter, "kind"> 
     height: number;
     alt: string;
     caption: string;
-    /** The same screen in the app's phone layout, shown on narrow viewports. */
-    mobile: { src: string; width: number; height: number };
+    /** The same screen in the app's phone layout, shown in front of the desktop screen. */
+    mobile: { src: string; width: number; height: number; alt: string };
   };
   highlights: readonly ProductHighlight[];
 }
 
+/** One moment of a day at the studio, and the part of Koaryu that handles it. */
+export interface DayMoment {
+  time: string;
+  title: string;
+  description: string;
+  detail: LandingDetailReference;
+}
+
 export interface JourneyFeaturesChapter extends Omit<JourneyBaseChapter, "kind"> {
   kind: "features";
-  kicker: string;
   lede: string;
-  rows: readonly LandingSummaryRow[];
+  moments: readonly DayMoment[];
   links: readonly [JourneyAction, JourneyAction];
 }
 
@@ -101,7 +101,6 @@ export interface PricingFact {
 
 export interface JourneyPricingChapter extends Omit<JourneyBaseChapter, "kind"> {
   kind: "pricing";
-  kicker: string;
   amount: string;
   displayPrice: string;
   period: string;
@@ -122,7 +121,6 @@ export interface FaqGroup {
 
 export interface JourneyFaqChapter extends Omit<JourneyBaseChapter, "kind"> {
   kind: "faq";
-  kicker: string;
   groups: readonly FaqGroup[];
 }
 
@@ -159,42 +157,55 @@ function landingDetail(ref: MarketingPageRef): LandingDetailReference {
   };
 }
 
-const featureRows: readonly LandingSummaryRow[] = [
+const dayMoments: readonly DayMoment[] = [
   {
-    title: "Students & families",
+    time: "7:30 AM",
+    title: "Open the dashboard",
     description:
-      "One profile per student with program, rank, guardians and notes. Siblings keep their own history.",
+      "Today's classes, students with attendance gaps and follow-ups that are due, on one screen.",
+    detail: landingDetail({ kind: "useCase", slug: "student-retention" }),
+  },
+  {
+    time: "3:45 PM",
+    title: "A trial family walks in",
+    description:
+      "Add the lead, note the visit and set a follow-up date. Due and overdue follow-ups wait in one queue.",
+    detail: landingDetail({ kind: "useCase", slug: "trial-to-enrollment" }),
+  },
+  {
+    time: "4:30 PM",
+    title: "A parent calls about two kids",
+    description:
+      "Each child keeps their own profile, program, rank and history. Guardians and payers are recorded separately.",
     detail: landingDetail({ kind: "feature", slug: "student-management" }),
   },
   {
-    title: "Ranks & belt tests",
-    description:
-      "Set class-count, time-at-rank and instructor-approval requirements, then see who is ready to test.",
-    detail: landingDetail({ kind: "feature", slug: "belt-tracking" }),
-  },
-  {
-    title: "Attendance",
+    time: "6:00 PM",
+    title: "Take attendance",
     description:
       "Open today's roster and mark Present, Late or Absent. Classes attended count toward the next rank.",
     detail: landingDetail({ kind: "feature", slug: "attendance" }),
   },
   {
-    title: "Trials & leads",
+    time: "7:15 PM",
+    title: "Plan the belt test",
     description:
-      "Track every inquiry from first visit to enrollment, with due and overdue follow-ups in one queue.",
-    detail: landingDetail({ kind: "useCase", slug: "trial-to-enrollment" }),
+      "Check class counts, time at rank and instructor approval for each student before deciding whom to test.",
+    detail: landingDetail({ kind: "feature", slug: "belt-tracking" }),
   },
   {
-    title: "Roster import",
+    time: "8:00 PM",
+    title: "The front desk closes out",
     description:
-      "Bring your spreadsheet. Map the columns to student fields, review the results, and you're set up.",
-    detail: landingDetail({ kind: "useCase", slug: "spreadsheets-to-studio-crm" }),
-  },
-  {
-    title: "Billing records",
-    description:
-      "Payers, invoices and cash or check payments in one place for the front desk. Instructors never see billing.",
+      "Payers, invoices and cash or check payments in one place. Instructors never see billing.",
     detail: landingDetail({ kind: "feature", slug: "billing" }),
+  },
+  {
+    time: "Sunday",
+    title: "Bring your roster over",
+    description:
+      "Import your spreadsheet: map the columns to student fields, review the results, and you're set up.",
+    detail: landingDetail({ kind: "useCase", slug: "spreadsheets-to-studio-crm" }),
   },
 ];
 
@@ -280,7 +291,7 @@ export const landingPageContent = {
       id: "welcome",
       title: "Run the school. Teach the art.",
       scene: 0,
-      interludeAfter: 50,
+      interludeAfter: 70,
       kind: "hero",
       ink: "dark",
       kicker: "For independent martial arts schools",
@@ -295,7 +306,7 @@ export const landingPageContent = {
       id: "the-problem",
       title: "Your studio is not a spreadsheet.",
       scene: 0.1,
-      interludeAfter: 60,
+      interludeAfter: 80,
       kind: "problem",
       ink: "light",
       question:
@@ -306,10 +317,9 @@ export const landingPageContent = {
       id: "product",
       title: "Know who is ready for their next belt.",
       scene: 0.288,
-      interludeAfter: 70,
+      interludeAfter: 100,
       kind: "product",
       ink: "dark",
-      kicker: "The belt tracker",
       lede: "Classes attended count toward the next rank's requirement. Koaryu keeps the tally; the decision to promote stays with you.",
       image: {
         src: "/marketing/product/belt-tracker.webp",
@@ -317,7 +327,12 @@ export const landingPageContent = {
         height: 1500,
         alt: "Koaryu belt tracker listing students by current rank, with classes attended and time at rank toward the next belt.",
         caption: "Belt tracker, shown with sample studio data.",
-        mobile: { src: "/marketing/product/belt-tracker-mobile.webp", width: 780, height: 1520 },
+        mobile: {
+          src: "/marketing/product/belt-tracker-mobile.webp",
+          width: 780,
+          height: 1520,
+          alt: "The same belt tracker in Koaryu's phone layout, with ready, approval and in-progress counts.",
+        },
       },
       highlights: [
         {
@@ -334,12 +349,11 @@ export const landingPageContent = {
       id: "features",
       title: "Everything between classes.",
       scene: 0.52,
-      interludeAfter: 80,
+      interludeAfter: 100,
       kind: "features",
       ink: "dark",
-      kicker: "What's inside",
-      lede: "Built around how a dojo actually runs: programs, ranks, and the people moving through them.",
-      rows: featureRows,
+      lede: "A day at the studio, from the first coffee to the last class. Built around how a dojo actually runs.",
+      moments: dayMoments,
       links: [
         { label: "All features", href: "/features" },
         { label: "Workflow guides", href: "/use-cases" },
@@ -349,10 +363,9 @@ export const landingPageContent = {
       id: "pricing",
       title: "One price. Every student.",
       scene: 0.66,
-      interludeAfter: 130,
+      interludeAfter: 200,
       kind: "pricing",
       ink: "dark",
-      kicker: "Pricing",
       amount: publicPlatformPriceAmount(),
       displayPrice: formatPublicPlatformPrice(),
       period: "per studio, per month",
@@ -372,11 +385,10 @@ export const landingPageContent = {
     {
       id: "faq",
       title: "Questions owners ask",
-      scene: 0.892,
-      interludeAfter: 100,
+      scene: 0.952,
+      interludeAfter: 90,
       kind: "faq",
       ink: "dark",
-      kicker: "FAQ",
       groups: faqGroups,
     },
     {

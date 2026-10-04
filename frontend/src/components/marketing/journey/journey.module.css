@@ -1,6 +1,8 @@
 /*
  * The landing page is an ordinary scrolling document. A fixed illustration sits
  * behind it and follows the scroll position; nothing here intercepts input.
+ * Copy and cards fade and rise with the scroll through CSS scroll-driven
+ * animations where supported; every animated element has a complete static state.
  */
 
 [data-koaryu-marketing].landingRoot::after {
@@ -12,6 +14,9 @@
   --journey-gutter: clamp(20px, 6vw, 96px);
   --journey-masthead: 76px;
   --koaryu-curtain: #3a2c19;
+  --journey-time: #7a612e;
+  /* Copy fades as it slides under the masthead. */
+  --journey-exit: view(block 76px 0px);
 
   position: relative;
   color: var(--koaryu-ink);
@@ -44,7 +49,7 @@
   mix-blend-mode: multiply;
 }
 
-/* Skip link and masthead */
+/* Skip link, belt progress and masthead */
 
 .skipLink {
   position: absolute;
@@ -61,20 +66,33 @@
   transform: translateY(0);
 }
 
+/* Shown only where the scroll position can drive it. */
+.beltProgress {
+  display: none;
+}
+
 .masthead {
   position: sticky;
   z-index: 30;
   top: 0;
   border-bottom: 1px solid transparent;
   transition:
-    background-color 220ms ease,
-    border-color 220ms ease,
+    background-color 320ms ease,
+    border-color 320ms ease,
+    color 320ms ease,
     transform 260ms ease;
 }
 
+/* Transparent over the hero; once the page moves it takes a ground matching the art beneath. */
 .journey[data-scrolled="true"] .masthead {
   border-bottom-color: var(--koaryu-line);
-  background: rgb(247 243 233 / 94%);
+  background: rgb(247 243 233 / 93%);
+}
+
+.journey[data-scrolled="true"][data-tone="dark"] .masthead {
+  border-bottom-color: rgb(244 238 225 / 10%);
+  color: var(--koaryu-ink-light);
+  background: rgb(52 39 22 / 90%);
 }
 
 .journey[data-masthead-hidden="true"] .masthead {
@@ -114,8 +132,14 @@
   scroll-margin-top: 0;
 }
 
-.chapter:not([data-kind="hero"], [data-kind="problem"], [data-kind="final"]) {
-  min-height: 80svh;
+/*
+ * Chapters are as tall as their copy, so the scene holds only while something
+ * is being read; the open stretches between them belong to the story's beats.
+ */
+.chapter:not([data-kind="hero"], [data-kind="final"]) {
+  min-height: auto;
+  padding-top: clamp(64px, 12vh, 120px);
+  padding-bottom: clamp(64px, 12vh, 120px);
 }
 
 .chapter[data-ink="light"] {
@@ -127,17 +151,19 @@
   height: calc(var(--interlude, 60) * 1svh);
 }
 
-/* Without JavaScript the scene stays on its first frame, so dark chapters bring their own ground. */
+/* Without JavaScript the scene stays on its first frame, so chapters set on open art bring their own ground. */
 .journey:not([data-enhanced="true"]) .chapter[data-ink="light"] {
   background: var(--koaryu-curtain);
 }
 
-.chapter[data-kind="faq"] {
-  align-items: start;
+.journey:not([data-enhanced="true"]) .chapter:is([data-kind="pricing"], [data-kind="final"]) {
+  background: var(--koaryu-paper);
 }
 
 .heroCopy,
 .problemCopy,
+.priceCopy,
+.productStage,
 .sheet {
   width: min(100%, 1180px);
   margin-inline: auto;
@@ -145,19 +171,10 @@
 
 /* Type */
 
-.kicker {
-  margin: 0 0 14px;
-  font-size: clamp(10px, 0.8vw, 12px);
-  font-weight: 730;
-  line-height: 1.25;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  opacity: 0.72;
-}
-
 .heroHeading,
 .statementHeading,
-.sheetHeading {
+.sheetHeading,
+.finalHeading {
   margin: 0;
   text-wrap: balance;
 }
@@ -170,22 +187,23 @@
   letter-spacing: -0.045em;
 }
 
-.heroHeading span {
+.heroHeading span,
+.line {
   display: block;
 }
 
 .statementHeading {
   max-width: 14ch;
   font-size: clamp(42px, 6.4vw, 92px);
-  font-weight: 660;
+  font-weight: 680;
   line-height: 0.94;
-  letter-spacing: -0.04em;
+  letter-spacing: -0.042em;
 }
 
 .sheetHeading {
   max-width: 18ch;
   font-size: clamp(32px, 3.4vw, 50px);
-  font-weight: 675;
+  font-weight: 690;
   line-height: 0.98;
   letter-spacing: -0.04em;
 }
@@ -196,7 +214,7 @@
   font-size: clamp(15px, 1.4vw, 19px);
   font-weight: 470;
   line-height: 1.55;
-  opacity: 0.78;
+  opacity: 0.8;
 }
 
 .actions {
@@ -229,13 +247,27 @@
   transform: translateX(3px);
 }
 
+.caption {
+  margin: 14px 0 0;
+  font-size: 12px;
+  font-weight: 560;
+}
+
 /* Hero */
 
 .heroCopy {
   padding-bottom: 6vh;
 }
 
-.heroCopy .lede {
+.heroKicker {
+  margin: 0 0 20px;
+  font-size: clamp(13px, 1.05vw, 15px);
+  font-weight: 640;
+  line-height: 1.3;
+  opacity: 0.74;
+}
+
+.heroLede {
   max-width: 46ch;
 }
 
@@ -255,14 +287,14 @@
 
 .problemResponse p {
   margin: 0;
-  opacity: 0.84;
+  opacity: 0.86;
 }
 
-.problemAside {
-  margin-top: 24px !important;
+.problemResponse .problemAside {
+  margin-top: 24px;
   font-size: 14px;
   font-style: italic;
-  opacity: 0.66 !important;
+  opacity: 0.68;
 }
 
 /* Sheets: paper cards that sit on the scene */
@@ -278,37 +310,35 @@
     0 30px 70px rgb(36 24 10 / 18%);
 }
 
-.sheetHeader {
+/* Product: the copy on a card, the real screens standing free over the dojo */
+
+.productStage {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 24px clamp(32px, 5vw, 72px);
-  align-items: end;
+  width: min(100%, 1260px);
+  grid-template-columns: minmax(330px, 390px) minmax(0, 1fr);
+  gap: clamp(40px, 5vw, 80px);
+  align-items: center;
 }
 
-.sheetHeader .lede {
+.productSheet {
+  position: relative;
+  z-index: 1;
+  width: auto;
   margin: 0;
 }
 
-.sheetLinks {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 28px;
-  margin-top: 18px;
+.productStage > * {
+  min-width: 0;
 }
 
-/* Product */
-
-.productSheet {
-  display: grid;
-  grid-template-columns: minmax(260px, 0.72fr) minmax(0, 1.5fr);
-  gap: clamp(28px, 4vw, 56px);
-  align-items: center;
+.productSheet .sheetHeading {
+  font-size: clamp(32px, 2.9vw, 42px);
 }
 
 .highlights {
   display: grid;
   gap: 14px;
-  margin: 28px 0 0;
+  margin: 26px 0 0;
   padding-top: 22px;
   border-top: 1px solid var(--koaryu-rule-soft);
 }
@@ -318,127 +348,226 @@
   gap: 3px;
 }
 
-.highlights dt {
+.highlights dt,
+.priceFacts dt {
   font-size: 14px;
   font-weight: 680;
 }
 
-.highlights dd {
+.highlights dd,
+.priceFacts dd {
   margin: 0;
   font-size: 14px;
   line-height: 1.5;
-  opacity: 0.72;
+  opacity: 0.76;
 }
 
 .productFigure {
+  position: relative;
+  z-index: 2;
   margin: 0;
 }
 
-.productFrame {
-  overflow: hidden;
-  border: 1px solid var(--koaryu-rule);
-  border-radius: 8px;
-  background: var(--koaryu-sheet-raised);
-  box-shadow: 0 18px 44px rgb(36 24 10 / 16%);
+.productScreens {
+  position: relative;
+  padding-bottom: 7%;
 }
 
-.productFrame img {
+.productDesktop {
+  overflow: hidden;
+  border: 1px solid var(--koaryu-rule);
+  border-radius: 10px;
+  background: var(--koaryu-sheet-raised);
+  box-shadow:
+    0 2px 0 rgb(255 255 255 / 40%) inset,
+    0 44px 90px rgb(36 24 10 / 26%);
+}
+
+.productDesktop img,
+.productPhone img {
   display: block;
   width: 100%;
   height: auto;
 }
 
-.productFigure figcaption {
-  margin-top: 10px;
-  font-size: 12px;
-  opacity: 0.62;
+.productPhone {
+  position: absolute;
+  bottom: 0;
+  left: -10%;
+  width: 24%;
+  overflow: hidden;
+  border: 6px solid #2b2115;
+  border-radius: 26px;
+  background: #2b2115;
+  box-shadow: 0 34px 60px rgb(36 24 10 / 34%);
 }
 
-/* Features */
-
-.featuresSheet {
-  max-width: 1120px;
+.productFigure .caption {
+  text-align: right;
 }
 
-.featureGrid {
+/* The day: a tall paper panel with a pinned heading and an inked timeline */
+
+.daySheet {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  margin: 32px 0 0;
-  padding: 0;
-  border-top: 1px solid var(--koaryu-rule-soft);
-  list-style: none;
+  grid-template-columns: minmax(0, 0.82fr) minmax(0, 1.18fr);
+  gap: clamp(40px, 6vw, 104px);
+  padding: clamp(36px, 5vw, 76px) clamp(28px, 5vw, 76px);
 }
 
-.featureGrid li {
-  padding: 22px 24px 24px 0;
-  border-bottom: 1px solid var(--koaryu-rule-soft);
+.dayHeader {
+  position: sticky;
+  top: calc(var(--journey-masthead) + 56px);
+  align-self: start;
 }
 
-.featureGrid li:not(:nth-child(3n + 1)) {
-  padding-left: 24px;
-  border-left: 1px solid var(--koaryu-rule-soft);
+.dayHeader .sheetHeading {
+  max-width: 9ch;
+  font-size: clamp(36px, 4.4vw, 62px);
 }
 
-.featureGrid h3 {
+.dayHeader .lede {
+  max-width: 34ch;
+}
+
+.dayLinks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 26px;
+  margin-top: 18px;
+}
+
+.dayList {
+  position: relative;
+  display: grid;
+  gap: clamp(40px, 6vh, 64px);
   margin: 0;
-  font-size: 16px;
-  font-weight: 680;
+  padding: 6px 0 6px 52px;
+  list-style: none;
+  view-timeline: --day block;
 }
 
-.featureGrid h3 a {
+/* The track the ink follows, and the ink itself. */
+.dayList::before,
+.dayList::after {
+  position: absolute;
+  top: 14px;
+  bottom: 18px;
+  left: 8px;
+  width: 2px;
+  border-radius: 2px;
+  content: "";
+}
+
+.dayList::before {
+  background: var(--koaryu-rule-soft);
+}
+
+.dayList::after {
+  background: var(--koaryu-ink);
+  transform-origin: top;
+}
+
+.dayMoment {
+  position: relative;
+}
+
+.dayDot {
+  position: absolute;
+  top: 1px;
+  left: -52px;
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--koaryu-ink);
+  border-radius: 50%;
+  background: var(--koaryu-ink);
+  box-shadow: 0 0 0 5px var(--koaryu-sheet);
+}
+
+.dayTime {
+  margin: 0 0 6px;
+  color: var(--journey-time);
+  font-size: 13px;
+  font-weight: 720;
+  line-height: 1.4;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+}
+
+.dayTitle {
+  margin: 0;
+  font-size: clamp(19px, 1.7vw, 24px);
+  font-weight: 690;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+}
+
+.dayTitle a {
   color: inherit;
   text-decoration: none;
+  background-image: linear-gradient(currentColor, currentColor);
+  background-position: 0 100%;
+  background-repeat: no-repeat;
+  background-size: 0 1.5px;
+  transition: background-size 260ms ease;
 }
 
-.featureGrid h3 a::after {
-  content: " →";
-  opacity: 0;
-  transition: opacity 200ms ease;
+.dayTitle a:hover,
+.dayTitle a:focus-visible {
+  background-size: 100% 1.5px;
 }
 
-.featureGrid h3 a:hover::after,
-.featureGrid h3 a:focus-visible::after {
-  opacity: 0.7;
-}
-
-.featureGrid p {
+.dayText {
+  max-width: 46ch;
   margin: 8px 0 0;
-  font-size: 14px;
-  line-height: 1.55;
-  opacity: 0.74;
+  font-size: 15px;
+  line-height: 1.6;
+  opacity: 0.76;
 }
 
-/* Pricing */
+/* Pricing: a big, simple price in the open sky */
 
-.chapter[data-kind="pricing"] {
-  justify-items: start;
+.priceCopy {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(260px, 0.8fr);
+  gap: clamp(40px, 8vw, 140px);
+  align-items: end;
 }
 
-.priceSheet {
-  width: min(100%, 420px);
-  margin-inline: max(0px, calc((100% - 1180px) / 2)) auto;
+.priceLead .statementHeading {
+  max-width: none;
+  font-size: clamp(42px, 5.4vw, 80px);
 }
 
 .price {
-  margin: 26px 0 0;
-  font-size: clamp(72px, 8vw, 108px);
-  font-weight: 720;
-  line-height: 0.9;
-  letter-spacing: -0.05em;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 18px;
+  align-items: baseline;
+  margin: clamp(16px, 3vh, 34px) 0 0;
+  font-size: clamp(112px, 15vw, 224px);
+  font-weight: 740;
+  line-height: 0.84;
+  letter-spacing: -0.065em;
 }
 
 .pricePeriod {
-  margin: 8px 0 0;
-  font-size: 14px;
-  opacity: 0.7;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0;
+  opacity: 0.78;
+}
+
+.priceDetail {
+  padding-bottom: 10px;
 }
 
 .priceFacts {
   display: grid;
-  gap: 14px;
-  margin: 24px 0 28px;
+  gap: 16px;
+  margin: 0;
   padding-top: 20px;
-  border-top: 1px solid var(--koaryu-rule-soft);
+  border-top: 1.5px solid var(--koaryu-ink);
 }
 
 .priceFacts div {
@@ -447,39 +576,44 @@
 }
 
 .priceFacts dt {
-  font-size: 14px;
-  font-weight: 680;
+  font-size: 15px;
 }
 
 .priceFacts dd {
-  margin: 0;
-  font-size: 14px;
-  line-height: 1.5;
-  opacity: 0.72;
+  font-size: 15px;
+  opacity: 0.84;
+}
+
+.priceDetail .actions {
+  margin-top: 26px;
 }
 
 .priceNote {
-  margin: 18px 0 0;
-  font-size: 12px;
+  margin: 16px 0 0;
+  font-size: 13px;
   line-height: 1.5;
-  opacity: 0.66;
+  opacity: 0.84;
 }
 
 .priceNote a {
   color: inherit;
 }
 
-/* FAQ */
+/* FAQ: quiet rows on a sheet pinned to the dojo wall */
+
+.chapter[data-kind="faq"] {
+  align-items: start;
+}
 
 .faqSheet {
-  max-width: 1120px;
+  max-width: 1080px;
 }
 
 .faqGroups {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px clamp(28px, 4vw, 56px);
-  margin-top: 28px;
+  margin-top: 22px;
 }
 
 .faqGroup {
@@ -487,12 +621,11 @@
 }
 
 .faqGroup h3 {
-  margin: 16px 0 4px;
-  font-size: 11px;
-  font-weight: 730;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  opacity: 0.62;
+  margin: 18px 0 2px;
+  color: var(--journey-time);
+  font-size: 13px;
+  font-weight: 720;
+  line-height: 1.4;
 }
 
 .faqItem {
@@ -507,7 +640,7 @@
   min-height: 52px;
   padding: 10px 0;
   font-size: 15px;
-  font-weight: 560;
+  font-weight: 580;
   line-height: 1.35;
   list-style: none;
   cursor: pointer;
@@ -554,39 +687,45 @@
   margin: 0 0 18px;
   font-size: 14px;
   line-height: 1.6;
-  opacity: 0.78;
+  opacity: 0.8;
 }
 
-/* Closing: the card sits high so the assembled class and the open door stay in view. */
+/* Closing: the line is written on the wall, above the seated class, with the footer beneath it. */
 
 .chapter[data-kind="final"] {
   align-items: start;
+  padding-top: calc(var(--journey-masthead) + clamp(28px, 6vh, 64px));
+  view-timeline: --finale block;
 }
 
-.finalSheet {
-  width: min(100%, 620px);
+.finalCopy {
+  width: min(100%, 760px);
+  margin-inline: auto;
   text-align: center;
 }
 
-.finalSheet .sheetHeading {
-  max-width: none;
+.finalHeading {
+  font-size: clamp(40px, 5.6vw, 82px);
+  font-weight: 720;
+  line-height: 0.94;
+  letter-spacing: -0.045em;
 }
 
-.finalSheet .lede {
-  margin-inline: auto;
+.finalCopy .lede {
+  margin: 16px auto 0;
+  opacity: 0.86;
 }
 
-.finalSheet .actions {
+.finalCopy .actions {
   justify-content: center;
+  margin-top: 24px;
 }
 
 .footer {
   display: grid;
   justify-items: center;
-  gap: 2px;
-  margin-top: 28px;
-  padding-top: 14px;
-  border-top: 1px solid var(--koaryu-rule-soft);
+  gap: 0;
+  margin-top: 20px;
   font-size: 13px;
 }
 
@@ -594,7 +733,7 @@
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
-  gap: 0 20px;
+  gap: 0 22px;
 }
 
 .footer a {
@@ -602,8 +741,9 @@
   align-items: center;
   min-height: 44px;
   color: inherit;
+  font-weight: 560;
   text-decoration: none;
-  opacity: 0.74;
+  opacity: 0.86;
 }
 
 .footer a:hover {
@@ -613,23 +753,46 @@
 .footer p {
   margin: 0;
   font-size: 12px;
-  opacity: 0.56;
+  opacity: 0.74;
 }
 
 .textLink:focus-visible,
-.featureGrid a:focus-visible,
+.dayTitle a:focus-visible,
 .footer a:focus-visible,
 .priceNote a:focus-visible {
   outline: 2px solid currentColor;
   outline-offset: 3px;
 }
 
-/* Cards rise into place as they enter, driven by scroll position on the compositor. */
+/* Motion */
 
-@keyframes sheetRise {
+@keyframes arrive {
   from {
     opacity: 0;
-    transform: translateY(48px);
+    transform: translateY(22px);
+  }
+}
+
+@keyframes heroAway {
+  0% {
+    opacity: 1;
+    transform: none;
+  }
+
+  80% {
+    opacity: 0;
+  }
+
+  100% {
+    opacity: 0;
+    transform: translateY(22vh);
+  }
+}
+
+@keyframes revealIn {
+  from {
+    opacity: 0;
+    transform: translateY(56px);
   }
 
   to {
@@ -638,42 +801,275 @@
   }
 }
 
+@keyframes revealOut {
+  from {
+    opacity: 1;
+    transform: none;
+  }
+
+  to {
+    opacity: 0;
+    transform: translateY(-36px);
+  }
+}
+
+/*
+ * The closing chapter is one screen tall. Moving the copy up by the distance
+ * its chapter has yet to scroll keeps it in place on the wall, so it never
+ * crosses the class; it is written there once the class has sat down.
+ */
+@keyframes finalSettle {
+  0% {
+    opacity: 0;
+    transform: translateY(-100svh);
+  }
+
+  45% {
+    opacity: 0;
+  }
+
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes phoneRise {
+  from {
+    opacity: 0;
+    transform: translateY(150px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes momentArrive {
+  from {
+    opacity: 0.3;
+    transform: translateY(16px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes ink {
+  from {
+    transform: scaleY(0);
+  }
+
+  to {
+    transform: scaleY(1);
+  }
+}
+
+@keyframes dotFill {
+  from {
+    background: var(--koaryu-sheet);
+  }
+
+  to {
+    background: var(--koaryu-ink);
+  }
+}
+
+@keyframes beltRank {
+  from {
+    clip-path: inset(0 100% 0 0);
+  }
+
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  /* The hero settles in on load: the line above, each headline line, then the rest. */
+  .heroKicker,
+  .heroHeading span,
+  .heroLede,
+  .heroActions {
+    animation: arrive 900ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  .heroHeading span:first-child {
+    animation-delay: 90ms;
+  }
+
+  .heroHeading span:last-child {
+    animation-delay: 200ms;
+  }
+
+  .heroLede {
+    animation-delay: 340ms;
+  }
+
+  .heroActions {
+    animation-delay: 440ms;
+  }
+}
+
 @supports (animation-timeline: view()) {
   @media (prefers-reduced-motion: no-preference) {
-    .sheet,
-    .problemCopy {
-      animation: sheetRise linear both;
+    .beltProgress {
+      position: fixed;
+      z-index: 35;
+      top: 0;
+      right: 0;
+      left: 0;
+      display: block;
+      height: 3px;
+      background: linear-gradient(
+        90deg,
+        #ddd5c4 0 14.28%,
+        #d9a931 14.28% 28.57%,
+        #d9772e 28.57% 42.85%,
+        #5f7d3a 42.85% 57.14%,
+        #3e5c7e 57.14% 71.42%,
+        #6b4425 71.42% 85.71%,
+        #1f1a16 85.71%
+      );
+      pointer-events: none;
+      animation: beltRank linear both;
+      animation-timeline: scroll(root);
+    }
+
+    /* The hero copy drifts up more slowly than the page and fades as the camera dives. */
+    .heroCopy {
+      animation: heroAway linear both;
+      animation-timeline: scroll(root);
+      animation-range: 0svh 46svh;
+    }
+
+    /* Copy and cards rise in as they enter and fade upward before reaching the masthead. */
+    .reveal,
+    .productDesktop {
+      animation:
+        revealIn linear both,
+        revealOut linear forwards;
+      animation-timeline: view(), var(--journey-exit);
+      animation-range:
+        entry 0% entry 70%,
+        exit 0% exit 55%;
+    }
+
+    /* The card and the screens leave together. */
+    .productStage {
+      animation: revealOut linear forwards;
+      animation-timeline: var(--journey-exit);
+      animation-range: exit 0% exit 45%;
+    }
+
+    .productSheet {
+      animation: revealIn linear both;
       animation-timeline: view();
       animation-range: entry 0% entry 70%;
+    }
+
+    .productDesktop {
+      animation-name: revealIn, none;
+    }
+
+    .productPhone {
+      animation: phoneRise linear both;
+      animation-timeline: view();
+      animation-range: entry 10% cover 45%;
+    }
+
+    /* Tall panels rise in as a whole, then their rows fade out one by one under the masthead. */
+    .daySheet,
+    .faqSheet {
+      animation:
+        revealIn linear both,
+        revealOut linear forwards;
+      animation-timeline: view(), view();
+      animation-range:
+        entry 0% entry 28%,
+        exit 72% exit 96%;
+    }
+
+    .finalCopy {
+      animation: finalSettle linear both;
+      animation-timeline: --finale;
+      animation-range: entry 0% entry 100%;
+    }
+
+    .revealRow {
+      animation: revealOut linear forwards;
+      animation-timeline: var(--journey-exit);
+      animation-range: exit 0% exit 90%;
+    }
+
+    /* The day inks itself in: the line follows the reading position and each moment arrives as it is reached. */
+    .dayList::after {
+      animation: ink linear both;
+      animation-timeline: --day;
+      animation-range: entry 40% exit 40%;
+    }
+
+    .dayMoment {
+      animation:
+        momentArrive linear both,
+        revealOut linear forwards;
+      animation-timeline: view(), var(--journey-exit);
+      animation-range:
+        cover 22% cover 38%,
+        exit 0% exit 100%;
+    }
+
+    .dayDot {
+      animation: dotFill linear both;
+      animation-timeline: view();
+      animation-range: cover 38% cover 42%;
+    }
+
+    /* On phones the stage is taller than the screen, so the card and the screens leave one at a time. */
+    @media (max-width: 820px) {
+      .productStage {
+        animation: none;
+      }
+
+      .productSheet {
+        animation:
+          revealIn linear both,
+          revealOut linear forwards;
+        animation-timeline: view(), var(--journey-exit);
+        animation-range:
+          entry 0% entry 70%,
+          exit 0% exit 55%;
+      }
+
+      .productFigure {
+        animation: revealOut linear forwards;
+        animation-timeline: var(--journey-exit);
+        animation-range: exit 0% exit 55%;
+      }
     }
   }
 }
 
 /* Responsive */
 
-@media (max-width: 1024px) {
-  .productSheet {
+@media (max-width: 1100px) {
+  .productStage {
     grid-template-columns: minmax(0, 1fr);
+    max-width: 760px;
   }
 
-  .featureGrid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .featureGrid li:not(:nth-child(3n + 1)) {
-    padding-left: 0;
-    border-left: 0;
-  }
-
-  .featureGrid li:nth-child(2n) {
-    padding-left: 24px;
-    border-left: 1px solid var(--koaryu-rule-soft);
+  .productPhone {
+    left: -3%;
   }
 }
 
 @media (max-width: 820px) {
   .journey {
     --journey-masthead: 68px;
+    --journey-exit: view(block 68px 0px);
   }
 
   .chapter {
@@ -682,14 +1078,15 @@
   }
 
   .chapter[data-kind="hero"],
-  .chapter[data-kind="problem"] {
-    min-height: 100svh;
+  .chapter[data-kind="problem"],
+  .chapter[data-kind="pricing"] {
     padding-inline: 22px;
   }
 
   .problemCopy,
-  .sheetHeader,
-  .faqGroups {
+  .priceCopy,
+  .faqGroups,
+  .daySheet {
     grid-template-columns: minmax(0, 1fr);
   }
 
@@ -698,81 +1095,123 @@
     align-items: start;
   }
 
-  .featureGrid {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .featureGrid li,
-  .featureGrid li:nth-child(2n) {
-    padding: 18px 0;
-    border-left: 0;
-  }
-
-  .priceSheet {
-    width: 100%;
-  }
-
-  /* The closing card tucks under the masthead so the seated class shows beneath it. */
-  .chapter[data-kind="final"] {
-    min-height: 100svh;
-    padding-top: calc(var(--journey-masthead) + 8px);
-  }
-
-  .chapter:not([data-kind="hero"], [data-kind="problem"], [data-kind="final"]) {
-    min-height: auto;
-  }
-
   .interlude {
     height: calc(var(--interlude, 60) * 0.8svh);
   }
 
-  /* The phone screenshot sits in a simple device frame at a readable size. */
-  .productFrame {
-    width: min(100%, 300px);
-    margin-inline: auto;
-    border: 7px solid var(--koaryu-ink);
-    border-radius: 32px;
+  /* Phones: the phone screen in front, the desktop screen behind it running off the edge. */
+  .productStage {
+    gap: 28px;
   }
 
-  .productFigure figcaption {
-    text-align: center;
+  .productFigure {
+    overflow-x: clip;
+    margin-inline: -16px;
+    padding: 0 16px;
   }
 
-  .footer nav {
+  .productScreens {
+    padding: 0;
+  }
+
+  .productDesktop {
+    position: absolute;
+    top: 9%;
+    left: 34%;
+    width: 150%;
+  }
+
+  .productPhone {
+    position: relative;
+    left: 2%;
+    width: min(56%, 230px);
+    border-width: 5px;
+    border-radius: 24px;
+  }
+
+  .productFigure .caption {
+    text-align: left;
+  }
+
+  .daySheet {
+    gap: 30px;
+    padding: 28px 20px 36px;
+  }
+
+  .dayHeader {
+    position: static;
+  }
+
+  .dayList {
+    gap: 34px;
+    padding-left: 40px;
+  }
+
+  .dayList::before,
+  .dayList::after {
+    left: 6px;
+  }
+
+  .dayDot {
+    left: -40px;
+    width: 16px;
+    height: 16px;
+  }
+
+  .dayText {
+    font-size: 14.5px;
+  }
+
+  .priceCopy {
+    gap: 26px;
+    align-items: start;
+  }
+
+  .price {
     gap: 0 12px;
   }
 
+  .faqSheet {
+    padding: 26px 18px;
+  }
+
+  .faqGroups {
+    gap: 0;
+  }
+
+  .chapter[data-kind="final"] {
+    min-height: 100svh;
+    padding-top: calc(var(--journey-masthead) + 20px);
+  }
+
+  .footer nav {
+    gap: 0 14px;
+  }
+
   .footer a {
-    font-size: 12px;
+    font-size: 12.5px;
     white-space: nowrap;
-  }
-
-  .finalSheet {
-    padding: 22px 18px;
-  }
-
-  .finalSheet .actions {
-    margin-top: 18px;
-  }
-
-  .finalSheet .footer {
-    margin-top: 18px;
-    padding-top: 6px;
   }
 
   .actions {
     display: grid;
   }
 
-  .heroCopy .actions {
+  .heroActions,
+  .priceDetail .actions,
+  .finalCopy .actions {
     max-width: 360px;
+  }
+
+  .finalCopy .actions {
+    margin-inline: auto;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .masthead,
   .textLink span,
-  .featureGrid h3 a::after,
+  .dayTitle a,
   .faqIcon::before,
   .faqIcon::after {
     transition: none;
