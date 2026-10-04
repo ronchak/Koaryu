@@ -68,13 +68,70 @@ refresh uses revision-based compare-and-swap writes so competing workers cannot
 silently overwrite a newer credential. A persistence failure prevents sending.
 The hosted runtime does not use the enrollment JSON files as its token store.
 
-Initial import is an operator action, separate from enrollment and startup. The
-root coordinator must prepare an exact environment-bound import using the
-verified app/mailbox binding and private encryption key, after the target schema
-is available. Production import needs the applicable owner authorization; this
-candidate does not authorize an ad hoc production SQL write. Follow the existing
+### Initial credential import
+
+`backend/scripts/bootstrap_automation_email.py` prepares an import plan by default.
+It reads the latest private, rotated encrypted smoke envelope, not the original
+enrollment plaintext. The envelope must have exactly `provider_key`, `revision`,
+and `encrypted_credentials`, with provider `microsoft_graph:primary` and revision
+at least 2. The source key and envelope must be separate absolute paths, regular
+files owned by the current operator with mode `0600`, outside every Koaryu
+worktree, Git common directory, and any other repository. Symlinks are refused.
+The helper never edits either file or writes decrypted tokens to an artifact.
+
+Install the exact reviewed candidate in the canonical checkout
+`/Users/openclaw/Projects/Koaryu-Repo` before running the command. Tracked changes
+or unreviewed importable files are refused. Existing Python caches are bypassed
+without deleting them. There is no worktree/root override. The helper cannot pass
+hosted readiness until both the target schema and backend serving the exact
+candidate have been deployed.
+
+The private `with-hosted-env.py` allowlist amendment is **proposed**, not installed
+by this candidate. After its separate review and installation, start an operator
+session with tracing disabled and explicitly source
+`/Users/openclaw/.config/koaryu/operator/release-env.sh`. Inspect with:
+
+```bash
+cd /Users/openclaw/Projects/Koaryu-Repo
+/usr/bin/python3 /Users/openclaw/.config/koaryu/operator/with-hosted-env.py --environment staging -- backend/venv/bin/python backend/scripts/bootstrap_automation_email.py --environment staging --candidate-sha <reviewed-40-character-sha> --source-state <absolute-private-rotated-envelope.json> --source-key-file <absolute-private-source-key>
+```
+
+The plan binds the candidate, environment, pinned Supabase project, current
+release declaration, source ciphertext and file identities, source and target key
+fingerprints, and verified app/mailbox. Both send and worker switches must remain
+false, and the recipient allowlist must be exactly `koaryu@outlook.com`. Settings
+come from the selected hosted environment with no `.env` fallback. Inspection
+performs no database write and sends no email.
+
+To import after reviewing that plan, use the same arguments with `--execute`:
+
+```bash
+/usr/bin/python3 /Users/openclaw/.config/koaryu/operator/with-hosted-env.py --environment staging -- backend/venv/bin/python backend/scripts/bootstrap_automation_email.py --environment staging --candidate-sha <reviewed-40-character-sha> --source-state <absolute-private-rotated-envelope.json> --source-key-file <absolute-private-source-key> --execute
+```
+
+All three standard streams must be terminals. Type the exact state-bound phrase
+shown by the helper; there is no confirmation argument or piped-input bypass.
+The helper repeats the checkout, configuration, source, deployed readiness,
+database readiness, and empty-store checks after confirmation. It then performs
+one compare-and-swap import with expected revision 0 and reads back revision 1
+and the complete decrypted state. It refuses a nonempty store even if the stored
+credentials match. There is no overwrite or rotation mode. A timeout or uncertain
+write result reports `write_state_unverified` and never retries. Preserve the
+safe JSON action, timestamp, candidate, project, fingerprint and outcome in the
+root coordinator's private evidence. An `imported` result requires matching
+readback and reports `messages_sent: 0`.
+
+For production, both environment arguments must be `production`. Execution needs
+**new, explicit owner authorization for this initial credential bootstrap**.
+The existing authorized manual production database operations remain the guarded
+migration apply and temporary backup role. A prior migration or deployment
+approval does not authorize this import. Follow the existing
 [release gates](cutover-gates.md#owner-authorized-release-execution) for migration
-and deployment. Subagents have no production authority.
+and deployment. Subagents have no production authority. The global sending and
+worker switches stay off, and studio rules are unchanged. Import neither
+refreshes tokens nor contacts Microsoft. A future `notifications@koaryu.app` sender needs a verified new
+mailbox/provider identity and consent, plus separate credential-replacement
+authorization. It uses the same automation rule schema.
 
 An expired access token can be refreshed before a send. Revoked consent, an
 expired app secret, or an unusable refresh token requires operator repair or
