@@ -3,6 +3,7 @@
 from types import SimpleNamespace
 from unittest.mock import Mock
 from urllib.parse import urlsplit
+from uuid import UUID
 
 import pytest
 from fastapi import HTTPException
@@ -214,7 +215,8 @@ def test_accepted_uses_snapshots_stable_identity_fragment_and_exact_settlement(r
     message = runner.send.call_args.args[0]
     assert message.to_address == "koaryu@outlook.com"
     assert message.subject == "Hi Sam" and message.reply_to == "reply@example.com"
-    assert message.attempt_id == "delivery-1:1"
+    assert UUID(message.attempt_id).version == 5
+    assert runner.database.messages["delivery-1"]["attempt_id"] == "delivery-1:1"
     url = message.text_body.split("Unsubscribe from these reminders: ")[1]
     assert urlsplit(url).path == "/api/v1/automations/unsubscribe"
     assert urlsplit(url).fragment == "a" * 64 and urlsplit(url).query == ""
@@ -570,10 +572,47 @@ def actual_graph_transport(runner, monkeypatch, handler, *, expired=False):
 def test_actual_graph_202_is_settled_as_accepted_with_no_network(runner, monkeypatch):
     import httpx
 
+    delivery_id = "28030c98-0334-4e56-b8e5-e493b5e8ea62"
+    claim_token = "58d62b30-e8f8-4fbb-8449-5d34922484a8"
+    runner.database.claims = [
+        {"id": delivery_id, "claim_token": claim_token, "studio_id": "studio"}
+    ]
+    runner.database.messages = {delivery_id: snapshot(delivery_id)}
     requests = actual_graph_transport(runner, monkeypatch, lambda _request: httpx.Response(202))
     assert_counts(runner.run(), processed=1, accepted=1)
     assert len(requests) == 1 and requests[0].url.path == "/v1.0/me/sendMail"
+    assert UUID(requests[0].headers["client-request-id"]).version == 5
+    assert "idempotency-key" not in requests[0].headers
+    assert runner.database.messages[delivery_id]["attempt_id"] == delivery_id + ":1"
+    assert runner.database.begun[0]["p_delivery_id"] == delivery_id
+    assert runner.database.settled[0]["p_delivery_id"] == delivery_id
+    assert runner.database.settled[0]["p_claim_token"] == claim_token
     assert runner.database.settled[0]["p_outcome"] == "accepted"
+
+
+def test_graph_correlation_mapping_is_stable_and_distinguishes_attempts(runner):
+    from app.services.automation_email import delivery_configuration
+
+    delivery_id = "28030c98-0334-4e56-b8e5-e493b5e8ea62"
+    first_snapshot = snapshot(delivery_id)
+    next_snapshot = snapshot(delivery_id, attempt_id=delivery_id + ":2")
+    config = delivery_configuration(runner.settings)
+    first = service._message(first_snapshot, config).attempt_id
+    repeated = service._message(first_snapshot, config).attempt_id
+    next_attempt = service._message(next_snapshot, config).attempt_id
+    assert str(UUID(first)) == first and UUID(first).version == 5
+    assert repeated == first
+    assert next_attempt != first and UUID(next_attempt).version == 5
+    assert first_snapshot["attempt_id"] == delivery_id + ":1"
+    assert next_snapshot["attempt_id"] == delivery_id + ":2"
+
+
+def test_local_render_failure_does_not_claim_provider_rejection(runner):
+    runner.database.messages["delivery-1"]["student_first_name"] = "x" * 200
+    assert_counts(runner.run(), processed=1, failed=1)
+    runner.send.assert_not_called()
+    assert runner.database.settled[0]["p_outcome"] == "permanent_failure"
+    assert runner.database.settled[0]["p_error_code"] == "unavailable"
 
 
 @pytest.mark.parametrize("phase", ["credential_load", "refresh", "credential_cas"])

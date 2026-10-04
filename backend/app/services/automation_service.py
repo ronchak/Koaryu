@@ -6,6 +6,7 @@ import math
 import time
 from collections.abc import Callable
 from typing import Any
+from uuid import NAMESPACE_URL, uuid5
 
 from fastapi import HTTPException
 from postgrest.exceptions import APIError
@@ -237,7 +238,13 @@ def _message(snapshot: dict, config: Any) -> EmailMessage:
         text_body=content.text_body,
         html_body=content.html_body,
         reply_to=normalize_email_address(snapshot["reply_to_email"]),
-        attempt_id=snapshot["attempt_id"],
+        # Graph requires UUID correlation. This stable mapping is not an idempotency key.
+        attempt_id=str(
+            uuid5(
+                NAMESPACE_URL,
+                "urn:koaryu:automations:missed-class:attempt:" + snapshot["attempt_id"],
+            )
+        ),
     )
 
 
@@ -250,7 +257,6 @@ def _settle_error_code(result: DeliveryResult) -> str | None:
         "provider_connection_failed": "connection_failed",
         "authentication_required": "authentication_required",
         "provider_rejected": "provider_rejected",
-        "invalid_message": "provider_rejected",
     }.get(result.error_code, "unavailable")
 
 
