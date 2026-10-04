@@ -73,7 +73,8 @@ export function frameForDimensions(viewportWidth: number, viewportHeight: number
   const aspect = width / height;
   const viewBoxHeight = clamp(SCENE_WIDTH / aspect, SCENE_HEIGHT, 2000);
   const visibleHalfWidth = Math.min(SCENE_WIDTH / 2, (viewBoxHeight / 2) * aspect);
-  const studentSpread = clamp((visibleHalfWidth - 210) / (SCENE_WIDTH / 2 - 210), 0.34, 1);
+  // Narrow crops pull the seated class toward the center so nobody is cut off.
+  const studentSpread = clamp((visibleHalfWidth - 120) / (SCENE_WIDTH / 2 - 120), 0.72, 1);
 
   return Object.freeze({
     viewBox: `0 ${round2(SCENE_HEIGHT / 2 - viewBoxHeight / 2)} ${SCENE_WIDTH} ${round2(viewBoxHeight)}`,

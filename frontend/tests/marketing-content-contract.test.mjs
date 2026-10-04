@@ -111,10 +111,30 @@ describe("marketing content contract", () => {
     assert.match(serialized, /class-count, time-at-rank and instructor-approval requirements/);
     assert.match(serialized, /requires separate activation and is not generally available/);
     assert.match(serialized, /0\.5% per successful charge, plus Stripe fees/);
-    assert.match(serialized, /Instructors cannot access billing/);
-    assert.match(serialized, /Illustrative studio morning/);
+    assert.match(serialized, /cannot access billing/);
     assert.equal(chapter("studio-view").examples.length, 3);
+    assert.doesNotMatch(serialized, /Illustrative|SCROLL ONCE|Scroll once/i);
     assert.doesNotMatch(serialized, /already sorted|Koaryu’s now|web-first|Very convenient/);
+  });
+
+  it("states current limits once, in the FAQ, so each chapter says what Koaryu does", () => {
+    const limitsGroup = chapter("faq").groups.at(-1);
+    assert.equal(limitsGroup.title, "Limits & support");
+    assert.equal(limitsGroup.items[0].question, "What doesn't Koaryu do yet?");
+    assert.match(limitsGroup.items[0].answer, /multi-location/);
+    assert.match(limitsGroup.items[0].answer, /automated email or SMS/);
+    assert.match(limitsGroup.items[0].answer, /not generally available/);
+    assert.match(limitsGroup.items[0].answer, /new billing exports are unavailable/);
+    const chapters = JSON.stringify(landingPageContent.chapters.filter(({ id }) => id !== "faq"));
+    assert.doesNotMatch(
+      chapters,
+      /not generally available|cannot access billing|outside its scope|is unavailable|does not explain/,
+    );
+    const kickers = landingPageContent.chapters.filter((item) => "kicker" in item);
+    assert.deepEqual(
+      kickers.map(({ id }) => id),
+      ["welcome"],
+    );
   });
 
   it("derives every authoritative public price representation from one fact", () => {

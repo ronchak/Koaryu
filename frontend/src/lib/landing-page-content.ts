@@ -84,23 +84,19 @@ export interface JourneyProblemChapter extends Omit<JourneyBaseChapter, "kind"> 
 
 export interface JourneyMorningChapter extends Omit<JourneyBaseChapter, "kind"> {
   kind: "morning";
-  kicker: string;
   lede: string;
-  proofLabel: string;
-  proof: string;
+  /** What the dashboard lists before class, and what staff do with each list. */
   examples: readonly { condition: string; action: string }[];
 }
 
 export interface JourneyProductIntroChapter extends Omit<JourneyBaseChapter, "kind"> {
   kind: "product-intro";
   framed: true;
-  kicker: string;
   lede: string;
 }
 
 export interface JourneyFeaturesChapter extends Omit<JourneyBaseChapter, "kind"> {
   kind: "features";
-  kicker: string;
   heading: string;
   lede: string;
   rows: readonly LandingSummaryRow[];
@@ -109,7 +105,6 @@ export interface JourneyFeaturesChapter extends Omit<JourneyBaseChapter, "kind">
 
 export interface JourneyUseCasesChapter extends Omit<JourneyBaseChapter, "kind"> {
   kind: "use-cases";
-  kicker: string;
   heading: string;
   rows: readonly LandingSummaryRow[];
   link: JourneyAction;
@@ -117,7 +112,6 @@ export interface JourneyUseCasesChapter extends Omit<JourneyBaseChapter, "kind">
 
 export interface JourneyTransitionChapter extends Omit<JourneyBaseChapter, "kind"> {
   kind: "transition";
-  kicker: string;
   lede?: string;
   placement?: "upper";
 }
@@ -131,7 +125,6 @@ export interface ExploreRoute {
 
 export interface JourneyExploreChapter extends Omit<JourneyBaseChapter, "kind"> {
   kind: "explore";
-  kicker: string;
   heading: string;
   routes: readonly ExploreRoute[];
   link: JourneyAction;
@@ -144,7 +137,6 @@ export interface PricingFact {
 
 export interface JourneyPricingChapter extends Omit<JourneyBaseChapter, "kind"> {
   kind: "pricing";
-  kicker: string;
   heading: string;
   amount: string;
   displayPrice: string;
@@ -160,7 +152,6 @@ export interface AboutPrinciple {
 
 export interface JourneyAboutChapter extends Omit<JourneyBaseChapter, "kind"> {
   kind: "about";
-  kicker: string;
   heading: string;
   lede: string;
   principles: readonly AboutPrinciple[];
@@ -179,14 +170,13 @@ export interface FaqGroup {
 
 export interface JourneyFaqChapter extends Omit<JourneyBaseChapter, "kind"> {
   kind: "faq";
-  kicker: string;
+  heading: string;
   groups: readonly FaqGroup[];
 }
 
 export interface JourneyFinalChapter extends Omit<JourneyBaseChapter, "kind"> {
   kind: "final";
   framed: true;
-  kicker: string;
   lede: string;
   action: JourneyAction;
   footerLinks: readonly JourneyAction[];
@@ -243,9 +233,9 @@ const featureRows: readonly LandingSummaryRow[] = [
     detail: landingDetail({ kind: "feature", slug: "attendance" }),
   },
   {
-    title: "Billing & availability",
+    title: "Billing records",
     description:
-      "Review payer and invoice records. Tuition collection requires separate activation and is not generally available.",
+      "Keep payers, invoices and payments received outside Koaryu together, for Admin and Front Desk staff.",
     detail: landingDetail({ kind: "feature", slug: "billing" }),
   },
 ];
@@ -355,11 +345,11 @@ const faqGroups: readonly FaqGroup[] = [
       {
         question: `What does ${formatPublicPlatformPrice()}/month include?`,
         answer:
-          "One studio's student records, ranks, leads, scheduling, attendance, reports and billing records. No per-student tiers. Tuition collection requires separate activation; automations are planned.",
+          "One studio's student records, ranks, leads, scheduling, attendance, reports and billing records. No per-student tiers.",
       },
       {
-        question: "What payment fees apply?",
-        answer: `The standard Koaryu Payments fee is ${PUBLIC_PAYMENTS_FEE_PERCENT}% per successful charge, plus Stripe fees. Your studio's configured rate may differ. These are separate from the studio subscription. Collection is not generally available.`,
+        question: "Can families pay tuition through Koaryu?",
+        answer: `Online tuition collection through Koaryu Payments requires separate activation and is not generally available. Where it is enabled, the standard fee is ${PUBLIC_PAYMENTS_FEE_PERCENT}% per successful charge, plus Stripe fees, separate from the studio subscription. Your studio's configured rate may differ.`,
       },
       {
         question: "Can I use my existing payment method?",
@@ -399,17 +389,17 @@ const faqGroups: readonly FaqGroup[] = [
     ],
   },
   {
-    title: "Support & availability",
+    title: "Limits & support",
     items: [
+      {
+        question: "What doesn't Koaryu do yet?",
+        answer:
+          "It is built for one studio, with no multi-location dashboard. It doesn't send automated email or SMS reminders; staff work from the follow-up queue. Import doesn't bring over past attendance, promotions or billing. Online tuition collection is not generally available, and new billing exports are unavailable.",
+      },
       {
         question: "Is there a mobile app?",
         answer:
           "Koaryu runs in a web browser on phones, tablets and computers. There is no separate native mobile app.",
-      },
-      {
-        question: "What payment actions are available?",
-        answer:
-          "Staff can review existing invoices, refresh Stripe status and record external payments. Tuition collection needs separate activation and is not generally available. New billing exports are unavailable.",
       },
       {
         question: "How do I get support?",
@@ -452,15 +442,14 @@ export const landingPageContent = {
       scene: 0.235,
       kind: "morning",
       ink: "dark",
-      kicker: "Before the first class",
       lede: "The dashboard surfaces attendance gaps, due follow-ups and today's sessions for staff to review.",
-      proofLabel: "Illustrative studio morning",
-      proof:
-        "Six students have a 14-day attendance gap: review their records. Nine leads have follow-ups due: contact them. Eight classes today: open the session rosters.",
       examples: [
-        { condition: "6 attendance gaps of 14+ days", action: "Review attendance and notes." },
-        { condition: "9 lead follow-ups due", action: "Contact leads; update follow-up." },
-        { condition: "8 classes today", action: "Open the session rosters." },
+        {
+          condition: "Attendance gaps",
+          action: "Students away 14 days or more, with their notes.",
+        },
+        { condition: "Follow-ups due", action: "Trial families to contact today." },
+        { condition: "Today's classes", action: "Each session roster, ready to open." },
       ],
     },
     {
@@ -470,8 +459,7 @@ export const landingPageContent = {
       kind: "product-intro",
       ink: "light",
       framed: true,
-      kicker: "A recorded class",
-      lede: "Mark a student Present. The saved entry appears in their attendance history and can count toward the next rank's class requirement. An instructor still decides whether to promote.",
+      lede: "Mark a student Present and the entry joins their attendance history, counting toward the next rank's class requirement. Koaryu keeps the tally; the instructor decides the promotion.",
     },
     {
       id: "features",
@@ -479,9 +467,8 @@ export const landingPageContent = {
       scene: 0.52,
       kind: "features",
       ink: "dark",
-      kicker: "Features",
       heading: "What you can manage",
-      lede: "Student records connect programs, ranks and attendance. Billing access is limited to Admin and Front Desk staff.",
+      lede: "Student records connect programs, ranks, attendance and billing, each shown to the staff who need it.",
       rows: featureRows,
       link: { label: "Product overview", href: "/features" },
     },
@@ -491,7 +478,6 @@ export const landingPageContent = {
       scene: 0.64,
       kind: "use-cases",
       ink: "dark",
-      kicker: "Use Cases",
       heading: "Work between classes",
       rows: useCaseRows,
       link: { label: "Compare workflows", href: "/use-cases" },
@@ -502,8 +488,7 @@ export const landingPageContent = {
       scene: 0.802,
       kind: "transition",
       ink: "dark",
-      kicker: "Illustrative attendance review",
-      lede: "Maya has a 14-day attendance gap. Her notes mention a family trip. Check the return date before contacting her guardian; an attendance gap alone does not explain the absence.",
+      lede: "Attendance history and student notes sit side by side, so you know why someone has been away before you call home.",
     },
     {
       id: "explore",
@@ -511,7 +496,6 @@ export const landingPageContent = {
       scene: 0.892,
       kind: "explore",
       ink: "dark",
-      kicker: "Explore Koaryu",
       heading: "Choose a guide",
       routes: [
         {
@@ -542,8 +526,7 @@ export const landingPageContent = {
       kind: "transition",
       ink: "dark",
       placement: "upper",
-      kicker: "Staff access",
-      lede: "Instructors use student profiles, attendance and rank history. Admin and Front Desk staff can also review payer and invoice records. Instructors cannot access billing.",
+      lede: "Instructors work from student profiles, attendance and rank history. Admin and Front Desk staff also handle payers and invoices.",
     },
     {
       id: "pricing",
@@ -551,7 +534,6 @@ export const landingPageContent = {
       scene: 1,
       kind: "pricing",
       ink: "dark",
-      kicker: "Pricing",
       heading: "One studio subscription",
       amount: publicPlatformPriceAmount(),
       displayPrice: formatPublicPlatformPrice(),
@@ -560,15 +542,15 @@ export const landingPageContent = {
         {
           label: "Included",
           description:
-            "Students, ranks, leads, attendance, reports and billing records. Automations are planned.",
-        },
-        {
-          label: "Payments",
-          description: `Standard Koaryu Payments fee: ${PUBLIC_PAYMENTS_FEE_PERCENT}% per successful charge, plus Stripe fees. Your studio's configured rate may differ. Collection requires separate activation and is not generally available.`,
+            "Students, ranks, leads, scheduling, attendance, reports and billing records.",
         },
         {
           label: "Student count",
-          description: "No per-student tiers.",
+          description: "No per-student tiers. Grow the roster without growing the bill.",
+        },
+        {
+          label: "Staff",
+          description: "Admin, Instructor and Front Desk roles in one studio workspace.",
         },
       ],
       setupAction: { label: "Create an account", href: "/signup" },
@@ -579,9 +561,8 @@ export const landingPageContent = {
       scene: 1,
       kind: "about",
       ink: "dark",
-      kicker: "About Koaryu",
       heading: "For independent schools",
-      lede: "A single studio workspace for a small staff, with separate Admin, Instructor and Front Desk roles. Multi-location management is outside its scope.",
+      lede: "A single studio workspace for a small staff, with separate Admin, Instructor and Front Desk roles.",
       principles: [
         {
           title: "One studio",
@@ -589,12 +570,12 @@ export const landingPageContent = {
         },
         {
           title: "Different staff roles",
-          description: "Instructors can use student records without access to billing.",
+          description:
+            "Instructors see students, attendance and ranks; the front desk handles billing.",
         },
         {
           title: "Staff make the decisions",
-          description:
-            "Contact families and review rank evidence yourself. Automated outreach is unavailable.",
+          description: "Koaryu gathers the evidence. You contact families and decide promotions.",
         },
       ],
       link: { label: "Product fit and limits", href: "/features#fit" },
@@ -605,7 +586,7 @@ export const landingPageContent = {
       scene: 1,
       kind: "faq",
       ink: "dark",
-      kicker: "Questions owners ask",
+      heading: "Questions owners ask",
       groups: faqGroups,
     },
     {
@@ -615,7 +596,6 @@ export const landingPageContent = {
       kind: "transition",
       ink: "dark",
       placement: "upper",
-      kicker: "Before you begin",
     },
     {
       id: "begin",
@@ -624,7 +604,6 @@ export const landingPageContent = {
       kind: "final",
       ink: "dark",
       framed: true,
-      kicker: "Koaryu",
       lede: `${formatPublicPlatformPrice()} per studio, per month.`,
       action: { label: "Create an account", href: "/signup" },
       footerLinks: [

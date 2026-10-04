@@ -1,9 +1,9 @@
 "use client";
 
-import { memo, useEffect, useRef, useState, type RefObject } from "react";
+import { memo, useEffect, useRef, type RefObject } from "react";
 
 import { sceneTransitionDuration } from "./interaction-model";
-import { JourneyScene } from "./journey-scene";
+import { JourneyScene, type JourneySceneHandle } from "./journey-scene";
 import { clamp, easeInOut, easeOut, mix, rangeProgress, type SceneFrame } from "./scene-model";
 
 export interface SceneTarget {
@@ -11,8 +11,21 @@ export interface SceneTarget {
   readonly animate: boolean;
 }
 
-// Keep frame updates inside the artwork. Navigation and the chapter tree do not
-// need to reconcile sixty times a second to move the camera.
+/** Light chrome over the dark curtain and the dojo ceiling; dark ink everywhere else. */
+export function chromeInkForProgress(progress: number): "light" | "dark" {
+  const lightMix = clamp(
+    rangeProgress(progress, 0.048, 0.096) - rangeProgress(progress, 0.48, 0.52),
+  );
+  return lightMix >= 0.5 ? "light" : "dark";
+}
+
+function writeDataset(element: HTMLElement | null | undefined, key: string, value: string) {
+  if (element && element.dataset[key] !== value) element.dataset[key] = value;
+}
+
+// The camera tween writes SVG attributes directly through the scene handle. No
+// React state changes per frame, so neither the artwork nor the chapter tree
+// reconciles while the camera moves.
 export const AnimatedJourneyScene = memo(function AnimatedJourneyScene({
   target,
   frame,
@@ -24,8 +37,8 @@ export const AnimatedJourneyScene = memo(function AnimatedJourneyScene({
   readonly compact: boolean;
   readonly rootRef: RefObject<HTMLDivElement | null>;
 }) {
+  const sceneRef = useRef<JourneySceneHandle>(null);
   const progressRef = useRef(target.progress);
-  const [progress, setProgress] = useState(target.progress);
 
   useEffect(() => {
     const origin = progressRef.current;
@@ -36,7 +49,7 @@ export const AnimatedJourneyScene = memo(function AnimatedJourneyScene({
     const mobileDoorway =
       compact && Math.min(origin, destination) >= 0.516 && Math.max(origin, destination) <= 0.64;
     const started = performance.now();
-    let animation: number;
+    let animation = 0;
     const tick = (now: number) => {
       const raw =
         target.animate && Math.abs(destination - origin) > 0.0001
@@ -46,28 +59,16 @@ export const AnimatedJourneyScene = memo(function AnimatedJourneyScene({
         Math.max(origin, destination) > 0.52 && !mobileDoorway ? easeInOut(raw) : easeOut(raw);
       const next = mix(origin, destination, eased);
       progressRef.current = next;
-      setProgress(next);
+      sceneRef.current?.setProgress(next);
+      const root = rootRef.current;
       if (compact) {
         // The phone crop keeps the ceiling behind the header longer than desktop.
         // The footer is over the darker mountains only at the start of the story.
-        const headerLight = next >= 0.075 && next < 0.6;
-        const footerLight = next < 0.19;
-        const style = rootRef.current?.style;
-        for (const [property, light] of [
-          ["--journey-mobile-header-color", headerLight],
-          ["--journey-mobile-footer-color", footerLight],
-        ] as const) {
-          const color = light ? "var(--koaryu-ink-light)" : "var(--koaryu-ink)";
-          // Inherited custom properties otherwise invalidate the whole page on
-          // each camera frame, even though mobile only needs two color switches.
-          if (style?.getPropertyValue(property) !== color) style?.setProperty(property, color);
-        }
+        writeDataset(root, "mobileHeaderInk", next >= 0.075 && next < 0.6 ? "light" : "dark");
+        writeDataset(root, "mobileFooterInk", next < 0.19 ? "light" : "dark");
       } else {
-        const lightMix = clamp(rangeProgress(next, 0.048, 0.096) - rangeProgress(next, 0.48, 0.52));
-        rootRef.current?.style.setProperty(
-          "--journey-chrome-color",
-          `color-mix(in srgb, var(--koaryu-ink-light) ${Math.round(lightMix * 100)}%, var(--koaryu-ink))`,
-        );
+        // Two discrete states; CSS eases the color. Only a change writes the DOM.
+        writeDataset(root, "chromeInk", chromeInkForProgress(next));
       }
       if (raw < 1) animation = requestAnimationFrame(tick);
     };
@@ -75,5 +76,5 @@ export const AnimatedJourneyScene = memo(function AnimatedJourneyScene({
     return () => cancelAnimationFrame(animation);
   }, [compact, rootRef, target]);
 
-  return <JourneyScene progress={progress} frame={frame} compact={compact} />;
+  return <JourneyScene ref={sceneRef} initialProgress={target.progress} frame={frame} />;
 });

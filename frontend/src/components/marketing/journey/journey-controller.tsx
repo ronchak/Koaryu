@@ -36,7 +36,8 @@ import { SCENE_HEIGHT, SCENE_WIDTH, clamp, frameForDimensions } from "./scene-mo
 import styles from "./journey.module.css";
 
 const chapters = landingPageContent.chapters;
-const mobileChapterLabels: Readonly<Record<string, string>> = {
+/** Short names for the chapter list on the right edge and the phone picker. */
+const chapterLabels: Readonly<Record<string, string>> = {
   welcome: "Welcome",
   "the-problem": "Daily admin",
   "studio-view": "Morning",
@@ -44,10 +45,12 @@ const mobileChapterLabels: Readonly<Record<string, string>> = {
   features: "Features",
   "use-cases": "Workflows",
   "signals-gather": "Attendance",
+  explore: "Guides",
   "class-ready": "Staff",
   pricing: "Pricing",
   about: "Studio fit",
   faq: "Questions",
+  stillness: "The room",
   begin: "Get started",
 };
 const firstChapter = chapters[0];
@@ -274,7 +277,8 @@ export function JourneyController({ children }: JourneyControllerProps) {
     for (const chapter of root.querySelectorAll<HTMLElement>("[data-journey-chapter]")) {
       const active = Number(chapter.dataset.chapterIndex) === pageIndex;
       chapter.inert = !active;
-      chapter.tabIndex = active && compact ? 0 : -1;
+      // Focusable for hash targets and key handling, never a tab stop of its own.
+      chapter.tabIndex = -1;
       chapter.setAttribute("aria-hidden", active ? "false" : "true");
     }
 
@@ -579,6 +583,12 @@ export function JourneyController({ children }: JourneyControllerProps) {
       return;
     }
 
+    if (event.target.closest("[data-skip-link]")) {
+      event.preventDefault();
+      rootRef.current?.querySelector<HTMLElement>("#journey-content")?.focus();
+      return;
+    }
+
     const faqQuestion = event.target.closest<HTMLElement>("[data-faq-question]");
     if (faqQuestion) {
       event.preventDefault();
@@ -644,6 +654,9 @@ export function JourneyController({ children }: JourneyControllerProps) {
         }
       }}
     >
+      <a className={styles.skipLink} href="#journey-content" data-skip-link="">
+        Skip to content
+      </a>
       <div className={styles.sceneLayer} aria-hidden="true">
         <AnimatedJourneyScene
           target={sceneTarget}
@@ -706,16 +719,16 @@ export function JourneyController({ children }: JourneyControllerProps) {
         children
       )}
 
-      <div className={styles.pager} aria-label="Journey controls">
-        <button
-          type="button"
-          onClick={() => navigateRelative(-1)}
-          disabled={pageIndex === 0}
-          aria-label="Previous chapter"
-        >
-          ↑
-        </button>
-        {compact ? (
+      {compact ? (
+        <div className={styles.pager} aria-label="Journey controls">
+          <button
+            type="button"
+            onClick={() => navigateRelative(-1)}
+            disabled={pageIndex === 0}
+            aria-label="Previous chapter"
+          >
+            ↑
+          </button>
           <label className={styles.mobileProgress}>
             <span>
               {String(visiblePosition + 1).padStart(2, "0")} / {visibleIndices.length}
@@ -727,35 +740,43 @@ export function JourneyController({ children }: JourneyControllerProps) {
             >
               {visibleIndices.map((index) => (
                 <option key={chapters[index]!.id} value={index}>
-                  {mobileChapterLabels[chapters[index]!.id] ?? chapters[index]!.title}
+                  {chapterLabels[chapters[index]!.id] ?? chapters[index]!.title}
                 </option>
               ))}
             </select>
           </label>
-        ) : null}
-        <button
-          type="button"
-          onClick={() => navigateRelative(1)}
-          disabled={pageIndex === lastChapterIndex}
-          aria-label="Next chapter"
-        >
-          ↓
-        </button>
-      </div>
-
-      <nav className={styles.rail} aria-label="Journey chapters">
-        {chapters.map((chapter, index) => (
           <button
-            key={chapter.id}
             type="button"
-            aria-label={`Go to chapter ${index + 1}: ${chapter.title}`}
-            aria-current={index === pageIndex ? "step" : undefined}
-            onClick={() => navigateTo(index)}
+            onClick={() => navigateRelative(1)}
+            disabled={pageIndex === lastChapterIndex}
+            aria-label="Next chapter"
           >
-            <span aria-hidden="true" />
+            ↓
           </button>
-        ))}
-      </nav>
+        </div>
+      ) : (
+        <nav className={styles.rail} aria-label="Chapters">
+          <ol>
+            {chapters.map((chapter, index) => (
+              <li key={chapter.id}>
+                <button
+                  type="button"
+                  aria-current={index === pageIndex ? "step" : undefined}
+                  onClick={() => navigateTo(index)}
+                >
+                  <span className={styles.railLabel}>
+                    <span className={styles.railNumber} aria-hidden="true">
+                      {String(index + 1).padStart(2, "0")}
+                    </span>
+                    {chapterLabels[chapter.id] ?? chapter.title}
+                  </span>
+                  <span className={styles.railDot} aria-hidden="true" />
+                </button>
+              </li>
+            ))}
+          </ol>
+        </nav>
+      )}
 
       <p className={styles.liveStatus} aria-live="polite" aria-atomic="true">
         Chapter {visiblePosition + 1} of {visibleIndices.length}: {activeChapter.title}

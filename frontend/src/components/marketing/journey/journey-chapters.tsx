@@ -45,24 +45,29 @@ function ChapterAction({
   );
 }
 
+/** Marks an element that rises into place, in order, when its chapter arrives. */
+function rise(order: number) {
+  return { "data-rise": order } as const;
+}
+
 function HeroChapter({ chapter }: { chapter: JourneyHeroChapter }) {
   return (
     <div className={styles.heroCopy}>
-      <p className={styles.kicker}>{chapter.kicker}</p>
-      <h1 className={styles.heroHeading}>
+      <p className={styles.kicker} {...rise(0)}>
+        {chapter.kicker}
+      </p>
+      <h1 className={styles.heroHeading} {...rise(1)}>
         {chapter.headline.map((line) => (
           <span key={line}>{line}</span>
         ))}
       </h1>
-      <p className={styles.lede}>{chapter.lede}</p>
-      <div className={styles.actions}>
+      <p className={styles.lede} {...rise(2)}>
+        {chapter.lede}
+      </p>
+      <div className={styles.actions} {...rise(3)}>
         <ChapterAction {...chapter.actions[0]} variant="primary" />
         <ChapterAction {...chapter.actions[1]} />
       </div>
-      <p className={styles.scrollHint}>
-        <span className={styles.desktopHint}>Scroll once</span>
-        <span className={styles.mobileHint}>Swipe to explore</span>
-      </p>
     </div>
   );
 }
@@ -70,10 +75,14 @@ function HeroChapter({ chapter }: { chapter: JourneyHeroChapter }) {
 function ProblemChapter({ chapter }: { chapter: JourneyProblemChapter }) {
   return (
     <div className={styles.problemCopy}>
-      <h2 className={styles.statementHeading}>{chapter.title}</h2>
+      <h2 className={styles.statementHeading} {...rise(0)}>
+        {chapter.title}
+      </h2>
       <div className={styles.problemResponse}>
-        <p>{chapter.question}</p>
-        <p className={styles.problemAside}>{chapter.aside}</p>
+        <p {...rise(1)}>{chapter.question}</p>
+        <p className={styles.problemAside} {...rise(2)}>
+          {chapter.aside}
+        </p>
       </div>
     </div>
   );
@@ -81,35 +90,48 @@ function ProblemChapter({ chapter }: { chapter: JourneyProblemChapter }) {
 
 function MorningChapter({ chapter }: { chapter: JourneyMorningChapter }) {
   return (
-    <article className={`${styles.plane} ${styles.morningPlane}`}>
-      <p className={styles.kicker}>{chapter.kicker}</p>
-      <h2 className={styles.planeHeading}>{chapter.title}</h2>
-      <p className={styles.lede}>{chapter.lede}</p>
-      <div className={styles.proofBlock}>
-        <p className={styles.rowLabel}>{chapter.proofLabel}</p>
-        <p>{chapter.proof}</p>
-      </div>
+    <article className={`${styles.plane} ${styles.morningPlane}`} {...rise(0)}>
+      <h2 className={styles.planeHeading} {...rise(1)}>
+        {chapter.title}
+      </h2>
+      <p className={styles.lede} {...rise(2)}>
+        {chapter.lede}
+      </p>
+      <dl className={styles.proofList} {...rise(3)}>
+        {chapter.examples.map((example) => (
+          <div key={example.condition}>
+            <dt>{example.condition}</dt>
+            <dd>{example.action}</dd>
+          </div>
+        ))}
+      </dl>
     </article>
   );
 }
 
 function ProductIntroChapter({ chapter }: { chapter: JourneyProductIntroChapter }) {
   return (
-    <article className={`${styles.framedPlane} ${styles.darkPlane}`}>
-      <p className={styles.kicker}>{chapter.kicker}</p>
-      <h2 className={styles.planeHeading}>{chapter.title}</h2>
-      <p className={styles.lede}>{chapter.lede}</p>
+    <article className={`${styles.framedPlane} ${styles.darkPlane}`} {...rise(0)}>
+      <h2 className={styles.planeHeading} {...rise(1)}>
+        {chapter.title}
+      </h2>
+      <p className={styles.lede} {...rise(2)}>
+        {chapter.lede}
+      </p>
     </article>
   );
 }
 
 function FeaturesChapter({ chapter }: { chapter: JourneyFeaturesChapter }) {
   return (
-    <article className={`${styles.plane} ${styles.ledgerPlane}`}>
-      <p className={styles.kicker}>{chapter.kicker}</p>
-      <h2 className={styles.planeHeading}>{chapter.heading}</h2>
-      <p className={`${styles.lede} ${styles.supportingLede}`}>{chapter.lede}</p>
-      <ul className={styles.ledgerList}>
+    <article className={`${styles.plane} ${styles.ledgerPlane}`} {...rise(0)}>
+      <h2 className={styles.planeHeading} {...rise(1)}>
+        {chapter.heading}
+      </h2>
+      <p className={`${styles.lede} ${styles.supportingLede}`} {...rise(2)}>
+        {chapter.lede}
+      </p>
+      <ul className={styles.ledgerList} {...rise(3)}>
         {chapter.rows.map((row) => (
           <li key={row.detail.href} className={styles.ledgerRow}>
             <h3>
@@ -119,7 +141,7 @@ function FeaturesChapter({ chapter }: { chapter: JourneyFeaturesChapter }) {
           </li>
         ))}
       </ul>
-      <Link className={styles.planeLink} href={chapter.link.href}>
+      <Link className={styles.planeLink} href={chapter.link.href} {...rise(4)}>
         {chapter.link.label} <span aria-hidden="true">→</span>
       </Link>
     </article>
@@ -128,17 +150,14 @@ function FeaturesChapter({ chapter }: { chapter: JourneyFeaturesChapter }) {
 
 function UseCasesChapter({ chapter }: { chapter: JourneyUseCasesChapter }) {
   return (
-    <article className={`${styles.plane} ${styles.bandPlane}`}>
-      <div className={styles.bandHeading}>
-        <div>
-          <p className={styles.kicker}>{chapter.kicker}</p>
-          <h2 className={styles.planeHeading}>{chapter.heading}</h2>
-        </div>
+    <article className={`${styles.plane} ${styles.bandPlane}`} {...rise(0)}>
+      <div className={styles.bandHeading} {...rise(1)}>
+        <h2 className={styles.planeHeading}>{chapter.heading}</h2>
         <Link className={styles.planeLink} href={chapter.link.href}>
           {chapter.link.label} <span aria-hidden="true">→</span>
         </Link>
       </div>
-      <ul className={styles.bandList}>
+      <ul className={styles.bandList} {...rise(2)}>
         {chapter.rows.map((row) => (
           <li key={row.detail.href} className={styles.bandRow}>
             <h3>
@@ -155,19 +174,25 @@ function UseCasesChapter({ chapter }: { chapter: JourneyUseCasesChapter }) {
 function TransitionChapter({ chapter }: { chapter: JourneyTransitionChapter }) {
   return (
     <div className={styles.transitionCopy}>
-      <p className={styles.kicker}>{chapter.kicker}</p>
-      <h2 className={styles.statementHeading}>{chapter.title}</h2>
-      {chapter.lede ? <p className={styles.lede}>{chapter.lede}</p> : null}
+      <h2 className={styles.statementHeading} {...rise(0)}>
+        {chapter.title}
+      </h2>
+      {chapter.lede ? (
+        <p className={styles.lede} {...rise(1)}>
+          {chapter.lede}
+        </p>
+      ) : null}
     </div>
   );
 }
 
 function ExploreChapter({ chapter }: { chapter: JourneyExploreChapter }) {
   return (
-    <article className={`${styles.plane} ${styles.mapPlane}`}>
-      <p className={styles.kicker}>{chapter.kicker}</p>
-      <h2 className={styles.planeHeading}>{chapter.heading}</h2>
-      <ul className={styles.routeList}>
+    <article className={`${styles.plane} ${styles.mapPlane}`} {...rise(0)}>
+      <h2 className={styles.planeHeading} {...rise(1)}>
+        {chapter.heading}
+      </h2>
+      <ul className={styles.routeList} {...rise(2)}>
         {chapter.routes.map((route) => (
           <li key={route.href} className={styles.routeRow}>
             <Link href={route.href}>
@@ -181,7 +206,7 @@ function ExploreChapter({ chapter }: { chapter: JourneyExploreChapter }) {
           </li>
         ))}
       </ul>
-      <Link className={styles.planeLink} href={chapter.link.href}>
+      <Link className={styles.planeLink} href={chapter.link.href} {...rise(3)}>
         {chapter.link.label} <span aria-hidden="true">→</span>
       </Link>
     </article>
@@ -190,14 +215,17 @@ function ExploreChapter({ chapter }: { chapter: JourneyExploreChapter }) {
 
 function PricingChapter({ chapter }: { chapter: JourneyPricingChapter }) {
   return (
-    <article className={`${styles.plane} ${styles.pricePlane}`}>
-      <p className={styles.kicker}>{chapter.kicker}</p>
-      <h2 className={styles.planeHeading}>{chapter.heading}</h2>
-      <p className={styles.price} data-price-amount={chapter.amount}>
-        {chapter.displayPrice}
-      </p>
-      <p className={styles.pricePeriod}>{chapter.period}</p>
-      <dl className={styles.priceFacts}>
+    <article className={`${styles.plane} ${styles.pricePlane}`} {...rise(0)}>
+      <h2 className={styles.planeHeading} {...rise(1)}>
+        {chapter.heading}
+      </h2>
+      <div {...rise(2)}>
+        <p className={styles.price} data-price-amount={chapter.amount}>
+          {chapter.displayPrice}
+        </p>
+        <p className={styles.pricePeriod}>{chapter.period}</p>
+      </div>
+      <dl className={styles.priceFacts} {...rise(3)}>
         {chapter.facts.map((fact) => (
           <div key={fact.label}>
             <dt>{fact.label}</dt>
@@ -205,18 +233,23 @@ function PricingChapter({ chapter }: { chapter: JourneyPricingChapter }) {
           </div>
         ))}
       </dl>
-      <ChapterAction {...chapter.setupAction} variant="primary" />
+      <div className={styles.priceAction} {...rise(4)}>
+        <ChapterAction {...chapter.setupAction} variant="primary" />
+      </div>
     </article>
   );
 }
 
 function AboutChapter({ chapter }: { chapter: JourneyAboutChapter }) {
   return (
-    <article className={`${styles.plane} ${styles.aboutPlane}`}>
-      <p className={styles.kicker}>{chapter.kicker}</p>
-      <h2 className={styles.planeHeading}>{chapter.heading}</h2>
-      <p className={`${styles.lede} ${styles.supportingLede}`}>{chapter.lede}</p>
-      <dl className={styles.statementList}>
+    <article className={`${styles.plane} ${styles.aboutPlane}`} {...rise(0)}>
+      <h2 className={styles.planeHeading} {...rise(1)}>
+        {chapter.heading}
+      </h2>
+      <p className={`${styles.lede} ${styles.supportingLede}`} {...rise(2)}>
+        {chapter.lede}
+      </p>
+      <dl className={styles.statementList} {...rise(3)}>
         {chapter.principles.map((principle) => (
           <div key={principle.title}>
             <dt>{principle.title}</dt>
@@ -224,7 +257,7 @@ function AboutChapter({ chapter }: { chapter: JourneyAboutChapter }) {
           </div>
         ))}
       </dl>
-      <Link className={styles.planeLink} href={chapter.link.href}>
+      <Link className={styles.planeLink} href={chapter.link.href} {...rise(4)}>
         {chapter.link.label} <span aria-hidden="true">→</span>
       </Link>
     </article>
@@ -244,58 +277,63 @@ function FaqChapter({ chapter }: { chapter: JourneyFaqChapter }) {
           ))}
         </select>
       </label>
-      <nav className={styles.faqIndex} aria-label="FAQ topics">
-        {chapter.groups.map((group, groupIndex) => (
-          <Link key={group.title} href={`#${FAQ_HASHES[groupIndex]}`} data-faq-topic={groupIndex}>
-            {group.title}
-          </Link>
-        ))}
-      </nav>
-      <div
-        className={`${styles.plane} ${styles.faqPanel}`}
-        tabIndex={0}
-        data-faq-scroll=""
-        aria-label="Questions and answers"
-      >
-        {chapter.groups.map((group, groupIndex) => (
-          <section
-            key={group.title}
-            id={FAQ_HASHES[groupIndex]}
-            className={styles.faqGroup}
-            data-faq-group={groupIndex}
-          >
-            <p className={styles.kicker}>{chapter.kicker}</p>
-            <h2 className={styles.planeHeading}>{group.title}</h2>
-            <div className={styles.faqList}>
-              {group.items.map((item, itemIndex) => {
-                const answerId = `faq-answer-${groupIndex}-${itemIndex}`;
-                return (
-                  <div
-                    key={item.question}
-                    className={styles.faqItem}
-                    data-faq-item={`${groupIndex}-${itemIndex}`}
-                  >
-                    <button
-                      type="button"
-                      className={styles.faqQuestion}
-                      data-faq-question={`${groupIndex}-${itemIndex}`}
-                      aria-expanded="true"
-                      aria-controls={answerId}
+      <div className={`${styles.plane} ${styles.faqCard}`} {...rise(0)}>
+        <h2 className={styles.planeHeading} {...rise(1)}>
+          {chapter.heading}
+        </h2>
+        <nav className={styles.faqIndex} aria-label="FAQ topics" {...rise(2)}>
+          {chapter.groups.map((group, groupIndex) => (
+            <Link key={group.title} href={`#${FAQ_HASHES[groupIndex]}`} data-faq-topic={groupIndex}>
+              {group.title}
+            </Link>
+          ))}
+        </nav>
+        <div
+          className={styles.faqPanel}
+          tabIndex={0}
+          data-faq-scroll=""
+          aria-label="Questions and answers"
+          {...rise(3)}
+        >
+          {chapter.groups.map((group, groupIndex) => (
+            <section
+              key={group.title}
+              id={FAQ_HASHES[groupIndex]}
+              className={styles.faqGroup}
+              data-faq-group={groupIndex}
+            >
+              <h3 className={styles.faqGroupTitle}>{group.title}</h3>
+              <div className={styles.faqList}>
+                {group.items.map((item, itemIndex) => {
+                  const answerId = `faq-answer-${groupIndex}-${itemIndex}`;
+                  return (
+                    <div
+                      key={item.question}
+                      className={styles.faqItem}
+                      data-faq-item={`${groupIndex}-${itemIndex}`}
                     >
-                      <span>{item.question}</span>
-                      <span className={styles.faqIcon} aria-hidden="true">
-                        +
-                      </span>
-                    </button>
-                    <div id={answerId} className={styles.faqAnswer} data-faq-answer="">
-                      <p>{item.answer}</p>
+                      <button
+                        type="button"
+                        className={styles.faqQuestion}
+                        data-faq-question={`${groupIndex}-${itemIndex}`}
+                        aria-expanded="true"
+                        aria-controls={answerId}
+                      >
+                        <span>{item.question}</span>
+                        <span className={styles.faqIcon} aria-hidden="true">
+                          +
+                        </span>
+                      </button>
+                      <div id={answerId} className={styles.faqAnswer} data-faq-answer="">
+                        <p>{item.answer}</p>
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
-            </div>
-          </section>
-        ))}
+                  );
+                })}
+              </div>
+            </section>
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -303,21 +341,26 @@ function FaqChapter({ chapter }: { chapter: JourneyFaqChapter }) {
 
 function FinalChapter({ chapter }: { chapter: JourneyFinalChapter }) {
   return (
-    <article className={`${styles.framedPlane} ${styles.finalPlane}`}>
-      <p className={styles.kicker}>{chapter.kicker}</p>
-      <h2 className={styles.planeHeading}>{chapter.title}</h2>
-      <p className={styles.lede}>{chapter.lede}</p>
-      <div className={styles.actions}>
+    <article className={`${styles.framedPlane} ${styles.finalPlane}`} {...rise(0)}>
+      <h2 className={styles.planeHeading} {...rise(1)}>
+        {chapter.title}
+      </h2>
+      <p className={styles.lede} {...rise(2)}>
+        {chapter.lede}
+      </p>
+      <div className={styles.actions} {...rise(3)}>
         <ChapterAction {...chapter.action} variant="primary" />
       </div>
-      <nav className={styles.finalLinks} aria-label="Footer">
-        {chapter.footerLinks.map((link) => (
-          <Link key={link.href} href={link.href}>
-            {link.label}
-          </Link>
-        ))}
-      </nav>
-      <p className={styles.copyright}>{chapter.copyright}</p>
+      <div {...rise(4)}>
+        <nav className={styles.finalLinks} aria-label="Footer">
+          {chapter.footerLinks.map((link) => (
+            <Link key={link.href} href={link.href}>
+              {link.label}
+            </Link>
+          ))}
+        </nav>
+        <p className={styles.copyright}>{chapter.copyright}</p>
+      </div>
     </article>
   );
 }
@@ -353,7 +396,7 @@ function ChapterContent({ chapter }: { chapter: JourneyChapter }) {
 
 export function JourneyChapters() {
   return (
-    <main className={styles.storyRegion}>
+    <main id="journey-content" className={styles.storyRegion} tabIndex={-1}>
       {landingPageContent.chapters.map((chapter, index) => (
         <section
           key={chapter.id}

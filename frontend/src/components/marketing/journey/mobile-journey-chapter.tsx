@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { PUBLIC_PAYMENTS_FEE_PERCENT } from "../../../lib/constants";
 import type {
   JourneyAction,
   JourneyChapter,
@@ -42,10 +41,10 @@ function Panel({
   );
 }
 
-function Heading({ kicker, title }: { kicker: string; title: string }) {
+function Heading({ kicker, title }: { kicker?: string; title: string }) {
   return (
     <>
-      <p className={styles.kicker}>{kicker}</p>
+      {kicker ? <p className={styles.kicker}>{kicker}</p> : null}
       <h2>{title}</h2>
     </>
   );
@@ -67,7 +66,7 @@ function Directory({
       layout="directory"
       intro={
         <>
-          <Heading kicker={label} title={heading} />
+          <Heading title={heading} />
           {overview ? <Action action={overview} /> : null}
         </>
       }
@@ -173,7 +172,7 @@ export function MobileJourneyChapter({
       break;
     case "about":
       content = (
-        <Panel intro={<Heading kicker={chapter.kicker} title={chapter.heading} />}>
+        <Panel intro={<Heading title={chapter.heading} />}>
           <p>{chapter.lede}</p>
           <Action action={chapter.link} />
         </Panel>
@@ -181,10 +180,7 @@ export function MobileJourneyChapter({
       break;
     case "morning":
       content = (
-        <Panel
-          layout="morning"
-          intro={<Heading kicker={chapter.proofLabel} title={chapter.title} />}
-        >
+        <Panel layout="morning" intro={<Heading title={chapter.title} />}>
           <dl className={styles.examples}>
             {chapter.examples.map((example) => (
               <div key={example.condition}>
@@ -198,7 +194,7 @@ export function MobileJourneyChapter({
       break;
     case "product-intro":
       content = (
-        <Panel dark intro={<Heading kicker={chapter.kicker} title={chapter.title} />}>
+        <Panel dark intro={<Heading title={chapter.title} />}>
           <p>{chapter.lede}</p>
         </Panel>
       );
@@ -209,17 +205,21 @@ export function MobileJourneyChapter({
           layout="pricing"
           intro={
             <>
-              <p className={styles.kicker}>{chapter.kicker}</p>
-              <h2 className={styles.price}>{chapter.displayPrice}</h2>
+              <h2 className={styles.priceHeading}>{chapter.heading}</h2>
+              <p className={styles.price}>{chapter.displayPrice}</p>
               <p>{chapter.period}</p>
-              <p className={styles.studentCount}>No per-student tiers.</p>
               <Action action={chapter.setupAction} primary />
             </>
           }
         >
-          <p>Students, ranks, leads, attendance, reports and billing records.</p>
-          <p>Payments: {PUBLIC_PAYMENTS_FEE_PERCENT}% standard fee + Stripe. Studio rates vary.</p>
-          <p>Tuition collection needs separate activation; not generally available.</p>
+          <dl className={styles.facts}>
+            {chapter.facts.map((fact) => (
+              <div key={fact.label}>
+                <dt>{fact.label}</dt>
+                <dd>{fact.description}</dd>
+              </div>
+            ))}
+          </dl>
         </Panel>
       );
       break;
@@ -271,7 +271,7 @@ export function MobileJourneyChapter({
       content = (
         <div className={styles.openCopy} data-placement={chapter.placement}>
           <div className={styles.intro}>
-            <Heading kicker={chapter.kicker} title={chapter.title} />
+            <Heading title={chapter.title} />
           </div>
           {chapter.lede ? (
             <div className={styles.body}>
@@ -286,7 +286,7 @@ export function MobileJourneyChapter({
         <Panel
           intro={
             <>
-              <Heading kicker={chapter.kicker} title={chapter.title} />
+              <Heading title={chapter.title} />
               <p className={styles.lede}>{chapter.lede}</p>
               <Action action={chapter.action} primary />
             </>
@@ -305,7 +305,7 @@ export function MobileJourneyChapter({
       break;
   }
   return (
-    <main className={styles.stage} data-mobile-stage="">
+    <main id="journey-content" className={styles.stage} data-mobile-stage="" tabIndex={-1}>
       <section
         id={chapter.id}
         className={styles.chapter}

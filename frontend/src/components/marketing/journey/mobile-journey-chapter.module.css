@@ -15,6 +15,13 @@
   outline-offset: -2px;
   animation: mobile-chapter-in 180ms ease 60ms both;
 }
+/* Hash targets focus the chapter for key handling; it is not a control. */
+.chapter:focus {
+  outline: none;
+}
+.stage:focus {
+  outline: none;
+}
 .panel,
 .openCopy {
   width: min(100%, 380px);
@@ -129,9 +136,30 @@
   font-size: 23px;
   line-height: 1.15;
 }
+.panel .priceHeading {
+  font-size: 17px;
+  letter-spacing: -0.02em;
+}
 .panel .price {
+  margin-top: 6px;
   font-size: 48px;
+  font-weight: 720;
   line-height: 1;
+  letter-spacing: -0.05em;
+}
+.facts {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+}
+.facts dt {
+  font-size: 14px;
+  font-weight: 700;
+}
+.facts dd {
+  margin: 2px 0 0;
+  font-size: 15px;
+  line-height: 1.35;
 }
 .panel .studentCount {
   margin: 8px 0;
@@ -325,6 +353,43 @@
 }
 .chapter[data-kind="problem"] {
   animation-delay: 160ms;
+}
+/* The card settles, then its heading and body rise in order. */
+@media (prefers-reduced-motion: no-preference) {
+  .panel,
+  .openCopy {
+    animation: mobile-rise 760ms cubic-bezier(0.22, 1, 0.36, 1) 60ms both;
+  }
+  .intro > *,
+  .body {
+    animation: mobile-rise 760ms cubic-bezier(0.22, 1, 0.36, 1) both;
+    --mobile-rise-distance: 10px;
+  }
+  .intro > :nth-child(1) {
+    animation-delay: 140ms;
+  }
+  .intro > :nth-child(2) {
+    animation-delay: 210ms;
+  }
+  .intro > :nth-child(n + 3) {
+    animation-delay: 280ms;
+  }
+  .body {
+    animation-delay: 330ms;
+  }
+  .chapter[data-kind="problem"] :is(.openCopy, .intro > *, .body) {
+    animation-delay: 380ms;
+  }
+}
+@keyframes mobile-rise {
+  from {
+    opacity: 0;
+    transform: translate3d(0, var(--mobile-rise-distance, 18px), 0);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 @media (prefers-reduced-motion: reduce) {
   .chapter {

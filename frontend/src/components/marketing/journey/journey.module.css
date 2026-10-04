@@ -146,15 +146,6 @@
   min-width: 150px;
 }
 
-.scrollHint {
-  margin: 44px 0 0;
-  font-size: 11px;
-  font-weight: 650;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  opacity: 0.72;
-}
-
 .problemCopy {
   display: grid;
   grid-template-columns: minmax(0, 1.15fr) minmax(260px, 0.72fr);
@@ -212,27 +203,28 @@
   margin-left: 0;
 }
 
-.proofBlock {
+.proofList {
+  margin: 26px 0 0;
+  padding: 0;
+}
+
+.proofList > div {
   display: grid;
-  grid-template-columns: minmax(90px, 0.25fr) minmax(0, 1fr);
-  gap: 24px;
-  margin-top: 30px;
-  padding-top: 20px;
+  grid-template-columns: minmax(120px, 0.32fr) minmax(0, 1fr);
+  gap: 20px;
+  padding: 11px 0;
   border-top: 1px solid var(--koaryu-rule-soft);
-  font-size: 14px;
-  line-height: 1.5;
+  font-size: 13.5px;
+  line-height: 1.45;
 }
 
-.proofBlock p {
+.proofList dt {
+  font-weight: 710;
+}
+
+.proofList dd {
   margin: 0;
-}
-
-.rowLabel {
-  font-size: 10px;
-  font-weight: 720;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  opacity: 0.76;
+  opacity: 0.8;
 }
 
 .ledgerPlane {
@@ -459,8 +451,9 @@
 .faqIndex {
   display: flex;
   flex-wrap: wrap;
-  gap: 5px 16px;
-  margin-bottom: 10px;
+  gap: 0 18px;
+  margin: 14px 0 6px;
+  border-bottom: 1px solid var(--koaryu-rule-soft);
 }
 
 .faqIndex a {
@@ -469,12 +462,25 @@
   align-items: center;
   justify-content: center;
   min-height: 44px;
+  margin-bottom: -1px;
   border-bottom: 2px solid transparent;
-  font-size: 10px;
-  font-weight: 720;
-  letter-spacing: 0.11em;
-  text-transform: uppercase;
-  opacity: 0.76;
+  font-size: 12.5px;
+  font-weight: 650;
+  opacity: 0.7;
+  transition: opacity 180ms ease;
+}
+
+.faqIndex a:hover {
+  opacity: 1;
+}
+
+.faqGroupTitle {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 .faqIndex a[aria-current="true"] {
@@ -526,6 +532,10 @@
   opacity: 0.76;
 }
 
+.priceAction {
+  margin-top: 6px;
+}
+
 .finalPlane {
   margin-inline: auto;
   text-align: center;
@@ -566,6 +576,29 @@
   opacity: 0.76;
 }
 
+.skipLink {
+  position: absolute;
+  z-index: 30;
+  top: 10px;
+  left: 10px;
+  padding: 10px 14px;
+  border-radius: 7px;
+  color: var(--koaryu-paper);
+  background: var(--koaryu-ink);
+  font-size: 13px;
+  font-weight: 650;
+  text-decoration: none;
+  transform: translateY(-160%);
+}
+
+.skipLink:focus-visible {
+  transform: none;
+}
+
+.storyRegion:focus {
+  outline: none;
+}
+
 .journey a:focus-visible,
 .journey button:focus-visible,
 .faqPanel:focus-visible {
@@ -592,6 +625,19 @@
   inset: 0;
   display: block;
   overflow: hidden;
+}
+
+/* The scene writes two discrete ink states; color changes ease in CSS. */
+.journey[data-chrome-ink="light"] {
+  --journey-chrome-color: var(--koaryu-ink-light);
+}
+
+.journey[data-mobile-header-ink="light"] {
+  --journey-mobile-header-color: var(--koaryu-ink-light);
+}
+
+.journey[data-mobile-footer-ink="light"] {
+  --journey-mobile-footer-color: var(--koaryu-ink-light);
 }
 
 .journey[data-enhanced="true"] .topbar {
@@ -622,8 +668,10 @@
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
-  transform: translate3d(0, 12px, 0);
-  transition: none;
+  /* Leaving is quick: the copy fades while the camera starts to move. */
+  transition:
+    opacity 200ms ease,
+    visibility 0s linear 200ms;
 }
 
 .journey[data-enhanced="true"] .chapter[aria-hidden="false"] {
@@ -631,11 +679,52 @@
   opacity: 1;
   visibility: visible;
   pointer-events: auto;
-  transform: translate3d(0, 0, 0);
-  transition:
-    opacity 340ms cubic-bezier(0.16, 1, 0.3, 1) 260ms,
-    transform 340ms cubic-bezier(0.16, 1, 0.3, 1) 260ms,
-    visibility 0s;
+  transition: none;
+}
+
+/* Arriving is a short staggered rise, timed to land as the camera settles. */
+.journey [data-rise="1"] {
+  --rise-order: 1;
+}
+
+.journey [data-rise="2"] {
+  --rise-order: 2;
+}
+
+.journey [data-rise="3"] {
+  --rise-order: 3;
+}
+
+.journey [data-rise="4"] {
+  --rise-order: 4;
+}
+
+.journey .plane [data-rise],
+.journey .framedPlane [data-rise],
+.journey .faqCard [data-rise] {
+  --rise-distance: 12px;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .journey[data-enhanced="true"] .chapter[aria-hidden="false"] [data-rise] {
+    animation: chapter-rise 820ms cubic-bezier(0.22, 1, 0.36, 1) both;
+    animation-delay: calc(var(--chapter-delay, 260ms) + var(--rise-order, 0) * 85ms);
+  }
+}
+
+@keyframes chapter-rise {
+  from {
+    opacity: 0;
+    transform: translate3d(0, var(--rise-distance, 22px), 0);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.journey[data-enhanced="true"] .chapter[data-kind="hero"] {
+  --chapter-delay: 160ms;
 }
 
 .journey[data-enhanced="true"] .chapter[data-ink="light"] {
@@ -643,12 +732,11 @@
 }
 
 .journey[data-enhanced="true"] .chapter[data-kind="morning"] {
-  transition-delay: 0ms;
-  transition-duration: 200ms;
+  --chapter-delay: 80ms;
 }
 
 .journey[data-enhanced="true"] .chapter[data-kind="problem"] {
-  transition-delay: 660ms;
+  --chapter-delay: 600ms;
 }
 
 .journey[data-enhanced="true"] .chapter[data-placement="upper"] {
@@ -676,7 +764,7 @@
 }
 
 .journey[data-enhanced="true"] .faqShell {
-  width: min(560px, 48%);
+  width: min(600px, 50%);
   max-width: none;
 }
 
@@ -703,18 +791,8 @@
   }
 }
 
-.journey[data-enhanced="true"] .scrollHint {
-  animation: hint-bob 1800ms ease-in-out infinite;
-}
-
-@keyframes hint-bob {
-  50% {
-    transform: translateY(5px);
-  }
-}
-
 .journey[data-enhanced="true"] .faqPanel {
-  max-height: min(66dvh, 590px);
+  max-height: min(46dvh, 420px);
   overflow: auto;
   scrollbar-gutter: stable;
   scrollbar-width: thin;
@@ -801,46 +879,150 @@
 
 .rail {
   top: 50%;
-  right: 4px;
-  flex-direction: column;
-  transform: translateY(-50%);
+  right: 6px;
   color: var(--journey-chrome-color, var(--koaryu-ink));
+  transform: translateY(-50%);
+  transition: color 550ms ease;
+  --rail-halo: rgb(247 243 233 / 62%);
+}
+
+.journey[data-chrome-ink="light"] .rail {
+  --rail-halo: rgb(43 32 14 / 46%);
+}
+
+/* The open list sits on its own sheet so labels read over any wall. */
+.rail::before {
+  position: absolute;
+  z-index: -1;
+  inset: -10px 0 -10px -8px;
+  content: "";
+  border: 1px solid var(--koaryu-rule-soft);
+  border-radius: 10px;
+  background: rgb(251 247 238 / 94%);
+  box-shadow: 0 18px 44px rgb(45 34 18 / 16%);
+  opacity: 0;
+  transform: translateX(8px);
+  transition:
+    opacity 200ms ease,
+    transform 260ms cubic-bezier(0.22, 1, 0.36, 1);
+  pointer-events: none;
+}
+
+.rail ol {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
 .rail button {
   display: grid;
-  width: 44px;
+  grid-template-columns: auto 44px;
+  align-items: center;
+  justify-content: end;
+  width: 100%;
+  min-height: 24px;
   height: 24px;
   padding: 0;
-  place-items: center;
   border: 0;
   color: inherit;
   background: transparent;
+  font: inherit;
   cursor: pointer;
 }
 
-.rail button span {
+.railLabel {
+  display: inline-flex;
+  gap: 8px;
+  align-items: baseline;
+  margin-left: 10px;
+  padding: 5px 9px;
+  border-radius: 999px;
+  font-size: 12.5px;
+  font-weight: 560;
+  line-height: 1;
+  white-space: nowrap;
+  opacity: 0;
+  transform: translateX(6px);
+  transition:
+    opacity 180ms ease,
+    transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
+  pointer-events: none;
+}
+
+.railNumber {
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.55;
+}
+
+.railDot {
   display: block;
-  width: 4px;
-  height: 4px;
+  justify-self: center;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
   background: currentColor;
-  opacity: 0.32;
+  box-shadow: 0 0 0 2px var(--rail-halo);
+  opacity: 0.55;
   transition:
-    width 180ms ease,
-    height 180ms ease,
+    height 220ms cubic-bezier(0.22, 1, 0.36, 1),
     opacity 180ms ease;
 }
 
-.rail button[aria-current="step"] span {
-  width: 6px;
-  height: 6px;
-  opacity: 0.96;
+.rail button:hover .railDot {
+  opacity: 0.9;
+}
+
+.rail button[aria-current="step"] .railDot {
+  height: 16px;
+  border-radius: 3px;
+  opacity: 1;
+}
+
+.rail:is(:hover, :focus-within) {
+  color: var(--koaryu-ink);
+  --rail-halo: transparent;
+}
+
+.rail:is(:hover, :focus-within)::before {
+  opacity: 1;
+  transform: none;
+}
+
+.rail:is(:hover, :focus-within) .railLabel {
+  opacity: 0.72;
+  transform: none;
+  pointer-events: auto;
+}
+
+.rail button:is(:hover, :focus-visible) .railLabel,
+.rail button[aria-current="step"] .railLabel {
+  opacity: 1;
+}
+
+.rail button[aria-current="step"] .railLabel {
+  font-weight: 700;
+}
+
+/* At rest only the current chapter is named, on a small chip of its own. */
+.rail:not(:hover, :focus-within) button[aria-current="step"] .railLabel {
+  color: var(--koaryu-ink);
+  background: rgb(251 247 238 / 86%);
+  box-shadow: 0 2px 10px rgb(45 34 18 / 10%);
+}
+
+.rail:not(:hover, :focus-within) button[aria-current="step"] .railNumber {
+  display: none;
 }
 
 .rail button:focus-visible {
-  outline-width: 1px;
-  outline-offset: -4px;
+  outline: 0;
+}
+
+.rail button:focus-visible .railDot {
+  outline: 2px solid currentColor;
+  outline-offset: 3px;
 }
 
 .liveStatus {
@@ -1007,7 +1189,7 @@
   }
 
   .problemCopy,
-  .proofBlock,
+  .proofList > div,
   .ledgerRow,
   .bandHeading {
     grid-template-columns: 1fr;
@@ -1201,9 +1383,6 @@
   .journey[data-enhanced="true"] .pager button:disabled {
     opacity: 0.4;
   }
-  .journey[data-enhanced="true"] .scrollHint {
-    margin-top: 24px;
-  }
 }
 
 @media (max-width: 560px) {
@@ -1220,7 +1399,6 @@
 }
 
 .mobileFaqTopic,
-.mobileHint,
 .mobileProgress {
   display: none;
 }
@@ -1313,16 +1491,6 @@
   .journey[data-enhanced="true"] .heroCopy .action:nth-child(2) {
     background: var(--koaryu-paper);
   }
-  .journey[data-enhanced="true"] .heroCopy .scrollHint {
-    color: var(--koaryu-paper);
-    opacity: 1;
-  }
-  .journey[data-enhanced="true"] .desktopHint {
-    display: none;
-  }
-  .journey[data-enhanced="true"] .mobileHint {
-    display: inline;
-  }
 
   .journey[data-enhanced="true"] .kicker,
   .journey[data-enhanced="true"] .ledgerPlane .kicker {
@@ -1337,11 +1505,9 @@
     line-height: 1.5;
     opacity: 0.85;
   }
-  .journey[data-enhanced="true"] .proofBlock {
+  .journey[data-enhanced="true"] .proofList > div {
     grid-template-columns: 1fr;
-    gap: 10px;
-    margin-top: 22px;
-    padding-top: 16px;
+    gap: 2px;
   }
   .journey[data-enhanced="true"] .ledgerList,
   .journey[data-enhanced="true"] .ledgerPlane .ledgerList,
@@ -1547,13 +1713,6 @@
   color: var(--koaryu-ink-light);
 }
 
-@media (pointer: coarse) {
-  .rail button {
-    width: 44px;
-    height: 24px;
-  }
-}
-
 @media (prefers-reduced-motion: reduce) {
   .journey *,
   .journey *::before,
@@ -1570,5 +1729,24 @@
     opacity: 1;
     visibility: visible;
     transform: none;
+  }
+}
+
+/* The FAQ is one card: heading, topics, then the open topic's questions. */
+.faqCard .planeHeading {
+  font-size: clamp(28px, 2.5vw, 36px);
+}
+
+.faqCard .faqList {
+  margin-top: 0;
+}
+
+.faqCard .faqItem:first-child {
+  border-top: 0;
+}
+
+@media (min-width: 821px) {
+  .faqIndex {
+    gap: 0 14px;
   }
 }

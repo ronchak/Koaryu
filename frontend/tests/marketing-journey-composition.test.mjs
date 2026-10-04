@@ -72,13 +72,19 @@ describe("Journey progressive enhancement and accessibility", () => {
 
   it("activates inert, live, focus, hit-area, FAQ, and reduced-motion contracts", () => {
     assert.match(controllerSource, /chapter\.inert = !active/);
+    assert.match(controllerSource, /data-skip-link/);
+    assert.match(chapterSource, /id="journey-content"/);
     assert.match(controllerSource, /chapter\.setAttribute\("aria-hidden"/);
     assert.match(controllerSource, /aria-live="polite"/);
     assert.match(controllerSource, /aria-current=\{index === pageIndex \? "step"/);
     assert.match(chapterSource, /aria-expanded="true"/);
     assert.match(chapterSource, /aria-controls=\{answerId\}/);
     assert.match(journeyCss, /\.pager button\s*\{[\s\S]*width:\s*44px;[\s\S]*height:\s*44px;/);
-    assert.match(journeyCss, /\.rail button\s*\{[\s\S]*width:\s*44px;[\s\S]*height:\s*24px;/);
+    assert.match(
+      journeyCss,
+      /\.rail button\s*\{[^}]*grid-template-columns:\s*auto 44px;[^}]*height:\s*24px;/,
+    );
+    assert.match(controllerSource, /className=\{styles\.railLabel\}/);
     assert.match(journeyCss, /outline:\s*2px solid currentColor/);
     assert.match(journeyCss, /@media \(prefers-reduced-motion: reduce\)/);
     assert.match(journeyCss, /animation-delay:\s*0ms !important/);
@@ -93,7 +99,17 @@ describe("Journey progressive enhancement and accessibility", () => {
       journeyCss,
       /@media \(max-width: 560px\)[\s\S]*\.journey\[data-enhanced="true"\] \.chapter\s*\{[\s\S]*padding-inline:\s*20px 48px;/,
     );
-    assert.match(journeyCss, /\.rail button\s*\{[\s\S]*width:\s*44px;[\s\S]*height:\s*24px;/);
+  });
+
+  it("brings each chapter's copy in with a short staggered rise and leaves quickly", () => {
+    assert.match(chapterSource, /"data-rise": order/);
+    assert.match(
+      journeyCss,
+      /@media \(prefers-reduced-motion: no-preference\)\s*\{\s*\.journey\[data-enhanced="true"\] \.chapter\[aria-hidden="false"\] \[data-rise\]/,
+    );
+    assert.match(journeyCss, /cubic-bezier\(0\.22, 1, 0\.36, 1\)/);
+    assert.match(journeyCss, /opacity 200ms ease,\s*visibility 0s linear 200ms/);
+    assert.doesNotMatch(chapterSource, /scrollHint|Scroll once/);
   });
 
   it("uses only scoped marketing materials and no external runtime", () => {
