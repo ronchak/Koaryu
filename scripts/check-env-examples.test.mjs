@@ -22,6 +22,7 @@ const reviewedVercelConfig = {
   crons: [
     { path: "/api/cron/account-deletions/process-due", schedule: "0 8 * * *" },
     { path: "/api/cron/operational-alerts/evaluate", schedule: "0 9 * * *" },
+    { path: "/api/cron/automations/process-due", schedule: "0 18 * * *" },
   ],
 };
 
@@ -685,6 +686,7 @@ services:
       crons: [
         { path: "/api/cron/account-deletions/process-due", schedule: "0 8 * * *" },
         { path: "/api/cron/operational-alerts/evaluate", schedule: "0 9 * * *" },
+        { path: "/api/cron/automations/process-due", schedule: "0 18 * * *" },
       ],
     };
 
@@ -730,6 +732,7 @@ services:
       crons: [
         { path: "/api/cron/account-deletions/process-due", schedule: "0 8 * * *" },
         { path: "/api/cron/operational-alerts/evaluate", schedule: "0 * * * *" },
+        { path: "/api/cron/automations/process-due", schedule: "0 18 * * *" },
       ],
     };
 
@@ -763,7 +766,7 @@ services:
     const extra = structuredClone(reviewedVercelConfig);
     extra.crons.push({ path: "/api/cron/unapproved", schedule: "0 10 * * *" });
     assert.ok(validateOperationalAlertCadence(extra).some(
-      (failure) => failure.includes("exactly the two approved entries"),
+      (failure) => failure.includes("exactly the three approved entries"),
     ));
 
     const duplicate = structuredClone(reviewedVercelConfig);
@@ -771,6 +774,39 @@ services:
     const failures = validateOperationalAlertCadence(duplicate);
     assert.ok(failures.some((failure) => failure.includes("account-deletion") && failure.includes("exactly once")));
     assert.ok(failures.some((failure) => failure.includes("operational-alert") && failure.includes("exactly once")));
+  });
+
+  it("requires exactly one missed-class automation cron at daily 18:00 UTC", () => {
+    for (const schedule of ["0 10 * * *", "0 * * * *", "*/5 * * * *"]) {
+      const changed = structuredClone(reviewedVercelConfig);
+      changed.crons[2].schedule = schedule;
+      assert.ok(validateOperationalAlertCadence(changed).some(
+        (failure) => failure.includes("missed-class automation") && failure.includes("daily 18:00 UTC"),
+      ));
+    }
+    for (const crons of [
+      reviewedVercelConfig.crons.slice(0, 2),
+      [...reviewedVercelConfig.crons, { ...reviewedVercelConfig.crons[2] }],
+    ]) {
+      const failures = validateOperationalAlertCadence({ crons });
+      assert.ok(failures.some((failure) => failure.includes("exactly the three approved entries")));
+      assert.ok(failures.some((failure) => failure.includes("missed-class automation") && failure.includes("exactly once")));
+    }
+  });
+
+  it("rejects malformed cron inventories and unapproved object fields", () => {
+    for (const crons of [undefined, null, {}]) {
+      assert.ok(validateOperationalAlertCadence({ crons }).some(
+        (failure) => failure.includes("must be an array"),
+      ));
+    }
+    for (const entry of [null, [], { ...reviewedVercelConfig.crons[2], enabled: true }]) {
+      const changed = structuredClone(reviewedVercelConfig);
+      changed.crons[2] = entry;
+      assert.ok(validateOperationalAlertCadence(changed).some(
+        (failure) => failure.includes("only the approved path/schedule objects"),
+      ));
+    }
   });
 
   it("rejects missing external-primary five-minute language", () => {

@@ -115,16 +115,18 @@ are included. See `docs/verification/navigation-reliability-followup.md`.
 
 ### Vercel cron jobs
 
-Two scheduled jobs run against the production frontend, which forwards them to
-the backend. They are declared in `frontend/vercel.json` and their cadence is
-enforced by `scripts/check-env-examples.mjs`.
+The manifest declares the two existing jobs and the disabled missed-class
+candidate below. Vercel executes scheduled jobs only on production deployments,
+whose frontend forwards them to the backend. Their cadence is enforced by
+`scripts/check-env-examples.mjs`.
 
 | Path | Schedule (UTC) | Purpose |
 | --- | --- | --- |
 | `/api/cron/account-deletions/process-due` | `0 8 * * *` | Processes account deletions that have passed their grace period |
 | `/api/cron/operational-alerts/evaluate` | `0 9 * * *` | Evaluates operational alert conditions |
+| `/api/cron/automations/process-due` | `0 18 * * *` | Missed-class candidate; pending deployment and activation |
 
-The missed-class candidate adds `/api/cron/automations/process-due` at `0 10 * * *`
+The missed-class candidate adds `/api/cron/automations/process-due` at `0 18 * * *`
 with a 60-second function limit. Its schedule and delivery are pending deployment
 and activation; this is not a third verified live cron. The bridge uses a
 55-second local budget for at most three sequential batches of 10, with a
@@ -132,7 +134,10 @@ and activation; this is not a third verified live cron. The bridge uses a
 seconds left. At most 30 rows are processed per daily invocation; backlog can
 remain for later runs. The backend budgets 25 seconds per batch. Both frontend
 and backend automation worker flags and the backend send flag remain false in
-this candidate. See [missed-class scheduling](missed-class-automation.md#scheduled-work-and-pause-controls).
+this candidate. The bridge stops further batches after a failed or unknown send;
+provider acceptance does not prove delivery. The daily schedule does not promise
+all due messages will be sent that day. See
+[missed-class scheduling](missed-class-automation.md#scheduled-work-and-pause-controls).
 
 ## Render — backend
 

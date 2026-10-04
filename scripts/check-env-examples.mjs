@@ -699,13 +699,18 @@ export function validateOperationalAlertCadence(
       schedule: "0 9 * * *",
       diagnostic: "the operational-alert Vercel backup cron must appear exactly once at daily 09:00 UTC (0 9 * * *)",
     },
+    {
+      path: "/api/cron/automations/process-due",
+      schedule: "0 18 * * *",
+      diagnostic: "the missed-class automation cron must appear exactly once at daily 18:00 UTC (0 18 * * *)",
+    },
   ];
 
   if (!Array.isArray(crons)) {
-    failures.push("frontend/vercel.json: crons must be an array containing exactly the two approved entries");
+    failures.push("frontend/vercel.json: crons must be an array containing exactly the three approved entries");
   } else {
     if (crons.length !== expectedCrons.length) {
-      failures.push("frontend/vercel.json: crons must contain exactly the two approved entries and no others");
+      failures.push("frontend/vercel.json: crons must contain exactly the three approved entries and no others");
     }
     for (const expected of expectedCrons) {
       const matches = crons.filter(

@@ -117,10 +117,13 @@ before deciding whether any further action is appropriate.
 
 ## Scheduled work and pause controls
 
-The candidate schedule is daily at 10:00 UTC, `0 10 * * *`, on
+The candidate schedule is daily at 18:00 UTC, `0 18 * * *`, on
 `GET /api/cron/automations/process-due`. It is pending deployment and activation.
 The existing Vercel project hosts the bridge; no new service or paid resource is
 required by this implementation. Existing scheduled jobs keep their cadence.
+Vercel executes the schedule only on production deployments. The fixed UTC time
+falls during the day for US studios; there is no per-studio send-time setting in
+this version.
 
 The bridge authenticates `CRON_SECRET`, then forwards `AUTOMATION_WORKER_SECRET`
 in `X-Internal-Secret` to
@@ -130,12 +133,17 @@ in `X-Internal-Secret` to
 timeout, and starts another only with at least 30 seconds left. It stops when
 `has_more=false`, both `enqueued` and `processed` are zero, or a response is invalid,
 failed, or ambiguous. It never blindly retries a lost worker response.
+Any returned `failed` or `unknown` count also stops further batches. Counts from
+completed batches remain truthful, including provider acceptance, which does not
+prove inbox delivery. A `retry_wait` count alone permits another batch when
+actionable work and enough time remain.
 
 Each backend call has a 25-second work budget, including credential reads,
 refresh, persistence, and provider submission. No new send begins after its
 budget expires. A daily invocation processes at most 30 rows and may process
 fewer. A larger queue remains visible for later runs. `has_more` describes work
 actionable now, not messages waiting for a future retry time.
+The daily cap does not promise that every due message will be sent that day.
 
 Pause an individual studio rule in Automations. For a global pause, set
 `EMAIL_SEND_ENABLED=false` on the backend and disable
