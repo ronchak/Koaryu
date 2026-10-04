@@ -1,0 +1,662 @@
+/*
+ * Act one: the film. The illustrated scene is pinned to the screen while the
+ * film section scrolls by; the controller scrubs it and fades the title cards.
+ * Without the film (reduced motion, or before scripts run) the same markup
+ * reads as a sequence of composed stills. Nothing here intercepts input.
+ */
+
+[data-koaryu-marketing].root {
+  --paper: #f7f3e9;
+  --ink: #3b2f1c;
+  --ink-soft: rgb(59 47 28 / 78%);
+  --ink-light: #f4eee1;
+  --curtain: #3a2c19;
+  --timber: #4e3c1f;
+  --gutter: clamp(22px, 6vw, 96px);
+  --masthead: 76px;
+  --display:
+    -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", Inter, "Segoe UI",
+    Roboto, sans-serif;
+
+  color: var(--ink);
+  background-color: var(--paper);
+  background-image: url("/marketing/scene-grain.webp");
+  background-size: 360px 360px;
+  background-blend-mode: multiply;
+  overflow-x: clip;
+}
+
+/* The paper tile above replaces the shared full-page noise overlay. */
+[data-koaryu-marketing].root::after {
+  display: none;
+}
+
+/* In-page links travel through the film instead of cutting to it. */
+:global(html):has(.landing) {
+  scroll-behavior: smooth;
+}
+
+.landing {
+  position: relative;
+}
+
+.main {
+  position: relative;
+  display: block;
+}
+
+.main:focus {
+  outline: none;
+}
+
+.skipLink {
+  position: absolute;
+  z-index: 70;
+  top: 8px;
+  left: 20px;
+  padding: 14px 18px;
+  color: var(--paper);
+  background: var(--ink);
+  transform: translateY(-150%);
+}
+
+.skipLink:focus {
+  transform: translateY(0);
+}
+
+/* ------------------------------------------------------------ Masthead */
+
+.masthead {
+  position: fixed;
+  z-index: 50;
+  top: 0;
+  right: 0;
+  left: 0;
+  border-bottom: 1px solid transparent;
+  transition:
+    background-color 240ms ease,
+    border-color 240ms ease,
+    transform 320ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.landing[data-scrolled="true"] .masthead {
+  border-bottom-color: rgb(59 47 28 / 14%);
+  background: rgb(247 243 233 / 95%);
+}
+
+.landing[data-masthead-hidden="true"] .masthead {
+  transform: translateY(-101%);
+}
+
+/* Keyboard focus always brings the masthead back. */
+.landing .masthead:focus-within {
+  transform: none;
+}
+
+/* Belt rank progress along the top: white to black across the page. */
+.beltProgress {
+  display: none;
+}
+
+/* ------------------------------------------------------------ The film */
+
+.film {
+  /* Where the closing frame settles as a framed picture, in percent of the screen. */
+  --handoff-scale: 0.54;
+  --handoff-ox: 92.5;
+  --handoff-oy: 54;
+  --crop-top: 0;
+  --crop-right: 0;
+  --crop-bottom: 0;
+  --crop-left: 0;
+  --frame-width: 22px;
+  --pic-left: calc(
+    var(--handoff-ox) + var(--handoff-scale) * (var(--crop-left) - var(--handoff-ox))
+  );
+  --pic-right: calc(
+    var(--handoff-ox) + var(--handoff-scale) * (100 - var(--crop-right) - var(--handoff-ox))
+  );
+  --pic-top: calc(var(--handoff-oy) + var(--handoff-scale) * (var(--crop-top) - var(--handoff-oy)));
+  --pic-bottom: calc(
+    var(--handoff-oy) + var(--handoff-scale) * (100 - var(--crop-bottom) - var(--handoff-oy))
+  );
+
+  position: relative;
+}
+
+.film[data-mode="live"] {
+  height: calc((var(--film-length) + 1) * 100lvh);
+}
+
+.stage {
+  position: sticky;
+  z-index: 0;
+  top: 0;
+  /* The large viewport keeps the artwork still while mobile toolbars move. */
+  height: 100lvh;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.film[data-mode="still"] .stage {
+  position: absolute;
+  right: 0;
+  left: 0;
+  height: 100svh;
+}
+
+.picture {
+  position: absolute;
+  inset: 0;
+  transform-origin: calc(var(--handoff-ox) * 1%) calc(var(--handoff-oy) * 1%);
+  will-change: transform;
+}
+
+.art {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: var(--paper);
+}
+
+/* Baked grain and a soft vignette over the artwork; one composite per frame. */
+.art::after {
+  position: absolute;
+  inset: 0;
+  content: "";
+  background:
+    radial-gradient(ellipse 72% 72% at 50% 48%, rgb(255 255 255) 55%, rgb(214 204 188) 100%),
+    url("/marketing/scene-grain.webp") 0 0 / 360px 360px;
+  background-blend-mode: multiply;
+  mix-blend-mode: multiply;
+}
+
+/* A timber frame, like the dojo's beams, that the film has been inside all along. */
+.pictureFrame {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  pointer-events: none;
+  box-shadow:
+    0 0 0 2px rgb(247 243 233 / 55%),
+    0 0 0 var(--frame-width) var(--timber),
+    0 0 0 calc(var(--frame-width) + 1px) rgb(36 24 10 / 35%),
+    0 70px 90px -30px rgb(36 24 10 / 50%);
+}
+
+/* ------------------------------------------------------------ Title layers */
+
+.titles {
+  position: relative;
+  z-index: 1;
+}
+
+.film[data-mode="live"] .titles {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.layer {
+  position: relative;
+}
+
+.film[data-mode="live"] .layer {
+  position: absolute;
+  top: calc(var(--from) * 100lvh);
+  right: 0;
+  left: 0;
+  height: calc((var(--to) - var(--from)) * 100lvh + 100svh);
+}
+
+.pin {
+  position: relative;
+  display: grid;
+  min-height: 100svh;
+  padding: calc(var(--masthead) + 4vh) var(--gutter) 9vh;
+  align-content: center;
+}
+
+.film[data-mode="live"] .pin {
+  position: sticky;
+  top: 0;
+  height: 100svh;
+}
+
+.anchor {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 1px;
+  height: 1px;
+}
+
+.film[data-mode="live"] .anchor {
+  top: calc((var(--at) - var(--from)) * 100lvh);
+}
+
+.film[data-mode="live"] [data-cue-body] {
+  opacity: 0;
+  will-change: opacity, transform;
+}
+
+.film[data-mode="live"] [data-cue-body="welcome"] {
+  opacity: 1;
+}
+
+.film[data-mode="live"] [data-cue-body="welcome"]:not([data-shown="false"]),
+.film[data-mode="live"] [data-cue-body][data-shown="true"] {
+  pointer-events: auto;
+}
+
+/* Keyboard focus reveals whatever it lands on. */
+.film[data-mode="live"] [data-cue-body]:focus-within {
+  opacity: 1 !important;
+}
+
+/* Still mode: the stills in between the titles. */
+.still {
+  position: relative;
+  height: 100svh;
+  overflow: hidden;
+}
+
+.film[data-mode="live"] .still,
+.film[data-mode="live"] .layer > .stillArt,
+.film[data-mode="live"] .handoffStill {
+  display: none;
+}
+
+.stillArt,
+.stillArt img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.stillArt img {
+  object-fit: cover;
+}
+
+.film[data-mode="still"] .layer[data-layer="the-problem"] {
+  background: var(--curtain);
+}
+
+/* ------------------------------------------------------------ Type */
+
+.kicker {
+  margin: 0 0 18px;
+  font-size: clamp(10px, 0.8vw, 12px);
+  font-weight: 730;
+  line-height: 1.25;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  opacity: 0.74;
+}
+
+.heroTitle,
+.title,
+.handoffTitle {
+  margin: 0;
+  font-family: var(--display);
+  text-wrap: balance;
+}
+
+.heroTitle {
+  max-width: 11ch;
+  font-size: clamp(54px, 9vw, 136px);
+  font-weight: 720;
+  line-height: 0.88;
+  letter-spacing: -0.048em;
+}
+
+.heroTitle span {
+  display: block;
+}
+
+.heroLede {
+  max-width: 42ch;
+  margin: 26px 0 0;
+  font-size: clamp(16px, 1.4vw, 19px);
+  font-weight: 470;
+  line-height: 1.55;
+  opacity: 0.82;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 30px;
+}
+
+/* Film titles: production's heavy sans, set like titles over a picture. */
+.title {
+  max-width: 13ch;
+  font-size: clamp(40px, 6.6vw, 104px);
+  font-weight: 700;
+  line-height: 0.92;
+  letter-spacing: -0.045em;
+}
+
+.layer[data-ink="light"] .title {
+  color: var(--ink-light);
+}
+
+/* ------------------------------------------------------------ Beats */
+
+.hero {
+  width: min(100%, 1180px);
+  margin-inline: auto;
+  padding-bottom: 8vh;
+}
+
+.layer[data-layer="the-problem"] .pin {
+  align-content: center;
+}
+
+.layer[data-layer="the-problem"] .title {
+  width: min(100%, 1180px);
+  max-width: none;
+  margin-inline: auto;
+}
+
+.layer[data-layer="the-problem"] .title::after {
+  display: block;
+  width: 64px;
+  height: 3px;
+  margin-top: 0.42em;
+  content: "";
+  background: #c9a75e;
+}
+
+.layer[data-layer="the-path"] .pin {
+  align-content: end;
+  justify-items: center;
+  padding-bottom: 14vh;
+}
+
+.layer[data-layer="the-path"] .title {
+  max-width: 15ch;
+  text-align: center;
+}
+
+/* The hand-off: the title stays on the wall while the picture settles beside it. */
+.handoff {
+  position: absolute;
+  inset: 0;
+}
+
+.handoffCopy {
+  position: absolute;
+  top: calc(var(--pic-top) * 1%);
+  left: var(--gutter);
+  width: calc(var(--pic-left) * 1% - var(--gutter) - clamp(36px, 4vw, 64px));
+  max-width: 560px;
+}
+
+.handoffTitle {
+  font-size: clamp(38px, 4.5vw, 70px);
+  font-weight: 710;
+  line-height: 0.95;
+  letter-spacing: -0.045em;
+}
+
+.handoffLede {
+  max-width: 40ch;
+  margin: 24px 0 0;
+  font-size: clamp(15px, 1.25vw, 18px);
+  line-height: 1.55;
+  opacity: 0.82;
+}
+
+.handoffDetail .actions {
+  margin-top: 26px;
+}
+
+.handoffFigure {
+  position: absolute;
+  top: calc(var(--pic-top) * 1%);
+  left: calc(var(--pic-left) * 1%);
+  width: calc((var(--pic-right) - var(--pic-left)) * 1%);
+  height: calc((var(--pic-bottom) - var(--pic-top)) * 1%);
+  margin: 0;
+}
+
+.caption {
+  position: absolute;
+  top: calc(100% + 22px);
+  right: 0;
+  margin: 0;
+  font-size: 12px;
+  opacity: 0.7;
+}
+
+.film[data-mode="live"] .caption[data-cue-body] {
+  opacity: 0;
+}
+
+/* Still mode: the hand-off is an ordinary composition with the class as a framed still. */
+.film[data-mode="still"] .layer[data-layer="studio"] .pin {
+  min-height: auto;
+  padding-block: clamp(96px, 14vh, 160px);
+}
+
+.film[data-mode="still"] .handoff {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+  gap: clamp(36px, 5vw, 80px);
+  align-items: center;
+  width: min(100%, 1280px);
+  margin-inline: auto;
+}
+
+.film[data-mode="still"] .handoffCopy,
+.film[data-mode="still"] .handoffFigure {
+  position: relative;
+  inset: auto;
+  width: auto;
+  height: auto;
+  max-width: none;
+}
+
+.film[data-mode="still"] .handoffFigure {
+  aspect-ratio: 16 / 10;
+}
+
+.handoffStill {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  box-shadow:
+    0 0 0 1px rgb(247 243 233 / 55%),
+    0 0 0 12px var(--timber),
+    0 50px 70px -30px rgb(36 24 10 / 50%);
+}
+
+.handoffStill img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* ------------------------------------------------------------ Motion */
+
+@keyframes beltRank {
+  from {
+    clip-path: inset(0 100% 0 0);
+  }
+
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+@keyframes arrive {
+  from {
+    opacity: 0;
+    transform: translateY(22px);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  /* The hero settles in on load: kicker, each line, then the rest. */
+  .hero > *,
+  .heroTitle > span {
+    animation: arrive 1s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  .hero > .heroTitle {
+    animation: none;
+  }
+
+  .heroTitle > span:first-child {
+    animation-delay: 90ms;
+  }
+
+  .heroTitle > span:last-child {
+    animation-delay: 210ms;
+  }
+
+  .hero > .heroLede {
+    animation-delay: 380ms;
+  }
+
+  .hero > .actions {
+    animation-delay: 480ms;
+  }
+
+  @supports (animation-timeline: scroll()) {
+    .beltProgress {
+      position: fixed;
+      z-index: 60;
+      top: 0;
+      right: 0;
+      left: 0;
+      display: block;
+      height: 3px;
+      background: linear-gradient(
+        90deg,
+        #e4ddd0 0 14.28%,
+        #d9a931 14.28% 28.57%,
+        #d9772e 28.57% 42.85%,
+        #5f7d3a 42.85% 57.14%,
+        #3e5c7e 57.14% 71.42%,
+        #6b4425 71.42% 85.71%,
+        #1f1a16 85.71%
+      );
+      animation: beltRank linear both;
+      animation-timeline: scroll(root);
+    }
+  }
+}
+
+/* ------------------------------------------------------------ Narrow screens */
+
+@media (max-width: 820px) {
+  [data-koaryu-marketing].root {
+    --masthead: 68px;
+  }
+
+  .film {
+    --handoff-scale: 0.9;
+    --handoff-ox: 50;
+    --handoff-oy: 86;
+    --crop-top: 37;
+    --crop-bottom: 14;
+    --frame-width: 11px;
+  }
+
+  .pin {
+    padding-inline: 22px;
+  }
+
+  .hero {
+    padding-bottom: 14vh;
+  }
+
+  .heroTitle {
+    font-size: clamp(38px, 11.6vw, 72px);
+  }
+
+  .heroLede {
+    margin-top: 18px;
+    font-size: 15px;
+  }
+
+  .actions {
+    display: grid;
+    max-width: 380px;
+  }
+
+  .title {
+    font-size: clamp(38px, 11vw, 64px);
+  }
+
+  .layer[data-layer="the-path"] .pin {
+    padding-bottom: 12vh;
+  }
+
+  .handoffCopy {
+    top: calc(var(--masthead) + 2svh);
+    right: 22px;
+    left: 22px;
+    width: auto;
+    max-width: none;
+  }
+
+  .handoffTitle {
+    max-width: 12ch;
+    font-size: clamp(32px, 9.4vw, 46px);
+  }
+
+  .handoffLede {
+    margin-top: 14px;
+    font-size: 15px;
+  }
+
+  .handoffDetail .actions {
+    margin-top: 18px;
+  }
+
+  .caption {
+    top: calc(100% + 16px);
+    right: auto;
+    left: 0;
+  }
+
+  .film[data-mode="still"] .handoff {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .film[data-mode="still"] .handoffFigure {
+    width: calc(100% - 12px);
+    margin-inline: auto;
+    aspect-ratio: 4 / 5;
+  }
+
+  .handoffStill {
+    box-shadow:
+      0 0 0 1px rgb(247 243 233 / 55%),
+      0 0 0 8px var(--timber),
+      0 40px 60px -30px rgb(36 24 10 / 50%);
+  }
+
+  .handoffStill img {
+    object-position: 50% 66%;
+  }
+}
+
+@media (max-width: 820px) and (max-height: 720px) {
+  .handoffLede {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .masthead {
+    transition: none;
+  }
+}

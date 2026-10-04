@@ -1,0 +1,788 @@
+/*
+ * Act two: the page. Calm, readable, in production's palette and heavy sans.
+ * Scroll-linked reveals use CSS scroll-driven animations where supported and
+ * motion is welcome; every element has a complete static state.
+ */
+
+/* ------------------------------------------------------------ Shared */
+
+.sectionHeader {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+  gap: 24px clamp(40px, 6vw, 96px);
+  align-items: end;
+}
+
+.sectionTitle {
+  max-width: 15ch;
+  margin: 0;
+  font-size: clamp(38px, 4.6vw, 70px);
+  font-weight: 710;
+  line-height: 0.95;
+  letter-spacing: -0.045em;
+  text-wrap: balance;
+}
+
+.sectionLede {
+  max-width: 46ch;
+  margin: 0;
+  font-size: clamp(16px, 1.3vw, 19px);
+  font-weight: 470;
+  line-height: 1.6;
+  opacity: 0.8;
+}
+
+.caption {
+  margin: 18px 0 0;
+  font-size: 12px;
+  opacity: 0.7;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 30px;
+}
+
+.action {
+  min-width: 164px;
+  min-height: 48px;
+  font-size: 14px;
+}
+
+.textLink {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  min-height: 44px;
+  color: inherit;
+  font-size: 14px;
+  font-weight: 650;
+  text-decoration: none;
+}
+
+.textLink span {
+  transition: transform 200ms ease;
+}
+
+.textLink:hover span {
+  transform: translateX(3px);
+}
+
+/* ------------------------------------------------------------ Product */
+
+.product {
+  width: min(100% - 2 * var(--gutter), 1240px);
+  margin: 0 auto;
+  padding: clamp(40px, 6vh, 72px) 0 clamp(80px, 12vh, 140px);
+  scroll-margin-top: var(--masthead);
+}
+
+.productFigure {
+  margin: clamp(48px, 7vh, 80px) 0 0;
+}
+
+.productScreens {
+  position: relative;
+  padding-right: 9%;
+}
+
+.productDesktop {
+  overflow: hidden;
+  border: 1px solid rgb(59 47 28 / 20%);
+  border-radius: 12px;
+  background: #fbf8f1;
+  box-shadow:
+    0 2px 0 rgb(255 255 255 / 60%) inset,
+    0 50px 100px -30px rgb(36 24 10 / 32%);
+}
+
+.productDesktop img,
+.productPhone img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.productPhone {
+  position: absolute;
+  right: 0;
+  bottom: -9%;
+  width: 22%;
+  overflow: hidden;
+  border: 8px solid #2a2117;
+  border-radius: 34px;
+  background: #2a2117;
+  box-shadow: 0 40px 70px -20px rgb(36 24 10 / 45%);
+}
+
+.productFigure .caption {
+  margin-top: clamp(28px, 6vw, 72px);
+}
+
+/* ------------------------------------------------------------ Day */
+
+.day {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  gap: clamp(40px, 7vw, 120px);
+  width: min(100% - 2 * var(--gutter), 1180px);
+  margin: 0 auto;
+  padding: clamp(80px, 12vh, 140px) 0 clamp(110px, 16vh, 180px);
+  border-top: 1px solid rgb(59 47 28 / 14%);
+}
+
+.dayHeader {
+  position: sticky;
+  top: calc(var(--masthead) + 9vh);
+  align-self: start;
+}
+
+.dayHeader .sectionLede {
+  margin-top: 22px;
+}
+
+.dayLinks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 26px;
+  margin-top: 18px;
+}
+
+.dayTrack {
+  position: relative;
+  padding-left: 50px;
+}
+
+.dayLine {
+  position: absolute;
+  top: 12px;
+  bottom: 12px;
+  left: 10px;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--ink);
+  transform-origin: top;
+}
+
+.dayList {
+  display: grid;
+  gap: clamp(44px, 7vh, 72px);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.dayMoment {
+  position: relative;
+}
+
+/* Each moment's dot is a belt: the day ranks up from white to black. */
+.dayDot {
+  position: absolute;
+  top: 1px;
+  left: -50px;
+  width: 22px;
+  height: 22px;
+  border: 2px solid var(--ink);
+  border-radius: 50%;
+  background: var(--belt, var(--ink));
+}
+
+.dayDot[data-belt="white"] {
+  --belt: #f4f1ea;
+}
+
+.dayDot[data-belt="yellow"] {
+  --belt: #d9a931;
+}
+
+.dayDot[data-belt="orange"] {
+  --belt: #d9772e;
+}
+
+.dayDot[data-belt="green"] {
+  --belt: #5f7d3a;
+}
+
+.dayDot[data-belt="blue"] {
+  --belt: #3e5c7e;
+}
+
+.dayDot[data-belt="brown"] {
+  --belt: #6b4425;
+}
+
+.dayDot[data-belt="black"] {
+  --belt: #1f1a16;
+}
+
+.dayTime {
+  margin: 0 0 6px;
+  color: #7a612e;
+  font-size: 14px;
+  font-weight: 720;
+  line-height: 1.2;
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.dayTitle {
+  margin: 0;
+  font-size: clamp(20px, 1.7vw, 25px);
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+}
+
+.dayTitle a {
+  color: inherit;
+  text-decoration: none;
+  background-image: linear-gradient(currentColor, currentColor);
+  background-position: 0 100%;
+  background-repeat: no-repeat;
+  background-size: 0 2px;
+  transition: background-size 260ms ease;
+}
+
+.dayTitle a:hover,
+.dayTitle a:focus-visible {
+  background-size: 100% 2px;
+}
+
+.dayText {
+  max-width: 48ch;
+  margin: 8px 0 0;
+  font-size: 16px;
+  line-height: 1.6;
+  opacity: 0.8;
+}
+
+/* ------------------------------------------------------------ Pricing */
+
+.pricing {
+  color: var(--ink-light);
+  background-color: var(--curtain);
+  background-image: url("/marketing/scene-grain.webp");
+  background-size: 360px 360px;
+  background-blend-mode: multiply;
+}
+
+.pricingInner {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: clamp(40px, 7vw, 120px);
+  align-items: center;
+  width: min(100% - 2 * var(--gutter), 1180px);
+  margin: 0 auto;
+  padding: clamp(96px, 15vh, 170px) 0;
+}
+
+.pricingNote {
+  max-width: 34ch;
+  margin: 24px 0 0;
+  font-size: clamp(17px, 1.4vw, 20px);
+  line-height: 1.5;
+  opacity: 0.86;
+}
+
+.priceCard .actions {
+  margin-top: 34px;
+}
+
+.pricing .actions {
+  --koaryu-action-label: var(--curtain);
+}
+
+.pricing .action {
+  color: var(--ink-light);
+}
+
+.paymentsLink {
+  margin: 18px 0 0;
+  font-size: 14px;
+}
+
+.paymentsLink a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  color: inherit;
+  text-underline-offset: 4px;
+  opacity: 0.86;
+}
+
+.priceCard {
+  padding: clamp(28px, 3vw, 44px) 0 0;
+  border-top: 2px solid #c9a75e;
+}
+
+.price {
+  margin: 0;
+  font-size: clamp(120px, 15vw, 220px);
+  font-weight: 720;
+  line-height: 0.82;
+  letter-spacing: -0.06em;
+  font-variant-numeric: tabular-nums;
+}
+
+.pricePeriod {
+  margin: 14px 0 0;
+  font-size: 16px;
+  font-weight: 560;
+  opacity: 0.84;
+}
+
+.included {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 28px;
+  margin: 32px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.included li {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 11px 0;
+  border-bottom: 1px solid rgb(244 238 225 / 16%);
+  font-size: 15px;
+  font-weight: 560;
+}
+
+.included li::before {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  content: "";
+  background: #c9a75e;
+}
+
+/* ------------------------------------------------------------ FAQ */
+
+.faq {
+  width: min(100% - 2 * var(--gutter), 1180px);
+  margin: 0 auto;
+  padding: clamp(96px, 15vh, 170px) 0 clamp(80px, 12vh, 140px);
+}
+
+.faqGroups {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px clamp(32px, 5vw, 72px);
+  margin-top: clamp(36px, 5vh, 56px);
+}
+
+.faqGroup {
+  scroll-margin-top: calc(var(--masthead) + 24px);
+}
+
+.faqGroup h3 {
+  margin: 18px 0 4px;
+  color: #7a612e;
+  font-size: 14px;
+  font-weight: 720;
+  letter-spacing: 0.01em;
+}
+
+.faqItem {
+  border-bottom: 1px solid rgb(59 47 28 / 16%);
+}
+
+.faqItem summary {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 56px;
+  padding: 12px 0;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.35;
+  list-style: none;
+  cursor: pointer;
+}
+
+.faqItem summary::-webkit-details-marker {
+  display: none;
+}
+
+.faqIcon {
+  position: relative;
+  flex: 0 0 auto;
+  width: 12px;
+  height: 12px;
+}
+
+.faqIcon::before,
+.faqIcon::after {
+  position: absolute;
+  top: 5px;
+  left: 0;
+  width: 12px;
+  height: 2px;
+  content: "";
+  background: currentColor;
+  transition: transform 220ms ease;
+}
+
+.faqIcon::after {
+  transform: rotate(90deg);
+}
+
+.faqItem[open] .faqIcon::after {
+  transform: rotate(0deg);
+}
+
+.faqItem p {
+  max-width: 62ch;
+  margin: 0 0 20px;
+  font-size: 15px;
+  line-height: 1.65;
+  opacity: 0.82;
+}
+
+/* ------------------------------------------------------------ Finale */
+
+.finale {
+  position: relative;
+  display: grid;
+  min-height: max(100svh, 680px);
+  grid-template-rows: 1fr auto;
+  overflow: clip;
+  background: linear-gradient(180deg, transparent 0%, rgb(243 241 234 / 70%) 40%, #efeadd 100%);
+}
+
+.finaleArt {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.finaleSun {
+  position: absolute;
+  top: 16%;
+  right: 16%;
+  width: clamp(80px, 8vw, 130px);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: radial-gradient(circle at 42% 38%, #dbc49e, #cdb389 78%);
+  box-shadow:
+    8px 12px 0 rgb(205 179 137 / 45%),
+    0 0 0 clamp(40px, 6vw, 90px) rgb(255 246 224 / 36%),
+    0 0 0 clamp(90px, 13vw, 190px) rgb(251 235 203 / 16%);
+}
+
+.finaleRidge {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.finaleCopy {
+  position: relative;
+  z-index: 1;
+  align-self: start;
+  width: min(100% - 2 * var(--gutter), 1180px);
+  margin: 0 auto;
+  padding-top: clamp(110px, 18vh, 200px);
+}
+
+.finaleTitle {
+  max-width: 11ch;
+  margin: 0;
+  font-size: clamp(50px, 7.4vw, 116px);
+  font-weight: 720;
+  line-height: 0.9;
+  letter-spacing: -0.048em;
+  text-wrap: balance;
+}
+
+.finaleLede {
+  margin: 22px 0 0;
+  font-size: clamp(16px, 1.4vw, 19px);
+  opacity: 0.82;
+}
+
+.footer {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 28px;
+  align-items: center;
+  justify-content: space-between;
+  width: min(100% - 2 * var(--gutter), 1180px);
+  margin: 0 auto;
+  padding: 18px 0 26px;
+  color: var(--ink-light);
+  font-size: 13px;
+}
+
+.footer nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 22px;
+}
+
+.footer a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  color: inherit;
+  text-decoration: none;
+  opacity: 0.9;
+}
+
+.footer a:hover {
+  opacity: 1;
+}
+
+.footer p {
+  margin: 0;
+  opacity: 0.86;
+}
+
+.footerBrand {
+  opacity: 1;
+}
+
+/* ------------------------------------------------------------ Focus */
+
+.textLink:focus-visible,
+.dayTitle a:focus-visible,
+.footer a:focus-visible,
+.paymentsLink a:focus-visible,
+.faqItem summary:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 3px;
+}
+
+/* ------------------------------------------------------------ Motion */
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(44px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes phoneRise {
+  from {
+    opacity: 0;
+    transform: translateY(26%);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes ink {
+  from {
+    transform: scaleY(0);
+  }
+
+  to {
+    transform: scaleY(1);
+  }
+}
+
+@keyframes dotFill {
+  from {
+    background: var(--paper);
+    transform: scale(0.7);
+  }
+
+  to {
+    background: var(--belt);
+    transform: none;
+  }
+}
+
+@keyframes ridgeRise {
+  from {
+    transform: translateY(calc(var(--rise) * 60%));
+  }
+
+  to {
+    transform: none;
+  }
+}
+
+@keyframes sunSet {
+  from {
+    transform: translateY(40%);
+  }
+
+  to {
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  @supports (animation-timeline: view()) {
+    .sectionHeader,
+    .faq > .sectionTitle,
+    .faqGroups,
+    .pricingCopy,
+    .priceCard,
+    .finaleCopy {
+      animation: rise linear both;
+      animation-timeline: view();
+      animation-range: entry 0% entry 80%;
+    }
+
+    .productDesktop {
+      animation: rise linear both;
+      animation-timeline: view();
+      animation-range: entry 0% entry 60%;
+    }
+
+    .productPhone {
+      animation: phoneRise linear both;
+      animation-timeline: view();
+      animation-range: entry 10% cover 45%;
+    }
+
+    .dayLine {
+      animation: ink linear both;
+      animation-timeline: --day;
+      animation-range: contain -10% contain 85%;
+    }
+
+    .dayTrack {
+      view-timeline-name: --day;
+      view-timeline-axis: block;
+    }
+
+    .dayDot {
+      animation: dotFill linear both;
+      animation-timeline: view();
+      animation-range: entry 100% cover 42%;
+    }
+
+    .finaleRidge {
+      animation: ridgeRise linear both;
+      animation-timeline: view();
+      animation-range: entry 0% cover 55%;
+    }
+
+    .finaleSun {
+      animation: sunSet linear both;
+      animation-timeline: view();
+      animation-range: entry 0% cover 60%;
+    }
+  }
+}
+
+/* ------------------------------------------------------------ Narrow screens */
+
+@media (max-width: 900px) {
+  .sectionHeader,
+  .day,
+  .pricingInner,
+  .faqGroups {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .dayHeader {
+    position: static;
+  }
+
+  .productScreens {
+    padding-right: 0;
+  }
+}
+
+@media (max-width: 820px) {
+  .product {
+    width: calc(100% - 44px);
+  }
+
+  .day,
+  .faq,
+  .pricingInner {
+    width: calc(100% - 44px);
+  }
+
+  .dayTrack {
+    padding-left: 44px;
+  }
+
+  .dayDot {
+    left: -44px;
+  }
+
+  .actions {
+    display: grid;
+    max-width: 380px;
+  }
+
+  .price {
+    font-size: clamp(112px, 36vw, 160px);
+  }
+
+  .included {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .finale {
+    min-height: max(100svh, 620px);
+  }
+
+  .finaleSun {
+    top: 52%;
+    right: 12%;
+  }
+
+  .footer {
+    width: calc(100% - 44px);
+    justify-content: flex-start;
+    gap: 0 18px;
+  }
+
+  .footer nav {
+    gap: 0 16px;
+  }
+}
+
+/* Phones show the same screen in the app's phone layout, at a readable size. */
+@media (max-width: 640px) {
+  .productDesktop {
+    display: none;
+  }
+
+  .productPhone {
+    position: relative;
+    right: auto;
+    bottom: auto;
+    width: min(300px, 76vw);
+    margin-inline: auto;
+  }
+
+  .productFigure .caption {
+    margin-top: 20px;
+    text-align: center;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .textLink span,
+  .dayTitle a,
+  .faqIcon::before,
+  .faqIcon::after {
+    transition: none;
+  }
+}
