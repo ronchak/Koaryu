@@ -1,5 +1,3 @@
-import { Instrument_Serif } from "next/font/google";
-
 import { BackendWarmup } from "@/components/backend-warmup";
 import { Breather, Faq, Finale, MatBand, Pricing } from "@/components/marketing/landing/closing";
 import { Day } from "@/components/marketing/landing/day";
@@ -12,17 +10,9 @@ import { Studio } from "@/components/marketing/landing/studio";
 import { MarketingRoot } from "@/components/marketing/marketing-root";
 import { MarketingHeader } from "@/components/marketing/public-pages";
 
-const display = Instrument_Serif({
-  weight: "400",
-  style: ["normal", "italic"],
-  subsets: ["latin"],
-  variable: "--font-display",
-  display: "swap",
-});
-
 export function LandingPage() {
   return (
-    <MarketingRoot layout="document" className={`${styles.root} ${display.variable}`}>
+    <MarketingRoot layout="document" className={styles.root}>
       <BackendWarmup />
       <LegacyHashRedirect />
       <div className={styles.beltProgress} aria-hidden="true" />
@@ -34,8 +24,11 @@ export function LandingPage() {
       </div>
       <main id="main-content" tabIndex={-1} className={styles.main}>
         <Hero />
-        <Problem />
-        <Studio />
+        {/* Inside the hill: the deep brown that the masthead darkens over. */}
+        <div className={styles.inside}>
+          <Problem />
+          <Studio />
+        </div>
         <Product />
         <Day />
         <Breather />

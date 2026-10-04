@@ -18,35 +18,56 @@ export function Breather() {
   );
 }
 
+/**
+ * The price, big and plain, beside the plan as Koaryu itself would list it:
+ * what is included, and the same bill at any roster size.
+ */
 export function Pricing() {
   const { pricing } = landingPageContent;
   return (
     <section id={pricing.id} className={styles.pricing} aria-labelledby="pricing-title">
-      <p className={styles.kicker}>{pricing.kicker}</p>
-      <h2 id="pricing-title" className={styles.sectionTitle}>
-        {pricing.title}
-      </h2>
-      <div className={styles.priceBlock}>
+      <div className={styles.pricingLead}>
+        <h2 id="pricing-title" className={styles.sectionTitle}>
+          {pricing.title}
+        </h2>
         <p className={styles.price} data-price-amount={pricing.amount}>
           {pricing.displayPrice}
         </p>
-        <span className={styles.seal} data-size="large" aria-hidden="true">
-          All in
-        </span>
+        <p className={styles.pricePeriod}>{pricing.period}</p>
+        <div className={styles.actions}>
+          <LandingAction {...pricing.setupAction} variant="primary" />
+        </div>
+        <p className={styles.paymentsLink}>
+          <Link href={pricing.paymentsLink.href}>{pricing.paymentsLink.label}</Link>
+        </p>
       </div>
-      <p className={styles.pricePeriod}>{pricing.period}</p>
-      <ul className={styles.included} aria-label="Included">
-        {pricing.included.map((item) => (
-          <li key={item}>{item}</li>
-        ))}
-      </ul>
-      <p className={styles.priceNote}>{pricing.note}</p>
-      <div className={styles.actions} data-align="center">
-        <LandingAction {...pricing.setupAction} variant="primary" />
+      <div className={styles.plan}>
+        <div className={styles.planHeader}>
+          <h3>Studio plan</h3>
+          <p>One studio, every program</p>
+        </div>
+        <ul className={styles.included} aria-label="Included">
+          {pricing.included.map((item) => (
+            <li key={item}>
+              <svg className={styles.includedGlyph} viewBox="0 0 16 16" aria-hidden="true">
+                <path d="M3.5 8.4 6.6 11.4 12.5 4.9" />
+              </svg>
+              {item}
+            </li>
+          ))}
+        </ul>
+        <div className={styles.register}>
+          <p className={styles.registerLabel}>{pricing.note}</p>
+          <dl>
+            {pricing.rosterSizes.map((size) => (
+              <div key={size}>
+                <dt>{size} students</dt>
+                <dd>{pricing.displayPrice}</dd>
+              </div>
+            ))}
+          </dl>
+        </div>
       </div>
-      <p className={styles.paymentsLink}>
-        <Link href={pricing.paymentsLink.href}>{pricing.paymentsLink.label}</Link>
-      </p>
     </section>
   );
 }
@@ -65,7 +86,6 @@ export function Faq() {
   return (
     <section id={faq.id} className={styles.faq} aria-labelledby="faq-title">
       <header className={styles.faqHeader}>
-        <p className={styles.kicker}>{faq.kicker}</p>
         <h2 id="faq-title" className={styles.sectionTitle}>
           {faq.title}
         </h2>

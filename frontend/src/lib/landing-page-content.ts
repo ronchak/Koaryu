@@ -24,12 +24,6 @@ export interface LandingDetailReference {
 
 export type BeltRank = "white" | "yellow" | "orange" | "green" | "blue" | "brown" | "black";
 
-/** A scrap of the paperwork a studio runs on before Koaryu. */
-export type ProblemScrap =
-  | { kind: "sheet"; title: string; lines: readonly string[] }
-  | { kind: "note"; text: string }
-  | { kind: "receipt"; text: string };
-
 export interface DemoStudent {
   name: string;
   belt: BeltRank;
@@ -149,9 +143,10 @@ const faqGroups: readonly FaqGroup[] = [
 ];
 
 /**
- * The landing page, beat by beat: the hills, the paperwork, stepping inside the
- * dojo to take a class, the real belt tracker, a day at the studio, the price,
- * questions, and the class seated at the end.
+ * The landing page, beat by beat: the hills, the dive into the hill where the
+ * problem is named, stepping inside the dojo to take a class, the real belt
+ * tracker, a day at the studio, the price, questions, and the class seated at
+ * the end.
  */
 export const landingPageContent = {
   hero: {
@@ -168,32 +163,10 @@ export const landingPageContent = {
     id: "the-problem",
     title: "Your studio is not a spreadsheet.",
     lede: "Yet the roster, belt ranks, trial follow-ups and payment notes still live in five of them.",
-    scraps: [
-      {
-        kind: "sheet",
-        title: "Roster_FINAL (3).xlsx",
-        lines: ["Kim, Daniel · orange?", "Ali, Zara · white", "Mori, Hana · red tip"],
-      },
-      { kind: "note", text: "Who's ready for yellow??" },
-      {
-        kind: "sheet",
-        title: "Trials · September",
-        lines: ["Maya C. · call back Thu", "Leo P. · left voicemail"],
-      },
-      { kind: "receipt", text: "Lee family · paid cash · Oct?" },
-      {
-        kind: "sheet",
-        title: "Tue 6pm Kids · attendance",
-        lines: ["✓ ✓ ✗ ✓ ✓ ✓", "✓ ✗ ✓ ✓ ✓ ✓"],
-      },
-      { kind: "note", text: "Belt test Sat · print the list" },
-    ],
-    resolution: "One place for all of it.",
   },
   studio: {
     id: "studio",
     doors: ["Step", "inside."],
-    kicker: "Attendance, connected",
     title: "Mark a class. Watch ranks move.",
     lede: "Every class a student attends counts toward their next rank's requirement. Koaryu keeps the tally; the decision to promote stays with you.",
     session: "Tuesday · 6:00 PM · Kids Karate",
@@ -208,12 +181,12 @@ export const landingPageContent = {
       student: "Maya Chen",
       nextRank: "Yellow belt",
       message: "Maya Chen is ready to test for Yellow belt.",
+      detail: "Classes, time at rank and approval met.",
     },
     caption: "Illustration with sample students.",
   },
   product: {
     id: "product",
-    kicker: "The belt tracker",
     title: "Know who is ready for their next belt.",
     lede: "Requirements you define for each program: classes, time at rank and instructor approval. See how many students meet every one, rank by rank.",
     image: {
@@ -227,7 +200,6 @@ export const landingPageContent = {
   },
   day: {
     id: "features",
-    kicker: "A day at the studio",
     title: "Everything between classes.",
     moments: [
       {
@@ -289,7 +261,6 @@ export const landingPageContent = {
   },
   pricing: {
     id: "pricing",
-    kicker: "Pricing",
     title: "One price. Every student.",
     amount: publicPlatformPriceAmount(),
     displayPrice: formatPublicPlatformPrice(),
@@ -304,12 +275,12 @@ export const landingPageContent = {
       "Billing records",
     ],
     note: "No per-student tiers. Grow your roster without growing your bill.",
+    rosterSizes: [25, 80, 200],
     setupAction: { label: "Create an account", href: "/signup" },
     paymentsLink: { label: "Collecting tuition online?", href: "#faq-pricing" },
   },
   faq: {
     id: "faq",
-    kicker: "FAQ",
     title: "Questions owners ask",
     groups: faqGroups,
   },
@@ -334,27 +305,19 @@ export const landingPageContent = {
     lede: string;
     actions: readonly [LandingAction, LandingAction];
   };
-  problem: {
-    id: string;
-    title: string;
-    lede: string;
-    scraps: readonly ProblemScrap[];
-    resolution: string;
-  };
+  problem: { id: string; title: string; lede: string };
   studio: {
     id: string;
     doors: readonly [string, string];
-    kicker: string;
     title: string;
     lede: string;
     session: string;
     students: readonly DemoStudent[];
-    ready: { student: string; nextRank: string; message: string };
+    ready: { student: string; nextRank: string; message: string; detail: string };
     caption: string;
   };
   product: {
     id: string;
-    kicker: string;
     title: string;
     lede: string;
     image: {
@@ -368,7 +331,6 @@ export const landingPageContent = {
   };
   day: {
     id: string;
-    kicker: string;
     title: string;
     moments: readonly DayMoment[];
     links: readonly [LandingAction, LandingAction];
@@ -376,17 +338,17 @@ export const landingPageContent = {
   breather: { line: string };
   pricing: {
     id: string;
-    kicker: string;
     title: string;
     amount: string;
     displayPrice: string;
     period: string;
     included: readonly string[];
     note: string;
+    rosterSizes: readonly number[];
     setupAction: LandingAction;
     paymentsLink: LandingAction;
   };
-  faq: { id: string; kicker: string; title: string; groups: readonly FaqGroup[] };
+  faq: { id: string; title: string; groups: readonly FaqGroup[] };
   finale: {
     id: string;
     title: string;

@@ -9,7 +9,6 @@ export function Product() {
   return (
     <section id={product.id} className={styles.product} aria-labelledby="product-title">
       <div className={styles.productCopy}>
-        <p className={styles.kicker}>{product.kicker}</p>
         <h2 id="product-title" className={styles.sectionTitle}>
           {product.title}
         </h2>
@@ -23,7 +22,7 @@ export function Product() {
               width={product.image.width}
               height={product.image.height}
               alt={product.image.alt}
-              sizes="(max-width: 820px) 1px, 64vw"
+              sizes="(max-width: 820px) 96vw, 64vw"
             />
           </div>
           <div className={styles.productPhone}>
@@ -32,7 +31,7 @@ export function Product() {
               width={product.image.mobile.width}
               height={product.image.mobile.height}
               alt="The same belt tracker in Koaryu's phone layout."
-              sizes="(max-width: 820px) 300px, 240px"
+              sizes="(max-width: 820px) 46vw, 240px"
             />
           </div>
         </div>

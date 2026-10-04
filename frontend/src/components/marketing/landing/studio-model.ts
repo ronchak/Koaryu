@@ -2,8 +2,8 @@
  * Where, through the studio's scroll, each student is marked present, and where
  * the class settles into its result. The shoji doors open before the first mark.
  */
-export const STUDIO_MARKS = [0.34, 0.43, 0.52, 0.61, 0.7] as const;
-export const STUDIO_READY = 0.78;
+export const STUDIO_MARKS = [0.28, 0.38, 0.48, 0.58, 0.68] as const;
+export const STUDIO_READY = 0.76;
 /** The step at which every student is marked and the result is shown. */
 export const STUDIO_FINISHED = STUDIO_MARKS.length + 1;
 

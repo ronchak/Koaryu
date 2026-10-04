@@ -1,84 +1,28 @@
-import type { CSSProperties } from "react";
-
-import { landingPageContent, type ProblemScrap } from "../../../lib/landing-page-content.ts";
+import { landingPageContent } from "../../../lib/landing-page-content.ts";
 import styles from "./landing.module.css";
 
 /**
- * Where each scrap lies before the page gathers them, relative to the center of
- * the stage. Kept clear of the headline above and the card that replaces them.
+ * The camera dives into the hill: the nearest ridge swells up out of the hero
+ * and fills the screen, darkening to deep brown, and the problem is named on it.
  */
-const SCATTER = [
-  { x: "-31vw", y: "-7vh", r: "-7deg" },
-  { x: "28vw", y: "-11vh", r: "6deg" },
-  { x: "-25vw", y: "17vh", r: "4deg" },
-  { x: "24vw", y: "14vh", r: "-5deg" },
-  { x: "-8vw", y: "27vh", r: "3deg" },
-  { x: "10vw", y: "-21vh", r: "-3deg" },
-] as const;
-
-function Scrap({ scrap }: { scrap: ProblemScrap }) {
-  switch (scrap.kind) {
-    case "sheet":
-      return (
-        <>
-          <p className={styles.scrapTitle}>{scrap.title}</p>
-          {scrap.lines.map((line) => (
-            <p key={line} className={styles.scrapLine}>
-              {line}
-            </p>
-          ))}
-        </>
-      );
-    case "note":
-    case "receipt":
-      return <p className={styles.scrapText}>{scrap.text}</p>;
-  }
-}
-
 export function Problem() {
   const { problem } = landingPageContent;
-  const [before, after] = problem.title.split(" not ");
   return (
     <section id={problem.id} className={styles.problem} aria-labelledby="problem-title">
+      <svg
+        className={styles.hillCrest}
+        viewBox="0 0 1600 240"
+        preserveAspectRatio="none"
+        aria-hidden="true"
+      >
+        <path d="M0 176 C 170 120, 360 30, 590 24 S 960 86, 1170 136 S 1470 156, 1600 120 L1600 240 L0 240 Z" />
+      </svg>
       <div className={styles.problemStage}>
-        <header className={styles.problemCopy}>
-          <h2 id="problem-title" className={styles.problemTitle}>
-            {before} <em>not</em> {after}
+        <div className={styles.problemCopy}>
+          <h2 id="problem-title" className={styles.statement}>
+            {problem.title}
           </h2>
-          <p className={styles.problemLede}>{problem.lede}</p>
-        </header>
-        <div className={styles.scrapField} aria-hidden="true">
-          {problem.scraps.map((scrap, index) => {
-            const scatter = SCATTER[index % SCATTER.length]!;
-            return (
-              <div
-                key={index}
-                className={styles.scrap}
-                data-kind={scrap.kind}
-                style={
-                  {
-                    "--from-x": scatter.x,
-                    "--from-y": scatter.y,
-                    "--from-r": scatter.r,
-                    "--stack": index,
-                  } as CSSProperties
-                }
-              >
-                <Scrap scrap={scrap} />
-              </div>
-            );
-          })}
-        </div>
-        <div className={styles.resolution}>
-          <p className={styles.resolutionMark}>Koaryu</p>
-          <p className={styles.resolutionText}>{problem.resolution}</p>
-          <div className={styles.resolutionBelts} aria-hidden="true">
-            {(["white", "yellow", "orange", "green", "blue", "brown", "black"] as const).map(
-              (belt) => (
-                <span key={belt} data-belt={belt} />
-              ),
-            )}
-          </div>
+          <p className={styles.statementLede}>{problem.lede}</p>
         </div>
       </div>
     </section>

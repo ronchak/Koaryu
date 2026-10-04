@@ -1,25 +1,35 @@
 /*
- * Koaryu landing: paper, ink, and the story world. Scroll-linked motion uses
- * CSS scroll-driven animations, which run on the compositor. Every animated
- * element has a complete static state for browsers without them and for
- * visitors who prefer reduced motion.
+ * Koaryu landing: the production world (mustard hills, deep brown, wood and
+ * washi) told on native scroll. Type is the system display stack at heavy
+ * weight with tight tracking. Scroll-linked motion uses CSS scroll-driven
+ * animations, which run on the compositor; every animated element has a
+ * complete static state for browsers without them and for visitors who
+ * prefer reduced motion.
  */
 
 [data-koaryu-marketing].root {
-  --paper: #f6f1e6;
-  --paper-deep: #efe6d5;
-  --paper-raised: #fbf8f1;
-  --ink: #231b13;
-  --ink-soft: rgb(35 27 19 / 72%);
-  --ink-faint: rgb(35 27 19 / 54%);
-  --rule: rgb(35 27 19 / 13%);
-  --rule-strong: rgb(35 27 19 / 24%);
-  --wood: #9b7e4f;
-  --wood-dark: #6b5230;
-  --seal: #b3432b;
+  --paper: var(--koaryu-paper);
+  --paper-deep: var(--koaryu-sheet);
+  --paper-raised: var(--koaryu-sheet-raised);
+  --ink: var(--koaryu-ink);
+  --ink-soft: rgb(59 47 28 / 76%);
+  --ink-faint: rgb(59 47 28 / 66%);
+  --rule: rgb(59 47 28 / 13%);
+  --rule-strong: rgb(59 47 28 / 24%);
+  --light: var(--koaryu-ink-light);
+  --light-soft: rgb(244 238 225 / 78%);
+  --deep: var(--koaryu-deep-brown);
+  --beam: var(--koaryu-beam);
+  --beam-light: var(--koaryu-beam-light);
+  --wood: var(--koaryu-wood);
+  --wood-pale: var(--koaryu-wood-pale);
+  --ridge: #7a612e;
+  /* The product's own "requirement met" green, as the belt tracker shows it. */
+  --met: #27805a;
   --masthead: 76px;
+  --lintel: calc(var(--masthead) + clamp(14px, 3.2vh, 32px));
   --gutter: clamp(20px, 6vw, 96px);
-  --serif: var(--font-display), "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+  --measure: 1180px;
 
   color: var(--ink);
   background-color: var(--paper);
@@ -27,6 +37,7 @@
   background-size: 360px 360px;
   background-blend-mode: multiply;
   overflow-x: clip;
+  timeline-scope: --inside;
 }
 
 /* The paper tile above replaces the shared full-page noise overlay. */
@@ -48,13 +59,14 @@
   display: none;
 }
 
-/* Masthead */
+/* ---------------------------------------------------------------- Masthead */
 
 .masthead {
   position: sticky;
   z-index: 50;
   top: 0;
-  background: rgb(246 241 230 / 92%);
+  color: var(--ink);
+  background: rgb(247 243 233 / 93%);
   box-shadow: 0 1px 0 var(--rule);
 }
 
@@ -73,34 +85,35 @@
   transform: translateY(0);
 }
 
-/* Shared type */
+/* ---------------------------------------------------------------- Shared type */
 
 .kicker {
-  margin: 0 0 16px;
-  color: var(--ink-soft);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.2em;
+  margin: 0 0 18px;
+  font-size: 12px;
+  font-weight: 730;
+  line-height: 1.25;
+  letter-spacing: 0.18em;
   text-transform: uppercase;
+  opacity: 0.78;
 }
 
 .sectionTitle {
-  max-width: 16ch;
+  max-width: 13ch;
   margin: 0;
-  font-family: var(--serif);
-  font-size: clamp(40px, 5.2vw, 76px);
-  font-weight: 400;
-  line-height: 1;
-  letter-spacing: -0.015em;
+  font-size: clamp(38px, 5vw, 74px);
+  font-weight: 720;
+  line-height: 0.95;
+  letter-spacing: -0.046em;
   text-wrap: balance;
 }
 
 .sectionLede {
-  max-width: 46ch;
-  margin: 22px 0 0;
+  max-width: 44ch;
+  margin: 24px 0 0;
   color: var(--ink-soft);
-  font-size: clamp(16px, 1.35vw, 19px);
-  line-height: 1.6;
+  font-size: clamp(16px, 1.3vw, 19px);
+  font-weight: 450;
+  line-height: 1.55;
 }
 
 .caption {
@@ -116,14 +129,10 @@
   margin-top: 34px;
 }
 
-.actions[data-align="center"] {
-  justify-content: center;
-}
-
 .action {
-  min-width: 164px;
+  min-width: 160px;
   min-height: 48px;
-  border-radius: 999px;
+  padding-inline: 22px;
   font-size: 14px;
 }
 
@@ -134,7 +143,7 @@
   min-height: 44px;
   color: inherit;
   font-size: 14px;
-  font-weight: 650;
+  font-weight: 680;
   text-decoration: none;
 }
 
@@ -146,306 +155,11 @@
   transform: translateX(3px);
 }
 
-/* A red hanko seal. */
-.seal {
-  display: inline-grid;
-  width: 64px;
-  height: 64px;
-  place-items: center;
-  border-radius: 6px;
-  color: var(--paper-raised);
-  background: var(--seal);
-  box-shadow: inset 0 0 0 3px rgb(255 255 255 / 18%);
-  font-family: var(--serif);
-  font-size: 19px;
-  font-style: italic;
-  line-height: 1;
-  transform: rotate(-8deg);
-}
-
-.seal[data-size="large"] {
-  width: 84px;
-  height: 84px;
-  font-size: 23px;
-}
-
-/* ---------------------------------------------------------------- Hero */
-
-.hero {
-  position: relative;
-  display: grid;
-  min-height: 100svh;
-  padding: calc(var(--masthead) + 6vh) var(--gutter) 18vh;
-  align-items: center;
-  overflow: clip;
-  background: linear-gradient(180deg, #fbf8f0 0%, #f3f1ea 60%, #efeadd 100%);
-}
-
-.heroArt {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-}
-
-.heroSun {
-  position: absolute;
-  top: 18%;
-  left: 68%;
-  width: clamp(84px, 9vw, 150px);
-  aspect-ratio: 1;
-  border-radius: 50%;
-  background: radial-gradient(circle at 42% 38%, #dbc49e, #cdb389 78%);
-  box-shadow:
-    8px 12px 0 rgb(205 179 137 / 45%),
-    0 0 0 clamp(40px, 6vw, 90px) rgb(255 246 224 / 38%),
-    0 0 0 clamp(90px, 13vw, 190px) rgb(251 235 203 / 18%);
-  --parallax: 0.55;
-}
-
-.heroWisp {
-  position: absolute;
-  width: clamp(240px, 34vw, 560px);
-  fill: #fff;
-  opacity: 0.68;
-  animation: wispDrift 46s ease-in-out infinite alternate;
-  animation-delay: calc(var(--wisp) * -11s);
-}
-
-@keyframes wispDrift {
-  from {
-    translate: -3vw 0;
-  }
-
-  to {
-    translate: 4vw 0;
-  }
-}
-
-.heroRidge {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-}
-
-.heroCopy {
-  position: relative;
-  z-index: 2;
-  width: min(100%, 1180px);
-  margin-inline: auto;
-}
-
-.heroTitle {
-  margin: 0;
-  font-family: var(--serif);
-  font-size: clamp(58px, 10vw, 156px);
-  font-weight: 400;
-  line-height: 0.9;
-  letter-spacing: -0.02em;
-}
-
-.heroTitle span {
-  display: block;
-}
-
-.heroTitleAccent {
-  position: relative;
-  width: fit-content;
-  font-style: italic;
-}
-
-.brush {
-  position: absolute;
-  bottom: -0.12em;
-  left: 1%;
-  /* An SVG keeps its intrinsic width under left/right insets; size it explicitly. */
-  width: 100%;
-  height: 0.22em;
-  overflow: visible;
-  fill: none;
-  stroke: var(--seal);
-  stroke-width: 7;
-  stroke-linecap: round;
-  stroke-dasharray: 640;
-  stroke-dashoffset: 0;
-  opacity: 0.85;
-}
-
-.heroLede {
-  max-width: 44ch;
-  margin: 30px 0 0;
-  color: var(--ink-soft);
-  font-size: clamp(16px, 1.4vw, 20px);
-  line-height: 1.55;
-}
-
-/* ---------------------------------------------------------------- Problem */
-
-.problem {
-  position: relative;
-  height: 240vh;
-  background: var(--paper);
-  view-timeline-name: --problem;
-  view-timeline-axis: block;
-}
-
-.problemStage {
-  position: sticky;
-  top: 0;
-  height: 100svh;
-  overflow: hidden;
-}
-
-.problemCopy {
-  position: absolute;
-  z-index: 3;
-  top: calc(var(--masthead) + 7vh);
-  right: var(--gutter);
-  left: var(--gutter);
-  text-align: center;
-}
-
-.problemTitle {
-  max-width: 15ch;
-  margin: 0 auto;
-  font-family: var(--serif);
-  font-size: clamp(40px, 5.6vw, 84px);
-  font-weight: 400;
-  line-height: 1;
-  letter-spacing: -0.015em;
-  text-wrap: balance;
-}
-
-.problemTitle em {
-  color: var(--seal);
-}
-
-.problemLede {
-  max-width: 44ch;
-  margin: 18px auto 0;
-  color: var(--ink-soft);
-  font-size: clamp(15px, 1.3vw, 18px);
-  line-height: 1.55;
-}
-
-.scrapField {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-}
-
-.scrap {
-  position: absolute;
-  top: 64%;
-  left: 50%;
-  width: clamp(150px, 17vw, 236px);
-  padding: 14px 16px;
-  border-radius: 3px;
-  background: #fffdf7;
-  box-shadow:
-    0 1px 0 rgb(35 27 19 / 8%),
-    0 14px 30px rgb(35 27 19 / 14%);
-  translate: -50% -50%;
-  transform: translate(var(--from-x), var(--from-y)) rotate(var(--from-r));
-}
-
-.scrap[data-kind="sheet"] {
-  background-image:
-    linear-gradient(rgb(35 27 19 / 7%) 1px, transparent 1px),
-    linear-gradient(90deg, rgb(35 27 19 / 7%) 1px, transparent 1px);
-  background-size:
-    100% 22px,
-    46px 100%;
-  background-position:
-    0 30px,
-    0 0;
-}
-
-.scrap[data-kind="note"] {
-  width: clamp(130px, 13vw, 180px);
-  border-radius: 1px;
-  background: #f7e7a1;
-  font-family: var(--serif);
-  font-size: clamp(17px, 1.6vw, 22px);
-  font-style: italic;
-}
-
-.scrap[data-kind="receipt"] {
-  width: clamp(130px, 13vw, 176px);
-  background: #fbfaf6;
-  border-bottom: 6px dotted var(--paper);
-  font-family: ui-monospace, "SF Mono", Menlo, monospace;
-  font-size: 12px;
-}
-
-.scrapTitle {
-  margin: 0 0 8px;
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.scrapLine {
-  margin: 0;
-  color: var(--ink-soft);
-  font-size: 12px;
-  line-height: 22px;
-}
-
-.scrapText {
-  margin: 0;
-  line-height: 1.3;
-}
-
-.resolution {
-  position: absolute;
-  z-index: 2;
-  top: 64%;
-  left: 50%;
-  display: grid;
-  justify-items: center;
-  width: min(360px, 82vw);
-  padding: 26px 28px 22px;
-  border: 1px solid var(--rule);
-  border-radius: 14px;
-  background: var(--paper-raised);
-  box-shadow: 0 30px 60px rgb(35 27 19 / 16%);
-  translate: -50% -50%;
-}
-
-.resolutionMark {
-  margin: 0;
-  font-size: 13px;
-  font-weight: 760;
-  letter-spacing: 0.32em;
-  text-transform: uppercase;
-}
-
-.resolutionText {
-  margin: 10px 0 18px;
-  font-family: var(--serif);
-  font-size: 30px;
-  line-height: 1.05;
-  text-align: center;
-}
-
-.resolutionBelts {
-  display: flex;
-  gap: 6px;
-}
-
-.resolutionBelts span {
-  width: 26px;
-  height: 7px;
-  border-radius: 99px;
-  background: var(--belt);
-  box-shadow: inset 0 0 0 1px var(--belt-edge, transparent);
-}
-
 /* ---------------------------------------------------------------- Belts */
 
 .root [data-belt="white"] {
   --belt: #f4f1ea;
-  --belt-edge: #cfc6b4;
+  --belt-edge: #c9bfac;
 }
 
 .root [data-belt="yellow"] {
@@ -472,11 +186,172 @@
   --belt: #1f1a16;
 }
 
+/* ---------------------------------------------------------------- Hero */
+
+.hero {
+  position: relative;
+  display: grid;
+  min-height: 100svh;
+  padding: calc(var(--masthead) + 4vh) var(--gutter) 20vh;
+  align-items: center;
+  overflow: clip;
+  background: linear-gradient(180deg, #fbf8f0 0%, #f4f0e5 58%, #efe8d8 100%);
+}
+
+.heroArt {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.heroSun {
+  position: absolute;
+  top: 17%;
+  left: 70%;
+  width: clamp(76px, 8vw, 132px);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: radial-gradient(circle at 42% 38%, #dcc59d, #cdb183 78%);
+  box-shadow:
+    7px 10px 0 rgb(205 177 131 / 42%),
+    0 0 0 clamp(36px, 5.5vw, 84px) rgb(255 246 224 / 36%),
+    0 0 0 clamp(84px, 12vw, 176px) rgb(251 235 203 / 16%);
+  --parallax: 0.55;
+}
+
+.heroWisp {
+  position: absolute;
+  width: clamp(240px, 34vw, 560px);
+  fill: #fff;
+  opacity: 0.66;
+  animation: wispDrift 46s ease-in-out infinite alternate;
+  animation-delay: calc(var(--wisp) * -11s);
+}
+
+@keyframes wispDrift {
+  from {
+    translate: -3vw 0;
+  }
+
+  to {
+    translate: 4vw 0;
+  }
+}
+
+.heroRidge {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.heroCopy {
+  position: relative;
+  z-index: 2;
+  width: min(100%, var(--measure));
+  margin-inline: auto;
+}
+
+.heroTitle {
+  margin: 0;
+  font-size: clamp(42px, 11.4vw, 136px);
+  font-weight: 740;
+  line-height: 0.88;
+  letter-spacing: -0.05em;
+}
+
+.heroTitle span {
+  display: block;
+}
+
+.heroLede {
+  max-width: 40ch;
+  margin: 28px 0 0;
+  color: var(--ink-soft);
+  font-size: clamp(16px, 1.4vw, 20px);
+  font-weight: 460;
+  line-height: 1.5;
+}
+
+/* ---------------------------------------------------------------- Inside the hill */
+
+.inside {
+  position: relative;
+  view-timeline-name: --inside;
+  view-timeline-axis: block;
+}
+
+.problem {
+  position: relative;
+  height: 150vh;
+  color: var(--light);
+  background-color: var(--deep);
+  background-image:
+    url("/marketing/washi.webp"),
+    linear-gradient(180deg, var(--ridge) 0, #5f4a24 48vh, var(--deep) 96vh);
+  background-size:
+    300px 300px,
+    100% 100%;
+  background-blend-mode: multiply, normal;
+  view-timeline-name: --problem;
+  view-timeline-axis: block;
+}
+
+/* The nearest ridge, swelling up out of the hero as the page dives into it. */
+.hillCrest {
+  position: absolute;
+  bottom: calc(100% - 1px);
+  left: 0;
+  display: none;
+  width: 100%;
+  height: clamp(120px, 30vh, 300px);
+  fill: var(--ridge);
+  transform-origin: 50% 100%;
+  pointer-events: none;
+}
+
+.problemStage {
+  position: sticky;
+  top: 0;
+  display: grid;
+  height: 100svh;
+  align-items: center;
+  padding-top: var(--masthead);
+}
+
+.problemCopy {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(0, 0.65fr);
+  gap: clamp(32px, 6vw, 96px);
+  align-items: end;
+  width: min(100% - 2 * var(--gutter), var(--measure));
+  margin-inline: auto;
+}
+
+.statement {
+  max-width: 11ch;
+  margin: 0;
+  font-size: clamp(44px, 7.2vw, 108px);
+  font-weight: 720;
+  line-height: 0.92;
+  letter-spacing: -0.05em;
+  text-wrap: balance;
+}
+
+.statementLede {
+  max-width: 30ch;
+  margin: 0 0 0.6em;
+  color: var(--light-soft);
+  font-size: clamp(17px, 1.5vw, 22px);
+  font-weight: 450;
+  line-height: 1.5;
+}
+
 /* ---------------------------------------------------------------- Studio */
 
 .studio {
   position: relative;
-  height: 420vh;
+  height: 380vh;
   view-timeline-name: --studio;
   view-timeline-axis: block;
 }
@@ -492,20 +367,27 @@
 .studioBackdrop,
 .studioBackdrop img {
   position: absolute;
-  inset: 0;
+  top: var(--lintel);
+  left: 0;
   width: 100%;
-  height: 100%;
+  height: calc(100% - var(--lintel));
   object-fit: cover;
+  object-position: 50% 0;
+}
+
+.studioBackdrop img {
+  top: 0;
+  height: 100%;
 }
 
 .studioShade {
   position: absolute;
-  inset: 0;
+  inset: var(--lintel) 0 0;
   background: linear-gradient(
     90deg,
-    rgb(246 241 230 / 94%) 0%,
-    rgb(246 241 230 / 82%) 36%,
-    rgb(246 241 230 / 10%) 72%
+    rgb(247 243 233 / 95%) 0%,
+    rgb(247 243 233 / 84%) 38%,
+    rgb(247 243 233 / 10%) 74%
   );
 }
 
@@ -516,36 +398,60 @@
   grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
   gap: clamp(32px, 5vw, 80px);
   align-items: center;
-  width: min(100% - 2 * var(--gutter), 1180px);
+  width: min(100% - 2 * var(--gutter), var(--measure));
   height: 100%;
   margin-inline: auto;
-  padding-top: var(--masthead);
+  padding-top: var(--lintel);
+}
+
+/* The deep brown of the hill, lifted until it is the ceiling beam of the dojo. */
+.studioCurtain {
+  position: absolute;
+  z-index: 6;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  border-bottom: clamp(5px, 0.55vw, 8px) solid var(--beam-light);
+  background-color: var(--deep);
+  background-image: url("/marketing/washi.webp");
+  background-size: 300px 300px;
+  background-blend-mode: multiply;
+  box-shadow: 0 10px 26px rgb(45 34 18 / 20%);
+  transform: translateY(calc(-100% + var(--lintel)));
+  pointer-events: none;
+}
+
+.studioCopy .sectionTitle {
+  max-width: 10em;
+  font-size: clamp(36px, 4.3vw, 62px);
 }
 
 .roster {
-  margin: 0;
   justify-self: end;
   width: min(100%, 540px);
+  margin: 0;
 }
 
 .rosterCard {
   overflow: hidden;
   border: 1px solid var(--rule);
-  border-radius: 16px;
+  border-radius: 14px;
   background: var(--paper-raised);
   box-shadow:
     0 1px 0 rgb(255 255 255 / 60%) inset,
-    0 40px 80px rgb(35 27 19 / 22%);
+    0 36px 80px rgb(45 34 18 / 20%);
 }
 
 .rosterHeader {
   display: flex;
   justify-content: space-between;
   gap: 12px;
-  padding: 16px 20px;
+  padding: 15px 20px;
   border-bottom: 1px solid var(--rule);
+  background: rgb(242 233 216 / 55%);
   font-size: 13px;
-  font-weight: 650;
+  font-weight: 680;
 }
 
 .rosterHeader p {
@@ -565,10 +471,10 @@
 
 .rosterRow {
   display: grid;
-  grid-template-columns: 24px minmax(0, 1fr) 132px 78px;
+  grid-template-columns: 24px minmax(0, 1fr) 128px 84px;
   gap: 14px;
   align-items: center;
-  padding: 13px 20px;
+  padding: 12px 20px;
   border-bottom: 1px solid var(--rule);
   transition: background-color 500ms ease;
 }
@@ -578,31 +484,38 @@
 }
 
 .rosterRow[data-ready="true"] {
-  background: #fff3d6;
+  background: color-mix(in srgb, var(--paper-raised) 90%, var(--met) 10%);
 }
 
 .rosterCheck {
-  position: relative;
+  display: grid;
   width: 22px;
   height: 22px;
+  place-items: center;
   border: 1.5px solid var(--rule-strong);
   border-radius: 50%;
+  color: var(--paper-raised);
   transition:
     background-color 260ms ease,
     border-color 260ms ease;
 }
 
-.rosterCheck::after {
-  position: absolute;
-  top: 4px;
-  left: 7px;
-  width: 5px;
-  height: 9px;
-  border: solid var(--paper-raised);
-  border-width: 0 2px 2px 0;
-  content: "";
+.rosterCheck svg,
+.statusGlyph,
+.readyIcon svg,
+.includedGlyph {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.rosterCheck svg {
+  width: 14px;
+  height: 14px;
   opacity: 0;
-  transform: rotate(45deg) scale(0.4);
+  transform: scale(0.4);
   transition:
     opacity 200ms ease,
     transform 300ms cubic-bezier(0.34, 1.56, 0.64, 1);
@@ -613,16 +526,23 @@
   background: var(--ink);
 }
 
-.rosterRow[data-marked="true"] .rosterCheck::after {
+.rosterRow[data-ready="true"] .rosterCheck {
+  border-color: var(--met);
+  background: var(--met);
+}
+
+.rosterRow[data-marked="true"] .rosterCheck svg {
   opacity: 1;
-  transform: rotate(45deg) scale(1);
+  transform: none;
 }
 
 .rosterName {
   display: grid;
   gap: 3px;
+  min-width: 0;
   font-size: 15px;
-  font-weight: 600;
+  font-weight: 640;
+  letter-spacing: -0.01em;
 }
 
 .rosterBelt {
@@ -630,10 +550,10 @@
   gap: 7px;
   align-items: center;
   color: var(--ink-faint);
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  font-size: 12px;
+  font-weight: 560;
+  letter-spacing: 0;
+  text-transform: capitalize;
 }
 
 .rosterBelt::before {
@@ -657,7 +577,7 @@
   height: 6px;
   overflow: hidden;
   border-radius: 99px;
-  background: rgb(35 27 19 / 9%);
+  background: rgb(59 47 28 / 9%);
 }
 
 .rosterBar::after {
@@ -668,11 +588,13 @@
   content: "";
   transform: scaleX(var(--fill));
   transform-origin: left;
-  transition: transform 700ms cubic-bezier(0.22, 1, 0.36, 1);
+  transition:
+    transform 700ms cubic-bezier(0.22, 1, 0.36, 1),
+    background-color 400ms ease;
 }
 
 .rosterRow[data-ready="true"] .rosterBar::after {
-  background: var(--seal);
+  background: var(--met);
 }
 
 .rosterTally {
@@ -683,11 +605,19 @@
   text-align: right;
 }
 
+.rosterRow[data-ready="true"] .rosterTally {
+  color: var(--met);
+  font-weight: 650;
+}
+
 .rosterStatus {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  justify-content: flex-end;
   color: var(--ink-faint);
   font-size: 12px;
   font-weight: 600;
-  text-align: right;
 }
 
 .rosterRow[data-marked="true"] .rosterStatus {
@@ -695,23 +625,50 @@
 }
 
 .rosterRow[data-ready="true"] .rosterStatus {
-  color: var(--seal);
+  color: var(--met);
+}
+
+.statusGlyph {
+  width: 13px;
+  height: 13px;
 }
 
 .readyNote {
-  display: flex;
-  gap: 16px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 14px;
   align-items: center;
-  margin-top: 18px;
+  margin-top: 14px;
   padding: 14px 18px;
+  border: 1px solid var(--rule);
   border-radius: 14px;
-  background: rgb(251 248 241 / 94%);
-  box-shadow: 0 18px 40px rgb(35 27 19 / 14%);
+  background: var(--paper-raised);
+  box-shadow: 0 18px 40px rgb(45 34 18 / 14%);
   opacity: 0;
   transform: translateY(14px);
   transition:
     opacity 400ms ease,
     transform 500ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.readyNote[data-visible="true"] {
+  opacity: 1;
+  transform: none;
+}
+
+.readyIcon {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border-radius: 50%;
+  color: var(--met);
+  background: color-mix(in srgb, var(--paper-raised) 84%, var(--met) 16%);
+}
+
+.readyIcon svg {
+  width: 18px;
+  height: 18px;
 }
 
 .readyNote p {
@@ -721,31 +678,38 @@
   font-size: 14px;
 }
 
+.readyNote strong {
+  font-weight: 680;
+  letter-spacing: -0.01em;
+}
+
 .readyNote p span {
   color: var(--ink-soft);
   font-size: 13px;
 }
 
-.readyNote[data-visible="true"] {
-  opacity: 1;
-  transform: none;
+/* The rank badge, as the belt tracker draws it. */
+.rankBadge {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  padding: 3px 9px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--belt) 22%, var(--paper-raised));
+  font-size: 12px;
+  font-weight: 620;
+  white-space: nowrap;
 }
 
-.readyNote .seal {
-  flex: 0 0 auto;
-  transform: rotate(-8deg) scale(1.6);
-  opacity: 0;
-  transition:
-    transform 420ms cubic-bezier(0.34, 1.4, 0.64, 1) 160ms,
-    opacity 200ms ease 160ms;
+.rankBadge::before {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--belt);
+  content: "";
 }
 
-.readyNote[data-visible="true"] .seal {
-  opacity: 1;
-  transform: rotate(-8deg) scale(1);
-}
-
-/* Shoji doors: washi panels in a wooden lattice, with the invitation written across them. */
+/* Shoji doors: washi panels in a wooden lattice, with the invitation across them. */
 .shoji {
   display: none;
 }
@@ -759,7 +723,7 @@
   align-items: center;
   width: min(100% - 2 * var(--gutter), 1280px);
   margin: 0 auto;
-  padding: clamp(110px, 16vh, 180px) 0;
+  padding: clamp(120px, 18vh, 200px) 0 clamp(100px, 14vh, 160px);
 }
 
 .productFigure {
@@ -776,7 +740,7 @@
   border: 1px solid var(--rule-strong);
   border-radius: 12px;
   background: var(--paper-raised);
-  box-shadow: 0 40px 90px rgb(35 27 19 / 18%);
+  box-shadow: 0 40px 90px rgb(45 34 18 / 18%);
 }
 
 .productDesktop img,
@@ -795,7 +759,7 @@
   border: 7px solid var(--ink);
   border-radius: 28px;
   background: var(--ink);
-  box-shadow: 0 30px 60px rgb(35 27 19 / 30%);
+  box-shadow: 0 30px 60px rgb(45 34 18 / 30%);
 }
 
 .productFigure .caption {
@@ -808,9 +772,9 @@
   display: grid;
   grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
   gap: clamp(40px, 6vw, 110px);
-  width: min(100% - 2 * var(--gutter), 1180px);
+  width: min(100% - 2 * var(--gutter), var(--measure));
   margin: 0 auto;
-  padding: clamp(60px, 10vh, 120px) 0 clamp(110px, 16vh, 180px);
+  padding: clamp(60px, 10vh, 120px) 0 clamp(40px, 6vh, 80px);
 }
 
 .dayHeader {
@@ -823,7 +787,7 @@
   display: flex;
   flex-wrap: wrap;
   gap: 4px 26px;
-  margin-top: 24px;
+  margin-top: 26px;
 }
 
 .dayList {
@@ -831,7 +795,7 @@
   display: grid;
   gap: clamp(44px, 7vh, 72px);
   margin: 0;
-  padding: 8px 0 8px 46px;
+  padding: 6px 0 6px 50px;
   list-style: none;
 }
 
@@ -839,7 +803,7 @@
   position: absolute;
   top: 14px;
   bottom: 14px;
-  left: 8px;
+  left: 9px;
   width: 2px;
   border-radius: 2px;
   background: var(--ink);
@@ -852,29 +816,32 @@
 
 .dayDot {
   position: absolute;
-  top: 6px;
-  left: -46px;
-  width: 18px;
-  height: 18px;
-  border: 2px solid var(--ink);
+  top: 0;
+  left: -50px;
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--belt-edge, var(--belt));
   border-radius: 50%;
-  background: var(--ink);
+  background: var(--belt);
+  box-shadow: 0 0 0 4px var(--paper);
 }
 
 .dayTime {
-  margin: 0 0 6px;
-  color: var(--seal);
-  font-family: var(--serif);
-  font-size: 22px;
-  font-style: italic;
-  line-height: 1;
+  margin: 0 0 8px;
+  color: var(--beam-light);
+  font-size: 14px;
+  font-weight: 720;
+  line-height: 20px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
 }
 
 .dayTitle {
   margin: 0;
-  font-size: clamp(19px, 1.6vw, 23px);
-  font-weight: 650;
-  letter-spacing: -0.01em;
+  font-size: clamp(20px, 1.7vw, 25px);
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: -0.03em;
 }
 
 .dayTitle a {
@@ -883,17 +850,17 @@
   background-image: linear-gradient(currentColor, currentColor);
   background-position: 0 100%;
   background-repeat: no-repeat;
-  background-size: 0 1px;
+  background-size: 0 1.5px;
   transition: background-size 260ms ease;
 }
 
 .dayTitle a:hover,
 .dayTitle a:focus-visible {
-  background-size: 100% 1px;
+  background-size: 100% 1.5px;
 }
 
 .dayText {
-  max-width: 48ch;
+  max-width: 46ch;
   margin: 8px 0 0;
   color: var(--ink-soft);
   font-size: 16px;
@@ -905,10 +872,12 @@
 .breather {
   position: relative;
   display: grid;
-  height: 78vh;
-  min-height: 460px;
-  place-items: center;
+  height: 72vh;
+  min-height: 440px;
+  place-items: end center;
+  padding-bottom: 15vh;
   overflow: hidden;
+  mask-image: linear-gradient(180deg, transparent, #000 9%, #000 88%, transparent);
 }
 
 .breatherArt {
@@ -922,12 +891,13 @@
 
 .breatherLine {
   position: relative;
-  max-width: 22ch;
+  max-width: 17ch;
   margin: 0;
   padding: 0 var(--gutter);
-  font-family: var(--serif);
-  font-size: clamp(36px, 5vw, 72px);
-  line-height: 1.04;
+  font-size: clamp(34px, 4.6vw, 68px);
+  font-weight: 720;
+  line-height: 0.98;
+  letter-spacing: -0.045em;
   text-align: center;
   text-wrap: balance;
 }
@@ -936,75 +906,148 @@
 
 .pricing {
   display: grid;
-  justify-items: center;
-  padding: clamp(110px, 16vh, 180px) var(--gutter) clamp(80px, 12vh, 140px);
-  text-align: center;
+  grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr);
+  gap: clamp(40px, 7vw, 120px);
+  align-items: center;
+  width: min(100% - 2 * var(--gutter), var(--measure));
+  margin: 0 auto;
+  padding: clamp(56px, 8vh, 100px) 0 clamp(80px, 12vh, 140px);
 }
 
-.pricing .sectionTitle {
-  max-width: none;
-}
-
-.priceBlock {
-  position: relative;
-  margin-top: 26px;
+.pricingLead .sectionTitle {
+  max-width: 10ch;
 }
 
 .price {
-  margin: 0;
-  font-family: var(--serif);
-  font-size: clamp(120px, 17vw, 240px);
-  line-height: 0.86;
-  letter-spacing: -0.03em;
-}
-
-.priceBlock .seal {
-  position: absolute;
-  top: -4%;
-  left: calc(100% + 14px);
+  margin: 30px 0 0;
+  font-size: clamp(112px, 15vw, 212px);
+  font-weight: 760;
+  line-height: 0.82;
+  letter-spacing: -0.065em;
+  font-variant-numeric: tabular-nums;
 }
 
 .pricePeriod {
-  margin: 10px 0 0;
+  margin: 14px 0 0;
   color: var(--ink-soft);
-  font-size: 16px;
-}
-
-.included {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 10px;
-  max-width: 640px;
-  margin: 34px 0 0;
-  padding: 0;
-  list-style: none;
-  font-size: 14px;
-  font-weight: 600;
-}
-
-.included li {
-  padding: 8px 14px;
-  border: 1px solid var(--rule-strong);
-  border-radius: 999px;
-  background: rgb(251 248 241 / 70%);
-  white-space: nowrap;
-}
-
-.priceNote {
-  margin: 20px 0 0;
-  color: var(--ink-soft);
-  font-size: 15px;
+  font-size: 17px;
+  font-weight: 520;
 }
 
 .paymentsLink {
-  margin: 18px 0 0;
+  margin: 16px 0 0;
   font-size: 13px;
 }
 
 .paymentsLink a {
   color: var(--ink-soft);
   text-underline-offset: 3px;
+}
+
+/* The plan, laid out like a card in the app. */
+.plan {
+  overflow: hidden;
+  border: 1px solid var(--rule);
+  border-radius: 16px;
+  background: var(--paper-raised);
+  box-shadow:
+    0 1px 0 rgb(255 255 255 / 60%) inset,
+    0 30px 70px rgb(45 34 18 / 12%);
+}
+
+.planHeader {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 18px 24px;
+  border-bottom: 1px solid var(--rule);
+  background: rgb(242 233 216 / 55%);
+}
+
+.planHeader h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 720;
+  letter-spacing: -0.01em;
+}
+
+.planHeader p {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 13px;
+}
+
+.included {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 24px;
+  margin: 0;
+  padding: 8px 24px 10px;
+  list-style: none;
+}
+
+.included li {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  min-height: 46px;
+  border-bottom: 1px solid var(--rule);
+  font-size: 15px;
+  font-weight: 560;
+}
+
+.included li:nth-last-child(-n + 1) {
+  border-bottom: 0;
+}
+
+.includedGlyph {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  color: var(--met);
+}
+
+.register {
+  padding: 16px 24px 24px;
+  border-top: 1px solid var(--rule);
+}
+
+.registerLabel {
+  margin: 0 0 12px;
+  color: var(--ink-soft);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.register dl {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+
+.register dl > div {
+  display: grid;
+  gap: 2px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--paper-deep);
+}
+
+.register dt {
+  color: var(--ink-soft);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.register dd {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 720;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
 }
 
 /* ---------------------------------------------------------------- Mat & FAQ */
@@ -1021,13 +1064,13 @@
 }
 
 .faq {
-  width: min(100% - 2 * var(--gutter), 1120px);
+  width: min(100% - 2 * var(--gutter), var(--measure));
   margin: 0 auto;
   padding: clamp(60px, 10vh, 110px) 0 clamp(110px, 16vh, 170px);
 }
 
 .faqHeader {
-  margin-bottom: 30px;
+  margin-bottom: 28px;
 }
 
 .faqGroups {
@@ -1041,12 +1084,11 @@
 }
 
 .faqGroup h3 {
-  margin: 22px 0 6px;
-  color: var(--ink-faint);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
+  margin: 26px 0 4px;
+  color: var(--beam-light);
+  font-size: 14px;
+  font-weight: 720;
+  letter-spacing: -0.005em;
 }
 
 .faqItem {
@@ -1061,8 +1103,9 @@
   min-height: 56px;
   padding: 12px 0;
   font-size: 16px;
-  font-weight: 600;
+  font-weight: 620;
   line-height: 1.35;
+  letter-spacing: -0.01em;
   list-style: none;
   cursor: pointer;
 }
@@ -1132,22 +1175,22 @@
   display: grid;
   justify-items: center;
   align-content: start;
-  padding: calc(var(--masthead) + 6vh) var(--gutter) 0;
+  padding: calc(var(--masthead) + 7vh) var(--gutter) 0;
   text-align: center;
 }
 
 .finaleCopy .actions {
-  margin-top: 22px;
+  justify-content: center;
+  margin-top: 26px;
 }
 
 .finaleTitle {
-  max-width: 22ch;
+  max-width: 14ch;
   margin: 0;
-  font-family: var(--serif);
-  font-size: clamp(48px, 6.4vw, 100px);
-  font-weight: 400;
-  line-height: 0.94;
-  letter-spacing: -0.02em;
+  font-size: clamp(46px, 6.6vw, 100px);
+  font-weight: 740;
+  line-height: 0.92;
+  letter-spacing: -0.05em;
   text-wrap: balance;
 }
 
@@ -1155,6 +1198,7 @@
   margin: 18px 0 0;
   color: var(--ink-soft);
   font-size: 17px;
+  font-weight: 520;
 }
 
 .footer {
@@ -1165,10 +1209,10 @@
   gap: 12px 28px;
   align-items: center;
   justify-content: space-between;
-  padding: 22px var(--gutter);
+  padding: 18px var(--gutter);
   border-top: 1px solid var(--rule);
   color: var(--ink-soft);
-  background: rgb(246 241 230 / 94%);
+  background: rgb(247 243 233 / 94%);
   font-size: 13px;
 }
 
@@ -1213,12 +1257,34 @@
 
 @keyframes mastheadGround {
   from {
-    background: rgb(246 241 230 / 0%);
+    background: rgb(247 243 233 / 0%);
     box-shadow: 0 1px 0 transparent;
   }
 
   to {
-    background: rgb(246 241 230 / 92%);
+    background: rgb(247 243 233 / 93%);
+    box-shadow: 0 1px 0 var(--rule);
+  }
+}
+
+/* Over the deep brown, the masthead goes dark with it, as it did in the story. */
+@keyframes mastheadInside {
+  0% {
+    color: var(--ink);
+    background: rgb(247 243 233 / 93%);
+    box-shadow: 0 1px 0 var(--rule);
+  }
+
+  2%,
+  98% {
+    color: var(--light);
+    background: rgb(73 55 24 / 0%);
+    box-shadow: 0 1px 0 transparent;
+  }
+
+  100% {
+    color: var(--ink);
+    background: rgb(247 243 233 / 93%);
     box-shadow: 0 1px 0 var(--rule);
   }
 }
@@ -1240,49 +1306,57 @@
 }
 
 @keyframes heroCopyAway {
-  to {
+  70%,
+  100% {
     opacity: 0;
-    transform: translateY(-10vh);
-  }
-}
-
-@keyframes brushDraw {
-  from {
-    stroke-dashoffset: 640;
-  }
-
-  to {
-    stroke-dashoffset: 0;
-  }
-}
-
-@keyframes scrapGather {
-  0% {
-    opacity: 1;
-    transform: translate(var(--from-x), var(--from-y)) rotate(var(--from-r));
-  }
-
-  72% {
-    opacity: 1;
-    transform: translate(0, calc(var(--stack) * -5px)) rotate(calc((var(--stack) - 2.5) * 1.6deg))
-      scale(0.86);
   }
 
   100% {
-    opacity: 0;
-    transform: translate(0, calc(var(--stack) * -5px)) scale(0.8);
+    transform: translateY(-12vh);
   }
 }
 
-@keyframes resolve {
+@keyframes crestRise {
+  from {
+    transform: scaleY(0.04);
+  }
+
+  to {
+    transform: scaleY(1);
+  }
+}
+
+@keyframes statementIn {
   from {
     opacity: 0;
-    transform: translateY(18px) scale(0.92);
+    transform: translateY(10vh);
   }
 
   to {
     opacity: 1;
     transform: none;
+  }
+}
+
+@keyframes statementOut {
+  from {
+    opacity: 1;
+    transform: none;
+  }
+
+  to {
+    opacity: 0;
+    transform: translateY(-6vh);
+  }
+}
+
+@keyframes curtainLift {
+  from {
+    transform: none;
+  }
+
+  to {
+    transform: translateY(calc(-100% + var(--lintel)));
   }
 }
 
@@ -1320,13 +1394,10 @@
   }
 }
 
-@keyframes dotFill {
+@keyframes dotTie {
   from {
+    border-color: var(--rule-strong);
     background: var(--paper);
-  }
-
-  to {
-    background: var(--ink);
   }
 }
 
@@ -1384,15 +1455,17 @@
     animation: none;
   }
 
-  .brush {
-    animation: brushDraw 1.3s cubic-bezier(0.65, 0, 0.35, 1) 0.7s both;
-  }
-
   @supports (animation-timeline: view()) {
     .masthead {
-      animation: mastheadGround linear both;
-      animation-timeline: scroll(root);
-      animation-range: 0 120px;
+      background: transparent;
+      box-shadow: none;
+      animation:
+        mastheadGround linear both,
+        mastheadInside linear none;
+      animation-timeline: scroll(root), --inside;
+      animation-range:
+        0 120px,
+        entry calc(100% - var(--masthead)) exit 12%;
     }
 
     .beltProgress {
@@ -1427,31 +1500,45 @@
     .heroCopy {
       animation: heroCopyAway linear both;
       animation-timeline: scroll(root);
-      animation-range: 15svh 75svh;
+      animation-range: 4svh 44svh;
     }
 
-    .scrap {
-      animation: scrapGather linear both;
+    .hillCrest {
+      display: block;
+      animation: crestRise linear both;
       animation-timeline: --problem;
-      animation-range: contain 0% contain 62%;
+      animation-range: entry 0% entry 60%;
     }
 
-    .resolution {
-      animation: resolve linear both;
-      animation-timeline: --problem;
-      animation-range: contain 46% contain 70%;
+    /* The statement settles in as the brown fills the screen, and fades before it reaches the masthead. */
+    .problemCopy {
+      animation:
+        statementIn linear both,
+        statementOut linear forwards;
+      animation-timeline: --problem, --problem;
+      animation-range:
+        entry 40% entry 92%,
+        exit 0% exit 40%;
+    }
+
+    .studioCurtain {
+      animation: curtainLift linear both;
+      animation-timeline: --studio;
+      animation-range: entry 8% entry 92%;
+      animation-timing-function: cubic-bezier(0.25, 0.4, 0.3, 1);
     }
 
     .shoji {
       position: absolute;
       z-index: 5;
-      top: 0;
+      top: var(--lintel);
       bottom: 0;
       display: grid;
       width: 50.5%;
       place-items: center;
-      border: clamp(10px, 1.2vw, 18px) solid var(--wood-dark);
-      background-color: #eee9de;
+      border: clamp(10px, 1.1vw, 16px) solid var(--beam-light);
+      border-top-width: 0;
+      background-color: #efe9dc;
       background-image:
         linear-gradient(90deg, transparent calc(100% - 6px), var(--wood) 0),
         linear-gradient(transparent calc(100% - 6px), var(--wood) 0), url("/marketing/washi.webp");
@@ -1460,9 +1547,9 @@
         100% 16.67%,
         220px 220px;
       background-blend-mode: normal, normal, multiply;
-      box-shadow: inset 0 0 60px rgb(107 82 48 / 18%);
+      box-shadow: inset 0 0 60px rgb(107 82 48 / 16%);
       animation-timeline: --studio;
-      animation-range: contain 4% contain 24%;
+      animation-range: contain 3% contain 15%;
       animation-fill-mode: both;
       animation-timing-function: cubic-bezier(0.65, 0, 0.35, 1);
     }
@@ -1477,37 +1564,46 @@
       animation-name: doorRight;
     }
 
-    /* Ink on the paper: a soft washi halo keeps the lattice from crossing the letters. */
+    /* A soft washi halo keeps the lattice from crossing the letters. */
     .shoji span {
-      padding: 0.5em 0.6em;
+      padding: 0.42em 0.5em;
       color: var(--ink);
       background: radial-gradient(
         closest-side,
-        rgb(238 233 222 / 97%) 58%,
-        rgb(238 233 222 / 0%) 100%
+        rgb(239 233 220 / 97%) 60%,
+        rgb(239 233 220 / 0%) 100%
       );
-      font-family: var(--serif);
-      font-size: clamp(54px, 9vw, 150px);
+      font-size: clamp(52px, 8.6vw, 140px);
+      font-weight: 740;
       line-height: 1;
+      letter-spacing: -0.05em;
     }
 
     .shoji[data-side="left"] span {
       justify-self: end;
-      font-style: normal;
     }
 
     .shoji[data-side="right"] span {
       justify-self: start;
-      font-style: italic;
     }
 
     .studioContent {
       animation: rise linear both;
       animation-timeline: --studio;
-      animation-range: contain 14% contain 26%;
+      animation-range: contain 11% contain 20%;
     }
 
-    .productPhone {
+    .productCopy,
+    .dayHeader > *,
+    .pricingLead,
+    .faqHeader {
+      animation: rise linear both;
+      animation-timeline: view();
+      animation-range: entry 10% entry 90%;
+    }
+
+    .productPhone,
+    .plan {
       animation: rise linear both;
       animation-timeline: view();
       animation-range: entry 0% entry 100%;
@@ -1520,7 +1616,7 @@
     }
 
     .dayDot {
-      animation: dotFill linear both;
+      animation: dotTie linear both;
       animation-timeline: view();
       animation-range: entry 100% cover 40%;
     }
@@ -1538,15 +1634,33 @@
   }
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .rosterRow,
+  .rosterCheck,
+  .rosterCheck svg,
+  .rosterBar::after,
+  .readyNote,
+  .heroWisp {
+    transition: none;
+    animation: none;
+  }
+}
+
 /* ---------------------------------------------------------------- Narrow screens */
 
 @media (max-width: 900px) {
+  .problemCopy {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 26px;
+    align-items: start;
+  }
+
   .studioShade {
     background: linear-gradient(
       180deg,
-      rgb(246 241 230 / 96%) 0%,
-      rgb(246 241 230 / 88%) 42%,
-      rgb(246 241 230 / 30%) 100%
+      rgb(247 243 233 / 96%) 0%,
+      rgb(247 243 233 / 88%) 44%,
+      rgb(247 243 233 / 34%) 100%
     );
   }
 
@@ -1588,7 +1702,8 @@
   }
 
   .product,
-  .day {
+  .day,
+  .pricing {
     grid-template-columns: minmax(0, 1fr);
   }
 
@@ -1597,63 +1712,68 @@
   }
 
   .productScreens {
-    padding: 0;
-  }
-
-  .productDesktop {
-    display: none;
-  }
-
-  .productPhone {
-    position: relative;
-    width: min(300px, 78vw);
-    margin-inline: auto;
-  }
-
-  .productFigure .caption {
-    padding-left: 0;
-    text-align: center;
+    padding: 0 0 0 0;
   }
 
   .faqGroups {
     grid-template-columns: minmax(0, 1fr);
   }
-
-  .priceBlock .seal {
-    top: auto;
-    bottom: 4%;
-    left: calc(100% + 6px);
-    width: 54px;
-    height: 54px;
-    font-size: 16px;
-  }
 }
 
 @media (max-width: 560px) {
+  .kicker {
+    font-size: 11px;
+    letter-spacing: 0.12em;
+  }
+
+  .heroTitle {
+    font-size: clamp(38px, 12.8vw, 60px);
+  }
+
+  .hero .actions {
+    flex-wrap: nowrap;
+    gap: 10px;
+  }
+
+  .hero .action {
+    flex: 1 1 0;
+    min-width: 0;
+    padding-inline: 12px;
+  }
+
+  .productPhone {
+    width: 40%;
+    border-width: 5px;
+    border-radius: 22px;
+  }
+
+  .register dl {
+    gap: 6px;
+  }
+
+  .register dl > div {
+    padding: 9px 10px;
+  }
+
+  .register dt {
+    font-size: 11px;
+    white-space: nowrap;
+  }
+
   .shoji span {
     font-size: clamp(34px, 11vw, 54px);
   }
 
+  .hillCrest {
+    height: 15vh;
+  }
+
+  .statement {
+    font-size: clamp(42px, 13vw, 58px);
+  }
+
   .finaleTitle {
     max-width: 10ch;
-  }
-
-  .scrap {
-    width: 42vw;
-    padding: 10px 12px;
-  }
-
-  .scrap[data-kind="note"],
-  .scrap[data-kind="receipt"] {
-    width: 36vw;
-  }
-
-  .resolutionText {
-    font-size: 26px;
-  }
-
-  .studioCopy .kicker {
-    margin-bottom: 8px;
   }
 
   .studioCopy .sectionTitle {
@@ -1664,8 +1784,17 @@
     font-size: 14px;
   }
 
-  .readyNote p span {
+  .readyNote {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .readyNote p span,
+  .readyNote .rankBadge {
     display: none;
+  }
+
+  .included {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .footer {
@@ -1677,5 +1806,29 @@
 @media (max-width: 560px) and (max-height: 720px) {
   .studioCopy .sectionLede {
     display: none;
+  }
+}
+
+@media (max-width: 560px) {
+  .finale {
+    min-height: max(100svh, 760px);
+  }
+}
+
+@media (max-width: 360px) {
+  .kicker {
+    letter-spacing: 0.06em;
+  }
+
+  .hero .actions {
+    flex-wrap: wrap;
+  }
+
+  .hero .action {
+    flex-basis: 100%;
+  }
+
+  .finaleTitle {
+    font-size: 42px;
   }
 }

@@ -103,7 +103,11 @@ describe("Landing motion and accessibility", () => {
 
   it("keeps decorative art out of the accessibility tree and labels the real product", () => {
     assert.match(sources["hero.tsx"], /className=\{styles\.heroArt\} aria-hidden="true"/);
-    assert.match(sources["problem.tsx"], /className=\{styles\.scrapField\} aria-hidden="true"/);
+    assert.match(
+      sources["problem.tsx"],
+      /className=\{styles\.hillCrest\}[\s\S]*?aria-hidden="true"/,
+    );
+    assert.match(sources["studio.tsx"], /className=\{styles\.studioCurtain\} aria-hidden="true"/);
     assert.match(sources["studio.tsx"], /data-side="left" aria-hidden="true"/);
     assert.match(sources["product.tsx"], /alt=\{product\.image\.alt\}/);
     assert.match(css, /outline: 2px solid currentColor/);
@@ -129,6 +133,40 @@ describe("Landing motion and accessibility", () => {
     assert.doesNotMatch(
       `${allSource}\n${css}`,
       /from\s+["']https?:|\bsrc=["']https?:|unpkg|<script|@font-face|url\(["']?https?:/i,
+    );
+  });
+});
+
+describe("Landing identity", () => {
+  const pageSource = readFileSync(
+    new URL("../src/components/marketing/landing-page.tsx", import.meta.url),
+    "utf8",
+  );
+
+  it("sets type in production's system display stack, without a web serif or italic accents", () => {
+    assert.doesNotMatch(`${pageSource}\n${allSource}`, /next\/font|Instrument|<em>/);
+    assert.doesNotMatch(css, /font-family|font-style:\s*italic|serif/);
+    const weights = [...css.matchAll(/font-weight:\s*(\d+)/g)].map((match) => Number(match[1]));
+    assert.ok(weights.filter((weight) => weight >= 700).length >= 8, "display type is heavy");
+  });
+
+  it("keeps production's palette: deep brown and wood, no red seal or sticky notes", () => {
+    assert.match(css, /--deep: var\(--koaryu-deep-brown\)/);
+    assert.match(css, /--beam-light: var\(--koaryu-beam-light\)/);
+    assert.doesNotMatch(css, /#b3432b|--seal|\.seal\b|\.scrap/);
+    assert.doesNotMatch(allSource, /styles\.seal|scrap/i);
+  });
+
+  it("dives into the hill: the masthead darkens over the brown, and the brown lifts into the dojo beam", () => {
+    assert.match(
+      pageSource,
+      /<div className=\{styles\.inside\}>\s*<Problem \/>\s*<Studio \/>\s*<\/div>/,
+    );
+    assert.match(css, /timeline-scope: --inside/);
+    assert.match(css, /animation-timeline: scroll\(root\), --inside/);
+    assert.match(
+      css,
+      /\.studioCurtain \{[^}]*transform: translateY\(calc\(-100% \+ var\(--lintel\)\)\)/s,
     );
   });
 });

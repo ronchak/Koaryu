@@ -48,7 +48,8 @@ describe("marketing content contract", () => {
       ],
       ["welcome", "the-problem", "studio", "product", "features", "pricing", "faq", "begin"],
     );
-    assert.equal(content.problem.scraps.length, 6);
+    assert.deepEqual(Object.keys(content.problem), ["id", "title", "lede"]);
+    assert.equal(content.problem.title, "Your studio is not a spreadsheet.");
     assert.deepEqual(content.studio.doors, ["Step", "inside."]);
     assert.deepEqual(JSON.parse(JSON.stringify(content)), content);
     assertPlainJsonValue(content);
@@ -90,6 +91,11 @@ describe("marketing content contract", () => {
     );
     assert.equal(pricing.setupAction.href, "/signup");
     assert.equal(pricing.paymentsLink.href, "#faq-pricing");
+    assert.deepEqual(
+      [...pricing.rosterSizes],
+      [...pricing.rosterSizes].sort((a, b) => a - b),
+    );
+    assert.match(pricing.note, /No per-student tiers/);
     assert.deepEqual(
       faq.groups.map((group) => [group.id, group.items.length]),
       [

@@ -32,6 +32,14 @@ function StudioBackdrop() {
   );
 }
 
+function CheckGlyph({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 16 16" aria-hidden="true">
+      <path d="M3.5 8.4 6.6 11.4 12.5 4.9" />
+    </svg>
+  );
+}
+
 export function Studio() {
   const { studio } = landingPageContent;
   const sectionRef = useRef<HTMLElement>(null);
@@ -47,6 +55,7 @@ export function Studio() {
       const box = section.getBoundingClientRect();
       const range = box.height - window.innerHeight;
       const progress = range > 0 ? Math.min(1, Math.max(0, -box.top / range)) : 1;
+      // React skips the render when the step is unchanged, so this commits once per mark.
       setStep(studioStep(progress));
     };
     const schedule = () => {
@@ -64,6 +73,7 @@ export function Studio() {
 
   const present = Math.min(step, studio.students.length);
   const ready = step >= STUDIO_FINISHED;
+  const nextBelt = studio.ready.nextRank.split(" ")[0]!.toLowerCase();
 
   return (
     <section
@@ -77,7 +87,6 @@ export function Studio() {
         <div className={styles.studioShade} aria-hidden="true" />
         <div className={styles.studioContent}>
           <div className={styles.studioCopy}>
-            <p className={styles.kicker}>{studio.kicker}</p>
             <h2 id="studio-title" className={styles.sectionTitle}>
               {studio.title}
             </h2>
@@ -103,7 +112,9 @@ export function Studio() {
                       data-marked={marked}
                       data-ready={isReady}
                     >
-                      <span className={styles.rosterCheck} aria-hidden="true" />
+                      <span className={styles.rosterCheck} aria-hidden="true">
+                        <CheckGlyph />
+                      </span>
                       <span className={styles.rosterName}>
                         {student.name}
                         <span className={styles.rosterBelt} data-belt={student.belt}>
@@ -120,7 +131,16 @@ export function Studio() {
                         </span>
                       </span>
                       <span className={styles.rosterStatus}>
-                        {isReady ? "Ready" : marked ? "Present" : "Not marked"}
+                        {isReady ? (
+                          <>
+                            <CheckGlyph className={styles.statusGlyph} />
+                            Eligible
+                          </>
+                        ) : marked ? (
+                          "Present"
+                        ) : (
+                          "Not marked"
+                        )}
                       </span>
                     </li>
                   );
@@ -128,13 +148,16 @@ export function Studio() {
               </ol>
             </div>
             <div className={styles.readyNote} data-visible={ready}>
-              <span className={styles.seal} aria-hidden="true">
-                Ready
+              <span className={styles.readyIcon} aria-hidden="true">
+                <CheckGlyph />
               </span>
               <p>
                 <strong>{studio.ready.message}</strong>
-                <span>Class, time-at-rank and approval requirements met.</span>
+                <span>{studio.ready.detail}</span>
               </p>
+              <span className={styles.rankBadge} data-belt={nextBelt}>
+                {studio.ready.nextRank}
+              </span>
             </div>
             <figcaption className={styles.caption}>{studio.caption}</figcaption>
           </figure>
@@ -145,6 +168,7 @@ export function Studio() {
         <div className={styles.shoji} data-side="right" aria-hidden="true">
           <span>{studio.doors[1]}</span>
         </div>
+        <div className={styles.studioCurtain} aria-hidden="true" />
       </div>
     </section>
   );
