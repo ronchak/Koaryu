@@ -349,9 +349,11 @@
 
 /* ---------------------------------------------------------------- Studio */
 
+/* The studio slides up under the held statement, so the doors rise while it is still read. */
 .studio {
   position: relative;
   height: 380vh;
+  margin-top: -32vh;
   view-timeline-name: --studio;
   view-timeline-axis: block;
 }
@@ -404,7 +406,10 @@
   padding-top: var(--lintel);
 }
 
-/* The deep brown of the hill, lifted until it is the ceiling beam of the dojo. */
+/*
+ * The ceiling beam of the dojo: the last of the hill's deep brown. The doors rise
+ * under it straight out of the statement, with no hold of empty brown between.
+ */
 .studioCurtain {
   position: absolute;
   z-index: 6;
@@ -1350,16 +1355,6 @@
   }
 }
 
-@keyframes curtainLift {
-  from {
-    transform: none;
-  }
-
-  to {
-    transform: translateY(calc(-100% + var(--lintel)));
-  }
-}
-
 @keyframes doorLeft {
   to {
     transform: translateX(-101%);
@@ -1518,14 +1513,7 @@
       animation-timeline: --problem, --problem;
       animation-range:
         entry 40% entry 92%,
-        exit 0% exit 40%;
-    }
-
-    .studioCurtain {
-      animation: curtainLift linear both;
-      animation-timeline: --studio;
-      animation-range: entry 8% entry 92%;
-      animation-timing-function: cubic-bezier(0.25, 0.4, 0.3, 1);
+        exit 4% exit 34%;
     }
 
     .shoji {
