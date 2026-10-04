@@ -145,16 +145,20 @@ $$;
 
 -- One source for previews, enqueue decisions, and dispatch revalidation.
 CREATE FUNCTION private.missed_class_automation_candidates(
-    p_studio_id UUID,p_inactivity_days INTEGER,p_student_id UUID DEFAULT NULL,p_delivery_id UUID DEFAULT NULL
+    p_studio_id UUID,p_inactivity_days INTEGER,p_student_id UUID DEFAULT NULL,p_delivery_id UUID DEFAULT NULL,
+    p_reference_at TIMESTAMPTZ DEFAULT clock_timestamp()
 ) RETURNS TABLE(student_id UUID,student_name TEXT,student_first_name TEXT,studio_name TEXT,
     reference_date DATE,last_attendance_date DATE,days_absent INTEGER,attendance_id UUID,
     attendance_checked_in_at TIMESTAMPTZ,attendance_occurred_at TIMESTAMPTZ,
     recipient_name TEXT,recipient_email TEXT,recipient_kind TEXT,skip_reason TEXT)
 LANGUAGE sql STABLE SECURITY INVOKER SET search_path='' AS $$
-WITH studio_clock AS MATERIALIZED (
-    SELECT s.id,s.name,public.student_business_date(s.id) AS today,
+WITH studio_zone AS MATERIALIZED (
+    SELECT s.id,s.name,
         CASE WHEN EXISTS(SELECT 1 FROM pg_catalog.pg_timezone_names z WHERE z.name=s.timezone)
             THEN s.timezone ELSE 'UTC' END AS timezone FROM public.studios s WHERE s.id=p_studio_id
+), studio_clock AS MATERIALIZED (
+    SELECT z.*,(p_reference_at AT TIME ZONE z.timezone)::date AS today,p_reference_at AS reference_at
+    FROM studio_zone z WHERE isfinite(p_reference_at)
 ), facts AS MATERIALIZED (
     SELECT s.*,c.name AS studio_name,c.today,c.timezone,
         CASE WHEN s.date_of_birth IS NULL THEN COALESCE(s.is_minor,false)
@@ -168,8 +172,8 @@ WITH studio_clock AS MATERIALIZED (
         FROM public.attendance a JOIN public.class_sessions cs ON cs.id=a.session_id AND cs.studio_id=s.studio_id
         WHERE a.studio_id=s.studio_id AND a.student_id=s.id AND a.status IN ('present','late')
             AND cs.deleted_at IS NULL AND cs.status IS DISTINCT FROM 'canceled'
-            AND isfinite(cs.date) AND cs.date<=c.today AND isfinite(a.checked_in_at) AND a.checked_in_at<=clock_timestamp()
-            AND (cs.date+cs.start_time) AT TIME ZONE c.timezone<=clock_timestamp()
+            AND isfinite(cs.date) AND cs.date<=c.today AND isfinite(a.checked_in_at) AND a.checked_in_at<=c.reference_at
+            AND (cs.date+cs.start_time) AT TIME ZONE c.timezone<=c.reference_at
         ORDER BY cs.date DESC,cs.start_time DESC,a.checked_in_at DESC,a.id DESC LIMIT 1
     ) a ON true
     LEFT JOIN LATERAL (
@@ -252,15 +256,18 @@ BEGIN
 END $$;
 CREATE FUNCTION public.preview_missed_class_automation_v1(p_studio_id UUID,p_actor_id UUID,p_inactivity_days INTEGER) RETURNS JSONB
 LANGUAGE plpgsql SECURITY INVOKER SET search_path='' AS $$
-DECLARE v_result JSONB;
+DECLARE v_result JSONB; v_reference_at TIMESTAMPTZ;
 BEGIN
     PERFORM private.automation_require_admin(p_studio_id,p_actor_id);
     IF p_inactivity_days IS NULL OR p_inactivity_days NOT BETWEEN 1 AND 90 THEN
         RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='Invalid inactivity days.';
     END IF;
-    WITH candidates AS MATERIALIZED (SELECT * FROM private.missed_class_automation_candidates(p_studio_id,p_inactivity_days)),
+    v_reference_at:=clock_timestamp();
+    WITH candidates AS MATERIALIZED (SELECT * FROM private.missed_class_automation_candidates(p_studio_id,p_inactivity_days,NULL,NULL,v_reference_at)),
     sample AS (SELECT * FROM candidates ORDER BY (skip_reason IS NOT NULL),student_name,student_id LIMIT 100)
-    SELECT jsonb_build_object('reference_date',public.student_business_date(p_studio_id),
+    SELECT jsonb_build_object('reference_date',(SELECT (v_reference_at AT TIME ZONE
+        CASE WHEN EXISTS(SELECT 1 FROM pg_catalog.pg_timezone_names z WHERE z.name=s.timezone) THEN s.timezone ELSE 'UTC' END)::date
+        FROM public.studios s WHERE s.id=p_studio_id),
         'eligible_count',(SELECT count(*) FROM candidates WHERE skip_reason IS NULL),
         'skipped_count',(SELECT count(*) FROM candidates WHERE skip_reason IS NOT NULL),
         'recipients',COALESCE((SELECT jsonb_agg(jsonb_build_object('student_id',student_id,'student_name',student_name,
@@ -357,6 +364,7 @@ END $$;
 CREATE FUNCTION public.begin_missed_class_automation_v1(p_delivery_id UUID,p_claim_token UUID,p_allowed_recipients TEXT[] DEFAULT NULL) RETURNS JSONB
 LANGUAGE plpgsql SECURITY INVOKER SET search_path='' AS $$
 DECLARE d public.automation_deliveries; r public.automation_rules; c RECORD; v_reason TEXT;
+    v_reference_at TIMESTAMPTZ; v_locked_recipient TEXT; v_defer BOOLEAN:=false;
 BEGIN
     SELECT * INTO d FROM public.automation_deliveries WHERE id=p_delivery_id;
     IF NOT FOUND THEN RETURN jsonb_build_object('ready',false,'state',NULL,'reason',NULL,'message',NULL); END IF;
@@ -373,30 +381,47 @@ BEGIN
     IF NOT FOUND OR d.state<>'claimed' OR d.claim_token IS DISTINCT FROM p_claim_token OR d.lease_expires_at<=clock_timestamp() THEN
         RETURN jsonb_build_object('ready',false,'state',d.state,'reason',NULL,'message',NULL);
     END IF;
+    v_reference_at:=clock_timestamp();
     IF r.enabled IS DISTINCT FROM true THEN v_reason:='rule_paused';
     ELSIF NOT private.automation_core_entitled(d.studio_id) THEN v_reason:='subscription_required';
     ELSE
-        SELECT * INTO c FROM private.missed_class_automation_candidates(d.studio_id,r.inactivity_days,d.student_id,d.id);
+        SELECT * INTO c FROM private.missed_class_automation_candidates(d.studio_id,r.inactivity_days,d.student_id,d.id,v_reference_at);
         IF NOT FOUND THEN v_reason:='student_unavailable'; ELSE v_reason:=c.skip_reason; END IF;
     END IF;
     IF v_reason IS NULL THEN
-        -- The suppression POST and dispatch boundary serialize on the same pair.
-        PERFORM pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended(d.studio_id::text||':'||c.recipient_email,0));
-        SELECT * INTO c FROM private.missed_class_automation_candidates(d.studio_id,r.inactivity_days,d.student_id,d.id);
-        v_reason:=c.skip_reason;
-        IF COALESCE(cardinality(p_allowed_recipients),0)>0 AND (c.recipient_email=ANY(p_allowed_recipients)) IS DISTINCT FROM true THEN
-            v_reason:='recipient_not_allowed';
+        -- Routing is needed to choose the suppression lock. Waiting for that
+        -- lock can cross a studio midnight, so the final evaluation uses one
+        -- fresh reference for age, holds, gap and attendance after the wait.
+        v_locked_recipient:=c.recipient_email;
+        PERFORM pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended(d.studio_id::text||':'||v_locked_recipient,0));
+        v_reference_at:=clock_timestamp();
+        IF d.lease_expires_at<=v_reference_at THEN
+            RETURN jsonb_build_object('ready',false,'state',d.state,'reason',NULL,'message',NULL);
         END IF;
-        IF d.attempted_at IS NOT NULL THEN
-            IF c.attendance_id IS DISTINCT FROM d.attendance_id OR c.last_attendance_date IS DISTINCT FROM d.attendance_date THEN v_reason:='attendance_changed';
-            ELSIF c.recipient_email IS DISTINCT FROM d.original_recipient_email THEN v_reason:='contact_changed'; END IF;
+        SELECT * INTO c FROM private.missed_class_automation_candidates(d.studio_id,r.inactivity_days,d.student_id,d.id,v_reference_at);
+        IF NOT FOUND THEN v_reason:='student_unavailable';
+        ELSIF c.recipient_email IS DISTINCT FROM v_locked_recipient THEN
+            -- A birthday can move routing from guardian to student at midnight.
+            -- Defer instead of dispatching under the wrong key or taking a
+            -- second recipient lock in an inconsistent order.
+            v_reason:='contact_changed'; v_defer:=true;
+        ELSE
+            v_reason:=c.skip_reason;
+            IF NOT private.automation_core_entitled(d.studio_id) THEN v_reason:='subscription_required'; END IF;
+            IF COALESCE(cardinality(p_allowed_recipients),0)>0 AND (c.recipient_email=ANY(p_allowed_recipients)) IS DISTINCT FROM true THEN
+                v_reason:='recipient_not_allowed';
+            END IF;
+            IF d.attempted_at IS NOT NULL THEN
+                IF c.attendance_id IS DISTINCT FROM d.attendance_id OR c.last_attendance_date IS DISTINCT FROM d.attendance_date THEN v_reason:='attendance_changed';
+                ELSIF c.recipient_email IS DISTINCT FROM d.original_recipient_email THEN v_reason:='contact_changed'; END IF;
+            END IF;
         END IF;
     END IF;
     IF v_reason IS NOT NULL THEN
         UPDATE public.automation_deliveries SET
-            state=CASE WHEN v_reason IN ('suppressed','episode_already_attempted','attendance_changed','contact_changed') THEN 'skipped' ELSE 'queued' END,
+            state=CASE WHEN NOT v_defer AND v_reason IN ('suppressed','episode_already_attempted','attendance_changed','contact_changed') THEN 'skipped' ELSE 'queued' END,
             reason=v_reason,claim_token=NULL,lease_expires_at=NULL,next_attempt_at=clock_timestamp()+INTERVAL '1 hour',
-            settled_at=CASE WHEN v_reason IN ('suppressed','episode_already_attempted','attendance_changed','contact_changed') THEN clock_timestamp() END,
+            settled_at=CASE WHEN NOT v_defer AND v_reason IN ('suppressed','episode_already_attempted','attendance_changed','contact_changed') THEN clock_timestamp() END,
             updated_at=clock_timestamp() WHERE id=d.id RETURNING * INTO d;
         RETURN jsonb_build_object('ready',false,'state',d.state,'reason',d.reason,'message',NULL);
     END IF;

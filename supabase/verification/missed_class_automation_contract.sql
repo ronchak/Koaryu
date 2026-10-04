@@ -348,4 +348,56 @@ BEGIN
     j:=public.enqueue_missed_class_automations_v1(1);
     PERFORM pg_temp.assert_automation((j->>'enqueued')::int=1 AND NOT (j->>'has_more')::bool,'rotation reaches studio beyond first ten');
 END $fairness$;
+-- Explicit internal clock references exercise rollover without changing the
+-- server clock, transaction clock, historical date helper or public RPCs.
+DO $rollover$
+DECLARE studio UUID:=gen_random_uuid(); actor UUID:=gen_random_uuid(); student UUID:=gen_random_uuid();
+    guardian UUID:=gen_random_uuid(); old_session UUID:=gen_random_uuid(); new_session UUID:=gen_random_uuid();
+    before_midnight TIMESTAMPTZ:='2020-01-15 07:59:59+00'; after_midnight TIMESTAMPTZ:='2020-01-15 08:00:01+00';
+    before_row RECORD; after_row RECORD; j JSONB;
+BEGIN
+    INSERT INTO auth.users(id,email) VALUES(actor,actor::text||'@example.invalid');
+    INSERT INTO public.studios(id,name,slug,owner_id,timezone) VALUES(studio,'Rollover fixture',studio::text,actor,'America/Los_Angeles');
+    INSERT INTO public.staff_roles(studio_id,user_id,role) VALUES(studio,actor,'admin');
+    INSERT INTO public.students(id,studio_id,legal_first_name,legal_last_name,email,date_of_birth,hold_start_date)
+        VALUES(student,studio,'Birthday','Fixture','adult@example.invalid','2002-01-15','2020-01-15');
+    INSERT INTO public.guardians(id,studio_id,first_name,last_name,email,is_primary_contact)
+        VALUES(guardian,studio,'Before','Birthday','guardian@example.invalid',true);
+    INSERT INTO public.student_guardians(student_id,guardian_id) VALUES(student,guardian);
+    INSERT INTO public.class_sessions(id,studio_id,name,date,start_time,end_time)
+        VALUES(old_session,studio,'Previous class','2019-12-31','00:00','01:00');
+    INSERT INTO public.attendance(studio_id,session_id,student_id,checked_in_at)
+        VALUES(studio,old_session,student,'2019-12-31 08:00:00+00');
+    SELECT * INTO before_row FROM private.missed_class_automation_candidates(studio,14,student,NULL,before_midnight);
+    SELECT * INTO after_row FROM private.missed_class_automation_candidates(studio,14,student,NULL,after_midnight);
+    PERFORM pg_temp.assert_automation(before_row.reference_date='2020-01-14' AND before_row.days_absent=14
+        AND before_row.recipient_email='guardian@example.invalid' AND before_row.recipient_kind='guardian'
+        AND before_row.skip_reason IS NULL,'one reference before midnight governs age gap and future hold');
+    PERFORM pg_temp.assert_automation(after_row.reference_date='2020-01-15' AND after_row.days_absent=15
+        AND after_row.recipient_email='adult@example.invalid' AND after_row.recipient_kind='student'
+        AND after_row.skip_reason='on_hold','one reference after midnight activates hold and eighteenth birthday');
+    UPDATE public.students SET hold_start_date=NULL WHERE id=student;
+    INSERT INTO public.class_sessions(id,studio_id,name,date,start_time,end_time)
+        VALUES(new_session,studio,'Midnight class','2020-01-15','00:00','01:00');
+    INSERT INTO public.attendance(studio_id,session_id,student_id,checked_in_at)
+        VALUES(studio,new_session,student,'2020-01-15 08:00:00+00');
+    SELECT * INTO before_row FROM private.missed_class_automation_candidates(studio,14,student,NULL,before_midnight);
+    SELECT * INTO after_row FROM private.missed_class_automation_candidates(studio,14,student,NULL,after_midnight);
+    PERFORM pg_temp.assert_automation(before_row.last_attendance_date='2019-12-31' AND before_row.days_absent=14,
+        'future occurrence and checkin excluded at explicit reference');
+    PERFORM pg_temp.assert_automation(after_row.last_attendance_date='2020-01-15' AND after_row.days_absent=0
+        AND after_row.skip_reason='recent_attendance','new occurrence and checkin included at same explicit reference');
+    UPDATE public.attendance SET checked_in_at='2020-01-15 08:00:02+00' WHERE session_id=new_session;
+    SELECT * INTO after_row FROM private.missed_class_automation_candidates(studio,14,student,NULL,after_midnight);
+    PERFORM pg_temp.assert_automation(after_row.last_attendance_date='2019-12-31','checkin after captured reference remains future');
+    PERFORM pg_temp.assert_automation(NOT EXISTS(SELECT 1 FROM private.missed_class_automation_candidates(studio,14,student,NULL,NULL))
+        AND NOT EXISTS(SELECT 1 FROM private.missed_class_automation_candidates(studio,14,student,NULL,'infinity')),
+        'null and nonfinite internal reference fail closed');
+    -- Even an empty preview gets a wall-clock date without the legacy helper.
+    DELETE FROM public.attendance WHERE student_id=student;
+    DELETE FROM public.students WHERE id=student;
+    j:=public.preview_missed_class_automation_v1(studio,actor,14);
+    PERFORM pg_temp.assert_automation(j->>'reference_date'=(clock_timestamp() AT TIME ZONE 'America/Los_Angeles')::date::text
+        AND j->'recipients'='[]'::jsonb,'empty preview has current reference date');
+END $rollover$;
 ROLLBACK;

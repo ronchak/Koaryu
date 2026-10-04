@@ -534,7 +534,235 @@ VALUES('{ids["studio"]}','{ids["session"]}','{student}',now()-INTERVAL '20 days'
         )
         passed("expired claimed rows remain actionable in has_more")
 
-        require(len(cases) == 24, "Expected 24 concurrency cases")
+        # Keep the production helper's OID, signature and ACL while instrumenting
+        # only this owned disposable database. Raw caller reference timestamps,
+        # not call order, determine the synthetic side of midnight.
+        helper_signature = "private.missed_class_automation_candidates(uuid,integer,uuid,uuid,timestamptz)"
+        helper_definition = sql(
+            f"SELECT pg_get_functiondef('{helper_signature}'::regprocedure);"
+        )
+        helper_acl = sql(
+            f"SELECT proacl::text FROM pg_proc WHERE oid='{helper_signature}'::regprocedure;"
+        )
+        source_definition = helper_definition.replace(
+            "FUNCTION private.missed_class_automation_candidates(",
+            "FUNCTION private.automation_candidates_clock_test_source(",
+            1,
+        )
+        require(
+            source_definition != helper_definition,
+            "Clock source copy did not rename the helper",
+        )
+        wrapper_header = helper_definition.split(" LANGUAGE sql", 1)[0]
+        require(
+            wrapper_header != helper_definition,
+            "Unexpected eligibility helper language",
+        )
+        sql(
+            source_definition
+            + ";\n"
+            + """
+REVOKE ALL ON FUNCTION private.automation_candidates_clock_test_source(uuid,integer,uuid,uuid,timestamptz) FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION private.automation_candidates_clock_test_source(uuid,integer,uuid,uuid,timestamptz) TO service_role;
+CREATE TABLE private.automation_clock_test_control(studio_id uuid PRIMARY KEY,cutoff timestamptz);
+CREATE TABLE private.automation_clock_test_observations(studio_id uuid,provided_at timestamptz,observed_at timestamptz,mapped_at timestamptz);
+REVOKE ALL ON private.automation_clock_test_control,private.automation_clock_test_observations FROM PUBLIC,anon,authenticated,service_role;
+GRANT SELECT ON private.automation_clock_test_control TO service_role;
+GRANT INSERT ON private.automation_clock_test_observations TO service_role;
+"""
+        )
+        sql(
+            wrapper_header
+            + """ LANGUAGE plpgsql VOLATILE SECURITY INVOKER SET search_path='' AS $clock_test$
+DECLARE v_cutoff timestamptz; v_mapped timestamptz;
+BEGIN
+    SELECT cutoff INTO v_cutoff FROM private.automation_clock_test_control WHERE studio_id=p_studio_id;
+    IF FOUND THEN
+        v_mapped:=CASE WHEN v_cutoff IS NOT NULL AND p_reference_at>=v_cutoff
+            THEN '2020-01-15 08:00:01+00'::timestamptz ELSE '2020-01-15 07:59:59+00'::timestamptz END;
+        INSERT INTO private.automation_clock_test_observations VALUES(p_studio_id,p_reference_at,clock_timestamp(),v_mapped);
+    ELSE v_mapped:=p_reference_at;
+    END IF;
+    RETURN QUERY SELECT * FROM private.automation_candidates_clock_test_source(
+        p_studio_id,p_inactivity_days,p_student_id,p_delivery_id,v_mapped);
+END $clock_test$;"""
+        )
+        try:
+            for rollover in ("hold", "birthday", "gap"):
+                ids = fixture()
+                guardian_email = "guardian-" + ids["student"] + "@example.invalid"
+                sql(
+                    f"UPDATE public.studios SET timezone='America/Los_Angeles' WHERE id='{ids['studio']}'; "
+                    f"UPDATE public.class_sessions SET date='2019-12-31' WHERE id='{ids['session']}'; "
+                    f"UPDATE public.attendance SET checked_in_at='2019-12-31 08:00:00+00' WHERE student_id='{ids['student']}';"
+                )
+                if rollover == "birthday":
+                    guardian = str(uuid4())
+                    sql(
+                        f"UPDATE public.students SET date_of_birth='2002-01-15' WHERE id='{ids['student']}'; "
+                        f"INSERT INTO public.guardians(id,studio_id,first_name,last_name,email,is_primary_contact) VALUES('{guardian}','{ids['studio']}','Synthetic','Guardian','{guardian_email}',true); "
+                        f"INSERT INTO public.student_guardians(student_id,guardian_id) VALUES('{ids['student']}','{guardian}');"
+                    )
+                prepare(ids)
+                if rollover == "hold":
+                    sql(
+                        f"UPDATE public.students SET hold_start_date='2020-01-15' WHERE id='{ids['student']}';"
+                    )
+                sql(
+                    f"INSERT INTO private.automation_clock_test_control VALUES('{ids['studio']}',NULL);"
+                )
+                before_email = (
+                    guardian_email if rollover == "birthday" else ids["email"]
+                )
+                lock_statement = (
+                    f"SELECT pg_advisory_xact_lock(hashtextextended('{ids['studio']}:{before_email}',0)); "
+                    "SELECT '{\"locked\":true}'::jsonb;"
+                )
+                first = session(f"rollover_{rollover}_lock", lock_statement, hold=True)
+                ready(first)
+                other_lock = None
+                if rollover == "birthday":
+                    other_lock = session(
+                        "rollover_new_recipient_lock",
+                        f"SELECT pg_advisory_xact_lock(hashtextextended('{ids['studio']}:{ids['email']}',0)); SELECT '{{\"locked\":true}}'::jsonb;",
+                        hold=True,
+                    )
+                    ready(other_lock)
+                second = session(f"rollover_{rollover}_begin", begin(ids))
+                observation = blocked(first, second, advisory=True)
+                sql(
+                    f"UPDATE private.automation_clock_test_control SET cutoff=clock_timestamp() WHERE studio_id='{ids['studio']}';"
+                )
+                release(first)
+                answer = finished(second)
+                clocks = json.loads(
+                    sql(
+                        f"SELECT jsonb_build_object('count',count(*),'before',count(*) FILTER(WHERE o.provided_at<c.cutoff),"
+                        "'after',count(*) FILTER(WHERE o.provided_at>=c.cutoff),'supplied_before_observed',bool_and(o.provided_at<=o.observed_at),"
+                        "'dates',jsonb_agg((o.mapped_at AT TIME ZONE 'America/Los_Angeles')::date ORDER BY o.observed_at)) "
+                        "FROM private.automation_clock_test_observations o JOIN private.automation_clock_test_control c USING(studio_id) "
+                        f"WHERE o.studio_id='{ids['studio']}';"
+                    )
+                )
+                require(
+                    clocks
+                    == {
+                        "count": 2,
+                        "before": 1,
+                        "after": 1,
+                        "supplied_before_observed": True,
+                        "dates": ["2020-01-14", "2020-01-15"],
+                    },
+                    f"Begin did not capture a fresh clock after its observed advisory wait: {clocks}",
+                )
+                state = json.loads(
+                    sql(
+                        f"SELECT jsonb_build_object('state',state,'attempts',attempts,'attempted',attempted_at IS NOT NULL,'token',unsubscribe_token IS NOT NULL) FROM public.automation_deliveries WHERE id='{ids['delivery']}';"
+                    )
+                )
+                if rollover == "gap":
+                    require(
+                        answer["ready"] and answer["message"]["days_absent"] == 15,
+                        "Dispatch used previous-day attendance gap",
+                    )
+                else:
+                    require(
+                        not answer["ready"]
+                        and answer["reason"]
+                        == ("on_hold" if rollover == "hold" else "contact_changed")
+                        and state
+                        == {
+                            "state": "queued",
+                            "attempts": 0,
+                            "attempted": False,
+                            "token": False,
+                        },
+                        "Rollover must defer without spending an episode",
+                    )
+                if other_lock:
+                    # Begin returned while the new key is still held. It did not
+                    # dispatch under the old key or acquire a second key.
+                    require(
+                        other_lock["process"].poll() is None,
+                        "Second recipient lock was not retained",
+                    )
+                    release(other_lock)
+                    sql(
+                        f"UPDATE public.automation_deliveries SET next_attempt_at=now() WHERE id='{ids['delivery']}';"
+                    )
+                    new_claim = json.loads(sql(claim(ids)))["items"][0]
+                    require(
+                        new_claim["id"] == ids["delivery"],
+                        "Birthday deferral lost its stable unsent identity",
+                    )
+                    ids["token"] = new_claim["claim_token"]
+                    resumed = json.loads(sql(begin(ids)))
+                    require(
+                        resumed["ready"]
+                        and resumed["message"]["recipient_email"] == ids["email"],
+                        "Deferred birthday route did not recover on a later claim",
+                    )
+                passed(
+                    f"{rollover} rollover after observed advisory wait",
+                    lock=observation,
+                    clock=clocks,
+                )
+        finally:
+            sql(helper_definition)
+            require(
+                sql(f"SELECT pg_get_functiondef('{helper_signature}'::regprocedure);")
+                == helper_definition,
+                "Clock instrumentation did not restore the exact helper definition",
+            )
+            require(
+                sql(
+                    f"SELECT proacl::text FROM pg_proc WHERE oid='{helper_signature}'::regprocedure;"
+                )
+                == helper_acl,
+                "Clock instrumentation changed helper privileges",
+            )
+            sql(
+                "DROP FUNCTION private.automation_candidates_clock_test_source(uuid,integer,uuid,uuid,timestamptz); "
+                "DROP TABLE private.automation_clock_test_observations,private.automation_clock_test_control;"
+            )
+
+        for expiry in ("trial", "claim"):
+            ids = fixture()
+            prepare(ids)
+            if expiry == "trial":
+                sql(
+                    f"UPDATE public.studio_subscriptions SET status='trialing',trial_end=clock_timestamp()+INTERVAL '2 seconds' WHERE studio_id='{ids['studio']}';"
+                )
+            else:
+                sql(
+                    f"UPDATE public.automation_deliveries SET lease_expires_at=clock_timestamp()+INTERVAL '2 seconds' WHERE id='{ids['delivery']}';"
+                )
+            first = session(
+                f"advisory_{expiry}_holder",
+                f"SELECT pg_advisory_xact_lock(hashtextextended('{ids['studio']}:{ids['email']}',0)); SELECT '{{\"locked\":true}}'::jsonb;",
+                hold=True,
+            )
+            ready(first)
+            second = session(f"advisory_{expiry}_waiter", begin(ids))
+            observation = blocked(first, second, advisory=True)
+            sql("SELECT pg_sleep(2.1);")
+            release(first)
+            answer = finished(second)
+            require(
+                not answer["ready"]
+                and (expiry == "claim" or answer["reason"] == "subscription_required"),
+                "Expired eligibility survived the final advisory wait",
+            )
+            require(
+                sql(
+                    f"SELECT attempts=0 AND attempted_at IS NULL AND unsubscribe_token IS NULL FROM public.automation_deliveries WHERE id='{ids['delivery']}';"
+                )
+                == "t",
+                "Expiry after advisory wait spent an episode",
+            )
+            passed(f"{expiry} expires during recipient advisory wait", lock=observation)
+
+        require(len(cases) == 29, "Expected 29 concurrency cases")
         evidence = {
             "script_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
             "cases": cases,
@@ -542,7 +770,7 @@ VALUES('{ids["studio"]}','{ids["session"]}','{student}',now()-INTERVAL '20 days'
         (local.temporary / "automation-concurrency-evidence.json").write_text(
             json.dumps(evidence, indent=2) + "\n"
         )
-        print("[automation concurrency] PASS 24 PostgreSQL session cases", flush=True)
+        print("[automation concurrency] PASS 29 PostgreSQL session cases", flush=True)
     finally:
         for item in children:
             process = item["process"]
