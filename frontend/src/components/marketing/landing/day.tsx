@@ -10,10 +10,10 @@ export function Day() {
   return (
     <section id={day.id} className={styles.day} aria-labelledby="day-title">
       <header className={styles.dayHeader}>
-        <p className={styles.kicker}>{day.kicker}</p>
         <h2 id="day-title" className={styles.sectionTitle}>
           {day.title}
         </h2>
+        <p className={styles.sectionLede}>{day.lede}</p>
         <nav className={styles.dayLinks} aria-label="Product guides">
           {day.links.map((link) => (
             <LandingTextLink key={link.href} {...link} />

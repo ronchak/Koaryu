@@ -38,7 +38,6 @@ describe("marketing content contract", () => {
     assert.deepEqual(
       [
         content.hero.id,
-        content.problem.id,
         content.studio.id,
         content.product.id,
         content.day.id,
@@ -46,28 +45,36 @@ describe("marketing content contract", () => {
         content.faq.id,
         content.finale.id,
       ],
-      ["welcome", "the-problem", "studio", "product", "features", "pricing", "faq", "begin"],
+      ["welcome", "studio", "product", "features", "pricing", "faq", "begin"],
     );
-    assert.equal(content.problem.scraps.length, 6);
-    assert.deepEqual(content.studio.doors, ["Step", "inside."]);
     assert.deepEqual(JSON.parse(JSON.stringify(content)), content);
     assertPlainJsonValue(content);
   });
 
-  it("keeps the class demo honest: one student finishes their requirement, and it is labeled", () => {
+  it("keeps the hands-on demo honest: one student can finish tonight, and it is labeled", () => {
     const { studio } = landingPageContent;
-    assert.equal(studio.students.length, 5);
+    assert.equal(studio.students.length, 6);
+    assert.equal(new Set(studio.students.map((student) => student.id)).size, 6);
     for (const student of studio.students) {
       assert.ok(student.attended < student.required, `${student.name} starts below requirement`);
     }
     const finishers = studio.students.filter(
-      (student) => student.attended + 1 === student.required,
+      (student) =>
+        student.attended + 1 === student.required &&
+        student.daysAtRank >= student.daysRequired &&
+        !student.needsApproval,
     );
     assert.deepEqual(
-      finishers.map((student) => student.name),
+      finishers.map((student) => student.id),
       [studio.ready.student],
     );
     assert.match(studio.caption, /sample students/);
+    assert.match(studio.ready.decision, /instructor's call/);
+    assert.equal(new Set(studio.leads.map((lead) => lead.id)).size, studio.leads.length);
+    assert.deepEqual(
+      studio.tasks.map((task) => task.id),
+      ["mark", "ready", "lead"],
+    );
   });
 
   it("preserves direct destinations and states current product limits once, plainly", () => {
@@ -171,14 +178,12 @@ describe("marketing content contract", () => {
       "utf8",
     );
     for (const section of [
+      "HeroArt",
       "Hero",
-      "Problem",
-      "Studio",
+      "TryIt",
       "Product",
       "Day",
-      "Breather",
       "Pricing",
-      "MatBand",
       "Faq",
       "Finale",
     ]) {

@@ -1,4 +1,4 @@
-import Image, { getImageProps } from "next/image";
+import { getImageProps } from "next/image";
 import Link from "next/link";
 
 import { landingPageContent } from "../../../lib/landing-page-content.ts";
@@ -6,57 +6,34 @@ import { MarketingBrandLink } from "../marketing-primitives";
 import { LandingAction } from "./actions";
 import styles from "./landing.module.css";
 
-/** The open sky from the story, as a quiet band between the product and the price. */
-export function Breather() {
-  return (
-    <section className={styles.breather} aria-label="About Koaryu">
-      <div className={styles.breatherArt} aria-hidden="true">
-        <Image src="/marketing/scenes/sky-wide.webp" alt="" fill sizes="100vw" />
-      </div>
-      <p className={styles.breatherLine}>{landingPageContent.breather.line}</p>
-    </section>
-  );
-}
-
 export function Pricing() {
   const { pricing } = landingPageContent;
   return (
     <section id={pricing.id} className={styles.pricing} aria-labelledby="pricing-title">
-      <p className={styles.kicker}>{pricing.kicker}</p>
-      <h2 id="pricing-title" className={styles.sectionTitle}>
-        {pricing.title}
-      </h2>
-      <div className={styles.priceBlock}>
+      <div className={styles.priceLead}>
+        <h2 id="pricing-title" className={styles.sectionTitle}>
+          {pricing.title}
+        </h2>
         <p className={styles.price} data-price-amount={pricing.amount}>
           {pricing.displayPrice}
         </p>
-        <span className={styles.seal} data-size="large" aria-hidden="true">
-          All in
-        </span>
+        <p className={styles.pricePeriod}>{pricing.period}</p>
       </div>
-      <p className={styles.pricePeriod}>{pricing.period}</p>
-      <ul className={styles.included} aria-label="Included">
-        {pricing.included.map((item) => (
-          <li key={item}>{item}</li>
-        ))}
-      </ul>
-      <p className={styles.priceNote}>{pricing.note}</p>
-      <div className={styles.actions} data-align="center">
-        <LandingAction {...pricing.setupAction} variant="primary" />
+      <div className={styles.priceDetail}>
+        <ul className={styles.included} aria-label="Included">
+          {pricing.included.map((item) => (
+            <li key={item}>{item}</li>
+          ))}
+        </ul>
+        <p className={styles.priceNote}>{pricing.note}</p>
+        <div className={styles.actions}>
+          <LandingAction {...pricing.setupAction} variant="primary" />
+          <Link className={styles.paymentsLink} href={pricing.paymentsLink.href}>
+            {pricing.paymentsLink.label}
+          </Link>
+        </div>
       </div>
-      <p className={styles.paymentsLink}>
-        <Link href={pricing.paymentsLink.href}>{pricing.paymentsLink.label}</Link>
-      </p>
     </section>
-  );
-}
-
-/** The woven mat from the story, as a strip of floor before the questions. */
-export function MatBand() {
-  return (
-    <div className={styles.matBand} aria-hidden="true">
-      <Image src="/marketing/scenes/mat-wide.webp" alt="" fill sizes="100vw" />
-    </div>
   );
 }
 
@@ -65,7 +42,6 @@ export function Faq() {
   return (
     <section id={faq.id} className={styles.faq} aria-labelledby="faq-title">
       <header className={styles.faqHeader}>
-        <p className={styles.kicker}>{faq.kicker}</p>
         <h2 id="faq-title" className={styles.sectionTitle}>
           {faq.title}
         </h2>

@@ -3,7 +3,6 @@ import { landingPageContent } from "../../../lib/landing-page-content.ts";
 /** Every section and FAQ topic on the page that a link may target. */
 export const LANDING_TARGETS: ReadonlySet<string> = new Set([
   landingPageContent.hero.id,
-  landingPageContent.problem.id,
   landingPageContent.studio.id,
   landingPageContent.product.id,
   landingPageContent.day.id,
@@ -18,6 +17,7 @@ export const LANDING_TARGETS: ReadonlySet<string> = new Set([
  * now carries the same content, so shared links keep working.
  */
 export const LANDING_HASH_ALIASES = Object.freeze({
+  "the-problem": "studio",
   "studio-view": "studio",
   "use-cases": "features",
   "signals-gather": "features",

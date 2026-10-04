@@ -22,20 +22,47 @@ export interface LandingDetailReference {
   title: string;
 }
 
-export type BeltRank = "white" | "yellow" | "orange" | "green" | "blue" | "brown" | "black";
+export type BeltRank = "white" | "yellow" | "orange" | "green";
 
-/** A scrap of the paperwork a studio runs on before Koaryu. */
-export type ProblemScrap =
-  | { kind: "sheet"; title: string; lines: readonly string[] }
-  | { kind: "note"; text: string }
-  | { kind: "receipt"; text: string };
-
+/** A student in the hands-on class demo. Counts are before tonight's class. */
 export interface DemoStudent {
+  id: string;
   name: string;
   belt: BeltRank;
+  nextBelt: BeltRank;
   /** Classes attended toward the next rank before this class. */
   attended: number;
   required: number;
+  daysAtRank: number;
+  daysRequired: number;
+  /** Whether the next rank also needs an instructor's sign-off once the counts are met. */
+  needsApproval: boolean;
+  guardian: string;
+  /** The last few classes, oldest first. */
+  history: readonly ("present" | "late" | "absent")[];
+}
+
+export type DemoLeadStage =
+  "inquiry" | "trial_scheduled" | "trial_completed" | "offer_sent" | "enrolled";
+
+export type DemoLeadSource = "walk_in" | "referral" | "social" | "search" | "website" | "other";
+
+/** A lead in the demo's follow-up queue. `dueIn` is days from today; negative is overdue. */
+export interface DemoLead {
+  id: string;
+  name: string;
+  stage: DemoLeadStage;
+  program: string;
+  source: DemoLeadSource;
+  dueIn: number;
+  owner: string | null;
+  minor: boolean;
+}
+
+export interface DemoTask {
+  id: "mark" | "ready" | "lead";
+  label: string;
+  detail: string;
 }
 
 export interface DayMoment {
@@ -149,73 +176,183 @@ const faqGroups: readonly FaqGroup[] = [
 ];
 
 /**
- * The landing page, beat by beat: the hills, the paperwork, stepping inside the
- * dojo to take a class, the real belt tracker, a day at the studio, the price,
- * questions, and the class seated at the end.
+ * The landing page, beat by beat: the headline over the evening hills, a working
+ * miniature of Koaryu to try on tonight's class, the real app at full size, a day
+ * at the studio, the price, questions, and the class seated at the end.
  */
 export const landingPageContent = {
   hero: {
     id: "welcome",
-    kicker: "For independent martial arts schools",
     headline: ["Run the school.", "Teach the art."],
-    lede: `Students, ranks, attendance and trial follow-ups in one calm place, so the mat gets your attention. ${formatPublicPlatformPrice()} per studio per month.`,
+    lede: `Students, ranks, attendance and trial follow-ups in one calm place. ${formatPublicPlatformPrice()} per studio per month.`,
     actions: [
       { label: "Create an account", href: "/signup" },
-      { label: "Step inside", href: "#studio" },
+      { label: "See pricing", href: "#pricing" },
     ],
-  },
-  problem: {
-    id: "the-problem",
-    title: "Your studio is not a spreadsheet.",
-    lede: "Yet the roster, belt ranks, trial follow-ups and payment notes still live in five of them.",
-    scraps: [
-      {
-        kind: "sheet",
-        title: "Roster_FINAL (3).xlsx",
-        lines: ["Kim, Daniel · orange?", "Ali, Zara · white", "Mori, Hana · red tip"],
-      },
-      { kind: "note", text: "Who's ready for yellow??" },
-      {
-        kind: "sheet",
-        title: "Trials · September",
-        lines: ["Maya C. · call back Thu", "Leo P. · left voicemail"],
-      },
-      { kind: "receipt", text: "Lee family · paid cash · Oct?" },
-      {
-        kind: "sheet",
-        title: "Tue 6pm Kids · attendance",
-        lines: ["✓ ✓ ✗ ✓ ✓ ✓", "✓ ✗ ✓ ✓ ✓ ✓"],
-      },
-      { kind: "note", text: "Belt test Sat · print the list" },
-    ],
-    resolution: "One place for all of it.",
   },
   studio: {
     id: "studio",
-    doors: ["Step", "inside."],
-    kicker: "Attendance, connected",
-    title: "Mark a class. Watch ranks move.",
-    lede: "Every class a student attends counts toward their next rank's requirement. Koaryu keeps the tally; the decision to promote stays with you.",
-    session: "Tuesday · 6:00 PM · Kids Karate",
+    title: "Try it on tonight's class.",
+    lede: "A working miniature of Koaryu. Tap around; nothing you change is saved.",
+    tasks: [
+      {
+        id: "mark",
+        label: "Take attendance",
+        detail: "Tap a student to cycle Present, Late and Absent.",
+      },
+      {
+        id: "ready",
+        label: "Finish Maya's requirement",
+        detail: "She is one class short of Yellow Belt.",
+      },
+      {
+        id: "lead",
+        label: "Add a trial lead",
+        detail: "Then work the follow-up queue.",
+      },
+    ],
+    studioName: "Riverside Karate",
+    session: {
+      name: "Kids Karate",
+      day: "Tuesday",
+      time: "6:00 – 6:45 PM",
+      capacity: 12,
+    },
+    programs: ["Kids Karate", "Teen & Adult Karate"],
     students: [
-      { name: "Zara Ali", belt: "white", attended: 3, required: 8 },
-      { name: "Noah Bennett", belt: "yellow", attended: 5, required: 10 },
-      { name: "Hana Mori", belt: "orange", attended: 9, required: 12 },
-      { name: "Liam Johnson", belt: "white", attended: 6, required: 8 },
-      { name: "Maya Chen", belt: "white", attended: 7, required: 8 },
+      {
+        id: "zara",
+        name: "Zara Ali",
+        belt: "white",
+        nextBelt: "yellow",
+        attended: 3,
+        required: 8,
+        daysAtRank: 41,
+        daysRequired: 60,
+        needsApproval: false,
+        guardian: "Samira Ali",
+        history: ["present", "absent", "present", "late", "present"],
+      },
+      {
+        id: "noah",
+        name: "Noah Bennett",
+        belt: "yellow",
+        nextBelt: "orange",
+        attended: 5,
+        required: 10,
+        daysAtRank: 72,
+        daysRequired: 60,
+        needsApproval: false,
+        guardian: "Claire Bennett",
+        history: ["present", "present", "absent", "present", "present"],
+      },
+      {
+        id: "hana",
+        name: "Hana Mori",
+        belt: "orange",
+        nextBelt: "green",
+        attended: 9,
+        required: 12,
+        daysAtRank: 88,
+        daysRequired: 90,
+        needsApproval: true,
+        guardian: "Kenji Mori",
+        history: ["present", "present", "present", "late", "present"],
+      },
+      {
+        id: "liam",
+        name: "Liam Johnson",
+        belt: "white",
+        nextBelt: "yellow",
+        attended: 6,
+        required: 8,
+        daysAtRank: 55,
+        daysRequired: 60,
+        needsApproval: false,
+        guardian: "Dana Johnson",
+        history: ["absent", "present", "present", "present", "absent"],
+      },
+      {
+        id: "maya",
+        name: "Maya Chen",
+        belt: "white",
+        nextBelt: "yellow",
+        attended: 7,
+        required: 8,
+        daysAtRank: 64,
+        daysRequired: 60,
+        needsApproval: false,
+        guardian: "Wei Chen",
+        history: ["present", "present", "late", "present", "present"],
+      },
+      {
+        id: "omar",
+        name: "Omar Haddad",
+        belt: "yellow",
+        nextBelt: "orange",
+        attended: 8,
+        required: 10,
+        daysAtRank: 96,
+        daysRequired: 60,
+        needsApproval: false,
+        guardian: "Lina Haddad",
+        history: ["present", "late", "present", "present", "present"],
+      },
     ],
     ready: {
-      student: "Maya Chen",
-      nextRank: "Yellow belt",
-      message: "Maya Chen is ready to test for Yellow belt.",
+      student: "maya",
+      message: "Maya Chen is ready to test for Yellow Belt.",
+      decision: "Requirements met. Whether she tests is the instructor's call.",
     },
-    caption: "Illustration with sample students.",
+    leads: [
+      {
+        id: "sarah",
+        name: "Sarah Kim",
+        stage: "offer_sent",
+        program: "Kids Karate",
+        source: "walk_in",
+        dueIn: -2,
+        owner: null,
+        minor: true,
+      },
+      {
+        id: "david",
+        name: "David Chen",
+        stage: "inquiry",
+        program: "Teen & Adult Karate",
+        source: "website",
+        dueIn: -1,
+        owner: "Ana Reyes",
+        minor: false,
+      },
+      {
+        id: "maria",
+        name: "Maria Gonzalez",
+        stage: "trial_scheduled",
+        program: "Kids Karate",
+        source: "referral",
+        dueIn: 0,
+        owner: null,
+        minor: true,
+      },
+      {
+        id: "tyler",
+        name: "Tyler Brooks",
+        stage: "trial_completed",
+        program: "Teen & Adult Karate",
+        source: "social",
+        dueIn: 2,
+        owner: "Ana Reyes",
+        minor: false,
+      },
+    ],
+    newLead: { name: "Jordan Rivera", program: "Kids Karate", source: "walk_in", dueIn: 1 },
+    caption: "Interactive demo with sample students and leads.",
   },
   product: {
     id: "product",
-    kicker: "The belt tracker",
-    title: "Know who is ready for their next belt.",
-    lede: "Requirements you define for each program: classes, time at rank and instructor approval. See how many students meet every one, rank by rank.",
+    title: "Now, the real thing.",
+    lede: "That was a miniature. This is Koaryu's belt tracker at full size: requirements you define for each program, and who meets every one, rank by rank. It runs in the browser, so the same screen fits a phone.",
     image: {
       src: "/marketing/product/belt-tracker.webp",
       width: 2400,
@@ -227,8 +364,8 @@ export const landingPageContent = {
   },
   day: {
     id: "features",
-    kicker: "A day at the studio",
     title: "Everything between classes.",
+    lede: "A day at the studio, from the first coffee to the last lock-up.",
     moments: [
       {
         time: "7:30 AM",
@@ -284,12 +421,8 @@ export const landingPageContent = {
       { label: "Workflow guides", href: "/use-cases" },
     ],
   },
-  breather: {
-    line: "Built for independent schools, the way a dojo actually runs.",
-  },
   pricing: {
     id: "pricing",
-    kicker: "Pricing",
     title: "One price. Every student.",
     amount: publicPlatformPriceAmount(),
     displayPrice: formatPublicPlatformPrice(),
@@ -309,7 +442,6 @@ export const landingPageContent = {
   },
   faq: {
     id: "faq",
-    kicker: "FAQ",
     title: "Questions owners ask",
     groups: faqGroups,
   },
@@ -329,32 +461,26 @@ export const landingPageContent = {
 } as const satisfies {
   hero: {
     id: string;
-    kicker: string;
     headline: readonly [string, string];
     lede: string;
     actions: readonly [LandingAction, LandingAction];
   };
-  problem: {
-    id: string;
-    title: string;
-    lede: string;
-    scraps: readonly ProblemScrap[];
-    resolution: string;
-  };
   studio: {
     id: string;
-    doors: readonly [string, string];
-    kicker: string;
     title: string;
     lede: string;
-    session: string;
+    tasks: readonly DemoTask[];
+    studioName: string;
+    session: { name: string; day: string; time: string; capacity: number };
+    programs: readonly string[];
     students: readonly DemoStudent[];
-    ready: { student: string; nextRank: string; message: string };
+    ready: { student: string; message: string; decision: string };
+    leads: readonly DemoLead[];
+    newLead: { name: string; program: string; source: DemoLeadSource; dueIn: number };
     caption: string;
   };
   product: {
     id: string;
-    kicker: string;
     title: string;
     lede: string;
     image: {
@@ -368,15 +494,13 @@ export const landingPageContent = {
   };
   day: {
     id: string;
-    kicker: string;
     title: string;
+    lede: string;
     moments: readonly DayMoment[];
     links: readonly [LandingAction, LandingAction];
   };
-  breather: { line: string };
   pricing: {
     id: string;
-    kicker: string;
     title: string;
     amount: string;
     displayPrice: string;
@@ -386,7 +510,7 @@ export const landingPageContent = {
     setupAction: LandingAction;
     paymentsLink: LandingAction;
   };
-  faq: { id: string; kicker: string; title: string; groups: readonly FaqGroup[] };
+  faq: { id: string; title: string; groups: readonly FaqGroup[] };
   finale: {
     id: string;
     title: string;

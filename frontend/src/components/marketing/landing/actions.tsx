@@ -21,6 +21,7 @@ export function LandingAction({
       href={href}
       prefetch={prefetchFor(href)}
       variant={variant}
+      data-variant={variant}
       className={styles.action}
     >
       {label}

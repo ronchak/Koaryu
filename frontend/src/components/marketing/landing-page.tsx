@@ -1,28 +1,26 @@
-import { Instrument_Serif } from "next/font/google";
+import { Archivo } from "next/font/google";
 
 import { BackendWarmup } from "@/components/backend-warmup";
-import { Breather, Faq, Finale, MatBand, Pricing } from "@/components/marketing/landing/closing";
+import { Faq, Finale, Pricing } from "@/components/marketing/landing/closing";
 import { Day } from "@/components/marketing/landing/day";
-import { Hero } from "@/components/marketing/landing/hero";
+import { Hero, HeroArt } from "@/components/marketing/landing/hero";
 import styles from "@/components/marketing/landing/landing.module.css";
 import { LegacyHashRedirect } from "@/components/marketing/landing/legacy-hash-redirect";
-import { Problem } from "@/components/marketing/landing/problem";
 import { Product } from "@/components/marketing/landing/product";
-import { Studio } from "@/components/marketing/landing/studio";
+import { TryIt } from "@/components/marketing/landing/try-it";
 import { MarketingRoot } from "@/components/marketing/marketing-root";
 import { MarketingHeader } from "@/components/marketing/public-pages";
 
-const display = Instrument_Serif({
-  weight: "400",
-  style: ["normal", "italic"],
+const archivo = Archivo({
   subsets: ["latin"],
-  variable: "--font-display",
+  axes: ["wdth"],
+  variable: "--font-archivo",
   display: "swap",
 });
 
 export function LandingPage() {
   return (
-    <MarketingRoot layout="document" className={`${styles.root} ${display.variable}`}>
+    <MarketingRoot layout="document" className={`${styles.root} ${archivo.variable}`}>
       <BackendWarmup />
       <LegacyHashRedirect />
       <div className={styles.beltProgress} aria-hidden="true" />
@@ -33,14 +31,14 @@ export function LandingPage() {
         <MarketingHeader />
       </div>
       <main id="main-content" tabIndex={-1} className={styles.main}>
-        <Hero />
-        <Problem />
-        <Studio />
+        <div className={styles.opening}>
+          <HeroArt />
+          <Hero />
+          <TryIt />
+        </div>
         <Product />
         <Day />
-        <Breather />
         <Pricing />
-        <MatBand />
         <Faq />
         <Finale />
       </main>

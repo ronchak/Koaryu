@@ -9,44 +9,135 @@ import {
   resolveLegacyHash,
 } from "../src/components/marketing/landing/legacy-hash.ts";
 import {
-  STUDIO_FINISHED,
-  STUDIO_MARKS,
-  STUDIO_READY,
-  studioStep,
-} from "../src/components/marketing/landing/studio-model.ts";
+  MARK_CYCLE,
+  beltRegister,
+  countsTowardRank,
+  createTryReducer,
+  describeChange,
+  followUpLabel,
+  initialTryState,
+  leadBand,
+  leadTotals,
+  nextAction,
+  nextMark,
+  sessionSummary,
+  stageCounts,
+  studentProgress,
+  tasksDone,
+} from "../src/components/marketing/landing/try-model.ts";
 
 const landingDir = new URL("../src/components/marketing/landing/", import.meta.url);
-const css = readFileSync(new URL("landing.module.css", landingDir), "utf8");
+const css = ["landing.module.css", "try.module.css"]
+  .map((name) => readFileSync(new URL(name, landingDir), "utf8"))
+  .join("\n");
+const pageCss = readFileSync(new URL("landing.module.css", landingDir), "utf8");
 const sources = Object.fromEntries(
   readdirSync(landingDir)
-    .filter((name) => name.endsWith(".tsx"))
+    .filter((name) => /\.tsx?$/.test(name))
     .map((name) => [name, readFileSync(new URL(name, landingDir), "utf8")]),
 );
 const allSource = Object.values(sources).join("\n");
 
-describe("Landing class demo", () => {
-  it("marks each student in turn after the doors open, then shows the result", () => {
-    assert.equal(STUDIO_MARKS.length, landingPageContent.studio.students.length);
-    assert.deepEqual(
-      [...STUDIO_MARKS],
-      [...STUDIO_MARKS].sort((a, b) => a - b),
-    );
-    assert.ok(STUDIO_MARKS[0] > 0.25, "the shoji doors finish opening before the first mark");
-    assert.ok(STUDIO_READY > STUDIO_MARKS.at(-1));
-    assert.equal(studioStep(0), 0);
-    assert.equal(studioStep(STUDIO_MARKS[0]), 1);
-    assert.equal(studioStep(STUDIO_MARKS.at(-1)), STUDIO_MARKS.length);
-    assert.equal(studioStep(1), STUDIO_FINISHED);
-    let previous = 0;
-    for (let step = 0; step <= 100; step += 1) {
-      const value = studioStep(step / 100);
-      assert.ok(value >= previous, "steps never go backwards while scrolling down");
-      previous = value;
-    }
+const { students, leads, ready, newLead } = landingPageContent.studio;
+const reduce = createTryReducer(students, leads);
+const start = initialTryState(students, leads);
+const cycle = (state, id, times = 1) =>
+  Array.from({ length: times }).reduce((current) => reduce(current, { type: "cycle", id }), state);
+
+describe("Try it: attendance and ranks", () => {
+  it("cycles attendance the way Koaryu does and counts Present and Late", () => {
+    assert.deepEqual([...MARK_CYCLE], ["unmarked", "present", "late", "absent"]);
+    assert.equal(nextMark("absent"), "unmarked");
+    assert.deepEqual(MARK_CYCLE.map(countsTowardRank), [false, true, true, false]);
+    assert.equal(cycle(start, "zara", 4).marks.zara, "unmarked");
   });
 
-  it("renders the finished class for server HTML and visitors without script", () => {
-    assert.match(sources["studio.tsx"], /useState\(STUDIO_FINISHED\)/);
+  it("starts unmarked, with nobody ready, and leaves the state alone for unknown students", () => {
+    assert.deepEqual(sessionSummary(start.marks), { present: 0, absent: 0, unmarked: 6 });
+    assert.equal(beltRegister(students, start.marks).ready, 0);
+    assert.equal(reduce(start, { type: "cycle", id: "nobody" }), start);
+  });
+
+  it("makes Maya ready to test on her eighth class, Present or Late, and not when Absent", () => {
+    const maya = students.find((student) => student.id === ready.student);
+    assert.equal(studentProgress(maya, "unmarked").standing, "progress");
+    assert.equal(studentProgress(maya, "present").standing, "ready");
+    assert.equal(studentProgress(maya, "late").standing, "ready");
+    assert.equal(studentProgress(maya, "absent").standing, "progress");
+    const marked = cycle(start, "maya");
+    assert.equal(beltRegister(students, marked.marks).ready, 1);
+    assert.match(
+      describeChange(start, marked, { type: "cycle", id: "maya" }, students),
+      /Ready to test for Yellow Belt/,
+    );
+    assert.deepEqual(sessionSummary(cycle(marked, "liam", 3).marks), {
+      present: 1,
+      absent: 1,
+      unmarked: 4,
+    });
+  });
+
+  it("never makes anyone else ready tonight, and holds approval-gated ranks for sign-off", () => {
+    for (const student of students) {
+      if (student.id === ready.student) continue;
+      for (const mark of MARK_CYCLE) {
+        assert.notEqual(studentProgress(student, mark).standing, "ready", student.name);
+      }
+    }
+    const hana = students.find((student) => student.id === "hana");
+    assert.equal(
+      studentProgress({ ...hana, attended: 11, daysAtRank: 90 }, "present").standing,
+      "approval",
+    );
+  });
+});
+
+describe("Try it: the follow-up queue", () => {
+  it("queues leads by how overdue they are, with Koaryu's next actions", () => {
+    assert.deepEqual(leads.map(leadBand), ["overdue-1", "overdue-1", "today", "upcoming"]);
+    assert.deepEqual(leadTotals(leads), {
+      overdue: 2,
+      dueToday: 1,
+      unassigned: 2,
+      active: 4,
+      enrolled: 0,
+    });
+    assert.equal(nextAction("trial_scheduled"), "Confirm trial attendance");
+    assert.equal(followUpLabel(leads[0]), "2d overdue · Sun");
+    assert.equal(followUpLabel(leads[3]), "Due Thu");
+  });
+
+  it("adds a trial lead as an inquiry, trimmed, and ignores a blank name", () => {
+    const added = reduce(start, {
+      type: "addLead",
+      lead: { ...newLead, name: "  Jordan   Rivera " },
+    });
+    const lead = added.leads.at(-1);
+    assert.equal(lead.name, "Jordan Rivera");
+    assert.equal(lead.stage, "inquiry");
+    assert.equal(leadBand(lead), "upcoming");
+    assert.equal(added.touchedLead, lead.id);
+    assert.equal(stageCounts(added.leads).inquiry, 2);
+    assert.equal(reduce(start, { type: "addLead", lead: { ...newLead, name: "  " } }), start);
+    assert.deepEqual(tasksDone(added, students), { mark: false, ready: false, lead: true });
+  });
+
+  it("moves leads one stage at a time within the pipeline", () => {
+    const back = reduce(start, { type: "moveLead", id: "david", direction: -1 });
+    assert.equal(back, start, "an inquiry has no earlier stage");
+    let state = start;
+    for (let step = 0; step < 6; step += 1) {
+      state = reduce(state, { type: "moveLead", id: "sarah", direction: 1 });
+    }
+    const sarah = state.leads.find((lead) => lead.id === "sarah");
+    assert.equal(sarah.stage, "enrolled");
+    assert.equal(leadBand(sarah), "done");
+    assert.equal(leadTotals(state.leads).enrolled, 1);
+  });
+
+  it("resets to the sample class and queue", () => {
+    const busy = reduce(cycle(start, "maya"), { type: "addLead", lead: newLead });
+    assert.deepEqual(reduce(busy, { type: "reset" }), start);
   });
 });
 
@@ -59,6 +150,7 @@ describe("Landing links", () => {
 
   it("sends every retired chapter and topic to a section that exists", () => {
     for (const retired of [
+      "the-problem",
       "studio-view",
       "use-cases",
       "signals-gather",
@@ -81,30 +173,32 @@ describe("Landing links", () => {
 
 describe("Landing motion and accessibility", () => {
   it("only animates on scroll where supported and where motion is welcome", () => {
-    const motion = css.indexOf("@media (prefers-reduced-motion: no-preference)");
+    const motion = pageCss.indexOf("@media (prefers-reduced-motion: no-preference)");
     assert.ok(motion > 0);
-    const timelines = [...css.matchAll(/animation-timeline:/g)].map((match) => match.index);
+    const timelines = [...pageCss.matchAll(/animation-timeline:/g)].map((match) => match.index);
     assert.ok(timelines.length >= 10);
     assert.ok(
       timelines.every((index) => index > motion),
       "every scroll animation is gated",
     );
-    assert.match(css, /@supports \(animation-timeline: view\(\)\)/);
+    assert.match(pageCss, /@supports \(animation-timeline: view\(\)\)/);
+    assert.match(css, /@media \(prefers-reduced-motion: reduce\)/);
   });
 
-  it("never intercepts scrolling or input", () => {
+  it("never intercepts scrolling or input, and the demo is client state only", () => {
     assert.doesNotMatch(allSource, /addEventListener\("(?:wheel|touchstart|touchmove|keydown)"/);
     assert.doesNotMatch(allSource, /preventDefault\(/);
-    assert.match(
-      sources["studio.tsx"],
-      /addEventListener\("scroll", schedule, \{ passive: true \}\)/,
+    assert.doesNotMatch(
+      sources["try-it.tsx"] + sources["try-model.ts"],
+      /fetch\(|localStorage|sessionStorage/,
     );
+    assert.match(sources["try-it.tsx"], /initialTryState\(STUDENTS, LEADS\)/);
   });
 
-  it("keeps decorative art out of the accessibility tree and labels the real product", () => {
-    assert.match(sources["hero.tsx"], /className=\{styles\.heroArt\} aria-hidden="true"/);
-    assert.match(sources["problem.tsx"], /className=\{styles\.scrapField\} aria-hidden="true"/);
-    assert.match(sources["studio.tsx"], /data-side="left" aria-hidden="true"/);
+  it("announces demo changes and labels decorative art and the real product", () => {
+    assert.match(sources["try-it.tsx"], /role="status" aria-live="polite"/);
+    assert.match(sources["try-it.tsx"], /role="progressbar"/);
+    assert.match(sources["hero.tsx"], /className=\{styles\.art\} aria-hidden="true"/);
     assert.match(sources["product.tsx"], /alt=\{product\.image\.alt\}/);
     assert.match(css, /outline: 2px solid currentColor/);
   });
@@ -114,15 +208,11 @@ describe("Landing motion and accessibility", () => {
     const referenced = [...allSource.matchAll(/"\/marketing\/scenes\/([\w-]+\.webp)"/g)].map(
       (match) => match[1],
     );
-    assert.ok(referenced.length >= 6);
+    assert.ok(referenced.length >= 2);
     for (const file of referenced) {
       assert.ok(existsSync(new URL(`marketing/scenes/${file}`, publicDir)), file);
     }
-    for (const scene of ["doorway", "class"]) {
-      assert.ok(
-        referenced.includes(`${scene}-wide.webp`) && referenced.includes(`${scene}-tall.webp`),
-      );
-    }
+    assert.ok(referenced.includes("class-wide.webp") && referenced.includes("class-tall.webp"));
   });
 
   it("uses only scoped marketing materials and no external runtime", () => {
