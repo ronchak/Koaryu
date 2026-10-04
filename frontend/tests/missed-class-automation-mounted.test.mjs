@@ -97,7 +97,7 @@ async function mount(t, options = {}) {
           attempted_at: null,
           settled_at: null,
           attempts: 1,
-          reason: "provider_timeout",
+          reason: "provider_unknown",
         },
       ],
       has_more: true,
@@ -130,7 +130,7 @@ async function mount(t, options = {}) {
           recipient_name: null,
           recipient_email: null,
           recipient_kind: null,
-          skip_reason: "ambiguous_guardian",
+          skip_reason: "guardian_ambiguous",
           rendered_subject: null,
           rendered_body: null,
         },
@@ -265,7 +265,7 @@ test("preview binds every editable field and rejects an old response even after 
   await preview(page);
   assert.match(await page.locator("#root").innerText(), /101 eligible · 2 skipped/);
   assert.match(await page.locator("#root").innerText(), /Showing up to 100/);
-  assert.match(await page.locator("#root").innerText(), /Skipped: ambiguous guardian/);
+  assert.match(await page.locator("#root").innerText(), /Skipped: guardian ambiguous/);
 });
 
 test("PUT owns its draft, suppresses double clicks and retains edits through rejection and token renewal", async (t) => {

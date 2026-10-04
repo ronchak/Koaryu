@@ -1,54 +1,19 @@
 import { api } from "@/lib/api";
+import type {
+  ApiMissedClassActivityResponse,
+  ApiMissedClassPreviewRequest,
+  ApiMissedClassPreviewResponse,
+  ApiMissedClassRuleResponse,
+  ApiMissedClassRuleUpdate,
+  ApiMissedClassSettingsResponse,
+} from "@/types/generated/api-contracts";
 
-// Locked v1 DTOs. Keep these aligned with the backend's generated contracts.
-export interface MissedClassPreviewRequest {
-  inactivity_days: number;
-  subject_template: string;
-  body_template: string;
-  reply_to_email: string;
-}
-
-export interface MissedClassRuleResponse extends MissedClassPreviewRequest {
-  enabled: boolean;
-  revision: number;
-  updated_at: string | null;
-}
-
-export interface MissedClassRuleUpdate extends MissedClassPreviewRequest {
-  enabled: boolean;
-  expected_revision: number;
-}
-
-export interface MissedClassSettingsResponse {
-  rule: MissedClassRuleResponse;
-  delivery_status: {
-    mode: "disabled" | "test" | "live";
-    configured: boolean;
-    can_enable: boolean;
-    sender: string;
-    test_recipient: string | null;
-    reason: string | null;
-  };
-}
-
-export interface MissedClassPreviewResponse {
-  reference_date: string;
-  eligible_count: number;
-  skipped_count: number;
-  recipients: {
-    student_id: string;
-    student_name: string;
-    last_attendance_date: string | null;
-    days_absent: number | null;
-    recipient_name: string | null;
-    recipient_email: string | null;
-    recipient_kind: "student" | "guardian" | null;
-    skip_reason: string | null;
-    rendered_subject: string | null;
-    rendered_body: string | null;
-  }[];
-  truncated: boolean;
-}
+export type MissedClassPreviewRequest = ApiMissedClassPreviewRequest;
+export type MissedClassRuleResponse = ApiMissedClassRuleResponse;
+export type MissedClassRuleUpdate = ApiMissedClassRuleUpdate;
+export type MissedClassSettingsResponse = ApiMissedClassSettingsResponse;
+export type MissedClassPreviewResponse = ApiMissedClassPreviewResponse;
+export type MissedClassActivityResponse = ApiMissedClassActivityResponse;
 
 export const ACTIVITY_LABELS = {
   queued: "Queued",
@@ -59,23 +24,7 @@ export const ACTIVITY_LABELS = {
   failed: "Failed",
   unknown: "Outcome unknown",
   skipped: "Skipped",
-} as const;
-
-export interface MissedClassActivityResponse {
-  items: {
-    id: string;
-    student_id: string;
-    student_name: string;
-    recipient_email: string;
-    state: keyof typeof ACTIVITY_LABELS;
-    created_at: string;
-    attempted_at: string | null;
-    settled_at: string | null;
-    attempts: number;
-    reason: string | null;
-  }[];
-  has_more: boolean;
-}
+} as const satisfies Record<MissedClassActivityResponse["items"][number]["state"], string>;
 
 const ROOT = "/automations/missed-class";
 export const missedClassApi = {
@@ -179,7 +128,7 @@ export function demoPreview(draft: MissedClassPreviewRequest): MissedClassPrevie
         recipient_name: null,
         recipient_email: null,
         recipient_kind: null,
-        skip_reason: "no_attendance",
+        skip_reason: "never_attended",
         rendered_subject: null,
         rendered_body: null,
       },
