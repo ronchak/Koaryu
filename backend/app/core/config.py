@@ -1,16 +1,18 @@
-from functools import lru_cache
 import hashlib
 import ipaddress
 import os
-from pathlib import Path
 import re
 import secrets
+from functools import lru_cache
+from pathlib import Path
 from typing import Literal
 from urllib.parse import urlparse
 from urllib.request import getproxies
+from uuid import UUID
 
+from cryptography.fernet import Fernet
+from pydantic import Field
 from pydantic_settings import BaseSettings
-
 
 KOARYU_PRODUCTION_SUPABASE_REF = "mimguepumzsgmcaycdsh"
 KOARYU_PRODUCTION_SUPABASE_URL = f"https://{KOARYU_PRODUCTION_SUPABASE_REF}.supabase.co"
@@ -83,6 +85,7 @@ PLACEHOLDER_VALUES = {
     "long-random-secret",
     "long-random-secret-for-support-ticket-triage",
     "long-random-secret-for-operational-alert-evaluation",
+    "long-random-secret-for-missed-class-worker",
     "long-random-secret-for-the-deletion-cron",
     "long-random-secret-for-the-deletion-worker",
     "placeholder-key",
@@ -268,6 +271,22 @@ class Settings(BaseSettings):
     OPERATIONAL_ALERT_BACKUP_ACK_SECRET: str = ""
     SUPPORT_TRIAGE_SECRET: str = ""
 
+    # Missed-class email and scheduler. Enrollment alone never enables delivery.
+    EMAIL_PROVIDER: Literal["disabled", "microsoft_graph"] = "disabled"
+    EMAIL_SEND_ENABLED: bool = False
+    EMAIL_FROM_ADDRESS: str = "koaryu@outlook.com"
+    EMAIL_FROM_NAME: str = "Koaryu"
+    EMAIL_REPLY_TO: str = "koaryu@outlook.com"
+    # A nonempty list limits actual recipients; empty explicitly selects live mode.
+    EMAIL_ALLOWED_RECIPIENTS: str = "koaryu@outlook.com"
+    EMAIL_GRAPH_CLIENT_ID: str = ""
+    EMAIL_GRAPH_CLIENT_SECRET: str = Field(default="", repr=False)
+    EMAIL_GRAPH_TENANT: str = "consumers"
+    EMAIL_TOKEN_ENCRYPTION_KEY: str = Field(default="", repr=False)
+    AUTOMATION_WORKER_ENABLED: bool = False
+    AUTOMATION_WORKER_SECRET: str = Field(default="", repr=False)
+    AUTOMATION_PUBLIC_API_URL: str = ""
+
     # API
     API_V1_PREFIX: str = "/api/v1"
 
@@ -275,6 +294,7 @@ class Settings(BaseSettings):
         "env_file": str(Path(__file__).resolve().parents[2] / ".env"),
         "case_sensitive": True,
         "extra": "ignore",
+        "hide_input_in_errors": True,
     }
 
     def validate_supabase_target(self) -> None:
@@ -354,6 +374,132 @@ class Settings(BaseSettings):
     def validated_frontend_origin(self) -> str:
         return validate_frontend_origin(self.FRONTEND_URL, self.ENVIRONMENT)
 
+    def validate_automation_email_configuration(self) -> None:
+        """Validate configuration only; never read credentials or contact a provider."""
+        from app.services.automation_email import (
+            APPROVED_TEST_RECIPIENT,
+            normalize_email_address,
+            validate_public_api_url,
+        )
+
+        def refuse(name: str, requirement: str) -> None:
+            raise RuntimeError(
+                f"Runtime configuration is incomplete or unsafe: {name} {requirement}"
+            ) from None
+
+        for name in ("EMAIL_FROM_ADDRESS", "EMAIL_REPLY_TO"):
+            try:
+                normalize_email_address(getattr(self, name) or self.EMAIL_FROM_ADDRESS)
+            except ValueError:
+                refuse(name, "must be one valid email address")
+        if (
+            not self.EMAIL_FROM_NAME.strip()
+            or len(self.EMAIL_FROM_NAME) > 200
+            or not self.EMAIL_FROM_NAME.isprintable()
+        ):
+            refuse("EMAIL_FROM_NAME", "must contain 1..200 printable characters")
+        try:
+            allowed = (
+                {
+                    normalize_email_address(value)
+                    for value in self.EMAIL_ALLOWED_RECIPIENTS.split(",")
+                }
+                if self.EMAIL_ALLOWED_RECIPIENTS
+                else set()
+            )
+            if allowed and allowed != {APPROVED_TEST_RECIPIENT}:
+                raise ValueError
+        except ValueError:
+            refuse(
+                "EMAIL_ALLOWED_RECIPIENTS", "must be the approved test mailbox or explicitly empty"
+            )
+
+        tenant = self.EMAIL_GRAPH_TENANT
+        if tenant not in {"common", "organizations", "consumers"}:
+            try:
+                if str(UUID(tenant)) != tenant.lower():
+                    raise ValueError
+            except ValueError:
+                refuse("EMAIL_GRAPH_TENANT", "must be a supported tenant name or UUID")
+        for name in (
+            "EMAIL_GRAPH_CLIENT_SECRET",
+            "EMAIL_TOKEN_ENCRYPTION_KEY",
+            "AUTOMATION_WORKER_SECRET",
+        ):
+            value = getattr(self, name)
+            validate_raw_header_value(name, value)
+            if value and (not value.isascii() or not value.isprintable()):
+                refuse(name, "must contain only printable ASCII characters")
+
+        public_api_url = self.AUTOMATION_PUBLIC_API_URL
+        if public_api_url or self.EMAIL_SEND_ENABLED:
+            try:
+                validate_public_api_url(public_api_url)
+                parsed = urlparse(public_api_url)
+                host = parsed.hostname or ""
+                authority = f"[{host}]" if ":" in host else host
+                if host.endswith((".local", ".internal", ".localdomain", ".test", ".invalid")):
+                    raise ValueError
+                if host.replace(".", "").isdigit():
+                    ipaddress.ip_address(host)  # Reject alternate numeric loopback spellings.
+                if public_api_url != f"https://{authority}/api/v1":
+                    raise ValueError
+                if ":" not in host and any(
+                    not re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", label)
+                    for label in host.split(".")
+                ):
+                    raise ValueError
+            except ValueError:
+                refuse("AUTOMATION_PUBLIC_API_URL", "must be a canonical public HTTPS /api/v1 base")
+            expected = {
+                "production": "https://koaryu.onrender.com/api/v1",
+                "staging": "https://koaryu-staging.onrender.com/api/v1",
+            }.get(self.ENVIRONMENT.strip().lower())
+            if expected and public_api_url != expected:
+                refuse(
+                    "AUTOMATION_PUBLIC_API_URL",
+                    "must match the pinned backend for this environment",
+                )
+
+        if self.EMAIL_SEND_ENABLED:
+            if self.EMAIL_PROVIDER != "microsoft_graph":
+                refuse("EMAIL_PROVIDER", "must be microsoft_graph when sending is enabled")
+            try:
+                if str(UUID(self.EMAIL_GRAPH_CLIENT_ID)) != self.EMAIL_GRAPH_CLIENT_ID.lower():
+                    raise ValueError
+            except ValueError:
+                refuse("EMAIL_GRAPH_CLIENT_ID", "must be a UUID when sending is enabled")
+            if (
+                is_placeholder_value(self.EMAIL_GRAPH_CLIENT_SECRET)
+                or len(self.EMAIL_GRAPH_CLIENT_SECRET) > 4096
+            ):
+                refuse("EMAIL_GRAPH_CLIENT_SECRET", "must be configured when sending is enabled")
+            try:
+                Fernet(self.EMAIL_TOKEN_ENCRYPTION_KEY.encode("ascii"))
+            except (ValueError, TypeError):
+                refuse(
+                    "EMAIL_TOKEN_ENCRYPTION_KEY",
+                    "must be a valid Fernet key when sending is enabled",
+                )
+
+        if self.AUTOMATION_WORKER_ENABLED:
+            secret = self.AUTOMATION_WORKER_SECRET
+            if (
+                is_placeholder_value(secret)
+                or not has_minimum_secret_length(secret)
+                or any(character.isspace() for character in secret)
+                or secret
+                in {
+                    self.ACCOUNT_DELETION_WORKER_SECRET,
+                    self.BILLING_TRANSITION_WORKER_SECRET,
+                    self.OPERATIONAL_ALERT_WORKER_SECRET,
+                    self.SUPPORT_TRIAGE_SECRET,
+                    self.EMAIL_GRAPH_CLIENT_SECRET,
+                    self.EMAIL_TOKEN_ENCRYPTION_KEY,
+                }
+            ):
+                refuse("AUTOMATION_WORKER_SECRET", "must be a dedicated long random secret")
+
     def validate_runtime_configuration(self) -> None:
         """Fail closed when a hosted environment has incomplete or unsafe config."""
         environment = self.ENVIRONMENT.strip().lower()
@@ -367,6 +513,7 @@ class Settings(BaseSettings):
             "STRIPE_CONNECT_WEBHOOK_SECRET",
             self.STRIPE_CONNECT_WEBHOOK_SECRET,
         )
+        self.validate_automation_email_configuration()
         self.validated_frontend_origin()
         self.validate_supabase_service_role_configuration()
         if self.CORE_SELF_CHECKOUT_ENABLED and environment != "production":

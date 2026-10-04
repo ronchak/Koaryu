@@ -59,6 +59,16 @@ services:
         value: "false"
       - key: CORE_SELF_CHECKOUT_ENABLED
         value: "false"
+      - key: EMAIL_PROVIDER
+        value: disabled
+      - key: EMAIL_SEND_ENABLED
+        value: "false"
+      - key: EMAIL_ALLOWED_RECIPIENTS
+        value: koaryu@outlook.com
+      - key: AUTOMATION_WORKER_ENABLED
+        value: "false"
+      - key: AUTOMATION_PUBLIC_API_URL
+        value: https://koaryu-staging.onrender.com/api/v1
       - key: SUPABASE_URL
         value: https://nxgsektqsgrtyfhawxbc.supabase.co
       - key: FRONTEND_URL
@@ -433,6 +443,58 @@ envVars:
     assert.ok(failures.some((failure) => failure.includes("FRONTEND_URL") && failure.includes("must match")));
   });
 
+  it("keeps automation mail disabled even if manifest and example drift together", () => {
+    for (const [key, unsafeValue] of [
+      ["EMAIL_PROVIDER", "microsoft_graph"],
+      ["EMAIL_SEND_ENABLED", "true"],
+      ["AUTOMATION_WORKER_ENABLED", "true"],
+      ["EMAIL_ALLOWED_RECIPIENTS", ""],
+      ["AUTOMATION_PUBLIC_API_URL", "https://koaryu-staging.onrender.com/api/v1"],
+    ]) {
+      const entries = extractRenderEnvEntries(`envVars:
+  - key: ${key}
+    value: "${unsafeValue}"
+`);
+      const failures = validateRenderManifest(
+        [key], entries, [], new Map([[key, unsafeValue]]),
+      );
+      assert.ok(failures.some((failure) => failure.includes(key) && failure.includes("must equal")), key);
+    }
+  });
+
+  it("keeps staging mail disabled and pins its public unsubscribe base", () => {
+    const source = stagingRenderSource();
+    for (const [key, currentValue, unsafeValue] of [
+      ["EMAIL_PROVIDER", "disabled", "microsoft_graph"],
+      ["EMAIL_SEND_ENABLED", '"false"', '"true"'],
+      ["AUTOMATION_WORKER_ENABLED", '"false"', '"true"'],
+      ["EMAIL_ALLOWED_RECIPIENTS", "koaryu@outlook.com", '""'],
+      ["AUTOMATION_PUBLIC_API_URL", "https://koaryu-staging.onrender.com/api/v1", "https://koaryu.onrender.com/api/v1"],
+    ]) {
+      const drifted = source.replace(`key: ${key}\n        value: ${currentValue}`, `key: ${key}\n        value: ${unsafeValue}`);
+      assert.notEqual(drifted, source);
+      assert.ok(validateStagingRenderService(drifted, []).some(
+        (failure) => failure.includes(`staging ${key}`) && failure.includes("must equal"),
+      ), key);
+    }
+  });
+
+  it("classifies all mail credentials as secrets and refuses literal Render values", () => {
+    const keys = ["EMAIL_GRAPH_CLIENT_ID", "EMAIL_GRAPH_CLIENT_SECRET", "EMAIL_TOKEN_ENCRYPTION_KEY", "AUTOMATION_WORKER_SECRET"];
+    const classification = classifyEnvKeys(keys, [], []);
+    assert.deepEqual(classification.secretKeys, [...keys].sort());
+    assert.deepEqual(classification.unclassifiedKeys, []);
+    for (const key of keys) {
+      const entries = extractRenderEnvEntries(`envVars:
+  - key: ${key}
+    value: synthetic-only-value
+`);
+      const failures = validateRenderManifest([key], entries, keys);
+      assert.ok(failures.some((failure) => failure.includes(key) && failure.includes("sync: false")), key);
+      assert.ok(failures.some((failure) => failure.includes(key) && failure.includes("literal value")), key);
+    }
+  });
+
   it("accepts only the exact fail-closed example divergence for production live billing", () => {
     const entries = extractRenderEnvEntries(`
 envVars:
@@ -496,6 +558,16 @@ services:
         value: "true"
       - key: CORE_SELF_CHECKOUT_ENABLED
         value: "false"
+      - key: EMAIL_PROVIDER
+        value: disabled
+      - key: EMAIL_SEND_ENABLED
+        value: "false"
+      - key: EMAIL_ALLOWED_RECIPIENTS
+        value: koaryu@outlook.com
+      - key: AUTOMATION_WORKER_ENABLED
+        value: "false"
+      - key: AUTOMATION_PUBLIC_API_URL
+        value: https://koaryu-staging.onrender.com/api/v1
       - key: SUPABASE_URL
         value: https://nxgsektqsgrtyfhawxbc.supabase.co
       - key: FRONTEND_URL
@@ -528,6 +600,16 @@ services:
         value: "false"
       - key: CORE_SELF_CHECKOUT_ENABLED
         value: "false"
+      - key: EMAIL_PROVIDER
+        value: disabled
+      - key: EMAIL_SEND_ENABLED
+        value: "false"
+      - key: EMAIL_ALLOWED_RECIPIENTS
+        value: koaryu@outlook.com
+      - key: AUTOMATION_WORKER_ENABLED
+        value: "false"
+      - key: AUTOMATION_PUBLIC_API_URL
+        value: https://koaryu-staging.onrender.com/api/v1
       - key: BILLING_TRANSITION_SCHEDULER_ENABLED
         value: "true"
       - key: SUPABASE_URL

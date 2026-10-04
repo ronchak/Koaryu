@@ -80,6 +80,33 @@ services:
         sync: false
       - key: SUPPORT_TRIAGE_SECRET
         sync: false
+      # Missed-class mail is declared here but stays disabled until released.
+      - key: EMAIL_PROVIDER
+        value: disabled
+      - key: EMAIL_SEND_ENABLED
+        value: "false"
+      - key: EMAIL_FROM_ADDRESS
+        value: koaryu@outlook.com
+      - key: EMAIL_FROM_NAME
+        value: Koaryu
+      - key: EMAIL_REPLY_TO
+        value: koaryu@outlook.com
+      - key: EMAIL_ALLOWED_RECIPIENTS
+        value: koaryu@outlook.com
+      - key: EMAIL_GRAPH_CLIENT_ID
+        sync: false
+      - key: EMAIL_GRAPH_CLIENT_SECRET
+        sync: false
+      - key: EMAIL_GRAPH_TENANT
+        value: consumers
+      - key: EMAIL_TOKEN_ENCRYPTION_KEY
+        sync: false
+      - key: AUTOMATION_WORKER_ENABLED
+        value: "false"
+      - key: AUTOMATION_WORKER_SECRET
+        sync: false
+      - key: AUTOMATION_PUBLIC_API_URL
+        value: https://koaryu.onrender.com/api/v1
 
   # Staging rehearses the database-first cutover before production sees it.
   # It is declared here rather than living only in the Render dashboard, because
@@ -160,6 +187,33 @@ services:
         sync: false
       - key: SUPPORT_TRIAGE_SECRET
         sync: false
+      # Missed-class mail is declared here but stays disabled until released.
+      - key: EMAIL_PROVIDER
+        value: disabled
+      - key: EMAIL_SEND_ENABLED
+        value: "false"
+      - key: EMAIL_FROM_ADDRESS
+        value: koaryu@outlook.com
+      - key: EMAIL_FROM_NAME
+        value: Koaryu
+      - key: EMAIL_REPLY_TO
+        value: koaryu@outlook.com
+      - key: EMAIL_ALLOWED_RECIPIENTS
+        value: koaryu@outlook.com
+      - key: EMAIL_GRAPH_CLIENT_ID
+        sync: false
+      - key: EMAIL_GRAPH_CLIENT_SECRET
+        sync: false
+      - key: EMAIL_GRAPH_TENANT
+        value: consumers
+      - key: EMAIL_TOKEN_ENCRYPTION_KEY
+        sync: false
+      - key: AUTOMATION_WORKER_ENABLED
+        value: "false"
+      - key: AUTOMATION_WORKER_SECRET
+        sync: false
+      - key: AUTOMATION_PUBLIC_API_URL
+        value: https://koaryu-staging.onrender.com/api/v1
 
   - type: cron
     name: koaryu-billing-transitions-staging
