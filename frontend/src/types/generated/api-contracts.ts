@@ -68,6 +68,15 @@ export interface ApiAuthResponse {
   role?: "admin" | "instructor" | "front_desk" | null;
 }
 
+export interface ApiAutomationDeliveryStatus {
+  mode: "disabled" | "test" | "live";
+  configured: boolean;
+  can_enable: boolean;
+  sender: string;
+  test_recipient: string | null;
+  reason: "setup_required" | "sending_disabled" | "authentication_required" | "unavailable" | null;
+}
+
 export interface ApiBeltLadderCreate {
   name: string;
   program_id?: string | null;
@@ -1186,6 +1195,91 @@ export interface ApiLeadUpdate {
   follow_up_date?: string | null;
   notes?: string | null;
   lost_reason?: "no_show" | "price_objection" | "timing" | "no_response" | "other" | null;
+}
+
+export interface ApiMissedClassActivityItem {
+  id: string;
+  student_id: string;
+  student_name: string;
+  recipient_email: string;
+  state: "queued" | "claimed" | "sending" | "accepted" | "retry_wait" | "failed" | "unknown" | "skipped";
+  created_at: string;
+  attempted_at: string | null;
+  settled_at: string | null;
+  attempts: number;
+  reason: "rule_paused" | "subscription_required" | "student_unavailable" | "inactive" | "on_hold" | "invalid_birth_date" | "never_attended" | "recent_attendance" | "invalid_email" | "guardian_missing" | "guardian_ambiguous" | "suppressed" | "episode_already_attempted" | "attendance_changed" | "contact_changed" | "lease_expired" | "rate_limited" | "connection_failed" | "authentication_required" | "provider_rejected" | "provider_unknown" | "retry_exhausted" | "unavailable" | "recipient_not_allowed" | null;
+}
+
+export interface ApiMissedClassActivityResponse {
+  items: ApiMissedClassActivityItem[];
+  has_more: boolean;
+}
+
+export interface ApiMissedClassPreviewRecipient {
+  student_id: string;
+  student_name: string;
+  last_attendance_date: string | null;
+  days_absent: number | null;
+  recipient_name: string | null;
+  recipient_email: string | null;
+  recipient_kind: "student" | "guardian" | null;
+  skip_reason: "rule_paused" | "subscription_required" | "student_unavailable" | "inactive" | "on_hold" | "invalid_birth_date" | "never_attended" | "recent_attendance" | "invalid_email" | "guardian_missing" | "guardian_ambiguous" | "suppressed" | "episode_already_attempted" | "attendance_changed" | "contact_changed" | "lease_expired" | "rate_limited" | "connection_failed" | "authentication_required" | "provider_rejected" | "provider_unknown" | "retry_exhausted" | "unavailable" | "recipient_not_allowed" | null;
+  rendered_subject: string | null;
+  rendered_body: string | null;
+}
+
+export interface ApiMissedClassPreviewRequest {
+  inactivity_days: number;
+  subject_template: string;
+  body_template: string;
+  reply_to_email: string;
+}
+
+export interface ApiMissedClassPreviewResponse {
+  reference_date: string;
+  eligible_count: number;
+  skipped_count: number;
+  recipients: ApiMissedClassPreviewRecipient[];
+  truncated: boolean;
+}
+
+export interface ApiMissedClassProcessRequest {
+  limit?: number;
+}
+
+export interface ApiMissedClassProcessResponse {
+  enqueued: number;
+  processed: number;
+  accepted: number;
+  retry_wait: number;
+  failed: number;
+  unknown: number;
+  skipped: number;
+  has_more: boolean;
+}
+
+export interface ApiMissedClassRuleResponse {
+  enabled: boolean;
+  inactivity_days: number;
+  subject_template: string;
+  body_template: string;
+  reply_to_email: string;
+  revision: number;
+  updated_at: string | null;
+}
+
+export interface ApiMissedClassRuleUpdate {
+  inactivity_days: number;
+  subject_template: string;
+  body_template: string;
+  reply_to_email: string;
+  enabled: boolean;
+  expected_revision: number;
+}
+
+export interface ApiMissedClassSettingsResponse {
+  rule: ApiMissedClassRuleResponse;
+  delivery_status: ApiAutomationDeliveryStatus;
 }
 
 export interface ApiOperationalAlertAcknowledgementResponse {
