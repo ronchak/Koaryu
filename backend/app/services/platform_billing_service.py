@@ -113,11 +113,12 @@ def _provider_failure(exc: Exception) -> AccessRepairProviderError:
 
 
 class AccessRepairDeferred(Exception):
-    """A repair was suppressed by the throttle and its recorded outcome was a fault.
+    """A needed repair was deferred without verifying the current row.
 
-    Raised so the caller reproduces the answer the failed repair produced rather
-    than evaluating an unverified row. It carries no provider information and is
-    deliberately not a provider error: nothing was contacted.
+    The throttle can replay an earlier fault, or a bounded caller can disable
+    provider repairs altogether. Neither permits granting access from an
+    unverified row. This carries no provider information and is deliberately
+    not a provider error: nothing was contacted.
     """
 
     def __init__(self, studio_id: str):
@@ -214,8 +215,21 @@ class PlatformBillingService:
         )
 
     def get_access_status_row(
-        self, studio_id: str, *, strict_repairs: bool = False
+        self,
+        studio_id: str,
+        *,
+        strict_repairs: bool = False,
+        allow_provider_repairs: bool = True,
     ) -> dict[str, Any]:
+        if not allow_provider_repairs:
+            # Bounded workers use current persisted facts without joining or
+            # changing repair coordination. Even a successful retry window
+            # cannot verify a row for this path while its repair guard is set.
+            row = self._ensure_subscription_row(studio_id)
+            if self._access_repair_pending(row):
+                raise AccessRepairDeferred(studio_id)
+            return row
+
         if strict_repairs:
             while True:
                 with _access_repair_metadata_lock:
