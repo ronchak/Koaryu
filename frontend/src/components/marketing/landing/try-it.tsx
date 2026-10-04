@@ -253,7 +253,8 @@ function ClassView({
   rowRefs: React.RefObject<Map<string, HTMLButtonElement>>;
 }) {
   const summary = sessionSummary(state.marks);
-  const capacity = studio.session.capacity;
+  // The session sheet counts against tonight's roster, the same students listed below.
+  const capacity = STUDENTS.length;
   const quickStudent = STUDENTS.find((student) => student.id === selected) ?? STUDENTS[0];
   return (
     <div className={s.page}>

@@ -53,6 +53,8 @@ describe("Try it: attendance and ranks", () => {
   });
 
   it("starts unmarked, with nobody ready, and leaves the state alone for unknown students", () => {
+    assert.equal(Object.keys(start.marks).length, students.length);
+    assert.doesNotMatch(sources["try-it.tsx"], /session\.capacity/);
     assert.deepEqual(sessionSummary(start.marks), { present: 0, absent: 0, unmarked: 6 });
     assert.equal(beltRegister(students, start.marks).ready, 0);
     assert.equal(reduce(start, { type: "cycle", id: "nobody" }), start);

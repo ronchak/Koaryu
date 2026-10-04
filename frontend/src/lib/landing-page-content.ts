@@ -216,7 +216,6 @@ export const landingPageContent = {
       name: "Kids Karate",
       day: "Tuesday",
       time: "6:00 – 6:45 PM",
-      capacity: 12,
     },
     programs: ["Kids Karate", "Teen & Adult Karate"],
     students: [
@@ -471,7 +470,7 @@ export const landingPageContent = {
     lede: string;
     tasks: readonly DemoTask[];
     studioName: string;
-    session: { name: string; day: string; time: string; capacity: number };
+    session: { name: string; day: string; time: string };
     programs: readonly string[];
     students: readonly DemoStudent[];
     ready: { student: string; message: string; decision: string };
