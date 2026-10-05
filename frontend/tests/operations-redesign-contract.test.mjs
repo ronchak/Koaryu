@@ -799,7 +799,10 @@ describe("operations behavior proof", () => {
       /<form|<input|<select|<textarea|onChange=|type="checkbox"|role="switch"|\bfetch\s*\(|\bapi\.|\baxios\b|process\.env|isPreviewMode|useEffect|useState/,
     );
     assert.match(automations, /<MissedClassAutomation \/>/);
-    assert.doesNotMatch(automations, /data-automations-readonly|No automation builder is live|five-proposals/);
+    assert.doesNotMatch(
+      automations,
+      /data-automations-readonly|No automation builder is live|five-proposals/,
+    );
     assert.match(automations, /data-automation-future-list="four-proposals"/);
     assert.doesNotMatch(
       futureSection,

@@ -605,7 +605,7 @@ def test_actual_graph_202_is_settled_as_accepted_with_no_network(runner, monkeyp
     import httpx
 
     delivery_id = "28030c98-0334-4e56-b8e5-e493b5e8ea62"
-    claim_token = "58d62b30-e8f8-4fbb-8449-5d34922484a8"
+    claim_token = str(UUID(int=2))
     runner.database.claims = [
         {"id": delivery_id, "claim_token": claim_token, "studio_id": "studio"}
     ]
