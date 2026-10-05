@@ -11,6 +11,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
 } from "react";
 
 import styles from "./journey-scene.module.css";
@@ -82,6 +83,108 @@ const PALETTE = Object.freeze({
   },
 } as const);
 
+/**
+ * The same world after 7 PM Pacific: moonlit hills, a lamplit dojo, a night sky
+ * through the door, moonlit clouds that weave into a floor warmed by andon lamps.
+ * Night air is cool (indigo, violet); every light source is warm. Each surface is
+ * relit for how moonlight or lamplight would fall on it, never tinted globally.
+ */
+const NIGHT = Object.freeze({
+  paper: "#14121B",
+  mountain: ["#4E4668", "#3C3555", "#2D2741", "#1F1A2E", "#13101B"],
+  mountainRim: ["#B3A9C9", "#9A8FB6", "#7E739C", "#5F5579", "#40384F"],
+  wisp: "#9AA2CC",
+  curtain: "#0F0C15",
+  curtainRim: "#8F8ABB",
+  beam: "#1C1410",
+  beamLight: "#2E2118",
+  beamEdge: "#120D0A",
+  post: "#2B1F17",
+  postLight: "#4A3423",
+  wood: "#33231A",
+  doorShadow: "#0E0905",
+  transom: "#A9794A",
+  scroll: "#B98E62",
+  tatami: "#5E4529",
+  tatamiLight: "#7D5D36",
+  tatamiDark: "#3A2A19",
+  tatamiEdge: "#8E6B3F",
+  sky: ["#0E1229", "#192043", "#253159", "#384471"],
+  farRidge: ["#2B3253", "#212843", "#181D33"],
+  farRidgeRim: ["#5D6A98", "#4A5580", "#394367"],
+  moon: "#DDD4BE",
+  moonLight: "#F7F0DE",
+  moonShade: "#7F86AC",
+  moonSea: "#C4BBA2",
+  star: "#F3EAD6",
+  lantern: "#FFC977",
+  lanternCore: "#FFF0CF",
+  lanternEdge: "#D9813F",
+  lanternCap: "#24170F",
+  cloud: ["#3D4870", "#343E63", "#2C3555", "#252D49", "#1F263E"],
+  cloudLight: "#A3AED8",
+  /** Moonlit strips: the weave is pale straw under the moon until the room's lamps warm it into a floor. */
+  bamboo: ["#CBC2B0", "#B8AF9D", "#A59C8B", "#928A7A", "#80786A"],
+  floor: ["#A47A49", "#956E42", "#87623B", "#795735", "#6B4C2E"],
+  wall: ["#120E14", "#1D1518", "#3A2A22"],
+  baseboard: "#1E150F",
+  gi: "#EFDDBE",
+  giShade: "#C7AE87",
+  whiteBeltEdge: "#B9A27E",
+  studentShadow: "#120A06",
+  hair: ["#1D1714", "#33241B", "#4E3322", "#26221F", "#6A462B", "#7E766B"],
+  skin: ["#E6C3A1", "#C28F67", "#87583A", "#5A3E2E", "#D3A47E"],
+  belt: {
+    white: "#F1E6D2",
+    yellow: "#E2B23A",
+    green: "#6A8A3F",
+    blue: "#4A6C94",
+    brown: "#7A4E2B",
+    black: "#151214",
+  },
+} as const);
+
+/** Which world the scene is lit for; the pre-paint switch sets it on <html data-scene>. */
+export type SceneLighting = "day" | "night";
+
+interface NightPaint {
+  readonly fill?: string;
+  readonly stroke?: string;
+  readonly stop?: string;
+  readonly opacity?: number;
+}
+
+/**
+ * Day colours stay presentation attributes, so the day scene renders exactly as
+ * before. The night colour waits in a custom property that only
+ * html[data-scene="night"] reads (journey-scene.module.css). Never use it on an
+ * attribute that sceneState writes.
+ */
+function night(paint: NightPaint, style?: CSSProperties) {
+  const properties: Record<string, string> = {};
+  const classes: (string | undefined)[] = [];
+  if (paint.fill) {
+    properties["--night-fill"] = paint.fill;
+    classes.push(styles.nightFill);
+  }
+  if (paint.stroke) {
+    properties["--night-stroke"] = paint.stroke;
+    classes.push(styles.nightStroke);
+  }
+  if (paint.stop) {
+    properties["--night-stop"] = paint.stop;
+    classes.push(styles.nightStop);
+  }
+  if (paint.opacity !== undefined) {
+    properties["--night-opacity"] = String(paint.opacity);
+    classes.push(styles.nightOpacity);
+  }
+  return {
+    className: classes.filter(Boolean).join(" ") || undefined,
+    style: { ...style, ...properties } as CSSProperties,
+  };
+}
+
 const VIEW = Object.freeze({
   backLeft: 430,
   backRight: 1170,
@@ -113,6 +216,14 @@ interface SceneIds {
   readonly crumple: string;
   readonly washi: string;
   readonly back: string;
+  readonly nightSky: string;
+  readonly moon: string;
+  readonly moonGlow: string;
+  readonly litPaper: string;
+  readonly lantern: string;
+  readonly lanternGlow: string;
+  readonly pool: string;
+  readonly window: string;
 }
 
 type DynamicAttribute =
@@ -260,6 +371,83 @@ function perspectiveLerp(progress: number): number {
 }
 
 // ---------------------------------------------------------------------------
+// Night-only geometry: crest lines for moonlit rims, stars, and the lights of
+// the dojo on a far hill, which is where the camera is about to go.
+
+/** The open crest line of each hill, for its rim of moonlight. */
+const RIDGE_CRESTS = Object.freeze(
+  RIDGES.map(({ baseY, amplitude, frequency, phase }) =>
+    smoothPath(ridgeLine(baseY, amplitude, frequency, phase)),
+  ),
+);
+
+interface Star {
+  readonly x: number;
+  readonly y: number;
+  readonly r: number;
+  readonly opacity: number;
+}
+
+/** A fixed star field: denser high in the sky, kept clear of the moon. */
+function starField(
+  seed: number,
+  count: number,
+  area: Readonly<{ left: number; right: number; top: number; bottom: number }>,
+  clearOf: readonly ScenePoint[],
+  clearance: number,
+): readonly Star[] {
+  const random = mulberry32(seed);
+  const stars: Star[] = [];
+  while (stars.length < count) {
+    const x = mix(area.left, area.right, random());
+    const y = mix(area.top, area.bottom, random() ** 1.6);
+    const r = 0.8 + random() ** 4 * 2.6;
+    const opacity = 0.3 + random() * 0.62;
+    if (clearOf.some((point) => Math.hypot(point.x - x, point.y - y) < clearance)) continue;
+    stars.push(
+      Object.freeze({ x: round2(x), y: round2(y), r: round2(r), opacity: round2(opacity) }),
+    );
+  }
+  return Object.freeze(stars);
+}
+
+/** Where the moon hangs over the hills (in place of the sun), landscape and portrait. */
+const HILL_MOON = Object.freeze({ x: 1128, landscapeY: 248, portraitY: -40 });
+
+const HILL_STARS = starField(
+  4127,
+  96,
+  { left: -40, right: SCENE_WIDTH + 40, top: -560, bottom: 470 },
+  [
+    { x: HILL_MOON.x, y: HILL_MOON.landscapeY },
+    { x: HILL_MOON.x, y: HILL_MOON.portraitY },
+  ],
+  120,
+);
+
+const SKY_STARS = starField(
+  6018,
+  84,
+  { left: -300, right: SCENE_WIDTH + 300, top: -560, bottom: 640 },
+  [{ x: VIEW.centerX, y: 430 }],
+  140,
+);
+
+/** The dojo's lit windows, tiny on the second hill: tonight's class is already on. */
+const HILLTOP_DOJO = Object.freeze(
+  (() => {
+    const ridge = RIDGES[1]!;
+    const x = 1090;
+    const crest = (at: number) => {
+      const line = ridgeLine(ridge.baseY, ridge.amplitude, ridge.frequency, ridge.phase, 400);
+      const index = line.findIndex((point) => point.x >= at);
+      return line[Math.max(0, index)]!.y;
+    };
+    return { x, y: round2(Math.max(crest(x - 30), crest(x + 30)) + 4) };
+  })(),
+);
+
+// ---------------------------------------------------------------------------
 // Students: the class assembles on the tatami, facing the open door.
 
 type BeltRank = keyof typeof PALETTE.belt;
@@ -380,33 +568,68 @@ const Student = memo(function Student({ seat }: { readonly seat: StudentSeat }) 
   const hair = PALETTE.hair[seat.hair] ?? PALETTE.hair[0];
   const skin = PALETTE.skin[seat.skin] ?? PALETTE.skin[0];
   const belt = PALETTE.belt[seat.belt];
+  const nightHair = night({ fill: NIGHT.hair[seat.hair] ?? NIGHT.hair[0] });
+  const nightSkin = night({ fill: NIGHT.skin[seat.skin] ?? NIGHT.skin[0] });
+  const giShade = night({ stroke: NIGHT.giShade });
   const beltPath = `M${-BELT_HALF_WIDTH} ${BELT_Y}Q0 ${BELT_Y + 7} ${BELT_HALF_WIDTH} ${BELT_Y}`;
   return (
     <>
-      <ellipse cx="6" cy="10" rx={STUDENT_BODY_WIDTH * 1.22} ry="22" fill="#5A4528" opacity="0.2" />
-      <path d={STUDENT_BODY_PATH} fill={PALETTE.gi} />
+      <ellipse
+        cx="6"
+        cy="10"
+        rx={STUDENT_BODY_WIDTH * 1.22}
+        ry="22"
+        fill="#5A4528"
+        opacity="0.2"
+        {...night({ fill: NIGHT.studentShadow, opacity: 0.5 })}
+      />
+      <path d={STUDENT_BODY_PATH} fill={PALETTE.gi} {...night({ fill: NIGHT.gi })} />
       <path
         d={`M0 ${-STUDENT_BODY_HEIGHT + 8}V${BELT_Y - 6}`}
         stroke={PALETTE.giShade}
         strokeWidth="3"
         opacity="0.8"
+        {...giShade}
       />
       {seat.belt === "white" ? (
-        <path d={beltPath} stroke="#CFC6B4" strokeWidth="18" strokeLinecap="round" fill="none" />
+        <path
+          d={beltPath}
+          stroke="#CFC6B4"
+          strokeWidth="18"
+          strokeLinecap="round"
+          fill="none"
+          {...night({ stroke: NIGHT.whiteBeltEdge })}
+        />
       ) : null}
-      <path d={beltPath} stroke={belt} strokeWidth="14" strokeLinecap="round" fill="none" />
+      <path
+        d={beltPath}
+        stroke={belt}
+        strokeWidth="14"
+        strokeLinecap="round"
+        fill="none"
+        {...night({ stroke: NIGHT.belt[seat.belt] })}
+      />
       <path
         d={`M-26 ${-STUDENT_BODY_HEIGHT + 3}Q0 ${-STUDENT_BODY_HEIGHT + 13} 26 ${-STUDENT_BODY_HEIGHT + 3}`}
         stroke={PALETTE.giShade}
         strokeWidth="9"
         strokeLinecap="round"
         fill="none"
+        {...giShade}
       />
-      <rect x="-15" y={-STUDENT_BODY_HEIGHT - 16} width="30" height="22" rx="9" fill={skin} />
-      <ellipse cx="-50" cy={HEAD_Y + 4} rx="9" ry="14" fill={skin} />
-      <ellipse cx="50" cy={HEAD_Y + 4} rx="9" ry="14" fill={skin} />
-      {seat.bun ? <circle cx="0" cy={HEAD_Y - 58} r="19" fill={hair} /> : null}
-      <ellipse cx="0" cy={HEAD_Y} rx="52" ry="58" fill={hair} />
+      <rect
+        x="-15"
+        y={-STUDENT_BODY_HEIGHT - 16}
+        width="30"
+        height="22"
+        rx="9"
+        fill={skin}
+        {...nightSkin}
+      />
+      <ellipse cx="-50" cy={HEAD_Y + 4} rx="9" ry="14" fill={skin} {...nightSkin} />
+      <ellipse cx="50" cy={HEAD_Y + 4} rx="9" ry="14" fill={skin} {...nightSkin} />
+      {seat.bun ? <circle cx="0" cy={HEAD_Y - 58} r="19" fill={hair} {...nightHair} /> : null}
+      <ellipse cx="0" cy={HEAD_Y} rx="52" ry="58" fill={hair} {...nightHair} />
     </>
   );
 });
@@ -428,6 +651,19 @@ function mixColor(from: string, to: string, progress: number): string {
   return `rgb(${Math.round(mix(a[0], b[0], progress))},${Math.round(mix(a[1], b[1], progress))},${Math.round(mix(a[2], b[2], progress))})`;
 }
 
+/** Like mixColor, but returns #rrggbb so the result can be shaded further. */
+function mixHex(from: string, to: string, progress: number): string {
+  const a = hexToRgb(from);
+  const b = hexToRgb(to);
+  return `#${[0, 1, 2]
+    .map((channel) =>
+      Math.round(mix(a[channel]!, b[channel]!, progress))
+        .toString(16)
+        .padStart(2, "0"),
+    )
+    .join("")}`;
+}
+
 function dojoCamera(progress: number) {
   const arrival = easeOut(rangeProgress(progress, SCENE_PHASES.drop[0], SCENE_PHASES.drop[1]));
   const portal = easeInOut(rangeProgress(progress, SCENE_PHASES.portal[0], SCENE_PHASES.portal[1]));
@@ -446,17 +682,40 @@ function dojoCamera(progress: number) {
   };
 }
 
-function curtainEdge(edgeY: number, amplitude: number, closeToward: number): string {
-  return `${smoothPath(ridgeLine(edgeY, amplitude, 0.85, 3.1))}L${SCENE_OVERSCAN.x + SCENE_OVERSCAN.width} ${closeToward} L${SCENE_OVERSCAN.x} ${closeToward} Z`;
+function curtainCrest(edgeY: number, amplitude: number): string {
+  return smoothPath(ridgeLine(edgeY, amplitude, 0.85, 3.1));
 }
+
+function curtainEdge(edgeY: number, amplitude: number, closeToward: number): string {
+  return `${curtainCrest(edgeY, amplitude)}L${SCENE_OVERSCAN.x + SCENE_OVERSCAN.width} ${closeToward} L${SCENE_OVERSCAN.x} ${closeToward} Z`;
+}
+
+/** The colours that sceneState blends per frame, for each world. */
+const BLENDS = Object.freeze({
+  day: {
+    cloud: PALETTE.cloud,
+    bamboo: PALETTE.bamboo,
+    floor: PALETTE.floor,
+  },
+  night: {
+    cloud: NIGHT.cloud,
+    bamboo: NIGHT.bamboo,
+    floor: NIGHT.floor,
+  },
+} as const);
 
 const HIDDEN = Object.freeze({ display: "none" });
 const SHOWN = Object.freeze({ display: "inline" });
 const PANEL_WIDTH = 185;
 
-export function sceneState(progress: number, frame: SceneFrame): SceneState {
+export function sceneState(
+  progress: number,
+  frame: SceneFrame,
+  lighting: SceneLighting = "day",
+): SceneState {
   const value = clamp(progress);
   const state: Record<string, DynamicAttributes> = {};
+  const blend = BLENDS[lighting];
   const camera = dojoCamera(value);
   const door = easeInOut(rangeProgress(value, SCENE_PHASES.door[0], SCENE_PHASES.door[1]));
   const slide = mix(0, PANEL_WIDTH, door);
@@ -471,8 +730,10 @@ export function sceneState(progress: number, frame: SceneFrame): SceneState {
     };
     state["mountain-sun"] = {
       // Portrait crops show the sky taller; lift the sun clear of the headline.
-      transform: `translate(1128 ${round2((frame.variant === "portrait" ? -40 : 248) - fall * 150)}) scale(${round2(1 + fall * 0.12)})`,
+      transform: `translate(${HILL_MOON.x} ${round2((frame.variant === "portrait" ? HILL_MOON.portraitY : HILL_MOON.landscapeY) - fall * 150)}) scale(${round2(1 + fall * 0.12)})`,
     };
+    // The stars sit as far away as the moon, so they rise with it as the camera dives.
+    state["mountain-stars"] = { transform: `translate(0 ${round2(-fall * 150)})` };
     MOUNTAIN_WISPS.forEach((wisp, index) => {
       state[`wisp-${index}`] = {
         transform: `translate(${round2(wisp.x - fall * (60 + index * 40))} ${round2(wisp.y - fall * (220 + index * 90))}) scale(${round2(wisp.scale * (1 + fall * 0.2))})`,
@@ -502,6 +763,10 @@ export function sceneState(progress: number, frame: SceneFrame): SceneState {
     state["curtain-closed"] = cover > 0.001 ? SHOWN : HIDDEN;
     state["curtain-closed-fill"] = { d: edge };
     state["curtain-closed-texture"] = { d: edge };
+    // By night the rising hill is outlined by the moon, so the dive still reads in the dark.
+    state["curtain-closed-rim"] = {
+      d: curtainCrest(mix(1010, SCENE_OVERSCAN.y - 120, cover), mix(138, 0, clamp(cover * 1.22))),
+    };
     state["curtain-open"] = HIDDEN;
   } else {
     state["curtain-closed"] = HIDDEN;
@@ -628,7 +893,14 @@ export function sceneState(progress: number, frame: SceneFrame): SceneState {
     state["weave-clip"] = { y: floorTop };
     state["weave-ground"] = {
       y: floorTop,
-      fill: mixColor(PALETTE.cloud[1], PALETTE.floor[2], clamp(morph * 0.6 + floor * 0.4)),
+      // By night the ground follows the strips (cloud, then silver, then lamplit
+      // wood) so the gaps never show a third colour.
+      fill:
+        lighting === "night"
+          ? floor > 0
+            ? mixColor(blend.bamboo[2], blend.floor[2], floor)
+            : mixColor(blend.cloud[1], blend.bamboo[2], morph)
+          : mixColor(blend.cloud[1], blend.floor[2], clamp(morph * 0.6 + floor * 0.4)),
     };
     PLANK_GEOMETRY.forEach((plank, index) => {
       const morphDelay = morphStagger * (0.72 * plank.horizontalOrder + 0.28 * plank.verticalOrder);
@@ -647,9 +919,9 @@ export function sceneState(progress: number, frame: SceneFrame): SceneState {
         }
         return { x, y };
       });
-      const cloudTone = PALETTE.cloud[plank.tone]!;
-      const bambooTone = PALETTE.bamboo[plank.tone]!;
-      const floorTone = PALETTE.floor[plank.tone]!;
+      const cloudTone = blend.cloud[plank.tone]!;
+      const bambooTone = blend.bamboo[plank.tone]!;
+      const floorTone = blend.floor[plank.tone]!;
       const pointList = polygonPoints(points);
       state[`plank-${index}`] = {
         points: pointList,
@@ -679,8 +951,24 @@ export function sceneState(progress: number, frame: SceneFrame): SceneState {
     state.room = { display: "inline", opacity: String(round2(room)) };
     state["room-wall"] = { height: String(round2(900 + floorLine)) };
     state["room-baseboard"] = { y: String(round2(floorLine - 20)) };
+    // Night only: a wall of lit shoji behind the class, and an andon either side of it.
+    state["room-lamps"] = state.room;
+    state["room-shoji"] = { transform: `translate(0 ${round2(floorLine)})` };
+    // Narrow frames keep the lamps out at the edges, clear of the class.
+    const lampOffset = Math.max(
+      270,
+      frame.visibleHalfWidth - Math.min(150, frame.visibleHalfWidth * 0.17),
+    );
+    const lampY = round2(floorLine + 46);
+    state["room-lamp-left"] = {
+      transform: `translate(${round2(VIEW.centerX - lampOffset)} ${lampY})`,
+    };
+    state["room-lamp-right"] = {
+      transform: `translate(${round2(VIEW.centerX + lampOffset)} ${lampY})`,
+    };
   } else {
     state.room = HIDDEN;
+    state["room-lamps"] = HIDDEN;
   }
 
   // The class arrives and sits facing the far wall.
@@ -758,6 +1046,14 @@ function makeIds(reactId: string): SceneIds {
     crumple: id("crumple"),
     washi: id("washi"),
     back: id("back"),
+    nightSky: id("night-sky"),
+    moon: id("moon"),
+    moonGlow: id("moon-glow"),
+    litPaper: id("lit-paper"),
+    lantern: id("lantern"),
+    lanternGlow: id("lantern-glow"),
+    pool: id("pool"),
+    window: id("window"),
   };
 }
 
@@ -769,17 +1065,68 @@ const SceneDefs = memo(function SceneDefs({ ids }: { readonly ids: SceneIds }) {
         <stop offset="0.6" stopColor={PALETTE.mountainSky} />
         <stop offset="1" stopColor="#EFEADD" />
       </linearGradient>
+      {/* The hills by night: indigo overhead, a low violet glow behind the crests. */}
+      <linearGradient
+        id={ids.nightSky}
+        gradientUnits="userSpaceOnUse"
+        x1="0"
+        y1="-560"
+        x2="0"
+        y2="780"
+      >
+        <stop offset="0" stopColor="#080A1D" />
+        <stop offset="0.34" stopColor="#0F1331" />
+        <stop offset="0.57" stopColor="#1B1E44" />
+        <stop offset="0.74" stopColor="#2A2850" />
+        <stop offset="0.87" stopColor="#4A3B5E" />
+        <stop offset="1" stopColor="#7C5664" />
+      </linearGradient>
       <linearGradient id={ids.sky} x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0" stopColor="#FCF4E2" />
-        <stop offset="0.42" stopColor={PALETTE.skyHigh} />
-        <stop offset="0.78" stopColor={PALETTE.skyMiddle} />
-        <stop offset="1" stopColor={PALETTE.skyLow} />
+        <stop offset="0" stopColor="#FCF4E2" {...night({ stop: NIGHT.sky[0] })} />
+        <stop offset="0.42" stopColor={PALETTE.skyHigh} {...night({ stop: NIGHT.sky[1] })} />
+        <stop offset="0.78" stopColor={PALETTE.skyMiddle} {...night({ stop: NIGHT.sky[2] })} />
+        <stop offset="1" stopColor={PALETTE.skyLow} {...night({ stop: NIGHT.sky[3] })} />
       </linearGradient>
       <linearGradient id={ids.wall} x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0" stopColor={PALETTE.wallHigh} />
-        <stop offset="0.7" stopColor="#D3C9C0" />
-        <stop offset="1" stopColor={PALETTE.wallLow} />
+        <stop offset="0" stopColor={PALETTE.wallHigh} {...night({ stop: NIGHT.wall[0] })} />
+        <stop offset="0.7" stopColor="#D3C9C0" {...night({ stop: NIGHT.wall[1] })} />
+        <stop offset="1" stopColor={PALETTE.wallLow} {...night({ stop: NIGHT.wall[2] })} />
       </linearGradient>
+      {/* Paper lit from the room side, brightest where a lantern hangs in front of it. */}
+      <radialGradient id={ids.litPaper} cx="0.5" cy="0.34" r="0.82">
+        <stop offset="0" stopColor="#DDA86B" />
+        <stop offset="0.55" stopColor="#B4814D" />
+        <stop offset="1" stopColor="#7E5733" />
+      </radialGradient>
+      <radialGradient id={ids.moon} cx="0.4" cy="0.36" r="0.8">
+        <stop offset="0" stopColor={NIGHT.moonLight} />
+        <stop offset="1" stopColor={NIGHT.moon} />
+      </radialGradient>
+      <radialGradient id={ids.moonGlow} cx="0.5" cy="0.5" r="0.5">
+        <stop offset="0" stopColor="#D2DAF2" stopOpacity="0.4" />
+        <stop offset="0.3" stopColor="#A5B0DA" stopOpacity="0.15" />
+        <stop offset="1" stopColor="#6672A6" stopOpacity="0" />
+      </radialGradient>
+      <radialGradient id={ids.lantern} cx="0.46" cy="0.42" r="0.62">
+        <stop offset="0" stopColor={NIGHT.lanternCore} />
+        <stop offset="0.5" stopColor={NIGHT.lantern} />
+        <stop offset="1" stopColor={NIGHT.lanternEdge} />
+      </radialGradient>
+      <radialGradient id={ids.lanternGlow} cx="0.5" cy="0.5" r="0.5">
+        <stop offset="0" stopColor="#FFC66E" stopOpacity="0.5" />
+        <stop offset="0.35" stopColor="#F2A24F" stopOpacity="0.18" />
+        <stop offset="1" stopColor="#D98236" stopOpacity="0" />
+      </radialGradient>
+      <radialGradient id={ids.pool} cx="0.5" cy="0.5" r="0.5">
+        <stop offset="0" stopColor="#F6B567" stopOpacity="0.4" />
+        <stop offset="0.6" stopColor="#D98E48" stopOpacity="0.12" />
+        <stop offset="1" stopColor="#B87435" stopOpacity="0" />
+      </radialGradient>
+      <radialGradient id={ids.window} cx="0.5" cy="0.5" r="0.5">
+        <stop offset="0" stopColor="#FFC97A" stopOpacity="0.55" />
+        <stop offset="0.4" stopColor="#E9984F" stopOpacity="0.16" />
+        <stop offset="1" stopColor="#C4743A" stopOpacity="0" />
+      </radialGradient>
       <linearGradient id={ids.shoji} x1="0" y1="0" x2="0" y2="1">
         <stop offset="0" stopColor="#F3EFE5" />
         <stop offset="0.52" stopColor="#E8E2D6" />
@@ -829,22 +1176,134 @@ function SunDisc({ ids, radius }: { readonly ids: SceneIds; readonly radius: num
   );
 }
 
+/** The moon takes the sun's place by night, painted the same way: a disc over a soft offset. */
+function Moon({ ids, radius }: { readonly ids: SceneIds; readonly radius: number }) {
+  return (
+    <>
+      <circle r={radius * 4.6} fill={`url(#${ids.moonGlow})`} />
+      <circle
+        cx={radius * 0.1}
+        cy={radius * 0.15}
+        r={radius * 1.05}
+        fill={NIGHT.moonShade}
+        opacity="0.2"
+      />
+      <circle r={radius} fill={`url(#${ids.moon})`} />
+      <ellipse
+        cx={-radius * 0.3}
+        cy={-radius * 0.16}
+        rx={radius * 0.26}
+        ry={radius * 0.21}
+        fill={NIGHT.moonSea}
+        opacity="0.36"
+      />
+      <ellipse
+        cx={radius * 0.2}
+        cy={radius * 0.28}
+        rx={radius * 0.32}
+        ry={radius * 0.24}
+        fill={NIGHT.moonSea}
+        opacity="0.28"
+      />
+      <circle
+        cx={radius * 0.36}
+        cy={-radius * 0.34}
+        r={radius * 0.12}
+        fill={NIGHT.moonSea}
+        opacity="0.3"
+      />
+    </>
+  );
+}
+
+function Stars({ stars }: { readonly stars: readonly Star[] }) {
+  return (
+    <>
+      {stars.map((star, index) =>
+        star.r > 2.4 ? (
+          <g key={index} opacity={star.opacity}>
+            <circle cx={star.x} cy={star.y} r={star.r * 3.2} fill={NIGHT.star} opacity="0.12" />
+            <circle cx={star.x} cy={star.y} r={star.r} fill={NIGHT.star} />
+          </g>
+        ) : (
+          <circle
+            key={index}
+            cx={star.x}
+            cy={star.y}
+            r={star.r}
+            fill={NIGHT.star}
+            opacity={star.opacity}
+          />
+        ),
+      )}
+    </>
+  );
+}
+
+/** A small dojo on the far hill with its paper windows lit. */
+function HilltopDojo({ ids }: { readonly ids: SceneIds }) {
+  const ink = NIGHT.mountain[1];
+  return (
+    <g transform={`translate(${HILLTOP_DOJO.x} ${HILLTOP_DOJO.y})`}>
+      <ellipse cx="0" cy="-12" rx="78" ry="42" fill={`url(#${ids.window})`} />
+      <rect x="-25" y="-21" width="50" height="21" fill={ink} />
+      <rect x="-19" y="-16" width="38" height="9" fill="#F2B76A" />
+      <path d="M-6.3 -16V-7M6.3 -16V-7" stroke={ink} strokeWidth="1.6" />
+      <path d="M-35 -20Q-24 -23 -18 -31H18Q24 -23 35 -20Z" fill={ink} />
+      <path d="M-14 -31L0 -38L14 -31Z" fill={ink} />
+    </g>
+  );
+}
+
 const Mountains = memo(function Mountains({ ids }: { readonly ids: SceneIds }) {
   const initial = useContext(InitialSceneState);
   return (
     <g {...dynamic(initial, "mountains")} data-scene-layer="mountains">
-      <rect {...overscanRect()} fill={`url(#${ids.skyMountain})`} />
+      <rect {...overscanRect()} fill={`url(#${ids.skyMountain})`} className={styles.dayOnly} />
+      <rect {...overscanRect()} fill={`url(#${ids.nightSky})`} className={styles.nightOnly} />
+      <g className={styles.nightOnly}>
+        <g {...dynamic(initial, "mountain-stars")}>
+          <Stars stars={HILL_STARS} />
+        </g>
+      </g>
       <g {...dynamic(initial, "mountain-sun")} opacity="0.92">
-        <SunDisc ids={ids} radius={60} />
+        <g className={styles.dayOnly}>
+          <SunDisc ids={ids} radius={60} />
+        </g>
+        <g className={styles.nightOnly}>
+          <Moon ids={ids} radius={54} />
+        </g>
       </g>
       {MOUNTAIN_WISPS.map((wisp, index) => (
         <g key={`wisp-${index}`} {...dynamic(initial, `wisp-${index}`)}>
-          <path d={wisp.path} fill="#FFFFFF" opacity="0.75" />
+          <path
+            d={wisp.path}
+            fill="#FFFFFF"
+            opacity="0.75"
+            {...night({ fill: NIGHT.wisp, opacity: 0.15 })}
+          />
         </g>
       ))}
       {RIDGES.map((ridge, index) => (
         <g key={`ridge-${index}`} {...dynamic(initial, `ridge-${index}`)}>
-          <path d={RIDGE_PATHS[index]} fill={ridge.color} />
+          <path
+            d={RIDGE_PATHS[index]}
+            fill={ridge.color}
+            {...night({ fill: NIGHT.mountain[index] })}
+          />
+          <path
+            className={styles.nightOnly}
+            d={RIDGE_CRESTS[index]}
+            fill="none"
+            stroke={NIGHT.mountainRim[index]}
+            strokeWidth={index < 2 ? 2 : 2.6}
+            opacity={round2(0.5 - index * 0.11)}
+          />
+          {index === 1 ? (
+            <g className={styles.nightOnly}>
+              <HilltopDojo ids={ids} />
+            </g>
+          ) : null}
         </g>
       ))}
     </g>
@@ -854,6 +1313,8 @@ const Mountains = memo(function Mountains({ ids }: { readonly ids: SceneIds }) {
 const Curtain = memo(function Curtain({ ids }: { readonly ids: SceneIds }) {
   const initial = useContext(InitialSceneState);
   const texture = `url(#${ids.crumple})`;
+  const curtain = night({ fill: NIGHT.curtain });
+  const grain = night({ opacity: 0.1 });
   const bottom = {
     x: SCENE_OVERSCAN.x,
     width: SCENE_OVERSCAN.width,
@@ -862,26 +1323,42 @@ const Curtain = memo(function Curtain({ ids }: { readonly ids: SceneIds }) {
   return (
     <g data-scene-layer="curtain">
       <g {...dynamic(initial, "curtain-closed")}>
-        <path {...dynamic(initial, "curtain-closed-fill")} fill={PALETTE.curtain} />
+        <path {...dynamic(initial, "curtain-closed-fill")} fill={PALETTE.curtain} {...curtain} />
         <path
           {...dynamic(initial, "curtain-closed-texture")}
           fill={texture}
           opacity={CURTAIN_TEXTURE_OPACITY}
+          {...grain}
+        />
+        <path
+          {...dynamic(initial, "curtain-closed-rim")}
+          className={styles.nightOnly}
+          fill="none"
+          stroke={NIGHT.curtainRim}
+          strokeWidth="3"
+          opacity="0.55"
         />
       </g>
       <g {...dynamic(initial, "curtain-open")}>
-        <path {...dynamic(initial, "curtain-top-fill")} fill={PALETTE.curtain} />
-        <rect {...dynamic(initial, "curtain-bottom-fill")} {...bottom} fill={PALETTE.curtain} />
+        <path {...dynamic(initial, "curtain-top-fill")} fill={PALETTE.curtain} {...curtain} />
+        <rect
+          {...dynamic(initial, "curtain-bottom-fill")}
+          {...bottom}
+          fill={PALETTE.curtain}
+          {...curtain}
+        />
         <path
           {...dynamic(initial, "curtain-top-texture")}
           fill={texture}
           opacity={CURTAIN_TEXTURE_OPACITY}
+          {...grain}
         />
         <rect
           {...dynamic(initial, "curtain-bottom-texture")}
           {...bottom}
           fill={texture}
           opacity={CURTAIN_TEXTURE_OPACITY}
+          {...grain}
         />
       </g>
     </g>
@@ -919,10 +1396,115 @@ interface ShojiProps {
   readonly ids: SceneIds;
 }
 
+const NIGHT_WOOD = night({ stroke: NIGHT.wood });
+const NIGHT_FILL_WOOD = night({ fill: NIGHT.wood });
+
+/** Paper lanterns hung from the ceiling either side of the back doors. */
+const LANTERNS = Object.freeze([
+  { x: 500, y: 336, size: 1 },
+  { x: 1100, y: 336, size: 1 },
+]);
+
+const LANTERN_RIBS = [-0.66, -0.33, 0, 0.33, 0.66] as const;
+
+function Lantern({
+  ids,
+  x,
+  y,
+  size,
+}: {
+  readonly ids: SceneIds;
+  readonly x: number;
+  readonly y: number;
+  readonly size: number;
+}) {
+  const rx = 30 * size;
+  const ry = 40 * size;
+  return (
+    <g transform={`translate(${x} ${y})`}>
+      <circle r={rx * 7} fill={`url(#${ids.lanternGlow})`} style={{ mixBlendMode: "screen" }} />
+      <line x1="0" y1={-ry - 8} x2="0" y2="-1500" stroke="#130D09" strokeWidth={2.2 * size} />
+      <ellipse rx={rx} ry={ry} fill={`url(#${ids.lantern})`} />
+      {LANTERN_RIBS.map((rib) => {
+        const half = rx * Math.sqrt(1 - rib * rib);
+        return (
+          <path
+            key={rib}
+            d={`M${round2(-half)} ${round2(rib * ry)}Q0 ${round2(rib * ry + ry * 0.1)} ${round2(half)} ${round2(rib * ry)}`}
+            stroke={NIGHT.lanternEdge}
+            strokeWidth={1.4 * size}
+            opacity="0.5"
+            fill="none"
+          />
+        );
+      })}
+      <rect
+        x={-rx * 0.6}
+        y={-ry - 8}
+        width={rx * 1.2}
+        height={11 * size}
+        rx="2.5"
+        fill={NIGHT.lanternCap}
+      />
+      <rect
+        x={-rx * 0.6}
+        y={ry - 3}
+        width={rx * 1.2}
+        height={11 * size}
+        rx="2.5"
+        fill={NIGHT.lanternCap}
+      />
+    </g>
+  );
+}
+
+/** A standing paper floor lamp (andon), lit from inside; the class sits in its light. */
+function Andon({ ids }: { readonly ids: SceneIds }) {
+  return (
+    <g>
+      <ellipse
+        cx="0"
+        cy="-90"
+        rx="440"
+        ry="380"
+        fill={`url(#${ids.lanternGlow})`}
+        style={{ mixBlendMode: "screen" }}
+      />
+      <ellipse cx="0" cy="40" rx="330" ry="70" fill={`url(#${ids.pool})`} />
+      <ellipse cx="0" cy="6" rx="64" ry="9" fill="#1A0F08" opacity="0.35" />
+      <rect x="-30" y="-150" width="60" height="140" fill={`url(#${ids.lantern})`} />
+      <path
+        d="M-30 -150V-10M30 -150V-10M-30 -104H30M-30 -58H30"
+        stroke="#2A1B11"
+        strokeWidth="3"
+        fill="none"
+      />
+      <rect x="-36" y="-158" width="72" height="9" rx="2" fill={NIGHT.lanternCap} />
+      <rect x="-36" y="-14" width="72" height="9" rx="2" fill={NIGHT.lanternCap} />
+      <path d="M-30 -5V8M30 -5V8" stroke={NIGHT.lanternCap} strokeWidth="6" />
+    </g>
+  );
+}
+
 function Shoji({ x, y, width, height, columns, rows, strokeWidth = 7, ids }: ShojiProps) {
   return (
     <g>
-      <rect x={x} y={y} width={width} height={height} fill={`url(#${ids.shoji})`} />
+      <rect
+        x={x}
+        y={y}
+        width={width}
+        height={height}
+        fill={`url(#${ids.shoji})`}
+        className={styles.dayOnly}
+      />
+      <rect
+        x={x}
+        y={y}
+        width={width}
+        height={height}
+        fill={`url(#${ids.litPaper})`}
+        className={styles.nightOnly}
+      />
       <rect
         x={x}
         y={y}
@@ -930,7 +1512,7 @@ function Shoji({ x, y, width, height, columns, rows, strokeWidth = 7, ids }: Sho
         height={height}
         fill={`url(#${ids.washi})`}
         opacity="0.78"
-        style={{ mixBlendMode: "multiply" }}
+        {...night({ opacity: 0.6 }, { mixBlendMode: "multiply" })}
       />
       <path
         d={shojiGridPath(x, y, width, height, columns, rows)}
@@ -938,6 +1520,7 @@ function Shoji({ x, y, width, height, columns, rows, strokeWidth = 7, ids }: Sho
         strokeWidth={strokeWidth}
         fill="none"
         shapeRendering="crispEdges"
+        {...NIGHT_WOOD}
       />
       <rect
         x={x + strokeWidth}
@@ -947,6 +1530,7 @@ function Shoji({ x, y, width, height, columns, rows, strokeWidth = 7, ids }: Sho
         fill="none"
         stroke={PALETTE.wood}
         strokeWidth={strokeWidth * 2}
+        {...NIGHT_WOOD}
       />
     </g>
   );
@@ -984,6 +1568,8 @@ function SideWall({ side, ids }: { readonly side: "left" | "right"; readonly ids
           { x: band.x0, y: mix(band.top0, band.bottom0, 0.94) },
         ];
         const alternatingShade = index % 2 === 0 ? 0 : 0.045;
+        // By night the lanterns light the far panels; the walls dim toward the camera.
+        const light = index / (SIDE_STOPS.length - 2);
         return (
           <g key={`${side}-${index}`}>
             <polygon
@@ -994,22 +1580,25 @@ function SideWall({ side, ids }: { readonly side: "left" | "right"; readonly ids
                 { x: band.x0, y: band.bottom0 },
               ])}
               fill={shade(PALETTE.shoji, -alternatingShade)}
+              {...night({ fill: shade(mixHex("#1E150E", "#3E2B1D", light), -alternatingShade) })}
             />
             <polygon
               points={polygonPoints(paper)}
               fill={shade("#EFECE5", -alternatingShade - 0.03)}
+              {...night({ fill: shade(mixHex("#4A3321", "#B07E4D", light), -alternatingShade) })}
             />
             <polygon
               points={polygonPoints(paper)}
               fill={`url(#${ids.washi})`}
               opacity="0.68"
-              style={{ mixBlendMode: "multiply" }}
+              {...night({ opacity: 0.55 }, { mixBlendMode: "multiply" })}
             />
             <polygon
               points={polygonPoints(paper)}
               fill="none"
               stroke={PALETTE.wood}
               strokeWidth={mix(15, 5, perspectiveLerp(stop))}
+              {...NIGHT_WOOD}
             />
             <line
               x1={band.x0}
@@ -1018,6 +1607,7 @@ function SideWall({ side, ids }: { readonly side: "left" | "right"; readonly ids
               y2={band.bottom0}
               stroke={PALETTE.wood}
               strokeWidth={mix(16, 5, perspectiveLerp(stop))}
+              {...NIGHT_WOOD}
             />
           </g>
         );
@@ -1030,6 +1620,7 @@ function SideWall({ side, ids }: { readonly side: "left" | "right"; readonly ids
           { x: frontX, y: VIEW.frontFloor - 40 },
         ])}
         fill={PALETTE.wood}
+        {...night({ fill: NIGHT.wood })}
       />
       <polygon
         points={polygonPoints([
@@ -1039,12 +1630,13 @@ function SideWall({ side, ids }: { readonly side: "left" | "right"; readonly ids
           { x: frontX, y: VIEW.frontTop + 46 },
         ])}
         fill={PALETTE.beamLight}
+        {...night({ fill: NIGHT.beamLight })}
       />
     </g>
   );
 }
 
-function DojoFloor() {
+function DojoFloor({ ids }: { readonly ids: SceneIds }) {
   const floorPlane = [
     { x: VIEW.frontLeft, y: VIEW.frontFloor },
     { x: VIEW.backLeft, y: VIEW.backFloor },
@@ -1055,8 +1647,17 @@ function DojoFloor() {
 
   return (
     <g>
-      <polygon points={polygonPoints(floorPlane)} fill={PALETTE.tatami} />
-      <polygon points={polygonPoints(floorPlane)} fill={PALETTE.tatamiLight} opacity="0.5" />
+      <polygon
+        points={polygonPoints(floorPlane)}
+        fill={PALETTE.tatami}
+        {...night({ fill: NIGHT.tatami })}
+      />
+      <polygon
+        points={polygonPoints(floorPlane)}
+        fill={PALETTE.tatamiLight}
+        opacity="0.5"
+        {...night({ fill: NIGHT.tatamiLight })}
+      />
       {Array.from({ length: 5 }, (_, index) => {
         const fraction = (index + 1) / 6;
         return (
@@ -1069,6 +1670,7 @@ function DojoFloor() {
             stroke={PALETTE.tatamiEdge}
             strokeWidth="6"
             opacity="0.85"
+            {...night({ stroke: NIGHT.tatamiEdge, opacity: 0.55 })}
           />
         );
       })}
@@ -1084,6 +1686,7 @@ function DojoFloor() {
             stroke={PALETTE.tatamiEdge}
             strokeWidth={mix(7, 3, value)}
             opacity="0.8"
+            {...night({ stroke: NIGHT.tatamiEdge, opacity: 0.5 })}
           />
         );
       })}
@@ -1096,13 +1699,28 @@ function DojoFloor() {
         ])}
         fill={PALETTE.tatamiDark}
         opacity="0.5"
+        {...night({ fill: NIGHT.tatamiDark, opacity: 0.8 })}
       />
+      {/* Pools of lamplight under the lanterns. */}
+      <g className={styles.nightOnly}>
+        {LANTERNS.map((lantern) => (
+          <ellipse
+            key={`pool-${lantern.x}`}
+            cx={lantern.x}
+            cy="770"
+            rx="480"
+            ry="130"
+            fill={`url(#${ids.pool})`}
+          />
+        ))}
+      </g>
       <rect
         x={SCENE_OVERSCAN.x}
         y={VIEW.frontFloor - 4}
         width={SCENE_OVERSCAN.width}
         height={SCENE_OVERSCAN.height}
         fill={PALETTE.tatami}
+        {...night({ fill: NIGHT.tatami })}
       />
     </g>
   );
@@ -1121,6 +1739,7 @@ function SlidingDoor({ side, ids }: { readonly side: "left" | "right"; readonly 
         height={height}
         fill="#4A3A1C"
         opacity="0.16"
+        {...night({ fill: NIGHT.doorShadow, opacity: 0.4 })}
       />
       <Shoji
         x={x}
@@ -1142,7 +1761,7 @@ const Dojo = memo(function Dojo({ ids }: { readonly ids: SceneIds }) {
     <g {...dynamic(initial, "dojo")} data-scene-layer="dojo">
       <SideWall side="left" ids={ids} />
       <SideWall side="right" ids={ids} />
-      <DojoFloor />
+      <DojoFloor ids={ids} />
       <polygon
         points={polygonPoints([
           { x: VIEW.frontLeft, y: -900 },
@@ -1153,6 +1772,7 @@ const Dojo = memo(function Dojo({ ids }: { readonly ids: SceneIds }) {
           { x: VIEW.frontLeft, y: VIEW.frontTop },
         ])}
         fill={PALETTE.beam}
+        {...night({ fill: NIGHT.beam })}
       />
       {[0.12, 0.32, 0.5, 0.68, 0.88].map((fraction, index) => (
         <polygon
@@ -1165,6 +1785,7 @@ const Dojo = memo(function Dojo({ ids }: { readonly ids: SceneIds }) {
           ])}
           fill={PALETTE.beamLight}
           opacity="0.75"
+          {...night({ fill: NIGHT.beamLight })}
         />
       ))}
       <polygon
@@ -1178,6 +1799,7 @@ const Dojo = memo(function Dojo({ ids }: { readonly ids: SceneIds }) {
         ])}
         fill={shade(PALETTE.beam, -0.3)}
         opacity="0.9"
+        {...night({ fill: NIGHT.beamEdge })}
       />
       <g clipPath={`url(#${ids.back})`}>
         <SlidingDoor side="left" ids={ids} />
@@ -1193,6 +1815,7 @@ const Dojo = memo(function Dojo({ ids }: { readonly ids: SceneIds }) {
               width={PANEL_WIDTH - 10}
               height={VIEW.doorTop - VIEW.backTop - 16}
               fill="#EFECE5"
+              {...night({ fill: NIGHT.transom })}
             />
             <rect
               x={x + 5}
@@ -1201,7 +1824,7 @@ const Dojo = memo(function Dojo({ ids }: { readonly ids: SceneIds }) {
               height={VIEW.doorTop - VIEW.backTop - 16}
               fill={`url(#${ids.washi})`}
               opacity="0.66"
-              style={{ mixBlendMode: "multiply" }}
+              {...night({ opacity: 0.55 }, { mixBlendMode: "multiply" })}
             />
             <rect
               x={x + 5}
@@ -1211,6 +1834,7 @@ const Dojo = memo(function Dojo({ ids }: { readonly ids: SceneIds }) {
               fill="none"
               stroke={PALETTE.wood}
               strokeWidth="9"
+              {...NIGHT_WOOD}
             />
           </g>
         );
@@ -1233,6 +1857,7 @@ const Dojo = memo(function Dojo({ ids }: { readonly ids: SceneIds }) {
         width={VIEW.backRight - VIEW.backLeft + 20}
         height="16"
         fill={PALETTE.wood}
+        {...NIGHT_FILL_WOOD}
       />
       <rect
         x={VIEW.backLeft - 10}
@@ -1240,6 +1865,7 @@ const Dojo = memo(function Dojo({ ids }: { readonly ids: SceneIds }) {
         width={VIEW.backRight - VIEW.backLeft + 20}
         height="15"
         fill={PALETTE.wood}
+        {...NIGHT_FILL_WOOD}
       />
       <rect
         x={VIEW.backLeft - 10}
@@ -1247,6 +1873,7 @@ const Dojo = memo(function Dojo({ ids }: { readonly ids: SceneIds }) {
         width={VIEW.backRight - VIEW.backLeft + 20}
         height="16"
         fill={PALETTE.wood}
+        {...NIGHT_FILL_WOOD}
       />
       {[
         VIEW.backLeft,
@@ -1261,10 +1888,18 @@ const Dojo = memo(function Dojo({ ids }: { readonly ids: SceneIds }) {
           width="14"
           height={VIEW.doorBottom - VIEW.doorTop + 18}
           fill={PALETTE.wood}
+          {...NIGHT_FILL_WOOD}
         />
       ))}
       <g transform="translate(1216 372)" opacity="0.95">
-        <rect x="0" y="0" width="86" height="200" fill="#EDE7D8" />
+        <rect
+          x="0"
+          y="0"
+          width="86"
+          height="200"
+          fill="#EDE7D8"
+          {...night({ fill: NIGHT.scroll })}
+        />
         <rect
           x="0"
           y="0"
@@ -1272,11 +1907,20 @@ const Dojo = memo(function Dojo({ ids }: { readonly ids: SceneIds }) {
           height="200"
           fill={`url(#${ids.washi})`}
           opacity="0.82"
-          style={{ mixBlendMode: "multiply" }}
+          {...night({ opacity: 0.6 }, { mixBlendMode: "multiply" })}
         />
-        <rect x="0" y="0" width="86" height="14" fill={PALETTE.wood} />
-        <rect x="0" y="186" width="86" height="14" fill={PALETTE.wood} />
-        <rect x="30" y="44" width="26" height="94" rx="6" fill={PALETTE.beam} opacity="0.3" />
+        <rect x="0" y="0" width="86" height="14" fill={PALETTE.wood} {...NIGHT_FILL_WOOD} />
+        <rect x="0" y="186" width="86" height="14" fill={PALETTE.wood} {...NIGHT_FILL_WOOD} />
+        <rect
+          x="30"
+          y="44"
+          width="26"
+          height="94"
+          rx="6"
+          fill={PALETTE.beam}
+          opacity="0.3"
+          {...night({ fill: NIGHT.beam, opacity: 0.5 })}
+        />
       </g>
       {[196, 1338].map((x) => (
         <g key={`post-${x}`}>
@@ -1286,6 +1930,7 @@ const Dojo = memo(function Dojo({ ids }: { readonly ids: SceneIds }) {
             width="66"
             height={SCENE_OVERSCAN.height}
             fill={PALETTE.beamLight}
+            {...night({ fill: NIGHT.post })}
           />
           <rect
             x={x}
@@ -1293,9 +1938,15 @@ const Dojo = memo(function Dojo({ ids }: { readonly ids: SceneIds }) {
             width="20"
             height={SCENE_OVERSCAN.height}
             fill={shade(PALETTE.beamLight, 0.13)}
+            {...night({ fill: NIGHT.postLight })}
           />
         </g>
       ))}
+      <g className={styles.nightOnly}>
+        {LANTERNS.map((lantern) => (
+          <Lantern key={`lantern-${lantern.x}`} ids={ids} {...lantern} />
+        ))}
+      </g>
     </g>
   );
 });
@@ -1309,6 +1960,12 @@ const FAR_RIDGES = [
 const FAR_RIDGE_PATHS = Object.freeze(
   FAR_RIDGES.map(({ baseY, amplitude, frequency, phase }) =>
     closedRidgePath(baseY, amplitude, frequency, phase, 30),
+  ),
+);
+
+const FAR_RIDGE_CRESTS = Object.freeze(
+  FAR_RIDGES.map(({ baseY, amplitude, frequency, phase }) =>
+    smoothPath(ridgeLine(baseY, amplitude, frequency, phase, 30)),
   ),
 );
 
@@ -1329,31 +1986,51 @@ const SkyWorld = memo(function SkyWorld({ ids }: { readonly ids: SceneIds }) {
           fill={`url(#${ids.sky})`}
         />
         <g {...dynamic(initial, "sky-camera")}>
+          <g className={styles.nightOnly}>
+            <Stars stars={SKY_STARS} />
+          </g>
           <g {...dynamic(initial, "sky-ridges")}>
             {FAR_RIDGES.map((ridge, index) => (
-              <path
-                key={`far-ridge-${index}`}
-                d={FAR_RIDGE_PATHS[index]}
-                fill={ridge.color}
-                opacity={0.95 - index * 0.05}
-              />
+              <g key={`far-ridge-${index}`}>
+                <path
+                  d={FAR_RIDGE_PATHS[index]}
+                  fill={ridge.color}
+                  opacity={0.95 - index * 0.05}
+                  {...night({ fill: NIGHT.farRidge[index], opacity: 1 })}
+                />
+                <path
+                  className={styles.nightOnly}
+                  d={FAR_RIDGE_CRESTS[index]}
+                  fill="none"
+                  stroke={NIGHT.farRidgeRim[index]}
+                  strokeWidth="2.5"
+                  opacity="0.6"
+                />
+              </g>
             ))}
           </g>
+          {/* By night the moon is up beyond the door, where the sun hangs by day. */}
           <g {...dynamic(initial, "sky-sun")}>
-            <circle r="300" fill={`url(#${ids.glow})`} />
-            <circle cx="9" cy="14" r="88" fill={PALETTE.sun} opacity="0.5" />
-            <circle r="84" fill={`url(#${ids.sun})`} />
-            <circle
-              r="84"
-              fill="none"
-              stroke={shade(PALETTE.sun, -0.2)}
-              strokeWidth="2"
-              opacity="0.35"
-            />
+            <g className={styles.dayOnly}>
+              <circle r="300" fill={`url(#${ids.glow})`} />
+              <circle cx="9" cy="14" r="88" fill={PALETTE.sun} opacity="0.5" />
+              <circle r="84" fill={`url(#${ids.sun})`} />
+              <circle
+                r="84"
+                fill="none"
+                stroke={shade(PALETTE.sun, -0.2)}
+                strokeWidth="2"
+                opacity="0.35"
+              />
+            </g>
+            <g className={styles.nightOnly}>
+              <Moon ids={ids} radius={80} />
+            </g>
           </g>
           <g {...dynamic(initial, "clouds")} data-scene-layer="clouds">
             {CLOUD_GEOMETRY.map((cloud, index) => {
               const tone = PALETTE.cloud[cloud.tone]!;
+              const nightTone = NIGHT.cloud[cloud.tone]!;
               return (
                 <g key={`cloud-${index}`} {...dynamic(initial, `cloud-${index}`)}>
                   <path
@@ -1361,13 +2038,16 @@ const SkyWorld = memo(function SkyWorld({ ids }: { readonly ids: SceneIds }) {
                     transform="translate(2 19)"
                     fill={shade(tone, -0.42)}
                     opacity="0.42"
+                    {...night({ fill: shade(nightTone, -0.5), opacity: 0.5 })}
                   />
-                  <path d={cloud.path} fill={tone} />
+                  <path d={cloud.path} fill={tone} {...night({ fill: nightTone })} />
+                  {/* Moonlight catches the top of every cloud. */}
                   <path
                     d={cloud.path}
                     transform="translate(0 -5)"
                     fill={shade(tone, 0.35)}
                     opacity="0.3"
+                    {...night({ fill: NIGHT.cloudLight, opacity: 0.24 })}
                   />
                 </g>
               );
@@ -1398,7 +2078,28 @@ const RoomWall = memo(function RoomWall({ ids }: { readonly ids: SceneIds }) {
         height="22"
         fill={PALETTE.baseboard}
         opacity="0.55"
+        {...night({ fill: NIGHT.baseboard, opacity: 0.9 })}
       />
+      {/* By night a wall of lit shoji stands behind the class, under a dark beam. */}
+      <g className={styles.nightOnly}>
+        <g {...dynamic(initial, "room-shoji")}>
+          <rect x="-400" y="-288" width={SCENE_WIDTH + 800} height="26" fill="#120D0B" />
+          <rect x="-400" y="-264" width={SCENE_WIDTH + 800} height="3" fill="#6E4628" />
+          {Array.from({ length: 14 }, (_, index) => (
+            <Shoji
+              key={`room-shoji-${index}`}
+              x={-495 + index * 185}
+              y={-262}
+              width={185}
+              height={242}
+              columns={3}
+              rows={4}
+              strokeWidth={6}
+              ids={ids}
+            />
+          ))}
+        </g>
+      </g>
     </g>
   );
 });
@@ -1421,15 +2122,34 @@ const Weave = memo(function Weave({ ids }: { readonly ids: SceneIds }) {
               <polygon
                 {...dynamic(initial, `plank-shadow-${index}`)}
                 fill={shade(PALETTE.cloud[plank.tone]!, -0.45)}
+                {...night({ fill: shade(NIGHT.cloud[plank.tone]!, -0.6) })}
               />
               <polygon
                 {...dynamic(initial, `plank-${index}`)}
                 stroke={shade(bambooTone, -0.3)}
                 strokeOpacity="0.42"
+                {...night({ stroke: shade(NIGHT.bamboo[plank.tone]!, -0.42) })}
               />
             </g>
           );
         })}
+      </g>
+    </g>
+  );
+});
+
+/** Two andon at the front corners of the room; their light is what the class sits in. */
+const RoomLamps = memo(function RoomLamps({ ids }: { readonly ids: SceneIds }) {
+  const initial = useContext(InitialSceneState);
+  return (
+    <g className={styles.nightOnly} data-scene-layer="lamps">
+      <g {...dynamic(initial, "room-lamps")}>
+        <g {...dynamic(initial, "room-lamp-left")}>
+          <Andon ids={ids} />
+        </g>
+        <g {...dynamic(initial, "room-lamp-right")}>
+          <Andon ids={ids} />
+        </g>
       </g>
     </g>
   );
@@ -1454,13 +2174,14 @@ const SceneArtwork = memo(function SceneArtwork() {
   return (
     <>
       <SceneDefs ids={ids} />
-      <rect {...overscanRect()} fill={PALETTE.paper} />
+      <rect {...overscanRect()} fill={PALETTE.paper} {...night({ fill: NIGHT.paper })} />
       <Mountains ids={ids} />
       <SkyWorld ids={ids} />
       <Dojo ids={ids} />
       <Curtain ids={ids} />
       <RoomWall ids={ids} />
       <Weave ids={ids} />
+      <RoomLamps ids={ids} />
       <Students />
     </>
   );
@@ -1477,6 +2198,15 @@ export interface JourneySceneProps {
   readonly initialProgress?: number;
   readonly frame?: SceneFrame;
   readonly className?: string;
+  /**
+   * Lighting for the server-rendered frame (stills). Live, the scene follows
+   * <html data-scene>, which the pre-paint switch sets before first paint.
+   */
+  readonly lighting?: SceneLighting;
+}
+
+function documentLighting(): SceneLighting {
+  return document.documentElement.dataset.scene === "night" ? "night" : "day";
 }
 
 /**
@@ -1484,7 +2214,7 @@ export interface JourneySceneProps {
  * moving the camera never reconciles the SVG tree.
  */
 export const JourneyScene = forwardRef<JourneySceneHandle, JourneySceneProps>(function JourneyScene(
-  { initialProgress = 0, frame, className },
+  { initialProgress = 0, frame, className, lighting = "day" },
   ref,
 ) {
   const resolvedFrame = frame ?? DEFAULT_FRAME;
@@ -1492,8 +2222,11 @@ export const JourneyScene = forwardRef<JourneySceneHandle, JourneySceneProps>(fu
   const cacheRef = useRef(new Map<string, Element>());
   const progressRef = useRef(clamp(initialProgress));
   const frameRef = useRef(resolvedFrame);
+  const lightingRef = useRef<SceneLighting>(lighting);
   // The initial attributes only seed server HTML; later frames are imperative.
-  const [initialState] = useState(() => sceneState(clamp(initialProgress), resolvedFrame));
+  const [initialState] = useState(() =>
+    sceneState(clamp(initialProgress), resolvedFrame, lighting),
+  );
 
   useImperativeHandle(
     ref,
@@ -1502,7 +2235,11 @@ export const JourneyScene = forwardRef<JourneySceneHandle, JourneySceneProps>(fu
         progressRef.current = clamp(progress);
         const svg = svgRef.current;
         if (svg) {
-          applySceneState(svg, sceneState(progressRef.current, frameRef.current), cacheRef.current);
+          applySceneState(
+            svg,
+            sceneState(progressRef.current, frameRef.current, lightingRef.current),
+            cacheRef.current,
+          );
           svg.dataset.sceneProgress = String(round2(progressRef.current));
         }
       },
@@ -1514,8 +2251,39 @@ export const JourneyScene = forwardRef<JourneySceneHandle, JourneySceneProps>(fu
   useLayoutEffect(() => {
     frameRef.current = resolvedFrame;
     const svg = svgRef.current;
-    if (svg) applySceneState(svg, sceneState(progressRef.current, resolvedFrame), cacheRef.current);
+    if (svg) {
+      applySceneState(
+        svg,
+        sceneState(progressRef.current, resolvedFrame, lightingRef.current),
+        cacheRef.current,
+      );
+    }
   }, [resolvedFrame]);
+
+  // CSS relights the artwork when <html data-scene> changes; only the colours
+  // sceneState blends per frame (the weave) need a fresh frame.
+  useLayoutEffect(() => {
+    const relight = () => {
+      const next = documentLighting();
+      if (next === lightingRef.current) return;
+      lightingRef.current = next;
+      const svg = svgRef.current;
+      if (svg) {
+        applySceneState(
+          svg,
+          sceneState(progressRef.current, frameRef.current, next),
+          cacheRef.current,
+        );
+      }
+    };
+    relight();
+    const observer = new MutationObserver(relight);
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["data-scene"],
+    });
+    return () => observer.disconnect();
+  }, []);
 
   return (
     <svg
