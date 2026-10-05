@@ -31,6 +31,8 @@ export default function LeadsPage() {
   const {
     leads: baseLeads,
     addLead,
+    leadCreate,
+    checkLeadCreateResult,
     updateLead,
     convertLeadToStudent,
     followUpLead,
@@ -63,6 +65,8 @@ export default function LeadsPage() {
   const today = businessDate;
   const controller = useLeadsPageController({
     addLead,
+    leadCreate,
+    checkLeadCreateResult,
     baseLeads,
     convertLeadToStudent,
     currentRole,
@@ -119,6 +123,21 @@ export default function LeadsPage() {
         ) : null}
       </Header>
 
+      {!controller.showAddLead && controller.leadCreateMessage ? (
+        <div role="status" className="px-4 pt-4 text-sm text-text-secondary sm:px-6 lg:px-8">
+          <p>{controller.leadCreateMessage}</p>
+          {controller.canCheckLeadCreate ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              onClick={() => void controller.handleCheckLeadCreateResult()}
+            >
+              Check result
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
       {requiresStaff && staffLoadError ? (
         <div role="alert" className="px-4 pt-4 sm:px-6 lg:px-8">
           <p className="text-sm text-danger">Staff assignments are unavailable. {staffLoadError}</p>
@@ -227,7 +246,11 @@ export default function LeadsPage() {
           activeStaff={activeStaff}
           addLeadError={controller.addLeadError}
           isAddingLead={controller.isAddingLead}
-          isOutcomeUnknown={controller.addLeadOutcomeUnknown}
+          createLocked={controller.addLeadLocked}
+          createMessage={controller.leadCreateMessage}
+          canCheckResult={controller.canCheckLeadCreate}
+          isCheckingResult={controller.isCheckingLead}
+          onCheckResult={controller.handleCheckLeadCreateResult}
           programById={programById}
           selectedProgramId={controller.addLeadProgramId}
           today={today}
@@ -235,6 +258,7 @@ export default function LeadsPage() {
           onDismissError={controller.dismissAddLeadError}
           onProgramChange={controller.setAddLeadProgramId}
           onSubmit={controller.handleAddLead}
+          onEdit={controller.handleAddLeadFormEdit}
         />
       )}
     </div>

@@ -70,6 +70,29 @@ persisted compiler state without deleting the production build or changing code.
 Keep the old cache until recovery is verified; increasing browser test timeouts
 does not repair a stalled compiler.
 
+## Lead creation recovery
+
+Add lead retains one operation ID before submitting. If confirmation is lost,
+**Check result** reads the original receipt and the current lead without repeating
+the create request. The blocker survives closing the form, navigating away,
+provider remounts, and reloads in the same browser session. Only the currently
+verified admin or original front desk owner can resume it. Other lead work remains
+available.
+
+The session-storage journal contains only operation, owner, studio and confirmed
+lead IDs. It never saves contact fields, notes, tokens or form contents. Unavailable
+or malformed storage blocks new creates. A missing receipt stays unresolved. If
+creation is confirmed but the current lead returns 404, the UI says that the lead
+was created but is no longer available. It publishes no historical receipt row.
+Clear/reset fences held reads while preserving unresolved operation markers.
+Preview keeps local sample creation and never uses this journal or live recovery.
+
+Run the synthetic recovery checks from `frontend/`:
+
+```bash
+node --experimental-strip-types --test tests/lead-create-operation.test.mjs tests/lead-create-mounted.test.mjs
+```
+
 ## Build
 
 ```bash

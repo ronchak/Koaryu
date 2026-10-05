@@ -41,6 +41,7 @@ import type {
   SessionAttendanceRefreshResult,
 } from "@/lib/schedule-store-model";
 import type { LeadFollowUpCommand, LeadOperations } from "@/lib/lead-operation-reservations";
+import type { LeadCreateView } from "@/lib/lead-create-operation";
 import type { LeadFollowUpOptions, LeadFollowUpResult } from "@/lib/store-lead-actions";
 import type { StudentListQuery } from "@/lib/student-list-page";
 import type { DemoResetResponse, StudioDataClearResponse } from "@/lib/studio-store-model";
@@ -115,6 +116,8 @@ export interface StoreContextValue {
   leadsLoaded: boolean;
   leadsLoadError: string | null;
   addLead: (data: Partial<Lead>) => Promise<void>;
+  leadCreate: LeadCreateView;
+  checkLeadCreateResult: () => Promise<void>;
   updateLead: (id: string, data: Partial<Lead>) => Promise<void>;
   deleteLead: (id: string) => Promise<void>;
   refreshLeads: () => Promise<Lead[]>;
@@ -259,6 +262,8 @@ export type LeadsStoreContextValue = Pick<
   | "leadsLoaded"
   | "leadsLoadError"
   | "addLead"
+  | "leadCreate"
+  | "checkLeadCreateResult"
   | "updateLead"
   | "deleteLead"
   | "refreshLeads"

@@ -44,6 +44,8 @@ export type StoreContextProviderValues = {
 export function useStoreContextValues(input: StoreContextValueInputs): StoreContextProviderValues {
   const {
     addLead,
+    leadCreate,
+    checkLeadCreateResult,
     addSession,
     addStudent,
     addTemplate,
@@ -227,6 +229,8 @@ export function useStoreContextValues(input: StoreContextValueInputs): StoreCont
       leadsLoaded,
       leadsLoadError,
       addLead,
+      leadCreate,
+      checkLeadCreateResult,
       updateLead,
       deleteLead,
       refreshLeads,
@@ -236,6 +240,8 @@ export function useStoreContextValues(input: StoreContextValueInputs): StoreCont
     }),
     [
       addLead,
+      leadCreate,
+      checkLeadCreateResult,
       convertLeadToStudent,
       deleteLead,
       followUpLead,

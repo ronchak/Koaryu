@@ -7,8 +7,9 @@ import { createCommonJsPacker } from "./helpers/store-browser-harness.mjs";
 function actionsFixture({ preview, converted = true, currentIdentity = true } = {}) {
   const f = { writes: [], studentWrites: 0, refreshes: 0, mutations: 0, finishes: 0 };
   const { add, modules } = createCommonJsPacker({
-    react: `exports.useCallback=fn=>fn;exports.useRef=value=>({current:value});`,
+    react: `exports.useCallback=fn=>fn;exports.useRef=value=>({current:value});exports.useMemo=fn=>fn();exports.useState=value=>[typeof value==='function'?value():value,()=>{}];exports.useLayoutEffect=()=>{};exports.useSyncExternalStore=(_,get)=>get();`,
     "@/lib/api": `exports.api=f.api;exports.ApiError=class extends Error{};`,
+    "@/lib/lead-create-operation": `exports.INACTIVE_LEAD_CREATE_VIEW={isCurrent:()=>false};`,
     "@/lib/lead-operation-reservations": `exports.useLeadOperationReservations=()=>({});`,
   });
   const id = add("@/lib/store-lead-actions");

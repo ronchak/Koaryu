@@ -1,6 +1,23 @@
-import { useCallback, useRef, type Dispatch, type SetStateAction } from "react";
+import {
+  useCallback,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type Dispatch,
+  type SetStateAction,
+} from "react";
 
 import { api, ApiError } from "@/lib/api";
+import {
+  getBrowserLeadCreateOwner,
+  INACTIVE_LEAD_CREATE_VIEW,
+  PREVIEW_LEAD_CREATE_VIEW,
+  type LeadCreateOwner,
+  type LeadCreateScope,
+  type LeadCreateBinding,
+} from "@/lib/lead-create-operation";
 import {
   applyLeadUpdate,
   buildPreviewLead,
@@ -18,6 +35,8 @@ import type { BeltLadder, BeltRank, Lead, Program, Student } from "@/types";
 import type { ResourceScope } from "@/lib/store-resource-scope";
 import { canCommitLiveMutation, withCurrentLiveAuthRead } from "@/lib/store-action-types";
 
+const inactiveSnapshot = () => INACTIVE_LEAD_CREATE_VIEW;
+
 export type LeadFollowUpResult =
   | { lead: Lead; currentLead: Lead | null; reconciliation: "ready" }
   | { lead: Lead; reconciliation: "required"; reconciliationError: string }
@@ -28,6 +47,7 @@ export interface LeadFollowUpOptions {
 }
 
 interface UseStoreLeadActionsOptions {
+  leadCreateScope?: LeadCreateScope | null;
   leadMutationScopeRef: StoreRef<ResourceScope>;
   businessDateRef: StoreRef<string>;
   beginLeadMutation: () => () => void;
@@ -48,6 +68,7 @@ interface UseStoreLeadActionsOptions {
 }
 
 export function useStoreLeadActions({
+  leadCreateScope,
   beginLeadMutation,
   businessDateRef,
   leadMutationScopeRef,
@@ -89,6 +110,114 @@ export function useStoreLeadActions({
     [setLeads],
   );
 
+  // React subscribes to the browser owner through this attachment. Detaching a
+  // provider removes its sinks without discarding the retained command.
+  const [createConnection] = useState(() => {
+    let owner: LeadCreateOwner | null = null;
+    const listeners = new Set<() => void>();
+    const notify = () => {
+      for (const listener of [...listeners]) listener();
+    };
+    return {
+      owner: () => owner,
+      snapshot: () => owner?.getSnapshot() ?? INACTIVE_LEAD_CREATE_VIEW,
+      subscribe(listener: () => void) {
+        listeners.add(listener);
+        return () => {
+          listeners.delete(listener);
+        };
+      },
+      attach(next: LeadCreateOwner) {
+        owner = next;
+        const unsubscribe = next.subscribe(notify);
+        notify();
+        return () => {
+          unsubscribe();
+          if (owner === next) {
+            owner = null;
+            notify();
+          }
+        };
+      },
+    };
+  });
+  const ownerUser = leadCreateScope?.userId;
+  const ownerStudio = leadCreateScope?.studioId;
+  const ownerRole = leadCreateScope?.role;
+  const resourceScope = leadMutationScopeRef.current;
+  const createBinding = useMemo<LeadCreateBinding>(
+    () => ({
+      isCurrent: () => leadMutationScopeRef.current === resourceScope,
+      beginRequest: beginLiveAuthRequest,
+      beginMutation: beginLeadMutation,
+      post: (body, token) => api.post("/leads", body, token),
+      receipt: (id, token) => api.get(`/automations/operations/${id}`, token),
+      currentLead: (id, token) => api.get(`/leads/${id}`, token),
+      capturePublication: (id) => {
+        const publication = leadPublicationsRef.current.get(id);
+        return () => leadPublicationsRef.current.get(id) === publication;
+      },
+      publish: (id, lead, isCurrent) => {
+        const publication = Symbol();
+        leadPublicationsRef.current.set(id, publication);
+        setLeads((current) => {
+          if (
+            !isCurrent() ||
+            leadMutationScopeRef.current !== resourceScope ||
+            leadPublicationsRef.current.get(id) !== publication
+          )
+            return current;
+          return lead
+            ? [lead, ...current.filter((item) => item.id !== id)]
+            : current.filter((item) => item.id !== id);
+        });
+      },
+    }),
+    [beginLeadMutation, beginLiveAuthRequest, leadMutationScopeRef, resourceScope, setLeads],
+  );
+  useLayoutEffect(() => {
+    if (
+      isPreviewMode ||
+      !ownerUser ||
+      !ownerStudio ||
+      !ownerRole ||
+      !["admin", "front_desk"].includes(ownerRole)
+    ) {
+      return;
+    }
+    try {
+      const owner = getBrowserLeadCreateOwner({
+        userId: ownerUser,
+        studioId: ownerStudio,
+        role: ownerRole,
+      });
+      const detach = owner.bind(createBinding);
+      const disconnect = createConnection.attach(owner);
+      return () => {
+        detach();
+        disconnect();
+      };
+    } catch {
+      /* Access has not been verified for this owner. */
+    }
+  }, [createBinding, createConnection, isPreviewMode, ownerUser, ownerStudio, ownerRole]);
+  const snapshot = useSyncExternalStore(
+    createConnection.subscribe,
+    createConnection.snapshot,
+    inactiveSnapshot,
+  );
+  const createOwner = createConnection.owner();
+  const matchesOwner =
+    !isPreviewMode &&
+    createOwner?.isCurrent() &&
+    createOwner.scope.userId === ownerUser &&
+    createOwner.scope.studioId === ownerStudio &&
+    createOwner.scope.role === ownerRole;
+  const leadCreate = isPreviewMode
+    ? PREVIEW_LEAD_CREATE_VIEW
+    : matchesOwner
+      ? snapshot
+      : INACTIVE_LEAD_CREATE_VIEW;
   const addLead = useCallback(
     async (data: Partial<Lead>) => {
       if (isPreviewMode) {
@@ -96,21 +225,18 @@ export function useStoreLeadActions({
         persistLeads([newLead, ...leadsRef.current]);
         return;
       }
-
-      const liveRequest = beginLiveAuthRequest();
-      const finishMutation = beginLeadMutation();
-      try {
-        const result = await api.post<Lead>("/leads", data, liveRequest.token);
-        if (!canCommitLiveMutation(liveRequest)) {
-          return;
-        }
-        setLeads((current) => [result, ...current]);
-      } finally {
-        finishMutation();
-      }
+      if (!matchesOwner || !createOwner)
+        throw new Error("Verify current lead access before adding a lead.");
+      await createOwner.submit(data);
     },
-    [beginLeadMutation, beginLiveAuthRequest, isPreviewMode, leadsRef, persistLeads, setLeads],
+    [createOwner, matchesOwner, isPreviewMode, leadsRef, persistLeads],
   );
+  const checkLeadCreateResult = useCallback(async () => {
+    if (isPreviewMode) return;
+    if (!matchesOwner || !createOwner)
+      throw new Error("Verify current lead access before checking the result.");
+    await createOwner.check();
+  }, [createOwner, matchesOwner, isPreviewMode]);
 
   const updateLead = useCallback(
     async (id: string, data: Partial<Lead>) => {
@@ -380,6 +506,8 @@ export function useStoreLeadActions({
 
   return {
     addLead,
+    leadCreate,
+    checkLeadCreateResult,
     convertLeadToStudent,
     deleteLead,
     followUpLead,
