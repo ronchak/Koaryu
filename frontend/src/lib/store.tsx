@@ -873,6 +873,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [hydrated, pathname, router, subscriptionRequired]);
 
   const applyDemoResetResponse = useCallback((data: DemoResetResponse) => {
+    leadMutationScopeRef.current.settle();
+    leadMutationScopeRef.current = createResourceScope();
     resetProgramScope();
     setProgramsUsageLoaded(false);
     setProgramsUsageLoadError(null);
@@ -904,6 +906,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [setPrograms, setProgramsLoaded, resetProgramScope, applyLadderSelection, clearPromotionHistoryCache, commitEligibilityRows, commitStudents, destructivelyResetScheduleCoordinator, setSessions]);
 
   const applyClearedStudioData = useCallback((studioNameValue?: string) => {
+    leadMutationScopeRef.current.settle();
+    leadMutationScopeRef.current = createResourceScope();
     resetProgramScope();
     setProgramsUsageLoaded(false);
     setProgramsUsageLoadError(null);
@@ -1673,6 +1677,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const {
     addLead,
+    leadCreate,
+    checkLeadCreateResult,
     convertLeadToStudent,
     deleteLead,
     followUpLead,
@@ -1680,6 +1686,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     refreshLeads,
     updateLead,
   } = useStoreLeadActions({
+    leadCreateScope: identityReady && !subscriptionRequired && activeUserId && currentStudioId && currentRole
+      ? { userId: activeUserId, studioId: currentStudioId, role: currentRole } : null,
     businessDateRef,
     beginLeadMutation,
     leadMutationScopeRef,
@@ -1958,6 +1966,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     bulkUpdateStudentStatus: useReconciledProjectionCommand(bulkUpdateStudentStatus, beginProjectionCommand),
     importStudents: useReconciledProjectionCommand(importStudents, beginProjectionCommand),
     addLead: useReconciledProjectionCommand(addLead, beginProjectionCommand),
+    checkLeadCreateResult: useReconciledProjectionCommand(checkLeadCreateResult, beginProjectionCommand),
     updateLead: useReconciledProjectionCommand(updateLead, beginProjectionCommand),
     deleteLead: useReconciledProjectionCommand(deleteLead, beginProjectionCommand),
     followUpLead: useReconciledProjectionCommand(followUpLead, beginProjectionCommand),
@@ -2016,6 +2025,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const contextValues = useStoreContextValues({
     addLead: reconciledCommands.addLead,
+    leadCreate,
+    checkLeadCreateResult: reconciledCommands.checkLeadCreateResult,
     addSession: reconciledCommands.addSession,
     addStudent: reconciledCommands.addStudent,
     addTemplate: reconciledCommands.addTemplate,

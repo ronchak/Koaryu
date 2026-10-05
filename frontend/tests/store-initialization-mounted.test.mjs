@@ -1739,13 +1739,13 @@ for (const operation of ["add", "update", "delete", "convert"]) {
         const browser = await chromium.launch({ headless: true });
         try {
           const page = await browser.newPage();
-          await page.route("http://fixture.local/", (route) =>
+          await page.route("http://localhost/", (route) =>
             route.fulfill({ contentType: "text/html", body: '<div id="root"></div>' }),
           );
-          await page.goto("http://fixture.local/");
+          await page.goto("http://localhost/");
           await page.evaluate((operation) => {
             const user = {
-              id: "lead-race-user",
+              id: "10000000-0000-4000-8000-000000000001",
               email: "lead-race@example.test",
               legal_first_name: "Lead",
               legal_last_name: "Owner",
@@ -1754,7 +1754,7 @@ for (const operation of ["add", "update", "delete", "convert"]) {
             const profile = {
               user,
               membership_status: "active",
-              studio_id: "lead-race-studio",
+              studio_id: "20000000-0000-4000-8000-000000000001",
               role: "admin",
               staff_profiles_available: true,
             };
@@ -1762,7 +1762,12 @@ for (const operation of ["add", "update", "delete", "convert"]) {
               id: "existing-lead",
               first_name: "Original",
               last_name: "Lead",
-              stage: "new",
+              stage: "inquiry",
+              studio_id: profile.studio_id,
+              source: "walk_in",
+              is_minor: false,
+              created_at: "2026-10-05T00:00:00Z",
+              updated_at: "2026-10-05T00:00:00Z",
               converted_student_id: null,
             };
             const fixture = (window.fixture = {
@@ -1784,7 +1789,9 @@ for (const operation of ["add", "update", "delete", "convert"]) {
             fixture.api = {
               get: async (path) => {
                 fixture.requests.push(path);
-                if (path === "/dashboard/bootstrap?allow_partial=true") {
+                if (path === "/dashboard/workspace")
+                  return { auth: profile, studio: { name: "Lead race studio", timezone: "UTC" } };
+                if (path.startsWith("/dashboard/bootstrap?")) {
                   fixture.bootstrapCalls += 1;
                   const leads = structuredClone(fixture.dbLeads);
                   if (fixture.holdBootstrap)
@@ -1816,6 +1823,10 @@ for (const operation of ["add", "update", "delete", "convert"]) {
                     total: 1,
                     page_size: 200,
                   };
+                if (path === "/leads/30000000-0000-4000-8000-000000000001")
+                  return fixture.dbLeads.find(
+                    (lead) => lead.id === "30000000-0000-4000-8000-000000000001",
+                  );
                 if (path === "/leads") throw new Error("Leads refresh failed");
                 throw new Error(`Unexpected request ${path}`);
               },
@@ -1824,7 +1835,11 @@ for (const operation of ["add", "update", "delete", "convert"]) {
               fixture.mutationCalls += 1;
               let result;
               if (operation === "add") {
-                result = { ...initialLead, id: "created-lead", first_name: "Created" };
+                result = {
+                  ...initialLead,
+                  id: "30000000-0000-4000-8000-000000000001",
+                  first_name: "Created",
+                };
                 fixture.dbLeads = [result, ...fixture.dbLeads];
               } else if (operation === "delete") {
                 fixture.dbLeads = [];
@@ -1849,7 +1864,7 @@ for (const operation of ["add", "update", "delete", "convert"]) {
             fixture.startMutation = () => {
               fixture.mutation =
                 operation === "add"
-                  ? fixture.store.addLead({ first_name: "Created" })
+                  ? fixture.store.addLead({ first_name: "Created", last_name: "Lead" })
                   : operation === "update"
                     ? fixture.store.updateLead("existing-lead", { first_name: "Changed" })
                     : operation === "delete"
@@ -1857,7 +1872,9 @@ for (const operation of ["add", "update", "delete", "convert"]) {
                       : fixture.store.convertLeadToStudent("existing-lead");
             };
           }, operation);
-          await page.addScriptTag({ content: bundle("production", { layout: true }) });
+          await page.addScriptTag({
+            content: (operation === "add" ? buildBundle : bundle)("production", { layout: true }),
+          });
           await page.waitForFunction(
             () => fixture.store?.identityReady && fixture.store.leadsLoaded,
           );
