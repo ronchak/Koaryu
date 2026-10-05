@@ -122,6 +122,20 @@ export default function WorkflowCanvas({
   text,
   issues,
 }: WorkflowCanvasProps) {
+  const [defaultViewport] = useState(() => {
+    const initial = fillWorkflowPositions(draft);
+    const start =
+      initial.graph.nodes.find((node) => node.type === "trigger") ?? initial.graph.nodes[0];
+    const position =
+      start && Object.hasOwn(initial.layout.positions, start.id)
+        ? initial.layout.positions[start.id]
+        : undefined;
+    return {
+      x: position ? 24 - position.x * 0.9 : 0,
+      y: position ? 24 - position.y * 0.9 : 0,
+      zoom: 0.9,
+    };
+  });
   const [drag, setDrag] = useState<{
     draft: WorkflowSnapshot;
     positions: Record<string, WorkflowPosition>;
@@ -311,14 +325,13 @@ export default function WorkflowCanvas({
           multiSelectionKeyCode={null}
           selectionOnDrag={false}
           selectionKeyCode={null}
-          fitView
-          fitViewOptions={fitOptions}
+          defaultViewport={defaultViewport}
           minZoom={0.2}
           maxZoom={1.5}
           ariaLabelConfig={disabled ? disabledAriaLabels : ariaLabels}
         >
           <Background gap={20} />
-          <Controls showInteractive={false} />
+          <Controls showInteractive={false} fitViewOptions={fitOptions} />
         </ReactFlow>
       </div>
     </div>

@@ -784,15 +784,9 @@ describe("operations behavior proof", () => {
     );
   });
 
-  it("mounts the missed-class editor and keeps other proposals read-only", () => {
+  it("mounts the missed-class editor and the workflow catalog beside live queues", () => {
     const automations = source("src/app/(dashboard)/automations/page.tsx");
-    const futureSection = automations.slice(
-      automations.indexOf('<section aria-labelledby="future-workflows-title"'),
-      automations.indexOf(
-        "</section>",
-        automations.indexOf('<section aria-labelledby="future-workflows-title"'),
-      ) + "</section>".length,
-    );
+
 
     assert.doesNotMatch(
       automations,
@@ -803,11 +797,9 @@ describe("operations behavior proof", () => {
       automations,
       /data-automations-readonly|No automation builder is live|five-proposals/,
     );
-    assert.match(automations, /data-automation-future-list="four-proposals"/);
-    assert.doesNotMatch(
-      futureSection,
-      /<Link|<Button|<button|<form|<input|<select|<textarea|onClick=|onChange=/,
-    );
+    assert.match(automations, /<WorkflowCatalogPanel \/>/);
+    assert.match(automations, /data-automation-live-list="four-destinations"/);
+    assert.doesNotMatch(automations, /FUTURE_WORKFLOWS|four-proposals/);
   });
 
   it("keeps settings indexed behind the Admin boundary", () => {

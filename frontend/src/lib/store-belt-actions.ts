@@ -133,6 +133,27 @@ export function useStoreBeltActions({
     [],
   );
 
+  const refreshBeltLadders = useCallback(async (): Promise<{ ladders: readonly BeltLadder[] }> => {
+    if (isPreviewMode) throw new Error("Live belt references are unavailable in preview.");
+    const owner = beginLiveAuthRequest();
+    const currentOwner = () => owner.isSameIdentity?.() ?? owner.isCurrent();
+    const stale = () => new Error("Your workspace changed. Reload the belt choices.");
+    const ladders = await withCurrentLiveAuthRead(
+      () => {
+        if (!currentOwner()) throw stale();
+        return beginLiveAuthRequest();
+      },
+      async (request) => {
+        const result = await api.get<BeltLadder[]>("/belts/ladders", request.token);
+        if (!request.isCurrent() || !currentOwner()) throw stale();
+        return result;
+      },
+      () => {},
+    );
+    if (!currentOwner()) throw stale();
+    return { ladders };
+  }, [beginLiveAuthRequest, isPreviewMode]);
+
   const refreshBelts = useCallback(
     async (preferredLadderId?: string | null, options?: { requireEligibility?: boolean }) => {
       if (isPreviewMode) {
@@ -578,6 +599,7 @@ export function useStoreBeltActions({
     loadPromotionHistory,
     promoteStudent,
     refreshBelts,
+    refreshBeltLadders,
     setBeltRanks,
     setCurrentLadder,
   };

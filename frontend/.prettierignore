@@ -11,6 +11,7 @@ vercel.json
 *.md
 .env*
 src/types/generated/api-contracts.ts
+src/lib/generated/workflow-preview-catalog.json
 
 # Temporary source-text contracts in tests/billing-enrollment-transition-model.test.mjs.
 src/components/billing/billing-enrollments-tab.tsx

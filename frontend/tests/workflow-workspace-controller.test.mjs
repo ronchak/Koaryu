@@ -904,3 +904,73 @@ for (const confirmation of ["direct response", "receipt recovery"]) {
     assert.equal(w.getSnapshot().editor.baseline.revision, 8);
   });
 }
+
+test("pendingOperation exposes immutable exact/confirmed-alias reservations after reload without I/O", async () => {
+  const f = fixture(),
+    original = workspace(f);
+  f.api.detail = async () => {
+    throw new ApiError("Unavailable", 503);
+  };
+  original.openNew(ids.draft);
+  await original.submit("workflow.create").settled;
+  assert.equal(markers(f)[0].workflow_id, ids.workflow);
+  const restored = workspace(f);
+  const beforeCalls = f.calls.length,
+    beforeJournal = f.saved.get(WORKFLOW_JOURNAL_KEY);
+  const pending = restored.pendingOperation(existing);
+  assert.equal(pending, restored.getSnapshot().operations[key(target)]);
+  assert.equal(pending.result, null);
+  assert.equal(pending.status, "unknown");
+  assert.ok(Object.isFrozen(pending));
+  assert.equal(restored.pendingOperation(target), pending);
+  assert.equal(restored.pendingOperation({ kind: "workflow", id: ids.draft }), undefined);
+  assert.equal(restored.pendingOperation({ kind: "draft", id: ids.workflow }), undefined);
+  assert.equal(f.calls.length, beforeCalls);
+  assert.equal(f.saved.get(WORKFLOW_JOURNAL_KEY), beforeJournal);
+  f.auth.at(-1).invalidate();
+  assert.equal(restored.pendingOperation(existing), undefined);
+});
+
+test("pendingOperation prefers exact reservations and confirmed aliases before an unidentified create blocker", () => {
+  const f = fixture();
+  const createId = "60000000-0000-4000-8000-000000000101";
+  const saveId = "60000000-0000-4000-8000-000000000102";
+  f.saved.set(
+    WORKFLOW_JOURNAL_KEY,
+    JSON.stringify({
+      version: 1,
+      entries: [
+        {
+          operation_id: createId,
+          command: "workflow.create",
+          target,
+          owner_user_id: owner.userId,
+          owner_studio_id: owner.studioId,
+        },
+        {
+          operation_id: saveId,
+          command: "workflow.save",
+          target: existing,
+          owner_user_id: owner.userId,
+          owner_studio_id: owner.studioId,
+        },
+      ],
+    }),
+  );
+  const w = workspace(f);
+  assert.equal(w.pendingOperation(existing).operationId, saveId);
+  assert.equal(w.pendingOperation(target).operationId, createId);
+  const other = { kind: "workflow", id: ids.other };
+  assert.equal(w.pendingOperation(other).operationId, createId);
+  // Same UUID does not turn the draft into a workflow alias: this is the owner blocker.
+  assert.deepEqual(w.pendingOperation({ kind: "workflow", id: ids.draft }).target, target);
+  assert.equal(f.calls.length, 0);
+  const data = JSON.parse(f.saved.get(WORKFLOW_JOURNAL_KEY));
+  data.entries[0].workflow_id = ids.other;
+  f.saved.set(WORKFLOW_JOURNAL_KEY, JSON.stringify(data));
+  const known = workspace(f);
+  assert.equal(known.pendingOperation(other).operationId, createId);
+  assert.equal(known.pendingOperation(existing).operationId, saveId);
+  assert.equal(known.pendingOperation({ kind: "workflow", id: ids.draft }), undefined);
+  assert.equal(known.pendingOperation({ kind: "draft", id: ids.other }), undefined);
+});

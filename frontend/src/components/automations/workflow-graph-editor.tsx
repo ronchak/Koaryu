@@ -17,6 +17,12 @@ import type {
   WorkflowNodeType,
   WorkflowPort,
 } from "@/lib/automation-workflow-types";
+import {
+  catalogEntry,
+  workflowReferenceLabel,
+  type WorkflowCatalogChoices,
+  type WorkflowReferenceChoices,
+} from "@/lib/automation-workflow-catalog";
 import styles from "./workflow-graph-editor.module.css";
 
 const WorkflowCanvas = dynamic(() => import("./workflow-canvas"), {
@@ -35,6 +41,10 @@ export type WorkflowGraphEditorProps = {
   canRedo: boolean;
   disabled?: boolean;
   issues: ValidationIssue[];
+  presentation?: {
+    readonly catalog: WorkflowCatalogChoices;
+    readonly references?: WorkflowReferenceChoices;
+  };
 };
 
 const kindLabels: Record<WorkflowNodeType, string> = {
@@ -55,20 +65,51 @@ const subscribeWidth = (listener: () => void) => {
 const desktopWidth = () => window.matchMedia("(min-width: 768px)").matches;
 const serverWidth = () => false;
 
-function nodeSummary(node: WorkflowSnapshot["graph"]["nodes"][number]): string {
+function nodeSummary(
+  node: WorkflowSnapshot["graph"]["nodes"][number],
+  presentation?: WorkflowGraphEditorProps["presentation"],
+): string {
+  const catalog = presentation?.catalog;
+  const references = presentation?.references ?? {};
+  const valueLabel = (value: unknown, field: string | null): string => {
+    if (value === undefined) return "Choose a value";
+    if (value === null) return "No value";
+    if (typeof value === "boolean") return value ? "Yes" : "No";
+    if (Array.isArray(value)) return value.map((item) => valueLabel(item, field)).join(", ");
+    if (typeof value !== "string") return String(value);
+    const metadata = catalog ? catalogEntry(catalog.fields, field) : undefined;
+    return (
+      workflowReferenceLabel(references, field, value) ??
+      (metadata?.value_type === "enum" && metadata.values?.includes(value)
+        ? value.replaceAll("_", " ")
+        : value)
+    );
+  };
+  const operators: Record<string, string> = {
+    eq: "Is",
+    neq: "Is not",
+    in: "Is one of",
+    not_in: "Is not one of",
+  };
   switch (node.type) {
     case "trigger":
-      return node.config.event_type ?? "Choose a trigger event";
+      return (
+        (catalog ? catalogEntry(catalog.triggers, node.config.event_type)?.label : undefined) ??
+        node.config.event_type ??
+        "Choose a trigger event"
+      );
     case "condition":
       return node.config.field && node.config.operator
-        ? `${node.config.field} ${node.config.operator} ${"value" in node.config ? JSON.stringify(node.config.value) : "Choose a value"}`
+        ? presentation
+          ? `${catalogEntry(catalog!.fields, node.config.field)?.label ?? node.config.field} ${operators[node.config.operator] ?? node.config.operator} ${valueLabel(node.config.value, node.config.field)}`
+          : `${node.config.field} ${node.config.operator} ${"value" in node.config ? JSON.stringify(node.config.value) : "Choose a value"}`
         : "Choose a field, comparison, and value";
     case "delay":
       return node.config.mode === "duration"
         ? node.config.minutes === null
           ? "Choose a duration"
           : `Wait ${node.config.minutes} minutes`
-        : `Wait until ${node.config.field ?? "an event time"} (${node.config.offset_minutes} minutes)`;
+        : `Wait until ${(catalog ? catalogEntry(catalog.delay_fields, node.config.field)?.label : undefined) ?? node.config.field ?? "an event time"} (${node.config.offset_minutes} minutes)`;
     case "email":
       return node.config.subject_template || "Write an email subject";
     case "lead_follow_up":
@@ -297,12 +338,21 @@ export function WorkflowGraphEditor({
   canRedo,
   disabled = false,
   issues,
+  presentation,
 }: WorkflowGraphEditorProps) {
   const wide = useSyncExternalStore(subscribeWidth, desktopWidth, serverWidth);
   const [choice, setChoice] = useState<"graph" | "steps" | null>(null);
   const view = choice ?? (wide ? "graph" : "steps");
   const [addKind, setAddKind] = useState<AddKind>("email");
   const [notice, setNotice] = useState<{ message: string; error: boolean } | null>(null);
+  const undo = () => {
+    setNotice({ message: "Undid the last change.", error: false });
+    onUndo();
+  };
+  const redo = () => {
+    setNotice({ message: "Redid the last change.", error: false });
+    onRedo();
+  };
   const root = useRef<HTMLElement>(null);
   const addButton = useRef<HTMLButtonElement>(null);
   const kindId = useId();
@@ -317,11 +367,14 @@ export function WorkflowGraphEditor({
           counts.set(node.type, ordinal);
           return [
             node.id,
-            { label: `${kindLabels[node.type]} ${ordinal}`, summary: nodeSummary(node) },
+            {
+              label: `${kindLabels[node.type]} ${ordinal}`,
+              summary: nodeSummary(node, presentation),
+            },
           ];
         }),
     );
-  }, [draft.graph.nodes]);
+  }, [draft.graph.nodes, presentation]);
   const triggerCount = draft.graph.nodes.filter((node) => node.type === "trigger").length;
   const availableKinds = addKinds.filter((kind) => kind !== "trigger" || triggerCount === 0);
   const effectiveKind = addKind === "trigger" && triggerCount > 0 ? "email" : addKind;
@@ -372,11 +425,11 @@ export function WorkflowGraphEditor({
     if (target.isContentEditable || target.closest("input, textarea, select")) return;
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z") {
       event.preventDefault();
-      if (!disabled && event.shiftKey && canRedo) onRedo();
-      else if (!disabled && !event.shiftKey && canUndo) onUndo();
+      if (!disabled && event.shiftKey && canRedo) redo();
+      else if (!disabled && !event.shiftKey && canUndo) undo();
     } else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "y") {
       event.preventDefault();
-      if (!disabled && canRedo) onRedo();
+      if (!disabled && canRedo) redo();
     }
   };
   const focusIssue = (id: string) => {
@@ -444,10 +497,10 @@ export function WorkflowGraphEditor({
         >
           Auto layout
         </button>
-        <button type="button" disabled={disabled || !canUndo} onClick={onUndo}>
+        <button type="button" disabled={disabled || !canUndo} onClick={undo}>
           Undo
         </button>
-        <button type="button" disabled={disabled || !canRedo} onClick={onRedo}>
+        <button type="button" disabled={disabled || !canRedo} onClick={redo}>
           Redo
         </button>
       </div>

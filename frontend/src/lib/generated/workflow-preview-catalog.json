@@ -1,0 +1,1307 @@
+{
+  "delay_fields": {
+    "belt_test.starts_at": {
+      "id": "belt_test.starts_at",
+      "label": "Belt test start",
+      "trigger_ids": [
+        "belt_test.approved",
+        "belt_test.upcoming"
+      ],
+      "value_type": "datetime"
+    },
+    "trial.starts_at": {
+      "id": "trial.starts_at",
+      "label": "Trial start",
+      "trigger_ids": [
+        "trial.scheduled",
+        "trial.upcoming"
+      ],
+      "value_type": "datetime"
+    }
+  },
+  "fields": {
+    "belt_test.approval_current": {
+      "id": "belt_test.approval_current",
+      "label": "Belt test approval is current",
+      "nullable": false,
+      "operators": [
+        "eq",
+        "neq"
+      ],
+      "value_type": "boolean"
+    },
+    "belt_test.event_scheduled": {
+      "id": "belt_test.event_scheduled",
+      "label": "Belt test is scheduled",
+      "nullable": false,
+      "operators": [
+        "eq",
+        "neq"
+      ],
+      "value_type": "boolean"
+    },
+    "invoice.collection_method": {
+      "id": "invoice.collection_method",
+      "label": "Invoice collection method",
+      "nullable": true,
+      "operators": [
+        "eq",
+        "neq",
+        "in",
+        "not_in"
+      ],
+      "value_type": "enum",
+      "values": [
+        "send_invoice",
+        "charge_automatically"
+      ]
+    },
+    "invoice.open_balance": {
+      "id": "invoice.open_balance",
+      "label": "Invoice has an open balance",
+      "nullable": false,
+      "operators": [
+        "eq",
+        "neq"
+      ],
+      "value_type": "boolean"
+    },
+    "invoice.overdue": {
+      "id": "invoice.overdue",
+      "label": "Invoice is overdue",
+      "nullable": false,
+      "operators": [
+        "eq",
+        "neq"
+      ],
+      "value_type": "boolean"
+    },
+    "lead.source": {
+      "id": "lead.source",
+      "label": "Lead source",
+      "nullable": false,
+      "operators": [
+        "eq",
+        "neq",
+        "in",
+        "not_in"
+      ],
+      "value_type": "enum",
+      "values": [
+        "walk_in",
+        "referral",
+        "social",
+        "search",
+        "website",
+        "other"
+      ]
+    },
+    "lead.stage": {
+      "id": "lead.stage",
+      "label": "Lead stage",
+      "nullable": false,
+      "operators": [
+        "eq",
+        "neq",
+        "in",
+        "not_in"
+      ],
+      "value_type": "enum",
+      "values": [
+        "inquiry",
+        "trial_scheduled",
+        "trial_completed",
+        "offer_sent",
+        "enrolled",
+        "closed_lost"
+      ]
+    },
+    "lead.unconverted": {
+      "id": "lead.unconverted",
+      "label": "Lead is unconverted",
+      "nullable": false,
+      "operators": [
+        "eq",
+        "neq"
+      ],
+      "value_type": "boolean"
+    },
+    "program.id": {
+      "id": "program.id",
+      "label": "Program",
+      "nullable": true,
+      "operators": [
+        "eq",
+        "neq",
+        "in",
+        "not_in"
+      ],
+      "value_type": "uuid"
+    },
+    "promotion.rank_id": {
+      "id": "promotion.rank_id",
+      "label": "Promoted rank",
+      "nullable": false,
+      "operators": [
+        "eq",
+        "neq",
+        "in",
+        "not_in"
+      ],
+      "value_type": "uuid"
+    },
+    "student.is_minor": {
+      "id": "student.is_minor",
+      "label": "Student is a minor",
+      "nullable": false,
+      "operators": [
+        "eq",
+        "neq"
+      ],
+      "value_type": "boolean"
+    },
+    "student.on_hold": {
+      "id": "student.on_hold",
+      "label": "Student is on hold",
+      "nullable": false,
+      "operators": [
+        "eq",
+        "neq"
+      ],
+      "value_type": "boolean"
+    },
+    "student.status": {
+      "id": "student.status",
+      "label": "Student status",
+      "nullable": false,
+      "operators": [
+        "eq",
+        "neq",
+        "in",
+        "not_in"
+      ],
+      "value_type": "enum",
+      "values": [
+        "active",
+        "trialing",
+        "inactive",
+        "paused",
+        "canceled"
+      ]
+    },
+    "trial.status": {
+      "id": "trial.status",
+      "label": "Trial status",
+      "nullable": false,
+      "operators": [
+        "eq",
+        "neq",
+        "in",
+        "not_in"
+      ],
+      "value_type": "enum",
+      "values": [
+        "scheduled",
+        "completed",
+        "no_show",
+        "canceled"
+      ]
+    }
+  },
+  "presets": [
+    {
+      "description": "Send a welcome message when a student first enrolls.",
+      "graph": {
+        "edges": [
+          {
+            "id": "trigger_next",
+            "port": "next",
+            "source": "trigger",
+            "target": "welcome"
+          },
+          {
+            "id": "welcome_next",
+            "port": "next",
+            "source": "welcome",
+            "target": "end"
+          }
+        ],
+        "nodes": [
+          {
+            "config": {
+              "event_type": "student.enrolled",
+              "program_id": null
+            },
+            "id": "trigger",
+            "type": "trigger"
+          },
+          {
+            "config": {
+              "body_template": "Hello {{recipient_name}},\n\nWelcome to {{studio_name}}! We look forward to seeing {{student_first_name}} in class. Reply if you have questions before the first visit.\n\n{{studio_name}}",
+              "recipient": "student_or_guardian",
+              "reply_to_email": "",
+              "subject_template": "Welcome to {{studio_name}}"
+            },
+            "id": "welcome",
+            "type": "email"
+          },
+          {
+            "config": {},
+            "id": "end",
+            "type": "end"
+          }
+        ],
+        "schema_version": 1
+      },
+      "id": "welcome",
+      "name": "Welcome a new student"
+    },
+    {
+      "description": "Congratulate a student after a rank promotion.",
+      "graph": {
+        "edges": [
+          {
+            "id": "trigger_next",
+            "port": "next",
+            "source": "trigger",
+            "target": "congratulations"
+          },
+          {
+            "id": "congratulations_next",
+            "port": "next",
+            "source": "congratulations",
+            "target": "end"
+          }
+        ],
+        "nodes": [
+          {
+            "config": {
+              "event_type": "student.promoted",
+              "program_id": null
+            },
+            "id": "trigger",
+            "type": "trigger"
+          },
+          {
+            "config": {
+              "body_template": "Hello {{recipient_name}},\n\nCongratulations to {{student_first_name}} on earning {{rank_name}} in {{program_name}}. We are proud of the work that went into this achievement.\n\n{{studio_name}}",
+              "recipient": "student_or_guardian",
+              "reply_to_email": "",
+              "subject_template": "Congratulations on {{rank_name}}!"
+            },
+            "id": "congratulations",
+            "type": "email"
+          },
+          {
+            "config": {},
+            "id": "end",
+            "type": "end"
+          }
+        ],
+        "schema_version": 1
+      },
+      "id": "promotion_congratulations",
+      "name": "Celebrate a promotion"
+    },
+    {
+      "description": "Welcome a lead, then set a staff follow-up after two days if they remain unconverted.",
+      "graph": {
+        "edges": [
+          {
+            "id": "trigger_next",
+            "port": "next",
+            "source": "trigger",
+            "target": "welcome"
+          },
+          {
+            "id": "welcome_next",
+            "port": "next",
+            "source": "welcome",
+            "target": "delay"
+          },
+          {
+            "id": "delay_next",
+            "port": "next",
+            "source": "delay",
+            "target": "condition"
+          },
+          {
+            "id": "condition_yes",
+            "port": "yes",
+            "source": "condition",
+            "target": "follow_up"
+          },
+          {
+            "id": "condition_no",
+            "port": "no",
+            "source": "condition",
+            "target": "end"
+          },
+          {
+            "id": "follow_up_next",
+            "port": "next",
+            "source": "follow_up",
+            "target": "end"
+          }
+        ],
+        "nodes": [
+          {
+            "config": {
+              "event_type": "lead.created",
+              "program_id": null
+            },
+            "id": "trigger",
+            "type": "trigger"
+          },
+          {
+            "config": {
+              "body_template": "Hello {{recipient_name}},\n\nThank you for asking about classes for {{lead_first_name}} at {{studio_name}}. Reply with any questions or to discuss a first visit.\n\n{{studio_name}}",
+              "recipient": "lead_or_guardian",
+              "reply_to_email": "",
+              "subject_template": "Thanks for your interest in {{studio_name}}"
+            },
+            "id": "welcome",
+            "type": "email"
+          },
+          {
+            "config": {
+              "minutes": 2880,
+              "mode": "duration"
+            },
+            "id": "delay",
+            "type": "delay"
+          },
+          {
+            "config": {
+              "field": "lead.unconverted",
+              "operator": "eq",
+              "value": true
+            },
+            "id": "condition",
+            "type": "condition"
+          },
+          {
+            "config": {
+              "due_in_days": 0,
+              "note": "Follow up on the initial inquiry and offer help arranging a first visit."
+            },
+            "id": "follow_up",
+            "type": "lead_follow_up"
+          },
+          {
+            "config": {},
+            "id": "end",
+            "type": "end"
+          }
+        ],
+        "schema_version": 1
+      },
+      "id": "new_lead_follow_up",
+      "name": "Follow up with a new lead"
+    },
+    {
+      "description": "Send a reminder one day before a scheduled trial.",
+      "graph": {
+        "edges": [
+          {
+            "id": "trigger_next",
+            "port": "next",
+            "source": "trigger",
+            "target": "reminder"
+          },
+          {
+            "id": "reminder_next",
+            "port": "next",
+            "source": "reminder",
+            "target": "end"
+          }
+        ],
+        "nodes": [
+          {
+            "config": {
+              "event_type": "trial.upcoming",
+              "offset_minutes": -1440,
+              "program_id": null
+            },
+            "id": "trigger",
+            "type": "trigger"
+          },
+          {
+            "config": {
+              "body_template": "Hello {{recipient_name}},\n\nThis is a reminder of {{lead_first_name}}'s trial at {{trial_start}}. Location: {{trial_location}}. Reply if you have questions or need to change your plans.\n\n{{studio_name}}",
+              "recipient": "lead_or_guardian",
+              "reply_to_email": "",
+              "subject_template": "Your trial at {{studio_name}}"
+            },
+            "id": "reminder",
+            "type": "email"
+          },
+          {
+            "config": {},
+            "id": "end",
+            "type": "end"
+          }
+        ],
+        "schema_version": 1
+      },
+      "id": "trial_reminder",
+      "name": "Remind a lead about a trial"
+    },
+    {
+      "description": "Wait one day after a completed trial, then contact an unconverted lead and set a follow-up.",
+      "graph": {
+        "edges": [
+          {
+            "id": "trigger_next",
+            "port": "next",
+            "source": "trigger",
+            "target": "delay"
+          },
+          {
+            "id": "delay_next",
+            "port": "next",
+            "source": "delay",
+            "target": "condition"
+          },
+          {
+            "id": "condition_yes",
+            "port": "yes",
+            "source": "condition",
+            "target": "follow_up_email"
+          },
+          {
+            "id": "condition_no",
+            "port": "no",
+            "source": "condition",
+            "target": "end"
+          },
+          {
+            "id": "follow_up_email_next",
+            "port": "next",
+            "source": "follow_up_email",
+            "target": "follow_up"
+          },
+          {
+            "id": "follow_up_next",
+            "port": "next",
+            "source": "follow_up",
+            "target": "end"
+          }
+        ],
+        "nodes": [
+          {
+            "config": {
+              "event_type": "trial.completed",
+              "program_id": null
+            },
+            "id": "trigger",
+            "type": "trigger"
+          },
+          {
+            "config": {
+              "minutes": 1440,
+              "mode": "duration"
+            },
+            "id": "delay",
+            "type": "delay"
+          },
+          {
+            "config": {
+              "field": "lead.unconverted",
+              "operator": "eq",
+              "value": true
+            },
+            "id": "condition",
+            "type": "condition"
+          },
+          {
+            "config": {
+              "body_template": "Hello {{recipient_name}},\n\nThank you for bringing {{lead_first_name}} to a trial at {{studio_name}}. We would love to hear how it went. Reply if you would like to discuss classes or enrollment.\n\n{{studio_name}}",
+              "recipient": "lead_or_guardian",
+              "reply_to_email": "",
+              "subject_template": "How was your trial at {{studio_name}}?"
+            },
+            "id": "follow_up_email",
+            "type": "email"
+          },
+          {
+            "config": {
+              "due_in_days": 0,
+              "note": "Check in after the completed trial and answer questions about enrollment."
+            },
+            "id": "follow_up",
+            "type": "lead_follow_up"
+          },
+          {
+            "config": {},
+            "id": "end",
+            "type": "end"
+          }
+        ],
+        "schema_version": 1
+      },
+      "id": "trial_completion_follow_up",
+      "name": "Follow up after a trial"
+    },
+    {
+      "description": "Contact an unconverted lead after a missed trial and set a staff follow-up.",
+      "graph": {
+        "edges": [
+          {
+            "id": "trigger_next",
+            "port": "next",
+            "source": "trigger",
+            "target": "condition"
+          },
+          {
+            "id": "condition_yes",
+            "port": "yes",
+            "source": "condition",
+            "target": "rebook"
+          },
+          {
+            "id": "condition_no",
+            "port": "no",
+            "source": "condition",
+            "target": "end"
+          },
+          {
+            "id": "rebook_next",
+            "port": "next",
+            "source": "rebook",
+            "target": "follow_up"
+          },
+          {
+            "id": "follow_up_next",
+            "port": "next",
+            "source": "follow_up",
+            "target": "end"
+          }
+        ],
+        "nodes": [
+          {
+            "config": {
+              "event_type": "trial.no_show",
+              "program_id": null
+            },
+            "id": "trigger",
+            "type": "trigger"
+          },
+          {
+            "config": {
+              "field": "lead.unconverted",
+              "operator": "eq",
+              "value": true
+            },
+            "id": "condition",
+            "type": "condition"
+          },
+          {
+            "config": {
+              "body_template": "Hello {{recipient_name}},\n\nWe missed {{lead_first_name}} at the trial. If another time would work better, reply and we can help arrange a new visit.\n\n{{studio_name}}",
+              "recipient": "lead_or_guardian",
+              "reply_to_email": "",
+              "subject_template": "Another time for a trial at {{studio_name}}?"
+            },
+            "id": "rebook",
+            "type": "email"
+          },
+          {
+            "config": {
+              "due_in_days": 0,
+              "note": "Offer help finding another trial time if the lead is still interested."
+            },
+            "id": "follow_up",
+            "type": "lead_follow_up"
+          },
+          {
+            "config": {},
+            "id": "end",
+            "type": "end"
+          }
+        ],
+        "schema_version": 1
+      },
+      "id": "trial_no_show",
+      "name": "Offer another trial time"
+    },
+    {
+      "description": "Send an overdue notice and a second message after three days if the invoice remains overdue.",
+      "graph": {
+        "edges": [
+          {
+            "id": "trigger_next",
+            "port": "next",
+            "source": "trigger",
+            "target": "notice"
+          },
+          {
+            "id": "notice_next",
+            "port": "next",
+            "source": "notice",
+            "target": "delay"
+          },
+          {
+            "id": "delay_next",
+            "port": "next",
+            "source": "delay",
+            "target": "condition"
+          },
+          {
+            "id": "condition_yes",
+            "port": "yes",
+            "source": "condition",
+            "target": "second_notice"
+          },
+          {
+            "id": "condition_no",
+            "port": "no",
+            "source": "condition",
+            "target": "end"
+          },
+          {
+            "id": "second_notice_next",
+            "port": "next",
+            "source": "second_notice",
+            "target": "end"
+          }
+        ],
+        "nodes": [
+          {
+            "config": {
+              "event_type": "invoice.overdue",
+              "program_id": null
+            },
+            "id": "trigger",
+            "type": "trigger"
+          },
+          {
+            "config": {
+              "body_template": "Hello {{recipient_name}},\n\nInvoice {{invoice_number}} from {{studio_name}} has an outstanding balance of {{invoice_balance}} and was due {{invoice_due_date}}. Reply if you have questions or need help with payment.\n\n{{studio_name}}",
+              "recipient": "invoice_payer",
+              "reply_to_email": "",
+              "subject_template": "Invoice {{invoice_number}} is overdue"
+            },
+            "id": "notice",
+            "type": "email"
+          },
+          {
+            "config": {
+              "minutes": 4320,
+              "mode": "duration"
+            },
+            "id": "delay",
+            "type": "delay"
+          },
+          {
+            "config": {
+              "field": "invoice.overdue",
+              "operator": "eq",
+              "value": true
+            },
+            "id": "condition",
+            "type": "condition"
+          },
+          {
+            "config": {
+              "body_template": "Hello {{recipient_name}},\n\nInvoice {{invoice_number}} still has an outstanding balance of {{invoice_balance}}. Please contact us if you need help or have questions about this invoice.\n\n{{studio_name}}",
+              "recipient": "invoice_payer",
+              "reply_to_email": "",
+              "subject_template": "Following up on invoice {{invoice_number}}"
+            },
+            "id": "second_notice",
+            "type": "email"
+          },
+          {
+            "config": {},
+            "id": "end",
+            "type": "end"
+          }
+        ],
+        "schema_version": 1
+      },
+      "id": "overdue_recovery",
+      "name": "Follow up on an overdue invoice"
+    },
+    {
+      "description": "Notify the invoice payer when a new payment first fails and a balance remains open.",
+      "graph": {
+        "edges": [
+          {
+            "id": "trigger_next",
+            "port": "next",
+            "source": "trigger",
+            "target": "condition"
+          },
+          {
+            "id": "condition_yes",
+            "port": "yes",
+            "source": "condition",
+            "target": "notice"
+          },
+          {
+            "id": "condition_no",
+            "port": "no",
+            "source": "condition",
+            "target": "end"
+          },
+          {
+            "id": "notice_next",
+            "port": "next",
+            "source": "notice",
+            "target": "end"
+          }
+        ],
+        "nodes": [
+          {
+            "config": {
+              "event_type": "invoice.payment_failed",
+              "program_id": null
+            },
+            "id": "trigger",
+            "type": "trigger"
+          },
+          {
+            "config": {
+              "field": "invoice.open_balance",
+              "operator": "eq",
+              "value": true
+            },
+            "id": "condition",
+            "type": "condition"
+          },
+          {
+            "config": {
+              "body_template": "Hello {{recipient_name}},\n\nA payment for invoice {{invoice_number}} was unsuccessful. The current outstanding balance is {{invoice_balance}}. Please contact {{studio_name}} for help with payment.\n\n{{studio_name}}",
+              "recipient": "invoice_payer",
+              "reply_to_email": "",
+              "subject_template": "Payment for invoice {{invoice_number}} was unsuccessful"
+            },
+            "id": "notice",
+            "type": "email"
+          },
+          {
+            "config": {},
+            "id": "end",
+            "type": "end"
+          }
+        ],
+        "schema_version": 1
+      },
+      "id": "failed_payment_notice",
+      "name": "Notify a payer about a failed payment"
+    },
+    {
+      "description": "Send an invitation after staff approval, then a reminder one day before the test.",
+      "graph": {
+        "edges": [
+          {
+            "id": "trigger_next",
+            "port": "next",
+            "source": "trigger",
+            "target": "invitation"
+          },
+          {
+            "id": "invitation_next",
+            "port": "next",
+            "source": "invitation",
+            "target": "delay"
+          },
+          {
+            "id": "delay_next",
+            "port": "next",
+            "source": "delay",
+            "target": "reminder"
+          },
+          {
+            "id": "reminder_next",
+            "port": "next",
+            "source": "reminder",
+            "target": "end"
+          }
+        ],
+        "nodes": [
+          {
+            "config": {
+              "event_type": "belt_test.approved",
+              "program_id": null
+            },
+            "id": "trigger",
+            "type": "trigger"
+          },
+          {
+            "config": {
+              "body_template": "Hello {{recipient_name}},\n\n{{student_first_name}} is invited to {{event_name}} at {{event_start}}. Location: {{event_location}}. Reply with any questions about attending.\n\n{{studio_name}}",
+              "recipient": "student_or_guardian",
+              "reply_to_email": "",
+              "subject_template": "Invitation to {{event_name}}"
+            },
+            "id": "invitation",
+            "type": "email"
+          },
+          {
+            "config": {
+              "field": "belt_test.starts_at",
+              "mode": "until",
+              "offset_minutes": -1440
+            },
+            "id": "delay",
+            "type": "delay"
+          },
+          {
+            "config": {
+              "body_template": "Hello {{recipient_name}},\n\nThis is a reminder that {{student_first_name}} is invited to {{event_name}} at {{event_start}}. Location: {{event_location}}. Reply if you have any questions.\n\n{{studio_name}}",
+              "recipient": "student_or_guardian",
+              "reply_to_email": "",
+              "subject_template": "Reminder for {{event_name}}"
+            },
+            "id": "reminder",
+            "type": "email"
+          },
+          {
+            "config": {},
+            "id": "end",
+            "type": "end"
+          }
+        ],
+        "schema_version": 1
+      },
+      "id": "belt_test_invitation",
+      "name": "Invite a student to a belt test"
+    }
+  ],
+  "recipients": {
+    "assigned_staff": {
+      "id": "assigned_staff",
+      "label": "Assigned staff member"
+    },
+    "invoice_payer": {
+      "id": "invoice_payer",
+      "label": "Invoice payer"
+    },
+    "lead_or_guardian": {
+      "id": "lead_or_guardian",
+      "label": "Lead or guardian"
+    },
+    "student_or_guardian": {
+      "id": "student_or_guardian",
+      "label": "Student or guardian"
+    }
+  },
+  "triggers": {
+    "belt_test.approved": {
+      "delay_fields": [
+        "belt_test.starts_at"
+      ],
+      "field_ids": [
+        "student.status",
+        "student.on_hold",
+        "student.is_minor",
+        "program.id",
+        "belt_test.event_scheduled",
+        "belt_test.approval_current"
+      ],
+      "id": "belt_test.approved",
+      "label": "Student is approved for a belt test",
+      "recipient_ids": [
+        "student_or_guardian"
+      ],
+      "simulation_entity_type": "belt_test_recipient",
+      "subject_kind": "belt_test",
+      "supports_lead_follow_up": false,
+      "supports_offset": false,
+      "supports_program_filter": true,
+      "template_variables": [
+        "studio_name",
+        "recipient_name",
+        "student_first_name",
+        "event_name",
+        "event_start",
+        "event_location"
+      ]
+    },
+    "belt_test.upcoming": {
+      "delay_fields": [
+        "belt_test.starts_at"
+      ],
+      "field_ids": [
+        "student.status",
+        "student.on_hold",
+        "student.is_minor",
+        "program.id",
+        "belt_test.event_scheduled",
+        "belt_test.approval_current"
+      ],
+      "id": "belt_test.upcoming",
+      "label": "Approved belt test is approaching",
+      "recipient_ids": [
+        "student_or_guardian"
+      ],
+      "simulation_entity_type": "belt_test_recipient",
+      "subject_kind": "belt_test",
+      "supports_lead_follow_up": false,
+      "supports_offset": true,
+      "supports_program_filter": true,
+      "template_variables": [
+        "studio_name",
+        "recipient_name",
+        "student_first_name",
+        "event_name",
+        "event_start",
+        "event_location"
+      ]
+    },
+    "invoice.overdue": {
+      "delay_fields": [],
+      "field_ids": [
+        "invoice.overdue",
+        "invoice.open_balance",
+        "invoice.collection_method"
+      ],
+      "id": "invoice.overdue",
+      "label": "Invoice becomes overdue",
+      "recipient_ids": [
+        "invoice_payer"
+      ],
+      "simulation_entity_type": "invoice",
+      "subject_kind": "invoice",
+      "supports_lead_follow_up": false,
+      "supports_offset": false,
+      "supports_program_filter": false,
+      "template_variables": [
+        "studio_name",
+        "recipient_name",
+        "invoice_number",
+        "invoice_balance",
+        "invoice_due_date"
+      ]
+    },
+    "invoice.payment_failed": {
+      "delay_fields": [],
+      "field_ids": [
+        "invoice.overdue",
+        "invoice.open_balance",
+        "invoice.collection_method"
+      ],
+      "id": "invoice.payment_failed",
+      "label": "When a new payment first fails",
+      "recipient_ids": [
+        "invoice_payer"
+      ],
+      "simulation_entity_type": "payment",
+      "subject_kind": "invoice",
+      "supports_lead_follow_up": false,
+      "supports_offset": false,
+      "supports_program_filter": false,
+      "template_variables": [
+        "studio_name",
+        "recipient_name",
+        "invoice_number",
+        "invoice_balance",
+        "invoice_due_date"
+      ]
+    },
+    "lead.created": {
+      "delay_fields": [],
+      "field_ids": [
+        "lead.stage",
+        "lead.source",
+        "lead.unconverted",
+        "program.id"
+      ],
+      "id": "lead.created",
+      "label": "Lead is created",
+      "recipient_ids": [
+        "lead_or_guardian",
+        "assigned_staff"
+      ],
+      "simulation_entity_type": "lead",
+      "subject_kind": "lead",
+      "supports_lead_follow_up": true,
+      "supports_offset": false,
+      "supports_program_filter": true,
+      "template_variables": [
+        "studio_name",
+        "recipient_name",
+        "lead_first_name"
+      ]
+    },
+    "lead.stage_changed": {
+      "delay_fields": [],
+      "field_ids": [
+        "lead.stage",
+        "lead.source",
+        "lead.unconverted",
+        "program.id"
+      ],
+      "id": "lead.stage_changed",
+      "label": "Lead stage changes",
+      "recipient_ids": [
+        "lead_or_guardian",
+        "assigned_staff"
+      ],
+      "simulation_entity_type": "lead",
+      "subject_kind": "lead",
+      "supports_lead_follow_up": true,
+      "supports_offset": false,
+      "supports_program_filter": true,
+      "template_variables": [
+        "studio_name",
+        "recipient_name",
+        "lead_first_name"
+      ]
+    },
+    "student.enrolled": {
+      "delay_fields": [],
+      "field_ids": [
+        "student.status",
+        "student.on_hold",
+        "student.is_minor"
+      ],
+      "id": "student.enrolled",
+      "label": "Student first enrolls",
+      "recipient_ids": [
+        "student_or_guardian"
+      ],
+      "simulation_entity_type": "student",
+      "subject_kind": "student",
+      "supports_lead_follow_up": false,
+      "supports_offset": false,
+      "supports_program_filter": true,
+      "template_variables": [
+        "studio_name",
+        "recipient_name",
+        "student_first_name"
+      ]
+    },
+    "student.promoted": {
+      "delay_fields": [],
+      "field_ids": [
+        "student.status",
+        "student.on_hold",
+        "student.is_minor",
+        "program.id",
+        "promotion.rank_id"
+      ],
+      "id": "student.promoted",
+      "label": "Student earns a rank promotion",
+      "recipient_ids": [
+        "student_or_guardian"
+      ],
+      "simulation_entity_type": "promotion",
+      "subject_kind": "promotion",
+      "supports_lead_follow_up": false,
+      "supports_offset": false,
+      "supports_program_filter": true,
+      "template_variables": [
+        "studio_name",
+        "recipient_name",
+        "student_first_name",
+        "rank_name",
+        "program_name"
+      ]
+    },
+    "trial.completed": {
+      "delay_fields": [],
+      "field_ids": [
+        "lead.stage",
+        "lead.source",
+        "lead.unconverted",
+        "trial.status",
+        "program.id"
+      ],
+      "id": "trial.completed",
+      "label": "Trial is completed",
+      "recipient_ids": [
+        "lead_or_guardian",
+        "assigned_staff"
+      ],
+      "simulation_entity_type": "trial_appointment",
+      "subject_kind": "trial",
+      "supports_lead_follow_up": true,
+      "supports_offset": false,
+      "supports_program_filter": true,
+      "template_variables": [
+        "studio_name",
+        "recipient_name",
+        "lead_first_name",
+        "trial_start",
+        "trial_location"
+      ]
+    },
+    "trial.no_show": {
+      "delay_fields": [],
+      "field_ids": [
+        "lead.stage",
+        "lead.source",
+        "lead.unconverted",
+        "trial.status",
+        "program.id"
+      ],
+      "id": "trial.no_show",
+      "label": "Trial is marked as missed",
+      "recipient_ids": [
+        "lead_or_guardian",
+        "assigned_staff"
+      ],
+      "simulation_entity_type": "trial_appointment",
+      "subject_kind": "trial",
+      "supports_lead_follow_up": true,
+      "supports_offset": false,
+      "supports_program_filter": true,
+      "template_variables": [
+        "studio_name",
+        "recipient_name",
+        "lead_first_name",
+        "trial_start",
+        "trial_location"
+      ]
+    },
+    "trial.scheduled": {
+      "delay_fields": [
+        "trial.starts_at"
+      ],
+      "field_ids": [
+        "lead.stage",
+        "lead.source",
+        "lead.unconverted",
+        "trial.status",
+        "program.id"
+      ],
+      "id": "trial.scheduled",
+      "label": "Trial is scheduled",
+      "recipient_ids": [
+        "lead_or_guardian",
+        "assigned_staff"
+      ],
+      "simulation_entity_type": "trial_appointment",
+      "subject_kind": "trial",
+      "supports_lead_follow_up": true,
+      "supports_offset": false,
+      "supports_program_filter": true,
+      "template_variables": [
+        "studio_name",
+        "recipient_name",
+        "lead_first_name",
+        "trial_start",
+        "trial_location"
+      ]
+    },
+    "trial.upcoming": {
+      "delay_fields": [
+        "trial.starts_at"
+      ],
+      "field_ids": [
+        "lead.stage",
+        "lead.source",
+        "lead.unconverted",
+        "trial.status",
+        "program.id"
+      ],
+      "id": "trial.upcoming",
+      "label": "Trial is approaching",
+      "recipient_ids": [
+        "lead_or_guardian",
+        "assigned_staff"
+      ],
+      "simulation_entity_type": "trial_appointment",
+      "subject_kind": "trial",
+      "supports_lead_follow_up": true,
+      "supports_offset": true,
+      "supports_program_filter": true,
+      "template_variables": [
+        "studio_name",
+        "recipient_name",
+        "lead_first_name",
+        "trial_start",
+        "trial_location"
+      ]
+    }
+  },
+  "variables": {
+    "event_location": {
+      "fallback": "Please contact the studio for the location",
+      "id": "event_location",
+      "label": "Belt test location",
+      "value_type": "string"
+    },
+    "event_name": {
+      "fallback": null,
+      "id": "event_name",
+      "label": "Belt test name",
+      "value_type": "string"
+    },
+    "event_start": {
+      "fallback": null,
+      "id": "event_start",
+      "label": "Belt test date and time",
+      "value_type": "string"
+    },
+    "invoice_balance": {
+      "fallback": null,
+      "id": "invoice_balance",
+      "label": "Current invoice balance",
+      "value_type": "string"
+    },
+    "invoice_due_date": {
+      "fallback": "No due date listed",
+      "id": "invoice_due_date",
+      "label": "Invoice due date",
+      "value_type": "string"
+    },
+    "invoice_number": {
+      "fallback": "not numbered",
+      "id": "invoice_number",
+      "label": "Invoice number",
+      "value_type": "string"
+    },
+    "lead_first_name": {
+      "fallback": null,
+      "id": "lead_first_name",
+      "label": "Lead first name",
+      "value_type": "string"
+    },
+    "program_name": {
+      "fallback": "your program",
+      "id": "program_name",
+      "label": "Promotion program name",
+      "value_type": "string"
+    },
+    "rank_name": {
+      "fallback": null,
+      "id": "rank_name",
+      "label": "Promoted rank name",
+      "value_type": "string"
+    },
+    "recipient_name": {
+      "fallback": "there",
+      "id": "recipient_name",
+      "label": "Recipient name",
+      "value_type": "string"
+    },
+    "student_first_name": {
+      "fallback": null,
+      "id": "student_first_name",
+      "label": "Student first name",
+      "value_type": "string"
+    },
+    "studio_name": {
+      "fallback": null,
+      "id": "studio_name",
+      "label": "Studio name",
+      "value_type": "string"
+    },
+    "trial_location": {
+      "fallback": "Please contact the studio for the location",
+      "id": "trial_location",
+      "label": "Trial location",
+      "value_type": "string"
+    },
+    "trial_start": {
+      "fallback": null,
+      "id": "trial_start",
+      "label": "Trial date and time",
+      "value_type": "string"
+    }
+  }
+}
