@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import {
   WORKFLOW_LIMITS,
@@ -14,9 +15,11 @@ import {
   nextWorkflowId,
   redoWorkflow,
   serializeWorkflowDraft,
+  truncateWorkflowText,
   undoWorkflow,
   validateWorkflow,
   workflowSteps,
+  workflowTextLength,
 } from "../src/lib/automation-workflow-model.ts";
 
 function branched() {
@@ -715,4 +718,111 @@ test("a present undefined or malformed comparison is invalid instead of becoming
     assert.equal(rejected.ok, false);
     assert.strictEqual(rejected.history, history);
   }
+});
+
+// Root emitted this graph/layout with the core validator at integration
+// b325ef141bc8e04f1c7c8b90b7568c7550183b59, from the UI run's
+// unicode-draft-fixture.json. Original source SHA256:
+// dfba3dff1261ad0f53403a5ddb2d04eb0a656cb26c4887bd64126f62b81c54f6.
+// The checked-in fixture preserves that JSON data without a backend/runtime dependency.
+const backendUnicodeDraft = JSON.parse(
+  readFileSync(new URL("./fixtures/workflow-unicode-draft.json", import.meta.url), "utf8"),
+);
+test("backend-valid 150-emoji fixture reopens, serializes, edits and survives undo/redo", () => {
+  const original = nodeById(backendUnicodeDraft, "email").config.subject_template;
+  assert.equal(original.length, 300);
+  assert.equal(workflowTextLength(original), 150);
+  assert.deepEqual(validateWorkflow(backendUnicodeDraft.graph, backendUnicodeDraft.layout), {
+    valid: true,
+    issues: [],
+  });
+  const canonical = canonicalWorkflowDraft(backendUnicodeDraft);
+  assert.equal(nodeById(canonical, "email").config.subject_template, original);
+  const reopened = JSON.parse(serializeWorkflowDraft(backendUnicodeDraft));
+  assert.deepEqual(reopened, canonical);
+  let history = createWorkflowHistory(reopened);
+  const config = nodeById(history.present, "email").config;
+  const edited = editWorkflowHistory(history, {
+    kind: "update_config",
+    node_id: "email",
+    update: {
+      type: "email",
+      config: { ...config, subject_template: original + " Welcome e\u0301" },
+    },
+  });
+  assert.equal(edited.ok, true);
+  history = edited.history;
+  assert.equal(
+    nodeById(history.present, "email").config.subject_template,
+    original + " Welcome e\u0301",
+  );
+  const undone = undoWorkflow(history);
+  assert.deepEqual(JSON.parse(serializeWorkflowDraft(undone.present)), canonical);
+  assert.deepEqual(redoWorkflow(undone).present, history.present);
+  assert.equal(nodeById(backendUnicodeDraft, "email").config.subject_template, original);
+});
+
+for (const [id, key, max, membership] of [
+  ["yes", "subject_template", 200, false],
+  ["yes", "body_template", 5000, false],
+  ["no", "note", 1000, false],
+  ["condition", "value", 500, false],
+  ["condition", "value", 500, true],
+]) {
+  test(`${key}${membership ? " member" : ""} accepts ${max} codepoints and rejects ${max + 1}`, () => {
+    for (const text of ["🥋".repeat(max), "🥋".repeat(max - 3) + "Ae\u0301"]) {
+      assert.equal(workflowTextLength(text), max);
+      assert.ok(text.length > max);
+      const draft = branched();
+      const node = nodeById(draft, id);
+      node.config[key] = membership ? [text] : text;
+      if (membership) node.config.operator = "in";
+      assert.deepEqual(validateWorkflow(draft.graph, draft.layout, "draft"), {
+        valid: true,
+        issues: [],
+      });
+      const roundtrip = JSON.parse(serializeWorkflowDraft(draft));
+      assert.deepEqual(nodeById(roundtrip, id).config[key], membership ? [text] : text);
+      const history = createWorkflowHistory(draft);
+      const rejected = editWorkflowHistory(history, {
+        kind: "update_config",
+        node_id: id,
+        update: {
+          type: node.type,
+          config: { ...node.config, [key]: membership ? [text + "🥋"] : text + "🥋" },
+        },
+      });
+      assert.equal(rejected.ok, false);
+      assert.strictEqual(rejected.history, history);
+      node.config[key] = membership ? [text + "🥋"] : text + "🥋";
+      const invalid = validateWorkflow(draft.graph, draft.layout, "draft");
+      assert.equal(invalid.valid, false);
+      assert.ok(
+        invalid.issues.some(
+          (issue) =>
+            issue.node_id === id &&
+            issue.field === `config.${key}` &&
+            issue.code === (key === "value" ? "invalid_condition_value" : "text_too_long"),
+        ),
+      );
+      assert.throws(() => serializeWorkflowDraft(draft));
+    }
+  });
+}
+
+test("shared text helpers count codepoints, preserve combining marks and never split astral pairs", () => {
+  const text = "A🥋e\u0301🥋";
+  assert.equal(workflowTextLength(text), 5);
+  assert.equal(truncateWorkflowText(text, 0), "");
+  assert.equal(truncateWorkflowText(text, 2), "A🥋");
+  assert.equal(truncateWorkflowText(text, 3), "A🥋e");
+  assert.equal(truncateWorkflowText(text, 4), "A🥋e\u0301");
+  assert.equal(truncateWorkflowText(text, 5), text);
+  assert.equal(truncateWorkflowText(text, 20), text);
+  assert.notEqual(truncateWorkflowText(text, 5), text.normalize("NFC"));
+  const draft = branched();
+  nodeById(draft, "yes").id = "🥋";
+  assert.ok(
+    codes(validateWorkflow(draft.graph, draft.layout, "draft")).includes("invalid_node_id"),
+  );
 });

@@ -52,7 +52,7 @@ export default function Fixture(){
   return <main><h1>Workflow graph test fixture</h1><p>Synthetic local test UI. No backend or customer data.</p><label><input type="checkbox" checked={disabled} onChange={e=>setDisabled(e.target.checked)}/> Disable editing</label><input aria-label="Native text undo fixture" defaultValue=""/><WorkflowGraphEditor draft={state.history.present} selectedNodeId={selected} onSelectNode={setSelected} onEdit={edit} onUndo={undo} onRedo={redo} canUndo={state.history.past.length>0} canRedo={state.history.future.length>0} disabled={disabled} issues={issues}/><p>Test action count: <output data-action-count>{state.actions.length}</output></p><p>Test selection: <output data-selected-node>{selected??'none'}</output></p><details><summary>Test graph JSON</summary><pre data-graph-json>{JSON.stringify(state.history.present,null,2)}</pre></details></main>;
 }`;
 
-async function prepare() {
+async function prepare(inspector = false) {
   await mkdir(resolve(fixtureDirectory, "app"), { recursive: true });
   await writeFile(
     resolve(fixtureDirectory, "package.json"),
@@ -90,7 +90,12 @@ async function prepare() {
     `import './theme.css';export const metadata={title:'Workflow graph local fixture'};export default function Layout({children}){return <html lang="en"><body>{children}</body></html>}`,
   );
   await writeFile(resolve(fixtureDirectory, "app/theme.css"), fixtureTheme);
-  await writeFile(resolve(fixtureDirectory, "app/page.jsx"), workflowGraphOwnerSource);
+  const ownerSource = inspector
+    ? (
+        await import("./workflow-node-inspector-fixture.mjs")
+      ).createWorkflowNodeInspectorOwnerSource(initialGraph)
+    : workflowGraphOwnerSource;
+  await writeFile(resolve(fixtureDirectory, "app/page.jsx"), ownerSource);
   await writeFile(
     resolve(fixtureDirectory, "proxy.js"),
     "export function proxy(){return undefined;} export const config={matcher:[]};",
@@ -147,6 +152,7 @@ function next(args) {
   );
 }
 // Build: node tests/helpers/workflow-graph-fixture.mjs build
+// Inspector variant: node tests/helpers/workflow-graph-fixture.mjs build --inspector
 // Serve after build: node tests/helpers/workflow-graph-fixture.mjs serve --port 4317
 // Stop with Ctrl-C. A lingering child is killed after 2.5 seconds, then clean: node tests/helpers/workflow-graph-fixture.mjs clean
 // Only this known disposable directory is removed. No environment files are copied or read.
@@ -154,7 +160,9 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   const command = process.argv[2];
   if (command === "clean") await rm(fixtureDirectory, { recursive: true, force: true });
   else if (command === "build") {
-    await prepare();
+    if (process.argv[3] && process.argv[3] !== "--inspector")
+      throw Error("Use build [--inspector]");
+    await prepare(process.argv[3] === "--inspector");
     await next(["build"]);
   } else if (command === "serve") {
     const port = Number(process.argv[4]);
