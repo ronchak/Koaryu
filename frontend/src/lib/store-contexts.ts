@@ -56,6 +56,7 @@ export interface StoreContextValue {
   identityLoadError: string | null;
   studioLoadError: string | null;
   beltLaddersLoadError: string | null;
+  refreshBeltLadders: () => Promise<{ ladders: readonly BeltLadder[] }>;
   retryInitialization: () => void;
   subscriptionRequired: boolean;
   markSubscriptionRequired: () => void;
@@ -267,6 +268,7 @@ export type LeadsStoreContextValue = Pick<
 >;
 export type BeltsStoreContextValue = Pick<
   StoreContextValue,
+  | "refreshBeltLadders"
   | "beltLaddersLoadError"
   | "beltLadders"
   | "beltRanks"

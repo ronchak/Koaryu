@@ -511,6 +511,16 @@ export function createWorkflowWorkspace(
   };
   const controller = {
     getSnapshot: () => state,
+    pendingOperation(target: WorkflowTarget): WorkflowOperation | undefined {
+      if (!state.accessible || (options.mode === "live" && !authority?.isCurrent()))
+        return undefined;
+      const found =
+        reservation(target) ??
+        [...pending.entries()].find(
+          ([, entry]) => entry.marker.command === "workflow.create" && !entry.marker.workflow_id,
+        );
+      return found ? state.operations[found[0]] : undefined;
+    },
     subscribe(listener: () => void) {
       listeners.add(listener);
       return () => {

@@ -101,6 +101,7 @@ export function useStoreContextValues(input: StoreContextValueInputs): StoreCont
     promoteStudent,
     promotionHistoryCache,
     refreshLeads,
+    refreshBeltLadders,
     refreshPrograms,
     refreshScheduleRange,
     refreshSessionAttendance,
@@ -282,6 +283,7 @@ export function useStoreContextValues(input: StoreContextValueInputs): StoreCont
   const beltsValue = useMemo<BeltsStoreContextValue>(
     () => ({
       beltLadders,
+      refreshBeltLadders,
       beltLaddersLoadError,
       beltRanks,
       currentLadderId,
@@ -301,6 +303,7 @@ export function useStoreContextValues(input: StoreContextValueInputs): StoreCont
     }),
     [
       beltLadders,
+      refreshBeltLadders,
       beltLaddersLoadError,
       beltRanks,
       currentLadderId,

@@ -1706,6 +1706,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     promoteStudent,
     setBeltRanks,
     setCurrentLadder,
+    refreshBeltLadders,
   } = useStoreBeltActions({
     applyLadderSelection,
     beginLiveAuthRequest,
@@ -2071,6 +2072,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     promotionHistoryCache,
     refreshLeads,
     refreshPrograms,
+    refreshBeltLadders,
     refreshSchedule,
     refreshScheduleRange,
     refreshSessionAttendance,

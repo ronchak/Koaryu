@@ -41,6 +41,26 @@ const snapshot = async (page) =>
 const count = (page) => page.evaluate(() => workflowFixture.actions.length);
 const node = (page, id) => page.locator(`[data-testid="rf__node-${id}"]`);
 const step = (page, id) => page.locator(`[data-workflow-step="${id}"]`);
+async function fitAll(page) {
+  await page.getByRole("button", { name: "Fit View", exact: true }).click();
+  await expect
+    .poll(() =>
+      page.locator(".react-flow__node").evaluateAll((nodes) =>
+        nodes.every((element) => {
+          const node = element.getBoundingClientRect(),
+            canvas = element.closest(".react-flow").getBoundingClientRect();
+          return (
+            node.x >= canvas.x &&
+            node.y >= canvas.y &&
+            node.right <= canvas.right &&
+            node.bottom <= canvas.bottom
+          );
+        }),
+      ),
+    )
+    .toBe(true);
+}
+
 async function connectStep(page, source, port, target) {
   const row = step(page, source).locator("..");
   await row
@@ -126,6 +146,7 @@ test("real canvas completes one move, syncs undo/redo and auto layout, preserves
   const browser = await chromium.launch();
   try {
     const { page, errors } = await mount(browser);
+    await fitAll(page);
     await expect(node(page, "condition")).toBeVisible();
     assert.equal(await node(page, "trigger").locator(".react-flow__handle.target").count(), 0);
     assert.equal(await node(page, "end").locator(".react-flow__handle.source").count(), 0);
@@ -179,6 +200,7 @@ test("deletion cleans incident edges/layout and restores focus; validation focus
   const browser = await chromium.launch();
   try {
     const { page, errors } = await mount(browser);
+    await fitAll(page);
     await expect(node(page, "email")).toBeVisible();
     await node(page, "email").click();
     await page.getByRole("button", { name: "Delete selected step" }).click();
@@ -187,6 +209,27 @@ test("deletion cleans incident edges/layout and restores focus; validation focus
     assert.ok(!draft.graph.nodes.some((n) => n.id === "email"));
     assert.ok(!draft.graph.edges.some((e) => e.target === "email" || e.source === "email"));
     assert.equal(Object.hasOwn(draft.layout.positions, "email"), false);
+    await expect(page.getByRole("status").filter({ hasText: "Deleted Email" })).toBeVisible();
+    await page.getByRole("button", { name: "Undo", exact: true }).click();
+    assert.ok((await snapshot(page)).graph.nodes.some((node) => node.id === "email"));
+    await expect(
+      page.getByRole("status").filter({ hasText: "Undid the last change." }),
+    ).toBeVisible();
+    await expect(page.getByText(/Deleted Email/)).toHaveCount(0);
+    await page.getByRole("button", { name: "Redo", exact: true }).click();
+    await expect(
+      page.getByRole("status").filter({ hasText: "Redid the last change." }),
+    ).toBeVisible();
+    await page.getByRole("button", { name: "Add step", exact: true }).focus();
+    await page.keyboard.press("ControlOrMeta+z");
+    await expect(
+      page.getByRole("status").filter({ hasText: "Undid the last change." }),
+    ).toBeVisible();
+    await page.keyboard.press("ControlOrMeta+Shift+z");
+    await expect(
+      page.getByRole("status").filter({ hasText: "Redid the last change." }),
+    ).toBeVisible();
+
     await page.evaluate(() =>
       workflowFixture.setIssues([
         {
@@ -213,6 +256,7 @@ test("disabled blocks all edits and history while retaining navigation and nativ
   const browser = await chromium.launch();
   try {
     const { page, errors } = await mount(browser);
+    await fitAll(page);
     await expect(node(page, "condition")).toBeVisible();
     await node(page, "condition").focus();
     await page.keyboard.press("Enter");
@@ -306,6 +350,7 @@ test("canvas handles connect canonical yes/no ports and announce a rejected cycl
   const browser = await chromium.launch();
   try {
     const { page, errors } = await mount(browser);
+    await fitAll(page);
     async function dragConnection(source, port, target) {
       const from = await node(page, source).locator(`[data-handleid="${port}"]`).boundingBox();
       const to = await node(page, target).locator(".react-flow__handle.target").boundingBox();
@@ -342,6 +387,7 @@ test("edge selection survives replacement in either array order", async () => {
   const browser = await chromium.launch();
   try {
     const { page, errors } = await mount(browser);
+    await fitAll(page);
     for (const id of ["follow_end", "trigger_condition", "email_end", "follow_end"]) {
       const edge = page.locator(`[data-testid="rf__edge-${id}"]`);
       await edge.focus();
@@ -467,6 +513,7 @@ for (const prototypeId of ["constructor", "toString", "__proto__"]) {
         if (edge.target === "end") edge.target = prototypeId;
       });
       await page.evaluate((value) => workflowFixture.reset(value), draft);
+      await fitAll(page);
       await expect(node(page, prototypeId)).toBeVisible();
       await expect(node(page, prototypeId)).toHaveAttribute(
         "aria-label",
@@ -492,6 +539,15 @@ for (const prototypeId of ["constructor", "toString", "__proto__"]) {
           (element) => element.style.transform,
         );
         const box = await node(page, movedId).boundingBox();
+        const hit = await page.evaluate(({ x, y }) => {
+          const element = document.elementFromPoint(x + 35, y + 35);
+          return {
+            node: element?.closest(".react-flow__node")?.getAttribute("data-id"),
+            element: element?.outerHTML,
+            viewport: document.querySelector(".react-flow__viewport")?.getAttribute("style"),
+          };
+        }, box);
+        assert.equal(hit.node, movedId, JSON.stringify({ hit, box }));
         await page.mouse.move(box.x + 35, box.y + 35);
         await page.mouse.down();
         await page.mouse.move(box.x + 85, box.y + 70, { steps: 12 });
@@ -536,3 +592,48 @@ for (const prototypeId of ["constructor", "toString", "__proto__"]) {
     }
   });
 }
+
+test("initial camera is readable and explicit Fit View shows all six nodes without editing", async () => {
+  const browser = await chromium.launch();
+  try {
+    const { page, errors } = await mount(browser);
+    const viewport = () =>
+      page.locator(".react-flow__viewport").evaluate((element) => {
+        const matrix = new DOMMatrixReadOnly(getComputedStyle(element).transform);
+        return { x: matrix.e, y: matrix.f, zoom: matrix.a };
+      });
+    await expect.poll(async () => (await viewport()).zoom).toBe(0.9);
+    const original = await snapshot(page);
+    const margin = await node(page, "trigger").evaluate((element) => {
+      const node = element.getBoundingClientRect(),
+        canvas = element.closest(".react-flow").getBoundingClientRect();
+      return { x: node.x - canvas.x, y: node.y - canvas.y, width: node.width };
+    });
+    assert.ok(
+      Math.abs(margin.x - 24) < 0.1 &&
+        Math.abs(margin.y - 24) < 0.1 &&
+        Math.abs(margin.width - 216) < 0.1,
+      JSON.stringify(margin),
+    );
+    await fitAll(page);
+    await expect.poll(async () => (await viewport()).zoom).toBeLessThan(0.9);
+    const inside = await page.locator(".react-flow__node").evaluateAll((nodes) =>
+      nodes.every((element) => {
+        const node = element.getBoundingClientRect(),
+          canvas = element.closest(".react-flow").getBoundingClientRect();
+        return (
+          node.x >= canvas.x &&
+          node.y >= canvas.y &&
+          node.right <= canvas.right &&
+          node.bottom <= canvas.bottom
+        );
+      }),
+    );
+    assert.equal(inside, true);
+    assert.deepEqual(await snapshot(page), original);
+    assert.equal(await count(page), 0);
+    assert.deepEqual(errors, []);
+  } finally {
+    await browser.close();
+  }
+});
