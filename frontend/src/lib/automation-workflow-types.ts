@@ -1,74 +1,60 @@
-// Local contract definitions until the backend generates the workflow API aliases.
-export type WorkflowScalar = string | number | boolean | null;
-export type WorkflowPort = "next" | "yes" | "no";
+import type {
+  ApiWorkflowCatalogResponse,
+  ApiWorkflowCreate,
+  ApiWorkflowDetail,
+  ApiWorkflowGraph_Output,
+  ApiWorkflowLayout_Output,
+  ApiWorkflowLifecycleRequest,
+  ApiWorkflowListResponse,
+  ApiWorkflowOperationResponse,
+  ApiWorkflowPosition,
+  ApiWorkflowPublish,
+  ApiWorkflowSave,
+  ApiWorkflowSummary,
+  ApiWorkflowValidate,
+  ApiWorkflowValidationIssue,
+  ApiWorkflowValidationResult,
+} from "../types/generated/api-contracts";
 
+// Canonical editor data uses the server's emitted output fields, including nullable defaults.
+export type WorkflowGraph = Pick<ApiWorkflowGraph_Output, keyof ApiWorkflowGraph_Output>;
+export type WorkflowNode = WorkflowGraph["nodes"][number];
+export type WorkflowNodeType = WorkflowNode["type"];
 export type WorkflowConfigByType = {
-  trigger: { event_type: string | null; program_id: string | null; offset_minutes?: number };
-  condition: {
-    field: string | null;
-    operator: string | null;
-    value?: WorkflowScalar | WorkflowScalar[];
-  };
-  delay:
-    | { mode: "duration"; minutes: number | null }
-    | { mode: "until"; field: string | null; offset_minutes: number };
-  email: {
-    recipient: string | null;
-    subject_template: string;
-    body_template: string;
-    reply_to_email: string;
-  };
-  lead_follow_up: { due_in_days: number | null; note: string };
-  end: Record<string, never>;
+  [Kind in WorkflowNodeType]: Extract<WorkflowNode, { type: Kind }>["config"];
 };
-export type WorkflowNodeType = keyof WorkflowConfigByType;
-export type WorkflowNode = {
-  [Kind in WorkflowNodeType]: { id: string; type: Kind; config: WorkflowConfigByType[Kind] };
-}[WorkflowNodeType];
+export type WorkflowScalar = Exclude<
+  WorkflowConfigByType["condition"]["value"],
+  unknown[] | undefined
+>;
 export type WorkflowNodeUpdate = {
   [Kind in WorkflowNodeType]: { type: Kind; config: WorkflowConfigByType[Kind] };
 }[WorkflowNodeType];
-export type WorkflowEdge = { id: string; source: string; target: string; port: WorkflowPort };
-export type WorkflowGraph = { schema_version: 1; nodes: WorkflowNode[]; edges: WorkflowEdge[] };
-export type WorkflowPosition = { x: number; y: number };
-export type WorkflowLayout = { positions: Record<string, WorkflowPosition> };
+export type WorkflowEdge = WorkflowGraph["edges"][number];
+export type WorkflowPort = WorkflowEdge["port"];
+export type WorkflowPosition = ApiWorkflowPosition;
+export type WorkflowLayout = ApiWorkflowLayout_Output;
 export type WorkflowDraft = { graph: WorkflowGraph; layout: WorkflowLayout };
 
-export type ValidationIssue = {
-  code: string;
-  message: string;
-  node_id: string | null;
-  edge_id: string | null;
-  field: string | null;
-};
-export type WorkflowValidationResponse = { valid: boolean; issues: ValidationIssue[] };
-export type WorkflowDetail = {
-  id: string;
-  name: string;
-  description: string;
-  status: "draft" | "active" | "paused" | "archived";
-  revision: number;
-  draft_graph: WorkflowGraph;
-  draft_layout: WorkflowLayout;
-  validation_issues: ValidationIssue[];
-  published_version_id: string | null;
-  published_version_number: number | null;
-  published_at: string | null;
-  updated_at: string;
-  has_unpublished_changes: boolean;
-  pending_run_count: number;
-  sending_run_count: number;
-};
-export type WorkflowCreateRequest = WorkflowDraft & {
-  operation_id: string;
-  name: string;
-  description: string;
-};
-export type WorkflowSaveRequest = WorkflowCreateRequest & { expected_revision: number };
-export type WorkflowCommandRequest = { operation_id: string; expected_revision: number };
-export type WorkflowPublishRequest = WorkflowCommandRequest & { cancel_pending?: boolean };
-export type WorkflowValidateRequest = { graph: WorkflowGraph; layout?: WorkflowLayout };
+export type ValidationIssue = ApiWorkflowValidationIssue;
+export type WorkflowValidationResponse = ApiWorkflowValidationResult;
+export type WorkflowDetail = ApiWorkflowDetail;
+// HTTP accepts defaults on input; this editor always submits its complete canonical draft.
+export type WorkflowCreateRequest = Omit<ApiWorkflowCreate, keyof WorkflowDraft> & WorkflowDraft;
+export type WorkflowSaveRequest = Omit<ApiWorkflowSave, keyof WorkflowDraft> & WorkflowDraft;
+export type WorkflowCommandRequest = ApiWorkflowLifecycleRequest;
+export type WorkflowPublishRequest = ApiWorkflowPublish;
+export type WorkflowValidateRequest = Omit<ApiWorkflowValidate, keyof WorkflowDraft> &
+  Pick<WorkflowDraft, "graph"> &
+  Partial<Pick<WorkflowDraft, "layout">>;
 
+export type WorkflowCommand = ApiWorkflowOperationResponse["command"];
+export type WorkflowSummary = ApiWorkflowSummary;
+export type WorkflowListResponse = ApiWorkflowListResponse;
+export type WorkflowOperationResponse = ApiWorkflowOperationResponse;
+export type WorkflowCatalogResponse = ApiWorkflowCatalogResponse;
+
+// Simulation DTOs remain local until the separately owned simulation API is generated.
 export type WorkflowSimulationEntityType =
   | "student"
   | "promotion"

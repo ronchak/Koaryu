@@ -826,3 +826,53 @@ test("shared text helpers count codepoints, preserve combining marks and never s
     codes(validateWorkflow(draft.graph, draft.layout, "draft")).includes("invalid_node_id"),
   );
 });
+
+test("condition arrays reject null members while preserving scalar values and catalog membership checks", async () => {
+  const { validConditionValue } = await import("../src/lib/automation-workflow-catalog.ts");
+  const { catalog } = JSON.parse(
+    readFileSync(new URL("./fixtures/workflow-catalog.json", import.meta.url), "utf8"),
+  );
+  for (const value of [[null], ["new", null]]) {
+    const draft = branched();
+    nodeById(draft, "condition").config = { field: "lead.stage", operator: "in", value };
+    const result = validateWorkflow(draft.graph, draft.layout, "draft");
+    assert.deepEqual(codes(result), ["invalid_condition_value"]);
+    assert.equal(result.issues[0].field, "config.value");
+    assert.throws(() => createWorkflowHistory(draft), /finite scalar values/);
+    assert.throws(() => canonicalWorkflowDraft(draft), /finite scalar values/);
+    assert.deepEqual(nodeById(draft, "condition").config.value, value);
+  }
+  for (const value of [[false], [0], [false, 0]]) {
+    const draft = branched();
+    nodeById(draft, "condition").config = { field: "lead.stage", operator: "in", value };
+    assert.equal(validateWorkflow(draft.graph, draft.layout, "draft").valid, true);
+    const history = createWorkflowHistory(draft);
+    assert.deepEqual(nodeById(history.present, "condition").config.value, value);
+    assert.equal(validConditionValue(value, catalog.fields["lead.stage"], "in", {}), false);
+  }
+  assert.equal(validConditionValue(["inquiry"], catalog.fields["lead.stage"], "in", {}), true);
+  assert.equal(validConditionValue(["unsupported"], catalog.fields["lead.stage"], "in", {}), false);
+  assert.equal(validConditionValue(false, catalog.fields["lead.unconverted"], "eq", {}), true);
+  assert.equal(validConditionValue(null, catalog.fields["program.id"], "eq", {}), true);
+});
+
+test("scalar null, false and zero survive canonical history after generated output alignment", () => {
+  for (const value of [null, false, 0]) {
+    const draft = branched();
+    nodeById(draft, "condition").config = { field: "lead.unconverted", operator: "eq", value };
+    const history = createWorkflowHistory(draft);
+    const changed = editWorkflowHistory(history, {
+      kind: "update_config",
+      node_id: "condition",
+      update: {
+        type: "condition",
+        config: { field: "lead.stage", operator: "eq", value: "inquiry" },
+      },
+    });
+    assert.equal(changed.ok, true);
+    const restored = undoWorkflow(changed.history);
+    assert.equal(Object.hasOwn(nodeById(restored.present, "condition").config, "value"), true);
+    assert.equal(nodeById(restored.present, "condition").config.value, value);
+    assert.equal(nodeById(redoWorkflow(restored).present, "condition").config.value, "inquiry");
+  }
+});
