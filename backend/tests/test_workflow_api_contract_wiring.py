@@ -156,8 +156,9 @@ def test_operation_readback_exposes_only_accepted_command_variants(openapi):
         "belt_test.update",
         "belt_test.approve",
         "belt_test.revoke",
+        "run.cancel",
     }
-    assert len(schema["oneOf"]) == 6
+    assert len(schema["oneOf"]) == 7
 
 
 def test_real_graph_requests_and_responses_keep_typed_configs(openapi):
@@ -338,6 +339,22 @@ def test_generated_aliases_keep_discriminants_and_optional_value_types(contracts
     assert "export type ApiTriggerConfig = Record" not in contracts
     assert "export type ApiConditionConfig = Record" not in contracts
     assert "x-optional-on-wire" not in contracts
+
+
+def test_run_cancel_receipt_adds_only_reachable_run_response_aliases(contracts):
+    for name in [
+        "RunCancelOperationResponse",
+        "WorkflowRunDetail",
+        "WorkflowRunSummary",
+        "WorkflowRunStep",
+        "WorkflowEmailAttemptSummary",
+    ]:
+        assert f"export interface Api{name} {{" in contracts
+    assert '  command: "run.cancel";' in contracts
+    assert '  entity_type: "workflow_run";' in contracts
+    assert "  result: ApiWorkflowRunDetail;" in contracts
+    assert "ApiWorkflowRunCancelRequest" not in contracts
+    assert "ApiWorkflowRunListResponse" not in contracts
 
 
 def test_official_generation_is_byte_identical_and_matches_checked_in_artifact(
