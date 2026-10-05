@@ -86,9 +86,12 @@ without deleting them. There is no worktree/root override. The helper cannot pas
 hosted readiness until both the target schema and backend serving the exact
 candidate have been deployed.
 
-The private `with-hosted-env.py` allowlist amendment is **proposed**, not installed
-by this candidate. After its separate review and installation, start an operator
-session with tracing disabled and explicitly source
+The private `with-hosted-env.py` allowlist amendment was separately reviewed and
+installed October 4, 2026 Pacific. Installation made no hosted requests or writes
+and performed no credential import. The repository importer still awaits
+canonical candidate installation, target schema/backend deployment, and current
+readiness verification. Start an operator session with tracing disabled and
+explicitly source
 `/Users/openclaw/.config/koaryu/operator/release-env.sh`. Inspect with:
 
 ```bash
@@ -100,7 +103,11 @@ The plan binds the candidate, environment, pinned Supabase project, current
 release declaration, source ciphertext and file identities, source and target key
 fingerprints, and verified app/mailbox. Both send and worker switches must remain
 false, and the recipient allowlist must be exactly `koaryu@outlook.com`. Settings
-come from the selected hosted environment with no `.env` fallback. Inspection
+use the selected hosted configuration snapshot captured when `with-hosted-env.py`
+starts, with no `.env` fallback. The post-confirmation Settings check rereads that
+snapshot; it does not retrieve current provider configuration. The coordinator
+must keep hosted send and worker switches paused and restart inspection if
+provider configuration or deployment changes during confirmation. Inspection
 performs no database write and sends no email.
 
 To import after reviewing that plan, use the same arguments with `--execute`:
