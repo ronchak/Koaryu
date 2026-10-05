@@ -19,6 +19,9 @@ BEGIN
 END;
 $predecessor$;
 
+-- Freeze the observed baseline before installing source callbacks.
+LOCK TABLE public.students,public.student_program_memberships,public.belt_ranks IN ACCESS EXCLUSIVE MODE;
+
 -- Mechanical projection of workflow_catalog.CATALOG: full maps for these five keys.
 -- Reproduce with json.dumps(projection,sort_keys=True,separators=(',',':'),ensure_ascii=True).
 -- catalog-source-sha256: f575ad4f3676e0d6d2134c888c9d24ac756bff05a1525f5af95b51185385cb7a
@@ -114,6 +117,9 @@ CREATE TABLE public.automation_workflow_runs (
     lease_expires_at TIMESTAMPTZ CHECK (isfinite(lease_expires_at)),
     revision BIGINT NOT NULL DEFAULT 1 CHECK (revision>0),
     reason TEXT CHECK (length(reason) BETWEEN 1 AND 200),
+    cancel_requested_at TIMESTAMPTZ CHECK (isfinite(cancel_requested_at)),
+    cancel_reason TEXT CHECK (cancel_reason ~ '^[a-z][a-z0-9_]{0,79}$'),
+    CHECK ((cancel_requested_at IS NULL)=(cancel_reason IS NULL)),
     created_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp() CHECK (isfinite(created_at)),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp() CHECK (isfinite(updated_at)),
     FOREIGN KEY(studio_id,workflow_id) REFERENCES public.automation_workflows(studio_id,id) ON DELETE CASCADE,
@@ -177,6 +183,10 @@ LANGUAGE plpgsql SECURITY INVOKER SET search_path='' AS $$
 BEGIN
     IF ROW(NEW.id,NEW.studio_id,NEW.workflow_id,NEW.version_id,NEW.event_id,NEW.activation_id,NEW.epoch,NEW.created_at)
         IS DISTINCT FROM ROW(OLD.id,OLD.studio_id,OLD.workflow_id,OLD.version_id,OLD.event_id,OLD.activation_id,OLD.epoch,OLD.created_at) THEN
+        RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_IMMUTABLE_RECORD';
+    END IF;
+    IF OLD.cancel_requested_at IS NOT NULL AND ROW(NEW.cancel_requested_at,NEW.cancel_reason)
+        IS DISTINCT FROM ROW(OLD.cancel_requested_at,OLD.cancel_reason) THEN
         RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_IMMUTABLE_RECORD';
     END IF;
     RETURN NEW;
@@ -1197,6 +1207,7 @@ CREATE TABLE public.belt_test_recipients (
     approved_schedule_revision BIGINT NOT NULL CHECK (approved_schedule_revision>0),
     -- Internal logical context. Public recipient DTOs intentionally omit it.
     approved_program_id UUID,
+    approved_rank_context_generation BIGINT NOT NULL CHECK (approved_rank_context_generation>=1),
     approved_current_rank_id UUID,
     approved_target_rank_id UUID NOT NULL,
     state TEXT NOT NULL CHECK (state IN ('approved','revoked')),
@@ -1223,9 +1234,9 @@ BEGIN
         RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STATE_CONFLICT';
     END IF;
     -- A revocation retains the exact facts of the last explicit approval.
-    IF NEW.state='revoked' AND ROW(NEW.approved_schedule_revision,NEW.approved_program_id,NEW.approved_current_rank_id,
+    IF NEW.state='revoked' AND ROW(NEW.approved_schedule_revision,NEW.approved_rank_context_generation,NEW.approved_program_id,NEW.approved_current_rank_id,
         NEW.approved_target_rank_id,NEW.approved_by,NEW.approved_at) IS DISTINCT FROM
-        ROW(OLD.approved_schedule_revision,OLD.approved_program_id,OLD.approved_current_rank_id,OLD.approved_target_rank_id,OLD.approved_by,OLD.approved_at) THEN
+        ROW(OLD.approved_schedule_revision,OLD.approved_rank_context_generation,OLD.approved_program_id,OLD.approved_current_rank_id,OLD.approved_target_rank_id,OLD.approved_by,OLD.approved_at) THEN
         RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STATE_CONFLICT';
     END IF;
     RETURN NEW;
@@ -1582,7 +1593,7 @@ DECLARE event public.belt_test_events; ladder public.belt_ladders; student publi
     fingerprint TEXT; replay BOOLEAN; student_ids UUID[]; changed_ids UUID[]:='{}'; v_program UUID;
     v_membership UUID; v_rank UUID; v_at TIMESTAMPTZ; v_today DATE; v_promotion TIMESTAMPTZ; v_anchor TIMESTAMPTZ;
     targets JSONB; workflow_ids UUID[]; events JSONB:='[]'; did_change BOOLEAN;
-    v_classes BIGINT; v_days NUMERIC; v_timezone TEXT;
+    v_classes BIGINT; v_days NUMERIC; v_timezone TEXT; v_generation BIGINT; v_student_id UUID; rank_workflows UUID[]; rank_runs UUID[];
 BEGIN
     IF p_studio_id IS NULL OR p_actor_id IS NULL THEN
         RAISE EXCEPTION USING ERRCODE='42501',MESSAGE='AUTOMATION_ADMIN_REQUIRED';
@@ -1644,6 +1655,9 @@ BEGIN
     END IF;
     -- Include ended memberships: reactivation cannot change a legacy predicate.
     PERFORM 1 FROM public.student_program_memberships WHERE studio_id=p_studio_id AND student_id=ANY(student_ids) ORDER BY id FOR UPDATE;
+    FOREACH v_student_id IN ARRAY student_ids LOOP
+        PERFORM private.workflow_rank_compare_pending_v1(p_studio_id,v_student_id);
+    END LOOP;
     BEGIN
         -- UPDATE, rather than SHARE, excludes a concurrent rank INSERT's FK lock.
         SELECT * INTO ladder FROM public.belt_ladders WHERE studio_id=p_studio_id AND id=event.ladder_id FOR UPDATE NOWAIT;
@@ -1724,7 +1738,8 @@ BEGIN
         IF (v_promotion IS NOT NULL AND NOT isfinite(v_promotion)) OR (v_anchor IS NOT NULL AND NOT isfinite(v_anchor)) THEN
             RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STATE_CONFLICT';
         END IF;
-        prepared:=prepared||jsonb_build_array(item||jsonb_build_object('program_id',v_program,'current_rank_id',v_rank,'target_rank_id',target_rank.id,
+        v_generation:=private.workflow_rank_context_generation_v1(p_studio_id,student.id,v_membership);
+        prepared:=prepared||jsonb_build_array(item||jsonb_build_object('rank_context_generation',v_generation,'program_id',v_program,'current_rank_id',v_rank,'target_rank_id',target_rank.id,
             'promotion_at',v_promotion,'anchor_at',v_anchor,'min_classes',target_rank.min_classes,'min_days',target_rank.min_months::BIGINT*30));
     END LOOP;
     PERFORM 1 FROM public.belt_test_recipients b WHERE b.studio_id=p_studio_id AND b.event_id=p_event_id AND EXISTS(
@@ -1734,6 +1749,7 @@ BEGIN
         JOIN jsonb_array_elements(prepared) n ON b.student_id=(n.value->>'student_id')::UUID
             AND b.student_program_membership_id IS NOT DISTINCT FROM (n.value->>'student_program_membership_id')::UUID
         WHERE b.studio_id=p_studio_id AND b.event_id=p_event_id AND (b.state<>'approved' OR b.approved_schedule_revision<>event.schedule_revision
+            OR b.approved_rank_context_generation IS DISTINCT FROM (n.value->>'rank_context_generation')::BIGINT
             OR b.approved_program_id IS DISTINCT FROM (n.value->>'program_id')::UUID
             OR b.approved_current_rank_id IS DISTINCT FROM (n.value->>'current_rank_id')::UUID OR b.approved_target_rank_id<>(n.value->>'target_rank_id')::UUID);
     IF EXISTS(SELECT 1 FROM public.belt_test_recipients WHERE id=ANY(changed_ids) AND revision=9223372036854775807) THEN
@@ -1742,10 +1758,30 @@ BEGIN
     SELECT coalesce(array_agg(DISTINCT r.workflow_id ORDER BY r.workflow_id),'{}'::UUID[]) INTO workflow_ids
         FROM public.automation_workflow_runs r JOIN private.automation_workflow_events e ON e.studio_id=r.studio_id AND e.id=r.event_id
         WHERE r.studio_id=p_studio_id AND e.subject_kind='belt_test' AND e.subject_id=ANY(changed_ids);
+    IF EXISTS(SELECT 1 FROM private.workflow_rank_scopes WHERE studio_id=p_studio_id AND backend_pid=pg_catalog.pg_backend_pid()
+        AND transaction_id=pg_catalog.pg_current_xact_id() AND (state='active' OR (state='unknown' AND owner='private_profile'))) THEN
+        RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_RANK_CONTEXT_UNAVAILABLE';
+    END IF;
+    FOR v_student_id IN SELECT DISTINCT student_id FROM private.workflow_rank_scopes WHERE studio_id=p_studio_id
+        AND backend_pid=pg_catalog.pg_backend_pid() AND transaction_id=pg_catalog.pg_current_xact_id() ORDER BY student_id LOOP
+        PERFORM private.workflow_rank_compare_pending_v1(p_studio_id,v_student_id);
+    END LOOP;
+    -- Include earlier completed rank commands in the same final-mode union.
+    SELECT coalesce(array_agg(DISTINCT r.workflow_id ORDER BY r.workflow_id),'{}'::UUID[]),
+        coalesce(array_agg(DISTINCT r.id ORDER BY r.id),'{}'::UUID[]) INTO rank_workflows,rank_runs
+        FROM public.automation_workflow_runs r JOIN private.automation_workflow_events e ON e.studio_id=r.studio_id AND e.id=r.event_id
+        WHERE r.studio_id=p_studio_id AND e.event_type IN ('student.promoted','belt_test.approved','belt_test.upcoming')
+            AND EXISTS(SELECT 1 FROM private.workflow_rank_pending_contexts p JOIN private.workflow_rank_scopes s ON s.id=p.scope_id
+                WHERE p.studio_id=e.studio_id AND p.student_id=(e.context->>'student_id')::UUID
+                    AND p.student_program_membership_id IS NOT DISTINCT FROM (e.context->>'student_program_membership_id')::UUID
+                    AND p.changed AND s.backend_pid=pg_catalog.pg_backend_pid() AND s.transaction_id=pg_catalog.pg_current_xact_id());
+    SELECT coalesce(array_agg(DISTINCT id ORDER BY id),'{}'::UUID[]) INTO workflow_ids FROM unnest(workflow_ids||rank_workflows) id;
     targets:=private.workflow_prepare_capture_v1(p_studio_id,workflow_ids,true);
+    UPDATE private.workflow_rank_scopes SET capture_targets=jsonb_build_object('lock_mode','update','packet',targets) WHERE studio_id=p_studio_id
+        AND backend_pid=pg_catalog.pg_backend_pid() AND transaction_id=pg_catalog.pg_current_xact_id();
     PERFORM 1 FROM public.automation_workflow_runs r JOIN private.automation_workflow_events e ON e.studio_id=r.studio_id AND e.id=r.event_id
-        WHERE r.studio_id=p_studio_id AND e.subject_kind='belt_test' AND e.subject_id=ANY(changed_ids)
-            AND r.state IN ('queued','waiting','claimed','running') ORDER BY r.id FOR UPDATE OF r;
+        WHERE r.studio_id=p_studio_id AND ((e.subject_kind='belt_test' AND e.subject_id=ANY(changed_ids)
+            AND r.state IN ('queued','waiting','claimed','running')) OR r.id=ANY(rank_runs)) ORDER BY r.id FOR UPDATE OF r;
     -- Time and all eligibility are evaluated after the final potentially blocking lock.
     v_at:=clock_timestamp();
     SELECT CASE WHEN EXISTS(SELECT 1 FROM pg_catalog.pg_timezone_names z WHERE z.name=s.timezone) THEN s.timezone ELSE 'UTC' END
@@ -1778,14 +1814,14 @@ BEGIN
         did_change:=false;
         IF NOT FOUND THEN
             did_change:=true;
-            INSERT INTO public.belt_test_recipients(studio_id,event_id,student_id,student_program_membership_id,approved_schedule_revision,approved_program_id,
+            INSERT INTO public.belt_test_recipients(studio_id,event_id,student_id,student_program_membership_id,approved_schedule_revision,approved_program_id,approved_rank_context_generation,
                 approved_current_rank_id,approved_target_rank_id,state,revision,approved_by,approved_at,created_at,updated_at)
-                VALUES(p_studio_id,p_event_id,(item->>'student_id')::UUID,(item->>'student_program_membership_id')::UUID,event.schedule_revision,(item->>'program_id')::UUID,
+                VALUES(p_studio_id,p_event_id,(item->>'student_id')::UUID,(item->>'student_program_membership_id')::UUID,event.schedule_revision,(item->>'program_id')::UUID,(item->>'rank_context_generation')::BIGINT,
                     (item->>'current_rank_id')::UUID,(item->>'target_rank_id')::UUID,'approved',1,p_actor_id,v_at,v_at,v_at) RETURNING * INTO recipient;
         ELSIF recipient.id=ANY(changed_ids) THEN
             did_change:=true;
             UPDATE public.belt_test_recipients SET approved_schedule_revision=event.schedule_revision,
-                approved_program_id=(item->>'program_id')::UUID,
+                approved_program_id=(item->>'program_id')::UUID,approved_rank_context_generation=(item->>'rank_context_generation')::BIGINT,
                 approved_current_rank_id=(item->>'current_rank_id')::UUID,approved_target_rank_id=(item->>'target_rank_id')::UUID,
                 state='approved',revision=revision+1,approved_by=p_actor_id,approved_at=v_at,revoked_at=NULL,updated_at=v_at
                 WHERE id=recipient.id RETURNING * INTO recipient;
@@ -1797,11 +1833,13 @@ BEGIN
                 'context',jsonb_build_object('event_id',recipient.event_id,'student_id',recipient.student_id,
                     'student_program_membership_id',recipient.student_program_membership_id,'approved_program_id',recipient.approved_program_id,
                     'approved_current_rank_id',recipient.approved_current_rank_id,'approved_target_rank_id',recipient.approved_target_rank_id,
-                    'approved_schedule_revision',recipient.approved_schedule_revision,'approval_revision',recipient.revision)));
+                    'approved_schedule_revision',recipient.approved_schedule_revision,'approval_revision',recipient.revision,
+                    'approved_rank_context_generation',recipient.approved_rank_context_generation)));
         END IF;
         items:=items||jsonb_build_array(private.belt_test_recipient_payload_v1(recipient));
     END LOOP;
     PERFORM private.belt_test_cancel_recipient_runs_v1(p_studio_id,changed_ids,v_at);
+    PERFORM private.workflow_rank_finalize_pending_v1(p_studio_id);
     IF events<>'[]'::JSONB THEN PERFORM private.workflow_capture_events_v1(p_studio_id,events,targets); END IF;
     result:=jsonb_build_object('items',items,'event_revision',p_expected_event_revision,'schedule_revision',event.schedule_revision);
     INSERT INTO public.audit_logs(studio_id,actor_id,action,entity_type,entity_id,metadata)
@@ -1923,6 +1961,12 @@ BEGIN
             OR item->'subject_kind' IS DISTINCT FROM private.workflow_catalog_v1()#>ARRAY['triggers',item->>'event_type','subject_kind'] THEN
             RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST';
         END IF;
+        IF item->>'event_type'='student.enrolled' AND EXISTS(
+            SELECT 1 FROM private.workflow_rank_scopes s WHERE s.studio_id=p_studio_id
+                AND s.student_id=(item->>'subject_id')::UUID AND s.backend_pid=pg_catalog.pg_backend_pid()
+                AND s.transaction_id=pg_catalog.pg_current_xact_id() AND s.state<>'completed') THEN
+            RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_RANK_CONTEXT_UNAVAILABLE';
+        END IF;
         at:=private.automation_instant_v1(item->'occurred_at');
         context:=item->'context'; kind:=item->>'event_type';
         CASE
@@ -1930,10 +1974,10 @@ BEGIN
             WHEN kind='lead.stage_changed' THEN fields:=ARRAY['lead_id','program_id','activity_id','old_stage','stage']; required:=fields;
             WHEN kind LIKE 'trial.%' THEN fields:=ARRAY['appointment_id','lead_id','program_id','revision','status']; required:=fields;
             WHEN kind='belt_test.approved' THEN fields:=ARRAY['event_id','student_id','student_program_membership_id','approved_program_id',
-                'approved_current_rank_id','approved_target_rank_id','approved_schedule_revision','approval_revision']; required:=fields;
+                'approved_current_rank_id','approved_target_rank_id','approved_schedule_revision','approval_revision','approved_rank_context_generation']; required:=fields;
             -- Store only matching frozen target filters, never the full membership list.
             WHEN kind='student.enrolled' THEN fields:=ARRAY['student_id','matched_program_ids']; required:=fields;
-            WHEN kind='student.promoted' THEN fields:=ARRAY['promotion_id','student_id','student_program_membership_id','program_id','rank_id','from_rank_id']; required:=array_remove(fields,'from_rank_id');
+            WHEN kind='student.promoted' THEN fields:=ARRAY['promotion_id','student_id','student_program_membership_id','program_id','rank_id','from_rank_id','rank_context_generation']; required:=array_remove(fields,'from_rank_id');
             WHEN kind='invoice.payment_failed' THEN fields:=ARRAY['payment_id','invoice_id','payer_id']; required:=fields;
         END CASE;
         IF NOT private.workflow_json_keys_v1(context,fields,required) THEN
@@ -1948,7 +1992,7 @@ BEGIN
                     WHERE jsonb_typeof(p)<>'string' OR p#>>'{}' !~ uuid_pattern) THEN
                     RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST';
                 END IF;
-            ELSIF k IN ('revision','approved_schedule_revision','approval_revision') THEN
+            ELSIF k IN ('revision','approved_schedule_revision','approval_revision','rank_context_generation','approved_rank_context_generation') THEN
                 IF NOT private.workflow_integer_v1(value,1,9223372036854775807) THEN
                     RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST';
                 END IF;
@@ -2453,7 +2497,8 @@ DECLARE
     v_guardian_first_name TEXT;
     v_guardian_last_name TEXT;
     v_inserted BOOLEAN := false;
-    v_targets JSONB;
+    v_rank_scope UUID;
+    v_rank_unmarked BOOLEAN := false;
 BEGIN
     -- Public rank preservation may already own the student; never wait on clear.
     IF NOT pg_catalog.pg_try_advisory_xact_lock_shared(pg_catalog.hashtextextended(
@@ -2522,7 +2567,8 @@ BEGIN
             USING ERRCODE = 'P0001';
     END IF;
 
-    IF NOT FOUND THEN
+    -- Preserve FOUND from the source lookup before any coordination query.
+    IF v_existing.id IS NULL THEN
         IF p_audit_action <> 'student.created' THEN
             RAISE EXCEPTION 'Student not found for update.'
                 USING ERRCODE = 'P0001';
@@ -2532,6 +2578,13 @@ BEGIN
            OR NULLIF(btrim(COALESCE(p_student->>'legal_last_name', '')), '') IS NULL THEN
             RAISE EXCEPTION 'Student create payload is missing required name fields.'
                 USING ERRCODE = '22023';
+        END IF;
+
+        SELECT id INTO v_rank_scope FROM private.workflow_rank_scopes WHERE studio_id=p_studio_id AND student_id=p_student_id
+            AND backend_pid=pg_catalog.pg_backend_pid() AND transaction_id=pg_catalog.pg_current_xact_id() AND state='active' AND owner='profile';
+        IF v_rank_scope IS NULL AND EXISTS(SELECT 1 FROM public.studios WHERE id=p_studio_id) THEN
+            v_rank_scope := private.workflow_rank_scope_enter_v1(p_studio_id,p_student_id,'private_profile');
+            v_rank_unmarked := true;
         END IF;
 
         INSERT INTO public.students (
@@ -2589,6 +2642,12 @@ BEGIN
         RETURNING * INTO v_updated;
         v_inserted := true;
     ELSE
+        SELECT id INTO v_rank_scope FROM private.workflow_rank_scopes WHERE studio_id=p_studio_id AND student_id=p_student_id
+            AND backend_pid=pg_catalog.pg_backend_pid() AND transaction_id=pg_catalog.pg_current_xact_id() AND state='active' AND owner='profile';
+        IF v_rank_scope IS NULL AND EXISTS(SELECT 1 FROM public.studios WHERE id=p_studio_id) THEN
+            v_rank_scope := private.workflow_rank_scope_enter_v1(p_studio_id,p_student_id,'private_profile');
+            v_rank_unmarked := true;
+        END IF;
         UPDATE public.students
            SET legal_first_name = CASE WHEN p_student ? 'legal_first_name' THEN NULLIF(btrim(COALESCE(p_student->>'legal_first_name', '')), '') ELSE legal_first_name END,
                legal_last_name = CASE WHEN p_student ? 'legal_last_name' THEN NULLIF(btrim(COALESCE(p_student->>'legal_last_name', '')), '') ELSE legal_last_name END,
@@ -2812,9 +2871,12 @@ BEGIN
     );
 
     IF v_inserted THEN
-        v_targets := private.workflow_prepare_capture_v1(p_studio_id);
-        PERFORM private.workflow_capture_events_v1(p_studio_id,
-            jsonb_build_array(private.workflow_student_enrollment_event_v1(p_studio_id,p_student_id,v_targets)),v_targets);
+        INSERT INTO private.workflow_rank_pending_events(scope_id,studio_id,intent)
+            VALUES(v_rank_scope,p_studio_id,jsonb_build_object('event_type','student.enrolled','student_id',p_student_id));
+    END IF;
+    IF v_rank_unmarked THEN
+        -- The retained public caller may still restore ranks after this return.
+        UPDATE private.workflow_rank_scopes SET state='unknown' WHERE id=v_rank_scope;
     END IF;
     RETURN v_updated;
 END;
@@ -2847,6 +2909,7 @@ DECLARE
     v_activity UUID;
     v_targets JSONB;
     v_events JSONB := '[]'::JSONB;
+    v_rank_scope UUID;
 BEGIN
     IF NOT pg_catalog.pg_try_advisory_xact_lock_shared(pg_catalog.hashtextextended(
         'koaryu.local-plan-clear:'||p_studio_id::TEXT,0)) THEN
@@ -2898,11 +2961,14 @@ BEGIN
     SELECT studio_id
     INTO v_existing_studio
     FROM public.students
-    WHERE id = p_student_id;
+    WHERE id = p_student_id
+    FOR UPDATE;
 
     IF v_existing_studio IS NOT NULL AND v_existing_studio <> p_studio_id THEN
         RAISE EXCEPTION 'Student id already belongs to another studio.';
     END IF;
+
+    v_rank_scope := private.workflow_rank_scope_enter_v1(p_studio_id,p_student_id,'conversion');
 
     INSERT INTO public.students (
         id,
@@ -3104,8 +3170,7 @@ BEGIN
         jsonb_build_object('student_id', p_student_id)
     );
 
-    -- Freeze both families together; the tail acquires no later source locks.
-    v_targets := private.workflow_prepare_capture_v1(p_studio_id);
+    -- The finalizer freezes stage and welcome capture with rank invalidation.
     IF v_lead.stage IS DISTINCT FROM v_updated.stage THEN
         v_events := jsonb_build_array(jsonb_build_object(
             'event_type','lead.stage_changed','source_key',v_activity::TEXT,'subject_kind','lead','subject_id',p_lead_id,
@@ -3114,11 +3179,10 @@ BEGIN
                 'old_stage',v_lead.stage,'stage',v_updated.stage)));
     END IF;
     IF v_inserted = 1 THEN
-        v_events := v_events || jsonb_build_array(private.workflow_student_enrollment_event_v1(p_studio_id,p_student_id,v_targets));
+        v_events := v_events || jsonb_build_array(jsonb_build_object('event_type','student.enrolled','student_id',p_student_id));
     END IF;
-    IF v_events <> '[]'::JSONB THEN
-        PERFORM private.workflow_capture_events_v1(p_studio_id,v_events,v_targets);
-    END IF;
+    PERFORM private.workflow_rank_scope_finish_v1(v_rank_scope,NULL,v_events);
+    PERFORM private.workflow_rank_finalize_pending_v1(p_studio_id);
     RETURN v_updated;
 END;
 $$;
@@ -3157,7 +3221,7 @@ DECLARE
     v_evidence_from UUID;
     v_legacy_audits INTEGER;
     v_legacy_verified BOOLEAN;
-    v_targets JSONB;
+    v_rank_scope UUID;
 BEGIN
     IF NOT pg_catalog.pg_try_advisory_xact_lock_shared(pg_catalog.hashtextextended(
         'koaryu.local-plan-clear:'||p_studio_id::TEXT,0)) THEN
@@ -3379,6 +3443,8 @@ BEGIN
         v_expected_action := 'student.demoted';
     END IF;
 
+    v_rank_scope := private.workflow_rank_scope_enter_v1(p_studio_id,p_student_id,'rank_transition');
+
     INSERT INTO public.promotions (
         studio_id, student_id, student_program_membership_id, program_id,
         from_rank_id, to_rank_id, promoted_by, notes, operation_id, transition_kind
@@ -3420,15 +3486,8 @@ BEGIN
             ELSE '{}'::JSONB
         END
     );
-    IF v_transition.transition_kind = 'promotion' THEN
-        v_targets := private.workflow_prepare_capture_v1(p_studio_id);
-        PERFORM private.workflow_capture_events_v1(p_studio_id,jsonb_build_array(jsonb_build_object(
-            'event_type','student.promoted','source_key',v_transition.id::TEXT,'subject_kind','promotion','subject_id',v_transition.id,
-            'occurred_at',private.automation_utc_text_v1(clock_timestamp()),'context',jsonb_build_object(
-                'promotion_id',v_transition.id,'student_id',v_transition.student_id,
-                'student_program_membership_id',v_transition.student_program_membership_id,'program_id',v_transition.program_id,
-                'rank_id',v_transition.to_rank_id,'from_rank_id',v_transition.from_rank_id))),v_targets);
-    END IF;
+    PERFORM private.workflow_rank_scope_finish_v1(v_rank_scope,v_transition.id);
+    PERFORM private.workflow_rank_finalize_pending_v1(p_studio_id);
     RETURN v_transition;
 END;
 $$;
@@ -3506,3 +3565,1462 @@ BEGIN
     END LOOP;
 END;
 $student_payment_capture_privileges$;
+
+-- Exact rank-context authority. Logical identities survive operational deletion.
+CREATE TABLE private.workflow_rank_contexts (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    studio_id UUID NOT NULL REFERENCES public.studios(id) ON DELETE CASCADE,
+    student_id UUID NOT NULL,
+    student_program_membership_id UUID,
+    generation BIGINT NOT NULL CHECK (generation>=1),
+    context JSONB NOT NULL CHECK (jsonb_typeof(context)='object'),
+    tombstoned BOOLEAN NOT NULL,
+    UNIQUE NULLS NOT DISTINCT(studio_id,student_id,student_program_membership_id)
+);
+CREATE TABLE private.workflow_rank_scopes (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    studio_id UUID NOT NULL REFERENCES public.studios(id) ON DELETE CASCADE,
+    student_id UUID NOT NULL,
+    backend_pid INTEGER NOT NULL,
+    transaction_id XID8 NOT NULL,
+    owner TEXT NOT NULL CHECK (owner IN ('profile','private_profile','conversion','rank_transition','membership','import','rank_plan','callback')),
+    state TEXT NOT NULL CHECK (state IN ('active','completed','unknown')),
+    transition_id UUID,
+    capture_targets JSONB
+);
+CREATE INDEX workflow_rank_scopes_transaction ON private.workflow_rank_scopes(backend_pid,transaction_id,studio_id,student_id);
+CREATE UNIQUE INDEX workflow_rank_scopes_active ON private.workflow_rank_scopes(backend_pid,transaction_id,studio_id,student_id) WHERE state='active';
+CREATE TABLE private.workflow_rank_pending_contexts (
+    scope_id UUID NOT NULL REFERENCES private.workflow_rank_scopes(id) ON DELETE CASCADE,
+    studio_id UUID NOT NULL REFERENCES public.studios(id) ON DELETE CASCADE,
+    student_id UUID NOT NULL,
+    student_program_membership_id UUID,
+    previous_generation BIGINT CHECK (previous_generation>=1),
+    previous_context JSONB,
+    dirty BOOLEAN NOT NULL DEFAULT true,
+    identity_removed BOOLEAN NOT NULL DEFAULT false,
+    legacy_membership_gained BOOLEAN NOT NULL DEFAULT false,
+    source_inserted BOOLEAN NOT NULL DEFAULT false,
+    compared BOOLEAN NOT NULL DEFAULT false,
+    changed BOOLEAN NOT NULL DEFAULT false,
+    UNIQUE NULLS NOT DISTINCT(scope_id,studio_id,student_id,student_program_membership_id),
+    CHECK ((previous_generation IS NULL)=(previous_context IS NULL))
+);
+CREATE TABLE private.workflow_rank_pending_events (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    scope_id UUID NOT NULL REFERENCES private.workflow_rank_scopes(id) ON DELETE CASCADE,
+    studio_id UUID NOT NULL REFERENCES public.studios(id) ON DELETE CASCADE,
+    intent JSONB NOT NULL CHECK (jsonb_typeof(intent)='object')
+);
+
+CREATE FUNCTION private.workflow_rank_context_identity_v1() RETURNS TRIGGER
+LANGUAGE plpgsql SECURITY INVOKER SET search_path='' AS $$
+BEGIN
+    IF ROW(NEW.id,NEW.studio_id,NEW.student_id,NEW.student_program_membership_id)
+        IS DISTINCT FROM ROW(OLD.id,OLD.studio_id,OLD.student_id,OLD.student_program_membership_id)
+        OR NEW.generation<OLD.generation
+        OR (ROW(NEW.context,NEW.tombstoned) IS DISTINCT FROM ROW(OLD.context,OLD.tombstoned) AND NEW.generation<=OLD.generation) THEN
+        RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STATE_CONFLICT';
+    END IF;
+    RETURN NEW;
+END $$;
+CREATE TRIGGER workflow_rank_context_identity BEFORE UPDATE ON private.workflow_rank_contexts
+    FOR EACH ROW EXECUTE FUNCTION private.workflow_rank_context_identity_v1();
+
+-- A side-effect-free tuple projection. Status/hold/contact details are separate
+-- eligibility guards. Active and paused both describe the same live context.
+CREATE FUNCTION private.workflow_rank_tuple_v1(p_studio_id UUID,p_student_id UUID,p_membership_id UUID)
+RETURNS JSONB LANGUAGE sql STABLE SECURITY INVOKER SET search_path='' AS $$
+    SELECT CASE WHEN p_membership_id IS NULL THEN jsonb_build_object(
+        'source_exists',s.id IS NOT NULL,'program_id',s.program_id,'rank_id',s.current_belt_rank_id,
+        'live',s.id IS NOT NULL AND NOT EXISTS(SELECT 1 FROM public.student_program_memberships m
+            WHERE m.studio_id=p_studio_id AND m.student_id=p_student_id AND m.status IN ('active','paused') AND m.ended_at IS NULL))
+    ELSE jsonb_build_object('source_exists',s.id IS NOT NULL AND m.id IS NOT NULL,
+        'program_id',m.program_id,'rank_id',m.current_belt_rank_id,
+        'live',s.id IS NOT NULL AND m.id IS NOT NULL AND m.status IN ('active','paused') AND m.ended_at IS NULL) END
+    FROM (SELECT 1) singleton
+    LEFT JOIN public.students s ON s.studio_id=p_studio_id AND s.id=p_student_id
+    LEFT JOIN public.student_program_memberships m ON m.studio_id=p_studio_id AND m.student_id=p_student_id AND m.id=p_membership_id
+$$;
+
+CREATE FUNCTION private.workflow_rank_compare_pending_v1(p_studio_id UUID,p_student_id UUID)
+RETURNS VOID LANGUAGE plpgsql VOLATILE SECURITY INVOKER SET search_path='' AS $$
+DECLARE pending RECORD; authority private.workflow_rank_contexts; current_context JSONB; forced BOOLEAN; v_changed BOOLEAN;
+BEGIN
+    IF EXISTS(SELECT 1 FROM private.workflow_rank_scopes WHERE studio_id=p_studio_id AND student_id=p_student_id
+        AND backend_pid=pg_catalog.pg_backend_pid() AND transaction_id=pg_catalog.pg_current_xact_id() AND state='active') THEN
+        RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_RANK_CONTEXT_UNAVAILABLE';
+    END IF;
+    -- Only a recognized same-student command/consumer calls this early boundary.
+    UPDATE private.workflow_rank_scopes SET state='completed' WHERE studio_id=p_studio_id AND student_id=p_student_id
+        AND backend_pid=pg_catalog.pg_backend_pid() AND transaction_id=pg_catalog.pg_current_xact_id() AND state='unknown';
+    FOR pending IN SELECT p.*,s.transition_id,s.owner FROM private.workflow_rank_pending_contexts p
+        JOIN private.workflow_rank_scopes s ON s.id=p.scope_id
+        WHERE p.studio_id=p_studio_id AND p.student_id=p_student_id AND NOT p.compared
+            AND s.backend_pid=pg_catalog.pg_backend_pid() AND s.transaction_id=pg_catalog.pg_current_xact_id() AND s.state='completed'
+        ORDER BY p.student_program_membership_id NULLS FIRST LOOP
+        current_context:=private.workflow_rank_tuple_v1(p_studio_id,p_student_id,pending.student_program_membership_id);
+        SELECT * INTO authority FROM private.workflow_rank_contexts WHERE studio_id=p_studio_id AND student_id=p_student_id
+            AND student_program_membership_id IS NOT DISTINCT FROM pending.student_program_membership_id FOR UPDATE;
+        IF NOT FOUND THEN
+            IF NOT pending.source_inserted OR pending.previous_generation IS NOT NULL THEN
+                RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_RANK_CONTEXT_UNAVAILABLE';
+            END IF;
+            -- The INSERT observation, never a read-time fallback, owns baseline 1.
+            INSERT INTO private.workflow_rank_contexts(studio_id,student_id,student_program_membership_id,generation,context,tombstoned)
+                VALUES(p_studio_id,p_student_id,pending.student_program_membership_id,1,current_context,
+                    NOT (current_context->>'source_exists')::BOOLEAN) RETURNING * INTO authority;
+            v_changed:=false;
+        ELSE
+            forced:=pending.owner='rank_transition' AND pending.transition_id IS NOT NULL AND EXISTS(
+                SELECT 1 FROM public.promotions t WHERE t.id=pending.transition_id AND t.studio_id=p_studio_id AND t.student_id=p_student_id
+                    AND t.command_membership_id IS NOT DISTINCT FROM pending.student_program_membership_id);
+            v_changed:=pending.identity_removed OR pending.legacy_membership_gained OR current_context IS DISTINCT FROM authority.context OR forced;
+            IF v_changed THEN
+                IF authority.generation=9223372036854775807 THEN
+                    RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STATE_CONFLICT';
+                END IF;
+                UPDATE private.workflow_rank_contexts SET generation=generation+1,context=current_context,
+                    tombstoned=NOT (current_context->>'source_exists')::BOOLEAN WHERE id=authority.id;
+            END IF;
+        END IF;
+        UPDATE private.workflow_rank_pending_contexts SET compared=true,changed=v_changed WHERE scope_id=pending.scope_id
+            AND student_program_membership_id IS NOT DISTINCT FROM pending.student_program_membership_id;
+    END LOOP;
+END $$;
+
+CREATE FUNCTION private.workflow_rank_scope_enter_v1(p_studio_id UUID,p_student_id UUID,p_owner TEXT)
+RETURNS UUID LANGUAGE plpgsql VOLATILE SECURITY INVOKER SET search_path='' AS $$
+DECLARE scope UUID;
+BEGIN
+    IF p_studio_id IS NULL OR p_student_id IS NULL OR p_owner IS NULL
+        OR p_owner NOT IN ('profile','private_profile','conversion','rank_transition','membership','import','rank_plan') THEN
+        RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST';
+    END IF;
+    -- This private constraint alone must not inherit caller ALL IMMEDIATE mode.
+    SET CONSTRAINTS private.workflow_rank_deferred DEFERRED;
+    IF NOT pg_catalog.pg_try_advisory_xact_lock_shared(pg_catalog.hashtextextended('koaryu.local-plan-clear:'||p_studio_id::TEXT,0)) THEN
+        RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STUDIO_BUSY';
+    END IF;
+    BEGIN
+        PERFORM 1 FROM public.studios WHERE id=p_studio_id FOR KEY SHARE NOWAIT;
+        IF NOT FOUND THEN RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_RANK_CONTEXT_UNAVAILABLE'; END IF;
+    EXCEPTION WHEN lock_not_available THEN
+        RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STUDIO_BUSY';
+    END;
+    PERFORM private.workflow_rank_compare_pending_v1(p_studio_id,p_student_id);
+    INSERT INTO private.workflow_rank_scopes(studio_id,student_id,backend_pid,transaction_id,owner,state)
+        VALUES(p_studio_id,p_student_id,pg_catalog.pg_backend_pid(),pg_catalog.pg_current_xact_id(),p_owner,'active') RETURNING id INTO scope;
+    RETURN scope;
+END $$;
+
+CREATE FUNCTION private.workflow_rank_mark_dirty_v1(p_studio_id UUID,p_student_id UUID,p_membership_id UUID,p_identity_removed BOOLEAN DEFAULT false)
+RETURNS VOID LANGUAGE plpgsql VOLATILE SECURITY INVOKER SET search_path='' AS $$
+DECLARE scope UUID; authority private.workflow_rank_contexts;
+BEGIN
+    SET CONSTRAINTS private.workflow_rank_deferred DEFERRED;
+    IF NOT pg_catalog.pg_try_advisory_xact_lock_shared(pg_catalog.hashtextextended('koaryu.local-plan-clear:'||p_studio_id::TEXT,0)) THEN
+        RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STUDIO_BUSY';
+    END IF;
+    BEGIN
+        PERFORM 1 FROM public.studios WHERE id=p_studio_id FOR KEY SHARE NOWAIT;
+        -- Studio deletion owns the cascade and removes all private evidence.
+        IF NOT FOUND THEN RETURN; END IF;
+        -- Standalone callbacks cannot introduce a membership -> student wait.
+        PERFORM 1 FROM public.students WHERE studio_id=p_studio_id AND id=p_student_id FOR UPDATE NOWAIT;
+    EXCEPTION WHEN lock_not_available THEN
+        RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STUDIO_BUSY';
+    END;
+    SELECT id INTO scope FROM private.workflow_rank_scopes WHERE studio_id=p_studio_id AND student_id=p_student_id
+        AND backend_pid=pg_catalog.pg_backend_pid() AND transaction_id=pg_catalog.pg_current_xact_id()
+        AND state IN ('active','unknown') ORDER BY (state='active') DESC LIMIT 1;
+    IF scope IS NULL THEN
+        INSERT INTO private.workflow_rank_scopes(studio_id,student_id,backend_pid,transaction_id,owner,state)
+            VALUES(p_studio_id,p_student_id,pg_catalog.pg_backend_pid(),pg_catalog.pg_current_xact_id(),'callback','unknown') RETURNING id INTO scope;
+    END IF;
+    SELECT * INTO authority FROM private.workflow_rank_contexts WHERE studio_id=p_studio_id AND student_id=p_student_id
+        AND student_program_membership_id IS NOT DISTINCT FROM p_membership_id;
+    INSERT INTO private.workflow_rank_pending_contexts(scope_id,studio_id,student_id,student_program_membership_id,
+        previous_generation,previous_context,identity_removed)
+        VALUES(scope,p_studio_id,p_student_id,p_membership_id,authority.generation,authority.context,p_identity_removed)
+        ON CONFLICT(scope_id,studio_id,student_id,student_program_membership_id) DO UPDATE
+            SET dirty=true,identity_removed=workflow_rank_pending_contexts.identity_removed OR EXCLUDED.identity_removed;
+END $$;
+
+CREATE FUNCTION private.workflow_rank_scope_finish_v1(p_scope_id UUID,p_transition_id UUID DEFAULT NULL,p_events JSONB DEFAULT '[]')
+RETURNS VOID LANGUAGE plpgsql VOLATILE SECURITY INVOKER SET search_path='' AS $$
+DECLARE scope private.workflow_rank_scopes; item JSONB; transition public.promotions; generation BIGINT;
+BEGIN
+    SELECT * INTO scope FROM private.workflow_rank_scopes WHERE id=p_scope_id
+        AND backend_pid=pg_catalog.pg_backend_pid() AND transaction_id=pg_catalog.pg_current_xact_id() AND state='active';
+    IF NOT FOUND OR scope.owner IN ('private_profile','callback') OR jsonb_typeof(p_events) IS DISTINCT FROM 'array'
+        OR jsonb_array_length(p_events)>100 OR (p_transition_id IS NOT NULL AND scope.owner<>'rank_transition') THEN
+        RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_RANK_CONTEXT_UNAVAILABLE';
+    END IF;
+    IF scope.owner='rank_transition' THEN
+        SELECT * INTO transition FROM public.promotions WHERE id=p_transition_id AND studio_id=scope.studio_id AND student_id=scope.student_id;
+        IF NOT FOUND THEN RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_RANK_CONTEXT_UNAVAILABLE'; END IF;
+        PERFORM private.workflow_rank_mark_dirty_v1(scope.studio_id,scope.student_id,transition.command_membership_id);
+    END IF;
+    UPDATE private.workflow_rank_scopes SET state='completed',transition_id=p_transition_id WHERE id=scope.id;
+    PERFORM private.workflow_rank_compare_pending_v1(scope.studio_id,scope.student_id);
+    FOR item IN SELECT value FROM jsonb_array_elements(p_events) LOOP
+        IF item->>'event_type'='student.enrolled' THEN
+            IF scope.owner NOT IN ('profile','conversion') OR item->>'student_id' IS DISTINCT FROM scope.student_id::TEXT THEN
+                RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST';
+            END IF;
+        ELSIF item->>'event_type'='lead.stage_changed' THEN
+            IF scope.owner<>'conversion' THEN RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST'; END IF;
+        ELSE
+            RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST';
+        END IF;
+        INSERT INTO private.workflow_rank_pending_events(scope_id,studio_id,intent) VALUES(scope.id,scope.studio_id,item);
+    END LOOP;
+    IF scope.owner='rank_transition' AND transition.transition_kind='promotion' THEN
+        SELECT c.generation INTO STRICT generation FROM private.workflow_rank_contexts c WHERE c.studio_id=scope.studio_id
+            AND c.student_id=scope.student_id AND c.student_program_membership_id IS NOT DISTINCT FROM transition.command_membership_id;
+        INSERT INTO private.workflow_rank_pending_events(scope_id,studio_id,intent) VALUES(scope.id,scope.studio_id,
+            jsonb_build_object('event_type','student.promoted','source_key',transition.id::TEXT,'subject_kind','promotion','subject_id',transition.id,
+                'context',jsonb_build_object('promotion_id',transition.id,'student_id',transition.student_id,
+                    'student_program_membership_id',transition.command_membership_id,'program_id',transition.command_program_id,
+                    'rank_id',transition.to_rank_id,'from_rank_id',transition.command_from_rank_id,'rank_context_generation',generation)));
+    END IF;
+END $$;
+
+CREATE FUNCTION private.workflow_rank_context_generation_v1(p_studio_id UUID,p_student_id UUID,p_membership_id UUID)
+RETURNS BIGINT LANGUAGE plpgsql VOLATILE SECURITY INVOKER SET search_path='' AS $$
+DECLARE generation BIGINT;
+BEGIN
+    PERFORM private.workflow_rank_compare_pending_v1(p_studio_id,p_student_id);
+    SELECT c.generation INTO generation FROM private.workflow_rank_contexts c WHERE c.studio_id=p_studio_id AND c.student_id=p_student_id
+        AND c.student_program_membership_id IS NOT DISTINCT FROM p_membership_id AND NOT c.tombstoned;
+    IF generation IS NULL THEN RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_RANK_CONTEXT_UNAVAILABLE'; END IF;
+    RETURN generation;
+END $$;
+
+CREATE FUNCTION private.workflow_cancel_runs_v1(p_studio_id UUID,p_run_ids UUID[],p_at TIMESTAMPTZ,p_reason TEXT)
+RETURNS JSONB LANGUAGE plpgsql VOLATILE SECURITY INVOKER SET search_path='' AS $$
+DECLARE cancelled INTEGER; intended INTEGER;
+BEGIN
+    IF p_studio_id IS NULL OR p_run_ids IS NULL OR coalesce(array_ndims(p_run_ids),1)<>1 OR array_position(p_run_ids,NULL) IS NOT NULL
+        OR p_at IS NULL OR NOT isfinite(p_at) OR p_reason IS NULL OR p_reason !~ '^[a-z][a-z0-9_]{0,79}$'
+        OR EXISTS(SELECT 1 FROM unnest(p_run_ids) requested(id) WHERE NOT EXISTS(SELECT 1 FROM public.automation_workflow_runs r
+            WHERE r.id=requested.id AND r.studio_id=p_studio_id)) THEN
+        RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST';
+    END IF;
+    IF EXISTS(SELECT 1 FROM public.automation_workflow_runs WHERE studio_id=p_studio_id AND id=ANY(p_run_ids)
+        AND cancel_requested_at IS NULL AND state IN ('queued','waiting','claimed','running','sending','unknown') AND revision=9223372036854775807) THEN
+        RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STATE_CONFLICT';
+    END IF;
+    WITH changed AS (
+        UPDATE public.automation_workflow_runs SET cancel_requested_at=p_at,cancel_reason=p_reason,revision=revision+1,updated_at=p_at,
+            state=CASE WHEN state IN ('queued','waiting','claimed','running') THEN 'cancelled' ELSE state END,
+            reason=CASE WHEN state IN ('queued','waiting','claimed','running') THEN p_reason ELSE reason END,
+            claim_token=CASE WHEN state IN ('queued','waiting','claimed','running') THEN NULL ELSE claim_token END,
+            lease_expires_at=CASE WHEN state IN ('queued','waiting','claimed','running') THEN NULL ELSE lease_expires_at END
+        WHERE studio_id=p_studio_id AND id=ANY(p_run_ids) AND cancel_requested_at IS NULL
+            AND state IN ('queued','waiting','claimed','running','sending','unknown') RETURNING state
+    ) SELECT count(*) FILTER (WHERE state='cancelled'),count(*) INTO cancelled,intended FROM changed;
+    RETURN jsonb_build_object('cancelled_count',cancelled,'intent_count',intended);
+END $$;
+
+CREATE FUNCTION private.workflow_rank_finalize_pending_v1(p_studio_id UUID)
+RETURNS VOID LANGUAGE plpgsql VOLATILE SECURITY INVOKER SET search_path='' AS $$
+DECLARE source RECORD; workflows UUID[]; runs UUID[]; targets JSONB; coordination JSONB; item RECORD; events JSONB:='[]'; at TIMESTAMPTZ;
+BEGIN
+    IF EXISTS(SELECT 1 FROM private.workflow_rank_scopes WHERE studio_id=p_studio_id AND backend_pid=pg_catalog.pg_backend_pid()
+        AND transaction_id=pg_catalog.pg_current_xact_id() AND (state='active' OR (state='unknown' AND owner='private_profile'))) THEN
+        RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_RANK_CONTEXT_UNAVAILABLE';
+    END IF;
+    FOR source IN SELECT DISTINCT student_id FROM private.workflow_rank_scopes WHERE studio_id=p_studio_id
+        AND backend_pid=pg_catalog.pg_backend_pid() AND transaction_id=pg_catalog.pg_current_xact_id() ORDER BY student_id LOOP
+        PERFORM private.workflow_rank_compare_pending_v1(p_studio_id,source.student_id);
+    END LOOP;
+    IF NOT EXISTS(SELECT 1 FROM private.workflow_rank_pending_contexts p JOIN private.workflow_rank_scopes s ON s.id=p.scope_id
+        WHERE p.studio_id=p_studio_id AND s.backend_pid=pg_catalog.pg_backend_pid() AND s.transaction_id=pg_catalog.pg_current_xact_id() AND p.changed)
+        AND NOT EXISTS(SELECT 1 FROM private.workflow_rank_pending_events e JOIN private.workflow_rank_scopes s ON s.id=e.scope_id
+            WHERE e.studio_id=p_studio_id AND s.backend_pid=pg_catalog.pg_backend_pid() AND s.transaction_id=pg_catalog.pg_current_xact_id()) THEN
+        DELETE FROM private.workflow_rank_scopes WHERE studio_id=p_studio_id AND backend_pid=pg_catalog.pg_backend_pid()
+            AND transaction_id=pg_catalog.pg_current_xact_id();
+        RETURN;
+    END IF;
+    -- Capture context supplies identity; no student -> belt-event lock inversion.
+    SELECT coalesce(array_agg(DISTINCT r.workflow_id ORDER BY r.workflow_id),'{}'::UUID[]),
+        coalesce(array_agg(DISTINCT r.id ORDER BY r.id),'{}'::UUID[]) INTO workflows,runs
+    FROM public.automation_workflow_runs r JOIN private.automation_workflow_events e ON e.studio_id=r.studio_id AND e.id=r.event_id
+    JOIN private.workflow_rank_contexts c ON c.studio_id=e.studio_id AND c.student_id=(e.context->>'student_id')::UUID
+        AND c.student_program_membership_id IS NOT DISTINCT FROM (e.context->>'student_program_membership_id')::UUID
+    WHERE r.studio_id=p_studio_id AND e.event_type IN ('student.promoted','belt_test.approved','belt_test.upcoming')
+        AND (e.context->>CASE WHEN e.event_type='student.promoted' THEN 'rank_context_generation' ELSE 'approved_rank_context_generation' END)::BIGINT
+            IS DISTINCT FROM c.generation
+        AND EXISTS(SELECT 1 FROM private.workflow_rank_pending_contexts p JOIN private.workflow_rank_scopes s ON s.id=p.scope_id
+            WHERE p.studio_id=c.studio_id AND p.student_id=c.student_id
+                AND p.student_program_membership_id IS NOT DISTINCT FROM c.student_program_membership_id AND p.changed
+                AND s.backend_pid=pg_catalog.pg_backend_pid() AND s.transaction_id=pg_catalog.pg_current_xact_id());
+    SELECT s.capture_targets INTO coordination FROM private.workflow_rank_scopes s WHERE s.studio_id=p_studio_id
+        AND s.backend_pid=pg_catalog.pg_backend_pid() AND s.transaction_id=pg_catalog.pg_current_xact_id()
+        AND s.capture_targets IS NOT NULL LIMIT 1;
+    IF coordination IS NULL THEN
+        targets:=private.workflow_prepare_capture_v1(p_studio_id,workflows,true);
+    ELSE
+        targets:=coordination->'packet';
+        IF NOT private.workflow_json_keys_v1(coordination,ARRAY['lock_mode','packet'],ARRAY['lock_mode','packet'])
+        OR coordination->>'lock_mode' IS DISTINCT FROM 'update'
+        OR NOT private.workflow_json_keys_v1(targets,
+            ARRAY['studio_id','transaction_id','backend_pid','locked_workflow_ids','targets'],
+            ARRAY['studio_id','transaction_id','backend_pid','locked_workflow_ids','targets'])
+        OR jsonb_typeof(targets->'locked_workflow_ids') IS DISTINCT FROM 'array'
+        OR jsonb_typeof(targets->'targets') IS DISTINCT FROM 'array'
+        OR EXISTS(SELECT 1 FROM private.workflow_rank_scopes s WHERE s.studio_id=p_studio_id
+            AND s.backend_pid=pg_catalog.pg_backend_pid() AND s.transaction_id=pg_catalog.pg_current_xact_id()
+            AND s.capture_targets IS NOT NULL AND s.capture_targets IS DISTINCT FROM coordination)
+        OR targets->'studio_id' IS DISTINCT FROM to_jsonb(p_studio_id)
+        OR targets->'transaction_id' IS DISTINCT FROM to_jsonb(pg_catalog.pg_current_xact_id()::TEXT)
+        OR targets->'backend_pid' IS DISTINCT FROM to_jsonb(pg_catalog.pg_backend_pid())
+        OR NOT (targets->'locked_workflow_ids') @> to_jsonb(workflows) THEN
+        RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_RANK_CONTEXT_UNAVAILABLE';
+        END IF;
+    END IF;
+    PERFORM 1 FROM public.automation_workflow_runs WHERE studio_id=p_studio_id AND id=ANY(runs) ORDER BY id FOR UPDATE;
+    at:=clock_timestamp();
+    PERFORM private.workflow_cancel_runs_v1(p_studio_id,runs,at,'rank_context_superseded');
+    FOR item IN SELECT e.intent FROM private.workflow_rank_pending_events e JOIN private.workflow_rank_scopes s ON s.id=e.scope_id
+        WHERE e.studio_id=p_studio_id AND s.backend_pid=pg_catalog.pg_backend_pid() AND s.transaction_id=pg_catalog.pg_current_xact_id() LOOP
+        IF item.intent->>'event_type'='student.enrolled' THEN
+            events:=events||jsonb_build_array(private.workflow_student_enrollment_event_v1(p_studio_id,(item.intent->>'student_id')::UUID,targets));
+        ELSE
+            events:=events||jsonb_build_array(item.intent||jsonb_build_object('occurred_at',private.automation_utc_text_v1(at)));
+        END IF;
+        IF jsonb_array_length(events)=100 THEN
+            PERFORM private.workflow_capture_events_v1(p_studio_id,events,targets); events:='[]';
+        END IF;
+    END LOOP;
+    IF events<>'[]'::JSONB THEN PERFORM private.workflow_capture_events_v1(p_studio_id,events,targets); END IF;
+    DELETE FROM private.workflow_rank_scopes WHERE studio_id=p_studio_id AND backend_pid=pg_catalog.pg_backend_pid()
+        AND transaction_id=pg_catalog.pg_current_xact_id();
+END $$;
+
+CREATE FUNCTION private.workflow_finalize_rank_deferred_v1() RETURNS TRIGGER
+LANGUAGE plpgsql VOLATILE SECURITY INVOKER SET search_path='' AS $$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM private.workflow_rank_scopes WHERE id=NEW.id) THEN RETURN NULL; END IF;
+    IF NEW.backend_pid<>pg_catalog.pg_backend_pid() OR NEW.transaction_id<>pg_catalog.pg_current_xact_id()
+        OR EXISTS(SELECT 1 FROM private.workflow_rank_scopes WHERE studio_id=NEW.studio_id AND backend_pid=NEW.backend_pid
+            AND transaction_id=NEW.transaction_id AND state='active') THEN
+        RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_RANK_CONTEXT_UNAVAILABLE';
+    END IF;
+    -- An external forced flush after an unmarked return declares that boundary
+    -- final. Current/frozen owners never force it during restoration.
+    UPDATE private.workflow_rank_scopes SET state='completed' WHERE studio_id=NEW.studio_id AND backend_pid=NEW.backend_pid
+        AND transaction_id=NEW.transaction_id AND state='unknown';
+    PERFORM private.workflow_rank_finalize_pending_v1(NEW.studio_id);
+    RETURN NULL;
+END $$;
+CREATE CONSTRAINT TRIGGER workflow_rank_deferred AFTER INSERT ON private.workflow_rank_scopes
+    DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION private.workflow_finalize_rank_deferred_v1();
+
+DO $rank_privileges$
+DECLARE item RECORD;
+BEGIN
+    FOR item IN SELECT c.oid::REGCLASS identity,c.relname name FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace
+        WHERE n.nspname='private' AND c.relname IN ('workflow_rank_contexts','workflow_rank_scopes','workflow_rank_pending_contexts','workflow_rank_pending_events') LOOP
+        EXECUTE format('ALTER TABLE %s OWNER TO postgres',item.identity);
+        EXECUTE format('ALTER TABLE %s ENABLE ROW LEVEL SECURITY',item.identity);
+        EXECUTE format('REVOKE ALL ON TABLE %s FROM PUBLIC,anon,authenticated,service_role',item.identity);
+        EXECUTE format('GRANT SELECT,INSERT ON TABLE %s TO service_role',item.identity);
+        IF item.name<>'workflow_rank_pending_events' THEN
+            EXECUTE format('GRANT UPDATE ON TABLE %s TO service_role',item.identity);
+        END IF;
+    END LOOP;
+    GRANT DELETE ON private.workflow_rank_scopes TO service_role;
+    FOR item IN SELECT p.oid::REGPROCEDURE identity,p.proname name FROM pg_catalog.pg_proc p JOIN pg_catalog.pg_namespace n ON n.oid=p.pronamespace
+        WHERE n.nspname='private' AND p.proname IN ('workflow_rank_context_identity_v1','workflow_rank_tuple_v1','workflow_rank_compare_pending_v1',
+            'workflow_rank_scope_enter_v1','workflow_rank_mark_dirty_v1','workflow_rank_scope_finish_v1','workflow_rank_context_generation_v1',
+            'workflow_rank_finalize_pending_v1','workflow_finalize_rank_deferred_v1','workflow_cancel_runs_v1') LOOP
+        EXECUTE format('ALTER FUNCTION %s OWNER TO postgres',item.identity);
+        EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC,anon,authenticated,service_role',item.identity);
+        IF item.name NOT IN ('workflow_rank_context_identity_v1','workflow_finalize_rank_deferred_v1') THEN
+            EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO service_role',item.identity);
+        END IF;
+    END LOOP;
+END;
+$rank_privileges$;
+
+CREATE OR REPLACE FUNCTION public.write_student_profile_atomic(
+    p_student_id UUID,
+    p_studio_id UUID,
+    p_actor_id UUID,
+    p_student JSONB,
+    p_program_ids UUID[] DEFAULT NULL,
+    p_guardians JSONB DEFAULT '[]'::JSONB,
+    p_replace_programs BOOLEAN DEFAULT FALSE,
+    p_audit_action TEXT DEFAULT 'student.updated'
+)
+RETURNS public.students
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path = pg_catalog, public, private
+AS $$
+DECLARE
+    v_student JSONB := p_student;
+    v_existing_program_id UUID;
+    v_rank_was_supplied BOOLEAN := p_student IS NOT NULL
+        AND jsonb_typeof(p_student) = 'object'
+        AND p_student ? 'current_belt_rank_id';
+    v_retained_membership_ranks JSONB := '{}'::JSONB;
+    v_result public.students%ROWTYPE;
+    v_rank_scope UUID;
+BEGIN
+    IF (p_replace_programs AND cardinality(p_program_ids) > 0)
+       OR v_rank_was_supplied THEN
+        -- Match every belt-plan writer's students-then-memberships lock order.
+        -- The private writer locks this row again later in the same transaction.
+        PERFORM 1
+        FROM public.students student
+        WHERE student.id = p_student_id
+          AND student.studio_id = p_studio_id
+        FOR UPDATE;
+
+        IF p_replace_programs AND cardinality(p_program_ids) > 0 THEN
+            SELECT COALESCE(
+                jsonb_object_agg(
+                    locked.program_id::TEXT,
+                    COALESCE(to_jsonb(locked.current_belt_rank_id), 'null'::JSONB)
+                ),
+                '{}'::JSONB
+            )
+            INTO v_retained_membership_ranks
+            FROM (
+                SELECT membership.program_id, membership.current_belt_rank_id
+                FROM public.student_program_memberships membership
+                WHERE membership.student_id = p_student_id
+                  AND membership.studio_id = p_studio_id
+                  AND membership.program_id = ANY(p_program_ids)
+                  AND membership.status IN ('active', 'paused')
+                  AND membership.ended_at IS NULL
+                FOR UPDATE
+            ) locked;
+        ELSE
+            PERFORM 1
+            FROM public.student_program_memberships membership
+            JOIN public.students student
+              ON student.id = membership.student_id
+             AND student.studio_id = membership.studio_id
+             AND student.program_id = membership.program_id
+            WHERE membership.student_id = p_student_id
+              AND membership.studio_id = p_studio_id
+              AND membership.status IN ('active', 'paused')
+              AND membership.ended_at IS NULL
+            FOR UPDATE OF membership;
+        END IF;
+    END IF;
+
+    -- Contact-only calls need the same final-owner boundary as rank writes.
+    IF p_student_id IS NOT NULL AND p_studio_id IS NOT NULL AND jsonb_typeof(p_student)='object'
+        AND EXISTS(SELECT 1 FROM public.studios WHERE id=p_studio_id) THEN
+        PERFORM 1 FROM public.students WHERE id=p_student_id AND studio_id=p_studio_id FOR UPDATE;
+        v_rank_scope := private.workflow_rank_scope_enter_v1(p_studio_id,p_student_id,'profile');
+    END IF;
+
+    IF p_replace_programs
+       AND cardinality(p_program_ids) > 0
+       AND p_student IS NOT NULL
+       AND jsonb_typeof(p_student) = 'object'
+       AND NOT (p_student ? 'current_belt_rank_id') THEN
+        SELECT student.program_id
+        INTO v_existing_program_id
+        FROM public.students student
+        WHERE student.id = p_student_id
+          AND student.studio_id = p_studio_id;
+
+        IF FOUND AND v_existing_program_id IS DISTINCT FROM p_program_ids[1] THEN
+            v_student := jsonb_set(
+                v_student,
+                '{current_belt_rank_id}',
+                'null'::JSONB,
+                TRUE
+            );
+        END IF;
+    END IF;
+
+    SELECT *
+    INTO v_result
+    FROM private.write_student_profile_atomic(
+        p_student_id,
+        p_studio_id,
+        p_actor_id,
+        v_student,
+        p_program_ids,
+        p_guardians,
+        p_replace_programs,
+        p_audit_action
+    );
+
+    IF p_replace_programs AND cardinality(p_program_ids) > 0 THEN
+        UPDATE public.student_program_memberships membership
+        SET current_belt_rank_id = (saved.value #>> '{}')::UUID,
+            updated_at = NOW()
+        FROM jsonb_each(v_retained_membership_ranks) saved
+        WHERE membership.student_id = p_student_id
+          AND membership.studio_id = p_studio_id
+          AND membership.program_id = saved.key::UUID
+          AND membership.program_id = ANY(p_program_ids)
+          AND membership.status IN ('active', 'paused')
+          AND membership.ended_at IS NULL
+          AND membership.current_belt_rank_id IS NULL
+          AND saved.value <> 'null'::JSONB
+          AND (
+              membership.program_id IS DISTINCT FROM p_program_ids[1]
+              OR NOT v_rank_was_supplied
+          )
+          AND EXISTS (
+              SELECT 1
+              FROM public.belt_ranks rank
+              JOIN public.belt_ladders ladder
+                ON ladder.id = rank.ladder_id
+               AND ladder.studio_id = rank.studio_id
+              WHERE rank.id = (saved.value #>> '{}')::UUID
+                AND rank.studio_id = p_studio_id
+                AND ladder.program_id = membership.program_id
+          );
+
+        UPDATE public.students student
+        SET current_belt_rank_id = membership.current_belt_rank_id,
+            updated_at = NOW()
+        FROM public.student_program_memberships membership
+        WHERE student.id = p_student_id
+          AND student.studio_id = p_studio_id
+          AND membership.student_id = student.id
+          AND membership.studio_id = student.studio_id
+          AND membership.program_id = student.program_id
+          AND membership.status IN ('active', 'paused')
+          AND membership.ended_at IS NULL
+          AND student.current_belt_rank_id IS DISTINCT FROM membership.current_belt_rank_id;
+
+        SELECT *
+        INTO v_result
+        FROM public.students student
+        WHERE student.id = p_student_id
+          AND student.studio_id = p_studio_id;
+    ELSIF v_rank_was_supplied THEN
+        UPDATE public.student_program_memberships membership
+        SET current_belt_rank_id = v_result.current_belt_rank_id,
+            updated_at = NOW()
+        WHERE membership.student_id = p_student_id
+          AND membership.studio_id = p_studio_id
+          AND membership.program_id = v_result.program_id
+          AND membership.status IN ('active', 'paused')
+          AND membership.ended_at IS NULL;
+
+        IF NOT FOUND THEN
+            RAISE EXCEPTION 'Student primary program membership is missing.'
+                USING ERRCODE = 'P0001';
+        END IF;
+    END IF;
+
+    IF v_rank_scope IS NOT NULL THEN
+        PERFORM private.workflow_rank_scope_finish_v1(v_rank_scope);
+        PERFORM private.workflow_rank_finalize_pending_v1(p_studio_id);
+    END IF;
+    RETURN v_result;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.mutate_student_program_membership_atomic(
+    p_student_id UUID,
+    p_studio_id UUID,
+    p_actor_id UUID,
+    p_operation TEXT,
+    p_membership_id UUID DEFAULT NULL,
+    p_payload JSONB DEFAULT '{}'::JSONB
+)
+RETURNS public.student_program_memberships
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path = pg_catalog, public
+AS $$
+DECLARE
+    v_student public.students%ROWTYPE;
+    v_result public.student_program_memberships%ROWTYPE;
+    v_primary public.student_program_memberships%ROWTYPE;
+    v_program_id UUID;
+    v_unassigned_program_id UUID;
+    v_status TEXT;
+    v_audit_action TEXT;
+    v_audit_entity_id UUID;
+    v_rank_scope UUID;
+BEGIN
+    IF p_operation NOT IN ('add', 'update', 'remove') THEN
+        RAISE EXCEPTION 'Unsupported student program membership operation.'
+            USING ERRCODE = '22023';
+    END IF;
+    IF p_payload IS NULL OR jsonb_typeof(p_payload) <> 'object' THEN
+        RAISE EXCEPTION 'Student program membership payload must be a JSON object.'
+            USING ERRCODE = '22023';
+    END IF;
+
+    SELECT *
+    INTO v_student
+    FROM public.students student
+    WHERE student.id = p_student_id
+      AND student.studio_id = p_studio_id
+      AND student.deleted_at IS NULL
+    FOR UPDATE;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Student not found.' USING ERRCODE = 'P0002';
+    END IF;
+
+    PERFORM 1
+    FROM public.student_program_memberships membership
+    WHERE membership.student_id = p_student_id
+      AND membership.studio_id = p_studio_id
+    ORDER BY membership.id
+    FOR UPDATE;
+
+    v_rank_scope := private.workflow_rank_scope_enter_v1(p_studio_id,p_student_id,'membership');
+
+    IF p_operation = 'add' THEN
+        v_program_id := NULLIF(p_payload->>'program_id', '')::UUID;
+        IF v_program_id IS NULL OR NOT EXISTS (
+            SELECT 1
+            FROM public.programs program
+            WHERE program.id = v_program_id
+              AND program.studio_id = p_studio_id
+              AND program.archived_at IS NULL
+        ) THEN
+            RAISE EXCEPTION 'Program does not belong to this studio or is archived.'
+                USING ERRCODE = 'P0001';
+        END IF;
+
+        v_status := COALESCE(NULLIF(p_payload->>'status', ''), 'active');
+        INSERT INTO public.student_program_memberships (
+            studio_id,
+            student_id,
+            program_id,
+            status,
+            started_at,
+            ended_at,
+            current_belt_rank_id
+        ) VALUES (
+            p_studio_id,
+            p_student_id,
+            v_program_id,
+            v_status,
+            NULLIF(p_payload->>'started_at', '')::DATE,
+            CASE
+                WHEN v_status = 'ended' THEN COALESCE(NULLIF(p_payload->>'ended_at', '')::DATE, CURRENT_DATE)
+                ELSE NULLIF(p_payload->>'ended_at', '')::DATE
+            END,
+            NULLIF(p_payload->>'current_belt_rank_id', '')::UUID
+        )
+        RETURNING * INTO v_result;
+        v_audit_action := 'student.program_added';
+        v_audit_entity_id := p_student_id;
+    ELSE
+        IF p_membership_id IS NULL THEN
+            RAISE EXCEPTION 'Student program membership id is required.'
+                USING ERRCODE = '22023';
+        END IF;
+
+        SELECT *
+        INTO v_result
+        FROM public.student_program_memberships membership
+        WHERE membership.id = p_membership_id
+          AND membership.student_id = p_student_id
+          AND membership.studio_id = p_studio_id;
+
+        IF NOT FOUND THEN
+            RAISE EXCEPTION 'Student program membership not found.'
+                USING ERRCODE = 'P0002';
+        END IF;
+
+        IF p_operation = 'remove' THEN
+            UPDATE public.student_program_memberships membership
+            SET status = 'ended',
+                ended_at = CURRENT_DATE,
+                current_belt_rank_id = NULL,
+                updated_at = NOW()
+            WHERE membership.id = p_membership_id
+              AND membership.student_id = p_student_id
+              AND membership.studio_id = p_studio_id
+            RETURNING * INTO v_result;
+            v_audit_action := 'student.program_removed';
+        ELSE
+            v_status := CASE
+                WHEN p_payload ? 'status' THEN NULLIF(p_payload->>'status', '')
+                ELSE v_result.status
+            END;
+            UPDATE public.student_program_memberships membership
+            SET status = v_status,
+                started_at = CASE
+                    WHEN p_payload ? 'started_at' THEN NULLIF(p_payload->>'started_at', '')::DATE
+                    ELSE membership.started_at
+                END,
+                ended_at = CASE
+                    WHEN v_status IN ('active', 'paused') THEN NULL
+                    WHEN p_payload ? 'ended_at' THEN NULLIF(p_payload->>'ended_at', '')::DATE
+                    WHEN v_status = 'ended' THEN COALESCE(membership.ended_at, CURRENT_DATE)
+                    ELSE membership.ended_at
+                END,
+                current_belt_rank_id = CASE
+                    WHEN v_status = 'ended' THEN NULL
+                    WHEN p_payload ? 'current_belt_rank_id'
+                        THEN NULLIF(p_payload->>'current_belt_rank_id', '')::UUID
+                    ELSE membership.current_belt_rank_id
+                END,
+                updated_at = NOW()
+            WHERE membership.id = p_membership_id
+              AND membership.student_id = p_student_id
+              AND membership.studio_id = p_studio_id
+            RETURNING * INTO v_result;
+            v_audit_action := 'student.program_updated';
+        END IF;
+        v_audit_entity_id := p_membership_id;
+    END IF;
+
+    SELECT membership.*
+    INTO v_primary
+    FROM public.student_program_memberships membership
+    WHERE membership.student_id = p_student_id
+      AND membership.studio_id = p_studio_id
+      AND membership.status IN ('active', 'paused')
+      AND membership.ended_at IS NULL
+    ORDER BY
+        (membership.program_id = v_student.program_id) DESC,
+        membership.created_at,
+        membership.id
+    LIMIT 1;
+
+    IF NOT FOUND THEN
+        SELECT program.id
+        INTO v_unassigned_program_id
+        FROM public.programs program
+        WHERE program.studio_id = p_studio_id
+          AND program.is_system = TRUE
+          AND lower(program.name) = 'unassigned'
+          AND program.archived_at IS NULL
+        ORDER BY program.created_at, program.id
+        LIMIT 1;
+
+        IF v_unassigned_program_id IS NULL THEN
+            RAISE EXCEPTION 'Unassigned program is missing for this studio.'
+                USING ERRCODE = 'P0001';
+        END IF;
+
+        INSERT INTO public.student_program_memberships (
+            studio_id, student_id, program_id, status, started_at
+        ) VALUES (
+            p_studio_id,
+            p_student_id,
+            v_unassigned_program_id,
+            'active',
+            COALESCE(v_student.membership_start_date, CURRENT_DATE)
+        )
+        RETURNING * INTO v_primary;
+    END IF;
+
+    UPDATE public.students student
+    SET program_id = v_primary.program_id,
+        current_belt_rank_id = v_primary.current_belt_rank_id,
+        updated_at = NOW()
+    WHERE student.id = p_student_id
+      AND student.studio_id = p_studio_id;
+
+    INSERT INTO public.audit_logs (
+        studio_id, actor_id, action, entity_type, entity_id, metadata
+    ) VALUES (
+        p_studio_id,
+        p_actor_id,
+        v_audit_action,
+        CASE WHEN p_operation = 'add' THEN 'student' ELSE 'student_program_membership' END,
+        v_audit_entity_id,
+        jsonb_build_object(
+            'student_id', p_student_id,
+            'program_id', v_result.program_id,
+            'operation', p_operation,
+            'changes', p_payload
+        )
+    );
+
+    PERFORM private.workflow_rank_scope_finish_v1(v_rank_scope);
+    PERFORM private.workflow_rank_finalize_pending_v1(p_studio_id);
+    RETURN v_result;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION private.import_student_row_atomic(
+    p_student JSONB,
+    p_studio_id UUID,
+    p_import_run_id UUID,
+    p_processing_token TEXT,
+    p_row_number INTEGER,
+    p_guardian_name TEXT DEFAULT NULL,
+    p_guardian_email TEXT DEFAULT NULL,
+    p_guardian_phone TEXT DEFAULT NULL,
+    p_guardian_relation TEXT DEFAULT NULL,
+    p_program_ids UUID[] DEFAULT NULL
+)
+RETURNS TABLE(student_id UUID, guardian_imported BOOLEAN)
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+    v_student public.students%ROWTYPE;
+    v_student_id UUID;
+    v_program_ids UUID[];
+    v_program_id UUID;
+    v_current_belt_rank_id UUID;
+    v_rank_program_id UUID;
+    v_membership_id UUID;
+    v_membership_started_at DATE;
+    v_guardian_name TEXT := NULLIF(btrim(COALESCE(p_guardian_name, '')), '');
+    v_guardian_first_name TEXT;
+    v_guardian_last_name TEXT;
+    v_guardian_id UUID;
+    v_guardian_link_id UUID;
+    v_run public.student_import_runs%ROWTYPE;
+    v_receipt JSONB;
+    v_outcome JSONB;
+    v_rank_scope UUID;
+BEGIN
+    IF p_student IS NULL OR jsonb_typeof(p_student) <> 'object' THEN
+        RAISE EXCEPTION 'Student import payload must be a JSON object.'
+            USING ERRCODE = '22023';
+    END IF;
+
+    IF p_import_run_id IS NULL OR p_row_number IS NULL THEN
+        RAISE EXCEPTION 'Student import run id and row number are required.'
+            USING ERRCODE = '22023';
+    END IF;
+
+    IF p_processing_token IS NULL OR btrim(p_processing_token) = '' THEN
+        RAISE EXCEPTION 'Student import processing token is required.'
+            USING ERRCODE = '22023';
+    END IF;
+
+    v_student.id := NULLIF(p_student->>'id', '')::UUID;
+    v_student.studio_id := NULLIF(p_student->>'studio_id', '')::UUID;
+    IF v_student.id IS NULL THEN
+        RAISE EXCEPTION 'Student import payload is missing id.'
+            USING ERRCODE = '22023';
+    END IF;
+
+    IF v_student.studio_id IS DISTINCT FROM p_studio_id THEN
+        RAISE EXCEPTION 'Student import payload studio does not match request studio.'
+            USING ERRCODE = 'P0001';
+    END IF;
+
+    v_run := private.lock_student_import_run(p_studio_id, p_import_run_id, p_processing_token);
+    IF NOT v_run.receipts_enabled THEN
+        RAISE EXCEPTION 'This unfinished import has no safe retry receipts.' USING ERRCODE = '22023';
+    END IF;
+    SELECT receipt.result_json INTO v_receipt FROM private.student_import_receipts AS receipt
+    WHERE receipt.import_run_id = p_import_run_id AND receipt.kind = 'student'
+      AND receipt.key = p_row_number::TEXT;
+    IF FOUND THEN
+        IF v_receipt->>'student_id' IS NULL
+           OR jsonb_typeof(v_receipt->'guardian_imported') IS DISTINCT FROM 'boolean'
+           OR (v_receipt->>'student_id')::UUID IS DISTINCT FROM v_student.id THEN
+            RAISE EXCEPTION 'Student import completion receipt does not match this row.' USING ERRCODE = 'P0001';
+        END IF;
+        student_id := (v_receipt->>'student_id')::UUID;
+        guardian_imported := (v_receipt->>'guardian_imported')::BOOLEAN;
+        RETURN NEXT;
+        RETURN;
+    END IF;
+    -- Internal diagnostic facts are not student columns. Keep only the original
+    -- successful-row outcome needed to rebuild the existing import response.
+    v_outcome := p_student->'_import_outcome';
+    IF p_row_number < 2 OR p_row_number > 10001
+       OR jsonb_typeof(v_outcome) IS DISTINCT FROM 'object'
+       OR (v_outcome->>'row_number')::INTEGER IS DISTINCT FROM p_row_number
+       OR v_outcome->'is_valid' IS DISTINCT FROM 'true'::JSONB
+       OR jsonb_typeof(v_outcome->'issues') IS DISTINCT FROM 'array'
+       OR jsonb_typeof(v_outcome->'data') IS DISTINCT FROM 'object'
+       OR jsonb_typeof(v_outcome->'imported_without_belt') IS DISTINCT FROM 'boolean' THEN
+        RAISE EXCEPTION 'Student import completion facts are required.' USING ERRCODE = '22023';
+    END IF;
+
+    v_student.legal_first_name := NULLIF(btrim(COALESCE(p_student->>'legal_first_name', '')), '');
+    v_student.legal_last_name := NULLIF(btrim(COALESCE(p_student->>'legal_last_name', '')), '');
+    v_student.preferred_name := NULLIF(p_student->>'preferred_name', '');
+    v_student.date_of_birth := NULLIF(p_student->>'date_of_birth', '')::DATE;
+    v_student.is_minor := COALESCE((p_student->>'is_minor')::BOOLEAN, false);
+    v_student.email := NULLIF(p_student->>'email', '');
+    v_student.phone := NULLIF(p_student->>'phone', '');
+    v_student.address_line1 := NULLIF(p_student->>'address_line1', '');
+    v_student.address_city := NULLIF(p_student->>'address_city', '');
+    v_student.address_state := NULLIF(p_student->>'address_state', '');
+    v_student.address_zip := NULLIF(p_student->>'address_zip', '');
+    v_student.emergency_contact_name := NULLIF(p_student->>'emergency_contact_name', '');
+    v_student.emergency_contact_phone := NULLIF(p_student->>'emergency_contact_phone', '');
+    v_student.emergency_contact_relation := NULLIF(p_student->>'emergency_contact_relation', '');
+    v_student.status := COALESCE(NULLIF(p_student->>'status', ''), 'active');
+    v_student.membership_start_date := NULLIF(p_student->>'membership_start_date', '')::DATE;
+    v_student.current_belt_rank_id := NULLIF(p_student->>'current_belt_rank_id', '')::UUID;
+    v_student.notes := NULLIF(p_student->>'notes', '');
+    v_student.hold_start_date := NULLIF(p_student->>'hold_start_date', '')::DATE;
+    v_student.hold_end_date := NULLIF(p_student->>'hold_end_date', '')::DATE;
+
+    SELECT COALESCE(array_agg(tag.value), ARRAY[]::TEXT[])
+      INTO v_student.tags
+      FROM jsonb_array_elements_text(
+          CASE
+              WHEN jsonb_typeof(p_student->'tags') = 'array' THEN p_student->'tags'
+              ELSE '[]'::JSONB
+          END
+      ) AS tag(value);
+
+    IF v_student.legal_first_name IS NULL OR v_student.legal_last_name IS NULL THEN
+        RAISE EXCEPTION 'Student import payload is missing required name fields.'
+            USING ERRCODE = '22023';
+    END IF;
+
+    v_program_ids := COALESCE(p_program_ids, ARRAY[]::UUID[]);
+    IF cardinality(v_program_ids) IS NULL OR cardinality(v_program_ids) = 0 THEN
+        RAISE EXCEPTION 'Student import payload is missing program memberships.'
+            USING ERRCODE = '22023';
+    END IF;
+
+    FOREACH v_program_id IN ARRAY v_program_ids LOOP
+        IF v_program_id IS NULL THEN
+            RAISE EXCEPTION 'Student import payload includes an empty program id.'
+                USING ERRCODE = '22023';
+        END IF;
+
+        PERFORM 1
+          FROM public.programs
+         WHERE id = v_program_id
+           AND studio_id = p_studio_id
+           AND archived_at IS NULL;
+
+        IF NOT FOUND THEN
+            RAISE EXCEPTION 'Import program does not belong to this studio or is archived.'
+                USING ERRCODE = 'P0001';
+        END IF;
+    END LOOP;
+
+    v_student.program_id := v_program_ids[1];
+    v_current_belt_rank_id := v_student.current_belt_rank_id;
+    v_membership_started_at := v_student.membership_start_date;
+
+    IF v_current_belt_rank_id IS NOT NULL THEN
+        SELECT ladder.program_id
+          INTO v_rank_program_id
+          FROM public.belt_ranks AS belt_rank
+          JOIN public.belt_ladders AS ladder ON ladder.id = belt_rank.ladder_id
+         WHERE belt_rank.id = v_current_belt_rank_id
+           AND belt_rank.studio_id = p_studio_id;
+
+        IF NOT FOUND THEN
+            RAISE EXCEPTION 'Current belt rank does not belong to this studio.'
+                USING ERRCODE = 'P0001';
+        END IF;
+    END IF;
+
+    v_rank_scope := private.workflow_rank_scope_enter_v1(p_studio_id,v_student.id,'import');
+
+    INSERT INTO public.students (
+        id,
+        studio_id,
+        legal_first_name,
+        legal_last_name,
+        preferred_name,
+        date_of_birth,
+        is_minor,
+        email,
+        phone,
+        address_line1,
+        address_city,
+        address_state,
+        address_zip,
+        emergency_contact_name,
+        emergency_contact_phone,
+        emergency_contact_relation,
+        status,
+        membership_start_date,
+        program_id,
+        current_belt_rank_id,
+        notes,
+        tags,
+        hold_start_date,
+        hold_end_date
+    )
+    VALUES (
+        v_student.id,
+        p_studio_id,
+        v_student.legal_first_name,
+        v_student.legal_last_name,
+        v_student.preferred_name,
+        v_student.date_of_birth,
+        v_student.is_minor,
+        v_student.email,
+        v_student.phone,
+        v_student.address_line1,
+        v_student.address_city,
+        v_student.address_state,
+        v_student.address_zip,
+        v_student.emergency_contact_name,
+        v_student.emergency_contact_phone,
+        v_student.emergency_contact_relation,
+        v_student.status,
+        v_student.membership_start_date,
+        v_student.program_id,
+        v_student.current_belt_rank_id,
+        v_student.notes,
+        v_student.tags,
+        v_student.hold_start_date,
+        v_student.hold_end_date
+    );
+
+    v_student_id := v_student.id;
+
+    FOREACH v_program_id IN ARRAY v_program_ids LOOP
+        SELECT membership.id
+          INTO v_membership_id
+          FROM public.student_program_memberships AS membership
+         WHERE membership.student_id = v_student_id
+           AND membership.studio_id = p_studio_id
+           AND membership.program_id = v_program_id
+           AND membership.ended_at IS NULL
+         FOR UPDATE;
+
+        IF FOUND THEN
+            UPDATE public.student_program_memberships AS membership
+               SET status = 'active',
+                   ended_at = NULL,
+                   started_at = COALESCE(v_membership_started_at, started_at),
+                   current_belt_rank_id = CASE
+                       WHEN v_current_belt_rank_id IS NOT NULL
+                            AND (v_rank_program_id IS NULL OR v_rank_program_id = v_program_id)
+                       THEN v_current_belt_rank_id
+                       ELSE NULL
+                   END
+             WHERE membership.id = v_membership_id;
+        ELSE
+            INSERT INTO public.student_program_memberships (
+                studio_id,
+                student_id,
+                program_id,
+                status,
+                started_at,
+                current_belt_rank_id
+            )
+            VALUES (
+                p_studio_id,
+                v_student_id,
+                v_program_id,
+                'active',
+                v_membership_started_at,
+                CASE
+                    WHEN v_current_belt_rank_id IS NOT NULL
+                         AND (v_rank_program_id IS NULL OR v_rank_program_id = v_program_id)
+                    THEN v_current_belt_rank_id
+                    ELSE NULL
+                END
+            );
+        END IF;
+    END LOOP;
+
+    UPDATE public.students
+       SET program_id = v_program_ids[1],
+           current_belt_rank_id = v_current_belt_rank_id
+     WHERE id = v_student_id
+       AND studio_id = p_studio_id;
+
+    student_id := v_student_id;
+    guardian_imported := false;
+    IF v_guardian_name IS NOT NULL THEN
+        v_guardian_first_name := split_part(v_guardian_name, ' ', 1);
+        v_guardian_last_name := NULLIF(btrim(substr(v_guardian_name, length(v_guardian_first_name) + 1)), '');
+        v_guardian_id := private.deterministic_import_uuid(
+            p_import_run_id,
+            'guardian-row:' || p_row_number::TEXT
+        );
+        v_guardian_link_id := private.deterministic_import_uuid(
+            p_import_run_id,
+            'student-guardian-link:' || v_student_id::TEXT || ':' || v_guardian_id::TEXT
+        );
+
+        INSERT INTO public.guardians (
+            id,
+            studio_id,
+            first_name,
+            last_name,
+            email,
+            phone,
+            relation,
+            is_primary_contact
+        )
+        VALUES (
+            v_guardian_id,
+            p_studio_id,
+            v_guardian_first_name,
+            COALESCE(v_guardian_last_name, ''),
+            NULLIF(p_guardian_email, ''),
+            NULLIF(p_guardian_phone, ''),
+            NULLIF(p_guardian_relation, ''),
+            true
+        );
+
+        INSERT INTO public.student_guardians (
+            id,
+            student_id,
+            guardian_id
+        )
+        VALUES (
+            v_guardian_link_id,
+            v_student_id,
+            v_guardian_id
+        );
+
+        guardian_imported := TRUE;
+    END IF;
+
+    UPDATE public.students student
+    SET current_belt_rank_id = membership.current_belt_rank_id,
+        updated_at = NOW()
+    FROM public.student_program_memberships membership
+    WHERE student.id = v_student_id
+      AND student.studio_id = p_studio_id
+      AND membership.student_id = student.id
+      AND membership.studio_id = student.studio_id
+      AND membership.program_id = student.program_id
+      AND membership.status IN ('active', 'paused')
+      AND membership.ended_at IS NULL
+      AND student.current_belt_rank_id IS DISTINCT FROM membership.current_belt_rank_id;
+
+    INSERT INTO private.student_import_receipts(import_run_id, kind, key, result_json)
+    VALUES (p_import_run_id, 'student', p_row_number::TEXT,
+        jsonb_build_object('student_id', v_student_id, 'guardian_imported', guardian_imported,
+            'outcome', v_outcome));
+
+    UPDATE public.student_import_runs SET processing_started_at = clock_timestamp() WHERE id = p_import_run_id;
+    PERFORM private.workflow_rank_scope_finish_v1(v_rank_scope);
+    PERFORM private.workflow_rank_finalize_pending_v1(p_studio_id);
+    RETURN NEXT;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.sync_belt_ladder_ranks(
+    p_ladder_id UUID,
+    p_studio_id UUID,
+    p_sub_rank_term TEXT DEFAULT NULL,
+    p_ranks JSONB DEFAULT '[]'::JSONB
+)
+RETURNS TABLE (
+    id UUID,
+    studio_id UUID,
+    name TEXT,
+    program_id UUID,
+    sub_rank_term TEXT,
+    created_at TIMESTAMPTZ,
+    updated_at TIMESTAMPTZ,
+    ranks JSONB
+)
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path = public
+AS $$
+DECLARE
+    v_program_id UUID;
+    v_student_id UUID;
+    v_scope UUID;
+    v_scopes UUID[] := ARRAY[]::UUID[];
+BEGIN
+    SELECT ladder.program_id INTO v_program_id
+    FROM public.belt_ladders ladder
+    WHERE ladder.id = p_ladder_id
+      AND ladder.studio_id = p_studio_id;
+
+    PERFORM 1
+    FROM public.students student
+    WHERE student.studio_id = p_studio_id
+      AND (EXISTS (
+          SELECT 1
+          FROM public.student_program_memberships membership
+          WHERE membership.studio_id = p_studio_id
+            AND membership.student_id = student.id
+            AND membership.program_id = v_program_id
+            AND membership.status IN ('active', 'paused')
+            AND membership.ended_at IS NULL
+      ) OR student.current_belt_rank_id IN (SELECT rank.id FROM public.belt_ranks rank
+          WHERE rank.studio_id=p_studio_id AND rank.ladder_id=p_ladder_id)
+        OR EXISTS(SELECT 1 FROM public.student_program_memberships membership JOIN public.belt_ranks rank
+            ON rank.id=membership.current_belt_rank_id AND rank.studio_id=membership.studio_id
+            WHERE membership.studio_id=p_studio_id AND membership.student_id=student.id AND rank.ladder_id=p_ladder_id))
+    ORDER BY student.id
+    FOR UPDATE;
+
+    FOR v_student_id IN SELECT student.id
+    FROM public.students student
+    WHERE student.studio_id = p_studio_id
+      AND (EXISTS (
+          SELECT 1
+          FROM public.student_program_memberships membership
+          WHERE membership.studio_id = p_studio_id
+            AND membership.student_id = student.id
+            AND membership.program_id = v_program_id
+            AND membership.status IN ('active', 'paused')
+            AND membership.ended_at IS NULL
+      ) OR student.current_belt_rank_id IN (SELECT rank.id FROM public.belt_ranks rank
+          WHERE rank.studio_id=p_studio_id AND rank.ladder_id=p_ladder_id)
+        OR EXISTS(SELECT 1 FROM public.student_program_memberships membership JOIN public.belt_ranks rank
+            ON rank.id=membership.current_belt_rank_id AND rank.studio_id=membership.studio_id
+            WHERE membership.studio_id=p_studio_id AND membership.student_id=student.id AND rank.ladder_id=p_ladder_id))
+    ORDER BY student.id
+    LOOP
+        v_scopes := array_append(v_scopes,private.workflow_rank_scope_enter_v1(p_studio_id,v_student_id,'rank_plan'));
+    END LOOP;
+
+    PERFORM set_config('koaryu.rank_plan_delete', 'enabled', TRUE);
+    RETURN QUERY
+    SELECT *
+    FROM public.sync_belt_ladder_ranks_internal(
+        p_ladder_id, p_studio_id, p_sub_rank_term, p_ranks
+    );
+    PERFORM set_config('koaryu.rank_plan_delete', 'disabled', TRUE);
+    FOREACH v_scope IN ARRAY v_scopes LOOP
+        PERFORM private.workflow_rank_scope_finish_v1(v_scope);
+    END LOOP;
+    PERFORM private.workflow_rank_finalize_pending_v1(p_studio_id);
+EXCEPTION WHEN OTHERS THEN
+    PERFORM set_config('koaryu.rank_plan_delete', 'disabled', TRUE);
+    RAISE;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.sync_primary_student_rank_from_membership()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path = pg_catalog, public
+AS $$
+BEGIN
+    IF TG_RELID='public.students'::REGCLASS THEN
+        IF TG_OP='DELETE' THEN
+            PERFORM private.workflow_rank_mark_dirty_v1(OLD.studio_id,OLD.id,NULL,true);
+            RETURN OLD;
+        END IF;
+        PERFORM private.workflow_rank_mark_dirty_v1(NEW.studio_id,NEW.id,NULL);
+        IF TG_OP='INSERT' THEN
+            UPDATE private.workflow_rank_pending_contexts p SET source_inserted=true FROM private.workflow_rank_scopes s
+                WHERE s.id=p.scope_id AND s.backend_pid=pg_catalog.pg_backend_pid() AND s.transaction_id=pg_catalog.pg_current_xact_id()
+                    AND s.state IN ('active','unknown') AND p.studio_id=NEW.studio_id AND p.student_id=NEW.id AND p.student_program_membership_id IS NULL;
+        END IF;
+        RETURN NEW;
+    ELSIF TG_RELID<>'public.student_program_memberships'::REGCLASS THEN
+        RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_RANK_CONTEXT_UNAVAILABLE';
+    END IF;
+    IF TG_OP='DELETE' THEN
+        PERFORM private.workflow_rank_mark_dirty_v1(OLD.studio_id,OLD.student_id,OLD.id,true);
+        PERFORM private.workflow_rank_mark_dirty_v1(OLD.studio_id,OLD.student_id,NULL);
+        RETURN OLD;
+    END IF;
+    PERFORM private.workflow_rank_mark_dirty_v1(NEW.studio_id,NEW.student_id,NEW.id);
+    PERFORM private.workflow_rank_mark_dirty_v1(NEW.studio_id,NEW.student_id,NULL);
+    IF TG_OP='INSERT' THEN
+        UPDATE private.workflow_rank_pending_contexts p SET source_inserted=true FROM private.workflow_rank_scopes s
+            WHERE s.id=p.scope_id AND s.backend_pid=pg_catalog.pg_backend_pid() AND s.transaction_id=pg_catalog.pg_current_xact_id()
+                AND s.state IN ('active','unknown') AND p.studio_id=NEW.studio_id AND p.student_id=NEW.student_id AND p.student_program_membership_id=NEW.id;
+    END IF;
+    IF NEW.status IN ('active','paused') AND NEW.ended_at IS NULL
+        AND (TG_OP='INSERT' OR OLD.status NOT IN ('active','paused') OR OLD.ended_at IS NOT NULL) THEN
+        -- Even add/remove within one deferred boundary permanently supersedes a
+        -- previously available legacy context. Rank-NULL mirrors do not set it.
+        UPDATE private.workflow_rank_pending_contexts p SET legacy_membership_gained=true FROM private.workflow_rank_scopes s
+            WHERE s.id=p.scope_id AND s.backend_pid=pg_catalog.pg_backend_pid() AND s.transaction_id=pg_catalog.pg_current_xact_id()
+                AND s.state IN ('active','unknown') AND p.studio_id=NEW.studio_id AND p.student_id=NEW.student_id
+                AND p.student_program_membership_id IS NULL AND p.previous_context->>'live'='true';
+    END IF;
+    IF TG_NARGS>0 THEN RETURN NEW; END IF;
+    IF NEW.status IN ('active', 'paused')
+       AND NEW.ended_at IS NULL THEN
+        UPDATE public.students
+        SET current_belt_rank_id = NEW.current_belt_rank_id,
+            updated_at = NOW()
+        WHERE id = NEW.student_id
+          AND studio_id = NEW.studio_id
+          AND program_id = NEW.program_id
+          AND current_belt_rank_id IS DISTINCT FROM NEW.current_belt_rank_id;
+    END IF;
+
+    RETURN NEW;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.reassign_memberships_before_belt_rank_delete()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path = pg_catalog, public
+AS $$
+DECLARE
+    target_program_id UUID;
+    replacement_rank_id UUID;
+    v_context RECORD;
+BEGIN
+    SELECT ladder.program_id
+    INTO target_program_id
+    FROM public.belt_ladders ladder
+    WHERE ladder.id = OLD.ladder_id
+      AND ladder.studio_id = OLD.studio_id;
+
+    -- Preserve physical rank removal even when an unscoped FK later clears it.
+    FOR v_context IN
+        SELECT candidate.studio_id,candidate.student_id,candidate.student_program_membership_id,
+            bool_or(candidate.current_rank_reference) current_rank_reference
+        FROM (
+            SELECT c.studio_id,c.student_id,c.student_program_membership_id,true current_rank_reference FROM private.workflow_rank_contexts c
+                WHERE c.studio_id=OLD.studio_id AND c.context->>'rank_id'=OLD.id::TEXT
+            UNION ALL SELECT m.studio_id,m.student_id,m.id,true FROM public.student_program_memberships m
+                WHERE m.studio_id=OLD.studio_id AND m.current_belt_rank_id=OLD.id
+            UNION ALL SELECT s.studio_id,s.id,NULL::UUID,true FROM public.students s
+                WHERE s.studio_id=OLD.studio_id AND s.current_belt_rank_id=OLD.id
+            UNION ALL SELECT b.studio_id,b.student_id,b.student_program_membership_id,false FROM public.belt_test_recipients b
+                JOIN private.workflow_rank_contexts c ON c.studio_id=b.studio_id AND c.student_id=b.student_id
+                    AND c.student_program_membership_id IS NOT DISTINCT FROM b.student_program_membership_id
+                WHERE b.studio_id=OLD.studio_id AND b.state='approved' AND b.approved_rank_context_generation=c.generation
+                    AND (b.approved_current_rank_id=OLD.id OR b.approved_target_rank_id=OLD.id)
+        ) candidate
+        GROUP BY candidate.studio_id,candidate.student_id,candidate.student_program_membership_id
+        ORDER BY candidate.student_id,candidate.student_program_membership_id NULLS FIRST
+    LOOP
+        IF NOT v_context.current_rank_reference THEN
+            -- Match the dirty owner's deleted-studio cascade short circuit.
+            IF NOT EXISTS(SELECT 1 FROM public.studios WHERE id=v_context.studio_id) THEN CONTINUE; END IF;
+            -- A cursor snapshot cannot authorize removal against a newer source
+            -- generation. Recheck after owning the same nonblocking student lock.
+            BEGIN
+                PERFORM 1 FROM public.students WHERE studio_id=v_context.studio_id AND id=v_context.student_id FOR UPDATE NOWAIT;
+            EXCEPTION WHEN lock_not_available THEN
+                RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STUDIO_BUSY';
+            END;
+            IF NOT EXISTS(SELECT 1 FROM public.belt_test_recipients b
+                JOIN private.workflow_rank_contexts c ON c.studio_id=b.studio_id AND c.student_id=b.student_id
+                    AND c.student_program_membership_id IS NOT DISTINCT FROM b.student_program_membership_id
+                WHERE b.studio_id=v_context.studio_id AND b.student_id=v_context.student_id
+                    AND b.student_program_membership_id IS NOT DISTINCT FROM v_context.student_program_membership_id
+                    AND b.state='approved' AND b.approved_rank_context_generation=c.generation
+                    AND (b.approved_current_rank_id=OLD.id OR b.approved_target_rank_id=OLD.id)) THEN
+                CONTINUE;
+            END IF;
+        END IF;
+        PERFORM private.workflow_rank_mark_dirty_v1(v_context.studio_id,v_context.student_id,v_context.student_program_membership_id,true);
+    END LOOP;
+
+    IF target_program_id IS NULL THEN
+        RETURN OLD;
+    END IF;
+
+    IF current_setting('koaryu.rank_plan_delete', TRUE) IS DISTINCT FROM 'enabled'
+       AND (
+           EXISTS (
+               SELECT 1
+               FROM public.students student
+               WHERE student.studio_id = OLD.studio_id
+                 AND student.program_id = target_program_id
+                 AND student.current_belt_rank_id = OLD.id
+           )
+           OR EXISTS (
+               SELECT 1
+               FROM public.student_program_memberships membership
+               WHERE membership.studio_id = OLD.studio_id
+                 AND membership.program_id = target_program_id
+                 AND membership.current_belt_rank_id = OLD.id
+                 AND membership.status IN ('active', 'paused')
+                 AND membership.ended_at IS NULL
+           )
+       ) THEN
+        RAISE EXCEPTION 'Assigned belt ranks must be deleted through sync_belt_ladder_ranks.'
+            USING ERRCODE = 'P0001';
+    END IF;
+
+    PERFORM 1
+    FROM public.students student
+    WHERE student.studio_id = OLD.studio_id
+      AND (
+          (
+              student.program_id = target_program_id
+              AND student.current_belt_rank_id = OLD.id
+          )
+          OR EXISTS (
+              SELECT 1
+              FROM public.student_program_memberships membership
+              WHERE membership.studio_id = OLD.studio_id
+                AND membership.student_id = student.id
+                AND membership.program_id = target_program_id
+                AND membership.status IN ('active', 'paused')
+                AND membership.ended_at IS NULL
+                AND membership.current_belt_rank_id = OLD.id
+          )
+      )
+    ORDER BY student.id
+    FOR UPDATE;
+
+    SELECT rank.id
+    INTO replacement_rank_id
+    FROM public.belt_ranks rank
+    WHERE rank.ladder_id = OLD.ladder_id
+      AND rank.studio_id = OLD.studio_id
+      AND rank.id <> OLD.id
+      AND rank.is_tip = FALSE
+    ORDER BY
+        ((rank.display_order, rank.created_at, rank.id)
+            < (OLD.display_order, OLD.created_at, OLD.id)) DESC,
+        CASE WHEN (rank.display_order, rank.created_at, rank.id)
+            < (OLD.display_order, OLD.created_at, OLD.id)
+            THEN rank.display_order END DESC,
+        CASE WHEN (rank.display_order, rank.created_at, rank.id)
+            < (OLD.display_order, OLD.created_at, OLD.id)
+            THEN rank.created_at END DESC,
+        CASE WHEN (rank.display_order, rank.created_at, rank.id)
+            < (OLD.display_order, OLD.created_at, OLD.id)
+            THEN rank.id END DESC,
+        rank.display_order,
+        rank.created_at,
+        rank.id
+    LIMIT 1;
+
+    UPDATE public.student_program_memberships
+    SET current_belt_rank_id = replacement_rank_id,
+        updated_at = NOW()
+    WHERE studio_id = OLD.studio_id
+      AND program_id = target_program_id
+      AND current_belt_rank_id = OLD.id
+      AND status IN ('active', 'paused')
+      AND ended_at IS NULL;
+
+    UPDATE public.students
+    SET current_belt_rank_id = replacement_rank_id,
+        updated_at = NOW()
+    WHERE studio_id = OLD.studio_id
+      AND program_id = target_program_id
+      AND current_belt_rank_id = OLD.id
+      AND EXISTS (
+          SELECT 1
+          FROM public.student_program_memberships membership
+          WHERE membership.studio_id = OLD.studio_id
+            AND membership.student_id = students.id
+            AND membership.program_id = target_program_id
+            AND membership.status IN ('active', 'paused')
+            AND membership.ended_at IS NULL
+            AND membership.current_belt_rank_id IS NOT DISTINCT FROM replacement_rank_id
+      );
+
+    RETURN OLD;
+END;
+$$;
+
+-- Explicit observed installation baselines. No business row or occurrence write.
+INSERT INTO private.workflow_rank_contexts(studio_id,student_id,student_program_membership_id,generation,context,tombstoned)
+SELECT s.studio_id,s.id,NULL,1,private.workflow_rank_tuple_v1(s.studio_id,s.id,NULL),false FROM public.students s;
+INSERT INTO private.workflow_rank_contexts(studio_id,student_id,student_program_membership_id,generation,context,tombstoned)
+SELECT m.studio_id,m.student_id,m.id,1,private.workflow_rank_tuple_v1(m.studio_id,m.student_id,m.id),false
+FROM public.student_program_memberships m;
+CREATE TRIGGER workflow_rank_student_dirty AFTER INSERT OR UPDATE OR DELETE ON public.students
+    FOR EACH ROW EXECUTE FUNCTION public.sync_primary_student_rank_from_membership('dirty_only');
+CREATE TRIGGER workflow_rank_membership_dirty AFTER INSERT OR UPDATE OR DELETE ON public.student_program_memberships
+    FOR EACH ROW EXECUTE FUNCTION public.sync_primary_student_rank_from_membership('dirty_only');

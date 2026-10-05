@@ -199,7 +199,8 @@ BEGIN
     SELECT to_jsonb(e) INTO original_event FROM private.automation_workflow_events e WHERE e.studio_id=s;
     PERFORM pg_temp.capture_check(original_event->'context'=jsonb_build_object('event_id',event,'student_id',student,
         'student_program_membership_id',NULL,'approved_program_id',x->'program','approved_current_rank_id',NULL,
-        'approved_target_rank_id',r0,'approved_schedule_revision',1,'approval_revision',1),'zero-target approval stores full original private snapshot');
+        'approved_target_rank_id',r0,'approved_schedule_revision',1,'approval_revision',1,'approved_rank_context_generation',1),'zero-target approval stores full original private snapshot');
+    PERFORM pg_temp.capture_check((original_event#>>'{context,approved_rank_context_generation}')::BIGINT=1,'first approval captures observed baseline generation');
     PERFORM public.approve_belt_test_recipients_v1(s,actor,event,gen_random_uuid(),1,request);
     PERFORM pg_temp.capture_check((SELECT count(*)=1 FROM private.automation_workflow_events WHERE studio_id=s),'current identical new-key approval emits nothing');
     RESET ROLE;
@@ -211,7 +212,8 @@ BEGIN
     second:=public.approve_belt_test_recipients_v1(s,actor,event,gen_random_uuid(),2,request);
     PERFORM pg_temp.capture_check((SELECT context=jsonb_build_object('event_id',event,'student_id',student,'student_program_membership_id',NULL,
         'approved_program_id',program2,'approved_current_rank_id',r0,'approved_target_rank_id',r1,
-        'approved_schedule_revision',2,'approval_revision',(second#>>'{payload,items,0,revision}')::BIGINT)
+        'approved_schedule_revision',2,'approval_revision',(second#>>'{payload,items,0,revision}')::BIGINT,
+        'approved_rank_context_generation',private.workflow_rank_context_generation_v1(s,student,NULL))
         FROM private.automation_workflow_events WHERE studio_id=s AND source_key=recipient::TEXT||':'||(second#>>'{payload,items,0,revision}')||':2'),
         'reapproval preserves new program rank and schedule in its new occurrence');
     PERFORM pg_temp.capture_check((SELECT to_jsonb(e)=original_event FROM private.automation_workflow_events e WHERE e.id=(original_event->>'id')::UUID)
