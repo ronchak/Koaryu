@@ -946,6 +946,7 @@ CREATE FUNCTION public.mutate_lead_trial_appointment_v1(
 DECLARE lead public.leads; old public.lead_trial_appointments; changed public.lead_trial_appointments;
     receipt private.automation_command_operations; program public.programs;
     v_request JSONB:=p_request; v_fingerprint TEXT; v_command TEXT; v_result JSONB; v_at TIMESTAMPTZ;
+    targets JSONB; workflow_ids UUID[]; events JSONB:='[]'; activity_id UUID;
     v_replay BOOLEAN; v_cancel BOOLEAN; v_stage TEXT; k TEXT; v UUID;
 BEGIN
     IF p_studio_id IS NULL OR p_actor_id IS NULL THEN
@@ -1039,8 +1040,14 @@ BEGIN
             IS NOT DISTINCT FROM ROW(old.starts_at,old.ends_at,old.timezone,old.location,old.program_id,old.status) THEN
             RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STATE_CONFLICT';
         END IF;
-        PERFORM private.workflow_cancel_source_pending_v1(p_studio_id,'trial',old.id,clock_timestamp(),'trial_changed');
     END IF;
+    SELECT coalesce(array_agg(DISTINCT r.workflow_id ORDER BY r.workflow_id),'{}'::UUID[]) INTO workflow_ids
+        FROM public.automation_workflow_runs r JOIN private.automation_workflow_events e ON e.studio_id=r.studio_id AND e.id=r.event_id
+        WHERE r.studio_id=p_studio_id AND e.subject_kind='trial' AND e.subject_id=old.id;
+    targets:=private.workflow_prepare_capture_v1(p_studio_id,workflow_ids,true);
+    PERFORM 1 FROM public.automation_workflow_runs r JOIN private.automation_workflow_events e ON e.studio_id=r.studio_id AND e.id=r.event_id
+        WHERE r.studio_id=p_studio_id AND e.subject_kind='trial' AND e.subject_id=old.id
+            AND r.state IN ('queued','waiting','claimed','running') ORDER BY r.id FOR UPDATE OF r;
     -- Source, workflow and run acquisition can all wait. Validate the moving
     -- clock after those waits. Rejection rolls pending cancellation back too.
     v_at:=clock_timestamp();
@@ -1068,7 +1075,7 @@ BEGIN
     IF v_stage<>lead.stage THEN
         UPDATE public.leads SET stage=v_stage WHERE studio_id=p_studio_id AND id=p_lead_id;
         INSERT INTO public.lead_activities(studio_id,lead_id,activity_type,description,created_by)
-            VALUES(p_studio_id,p_lead_id,'stage_change','Stage changed from '||lead.stage||' to '||v_stage,p_actor_id);
+            VALUES(p_studio_id,p_lead_id,'stage_change','Stage changed from '||lead.stage||' to '||v_stage,p_actor_id) RETURNING id INTO activity_id;
     END IF;
     INSERT INTO public.lead_activities(studio_id,lead_id,activity_type,description,created_by)
         VALUES(p_studio_id,p_lead_id,'meeting','Trial appointment '||changed.id::TEXT||' '||changed.status||' at '||private.automation_utc_text_v1(changed.starts_at),p_actor_id);
@@ -1076,6 +1083,22 @@ BEGIN
         VALUES(p_studio_id,p_actor_id,v_command,'trial_appointment',changed.id,
             jsonb_build_object('lead_id',p_lead_id,'revision',changed.revision,'status',changed.status,
                 'starts_at',private.automation_utc_text_v1(changed.starts_at),'ends_at',private.automation_utc_text_v1(changed.ends_at)));
+    UPDATE public.automation_workflow_runs r SET state='cancelled',claim_token=NULL,lease_expires_at=NULL,
+        revision=r.revision+1,reason='trial_changed',updated_at=v_at FROM private.automation_workflow_events e
+        WHERE e.studio_id=r.studio_id AND e.id=r.event_id AND r.studio_id=p_studio_id AND e.subject_kind='trial'
+            AND e.subject_id=old.id AND r.state IN ('queued','waiting','claimed','running');
+    IF changed.status IN ('scheduled','completed','no_show') THEN
+        events:=events||jsonb_build_array(jsonb_build_object('event_type','trial.'||changed.status,
+            'source_key',changed.id::TEXT||':'||changed.revision::TEXT,'subject_kind','trial','subject_id',changed.id,
+            'occurred_at',private.automation_utc_text_v1(v_at),'context',jsonb_build_object('appointment_id',changed.id,
+                'lead_id',p_lead_id,'program_id',changed.program_id,'revision',changed.revision,'status',changed.status)));
+    END IF;
+    IF activity_id IS NOT NULL THEN
+        events:=events||jsonb_build_array(jsonb_build_object('event_type','lead.stage_changed','source_key',activity_id::TEXT,
+            'subject_kind','lead','subject_id',p_lead_id,'occurred_at',private.automation_utc_text_v1(v_at),
+            'context',jsonb_build_object('lead_id',p_lead_id,'program_id',lead.program_id,'activity_id',activity_id,'old_stage',lead.stage,'stage',v_stage)));
+    END IF;
+    IF events<>'[]'::JSONB THEN PERFORM private.workflow_capture_events_v1(p_studio_id,events,targets); END IF;
     v_result:=private.trial_appointment_payload_v1(changed);
     INSERT INTO private.automation_command_operations(studio_id,operation_id,actor_id,command,request_fingerprint,entity_type,entity_id,result,committed_at)
         VALUES(p_studio_id,p_operation_id,p_actor_id,v_command,v_fingerprint,'trial_appointment',changed.id,v_result,v_at);
@@ -1558,6 +1581,7 @@ DECLARE event public.belt_test_events; ladder public.belt_ladders; student publi
     item JSONB; prepared JSONB:='[]'; normalized JSONB:='[]'; items JSONB:='[]'; result JSONB;
     fingerprint TEXT; replay BOOLEAN; student_ids UUID[]; changed_ids UUID[]:='{}'; v_program UUID;
     v_membership UUID; v_rank UUID; v_at TIMESTAMPTZ; v_today DATE; v_promotion TIMESTAMPTZ; v_anchor TIMESTAMPTZ;
+    targets JSONB; workflow_ids UUID[]; events JSONB:='[]'; did_change BOOLEAN;
     v_classes BIGINT; v_days NUMERIC; v_timezone TEXT;
 BEGIN
     IF p_studio_id IS NULL OR p_actor_id IS NULL THEN
@@ -1715,7 +1739,13 @@ BEGIN
     IF EXISTS(SELECT 1 FROM public.belt_test_recipients WHERE id=ANY(changed_ids) AND revision=9223372036854775807) THEN
         RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STATE_CONFLICT';
     END IF;
-    PERFORM private.belt_test_lock_recipient_runs_v1(p_studio_id,changed_ids);
+    SELECT coalesce(array_agg(DISTINCT r.workflow_id ORDER BY r.workflow_id),'{}'::UUID[]) INTO workflow_ids
+        FROM public.automation_workflow_runs r JOIN private.automation_workflow_events e ON e.studio_id=r.studio_id AND e.id=r.event_id
+        WHERE r.studio_id=p_studio_id AND e.subject_kind='belt_test' AND e.subject_id=ANY(changed_ids);
+    targets:=private.workflow_prepare_capture_v1(p_studio_id,workflow_ids,true);
+    PERFORM 1 FROM public.automation_workflow_runs r JOIN private.automation_workflow_events e ON e.studio_id=r.studio_id AND e.id=r.event_id
+        WHERE r.studio_id=p_studio_id AND e.subject_kind='belt_test' AND e.subject_id=ANY(changed_ids)
+            AND r.state IN ('queued','waiting','claimed','running') ORDER BY r.id FOR UPDATE OF r;
     -- Time and all eligibility are evaluated after the final potentially blocking lock.
     v_at:=clock_timestamp();
     SELECT CASE WHEN EXISTS(SELECT 1 FROM pg_catalog.pg_timezone_names z WHERE z.name=s.timezone) THEN s.timezone ELSE 'UTC' END
@@ -1745,21 +1775,34 @@ BEGIN
         SELECT * INTO recipient FROM public.belt_test_recipients WHERE studio_id=p_studio_id AND event_id=p_event_id
             AND student_id=(item->>'student_id')::UUID
             AND student_program_membership_id IS NOT DISTINCT FROM (item->>'student_program_membership_id')::UUID;
+        did_change:=false;
         IF NOT FOUND THEN
+            did_change:=true;
             INSERT INTO public.belt_test_recipients(studio_id,event_id,student_id,student_program_membership_id,approved_schedule_revision,approved_program_id,
                 approved_current_rank_id,approved_target_rank_id,state,revision,approved_by,approved_at,created_at,updated_at)
                 VALUES(p_studio_id,p_event_id,(item->>'student_id')::UUID,(item->>'student_program_membership_id')::UUID,event.schedule_revision,(item->>'program_id')::UUID,
                     (item->>'current_rank_id')::UUID,(item->>'target_rank_id')::UUID,'approved',1,p_actor_id,v_at,v_at,v_at) RETURNING * INTO recipient;
         ELSIF recipient.id=ANY(changed_ids) THEN
+            did_change:=true;
             UPDATE public.belt_test_recipients SET approved_schedule_revision=event.schedule_revision,
                 approved_program_id=(item->>'program_id')::UUID,
                 approved_current_rank_id=(item->>'current_rank_id')::UUID,approved_target_rank_id=(item->>'target_rank_id')::UUID,
                 state='approved',revision=revision+1,approved_by=p_actor_id,approved_at=v_at,revoked_at=NULL,updated_at=v_at
                 WHERE id=recipient.id RETURNING * INTO recipient;
         END IF;
+        IF did_change THEN
+            events:=events||jsonb_build_array(jsonb_build_object('event_type','belt_test.approved',
+                'source_key',recipient.id::TEXT||':'||recipient.revision::TEXT||':'||recipient.approved_schedule_revision::TEXT,
+                'subject_kind','belt_test','subject_id',recipient.id,'occurred_at',private.automation_utc_text_v1(v_at),
+                'context',jsonb_build_object('event_id',recipient.event_id,'student_id',recipient.student_id,
+                    'student_program_membership_id',recipient.student_program_membership_id,'approved_program_id',recipient.approved_program_id,
+                    'approved_current_rank_id',recipient.approved_current_rank_id,'approved_target_rank_id',recipient.approved_target_rank_id,
+                    'approved_schedule_revision',recipient.approved_schedule_revision,'approval_revision',recipient.revision)));
+        END IF;
         items:=items||jsonb_build_array(private.belt_test_recipient_payload_v1(recipient));
     END LOOP;
     PERFORM private.belt_test_cancel_recipient_runs_v1(p_studio_id,changed_ids,v_at);
+    IF events<>'[]'::JSONB THEN PERFORM private.workflow_capture_events_v1(p_studio_id,events,targets); END IF;
     result:=jsonb_build_object('items',items,'event_revision',p_expected_event_revision,'schedule_revision',event.schedule_revision);
     INSERT INTO public.audit_logs(studio_id,actor_id,action,entity_type,entity_id,metadata)
         VALUES(p_studio_id,p_actor_id,'belt_test.approve','belt_test',p_event_id,
@@ -1781,3 +1824,578 @@ BEGIN
     END LOOP;
 END;
 $recipient_privileges$;
+
+-- Committed source occurrences. Preparation owns every target before temporal
+-- validation; emission consumes that transaction's frozen targets without waits.
+CREATE FUNCTION private.workflow_prepare_capture_v1(p_studio_id UUID,p_update_workflow_ids UUID[] DEFAULT '{}',p_for_update BOOLEAN DEFAULT false)
+RETURNS JSONB LANGUAGE plpgsql VOLATILE SECURITY INVOKER SET search_path='' AS $$
+DECLARE ids UUID[]; wid UUID; targets JSONB;
+BEGIN
+    IF p_studio_id IS NULL OR p_update_workflow_ids IS NULL OR p_for_update IS NULL
+        OR coalesce(array_ndims(p_update_workflow_ids),1)<>1 OR cardinality(p_update_workflow_ids)>100
+        OR array_position(p_update_workflow_ids,NULL) IS NOT NULL
+        OR EXISTS(SELECT 1 FROM unnest(p_update_workflow_ids) i WHERE NOT EXISTS(
+            SELECT 1 FROM public.automation_workflows w WHERE w.studio_id=p_studio_id AND w.id=i))
+        OR (NOT p_for_update AND cardinality(p_update_workflow_ids)>0) THEN
+        RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST';
+    END IF;
+    -- The same admission key used exclusively by workflow create/start.
+    IF NOT pg_catalog.pg_try_advisory_xact_lock_shared(pg_catalog.hashtextextended('automation.workflow.admission:'||p_studio_id::TEXT,0)) THEN
+        RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STUDIO_BUSY';
+    END IF;
+    SELECT coalesce(array_agg(id ORDER BY id),'{}'::UUID[]) INTO ids FROM public.automation_workflows
+        WHERE studio_id=p_studio_id AND (status='active' OR id=ANY(p_update_workflow_ids));
+    IF cardinality(ids)>100 THEN RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STATE_CONFLICT'; END IF;
+    FOREACH wid IN ARRAY ids LOOP
+        IF p_for_update THEN
+            PERFORM 1 FROM public.automation_workflows WHERE studio_id=p_studio_id AND id=wid FOR UPDATE;
+        ELSE
+            PERFORM 1 FROM public.automation_workflows WHERE studio_id=p_studio_id AND id=wid FOR SHARE;
+        END IF;
+    END LOOP;
+    -- Separate statement after all waits: no stale outer join/cursor tuple is
+    -- allowed to select a version published while this source was blocked.
+    SELECT coalesce(jsonb_agg(jsonb_build_object('workflow_id',w.id,'version_id',v.id,'activation_id',a.id,
+        'epoch',a.epoch,'event_type',n.value#>>'{config,event_type}','program_id',n.value#>'{config,program_id}') ORDER BY w.id),'[]'::JSONB)
+        INTO targets FROM public.automation_workflows w
+        JOIN public.automation_workflow_versions v ON v.studio_id=w.studio_id AND v.workflow_id=w.id AND v.id=w.published_version_id
+        JOIN public.automation_workflow_activations a ON a.studio_id=w.studio_id AND a.workflow_id=w.id
+            AND a.version_id=v.id AND a.epoch=w.enrollment_epoch AND a.retired_at IS NULL AND a.cancelled_at IS NULL
+        CROSS JOIN LATERAL jsonb_array_elements(v.graph->'nodes') n
+        WHERE w.studio_id=p_studio_id AND w.id=ANY(ids) AND w.status='active' AND n.value->>'type'='trigger';
+    IF jsonb_array_length(targets)>25 THEN RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STATE_CONFLICT'; END IF;
+    RETURN jsonb_build_object('studio_id',p_studio_id,'transaction_id',pg_catalog.pg_current_xact_id()::TEXT,
+        'backend_pid',pg_catalog.pg_backend_pid(),'locked_workflow_ids',to_jsonb(ids),'targets',targets);
+END $$;
+
+CREATE FUNCTION private.workflow_capture_events_v1(p_studio_id UUID,p_events JSONB,p_targets JSONB)
+RETURNS VOID LANGUAGE plpgsql VOLATILE SECURITY INVOKER SET search_path='' AS $$
+DECLARE item JSONB; target JSONB; context JSONB; fields TEXT[]; required TEXT[]; k TEXT; value JSONB;
+    kind TEXT; occurrence UUID; trigger_id TEXT; at TIMESTAMPTZ; program UUID;
+    uuid_pattern CONSTANT TEXT:='^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$';
+BEGIN
+    IF p_studio_id IS NULL OR NOT private.workflow_json_keys_v1(p_targets,
+        ARRAY['studio_id','transaction_id','backend_pid','locked_workflow_ids','targets'],
+        ARRAY['studio_id','transaction_id','backend_pid','locked_workflow_ids','targets'])
+        OR p_targets->'studio_id' IS DISTINCT FROM to_jsonb(p_studio_id)
+        OR p_targets->'transaction_id' IS DISTINCT FROM to_jsonb(pg_catalog.pg_current_xact_id()::TEXT)
+        OR p_targets->'backend_pid' IS DISTINCT FROM to_jsonb(pg_catalog.pg_backend_pid())
+        OR jsonb_typeof(p_targets->'locked_workflow_ids') IS DISTINCT FROM 'array'
+        OR jsonb_typeof(p_targets->'targets') IS DISTINCT FROM 'array'
+        OR jsonb_typeof(p_events) IS DISTINCT FROM 'array' THEN
+        RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST';
+    END IF;
+    IF jsonb_array_length(p_events) NOT BETWEEN 1 AND 100 OR jsonb_array_length(p_targets->'targets')>25
+        OR jsonb_array_length(p_targets->'locked_workflow_ids')>100 THEN
+        RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST';
+    END IF;
+    FOR value IN SELECT v FROM jsonb_array_elements(p_targets->'locked_workflow_ids') v LOOP
+        IF jsonb_typeof(value)<>'string' OR value#>>'{}' !~ uuid_pattern THEN
+            RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST';
+        END IF;
+    END LOOP;
+    FOR target IN SELECT v FROM jsonb_array_elements(p_targets->'targets') v LOOP
+        IF NOT private.workflow_json_keys_v1(target,ARRAY['workflow_id','version_id','activation_id','epoch','event_type','program_id'],
+            ARRAY['workflow_id','version_id','activation_id','epoch','event_type','program_id'])
+            OR NOT private.workflow_integer_v1(target->'epoch',1,9223372036854775807)
+            OR jsonb_typeof(target->'event_type') IS DISTINCT FROM 'string'
+            OR NOT (private.workflow_catalog_v1()->'triggers') ? (target->>'event_type')
+            OR NOT (p_targets->'locked_workflow_ids') @> jsonb_build_array(target->'workflow_id') THEN
+            RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST';
+        END IF;
+        FOREACH k IN ARRAY ARRAY['workflow_id','version_id','activation_id','program_id'] LOOP
+            IF NOT (k='program_id' AND target->k='null'::JSONB)
+                AND (jsonb_typeof(target->k) IS DISTINCT FROM 'string' OR target->>k !~ uuid_pattern) THEN
+                RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST';
+            END IF;
+        END LOOP;
+    END LOOP;
+    -- Validate the full bounded owner batch before inserting any occurrence.
+    FOR item IN SELECT v FROM jsonb_array_elements(p_events) v LOOP
+        IF NOT private.workflow_json_keys_v1(item,ARRAY['event_type','source_key','subject_kind','subject_id','occurred_at','context'],
+            ARRAY['event_type','source_key','subject_kind','subject_id','occurred_at','context'])
+            OR jsonb_typeof(item->'event_type') IS DISTINCT FROM 'string'
+            OR item->>'event_type' NOT IN ('student.enrolled','student.promoted','lead.created','lead.stage_changed',
+                'trial.scheduled','trial.completed','trial.no_show','invoice.payment_failed','belt_test.approved')
+            OR jsonb_typeof(item->'source_key') IS DISTINCT FROM 'string' OR length(item->>'source_key') NOT BETWEEN 1 AND 500
+            OR item->>'source_key' !~ '^[a-z0-9_.:-]+$'
+            OR jsonb_typeof(item->'subject_id') IS DISTINCT FROM 'string' OR item->>'subject_id' !~ uuid_pattern
+            OR item->'subject_kind' IS DISTINCT FROM private.workflow_catalog_v1()#>ARRAY['triggers',item->>'event_type','subject_kind'] THEN
+            RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST';
+        END IF;
+        at:=private.automation_instant_v1(item->'occurred_at');
+        context:=item->'context'; kind:=item->>'event_type';
+        CASE
+            WHEN kind='lead.created' THEN fields:=ARRAY['lead_id','program_id','stage']; required:=fields;
+            WHEN kind='lead.stage_changed' THEN fields:=ARRAY['lead_id','program_id','activity_id','old_stage','stage']; required:=fields;
+            WHEN kind LIKE 'trial.%' THEN fields:=ARRAY['appointment_id','lead_id','program_id','revision','status']; required:=fields;
+            WHEN kind='belt_test.approved' THEN fields:=ARRAY['event_id','student_id','student_program_membership_id','approved_program_id',
+                'approved_current_rank_id','approved_target_rank_id','approved_schedule_revision','approval_revision']; required:=fields;
+            -- Store only matching frozen target filters, never the full membership list.
+            WHEN kind='student.enrolled' THEN fields:=ARRAY['student_id','matched_program_ids']; required:=fields;
+            WHEN kind='student.promoted' THEN fields:=ARRAY['promotion_id','student_id','student_program_membership_id','program_id','rank_id','from_rank_id']; required:=array_remove(fields,'from_rank_id');
+            WHEN kind='invoice.payment_failed' THEN fields:=ARRAY['payment_id','invoice_id','payer_id']; required:=fields;
+        END CASE;
+        IF NOT private.workflow_json_keys_v1(context,fields,required) THEN
+            RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST';
+        END IF;
+        FOREACH k IN ARRAY fields LOOP
+            value:=context->k;
+            IF k='from_rank_id' AND NOT context ? k THEN CONTINUE; END IF;
+            IF k='matched_program_ids' THEN
+                IF jsonb_typeof(value) IS DISTINCT FROM 'array' THEN RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST'; END IF;
+                IF jsonb_array_length(value)>25 OR EXISTS(SELECT 1 FROM jsonb_array_elements(value) p
+                    WHERE jsonb_typeof(p)<>'string' OR p#>>'{}' !~ uuid_pattern) THEN
+                    RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST';
+                END IF;
+            ELSIF k IN ('revision','approved_schedule_revision','approval_revision') THEN
+                IF NOT private.workflow_integer_v1(value,1,9223372036854775807) THEN
+                    RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST';
+                END IF;
+            ELSIF k IN ('old_stage','stage') THEN
+                IF jsonb_typeof(value) IS DISTINCT FROM 'string' OR value#>>'{}' NOT IN ('inquiry','trial_scheduled','trial_completed','offer_sent','enrolled','closed_lost') THEN
+                    RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST';
+                END IF;
+            ELSIF k='status' THEN
+                IF value IS DISTINCT FROM to_jsonb(substr(kind,7)) THEN RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST'; END IF;
+            ELSIF NOT (k IN ('program_id','student_program_membership_id','approved_program_id','approved_current_rank_id','from_rank_id','invoice_id','payer_id') AND value='null'::JSONB)
+                AND (jsonb_typeof(value) IS DISTINCT FROM 'string' OR value#>>'{}' !~ uuid_pattern) THEN
+                RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST';
+            END IF;
+        END LOOP;
+        IF (kind LIKE 'lead.%' AND context->'lead_id' IS DISTINCT FROM item->'subject_id')
+            OR (kind LIKE 'trial.%' AND context->'appointment_id' IS DISTINCT FROM item->'subject_id')
+            OR (kind='student.enrolled' AND context->'student_id' IS DISTINCT FROM item->'subject_id')
+            OR (kind='student.promoted' AND context->'promotion_id' IS DISTINCT FROM item->'subject_id')
+            OR (kind='invoice.payment_failed' AND context->'payment_id' IS DISTINCT FROM item->'subject_id') THEN
+            RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST';
+        END IF;
+    END LOOP;
+    FOR item IN SELECT v FROM jsonb_array_elements(p_events) v LOOP
+        occurrence:=NULL;
+        INSERT INTO private.automation_workflow_events(studio_id,event_type,source_key,subject_kind,subject_id,occurred_at,context)
+            VALUES(p_studio_id,item->>'event_type',item->>'source_key',item->>'subject_kind',(item->>'subject_id')::UUID,
+                private.automation_instant_v1(item->'occurred_at'),item->'context')
+            ON CONFLICT(studio_id,event_type,source_key) DO NOTHING RETURNING id INTO occurrence;
+        -- Seen with zero active targets is still seen forever. No backfill on replay.
+        IF occurrence IS NULL THEN CONTINUE; END IF;
+        context:=item->'context';
+        program:=CASE WHEN item->>'event_type'='belt_test.approved' THEN (context->>'approved_program_id')::UUID ELSE (context->>'program_id')::UUID END;
+        FOR target IN SELECT v FROM jsonb_array_elements(p_targets->'targets') v LOOP
+            IF target->>'event_type'<>item->>'event_type' OR (target->>'program_id' IS NOT NULL
+                AND NOT CASE WHEN item->>'event_type'='student.enrolled' THEN context->'matched_program_ids' @> jsonb_build_array(target->'program_id')
+                    ELSE (target->>'program_id')::UUID IS NOT DISTINCT FROM program END) THEN CONTINUE; END IF;
+            SELECT n.value->>'id' INTO STRICT trigger_id FROM public.automation_workflow_versions v
+                CROSS JOIN LATERAL jsonb_array_elements(v.graph->'nodes') n
+                WHERE v.studio_id=p_studio_id AND v.workflow_id=(target->>'workflow_id')::UUID
+                    AND v.id=(target->>'version_id')::UUID AND n.value->>'type'='trigger';
+            INSERT INTO public.automation_workflow_runs(studio_id,workflow_id,version_id,event_id,activation_id,epoch,current_node_id,next_due_at)
+                VALUES(p_studio_id,(target->>'workflow_id')::UUID,(target->>'version_id')::UUID,occurrence,
+                    (target->>'activation_id')::UUID,(target->>'epoch')::BIGINT,trigger_id,private.automation_instant_v1(item->'occurred_at'));
+        END LOOP;
+    END LOOP;
+END $$;
+
+-- Actor authority and the shared operation identity are already owned. Never
+-- wait backwards for assignee Auth behind its invited_by FK child cleanup.
+CREATE FUNCTION private.workflow_lock_lead_assignee_v1(p_assignee_id UUID) RETURNS BOOLEAN
+LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path='' AS $$
+BEGIN
+    PERFORM 1 FROM auth.users WHERE id=p_assignee_id FOR KEY SHARE NOWAIT;
+    RETURN FOUND;
+END $$;
+
+CREATE FUNCTION public.create_lead_atomic_v1(p_studio_id UUID,p_actor_id UUID,p_operation_id UUID,p_request JSONB)
+RETURNS JSONB LANGUAGE plpgsql VOLATILE SECURITY INVOKER SET search_path='' AS $$
+DECLARE request JSONB; fingerprint TEXT; receipt private.automation_command_operations; lead public.leads;
+    targets JSONB; k TEXT; v_at TIMESTAMPTZ; result JSONB; replay BOOLEAN;
+BEGIN
+    IF p_studio_id IS NULL OR p_actor_id IS NULL THEN RAISE EXCEPTION USING ERRCODE='42501',MESSAGE='AUTOMATION_ADMIN_REQUIRED'; END IF;
+    IF NOT pg_catalog.pg_try_advisory_xact_lock_shared(pg_catalog.hashtextextended('koaryu.local-plan-clear:'||p_studio_id::TEXT,0)) THEN
+        RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STUDIO_BUSY';
+    END IF;
+    PERFORM private.workflow_require_actor_v1(p_studio_id,p_actor_id,true);
+    IF p_operation_id IS NULL THEN RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST'; END IF;
+    PERFORM pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended('automation.operation:'||p_studio_id::TEXT||':'||p_operation_id::TEXT,0));
+    SELECT * INTO receipt FROM private.automation_command_operations WHERE studio_id=p_studio_id AND operation_id=p_operation_id;
+    replay:=FOUND;
+    BEGIN
+        IF NOT private.workflow_json_keys_v1(p_request,ARRAY['first_name','last_name','email','phone','source','stage','program_interest',
+            'program_id','is_minor','guardian_name','guardian_email','guardian_phone','assigned_staff_id','follow_up_date','notes'],ARRAY['first_name','last_name']) THEN
+            RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST';
+        END IF;
+        request:=jsonb_build_object('email',NULL,'phone',NULL,'source','walk_in','stage','inquiry','program_interest',NULL,
+            'program_id',NULL,'is_minor',false,'guardian_name',NULL,'guardian_email',NULL,'guardian_phone',NULL,
+            'assigned_staff_id',NULL,'follow_up_date',NULL,'notes',NULL)||p_request;
+        FOREACH k IN ARRAY ARRAY['first_name','last_name','email','phone','source','stage','program_interest','guardian_name','guardian_email','guardian_phone','notes'] LOOP
+            IF NOT (k NOT IN ('first_name','last_name','source','stage') AND request->k='null'::JSONB)
+                AND jsonb_typeof(request->k) IS DISTINCT FROM 'string' THEN
+                RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST';
+            END IF;
+        END LOOP;
+        IF request->>'source' NOT IN ('walk_in','referral','social','search','website','other')
+            OR request->>'stage' NOT IN ('inquiry','trial_scheduled','trial_completed','offer_sent','closed_lost')
+            OR jsonb_typeof(request->'is_minor') IS DISTINCT FROM 'boolean' THEN
+            RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST';
+        END IF;
+        FOREACH k IN ARRAY ARRAY['program_id','assigned_staff_id'] LOOP
+            IF request->k<>'null'::JSONB THEN
+                IF jsonb_typeof(request->k) IS DISTINCT FROM 'string' OR request->>k !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN
+                    RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST';
+                END IF;
+                request:=jsonb_set(request,ARRAY[k],to_jsonb((request->>k)::UUID));
+            END IF;
+        END LOOP;
+        IF request->'follow_up_date'<>'null'::JSONB THEN
+            IF jsonb_typeof(request->'follow_up_date') IS DISTINCT FROM 'string' THEN
+                RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST';
+            END IF;
+            -- Fingerprint the original string: DATE interpretation can change
+            -- with TimeZone, DateStyle or the day of a later receipt replay.
+        END IF;
+    EXCEPTION WHEN invalid_text_representation OR datetime_field_overflow OR invalid_datetime_format OR SQLSTATE '22023' THEN
+        IF replay THEN RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_OPERATION_CONFLICT'; END IF;
+        RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST';
+    END;
+    fingerprint:=private.workflow_hash_v1(jsonb_build_object('command','lead.create','studio_id',p_studio_id,'actor_id',p_actor_id,'request',request));
+    IF replay THEN
+        IF receipt.actor_id<>p_actor_id OR receipt.command<>'lead.create' OR receipt.request_fingerprint<>fingerprint THEN
+            RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_OPERATION_CONFLICT';
+        END IF;
+        RETURN jsonb_build_object('payload',receipt.result,'operation_id',p_operation_id,'replayed',true);
+    END IF;
+    BEGIN
+        -- Only a fresh command interprets the retained DATE input syntax.
+        lead:=jsonb_populate_record(NULL::public.leads,request);
+    EXCEPTION WHEN invalid_text_representation OR datetime_field_overflow OR invalid_datetime_format THEN
+        RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST';
+    END;
+    IF lead.assigned_staff_id IS NOT NULL THEN
+        BEGIN
+            IF NOT private.workflow_lock_lead_assignee_v1(lead.assigned_staff_id) THEN
+                RAISE EXCEPTION USING ERRCODE='P0002',MESSAGE='AUTOMATION_NOT_FOUND';
+            END IF;
+        EXCEPTION WHEN lock_not_available THEN
+            RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STUDIO_BUSY';
+        END;
+        PERFORM 1 FROM public.staff_roles WHERE studio_id=p_studio_id AND user_id=lead.assigned_staff_id AND archived_at IS NULL FOR SHARE;
+        IF NOT FOUND THEN RAISE EXCEPTION USING ERRCODE='P0002',MESSAGE='AUTOMATION_NOT_FOUND'; END IF;
+    END IF;
+    IF lead.program_id IS NOT NULL THEN
+        BEGIN
+            PERFORM 1 FROM public.programs WHERE studio_id=p_studio_id AND id=lead.program_id FOR SHARE NOWAIT;
+            IF NOT FOUND THEN RAISE EXCEPTION USING ERRCODE='P0002',MESSAGE='AUTOMATION_NOT_FOUND'; END IF;
+            IF EXISTS(SELECT 1 FROM public.programs WHERE id=lead.program_id AND archived_at IS NOT NULL) THEN
+                RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='PROGRAM_INACTIVE',DETAIL=lead.program_id::TEXT;
+            END IF;
+        EXCEPTION WHEN lock_not_available THEN
+            RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STUDIO_BUSY';
+        END;
+    END IF;
+    lead.id:=gen_random_uuid(); lead.studio_id:=p_studio_id;
+    v_at:=clock_timestamp(); lead.created_at:=v_at; lead.updated_at:=v_at;
+    INSERT INTO public.leads SELECT lead.*;
+    INSERT INTO public.lead_activities(studio_id,lead_id,activity_type,description,created_by)
+        VALUES(p_studio_id,lead.id,'note','Lead created',p_actor_id);
+    INSERT INTO public.audit_logs(studio_id,actor_id,action,entity_type,entity_id,metadata)
+        VALUES(p_studio_id,p_actor_id,'lead.created','lead',lead.id,jsonb_build_object('name',lead.first_name||' '||lead.last_name));
+    targets:=private.workflow_prepare_capture_v1(p_studio_id);
+    PERFORM private.workflow_capture_events_v1(p_studio_id,jsonb_build_array(jsonb_build_object('event_type','lead.created',
+        'source_key',lead.id::TEXT,'subject_kind','lead','subject_id',lead.id,'occurred_at',private.automation_utc_text_v1(clock_timestamp()),
+        'context',jsonb_build_object('lead_id',lead.id,'program_id',lead.program_id,'stage',lead.stage))),targets);
+    result:=to_jsonb(lead);
+    INSERT INTO private.automation_command_operations(studio_id,operation_id,actor_id,command,request_fingerprint,entity_type,entity_id,result)
+        VALUES(p_studio_id,p_operation_id,p_actor_id,'lead.create',fingerprint,'lead',lead.id,result);
+    RETURN jsonb_build_object('payload',result,'operation_id',p_operation_id,'replayed',false);
+END $$;
+
+-- Retained lead owners: only clear/reference coordination and owned stage capture.
+CREATE OR REPLACE FUNCTION public.update_lead_atomic(
+    p_studio_id UUID, p_actor_id UUID, p_lead_id UUID, p_patch JSONB
+)
+RETURNS public.leads
+LANGUAGE plpgsql SECURITY INVOKER SET search_path = ''
+AS $function$
+DECLARE
+    v_lead public.leads;
+    v_update public.leads;
+    v_assigned_user UUID;
+    v_program public.programs;
+    v_activity UUID;
+    v_targets JSONB;
+BEGIN
+    IF NOT pg_catalog.pg_try_advisory_xact_lock_shared(pg_catalog.hashtextextended('koaryu.local-plan-clear:'||p_studio_id::TEXT,0)) THEN
+        RAISE EXCEPTION USING ERRCODE='P0001', MESSAGE='LEAD_STUDIO_BUSY';
+    END IF;
+    -- Use the existing narrow Auth-owner helper before locking memberships or
+    -- leads. Account cleanup locks Auth first and then visits these FK children.
+    IF NOT private.lock_student_import_actor(p_actor_id) THEN
+        RAISE EXCEPTION USING ERRCODE='42501', MESSAGE='Lead management permission required.';
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM public.staff_roles WHERE studio_id=p_studio_id
+          AND user_id=p_actor_id AND archived_at IS NULL
+          AND role IN ('admin','front_desk')
+    ) THEN
+        RAISE EXCEPTION USING ERRCODE='42501', MESSAGE='Lead management permission required.';
+    END IF;
+    -- Validate tenant membership without a row lock, acquire the referenced
+    -- Auth parent, then revalidate membership below under its existing lock.
+    IF p_patch ? 'assigned_staff_id' AND p_patch->>'assigned_staff_id' IS NOT NULL THEN
+        v_assigned_user := (p_patch->>'assigned_staff_id')::UUID;
+        IF NOT EXISTS (SELECT 1 FROM public.staff_roles
+            WHERE user_id=v_assigned_user AND studio_id=p_studio_id AND archived_at IS NULL) THEN
+            RAISE EXCEPTION USING ERRCODE='P0002', MESSAGE='Assigned staff not found for studio.';
+        END IF;
+        IF NOT private.lock_student_import_actor(v_assigned_user) THEN
+            RAISE EXCEPTION USING ERRCODE='P0002', MESSAGE='Assigned staff not found for studio.';
+        END IF;
+    END IF;
+    PERFORM 1 FROM public.staff_roles
+    WHERE studio_id=p_studio_id AND user_id=p_actor_id
+      AND archived_at IS NULL AND role IN ('admin','front_desk') FOR SHARE;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION USING ERRCODE='42501', MESSAGE='Lead management permission required.';
+    END IF;
+    IF v_assigned_user IS NOT NULL THEN
+        PERFORM 1 FROM public.staff_roles WHERE user_id=v_assigned_user
+            AND studio_id=p_studio_id AND archived_at IS NULL FOR SHARE;
+        IF NOT FOUND THEN
+            RAISE EXCEPTION USING ERRCODE='P0002', MESSAGE='Assigned staff not found for studio.';
+        END IF;
+    END IF;
+    -- Staff administration locks membership before studio. Fail before lead
+    -- effects if a parent-first writer already owns the studio row.
+    BEGIN
+        PERFORM 1 FROM public.studios WHERE id=p_studio_id FOR KEY SHARE NOWAIT;
+    EXCEPTION WHEN lock_not_available THEN
+        RAISE EXCEPTION USING ERRCODE='P0001', MESSAGE='LEAD_STUDIO_BUSY';
+    END;
+    IF p_patch IS NULL OR jsonb_typeof(p_patch) <> 'object' OR p_patch='{}'::jsonb THEN
+        RAISE EXCEPTION USING ERRCODE='22023', MESSAGE='A nonempty lead patch is required.';
+    END IF;
+    IF EXISTS (SELECT 1 FROM jsonb_object_keys(p_patch) AS fields(name)
+        WHERE name <> ALL(ARRAY['first_name','last_name','email','phone','source','stage',
+        'program_interest','program_id','is_minor','guardian_name','guardian_email','guardian_phone',
+        'assigned_staff_id','follow_up_date','notes','lost_reason']))
+       OR (p_patch ? 'stage' AND p_patch->>'stage' IS NOT NULL AND p_patch->>'stage' <> ALL(
+           ARRAY['inquiry','trial_scheduled','trial_completed','offer_sent','closed_lost'])) THEN
+        RAISE EXCEPTION USING ERRCODE='22023', MESSAGE='Unsupported lead patch field or stage.';
+    END IF;
+    SELECT * INTO v_lead FROM public.leads
+    WHERE id=p_lead_id AND studio_id=p_studio_id FOR UPDATE;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION USING ERRCODE='P0002', MESSAGE='Lead not found for studio.';
+    END IF;
+    -- Populating the locked record preserves omitted fields and explicit nulls.
+    v_update := jsonb_populate_record(v_lead,p_patch);
+    IF p_patch ? 'program_id' AND v_update.program_id IS NOT NULL THEN
+        BEGIN
+            SELECT * INTO v_program FROM public.programs WHERE id=v_update.program_id
+                AND studio_id=p_studio_id FOR SHARE NOWAIT;
+        EXCEPTION WHEN lock_not_available THEN
+            RAISE EXCEPTION USING ERRCODE='P0001', MESSAGE='LEAD_STUDIO_BUSY';
+        END;
+        IF NOT FOUND THEN
+            RAISE EXCEPTION USING ERRCODE='P0002', MESSAGE='Program not found for studio.';
+        END IF;
+        IF v_program.archived_at IS NOT NULL THEN
+            RAISE EXCEPTION USING ERRCODE='P0001', MESSAGE='PROGRAM_INACTIVE', DETAIL=v_program.id::text;
+        END IF;
+    END IF;
+    UPDATE public.leads SET
+        first_name=v_update.first_name,last_name=v_update.last_name,email=v_update.email,
+        phone=v_update.phone,source=v_update.source,stage=v_update.stage,
+        program_interest=v_update.program_interest,program_id=v_update.program_id,
+        is_minor=v_update.is_minor,guardian_name=v_update.guardian_name,
+        guardian_email=v_update.guardian_email,guardian_phone=v_update.guardian_phone,
+        assigned_staff_id=v_update.assigned_staff_id,follow_up_date=v_update.follow_up_date,
+        notes=v_update.notes,lost_reason=v_update.lost_reason
+    WHERE id=p_lead_id AND studio_id=p_studio_id RETURNING * INTO v_update;
+    IF v_lead.stage IS DISTINCT FROM v_update.stage THEN
+        INSERT INTO public.lead_activities(studio_id,lead_id,activity_type,description,created_by)
+        VALUES(p_studio_id,p_lead_id,'stage_change',
+            'Stage changed from ' || v_lead.stage || ' to ' || v_update.stage,p_actor_id) RETURNING id INTO v_activity;
+        BEGIN
+            v_targets:=private.workflow_prepare_capture_v1(p_studio_id);
+        EXCEPTION WHEN SQLSTATE 'P0001' THEN
+            IF SQLERRM='AUTOMATION_STUDIO_BUSY' THEN RAISE EXCEPTION USING ERRCODE='P0001', MESSAGE='LEAD_STUDIO_BUSY'; END IF;
+            RAISE;
+        END;
+        PERFORM private.workflow_capture_events_v1(p_studio_id,jsonb_build_array(jsonb_build_object('event_type','lead.stage_changed',
+            'source_key',v_activity::TEXT,'subject_kind','lead','subject_id',p_lead_id,
+            'occurred_at',private.automation_utc_text_v1(clock_timestamp()),'context',jsonb_build_object('lead_id',p_lead_id,
+                'program_id',v_update.program_id,'activity_id',v_activity,'old_stage',v_lead.stage,'stage',v_update.stage))),v_targets);
+    END IF;
+    RETURN v_update;
+END;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.follow_up_lead_atomic(
+    p_studio_id UUID, p_actor_id UUID, p_lead_id UUID, p_operation_id UUID, p_request JSONB
+)
+RETURNS public.leads
+LANGUAGE plpgsql SECURITY INVOKER SET search_path = ''
+AS $function$
+DECLARE
+    v_lead public.leads;
+    v_result public.leads;
+    v_receipt public.lead_follow_up_operations;
+    v_request JSONB;
+    v_stage TEXT;
+    v_program UUID;
+    v_program_archived TIMESTAMPTZ;
+    v_student UUID;
+    v_guardian UUID;
+    v_link UUID;
+    v_digest BYTEA;
+    v_timezone TEXT;
+    v_start DATE;
+BEGIN
+    IF NOT pg_catalog.pg_try_advisory_xact_lock_shared(pg_catalog.hashtextextended('koaryu.local-plan-clear:'||p_studio_id::TEXT,0)) THEN
+        RAISE EXCEPTION USING ERRCODE='P0001', MESSAGE='LEAD_STUDIO_BUSY';
+    END IF;
+    -- Use the existing narrow Auth-owner helper before locking memberships or
+    -- leads. Account cleanup locks Auth first and then visits these FK children.
+    IF NOT private.lock_student_import_actor(p_actor_id) THEN
+        RAISE EXCEPTION USING ERRCODE='42501', MESSAGE='Lead management permission required.';
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM public.staff_roles WHERE studio_id=p_studio_id
+          AND user_id=p_actor_id AND archived_at IS NULL
+          AND role IN ('admin','front_desk')
+    ) THEN
+        RAISE EXCEPTION USING ERRCODE='42501', MESSAGE='Lead management permission required.';
+    END IF;
+    PERFORM 1 FROM public.staff_roles
+    WHERE studio_id=p_studio_id AND user_id=p_actor_id
+      AND archived_at IS NULL AND role IN ('admin','front_desk') FOR SHARE;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION USING ERRCODE='42501', MESSAGE='Lead management permission required.';
+    END IF;
+    -- Use the same membership-before-studio order as staff administration.
+    BEGIN
+        PERFORM 1 FROM public.studios WHERE id=p_studio_id FOR KEY SHARE NOWAIT;
+    EXCEPTION WHEN lock_not_available THEN
+        RAISE EXCEPTION USING ERRCODE='P0001', MESSAGE='LEAD_STUDIO_BUSY';
+    END;
+    IF p_operation_id IS NULL OR p_request IS NULL OR jsonb_typeof(p_request) <> 'object' THEN
+        RAISE EXCEPTION USING ERRCODE='22023', MESSAGE='A keyed follow-up request is required.';
+    END IF;
+    IF EXISTS(SELECT 1 FROM jsonb_object_keys(p_request) AS fields(name) WHERE name <> 'next_stage')
+       OR (p_request ? 'next_stage' AND jsonb_typeof(p_request->'next_stage') NOT IN ('null','string')) THEN
+        RAISE EXCEPTION USING ERRCODE='22023', MESSAGE='Unsupported follow-up request.';
+    END IF;
+    v_stage := p_request->>'next_stage';
+    IF v_stage IS NOT NULL AND v_stage <> ALL(ARRAY['inquiry','trial_scheduled','trial_completed',
+        'offer_sent','enrolled','closed_lost']) THEN
+        RAISE EXCEPTION USING ERRCODE='22023', MESSAGE='Unsupported follow-up stage.';
+    END IF;
+    -- Keep conversion authorization explicit even while its roles match lead management.
+    IF v_stage='enrolled' AND NOT EXISTS(SELECT 1 FROM public.staff_roles
+        WHERE studio_id=p_studio_id AND user_id=p_actor_id AND archived_at IS NULL
+        AND role IN ('admin','front_desk')) THEN
+        RAISE EXCEPTION USING ERRCODE='42501', MESSAGE='Lead conversion permission required.';
+    END IF;
+    v_request := jsonb_build_object('next_stage',v_stage);
+    -- A global operation identity also rejects reuse for another tenant or lead.
+    -- This lock precedes the lead lock for every follow-up caller.
+    PERFORM pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended(
+        'lead-follow-up:' || p_operation_id::text,0));
+    SELECT * INTO v_receipt FROM public.lead_follow_up_operations WHERE operation_id=p_operation_id;
+    IF FOUND THEN
+        IF v_receipt.studio_id IS DISTINCT FROM p_studio_id
+           OR v_receipt.actor_id IS DISTINCT FROM p_actor_id
+           OR v_receipt.lead_id IS DISTINCT FROM p_lead_id
+           OR v_receipt.request IS DISTINCT FROM v_request THEN
+            RAISE EXCEPTION USING ERRCODE='23505', MESSAGE='Follow-up operation identity conflict.';
+        END IF;
+        RETURN jsonb_populate_record(NULL::public.leads,v_receipt.result);
+    END IF;
+    SELECT * INTO v_lead FROM public.leads
+    WHERE id=p_lead_id AND studio_id=p_studio_id FOR UPDATE;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION USING ERRCODE='P0002', MESSAGE='Lead not found for studio.';
+    END IF;
+    IF v_stage='enrolled' THEN
+        IF v_lead.converted_student_id IS NOT NULL THEN
+            -- Restoring the existing conversion must also work after the lead's
+            -- original program was archived or its interest was cleared.
+            SELECT * INTO v_result FROM public.convert_lead_to_student_atomic(
+                p_studio_id,p_actor_id,p_lead_id,v_lead.converted_student_id,
+                NULL,NULL,NULL,NULL,NULL);
+        ELSE
+            v_program := v_lead.program_id;
+            IF v_program IS NULL THEN
+                SELECT id INTO v_program FROM public.programs
+                WHERE studio_id=p_studio_id AND name='Unassigned' LIMIT 1;
+                IF v_program IS NULL THEN
+                    INSERT INTO public.programs(studio_id,name,description,color_hex,sort_order,is_system)
+                    VALUES(p_studio_id,'Unassigned','Students awaiting program assignment.','#94A3B8',9999,TRUE)
+                    ON CONFLICT (studio_id,lower(name)) WHERE archived_at IS NULL DO NOTHING
+                    RETURNING id INTO v_program;
+                    IF v_program IS NULL THEN
+                        SELECT id INTO v_program FROM public.programs
+                        WHERE studio_id=p_studio_id AND name='Unassigned' AND archived_at IS NULL;
+                    END IF;
+                END IF;
+            END IF;
+            BEGIN
+                SELECT archived_at INTO v_program_archived FROM public.programs
+                WHERE id=v_program AND studio_id=p_studio_id FOR SHARE NOWAIT;
+            EXCEPTION WHEN lock_not_available THEN
+                RAISE EXCEPTION USING ERRCODE='P0001', MESSAGE='LEAD_STUDIO_BUSY';
+            END;
+            IF NOT FOUND THEN
+                RAISE EXCEPTION USING ERRCODE='P0002', MESSAGE='Program not found for studio.';
+            END IF;
+            IF v_program_archived IS NOT NULL THEN
+                RAISE EXCEPTION USING ERRCODE='P0001', MESSAGE='PROGRAM_INACTIVE', DETAIL=v_program::text;
+            END IF;
+            -- RFC 4122 UUIDv5, identical to LeadService's established namespace/names.
+            v_digest := substring(extensions.digest(uuid_send('27c8322f-a4e4-46d7-bfae-018f6b638858'::uuid)
+                || convert_to(p_studio_id::text || ':' || p_lead_id::text || ':student','UTF8'),'sha1') FROM 1 FOR 16);
+            v_student := encode(set_byte(set_byte(v_digest,6,(get_byte(v_digest,6) & 15) | 80),
+                8,(get_byte(v_digest,8) & 63) | 128),'hex')::uuid;
+            v_digest := substring(extensions.digest(uuid_send('27c8322f-a4e4-46d7-bfae-018f6b638858'::uuid)
+                || convert_to(p_studio_id::text || ':' || p_lead_id::text || ':guardian','UTF8'),'sha1') FROM 1 FOR 16);
+            v_guardian := encode(set_byte(set_byte(v_digest,6,(get_byte(v_digest,6) & 15) | 80),
+                8,(get_byte(v_digest,8) & 63) | 128),'hex')::uuid;
+            v_digest := substring(extensions.digest(uuid_send('27c8322f-a4e4-46d7-bfae-018f6b638858'::uuid)
+                || convert_to(v_student::text || ':' || v_guardian::text || ':link','UTF8'),'sha1') FROM 1 FOR 16);
+            v_link := encode(set_byte(set_byte(v_digest,6,(get_byte(v_digest,6) & 15) | 80),
+                8,(get_byte(v_digest,8) & 63) | 128),'hex')::uuid;
+            SELECT COALESCE(NULLIF(timezone,''),'UTC') INTO v_timezone FROM public.studios WHERE id=p_studio_id;
+            IF NOT EXISTS(SELECT 1 FROM pg_catalog.pg_timezone_names WHERE name=v_timezone) THEN
+                v_timezone := 'UTC';
+            END IF;
+            v_start := (CURRENT_TIMESTAMP AT TIME ZONE v_timezone)::date;
+            SELECT * INTO v_result FROM public.convert_lead_to_student_atomic(p_studio_id,p_actor_id,p_lead_id,
+                v_student,v_program,'active',v_start,v_guardian,v_link);
+        END IF;
+    ELSE
+        SELECT * INTO v_result FROM public.update_lead_atomic(p_studio_id,p_actor_id,p_lead_id,
+            jsonb_build_object('follow_up_date',NULL) ||
+            CASE WHEN v_stage IS NULL THEN '{}'::jsonb ELSE jsonb_build_object('stage',v_stage) END);
+    END IF;
+    INSERT INTO public.lead_activities(studio_id,lead_id,activity_type,description,created_by)
+    VALUES(p_studio_id,p_lead_id,'follow_up',CASE WHEN v_stage IS NULL THEN 'Contacted lead'
+        ELSE 'Contacted lead and moved to ' || v_stage END,p_actor_id);
+    INSERT INTO public.lead_follow_up_operations(operation_id,studio_id,actor_id,lead_id,request,result)
+    VALUES(p_operation_id,p_studio_id,p_actor_id,p_lead_id,v_request,to_jsonb(v_result));
+    RETURN v_result;
+END;
+$function$;
+
+DO $capture_privileges$
+DECLARE r RECORD;
+BEGIN
+    FOR r IN SELECT p.oid::REGPROCEDURE identity FROM pg_catalog.pg_proc p JOIN pg_catalog.pg_namespace n ON n.oid=p.pronamespace
+        WHERE (n.nspname='private' AND p.proname IN ('workflow_prepare_capture_v1','workflow_capture_events_v1','workflow_lock_lead_assignee_v1'))
+            OR (n.nspname='public' AND p.proname='create_lead_atomic_v1') LOOP
+        EXECUTE format('ALTER FUNCTION %s OWNER TO postgres',r.identity);
+        EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC,anon,authenticated,service_role',r.identity);
+        EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO service_role',r.identity);
+    END LOOP;
+END;
+$capture_privileges$;

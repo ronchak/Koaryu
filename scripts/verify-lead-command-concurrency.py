@@ -551,21 +551,36 @@ FOR EACH ROW EXECUTE FUNCTION public.koaryu_test_lead_assignment_barrier();""")
             return json.loads(sql(f"SELECT jsonb_build_object({counts},'student_guardians',"
                                   f"(SELECT count(*) FROM public.student_guardians WHERE student_id='{student}'));"))
 
+        capture_owner = sql("SELECT to_regprocedure('private.workflow_prepare_capture_v1(uuid,uuid[],boolean)') IS NOT NULL;") == "t"
         for command_first in (False, True):
             for rollback in (False, True):
                 ids = auth_fixture()
                 case = f"enrolled_clear_{'command_first' if command_first else 'clear_first'}_{'rollback' if rollback else 'commit'}"
                 command = follow(ids, ids["operation"], "enrolled", actor="actor2")
                 clear = f"SELECT public.clear_studio_operational_data_atomic('{ids['studio']}',false); SELECT '{{}}'::jsonb;"
+                before = facts(ids)
                 first = session(case + "_first", command if command_first else clear, hold=True)
                 await_result(first)
                 second = session(case + "_second", clear if command_first else command)
-                blocking = observed_blocker(first, second)
-                settle(first, rollback=rollback)
-                if not command_first and not rollback:
-                    finish(second, expected_error=("P0002", "Lead not found for studio"))
+                if capture_owner and not command_first:
+                    finish(second, expected_error=("P0001", "LEAD_STUDIO_BUSY"))
+                    require("ERROR:  P0001: LEAD_STUDIO_BUSY" in second["errors"]
+                            and first["process"].poll() is None and facts(ids) == before,
+                            "Clear contention waited or committed partial lead effects")
+                    blocking = {"kind": "shared_clear_try", "error": "LEAD_STUDIO_BUSY"}
+                    settle(first, rollback=rollback)
+                    if rollback:
+                        # Definite refusal wrote no receipt. Explicit retry keeps
+                        # the original operation identity and exact request.
+                        retried = session(case + "_retry", command)
+                        finish(retried)
                 else:
-                    finish(second)
+                    blocking = observed_blocker(first, second)
+                    settle(first, rollback=rollback)
+                    if not command_first and not rollback:
+                        finish(second, expected_error=("P0002", "Lead not found for studio"))
+                    else:
+                        finish(second)
                 if not command_first and rollback:
                     state = facts(ids)
                     require(state["lead"]["stage"] == "enrolled" and state["receipts"] == 1
