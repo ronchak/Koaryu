@@ -465,3 +465,105 @@ export function render_student_profile_facts_v54(check) {
 // definition independently of the historical V54 declaration.
 export const STUDENT_PROFILE_FACTS_V55_SQL = STUDENT_PROFILE_FACTS_V54_SQL;
 export const render_student_profile_facts_v55 = render_student_profile_facts_v54;
+
+
+// V56 automation state includes complete effective ACLs. Raw facts remain
+// available independently of the preflight's reviewed expected digest.
+export const AUTOMATION_TABLE_FACTS_V56_SQL = `SELECT jsonb_agg(jsonb_build_object(
+    'table',required.name,'exists',c.oid IS NOT NULL,'kind',c.relkind,'persistence',c.relpersistence,
+    'owner',pg_catalog.pg_get_userbyid(c.relowner),'rls',c.relrowsecurity,'force_rls',c.relforcerowsecurity,
+    'acl',(SELECT jsonb_agg(jsonb_build_array(
+        CASE WHEN a.grantee=0 THEN 'PUBLIC' ELSE pg_catalog.pg_get_userbyid(a.grantee)::TEXT END,
+        pg_catalog.pg_get_userbyid(a.grantor)::TEXT,a.privilege_type,a.is_grantable)
+        ORDER BY a.grantee::regrole::TEXT COLLATE "C",a.grantor::regrole::TEXT COLLATE "C",a.privilege_type,a.is_grantable)
+        FROM pg_catalog.aclexplode(COALESCE(c.relacl,pg_catalog.acldefault('r',c.relowner))) a),
+    'columns',(SELECT jsonb_agg(jsonb_build_object(
+        'name',a.attname,'position',a.attnum,'type',pg_catalog.format_type(a.atttypid,a.atttypmod),
+        'not_null',a.attnotnull,'default',pg_catalog.pg_get_expr(d.adbin,d.adrelid),
+        'identity',a.attidentity,'generated',a.attgenerated,
+        'collation',(SELECT n.nspname||'.'||co.collname FROM pg_catalog.pg_collation co JOIN pg_catalog.pg_namespace n ON n.oid=co.collnamespace WHERE co.oid=a.attcollation),
+        'acl',(SELECT jsonb_agg(jsonb_build_array(
+            CASE WHEN x.grantee=0 THEN 'PUBLIC' ELSE pg_catalog.pg_get_userbyid(x.grantee)::TEXT END,
+            pg_catalog.pg_get_userbyid(x.grantor)::TEXT,x.privilege_type,x.is_grantable)
+            ORDER BY x.grantee::regrole::TEXT COLLATE "C",x.grantor::regrole::TEXT COLLATE "C",x.privilege_type,x.is_grantable)
+            FROM pg_catalog.aclexplode(a.attacl) x)
+        ) ORDER BY a.attnum) FROM pg_catalog.pg_attribute a
+        LEFT JOIN pg_catalog.pg_attrdef d ON d.adrelid=a.attrelid AND d.adnum=a.attnum
+        WHERE a.attrelid=c.oid AND a.attnum>0 AND NOT a.attisdropped),
+    'constraints',(SELECT jsonb_agg(jsonb_build_object(
+        'name',k.conname,'type',k.contype,'definition',pg_catalog.pg_get_constraintdef(k.oid),
+        'validated',k.convalidated,'deferrable',k.condeferrable,'deferred',k.condeferred,
+        'local',k.conislocal,'inheritance',k.coninhcount,'no_inherit',k.connoinherit,
+        'foreign_table',k.confrelid::regclass::TEXT,'update',k.confupdtype,'delete',k.confdeltype,'match',k.confmatchtype
+        ) ORDER BY k.conname COLLATE "C") FROM pg_catalog.pg_constraint k WHERE k.conrelid=c.oid),
+    'indexes',(SELECT jsonb_agg(jsonb_build_object(
+        'name',i.relname,'persistence',i.relpersistence,'definition',pg_catalog.pg_get_indexdef(x.indexrelid),
+        'valid',x.indisvalid,'ready',x.indisready,'unique',x.indisunique,
+        'primary',x.indisprimary,'exclusion',x.indisexclusion,'immediate',x.indimmediate,
+        'nulls_not_distinct',x.indnullsnotdistinct,'live',x.indislive,
+        'predicate',pg_catalog.pg_get_expr(x.indpred,x.indrelid)
+        ) ORDER BY i.relname COLLATE "C") FROM pg_catalog.pg_index x JOIN pg_catalog.pg_class i ON i.oid=x.indexrelid WHERE x.indrelid=c.oid),
+    'policies',(SELECT jsonb_agg(jsonb_build_object(
+        'name',p.polname,'command',p.polcmd,'permissive',p.polpermissive,
+        'roles',(SELECT jsonb_agg(r::regrole::TEXT ORDER BY r::regrole::TEXT COLLATE "C") FROM unnest(p.polroles) r),
+        'using',pg_catalog.pg_get_expr(p.polqual,p.polrelid),'check',pg_catalog.pg_get_expr(p.polwithcheck,p.polrelid)
+        ) ORDER BY p.polname COLLATE "C") FROM pg_catalog.pg_policy p WHERE p.polrelid=c.oid),
+    'triggers',(SELECT jsonb_agg(jsonb_build_object(
+        'name',t.tgname,'definition',pg_catalog.pg_get_triggerdef(t.oid),'function',t.tgfoid::regprocedure::TEXT,
+        'enabled',t.tgenabled,'type',t.tgtype,'arguments',encode(t.tgargs,'hex'),
+        'deferrable',t.tgdeferrable,'deferred',t.tginitdeferred,'constraint',t.tgconstraint<>0
+        ) ORDER BY t.tgname COLLATE "C") FROM pg_catalog.pg_trigger t WHERE t.tgrelid=c.oid AND NOT t.tgisinternal)
+    ) ORDER BY required.name COLLATE "C")
+FROM (VALUES ('public.automation_rules'),('public.automation_deliveries'),
+    ('public.automation_suppressions'),('private.automation_email_credentials')) required(name)
+LEFT JOIN pg_catalog.pg_class c ON c.oid=pg_catalog.to_regclass(required.name)`;
+
+export const AUTOMATION_FUNCTION_FACTS_V56_SQL = `SELECT jsonb_agg(jsonb_build_object(
+    'signature',required.signature,'exists',p.oid IS NOT NULL,
+    'definition',pg_catalog.pg_get_functiondef(p.oid),'body',p.prosrc,
+    'owner',pg_catalog.pg_get_userbyid(p.proowner),'language',l.lanname,
+    'kind',p.prokind,'volatility',p.provolatile,'security_definer',p.prosecdef,
+    'strict',p.proisstrict,'parallel',p.proparallel,'leakproof',p.proleakproof,
+    'config',p.proconfig,'result',pg_catalog.pg_get_function_result(p.oid),
+    'arguments',pg_catalog.pg_get_function_arguments(p.oid),'returns_set',p.proretset,
+    'overloads',(SELECT jsonb_agg(x.oid::regprocedure::TEXT ORDER BY x.oid::regprocedure::TEXT COLLATE "C")
+        FROM pg_catalog.pg_proc x JOIN pg_catalog.pg_namespace n ON n.oid=x.pronamespace
+        WHERE n.nspname=split_part(required.signature,'.',1)
+          AND x.proname=split_part(split_part(required.signature,'.',2),'(',1)),
+    'acl',(SELECT jsonb_agg(jsonb_build_array(
+        CASE WHEN a.grantee=0 THEN 'PUBLIC' ELSE pg_catalog.pg_get_userbyid(a.grantee)::TEXT END,
+        pg_catalog.pg_get_userbyid(a.grantor)::TEXT,a.privilege_type,a.is_grantable)
+        ORDER BY a.grantee::regrole::TEXT COLLATE "C",a.grantor::regrole::TEXT COLLATE "C",a.privilege_type,a.is_grantable)
+        FROM pg_catalog.aclexplode(COALESCE(p.proacl,pg_catalog.acldefault('f',p.proowner))) a)
+    ) ORDER BY required.signature COLLATE "C")
+FROM (VALUES
+    ('private.automation_delivery_immutable()'),
+    ('private.automation_normalize_email(text)'),
+    ('private.automation_require_admin(uuid,uuid)'),
+    ('private.automation_core_entitled(uuid)'),
+    ('private.automation_has_actionable_work(text[])'),
+    ('private.missed_class_automation_candidates(uuid,integer,uuid,uuid,timestamp with time zone)'),
+    ('public.get_missed_class_automation_rule_v1(uuid,uuid)'),
+    ('public.save_missed_class_automation_rule_v1(uuid,uuid,bigint,boolean,integer,text,text,text)'),
+    ('public.preview_missed_class_automation_v1(uuid,uuid,integer)'),
+    ('public.get_missed_class_automation_activity_v1(uuid,uuid,integer)'),
+    ('public.enqueue_missed_class_automations_v1(integer,text[])'),
+    ('public.claim_missed_class_automations_v1(integer,text[])'),
+    ('public.defer_missed_class_automation_studio_v1(uuid,uuid,text,text[])'),
+    ('public.begin_missed_class_automation_v1(uuid,uuid,text[])'),
+    ('public.settle_missed_class_automation_v1(uuid,uuid,text,text,text,integer)'),
+    ('public.suppress_missed_class_automation_v1(text)'),
+    ('public.get_automation_email_credential_v1(text)'),
+    ('public.save_automation_email_credential_v1(text,bigint,text)')
+) required(signature)
+LEFT JOIN pg_catalog.pg_proc p ON p.oid=pg_catalog.to_regprocedure(required.signature)
+LEFT JOIN pg_catalog.pg_language l ON l.oid=p.prolang`;
+
+function renderAutomationFacts(check, sql) {
+  return `    IF (SELECT encode(extensions.digest(convert_to((${sql})::TEXT,'UTF8'),'sha256'),'hex'))
+       IS DISTINCT FROM ${sqlLiteral(check.expected)} THEN
+        v_failures:=array_append(v_failures,${sqlLiteral(check.id)});
+    END IF;`;
+}
+export const render_automation_tables_v56 = check => renderAutomationFacts(check, AUTOMATION_TABLE_FACTS_V56_SQL);
+export const render_automation_functions_v56 = check => renderAutomationFacts(check, AUTOMATION_FUNCTION_FACTS_V56_SQL);

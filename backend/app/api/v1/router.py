@@ -1,7 +1,9 @@
 from fastapi import APIRouter
+
 from app.api.v1.endpoints import (
     account,
     auth,
+    automations,
     belts,
     billing,
     dashboard,
@@ -26,6 +28,8 @@ router.include_router(account.router)
 router.include_router(health.router)
 router.include_router(internal.router)
 router.include_router(auth.router)
+router.include_router(automations.router)
+router.include_router(automations.worker_router)
 router.include_router(dashboard.router)
 router.include_router(demo.router)
 router.include_router(platform_billing.router)

@@ -204,10 +204,22 @@ the bridge does not continue processing further batches after a deferred retry.
 
 Each backend call has a 25-second work budget, including credential reads,
 refresh, persistence, and provider submission. No new send begins after its
-budget expires. A daily invocation processes at most 30 rows and may process
-fewer. A larger queue remains visible for later runs. `has_more` describes work
-actionable now, not messages waiting for a future retry time.
-The daily cap does not promise that every due message will be sent that day.
+budget expires. This deadline controls admission of new stages and requests;
+it does not forcibly cancel an in-flight request. Late or ambiguous provider
+responses use the durable `sending`/`unknown` recovery rules. A daily invocation
+processes at most 30 rows and may process fewer. A larger queue remains visible
+for later runs. `has_more` describes work actionable now, excluding paused rules,
+studio cooldowns, future retries and live claims. It also includes eligible work
+that has not yet been queued. The daily cap does not promise that every due
+message will be sent that day.
+
+The worker checks authoritative Core access without provider repair calls. Denied
+or unverifiable entitlement defers that studio for one hour and releases only
+the matching unsent claim, then continues with other studios. Claim order rotates
+between studios, and claim priority advances before entitlement checks. Historical
+attempt facts remain intact. An uncertain deferral write stops the worker; it
+does not pretend the row was released. The processor uses the fresh deferral
+result for `has_more`.
 
 Pause an individual studio rule in Automations. For a global pause, set
 `EMAIL_SEND_ENABLED=false` on the backend and disable
@@ -239,3 +251,9 @@ venv/bin/python -m pytest tests/test_automation_email_config.py tests/test_confi
 
 Run `npm run check:env-examples` from the repository root to check declared
 settings, placeholder credentials, disabled flags, and provider inventory.
+
+The V56 database candidate contains 151 migrations and requires full preflight V37.
+The exact V55/V36 readiness consumer remains available only after V56 verifies.
+`npm run check:supabase-contracts-local` includes the V55-to-V56 canonical/logical
+restore proof, all 57 SQL contracts and 37 automation concurrency cases. These
+checks use synthetic local data and make no provider requests.
