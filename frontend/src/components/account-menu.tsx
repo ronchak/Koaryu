@@ -63,7 +63,7 @@ const submenuTitles: Record<Exclude<AccountSubmenu, null>, string> = {
 
 const helpItems: MenuLinkItem[] = [
   { href: "/help", label: "Help center", icon: CircleHelp },
-  { href: "/automations", label: "Planned automations", icon: Flag },
+  { href: "/automations", label: "Automations", icon: Flag },
   { href: "/help/release-notes", label: "Release notes", icon: Flag },
   { href: "/help/downloads", label: "Download apps", icon: AppWindow },
   { href: "/terms", label: "Terms of Service", icon: FileText },

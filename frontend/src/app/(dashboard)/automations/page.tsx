@@ -3,6 +3,7 @@ import { BellRing } from "lucide-react";
 import { Header } from "@/components/header";
 import { OperationsSurface } from "@/components/operations/operations-surface";
 import { Button } from "@/components/ui/button";
+import { MissedClassAutomation } from "@/components/automations/missed-class-automation";
 import { crmLinkPrefetch } from "@/lib/constants";
 
 const LIVE_QUEUES = [
@@ -14,7 +15,6 @@ const LIVE_QUEUES = [
 
 const FUTURE_WORKFLOWS = [
   ["Trial reminders", "Reminder before a trial class and a follow-up afterward."],
-  ["Missed-class nudges", "Family email after a configurable attendance gap."],
   ["Payment recovery", "Failed-payment notice that stops after provider recovery."],
   ["Promotion congratulations", "Studio-approved note after a promotion is recorded."],
   ["Belt test announcements", "Notice to eligible students and families before a testing cycle."],
@@ -34,22 +34,10 @@ export default function AutomationsPage() {
 
       <div
         className="min-w-0 flex-1 overflow-x-hidden px-4 py-5 sm:px-8 lg:py-7"
-        data-automations-readonly="true"
         data-automation-catalog="live-queues-and-proposals"
       >
         <div className="mx-auto max-w-5xl space-y-3">
-          <section className="min-w-0 overflow-hidden" data-automation-sheet="true">
-            <div className="grid min-w-0 gap-4 px-5 py-6 sm:grid-cols-[minmax(12rem,0.36fr)_minmax(0,1fr)] sm:gap-8">
-              <div>
-                <p className="text-xs font-medium text-accent">Current status</p>
-                <h2 className="mt-2 text-xl font-semibold tracking-tight text-text-primary">No automation builder is live.</h2>
-              </div>
-              <p className="text-sm leading-6 text-text-secondary">
-                This page does not send messages or schedule work. Use the available queues below
-                to review follow-ups that need staff attention.
-              </p>
-            </div>
-          </section>
+          <MissedClassAutomation />
 
           <section aria-labelledby="live-queues-title" className="min-w-0 p-4" data-automation-sheet="true">
             <div className="mb-3 flex min-w-0 items-end justify-between gap-4">
@@ -83,11 +71,11 @@ export default function AutomationsPage() {
             <div className="mb-3 flex min-w-0 items-end justify-between gap-4">
               <div>
                 <p className="text-xs font-medium text-muted">Future catalog</p>
-                <h2 id="future-workflows-title" className="mt-1 text-base font-semibold text-text-primary">Five proposed workflows</h2>
+                <h2 id="future-workflows-title" className="mt-1 text-base font-semibold text-text-primary">Four proposed workflows</h2>
               </div>
-              <span className="shrink-0 text-xs font-semibold text-muted">Read only · 05</span>
+              <span className="shrink-0 text-xs font-semibold text-muted">Read only · 04</span>
             </div>
-            <dl className="min-w-0 overflow-hidden" data-automation-future-list="five-proposals" data-automation-inset="true">
+            <dl className="min-w-0 overflow-hidden" data-automation-future-list="four-proposals" data-automation-inset="true">
               {FUTURE_WORKFLOWS.map(([title, description]) => (
                 <div key={title} className="grid min-w-0 gap-1 border-b border-border px-4 py-4 last:border-b-0 sm:grid-cols-[minmax(12rem,0.36fr)_minmax(0,1fr)] sm:gap-4">
                   <dt className="break-words text-sm font-semibold text-text-primary">{title}</dt>
