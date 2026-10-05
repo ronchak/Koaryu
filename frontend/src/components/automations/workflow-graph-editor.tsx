@@ -101,7 +101,7 @@ function nodeSummary(
     case "condition":
       return node.config.field && node.config.operator
         ? presentation
-          ? `${catalogEntry(catalog!.fields, node.config.field)?.label ?? node.config.field} ${operators[node.config.operator] ?? node.config.operator} ${valueLabel(node.config.value, node.config.field)}`
+          ? `${catalogEntry(catalog!.fields, node.config.field)?.label ?? node.config.field} ${catalogEntry(operators, node.config.operator) ?? node.config.operator} ${valueLabel(node.config.value, node.config.field)}`
           : `${node.config.field} ${node.config.operator} ${"value" in node.config ? JSON.stringify(node.config.value) : "Choose a value"}`
         : "Choose a field, comparison, and value";
     case "delay":
