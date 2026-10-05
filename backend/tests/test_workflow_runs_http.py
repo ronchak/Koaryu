@@ -1,4 +1,4 @@
-"""Isolated unmounted routes with actual scope guards and mocked provider data."""
+"""Run route wiring, actual scope guards, and mocked provider data."""
 
 from copy import deepcopy
 from types import SimpleNamespace
@@ -310,14 +310,39 @@ def test_isolated_openapi_has_exact_routes_and_composed_receipt_union(api):
     assert len(operation["oneOf"]) == 7
 
 
-def test_history_routes_remain_unmounted_on_actual_app():
+def test_history_routes_are_registered_once_on_actual_app():
+    from fastapi.routing import iter_route_contexts
+
     from app.main import app
 
     paths = app.openapi()["paths"]
-    assert BASE + "/runs/{run_id}" not in paths
-    assert BASE + "/runs/{run_id}/cancel" not in paths
-    assert BASE + "/workflows/{workflow_id}/runs" not in paths
+    for path, method, handler, model in [
+        (
+            "/workflows/{workflow_id}/runs",
+            "get",
+            routes.list_workflow_runs,
+            "WorkflowRunListResponse",
+        ),
+        ("/runs/{run_id}", "get", routes.get_workflow_run, "WorkflowRunDetail"),
+        ("/runs/{run_id}/cancel", "post", routes.cancel_workflow_run, "WorkflowRunDetail"),
+    ]:
+        path = BASE + path
+        assert set(paths[path]) == {method}
+        matches = [
+            route
+            for route in iter_route_contexts(app.routes)
+            if route.path == path and method.upper() in route.methods
+        ]
+        assert len(matches) == 1
+        assert matches[0].endpoint is handler
+        assert paths[path][method]["responses"]["200"]["content"]["application/json"]["schema"] == {
+            "$ref": f"#/components/schemas/{model}"
+        }
+    cancel = paths[BASE + "/runs/{run_id}/cancel"]["post"]
+    assert cancel["requestBody"]["content"]["application/json"]["schema"] == {
+        "$ref": "#/components/schemas/WorkflowRunCancelRequest"
+    }
     schemas = app.openapi()["components"]["schemas"]
     assert "RunCancelOperationResponse" in schemas
-    assert "WorkflowRunCancelRequest" not in schemas
-    assert "WorkflowRunListResponse" not in schemas
+    assert "WorkflowRunCancelRequest" in schemas
+    assert "WorkflowRunListResponse" in schemas
