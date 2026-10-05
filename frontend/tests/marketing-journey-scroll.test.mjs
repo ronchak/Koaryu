@@ -3,183 +3,380 @@ import { describe, it } from "node:test";
 
 import { landingPageContent } from "../src/lib/landing-page-content.ts";
 import {
+  INITIAL_WHEEL_GESTURE_STATE,
+  STORY_BEATS,
+  canScrollablePanelMove,
+  decideJourneyKey,
+  decideTouchChapter,
+  handoffGeometry,
+  handoffProgress,
+  holdWheelGesture,
+  monotoneMotion,
+  nearestStop,
+  normalizeWheelDelta,
+  planMove,
+  reduceWheelGesture,
+  stopAt,
+  stopToward,
+  storyKeyframes,
+} from "../src/components/marketing/journey/paging-model.ts";
+import {
   LANDING_HASH_ALIASES,
-  TRANSITION_END,
-  TRANSITION_START,
-  driftForScroll,
   mastheadTone,
-  keyframesForLayout,
   progressForScroll,
   resolveLegacyHash,
   stillFrame,
 } from "../src/components/marketing/journey/scroll-model.ts";
+import {
+  LOOM_PHASES,
+  loomFrame,
+  loomLayout,
+  warpPath,
+} from "../src/components/marketing/journey/weave-model.ts";
 
-const anchors = [
-  { scrollY: 0, scene: 0 },
-  { scrollY: 800, scene: 0.1 },
-  { scrollY: 1600, scene: 0.3 },
+const H = 1000;
+const stops = [
+  { id: "welcome", y: 0, scene: 0 },
+  { id: "the-problem", y: 1500, scene: 0.1 },
+  { id: "product", y: 3200, scene: 0.288 },
+  { id: "studio", y: 6000, scene: 1 },
+  { id: "handoff", y: 6700, scene: 1 },
 ];
 
-describe("Journey scroll model", () => {
-  it("interpolates scene progress between chapter anchors and clamps at both ends", () => {
-    assert.equal(progressForScroll(-40, anchors), 0);
-    assert.equal(progressForScroll(0, anchors), 0);
-    assert.equal(progressForScroll(400, anchors), 0.05);
-    assert.equal(progressForScroll(800, anchors), 0.1);
-    assert.ok(Math.abs(progressForScroll(1200, anchors) - 0.2) < 1e-9);
-    assert.equal(progressForScroll(9000, anchors), 0.3);
-    assert.equal(progressForScroll(100, []), 0);
+/** Feeds wheel deltas at a fixed interval and counts chapter advances. */
+function advancesFor(deltas, interval = 16, start = 1000) {
+  let state = INITIAL_WHEEL_GESTURE_STATE;
+  let advances = 0;
+  deltas.forEach((delta, index) => {
+    const result = reduceWheelGesture(state, {
+      delta,
+      now: start + index * interval,
+      panelCanScroll: false,
+    });
+    state = result.state;
+    if (result.action === "advance") advances += 1;
+  });
+  return { advances, state };
+}
+
+function momentum(peak = 60, length = 70, decay = 0.93) {
+  return Array.from({ length }, (_, index) => Math.max(1, peak * decay ** index));
+}
+
+describe("Wheel, key and touch gestures", () => {
+  it("advances once per trackpad swipe, however long its momentum tail", () => {
+    assert.equal(advancesFor(momentum()).advances, 1);
+    assert.equal(advancesFor(momentum().map((delta) => -delta)).advances, 1);
   });
 
-  it("lets the last of several chapters sharing the page bottom own the final frame", () => {
-    const bottom = [
-      { scrollY: 0, scene: 0 },
-      { scrollY: 500, scene: 0.86 },
-      { scrollY: 500, scene: 1 },
-    ];
-    assert.equal(progressForScroll(500, bottom), 1);
-    assert.equal(progressForScroll(250, bottom), 0.43);
+  it("keeps a tail together across a stalled frame, but not a fresh swipe", () => {
+    const tail = momentum();
+    let state = INITIAL_WHEEL_GESTURE_STATE;
+    let advances = 0;
+    let now = 0;
+    tail.forEach((delta, index) => {
+      now += index === 20 ? 300 : 16; // a busy frame delays one event
+      const result = reduceWheelGesture(state, { delta, now, panelCanScroll: false });
+      state = result.state;
+      if (result.action === "advance") advances += 1;
+    });
+    assert.equal(advances, 1);
+    // A deliberate new swipe after the lock pages again.
+    const next = reduceWheelGesture(state, { delta: 80, now: now + 40, panelCanScroll: false });
+    assert.equal(next.action, "advance");
   });
 
-  it("shows only chapter still frames for reduced motion", () => {
-    const scenes = [0, 0.1, 0.3, 0.5];
-    assert.equal(stillFrame(0.04, scenes), 0);
-    assert.equal(stillFrame(0.06, scenes), 0.1);
-    assert.equal(stillFrame(0.21, scenes), 0.3);
-    assert.equal(stillFrame(0.9, scenes), 0.5);
+  it("pages on one mouse notch and on a pause between gestures", () => {
+    assert.equal(advancesFor([100]).advances, 1);
+    assert.equal(advancesFor([100, 100], 600).advances, 2);
+    assert.equal(advancesFor([6]).advances, 0);
   });
 
-  it("holds each chapter while it is read and plays each beat across the gap after it", () => {
-    const keyframes = keyframesForLayout(
-      [
-        { scene: 0, gapStart: 1000, gapEnd: 1500 },
-        { scene: 0.1, gapStart: 2500, gapEnd: 3800 },
-        { scene: 0.3, gapStart: 4800, gapEnd: 4800 },
-      ],
-      1000,
-      9000,
+  it("lets a scrollable chapter scroll natively and swallows its tail at the edge", () => {
+    const panel = reduceWheelGesture(INITIAL_WHEEL_GESTURE_STATE, {
+      delta: 40,
+      now: 100,
+      panelCanScroll: true,
+    });
+    assert.equal(panel.action, "panel-scroll");
+    assert.equal(panel.preventDefault, false);
+    const edge = reduceWheelGesture(panel.state, { delta: 30, now: 116, panelCanScroll: false });
+    assert.equal(edge.action, "none");
+    assert.equal(edge.preventDefault, true);
+    const held = holdWheelGesture(INITIAL_WHEEL_GESTURE_STATE, -50, 500);
+    assert.equal(
+      reduceWheelGesture(held, { delta: -40, now: 516, panelCanScroll: false }).action,
+      "none",
     );
-    assert.equal(TRANSITION_START, 0.55);
-    assert.equal(TRANSITION_END, 0.75);
-    assert.deepEqual(keyframes, [
-      { scrollY: 0, scene: 0 },
-      { scrollY: 450, scene: 0 },
-      { scrollY: 750, scene: 0.1 },
-      { scrollY: 1950, scene: 0.1 },
-      { scrollY: 3050, scene: 0.3 },
-    ]);
-    // Reading the first two chapters moves nothing.
-    assert.equal(progressForScroll(200, keyframes), 0);
+  });
+
+  it("normalises line and page deltas", () => {
+    assert.equal(normalizeWheelDelta(3, 1, 900), 54);
+    assert.equal(normalizeWheelDelta(1, 2, 900), 900);
+    assert.equal(normalizeWheelDelta(Number.NaN, 0, 900), 0);
+  });
+
+  it("maps keys to chapters, panel scrolling or nothing", () => {
+    const at = (key, panel = null, extra = {}) =>
+      decideJourneyKey({ key, shiftKey: false, interactiveTarget: false, panel, ...extra });
+    assert.deepEqual(at("ArrowDown"), { action: "chapter", direction: 1 });
+    assert.deepEqual(at("PageUp"), { action: "chapter", direction: -1 });
+    assert.deepEqual(at(" ", null, { shiftKey: true }), { action: "chapter", direction: -1 });
+    assert.deepEqual(at("Home"), { action: "chapter-edge", edge: "first" });
+    assert.deepEqual(at("End"), { action: "chapter-edge", edge: "last" });
+    const panel = { scrollTop: 0, scrollHeight: 2000, clientHeight: 800 };
+    assert.deepEqual(at("PageDown", panel), {
+      action: "panel-scroll",
+      direction: 1,
+      amount: "page",
+    });
+    assert.deepEqual(at("ArrowUp", panel), { action: "chapter", direction: -1 });
+    assert.deepEqual(at("ArrowDown", null, { interactiveTarget: true }), { action: "none" });
+    assert.equal(
+      canScrollablePanelMove({ scrollTop: 1200, scrollHeight: 2000, clientHeight: 800 }, 1),
+      false,
+    );
+  });
+
+  it("pages on a vertical swipe that no panel used", () => {
+    assert.equal(
+      decideTouchChapter({ startY: 600, endY: 300, panelMoved: false, panelCanScroll: false }),
+      1,
+    );
+    assert.equal(
+      decideTouchChapter({ startY: 300, endY: 600, panelMoved: false, panelCanScroll: false }),
+      -1,
+    );
+    assert.equal(
+      decideTouchChapter({ startY: 600, endY: 580, panelMoved: false, panelCanScroll: false }),
+      0,
+    );
+    assert.equal(
+      decideTouchChapter({
+        startY: 600,
+        endY: 300,
+        deltaX: 400,
+        panelMoved: false,
+        panelCanScroll: false,
+      }),
+      0,
+    );
+    assert.equal(
+      decideTouchChapter({ startY: 600, endY: 300, panelMoved: true, panelCanScroll: false }),
+      0,
+    );
+  });
+});
+
+describe("Stops, beats and motion", () => {
+  it("finds the stop a position rests on, the nearest one and the next one each way", () => {
+    assert.equal(stopAt(stops, 1502), 1);
+    assert.equal(stopAt(stops, 1600), -1);
+    assert.equal(nearestStop(stops, 2600), 2);
+    assert.equal(stopToward(stops, 1500, 1), 2);
+    assert.equal(stopToward(stops, 1500, -1), 0);
+    assert.equal(stopToward(stops, 2000, -1), 1);
+    assert.equal(stopToward(stops, 9000, 1), stops.length - 1);
+  });
+
+  it("holds each stop's frame while its copy is on screen and plays the beat in between", () => {
+    const keyframes = storyKeyframes(stops, H);
+    assert.equal(progressForScroll(0, keyframes), 0);
     assert.equal(progressForScroll(1500, keyframes), 0.1);
-    // Halfway through a gap, the story is halfway through its beat.
-    assert.ok(Math.abs(progressForScroll(600, keyframes) - 0.05) < 1e-9);
-    // A longer interlude gives its beat more scroll.
-    assert.ok(3050 - 1950 > 750 - 450);
-    assert.equal(progressForScroll(8000, keyframes), 0.3);
-  });
-
-  it("gives the masthead the tone of the artwork beneath it", () => {
-    // The hills and the open sky are light; inside the hill and under the dojo ceiling are dark.
-    assert.equal(mastheadTone(0, 1000), "light");
-    assert.equal(mastheadTone(0.1, 1000), "dark");
-    assert.equal(mastheadTone(0.288, 1000), "dark");
-    assert.equal(mastheadTone(0.45, 1000), "light");
-    // Tall screens keep the ceiling in view for longer.
-    assert.equal(mastheadTone(0.52, 2000), "dark");
-    assert.equal(mastheadTone(0.66, 2000), "light");
-    assert.equal(mastheadTone(1, 1600), "light");
-  });
-
-  it("drifts held frames continuously and eases the drift out during each beat", () => {
-    const keyframes = [
-      { scrollY: 0, scene: 0 },
-      { scrollY: 400, scene: 0 },
-      { scrollY: 1100, scene: 0.1 },
-      { scrollY: 1900, scene: 0.1 },
-    ];
-    assert.equal(driftForScroll(0, keyframes, 3000), 0);
-    assert.equal(driftForScroll(200, keyframes, 3000), 0.5);
-    assert.equal(driftForScroll(400, keyframes, 3000), 1);
-    assert.ok(Math.abs(driftForScroll(750, keyframes, 3000) - 0.5) < 1e-9);
-    assert.equal(driftForScroll(1100, keyframes, 3000), 0);
-    assert.equal(driftForScroll(1500, keyframes, 3000), 0.5);
-    assert.ok(Math.abs(driftForScroll(2450, keyframes, 3000) - 0.5) < 1e-9);
-    assert.equal(driftForScroll(100, [], 3000), 0);
-  });
-
-  it("clamps keyframes to the scrollable range without ever decreasing", () => {
-    const keyframes = keyframesForLayout(
-      [
-        { scene: 0, gapStart: 300, gapEnd: 500 },
-        { scene: 0.5, gapStart: 900, gapEnd: 1200 },
-        { scene: 1, gapStart: 1600, gapEnd: 1600 },
-      ],
-      1000,
-      600,
-    );
+    // The copy leaves before the scene moves...
+    const beat = STORY_BEATS["the-problem"];
+    assert.equal(progressForScroll(beat.exit * H - 1, keyframes), 0);
+    // ...and the scene has arrived before the next copy settles.
+    assert.equal(progressForScroll(1500 - beat.enter * H + 1, keyframes), 0.1);
     const positions = keyframes.map(({ scrollY }) => scrollY);
     assert.deepEqual(
       positions,
       [...positions].sort((a, b) => a - b),
     );
-    assert.ok(positions.every((position) => position >= 0 && position <= 600));
-    assert.equal(progressForScroll(600, keyframes), 1);
-    assert.deepEqual(keyframesForLayout([], 1000, 600), []);
-  });
-
-  it("orders chapter scenes so scrolling down always moves the story forward", () => {
-    const interludes = landingPageContent.chapters.map((chapter) =>
-      "interludeAfter" in chapter ? chapter.interludeAfter : null,
-    );
-    // Every beat gets open space; the long cloud-to-floor sequence gets the most.
-    assert.deepEqual(interludes, [70, 80, 100, 100, 200, 90, null]);
-    const scenes = landingPageContent.chapters.map(({ scene }) => scene);
+    const scenes = keyframes.map(({ scene }) => scene);
     assert.deepEqual(
       scenes,
       [...scenes].sort((a, b) => a - b),
     );
-    assert.equal(scenes[0], 0);
-    assert.equal(scenes.at(-1), 1);
+    assert.equal(progressForScroll(6700, keyframes), 1);
+    assert.deepEqual(storyKeyframes([], H), []);
+  });
+
+  it("paces the weave through its own keyframes", () => {
+    const weave = [
+      { id: "the-path", y: 0, scene: 0.66 },
+      { id: "the-weave", y: 2200, scene: 0.892 },
+    ];
+    const keyframes = storyKeyframes(weave, H);
+    for (const step of STORY_BEATS["the-weave"].via) {
+      assert.ok(keyframes.some(({ scene }) => scene === step.scene));
+    }
+  });
+
+  it("draws a monotone, smooth curve that never overshoots a knot", () => {
+    const motion = monotoneMotion([
+      { t: 0, y: 0 },
+      { t: 300, y: 450 },
+      { t: 1300, y: 900 },
+      { t: 1800, y: 1500 },
+    ]);
+    let previous = -1;
+    for (let t = 0; t <= 1800; t += 10) {
+      const y = motion.position(t);
+      assert.ok(y >= previous - 1e-9, `runs backwards at ${t}`);
+      assert.ok(y <= 1500 + 1e-9);
+      previous = y;
+    }
+    assert.equal(motion.position(-10), 0);
+    assert.equal(motion.position(5000), 1500);
+    assert.equal(motion.duration, 1800);
+    assert.ok(Math.abs(motion.velocity(1800)) < 1e-9);
+    // Velocity is continuous across a knot.
+    assert.ok(Math.abs(motion.velocity(299.9) - motion.velocity(300.1)) < 0.01);
+  });
+
+  it("plans a neighbour move by its beat and longer moves as one eased path", () => {
+    const next = planMove(stops, 0, 1, { viewportHeight: H });
+    const beat = STORY_BEATS["the-problem"];
+    assert.ok(next.duration >= beat.ms);
+    assert.ok(next.duration <= 2400);
+    assert.equal(next.to, 1500);
+    // The copy starts moving at once.
+    assert.ok(next.position(60) > 0);
+    // Phones play the beats a little quicker.
+    assert.ok(planMove(stops, 0, 1, { viewportHeight: H, compact: true }).duration < next.duration);
+    const back = planMove(stops, 1500, 0, { viewportHeight: H });
+    assert.ok(back.duration < next.duration);
+    const handoff = planMove(stops, 6000, 4, { viewportHeight: H });
+    assert.equal(handoff.duration, STORY_BEATS.handoff.ms);
+    const far = planMove(stops, 0, 3, { viewportHeight: H });
+    assert.ok(far.duration <= 1800);
+    // Every story beat stays within the paging budget.
+    for (const spec of Object.values(STORY_BEATS)) assert.ok(spec.ms <= 2000);
+  });
+
+  it("frames the class into the picture slot and eases the hand-off", () => {
+    assert.equal(handoffProgress(6000, 6000, 6700), 0);
+    assert.equal(handoffProgress(6700, 6000, 6700), 1);
+    assert.equal(handoffProgress(6350, 6000, 6700), 0.5);
+    const slot = { left: 700, top: 180, width: 640, height: 400 };
+    const settled = handoffGeometry({
+      layerWidth: 1440,
+      layerHeight: 900,
+      slot,
+      focusY: 0.6,
+      progress: 1,
+    });
+    for (const key of ["left", "top", "width", "height"]) {
+      assert.ok(Math.abs(settled.rect[key] - slot[key]) < 0.01, key);
+    }
+    const start = handoffGeometry({
+      layerWidth: 1440,
+      layerHeight: 900,
+      slot,
+      focusY: 0.6,
+      progress: 0,
+    });
+    assert.equal(start.scale, 1);
+    assert.deepEqual(start.inset, [0, 0, 0, 0]);
   });
 });
 
-describe("Legacy landing hashes", () => {
-  it("leaves current chapters, FAQ groups, and empty hashes alone", () => {
-    for (const { id } of landingPageContent.chapters)
-      assert.equal(resolveLegacyHash(`#${id}`), null);
-    for (const id of ["faq-fit", "faq-daily", "faq-pricing", "faq-limits"]) {
-      assert.equal(resolveLegacyHash(`#${id}`), null);
-    }
-    assert.equal(resolveLegacyHash(""), null);
-    assert.equal(resolveLegacyHash("#"), null);
-    assert.equal(resolveLegacyHash("#not-a-section"), null);
+describe("Scene helpers and old links", () => {
+  it("gives the masthead the tone of the art beneath it", () => {
+    assert.equal(mastheadTone(0, 1000), "light");
+    assert.equal(mastheadTone(0.1, 1000), "dark");
+    assert.equal(mastheadTone(0.45, 1000), "light");
+    assert.equal(mastheadTone(0.52, 2000), "dark");
+    assert.equal(mastheadTone(1, 1600), "light");
   });
 
-  it("sends every retired chapter, topic, and alias to a section that exists", () => {
+  it("shows only chapter still frames for reduced motion", () => {
+    const scenes = landingPageContent.story.map(({ scene }) => scene);
+    assert.equal(stillFrame(0.04, scenes), 0);
+    assert.equal(stillFrame(0.8, scenes), 0.892);
+    assert.deepEqual(
+      scenes,
+      [...scenes].sort((a, b) => a - b),
+    );
+  });
+
+  it("leaves current ids alone and sends retired hashes somewhere that exists", () => {
     const targets = new Set([
-      ...landingPageContent.chapters.map(({ id }) => id),
-      "faq-fit",
-      "faq-daily",
-      "faq-pricing",
-      "faq-limits",
+      ...landingPageContent.story.map(({ id }) => id),
+      "pricing",
+      "try",
+      "faq",
+      "begin",
+      ...landingPageContent.faq.groups.map(({ id }) => id),
     ]);
-    for (const retired of [
-      "studio-view",
-      "use-cases",
-      "signals-gather",
-      "explore",
-      "class-ready",
-      "about",
-      "stillness",
-      "faq-switching",
-      "faq-data",
-      "faq-roadmap",
-    ]) {
-      assert.ok(retired in LANDING_HASH_ALIASES, `${retired} has no alias`);
-    }
+    for (const id of targets) assert.equal(resolveLegacyHash(`#${id}`), null);
+    assert.equal(resolveLegacyHash(""), null);
+    assert.equal(resolveLegacyHash("#not-a-section"), null);
     for (const [from, to] of Object.entries(LANDING_HASH_ALIASES)) {
       assert.ok(targets.has(to), `${from} points at missing ${to}`);
       assert.equal(resolveLegacyHash(`#${from}`), to);
     }
+    assert.equal(resolveLegacyHash("#studio-view"), "product");
+    assert.equal(resolveLegacyHash("#faq-roadmap"), "faq-limits");
+  });
+});
+
+describe("The weave", () => {
+  const threads = landingPageContent.story.find((chapter) => chapter.kind === "weave").threads;
+
+  it("lays one labelled strand per thread across the floor, on screen", () => {
+    for (const [width, height] of [
+      [1440, 900],
+      [390, 844],
+      [320, 640],
+      [1920, 900],
+    ]) {
+      const layout = loomLayout(width, height, threads);
+      assert.equal(layout.warps.length, threads.length);
+      assert.ok(layout.wefts.length >= 8, `${width}x${height} wefts`);
+      for (const warp of layout.warps) {
+        assert.ok(warp.labelX >= layout.visible.left, `${warp.label} starts on screen`);
+        assert.ok(
+          warp.labelX + warp.labelWidth <= layout.visible.right,
+          `${warp.label} ends on screen`,
+        );
+        assert.ok(
+          warp.y + warp.thickness / 2 < layout.visible.bottom,
+          `${warp.label} label visible`,
+        );
+      }
+      assert.ok(layout.floorFraction > layout.matTopFraction - 0.1);
+    }
+  });
+
+  it("weaves over and under, keeping every label on an unbroken float", () => {
+    const layout = loomLayout(1440, 900, threads);
+    layout.warps.forEach((warp, row) => {
+      layout.wefts.forEach((weft, column) => {
+        const underLabel =
+          weft.x + weft.width > warp.labelX && weft.x < warp.labelX + warp.labelWidth;
+        if (underLabel) assert.equal(layout.over[row][column], true);
+      });
+      const crossings = layout.over[row];
+      assert.ok(crossings.includes(true) && crossings.includes(false), "over and under");
+    });
+  });
+
+  it("hides the scene's morph under a full wash and hands back to the room", () => {
+    const layout = loomLayout(1440, 900, threads);
+    assert.equal(loomFrame(0.7, layout).visible, false);
+    const woven = loomFrame(0.892, layout);
+    assert.equal(woven.wash, 1);
+    assert.equal(woven.mat, 1);
+    assert.ok(woven.wefts.every((value) => value === 1));
+    assert.ok(woven.warps.every(({ settle, cloud }) => settle === 1 && cloud === 0));
+    assert.ok(woven.labels.every(({ opacity }) => opacity === 1));
+    // Fully covered while the scene shuffles its planks.
+    for (const p of [0.802, 0.85, 0.89]) assert.equal(loomFrame(p, layout).wash, 1);
+    const lying = loomFrame(0.92, layout);
+    assert.ok(lying.lie > 0 && lying.labels.every(({ opacity }) => opacity === 0));
+    assert.equal(loomFrame(LOOM_PHASES.leave[1], layout).visible, false);
+    assert.match(warpPath(layout, layout.warps[0], 1), /^M/);
   });
 });

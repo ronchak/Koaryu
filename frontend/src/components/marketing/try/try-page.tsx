@@ -4,6 +4,7 @@ import type { CSSProperties } from "react";
 import { MarketingActionLink } from "@/components/marketing/marketing-primitives";
 import { MarketingRoot } from "@/components/marketing/marketing-root";
 import { MarketingFooter, MarketingHeader } from "@/components/marketing/public-pages";
+import { SceneTimeScript } from "@/components/marketing/journey/scene-time-script";
 
 import { tryPageContent } from "./try-content.ts";
 import { TryDemo } from "./try-demo";
@@ -182,6 +183,7 @@ function RealThing() {
 export function TryPage() {
   return (
     <MarketingRoot layout="document" className={styles.root}>
+      <SceneTimeScript />
       <a href="#main-content" className={styles.skipLink}>
         Skip to content
       </a>

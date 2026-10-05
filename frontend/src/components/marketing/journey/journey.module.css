@@ -9,6 +9,7 @@
 
 [data-koaryu-marketing].landingRoot {
   --page-ground: #fbfaf6;
+  --page-masthead: rgb(251 250 246 / 94%);
 
   background: var(--page-ground);
 }
@@ -19,7 +20,8 @@
 }
 
 :global(html[data-scene="night"]) [data-koaryu-marketing].landingRoot {
-  --page-ground: #16131a;
+  --page-ground: var(--scene-ground);
+  --page-masthead: var(--scene-masthead-light);
 }
 
 .journey {
@@ -60,8 +62,8 @@
 
 /* Night: copy reads cream on the evening scene; sheets are lamplit umber. */
 :global(html[data-scene="night"]) .journey {
-  --story-ink: #f4ebdc;
-  --story-ink-light: #f4ebdc;
+  --story-ink: var(--scene-ink);
+  --story-ink-light: var(--scene-ink-on-dark);
   --sheet: rgb(33 27 25 / 94%);
   --sheet-ink: #f1e7d6;
   --sheet-rule: rgb(241 231 214 / 14%);
@@ -70,23 +72,24 @@
   --koaryu-action-label: #1d1712;
   --timber: #3a2a17;
   --timber-edge: rgb(0 0 0 / 55%);
-  --loom-sky-top: #1d2140;
-  --loom-sky-mid: #2a2b4a;
-  --loom-sky-low: #3b3550;
-  --loom-cloud: #c9cbd8;
-  --loom-ground: #1c1510;
-  --loom-warp-0: #cfc6b4;
-  --loom-warp-1: #bdb5a5;
-  --loom-warp-2: #b2aa9a;
-  --loom-warp-3: #c6bdac;
-  --loom-weft-0: #9a7547;
-  --loom-weft-1: #87653b;
-  --loom-weft-2: #a8814f;
-  --loom-weft-3: #7c5b34;
-  --loom-label: #2a2018;
-  --loom-light: 0.55;
-  --loom-wall-top: #2a221e;
-  --loom-wall-low: #3a2d22;
+  /* Moonlit straw over the night sky, woven with lamplit wood that warms into the floor. */
+  --loom-sky-top: #0e1229;
+  --loom-sky-mid: #192043;
+  --loom-sky-low: #2a3560;
+  --loom-cloud: #a3aed8;
+  --loom-ground: #0f0d16;
+  --loom-warp-0: #cbc2b0;
+  --loom-warp-1: #b8af9d;
+  --loom-warp-2: #a59c8b;
+  --loom-warp-3: #c2b9a6;
+  --loom-weft-0: #8f7552;
+  --loom-weft-1: #7f6849;
+  --loom-weft-2: #9c815c;
+  --loom-weft-3: #735e42;
+  --loom-label: #1c1922;
+  --loom-light: 0.5;
+  --loom-wall-top: #120e14;
+  --loom-wall-low: #3a2a22;
 }
 
 .sceneLayer {
@@ -262,6 +265,7 @@
   z-index: 30;
   top: 0;
   border-bottom: 1px solid transparent;
+  color: var(--scene-masthead-light-ink, inherit);
   transition:
     background-color 360ms ease,
     border-color 360ms ease,
@@ -271,31 +275,21 @@
 
 /* Transparent over the hero; once the story moves it takes a ground matching the art beneath. */
 .journey[data-scrolled="true"] .masthead {
-  border-bottom-color: var(--koaryu-line);
-  background: rgb(247 243 233 / 93%);
+  border-bottom-color: var(--scene-masthead-line);
+  background: var(--scene-masthead-light);
 }
 
 .journey[data-scrolled="true"][data-tone="dark"] .masthead {
-  border-bottom-color: rgb(244 238 225 / 10%);
-  color: var(--koaryu-ink-light);
-  background: rgb(52 39 22 / 90%);
+  border-bottom-color: var(--scene-masthead-line-dark);
+  color: var(--scene-masthead-dark-ink);
+  background: var(--scene-masthead-dark);
 }
 
-/* On the page it grounds itself on white. */
+/* On the page it grounds itself on the page. */
 .journey[data-zone="page"] .masthead {
-  border-bottom-color: rgb(42 33 23 / 9%);
-  color: #2a2117;
-  background: rgb(251 250 246 / 94%);
-}
-
-:global(html[data-scene="night"]) .journey .masthead {
-  color: #f1e7d6;
-}
-
-:global(html[data-scene="night"]) .journey[data-scrolled="true"] .masthead {
-  border-bottom-color: rgb(241 231 214 / 9%);
-  color: #f1e7d6;
-  background: rgb(24 20 28 / 88%);
+  border-bottom-color: var(--scene-masthead-line);
+  color: var(--scene-masthead-light-ink);
+  background: var(--page-masthead);
 }
 
 .journey[data-masthead-hidden="true"] .masthead {
@@ -914,6 +908,22 @@
   color: #efe6d6;
 }
 
+/* At night the class sits under lit shoji and lanterns; the line keeps a soft shadow of its own. */
+:global(html[data-scene="night"]) .journey[data-zone="story"] .studioHeading,
+:global(html[data-scene="night"]) .pathHeading,
+:global(html[data-scene="night"]) .heroHeading {
+  text-shadow:
+    0 0 32px rgb(14 10 12 / 72%),
+    0 2px 8px rgb(14 10 12 / 45%);
+}
+
+/* Night actions are lantern-lit. */
+:global(html[data-scene="night"]) .action[data-variant="primary"] {
+  --koaryu-action-label: var(--scene-accent-ink);
+
+  color: var(--scene-accent);
+}
+
 /* Chapter rail: the current chapter is named; the full list opens on hover or focus */
 
 .rail {
@@ -1294,13 +1304,13 @@
       height: 3px;
       background: linear-gradient(
         90deg,
-        #ddd5c4 0 14.28%,
+        var(--scene-belt-white) 0 14.28%,
         #d9a931 14.28% 28.57%,
         #d9772e 28.57% 42.85%,
         #5f7d3a 42.85% 57.14%,
         #3e5c7e 57.14% 71.42%,
         #6b4425 71.42% 85.71%,
-        #1f1a16 85.71%
+        var(--scene-belt-black) 85.71%
       );
       pointer-events: none;
       animation: beltRank linear both;

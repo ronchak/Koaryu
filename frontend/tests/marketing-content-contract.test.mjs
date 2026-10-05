@@ -14,7 +14,7 @@ import { featurePages } from "../src/lib/marketing-pages.ts";
 const frontendRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 
 function chapter(id) {
-  const value = landingPageContent.chapters.find((item) => item.id === id);
+  const value = landingPageContent.story.find((item) => item.id === id);
   assert.ok(value, `missing ${id} chapter`);
   return value;
 }
@@ -39,21 +39,48 @@ function assertPlainJsonValue(value, path = "landingPageContent") {
 }
 
 describe("marketing content contract", () => {
-  it("keeps the Journey in exact chapter order with plain JSON-safe values", () => {
+  it("keeps the paged story in exact chapter order with plain JSON-safe values", () => {
     assert.deepEqual(
-      landingPageContent.chapters.map(({ id, scene, kind }) => [id, scene, kind]),
+      landingPageContent.story.map(({ id, scene, kind }) => [id, scene, kind]),
       [
         ["welcome", 0, "hero"],
         ["the-problem", 0.1, "problem"],
         ["product", 0.288, "product"],
         ["features", 0.52, "features"],
-        ["pricing", 0.66, "pricing"],
-        ["faq", 0.952, "faq"],
-        ["begin", 1, "final"],
+        ["the-path", 0.66, "path"],
+        ["the-weave", 0.892, "weave"],
+        ["studio", 1, "studio"],
       ],
+    );
+    assert.deepEqual(
+      ["pricing", "tryIt", "faq", "close"].map((key) => landingPageContent[key].id),
+      ["pricing", "try", "faq", "begin"],
     );
     assert.deepEqual(JSON.parse(JSON.stringify(landingPageContent)), landingPageContent);
     assertPlainJsonValue(landingPageContent);
+  });
+
+  it("weaves the studio's real records and points people to the hands-on demo", () => {
+    assert.deepEqual(chapter("the-weave").threads, [
+      "Students",
+      "Families",
+      "Belt ranks",
+      "Attendance",
+      "Trial leads",
+      "Schedules",
+      "Billing records",
+    ]);
+    assert.equal(chapter("the-path").title, "Every class is a step toward the next belt.");
+    assert.deepEqual(
+      chapter("welcome").actions.map((action) => [action.label, action.href]),
+      [
+        ["Create an account", "/signup"],
+        ["Try it", "/try"],
+      ],
+    );
+    assert.equal(landingPageContent.tryIt.action.href, "/try");
+    assert.match(landingPageContent.tryIt.miniature.caption, /Sample students/);
+    assert.match(chapter("studio").caption, /Illustration with sample students/);
   });
 
   it("preserves direct destinations and states current product limits once, plainly", () => {
@@ -73,9 +100,9 @@ describe("marketing content contract", () => {
       chapter("features").links.map((link) => link.href),
       ["/features", "/use-cases"],
     );
-    assert.equal(chapter("pricing").setupAction.href, "/signup");
+    assert.equal(landingPageContent.pricing.setupAction.href, "/signup");
     assert.deepEqual(
-      chapter("faq").groups.map((group) => [group.id, group.items.length]),
+      landingPageContent.faq.groups.map((group) => [group.id, group.items.length]),
       [
         ["faq-fit", 3],
         ["faq-daily", 3],
@@ -84,8 +111,8 @@ describe("marketing content contract", () => {
       ],
     );
     assert.deepEqual(
-      chapter("begin").footerLinks.map((link) => link.href),
-      ["/features", "/use-cases", "/terms", "/privacy"],
+      landingPageContent.close.footerLinks.map((link) => link.href),
+      ["/features", "/use-cases", "/try", "/terms", "/privacy"],
     );
 
     const serialized = JSON.stringify(landingPageContent);
@@ -103,8 +130,13 @@ describe("marketing content contract", () => {
 
     // Limits live in the FAQ; the selling chapters say what Koaryu does.
     const limitsCopy = /not generally available|requires separate activation/;
-    for (const id of ["welcome", "product", "features", "pricing", "begin"]) {
-      assert.doesNotMatch(JSON.stringify(chapter(id)), limitsCopy, id);
+    for (const section of [
+      ...landingPageContent.story,
+      landingPageContent.pricing,
+      landingPageContent.tryIt,
+      landingPageContent.close,
+    ]) {
+      assert.doesNotMatch(JSON.stringify(section), limitsCopy, section.id);
     }
     assert.equal(serialized.match(/not generally available/g)?.length, 1);
   });
@@ -118,10 +150,12 @@ describe("marketing content contract", () => {
     });
     assert.equal(publicPlatformPriceAmount(), "27");
     assert.equal(formatPublicPlatformPrice(), "$27");
-    assert.equal(chapter("pricing").amount, publicPlatformPriceAmount());
-    assert.equal(chapter("pricing").displayPrice, formatPublicPlatformPrice());
+    assert.equal(landingPageContent.pricing.amount, publicPlatformPriceAmount());
+    assert.equal(landingPageContent.pricing.displayPrice, formatPublicPlatformPrice());
     assert.match(chapter("welcome").lede, /\$27 per studio per month/);
-    assert.equal(chapter("begin").lede, "$27 per studio, per month.");
+    assert.equal(landingPageContent.close.lede, "$27 per studio, per month.");
+    // The roster sizes all show the one price; no tiers are stored anywhere.
+    assert.deepEqual(landingPageContent.pricing.rosterSizes, [25, 80, 200]);
 
     const constantsPath = join(frontendRoot, "src/lib/constants.ts");
     const constantsSource = readFileSync(constantsPath, "utf8");
@@ -150,13 +184,15 @@ describe("marketing content contract", () => {
     assert.doesNotMatch(source, /new\s+(?:Date|Map|Set)\b|\bSymbol\s*\(/);
   });
 
-  it("retires the old landing composition after the complete Journey takes ownership", () => {
+  it("composes the paged story and the product page under one controller", () => {
     const landingSource = readFileSync(
       join(frontendRoot, "src/components/marketing/landing-page.tsx"),
       "utf8",
     );
+    assert.match(landingSource, /<SceneTimeScript\s*\/>/);
     assert.match(landingSource, /<JourneyController>/);
-    assert.match(landingSource, /<JourneyChapters\s*\/>/);
+    assert.match(landingSource, /<JourneyStory\s*\/>/);
+    assert.match(landingSource, /<LandingPageSections\s*\/>/);
     assert.doesNotMatch(landingSource, /landing-page-legacy-content/);
     assert.equal(existsSync(join(frontendRoot, "src/lib/landing-page-legacy-content.ts")), false);
     assert.equal(existsSync(join(frontendRoot, "src/app/page.module.css")), false);

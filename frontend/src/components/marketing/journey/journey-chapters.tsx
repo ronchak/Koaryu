@@ -36,6 +36,7 @@ export function ChapterAction({
       href={href}
       prefetch={actionPrefetch(href)}
       variant={variant}
+      data-variant={variant}
       className={[styles.action, className].filter(Boolean).join(" ")}
     >
       {label}
