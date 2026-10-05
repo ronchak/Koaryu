@@ -281,7 +281,9 @@ neither can be relaxed by accident.
 | Frontend | `git.deploymentEnabled.main: false` | `frontend/vercel.json` | `check-env-examples.mjs` |
 
 `git.deploymentEnabled.staging` stays `true`: the staging frontend is meant to
-track its branch automatically.
+track its branch automatically. `git.deploymentEnabled["codex/missed-class-automations-20261004"]`
+is explicitly `false` so pushing the draft candidate does not trigger a deployment;
+[unspecified branches default to enabled](https://vercel.com/docs/project-configuration/git-configuration#gitdeploymentenabled).
 
 **A push to `main` therefore deploys nothing.** Production frontend and backend
 are each released explicitly after the database is migrated. If production looks

@@ -505,6 +505,7 @@ describe("missed-class automation cron", () => {
       main: false,
       staging: true,
       "codex/launch-readiness-candidate": false,
+      "codex/missed-class-automations-20261004": false,
     });
   });
 });
