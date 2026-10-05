@@ -13,6 +13,7 @@ import subprocess
 import sys
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from pathlib import Path
 from uuid import uuid4
@@ -30,6 +31,45 @@ from app.services.workflow_graph import (
     validate_workflow_draft,
     validate_workflow_graph,
 )
+
+# Frozen rejected definition from 2ad740afa318225b953ec11f3867e9c449ed109c.
+# This negative-control fixture is installed only in our disposable clone and
+# restored to the migration's current definition before the positive proof.
+# sha256: 66a0fe988bdd49b82570e71e9e353e44301a1b8f855d3fcffde6a5182d8dd9ee
+REJECTED_LIST_DEFINITION = r"""CREATE FUNCTION public.list_automation_workflows_v1(p_studio_id UUID,p_actor_id UUID,p_limit INTEGER DEFAULT 50,p_cursor JSONB DEFAULT NULL)
+RETURNS JSONB LANGUAGE plpgsql VOLATILE SECURITY INVOKER SET search_path='' AS $$
+DECLARE v_at TIMESTAMPTZ; v_id UUID; v_items JSONB:='[]'; v_next JSONB; r RECORD; v_count INTEGER:=0;
+BEGIN
+    PERFORM private.workflow_require_actor_v1(p_studio_id,p_actor_id);
+    IF p_limit IS NULL OR p_limit NOT BETWEEN 1 AND 100 THEN RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST'; END IF;
+    IF p_cursor IS NOT NULL THEN
+        IF NOT private.workflow_json_keys_v1(p_cursor,ARRAY['created_at','id'],ARRAY['created_at','id'])
+            OR jsonb_typeof(p_cursor->'created_at') IS DISTINCT FROM 'string' OR jsonb_typeof(p_cursor->'id') IS DISTINCT FROM 'string'
+            OR p_cursor->>'id' !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+            OR length(p_cursor->>'created_at')>40 OR p_cursor->>'created_at' !~ '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$' THEN
+            RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST';
+        END IF;
+        BEGIN
+            v_at:=(p_cursor->>'created_at')::TIMESTAMPTZ; v_id:=(p_cursor->>'id')::UUID;
+        EXCEPTION WHEN invalid_datetime_format OR datetime_field_overflow OR invalid_text_representation THEN
+            RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST';
+        END;
+        IF NOT isfinite(v_at) THEN RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST'; END IF;
+    END IF;
+    FOR r IN SELECT w.id,w.created_at,w.draft_graph,v.graph published_graph FROM public.automation_workflows w
+        LEFT JOIN public.automation_workflow_versions v ON v.studio_id=w.studio_id AND v.workflow_id=w.id AND v.id=w.published_version_id
+        WHERE w.studio_id=p_studio_id AND (p_cursor IS NULL OR (w.created_at,w.id)<(v_at,v_id))
+        ORDER BY w.created_at DESC,w.id DESC LIMIT p_limit+1 LOOP
+        v_count:=v_count+1;
+        IF v_count>p_limit THEN RETURN jsonb_build_object('payload',jsonb_build_object('items',v_items,'next_cursor',v_next,'has_more',true)); END IF;
+        v_items:=v_items||jsonb_build_array((private.workflow_detail_v1(p_studio_id,r.id)
+            - ARRAY['draft_graph','draft_layout','validation_issues']) || jsonb_build_object('created_at',r.created_at,
+            'trigger_event_type',private.workflow_trigger_event_type_v1(coalesce(r.published_graph,r.draft_graph)),
+            'draft_trigger_event_type',private.workflow_trigger_event_type_v1(r.draft_graph)));
+        v_next:=jsonb_build_object('created_at',r.created_at,'id',r.id);
+    END LOOP;
+    RETURN jsonb_build_object('payload',jsonb_build_object('items',v_items,'next_cursor',NULL,'has_more',false));
+END $$;"""
 
 
 def quote(value):
@@ -693,6 +733,205 @@ COMMIT;""")
         )
         passed("canonical ordering and omitted nullable value preserved")
 
+    def summary_snapshot_schedule(label):
+        """Race 80 committed save/publish pairs with two independent list readers."""
+        ids = fixture()
+        initial = sql(
+            "SET ROLE service_role; SELECT public.create_automation_workflow_v1("
+            + ",".join(
+                map(
+                    quote,
+                    (
+                        ids["studio"],
+                        ids["actor"],
+                        ids["operation"],
+                        "Version 1",
+                        "published 1",
+                        simple,
+                        {},
+                    ),
+                )
+            )
+            + ");"
+        )
+        ids["workflow"] = json.loads(initial)["payload"]["id"]
+        sql("SET ROLE service_role; " + command(ids, "publish", 1))
+        sql(f"""SET ROLE service_role;
+DO $fixtures$ DECLARE i integer; BEGIN
+    FOR i IN 1..99 LOOP
+        PERFORM public.create_automation_workflow_v1('{ids["studio"]}','{ids["actor"]}',
+            gen_random_uuid(),'Filler '||i,'',{quote(simple)},'{{}}');
+    END LOOP;
+END $fixtures$;""")
+        listing = f"public.list_automation_workflows_v1('{ids['studio']}','{ids['actor']}',100)"
+        initial_list = json.loads(
+            sql("SET ROLE service_role; SELECT " + listing + ";")
+        )["payload"]
+        require(
+            len(initial_list["items"]) == 100
+            and initial_list["items"][-1]["id"] == ids["workflow"],
+            "Snapshot fixture target must be oldest and last among 100 workflows",
+        )
+        created_at = initial_list["items"][-1]["created_at"]
+        writer_statements = ["SET ROLE service_role; SET statement_timeout='20s';"]
+        for version in range(2, 82):
+            graph = deepcopy(simple)
+            graph["nodes"][0]["config"]["event_type"] = (
+                "lead.stage_changed" if version % 2 == 0 else "lead.created"
+            )
+            writer_statements.append(f"""DO $writer$ BEGIN
+    PERFORM public.save_automation_workflow_v1('{ids["studio"]}','{ids["actor"]}',
+        '{ids["workflow"]}',gen_random_uuid(),{2 * version - 2},
+        'Version {version}','published {version}',{quote(graph)},'{{}}');
+    PERFORM public.command_automation_workflow_v1('{ids["studio"]}','{ids["actor"]}',
+        '{ids["workflow"]}',gen_random_uuid(),{2 * version - 1},'publish');
+END $writer$;
+SELECT jsonb_build_object('published',{version});
+SELECT pg_sleep(0.003);""")
+        # Each SELECT invokes the public list exactly once. Return only the target
+        # summary to keep proof output bounded while still traversing all 100 rows.
+        read_statement = (
+            f"SELECT item FROM jsonb_array_elements({listing}#>'{{payload,items}}') item "
+            f"WHERE item->>'id'='{ids['workflow']}';"
+        )
+        reader_statements = (
+            "SET ROLE service_role; SET statement_timeout='20s';\n"
+            + "\n".join([read_statement] * 40)
+        )
+        barrier = threading.Barrier(3)
+
+        def concurrent_sql(statement):
+            barrier.wait(timeout=10)
+            return sql(statement)
+
+        with ThreadPoolExecutor(max_workers=3) as pool:
+            writer = pool.submit(concurrent_sql, "\n".join(writer_statements))
+            readers = [pool.submit(concurrent_sql, reader_statements) for _ in range(2)]
+            writer_rows = [
+                json.loads(line)
+                for line in writer.result(timeout=60).splitlines()
+                if line.startswith("{")
+            ]
+            rows = [
+                json.loads(line)
+                for reader in readers
+                for line in reader.result(timeout=60).splitlines()
+                if line.startswith("{")
+            ]
+        require(
+            writer_rows == [{"published": version} for version in range(2, 82)],
+            "Snapshot writer did not commit the complete alternating publication sequence",
+        )
+        require(
+            len(rows) == 80,
+            "Expected 80 actual list reads across two independent sessions",
+        )
+        versions_seen = sorted({row["published_version_number"] for row in rows})
+        require(
+            len(versions_seen) >= 2
+            and any(1 < version < 81 for version in versions_seen),
+            "List readers did not overlap the publishing writer",
+        )
+        expected_fields = {
+            "id",
+            "name",
+            "description",
+            "status",
+            "revision",
+            "trigger_event_type",
+            "draft_trigger_event_type",
+            "published_version_id",
+            "published_version_number",
+            "published_at",
+            "has_unpublished_changes",
+            "pending_run_count",
+            "sending_run_count",
+            "created_at",
+            "updated_at",
+        }
+        mismatches = []
+        for row in rows:
+            version = row["published_version_number"]
+            expected_trigger = (
+                "lead.stage_changed" if version % 2 == 0 else "lead.created"
+            )
+            require(
+                set(row) == expected_fields,
+                "Concurrent list changed the bounded 15-field summary",
+            )
+            if not (
+                row["revision"] == 2 * version
+                and row["name"] == f"Version {version}"
+                and row["description"] == f"published {version}"
+                and row["status"] == "paused"
+                and row["trigger_event_type"] == expected_trigger
+                and row["draft_trigger_event_type"] == expected_trigger
+                and row["has_unpublished_changes"] is False
+                and row["pending_run_count"] == 0
+                and row["sending_run_count"] == 0
+                and row["created_at"] == created_at
+                and row["published_at"] == row["updated_at"]
+            ):
+                mismatches.append(
+                    {
+                        "version": version,
+                        "revision": row["revision"],
+                        "trigger": row["trigger_event_type"],
+                        "draft_trigger": row["draft_trigger_event_type"],
+                    }
+                )
+        return {
+            "definition": label,
+            "reads": len(rows),
+            "publications": len(writer_rows),
+            "versions_seen": versions_seen,
+            "mismatches": mismatches,
+        }
+
+    def prove_summary_snapshot():
+        migration = MIGRATION.read_text()
+        start = migration.index("CREATE FUNCTION public.list_automation_workflows_v1(")
+        end = migration.index(
+            "CREATE FUNCTION public.get_automation_operation_v1(", start
+        )
+        fixed_definition = migration[start:end].rstrip()
+        try:
+            sql(
+                REJECTED_LIST_DEFINITION.replace(
+                    "CREATE FUNCTION", "CREATE OR REPLACE FUNCTION", 1
+                )
+            )
+            rejected = summary_snapshot_schedule("rejected 2ad740a")
+            require(
+                rejected["mismatches"],
+                "Negative control did not reproduce the rejected list snapshot bug",
+            )
+        finally:
+            sql(
+                fixed_definition.replace(
+                    "CREATE FUNCTION", "CREATE OR REPLACE FUNCTION", 1
+                )
+            )
+        passed(
+            "rejected list definition reproduces mixed snapshots",
+            reads=rejected["reads"],
+            mismatches=len(rejected["mismatches"]),
+            example=rejected["mismatches"][0],
+        )
+        fixed = summary_snapshot_schedule("fixed migration")
+        require(
+            not fixed["mismatches"],
+            "Fixed list still mixes statement snapshots: "
+            + json.dumps(fixed["mismatches"][:3]),
+        )
+        passed(
+            "concurrent list summaries use one statement snapshot",
+            reads=fixed["reads"],
+            publications=fixed["publications"],
+            versions_seen=fixed["versions_seen"],
+            mismatches=0,
+        )
+
     try:
         local.sql("postgres", f"CREATE DATABASE {database} TEMPLATE postgres;")
         owned = True
@@ -914,6 +1153,7 @@ FROM public.automation_workflow_activations WHERE workflow_id='{ids["workflow"]}
         finished(second, "AUTOMATION_STUDIO_BUSY")
         release(first)
         passed("different operation admission lock fails promptly")
+        prove_summary_snapshot()
         require(
             {
                 p.name: hashlib.sha256(p.read_bytes()).hexdigest()

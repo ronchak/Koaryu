@@ -698,16 +698,27 @@ BEGIN
         END;
         IF NOT isfinite(v_at) THEN RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST'; END IF;
     END IF;
-    FOR r IN SELECT w.id,w.created_at,w.draft_graph,v.graph published_graph FROM public.automation_workflows w
+    -- Capture the complete summary in this statement's snapshot. Calling a
+    -- VOLATILE row reader in the loop would mix later revisions with old labels.
+    FOR r IN SELECT w.id,w.created_at,jsonb_build_object(
+            'id',w.id,'name',w.name,'description',w.description,'status',w.status,'revision',w.revision,
+            'trigger_event_type',private.workflow_trigger_event_type_v1(coalesce(v.graph,w.draft_graph)),
+            'draft_trigger_event_type',private.workflow_trigger_event_type_v1(w.draft_graph),
+            'published_version_id',w.published_version_id,'published_version_number',w.published_version_number,
+            'published_at',w.published_at,'created_at',w.created_at,'updated_at',w.updated_at,
+            'has_unpublished_changes',w.published_version_id IS NULL OR
+                private.workflow_semantic_graph_v1(w.draft_graph) IS DISTINCT FROM private.workflow_semantic_graph_v1(v.graph),
+            'pending_run_count',(SELECT count(*) FROM public.automation_workflow_runs pending
+                WHERE pending.studio_id=w.studio_id AND pending.workflow_id=w.id AND pending.state IN ('queued','waiting','claimed','running')),
+            'sending_run_count',(SELECT count(*) FROM public.automation_workflow_runs sending
+                WHERE sending.studio_id=w.studio_id AND sending.workflow_id=w.id AND sending.state='sending')) summary
+        FROM public.automation_workflows w
         LEFT JOIN public.automation_workflow_versions v ON v.studio_id=w.studio_id AND v.workflow_id=w.id AND v.id=w.published_version_id
         WHERE w.studio_id=p_studio_id AND (p_cursor IS NULL OR (w.created_at,w.id)<(v_at,v_id))
         ORDER BY w.created_at DESC,w.id DESC LIMIT p_limit+1 LOOP
         v_count:=v_count+1;
         IF v_count>p_limit THEN RETURN jsonb_build_object('payload',jsonb_build_object('items',v_items,'next_cursor',v_next,'has_more',true)); END IF;
-        v_items:=v_items||jsonb_build_array((private.workflow_detail_v1(p_studio_id,r.id)
-            - ARRAY['draft_graph','draft_layout','validation_issues']) || jsonb_build_object('created_at',r.created_at,
-            'trigger_event_type',private.workflow_trigger_event_type_v1(coalesce(r.published_graph,r.draft_graph)),
-            'draft_trigger_event_type',private.workflow_trigger_event_type_v1(r.draft_graph)));
+        v_items:=v_items||jsonb_build_array(r.summary);
         v_next:=jsonb_build_object('created_at',r.created_at,'id',r.id);
     END LOOP;
     RETURN jsonb_build_object('payload',jsonb_build_object('items',v_items,'next_cursor',NULL,'has_more',false));
