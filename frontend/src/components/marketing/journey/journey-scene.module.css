@@ -10,3 +10,37 @@
   transform-origin: 50% 56%;
   will-change: transform;
 }
+
+/*
+ * Night: html[data-scene="night"] (set before first paint by scene-time-script)
+ * relights the artwork. Day colours stay presentation attributes; each relit
+ * element carries its night colour in a custom property that only these rules
+ * read, so the day scene renders exactly as it always has.
+ */
+.nightOnly {
+  display: none;
+}
+
+:global(html[data-scene="night"]) .nightOnly {
+  display: inline;
+}
+
+:global(html[data-scene="night"]) .dayOnly {
+  display: none;
+}
+
+:global(html[data-scene="night"]) .nightFill {
+  fill: var(--night-fill);
+}
+
+:global(html[data-scene="night"]) .nightStroke {
+  stroke: var(--night-stroke);
+}
+
+:global(html[data-scene="night"]) .nightStop {
+  stop-color: var(--night-stop);
+}
+
+:global(html[data-scene="night"]) .nightOpacity {
+  opacity: var(--night-opacity);
+}
