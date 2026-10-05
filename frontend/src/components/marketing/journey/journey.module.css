@@ -238,6 +238,21 @@
   will-change: transform, opacity;
 }
 
+/* A brief veil for far jumps, in the page's own ground. */
+.veil {
+  position: fixed;
+  z-index: 25;
+  inset: 0;
+  background: var(--page-ground, #fbfaf6);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 190ms ease;
+}
+
+.journey[data-veil="on"] .veil {
+  opacity: 1;
+}
+
 /* Skip link, belt progress and masthead */
 
 .skipLink {
@@ -1594,7 +1609,7 @@
   }
 
   .studioDetail .actions {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   }
 
   /* Phones read the story full width; the belt line along the top shows the way. */

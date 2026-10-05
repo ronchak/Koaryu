@@ -48,11 +48,11 @@ export const WeaveLoom = forwardRef<WeaveLoomHandle, WeaveLoomProps>(function We
   const wallRef = useRef<HTMLDivElement>(null);
   const matRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
-  const lastRef = useRef<{ layout: LoomLayout | null; frame: LoomFrame | null; progress: number }>({
-    layout: null,
-    frame: null,
-    progress: Number.NaN,
-  });
+  const lastRef = useRef<{
+    layout: LoomLayout | null;
+    frame: LoomFrame | null;
+    elements: { warps: Element[]; labels: Element[]; wefts: Element[]; ground: Element | null };
+  }>({ layout: null, frame: null, elements: { warps: [], labels: [], wefts: [], ground: null } });
 
   useImperativeHandle(
     ref,
@@ -64,9 +64,19 @@ export const WeaveLoom = forwardRef<WeaveLoomHandle, WeaveLoomProps>(function We
         const last = lastRef.current;
         const frame = loomFrame(progress, layout);
         const previous = last.layout === layout ? last.frame : null;
+        if (last.layout !== layout) {
+          // Look the moving parts up once per layout, not once per frame.
+          const all = (selector: string) => Array.from(svg.querySelectorAll(selector));
+          last.elements = {
+            warps: all("[data-warp]"),
+            labels: all("[data-label]"),
+            wefts: all("[data-weft]"),
+            ground: svg.querySelector("[data-ground]"),
+          };
+        }
         last.layout = layout;
         last.frame = frame;
-        last.progress = progress;
+        const { elements } = last;
 
         if (root.dataset.visible !== String(frame.visible)) {
           root.dataset.visible = String(frame.visible);
@@ -75,7 +85,7 @@ export const WeaveLoom = forwardRef<WeaveLoomHandle, WeaveLoomProps>(function We
         setStyle(washRef.current, "opacity", String(frame.wash));
         setStyle(wallRef.current, "opacity", String(Math.min(frame.wash, frame.room)));
         setStyle(matRef.current, "opacity", String(frame.mat));
-        set(svg.querySelector("[data-ground]"), "opacity", String(frame.ground));
+        set(elements.ground, "opacity", String(frame.ground));
         // The mat tips toward the camera around its far edge, which settles on the room's floor line.
         const drop = (layout.floorFraction - layout.matTopFraction) * height * frame.lie;
         setStyle(
@@ -88,7 +98,7 @@ export const WeaveLoom = forwardRef<WeaveLoomHandle, WeaveLoomProps>(function We
 
         frame.warps.forEach((warp, index) => {
           const before = previous?.warps[index];
-          const group = svg.querySelector(`[data-warp="${index}"]`);
+          const group = elements.warps[index];
           if (!group) return;
           if (!before || before.settle !== warp.settle) {
             const d = warpPath(layout, layout.warps[index]!, warp.settle);
@@ -98,14 +108,14 @@ export const WeaveLoom = forwardRef<WeaveLoomHandle, WeaveLoomProps>(function We
           set(group.querySelector("[data-cloud]"), "opacity", String(warp.cloud));
         });
         frame.labels.forEach((label, index) => {
-          const text = svg.querySelector(`[data-label="${index}"]`);
+          const text = elements.labels[index];
           set(text, "opacity", String(label.opacity));
           set(text, "transform", label.shift ? `translate(${label.shift} 0)` : "");
         });
         frame.wefts.forEach((woven, index) => {
           if (previous && previous.wefts[index] === woven) return;
           const weft = layout.wefts[index]!;
-          const group = svg.querySelector(`[data-weft="${index}"]`);
+          const group = elements.wefts[index];
           if (!group) return;
           if (woven <= 0) {
             set(group, "display", "none");

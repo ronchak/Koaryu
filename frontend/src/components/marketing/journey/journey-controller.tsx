@@ -55,6 +55,9 @@ const MOTION_QUERY = "(prefers-reduced-motion: reduce)";
 /** Where the class sits in the scene layer, as a fraction of its height, for the framed picture. */
 const PICTURE_FOCUS = Object.freeze({ wide: 0.62, tall: 0.7 });
 const MASTHEAD_DIRECTION_PX = 6;
+/** Jumps longer than this many screens cut through a veil. */
+const FAR_SCREENS = 3.2;
+const VEIL_MS = 190;
 
 const weave = landingPageContent.story.find((chapter) => chapter.kind === "weave");
 const studio = landingPageContent.story.find((chapter) => chapter.kind === "studio");
@@ -336,11 +339,39 @@ export function JourneyController({ children }: JourneyControllerProps) {
 
     const currentVelocity = () => (motion ? motion.velocity(performance.now() - motionStart) : 0);
 
+    /**
+     * Far jumps (links, Home, the rail) cut through a brief veil instead of
+     * racing through every beat: calmer, and nothing has to repaint at speed.
+     */
+    let veilTimer = 0;
+    const cut = (y: number, index: number) => {
+      motion = null;
+      window.clearTimeout(veilTimer);
+      setFlag("veil", "on");
+      veilTimer = window.setTimeout(() => {
+        scrollToY(y);
+        if (index !== -1) {
+          announce(index);
+          writeHash(index);
+        }
+        schedule();
+        window.requestAnimationFrame(() => setFlag("veil", "off"));
+      }, VEIL_MS);
+    };
+    const isFar = (fromY: number, toY: number) =>
+      Math.abs(toY - fromY) > viewportHeight * FAR_SCREENS;
+
     const goIndex = (requested: number) => {
       if (!stops.length) return;
       const index = Math.max(0, Math.min(stops.length - 1, requested));
       const fromY = window.scrollY;
       preparePanel(index, fromY);
+      const fromIndex = stopAt(stops, fromY);
+      const neighbour = fromIndex !== -1 && Math.abs(fromIndex - index) === 1;
+      if (!reduced() && !neighbour && !motion && isFar(fromY, stops[index]!.y)) {
+        cut(stops[index]!.y, index);
+        return;
+      }
       if (reduced()) {
         motion = null;
         scrollToY(stops[index]!.y);
@@ -366,6 +397,10 @@ export function JourneyController({ children }: JourneyControllerProps) {
         motion = null;
         scrollToY(targetY);
         schedule();
+        return;
+      }
+      if (!motion && isFar(window.scrollY, targetY)) {
+        cut(targetY, stopAt(stops, targetY));
         return;
       }
       const distance = Math.abs(targetY - window.scrollY) / viewportHeight;
@@ -628,6 +663,8 @@ export function JourneyController({ children }: JourneyControllerProps) {
       schedule();
     };
 
+    // Enhanced layout (the hand-off run, pinned copy) applies before anything is measured.
+    root.dataset.enhanced = "true";
     measure();
     // Land a linked or restored visitor on a composed frame.
     const initialHash = window.location.hash.replace(/^#/, "");
@@ -674,6 +711,7 @@ export function JourneyController({ children }: JourneyControllerProps) {
       engineRef.current = null;
       window.cancelAnimationFrame(frameRequest);
       window.clearTimeout(settleTimer);
+      window.clearTimeout(veilTimer);
       resizeObserver.disconnect();
       window.removeEventListener("scroll", onScroll);
       window.removeEventListener("wheel", onWheel);
@@ -726,6 +764,7 @@ export function JourneyController({ children }: JourneyControllerProps) {
       data-tone="light"
       data-zone="story"
       data-handoff="none"
+      data-veil="off"
       data-active={activeStop.id}
       onClickCapture={onClickCapture}
     >
@@ -740,6 +779,7 @@ export function JourneyController({ children }: JourneyControllerProps) {
       />
       {/* The timber frame the story has been inside all along. */}
       <div ref={ringRef} className={styles.pictureRing} aria-hidden="true" />
+      <div className={styles.veil} aria-hidden="true" />
       {/* A belt that ranks up from white to black as the page is read. */}
       <div className={styles.beltProgress} aria-hidden="true" />
       <a href="#main-content" className={styles.skipLink}>
