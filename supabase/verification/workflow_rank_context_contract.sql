@@ -219,7 +219,7 @@ BEGIN
     i:=0;
     FOR r IN SELECT id FROM public.automation_workflow_runs WHERE studio_id=s ORDER BY id LOOP
         i:=i+1; desired:=(ARRAY['queued','waiting','claimed','running','sending','unknown'])[i];
-        UPDATE public.automation_workflow_runs SET state=desired,reason=CASE WHEN desired IN ('sending','unknown') THEN 'truthful_delivery_reason' END,
+        UPDATE public.automation_workflow_runs SET state=desired,next_due_at=CASE WHEN desired NOT IN ('sending','unknown') THEN clock_timestamp() END,reason=CASE WHEN desired IN ('sending','unknown') THEN 'truthful_delivery_reason' END,
             claim_token=CASE WHEN desired IN ('claimed','running','sending','unknown') THEN gen_random_uuid() END,
             lease_expires_at=CASE WHEN desired IN ('claimed','running','sending','unknown') THEN clock_timestamp()+INTERVAL '5 minutes' END WHERE id=r.id;
     END LOOP;
@@ -232,11 +232,11 @@ BEGIN
 
     PERFORM pg_temp.rank_transition(x,'rank0','demotion');
     PERFORM pg_temp.rank_check((SELECT count(*)=4 FROM public.automation_workflow_runs WHERE studio_id=s AND state='cancelled'
-        AND claim_token IS NULL AND lease_expires_at IS NULL AND reason='rank_context_superseded' AND revision=2),'pending states cancel once and release claim lease');
+        AND next_due_at IS NULL AND claim_token IS NULL AND lease_expires_at IS NULL AND reason='rank_context_superseded' AND revision=2),'pending states cancel once and release claim lease');
     PERFORM pg_temp.rank_check(NOT EXISTS(SELECT 1 FROM jsonb_array_elements(before) old JOIN public.automation_workflow_runs current ON current.id=(old->>'id')::UUID
         WHERE current.state<>old->>'state' OR current.reason<>old->>'reason' OR to_jsonb(current.claim_token)<>old->'claim_token'
             OR to_jsonb(current.lease_expires_at)<>old->'lease_expires_at' OR current.cancel_reason IS DISTINCT FROM 'rank_context_superseded'
-            OR current.cancel_requested_at IS NULL OR current.revision<>2),'sending unknown retain actual evidence while gaining monotonic intent');
+            OR current.next_due_at IS NOT NULL OR current.cancel_requested_at IS NULL OR current.revision<>2),'sending unknown retain actual evidence while gaining monotonic intent');
     SELECT array_agg(id ORDER BY id) INTO ids FROM public.automation_workflow_runs WHERE studio_id=s;
     result:=private.workflow_cancel_runs_v1(s,ids||ids,clock_timestamp(),'second_reason');
     PERFORM pg_temp.rank_check(result='{"cancelled_count":0,"intent_count":0}'::JSONB,'duplicate and already-intended cancel counts are idempotent');

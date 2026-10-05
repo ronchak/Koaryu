@@ -179,13 +179,24 @@ BEGIN
                     AND e.source_key=(o.result->>'id')||':'||(o.result->>'revision')
                     AND e.context=jsonb_build_object('appointment_id',o.result->'id','lead_id',o.result->'lead_id',
                         'program_id',o.result->'program_id','revision',o.result->'revision','status',o.result->'status')))
-        AND (SELECT count(*)=3 FROM private.automation_workflow_events WHERE studio_id=s AND event_type='lead.stage_changed')
-        AND NOT EXISTS(SELECT 1 FROM private.automation_workflow_events e WHERE e.studio_id=s AND e.event_type='lead.stage_changed'
+        AND (SELECT count(*)=3 FROM private.automation_workflow_events WHERE studio_id=s AND event_type='lead.stage_changed'
+            AND context->>'stage' IN ('trial_scheduled','trial_completed'))
+        AND NOT EXISTS(SELECT 1 FROM private.automation_workflow_events e WHERE e.studio_id=s AND e.event_type='lead.stage_changed' AND e.context->>'stage' IN ('trial_scheduled','trial_completed')
             AND NOT EXISTS(SELECT 1 FROM public.lead_activities a WHERE a.id=e.source_key::UUID AND a.studio_id=s
                 AND a.lead_id=e.subject_id AND a.activity_type='stage_change' AND e.context->>'activity_id'=a.id::TEXT
                 AND e.context->>'lead_id'=a.lead_id::TEXT AND e.context->>'stage' IN ('trial_scheduled','trial_completed')))
+        AND (SELECT count(*)=1 FROM private.automation_workflow_events e JOIN public.lead_activities activity
+            ON activity.id=e.source_key::UUID AND activity.studio_id=s AND activity.lead_id=l3 AND activity.activity_type='stage_change'
+            WHERE e.studio_id=s AND e.event_type='lead.stage_changed' AND e.subject_kind='lead' AND e.subject_id=l3
+                AND e.context=jsonb_build_object('lead_id',l3,'program_id',p2,'activity_id',activity.id,'old_stage','offer_sent','stage','enrolled'))
+        AND (SELECT count(*)=4 FROM private.automation_workflow_events WHERE studio_id=s AND event_type='lead.stage_changed')
+        AND (SELECT count(*)=1 FROM private.automation_workflow_events e JOIN public.leads converted ON converted.id=l3 AND converted.studio_id=s
+            WHERE e.studio_id=s AND e.event_type='student.enrolled' AND e.subject_kind='student' AND e.subject_id=converted.converted_student_id
+                AND e.source_key=converted.converted_student_id::TEXT
+                AND e.context=jsonb_build_object('student_id',converted.converted_student_id,'matched_program_ids','[]'::JSONB))
+        AND (SELECT count(*)=1 FROM private.automation_workflow_events WHERE studio_id=s AND event_type='student.enrolled')
         AND NOT EXISTS(SELECT 1 FROM private.automation_workflow_events WHERE studio_id=s AND event_type NOT IN
-            ('trial.scheduled','trial.completed','trial.no_show','lead.stage_changed'))
+            ('trial.scheduled','trial.completed','trial.no_show','lead.stage_changed','student.enrolled'))
         AND NOT EXISTS(SELECT 1 FROM public.automation_workflow_runs WHERE studio_id=s),'exact committed trial and owned stage occurrences without target runs');
     -- Cursor ordering has a tie so UUID, not insertion order, resolves the page.
     RESET ROLE;
@@ -208,8 +219,9 @@ BEGIN
     FOREACH state_name IN ARRAY ARRAY['queued','waiting','claimed','running','sending','unknown','unrelated'] LOOP
         INSERT INTO private.automation_workflow_events(studio_id,event_type,source_key,subject_kind,subject_id,occurred_at)
             VALUES(s,'trial.scheduled',state_name,'trial',CASE WHEN state_name='unrelated' THEN t2 ELSE t END,clock_timestamp()) RETURNING id INTO event_id;
-        INSERT INTO public.automation_workflow_runs(studio_id,workflow_id,version_id,event_id,activation_id,epoch,current_node_id,state,claim_token,lease_expires_at)
+        INSERT INTO public.automation_workflow_runs(studio_id,workflow_id,version_id,event_id,activation_id,epoch,current_node_id,state,next_due_at,claim_token,lease_expires_at)
             VALUES(s,wid,version_id,event_id,activation_id,1,'start',CASE WHEN state_name='unrelated' THEN 'queued' ELSE state_name END,
+                CASE WHEN state_name NOT IN ('sending','unknown') THEN clock_timestamp() END,
                 CASE WHEN state_name IN ('claimed','running','sending','unknown') THEN gen_random_uuid() END,
                 CASE WHEN state_name IN ('claimed','running','sending','unknown') THEN clock_timestamp()+INTERVAL '1 minute' END);
     END LOOP;
@@ -231,7 +243,8 @@ BEGIN
             WHERE run.workflow_id=wid AND run.state='cancelled' AND run.claim_token IS NULL AND run.revision=2
                 AND event.source_key IN ('queued','waiting','claimed','running'))
         AND (SELECT count(*)=2 FROM public.automation_workflow_runs run JOIN private.automation_workflow_events event ON event.id=run.event_id
-            WHERE run.workflow_id=wid AND run.state IN ('sending','unknown') AND run.revision=1 AND run.claim_token IS NOT NULL
+            WHERE run.workflow_id=wid AND run.state IN ('sending','unknown') AND run.revision=2 AND run.claim_token IS NOT NULL AND run.next_due_at IS NULL
+                AND run.cancel_requested_at IS NOT NULL AND run.cancel_reason='trial_changed'
                 AND event.source_key IN ('sending','unknown'))
         AND (SELECT count(*)=1 FROM public.automation_workflow_runs run JOIN private.automation_workflow_events event ON event.id=run.event_id
             WHERE run.workflow_id=wid AND run.state='queued' AND event.source_key='unrelated' AND event.subject_id=t2)

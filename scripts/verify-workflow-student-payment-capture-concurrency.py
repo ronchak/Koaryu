@@ -12,6 +12,7 @@ import queue
 import re
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 from pathlib import Path
@@ -33,6 +34,29 @@ def quote(value):
     return "'" + str(value).replace("'", "''") + "'"
 
 
+def psql_file(path):
+    # psql17 meta-command arguments: single quotes double inside single quotes;
+    # backslashes must also double to suppress C-like substitutions.
+    # https://www.postgresql.org/docs/17/app-psql.html#APP-PSQL-META-COMMANDS
+    value = str(path.resolve())
+    require(not any(c in value for c in "\r\n\x00"), "Unsupported psql file path")
+    return "'" + value.replace("\\", "\\\\").replace("'", "''") + "'"
+
+
+def migration_body(name):
+    matches = list(
+        re.finditer(
+            r"CREATE (?:OR REPLACE )?FUNCTION "
+            + re.escape(name)
+            + r"\(.*?AS (\$[\w]*\$)(.*?)\1;",
+            MIGRATION.read_text(),
+            re.DOTALL,
+        )
+    )
+    require(len(matches) == 1, "Expected unique current V57 definition: " + name)
+    return matches[0][2]
+
+
 def call(name, *args):
     return "SELECT public." + name + "(" + ",".join(map(quote, args)) + ");"
 
@@ -52,6 +76,7 @@ def main(arguments):
     )
     local = LocalPostgres(psql, socket, port, str(Path(socket).parent))
     children, cases = [], []
+    migration_hash = hashlib.sha256(MIGRATION.read_bytes()).hexdigest()
     owned = False
     historical = {
         p.name: hashlib.sha256(p.read_bytes()).hexdigest()
@@ -198,7 +223,9 @@ COMMIT;""")
 
     def functions():
         return json.loads(
-            sql("""SELECT jsonb_object_agg(n.nspname||'.'||p.proname,jsonb_build_object('definition',pg_get_functiondef(p.oid),'acl',p.proacl::TEXT))
+            sql("""SELECT jsonb_object_agg(n.nspname||'.'||p.proname,jsonb_build_object('definition',pg_get_functiondef(p.oid),'body',p.prosrc,'acl',p.proacl::TEXT,
+'signature',pg_get_function_identity_arguments(p.oid),'result',pg_get_function_result(p.oid),'security_definer',p.prosecdef,
+'config',p.proconfig,'owner',pg_get_userbyid(p.proowner),'language',p.prolang,'volatility',p.provolatile,'strict',p.proisstrict,'parallel',p.proparallel))
 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE (n.nspname='private' AND p.proname IN ('write_student_profile_atomic','record_student_rank_transition_v3','validate_billing_payment_identity_change','import_student_row_atomic'))
 OR (n.nspname='public' AND p.proname IN ('write_student_profile_atomic','write_student_profile_v2_atomic','convert_lead_to_student_atomic','record_student_rank_transition_v3','validate_billing_payment_refs'));""")
         )
@@ -346,6 +373,13 @@ OR (n.nspname='public' AND p.proname IN ('write_student_profile_atomic','write_s
         local.sql("postgres", f"CREATE DATABASE {database} TEMPLATE postgres;")
         owned = True
         print(f"[student payment capture] owned clone {database}", flush=True)
+        with tempfile.TemporaryDirectory(prefix="koaryu-psql-feed-") as directory:
+            specimen = Path(directory) / "quoted path's \\ probe.sql"
+            specimen.write_text("SELECT 'quoted_file';\n")
+            require(
+                sql("\\i " + psql_file(specimen)) == "quoted_file",
+                "psql file argument quoting failed",
+            )
         old = fixture()
         sql(payment(old, "processing"))
         old_failed = {**old, "payment": str(uuid4())}
@@ -357,7 +391,7 @@ OR (n.nspname='public' AND p.proname IN ('write_student_profile_atomic','write_s
         )
         ready(preceding_writer)
         installer = session(
-            "capture_install", MIGRATION.read_text(), hold=True, role="postgres"
+            "capture_install", "\\i " + psql_file(MIGRATION), hold=True, role="postgres"
         )
         blocked(preceding_writer, installer)
         release(preceding_writer)
@@ -382,7 +416,9 @@ OR (n.nspname='public' AND p.proname IN ('write_student_profile_atomic','write_s
             "Payment admitted after install did not capture",
         )
         passed(
-            "DML-conflicting installation lock excludes preceding commit and captures following insert"
+            "DML-conflicting installation lock excludes preceding commit and captures following insert",
+            migration_sha256=migration_hash,
+            psql_file_quoting_verified=True,
         )
         require(facts(old) == before_facts, "Installation rewrote business rows")
         require(
@@ -394,13 +430,38 @@ OR (n.nspname='public' AND p.proname IN ('write_student_profile_atomic','write_s
             "private.write_student_profile_atomic",
             "private.record_student_rank_transition_v3",
             "public.convert_lead_to_student_atomic",
+            "public.write_student_profile_atomic",
+            "private.import_student_row_atomic",
         }
+        require(
+            hashlib.sha256(MIGRATION.read_bytes()).hexdigest() == migration_hash,
+            "Installer migration bytes changed",
+        )
         for name, entry in before_functions.items():
             require(
                 after_functions[name]["acl"] == entry["acl"],
                 f"Retained ACL changed: {name}",
             )
-            if name not in retained:
+            if name in retained:
+                identity = {
+                    key: value
+                    for key, value in entry.items()
+                    if key not in {"definition", "body"}
+                }
+                require(
+                    {
+                        key: value
+                        for key, value in after_functions[name].items()
+                        if key not in {"definition", "body"}
+                    }
+                    == identity,
+                    f"Retained signature/config/security identity changed: {name}",
+                )
+                require(
+                    after_functions[name]["body"] == migration_body(name),
+                    f"Installed body differs from exact V57 owner: {name}",
+                )
+            else:
                 require(
                     after_functions[name] == entry,
                     f"Wrapper or financial owner changed: {name}",
@@ -413,6 +474,14 @@ OR (n.nspname='public' AND p.proname IN ('write_student_profile_atomic','write_s
                     "after": hashlib.sha256(
                         after_functions[name]["definition"].encode()
                     ).hexdigest(),
+                    "installed_body": hashlib.sha256(
+                        after_functions[name]["body"].encode()
+                    ).hexdigest(),
+                    "current_v57_body": hashlib.sha256(
+                        migration_body(name).encode()
+                    ).hexdigest()
+                    if name in retained
+                    else None,
                 }
                 for name, entry in before_functions.items()
             },

@@ -112,16 +112,16 @@ CREATE TABLE public.automation_workflow_runs (
     epoch BIGINT NOT NULL CHECK (epoch>0),
     current_node_id TEXT NOT NULL CHECK (current_node_id ~ '^[A-Za-z0-9_-]{1,64}$'),
     state TEXT NOT NULL DEFAULT 'queued' CHECK (state IN ('queued','waiting','claimed','running','sending','completed','cancelled','failed','unknown')),
-    next_due_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp() CHECK (isfinite(next_due_at)),
+    next_due_at TIMESTAMPTZ DEFAULT clock_timestamp() CHECK (next_due_at BETWEEN TIMESTAMPTZ '0001-01-01 00:00:00+00' AND TIMESTAMPTZ '9999-12-31 23:59:59.999999+00'),
     claim_token UUID,
     lease_expires_at TIMESTAMPTZ CHECK (isfinite(lease_expires_at)),
     revision BIGINT NOT NULL DEFAULT 1 CHECK (revision>0),
-    reason TEXT CHECK (length(reason) BETWEEN 1 AND 200),
-    cancel_requested_at TIMESTAMPTZ CHECK (isfinite(cancel_requested_at)),
+    reason TEXT CHECK (reason ~ '^[a-z][a-z0-9_]{0,79}$'),
+    cancel_requested_at TIMESTAMPTZ CHECK (cancel_requested_at BETWEEN TIMESTAMPTZ '0001-01-01 00:00:00+00' AND TIMESTAMPTZ '9999-12-31 23:59:59.999999+00'),
     cancel_reason TEXT CHECK (cancel_reason ~ '^[a-z][a-z0-9_]{0,79}$'),
     CHECK ((cancel_requested_at IS NULL)=(cancel_reason IS NULL)),
-    created_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp() CHECK (isfinite(created_at)),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp() CHECK (isfinite(updated_at)),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp() CHECK (created_at BETWEEN TIMESTAMPTZ '0001-01-01 00:00:00+00' AND TIMESTAMPTZ '9999-12-31 23:59:59.999999+00'),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp() CHECK (updated_at BETWEEN TIMESTAMPTZ '0001-01-01 00:00:00+00' AND TIMESTAMPTZ '9999-12-31 23:59:59.999999+00'),
     FOREIGN KEY(studio_id,workflow_id) REFERENCES public.automation_workflows(studio_id,id) ON DELETE CASCADE,
     FOREIGN KEY(studio_id,workflow_id,version_id) REFERENCES public.automation_workflow_versions(studio_id,workflow_id,id) ON DELETE CASCADE,
     FOREIGN KEY(studio_id,event_id) REFERENCES private.automation_workflow_events(studio_id,id) ON DELETE CASCADE,
@@ -129,6 +129,7 @@ CREATE TABLE public.automation_workflow_runs (
         REFERENCES public.automation_workflow_activations(studio_id,workflow_id,version_id,epoch,id) ON DELETE CASCADE,
     UNIQUE(workflow_id,event_id),
     UNIQUE(studio_id,id),
+    CHECK ((state IN ('queued','waiting','claimed','running'))=(next_due_at IS NOT NULL)),
     CHECK ((claim_token IS NULL)=(lease_expires_at IS NULL)),
     CHECK (state NOT IN ('claimed','running','sending') OR claim_token IS NOT NULL),
     CHECK (state NOT IN ('queued','waiting','completed','cancelled','failed') OR claim_token IS NULL)
@@ -138,6 +139,7 @@ CREATE INDEX automation_workflow_runs_due ON public.automation_workflow_runs(nex
 CREATE INDEX automation_workflow_runs_workflow ON public.automation_workflow_runs(studio_id,workflow_id,state);
 CREATE INDEX automation_workflow_runs_event ON public.automation_workflow_runs(studio_id,event_id);
 CREATE INDEX automation_workflow_runs_activation ON public.automation_workflow_runs(activation_id);
+CREATE INDEX automation_workflow_runs_list ON public.automation_workflow_runs(studio_id,workflow_id,created_at DESC,id DESC);
 CREATE TABLE private.automation_command_operations (
     studio_id UUID NOT NULL REFERENCES public.studios(id) ON DELETE CASCADE,
     operation_id UUID NOT NULL,
@@ -580,10 +582,9 @@ BEGIN
     -- Caller holds the workflow. Future claim/begin implementations take that same
     -- parent before runs, so cancellation cannot leave a usable stale claim.
     PERFORM 1 FROM public.automation_workflow_runs WHERE studio_id=p_studio_id AND workflow_id=p_workflow_id
-        AND state IN ('queued','waiting','claimed','running') ORDER BY id FOR UPDATE;
-    UPDATE public.automation_workflow_runs SET state='cancelled',claim_token=NULL,lease_expires_at=NULL,
-        revision=revision+1,reason=p_reason,updated_at=p_at
-        WHERE studio_id=p_studio_id AND workflow_id=p_workflow_id AND state IN ('queued','waiting','claimed','running');
+        AND state IN ('queued','waiting','claimed','running','sending','unknown') ORDER BY id FOR UPDATE;
+    PERFORM private.workflow_cancel_runs_v1(p_studio_id,ARRAY(SELECT id FROM public.automation_workflow_runs
+        WHERE studio_id=p_studio_id AND workflow_id=p_workflow_id AND state IN ('queued','waiting','claimed','running','sending','unknown') ORDER BY id),p_at,p_reason);
     UPDATE public.automation_workflow_activations SET retired_at=coalesce(retired_at,p_at),cancelled_at=p_at
         WHERE studio_id=p_studio_id AND workflow_id=p_workflow_id AND cancelled_at IS NULL;
 END $$;
@@ -899,6 +900,7 @@ END $$;
 
 ALTER TABLE public.leads ADD CONSTRAINT leads_studio_id_id_key UNIQUE(studio_id,id);
 CREATE TABLE public.lead_trial_appointments (
+    rebooking_superseded BOOLEAN NOT NULL DEFAULT false,
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     studio_id UUID NOT NULL REFERENCES public.studios(id) ON DELETE CASCADE,
     lead_id UUID NOT NULL,
@@ -937,17 +939,16 @@ BEGIN
         SELECT 1 FROM public.automation_workflow_runs r JOIN private.automation_workflow_events e
             ON e.studio_id=r.studio_id AND e.id=r.event_id
         WHERE r.studio_id=p_studio_id AND r.workflow_id=w.id AND e.subject_kind=p_subject_kind
-            AND e.subject_id=p_subject_id AND r.state IN ('queued','waiting','claimed','running'))
+            AND e.subject_id=p_subject_id AND r.state IN ('queued','waiting','claimed','running','sending','unknown'))
         ORDER BY w.id FOR UPDATE;
     PERFORM 1 FROM public.automation_workflow_runs r JOIN private.automation_workflow_events e
         ON e.studio_id=r.studio_id AND e.id=r.event_id
         WHERE r.studio_id=p_studio_id AND e.subject_kind=p_subject_kind AND e.subject_id=p_subject_id
-            AND r.state IN ('queued','waiting','claimed','running') ORDER BY r.id FOR UPDATE OF r;
-    UPDATE public.automation_workflow_runs r SET state='cancelled',claim_token=NULL,lease_expires_at=NULL,
-        revision=r.revision+1,reason=p_reason,updated_at=p_at FROM private.automation_workflow_events e
-        WHERE e.studio_id=r.studio_id AND e.id=r.event_id AND r.studio_id=p_studio_id
-            AND e.subject_kind=p_subject_kind AND e.subject_id=p_subject_id
-            AND r.state IN ('queued','waiting','claimed','running');
+            AND r.state IN ('queued','waiting','claimed','running','sending','unknown') ORDER BY r.id FOR UPDATE OF r;
+    PERFORM private.workflow_cancel_runs_v1(p_studio_id,ARRAY(SELECT r.id
+        FROM public.automation_workflow_runs r JOIN private.automation_workflow_events e ON e.studio_id=r.studio_id AND e.id=r.event_id
+        WHERE r.studio_id=p_studio_id AND e.subject_kind=p_subject_kind AND e.subject_id=p_subject_id
+            AND r.state IN ('queued','waiting','claimed','running','sending','unknown') ORDER BY r.id),p_at,p_reason);
 END $$;
 
 CREATE FUNCTION public.mutate_lead_trial_appointment_v1(
@@ -956,7 +957,7 @@ CREATE FUNCTION public.mutate_lead_trial_appointment_v1(
 DECLARE lead public.leads; old public.lead_trial_appointments; changed public.lead_trial_appointments;
     receipt private.automation_command_operations; program public.programs;
     v_request JSONB:=p_request; v_fingerprint TEXT; v_command TEXT; v_result JSONB; v_at TIMESTAMPTZ;
-    targets JSONB; workflow_ids UUID[]; events JSONB:='[]'; activity_id UUID;
+    targets JSONB; workflow_ids UUID[]; replaced_ids UUID[]:='{}'; run_ids UUID[]; events JSONB:='[]'; activity_id UUID;
     v_replay BOOLEAN; v_cancel BOOLEAN; v_stage TEXT; k TEXT; v UUID;
 BEGIN
     IF p_studio_id IS NULL OR p_actor_id IS NULL THEN
@@ -1020,7 +1021,11 @@ BEGIN
     IF NOT FOUND THEN RAISE EXCEPTION USING ERRCODE='P0002',MESSAGE='AUTOMATION_NOT_FOUND'; END IF;
     IF p_appointment_id IS NULL THEN
         changed.studio_id:=p_studio_id; changed.lead_id:=p_lead_id; changed.status:='scheduled'; changed.revision:=1;
-        changed.program_id:=lead.program_id; changed.created_by:=p_actor_id;
+        changed.program_id:=lead.program_id; changed.created_by:=p_actor_id; changed.rebooking_superseded:=false;
+        -- Lead ownership serializes creation; lock every prior appointment before workflows.
+        PERFORM 1 FROM public.lead_trial_appointments WHERE studio_id=p_studio_id AND lead_id=p_lead_id ORDER BY id FOR UPDATE;
+        SELECT coalesce(array_agg(id ORDER BY id),'{}'::UUID[]) INTO replaced_ids FROM public.lead_trial_appointments
+            WHERE studio_id=p_studio_id AND lead_id=p_lead_id;
     ELSE
         SELECT * INTO old FROM public.lead_trial_appointments
             WHERE studio_id=p_studio_id AND lead_id=p_lead_id AND id=p_appointment_id FOR UPDATE;
@@ -1053,11 +1058,12 @@ BEGIN
     END IF;
     SELECT coalesce(array_agg(DISTINCT r.workflow_id ORDER BY r.workflow_id),'{}'::UUID[]) INTO workflow_ids
         FROM public.automation_workflow_runs r JOIN private.automation_workflow_events e ON e.studio_id=r.studio_id AND e.id=r.event_id
-        WHERE r.studio_id=p_studio_id AND e.subject_kind='trial' AND e.subject_id=old.id;
+        WHERE r.studio_id=p_studio_id AND e.subject_kind='trial' AND (e.subject_id=old.id OR (e.event_type='trial.no_show' AND e.subject_id=ANY(replaced_ids)));
     targets:=private.workflow_prepare_capture_v1(p_studio_id,workflow_ids,true);
     PERFORM 1 FROM public.automation_workflow_runs r JOIN private.automation_workflow_events e ON e.studio_id=r.studio_id AND e.id=r.event_id
-        WHERE r.studio_id=p_studio_id AND e.subject_kind='trial' AND e.subject_id=old.id
-            AND r.state IN ('queued','waiting','claimed','running') ORDER BY r.id FOR UPDATE OF r;
+        WHERE r.studio_id=p_studio_id AND e.subject_kind='trial'
+            AND (e.subject_id=old.id OR (e.event_type='trial.no_show' AND e.subject_id=ANY(replaced_ids)))
+            AND r.state IN ('queued','waiting','claimed','running','sending','unknown') ORDER BY r.id FOR UPDATE OF r;
     -- Source, workflow and run acquisition can all wait. Validate the moving
     -- clock after those waits. Rejection rolls pending cancellation back too.
     v_at:=clock_timestamp();
@@ -1073,6 +1079,8 @@ BEGIN
         IF EXISTS(SELECT 1 FROM public.lead_trial_appointments WHERE studio_id=p_studio_id AND lead_id=p_lead_id AND status='scheduled') THEN
             RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STATE_CONFLICT';
         END IF;
+        UPDATE public.lead_trial_appointments SET rebooking_superseded=true
+            WHERE studio_id=p_studio_id AND id=ANY(replaced_ids);
         changed.id:=gen_random_uuid(); changed.created_at:=v_at; changed.updated_at:=v_at;
         INSERT INTO public.lead_trial_appointments SELECT changed.*;
     ELSE
@@ -1093,10 +1101,13 @@ BEGIN
         VALUES(p_studio_id,p_actor_id,v_command,'trial_appointment',changed.id,
             jsonb_build_object('lead_id',p_lead_id,'revision',changed.revision,'status',changed.status,
                 'starts_at',private.automation_utc_text_v1(changed.starts_at),'ends_at',private.automation_utc_text_v1(changed.ends_at)));
-    UPDATE public.automation_workflow_runs r SET state='cancelled',claim_token=NULL,lease_expires_at=NULL,
-        revision=r.revision+1,reason='trial_changed',updated_at=v_at FROM private.automation_workflow_events e
-        WHERE e.studio_id=r.studio_id AND e.id=r.event_id AND r.studio_id=p_studio_id AND e.subject_kind='trial'
-            AND e.subject_id=old.id AND r.state IN ('queued','waiting','claimed','running');
+    SELECT coalesce(array_agg(r.id ORDER BY r.id),'{}'::UUID[]) INTO run_ids
+        FROM public.automation_workflow_runs r JOIN private.automation_workflow_events e ON e.studio_id=r.studio_id AND e.id=r.event_id
+        WHERE r.studio_id=p_studio_id AND e.subject_kind='trial'
+            AND (e.subject_id=old.id OR (e.event_type='trial.no_show' AND e.subject_id=ANY(replaced_ids)))
+            AND r.state IN ('queued','waiting','claimed','running','sending','unknown');
+    PERFORM private.workflow_cancel_runs_v1(p_studio_id,run_ids,v_at,
+        CASE WHEN p_appointment_id IS NULL THEN 'trial_replaced' ELSE 'trial_changed' END);
     IF changed.status IN ('scheduled','completed','no_show') THEN
         events:=events||jsonb_build_array(jsonb_build_object('event_type','trial.'||changed.status,
             'source_key',changed.id::TEXT||':'||changed.revision::TEXT,'subject_kind','trial','subject_id',changed.id,
@@ -1375,11 +1386,11 @@ BEGIN
                 SELECT 1 FROM public.automation_workflow_runs r JOIN private.automation_workflow_events e ON e.studio_id=r.studio_id AND e.id=r.event_id
                 JOIN public.belt_test_recipients b ON b.studio_id=e.studio_id AND b.id=e.subject_id
                 WHERE r.studio_id=p_studio_id AND r.workflow_id=w.id AND e.subject_kind='belt_test' AND b.event_id=old.id
-                    AND r.state IN ('queued','waiting','claimed','running')) ORDER BY w.id FOR UPDATE;
+                    AND r.state IN ('queued','waiting','claimed','running','sending','unknown')) ORDER BY w.id FOR UPDATE;
             PERFORM 1 FROM public.automation_workflow_runs r JOIN private.automation_workflow_events e ON e.studio_id=r.studio_id AND e.id=r.event_id
                 JOIN public.belt_test_recipients b ON b.studio_id=e.studio_id AND b.id=e.subject_id
                 WHERE r.studio_id=p_studio_id AND e.subject_kind='belt_test' AND b.event_id=old.id
-                    AND r.state IN ('queued','waiting','claimed','running') ORDER BY r.id FOR UPDATE OF r;
+                    AND r.state IN ('queued','waiting','claimed','running','sending','unknown') ORDER BY r.id FOR UPDATE OF r;
         END IF;
     END IF;
     -- Resample only after the final run wait. Every rejection remains atomic.
@@ -1391,11 +1402,11 @@ BEGIN
     IF v_invalidate THEN
         UPDATE public.belt_test_recipients SET state='revoked',revision=revision+1,revoked_at=v_at,updated_at=v_at
             WHERE studio_id=p_studio_id AND event_id=old.id AND state='approved';
-        UPDATE public.automation_workflow_runs r SET state='cancelled',claim_token=NULL,lease_expires_at=NULL,
-            revision=r.revision+1,reason='belt_test_changed',updated_at=v_at
-            FROM private.automation_workflow_events e JOIN public.belt_test_recipients b ON b.studio_id=e.studio_id AND b.id=e.subject_id
-            WHERE e.studio_id=r.studio_id AND e.id=r.event_id AND r.studio_id=p_studio_id AND e.subject_kind='belt_test'
-                AND b.event_id=old.id AND r.state IN ('queued','waiting','claimed','running');
+        PERFORM private.workflow_cancel_runs_v1(p_studio_id,ARRAY(SELECT r.id FROM public.automation_workflow_runs r
+            JOIN private.automation_workflow_events e ON e.studio_id=r.studio_id AND e.id=r.event_id
+            JOIN public.belt_test_recipients b ON b.studio_id=e.studio_id AND b.id=e.subject_id
+            WHERE r.studio_id=p_studio_id AND e.subject_kind='belt_test' AND b.event_id=old.id
+                AND r.state IN ('queued','waiting','claimed','running','sending','unknown') ORDER BY r.id),v_at,'belt_test_changed');
     END IF;
     IF p_event_id IS NULL THEN
         changed.id:=gen_random_uuid(); changed.created_at:=v_at; changed.updated_at:=v_at;
@@ -1519,20 +1530,20 @@ BEGIN
     PERFORM 1 FROM public.automation_workflows w WHERE w.studio_id=p_studio_id AND EXISTS(
         SELECT 1 FROM public.automation_workflow_runs r JOIN private.automation_workflow_events e ON e.studio_id=r.studio_id AND e.id=r.event_id
         WHERE r.studio_id=p_studio_id AND r.workflow_id=w.id AND e.subject_kind='belt_test' AND e.subject_id=ANY(p_recipient_ids)
-            AND r.state IN ('queued','waiting','claimed','running')) ORDER BY w.id FOR UPDATE;
+            AND r.state IN ('queued','waiting','claimed','running','sending','unknown')) ORDER BY w.id FOR UPDATE;
     PERFORM 1 FROM public.automation_workflow_runs r JOIN private.automation_workflow_events e ON e.studio_id=r.studio_id AND e.id=r.event_id
         WHERE r.studio_id=p_studio_id AND e.subject_kind='belt_test' AND e.subject_id=ANY(p_recipient_ids)
-            AND r.state IN ('queued','waiting','claimed','running') ORDER BY r.id FOR UPDATE OF r;
+            AND r.state IN ('queued','waiting','claimed','running','sending','unknown') ORDER BY r.id FOR UPDATE OF r;
 END $$;
 
 CREATE FUNCTION private.belt_test_cancel_recipient_runs_v1(p_studio_id UUID,p_recipient_ids UUID[],p_at TIMESTAMPTZ) RETURNS VOID
-LANGUAGE sql VOLATILE SECURITY INVOKER SET search_path='' AS $$
-    UPDATE public.automation_workflow_runs r SET state='cancelled',claim_token=NULL,lease_expires_at=NULL,
-        revision=r.revision+1,reason='belt_test_approval_changed',updated_at=p_at
-        FROM private.automation_workflow_events e WHERE e.studio_id=r.studio_id AND e.id=r.event_id
-            AND r.studio_id=p_studio_id AND e.subject_kind='belt_test' AND e.subject_id=ANY(p_recipient_ids)
-            AND r.state IN ('queued','waiting','claimed','running')
-$$;
+LANGUAGE plpgsql VOLATILE SECURITY INVOKER SET search_path='' AS $$
+BEGIN
+    PERFORM private.workflow_cancel_runs_v1(p_studio_id,ARRAY(SELECT r.id FROM public.automation_workflow_runs r
+        JOIN private.automation_workflow_events e ON e.studio_id=r.studio_id AND e.id=r.event_id
+        WHERE r.studio_id=p_studio_id AND e.subject_kind='belt_test' AND e.subject_id=ANY(p_recipient_ids)
+            AND r.state IN ('queued','waiting','claimed','running','sending','unknown') ORDER BY r.id),p_at,'belt_test_approval_changed');
+END $$;
 
 CREATE FUNCTION public.revoke_belt_test_recipient_v1(
     p_studio_id UUID,p_actor_id UUID,p_event_id UUID,p_recipient_id UUID,p_operation_id UUID,p_expected_revision BIGINT
@@ -1781,7 +1792,7 @@ BEGIN
         AND backend_pid=pg_catalog.pg_backend_pid() AND transaction_id=pg_catalog.pg_current_xact_id();
     PERFORM 1 FROM public.automation_workflow_runs r JOIN private.automation_workflow_events e ON e.studio_id=r.studio_id AND e.id=r.event_id
         WHERE r.studio_id=p_studio_id AND ((e.subject_kind='belt_test' AND e.subject_id=ANY(changed_ids)
-            AND r.state IN ('queued','waiting','claimed','running')) OR r.id=ANY(rank_runs)) ORDER BY r.id FOR UPDATE OF r;
+            AND r.state IN ('queued','waiting','claimed','running','sending','unknown')) OR r.id=ANY(rank_runs)) ORDER BY r.id FOR UPDATE OF r;
     -- Time and all eligibility are evaluated after the final potentially blocking lock.
     v_at:=clock_timestamp();
     SELECT CASE WHEN EXISTS(SELECT 1 FROM pg_catalog.pg_timezone_names z WHERE z.name=s.timezone) THEN s.timezone ELSE 'UTC' END
@@ -2023,6 +2034,11 @@ BEGIN
             ON CONFLICT(studio_id,event_type,source_key) DO NOTHING RETURNING id INTO occurrence;
         -- Seen with zero active targets is still seen forever. No backfill on replay.
         IF occurrence IS NULL THEN CONTINUE; END IF;
+        -- Retain the occurrence even when a committed replacement forbids enrollment.
+        IF item->>'event_type'='trial.no_show' AND EXISTS(SELECT 1 FROM public.lead_trial_appointments a
+            WHERE a.studio_id=p_studio_id AND a.id=(item->>'subject_id')::UUID AND a.rebooking_superseded) THEN
+            CONTINUE;
+        END IF;
         context:=item->'context';
         program:=CASE WHEN item->>'event_type'='belt_test.approved' THEN (context->>'approved_program_id')::UUID ELSE (context->>'program_id')::UUID END;
         FOR target IN SELECT v FROM jsonb_array_elements(p_targets->'targets') v LOOP
@@ -3816,6 +3832,7 @@ BEGIN
         UPDATE public.automation_workflow_runs SET cancel_requested_at=p_at,cancel_reason=p_reason,revision=revision+1,updated_at=p_at,
             state=CASE WHEN state IN ('queued','waiting','claimed','running') THEN 'cancelled' ELSE state END,
             reason=CASE WHEN state IN ('queued','waiting','claimed','running') THEN p_reason ELSE reason END,
+            next_due_at=NULL,
             claim_token=CASE WHEN state IN ('queued','waiting','claimed','running') THEN NULL ELSE claim_token END,
             lease_expires_at=CASE WHEN state IN ('queued','waiting','claimed','running') THEN NULL ELSE lease_expires_at END
         WHERE studio_id=p_studio_id AND id=ANY(p_run_ids) AND cancel_requested_at IS NULL
@@ -5024,3 +5041,292 @@ CREATE TRIGGER workflow_rank_student_dirty AFTER INSERT OR UPDATE OR DELETE ON p
     FOR EACH ROW EXECUTE FUNCTION public.sync_primary_student_rank_from_membership('dirty_only');
 CREATE TRIGGER workflow_rank_membership_dirty AFTER INSERT OR UPDATE OR DELETE ON public.student_program_memberships
     FOR EACH ROW EXECUTE FUNCTION public.sync_primary_student_rank_from_membership('dirty_only');
+
+-- Real entered-node and actual-attempt metadata. Admission and rendered mail
+-- snapshots are separate later owners; these rows never grant effect authority.
+CREATE TABLE private.automation_workflow_run_steps (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    studio_id UUID NOT NULL,
+    run_id UUID NOT NULL,
+    sequence INTEGER NOT NULL CHECK (sequence BETWEEN 1 AND 40),
+    node_id TEXT NOT NULL CHECK (node_id ~ '^[A-Za-z0-9_-]{1,64}$'),
+    node_type TEXT NOT NULL CHECK (node_type IN ('trigger','condition','delay','email','lead_follow_up','end')),
+    outcome TEXT NOT NULL CHECK (outcome IN ('entered','matched','not_matched','waiting','sending','accepted','skipped','failed','unknown','cancelled','completed')),
+    edge_id TEXT CHECK (edge_id ~ '^[A-Za-z0-9_-]{1,64}$'),
+    reason TEXT CHECK (reason ~ '^[a-z][a-z0-9_]{0,79}$'),
+    scheduled_at TIMESTAMPTZ CHECK (scheduled_at BETWEEN TIMESTAMPTZ '0001-01-01 00:00:00+00' AND TIMESTAMPTZ '9999-12-31 23:59:59.999999+00'),
+    entered_at TIMESTAMPTZ NOT NULL CHECK (entered_at BETWEEN TIMESTAMPTZ '0001-01-01 00:00:00+00' AND TIMESTAMPTZ '9999-12-31 23:59:59.999999+00'),
+    finished_at TIMESTAMPTZ CHECK (finished_at BETWEEN TIMESTAMPTZ '0001-01-01 00:00:00+00' AND TIMESTAMPTZ '9999-12-31 23:59:59.999999+00'),
+    FOREIGN KEY(studio_id,run_id) REFERENCES public.automation_workflow_runs(studio_id,id) ON DELETE CASCADE,
+    UNIQUE(run_id,node_id),
+    UNIQUE(run_id,sequence),
+    UNIQUE(studio_id,run_id,id,node_id),
+    CHECK ((outcome IN ('entered','waiting','sending'))=(finished_at IS NULL)),
+    CHECK (finished_at>=entered_at)
+);
+CREATE TABLE private.automation_workflow_email_attempts (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    studio_id UUID NOT NULL,
+    run_id UUID NOT NULL,
+    step_id UUID NOT NULL,
+    node_id TEXT NOT NULL,
+    attempt_number INTEGER NOT NULL CHECK (attempt_number BETWEEN 1 AND 3),
+    state TEXT NOT NULL CHECK (state IN ('sending','accepted','failed','unknown')),
+    reason TEXT CHECK (reason ~ '^[a-z][a-z0-9_]{0,79}$'),
+    recipient_email TEXT NOT NULL CHECK (length(recipient_email) BETWEEN 1 AND 254
+        AND private.automation_normalize_email(recipient_email) IS NOT NULL
+        AND private.automation_normalize_email(recipient_email)=recipient_email),
+    recipient_kind TEXT NOT NULL CHECK (recipient_kind IN ('student','guardian','lead','invoice_payer','assigned_staff')),
+    began_at TIMESTAMPTZ NOT NULL CHECK (began_at BETWEEN TIMESTAMPTZ '0001-01-01 00:00:00+00' AND TIMESTAMPTZ '9999-12-31 23:59:59.999999+00'),
+    settled_at TIMESTAMPTZ CHECK (settled_at BETWEEN TIMESTAMPTZ '0001-01-01 00:00:00+00' AND TIMESTAMPTZ '9999-12-31 23:59:59.999999+00'),
+    submission_evidence TEXT CHECK (submission_evidence IN ('not_submitted','rejected','accepted','unknown')),
+    failure_scope TEXT CHECK (failure_scope IN ('sender_auth','sender_transient','message','unclassified')),
+    FOREIGN KEY(studio_id,run_id,step_id,node_id)
+        REFERENCES private.automation_workflow_run_steps(studio_id,run_id,id,node_id) ON DELETE CASCADE,
+    UNIQUE(run_id,node_id,attempt_number),
+    CHECK ((state='sending')=(settled_at IS NULL)),
+    CHECK (settled_at>=began_at),
+    CHECK (submission_evidence IS NULL OR (state='accepted' AND submission_evidence='accepted')
+        OR (state='failed' AND submission_evidence IN ('not_submitted','rejected')) OR (state='unknown' AND submission_evidence='unknown')),
+    CHECK (failure_scope IS NULL OR state='failed' OR (state='unknown' AND failure_scope='unclassified'))
+);
+CREATE FUNCTION private.workflow_run_step_identity_v1() RETURNS TRIGGER
+LANGUAGE plpgsql SECURITY INVOKER SET search_path='' AS $$
+DECLARE graph JSONB;
+BEGIN
+    IF TG_OP='UPDATE' THEN
+        IF ROW(NEW.id,NEW.studio_id,NEW.run_id,NEW.sequence,NEW.node_id,NEW.node_type,NEW.entered_at)
+            IS DISTINCT FROM ROW(OLD.id,OLD.studio_id,OLD.run_id,OLD.sequence,OLD.node_id,OLD.node_type,OLD.entered_at)
+            OR (OLD.outcome NOT IN ('entered','waiting','sending') AND NEW IS DISTINCT FROM OLD) THEN
+            RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_IMMUTABLE_RECORD';
+        END IF;
+    END IF;
+    SELECT v.graph INTO graph FROM public.automation_workflow_runs r
+        JOIN public.automation_workflow_versions v ON v.studio_id=r.studio_id AND v.workflow_id=r.workflow_id AND v.id=r.version_id
+        WHERE r.studio_id=NEW.studio_id AND r.id=NEW.run_id;
+    -- Leave absent-parent rejection to the composite FK, including its SQLSTATE.
+    IF graph IS NOT NULL AND (NOT EXISTS(SELECT 1 FROM jsonb_array_elements(graph->'nodes') n
+        WHERE n->>'id'=NEW.node_id AND n->>'type'=NEW.node_type)
+        OR (NEW.edge_id IS NOT NULL AND NOT EXISTS(SELECT 1 FROM jsonb_array_elements(graph->'edges') e
+            WHERE e->>'id'=NEW.edge_id AND e->>'source'=NEW.node_id))) THEN
+        RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST';
+    END IF;
+    RETURN NEW;
+END $$;
+CREATE TRIGGER automation_workflow_run_steps_identity BEFORE INSERT OR UPDATE ON private.automation_workflow_run_steps
+    FOR EACH ROW EXECUTE FUNCTION private.workflow_run_step_identity_v1();
+CREATE FUNCTION private.workflow_email_attempt_identity_v1() RETURNS TRIGGER
+LANGUAGE plpgsql SECURITY INVOKER SET search_path='' AS $$
+BEGIN
+    IF TG_OP='UPDATE' THEN
+        IF ROW(NEW.id,NEW.studio_id,NEW.run_id,NEW.step_id,NEW.node_id,NEW.attempt_number,NEW.recipient_email,NEW.recipient_kind,NEW.began_at)
+            IS DISTINCT FROM ROW(OLD.id,OLD.studio_id,OLD.run_id,OLD.step_id,OLD.node_id,OLD.attempt_number,OLD.recipient_email,OLD.recipient_kind,OLD.began_at)
+            OR (OLD.state<>'sending' AND NEW IS DISTINCT FROM OLD) THEN
+            RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_IMMUTABLE_RECORD';
+        END IF;
+    END IF;
+    IF EXISTS(SELECT 1 FROM private.automation_workflow_run_steps s
+        WHERE s.studio_id=NEW.studio_id AND s.run_id=NEW.run_id AND s.id=NEW.step_id AND s.node_id=NEW.node_id AND s.node_type<>'email') THEN
+        RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST';
+    END IF;
+    RETURN NEW;
+END $$;
+CREATE TRIGGER automation_workflow_email_attempts_identity BEFORE INSERT OR UPDATE ON private.automation_workflow_email_attempts
+    FOR EACH ROW EXECUTE FUNCTION private.workflow_email_attempt_identity_v1();
+CREATE FUNCTION private.trial_rebooking_marker_v1() RETURNS TRIGGER
+LANGUAGE plpgsql SECURITY INVOKER SET search_path='' AS $$
+BEGIN
+    IF OLD.rebooking_superseded AND NEW.rebooking_superseded IS DISTINCT FROM true THEN
+        RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_IMMUTABLE_RECORD';
+    END IF;
+    RETURN NEW;
+END $$;
+CREATE TRIGGER lead_trial_appointments_rebooking_marker BEFORE UPDATE ON public.lead_trial_appointments
+    FOR EACH ROW EXECUTE FUNCTION private.trial_rebooking_marker_v1();
+
+-- STABLE label lookup inherits the caller's statement snapshot. Logical subject
+-- IDs are resolved through their actual current same-studio parents only.
+CREATE FUNCTION private.workflow_run_subject_label_v1(p_event private.automation_workflow_events) RETURNS TEXT
+LANGUAGE sql STABLE SECURITY INVOKER SET search_path='' AS $$
+    SELECT coalesce(nullif(left(btrim(label,U&'\0009\000a\000b\000c\000d\001c\001d\001e\001f\0020\0085\00a0\1680\2000\2001\2002\2003\2004\2005\2006\2007\2008\2009\200a\2028\2029\202f\205f\3000'),240),''),'Unavailable subject') FROM (
+        SELECT CASE p_event.subject_kind
+        WHEN 'student' THEN (SELECT concat_ws(' ',coalesce(nullif(btrim(s.preferred_name,U&'\0009\000a\000b\000c\000d\001c\001d\001e\001f\0020\0085\00a0\1680\2000\2001\2002\2003\2004\2005\2006\2007\2008\2009\200a\2028\2029\202f\205f\3000'),''),s.legal_first_name),s.legal_last_name)
+            FROM public.students s WHERE s.studio_id=p_event.studio_id AND s.id=p_event.subject_id AND s.deleted_at IS NULL)
+        WHEN 'promotion' THEN (SELECT concat_ws(' ',coalesce(nullif(btrim(s.preferred_name,U&'\0009\000a\000b\000c\000d\001c\001d\001e\001f\0020\0085\00a0\1680\2000\2001\2002\2003\2004\2005\2006\2007\2008\2009\200a\2028\2029\202f\205f\3000'),''),s.legal_first_name),s.legal_last_name)
+            FROM public.promotions p JOIN public.students s ON s.studio_id=p.studio_id AND s.id=p.student_id
+            WHERE p.studio_id=p_event.studio_id AND p.id=p_event.subject_id AND s.deleted_at IS NULL)
+        WHEN 'belt_test' THEN (SELECT concat_ws(' ',coalesce(nullif(btrim(s.preferred_name,U&'\0009\000a\000b\000c\000d\001c\001d\001e\001f\0020\0085\00a0\1680\2000\2001\2002\2003\2004\2005\2006\2007\2008\2009\200a\2028\2029\202f\205f\3000'),''),s.legal_first_name),s.legal_last_name)
+            FROM public.belt_test_recipients b JOIN public.students s ON s.studio_id=b.studio_id AND s.id=b.student_id
+            WHERE b.studio_id=p_event.studio_id AND b.id=p_event.subject_id AND s.deleted_at IS NULL)
+        WHEN 'lead' THEN (SELECT concat_ws(' ',l.first_name,l.last_name) FROM public.leads l
+            WHERE l.studio_id=p_event.studio_id AND l.id=p_event.subject_id)
+        WHEN 'trial' THEN (SELECT concat_ws(' ',l.first_name,l.last_name) FROM public.lead_trial_appointments a
+            JOIN public.leads l ON l.studio_id=a.studio_id AND l.id=a.lead_id
+            WHERE a.studio_id=p_event.studio_id AND a.id=p_event.subject_id)
+        WHEN 'invoice' THEN CASE WHEN p_event.event_type='invoice.payment_failed' THEN
+            (SELECT i.invoice_number FROM public.billing_payments p JOIN public.billing_invoices i ON i.studio_id=p.studio_id AND i.id=p.invoice_id
+                WHERE p.studio_id=p_event.studio_id AND p.id=p_event.subject_id AND p.invoice_id::TEXT=p_event.context->>'invoice_id')
+            ELSE (SELECT i.invoice_number FROM public.billing_invoices i WHERE i.studio_id=p_event.studio_id AND i.id=p_event.subject_id) END
+        END label
+    ) source
+$$;
+CREATE FUNCTION private.workflow_run_summary_payload_v1(p_run public.automation_workflow_runs,
+    p_event private.automation_workflow_events,p_version public.automation_workflow_versions,p_subject_label TEXT) RETURNS JSONB
+LANGUAGE sql IMMUTABLE SECURITY INVOKER SET search_path='' AS $$
+    SELECT jsonb_build_object('id',p_run.id,'studio_id',p_run.studio_id,'workflow_id',p_run.workflow_id,
+        'version_id',p_run.version_id,'version_number',p_version.version_number,'event_type',p_event.event_type,
+        'subject_kind',p_event.subject_kind,'subject_id',p_event.subject_id,'subject_label',p_subject_label,
+        'state',p_run.state,'revision',p_run.revision,'current_node_id',p_run.current_node_id,
+        'next_due_at',private.automation_utc_text_v1(p_run.next_due_at),'reason',p_run.reason,
+        'cancel_requested_at',private.automation_utc_text_v1(p_run.cancel_requested_at),'cancel_reason',p_run.cancel_reason,
+        'can_cancel',p_run.state IN ('queued','waiting','claimed','running','sending') AND p_run.cancel_requested_at IS NULL,
+        'created_at',private.automation_utc_text_v1(p_run.created_at),'updated_at',private.automation_utc_text_v1(p_run.updated_at))
+$$;
+CREATE FUNCTION private.workflow_run_step_payload_v1(p_row private.automation_workflow_run_steps) RETURNS JSONB
+LANGUAGE sql IMMUTABLE SECURITY INVOKER SET search_path='' AS $$
+    SELECT jsonb_build_object('id',p_row.id,'sequence',p_row.sequence,'node_id',p_row.node_id,'node_type',p_row.node_type,
+        'outcome',p_row.outcome,'edge_id',p_row.edge_id,'reason',p_row.reason,
+        'scheduled_at',private.automation_utc_text_v1(p_row.scheduled_at),'entered_at',private.automation_utc_text_v1(p_row.entered_at),
+        'finished_at',private.automation_utc_text_v1(p_row.finished_at))
+$$;
+CREATE FUNCTION private.workflow_email_attempt_payload_v1(p_row private.automation_workflow_email_attempts) RETURNS JSONB
+LANGUAGE sql IMMUTABLE SECURITY INVOKER SET search_path='' AS $$
+    SELECT jsonb_build_object('id',p_row.id,'node_id',p_row.node_id,'attempt_number',p_row.attempt_number,
+        'state',p_row.state,'reason',p_row.reason,'recipient_email',p_row.recipient_email,'recipient_kind',p_row.recipient_kind,
+        'began_at',private.automation_utc_text_v1(p_row.began_at),'settled_at',private.automation_utc_text_v1(p_row.settled_at),
+        'submission_evidence',p_row.submission_evidence,'failure_scope',p_row.failure_scope)
+$$;
+CREATE FUNCTION private.workflow_run_detail_v1(p_studio_id UUID,p_run_id UUID) RETURNS JSONB
+LANGUAGE sql STABLE SECURITY INVOKER SET search_path='' AS $$
+    SELECT jsonb_build_object('run',private.workflow_run_summary_payload_v1(r,e,v,private.workflow_run_subject_label_v1(e)),
+        'steps',coalesce((SELECT jsonb_agg(private.workflow_run_step_payload_v1(s) ORDER BY s.sequence)
+            FROM private.automation_workflow_run_steps s WHERE s.studio_id=r.studio_id AND s.run_id=r.id),'[]'::JSONB),
+        'attempts',coalesce((SELECT jsonb_agg(private.workflow_email_attempt_payload_v1(a) ORDER BY s.sequence,a.attempt_number,a.id)
+            FROM private.automation_workflow_email_attempts a JOIN private.automation_workflow_run_steps s
+                ON s.studio_id=a.studio_id AND s.run_id=a.run_id AND s.id=a.step_id
+            WHERE a.studio_id=r.studio_id AND a.run_id=r.id),'[]'::JSONB))
+    FROM public.automation_workflow_runs r JOIN private.automation_workflow_events e ON e.studio_id=r.studio_id AND e.id=r.event_id
+    JOIN public.automation_workflow_versions v ON v.studio_id=r.studio_id AND v.workflow_id=r.workflow_id AND v.id=r.version_id
+    WHERE r.studio_id=p_studio_id AND r.id=p_run_id
+$$;
+CREATE FUNCTION public.get_automation_workflow_run_v1(p_studio_id UUID,p_actor_id UUID,p_run_id UUID) RETURNS JSONB
+LANGUAGE plpgsql VOLATILE SECURITY INVOKER SET search_path='' AS $$
+DECLARE result JSONB;
+BEGIN
+    PERFORM private.workflow_require_actor_v1(p_studio_id,p_actor_id);
+    IF p_run_id IS NULL THEN RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST'; END IF;
+    SELECT private.workflow_run_detail_v1(p_studio_id,p_run_id) INTO result;
+    IF result IS NULL THEN RAISE EXCEPTION USING ERRCODE='P0002',MESSAGE='AUTOMATION_NOT_FOUND'; END IF;
+    RETURN jsonb_build_object('payload',result);
+END $$;
+CREATE FUNCTION public.list_automation_workflow_runs_v1(p_studio_id UUID,p_actor_id UUID,p_workflow_id UUID,
+    p_limit INTEGER DEFAULT 50,p_cursor JSONB DEFAULT NULL) RETURNS JSONB
+LANGUAGE plpgsql VOLATILE SECURITY INVOKER SET search_path='' AS $$
+DECLARE cursor_at TIMESTAMPTZ; cursor_id UUID; items JSONB; next_cursor JSONB; more BOOLEAN; exists_workflow BOOLEAN;
+BEGIN
+    PERFORM private.workflow_require_actor_v1(p_studio_id,p_actor_id);
+    IF p_workflow_id IS NULL OR p_limit IS NULL OR p_limit NOT BETWEEN 1 AND 100 THEN
+        RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST';
+    END IF;
+    IF p_cursor IS NOT NULL THEN
+        IF NOT private.workflow_json_keys_v1(p_cursor,ARRAY['created_at','id'],ARRAY['created_at','id'])
+            OR jsonb_typeof(p_cursor->'id') IS DISTINCT FROM 'string'
+            OR p_cursor->>'id' !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN
+            RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST';
+        END IF;
+        cursor_at:=private.automation_instant_v1(p_cursor->'created_at'); cursor_id:=(p_cursor->>'id')::UUID;
+    END IF;
+    -- Workflow existence, page rows, current labels and cursor share one snapshot.
+    WITH page AS MATERIALIZED (
+        SELECT r.id,r.created_at,private.workflow_run_summary_payload_v1(r,e,v,private.workflow_run_subject_label_v1(e)) payload
+        FROM public.automation_workflow_runs r JOIN private.automation_workflow_events e ON e.studio_id=r.studio_id AND e.id=r.event_id
+        JOIN public.automation_workflow_versions v ON v.studio_id=r.studio_id AND v.workflow_id=r.workflow_id AND v.id=r.version_id
+        WHERE r.studio_id=p_studio_id AND r.workflow_id=p_workflow_id
+            AND (cursor_at IS NULL OR (r.created_at,r.id)<(cursor_at,cursor_id))
+        ORDER BY r.created_at DESC,r.id DESC LIMIT p_limit+1
+    ), numbered AS (SELECT *,row_number() OVER (ORDER BY created_at DESC,id DESC) ordinal FROM page)
+    SELECT EXISTS(SELECT 1 FROM public.automation_workflows WHERE studio_id=p_studio_id AND id=p_workflow_id),
+        coalesce(jsonb_agg(payload ORDER BY created_at DESC,id DESC) FILTER (WHERE ordinal<=p_limit),'[]'::JSONB),
+        count(*)>p_limit,
+        CASE WHEN count(*)>p_limit THEN (jsonb_agg(jsonb_build_object('created_at',private.automation_utc_text_v1(created_at),'id',id)
+            ORDER BY created_at DESC,id DESC) FILTER (WHERE ordinal<=p_limit))->(p_limit-1) ELSE NULL END
+        INTO exists_workflow,items,more,next_cursor FROM numbered;
+    IF NOT exists_workflow THEN RAISE EXCEPTION USING ERRCODE='P0002',MESSAGE='AUTOMATION_NOT_FOUND'; END IF;
+    RETURN jsonb_build_object('payload',jsonb_build_object('items',items,'next_cursor',next_cursor,'has_more',more));
+END $$;
+CREATE FUNCTION public.cancel_automation_workflow_run_v1(p_studio_id UUID,p_actor_id UUID,p_run_id UUID,
+    p_operation_id UUID,p_expected_revision BIGINT) RETURNS JSONB
+LANGUAGE plpgsql VOLATILE SECURITY INVOKER SET search_path='' AS $$
+DECLARE receipt private.automation_command_operations; fingerprint TEXT; workflow UUID;
+    current_run public.automation_workflow_runs; result JSONB; at TIMESTAMPTZ;
+BEGIN
+    PERFORM private.workflow_require_actor_v1(p_studio_id,p_actor_id);
+    IF p_run_id IS NULL OR p_operation_id IS NULL OR p_expected_revision IS NULL OR p_expected_revision<1 THEN
+        RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST';
+    END IF;
+    fingerprint:=private.workflow_hash_v1(jsonb_build_object('command','run.cancel','studio_id',p_studio_id,
+        'actor_id',p_actor_id,'run_id',p_run_id,'expected_revision',p_expected_revision));
+    PERFORM pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended('automation.operation:'||p_studio_id::TEXT||':'||p_operation_id::TEXT,0));
+    SELECT * INTO receipt FROM private.automation_command_operations WHERE studio_id=p_studio_id AND operation_id=p_operation_id;
+    IF FOUND THEN
+        IF receipt.actor_id<>p_actor_id OR receipt.command<>'run.cancel' OR receipt.request_fingerprint<>fingerprint THEN
+            RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_OPERATION_CONFLICT';
+        END IF;
+        RETURN jsonb_build_object('payload',receipt.result,'operation_id',p_operation_id,'replayed',true);
+    END IF;
+    SELECT workflow_id INTO workflow FROM public.automation_workflow_runs WHERE studio_id=p_studio_id AND id=p_run_id;
+    IF workflow IS NULL THEN RAISE EXCEPTION USING ERRCODE='P0002',MESSAGE='AUTOMATION_NOT_FOUND'; END IF;
+    PERFORM 1 FROM public.automation_workflows WHERE studio_id=p_studio_id AND id=workflow FOR UPDATE;
+    SELECT * INTO current_run FROM public.automation_workflow_runs WHERE studio_id=p_studio_id AND id=p_run_id AND workflow_id=workflow FOR UPDATE;
+    IF NOT FOUND THEN RAISE EXCEPTION USING ERRCODE='P0002',MESSAGE='AUTOMATION_NOT_FOUND'; END IF;
+    IF current_run.revision<>p_expected_revision THEN
+        RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_REVISION_CONFLICT';
+    END IF;
+    IF current_run.cancel_requested_at IS NOT NULL OR current_run.state NOT IN ('queued','waiting','claimed','running','sending')
+        OR current_run.revision=9223372036854775807 THEN
+        RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STATE_CONFLICT';
+    END IF;
+    at:=clock_timestamp();
+    PERFORM private.workflow_cancel_runs_v1(p_studio_id,ARRAY[p_run_id],at,'run_cancelled');
+    SELECT private.workflow_run_detail_v1(p_studio_id,p_run_id) INTO result;
+    INSERT INTO private.automation_command_operations(studio_id,operation_id,actor_id,command,request_fingerprint,entity_type,entity_id,result,committed_at)
+        VALUES(p_studio_id,p_operation_id,p_actor_id,'run.cancel',fingerprint,'workflow_run',p_run_id,result,at);
+    RETURN jsonb_build_object('payload',result,'operation_id',p_operation_id,'replayed',false);
+END $$;
+CREATE FUNCTION public.get_lead_trial_appointment_v1(p_studio_id UUID,p_actor_id UUID,p_lead_id UUID,p_appointment_id UUID) RETURNS JSONB
+LANGUAGE plpgsql VOLATILE SECURITY INVOKER SET search_path='' AS $$
+DECLARE result JSONB;
+BEGIN
+    PERFORM private.workflow_require_actor_v1(p_studio_id,p_actor_id);
+    IF p_lead_id IS NULL OR p_appointment_id IS NULL THEN
+        RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST';
+    END IF;
+    SELECT private.trial_appointment_payload_v1(a) INTO result FROM public.lead_trial_appointments a
+        JOIN public.leads l ON l.studio_id=a.studio_id AND l.id=a.lead_id
+        WHERE a.studio_id=p_studio_id AND a.lead_id=p_lead_id AND a.id=p_appointment_id;
+    IF result IS NULL THEN RAISE EXCEPTION USING ERRCODE='P0002',MESSAGE='AUTOMATION_NOT_FOUND'; END IF;
+    RETURN jsonb_build_object('payload',result);
+END $$;
+
+ALTER TABLE private.automation_workflow_run_steps OWNER TO postgres;
+ALTER TABLE private.automation_workflow_email_attempts OWNER TO postgres;
+ALTER TABLE private.automation_workflow_run_steps ENABLE ROW LEVEL SECURITY;
+ALTER TABLE private.automation_workflow_email_attempts ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON private.automation_workflow_run_steps,private.automation_workflow_email_attempts FROM PUBLIC,anon,authenticated,service_role;
+GRANT SELECT,INSERT,UPDATE ON private.automation_workflow_run_steps,private.automation_workflow_email_attempts TO service_role;
+DO $run_metadata_privileges$
+DECLARE r RECORD;
+BEGIN
+    FOR r IN SELECT p.oid::regprocedure identity,p.proname FROM pg_catalog.pg_proc p JOIN pg_catalog.pg_namespace n ON n.oid=p.pronamespace
+        WHERE (n.nspname='private' AND p.proname IN ('workflow_run_step_identity_v1','workflow_email_attempt_identity_v1','trial_rebooking_marker_v1',
+            'workflow_run_subject_label_v1','workflow_run_summary_payload_v1','workflow_run_step_payload_v1','workflow_email_attempt_payload_v1','workflow_run_detail_v1'))
+        OR (n.nspname='public' AND p.proname IN ('list_automation_workflow_runs_v1','get_automation_workflow_run_v1',
+            'cancel_automation_workflow_run_v1','get_lead_trial_appointment_v1')) LOOP
+        EXECUTE format('ALTER FUNCTION %s OWNER TO postgres',r.identity);
+        EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC,anon,authenticated,service_role',r.identity);
+        IF r.proname NOT IN ('workflow_run_step_identity_v1','workflow_email_attempt_identity_v1','trial_rebooking_marker_v1') THEN
+            EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO service_role',r.identity);
+        END IF;
+    END LOOP;
+END;
+$run_metadata_privileges$;

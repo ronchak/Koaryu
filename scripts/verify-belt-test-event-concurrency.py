@@ -268,9 +268,9 @@ COMMIT;""")
         return finished(item, expected_error)
 
     def seed_recipient(ids):
-        sql(f"""INSERT INTO public.belt_test_recipients(id,studio_id,event_id,student_id,approved_schedule_revision,
+        sql(f"""INSERT INTO public.belt_test_recipients(id,studio_id,event_id,student_id,approved_schedule_revision,approved_rank_context_generation,
 approved_current_rank_id,approved_target_rank_id,state,approved_by,approved_at)
-VALUES('{ids["recipient"]}','{ids["studio"]}','{ids["event"]}','{ids["student"]}',1,NULL,'{uuid4()}','approved','{ids["actor"]}',clock_timestamp());""")
+VALUES('{ids["recipient"]}','{ids["studio"]}','{ids["event"]}','{ids["student"]}',1,private.workflow_rank_context_generation_v1('{ids["studio"]}','{ids["student"]}',NULL),NULL,'{uuid4()}','approved','{ids["actor"]}',clock_timestamp());""")
         return BeltTestRecipientResponse.model_validate(
             json.loads(
                 sql(
@@ -359,7 +359,7 @@ PERFORM 1 FROM public.automation_workflow_runs WHERE id='{ids["run"]}' FOR UPDAT
 IF EXISTS(SELECT 1 FROM public.belt_test_events e JOIN public.belt_test_recipients b ON b.event_id=e.id
 WHERE e.id='{ids["event"]}' AND e.status='scheduled' AND e.starts_at>clock_timestamp()
 AND b.id='{ids["recipient"]}' AND b.state='approved' AND b.revision=1 AND b.approved_schedule_revision=e.schedule_revision) THEN
- UPDATE public.automation_workflow_runs SET state='sending' WHERE id='{ids["run"]}' AND state='claimed';
+ UPDATE public.automation_workflow_runs SET state='sending',next_due_at=NULL WHERE id='{ids["run"]}' AND state='claimed';
 END IF;
 END $proof$; SELECT '{{}}'::jsonb;"""
 

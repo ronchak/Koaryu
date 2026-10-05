@@ -146,11 +146,11 @@ BEGIN
     PERFORM pg_temp.belt_check(NOT EXISTS(SELECT 1 FROM private.automation_workflow_events WHERE studio_id=s)
         AND NOT EXISTS(SELECT 1 FROM public.belt_test_recipients WHERE studio_id=s),'commands do not invent approval or enrollment');
     RESET ROLE;
-    INSERT INTO public.belt_test_recipients(studio_id,event_id,student_id,student_program_membership_id,approved_schedule_revision,
+    INSERT INTO public.belt_test_recipients(studio_id,event_id,student_id,student_program_membership_id,approved_schedule_revision,approved_rank_context_generation,
         approved_current_rank_id,approved_target_rank_id,state,approved_by,approved_at)
-        VALUES(s,t,student,membership,1,rank1,rank2,'approved',a,clock_timestamp()) RETURNING id INTO recipient;
-    INSERT INTO public.belt_test_recipients(studio_id,event_id,student_id,approved_schedule_revision,approved_target_rank_id,state,approved_by,approved_at)
-        VALUES(s,t2,student,1,rank2,'approved',a,clock_timestamp()) RETURNING id INTO other_recipient;
+        VALUES(s,t,student,membership,1,private.workflow_rank_context_generation_v1(s,student,membership),rank1,rank2,'approved',a,clock_timestamp()) RETURNING id INTO recipient;
+    INSERT INTO public.belt_test_recipients(studio_id,event_id,student_id,approved_schedule_revision,approved_rank_context_generation,approved_target_rank_id,state,approved_by,approved_at)
+        VALUES(s,t2,student,1,private.workflow_rank_context_generation_v1(s,student,NULL),rank2,'approved',a,clock_timestamp()) RETURNING id INTO other_recipient;
     SELECT to_jsonb(x) INTO original FROM public.belt_test_recipients x WHERE id=recipient;
     FOREACH bad IN ARRAY ARRAY['{"state":"bogus"}'::JSONB,'{"revision":0}','{"approved_schedule_revision":0}',
         '{"approved_target_rank_id":null}','{"approved_at":"infinity"}','{"revoked_at":"infinity"}',
@@ -177,7 +177,7 @@ BEGIN
     r:=public.mutate_belt_test_event_v1(s,a,t,gen_random_uuid(),2,'{"name":"Corrected"}');
     PERFORM pg_temp.belt_check(r#>>'{payload,revision}'='3' AND r#>>'{payload,schedule_revision}'='1'
         AND (SELECT to_jsonb(x)=original FROM public.belt_test_recipients x WHERE id=recipient),'name preserves exact approval row');
-    -- One synthetic run per state proves cancellation does not touch sending/unknown.
+    -- One synthetic run per state proves cancellation preserves sending/unknown truth while recording intent.
     r:=public.create_automation_workflow_v1(s,a,gen_random_uuid(),'Belt proof','',graph,'{}'); wid:=(r#>>'{payload,id}')::UUID;
     r:=public.command_automation_workflow_v1(s,a,wid,gen_random_uuid(),1,'publish'); version_id:=(r#>>'{payload,published_version_id}')::UUID;
     PERFORM public.command_automation_workflow_v1(s,a,wid,gen_random_uuid(),2,'start');
@@ -185,8 +185,9 @@ BEGIN
     FOREACH state_name IN ARRAY ARRAY['queued','waiting','claimed','running','sending','unknown','unrelated'] LOOP
         INSERT INTO private.automation_workflow_events(studio_id,event_type,source_key,subject_kind,subject_id,occurred_at)
             VALUES(s,'belt_test.approved',state_name,'belt_test',CASE WHEN state_name='unrelated' THEN other_recipient ELSE recipient END,clock_timestamp()) RETURNING id INTO event_id;
-        INSERT INTO public.automation_workflow_runs(studio_id,workflow_id,version_id,event_id,activation_id,epoch,current_node_id,state,claim_token,lease_expires_at)
+        INSERT INTO public.automation_workflow_runs(studio_id,workflow_id,version_id,event_id,activation_id,epoch,current_node_id,state,next_due_at,claim_token,lease_expires_at)
             VALUES(s,wid,version_id,event_id,activation_id,1,'start',CASE WHEN state_name='unrelated' THEN 'queued' ELSE state_name END,
+                CASE WHEN state_name NOT IN ('sending','unknown') THEN clock_timestamp() END,
                 CASE WHEN state_name IN ('claimed','running','sending','unknown') THEN gen_random_uuid() END,
                 CASE WHEN state_name IN ('claimed','running','sending','unknown') THEN clock_timestamp()+INTERVAL '1 minute' END);
     END LOOP;
@@ -216,7 +217,8 @@ BEGIN
     END LOOP;
     PERFORM pg_temp.belt_check((SELECT program_id=p2 FROM public.belt_test_events WHERE id=t),'different ladder derives different program');
     PERFORM pg_temp.belt_check((SELECT count(*)=4 FROM public.automation_workflow_runs WHERE workflow_id=wid AND state='cancelled' AND claim_token IS NULL)
-        AND (SELECT count(*)=2 FROM public.automation_workflow_runs WHERE workflow_id=wid AND state IN ('sending','unknown') AND claim_token IS NOT NULL)
+        AND (SELECT count(*)=2 FROM public.automation_workflow_runs WHERE workflow_id=wid AND state IN ('sending','unknown') AND claim_token IS NOT NULL AND next_due_at IS NULL
+            AND revision=2 AND cancel_requested_at IS NOT NULL AND cancel_reason='belt_test_changed')
         AND (SELECT count(*)=1 FROM public.automation_workflow_runs WHERE workflow_id=wid AND state='queued'),'cancel nonsending runs only across exact event recipients');
     RESET ROLE;
     UPDATE public.belt_test_events SET starts_at=clock_timestamp()-INTERVAL '2 hours',ends_at=clock_timestamp()-INTERVAL '1 hour' WHERE id=t;
@@ -296,8 +298,8 @@ BEGIN
     INSERT INTO public.students(id,studio_id,legal_first_name,legal_last_name) VALUES(cascade_student,cascade_studio,'Cascade','Fixture');
     INSERT INTO public.belt_test_events SELECT (jsonb_populate_record(NULL::public.belt_test_events,
         to_jsonb(e)||jsonb_build_object('id',cascade_event,'studio_id',cascade_studio))).* FROM public.belt_test_events e WHERE id=t2;
-    INSERT INTO public.belt_test_recipients(studio_id,event_id,student_id,approved_schedule_revision,approved_target_rank_id,state,approved_at)
-        VALUES(cascade_studio,cascade_event,cascade_student,1,rank2,'approved',clock_timestamp());
+    INSERT INTO public.belt_test_recipients(studio_id,event_id,student_id,approved_schedule_revision,approved_rank_context_generation,approved_target_rank_id,state,approved_at)
+        VALUES(cascade_studio,cascade_event,cascade_student,1,private.workflow_rank_context_generation_v1(cascade_studio,cascade_student,NULL),rank2,'approved',clock_timestamp());
     DELETE FROM public.studios WHERE id=cascade_studio;
     PERFORM pg_temp.belt_check(NOT EXISTS(SELECT 1 FROM public.belt_test_events WHERE studio_id=cascade_studio)
         AND NOT EXISTS(SELECT 1 FROM public.belt_test_recipients WHERE studio_id=cascade_studio),'studio deletion cascades domain rows');

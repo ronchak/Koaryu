@@ -835,8 +835,8 @@ VALUES('{ids["studio"]}','{ids["session"]}','{companion}','present',clock_timest
         seed_run(ids)
         sql(f"""INSERT INTO private.automation_workflow_events(studio_id,event_type,source_key,subject_kind,subject_id,occurred_at)
 SELECT '{ids["studio"]}','belt_test.approved',v.state,'belt_test','{ids["recipient"]}',clock_timestamp() FROM (VALUES('sending'),('unknown')) v(state);
-INSERT INTO public.automation_workflow_runs(studio_id,workflow_id,version_id,event_id,activation_id,epoch,current_node_id,state,claim_token,lease_expires_at)
-SELECT r.studio_id,r.workflow_id,r.version_id,e.id,r.activation_id,r.epoch,r.current_node_id,e.source_key,gen_random_uuid(),clock_timestamp()+interval '1 hour'
+INSERT INTO public.automation_workflow_runs(studio_id,workflow_id,version_id,event_id,activation_id,epoch,current_node_id,state,next_due_at,claim_token,lease_expires_at)
+SELECT r.studio_id,r.workflow_id,r.version_id,e.id,r.activation_id,r.epoch,r.current_node_id,e.source_key,NULL,gen_random_uuid(),clock_timestamp()+interval '1 hour'
 FROM public.automation_workflow_runs r JOIN private.automation_workflow_events e ON e.studio_id=r.studio_id
 WHERE r.id='{ids["run"]}' AND e.source_key IN ('sending','unknown');""")
         inflight = sql(
@@ -850,6 +850,13 @@ WHERE r.id='{ids["run"]}' AND e.source_key IN ('sending','unknown');""")
             )
             == "claimed",
             "Identical new-key approval invalidated current work",
+        )
+        require(
+            sql(
+                f"SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM public.automation_workflow_runs r WHERE studio_id='{ids['studio']}' AND state IN ('sending','unknown');"
+            )
+            == inflight,
+            "No-op approval changed inflight metadata",
         )
         sql("SET ROLE service_role;" + source(ids, "rank_transition"))
         sql(f"UPDATE public.belt_ranks SET min_classes=0 WHERE id='{ids['rank2']}';")
@@ -869,13 +876,25 @@ WHERE r.id='{ids["run"]}' AND e.source_key IN ('sending','unknown');""")
             == "cancelled",
             "Old approval run survived new revision",
         )
-        require(
+        intended = json.loads(
             sql(
                 f"SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM public.automation_workflow_runs r WHERE studio_id='{ids['studio']}' AND state IN ('sending','unknown');"
             )
-            == inflight,
-            "Reapproval rewrote inflight truth",
         )
+        for before, after in zip(json.loads(inflight), intended, strict=True):
+            delta = {"revision", "cancel_requested_at", "cancel_reason", "updated_at"}
+            require(
+                {k: v for k, v in before.items() if k not in delta}
+                == {k: v for k, v in after.items() if k not in delta},
+                "Reapproval rewrote inflight truth",
+            )
+            require(
+                after["revision"] == before["revision"] + 1
+                and after["cancel_reason"] == "belt_test_approval_changed"
+                and after["cancel_requested_at"] is not None
+                and after["updated_at"] == after["cancel_requested_at"],
+                "Reapproval lost first approval intent",
+            )
         require(
             json.loads(sql("SET ROLE service_role;" + approve(ids, operation)))
             == {**original, "replayed": True},
@@ -883,10 +902,12 @@ WHERE r.id='{ids["run"]}' AND e.source_key IN ('sending','unknown');""")
         )
         json.loads(sql("SET ROLE service_role;" + revoke(ids, revision=2)))
         require(
-            sql(
-                f"SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM public.automation_workflow_runs r WHERE studio_id='{ids['studio']}' AND state IN ('sending','unknown');"
+            json.loads(
+                sql(
+                    f"SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM public.automation_workflow_runs r WHERE studio_id='{ids['studio']}' AND state IN ('sending','unknown');"
+                )
             )
-            == inflight,
+            == intended,
             "Revoke rewrote inflight truth",
         )
         passed(

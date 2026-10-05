@@ -216,8 +216,9 @@ BEGIN
     FOREACH run_state IN ARRAY ARRAY['queued','waiting','claimed','running','sending','unknown'] LOOP
         INSERT INTO private.automation_workflow_events(studio_id,event_type,source_key,subject_kind,subject_id,occurred_at)
             VALUES(s,'lead.created',run_state,'lead',gen_random_uuid(),clock_timestamp()) RETURNING id INTO event_id;
-        INSERT INTO public.automation_workflow_runs(studio_id,workflow_id,version_id,event_id,activation_id,epoch,current_node_id,state,claim_token,lease_expires_at)
+        INSERT INTO public.automation_workflow_runs(studio_id,workflow_id,version_id,event_id,activation_id,epoch,current_node_id,state,next_due_at,claim_token,lease_expires_at)
             VALUES(s,wid,version1,event_id,activation1,1,'Start',run_state,
+                CASE WHEN run_state NOT IN ('sending','unknown') THEN clock_timestamp() END,
                 CASE WHEN run_state IN ('claimed','running','sending','unknown') THEN gen_random_uuid() END,
                 CASE WHEN run_state IN ('claimed','running','sending','unknown') THEN clock_timestamp()+INTERVAL '1 minute' END);
     END LOOP;
@@ -228,7 +229,8 @@ BEGIN
         AND (SELECT count(*)=2 AND count(*) FILTER(WHERE retired_at IS NULL)=1 AND min(epoch)=max(epoch) FROM public.automation_workflow_activations WHERE workflow_id=wid),'active publish retains old runs and changes interval');
     result:=public.command_automation_workflow_v1(s,a,wid,gen_random_uuid(),7,'publish',true);
     PERFORM pg_temp.workflow_check((SELECT count(*)=4 FROM public.automation_workflow_runs WHERE workflow_id=wid AND state='cancelled' AND claim_token IS NULL AND lease_expires_at IS NULL AND revision=2)
-        AND (SELECT count(*)=2 FROM public.automation_workflow_runs WHERE workflow_id=wid AND state IN ('sending','unknown') AND revision=1 AND claim_token IS NOT NULL)
+        AND (SELECT count(*)=2 FROM public.automation_workflow_runs WHERE workflow_id=wid AND state IN ('sending','unknown') AND revision=2 AND claim_token IS NOT NULL AND next_due_at IS NULL
+            AND cancel_requested_at IS NOT NULL AND cancel_reason='workflow_republished')
         AND (SELECT epoch=2 FROM public.automation_workflow_activations WHERE workflow_id=wid AND retired_at IS NULL),'cancel pending advances epoch but retains sending unknown');
     result:=public.command_automation_workflow_v1(s,a,wid,gen_random_uuid(),8,'pause');
     PERFORM pg_temp.workflow_check(result#>>'{payload,status}'='paused' AND result#>>'{payload,pending_run_count}'='0'

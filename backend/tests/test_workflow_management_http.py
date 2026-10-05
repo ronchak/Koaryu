@@ -1,5 +1,6 @@
 """HTTP proofs with real role resolution and normal error handlers, synthetic providers only."""
 
+import json
 from copy import deepcopy
 from types import SimpleNamespace
 from unittest.mock import Mock
@@ -43,6 +44,7 @@ from tests.test_workflow_management import (
     huge_safe_draft,
     invoke,
     mutation,
+    nul_workflow_body,
 )
 
 BASE = "/api/v1/automations"
@@ -252,14 +254,18 @@ def test_publish_boolean_and_server_only_start_mode(api):
         ("POST", "/workflows/validate", {"graph": GRAPH}),
     ],
 )
+@pytest.mark.parametrize("contains_nul", [False, True])
 def test_oversized_request_has_fixed_small_422_before_nested_validation_or_rpc(
-    api, monkeypatch, method, path, body
+    api, monkeypatch, method, path, body, contains_nul
 ):
     from app.schemas import workflow_management
 
     nested = Mock(side_effect=AssertionError("Must not validate nested draft"))
     monkeypatch.setattr(workflow_management, "validate_workflow_draft", nested)
-    response = api.client.request(method, BASE + path, json={**body, "graph": huge_safe_draft()})
+    payload = {**body, "graph": huge_safe_draft()}
+    if contains_nul:
+        payload["A\x00B"] = None
+    response = api.client.request(method, BASE + path, json=payload)
     assert response.status_code == 422
     assert response.json() == {
         "detail": REQUEST_TOO_LARGE_DETAIL,
@@ -267,7 +273,43 @@ def test_oversized_request_has_fixed_small_422_before_nested_validation_or_rpc(
     }
     assert len(response.content) < 200
     assert not api.database.rpc_calls
+    assert api.database.query_log == [] and api.lanes == []
     nested.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "method,path,body",
+    [
+        ("POST", "/workflows", CREATE),
+        ("PUT", f"/workflows/{WORKFLOW}", SAVE),
+        ("POST", "/workflows/validate", {"graph": GRAPH}),
+    ],
+)
+@pytest.mark.parametrize("location", ["name", "description", "graph_value", "graph_key"])
+def test_raw_escaped_nul_rejects_before_membership_entitlement_or_capacity(
+    api, method, path, body, location
+):
+    raw = json.dumps(nul_workflow_body(body, location)).encode("utf-8")
+    assert b"\\u0000" in raw and b"\x00" not in raw
+    response = api.client.request(
+        method, BASE + path, content=raw, headers={"content-type": "application/json"}
+    )
+    assert response.status_code == 422 and response.json()["detail"] == "Invalid workflow request."
+    assert api.database.query_log == [] and api.database.rpc_calls == [] and api.lanes == []
+    api.subscription.assert_not_called()
+    api.capability.assert_not_called()
+
+
+@pytest.mark.parametrize("text,valid", [(r"A\u0000B", True), ("A\x01B", False)])
+def test_representable_validation_graphs_reach_semantics_unchanged(api, text, valid):
+    from app.services.workflow_catalog import build_preset
+
+    graph = build_preset("welcome")
+    graph["nodes"][1]["config"]["body_template"] = text
+    response = api.client.post(BASE + "/workflows/validate", json={"graph": graph})
+    assert response.status_code == 200 and response.json()["valid"] is valid
+    assert api.database.rpc_calls[0][1]["p_graph"] == graph
+    assert api.lanes == ["interactive"]
 
 
 def test_raw_body_413_middleware_is_unchanged_and_separate(api):
