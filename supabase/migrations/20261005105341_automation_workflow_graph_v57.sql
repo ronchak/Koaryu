@@ -502,6 +502,47 @@ BEGIN
     END LOOP;
 END $$;
 
+-- A validation read observes all references in one statement snapshot. It does
+-- not reserve them for a later command, whose receipt-owning checks stay atomic.
+CREATE FUNCTION public.validate_automation_workflow_v1(
+    p_studio_id UUID,p_actor_id UUID,p_graph JSONB,p_layout JSONB DEFAULT '{}'
+) RETURNS JSONB LANGUAGE plpgsql VOLATILE SECURITY INVOKER SET search_path='' AS $$
+DECLARE v_issues JSONB;
+BEGIN
+    PERFORM private.workflow_require_actor_v1(p_studio_id,p_actor_id);
+    v_issues:=private.workflow_validate_v1(p_graph,p_layout,false);
+    IF v_issues<>'[]'::JSONB THEN
+        RETURN jsonb_build_object('payload',jsonb_build_object('valid',false,'issues',v_issues));
+    END IF;
+    -- Draft safety includes typed UUIDs, even when an operator or trigger choice
+    -- is incomplete. Only validated nodes reach the reference casts below.
+    WITH nodes AS (
+        SELECT n->>'id' node_id,
+            CASE WHEN n->>'type'='trigger' THEN 'program.id' ELSE n->'config'->>'field' END kind,
+            CASE WHEN n->>'type'='trigger' THEN 'config.program_id' ELSE 'config.value' END field,
+            CASE WHEN n->>'type'='trigger' THEN n->'config'->'program_id' ELSE n->'config'->'value' END value
+        FROM jsonb_array_elements(p_graph->'nodes') n
+        WHERE n->>'type'='trigger' OR n->>'type'='condition' AND n->'config'->>'field' IN ('program.id','promotion.rank_id')
+    ), refs AS (
+        SELECT n.node_id,n.kind,n.field,(v.value#>>'{}')::UUID id FROM nodes n
+        CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN n.value IS NULL OR n.value='null' THEN '[]'::JSONB
+            WHEN jsonb_typeof(n.value)='array' THEN n.value ELSE jsonb_build_array(n.value) END) v(value)
+    ), issues AS (
+        SELECT jsonb_build_object('code','reference_unavailable','message','Choose an available program or rank.',
+            'node_id',r.node_id,'edge_id',NULL,'field',r.field) issue
+        FROM refs r
+        LEFT JOIN public.programs p ON r.kind='program.id' AND p.studio_id=p_studio_id AND p.id=r.id
+        LEFT JOIN public.belt_ranks b ON r.kind='promotion.rank_id' AND b.studio_id=p_studio_id AND b.id=r.id
+        WHERE r.kind='program.id' AND p.id IS NULL OR r.kind='promotion.rank_id' AND b.id IS NULL
+        UNION
+        SELECT value FROM jsonb_array_elements(private.workflow_validate_v1(p_graph,p_layout,true))
+    )
+    SELECT coalesce(jsonb_agg(issue ORDER BY (issue->>'node_id') COLLATE "C" NULLS FIRST,
+        (issue->>'field') COLLATE "C" NULLS FIRST,(issue->>'code') COLLATE "C",issue::TEXT COLLATE "C"),'[]'::JSONB)
+        INTO v_issues FROM issues;
+    RETURN jsonb_build_object('payload',jsonb_build_object('valid',v_issues='[]'::JSONB,'issues',v_issues));
+END $$;
+
 CREATE FUNCTION private.workflow_detail_v1(p_studio_id UUID,p_workflow_id UUID) RETURNS JSONB
 LANGUAGE sql VOLATILE SECURITY INVOKER SET search_path='' AS $$
     SELECT jsonb_build_object('id',w.id,'name',w.name,'description',w.description,'status',w.status,
@@ -535,7 +576,8 @@ END $$;
 
 CREATE FUNCTION private.workflow_mutate_v1(
     p_studio_id UUID,p_actor_id UUID,p_workflow_id UUID,p_operation_id UUID,p_expected_revision BIGINT,
-    p_action TEXT,p_name TEXT,p_description TEXT,p_graph JSONB,p_layout JSONB,p_cancel_pending BOOLEAN
+    p_action TEXT,p_name TEXT,p_description TEXT,p_graph JSONB,p_layout JSONB,p_cancel_pending BOOLEAN,
+    p_start_replay_only BOOLEAN DEFAULT false
 ) RETURNS JSONB LANGUAGE plpgsql VOLATILE SECURITY INVOKER SET search_path='' AS $$
 DECLARE w public.automation_workflows; receipt private.automation_command_operations;
     v_fingerprint TEXT; v_request JSONB; v_result JSONB; v_at TIMESTAMPTZ; v_version UUID;
@@ -544,12 +586,10 @@ BEGIN
     PERFORM private.workflow_require_actor_v1(p_studio_id,p_actor_id);
     IF p_operation_id IS NULL OR p_action IS NULL OR p_action NOT IN ('create','save','publish','start','pause','archive')
         OR p_cancel_pending IS NULL OR (p_cancel_pending AND p_action<>'publish')
+        OR p_start_replay_only IS NULL OR (p_start_replay_only AND p_action<>'start')
         OR (p_action='create' AND (p_workflow_id IS NOT NULL OR p_expected_revision IS NOT NULL))
         OR (p_action<>'create' AND (p_workflow_id IS NULL OR p_expected_revision IS NULL OR p_expected_revision<1)) THEN
         RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST';
-    END IF;
-    IF p_action<>'create' AND NOT EXISTS(SELECT 1 FROM public.automation_workflows WHERE studio_id=p_studio_id AND id=p_workflow_id) THEN
-        RAISE EXCEPTION USING ERRCODE='P0002',MESSAGE='AUTOMATION_NOT_FOUND';
     END IF;
     v_request:=jsonb_build_object('command','workflow.'||p_action,'studio_id',p_studio_id,'actor_id',p_actor_id,
         'workflow_id',p_workflow_id,'expected_revision',p_expected_revision,'cancel_pending',p_cancel_pending);
@@ -571,6 +611,12 @@ BEGIN
             RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_OPERATION_CONFLICT';
         END IF;
         RETURN jsonb_build_object('payload',receipt.result,'operation_id',p_operation_id,'replayed',true);
+    END IF;
+    IF p_start_replay_only THEN
+        RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STATE_CONFLICT';
+    END IF;
+    IF p_action<>'create' AND NOT EXISTS(SELECT 1 FROM public.automation_workflows WHERE studio_id=p_studio_id AND id=p_workflow_id) THEN
+        RAISE EXCEPTION USING ERRCODE='P0002',MESSAGE='AUTOMATION_NOT_FOUND';
     END IF;
     IF p_action IN ('create','start') AND NOT pg_catalog.pg_try_advisory_xact_lock(
         pg_catalog.hashtextextended('automation.workflow.admission:'||p_studio_id::TEXT,0)) THEN
@@ -661,13 +707,13 @@ CREATE FUNCTION public.save_automation_workflow_v1(p_studio_id UUID,p_actor_id U
 RETURNS JSONB LANGUAGE sql VOLATILE SECURITY INVOKER SET search_path='' AS $$
     SELECT private.workflow_mutate_v1(p_studio_id,p_actor_id,p_workflow_id,p_operation_id,p_expected_revision,'save',p_name,p_description,p_graph,p_layout,false)
 $$;
-CREATE FUNCTION public.command_automation_workflow_v1(p_studio_id UUID,p_actor_id UUID,p_workflow_id UUID,p_operation_id UUID,p_expected_revision BIGINT,p_action TEXT,p_cancel_pending BOOLEAN DEFAULT false)
+CREATE FUNCTION public.command_automation_workflow_v1(p_studio_id UUID,p_actor_id UUID,p_workflow_id UUID,p_operation_id UUID,p_expected_revision BIGINT,p_action TEXT,p_cancel_pending BOOLEAN DEFAULT false,p_start_replay_only BOOLEAN DEFAULT false)
 RETURNS JSONB LANGUAGE plpgsql VOLATILE SECURITY INVOKER SET search_path='' AS $$
 BEGIN
     IF p_action IS NULL OR p_action NOT IN ('publish','start','pause','archive') THEN
         RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST';
     END IF;
-    RETURN private.workflow_mutate_v1(p_studio_id,p_actor_id,p_workflow_id,p_operation_id,p_expected_revision,p_action,NULL,NULL,NULL,NULL,p_cancel_pending);
+    RETURN private.workflow_mutate_v1(p_studio_id,p_actor_id,p_workflow_id,p_operation_id,p_expected_revision,p_action,NULL,NULL,NULL,NULL,p_cancel_pending,p_start_replay_only);
 END $$;
 CREATE FUNCTION public.get_automation_workflow_v1(p_studio_id UUID,p_actor_id UUID,p_workflow_id UUID)
 RETURNS JSONB LANGUAGE plpgsql VOLATILE SECURITY INVOKER SET search_path='' AS $$
@@ -772,7 +818,8 @@ BEGIN
             'workflow_typed_value_v1','workflow_validate_v1','workflow_require_actor_v1',
             'workflow_require_graph_tenant_v1','workflow_trigger_event_type_v1','workflow_detail_v1','workflow_cancel_pending_v1','workflow_mutate_v1'))
         OR (n.nspname='public' AND p.proname IN ('create_automation_workflow_v1','save_automation_workflow_v1',
-            'command_automation_workflow_v1','get_automation_workflow_v1','list_automation_workflows_v1','get_automation_operation_v1')) LOOP
+            'command_automation_workflow_v1','get_automation_workflow_v1','list_automation_workflows_v1','get_automation_operation_v1',
+            'validate_automation_workflow_v1')) LOOP
         EXECUTE format('ALTER FUNCTION %s OWNER TO postgres',r.identity);
         EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC,anon,authenticated,service_role',r.identity);
         IF r.proname NOT IN ('workflow_immutable_record_v1','workflow_activation_immutable_v1','workflow_run_identity_v1') THEN

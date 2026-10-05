@@ -168,7 +168,7 @@ COMMIT;""")
             + ");"
         )
 
-    def command(ids, action, revision, operation=None):
+    def command(ids, action, revision, operation=None, replay_only=None):
         return (
             "SELECT public.command_automation_workflow_v1("
             + ",".join(
@@ -183,6 +183,11 @@ COMMIT;""")
                         action,
                     ),
                 )
+            )
+            + (
+                "," + quote(False) + "," + quote(replay_only)
+                if replay_only is not None
+                else ""
             )
             + ");"
         )
@@ -954,6 +959,14 @@ SELECT pg_sleep(0.003);""")
         passed(
             "transactional draft migration from exact V56 without history registration"
         )
+        require(
+            sql(
+                "SELECT to_regprocedure('public.koaryu_release_schema_preflight_v38()') IS NULL;"
+            )
+            == "t",
+            "Partial migration must not advertise V38 readiness",
+        )
+        passed("partial V57 retains absent workflow readiness guard")
         graph_parity()
         contract_result = local.run(
             [
@@ -975,6 +988,122 @@ SELECT pg_sleep(0.003);""")
             "Focused SQL contract did not roll back",
         )
         passed("rollback SQL management contract", checks=contract_count)
+        trial_contract = local.run(
+            [
+                psql,
+                *local.connection,
+                f"--dbname={database}",
+                "--no-psqlrc",
+                "--set=ON_ERROR_STOP=1",
+                "--quiet",
+                "--tuples-only",
+                "--no-align",
+                f"--file={ROOT / 'supabase/verification/trial_appointment_contract.sql'}",
+            ]
+        )
+        require(
+            sql("SELECT count(*) FROM public.lead_trial_appointments;") == "0",
+            "Retained trial contract did not roll back",
+        )
+        passed(
+            "retained trial rollback contract after command signature change",
+            checks=json.loads(trial_contract.splitlines()[-1])["trial_contract_checks"],
+        )
+
+        for rollback in (False, True):
+            ids = fixture()
+            provision(ids)
+            sql(command(ids, "publish", 1))
+            operation = str(uuid4())
+            first = session(
+                "start_owner", command(ids, "start", 2, operation=operation), hold=True
+            )
+            original = ready(first)
+            second = session(
+                "start_replay_only",
+                command(ids, "start", 2, operation=operation, replay_only=True),
+            )
+            blocked(first, second, advisory=True)
+            release(first, rollback=rollback)
+            if rollback:
+                finished(second, "AUTOMATION_STATE_CONFLICT")
+                require(
+                    sql(
+                        f"SELECT count(*) FROM private.automation_command_operations WHERE operation_id='{operation}';"
+                    )
+                    == "0",
+                    "Rolled-back start left a replay receipt",
+                )
+                require(
+                    sql(
+                        f"SELECT count(*) FROM public.automation_workflow_activations WHERE workflow_id='{ids['workflow']}';"
+                    )
+                    == "0",
+                    "Replay-only request started after original rollback",
+                )
+                resumed = finished(
+                    session(
+                        "start_available", command(ids, "start", 2, operation=operation)
+                    )
+                )
+                require(
+                    resumed["replayed"] is False,
+                    "Uncommitted start did not remain available",
+                )
+            else:
+                require(
+                    finished(second) == {**original, "replayed": True},
+                    "Replay-only contender did not return the committed original start",
+                )
+                sql(command(ids, "pause", 3))
+                replayed = finished(
+                    session(
+                        "start_after_pause",
+                        command(ids, "start", 2, operation=operation, replay_only=True),
+                    )
+                )
+                require(
+                    replayed == {**original, "replayed": True},
+                    "Paused start replay lost original result",
+                )
+            passed(f"start replay-only contention rollback={rollback}")
+
+        ids = fixture()
+        parent = str(uuid4())
+        graph = deepcopy(simple)
+        graph["nodes"][0]["config"]["program_id"] = parent
+        sql(
+            f"INSERT INTO public.programs(id,studio_id,name) VALUES('{parent}','{ids['studio']}','Read observation');"
+        )
+        statement = f"SELECT public.validate_automation_workflow_v1('{ids['studio']}','{ids['actor']}',{quote(graph)});"
+        first = session(
+            "reference_delete",
+            f"DELETE FROM public.programs WHERE id='{parent}' RETURNING jsonb_build_object('deleted',id);",
+            hold=True,
+        )
+        ready(first)
+        observed = finished(session("reference_validation", statement))
+        require(
+            observed == {"payload": {"valid": True, "issues": []}},
+            "Validation did not observe committed reference state while deletion waited",
+        )
+        release(first)
+        observed = finished(session("reference_validation_after", statement))
+        require(
+            observed["payload"]["valid"] is False
+            and observed["payload"]["issues"][0]["code"] == "reference_unavailable",
+            "Validation did not observe missing reference after commit",
+        )
+        require(
+            sql(
+                f"SELECT count(*) FROM private.automation_command_operations WHERE studio_id='{ids['studio']}';"
+            )
+            == "0",
+            "Read validation wrote an operation receipt",
+        )
+        passed(
+            "reference validation observes committed state without reserving deleted parent"
+        )
 
         ids = fixture()
         provision(ids)

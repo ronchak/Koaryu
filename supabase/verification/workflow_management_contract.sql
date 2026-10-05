@@ -31,6 +31,7 @@ DO $$ DECLARE role_name TEXT; t TEXT; fn REGPROCEDURE; BEGIN
             PERFORM pg_temp.workflow_error('SELECT * FROM '||t,'42501',NULL,role_name||' rejects '||t);
         END LOOP;
         PERFORM pg_temp.workflow_error('SELECT public.list_automation_workflows_v1(NULL,NULL)','42501',NULL,role_name||' rejects RPC');
+        PERFORM pg_temp.workflow_error('SELECT public.validate_automation_workflow_v1(NULL,NULL,NULL)','42501',NULL,role_name||' rejects validation RPC');
         RESET ROLE;
     END LOOP;
     PERFORM pg_temp.workflow_check((SELECT bool_and(c.relrowsecurity AND c.relpersistence='p'
@@ -40,11 +41,131 @@ DO $$ DECLARE role_name TEXT; t TEXT; fn REGPROCEDURE; BEGIN
             'private.automation_workflow_events','private.automation_command_operations'])),'six logged RLS postgres-owned tables');
     FOR fn IN SELECT p.oid FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
         WHERE n.nspname='public' AND p.proname IN ('create_automation_workflow_v1','save_automation_workflow_v1',
-            'command_automation_workflow_v1','get_automation_workflow_v1','list_automation_workflows_v1','get_automation_operation_v1') LOOP
+            'command_automation_workflow_v1','get_automation_workflow_v1','list_automation_workflows_v1','get_automation_operation_v1',
+            'validate_automation_workflow_v1') LOOP
         PERFORM pg_temp.workflow_check(has_function_privilege('service_role',fn,'EXECUTE')
             AND NOT has_function_privilege('anon',fn,'EXECUTE') AND NOT has_function_privilege('authenticated',fn,'EXECUTE')
             AND (SELECT NOT prosecdef AND proconfig=ARRAY['search_path=""'] FROM pg_proc WHERE oid=fn),fn::TEXT||' service invoker');
     END LOOP;
+END $$;
+
+
+-- Hash every retained business/command row around observations and refused starts.
+CREATE FUNCTION pg_temp.workflow_observation_state() RETURNS JSONB LANGUAGE plpgsql AS $$
+DECLARE t TEXT; state JSONB:='{}'; rows JSONB;
+BEGIN
+    FOREACH t IN ARRAY ARRAY['auth.users','public.staff_roles','public.studios','public.studio_subscriptions',
+        'public.programs','public.belt_ladders','public.belt_ranks','public.automation_workflows',
+        'public.automation_workflow_versions','public.automation_workflow_activations','public.automation_workflow_runs',
+        'private.automation_workflow_events','private.automation_command_operations'] LOOP
+        EXECUTE format('SELECT coalesce(jsonb_agg(to_jsonb(r) ORDER BY to_jsonb(r)::TEXT),%L::JSONB) FROM %s r','[]',t) INTO rows;
+        state:=state||jsonb_build_object(t,md5(rows::TEXT));
+    END LOOP;
+    RETURN state;
+END $$;
+DO $$
+DECLARE a UUID:=gen_random_uuid(); a2 UUID:=gen_random_uuid(); b UUID:=gen_random_uuid(); s UUID:=gen_random_uuid(); s2 UUID:=gen_random_uuid();
+    program UUID:=gen_random_uuid(); foreign_program UUID:=gen_random_uuid(); ladder UUID:=gen_random_uuid(); rank_id UUID:=gen_random_uuid();
+    foreign_ladder UUID:=gen_random_uuid(); foreign_rank UUID:=gen_random_uuid(); missing UUID:=gen_random_uuid();
+    op UUID:=gen_random_uuid(); later_op UUID:=gen_random_uuid(); wid UUID; start_result JSONB; result JSONB; before_state JSONB;
+    g JSONB:='{"schema_version":1,"nodes":[{"id":"start","type":"trigger","config":{"event_type":"student.promoted"}},{"id":"rank","type":"condition","config":{"field":"promotion.rank_id","operator":"in"}},{"id":"end","type":"end","config":{}}],"edges":[{"id":"next","source":"start","target":"rank","port":"next"},{"id":"yes","source":"rank","target":"end","port":"yes"},{"id":"no","source":"rank","target":"end","port":"no"}]}';
+    child JSONB; expected JSONB; value JSONB; action TEXT;
+BEGIN
+    PERFORM pg_temp.workflow_check((SELECT count(*)=1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+        WHERE n.nspname='public' AND p.proname='command_automation_workflow_v1')
+        AND to_regprocedure('public.command_automation_workflow_v1(uuid,uuid,uuid,uuid,bigint,text,boolean,boolean)') IS NOT NULL
+        AND to_regprocedure('public.command_automation_workflow_v1(uuid,uuid,uuid,uuid,bigint,text,boolean)') IS NULL,'one command owner with replay flag');
+    PERFORM pg_temp.workflow_check((SELECT count(*)=1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+        WHERE n.nspname='private' AND p.proname='workflow_mutate_v1')
+        AND to_regprocedure('private.workflow_mutate_v1(uuid,uuid,uuid,uuid,bigint,text,text,text,jsonb,jsonb,boolean,boolean)') IS NOT NULL
+        AND to_regprocedure('private.workflow_mutate_v1(uuid,uuid,uuid,uuid,bigint,text,text,text,jsonb,jsonb,boolean)') IS NULL,'one private owner with replay flag');
+    INSERT INTO auth.users(id,email,email_confirmed_at) VALUES(a,a||'@example.invalid',now()),(a2,a2||'@example.invalid',now()),(b,b||'@example.invalid',now());
+    INSERT INTO public.studios(id,name,slug,owner_id,timezone) VALUES(s,'Read proof',s::TEXT,a2,'UTC'),(s2,'Foreign read proof',s2::TEXT,b,'UTC');
+    INSERT INTO public.staff_roles(studio_id,user_id,role) VALUES(s,a,'admin'),(s,a2,'admin'),(s2,b,'admin');
+    INSERT INTO public.studio_subscriptions(studio_id,status,comped) VALUES(s,'active',false),(s2,'active',false);
+    INSERT INTO public.programs(id,studio_id,name,archived_at) VALUES(program,s,'Archived but existing',now()),(foreign_program,s2,'Foreign',NULL);
+    INSERT INTO public.belt_ladders(id,studio_id,name) VALUES(ladder,s,'Local'),(foreign_ladder,s2,'Foreign');
+    INSERT INTO public.belt_ranks(id,studio_id,ladder_id,name) VALUES(rank_id,s,ladder,'Local'),(foreign_rank,s2,foreign_ladder,'Foreign');
+    g:=jsonb_set(jsonb_set(g,'{nodes,0,config,program_id}',to_jsonb(program::TEXT)), '{nodes,1,config,value}',jsonb_build_array(rank_id));
+    before_state:=pg_temp.workflow_observation_state();
+    SET LOCAL ROLE service_role;
+    PERFORM pg_temp.workflow_check(public.validate_automation_workflow_v1(s,a,g)='{"payload":{"valid":true,"issues":[]}}','validation accepts current same studio archived program and rank');
+    expected:=jsonb_build_object('payload',jsonb_build_object('valid',false,'issues',jsonb_build_array(
+        jsonb_build_object('code','reference_unavailable','message','Choose an available program or rank.','node_id','rank','edge_id',NULL,'field','config.value'),
+        jsonb_build_object('code','reference_unavailable','message','Choose an available program or rank.','node_id','start','edge_id',NULL,'field','config.program_id'))));
+    child:=jsonb_set(jsonb_set(g,'{nodes,0,config,program_id}',to_jsonb(foreign_program::TEXT)),
+        '{nodes,1,config,value}',jsonb_build_array(foreign_rank,foreign_rank,missing));
+    PERFORM pg_temp.workflow_check(public.validate_automation_workflow_v1(s,a,child)=expected,'foreign and duplicate references return fixed located deduplicated issues');
+    child:=jsonb_set(jsonb_set(child,'{nodes,0,config,program_id}',to_jsonb(missing::TEXT)),
+        '{nodes,1,config,value}',jsonb_build_array(missing));
+    PERFORM pg_temp.workflow_check(public.validate_automation_workflow_v1(s,a,child)=expected,'missing and foreign references are indistinguishable');
+    child:=jsonb_set(child,'{nodes,1,config,operator}','null');
+    result:=public.validate_automation_workflow_v1(s,a,child);
+    PERFORM pg_temp.workflow_check(result#>'{payload,valid}'='false' AND jsonb_array_length(result#>'{payload,issues}')=3
+        AND (result#>'{payload,issues}') @> (expected#>'{payload,issues}'),'incomplete safe graph combines executable and reference issues');
+    child:=jsonb_set(g,'{nodes,1,config,field}','"program.id"');
+    child:=jsonb_set(child,'{nodes,1,config,value}',jsonb_build_array(foreign_program,missing));
+    result:=public.validate_automation_workflow_v1(s,a,child);
+    PERFORM pg_temp.workflow_check(result#>>'{payload,issues,0,field}'='config.value'
+        AND jsonb_array_length(result#>'{payload,issues}')=1,'condition program reference is scoped and located');
+    FOREACH value IN ARRAY ARRAY['null'::JSONB,'true'::JSONB,'"untrusted-value"'::JSONB,'{}'::JSONB,
+        '{"schema_version":1,"nodes":{},"edges":[]}'::JSONB,
+        jsonb_set(g,'{nodes,1,config,value}','["untrusted-value"]'),
+        jsonb_set(g,'{nodes,0,id}','"untrusted <id>"'),
+        jsonb_set(g,'{nodes,0,config,program_id}','{"untrusted":"value"}')] LOOP
+        result:=public.validate_automation_workflow_v1(s,a,value);
+        PERFORM pg_temp.workflow_check(result#>'{payload,valid}'='false'
+            AND jsonb_array_length(result#>'{payload,issues}')=1
+            AND result::TEXT NOT LIKE '%untrusted%','malformed read validation '||md5(value::TEXT));
+    END LOOP;
+    PERFORM pg_temp.workflow_error(format('SELECT public.validate_automation_workflow_v1(%L,%L,%L)',s,b,g),'42501','AUTOMATION_ADMIN_REQUIRED','validation denies foreign actor');
+    RESET ROLE;
+    PERFORM pg_temp.workflow_check(pg_temp.workflow_observation_state()=before_state,'validation changes no source or workflow state');
+    UPDATE public.staff_roles SET role='front_desk' WHERE user_id=a;
+    SET LOCAL ROLE service_role;
+    PERFORM pg_temp.workflow_error(format('SELECT public.validate_automation_workflow_v1(%L,%L,%L)',s,a,g),'42501','AUTOMATION_ADMIN_REQUIRED','validation requires current admin');
+    RESET ROLE;
+    UPDATE public.staff_roles SET role='admin' WHERE user_id=a;
+    UPDATE public.studio_subscriptions SET status='canceled' WHERE studio_id=s;
+    SET LOCAL ROLE service_role;
+    PERFORM pg_temp.workflow_error(format('SELECT public.validate_automation_workflow_v1(%L,%L,%L)',s,a,g),'42501','AUTOMATION_ADMIN_REQUIRED','validation requires current entitlement');
+    RESET ROLE;
+    UPDATE public.studio_subscriptions SET status='active' WHERE studio_id=s;
+    SET LOCAL ROLE service_role;
+    result:=public.create_automation_workflow_v1(s,a,gen_random_uuid(),'Replay proof','',g,'{}'); wid:=(result#>>'{payload,id}')::UUID;
+    PERFORM public.command_automation_workflow_v1(s,a,wid,gen_random_uuid(),1,'publish');
+    start_result:=public.command_automation_workflow_v1(s,a,wid,op,2,'start');
+    PERFORM public.command_automation_workflow_v1(s,a,wid,gen_random_uuid(),3,'pause');
+    RESET ROLE;
+    before_state:=pg_temp.workflow_observation_state();
+    SET LOCAL ROLE service_role;
+    PERFORM pg_temp.workflow_check(public.command_automation_workflow_v1(s,a,wid,op,2,'start',false,true)=start_result||'{"replayed":true}',
+        'replay only returns original start after pause');
+    PERFORM pg_temp.workflow_check(public.command_automation_workflow_v1(s,a,wid,op,2,'start',false,false)=start_result||'{"replayed":true}',
+        'readiness flag is absent from original command identity');
+    PERFORM pg_temp.workflow_check(public.get_automation_operation_v1(s,a,op)#>'{payload,result}'=start_result->'payload','readback retains original start authority');
+    PERFORM pg_temp.workflow_error(format('SELECT public.command_automation_workflow_v1(%L,%L,%L,%L,2,%L,false,true)',s,a2,wid,op,'start'),'P0001','AUTOMATION_OPERATION_CONFLICT','replay only changed actor conflicts');
+    PERFORM pg_temp.workflow_error(format('SELECT public.command_automation_workflow_v1(%L,%L,%L,%L,4,%L,false,true)',s,a,wid,op,'start'),'P0001','AUTOMATION_OPERATION_CONFLICT','replay only changed revision conflicts');
+    PERFORM pg_temp.workflow_error(format('SELECT public.command_automation_workflow_v1(%L,%L,%L,%L,2,%L,false,true)',s,a,missing,op,'start'),'P0001','AUTOMATION_OPERATION_CONFLICT','replay only changed absent target conflicts');
+    PERFORM pg_temp.workflow_error(format('SELECT public.command_automation_workflow_v1(%L,%L,%L,%L,4,%L,false,true)',s,a,wid,later_op,'start'),'P0001','AUTOMATION_STATE_CONFLICT','replay only new key refuses start');
+    PERFORM pg_temp.workflow_error(format('SELECT public.command_automation_workflow_v1(%L,%L,%L,%L,4,%L,false,NULL)',s,a,wid,later_op,'start'),'22023','AUTOMATION_INVALID_REQUEST','explicit null replay flag rejected');
+    FOREACH action IN ARRAY ARRAY['publish','pause','archive'] LOOP
+        PERFORM pg_temp.workflow_error(format('SELECT public.command_automation_workflow_v1(%L,%L,%L,%L,4,%L,false,true)',s,a,wid,later_op,action),'22023','AUTOMATION_INVALID_REQUEST','replay flag invalid for '||action);
+    END LOOP;
+    PERFORM pg_temp.workflow_error(format('SELECT private.workflow_mutate_v1(%L,%L,NULL,%L,NULL,%L,%L,%L,%L,%L,false,true)',s,a,later_op,'create','Invalid','',g,'{}'),'22023','AUTOMATION_INVALID_REQUEST','private owner rejects replay flag for create');
+    RESET ROLE;
+    PERFORM pg_temp.workflow_check(pg_temp.workflow_observation_state()=before_state,'replays and blocked starts have no state effects');
+    UPDATE public.staff_roles SET archived_at=now() WHERE user_id=a;
+    SET LOCAL ROLE service_role;
+    PERFORM pg_temp.workflow_error(format('SELECT public.command_automation_workflow_v1(%L,%L,%L,%L,2,%L,false,true)',s,a,wid,op,'start'),'42501','AUTOMATION_ADMIN_REQUIRED','replay only still requires current actor authority');
+    RESET ROLE;
+    UPDATE public.staff_roles SET archived_at=NULL WHERE user_id=a;
+    SET LOCAL ROLE service_role;
+    result:=public.command_automation_workflow_v1(s,a,wid,later_op,4,'start');
+    PERFORM pg_temp.workflow_check(result#>>'{payload,status}'='active' AND result->'replayed'='false'
+        AND (SELECT count(*)=2 FROM public.automation_workflow_activations WHERE workflow_id=wid),'blocked key starts once when capability returns');
+    RESET ROLE;
+    -- The enclosing rollback removes these separate-studio fixtures.
 END $$;
 
 DO $$
