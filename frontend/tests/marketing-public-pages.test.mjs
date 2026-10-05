@@ -3,11 +3,12 @@ import { describe, it } from "node:test";
 import { publicFooterLinks, publicNavLinks } from "../src/lib/public-navigation.ts";
 
 describe("public document navigation", () => {
-  it("offers distinct product, workflow, and pricing destinations", () => {
+  it("offers distinct product, workflow, pricing and hands-on demo destinations", () => {
     assert.deepEqual(publicNavLinks, [
       { href: "/features", label: "Features" },
       { href: "/use-cases", label: "Workflows" },
       { href: "/#pricing", label: "Pricing" },
+      { href: "/try", label: "Try it" },
     ]);
     assert.equal(new Set(publicNavLinks.map(({ href }) => href)).size, publicNavLinks.length);
   });
