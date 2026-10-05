@@ -9,7 +9,7 @@ import { pendingCommands, subscribePendingCommands } from "@/lib/pending-command
 import { markDashboardFactsChanged, needsFreshDashboardFacts } from "@/lib/dashboard-freshness";
 import { beginResourceMutation, createResourceScope } from "@/lib/store-resource-scope";
 
-import React, { useState, useEffect, useCallback, useRef, type ReactNode } from "react";
+import React, { useState, useEffect, useCallback, useRef, useMemo, type ReactNode } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { api, isStaffArchivedError, isSubscriptionRequiredError } from "@/lib/api";
@@ -1679,6 +1679,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     addLead,
     leadCreate,
     checkLeadCreateResult,
+    trialAppointments,
     convertLeadToStudent,
     deleteLead,
     followUpLead,
@@ -1966,6 +1967,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     bulkUpdateStudentStatus: useReconciledProjectionCommand(bulkUpdateStudentStatus, beginProjectionCommand),
     importStudents: useReconciledProjectionCommand(importStudents, beginProjectionCommand),
     addLead: useReconciledProjectionCommand(addLead, beginProjectionCommand),
+    createTrialAppointment: useReconciledProjectionCommand(trialAppointments.createTrialAppointment, beginProjectionCommand),
+    updateTrialAppointment: useReconciledProjectionCommand(trialAppointments.updateTrialAppointment, beginProjectionCommand),
+    checkTrialAppointmentResult: useReconciledProjectionCommand(trialAppointments.checkTrialAppointmentResult, beginProjectionCommand),
     checkLeadCreateResult: useReconciledProjectionCommand(checkLeadCreateResult, beginProjectionCommand),
     updateLead: useReconciledProjectionCommand(updateLead, beginProjectionCommand),
     deleteLead: useReconciledProjectionCommand(deleteLead, beginProjectionCommand),
@@ -1983,6 +1987,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     addTemplate: useReconciledProjectionCommand(addTemplate, beginProjectionCommand),
     setBeltRanks: useReconciledProjectionCommand(setBeltRanks, beginProjectionCommand),
   };
+  const reconciledTrialAppointments = useMemo(() => Object.freeze({
+    ...trialAppointments,
+    createTrialAppointment: reconciledCommands.createTrialAppointment,
+    updateTrialAppointment: reconciledCommands.updateTrialAppointment,
+    checkTrialAppointmentResult: reconciledCommands.checkTrialAppointmentResult,
+  }), [trialAppointments, reconciledCommands.createTrialAppointment, reconciledCommands.updateTrialAppointment, reconciledCommands.checkTrialAppointmentResult]);
   const studentCommandOwnersRef = useRef(new Map<string, symbol>());
   const ownedStudentCommands = {
     updateStudent: useStudentCommandOwnership(
@@ -2027,6 +2037,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     addLead: reconciledCommands.addLead,
     leadCreate,
     checkLeadCreateResult: reconciledCommands.checkLeadCreateResult,
+    trialAppointments: reconciledTrialAppointments,
     addSession: reconciledCommands.addSession,
     addStudent: reconciledCommands.addStudent,
     addTemplate: reconciledCommands.addTemplate,
