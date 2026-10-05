@@ -56,6 +56,10 @@ class TrialAppointmentMutationResult(TrialAppointmentModel):
     replayed: StrictBool
 
 
+class _ReadEnvelope(TrialAppointmentModel):
+    payload: TrialAppointmentResponse
+
+
 class _ListPayload(TrialAppointmentModel):
     items: Annotated[list[TrialAppointmentResponse], Field(strict=True, max_length=100)]
     next_cursor: _Cursor | None
@@ -134,6 +138,29 @@ class TrialAppointmentService:
             or (appointment_id is not None and row.id != UUID(str(appointment_id)))
         ):
             raise ValueError("Invalid appointment identity.")
+
+    def get(
+        self,
+        studio_id: str | UUID,
+        actor_id: str | UUID,
+        lead_id: str | UUID,
+        appointment_id: str | UUID,
+    ) -> TrialAppointmentResponse:
+        result = self._call(
+            "get_lead_trial_appointment_v1",
+            {
+                "p_studio_id": str(studio_id),
+                "p_actor_id": str(actor_id),
+                "p_lead_id": str(lead_id),
+                "p_appointment_id": str(appointment_id),
+            },
+        )
+        try:
+            payload = _ReadEnvelope.model_validate(result).payload
+            self._check_identity(payload, studio_id, lead_id, appointment_id)
+            return payload
+        except (ValidationError, ValueError, TypeError):
+            raise HTTPException(503, UNAVAILABLE_DETAIL) from None
 
     def list(
         self,

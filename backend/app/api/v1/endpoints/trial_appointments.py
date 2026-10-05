@@ -28,6 +28,8 @@ from app.services.trial_appointment_service import (
 )
 
 router = APIRouter(prefix="/leads", tags=["trial-appointments"])
+# Registered separately after the exact-read SQL contract is accepted.
+detail_router = APIRouter(prefix="/leads", tags=["trial-appointments"])
 
 
 def _admin_studio(client, user_id: str, requested_studio_id: str | None) -> str:
@@ -67,6 +69,23 @@ async def create_trial_appointment(
     def operation(client):
         studio_id = _admin_studio(client, user_id, requested_studio_id)
         return TrialAppointmentService(client).create(studio_id, user_id, lead_id, data).payload
+
+    return await run_supabase_operation(supabase, operation, lane="interactive")
+
+
+@detail_router.get(
+    "/{lead_id}/trial-appointments/{appointment_id}", response_model=TrialAppointmentResponse
+)
+async def get_trial_appointment(
+    lead_id: UUID,
+    appointment_id: UUID,
+    supabase: Annotated[ProviderDependency, Depends(get_supabase)],
+    user_id: str = Depends(get_current_user_id),
+    requested_studio_id: str | None = Depends(get_requested_studio_id),
+):
+    def operation(client):
+        studio_id = _admin_studio(client, user_id, requested_studio_id)
+        return TrialAppointmentService(client).get(studio_id, user_id, lead_id, appointment_id)
 
     return await run_supabase_operation(supabase, operation, lane="interactive")
 
