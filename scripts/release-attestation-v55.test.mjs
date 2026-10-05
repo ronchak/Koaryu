@@ -3,7 +3,7 @@ import fs from "node:fs";
 import { test } from "node:test";
 import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
-import { CURRENT_RELEASE, releaseState } from "./release-attestation/states.mjs";
+import { releaseState } from "./release-attestation/states.mjs";
 import { MIGRATION_VERSIONS } from "./release-attestation/generated-history.mjs";
 import { renderPreflight } from "./release-attestation/preflight.mjs";
 import { STUDENT_PROFILE_FACTS_V55_SQL } from "./release-attestation/preflight-policy.mjs";
@@ -13,7 +13,6 @@ const read = relative => fs.readFileSync(fileURLToPath(new URL(relative, import.
 const migration = read("../supabase/migrations/20260930192626_converted_lead_enrollment_v55.sql");
 
 test("V55 has one exact V54 predecessor and complete version-bound readiness", () => {
-  assert.equal(CURRENT_RELEASE, "v55");
   const state = releaseState("v55", MIGRATION_VERSIONS);
   assert.equal(state.predecessor, "v54");
   assert.equal(state.count, 150);
