@@ -1,0 +1,28 @@
+{
+  "graph": {
+    "schema_version": 1,
+    "nodes": [
+      {
+        "id": "trigger",
+        "type": "trigger",
+        "config": { "event_type": "lead.created", "program_id": null }
+      },
+      {
+        "id": "email",
+        "type": "email",
+        "config": {
+          "recipient": "lead_or_guardian",
+          "subject_template": "🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋🥋",
+          "body_template": "Hello",
+          "reply_to_email": ""
+        }
+      },
+      { "id": "end", "type": "end", "config": {} }
+    ],
+    "edges": [
+      { "id": "first", "source": "trigger", "target": "email", "port": "next" },
+      { "id": "last", "source": "email", "target": "end", "port": "next" }
+    ]
+  },
+  "layout": { "positions": {} }
+}

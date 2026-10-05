@@ -24,6 +24,16 @@ export const WORKFLOW_LIMITS = {
 type Frozen<T> = T extends object ? { readonly [Key in keyof T]: Frozen<T[Key]> } : T;
 export type WorkflowSnapshot = Frozen<WorkflowDraft>;
 
+// Match Python and PostgreSQL character limits without normalizing the text.
+// Iterating a string keeps each astral codepoint's surrogate pair intact.
+export function workflowTextLength(value: string): number {
+  return Array.from(value).length;
+}
+
+export function truncateWorkflowText(value: string, limit: number): string {
+  return Array.from(value).slice(0, limit).join("");
+}
+
 const ID = /^[A-Za-z0-9_-]{1,64}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const NODE_TYPES: readonly WorkflowNodeType[] = [
@@ -43,7 +53,7 @@ const has = (value: object, key: string) => Object.prototype.hasOwnProperty.call
 const scalar = (value: unknown) =>
   value === null ||
   typeof value === "boolean" ||
-  (typeof value === "string" && value.length <= WORKFLOW_LIMITS.conditionString) ||
+  (typeof value === "string" && workflowTextLength(value) <= WORKFLOW_LIMITS.conditionString) ||
   (typeof value === "number" && Number.isFinite(value));
 
 export function defaultWorkflowConfig<Kind extends WorkflowNodeType>(
@@ -113,7 +123,7 @@ export function validateWorkflow(
   const text = (value: unknown, field: string, node: string, nullable = false, max?: number) => {
     if (nullable && value === null) return;
     if (typeof value !== "string") issue("invalid_text", "Use text for this value.", field, node);
-    else if (max !== undefined && value.length > max)
+    else if (max !== undefined && workflowTextLength(value) > max)
       issue("text_too_long", `Use at most ${max} characters.`, field, node);
   };
   const integer = (
