@@ -76,6 +76,10 @@ class _ListEnvelope(BeltTestModel):
     payload: _ListPayload
 
 
+class _ReadEnvelope(BeltTestModel):
+    payload: BeltTestRecipientResponse
+
+
 def _unique_object(pairs: list[tuple[str, object]]) -> dict:
     result = {}
     for key, value in pairs:
@@ -144,6 +148,29 @@ class BeltTestRecipientService:
             or (recipient_id is not None and row.id != UUID(str(recipient_id)))
         ):
             raise ValueError("Invalid belt-test recipient identity.")
+
+    def get_recipient(
+        self,
+        studio_id: str | UUID,
+        actor_id: str | UUID,
+        event_id: str | UUID,
+        recipient_id: str | UUID,
+    ) -> BeltTestRecipientResponse:
+        result = self._call(
+            "get_belt_test_recipient_v1",
+            {
+                "p_studio_id": str(studio_id),
+                "p_actor_id": str(actor_id),
+                "p_event_id": str(event_id),
+                "p_recipient_id": str(recipient_id),
+            },
+        )
+        try:
+            payload = _ReadEnvelope.model_validate(result).payload
+            self._check_identity(payload, studio_id, event_id, recipient_id)
+            return payload
+        except (ValidationError, ValueError, TypeError):
+            raise HTTPException(503, UNAVAILABLE_DETAIL) from None
 
     def list_recipients(
         self,

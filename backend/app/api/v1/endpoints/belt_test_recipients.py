@@ -26,14 +26,39 @@ from app.services.studio_scope import (
 )
 
 router = APIRouter(prefix="/belt-tests", tags=["belt-tests"])
+detail_router = APIRouter(prefix="/belt-tests", tags=["belt-tests"])
 
 
-def _admin_studio(client, user_id: str, requested_studio_id: str | None) -> str:
+def _admin_studio(
+    client, user_id: str, requested_studio_id: str | None, *, read_only: bool = False
+) -> str:
     membership = resolve_write_staff_role_for_user(client, user_id, requested_studio_id)
     if membership.get("role") != "admin":
         raise HTTPException(403, ADMIN_REQUIRED_DETAIL)
-    ensure_platform_subscription_access(client, membership["studio_id"])
+    if read_only:
+        ensure_platform_subscription_access(client, membership["studio_id"], read_only=True)
+    else:
+        ensure_platform_subscription_access(client, membership["studio_id"])
     return membership["studio_id"]
+
+
+@detail_router.get(
+    "/{event_id}/recipients/{recipient_id}", response_model=BeltTestRecipientResponse
+)
+async def get_belt_test_recipient(
+    event_id: UUID,
+    recipient_id: UUID,
+    supabase: Annotated[ProviderDependency, Depends(get_supabase)],
+    user_id: str = Depends(get_current_user_id),
+    requested_studio_id: str | None = Depends(get_requested_studio_id),
+):
+    def operation(client):
+        studio_id = _admin_studio(client, user_id, requested_studio_id, read_only=True)
+        return BeltTestRecipientService(client).get_recipient(
+            studio_id, user_id, event_id, recipient_id
+        )
+
+    return await run_supabase_operation(supabase, operation, lane="interactive")
 
 
 @router.get("/{event_id}/recipients", response_model=BeltTestRecipientListResponse)
