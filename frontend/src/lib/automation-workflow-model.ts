@@ -51,7 +51,7 @@ export function defaultWorkflowConfig<Kind extends WorkflowNodeType>(
 ): WorkflowConfigByType[Kind] {
   const defaults: WorkflowConfigByType = {
     trigger: { event_type: null, program_id: null },
-    condition: { field: null, operator: null, value: null },
+    condition: { field: null, operator: null },
     delay: { mode: "duration", minutes: null },
     email: { recipient: null, subject_template: "", body_template: "", reply_to_email: "" },
     lead_follow_up: { due_in_days: null, note: "" },
@@ -179,13 +179,13 @@ export function validateWorkflow(
         }
         break;
       case "condition":
-        if (shape(config, ["field", "operator", "value"], [], "config", id)) {
+        if (shape(config, ["field", "operator"], ["value"], "config", id)) {
           text(config.field, "config.field", nodeId, true);
           text(config.operator, "config.operator", nodeId, true);
-          if (!(
-            scalar(config.value) ||
-            (Array.isArray(config.value) && config.value.every(scalar))
-          ))
+          if (
+            has(config, "value") &&
+            !(scalar(config.value) || (Array.isArray(config.value) && config.value.every(scalar)))
+          )
             issue(
               "invalid_condition_value",
               "Use finite scalar values with text no longer than 500 characters.",
@@ -193,6 +193,7 @@ export function validateWorkflow(
               id,
             );
           if (
+            has(config, "value") &&
             (config.operator === "in" || config.operator === "not_in") &&
             Array.isArray(config.value) &&
             config.value.length > WORKFLOW_LIMITS.conditionItems
@@ -329,8 +330,15 @@ export function validateWorkflow(
       case "condition":
         required(node.config.field, "field");
         required(node.config.operator, "operator");
-        // Nullable eq/neq, field types and operator eligibility depend on the catalog.
-        if (
+        // Omission is unfinished; explicit null eligibility depends on the catalog.
+        if (!has(node.config, "value"))
+          issue(
+            "incomplete_config",
+            "Choose a comparison value before publishing.",
+            "config.value",
+            node.id,
+          );
+        else if (
           (node.config.operator === "in" || node.config.operator === "not_in") &&
           (!Array.isArray(node.config.value) || !node.config.value.length)
         )

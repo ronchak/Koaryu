@@ -7,7 +7,7 @@ export type WorkflowConfigByType = {
   condition: {
     field: string | null;
     operator: string | null;
-    value: WorkflowScalar | WorkflowScalar[];
+    value?: WorkflowScalar | WorkflowScalar[];
   };
   delay:
     | { mode: "duration"; minutes: number | null }

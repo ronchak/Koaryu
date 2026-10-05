@@ -61,7 +61,6 @@ test("defaults preserve all nullable draft choices and initial trigger/end are s
   assert.deepEqual(defaultWorkflowConfig("condition"), {
     field: null,
     operator: null,
-    value: null,
   });
   assert.deepEqual(defaultWorkflowConfig("delay"), { mode: "duration", minutes: null });
   assert.deepEqual(defaultWorkflowConfig("email"), {
@@ -78,7 +77,7 @@ test("defaults preserve all nullable draft choices and initial trigger/end are s
   assert.equal(draft.graph.edges[0].port, "next");
   const one = defaultWorkflowConfig("condition");
   one.value = ["mutated"];
-  assert.equal(defaultWorkflowConfig("condition").value, null);
+  assert.equal(Object.hasOwn(defaultWorkflowConfig("condition"), "value"), false);
 });
 
 test("branched converging graph serializes only canonical graph/layout and roundtrips", () => {
@@ -583,5 +582,137 @@ test("upcoming trigger offset excludes zero and accepts the negative inclusive b
     assert.ok(
       codes(validateWorkflow(draft.graph, draft.layout, "draft")).includes("invalid_integer"),
     );
+  }
+});
+
+// Emitted by WorkflowGraph.model_validate(raw).model_dump(mode="json").
+// Core ba64e8dcb531ef05c0ddddbaa92d34e3e323fae8 and domains catalog
+// 68648b6fb261b2bb0959a9df7ef5e1ddcc15bee9: draft valid, execution has only
+// incomplete_config at condition/config.value. Tests require no Python or sibling checkout.
+const coreOmittedValueGraph = {
+  schema_version: 1,
+  nodes: [
+    { id: "trigger", type: "trigger", config: { event_type: "lead.created", program_id: null } },
+    { id: "condition", type: "condition", config: { field: "lead.unconverted", operator: "eq" } },
+    { id: "yes", type: "delay", config: { mode: "duration", minutes: 0 } },
+    { id: "no", type: "delay", config: { mode: "duration", minutes: 0 } },
+    { id: "end", type: "end", config: {} },
+  ],
+  edges: [
+    { id: "e1", source: "trigger", target: "condition", port: "next" },
+    { id: "e2", source: "condition", target: "yes", port: "yes" },
+    { id: "e3", source: "condition", target: "no", port: "no" },
+    { id: "e4", source: "yes", target: "end", port: "next" },
+    { id: "e5", source: "no", target: "end", port: "next" },
+  ],
+};
+
+test("core draft with omitted comparison loads, roundtrips, edits and repairs through undo/redo", () => {
+  const draft = { graph: structuredClone(coreOmittedValueGraph), layout: { positions: {} } };
+  const assertOmitted = (current) => {
+    assert.equal(Object.hasOwn(nodeById(current, "condition").config, "value"), false);
+  };
+  assert.deepEqual(validateWorkflow(draft.graph, draft.layout, "draft"), {
+    valid: true,
+    issues: [],
+  });
+  assertOmitted(canonicalWorkflowDraft(draft));
+  assertOmitted(JSON.parse(serializeWorkflowDraft(draft)));
+  const execution = validateWorkflow(draft.graph, draft.layout);
+  assert.equal(execution.valid, false);
+  assert.equal(execution.issues.length, 1);
+  assert.deepEqual(execution.issues[0], {
+    code: "incomplete_config",
+    message: "Choose a comparison value before publishing.",
+    node_id: "condition",
+    edge_id: null,
+    field: "config.value",
+  });
+  let history = createWorkflowHistory(draft);
+  assertOmitted(history.present);
+  const moved = editWorkflowHistory(history, {
+    kind: "commit_position",
+    node_id: "condition",
+    position: { x: 40, y: 60 },
+  });
+  assert.equal(moved.ok, true);
+  history = moved.history;
+  assertOmitted(history.present);
+  const configured = editWorkflowHistory(history, {
+    kind: "update_config",
+    node_id: "condition",
+    update: { type: "condition", config: { field: "lead.unconverted", operator: "neq" } },
+  });
+  assert.equal(configured.ok, true);
+  history = configured.history;
+  assertOmitted(history.present);
+  assertOmitted(JSON.parse(serializeWorkflowDraft(history.present)));
+  const repaired = editWorkflowHistory(history, {
+    kind: "update_config",
+    node_id: "condition",
+    update: {
+      type: "condition",
+      config: { field: "lead.unconverted", operator: "eq", value: true },
+    },
+  });
+  assert.equal(repaired.ok, true);
+  assert.equal(
+    validateWorkflow(repaired.history.present.graph, repaired.history.present.layout).valid,
+    true,
+  );
+  assert.equal(nodeById(repaired.history.present, "condition").config.value, true);
+  const undone = undoWorkflow(repaired.history);
+  assertOmitted(undone.present);
+  assert.deepEqual(undone.present, history.present);
+  assertOmitted(JSON.parse(serializeWorkflowDraft(undone.present)));
+  const redone = redoWorkflow(undone);
+  assert.equal(Object.hasOwn(nodeById(redone.present, "condition").config, "value"), true);
+  assert.equal(nodeById(redone.present, "condition").config.value, true);
+  assertOmitted(draft);
+});
+
+test("explicit condition null stays an own value across roundtrip and history", () => {
+  const draft = { graph: structuredClone(coreOmittedValueGraph), layout: { positions: {} } };
+  nodeById(draft, "condition").config = { field: "program.id", operator: "eq", value: null };
+  const assertNull = (current) => {
+    const config = nodeById(current, "condition").config;
+    assert.equal(Object.hasOwn(config, "value"), true);
+    assert.equal(config.value, null);
+  };
+  assertNull(canonicalWorkflowDraft(draft));
+  assertNull(JSON.parse(serializeWorkflowDraft(draft)));
+  // Local guidance leaves nullable field eligibility to the server catalog.
+  assert.equal(validateWorkflow(draft.graph, draft.layout).valid, true);
+  const history = createWorkflowHistory(draft);
+  assertNull(history.present);
+  const moved = editWorkflowHistory(history, {
+    kind: "commit_position",
+    node_id: "condition",
+    position: { x: 20, y: 10 },
+  });
+  assert.equal(moved.ok, true);
+  assertNull(moved.history.present);
+  assertNull(undoWorkflow(moved.history).present);
+  assertNull(redoWorkflow(undoWorkflow(moved.history)).present);
+});
+
+test("a present undefined or malformed comparison is invalid instead of becoming omission", () => {
+  const clean = { graph: structuredClone(coreOmittedValueGraph), layout: { positions: {} } };
+  const history = createWorkflowHistory(clean);
+  for (const value of [undefined, NaN, Infinity, {}, [undefined], [[true]]]) {
+    const draft = structuredClone(clean);
+    nodeById(draft, "condition").config.value = value;
+    assert.equal(Object.hasOwn(nodeById(draft, "condition").config, "value"), true);
+    const validation = validateWorkflow(draft.graph, draft.layout, "draft");
+    assert.equal(validation.valid, false);
+    assert.deepEqual(codes(validation), ["invalid_condition_value"]);
+    assert.throws(() => serializeWorkflowDraft(draft), /finite scalar/);
+    const rejected = editWorkflowHistory(history, {
+      kind: "update_config",
+      node_id: "condition",
+      update: { type: "condition", config: { field: "lead.unconverted", operator: "eq", value } },
+    });
+    assert.equal(rejected.ok, false);
+    assert.strictEqual(rejected.history, history);
   }
 });

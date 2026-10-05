@@ -298,3 +298,103 @@ test("simulation sends only graph and server-derived context and preserves the t
     assertRequest(calls.at(-1), "POST", `${route}/simulate`, { graph, context }, controller);
   }
 });
+
+// Emitted by WorkflowGraph.model_validate(raw).model_dump(mode="json").
+// Core ba64e8dcb531ef05c0ddddbaa92d34e3e323fae8 and domains catalog
+// 68648b6fb261b2bb0959a9df7ef5e1ddcc15bee9: draft valid, execution has only
+// incomplete_config at condition/config.value. Tests require no Python or sibling checkout.
+const coreOmittedValueGraph = {
+  schema_version: 1,
+  nodes: [
+    { id: "trigger", type: "trigger", config: { event_type: "lead.created", program_id: null } },
+    { id: "condition", type: "condition", config: { field: "lead.unconverted", operator: "eq" } },
+    { id: "yes", type: "delay", config: { mode: "duration", minutes: 0 } },
+    { id: "no", type: "delay", config: { mode: "duration", minutes: 0 } },
+    { id: "end", type: "end", config: {} },
+  ],
+  edges: [
+    { id: "e1", source: "trigger", target: "condition", port: "next" },
+    { id: "e2", source: "condition", target: "yes", port: "yes" },
+    { id: "e3", source: "condition", target: "no", port: "no" },
+    { id: "e4", source: "yes", target: "end", port: "next" },
+    { id: "e5", source: "no", target: "end", port: "next" },
+  ],
+};
+
+test("create/save/simulate preserve omitted comparison and explicit null as distinct request data", async () => {
+  const calls = capture();
+  const controller = new AbortController();
+  for (const explicitNull of [false, true]) {
+    const graph = structuredClone(coreOmittedValueGraph);
+    const config = graph.nodes.find((node) => node.id === "condition").config;
+    if (explicitNull) {
+      config.field = "program.id";
+      config.value = null;
+    }
+    const request = {
+      operation_id,
+      name: "Incomplete condition",
+      description: "",
+      graph,
+      layout: { positions: {} },
+    };
+    await workflowApi.create(request, token, controller.signal);
+    await workflowApi.save(id, { ...request, expected_revision: 7 }, token, controller.signal);
+    await workflowApi.simulate(
+      id,
+      { graph, context: { kind: "synthetic" } },
+      token,
+      controller.signal,
+    );
+    const expectedGraph = canonicalWorkflowDraft(request).graph;
+    const body = {
+      operation_id,
+      name: request.name,
+      description: "",
+      graph: expectedGraph,
+      layout: request.layout,
+    };
+    const recent = calls.slice(-3);
+    assertRequest(recent[0], "POST", "/automations/workflows", body, controller);
+    assertRequest(recent[1], "PUT", route, { ...body, expected_revision: 7 }, controller);
+    assertRequest(
+      recent[2],
+      "POST",
+      `${route}/simulate`,
+      { graph: expectedGraph, context: { kind: "synthetic" } },
+      controller,
+    );
+    for (const call of recent) {
+      const sent = JSON.parse(call.init.body).graph.nodes.find(
+        (node) => node.id === "condition",
+      ).config;
+      assert.equal(Object.hasOwn(sent, "value"), explicitNull);
+      assert.deepEqual(sent, config);
+    }
+    assert.equal(Object.hasOwn(config, "value"), explicitNull);
+  }
+  assert.equal(calls.length, 6);
+});
+
+test("present undefined comparison fails before transport rather than being omitted from a command", () => {
+  const calls = capture();
+  const graph = structuredClone(coreOmittedValueGraph);
+  graph.nodes.find((node) => node.id === "condition").config.value = undefined;
+  const request = {
+    operation_id,
+    name: "Invalid comparison",
+    description: "",
+    graph,
+    layout: { positions: {} },
+  };
+  assert.throws(() => workflowApi.create(request, token), /finite scalar/);
+  assert.throws(
+    () => workflowApi.save(id, { ...request, expected_revision: 7 }, token),
+    /finite scalar/,
+  );
+  assert.throws(
+    () => workflowApi.simulate(id, { graph, context: { kind: "synthetic" } }, token),
+    /finite scalar/,
+  );
+  assert.equal(calls.length, 0);
+});
