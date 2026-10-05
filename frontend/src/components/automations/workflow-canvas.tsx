@@ -34,6 +34,10 @@ type CardNode = Node<
   { kind: WorkflowNodeType; label: string; summary: string; issue: boolean },
   "workflow"
 >;
+type WorkflowMeasurement = {
+  kind: WorkflowNodeType;
+  dimensions: { width: number; height: number };
+};
 export type WorkflowCanvasProps = {
   draft: WorkflowSnapshot;
   selectedNodeId: string | null;
@@ -141,16 +145,18 @@ export default function WorkflowCanvas({
     positions: Record<string, WorkflowPosition>;
   } | null>(null);
   const [selectedEdge, setSelectedEdge] = useState<string | null>(null);
-  const [measurements, setMeasurements] = useState<
-    ReadonlyMap<string, { width: number; height: number }>
-  >(() => new Map());
-  const nodeIds = useMemo(
-    () => new Set(draft.graph.nodes.map((node) => node.id)),
+  const [measurements, setMeasurements] = useState<ReadonlyMap<string, WorkflowMeasurement>>(
+    () => new Map(),
+  );
+  const nodeKinds = useMemo(
+    () => new Map(draft.graph.nodes.map((node) => [node.id, node.type])),
     [draft.graph.nodes],
   );
-  if ([...measurements.keys()].some((id) => !nodeIds.has(id))) {
+  if ([...measurements].some(([id, measurement]) => nodeKinds.get(id) !== measurement.kind)) {
     setMeasurements((previous) => {
-      const retained = new Map([...previous].filter(([id]) => nodeIds.has(id)));
+      const retained = new Map(
+        [...previous].filter(([id, measurement]) => nodeKinds.get(id) === measurement.kind),
+      );
       return retained.size === previous.size ? previous : retained;
     });
   }
@@ -162,7 +168,10 @@ export default function WorkflowCanvas({
         type: "workflow",
         width: 240,
         height: 132,
-        measured: measurements.get(node.id),
+        measured:
+          measurements.get(node.id)?.kind === node.type
+            ? measurements.get(node.id)!.dimensions
+            : undefined,
         position:
           (!disabled && drag?.draft === draft && Object.hasOwn(drag.positions, node.id)
             ? drag.positions[node.id]
@@ -198,18 +207,25 @@ export default function WorkflowCanvas({
   const changeNodes = useCallback<OnNodesChange<CardNode>>(
     (changes) => {
       const dimensions = changes.filter(
-        (change) => change.type === "dimensions" && change.dimensions && nodeIds.has(change.id),
+        (change) => change.type === "dimensions" && change.dimensions && nodeKinds.has(change.id),
       );
       if (dimensions.length) {
         setMeasurements((previous) => {
-          let next: Map<string, { width: number; height: number }> | undefined;
+          let next: Map<string, WorkflowMeasurement> | undefined;
           for (const change of dimensions) {
             if (change.type !== "dimensions" || !change.dimensions) continue;
+            const kind = nodeKinds.get(change.id);
+            if (!kind) continue;
             const { width, height } = change.dimensions;
             const current = (next ?? previous).get(change.id);
-            if (current?.width === width && current?.height === height) continue;
+            if (
+              current?.kind === kind &&
+              current.dimensions.width === width &&
+              current.dimensions.height === height
+            )
+              continue;
             next ??= new Map(previous);
-            next.set(change.id, { width, height });
+            next.set(change.id, { kind, dimensions: { width, height } });
           }
           return next ?? previous;
         });
@@ -243,7 +259,7 @@ export default function WorkflowCanvas({
         }
       }
     },
-    [disabled, draft, onEdit, onSelectNode, selectedNodeId, nodeIds],
+    [disabled, draft, onEdit, onSelectNode, selectedNodeId, nodeKinds],
   );
   const changeEdges = useCallback<OnEdgesChange>(
     (changes) => {

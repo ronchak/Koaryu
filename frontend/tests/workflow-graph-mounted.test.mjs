@@ -841,3 +841,203 @@ for (const mode of ["production", "development"])
       await browser.close();
     }
   });
+
+test("same-ID condition-to-email replacement refreshes next-handle geometry", async () => {
+  const browser = await chromium.launch();
+  try {
+    const { page, errors } = await mount(browser, { instrumentMeasurements: true });
+    await expect
+      .poll(() =>
+        page.evaluate(() =>
+          workflowMeasurements.renders
+            .at(-1)
+            .nodes.every((node) => node.measured?.width > 0 && node.measured?.height > 0),
+        ),
+      )
+      .toBe(true);
+    await expect(page.locator(".react-flow__edge-path")).toHaveCount(3);
+    const camera = await page
+      .locator(".react-flow__viewport")
+      .evaluate((element) => element.style.transform);
+    const changed = structuredClone(initialGraph);
+    changed.graph.nodes = changed.graph.nodes.map((node) =>
+      node.id === "condition"
+        ? {
+            id: node.id,
+            type: "email",
+            config: {
+              recipient: null,
+              subject_template: "Replacement kind",
+              body_template: "",
+              reply_to_email: "",
+            },
+          }
+        : node,
+    );
+    changed.graph.edges.push({
+      id: "replacement_next",
+      source: "condition",
+      target: "end",
+      port: "next",
+    });
+    const firstRender = await page.evaluate(() => workflowMeasurements.renders.length);
+    await page.evaluate((draft) => workflowFixture.reset(draft), changed);
+    await expect(
+      node(page, "condition").locator('.react-flow__handle.source[data-handleid="next"]'),
+    ).toHaveCount(1);
+    await expect(
+      node(page, "condition").locator(
+        '.react-flow__handle.source[data-handleid="yes"], .react-flow__handle.source[data-handleid="no"]',
+      ),
+    ).toHaveCount(0);
+    const expected = await snapshot(page);
+    try {
+      await expect(page.locator(".react-flow__edge-path")).toHaveCount(4, { timeout: 2000 });
+    } catch (error) {
+      const observation = await page.evaluate(() => ({
+        edgeCount: document.querySelectorAll(".react-flow__edge-path").length,
+        handles: [
+          ...document.querySelectorAll('[data-testid="rf__node-condition"] .react-flow__handle'),
+        ].map((handle) => ({
+          type: handle.classList.contains("source") ? "source" : "target",
+          id: handle.dataset.handleid ?? null,
+        })),
+        latestProps: workflowMeasurements.renders.at(-1),
+      }));
+      throw new Error(JSON.stringify({ observation, errors }), { cause: error });
+    }
+    for (const path of await page
+      .locator(".react-flow__edge-path")
+      .evaluateAll((edges) => edges.map((edge) => edge.getAttribute("d"))))
+      assert.ok(path && !/NaN|undefined|Infinity/.test(path));
+    const measurement = await page.evaluate((index) => {
+      const changed = workflowMeasurements.renders
+        .slice(index)
+        .find((render) =>
+          render.nodes.some((node) => node.id === "condition" && node.data.kind === "email"),
+        );
+      return {
+        first: changed.nodes.find((node) => node.id === "condition").measured,
+        actual: workflowMeasurements.dimensions
+          .slice(changed.eventCount)
+          .filter((change) => change.id === "condition"),
+        latest: workflowMeasurements.renders.at(-1).nodes.find((node) => node.id === "condition")
+          .measured,
+      };
+    }, firstRender);
+    assert.equal(measurement.first, null);
+    assert.ok(measurement.actual.length > 0);
+    assert.deepEqual(measurement.latest, measurement.actual.at(-1).dimensions);
+    assert.deepEqual(await snapshot(page), expected);
+    assert.equal(await count(page), 0);
+    assert.equal(await page.evaluate(() => workflowFixture.history.past.length), 0);
+    assert.equal(
+      await page.locator(".react-flow__viewport").evaluate((element) => element.style.transform),
+      camera,
+    );
+    assert.deepEqual(errors, []);
+  } finally {
+    await browser.close();
+  }
+});
+
+test("same-ID constructor email-to-condition replacement refreshes both branch handles", async () => {
+  const browser = await chromium.launch();
+  try {
+    const { page, errors } = await mount(browser, { instrumentMeasurements: true });
+    const emailDraft = structuredClone(initialGraph);
+    emailDraft.graph.nodes = emailDraft.graph.nodes.map((node) =>
+      node.id === "condition"
+        ? {
+            id: "constructor",
+            type: "email",
+            config: {
+              recipient: null,
+              subject_template: "Before branches",
+              body_template: "",
+              reply_to_email: "",
+            },
+          }
+        : node,
+    );
+    emailDraft.graph.edges = emailDraft.graph.edges.map((edge) => ({
+      ...edge,
+      source: edge.source === "condition" ? "constructor" : edge.source,
+      target: edge.target === "condition" ? "constructor" : edge.target,
+    }));
+    emailDraft.graph.edges.push({
+      id: "before_next",
+      source: "constructor",
+      target: "end",
+      port: "next",
+    });
+    await page.evaluate((draft) => workflowFixture.reset(draft), emailDraft);
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () =>
+            workflowMeasurements.renders.at(-1).nodes.find((node) => node.id === "constructor")
+              ?.measured?.width ?? 0,
+        ),
+      )
+      .toBeGreaterThan(0);
+    await expect(page.locator(".react-flow__edge-path")).toHaveCount(4);
+    const camera = await page
+      .locator(".react-flow__viewport")
+      .evaluate((element) => element.style.transform);
+    const changed = structuredClone(emailDraft);
+    changed.graph.nodes = changed.graph.nodes.map((node) =>
+      node.id === "constructor"
+        ? { id: node.id, type: "condition", config: { field: null, operator: null } }
+        : node,
+    );
+    changed.graph.edges = changed.graph.edges.filter((edge) => edge.id !== "before_next");
+    changed.graph.edges.push(
+      { id: "replacement_yes", source: "constructor", target: "delay", port: "yes" },
+      { id: "replacement_no", source: "constructor", target: "email", port: "no" },
+    );
+    const firstRender = await page.evaluate(() => workflowMeasurements.renders.length);
+    await page.evaluate((draft) => workflowFixture.reset(draft), changed);
+    await expect(
+      node(page, "constructor").locator('.react-flow__handle.source[data-handleid="next"]'),
+    ).toHaveCount(0);
+    for (const port of ["yes", "no"])
+      await expect(
+        node(page, "constructor").locator(`.react-flow__handle.source[data-handleid="${port}"]`),
+      ).toHaveCount(1);
+    const expected = await snapshot(page);
+    await expect(page.locator(".react-flow__edge-path")).toHaveCount(5, { timeout: 2000 });
+    for (const path of await page
+      .locator(".react-flow__edge-path")
+      .evaluateAll((edges) => edges.map((edge) => edge.getAttribute("d"))))
+      assert.ok(path && !/NaN|undefined|Infinity/.test(path));
+    const measurement = await page.evaluate((index) => {
+      const changed = workflowMeasurements.renders
+        .slice(index)
+        .find((render) =>
+          render.nodes.some((node) => node.id === "constructor" && node.data.kind === "condition"),
+        );
+      return {
+        first: changed.nodes.find((node) => node.id === "constructor").measured,
+        actual: workflowMeasurements.dimensions
+          .slice(changed.eventCount)
+          .filter((change) => change.id === "constructor"),
+        latest: workflowMeasurements.renders.at(-1).nodes.find((node) => node.id === "constructor")
+          .measured,
+      };
+    }, firstRender);
+    assert.equal(measurement.first, null);
+    assert.ok(measurement.actual.length > 0);
+    assert.deepEqual(measurement.latest, measurement.actual.at(-1).dimensions);
+    assert.deepEqual(await snapshot(page), expected);
+    assert.equal(await count(page), 0);
+    assert.equal(await page.evaluate(() => workflowFixture.history.past.length), 0);
+    assert.equal(
+      await page.locator(".react-flow__viewport").evaluate((element) => element.style.transform),
+      camera,
+    );
+    assert.deepEqual(errors, []);
+  } finally {
+    await browser.close();
+  }
+});
