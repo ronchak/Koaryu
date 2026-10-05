@@ -1,5 +1,7 @@
 "use client";
 
+import type { TrialAppointmentFacade } from "@/lib/trial-appointment-operation";
+
 import { createContext, useContext, type Context } from "react";
 
 import type {
@@ -117,6 +119,7 @@ export interface StoreContextValue {
   leadsLoadError: string | null;
   addLead: (data: Partial<Lead>) => Promise<void>;
   leadCreate: LeadCreateView;
+  trialAppointments: TrialAppointmentFacade;
   checkLeadCreateResult: () => Promise<void>;
   updateLead: (id: string, data: Partial<Lead>) => Promise<void>;
   deleteLead: (id: string) => Promise<void>;
@@ -263,6 +266,7 @@ export type LeadsStoreContextValue = Pick<
   | "leadsLoadError"
   | "addLead"
   | "leadCreate"
+  | "trialAppointments"
   | "checkLeadCreateResult"
   | "updateLead"
   | "deleteLead"

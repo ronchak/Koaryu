@@ -11,6 +11,13 @@ import {
 
 import { api, ApiError } from "@/lib/api";
 import {
+  getBrowserTrialAppointmentOwner,
+  createPreviewTrialOwner,
+  INACTIVE_TRIAL_FACADE,
+  type TrialBinding,
+  type TrialAppointmentFacade,
+} from "@/lib/trial-appointment-operation";
+import {
   getBrowserLeadCreateOwner,
   INACTIVE_LEAD_CREATE_VIEW,
   PREVIEW_LEAD_CREATE_VIEW,
@@ -237,6 +244,137 @@ export function useStoreLeadActions({
       throw new Error("Verify current lead access before checking the result.");
     await createOwner.check();
   }, [createOwner, matchesOwner, isPreviewMode]);
+
+  const [trialConnection] = useState(() => {
+    let facade = INACTIVE_TRIAL_FACADE;
+    const listeners = new Set<() => void>();
+    const notify = () => {
+      for (const listener of listeners) listener();
+    };
+    return {
+      snapshot: () => facade,
+      subscribe(listener: () => void) {
+        listeners.add(listener);
+        return () => {
+          listeners.delete(listener);
+        };
+      },
+      attach(owner: {
+        getSnapshot(): TrialAppointmentFacade;
+        subscribe(listener: () => void): () => void;
+      }) {
+        const update = () => {
+          facade = owner.getSnapshot();
+          notify();
+        };
+        const unsubscribe = owner.subscribe(update);
+        update();
+        return () => {
+          unsubscribe();
+          facade = INACTIVE_TRIAL_FACADE;
+          notify();
+        };
+      },
+    };
+  });
+  const {
+    reserve: reserveTrialLead,
+    current: currentTrialLead,
+    release: releaseTrialLead,
+  } = leadOperations;
+  const trialBinding = useMemo<TrialBinding>(
+    () => ({
+      isCurrent: () => leadMutationScopeRef.current === resourceScope,
+      beginRequest: beginLiveAuthRequest,
+      beginMutation: beginLeadMutation,
+      reserve: reserveTrialLead,
+      current: currentTrialLead,
+      release: releaseTrialLead,
+      list: (lead, query, token) => api.get(`/leads/${lead}/trial-appointments${query}`, token),
+      detail: (lead, id, token) => api.get(`/leads/${lead}/trial-appointments/${id}`, token),
+      create: (lead, body, token) => api.post(`/leads/${lead}/trial-appointments`, body, token),
+      update: (lead, id, body, token) =>
+        api.patch(`/leads/${lead}/trial-appointments/${id}`, body, token),
+      receipt: (id, token) => api.get(`/automations/operations/${id}`, token),
+      currentLead: (id, token) => api.get(`/leads/${id}`, token),
+      capturePublication: (id) => {
+        const publication = leadPublicationsRef.current.get(id);
+        return () => leadPublicationsRef.current.get(id) === publication;
+      },
+      publish: (id, lead, isCurrent) => {
+        const publication = Symbol();
+        leadPublicationsRef.current.set(id, publication);
+        setLeads((current) => {
+          if (
+            !isCurrent() ||
+            leadMutationScopeRef.current !== resourceScope ||
+            leadPublicationsRef.current.get(id) !== publication
+          )
+            return current;
+          return lead
+            ? [lead, ...current.filter((item) => item.id !== id)]
+            : current.filter((item) => item.id !== id);
+        });
+      },
+    }),
+    [
+      beginLeadMutation,
+      beginLiveAuthRequest,
+      reserveTrialLead,
+      currentTrialLead,
+      releaseTrialLead,
+      leadMutationScopeRef,
+      resourceScope,
+      setLeads,
+    ],
+  );
+  const previewInputsRef = useRef({ leadsRef, programsRef });
+  useLayoutEffect(() => {
+    previewInputsRef.current = { leadsRef, programsRef };
+  });
+  const previewIsCurrent = useMemo(
+    () => () => leadMutationScopeRef.current === resourceScope,
+    [leadMutationScopeRef, resourceScope],
+  );
+  useLayoutEffect(() => {
+    if (!isPreviewMode) return;
+    let active = true;
+    const owner = createPreviewTrialOwner(
+      () => previewInputsRef.current.leadsRef.current,
+      () => active && previewIsCurrent(),
+      () => previewInputsRef.current.programsRef.current,
+    );
+    const disconnect = trialConnection.attach(owner);
+    return () => {
+      active = false;
+      disconnect();
+    };
+  }, [isPreviewMode, previewIsCurrent, trialConnection]);
+  useLayoutEffect(() => {
+    if (isPreviewMode || !ownerUser || !ownerStudio || ownerRole !== "admin") return;
+    try {
+      const owner = getBrowserTrialAppointmentOwner({
+        userId: ownerUser,
+        studioId: ownerStudio,
+        role: ownerRole,
+      });
+      const detach = owner.bind(trialBinding);
+      const disconnect = trialConnection.attach(owner);
+      return () => {
+        disconnect();
+        detach();
+      };
+    } catch {
+      /* Only a verified live admin can attach or read trial metadata. */
+    }
+  }, [isPreviewMode, ownerUser, ownerStudio, ownerRole, trialBinding, trialConnection]);
+  const trialSnapshot = useSyncExternalStore(
+    trialConnection.subscribe,
+    trialConnection.snapshot,
+    () => INACTIVE_TRIAL_FACADE,
+  );
+  const trialAppointments =
+    isPreviewMode || ownerRole === "admin" ? trialSnapshot : INACTIVE_TRIAL_FACADE;
 
   const updateLead = useCallback(
     async (id: string, data: Partial<Lead>) => {
@@ -508,6 +646,7 @@ export function useStoreLeadActions({
     addLead,
     leadCreate,
     checkLeadCreateResult,
+    trialAppointments,
     convertLeadToStudent,
     deleteLead,
     followUpLead,

@@ -21,6 +21,7 @@
     "test:e2e:preview-import": "KOARYU_PREVIEW_E2E=true playwright test e2e/student-import-idempotency-key.spec.ts"
   },
   "dependencies": {
+    "@js-temporal/polyfill": "0.5.1",
     "@supabase/ssr": "^0.10.2",
     "@supabase/supabase-js": "^2.103.3",
     "@xyflow/react": "12.12.0",

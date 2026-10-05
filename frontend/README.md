@@ -70,6 +70,26 @@ persisted compiler state without deleting the production build or changing code.
 Keep the old cache until recovery is verified; increasing browser test timeouts
 does not repair a stalled compiler.
 
+## Trial appointment command and time checks
+
+`useLeadStore().trialAppointments` owns one pending trial command per lead. Its
+metadata-only session journal retains operation and owner IDs; explicit Check
+result reads the receipt, exact current appointment, then exact current lead.
+Unknown results never replay a mutation. An initially malformed journal blocks new trial
+commands without reserving ordinary lead rows; protected history reads still
+work. Explicit storage recheck only verifies and adopts metadata.
+
+Shared appointment time helpers preserve untouched saved instants, including
+fractions. New local schedules lazy-load Temporal and require an explicit choice
+for ambiguous times. A server-named zone unavailable locally remains readable,
+recoverable and cancelable; schedule editing requires a supported replacement.
+The facade tests use synthetic exact-detail responses. They do not establish
+runtime readiness of the backend exact-detail route, whose mounting is tracked separately.
+
+```bash
+node --experimental-strip-types --test tests/appointment-time.test.mjs tests/trial-appointment-operation.test.mjs tests/trial-appointment-mounted.test.mjs
+```
+
 ## Lead creation recovery
 
 Add lead retains one operation ID before submitting. If confirmation is lost,
