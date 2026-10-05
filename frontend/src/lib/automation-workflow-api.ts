@@ -76,7 +76,8 @@ export function assertWorkflowCatalog(value: unknown): asserts value is Workflow
     typeof value.scheduler.enabled !== "boolean" ||
     value.scheduler.interval_seconds !== 60 ||
     !isRecord(value.delivery_status) ||
-    !["disabled", "test", "live"].includes(String(value.delivery_status.mode)) ||
+    typeof value.delivery_status.mode !== "string" ||
+    !["disabled", "test", "live"].includes(value.delivery_status.mode) ||
     typeof value.delivery_status.configured !== "boolean" ||
     typeof value.delivery_status.can_enable !== "boolean" ||
     typeof value.delivery_status.sender !== "string" ||
@@ -93,9 +94,11 @@ export function assertWorkflowCatalog(value: unknown): asserts value is Workflow
       (item) =>
         isRecord(item) &&
         choice(item) &&
+        typeof item.subject_kind === "string" &&
         ["student", "promotion", "lead", "trial", "invoice", "belt_test"].includes(
-          String(item.subject_kind),
+          item.subject_kind,
         ) &&
+        typeof item.simulation_entity_type === "string" &&
         [
           "student",
           "promotion",
@@ -104,7 +107,7 @@ export function assertWorkflowCatalog(value: unknown): asserts value is Workflow
           "invoice",
           "payment",
           "belt_test_recipient",
-        ].includes(String(item.simulation_entity_type)) &&
+        ].includes(item.simulation_entity_type) &&
         strings(item.recipient_ids) &&
         strings(item.field_ids) &&
         strings(item.template_variables) &&
@@ -118,7 +121,8 @@ export function assertWorkflowCatalog(value: unknown): asserts value is Workflow
       (item) =>
         isRecord(item) &&
         choice(item) &&
-        ["boolean", "enum", "uuid"].includes(String(item.value_type)) &&
+        typeof item.value_type === "string" &&
+        ["boolean", "enum", "uuid"].includes(item.value_type) &&
         strings(item.operators) &&
         item.operators.every((operator) => ["eq", "neq", "in", "not_in"].includes(operator)) &&
         typeof item.nullable === "boolean" &&
@@ -164,7 +168,7 @@ export function assertWorkflowCatalog(value: unknown): asserts value is Workflow
     throw new ApiError("Workflow capabilities are unavailable.", 503);
 }
 function validSummary(value: unknown): boolean {
-  if (!isRecord(value)) return false;
+  if (!isRecord(value) || typeof value.status !== "string") return false;
   const publication = [
     value.published_version_id,
     value.published_version_number,
@@ -172,7 +176,7 @@ function validSummary(value: unknown): boolean {
   ].map((item) => item !== null);
   if (
     publication.some(Boolean) !== publication.every(Boolean) ||
-    (["active", "paused"].includes(String(value.status)) && !publication.every(Boolean)) ||
+    (["active", "paused"].includes(value.status) && !publication.every(Boolean)) ||
     (value.status === "draft" && publication.some(Boolean))
   )
     return false;
@@ -181,7 +185,7 @@ function validSummary(value: unknown): boolean {
     uuid(value.id) &&
     typeof value.name === "string" &&
     typeof value.description === "string" &&
-    ["draft", "active", "paused", "archived"].includes(String(value.status)) &&
+    ["draft", "active", "paused", "archived"].includes(value.status) &&
     integer(value.revision, 1) &&
     (value.published_version_id === null || uuid(value.published_version_id)) &&
     (value.published_version_number === null || integer(value.published_version_number, 1)) &&

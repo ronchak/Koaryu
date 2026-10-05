@@ -622,3 +622,266 @@ test("generated condition scalar null, false and zero remain present in canonica
     assert.equal(returned.value, value);
   }
 });
+
+const { assertWorkflowCatalog, assertWorkflowDetail } =
+  await import("../src/lib/automation-workflow-api.ts");
+
+function enumCatalog() {
+  return {
+    ...structuredClone(catalog),
+    triggers: {
+      event: {
+        id: "event",
+        label: "Event",
+        subject_kind: "lead",
+        simulation_entity_type: "lead",
+        recipient_ids: [],
+        field_ids: [],
+        template_variables: [],
+        delay_fields: [],
+        supports_offset: false,
+        supports_program_filter: false,
+        supports_lead_follow_up: false,
+      },
+    },
+    fields: {
+      field: {
+        id: "field",
+        label: "Field",
+        value_type: "enum",
+        operators: ["eq"],
+        nullable: false,
+      },
+    },
+  };
+}
+const malformedEnums = (value) => [[value], { value }, null, 0];
+const unavailable = (error) => error instanceof ApiError && error.status === 503;
+const enumBoundaries = [
+  {
+    label: "detail status",
+    valid: "draft",
+    make: (value) => ({ ...detail(), status: value }),
+    check: assertWorkflowDetail,
+  },
+  {
+    label: "delivery mode",
+    valid: "disabled",
+    make: (value) => {
+      const response = enumCatalog();
+      response.delivery_status.mode = value;
+      return response;
+    },
+    check: assertWorkflowCatalog,
+  },
+  {
+    label: "trigger subject kind",
+    valid: "lead",
+    make: (value) => {
+      const response = enumCatalog();
+      response.triggers.event.subject_kind = value;
+      return response;
+    },
+    check: assertWorkflowCatalog,
+  },
+  {
+    label: "trigger simulation entity type",
+    valid: "lead",
+    make: (value) => {
+      const response = enumCatalog();
+      response.triggers.event.simulation_entity_type = value;
+      return response;
+    },
+    check: assertWorkflowCatalog,
+  },
+  {
+    label: "field value type",
+    valid: "enum",
+    make: (value) => {
+      const response = enumCatalog();
+      response.fields.field.value_type = value;
+      return response;
+    },
+    check: assertWorkflowCatalog,
+  },
+];
+
+for (const boundary of enumBoundaries) {
+  test(`${boundary.label} rejects malformed JSON enums as unavailable reads`, async () => {
+    for (const value of malformedEnums(boundary.valid)) {
+      const response = boundary.make(value);
+      assert.throws(() => boundary.check(response), unavailable);
+      let reads = 0;
+      globalThis.fetch = async () => {
+        reads++;
+        return Response.json(response);
+      };
+      await assert.rejects(
+        boundary.label === "detail status"
+          ? workflowApi.detail(id, token)
+          : workflowApi.catalog(token),
+        unavailable,
+      );
+      assert.equal(reads, 1);
+    }
+  });
+}
+
+test("enum validation rejects boxed strings and objects without invoking coercion", () => {
+  for (const boundary of enumBoundaries) {
+    let coerced = 0;
+    const value = {
+      [Symbol.toPrimitive]() {
+        coerced++;
+        return boundary.valid;
+      },
+      toString() {
+        coerced++;
+        return boundary.valid;
+      },
+    };
+    assert.throws(() => boundary.check(boundary.make(value)), unavailable);
+    assert.equal(coerced, 0, boundary.label);
+    assert.throws(() => boundary.check(boundary.make(Object(boundary.valid))), unavailable);
+  }
+});
+
+test("coerced disabled delivery mode cannot claim ready capabilities", async () => {
+  const response = enumCatalog();
+  response.delivery_status = {
+    ...response.delivery_status,
+    mode: ["disabled"],
+    configured: true,
+    can_enable: true,
+    reason: null,
+  };
+  response.scheduler.enabled = true;
+  response.capabilities = { can_start: true, can_test_email: true, disabled_reason: null };
+  assert.throws(() => assertWorkflowCatalog(response), unavailable);
+  globalThis.fetch = async () => Response.json(response);
+  await assert.rejects(workflowApi.catalog(token), unavailable);
+  response.delivery_status.mode = "disabled";
+  assert.throws(() => assertWorkflowCatalog(response), unavailable);
+  for (const mode of ["test", "live"]) {
+    response.delivery_status.mode = mode;
+    assert.doesNotThrow(() => assertWorkflowCatalog(response));
+    assert.deepEqual(await workflowApi.catalog(token), response);
+  }
+});
+
+test("valid status and catalog enum strings retain their values", async () => {
+  for (const status of ["draft", "active", "paused", "archived"]) {
+    const response = { ...detail(), status };
+    if (status === "active" || status === "paused") {
+      response.published_version_id = ids.other;
+      response.published_version_number = 1;
+      response.published_at = response.updated_at;
+    }
+    globalThis.fetch = async () => Response.json(response);
+    assert.equal((await workflowApi.detail(id, token)).status, status);
+  }
+  const allowed = [
+    ["delivery mode", ["disabled", "test", "live"]],
+    ["trigger subject kind", ["student", "promotion", "lead", "trial", "invoice", "belt_test"]],
+    [
+      "trigger simulation entity type",
+      [
+        "student",
+        "promotion",
+        "lead",
+        "trial_appointment",
+        "invoice",
+        "payment",
+        "belt_test_recipient",
+      ],
+    ],
+    ["field value type", ["boolean", "enum", "uuid"]],
+  ];
+  for (const [label, values] of allowed)
+    for (const value of values) {
+      const boundary = enumBoundaries.find((item) => item.label === label);
+      const response = boundary.make(value);
+      globalThis.fetch = async () => Response.json(response);
+      assert.deepEqual(await workflowApi.catalog(token), response);
+    }
+});
+
+test("list summaries reject malformed status enums without retrying", async () => {
+  for (const status of malformedEnums("draft")) {
+    const item = {
+      ...detail(),
+      status,
+      created_at: detail().updated_at,
+      trigger_event_type: null,
+      draft_trigger_event_type: null,
+    };
+    delete item.draft_graph;
+    delete item.draft_layout;
+    delete item.validation_issues;
+    let reads = 0;
+    globalThis.fetch = async () => {
+      reads++;
+      return Response.json({ items: [item], next_cursor: null, has_more: false });
+    };
+    await assert.rejects(workflowApi.list({}, token), unavailable);
+    assert.equal(reads, 1);
+  }
+});
+
+test("malformed command status stays unknown and retains one reservation without mutation replay", async () => {
+  const { createWorkflowWorkspace, WORKFLOW_JOURNAL_KEY } =
+    await import("../src/lib/automation-workflow-workspace-controller.ts");
+  const { fixture, owner } = await import("./helpers/workflow-workspace-fixture.mjs");
+  for (const status of malformedEnums("draft")) {
+    const f = fixture();
+    f.dependencies.api = workflowApi;
+    const w = createWorkflowWorkspace({ mode: "live", owner, token }, f.dependencies);
+    w.openNew(ids.draft);
+    const calls = [];
+    globalThis.fetch = async (_url, init) => {
+      calls.push(JSON.parse(init.body));
+      return Response.json({ ...detail(), revision: 1, status });
+    };
+    const handle = w.submit("workflow.create");
+    await handle.settled;
+    const operation = w.getSnapshot().operations[`draft:${ids.draft}`];
+    assert.equal(operation.status, "unknown");
+    assert.equal(operation.locked, true);
+    assert.equal(operation.operationId, handle.operationId);
+    assert.equal(w.getSnapshot().editor.workflowId, null);
+    assert.equal(w.submit("workflow.create"), handle);
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].operation_id, handle.operationId);
+    const entries = JSON.parse(f.saved.get(WORKFLOW_JOURNAL_KEY)).entries;
+    assert.equal(entries.length, 1);
+    assert.equal(entries[0].operation_id, handle.operationId);
+  }
+});
+
+test("already strict command, reason and operator enum checks continue rejecting nonstrings", () => {
+  for (const value of malformedEnums("workflow.create")) {
+    assert.throws(
+      () =>
+        assertWorkflowReceipt(
+          {
+            ...receipt(operation_id, "workflow.create", { ...detail(), revision: 1 }),
+            command: value,
+          },
+          { operationId: operation_id },
+        ),
+      unavailable,
+    );
+  }
+  for (const value of malformedEnums("setup_required")) {
+    const response = enumCatalog();
+    response.delivery_status.reason = value;
+    // Null is an allowed reason, unlike the other malformed enum values.
+    if (value === null) assert.doesNotThrow(() => assertWorkflowCatalog(response));
+    else assert.throws(() => assertWorkflowCatalog(response), unavailable);
+  }
+  for (const value of malformedEnums("eq")) {
+    const response = enumCatalog();
+    response.fields.field.operators = [value];
+    assert.throws(() => assertWorkflowCatalog(response), unavailable);
+  }
+});
