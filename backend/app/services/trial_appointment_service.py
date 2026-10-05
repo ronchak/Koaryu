@@ -114,7 +114,9 @@ class TrialAppointmentService:
                 raise ValueError("Invalid trial RPC envelope.")
             return result
         except APIError as exc:
-            status_code, detail = _ERRORS.get((exc.code, exc.message), (503, UNAVAILABLE_DETAIL))
+            status_code, detail = 503, UNAVAILABLE_DETAIL
+            if isinstance(exc.code, str) and isinstance(exc.message, str):
+                status_code, detail = _ERRORS.get((exc.code, exc.message), (status_code, detail))
             raise HTTPException(status_code, detail) from None
         except Exception:  # noqa: BLE001 - Provider messages can contain private data.
             raise HTTPException(503, UNAVAILABLE_DETAIL) from None

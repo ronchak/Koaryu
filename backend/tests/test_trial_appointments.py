@@ -72,6 +72,31 @@ ROUTE_CASES = [
     ("POST", BASE, CREATE),
     ("PATCH", BASE + f"/{APPOINTMENT}", PATCH),
 ]
+MISSING_ERROR_IDENTITY = object()
+MALFORMED_ERROR_IDENTITIES = [
+    pytest.param(MISSING_ERROR_IDENTITY, id="missing"),
+    pytest.param(None, id="null"),
+    pytest.param([], id="array"),
+    pytest.param({}, id="object"),
+    pytest.param(503, id="integer"),
+    pytest.param(1.5, id="float"),
+    pytest.param(True, id="true"),
+    pytest.param(False, id="false"),
+]
+
+
+def malformed_provider_error(field, identity):
+    error = {
+        "code": "P0001",
+        "message": "AUTOMATION_STATE_CONFLICT",
+        "details": "synthetic private provider detail",
+        "hint": "synthetic private provider hint",
+    }
+    if identity is MISSING_ERROR_IDENTITY:
+        error.pop(field)
+    else:
+        error[field] = identity
+    return error
 
 
 def encoded(value):
@@ -94,12 +119,14 @@ class Database(TableBackedSupabase):
             }
         )
         self.rpc_calls = []
+        self.execute_calls = []
         self.handlers = {MUTATE: deepcopy(RECEIPT), LIST: deepcopy(PAGE)}
 
     def rpc(self, name, params):
         self.rpc_calls.append((name, params))
 
         def execute():
+            self.execute_calls.append(name)
             handler = self.handlers[name]
             if isinstance(handler, Exception):
                 raise handler
@@ -722,6 +749,23 @@ def test_http_mocked_sql_parent_authority_and_terminal_rejections_are_fixed(
     assert len(database.rpc_calls) == 1
 
 
+@pytest.mark.parametrize("method,path,body", ROUTE_CASES)
+@pytest.mark.parametrize("field", ["code", "message"])
+@pytest.mark.parametrize("identity", [[], {}], ids=["array", "object"])
+def test_http_malformed_error_identity_returns_fixed_503_without_retry(
+    api, method, path, body, field, identity
+):
+    client, database, _, _, _ = api
+    rpc = LIST if method == "GET" else MUTATE
+    database.handlers[rpc] = APIError(malformed_provider_error(field, identity))
+    response = client.request(method, path, json=body)
+    assert response.status_code == 503
+    assert response.json() == {"detail": UNAVAILABLE_DETAIL}
+    assert "private" not in response.text
+    assert database.execute_calls == [rpc]
+    assert len(database.rpc_calls) == 1
+
+
 def test_http_provider_timeout_is_sanitized_without_retry(api):
     client, database, _, _, _ = api
     database.handlers[MUTATE] = httpx.ReadTimeout("private provider timeout")
@@ -804,3 +848,29 @@ def test_pinned_postgrest_error_details_are_not_exposed():
         "This trial appointment cannot be changed in its current state.",
     )
     assert len(requests) == 1
+
+
+@pytest.mark.parametrize("rpc", [MUTATE, LIST])
+@pytest.mark.parametrize("field", ["code", "message"])
+@pytest.mark.parametrize("identity", MALFORMED_ERROR_IDENTITIES)
+def test_pinned_postgrest_malformed_error_identity_is_unavailable(rpc, field, identity):
+    assert version("postgrest") == "0.17.2"
+    requests = []
+
+    def handler(request):
+        requests.append(request)
+        return httpx.Response(503, json=malformed_provider_error(field, identity))
+
+    with SyntheticPostgrestClient(handler) as database:
+        with pytest.raises(HTTPException) as error:
+            service = TrialAppointmentService(database)
+            if rpc == LIST:
+                service.list(STUDIO, ACTOR, LEAD)
+            else:
+                create(service)
+    assert (error.value.status_code, error.value.detail) == (503, UNAVAILABLE_DETAIL)
+    assert error.value.__cause__ is None
+    assert error.value.__suppress_context__ is True
+    assert isinstance(error.value.__context__, APIError)
+    assert len(requests) == 1
+    assert requests[0].url.path == f"/rest/v1/rpc/{rpc}"
