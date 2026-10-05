@@ -11,6 +11,9 @@ async function mount(browser, { width = 1200, mode = "production" } = {}) {
   const page = await browser.newPage({ viewport: { width, height: 1000 } });
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));
+  page.on("console", (message) => {
+    if (message.type() === "error") errors.push(message.text());
+  });
   await page.route("**/*", (route) =>
     route.request().url() === "http://localhost/"
       ? route.fulfill({ contentType: "text/html", body: '<div id="root"></div>' })
@@ -32,7 +35,9 @@ async function mount(browser, { width = 1200, mode = "production" } = {}) {
   }
   return { page, errors };
 }
-const snapshot = (page) => page.evaluate(() => workflowFixture.draft);
+// JSON preserves own __proto__ keys across the browser automation transport.
+const snapshot = async (page) =>
+  JSON.parse(await page.evaluate(() => JSON.stringify(workflowFixture.draft)));
 const count = (page) => page.evaluate(() => workflowFixture.actions.length);
 const node = (page, id) => page.locator(`[data-testid="rf__node-${id}"]`);
 const step = (page, id) => page.locator(`[data-workflow-step="${id}"]`);
@@ -252,8 +257,13 @@ test("draft repair handles ID collisions, dangling connections, and missing or d
     const { page, errors } = await mount(browser, { width: 600 });
     const draft = structuredClone(initialGraph);
     draft.graph.edges[0].id = "candidate_connection";
-    draft.graph.edges.push({ id: "missing", source: "gone", target: "email", port: "next" });
-    draft.graph.edges.push({ id: "missing_target", source: "delay", target: "gone", port: "next" });
+    draft.graph.edges.push({ id: "missing", source: "constructor", target: "email", port: "next" });
+    draft.graph.edges.push({
+      id: "missing_target",
+      source: "delay",
+      target: "__proto__",
+      port: "next",
+    });
     await page.evaluate((draft) => workflowFixture.reset(draft), draft);
     await connectStep(page, "condition", "yes", "email");
     await expect(page.getByRole("button", { name: "Remove unattached connection" })).toBeVisible();
@@ -266,7 +276,9 @@ test("draft repair handles ID collisions, dangling connections, and missing or d
       .getByRole("button", { name: /^Disconnect next/ })
       .click();
     assert.ok(
-      !(await snapshot(page)).graph.edges.some((e) => e.source === "gone" || e.target === "gone"),
+      !(await snapshot(page)).graph.edges.some(
+        (e) => e.source === "constructor" || e.target === "__proto__",
+      ),
     );
     draft.graph.nodes = draft.graph.nodes.filter((n) => n.type !== "trigger");
     draft.graph.edges = [];
@@ -443,3 +455,84 @@ test(
     assert.equal(failureSignals.listenerCount("SIGTERM"), 0);
   },
 );
+
+for (const prototypeId of ["constructor", "toString", "__proto__"]) {
+  test(`real canvas preserves finite geometry with stationary and moved ${prototypeId}`, async () => {
+    const browser = await chromium.launch();
+    try {
+      const { page, errors } = await mount(browser);
+      const draft = structuredClone(initialGraph);
+      draft.graph.nodes.find((entry) => entry.id === "end").id = prototypeId;
+      draft.graph.edges.forEach((edge) => {
+        if (edge.target === "end") edge.target = prototypeId;
+      });
+      await page.evaluate((value) => workflowFixture.reset(value), draft);
+      await expect(node(page, prototypeId)).toBeVisible();
+      await expect(node(page, prototypeId)).toHaveAttribute(
+        "aria-label",
+        "End 1. Finish this branch",
+      );
+      await expect(page.locator(".react-flow__edge-path")).toHaveCount(draft.graph.edges.length);
+      const assertFiniteEdges = async () => {
+        await expect(page.locator(".react-flow__edge-path")).toHaveCount(draft.graph.edges.length);
+        const paths = await page
+          .locator(".react-flow__edge-path")
+          .evaluateAll((edges) => edges.map((edge) => edge.getAttribute("d")));
+        assert.equal(paths.length, draft.graph.edges.length, JSON.stringify({ paths, errors }));
+        for (const path of paths) {
+          assert.ok(path && !/NaN|undefined|Infinity/.test(path), `Invalid edge geometry: ${path}`);
+        }
+      };
+      for (const movedId of ["condition", prototypeId]) {
+        await node(page, movedId).focus();
+        await page.keyboard.press("Enter");
+        const before = await snapshot(page);
+        const actionCount = await count(page);
+        const originalTransform = await node(page, movedId).evaluate(
+          (element) => element.style.transform,
+        );
+        const box = await node(page, movedId).boundingBox();
+        await page.mouse.move(box.x + 35, box.y + 35);
+        await page.mouse.down();
+        await page.mouse.move(box.x + 85, box.y + 70, { steps: 12 });
+        assert.notEqual(
+          await node(page, movedId).evaluate((element) => element.style.transform),
+          originalTransform,
+        );
+        assert.deepEqual(await snapshot(page), before);
+        assert.equal(await count(page), actionCount);
+        await assertFiniteEdges();
+        assert.deepEqual(errors, []);
+        await page.mouse.up();
+        await expect.poll(() => count(page)).toBe(actionCount + 1);
+        const after = await snapshot(page);
+        assert.ok(
+          await page.evaluate(
+            (id) => Object.hasOwn(workflowFixture.draft.layout.positions, id),
+            movedId,
+          ),
+        );
+        assert.ok(Object.hasOwn(after.layout.positions, movedId));
+        assert.ok(Number.isFinite(after.layout.positions[movedId].x));
+        assert.ok(Number.isFinite(after.layout.positions[movedId].y));
+        assert.deepEqual(
+          await page.evaluate(() => {
+            const action = workflowFixture.actions.at(-1);
+            return { kind: action.kind, node_id: action.node_id };
+          }),
+          { kind: "commit_position", node_id: movedId },
+        );
+        await assertFiniteEdges();
+        await page.getByRole("button", { name: "Undo", exact: true }).click();
+        await expect.poll(() => snapshot(page)).toEqual(before);
+        await assertFiniteEdges();
+        await page.getByRole("button", { name: "Redo", exact: true }).click();
+        await expect.poll(() => snapshot(page)).toEqual(after);
+        await assertFiniteEdges();
+        assert.deepEqual(errors, []);
+      }
+    } finally {
+      await browser.close();
+    }
+  });
+}
