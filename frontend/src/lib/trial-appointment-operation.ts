@@ -620,12 +620,13 @@ export function createTrialAppointmentOwner(scope: TrialScope, deps = dependenci
     const marker = pending.get(lead);
     if (!marker?.appointment_id) throw bad();
     const unchanged = io.capturePublication(lead);
+    const missing = Symbol("current trial row missing");
     const currentOrMissing = (fetch: (token: string) => Promise<unknown>) =>
       read(io, async (token) => {
         try {
           return await fetch(token);
         } catch (error) {
-          if (error instanceof ApiError && error.status === 404) return null;
+          if (error instanceof ApiError && error.status === 404) return missing;
           throw error;
         }
       });
@@ -634,7 +635,7 @@ export function createTrialAppointmentOwner(scope: TrialScope, deps = dependenci
     );
     guard(io, lead);
     if (
-      appointment !== null &&
+      appointment !== missing &&
       !isTrialAppointment(appointment, scope.studioId, lead, marker.appointment_id)
     )
       throw bad();
@@ -642,9 +643,11 @@ export function createTrialAppointmentOwner(scope: TrialScope, deps = dependenci
     guard(io, lead);
     if (
       !unchanged() ||
-      (currentLead !== null && !isLeadCreateResult(currentLead, scope.studioId, lead))
+      (currentLead !== missing && !isLeadCreateResult(currentLead, scope.studioId, lead))
     )
       throw bad();
+    const observedLead = currentLead === missing ? null : currentLead;
+    const observedAppointment = appointment === missing ? null : appointment;
     try {
       persist(io, lead, null, unchanged);
     } catch (error) {
@@ -652,15 +655,17 @@ export function createTrialAppointmentOwner(scope: TrialScope, deps = dependenci
       throw error;
     }
     guard(io, lead);
-    io.publish(lead, currentLead, () => attached(io) && !pending.has(lead));
+    io.publish(lead, observedLead, () => attached(io) && !pending.has(lead));
     release(io, lead);
     confirmed.delete(lead);
     rejected.delete(lead);
     view(
       lead,
-      appointment === null || currentLead === null ? "unavailable" : "confirmed",
-      appointment === null || currentLead === null ? TRIAL_UNAVAILABLE : "Trial change saved.",
-      currentLead === null ? null : appointment,
+      observedAppointment === null || observedLead === null ? "unavailable" : "confirmed",
+      observedAppointment === null || observedLead === null
+        ? TRIAL_UNAVAILABLE
+        : "Trial change saved.",
+      observedLead === null ? null : observedAppointment,
       marker.command,
     );
     knownIds.delete(lead);
