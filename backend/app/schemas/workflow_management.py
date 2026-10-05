@@ -34,6 +34,7 @@ from app.schemas.workflow import (
     WorkflowGraph,
     WorkflowLayout,
     WorkflowValidationIssue,
+    omit_optional_wire_requirements,
 )
 from app.services.workflow_catalog import CATALOG
 from app.services.workflow_graph import validate_workflow_draft
@@ -108,7 +109,12 @@ RunCount = Annotated[int, Field(strict=True, ge=0)]
 
 
 class WorkflowManagementModel(BaseModel):
-    model_config = ConfigDict(extra="forbid", revalidate_instances="always")
+    model_config = ConfigDict(
+        extra="forbid",
+        revalidate_instances="always",
+        json_schema_serialization_defaults_required=True,
+        json_schema_extra=omit_optional_wire_requirements,
+    )
 
 
 class WorkflowRequest(WorkflowManagementModel):
@@ -149,7 +155,7 @@ class WorkflowPublish(WorkflowLifecycleRequest):
 class WorkflowValidate(WorkflowRequest):
     # Invalid graph shapes are diagnostics, not invalid request envelopes.
     graph: JsonValue
-    layout: JsonValue = Field(default_factory=dict)
+    layout: JsonValue = Field(default_factory=dict, json_schema_extra={"x-optional-on-wire": True})
 
 
 def require_complete_issues(value: object) -> object:
@@ -249,7 +255,9 @@ class WorkflowFieldMetadata(WorkflowManagementModel):
     value_type: Literal["boolean", "enum", "uuid"]
     operators: list[Literal["eq", "neq", "in", "not_in"]]
     nullable: StrictBool
-    values: list[StrictStr] = Field(default_factory=list)
+    values: list[StrictStr] = Field(
+        default_factory=list, json_schema_extra={"x-optional-on-wire": True}
+    )
 
     @model_serializer(mode="wrap")
     def omit_unset_values(self, handler: SerializerFunctionWrapHandler):

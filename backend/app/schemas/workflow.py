@@ -26,17 +26,37 @@ ConditionScalar = ConditionString | bool | int | Annotated[float, Field(allow_in
 ConditionValue = ConditionScalar | Annotated[list[ConditionScalar], Field(max_length=100)] | None
 
 
+def omit_optional_wire_requirements(schema: dict) -> None:
+    """Keep serializer omissions optional when output defaults become required."""
+    if "required" in schema:
+        properties = schema.get("properties", {})
+        schema["required"] = [
+            name
+            for name in schema["required"]
+            if properties.get(name, {}).get("x-optional-on-wire") is not True
+        ]
+
+
 class WorkflowModel(BaseModel):
-    model_config = ConfigDict(extra="forbid", strict=True, revalidate_instances="always")
+    model_config = ConfigDict(
+        extra="forbid",
+        strict=True,
+        revalidate_instances="always",
+        json_schema_serialization_defaults_required=True,
+        json_schema_extra=omit_optional_wire_requirements,
+    )
 
 
 class TriggerConfig(WorkflowModel):
     event_type: CatalogChoice | None = None
     program_id: Annotated[str, Field(max_length=36)] | None = None
-    offset_minutes: int = Field(default=-1, ge=-129600, le=-1)
+    offset_minutes: int = Field(
+        default=-1, ge=-129600, le=-1, json_schema_extra={"x-optional-on-wire": True}
+    )
 
     @model_serializer(mode="wrap")
-    def omit_unset_offset(self, handler: SerializerFunctionWrapHandler) -> dict:
+    def omit_unset_offset(self, handler: SerializerFunctionWrapHandler):
+        # A dict return annotation would erase these fields in response OpenAPI.
         result = handler(self)
         if "offset_minutes" not in self.model_fields_set:
             result.pop("offset_minutes", None)
@@ -59,7 +79,7 @@ class TriggerConfig(WorkflowModel):
 class ConditionConfig(WorkflowModel):
     field: CatalogChoice | None = None
     operator: CatalogChoice | None = None
-    value: ConditionValue = None
+    value: ConditionValue = Field(default=None, json_schema_extra={"x-optional-on-wire": True})
 
     @field_validator("value", mode="before")
     @classmethod
@@ -72,7 +92,8 @@ class ConditionConfig(WorkflowModel):
         return value
 
     @model_serializer(mode="wrap")
-    def omit_unset_value(self, handler: SerializerFunctionWrapHandler) -> dict:
+    def omit_unset_value(self, handler: SerializerFunctionWrapHandler):
+        # Keep the model's output schema while preserving omitted draft values.
         result = handler(self)
         if "value" not in self.model_fields_set:
             result.pop("value", None)
@@ -171,7 +192,7 @@ class WorkflowEdge(WorkflowModel):
 
 
 class WorkflowGraph(WorkflowModel):
-    schema_version: int = Field(ge=1, le=1)
+    schema_version: int = Field(ge=1, le=1, json_schema_extra={"const": 1})
     nodes: list[WorkflowNode] = Field(max_length=40)
     edges: list[WorkflowEdge] = Field(max_length=60)
 

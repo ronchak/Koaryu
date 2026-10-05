@@ -155,6 +155,129 @@ export interface ApiBeltRankUpdate {
   tip_color_hex?: string | null;
 }
 
+export interface ApiBeltTestApprovalOperationResponse {
+  operation_id: string;
+  state: "committed";
+  entity_id: string;
+  committed_at: string;
+  command: "belt_test.approve";
+  entity_type: "belt_test";
+  result: ApiBeltTestRecipientApprovalResponse;
+}
+
+export interface ApiBeltTestEventCreate {
+  operation_id: string;
+  name: string;
+  ladder_id: string;
+  starts_at: string;
+  ends_at: string;
+  timezone: string;
+  location?: string;
+  status?: "draft" | "scheduled";
+}
+
+export interface ApiBeltTestEventListResponse {
+  items: ApiBeltTestEventResponse[];
+  next_cursor: string | null;
+  has_more: boolean;
+}
+
+export interface ApiBeltTestEventResponse {
+  id: string;
+  studio_id: string;
+  name: string;
+  ladder_id: string;
+  program_id: string | null;
+  starts_at: string;
+  ends_at: string;
+  timezone: string;
+  location: string;
+  status: "draft" | "scheduled" | "completed" | "canceled";
+  revision: number;
+  schedule_revision: number;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ApiBeltTestEventUpdate {
+  operation_id: string;
+  expected_revision: number;
+  name?: string;
+  ladder_id?: string;
+  starts_at?: string;
+  ends_at?: string;
+  timezone?: string;
+  location?: string;
+  status?: "draft" | "scheduled" | "completed" | "canceled";
+}
+
+export interface ApiBeltTestOperationResponse {
+  operation_id: string;
+  state: "committed";
+  entity_id: string;
+  committed_at: string;
+  command: "belt_test.create" | "belt_test.update";
+  entity_type: "belt_test";
+  result: ApiBeltTestEventResponse;
+}
+
+export interface ApiBeltTestRecipientApprovalResponse {
+  items: ApiBeltTestRecipientResponse[];
+  event_revision: number;
+  schedule_revision: number;
+}
+
+export interface ApiBeltTestRecipientApprove {
+  operation_id: string;
+  expected_event_revision: number;
+  recipients: ApiBeltTestRecipientSelection[];
+}
+
+export interface ApiBeltTestRecipientListResponse {
+  items: ApiBeltTestRecipientResponse[];
+  next_cursor: string | null;
+  has_more: boolean;
+}
+
+export interface ApiBeltTestRecipientResponse {
+  id: string;
+  studio_id: string;
+  event_id: string;
+  student_id: string;
+  student_program_membership_id: string | null;
+  approved_schedule_revision: number;
+  approved_current_rank_id: string | null;
+  approved_target_rank_id: string;
+  state: "approved" | "revoked";
+  revision: number;
+  approved_by: string | null;
+  approved_at: string;
+  revoked_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ApiBeltTestRecipientRevoke {
+  operation_id: string;
+  expected_revision: number;
+}
+
+export interface ApiBeltTestRecipientSelection {
+  student_id: string;
+  student_program_membership_id?: string | null;
+}
+
+export interface ApiBeltTestRevokeOperationResponse {
+  operation_id: string;
+  state: "committed";
+  entity_id: string;
+  committed_at: string;
+  command: "belt_test.revoke";
+  entity_type: "belt_test_recipient";
+  result: ApiBeltTestRecipientResponse;
+}
+
 export interface ApiBillingEnrollmentPageResponse {
   items: ApiStudentBillingEnrollmentResponse[];
   next_cursor?: string | null;
@@ -676,6 +799,30 @@ export interface ApiClassTemplateUpdate {
   is_active?: boolean | null;
 }
 
+export interface ApiConditionConfig_Input {
+  field?: string | null;
+  operator?: string | null;
+  value?: string | boolean | number | (string | boolean | number)[] | null;
+}
+
+export interface ApiConditionConfig_Output {
+  field: string | null;
+  operator: string | null;
+  value?: string | boolean | number | (string | boolean | number)[] | null;
+}
+
+export interface ApiConditionNode_Input {
+  id: string;
+  type: "condition";
+  config: ApiConditionConfig_Input;
+}
+
+export interface ApiConditionNode_Output {
+  id: string;
+  type: "condition";
+  config: ApiConditionConfig_Output;
+}
+
 export interface ApiConnectOnboardingDeliveryAckRequest {
   receipt: string;
 }
@@ -975,6 +1122,18 @@ export interface ApiDashboardWorkspaceResponse {
   studio?: ApiDashboardBootstrapStudioSummary | null;
 }
 
+export interface ApiDelayNode_Input {
+  id: string;
+  type: "delay";
+  config: ApiDurationDelayConfig_Input | ApiUntilDelayConfig_Input;
+}
+
+export interface ApiDelayNode_Output {
+  id: string;
+  type: "delay";
+  config: ApiDurationDelayConfig_Output | ApiUntilDelayConfig_Output;
+}
+
 export interface ApiDemoResetCounts {
   students: number;
   leads: number;
@@ -1007,6 +1166,16 @@ export interface ApiDemoteStudent {
   reason: string;
 }
 
+export interface ApiDurationDelayConfig_Input {
+  mode: "duration";
+  minutes?: number | null;
+}
+
+export interface ApiDurationDelayConfig_Output {
+  mode: "duration";
+  minutes: number | null;
+}
+
 export interface ApiEligibilityEntry {
   student_id: string;
   student_program_membership_id?: string | null;
@@ -1028,6 +1197,32 @@ export interface ApiEligibilityEntry {
   is_eligible: boolean;
 }
 
+export interface ApiEmailConfig_Input {
+  recipient?: string | null;
+  subject_template?: string;
+  body_template?: string;
+  reply_to_email?: string;
+}
+
+export interface ApiEmailConfig_Output {
+  recipient: string | null;
+  subject_template: string;
+  body_template: string;
+  reply_to_email: string;
+}
+
+export interface ApiEmailNode_Input {
+  id: string;
+  type: "email";
+  config: ApiEmailConfig_Input;
+}
+
+export interface ApiEmailNode_Output {
+  id: string;
+  type: "email";
+  config: ApiEmailConfig_Output;
+}
+
 export interface ApiEmailUsageResponse {
   included: number;
   sent: number;
@@ -1036,6 +1231,14 @@ export interface ApiEmailUsageResponse {
   estimated_overage_cents: number;
   period_start: string;
   period_end: string;
+}
+
+export type ApiEndConfig = Record<string, never>;
+
+export interface ApiEndNode {
+  id: string;
+  type: "end";
+  config: ApiEndConfig;
 }
 
 export interface ApiErrorMeta {
@@ -1110,6 +1313,8 @@ export interface ApiHTTPValidationError {
   error: ApiErrorMeta;
 }
 
+export type ApiJsonValue = unknown;
+
 export interface ApiLeadActivityCreate {
   activity_type: string;
   description?: string | null;
@@ -1148,6 +1353,38 @@ export interface ApiLeadCreate {
   assigned_staff_id?: string | null;
   follow_up_date?: string | null;
   notes?: string | null;
+}
+
+export interface ApiLeadCreateOperationResponse {
+  operation_id: string;
+  state: "committed";
+  entity_id: string;
+  committed_at: string;
+  command: "lead.create";
+  entity_type: "lead";
+  result: ApiLeadResponse;
+}
+
+export interface ApiLeadFollowUpConfig_Input {
+  due_in_days?: number | null;
+  note?: string;
+}
+
+export interface ApiLeadFollowUpConfig_Output {
+  due_in_days: number | null;
+  note: string;
+}
+
+export interface ApiLeadFollowUpNode_Input {
+  id: string;
+  type: "lead_follow_up";
+  config: ApiLeadFollowUpConfig_Input;
+}
+
+export interface ApiLeadFollowUpNode_Output {
+  id: string;
+  type: "lead_follow_up";
+  config: ApiLeadFollowUpConfig_Output;
 }
 
 export interface ApiLeadFollowUpRequest {
@@ -1782,6 +2019,94 @@ export interface ApiSupportTicketTriageUpdate {
   metadata?: Record<string, unknown>;
 }
 
+export interface ApiTrialAppointmentCreate {
+  operation_id: string;
+  starts_at: string;
+  ends_at: string;
+  timezone: string;
+  location?: string;
+  program_id?: string | null;
+}
+
+export interface ApiTrialAppointmentListResponse {
+  items: ApiTrialAppointmentResponse[];
+  next_cursor: string | null;
+  has_more: boolean;
+}
+
+export interface ApiTrialAppointmentResponse {
+  id: string;
+  studio_id: string;
+  lead_id: string;
+  program_id: string | null;
+  starts_at: string;
+  ends_at: string;
+  timezone: string;
+  location: string;
+  status: "scheduled" | "completed" | "no_show" | "canceled";
+  revision: number;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ApiTrialAppointmentUpdate {
+  operation_id: string;
+  expected_revision: number;
+  starts_at?: string;
+  ends_at?: string;
+  timezone?: string;
+  location?: string;
+  program_id?: string | null;
+  status?: "scheduled" | "completed" | "no_show" | "canceled";
+}
+
+export interface ApiTrialOperationResponse {
+  operation_id: string;
+  state: "committed";
+  entity_id: string;
+  committed_at: string;
+  command: "trial.create" | "trial.update";
+  entity_type: "trial_appointment";
+  result: ApiTrialAppointmentResponse;
+}
+
+export interface ApiTriggerConfig_Input {
+  event_type?: string | null;
+  program_id?: string | null;
+  offset_minutes?: number;
+}
+
+export interface ApiTriggerConfig_Output {
+  event_type: string | null;
+  program_id: string | null;
+  offset_minutes?: number;
+}
+
+export interface ApiTriggerNode_Input {
+  id: string;
+  type: "trigger";
+  config: ApiTriggerConfig_Input;
+}
+
+export interface ApiTriggerNode_Output {
+  id: string;
+  type: "trigger";
+  config: ApiTriggerConfig_Output;
+}
+
+export interface ApiUntilDelayConfig_Input {
+  mode: "until";
+  field?: string | null;
+  offset_minutes?: number;
+}
+
+export interface ApiUntilDelayConfig_Output {
+  mode: "until";
+  field: string | null;
+  offset_minutes: number;
+}
+
 export interface ApiUserProfile {
   id: string;
   email: string;
@@ -1799,4 +2124,226 @@ export interface ApiValidationError {
 export interface ApiWebhookProcessResponse {
   received: boolean;
   status: string;
+}
+
+export interface ApiWorkflowCapabilities {
+  can_start: boolean;
+  can_test_email: boolean;
+  disabled_reason: string | null;
+}
+
+export interface ApiWorkflowCatalogResponse {
+  delivery_status: ApiWorkflowDeliveryStatus;
+  capabilities: ApiWorkflowCapabilities;
+  scheduler: ApiWorkflowScheduler;
+  schema_version: 1;
+  limits: ApiWorkflowLimits;
+  triggers: Record<string, ApiWorkflowTriggerMetadata>;
+  fields: Record<string, ApiWorkflowFieldMetadata>;
+  recipients: Record<string, ApiWorkflowRecipientMetadata>;
+  variables: Record<string, ApiWorkflowVariableMetadata>;
+  delay_fields: Record<string, ApiWorkflowDelayMetadata>;
+  presets: ApiWorkflowPresetMetadata[];
+}
+
+export interface ApiWorkflowCreate {
+  operation_id: string;
+  name: string;
+  description: string;
+  graph: ApiWorkflowGraph_Input;
+  layout: ApiWorkflowLayout_Input;
+}
+
+export interface ApiWorkflowDelayMetadata {
+  id: string;
+  label: string;
+  value_type: "datetime";
+  trigger_ids: string[];
+}
+
+export interface ApiWorkflowDeliveryStatus {
+  mode: "disabled" | "test" | "live";
+  configured: boolean;
+  can_enable: boolean;
+  sender: string;
+  test_recipient: string | null;
+  reason: "setup_required" | "sending_disabled" | "authentication_required" | "unavailable" | null;
+}
+
+export interface ApiWorkflowDetail {
+  id: string;
+  name: string;
+  description: string;
+  status: "draft" | "active" | "paused" | "archived";
+  revision: number;
+  published_version_id: string | null;
+  published_version_number: number | null;
+  published_at: string | null;
+  updated_at: string;
+  has_unpublished_changes: boolean;
+  pending_run_count: number;
+  sending_run_count: number;
+  draft_graph: ApiWorkflowGraph_Output;
+  draft_layout: ApiWorkflowLayout_Output;
+  validation_issues: ApiWorkflowValidationIssue[];
+}
+
+export interface ApiWorkflowEdge {
+  id: string;
+  source: string;
+  target: string;
+  port: "next" | "yes" | "no";
+}
+
+export interface ApiWorkflowFieldMetadata {
+  id: string;
+  label: string;
+  value_type: "boolean" | "enum" | "uuid";
+  operators: ("eq" | "neq" | "in" | "not_in")[];
+  nullable: boolean;
+  values?: string[];
+}
+
+export interface ApiWorkflowGraph_Input {
+  schema_version: 1;
+  nodes: (ApiTriggerNode_Input | ApiConditionNode_Input | ApiDelayNode_Input | ApiEmailNode_Input | ApiLeadFollowUpNode_Input | ApiEndNode)[];
+  edges: ApiWorkflowEdge[];
+}
+
+export interface ApiWorkflowGraph_Output {
+  schema_version: 1;
+  nodes: (ApiTriggerNode_Output | ApiConditionNode_Output | ApiDelayNode_Output | ApiEmailNode_Output | ApiLeadFollowUpNode_Output | ApiEndNode)[];
+  edges: ApiWorkflowEdge[];
+}
+
+export interface ApiWorkflowLayout_Input {
+  positions?: Record<string, ApiWorkflowPosition>;
+}
+
+export interface ApiWorkflowLayout_Output {
+  positions: Record<string, ApiWorkflowPosition>;
+}
+
+export interface ApiWorkflowLifecycleRequest {
+  operation_id: string;
+  expected_revision: number;
+}
+
+export interface ApiWorkflowLimits {
+  max_nodes: 40;
+  max_edges: 60;
+  max_workflows: 100;
+  max_active_workflows: 25;
+  max_delay_minutes: 129600;
+  max_request_bytes: 1048576;
+}
+
+export interface ApiWorkflowListResponse {
+  items: ApiWorkflowSummary[];
+  next_cursor: string | null;
+  has_more: boolean;
+}
+
+export interface ApiWorkflowOperationResponse {
+  operation_id: string;
+  state: "committed";
+  entity_id: string;
+  committed_at: string;
+  command: "workflow.create" | "workflow.save" | "workflow.publish" | "workflow.start" | "workflow.pause" | "workflow.archive";
+  entity_type: "workflow";
+  result: ApiWorkflowDetail;
+}
+
+export interface ApiWorkflowPosition {
+  x: number;
+  y: number;
+}
+
+export interface ApiWorkflowPresetMetadata {
+  id: string;
+  name: string;
+  description: string;
+  graph: ApiWorkflowGraph_Output;
+}
+
+export interface ApiWorkflowPublish {
+  operation_id: string;
+  expected_revision: number;
+  cancel_pending?: boolean;
+}
+
+export interface ApiWorkflowRecipientMetadata {
+  id: string;
+  label: string;
+}
+
+export interface ApiWorkflowSave {
+  operation_id: string;
+  name: string;
+  description: string;
+  graph: ApiWorkflowGraph_Input;
+  layout: ApiWorkflowLayout_Input;
+  expected_revision: number;
+}
+
+export interface ApiWorkflowScheduler {
+  enabled: boolean;
+  interval_seconds: 60;
+}
+
+export interface ApiWorkflowSummary {
+  id: string;
+  name: string;
+  description: string;
+  status: "draft" | "active" | "paused" | "archived";
+  revision: number;
+  published_version_id: string | null;
+  published_version_number: number | null;
+  published_at: string | null;
+  updated_at: string;
+  has_unpublished_changes: boolean;
+  pending_run_count: number;
+  sending_run_count: number;
+  trigger_event_type: string | null;
+  draft_trigger_event_type: string | null;
+  created_at: string;
+}
+
+export interface ApiWorkflowTriggerMetadata {
+  id: string;
+  label: string;
+  subject_kind: "student" | "promotion" | "lead" | "trial" | "invoice" | "belt_test";
+  simulation_entity_type: "student" | "promotion" | "lead" | "trial_appointment" | "invoice" | "payment" | "belt_test_recipient";
+  recipient_ids: string[];
+  field_ids: string[];
+  template_variables: string[];
+  supports_offset: boolean;
+  supports_program_filter: boolean;
+  delay_fields: string[];
+  supports_lead_follow_up: boolean;
+}
+
+export interface ApiWorkflowValidate {
+  graph: ApiJsonValue;
+  layout?: ApiJsonValue;
+}
+
+export interface ApiWorkflowValidationIssue {
+  code: string;
+  message: string;
+  node_id: string | null;
+  edge_id: string | null;
+  field: string | null;
+}
+
+export interface ApiWorkflowValidationResult {
+  valid: boolean;
+  issues: ApiWorkflowValidationIssue[];
+}
+
+export interface ApiWorkflowVariableMetadata {
+  id: string;
+  label: string;
+  value_type: "string";
+  fallback: string | null;
 }
