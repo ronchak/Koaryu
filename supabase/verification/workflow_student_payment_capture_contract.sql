@@ -134,7 +134,8 @@ BEGIN
     SELECT id INTO promotion FROM public.record_student_rank_transition_v3(s,student,membership,program,white,a,NULL,'promotion',op);
     SELECT * INTO source_event FROM private.automation_workflow_events WHERE event_type='student.promoted' AND subject_id=promotion;
     PERFORM pg_temp.capture_check(source_event.source_key=promotion::TEXT AND source_event.subject_kind='promotion' AND source_event.context=jsonb_build_object(
-        'promotion_id',promotion,'student_id',student,'student_program_membership_id',membership,'program_id',program,'rank_id',white,'from_rank_id',NULL),'actual promotion stores exact returned identity and resolved context');
+        'promotion_id',promotion,'student_id',student,'student_program_membership_id',membership,'program_id',program,'rank_id',white,'from_rank_id',NULL,'rank_context_generation',2),'actual promotion stores exact returned identity and resolved context');
+    PERFORM pg_temp.capture_check(private.workflow_rank_context_generation_v1(s,student,membership)=2,'genuine promotion advances its exact generation once');
     PERFORM public.record_student_rank_transition_v3(s,student,membership,program,white,a,NULL,'promotion',op);
     PERFORM pg_temp.capture_check((SELECT count(*)=1 FROM private.automation_workflow_events WHERE event_type='student.promoted'),'rank operation replay is silent');
     PERFORM public.record_student_rank_transition_v3(s,student,membership,program,yellow,a,NULL,'promotion',gen_random_uuid());

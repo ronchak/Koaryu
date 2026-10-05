@@ -226,7 +226,7 @@ BEGIN
                 AND captured.source_key=recipient::TEXT||':'||revision::TEXT||':1'
                 AND captured.context=jsonb_build_object('event_id',e,'student_id',x->'student','student_program_membership_id',x->'membership',
                     'approved_program_id',x->'program','approved_current_rank_id',x->'rank0','approved_target_rank_id',x->'rank1',
-                    'approved_schedule_revision',1,'approval_revision',revision)))
+                    'approved_schedule_revision',1,'approval_revision',revision,'approved_rank_context_generation',1)))
         AND NOT EXISTS(SELECT 1 FROM public.automation_workflow_runs WHERE studio_id=s)
         AND NOT EXISTS(SELECT 1 FROM public.promotions WHERE studio_id=s)
         AND NOT EXISTS(SELECT 1 FROM public.automation_deliveries WHERE studio_id=s),'exact changed approval snapshots without runs promotion or delivery effects');
@@ -352,6 +352,9 @@ BEGIN
         SELECT 1 FROM jsonb_array_elements(result#>'{payload,items}') n WHERE n.value ? 'approved_program_id'),'unscoped explicit contexts keep unchanged public DTO');
     PERFORM pg_temp.recipient_check((SELECT count(*)=2 FROM public.belt_test_recipients b JOIN public.student_program_memberships m ON m.id=b.student_program_membership_id
         WHERE b.studio_id=s AND b.approved_program_id=m.program_id),'internal snapshots bind exact selected programs');
+    PERFORM pg_temp.recipient_check(NOT EXISTS(SELECT 1 FROM public.belt_test_recipients b WHERE b.studio_id=s
+        AND b.approved_rank_context_generation IS DISTINCT FROM private.workflow_rank_context_generation_v1(s,b.student_id,b.student_program_membership_id)),
+        'internal approvals bind the exact observed generation');
     RESET ROLE;
     UPDATE public.programs SET archived_at=clock_timestamp() WHERE id=program2;
     SET LOCAL ROLE service_role;
