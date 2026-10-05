@@ -6,7 +6,7 @@ from concurrent.futures import Future
 from datetime import datetime, timezone
 from threading import Lock
 from time import monotonic
-from typing import Any, Optional
+from typing import Any, Optional, get_args
 from uuid import uuid4
 
 try:  # pragma: no cover - exercised by whichever stripe version is installed
@@ -22,6 +22,7 @@ from app.schemas.billing import (
     BillingLinkResponse,
     EmailUsageResponse,
     PlatformBillingStatusResponse,
+    SubscriptionStatus,
 )
 from app.services.platform_billing_helpers import (
     INVOICE_PAYMENT_EVENT_METADATA_KEY,
@@ -83,6 +84,39 @@ ACCESS_REPAIR_FAILURE_BACKOFF_SECONDS = 60
 # the threshold where a person waiting on a confirmed payment would notice, and
 # treat it as burst collapsing for a single page load rather than a rate limit.
 ACCESS_REPAIR_RECHECK_INTERVAL_SECONDS = 5
+
+
+class AccessStatusUnavailable(Exception):
+    """The database did not return an existing, structurally valid access row."""
+
+    def __init__(self) -> None:
+        super().__init__("Koaryu Core subscription status is unavailable.")
+
+
+def _require_subscription_access_row(row: Any, *, studio_id: str | None = None) -> dict[str, Any]:
+    """Validate selected facts without interpreting entitlement or timestamps."""
+    if (
+        not isinstance(row, dict)
+        or not isinstance(row.get("status"), str)
+        or row["status"] not in get_args(SubscriptionStatus)
+        or not isinstance(row.get("comped"), bool)
+    ):
+        raise AccessStatusUnavailable()
+
+    nullable_text_fields = ("trial_end",)
+    if studio_id is not None:
+        if not isinstance(row.get("studio_id"), str) or row["studio_id"] != studio_id:
+            raise AccessStatusUnavailable()
+        nullable_text_fields += (
+            "stripe_subscription_id",
+            "stripe_customer_id",
+            "current_period_start",
+            "current_period_end",
+        )
+    for field in nullable_text_fields:
+        if field not in row or (row[field] is not None and not isinstance(row[field], str)):
+            raise AccessStatusUnavailable()
+    return row
 
 
 class AccessRepairProviderError(Exception):
@@ -220,7 +254,17 @@ class PlatformBillingService:
         *,
         strict_repairs: bool = False,
         allow_provider_repairs: bool = True,
+        read_only: bool = False,
     ) -> dict[str, Any]:
+        if read_only:
+            row = _require_subscription_access_row(
+                getattr(self._select_subscription_result(studio_id), "data", None),
+                studio_id=studio_id,
+            )
+            if self._access_repair_pending(row):
+                raise AccessRepairDeferred(studio_id)
+            return row
+
         if not allow_provider_repairs:
             # Bounded workers use current persisted facts without joining or
             # changing repair coordination. Even a successful retry window
@@ -1054,14 +1098,17 @@ class PlatformBillingService:
             event_type,
         )
 
-    def _ensure_subscription_row(self, studio_id: str) -> dict[str, Any]:
-        result = (
+    def _select_subscription_result(self, studio_id: str) -> Any:
+        return (
             self.supabase.table("studio_subscriptions")
             .select("*")
             .eq("studio_id", studio_id)
             .maybe_single()
             .execute()
         )
+
+    def _ensure_subscription_row(self, studio_id: str) -> dict[str, Any]:
+        result = self._select_subscription_result(studio_id)
         if result.data:
             return result.data
         insert_result = (

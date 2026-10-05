@@ -151,6 +151,7 @@ def get_platform_subscription_access(
     studio_id: str,
     *,
     allow_provider_repairs: bool = True,
+    read_only: bool = False,
 ) -> dict:
     from app.services.platform_billing_service import (
         AccessRepairDeferred,
@@ -164,6 +165,7 @@ def get_platform_subscription_access(
             studio_id,
             strict_repairs=True,
             allow_provider_repairs=allow_provider_repairs,
+            **({"read_only": True} if read_only else {}),
         )
         return _platform_subscription_access_from_row(row)
     except AccessRepairInFlight:
@@ -182,14 +184,18 @@ def get_platform_subscription_access(
         #
         # AccessRepairDeferred likewise leaves the row unverified, whether it
         # replays an earlier fault or this caller disabled provider repairs.
-        local_access = _get_local_platform_subscription_access(supabase, studio_id)
+        local_access = _get_local_platform_subscription_access(
+            supabase, studio_id, **({"require_existing": True} if read_only else {})
+        )
         if local_access["subscription_required"]:
             return local_access
 
         raise _billing_status_unavailable_exception() from exc
     except Exception as exc:
         if _is_noncritical_access_repair_error(exc):
-            return _get_local_platform_subscription_access(supabase, studio_id)
+            return _get_local_platform_subscription_access(
+                supabase, studio_id, **({"require_existing": True} if read_only else {})
+            )
 
         # Our own code failed — a persistence write, the projector, Supabase.
         # That is no evidence about this studio's entitlement, so it is not
@@ -234,15 +240,28 @@ def _billing_status_unavailable_exception() -> HTTPException:
     )
 
 
-def _get_local_platform_subscription_access(supabase: Client, studio_id: str) -> dict:
-    result = (
-        supabase.table("studio_subscriptions")
-        .select("status, comped, trial_end")
-        .eq("studio_id", studio_id)
-        .maybe_single()
-        .execute()
-    )
-    return _platform_subscription_access_from_row(result.data or {})
+def _get_local_platform_subscription_access(
+    supabase: Client, studio_id: str, *, require_existing: bool = False
+) -> dict:
+    try:
+        result = (
+            supabase.table("studio_subscriptions")
+            .select("status, comped, trial_end")
+            .eq("studio_id", studio_id)
+            .maybe_single()
+            .execute()
+        )
+        if require_existing:
+            from app.services.platform_billing_service import _require_subscription_access_row
+
+            row = _require_subscription_access_row(result.data)
+        else:
+            row = result.data or {}
+        return _platform_subscription_access_from_row(row)
+    except Exception as exc:
+        if require_existing:
+            raise _billing_status_unavailable_exception() from exc
+        raise
 
 
 def _trial_has_ended(trial_end: str) -> bool:
@@ -256,8 +275,12 @@ def _trial_has_ended(trial_end: str) -> bool:
         return True
 
 
-def ensure_platform_subscription_access(supabase: Client, studio_id: str) -> None:
-    access = get_platform_subscription_access(supabase, studio_id)
+def ensure_platform_subscription_access(
+    supabase: Client, studio_id: str, *, read_only: bool = False
+) -> None:
+    access = get_platform_subscription_access(
+        supabase, studio_id, **({"read_only": True} if read_only else {})
+    )
     if not access["subscription_required"]:
         return
 
