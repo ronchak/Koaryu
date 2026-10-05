@@ -762,7 +762,290 @@ END $clock_test$;"""
             )
             passed(f"{expiry} expires during recipient advisory wait", lock=observation)
 
-        require(len(cases) == 29, "Expected 29 concurrency cases")
+        def defer(ids, reason="unavailable", allowed=None):
+            emails = allowed or [ids["email"]]
+            array = "ARRAY[" + ",".join("'" + email + "'" for email in emails) + "]"
+            return (
+                f"SELECT public.defer_missed_class_automation_studio_v1('{ids['delivery']}',"
+                f"'{ids['token']}','{reason}',{array});"
+            )
+
+        for begin_first in (False, True):
+            for rollback in (False, True):
+                ids = fixture()
+                prepare(ids)
+                first_sql, second_sql = (
+                    (begin(ids), defer(ids))
+                    if begin_first
+                    else (defer(ids), begin(ids))
+                )
+                first = session(
+                    f"deferral_owner_{begin_first}_{rollback}", first_sql, hold=True
+                )
+                ready(first)
+                second = session(
+                    f"deferral_waiter_{begin_first}_{rollback}", second_sql
+                )
+                observation = blocked(first, second)
+                release(first, rollback=rollback)
+                answer = finished(second)
+                if begin_first:
+                    require(
+                        answer["updated"] is rollback,
+                        "Deferral released an already dispatch-marked claim",
+                    )
+                else:
+                    require(
+                        answer["ready"] is rollback,
+                        "Begin ignored committed studio deferral",
+                    )
+                passed(
+                    f"deferral boundary {'begin' if begin_first else 'deferral'} first {'rollback' if rollback else 'commit'}",
+                    lock=observation,
+                )
+
+        ids = fixture()
+        prepare(ids)
+        first = session("deferral_token_owner", defer(ids), hold=True)
+        until = ready(first)["dispatch_deferred_until"]
+        second = session("deferral_token_competitor", defer(ids))
+        observation = blocked(first, second)
+        release(first)
+        answer = finished(second)
+        require(
+            not answer["updated"] and answer["dispatch_deferred_until"] is None,
+            "Consumed claim token extended studio cooldown",
+        )
+        require(
+            sql(
+                f"SELECT dispatch_deferred_until='{until}'::timestamptz FROM public.automation_rules WHERE studio_id='{ids['studio']}';"
+            )
+            == "t",
+            "Duplicate deferral changed cooldown",
+        )
+        passed("deferral token can release only once", lock=observation)
+
+        def add_students(ids, count):
+            for _ in range(count):
+                student = str(uuid4())
+                sql(
+                    f"INSERT INTO public.students(id,studio_id,legal_first_name,legal_last_name,email) VALUES('{student}','{ids['studio']}','Fair','Student','{ids['email']}'); "
+                    f"INSERT INTO public.attendance(studio_id,session_id,student_id,checked_in_at) VALUES('{ids['studio']}','{ids['session']}','{student}',now()-INTERVAL '20 days');"
+                )
+
+        # Model strict application Core outcomes without weakening the SQL local
+        # entitlement check. Three unverifiable rows and 35 denied rows precede
+        # valid work; each daily-style cycle must reach the valid studio promptly.
+        sql("UPDATE public.automation_rules SET enabled=false;")
+        unverifiable = fixture()
+        denied = fixture()
+        valid = fixture()
+        add_students(unverifiable, 2)
+        add_students(denied, 34)
+        all_emails = [unverifiable["email"], denied["email"], valid["email"]]
+        allowed = "ARRAY[" + ",".join("'" + email + "'" for email in all_emails) + "]"
+        total = 0
+        for _ in range(6):
+            answer = json.loads(
+                sql(f"SELECT public.enqueue_missed_class_automations_v1(10,{allowed});")
+            )
+            total += answer["enqueued"]
+            if answer["enqueued"] == 0:
+                require(
+                    answer["has_more"],
+                    "Existing due queue lost actionable enqueue flag",
+                )
+                break
+        require(
+            total == 39,
+            "Fairness fixture must contain 3 unverifiable + 35 denied + 1 valid rows",
+        )
+        sql(
+            f"UPDATE public.studio_subscriptions SET status='canceled' WHERE studio_id='{denied['studio']}'; "
+            f"UPDATE public.automation_rules SET last_dispatch_claim_at=CASE studio_id WHEN '{unverifiable['studio']}'::uuid THEN '2000-01-01'::timestamptz WHEN '{denied['studio']}'::uuid THEN '2000-01-02'::timestamptz ELSE '2000-01-03'::timestamptz END WHERE studio_id IN ('{unverifiable['studio']}','{denied['studio']}','{valid['studio']}');"
+        )
+        progress = []
+        for day in range(3):
+            if day:
+                sql(
+                    f"UPDATE public.automation_rules SET dispatch_deferred_until=clock_timestamp()-INTERVAL '1 day' WHERE studio_id IN ('{unverifiable['studio']}','{denied['studio']}'); "
+                    f"UPDATE public.automation_deliveries SET next_attempt_at=clock_timestamp()-INTERVAL '1 day',lease_expires_at=CASE WHEN state='claimed' THEN clock_timestamp()-INTERVAL '1 day' ELSE lease_expires_at END WHERE studio_id IN ('{unverifiable['studio']}','{denied['studio']}') AND state IN ('queued','claimed','retry_wait');"
+                )
+                add_students(valid, 1)
+                require(
+                    json.loads(
+                        sql(
+                            f"SELECT public.enqueue_missed_class_automations_v1(10,ARRAY['{valid['email']}']);"
+                        )
+                    )["enqueued"]
+                    == 1,
+                    "Next valid episode was not queued",
+                )
+            seen = []
+            for _ in range(3):
+                answer = json.loads(
+                    sql(
+                        f"SELECT public.claim_missed_class_automations_v1(1,{allowed});"
+                    )
+                )
+                require(
+                    len(answer["items"]) == 1, "Fair scheduler found no next studio"
+                )
+                row = answer["items"][0]
+                seen.append(row["studio_id"])
+                ids = next(
+                    item
+                    for item in (unverifiable, denied, valid)
+                    if item["studio"] == row["studio_id"]
+                )
+                ids.update(delivery=row["id"], token=row["claim_token"])
+                if ids is valid:
+                    require(
+                        json.loads(sql(begin(ids)))["ready"],
+                        "Valid studio was prevented from dispatching",
+                    )
+                    sql(settle(ids))
+                    break
+                answer = json.loads(
+                    sql(
+                        defer(
+                            ids,
+                            "unavailable"
+                            if ids is unverifiable
+                            else "subscription_required",
+                            all_emails,
+                        )
+                    )
+                )
+                require(
+                    answer["updated"] and answer["has_more"],
+                    "Deferral lost valid work behind a bad studio",
+                )
+            require(
+                seen == [unverifiable["studio"], denied["studio"], valid["studio"]],
+                f"Day {day}: valid studio did not progress after two studio deferrals",
+            )
+            require(
+                sql(f"SELECT private.automation_has_actionable_work({allowed});")
+                == "f",
+                "Only cooled bad studios should not be actionable",
+            )
+            progress.append({"day": day + 1, "claims_to_valid": len(seen)})
+        require(
+            sql(
+                f"SELECT count(*) FROM public.automation_deliveries WHERE studio_id='{denied['studio']}' AND attempted_at IS NOT NULL;"
+            )
+            == "0",
+            "Denied studio attempted a send",
+        )
+        require(
+            sql(
+                f"SELECT count(*) FROM public.automation_deliveries WHERE studio_id='{unverifiable['studio']}' AND attempted_at IS NOT NULL;"
+            )
+            == "0",
+            "Unverifiable studio attempted a send",
+        )
+        passed(
+            "daily studio deferrals do not starve valid work behind 38 bad rows",
+            progress=progress,
+        )
+
+        sql("UPDATE public.automation_rules SET enabled=false;")
+        bad = fixture()
+        good = fixture()
+        add_students(bad, 2)
+        emails = "ARRAY['" + bad["email"] + "','" + good["email"] + "']"
+        require(
+            json.loads(
+                sql(f"SELECT public.enqueue_missed_class_automations_v1(10,{emails});")
+            )["enqueued"]
+            == 4,
+            "Abandoned fixture queue count",
+        )
+        sql(
+            f"UPDATE public.automation_rules SET last_dispatch_claim_at=CASE WHEN studio_id='{bad['studio']}' THEN '2000-01-01'::timestamptz ELSE '2000-01-02'::timestamptz END WHERE studio_id IN ('{bad['studio']}','{good['studio']}'); "
+            f"UPDATE public.automation_deliveries SET next_attempt_at='2000-01-01' WHERE studio_id='{bad['studio']}';"
+        )
+        first_claim = json.loads(
+            sql(f"SELECT public.claim_missed_class_automations_v1(1,{emails});")
+        )["items"][0]
+        require(
+            first_claim["studio_id"] == bad["studio"],
+            "Old bad studio was not first fixture claim",
+        )
+        require(
+            sql(
+                f"SELECT next_attempt_at>'2000-01-01'::timestamptz FROM public.automation_deliveries WHERE id='{first_claim['id']}';"
+            )
+            == "t",
+            "Claim retained ancient row priority",
+        )
+        sql(
+            f"UPDATE public.automation_deliveries SET lease_expires_at=clock_timestamp()-INTERVAL '1 day' WHERE id='{first_claim['id']}';"
+        )
+        next_claim = json.loads(
+            sql(f"SELECT public.claim_missed_class_automations_v1(1,{emails});")
+        )["items"][0]
+        require(
+            next_claim["studio_id"] == good["studio"],
+            "Expired abandoned claim starved a valid studio",
+        )
+        next_bad = json.loads(
+            sql(
+                f"SELECT public.claim_missed_class_automations_v1(1,ARRAY['{bad['email']}']);"
+            )
+        )["items"][0]
+        require(
+            next_bad["id"] != first_claim["id"],
+            "Expired abandoned row repeatedly monopolized its studio",
+        )
+        passed("expired abandoned claims rotate studio and row priority")
+
+        # Actionable status includes unqueued eligible work, then excludes each
+        # kind of pause or gate without relying on stale enqueue metadata.
+        sql("UPDATE public.automation_rules SET enabled=false;")
+        ids = fixture()
+        actionable = (
+            f"SELECT private.automation_has_actionable_work(ARRAY['{ids['email']}']);"
+        )
+        require(
+            sql(actionable) == "t",
+            "Eligible unqueued work missing from actionable flag",
+        )
+        require(
+            sql(
+                "SELECT private.automation_has_actionable_work(ARRAY['not.allowed@example.invalid']);"
+            )
+            == "f",
+            "Disallowed contact is actionable",
+        )
+        sql(
+            f"UPDATE public.automation_rules SET enabled=false WHERE studio_id='{ids['studio']}';"
+        )
+        require(sql(actionable) == "f", "Paused rule is actionable")
+        sql(
+            f"UPDATE public.automation_rules SET enabled=true WHERE studio_id='{ids['studio']}'; UPDATE public.studio_subscriptions SET status='canceled' WHERE studio_id='{ids['studio']}';"
+        )
+        require(sql(actionable) == "f", "Canceled Core entitlement is actionable")
+        sql(
+            f"UPDATE public.studio_subscriptions SET status='active' WHERE studio_id='{ids['studio']}'; UPDATE public.students SET status='canceled' WHERE id='{ids['student']}';"
+        )
+        require(sql(actionable) == "f", "Canceled student is actionable")
+        sql(f"UPDATE public.students SET status='active' WHERE id='{ids['student']}';")
+        prepare(ids)
+        require(sql(actionable) == "f", "Nonexpired claimed work is actionable")
+        require(json.loads(sql(begin(ids)))["ready"], "Retry fixture begin")
+        sql(
+            f"SELECT public.settle_missed_class_automation_v1('{ids['delivery']}','{ids['token']}','retryable_failure','rate_limited',NULL,3600);"
+        )
+        require(sql(actionable) == "f", "Future retry is actionable")
+        sql(
+            f"UPDATE public.automation_deliveries SET next_attempt_at=clock_timestamp()-INTERVAL '1 second' WHERE id='{ids['delivery']}';"
+        )
+        require(sql(actionable) == "t", "Due safe retry is not actionable")
+        passed("fresh actionable work respects eligibility allowlist and due time")
+
+        require(len(cases) == 37, "Expected 37 concurrency cases")
         evidence = {
             "script_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
             "cases": cases,
@@ -770,7 +1053,7 @@ END $clock_test$;"""
         (local.temporary / "automation-concurrency-evidence.json").write_text(
             json.dumps(evidence, indent=2) + "\n"
         )
-        print("[automation concurrency] PASS 29 PostgreSQL session cases", flush=True)
+        print("[automation concurrency] PASS 37 PostgreSQL session cases", flush=True)
     finally:
         for item in children:
             process = item["process"]

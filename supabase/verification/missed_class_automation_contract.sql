@@ -85,8 +85,9 @@ BEGIN
     PERFORM pg_temp.assert_automation(private.automation_core_entitled(studio),'comped status grants worker');
     UPDATE public.studio_subscriptions SET status='active' WHERE studio_id=studio;
     j:=public.enqueue_missed_class_automations_v1(10,ARRAY['adult@example.invalid']);
-    PERFORM pg_temp.assert_automation((j->>'enqueued')::int=1 AND (j->>'has_more')::bool=false,'allowlisted enqueue and exact has_more');
-    PERFORM pg_temp.assert_automation((public.enqueue_missed_class_automations_v1(10,ARRAY['adult@example.invalid'])->>'enqueued')::int=0,'duplicate queue prevention');
+    PERFORM pg_temp.assert_automation((j->>'enqueued')::int=1 AND (j->>'has_more')::bool,'newly enqueued allowlisted work remains actionable');
+    j:=public.enqueue_missed_class_automations_v1(10,ARRAY['adult@example.invalid']);
+    PERFORM pg_temp.assert_automation((j->>'enqueued')::int=0 AND (j->>'has_more')::bool,'duplicate queue prevention retains fresh actionable flag');
     j:=public.claim_missed_class_automations_v1(1,ARRAY['adult@example.invalid']);
     delivery:=(j#>>'{items,0,id}')::uuid; token:=(j#>>'{items,0,claim_token}')::uuid;
     PERFORM pg_temp.assert_automation(delivery IS NOT NULL,'claim returns identity');
@@ -114,7 +115,7 @@ BEGIN
     j:=public.settle_missed_class_automation_v1(delivery,token,'retryable_failure','rate_limited',NULL,99999999);
     PERFORM pg_temp.assert_automation(j->>'state'='retry_wait','safe retryable outcome');
     PERFORM pg_temp.assert_automation((SELECT next_attempt_at<=clock_timestamp()+INTERVAL '1 day' FROM public.automation_deliveries WHERE id=delivery),'bounded retry-after');
-    PERFORM pg_temp.assert_automation((public.claim_missed_class_automations_v1(10)->>'has_more')::bool=false,'future retry is not has_more');
+    PERFORM pg_temp.assert_automation((public.claim_missed_class_automations_v1(10,ARRAY['new@example.invalid'])->>'has_more')::bool=false,'future retry is not has_more');
     FOR n IN 2..3 LOOP
         UPDATE public.automation_deliveries SET next_attempt_at=now() WHERE id=delivery;
         j:=public.claim_missed_class_automations_v1(1);token:=(j#>>'{items,0,claim_token}')::uuid;
@@ -346,7 +347,7 @@ BEGIN
     j:=public.enqueue_missed_class_automations_v1(1);
     PERFORM pg_temp.assert_automation((j->>'enqueued')::int=0 AND (j->>'has_more')::bool,'unvisited eligible studio still has_more');
     j:=public.enqueue_missed_class_automations_v1(1);
-    PERFORM pg_temp.assert_automation((j->>'enqueued')::int=1 AND NOT (j->>'has_more')::bool,'rotation reaches studio beyond first ten');
+    PERFORM pg_temp.assert_automation((j->>'enqueued')::int=1 AND (j->>'has_more')::bool,'rotation reaches studio beyond first ten and exposes queued work');
 END $fairness$;
 -- Explicit internal clock references exercise rollover without changing the
 -- server clock, transaction clock, historical date helper or public RPCs.
@@ -400,4 +401,102 @@ BEGIN
     PERFORM pg_temp.assert_automation(j->>'reference_date'=(clock_timestamp() AT TIME ZONE 'America/Los_Angeles')::date::text
         AND j->'recipients'='[]'::jsonb,'empty preview has current reference date');
 END $rollover$;
+DO $dispatch_deferral$
+#variable_conflict use_variable
+DECLARE studio UUID:=gen_random_uuid(); actor UUID:=gen_random_uuid(); session_id UUID:=gen_random_uuid();
+    student UUID; j JSONB; rule_before JSONB; row_before JSONB; row_after JSONB; first_id UUID; second_id UUID;
+    first_token UUID; second_token UUID; until_at TIMESTAMPTZ; before_until TIMESTAMPTZ; n INTEGER; failed BOOLEAN;
+    recipient TEXT; outcome TEXT;
+BEGIN
+    UPDATE public.automation_rules SET enabled=false;
+    INSERT INTO auth.users(id,email) VALUES(actor,actor::text||'@example.invalid');
+    INSERT INTO public.studios(id,name,slug,owner_id,timezone) VALUES(studio,'Deferral fixture',studio::text,actor,'UTC');
+    INSERT INTO public.staff_roles(studio_id,user_id,role) VALUES(studio,actor,'admin');
+    INSERT INTO public.studio_subscriptions(studio_id,status,comped) VALUES(studio,'active',false);
+    INSERT INTO public.class_sessions(id,studio_id,name,date,start_time,end_time) VALUES(session_id,studio,'Old class',current_date-20,'00:00','01:00');
+    FOR n IN 1..3 LOOP
+        INSERT INTO public.students(studio_id,legal_first_name,legal_last_name,email)
+            VALUES(studio,'Deferral',n::text,'defer'||n||'@example.invalid') RETURNING id INTO student;
+        INSERT INTO public.attendance(studio_id,session_id,student_id,checked_in_at) VALUES(studio,session_id,student,now()-INTERVAL '20 days');
+    END LOOP;
+    SET LOCAL ROLE service_role;
+    rule_before:=public.save_missed_class_automation_rule_v1(studio,actor,0,true,14,'Subject','Body','reply@example.invalid');
+    PERFORM public.enqueue_missed_class_automations_v1(10);
+    j:=public.claim_missed_class_automations_v1(2);
+    first_id:=(j#>>'{items,0,id}')::uuid;first_token:=(j#>>'{items,0,claim_token}')::uuid;
+    second_id:=(j#>>'{items,1,id}')::uuid;second_token:=(j#>>'{items,1,claim_token}')::uuid;
+    PERFORM pg_temp.assert_automation(first_id IS NOT NULL AND second_id IS NOT NULL,'one studio can fill a bounded claim batch');
+    PERFORM pg_temp.assert_automation((public.defer_missed_class_automation_studio_v1(first_id,NULL,'unavailable')->>'updated')::bool=false
+        AND (public.defer_missed_class_automation_studio_v1(first_id,gen_random_uuid(),'unavailable')->>'updated')::bool=false,
+        'null and wrong deferral tokens rejected');
+    failed:=false;
+    BEGIN PERFORM public.defer_missed_class_automation_studio_v1(first_id,first_token,'provider_error_text');
+    EXCEPTION WHEN invalid_parameter_value THEN failed:=true; END;
+    PERFORM pg_temp.assert_automation(failed,'deferral reason allowlist');
+    UPDATE public.automation_deliveries SET lease_expires_at=clock_timestamp()-INTERVAL '1 second' WHERE id=first_id;
+    PERFORM pg_temp.assert_automation((public.defer_missed_class_automation_studio_v1(first_id,first_token,'unavailable')->>'updated')::bool=false,
+        'expired claim cannot defer studio');
+    UPDATE public.automation_deliveries SET lease_expires_at=clock_timestamp()+INTERVAL '60 seconds' WHERE id=first_id;
+    PERFORM pg_temp.assert_automation((SELECT dispatch_deferred_until IS NULL FROM public.automation_rules WHERE studio_id=studio),
+        'invalid tokens never mutate studio cooldown');
+    j:=public.defer_missed_class_automation_studio_v1(first_id,first_token,'unavailable');until_at:=(j->>'dispatch_deferred_until')::timestamptz;
+    PERFORM pg_temp.assert_automation((j->>'updated')::bool AND j->>'state'='queued' AND until_at>=clock_timestamp()+INTERVAL '59 minutes',
+        'live unstarted claim atomically releases with one hour cooldown');
+    PERFORM pg_temp.assert_automation(NOT (j->>'has_more')::bool,'only just-deferred studio is not actionable');
+    PERFORM pg_temp.assert_automation((SELECT attempts=0 AND attempted_at IS NULL AND claim_token IS NULL AND next_attempt_at>=until_at
+        FROM public.automation_deliveries WHERE id=first_id),'fresh deferral spends no attempt');
+    PERFORM pg_temp.assert_automation(public.get_missed_class_automation_rule_v1(studio,actor)=rule_before,
+        'dispatch scheduling does not change public rule revision updated_at or fields');
+    PERFORM pg_temp.assert_automation(NOT (rule_before->'rule') ? 'last_dispatch_claim_at' AND NOT (rule_before->'rule') ? 'dispatch_deferred_until',
+        'internal scheduling fields absent from save and get rule JSON');
+    j:=public.enqueue_missed_class_automations_v1(10);
+    PERFORM pg_temp.assert_automation(j='{"enqueued":0,"has_more":false}'::jsonb,'enqueue and has_more honor studio cooldown');
+    j:=public.claim_missed_class_automations_v1(10);
+    PERFORM pg_temp.assert_automation(j='{"items":[],"has_more":false}'::jsonb,'claim and has_more honor studio cooldown');
+    j:=public.begin_missed_class_automation_v1(second_id,second_token);
+    PERFORM pg_temp.assert_automation(NOT (j->>'ready')::bool AND j->>'state'='queued'
+        AND (SELECT attempts=0 AND attempted_at IS NULL FROM public.automation_deliveries WHERE id=second_id),'begin honors a cooldown set after its claim');
+    PERFORM pg_temp.assert_automation((public.defer_missed_class_automation_studio_v1(first_id,first_token,'subscription_required')->>'updated')::bool=false
+        AND (SELECT dispatch_deferred_until=until_at FROM public.automation_rules WHERE studio_id=studio),'stale token cannot extend cooldown');
+    -- Advance only synthetic scheduling timestamps to model cooldown expiry.
+    UPDATE public.automation_rules SET dispatch_deferred_until=clock_timestamp()-INTERVAL '1 second' WHERE studio_id=studio;
+    UPDATE public.automation_deliveries SET next_attempt_at=clock_timestamp()-INTERVAL '1 second' WHERE studio_id=studio;
+    SELECT recipient_email INTO recipient FROM public.automation_deliveries WHERE id=first_id;
+    j:=public.claim_missed_class_automations_v1(1,ARRAY[recipient]);first_token:=(j#>>'{items,0,claim_token}')::uuid;
+    PERFORM pg_temp.assert_automation((j#>>'{items,0,id}')::uuid=first_id,'cooled work becomes eligible again with same identity');
+    j:=public.begin_missed_class_automation_v1(first_id,first_token);
+    PERFORM pg_temp.assert_automation((j->>'ready')::bool,'expired cooldown permits dispatch');
+    SELECT dispatch_deferred_until INTO before_until FROM public.automation_rules WHERE studio_id=studio;
+    PERFORM pg_temp.assert_automation((public.defer_missed_class_automation_studio_v1(first_id,first_token,'unavailable')->>'updated')::bool=false
+        AND (SELECT state='sending' FROM public.automation_deliveries WHERE id=first_id)
+        AND (SELECT dispatch_deferred_until=before_until FROM public.automation_rules WHERE studio_id=studio),'sending deferral refused without cooldown mutation');
+    PERFORM public.settle_missed_class_automation_v1(first_id,first_token,'retryable_failure','rate_limited');
+    UPDATE public.automation_deliveries SET next_attempt_at=clock_timestamp()-INTERVAL '1 second' WHERE id=first_id;
+    j:=public.claim_missed_class_automations_v1(1,ARRAY[recipient]);first_token:=(j#>>'{items,0,claim_token}')::uuid;
+    SELECT to_jsonb(d)-ARRAY['state','reason','claim_token','lease_expires_at','next_attempt_at','updated_at'] INTO row_before
+        FROM public.automation_deliveries d WHERE id=first_id;
+    until_at:=clock_timestamp()+INTERVAL '2 hours';
+    UPDATE public.automation_deliveries SET next_attempt_at=until_at WHERE id=first_id;
+    j:=public.defer_missed_class_automation_studio_v1(first_id,first_token,'subscription_required');
+    SELECT to_jsonb(d)-ARRAY['state','reason','claim_token','lease_expires_at','next_attempt_at','updated_at'] INTO row_after
+        FROM public.automation_deliveries d WHERE id=first_id;
+    PERFORM pg_temp.assert_automation((j->>'updated')::bool AND j->>'state'='retry_wait' AND row_before=row_after
+        AND (row_after->>'attempts')::int=1 AND row_after->>'attempted_at' IS NOT NULL
+        AND (SELECT next_attempt_at>=until_at FROM public.automation_deliveries WHERE id=first_id),
+        'claimed safe retry retains every immutable fact and retry eligibility');
+    -- Each terminal result also refuses the deferral RPC without rewriting state.
+    FOREACH outcome IN ARRAY ARRAY['accepted','unknown','permanent_failure'] LOOP
+        UPDATE public.automation_rules SET dispatch_deferred_until=NULL WHERE studio_id=studio;
+        UPDATE public.automation_deliveries SET next_attempt_at=clock_timestamp()-INTERVAL '1 second' WHERE studio_id=studio;
+        j:=public.claim_missed_class_automations_v1(1);
+        first_id:=(j#>>'{items,0,id}')::uuid;first_token:=(j#>>'{items,0,claim_token}')::uuid;
+        j:=public.begin_missed_class_automation_v1(first_id,first_token);
+        PERFORM pg_temp.assert_automation((j->>'ready')::bool,'terminal refusal fixture ready');
+        PERFORM public.settle_missed_class_automation_v1(first_id,first_token,outcome);
+        SELECT to_jsonb(d) INTO row_before FROM public.automation_deliveries d WHERE id=first_id;
+        PERFORM pg_temp.assert_automation((public.defer_missed_class_automation_studio_v1(first_id,first_token,'unavailable')->>'updated')::bool=false
+            AND (SELECT to_jsonb(d)=row_before FROM public.automation_deliveries d WHERE id=first_id),'terminal deferral refuses all mutation');
+    END LOOP;
+    RESET ROLE;
+END $dispatch_deferral$;
 ROLLBACK;

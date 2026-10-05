@@ -11,9 +11,12 @@ CREATE TABLE public.automation_rules (
     updated_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    last_evaluated_at TIMESTAMPTZ
+    last_evaluated_at TIMESTAMPTZ,
+    dispatch_deferred_until TIMESTAMPTZ,
+    last_dispatch_claim_at TIMESTAMPTZ
 );
 CREATE INDEX automation_rules_due ON public.automation_rules(last_evaluated_at NULLS FIRST,studio_id) WHERE enabled;
+CREATE INDEX automation_rules_dispatch ON public.automation_rules(last_dispatch_claim_at NULLS FIRST,studio_id) WHERE enabled;
 CREATE TABLE public.automation_deliveries (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     studio_id UUID NOT NULL REFERENCES public.studios(id) ON DELETE CASCADE,
@@ -63,7 +66,7 @@ CREATE TABLE public.automation_suppressions (
     PRIMARY KEY(studio_id,recipient_email)
 );
 CREATE TABLE private.automation_email_credentials (
-    provider_key TEXT PRIMARY KEY CHECK (length(provider_key) BETWEEN 1 AND 128 AND provider_key ~ '^[a-zA-Z0-9:_-]+$'),
+    provider_key TEXT PRIMARY KEY CHECK (length(provider_key) >= 1 AND length(provider_key) <= 128 AND provider_key ~ '^[a-zA-Z0-9:_-]+$'),
     encrypted_credentials TEXT NOT NULL CHECK (length(encrypted_credentials) BETWEEN 1 AND 131072),
     revision BIGINT NOT NULL CHECK (revision>0),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -72,6 +75,20 @@ ALTER TABLE public.automation_rules ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.automation_deliveries ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.automation_suppressions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE private.automation_email_credentials ENABLE ROW LEVEL SECURITY;
+-- Preserve the existing restrictive guard required on every public RLS table.
+CREATE POLICY reject_ambiguous_staff_membership_access ON public.automation_rules
+    AS RESTRICTIVE FOR ALL TO authenticated
+    USING ((SELECT private.has_unambiguous_studio_membership() AS has_unambiguous_studio_membership))
+    WITH CHECK ((SELECT private.has_unambiguous_studio_membership() AS has_unambiguous_studio_membership));
+CREATE POLICY reject_ambiguous_staff_membership_access ON public.automation_deliveries
+    AS RESTRICTIVE FOR ALL TO authenticated
+    USING ((SELECT private.has_unambiguous_studio_membership() AS has_unambiguous_studio_membership))
+    WITH CHECK ((SELECT private.has_unambiguous_studio_membership() AS has_unambiguous_studio_membership));
+CREATE POLICY reject_ambiguous_staff_membership_access ON public.automation_suppressions
+    AS RESTRICTIVE FOR ALL TO authenticated
+    USING ((SELECT private.has_unambiguous_studio_membership() AS has_unambiguous_studio_membership))
+    WITH CHECK ((SELECT private.has_unambiguous_studio_membership() AS has_unambiguous_studio_membership));
+
 REVOKE ALL ON public.automation_rules,public.automation_deliveries,public.automation_suppressions,private.automation_email_credentials FROM PUBLIC,anon,authenticated,service_role;
 GRANT SELECT,INSERT,UPDATE ON public.automation_rules,public.automation_deliveries,private.automation_email_credentials TO service_role;
 GRANT SELECT,INSERT ON public.automation_suppressions TO service_role;
@@ -292,6 +309,25 @@ BEGIN
     RETURN v_result;
 END $$;
 
+-- A fresh answer after a claim or cooldown must not reuse an enqueue flag
+-- captured before that studio was deferred. Include eligible unqueued work too.
+CREATE FUNCTION private.automation_has_actionable_work(p_allowed_recipients TEXT[] DEFAULT NULL) RETURNS BOOLEAN
+LANGUAGE sql VOLATILE SECURITY INVOKER SET search_path='' AS $$
+    SELECT EXISTS(SELECT 1 FROM public.automation_rules r
+        WHERE r.enabled AND (r.dispatch_deferred_until IS NULL OR r.dispatch_deferred_until<=clock_timestamp())
+        AND private.automation_core_entitled(r.studio_id)
+        AND (EXISTS(SELECT 1 FROM public.automation_deliveries d
+            CROSS JOIN LATERAL private.missed_class_automation_candidates(r.studio_id,r.inactivity_days,d.student_id,d.id) c
+            WHERE d.studio_id=r.studio_id AND c.skip_reason IS NULL
+            AND ((d.state IN ('queued','retry_wait') AND d.next_attempt_at<=clock_timestamp())
+                OR (d.state='claimed' AND d.lease_expires_at<=clock_timestamp()))
+            AND (COALESCE(cardinality(p_allowed_recipients),0)=0 OR c.recipient_email=ANY(p_allowed_recipients)))
+        OR EXISTS(SELECT 1 FROM private.missed_class_automation_candidates(r.studio_id,r.inactivity_days) c
+            WHERE c.skip_reason IS NULL AND (COALESCE(cardinality(p_allowed_recipients),0)=0 OR c.recipient_email=ANY(p_allowed_recipients))
+            AND NOT EXISTS(SELECT 1 FROM public.automation_deliveries d WHERE d.studio_id=r.studio_id AND d.student_id=c.student_id
+                AND d.state IN ('queued','claimed','sending','retry_wait')))))
+$$;
+
 CREATE FUNCTION public.enqueue_missed_class_automations_v1(p_limit INTEGER DEFAULT 10,p_allowed_recipients TEXT[] DEFAULT NULL) RETURNS JSONB
 LANGUAGE plpgsql SECURITY INVOKER SET search_path='' AS $$
 DECLARE v_rule public.automation_rules; v_candidate RECORD; v_count INTEGER:=0; v_added INTEGER; v_more BOOLEAN:=false;
@@ -300,6 +336,7 @@ BEGIN
     -- Each invocation visits at most ten studios and creates at most p_limit rows.
     -- Rotation advances even when a studio has no eligible students.
     FOR v_rule IN SELECT * FROM public.automation_rules WHERE enabled
+        AND (dispatch_deferred_until IS NULL OR dispatch_deferred_until<=clock_timestamp())
         ORDER BY last_evaluated_at NULLS FIRST,studio_id LIMIT 10 FOR UPDATE SKIP LOCKED LOOP
         UPDATE public.automation_rules SET last_evaluated_at=clock_timestamp() WHERE studio_id=v_rule.studio_id;
         BEGIN
@@ -321,44 +358,88 @@ BEGIN
         END LOOP;
         IF v_count>=p_limit THEN EXIT; END IF;
     END LOOP;
-    SELECT EXISTS(SELECT 1 FROM public.automation_rules remaining_rule
-        CROSS JOIN LATERAL private.missed_class_automation_candidates(remaining_rule.studio_id,remaining_rule.inactivity_days) c
-        WHERE remaining_rule.enabled AND private.automation_core_entitled(remaining_rule.studio_id) AND c.skip_reason IS NULL
-        AND (COALESCE(cardinality(p_allowed_recipients),0)=0 OR c.recipient_email=ANY(p_allowed_recipients))
-        AND NOT EXISTS(SELECT 1 FROM public.automation_deliveries d WHERE d.studio_id=remaining_rule.studio_id AND d.student_id=c.student_id
-            AND d.state IN ('queued','claimed','sending','retry_wait'))) INTO v_more;
+    v_more:=private.automation_has_actionable_work(p_allowed_recipients);
     RETURN jsonb_build_object('enqueued',v_count,'has_more',v_more);
 END $$;
 
 CREATE FUNCTION public.claim_missed_class_automations_v1(p_limit INTEGER DEFAULT 10,p_allowed_recipients TEXT[] DEFAULT NULL) RETURNS JSONB
 LANGUAGE plpgsql SECURITY INVOKER SET search_path='' AS $$
-DECLARE v_items JSONB; v_more BOOLEAN;
+DECLARE v_items JSONB:='[]'::jsonb; v_more BOOLEAN; v_rule public.automation_rules;
+    v_delivery public.automation_deliveries; v_scan INTEGER; v_visited UUID[]:='{}';
 BEGIN
     IF p_limit IS NULL OR p_limit NOT BETWEEN 1 AND 10 THEN RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='Invalid claim limit.'; END IF;
-    -- A lost sending lease has an uncertain provider outcome, never a new send.
-    WITH expired AS (SELECT id FROM public.automation_deliveries WHERE state='sending' AND lease_expires_at<=now()
+    -- Sending expiry is recovery, not another attempt, even during a cooldown.
+    WITH expired AS (SELECT id FROM public.automation_deliveries WHERE state='sending' AND lease_expires_at<=clock_timestamp()
         ORDER BY lease_expires_at,id LIMIT 100 FOR UPDATE SKIP LOCKED)
     UPDATE public.automation_deliveries d SET state='unknown',reason='lease_expired',settled_at=clock_timestamp(),
         claim_token=NULL,lease_expires_at=NULL,updated_at=clock_timestamp() FROM expired e WHERE d.id=e.id;
-    WITH due AS (SELECT id FROM public.automation_deliveries
-        WHERE ((state IN ('queued','retry_wait') AND next_attempt_at<=now())
-            OR (state='claimed' AND lease_expires_at<=now()))
+    -- Rotate across studios, not a globally oldest row list. Ten bounded visits
+    -- still allow a sole ready studio to fill the caller's requested batch.
+    FOR v_scan IN 1..10 LOOP
+        EXIT WHEN jsonb_array_length(v_items)>=p_limit;
+        SELECT r.* INTO v_rule FROM public.automation_rules r
+        WHERE r.enabled AND (r.dispatch_deferred_until IS NULL OR r.dispatch_deferred_until<=clock_timestamp())
+            AND NOT r.studio_id=ANY(v_visited)
+            AND EXISTS(SELECT 1 FROM public.automation_deliveries d WHERE d.studio_id=r.studio_id
+                AND ((d.state IN ('queued','retry_wait') AND d.next_attempt_at<=clock_timestamp())
+                    OR (d.state='claimed' AND d.lease_expires_at<=clock_timestamp()))
+                AND (COALESCE(cardinality(p_allowed_recipients),0)=0 OR EXISTS(
+                    SELECT 1 FROM private.missed_class_automation_candidates(r.studio_id,r.inactivity_days,d.student_id,d.id) c
+                    WHERE c.recipient_email=ANY(p_allowed_recipients))))
+        ORDER BY r.last_dispatch_claim_at NULLS FIRST,r.studio_id LIMIT 1 FOR UPDATE OF r SKIP LOCKED;
+        EXIT WHEN NOT FOUND;
+        -- Advance even a busy parent so fixed oldest studios cannot monopolize
+        -- every invocation. These internal fields never change the rule draft.
+        UPDATE public.automation_rules SET last_dispatch_claim_at=clock_timestamp() WHERE studio_id=v_rule.studio_id;
+        BEGIN
+            PERFORM 1 FROM public.studios WHERE id=v_rule.studio_id FOR KEY SHARE NOWAIT;
+        EXCEPTION WHEN lock_not_available THEN
+            v_visited:=array_append(v_visited,v_rule.studio_id); CONTINUE;
+        END;
+        SELECT d.* INTO v_delivery FROM public.automation_deliveries d WHERE d.studio_id=v_rule.studio_id
+            AND ((d.state IN ('queued','retry_wait') AND d.next_attempt_at<=clock_timestamp())
+                OR (d.state='claimed' AND d.lease_expires_at<=clock_timestamp()))
             AND (COALESCE(cardinality(p_allowed_recipients),0)=0 OR EXISTS(
-                SELECT 1 FROM public.automation_rules r CROSS JOIN LATERAL private.missed_class_automation_candidates(
-                    r.studio_id,r.inactivity_days,automation_deliveries.student_id,automation_deliveries.id) c
-                WHERE r.studio_id=automation_deliveries.studio_id AND c.recipient_email=ANY(p_allowed_recipients)))
-        ORDER BY next_attempt_at,created_at,id LIMIT p_limit FOR UPDATE SKIP LOCKED),
-    claimed AS (UPDATE public.automation_deliveries d SET state='claimed',claim_token=gen_random_uuid(),
-        lease_expires_at=clock_timestamp()+INTERVAL '60 seconds',updated_at=clock_timestamp()
-        FROM due WHERE due.id=d.id RETURNING d.id,d.claim_token,d.studio_id)
-    SELECT COALESCE(jsonb_agg(jsonb_build_object('id',id,'claim_token',claim_token,'studio_id',studio_id)),'[]'::jsonb) INTO v_items FROM claimed;
-    SELECT EXISTS(SELECT 1 FROM public.automation_deliveries WHERE ((state IN ('queued','retry_wait') AND next_attempt_at<=now())
-        OR (state='claimed' AND lease_expires_at<=now()))
-        AND (COALESCE(cardinality(p_allowed_recipients),0)=0 OR EXISTS(
-                SELECT 1 FROM public.automation_rules r CROSS JOIN LATERAL private.missed_class_automation_candidates(
-                    r.studio_id,r.inactivity_days,automation_deliveries.student_id,automation_deliveries.id) c
-                WHERE r.studio_id=automation_deliveries.studio_id AND c.recipient_email=ANY(p_allowed_recipients)))) INTO v_more;
+                SELECT 1 FROM private.missed_class_automation_candidates(v_rule.studio_id,v_rule.inactivity_days,d.student_id,d.id) c
+                WHERE c.recipient_email=ANY(p_allowed_recipients)))
+        ORDER BY d.next_attempt_at,d.created_at,d.id LIMIT 1 FOR UPDATE OF d SKIP LOCKED;
+        IF NOT FOUND THEN v_visited:=array_append(v_visited,v_rule.studio_id); CONTINUE; END IF;
+        UPDATE public.automation_deliveries SET state='claimed',claim_token=gen_random_uuid(),
+            lease_expires_at=clock_timestamp()+INTERVAL '60 seconds',next_attempt_at=clock_timestamp(),updated_at=clock_timestamp()
+            WHERE id=v_delivery.id RETURNING * INTO v_delivery;
+        v_items:=v_items||jsonb_build_array(jsonb_build_object('id',v_delivery.id,'claim_token',v_delivery.claim_token,'studio_id',v_delivery.studio_id));
+    END LOOP;
+    v_more:=private.automation_has_actionable_work(p_allowed_recipients);
     RETURN jsonb_build_object('items',v_items,'has_more',v_more);
+END $$;
+
+CREATE FUNCTION public.defer_missed_class_automation_studio_v1(p_delivery_id UUID,p_claim_token UUID,p_reason TEXT,p_allowed_recipients TEXT[] DEFAULT NULL) RETURNS JSONB
+LANGUAGE plpgsql SECURITY INVOKER SET search_path='' AS $$
+DECLARE d public.automation_deliveries; v_until TIMESTAMPTZ; v_rule public.automation_rules;
+BEGIN
+    IF p_reason IS NULL OR p_reason NOT IN ('subscription_required','unavailable') THEN
+        RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='Invalid automation deferral reason.';
+    END IF;
+    SELECT * INTO d FROM public.automation_deliveries WHERE id=p_delivery_id;
+    IF NOT FOUND THEN RETURN jsonb_build_object('updated',false,'state',NULL,'dispatch_deferred_until',NULL,'has_more',private.automation_has_actionable_work(p_allowed_recipients)); END IF;
+    -- Match begin's parent/rule/delivery order. No delivery lock precedes a rule
+    -- lock, and no provider call is made inside this transaction.
+    PERFORM 1 FROM public.studios WHERE id=d.studio_id FOR KEY SHARE;
+    SELECT * INTO v_rule FROM public.automation_rules WHERE studio_id=d.studio_id FOR UPDATE;
+    IF NOT FOUND THEN RETURN jsonb_build_object('updated',false,'state',d.state,'dispatch_deferred_until',NULL,'has_more',private.automation_has_actionable_work(p_allowed_recipients)); END IF;
+    SELECT * INTO d FROM public.automation_deliveries WHERE id=p_delivery_id FOR UPDATE;
+    IF NOT FOUND OR d.state<>'claimed' OR p_claim_token IS NULL OR d.claim_token IS DISTINCT FROM p_claim_token
+        OR d.lease_expires_at IS NULL OR d.lease_expires_at<=clock_timestamp() THEN
+        RETURN jsonb_build_object('updated',false,'state',d.state,'dispatch_deferred_until',NULL,'has_more',private.automation_has_actionable_work(p_allowed_recipients));
+    END IF;
+    v_until:=greatest(COALESCE(v_rule.dispatch_deferred_until,clock_timestamp()),clock_timestamp()+INTERVAL '1 hour');
+    UPDATE public.automation_rules SET dispatch_deferred_until=v_until WHERE studio_id=d.studio_id;
+    -- A claimed safe retry has historical attempt facts. Release this unstarted
+    -- claim without erasing that episode, message, retry eligibility or count.
+    UPDATE public.automation_deliveries SET state=CASE WHEN attempted_at IS NULL THEN 'queued' ELSE 'retry_wait' END,
+        reason=p_reason,claim_token=NULL,lease_expires_at=NULL,next_attempt_at=greatest(next_attempt_at,v_until),updated_at=clock_timestamp()
+        WHERE id=d.id RETURNING * INTO d;
+    RETURN jsonb_build_object('updated',true,'state',d.state,'dispatch_deferred_until',v_until,'has_more',private.automation_has_actionable_work(p_allowed_recipients));
 END $$;
 
 CREATE FUNCTION public.begin_missed_class_automation_v1(p_delivery_id UUID,p_claim_token UUID,p_allowed_recipients TEXT[] DEFAULT NULL) RETURNS JSONB
@@ -382,6 +463,12 @@ BEGIN
         RETURN jsonb_build_object('ready',false,'state',d.state,'reason',NULL,'message',NULL);
     END IF;
     v_reference_at:=clock_timestamp();
+    IF r.dispatch_deferred_until>v_reference_at THEN
+        UPDATE public.automation_deliveries SET state=CASE WHEN attempted_at IS NULL THEN 'queued' ELSE 'retry_wait' END,
+            reason='unavailable',claim_token=NULL,lease_expires_at=NULL,next_attempt_at=greatest(next_attempt_at,r.dispatch_deferred_until),
+            updated_at=clock_timestamp() WHERE id=d.id RETURNING * INTO d;
+        RETURN jsonb_build_object('ready',false,'state',d.state,'reason',d.reason,'message',NULL);
+    END IF;
     IF r.enabled IS DISTINCT FROM true THEN v_reason:='rule_paused';
     ELSIF NOT private.automation_core_entitled(d.studio_id) THEN v_reason:='subscription_required';
     ELSE
@@ -528,10 +615,10 @@ DO $acl$
 DECLARE r RECORD;
 BEGIN
     FOR r IN SELECT p.oid::regprocedure AS signature FROM pg_catalog.pg_proc p JOIN pg_catalog.pg_namespace n ON n.oid=p.pronamespace
-        WHERE (n.nspname='private' AND p.proname IN ('automation_delivery_immutable','automation_normalize_email','automation_require_admin','automation_core_entitled','missed_class_automation_candidates'))
+        WHERE (n.nspname='private' AND p.proname IN ('automation_delivery_immutable','automation_normalize_email','automation_require_admin','automation_core_entitled','automation_has_actionable_work','missed_class_automation_candidates'))
         OR (n.nspname='public' AND p.proname IN ('get_missed_class_automation_rule_v1','save_missed_class_automation_rule_v1',
             'preview_missed_class_automation_v1','get_missed_class_automation_activity_v1','enqueue_missed_class_automations_v1',
-            'claim_missed_class_automations_v1','begin_missed_class_automation_v1','settle_missed_class_automation_v1',
+            'claim_missed_class_automations_v1','defer_missed_class_automation_studio_v1','begin_missed_class_automation_v1','settle_missed_class_automation_v1',
             'suppress_missed_class_automation_v1','get_automation_email_credential_v1','save_automation_email_credential_v1')) LOOP
         EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC,anon,authenticated,service_role',r.signature);
         EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO service_role',r.signature);
