@@ -4,6 +4,10 @@ import { chromium } from "@playwright/test";
 import { createCommonJsPacker } from "./helpers/store-browser-harness.mjs";
 
 function bundle(mode = "production") {
+  if (mode !== "production" && mode !== "development") {
+    throw new TypeError("Unsupported React mode");
+  }
+  const modeSource = mode === "development" ? "'development'" : "'production'";
   const { add, modules } = createCommonJsPacker({
     "@/lib/store": `const React=require('react');exports.useConfigStore=exports.useStudioStore=()=>React.useSyncExternalStore(window.f.subscribe,window.f.getState);`,
     "@/lib/api": `class ApiError extends Error{constructor(message,status){super(message);this.status=status;}}exports.ApiError=window.f.ApiError=ApiError;exports.CommandOutcomeUnknown=window.f.Unknown=require('@/lib/command-outcome').CommandOutcomeUnknown;exports.api=window.f.api;`,
@@ -11,7 +15,7 @@ function bundle(mode = "production") {
   const react = add("react");
   const dom = add("react-dom/client");
   const subject = add("@/components/automations/missed-class-automation");
-  return `(()=>{const process={env:{NODE_ENV:${JSON.stringify(mode)}}};const modules=[${modules.join(",")}],cache={};function require(id){if(cache[id])return cache[id].exports;const m=cache[id]={exports:{}};modules[id](m,m.exports,require);return m.exports;}window.f.root=require(${dom}).createRoot(document.getElementById('root'));window.f.root.render(require(${react}).createElement(require(${react}).StrictMode,null,require(${react}).createElement(require(${subject}).MissedClassAutomation)));})();`;
+  return `(()=>{const process={env:{NODE_ENV:${modeSource}}};const modules=[${modules.join(",")}],cache={};function require(id){if(cache[id])return cache[id].exports;const m=cache[id]={exports:{}};modules[id](m,m.exports,require);return m.exports;}window.f.root=require(${dom}).createRoot(document.getElementById('root'));window.f.root.render(require(${react}).createElement(require(${react}).StrictMode,null,require(${react}).createElement(require(${subject}).MissedClassAutomation)));})();`;
 }
 
 let browser;

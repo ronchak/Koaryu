@@ -323,7 +323,7 @@ def test_unsubscribe_get_is_static_nonmutating_with_exact_script_csp(api):
     assert response.status_code == 200
     assert database.rpc_calls == [] and token not in response.text
     assert response.request.url.path == OPTOUT and not response.request.url.query
-    script = re.search(r"<script>(.*?)</script>", response.text).group(1)
+    script = re.search(r"<script>(.*?)</script>", response.text, re.IGNORECASE).group(1)
     digest = base64.b64encode(hashlib.sha256(script.encode()).digest()).decode()
     assert "'sha256-" + digest + "'" in response.headers["content-security-policy"]
     assert "location.hash.slice(1)" in script and "history.replaceState" in script
