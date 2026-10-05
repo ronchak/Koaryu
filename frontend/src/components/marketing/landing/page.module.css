@@ -1,0 +1,1107 @@
+/*
+ * Act two: after the frame hand-off the page scrolls naturally. White, quiet
+ * and structured like a product site, in production's heavy sans, with the
+ * scene's wood and belt colours as small signals. Scroll-linked motion uses
+ * CSS view timelines where supported; every element has a complete static state.
+ */
+
+.page {
+  --ink: #2a2117;
+  --muted: rgb(42 33 23 / 68%);
+  --faint: rgb(42 33 23 / 52%);
+  --rule: rgb(42 33 23 / 10%);
+  --card: #fff;
+  --card-edge: rgb(42 33 23 / 10%);
+  --card-shadow: 0 1px 2px rgb(42 33 23 / 4%), 0 24px 60px -24px rgb(42 33 23 / 18%);
+  --wash: #f5f1e8;
+  --tile: #f7f3ea;
+  --affirm: #2f6b52;
+  --wood: #8a6a34;
+  --section-pad: clamp(80px, 12vh, 136px);
+  --gutter: clamp(20px, 6vw, 96px);
+  --masthead: 76px;
+
+  position: relative;
+  z-index: 1;
+  color: var(--ink);
+  background: var(--page-ground, #fbfaf6);
+}
+
+:global(html[data-scene="night"]) .page {
+  --ink: #efe6d6;
+  --muted: rgb(239 230 214 / 70%);
+  --faint: rgb(239 230 214 / 52%);
+  --rule: rgb(239 230 214 / 11%);
+  --card: #1e1a22;
+  --card-edge: rgb(239 230 214 / 10%);
+  --card-shadow: 0 1px 0 rgb(255 255 255 / 4%) inset, 0 30px 70px -30px rgb(0 0 0 / 70%);
+  --wash: #1b1720;
+  --tile: #25202a;
+  --affirm: #8cc7a4;
+  --wood: #e2b15e;
+  --koaryu-action-label: #1d1712;
+}
+
+.pricing,
+.try,
+.faq {
+  box-sizing: border-box;
+  width: min(100% - 2 * var(--gutter), 1180px);
+  margin: 0 auto;
+  padding: var(--section-pad) 0;
+  scroll-margin-top: var(--masthead);
+}
+
+.title {
+  max-width: 16ch;
+  margin: 0;
+  font-size: clamp(38px, 4.4vw, 66px);
+  font-weight: 710;
+  line-height: 0.95;
+  letter-spacing: -0.045em;
+  text-wrap: balance;
+}
+
+.title span {
+  display: block;
+}
+
+.lede {
+  max-width: 44ch;
+  margin: 22px 0 0;
+  color: var(--muted);
+  font-size: clamp(16px, 1.3vw, 19px);
+  font-weight: 460;
+  line-height: 1.55;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 32px;
+}
+
+.action {
+  min-width: 164px;
+  min-height: 48px;
+  font-size: 14px;
+}
+
+.caption {
+  margin: 16px 0 0;
+  color: var(--faint);
+  font-size: 12px;
+  font-weight: 540;
+}
+
+/* Pricing */
+
+.pricing {
+  display: grid;
+  grid-template-columns: minmax(0, 0.92fr) minmax(0, 1.08fr);
+  gap: clamp(48px, 7vw, 112px);
+  align-items: start;
+  padding-top: clamp(104px, 17vh, 184px);
+}
+
+.price {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  align-items: baseline;
+  margin: clamp(30px, 5vh, 52px) 0 0;
+  font-size: clamp(104px, 12vw, 176px);
+  font-weight: 740;
+  line-height: 0.82;
+  letter-spacing: -0.065em;
+}
+
+.pricePeriod {
+  color: var(--muted);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+.note {
+  margin: 18px 0 0;
+  color: var(--muted);
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+
+.note a {
+  color: inherit;
+  font-weight: 620;
+  text-underline-offset: 3px;
+}
+
+.plan {
+  overflow: hidden;
+  border: 1px solid var(--card-edge);
+  border-radius: 16px;
+  background: var(--card);
+  box-shadow: var(--card-shadow);
+}
+
+.planHeader {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 20px;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 22px 28px;
+  border-bottom: 1px solid var(--rule);
+  background: var(--wash);
+}
+
+.planHeader h3 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.planHeader p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.included {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 28px;
+  margin: 0;
+  padding: 10px 28px 18px;
+  list-style: none;
+}
+
+.included li {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  min-height: 50px;
+  border-bottom: 1px solid var(--rule);
+  font-size: 15px;
+  font-weight: 620;
+  line-height: 1.3;
+}
+
+.included li:last-child {
+  grid-column: 1 / -1;
+  border-bottom: 0;
+}
+
+.check {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: var(--affirm);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+}
+
+.planFooter {
+  padding: 22px 28px 28px;
+  border-top: 1px solid var(--rule);
+}
+
+.planFooter > p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.rosters {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin: 16px 0 0;
+}
+
+.rosters div {
+  display: grid;
+  gap: 6px;
+  padding: 14px 16px;
+  border-radius: 10px;
+  background: var(--tile);
+}
+
+.rosters dt {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.rosters dd {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 720;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Try it: copy beside a miniature of the app that marks tonight's class as it arrives */
+
+.try {
+  display: grid;
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+  gap: clamp(48px, 6vw, 96px);
+  align-items: center;
+  border-top: 1px solid var(--rule);
+}
+
+.tasks {
+  display: grid;
+  gap: 0;
+  margin: 30px 0 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: task;
+}
+
+.tasks li {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr);
+  gap: 2px 14px;
+  padding: 14px 0;
+  border-top: 1px solid var(--rule);
+  counter-increment: task;
+}
+
+.tasks li:last-child {
+  border-bottom: 1px solid var(--rule);
+}
+
+.tasks li::before {
+  grid-row: span 2;
+  color: var(--wood);
+  font-size: 13px;
+  font-weight: 720;
+  line-height: 1.6;
+  font-variant-numeric: tabular-nums;
+  content: counter(task, decimal-leading-zero);
+}
+
+.taskTitle {
+  font-size: 15px;
+  font-weight: 680;
+}
+
+.taskText {
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.tryFigure {
+  min-width: 0;
+  margin: 0;
+}
+
+.tryWindow {
+  view-timeline: --mini block;
+}
+
+.tryFigure .caption {
+  text-align: right;
+}
+
+/* The miniature mirrors the app's own surfaces, so it stays light at night like the app. */
+.miniature {
+  --app-ground: #efe8da;
+  --app-paper: #fbf8f1;
+  --app-card: #fffdf8;
+  --app-ink: #2e271c;
+  --app-muted: #6f6450;
+  --app-line: rgb(46 39 28 / 10%);
+  --app-wood: #8a6a34;
+  --app-affirm: #2f6b52;
+
+  display: grid;
+  overflow: hidden;
+  grid-template-columns: 168px minmax(0, 1fr);
+  border: 1px solid rgb(46 39 28 / 14%);
+  border-radius: 14px;
+  color: var(--app-ink);
+  background: var(--app-ground);
+  box-shadow:
+    0 1px 2px rgb(42 33 23 / 6%),
+    0 40px 90px -36px rgb(42 33 23 / 34%);
+  font-size: 13px;
+}
+
+:global(html[data-scene="night"]) .miniature {
+  border-color: rgb(239 230 214 / 18%);
+  box-shadow: 0 40px 100px -30px rgb(0 0 0 / 80%);
+}
+
+.miniSidebar {
+  display: grid;
+  align-content: start;
+  gap: 4px;
+  padding: 20px 12px;
+  border-right: 1px solid var(--app-line);
+  background: var(--app-paper);
+}
+
+.miniBrand {
+  margin: 2px 8px 16px;
+  font-size: 12px;
+  font-weight: 760;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+}
+
+.miniNav {
+  padding: 9px 10px;
+  border-radius: 8px;
+  color: var(--app-muted);
+  font-weight: 600;
+}
+
+.miniNav[data-current] {
+  color: var(--app-ink);
+  background: var(--app-card);
+  box-shadow: 0 1px 2px rgb(46 39 28 / 8%);
+}
+
+.miniMain {
+  min-width: 0;
+  padding: 0 22px 22px;
+}
+
+.miniBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 48px;
+  margin: 0 -22px;
+  padding: 0 22px;
+  border-bottom: 1px solid var(--app-line);
+  background: var(--app-paper);
+  font-weight: 650;
+}
+
+.miniSample {
+  padding: 4px 10px;
+  border: 1px solid var(--app-line);
+  border-radius: 999px;
+  color: var(--app-muted);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.miniClass {
+  padding: 20px 0 14px;
+}
+
+.miniClassName {
+  margin: 0;
+  font-size: 19px;
+  font-weight: 720;
+  letter-spacing: -0.02em;
+}
+
+.miniClassName span {
+  margin-left: 8px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: #e6dcc6;
+  font-size: 11.5px;
+  font-weight: 650;
+  letter-spacing: 0;
+  vertical-align: 3px;
+}
+
+.miniWhen {
+  margin: 6px 0 0;
+  color: var(--app-muted);
+  font-size: 12.5px;
+}
+
+.miniRoster {
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--app-line);
+  border-radius: 12px;
+  background: var(--app-card);
+  list-style: none;
+}
+
+.miniRow {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) minmax(96px, 150px) 84px;
+  gap: 14px;
+  align-items: center;
+  min-height: 62px;
+  padding: 0 16px;
+  border-top: 1px solid var(--app-line);
+}
+
+.miniRow:first-child {
+  border-top: 0;
+}
+
+.miniAvatar {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border: 1px solid var(--app-line);
+  border-radius: 9px;
+  color: var(--app-muted);
+  background: var(--app-paper);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.miniWho {
+  display: grid;
+  grid-column: 2;
+  grid-row: 1;
+  gap: 3px;
+  min-width: 0;
+}
+
+.miniName {
+  font-weight: 680;
+}
+
+.miniBelt {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  color: var(--app-muted);
+  font-size: 12px;
+}
+
+.miniBelt::before {
+  width: 18px;
+  height: 7px;
+  border: 1px solid rgb(46 39 28 / 22%);
+  border-radius: 2px;
+  content: "";
+}
+
+.miniBelt[data-belt="white"]::before {
+  background: #f4f1ea;
+}
+
+.miniBelt[data-belt="yellow"]::before {
+  background: #d9a931;
+}
+
+.miniBelt[data-belt="orange"]::before {
+  background: #d9772e;
+}
+
+.miniProgress {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.miniTrack {
+  position: relative;
+  flex: 1 1 auto;
+  height: 5px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: #ebe3d3;
+}
+
+.miniFill {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--app-wood);
+  transform: scaleX(var(--to));
+  transform-origin: left;
+}
+
+.miniRow[data-ready] .miniFill {
+  background: var(--app-affirm);
+}
+
+.miniCount {
+  display: grid;
+  flex: 0 0 auto;
+  min-width: 34px;
+  color: var(--app-muted);
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 11.5px;
+}
+
+.miniBefore,
+.miniAfter,
+.miniCheckIn,
+.miniPresent {
+  grid-area: 1 / 1;
+}
+
+.miniBefore,
+.miniCheckIn {
+  opacity: 0;
+}
+
+.miniStatus {
+  display: grid;
+  justify-items: end;
+  font-size: 12.5px;
+  font-weight: 650;
+}
+
+.miniCheckIn {
+  color: var(--app-muted);
+}
+
+.miniPresent {
+  padding: 4px 10px;
+  border-radius: 999px;
+  color: var(--app-affirm);
+  background: rgb(47 107 82 / 10%);
+}
+
+.miniBeltLine {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  align-items: center;
+}
+
+.miniReady {
+  padding: 2px 8px;
+  border-radius: 999px;
+  color: #6b4a10;
+  background: #f1d98f;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+/* FAQ: quiet rows beside a pinned heading */
+
+.faq {
+  display: grid;
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+  gap: clamp(40px, 6vw, 96px);
+  align-items: start;
+  border-top: 1px solid var(--rule);
+}
+
+.faqHeader {
+  position: sticky;
+  top: calc(var(--masthead) + 48px);
+}
+
+.faqGroups {
+  display: grid;
+  gap: 34px;
+}
+
+.faqGroup {
+  scroll-margin-top: calc(var(--masthead) + 24px);
+}
+
+.faqGroup h3 {
+  margin: 0 0 4px;
+  color: var(--wood);
+  font-size: 13px;
+  font-weight: 720;
+  line-height: 1.4;
+}
+
+.faqItem {
+  border-bottom: 1px solid var(--rule);
+}
+
+.faqItem summary {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 56px;
+  padding: 10px 0;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.35;
+  list-style: none;
+  cursor: pointer;
+}
+
+.faqItem summary::-webkit-details-marker {
+  display: none;
+}
+
+.faqIcon {
+  position: relative;
+  flex: 0 0 auto;
+  width: 11px;
+  height: 11px;
+}
+
+.faqIcon::before,
+.faqIcon::after {
+  position: absolute;
+  top: 5px;
+  left: 0;
+  width: 11px;
+  height: 1.5px;
+  content: "";
+  background: currentColor;
+  transition: transform 200ms ease;
+}
+
+.faqIcon::after {
+  transform: rotate(90deg);
+}
+
+.faqItem[open] .faqIcon::after {
+  transform: rotate(0deg);
+}
+
+.faqItem p {
+  max-width: 62ch;
+  margin: 0 0 20px;
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1.6;
+}
+
+/* The close: the hills return and the footer sits on the nearest ridge */
+
+.close {
+  --ridge-0: #efe2c0;
+  --ridge-1: #e7cc97;
+  --ridge-2: #c9a75e;
+  --ridge-3: #a28341;
+  --ridge-4: #7a612e;
+  --sun: #dcc191;
+  --footer-ink: #f4eee1;
+
+  position: relative;
+  display: grid;
+  overflow: hidden;
+  min-height: max(760px, 100svh);
+  grid-template-rows: 1fr auto;
+  scroll-margin-top: 0;
+  view-timeline: --close block;
+}
+
+:global(html[data-scene="night"]) .close {
+  --ridge-0: #4c4468;
+  --ridge-1: #3f3859;
+  --ridge-2: #322c48;
+  --ridge-3: #272237;
+  --ridge-4: #1c1828;
+  --sun: #ece4cf;
+}
+
+.closeCopy {
+  position: relative;
+  z-index: 2;
+  width: min(100% - 2 * var(--gutter), 1180px);
+  margin: 0 auto;
+  padding-top: clamp(96px, 16vh, 168px);
+}
+
+.closeTitle {
+  margin: 0;
+  font-size: clamp(48px, 7vw, 108px);
+  font-weight: 720;
+  line-height: 0.9;
+  letter-spacing: -0.05em;
+}
+
+.closeTitle span {
+  display: block;
+}
+
+.closeLede {
+  margin: 22px 0 0;
+  color: var(--muted);
+  font-size: clamp(16px, 1.3vw, 19px);
+}
+
+.closeArt {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  pointer-events: none;
+}
+
+.closeSun {
+  position: absolute;
+  top: 24%;
+  right: 16%;
+  width: clamp(84px, 9vw, 136px);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle at 42% 38%,
+    color-mix(in srgb, var(--sun), white 22%),
+    var(--sun) 70%
+  );
+  box-shadow: 0 0 0 1px rgb(255 255 255 / 20%) inset;
+}
+
+:global(html[data-scene="night"]) .closeSun {
+  box-shadow:
+    0 0 60px 18px rgb(236 228 207 / 16%),
+    0 0 0 1px rgb(255 255 255 / 30%) inset;
+}
+
+.closeRidge {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: 62%;
+}
+
+.closeRidge[data-ridge="0"] path {
+  fill: var(--ridge-0);
+}
+
+.closeRidge[data-ridge="1"] path {
+  fill: var(--ridge-1);
+}
+
+.closeRidge[data-ridge="2"] path {
+  fill: var(--ridge-2);
+}
+
+.closeRidge[data-ridge="3"] path {
+  fill: var(--ridge-3);
+}
+
+.closeRidge[data-ridge="4"] path {
+  fill: var(--ridge-4);
+}
+
+.footer {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 32px;
+  align-items: center;
+  justify-content: space-between;
+  box-sizing: border-box;
+  width: min(100% - 2 * var(--gutter), 1180px);
+  margin: 0 auto;
+  padding: 28px 0 max(28px, env(safe-area-inset-bottom));
+  color: var(--footer-ink);
+  font-size: 13px;
+}
+
+.footer nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 24px;
+}
+
+.footer a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  color: inherit;
+  font-weight: 560;
+  text-decoration: none;
+  opacity: 0.86;
+}
+
+.footer a:hover {
+  opacity: 1;
+}
+
+.footer p {
+  margin: 0;
+  font-size: 12px;
+  opacity: 0.74;
+}
+
+.footerBrand {
+  font-size: 13px;
+}
+
+.note a:focus-visible,
+.footer a:focus-visible,
+.faqItem summary:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 3px;
+}
+
+/* Motion */
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(40px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes ridgeRise {
+  from {
+    transform: translateY(calc(var(--rise) * 60%));
+  }
+
+  to {
+    transform: none;
+  }
+}
+
+@keyframes sunSet {
+  from {
+    transform: translateY(36vh);
+  }
+
+  to {
+    transform: none;
+  }
+}
+
+@keyframes fadeOut {
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes fill {
+  from {
+    transform: scaleX(var(--from));
+  }
+
+  to {
+    transform: scaleX(var(--to));
+  }
+}
+
+@keyframes pop {
+  from {
+    opacity: 0;
+    transform: scale(0.7);
+  }
+
+  70% {
+    opacity: 1;
+    transform: scale(1.08);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .pricingLead,
+    .plan,
+    .tryCopy,
+    .tryFigure,
+    .faqHeader,
+    .faqGroup,
+    .closeCopy {
+      animation: rise linear both;
+      animation-timeline: view();
+      animation-range: entry 0% entry 60%;
+    }
+
+    .plan {
+      animation-range: entry 10% entry 75%;
+    }
+
+    .closeRidge {
+      animation: ridgeRise linear both;
+      animation-timeline: --close;
+      animation-range: entry 0% cover 55%;
+    }
+
+    .closeSun {
+      animation: sunSet linear both;
+      animation-timeline: --close;
+      animation-range: entry 0% cover 50%;
+    }
+
+    /* Tonight's class is marked as the miniature arrives; Maya reaches her requirement. */
+    .miniCheckIn,
+    .miniBefore {
+      opacity: 1;
+      animation: fadeOut linear both;
+      animation-timeline: --mini;
+    }
+
+    .miniPresent,
+    .miniAfter {
+      animation: fadeIn linear both;
+      animation-timeline: --mini;
+    }
+
+    .miniFill {
+      animation: fill linear both;
+      animation-timeline: --mini;
+    }
+
+    .miniRow:nth-child(1) :is(.miniCheckIn, .miniBefore, .miniPresent, .miniAfter, .miniFill) {
+      animation-range: contain 4% contain 9%;
+    }
+
+    .miniRow:nth-child(2) :is(.miniCheckIn, .miniBefore, .miniPresent, .miniAfter, .miniFill) {
+      animation-range: contain 12% contain 17%;
+    }
+
+    .miniRow:nth-child(3) :is(.miniCheckIn, .miniBefore, .miniPresent, .miniAfter, .miniFill) {
+      animation-range: contain 20% contain 25%;
+    }
+
+    .miniRow:nth-child(4) :is(.miniCheckIn, .miniBefore, .miniPresent, .miniAfter, .miniFill) {
+      animation-range: contain 28% contain 34%;
+    }
+
+    .miniReady {
+      animation: pop linear both;
+      animation-timeline: --mini;
+      animation-range: contain 36% contain 44%;
+    }
+  }
+}
+
+/* Responsive */
+
+@media (max-width: 1000px) {
+  .pricing,
+  .try,
+  .faq {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .faqHeader {
+    position: static;
+  }
+}
+
+@media (max-width: 820px) {
+  .page {
+    --masthead: 68px;
+    --section-pad: 88px;
+    --gutter: 22px;
+  }
+
+  .actions {
+    display: grid;
+    max-width: 380px;
+  }
+
+  .price {
+    font-size: clamp(96px, 30vw, 132px);
+  }
+
+  .planHeader,
+  .included,
+  .planFooter {
+    padding-inline: 20px;
+  }
+
+  .included {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .rosters dd {
+    font-size: 19px;
+  }
+
+  .rosters div {
+    padding: 12px;
+  }
+
+  .miniature {
+    grid-template-columns: minmax(0, 1fr);
+    font-size: 12.5px;
+  }
+
+  .miniSidebar {
+    display: none;
+  }
+
+  .miniMain {
+    padding: 0 14px 14px;
+  }
+
+  .miniBar {
+    margin: 0 -14px;
+    padding: 0 14px;
+  }
+
+  .miniRow {
+    grid-template-columns: 30px minmax(0, 1fr) 70px;
+    gap: 10px;
+    padding: 10px 12px;
+  }
+
+  .miniAvatar {
+    width: 30px;
+    height: 30px;
+  }
+
+  .miniProgress {
+    grid-column: 2 / -1;
+    grid-row: 2;
+  }
+
+  .miniStatus {
+    grid-column: 3;
+    grid-row: 1;
+  }
+
+  .tryFigure .caption {
+    text-align: left;
+  }
+
+  .closeSun {
+    top: auto;
+    right: 14%;
+    bottom: 47%;
+    width: 72px;
+  }
+
+  .closeRidge {
+    height: 52%;
+  }
+
+  .footer {
+    display: grid;
+    justify-content: start;
+    gap: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .faqIcon::before,
+  .faqIcon::after {
+    transition: none;
+  }
+}

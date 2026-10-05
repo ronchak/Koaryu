@@ -1,17 +1,17 @@
-import Image from "next/image";
+import Image, { getImageProps } from "next/image";
 import Link from "next/link";
-import { Fragment, type CSSProperties } from "react";
+import { Fragment, type CSSProperties, type ReactNode } from "react";
 
 import {
   landingPageContent,
-  type JourneyChapter,
-  type JourneyFaqChapter,
-  type JourneyFeaturesChapter,
-  type JourneyFinalChapter,
-  type JourneyHeroChapter,
-  type JourneyPricingChapter,
-  type JourneyProblemChapter,
-  type JourneyProductChapter,
+  type FeaturesChapter as FeaturesContent,
+  type HeroChapter as HeroContent,
+  type PathChapter as PathContent,
+  type ProblemChapter as ProblemContent,
+  type ProductChapter as ProductContent,
+  type StoryChapter,
+  type StudioChapter as StudioContent,
+  type WeaveChapter as WeaveContent,
 } from "../../../lib/landing-page-content.ts";
 import { MarketingActionLink } from "../marketing-primitives";
 import styles from "./journey.module.css";
@@ -20,28 +20,30 @@ function actionPrefetch(href: string): false | undefined {
   return href === "/signup" || href === "/login" ? false : undefined;
 }
 
-function ChapterAction({
+export function ChapterAction({
   href,
   label,
   variant = "secondary",
+  className,
 }: {
   href: string;
   label: string;
   variant?: "primary" | "secondary";
+  className?: string;
 }) {
   return (
     <MarketingActionLink
       href={href}
       prefetch={actionPrefetch(href)}
       variant={variant}
-      className={styles.action}
+      className={[styles.action, className].filter(Boolean).join(" ")}
     >
       {label}
     </MarketingActionLink>
   );
 }
 
-/** Sets each sentence of a short title on its own line ("One price." / "Every student."). */
+/** Sets each sentence of a short title on its own line ("Koaryu keeps count." / "You teach."). */
 function SentenceLines({ text }: { text: string }) {
   return text.split(/(?<=\.)\s+/).map((line) => (
     <span key={line} className={styles.line}>
@@ -59,7 +61,7 @@ function TextLink({ href, label }: { href: string; label: string }) {
 }
 
 /** Hero copy arrives in a short stagger on load and drifts away as the camera dives. */
-function HeroChapter({ chapter }: { chapter: JourneyHeroChapter }) {
+function Hero({ chapter }: { chapter: HeroContent }) {
   return (
     <div className={styles.heroCopy}>
       <p className={styles.heroKicker}>{chapter.kicker}</p>
@@ -77,9 +79,9 @@ function HeroChapter({ chapter }: { chapter: JourneyHeroChapter }) {
   );
 }
 
-function ProblemChapter({ chapter }: { chapter: JourneyProblemChapter }) {
+function Problem({ chapter }: { chapter: ProblemContent }) {
   return (
-    <div className={`${styles.problemCopy} ${styles.reveal}`}>
+    <div className={styles.problemCopy}>
       <h2 className={styles.statementHeading}>{chapter.title}</h2>
       <div className={styles.problemResponse}>
         <p>{chapter.question}</p>
@@ -90,7 +92,7 @@ function ProblemChapter({ chapter }: { chapter: JourneyProblemChapter }) {
 }
 
 /** The real belt tracker: the desktop screen, with the phone layout standing in front of it. */
-function ProductChapter({ chapter }: { chapter: JourneyProductChapter }) {
+function Product({ chapter }: { chapter: ProductContent }) {
   const { image } = chapter;
   return (
     <div className={styles.productStage}>
@@ -133,8 +135,11 @@ function ProductChapter({ chapter }: { chapter: JourneyProductChapter }) {
   );
 }
 
-/** Features told as a day at the studio; an ink line draws down the day as it is read. */
-function FeaturesChapter({ chapter }: { chapter: JourneyFeaturesChapter }) {
+/**
+ * Features told as a day at the studio. The chapter scrolls on its own, so the
+ * day reads naturally while the story waits; an ink line draws down the day.
+ */
+function Features({ chapter }: { chapter: FeaturesContent }) {
   return (
     <article className={`${styles.sheet} ${styles.daySheet}`}>
       <header className={styles.dayHeader}>
@@ -162,134 +167,159 @@ function FeaturesChapter({ chapter }: { chapter: JourneyFeaturesChapter }) {
   );
 }
 
-/** The price stands in the open sky, without a card. */
-function PricingChapter({ chapter }: { chapter: JourneyPricingChapter }) {
+/** A single line in the open sky, after flying through the door. */
+function Path({ chapter }: { chapter: PathContent }) {
   return (
-    <div className={`${styles.priceCopy} ${styles.reveal}`}>
-      <div className={styles.priceLead}>
-        <h2 className={styles.statementHeading}>
-          <SentenceLines text={chapter.title} />
-        </h2>
-        <p className={styles.price} data-price-amount={chapter.amount}>
-          {chapter.displayPrice}
-          <span className={styles.pricePeriod}>{chapter.period}</span>
-        </p>
-      </div>
-      <div className={styles.priceDetail}>
-        <dl className={styles.priceFacts}>
-          {chapter.facts.map((fact) => (
-            <div key={fact.label}>
-              <dt>{fact.label}</dt>
-              <dd>{fact.description}</dd>
+    <div className={styles.pathCopy}>
+      <h2 className={styles.pathHeading}>{chapter.title}</h2>
+    </div>
+  );
+}
+
+/** Over the loom: the threads are drawn in the art; the words say what they are. */
+function Weave({ chapter }: { chapter: WeaveContent }) {
+  return (
+    <div className={styles.weaveCopy}>
+      <h2 className={styles.weaveHeading}>{chapter.title}</h2>
+      <p className={`${styles.lede} ${styles.weaveLede}`}>{chapter.lede}</p>
+    </div>
+  );
+}
+
+/** A still of the seated class for visitors without scripts; the live scene frames itself. */
+function ClassStill() {
+  const common = { alt: "", sizes: "(max-width: 820px) 92vw, 50vw", quality: 76 } as const;
+  const {
+    props: { srcSet: wide },
+  } = getImageProps({
+    ...common,
+    src: "/marketing/scenes/class-wide.webp",
+    width: 3200,
+    height: 2000,
+  });
+  const { props: tall } = getImageProps({
+    ...common,
+    src: "/marketing/scenes/class-tall.webp",
+    width: 975,
+    height: 2110,
+  });
+  return (
+    <picture className={styles.pictureStill}>
+      <source media="(min-width: 821px)" srcSet={wide} />
+      {/* eslint-disable-next-line jsx-a11y/alt-text -- decorative; alt is empty in the props */}
+      <img {...tall} loading="lazy" />
+    </picture>
+  );
+}
+
+/**
+ * The class sits; then the picture is handed off into a timber frame beside the
+ * same headline, and the page begins. The copy is pinned while the hand-off plays.
+ */
+function Studio({ chapter }: { chapter: StudioContent }) {
+  return (
+    <section
+      id={chapter.id}
+      className={styles.studio}
+      data-stop={chapter.id}
+      data-scene={chapter.scene}
+      data-focus-stop={chapter.id}
+      data-kind={chapter.kind}
+      aria-labelledby="studio-title"
+    >
+      <span className={styles.handoffMarker} data-stop="handoff" data-scene={chapter.scene} />
+      <div className={styles.studioPin} data-pinned="">
+        <div className={styles.studioCopy}>
+          <h2 id="studio-title" className={styles.studioHeading}>
+            <SentenceLines text={chapter.title} />
+          </h2>
+          <div className={styles.studioDetail} data-focus-stop="handoff">
+            <p className={styles.studioLede}>{chapter.lede}</p>
+            <div className={styles.actions}>
+              <ChapterAction {...chapter.actions[0]} variant="primary" />
+              <ChapterAction {...chapter.actions[1]} />
             </div>
-          ))}
-        </dl>
-        <div className={styles.actions}>
-          <ChapterAction {...chapter.setupAction} variant="primary" />
+          </div>
         </div>
-        <p className={styles.priceNote}>
-          Collecting tuition online? See <Link href="#faq-pricing">Pricing &amp; payments</Link>.
-        </p>
+        <figure className={styles.studioFigure}>
+          <div className={styles.pictureSlot} data-picture-slot="">
+            <ClassStill />
+          </div>
+          <figcaption className={styles.studioCaption}>{chapter.caption}</figcaption>
+        </figure>
       </div>
-    </div>
+    </section>
   );
 }
 
-function FaqChapter({ chapter }: { chapter: JourneyFaqChapter }) {
-  return (
-    <article className={`${styles.sheet} ${styles.faqSheet}`}>
-      <h2 className={`${styles.sheetHeading} ${styles.revealRow}`}>{chapter.title}</h2>
-      <div className={styles.faqGroups}>
-        {chapter.groups.map((group) => (
-          <section key={group.id} id={group.id} className={styles.faqGroup}>
-            <h3 className={styles.revealRow}>{group.title}</h3>
-            {group.items.map((item) => (
-              <details key={item.question} className={`${styles.faqItem} ${styles.revealRow}`}>
-                <summary>
-                  <span>{item.question}</span>
-                  <span className={styles.faqIcon} aria-hidden="true" />
-                </summary>
-                <p>{item.answer}</p>
-              </details>
-            ))}
-          </section>
-        ))}
-      </div>
-    </article>
-  );
-}
-
-/** The closing line is written on the dojo wall, above the seated class. */
-function FinalChapter({ chapter }: { chapter: JourneyFinalChapter }) {
-  return (
-    <div className={styles.finalCopy}>
-      <h2 className={styles.finalHeading}>
-        <SentenceLines text={chapter.title} />
-      </h2>
-      <p className={styles.lede}>{chapter.lede}</p>
-      <div className={styles.actions}>
-        <ChapterAction {...chapter.action} variant="primary" />
-      </div>
-      <footer className={styles.footer}>
-        <nav aria-label="Footer">
-          {chapter.footerLinks.map((link) => (
-            <Link key={link.href} href={link.href}>
-              {link.label}
-            </Link>
-          ))}
-        </nav>
-        <p>{chapter.copyright}</p>
-      </footer>
-    </div>
-  );
-}
-
-function ChapterContent({ chapter }: { chapter: JourneyChapter }) {
+function ChapterContent({ chapter }: { chapter: StoryChapter }): ReactNode {
   switch (chapter.kind) {
     case "hero":
-      return <HeroChapter chapter={chapter} />;
+      return <Hero chapter={chapter} />;
     case "problem":
-      return <ProblemChapter chapter={chapter} />;
+      return <Problem chapter={chapter} />;
     case "product":
-      return <ProductChapter chapter={chapter} />;
+      return <Product chapter={chapter} />;
     case "features":
-      return <FeaturesChapter chapter={chapter} />;
-    case "pricing":
-      return <PricingChapter chapter={chapter} />;
-    case "faq":
-      return <FaqChapter chapter={chapter} />;
-    case "final":
-      return <FinalChapter chapter={chapter} />;
+      return <Features chapter={chapter} />;
+    case "path":
+      return <Path chapter={chapter} />;
+    case "weave":
+      return <Weave chapter={chapter} />;
+    case "studio":
+      return null;
   }
 }
 
-export function JourneyChapters() {
+/**
+ * Open scroll between chapters, in screen heights, where each beat plays when
+ * the story is scrubbed. Keyed by the chapter the beat arrives at.
+ */
+const INTERLUDES: Readonly<Record<string, number>> = {
+  "the-problem": 50,
+  product: 70,
+  features: 80,
+  "the-path": 80,
+  "the-weave": 120,
+  studio: 90,
+};
+
+/** The paged story: one composed chapter per screen, with open scroll between them. */
+export function JourneyStory() {
+  const { story } = landingPageContent;
   return (
-    <main id="main-content" tabIndex={-1} className={styles.storyRegion}>
-      {landingPageContent.chapters.map((chapter) => (
+    <div className={styles.story}>
+      {story.map((chapter, index) => (
         <Fragment key={chapter.id}>
-          <section
-            id={chapter.id}
-            className={styles.chapter}
-            data-journey-chapter=""
-            data-chapter-id={chapter.id}
-            data-kind={chapter.kind}
-            data-ink={chapter.ink}
-            data-scene={chapter.scene}
-            aria-label={chapter.kind === "hero" ? undefined : chapter.title}
-          >
-            <ChapterContent chapter={chapter} />
-          </section>
-          {"interludeAfter" in chapter && chapter.interludeAfter ? (
+          {index > 0 ? (
             <div
               className={styles.interlude}
-              data-journey-interlude=""
               aria-hidden="true"
-              style={{ "--interlude": chapter.interludeAfter } as CSSProperties}
+              style={{ "--interlude": INTERLUDES[chapter.id] ?? 70 } as CSSProperties}
             />
           ) : null}
+          {chapter.kind === "studio" ? (
+            <Studio chapter={chapter} />
+          ) : (
+            <section
+              id={chapter.id}
+              className={styles.chapter}
+              data-stop={chapter.id}
+              data-scene={chapter.scene}
+              data-focus-stop={chapter.id}
+              data-kind={chapter.kind}
+              data-ink={chapter.ink}
+              aria-label={chapter.kind === "hero" ? undefined : chapter.title}
+            >
+              <div className={styles.panel} data-panel="">
+                <div className={styles.frame}>
+                  <ChapterContent chapter={chapter} />
+                </div>
+              </div>
+            </section>
+          )}
         </Fragment>
       ))}
-    </main>
+    </div>
   );
 }

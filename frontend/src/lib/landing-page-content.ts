@@ -9,13 +9,21 @@ import {
   type MarketingPageRef,
 } from "./marketing-pages.ts";
 
-export type JourneyChapterId =
-  "welcome" | "the-problem" | "product" | "features" | "pricing" | "faq" | "begin";
+/**
+ * The landing page in two acts. The story is paged: each chapter is a composed
+ * frame of the illustrated scene, and one gesture moves one chapter. After the
+ * class sits, the picture is handed off into a framed still and the page reads
+ * as an ordinary product page: pricing, the hands-on demo, questions, the close.
+ */
 
+export type StoryChapterId =
+  "welcome" | "the-problem" | "product" | "features" | "the-path" | "the-weave" | "studio";
+
+export type StoryChapterKind =
+  "hero" | "problem" | "product" | "features" | "path" | "weave" | "studio";
+
+/** Ink for copy set directly on the daytime scene. */
 export type JourneyInk = "dark" | "light";
-
-export type JourneyChapterKind =
-  "hero" | "problem" | "product" | "features" | "pricing" | "faq" | "final";
 
 export interface JourneyAction {
   label: string;
@@ -30,22 +38,18 @@ export interface LandingDetailReference {
   title: string;
 }
 
-export interface JourneyBaseChapter {
-  id: JourneyChapterId;
+interface StoryChapterBase {
+  id: StoryChapterId;
+  kind: StoryChapterKind;
   title: string;
-  /** Scene progress held while this chapter is being read. */
+  /** Short name in the chapter rail. */
+  label: string;
+  /** Scene progress (0 hills to 1 seated class) held while this chapter is shown. */
   scene: number;
-  /**
-   * Length, in percent of the screen's height, of the open stretch of scroll
-   * after this chapter where the next story beat plays unobstructed. Longer
-   * beats get more room.
-   */
-  interludeAfter?: number;
-  kind: JourneyChapterKind;
   ink: JourneyInk;
 }
 
-export interface JourneyHeroChapter extends Omit<JourneyBaseChapter, "kind"> {
+export interface HeroChapter extends StoryChapterBase {
   kind: "hero";
   kicker: string;
   headline: readonly [string, string];
@@ -53,7 +57,7 @@ export interface JourneyHeroChapter extends Omit<JourneyBaseChapter, "kind"> {
   actions: readonly [JourneyAction, JourneyAction];
 }
 
-export interface JourneyProblemChapter extends Omit<JourneyBaseChapter, "kind"> {
+export interface ProblemChapter extends StoryChapterBase {
   kind: "problem";
   question: string;
   aside: string;
@@ -64,7 +68,7 @@ export interface ProductHighlight {
   description: string;
 }
 
-export interface JourneyProductChapter extends Omit<JourneyBaseChapter, "kind"> {
+export interface ProductChapter extends StoryChapterBase {
   kind: "product";
   lede: string;
   image: {
@@ -87,25 +91,83 @@ export interface DayMoment {
   detail: LandingDetailReference;
 }
 
-export interface JourneyFeaturesChapter extends Omit<JourneyBaseChapter, "kind"> {
+export interface FeaturesChapter extends StoryChapterBase {
   kind: "features";
   lede: string;
   moments: readonly DayMoment[];
   links: readonly [JourneyAction, JourneyAction];
 }
 
-export interface PricingFact {
-  label: string;
-  description: string;
+export interface PathChapter extends StoryChapterBase {
+  kind: "path";
 }
 
-export interface JourneyPricingChapter extends Omit<JourneyBaseChapter, "kind"> {
-  kind: "pricing";
+export interface WeaveChapter extends StoryChapterBase {
+  kind: "weave";
+  lede: string;
+  /** The studio's scattered threads, written along the strands of the weave. */
+  threads: readonly string[];
+}
+
+/** The seated class, then the hand-off into the page. */
+export interface StudioChapter extends StoryChapterBase {
+  kind: "studio";
+  lede: string;
+  actions: readonly [JourneyAction, JourneyAction];
+  caption: string;
+  /** Rail label for the hand-off, where the page begins. */
+  handoffLabel: string;
+}
+
+export type StoryChapter =
+  | HeroChapter
+  | ProblemChapter
+  | ProductChapter
+  | FeaturesChapter
+  | PathChapter
+  | WeaveChapter
+  | StudioChapter;
+
+export interface PricingSection {
+  id: "pricing";
+  title: string;
+  lede: string;
   amount: string;
   displayPrice: string;
   period: string;
-  facts: readonly PricingFact[];
+  plan: { name: string; scope: string };
+  included: readonly string[];
+  /** Roster sizes shown at the same price, so "no per-student tiers" is visible. */
+  rosterSizes: readonly number[];
+  rosterNote: string;
   setupAction: JourneyAction;
+  paymentsNote: { lead: string; label: string; href: string };
+}
+
+export interface TryStudent {
+  initials: string;
+  name: string;
+  belt: "white" | "yellow" | "orange";
+  beltLabel: string;
+  attended: number;
+  required: number;
+}
+
+export interface TrySection {
+  id: "try";
+  title: string;
+  lede: string;
+  tasks: readonly { title: string; description: string }[];
+  action: JourneyAction;
+  secondaryAction: JourneyAction;
+  miniature: {
+    studio: string;
+    className: string;
+    when: string;
+    students: readonly TryStudent[];
+    readyLabel: string;
+    caption: string;
+  };
 }
 
 export interface FaqItem {
@@ -119,27 +181,21 @@ export interface FaqGroup {
   items: readonly FaqItem[];
 }
 
-export interface JourneyFaqChapter extends Omit<JourneyBaseChapter, "kind"> {
-  kind: "faq";
+export interface FaqSection {
+  id: "faq";
+  title: string;
+  lede: string;
   groups: readonly FaqGroup[];
 }
 
-export interface JourneyFinalChapter extends Omit<JourneyBaseChapter, "kind"> {
-  kind: "final";
+export interface CloseSection {
+  id: "begin";
+  title: string;
   lede: string;
   action: JourneyAction;
   footerLinks: readonly JourneyAction[];
   copyright: string;
 }
-
-export type JourneyChapter =
-  | JourneyHeroChapter
-  | JourneyProblemChapter
-  | JourneyProductChapter
-  | JourneyFeaturesChapter
-  | JourneyPricingChapter
-  | JourneyFaqChapter
-  | JourneyFinalChapter;
 
 function landingDetail(ref: MarketingPageRef): LandingDetailReference {
   const page = getMarketingPageByRef(ref);
@@ -285,127 +341,235 @@ const faqGroups: readonly FaqGroup[] = [
   },
 ];
 
-export const landingPageContent = {
-  chapters: [
-    {
-      id: "welcome",
-      title: "Run the school. Teach the art.",
-      scene: 0,
-      interludeAfter: 70,
-      kind: "hero",
-      ink: "dark",
-      kicker: "For independent martial arts schools",
-      headline: ["Run the school.", "Teach the art."],
-      lede: `Students, ranks, attendance and trial follow-ups in one calm place. ${formatPublicPlatformPrice()} per studio per month.`,
-      actions: [
-        { label: "Create an account", href: "/signup" },
-        { label: "See the product", href: "#product" },
-      ],
-    },
-    {
-      id: "the-problem",
-      title: "Your studio is not a spreadsheet.",
-      scene: 0.1,
-      interludeAfter: 80,
-      kind: "problem",
-      ink: "light",
-      question:
-        "Yet the roster, belt ranks, trial follow-ups and payment notes still live in five of them.",
-      aside: "Class starts in ten minutes. Which one is up to date?",
-    },
-    {
-      id: "product",
-      title: "Know who is ready for their next belt.",
-      scene: 0.288,
-      interludeAfter: 100,
-      kind: "product",
-      ink: "dark",
-      lede: "Classes attended count toward the next rank's requirement. Koaryu keeps the tally; the decision to promote stays with you.",
-      image: {
-        src: "/marketing/product/belt-tracker.webp",
-        width: 2400,
-        height: 1500,
-        alt: "Koaryu belt tracker listing students by current rank, with classes attended and time at rank toward the next belt.",
-        caption: "Belt tracker, shown with sample studio data.",
-        mobile: {
-          src: "/marketing/product/belt-tracker-mobile.webp",
-          width: 780,
-          height: 1520,
-          alt: "The same belt tracker in Koaryu's phone layout, with ready, approval and in-progress counts.",
-        },
+const story = [
+  {
+    id: "welcome",
+    kind: "hero",
+    title: "Run the school. Teach the art.",
+    label: "Welcome",
+    scene: 0,
+    ink: "dark",
+    kicker: "For independent martial arts schools",
+    headline: ["Run the school.", "Teach the art."],
+    lede: `Students, ranks, attendance and trial follow-ups in one calm place. ${formatPublicPlatformPrice()} per studio per month.`,
+    actions: [
+      { label: "Create an account", href: "/signup" },
+      { label: "Try it", href: "/try" },
+    ],
+  },
+  {
+    id: "the-problem",
+    kind: "problem",
+    title: "Your studio is not a spreadsheet.",
+    label: "Spreadsheets",
+    scene: 0.1,
+    ink: "light",
+    question:
+      "Yet the roster, belt ranks, trial follow-ups and payment notes still live in five of them.",
+    aside: "Class starts in ten minutes. Which one is up to date?",
+  },
+  {
+    id: "product",
+    kind: "product",
+    title: "Know who is ready for their next belt.",
+    label: "Belt tracker",
+    scene: 0.288,
+    ink: "dark",
+    lede: "Classes attended count toward the next rank's requirement. Koaryu keeps the tally; the decision to promote stays with you.",
+    image: {
+      src: "/marketing/product/belt-tracker.webp",
+      width: 2400,
+      height: 1500,
+      alt: "Koaryu belt tracker listing students by current rank, with classes attended and time at rank toward the next belt.",
+      caption: "Belt tracker, shown with sample studio data.",
+      mobile: {
+        src: "/marketing/product/belt-tracker-mobile.webp",
+        width: 780,
+        height: 1520,
+        alt: "The same belt tracker in Koaryu's phone layout, with ready, approval and in-progress counts.",
       },
-      highlights: [
-        {
-          label: "Requirements you define",
-          description: "Classes, time at rank and instructor approval, per program.",
-        },
-        {
-          label: "Ready at a glance",
-          description: "See how many students meet every requirement, rank by rank.",
-        },
-      ],
     },
-    {
-      id: "features",
-      title: "Everything between classes.",
-      scene: 0.52,
-      interludeAfter: 100,
-      kind: "features",
-      ink: "dark",
-      lede: "A day at the studio, from the first coffee to the last class. Built around how a dojo actually runs.",
-      moments: dayMoments,
-      links: [
-        { label: "All features", href: "/features" },
-        { label: "Workflow guides", href: "/use-cases" },
-      ],
-    },
-    {
-      id: "pricing",
-      title: "One price. Every student.",
-      scene: 0.66,
-      interludeAfter: 200,
-      kind: "pricing",
-      ink: "dark",
-      amount: publicPlatformPriceAmount(),
-      displayPrice: formatPublicPlatformPrice(),
-      period: "per studio, per month",
-      facts: [
-        {
-          label: "Everything included",
-          description:
-            "Students, ranks, leads, scheduling, attendance, reports and billing records.",
-        },
-        {
-          label: "No per-student tiers",
-          description: "Grow your roster without growing your bill.",
-        },
-      ],
-      setupAction: { label: "Create an account", href: "/signup" },
-    },
-    {
-      id: "faq",
-      title: "Questions owners ask",
-      scene: 0.952,
-      interludeAfter: 90,
-      kind: "faq",
-      ink: "dark",
-      groups: faqGroups,
-    },
-    {
-      id: "begin",
-      title: "Enough admin. Go teach.",
-      scene: 1,
-      kind: "final",
-      ink: "dark",
-      lede: `${formatPublicPlatformPrice()} per studio, per month.`,
-      action: { label: "Create an account", href: "/signup" },
-      footerLinks: [
-        { label: "Features", href: "/features" },
-        { label: "Workflows", href: "/use-cases" },
-        { label: "Terms", href: "/terms" },
-        { label: "Privacy", href: "/privacy" },
-      ],
-      copyright: "© 2026 Koaryu",
-    },
+    highlights: [
+      {
+        label: "Requirements you define",
+        description: "Classes, time at rank and instructor approval, per program.",
+      },
+      {
+        label: "Ready at a glance",
+        description: "See how many students meet every requirement, rank by rank.",
+      },
+    ],
+  },
+  {
+    id: "features",
+    kind: "features",
+    title: "Everything between classes.",
+    label: "Between classes",
+    scene: 0.52,
+    ink: "dark",
+    lede: "A day at the studio, from the first coffee to the last class. Built around how a dojo actually runs.",
+    moments: dayMoments,
+    links: [
+      { label: "All features", href: "/features" },
+      { label: "Workflow guides", href: "/use-cases" },
+    ],
+  },
+  {
+    id: "the-path",
+    kind: "path",
+    title: "Every class is a step toward the next belt.",
+    label: "The path",
+    scene: 0.66,
+    ink: "dark",
+  },
+  {
+    id: "the-weave",
+    kind: "weave",
+    title: "Everything your studio runs on, woven into one place.",
+    label: "Woven together",
+    scene: 0.892,
+    ink: "dark",
+    lede: "Students, families, belt ranks, attendance, trial leads, schedules and billing records, held in one studio workspace instead of five spreadsheets.",
+    threads: [
+      "Students",
+      "Families",
+      "Belt ranks",
+      "Attendance",
+      "Trial leads",
+      "Schedules",
+      "Billing records",
+    ],
+  },
+  {
+    id: "studio",
+    kind: "studio",
+    title: "Koaryu keeps count. You teach.",
+    label: "The class",
+    scene: 1,
+    ink: "dark",
+    lede: "One place for a small school's students and families, belt ranks, attendance, trials and billing records, so the mat gets your attention.",
+    actions: [
+      { label: "Create an account", href: "/signup" },
+      { label: "Try it", href: "/try" },
+    ],
+    caption: "Illustration with sample students.",
+    handoffLabel: "Get started",
+  },
+] as const satisfies readonly StoryChapter[];
+
+const pricing: PricingSection = {
+  id: "pricing",
+  title: "One price. Every student.",
+  lede: "Every feature for every student on your roster, in one studio subscription.",
+  amount: publicPlatformPriceAmount(),
+  displayPrice: formatPublicPlatformPrice(),
+  period: "per studio, per month",
+  plan: { name: "Studio plan", scope: "One studio, every program" },
+  included: [
+    "Students & families",
+    "Ranks & belt tests",
+    "Attendance",
+    "Trials & leads",
+    "Scheduling",
+    "Reports",
+    "Billing records",
+    "Admin, Instructor and Front Desk roles",
   ],
-} as const satisfies { chapters: readonly JourneyChapter[] };
+  rosterSizes: [25, 80, 200],
+  rosterNote: "No per-student tiers. Grow your roster without growing your bill.",
+  setupAction: { label: "Create an account", href: "/signup" },
+  paymentsNote: {
+    lead: "Collecting tuition online?",
+    label: "See Pricing & payments",
+    href: "#faq-pricing",
+  },
+};
+
+const tryIt: TrySection = {
+  id: "try",
+  title: "Try it on tonight's class.",
+  lede: "A working miniature of Koaryu with sample students. Tap around; nothing you change is saved.",
+  tasks: [
+    { title: "Take attendance", description: "Tap a student to cycle Present, Late and Absent." },
+    {
+      title: "Finish Maya's requirement",
+      description: "She is one class short of Yellow Belt.",
+    },
+    { title: "Add a trial lead", description: "Then work the follow-up queue." },
+  ],
+  action: { label: "Try it", href: "/try" },
+  secondaryAction: { label: "Create an account", href: "/signup" },
+  miniature: {
+    studio: "Riverside Karate",
+    className: "Kids Karate",
+    when: "Tuesday, 6:00 PM",
+    students: [
+      {
+        initials: "ZA",
+        name: "Zara Ali",
+        belt: "white",
+        beltLabel: "White Belt",
+        attended: 3,
+        required: 8,
+      },
+      {
+        initials: "NB",
+        name: "Noah Bennett",
+        belt: "yellow",
+        beltLabel: "Yellow Belt",
+        attended: 5,
+        required: 10,
+      },
+      {
+        initials: "HM",
+        name: "Hana Mori",
+        belt: "orange",
+        beltLabel: "Orange Belt",
+        attended: 9,
+        required: 12,
+      },
+      {
+        initials: "MC",
+        name: "Maya Chen",
+        belt: "white",
+        beltLabel: "White Belt",
+        attended: 7,
+        required: 8,
+      },
+    ],
+    readyLabel: "Ready to test",
+    caption: "Sample students and class.",
+  },
+};
+
+const faq: FaqSection = {
+  id: "faq",
+  title: "Questions owners ask",
+  lede: "Straight answers, including what Koaryu doesn't do yet.",
+  groups: faqGroups,
+};
+
+const close: CloseSection = {
+  id: "begin",
+  title: "Enough admin. Go teach.",
+  lede: `${formatPublicPlatformPrice()} per studio, per month.`,
+  action: { label: "Create an account", href: "/signup" },
+  footerLinks: [
+    { label: "Features", href: "/features" },
+    { label: "Workflows", href: "/use-cases" },
+    { label: "Try it", href: "/try" },
+    { label: "Terms", href: "/terms" },
+    { label: "Privacy", href: "/privacy" },
+  ],
+  copyright: "© 2026 Koaryu",
+};
+
+export const landingPageContent = {
+  story,
+  pricing,
+  tryIt,
+  faq,
+  close,
+} as const;
+
+export type LandingPageContent = typeof landingPageContent;

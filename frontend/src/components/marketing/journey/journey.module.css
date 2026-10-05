@@ -1,13 +1,25 @@
 /*
- * The landing page is an ordinary scrolling document. A fixed illustration sits
- * behind it and follows the scroll position; nothing here intercepts input.
- * Copy and cards fade and rise with the scroll through CSS scroll-driven
- * animations where supported; every animated element has a complete static state.
+ * Act one: a paged story over a fixed illustration. Chapters are one screen
+ * tall with open scroll between them; the controller moves the document from
+ * stop to stop and the scene follows the scroll position. Copy rises and fades
+ * with the scroll through CSS scroll-driven animations where supported; every
+ * animated element has a complete static state. Act two (the page) lives in
+ * landing/page.module.css.
  */
+
+[data-koaryu-marketing].landingRoot {
+  --page-ground: #fbfaf6;
+
+  background: var(--page-ground);
+}
 
 [data-koaryu-marketing].landingRoot::after {
   /* The scene layer carries its own baked grain. */
   display: none;
+}
+
+:global(html[data-scene="night"]) [data-koaryu-marketing].landingRoot {
+  --page-ground: #16131a;
 }
 
 .journey {
@@ -15,11 +27,66 @@
   --journey-masthead: 76px;
   --koaryu-curtain: #3a2c19;
   --journey-time: #7a612e;
-  /* Copy fades as it slides under the masthead. */
-  --journey-exit: view(block 76px 0px);
+  --story-ink: var(--koaryu-ink);
+  --story-ink-light: var(--koaryu-ink-light);
+  --sheet: var(--koaryu-sheet);
+  --sheet-ink: var(--koaryu-ink);
+  --sheet-rule: var(--koaryu-rule-soft);
+  --sheet-shadow: 0 30px 70px rgb(36 24 10 / 18%);
+  --timber: #5a4423;
+  --timber-edge: rgb(36 24 10 / 40%);
+  /* The weave, by day: cloud-white strands lying down into bamboo and wood. */
+  --loom-sky-top: #f6e9cd;
+  --loom-sky-mid: #eedcb7;
+  --loom-sky-low: #e2cba3;
+  --loom-cloud: #f6ebd3;
+  --loom-ground: #6f5532;
+  --loom-warp-0: #ead8b0;
+  --loom-warp-1: #e0c89b;
+  --loom-warp-2: #d6bd8f;
+  --loom-warp-3: #e5d0a6;
+  --loom-weft-0: #c9a77a;
+  --loom-weft-1: #bb996c;
+  --loom-weft-2: #d2b386;
+  --loom-weft-3: #b18f62;
+  --loom-label: #47361c;
+  --loom-light: 1;
+  --loom-wall-top: #d9d1c7;
+  --loom-wall-low: #c9bfb4;
 
   position: relative;
-  color: var(--koaryu-ink);
+  color: var(--story-ink);
+}
+
+/* Night: copy reads cream on the evening scene; sheets are lamplit umber. */
+:global(html[data-scene="night"]) .journey {
+  --story-ink: #f4ebdc;
+  --story-ink-light: #f4ebdc;
+  --sheet: rgb(33 27 25 / 94%);
+  --sheet-ink: #f1e7d6;
+  --sheet-rule: rgb(241 231 214 / 14%);
+  --sheet-shadow: 0 30px 80px rgb(0 0 0 / 42%);
+  --journey-time: #e2b15e;
+  --koaryu-action-label: #1d1712;
+  --timber: #3a2a17;
+  --timber-edge: rgb(0 0 0 / 55%);
+  --loom-sky-top: #1d2140;
+  --loom-sky-mid: #2a2b4a;
+  --loom-sky-low: #3b3550;
+  --loom-cloud: #c9cbd8;
+  --loom-ground: #1c1510;
+  --loom-warp-0: #cfc6b4;
+  --loom-warp-1: #bdb5a5;
+  --loom-warp-2: #b2aa9a;
+  --loom-warp-3: #c6bdac;
+  --loom-weft-0: #9a7547;
+  --loom-weft-1: #87653b;
+  --loom-weft-2: #a8814f;
+  --loom-weft-3: #7c5b34;
+  --loom-label: #2a2018;
+  --loom-light: 0.55;
+  --loom-wall-top: #2a221e;
+  --loom-wall-low: #3a2d22;
 }
 
 .sceneLayer {
@@ -34,6 +101,7 @@
   overflow: hidden;
   pointer-events: none;
   contain: layout paint;
+  transform-origin: 0 0;
   will-change: transform;
 }
 
@@ -47,6 +115,124 @@
   /* Both layers are baked once; multiplying them costs one composite per frame. */
   background-blend-mode: multiply;
   mix-blend-mode: multiply;
+}
+
+/* The weave sits over the scene between the sky and the room. */
+.loom {
+  position: fixed;
+  z-index: 0;
+  top: 0;
+  left: 0;
+  display: none;
+  width: 100vw;
+  height: 100lvh;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.journey[data-enhanced="true"] .loom[data-visible="true"] {
+  display: block;
+}
+
+.loomWash,
+.loomWall,
+.loomMat {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+}
+
+.loomWash {
+  background: linear-gradient(
+    180deg,
+    var(--loom-sky-top) 0%,
+    var(--loom-sky-mid) 44%,
+    var(--loom-sky-low) 100%
+  );
+}
+
+.loomWall {
+  background: linear-gradient(180deg, var(--loom-wall-top) 0%, var(--loom-wall-low) 52%);
+}
+
+.loomMat {
+  will-change: transform, opacity;
+}
+
+.loomSvg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.loomGround {
+  fill: var(--loom-ground);
+}
+
+.loomCloud {
+  fill: var(--loom-cloud);
+}
+
+.loomWarp[data-tone="0"] {
+  fill: var(--loom-warp-0);
+}
+
+.loomWarp[data-tone="1"] {
+  fill: var(--loom-warp-1);
+}
+
+.loomWarp[data-tone="2"] {
+  fill: var(--loom-warp-2);
+}
+
+.loomWarp[data-tone="3"] {
+  fill: var(--loom-warp-3);
+}
+
+.loomWeft[data-tone="0"] {
+  fill: var(--loom-weft-0);
+}
+
+.loomWeft[data-tone="1"] {
+  fill: var(--loom-weft-1);
+}
+
+.loomWeft[data-tone="2"] {
+  fill: var(--loom-weft-2);
+}
+
+.loomWeft[data-tone="3"] {
+  fill: var(--loom-weft-3);
+}
+
+.loomLight {
+  opacity: var(--loom-light);
+}
+
+.loomLabel {
+  fill: var(--loom-label);
+  font-family: inherit;
+  font-weight: 680;
+  letter-spacing: -0.01em;
+}
+
+/* The timber frame the story has been inside all along; it appears as the class becomes a picture. */
+.pictureRing {
+  position: fixed;
+  z-index: 0;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 0;
+  border-radius: 2px;
+  opacity: 0;
+  pointer-events: none;
+  box-shadow:
+    0 0 0 1.5px rgb(247 243 233 / 50%),
+    0 0 0 var(--frame-width, 16px) var(--timber),
+    0 0 0 calc(var(--frame-width, 16px) + 1px) var(--timber-edge),
+    0 60px 90px -30px rgb(36 24 10 / 45%);
+  will-change: transform, opacity;
 }
 
 /* Skip link, belt progress and masthead */
@@ -77,13 +263,13 @@
   top: 0;
   border-bottom: 1px solid transparent;
   transition:
-    background-color 320ms ease,
-    border-color 320ms ease,
-    color 320ms ease,
+    background-color 360ms ease,
+    border-color 360ms ease,
+    color 360ms ease,
     transform 260ms ease;
 }
 
-/* Transparent over the hero; once the page moves it takes a ground matching the art beneath. */
+/* Transparent over the hero; once the story moves it takes a ground matching the art beneath. */
 .journey[data-scrolled="true"] .masthead {
   border-bottom-color: var(--koaryu-line);
   background: rgb(247 243 233 / 93%);
@@ -95,6 +281,23 @@
   background: rgb(52 39 22 / 90%);
 }
 
+/* On the page it grounds itself on white. */
+.journey[data-zone="page"] .masthead {
+  border-bottom-color: rgb(42 33 23 / 9%);
+  color: #2a2117;
+  background: rgb(251 250 246 / 94%);
+}
+
+:global(html[data-scene="night"]) .journey .masthead {
+  color: #f1e7d6;
+}
+
+:global(html[data-scene="night"]) .journey[data-scrolled="true"] .masthead {
+  border-bottom-color: rgb(241 231 214 / 9%);
+  color: #f1e7d6;
+  background: rgb(24 20 28 / 88%);
+}
+
 .journey[data-masthead-hidden="true"] .masthead {
   transform: translateY(-101%);
 }
@@ -104,65 +307,69 @@
   transform: none;
 }
 
-/* In-page links travel through the story instead of cutting to it. */
-:global(html):has(.journey) {
-  scroll-behavior: smooth;
-}
-
 /* Chapters */
 
-.storyRegion {
+.main {
   position: relative;
   z-index: 1;
   display: block;
   margin-top: calc(var(--journey-masthead) * -1);
 }
 
-.storyRegion:focus {
+.main:focus {
   outline: none;
 }
 
+.story {
+  position: relative;
+}
+
+/* Each chapter is one composed screen. */
 .chapter {
   position: relative;
-  display: grid;
-  min-height: 100svh;
-  padding: calc(var(--journey-masthead) + clamp(32px, 7vh, 88px)) var(--journey-gutter)
-    clamp(48px, 10vh, 120px);
-  align-items: center;
+  height: 100svh;
   scroll-margin-top: 0;
 }
 
-/*
- * Chapters are as tall as their copy, so the scene holds only while something
- * is being read; the open stretches between them belong to the story's beats.
- */
-.chapter:not([data-kind="hero"], [data-kind="final"]) {
-  min-height: auto;
-  padding-top: clamp(64px, 12vh, 120px);
-  padding-bottom: clamp(64px, 12vh, 120px);
-}
-
 .chapter[data-ink="light"] {
-  color: var(--koaryu-ink-light);
+  color: var(--story-ink-light);
 }
 
-/* An open stretch of scroll where the scene plays the story's next beat unobstructed. */
+/* A chapter whose content is taller than the screen scrolls on its own, inside its frame. */
+.panel {
+  height: 100%;
+  overflow: hidden auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+}
+
+.panel::-webkit-scrollbar {
+  display: none;
+}
+
+.frame {
+  display: grid;
+  box-sizing: border-box;
+  min-height: 100%;
+  padding: calc(var(--journey-masthead) + clamp(24px, 6vh, 72px)) var(--journey-gutter)
+    clamp(40px, 9vh, 104px);
+  align-items: center;
+}
+
+/* Open scroll between chapters, where each beat plays when the story is scrubbed. */
 .interlude {
-  height: calc(var(--interlude, 60) * 1svh);
+  height: calc(var(--interlude, 70) * 1svh);
 }
 
-/* Without JavaScript the scene stays on its first frame, so chapters set on open art bring their own ground. */
+/* Without scripts the scene stays on its first frame, so chapters set on dark art bring their own ground. */
 .journey:not([data-enhanced="true"]) .chapter[data-ink="light"] {
   background: var(--koaryu-curtain);
 }
 
-.journey:not([data-enhanced="true"]) .chapter:is([data-kind="pricing"], [data-kind="final"]) {
-  background: var(--koaryu-paper);
-}
-
 .heroCopy,
 .problemCopy,
-.priceCopy,
+.pathCopy,
+.weaveCopy,
 .productStage,
 .sheet {
   width: min(100%, 1180px);
@@ -174,7 +381,9 @@
 .heroHeading,
 .statementHeading,
 .sheetHeading,
-.finalHeading {
+.pathHeading,
+.weaveHeading,
+.studioHeading {
   margin: 0;
   text-wrap: balance;
 }
@@ -255,6 +464,10 @@
 
 /* Hero */
 
+.chapter[data-kind="hero"] .frame {
+  align-items: center;
+}
+
 .heroCopy {
   padding-bottom: 6vh;
 }
@@ -300,14 +513,21 @@
 /* Sheets: paper cards that sit on the scene */
 
 .sheet {
+  box-sizing: border-box;
   padding: clamp(24px, 3vw, 44px);
-  border: 1px solid var(--koaryu-rule-soft);
+  border: 1px solid var(--sheet-rule);
   border-radius: 10px;
-  color: var(--koaryu-ink);
-  background: var(--koaryu-sheet);
+  color: var(--sheet-ink);
+  background: var(--sheet);
   box-shadow:
     0 1px 0 rgb(255 255 255 / 50%) inset,
-    0 30px 70px rgb(36 24 10 / 18%);
+    var(--sheet-shadow);
+}
+
+:global(html[data-scene="night"]) .sheet {
+  box-shadow:
+    0 1px 0 rgb(255 255 255 / 6%) inset,
+    var(--sheet-shadow);
 }
 
 /* Product: the copy on a card, the real screens standing free over the dojo */
@@ -340,7 +560,7 @@
   gap: 14px;
   margin: 26px 0 0;
   padding-top: 22px;
-  border-top: 1px solid var(--koaryu-rule-soft);
+  border-top: 1px solid var(--sheet-rule);
 }
 
 .highlights div {
@@ -348,14 +568,12 @@
   gap: 3px;
 }
 
-.highlights dt,
-.priceFacts dt {
+.highlights dt {
   font-size: 14px;
   font-weight: 680;
 }
 
-.highlights dd,
-.priceFacts dd {
+.highlights dd {
   margin: 0;
   font-size: 14px;
   line-height: 1.5;
@@ -406,7 +624,18 @@
   text-align: right;
 }
 
-/* The day: a tall paper panel with a pinned heading and an inked timeline */
+:global(html[data-scene="night"]) .productDesktop {
+  border-color: rgb(241 231 214 / 16%);
+  box-shadow: 0 44px 100px rgb(0 0 0 / 50%);
+}
+
+/* The day: the door opens onto a tall paper panel that reads at its own pace */
+
+.chapter[data-kind="features"] .frame {
+  align-items: start;
+  padding-top: max(calc(var(--journey-masthead) + 24px), 40svh);
+  padding-bottom: 12svh;
+}
 
 .daySheet {
   display: grid;
@@ -417,7 +646,7 @@
 
 .dayHeader {
   position: sticky;
-  top: calc(var(--journey-masthead) + 56px);
+  top: calc(var(--journey-masthead) + 48px);
   align-self: start;
 }
 
@@ -460,11 +689,11 @@
 }
 
 .dayList::before {
-  background: var(--koaryu-rule-soft);
+  background: var(--sheet-rule);
 }
 
 .dayList::after {
-  background: var(--koaryu-ink);
+  background: currentColor;
   transform-origin: top;
 }
 
@@ -478,10 +707,11 @@
   left: -52px;
   width: 18px;
   height: 18px;
-  border: 2px solid var(--koaryu-ink);
+  box-sizing: border-box;
+  border: 2px solid currentColor;
   border-radius: 50%;
-  background: var(--koaryu-ink);
-  box-shadow: 0 0 0 5px var(--koaryu-sheet);
+  background: currentColor;
+  box-shadow: 0 0 0 5px var(--sheet);
 }
 
 .dayTime {
@@ -525,241 +755,379 @@
   opacity: 0.76;
 }
 
-/* Pricing: a big, simple price in the open sky */
+/* The path: one line in the open sky, low and wide, under the sun */
 
-.priceCopy {
-  display: grid;
-  grid-template-columns: minmax(0, 1.2fr) minmax(260px, 0.8fr);
-  gap: clamp(40px, 8vw, 140px);
+.chapter[data-kind="path"] .frame {
   align-items: end;
+  padding-bottom: clamp(56px, 13vh, 150px);
 }
 
-.priceLead .statementHeading {
-  max-width: none;
-  font-size: clamp(42px, 5.4vw, 80px);
-}
-
-.price {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0 18px;
-  align-items: baseline;
-  margin: clamp(16px, 3vh, 34px) 0 0;
-  font-size: clamp(112px, 15vw, 224px);
-  font-weight: 740;
-  line-height: 0.84;
-  letter-spacing: -0.065em;
-}
-
-.pricePeriod {
-  font-size: 15px;
-  font-weight: 600;
-  letter-spacing: 0;
-  opacity: 0.78;
-}
-
-.priceDetail {
-  padding-bottom: 10px;
-}
-
-.priceFacts {
-  display: grid;
-  gap: 16px;
-  margin: 0;
-  padding-top: 20px;
-  border-top: 1.5px solid var(--koaryu-ink);
-}
-
-.priceFacts div {
-  display: grid;
-  gap: 3px;
-}
-
-.priceFacts dt {
-  font-size: 15px;
-}
-
-.priceFacts dd {
-  font-size: 15px;
-  opacity: 0.84;
-}
-
-.priceDetail .actions {
-  margin-top: 26px;
-}
-
-.priceNote {
-  margin: 16px 0 0;
-  font-size: 13px;
-  line-height: 1.5;
-  opacity: 0.84;
-}
-
-.priceNote a {
-  color: inherit;
-}
-
-/* FAQ: quiet rows on a sheet pinned to the dojo wall */
-
-.chapter[data-kind="faq"] {
-  align-items: start;
-}
-
-.faqSheet {
-  max-width: 1080px;
-}
-
-.faqGroups {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px clamp(28px, 4vw, 56px);
-  margin-top: 22px;
-}
-
-.faqGroup {
-  scroll-margin-top: calc(var(--journey-masthead) + 24px);
-}
-
-.faqGroup h3 {
-  margin: 18px 0 2px;
-  color: var(--journey-time);
-  font-size: 13px;
-  font-weight: 720;
-  line-height: 1.4;
-}
-
-.faqItem {
-  border-bottom: 1px solid var(--koaryu-rule-soft);
-}
-
-.faqItem summary {
-  display: flex;
-  gap: 16px;
-  align-items: center;
-  justify-content: space-between;
-  min-height: 52px;
-  padding: 10px 0;
-  font-size: 15px;
-  font-weight: 580;
-  line-height: 1.35;
-  list-style: none;
-  cursor: pointer;
-}
-
-.faqItem summary::-webkit-details-marker {
-  display: none;
-}
-
-.faqItem summary:focus-visible {
-  outline: 2px solid currentColor;
-  outline-offset: 2px;
-}
-
-.faqIcon {
-  position: relative;
-  flex: 0 0 auto;
-  width: 11px;
-  height: 11px;
-}
-
-.faqIcon::before,
-.faqIcon::after {
-  position: absolute;
-  top: 5px;
-  left: 0;
-  width: 11px;
-  height: 1.5px;
-  content: "";
-  background: currentColor;
-  transition: transform 200ms ease;
-}
-
-.faqIcon::after {
-  transform: rotate(90deg);
-}
-
-.faqItem[open] .faqIcon::after {
-  transform: rotate(0deg);
-}
-
-.faqItem p {
-  max-width: 62ch;
-  margin: 0 0 18px;
-  font-size: 14px;
-  line-height: 1.6;
-  opacity: 0.8;
-}
-
-/* Closing: the line is written on the wall, above the seated class, with the footer beneath it. */
-
-.chapter[data-kind="final"] {
-  align-items: start;
-  padding-top: calc(var(--journey-masthead) + clamp(28px, 6vh, 64px));
-  view-timeline: --finale block;
-}
-
-.finalCopy {
-  width: min(100%, 760px);
-  margin-inline: auto;
-  text-align: center;
-}
-
-.finalHeading {
-  font-size: clamp(40px, 5.6vw, 82px);
-  font-weight: 720;
-  line-height: 0.94;
+.pathHeading {
+  max-width: 13ch;
+  font-size: clamp(44px, 6.2vw, 96px);
+  font-weight: 700;
+  line-height: 0.93;
   letter-spacing: -0.045em;
 }
 
-.finalCopy .lede {
-  margin: 16px auto 0;
-  opacity: 0.86;
+/* The weave: the words sit in the sky above the loom */
+
+.chapter[data-kind="weave"] .frame {
+  align-items: start;
+  padding-top: calc(var(--journey-masthead) + clamp(28px, 7vh, 84px));
 }
 
-.finalCopy .actions {
-  justify-content: center;
-  margin-top: 24px;
-}
-
-.footer {
+.weaveCopy {
   display: grid;
-  justify-items: center;
-  gap: 0;
-  margin-top: 20px;
-  font-size: 13px;
+  grid-template-columns: minmax(0, 1.25fr) minmax(260px, 0.75fr);
+  gap: 20px clamp(40px, 7vw, 120px);
+  align-items: end;
 }
 
-.footer nav {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 0 22px;
+.weaveHeading {
+  max-width: 17ch;
+  font-size: clamp(36px, 4.4vw, 66px);
+  font-weight: 700;
+  line-height: 0.96;
+  letter-spacing: -0.043em;
 }
 
-.footer a {
-  display: inline-flex;
-  align-items: center;
-  min-height: 44px;
-  color: inherit;
+.weaveLede {
+  max-width: 40ch;
+  margin: 0 0 6px;
+  font-size: clamp(15px, 1.2vw, 17px);
+}
+
+/* The class sits, then becomes a framed picture beside the same words */
+
+.studio {
+  --handoff-run: 70svh;
+  --handoff: 0;
+
+  position: relative;
+  height: calc(100svh + var(--handoff-run));
+  view-timeline: --studio block;
+}
+
+.handoffMarker {
+  position: absolute;
+  top: var(--handoff-run);
+  left: 0;
+  width: 1px;
+  height: 1px;
+  pointer-events: none;
+}
+
+.studioPin {
+  position: sticky;
+  top: 0;
+  display: grid;
+  box-sizing: border-box;
+  height: 100svh;
+  grid-template-columns: minmax(0, 0.78fr) minmax(0, 1.22fr);
+  gap: clamp(36px, 5vw, 88px);
+  align-items: start;
+  padding: calc(var(--journey-masthead) + clamp(48px, 12vh, 128px)) var(--journey-gutter) 0;
+}
+
+.studioHeading {
+  max-width: 10ch;
+  font-size: clamp(40px, 4.8vw, 74px);
+  font-weight: 720;
+  line-height: 0.93;
+  letter-spacing: -0.045em;
+}
+
+.studioDetail,
+.studioCaption {
+  opacity: clamp(0, calc((var(--handoff) - 0.55) * 2.4), 1);
+  transform: translateY(calc((1 - var(--handoff)) * 22px));
+}
+
+.studioLede {
+  max-width: 40ch;
+  margin: 24px 0 0;
+  font-size: clamp(15px, 1.25vw, 18px);
+  line-height: 1.55;
+  opacity: 0.82;
+}
+
+.studioFigure {
+  margin: 0;
+}
+
+.pictureSlot {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1.6;
+}
+
+.pictureStill {
+  display: none;
+}
+
+.pictureStill img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.studioCaption {
+  margin: 30px 0 0;
+  font-size: 12px;
   font-weight: 560;
-  text-decoration: none;
-  opacity: 0.86;
+  text-align: right;
 }
 
-.footer a:hover {
+/* Without scripts the hand-off is an ordinary composition with the class as a framed still. */
+.journey:not([data-enhanced="true"]) .studio {
+  height: auto;
+  background: var(--page-ground, #fbfaf6);
+}
+
+.journey:not([data-enhanced="true"]) .studioPin {
+  position: relative;
+  height: auto;
+  min-height: 100svh;
+}
+
+.journey:not([data-enhanced="true"]) .studioDetail,
+.journey:not([data-enhanced="true"]) .studioCaption {
+  opacity: 1;
+  transform: none;
+}
+
+.journey:not([data-enhanced="true"]) .pictureStill {
+  position: absolute;
+  inset: 0;
+  display: block;
+  box-shadow: 0 0 0 16px var(--timber);
+}
+
+/* Once the page has begun, the story's copy takes the page's ink. */
+.journey[data-zone="page"] .studio {
+  color: #2a2117;
+}
+
+:global(html[data-scene="night"]) .journey[data-zone="page"] .studio {
+  color: #efe6d6;
+}
+
+/* Chapter rail: the current chapter is named; the full list opens on hover or focus */
+
+.rail {
+  --rail-ink: var(--story-ink);
+  --rail-halo: rgb(247 243 233 / 62%);
+  --rail-sheet: rgb(251 247 238 / 95%);
+  --rail-sheet-ink: var(--koaryu-ink);
+
+  position: fixed;
+  z-index: 31;
+  top: 50%;
+  right: 6px;
+  display: none;
+  color: var(--rail-ink);
+  transform: translateY(-50%);
+  transition:
+    color 500ms ease,
+    opacity 400ms ease,
+    transform 400ms ease;
+}
+
+.journey[data-enhanced="true"] .rail {
+  display: block;
+}
+
+.journey[data-tone="dark"] .rail {
+  --rail-ink: var(--koaryu-ink-light);
+  --rail-halo: rgb(43 32 14 / 46%);
+}
+
+:global(html[data-scene="night"]) .rail {
+  --rail-ink: #f1e7d6;
+  --rail-halo: rgb(12 10 16 / 50%);
+  --rail-sheet: rgb(30 25 32 / 95%);
+  --rail-sheet-ink: #f1e7d6;
+}
+
+/* The rail belongs to the story; on the page it steps away. */
+.journey[data-zone="page"] .rail {
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(12px, -50%);
+}
+
+.journey[data-zone="page"] .rail:focus-within {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(-50%);
+}
+
+.rail::before {
+  position: absolute;
+  z-index: -1;
+  inset: -10px 0 -10px -8px;
+  content: "";
+  border: 1px solid var(--koaryu-rule-soft);
+  border-radius: 10px;
+  background: var(--rail-sheet);
+  box-shadow: 0 18px 44px rgb(45 34 18 / 16%);
+  opacity: 0;
+  transform: translateX(8px);
+  transition:
+    opacity 200ms ease,
+    transform 260ms cubic-bezier(0.22, 1, 0.36, 1);
+  pointer-events: none;
+}
+
+.rail ol {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.rail button {
+  display: grid;
+  grid-template-columns: auto 44px;
+  align-items: center;
+  justify-content: end;
+  width: 100%;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+}
+
+.railLabel {
+  display: inline-flex;
+  gap: 8px;
+  align-items: baseline;
+  margin-left: 10px;
+  padding: 5px 9px;
+  border-radius: 999px;
+  font-size: 12.5px;
+  font-weight: 560;
+  line-height: 1;
+  white-space: nowrap;
+  opacity: 0;
+  transform: translateX(6px);
+  transition:
+    opacity 180ms ease,
+    transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
+  pointer-events: none;
+}
+
+.railNumber {
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.55;
+}
+
+.railDot {
+  display: block;
+  justify-self: center;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 0 2px var(--rail-halo);
+  opacity: 0.55;
+  transition:
+    height 220ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 180ms ease;
+}
+
+.rail button:hover .railDot {
+  opacity: 0.9;
+}
+
+.rail button[aria-current="step"] .railDot {
+  height: 16px;
+  border-radius: 3px;
   opacity: 1;
 }
 
-.footer p {
-  margin: 0;
-  font-size: 12px;
-  opacity: 0.74;
+.rail:is(:hover, :focus-within) {
+  --rail-halo: transparent;
+
+  color: var(--rail-sheet-ink);
+}
+
+.rail:is(:hover, :focus-within)::before {
+  opacity: 1;
+  transform: none;
+}
+
+.rail:is(:hover, :focus-within) .railLabel {
+  opacity: 0.72;
+  transform: none;
+  pointer-events: auto;
+}
+
+.rail button:is(:hover, :focus-visible) .railLabel,
+.rail button[aria-current="step"] .railLabel {
+  opacity: 1;
+}
+
+.rail button[aria-current="step"] .railLabel {
+  font-weight: 700;
+}
+
+/* On arrival the chapter is named on a small chip of its own, which then steps aside for the art. */
+.rail:not(:hover, :focus-within) button[aria-current="step"] .railLabel {
+  color: var(--rail-sheet-ink);
+  background: var(--rail-sheet);
+  box-shadow: 0 2px 10px rgb(45 34 18 / 10%);
+  animation: chipFlash 2600ms ease both;
+}
+
+@keyframes chipFlash {
+  0% {
+    opacity: 0;
+    transform: translateX(6px);
+  }
+
+  12%,
+  72% {
+    opacity: 1;
+    transform: none;
+  }
+
+  100% {
+    opacity: 0;
+    transform: none;
+  }
+}
+
+.rail:not(:hover, :focus-within) button[aria-current="step"] .railNumber {
+  display: none;
+}
+
+.rail button:focus-visible {
+  outline: 0;
+}
+
+.rail button:focus-visible .railDot {
+  outline: 2px solid currentColor;
+  outline-offset: 3px;
+}
+
+.liveStatus {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 .textLink:focus-visible,
-.dayTitle a:focus-visible,
-.footer a:focus-visible,
-.priceNote a:focus-visible {
+.dayTitle a:focus-visible {
   outline: 2px solid currentColor;
   outline-offset: 3px;
 }
@@ -779,20 +1147,20 @@
     transform: none;
   }
 
-  80% {
+  70% {
     opacity: 0;
   }
 
   100% {
     opacity: 0;
-    transform: translateY(22vh);
+    transform: translateY(18vh);
   }
 }
 
 @keyframes revealIn {
   from {
     opacity: 0;
-    transform: translateY(56px);
+    transform: translateY(64px);
   }
 
   to {
@@ -809,22 +1177,22 @@
 
   to {
     opacity: 0;
-    transform: translateY(-36px);
+    transform: translateY(-48px);
   }
 }
 
 /*
- * The closing chapter is one screen tall. Moving the copy up by the distance
- * its chapter has yet to scroll keeps it in place on the wall, so it never
- * crosses the class; it is written there once the class has sat down.
+ * Moving the closing line up by the distance its section has yet to scroll
+ * keeps it in place on the wall, so it never crosses the class; it is written
+ * there as the class settles.
  */
-@keyframes finalSettle {
+@keyframes writeOnWall {
   0% {
     opacity: 0;
     transform: translateY(-100svh);
   }
 
-  45% {
+  76% {
     opacity: 0;
   }
 
@@ -837,7 +1205,7 @@
 @keyframes phoneRise {
   from {
     opacity: 0;
-    transform: translateY(150px);
+    transform: translateY(120px);
   }
 
   to {
@@ -870,11 +1238,11 @@
 
 @keyframes dotFill {
   from {
-    background: var(--koaryu-sheet);
+    background: var(--sheet);
   }
 
   to {
-    background: var(--koaryu-ink);
+    background: currentColor;
   }
 }
 
@@ -939,70 +1307,47 @@
       animation-timeline: scroll(root);
     }
 
-    /* The hero copy drifts up more slowly than the page and fades as the camera dives. */
+    /* The hero copy drifts down more slowly than the page and fades as the camera dives. */
     .heroCopy {
       animation: heroAway linear both;
       animation-timeline: scroll(root);
-      animation-range: 0svh 46svh;
+      animation-range: 0svh 40svh;
     }
 
-    /* Copy and cards rise in as they enter and fade upward before reaching the masthead. */
-    .reveal,
-    .productDesktop {
-      animation:
-        revealIn linear both,
-        revealOut linear forwards;
-      animation-timeline: view(), var(--journey-exit);
-      animation-range:
-        entry 0% entry 70%,
-        exit 0% exit 55%;
-    }
-
-    /* The card and the screens leave together. */
-    .productStage {
-      animation: revealOut linear forwards;
-      animation-timeline: var(--journey-exit);
-      animation-range: exit 0% exit 45%;
-    }
-
-    .productSheet {
-      animation: revealIn linear both;
-      animation-timeline: view();
-      animation-range: entry 0% entry 70%;
-    }
-
-    .productDesktop {
-      animation-name: revealIn, none;
-    }
-
-    .productPhone {
-      animation: phoneRise linear both;
-      animation-timeline: view();
-      animation-range: entry 10% cover 45%;
-    }
-
-    /* Tall panels rise in as a whole, then their rows fade out one by one under the masthead. */
-    .daySheet,
-    .faqSheet {
+    /* Each chapter's copy rises in as its screen arrives and lifts away as it leaves. */
+    .chapter:not([data-kind="hero"]) .panel {
       animation:
         revealIn linear both,
         revealOut linear forwards;
       animation-timeline: view(), view();
       animation-range:
-        entry 0% entry 28%,
-        exit 72% exit 96%;
+        entry 35% entry 100%,
+        exit 0% exit 52%;
     }
 
-    .finalCopy {
-      animation: finalSettle linear both;
-      animation-timeline: --finale;
+    /* Over the loom the words appear in place in the sky, never across the strands. */
+    .chapter[data-kind="weave"] .panel {
+      animation:
+        writeOnWall linear both,
+        revealOut linear forwards;
+      animation-timeline: view(), view();
+      animation-range:
+        entry 0% entry 100%,
+        exit 0% exit 52%;
+    }
+
+    /* The screens stand up a beat after the card. */
+    .productPhone {
+      animation: phoneRise linear both;
+      animation-timeline: view();
+      animation-range: entry 0% cover 40%;
+    }
+
+    /* The closing line is written on the wall as the class settles, not carried over it. */
+    .studioHeading {
+      animation: writeOnWall linear both;
+      animation-timeline: --studio;
       animation-range: entry 0% entry 100%;
-    }
-
-    .revealRow {
-      animation: revealOut linear forwards;
-      animation-timeline: var(--journey-exit);
-      animation-range: exit 0% exit 90%;
     }
 
     /* The day inks itself in: the line follows the reading position and each moment arrives as it is reached. */
@@ -1013,42 +1358,15 @@
     }
 
     .dayMoment {
-      animation:
-        momentArrive linear both,
-        revealOut linear forwards;
-      animation-timeline: view(), var(--journey-exit);
-      animation-range:
-        cover 22% cover 38%,
-        exit 0% exit 100%;
+      animation: momentArrive linear both;
+      animation-timeline: view();
+      animation-range: cover 18% cover 34%;
     }
 
     .dayDot {
       animation: dotFill linear both;
       animation-timeline: view();
-      animation-range: cover 38% cover 42%;
-    }
-
-    /* On phones the stage is taller than the screen, so the card and the screens leave one at a time. */
-    @media (max-width: 820px) {
-      .productStage {
-        animation: none;
-      }
-
-      .productSheet {
-        animation:
-          revealIn linear both,
-          revealOut linear forwards;
-        animation-timeline: view(), var(--journey-exit);
-        animation-range:
-          entry 0% entry 70%,
-          exit 0% exit 55%;
-      }
-
-      .productFigure {
-        animation: revealOut linear forwards;
-        animation-timeline: var(--journey-exit);
-        animation-range: exit 0% exit 55%;
-      }
+      animation-range: cover 34% cover 38%;
     }
   }
 }
@@ -1069,23 +1387,16 @@
 @media (max-width: 820px) {
   .journey {
     --journey-masthead: 68px;
-    --journey-exit: view(block 68px 0px);
   }
 
-  .chapter {
-    min-height: 92svh;
-    padding-inline: 16px;
-  }
-
-  .chapter[data-kind="hero"],
-  .chapter[data-kind="problem"],
-  .chapter[data-kind="pricing"] {
+  .frame {
     padding-inline: 22px;
+    padding-top: calc(var(--journey-masthead) + 20px);
+    padding-bottom: 40px;
   }
 
   .problemCopy,
-  .priceCopy,
-  .faqGroups,
+  .weaveCopy,
   .daySheet {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -1095,13 +1406,36 @@
     align-items: start;
   }
 
-  .interlude {
-    height: calc(var(--interlude, 60) * 0.8svh);
+  .chapter[data-kind="problem"] .frame {
+    align-items: end;
+    padding-bottom: 14svh;
   }
 
-  /* Phones: the phone screen in front, the desktop screen behind it running off the edge. */
+  .chapter[data-kind="product"] .frame {
+    align-items: start;
+    padding-inline: 16px;
+  }
+
+  /* Phones: the card, then the phone screen in front of the desktop screen running off the edge. */
   .productStage {
-    gap: 28px;
+    gap: 22px;
+  }
+
+  .productSheet {
+    padding: 22px 20px;
+  }
+
+  .productSheet .sheetHeading {
+    font-size: 28px;
+  }
+
+  .productSheet .lede {
+    margin-top: 12px;
+    font-size: 15px;
+  }
+
+  .highlights {
+    display: none;
   }
 
   .productFigure {
@@ -1116,21 +1450,33 @@
 
   .productDesktop {
     position: absolute;
-    top: 9%;
-    left: 34%;
-    width: 150%;
+    top: 7%;
+    left: 30%;
+    width: 128%;
+  }
+
+  .productFigure .caption {
+    position: relative;
+    z-index: 1;
+    margin-top: 18px;
   }
 
   .productPhone {
     position: relative;
     left: 2%;
-    width: min(56%, 230px);
+    width: min(46%, 190px);
     border-width: 5px;
-    border-radius: 24px;
+    border-radius: 22px;
   }
 
   .productFigure .caption {
     text-align: left;
+  }
+
+  .chapter[data-kind="features"] .frame {
+    padding-inline: 14px;
+    padding-top: 42svh;
+    padding-bottom: 8svh;
   }
 
   .daySheet {
@@ -1162,35 +1508,70 @@
     font-size: 14.5px;
   }
 
-  .priceCopy {
-    gap: 26px;
-    align-items: start;
+  .chapter[data-kind="path"] .frame {
+    padding-bottom: 16svh;
   }
 
-  .price {
-    gap: 0 12px;
+  .pathHeading {
+    font-size: clamp(40px, 12vw, 60px);
   }
 
-  .faqSheet {
-    padding: 26px 18px;
+  .chapter[data-kind="weave"] .frame {
+    padding-top: calc(var(--journey-masthead) + 18px);
   }
 
-  .faqGroups {
-    gap: 0;
+  .weaveHeading {
+    font-size: clamp(30px, 8.6vw, 42px);
   }
 
-  .chapter[data-kind="final"] {
-    min-height: 100svh;
-    padding-top: calc(var(--journey-masthead) + 20px);
+  .weaveLede {
+    font-size: 14.5px;
   }
 
-  .footer nav {
-    gap: 0 14px;
+  .studioPin {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto 1fr;
+    gap: 22px;
+    padding: calc(var(--journey-masthead) + 22px) 22px max(22px, env(safe-area-inset-bottom));
   }
 
-  .footer a {
-    font-size: 12.5px;
-    white-space: nowrap;
+  .studioHeading {
+    font-size: clamp(34px, 10vw, 48px);
+  }
+
+  .studioLede {
+    margin-top: 14px;
+    font-size: 15px;
+  }
+
+  .studioDetail .actions {
+    margin-top: 18px;
+  }
+
+  .studioFigure {
+    display: flex;
+    flex-direction: column;
+    align-self: stretch;
+    justify-content: end;
+    min-height: 0;
+  }
+
+  .pictureSlot {
+    --frame-width: 9px;
+
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: 46svh;
+    aspect-ratio: auto;
+  }
+
+  .studioCaption {
+    margin-top: 16px;
+    text-align: left;
+  }
+
+  .pictureRing {
+    --frame-width: 9px;
   }
 
   .actions {
@@ -1198,22 +1579,25 @@
   }
 
   .heroActions,
-  .priceDetail .actions,
-  .finalCopy .actions {
+  .studioDetail .actions {
     max-width: 360px;
   }
 
-  .finalCopy .actions {
-    margin-inline: auto;
+  .studioDetail .actions {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  /* Phones read the story full width; the belt line along the top shows the way. */
+  .journey[data-enhanced="true"] .rail {
+    display: none;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .masthead,
+  .rail,
   .textLink span,
-  .dayTitle a,
-  .faqIcon::before,
-  .faqIcon::after {
+  .dayTitle a {
     transition: none;
   }
 }
