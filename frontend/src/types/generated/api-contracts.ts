@@ -1132,6 +1132,7 @@ export interface ApiLeadConvert {
 }
 
 export interface ApiLeadCreate {
+  operation_id?: string | null;
   first_name: string;
   last_name: string;
   email?: string | null;
