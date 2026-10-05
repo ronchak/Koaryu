@@ -153,6 +153,8 @@ def is_required_property(
 ) -> bool:
     if prop_name in required:
         return True
+    if prop_schema.get("x-optional-on-wire") is True:
+        return False
     if is_request_schema(schema_name) or is_nullable(prop_schema):
         return False
     if schema_name in response_schema_names:
@@ -179,6 +181,9 @@ def schema_to_ts(schema: dict[str, Any]) -> str:
             if ts_type not in rendered:
                 rendered.append(ts_type)
         return " | ".join(rendered) or "unknown"
+
+    if "const" in schema:
+        return literal(schema["const"])
 
     if "enum" in schema:
         return " | ".join(literal(item) for item in schema["enum"]) or "never"
@@ -215,8 +220,16 @@ def schema_to_ts(schema: dict[str, Any]) -> str:
             lines.append("}")
             return "\n".join(lines)
         additional = schema.get("additionalProperties")
+        patterns = schema.get("patternProperties") or {}
+        if patterns:
+            value_types = [schema_to_ts(value) for value in patterns.values()]
+            if isinstance(additional, dict):
+                value_types.append(schema_to_ts(additional))
+            return f"Record<string, {' | '.join(dict.fromkeys(value_types))}>"
         if isinstance(additional, dict):
             return f"Record<string, {schema_to_ts(additional)}>"
+        if additional is False:
+            return "Record<string, never>"
         return "Record<string, unknown>"
 
     return "unknown"

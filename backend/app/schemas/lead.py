@@ -18,6 +18,7 @@ LeadConvertStudentStatus = Literal["active", "trialing", "inactive", "paused", "
 
 
 class LeadCreate(BaseModel):
+    operation_id: UUID | None = None
     first_name: str
     last_name: str
     email: Optional[str] = None

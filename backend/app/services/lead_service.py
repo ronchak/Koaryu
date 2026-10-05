@@ -13,7 +13,6 @@ from app.schemas.lead import (
     LeadConvert,
     LeadFollowUpRequest,
 )
-from app.services.studio_scope import ensure_staff_user_in_studio
 from app.services.program_service import ProgramService
 from app.services.program_records import program_error
 from app.services.supabase_rpc import execute_required_rpc, first_rpc_row
@@ -21,7 +20,84 @@ from app.services.lead_reads import fetch_lead_rows
 
 
 CONVERSION_NAMESPACE = uuid.UUID("27c8322f-a4e4-46d7-bfae-018f6b638858")
-OPTIONAL_MEMBERSHIP_SCHEMA_ERROR_CODES = {"42P01", "42703", "PGRST204", "PGRST205"}
+_CREATE_UNAVAILABLE_DETAIL = (
+    "Lead creation could not be confirmed. Check the lead list before trying again."
+)
+_CREATE_ERRORS = {
+    ("42501", "AUTOMATION_ADMIN_REQUIRED"): (
+        403,
+        "Only studio admins and front desk staff can manage leads.",
+    ),
+    ("P0002", "AUTOMATION_NOT_FOUND"): (
+        404,
+        "Lead or related record not found in this studio",
+    ),
+    ("22023", "AUTOMATION_INVALID_REQUEST"): (422, "Invalid lead request."),
+    ("P0001", "AUTOMATION_REVISION_CONFLICT"): (
+        409,
+        "This lead changed. Reload it before saving.",
+    ),
+    ("P0001", "AUTOMATION_OPERATION_CONFLICT"): (
+        409,
+        "This lead operation was already used for a different request.",
+    ),
+    ("P0001", "AUTOMATION_STATE_CONFLICT"): (
+        409,
+        "This lead cannot be changed in its current state.",
+    ),
+    ("P0001", "AUTOMATION_STUDIO_BUSY"): (
+        409,
+        "The studio is busy. Try the lead request again shortly.",
+    ),
+}
+
+
+def _parse_create_lead_result(
+    result: object, studio_id: str, operation_id: uuid.UUID
+) -> LeadResponse:
+    if not isinstance(result, dict) or set(result) != {"payload", "operation_id", "replayed"}:
+        raise ValueError("Invalid lead creation receipt.")
+    if (
+        type(result["replayed"]) is not bool
+        or not isinstance(result["operation_id"], str)
+        or uuid.UUID(result["operation_id"]) != operation_id
+    ):
+        raise ValueError("Invalid lead creation operation identity.")
+    payload = result["payload"]
+    # The public response still supports legacy rows; command receipts must carry
+    # every fact explicitly, including nulls, without adding response fields.
+    if not isinstance(payload, dict) or set(payload) != set(LeadResponse.model_fields):
+        raise ValueError("Incomplete lead creation payload.")
+    lead = LeadResponse.model_validate(payload, strict=True)
+    uuid.UUID(lead.id)
+    if uuid.UUID(lead.studio_id) != uuid.UUID(studio_id):
+        raise ValueError("Invalid lead creation studio identity.")
+    return lead
+
+
+def _create_lead_error(exc: PostgrestAPIError, requested_program_id: str | None) -> HTTPException:
+    code = getattr(exc, "code", None)
+    message = getattr(exc, "message", None)
+    if isinstance(code, str) and isinstance(message, str):
+        if code == "P0001" and message == "PROGRAM_INACTIVE":
+            details = getattr(exc, "details", None)
+            if isinstance(details, str) and isinstance(requested_program_id, str):
+                try:
+                    program_id = uuid.UUID(requested_program_id)
+                    if uuid.UUID(details) == program_id:
+                        return program_error(
+                            409,
+                            "PROGRAM_INACTIVE",
+                            "Archived programs cannot be used for new records.",
+                            program_id=str(program_id),
+                        )
+                except ValueError:
+                    pass
+        else:
+            mapped = _CREATE_ERRORS.get((code, message))
+            if mapped is not None:
+                return HTTPException(*mapped)
+    return HTTPException(503, _CREATE_UNAVAILABLE_DETAIL)
 
 
 class LeadService:
@@ -36,48 +112,22 @@ class LeadService:
         ]
 
     async def create_lead(self, data: LeadCreate, studio_id: str, actor_id: str) -> LeadResponse:
-        row = data.model_dump()
-        ensure_staff_user_in_studio(
-            self.supabase,
-            row.get("assigned_staff_id"),
-            studio_id,
-            "Assigned staff member not found in this studio",
-        )
-        ProgramService(self.supabase).ensure_program_active(studio_id, row.get("program_id"))
-        row["studio_id"] = studio_id
+        operation_id = data.operation_id or uuid.uuid4()
         try:
-            result = self.supabase.table("leads").insert(row).execute()
+            result = self.supabase.rpc(
+                "create_lead_atomic_v1",
+                {
+                    "p_studio_id": studio_id,
+                    "p_actor_id": actor_id,
+                    "p_operation_id": str(operation_id),
+                    "p_request": data.model_dump(mode="json", exclude={"operation_id"}),
+                },
+            ).execute()
+            return _parse_create_lead_result(result.data, studio_id, operation_id)
         except PostgrestAPIError as exc:
-            if exc.code not in OPTIONAL_MEMBERSHIP_SCHEMA_ERROR_CODES or "program_id" not in row:
-                raise
-            row.pop("program_id", None)
-            result = self.supabase.table("leads").insert(row).execute()
-        if not result.data:
-            raise HTTPException(status_code=500, detail="Failed to create lead")
-
-        # Log activity
-        self.supabase.table("lead_activities").insert(
-            {
-                "studio_id": studio_id,
-                "lead_id": result.data[0]["id"],
-                "activity_type": "note",
-                "description": "Lead created",
-                "created_by": actor_id,
-            }
-        ).execute()
-
-        self.supabase.table("audit_logs").insert(
-            {
-                "studio_id": studio_id,
-                "actor_id": actor_id,
-                "action": "lead.created",
-                "entity_type": "lead",
-                "entity_id": result.data[0]["id"],
-                "metadata": {"name": f"{data.first_name} {data.last_name}"},
-            }
-        ).execute()
-
-        return LeadResponse(**result.data[0])
+            raise _create_lead_error(exc, data.program_id) from None
+        except Exception:  # noqa: BLE001 - Provider failures may contain private record data.
+            raise HTTPException(503, _CREATE_UNAVAILABLE_DETAIL) from None
 
     async def get_lead(self, lead_id: str, studio_id: str) -> LeadResponse:
         result = (
