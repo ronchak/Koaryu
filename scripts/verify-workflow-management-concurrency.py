@@ -321,6 +321,49 @@ COMMIT;""")
         cases.append({"case": name, "outcome": "passed", **facts})
         print(f"[workflow management] PASS {name}", flush=True)
 
+    def name_parity():
+        # Derive the entire Python whitespace set rather than sampling categories.
+        whitespace = [
+            chr(value) for value in range(sys.maxunicode + 1) if chr(value).isspace()
+        ]
+        require(
+            len(whitespace) == 29,
+            "Review workflow-name whitespace parity after Python Unicode changes",
+        )
+        names = [
+            *whitespace,
+            "",
+            " \t\n\u00a0\u2007\x1c",
+            "  保留名  ",
+            "\tÉcole\u00a0",
+            "\x1cName\u3000",
+            "🙂" * 120,
+            "🙂" * 121,
+            "A\u2007B",
+            "\u200b",
+        ]
+        values = ",".join(
+            f"({index},{quote(name)})" for index, name in enumerate(names)
+        )
+        observations = json.loads(
+            sql(
+                "SELECT jsonb_agg(jsonb_build_array(i,length(name) BETWEEN 1 AND 120 "
+                "AND private.workflow_blank_v1(to_jsonb(name)) IS FALSE) ORDER BY i) "
+                "FROM (VALUES " + values + ") names(i,name);"
+            )
+        )
+        for index, accepted in observations:
+            name = names[index]
+            require(
+                accepted == (bool(name.strip()) and len(name) <= 120),
+                "SQL/Python workflow-name boundary differs for " + ascii(name),
+            )
+        passed(
+            "workflow name matches Python Unicode nonblank and codepoint bounds",
+            whitespace_codepoints=len(whitespace),
+            specimens=len(names),
+        )
+
     def graph_parity():
         projection = {
             key: _copy_json(CATALOG[key])
@@ -968,6 +1011,7 @@ SELECT pg_sleep(0.003);""")
         )
         passed("partial V57 retains absent workflow readiness guard")
         graph_parity()
+        name_parity()
         contract_result = local.run(
             [
                 psql,
@@ -1008,6 +1052,29 @@ SELECT pg_sleep(0.003);""")
         passed(
             "retained trial rollback contract after command signature change",
             checks=json.loads(trial_contract.splitlines()[-1])["trial_contract_checks"],
+        )
+
+        belt_contract = local.run(
+            [
+                psql,
+                *local.connection,
+                f"--dbname={database}",
+                "--no-psqlrc",
+                "--set=ON_ERROR_STOP=1",
+                "--quiet",
+                "--tuples-only",
+                "--no-align",
+                f"--file={ROOT / 'supabase/verification/belt_test_event_contract.sql'}",
+            ]
+        )
+        require(
+            sql("SELECT count(*) FROM public.belt_test_events;") == "0"
+            and sql("SELECT count(*) FROM public.belt_test_recipients;") == "0",
+            "Retained belt contract did not roll back",
+        )
+        passed(
+            "retained belt event rollback contract after workflow-name correction",
+            checks=json.loads(belt_contract.splitlines()[-1])["checks"],
         )
 
         for rollback in (False, True):

@@ -30,7 +30,7 @@ $catalog$;
 CREATE TABLE public.automation_workflows (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     studio_id UUID NOT NULL REFERENCES public.studios(id) ON DELETE CASCADE,
-    name TEXT NOT NULL CHECK (length(btrim(name)) BETWEEN 1 AND 120 AND length(name)<=120),
+    name TEXT NOT NULL CHECK (length(name) BETWEEN 1 AND 120),
     description TEXT NOT NULL DEFAULT '' CHECK (length(description)<=500),
     status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','active','paused','archived')),
     revision BIGINT NOT NULL DEFAULT 1 CHECK (revision>0),
@@ -204,6 +204,10 @@ LANGUAGE sql IMMUTABLE SECURITY INVOKER SET search_path='' AS $$
     SELECT p_value IS NULL OR p_value='null'::JSONB OR
         (jsonb_typeof(p_value)='string' AND btrim(p_value#>>'{}',U&'\0009\000a\000b\000c\000d\001c\001d\001e\001f\0020\0085\00a0\1680\2000\2001\2002\2003\2004\2005\2006\2007\2008\2009\200a\2028\2029\202f\205f\3000')='')
 $$;
+-- Keep meaningful name text byte-for-byte while matching Python's nonblank boundary.
+ALTER TABLE public.automation_workflows ADD CONSTRAINT automation_workflows_name_nonblank
+    CHECK (private.workflow_blank_v1(to_jsonb(name)) IS FALSE);
+
 CREATE FUNCTION private.workflow_integer_v1(p_value JSONB,p_min BIGINT,p_max BIGINT) RETURNS BOOLEAN
 LANGUAGE sql IMMUTABLE SECURITY INVOKER SET search_path='' AS $$
     SELECT CASE WHEN jsonb_typeof(p_value)='number' AND p_value::TEXT ~ '^-?[0-9]+$'
@@ -594,7 +598,7 @@ BEGIN
     v_request:=jsonb_build_object('command','workflow.'||p_action,'studio_id',p_studio_id,'actor_id',p_actor_id,
         'workflow_id',p_workflow_id,'expected_revision',p_expected_revision,'cancel_pending',p_cancel_pending);
     IF p_action IN ('create','save') THEN
-        IF p_name IS NULL OR length(btrim(p_name)) NOT BETWEEN 1 AND 120 OR length(p_name)>120
+        IF p_name IS NULL OR private.workflow_blank_v1(to_jsonb(p_name)) OR length(p_name)>120
             OR p_description IS NULL OR length(p_description)>500
             OR private.workflow_validate_v1(p_graph,p_layout,false)<>'[]'::JSONB THEN
             RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST';

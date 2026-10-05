@@ -57,7 +57,7 @@ BEGIN
     FOREACH t IN ARRAY ARRAY['auth.users','public.staff_roles','public.studios','public.studio_subscriptions',
         'public.programs','public.belt_ladders','public.belt_ranks','public.automation_workflows',
         'public.automation_workflow_versions','public.automation_workflow_activations','public.automation_workflow_runs',
-        'private.automation_workflow_events','private.automation_command_operations'] LOOP
+        'private.automation_workflow_events','private.automation_command_operations','public.audit_logs'] LOOP
         EXECUTE format('SELECT coalesce(jsonb_agg(to_jsonb(r) ORDER BY to_jsonb(r)::TEXT),%L::JSONB) FROM %s r','[]',t) INTO rows;
         state:=state||jsonb_build_object(t,md5(rows::TEXT));
     END LOOP;
@@ -333,6 +333,74 @@ BEGIN
     END LOOP;
     PERFORM pg_temp.workflow_error(format('SELECT public.command_automation_workflow_v1(%L,%L,%L,%L,2,%L)',s2,b,wid2,gen_random_uuid(),'start'),'P0001','AUTOMATION_STATE_CONFLICT','25 active cap');
     RESET ROLE;
+END $$;
+-- WorkflowName uses Python's full whitespace set, without trimming valid names.
+DO $$
+DECLARE a UUID:=gen_random_uuid(); s UUID:=gen_random_uuid(); wid UUID; op UUID; save_op UUID;
+    bad_name TEXT; good_name TEXT; create_name TEXT; specimen INTEGER:=0; codepoint INTEGER;
+    blanks TEXT[]:=ARRAY['',E' \t\n'||chr(160)||chr(8199)||chr(28)];
+    before_state JSONB; created JSONB; saved JSONB; result JSONB;
+    g JSONB:='{"schema_version":1,"nodes":[{"id":"start","type":"trigger","config":{"event_type":"lead.created"}},{"id":"end","type":"end","config":{}}],"edges":[{"id":"next","source":"start","target":"end","port":"next"}]}';
+BEGIN
+    FOREACH codepoint IN ARRAY ARRAY[9,10,11,12,13,28,29,30,31,32,133,160,5760,
+        8192,8193,8194,8195,8196,8197,8198,8199,8200,8201,8202,8232,8233,8239,8287,12288] LOOP
+        blanks:=array_append(blanks,chr(codepoint));
+    END LOOP;
+    INSERT INTO auth.users(id,email,email_confirmed_at) VALUES(a,a||'@example.invalid',now());
+    INSERT INTO public.studios(id,name,slug,owner_id,timezone) VALUES(s,'Name proof',s::TEXT,a,'UTC');
+    INSERT INTO public.staff_roles(studio_id,user_id,role) VALUES(s,a,'admin');
+    INSERT INTO public.studio_subscriptions(studio_id,status,comped) VALUES(s,'active',false);
+    SET LOCAL ROLE service_role;
+    created:=public.create_automation_workflow_v1(s,a,gen_random_uuid(),'Original','',g,'{}');
+    wid:=(created#>>'{payload,id}')::UUID;
+    RESET ROLE;
+    FOREACH bad_name IN ARRAY blanks||ARRAY[repeat(chr(128578),121)] LOOP
+        specimen:=specimen+1;
+        before_state:=pg_temp.workflow_observation_state();
+        SET LOCAL ROLE service_role;
+        PERFORM pg_temp.workflow_error(format('SELECT public.create_automation_workflow_v1(%L,%L,%L,%L,%L,%L,%L)',
+            s,a,gen_random_uuid(),bad_name,'',g,'{}'),'22023','AUTOMATION_INVALID_REQUEST','name create rejection '||specimen);
+        PERFORM pg_temp.workflow_error(format('SELECT public.save_automation_workflow_v1(%L,%L,%L,%L,1,%L,%L,%L,%L)',
+            s,a,wid,gen_random_uuid(),bad_name,'',g,'{}'),'22023','AUTOMATION_INVALID_REQUEST','name save rejection '||specimen);
+        PERFORM pg_temp.workflow_error(format('INSERT INTO public.automation_workflows(studio_id,name,draft_graph,draft_layout) VALUES(%L,%L,%L,%L)',
+            s,bad_name,g,'{}'),'23514',NULL,'name table insert rejection '||specimen);
+        PERFORM pg_temp.workflow_error(format('UPDATE public.automation_workflows SET name=%L WHERE studio_id=%L AND id=%L',
+            bad_name,s,wid),'23514',NULL,'name table update rejection '||specimen);
+        RESET ROLE;
+        PERFORM pg_temp.workflow_check(pg_temp.workflow_observation_state()=before_state,
+            'rejected name leaves workflow receipt audit and source state unchanged '||specimen);
+    END LOOP;
+    FOREACH good_name IN ARRAY ARRAY['  保留名  ',chr(9)||'École'||chr(160),chr(28)||'Name'||chr(12288),
+        repeat(chr(128578),120),'A'||chr(8199)||'B',chr(8203)] LOOP
+        specimen:=specimen+1; op:=gen_random_uuid(); save_op:=gen_random_uuid();
+        create_name:='Original '||specimen;
+        SET LOCAL ROLE service_role;
+        created:=public.create_automation_workflow_v1(s,a,op,create_name,'',g,'{}');
+        wid:=(created#>>'{payload,id}')::UUID;
+        saved:=public.save_automation_workflow_v1(s,a,wid,save_op,1,good_name,'',g,'{}');
+        PERFORM pg_temp.workflow_check(saved#>>'{payload,name}'=good_name
+            AND public.get_automation_workflow_v1(s,a,wid)#>>'{payload,name}'=good_name,
+            'Unicode name save roundtrip preserves exact text '||specimen);
+        PERFORM pg_temp.workflow_check(public.save_automation_workflow_v1(s,a,wid,save_op,1,good_name,'',g,'{}')=saved||'{"replayed":true}'
+            AND public.create_automation_workflow_v1(s,a,op,create_name,'',g,'{}')=created||'{"replayed":true}',
+            'Unicode name command replays preserve original exact results '||specimen);
+        PERFORM pg_temp.workflow_error(format('SELECT public.save_automation_workflow_v1(%L,%L,%L,%L,1,%L,%L,%L,%L)',
+            s,a,wid,save_op,'x'||good_name,'',g,'{}'),CASE WHEN length(good_name)=120 THEN '22023' ELSE 'P0001' END,
+            CASE WHEN length(good_name)=120 THEN 'AUTOMATION_INVALID_REQUEST' ELSE 'AUTOMATION_OPERATION_CONFLICT' END,
+            'meaningful name change never replays under original key '||specimen);
+        IF btrim(good_name)<>good_name THEN
+            PERFORM pg_temp.workflow_error(format('SELECT public.save_automation_workflow_v1(%L,%L,%L,%L,1,%L,%L,%L,%L)',
+                s,a,wid,save_op,btrim(good_name),'',g,'{}'),'P0001','AUTOMATION_OPERATION_CONFLICT',
+                'removing meaningful edge whitespace changes fingerprint '||specimen);
+        END IF;
+        created:=public.create_automation_workflow_v1(s,a,gen_random_uuid(),good_name,'',g,'{}');
+        PERFORM pg_temp.workflow_check(created#>>'{payload,name}'=good_name,'Unicode name create roundtrip preserves exact text '||specimen);
+        -- Direct writes obey the same invariant and preserve edge whitespace.
+        UPDATE public.automation_workflows SET name=good_name WHERE id=wid;
+        INSERT INTO public.automation_workflows(studio_id,name,draft_graph,draft_layout) VALUES(s,good_name,g,'{}') RETURNING to_jsonb(automation_workflows.*) INTO result;
+        PERFORM pg_temp.workflow_check(result->>'name'=good_name,'Unicode name direct insert preserves exact text '||specimen);
+        RESET ROLE;
+    END LOOP;
 END $$;
 SELECT count(*) AS workflow_management_contract_checks FROM workflow_management_checks;
 ROLLBACK;
