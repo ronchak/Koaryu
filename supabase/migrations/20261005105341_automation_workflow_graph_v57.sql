@@ -2399,3 +2399,1110 @@ BEGIN
     END LOOP;
 END;
 $capture_privileges$;
+
+-- Only actual interactive INSERT owners call this helper. Keep the filter
+-- projection bounded by frozen targets, not by the student's membership count.
+CREATE FUNCTION private.workflow_student_enrollment_event_v1(p_studio_id UUID,p_student_id UUID,p_targets JSONB)
+RETURNS JSONB LANGUAGE sql VOLATILE SECURITY INVOKER SET search_path='' AS $$
+    SELECT jsonb_build_object('event_type','student.enrolled','source_key',p_student_id::TEXT,
+        'subject_kind','student','subject_id',p_student_id,'occurred_at',private.automation_utc_text_v1(clock_timestamp()),
+        'context',jsonb_build_object('student_id',p_student_id,'matched_program_ids',coalesce((
+            SELECT jsonb_agg(program_id ORDER BY program_id) FROM (
+                SELECT DISTINCT (t->>'program_id')::UUID program_id
+                FROM jsonb_array_elements(p_targets->'targets') t
+                WHERE t->>'event_type'='student.enrolled' AND t->>'program_id' IS NOT NULL
+                    AND EXISTS(SELECT 1 FROM public.student_program_memberships m
+                        JOIN public.programs p ON p.id=m.program_id AND p.studio_id=m.studio_id
+                        WHERE m.studio_id=p_studio_id AND m.student_id=p_student_id
+                            AND m.program_id=(t->>'program_id')::UUID AND m.status IN ('active','paused')
+                            AND m.ended_at IS NULL AND p.archived_at IS NULL)
+            ) matched),'[]'::JSONB)))
+$$;
+
+-- Retained source owners: entry coordination, actual identities and capture only.
+CREATE OR REPLACE FUNCTION private.write_student_profile_atomic(
+    p_student_id UUID,
+    p_studio_id UUID,
+    p_actor_id UUID,
+    p_student JSONB,
+    p_program_ids UUID[] DEFAULT NULL,
+    p_guardians JSONB DEFAULT '[]'::JSONB,
+    p_replace_programs BOOLEAN DEFAULT FALSE,
+    p_audit_action TEXT DEFAULT 'student.updated'
+)
+RETURNS public.students
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+    v_existing public.students%ROWTYPE;
+    v_updated public.students%ROWTYPE;
+    v_program_ids UUID[] := COALESCE(p_program_ids, ARRAY[]::UUID[]);
+    v_program_id UUID;
+    v_rank_program_id UUID;
+    v_membership_id UUID;
+    v_current_belt_rank_id UUID;
+    v_membership_started_at DATE;
+    v_today DATE := CURRENT_DATE;
+    v_tags TEXT[];
+    v_guardian JSONB;
+    v_guardian_row public.guardians%ROWTYPE;
+    v_guardian_id UUID;
+    v_guardian_key TEXT;
+    v_guardian_first_name TEXT;
+    v_guardian_last_name TEXT;
+    v_inserted BOOLEAN := false;
+    v_targets JSONB;
+BEGIN
+    -- Public rank preservation may already own the student; never wait on clear.
+    IF NOT pg_catalog.pg_try_advisory_xact_lock_shared(pg_catalog.hashtextextended(
+        'koaryu.local-plan-clear:'||p_studio_id::TEXT,0)) THEN
+        RAISE EXCEPTION USING ERRCODE='P0001', MESSAGE='AUTOMATION_STUDIO_BUSY';
+    END IF;
+    IF p_student IS NULL OR jsonb_typeof(p_student) <> 'object' THEN
+        RAISE EXCEPTION 'Student write payload must be a JSON object.'
+            USING ERRCODE = '22023';
+    END IF;
+
+    IF p_student_id IS NULL THEN
+        RAISE EXCEPTION 'Student write requires a student id.'
+            USING ERRCODE = '22023';
+    END IF;
+
+    IF p_student ? 'studio_id' AND NULLIF(p_student->>'studio_id', '')::UUID IS DISTINCT FROM p_studio_id THEN
+        RAISE EXCEPTION 'Student write payload studio does not match request studio.'
+            USING ERRCODE = 'P0001';
+    END IF;
+
+    IF p_replace_programs THEN
+        IF cardinality(v_program_ids) IS NULL OR cardinality(v_program_ids) = 0 THEN
+            RAISE EXCEPTION 'Student write requires program memberships.'
+                USING ERRCODE = '22023';
+        END IF;
+
+        FOREACH v_program_id IN ARRAY v_program_ids LOOP
+            IF v_program_id IS NULL THEN
+                RAISE EXCEPTION 'Student write includes an empty program id.'
+                    USING ERRCODE = '22023';
+            END IF;
+
+            PERFORM 1
+              FROM public.programs
+             WHERE id = v_program_id
+               AND studio_id = p_studio_id
+               AND archived_at IS NULL;
+
+            IF NOT FOUND THEN
+                RAISE EXCEPTION 'Student write program does not belong to this studio or is archived.'
+                    USING ERRCODE = 'P0001';
+            END IF;
+        END LOOP;
+    END IF;
+
+    IF p_student ? 'tags' THEN
+        SELECT COALESCE(array_agg(tag.value), ARRAY[]::TEXT[])
+          INTO v_tags
+          FROM jsonb_array_elements_text(
+              CASE
+                  WHEN jsonb_typeof(p_student->'tags') = 'array' THEN p_student->'tags'
+                  ELSE '[]'::JSONB
+              END
+          ) AS tag(value);
+    END IF;
+
+    SELECT *
+      INTO v_existing
+      FROM public.students
+     WHERE id = p_student_id
+     FOR UPDATE;
+
+    IF FOUND AND v_existing.studio_id <> p_studio_id THEN
+        RAISE EXCEPTION 'Student id already belongs to another studio.'
+            USING ERRCODE = 'P0001';
+    END IF;
+
+    IF NOT FOUND THEN
+        IF p_audit_action <> 'student.created' THEN
+            RAISE EXCEPTION 'Student not found for update.'
+                USING ERRCODE = 'P0001';
+        END IF;
+
+        IF NULLIF(btrim(COALESCE(p_student->>'legal_first_name', '')), '') IS NULL
+           OR NULLIF(btrim(COALESCE(p_student->>'legal_last_name', '')), '') IS NULL THEN
+            RAISE EXCEPTION 'Student create payload is missing required name fields.'
+                USING ERRCODE = '22023';
+        END IF;
+
+        INSERT INTO public.students (
+            id,
+            studio_id,
+            legal_first_name,
+            legal_last_name,
+            preferred_name,
+            date_of_birth,
+            is_minor,
+            email,
+            phone,
+            address_line1,
+            address_city,
+            address_state,
+            address_zip,
+            emergency_contact_name,
+            emergency_contact_phone,
+            emergency_contact_relation,
+            status,
+            membership_start_date,
+            program_id,
+            current_belt_rank_id,
+            notes,
+            tags,
+            hold_start_date,
+            hold_end_date
+        )
+        VALUES (
+            p_student_id,
+            p_studio_id,
+            NULLIF(btrim(COALESCE(p_student->>'legal_first_name', '')), ''),
+            NULLIF(btrim(COALESCE(p_student->>'legal_last_name', '')), ''),
+            NULLIF(p_student->>'preferred_name', ''),
+            NULLIF(p_student->>'date_of_birth', '')::DATE,
+            COALESCE((p_student->>'is_minor')::BOOLEAN, false),
+            NULLIF(p_student->>'email', ''),
+            NULLIF(p_student->>'phone', ''),
+            NULLIF(p_student->>'address_line1', ''),
+            NULLIF(p_student->>'address_city', ''),
+            NULLIF(p_student->>'address_state', ''),
+            NULLIF(p_student->>'address_zip', ''),
+            NULLIF(p_student->>'emergency_contact_name', ''),
+            NULLIF(p_student->>'emergency_contact_phone', ''),
+            NULLIF(p_student->>'emergency_contact_relation', ''),
+            COALESCE(NULLIF(p_student->>'status', ''), 'active'),
+            NULLIF(p_student->>'membership_start_date', '')::DATE,
+            CASE WHEN p_replace_programs THEN v_program_ids[1] ELSE NULLIF(p_student->>'program_id', '')::UUID END,
+            NULLIF(p_student->>'current_belt_rank_id', '')::UUID,
+            NULLIF(p_student->>'notes', ''),
+            COALESCE(v_tags, ARRAY[]::TEXT[]),
+            NULLIF(p_student->>'hold_start_date', '')::DATE,
+            NULLIF(p_student->>'hold_end_date', '')::DATE
+        )
+        RETURNING * INTO v_updated;
+        v_inserted := true;
+    ELSE
+        UPDATE public.students
+           SET legal_first_name = CASE WHEN p_student ? 'legal_first_name' THEN NULLIF(btrim(COALESCE(p_student->>'legal_first_name', '')), '') ELSE legal_first_name END,
+               legal_last_name = CASE WHEN p_student ? 'legal_last_name' THEN NULLIF(btrim(COALESCE(p_student->>'legal_last_name', '')), '') ELSE legal_last_name END,
+               preferred_name = CASE WHEN p_student ? 'preferred_name' THEN NULLIF(p_student->>'preferred_name', '') ELSE preferred_name END,
+               date_of_birth = CASE WHEN p_student ? 'date_of_birth' THEN NULLIF(p_student->>'date_of_birth', '')::DATE ELSE date_of_birth END,
+               is_minor = CASE WHEN p_student ? 'is_minor' THEN COALESCE((p_student->>'is_minor')::BOOLEAN, false) ELSE is_minor END,
+               email = CASE WHEN p_student ? 'email' THEN NULLIF(p_student->>'email', '') ELSE email END,
+               phone = CASE WHEN p_student ? 'phone' THEN NULLIF(p_student->>'phone', '') ELSE phone END,
+               address_line1 = CASE WHEN p_student ? 'address_line1' THEN NULLIF(p_student->>'address_line1', '') ELSE address_line1 END,
+               address_city = CASE WHEN p_student ? 'address_city' THEN NULLIF(p_student->>'address_city', '') ELSE address_city END,
+               address_state = CASE WHEN p_student ? 'address_state' THEN NULLIF(p_student->>'address_state', '') ELSE address_state END,
+               address_zip = CASE WHEN p_student ? 'address_zip' THEN NULLIF(p_student->>'address_zip', '') ELSE address_zip END,
+               emergency_contact_name = CASE WHEN p_student ? 'emergency_contact_name' THEN NULLIF(p_student->>'emergency_contact_name', '') ELSE emergency_contact_name END,
+               emergency_contact_phone = CASE WHEN p_student ? 'emergency_contact_phone' THEN NULLIF(p_student->>'emergency_contact_phone', '') ELSE emergency_contact_phone END,
+               emergency_contact_relation = CASE WHEN p_student ? 'emergency_contact_relation' THEN NULLIF(p_student->>'emergency_contact_relation', '') ELSE emergency_contact_relation END,
+               status = CASE WHEN p_student ? 'status' THEN COALESCE(NULLIF(p_student->>'status', ''), status) ELSE status END,
+               membership_start_date = CASE WHEN p_student ? 'membership_start_date' THEN NULLIF(p_student->>'membership_start_date', '')::DATE ELSE membership_start_date END,
+               program_id = CASE WHEN p_replace_programs THEN v_program_ids[1] WHEN p_student ? 'program_id' THEN NULLIF(p_student->>'program_id', '')::UUID ELSE program_id END,
+               current_belt_rank_id = CASE WHEN p_student ? 'current_belt_rank_id' THEN NULLIF(p_student->>'current_belt_rank_id', '')::UUID ELSE current_belt_rank_id END,
+               notes = CASE WHEN p_student ? 'notes' THEN NULLIF(p_student->>'notes', '') ELSE notes END,
+               tags = CASE WHEN p_student ? 'tags' THEN COALESCE(v_tags, ARRAY[]::TEXT[]) ELSE tags END,
+               hold_start_date = CASE WHEN p_student ? 'hold_start_date' THEN NULLIF(p_student->>'hold_start_date', '')::DATE ELSE hold_start_date END,
+               hold_end_date = CASE WHEN p_student ? 'hold_end_date' THEN NULLIF(p_student->>'hold_end_date', '')::DATE ELSE hold_end_date END
+         WHERE id = p_student_id
+           AND studio_id = p_studio_id
+         RETURNING * INTO v_updated;
+
+        IF NOT FOUND THEN
+            RAISE EXCEPTION 'Student not found for update.'
+                USING ERRCODE = 'P0001';
+        END IF;
+    END IF;
+
+    IF p_replace_programs THEN
+        v_current_belt_rank_id := v_updated.current_belt_rank_id;
+        v_membership_started_at := v_updated.membership_start_date;
+
+        IF v_current_belt_rank_id IS NOT NULL THEN
+            SELECT ladder.program_id
+              INTO v_rank_program_id
+              FROM public.belt_ranks AS belt_rank
+              JOIN public.belt_ladders AS ladder ON ladder.id = belt_rank.ladder_id
+             WHERE belt_rank.id = v_current_belt_rank_id
+               AND belt_rank.studio_id = p_studio_id;
+
+            IF NOT FOUND THEN
+                RAISE EXCEPTION 'Current belt rank does not belong to this studio.'
+                    USING ERRCODE = 'P0001';
+            END IF;
+        END IF;
+
+        UPDATE public.student_program_memberships AS membership
+           SET status = 'ended',
+               ended_at = v_today,
+               current_belt_rank_id = NULL
+         WHERE membership.student_id = p_student_id
+           AND membership.studio_id = p_studio_id
+           AND membership.ended_at IS NULL
+           AND NOT (membership.program_id = ANY(v_program_ids));
+
+        FOREACH v_program_id IN ARRAY v_program_ids LOOP
+            SELECT membership.id
+              INTO v_membership_id
+              FROM public.student_program_memberships AS membership
+             WHERE membership.student_id = p_student_id
+               AND membership.studio_id = p_studio_id
+               AND membership.program_id = v_program_id
+               AND membership.ended_at IS NULL
+             FOR UPDATE;
+
+            IF FOUND THEN
+                UPDATE public.student_program_memberships AS membership
+                   SET status = CASE WHEN membership.status = 'paused' THEN 'paused' ELSE 'active' END,
+                       ended_at = NULL,
+                       current_belt_rank_id = CASE
+                           WHEN v_current_belt_rank_id IS NOT NULL
+                                AND (v_rank_program_id IS NULL OR v_rank_program_id = v_program_id)
+                           THEN v_current_belt_rank_id
+                           ELSE NULL
+                       END
+                 WHERE membership.id = v_membership_id
+                   AND membership.studio_id = p_studio_id;
+            ELSE
+                INSERT INTO public.student_program_memberships (
+                    studio_id,
+                    student_id,
+                    program_id,
+                    status,
+                    started_at,
+                    current_belt_rank_id
+                )
+                VALUES (
+                    p_studio_id,
+                    p_student_id,
+                    v_program_id,
+                    'active',
+                    v_membership_started_at,
+                    CASE
+                        WHEN v_current_belt_rank_id IS NOT NULL
+                             AND (v_rank_program_id IS NULL OR v_rank_program_id = v_program_id)
+                        THEN v_current_belt_rank_id
+                        ELSE NULL
+                    END
+                );
+            END IF;
+        END LOOP;
+    END IF;
+
+    -- An empty array preserves every guardian and link. Supplied entries add a
+    -- contact or patch an already-linked contact; removal is never implicit.
+    IF p_guardians IS NULL OR jsonb_typeof(p_guardians) <> 'array' THEN
+        RAISE EXCEPTION 'Student guardians payload must be an array.'
+            USING ERRCODE = '22023';
+    END IF;
+
+    IF EXISTS (
+        SELECT (entry->>'id')::UUID
+          FROM jsonb_array_elements(p_guardians) entry
+         WHERE jsonb_typeof(entry) = 'object' AND entry ? 'id'
+         GROUP BY (entry->>'id')::UUID HAVING count(*) > 1
+    ) THEN
+        RAISE EXCEPTION 'Duplicate guardian id in student write.' USING ERRCODE = '22023';
+    END IF;
+
+    -- Shared family contacts can be edited from different students. Lock the
+    -- guardian rows in UUID order after the existing student/membership locks.
+    PERFORM guardian.id
+      FROM public.guardians guardian
+     WHERE guardian.studio_id = p_studio_id
+       AND guardian.id IN (
+           SELECT (entry->>'id')::UUID
+             FROM jsonb_array_elements(p_guardians) entry
+            WHERE jsonb_typeof(entry) = 'object' AND entry ? 'id'
+       )
+     ORDER BY guardian.id
+     FOR UPDATE;
+
+    FOR v_guardian IN SELECT value FROM jsonb_array_elements(p_guardians)
+    LOOP
+        IF jsonb_typeof(v_guardian) <> 'object' THEN
+            RAISE EXCEPTION 'Guardian payload must be a JSON object.' USING ERRCODE = '22023';
+        END IF;
+        FOR v_guardian_key IN SELECT jsonb_object_keys(v_guardian)
+        LOOP
+            IF v_guardian_key NOT IN ('id', 'first_name', 'last_name', 'email', 'phone', 'relation', 'is_primary_contact') THEN
+                RAISE EXCEPTION 'Unknown guardian field.' USING ERRCODE = '22023';
+            END IF;
+            IF v_guardian_key = 'is_primary_contact' THEN
+                IF jsonb_typeof(v_guardian->v_guardian_key) <> 'boolean' THEN
+                    RAISE EXCEPTION 'Guardian primary contact flag must be a boolean.' USING ERRCODE = '22023';
+                END IF;
+            ELSIF jsonb_typeof(v_guardian->v_guardian_key) <> 'string'
+                  AND NOT (v_guardian_key IN ('email', 'phone', 'relation') AND v_guardian->v_guardian_key = 'null'::JSONB) THEN
+                RAISE EXCEPTION 'Guardian field must be a string.' USING ERRCODE = '22023';
+            END IF;
+        END LOOP;
+
+        v_guardian_first_name := NULLIF(btrim(COALESCE(v_guardian->>'first_name', '')), '');
+        v_guardian_last_name := NULLIF(btrim(COALESCE(v_guardian->>'last_name', '')), '');
+        IF (NOT (v_guardian ? 'id') OR v_guardian ? 'first_name') AND v_guardian_first_name IS NULL
+           OR NOT (v_guardian ? 'id') AND NOT (v_guardian ? 'last_name') THEN
+            RAISE EXCEPTION 'Guardian first name is required; last name must be a string.' USING ERRCODE = '22023';
+        END IF;
+
+        IF v_guardian ? 'id' THEN
+            v_guardian_id := (v_guardian->>'id')::UUID;
+            IF v_guardian_id IS NULL OR NOT EXISTS (
+                SELECT 1 FROM public.student_guardians link
+                JOIN public.guardians guardian ON guardian.id = link.guardian_id
+                WHERE link.student_id = p_student_id
+                  AND guardian.id = v_guardian_id
+                  AND guardian.studio_id = p_studio_id
+            ) THEN
+                RAISE EXCEPTION 'Guardian is not linked to this student in this studio.' USING ERRCODE = '22023';
+            END IF;
+            IF v_guardian = jsonb_build_object('id', v_guardian_id) THEN
+                RAISE EXCEPTION 'Provide guardian fields to update.' USING ERRCODE = '22023';
+            END IF;
+            UPDATE public.guardians
+               SET first_name = CASE WHEN v_guardian ? 'first_name' THEN v_guardian_first_name ELSE first_name END,
+                   last_name = CASE WHEN v_guardian ? 'last_name' THEN btrim(v_guardian->>'last_name') ELSE last_name END,
+                   email = CASE WHEN v_guardian ? 'email' THEN NULLIF(btrim(v_guardian->>'email'), '') ELSE email END,
+                   phone = CASE WHEN v_guardian ? 'phone' THEN NULLIF(btrim(v_guardian->>'phone'), '') ELSE phone END,
+                   relation = CASE WHEN v_guardian ? 'relation' THEN NULLIF(btrim(v_guardian->>'relation'), '') ELSE relation END,
+                   is_primary_contact = CASE WHEN v_guardian ? 'is_primary_contact' THEN (v_guardian->>'is_primary_contact')::BOOLEAN ELSE is_primary_contact END
+             WHERE id = v_guardian_id AND studio_id = p_studio_id;
+        ELSE
+            INSERT INTO public.guardians (
+                studio_id, first_name, last_name, email, phone, relation, is_primary_contact
+            ) VALUES (
+                p_studio_id, v_guardian_first_name, btrim(v_guardian->>'last_name'),
+                NULLIF(btrim(v_guardian->>'email'), ''), NULLIF(btrim(v_guardian->>'phone'), ''),
+                NULLIF(btrim(v_guardian->>'relation'), ''),
+                COALESCE((v_guardian->>'is_primary_contact')::BOOLEAN, false)
+            ) RETURNING * INTO v_guardian_row;
+            INSERT INTO public.student_guardians (student_id, guardian_id)
+            VALUES (p_student_id, v_guardian_row.id);
+        END IF;
+    END LOOP;
+
+    INSERT INTO public.audit_logs (
+        studio_id,
+        actor_id,
+        action,
+        entity_type,
+        entity_id,
+        metadata
+    )
+    VALUES (
+        p_studio_id,
+        p_actor_id,
+        p_audit_action,
+        'student',
+        p_student_id,
+        CASE
+            WHEN p_audit_action = 'student.created' THEN
+                jsonb_build_object('name', concat_ws(' ', v_updated.legal_first_name, v_updated.legal_last_name))
+            ELSE
+                p_student || CASE WHEN jsonb_array_length(p_guardians) > 0 THEN jsonb_build_object('guardians', p_guardians) ELSE '{}'::JSONB END
+        END
+    );
+
+    IF v_inserted THEN
+        v_targets := private.workflow_prepare_capture_v1(p_studio_id);
+        PERFORM private.workflow_capture_events_v1(p_studio_id,
+            jsonb_build_array(private.workflow_student_enrollment_event_v1(p_studio_id,p_student_id,v_targets)),v_targets);
+    END IF;
+    RETURN v_updated;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.convert_lead_to_student_atomic(
+    p_studio_id UUID,
+    p_actor_id UUID,
+    p_lead_id UUID,
+    p_student_id UUID,
+    p_program_id UUID,
+    p_status TEXT,
+    p_membership_start_date DATE,
+    p_guardian_id UUID DEFAULT NULL,
+    p_student_guardian_id UUID DEFAULT NULL
+)
+RETURNS public.leads
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+    v_lead public.leads%ROWTYPE;
+    v_student public.students%ROWTYPE;
+    v_existing_studio UUID;
+    v_guardian_first_name TEXT;
+    v_guardian_last_name TEXT;
+    v_updated public.leads%ROWTYPE;
+    v_inserted INTEGER;
+    v_activity UUID;
+    v_targets JSONB;
+    v_events JSONB := '[]'::JSONB;
+BEGIN
+    IF NOT pg_catalog.pg_try_advisory_xact_lock_shared(pg_catalog.hashtextextended(
+        'koaryu.local-plan-clear:'||p_studio_id::TEXT,0)) THEN
+        RAISE EXCEPTION USING ERRCODE='P0001', MESSAGE='LEAD_STUDIO_BUSY';
+    END IF;
+    SELECT *
+    INTO v_lead
+    FROM public.leads
+    WHERE id = p_lead_id
+      AND studio_id = p_studio_id
+    FOR UPDATE;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Lead not found for studio.';
+    END IF;
+
+    -- Conversion identity is permanent even when an ordinary edit moves the lead
+    -- backwards. Re-enrollment restores only lead state, never student details,
+    -- program membership or guardians. It needs no active/new program selection.
+    IF v_lead.converted_student_id IS NOT NULL THEN
+        IF v_lead.stage = 'enrolled' AND v_lead.follow_up_date IS NULL THEN
+            RETURN v_lead;
+        END IF;
+        UPDATE public.leads
+        SET stage = 'enrolled', follow_up_date = NULL
+        WHERE id = p_lead_id AND studio_id = p_studio_id
+        RETURNING * INTO v_updated;
+        IF v_lead.stage IS DISTINCT FROM 'enrolled' THEN
+            INSERT INTO public.lead_activities (
+                studio_id, lead_id, activity_type, description, created_by
+            ) VALUES (
+                p_studio_id, p_lead_id, 'stage_change',
+                'Stage changed from ' || v_lead.stage || ' to enrolled', p_actor_id
+            ) RETURNING id INTO v_activity;
+            v_targets := private.workflow_prepare_capture_v1(p_studio_id);
+            PERFORM private.workflow_capture_events_v1(p_studio_id,jsonb_build_array(jsonb_build_object(
+                'event_type','lead.stage_changed','source_key',v_activity::TEXT,'subject_kind','lead','subject_id',p_lead_id,
+                'occurred_at',private.automation_utc_text_v1(clock_timestamp()),'context',jsonb_build_object(
+                    'lead_id',p_lead_id,'program_id',v_updated.program_id,'activity_id',v_activity,
+                    'old_stage',v_lead.stage,'stage',v_updated.stage))),v_targets);
+        END IF;
+        RETURN v_updated;
+    END IF;
+
+    IF p_program_id IS NULL THEN
+        RAISE EXCEPTION 'Lead conversion requires a program id.';
+    END IF;
+
+    SELECT studio_id
+    INTO v_existing_studio
+    FROM public.students
+    WHERE id = p_student_id;
+
+    IF v_existing_studio IS NOT NULL AND v_existing_studio <> p_studio_id THEN
+        RAISE EXCEPTION 'Student id already belongs to another studio.';
+    END IF;
+
+    INSERT INTO public.students (
+        id,
+        studio_id,
+        legal_first_name,
+        legal_last_name,
+        is_minor,
+        email,
+        phone,
+        status,
+        membership_start_date,
+        program_id,
+        notes,
+        tags
+    )
+    VALUES (
+        p_student_id,
+        p_studio_id,
+        v_lead.first_name,
+        v_lead.last_name,
+        COALESCE(v_lead.is_minor, false),
+        v_lead.email,
+        v_lead.phone,
+        p_status,
+        p_membership_start_date,
+        p_program_id,
+        v_lead.notes,
+        ARRAY['converted-lead']::TEXT[]
+    )
+    ON CONFLICT (id) DO NOTHING;
+    GET DIAGNOSTICS v_inserted = ROW_COUNT;
+
+    SELECT *
+    INTO v_student
+    FROM public.students
+    WHERE id = p_student_id
+      AND studio_id = p_studio_id
+    FOR UPDATE;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Converted student was not available after insert.';
+    END IF;
+
+    UPDATE public.student_program_memberships
+    SET status = 'active',
+        started_at = p_membership_start_date,
+        ended_at = NULL
+    WHERE studio_id = p_studio_id
+      AND student_id = p_student_id
+      AND program_id = p_program_id
+      AND ended_at IS NULL;
+
+    IF NOT FOUND THEN
+        INSERT INTO public.student_program_memberships (
+            studio_id,
+            student_id,
+            program_id,
+            status,
+            started_at
+        )
+        VALUES (
+            p_studio_id,
+            p_student_id,
+            p_program_id,
+            'active',
+            p_membership_start_date
+        )
+        ON CONFLICT (student_id, program_id) WHERE ended_at IS NULL
+        DO UPDATE SET
+            status = 'active',
+            started_at = EXCLUDED.started_at,
+            ended_at = NULL
+        WHERE student_program_memberships.studio_id = p_studio_id
+        ;
+
+        IF NOT EXISTS (
+            SELECT 1
+            FROM public.student_program_memberships
+            WHERE studio_id = p_studio_id
+              AND student_id = p_student_id
+              AND program_id = p_program_id
+              AND ended_at IS NULL
+        ) THEN
+            RAISE EXCEPTION 'Converted student membership could not be activated for this studio.';
+        END IF;
+    END IF;
+
+    IF v_lead.is_minor AND NULLIF(btrim(COALESCE(v_lead.guardian_name, '')), '') IS NOT NULL THEN
+        IF p_guardian_id IS NULL OR p_student_guardian_id IS NULL THEN
+            RAISE EXCEPTION 'Minor lead conversion requires guardian ids.';
+        END IF;
+
+        SELECT studio_id
+        INTO v_existing_studio
+        FROM public.guardians
+        WHERE id = p_guardian_id;
+
+        IF v_existing_studio IS NOT NULL AND v_existing_studio <> p_studio_id THEN
+            RAISE EXCEPTION 'Guardian id already belongs to another studio.';
+        END IF;
+
+        v_guardian_first_name := split_part(btrim(v_lead.guardian_name), ' ', 1);
+        v_guardian_last_name := NULLIF(btrim(substr(btrim(v_lead.guardian_name), length(v_guardian_first_name) + 1)), '');
+
+        INSERT INTO public.guardians (
+            id,
+            studio_id,
+            first_name,
+            last_name,
+            email,
+            phone,
+            is_primary_contact
+        )
+        VALUES (
+            p_guardian_id,
+            p_studio_id,
+            v_guardian_first_name,
+            COALESCE(v_guardian_last_name, ''),
+            v_lead.guardian_email,
+            v_lead.guardian_phone,
+            TRUE
+        )
+        ON CONFLICT (id) DO NOTHING;
+
+        SELECT student.studio_id
+        INTO v_existing_studio
+        FROM public.student_guardians AS link
+        JOIN public.students AS student ON student.id = link.student_id
+        WHERE link.id = p_student_guardian_id;
+
+        IF v_existing_studio IS NOT NULL AND v_existing_studio <> p_studio_id THEN
+            RAISE EXCEPTION 'Student guardian link id already belongs to another studio.';
+        END IF;
+
+        INSERT INTO public.student_guardians (
+            id,
+            student_id,
+            guardian_id
+        )
+        VALUES (
+            p_student_guardian_id,
+            p_student_id,
+            p_guardian_id
+        )
+        ON CONFLICT (id) DO NOTHING;
+
+        IF NOT EXISTS (
+            SELECT 1
+            FROM public.student_guardians
+            WHERE id = p_student_guardian_id
+              AND student_id = p_student_id
+              AND guardian_id = p_guardian_id
+        ) THEN
+            RAISE EXCEPTION 'Student guardian link id already points at a different relationship.';
+        END IF;
+    END IF;
+
+    UPDATE public.leads
+    SET stage = 'enrolled',
+        converted_student_id = p_student_id,
+        follow_up_date = NULL
+    WHERE id = p_lead_id
+      AND studio_id = p_studio_id
+    RETURNING * INTO v_updated;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Lead was not updated during conversion.';
+    END IF;
+
+    INSERT INTO public.lead_activities (
+        studio_id,
+        lead_id,
+        activity_type,
+        description,
+        created_by
+    )
+    VALUES (
+        p_studio_id,
+        p_lead_id,
+        'stage_change',
+        'Converted to student (ID: ' || p_student_id::TEXT || ')',
+        p_actor_id
+    ) RETURNING id INTO v_activity;
+
+    INSERT INTO public.audit_logs (
+        studio_id,
+        actor_id,
+        action,
+        entity_type,
+        entity_id,
+        metadata
+    )
+    VALUES (
+        p_studio_id,
+        p_actor_id,
+        'lead.converted',
+        'lead',
+        p_lead_id,
+        jsonb_build_object('student_id', p_student_id)
+    );
+
+    -- Freeze both families together; the tail acquires no later source locks.
+    v_targets := private.workflow_prepare_capture_v1(p_studio_id);
+    IF v_lead.stage IS DISTINCT FROM v_updated.stage THEN
+        v_events := jsonb_build_array(jsonb_build_object(
+            'event_type','lead.stage_changed','source_key',v_activity::TEXT,'subject_kind','lead','subject_id',p_lead_id,
+            'occurred_at',private.automation_utc_text_v1(clock_timestamp()),'context',jsonb_build_object(
+                'lead_id',p_lead_id,'program_id',v_updated.program_id,'activity_id',v_activity,
+                'old_stage',v_lead.stage,'stage',v_updated.stage)));
+    END IF;
+    IF v_inserted = 1 THEN
+        v_events := v_events || jsonb_build_array(private.workflow_student_enrollment_event_v1(p_studio_id,p_student_id,v_targets));
+    END IF;
+    IF v_events <> '[]'::JSONB THEN
+        PERFORM private.workflow_capture_events_v1(p_studio_id,v_events,v_targets);
+    END IF;
+    RETURN v_updated;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION private.record_student_rank_transition_v3(
+    p_studio_id UUID,
+    p_student_id UUID,
+    p_student_program_membership_id UUID,
+    p_program_id UUID,
+    p_from_rank_id UUID,
+    p_to_rank_id UUID,
+    p_actor_id UUID,
+    p_notes TEXT,
+    p_transition_kind TEXT,
+    p_operation_id UUID,
+    p_resolve_context BOOLEAN
+)
+RETURNS public.promotions
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+    v_transition public.promotions%ROWTYPE;
+    v_student public.students%ROWTYPE;
+    v_membership public.student_program_memberships%ROWTYPE;
+    v_target_ladder_id UUID;
+    v_target_ladder_program_id UUID;
+    v_from_ladder_id UUID;
+    v_from_position INTEGER;
+    v_to_position INTEGER;
+    v_expected_action TEXT;
+    v_requested_program UUID := p_program_id;
+    v_evidence_program UUID;
+    v_evidence_membership UUID;
+    v_evidence_from UUID;
+    v_legacy_audits INTEGER;
+    v_legacy_verified BOOLEAN;
+    v_targets JSONB;
+BEGIN
+    IF NOT pg_catalog.pg_try_advisory_xact_lock_shared(pg_catalog.hashtextextended(
+        'koaryu.local-plan-clear:'||p_studio_id::TEXT,0)) THEN
+        RAISE EXCEPTION USING ERRCODE='P0001', MESSAGE='AUTOMATION_STUDIO_BUSY';
+    END IF;
+    IF p_studio_id IS NULL OR p_student_id IS NULL OR p_to_rank_id IS NULL
+       OR p_actor_id IS NULL OR p_resolve_context IS NULL
+       OR (p_resolve_context AND p_operation_id IS NULL)
+       OR p_transition_kind IS NULL OR p_transition_kind NOT IN ('promotion', 'demotion') THEN
+        RAISE EXCEPTION 'Rank transition command is invalid.'
+            USING ERRCODE = '22023', DETAIL = 'rank_transition_invalid';
+    END IF;
+    IF p_transition_kind = 'demotion' AND NULLIF(BTRIM(p_notes), '') IS NULL THEN
+        RAISE EXCEPTION 'A demotion reason is required.'
+            USING ERRCODE = 'P0001', DETAIL = 'rank_transition_invalid';
+    END IF;
+    v_expected_action := CASE p_transition_kind
+        WHEN 'promotion' THEN 'student.promoted' ELSE 'student.demoted' END;
+
+    IF p_operation_id IS NOT NULL THEN
+        PERFORM pg_advisory_xact_lock(hashtextextended(
+            'student_rank_transition|' || p_studio_id::TEXT || '|' || p_operation_id::TEXT, 0
+        ));
+        SELECT * INTO v_transition FROM public.promotions promotion
+        WHERE promotion.studio_id = p_studio_id AND promotion.operation_id = p_operation_id;
+        IF FOUND THEN
+            IF v_transition.command_fingerprint IS NOT NULL THEN
+                v_evidence_program := CASE WHEN p_resolve_context
+                    THEN COALESCE(p_program_id, v_transition.command_program_id) ELSE p_program_id END;
+                v_evidence_membership := CASE WHEN p_resolve_context
+                    THEN COALESCE(p_student_program_membership_id, v_transition.command_membership_id)
+                    ELSE p_student_program_membership_id END;
+                v_evidence_from := CASE WHEN p_resolve_context
+                    THEN v_transition.command_from_rank_id ELSE p_from_rank_id END;
+                IF v_transition.command_fingerprint IS DISTINCT FROM private.rank_transition_fingerprint_v1(
+                    p_studio_id, p_operation_id, p_student_id, p_actor_id, p_to_rank_id,
+                    v_evidence_from, v_evidence_program, v_evidence_membership,
+                    p_transition_kind, p_notes
+                ) THEN
+                    RAISE EXCEPTION 'Operation ID was already used for a different rank transition.'
+                        USING ERRCODE = '22023', DETAIL = 'rank_transition_conflict';
+                END IF;
+            ELSE
+                -- The API asserts only supplied context. V2 asserts exact context/from.
+                IF v_transition.student_id IS DISTINCT FROM p_student_id
+                   OR v_transition.to_rank_id IS DISTINCT FROM p_to_rank_id
+                   OR v_transition.promoted_by IS DISTINCT FROM p_actor_id
+                   OR v_transition.transition_kind IS DISTINCT FROM p_transition_kind
+                   OR v_transition.notes IS DISTINCT FROM p_notes
+                   OR ((NOT p_resolve_context OR p_program_id IS NOT NULL)
+                       AND v_transition.program_id IS DISTINCT FROM p_program_id)
+                   OR ((NOT p_resolve_context OR p_student_program_membership_id IS NOT NULL)
+                       AND v_transition.student_program_membership_id IS DISTINCT FROM p_student_program_membership_id)
+                   OR (NOT p_resolve_context AND v_transition.from_rank_id IS DISTINCT FROM p_from_rank_id) THEN
+                    RAISE EXCEPTION 'Operation ID was already used for a different rank transition.'
+                        USING ERRCODE = '22023', DETAIL = 'rank_transition_conflict';
+                END IF;
+                IF NOT p_resolve_context AND (p_program_id IS NULL
+                    OR p_student_program_membership_id IS NULL OR p_from_rank_id IS NULL) THEN
+                    -- A nullable FK cannot prove an original null. Match one complete
+                    -- transaction audit, with explicit JSON nulls rather than missing keys.
+                    SELECT count(*), bool_and(
+                        audit.actor_id = p_actor_id AND audit.action = v_expected_action
+                        AND audit.metadata @> jsonb_build_object(
+                            'student_id', p_student_id, 'operation_id', p_operation_id,
+                            'transition_kind', p_transition_kind, 'program_id', p_program_id,
+                            'student_program_membership_id', p_student_program_membership_id,
+                            'from_rank_id', p_from_rank_id, 'to_rank_id', p_to_rank_id
+                        )
+                    ) INTO v_legacy_audits, v_legacy_verified FROM public.audit_logs audit
+                    WHERE audit.studio_id = p_studio_id AND audit.entity_type = 'promotion'
+                      AND audit.entity_id = v_transition.id;
+                    IF v_legacy_audits IS DISTINCT FROM 1 OR v_legacy_verified IS DISTINCT FROM TRUE THEN
+                        RAISE EXCEPTION 'The original rank transition cannot be verified; review its history before retrying.'
+                            USING ERRCODE = '22023', DETAIL = 'rank_transition_conflict';
+                    END IF;
+                END IF;
+            END IF;
+            RETURN v_transition;
+        END IF;
+    END IF;
+
+    SELECT * INTO v_student
+    FROM public.students student
+    WHERE student.id = p_student_id
+      AND student.studio_id = p_studio_id
+    FOR UPDATE;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Student not found for rank transition.' USING ERRCODE = 'P0002', DETAIL = 'rank_transition_not_found';
+    END IF;
+
+    SELECT rank.ladder_id, ladder.program_id
+    INTO v_target_ladder_id, v_target_ladder_program_id
+    FROM public.belt_ranks rank
+    JOIN public.belt_ladders ladder ON ladder.id = rank.ladder_id
+    WHERE rank.id = p_to_rank_id
+      AND rank.studio_id = p_studio_id
+      AND ladder.studio_id = p_studio_id;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Target belt rank not found for rank transition.' USING ERRCODE = 'P0002', DETAIL = 'rank_transition_not_found';
+    END IF;
+    IF p_resolve_context THEN
+        p_program_id := COALESCE(p_program_id, v_target_ladder_program_id,
+            CASE WHEN p_student_program_membership_id IS NULL THEN v_student.program_id END);
+    END IF;
+    IF v_target_ladder_program_id IS NOT NULL
+       AND p_program_id IS DISTINCT FROM v_target_ladder_program_id THEN
+        RAISE EXCEPTION 'Rank transition program must match the target ladder program.'
+            USING ERRCODE = 'P0001', DETAIL = 'rank_transition_invalid';
+    END IF;
+
+    IF p_student_program_membership_id IS NOT NULL
+       OR (p_resolve_context AND p_program_id IS NOT NULL) THEN
+        SELECT * INTO v_membership FROM public.student_program_memberships membership
+        WHERE membership.studio_id = p_studio_id AND membership.student_id = p_student_id
+          AND CASE WHEN p_student_program_membership_id IS NOT NULL
+              THEN membership.id = p_student_program_membership_id
+              ELSE membership.program_id = p_program_id
+                   AND membership.status IN ('active', 'paused') AND membership.ended_at IS NULL END
+        FOR UPDATE;
+        IF NOT FOUND AND p_student_program_membership_id IS NOT NULL THEN
+            RAISE EXCEPTION 'Student program membership not found for rank transition.'
+                USING ERRCODE = 'P0002', DETAIL = 'rank_transition_not_found';
+        END IF;
+        IF FOUND THEN p_student_program_membership_id := v_membership.id; END IF;
+    END IF;
+
+    IF p_student_program_membership_id IS NOT NULL THEN
+        IF v_membership.ended_at IS NOT NULL OR v_membership.status NOT IN ('active', 'paused') THEN
+            RAISE EXCEPTION 'Cannot transition an inactive program membership.' USING ERRCODE = 'P0001', DETAIL = 'rank_transition_invalid';
+        END IF;
+        IF p_resolve_context THEN
+            IF (v_requested_program IS NOT NULL AND v_membership.program_id IS DISTINCT FROM v_requested_program)
+               OR (v_target_ladder_program_id IS NOT NULL
+                   AND v_membership.program_id IS DISTINCT FROM v_target_ladder_program_id) THEN
+                RAISE EXCEPTION 'Rank transition program must match the student program membership.'
+                    USING ERRCODE = 'P0001', DETAIL = 'rank_transition_invalid';
+            END IF;
+            p_program_id := v_membership.program_id;
+            p_from_rank_id := v_membership.current_belt_rank_id;
+        END IF;
+        IF v_membership.program_id IS DISTINCT FROM p_program_id THEN
+            RAISE EXCEPTION 'Rank transition program must match the student program membership.'
+                USING ERRCODE = 'P0001', DETAIL = 'rank_transition_invalid';
+        END IF;
+        IF v_membership.current_belt_rank_id IS DISTINCT FROM p_from_rank_id THEN
+            RAISE EXCEPTION 'Student program membership rank changed before transition.'
+                USING ERRCODE = 'P0001', DETAIL = 'rank_transition_invalid';
+        END IF;
+    ELSE
+        IF v_target_ladder_program_id IS NOT NULL THEN
+            IF p_transition_kind = 'promotion' THEN
+                RAISE EXCEPTION 'Program-scoped promotions require a student program membership.' USING ERRCODE = 'P0001', DETAIL = 'rank_transition_invalid';
+            ELSE
+                RAISE EXCEPTION 'Program-scoped demotions require a student program membership.' USING ERRCODE = 'P0001', DETAIL = 'rank_transition_invalid';
+            END IF;
+        END IF;
+        IF p_resolve_context THEN
+            IF v_requested_program IS NOT NULL AND v_requested_program IS DISTINCT FROM v_student.program_id THEN
+                RAISE EXCEPTION 'Student program membership not found for rank transition.' USING ERRCODE = 'P0002', DETAIL = 'rank_transition_not_found';
+            END IF;
+            p_program_id := v_student.program_id;
+            p_from_rank_id := v_student.current_belt_rank_id;
+        END IF;
+        IF v_student.current_belt_rank_id IS DISTINCT FROM p_from_rank_id THEN
+            RAISE EXCEPTION 'Student rank changed before transition.' USING ERRCODE = 'P0001', DETAIL = 'rank_transition_invalid';
+        END IF;
+    END IF;
+
+    IF p_program_id IS NOT NULL AND NOT EXISTS (
+        SELECT 1 FROM public.programs program
+        WHERE program.id = p_program_id AND program.studio_id = p_studio_id
+    ) THEN
+        RAISE EXCEPTION 'Program not found in this studio for rank transition.'
+            USING ERRCODE = 'P0002', DETAIL = 'rank_transition_not_found';
+    END IF;
+
+    IF p_from_rank_id IS NOT NULL THEN
+        SELECT rank.ladder_id INTO v_from_ladder_id
+        FROM public.belt_ranks rank
+        WHERE rank.id = p_from_rank_id
+          AND rank.studio_id = p_studio_id;
+        IF NOT FOUND OR v_from_ladder_id IS DISTINCT FROM v_target_ladder_id THEN
+            RAISE EXCEPTION 'Rank transitions must stay within one belt ladder.'
+                USING ERRCODE = 'P0001', DETAIL = 'rank_transition_invalid';
+        END IF;
+    END IF;
+
+    WITH ordered AS (
+        SELECT rank.id,
+               row_number() OVER (
+                   ORDER BY rank.display_order, rank.created_at, rank.id
+               )::INTEGER AS position
+        FROM public.belt_ranks rank
+        WHERE rank.studio_id = p_studio_id
+          AND rank.ladder_id = v_target_ladder_id
+    )
+    SELECT
+        max(position) FILTER (WHERE id = p_from_rank_id),
+        max(position) FILTER (WHERE id = p_to_rank_id)
+    INTO v_from_position, v_to_position
+    FROM ordered;
+
+    IF v_to_position IS NULL THEN
+        RAISE EXCEPTION 'Target belt rank disappeared before transition.' USING ERRCODE = 'P0002', DETAIL = 'rank_transition_not_found';
+    END IF;
+    IF p_transition_kind = 'promotion' THEN
+        IF (p_from_rank_id IS NULL AND v_to_position <> 1)
+           OR (p_from_rank_id IS NOT NULL AND v_to_position <> v_from_position + 1) THEN
+            RAISE EXCEPTION 'Students can only be promoted to the next rank.'
+                USING ERRCODE = 'P0001', DETAIL = 'rank_transition_invalid';
+        END IF;
+        v_expected_action := 'student.promoted';
+    ELSE
+        IF p_from_rank_id IS NULL OR v_to_position <> v_from_position - 1 THEN
+            RAISE EXCEPTION 'Students can only be demoted to the previous rank.'
+                USING ERRCODE = 'P0001', DETAIL = 'rank_transition_invalid';
+        END IF;
+        v_expected_action := 'student.demoted';
+    END IF;
+
+    INSERT INTO public.promotions (
+        studio_id, student_id, student_program_membership_id, program_id,
+        from_rank_id, to_rank_id, promoted_by, notes, operation_id, transition_kind
+    ) VALUES (
+        p_studio_id, p_student_id, p_student_program_membership_id, p_program_id,
+        p_from_rank_id, p_to_rank_id, p_actor_id, p_notes, p_operation_id,
+        p_transition_kind
+    )
+    RETURNING * INTO v_transition;
+
+    IF p_student_program_membership_id IS NOT NULL THEN
+        UPDATE public.student_program_memberships membership
+        SET current_belt_rank_id = p_to_rank_id
+        WHERE membership.id = p_student_program_membership_id;
+    END IF;
+    IF p_student_program_membership_id IS NULL
+       OR v_student.program_id IS NOT DISTINCT FROM p_program_id THEN
+        UPDATE public.students student
+        SET current_belt_rank_id = p_to_rank_id
+        WHERE student.id = p_student_id
+          AND student.studio_id = p_studio_id;
+    END IF;
+
+    INSERT INTO public.audit_logs (
+        studio_id, actor_id, action, entity_type, entity_id, metadata
+    ) VALUES (
+        p_studio_id, p_actor_id, v_expected_action, 'promotion', v_transition.id,
+        jsonb_build_object(
+            'student_id', p_student_id,
+            'student_program_membership_id', p_student_program_membership_id,
+            'program_id', p_program_id,
+            'from_rank_id', p_from_rank_id,
+            'to_rank_id', p_to_rank_id,
+            'operation_id', p_operation_id,
+            'transition_kind', p_transition_kind
+        ) || CASE
+            WHEN p_transition_kind = 'demotion' THEN
+                jsonb_build_object('reason', BTRIM(p_notes))
+            ELSE '{}'::JSONB
+        END
+    );
+    IF v_transition.transition_kind = 'promotion' THEN
+        v_targets := private.workflow_prepare_capture_v1(p_studio_id);
+        PERFORM private.workflow_capture_events_v1(p_studio_id,jsonb_build_array(jsonb_build_object(
+            'event_type','student.promoted','source_key',v_transition.id::TEXT,'subject_kind','promotion','subject_id',v_transition.id,
+            'occurred_at',private.automation_utc_text_v1(clock_timestamp()),'context',jsonb_build_object(
+                'promotion_id',v_transition.id,'student_id',v_transition.student_id,
+                'student_program_membership_id',v_transition.student_program_membership_id,'program_id',v_transition.program_id,
+                'rank_id',v_transition.to_rank_id,'from_rank_id',v_transition.from_rank_id))),v_targets);
+    END IF;
+    RETURN v_transition;
+END;
+$$;
+
+-- Installation excludes every existing payment under a lock that conflicts
+-- with INSERT/UPDATE/DELETE. Logical identities survive operational clear.
+LOCK TABLE public.billing_payments IN SHARE ROW EXCLUSIVE MODE;
+CREATE TABLE private.workflow_payment_capture_markers (
+    payment_id UUID PRIMARY KEY,
+    studio_id UUID NOT NULL REFERENCES public.studios(id) ON DELETE CASCADE,
+    eligible BOOLEAN NOT NULL,
+    failure_seen BOOLEAN NOT NULL DEFAULT false
+);
+INSERT INTO private.workflow_payment_capture_markers(payment_id,studio_id,eligible)
+    SELECT id,studio_id,false FROM public.billing_payments;
+ALTER TABLE private.workflow_payment_capture_markers OWNER TO postgres;
+ALTER TABLE private.workflow_payment_capture_markers ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON private.workflow_payment_capture_markers FROM PUBLIC,anon,authenticated,service_role;
+GRANT SELECT,INSERT,UPDATE ON private.workflow_payment_capture_markers TO service_role;
+CREATE POLICY reject_client_access ON private.workflow_payment_capture_markers AS RESTRICTIVE FOR ALL
+    TO anon,authenticated USING(false) WITH CHECK(false);
+
+CREATE FUNCTION private.workflow_capture_payment_failure_v1() RETURNS TRIGGER
+LANGUAGE plpgsql VOLATILE SECURITY INVOKER SET search_path='' AS $$
+DECLARE invoice public.billing_invoices; payer public.billing_payers; invoice_payer public.billing_payers;
+    excluded BOOLEAN; marker private.workflow_payment_capture_markers; targets JSONB;
+BEGIN
+    -- A projection already owns its payment. Neither clear nor studio deletion
+    -- may make this late entry wait backwards for a parent.
+    IF NOT pg_catalog.pg_try_advisory_xact_lock_shared(pg_catalog.hashtextextended('koaryu.local-plan-clear:'||NEW.studio_id::TEXT,0)) THEN
+        RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STUDIO_BUSY';
+    END IF;
+    BEGIN
+        PERFORM 1 FROM public.studios WHERE id=NEW.studio_id FOR KEY SHARE NOWAIT;
+    EXCEPTION WHEN lock_not_available THEN
+        RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STUDIO_BUSY';
+    END;
+    -- Financial identity/ref guards remain authoritative. These same-studio
+    -- reads add no invoice or payer row locks after payment ownership.
+    SELECT * INTO invoice FROM public.billing_invoices WHERE id=NEW.invoice_id AND studio_id=NEW.studio_id;
+    SELECT * INTO payer FROM public.billing_payers WHERE id=NEW.payer_id AND studio_id=NEW.studio_id;
+    SELECT * INTO invoice_payer FROM public.billing_payers WHERE id=invoice.payer_id AND studio_id=NEW.studio_id;
+    excluded := coalesce(NEW.metadata @> '{"demo":true}'::JSONB,false)
+        OR coalesce(invoice.metadata @> '{"demo":true}'::JSONB,false)
+        OR coalesce(payer.metadata @> '{"demo":true}'::JSONB,false)
+        OR coalesce(invoice_payer.metadata @> '{"demo":true}'::JSONB,false);
+    IF TG_OP='INSERT' THEN
+        INSERT INTO private.workflow_payment_capture_markers(payment_id,studio_id,eligible)
+            VALUES(NEW.id,NEW.studio_id,NOT excluded) ON CONFLICT(payment_id) DO NOTHING;
+    END IF;
+    SELECT * INTO marker FROM private.workflow_payment_capture_markers WHERE payment_id=NEW.id AND studio_id=NEW.studio_id;
+    IF NOT FOUND OR NOT marker.eligible OR marker.failure_seen OR NEW.status<>'failed' THEN RETURN NEW; END IF;
+    UPDATE private.workflow_payment_capture_markers SET failure_seen=true WHERE payment_id=NEW.id;
+    -- Consume the first committed failure even when demo or no target is active.
+    IF excluded THEN RETURN NEW; END IF;
+    targets := private.workflow_prepare_capture_v1(NEW.studio_id);
+    PERFORM private.workflow_capture_events_v1(NEW.studio_id,jsonb_build_array(jsonb_build_object(
+        'event_type','invoice.payment_failed','source_key',NEW.id::TEXT,'subject_kind','invoice','subject_id',NEW.id,
+        'occurred_at',private.automation_utc_text_v1(clock_timestamp()),'context',jsonb_build_object(
+            'payment_id',NEW.id,'invoice_id',invoice.id,'payer_id',payer.id))),targets);
+    RETURN NEW;
+END $$;
+CREATE TRIGGER workflow_capture_payment_failure_v1
+    AFTER INSERT OR UPDATE OF status,invoice_id,payer_id,metadata ON public.billing_payments
+    FOR EACH ROW EXECUTE FUNCTION private.workflow_capture_payment_failure_v1();
+
+DO $student_payment_capture_privileges$
+DECLARE r RECORD;
+BEGIN
+    FOR r IN SELECT p.oid::REGPROCEDURE identity FROM pg_catalog.pg_proc p JOIN pg_catalog.pg_namespace n ON n.oid=p.pronamespace
+        WHERE n.nspname='private' AND p.proname IN ('workflow_student_enrollment_event_v1','workflow_capture_payment_failure_v1') LOOP
+        EXECUTE format('ALTER FUNCTION %s OWNER TO postgres',r.identity);
+        EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC,anon,authenticated,service_role',r.identity);
+        EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO service_role',r.identity);
+    END LOOP;
+END;
+$student_payment_capture_privileges$;
