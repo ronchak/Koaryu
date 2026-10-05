@@ -1125,3 +1125,73 @@ def test_same_run_with_fresh_claim_token_may_continue_after_settlement(runner):
     assert_counts(runner.run(limit=2), claimed=2, processed=2, accepted=1, completed=1)
     assert [p["p_claim_token"] for p in runner.requests(ADVANCE)] == [TOKEN, OTHER]
     assert len(runner.requests(SETTLE)) == 1
+
+
+@pytest.mark.parametrize(
+    "state",
+    [
+        "waiting",
+        "claimed",
+        "running",
+        "sending",
+        "queued",
+        "completed",
+        "cancelled",
+        "failed",
+        "unknown",
+    ],
+)
+def test_replayed_failed_attempt_does_not_infer_retry_from_later_run(runner, state):
+    runner.transport.send_prepared.return_value = DeliveryResult(
+        "permanent_failure",
+        "invalid_message",
+        submission_evidence="not_submitted",
+        failure_scope="message",
+    )
+    later_position = position(state, node="later_delay")
+    runner.database.graph_handlers[SETTLE] = settled(
+        "failed",
+        replayed=True,
+        run=deepcopy(later_position),
+    )
+    assert_counts(runner.run(), failed=1, retry_wait=0, waiting=0, has_more=False)
+    assert runner.database.graph_handlers[SETTLE]["run"] == later_position
+    assert len(runner.requests(CLAIM_RPC)) == 2
+    assert len(runner.requests(ADVANCE)) == len(runner.requests(BEGIN)) == 1
+    assert runner.requests(SETTLE)[0]["p_claim_token"] == TOKEN
+    runner.transport.send_prepared.assert_called_once()
+
+
+def test_fresh_failed_attempt_waiting_for_safe_retry_keeps_retry_wait_count(runner):
+    runner.transport.send_prepared.return_value = DeliveryResult(
+        "retryable_failure",
+        "provider_throttled",
+        submission_evidence="rejected",
+        failure_scope="sender_transient",
+    )
+    runner.database.graph_handlers[SETTLE] = settled(
+        "failed",
+        replayed=False,
+        run=position("waiting"),
+    )
+    assert_counts(runner.run(), retry_wait=1, failed=0, waiting=0)
+    assert len(runner.requests(CLAIM_RPC)) == 2
+    assert len(runner.requests(ADVANCE)) == len(runner.requests(SETTLE)) == 1
+    runner.transport.send_prepared.assert_called_once()
+
+
+@pytest.mark.parametrize("replayed", [False, True])
+@pytest.mark.parametrize("state", ["accepted", "unknown"])
+def test_fresh_and_replayed_nonfailure_keep_original_attempt_summary(runner, replayed, state):
+    runner.transport.send_prepared.return_value = DeliveryResult(
+        state,
+        submission_evidence=None if state == "accepted" else "unknown",
+    )
+    runner.database.graph_handlers[SETTLE] = settled(
+        state,
+        replayed=replayed,
+        run=position("cancelled" if state == "accepted" else "unknown"),
+    )
+    assert_counts(runner.run(), retry_wait=0, failed=0, **{state: 1})
+    assert len(runner.requests(CLAIM_RPC)) == (2 if state == "accepted" else 1)
+    runner.transport.send_prepared.assert_called_once()

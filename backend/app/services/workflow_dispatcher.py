@@ -307,7 +307,11 @@ class _ClaimConsumer:
             # alongside current progress, which can already belong to another worker.
             if not settled.replayed and settled.run.state == "queued":
                 self.counts["has_more"] = True
-            if settled.state == "failed" and settled.run.state == "waiting":
+            if (
+                not settled.replayed
+                and settled.state == "failed"
+                and settled.run.state == "waiting"
+            ):
                 return "retry_wait"
             return settled.state
         except Exception:  # noqa: BLE001 - Lost settlement is unknown even after observed acceptance.
