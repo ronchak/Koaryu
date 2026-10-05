@@ -486,12 +486,18 @@ BEGIN
         ELSE CONTINUE; END IF;
         IF v IS NULL OR v='null' THEN CONTINUE; END IF;
         FOR v IN SELECT value FROM jsonb_array_elements(CASE WHEN jsonb_typeof(v)='array' THEN v ELSE jsonb_build_array(v) END) ORDER BY value::TEXT LOOP
-            IF kind='program.id' THEN
-                PERFORM 1 FROM public.programs WHERE studio_id=p_studio_id AND id=(v#>>'{}')::UUID FOR KEY SHARE;
-            ELSE
-                PERFORM 1 FROM public.belt_ranks WHERE studio_id=p_studio_id AND id=(v#>>'{}')::UUID FOR KEY SHARE;
-            END IF;
-            IF NOT FOUND THEN RAISE EXCEPTION USING ERRCODE='P0002',MESSAGE='AUTOMATION_NOT_FOUND'; END IF;
+            BEGIN
+                IF kind='program.id' THEN
+                    PERFORM 1 FROM public.programs WHERE studio_id=p_studio_id AND id=(v#>>'{}')::UUID FOR KEY SHARE NOWAIT;
+                ELSE
+                    PERFORM 1 FROM public.belt_ranks WHERE studio_id=p_studio_id AND id=(v#>>'{}')::UUID FOR KEY SHARE NOWAIT;
+                END IF;
+                IF NOT FOUND THEN RAISE EXCEPTION USING ERRCODE='P0002',MESSAGE='AUTOMATION_NOT_FOUND'; END IF;
+            EXCEPTION WHEN lock_not_available THEN
+                -- Publication already holds its workflow. Waiting for a deleted
+                -- source reference could invert source -> workflow cancellation.
+                RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STUDIO_BUSY';
+            END;
         END LOOP;
     END LOOP;
 END $$;
@@ -778,3 +784,297 @@ $function_privileges$;
 
 -- V57 catalog/readiness/history closure is pending later core tasks. This pilot
 -- must be applied transactionally only to a disposable clone of exact V56.
+
+-- Trial scheduling uses resolved instants. The display zone never reinterprets
+-- an already resolved offset. All serialized instants stay in Python's UTC range.
+CREATE FUNCTION private.automation_instant_v1(p_value JSONB) RETURNS TIMESTAMPTZ
+LANGUAGE plpgsql IMMUTABLE SECURITY INVOKER SET search_path='' AS $$
+DECLARE v TEXT; v_at TIMESTAMPTZ; v_offset TEXT; v_local TEXT;
+BEGIN
+    IF jsonb_typeof(p_value) IS DISTINCT FROM 'string' THEN
+        RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST';
+    END IF;
+    v:=p_value#>>'{}';
+    IF length(v)>64 OR v !~ '^\d{4}-\d{2}-\d{2}T([01]\d|2[0-3]):[0-5]\d:[0-5]\d(\.\d+)?(Z|[+-]([01]\d|2[0-3]):[0-5]\d)$' THEN
+        RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST';
+    END IF;
+    -- Python truncates excess fractional precision; PostgreSQL otherwise rounds.
+    v:=regexp_replace(v,'(\.\d{6})\d+','\1');
+    BEGIN
+        -- Python permits aware offsets up to 23:59; PostgreSQL's direct
+        -- timestamptz parser has a smaller displacement bound. Resolve the
+        -- already-validated numeric offset explicitly, without local-zone rules.
+        v_offset:=CASE WHEN right(v,1)='Z' THEN '+00:00' ELSE right(v,6) END;
+        v_local:=left(v,length(v)-CASE WHEN right(v,1)='Z' THEN 1 ELSE 6 END);
+        v_at:=(v_local::TIMESTAMP AT TIME ZONE 'UTC')
+            - CASE WHEN left(v_offset,1)='-' THEN -1 ELSE 1 END
+            * make_interval(hours=>substring(v_offset,2,2)::INTEGER,mins=>substring(v_offset,5,2)::INTEGER);
+    EXCEPTION WHEN invalid_datetime_format OR datetime_field_overflow THEN
+        RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST';
+    END;
+    IF NOT isfinite(v_at) OR v_at<TIMESTAMPTZ '0001-01-01 00:00:00+00'
+        OR v_at>TIMESTAMPTZ '9999-12-31 23:59:59.999999+00' THEN
+        RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST';
+    END IF;
+    RETURN v_at;
+END $$;
+CREATE FUNCTION private.automation_utc_text_v1(p_at TIMESTAMPTZ) RETURNS TEXT
+LANGUAGE sql IMMUTABLE SECURITY INVOKER SET search_path='' AS $$
+    SELECT to_char(p_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')
+$$;
+CREATE FUNCTION private.automation_timezone_v1(p_value JSONB) RETURNS TEXT
+LANGUAGE plpgsql STABLE SECURITY INVOKER SET search_path='' AS $$
+DECLARE v TEXT;
+BEGIN
+    v:=p_value#>>'{}';
+    IF jsonb_typeof(p_value) IS DISTINCT FROM 'string' OR length(v)>128
+        OR v !~ '^[A-Za-z0-9._+-]+(/[A-Za-z0-9._+-]+)*$'
+        OR v ~ '(^|/)(\.|\.\.)(/|$)' OR split_part(v,'/',1) IN ('localtime','posixrules','posix','right')
+        OR NOT EXISTS(SELECT 1 FROM pg_catalog.pg_timezone_names WHERE name=v) THEN
+        RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST';
+    END IF;
+    RETURN v;
+END $$;
+
+ALTER TABLE public.leads ADD CONSTRAINT leads_studio_id_id_key UNIQUE(studio_id,id);
+CREATE TABLE public.lead_trial_appointments (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    studio_id UUID NOT NULL REFERENCES public.studios(id) ON DELETE CASCADE,
+    lead_id UUID NOT NULL,
+    program_id UUID,
+    starts_at TIMESTAMPTZ NOT NULL CHECK (starts_at BETWEEN TIMESTAMPTZ '0001-01-01 00:00:00+00' AND TIMESTAMPTZ '9999-12-31 23:59:59.999999+00'),
+    ends_at TIMESTAMPTZ NOT NULL CHECK (ends_at BETWEEN TIMESTAMPTZ '0001-01-01 00:00:00+00' AND TIMESTAMPTZ '9999-12-31 23:59:59.999999+00'),
+    timezone TEXT NOT NULL CHECK (private.automation_timezone_v1(to_jsonb(timezone))=timezone),
+    location TEXT NOT NULL DEFAULT '' CHECK (length(location)<=240),
+    status TEXT NOT NULL DEFAULT 'scheduled' CHECK (status IN ('scheduled','completed','no_show','canceled')),
+    revision BIGINT NOT NULL DEFAULT 1 CHECK (revision>0),
+    created_by UUID,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp() CHECK (created_at BETWEEN TIMESTAMPTZ '0001-01-01 00:00:00+00' AND TIMESTAMPTZ '9999-12-31 23:59:59.999999+00'),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp() CHECK (updated_at BETWEEN TIMESTAMPTZ '0001-01-01 00:00:00+00' AND TIMESTAMPTZ '9999-12-31 23:59:59.999999+00'),
+    FOREIGN KEY(studio_id,lead_id) REFERENCES public.leads(studio_id,id) ON DELETE CASCADE,
+    UNIQUE(studio_id,id),
+    CHECK (ends_at>starts_at AND ends_at-starts_at<=INTERVAL '24 hours')
+);
+CREATE UNIQUE INDEX lead_trial_appointments_scheduled ON public.lead_trial_appointments(studio_id,lead_id) WHERE status='scheduled';
+CREATE INDEX lead_trial_appointments_list ON public.lead_trial_appointments(studio_id,lead_id,created_at DESC,id DESC);
+CREATE INDEX automation_workflow_events_subject ON private.automation_workflow_events(studio_id,subject_kind,subject_id);
+
+CREATE FUNCTION private.trial_appointment_payload_v1(p_row public.lead_trial_appointments) RETURNS JSONB
+LANGUAGE sql IMMUTABLE SECURITY INVOKER SET search_path='' AS $$
+    SELECT jsonb_build_object('id',p_row.id,'studio_id',p_row.studio_id,'lead_id',p_row.lead_id,
+        'program_id',p_row.program_id,'starts_at',private.automation_utc_text_v1(p_row.starts_at),
+        'ends_at',private.automation_utc_text_v1(p_row.ends_at),'timezone',p_row.timezone,'location',p_row.location,
+        'status',p_row.status,'revision',p_row.revision,'created_by',p_row.created_by,
+        'created_at',private.automation_utc_text_v1(p_row.created_at),'updated_at',private.automation_utc_text_v1(p_row.updated_at))
+$$;
+CREATE FUNCTION private.workflow_cancel_source_pending_v1(p_studio_id UUID,p_subject_kind TEXT,p_subject_id UUID,p_at TIMESTAMPTZ,p_reason TEXT)
+RETURNS VOID LANGUAGE plpgsql VOLATILE SECURITY INVOKER SET search_path='' AS $$
+BEGIN
+    -- Caller owns the authoritative source parents. Every affected workflow is
+    -- acquired before any run; event identity is immutable. Epochs stay intact.
+    PERFORM 1 FROM public.automation_workflows w WHERE w.studio_id=p_studio_id AND EXISTS(
+        SELECT 1 FROM public.automation_workflow_runs r JOIN private.automation_workflow_events e
+            ON e.studio_id=r.studio_id AND e.id=r.event_id
+        WHERE r.studio_id=p_studio_id AND r.workflow_id=w.id AND e.subject_kind=p_subject_kind
+            AND e.subject_id=p_subject_id AND r.state IN ('queued','waiting','claimed','running'))
+        ORDER BY w.id FOR UPDATE;
+    PERFORM 1 FROM public.automation_workflow_runs r JOIN private.automation_workflow_events e
+        ON e.studio_id=r.studio_id AND e.id=r.event_id
+        WHERE r.studio_id=p_studio_id AND e.subject_kind=p_subject_kind AND e.subject_id=p_subject_id
+            AND r.state IN ('queued','waiting','claimed','running') ORDER BY r.id FOR UPDATE OF r;
+    UPDATE public.automation_workflow_runs r SET state='cancelled',claim_token=NULL,lease_expires_at=NULL,
+        revision=r.revision+1,reason=p_reason,updated_at=p_at FROM private.automation_workflow_events e
+        WHERE e.studio_id=r.studio_id AND e.id=r.event_id AND r.studio_id=p_studio_id
+            AND e.subject_kind=p_subject_kind AND e.subject_id=p_subject_id
+            AND r.state IN ('queued','waiting','claimed','running');
+END $$;
+
+CREATE FUNCTION public.mutate_lead_trial_appointment_v1(
+    p_studio_id UUID,p_actor_id UUID,p_lead_id UUID,p_appointment_id UUID,p_operation_id UUID,p_expected_revision BIGINT,p_request JSONB
+) RETURNS JSONB LANGUAGE plpgsql VOLATILE SECURITY INVOKER SET search_path='' AS $$
+DECLARE lead public.leads; old public.lead_trial_appointments; changed public.lead_trial_appointments;
+    receipt private.automation_command_operations; program public.programs;
+    v_request JSONB:=p_request; v_fingerprint TEXT; v_command TEXT; v_result JSONB; v_at TIMESTAMPTZ;
+    v_replay BOOLEAN; v_cancel BOOLEAN; v_stage TEXT; k TEXT; v UUID;
+BEGIN
+    IF p_studio_id IS NULL OR p_actor_id IS NULL THEN
+        RAISE EXCEPTION USING ERRCODE='42501',MESSAGE='AUTOMATION_ADMIN_REQUIRED';
+    END IF;
+    -- Operational clear takes the exclusive gate before its Auth/staff locks.
+    IF NOT pg_catalog.pg_try_advisory_xact_lock_shared(pg_catalog.hashtextextended('koaryu.local-plan-clear:'||p_studio_id::TEXT,0)) THEN
+        RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STUDIO_BUSY';
+    END IF;
+    PERFORM private.workflow_require_actor_v1(p_studio_id,p_actor_id);
+    IF p_operation_id IS NULL OR p_lead_id IS NULL OR
+        (p_appointment_id IS NULL AND p_expected_revision IS NOT NULL) OR
+        (p_appointment_id IS NOT NULL AND (p_expected_revision IS NULL OR p_expected_revision<1)) THEN
+        RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST';
+    END IF;
+    v_command:=CASE WHEN p_appointment_id IS NULL THEN 'trial.create' ELSE 'trial.update' END;
+    PERFORM pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended('automation.operation:'||p_studio_id::TEXT||':'||p_operation_id::TEXT,0));
+    SELECT * INTO receipt FROM private.automation_command_operations WHERE studio_id=p_studio_id AND operation_id=p_operation_id;
+    v_replay:=FOUND;
+    BEGIN
+        IF p_appointment_id IS NULL THEN
+            IF NOT private.workflow_json_keys_v1(v_request,ARRAY['starts_at','ends_at','timezone','location','program_id'],ARRAY['starts_at','ends_at','timezone']) THEN
+                RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST';
+            END IF;
+            v_request:=jsonb_build_object('location','')||v_request;
+        ELSIF NOT private.workflow_json_keys_v1(v_request,ARRAY['starts_at','ends_at','timezone','location','program_id','status']) OR v_request='{}' THEN
+            RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST';
+        END IF;
+        FOREACH k IN ARRAY ARRAY['starts_at','ends_at'] LOOP
+            IF v_request ? k THEN v_request:=jsonb_set(v_request,ARRAY[k],to_jsonb(private.automation_utc_text_v1(private.automation_instant_v1(v_request->k)))); END IF;
+        END LOOP;
+        IF v_request ? 'timezone' THEN v_request:=jsonb_set(v_request,'{timezone}',to_jsonb(private.automation_timezone_v1(v_request->'timezone'))); END IF;
+        IF v_request ? 'location' AND (jsonb_typeof(v_request->'location') IS DISTINCT FROM 'string' OR length(v_request->>'location')>240) THEN
+            RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST';
+        END IF;
+        IF v_request ? 'program_id' AND v_request->'program_id'<>'null'::JSONB THEN
+            IF jsonb_typeof(v_request->'program_id') IS DISTINCT FROM 'string' OR v_request->>'program_id' !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN
+                RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST';
+            END IF;
+            v:=(v_request->>'program_id')::UUID; v_request:=jsonb_set(v_request,'{program_id}',to_jsonb(v));
+        END IF;
+        IF v_request ? 'status' AND (jsonb_typeof(v_request->'status') IS DISTINCT FROM 'string'
+            OR v_request->>'status' NOT IN ('scheduled','completed','no_show','canceled')
+            OR (v_request->>'status'<>'scheduled' AND v_request-'status'<>'{}'::JSONB)) THEN
+            RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST';
+        END IF;
+    EXCEPTION WHEN SQLSTATE '22023' THEN
+        IF v_replay THEN RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_OPERATION_CONFLICT'; END IF;
+        RAISE;
+    END;
+    v_fingerprint:=private.workflow_hash_v1(jsonb_build_object('command',v_command,'studio_id',p_studio_id,
+        'actor_id',p_actor_id,'lead_id',p_lead_id,'appointment_id',p_appointment_id,
+        'expected_revision',p_expected_revision,'request',v_request));
+    IF v_replay THEN
+        IF receipt.actor_id<>p_actor_id OR receipt.command<>v_command OR receipt.request_fingerprint<>v_fingerprint THEN
+            RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_OPERATION_CONFLICT';
+        END IF;
+        RETURN jsonb_build_object('payload',receipt.result,'operation_id',p_operation_id,'replayed',true);
+    END IF;
+    SELECT * INTO lead FROM public.leads WHERE studio_id=p_studio_id AND id=p_lead_id FOR UPDATE;
+    IF NOT FOUND THEN RAISE EXCEPTION USING ERRCODE='P0002',MESSAGE='AUTOMATION_NOT_FOUND'; END IF;
+    IF p_appointment_id IS NULL THEN
+        changed.studio_id:=p_studio_id; changed.lead_id:=p_lead_id; changed.status:='scheduled'; changed.revision:=1;
+        changed.program_id:=lead.program_id; changed.created_by:=p_actor_id;
+    ELSE
+        SELECT * INTO old FROM public.lead_trial_appointments
+            WHERE studio_id=p_studio_id AND lead_id=p_lead_id AND id=p_appointment_id FOR UPDATE;
+        IF NOT FOUND THEN RAISE EXCEPTION USING ERRCODE='P0002',MESSAGE='AUTOMATION_NOT_FOUND'; END IF;
+        IF old.revision<>p_expected_revision THEN RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_REVISION_CONFLICT'; END IF;
+        IF old.status<>'scheduled' OR old.revision=9223372036854775807 THEN
+            RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STATE_CONFLICT';
+        END IF;
+        changed:=old;
+    END IF;
+    changed:=jsonb_populate_record(changed,v_request);
+    v_cancel:=changed.status='canceled';
+    IF NOT v_cancel AND (lead.converted_student_id IS NOT NULL OR lead.stage IN ('enrolled','closed_lost')) THEN
+        RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STATE_CONFLICT';
+    END IF;
+    IF NOT v_cancel AND changed.program_id IS NOT NULL THEN
+        BEGIN
+            SELECT * INTO program FROM public.programs WHERE studio_id=p_studio_id AND id=changed.program_id FOR SHARE NOWAIT;
+            IF NOT FOUND THEN RAISE EXCEPTION USING ERRCODE='P0002',MESSAGE='AUTOMATION_NOT_FOUND'; END IF;
+            IF program.archived_at IS NOT NULL THEN RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STATE_CONFLICT'; END IF;
+        EXCEPTION WHEN lock_not_available THEN
+            RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STUDIO_BUSY';
+        END;
+    END IF;
+    IF p_appointment_id IS NOT NULL THEN
+        IF ROW(changed.starts_at,changed.ends_at,changed.timezone,changed.location,changed.program_id,changed.status)
+            IS NOT DISTINCT FROM ROW(old.starts_at,old.ends_at,old.timezone,old.location,old.program_id,old.status) THEN
+            RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STATE_CONFLICT';
+        END IF;
+        PERFORM private.workflow_cancel_source_pending_v1(p_studio_id,'trial',old.id,clock_timestamp(),'trial_changed');
+    END IF;
+    -- Source, workflow and run acquisition can all wait. Validate the moving
+    -- clock after those waits. Rejection rolls pending cancellation back too.
+    v_at:=clock_timestamp();
+    IF changed.ends_at<=changed.starts_at OR changed.ends_at-changed.starts_at>INTERVAL '24 hours' THEN
+        RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST';
+    END IF;
+    IF (changed.status='scheduled' AND changed.starts_at<=v_at)
+        OR (changed.status='completed' AND v_at<changed.starts_at)
+        OR (changed.status='no_show' AND v_at<changed.ends_at) THEN
+        RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STATE_CONFLICT';
+    END IF;
+    IF p_appointment_id IS NULL THEN
+        IF EXISTS(SELECT 1 FROM public.lead_trial_appointments WHERE studio_id=p_studio_id AND lead_id=p_lead_id AND status='scheduled') THEN
+            RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STATE_CONFLICT';
+        END IF;
+        changed.id:=gen_random_uuid(); changed.created_at:=v_at; changed.updated_at:=v_at;
+        INSERT INTO public.lead_trial_appointments SELECT changed.*;
+    ELSE
+        UPDATE public.lead_trial_appointments SET starts_at=changed.starts_at,ends_at=changed.ends_at,timezone=changed.timezone,
+            location=changed.location,program_id=changed.program_id,status=changed.status,revision=old.revision+1,updated_at=v_at
+            WHERE studio_id=p_studio_id AND id=old.id RETURNING * INTO changed;
+    END IF;
+    v_stage:=CASE WHEN lead.stage='inquiry' AND changed.status='scheduled' THEN 'trial_scheduled'
+        WHEN lead.stage='trial_scheduled' AND changed.status='completed' THEN 'trial_completed' ELSE lead.stage END;
+    IF v_stage<>lead.stage THEN
+        UPDATE public.leads SET stage=v_stage WHERE studio_id=p_studio_id AND id=p_lead_id;
+        INSERT INTO public.lead_activities(studio_id,lead_id,activity_type,description,created_by)
+            VALUES(p_studio_id,p_lead_id,'stage_change','Stage changed from '||lead.stage||' to '||v_stage,p_actor_id);
+    END IF;
+    INSERT INTO public.lead_activities(studio_id,lead_id,activity_type,description,created_by)
+        VALUES(p_studio_id,p_lead_id,'meeting','Trial appointment '||changed.id::TEXT||' '||changed.status||' at '||private.automation_utc_text_v1(changed.starts_at),p_actor_id);
+    INSERT INTO public.audit_logs(studio_id,actor_id,action,entity_type,entity_id,metadata)
+        VALUES(p_studio_id,p_actor_id,v_command,'trial_appointment',changed.id,
+            jsonb_build_object('lead_id',p_lead_id,'revision',changed.revision,'status',changed.status,
+                'starts_at',private.automation_utc_text_v1(changed.starts_at),'ends_at',private.automation_utc_text_v1(changed.ends_at)));
+    v_result:=private.trial_appointment_payload_v1(changed);
+    INSERT INTO private.automation_command_operations(studio_id,operation_id,actor_id,command,request_fingerprint,entity_type,entity_id,result,committed_at)
+        VALUES(p_studio_id,p_operation_id,p_actor_id,v_command,v_fingerprint,'trial_appointment',changed.id,v_result,v_at);
+    RETURN jsonb_build_object('payload',v_result,'operation_id',p_operation_id,'replayed',false);
+END $$;
+
+CREATE FUNCTION public.list_lead_trial_appointments_v1(p_studio_id UUID,p_actor_id UUID,p_lead_id UUID,p_limit INTEGER DEFAULT 50,p_cursor JSONB DEFAULT NULL)
+RETURNS JSONB LANGUAGE plpgsql VOLATILE SECURITY INVOKER SET search_path='' AS $$
+DECLARE v_at TIMESTAMPTZ; v_id UUID; v_items JSONB:='[]'; v_next JSONB; r RECORD; v_count INTEGER:=0;
+BEGIN
+    PERFORM private.workflow_require_actor_v1(p_studio_id,p_actor_id);
+    PERFORM 1 FROM public.leads WHERE studio_id=p_studio_id AND id=p_lead_id FOR KEY SHARE;
+    IF NOT FOUND THEN RAISE EXCEPTION USING ERRCODE='P0002',MESSAGE='AUTOMATION_NOT_FOUND'; END IF;
+    IF p_limit IS NULL OR p_limit NOT BETWEEN 1 AND 100 THEN RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST'; END IF;
+    IF p_cursor IS NOT NULL THEN
+        IF NOT private.workflow_json_keys_v1(p_cursor,ARRAY['created_at','id'],ARRAY['created_at','id'])
+            OR jsonb_typeof(p_cursor->'id') IS DISTINCT FROM 'string'
+            OR p_cursor->>'id' !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN
+            RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST';
+        END IF;
+        v_at:=private.automation_instant_v1(p_cursor->'created_at'); v_id:=(p_cursor->>'id')::UUID;
+    END IF;
+    -- Pass the complete row to an immutable serializer; the DTO and cursor use
+    -- this one query snapshot even while another session updates appointments.
+    FOR r IN SELECT a.id,a.created_at,private.trial_appointment_payload_v1(a) payload FROM public.lead_trial_appointments a
+        WHERE a.studio_id=p_studio_id AND a.lead_id=p_lead_id AND (p_cursor IS NULL OR (a.created_at,a.id)<(v_at,v_id))
+        ORDER BY a.created_at DESC,a.id DESC LIMIT p_limit+1 LOOP
+        v_count:=v_count+1;
+        IF v_count>p_limit THEN RETURN jsonb_build_object('payload',jsonb_build_object('items',v_items,'next_cursor',v_next,'has_more',true)); END IF;
+        v_items:=v_items||jsonb_build_array(r.payload);
+        v_next:=jsonb_build_object('created_at',private.automation_utc_text_v1(r.created_at),'id',r.id);
+    END LOOP;
+    RETURN jsonb_build_object('payload',jsonb_build_object('items',v_items,'next_cursor',NULL,'has_more',false));
+END $$;
+ALTER TABLE public.lead_trial_appointments OWNER TO postgres;
+ALTER TABLE public.lead_trial_appointments ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE public.lead_trial_appointments FROM PUBLIC,anon,authenticated,service_role;
+GRANT SELECT,INSERT,UPDATE ON TABLE public.lead_trial_appointments TO service_role;
+CREATE POLICY reject_client_access ON public.lead_trial_appointments AS RESTRICTIVE FOR ALL TO anon,authenticated USING(false) WITH CHECK(false);
+CREATE POLICY reject_ambiguous_staff_membership_access ON public.lead_trial_appointments AS RESTRICTIVE FOR ALL TO authenticated
+    USING((SELECT private.has_unambiguous_studio_membership())) WITH CHECK((SELECT private.has_unambiguous_studio_membership()));
+DO $trial_privileges$
+DECLARE r RECORD;
+BEGIN
+    FOR r IN SELECT p.oid::REGPROCEDURE identity FROM pg_catalog.pg_proc p JOIN pg_catalog.pg_namespace n ON n.oid=p.pronamespace
+        WHERE (n.nspname='private' AND p.proname IN ('automation_instant_v1','automation_utc_text_v1','automation_timezone_v1','trial_appointment_payload_v1','workflow_cancel_source_pending_v1'))
+        OR (n.nspname='public' AND p.proname IN ('mutate_lead_trial_appointment_v1','list_lead_trial_appointments_v1')) LOOP
+        EXECUTE format('ALTER FUNCTION %s OWNER TO postgres',r.identity);
+        EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC,anon,authenticated,service_role',r.identity);
+        EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO service_role',r.identity);
+    END LOOP;
+END;
+$trial_privileges$;

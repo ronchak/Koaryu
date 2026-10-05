@@ -1118,33 +1118,78 @@ FROM public.automation_workflow_activations WHERE workflow_id='{ids["workflow"]}
         )
         passed("rolled-back operation permits later retry without ghost receipt")
 
-        ids = fixture()
-        program = str(uuid4())
-        sql(
-            f"INSERT INTO public.programs(id,studio_id,name) VALUES('{program}','{ids['studio']}','Clock fixture');"
-        )
-        graph = deepcopy(simple)
-        graph["nodes"][0]["config"]["program_id"] = program
-        ids["workflow"] = json.loads(sql(create(ids, graph=graph)))["payload"]["id"]
-        first = session(
-            "program_parent_owner",
-            f"SELECT jsonb_build_object('held',id) FROM public.programs WHERE id='{program}' FOR UPDATE;",
-            hold=True,
-        )
-        ready(first)
-        second = session("publish_program_wait", command(ids, "publish", 1))
-        blocked(first, second)
-        observed_after_wait = sql("SELECT clock_timestamp();")
-        release(first)
-        finished(second)
-        require(
-            sql(
-                f"SELECT published_at >= {quote(observed_after_wait)}::timestamptz FROM public.automation_workflows WHERE id='{ids['workflow']}';"
+        for parent_kind in ("program", "rank"):
+            ids = fixture()
+            parent = str(uuid4())
+            graph = deepcopy(simple)
+            if parent_kind == "program":
+                table = "programs"
+                sql(
+                    f"INSERT INTO public.programs(id,studio_id,name) VALUES('{parent}','{ids['studio']}','Busy fixture');"
+                )
+                graph["nodes"][0]["config"]["program_id"] = parent
+            else:
+                table = "belt_ranks"
+                ladder = str(uuid4())
+                sql(
+                    f"INSERT INTO public.belt_ladders(id,studio_id,name) VALUES('{ladder}','{ids['studio']}','Busy fixture');"
+                    f"INSERT INTO public.belt_ranks(id,studio_id,ladder_id,name) VALUES('{parent}','{ids['studio']}','{ladder}','Rank');"
+                )
+                graph["nodes"][0]["config"]["event_type"] = "student.promoted"
+                graph["nodes"].insert(
+                    1,
+                    {
+                        "id": "rank",
+                        "type": "condition",
+                        "config": {
+                            "field": "promotion.rank_id",
+                            "operator": "eq",
+                            "value": parent,
+                        },
+                    },
+                )
+                graph["edges"] = [
+                    {"id": "next", "source": "start", "target": "rank", "port": "next"},
+                    {"id": "yes", "source": "rank", "target": "end", "port": "yes"},
+                    {"id": "no", "source": "rank", "target": "end", "port": "no"},
+                ]
+            ids["workflow"] = json.loads(sql(create(ids, graph=graph)))["payload"]["id"]
+            first = session(
+                f"{parent_kind}_parent_owner",
+                f"SELECT jsonb_build_object('held',id) FROM public.{table} WHERE id='{parent}' FOR UPDATE;",
+                hold=True,
             )
-            == "t",
-            "Publication timestamp preceded referenced-parent wait",
-        )
-        passed("publication clock sampled after referenced program lock")
+            ready(first)
+            operation = str(uuid4())
+            statement = command(ids, "publish", 1, operation=operation)
+            second = session(f"publish_{parent_kind}_busy", statement)
+            finished(second, "AUTOMATION_STUDIO_BUSY")
+            require(
+                sql(
+                    f"SELECT revision=1 AND published_version_id IS NULL FROM public.automation_workflows WHERE id='{ids['workflow']}';"
+                )
+                == "t",
+                "Busy publication changed workflow",
+            )
+            require(
+                sql(
+                    f"SELECT count(*) FROM private.automation_command_operations WHERE operation_id='{operation}';"
+                )
+                == "0",
+                "Busy publication left a receipt",
+            )
+            release(first)
+            result_after_release = finished(
+                session(f"publish_{parent_kind}_explicit_retry", statement)
+            )
+            require(
+                result_after_release["payload"]["revision"] == 2
+                and not result_after_release["replayed"],
+                "Explicit retry did not publish once",
+            )
+            passed(
+                f"publication {parent_kind} contention fails busy without writes and explicit retry succeeds"
+            )
 
         ids = fixture()
         first = session("admission_owner", create(ids), hold=True)
