@@ -274,7 +274,7 @@ VALUES('{ids["recipient"]}','{ids["studio"]}','{ids["event"]}','{ids["student"]}
         return BeltTestRecipientResponse.model_validate(
             json.loads(
                 sql(
-                    f"SELECT to_jsonb(b) FROM public.belt_test_recipients b WHERE id='{ids['recipient']}';"
+                    f"SELECT private.belt_test_recipient_payload_v1(b) FROM public.belt_test_recipients b WHERE id='{ids['recipient']}';"
                 )
             )
         )
@@ -447,7 +447,7 @@ END $proof$; SELECT '{{}}'::jsonb;"""
         revoked = BeltTestRecipientResponse.model_validate(
             json.loads(
                 sql(
-                    f"SELECT to_jsonb(b) FROM public.belt_test_recipients b WHERE id='{ids['recipient']}';"
+                    f"SELECT private.belt_test_recipient_payload_v1(b) FROM public.belt_test_recipients b WHERE id='{ids['recipient']}';"
                 )
             )
         )
