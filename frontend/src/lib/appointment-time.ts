@@ -212,6 +212,7 @@ export async function resolveAppointmentTime(
   const { Temporal } = await import("@js-temporal/polyfill").catch(() => {
     throw new Error("Appointment time conversion could not load. Try again.");
   });
+  let resolvedTimezone: string | null = null;
   const occurrences = (endpoint: "start" | "end"): readonly AppointmentOccurrence[] => {
     const wall = Temporal.PlainDateTime.from(
       `${fields[`${endpoint}Date`]}T${fields[`${endpoint}Time`]}:00`,
@@ -220,6 +221,9 @@ export async function resolveAppointmentTime(
     for (const disambiguation of ["earlier", "later"] as const) {
       const candidate = wall.toZonedDateTime(fields.timezone, { disambiguation });
       if (!candidate.toPlainDateTime().equals(wall)) continue;
+      if (resolvedTimezone !== null && resolvedTimezone !== candidate.timeZoneId)
+        throw new Error("Appointment timezone identities do not match.");
+      resolvedTimezone = candidate.timeZoneId;
       const instant = candidate.toInstant().toString({ smallestUnit: "second" });
       if (!isAppointmentInstant(instant)) {
         issues.push({
@@ -270,9 +274,9 @@ export async function resolveAppointmentTime(
   };
   const starts_at = chosen(start, draft.startChoice, "startTime"),
     ends_at = chosen(end, draft.endChoice, "endTime");
-  if (issues.length) return invalid(issues);
+  if (issues.length || resolvedTimezone === null) return invalid(issues);
   if (!starts_at || !ends_at) return Object.freeze({ status: "needs_choice", start, end });
-  const schedule = Object.freeze({ starts_at, ends_at, timezone: fields.timezone });
+  const schedule = Object.freeze({ starts_at, ends_at, timezone: resolvedTimezone });
   return isAppointmentSchedule(schedule)
     ? Object.freeze({ status: "resolved", schedule })
     : invalid([
