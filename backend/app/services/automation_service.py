@@ -3,19 +3,23 @@
 from __future__ import annotations
 
 import math
+import re
 import time
 from collections.abc import Callable
+from dataclasses import dataclass, field
 from datetime import datetime
 from types import SimpleNamespace
 from typing import Any
-from uuid import NAMESPACE_URL, uuid5
+from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from fastapi import HTTPException
 from postgrest._sync.request_builder import SyncRPCFilterRequestBuilder
 from postgrest.exceptions import APIError
+from postgrest.utils import SyncClient
 from pydantic import BaseModel, ValidationError
 
 from app.db.supabase import close_supabase_client, create_supabase_client
+from app.schemas import workflow_dispatch as dispatch
 from app.schemas.automation import (
     MissedClassActivityResponse,
     MissedClassPreviewRequest,
@@ -25,6 +29,7 @@ from app.schemas.automation import (
     MissedClassRuleUpdate,
     MissedClassSettingsResponse,
 )
+from app.services import workflow_capabilities
 from app.services.automation_email import (
     DeliveryResult,
     EmailMessage,
@@ -33,7 +38,10 @@ from app.services.automation_email import (
     email_delivery_status,
     normalize_email_address,
     render_missed_class_email,
+    sender_identity_binding,
 )
+from app.services.automation_email_credentials import PROVIDER_KEY
+from app.services.microsoft_graph_email import PreparedEmailSender
 from app.services.studio_scope import get_platform_subscription_access
 
 WORK_BUDGET_SECONDS = 25.0
@@ -187,7 +195,12 @@ class _WorkerBudget:
         self.reserve = SETTLEMENT_RESERVE_SECONDS
 
     def check(self, seconds: float = 0.0) -> None:
-        if self.deadline - self.clock() <= self.reserve + seconds:
+        now = self.clock()
+        if (
+            not math.isfinite(now)
+            or not math.isfinite(self.deadline)
+            or self.deadline - now <= self.reserve + seconds
+        ):
             raise _BudgetExhausted
 
 
@@ -283,9 +296,18 @@ class _WorkerClient:
         self.client = client
         self.budget = budget
 
+    @staticmethod
+    def _worker_query(query: Any):
+        session = getattr(query, "session", None)
+        if isinstance(session, SyncClient):
+            # This dedicated worker lane must not replay a mutation or forward
+            # its service key to a redirected endpoint. Keep ordinary SDK parsing.
+            session.follow_redirects = False
+        return query
+
     def rpc(self, name: str, params: dict):
         self.budget.check(DATABASE_TIMEOUT_SECONDS)
-        query = self.client.rpc(name, params)
+        query = self._worker_query(self.client.rpc(name, params))
         if name == "begin_missed_class_automation_v1" and isinstance(
             query, SyncRPCFilterRequestBuilder
         ):
@@ -294,7 +316,7 @@ class _WorkerClient:
 
     def table(self, name: str):
         self.budget.check(DATABASE_TIMEOUT_SECONDS)
-        return _BudgetQuery(self.client.table(name), self.budget)
+        return _BudgetQuery(self._worker_query(self.client.table(name)), self.budget)
 
 
 def _message(snapshot: dict, config: Any) -> EmailMessage:
@@ -323,16 +345,188 @@ def _message(snapshot: dict, config: Any) -> EmailMessage:
     )
 
 
-def _settle_error_code(result: DeliveryResult) -> str | None:
-    if result.outcome == "accepted":
+def _dispatch_rpc(client: Any, name: str, request: dispatch.DispatchModel, result_type):
+    """Parse payload through the installed SDK and verify every request identity echo."""
+    try:
+        data = client.rpc(name, request.model_dump(mode="json")).execute().data
+        result = dispatch.Envelope[result_type].model_validate(data).payload
+        for key in (
+            "studio_id",
+            "run_id",
+            "claim_token",
+            "node_id",
+            "attempt_id",
+            "delivery_id",
+            "preparation_id",
+        ):
+            if (
+                hasattr(result, key)
+                and hasattr(request, "p_" + key)
+                and getattr(result, key) != getattr(request, "p_" + key)
+            ):
+                raise ValueError("invalid_dispatch_identity")
+        if (
+            isinstance(request, (dispatch.SettleRequest, dispatch.LegacySettleRequest))
+            and result.updated
+        ):
+            permitted = {
+                "accepted": {"accepted", "unknown"},
+                "retryable_failure": {"failed", "retry_wait", "unknown"},
+                "permanent_failure": {"failed", "retry_wait", "unknown"},
+                "unknown": {"unknown"},
+            }[request.p_result.outcome]
+            if result.state not in permitted:
+                raise ValueError("inconsistent_dispatch_settlement_truth")
+        if isinstance(result, dispatch.Claims) and len(result.claims) > request.p_limit:
+            raise ValueError("invalid_dispatch_claim_count")
+        return result
+    except _BudgetExhausted:
+        raise
+    except Exception:  # noqa: BLE001 - No raw SQL/SDK diagnostics escape this boundary.
+        raise ValueError("invalid_automation_dispatch_result") from None
+
+
+def _require_dispatch_schema(client: Any, budget: _WorkerBudget) -> None:
+    budget.check(DATABASE_TIMEOUT_SECONDS)
+    ready = workflow_capabilities._schema_ready(client)
+    # Readiness deliberately swallows database exceptions, including budget exits.
+    budget.check(DATABASE_TIMEOUT_SECONDS)
+    if not ready:
+        raise ValueError("automation_schema_unavailable")
+
+
+def _delivery_result(result: Any, *, expected_revision: int | None = None) -> dispatch.Delivery:
+    """Keep observed truth; malformed or unproved submission metadata is unknown."""
+    values = (
+        {key: getattr(result, key, None) for key in dispatch.Delivery.model_fields}
+        if isinstance(result, DeliveryResult)
+        else {}
+    )
+    revision = values.get("credential_revision")
+    safe_revision = revision if type(revision) is int and 0 < revision < 2**63 else None
+    request_id = values.get("provider_request_id")
+    safe_request_id = (
+        request_id
+        if type(request_id) is str and re.fullmatch(r"[A-Za-z0-9_.:-]{1,200}", request_id)
+        else None
+    )
+    values["provider_request_id"] = safe_request_id
+    code = values.get("error_code")
+    if values.get("outcome") == "accepted":
+        values["error_code"] = None
+    elif type(code) is not str or code not in dispatch.TRANSPORT_CODES:
+        values["error_code"] = "provider_unavailable"
+    try:
+        parsed = dispatch.Delivery.model_validate(values)
+        if (
+            safe_revision is not None
+            and expected_revision is not None
+            and safe_revision != expected_revision
+        ):
+            raise ValueError("different_used_revision")
+        if parsed.outcome != "unknown":
+            return parsed
+    except (TypeError, ValueError):
+        pass
+    return dispatch.Delivery(
+        outcome="unknown",
+        error_code="provider_submission_unknown",
+        provider_request_id=safe_request_id,
+        retry_after_seconds=None,
+        submission_evidence="unknown",
+        failure_scope="unclassified",
+        credential_revision=safe_revision
+        if expected_revision is None or safe_revision == expected_revision
+        else None,
+    )
+
+
+@dataclass(frozen=True)
+class _PreparedGrant:
+    handle: PreparedEmailSender = field(repr=False)
+    claim: dispatch.PreparationClaim = field(repr=False)
+
+    def params(self) -> dict:
+        return {
+            "p_preparation_id": self.claim.preparation_id,
+            "p_preparation_token": self.claim.preparation_token,
+            "p_probe_token": self.claim.probe_token,
+        }
+
+
+def _prepare_sender(
+    client: Any, budget: _WorkerBudget, transport: Any, config: Any
+) -> _PreparedGrant | None:
+    binding = sender_identity_binding(config)
+    claim = _dispatch_rpc(
+        client,
+        "claim_automation_sender_preparation_v1",
+        dispatch.PreparationClaimRequest(
+            p_provider_key=PROVIDER_KEY,
+            p_preparation_id=uuid4(),
+            p_sender_binding=binding,
+        ),
+        dispatch.PreparationClaim,
+    )
+    if not claim.allowed:
         return None
-    return {
-        "provider_throttled": "rate_limited",
-        "token_refresh_throttled": "rate_limited",
-        "provider_connection_failed": "connection_failed",
-        "authentication_required": "authentication_required",
-        "provider_rejected": "provider_rejected",
-    }.get(result.error_code, "unavailable")
+    budget.check(DATABASE_TIMEOUT_SECONDS)
+    try:
+        prepared = transport.prepare(deadline=budget.deadline - SETTLEMENT_RESERVE_SECONDS)
+    except _BudgetExhausted:
+        raise
+    except Exception:  # noqa: BLE001 - Preparation is never a submission.
+        prepared = None
+    budget.check(DATABASE_TIMEOUT_SECONDS)
+    if isinstance(prepared, PreparedEmailSender):
+        evidence = dispatch.PreparationResult(
+            outcome="prepared",
+            credential_revision=prepared.envelope.revision,
+            sender_binding=binding,
+            safe_reason=None,
+            retry_after_seconds=None,
+        )
+        if prepared.sender_binding != binding:
+            raise ValueError("invalid_prepared_sender_binding")
+    else:
+        failure = _delivery_result(prepared)
+        proven = failure.submission_evidence == "not_submitted" and failure.failure_scope in {
+            "sender_auth",
+            "sender_transient",
+        }
+        evidence = dispatch.PreparationResult(
+            outcome="sender_auth"
+            if proven and failure.failure_scope == "sender_auth"
+            else "sender_transient",
+            credential_revision=None,
+            sender_binding=binding,
+            safe_reason=failure.error_code
+            if proven and failure.error_code
+            else "provider_unavailable",
+            retry_after_seconds=failure.retry_after_seconds
+            if proven
+            and failure.retry_after_seconds is not None
+            and failure.retry_after_seconds <= 3600
+            else None,
+        )
+    settled = _dispatch_rpc(
+        client,
+        "settle_automation_sender_preparation_v1",
+        dispatch.PreparationSettleRequest(
+            p_preparation_id=claim.preparation_id,
+            p_preparation_token=claim.preparation_token,
+            p_result=evidence,
+        ),
+        dispatch.PreparationSettled,
+    )
+    if settled.outcome != "prepared":
+        return None
+    if not isinstance(prepared, PreparedEmailSender) or any(
+        getattr(settled, key) != getattr(claim, key)
+        for key in ("generation", "preparation_token", "probe_token", "lease_expires_at")
+    ):
+        raise ValueError("invalid_preparation_settlement")
+    return _PreparedGrant(prepared, claim)
 
 
 def _stop_dispatch(result: DeliveryResult) -> bool:
@@ -402,8 +596,9 @@ def process_due_missed_class_automations(
             postgrest_client_timeout=DATABASE_TIMEOUT_SECONDS
         )
         client = _WorkerClient(raw_client, budget)
+        _require_dispatch_schema(client, budget)
         budget.check(DATABASE_TIMEOUT_SECONDS)
-        if email_delivery_status(settings, client).get("can_enable") is not True:
+        if email_delivery_status(settings, client).get("configured") is not True:
             return MissedClassProcessResponse(**counts)
         budget.check()
         transport = (transport_factory or build_email_transport)(settings, client)
@@ -466,22 +661,46 @@ def process_due_missed_class_automations(
                 counts["processed"] += 1
                 counts["skipped"] += 1
                 continue
-            try:
-                begun = _rpc(
+            prepared = _prepare_sender(client, budget, transport, config)
+            if prepared is None:
+                deferred = _rpc(
                     client,
-                    "begin_missed_class_automation_v1",
-                    {**identity, "p_allowed_recipients": allowed},
+                    "defer_missed_class_automation_studio_v1",
+                    {
+                        **identity,
+                        "p_reason": "unavailable",
+                        "p_allowed_recipients": allowed,
+                    },
                 )
+                _validate_deferral(deferred)
+                counts["has_more"] = _has_more(deferred)
+                counts["processed"] += 1
+                counts["skipped"] += 1
+                break
+            try:
+                begun = _dispatch_rpc(
+                    client,
+                    "begin_missed_class_automation_v2",
+                    dispatch.LegacyBeginRequest(
+                        **identity,
+                        **prepared.params(),
+                        p_allowed_recipients=allowed,
+                    ),
+                    dispatch.LegacyBegun,
+                )
+                if begun.ready and (
+                    begun.credential_revision != prepared.handle.envelope.revision
+                    or begun.sender_binding != prepared.handle.sender_binding
+                ):
+                    raise ValueError("invalid_legacy_prepared_identity")
             except _BudgetExhausted:
                 raise
-            except Exception:  # noqa: BLE001 - Any lost response can hide a committed begin.
-                # A lost begin response may have committed sending. Leave its lease
-                # for SQL recovery; a second begin or send is unsafe.
+            except Exception:  # noqa: BLE001 - A lost response can hide a committed begin.
                 counts["processed"] += 1
                 counts["unknown"] += 1
                 break
-            if begun.get("ready") is not True:
-                disposition = "unknown" if begun.get("state") == "unknown" else "skipped"
+            if not begun.ready:
+                disposition = "unknown" if begun.state in {"unknown", "sending"} else "skipped"
                 counts["processed"] += 1
                 counts[disposition] += 1
                 if disposition == "unknown":
@@ -489,45 +708,43 @@ def process_due_missed_class_automations(
                 continue
             try:
                 budget.check()
-                message = _message(begun["message"], config)
+                message = _message(begun.message.model_dump(mode="json"), config)
                 budget.check()
             except _BudgetExhausted:
-                result = DeliveryResult("retryable_failure", "send_budget_exhausted")
+                result = DeliveryResult(
+                    "retryable_failure",
+                    "send_budget_exhausted",
+                    submission_evidence="not_submitted",
+                    failure_scope="sender_transient",
+                )
             except (KeyError, TypeError, ValueError):
-                result = DeliveryResult("permanent_failure", "invalid_message")
+                result = DeliveryResult(
+                    "permanent_failure",
+                    "invalid_message",
+                    submission_evidence="not_submitted",
+                    failure_scope="message",
+                )
             else:
                 try:
-                    result = transport.send(message, deadline=deadline - SETTLEMENT_RESERVE_SECONDS)
-                    if not isinstance(result, DeliveryResult) or result.outcome not in {
-                        "accepted",
-                        "retryable_failure",
-                        "permanent_failure",
-                        "unknown",
-                    }:
-                        result = DeliveryResult("unknown", "provider_submission_unknown")
+                    result = transport.send_prepared(
+                        message, prepared.handle, deadline=deadline - SETTLEMENT_RESERVE_SECONDS
+                    )
                 except Exception:  # noqa: BLE001 - Submission may already have happened.
-                    result = DeliveryResult("unknown", "provider_submission_unknown")
+                    result = None
+            result = _delivery_result(result, expected_revision=prepared.handle.envelope.revision)
             budget.reserve = 0.0
             try:
-                settled = _rpc(
+                settled = _dispatch_rpc(
                     client,
-                    "settle_missed_class_automation_v1",
-                    {
+                    "settle_missed_class_automation_v2",
+                    dispatch.LegacySettleRequest(
                         **identity,
-                        "p_outcome": result.outcome,
-                        "p_error_code": _settle_error_code(result),
-                        "p_provider_request_id": result.provider_request_id,
-                        "p_retry_after_seconds": result.retry_after_seconds,
-                    },
+                        p_attempt_id=begun.attempt_id,
+                        p_result=result,
+                    ),
+                    dispatch.LegacySettled,
                 )
-                disposition = settled.get("state")
-                if settled.get("updated") is not True or disposition not in {
-                    "accepted",
-                    "retry_wait",
-                    "failed",
-                    "unknown",
-                }:
-                    disposition = "unknown"
+                disposition = settled.state if settled.updated else "unknown"
             except Exception:  # noqa: BLE001 - Never resend after uncertain settlement.
                 disposition = "unknown"
             finally:
