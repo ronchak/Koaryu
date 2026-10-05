@@ -367,7 +367,10 @@ def test_partial_projection_opt_in_is_off_by_default_in_endpoint_and_service():
 
 
 @pytest.mark.parametrize("allow_partial", [False, True])
-def test_bootstrap_endpoint_forwards_partial_opt_in_without_changing_private_headers(allow_partial):
+@pytest.mark.parametrize("bounded_dashboard", [False, True])
+def test_bootstrap_endpoint_forwards_partial_opt_in_without_changing_private_headers(
+    allow_partial, bounded_dashboard
+):
     from fastapi import Response
     from app.api.v1.endpoints.dashboard import get_dashboard_bootstrap
 
@@ -395,6 +398,7 @@ def test_bootstrap_endpoint_forwards_partial_opt_in_without_changing_private_hea
                 user_id="partial-user",
                 requested_studio_id="partial-studio",
                 supabase=provider,
+                bounded_dashboard=bounded_dashboard,
             )
         )
     bootstrap.assert_awaited_once_with(
@@ -403,6 +407,7 @@ def test_bootstrap_endpoint_forwards_partial_opt_in_without_changing_private_hea
         provider_owned=True,
         allow_partial=allow_partial,
         view="dashboard",
+        bounded_dashboard=bounded_dashboard,
     )
     assert result is payload
     assert "private" in response.headers["cache-control"]
@@ -454,17 +459,21 @@ def test_workspace_does_not_load_feature_projections_and_keeps_subscription_enfo
 
 
 @pytest.mark.parametrize(
-    "view,expected",
+    "view,bounded_dashboard,expected",
     [
-        ("students", ["programs", "students", "studio"]),
-        ("schedule", ["programs", "studio"]),
-        ("settings", ["programs", "studio"]),
-        ("leads", ["leads", "programs", "studio"]),
-        ("reports", ["leads", "programs", "studio"]),
-        ("training", ["belts", "programs", "studio"]),
+        ("dashboard", False, ["belts", "leads", "programs", "students", "studio"]),
+        ("dashboard", True, ["belts", "programs", "students", "studio"]),
+        ("students", False, ["programs", "students", "studio"]),
+        ("schedule", False, ["programs", "studio"]),
+        ("settings", False, ["programs", "studio"]),
+        ("leads", False, ["leads", "programs", "studio"]),
+        ("leads", True, ["leads", "programs", "studio"]),
+        ("reports", False, ["leads", "programs", "studio"]),
+        ("reports", True, ["leads", "programs", "studio"]),
+        ("training", False, ["belts", "programs", "studio"]),
     ],
 )
-def test_bootstrap_omits_unrelated_route_queries(view, expected):
+def test_bootstrap_omits_unrelated_route_queries(view, bounded_dashboard, expected):
     profile = AuthResponse(
         user=UserProfile(id="fixture-user", email="fixture@example.test"),
         staff_profiles_available=True,
@@ -505,7 +514,9 @@ def test_bootstrap_omits_unrelated_route_queries(view, expected):
         patch.object(service, "_timed_fetch_with_isolated_client", side_effect=fetch),
     ):
         result, _ = asyncio.run(
-            service.get_dashboard_bootstrap("fixture-user", provider_owned=True, view=view)
+            service.get_dashboard_bootstrap(
+                "fixture-user", provider_owned=True, view=view, bounded_dashboard=bounded_dashboard
+            )
         )
     assert sorted(labels) == expected
     assert result.students == []

@@ -24,6 +24,18 @@ class DashboardSummaryLeadCounts(BaseModel):
     due_today_leads: int = 0
 
 
+class DashboardSummaryLeadFollowUp(BaseModel):
+    id: str
+    first_name: str
+    last_name: str
+    follow_up_date: str
+
+
+class DashboardSummaryLeadFollowUps(BaseModel):
+    available: bool = False
+    rows: list[DashboardSummaryLeadFollowUp] = Field(default_factory=list, max_length=5)
+
+
 class DashboardSummaryScheduleCounts(BaseModel):
     today_sessions: int = 0
 
@@ -170,6 +182,7 @@ class DashboardSummaryResponse(BaseModel):
     emergency_contacts: Optional[DashboardSummaryEmergencyContacts] = None
     students: DashboardSummaryStudentCounts = Field(default_factory=DashboardSummaryStudentCounts)
     leads: DashboardSummaryLeadCounts = Field(default_factory=DashboardSummaryLeadCounts)
+    lead_follow_ups: Optional[DashboardSummaryLeadFollowUps] = None
     schedule: DashboardSummaryScheduleCounts = Field(default_factory=DashboardSummaryScheduleCounts)
     belts: DashboardSummaryBeltCounts = Field(default_factory=DashboardSummaryBeltCounts)
     inactivity: DashboardSummaryInactivityCounts = Field(
@@ -197,4 +210,6 @@ class DashboardSummaryResponse(BaseModel):
             data.pop("today_schedule", None)
         if self.emergency_contacts is None:
             data.pop("emergency_contacts", None)
+        if self.lead_follow_ups is None:
+            data.pop("lead_follow_ups", None)
         return data
