@@ -234,3 +234,87 @@ test("canonical fractional zeros normalize without changing untouched original w
     saved,
   );
 });
+
+for (const [input, expectedZone, start, end] of [
+  ["america/new_york", "America/New_York", "14:00", "15:00"],
+  ["aMeRiCa/NeW_yOrK", "America/New_York", "14:00", "15:00"],
+  ["utC", "UTC", "09:00", "10:00"],
+  ["eTc/gMt+5", "Etc/GMT+5", "14:00", "15:00"],
+  ["US/Pacific", "US/Pacific", "17:00", "18:00"],
+  ["Asia/Kolkata", "Asia/Kolkata", "03:30", "04:30"],
+  ["uS/pACiFiC", "US/Pacific", "17:00", "18:00"],
+  ["aSIA/kolKATA", "Asia/Kolkata", "03:30", "04:30"],
+]) {
+  test(`resolved timezone identity for ${input} preserves both endpoint instants`, async () => {
+    const result = await resolveAppointmentTime(
+      draft(input, "2030-01-01", "09:00", "2030-01-01", "10:00"),
+    );
+    assert.deepEqual(result, {
+      status: "resolved",
+      schedule: {
+        starts_at: `2030-01-01T${start}:00Z`,
+        ends_at: `2030-01-01T${end}:00Z`,
+        timezone: expectedZone,
+      },
+    });
+  });
+}
+for (const timezone of ["america/new_york", "aMeRiCa/NeW_yOrK", "uS/pACiFiC"]) {
+  test(`untouched saved timezone identity ${timezone} and fractional wires stay exact`, async () => {
+    const saved = {
+      starts_at: "2030-01-01T14:00:00.123456Z",
+      ends_at: "2030-01-01T15:00:00.654321Z",
+      timezone,
+    };
+    assert.deepEqual(await resolveAppointmentTime(createAppointmentTimeDraft("UTC", saved)), {
+      status: "resolved",
+      schedule: saved,
+    });
+  });
+}
+test("explicit saved schedule edit emits resolved timezone identity without rewriting its original", async () => {
+  const saved = {
+    starts_at: "2030-01-01T14:00:00.123456Z",
+    ends_at: "2030-01-01T15:00:00.654321Z",
+    timezone: "america/new_york",
+  };
+  const original = createAppointmentTimeDraft("UTC", saved);
+  const edited = editAppointmentTimeField(original, "endTime", "11:00");
+  assert.deepEqual(await resolveAppointmentTime(edited), {
+    status: "resolved",
+    schedule: {
+      starts_at: "2030-01-01T14:00:00Z",
+      ends_at: "2030-01-01T16:00:00Z",
+      timezone: "America/New_York",
+    },
+  });
+  assert.deepEqual(edited.original, saved);
+  assert.deepEqual((await resolveAppointmentTime(original)).schedule, saved);
+});
+test("different resolved timezone identities at the endpoints cannot resolve", async () => {
+  const { Temporal } = await import("@js-temporal/polyfill");
+  const prototype = Temporal.PlainDateTime.prototype;
+  const descriptor = Object.getOwnPropertyDescriptor(prototype, "toZonedDateTime");
+  const endpoints = new Set();
+  try {
+    Object.defineProperty(prototype, "toZonedDateTime", {
+      ...descriptor,
+      value: function (...args) {
+        endpoints.add(this.hour);
+        const candidate = Reflect.apply(descriptor.value, this, args);
+        Object.defineProperty(candidate, "timeZoneId", {
+          value: this.hour === 10 ? "Etc/UTC" : "UTC",
+        });
+        return candidate;
+      },
+    });
+    const result = await resolveAppointmentTime(
+      draft("UTC", "2030-01-01", "09:00", "2030-01-01", "10:00"),
+    );
+    assert.equal(result.status, "invalid");
+    assert.equal(result.issues[0].field, "timezone");
+    assert.deepEqual([...endpoints], [9, 10]);
+  } finally {
+    Object.defineProperty(prototype, "toZonedDateTime", descriptor);
+  }
+});
