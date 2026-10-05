@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
 import ipaddress
+import json
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
@@ -45,6 +47,44 @@ class DeliveryResult:
     error_code: str | None = None
     provider_request_id: str | None = None
     retry_after_seconds: int | None = None
+    submission_evidence: Literal["not_submitted", "rejected", "accepted", "unknown"] | None = None
+    failure_scope: Literal["sender_auth", "sender_transient", "message", "unclassified"] | None = (
+        None
+    )
+    credential_revision: int | None = None
+
+    def __post_init__(self) -> None:
+        if self.submission_evidence is not None and (
+            not isinstance(self.submission_evidence, str)
+            or self.submission_evidence not in {"not_submitted", "rejected", "accepted", "unknown"}
+        ):
+            raise ValueError("invalid_submission_evidence")
+        if self.failure_scope is not None and (
+            not isinstance(self.failure_scope, str)
+            or self.failure_scope
+            not in {"sender_auth", "sender_transient", "message", "unclassified"}
+        ):
+            raise ValueError("invalid_failure_scope")
+        if self.credential_revision is not None and (
+            type(self.credential_revision) is not int or self.credential_revision <= 0
+        ):
+            raise ValueError("invalid_credential_revision")
+        # Reject contradictions without rewriting the legacy outcome or error fields.
+        if (
+            (self.outcome == "unknown" and self.submission_evidence not in {None, "unknown"})
+            or (self.submission_evidence == "unknown" and self.outcome != "unknown")
+            or (self.outcome == "unknown" and self.failure_scope not in {None, "unclassified"})
+            or (self.submission_evidence == "accepted" and self.outcome != "accepted")
+            or (
+                self.outcome == "accepted"
+                and (
+                    self.submission_evidence not in {None, "accepted"}
+                    or self.failure_scope is not None
+                )
+            )
+            or (self.failure_scope == "sender_auth" and self.outcome != "permanent_failure")
+        ):
+            raise ValueError("inconsistent_delivery_evidence")
 
 
 class EmailTransport(Protocol):
@@ -234,9 +274,33 @@ def delivery_configuration(settings: Any) -> DeliveryConfiguration:
     )
 
 
+def sender_identity_binding(config: DeliveryConfiguration) -> str:
+    """Bind a validated sender identity without including secrets or recipients."""
+    # Credentials imports normalize_email_address from this module.
+    from app.services.automation_email_credentials import PROVIDER_KEY
+
+    tenant = config.tenant
+    if tenant not in {"common", "organizations", "consumers"}:
+        tenant = str(UUID(tenant))
+    identity = (
+        PROVIDER_KEY,
+        str(UUID(config.client_id)),
+        normalize_email_address(config.sender),
+        tenant,
+    )
+    return hashlib.sha256(
+        json.dumps(identity, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    ).hexdigest()
+
+
 class DisabledEmailTransport:
     def send(self, message: EmailMessage, *, deadline: float | None = None) -> DeliveryResult:
-        return DeliveryResult("permanent_failure", "sending_disabled")
+        return DeliveryResult(
+            "permanent_failure",
+            "sending_disabled",
+            submission_evidence="not_submitted",
+            failure_scope="sender_transient",
+        )
 
 
 def build_email_transport(settings: Any, supabase_client: Any) -> EmailTransport:
