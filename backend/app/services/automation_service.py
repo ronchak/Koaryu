@@ -6,10 +6,12 @@ import math
 import time
 from collections.abc import Callable
 from datetime import datetime
+from types import SimpleNamespace
 from typing import Any
 from uuid import NAMESPACE_URL, uuid5
 
 from fastapi import HTTPException
+from postgrest._sync.request_builder import SyncRPCFilterRequestBuilder
 from postgrest.exceptions import APIError
 from pydantic import BaseModel, ValidationError
 
@@ -209,6 +211,73 @@ class _BudgetQuery:
         return self.query.execute()
 
 
+def _validate_begin_response(data: Any, delivery_id: str) -> dict:
+    if (
+        not isinstance(data, dict)
+        or set(data) != {"ready", "state", "reason", "message"}
+        or type(data["ready"]) is not bool
+        or (data["state"] is not None and not isinstance(data["state"], str))
+        or (data["reason"] is not None and not isinstance(data["reason"], str))
+    ):
+        raise RuntimeError("invalid_automation_begin_response")
+    message = data["message"]
+    if data["ready"] is False:
+        if message is not None:
+            raise RuntimeError("invalid_automation_begin_response")
+        return data
+    string_fields = {
+        "delivery_id",
+        "attempt_id",
+        "student_first_name",
+        "studio_name",
+        "recipient_email",
+        "subject_template",
+        "body_template",
+        "reply_to_email",
+        "unsubscribe_token",
+    }
+    if (
+        data["state"] != "sending"
+        or data["reason"] is not None
+        or not isinstance(message, dict)
+        or set(message) != string_fields | {"days_absent"}
+        or any(not isinstance(message[key], str) for key in string_fields)
+        or type(message["days_absent"]) is not int
+        or message["delivery_id"] != delivery_id
+    ):
+        raise RuntimeError("invalid_automation_begin_response")
+    return data
+
+
+class _BeginRPCQuery:
+    """Bypass only postgrest 0.17.2's erroneous `message` API-error validator."""
+
+    def __init__(self, query: SyncRPCFilterRequestBuilder, budget: _WorkerBudget, delivery_id: str):
+        self.query = query
+        self.budget = budget
+        self.delivery_id = delivery_id
+
+    def execute(self):
+        query = self.query
+        self.budget.check(DATABASE_TIMEOUT_SECONDS)
+        response = query.session.request(
+            query.http_method,
+            query.path,
+            json=query.json,
+            params=query.params,
+            headers=query.headers,
+            follow_redirects=False,
+        )
+        # Do not infer success from an error body or submit again through execute.
+        if not 200 <= response.status_code < 300:
+            raise RuntimeError("invalid_automation_begin_response")
+        try:
+            data = response.json()
+        except ValueError:
+            raise RuntimeError("invalid_automation_begin_response") from None
+        return SimpleNamespace(data=_validate_begin_response(data, self.delivery_id))
+
+
 class _WorkerClient:
     def __init__(self, client: Any, budget: _WorkerBudget):
         self.client = client
@@ -216,7 +285,12 @@ class _WorkerClient:
 
     def rpc(self, name: str, params: dict):
         self.budget.check(DATABASE_TIMEOUT_SECONDS)
-        return _BudgetQuery(self.client.rpc(name, params), self.budget)
+        query = self.client.rpc(name, params)
+        if name == "begin_missed_class_automation_v1" and isinstance(
+            query, SyncRPCFilterRequestBuilder
+        ):
+            return _BeginRPCQuery(query, self.budget, params["p_delivery_id"])
+        return _BudgetQuery(query, self.budget)
 
     def table(self, name: str):
         self.budget.check(DATABASE_TIMEOUT_SECONDS)
