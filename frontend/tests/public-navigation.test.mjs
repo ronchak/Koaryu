@@ -7,7 +7,7 @@ describe("public navigation", () => {
   it("keeps primary public routes in one exported list", () => {
     assert.deepEqual(
       publicNavLinks.map((link) => link.href),
-      ["/features", "/use-cases", "/#pricing"],
+      ["/features", "/use-cases", "/#pricing", "/try"],
     );
   });
 

@@ -36,6 +36,7 @@ describe("sitemap freshness", () => {
     assert.equal(entriesByUrl.get("https://koaryu.app/")?.priority, 1);
     assert.equal(entriesByUrl.has("https://koaryu.app/explore"), false);
     assert.equal(entriesByUrl.get("https://koaryu.app/features")?.priority, 0.8);
+    assert.equal(entriesByUrl.get("https://koaryu.app/try")?.priority, 0.8);
     assert.equal(entriesByUrl.has("https://koaryu.app/about"), false);
     assert.equal(entriesByUrl.has("https://koaryu.app/features/billing"), true);
     assert.equal(entriesByUrl.has("https://koaryu.app/use-cases/retention"), true);

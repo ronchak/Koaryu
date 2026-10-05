@@ -15,7 +15,7 @@ export function buildPublicSitemap({
   publicContentLastModified: Date;
   useCasePages: SitemapPage[];
 }): MetadataRoute.Sitemap {
-  const staticRoutes = ["", "/features", "/use-cases", "/privacy", "/terms"];
+  const staticRoutes = ["", "/try", "/features", "/use-cases", "/privacy", "/terms"];
   const featureRoutes = featurePages.map((page) => `/features/${page.slug}`);
   const useCaseRoutes = useCasePages.map((page) => `/use-cases/${page.slug}`);
 
@@ -23,6 +23,11 @@ export function buildPublicSitemap({
     url: `${baseUrl}${route || "/"}`,
     lastModified: publicContentLastModified,
     changeFrequency: route === "" ? "weekly" : "monthly",
-    priority: route === "" ? 1 : route === "/features" || route === "/use-cases" ? 0.8 : 0.7,
+    priority:
+      route === ""
+        ? 1
+        : route === "/try" || route === "/features" || route === "/use-cases"
+          ? 0.8
+          : 0.7,
   }));
 }
