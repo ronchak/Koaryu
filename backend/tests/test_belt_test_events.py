@@ -805,12 +805,16 @@ def test_http_provider_timeout_is_sanitized(api):
     assert database.execute_calls == [MUTATE]
 
 
-def test_openapi_exports_only_the_four_typed_event_routes(api):
+def test_openapi_exports_typed_event_routes_and_existing_eligibility_candidates(api):
     _, _, _, _, app = api
     schema = app.openapi()
-    assert set(schema["paths"]) == {BASE, BASE + "/{event_id}"}
+    assert set(schema["paths"]) == {BASE, BASE + "/{event_id}", BASE + "/{event_id}/candidates"}
     assert set(schema["paths"][BASE]) == {"get", "post"}
     assert set(schema["paths"][BASE + "/{event_id}"]) == {"get", "patch"}
+    assert set(schema["paths"][BASE + "/{event_id}/candidates"]) == {"get"}
+    assert schema["paths"][BASE + "/{event_id}/candidates"]["get"]["responses"]["200"]["content"][
+        "application/json"
+    ]["schema"]["items"] == {"$ref": "#/components/schemas/EligibilityEntry"}
     assert set(schema["components"]["schemas"]["BeltTestEventResponse"]["required"]) == set(ROW)
     create_schema = schema["components"]["schemas"]["BeltTestEventCreate"]
     assert "program_id" not in create_schema["properties"]

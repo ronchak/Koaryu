@@ -988,7 +988,7 @@ def test_http_approval_event_revision_mismatch_is_sanitized(api, event_revision,
     assert lane_calls == ["interactive"]
 
 
-def test_composed_openapi_preserves_four_event_and_three_recipient_methods():
+def test_composed_openapi_preserves_event_recipient_and_candidate_methods():
     app = FastAPI()
     app.include_router(event_routes.router, prefix="/api/v1")
     app.include_router(routes.router, prefix="/api/v1")
@@ -996,11 +996,15 @@ def test_composed_openapi_preserves_four_event_and_three_recipient_methods():
     expected_paths = {
         BASE: {"get", "post"},
         BASE + "/{event_id}": {"get", "patch"},
+        BASE + "/{event_id}/candidates": {"get"},
         BASE + "/{event_id}/recipients": {"get"},
         BASE + "/{event_id}/recipients/approve": {"post"},
         BASE + "/{event_id}/recipients/{recipient_id}/revoke": {"post"},
     }
     assert {path: set(methods) for path, methods in schema["paths"].items()} == expected_paths
+    assert schema["paths"][BASE + "/{event_id}/candidates"]["get"]["responses"]["200"]["content"][
+        "application/json"
+    ]["schema"]["items"] == {"$ref": "#/components/schemas/EligibilityEntry"}
     models = schema["components"]["schemas"]
     assert set(models["BeltTestRecipientResponse"]["required"]) == set(ROW)
     for name in [
