@@ -174,9 +174,14 @@ export function buildDashboardWidgetViewModels(
     setupSteps,
   } = input.composition;
   const summaryEnrichments = readDashboardWidgetSummaryEnrichments(input.dashboardSummary);
+  const liveSummaryState = !input.dashboardSummaryLoaded
+    ? "loading"
+    : !input.hasDashboardSummary
+      ? "error"
+      : null;
   const quickActions = quickActionsForRole(input.role);
 
-  const dueLeads = input.leads
+  const previewDueLeads = input.leads
     .filter(
       (lead) =>
         lead.stage !== "enrolled" &&
@@ -185,6 +190,19 @@ export function buildDashboardWidgetViewModels(
         (lead.follow_up_date ?? "") <= input.today,
     )
     .slice(0, 5);
+  const dueLeadRows: DashboardWidgetRow[] = !input.canSeeLeads
+    ? []
+    : input.isPreviewMode
+      ? previewDueLeads.map((lead) => ({
+          label: `${lead.first_name} ${lead.last_name}`.trim(),
+          meta: lead.follow_up_date ?? "Due",
+          href: "/leads",
+        }))
+      : summaryEnrichments.leadFollowUps.rows.map((lead) => ({
+          label: `${lead.firstName} ${lead.lastName}`.trim(),
+          meta: lead.followUpDate,
+          href: "/leads",
+        }));
   const previewTodaySessions = input.sessions
     .filter((session) => session.date === input.today && session.status !== "canceled")
     .sort((left, right) => left.start_time.localeCompare(right.start_time))
@@ -219,8 +237,8 @@ export function buildDashboardWidgetViewModels(
         : displayedTodaySessions === 0
           ? "empty"
           : "ready"
-    : !input.dashboardSummaryLoaded
-      ? "loading"
+    : liveSummaryState
+      ? liveSummaryState
       : !liveTodaySchedule.available
         ? "unavailable"
         : classesTotal === 0
@@ -229,21 +247,34 @@ export function buildDashboardWidgetViewModels(
   const readyPromotions = input.eligibility.filter((entry) => entry.is_eligible).slice(0, 5);
   const attentionRows: DashboardWidgetRow[] = [];
   const billingAttentionPending = input.canSeeBilling && !input.dashboardSummaryLoaded;
-  const leadAttentionPending = input.canSeeLeads && !input.leadsLoaded && !input.leadsLoadError;
-  const inactivityAttentionPending =
-    !input.hasDashboardSummary &&
-    ((!input.studentsLoaded && !input.studentsLoadError) ||
-      ((input.scheduleStatus === "idle" || input.scheduleStatus === "loading") &&
-        !input.scheduleLoadError));
+  const leadAttentionPending =
+    input.canSeeLeads &&
+    (input.isPreviewMode
+      ? !input.leadsLoaded && !input.leadsLoadError
+      : !input.dashboardSummaryLoaded);
+  const inactivityAttentionPending = input.isPreviewMode
+    ? !input.hasDashboardSummary &&
+      ((!input.studentsLoaded && !input.studentsLoadError) ||
+        ((input.scheduleStatus === "idle" || input.scheduleStatus === "loading") &&
+          !input.scheduleLoadError))
+    : !input.dashboardSummaryLoaded;
   const billingAttentionFailed =
     input.canSeeBilling &&
     input.dashboardSummaryLoaded &&
     displayedBillingSummary.paymentAttentionCount === null;
-  const leadAttentionFailed = input.canSeeLeads && Boolean(input.leadsLoadError);
-  const inactivityAttentionFailed =
-    !input.hasDashboardSummary && Boolean(input.studentsLoadError || input.scheduleLoadError);
+  const leadAttentionFailed =
+    input.canSeeLeads &&
+    (input.isPreviewMode
+      ? Boolean(input.leadsLoadError)
+      : input.dashboardSummaryLoaded && !input.hasDashboardSummary);
+  const inactivityAttentionFailed = input.isPreviewMode
+    ? !input.hasDashboardSummary && Boolean(input.studentsLoadError || input.scheduleLoadError)
+    : input.dashboardSummaryLoaded && !input.hasDashboardSummary;
   const inactivityAttentionPartial =
-    !input.hasDashboardSummary && input.studentsLoaded && input.hasPartialStudentSample;
+    input.isPreviewMode &&
+    !input.hasDashboardSummary &&
+    input.studentsLoaded &&
+    input.hasPartialStudentSample;
   const inactivityAttentionSettled =
     !inactivityAttentionPending && !inactivityAttentionFailed && !inactivityAttentionPartial;
 
@@ -268,7 +299,7 @@ export function buildDashboardWidgetViewModels(
   ) {
     attentionRows.push({
       label: `${displayedLeadStats.dueTodayLeads} lead follow-up${displayedLeadStats.dueTodayLeads === 1 ? "" : "s"} due`,
-      meta: "Oldest first",
+      meta: "Open follow-ups",
       href: "/leads",
     });
   }
@@ -301,64 +332,88 @@ export function buildDashboardWidgetViewModels(
           : attentionFailed
             ? "error"
             : "empty";
-  const studentPulseState: DashboardWidgetState = input.hasDashboardSummary
-    ? displayedStudentStats.totalStudents === 0
-      ? "empty"
-      : "ready"
-    : input.studentsLoadError
-      ? "error"
-      : !input.studentsLoaded
-        ? "loading"
-        : input.hasPartialStudentSample
-          ? "partial"
-          : displayedStudentStats.totalStudents === 0
+  const studentPulseState: DashboardWidgetState =
+    !input.isPreviewMode && liveSummaryState
+      ? liveSummaryState
+      : input.hasDashboardSummary
+        ? displayedStudentStats.totalStudents === 0
+          ? "empty"
+          : "ready"
+        : input.studentsLoadError
+          ? "error"
+          : !input.studentsLoaded
+            ? "loading"
+            : input.hasPartialStudentSample
+              ? "partial"
+              : displayedStudentStats.totalStudents === 0
+                ? "empty"
+                : "ready";
+  const attendanceState: DashboardWidgetState =
+    !input.isPreviewMode && liveSummaryState
+      ? liveSummaryState
+      : input.hasDashboardSummary
+        ? displayedOperationalStats.sessionsTracked === 0
+          ? "empty"
+          : "ready"
+        : input.scheduleLoadError
+          ? "error"
+          : input.scheduleStatus === "loading" || input.scheduleStatus === "idle"
+            ? "loading"
+            : displayedOperationalStats.sessionsTracked === 0
+              ? "empty"
+              : "ready";
+  const leadsState: DashboardWidgetState = !input.canSeeLeads
+    ? "unavailable"
+    : input.isPreviewMode
+      ? input.leadsLoadError
+        ? "error"
+        : !input.leadsLoaded
+          ? "loading"
+          : dueLeadRows.length === 0
+            ? "empty"
+            : "ready"
+      : liveSummaryState
+        ? liveSummaryState
+        : !summaryEnrichments.leadFollowUps.available
+          ? "unavailable"
+          : dueLeadRows.length === 0
             ? "empty"
             : "ready";
-  const attendanceState: DashboardWidgetState = input.hasDashboardSummary
-    ? displayedOperationalStats.sessionsTracked === 0
-      ? "empty"
-      : "ready"
-    : input.scheduleLoadError
-      ? "error"
-      : input.scheduleStatus === "loading" || input.scheduleStatus === "idle"
-        ? "loading"
-        : displayedOperationalStats.sessionsTracked === 0
-          ? "empty"
-          : "ready";
-  const leadsState: DashboardWidgetState = input.leadsLoadError
-    ? "error"
-    : !input.leadsLoaded
-      ? "loading"
-      : dueLeads.length === 0
-        ? "empty"
-        : "ready";
   const promotionsState: DashboardWidgetState = input.eligibilityLoadError
-    ? "error"
+    ? input.eligibilityReady
+      ? "partial"
+      : "error"
     : !input.eligibilityReady
       ? "loading"
       : readyPromotions.length === 0
         ? "empty"
         : "ready";
-  const billingState: DashboardWidgetState = !input.dashboardSummaryLoaded
-    ? "loading"
-    : displayedBillingSummary.paymentAttentionCount === null
-      ? "unavailable"
-      : displayedBillingSummary.paymentAttentionCount === 0
-        ? "empty"
-        : "ready";
-  const recentState: DashboardWidgetState = input.hasDashboardSummary
-    ? input.recentStudentRows.length === 0
-      ? "empty"
-      : "ready"
-    : input.studentsLoadError
-      ? "error"
-      : !input.studentsLoaded
+  const billingState: DashboardWidgetState =
+    !input.isPreviewMode && liveSummaryState
+      ? liveSummaryState
+      : !input.dashboardSummaryLoaded
         ? "loading"
-        : input.hasPartialStudentSample
-          ? "partial"
-          : input.recentStudentRows.length === 0
+        : displayedBillingSummary.paymentAttentionCount === null
+          ? "unavailable"
+          : displayedBillingSummary.paymentAttentionCount === 0
             ? "empty"
             : "ready";
+  const recentState: DashboardWidgetState =
+    !input.isPreviewMode && liveSummaryState
+      ? liveSummaryState
+      : input.hasDashboardSummary
+        ? input.recentStudentRows.length === 0
+          ? "empty"
+          : "ready"
+        : input.studentsLoadError
+          ? "error"
+          : !input.studentsLoaded
+            ? "loading"
+            : input.hasPartialStudentSample
+              ? "partial"
+              : input.recentStudentRows.length === 0
+                ? "empty"
+                : "ready";
   const activeStudents = input.students.filter(
     (student) => student.status === "active" || student.status === "trialing",
   );
@@ -374,8 +429,8 @@ export function buildDashboardWidgetViewModels(
         : studentsMissingEmergencyContactName === 0
           ? "empty"
           : "ready"
-    : !input.dashboardSummaryLoaded
-      ? "loading"
+    : liveSummaryState
+      ? liveSummaryState
       : !liveEmergencyContacts.available
         ? "unavailable"
         : liveEmergencyContacts.studentsMissingContactName === 0
@@ -495,24 +550,19 @@ export function buildDashboardWidgetViewModels(
           ? "Lead follow-ups are still loading."
           : leadsState === "error"
             ? "Lead follow-ups could not be loaded."
-            : leadsState === "empty"
-              ? "No follow-ups are due through today."
-              : "Open follow-ups due through today.",
-      rows:
-        leadsState === "ready"
-          ? dueLeads.map((lead) => ({
-              label: `${lead.first_name} ${lead.last_name}`.trim(),
-              meta: lead.follow_up_date ?? "Due",
-              href: "/leads",
-            }))
-          : [],
+            : leadsState === "unavailable"
+              ? "Lead follow-up details are unavailable. Retry dashboard data to check again."
+              : leadsState === "empty"
+                ? "No follow-ups are due through today."
+                : "Open follow-ups due through today.",
+      rows: leadsState === "ready" ? dueLeadRows : [],
       actions: [],
     }),
     model(input, {
       id: "promotions_due",
       state: promotionsState,
       metric:
-        promotionsState === "ready" || promotionsState === "empty"
+        promotionsState === "ready" || promotionsState === "empty" || promotionsState === "partial"
           ? String(displayedTestReadinessStats.readyToTest)
           : undefined,
       detail:
@@ -520,9 +570,11 @@ export function buildDashboardWidgetViewModels(
           ? "Promotion eligibility is still loading."
           : promotionsState === "error"
             ? "Promotion eligibility could not be loaded."
-            : `${displayedTestReadinessStats.needsApproval} awaiting approval.`,
+            : promotionsState === "partial"
+              ? "Showing saved eligibility. The latest check failed; retry dashboard data."
+              : `${displayedTestReadinessStats.needsApproval} awaiting approval.`,
       rows:
-        promotionsState === "ready"
+        promotionsState === "ready" || promotionsState === "partial"
           ? readyPromotions.map((entry) => ({
               label: entry.student_name,
               meta: entry.next_rank_name ? `Ready for ${entry.next_rank_name}` : "Eligible",
@@ -541,11 +593,13 @@ export function buildDashboardWidgetViewModels(
       detail:
         billingState === "loading"
           ? "The billing-safe exception count is still loading."
-          : billingState === "unavailable"
-            ? "The current summary does not expose a billing-safe exception count."
-            : billingState === "empty"
-              ? "No payment exceptions need attention."
-              : "Payment records need review in Billing.",
+          : billingState === "error"
+            ? "Billing exceptions could not be loaded. Retry dashboard data."
+            : billingState === "unavailable"
+              ? "The current summary does not expose a billing-safe exception count."
+              : billingState === "empty"
+                ? "No payment exceptions need attention."
+                : "Payment records need review in Billing.",
       rows: [],
       actions: [],
     }),

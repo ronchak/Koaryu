@@ -64,7 +64,7 @@ export interface StoreContextValue {
   dashboardSummary: DashboardSummary | null;
   dashboardSummaryLoaded: boolean;
   dashboardSummaryLoadError: string | null;
-  refreshDashboardSummary: (options?: { reason?: "visit" }) => Promise<void>;
+  refreshDashboardSummary: (options?: { reason?: "visit" | "resume" }) => Promise<void>;
 
   students: Student[];
   studentsLoaded: boolean;
@@ -131,8 +131,10 @@ export interface StoreContextValue {
   setCurrentLadder: (ladderId: string) => Promise<void>;
   loadEligibilityForLadder: (
     ladderId?: string | null,
-    options?: { force?: boolean },
+    options?: { force?: boolean; retainCurrent?: boolean },
   ) => Promise<EligibilityEntry[]>;
+  refreshDashboardPromotions: () => Promise<void>;
+  dashboardPromotionsLoading: boolean;
   setBeltRanks: (
     ranks: BeltRank[],
     options: { ladderId: string; subRankTerm?: string },
@@ -273,6 +275,8 @@ export type BeltsStoreContextValue = Pick<
   | "currentLadderId"
   | "setCurrentLadder"
   | "loadEligibilityForLadder"
+  | "refreshDashboardPromotions"
+  | "dashboardPromotionsLoading"
   | "setBeltRanks"
   | "ladderName"
   | "subRankTerm"

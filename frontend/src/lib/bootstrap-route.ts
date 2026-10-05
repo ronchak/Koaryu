@@ -12,7 +12,7 @@ export function bootstrapDatasets(view: BootstrapView): ReadonlySet<string> {
     "studio",
     "programs",
     ...(["dashboard", "students"].includes(view) ? ["students"] : []),
-    ...(["dashboard", "leads", "reports"].includes(view) ? ["leads"] : []),
+    ...(["leads", "reports"].includes(view) ? ["leads"] : []),
     ...(["dashboard", "training"].includes(view) ? ["belts"] : []),
   ]);
 }

@@ -69,6 +69,7 @@ export function bundle(
     scheduleController = false,
     scheduleForm = false,
     dashboardController = false,
+    dashboardVisibleWidgets = null,
     beltPage = false,
     realApi = false,
     detailController = false,
@@ -322,7 +323,7 @@ window.fixture.renderRecordsLoading = (props) => {
   const dashboardObserver =
     dashboard === null
       ? ""
-      : `function DashboardObserver(){const store=useStore();window.fixture.dashboard=require(${dashboard}).useDashboardPageController({config:store,beltStore:store,dashboardStore:store,leadStore:store,programsStore:store,scheduleStore:store,studentsStore:store,studioStore:store}).contentProps;return null;}`;
+      : `${dashboardVisibleWidgets ? `function DashboardVisibilityObserver({callback,ready}){React.useEffect(()=>{if(ready)callback(${JSON.stringify(dashboardVisibleWidgets)})},[callback,ready]);return null;}` : ""}function DashboardObserver(){const store=useStore();window.fixture.dashboard=require(${dashboard}).useDashboardPageController({config:store,beltStore:store,dashboardStore:store,leadStore:store,programsStore:store,scheduleStore:store,studentsStore:store,studioStore:store}).contentProps;return ${dashboardVisibleWidgets ? "React.createElement(DashboardVisibilityObserver,{callback:window.fixture.dashboard.onVisibleWidgetsChange,ready:store.identityReady})" : "null"};}`;
   const leadHook = leadController ? add("@/lib/leads-page-controller") : null;
   const leadModal = leadController ? add("@/components/leads/add-lead-modal") : null;
   const leadBoard = leadControls ? add("@/components/leads/lead-pipeline-board") : null;

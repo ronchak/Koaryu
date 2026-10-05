@@ -1,10 +1,12 @@
 import asyncio
+import logging
 import time
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Callable, Mapping, Optional
 from app.services.studio_business_date import studio_today
 
+from fastapi import HTTPException
 from pydantic import ValidationError
 from supabase import Client
 
@@ -12,6 +14,7 @@ from app.core.deps import ProviderDependency, run_supabase_operation
 from app.schemas.auth import AuthResponse
 from app.schemas.dashboard_summary import (
     DashboardSummaryInactivityCounts,
+    DashboardSummaryLeadFollowUps,
     DashboardSummaryOperationalCounts,
     DashboardSummaryResponse,
     DashboardSummaryScheduleCounts,
@@ -36,6 +39,8 @@ PRIVATE_CACHE_CONTROL = "no-store, private"
 PRIVATE_VARY = "Authorization, X-Studio-Id, Cookie"
 DASHBOARD_SUMMARY_FORMULA_VERSION = "dashboard-summary-v1"
 BILLING_VISIBLE_ROLES = {"admin", "front_desk"}
+LEADS_VISIBLE_ROLES = {"admin", "front_desk"}
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -231,7 +236,29 @@ class DashboardSummaryService:
         except ValidationError as exc:
             raise DashboardSummaryFactMismatch("dashboard fact response shape is invalid") from exc
 
-        return validated.model_dump(mode="python", exclude={"auth", "generated_at"})
+        return validated.model_dump(
+            mode="python", exclude={"auth", "generated_at", "lead_follow_ups"}
+        )
+
+    def fetch_lead_follow_ups_sync(
+        self, key: DashboardSummaryCacheKey
+    ) -> DashboardSummaryLeadFollowUps:
+        result = (
+            self.supabase.table("leads")
+            .select("id, first_name, last_name, follow_up_date")
+            .eq("studio_id", key.studio_id)
+            .neq("stage", "enrolled")
+            .neq("stage", "closed_lost")
+            .lte("follow_up_date", key.local_date.isoformat())
+            # Preserve the full lead reader's ordering before its UI filter/slice.
+            .order("created_at", desc=True)
+            .order("id", desc=True)
+            .limit(5)
+            .execute()
+        )
+        if not isinstance(result.data, list):
+            raise ValueError("Dashboard follow-up response is invalid")
+        return DashboardSummaryLeadFollowUps(available=True, rows=result.data)
 
     @staticmethod
     def assemble_fact_response(
@@ -256,6 +283,7 @@ class DashboardSummaryService:
         *,
         cache: DashboardSummaryFactCache[dict[str, Any]] = dashboard_summary_fact_cache,
         fresh: bool = False,
+        include_follow_ups: bool = False,
         timings: Optional[dict[str, float]] = None,
         total_started: Optional[float] = None,
     ) -> tuple[DashboardSummaryResponse, dict[str, float]]:
@@ -277,12 +305,52 @@ class DashboardSummaryService:
                 lane="interactive",
             )
 
-        facts_started = time.perf_counter()
-        # Confirmed-command reconciliation must not join an older flight or
-        # depend on which worker accepted the write. Authorization above is unchanged.
-        facts = await load_facts() if fresh else await cache.get_or_load(context.key, load_facts)
-        timings["facts"] = (time.perf_counter() - facts_started) * 1000
+        async def timed_facts() -> dict[str, Any]:
+            facts_started = time.perf_counter()
+            # Confirmed-command reconciliation must not join an older flight or
+            # depend on which worker accepted the write. Authorization is unchanged.
+            result = (
+                await load_facts() if fresh else await cache.get_or_load(context.key, load_facts)
+            )
+            timings["facts"] = (time.perf_counter() - facts_started) * 1000
+            return result
+
+        async def load_follow_ups() -> Optional[DashboardSummaryLeadFollowUps]:
+            if not include_follow_ups:
+                return None
+            if context.auth.role not in LEADS_VISIBLE_ROLES:
+                return DashboardSummaryLeadFollowUps()
+            started = time.perf_counter()
+            try:
+                # Each operation runs on its provider worker's own client. Rows
+                # remain outside the fact cache and never become full-list authority.
+                return await run_supabase_operation(
+                    provider,
+                    lambda client: cls(client).fetch_lead_follow_ups_sync(context.key),
+                    lane="interactive",
+                )
+            except Exception as error:
+                if (
+                    isinstance(error, HTTPException) and error.status_code in {401, 402, 403}
+                ) or getattr(error, "code", None) in {
+                    "42501",
+                    "28000",
+                    "28P01",
+                    "PGRST301",
+                    "PGRST302",
+                    "PGRST303",
+                }:
+                    raise
+                logger.warning(
+                    "Dashboard follow-ups unavailable", extra={"error_type": type(error).__name__}
+                )
+                return DashboardSummaryLeadFollowUps()
+            finally:
+                timings["lead_follow_ups"] = (time.perf_counter() - started) * 1000
+
+        facts, follow_ups = await asyncio.gather(timed_facts(), load_follow_ups())
         payload = cls.assemble_fact_response(context.auth, facts)
+        payload.lead_follow_ups = follow_ups
         timings["total"] = (time.perf_counter() - total_started) * 1000
         return payload, timings
 
