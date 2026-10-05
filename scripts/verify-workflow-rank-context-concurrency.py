@@ -708,7 +708,7 @@ FOR EACH ROW WHEN (OLD.current_belt_rank_id IS DISTINCT FROM NEW.current_belt_ra
         x = fixture()
         old_workflow = workflow(x)
         sql(
-            f"SET ROLE service_role;SELECT rank_proof.rank_transition({quote(x)},'rank1');UPDATE public.automation_workflow_runs SET state='sending',reason='truthful_sending',claim_token=gen_random_uuid(),lease_expires_at=clock_timestamp()+INTERVAL '5 minutes' WHERE studio_id='{x['studio']}';SELECT public.command_automation_workflow_v1('{x['studio']}','{x['actor']}','{old_workflow}',gen_random_uuid(),3,'pause');"
+            f"SET ROLE service_role;SELECT rank_proof.rank_transition({quote(x)},'rank1');UPDATE public.automation_workflow_runs SET state='sending',next_due_at=NULL,reason='truthful_sending',claim_token=gen_random_uuid(),lease_expires_at=clock_timestamp()+INTERVAL '5 minutes' WHERE studio_id='{x['studio']}';SELECT public.command_automation_workflow_v1('{x['studio']}','{x['actor']}','{old_workflow}',gen_random_uuid(),3,'pause');"
         )
         welcome = workflow(x, "student.enrolled")
         trace = sql(f"""BEGIN;
@@ -734,7 +734,7 @@ SELECT rank_proof.rank_approve({quote(x)}::JSONB||jsonb_build_object('membership
 SELECT jsonb_build_object('calls',(SELECT count(*) FROM rank_proof.capture_calls),'update_only',(SELECT bool_and(for_update) FROM rank_proof.capture_calls),
     'complete_union',(SELECT bool_and(packet->'locked_workflow_ids' @> jsonb_build_array('{old_workflow}'::UUID,'{welcome}'::UUID)) FROM rank_proof.capture_calls),
     'welcome',(SELECT count(*) FROM private.automation_workflow_events WHERE studio_id='{x["studio"]}' AND event_type='student.enrolled'),
-    'sending',(SELECT bool_and(state='sending' AND reason='truthful_sending' AND claim_token IS NOT NULL AND cancel_reason='rank_context_superseded' AND revision=2) FROM public.automation_workflow_runs WHERE workflow_id='{old_workflow}'),
+    'sending',(SELECT bool_and(state='sending' AND reason='truthful_sending' AND claim_token IS NOT NULL AND cancel_reason='workflow_paused' AND revision=2 AND next_due_at IS NULL) FROM public.automation_workflow_runs WHERE workflow_id='{old_workflow}'),
     'pending',(SELECT count(*) FROM private.workflow_rank_scopes WHERE studio_id='{x["studio"]}'));
 ROLLBACK;
 """)

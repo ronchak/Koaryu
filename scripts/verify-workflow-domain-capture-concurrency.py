@@ -956,7 +956,7 @@ COMMIT;""")
         ]["items"]
         # Keep only deliberately reversed old mappings as pending invalidation.
         sql(
-            f"UPDATE public.automation_workflow_runs SET state='completed' WHERE studio_id='{ids['studio']}';"
+            f"UPDATE public.automation_workflow_runs SET state='completed',next_due_at=NULL WHERE studio_id='{ids['studio']}';"
         )
         for recipient, wid in zip(
             sorted(approved, key=lambda r: r["id"]), reversed(ws)
