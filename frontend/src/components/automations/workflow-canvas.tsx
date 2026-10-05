@@ -136,8 +136,9 @@ export default function WorkflowCanvas({
         width: 240,
         height: 132,
         position:
-          (!disabled && drag?.draft === draft ? drag.positions[node.id] : undefined) ??
-          positioned.layout.positions[node.id],
+          (!disabled && drag?.draft === draft && Object.hasOwn(drag.positions, node.id)
+            ? drag.positions[node.id]
+            : undefined) ?? positioned.layout.positions[node.id],
         selected: selectedNodeId === node.id,
         data: {
           kind: node.type,
