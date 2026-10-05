@@ -196,7 +196,24 @@ def render_missed_class_email(
     # re.sub visits template tokens once. Substituted names are never interpreted as templates.
     subject = _TOKEN.sub(lambda match: values[match.group(1)], subject_template)
     body = _TOKEN.sub(lambda match: values[match.group(1)], body_template)
-    if len(subject) > 200 or len(body) > 20000:
+    return assemble_plain_text_email(subject, body, unsubscribe_url)
+
+
+def assemble_plain_text_email(
+    subject: str, body: str, unsubscribe_url: str | None = None
+) -> EmailContent:
+    """Validate rendered text, escape it, and append the existing optional footer."""
+    if (
+        not isinstance(subject, str)
+        or not subject.strip()
+        or len(subject) > 200
+        or _CONTROL.search(subject)
+        or not isinstance(body, str)
+        or not body.strip()
+        or len(body) > 20000
+        or _BODY_CONTROL.search(body)
+        or "\r" in body
+    ):
         raise ValueError("invalid_email_context")
     html = '<div style="white-space: pre-wrap">' + escape(body) + "</div>"
     if unsubscribe_url is not None:
