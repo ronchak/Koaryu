@@ -1125,3 +1125,308 @@ BEGIN
     END LOOP;
 END;
 $trial_privileges$;
+
+-- Belt-test scheduling retains logical ladder/program and approval snapshots.
+-- Parent deletion must not erase history or silently select a different context.
+CREATE FUNCTION private.belt_test_name_v1(p_value JSONB) RETURNS TEXT
+LANGUAGE plpgsql IMMUTABLE SECURITY INVOKER SET search_path='' AS $$
+DECLARE v TEXT;
+BEGIN
+    -- Match Pydantic's Unicode White_Space trimming, including tabs and NBSP.
+    v:=btrim(p_value#>>'{}',U&'\0009\000A\000B\000C\000D\0020\0085\00A0\1680\2000\2001\2002\2003\2004\2005\2006\2007\2008\2009\200A\2028\2029\202F\205F\3000');
+    IF jsonb_typeof(p_value) IS DISTINCT FROM 'string' OR length(v) NOT BETWEEN 1 AND 140 THEN
+        RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST';
+    END IF;
+    RETURN v;
+END $$;
+CREATE TABLE public.belt_test_events (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    studio_id UUID NOT NULL REFERENCES public.studios(id) ON DELETE CASCADE,
+    name TEXT NOT NULL CHECK (private.belt_test_name_v1(to_jsonb(name))=name),
+    ladder_id UUID NOT NULL,
+    program_id UUID,
+    starts_at TIMESTAMPTZ NOT NULL CHECK (starts_at BETWEEN TIMESTAMPTZ '0001-01-01 00:00:00+00' AND TIMESTAMPTZ '9999-12-31 23:59:59.999999+00'),
+    ends_at TIMESTAMPTZ NOT NULL CHECK (ends_at BETWEEN TIMESTAMPTZ '0001-01-01 00:00:00+00' AND TIMESTAMPTZ '9999-12-31 23:59:59.999999+00'),
+    timezone TEXT NOT NULL CHECK (private.automation_timezone_v1(to_jsonb(timezone))=timezone),
+    location TEXT NOT NULL DEFAULT '' CHECK (length(location)<=240),
+    status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','scheduled','completed','canceled')),
+    revision BIGINT NOT NULL DEFAULT 1 CHECK (revision>0),
+    schedule_revision BIGINT NOT NULL DEFAULT 1 CHECK (schedule_revision>0 AND schedule_revision<=revision),
+    created_by UUID,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp() CHECK (created_at BETWEEN TIMESTAMPTZ '0001-01-01 00:00:00+00' AND TIMESTAMPTZ '9999-12-31 23:59:59.999999+00'),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp() CHECK (updated_at BETWEEN TIMESTAMPTZ '0001-01-01 00:00:00+00' AND TIMESTAMPTZ '9999-12-31 23:59:59.999999+00'),
+    UNIQUE(studio_id,id),
+    CHECK (ends_at>starts_at AND ends_at-starts_at<=INTERVAL '24 hours')
+);
+CREATE INDEX belt_test_events_list ON public.belt_test_events(studio_id,created_at DESC,id DESC);
+
+ALTER TABLE public.students ADD CONSTRAINT students_id_studio_id_key UNIQUE(id,studio_id);
+CREATE TABLE public.belt_test_recipients (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    studio_id UUID NOT NULL REFERENCES public.studios(id) ON DELETE CASCADE,
+    event_id UUID NOT NULL,
+    student_id UUID NOT NULL,
+    student_program_membership_id UUID,
+    approved_schedule_revision BIGINT NOT NULL CHECK (approved_schedule_revision>0),
+    approved_current_rank_id UUID,
+    approved_target_rank_id UUID NOT NULL,
+    state TEXT NOT NULL CHECK (state IN ('approved','revoked')),
+    revision BIGINT NOT NULL DEFAULT 1 CHECK (revision>0),
+    approved_by UUID,
+    approved_at TIMESTAMPTZ NOT NULL CHECK (approved_at BETWEEN TIMESTAMPTZ '0001-01-01 00:00:00+00' AND TIMESTAMPTZ '9999-12-31 23:59:59.999999+00'),
+    revoked_at TIMESTAMPTZ CHECK (revoked_at BETWEEN TIMESTAMPTZ '0001-01-01 00:00:00+00' AND TIMESTAMPTZ '9999-12-31 23:59:59.999999+00'),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp() CHECK (created_at BETWEEN TIMESTAMPTZ '0001-01-01 00:00:00+00' AND TIMESTAMPTZ '9999-12-31 23:59:59.999999+00'),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp() CHECK (updated_at BETWEEN TIMESTAMPTZ '0001-01-01 00:00:00+00' AND TIMESTAMPTZ '9999-12-31 23:59:59.999999+00'),
+    FOREIGN KEY(studio_id,event_id) REFERENCES public.belt_test_events(studio_id,id) ON DELETE CASCADE,
+    FOREIGN KEY(student_id,studio_id) REFERENCES public.students(id,studio_id) ON DELETE CASCADE,
+    UNIQUE(studio_id,id),
+    UNIQUE NULLS NOT DISTINCT(event_id,student_id,student_program_membership_id),
+    CHECK ((state='approved' AND revoked_at IS NULL) OR (state='revoked' AND revoked_at IS NOT NULL))
+);
+CREATE INDEX belt_test_recipients_list ON public.belt_test_recipients(studio_id,event_id,created_at DESC,id DESC);
+CREATE INDEX belt_test_recipients_student ON public.belt_test_recipients(student_id,studio_id);
+CREATE FUNCTION private.belt_test_recipient_identity_v1() RETURNS TRIGGER
+LANGUAGE plpgsql VOLATILE SECURITY INVOKER SET search_path='' AS $$
+BEGIN
+    IF ROW(NEW.id,NEW.studio_id,NEW.event_id,NEW.student_id,NEW.student_program_membership_id,NEW.created_at)
+        IS DISTINCT FROM ROW(OLD.id,OLD.studio_id,OLD.event_id,OLD.student_id,OLD.student_program_membership_id,OLD.created_at)
+        OR OLD.revision=9223372036854775807 OR NEW.revision<>OLD.revision+1 THEN
+        RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STATE_CONFLICT';
+    END IF;
+    -- A revocation retains the exact facts of the last explicit approval.
+    IF NEW.state='revoked' AND ROW(NEW.approved_schedule_revision,NEW.approved_current_rank_id,
+        NEW.approved_target_rank_id,NEW.approved_by,NEW.approved_at) IS DISTINCT FROM
+        ROW(OLD.approved_schedule_revision,OLD.approved_current_rank_id,OLD.approved_target_rank_id,OLD.approved_by,OLD.approved_at) THEN
+        RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STATE_CONFLICT';
+    END IF;
+    RETURN NEW;
+END $$;
+CREATE TRIGGER belt_test_recipient_identity BEFORE UPDATE ON public.belt_test_recipients
+    FOR EACH ROW EXECUTE FUNCTION private.belt_test_recipient_identity_v1();
+
+CREATE FUNCTION private.belt_test_event_payload_v1(p_row public.belt_test_events) RETURNS JSONB
+LANGUAGE sql IMMUTABLE SECURITY INVOKER SET search_path='' AS $$
+    SELECT jsonb_build_object('id',p_row.id,'studio_id',p_row.studio_id,'name',p_row.name,
+        'ladder_id',p_row.ladder_id,'program_id',p_row.program_id,'starts_at',private.automation_utc_text_v1(p_row.starts_at),
+        'ends_at',private.automation_utc_text_v1(p_row.ends_at),'timezone',p_row.timezone,'location',p_row.location,
+        'status',p_row.status,'revision',p_row.revision,'schedule_revision',p_row.schedule_revision,'created_by',p_row.created_by,
+        'created_at',private.automation_utc_text_v1(p_row.created_at),'updated_at',private.automation_utc_text_v1(p_row.updated_at))
+$$;
+
+CREATE FUNCTION public.mutate_belt_test_event_v1(
+    p_studio_id UUID,p_actor_id UUID,p_event_id UUID,p_operation_id UUID,p_expected_revision BIGINT,p_request JSONB
+) RETURNS JSONB LANGUAGE plpgsql VOLATILE SECURITY INVOKER SET search_path='' AS $$
+DECLARE old public.belt_test_events; changed public.belt_test_events; ladder public.belt_ladders; program public.programs;
+    receipt private.automation_command_operations; v_request JSONB:=p_request; v_fingerprint TEXT; v_command TEXT;
+    v_result JSONB; v_at TIMESTAMPTZ; v_replay BOOLEAN; v_schedule BOOLEAN:=false; v_invalidate BOOLEAN:=false; k TEXT;
+BEGIN
+    IF p_studio_id IS NULL OR p_actor_id IS NULL THEN
+        RAISE EXCEPTION USING ERRCODE='42501',MESSAGE='AUTOMATION_ADMIN_REQUIRED';
+    END IF;
+    IF NOT pg_catalog.pg_try_advisory_xact_lock_shared(pg_catalog.hashtextextended('koaryu.local-plan-clear:'||p_studio_id::TEXT,0)) THEN
+        RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STUDIO_BUSY';
+    END IF;
+    PERFORM private.workflow_require_actor_v1(p_studio_id,p_actor_id);
+    IF p_operation_id IS NULL OR (p_event_id IS NULL AND p_expected_revision IS NOT NULL)
+        OR (p_event_id IS NOT NULL AND (p_expected_revision IS NULL OR p_expected_revision<1)) THEN
+        RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST';
+    END IF;
+    v_command:=CASE WHEN p_event_id IS NULL THEN 'belt_test.create' ELSE 'belt_test.update' END;
+    PERFORM pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended('automation.operation:'||p_studio_id::TEXT||':'||p_operation_id::TEXT,0));
+    SELECT * INTO receipt FROM private.automation_command_operations WHERE studio_id=p_studio_id AND operation_id=p_operation_id;
+    v_replay:=FOUND;
+    BEGIN
+        IF p_event_id IS NULL THEN
+            IF NOT private.workflow_json_keys_v1(v_request,ARRAY['name','ladder_id','starts_at','ends_at','timezone','location','status'],
+                ARRAY['name','ladder_id','starts_at','ends_at','timezone']) THEN
+                RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST';
+            END IF;
+            v_request:=jsonb_build_object('location','','status','draft')||v_request;
+        ELSIF NOT private.workflow_json_keys_v1(v_request,ARRAY['name','ladder_id','starts_at','ends_at','timezone','location','status']) OR v_request='{}' THEN
+            RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST';
+        END IF;
+        FOREACH k IN ARRAY ARRAY['starts_at','ends_at'] LOOP
+            IF v_request ? k THEN v_request:=jsonb_set(v_request,ARRAY[k],to_jsonb(private.automation_utc_text_v1(private.automation_instant_v1(v_request->k)))); END IF;
+        END LOOP;
+        IF v_request ? 'timezone' THEN v_request:=jsonb_set(v_request,'{timezone}',to_jsonb(private.automation_timezone_v1(v_request->'timezone'))); END IF;
+        IF v_request ? 'name' THEN
+            v_request:=jsonb_set(v_request,'{name}',to_jsonb(private.belt_test_name_v1(v_request->'name')));
+        END IF;
+        IF v_request ? 'location' AND (jsonb_typeof(v_request->'location') IS DISTINCT FROM 'string' OR length(v_request->>'location')>240) THEN
+            RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST';
+        END IF;
+        IF v_request ? 'ladder_id' THEN
+            IF jsonb_typeof(v_request->'ladder_id') IS DISTINCT FROM 'string' OR v_request->>'ladder_id' !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN
+                RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST';
+            END IF;
+            v_request:=jsonb_set(v_request,'{ladder_id}',to_jsonb((v_request->>'ladder_id')::UUID));
+        END IF;
+        IF v_request ? 'status' AND (jsonb_typeof(v_request->'status') IS DISTINCT FROM 'string'
+            OR v_request->>'status' NOT IN ('draft','scheduled','completed','canceled')
+            OR (p_event_id IS NULL AND v_request->>'status' NOT IN ('draft','scheduled'))) THEN
+            RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST';
+        END IF;
+    EXCEPTION WHEN SQLSTATE '22023' THEN
+        IF v_replay THEN RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_OPERATION_CONFLICT'; END IF;
+        RAISE;
+    END;
+    v_fingerprint:=private.workflow_hash_v1(jsonb_build_object('command',v_command,'studio_id',p_studio_id,'actor_id',p_actor_id,
+        'event_id',p_event_id,'expected_revision',p_expected_revision,'request',v_request));
+    IF v_replay THEN
+        IF receipt.actor_id<>p_actor_id OR receipt.command<>v_command OR receipt.request_fingerprint<>v_fingerprint THEN
+            RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_OPERATION_CONFLICT';
+        END IF;
+        RETURN jsonb_build_object('payload',receipt.result,'operation_id',p_operation_id,'replayed',true);
+    END IF;
+    IF p_event_id IS NULL THEN
+        changed.studio_id:=p_studio_id; changed.revision:=1; changed.schedule_revision:=1; changed.created_by:=p_actor_id;
+    ELSE
+        SELECT * INTO old FROM public.belt_test_events WHERE studio_id=p_studio_id AND id=p_event_id FOR UPDATE;
+        IF NOT FOUND THEN RAISE EXCEPTION USING ERRCODE='P0002',MESSAGE='AUTOMATION_NOT_FOUND'; END IF;
+        IF old.revision<>p_expected_revision THEN RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_REVISION_CONFLICT'; END IF;
+        IF old.status IN ('completed','canceled') OR old.revision=9223372036854775807 THEN
+            RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STATE_CONFLICT';
+        END IF;
+        changed:=old;
+    END IF;
+    changed:=jsonb_populate_record(changed,v_request);
+    IF (old.status='scheduled' AND changed.status='draft') OR (old.status='draft' AND changed.status='completed') THEN
+        RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STATE_CONFLICT';
+    END IF;
+    -- Status-only cancellation, including a name correction, retains missing
+    -- parents. Effective schedule/context edits still require current parents.
+    IF changed.status<>'canceled' OR ROW(changed.starts_at,changed.ends_at,changed.timezone,changed.location,changed.ladder_id)
+        IS DISTINCT FROM ROW(old.starts_at,old.ends_at,old.timezone,old.location,old.ladder_id) THEN
+        BEGIN
+            SELECT * INTO ladder FROM public.belt_ladders WHERE studio_id=p_studio_id AND id=changed.ladder_id FOR SHARE NOWAIT;
+            IF NOT FOUND THEN RAISE EXCEPTION USING ERRCODE='P0002',MESSAGE='AUTOMATION_NOT_FOUND'; END IF;
+            IF p_event_id IS NOT NULL AND changed.ladder_id=old.ladder_id AND ladder.program_id IS DISTINCT FROM old.program_id THEN
+                RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STATE_CONFLICT';
+            END IF;
+            IF ladder.program_id IS NOT NULL THEN
+                SELECT * INTO program FROM public.programs WHERE studio_id=p_studio_id AND id=ladder.program_id FOR SHARE NOWAIT;
+                IF NOT FOUND THEN RAISE EXCEPTION USING ERRCODE='P0002',MESSAGE='AUTOMATION_NOT_FOUND'; END IF;
+                IF program.archived_at IS NOT NULL THEN RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STATE_CONFLICT'; END IF;
+            END IF;
+            changed.program_id:=ladder.program_id;
+        EXCEPTION WHEN lock_not_available THEN
+            RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STUDIO_BUSY';
+        END;
+    END IF;
+    IF changed.ends_at<=changed.starts_at OR changed.ends_at-changed.starts_at>INTERVAL '24 hours' THEN
+        RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST';
+    END IF;
+    IF p_event_id IS NOT NULL THEN
+        v_schedule:=ROW(changed.starts_at,changed.ends_at,changed.timezone,changed.location,changed.ladder_id,changed.program_id)
+            IS DISTINCT FROM ROW(old.starts_at,old.ends_at,old.timezone,old.location,old.ladder_id,old.program_id);
+        IF NOT v_schedule AND ROW(changed.name,changed.status) IS NOT DISTINCT FROM ROW(old.name,old.status) THEN
+            RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STATE_CONFLICT';
+        END IF;
+        v_invalidate:=v_schedule OR changed.status IN ('canceled','completed');
+        IF v_invalidate THEN
+            -- Event first, then every recipient, then every workflow, then runs.
+            -- Do not cancel one recipient at a time: that reverses workflow order.
+            PERFORM 1 FROM public.belt_test_recipients WHERE studio_id=p_studio_id AND event_id=old.id ORDER BY id FOR UPDATE;
+            IF EXISTS(SELECT 1 FROM public.belt_test_recipients WHERE studio_id=p_studio_id AND event_id=old.id
+                AND state='approved' AND revision=9223372036854775807) THEN
+                RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STATE_CONFLICT';
+            END IF;
+            PERFORM 1 FROM public.automation_workflows w WHERE w.studio_id=p_studio_id AND EXISTS(
+                SELECT 1 FROM public.automation_workflow_runs r JOIN private.automation_workflow_events e ON e.studio_id=r.studio_id AND e.id=r.event_id
+                JOIN public.belt_test_recipients b ON b.studio_id=e.studio_id AND b.id=e.subject_id
+                WHERE r.studio_id=p_studio_id AND r.workflow_id=w.id AND e.subject_kind='belt_test' AND b.event_id=old.id
+                    AND r.state IN ('queued','waiting','claimed','running')) ORDER BY w.id FOR UPDATE;
+            PERFORM 1 FROM public.automation_workflow_runs r JOIN private.automation_workflow_events e ON e.studio_id=r.studio_id AND e.id=r.event_id
+                JOIN public.belt_test_recipients b ON b.studio_id=e.studio_id AND b.id=e.subject_id
+                WHERE r.studio_id=p_studio_id AND e.subject_kind='belt_test' AND b.event_id=old.id
+                    AND r.state IN ('queued','waiting','claimed','running') ORDER BY r.id FOR UPDATE OF r;
+        END IF;
+    END IF;
+    -- Resample only after the final run wait. Every rejection remains atomic.
+    v_at:=clock_timestamp();
+    IF (changed.status='scheduled' AND (p_event_id IS NULL OR old.status='draft' OR v_schedule) AND changed.starts_at<=v_at)
+        OR (changed.status='completed' AND changed.starts_at>v_at) THEN
+        RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STATE_CONFLICT';
+    END IF;
+    IF v_invalidate THEN
+        UPDATE public.belt_test_recipients SET state='revoked',revision=revision+1,revoked_at=v_at,updated_at=v_at
+            WHERE studio_id=p_studio_id AND event_id=old.id AND state='approved';
+        UPDATE public.automation_workflow_runs r SET state='cancelled',claim_token=NULL,lease_expires_at=NULL,
+            revision=r.revision+1,reason='belt_test_changed',updated_at=v_at
+            FROM private.automation_workflow_events e JOIN public.belt_test_recipients b ON b.studio_id=e.studio_id AND b.id=e.subject_id
+            WHERE e.studio_id=r.studio_id AND e.id=r.event_id AND r.studio_id=p_studio_id AND e.subject_kind='belt_test'
+                AND b.event_id=old.id AND r.state IN ('queued','waiting','claimed','running');
+    END IF;
+    IF p_event_id IS NULL THEN
+        changed.id:=gen_random_uuid(); changed.created_at:=v_at; changed.updated_at:=v_at;
+        INSERT INTO public.belt_test_events SELECT changed.*;
+    ELSE
+        UPDATE public.belt_test_events SET name=changed.name,ladder_id=changed.ladder_id,program_id=changed.program_id,
+            starts_at=changed.starts_at,ends_at=changed.ends_at,timezone=changed.timezone,location=changed.location,status=changed.status,
+            revision=old.revision+1,schedule_revision=old.schedule_revision+CASE WHEN v_schedule THEN 1 ELSE 0 END,updated_at=v_at
+            WHERE studio_id=p_studio_id AND id=old.id RETURNING * INTO changed;
+    END IF;
+    INSERT INTO public.audit_logs(studio_id,actor_id,action,entity_type,entity_id,metadata)
+        VALUES(p_studio_id,p_actor_id,v_command,'belt_test',changed.id,jsonb_build_object('revision',changed.revision,
+            'schedule_revision',changed.schedule_revision,'status',changed.status,'ladder_id',changed.ladder_id,'program_id',changed.program_id));
+    v_result:=private.belt_test_event_payload_v1(changed);
+    INSERT INTO private.automation_command_operations(studio_id,operation_id,actor_id,command,request_fingerprint,entity_type,entity_id,result,committed_at)
+        VALUES(p_studio_id,p_operation_id,p_actor_id,v_command,v_fingerprint,'belt_test',changed.id,v_result,v_at);
+    RETURN jsonb_build_object('payload',v_result,'operation_id',p_operation_id,'replayed',false);
+END $$;
+
+CREATE FUNCTION public.get_belt_test_event_v1(p_studio_id UUID,p_actor_id UUID,p_event_id UUID) RETURNS JSONB
+LANGUAGE plpgsql VOLATILE SECURITY INVOKER SET search_path='' AS $$
+DECLARE r public.belt_test_events;
+BEGIN
+    PERFORM private.workflow_require_actor_v1(p_studio_id,p_actor_id);
+    SELECT * INTO r FROM public.belt_test_events WHERE studio_id=p_studio_id AND id=p_event_id;
+    IF NOT FOUND THEN RAISE EXCEPTION USING ERRCODE='P0002',MESSAGE='AUTOMATION_NOT_FOUND'; END IF;
+    RETURN jsonb_build_object('payload',private.belt_test_event_payload_v1(r));
+END $$;
+CREATE FUNCTION public.list_belt_test_events_v1(p_studio_id UUID,p_actor_id UUID,p_limit INTEGER DEFAULT 50,p_cursor JSONB DEFAULT NULL)
+RETURNS JSONB LANGUAGE plpgsql VOLATILE SECURITY INVOKER SET search_path='' AS $$
+DECLARE v_at TIMESTAMPTZ; v_id UUID; v_items JSONB:='[]'; v_next JSONB; r RECORD; v_count INTEGER:=0;
+BEGIN
+    PERFORM private.workflow_require_actor_v1(p_studio_id,p_actor_id);
+    IF p_limit IS NULL OR p_limit NOT BETWEEN 1 AND 100 THEN RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST'; END IF;
+    IF p_cursor IS NOT NULL THEN
+        IF NOT private.workflow_json_keys_v1(p_cursor,ARRAY['created_at','id'],ARRAY['created_at','id'])
+            OR jsonb_typeof(p_cursor->'id') IS DISTINCT FROM 'string'
+            OR p_cursor->>'id' !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN
+            RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST';
+        END IF;
+        v_at:=private.automation_instant_v1(p_cursor->'created_at'); v_id:=(p_cursor->>'id')::UUID;
+    END IF;
+    FOR r IN SELECT a.id,a.created_at,private.belt_test_event_payload_v1(a) payload FROM public.belt_test_events a
+        WHERE a.studio_id=p_studio_id AND (p_cursor IS NULL OR (a.created_at,a.id)<(v_at,v_id))
+        ORDER BY a.created_at DESC,a.id DESC LIMIT p_limit+1 LOOP
+        v_count:=v_count+1;
+        IF v_count>p_limit THEN RETURN jsonb_build_object('payload',jsonb_build_object('items',v_items,'next_cursor',v_next,'has_more',true)); END IF;
+        v_items:=v_items||jsonb_build_array(r.payload);
+        v_next:=jsonb_build_object('created_at',private.automation_utc_text_v1(r.created_at),'id',r.id);
+    END LOOP;
+    RETURN jsonb_build_object('payload',jsonb_build_object('items',v_items,'next_cursor',NULL,'has_more',false));
+END $$;
+DO $belt_privileges$
+DECLARE r RECORD; t TEXT;
+BEGIN
+    FOREACH t IN ARRAY ARRAY['belt_test_events','belt_test_recipients'] LOOP
+        EXECUTE format('ALTER TABLE public.%I OWNER TO postgres',t);
+        EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY',t);
+        EXECUTE format('REVOKE ALL ON TABLE public.%I FROM PUBLIC,anon,authenticated,service_role',t);
+        EXECUTE format('GRANT SELECT,INSERT,UPDATE ON TABLE public.%I TO service_role',t);
+        EXECUTE format('CREATE POLICY reject_client_access ON public.%I AS RESTRICTIVE FOR ALL TO anon,authenticated USING(false) WITH CHECK(false)',t);
+        EXECUTE format('CREATE POLICY reject_ambiguous_staff_membership_access ON public.%I AS RESTRICTIVE FOR ALL TO authenticated USING((SELECT private.has_unambiguous_studio_membership())) WITH CHECK((SELECT private.has_unambiguous_studio_membership()))',t);
+    END LOOP;
+    FOR r IN SELECT p.oid::REGPROCEDURE identity FROM pg_catalog.pg_proc p JOIN pg_catalog.pg_namespace n ON n.oid=p.pronamespace
+        WHERE (n.nspname='private' AND p.proname IN ('belt_test_name_v1','belt_test_event_payload_v1','belt_test_recipient_identity_v1'))
+        OR (n.nspname='public' AND p.proname IN ('mutate_belt_test_event_v1','get_belt_test_event_v1','list_belt_test_events_v1')) LOOP
+        EXECUTE format('ALTER FUNCTION %s OWNER TO postgres',r.identity);
+        EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC,anon,authenticated,service_role',r.identity);
+        IF r.identity::TEXT<>'private.belt_test_recipient_identity_v1()' THEN
+            EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO service_role',r.identity);
+        END IF;
+    END LOOP;
+END;
+$belt_privileges$;
