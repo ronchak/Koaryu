@@ -16,6 +16,7 @@ import {
   INITIAL_WHEEL_GESTURE_STATE,
   STOP_TOLERANCE_PX,
   canScrollablePanelMove,
+  copyClearance,
   decideJourneyKey,
   decideTouchChapter,
   handoffGeometry,
@@ -37,6 +38,7 @@ import {
 } from "./paging-model";
 import { SCENE_HEIGHT, SCENE_WIDTH, frameForDimensions } from "./scene-model";
 import {
+  mastheadOverHills,
   mastheadTone,
   progressForScroll,
   resolveLegacyHash,
@@ -79,6 +81,37 @@ function metricsFor(element: HTMLElement): ScrollMetrics {
     scrollHeight: element.scrollHeight,
     clientHeight: element.clientHeight,
   };
+}
+
+interface CopyBox {
+  readonly element: HTMLElement;
+  readonly name: string;
+  readonly onWall: boolean;
+  readonly box: PictureRect;
+  /** How far clear of the framed picture the copy sits once the page has begun. */
+  readonly settled: number;
+}
+
+/** The box the copy's ink and controls actually cover, tighter than its block. */
+function inkBox(element: HTMLElement): DOMRect | null {
+  const rects: DOMRect[] = [];
+  const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+  const range = document.createRange();
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    if (!node.textContent?.trim()) continue;
+    range.selectNodeContents(node);
+    rects.push(...Array.from(range.getClientRects()));
+  }
+  for (const control of element.querySelectorAll("a, button")) {
+    rects.push(control.getBoundingClientRect());
+  }
+  const solid = rects.filter((rect) => rect.width > 0 && rect.height > 0);
+  if (!solid.length) return null;
+  const left = Math.min(...solid.map((rect) => rect.left));
+  const top = Math.min(...solid.map((rect) => rect.top));
+  const right = Math.max(...solid.map((rect) => rect.right));
+  const bottom = Math.max(...solid.map((rect) => rect.bottom));
+  return new DOMRect(left, top, right - left, bottom - top);
 }
 
 function isFormTarget(target: EventTarget | null): boolean {
@@ -133,6 +166,8 @@ export function JourneyController({ children }: JourneyControllerProps) {
     let viewBoxHeight = 1000;
     let slot: PictureRect | null = null;
     let studioElement: HTMLElement | null = null;
+    let copyBoxes: CopyBox[] = [];
+    let frameWidth = 16;
     let motion: Motion | null = null;
     let motionStart = 0;
     let motionTarget = -1;
@@ -185,6 +220,8 @@ export function JourneyController({ children }: JourneyControllerProps) {
         const pin = pinned.getBoundingClientRect();
         slot = { left: box.left, top: box.top - pin.top, width: box.width, height: box.height };
       }
+      frameWidth =
+        Number.parseFloat(getComputedStyle(ring).getPropertyValue("--frame-width")) || 16;
 
       // The scene layer uses the large viewport, so mobile toolbars collapsing
       // do not reframe the artwork. Only a real size change does.
@@ -199,8 +236,62 @@ export function JourneyController({ children }: JourneyControllerProps) {
         setFrame(nextFrame);
         setLayerSize({ width: Math.round(width), height: Math.round(height) });
       }
+      // The copy beside the picture, and how far clear of the settled frame it sits.
+      const pin = pinned?.getBoundingClientRect();
+      copyBoxes = [];
+      if (pin && slot) {
+        const settledRect = handoffGeometry({
+          layerWidth,
+          layerHeight,
+          slot,
+          focusY: layerWidth < layerHeight ? PICTURE_FOCUS.tall : PICTURE_FOCUS.wide,
+          progress: 1,
+        }).rect;
+        for (const element of pinned!.querySelectorAll<HTMLElement>("[data-handoff-copy]")) {
+          const ink = inkBox(element);
+          if (!ink) continue;
+          // Where the copy rests in the pinned layout, whatever its reveal transforms are doing now.
+          const drawn = element.getBoundingClientRect();
+          let left = 0;
+          let top = 0;
+          for (
+            let node: HTMLElement | null = element;
+            node && node !== pinned;
+            node = node.offsetParent as HTMLElement | null
+          ) {
+            left += node.offsetLeft;
+            top += node.offsetTop;
+          }
+          const box = {
+            left: pin.left + left + ink.left - drawn.left,
+            top: top + ink.top - drawn.top,
+            width: ink.width,
+            height: ink.height,
+          };
+          copyBoxes.push({
+            element,
+            name: element.dataset.handoffCopy ?? "",
+            // Only the headline is written on the wall; the rest belongs to the page beside the picture.
+            onWall: element.dataset.handoffCopy === "heading",
+            box,
+            settled: Math.max(
+              settledRect.left - frameWidth - (box.left + box.width),
+              box.left - (settledRect.left + settledRect.width + frameWidth),
+              settledRect.top - frameWidth - (box.top + box.height),
+              box.top - (settledRect.top + settledRect.height + frameWidth),
+            ),
+          });
+        }
+      }
       appliedPicture = "";
       appliedScene = Number.NaN;
+    };
+
+    const clearCopy = (picture: PictureRect | null) => {
+      for (const { name, box, settled, onWall } of copyBoxes) {
+        const value = picture ? copyClearance(box, picture, frameWidth, settled, onWall) : 1;
+        studioElement?.style.setProperty(`--clear-${name}`, value.toFixed(3));
+      }
     };
 
     const announce = (index: number) => {
@@ -233,6 +324,7 @@ export function JourneyController({ children }: JourneyControllerProps) {
         layer.style.clipPath = "";
         layer.style.visibility = "";
         ring.style.opacity = "0";
+        clearCopy(null);
         return;
       }
       const geometry = handoffGeometry({
@@ -253,6 +345,8 @@ export function JourneyController({ children }: JourneyControllerProps) {
       ring.style.width = `${rect.width.toFixed(2)}px`;
       ring.style.height = `${rect.height.toFixed(2)}px`;
       ring.style.opacity = String(Math.min(1, progress * 2.4).toFixed(3));
+      // Text never shares the screen with a passing edge or frame: it waits, then returns.
+      clearCopy(progress >= 1 ? null : rect);
     };
 
     const tick = (now: number) => {
@@ -291,7 +385,7 @@ export function JourneyController({ children }: JourneyControllerProps) {
         setFlag("tone", mastheadTone(displayed, viewBoxHeight));
       }
       applyPicture(y);
-      setFlag("scrolled", y > 8 ? "true" : "false");
+      setFlag("scrolled", y > 8 && !mastheadOverHills(displayed, viewBoxHeight) ? "true" : "false");
 
       // On phones the masthead steps aside while the page is read downward.
       const delta = y - lastScrollY;
@@ -335,6 +429,21 @@ export function JourneyController({ children }: JourneyControllerProps) {
         }
       }
       schedule();
+    };
+
+    /**
+     * WebKit keeps snapping the window back to a fragment it landed on until
+     * the page itself is scrolled, so a chapter panel scrolling inside itself
+     * would drag the whole story with it. Before the first input after a
+     * fragment landing, a one-pixel nudge releases it.
+     */
+    let fragmentHeld = false;
+    const releaseFragment = () => {
+      if (!fragmentHeld) return;
+      fragmentHeld = false;
+      const y = window.scrollY;
+      scrollToY(y > 0 ? y - 1 : y + 1);
+      scrollToY(y);
     };
 
     const currentVelocity = () => (motion ? motion.velocity(performance.now() - motionStart) : 0);
@@ -475,6 +584,7 @@ export function JourneyController({ children }: JourneyControllerProps) {
     };
 
     const onWheel = (event: WheelEvent) => {
+      releaseFragment();
       if (event.ctrlKey || Math.abs(event.deltaX) > Math.abs(event.deltaY)) return;
       if (root.querySelector("details[open]")) return;
       const delta = normalizeWheelDelta(event.deltaY, event.deltaMode, window.innerHeight);
@@ -513,6 +623,7 @@ export function JourneyController({ children }: JourneyControllerProps) {
     };
 
     const onKeyDown = (event: KeyboardEvent) => {
+      releaseFragment();
       if (event.defaultPrevented || event.altKey || event.metaKey || event.ctrlKey) return;
       const activeElement = document.activeElement;
       if (
@@ -556,6 +667,7 @@ export function JourneyController({ children }: JourneyControllerProps) {
     };
 
     const onTouchStart = (event: TouchEvent) => {
+      releaseFragment();
       if (
         event.touches.length !== 1 ||
         isFormTarget(event.target) ||
@@ -629,6 +741,7 @@ export function JourneyController({ children }: JourneyControllerProps) {
     };
 
     const onPointerDown = () => {
+      releaseFragment();
       pointerDown = true;
     };
     const onPointerUp = () => {
@@ -648,6 +761,7 @@ export function JourneyController({ children }: JourneyControllerProps) {
     };
 
     const onHashChange = () => {
+      fragmentHeld = true;
       const id = window.location.hash.replace(/^#/, "");
       if (!id) {
         goIndex(0);
@@ -682,6 +796,7 @@ export function JourneyController({ children }: JourneyControllerProps) {
       if (index !== -1) scrollToY(stops[index]!.y);
       else document.getElementById(id)?.scrollIntoView({ block: "start" });
     }
+    fragmentHeld = Boolean(initialHash);
     {
       const y = window.scrollY;
       const index = stopAt(stops, y);
@@ -770,13 +885,14 @@ export function JourneyController({ children }: JourneyControllerProps) {
     >
       <div ref={sceneLayerRef} className={styles.sceneLayer} aria-hidden="true">
         <JourneyScene ref={sceneRef} frame={frame} />
+        {/* The weave is part of the picture: it takes the scene's paper grain. */}
+        <WeaveLoom
+          ref={loomRef}
+          width={layerSize.width}
+          height={layerSize.height}
+          threads={THREADS}
+        />
       </div>
-      <WeaveLoom
-        ref={loomRef}
-        width={layerSize.width}
-        height={layerSize.height}
-        threads={THREADS}
-      />
       {/* The timber frame the story has been inside all along. */}
       <div ref={ringRef} className={styles.pictureRing} aria-hidden="true" />
       <div className={styles.veil} aria-hidden="true" />

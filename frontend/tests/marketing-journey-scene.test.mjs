@@ -59,8 +59,8 @@ describe("Journey scene geometry", () => {
       sky: [0.6, 0.7],
       clouds: [0.66, 0.802],
       morph: [0.802, 0.892],
-      floor: [0.892, 0.952],
-      students: [0.952, 1],
+      floor: [0.892, 0.9],
+      students: [0.958, 1],
     });
   });
 

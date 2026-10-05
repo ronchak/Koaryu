@@ -37,24 +37,26 @@
   --sheet-shadow: 0 30px 70px rgb(36 24 10 / 18%);
   --timber: #5a4423;
   --timber-edge: rgb(36 24 10 / 40%);
-  /* The weave, by day: cloud-white strands lying down into bamboo and wood. */
+  /* The weave, by day: cream paper strips and kraft, woven on an umber backing card. */
   --loom-sky-top: #f6e9cd;
   --loom-sky-mid: #eedcb7;
   --loom-sky-low: #e2cba3;
-  --loom-cloud: #f6ebd3;
-  --loom-ground: #6f5532;
-  --loom-warp-0: #ead8b0;
-  --loom-warp-1: #e0c89b;
-  --loom-warp-2: #d6bd8f;
-  --loom-warp-3: #e5d0a6;
-  --loom-weft-0: #c9a77a;
-  --loom-weft-1: #bb996c;
-  --loom-weft-2: #d2b386;
-  --loom-weft-3: #b18f62;
-  --loom-label: #47361c;
-  --loom-light: 1;
-  --loom-wall-top: #d9d1c7;
-  --loom-wall-low: #c9bfb4;
+  --loom-cloud: #f4e7cc;
+  --loom-ground: #7e623a;
+  --loom-warp-0: #f2e5c8;
+  --loom-warp-1: #ead7b0;
+  --loom-warp-2: #e2ca9c;
+  --loom-warp-3: #eedfbd;
+  --loom-weft-0: #cdae7c;
+  --loom-weft-1: #bf9c68;
+  --loom-weft-2: #d5ba8d;
+  --loom-weft-3: #b39060;
+  --loom-shadow: #3d2910;
+  --loom-shadow-near: 0.2;
+  --loom-shadow-far: 0.09;
+  --loom-fibre: 0.55;
+  --loom-label: #4b3a20;
+  --loom-seam: rgb(61 41 16 / 26%);
 
   position: relative;
   color: var(--story-ink);
@@ -72,24 +74,27 @@
   --koaryu-action-label: #1d1712;
   --timber: #3a2a17;
   --timber-edge: rgb(0 0 0 / 55%);
-  /* Moonlit straw over the night sky, woven with lamplit wood that warms into the floor. */
+  /* Moonlit paper over the night sky, on a dark card; the lamplit floor is laid over it. */
   --loom-sky-top: #0e1229;
   --loom-sky-mid: #192043;
   --loom-sky-low: #2a3560;
-  --loom-cloud: #a3aed8;
-  --loom-ground: #0f0d16;
-  --loom-warp-0: #cbc2b0;
-  --loom-warp-1: #b8af9d;
-  --loom-warp-2: #a59c8b;
-  --loom-warp-3: #c2b9a6;
+  /* The night clouds' own dusk blue, so the streaks read as the clouds lying down. */
+  --loom-cloud: #59649a;
+  --loom-ground: #17141d;
+  --loom-warp-0: #cfc6b3;
+  --loom-warp-1: #bdb3a0;
+  --loom-warp-2: #aaa08e;
+  --loom-warp-3: #c5bcaa;
   --loom-weft-0: #8f7552;
   --loom-weft-1: #7f6849;
   --loom-weft-2: #9c815c;
   --loom-weft-3: #735e42;
-  --loom-label: #1c1922;
-  --loom-light: 0.5;
-  --loom-wall-top: #120e14;
-  --loom-wall-low: #3a2a22;
+  --loom-shadow: #05040a;
+  --loom-shadow-near: 0.34;
+  --loom-shadow-far: 0.16;
+  --loom-fibre: 0.4;
+  --loom-label: #1d1a22;
+  --loom-seam: rgb(5 4 10 / 46%);
 }
 
 .sceneLayer {
@@ -120,15 +125,16 @@
   mix-blend-mode: multiply;
 }
 
-/* The weave sits over the scene between the sky and the room. */
+/*
+ * The weave sits inside the scene layer, over the artwork and under its grain,
+ * between the sky and the room. Its sky and its mat are each clipped by a pair
+ * of opposed transforms, so the wipes that hand it to the room never repaint.
+ */
 .loom {
-  position: fixed;
+  position: absolute;
   z-index: 0;
-  top: 0;
-  left: 0;
+  inset: 0;
   display: none;
-  width: 100vw;
-  height: 100lvh;
   overflow: hidden;
   pointer-events: none;
 }
@@ -137,12 +143,20 @@
   display: block;
 }
 
+.loomSky,
+.loomFloor {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  will-change: transform;
+}
+
 .loomWash,
-.loomWall,
+.loomFloorInner,
 .loomMat {
   position: absolute;
   inset: 0;
-  opacity: 0;
+  will-change: transform;
 }
 
 .loomWash {
@@ -152,14 +166,19 @@
     var(--loom-sky-mid) 44%,
     var(--loom-sky-low) 100%
   );
+  opacity: 0;
 }
 
-.loomWall {
-  background: linear-gradient(180deg, var(--loom-wall-top) 0%, var(--loom-wall-low) 52%);
-}
-
-.loomMat {
-  will-change: transform, opacity;
+/* The shadow the laid floor casts on the mat just ahead of its leading edge. */
+.loomSeam {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: clamp(10px, 2.2vh, 22px);
+  background: linear-gradient(180deg, var(--loom-seam), transparent);
+  opacity: 0;
+  will-change: transform;
 }
 
 .loomSvg {
@@ -174,6 +193,16 @@
 
 .loomCloud {
   fill: var(--loom-cloud);
+}
+
+.loomShadow,
+.loomShadowFar {
+  fill: var(--loom-shadow);
+  opacity: var(--loom-shadow-near);
+}
+
+.loomShadowFar {
+  opacity: var(--loom-shadow-far);
 }
 
 .loomWarp[data-tone="0"] {
@@ -208,15 +237,21 @@
   fill: var(--loom-weft-3);
 }
 
-.loomLight {
-  opacity: var(--loom-light);
+.loomFibre {
+  fill-opacity: var(--loom-fibre);
 }
 
+/* Printed on the strip in the scene's ink, so the paper shows through it. */
 .loomLabel {
   fill: var(--loom-label);
   font-family: inherit;
-  font-weight: 680;
-  letter-spacing: -0.01em;
+  font-weight: 640;
+  letter-spacing: -0.005em;
+  mix-blend-mode: multiply;
+}
+
+:global(html[data-scene="night"]) .loomLabel {
+  mix-blend-mode: normal;
 }
 
 /* The timber frame the story has been inside all along; it appears as the class becomes a picture. */
@@ -281,10 +316,11 @@
   top: 0;
   border-bottom: 1px solid transparent;
   color: var(--scene-masthead-light-ink, inherit);
+  /* Short, so a page turn never catches it half way between two grounds. */
   transition:
-    background-color 360ms ease,
-    border-color 360ms ease,
-    color 360ms ease,
+    background-color 200ms ease,
+    border-color 200ms ease,
+    color 200ms ease,
     transform 260ms ease;
 }
 
@@ -847,10 +883,25 @@
   letter-spacing: -0.045em;
 }
 
+/*
+ * --clear-* (written by the controller) is 0 while the picture's edge or its
+ * frame passes through a block of copy, so text and frame never cross.
+ */
+.studioHeading .line {
+  opacity: var(--clear-heading, 1);
+}
+
 .studioDetail,
 .studioCaption {
-  opacity: clamp(0, calc((var(--handoff) - 0.55) * 2.4), 1);
   transform: translateY(calc((1 - var(--handoff)) * 22px));
+}
+
+.studioDetail {
+  opacity: calc(clamp(0, calc((var(--handoff) - 0.55) * 2.4), 1) * var(--clear-detail, 1));
+}
+
+.studioCaption {
+  opacity: calc(clamp(0, calc((var(--handoff) - 0.55) * 2.4), 1) * var(--clear-caption, 1));
 }
 
 .studioLede {
@@ -1166,13 +1217,14 @@
   }
 }
 
+/* Gone well before the hills start to fall away, so it never fades across them. */
 @keyframes heroAway {
   0% {
     opacity: 1;
     transform: none;
   }
 
-  70% {
+  40% {
     opacity: 0;
   }
 
@@ -1182,10 +1234,20 @@
   }
 }
 
+/*
+ * Copy arrives near where it rests rather than riding up from the bottom edge:
+ * the transform takes back most of the scroll across its range (58svh, entry
+ * 42% to 100%), so it rises 96px into place; it turns opaque in the first
+ * sixth of that, so no half-seen card lingers over the art.
+ */
 @keyframes revealIn {
   from {
     opacity: 0;
-    transform: translateY(64px);
+    transform: translateY(calc(96px - 58svh));
+  }
+
+  16% {
+    opacity: 1;
   }
 
   to {
@@ -1194,6 +1256,11 @@
   }
 }
 
+/*
+ * And leaves quickly, lifting 36px as it fades where it stands (the transform
+ * takes back the 18svh it scrolls), gone before the scene begins to move and
+ * never carried up under the masthead.
+ */
 @keyframes revealOut {
   from {
     opacity: 1;
@@ -1202,7 +1269,7 @@
 
   to {
     opacity: 0;
-    transform: translateY(-48px);
+    transform: translateY(calc(18svh - 36px));
   }
 }
 
@@ -1339,15 +1406,21 @@
       animation-range: 0svh 40svh;
     }
 
-    /* Each chapter's copy rises in as its screen arrives and lifts away as it leaves. */
+    /*
+     * Each chapter's copy rises in as its screen arrives and lifts away as it
+     * leaves. The ranges sit inside the beats (paging-model STORY_BEATS): copy
+     * starts to arrive only once the scene has settled (entry 42% < every
+     * beat's enter) and is gone before the scene starts to move (exit 18% <
+     * every beat's exit), so copy never crosses moving art.
+     */
     .chapter:not([data-kind="hero"]) .panel {
       animation:
         revealIn linear both,
         revealOut linear forwards;
       animation-timeline: view(), view();
       animation-range:
-        entry 35% entry 100%,
-        exit 0% exit 52%;
+        entry 42% entry 100%,
+        exit 0% exit 18%;
     }
 
     /* Over the loom the words appear in place in the sky, never across the strands. */
@@ -1358,7 +1431,7 @@
       animation-timeline: view(), view();
       animation-range:
         entry 0% entry 100%,
-        exit 0% exit 52%;
+        exit 0% exit 18%;
     }
 
     /* The screens stand up a beat after the card. */

@@ -851,6 +851,8 @@ export function sceneState(
     };
     const cloudsOpacity =
       1 - rangeProgress(value, SCENE_PHASES.morph[0], SCENE_PHASES.morph[0] + 0.045);
+    // The clouds lie down: they flatten into streaks as the loom's strips arrive over them.
+    const flatten = easeInOut(rangeProgress(value, 0.74, 0.788));
     if (cloudsOpacity > 0.001 && clouds > 0) {
       state.clouds = { display: "inline", opacity: String(round2(cloudsOpacity)) };
       CLOUD_GEOMETRY.forEach((cloud, index) => {
@@ -863,9 +865,10 @@ export function sceneState(
         const offsetX = cloud.direction * mix(760, 0, eased) + cloud.drift * clouds * 90;
         const offsetY = mix(70, 0, eased) - clouds * 46 * cloud.drift;
         const cloudScale = cloud.scale * mix(0.78, 1, eased);
+        const squash = flatten ? ` ${round2(cloudScale * (1 - 0.8 * flatten))}` : "";
         state[`cloud-${index}`] = {
           display: "inline",
-          transform: `translate(${round2(cloud.x + offsetX)} ${round2(cloud.y + offsetY)}) scale(${round2(cloudScale)})`,
+          transform: `translate(${round2(cloud.x + offsetX)} ${round2(cloud.y + offsetY + flatten * 30)}) scale(${round2(cloudScale)}${squash})`,
           opacity: String(round2(clamp(cloudProgress * 2.6))),
         };
       });
@@ -945,7 +948,7 @@ export function sceneState(
     state.weave = HIDDEN;
   }
 
-  const room = rangeProgress(value, SCENE_PHASES.floor[0] + 0.02, SCENE_PHASES.floor[1]);
+  const room = rangeProgress(value, SCENE_PHASES.floor[0], SCENE_PHASES.floor[1]);
   if (room > 0.001) {
     const floorLine = horizon + FLOOR_FAR;
     state.room = { display: "inline", opacity: String(round2(room)) };
@@ -985,10 +988,15 @@ export function sceneState(
     const depth = mix(FLOOR_FAR, FLOOR_NEAR, seat.depth);
     // Portrait crops see the room from farther back; seat the class a little larger.
     const presence = frame.variant === "portrait" ? 1.18 : 1;
+    const scale = (depth / 440) * presence;
+    // Solid paper figures that slide in from the nearer wing and settle in their seats.
+    const side = seat.horizontal > 0.5 ? 1 : -1;
+    const wing =
+      SCENE_WIDTH / 2 + side * (frame.visibleHalfWidth + STUDENT_BODY_WIDTH * 1.3 * scale);
     state[`student-${index}`] = {
       display: "inline",
-      opacity: String(round2(clamp(arrival * 1.8))),
-      transform: `translate(${round2(point.x)} ${round2(point.y + mix(120, 0, eased))}) scale(${round2((depth / 440) * presence * mix(0.94, 1, eased))}) rotate(${seat.lean})`,
+      opacity: "1",
+      transform: `translate(${round2(mix(wing, point.x, eased))} ${round2(point.y)}) scale(${round2(scale)}) rotate(${seat.lean})`,
     };
   });
 
@@ -2155,6 +2163,10 @@ const RoomLamps = memo(function RoomLamps({ ids }: { readonly ids: SceneIds }) {
   );
 });
 
+/**
+ * Each student is a solid paper figure that slides in from the nearer wing to
+ * its seat, like a cut-out in a toy theatre.
+ */
 const Students = memo(function Students() {
   const initial = useContext(InitialSceneState);
   return (

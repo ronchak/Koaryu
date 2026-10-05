@@ -6,6 +6,7 @@ import {
   INITIAL_WHEEL_GESTURE_STATE,
   STORY_BEATS,
   canScrollablePanelMove,
+  copyClearance,
   decideJourneyKey,
   decideTouchChapter,
   handoffGeometry,
@@ -22,6 +23,7 @@ import {
 } from "../src/components/marketing/journey/paging-model.ts";
 import {
   LANDING_HASH_ALIASES,
+  mastheadOverHills,
   mastheadTone,
   progressForScroll,
   resolveLegacyHash,
@@ -32,6 +34,7 @@ import {
   loomFrame,
   loomLayout,
   warpPath,
+  weftPath,
 } from "../src/components/marketing/journey/weave-model.ts";
 
 const H = 1000;
@@ -282,6 +285,33 @@ describe("Stops, beats and motion", () => {
   });
 });
 
+describe("Copy beside the moving picture", () => {
+  const box = { left: 86, top: 190, width: 370, height: 190 };
+  const settled = 150;
+  const frame = 16;
+
+  it("shows wall copy while the picture still holds it, and page copy only once clear", () => {
+    const full = { left: 0, top: 0, width: 1440, height: 900 };
+    assert.equal(copyClearance(box, full, frame, settled), 1);
+    assert.equal(copyClearance(box, full, frame, settled, false), 0);
+  });
+
+  it("hides copy while an edge or the frame passes through it", () => {
+    for (const left of [80, 200, 300, 456, 470]) {
+      const picture = { left, top: 60, width: 1300, height: 800 };
+      assert.equal(copyClearance(box, picture, frame, settled), 0, `edge at ${left}`);
+    }
+  });
+
+  it("is whole again once the picture and its frame are clear, and always when settled", () => {
+    const clear = { left: 520, top: 180, width: 860, height: 540 };
+    assert.equal(copyClearance(box, clear, frame, settled), 1);
+    // A settled layout closer than the usual return distance is still fully visible.
+    const near = { left: 86 + 370 + 16 + 10, top: 180, width: 800, height: 500 };
+    assert.equal(copyClearance(box, near, frame, 10), 1);
+  });
+});
+
 describe("Scene helpers and old links", () => {
   it("gives the masthead the tone of the art beneath it", () => {
     assert.equal(mastheadTone(0, 1000), "light");
@@ -289,6 +319,22 @@ describe("Scene helpers and old links", () => {
     assert.equal(mastheadTone(0.45, 1000), "light");
     assert.equal(mastheadTone(0.52, 2000), "dark");
     assert.equal(mastheadTone(1, 1600), "light");
+  });
+
+  it("keeps the masthead clear over the hills until the curtain reaches it", () => {
+    assert.equal(mastheadOverHills(0.04, 1000), true);
+    assert.equal(mastheadOverHills(0.08, 1000), false);
+    // Tall frames see more sky, so the curtain reaches the top later.
+    assert.equal(mastheadOverHills(0.085, 2000), true);
+    assert.equal(mastheadOverHills(0.09, 2000), false);
+    for (const height of [1000, 1500, 2000]) {
+      for (let progress = 0; progress <= 0.2; progress += 0.005) {
+        // Never a light ground in between: clear, then dark.
+        if (!mastheadOverHills(progress, height) && progress < 0.3) {
+          assert.equal(mastheadTone(progress, height), "dark");
+        }
+      }
+    }
   });
 
   it("shows only chapter still frames for reduced motion", () => {
@@ -368,15 +414,57 @@ describe("The weave", () => {
     assert.equal(loomFrame(0.7, layout).visible, false);
     const woven = loomFrame(0.892, layout);
     assert.equal(woven.wash, 1);
-    assert.equal(woven.mat, 1);
+    assert.equal(woven.ground, 1);
+    assert.equal(woven.lie, 0);
     assert.ok(woven.wefts.every((value) => value === 1));
-    assert.ok(woven.warps.every(({ settle, cloud }) => settle === 1 && cloud === 0));
+    assert.ok(
+      woven.warps.every(({ settle, cloud, slide }) => settle === 1 && cloud === 0 && slide === 0),
+    );
     assert.ok(woven.labels.every(({ opacity }) => opacity === 1));
     // Fully covered while the scene shuffles its planks.
     for (const p of [0.802, 0.85, 0.89]) assert.equal(loomFrame(p, layout).wash, 1);
+    // The names stay printed on the mat as it lies down.
     const lying = loomFrame(0.92, layout);
-    assert.ok(lying.lie > 0 && lying.labels.every(({ opacity }) => opacity === 0));
-    assert.equal(loomFrame(LOOM_PHASES.leave[1], layout).visible, false);
+    assert.ok(lying.lie > 0 && lying.labels.every(({ opacity }) => opacity === 1));
+    assert.equal(loomFrame(LOOM_PHASES.floor[1], layout).visible, false);
     assert.match(warpPath(layout, layout.warps[0], 1), /^M/);
+  });
+
+  it("is cut paper: hand-cut edges, flat strips, no rounded ends", () => {
+    const layout = loomLayout(1440, 900, threads);
+    for (const warp of layout.warps) {
+      assert.ok(
+        warp.cutTop.some((cut) => cut !== 0),
+        "the edges wobble",
+      );
+      assert.ok(warp.cutTop.every((cut) => Math.abs(cut) <= warp.thickness * 0.05));
+    }
+    // A settled strip is a polygon of straight cuts; a weft ends in a straight, slanted cut.
+    assert.doesNotMatch(warpPath(layout, layout.warps[0], 1), /NaN/);
+    const weft = weftPath(layout, layout.wefts[0]);
+    assert.match(weft, /^M[^A-KN-Z]*Z$/);
+    // Strips arrive solid: pulled in from the side, never faded in.
+    const arriving = loomFrame(LOOM_PHASES.warp[0] + 0.004, layout);
+    assert.ok(arriving.warps.some(({ slide }) => Math.abs(slide) > 0));
+  });
+
+  it("hands over to the room with wipes, never a dissolve", () => {
+    const layout = loomLayout(1440, 900, threads);
+    let wall = Number.POSITIVE_INFINITY;
+    let floor = Number.NEGATIVE_INFINITY;
+    for (let p = LOOM_PHASES.lie[0]; p < LOOM_PHASES.floor[1]; p += 0.002) {
+      const frame = loomFrame(p, layout);
+      // The mat itself never fades: it is covered by the floor, edge first.
+      assert.equal(frame.wash, 1);
+      assert.ok(frame.wallEdge <= wall && frame.floorEdge >= floor);
+      wall = frame.wallEdge;
+      floor = frame.floorEdge;
+    }
+    assert.ok(wall < 0, "the wall is up to the top of the screen");
+    assert.ok(
+      loomFrame(LOOM_PHASES.floor[1], layout).floorEdge > 1,
+      "the floor reaches the camera",
+    );
+    assert.equal(loomFrame(LOOM_PHASES.floor[0], layout).floorEdge, layout.floorFraction);
   });
 });

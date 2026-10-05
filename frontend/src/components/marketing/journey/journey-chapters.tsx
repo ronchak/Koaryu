@@ -231,10 +231,10 @@ function Studio({ chapter }: { chapter: StudioContent }) {
       <span className={styles.handoffMarker} data-stop="handoff" data-scene={chapter.scene} />
       <div className={styles.studioPin} data-pinned="">
         <div className={styles.studioCopy}>
-          <h2 id="studio-title" className={styles.studioHeading}>
+          <h2 id="studio-title" className={styles.studioHeading} data-handoff-copy="heading">
             <SentenceLines text={chapter.title} />
           </h2>
-          <div className={styles.studioDetail} data-focus-stop="handoff">
+          <div className={styles.studioDetail} data-focus-stop="handoff" data-handoff-copy="detail">
             <p className={styles.studioLede}>{chapter.lede}</p>
             <div className={styles.actions}>
               <ChapterAction {...chapter.actions[0]} variant="primary" />
@@ -246,7 +246,9 @@ function Studio({ chapter }: { chapter: StudioContent }) {
           <div className={styles.pictureSlot} data-picture-slot="">
             <ClassStill />
           </div>
-          <figcaption className={styles.studioCaption}>{chapter.caption}</figcaption>
+          <figcaption className={styles.studioCaption} data-handoff-copy="caption">
+            {chapter.caption}
+          </figcaption>
         </figure>
       </div>
     </section>

@@ -2,7 +2,14 @@
 
 import { forwardRef, useId, useImperativeHandle, useMemo, useRef } from "react";
 
-import { loomFrame, loomLayout, warpPath, type LoomFrame, type LoomLayout } from "./weave-model";
+import {
+  loomFrame,
+  loomLayout,
+  warpPath,
+  weftPath,
+  type LoomFrame,
+  type LoomLayout,
+} from "./weave-model";
 import styles from "./journey.module.css";
 
 export interface WeaveLoomHandle {
@@ -19,22 +26,34 @@ function set(element: Element | null | undefined, name: string, value: string) {
   if (element && element.getAttribute(name) !== value) element.setAttribute(name, value);
 }
 
-function setStyle(
-  element: HTMLElement | SVGElement | null | undefined,
-  name: string,
-  value: string,
-) {
+function setStyle(element: HTMLElement | null | undefined, name: string, value: string) {
   if (element && element.style.getPropertyValue(name) !== value) {
     element.style.setProperty(name, value);
   }
 }
 
-/** Angle the woven floor tips toward the camera as it becomes the room's floor, in degrees. */
+/** Angle the woven mat tips toward the camera as it becomes the room's floor, in degrees. */
 const LIE_ANGLE = 52;
 
+interface LoomElements {
+  readonly live: Element[];
+  readonly warps: Element[];
+  readonly shadows: Element[][];
+  readonly clouds: Element[];
+  readonly labels: Element[];
+  readonly wefts: Element[];
+  readonly slides: Element[];
+  readonly reaches: Element[];
+  readonly ground: Element | null;
+  readonly texture: Element | null;
+}
+
 /**
- * The weave moment, layered over the scene between the sky and the room. It
- * renders once per layout; scene progress writes attributes directly.
+ * The weave moment, layered over the scene between the sky and the room and
+ * under the scene's own paper grain. It renders once per layout; scene
+ * progress writes attributes and transforms directly. Paper throughout: flat
+ * strips with hand-cut edges, offset shadows where one lies on another, and
+ * wipes instead of dissolves when it hands over to the room.
  */
 export const WeaveLoom = forwardRef<WeaveLoomHandle, WeaveLoomProps>(function WeaveLoom(
   { width, height, threads },
@@ -44,15 +63,18 @@ export const WeaveLoom = forwardRef<WeaveLoomHandle, WeaveLoomProps>(function We
   const id = (name: string) => `koaryu-loom-${rawId.replace(/[^a-zA-Z0-9_-]/g, "")}-${name}`;
   const layout = useMemo(() => loomLayout(width, height, threads), [width, height, threads]);
   const rootRef = useRef<HTMLDivElement>(null);
+  const skyRef = useRef<HTMLDivElement>(null);
   const washRef = useRef<HTMLDivElement>(null);
-  const wallRef = useRef<HTMLDivElement>(null);
+  const floorRef = useRef<HTMLDivElement>(null);
+  const floorInnerRef = useRef<HTMLDivElement>(null);
   const matRef = useRef<HTMLDivElement>(null);
+  const seamRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const lastRef = useRef<{
     layout: LoomLayout | null;
     frame: LoomFrame | null;
-    elements: { warps: Element[]; labels: Element[]; wefts: Element[]; ground: Element | null };
-  }>({ layout: null, frame: null, elements: { warps: [], labels: [], wefts: [], ground: null } });
+    elements: LoomElements | null;
+  }>({ layout: null, frame: null, elements: null });
 
   useImperativeHandle(
     ref,
@@ -64,28 +86,54 @@ export const WeaveLoom = forwardRef<WeaveLoomHandle, WeaveLoomProps>(function We
         const last = lastRef.current;
         const frame = loomFrame(progress, layout);
         const previous = last.layout === layout ? last.frame : null;
-        if (last.layout !== layout) {
+        if (last.layout !== layout || !last.elements) {
           // Look the moving parts up once per layout, not once per frame.
           const all = (selector: string) => Array.from(svg.querySelectorAll(selector));
+          const warps = all("[data-warp]");
           last.elements = {
-            warps: all("[data-warp]"),
+            live: all("[data-live]"),
+            warps,
+            shadows: warps.map((group) => Array.from(group.querySelectorAll("[data-shadow]"))),
+            clouds: all("[data-cloud]"),
             labels: all("[data-label]"),
             wefts: all("[data-weft]"),
+            slides: all("[data-slide]"),
+            reaches: all("[data-reach]"),
             ground: svg.querySelector("[data-ground]"),
+            texture: svg.querySelector("[data-texture]"),
           };
         }
         last.layout = layout;
         last.frame = frame;
-        const { elements } = last;
+        const elements = last.elements;
 
         if (root.dataset.visible !== String(frame.visible)) {
           root.dataset.visible = String(frame.visible);
         }
         if (!frame.visible) return;
+
+        // The sky: washed in over the clouds, then lifted off the wall from the floor line up.
         setStyle(washRef.current, "opacity", String(frame.wash));
-        setStyle(wallRef.current, "opacity", String(Math.min(frame.wash, frame.room)));
-        setStyle(matRef.current, "opacity", String(frame.mat));
-        set(elements.ground, "opacity", String(frame.ground));
+        const lifted = Math.max(0, (1 - frame.wallEdge) * height);
+        setStyle(
+          skyRef.current,
+          "transform",
+          lifted ? `translateY(${(-lifted).toFixed(1)}px)` : "",
+        );
+        setStyle(washRef.current, "transform", lifted ? `translateY(${lifted.toFixed(1)}px)` : "");
+
+        // The floor is laid over the mat: everything above its leading edge is the room's.
+        const edge = Math.max(0, frame.floorEdge * height);
+        const laid = frame.floorEdge > layout.floorFraction;
+        setStyle(floorRef.current, "transform", laid ? `translateY(${edge.toFixed(1)}px)` : "");
+        setStyle(
+          floorInnerRef.current,
+          "transform",
+          laid ? `translateY(${(-edge).toFixed(1)}px)` : "",
+        );
+        setStyle(seamRef.current, "opacity", String(frame.seam));
+        setStyle(seamRef.current, "transform", `translateY(${edge.toFixed(1)}px)`);
+
         // The mat tips toward the camera around its far edge, which settles on the room's floor line.
         const drop = (layout.floorFraction - layout.matTopFraction) * height * frame.lie;
         setStyle(
@@ -96,16 +144,25 @@ export const WeaveLoom = forwardRef<WeaveLoomHandle, WeaveLoomProps>(function We
             : "",
         );
 
+        // The backing card slides up behind the strips; only the gaps between them show it coming.
+        const backing = (1 - frame.ground) * (layout.matBottom - layout.matTop + 40);
+        set(elements.ground, "transform", backing ? `translate(0 ${backing.toFixed(1)})` : "");
+        set(elements.texture, "opacity", String(frame.ground));
+
         frame.warps.forEach((warp, index) => {
           const before = previous?.warps[index];
-          const group = elements.warps[index];
-          if (!group) return;
           if (!before || before.settle !== warp.settle) {
-            const d = warpPath(layout, layout.warps[index]!, warp.settle);
-            for (const path of group.querySelectorAll("path")) set(path, "d", d);
+            set(elements.live[index], "d", warpPath(layout, layout.warps[index]!, warp.settle));
           }
-          set(group, "opacity", String(warp.opacity));
-          set(group.querySelector("[data-cloud]"), "opacity", String(warp.cloud));
+          set(elements.warps[index], "transform", warp.slide ? `translate(${warp.slide} 0)` : "");
+          const [far, near] = elements.shadows[index] ?? [];
+          set(
+            far,
+            "transform",
+            `translate(${(warp.shadow * 0.5).toFixed(1)} ${(warp.shadow * 1.9).toFixed(1)})`,
+          );
+          set(near, "transform", `translate(0 ${warp.shadow.toFixed(1)})`);
+          set(elements.clouds[index], "opacity", String(warp.cloud));
         });
         frame.labels.forEach((label, index) => {
           const text = elements.labels[index];
@@ -114,7 +171,6 @@ export const WeaveLoom = forwardRef<WeaveLoomHandle, WeaveLoomProps>(function We
         });
         frame.wefts.forEach((woven, index) => {
           if (previous && previous.wefts[index] === woven) return;
-          const weft = layout.wefts[index]!;
           const group = elements.wefts[index];
           if (!group) return;
           if (woven <= 0) {
@@ -122,203 +178,188 @@ export const WeaveLoom = forwardRef<WeaveLoomHandle, WeaveLoomProps>(function We
             return;
           }
           set(group, "display", "inline");
-          const span = layout.matBottom - layout.weftTop;
-          const length = Math.max(weft.width, span * woven);
-          const top = weft.downward ? layout.weftTop : layout.matBottom - length;
-          for (const body of group.querySelectorAll("[data-body]")) {
-            set(body, "y", top.toFixed(1));
-            set(body, "height", length.toFixed(1));
-          }
-          // Crossings are revealed just behind the strand's rounded tip.
-          const reveal = Math.max(0, length - weft.width * 0.5);
-          const clip = group.querySelector("clipPath rect");
-          set(clip, "y", (weft.downward ? top : layout.matBottom - reveal).toFixed(1));
-          set(clip, "height", reveal.toFixed(1));
+          const rise = (1 - woven) * layout.weftTravel;
+          set(elements.slides[index], "transform", rise ? `translate(0 ${rise.toFixed(1)})` : "");
+          // Where a warp lies over this strip, its shadow falls only on the part already threaded.
+          set(elements.reaches[index], "y", (layout.weftTop + rise).toFixed(1));
         });
       },
     }),
     [height, layout],
   );
 
-  const { visible, matTop, matBottom, shadow, warps, wefts, over, fontSize } = layout;
-  const left = visible.left - 120;
-  const right = visible.right + 120;
+  const { visible, matTop, matBottom, shadow, warps, wefts, over, fontSize, weftTop } = layout;
+  const left = visible.left - 160;
+  const right = visible.right + 160;
+  // Crossings redraw the warp a little either side of the weft, over all of the weft's own shadow.
+  const margin = shadow * 1.8 + 1.5;
 
   return (
     <div ref={rootRef} className={styles.loom} data-visible="false" aria-hidden="true">
-      <div ref={washRef} className={styles.loomWash} />
-      <div ref={wallRef} className={styles.loomWall} />
-      <div
-        ref={matRef}
-        className={styles.loomMat}
-        style={{ transformOrigin: `50% ${(layout.matTopFraction * 100).toFixed(2)}%` }}
-      >
-        <svg
-          ref={svgRef}
-          className={styles.loomSvg}
-          viewBox={layout.viewBox}
-          preserveAspectRatio="xMidYMid slice"
-          xmlns="http://www.w3.org/2000/svg"
-          focusable="false"
-        >
-          <defs>
-            <linearGradient id={id("round-v")} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0" stopColor="#fff" stopOpacity="0.3" />
-              <stop offset="0.38" stopColor="#fff" stopOpacity="0.06" />
-              <stop offset="0.7" stopColor="#2a1a08" stopOpacity="0" />
-              <stop offset="1" stopColor="#2a1a08" stopOpacity="0.24" />
-            </linearGradient>
-            <linearGradient id={id("round-h")} x1="0" y1="0" x2="1" y2="0">
-              <stop offset="0" stopColor="#2a1a08" stopOpacity="0.2" />
-              <stop offset="0.3" stopColor="#fff" stopOpacity="0.16" />
-              <stop offset="0.55" stopColor="#fff" stopOpacity="0.04" />
-              <stop offset="1" stopColor="#2a1a08" stopOpacity="0.26" />
-            </linearGradient>
-            {(
-              [
-                ["shade-up", "0", "1", "0", "0"],
-                ["shade-down", "0", "0", "0", "1"],
-                ["shade-left", "1", "0", "0", "0"],
-                ["shade-right", "0", "0", "1", "0"],
-              ] as const
-            ).map(([name, x1, y1, x2, y2]) => (
-              <linearGradient key={name} id={id(name)} x1={x1} y1={y1} x2={x2} y2={y2}>
-                <stop offset="0" stopColor="#1e1205" stopOpacity="0.42" />
-                <stop offset="1" stopColor="#1e1205" stopOpacity="0" />
-              </linearGradient>
-            ))}
-            <radialGradient id={id("light")} cx="0.28" cy="0.1" r="0.95">
-              <stop offset="0" stopColor="#fff" stopOpacity="0.2" />
-              <stop offset="0.55" stopColor="#fff" stopOpacity="0" />
-              <stop offset="1" stopColor="#1e1205" stopOpacity="0.22" />
-            </radialGradient>
-          </defs>
-
-          <rect
-            data-ground=""
-            opacity="0"
-            className={styles.loomGround}
-            x={left}
-            y={matTop - 2}
-            width={right - left}
-            height={matBottom - matTop + 4}
-          />
-
-          {warps.map((warp, row) => (
-            <g key={warp.label} data-warp={row} opacity="0">
-              <path className={styles.loomWarp} data-tone={warp.tone} />
-              <path fill={`url(#${id("round-v")})`} />
-              <path className={styles.loomCloud} data-cloud="" />
-            </g>
-          ))}
-
-          {wefts.map((weft, column) => (
-            <g key={column} data-weft={column} display="none">
-              <clipPath id={id(`clip-${column}`)}>
-                <rect
-                  x={weft.x - shadow - 1}
-                  y={matTop}
-                  width={weft.width + shadow * 2 + 2}
-                  height={0}
-                />
-              </clipPath>
-              <rect
-                className={styles.loomWeft}
-                data-tone={weft.tone}
-                data-body=""
-                x={weft.x}
-                width={weft.width}
-                rx={weft.width / 2}
-              />
-              <rect
-                data-body=""
-                x={weft.x}
-                width={weft.width}
-                rx={weft.width / 2}
-                fill={`url(#${id("round-h")})`}
-              />
-              <g clipPath={`url(#${id(`clip-${column}`)})`}>
-                {warps.map((warp, row) =>
-                  over[row]![column] ? (
-                    <g key={row}>
-                      <rect
-                        className={styles.loomWarp}
-                        data-tone={warp.tone}
-                        x={weft.x - 0.5}
-                        y={warp.y}
-                        width={weft.width + 1}
-                        height={warp.thickness}
-                      />
-                      <rect
-                        x={weft.x - 0.5}
-                        y={warp.y}
-                        width={weft.width + 1}
-                        height={warp.thickness}
-                        fill={`url(#${id("round-v")})`}
-                      />
-                      <rect
-                        x={weft.x}
-                        y={warp.y - shadow}
-                        width={weft.width}
-                        height={shadow}
-                        fill={`url(#${id("shade-up")})`}
-                      />
-                      <rect
-                        x={weft.x}
-                        y={warp.y + warp.thickness}
-                        width={weft.width}
-                        height={shadow}
-                        fill={`url(#${id("shade-down")})`}
-                      />
-                    </g>
-                  ) : (
-                    <g key={row}>
-                      <rect
-                        x={weft.x - shadow}
-                        y={warp.y}
-                        width={shadow}
-                        height={warp.thickness}
-                        fill={`url(#${id("shade-left")})`}
-                      />
-                      <rect
-                        x={weft.x + weft.width}
-                        y={warp.y}
-                        width={shadow}
-                        height={warp.thickness}
-                        fill={`url(#${id("shade-right")})`}
-                      />
-                    </g>
-                  ),
-                )}
-              </g>
-            </g>
-          ))}
-
-          <rect
-            x={left}
-            y={matTop - 2}
-            width={right - left}
-            height={matBottom - matTop + 2}
-            fill={`url(#${id("light")})`}
-            className={styles.loomLight}
-          />
-
-          {warps.map((warp, row) => (
-            <text
-              key={warp.label}
-              data-label={row}
-              className={styles.loomLabel}
-              x={warp.labelX + fontSize * 0.8}
-              y={warp.y + warp.thickness / 2}
-              fontSize={fontSize}
-              dominantBaseline="central"
-              opacity="0"
-            >
-              {warp.label}
-            </text>
-          ))}
-        </svg>
+      <div ref={skyRef} className={styles.loomSky}>
+        <div ref={washRef} className={styles.loomWash} />
       </div>
+      <div ref={floorRef} className={styles.loomFloor}>
+        <div ref={floorInnerRef} className={styles.loomFloorInner}>
+          <div
+            ref={matRef}
+            className={styles.loomMat}
+            style={{ transformOrigin: `50% ${(layout.matTopFraction * 100).toFixed(2)}%` }}
+          >
+            <svg
+              ref={svgRef}
+              className={styles.loomSvg}
+              viewBox={layout.viewBox}
+              preserveAspectRatio="xMidYMid slice"
+              xmlns="http://www.w3.org/2000/svg"
+              focusable="false"
+            >
+              <defs>
+                <pattern
+                  id={id("fibre")}
+                  patternUnits="userSpaceOnUse"
+                  width={fontSize * 8}
+                  height={fontSize * 8}
+                >
+                  <image href="/marketing/washi.webp" width={fontSize * 8} height={fontSize * 8} />
+                </pattern>
+                {warps.map((warp, row) => (
+                  <path key={warp.label} id={id(`live-${row}`)} data-live="" />
+                ))}
+                {warps.map((warp, row) => (
+                  <path key={warp.label} id={id(`strip-${row}`)} d={warpPath(layout, warp, 1)} />
+                ))}
+                {wefts.map((weft, column) => (
+                  <clipPath key={column} id={id(`reach-${column}`)}>
+                    <rect
+                      data-reach=""
+                      x={weft.x}
+                      y={weftTop + layout.weftTravel}
+                      width={weft.width}
+                      height={matBottom - weftTop}
+                    />
+                  </clipPath>
+                ))}
+                {wefts.map((weft, column) => (
+                  <clipPath key={column} id={id(`column-${column}`)}>
+                    <rect
+                      x={weft.x - margin}
+                      y={visible.top - 10}
+                      width={weft.width + margin * 2}
+                      height={matBottom - visible.top + 20}
+                    />
+                  </clipPath>
+                ))}
+              </defs>
+
+              {/* The backing sheet the strips are woven against. */}
+              <rect
+                data-ground=""
+                className={styles.loomGround}
+                x={left}
+                y={matTop - 2}
+                width={right - left}
+                height={matBottom - matTop + 40}
+                transform={`translate(0 ${matBottom - matTop + 40})`}
+              />
+
+              {warps.map((warp, row) => (
+                <g key={warp.label} data-warp={row}>
+                  <use
+                    href={`#${id(`live-${row}`)}`}
+                    data-shadow=""
+                    className={styles.loomShadowFar}
+                  />
+                  <use
+                    href={`#${id(`live-${row}`)}`}
+                    data-shadow=""
+                    className={styles.loomShadow}
+                  />
+                  <use
+                    href={`#${id(`live-${row}`)}`}
+                    className={styles.loomWarp}
+                    data-tone={warp.tone}
+                  />
+                  <use href={`#${id(`live-${row}`)}`} className={styles.loomCloud} data-cloud="" />
+                </g>
+              ))}
+
+              {wefts.map((weft, column) => {
+                const outline = weftPath(layout, weft);
+                return (
+                  <g key={column} data-weft={column} display="none">
+                    <g data-slide="" transform={`translate(0 ${layout.weftTravel})`}>
+                      <path
+                        d={outline}
+                        className={styles.loomShadowFar}
+                        transform={`translate(${shadow * 1.8} ${shadow * 1.1})`}
+                      />
+                      <path
+                        d={outline}
+                        className={styles.loomShadow}
+                        transform={`translate(${shadow} ${shadow * 0.5})`}
+                      />
+                      <path d={outline} className={styles.loomWeft} data-tone={weft.tone} />
+                    </g>
+                    <g clipPath={`url(#${id(`reach-${column}`)})`}>
+                      {warps.map((warp, row) =>
+                        over[row]![column] ? (
+                          <use
+                            key={row}
+                            href={`#${id(`strip-${row}`)}`}
+                            className={styles.loomShadow}
+                            transform={`translate(0 ${shadow})`}
+                          />
+                        ) : null,
+                      )}
+                    </g>
+                    <g clipPath={`url(#${id(`column-${column}`)})`}>
+                      {warps.map((warp, row) =>
+                        over[row]![column] ? (
+                          <use
+                            key={row}
+                            href={`#${id(`strip-${row}`)}`}
+                            className={styles.loomWarp}
+                            data-tone={warp.tone}
+                          />
+                        ) : null,
+                      )}
+                    </g>
+                  </g>
+                );
+              })}
+
+              {/* Paper fibre over the woven mat; the scene's grain lies over everything. */}
+              <rect
+                data-texture=""
+                className={styles.loomFibre}
+                x={left}
+                y={matTop - 2}
+                width={right - left}
+                height={matBottom - matTop + 2}
+                fill={`url(#${id("fibre")})`}
+                opacity="0"
+              />
+
+              {warps.map((warp, row) => (
+                <text
+                  key={warp.label}
+                  data-label={row}
+                  className={styles.loomLabel}
+                  x={warp.labelX + fontSize * 0.8}
+                  y={warp.y + warp.thickness / 2}
+                  fontSize={fontSize}
+                  dominantBaseline="central"
+                  opacity="0"
+                >
+                  {warp.label}
+                </text>
+              ))}
+            </svg>
+          </div>
+        </div>
+      </div>
+      <div ref={seamRef} className={styles.loomSeam} />
     </div>
   );
 });

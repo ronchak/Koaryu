@@ -84,7 +84,7 @@ export type MastheadTone = "light" | "dark";
  * hill, then under the dojo ceiling. Wide frames leave the ceiling sooner than
  * tall ones, which keep more of it in view.
  */
-export const DARK_TOP_START = 0.08;
+export const DARK_TOP_START = Object.freeze({ wide: 0.08, tall: 0.09 });
 export const DARK_TOP_END = Object.freeze({ wide: 0.385, tall: 0.575 });
 
 /**
@@ -93,8 +93,19 @@ export const DARK_TOP_END = Object.freeze({ wide: 0.385, tall: 0.575 });
  */
 export function mastheadTone(progress: number, viewBoxHeight: number): MastheadTone {
   const tallness = Math.min(1, Math.max(0, (viewBoxHeight - 1000) / 1000));
+  const start = DARK_TOP_START.wide + (DARK_TOP_START.tall - DARK_TOP_START.wide) * tallness;
   const end = DARK_TOP_END.wide + (DARK_TOP_END.tall - DARK_TOP_END.wide) * tallness;
-  return progress >= DARK_TOP_START && progress <= end ? "dark" : "light";
+  return progress >= start && progress <= end ? "dark" : "light";
+}
+
+/**
+ * While the hills are still beneath it, the masthead stays clear over the art;
+ * it takes a ground only once the curtain reaches it, so it never flashes light
+ * and then dark on the way into the second chapter.
+ */
+export function mastheadOverHills(progress: number, viewBoxHeight: number): boolean {
+  const tallness = Math.min(1, Math.max(0, (viewBoxHeight - 1000) / 1000));
+  return progress < DARK_TOP_START.wide + (DARK_TOP_START.tall - DARK_TOP_START.wide) * tallness;
 }
 
 /** Reduced motion shows only chapter still frames, switching at each transition's midpoint. */

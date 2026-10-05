@@ -633,3 +633,40 @@ export function handoffGeometry(input: {
     },
   };
 }
+
+/** Copy waits this far clear of the picture's edge and frame, and returns over this distance. */
+export const COPY_CLEARANCE_PX = 6;
+export const COPY_RETURN_PX = 28;
+
+/**
+ * How visible a block of copy is beside a picture moving into its frame: whole
+ * while it lies well inside the picture or well clear of it and its frame,
+ * gone while an edge or the frame passes through it, so text and frame never
+ * cross. `settled` is how far clear the copy sits once the picture has landed;
+ * the return ramp ends there, so the settled layout is always fully visible.
+ */
+export function copyClearance(
+  box: PictureRect,
+  picture: PictureRect,
+  frame: number,
+  settled: number,
+  /** Copy written on the wall of the picture may also show while the picture still holds it. */
+  onWall = true,
+): number {
+  const inside = Math.min(
+    box.left - picture.left,
+    box.top - picture.top,
+    picture.left + picture.width - (box.left + box.width),
+    picture.top + picture.height - (box.top + box.height),
+  );
+  const outside = Math.max(
+    picture.left - frame - (box.left + box.width),
+    box.left - (picture.left + picture.width + frame),
+    picture.top - frame - (box.top + box.height),
+    box.top - (picture.top + picture.height + frame),
+  );
+  const start = Math.min(COPY_CLEARANCE_PX, settled - 1);
+  const span = Math.max(1, Math.min(COPY_RETURN_PX, settled - start));
+  const ramp = (distance: number) => Math.min(1, Math.max(0, (distance - start) / span));
+  return Math.max(onWall ? ramp(inside) : 0, ramp(outside));
+}
