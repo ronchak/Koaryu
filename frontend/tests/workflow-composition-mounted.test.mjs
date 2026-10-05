@@ -1127,3 +1127,45 @@ test("manual camera survives edits, history and resize, and a new canvas mount r
     assert.equal(await count(page), 0);
   });
 });
+
+test("saved prototype-named operators keep their exact IDs in Graph and Steps", async () => {
+  await mount({ route: draftRoute }, async (page) => {
+    await expect(name(page)).toBeVisible();
+    await page.evaluate(() => {
+      for (const [index, operator] of ["constructor", "toString", "__proto__", "eq"].entries())
+        fixture.owner().edit({
+          kind: "add_node",
+          node: {
+            id: "operator_" + index,
+            type: "condition",
+            config: { field: "lead.stage", operator, value: "inquiry" },
+          },
+        });
+    });
+    const labels = [
+      "Lead stage constructor inquiry",
+      "Lead stage toString inquiry",
+      "Lead stage __proto__ inquiry",
+      "Lead stage Is inquiry",
+    ];
+    const steps = page.getByRole("list", { name: "Workflow steps" });
+    for (const label of labels) await expect(steps).toContainText(label);
+    assert.doesNotMatch(
+      await steps.innerText(),
+      /native code|\[object Object\]|function Object|function toString/,
+    );
+    const before = await page.evaluate(() =>
+      structuredClone(fixture.owner().getSnapshot().editor.history),
+    );
+    await page.getByRole("button", { name: "Graph", exact: true }).click();
+    for (const label of labels) await expect(page.locator(".react-flow")).toContainText(label);
+    assert.doesNotMatch(
+      await page.locator(".react-flow").innerText(),
+      /native code|\[object Object\]|function Object|function toString/,
+    );
+    assert.deepEqual(
+      await page.evaluate(() => structuredClone(fixture.owner().getSnapshot().editor.history)),
+      before,
+    );
+  });
+});

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { EventEmitter, once } from "node:events";
 import { test } from "node:test";
 import { chromium, expect } from "@playwright/test";
@@ -7,7 +8,10 @@ import { bundleWorkflowGraph, workflowGraphCss } from "./helpers/workflow-graph-
 import { initialGraph, settleFixtureChild } from "./helpers/workflow-graph-fixture.mjs";
 
 const bundles = new Map();
-async function mount(browser, { width = 1200, mode = "production" } = {}) {
+async function mount(
+  browser,
+  { width = 1200, mode = "production", instrumentMeasurements = false } = {},
+) {
   const page = await browser.newPage({ viewport: { width, height: 1000 } });
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));
@@ -21,8 +25,10 @@ async function mount(browser, { width = 1200, mode = "production" } = {}) {
   );
   await page.goto("http://localhost/");
   await page.addStyleTag({ content: workflowGraphCss });
-  if (!bundles.has(mode)) bundles.set(mode, bundleWorkflowGraph(mode));
-  await page.addScriptTag({ content: bundles.get(mode) });
+  const bundleKey = `${mode}:${instrumentMeasurements}`;
+  if (!bundles.has(bundleKey))
+    bundles.set(bundleKey, bundleWorkflowGraph(mode, { instrumentMeasurements }));
+  await page.addScriptTag({ content: bundles.get(bundleKey) });
   await page.waitForFunction(() => window.workflowFixture);
   if (width >= 768) {
     try {
@@ -637,3 +643,201 @@ test("initial camera is readable and explicit Fit View shows all six nodes witho
     await browser.close();
   }
 });
+
+for (const mode of ["production", "development"])
+  test(`actual dimensions survive fresh presentation props without canonical edits or camera changes (${mode})`, async () => {
+    const browser = await chromium.launch();
+    try {
+      const { page, errors } = await mount(browser, { mode, instrumentMeasurements: true });
+      const currentNodes = () => page.evaluate(() => workflowMeasurements.renders.at(-1).nodes);
+      const measured = async () =>
+        (await currentNodes()).length === initialGraph.graph.nodes.length &&
+        (await currentNodes()).every(
+          (node) => node.measured?.width > 0 && node.measured?.height > 0,
+        );
+      await expect.poll(measured).toBe(true);
+      assert.equal(await count(page), 0);
+      assert.equal(await page.evaluate(() => workflowFixture.history.past.length), 0);
+      const initial = await page.evaluate(() =>
+        structuredClone({
+          renders: workflowMeasurements.renders,
+          dimensions: workflowMeasurements.dimensions,
+        }),
+      );
+      assert.ok(initial.renders[0].nodes.every((node) => node.measured === null));
+      await page.evaluate(() =>
+        workflowFixture.edit({
+          kind: "update_config",
+          node_id: "condition",
+          update: {
+            type: "condition",
+            config: {
+              field: "program.id",
+              operator: "eq",
+              value: "71000000-0000-4000-8000-000000000001",
+            },
+          },
+        }),
+      );
+      await expect
+        .poll(
+          async () =>
+            (await snapshot(page)).graph.nodes.find((node) => node.id === "condition").config
+              .operator,
+        )
+        .toBe("eq");
+      await page.getByRole("button", { name: "Zoom Out", exact: true }).click();
+      const camera = () =>
+        page
+          .locator(".react-flow__viewport")
+          .evaluate((element) => getComputedStyle(element).transform);
+      await expect
+        .poll(() =>
+          page
+            .locator(".react-flow__viewport")
+            .evaluate((element) => new DOMMatrixReadOnly(getComputedStyle(element).transform).a),
+        )
+        .toBeCloseTo(0.75, 6);
+      const beforeCamera = await camera();
+      const beforeHistory = await page.evaluate(() => structuredClone(workflowFixture.history));
+      const beforeActions = await count(page);
+      const beforeRenders = await page.evaluate(() => workflowMeasurements.renders.length);
+      const catalog = JSON.parse(
+        readFileSync(
+          new URL("../src/lib/generated/workflow-preview-catalog.json", import.meta.url),
+          "utf8",
+        ),
+      );
+      for (let index = 0; index < 10; index++) {
+        await page.evaluate(
+          ({ catalog, index }) => {
+            const next = structuredClone(catalog);
+            next.triggers["lead.created"].label = "Fresh lead label " + index;
+            workflowFixture.setPresentation({
+              catalog: next,
+              references: {
+                "program.id": {
+                  status: "ready",
+                  choices: [
+                    { id: "71000000-0000-4000-8000-000000000001", label: "Fresh program " + index },
+                  ],
+                },
+              },
+            });
+            workflowFixture.setIssues(
+              index % 2
+                ? [
+                    {
+                      code: "fixture",
+                      message: "Fresh issue " + index,
+                      node_id: "condition",
+                      edge_id: null,
+                      field: null,
+                    },
+                  ]
+                : [],
+            );
+          },
+          { catalog, index },
+        );
+        await expect
+          .poll(
+            async () => (await currentNodes()).find((node) => node.id === "trigger").data.summary,
+          )
+          .toBe("Fresh lead label " + index);
+        await expect
+          .poll(
+            async () => (await currentNodes()).find((node) => node.id === "condition").data.summary,
+          )
+          .toBe("Program Is Fresh program " + index);
+        assert.equal(
+          (await currentNodes()).find((node) => node.id === "condition").data.issue,
+          index % 2 === 1,
+        );
+        await expect(page.locator(".react-flow__edge-path")).toHaveCount(
+          initialGraph.graph.edges.length,
+        );
+        for (const path of await page
+          .locator(".react-flow__edge-path")
+          .evaluateAll((edges) => edges.map((edge) => edge.getAttribute("d"))))
+          assert.ok(path && !/NaN|undefined|Infinity/.test(path));
+      }
+      const observed = await page.evaluate(() => ({
+        renders: workflowMeasurements.renders,
+        dimensions: workflowMeasurements.dimensions,
+        dom: [...document.querySelectorAll(".react-flow__node")].map((node) => ({
+          id: node.dataset.id,
+          width: node.offsetWidth,
+          height: node.offsetHeight,
+        })),
+      }));
+      for (const rendered of observed.renders)
+        for (const node of rendered.nodes) {
+          if (node.measured === null) continue;
+          const actual = observed.dimensions
+            .slice(0, rendered.eventCount)
+            .findLast((change) => change.id === node.id);
+          assert.deepEqual(
+            node.measured,
+            actual?.dimensions,
+            `No preceding actual dimensions for ${node.id}`,
+          );
+        }
+      for (const node of observed.renders.at(-1).nodes) {
+        const dom = observed.dom.find((entry) => entry.id === node.id);
+        assert.deepEqual(node.measured, { width: dom.width, height: dom.height });
+      }
+      assert.ok(
+        observed.renders.length - beforeRenders <= 40,
+        `Unbounded presentation renders: ${observed.renders.length - beforeRenders}`,
+      );
+      assert.deepEqual(
+        await page.evaluate(() => structuredClone(workflowFixture.history)),
+        beforeHistory,
+      );
+      assert.equal(await count(page), beforeActions);
+      assert.equal(await camera(), beforeCamera);
+      const renderCount = await page.evaluate(() => {
+        const actual = [
+          ...new Map(workflowMeasurements.dimensions.map((change) => [change.id, change])).values(),
+        ];
+        const before = workflowMeasurements.renders.length;
+        for (let index = 0; index < 10; index++) workflowMeasurements.notify(actual);
+        return before;
+      });
+      assert.ok(
+        (await page.evaluate(() => workflowMeasurements.renders.length)) <= renderCount + 2,
+        "Equal actual measurements must settle without repeated renders",
+      );
+      assert.deepEqual(
+        await page.evaluate(() => structuredClone(workflowFixture.history)),
+        beforeHistory,
+      );
+      assert.equal(await camera(), beforeCamera);
+      await page.evaluate(() => workflowFixture.edit({ kind: "remove_node", node_id: "email" }));
+      await expect
+        .poll(async () => (await currentNodes()).some((node) => node.id === "email"))
+        .toBe(false);
+      const removalRenders = await page.evaluate(() => workflowMeasurements.renders.length);
+      await page.getByRole("button", { name: "Undo", exact: true }).click();
+      await expect.poll(measured).toBe(true);
+      const readded = await page.evaluate(
+        (index) =>
+          workflowMeasurements.renders
+            .slice(index)
+            .find((render) => render.nodes.some((node) => node.id === "email"))
+            .nodes.find((node) => node.id === "email"),
+        removalRenders,
+      );
+      assert.equal(readded.measured, null, "Removed IDs must not retain dimensions when re-added");
+      await expect(page.locator(".react-flow__edge-path")).toHaveCount(
+        initialGraph.graph.edges.length,
+      );
+      assert.equal(await count(page), beforeActions + 1);
+      assert.deepEqual(await snapshot(page), beforeHistory.present);
+      assert.equal(await camera(), beforeCamera);
+      assert.deepEqual(errors, []);
+    } finally {
+      await browser.close();
+    }
+  });

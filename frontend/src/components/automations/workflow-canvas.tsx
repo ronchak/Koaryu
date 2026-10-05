@@ -141,6 +141,19 @@ export default function WorkflowCanvas({
     positions: Record<string, WorkflowPosition>;
   } | null>(null);
   const [selectedEdge, setSelectedEdge] = useState<string | null>(null);
+  const [measurements, setMeasurements] = useState<
+    ReadonlyMap<string, { width: number; height: number }>
+  >(() => new Map());
+  const nodeIds = useMemo(
+    () => new Set(draft.graph.nodes.map((node) => node.id)),
+    [draft.graph.nodes],
+  );
+  if ([...measurements.keys()].some((id) => !nodeIds.has(id))) {
+    setMeasurements((previous) => {
+      const retained = new Map([...previous].filter(([id]) => nodeIds.has(id)));
+      return retained.size === previous.size ? previous : retained;
+    });
+  }
   const positioned = useMemo(() => fillWorkflowPositions(draft), [draft]);
   const nodes = useMemo<CardNode[]>(
     () =>
@@ -149,6 +162,7 @@ export default function WorkflowCanvas({
         type: "workflow",
         width: 240,
         height: 132,
+        measured: measurements.get(node.id),
         position:
           (!disabled && drag?.draft === draft && Object.hasOwn(drag.positions, node.id)
             ? drag.positions[node.id]
@@ -161,7 +175,7 @@ export default function WorkflowCanvas({
         },
         ariaLabel: `${text[node.id].label}. ${text[node.id].summary}`,
       })),
-    [draft, drag, disabled, positioned, selectedNodeId, text, issues],
+    [draft, drag, disabled, positioned, selectedNodeId, text, issues, measurements],
   );
   const edges = useMemo<Edge[]>(
     () =>
@@ -183,6 +197,23 @@ export default function WorkflowCanvas({
   );
   const changeNodes = useCallback<OnNodesChange<CardNode>>(
     (changes) => {
+      const dimensions = changes.filter(
+        (change) => change.type === "dimensions" && change.dimensions && nodeIds.has(change.id),
+      );
+      if (dimensions.length) {
+        setMeasurements((previous) => {
+          let next: Map<string, { width: number; height: number }> | undefined;
+          for (const change of dimensions) {
+            if (change.type !== "dimensions" || !change.dimensions) continue;
+            const { width, height } = change.dimensions;
+            const current = (next ?? previous).get(change.id);
+            if (current?.width === width && current?.height === height) continue;
+            next ??= new Map(previous);
+            next.set(change.id, { width, height });
+          }
+          return next ?? previous;
+        });
+      }
       for (const change of changes) {
         if (change.type === "select") {
           if (change.selected) {
@@ -212,7 +243,7 @@ export default function WorkflowCanvas({
         }
       }
     },
-    [disabled, draft, onEdit, onSelectNode, selectedNodeId],
+    [disabled, draft, onEdit, onSelectNode, selectedNodeId, nodeIds],
   );
   const changeEdges = useCallback<OnEdgesChange>(
     (changes) => {

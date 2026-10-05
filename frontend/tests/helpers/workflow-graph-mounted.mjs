@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { createRequire } from "node:module";
 import { createCommonJsPacker } from "./store-browser-harness.mjs";
 import { frontend, fixtureTheme, workflowGraphOwnerSource } from "./workflow-graph-fixture.mjs";
 
@@ -15,8 +16,27 @@ export const workflowGraphCss =
   componentCss.replace(/:global\(([^)]+)\)/g, "$1") +
   readFileSync(resolve(frontend, "node_modules/@xyflow/react/dist/style.css"), "utf8");
 
-export function bundleWorkflowGraph(mode = "production") {
+export function bundleWorkflowGraph(mode = "production", { instrumentMeasurements = false } = {}) {
+  const measurementProbe = instrumentMeasurements
+    ? {
+        "@xyflow/react": `
+      const React=require('react');
+      const library=require(${JSON.stringify(createRequire(import.meta.url).resolve("@xyflow/react"))});
+      const probe=window.workflowMeasurements={renders:[],dimensions:[],notify:null};
+      const ReactFlow=React.forwardRef((props,ref)=>{
+        probe.renders.push({eventCount:probe.dimensions.length,nodes:props.nodes.map(node=>({id:node.id,measured:node.measured?{...node.measured}:null,position:{...node.position},data:{...node.data}}))});
+        probe.notify=props.onNodesChange;
+        const onNodesChange=React.useCallback(changes=>{
+          probe.dimensions.push(...changes.filter(change=>change.type==='dimensions'&&change.dimensions).map(change=>({...change,dimensions:{...change.dimensions}})));
+          props.onNodesChange?.(changes);
+        },[props.onNodesChange]);
+        return React.createElement(library.ReactFlow,{...props,ref,onNodesChange});
+      });
+      module.exports={...library,ReactFlow};`,
+      }
+    : {};
   const { add, modules } = createCommonJsPacker({
+    ...measurementProbe,
     "./workflow-graph-editor.module.css": `module.exports=${JSON.stringify(classes)}`,
     "@xyflow/react/dist/style.css": "module.exports={};",
     "next/dynamic": `const React=require('react');module.exports=(loader,options)=>{const Lazy=React.lazy(loader);return props=>React.createElement(React.Suspense,{fallback:React.createElement(options.loading)},React.createElement(Lazy,props));};`,
