@@ -194,7 +194,11 @@ export function validateWorkflow(
           text(config.operator, "config.operator", nodeId, true);
           if (
             has(config, "value") &&
-            !(scalar(config.value) || (Array.isArray(config.value) && config.value.every(scalar)))
+            !(
+              scalar(config.value) ||
+              (Array.isArray(config.value) &&
+                config.value.every((entry) => entry !== null && scalar(entry)))
+            )
           )
             issue(
               "invalid_condition_value",

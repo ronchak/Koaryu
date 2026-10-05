@@ -15,7 +15,7 @@ afterEach(() => {
 const operation_id = "12d540e8-054a-4a27-acba-f507684320fc";
 const command = { operation_id, expected_revision: 7 };
 const token = "synthetic-token";
-const id = "workflow/with ?characters";
+const id = "5aa8c5ca-d0f0-4f5e-a7ad-89c711f50365";
 const route = `/automations/workflows/${encodeURIComponent(id)}`;
 function detail() {
   const draft = initialWorkflowDraft();
@@ -41,7 +41,24 @@ function capture(response = detail()) {
   const calls = [];
   globalThis.fetch = async (url, init) => {
     calls.push({ pathname: new URL(url).pathname, init });
-    return Response.json(response);
+    const action = new URL(url).pathname.split("/").at(-1);
+    const status = { publish: "paused", start: "active", pause: "paused", archive: "archived" }[
+      action
+    ];
+    return Response.json({
+      ...response,
+      ...(status
+        ? {
+            status,
+            published_version_id: "20000000-0000-4000-8000-000000000001",
+            published_version_number: 1,
+            published_at: "2026-10-05T12:00:00Z",
+          }
+        : {}),
+      ...(new URL(url).pathname.endsWith("/workflows") && init.method === "POST"
+        ? { revision: 1, status: "draft" }
+        : {}),
+    });
   };
   return calls;
 }
@@ -74,7 +91,10 @@ test("create and save project draft JSON and forward operation/revision through 
     description: request.description,
     ...canonicalWorkflowDraft(draft),
   };
-  assert.deepEqual(await workflowApi.create(request, token, controller.signal), response);
+  assert.deepEqual(await workflowApi.create(request, token, controller.signal), {
+    ...response,
+    revision: 1,
+  });
   assert.deepEqual(
     await workflowApi.save(id, { ...request, expected_revision: 7 }, token, controller.signal),
     response,
@@ -397,4 +417,208 @@ test("present undefined comparison fails before transport rather than being omit
     /finite scalar/,
   );
   assert.equal(calls.length, 0);
+});
+
+const { sizedRequest, catalog, receipt, ids } =
+  await import("./helpers/workflow-workspace-fixture.mjs");
+const { WORKFLOW_MAX_REQUEST_BYTES, assertWorkflowReceipt } =
+  await import("../src/lib/automation-workflow-api.ts");
+
+test("complete canonical UTF-8 body accepts exact maximum and rejects max+1 before fetch", async () => {
+  const request = sizedRequest(WORKFLOW_MAX_REQUEST_BYTES, operation_id);
+  let seen;
+  globalThis.fetch = async (_url, init) => {
+    seen = init.body;
+    return Response.json({ ...detail(), revision: 1 });
+  };
+  await workflowApi.create(request, token);
+  assert.equal(Buffer.byteLength(seen), WORKFLOW_MAX_REQUEST_BYTES);
+  const tooBig = sizedRequest(WORKFLOW_MAX_REQUEST_BYTES + 1, operation_id);
+  seen = null;
+  assert.throws(
+    () => workflowApi.create(tooBig, token),
+    (error) => error instanceof ApiError && error.status === 413,
+  );
+  assert.equal(seen, null);
+  // The expected_revision field belongs to the same complete-body budget.
+  assert.throws(
+    () => workflowApi.save(id, { ...request, expected_revision: 7 }, token),
+    (error) => error.status === 413,
+  );
+});
+
+test("typed malformed 200, wrong target and command revision failures are unknown outcomes", async () => {
+  for (const response of [{}, { ...detail(), id: ids.other }, { ...detail(), revision: 7 }]) {
+    capture(response);
+    await assert.rejects(
+      workflowApi.save(
+        id,
+        {
+          operation_id,
+          name: "A",
+          description: "",
+          ...initialWorkflowDraft(),
+          expected_revision: 7,
+        },
+        token,
+      ),
+      CommandOutcomeUnknown,
+    );
+  }
+  globalThis.fetch = async () => Response.json({ ...detail(), revision: 1, status: "active" });
+  await assert.rejects(
+    workflowApi.create(
+      { operation_id, name: "A", description: "", ...initialWorkflowDraft() },
+      token,
+    ),
+    CommandOutcomeUnknown,
+  );
+});
+
+test("catalog, bounded list and receipt reads preserve typed ownership without response fallback", async () => {
+  capture(catalog);
+  assert.deepEqual(await workflowApi.catalog(token), catalog);
+  capture({ ...catalog, capabilities: { ...catalog.capabilities, can_start: 1 } });
+  await assert.rejects(workflowApi.catalog(token), (error) => error.status === 503);
+  const page = { items: [], next_cursor: null, has_more: false };
+  let called;
+  globalThis.fetch = async (url, init) => {
+    called = { url, init };
+    return Response.json(page);
+  };
+  assert.deepEqual(await workflowApi.list({}, token), page);
+  assert.ok(called.url.endsWith("?limit=50"));
+  await assert.rejects(workflowApi.list({ limit: 101 }, token), (error) => error.status === 422);
+  await assert.rejects(
+    workflowApi.list({ cursor: "x".repeat(513) }, token),
+    (error) => error.status === 422,
+  );
+  capture({ ...page, has_more: true });
+  await assert.rejects(workflowApi.list({}, token), (error) => error.status === 503);
+  const result = { ...detail(), revision: 1 };
+  const committed = receipt(operation_id, "workflow.create", result);
+  capture(committed);
+  assert.deepEqual(await workflowApi.operation(operation_id, token), committed);
+  assert.throws(
+    () => assertWorkflowReceipt(committed, { operationId: operation_id, command: "workflow.save" }),
+    (error) => error.status === 503,
+  );
+  capture({ ...committed, entity_id: ids.other });
+  await assert.rejects(workflowApi.operation(operation_id, token), CommandOutcomeUnknown);
+});
+
+test("wrong detail ownership is rejected after encoding the supplied path", async () => {
+  const calls = capture();
+  const unsafe = "workflow/with ?characters";
+  await assert.rejects(workflowApi.detail(unsafe, token), (error) => error.status === 503);
+  assert.ok(calls[0].pathname.endsWith(encodeURIComponent(unsafe)));
+});
+
+test("actual server413/422 are definite rejections with the submitted operation identity", async () => {
+  for (const status of [413, 422]) {
+    let sent;
+    globalThis.fetch = async (_url, init) => {
+      sent = JSON.parse(init.body);
+      return Response.json({ detail: "Rejected" }, { status });
+    };
+    await assert.rejects(
+      workflowApi.create(
+        { operation_id, name: "Draft", description: "", ...initialWorkflowDraft() },
+        token,
+      ),
+      (error) => error instanceof ApiError && error.status === status,
+    );
+    assert.equal(sent.operation_id, operation_id);
+  }
+});
+
+test("generated output fixtures retain all six node branches, nullable fields and omissions through transport", async () => {
+  const { canonicalCreate, untilOutputNode } =
+    await import("./helpers/workflow-workspace-contract-fixture.ts");
+  const request = structuredClone(canonicalCreate);
+  request.graph.nodes.push(structuredClone(untilOutputNode));
+  const response = {
+    ...detail(),
+    revision: 1,
+    draft_graph: request.graph,
+    draft_layout: request.layout,
+  };
+  const calls = capture(response);
+  const result = await workflowApi.create(request, token);
+  const sent = JSON.parse(calls[0].init.body);
+  assert.deepEqual(
+    new Set(sent.graph.nodes.map((node) => node.type)),
+    new Set(["trigger", "condition", "delay", "email", "lead_follow_up", "end"]),
+  );
+  for (const graph of [result.draft_graph, sent.graph]) {
+    const nodes = Object.fromEntries(graph.nodes.map((node) => [node.id, node]));
+    assert.equal(nodes.trigger.config.event_type, null);
+    assert.equal(nodes.trigger.config.program_id, null);
+    assert.equal(Object.hasOwn(nodes.trigger.config, "offset_minutes"), false);
+    assert.equal(nodes.condition.config.field, null);
+    assert.equal(nodes.condition.config.operator, null);
+    assert.equal(Object.hasOwn(nodes.condition.config, "value"), false);
+    assert.equal(nodes.delay.config.minutes, null);
+    assert.equal(nodes.until.config.field, null);
+    assert.equal(nodes.until.config.offset_minutes, 0);
+    assert.equal(nodes.email.config.recipient, null);
+    assert.equal(nodes.email.config.reply_to_email, "");
+    assert.equal(nodes.follow_up.config.due_in_days, null);
+    assert.deepEqual(nodes.end.config, {});
+  }
+});
+
+test("catalog transport rejects incompatible field types/operators instead of asserting generated wire metadata", async () => {
+  const base = {
+    id: "field",
+    label: "Field",
+    value_type: "enum",
+    operators: ["eq"],
+    nullable: false,
+    values: ["allowed"],
+  };
+  for (const field of [
+    { ...base, value_type: "number" },
+    { ...base, value_type: "datetime" },
+    { ...base, value_type: "string" },
+    { ...base, operators: ["gt"] },
+    { ...base, operators: ["eq", "unknown"] },
+  ]) {
+    capture({ ...catalog, fields: { field } });
+    await assert.rejects(
+      workflowApi.catalog(token),
+      (error) => error instanceof ApiError && error.status === 503,
+    );
+  }
+  for (const values of [undefined, ["allowed"]]) {
+    const field = { ...base };
+    if (values === undefined) delete field.values;
+    else field.values = values;
+    capture({ ...catalog, fields: { field } });
+    const returned = await workflowApi.catalog(token);
+    assert.equal(Object.hasOwn(returned.fields.field, "values"), values !== undefined);
+    assert.deepEqual(returned.fields.field.values, values);
+  }
+});
+
+test("generated condition scalar null, false and zero remain present in canonical request and response", async () => {
+  const { canonicalCreate } = await import("./helpers/workflow-workspace-contract-fixture.ts");
+  for (const value of [null, false, 0]) {
+    const request = structuredClone(canonicalCreate);
+    request.graph.nodes.find((node) => node.type === "condition").config.value = value;
+    const calls = capture({
+      ...detail(),
+      revision: 1,
+      draft_graph: request.graph,
+      draft_layout: request.layout,
+    });
+    const response = await workflowApi.create(request, token);
+    const sent = JSON.parse(calls[0].init.body).graph.nodes.find(
+      (node) => node.type === "condition",
+    ).config;
+    const returned = response.draft_graph.nodes.find((node) => node.type === "condition").config;
+    assert.equal(Object.hasOwn(sent, "value"), true);
+    assert.equal(sent.value, value);
+    assert.equal(returned.value, value);
+  }
 });

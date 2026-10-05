@@ -1,44 +1,28 @@
-import type { WorkflowSnapshot } from "./automation-workflow-model.ts";
 import type {
-  WorkflowConfigByType,
-  WorkflowScalar,
-  WorkflowSimulationEntityType,
-} from "./automation-workflow-types.ts";
+  ApiWorkflowCatalogResponse,
+  ApiWorkflowDelayMetadata,
+  ApiWorkflowFieldMetadata,
+  ApiWorkflowRecipientMetadata,
+  ApiWorkflowTriggerMetadata,
+  ApiWorkflowVariableMetadata,
+} from "../types/generated/api-contracts";
+import type { WorkflowSnapshot } from "./automation-workflow-model.ts";
+import type { WorkflowConfigByType, WorkflowScalar } from "./automation-workflow-types.ts";
 
-// Local catalog definitions until generated API aliases are available.
-export type WorkflowCatalogChoice = { readonly id: string; readonly label: string };
-export type WorkflowCatalogTrigger = WorkflowCatalogChoice & {
-  readonly subject_kind: "student" | "promotion" | "lead" | "trial" | "invoice" | "belt_test";
-  readonly simulation_entity_type: WorkflowSimulationEntityType;
-  readonly recipient_ids: readonly string[];
-  readonly field_ids: readonly string[];
-  readonly template_variables: readonly string[];
-  readonly supports_offset: boolean;
-  readonly supports_program_filter: boolean;
-  readonly delay_fields: readonly string[];
-  readonly supports_lead_follow_up: boolean;
-};
-export type WorkflowCatalogField = WorkflowCatalogChoice & {
-  readonly value_type: "boolean" | "enum" | "uuid" | "number" | "datetime" | "string";
-  readonly operators: readonly string[];
-  readonly nullable: boolean;
-  readonly values?: readonly string[];
-};
-export type WorkflowCatalogVariable = WorkflowCatalogChoice & {
-  readonly value_type: "string";
-  readonly fallback: string | null;
-};
-export type WorkflowCatalogDelayField = WorkflowCatalogChoice & {
-  readonly value_type: "datetime";
-  readonly trigger_ids: readonly string[];
-};
-export type WorkflowCatalogChoices = {
-  readonly triggers: Readonly<Record<string, WorkflowCatalogTrigger>>;
-  readonly fields: Readonly<Record<string, WorkflowCatalogField>>;
-  readonly recipients: Readonly<Record<string, WorkflowCatalogChoice>>;
-  readonly variables: Readonly<Record<string, WorkflowCatalogVariable>>;
-  readonly delay_fields: Readonly<Record<string, WorkflowCatalogDelayField>>;
-};
+type ReadonlyCatalog<T> = T extends object
+  ? { readonly [Key in keyof T]: ReadonlyCatalog<T[Key]> }
+  : T;
+export type WorkflowCatalogChoice = Readonly<ApiWorkflowRecipientMetadata>;
+export type WorkflowCatalogTrigger = ReadonlyCatalog<ApiWorkflowTriggerMetadata>;
+export type WorkflowCatalogField = ReadonlyCatalog<ApiWorkflowFieldMetadata>;
+export type WorkflowCatalogVariable = Readonly<ApiWorkflowVariableMetadata>;
+export type WorkflowCatalogDelayField = ReadonlyCatalog<ApiWorkflowDelayMetadata>;
+export type WorkflowCatalogChoices = ReadonlyCatalog<
+  Pick<
+    ApiWorkflowCatalogResponse,
+    "triggers" | "fields" | "recipients" | "variables" | "delay_fields"
+  >
+>;
 export type WorkflowReferenceChoices = Partial<
   Record<
     "program.id" | "promotion.rank_id",
@@ -48,9 +32,7 @@ export type WorkflowReferenceChoices = Partial<
     }
   >
 >;
-export type ConditionConfig = Readonly<Omit<WorkflowConfigByType["condition"], "value">> & {
-  readonly value?: WorkflowScalar | readonly WorkflowScalar[];
-};
+export type ConditionConfig = ReadonlyCatalog<WorkflowConfigByType["condition"]>;
 
 export function catalogEntry<T>(
   entries: Readonly<Record<string, T>>,
