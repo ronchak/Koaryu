@@ -42,6 +42,19 @@ def _scalar(value: Any, field: Mapping, *, allow_null: bool) -> Any:
     raise ValueError("invalid_workflow_condition_value")
 
 
+def condition_fact_available(field_id: str, actual: Any = MISSING) -> bool:
+    """Whether a supplied fact is known and valid, independently of comparison."""
+    if not isinstance(field_id, str) or field_id not in CATALOG["fields"]:
+        raise ValueError("unknown_workflow_condition_field")
+    if actual is MISSING:
+        return False
+    try:
+        _scalar(actual, CATALOG["fields"][field_id], allow_null=True)
+    except ValueError:
+        return False
+    return True
+
+
 def condition_matches(field_id: str, operator: str, expected: Any, actual: Any = MISSING) -> bool:
     """Compare one supplied fact using the field's declared type and operators.
 

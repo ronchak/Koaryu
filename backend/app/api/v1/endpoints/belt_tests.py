@@ -12,12 +12,14 @@ from app.core.deps import (
     get_supabase,
     run_supabase_operation,
 )
+from app.schemas.belt import EligibilityEntry
 from app.schemas.belt_test import (
     BeltTestEventCreate,
     BeltTestEventListResponse,
     BeltTestEventResponse,
     BeltTestEventUpdate,
 )
+from app.services.belt_eligibility import BeltEligibilityCalculator
 from app.services.belt_test_service import ADMIN_REQUIRED_DETAIL, BeltTestService
 from app.services.studio_scope import (
     ensure_platform_subscription_access,
@@ -89,5 +91,20 @@ async def update_belt_test_event(
     def operation(client):
         studio_id = _admin_studio(client, user_id, requested_studio_id)
         return BeltTestService(client).update(studio_id, user_id, event_id, data).payload
+
+    return await run_supabase_operation(supabase, operation, lane="interactive")
+
+
+@router.get("/{event_id}/candidates", response_model=list[EligibilityEntry])
+async def get_belt_test_candidates(
+    event_id: UUID,
+    supabase: Annotated[ProviderDependency, Depends(get_supabase)],
+    user_id: str = Depends(get_current_user_id),
+    requested_studio_id: str | None = Depends(get_requested_studio_id),
+):
+    async def operation(client):
+        studio_id = _admin_studio(client, user_id, requested_studio_id)
+        event = BeltTestService(client).get(studio_id, user_id, event_id)
+        return await BeltEligibilityCalculator(client).get_event_candidates(studio_id, event)
 
     return await run_supabase_operation(supabase, operation, lane="interactive")

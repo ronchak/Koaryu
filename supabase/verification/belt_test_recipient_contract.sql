@@ -219,9 +219,17 @@ BEGIN
     PERFORM pg_temp.recipient_check(public.list_belt_test_recipients_v1(s,a,e)#>>'{payload,items,0,student_program_membership_id}'=x->>'membership','deleted membership remains logical snapshot');
     PERFORM pg_temp.recipient_check(pg_temp.recipient_approve(x,request,op)=first||'{"replayed":true}','receipt survives membership deletion');
     RESET ROLE;
-    PERFORM pg_temp.recipient_check(NOT EXISTS(SELECT 1 FROM private.automation_workflow_events WHERE studio_id=s)
+    PERFORM pg_temp.recipient_check((SELECT count(*)=2 FROM private.automation_workflow_events WHERE studio_id=s)
+        AND NOT EXISTS(SELECT 1 FROM unnest(ARRAY[1,3]) revision WHERE NOT EXISTS(
+            SELECT 1 FROM private.automation_workflow_events captured WHERE captured.studio_id=s AND captured.event_type='belt_test.approved'
+                AND captured.subject_kind='belt_test' AND captured.subject_id=recipient
+                AND captured.source_key=recipient::TEXT||':'||revision::TEXT||':1'
+                AND captured.context=jsonb_build_object('event_id',e,'student_id',x->'student','student_program_membership_id',x->'membership',
+                    'approved_program_id',x->'program','approved_current_rank_id',x->'rank0','approved_target_rank_id',x->'rank1',
+                    'approved_schedule_revision',1,'approval_revision',revision)))
+        AND NOT EXISTS(SELECT 1 FROM public.automation_workflow_runs WHERE studio_id=s)
         AND NOT EXISTS(SELECT 1 FROM public.promotions WHERE studio_id=s)
-        AND NOT EXISTS(SELECT 1 FROM public.automation_deliveries WHERE studio_id=s),'no capture promotion or delivery effects');
+        AND NOT EXISTS(SELECT 1 FROM public.automation_deliveries WHERE studio_id=s),'exact changed approval snapshots without runs promotion or delivery effects');
 END $$;
 DO $$
 DECLARE x JSONB:=pg_temp.recipient_fixture(); s UUID:=(x->>'studio')::UUID; a UUID:=(x->>'actor')::UUID;

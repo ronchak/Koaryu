@@ -1631,6 +1631,16 @@ export interface ApiPromotionResponse {
   to_rank_name?: string | null;
 }
 
+export interface ApiRunCancelOperationResponse {
+  operation_id: string;
+  state: "committed";
+  entity_id: string;
+  committed_at: string;
+  command: "run.cancel";
+  entity_type: "workflow_run";
+  result: ApiWorkflowRunDetail;
+}
+
 export interface ApiScheduleWindowRange {
   start_date: string;
   end_date: string;
@@ -2195,6 +2205,20 @@ export interface ApiWorkflowEdge {
   port: "next" | "yes" | "no";
 }
 
+export interface ApiWorkflowEmailAttemptSummary {
+  id: string;
+  node_id: string;
+  attempt_number: number;
+  state: "sending" | "accepted" | "failed" | "unknown";
+  reason: string | null;
+  recipient_email: string;
+  recipient_kind: "student" | "guardian" | "lead" | "invoice_payer" | "assigned_staff";
+  began_at: string;
+  settled_at: string | null;
+  submission_evidence: "not_submitted" | "rejected" | "accepted" | "unknown" | null;
+  failure_scope: "sender_auth" | "sender_transient" | "message" | "unclassified" | null;
+}
+
 export interface ApiWorkflowFieldMetadata {
   id: string;
   label: string;
@@ -2275,6 +2299,47 @@ export interface ApiWorkflowPublish {
 export interface ApiWorkflowRecipientMetadata {
   id: string;
   label: string;
+}
+
+export interface ApiWorkflowRunDetail {
+  run: ApiWorkflowRunSummary;
+  steps: ApiWorkflowRunStep[];
+  attempts: ApiWorkflowEmailAttemptSummary[];
+}
+
+export interface ApiWorkflowRunStep {
+  id: string;
+  sequence: number;
+  node_id: string;
+  node_type: "trigger" | "condition" | "delay" | "email" | "lead_follow_up" | "end";
+  outcome: "entered" | "matched" | "not_matched" | "waiting" | "sending" | "accepted" | "skipped" | "failed" | "unknown" | "cancelled" | "completed";
+  edge_id: string | null;
+  reason: string | null;
+  scheduled_at: string | null;
+  entered_at: string;
+  finished_at: string | null;
+}
+
+export interface ApiWorkflowRunSummary {
+  id: string;
+  studio_id: string;
+  workflow_id: string;
+  version_id: string;
+  version_number: number;
+  event_type: "student.enrolled" | "student.promoted" | "lead.created" | "lead.stage_changed" | "trial.scheduled" | "trial.completed" | "trial.no_show" | "trial.upcoming" | "invoice.overdue" | "invoice.payment_failed" | "belt_test.approved" | "belt_test.upcoming";
+  subject_kind: "student" | "promotion" | "lead" | "trial" | "invoice" | "belt_test";
+  subject_id: string;
+  subject_label: string;
+  state: "queued" | "waiting" | "claimed" | "running" | "sending" | "completed" | "cancelled" | "failed" | "unknown";
+  revision: number;
+  current_node_id: string;
+  next_due_at: string | null;
+  reason: string | null;
+  cancel_requested_at: string | null;
+  cancel_reason: string | null;
+  can_cancel: boolean;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface ApiWorkflowSave {

@@ -36,6 +36,7 @@ from app.schemas.workflow import (
     WorkflowValidationIssue,
     omit_optional_wire_requirements,
 )
+from app.schemas.workflow_run import WorkflowRunDetail
 from app.services.workflow_catalog import CATALOG
 from app.services.workflow_graph import validate_workflow_draft
 
@@ -481,12 +482,31 @@ class BeltTestRevokeOperationResponse(_OperationReceipt):
         return self
 
 
+class RunCancelOperationResponse(_OperationReceipt):
+    command: Literal["run.cancel"]
+    entity_type: Literal["workflow_run"]
+    result: WorkflowRunDetail
+
+    @model_validator(mode="after")
+    def validate_result(self) -> RunCancelOperationResponse:
+        run = self.result.run
+        if (
+            self.entity_id != run.id
+            or run.can_cancel
+            or run.cancel_requested_at is None
+            or run.cancel_reason is None
+        ):
+            raise ValueError("Invalid run cancellation receipt.")
+        return self
+
+
 AutomationOperationResponse = Annotated[
     WorkflowOperationResponse
     | LeadCreateOperationResponse
     | TrialOperationResponse
     | BeltTestOperationResponse
     | BeltTestApprovalOperationResponse
-    | BeltTestRevokeOperationResponse,
+    | BeltTestRevokeOperationResponse
+    | RunCancelOperationResponse,
     Field(discriminator="command"),
 ]

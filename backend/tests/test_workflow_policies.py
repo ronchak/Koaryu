@@ -2,13 +2,14 @@ from uuid import UUID
 
 import pytest
 
+from app.services.workflow_catalog import CATALOG
 from app.services.workflow_policies import (
     MISSING,
+    condition_fact_available,
     condition_matches,
     lead_is_enrolled,
     lead_is_open_unconverted,
 )
-
 
 PROGRAM_ID = "a1234567-89ab-cdef-0123-456789abcdef"
 OTHER_PROGRAM_ID = "b1234567-89ab-cdef-0123-456789abcdef"
@@ -224,3 +225,74 @@ def test_membership_array_boundary_is_one_to_one_hundred_values():
     assert condition_matches("lead.stage", "in", ["inquiry"] * 100, "inquiry")
     assert condition_matches("program.id", "in", [PROGRAM_ID] * 100, PROGRAM_ID)
     assert condition_matches("lead.stage", "in", ("inquiry",), "inquiry")
+
+
+@pytest.mark.parametrize("field_id,field", CATALOG["fields"].items())
+def test_availability_covers_every_declared_field_without_changing_comparisons(field_id, field):
+    if field["value_type"] == "boolean":
+        valid = [True, False]
+    elif field["value_type"] == "enum":
+        valid = field["values"]
+    else:
+        assert field["value_type"] == "uuid"
+        valid = [PROGRAM_ID, PROGRAM_ID.upper(), "{" + PROGRAM_ID + "}"]
+    for actual in valid:
+        assert condition_fact_available(field_id, actual)
+        assert condition_matches(field_id, "eq", actual, actual)
+        assert not condition_matches(field_id, "neq", actual, actual)
+    assert condition_fact_available(field_id, None) is field["nullable"]
+    assert not condition_fact_available(field_id)
+    assert not condition_fact_available(field_id, MISSING)
+    for invalid in [0, 1, 1.0, "invalid", "x" * 501, [], {}, object(), UUID(PROGRAM_ID)]:
+        assert not condition_fact_available(field_id, invalid)
+        assert not condition_matches(field_id, "neq", valid[0], invalid)
+
+
+@pytest.mark.parametrize("field_id", ["unknown", "", None, [], {}, {"unhashable"}, 1, True])
+def test_availability_rejects_unknown_or_unhashable_field_before_value_validation(field_id):
+    with pytest.raises(ValueError, match="^unknown_workflow_condition_field$"):
+        condition_fact_available(field_id, {})
+
+
+@pytest.mark.parametrize(
+    "actual",
+    [
+        PROGRAM_ID,
+        PROGRAM_ID.upper(),
+        PROGRAM_ID.replace("-", ""),
+        "{" + PROGRAM_ID + "}",
+        "urn:uuid:" + PROGRAM_ID,
+    ],
+)
+def test_availability_preserves_existing_uuid_normalization(actual):
+    assert condition_fact_available("program.id", actual)
+
+
+@pytest.mark.parametrize(
+    "field_id,actual",
+    [
+        ("lead.stage", "INQUIRY"),
+        ("lead.stage", "inquiry "),
+        ("program.id", " " + PROGRAM_ID),
+        ("lead.unconverted", "false"),
+    ],
+)
+def test_availability_does_not_normalize_malformed_scalar_to_null(field_id, actual):
+    assert not condition_fact_available(field_id, actual)
+
+
+def test_pure_consumer_checks_availability_before_choosing_a_branch():
+    comparisons = []
+
+    def decide(actual):
+        if not condition_fact_available("program.id", actual):
+            return "unavailable"
+        comparisons.append(actual)
+        return "yes" if condition_matches("program.id", "not_in", [PROGRAM_ID], actual) else "no"
+
+    assert decide(MISSING) == "unavailable"
+    assert decide("malformed") == "unavailable"
+    assert comparisons == []
+    assert decide(None) == "no"
+    assert comparisons == [None]
+    assert decide(OTHER_PROGRAM_ID) == "yes"

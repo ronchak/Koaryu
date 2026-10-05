@@ -19,6 +19,7 @@ from app.schemas.workflow import WorkflowValidationResult
 from app.schemas.workflow_management import (
     AutomationOperationResponse,
     BeltTestApprovalOperationResponse,
+    RunCancelOperationResponse,
     WorkflowAction,
     WorkflowAvailability,
     WorkflowCatalogResponse,
@@ -364,7 +365,10 @@ class WorkflowManagementService:
             receipt = _OperationEnvelope.model_validate(result).payload
             if receipt.operation_id != operation_id:
                 raise ValueError("Invalid operation identity.")
-            if not isinstance(receipt, WorkflowOperationResponse):
+            if isinstance(receipt, RunCancelOperationResponse):
+                if receipt.result.run.studio_id != UUID(str(studio_id)):
+                    raise ValueError("Invalid operation studio.")
+            elif not isinstance(receipt, WorkflowOperationResponse):
                 rows = (
                     receipt.result.items
                     if isinstance(receipt, BeltTestApprovalOperationResponse)

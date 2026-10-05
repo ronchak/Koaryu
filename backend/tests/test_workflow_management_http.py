@@ -330,8 +330,8 @@ def test_openapi_exposes_typed_receipt_variants_and_exact_requests(api):
         "content"
     ]["application/json"]["schema"]
     assert operation["discriminator"]["propertyName"] == "command"
-    assert set(operation["discriminator"]["mapping"]) == set(domain_receipts())
-    assert len(operation["oneOf"]) == 6
+    assert set(operation["discriminator"]["mapping"]) == set(domain_receipts()) | {"run.cancel"}
+    assert len(operation["oneOf"]) == 7
     schemas = document["components"]["schemas"]
     metadata = schemas["WorkflowFieldMetadata"]
     assert set(metadata["properties"]) == {

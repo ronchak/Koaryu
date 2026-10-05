@@ -169,8 +169,24 @@ BEGIN
     r:=public.mutate_lead_trial_appointment_v1(s,a,l2,t2,gen_random_uuid(),3,'{"status":"canceled"}');
     PERFORM pg_temp.trial_check(r#>>'{payload,status}'='canceled' AND r#>>'{payload,program_id}'=p::TEXT
         AND (SELECT stage='closed_lost' FROM public.leads WHERE id=l2),'cancel after closed lead and deleted reference');
-    PERFORM pg_temp.trial_check(NOT EXISTS(SELECT 1 FROM private.automation_workflow_events WHERE studio_id=s)
-        AND NOT EXISTS(SELECT 1 FROM public.automation_workflow_runs WHERE studio_id=s),'trial persistence emits no partial events or runs');
+    PERFORM pg_temp.trial_check((SELECT count(*) FROM private.automation_workflow_events WHERE studio_id=s AND event_type LIKE 'trial.%')=
+        (SELECT count(*) FROM private.automation_command_operations WHERE studio_id=s AND command IN ('trial.create','trial.update')
+            AND result->>'status' IN ('scheduled','completed','no_show'))
+        AND NOT EXISTS(SELECT 1 FROM private.automation_command_operations o WHERE o.studio_id=s AND o.command IN ('trial.create','trial.update')
+            AND o.result->>'status' IN ('scheduled','completed','no_show') AND NOT EXISTS(
+                SELECT 1 FROM private.automation_workflow_events e WHERE e.studio_id=s AND e.event_type='trial.'||(o.result->>'status')
+                    AND e.subject_kind='trial' AND e.subject_id=(o.result->>'id')::UUID
+                    AND e.source_key=(o.result->>'id')||':'||(o.result->>'revision')
+                    AND e.context=jsonb_build_object('appointment_id',o.result->'id','lead_id',o.result->'lead_id',
+                        'program_id',o.result->'program_id','revision',o.result->'revision','status',o.result->'status')))
+        AND (SELECT count(*)=3 FROM private.automation_workflow_events WHERE studio_id=s AND event_type='lead.stage_changed')
+        AND NOT EXISTS(SELECT 1 FROM private.automation_workflow_events e WHERE e.studio_id=s AND e.event_type='lead.stage_changed'
+            AND NOT EXISTS(SELECT 1 FROM public.lead_activities a WHERE a.id=e.source_key::UUID AND a.studio_id=s
+                AND a.lead_id=e.subject_id AND a.activity_type='stage_change' AND e.context->>'activity_id'=a.id::TEXT
+                AND e.context->>'lead_id'=a.lead_id::TEXT AND e.context->>'stage' IN ('trial_scheduled','trial_completed')))
+        AND NOT EXISTS(SELECT 1 FROM private.automation_workflow_events WHERE studio_id=s AND event_type NOT IN
+            ('trial.scheduled','trial.completed','trial.no_show','lead.stage_changed'))
+        AND NOT EXISTS(SELECT 1 FROM public.automation_workflow_runs WHERE studio_id=s),'exact committed trial and owned stage occurrences without target runs');
     -- Cursor ordering has a tie so UUID, not insertion order, resolves the page.
     RESET ROLE;
     UPDATE public.lead_trial_appointments SET created_at=TIMESTAMPTZ '2026-01-01 00:00:00Z' WHERE lead_id=l;
@@ -211,9 +227,22 @@ BEGIN
     END LOOP;
     PERFORM set_config('koaryu.trial_fail','',true);
     r:=public.mutate_lead_trial_appointment_v1(s,a,l,t,gen_random_uuid(),1,'{"location":"New studio"}');
-    PERFORM pg_temp.trial_check((SELECT count(*)=4 FROM public.automation_workflow_runs WHERE workflow_id=wid AND state='cancelled' AND claim_token IS NULL AND revision=2)
-        AND (SELECT count(*)=2 FROM public.automation_workflow_runs WHERE workflow_id=wid AND state IN ('sending','unknown') AND revision=1 AND claim_token IS NOT NULL)
-        AND (SELECT count(*)=1 FROM public.automation_workflow_runs WHERE workflow_id=wid AND state='queued')
+    PERFORM pg_temp.trial_check((SELECT count(*)=4 FROM public.automation_workflow_runs run JOIN private.automation_workflow_events event ON event.id=run.event_id
+            WHERE run.workflow_id=wid AND run.state='cancelled' AND run.claim_token IS NULL AND run.revision=2
+                AND event.source_key IN ('queued','waiting','claimed','running'))
+        AND (SELECT count(*)=2 FROM public.automation_workflow_runs run JOIN private.automation_workflow_events event ON event.id=run.event_id
+            WHERE run.workflow_id=wid AND run.state IN ('sending','unknown') AND run.revision=1 AND run.claim_token IS NOT NULL
+                AND event.source_key IN ('sending','unknown'))
+        AND (SELECT count(*)=1 FROM public.automation_workflow_runs run JOIN private.automation_workflow_events event ON event.id=run.event_id
+            WHERE run.workflow_id=wid AND run.state='queued' AND event.source_key='unrelated' AND event.subject_id=t2)
+        AND (SELECT count(*)=1 FROM public.automation_workflow_runs run JOIN private.automation_workflow_events event ON event.id=run.event_id
+            WHERE run.workflow_id=wid AND run.state='cancelled' AND run.claim_token IS NULL AND run.revision=2
+                AND event.source_key=t::TEXT||':1' AND event.subject_id=t AND event.event_type='trial.scheduled'
+                AND event.context->>'revision'='1')
+        AND (SELECT count(*)=1 FROM public.automation_workflow_runs run JOIN private.automation_workflow_events event ON event.id=run.event_id
+            WHERE run.workflow_id=wid AND run.state='queued' AND run.revision=1 AND event.source_key=t::TEXT||':2'
+                AND event.subject_id=t AND event.event_type='trial.scheduled' AND event.context->>'revision'='2')
+        AND (SELECT count(*)=9 FROM public.automation_workflow_runs WHERE workflow_id=wid)
         AND (SELECT cancelled_at IS NULL AND retired_at IS NULL AND epoch=1 FROM public.automation_workflow_activations WHERE id=activation_id),'cancel only exact pending trial runs and preserve activation sending unknown');
     RESET ROLE;
     UPDATE public.staff_roles SET archived_at=clock_timestamp() WHERE studio_id=s AND user_id=a;
