@@ -790,3 +790,57 @@ test("equivalent fractional schedule is a local no-op with no journal or dispatc
   assert.equal(f.storageWrites, 0);
   assert.equal(f.handles.size, 0);
 });
+
+for (const mode of ["direct", "recovery"]) {
+  for (const target of ["detail", "lead"]) {
+    test(`${mode} HTTP200null current ${target} retains exact confirmed command and reservation`, async () => {
+      const f = fixture();
+      if (mode === "recovery") {
+        f.create = async () => {
+          throw Error("Lost confirmation");
+        };
+        await assert.rejects(f.api().createTrialAppointment(LEAD, fields()));
+      }
+      let confirmedJournal;
+      f.detail = async () => {
+        confirmedJournal = f.storage.get(m.TRIAL_JOURNAL_KEY);
+        return target === "detail" ? null : row();
+      };
+      f.lead = async () => (target === "lead" ? null : leadRow());
+      const result =
+        mode === "direct"
+          ? f.api().createTrialAppointment(LEAD, fields())
+          : f.api().checkTrialAppointmentResult(LEAD);
+      const handle = f.handles.get(LEAD);
+      await assert.rejects(result, (error) => error.status === 503);
+      assert.equal(f.view().status, "confirmed_needs_refresh");
+      assert.equal(f.view().locked, true);
+      assert.equal(f.view().appointmentId, APPT);
+      assert.equal(f.view().currentAppointment, null);
+      assert.equal(f.view().ownsLeadReservation, true);
+      assert.equal(f.handles.get(LEAD), handle);
+      assert.equal(f.storage.get(m.TRIAL_JOURNAL_KEY), confirmedJournal);
+      assert.deepEqual(JSON.parse(confirmedJournal).entries, [marker({ appointment_id: APPT })]);
+      assert.equal(f.publications.length, 0);
+      assert.equal(f.writes.length, 1);
+      assert.deepEqual(
+        f.reads.map((read) => read.kind),
+        [
+          ...(mode === "recovery" ? ["receipt"] : []),
+          "detail",
+          ...(target === "lead" ? ["lead"] : []),
+        ],
+      );
+      f.detail = async () => row();
+      f.lead = async () => leadRow();
+      await f.api().checkTrialAppointmentResult(LEAD);
+      assert.equal(f.view().status, "confirmed");
+      assert.equal(f.view().locked, false);
+      assert.equal(f.view().currentAppointment.id, APPT);
+      assert.equal(f.handles.has(LEAD), false);
+      assert.deepEqual(JSON.parse(f.storage.get(m.TRIAL_JOURNAL_KEY)).entries, []);
+      assert.equal(f.publications.length, 1);
+      assert.equal(f.writes.length, 1);
+    });
+  }
+}

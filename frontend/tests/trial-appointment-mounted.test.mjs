@@ -379,3 +379,118 @@ for (const fault of ["malformed", "unreadable"])
       await close();
     }
   });
+
+for (const mode of ["direct", "recovery"]) {
+  for (const target of ["appointment", "lead"]) {
+    test(`mounted ${mode} HTTP200null current ${target} retains cached lead and exact reservation`, async () => {
+      const { p, close } = await mountTrialFixture(browser);
+      try {
+        await p.evaluate(() => {
+          f.nullCachedLeads = f.store.leads;
+          f.nullCachedJson = JSON.stringify(f.store.leads);
+          f.createTrial();
+          f.nullHandle = f.store.leadOperations.current(f.trialLead);
+        });
+        await p.waitForFunction(() => f.writes.length === 1);
+        let detailIndex = 0;
+        if (mode === "recovery") {
+          await p.evaluate(() => f.lose(0));
+          await p.evaluate(() => f.trialPromise);
+          await p.evaluate(() => {
+            f.trialError = null;
+            f.checkTrial();
+          });
+          await p.waitForFunction(() => f.trialReads.length === 1);
+          await p.evaluate(() =>
+            f.trialReads[0].resolve(f.trialReceipt(JSON.parse(f.writes[0].body).operation_id)),
+          );
+          detailIndex = 1;
+        } else {
+          await p.evaluate(() => f.writes[0].resolve(f.trialRow()));
+        }
+        await p.waitForFunction((index) => f.trialReads.length > index, detailIndex);
+        await p.evaluate((key) => {
+          f.nullConfirmedJournal = sessionStorage.getItem(key);
+        }, KEY);
+        await p.evaluate(
+          ({ detailIndex, target }) => {
+            f.trialReads[detailIndex].resolve(target === "appointment" ? null : f.trialRow());
+          },
+          { detailIndex, target },
+        );
+        if (target === "lead") {
+          await p.waitForFunction(() => f.rowReads.length === 1);
+          await p.evaluate(() => f.rowReads[0].resolve(null));
+        } else {
+          await flush(p);
+          // Let a regressed null-as-404 implementation finish, so assertions
+          // show its incorrect cleanup instead of hanging on its extra read.
+          await p.evaluate(() => {
+            if (f.rowReads.length) f.readRow(0);
+          });
+        }
+        await p.evaluate(() => f.trialPromise);
+        await flush(p);
+        const outcome = await p.evaluate(
+          (key) => ({
+            rejected: typeof f.trialError === "string",
+            status: f.viewTrial().status,
+            locked: f.viewTrial().locked,
+            aliasRetained: f.viewTrial().appointmentId === f.trialId,
+            currentAppointment: f.viewTrial().currentAppointment,
+            sameHandle: f.store.leadOperations.current(f.trialLead) === f.nullHandle,
+            ownsReservation: f.viewTrial().ownsLeadReservation,
+            sameJournal: sessionStorage.getItem(key) === f.nullConfirmedJournal,
+            sameCachedArray: f.store.leads === f.nullCachedLeads,
+            sameCachedValues: JSON.stringify(f.store.leads) === f.nullCachedJson,
+            writes: f.writes.length,
+          }),
+          KEY,
+        );
+        assert.deepEqual(outcome, {
+          rejected: true,
+          status: "confirmed_needs_refresh",
+          locked: true,
+          aliasRetained: true,
+          currentAppointment: null,
+          sameHandle: true,
+          ownsReservation: true,
+          sameJournal: true,
+          sameCachedArray: true,
+          sameCachedValues: true,
+          writes: 1,
+        });
+        if (mode === "recovery" && target === "lead") {
+          const counts = await p.evaluate(() => ({
+            trial: f.trialReads.length,
+            lead: f.rowReads.length,
+          }));
+          await p.evaluate(() => f.checkTrial());
+          await p.waitForFunction((index) => f.trialReads.length > index, counts.trial);
+          await p.evaluate(
+            (index) =>
+              f.trialReads[index].resolve(
+                f.trialReceipt(JSON.parse(f.writes[0].body).operation_id),
+              ),
+            counts.trial,
+          );
+          await p.waitForFunction((index) => f.trialReads.length > index, counts.trial + 1);
+          await p.evaluate((index) => f.trialReads[index].resolve(f.trialRow()), counts.trial + 1);
+          await p.waitForFunction((index) => f.rowReads.length > index, counts.lead);
+          await p.evaluate((index) => f.readRow(index), counts.lead);
+          await p.evaluate(() => f.trialPromise);
+          await flush(p);
+          assert.equal(await p.evaluate(() => f.viewTrial().status), "confirmed");
+          assert.equal(await p.evaluate(() => f.store.leadOperations.current(f.trialLead)), null);
+          assert.equal(
+            await p.evaluate((key) => JSON.parse(sessionStorage.getItem(key)).entries.length, KEY),
+            0,
+          );
+          assert.equal(await p.evaluate(() => f.writes.length), 1);
+        }
+      } finally {
+        await close();
+      }
+    });
+  }
+}
