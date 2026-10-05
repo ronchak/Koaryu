@@ -50,5 +50,5 @@ export function renderPreflight(state) {
     }),
     ...checks,
   ], { separateTerminator: state.id === "v39" || state.id === "v40" });
-  return ["v52", "v53"].includes(state.id) ? rendered.replace(/^[ \t]+$/gm, "") : rendered;
+  return ["v52", "v53", "v56"].includes(state.id) ? rendered.replace(/^[ \t]+$/gm, "") : rendered;
 }

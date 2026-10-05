@@ -58,6 +58,34 @@ see [Deployment triggers](#deployment-triggers).
   Azure compute, storage, premium identity license, or pay-as-you-go upgrade is
   part of this feature. Normal Supabase auth usage limits still apply.
 
+## Microsoft automation mail
+
+- Separate app: `Koaryu Automations Mail`, client ID
+  `5b4f5762-7807-4aaf-932a-2a458dc88636`, object ID
+  `569a81de-135c-42d8-93e5-c2765621a052`. Existing Microsoft SSO is unchanged.
+- Sender and approved test recipient: `koaryu@outlook.com`. Consumer delegated
+  permissions are `Mail.Send` and `User.Read`, with `offline_access`; OIDC
+  enrollment also uses `openid` and `profile`.
+- Enrollment uses confidential Web OAuth with PKCE and the exact callback
+  `http://localhost:8400/oauth/callback`. The app secret expires April 2, 2027.
+- October 4, 2026 setup verified the signed OIDC identity and exact Graph `/me`
+  mailbox. The root coordinator's single synthetic message from and to that
+  mailbox passed a forced token refresh through a private encrypted local
+  compare-and-swap adapter and received Graph `202`. The setup agent verified the
+  matching message in the Outlook inbox. This does not prove hosted database or
+  scheduled worker execution. No student or customer mail was sent.
+  Enrollment and rotated credentials stay private; see
+  [missed-class setup](missed-class-automation.md).
+- This candidate declares disabled mail and worker configuration for both Render
+  web services. It does not record a hosted deployment or activation. No new
+  Microsoft Business subscription, Teams license, Azure service, or paid sending
+  resource is part of this setup. The Outlook sender needs no `koaryu.app` DNS
+  changes.
+- Runtime credentials are encrypted in a private, service-role-only database
+  table after an authorized initial import. Mail app secrets and the encryption
+  key stay backend-only. Scheduled work also needs a dedicated shared worker
+  secret on the frontend server. Both send and worker switches default to false.
+
 ## GitHub
 
 - Repository: `ronchak/Koaryu`
@@ -87,14 +115,29 @@ are included. See `docs/verification/navigation-reliability-followup.md`.
 
 ### Vercel cron jobs
 
-Two scheduled jobs run against the production frontend, which forwards them to
-the backend. They are declared in `frontend/vercel.json` and their cadence is
-enforced by `scripts/check-env-examples.mjs`.
+The manifest declares the two existing jobs and the disabled missed-class
+candidate below. Vercel executes scheduled jobs only on production deployments,
+whose frontend forwards them to the backend. Their cadence is enforced by
+`scripts/check-env-examples.mjs`.
 
 | Path | Schedule (UTC) | Purpose |
 | --- | --- | --- |
 | `/api/cron/account-deletions/process-due` | `0 8 * * *` | Processes account deletions that have passed their grace period |
 | `/api/cron/operational-alerts/evaluate` | `0 9 * * *` | Evaluates operational alert conditions |
+| `/api/cron/automations/process-due` | `0 18 * * *` | Missed-class candidate; pending deployment and activation |
+
+The missed-class candidate adds `/api/cron/automations/process-due` at `0 18 * * *`
+with a 60-second function limit. Its schedule and delivery are pending deployment
+and activation; this is not a third verified live cron. The bridge uses a
+55-second local budget for at most three sequential batches of 10, with a
+30-second timeout per backend call. It starts another only with at least 30
+seconds left. At most 30 rows are processed per daily invocation; backlog can
+remain for later runs. The backend budgets 25 seconds per batch. Both frontend
+and backend automation worker flags and the backend send flag remain false in
+this candidate. The bridge stops further batches after any `retry_wait`, `failed`,
+or `unknown` outcome; provider acceptance does not prove delivery. The daily
+schedule does not promise all due messages will be sent that day. See
+[missed-class scheduling](missed-class-automation.md#scheduled-work-and-pause-controls).
 
 ## Render — backend
 
@@ -238,7 +281,9 @@ neither can be relaxed by accident.
 | Frontend | `git.deploymentEnabled.main: false` | `frontend/vercel.json` | `check-env-examples.mjs` |
 
 `git.deploymentEnabled.staging` stays `true`: the staging frontend is meant to
-track its branch automatically.
+track its branch automatically. `git.deploymentEnabled["codex/missed-class-automations-20261004"]`
+is explicitly `false` so pushing the draft candidate does not trigger a deployment;
+[unspecified branches default to enabled](https://vercel.com/docs/project-configuration/git-configuration#gitdeploymentenabled).
 
 **A push to `main` therefore deploys nothing.** Production frontend and backend
 are each released explicitly after the database is migrated. If production looks
@@ -254,6 +299,10 @@ vault.
 | Render API key | Owner-managed file on the OpenClaw Mac: `/Users/openclaw/.config/koaryu/secrets/render-api-key` |
 | Supabase service role / JWT secret | Render dashboard env vars, `sync: false` |
 | Stripe keys and webhook secrets | Render dashboard env vars, `sync: false` |
+| Automation Microsoft enrollment | Private `/Users/openclaw/.config/koaryu/secrets/microsoft-automation-client.json` and `microsoft-automation-token.json`; never a hosted token-file adapter |
+| Automation app credential and Fernet key | Declared backend-only Render variables with `sync: false`; hosted provisioning pending |
+| Automation runtime refresh/access tokens | Encrypted private database credential table after authorized import; revision-based compare-and-swap renewal |
+| Automation worker secret | Declared Render `sync: false` and frontend server-only variable; provisioning pending, distinct from other worker secrets |
 | Studio-user sign-in material | Private owner authentication guidance outside the repository |
 | Non-secret account references | Obsidian vault, `Codex Memory/` |
 

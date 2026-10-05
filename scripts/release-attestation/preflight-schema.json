@@ -1293,6 +1293,14 @@
       "configuration": [
         "search_path=public, pg_temp"
       ]
+    },
+    "automation_tables_v56": {
+      "kind": "automation_tables_v56",
+      "expected": "d80c19a977860ed634cd2959a4bbf1cdf4c2af0bca7829e2c033092301f0b405"
+    },
+    "automation_functions_v56": {
+      "kind": "automation_functions_v56",
+      "expected": "306e359fc1af2adf2d894c0beba02618c4fa16d6725909345a5abdaaa051d642"
     }
   },
   "states": {
@@ -1584,6 +1592,24 @@
       "append": [
         "convert_lead_to_student_atomic_v55"
       ]
+    },
+    "v56": {
+      "extends": "v55",
+      "append": [
+        "automation_tables_v56",
+        "automation_functions_v56"
+      ],
+      "overrides": {
+        "resource_ownership_manifest_v31": {
+          "expected": "0:c4d547c0e82fa0376ea97b9302502d16aa79685f2e6a00a341da7859cafc147a"
+        },
+        "operational_manifest_v11": {
+          "expected": "3e51d286b79754b3d37077ba3090be86d1c8fe38ec68422c65bfdbed636698ec"
+        },
+        "operational_manifest_v12": {
+          "expected": "46d30248f99d376efa39420093ff6c01c6c22fd6dfcb903323c7a75f1cb419d0"
+        }
+      }
     }
   }
 }

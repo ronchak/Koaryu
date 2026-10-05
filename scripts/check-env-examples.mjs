@@ -35,6 +35,10 @@ const backendSecretKeys = [
   "OPERATIONAL_ALERT_BACKUP_BEARER_SECRET",
   "OPERATIONAL_ALERT_BACKUP_ACK_SECRET",
   "SUPPORT_TRIAGE_SECRET",
+  "EMAIL_GRAPH_CLIENT_ID",
+  "EMAIL_GRAPH_CLIENT_SECRET",
+  "EMAIL_TOKEN_ENCRYPTION_KEY",
+  "AUTOMATION_WORKER_SECRET",
 ];
 
 const backendPublicKeys = [
@@ -52,12 +56,23 @@ const backendPublicKeys = [
   "OPERATIONAL_ALERTS_ENABLED",
   "BILLING_PLATFORM_FEE_BPS",
   "API_V1_PREFIX",
+  "EMAIL_PROVIDER",
+  "EMAIL_SEND_ENABLED",
+  "EMAIL_FROM_ADDRESS",
+  "EMAIL_FROM_NAME",
+  "EMAIL_REPLY_TO",
+  "EMAIL_ALLOWED_RECIPIENTS",
+  "EMAIL_GRAPH_TENANT",
+  "AUTOMATION_WORKER_ENABLED",
+  "AUTOMATION_PUBLIC_API_URL",
 ];
 
 const backendOptionalBlankKeys = [
   "DEMO_RESET_STUDIO_IDS",
   "SUPABASE_DEVELOPMENT_PROJECT_REF",
   "STRIPE_RESTRICTED_KEY",
+  "AUTOMATION_PUBLIC_API_URL",
+  "EMAIL_REPLY_TO",
 ];
 
 const frontendPublicKeys = [
@@ -70,11 +85,13 @@ const frontendPublicKeys = [
   "NEXT_PUBLIC_STUDENTS_PAGED_ROSTER",
   "NEXT_PUBLIC_KOARYU_PERFORMANCE_DEBUG",
   "OPERATIONAL_ALERTS_ENABLED",
+  "AUTOMATION_WORKER_ENABLED",
 ];
 
 const frontendSecretKeys = [
   "NEXT_PUBLIC_SUPABASE_ANON_KEY",
   "CRON_SECRET",
+  "AUTOMATION_WORKER_SECRET",
   "ACCOUNT_DELETION_WORKER_SECRET",
   "OPERATIONAL_ALERT_WORKER_SECRET",
   "OPERATIONAL_ALERT_EVALUATOR_DEADMAN_URL",
@@ -102,6 +119,11 @@ const renderCriticalValues = new Map([
   ["CORE_SELF_CHECKOUT_ENABLED", "true"],
   ["BILLING_TRANSITION_SCHEDULER_ENABLED", "false"],
   ["OPERATIONAL_ALERTS_ENABLED", "false"],
+  ["EMAIL_PROVIDER", "disabled"],
+  ["EMAIL_SEND_ENABLED", "false"],
+  ["EMAIL_ALLOWED_RECIPIENTS", "koaryu@outlook.com"],
+  ["AUTOMATION_WORKER_ENABLED", "false"],
+  ["AUTOMATION_PUBLIC_API_URL", "https://koaryu.onrender.com/api/v1"],
   ["API_V1_PREFIX", "/api/v1"],
 ]);
 const RENDER_DOCKERFILE_PATH = "./Dockerfile";
@@ -536,6 +558,11 @@ function renderServiceBlock(source, serviceName) {
 // money. These are the settings whose drift would make a staging rehearsal
 // meaningless — or worse, quietly point staging at production data.
 const stagingRenderCriticalValues = new Map([
+  ["EMAIL_PROVIDER", "disabled"],
+  ["EMAIL_SEND_ENABLED", "false"],
+  ["EMAIL_ALLOWED_RECIPIENTS", "koaryu@outlook.com"],
+  ["AUTOMATION_WORKER_ENABLED", "false"],
+  ["AUTOMATION_PUBLIC_API_URL", "https://koaryu-staging.onrender.com/api/v1"],
   ["ENVIRONMENT", "staging"],
   ["STRIPE_MODE", "test"],
   ["LIVE_BILLING_ENABLED", "false"],
@@ -672,13 +699,18 @@ export function validateOperationalAlertCadence(
       schedule: "0 9 * * *",
       diagnostic: "the operational-alert Vercel backup cron must appear exactly once at daily 09:00 UTC (0 9 * * *)",
     },
+    {
+      path: "/api/cron/automations/process-due",
+      schedule: "0 18 * * *",
+      diagnostic: "the missed-class automation cron must appear exactly once at daily 18:00 UTC (0 18 * * *)",
+    },
   ];
 
   if (!Array.isArray(crons)) {
-    failures.push("frontend/vercel.json: crons must be an array containing exactly the two approved entries");
+    failures.push("frontend/vercel.json: crons must be an array containing exactly the three approved entries");
   } else {
     if (crons.length !== expectedCrons.length) {
-      failures.push("frontend/vercel.json: crons must contain exactly the two approved entries and no others");
+      failures.push("frontend/vercel.json: crons must contain exactly the three approved entries and no others");
     }
     for (const expected of expectedCrons) {
       const matches = crons.filter(

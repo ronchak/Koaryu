@@ -14,3 +14,6 @@ d77b7d55a458096765428aa3377229dd043fb553:scripts/check-env-examples.test.mjs:str
 dcb03a391ccdcf566f4558573efe056126f7af86:frontend/src/lib/student-roster-location.ts:generic-api-key:25
 # The same identifier in the separate current-tree scan.
 frontend/src/lib/student-roster-location.ts:generic-api-key:34
+
+# Deterministic synthetic UUID used only by WorkerDatabase and httpx.MockTransport.
+bd73fed9fa4da97bc5e7ed1f7070246379982ac1:backend/tests/test_automation_service.py:generic-api-key:576
