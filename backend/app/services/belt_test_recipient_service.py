@@ -206,7 +206,10 @@ class BeltTestRecipientService:
         )
         try:
             response = BeltTestRecipientApprovalResult.model_validate(result)
-            if response.operation_id != data.operation_id:
+            if (
+                response.operation_id != data.operation_id
+                or response.payload.event_revision != data.expected_event_revision
+            ):
                 raise ValueError("Invalid belt-test recipient operation receipt.")
             expected_pairs = {
                 (row.student_id, row.student_program_membership_id) for row in data.recipients

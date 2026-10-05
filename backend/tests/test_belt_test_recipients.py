@@ -395,8 +395,21 @@ def test_approval_sends_both_pair_keys_and_preserves_legacy_null(database):
     assert database.query_log == []
 
 
+@pytest.mark.parametrize("event_revision", [7, 9, MAX_REVISION])
+@pytest.mark.parametrize("replayed", [False, True])
+def test_approval_rejects_event_revision_mismatch_without_read_or_retry(
+    database, event_revision, replayed
+):
+    database.handlers[APPROVE]["payload"]["event_revision"] = event_revision
+    database.handlers[APPROVE]["replayed"] = replayed
+    assert_unavailable(lambda: call_service(database, APPROVE))
+    assert database.rpc_calls[0][1]["p_expected_event_revision"] == 8
+    assert database.execute_calls == [APPROVE]
+    assert database.query_log == []
+
+
 @pytest.mark.parametrize("count", [2, 100])
-def test_approval_matches_unordered_pairs_and_does_not_guess_revision_relationships(
+def test_approval_matches_unordered_pairs_with_independent_schedule_and_recipient_revisions(
     database, count
 ):
     selections = [
@@ -409,13 +422,19 @@ def test_approval_matches_unordered_pairs_and_does_not_guess_revision_relationsh
     ][::-1]
     database.handlers[APPROVE]["payload"].update(items=rows, event_revision=MAX_REVISION)
     result = BeltTestRecipientService(database).approve_recipients(
-        STUDIO, ACTOR, EVENT, BeltTestRecipientApprove(**{**APPROVAL, "recipients": selections})
+        STUDIO,
+        ACTOR,
+        EVENT,
+        BeltTestRecipientApprove(
+            **{**APPROVAL, "expected_event_revision": MAX_REVISION, "recipients": selections}
+        ),
     )
     assert result.payload.model_dump(mode="json") == {
         "items": rows,
         "event_revision": MAX_REVISION,
         "schedule_revision": 3,
     }
+    assert database.rpc_calls[0][1]["p_expected_event_revision"] == MAX_REVISION
     assert database.execute_calls == [APPROVE]
     assert database.query_log == []
 
@@ -953,6 +972,22 @@ def test_http_provider_timeout_is_sanitized(api, method, path, body, rpc):
     assert database.execute_calls == [rpc]
 
 
+@pytest.mark.parametrize("event_revision", [7, 9, MAX_REVISION])
+@pytest.mark.parametrize("replayed", [False, True])
+def test_http_approval_event_revision_mismatch_is_sanitized(api, event_revision, replayed):
+    client, database, subscription, lane_calls, _ = api
+    database.handlers[APPROVE]["payload"]["event_revision"] = event_revision
+    database.handlers[APPROVE]["replayed"] = replayed
+    response = client.post(APPROVE_PATH, json=APPROVAL)
+    assert response.status_code == 503
+    assert response.json() == {"detail": UNAVAILABLE_DETAIL}
+    assert database.execute_calls == [APPROVE]
+    assert database.rpc_calls[0][1]["p_expected_event_revision"] == 8
+    assert {query["table"] for query in database.query_log} == {"staff_roles"}
+    subscription.assert_called_once_with(database, STUDIO)
+    assert lane_calls == ["interactive"]
+
+
 def test_composed_openapi_preserves_four_event_and_three_recipient_methods():
     app = FastAPI()
     app.include_router(event_routes.router, prefix="/api/v1")
@@ -1040,6 +1075,26 @@ def test_pinned_postgrest_parses_exact_payload_envelopes_without_network(rpc, en
     elif rpc == REVOKE:
         assert request["p_recipient_id"] == RECIPIENT
         assert request["p_expected_revision"] == 2
+
+
+@pytest.mark.parametrize("event_revision", [7, 9, MAX_REVISION])
+@pytest.mark.parametrize("replayed", [False, True])
+def test_pinned_postgrest_approval_event_revision_mismatch_is_unavailable(event_revision, replayed):
+    assert version("postgrest") == "0.17.2"
+    requests = []
+    receipt = deepcopy(APPROVAL_RECEIPT)
+    receipt["payload"]["event_revision"] = event_revision
+    receipt["replayed"] = replayed
+
+    def handler(request):
+        requests.append(request)
+        return httpx.Response(200, json=receipt)
+
+    with SyntheticPostgrestClient(handler) as database:
+        assert_unavailable(lambda: call_service(database, APPROVE))
+    assert len(requests) == 1
+    assert requests[0].url.path == f"/rest/v1/rpc/{APPROVE}"
+    assert json.loads(requests[0].content)["p_expected_event_revision"] == 8
 
 
 @pytest.mark.parametrize("rpc", [APPROVE, REVOKE, LIST])
