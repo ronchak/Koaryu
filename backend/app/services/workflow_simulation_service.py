@@ -18,7 +18,7 @@ from pydantic import Field, StrictBool, StrictStr, model_validator
 
 from app.schemas.trial_appointment import IANATimezone, UTCInstant
 from app.schemas.workflow import WorkflowGraph, WorkflowValidationIssue
-from app.schemas.workflow_management import WorkflowManagementModel
+from app.schemas.workflow_management import WorkflowManagementModel, guard_workflow_request
 from app.schemas.workflow_run import ReasonCode, TriggerEvent
 from app.schemas.workflow_simulation import (
     SimulationContext,
@@ -28,7 +28,6 @@ from app.schemas.workflow_simulation import (
     WorkflowSimulationRequest,
     WorkflowSimulationResponse,
     WorkflowSimulationTrace,
-    guard_workflow_simulation_request,
 )
 from app.services.workflow_catalog import CATALOG
 from app.services.workflow_email import (
@@ -429,7 +428,7 @@ class WorkflowSimulationService:
         workflow_id: UUID,
         data: WorkflowSimulationRequest,
     ) -> WorkflowSimulationResponse:
-        guard_workflow_simulation_request(data)
+        guard_workflow_request(data)
         graph = data.graph
         python_result = validate_workflow_graph(graph, catalog=CATALOG)
         triggers = [node for node in graph.nodes if node.type == "trigger"]

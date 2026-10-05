@@ -15,11 +15,11 @@ from fastapi import HTTPException
 from postgrest.exceptions import APIError
 from pydantic import ValidationError
 
+from app.schemas.workflow_management import guard_workflow_request
 from app.schemas.workflow_simulation import (
     WorkflowSimulationRequest,
     WorkflowSimulationResponse,
     WorkflowSimulationTrace,
-    guard_workflow_simulation_request,
 )
 from app.services import workflow_simulation_service as boundary
 from app.services.workflow_catalog import CATALOG, build_preset
@@ -1084,18 +1084,18 @@ def test_direct_service_rejects_nul_before_validation_or_rpc(monkeypatch):
 def test_size_guard_precedes_nul_rejection():
     body = {"graph": huge_safe_draft(), "context": {"kind": "synthetic"}, "A\x00B": None}
     with pytest.raises(HTTPException) as error:
-        guard_workflow_simulation_request(body)
+        guard_workflow_request(body)
     assert error.value.status_code == 422 and error.value.detail == "Workflow request is too large."
 
 
-def test_existing_utf8_guard_runs_before_nul_scan(monkeypatch):
-    from app.schemas import workflow_simulation as simulation_schema
+def test_simulation_inherits_shared_utf8_and_nul_guard(monkeypatch):
+    from app.schemas import workflow_management as management_schema
 
-    guard = Mock(wraps=simulation_schema.guard_workflow_request)
-    monkeypatch.setattr(simulation_schema, "guard_workflow_request", guard)
+    guard = Mock(wraps=management_schema.guard_workflow_request)
+    monkeypatch.setattr(management_schema, "guard_workflow_request", guard)
     body = {"graph": "\ud800", "context": {"kind": "A\x00B"}}
     with pytest.raises(HTTPException) as error:
-        guard_workflow_simulation_request(body)
+        WorkflowSimulationRequest.model_validate(body)
     assert error.value.status_code == 422 and error.value.detail == "Invalid workflow request."
     guard.assert_called_once_with(body)
 

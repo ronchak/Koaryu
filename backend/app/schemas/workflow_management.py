@@ -79,6 +79,19 @@ def guard_workflow_request(value: object) -> None:
     except (ValueError, TypeError, UnicodeError, RecursionError):
         raise HTTPException(422, INVALID_REQUEST_DETAIL) from None
 
+    # PostgreSQL JSONB cannot represent U+0000. Inspect original data only after
+    # the complete type/encoding/size pass, preserving its error precedence.
+    pending = [value]
+    while pending:
+        item = pending.pop()
+        if isinstance(item, str) and "\x00" in item:
+            raise HTTPException(422, INVALID_REQUEST_DETAIL)
+        if isinstance(item, dict):
+            pending.extend(item.keys())
+            pending.extend(item.values())
+        elif isinstance(item, list):
+            pending.extend(item)
+
 
 def _nonblank(value: str) -> str:
     if isinstance(value, str) and not value.strip():

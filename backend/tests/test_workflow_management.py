@@ -21,7 +21,7 @@ from app.core.request_body_limits import DEFAULT_API_REQUEST_MAX_BYTES
 from app.schemas import workflow_management as schema
 from app.schemas.lead import LeadResponse
 from app.schemas.trial_appointment import MAX_REVISION
-from app.schemas.workflow import WorkflowGraph
+from app.schemas.workflow import WorkflowGraph, WorkflowPosition
 from app.schemas.workflow_management import (
     AutomationOperationResponse,
     WorkflowCreate,
@@ -374,6 +374,110 @@ def test_circular_request_is_rejected_without_hanging():
     value.append(value)
     with pytest.raises(HTTPException):
         guard_workflow_request(value)
+
+
+NUL_REQUESTS = [
+    (WorkflowCreate, CREATE),
+    (WorkflowSave, SAVE),
+    (WorkflowValidate, {"graph": GRAPH}),
+]
+
+
+def nul_workflow_body(body, location):
+    body = deepcopy(body)
+    if location == "graph_value":
+        body["graph"]["nodes"][0]["config"]["event_type"] = "A\x00B"
+    elif location == "graph_key":
+        body["graph"]["A\x00B"] = None
+    else:
+        body[location] = "A\x00B"
+    return body
+
+
+@pytest.mark.parametrize("model,body", NUL_REQUESTS)
+@pytest.mark.parametrize("location", ["name", "description", "graph_value", "graph_key"])
+def test_shared_nul_guard_rejects_before_nested_request_work(monkeypatch, model, body, location):
+    body = nul_workflow_body(body, location)
+    original = deepcopy(body)
+    nested = Mock(side_effect=AssertionError("NUL must not reach graph validation"))
+    monkeypatch.setattr(schema, "validate_workflow_draft", nested)
+    for validate in (guard_workflow_request, model.model_validate):
+        with pytest.raises(HTTPException) as error:
+            validate(body)
+        assert (error.value.status_code, error.value.detail) == (422, schema.INVALID_REQUEST_DETAIL)
+    nested.assert_not_called()
+    assert body == original
+
+
+@pytest.mark.parametrize("model,body", NUL_REQUESTS)
+@pytest.mark.parametrize("location", ["value", "key"])
+def test_direct_services_reject_nul_before_graph_validation_or_rpc(
+    database, monkeypatch, model, body, location
+):
+    data = model.model_validate(deepcopy(body))
+    if isinstance(data, WorkflowValidate):
+        data.graph = {"A\x00B": None} if location == "key" else "A\x00B"
+    elif location == "key":
+        data.layout.positions["A\x00B"] = WorkflowPosition(x=0, y=0)
+    else:
+        data.name = "A\x00B"
+    nested = Mock(side_effect=AssertionError("NUL must not reach semantic validation"))
+    monkeypatch.setattr(boundary, "validate_workflow_graph", nested)
+    service = WorkflowManagementService(database)
+    with pytest.raises(HTTPException) as error:
+        if isinstance(data, WorkflowSave):
+            service.save(STUDIO, ACTOR, UUID(WORKFLOW), data)
+        elif isinstance(data, WorkflowCreate):
+            service.create(STUDIO, ACTOR, data)
+        else:
+            service.validate(STUDIO, ACTOR, data)
+    assert (error.value.status_code, error.value.detail) == (422, schema.INVALID_REQUEST_DETAIL)
+    assert database.rpc_calls == [] and database.query_log == []
+    nested.assert_not_called()
+
+
+@pytest.mark.parametrize("model,body", NUL_REQUESTS)
+def test_shared_size_guard_retains_precedence_over_nul(model, body):
+    with pytest.raises(HTTPException) as error:
+        model.model_validate({**body, "graph": huge_safe_draft(), "A\x00B": None})
+    assert (error.value.status_code, error.value.detail) == (422, schema.REQUEST_TOO_LARGE_DETAIL)
+
+
+@pytest.mark.parametrize("bad", ["\ud800", float("nan"), b"bytes", (1, 2), {1: "key"}])
+def test_nul_does_not_bypass_existing_non_json_and_utf8_rejection(bad):
+    with pytest.raises(HTTPException) as error:
+        guard_workflow_request({"bad": bad, "A\x00B": None})
+    assert (error.value.status_code, error.value.detail) == (422, schema.INVALID_REQUEST_DETAIL)
+
+
+def test_nul_cyclic_request_still_rejects_without_hanging():
+    body = {"A\x00B": None}
+    body["graph"] = body
+    with pytest.raises(HTTPException) as error:
+        guard_workflow_request(body)
+    assert (error.value.status_code, error.value.detail) == (422, schema.INVALID_REQUEST_DETAIL)
+
+
+def test_literal_backslash_u0000_is_representable_and_unchanged(database):
+    graph = build_preset("welcome")
+    graph["nodes"][1]["config"]["body_template"] = r"A\u0000B"
+    data = WorkflowCreate(
+        **{**CREATE, "name": r"A\u0000B", "description": r"A\u0000B", "graph": graph}
+    )
+    WorkflowManagementService(database).create(STUDIO, ACTOR, data)
+    params = database.rpc_calls[0][1]
+    assert params["p_graph"] == graph and params["p_name"] == params["p_description"] == r"A\u0000B"
+    guard_workflow_request({r"A\u0000B": [r"A\u0000B"]})
+
+
+def test_nul_does_not_add_request_rules_to_pure_graphs_or_retained_details(database):
+    graph = build_preset("welcome")
+    graph["nodes"][1]["config"]["body_template"] = "A\x00B"
+    assert WorkflowGraph.model_validate(graph)
+    assert not validate_workflow_graph(graph, catalog=CATALOG).valid
+    database.handlers[GET_RPC] = {"payload": {**ROW, "draft_graph": graph}}
+    result = invoke(WorkflowManagementService(database), GET_RPC)
+    assert result.draft_graph.nodes[1].config.body_template == "A\x00B"
 
 
 def test_large_stored_safe_draft_still_loads_and_pure_validation_is_unchanged(database):

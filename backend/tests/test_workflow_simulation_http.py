@@ -310,6 +310,16 @@ def test_representable_controls_keep_semantic_200_and_unchanged_graph(api, contr
     assert len(api.access_calls) == 1 and api.lanes == ["interactive"]
 
 
+def test_literal_backslash_u0000_reaches_simulation_and_rendering_unchanged(api):
+    request = request_for()
+    request.graph.nodes[1].config.body_template = r"A\u0000B"
+    api.database.result = envelope(request)
+    response = post(api, request)
+    assert response.status_code == 200 and response.json()["valid"] is True
+    assert response.json()["trace"][1]["rendered_body"] == r"A\u0000B"
+    assert api.database.rpc_calls[0][1]["p_graph"] == request.graph.model_dump(mode="json")
+
+
 def test_whole_request_canonical_guard_and_raw_middleware_limit(api):
     body = {"graph": huge_safe_draft(), "context": {"kind": "synthetic"}}
     response = api.client.post(BASE, json=body)

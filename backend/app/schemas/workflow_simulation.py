@@ -5,16 +5,13 @@ from __future__ import annotations
 from typing import Annotated, Literal
 from uuid import UUID
 
-from fastapi import HTTPException
-from pydantic import BaseModel, BeforeValidator, Field, StrictBool, field_validator, model_validator
+from pydantic import BeforeValidator, Field, StrictBool, field_validator, model_validator
 
 from app.schemas.trial_appointment import UTCInstant
 from app.schemas.workflow import WorkflowGraph, WorkflowValidationIssue
 from app.schemas.workflow_management import (
-    INVALID_REQUEST_DETAIL,
     WorkflowManagementModel,
     WorkflowRequest,
-    guard_workflow_request,
     require_complete_issues,
 )
 from app.schemas.workflow_run import GraphId, ReasonCode
@@ -48,32 +45,9 @@ SimulationIssues = Annotated[
 ActionKind = Literal["email", "lead_follow_up"]
 
 
-def guard_workflow_simulation_request(value: object) -> None:
-    """Keep transport guard precedence, then reject text JSONB cannot represent."""
-    if isinstance(value, BaseModel):
-        value = value.model_dump(mode="json")
-    guard_workflow_request(value)
-    pending = [value]
-    while pending:
-        item = pending.pop()
-        if isinstance(item, str) and "\x00" in item:
-            raise HTTPException(422, INVALID_REQUEST_DETAIL)
-        if isinstance(item, dict):
-            pending.extend(item.keys())
-            pending.extend(item.values())
-        elif isinstance(item, list):
-            pending.extend(item)
-
-
 class WorkflowSimulationRequest(WorkflowRequest):
     graph: WorkflowGraph
     context: SimulationContext
-
-    @model_validator(mode="before")
-    @classmethod
-    def bound_request(cls, value: object) -> object:
-        guard_workflow_simulation_request(value)
-        return value
 
 
 class WorkflowSimulationTrace(WorkflowManagementModel):
