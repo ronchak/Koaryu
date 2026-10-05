@@ -75,6 +75,18 @@ class WorkerDatabase(TableBackedSupabase):
         self.enqueue_has_more = False
         self.begun = []
         self.settled = []
+        self.deferred = []
+        self.claimed_rows = {}
+        self.cooldowns = {}
+        self.clock = lambda: 0.0
+
+    def eligible_claims(self, allowed):
+        return [
+            claim
+            for claim in self.claims
+            if self.cooldowns.get(claim["studio_id"], 0) <= self.clock()
+            and (not allowed or self.messages[claim["id"]]["recipient_email"] in allowed)
+        ]
 
     def rpc(self, name, params):
         self.calls.append((name, params))
@@ -99,15 +111,24 @@ class WorkerDatabase(TableBackedSupabase):
             elif name == "claim_missed_class_automations_v1":
                 assert params["p_limit"] == 1
                 allowed = params["p_allowed_recipients"]
-                eligible = [
-                    claim
-                    for claim in self.claims
-                    if not allowed or self.messages[claim["id"]]["recipient_email"] in allowed
-                ]
+                eligible = self.eligible_claims(allowed)
                 items = eligible[:1]
                 for item in items:
                     self.claims.remove(item)
+                    self.claimed_rows[item["id"]] = item
                 result = {"items": items, "has_more": len(eligible) > 1}
+            elif name == "defer_missed_class_automation_studio_v1":
+                self.deferred.append(params)
+                claim = self.claimed_rows.pop(params["p_delivery_id"])
+                assert params["p_claim_token"] == claim["claim_token"]
+                self.cooldowns[claim["studio_id"]] = self.clock() + 3600
+                self.claims.append(claim)
+                result = {
+                    "updated": True,
+                    "state": "queued",
+                    "dispatch_deferred_until": "2026-10-04T19:00:00+00:00",
+                    "has_more": bool(self.eligible_claims(params["p_allowed_recipients"])),
+                }
             elif name == "begin_missed_class_automation_v1":
                 self.begun.append(params)
                 result = {
@@ -283,6 +304,14 @@ def test_entitlement_denied_never_begins_or_spends_send_attempt(runner, access):
     assert_counts(runner.run(), processed=1, skipped=1)
     assert not runner.database.begun and not runner.database.settled
     runner.send.assert_not_called()
+    assert runner.database.deferred == [
+        {
+            "p_delivery_id": "delivery-1",
+            "p_claim_token": "claim-1",
+            "p_reason": "unavailable" if isinstance(access, Exception) else "subscription_required",
+            "p_allowed_recipients": ["koaryu@outlook.com"],
+        }
+    ]
 
 
 def test_real_entitlement_owner_refuses_active_pending_row_without_provider(runner, monkeypatch):
@@ -308,6 +337,7 @@ def test_real_entitlement_owner_refuses_active_pending_row_without_provider(runn
     repair.assert_not_called()
     runner.send.assert_not_called()
     assert not runner.database.begun
+    assert runner.database.deferred[0]["p_reason"] == "unavailable"
 
 
 @pytest.mark.parametrize(
@@ -446,15 +476,17 @@ def test_initial_credential_fetch_consumes_work_budget(runner):
     runner.closer.assert_called_once()
 
 
-def test_enqueue_budget_exit_reports_newly_queued_work(runner):
+@pytest.mark.parametrize("authoritative_has_more", [True, False])
+def test_enqueue_budget_exit_uses_authoritative_actionable_flag(runner, authoritative_has_more):
     runner.database.enqueued = 1
+    runner.database.enqueue_has_more = authoritative_has_more
 
     def delay(name, _params):
         if name.startswith("enqueue_"):
             runner.clock.now += 16
 
     runner.database.on_execute = delay
-    assert_counts(runner.run(limit=1), processed=0, enqueued=1, has_more=True)
+    assert_counts(runner.run(limit=1), processed=0, enqueued=1, has_more=authoritative_has_more)
     assert not runner.database.begun
 
 
@@ -661,3 +693,215 @@ def test_actual_transport_counts_credential_refresh_and_cas_time_in_budget(
     assert not any(request.url.path == "/v1.0/me/sendMail" for request in requests)
     assert not runner.database.settled
     runner.closer.assert_called_once_with(runner.database)
+
+
+@pytest.mark.parametrize("bad_studios,rows_per_studio,unavailable", [(3, 3, True), (1, 35, False)])
+def test_repeated_runs_defer_large_bad_queues_and_promptly_process_valid_studio(
+    runner, bad_studios, rows_per_studio, unavailable
+):
+    # SQL owns fair ordering. Bad rows deliberately come first in this queue stub,
+    # so progress requires the runtime to invoke studio deferral.
+    database = WorkerDatabase(runner.settings, row_count=bad_studios * rows_per_studio)
+    database.clock = runner.clock
+    database.enqueue_has_more = True
+    for index, claim in enumerate(database.claims):
+        claim["studio_id"] = f"bad-{index // rows_per_studio}"
+    runner.factory.return_value = database
+
+    def access(_client, studio_id, *, allow_provider_repairs):
+        assert allow_provider_repairs is False
+        if studio_id.startswith("bad-"):
+            if unavailable:
+                raise HTTPException(503, "unverifiable")
+            return {"subscription_required": True}
+        return {"subscription_required": False}
+
+    runner.access.side_effect = access
+    for day in range(3):
+        runner.clock.now = 100 + day * 86400
+        delivery_id = f"valid-{day}"
+        database.claims.append(
+            {"id": delivery_id, "claim_token": f"valid-claim-{day}", "studio_id": "good"}
+        )
+        database.messages[delivery_id] = snapshot(delivery_id)
+        result = runner.run(limit=10)
+        assert_counts(
+            result,
+            processed=bad_studios + 1,
+            skipped=bad_studios,
+            accepted=1,
+            failed=0,
+            retry_wait=0,
+            unknown=0,
+            has_more=False,
+        )
+        assert len(database.claims) == bad_studios * rows_per_studio
+        assert len(database.deferred) == (day + 1) * bad_studios
+        # Immediate invocations see only cooled work, not another false attempt.
+        assert_counts(runner.run(limit=10), processed=0, has_more=False)
+
+    assert [p["p_delivery_id"] for p in database.begun] == ["valid-0", "valid-1", "valid-2"]
+    assert [p["p_delivery_id"] for p in database.settled] == ["valid-0", "valid-1", "valid-2"]
+    assert runner.send.call_count == 3
+    assert runner.access.call_count == 3 * (bad_studios + 1)
+    assert all(p["p_limit"] == 1 for name, p in database.calls if name.startswith("claim_"))
+    assert {p["p_reason"] for p in database.deferred} == {
+        "unavailable" if unavailable else "subscription_required"
+    }
+
+
+@pytest.mark.parametrize("has_valid_behind", [False, True])
+def test_deferral_fresh_has_more_replaces_stale_enqueue_and_claim_flags(runner, has_valid_behind):
+    database = WorkerDatabase(runner.settings, row_count=3 + int(has_valid_behind))
+    database.enqueue_has_more = True
+    if has_valid_behind:
+        database.claims[-1]["studio_id"] = "good"
+    runner.factory.return_value = database
+    runner.access.return_value = {"subscription_required": True}
+    assert_counts(runner.run(limit=1), processed=1, skipped=1, has_more=has_valid_behind)
+    assert len(database.deferred) == 1
+    runner.send.assert_not_called()
+
+
+@pytest.mark.parametrize("allowed", [" Koaryu@Outlook.COM ", ""])
+def test_deferral_passes_same_normalized_allowlist_as_claim(runner, allowed):
+    runner.settings.EMAIL_ALLOWED_RECIPIENTS = allowed
+    runner.access.side_effect = HTTPException(503, "unavailable")
+    assert_counts(runner.run(limit=1), processed=1, skipped=1)
+    expected = ["koaryu@outlook.com"] if allowed else []
+    assert runner.database.deferred[0]["p_allowed_recipients"] == expected
+    assert all(
+        p["p_allowed_recipients"] == expected
+        for name, p in runner.database.calls
+        if name.startswith(("enqueue_", "claim_", "defer_"))
+    )
+
+
+def test_reclaimed_expired_lease_uses_new_token_for_deferral_and_releases_work(runner):
+    # SQL returns new ownership when reclaiming an expired claimed row. The
+    # runtime must use that exact token, never a remembered expired lease.
+    expired_token = "expired-token"
+    runner.database.claims[0]["claim_token"] = "renewed-token"
+    runner.access.return_value = {"subscription_required": True}
+    assert_counts(runner.run(limit=1), processed=1, skipped=1, has_more=False)
+    assert runner.database.deferred[0]["p_claim_token"] == "renewed-token"
+    assert expired_token not in str(runner.database.calls)
+    assert len(runner.database.claims) == 1 and not runner.database.claimed_rows
+    assert not runner.database.begun and not runner.database.settled
+    runner.send.assert_not_called()
+
+
+def deferral_result(**changes):
+    return {
+        "updated": True,
+        "state": "queued",
+        "dispatch_deferred_until": "2026-10-04T19:00:00Z",
+        "has_more": False,
+        **changes,
+    }
+
+
+def test_safe_retry_deferral_preserves_attempt_facts_without_counting_new_retry(runner):
+    runner.access.return_value = {"subscription_required": True}
+    original = {
+        "attempt_id": "delivery-1:2",
+        "attempts": 2,
+        "attempted_at": "2026-09-01T12:00:00Z",
+        "next_attempt_at": "2026-10-05T12:00:00Z",
+        "original_recipient_email": "koaryu@outlook.com",
+        "unsubscribe_token": "a" * 64,
+    }
+    runner.database.messages["delivery-1"].update(original)
+    runner.database.handlers["defer_missed_class_automation_studio_v1"] = deferral_result(
+        state="retry_wait"
+    )
+    assert_counts(
+        runner.run(limit=1), processed=1, skipped=1, retry_wait=0, unknown=0, has_more=False
+    )
+    assert {key: runner.database.messages["delivery-1"][key] for key in original} == original
+    params = next(p for name, p in runner.database.executed if name.startswith("defer_"))
+    assert set(params) == {"p_delivery_id", "p_claim_token", "p_reason", "p_allowed_recipients"}
+    assert not runner.database.begun and not runner.database.settled
+    runner.send.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [
+        RuntimeError("private uncertain deferral"),
+        deferral_result(
+            updated=False, state="claimed", dispatch_deferred_until=None, has_more=True
+        ),
+        deferral_result(
+            updated=False, state="sending", dispatch_deferred_until=None, has_more=True
+        ),
+        deferral_result(state="sending"),
+        deferral_result(dispatch_deferred_until=None),
+        deferral_result(dispatch_deferred_until="invalid"),
+        deferral_result(dispatch_deferred_until="2026-10-04T19:00:00"),
+        deferral_result(has_more=1),
+        {"updated": True, "state": "queued", "dispatch_deferred_until": "2026-10-04T19:00:00Z"},
+    ],
+)
+def test_uncertain_refused_or_malformed_deferral_stops_without_inventing_send_outcome(
+    runner, failure
+):
+    database = WorkerDatabase(runner.settings, row_count=3)
+    database.handlers["defer_missed_class_automation_studio_v1"] = failure
+    runner.factory.return_value = database
+    runner.access.side_effect = HTTPException(503, "private entitlement detail")
+    with pytest.raises(HTTPException) as caught:
+        runner.run()
+    assert caught.value.status_code == 503 and caught.value.detail == service.UNAVAILABLE_DETAIL
+    assert len(database.claims) == 2
+    assert not database.begun and not database.settled
+    assert len([name for name, _ in database.executed if name.startswith("defer_")]) == 1
+    runner.send.assert_not_called()
+    runner.closer.assert_called_once_with(database)
+
+
+def test_deferral_failure_keeps_earlier_accepted_outcome_durable_and_stops(runner):
+    database = WorkerDatabase(runner.settings, row_count=3)
+    database.claims[1]["studio_id"] = "denied"
+    database.handlers["defer_missed_class_automation_studio_v1"] = RuntimeError("uncertain")
+    runner.factory.return_value = database
+    runner.access.side_effect = lambda _client, studio, **_: {
+        "subscription_required": studio == "denied"
+    }
+    with pytest.raises(HTTPException) as caught:
+        runner.run()
+    assert caught.value.status_code == 503
+    assert len(database.settled) == 1
+    assert database.settled[0]["p_delivery_id"] == "delivery-1"
+    assert database.settled[0]["p_outcome"] == "accepted"
+    assert len(database.begun) == 1 and len(database.claims) == 1
+    runner.send.assert_called_once()
+
+
+def test_budget_expiry_after_entitlement_does_not_start_deferral_or_classify_claim(runner):
+    def access(*_args, **_kwargs):
+        runner.clock.now += 16
+        raise HTTPException(503, "unavailable")
+
+    runner.access.side_effect = access
+    assert_counts(runner.run(), processed=0, skipped=0, unknown=0)
+    assert not runner.database.deferred and not runner.database.begun
+    runner.send.assert_not_called()
+
+
+def test_successful_deferral_consumes_budget_without_new_claim_or_send(runner):
+    def delay(name, _params):
+        if name.startswith("defer_"):
+            runner.clock.now += 16
+
+    runner.database.on_execute = delay
+    runner.access.side_effect = HTTPException(503, "unavailable")
+    assert_counts(runner.run(), processed=1, skipped=1, has_more=False)
+    assert len([name for name, _ in runner.database.executed if name.startswith("claim_")]) == 1
+    runner.send.assert_not_called()
+
+
+def test_claim_fresh_flag_includes_unqueued_actionable_work(runner):
+    runner.database.handlers["claim_missed_class_automations_v1"] = {"items": [], "has_more": True}
+    assert_counts(runner.run(), processed=0, enqueued=0, has_more=True)
+    runner.send.assert_not_called()

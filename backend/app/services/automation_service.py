@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 import time
 from collections.abc import Callable
+from datetime import datetime
 from typing import Any
 from uuid import NAMESPACE_URL, uuid5
 
@@ -266,6 +267,25 @@ def _stop_dispatch(result: DeliveryResult) -> bool:
     return result.outcome != "accepted"
 
 
+def _has_more(result: dict) -> bool:
+    value = result.get("has_more")
+    if type(value) is not bool:
+        raise ValueError("invalid_automation_actionable_result")
+    return value
+
+
+def _validate_deferral(result: dict) -> None:
+    if (
+        result.get("updated") is not True
+        or result.get("state") not in {"queued", "retry_wait"}
+        or not isinstance(result.get("dispatch_deferred_until"), str)
+    ):
+        raise ValueError("unconfirmed_automation_deferral")
+    deferred_until = datetime.fromisoformat(result["dispatch_deferred_until"])
+    if deferred_until.utcoffset() is None:
+        raise ValueError("invalid_automation_deferral_time")
+
+
 def process_due_missed_class_automations(
     settings: Any,
     *,
@@ -322,42 +342,56 @@ def process_due_missed_class_automations(
         if type(enqueued.get("enqueued")) is not int or not 0 <= enqueued["enqueued"] <= limit:
             raise ValueError("invalid_automation_result")
         counts["enqueued"] = enqueued["enqueued"]
-        enqueue_has_more = enqueued.get("has_more") is True
-        counts["has_more"] = enqueue_has_more or counts["enqueued"] > 0
-        access_by_studio: dict[str, bool] = {}
+        counts["has_more"] = _has_more(enqueued)
+        deferral_reason_by_studio: dict[str, str | None] = {}
         for _ in range(limit):
             claimed = _rpc(
                 client,
                 "claim_missed_class_automations_v1",
                 {"p_limit": 1, "p_allowed_recipients": allowed},
             )
-            counts["has_more"] = enqueue_has_more or claimed.get("has_more") is True
-            items = claimed["items"]
+            counts["has_more"] = _has_more(claimed)
+            items = claimed.get("items")
+            if not isinstance(items, list) or len(items) > 1:
+                raise ValueError("invalid_automation_claim")
             if not items:
                 break
-            if not isinstance(items, list) or len(items) != 1:
-                raise ValueError("invalid_automation_claim")
             claim = items[0]
             studio_id = claim["studio_id"]
-            if studio_id not in access_by_studio:
+            identity = {"p_delivery_id": claim["id"], "p_claim_token": claim["claim_token"]}
+            if studio_id not in deferral_reason_by_studio:
                 budget.check(DATABASE_TIMEOUT_SECONDS)
                 try:
                     access = get_platform_subscription_access(
                         client, studio_id, allow_provider_repairs=False
                     )
-                except HTTPException:
+                except HTTPException as exc:
                     # A deadline error can be wrapped by the entitlement owner.
                     budget.check(DATABASE_TIMEOUT_SECONDS)
-                    counts["processed"] += 1
-                    counts["skipped"] += 1
-                    break
-                access_by_studio[studio_id] = access.get("subscription_required") is False
+                    if exc.status_code != 503:
+                        raise
+                    deferral_reason_by_studio[studio_id] = "unavailable"
+                else:
+                    deferral_reason_by_studio[studio_id] = (
+                        None
+                        if access.get("subscription_required") is False
+                        else "subscription_required"
+                    )
             budget.check(DATABASE_TIMEOUT_SECONDS)
-            if not access_by_studio[studio_id]:
+            deferral_reason = deferral_reason_by_studio[studio_id]
+            if deferral_reason is not None:
+                deferred = _rpc(
+                    client,
+                    "defer_missed_class_automation_studio_v1",
+                    {**identity, "p_reason": deferral_reason, "p_allowed_recipients": allowed},
+                )
+                # A lost or refused write stops through the existing safe 503
+                # boundary. No provider attempt happened and none is invented.
+                _validate_deferral(deferred)
+                counts["has_more"] = _has_more(deferred)
                 counts["processed"] += 1
                 counts["skipped"] += 1
                 continue
-            identity = {"p_delivery_id": claim["id"], "p_claim_token": claim["claim_token"]}
             try:
                 begun = _rpc(
                     client,
