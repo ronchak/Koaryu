@@ -24,6 +24,7 @@ from app.api.v1.endpoints import (
     trial_appointments,
     webhooks,
     workflow_management,
+    workflow_runs,
 )
 
 router = APIRouter()
@@ -35,6 +36,7 @@ router.include_router(auth.router)
 router.include_router(automations.router)
 router.include_router(automations.worker_router)
 router.include_router(workflow_management.router)
+router.include_router(workflow_runs.router)
 router.include_router(dashboard.router)
 router.include_router(demo.router)
 router.include_router(platform_billing.router)
@@ -50,5 +52,6 @@ router.include_router(belt_tests.router)
 router.include_router(belt_test_recipients.router)
 router.include_router(leads.router)
 router.include_router(trial_appointments.router)
+router.include_router(trial_appointments.detail_router)
 router.include_router(staff.router)
 router.include_router(support.router)

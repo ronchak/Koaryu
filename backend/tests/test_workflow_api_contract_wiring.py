@@ -10,6 +10,13 @@ import pytest
 from fastapi.routing import iter_route_contexts
 from pydantic import TypeAdapter, ValidationError
 
+from app.api.v1.endpoints import (
+    belt_test_recipients,
+    belt_tests,
+    trial_appointments,
+    workflow_management,
+    workflow_runs,
+)
 from app.main import app
 from app.schemas.workflow import (
     ConditionConfig,
@@ -35,22 +42,47 @@ from tests.test_workflow_management import CREATE, INSTANT, OPERATION, ROW, WORK
 
 ROOT = Path(__file__).resolve().parents[2]
 APPROVED_ROUTES = {
-    "/leads/{lead_id}/trial-appointments": {"get", "post"},
-    "/leads/{lead_id}/trial-appointments/{appointment_id}": {"patch"},
-    "/belt-tests": {"get", "post"},
-    "/belt-tests/{event_id}": {"get", "patch"},
-    "/belt-tests/{event_id}/recipients": {"get"},
-    "/belt-tests/{event_id}/recipients/approve": {"post"},
-    "/belt-tests/{event_id}/recipients/{recipient_id}/revoke": {"post"},
-    "/automations/catalog": {"get"},
-    "/automations/workflows": {"get", "post"},
-    "/automations/workflows/validate": {"post"},
-    "/automations/workflows/{workflow_id}": {"get", "put"},
-    "/automations/workflows/{workflow_id}/publish": {"post"},
-    "/automations/workflows/{workflow_id}/start": {"post"},
-    "/automations/workflows/{workflow_id}/pause": {"post"},
-    "/automations/workflows/{workflow_id}/archive": {"post"},
-    "/automations/operations/{operation_id}": {"get"},
+    "/leads/{lead_id}/trial-appointments": {
+        "get": trial_appointments.list_trial_appointments,
+        "post": trial_appointments.create_trial_appointment,
+    },
+    "/leads/{lead_id}/trial-appointments/{appointment_id}": {
+        "get": trial_appointments.get_trial_appointment,
+        "patch": trial_appointments.update_trial_appointment,
+    },
+    "/belt-tests": {
+        "get": belt_tests.list_belt_test_events,
+        "post": belt_tests.create_belt_test_event,
+    },
+    "/belt-tests/{event_id}": {
+        "get": belt_tests.get_belt_test_event,
+        "patch": belt_tests.update_belt_test_event,
+    },
+    "/belt-tests/{event_id}/recipients": {"get": belt_test_recipients.list_belt_test_recipients},
+    "/belt-tests/{event_id}/recipients/approve": {
+        "post": belt_test_recipients.approve_belt_test_recipients
+    },
+    "/belt-tests/{event_id}/recipients/{recipient_id}/revoke": {
+        "post": belt_test_recipients.revoke_belt_test_recipient
+    },
+    "/automations/catalog": {"get": workflow_management.get_workflow_catalog},
+    "/automations/workflows": {
+        "get": workflow_management.list_workflows,
+        "post": workflow_management.create_workflow,
+    },
+    "/automations/workflows/validate": {"post": workflow_management.validate_workflow},
+    "/automations/workflows/{workflow_id}": {
+        "get": workflow_management.get_workflow,
+        "put": workflow_management.save_workflow,
+    },
+    "/automations/workflows/{workflow_id}/publish": {"post": workflow_management.publish_workflow},
+    "/automations/workflows/{workflow_id}/start": {"post": workflow_management.start_workflow},
+    "/automations/workflows/{workflow_id}/pause": {"post": workflow_management.pause_workflow},
+    "/automations/workflows/{workflow_id}/archive": {"post": workflow_management.archive_workflow},
+    "/automations/operations/{operation_id}": {"get": workflow_management.get_automation_operation},
+    "/automations/workflows/{workflow_id}/runs": {"get": workflow_runs.list_workflow_runs},
+    "/automations/runs/{run_id}": {"get": workflow_runs.get_workflow_run},
+    "/automations/runs/{run_id}/cancel": {"post": workflow_runs.cancel_workflow_run},
 }
 LEGACY_RESPONSES = [
     ("/automations/missed-class", "get", "200", "MissedClassSettingsResponse"),
@@ -92,20 +124,15 @@ def contracts(generator):
 @pytest.mark.parametrize("path,methods", APPROVED_ROUTES.items())
 def test_approved_routes_are_registered_once_on_the_real_app(openapi, path, methods):
     path = "/api/v1" + path
-    assert set(openapi["paths"][path]) == methods
-    for method in methods:
+    assert set(openapi["paths"][path]) == set(methods)
+    for method, handler in methods.items():
         matches = [
             route
             for route in iter_route_contexts(app.routes)
             if route.path == path and method.upper() in getattr(route, "methods", set())
         ]
         assert len(matches) == 1
-        assert matches[0].endpoint.__module__ in {
-            "app.api.v1.endpoints.trial_appointments",
-            "app.api.v1.endpoints.belt_tests",
-            "app.api.v1.endpoints.belt_test_recipients",
-            "app.api.v1.endpoints.workflow_management",
-        }
+        assert matches[0].endpoint is handler
 
 
 def test_actual_app_has_no_duplicate_routes_or_operation_ids(openapi):
@@ -341,20 +368,28 @@ def test_generated_aliases_keep_discriminants_and_optional_value_types(contracts
     assert "x-optional-on-wire" not in contracts
 
 
-def test_run_cancel_receipt_adds_only_reachable_run_response_aliases(contracts):
+def test_run_routes_and_cancel_receipt_expose_the_accepted_aliases(contracts):
     for name in [
         "RunCancelOperationResponse",
         "WorkflowRunDetail",
         "WorkflowRunSummary",
         "WorkflowRunStep",
         "WorkflowEmailAttemptSummary",
+        "WorkflowRunCancelRequest",
+        "WorkflowRunListResponse",
     ]:
         assert f"export interface Api{name} {{" in contracts
     assert '  command: "run.cancel";' in contracts
     assert '  entity_type: "workflow_run";' in contracts
     assert "  result: ApiWorkflowRunDetail;" in contracts
-    assert "ApiWorkflowRunCancelRequest" not in contracts
-    assert "ApiWorkflowRunListResponse" not in contracts
+    assert (
+        "export interface ApiWorkflowRunCancelRequest {\n  operation_id: string;\n  expected_revision: number;\n}"
+        in contracts
+    )
+    assert (
+        "export interface ApiWorkflowRunListResponse {\n  items: ApiWorkflowRunSummary[];\n  next_cursor: string | null;\n  has_more: boolean;\n}"
+        in contracts
+    )
 
 
 def test_official_generation_is_byte_identical_and_matches_checked_in_artifact(

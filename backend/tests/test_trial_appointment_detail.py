@@ -1,6 +1,6 @@
 """Mocked current trial reads, actual HTTP dependencies, and pinned SDK parsing.
 
-These tests do not execute SQL. Core owns the SQL proof and later router mounting.
+These tests verify current-detail router mounting without executing SQL.
 """
 
 import json
@@ -468,11 +468,12 @@ def test_detail_openapi_reuses_complete_response_and_accepts_only_identity_param
     assert len(routes.detail_router.routes) == 1
 
 
-def test_composed_app_keeps_trial_detail_unmounted_until_core_sql_proof():
+def test_composed_app_registers_trial_detail_once_beside_existing_routes():
     base = "/api/v1/leads/{lead_id}/trial-appointments"
     expected = {
         (base, "GET"): routes.list_trial_appointments,
         (base, "POST"): routes.create_trial_appointment,
+        (base + "/{appointment_id}", "GET"): routes.get_trial_appointment,
         (base + "/{appointment_id}", "PATCH"): routes.update_trial_appointment,
     }
     actual = [
@@ -485,4 +486,8 @@ def test_composed_app_keeps_trial_detail_unmounted_until_core_sql_proof():
     assert {(path, method): handler for path, method, handler in actual} == expected
     openapi = composed_app.openapi()
     assert set(openapi["paths"][base]) == {"get", "post"}
-    assert set(openapi["paths"][base + "/{appointment_id}"]) == {"patch"}
+    detail = openapi["paths"][base + "/{appointment_id}"]
+    assert set(detail) == {"get", "patch"}
+    assert detail["get"]["responses"]["200"]["content"]["application/json"]["schema"] == {
+        "$ref": "#/components/schemas/TrialAppointmentResponse"
+    }

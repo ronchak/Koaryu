@@ -1989,7 +1989,7 @@ BEGIN
             -- Store only matching frozen target filters, never the full membership list.
             WHEN kind='student.enrolled' THEN fields:=ARRAY['student_id','matched_program_ids']; required:=fields;
             WHEN kind='student.promoted' THEN fields:=ARRAY['promotion_id','student_id','student_program_membership_id','program_id','rank_id','from_rank_id','rank_context_generation']; required:=array_remove(fields,'from_rank_id');
-            WHEN kind='invoice.payment_failed' THEN fields:=ARRAY['payment_id','invoice_id','payer_id']; required:=fields;
+            WHEN kind='invoice.payment_failed' THEN fields:=ARRAY['payment_id','invoice_id','payer_id','invoice_settlement_generation','payment_evidence']; required:=fields;
         END CASE;
         IF NOT private.workflow_json_keys_v1(context,fields,required) THEN
             RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST';
@@ -2001,6 +2001,18 @@ BEGIN
                 IF jsonb_typeof(value) IS DISTINCT FROM 'array' THEN RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST'; END IF;
                 IF jsonb_array_length(value)>25 OR EXISTS(SELECT 1 FROM jsonb_array_elements(value) p
                     WHERE jsonb_typeof(p)<>'string' OR p#>>'{}' !~ uuid_pattern) THEN
+                    RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST';
+                END IF;
+            ELSIF kind='invoice.payment_failed' AND k='payment_evidence' THEN
+                IF NOT private.workflow_payment_evidence_valid_v1(value) OR value->>'status' IS DISTINCT FROM 'failed'
+                    OR value->'payment_id' IS DISTINCT FROM context->'payment_id'
+                    OR (context->'invoice_id'<>'null'::JSONB AND context->'invoice_id' IS DISTINCT FROM value->'invoice_id')
+                    OR (context->'payer_id'<>'null'::JSONB AND context->'payer_id' IS DISTINCT FROM value->'payer_id') THEN
+                    RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST';
+                END IF;
+            ELSIF kind='invoice.payment_failed' AND k='invoice_settlement_generation' THEN
+                IF (value='null'::JSONB) IS DISTINCT FROM (context->'invoice_id'='null'::JSONB)
+                    OR (value<>'null'::JSONB AND NOT private.workflow_integer_v1(value,1,9223372036854775807)) THEN
                     RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST';
                 END IF;
             ELSIF k IN ('revision','approved_schedule_revision','approval_revision','rank_context_generation','approved_rank_context_generation') THEN
@@ -3510,7 +3522,456 @@ $$;
 
 -- Installation excludes every existing payment under a lock that conflicts
 -- with INSERT/UPDATE/DELETE. Logical identities survive operational clear.
-LOCK TABLE public.billing_payments IN SHARE ROW EXCLUSIVE MODE;
+LOCK TABLE public.studio_payment_accounts,public.billing_payers,public.billing_invoices,public.billing_payments
+    IN SHARE ROW EXCLUSIVE MODE NOWAIT;
+-- Settlement generations order committed evidence, never monetary totals.
+CREATE TABLE private.workflow_invoice_settlement_authority (
+    studio_id UUID NOT NULL REFERENCES public.studios(id) ON DELETE CASCADE,
+    invoice_id UUID NOT NULL,
+    generation BIGINT NOT NULL CHECK(generation>0),
+    PRIMARY KEY(studio_id,invoice_id)
+);
+CREATE TABLE private.workflow_payment_settlement_observations (
+    payment_id UUID PRIMARY KEY,
+    studio_id UUID NOT NULL REFERENCES public.studios(id) ON DELETE CASCADE,
+    invoice_id UUID,
+    first_evidence JSONB NOT NULL,
+    baseline BOOLEAN NOT NULL DEFAULT false,
+    accepted_generation BIGINT CHECK(accepted_generation>0),
+    accepted_identity JSONB,
+    uncertain BOOLEAN NOT NULL,
+    CHECK((accepted_generation IS NULL)=(accepted_identity IS NULL)),
+    CHECK(accepted_generation IS NULL OR invoice_id IS NOT NULL),
+    CHECK(accepted_generation IS NOT NULL OR uncertain),
+    CHECK(NOT baseline OR (accepted_generation IS NOT NULL AND accepted_generation=1))
+);
+CREATE INDEX workflow_payment_settlement_uncertain_invoice ON private.workflow_payment_settlement_observations(studio_id,invoice_id)
+    WHERE uncertain AND invoice_id IS NOT NULL;
+
+CREATE FUNCTION private.workflow_payment_evidence_v1(p_payment public.billing_payments)
+RETURNS JSONB LANGUAGE plpgsql IMMUTABLE SECURITY INVOKER SET search_path='' AS $$
+DECLARE evidence JSONB; invalid TEXT[]:='{}'; k TEXT; value TEXT;
+BEGIN
+    evidence:=jsonb_build_object('payment_id',p_payment.id,'status',p_payment.status,'amount_cents',p_payment.amount_cents,
+        'currency',p_payment.currency,'payer_id',p_payment.payer_id,'invoice_id',p_payment.invoice_id,
+        'stripe_account_id',p_payment.stripe_account_id,'stripe_customer_id',p_payment.stripe_customer_id,
+        'stripe_invoice_id',p_payment.stripe_invoice_id,'stripe_payment_intent_id',p_payment.stripe_payment_intent_id,
+        'stripe_charge_id',p_payment.stripe_charge_id,'connect_account_generation',p_payment.connect_account_generation,
+        'payment_method_type',p_payment.payment_method_type,'external_method',p_payment.external_method,
+        'adjustment_reconciliation_required',p_payment.adjustment_reconciliation_required,
+        'demo',coalesce(p_payment.metadata->'demo'='true'::JSONB,false));
+    FOREACH k IN ARRAY ARRAY['currency','stripe_account_id','stripe_customer_id','stripe_invoice_id',
+        'stripe_payment_intent_id','stripe_charge_id','connect_account_generation','payment_method_type','external_method'] LOOP
+        value:=evidence->>k;
+        IF value IS NULL THEN CONTINUE; END IF;
+        IF (CASE WHEN k='currency' THEN value !~ '^[A-Za-z]{3}$'
+            WHEN k='connect_account_generation' THEN p_payment.connect_account_generation<=0
+            WHEN k='external_method' THEN length(value) NOT BETWEEN 1 AND 80 OR private.workflow_blank_v1(to_jsonb(value))
+                OR value ~ ('['||chr(1)||'-'||chr(31)||chr(127)||'-'||chr(159)||']')
+            ELSE octet_length(value) NOT BETWEEN 1 AND CASE WHEN k='payment_method_type' THEN 80 ELSE 255 END
+                OR value !~ '^[!-~]+$' END) THEN
+            evidence:=jsonb_set(evidence,ARRAY[k],'null'); invalid:=array_append(invalid,k);
+        ELSIF k='currency' THEN evidence:=jsonb_set(evidence,ARRAY[k],to_jsonb(upper(value)));
+        END IF;
+    END LOOP;
+    RETURN evidence||jsonb_build_object('invalid_fields',ARRAY(SELECT x FROM unnest(invalid) x ORDER BY x COLLATE "C"));
+END $$;
+
+CREATE FUNCTION private.workflow_payment_evidence_valid_v1(p_evidence JSONB)
+RETURNS BOOLEAN LANGUAGE plpgsql IMMUTABLE SECURITY INVOKER SET search_path='' AS $$
+DECLARE k TEXT; value JSONB; invalid JSONB; allowed CONSTANT TEXT[]:=ARRAY['payment_id','status','amount_cents','currency',
+    'payer_id','invoice_id','stripe_account_id','stripe_customer_id','stripe_invoice_id','stripe_payment_intent_id',
+    'stripe_charge_id','connect_account_generation','payment_method_type','external_method',
+    'adjustment_reconciliation_required','demo','invalid_fields'];
+    uuid_pattern CONSTANT TEXT:='^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$';
+BEGIN
+    IF NOT private.workflow_json_keys_v1(p_evidence,allowed,allowed) OR octet_length(p_evidence::TEXT)>4096 THEN RETURN false; END IF;
+    invalid:=p_evidence->'invalid_fields';
+    IF jsonb_typeof(invalid) IS DISTINCT FROM 'array' THEN RETURN false; END IF;
+    IF jsonb_array_length(invalid)>9 OR EXISTS(SELECT 1 FROM jsonb_array_elements(invalid) x
+        WHERE jsonb_typeof(x)<>'string' OR x#>>'{}' NOT IN ('currency','stripe_account_id','stripe_customer_id',
+            'stripe_invoice_id','stripe_payment_intent_id','stripe_charge_id','connect_account_generation','payment_method_type','external_method')
+            OR p_evidence->(x#>>'{}') IS DISTINCT FROM 'null'::JSONB) THEN RETURN false; END IF;
+    IF invalid IS DISTINCT FROM (SELECT coalesce(jsonb_agg(x ORDER BY x COLLATE "C"),'[]'::JSONB)
+        FROM (SELECT DISTINCT jsonb_array_elements_text(invalid) x) names) THEN RETURN false; END IF;
+    FOREACH k IN ARRAY allowed LOOP
+        value:=p_evidence->k;
+        IF k='invalid_fields' THEN CONTINUE;
+        ELSIF k IN ('adjustment_reconciliation_required','demo') THEN
+            IF jsonb_typeof(value) IS DISTINCT FROM 'boolean' THEN RETURN false; END IF;
+        ELSIF k='amount_cents' THEN
+            IF NOT private.workflow_integer_v1(value,0,2147483647) THEN RETURN false; END IF;
+        ELSIF k='status' THEN
+            IF jsonb_typeof(value) IS DISTINCT FROM 'string' OR value#>>'{}' NOT IN
+                ('pending','processing','succeeded','failed','refunded','disputed','externally_recorded') THEN RETURN false; END IF;
+        ELSIF value='null'::JSONB THEN
+            IF k='payment_id' OR (k='currency' AND NOT invalid ? k) THEN RETURN false; END IF;
+        ELSIF k IN ('payment_id','payer_id','invoice_id') THEN
+            IF jsonb_typeof(value) IS DISTINCT FROM 'string' OR value#>>'{}' !~ uuid_pattern THEN RETURN false; END IF;
+        ELSIF k='connect_account_generation' THEN
+            IF NOT private.workflow_integer_v1(value,1,2147483647) THEN RETURN false; END IF;
+        ELSE
+            IF jsonb_typeof(value) IS DISTINCT FROM 'string' THEN RETURN false; END IF;
+            IF (CASE WHEN k='currency' THEN value#>>'{}' !~ '^[A-Z]{3}$'
+                WHEN k='external_method' THEN length(value#>>'{}') NOT BETWEEN 1 AND 80 OR private.workflow_blank_v1(value)
+                    OR value#>>'{}' ~ ('['||chr(1)||'-'||chr(31)||chr(127)||'-'||chr(159)||']')
+                ELSE octet_length(value#>>'{}') NOT BETWEEN 1 AND CASE WHEN k='payment_method_type' THEN 80 ELSE 255 END
+                    OR value#>>'{}' !~ '^[!-~]+$' END) THEN RETURN false; END IF;
+        END IF;
+    END LOOP;
+    RETURN true;
+END $$;
+
+-- Pure identity comparison shared by positive evidence and every visible contributor.
+-- Only account metadata retains the established absent/empty generation convention.
+CREATE FUNCTION private.workflow_financial_identity_valid_v1(p_invoice public.billing_invoices,p_payer public.billing_payers,
+    p_account public.studio_payment_accounts,p_payment public.billing_payments DEFAULT NULL)
+RETURNS BOOLEAN LANGUAGE plpgsql IMMUTABLE SECURITY INVOKER SET search_path='' AS $$
+DECLARE invoice_generation TEXT:=p_invoice.metadata->>'connect_account_generation';
+    account_generation TEXT:=p_account.metadata->>'connect_account_generation'; generation INTEGER; evidence JSONB; value TEXT;
+BEGIN
+    IF p_invoice.id IS NULL OR p_payer.id IS NULL OR p_account.studio_id IS NULL
+        OR p_invoice.studio_id IS DISTINCT FROM p_payer.studio_id OR p_invoice.studio_id IS DISTINCT FROM p_account.studio_id
+        OR p_invoice.payer_id IS DISTINCT FROM p_payer.id OR p_invoice.external IS DISTINCT FROM false
+        OR p_invoice.currency !~ '^[A-Za-z]{3}$'
+        OR coalesce(p_invoice.metadata->'demo'='true'::JSONB,false) OR coalesce(p_payer.metadata->'demo'='true'::JSONB,false)
+        OR invoice_generation IS NULL OR length(invoice_generation) NOT BETWEEN 1 AND 10
+        OR invoice_generation !~ '^[1-9][0-9]*$' THEN RETURN false; END IF;
+    IF invoice_generation::NUMERIC>2147483647 THEN RETURN false; END IF;
+    IF account_generation IS NOT NULL AND account_generation<>'' THEN
+        IF length(account_generation) NOT BETWEEN 1 AND 10 OR account_generation !~ '^[1-9][0-9]*$' THEN RETURN false; END IF;
+        IF account_generation::NUMERIC>2147483647 THEN RETURN false; END IF;
+    END IF;
+    generation:=private.current_connect_account_generation(p_account.metadata);
+    IF generation IS NULL OR generation IS DISTINCT FROM invoice_generation::INTEGER
+        OR p_payer.connect_account_generation IS DISTINCT FROM generation
+        OR p_invoice.stripe_account_id IS DISTINCT FROM p_account.stripe_connected_account_id
+        OR p_payer.stripe_account_id IS DISTINCT FROM p_invoice.stripe_account_id
+        OR p_payer.stripe_customer_id IS DISTINCT FROM p_invoice.stripe_customer_id THEN RETURN false; END IF;
+    FOREACH value IN ARRAY ARRAY[p_invoice.stripe_account_id,p_invoice.stripe_customer_id,p_invoice.stripe_invoice_id] LOOP
+        IF value IS NULL OR octet_length(value) NOT BETWEEN 1 AND 255 OR value !~ '^[!-~]+$' THEN RETURN false; END IF;
+    END LOOP;
+    IF p_payment.id IS NULL THEN RETURN true; END IF;
+    evidence:=private.workflow_payment_evidence_v1(p_payment);
+    IF NOT private.workflow_payment_evidence_valid_v1(evidence) OR evidence->'invalid_fields'<>'[]'::JSONB
+        OR p_payment.studio_id IS DISTINCT FROM p_invoice.studio_id OR p_payment.invoice_id IS DISTINCT FROM p_invoice.id
+        OR p_payment.payer_id IS DISTINCT FROM p_payer.id OR upper(p_payment.currency) IS DISTINCT FROM upper(p_invoice.currency)
+        OR p_payment.adjustment_reconciliation_required OR evidence->'demo'='true'::JSONB THEN RETURN false; END IF;
+    IF p_payment.status='externally_recorded' OR p_payment.payment_method_type='external' THEN
+        RETURN coalesce(p_payment.amount_cents>0 AND evidence->>'currency'='USD' AND p_payment.payment_method_type='external'
+            AND p_payment.external_method IS NOT NULL
+            AND (p_payment.stripe_account_id IS NULL OR p_payment.stripe_account_id=p_invoice.stripe_account_id)
+            AND (p_payment.stripe_customer_id IS NULL OR p_payment.stripe_customer_id=p_invoice.stripe_customer_id)
+            AND (p_payment.stripe_invoice_id IS NULL OR p_payment.stripe_invoice_id=p_invoice.stripe_invoice_id)
+            AND (p_payment.connect_account_generation IS NULL OR p_payment.connect_account_generation=generation),false);
+    END IF;
+    RETURN p_payment.stripe_account_id IS NOT DISTINCT FROM p_invoice.stripe_account_id
+        AND p_payment.stripe_customer_id IS NOT DISTINCT FROM p_invoice.stripe_customer_id
+        AND p_payment.stripe_invoice_id IS NOT DISTINCT FROM p_invoice.stripe_invoice_id
+        AND p_payment.connect_account_generation IS NOT DISTINCT FROM generation;
+END $$;
+
+CREATE FUNCTION private.workflow_payment_settlement_valid_v1(p_studio_id UUID,p_payment_id UUID)
+RETURNS BOOLEAN LANGUAGE sql STABLE SECURITY INVOKER SET search_path='' AS $$
+    SELECT EXISTS(SELECT 1 FROM public.billing_payments p
+        JOIN public.billing_invoices i ON i.id=p.invoice_id AND i.studio_id=p.studio_id
+        JOIN public.billing_payers y ON y.id=i.payer_id AND y.studio_id=i.studio_id
+        JOIN public.studio_payment_accounts a ON a.studio_id=i.studio_id
+        WHERE p.studio_id=p_studio_id AND p.id=p_payment_id AND p.status IN ('succeeded','externally_recorded')
+            AND p.amount_cents>0 AND private.workflow_financial_identity_valid_v1(i,y,a,p));
+$$;
+
+CREATE FUNCTION private.workflow_invoice_financial_context_v1(p_studio_id UUID,p_invoice_id UUID,p_payment_id UUID DEFAULT NULL)
+RETURNS JSONB LANGUAGE sql STABLE SECURITY INVOKER SET search_path='' AS $$
+    WITH current_context AS (
+        SELECT i.currency,s.generation FROM public.billing_invoices i
+        JOIN public.billing_payers y ON y.id=i.payer_id AND y.studio_id=i.studio_id
+        JOIN public.studio_payment_accounts a ON a.studio_id=i.studio_id
+        JOIN private.workflow_invoice_settlement_authority s ON s.studio_id=i.studio_id AND s.invoice_id=i.id
+        WHERE i.studio_id=p_studio_id AND i.id=p_invoice_id AND private.workflow_financial_identity_valid_v1(i,y,a)
+            AND NOT EXISTS(SELECT 1 FROM public.billing_payments p WHERE p.invoice_id=i.id
+                AND p.status IN ('succeeded','refunded','disputed','externally_recorded')
+                AND private.workflow_financial_identity_valid_v1(i,y,a,p) IS NOT TRUE)
+            AND NOT EXISTS(SELECT 1 FROM private.workflow_payment_settlement_observations o
+                WHERE o.studio_id=i.studio_id AND o.invoice_id=i.id AND o.uncertain)
+            AND NOT EXISTS(SELECT 1 FROM public.billing_payments p JOIN private.workflow_payment_settlement_observations o ON o.payment_id=p.id
+                WHERE ((p.invoice_id=i.id AND p.status IN ('succeeded','refunded','disputed','externally_recorded')) OR p.id=p_payment_id)
+                    AND (o.studio_id IS DISTINCT FROM p.studio_id OR o.uncertain
+                        OR (o.invoice_id IS NOT NULL AND o.invoice_id IS DISTINCT FROM p.invoice_id)
+                        OR EXISTS(SELECT 1 FROM jsonb_each(o.accepted_identity) x WHERE x.value<>'null'::JSONB
+                            AND x.value IS DISTINCT FROM private.workflow_payment_evidence_v1(p)->x.key)))
+            AND (p_payment_id IS NULL OR EXISTS(SELECT 1 FROM public.billing_payments p
+                WHERE p.studio_id=i.studio_id AND p.id=p_payment_id AND private.workflow_financial_identity_valid_v1(i,y,a,p)))
+    ) SELECT coalesce((SELECT jsonb_build_object('available',true,'currency',upper(currency),'unit_convention','stripe_minor_units',
+        'invoice_settlement_generation',generation) FROM current_context),jsonb_build_object('available',false,'currency',NULL,
+        'unit_convention',NULL,'invoice_settlement_generation',NULL));
+$$;
+
+-- The caller owns its first source. Every additional financial parent is NOWAIT.
+-- No workflow/run lock is acquired here or in the single-payment observer.
+CREATE FUNCTION private.workflow_lock_financial_sources_v1(p_studio_id UUID,p_invoice_id UUID,p_payment_ids UUID[])
+RETURNS VOID LANGUAGE plpgsql VOLATILE SECURITY INVOKER SET search_path='' AS $$
+BEGIN
+    IF NOT pg_catalog.pg_try_advisory_xact_lock_shared(pg_catalog.hashtextextended('koaryu.local-plan-clear:'||p_studio_id::TEXT,0)) THEN
+        RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STUDIO_BUSY';
+    END IF;
+    PERFORM 1 FROM public.studios WHERE id=p_studio_id FOR KEY SHARE NOWAIT;
+    PERFORM 1 FROM public.billing_payments WHERE studio_id=p_studio_id AND id=ANY(p_payment_ids) ORDER BY id FOR UPDATE NOWAIT;
+    PERFORM 1 FROM public.billing_invoices WHERE studio_id=p_studio_id AND id=p_invoice_id FOR SHARE NOWAIT;
+    PERFORM 1 FROM public.billing_payers y WHERE y.studio_id=p_studio_id AND (y.id IN (
+        SELECT p.payer_id FROM public.billing_payments p WHERE p.studio_id=p_studio_id AND p.id=ANY(p_payment_ids))
+        OR y.id IN (SELECT i.payer_id FROM public.billing_invoices i WHERE i.studio_id=p_studio_id AND i.id=p_invoice_id))
+        ORDER BY y.id FOR SHARE NOWAIT;
+    PERFORM 1 FROM public.studio_payment_accounts WHERE studio_id=p_studio_id FOR SHARE NOWAIT;
+    IF p_invoice_id IS NOT NULL THEN
+        IF NOT pg_catalog.pg_try_advisory_xact_lock(pg_catalog.hashtextextended(
+            'koaryu.workflow-invoice-settlement:'||p_studio_id::TEXT||':'||p_invoice_id::TEXT,0)) THEN
+            RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STUDIO_BUSY';
+        END IF;
+        PERFORM 1 FROM private.workflow_invoice_settlement_authority
+            WHERE studio_id=p_studio_id AND invoice_id=p_invoice_id FOR UPDATE NOWAIT;
+        IF NOT FOUND AND EXISTS(SELECT 1 FROM public.billing_invoices WHERE studio_id=p_studio_id AND id=p_invoice_id) THEN
+            RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STATE_CONFLICT';
+        END IF;
+    END IF;
+    PERFORM 1 FROM private.workflow_payment_settlement_observations
+        WHERE studio_id=p_studio_id AND payment_id=ANY(p_payment_ids) ORDER BY payment_id FOR UPDATE NOWAIT;
+EXCEPTION WHEN lock_not_available THEN
+    RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STUDIO_BUSY';
+END $$;
+
+CREATE FUNCTION private.workflow_observe_payment_settlement_v1(p_studio_id UUID,p_payment_id UUID)
+RETURNS JSONB LANGUAGE plpgsql VOLATILE SECURITY INVOKER SET search_path='' AS $$
+DECLARE payment public.billing_payments; observation private.workflow_payment_settlement_observations;
+    invoice UUID; generation BIGINT; evidence JSONB; identity JSONB; valid BOOLEAN; consistent BOOLEAN; advanced BOOLEAN:=false; uncertain BOOLEAN:=false;
+BEGIN
+    IF NOT pg_catalog.pg_try_advisory_xact_lock_shared(pg_catalog.hashtextextended('koaryu.local-plan-clear:'||p_studio_id::TEXT,0)) THEN
+        RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STUDIO_BUSY';
+    END IF;
+    PERFORM 1 FROM public.studios WHERE id=p_studio_id FOR KEY SHARE NOWAIT;
+    SELECT * INTO payment FROM public.billing_payments WHERE studio_id=p_studio_id AND id=p_payment_id FOR UPDATE NOWAIT;
+    IF payment.id IS NULL THEN RETURN jsonb_build_object('invoice_id',NULL,'generation',NULL,'advanced',false,'uncertain',true); END IF;
+    SELECT id INTO invoice FROM public.billing_invoices WHERE studio_id=p_studio_id AND id=payment.invoice_id;
+    PERFORM private.workflow_lock_financial_sources_v1(p_studio_id,invoice,ARRAY[p_payment_id]);
+    SELECT a.generation INTO generation FROM private.workflow_invoice_settlement_authority a WHERE a.studio_id=p_studio_id AND a.invoice_id=invoice;
+    SELECT * INTO observation FROM private.workflow_payment_settlement_observations WHERE payment_id=p_payment_id;
+    IF observation.payment_id IS NOT NULL AND observation.studio_id IS DISTINCT FROM p_studio_id THEN
+        RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STATE_CONFLICT';
+    END IF;
+    IF observation.payment_id IS NULL AND payment.status NOT IN ('succeeded','externally_recorded') THEN
+        RETURN jsonb_build_object('invoice_id',invoice,'generation',generation,'advanced',false,'uncertain',false);
+    END IF;
+    evidence:=private.workflow_payment_evidence_v1(payment);
+    identity:=evidence-ARRAY['status','amount_cents','payment_method_type','external_method','adjustment_reconciliation_required','demo','invalid_fields'];
+    consistent:=EXISTS(SELECT 1 FROM public.billing_invoices i JOIN public.billing_payers y ON y.id=i.payer_id AND y.studio_id=i.studio_id
+        JOIN public.studio_payment_accounts a ON a.studio_id=i.studio_id WHERE i.id=invoice AND i.studio_id=p_studio_id
+            AND private.workflow_financial_identity_valid_v1(i,y,a,payment))
+        AND (observation.invoice_id IS NULL OR observation.invoice_id=invoice)
+        AND (observation.accepted_identity IS NULL OR NOT EXISTS(SELECT 1 FROM jsonb_each(observation.accepted_identity) x
+            WHERE x.value<>'null'::JSONB AND x.value IS DISTINCT FROM identity->x.key));
+    valid:=consistent AND private.workflow_payment_settlement_valid_v1(p_studio_id,p_payment_id);
+    IF observation.payment_id IS NULL THEN
+        INSERT INTO private.workflow_payment_settlement_observations(payment_id,studio_id,invoice_id,first_evidence,uncertain)
+            VALUES(p_payment_id,p_studio_id,invoice,evidence,true) RETURNING * INTO observation;
+    ELSIF observation.invoice_id IS NULL AND invoice IS NOT NULL THEN
+        UPDATE private.workflow_payment_settlement_observations SET invoice_id=invoice WHERE payment_id=p_payment_id RETURNING * INTO observation;
+    END IF;
+    uncertain:=observation.uncertain;
+    IF valid THEN
+        IF observation.accepted_generation IS NULL THEN
+            IF generation IS NULL OR generation=9223372036854775807 THEN
+                RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STATE_CONFLICT';
+            END IF;
+            UPDATE private.workflow_invoice_settlement_authority a SET generation=a.generation+1
+                WHERE a.studio_id=p_studio_id AND a.invoice_id=invoice RETURNING a.generation INTO generation;
+            UPDATE private.workflow_payment_settlement_observations SET accepted_generation=generation,accepted_identity=identity,uncertain=false
+                WHERE payment_id=p_payment_id;
+            advanced:=true;
+        ELSIF observation.uncertain THEN
+            UPDATE private.workflow_payment_settlement_observations SET uncertain=false WHERE payment_id=p_payment_id;
+        END IF;
+        uncertain:=false;
+    ELSIF (NOT coalesce(consistent,false) OR payment.status IN ('succeeded','externally_recorded','failed','pending','processing')) AND NOT observation.uncertain THEN
+        UPDATE private.workflow_payment_settlement_observations SET uncertain=true WHERE payment_id=p_payment_id;
+        uncertain:=true;
+    END IF;
+    RETURN jsonb_build_object('invoice_id',invoice,'generation',generation,'advanced',advanced,'uncertain',uncertain);
+EXCEPTION WHEN lock_not_available THEN
+    RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STUDIO_BUSY';
+END $$;
+
+CREATE FUNCTION private.workflow_cancel_settled_invoice_runs_v1(p_studio_id UUID,p_invoice_ids UUID[])
+RETURNS VOID LANGUAGE plpgsql VOLATILE SECURITY INVOKER SET search_path='' AS $$
+DECLARE runs UUID[]; workflows UUID[];
+BEGIN
+    SELECT coalesce(array_agg(r.id ORDER BY r.id),'{}'::UUID[]),coalesce(array_agg(DISTINCT r.workflow_id ORDER BY r.workflow_id),'{}'::UUID[])
+        INTO runs,workflows FROM public.automation_workflow_runs r
+        JOIN private.automation_workflow_events e ON e.id=r.event_id AND e.studio_id=r.studio_id
+        JOIN private.workflow_invoice_settlement_authority a ON a.studio_id=e.studio_id AND a.invoice_id=(e.context->>'invoice_id')::UUID
+        WHERE r.studio_id=p_studio_id AND a.invoice_id=ANY(p_invoice_ids) AND e.event_type='invoice.payment_failed'
+            AND e.context->>'invoice_settlement_generation' IS NOT NULL
+            AND (e.context->>'invoice_settlement_generation')::BIGINT<a.generation
+            AND r.cancel_requested_at IS NULL AND r.state IN ('queued','waiting','claimed','running','sending','unknown');
+    PERFORM 1 FROM public.automation_workflows WHERE studio_id=p_studio_id AND id=ANY(workflows) ORDER BY id FOR UPDATE;
+    PERFORM 1 FROM public.automation_workflow_runs WHERE studio_id=p_studio_id AND id=ANY(runs) ORDER BY id FOR UPDATE;
+    PERFORM private.workflow_cancel_runs_v1(p_studio_id,runs,clock_timestamp(),'payment_settled');
+END $$;
+
+CREATE FUNCTION private.workflow_prepare_financial_context_v1(p_studio_id UUID,p_invoice_id UUID,p_payment_id UUID DEFAULT NULL)
+RETURNS JSONB LANGUAGE plpgsql VOLATILE SECURITY INVOKER SET search_path='' AS $$
+DECLARE candidates UUID[]; payments UUID[]; changed UUID[]:='{}'; payment UUID; observed JSONB;
+BEGIN
+    IF NOT pg_catalog.pg_try_advisory_xact_lock_shared(pg_catalog.hashtextextended('koaryu.local-plan-clear:'||p_studio_id::TEXT,0)) THEN
+        RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STUDIO_BUSY';
+    END IF;
+    PERFORM 1 FROM public.studios WHERE id=p_studio_id FOR KEY SHARE NOWAIT;
+    IF p_payment_id IS NOT NULL THEN
+        PERFORM 1 FROM public.billing_payments WHERE studio_id=p_studio_id AND id=p_payment_id FOR UPDATE NOWAIT;
+    END IF;
+    PERFORM 1 FROM public.billing_invoices WHERE studio_id=p_studio_id AND id=p_invoice_id FOR SHARE NOWAIT;
+    IF p_invoice_id IS NOT NULL AND NOT pg_catalog.pg_try_advisory_xact_lock(pg_catalog.hashtextextended(
+        'koaryu.workflow-invoice-settlement:'||p_studio_id::TEXT||':'||p_invoice_id::TEXT,0)) THEN
+        RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STUDIO_BUSY';
+    END IF;
+    -- Freeze contributors after admission excludes another committing projection.
+    SELECT coalesce(array_agg(payment_id ORDER BY payment_id),'{}'::UUID[]) INTO candidates FROM (
+        SELECT payment_id FROM private.workflow_payment_settlement_observations WHERE studio_id=p_studio_id
+            AND invoice_id=p_invoice_id AND uncertain ORDER BY payment_id LIMIT 20) bounded;
+    SELECT coalesce(array_agg(DISTINCT id ORDER BY id),'{}'::UUID[]) INTO payments FROM public.billing_payments
+        WHERE studio_id=p_studio_id AND (id=p_payment_id OR id=ANY(candidates)
+            OR (invoice_id=p_invoice_id AND status IN ('succeeded','refunded','disputed','externally_recorded')));
+    PERFORM private.workflow_lock_financial_sources_v1(p_studio_id,p_invoice_id,payments);
+    FOREACH payment IN ARRAY candidates LOOP
+        IF NOT EXISTS(SELECT 1 FROM public.billing_payments p WHERE p.id=payment AND p.studio_id=p_studio_id AND p.invoice_id=p_invoice_id) THEN CONTINUE; END IF;
+        observed:=private.workflow_observe_payment_settlement_v1(p_studio_id,payment);
+        IF (observed->>'advanced')::BOOLEAN THEN changed:=array_append(changed,(observed->>'invoice_id')::UUID); END IF;
+    END LOOP;
+    -- This is the only workflow/run acquisition, after every bounded source parent.
+    PERFORM private.workflow_cancel_settled_invoice_runs_v1(p_studio_id,ARRAY(SELECT DISTINCT x FROM unnest(changed) x ORDER BY x));
+    RETURN private.workflow_invoice_financial_context_v1(p_studio_id,p_invoice_id,p_payment_id);
+EXCEPTION WHEN lock_not_available THEN
+    RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STUDIO_BUSY';
+END $$;
+
+-- Installer classification does not invoke runtime observation or cancellation.
+INSERT INTO private.workflow_invoice_settlement_authority(studio_id,invoice_id,generation)
+    SELECT studio_id,id,1 FROM public.billing_invoices;
+INSERT INTO private.workflow_payment_settlement_observations(payment_id,studio_id,invoice_id,first_evidence,baseline,accepted_generation,accepted_identity,uncertain)
+    SELECT p.id,p.studio_id,i.id,e.evidence,v.valid,CASE WHEN v.valid THEN 1 END,
+        CASE WHEN v.valid THEN e.evidence-ARRAY['status','amount_cents','payment_method_type','external_method','adjustment_reconciliation_required','demo','invalid_fields'] END,
+        NOT v.valid FROM public.billing_payments p
+        LEFT JOIN public.billing_invoices i ON i.id=p.invoice_id AND i.studio_id=p.studio_id
+        CROSS JOIN LATERAL (SELECT private.workflow_payment_evidence_v1(p) evidence) e
+        CROSS JOIN LATERAL (SELECT private.workflow_payment_settlement_valid_v1(p.studio_id,p.id) valid) v
+        WHERE p.status IN ('succeeded','externally_recorded');
+
+CREATE FUNCTION private.workflow_invoice_settlement_identity_v1() RETURNS TRIGGER
+LANGUAGE plpgsql VOLATILE SECURITY INVOKER SET search_path='' AS $$
+BEGIN
+    IF TG_OP='INSERT' THEN
+        IF NEW.generation<>1 OR NOT EXISTS(SELECT 1 FROM public.billing_invoices i WHERE i.studio_id=NEW.studio_id AND i.id=NEW.invoice_id) THEN
+            RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STATE_CONFLICT';
+        END IF;
+    ELSIF NEW.studio_id IS DISTINCT FROM OLD.studio_id OR NEW.invoice_id IS DISTINCT FROM OLD.invoice_id
+        OR (NEW.generation IS DISTINCT FROM OLD.generation AND (OLD.generation=9223372036854775807 OR NEW.generation::NUMERIC<>OLD.generation::NUMERIC+1)) THEN
+        RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STATE_CONFLICT';
+    END IF;
+    RETURN NEW;
+END $$;
+CREATE TRIGGER workflow_invoice_settlement_identity_v1 BEFORE INSERT OR UPDATE ON private.workflow_invoice_settlement_authority
+    FOR EACH ROW EXECUTE FUNCTION private.workflow_invoice_settlement_identity_v1();
+
+CREATE FUNCTION private.workflow_settlement_observation_identity_v1() RETURNS TRIGGER
+LANGUAGE plpgsql VOLATILE SECURITY INVOKER SET search_path='' AS $$
+DECLARE payment public.billing_payments; evidence JSONB; identity JSONB;
+BEGIN
+    IF NOT private.workflow_payment_evidence_valid_v1(NEW.first_evidence)
+        OR NEW.first_evidence->'payment_id' IS DISTINCT FROM to_jsonb(NEW.payment_id)
+        OR NEW.first_evidence->>'status' NOT IN ('succeeded','externally_recorded') THEN
+        RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STATE_CONFLICT';
+    END IF;
+    SELECT * INTO payment FROM public.billing_payments WHERE studio_id=NEW.studio_id AND id=NEW.payment_id;
+    evidence:=private.workflow_payment_evidence_v1(payment);
+    identity:=evidence-ARRAY['status','amount_cents','payment_method_type','external_method','adjustment_reconciliation_required','demo','invalid_fields'];
+    IF TG_OP='INSERT' THEN
+        IF NEW.baseline OR NEW.first_evidence IS DISTINCT FROM evidence THEN
+            RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STATE_CONFLICT';
+        END IF;
+    ELSE
+        IF NEW.payment_id IS DISTINCT FROM OLD.payment_id OR NEW.studio_id IS DISTINCT FROM OLD.studio_id
+            OR NEW.first_evidence IS DISTINCT FROM OLD.first_evidence OR NEW.baseline IS DISTINCT FROM OLD.baseline
+            OR (OLD.invoice_id IS NOT NULL AND NEW.invoice_id IS DISTINCT FROM OLD.invoice_id)
+            OR (OLD.accepted_generation IS NOT NULL AND (NEW.accepted_generation IS DISTINCT FROM OLD.accepted_generation
+                OR NEW.accepted_identity IS DISTINCT FROM OLD.accepted_identity)) THEN
+            RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STATE_CONFLICT';
+        END IF;
+    END IF;
+    IF (TG_OP='INSERT' OR (OLD.invoice_id IS NULL AND NEW.invoice_id IS NOT NULL)) AND NEW.invoice_id IS NOT NULL
+        AND (NEW.invoice_id IS DISTINCT FROM payment.invoice_id OR NOT EXISTS(SELECT 1 FROM public.billing_invoices
+            WHERE id=NEW.invoice_id AND studio_id=NEW.studio_id)) THEN
+        RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STATE_CONFLICT';
+    END IF;
+    IF NEW.accepted_generation IS NOT NULL AND (TG_OP='INSERT' OR OLD.accepted_generation IS NULL) THEN
+        IF NEW.accepted_identity IS DISTINCT FROM identity OR NEW.accepted_generation IS DISTINCT FROM (
+            SELECT generation FROM private.workflow_invoice_settlement_authority WHERE studio_id=NEW.studio_id AND invoice_id=NEW.invoice_id)
+            OR NOT private.workflow_payment_settlement_valid_v1(NEW.studio_id,NEW.payment_id) THEN
+            RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STATE_CONFLICT';
+        END IF;
+    END IF;
+    IF NOT NEW.uncertain AND (TG_OP='INSERT' OR OLD.uncertain) THEN
+        IF NOT private.workflow_payment_settlement_valid_v1(NEW.studio_id,NEW.payment_id) OR NEW.invoice_id IS DISTINCT FROM payment.invoice_id
+            OR EXISTS(SELECT 1 FROM jsonb_each(NEW.accepted_identity) x WHERE x.value<>'null'::JSONB AND x.value IS DISTINCT FROM identity->x.key) THEN
+            RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STATE_CONFLICT';
+        END IF;
+    END IF;
+    RETURN NEW;
+END $$;
+CREATE TRIGGER workflow_settlement_observation_identity_v1 BEFORE INSERT OR UPDATE ON private.workflow_payment_settlement_observations
+    FOR EACH ROW EXECUTE FUNCTION private.workflow_settlement_observation_identity_v1();
+
+CREATE FUNCTION private.workflow_invoice_settlement_seed_v1() RETURNS TRIGGER
+LANGUAGE plpgsql VOLATILE SECURITY INVOKER SET search_path='' AS $$
+BEGIN
+    IF NOT pg_catalog.pg_try_advisory_xact_lock_shared(pg_catalog.hashtextextended('koaryu.local-plan-clear:'||NEW.studio_id::TEXT,0)) THEN
+        RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STUDIO_BUSY';
+    END IF;
+    PERFORM 1 FROM public.studios WHERE id=NEW.studio_id FOR KEY SHARE NOWAIT;
+    IF NOT pg_catalog.pg_try_advisory_xact_lock(pg_catalog.hashtextextended(
+        'koaryu.workflow-invoice-settlement:'||NEW.studio_id::TEXT||':'||NEW.id::TEXT,0)) THEN
+        RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STUDIO_BUSY';
+    END IF;
+    PERFORM 1 FROM private.workflow_invoice_settlement_authority WHERE studio_id=NEW.studio_id AND invoice_id=NEW.id FOR UPDATE NOWAIT;
+    IF NOT FOUND THEN INSERT INTO private.workflow_invoice_settlement_authority(studio_id,invoice_id,generation) VALUES(NEW.studio_id,NEW.id,1); END IF;
+    RETURN NEW;
+EXCEPTION WHEN lock_not_available THEN
+    RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STUDIO_BUSY';
+END $$;
+CREATE TRIGGER workflow_invoice_settlement_seed_v1 AFTER INSERT ON public.billing_invoices
+    FOR EACH ROW EXECUTE FUNCTION private.workflow_invoice_settlement_seed_v1();
+
+DO $financial_authority_privileges$
+DECLARE item TEXT; r RECORD;
+BEGIN
+    FOREACH item IN ARRAY ARRAY['workflow_invoice_settlement_authority','workflow_payment_settlement_observations'] LOOP
+        EXECUTE format('ALTER TABLE private.%I OWNER TO postgres',item);
+        EXECUTE format('ALTER TABLE private.%I ENABLE ROW LEVEL SECURITY',item);
+        EXECUTE format('REVOKE ALL ON private.%I FROM PUBLIC,anon,authenticated,service_role',item);
+        EXECUTE format('GRANT SELECT,INSERT,UPDATE ON private.%I TO service_role',item);
+        EXECUTE format('CREATE POLICY reject_client_access ON private.%I AS RESTRICTIVE FOR ALL TO anon,authenticated USING(false) WITH CHECK(false)',item);
+    END LOOP;
+    FOR r IN SELECT p.oid::REGPROCEDURE identity,p.prorettype FROM pg_catalog.pg_proc p JOIN pg_catalog.pg_namespace n ON n.oid=p.pronamespace
+        WHERE n.nspname='private' AND p.proname IN ('workflow_invoice_settlement_seed_v1','workflow_payment_evidence_v1',
+            'workflow_payment_evidence_valid_v1','workflow_financial_identity_valid_v1','workflow_payment_settlement_valid_v1',
+            'workflow_invoice_financial_context_v1','workflow_lock_financial_sources_v1','workflow_prepare_financial_context_v1',
+            'workflow_observe_payment_settlement_v1','workflow_cancel_settled_invoice_runs_v1',
+            'workflow_invoice_settlement_identity_v1','workflow_settlement_observation_identity_v1') LOOP
+        EXECUTE format('ALTER FUNCTION %s OWNER TO postgres',r.identity);
+        EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC,anon,authenticated,service_role',r.identity);
+        IF r.prorettype<>'trigger'::REGTYPE THEN EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO service_role',r.identity); END IF;
+    END LOOP;
+END;
+$financial_authority_privileges$;
+
 CREATE TABLE private.workflow_payment_capture_markers (
     payment_id UUID PRIMARY KEY,
     studio_id UUID NOT NULL REFERENCES public.studios(id) ON DELETE CASCADE,
@@ -3529,7 +3990,7 @@ CREATE POLICY reject_client_access ON private.workflow_payment_capture_markers A
 CREATE FUNCTION private.workflow_capture_payment_failure_v1() RETURNS TRIGGER
 LANGUAGE plpgsql VOLATILE SECURITY INVOKER SET search_path='' AS $$
 DECLARE invoice public.billing_invoices; payer public.billing_payers; invoice_payer public.billing_payers;
-    excluded BOOLEAN; marker private.workflow_payment_capture_markers; targets JSONB;
+    excluded BOOLEAN; marker private.workflow_payment_capture_markers; targets JSONB; observation JSONB; generation BIGINT;
 BEGIN
     -- A projection already owns its payment. Neither clear nor studio deletion
     -- may make this late entry wait backwards for a parent.
@@ -3541,8 +4002,9 @@ BEGIN
     EXCEPTION WHEN lock_not_available THEN
         RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STUDIO_BUSY';
     END;
-    -- Financial identity/ref guards remain authoritative. These same-studio
-    -- reads add no invoice or payer row locks after payment ownership.
+    observation:=private.workflow_observe_payment_settlement_v1(NEW.studio_id,NEW.id);
+    generation:=(observation->>'generation')::BIGINT;
+    -- The shared observer owns the exact payment and financial parents.
     SELECT * INTO invoice FROM public.billing_invoices WHERE id=NEW.invoice_id AND studio_id=NEW.studio_id;
     SELECT * INTO payer FROM public.billing_payers WHERE id=NEW.payer_id AND studio_id=NEW.studio_id;
     SELECT * INTO invoice_payer FROM public.billing_payers WHERE id=invoice.payer_id AND studio_id=NEW.studio_id;
@@ -3555,7 +4017,13 @@ BEGIN
             VALUES(NEW.id,NEW.studio_id,NOT excluded) ON CONFLICT(payment_id) DO NOTHING;
     END IF;
     SELECT * INTO marker FROM private.workflow_payment_capture_markers WHERE payment_id=NEW.id AND studio_id=NEW.studio_id;
-    IF NOT FOUND OR NOT marker.eligible OR marker.failure_seen OR NEW.status<>'failed' THEN RETURN NEW; END IF;
+    IF NEW.status<>'failed' THEN
+        IF (observation->>'advanced')::BOOLEAN THEN
+            PERFORM private.workflow_cancel_settled_invoice_runs_v1(NEW.studio_id,ARRAY[(observation->>'invoice_id')::UUID]);
+        END IF;
+        RETURN NEW;
+    END IF;
+    IF NOT FOUND OR NOT marker.eligible OR marker.failure_seen THEN RETURN NEW; END IF;
     UPDATE private.workflow_payment_capture_markers SET failure_seen=true WHERE payment_id=NEW.id;
     -- Consume the first committed failure even when demo or no target is active.
     IF excluded THEN RETURN NEW; END IF;
@@ -3563,11 +4031,14 @@ BEGIN
     PERFORM private.workflow_capture_events_v1(NEW.studio_id,jsonb_build_array(jsonb_build_object(
         'event_type','invoice.payment_failed','source_key',NEW.id::TEXT,'subject_kind','invoice','subject_id',NEW.id,
         'occurred_at',private.automation_utc_text_v1(clock_timestamp()),'context',jsonb_build_object(
-            'payment_id',NEW.id,'invoice_id',invoice.id,'payer_id',payer.id))),targets);
+            'payment_id',NEW.id,'invoice_id',invoice.id,'payer_id',payer.id,'invoice_settlement_generation',generation,
+            'payment_evidence',private.workflow_payment_evidence_v1(NEW)))),targets);
     RETURN NEW;
 END $$;
 CREATE TRIGGER workflow_capture_payment_failure_v1
-    AFTER INSERT OR UPDATE OF status,invoice_id,payer_id,metadata ON public.billing_payments
+    AFTER INSERT OR UPDATE OF status,invoice_id,payer_id,amount_cents,currency,stripe_account_id,stripe_customer_id,
+        stripe_invoice_id,stripe_payment_intent_id,stripe_charge_id,connect_account_generation,payment_method_type,external_method,
+        metadata,adjustment_reconciliation_required,adjustment_reconciliation_reason_code ON public.billing_payments
     FOR EACH ROW EXECUTE FUNCTION private.workflow_capture_payment_failure_v1();
 
 DO $student_payment_capture_privileges$

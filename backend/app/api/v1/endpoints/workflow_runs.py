@@ -1,4 +1,4 @@
-"""Unmounted workflow history routes pending real SQL snapshot/cancel verification."""
+"""Admin workflow run history and cancellation routes."""
 
 from typing import Annotated
 from uuid import UUID

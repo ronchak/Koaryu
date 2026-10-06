@@ -22,6 +22,8 @@ APPROVED_TEST_RECIPIENT = "koaryu@outlook.com"
 _TOKEN = re.compile(r"\{\{(student_first_name|studio_name|days_absent)\}\}")
 _CONTROL = re.compile(r"[\x00-\x1f\x7f-\x9f]")
 _BODY_CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]")
+_SYNTHETIC_SUBJECT_PREFIX = "[Test] "
+_SYNTHETIC_BODY_PREFIX = "Synthetic automation test. Sample data only.\n\n"
 
 
 @dataclass(frozen=True)
@@ -39,6 +41,11 @@ class EmailMessage:
     html_body: str = field(repr=False)
     reply_to: str = field(repr=False)
     attempt_id: str
+
+
+@dataclass(frozen=True)
+class SyntheticTestEmailMessage(EmailMessage):
+    """Fixed synthetic content profile. This type grants no delivery authority."""
 
 
 @dataclass(frozen=True)
@@ -199,10 +206,7 @@ def render_missed_class_email(
     return assemble_plain_text_email(subject, body, unsubscribe_url)
 
 
-def assemble_plain_text_email(
-    subject: str, body: str, unsubscribe_url: str | None = None
-) -> EmailContent:
-    """Validate rendered text, escape it, and append the existing optional footer."""
+def _validate_plain_text_email(subject: str, body: str) -> None:
     if (
         not isinstance(subject, str)
         or not subject.strip()
@@ -215,7 +219,18 @@ def assemble_plain_text_email(
         or "\r" in body
     ):
         raise ValueError("invalid_email_context")
-    html = '<div style="white-space: pre-wrap">' + escape(body) + "</div>"
+
+
+def _plain_text_html(body: str) -> str:
+    return '<div style="white-space: pre-wrap">' + escape(body) + "</div>"
+
+
+def assemble_plain_text_email(
+    subject: str, body: str, unsubscribe_url: str | None = None
+) -> EmailContent:
+    """Validate rendered text, escape it, and append the existing optional footer."""
+    _validate_plain_text_email(subject, body)
+    html = _plain_text_html(body)
     if unsubscribe_url is not None:
         url = _safe_https_url(unsubscribe_url, allow_fragment=True)
         body += "\n\nUnsubscribe from these reminders: " + url
@@ -223,6 +238,39 @@ def assemble_plain_text_email(
             '<p><a href="' + escape(url, quote=True) + '">Unsubscribe from these reminders</a></p>'
         )
     return EmailContent(subject=subject, text_body=body, html_body=html)
+
+
+def _assemble_synthetic_test_content(subject: str, body: str) -> EmailContent:
+    """Validate the closed labeled profile used by assembly and transport."""
+    if (
+        not isinstance(subject, str)
+        or not subject.startswith(_SYNTHETIC_SUBJECT_PREFIX)
+        or len(subject) > 207
+        or not isinstance(body, str)
+        or not body.startswith(_SYNTHETIC_BODY_PREFIX)
+        or len(body) > 20046
+    ):
+        raise ValueError("invalid_email_context")
+    _validate_plain_text_email(
+        subject[len(_SYNTHETIC_SUBJECT_PREFIX) :], body[len(_SYNTHETIC_BODY_PREFIX) :]
+    )
+    try:
+        if len(subject.encode("utf-8")) > 807 or len(body.encode("utf-8")) > 80046:
+            raise ValueError("invalid_email_context")
+    except UnicodeEncodeError:
+        raise ValueError("invalid_email_context") from None
+    html = _plain_text_html(body)
+    if len(html) > 120317 or len(html.encode("utf-8")) > 120317:
+        raise ValueError("invalid_email_context")
+    return EmailContent(subject=subject, text_body=body, html_body=html)
+
+
+def assemble_synthetic_test_email(subject: str, body: str) -> EmailContent:
+    """Label already-rendered ordinary text once, without an unsubscribe footer."""
+    _validate_plain_text_email(subject, body)
+    return _assemble_synthetic_test_content(
+        _SYNTHETIC_SUBJECT_PREFIX + subject, _SYNTHETIC_BODY_PREFIX + body
+    )
 
 
 @dataclass(frozen=True)

@@ -2301,10 +2301,21 @@ export interface ApiWorkflowRecipientMetadata {
   label: string;
 }
 
+export interface ApiWorkflowRunCancelRequest {
+  operation_id: string;
+  expected_revision: number;
+}
+
 export interface ApiWorkflowRunDetail {
   run: ApiWorkflowRunSummary;
   steps: ApiWorkflowRunStep[];
   attempts: ApiWorkflowEmailAttemptSummary[];
+}
+
+export interface ApiWorkflowRunListResponse {
+  items: ApiWorkflowRunSummary[];
+  next_cursor: string | null;
+  has_more: boolean;
 }
 
 export interface ApiWorkflowRunStep {
