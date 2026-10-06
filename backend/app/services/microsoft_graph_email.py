@@ -19,6 +19,8 @@ from app.services.automation_email import (
     DeliveryConfiguration,
     DeliveryResult,
     EmailMessage,
+    SyntheticTestEmailMessage,
+    _assemble_synthetic_test_content,
     delivery_configuration,
     normalize_email_address,
     sender_identity_binding,
@@ -102,6 +104,17 @@ def _retry_after(response: httpx.Response) -> int:
 
 
 def _valid_message(message: EmailMessage) -> bool:
+    if isinstance(message, SyntheticTestEmailMessage):
+        try:
+            content = _assemble_synthetic_test_content(message.subject, message.text_body)
+        except ValueError:
+            return False
+        return (
+            isinstance(message.html_body, str)
+            and message.html_body == content.html_body
+            and isinstance(message.attempt_id, str)
+            and re.fullmatch(r"[A-Za-z0-9._:-]{1,128}", message.attempt_id) is not None
+        )
     return (
         isinstance(message.subject, str)
         and bool(message.subject.strip())
