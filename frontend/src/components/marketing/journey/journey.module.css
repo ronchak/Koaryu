@@ -27,6 +27,8 @@
 .journey {
   --journey-gutter: clamp(20px, 6vw, 96px);
   --journey-masthead: 76px;
+  /* The masthead as drawn, its bottom rule included. */
+  --journey-bar: 77px;
   --koaryu-curtain: #3a2c19;
   --journey-time: #7a612e;
   --story-ink: var(--koaryu-ink);
@@ -97,12 +99,35 @@
   --loom-seam: rgb(5 4 10 / 46%);
 }
 
-.sceneLayer {
-  position: fixed;
+/*
+ * The scene and its frame stand on one sticky stage. It holds them on screen
+ * through the story and lets go at the hand-off stop, where the copy's pin
+ * lets go too (the controller ends the dock one screen below that stop), so
+ * the framed picture leaves with the page on the browser's own scroll, never
+ * dragged after it by script.
+ */
+.stageDock {
+  position: absolute;
   z-index: 0;
   top: 0;
   left: 0;
-  /* Explicit viewport units: WebKit narrows inset-sized fixed layers by its scrollbar. */
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.stage {
+  position: sticky;
+  top: 0;
+  height: 100lvh;
+}
+
+.sceneLayer {
+  position: absolute;
+  z-index: 0;
+  top: 0;
+  left: 0;
+  /* Explicit viewport units, so the artwork is framed to the screen, not the scrollbar's leftover. */
   width: 100vw;
   /* The large viewport keeps the artwork still while mobile toolbars move. */
   height: 100lvh;
@@ -256,7 +281,7 @@
 
 /* The timber frame the story has been inside all along; it appears as the class becomes a picture. */
 .pictureRing {
-  position: fixed;
+  position: absolute;
   z-index: 0;
   top: 0;
   left: 0;
@@ -676,9 +701,16 @@
 
 /* The day: the door opens onto a tall paper panel that reads at its own pace */
 
+/* The day scrolls in a window that starts below the masthead, so no card runs on under the bar. */
+.chapter[data-kind="features"] .panel {
+  position: absolute;
+  inset: var(--journey-bar) 0 0;
+  height: auto;
+}
+
 .chapter[data-kind="features"] .frame {
   align-items: start;
-  padding-top: max(calc(var(--journey-masthead) + 24px), 40svh);
+  padding-top: max(24px, calc(40svh - var(--journey-bar)));
   padding-bottom: 18svh;
 }
 
@@ -691,7 +723,7 @@
 
 .dayHeader {
   position: sticky;
-  top: calc(var(--journey-masthead) + 48px);
+  top: 48px;
   align-self: start;
 }
 
@@ -892,7 +924,7 @@
 
 .studioDetail,
 .studioCaption {
-  transform: translateY(calc((1 - var(--handoff)) * 22px));
+  transform: translateY(calc((1 - var(--handoff)) * 10px));
 }
 
 .studioDetail {
@@ -1350,6 +1382,7 @@
 @media (max-width: 820px) {
   .journey {
     --journey-masthead: 68px;
+    --journey-bar: 73px;
   }
 
   .frame {
@@ -1445,7 +1478,7 @@
 
   .chapter[data-kind="features"] .frame {
     padding-inline: 14px;
-    padding-top: 42svh;
+    padding-top: calc(42svh - var(--journey-bar));
     padding-bottom: 16svh;
   }
 

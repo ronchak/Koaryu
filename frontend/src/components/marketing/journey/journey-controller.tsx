@@ -149,8 +149,10 @@ interface Engine {
 
 export function JourneyController({ children }: JourneyControllerProps) {
   const rootRef = useRef<HTMLDivElement>(null);
+  const dockRef = useRef<HTMLDivElement>(null);
   const sceneLayerRef = useRef<HTMLDivElement>(null);
   const ringRef = useRef<HTMLDivElement>(null);
+  const mastheadRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<JourneySceneHandle>(null);
   const loomRef = useRef<WeaveLoomHandle>(null);
   const engineRef = useRef<Engine | null>(null);
@@ -161,9 +163,11 @@ export function JourneyController({ children }: JourneyControllerProps) {
 
   useEffect(() => {
     const root = rootRef.current;
+    const dock = dockRef.current;
     const layer = sceneLayerRef.current;
     const ring = ringRef.current;
-    if (!root || !layer || !ring) return;
+    const masthead = mastheadRef.current;
+    if (!root || !dock || !layer || !ring || !masthead) return;
 
     const motionQuery = window.matchMedia(MOTION_QUERY);
     const compactQuery = window.matchMedia(COMPACT_QUERY);
@@ -208,6 +212,14 @@ export function JourneyController({ children }: JourneyControllerProps) {
     const setFlag = (name: string, value: string) => {
       if (root.dataset[name] !== value) root.dataset[name] = value;
     };
+    /** The controller's own scroll writes, so a scroll event can tell them from the reader's. */
+    let writtenY = Number.NaN;
+    const jumpTo = (y: number) => {
+      writtenY = y;
+      scrollToY(y);
+    };
+    /** The masthead's menu is open: the story leaves the wheel to it. */
+    const menuOpen = () => Boolean(masthead.querySelector("details[open]"));
     const reduced = () => motionQuery.matches;
     const inPage = (y: number) => y > pageY + STOP_TOLERANCE_PX;
     const atPageStart = (y: number) => Math.abs(y - pageY) <= STOP_TOLERANCE_PX;
@@ -247,6 +259,13 @@ export function JourneyController({ children }: JourneyControllerProps) {
       scenes = stops.map(({ scene }) => scene);
       classY = stops.find(({ id }) => id === "studio")?.y ?? 0;
       pageY = stops[stops.length - 1]?.y ?? 0;
+      // The stage lets go exactly where the copy's pin does: one screen above
+      // the dock's end, at the hand-off marker (unrounded, as layout places it).
+      const marker = elements[elements.length - 1];
+      if (marker?.dataset.stop === "handoff") {
+        const run = marker.getBoundingClientRect().top - dock.getBoundingClientRect().top;
+        dock.style.height = `calc(${run.toFixed(3)}px + 100lvh)`;
+      }
 
       const slotElement = root.querySelector<HTMLElement>("[data-picture-slot]");
       const pinned = slotElement?.closest<HTMLElement>("[data-pinned]");
@@ -364,11 +383,15 @@ export function JourneyController({ children }: JourneyControllerProps) {
       }
     };
 
+    /**
+     * Shapes the picture for the hand-off. Only the shape is written here: the
+     * stage holds the picture still through the story and the page's own
+     * scroll carries it away afterwards, so nothing here follows the scroll.
+     */
     const applyPicture = (y: number) => {
       const progress =
         y >= pageY - STOP_TOLERANCE_PX ? 1 : reduced() ? 0 : handoffProgress(y, classY, pageY);
-      const lift = Math.max(0, y - pageY);
-      const key = `${progress.toFixed(4)}:${Math.round(lift)}`;
+      const key = progress.toFixed(4);
       if (key === appliedPicture) return;
       appliedPicture = key;
       setFlag("handoff", progress <= 0 ? "none" : progress >= 1 ? "settled" : "moving");
@@ -377,7 +400,6 @@ export function JourneyController({ children }: JourneyControllerProps) {
       if (progress <= 0 || !slot) {
         layer.style.transform = "";
         layer.style.clipPath = "";
-        layer.style.visibility = "";
         ring.style.opacity = "0";
         clearCopy(null);
         return;
@@ -390,13 +412,10 @@ export function JourneyController({ children }: JourneyControllerProps) {
         progress,
       });
       const [top, right, bottom, left] = geometry.inset;
-      layer.style.transform = `translate3d(${geometry.translateX.toFixed(2)}px, ${(geometry.translateY - lift).toFixed(2)}px, 0) scale(${geometry.scale.toFixed(5)})`;
+      layer.style.transform = `translate3d(${geometry.translateX.toFixed(2)}px, ${geometry.translateY.toFixed(2)}px, 0) scale(${geometry.scale.toFixed(5)})`;
       layer.style.clipPath = `inset(${top.toFixed(2)}px ${right.toFixed(2)}px ${bottom.toFixed(2)}px ${left.toFixed(2)}px)`;
-      // Once the picture has scrolled away with the page, stop painting it.
-      layer.style.visibility =
-        geometry.rect.top + geometry.rect.height - lift < -40 ? "hidden" : "";
       const { rect } = geometry;
-      ring.style.transform = `translate3d(${rect.left.toFixed(2)}px, ${(rect.top - lift).toFixed(2)}px, 0)`;
+      ring.style.transform = `translate3d(${rect.left.toFixed(2)}px, ${rect.top.toFixed(2)}px, 0)`;
       ring.style.width = `${rect.width.toFixed(2)}px`;
       ring.style.height = `${rect.height.toFixed(2)}px`;
       ring.style.opacity = String(Math.min(1, progress * 2.4).toFixed(3));
@@ -432,10 +451,10 @@ export function JourneyController({ children }: JourneyControllerProps) {
       if (motion) {
         const elapsed = now - motionStart;
         const next = motion.position(elapsed);
-        if (Math.abs(next - y) >= 0.5) scrollToY(next);
+        if (Math.abs(next - y) >= 0.5) jumpTo(next);
         y = next;
         if (elapsed >= motion.duration) {
-          scrollToY(motion.to);
+          jumpTo(motion.to);
           y = motion.to;
           motion = null;
           const index = stopAt(stops, y);
@@ -465,19 +484,17 @@ export function JourneyController({ children }: JourneyControllerProps) {
       applyReveals(y);
       setFlag("scrolled", y > 8 && !mastheadOverHills(displayed, viewBoxHeight) ? "true" : "false");
 
-      // On phones the masthead steps aside while the page is read downward.
+      // On phones the masthead steps aside while the page is read downward. It
+      // stays through the hand-off and on the frame, so no page turn moves it.
       const delta = y - lastScrollY;
-      if (!compactQuery.matches || !inPage(y + viewportHeight * 0.5)) {
+      if (!compactQuery.matches || !inPage(y)) {
         mastheadHidden = false;
         lastScrollY = y;
       } else if (Math.abs(delta) > MASTHEAD_DIRECTION_PX) {
         mastheadHidden = delta > 0;
         lastScrollY = y;
       }
-      setFlag(
-        "mastheadHidden",
-        mastheadHidden && !root.querySelector("details[open]") ? "true" : "false",
-      );
+      setFlag("mastheadHidden", mastheadHidden && !menuOpen() ? "true" : "false");
 
       if (motion || displayed !== target) frameRequest = window.requestAnimationFrame(tick);
     };
@@ -500,7 +517,7 @@ export function JourneyController({ children }: JourneyControllerProps) {
       motionStart = performance.now();
       motionTarget = targetIndex;
       if (!motion) {
-        scrollToY(next.to);
+        jumpTo(next.to);
         const index = stopAt(stops, next.to);
         if (index !== -1) {
           announce(index);
@@ -521,8 +538,8 @@ export function JourneyController({ children }: JourneyControllerProps) {
       if (!fragmentHeld) return;
       fragmentHeld = false;
       const y = window.scrollY;
-      scrollToY(y > 0 ? y - 1 : y + 1);
-      scrollToY(y);
+      jumpTo(y > 0 ? y - 1 : y + 1);
+      jumpTo(y);
     };
 
     const currentVelocity = () => (motion ? motion.velocity(performance.now() - motionStart) : 0);
@@ -537,7 +554,7 @@ export function JourneyController({ children }: JourneyControllerProps) {
       window.clearTimeout(veilTimer);
       setFlag("veil", "on");
       veilTimer = window.setTimeout(() => {
-        scrollToY(y);
+        jumpTo(y);
         if (index !== -1) {
           announce(index);
           writeHash(index);
@@ -562,7 +579,7 @@ export function JourneyController({ children }: JourneyControllerProps) {
       }
       if (reduced()) {
         motion = null;
-        scrollToY(stops[index]!.y);
+        jumpTo(stops[index]!.y);
         announce(index);
         writeHash(index);
         schedule();
@@ -583,7 +600,7 @@ export function JourneyController({ children }: JourneyControllerProps) {
       const targetY = Math.max(0, Math.min(max, Math.round(y)));
       if (reduced()) {
         motion = null;
-        scrollToY(targetY);
+        jumpTo(targetY);
         schedule();
         return;
       }
@@ -603,6 +620,34 @@ export function JourneyController({ children }: JourneyControllerProps) {
           0,
         ),
         -1,
+      );
+    };
+
+    /**
+     * Reading back up out of the page comes to rest on the frame: a short
+     * ease from wherever the reader's scroll has reached, carrying its speed
+     * (px/ms, negative going up). Only a fresh gesture there pages on.
+     */
+    const landOnFrame = (velocity: number) => {
+      const y = window.scrollY;
+      const distance = y - pageY;
+      if (reduced() || distance <= 2) {
+        motion = null;
+        jumpTo(pageY);
+        schedule();
+        return;
+      }
+      const duration = Math.min(420, Math.max(160, distance * 1.2));
+      startMotion(
+        monotoneMotion(
+          [
+            { t: 0, y },
+            { t: duration, y: pageY },
+          ],
+          Math.min(0, velocity),
+          0,
+        ),
+        stops.length - 1,
       );
     };
 
@@ -655,7 +700,25 @@ export function JourneyController({ children }: JourneyControllerProps) {
       goIndex(nearestStop(stops, y));
     };
 
+    let seenY = window.scrollY;
     const onScroll = () => {
+      const y = window.scrollY;
+      const fromY = seenY;
+      seenY = y;
+      // A native scroll that runs up out of the page (keys, a fling's momentum)
+      // stops on the frame, as the wheel does. Where the stage and the copy are
+      // both pinned, nothing on screen shows the few pixels it overshot.
+      if (
+        !motion &&
+        !touch &&
+        !pointerDown &&
+        Math.abs(y - writtenY) > 1.5 &&
+        fromY > pageY + STOP_TOLERANCE_PX &&
+        y < pageY - STOP_TOLERANCE_PX
+      ) {
+        jumpTo(pageY);
+        seenY = pageY;
+      }
       schedule();
       if (motion || touch) return;
       window.clearTimeout(settleTimer);
@@ -665,7 +728,7 @@ export function JourneyController({ children }: JourneyControllerProps) {
     const onWheel = (event: WheelEvent) => {
       releaseFragment();
       if (event.ctrlKey || Math.abs(event.deltaX) > Math.abs(event.deltaY)) return;
-      if (root.querySelector("details[open]")) return;
+      if (menuOpen()) return;
       const delta = normalizeWheelDelta(event.deltaY, event.deltaMode, window.innerHeight);
       if (!delta) return;
       const direction = delta > 0 ? 1 : -1;
@@ -673,13 +736,13 @@ export function JourneyController({ children }: JourneyControllerProps) {
       const now = event.timeStamp;
 
       if (!motion && (inPage(y) || (atPageStart(y) && direction > 0))) {
-        // The page scrolls natively. Scrolling up into the frame stops at the
-        // frame; the next gesture pages back into the story.
+        // The page scrolls natively. Scrolling up into the frame comes to rest
+        // on the frame; the next gesture pages back into the story.
         if (direction < 0 && y + delta < pageY) {
           event.preventDefault();
-          scrollToY(pageY);
+          // A wheel step is about one frame's travel.
+          landOnFrame(delta / 16);
           wheelState = holdWheelGesture(wheelState, delta, now);
-          schedule();
           return;
         }
         wheelState = reduceWheelGesture(wheelState, { delta, now, panelCanScroll: true }).state;
@@ -719,16 +782,39 @@ export function JourneyController({ children }: JourneyControllerProps) {
       const down =
         ["ArrowDown", "PageDown", "End"].includes(event.key) ||
         (event.key === " " && !event.shiftKey);
-      if (!motion && (inPage(y) || (atPageStart(y) && down))) return;
+      const onControl =
+        isFormTarget(activeElement) ||
+        (event.key === " " &&
+          activeElement instanceof Element &&
+          Boolean(activeElement.closest("a, button, summary")));
+      if (!motion && inPage(y)) {
+        if (onControl) return;
+        // Home goes back to the hills, through the veil.
+        if (event.key === "Home") {
+          event.preventDefault();
+          goIndex(0);
+          return;
+        }
+        // The page reads natively; the step that would run past the top of the
+        // page comes to rest on the frame instead.
+        const step =
+          event.key === "ArrowUp"
+            ? 40
+            : event.key === "PageUp" || (event.key === " " && event.shiftKey)
+              ? viewportHeight * 0.875
+              : 0;
+        if (step && y - step < pageY + STOP_TOLERANCE_PX) {
+          event.preventDefault();
+          landOnFrame(0);
+        }
+        return;
+      }
+      if (!motion && atPageStart(y) && down) return;
       const panel = restingPanel();
       const decision = decideJourneyKey({
         key: event.key,
         shiftKey: event.shiftKey,
-        interactiveTarget:
-          isFormTarget(activeElement) ||
-          (event.key === " " &&
-            activeElement instanceof Element &&
-            Boolean(activeElement.closest("a, button, summary"))),
+        interactiveTarget: onControl,
         panel: panel ? metricsFor(panel) : null,
       });
       if (decision.action === "none") return;
@@ -852,7 +938,7 @@ export function JourneyController({ children }: JourneyControllerProps) {
     const onResize = () => {
       const resting = motion ? motionTarget : stopAt(stops, window.scrollY);
       measure();
-      if (resting !== -1 && stops[resting] && !motion) scrollToY(stops[resting]!.y);
+      if (resting !== -1 && stops[resting] && !motion) jumpTo(stops[resting]!.y);
       schedule();
     };
 
@@ -872,7 +958,7 @@ export function JourneyController({ children }: JourneyControllerProps) {
         );
       }
       const index = stops.findIndex((stop) => stop.id === id);
-      if (index !== -1) scrollToY(stops[index]!.y);
+      if (index !== -1) jumpTo(stops[index]!.y);
       else document.getElementById(id)?.scrollIntoView({ block: "start" });
     }
     fragmentHeld = Boolean(initialHash);
@@ -962,25 +1048,29 @@ export function JourneyController({ children }: JourneyControllerProps) {
       data-active={activeStop.id}
       onClickCapture={onClickCapture}
     >
-      <div ref={sceneLayerRef} className={styles.sceneLayer} aria-hidden="true">
-        <JourneyScene ref={sceneRef} frame={frame} />
-        {/* The weave is part of the picture: it takes the scene's paper grain. */}
-        <WeaveLoom
-          ref={loomRef}
-          width={layerSize.width}
-          height={layerSize.height}
-          threads={THREADS}
-        />
+      <div ref={dockRef} className={styles.stageDock} aria-hidden="true">
+        <div className={styles.stage}>
+          <div ref={sceneLayerRef} className={styles.sceneLayer}>
+            <JourneyScene ref={sceneRef} frame={frame} />
+            {/* The weave is part of the picture: it takes the scene's paper grain. */}
+            <WeaveLoom
+              ref={loomRef}
+              width={layerSize.width}
+              height={layerSize.height}
+              threads={THREADS}
+            />
+          </div>
+          {/* The timber frame the story has been inside all along. */}
+          <div ref={ringRef} className={styles.pictureRing} />
+        </div>
       </div>
-      {/* The timber frame the story has been inside all along. */}
-      <div ref={ringRef} className={styles.pictureRing} aria-hidden="true" />
       <div className={styles.veil} aria-hidden="true" />
       {/* A belt that ranks up from white to black as the page is read. */}
       <div className={styles.beltProgress} aria-hidden="true" />
       <a href="#main-content" className={styles.skipLink}>
         Skip to content
       </a>
-      <div className={styles.masthead}>
+      <div ref={mastheadRef} className={styles.masthead}>
         <MarketingHeader />
       </div>
       {children}

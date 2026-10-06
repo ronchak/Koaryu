@@ -113,6 +113,12 @@ describe("Landing paging and accessibility", () => {
     // Below the hand-off the wheel is only clamped at the frame's edge.
     assert.match(controllerSource, /inPage\(y\)/);
     assert.match(controllerSource, /holdWheelGesture\(/);
+    // Wheel, keys and a fling's momentum reading back up all come to rest on the frame.
+    assert.match(controllerSource, /landOnFrame\(delta \/ 16\)/);
+    assert.match(controllerSource, /landOnFrame\(0\)/);
+    // An open FAQ answer never stops the story paging; only the masthead's menu does.
+    assert.doesNotMatch(controllerSource, /root\.querySelector\("details\[open\]"\)/);
+    assert.match(controllerSource, /masthead\.querySelector\("details\[open\]"\)/);
     assert.doesNotMatch(pageCss, /scroll-snap/);
   });
 
@@ -122,12 +128,20 @@ describe("Landing paging and accessibility", () => {
     assert.match(controllerSource, /resolveLegacyHash\(/);
   });
 
-  it("keeps a fixed, decorative scene behind the chapters", () => {
+  it("keeps a decorative scene behind the chapters on a stage the page itself releases", () => {
+    // The scene and its frame stand on one sticky stage inside a dock that
+    // ends a screen below the hand-off stop: the browser holds the picture
+    // through the story and scrolls it away with the page, with no script.
     assert.match(
       journeyCss,
-      /\.sceneLayer\s*\{[\s\S]*position:\s*fixed;[\s\S]*pointer-events:\s*none;/,
+      /\.stageDock\s*\{[^}]*position:\s*absolute;[^}]*pointer-events:\s*none;/,
     );
-    assert.match(controllerSource, /className=\{styles\.sceneLayer\} aria-hidden="true"/);
+    assert.match(journeyCss, /\.stage\s*\{[^}]*position:\s*sticky;[^}]*top:\s*0;/);
+    assert.match(journeyCss, /\.sceneLayer\s*\{[^}]*position:\s*absolute;/);
+    assert.match(journeyCss, /\.pictureRing\s*\{[^}]*position:\s*absolute;/);
+    assert.match(controllerSource, /className=\{styles\.stageDock\} aria-hidden="true"/);
+    assert.match(controllerSource, /dock\.style\.height = `calc\(/);
+    assert.doesNotMatch(controllerSource, /\blift\b/);
     assert.match(
       journeyCss,
       /\.journey:not\(\[data-enhanced="true"\]\) \.chapter\[data-ink="light"\]\s*\{[^}]*background/,
