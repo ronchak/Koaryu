@@ -25,6 +25,7 @@ from app.services.automation_service import (
 from app.services.workflow_dispatcher import process_due_workflow_automations
 
 logger = logging.getLogger(__name__)
+_OCCURRENCE_LIMIT = 25
 
 
 class AutomationBatchUnavailable(RuntimeError):
@@ -76,7 +77,7 @@ def process_automation_batch(
         )
         client = _WorkerClient(raw_client, budget)
         _require_dispatch_schema(client, budget)
-        request = OccurrenceProcessRequest(p_limit=100)
+        request = OccurrenceProcessRequest(p_limit=_OCCURRENCE_LIMIT)
         data = (
             client.rpc("process_automation_workflow_occurrences_v1", request.model_dump())
             .execute()
@@ -122,7 +123,7 @@ def process_automation_batch(
             )
             summary = AutomationBatchResponse.model_validate(
                 {"occurrences": occurrences, **results, "has_more": hint},
-                context={"limit": limit, "p_limit": 100},
+                context={"limit": limit, "p_limit": _OCCURRENCE_LIMIT},
             )
             confirmed = getattr(summary, engine)
             if any(getattr(confirmed, key) for key in ("retry_wait", "failed", "unknown")):
@@ -133,7 +134,7 @@ def process_automation_batch(
         )
         return AutomationBatchResponse.model_validate(
             {"occurrences": occurrences, **results, "has_more": hint},
-            context={"limit": limit, "p_limit": 100},
+            context={"limit": limit, "p_limit": _OCCURRENCE_LIMIT},
         )
     except Exception:  # noqa: BLE001 - Never expose SDK, credential or processor diagnostics.
         raise AutomationBatchUnavailable() from None

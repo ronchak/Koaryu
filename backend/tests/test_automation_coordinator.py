@@ -23,7 +23,7 @@ from app.services.automation_email import DeliveryResult
 from app.services.generated_release_readiness import RELEASE_PREFLIGHT_RPC
 
 SCAN = "process_automation_workflow_occurrences_v1"
-OCCURRENCES = {"created_event_count": 100, "enqueued_run_count": 100, "has_more": False}
+OCCURRENCES = {"created_event_count": 25, "enqueued_run_count": 25, "has_more": False}
 
 
 class BatchFixture:
@@ -130,11 +130,11 @@ def batch(monkeypatch):
 def test_real_processors_share_actual_sdk_client_scan_and_deadline(batch, first):
     result = batch.run(first_engine=first)
     assert result.attendance.accepted == result.workflows.accepted == 1
-    assert result.occurrences.created_event_count == 100
+    assert result.occurrences.created_event_count == 25
     assert result.has_more is (result.attendance.has_more or result.workflows.has_more)
     assert batch.names().count(SCAN) == 1
     assert batch.names()[:3] == [RELEASE_PREFLIGHT_RPC, V38, SCAN]
-    assert [p for n, p, _ in batch.requests if n == SCAN] == [{"p_limit": 100}]
+    assert [p for n, p, _ in batch.requests if n == SCAN] == [{"p_limit": 25}]
     assert len(batch.clients) == 1 and batch.closes == batch.clients
     assert batch.clients[0][0].session.is_closed
     for _, builder in batch.clients[0][0].builders:
@@ -193,6 +193,45 @@ def test_c2_closed_envelope_and_strict_fields_through_installed_sdk(batch, bad):
     assert "private" not in repr(error.value)
     assert batch.names().count(SCAN) == 1 and not batch.engine_calls
     assert batch.closes == batch.clients
+
+
+@pytest.mark.parametrize("field", ["created_event_count", "enqueued_run_count"])
+def test_occurrence_count_above_actual_request_bound_stops_before_engines(batch, field):
+    batch.responses[SCAN] = httpx.Response(200, json={"payload": {**OCCURRENCES, field: 26}})
+    with pytest.raises(AutomationBatchUnavailable, match="^Automation batch is unavailable\\.$"):
+        batch.stubbed()
+    assert not batch.engine_calls
+    batch.transport.prepare.assert_not_called()
+    batch.transport.send_prepared.assert_not_called()
+    assert [p for n, p, _ in batch.requests if n == SCAN] == [{"p_limit": 25}]
+    assert len(batch.clients) == 1 and batch.closes == batch.clients
+    assert batch.clients[0][0].session.is_closed
+
+
+@pytest.mark.parametrize("path,validations", [("complete", 3), ("no_engines", 1), ("flagged", 1)])
+def test_nested_summary_validation_uses_the_actual_scan_bound(
+    batch, monkeypatch, path, validations
+):
+    contexts = []
+    validate = coordinator.AutomationBatchResponse.model_validate
+
+    def checked(data, *, context):
+        contexts.append(context)
+        return validate(data, context=context)
+
+    monkeypatch.setattr(coordinator.AutomationBatchResponse, "model_validate", checked)
+    kwargs = {}
+    if path == "no_engines":
+        batch.after_request = lambda name: (
+            setattr(batch.clock, "now", 115.0) if name == SCAN else None
+        )
+    elif path == "flagged":
+        kwargs["attendance_processor"] = batch.processor(
+            "attendance", result=engine_summary("attendance", enqueued=1, processed=1, failed=1)
+        )
+    result = batch.stubbed(**kwargs)
+    assert contexts == [{"limit": 1, "p_limit": 25}] * validations
+    assert result.occurrences.created_event_count == result.occurrences.enqueued_run_count == 25
 
 
 @pytest.mark.parametrize(
@@ -349,7 +388,7 @@ def test_cleanup_failure_preserves_summary_without_claiming_client_closed(batch,
         raise RuntimeError("private cleanup diagnostics")
 
     result = batch.stubbed(client_closer=failed_close)
-    assert result.occurrences.created_event_count == 100 and result.has_more is False
+    assert result.occurrences.created_event_count == 25 and result.has_more is False
     assert batch.closes == batch.clients and not batch.clients[0][0].session.is_closed
     assert [r.message for r in caplog.records] == ["automation_batch_cleanup_failed"]
     assert "private" not in caplog.text
