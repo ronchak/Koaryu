@@ -7301,3 +7301,535 @@ BEGIN
     END LOOP;
 END;
 $advance_privileges$;
+
+-- Timed discovery is progress, never occurrence truth. Lifecycle writers project
+-- immutable trigger metadata without acquiring this scanner's singleton.
+CREATE TABLE private.workflow_timer_activations (
+    activation_id UUID PRIMARY KEY, studio_id UUID NOT NULL, workflow_id UUID NOT NULL,
+    version_id UUID NOT NULL, epoch BIGINT NOT NULL CHECK(epoch>0),
+    trigger_event_type TEXT NOT NULL CHECK(trigger_event_type IN ('trial.upcoming','belt_test.upcoming','invoice.overdue')),
+    offset_minutes INTEGER, program_id UUID,
+    last_threshold_at TIMESTAMPTZ, last_event_id UUID, last_source_id UUID,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp() CHECK(isfinite(updated_at)),
+    FOREIGN KEY(studio_id,workflow_id,version_id,epoch,activation_id)
+        REFERENCES public.automation_workflow_activations(studio_id,workflow_id,version_id,epoch,id) ON DELETE CASCADE,
+    CHECK((trigger_event_type='invoice.overdue' AND offset_minutes IS NULL AND program_id IS NULL)
+        OR (trigger_event_type<>'invoice.overdue' AND offset_minutes IS NOT NULL AND offset_minutes BETWEEN -129600 AND -1)),
+    CHECK(last_threshold_at IS NULL OR last_threshold_at BETWEEN TIMESTAMPTZ '0001-01-01+00' AND TIMESTAMPTZ '9999-12-31 23:59:59.999999+00'),
+    CHECK((last_threshold_at IS NULL AND last_event_id IS NULL AND last_source_id IS NULL)
+        OR (last_threshold_at IS NOT NULL AND ((trigger_event_type='belt_test.upcoming' AND last_event_id IS NOT NULL)
+            OR (trigger_event_type<>'belt_test.upcoming' AND last_event_id IS NULL AND last_source_id IS NOT NULL))))
+);
+CREATE TABLE private.workflow_timer_dispatch_cursor (
+    singleton BOOLEAN PRIMARY KEY DEFAULT true CHECK(singleton),
+    last_studio_id UUID, last_activation_id UUID,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp() CHECK(isfinite(updated_at)),
+    CHECK((last_studio_id IS NULL)=(last_activation_id IS NULL))
+);
+INSERT INTO private.workflow_timer_dispatch_cursor(singleton) VALUES(true);
+CREATE INDEX workflow_timer_activations_scan ON private.workflow_timer_activations(studio_id,activation_id);
+CREATE INDEX lead_trial_appointments_timer_scan ON public.lead_trial_appointments(studio_id,starts_at,id) WHERE status='scheduled';
+CREATE INDEX belt_test_events_timer_scan ON public.belt_test_events(studio_id,starts_at,id) WHERE status='scheduled';
+CREATE INDEX belt_test_recipients_timer_scan ON public.belt_test_recipients(studio_id,event_id,id) WHERE state='approved';
+CREATE INDEX workflow_invoice_episodes_timer_scan ON private.workflow_invoice_collection_episodes(studio_id,threshold_at,id)
+    WHERE closed_at IS NULL AND threshold_eligible;
+CREATE INDEX workflow_payment_settlement_uncertain_scan ON private.workflow_payment_settlement_observations(studio_id,invoice_id,payment_id)
+    WHERE uncertain AND invoice_id IS NOT NULL;
+CREATE INDEX workflow_events_failed_invoice ON private.automation_workflow_events(studio_id,(context->>'invoice_id'),id)
+    WHERE event_type='invoice.payment_failed';
+
+CREATE FUNCTION private.workflow_timer_activation_insert_v1() RETURNS TRIGGER
+LANGUAGE plpgsql VOLATILE SECURITY INVOKER SET search_path='' AS $$
+DECLARE graph JSONB; config JSONB;
+BEGIN
+    SELECT v.graph INTO graph FROM public.automation_workflow_versions v
+        WHERE v.studio_id=NEW.studio_id AND v.workflow_id=NEW.workflow_id AND v.id=NEW.version_id;
+    IF graph IS NULL OR private.workflow_validate_v1(graph,'{}',true) IS DISTINCT FROM '[]'::JSONB THEN
+        RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STATE_CONFLICT';
+    END IF;
+    SELECT n->'config' INTO config FROM jsonb_array_elements(graph->'nodes') n WHERE n->>'type'='trigger';
+    IF config->>'event_type' IN ('trial.upcoming','belt_test.upcoming','invoice.overdue') THEN
+        INSERT INTO private.workflow_timer_activations(activation_id,studio_id,workflow_id,version_id,epoch,trigger_event_type,offset_minutes,program_id)
+            VALUES(NEW.id,NEW.studio_id,NEW.workflow_id,NEW.version_id,NEW.epoch,config->>'event_type',
+                (config->>'offset_minutes')::INTEGER,(config->>'program_id')::UUID);
+    END IF;
+    RETURN NEW;
+END $$;
+CREATE TRIGGER workflow_timer_activation_insert_v1 AFTER INSERT ON public.automation_workflow_activations
+    FOR EACH ROW EXECUTE FUNCTION private.workflow_timer_activation_insert_v1();
+INSERT INTO private.workflow_timer_activations(activation_id,studio_id,workflow_id,version_id,epoch,trigger_event_type,offset_minutes,program_id)
+    SELECT a.id,a.studio_id,a.workflow_id,a.version_id,a.epoch,n#>>'{config,event_type}',
+        (n#>>'{config,offset_minutes}')::INTEGER,(n#>>'{config,program_id}')::UUID
+    FROM public.automation_workflow_activations a JOIN public.automation_workflow_versions v
+        ON v.studio_id=a.studio_id AND v.workflow_id=a.workflow_id AND v.id=a.version_id
+    CROSS JOIN LATERAL jsonb_array_elements(v.graph->'nodes') n
+    WHERE n->>'type'='trigger' AND n#>>'{config,event_type}' IN ('trial.upcoming','belt_test.upcoming','invoice.overdue');
+CREATE FUNCTION private.workflow_timer_activation_identity_v1() RETURNS TRIGGER
+LANGUAGE plpgsql VOLATILE SECURITY INVOKER SET search_path='' AS $$
+BEGIN
+    IF (to_jsonb(NEW)-ARRAY['last_threshold_at','last_event_id','last_source_id','updated_at'])
+        IS DISTINCT FROM (to_jsonb(OLD)-ARRAY['last_threshold_at','last_event_id','last_source_id','updated_at']) THEN
+        RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_IMMUTABLE_RECORD';
+    END IF;
+    RETURN NEW;
+END $$;
+CREATE TRIGGER workflow_timer_activation_identity_v1 BEFORE UPDATE ON private.workflow_timer_activations
+    FOR EACH ROW EXECUTE FUNCTION private.workflow_timer_activation_identity_v1();
+
+CREATE FUNCTION private.workflow_timed_candidates_v1(p_limit INTEGER,p_reference_at TIMESTAMPTZ) RETURNS JSONB
+LANGUAGE plpgsql VOLATILE SECURITY INVOKER SET search_path='' AS $$
+DECLARE dispatch private.workflow_timer_dispatch_cursor; timer private.workflow_timer_activations;
+    activation public.automation_workflow_activations; source RECORD; parent public.belt_test_events;
+    pairs JSONB:='[]'; invoices TEXT[]:='{}'; invoice_key TEXT; more BOOLEAN:=false;
+    global_studio UUID; global_activation UUID; global_wrapped BOOLEAN:=false;
+    position_time TIMESTAMPTZ; position_source UUID; position_event UUID; wrapped BOOLEAN;
+    lower_start TIMESTAMPTZ; upper_start TIMESTAMPTZ; retired_start TIMESTAMPTZ; shift INTERVAL;
+    visits INTEGER:=0; decisions INTEGER; pair_cap INTEGER; parent_visits INTEGER; total_parents INTEGER:=0;
+    resume_parent BOOLEAN; resumed BOOLEAN;
+BEGIN
+    IF p_limit IS NULL OR p_limit NOT BETWEEN 1 AND 100 OR p_reference_at IS NULL
+        OR p_reference_at NOT BETWEEN TIMESTAMPTZ '0001-01-01+00' AND TIMESTAMPTZ '9999-12-31 23:59:59.999999+00' THEN
+        RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST';
+    END IF;
+    SELECT * INTO dispatch FROM private.workflow_timer_dispatch_cursor WHERE singleton FOR UPDATE NOWAIT;
+    IF dispatch.singleton IS DISTINCT FROM true OR (dispatch.last_studio_id IS NULL)<>(dispatch.last_activation_id IS NULL) THEN
+        RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STATE_CONFLICT';
+    END IF;
+    global_studio:=dispatch.last_studio_id; global_activation:=dispatch.last_activation_id;
+    LOOP
+        -- A global cap must preserve the next activation's turn.
+        IF visits=100 OR jsonb_array_length(pairs)=p_limit OR cardinality(invoices)=10
+            OR total_parents=100 THEN more:=true; EXIT; END IF;
+        -- LIMIT is on metadata alone. Canceled history consumes the same budget.
+        EXECUTE 'SELECT * FROM private.workflow_timer_activations t WHERE true'
+            ||CASE WHEN global_studio IS NOT NULL THEN ' AND (t.studio_id,t.activation_id)>($1,$2)' ELSE '' END
+            ||CASE WHEN global_wrapped THEN ' AND (t.studio_id,t.activation_id)<=($3,$4)' ELSE '' END
+            ||' ORDER BY t.studio_id,t.activation_id LIMIT 1 FOR UPDATE NOWAIT'
+            INTO timer USING global_studio,global_activation,dispatch.last_studio_id,dispatch.last_activation_id;
+        IF timer.activation_id IS NULL THEN
+            IF NOT global_wrapped AND dispatch.last_studio_id IS NOT NULL THEN
+                global_wrapped:=true; global_studio:=NULL; global_activation:=NULL; CONTINUE;
+            END IF;
+            EXIT;
+        END IF;
+        visits:=visits+1; global_studio:=timer.studio_id; global_activation:=timer.activation_id;
+        UPDATE private.workflow_timer_dispatch_cursor SET last_studio_id=global_studio,last_activation_id=global_activation,
+            updated_at=p_reference_at WHERE singleton;
+        SELECT * INTO activation FROM public.automation_workflow_activations a WHERE a.id=timer.activation_id;
+        IF activation.id IS NULL OR activation.cancelled_at IS NOT NULL THEN CONTINUE; END IF;
+        position_time:=timer.last_threshold_at; position_source:=timer.last_source_id; position_event:=timer.last_event_id;
+        wrapped:=false; decisions:=0; parent_visits:=0;
+        pair_cap:=least(25,p_limit-jsonb_array_length(pairs));
+        shift:=make_interval(mins=>coalesce(timer.offset_minutes,0));
+        lower_start:=greatest(p_reference_at,activation.active_from-shift,TIMESTAMPTZ '0001-01-01+00'-shift);
+        upper_start:=least(p_reference_at-shift,TIMESTAMPTZ '9999-12-31 23:59:59.999999+00');
+        retired_start:=activation.retired_at-shift;
+        IF timer.trigger_event_type='belt_test.upcoming' THEN
+            resume_parent:=position_event IS NOT NULL AND position_source IS NOT NULL;
+            LOOP
+                IF decisions=pair_cap OR parent_visits=25 OR total_parents=100 THEN more:=true; EXIT; END IF;
+                parent:=NULL; resumed:=resume_parent;
+                IF resume_parent THEN
+                    SELECT * INTO parent FROM public.belt_test_events e WHERE e.studio_id=timer.studio_id AND e.id=position_event
+                        AND e.status='scheduled' AND e.starts_at=position_time-shift
+                        AND e.starts_at>p_reference_at AND e.starts_at>=lower_start AND e.starts_at<=upper_start
+                        AND (retired_start IS NULL OR e.starts_at<retired_start);
+                    resume_parent:=false;
+                ELSE
+                    EXECUTE $scan$SELECT * FROM public.belt_test_events e WHERE e.studio_id=$1 AND e.status='scheduled'
+                        AND e.starts_at>$4 AND e.starts_at>=$2 AND e.starts_at<=$3$scan$
+                        ||CASE WHEN retired_start IS NOT NULL THEN ' AND e.starts_at<$5' ELSE '' END
+                        ||CASE WHEN position_time IS NOT NULL THEN ' AND (e.starts_at,e.id)>($6-$10,$7)' ELSE '' END
+                        ||CASE WHEN wrapped THEN ' AND (e.starts_at,e.id)<=($8-$10,$9)' ELSE '' END
+                        ||' ORDER BY e.starts_at,e.id LIMIT 1' INTO parent
+                        USING timer.studio_id,lower_start,upper_start,p_reference_at,retired_start,position_time,position_event,
+                            timer.last_threshold_at,timer.last_event_id,shift;
+                    position_source:=NULL;
+                END IF;
+                IF parent.id IS NULL THEN
+                    IF resumed THEN position_source:=NULL; CONTINUE; END IF;
+                    IF NOT wrapped AND timer.last_threshold_at IS NOT NULL THEN
+                        wrapped:=true; position_time:=NULL; position_event:=NULL; position_source:=NULL; CONTINUE;
+                    END IF;
+                    EXIT;
+                END IF;
+                parent_visits:=parent_visits+1; total_parents:=total_parents+1;
+                position_time:=parent.starts_at+shift; position_event:=parent.id;
+                FOR source IN EXECUTE $scan$SELECT r.id FROM public.belt_test_recipients r
+                    WHERE r.studio_id=$1 AND r.event_id=$2 AND r.state='approved'$scan$
+                    ||CASE WHEN position_source IS NOT NULL THEN ' AND r.id>$3' ELSE '' END
+                    ||CASE WHEN wrapped AND parent.id=timer.last_event_id AND position_time=timer.last_threshold_at
+                        AND timer.last_source_id IS NOT NULL THEN ' AND r.id<=$4' ELSE '' END
+                    ||' ORDER BY r.id LIMIT $5'
+                    USING timer.studio_id,parent.id,position_source,timer.last_source_id,pair_cap-decisions LOOP
+                    decisions:=decisions+1; position_source:=source.id;
+                    pairs:=pairs||jsonb_build_array(jsonb_build_object('studio_id',timer.studio_id,'activation_id',timer.activation_id,
+                        'workflow_id',timer.workflow_id,'version_id',timer.version_id,'epoch',timer.epoch,'event_type',timer.trigger_event_type,
+                        'subject_id',source.id,'source_record_id',source.id,'source_parent_id',parent.id,
+                        'source_starts_at',private.automation_utc_text_v1(parent.starts_at),'threshold_at',private.automation_utc_text_v1(position_time)));
+                END LOOP;
+                -- A full page is conservatively partial. No lookahead row.
+                IF decisions<pair_cap THEN position_source:=NULL; END IF;
+                UPDATE private.workflow_timer_activations SET last_threshold_at=position_time,last_event_id=position_event,
+                    last_source_id=position_source,updated_at=p_reference_at WHERE activation_id=timer.activation_id;
+                IF decisions=pair_cap OR parent_visits=25 OR total_parents=100 THEN more:=true; END IF;
+                IF wrapped AND parent.id=timer.last_event_id AND position_time=timer.last_threshold_at THEN EXIT; END IF;
+            END LOOP;
+        ELSE
+            LOOP
+                IF decisions=pair_cap THEN more:=true; EXIT; END IF;
+                IF timer.trigger_event_type='invoice.overdue' AND cardinality(invoices)=10 THEN more:=true; EXIT; END IF;
+                IF timer.trigger_event_type='trial.upcoming' THEN
+                    EXECUTE $scan$SELECT t.id,t.id subject_id,t.starts_at+$10 threshold_at,t.starts_at
+                        FROM public.lead_trial_appointments t WHERE t.studio_id=$1 AND t.status='scheduled'
+                            AND t.starts_at>$4 AND t.starts_at>=$2 AND t.starts_at<=$3$scan$
+                        ||CASE WHEN retired_start IS NOT NULL THEN ' AND t.starts_at<$5' ELSE '' END
+                        ||CASE WHEN position_time IS NOT NULL THEN ' AND (t.starts_at,t.id)>($6-$10,$7)' ELSE '' END
+                        ||CASE WHEN wrapped THEN ' AND (t.starts_at,t.id)<=($8-$10,$9)' ELSE '' END
+                        ||' ORDER BY t.starts_at,t.id LIMIT 1' INTO source
+                        USING timer.studio_id,lower_start,upper_start,p_reference_at,retired_start,position_time,position_source,
+                            timer.last_threshold_at,timer.last_source_id,shift;
+                ELSE
+                    EXECUTE $scan$SELECT e.id,e.invoice_id subject_id,e.threshold_at,NULL::TIMESTAMPTZ starts_at
+                        FROM private.workflow_invoice_collection_episodes e WHERE e.studio_id=$1
+                            AND e.closed_at IS NULL AND e.threshold_eligible AND e.threshold_at<=$4 AND e.threshold_at>=$2$scan$
+                        ||CASE WHEN activation.retired_at IS NOT NULL THEN ' AND e.threshold_at<$5' ELSE '' END
+                        ||CASE WHEN position_time IS NOT NULL THEN ' AND (e.threshold_at,e.id)>($6,$7)' ELSE '' END
+                        ||CASE WHEN wrapped THEN ' AND (e.threshold_at,e.id)<=($8,$9)' ELSE '' END
+                        ||' ORDER BY e.threshold_at,e.id LIMIT 1' INTO source
+                        USING timer.studio_id,activation.active_from,NULL::TIMESTAMPTZ,p_reference_at,activation.retired_at,
+                            position_time,position_source,timer.last_threshold_at,timer.last_source_id;
+                END IF;
+                IF source.id IS NULL THEN
+                    IF NOT wrapped AND timer.last_threshold_at IS NOT NULL THEN
+                        wrapped:=true; position_time:=NULL; position_source:=NULL; CONTINUE;
+                    END IF;
+                    EXIT;
+                END IF;
+                IF timer.trigger_event_type='invoice.overdue' THEN
+                    invoice_key:=timer.studio_id::TEXT||':'||source.subject_id::TEXT;
+                    IF NOT invoice_key=ANY(invoices) THEN invoices:=array_append(invoices,invoice_key); END IF;
+                END IF;
+                decisions:=decisions+1; position_time:=source.threshold_at; position_source:=source.id;
+                pairs:=pairs||jsonb_build_array(jsonb_build_object('studio_id',timer.studio_id,'activation_id',timer.activation_id,
+                    'workflow_id',timer.workflow_id,'version_id',timer.version_id,'epoch',timer.epoch,'event_type',timer.trigger_event_type,
+                    'subject_id',source.subject_id,'source_record_id',source.id,'source_parent_id',NULL,
+                    'source_starts_at',private.automation_utc_text_v1(source.starts_at),'threshold_at',private.automation_utc_text_v1(source.threshold_at)));
+                UPDATE private.workflow_timer_activations SET last_threshold_at=position_time,last_source_id=position_source,
+                    updated_at=p_reference_at WHERE activation_id=timer.activation_id;
+            END LOOP;
+        END IF;
+    END LOOP;
+    RETURN jsonb_build_object('pairs',pairs,'has_more',more);
+EXCEPTION WHEN lock_not_available THEN RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STUDIO_BUSY';
+END $$;
+
+CREATE FUNCTION private.workflow_lock_timed_sources_v1(p_candidates JSONB) RETURNS JSONB
+LANGUAGE plpgsql VOLATILE SECURITY INVOKER SET search_path='' AS $$
+DECLARE item JSONB; studio UUID; key TEXT; owned TEXT[]:='{}'; complete_sources TEXT[]:='{}'; complete_studios UUID[]:='{}';
+    owned_candidates JSONB:='[]'; owned_pairs JSONB:='[]'; payments UUID[]; uncertain_ids UUID[];
+    required_programs UUID[]; required_ranks UUID[]; required_payers UUID[]; held_ids UUID[]; held_filters UUID[]; complete BOOLEAN; found_parent UUID;
+    invoice public.billing_invoices; payer public.billing_payers; account public.studio_payment_accounts;
+    failed_runs UUID[]; workflows UUID[]; event private.automation_workflow_events; timer private.workflow_timer_activations;
+    before_route JSONB; after_route JSONB; fields TEXT[]:=ARRAY['studio_id','activation_id','workflow_id','version_id','epoch',
+        'event_type','subject_id','source_record_id','source_parent_id','source_starts_at','threshold_at'];
+BEGIN
+    IF jsonb_typeof(p_candidates) IS DISTINCT FROM 'array' OR jsonb_array_length(p_candidates)>100 THEN
+        RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST';
+    END IF;
+    FOR item IN SELECT value FROM jsonb_array_elements(p_candidates) LOOP
+        IF NOT private.workflow_json_keys_v1(item,fields,fields) OR NOT private.workflow_integer_v1(item->'epoch',1,9223372036854775807)
+            OR jsonb_typeof(item->'event_type') IS DISTINCT FROM 'string' OR item->>'event_type' NOT IN ('trial.upcoming','belt_test.upcoming','invoice.overdue') THEN
+            RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST';
+        END IF;
+        FOREACH key IN ARRAY ARRAY['studio_id','activation_id','workflow_id','version_id','subject_id','source_record_id'] LOOP
+            IF jsonb_typeof(item->key) IS DISTINCT FROM 'string' OR NOT coalesce(private.workflow_typed_value_v1(item->key,private.workflow_catalog_v1()#>'{fields,program.id}'),false) THEN
+                RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST';
+            END IF;
+        END LOOP;
+        PERFORM private.automation_instant_v1(item->'threshold_at');
+        IF item->>'event_type'='invoice.overdue' THEN
+            IF item->'source_starts_at'<>'null'::JSONB OR item->'source_parent_id'<>'null'::JSONB THEN
+                RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST';
+            END IF;
+        ELSE
+            PERFORM private.automation_instant_v1(item->'source_starts_at');
+            IF item->'subject_id' IS DISTINCT FROM item->'source_record_id'
+                OR (item->>'event_type'='trial.upcoming' AND item->'source_parent_id'<>'null'::JSONB)
+                OR (item->>'event_type'='belt_test.upcoming' AND (jsonb_typeof(item->'source_parent_id') IS DISTINCT FROM 'string'
+                    OR NOT coalesce(private.workflow_typed_value_v1(item->'source_parent_id',private.workflow_catalog_v1()#>'{fields,program.id}'),false))) THEN
+                RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST';
+            END IF;
+        END IF;
+        SELECT * INTO timer FROM private.workflow_timer_activations WHERE activation_id=(item->>'activation_id')::UUID;
+        IF timer.activation_id IS NULL OR ROW(timer.studio_id,timer.workflow_id,timer.version_id,timer.epoch,timer.trigger_event_type)
+            IS DISTINCT FROM ROW((item->>'studio_id')::UUID,(item->>'workflow_id')::UUID,(item->>'version_id')::UUID,(item->>'epoch')::BIGINT,item->>'event_type') THEN
+            RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STUDIO_BUSY';
+        END IF;
+    END LOOP;
+    IF EXISTS(SELECT 1 FROM jsonb_array_elements(p_candidates) x GROUP BY x->>'activation_id',x->>'source_record_id' HAVING count(*)>1)
+        OR (SELECT count(DISTINCT (x->>'studio_id',x->>'subject_id')) FROM jsonb_array_elements(p_candidates) x WHERE x->>'event_type'='invoice.overdue')>10 THEN
+        RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST';
+    END IF;
+    FOR studio IN SELECT DISTINCT (x->>'studio_id')::UUID FROM jsonb_array_elements(p_candidates) x ORDER BY 1 LOOP
+        IF NOT pg_catalog.pg_try_advisory_xact_lock_shared(pg_catalog.hashtextextended('koaryu.local-plan-clear:'||studio::TEXT,0)) THEN
+            RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STUDIO_BUSY';
+        END IF;
+        SELECT id INTO found_parent FROM public.studios WHERE id=studio FOR SHARE NOWAIT;
+        complete:=FOUND;
+        PERFORM 1 FROM public.studio_subscriptions WHERE studio_id=studio FOR SHARE NOWAIT;
+        IF complete THEN complete_studios:=array_append(complete_studios,studio); END IF;
+    END LOOP;
+    FOR item IN SELECT value FROM jsonb_array_elements(p_candidates) ORDER BY value->>'studio_id',value->>'event_type',value->>'subject_id' LOOP
+        key:=(item->>'studio_id')||':'||(item->>'event_type')||':'||(item->>'subject_id');
+        IF key=ANY(owned) THEN CONTINUE; END IF;
+        owned:=array_append(owned,key); studio:=(item->>'studio_id')::UUID; complete:=studio=ANY(complete_studios);
+        IF NOT complete THEN CONTINUE; END IF;
+        IF item->>'event_type'='invoice.overdue' THEN
+            PERFORM private.workflow_lock_financial_sources_v1(studio,(item->>'subject_id')::UUID,'{}');
+            -- Only repair candidates are capped. Current contributors and failed
+            -- notice cancellation retain the accepted owners' full fanout.
+            SELECT coalesce(array_agg(payment_id ORDER BY payment_id),'{}'::UUID[]) INTO uncertain_ids FROM (
+                SELECT payment_id FROM private.workflow_payment_settlement_observations WHERE studio_id=studio
+                    AND invoice_id=(item->>'subject_id')::UUID AND uncertain ORDER BY payment_id LIMIT 20) bounded;
+            SELECT coalesce(array_agg(DISTINCT id ORDER BY id),'{}'::UUID[]) INTO payments FROM public.billing_payments
+                WHERE studio_id=studio AND (id=ANY(uncertain_ids) OR (invoice_id=(item->>'subject_id')::UUID
+                    AND status IN ('succeeded','refunded','disputed','externally_recorded')));
+            PERFORM private.workflow_lock_financial_sources_v1(studio,(item->>'subject_id')::UUID,payments);
+            SELECT * INTO invoice FROM public.billing_invoices WHERE studio_id=studio AND id=(item->>'subject_id')::UUID FOR SHARE NOWAIT;
+            SELECT * INTO payer FROM public.billing_payers WHERE studio_id=studio AND id=invoice.payer_id FOR SHARE NOWAIT;
+            SELECT * INTO account FROM public.studio_payment_accounts WHERE studio_id=studio FOR SHARE NOWAIT;
+            complete:=invoice.id IS NOT NULL AND payer.id IS NOT NULL AND account.studio_id IS NOT NULL;
+            SELECT ARRAY(SELECT DISTINCT payer_id FROM public.billing_payments WHERE studio_id=studio AND id=ANY(payments)
+                AND payer_id IS NOT NULL ORDER BY payer_id) INTO required_payers;
+            SELECT coalesce(array_agg(id ORDER BY id),'{}'::UUID[]) INTO held_ids FROM (
+                SELECT id FROM public.billing_payers WHERE studio_id=studio AND id=ANY(required_payers) ORDER BY id FOR SHARE NOWAIT) locked;
+            complete:=complete AND held_ids=required_payers;
+            SELECT coalesce(array_agg(id ORDER BY id),'{}'::UUID[]) INTO held_ids FROM (
+                SELECT id FROM public.billing_payments WHERE studio_id=studio AND (id=ANY(uncertain_ids)
+                    OR (invoice_id=(item->>'subject_id')::UUID AND status IN ('succeeded','refunded','disputed','externally_recorded')))
+                    ORDER BY id FOR UPDATE NOWAIT) locked;
+            IF held_ids IS DISTINCT FROM payments THEN RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STUDIO_BUSY'; END IF;
+        ELSE
+            -- Capture every routing field the retained source owner may follow.
+            IF item->>'event_type'='trial.upcoming' THEN
+                SELECT jsonb_build_object('trial',to_jsonb(t),'lead',to_jsonb(l)) INTO before_route
+                    FROM public.lead_trial_appointments t LEFT JOIN public.leads l ON l.studio_id=t.studio_id AND l.id=t.lead_id
+                    WHERE t.studio_id=studio AND t.id=(item->>'subject_id')::UUID;
+            ELSE
+                SELECT jsonb_build_object('recipient',to_jsonb(r),'event',to_jsonb(e),'student',to_jsonb(s),'membership',to_jsonb(m)) INTO before_route
+                    FROM public.belt_test_recipients r LEFT JOIN public.belt_test_events e ON e.studio_id=r.studio_id AND e.id=r.event_id
+                    LEFT JOIN public.students s ON s.studio_id=r.studio_id AND s.id=r.student_id
+                    LEFT JOIN public.student_program_memberships m ON m.studio_id=r.studio_id AND m.id=r.student_program_membership_id
+                    WHERE r.studio_id=studio AND r.id=(item->>'subject_id')::UUID;
+                IF before_route#>>'{recipient,event_id}' IS DISTINCT FROM item->>'source_parent_id' AND before_route IS NOT NULL THEN
+                    RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STUDIO_BUSY';
+                END IF;
+            END IF;
+            event:=NULL; event.studio_id:=studio; event.event_type:=item->>'event_type'; event.subject_id:=(item->>'subject_id')::UUID;
+            PERFORM private.workflow_lock_run_sources_v1(studio,event,'{"program_id":null}');
+            IF item->>'event_type'='trial.upcoming' THEN
+                SELECT jsonb_build_object('trial',to_jsonb(t),'lead',to_jsonb(l)) INTO after_route
+                    FROM public.lead_trial_appointments t LEFT JOIN public.leads l ON l.studio_id=t.studio_id AND l.id=t.lead_id
+                    WHERE t.studio_id=studio AND t.id=event.subject_id;
+            ELSE
+                SELECT jsonb_build_object('recipient',to_jsonb(r),'event',to_jsonb(e),'student',to_jsonb(s),'membership',to_jsonb(m)) INTO after_route
+                    FROM public.belt_test_recipients r LEFT JOIN public.belt_test_events e ON e.studio_id=r.studio_id AND e.id=r.event_id
+                    LEFT JOIN public.students s ON s.studio_id=r.studio_id AND s.id=r.student_id
+                    LEFT JOIN public.student_program_memberships m ON m.studio_id=r.studio_id AND m.id=r.student_program_membership_id
+                    WHERE r.studio_id=studio AND r.id=event.subject_id;
+            END IF;
+            IF before_route IS DISTINCT FROM after_route THEN RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STUDIO_BUSY'; END IF;
+            IF item->>'event_type'='trial.upcoming' THEN
+                complete:=after_route IS NOT NULL AND after_route->'lead'<>'null'::JSONB;
+                required_programs:=ARRAY[(after_route#>>'{trial,program_id}')::UUID,(after_route#>>'{lead,program_id}')::UUID];
+            ELSE
+                complete:=after_route IS NOT NULL AND after_route->'event'<>'null'::JSONB AND after_route->'student'<>'null'::JSONB
+                    AND (after_route#>>'{recipient,student_program_membership_id}' IS NULL OR after_route->'membership'<>'null'::JSONB);
+                required_programs:=ARRAY[(after_route#>>'{event,program_id}')::UUID,(after_route#>>'{recipient,approved_program_id}')::UUID,
+                    CASE WHEN after_route#>>'{recipient,student_program_membership_id}' IS NULL THEN (after_route#>>'{student,program_id}')::UUID
+                        ELSE (after_route#>>'{membership,program_id}')::UUID END];
+                required_ranks:=ARRAY[(after_route#>>'{recipient,approved_current_rank_id}')::UUID,(after_route#>>'{recipient,approved_target_rank_id}')::UUID,
+                    CASE WHEN after_route#>>'{recipient,student_program_membership_id}' IS NULL THEN (after_route#>>'{student,current_belt_rank_id}')::UUID
+                        ELSE (after_route#>>'{membership,current_belt_rank_id}')::UUID END];
+                SELECT id INTO found_parent FROM public.belt_ladders WHERE studio_id=studio AND id=(after_route#>>'{event,ladder_id}')::UUID FOR SHARE NOWAIT;
+                complete:=complete AND FOUND;
+                SELECT ARRAY(SELECT DISTINCT id FROM unnest(required_ranks) id WHERE id IS NOT NULL ORDER BY id) INTO required_ranks;
+                SELECT coalesce(array_agg(id ORDER BY id),'{}'::UUID[]) INTO held_ids FROM (
+                    SELECT id FROM public.belt_ranks WHERE studio_id=studio AND id=ANY(required_ranks) ORDER BY id FOR SHARE NOWAIT) locked;
+                complete:=complete AND held_ids=required_ranks;
+            END IF;
+            SELECT ARRAY(SELECT DISTINCT id FROM unnest(required_programs) id WHERE id IS NOT NULL ORDER BY id) INTO required_programs;
+            SELECT coalesce(array_agg(id ORDER BY id),'{}'::UUID[]) INTO held_ids FROM (
+                SELECT id FROM public.programs WHERE studio_id=studio AND id=ANY(required_programs) ORDER BY id FOR SHARE NOWAIT) locked;
+            complete:=complete AND held_ids=required_programs;
+        END IF;
+        IF complete THEN complete_sources:=array_append(complete_sources,key); END IF;
+    END LOOP;
+    -- Source deduplication must not omit another selected activation's filter.
+    SELECT coalesce(array_agg(id ORDER BY id),'{}'::UUID[]) INTO held_filters FROM (
+        SELECT p.id FROM public.programs p WHERE EXISTS(SELECT 1 FROM jsonb_array_elements(p_candidates) x
+            JOIN private.workflow_timer_activations t ON t.activation_id=(x->>'activation_id')::UUID
+            WHERE p.studio_id=t.studio_id AND p.id=t.program_id) ORDER BY p.id FOR SHARE NOWAIT) locked;
+    FOR item IN SELECT value FROM jsonb_array_elements(p_candidates) LOOP
+        SELECT * INTO timer FROM private.workflow_timer_activations WHERE activation_id=(item->>'activation_id')::UUID;
+        key:=(item->>'studio_id')||':'||(item->>'event_type')||':'||(item->>'subject_id');
+        IF key=ANY(complete_sources) AND (timer.program_id IS NULL OR timer.program_id=ANY(held_filters)) THEN
+            owned_candidates:=owned_candidates||jsonb_build_array(item);
+            owned_pairs:=owned_pairs||jsonb_build_array(jsonb_build_object('activation_id',item->'activation_id','source_record_id',item->'source_record_id'));
+        END IF;
+    END LOOP;
+    SELECT coalesce(array_agg(DISTINCT r.id ORDER BY r.id),'{}'::UUID[]),coalesce(array_agg(DISTINCT r.workflow_id ORDER BY r.workflow_id),'{}'::UUID[])
+        INTO failed_runs,workflows FROM private.automation_workflow_events e JOIN public.automation_workflow_runs r ON r.studio_id=e.studio_id AND r.event_id=e.id
+        WHERE e.event_type='invoice.payment_failed' AND r.cancel_requested_at IS NULL
+            AND r.state IN ('queued','waiting','claimed','running','sending','unknown')
+            AND EXISTS(SELECT 1 FROM jsonb_array_elements(owned_candidates) x WHERE x->>'event_type'='invoice.overdue'
+                AND e.studio_id=(x->>'studio_id')::UUID AND e.context->>'invoice_id'=((x->>'subject_id')::UUID)::TEXT);
+    SELECT ARRAY(SELECT DISTINCT id FROM (SELECT unnest(workflows) id UNION ALL
+        SELECT (x->>'workflow_id')::UUID FROM jsonb_array_elements(owned_candidates) x) ids ORDER BY id) INTO workflows;
+    PERFORM 1 FROM public.automation_workflows WHERE id=ANY(workflows) ORDER BY id FOR UPDATE NOWAIT;
+    PERFORM 1 FROM public.automation_workflow_runs WHERE id=ANY(failed_runs) ORDER BY id FOR UPDATE NOWAIT;
+    -- Every blocking cancellation selection below reenters this preowned union.
+    FOR item IN SELECT DISTINCT jsonb_build_object('studio',x->'studio_id','invoice',x->'subject_id')
+        FROM jsonb_array_elements(owned_candidates) x WHERE x->>'event_type'='invoice.overdue' ORDER BY 1 LOOP
+        PERFORM private.workflow_prepare_financial_context_v1((item->>'studio')::UUID,(item->>'invoice')::UUID);
+    END LOOP;
+    RETURN jsonb_build_object('owned_pairs',owned_pairs);
+EXCEPTION WHEN lock_not_available THEN RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STUDIO_BUSY';
+END $$;
+
+CREATE FUNCTION private.workflow_enroll_timed_occurrence_v1(
+    p_activation_id UUID,p_subject_id UUID,p_source_record_id UUID,p_discovered_start TIMESTAMPTZ,
+    p_discovered_threshold TIMESTAMPTZ,p_at TIMESTAMPTZ) RETURNS JSONB
+LANGUAGE plpgsql VOLATILE SECURITY INVOKER SET search_path='' AS $$
+DECLARE timer private.workflow_timer_activations; activation public.automation_workflow_activations;
+    workflow public.automation_workflows; version public.automation_workflow_versions; trial public.lead_trial_appointments;
+    recipient public.belt_test_recipients; parent public.belt_test_events; episode private.workflow_invoice_collection_episodes;
+    provenance private.automation_workflow_events; occurrence private.automation_workflow_events;
+    context JSONB; config JSONB; facts JSONB; threshold TIMESTAMPTZ; starts TIMESTAMPTZ;
+    v_source_key TEXT; source_kind TEXT; trigger_id TEXT; v_event_id UUID; run_id UUID;
+    decision TEXT:='ineligible'; created BOOLEAN:=false; enqueued BOOLEAN:=false;
+BEGIN
+    IF p_activation_id IS NULL OR p_subject_id IS NULL OR p_source_record_id IS NULL OR p_at IS NULL
+        OR p_at NOT BETWEEN TIMESTAMPTZ '0001-01-01+00' AND TIMESTAMPTZ '9999-12-31 23:59:59.999999+00' THEN
+        RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST';
+    END IF;
+    <<admission>>
+    BEGIN
+        SELECT * INTO timer FROM private.workflow_timer_activations WHERE activation_id=p_activation_id;
+        SELECT * INTO activation FROM public.automation_workflow_activations WHERE id=p_activation_id;
+        SELECT * INTO workflow FROM public.automation_workflows WHERE id=timer.workflow_id AND studio_id=timer.studio_id;
+        IF timer.activation_id IS NULL OR activation.id IS NULL OR workflow.id IS NULL OR workflow.status<>'active'
+            OR activation.cancelled_at IS NOT NULL OR activation.epoch<>workflow.enrollment_epoch
+            OR ROW(activation.studio_id,activation.workflow_id,activation.version_id,activation.epoch)
+                IS DISTINCT FROM ROW(timer.studio_id,timer.workflow_id,timer.version_id,timer.epoch) THEN EXIT admission; END IF;
+        SELECT * INTO version FROM public.automation_workflow_versions WHERE studio_id=timer.studio_id AND workflow_id=timer.workflow_id AND id=timer.version_id;
+        SELECT n->>'id',jsonb_build_object('program_id',NULL)||(n->'config') INTO trigger_id,config
+            FROM jsonb_array_elements(version.graph->'nodes') n WHERE n->>'type'='trigger';
+        IF trigger_id IS NULL OR config->>'event_type' IS DISTINCT FROM timer.trigger_event_type
+            OR (config->>'offset_minutes')::INTEGER IS DISTINCT FROM timer.offset_minutes
+            OR (config->>'program_id')::UUID IS DISTINCT FROM timer.program_id THEN
+            RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STATE_CONFLICT';
+        END IF;
+        IF timer.trigger_event_type='invoice.overdue' THEN
+            SELECT * INTO episode FROM private.workflow_invoice_collection_episodes WHERE studio_id=timer.studio_id AND invoice_id=p_subject_id AND id=p_source_record_id;
+            IF episode.id IS NULL OR episode.closed_at IS NOT NULL OR NOT episode.threshold_eligible
+                OR NOT EXISTS(SELECT 1 FROM private.workflow_invoice_episode_state WHERE studio_id=timer.studio_id
+                    AND invoice_id=p_subject_id AND current_episode_id=episode.id) THEN EXIT admission; END IF;
+            threshold:=episode.threshold_at; context:=episode.context; v_source_key:=episode.id::TEXT; source_kind:='invoice';
+            IF episode.opened_at>threshold OR (episode.opened_at AT TIME ZONE episode.frozen_timezone)::DATE>(context->>'due_date')::DATE
+                OR (activation.active_from AT TIME ZONE episode.frozen_timezone)::DATE>(context->>'due_date')::DATE THEN EXIT admission; END IF;
+        ELSIF timer.trigger_event_type='trial.upcoming' THEN
+            SELECT * INTO trial FROM public.lead_trial_appointments WHERE studio_id=timer.studio_id AND id=p_subject_id AND id=p_source_record_id;
+            IF trial.id IS NULL OR trial.status<>'scheduled' THEN EXIT admission; END IF;
+            starts:=trial.starts_at; source_kind:='trial'; v_source_key:=trial.id::TEXT||':'||trial.revision::TEXT;
+            SELECT * INTO provenance FROM private.automation_workflow_events e WHERE e.studio_id=timer.studio_id AND e.event_type='trial.scheduled' AND e.source_key=v_source_key;
+            v_source_key:=v_source_key||':'||timer.offset_minutes::TEXT;
+        ELSE
+            SELECT * INTO recipient FROM public.belt_test_recipients WHERE studio_id=timer.studio_id AND id=p_subject_id AND id=p_source_record_id;
+            SELECT * INTO parent FROM public.belt_test_events WHERE studio_id=timer.studio_id AND id=recipient.event_id;
+            IF recipient.id IS NULL OR recipient.state<>'approved' OR parent.id IS NULL OR parent.status<>'scheduled'
+                OR recipient.approved_schedule_revision<>parent.schedule_revision THEN EXIT admission; END IF;
+            starts:=parent.starts_at; source_kind:='belt_test'; v_source_key:=recipient.id::TEXT||':'||recipient.revision::TEXT||':'||recipient.approved_schedule_revision::TEXT;
+            SELECT * INTO provenance FROM private.automation_workflow_events e WHERE e.studio_id=timer.studio_id AND e.event_type='belt_test.approved' AND e.source_key=v_source_key;
+            v_source_key:=v_source_key||':'||timer.offset_minutes::TEXT;
+        END IF;
+        IF timer.trigger_event_type<>'invoice.overdue' THEN
+            threshold:=starts+make_interval(mins=>timer.offset_minutes);
+            IF starts<=p_at OR starts IS DISTINCT FROM p_discovered_start THEN EXIT admission; END IF;
+            IF provenance.id IS NULL OR provenance.subject_kind IS DISTINCT FROM source_kind OR provenance.subject_id IS DISTINCT FROM p_subject_id THEN
+                decision:='unavailable'; EXIT admission;
+            END IF;
+            IF provenance.occurred_at>threshold THEN EXIT admission; END IF;
+            context:=provenance.context;
+        ELSIF p_discovered_start IS NOT NULL THEN EXIT admission;
+        END IF;
+        IF threshold IS NULL OR threshold IS DISTINCT FROM p_discovered_threshold
+            OR threshold NOT BETWEEN TIMESTAMPTZ '0001-01-01+00' AND TIMESTAMPTZ '9999-12-31 23:59:59.999999+00'
+            OR threshold>p_at OR threshold<activation.active_from OR (activation.retired_at IS NOT NULL AND threshold>=activation.retired_at) THEN EXIT admission; END IF;
+        facts:=private.workflow_current_source_facts_v1(timer.studio_id,timer.trigger_event_type,p_subject_id,context,config,p_at,'{}')->'facts';
+        IF facts->>'source_decision'='ineligible' THEN EXIT admission; END IF;
+        IF facts->>'source_decision' IS DISTINCT FROM 'eligible'
+            OR (timer.trigger_event_type='invoice.overdue' AND EXISTS(SELECT 1 FROM private.workflow_invoice_episode_pending p
+                WHERE p.studio_id=timer.studio_id AND p.invoice_id=p_subject_id AND p.backend_pid=pg_catalog.pg_backend_pid()
+                    AND p.transaction_id=pg_catalog.pg_current_xact_id())) THEN decision:='unavailable'; EXIT admission; END IF;
+        INSERT INTO private.automation_workflow_events(studio_id,event_type,source_key,subject_kind,subject_id,occurred_at,context,created_at)
+            VALUES(timer.studio_id,timer.trigger_event_type,v_source_key,source_kind,p_subject_id,threshold,context,p_at)
+            ON CONFLICT(studio_id,event_type,source_key) DO NOTHING RETURNING id INTO v_event_id;
+        created:=v_event_id IS NOT NULL;
+        IF NOT created THEN
+            SELECT * INTO occurrence FROM private.automation_workflow_events e WHERE e.studio_id=timer.studio_id AND e.event_type=timer.trigger_event_type AND e.source_key=v_source_key;
+            IF occurrence.id IS NULL OR ROW(occurrence.subject_kind,occurrence.subject_id,occurrence.occurred_at,occurrence.context)
+                IS DISTINCT FROM ROW(source_kind,p_subject_id,threshold,context) THEN
+                RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STATE_CONFLICT';
+            END IF;
+            v_event_id:=occurrence.id;
+        END IF;
+        INSERT INTO public.automation_workflow_runs(studio_id,workflow_id,version_id,event_id,activation_id,epoch,current_node_id,next_due_at,created_at,updated_at)
+            VALUES(timer.studio_id,timer.workflow_id,timer.version_id,v_event_id,timer.activation_id,timer.epoch,trigger_id,p_at,p_at,p_at)
+            ON CONFLICT(workflow_id,event_id) DO NOTHING RETURNING id INTO run_id;
+        enqueued:=run_id IS NOT NULL; decision:=CASE WHEN enqueued THEN 'enrolled' ELSE 'already_enrolled' END;
+    END admission;
+    RETURN jsonb_build_object('decision',decision,'created_event',created,'enqueued_run',enqueued);
+END $$;
+
+CREATE FUNCTION public.process_automation_workflow_occurrences_v1(p_limit INTEGER DEFAULT 100) RETURNS JSONB
+LANGUAGE plpgsql VOLATILE SECURITY INVOKER SET search_path='' AS $$
+DECLARE candidates JSONB; ownership JSONB; item JSONB; result JSONB; at TIMESTAMPTZ; events INTEGER:=0; runs INTEGER:=0;
+BEGIN
+    IF p_limit IS NULL OR p_limit NOT BETWEEN 1 AND 100 THEN RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST'; END IF;
+    candidates:=private.workflow_timed_candidates_v1(p_limit,clock_timestamp());
+    ownership:=private.workflow_lock_timed_sources_v1(candidates->'pairs');
+    at:=clock_timestamp();
+    FOR item IN SELECT x.value FROM jsonb_array_elements(candidates->'pairs') x WHERE EXISTS(
+        SELECT 1 FROM jsonb_array_elements(ownership->'owned_pairs') o WHERE o->'activation_id'=x.value->'activation_id'
+            AND o->'source_record_id'=x.value->'source_record_id') LOOP
+        result:=private.workflow_enroll_timed_occurrence_v1((item->>'activation_id')::UUID,(item->>'subject_id')::UUID,
+            (item->>'source_record_id')::UUID,(item->>'source_starts_at')::TIMESTAMPTZ,(item->>'threshold_at')::TIMESTAMPTZ,at);
+        events:=events+(result->>'created_event')::BOOLEAN::INTEGER; runs:=runs+(result->>'enqueued_run')::BOOLEAN::INTEGER;
+    END LOOP;
+    RETURN jsonb_build_object('payload',jsonb_build_object('created_event_count',events,'enqueued_run_count',runs,'has_more',candidates->'has_more'));
+EXCEPTION WHEN lock_not_available THEN RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STUDIO_BUSY';
+END $$;
+
+ALTER TABLE private.workflow_timer_activations OWNER TO postgres;
+ALTER TABLE private.workflow_timer_dispatch_cursor OWNER TO postgres;
+ALTER TABLE private.workflow_timer_activations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE private.workflow_timer_dispatch_cursor ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON private.workflow_timer_activations,private.workflow_timer_dispatch_cursor FROM PUBLIC,anon,authenticated,service_role;
+GRANT SELECT,INSERT,UPDATE ON private.workflow_timer_activations TO service_role;
+GRANT SELECT,UPDATE ON private.workflow_timer_dispatch_cursor TO service_role;
+CREATE POLICY reject_client_access ON private.workflow_timer_activations AS RESTRICTIVE FOR ALL TO anon,authenticated USING(false) WITH CHECK(false);
+CREATE POLICY reject_client_access ON private.workflow_timer_dispatch_cursor AS RESTRICTIVE FOR ALL TO anon,authenticated USING(false) WITH CHECK(false);
+DO $timed_privileges$
+DECLARE r RECORD;
+BEGIN
+    FOR r IN SELECT p.oid::REGPROCEDURE identity,p.prorettype FROM pg_catalog.pg_proc p JOIN pg_catalog.pg_namespace n ON n.oid=p.pronamespace
+        WHERE (n.nspname='private' AND p.proname IN ('workflow_timer_activation_insert_v1','workflow_timer_activation_identity_v1',
+            'workflow_timed_candidates_v1','workflow_lock_timed_sources_v1','workflow_enroll_timed_occurrence_v1'))
+            OR (n.nspname='public' AND p.proname='process_automation_workflow_occurrences_v1') LOOP
+        EXECUTE format('ALTER FUNCTION %s OWNER TO postgres',r.identity);
+        EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC,anon,authenticated,service_role',r.identity);
+        IF r.prorettype<>'trigger'::REGTYPE THEN EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO service_role',r.identity); END IF;
+    END LOOP;
+END $timed_privileges$;
