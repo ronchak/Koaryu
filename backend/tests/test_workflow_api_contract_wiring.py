@@ -62,6 +62,9 @@ APPROVED_ROUTES = {
     "/belt-tests/{event_id}/recipients/approve": {
         "post": belt_test_recipients.approve_belt_test_recipients
     },
+    "/belt-tests/{event_id}/recipients/{recipient_id}": {
+        "get": belt_test_recipients.get_belt_test_recipient
+    },
     "/belt-tests/{event_id}/recipients/{recipient_id}/revoke": {
         "post": belt_test_recipients.revoke_belt_test_recipient
     },
@@ -133,6 +136,17 @@ def test_approved_routes_are_registered_once_on_the_real_app(openapi, path, meth
         ]
         assert len(matches) == 1
         assert matches[0].endpoint is handler
+
+
+def test_recipient_detail_reuses_complete_response_with_identity_only(openapi):
+    detail = openapi["paths"]["/api/v1/belt-tests/{event_id}/recipients/{recipient_id}"]["get"]
+    assert detail["responses"]["200"]["content"]["application/json"]["schema"] == {
+        "$ref": "#/components/schemas/BeltTestRecipientResponse"
+    }
+    assert "requestBody" not in detail
+    assert {
+        (param["name"], param["in"]) for param in detail["parameters"] if param["in"] != "header"
+    } == {("event_id", "path"), ("recipient_id", "path")}
 
 
 def test_actual_app_has_no_duplicate_routes_or_operation_ids(openapi):
