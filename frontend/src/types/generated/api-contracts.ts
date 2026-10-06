@@ -2029,6 +2029,16 @@ export interface ApiSupportTicketTriageUpdate {
   metadata?: Record<string, unknown>;
 }
 
+export interface ApiTestEmailOperationResponse {
+  operation_id: string;
+  state: "committed";
+  entity_id: string;
+  committed_at: string;
+  command: "test_email.create";
+  entity_type: "test_delivery";
+  result: ApiWorkflowTestEmailAcknowledgment;
+}
+
 export interface ApiTrialAppointmentCreate {
   operation_id: string;
   starts_at: string;
@@ -2383,6 +2393,12 @@ export interface ApiWorkflowSummary {
   trigger_event_type: string | null;
   draft_trigger_event_type: string | null;
   created_at: string;
+}
+
+export interface ApiWorkflowTestEmailAcknowledgment {
+  operation_id: string;
+  test_delivery_id: string;
+  state: "queued";
 }
 
 export interface ApiWorkflowTriggerMetadata {

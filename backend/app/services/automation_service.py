@@ -9,8 +9,8 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from types import SimpleNamespace
-from typing import Any
-from uuid import NAMESPACE_URL, uuid4, uuid5
+from typing import Any, Protocol
+from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 from fastapi import HTTPException
 from postgrest._sync.request_builder import SyncRPCFilterRequestBuilder
@@ -441,10 +441,19 @@ def _delivery_result(result: Any, *, expected_revision: int | None = None) -> di
     )
 
 
+class _PreparationGrant(Protocol):
+    allowed: bool
+    preparation_id: UUID
+    preparation_token: UUID | None
+    probe_token: UUID | None
+    generation: int
+    lease_expires_at: datetime | None
+
+
 @dataclass(frozen=True)
 class _PreparedGrant:
     handle: PreparedEmailSender = field(repr=False)
-    claim: dispatch.PreparationClaim = field(repr=False)
+    claim: _PreparationGrant = field(repr=False)
 
     def params(self) -> dict:
         return {
@@ -468,7 +477,22 @@ def _prepare_sender(
         ),
         dispatch.PreparationClaim,
     )
-    if not claim.allowed:
+    return _complete_sender_preparation(client, budget, transport, binding, claim)
+
+
+def _complete_sender_preparation(
+    client: Any,
+    budget: _WorkerBudget,
+    transport: Any,
+    binding: str,
+    claim: _PreparationGrant,
+) -> _PreparedGrant | None:
+    """Complete an already validated normal or test-owned preparation grant."""
+    if (
+        claim.allowed is not True
+        or claim.preparation_token is None
+        or claim.lease_expires_at is None
+    ):
         return None
     budget.check(DATABASE_TIMEOUT_SECONDS)
     try:

@@ -37,6 +37,7 @@ from app.schemas.workflow import (
     omit_optional_wire_requirements,
 )
 from app.schemas.workflow_run import WorkflowRunDetail
+from app.schemas.workflow_test_email import WorkflowTestEmailAcknowledgment
 from app.services.workflow_catalog import CATALOG
 from app.services.workflow_graph import validate_workflow_draft
 
@@ -513,6 +514,21 @@ class RunCancelOperationResponse(_OperationReceipt):
         return self
 
 
+class TestEmailOperationResponse(_OperationReceipt):
+    command: Literal["test_email.create"]
+    entity_type: Literal["test_delivery"]
+    result: WorkflowTestEmailAcknowledgment
+
+    @model_validator(mode="after")
+    def validate_result(self) -> TestEmailOperationResponse:
+        if (
+            self.operation_id != self.result.operation_id
+            or self.entity_id != self.result.test_delivery_id
+        ):
+            raise ValueError("Invalid test email receipt identity.")
+        return self
+
+
 AutomationOperationResponse = Annotated[
     WorkflowOperationResponse
     | LeadCreateOperationResponse
@@ -520,6 +536,7 @@ AutomationOperationResponse = Annotated[
     | BeltTestOperationResponse
     | BeltTestApprovalOperationResponse
     | BeltTestRevokeOperationResponse
-    | RunCancelOperationResponse,
+    | RunCancelOperationResponse
+    | TestEmailOperationResponse,
     Field(discriminator="command"),
 ]

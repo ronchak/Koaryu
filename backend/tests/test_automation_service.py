@@ -1151,3 +1151,48 @@ def test_legacy_settlement_cannot_upgrade_uncertain_or_failed_truth(
     }
     assert_counts(runner.run(), processed=1, unknown=1, accepted=0)
     runner.send.assert_called_once()
+
+
+@pytest.mark.parametrize(
+    "allowed,token,lease",
+    [
+        (False, None, None),
+        (True, None, LEASE),
+        (True, PREPARATION_TOKEN, None),
+        (1, PREPARATION_TOKEN, LEASE),
+    ],
+)
+def test_shared_preparation_completion_requires_explicit_allowed_token_and_lease(
+    allowed, token, lease
+):
+    client = Mock()
+    transport = Mock()
+    clock = Clock()
+    claim = SimpleNamespace(allowed=allowed, preparation_token=token, lease_expires_at=lease)
+    assert (
+        service._complete_sender_preparation(
+            client, service._WorkerBudget(125.0, clock), transport, "f" * 64, claim
+        )
+        is None
+    )
+    transport.prepare.assert_not_called()
+    client.rpc.assert_not_called()
+
+
+def test_normal_preparation_still_rejects_auth_blocked_before_shared_completion():
+    settings = email_settings()
+    database = WorkerDatabase(settings)
+    database.handlers["claim_automation_sender_preparation_v1"] = lambda params: {
+        "payload": preparation_claim(params, mode="auth_blocked", probe_token=str(UUID(int=999)))
+    }
+    transport = Mock()
+    clock = Clock()
+    with pytest.raises(ValueError, match="invalid_automation_dispatch_result"):
+        service._prepare_sender(
+            database,
+            service._WorkerBudget(125.0, clock),
+            transport,
+            delivery_configuration(settings),
+        )
+    transport.prepare.assert_not_called()
+    assert [name for name, _ in database.executed] == ["claim_automation_sender_preparation_v1"]

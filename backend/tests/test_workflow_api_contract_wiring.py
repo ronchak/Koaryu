@@ -184,8 +184,22 @@ def test_operation_readback_exposes_only_accepted_command_variants(openapi):
         "belt_test.approve",
         "belt_test.revoke",
         "run.cancel",
+        "test_email.create",
     }
-    assert len(schema["oneOf"]) == 7
+    assert len(schema["oneOf"]) == 8
+    acknowledgment = openapi["components"]["schemas"]["WorkflowTestEmailAcknowledgment"]
+    assert (
+        set(acknowledgment["properties"])
+        == set(acknowledgment["required"])
+        == {
+            "operation_id",
+            "test_delivery_id",
+            "state",
+        }
+    )
+    assert acknowledgment["properties"]["state"]["const"] == "queued"
+    assert "WorkflowTestEmailRequest" not in openapi["components"]["schemas"]
+    assert "WorkflowTestEmailResponse" not in openapi["components"]["schemas"]
 
 
 def test_real_graph_requests_and_responses_keep_typed_configs(openapi):
@@ -380,6 +394,12 @@ def test_run_routes_and_cancel_receipt_expose_the_accepted_aliases(contracts):
     ]:
         assert f"export interface Api{name} {{" in contracts
     assert '  command: "run.cancel";' in contracts
+    assert "export interface ApiTestEmailOperationResponse {" in contracts
+    assert "export interface ApiWorkflowTestEmailAcknowledgment {" in contracts
+    assert '  command: "test_email.create";' in contracts
+    assert "  result: ApiWorkflowTestEmailAcknowledgment;" in contracts
+    assert "ApiWorkflowTestEmailRequest" not in contracts
+    assert "ApiWorkflowTestEmailResponse" not in contracts
     assert '  entity_type: "workflow_run";' in contracts
     assert "  result: ApiWorkflowRunDetail;" in contracts
     assert (

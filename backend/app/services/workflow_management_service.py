@@ -20,6 +20,7 @@ from app.schemas.workflow_management import (
     AutomationOperationResponse,
     BeltTestApprovalOperationResponse,
     RunCancelOperationResponse,
+    TestEmailOperationResponse,
     WorkflowAction,
     WorkflowAvailability,
     WorkflowCatalogResponse,
@@ -368,6 +369,10 @@ class WorkflowManagementService:
             if isinstance(receipt, RunCancelOperationResponse):
                 if receipt.result.run.studio_id != UUID(str(studio_id)):
                     raise ValueError("Invalid operation studio.")
+            elif isinstance(receipt, TestEmailOperationResponse):
+                # This queued acknowledgment contains no tenant or private mail
+                # data. The scoped receipt RPC owns current tenant authorization.
+                pass
             elif not isinstance(receipt, WorkflowOperationResponse):
                 rows = (
                     receipt.result.items

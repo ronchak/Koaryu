@@ -307,7 +307,7 @@ def test_isolated_openapi_has_exact_routes_and_composed_receipt_union(api):
     assert operation["discriminator"]["mapping"]["run.cancel"].endswith(
         "/RunCancelOperationResponse"
     )
-    assert len(operation["oneOf"]) == 7
+    assert len(operation["oneOf"]) == 8
 
 
 def test_history_routes_are_registered_once_on_actual_app():
