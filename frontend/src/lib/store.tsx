@@ -88,6 +88,7 @@ import {
   type ScheduleRangeRefreshIntent,
 } from "@/lib/schedule-store-model";
 import { useStoreBeltActions } from "@/lib/store-belt-actions";
+import { useStoreBeltTestActions } from "@/lib/store-belt-test-actions";
 import { useStoreLeadActions } from "@/lib/store-lead-actions";
 import { useStoreProgramActions } from "@/lib/store-program-actions";
 import { useStoreScheduleActions } from "@/lib/store-schedule-actions";
@@ -254,6 +255,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [leadsLoaded, setLeadsLoaded] = useState(isPreviewMode);
   const [leadsLoadError, setLeadsLoadError] = useState<string | null>(null);
   const leadsRef = useRef<Lead[]>(leads);
+  const beltTestResourceScopeRef = useRef(createResourceScope());
+  const resetBeltTestResourceScope = useCallback(() => {
+    beltTestResourceScopeRef.current.settle();
+    beltTestResourceScopeRef.current = createResourceScope();
+  }, []);
   const leadMutationScopeRef = useRef(createResourceScope());
   const beginLeadMutation = useCallback(() => beginResourceMutation(leadMutationScopeRef.current), []);
   const [beltLadders, setBeltLaddersState] = useState<BeltLadder[]>(() =>
@@ -683,6 +689,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [commitEligibilityRows]);
 
   const applyLiveStudioDataResetState = useCallback((state: LiveStudioDataResetState) => {
+    resetBeltTestResourceScope();
     beltsHydratedRef.current = false;
     resetProgramScope();
     resetStaffScope();
@@ -745,7 +752,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setEligibilityLoadError(state.eligibilityLoadError);
     promotionHistoryGenerationRef.current += 1;
     setPromotionHistoryCache(state.promotionHistoryCache);
-  }, [setPrograms, setProgramsLoaded, resetProgramScope, resetStaffScope, destructivelyResetScheduleCoordinator, setSessions, updateCurrentLadderId]);
+  }, [setPrograms, setProgramsLoaded, resetProgramScope, resetBeltTestResourceScope, resetStaffScope, destructivelyResetScheduleCoordinator, setSessions, updateCurrentLadderId]);
 
   const resetLiveStudioState = useCallback(() => {
     invalidateAccessIdentity();
@@ -873,6 +880,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [hydrated, pathname, router, subscriptionRequired]);
 
   const applyDemoResetResponse = useCallback((data: DemoResetResponse) => {
+    resetBeltTestResourceScope();
     leadMutationScopeRef.current.settle();
     leadMutationScopeRef.current = createResourceScope();
     resetProgramScope();
@@ -903,9 +911,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setSessions(data.sessions.sort(compareSessions));
     setAttendance(data.attendance);
     clearPromotionHistoryCache();
-  }, [setPrograms, setProgramsLoaded, resetProgramScope, applyLadderSelection, clearPromotionHistoryCache, commitEligibilityRows, commitStudents, destructivelyResetScheduleCoordinator, setSessions]);
+  }, [setPrograms, setProgramsLoaded, resetProgramScope, resetBeltTestResourceScope, applyLadderSelection, clearPromotionHistoryCache, commitEligibilityRows, commitStudents, destructivelyResetScheduleCoordinator, setSessions]);
 
   const applyClearedStudioData = useCallback((studioNameValue?: string) => {
+    resetBeltTestResourceScope();
     leadMutationScopeRef.current.settle();
     leadMutationScopeRef.current = createResourceScope();
     resetProgramScope();
@@ -941,7 +950,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setAttendance([]);
     clearEligibilityState();
     clearPromotionHistoryCache();
-  }, [setPrograms, setProgramsLoaded, resetProgramScope,
+  }, [setPrograms, setProgramsLoaded, resetProgramScope, resetBeltTestResourceScope,
     clearEligibilityState,
     clearPromotionHistoryCache,
     commitStudents,
@@ -1035,6 +1044,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       promotionHistoryByStudent: toPromotionHistoryByStudent(promotionHistoryCacheRef.current),
     });
   }, []);
+
+  const beltTests = useStoreBeltTestActions({
+    scope: identityReady && !subscriptionRequired && activeUserId && currentStudioId && currentRole === "admin"
+      ? { userId: activeUserId, studioId: currentStudioId, role: "admin" } : null,
+    isPreviewMode,
+    beginLiveAuthRequest,
+    resourceScopeRef: beltTestResourceScopeRef,
+    beltLaddersRef,
+    programsRef,
+    studentsRef,
+    previewEligibilityForLadder,
+  });
 
   const fetchEligibilityForLadder = useCallback(async (
     ladderId?: string | null,
@@ -2038,6 +2059,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     leadCreate,
     checkLeadCreateResult: reconciledCommands.checkLeadCreateResult,
     trialAppointments: reconciledTrialAppointments,
+    beltTests,
     addSession: reconciledCommands.addSession,
     addStudent: reconciledCommands.addStudent,
     addTemplate: reconciledCommands.addTemplate,

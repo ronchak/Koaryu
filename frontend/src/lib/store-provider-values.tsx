@@ -47,6 +47,7 @@ export function useStoreContextValues(input: StoreContextValueInputs): StoreCont
     leadCreate,
     checkLeadCreateResult,
     trialAppointments,
+    beltTests,
     addSession,
     addStudent,
     addTemplate,
@@ -291,6 +292,7 @@ export function useStoreContextValues(input: StoreContextValueInputs): StoreCont
 
   const beltsValue = useMemo<BeltsStoreContextValue>(
     () => ({
+      beltTests,
       beltLadders,
       refreshBeltLadders,
       beltLaddersLoadError,
@@ -311,6 +313,7 @@ export function useStoreContextValues(input: StoreContextValueInputs): StoreCont
       promoteStudent,
     }),
     [
+      beltTests,
       beltLadders,
       refreshBeltLadders,
       beltLaddersLoadError,
