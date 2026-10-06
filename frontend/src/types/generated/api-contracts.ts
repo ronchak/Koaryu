@@ -2377,6 +2377,48 @@ export interface ApiWorkflowScheduler {
   interval_seconds: 60;
 }
 
+export interface ApiWorkflowSimulationAction {
+  node_id: string;
+  scheduled_at: string | null;
+  action_kind: "email" | "lead_follow_up";
+  reason: string | null;
+}
+
+export interface ApiWorkflowSimulationEntityContext {
+  kind: "entity";
+  entity_type: "student" | "promotion" | "lead" | "trial_appointment" | "invoice" | "payment" | "belt_test_recipient";
+  entity_id: string;
+}
+
+export interface ApiWorkflowSimulationRequest {
+  graph: ApiWorkflowGraph_Input;
+  context: ApiWorkflowSimulationSyntheticContext | ApiWorkflowSimulationEntityContext;
+}
+
+export interface ApiWorkflowSimulationResponse {
+  valid: boolean;
+  issues: ApiWorkflowValidationIssue[];
+  trace: ApiWorkflowSimulationTrace[];
+  next_actions: ApiWorkflowSimulationAction[];
+  reference_time: string;
+  future_conditions_rechecked: true;
+}
+
+export interface ApiWorkflowSimulationSyntheticContext {
+  kind: "synthetic";
+}
+
+export interface ApiWorkflowSimulationTrace {
+  node_id: string;
+  outcome: "entered" | "matched" | "not_matched" | "waiting" | "would_send" | "would_follow_up" | "skipped" | "completed";
+  edge_id: string | null;
+  reason: string | null;
+  scheduled_at: string | null;
+  action_kind: "email" | "lead_follow_up" | null;
+  rendered_subject: string | null;
+  rendered_body: string | null;
+}
+
 export interface ApiWorkflowSummary {
   id: string;
   name: string;
@@ -2399,6 +2441,18 @@ export interface ApiWorkflowTestEmailAcknowledgment {
   operation_id: string;
   test_delivery_id: string;
   state: "queued";
+}
+
+export interface ApiWorkflowTestEmailRequest {
+  operation_id: string;
+  graph: ApiWorkflowGraph_Input;
+  email_node_id: string;
+}
+
+export interface ApiWorkflowTestEmailResponse {
+  operation_id: string;
+  test_delivery_id: string;
+  state: "queued" | "sending" | "accepted" | "failed" | "unknown";
 }
 
 export interface ApiWorkflowTriggerMetadata {

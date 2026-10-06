@@ -412,8 +412,8 @@ def test_run_routes_and_cancel_receipt_expose_the_accepted_aliases(contracts):
     assert "export interface ApiWorkflowTestEmailAcknowledgment {" in contracts
     assert '  command: "test_email.create";' in contracts
     assert "  result: ApiWorkflowTestEmailAcknowledgment;" in contracts
-    assert "ApiWorkflowTestEmailRequest" not in contracts
-    assert "ApiWorkflowTestEmailResponse" not in contracts
+    assert "ApiWorkflowTestEmailRequest" in contracts
+    assert "ApiWorkflowTestEmailResponse" in contracts
     assert '  entity_type: "workflow_run";' in contracts
     assert "  result: ApiWorkflowRunDetail;" in contracts
     assert (
