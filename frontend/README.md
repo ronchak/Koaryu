@@ -381,6 +381,14 @@ USER_UPDATED, or access reset suppresses file handoff. The request releases its
 Auth listener when it settles. See [identity lifetime verification](../docs/verification/identity-lifetime.md)
 for the mounted regression coverage and its limits.
 
+## Trial appointments
+
+Trial appointments live in the selected lead inspector for current admins. Preview labels all trial records as samples and performs no trial API or recovery-journal I/O. Program choices distinguish loading, failed refresh, and a ready empty list. Scheduling uses the chosen event timezone and requires an explicit occurrence when clocks move backward. Unsupported saved timezones and removed program context remain visible for history, repair, and cancellation.
+
+Trial commands use the shared lead reservation and retained recovery owner. A waiting result can be checked above the lead list even after its lead disappears. Check browser recovery record only rechecks storage; Check result reads the command result and current records. Neither action resubmits the command.
+
+Run `node --experimental-strip-types --test tests/trial-appointment-panel-mounted.test.mjs tests/appointment-time.test.mjs tests/trial-appointment-operation.test.mjs tests/trial-appointment-mounted.test.mjs` from `frontend/` for synthetic trial proof. To prepare a disposable manual fixture, run `node tests/helpers/trial-appointment-fixture.mjs /tmp/koaryu-trial-panel-qa`, then serve that directory on loopback. The fixture uses the actual page, provider, inspector and time controls with synthetic auth/API. Its visible controls exercise lost responses, held reads, removed leads and reference failures. Stop the server and remove the temporary directory after review. Inspect the normal preview Next build separately for production CSS and lazy Temporal chunk loading.
+
 ## Workflow editor
 
 Admins can open the workflow catalog at `/automations`, choose a template, or start an empty draft. Template and duplicate actions allocate a local draft address before navigation. A backend workflow is created only by Save draft. Unsaved edits and Undo history survive client navigation in the same browser page; reloading the page does not preserve unsaved content. A pending action retains only its recovery marker so Check result can resolve it without repeating the command.

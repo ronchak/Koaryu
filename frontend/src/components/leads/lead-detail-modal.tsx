@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { LEAD_SOURCE_ICONS } from "@/components/leads/lead-source-icons";
 import { ProgramBadge } from "@/components/programs/program-picker";
 import { Button } from "@/components/ui/button";
@@ -34,6 +34,8 @@ interface LeadDetailInspectorProps {
   leadActionMessage: string | null;
   pendingLeadIds: ReadonlySet<string>;
   followUpRecovery: "unknown" | "confirmed" | null;
+  trialAppointments?: ReactNode;
+  trialRecoveryPending?: boolean;
   onRetryFollowUp: (lead: Lead) => void | Promise<void>;
   programById: Map<string, Program>;
   today: string;
@@ -64,6 +66,8 @@ export function LeadDetailInspector({
   leadActionMessage,
   pendingLeadIds,
   followUpRecovery,
+  trialAppointments,
+  trialRecoveryPending = false,
   onRetryFollowUp,
   programById,
   today,
@@ -111,7 +115,7 @@ export function LeadDetailInspector({
       ref={inspectorRef}
       className={styles.inspector}
       aria-labelledby="lead-detail-title"
-      aria-busy={(isPending && !followUpRecovery) || undefined}
+      aria-busy={(isPending && !followUpRecovery && !trialRecoveryPending) || undefined}
       tabIndex={-1}
       onKeyDown={(event) => {
         if (event.key !== "Escape") return;
@@ -128,7 +132,7 @@ export function LeadDetailInspector({
         <button
           type="button"
           onClick={handleClose}
-          disabled={isPending && !followUpRecovery}
+          disabled={isPending && !followUpRecovery && !trialRecoveryPending}
           aria-label="Close lead details"
           className={styles.inspectorClose}
         >
@@ -204,6 +208,8 @@ export function LeadDetailInspector({
             />
           </div>
         </div>
+
+        {trialAppointments}
 
         <div>
           <label htmlFor="lead-detail-assignee" className="block text-xs text-muted mb-1.5">

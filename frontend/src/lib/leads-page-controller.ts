@@ -51,6 +51,7 @@ type LeadsPageControllerOptions = LeadStoreActions & {
   programs: Program[];
   today: string;
   token: string | null;
+  trialRecoveryLeadIds?: ReadonlySet<string>;
 };
 
 export function useLeadsPageController({
@@ -68,6 +69,7 @@ export function useLeadsPageController({
   programs,
   today,
   token,
+  trialRecoveryLeadIds,
   updateLead,
 }: LeadsPageControllerOptions) {
   const router = useRouter();
@@ -228,7 +230,8 @@ export function useLeadsPageController({
     if (
       !selectedLeadId ||
       !pendingLeadIds.has(selectedLeadId) ||
-      followUpRecoveries.has(selectedLeadId)
+      followUpRecoveries.has(selectedLeadId) ||
+      trialRecoveryLeadIds?.has(selectedLeadId)
     ) {
       selectedLeadIdRef.current = null;
       setSelectedLeadId(null);
@@ -585,7 +588,7 @@ export function useLeadsPageController({
     openAddLeadModal,
     pendingLeadIds,
     followUpRecoveries,
-    recoveringLeadIds: new Set(followUpRecoveries.keys()),
+    recoveringLeadIds: new Set([...followUpRecoveries.keys(), ...(trialRecoveryLeadIds ?? [])]),
     retrySelectedLeadActivities,
     selectedLeadActivities,
     selectedLeadActivityError,
