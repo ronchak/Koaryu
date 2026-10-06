@@ -164,8 +164,13 @@ BEGIN
         '22023','AUTOMATION_INVALID_REQUEST','out of range owner revision rejected');
     PERFORM pg_temp.capture_error(format('SELECT private.workflow_capture_events_v1(%L,%L,%L)',s,
         jsonb_build_array(jsonb_build_object('event_type','invoice.payment_failed','source_key',l::TEXT,'subject_kind','invoice','subject_id',l,
-            'occurred_at',private.automation_utc_text_v1(clock_timestamp()),'context',jsonb_build_object('payment_id',gen_random_uuid(),
-                'invoice_id',NULL,'payer_id',NULL))),packet),'22023','AUTOMATION_INVALID_REQUEST','payment occurrence identity mismatch rejected');
+            'occurred_at',private.automation_utc_text_v1(clock_timestamp()),'context',jsonb_build_object('payment_id',s,
+                'invoice_id',NULL,'payer_id',NULL,'invoice_settlement_generation',NULL,'payment_evidence',jsonb_build_object(
+                    'payment_id',s,'status','failed','amount_cents',100,'currency','USD','payer_id',NULL,'invoice_id',NULL,
+                    'stripe_account_id',NULL,'stripe_customer_id',NULL,'stripe_invoice_id',NULL,'stripe_payment_intent_id',NULL,
+                    'stripe_charge_id',NULL,'connect_account_generation',NULL,'payment_method_type',NULL,'external_method',NULL,
+                    'adjustment_reconciliation_required',false,'demo',false,'invalid_fields','[]'::JSONB)))),packet),
+        '22023','AUTOMATION_INVALID_REQUEST','payment occurrence identity mismatch rejected');
     PERFORM pg_temp.capture_check(pg_temp.capture_facts(s)=before,'invalid private captures leave every fact unchanged');
     -- Stage changes are owned by activity identity; notes and identical stage are silent.
     PERFORM public.update_lead_atomic(s,a,l,'{"stage":"offer_sent"}');

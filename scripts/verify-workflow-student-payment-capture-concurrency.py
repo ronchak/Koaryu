@@ -393,8 +393,28 @@ OR (n.nspname='public' AND p.proname IN ('write_student_profile_atomic','write_s
         installer = session(
             "capture_install", "\\i " + psql_file(MIGRATION), hold=True, role="postgres"
         )
-        blocked(preceding_writer, installer)
+        finished(installer, "55P03")
+        require(
+            facts(old) == before_facts and functions() == before_functions,
+            "Refused install changed retained facts or definitions",
+        )
+        require(
+            sql(
+                "SELECT to_regclass('private.workflow_payment_capture_markers') IS NULL AND "
+                "to_regclass('private.workflow_invoice_settlement_authority') IS NULL AND "
+                "to_regclass('private.workflow_payment_settlement_observations') IS NULL AND "
+                "(SELECT count(*)=151 FROM supabase_migrations.schema_migrations);"
+            )
+            == "t",
+            "Refused install left partial capture/authority/history effects",
+        )
         release(preceding_writer)
+        installer = session(
+            "capture_install_fresh",
+            "\\i " + psql_file(MIGRATION),
+            hold=True,
+            role="postgres",
+        )
         ready(installer)
         following_writer = session("payment_after_install", payment(after_install))
         blocked(installer, following_writer)
@@ -416,7 +436,7 @@ OR (n.nspname='public' AND p.proname IN ('write_student_profile_atomic','write_s
             "Payment admitted after install did not capture",
         )
         passed(
-            "DML-conflicting installation lock excludes preceding commit and captures following insert",
+            "NOWAIT installation refuses preceding writer, then fresh install excludes commit and captures following insert",
             migration_sha256=migration_hash,
             psql_file_quoting_verified=True,
         )
@@ -720,7 +740,7 @@ OR (n.nspname='public' AND p.proname IN ('write_student_profile_atomic','write_s
             require(len(events(ids)) == 1, "Late studio retry failed")
             passed(f"late payment studio NOWAIT whole projection rollback={rollback}")
 
-        # Plain invoice/payer reads must not add a blocking financial parent lock.
+        # Required parent SHARE NOWAIT refuses without a backward financial wait.
         for table, key in (
             ("billing_invoices", "invoice"),
             ("billing_payers", "payer"),
@@ -736,19 +756,27 @@ OR (n.nspname='public' AND p.proname IN ('write_student_profile_atomic','write_s
                     role="postgres",
                 )
                 ready(holder)
+                update = f"UPDATE public.billing_payments SET status='failed' WHERE id='{ids['payment']}' RETURNING to_jsonb(billing_payments);"
                 finished(
-                    session(
-                        "failure_without_parent_wait",
-                        f"UPDATE public.billing_payments SET status='failed' WHERE id='{ids['payment']}' RETURNING to_jsonb(billing_payments);",
-                    )
+                    session("failure_without_parent_wait", update),
+                    "AUTOMATION_STUDIO_BUSY",
                 )
                 require(
-                    len(events(ids)) == 1,
-                    "Financial parent blocked or lost first failure",
+                    not events(ids)
+                    and sql(
+                        f"SELECT p.status='processing' AND NOT m.failure_seen FROM public.billing_payments p "
+                        f"JOIN private.workflow_payment_capture_markers m ON m.payment_id=p.id WHERE p.id='{ids['payment']}';"
+                    )
+                    == "t",
+                    "Parent NOWAIT refusal changed payment, marker or events",
                 )
                 release(holder, rollback)
+                finished(session("failure_after_parent_release", update))
+                require(
+                    len(events(ids)) == 1, "Explicit parent retry lost first failure"
+                )
                 passed(
-                    f"payment failure adds no {table} parent wait rollback={rollback}"
+                    f"payment parent SHARE NOWAIT then explicit retry {table} rollback={rollback}"
                 )
 
         # Freeze both conversion families in one UUID-ordered SHARE pass. A lower

@@ -159,7 +159,11 @@ BEGIN
     INSERT INTO public.billing_payments(id,studio_id,payer_id,invoice_id,status,amount_cents) VALUES(payment,s,payer,invoice,'failed',1000);
     SELECT * INTO source_event FROM private.automation_workflow_events WHERE event_type='invoice.payment_failed' AND subject_id=payment;
     PERFORM pg_temp.capture_check(source_event.source_key=payment::TEXT AND source_event.subject_kind='invoice'
-        AND source_event.context=jsonb_build_object('payment_id',payment,'invoice_id',invoice,'payer_id',payer),'failed INSERT captures exact payment and same-studio parents');
+        AND source_event.context=jsonb_build_object('payment_id',payment,'invoice_id',invoice,'payer_id',payer,
+            'invoice_settlement_generation',1,'payment_evidence',jsonb_build_object('payment_id',payment,'status','failed','amount_cents',1000,
+                'currency','USD','payer_id',payer,'invoice_id',invoice,'stripe_account_id',NULL,'stripe_customer_id',NULL,
+                'stripe_invoice_id',NULL,'stripe_payment_intent_id',NULL,'stripe_charge_id',NULL,'connect_account_generation',NULL,
+                'payment_method_type',NULL,'external_method',NULL,'adjustment_reconciliation_required',false,'demo',false,'invalid_fields','[]'::JSONB)),'failed INSERT captures exact payment and same-studio parents');
     PERFORM pg_temp.capture_check((SELECT eligible AND failure_seen FROM private.workflow_payment_capture_markers WHERE payment_id=payment)
         AND (SELECT count(*)=1 FROM public.automation_workflow_runs WHERE event_id=source_event.id),'first payment failure marker and one target');
     UPDATE public.billing_payments SET status='failed' WHERE id=payment;
@@ -172,7 +176,11 @@ BEGIN
     PERFORM pg_temp.capture_check((SELECT count(*)=1 FROM private.automation_workflow_events WHERE subject_id=later),'later first failure captured');
     INSERT INTO public.billing_payments(id,studio_id,status,amount_cents) VALUES(unlinked,s,'failed',1000);
     UPDATE public.billing_payments SET payer_id=payer,invoice_id=invoice WHERE id=unlinked;
-    PERFORM pg_temp.capture_check((SELECT context=jsonb_build_object('payment_id',unlinked,'invoice_id',NULL,'payer_id',NULL)
+    PERFORM pg_temp.capture_check((SELECT context=jsonb_build_object('payment_id',unlinked,'invoice_id',NULL,'payer_id',NULL,
+            'invoice_settlement_generation',NULL,'payment_evidence',jsonb_build_object('payment_id',unlinked,'status','failed','amount_cents',1000,
+                'currency','USD','payer_id',NULL,'invoice_id',NULL,'stripe_account_id',NULL,'stripe_customer_id',NULL,
+                'stripe_invoice_id',NULL,'stripe_payment_intent_id',NULL,'stripe_charge_id',NULL,'connect_account_generation',NULL,
+                'payment_method_type',NULL,'external_method',NULL,'adjustment_reconciliation_required',false,'demo',false,'invalid_fields','[]'::JSONB))
         FROM private.automation_workflow_events WHERE subject_id=unlinked) AND (SELECT count(*)=1 FROM private.automation_workflow_events WHERE subject_id=unlinked),'later linking never retargets or repeats first failure');
 
     INSERT INTO public.billing_payers(id,studio_id,display_name,metadata) VALUES(demo_payer,s,'Demo payer','{"demo":true}');
