@@ -11,6 +11,10 @@ import type {
   ApiWorkflowPublish,
   ApiWorkflowSave,
   ApiWorkflowSummary,
+  ApiWorkflowSimulationRequest,
+  ApiWorkflowSimulationResponse,
+  ApiWorkflowSimulationTrace,
+  ApiWorkflowSimulationAction,
   ApiWorkflowValidate,
   ApiWorkflowValidationIssue,
   ApiWorkflowValidationResult,
@@ -54,51 +58,16 @@ export type WorkflowListResponse = ApiWorkflowListResponse;
 export type WorkflowOperationResponse = ApiWorkflowOperationResponse;
 export type WorkflowCatalogResponse = ApiWorkflowCatalogResponse;
 
-// Simulation DTOs remain local until the separately owned simulation API is generated.
-export type WorkflowSimulationEntityType =
-  | "student"
-  | "promotion"
-  | "lead"
-  | "trial_appointment"
-  | "invoice"
-  | "payment"
-  | "belt_test_recipient";
-export type WorkflowSimulationContext =
-  | { kind: "synthetic" }
-  | { kind: "entity"; entity_type: WorkflowSimulationEntityType; entity_id: string };
-export type WorkflowSimulateRequest = {
+export type WorkflowSimulationContext = ApiWorkflowSimulationRequest["context"];
+export type WorkflowSimulationEntityType = Extract<
+  WorkflowSimulationContext,
+  { kind: "entity" }
+>["entity_type"];
+export type WorkflowSimulateRequest = Omit<ApiWorkflowSimulationRequest, "graph"> & {
   graph: WorkflowGraph;
-  context: WorkflowSimulationContext;
 };
-export type WorkflowSimulationOutcome =
-  | "entered"
-  | "matched"
-  | "not_matched"
-  | "waiting"
-  | "would_send"
-  | "would_follow_up"
-  | "skipped"
-  | "completed";
-export type WorkflowActionKind = "email" | "lead_follow_up";
-export type WorkflowSimulationTrace = {
-  node_id: string;
-  outcome: WorkflowSimulationOutcome;
-  edge_id: string | null;
-  reason: string | null;
-  scheduled_at: string | null;
-  action_kind: WorkflowActionKind | null;
-  rendered_subject: string | null;
-  rendered_body: string | null;
-};
-export type WorkflowSimulationAction = {
-  node_id: string;
-  scheduled_at: string | null;
-  action_kind: WorkflowActionKind;
-  reason: string | null;
-};
-export type WorkflowSimulationResponse = WorkflowValidationResponse & {
-  trace: WorkflowSimulationTrace[];
-  next_actions: WorkflowSimulationAction[];
-  reference_time: string;
-  future_conditions_rechecked: true;
-};
+export type WorkflowSimulationOutcome = ApiWorkflowSimulationTrace["outcome"];
+export type WorkflowActionKind = ApiWorkflowSimulationAction["action_kind"];
+export type WorkflowSimulationTrace = ApiWorkflowSimulationTrace;
+export type WorkflowSimulationAction = ApiWorkflowSimulationAction;
+export type WorkflowSimulationResponse = ApiWorkflowSimulationResponse;
