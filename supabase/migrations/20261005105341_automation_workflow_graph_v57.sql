@@ -6372,6 +6372,433 @@ END;
 $current_fact_privileges$;
 
 -- Bounded nonmail execution. Sending recovery remains with the later atomic mail owner.
+-- A collection episode records observed identity, never financial or send authority.
+CREATE FUNCTION private.workflow_invoice_episode_context_valid_v1(p_context JSONB) RETURNS BOOLEAN
+LANGUAGE plpgsql IMMUTABLE SECURITY INVOKER SET search_path='' AS $$
+DECLARE k TEXT; due DATE;
+BEGIN
+    IF NOT private.workflow_json_keys_v1(p_context,
+        ARRAY['invoice_id','payer_id','due_date','stripe_account_id','stripe_customer_id','stripe_invoice_id','connect_account_generation','currency'],
+        ARRAY['invoice_id','payer_id','due_date','stripe_account_id','stripe_customer_id','stripe_invoice_id','connect_account_generation','currency']) THEN RETURN false; END IF;
+    FOREACH k IN ARRAY ARRAY['invoice_id','payer_id'] LOOP
+        IF jsonb_typeof(p_context->k) IS DISTINCT FROM 'string' OR p_context->>k !~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN RETURN false; END IF;
+    END LOOP;
+    FOREACH k IN ARRAY ARRAY['stripe_account_id','stripe_customer_id','stripe_invoice_id'] LOOP
+        IF jsonb_typeof(p_context->k) IS DISTINCT FROM 'string' OR octet_length(p_context->>k) NOT BETWEEN 1 AND 255
+            OR p_context->>k !~ '^[!-~]+$' THEN RETURN false; END IF;
+    END LOOP;
+    IF jsonb_typeof(p_context->'currency') IS DISTINCT FROM 'string' OR p_context->>'currency' !~ '^[A-Z]{3}$'
+        OR NOT coalesce(private.workflow_integer_v1(p_context->'connect_account_generation',1,2147483647),false)
+        OR jsonb_typeof(p_context->'due_date') IS DISTINCT FROM 'string' OR p_context->>'due_date' !~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' THEN RETURN false; END IF;
+    due:=(p_context->>'due_date')::DATE;
+    RETURN isfinite(due) AND due BETWEEN DATE '0001-01-01' AND DATE '9999-12-31' AND to_char(due,'YYYY-MM-DD')=p_context->>'due_date';
+EXCEPTION WHEN invalid_datetime_format OR datetime_field_overflow THEN RETURN false;
+END $$;
+
+CREATE FUNCTION private.workflow_invoice_episode_projection_v1(p_invoice public.billing_invoices,p_payer public.billing_payers)
+RETURNS JSONB LANGUAGE plpgsql IMMUTABLE SECURITY INVOKER SET search_path='' AS $$
+DECLARE reason TEXT; context JSONB; generation TEXT; k TEXT; value TEXT;
+BEGIN
+    -- Known stop facts outrank uncertainty. NULL or malformed values are never zero.
+    reason:=CASE WHEN p_invoice.id IS NULL THEN 'source_missing'
+        WHEN p_invoice.status IN ('draft','paid','void','uncollectible','refunded','partially_refunded')
+            OR p_invoice.amount_remaining_cents<=0 THEN 'invoice_not_open'
+        WHEN p_invoice.due_date IS NULL THEN 'invoice_not_overdue'
+        WHEN p_invoice.payer_id IS NULL OR p_payer.id IS NULL OR p_payer.id IS DISTINCT FROM p_invoice.payer_id
+            OR p_payer.studio_id IS DISTINCT FROM p_invoice.studio_id THEN 'invoice_parent_missing'
+        WHEN p_invoice.metadata->'demo'='true'::JSONB OR p_payer.metadata->'demo'='true'::JSONB THEN 'demo_source' END;
+    IF reason IS NOT NULL THEN RETURN jsonb_build_object('classification','excluded','reason',reason,'context',NULL); END IF;
+    IF p_invoice.studio_id IS NULL OR p_invoice.status IS DISTINCT FROM 'open' OR p_invoice.amount_remaining_cents IS NULL
+        OR NOT isfinite(p_invoice.due_date) OR p_invoice.due_date NOT BETWEEN DATE '0001-01-01' AND DATE '9999-12-31'
+        OR p_invoice.currency IS NULL OR p_invoice.currency !~ '^[A-Za-z]{3}$' THEN
+        RETURN jsonb_build_object('classification','unavailable','reason','facts_unavailable','context',NULL);
+    END IF;
+    generation:=p_invoice.metadata->>'connect_account_generation';
+    IF jsonb_typeof(p_invoice.metadata->'connect_account_generation') NOT IN ('number','string') OR generation IS NULL
+        OR length(generation) NOT BETWEEN 1 AND 10 OR generation !~ '^[1-9][0-9]*$' THEN
+        RETURN jsonb_build_object('classification','unavailable','reason','facts_unavailable','context',NULL);
+    END IF;
+    IF generation::NUMERIC>2147483647 THEN RETURN jsonb_build_object('classification','unavailable','reason','facts_unavailable','context',NULL); END IF;
+    FOREACH k IN ARRAY ARRAY['stripe_account_id','stripe_customer_id','stripe_invoice_id'] LOOP
+        value:=to_jsonb(p_invoice)->>k;
+        IF value IS NULL OR octet_length(value) NOT BETWEEN 1 AND 255 OR value !~ '^[!-~]+$' THEN
+            RETURN jsonb_build_object('classification','unavailable','reason','facts_unavailable','context',NULL);
+        END IF;
+    END LOOP;
+    context:=jsonb_build_object('invoice_id',p_invoice.id,'payer_id',p_invoice.payer_id,'due_date',to_char(p_invoice.due_date,'YYYY-MM-DD'),
+        'stripe_account_id',p_invoice.stripe_account_id,'stripe_customer_id',p_invoice.stripe_customer_id,'stripe_invoice_id',p_invoice.stripe_invoice_id,
+        'connect_account_generation',generation::INTEGER,'currency',upper(p_invoice.currency));
+    RETURN jsonb_build_object('classification','open_positive','reason',NULL,'context',context);
+END $$;
+
+-- PG17 resolves nonexistent midnight with the preceding offset and repeats with
+-- the following offset. This is scheduled midnight, not a first actual crossing.
+CREATE FUNCTION private.workflow_invoice_episode_threshold_v1(p_due DATE,p_zone TEXT) RETURNS TIMESTAMPTZ
+LANGUAGE plpgsql IMMUTABLE SECURITY INVOKER SET search_path='' AS $$
+DECLARE result TIMESTAMPTZ;
+BEGIN
+    IF p_due IS NULL OR p_zone IS NULL OR NOT isfinite(p_due) OR p_due NOT BETWEEN DATE '0001-01-01' AND DATE '9999-12-30' THEN RETURN NULL; END IF;
+    result:=(p_due+1)::TIMESTAMP AT TIME ZONE p_zone;
+    IF NOT isfinite(result) OR result NOT BETWEEN TIMESTAMPTZ '0001-01-01+00' AND TIMESTAMPTZ '9999-12-31 23:59:59.999999+00' THEN RETURN NULL; END IF;
+    RETURN result;
+EXCEPTION WHEN datetime_field_overflow OR invalid_parameter_value THEN RETURN NULL;
+END $$;
+
+CREATE TABLE private.workflow_invoice_episode_state (
+    invoice_id UUID PRIMARY KEY,
+    studio_id UUID NOT NULL REFERENCES public.studios(id) ON DELETE CASCADE,
+    episode_number BIGINT NOT NULL DEFAULT 0 CHECK(episode_number>=0),
+    current_episode_id UUID,
+    ever_removed BOOLEAN NOT NULL DEFAULT false,
+    updated_at TIMESTAMPTZ NOT NULL CHECK(isfinite(updated_at) AND updated_at BETWEEN TIMESTAMPTZ '0001-01-01+00' AND TIMESTAMPTZ '9999-12-31 23:59:59.999999+00'),
+    UNIQUE(studio_id,invoice_id),
+    CHECK(current_episode_id IS NULL OR episode_number>0)
+);
+CREATE TABLE private.workflow_invoice_collection_episodes (
+    id UUID PRIMARY KEY,
+    studio_id UUID NOT NULL,
+    invoice_id UUID NOT NULL,
+    episode_number BIGINT NOT NULL CHECK(episode_number>0),
+    context JSONB NOT NULL CHECK(private.workflow_invoice_episode_context_valid_v1(context)),
+    opened_at TIMESTAMPTZ NOT NULL CHECK(isfinite(opened_at) AND opened_at BETWEEN TIMESTAMPTZ '0001-01-01+00' AND TIMESTAMPTZ '9999-12-31 23:59:59.999999+00'),
+    frozen_timezone TEXT NOT NULL,
+    threshold_at TIMESTAMPTZ CHECK(isfinite(threshold_at) AND threshold_at BETWEEN TIMESTAMPTZ '0001-01-01+00' AND TIMESTAMPTZ '9999-12-31 23:59:59.999999+00'),
+    threshold_eligible BOOLEAN NOT NULL,
+    closed_at TIMESTAMPTZ CHECK(isfinite(closed_at) AND closed_at BETWEEN TIMESTAMPTZ '0001-01-01+00' AND TIMESTAMPTZ '9999-12-31 23:59:59.999999+00' AND closed_at>=opened_at),
+    close_reason TEXT CHECK(close_reason IN ('source_missing','invoice_not_open','invoice_not_overdue','invoice_parent_missing','demo_source','source_context_changed')),
+    FOREIGN KEY(studio_id,invoice_id) REFERENCES private.workflow_invoice_episode_state(studio_id,invoice_id) ON DELETE CASCADE,
+    UNIQUE(invoice_id,episode_number), UNIQUE(studio_id,invoice_id,id),
+    CHECK((closed_at IS NULL)=(close_reason IS NULL)),
+    CHECK(context->>'invoice_id'=invoice_id::TEXT),
+    CHECK(NOT threshold_eligible OR (threshold_at IS NOT NULL AND opened_at<=threshold_at AND (opened_at AT TIME ZONE frozen_timezone)::DATE<=(context->>'due_date')::DATE))
+);
+ALTER TABLE private.workflow_invoice_episode_state ADD CONSTRAINT workflow_invoice_episode_current_fk
+    FOREIGN KEY(studio_id,invoice_id,current_episode_id) REFERENCES private.workflow_invoice_collection_episodes(studio_id,invoice_id,id);
+CREATE INDEX workflow_invoice_episode_active_threshold ON private.workflow_invoice_collection_episodes(threshold_at,studio_id,invoice_id,id)
+    WHERE closed_at IS NULL AND threshold_eligible;
+CREATE INDEX workflow_invoice_episode_history ON private.workflow_invoice_collection_episodes(studio_id,invoice_id,episode_number);
+CREATE TABLE private.workflow_invoice_episode_pending (
+    studio_id UUID NOT NULL, invoice_id UUID NOT NULL, backend_pid INTEGER NOT NULL CHECK(backend_pid>0), transaction_id XID8 NOT NULL,
+    may_initialize BOOLEAN NOT NULL, saw_known_transition BOOLEAN NOT NULL, saw_removal BOOLEAN NOT NULL,
+    transition_reason TEXT CHECK(transition_reason IN ('source_missing','invoice_not_open','invoice_not_overdue','invoice_parent_missing','demo_source','source_context_changed')),
+    PRIMARY KEY(studio_id,invoice_id,backend_pid,transaction_id),
+    CHECK(NOT saw_removal OR saw_known_transition),
+    CHECK(transition_reason IS NULL OR saw_known_transition)
+);
+
+-- The financial installation lock remains held. Freeze each seed studio zone
+-- before one observation clock, with no events, runs or source-row mutation.
+DO $invoice_episode_seed$
+DECLARE item RECORD; projection JSONB; zone TEXT; boundary TIMESTAMPTZ; episode UUID; at TIMESTAMPTZ;
+BEGIN
+    PERFORM 1 FROM public.studios s WHERE EXISTS(SELECT 1 FROM public.billing_invoices i WHERE i.studio_id=s.id) ORDER BY s.id FOR SHARE NOWAIT;
+    at:=clock_timestamp();
+    INSERT INTO private.workflow_invoice_episode_state(invoice_id,studio_id,updated_at) SELECT id,studio_id,at FROM public.billing_invoices;
+    FOR item IN SELECT i AS invoice,y AS payer,s.timezone FROM public.billing_invoices i
+        JOIN public.studios s ON s.id=i.studio_id LEFT JOIN public.billing_payers y ON y.id=i.payer_id AND y.studio_id=i.studio_id ORDER BY i.id LOOP
+        projection:=private.workflow_invoice_episode_projection_v1(item.invoice,item.payer);
+        IF projection->>'classification'<>'open_positive' THEN CONTINUE; END IF;
+        zone:=CASE WHEN EXISTS(SELECT 1 FROM pg_catalog.pg_timezone_names z WHERE z.name=item.timezone) THEN item.timezone ELSE 'UTC' END;
+        boundary:=private.workflow_invoice_episode_threshold_v1((projection#>>'{context,due_date}')::DATE,zone); episode:=gen_random_uuid();
+        INSERT INTO private.workflow_invoice_collection_episodes(id,studio_id,invoice_id,episode_number,context,opened_at,frozen_timezone,threshold_at,threshold_eligible)
+            VALUES(episode,(item.invoice).studio_id,(item.invoice).id,1,projection->'context',at,zone,boundary,
+                coalesce(boundary IS NOT NULL AND at<=boundary AND (at AT TIME ZONE zone)::DATE<=(item.invoice).due_date,false));
+        UPDATE private.workflow_invoice_episode_state SET episode_number=1,current_episode_id=episode WHERE invoice_id=(item.invoice).id;
+    END LOOP;
+END $invoice_episode_seed$;
+
+CREATE FUNCTION private.workflow_invoice_episode_state_identity_v1() RETURNS TRIGGER
+LANGUAGE plpgsql VOLATILE SECURITY INVOKER SET search_path='' AS $$
+DECLARE pending private.workflow_invoice_episode_pending; episode private.workflow_invoice_collection_episodes;
+BEGIN
+    SELECT * INTO pending FROM private.workflow_invoice_episode_pending WHERE studio_id=NEW.studio_id AND invoice_id=NEW.invoice_id
+        AND backend_pid=pg_catalog.pg_backend_pid() AND transaction_id=pg_catalog.pg_current_xact_id();
+    IF pending.invoice_id IS NULL THEN RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STATE_CONFLICT'; END IF;
+    IF TG_OP='INSERT' THEN
+        IF NOT pending.may_initialize OR NEW.episode_number<>0 OR NEW.current_episode_id IS NOT NULL OR NEW.ever_removed THEN
+            RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STATE_CONFLICT';
+        END IF;
+        RETURN NEW;
+    END IF;
+    IF ROW(NEW.studio_id,NEW.invoice_id) IS DISTINCT FROM ROW(OLD.studio_id,OLD.invoice_id)
+        OR NEW.episode_number<OLD.episode_number OR NEW.episode_number::NUMERIC>OLD.episode_number::NUMERIC+1
+        OR (OLD.ever_removed AND NOT NEW.ever_removed) OR (NEW.ever_removed AND NOT OLD.ever_removed AND NOT pending.saw_removal)
+        OR NEW.updated_at<OLD.updated_at THEN RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STATE_CONFLICT'; END IF;
+    IF NEW.current_episode_id IS NOT NULL THEN
+        SELECT * INTO episode FROM private.workflow_invoice_collection_episodes WHERE studio_id=NEW.studio_id AND invoice_id=NEW.invoice_id AND id=NEW.current_episode_id;
+        IF episode.id IS NULL OR episode.episode_number<>NEW.episode_number OR episode.closed_at IS NOT NULL THEN
+            RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STATE_CONFLICT';
+        END IF;
+    ELSIF NEW.episode_number<>OLD.episode_number THEN RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STATE_CONFLICT'; END IF;
+    IF NEW.current_episode_id IS DISTINCT FROM OLD.current_episode_id AND OLD.current_episode_id IS NOT NULL
+        AND EXISTS(SELECT 1 FROM private.workflow_invoice_collection_episodes WHERE id=OLD.current_episode_id AND closed_at IS NULL) THEN
+        RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STATE_CONFLICT';
+    END IF;
+    IF (NEW.episode_number>OLD.episode_number) IS DISTINCT FROM (NEW.current_episode_id IS NOT NULL AND NEW.current_episode_id IS DISTINCT FROM OLD.current_episode_id) THEN
+        RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STATE_CONFLICT';
+    END IF;
+    RETURN NEW;
+END $$;
+CREATE TRIGGER workflow_invoice_episode_state_identity_v1 BEFORE INSERT OR UPDATE ON private.workflow_invoice_episode_state
+    FOR EACH ROW EXECUTE FUNCTION private.workflow_invoice_episode_state_identity_v1();
+
+CREATE FUNCTION private.workflow_invoice_episode_identity_v1() RETURNS TRIGGER
+LANGUAGE plpgsql VOLATILE SECURITY INVOKER SET search_path='' AS $$
+DECLARE state private.workflow_invoice_episode_state; pending private.workflow_invoice_episode_pending; invoice public.billing_invoices;
+    payer public.billing_payers; zone TEXT; projection JSONB;
+BEGIN
+    SELECT * INTO pending FROM private.workflow_invoice_episode_pending WHERE studio_id=NEW.studio_id AND invoice_id=NEW.invoice_id
+        AND backend_pid=pg_catalog.pg_backend_pid() AND transaction_id=pg_catalog.pg_current_xact_id();
+    IF pending.invoice_id IS NULL THEN RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STATE_CONFLICT'; END IF;
+    IF TG_OP='UPDATE' THEN
+        IF (to_jsonb(NEW)-ARRAY['closed_at','close_reason']) IS DISTINCT FROM (to_jsonb(OLD)-ARRAY['closed_at','close_reason'])
+            OR OLD.closed_at IS NOT NULL OR NEW.closed_at IS NULL OR NEW.close_reason IS NULL THEN
+            RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STATE_CONFLICT';
+        END IF;
+        RETURN NEW;
+    END IF;
+    SELECT * INTO state FROM private.workflow_invoice_episode_state WHERE studio_id=NEW.studio_id AND invoice_id=NEW.invoice_id;
+    SELECT * INTO invoice FROM public.billing_invoices WHERE studio_id=NEW.studio_id AND id=NEW.invoice_id;
+    SELECT * INTO payer FROM public.billing_payers WHERE studio_id=NEW.studio_id AND id=invoice.payer_id;
+    SELECT CASE WHEN EXISTS(SELECT 1 FROM pg_catalog.pg_timezone_names z WHERE z.name=s.timezone) THEN s.timezone ELSE 'UTC' END
+        INTO zone FROM public.studios s WHERE s.id=NEW.studio_id;
+    projection:=private.workflow_invoice_episode_projection_v1(invoice,payer);
+    IF state.invoice_id IS NULL OR NEW.episode_number::NUMERIC<>state.episode_number::NUMERIC+1 OR NEW.closed_at IS NOT NULL OR NEW.close_reason IS NOT NULL
+        OR projection->>'classification' IS DISTINCT FROM 'open_positive' OR NEW.context IS DISTINCT FROM projection->'context'
+        OR NEW.frozen_timezone IS DISTINCT FROM zone OR NEW.threshold_at IS DISTINCT FROM private.workflow_invoice_episode_threshold_v1(invoice.due_date,zone)
+        OR NEW.threshold_eligible IS DISTINCT FROM coalesce(NEW.threshold_at IS NOT NULL AND NEW.opened_at<=NEW.threshold_at
+            AND (NEW.opened_at AT TIME ZONE zone)::DATE<=invoice.due_date,false)
+        OR (state.current_episode_id IS NOT NULL AND EXISTS(SELECT 1 FROM private.workflow_invoice_collection_episodes WHERE id=state.current_episode_id AND closed_at IS NULL)) THEN
+        RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STATE_CONFLICT';
+    END IF;
+    RETURN NEW;
+END $$;
+CREATE TRIGGER workflow_invoice_episode_identity_v1 BEFORE INSERT OR UPDATE ON private.workflow_invoice_collection_episodes
+    FOR EACH ROW EXECUTE FUNCTION private.workflow_invoice_episode_identity_v1();
+
+CREATE FUNCTION private.workflow_invoice_episode_pending_identity_v1() RETURNS TRIGGER
+LANGUAGE plpgsql VOLATILE SECURITY INVOKER SET search_path='' AS $$
+BEGIN
+    IF NEW.backend_pid<>pg_catalog.pg_backend_pid() OR NEW.transaction_id<>pg_catalog.pg_current_xact_id() OR pg_catalog.pg_trigger_depth()<2 THEN
+        RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STATE_CONFLICT';
+    END IF;
+    IF TG_OP='UPDATE' AND (ROW(NEW.studio_id,NEW.invoice_id,NEW.backend_pid,NEW.transaction_id)
+        IS DISTINCT FROM ROW(OLD.studio_id,OLD.invoice_id,OLD.backend_pid,OLD.transaction_id)
+        OR (OLD.may_initialize AND NOT NEW.may_initialize) OR (OLD.saw_known_transition AND NOT NEW.saw_known_transition)
+        OR (OLD.saw_removal AND NOT NEW.saw_removal) OR (OLD.transition_reason IS NOT NULL AND NEW.transition_reason IS DISTINCT FROM OLD.transition_reason)) THEN
+        RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STATE_CONFLICT';
+    END IF;
+    RETURN NEW;
+END $$;
+CREATE TRIGGER workflow_invoice_episode_pending_identity_v1 BEFORE INSERT OR UPDATE ON private.workflow_invoice_episode_pending
+    FOR EACH ROW EXECUTE FUNCTION private.workflow_invoice_episode_pending_identity_v1();
+
+CREATE FUNCTION private.workflow_queue_invoice_episode_v1(p_studio_id UUID,p_invoice_id UUID,p_initialize BOOLEAN,p_transition BOOLEAN,p_removal BOOLEAN,p_reason TEXT DEFAULT NULL)
+RETURNS VOID LANGUAGE plpgsql VOLATILE SECURITY INVOKER SET search_path='' AS $$
+BEGIN
+    IF p_studio_id IS NULL OR p_invoice_id IS NULL OR pg_catalog.pg_trigger_depth()<1 THEN
+        RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STATE_CONFLICT';
+    END IF;
+    SET CONSTRAINTS private.workflow_invoice_episode_deferred DEFERRED;
+    IF NOT pg_catalog.pg_try_advisory_xact_lock_shared(pg_catalog.hashtextextended('koaryu.local-plan-clear:'||p_studio_id::TEXT,0)) THEN
+        RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STUDIO_BUSY';
+    END IF;
+    PERFORM 1 FROM public.studios WHERE id=p_studio_id FOR KEY SHARE NOWAIT;
+    IF EXISTS(SELECT 1 FROM public.billing_invoices WHERE id=p_invoice_id AND studio_id<>p_studio_id)
+        OR EXISTS(SELECT 1 FROM private.workflow_invoice_episode_state WHERE invoice_id=p_invoice_id AND studio_id<>p_studio_id)
+        OR EXISTS(SELECT 1 FROM private.workflow_invoice_episode_pending WHERE invoice_id=p_invoice_id
+            AND (studio_id<>p_studio_id OR backend_pid<>pg_catalog.pg_backend_pid() OR transaction_id<>pg_catalog.pg_current_xact_id())) THEN
+        RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STATE_CONFLICT';
+    END IF;
+    INSERT INTO private.workflow_invoice_episode_pending(studio_id,invoice_id,backend_pid,transaction_id,may_initialize,saw_known_transition,saw_removal,transition_reason)
+        VALUES(p_studio_id,p_invoice_id,pg_catalog.pg_backend_pid(),pg_catalog.pg_current_xact_id(),p_initialize,p_transition,p_removal,p_reason)
+        ON CONFLICT(studio_id,invoice_id,backend_pid,transaction_id) DO UPDATE SET
+            may_initialize=workflow_invoice_episode_pending.may_initialize OR EXCLUDED.may_initialize,
+            saw_known_transition=workflow_invoice_episode_pending.saw_known_transition OR EXCLUDED.saw_known_transition,
+            saw_removal=workflow_invoice_episode_pending.saw_removal OR EXCLUDED.saw_removal,
+            transition_reason=coalesce(workflow_invoice_episode_pending.transition_reason,EXCLUDED.transition_reason);
+END $$;
+
+CREATE FUNCTION private.workflow_mark_invoice_episode_v1() RETURNS TRIGGER
+LANGUAGE plpgsql VOLATILE SECURITY INVOKER SET search_path='' AS $$
+DECLARE before JSONB; after JSONB; current_context JSONB; payer public.billing_payers; prior_payer public.billing_payers; changed BOOLEAN; reason TEXT;
+BEGIN
+    IF TG_OP='DELETE' THEN
+        PERFORM private.workflow_queue_invoice_episode_v1(OLD.studio_id,OLD.id,false,true,true,'source_missing'); RETURN NULL;
+    END IF;
+    IF TG_OP='UPDATE' AND ROW(NEW.studio_id,NEW.id) IS DISTINCT FROM ROW(OLD.studio_id,OLD.id) THEN
+        RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STATE_CONFLICT';
+    END IF;
+    SELECT * INTO payer FROM public.billing_payers WHERE studio_id=NEW.studio_id AND id=NEW.payer_id;
+    after:=private.workflow_invoice_episode_projection_v1(NEW,payer);
+    IF TG_OP='INSERT' THEN
+        PERFORM private.workflow_queue_invoice_episode_v1(NEW.studio_id,NEW.id,true,false,false,NULL); RETURN NULL;
+    END IF;
+    SELECT * INTO prior_payer FROM public.billing_payers WHERE studio_id=OLD.studio_id AND id=OLD.payer_id;
+    before:=private.workflow_invoice_episode_projection_v1(OLD,prior_payer);
+    IF NOT EXISTS(SELECT 1 FROM private.workflow_invoice_episode_state WHERE studio_id=NEW.studio_id AND invoice_id=NEW.id)
+        AND NOT EXISTS(SELECT 1 FROM private.workflow_invoice_episode_pending WHERE studio_id=NEW.studio_id AND invoice_id=NEW.id
+            AND backend_pid=pg_catalog.pg_backend_pid() AND transaction_id=pg_catalog.pg_current_xact_id() AND may_initialize) THEN
+        RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STATE_CONFLICT';
+    END IF;
+    SELECT e.context INTO current_context FROM private.workflow_invoice_episode_state s
+        JOIN private.workflow_invoice_collection_episodes e ON e.id=s.current_episode_id WHERE s.studio_id=NEW.studio_id AND s.invoice_id=NEW.id;
+    -- A payer FK callback runs after its parent is gone. OLD therefore projects
+    -- missing too; the retained active context still proves this known closure.
+    IF before=after AND NOT (current_context IS NOT NULL AND (after->>'classification'='excluded'
+        OR (after->>'classification'='open_positive' AND after->'context' IS DISTINCT FROM current_context))) THEN RETURN NULL; END IF;
+    changed:=after->>'classification'='excluded' OR (before->>'classification'='excluded' AND after->>'classification'='open_positive')
+        OR (after->>'classification'='open_positive' AND current_context IS NOT NULL AND current_context IS DISTINCT FROM after->'context')
+        OR (before->>'classification'='open_positive' AND after->>'classification'='open_positive' AND before->'context' IS DISTINCT FROM after->'context');
+    reason:=CASE WHEN changed THEN CASE WHEN after->>'classification'='excluded' THEN after->>'reason' ELSE 'source_context_changed' END END;
+    PERFORM private.workflow_queue_invoice_episode_v1(NEW.studio_id,NEW.id,false,changed,false,reason);
+    RETURN NULL;
+END $$;
+
+CREATE FUNCTION private.workflow_mark_payer_episode_demo_v1() RETURNS TRIGGER
+LANGUAGE plpgsql VOLATILE SECURITY INVOKER SET search_path='' AS $$
+DECLARE item RECORD;
+BEGIN
+    IF coalesce(OLD.metadata->'demo'='true'::JSONB,false)=coalesce(NEW.metadata->'demo'='true'::JSONB,false) THEN RETURN NULL; END IF;
+    FOR item IN SELECT id FROM public.billing_invoices WHERE studio_id=NEW.studio_id AND payer_id=NEW.id ORDER BY id LOOP
+        PERFORM private.workflow_queue_invoice_episode_v1(NEW.studio_id,item.id,false,true,false,
+            CASE WHEN NEW.metadata->'demo'='true'::JSONB THEN 'demo_source' ELSE 'source_context_changed' END);
+    END LOOP;
+    RETURN NULL;
+END $$;
+
+CREATE FUNCTION private.workflow_finalize_invoice_episodes_v1() RETURNS VOID
+LANGUAGE plpgsql VOLATILE SECURITY INVOKER SET search_path='' AS $$
+DECLARE item RECORD; invoice public.billing_invoices; payer public.billing_payers; state private.workflow_invoice_episode_state;
+    episode private.workflow_invoice_collection_episodes; projection JSONB; decisions JSONB:='{}'; decision JSONB;
+    workflows UUID[]; runs UUID[]; retired UUID[]:='{}'; at TIMESTAMPTZ; zone TEXT; boundary TIMESTAMPTZ; new_id UUID; reason TEXT; retire BOOLEAN;
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM private.workflow_invoice_episode_pending WHERE backend_pid=pg_catalog.pg_backend_pid()
+        AND transaction_id=pg_catalog.pg_current_xact_id()) THEN RETURN; END IF;
+    IF EXISTS(SELECT 1 FROM private.workflow_invoice_episode_pending p JOIN private.workflow_invoice_episode_pending own USING(invoice_id)
+        WHERE own.backend_pid=pg_catalog.pg_backend_pid() AND own.transaction_id=pg_catalog.pg_current_xact_id()
+        AND (p.studio_id<>own.studio_id OR p.backend_pid<>own.backend_pid OR p.transaction_id<>own.transaction_id)) THEN
+        RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STATE_CONFLICT';
+    END IF;
+    FOR item IN SELECT DISTINCT studio_id FROM private.workflow_invoice_episode_pending WHERE backend_pid=pg_catalog.pg_backend_pid()
+        AND transaction_id=pg_catalog.pg_current_xact_id() ORDER BY studio_id LOOP
+        IF NOT pg_catalog.pg_try_advisory_xact_lock_shared(pg_catalog.hashtextextended('koaryu.local-plan-clear:'||item.studio_id::TEXT,0)) THEN
+            RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STUDIO_BUSY';
+        END IF;
+    END LOOP;
+    -- Complete source/reference ownership precedes the complete cancellation union.
+    PERFORM 1 FROM public.studios s WHERE EXISTS(SELECT 1 FROM private.workflow_invoice_episode_pending p WHERE p.studio_id=s.id
+        AND p.backend_pid=pg_catalog.pg_backend_pid() AND p.transaction_id=pg_catalog.pg_current_xact_id()) ORDER BY s.id FOR SHARE NOWAIT;
+    PERFORM 1 FROM public.billing_invoices i WHERE EXISTS(SELECT 1 FROM private.workflow_invoice_episode_pending p WHERE p.invoice_id=i.id
+        AND p.backend_pid=pg_catalog.pg_backend_pid() AND p.transaction_id=pg_catalog.pg_current_xact_id()) ORDER BY i.id FOR UPDATE NOWAIT;
+    PERFORM 1 FROM public.billing_payers y WHERE EXISTS(SELECT 1 FROM public.billing_invoices i JOIN private.workflow_invoice_episode_pending p ON p.invoice_id=i.id
+        AND p.studio_id=i.studio_id WHERE i.payer_id=y.id AND i.studio_id=y.studio_id AND p.backend_pid=pg_catalog.pg_backend_pid()
+        AND p.transaction_id=pg_catalog.pg_current_xact_id()) ORDER BY y.id FOR SHARE NOWAIT;
+    PERFORM 1 FROM private.workflow_invoice_episode_state s WHERE EXISTS(SELECT 1 FROM private.workflow_invoice_episode_pending p WHERE p.invoice_id=s.invoice_id
+        AND p.backend_pid=pg_catalog.pg_backend_pid() AND p.transaction_id=pg_catalog.pg_current_xact_id()) ORDER BY s.invoice_id FOR UPDATE NOWAIT;
+    PERFORM 1 FROM private.workflow_invoice_collection_episodes e WHERE EXISTS(SELECT 1 FROM private.workflow_invoice_episode_state s
+        JOIN private.workflow_invoice_episode_pending p ON p.invoice_id=s.invoice_id WHERE s.current_episode_id=e.id AND p.backend_pid=pg_catalog.pg_backend_pid()
+        AND p.transaction_id=pg_catalog.pg_current_xact_id()) ORDER BY e.id FOR UPDATE NOWAIT;
+    FOR item IN SELECT * FROM private.workflow_invoice_episode_pending WHERE backend_pid=pg_catalog.pg_backend_pid()
+        AND transaction_id=pg_catalog.pg_current_xact_id() ORDER BY invoice_id LOOP
+        IF NOT EXISTS(SELECT 1 FROM public.studios WHERE id=item.studio_id) THEN CONTINUE; END IF;
+        SELECT * INTO invoice FROM public.billing_invoices WHERE id=item.invoice_id;
+        SELECT * INTO state FROM private.workflow_invoice_episode_state WHERE invoice_id=item.invoice_id;
+        IF (invoice.id IS NOT NULL AND invoice.studio_id<>item.studio_id) OR (state.invoice_id IS NOT NULL AND state.studio_id<>item.studio_id)
+            OR (state.invoice_id IS NULL AND NOT item.may_initialize) THEN RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STATE_CONFLICT'; END IF;
+        SELECT * INTO payer FROM public.billing_payers WHERE id=invoice.payer_id AND studio_id=item.studio_id;
+        projection:=private.workflow_invoice_episode_projection_v1(invoice,payer);
+        SELECT * INTO episode FROM private.workflow_invoice_collection_episodes WHERE id=state.current_episode_id;
+        IF state.current_episode_id IS NOT NULL AND (episode.id IS NULL OR episode.closed_at IS NOT NULL) THEN
+            RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STATE_CONFLICT';
+        END IF;
+        retire:=episode.id IS NOT NULL AND (item.saw_known_transition OR projection->>'classification'='excluded'
+            OR (projection->>'classification'='open_positive' AND projection->'context' IS DISTINCT FROM episode.context));
+        reason:=CASE WHEN projection->>'classification'='excluded' THEN projection->>'reason' ELSE 'source_context_changed' END;
+        IF retire OR item.saw_known_transition THEN retired:=array_append(retired,item.invoice_id); END IF;
+        decisions:=decisions||jsonb_build_object(item.invoice_id::TEXT,jsonb_build_object('projection',projection,'retire',retire,'reason',reason));
+    END LOOP;
+    SELECT coalesce(array_agg(DISTINCT r.workflow_id ORDER BY r.workflow_id),'{}'::UUID[]),coalesce(array_agg(DISTINCT r.id ORDER BY r.id),'{}'::UUID[])
+        INTO workflows,runs FROM public.automation_workflow_runs r JOIN private.automation_workflow_events e ON e.id=r.event_id AND e.studio_id=r.studio_id
+        JOIN private.workflow_invoice_episode_pending p ON p.studio_id=e.studio_id AND p.invoice_id=e.subject_id
+        WHERE p.backend_pid=pg_catalog.pg_backend_pid() AND p.transaction_id=pg_catalog.pg_current_xact_id() AND p.invoice_id=ANY(retired)
+        AND e.event_type='invoice.overdue' AND e.subject_kind='invoice' AND r.state IN ('queued','waiting','claimed','running','sending','unknown');
+    PERFORM 1 FROM public.automation_workflows WHERE id=ANY(workflows) ORDER BY id FOR UPDATE NOWAIT;
+    PERFORM 1 FROM public.automation_workflow_runs WHERE id=ANY(runs) ORDER BY id FOR UPDATE NOWAIT;
+    at:=clock_timestamp();
+    -- No additional parent acquisition is permitted below this final clock.
+    FOR item IN SELECT * FROM private.workflow_invoice_episode_pending WHERE backend_pid=pg_catalog.pg_backend_pid()
+        AND transaction_id=pg_catalog.pg_current_xact_id() ORDER BY invoice_id LOOP
+        decision:=decisions->item.invoice_id::TEXT;
+        IF decision IS NULL THEN CONTINUE; END IF;
+        projection:=decision->'projection'; reason:=decision->>'reason';
+        SELECT * INTO state FROM private.workflow_invoice_episode_state WHERE invoice_id=item.invoice_id;
+        IF state.invoice_id IS NULL THEN
+            INSERT INTO private.workflow_invoice_episode_state(invoice_id,studio_id,updated_at) VALUES(item.invoice_id,item.studio_id,at) RETURNING * INTO state;
+        END IF;
+        IF (decision->>'retire')::BOOLEAN THEN
+            UPDATE private.workflow_invoice_collection_episodes SET closed_at=at,close_reason=reason WHERE id=state.current_episode_id;
+            UPDATE private.workflow_invoice_episode_state SET current_episode_id=NULL,updated_at=at WHERE invoice_id=item.invoice_id RETURNING * INTO state;
+        END IF;
+        IF item.invoice_id=ANY(retired) THEN
+            PERFORM private.workflow_cancel_runs_v1(item.studio_id,ARRAY(SELECT r.id FROM public.automation_workflow_runs r
+                JOIN private.automation_workflow_events e ON e.id=r.event_id AND e.studio_id=r.studio_id WHERE r.id=ANY(runs)
+                AND e.studio_id=item.studio_id AND e.subject_id=item.invoice_id ORDER BY r.id),at,reason);
+        END IF;
+        IF state.current_episode_id IS NULL AND projection->>'classification'='open_positive' THEN
+            IF state.episode_number=9223372036854775807 THEN RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STATE_CONFLICT'; END IF;
+            SELECT CASE WHEN EXISTS(SELECT 1 FROM pg_catalog.pg_timezone_names z WHERE z.name=s.timezone) THEN s.timezone ELSE 'UTC' END
+                INTO zone FROM public.studios s WHERE s.id=item.studio_id;
+            boundary:=private.workflow_invoice_episode_threshold_v1((projection#>>'{context,due_date}')::DATE,zone); new_id:=gen_random_uuid();
+            INSERT INTO private.workflow_invoice_collection_episodes(id,studio_id,invoice_id,episode_number,context,opened_at,frozen_timezone,threshold_at,threshold_eligible)
+                VALUES(new_id,item.studio_id,item.invoice_id,state.episode_number+1,projection->'context',at,zone,boundary,
+                    coalesce(boundary IS NOT NULL AND at<=boundary AND (at AT TIME ZONE zone)::DATE<=(projection#>>'{context,due_date}')::DATE,false));
+            UPDATE private.workflow_invoice_episode_state SET episode_number=episode_number+1,current_episode_id=new_id,updated_at=at WHERE invoice_id=item.invoice_id;
+        END IF;
+        UPDATE private.workflow_invoice_episode_state SET ever_removed=ever_removed OR item.saw_removal,updated_at=at WHERE invoice_id=item.invoice_id;
+    END LOOP;
+    DELETE FROM private.workflow_invoice_episode_pending WHERE backend_pid=pg_catalog.pg_backend_pid() AND transaction_id=pg_catalog.pg_current_xact_id();
+END $$;
+
+CREATE FUNCTION private.workflow_finalize_invoice_episode_deferred_v1() RETURNS TRIGGER
+LANGUAGE plpgsql VOLATILE SECURITY INVOKER SET search_path='' AS $$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM private.workflow_invoice_episode_pending WHERE studio_id=NEW.studio_id AND invoice_id=NEW.invoice_id
+        AND backend_pid=NEW.backend_pid AND transaction_id=NEW.transaction_id) THEN RETURN NULL; END IF;
+    IF NEW.backend_pid<>pg_catalog.pg_backend_pid() OR NEW.transaction_id<>pg_catalog.pg_current_xact_id() THEN
+        RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STATE_CONFLICT';
+    END IF;
+    PERFORM private.workflow_finalize_invoice_episodes_v1(); RETURN NULL;
+END $$;
+CREATE CONSTRAINT TRIGGER workflow_invoice_episode_deferred AFTER INSERT OR UPDATE ON private.workflow_invoice_episode_pending
+    DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION private.workflow_finalize_invoice_episode_deferred_v1();
+CREATE TRIGGER workflow_mark_invoice_episode_v1 AFTER INSERT OR UPDATE OR DELETE ON public.billing_invoices
+    FOR EACH ROW EXECUTE FUNCTION private.workflow_mark_invoice_episode_v1();
+CREATE TRIGGER workflow_mark_payer_episode_demo_v1 AFTER UPDATE OF metadata ON public.billing_payers
+    FOR EACH ROW EXECUTE FUNCTION private.workflow_mark_payer_episode_demo_v1();
+DO $invoice_episode_privileges$
+DECLARE item RECORD;
+BEGIN
+    FOR item IN SELECT c.oid::REGCLASS identity,c.relname name FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace
+        WHERE n.nspname='private' AND c.relname IN ('workflow_invoice_episode_state','workflow_invoice_collection_episodes','workflow_invoice_episode_pending') LOOP
+        EXECUTE format('ALTER TABLE %s OWNER TO postgres',item.identity);
+        EXECUTE format('ALTER TABLE %s ENABLE ROW LEVEL SECURITY',item.identity);
+        EXECUTE format('REVOKE ALL ON TABLE %s FROM PUBLIC,anon,authenticated,service_role',item.identity);
+        EXECUTE format('GRANT SELECT,INSERT,UPDATE ON TABLE %s TO service_role',item.identity);
+    END LOOP;
+    GRANT DELETE ON private.workflow_invoice_episode_pending TO service_role;
+    FOR item IN SELECT p.oid::REGPROCEDURE identity,p.proname name FROM pg_catalog.pg_proc p JOIN pg_catalog.pg_namespace n ON n.oid=p.pronamespace
+        WHERE n.nspname='private' AND p.proname IN ('workflow_invoice_episode_context_valid_v1','workflow_invoice_episode_projection_v1',
+            'workflow_invoice_episode_threshold_v1','workflow_invoice_episode_state_identity_v1','workflow_invoice_episode_identity_v1',
+            'workflow_invoice_episode_pending_identity_v1','workflow_queue_invoice_episode_v1','workflow_mark_invoice_episode_v1',
+            'workflow_mark_payer_episode_demo_v1','workflow_finalize_invoice_episodes_v1','workflow_finalize_invoice_episode_deferred_v1') LOOP
+        EXECUTE format('ALTER FUNCTION %s OWNER TO postgres',item.identity);
+        EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC,anon,authenticated,service_role',item.identity);
+        IF item.name IN ('workflow_invoice_episode_context_valid_v1','workflow_invoice_episode_projection_v1','workflow_invoice_episode_threshold_v1',
+            'workflow_queue_invoice_episode_v1','workflow_finalize_invoice_episodes_v1') THEN EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO service_role',item.identity); END IF;
+    END LOOP;
+END $invoice_episode_privileges$;
+
 CREATE TABLE private.automation_workflow_dispatch_cursor (
     singleton BOOLEAN PRIMARY KEY DEFAULT true CHECK (singleton),
     last_studio_id UUID,
@@ -6722,6 +7149,12 @@ BEGIN
             PERFORM private.workflow_cancel_runs_v1(p_studio_id,ARRAY[p_run_id],at,facts->>'source_reason');
             SELECT * INTO v_run FROM public.automation_workflow_runs WHERE studio_id=p_studio_id AND id=p_run_id;
             outcome:='stopped'; EXIT;
+        END IF;
+        IF v_event.event_type='invoice.overdue' AND EXISTS(SELECT 1 FROM private.workflow_invoice_episode_pending p
+            WHERE p.studio_id=p_studio_id AND p.invoice_id=v_event.subject_id AND p.backend_pid=pg_catalog.pg_backend_pid()
+                AND p.transaction_id=pg_catalog.pg_current_xact_id()) THEN
+            v_run:=private.workflow_defer_owned_run_v1(p_studio_id,p_run_id,at,'facts_unavailable');
+            outcome:='waiting'; EXIT;
         END IF;
         reason:=CASE WHEN facts->>'source_decision' IS DISTINCT FROM 'eligible' THEN 'facts_unavailable'
             WHEN NOT private.automation_core_entitled(p_studio_id) THEN 'subscription_required' ELSE p_reason END;
