@@ -503,6 +503,188 @@ def test_missing_anchor_waits_with_no_due_time_or_downstream_action():
     assert not result.next_actions
 
 
+def simulate_delay_projection(request, projection, sdk):
+    if not sdk:
+        return simulate(request, result=projection)
+    calls = []
+
+    def handler(http_request):
+        calls.append(http_request)
+        return httpx.Response(200, json=projection)
+
+    with SyntheticPostgrestClient(handler) as client:
+        result = WorkflowSimulationService(client).simulate(STUDIO, ACTOR, UUID(WORKFLOW), request)
+    assert len(calls) == 1 and calls[0].url.path == "/rest/v1/rpc/" + SIMULATION_RPC
+    assert json.loads(calls[0].content)["p_graph"] == request.graph.model_dump(mode="json")
+    return result
+
+
+@pytest.mark.parametrize("sdk", [False, True])
+def test_original_until_overflow_returns_a_complete_waiting_dto(sdk):
+    graph = {
+        "schema_version": 1,
+        "nodes": [
+            node("t", "trigger", event_type="trial.scheduled", program_id=None),
+            node("d", "delay", mode="until", field="trial.starts_at", offset_minutes=1),
+            node("e", "end"),
+        ],
+        "edges": [
+            {"id": "t_d", "source": "t", "target": "d", "port": "next"},
+            {"id": "d_e", "source": "d", "target": "e", "port": "next"},
+        ],
+    }
+    request = request_for(graph, entity=True)
+    assert validate_workflow_graph(request.graph, catalog=CATALOG).valid
+    facts = wire_facts(recipients=())
+    facts["anchors"]["trial.starts_at"] = "9999-12-31T23:59:00Z"
+    projection = envelope(request, facts=facts)
+    projection["payload"]["reference_time"] = "2026-10-06T00:00:00Z"
+    result = simulate_delay_projection(request, projection, sdk)
+    assert result.valid and result.issues == [] and result.next_actions == []
+    assert result.reference_time == datetime(2026, 10, 6, tzinfo=UTC)
+    assert result.future_conditions_rechecked is True
+    assert [row.node_id for row in result.trace] == ["t", "d"]
+    assert result.trace[-1].model_dump() == {
+        "node_id": "d",
+        "outcome": "waiting",
+        "edge_id": None,
+        "reason": "facts_unavailable",
+        "scheduled_at": None,
+        "action_kind": None,
+        "rendered_subject": None,
+        "rendered_body": None,
+    }
+    assert WorkflowSimulationResponse.model_validate_json(result.model_dump_json()) == result
+
+
+@pytest.mark.parametrize("sdk", [False, True])
+@pytest.mark.parametrize("earlier_action", [False, True])
+@pytest.mark.parametrize(
+    "mode,instant,minutes",
+    [
+        ("until", "9999-12-31T23:59:00Z", 1),
+        ("until", "0001-01-01T00:00:00Z", -1),
+        ("until", "9999-12-31T23:59:59.999999Z", 129600),
+        ("until", "0001-01-01T00:00:00Z", -129600),
+        ("duration", "9999-12-31T23:59:00Z", 1),
+    ],
+)
+def test_delay_overflow_stops_without_downstream_work(mode, instant, minutes, earlier_action, sdk):
+    config = (
+        {"mode": mode, "minutes": minutes}
+        if mode == "duration"
+        else {"mode": mode, "field": "trial.starts_at", "offset_minutes": minutes}
+    )
+    graph = graph_for(
+        "trial.scheduled",
+        *([email("before")] if earlier_action else []),
+        node("delay", "delay", **config),
+        node("condition", "condition", field="trial.status", operator="eq", value="scheduled"),
+        email("after"),
+    )
+    request = request_for(graph, entity=True)
+    assert validate_workflow_graph(request.graph, catalog=CATALOG).valid
+    facts = wire_facts()
+    facts["condition_facts"]["trial.status"] = "scheduled"
+    if mode == "until":
+        facts["anchors"]["trial.starts_at"] = instant
+    projection = envelope(request, facts=facts)
+    if mode == "duration":
+        projection["payload"]["reference_time"] = instant
+    result = simulate_delay_projection(request, projection, sdk)
+    assert result.valid and result.issues == [] and result.future_conditions_rechecked is True
+    assert result.reference_time == datetime.fromisoformat(projection["payload"]["reference_time"])
+    assert [row.node_id for row in result.trace] == [
+        "trigger",
+        *(["before"] if earlier_action else []),
+        "delay",
+    ]
+    assert result.trace[-1].model_dump() == {
+        "node_id": "delay",
+        "outcome": "waiting",
+        "edge_id": None,
+        "reason": "facts_unavailable",
+        "scheduled_at": None,
+        "action_kind": None,
+        "rendered_subject": None,
+        "rendered_body": None,
+    }
+    assert [action.node_id for action in result.next_actions] == (
+        ["before"] if earlier_action else []
+    )
+    assert all(action.scheduled_at is None for action in result.next_actions)
+    assert len({row.node_id for row in result.trace}) == len(result.trace)
+
+
+MIN_DUE = datetime.min.replace(tzinfo=UTC)
+MAX_DUE = datetime.max.replace(tzinfo=UTC)
+
+
+@pytest.mark.parametrize(
+    "mode,anchor,minutes,reference,due",
+    [
+        ("until", MIN_DUE + timedelta(minutes=1), -1, NOW, MIN_DUE),
+        ("until", MAX_DUE - timedelta(minutes=1), 1, NOW, MAX_DUE),
+        ("until", MIN_DUE + timedelta(days=90), -129600, NOW, MIN_DUE),
+        ("until", MAX_DUE - timedelta(days=90), 129600, NOW, MAX_DUE),
+        ("until", MIN_DUE, 0, MIN_DUE, MIN_DUE),
+        ("until", MAX_DUE, 0, MAX_DUE, MAX_DUE),
+        ("duration", None, 0, MIN_DUE, MIN_DUE),
+        ("duration", None, 0, MAX_DUE, MAX_DUE),
+        ("duration", None, 129600, MAX_DUE - timedelta(days=90), MAX_DUE),
+        ("duration", None, 1, NOW, NOW + timedelta(minutes=1)),
+    ],
+)
+def test_exact_representable_delay_bounds_keep_due_and_path(mode, anchor, minutes, reference, due):
+    config = (
+        {"mode": mode, "minutes": minutes}
+        if mode == "duration"
+        else {"mode": mode, "field": "trial.starts_at", "offset_minutes": minutes}
+    )
+    request = request_for(
+        graph_for("trial.scheduled", node("delay", "delay", **config)), entity=True
+    )
+    assert validate_workflow_graph(request.graph, catalog=CATALOG).valid
+    facts = wire_facts(recipients=())
+    if anchor is not None:
+        facts["anchors"]["trial.starts_at"] = anchor.isoformat()
+    projection = envelope(request, facts=facts)
+    projection["payload"]["reference_time"] = reference.isoformat()
+    result = simulate(request, result=projection)
+    row = result.trace[1]
+    assert row.scheduled_at == due and row.reason is None
+    assert row.outcome == ("waiting" if due > reference else "entered")
+    assert row.edge_id == (None if due > reference else "delay_next")
+    assert len(result.trace) == (2 if due > reference else 3)
+    assert result.valid and not result.issues and not result.next_actions
+
+
+@pytest.mark.parametrize("field", ["anchor", "reference_time"])
+@pytest.mark.parametrize(
+    "value",
+    [
+        "0000-01-01T00:00:00Z",
+        "10000-01-01T00:00:00Z",
+        "9999-12-31T23:59:59-01:00",
+        "not an instant",
+    ],
+)
+def test_invalid_delay_inputs_remain_protocol_503(field, value):
+    request = request_for(
+        graph_for(
+            "trial.scheduled",
+            node("delay", "delay", mode="until", field="trial.starts_at", offset_minutes=1),
+        ),
+        entity=True,
+    )
+    facts = wire_facts(recipients=())
+    facts["anchors"]["trial.starts_at"] = value if field == "anchor" else INSTANT
+    projection = envelope(request, facts=facts)
+    if field == "reference_time":
+        projection["payload"][field] = value
+    unavailable(request, projection)
+
+
 @pytest.mark.parametrize(
     "decision,reason,outcome,continues",
     [
