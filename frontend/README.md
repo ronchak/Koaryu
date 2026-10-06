@@ -409,3 +409,9 @@ Admins can open the workflow catalog at `/automations`, choose a template, or st
 Preview uses the actual pure backend catalog copied into `src/lib/generated/workflow-preview-catalog.json`, with sample workflow and reference records and all live capabilities disabled. Regenerate it with `npm run generate:workflow-preview-catalog` from the repository root after changing `backend/app/services/workflow_catalog.py`, then run `npm run check:workflow-preview-catalog`. These commands use `backend/venv/bin/python`, with Python 3.11 or newer. They need no installed backend dependencies, settings, credentials, or network.
 
 Focused composition proof: `node --experimental-strip-types --test tests/workflow-composition-mounted.test.mjs tests/workflow-preview-catalog.test.mjs` from `frontend/`. For manual local review, `PORT=4325 node --experimental-strip-types tests/helpers/workflow-composition-mounted.mjs --serve` starts a disposable fixture on `127.0.0.1`; add `--preview` for zero-I/O sample mode. The fixture mounts the real catalog, editor, graph, inspector, operation owner, and reference action hooks with synthetic API/auth and store contexts. Its visible fixture controls can complete a pending synthetic action, enable synthetic delivery for Start confirmation, switch to a distinct synthetic studio catalog, renew a token, or select light mode. Pass `--route /automations/30000000-0000-4000-8000-000000000001` for a cold saved-workflow entry, or `--route "/automations/new?draft=40000000-0000-4000-8000-000000000001"` for a cold local draft. Stop it with Ctrl-C. `--write` instead writes a standalone fixture to `/tmp/koaryu-ui04b-fixture/index.html`; remove that temporary directory after review.
+
+Workflow activity contract and transport proof, using checked-in synthetic backend serializer fixtures:
+
+```sh
+node --experimental-strip-types --test tests/automation-workflow-activity-contract.test.mjs tests/automation-workflow-activity-api.test.mjs
+```
