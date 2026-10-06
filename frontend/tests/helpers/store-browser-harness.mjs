@@ -153,6 +153,11 @@ export function bundle(
           "lucide-react": `for (const name of ['ArrowUpRight','CheckCircle2','CreditCard','Loader2','ShieldCheck']) exports[name]=()=>null;`,
         }
       : {}),
+    ...(beltPage
+      ? {
+          "next/link": `exports.__esModule=true;exports.default=({children,href,prefetch,...props})=>require('react').createElement('a',{href:typeof href==='string'?href:href.pathname,...props},children);`,
+        }
+      : {}),
     ...(beltPage === "editor"
       ? {
           "@/components/header": `exports.Header=()=>null;`,
