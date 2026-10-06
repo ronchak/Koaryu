@@ -8,7 +8,6 @@ import {
   flush,
   LEAD,
   OTHER,
-  APPT,
   PROGRAM,
   KEY,
 } from "./helpers/trial-appointment-panel-mounted.mjs";
@@ -640,3 +639,132 @@ test("verified creation and current absence need no fabricated list page when hi
       await expect(panel(p).getByText("No trial appointments on this page.")).toHaveCount(0);
     });
 });
+
+const overlapFields = {
+  startDate: "2030-11-03",
+  startTime: "01:10",
+  endTime: "01:50",
+  timezone: "America/New_York",
+};
+const laterOverlap = {
+  starts_at: "2030-11-03T06:10:00Z",
+  ends_at: "2030-11-03T06:50:00Z",
+  timezone: "America/New_York",
+};
+async function chooseOverlap(p) {
+  await expect(p.getByRole("radio")).toHaveCount(4);
+  await p.getByRole("radio", { name: "Earlier occurrence · UTC-04:00" }).first().check();
+  await p.getByRole("radio", { name: "Later occurrence · UTC-05:00" }).last().check();
+  await expect(p.getByRole("button", { name: "Save trial", exact: true })).toBeEnabled();
+}
+function assertLocationOnly(body, revision) {
+  assert.equal(body.expected_revision, revision);
+  assert.equal(body.location, "Changed room");
+  for (const field of ["starts_at", "ends_at", "timezone"])
+    assert.equal(Object.hasOwn(body, field), false);
+}
+
+test("new-to-saved same-wall replacement clears stale occurrences and preserves the exact saved schedule", () =>
+  run({ rows: [laterOverlap] }, async (p) => {
+    await selectLead(p);
+    await panel(p).getByRole("button", { name: "Schedule trial", exact: true }).click();
+    await fillSchedule(p, overlapFields);
+    await chooseOverlap(p);
+    const controlId = await p.getByLabel("Start date", { exact: true }).getAttribute("id");
+    await panel(p).getByRole("button", { name: "Reschedule trial", exact: true }).click();
+    const form = p.getByRole("form", { name: "Edit trial", exact: true });
+    await expect(form).toContainText("Resolved time: Nov 3, 2030, 01:10:00 GMT-05:00");
+    await expect(p.getByRole("radio")).toHaveCount(0);
+    assert.equal(await p.getByLabel("Start date", { exact: true }).getAttribute("id"), controlId);
+    await p.getByLabel("Location", { exact: true }).fill("Changed room");
+    await p.getByRole("button", { name: "Save trial", exact: true }).click();
+    assertLocationOnly(await p.evaluate(() => JSON.parse(f.writes[0].body)), 1);
+    await commit(p);
+    assert.deepEqual(
+      await p.evaluate(() => ({
+        starts_at: f.appointments[0].starts_at,
+        ends_at: f.appointments[0].ends_at,
+        timezone: f.appointments[0].timezone,
+      })),
+      laterOverlap,
+    );
+  }));
+
+test("saved-to-new same-wall replacement requires fresh choices and keeps current alternatives after selection", () =>
+  run({ rows: [laterOverlap] }, async (p) => {
+    await selectLead(p);
+    await panel(p).getByRole("button", { name: "Reschedule trial", exact: true }).click();
+    await expect(p.getByRole("form", { name: "Edit trial", exact: true })).toBeVisible();
+    await p.getByLabel("Start time", { exact: true }).fill("01:11");
+    await p.getByLabel("Start time", { exact: true }).fill("01:10");
+    await chooseOverlap(p);
+    const controlId = await p.getByLabel("Start date", { exact: true }).getAttribute("id");
+    await panel(p).getByRole("button", { name: "Schedule trial", exact: true }).click();
+    await expect(p.getByRole("radio")).toHaveCount(0);
+    await fillSchedule(p, overlapFields);
+    await expect(p.getByRole("radio")).toHaveCount(4);
+    assert.equal(
+      await p.getByRole("radio").evaluateAll((radios) => radios.some((radio) => radio.checked)),
+      false,
+    );
+    await expect(p.getByRole("button", { name: "Save trial", exact: true })).toBeDisabled();
+    await chooseOverlap(p);
+    await expect(p.getByRole("radio")).toHaveCount(4);
+    await p.getByRole("radio", { name: "Later occurrence · UTC-05:00" }).first().check();
+    await expect(p.getByRole("radio")).toHaveCount(4);
+    await expect(p.getByRole("form", { name: "Schedule trial", exact: true })).toContainText(
+      "Resolved time: Nov 3, 2030, 01:10:00 GMT-05:00",
+    );
+    assert.equal(await p.getByLabel("Start date", { exact: true }).getAttribute("id"), controlId);
+    await p.getByRole("button", { name: "Save trial", exact: true }).click();
+    const write = await p.evaluate(() => ({
+      method: f.writes[0].method,
+      body: JSON.parse(f.writes[0].body),
+    }));
+    assert.equal(write.method, "post");
+    for (const field of ["starts_at", "ends_at", "timezone"])
+      assert.equal(write.body[field], laterOverlap[field]);
+    await commit(p);
+  }));
+
+test("saved baseline replacement clears prior edited occurrences without rounding the replacement wires", () =>
+  run(
+    {
+      rows: [
+        { ...laterOverlap, starts_at: "2030-11-03T05:10:00Z", ends_at: "2030-11-03T05:50:00Z" },
+      ],
+    },
+    async (p) => {
+      await selectLead(p);
+      await panel(p).getByRole("button", { name: "Reschedule trial", exact: true }).click();
+      await expect(p.getByRole("form", { name: "Edit trial", exact: true })).toBeVisible();
+      await p.getByLabel("Start time", { exact: true }).fill("01:11");
+      await p.getByLabel("Start time", { exact: true }).fill("01:10");
+      await chooseOverlap(p);
+      const replacement = {
+        ...laterOverlap,
+        starts_at: "2030-11-03T06:10:00.123456Z",
+        ends_at: "2030-11-03T06:50:00.123457Z",
+      };
+      await p.evaluate((replacement) => {
+        Object.assign(f.appointments[0], replacement, { revision: 2 });
+      }, replacement);
+      await panel(p).getByRole("button", { name: "Reschedule trial", exact: true }).click();
+      await expect(p.getByRole("form", { name: "Edit trial", exact: true })).toContainText(
+        "01:10:00.123456 GMT-05:00",
+      );
+      await expect(p.getByRole("radio")).toHaveCount(0);
+      await p.getByLabel("Location", { exact: true }).fill("Changed room");
+      await p.getByRole("button", { name: "Save trial", exact: true }).click();
+      assertLocationOnly(await p.evaluate(() => JSON.parse(f.writes[0].body)), 2);
+      await commit(p);
+      assert.deepEqual(
+        await p.evaluate(() => ({
+          starts_at: f.appointments[0].starts_at,
+          ends_at: f.appointments[0].ends_at,
+          timezone: f.appointments[0].timezone,
+        })),
+        replacement,
+      );
+    },
+  ));
