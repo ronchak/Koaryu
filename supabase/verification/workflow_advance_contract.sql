@@ -67,6 +67,8 @@ BEGIN
         VALUES(i,s,y,'open','usd',1234,0,1234,CURRENT_DATE-5,'FACT-1','send_invoice','acct_'||replace(s::TEXT,'-',''),'cus_'||y,'in_'||i,'{"connect_account_generation":1}');
     INSERT INTO public.billing_payments(id,studio_id,payer_id,invoice_id,status,amount_cents,currency,stripe_account_id,stripe_customer_id,stripe_invoice_id,
         connect_account_generation,payment_method_type,idempotency_key) VALUES(pay,s,y,i,'failed',1234,'usd','acct_'||replace(s::TEXT,'-',''),'cus_'||y,'in_'||i,1,'card',pay::TEXT);
+    PERFORM private.workflow_finalize_invoice_episodes_v1();
+    SET CONSTRAINTS private.workflow_invoice_episode_deferred DEFERRED;
     result:=public.create_automation_workflow_v1(s,a,gen_random_uuid(),'Fact workflow','',pg_temp.advance_graph('student.enrolled'),'{}');
     w:=(result#>>'{payload,id}')::UUID;
     RETURN jsonb_build_object('actor',a,'staff',staff,'studio',s,'program',p,'program2',p2,'ladder',l,'rank0',r0,'rank1',r1,'rank2',r2,
