@@ -278,7 +278,7 @@ export function BeltTestRecipients({
     }
   }
   async function prepareRevoke(row: Readonly<Recipient>) {
-    if (!current() || locked || detailsDirty || selection.length) return;
+    if (!current() || revokeLoading || locked || detailsDirty || selection.length) return;
     const request = ++revokeRequest.current;
     const owns = () => current() && request === revokeRequest.current;
     setRevokeLoading(true);
@@ -487,10 +487,11 @@ export function BeltTestRecipients({
             {mutable && row.state === "approved" && (
               <button
                 type="button"
-                disabled={locked || revokeLoading || detailsDirty || selection.length > 0}
+                disabled={locked || detailsDirty || selection.length > 0}
+                aria-disabled={revokeLoading}
                 onClick={() => void prepareRevoke(row)}
               >
-                Revoke approval
+                {revokeLoading ? "Checking approval..." : "Revoke approval"}
               </button>
             )}
           </article>

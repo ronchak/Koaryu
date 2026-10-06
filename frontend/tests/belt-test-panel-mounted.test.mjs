@@ -831,3 +831,119 @@ test("missing parent after recovery preserves later unsaved event fields without
   await expect(p.getByRole("button", { name: "Save draft", exact: true })).toHaveCount(0);
   assert.equal(await p.evaluate(() => f.writes.length), 1);
 });
+
+async function beginHeldRevoke(p) {
+  const trigger = p.getByRole("button", { name: "Revoke approval", exact: true });
+  await trigger.waitFor();
+  const opener = await trigger.elementHandle(),
+    before = await reads(p);
+  await opener.evaluate((node) => {
+    node.dataset.nativeClicks = "0";
+    node.addEventListener("click", () => {
+      node.dataset.nativeClicks = String(Number(node.dataset.nativeClicks) + 1);
+    });
+  });
+  await p.evaluate((EVENT) => {
+    f.holds = [`/belt-tests/${EVENT}`];
+  }, EVENT);
+  await trigger.focus();
+  await p.keyboard.press("Enter");
+  await p.waitForFunction(
+    (EVENT) => f.held.some((row) => row.path === `/belt-tests/${EVENT}`),
+    EVENT,
+  );
+  await expect(
+    p.getByRole("button", { name: "Checking approval...", exact: true }),
+  ).toHaveAttribute("aria-disabled", "true");
+  assert.equal(
+    await opener.evaluate(
+      (node) => node.isConnected && !node.disabled && document.activeElement === node,
+    ),
+    true,
+  );
+  await duplicateRevokeActivation(p, opener);
+  assert.equal(await opener.getAttribute("data-native-clicks"), "3");
+  assert.equal(
+    (await reads(p)).filter((path) => path === `/belt-tests/${EVENT}`).length,
+    before.filter((path) => path === `/belt-tests/${EVENT}`).length + 1,
+  );
+  return opener;
+}
+async function duplicateRevokeActivation(p, opener) {
+  await p.keyboard.press("Enter");
+  const box = await opener.boundingBox();
+  assert.ok(box);
+  await p.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+  await flush(p);
+}
+
+for (const dismiss of ["Escape", "Keep reviewing", "backdrop"])
+  test(`async revoke ${dismiss} restores the identical connected opener and ignores pending duplicate activation`, async (t) => {
+    const p = await open(t),
+      opener = await beginHeldRevoke(p);
+    await p.evaluate(() => f.finishReads());
+    await p.waitForFunction(
+      (id) => f.held.some((row) => row.path.endsWith(`/recipients/${id}`)),
+      fixture.ids.recipient,
+    );
+    await duplicateRevokeActivation(p, opener);
+    assert.equal(await opener.getAttribute("data-native-clicks"), "5");
+    assert.equal(
+      (await reads(p)).filter(
+        (path) => path === `/belt-tests/${EVENT}/recipients/${fixture.ids.recipient}`,
+      ).length,
+      1,
+    );
+    await p.evaluate(() => {
+      f.holds = [];
+      f.finishReads();
+    });
+    await expect(p.getByRole("dialog", { name: "Confirm recipient revocation" })).toBeVisible();
+    await expect(p.getByRole("button", { name: "Keep reviewing", exact: true })).toBeFocused();
+    if (dismiss === "Escape") await p.keyboard.press("Escape");
+    else if (dismiss === "backdrop")
+      await p.locator(".koaryu-modal-backdrop").evaluate((node) => node.click());
+    else await p.getByRole("button", { name: "Keep reviewing", exact: true }).click();
+    await expect(p.getByRole("dialog")).toHaveCount(0);
+    await flush(p);
+    assert.equal(
+      await opener.evaluate(
+        (node) => node.isConnected && !node.disabled && document.activeElement === node,
+      ),
+      true,
+    );
+    await expect(p.getByRole("button", { name: "Revoke approval", exact: true })).toBeFocused();
+    assert.equal(await p.evaluate(() => f.writes.length), 0);
+  });
+
+for (const invalidation of ["role", "resource"])
+  test(`pending revoke ${invalidation} invalidation never reopens a stale dialog or moves focus to its old opener`, async (t) => {
+    const p = await open(t),
+      opener = await beginHeldRevoke(p);
+    await p.evaluate(async (invalidation) => {
+      f.holds = [];
+      if (invalidation === "role") {
+        f.auth.role = "instructor";
+        f.emit("USER_UPDATED", f.session);
+      } else await f.resetBeltResource();
+    }, invalidation);
+    if (invalidation === "role")
+      await expect(p.getByText("Belt tests require current administrator access.")).toBeVisible();
+    else {
+      await expect(p.getByRole("button", { name: "Revoke approval", exact: true })).toBeVisible();
+      await p.getByRole("button", { name: "New belt test", exact: true }).focus();
+    }
+    assert.equal(await opener.evaluate((node) => node.isConnected), false);
+    const focused = await p.evaluateHandle(() => document.activeElement);
+    await p.evaluate(() => f.finishReads());
+    await flush(p);
+    await expect(p.getByRole("dialog")).toHaveCount(0);
+    assert.equal(await focused.evaluate((node) => document.activeElement === node), true);
+    assert.equal(
+      (await reads(p)).filter(
+        (path) => path === `/belt-tests/${EVENT}/recipients/${fixture.ids.recipient}`,
+      ).length,
+      0,
+    );
+    assert.equal(await p.evaluate(() => f.writes.length), 0);
+  });
