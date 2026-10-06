@@ -415,3 +415,9 @@ Workflow activity contract and transport proof, using checked-in synthetic backe
 ```sh
 node --experimental-strip-types --test tests/automation-workflow-activity-contract.test.mjs tests/automation-workflow-activity-api.test.mjs
 ```
+
+The browser workflow workspace owns activity reads, simulations, and recovery for cancellation and test email. Recovery stores only administrator and target identifiers in session storage. Check result never repeats a send. A verified terminal sample needs explicit dismissal or a new sample intent before another test.
+
+```bash
+node --experimental-strip-types --test tests/workflow-activity-state.test.mjs tests/workflow-activity-owner.test.mjs tests/workflow-activity-mounted.test.mjs
+```

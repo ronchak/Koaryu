@@ -4,6 +4,8 @@ import { ApiError } from "@/lib/api";
 import { captureAccessIdentity, invalidateAccessIdentity } from "@/lib/access-identity";
 import { withCurrentLiveAuthRead } from "@/lib/store-action-types";
 import { getActiveStudioIdCookie } from "@/lib/studio-state-cookie";
+import { workflowActivityApi } from "./automation-workflow-activity-api.ts";
+import { createWorkflowActivityOwner } from "./automation-workflow-activity-owner.ts";
 import {
   assertWorkflowCommandResult,
   assertWorkflowCatalog,
@@ -52,6 +54,7 @@ type Marker = {
 type Authority = ReturnType<typeof captureAccessIdentity>;
 export type WorkflowWorkspaceDependencies = {
   api: typeof workflowApi;
+  activityApi?: typeof workflowActivityApi;
   capture: typeof captureAccessIdentity;
   invalidate: typeof invalidateAccessIdentity;
   activeStudio: typeof getActiveStudioIdCookie;
@@ -166,15 +169,27 @@ export function createWorkflowWorkspace(
   let editorGeneration = 0;
   const listeners = new Set<() => void>();
   const pending = new Map<string, Pending>();
+  const activityChild: { value?: ReturnType<typeof createWorkflowActivityOwner> } = {};
+  const notify = () => {
+    for (const listener of [...listeners]) listener();
+  };
+  const subscribe = (listener: () => void) => {
+    listeners.add(listener);
+    return () => {
+      listeners.delete(listener);
+    };
+  };
   const update = (next: WorkflowWorkspaceState) => {
     state = freeze(next);
-    for (const listener of [...listeners]) listener();
+    activityChild.value?.observeEditor();
+    notify();
   };
   const fence = () => {
     token = "";
     authority?.dispose();
     authority = null;
     pending.clear();
+    activityChild.value?.fence();
     update(fenceWorkflowWorkspace(state));
   };
   if (options.mode === "live") {
@@ -509,7 +524,34 @@ export function createWorkflowWorkspace(
   const accessible = () => {
     if (!state.accessible) throw new Error("Verify current access before opening this workspace.");
   };
+  activityChild.value = createWorkflowActivityOwner(
+    {
+      mode: options.mode,
+      owner: options.mode === "live" ? options.owner : null,
+      live,
+      isCurrent: () =>
+        options.mode === "preview" || Boolean(state.accessible && authority?.isCurrent()),
+      tokenChanged: (previous) => token !== previous,
+      authFailure,
+      subscribe,
+      notify,
+      editor: () => ({
+        workflowId: state.editor?.workflowId ?? null,
+        graph: state.editor ? workflowEditorContent(state.editor).graph : null,
+      }),
+      canTestEmail: () => state.catalog?.capabilities.can_test_email === true,
+    },
+    {
+      api:
+        options.mode === "live"
+          ? (dependencies.activityApi ?? workflowActivityApi)
+          : workflowActivityApi,
+      storage: () => dependencies.storage(),
+      uuid: () => dependencies.uuid(),
+    },
+  );
   const controller = {
+    activity: activityChild.value.activity,
     getSnapshot: () => state,
     pendingOperation(target: WorkflowTarget): WorkflowOperation | undefined {
       if (!state.accessible || (options.mode === "live" && !authority?.isCurrent()))
@@ -521,12 +563,7 @@ export function createWorkflowWorkspace(
         );
       return found ? state.operations[found[0]] : undefined;
     },
-    subscribe(listener: () => void) {
-      listeners.add(listener);
-      return () => {
-        listeners.delete(listener);
-      };
-    },
+    subscribe,
     isCurrent: () =>
       options.mode === "preview" || Boolean(state.accessible && authority?.isCurrent()),
     updateToken(next: string) {
