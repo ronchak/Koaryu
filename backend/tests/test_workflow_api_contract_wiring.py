@@ -16,6 +16,7 @@ from app.api.v1.endpoints import (
     trial_appointments,
     workflow_management,
     workflow_runs,
+    workflow_simulation,
 )
 from app.main import app
 from app.schemas.workflow import (
@@ -86,6 +87,9 @@ APPROVED_ROUTES = {
     "/automations/workflows/{workflow_id}/runs": {"get": workflow_runs.list_workflow_runs},
     "/automations/runs/{run_id}": {"get": workflow_runs.get_workflow_run},
     "/automations/runs/{run_id}/cancel": {"post": workflow_runs.cancel_workflow_run},
+    "/automations/workflows/{workflow_id}/simulate": {
+        "post": workflow_simulation.simulate_workflow
+    },
 }
 LEGACY_RESPONSES = [
     ("/automations/missed-class", "get", "200", "MissedClassSettingsResponse"),
@@ -147,6 +151,16 @@ def test_recipient_detail_reuses_complete_response_with_identity_only(openapi):
     assert {
         (param["name"], param["in"]) for param in detail["parameters"] if param["in"] != "header"
     } == {("event_id", "path"), ("recipient_id", "path")}
+
+
+def test_simulation_uses_accepted_request_and_response_schemas(openapi):
+    operation = openapi["paths"]["/api/v1/automations/workflows/{workflow_id}/simulate"]["post"]
+    assert operation["requestBody"]["content"]["application/json"]["schema"] == {
+        "$ref": "#/components/schemas/WorkflowSimulationRequest"
+    }
+    assert operation["responses"]["200"]["content"]["application/json"]["schema"] == {
+        "$ref": "#/components/schemas/WorkflowSimulationResponse"
+    }
 
 
 def test_actual_app_has_no_duplicate_routes_or_operation_ids(openapi):

@@ -25,6 +25,7 @@ from app.api.v1.endpoints import (
     webhooks,
     workflow_management,
     workflow_runs,
+    workflow_simulation,
 )
 
 router = APIRouter()
@@ -37,6 +38,7 @@ router.include_router(automations.router)
 router.include_router(automations.worker_router)
 router.include_router(workflow_management.router)
 router.include_router(workflow_runs.router)
+router.include_router(workflow_simulation.router)
 router.include_router(dashboard.router)
 router.include_router(demo.router)
 router.include_router(platform_billing.router)

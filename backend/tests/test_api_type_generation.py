@@ -135,7 +135,8 @@ def test_registry_modes_preserve_every_legacy_alias(generator, monkeypatch):
     monkeypatch.setattr(generator, "EXTRA_PYDANTIC_SCHEMA_MODELS", registry)
     current = aliases(generator.render_contracts())
     old = aliases(previous)
-    assert current.keys() - old.keys() == NEW_ALIASES
+    assert NEW_ALIASES <= current.keys()
+    assert current.keys() - old.keys() == NEW_ALIASES - old.keys()
     assert old.keys() <= current.keys()
     assert {name: current[name] for name in old} == old
 
@@ -319,14 +320,16 @@ generator = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(generator)
 before = generator.render_contracts()
 from app.main import app
-from app.api.v1.endpoints import workflow_simulation, workflow_test_email
+from app.api.v1.endpoints import workflow_test_email
+from fastapi.routing import iter_route_contexts
 paths = (
     "/api/v1/automations/workflows/{workflow_id}/simulate",
     "/api/v1/automations/workflows/{workflow_id}/test-email",
     "/api/v1/automations/test-deliveries/{test_delivery_id}",
 )
-assert all(path not in app.openapi()["paths"] for path in paths)
-app.include_router(workflow_simulation.router, prefix="/api/v1")
+assert set(app.openapi()["paths"][paths[0]]) == {"post"}
+assert sum(route.path == paths[0] for route in iter_route_contexts(app.routes)) == 1
+assert all(path not in app.openapi()["paths"] for path in paths[1:])
 app.include_router(workflow_test_email.router, prefix="/api/v1")
 app.openapi_schema = None
 assert all(path in app.openapi()["paths"] for path in paths)

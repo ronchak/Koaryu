@@ -1,4 +1,4 @@
-"""Unmounted HTTP proofs using actual membership and read-only entitlement owners."""
+"""Simulation HTTP proofs using actual membership and read-only entitlement owners."""
 
 import json
 from copy import deepcopy
@@ -8,6 +8,7 @@ from unittest.mock import Mock
 import httpx
 import pytest
 from fastapi import FastAPI
+from fastapi.routing import iter_route_contexts
 from fastapi.testclient import TestClient
 from postgrest.exceptions import APIError
 
@@ -381,15 +382,32 @@ def test_openapi_contains_only_exact_public_dtos_and_required_fields(api):
     assert not any(name.startswith(("_Facts", "_Payload")) for name in schemas)
 
 
-def test_composed_app_keeps_new_router_unmounted_and_existing_routes():
+def test_composed_app_mounts_simulation_once_and_keeps_existing_routes():
     from app.main import app
 
     paths = app.openapi()["paths"]
-    assert "/api/v1/automations/workflows/{workflow_id}/simulate" not in paths
+    path = "/api/v1/automations/workflows/{workflow_id}/simulate"
+    matches = [route for route in iter_route_contexts(app.routes) if route.path == path]
+    assert len(matches) == 1 and matches[0].endpoint is routes.simulate_workflow
+    assert matches[0].methods == {"POST"} and set(paths[path]) == {"post"}
+    operation = paths[path]["post"]
+    assert operation["requestBody"]["content"]["application/json"]["schema"] == {
+        "$ref": "#/components/schemas/WorkflowSimulationRequest"
+    }
+    assert operation["responses"]["200"]["content"]["application/json"]["schema"] == {
+        "$ref": "#/components/schemas/WorkflowSimulationResponse"
+    }
+    assert {
+        (parameter["name"], parameter["in"])
+        for parameter in operation["parameters"]
+        if parameter["in"] != "header"
+    } == {("workflow_id", "path")}
     assert set(paths["/api/v1/automations/workflows/{workflow_id}"]) == {"get", "put"}
     assert set(paths["/api/v1/automations/missed-class"]) == {"get", "put"}
+    assert "/api/v1/automations/workflows/{workflow_id}/test-email" not in paths
+    assert "/api/v1/automations/test-deliveries/{test_delivery_id}" not in paths
     assert not any(
-        name.startswith("WorkflowSimulation") for name in app.openapi()["components"]["schemas"]
+        name.startswith(("_Facts", "_Payload")) for name in app.openapi()["components"]["schemas"]
     )
 
 

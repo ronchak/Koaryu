@@ -1,4 +1,4 @@
-"""Unmounted preview route pending the SQL current-fact and parity proofs."""
+"""Non-sending workflow simulation with current authority and read-only entitlement checks."""
 
 from typing import Annotated
 from uuid import UUID
