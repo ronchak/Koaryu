@@ -394,25 +394,46 @@ BEGIN
 END $$;
 -- Large raw histories are deliberately synthetic. Missing provenance is tested
 -- as unavailable, while the four command-created sources remain real events.
+-- Preserve one reference clock while giving each 500-row setup its own statement.
+CREATE TEMP TABLE timed_backlog_setup_context (
+    singleton BOOLEAN PRIMARY KEY CHECK(singleton), reference_at TIMESTAMPTZ NOT NULL,
+    starts_at TIMESTAMPTZ NOT NULL, last_fixture JSONB
+);
 DO $$
-DECLARE x JSONB; y JSONB; packet JSONB; result JSONB; at TIMESTAMPTZ:=clock_timestamp()+INTERVAL '1 day 1 minute';
-    starts TIMESTAMPTZ:=clock_timestamp()+INTERVAL '2 days'; s UUID; w UUID; v UUID; epoch BIGINT; last UUID; expected UUID;
-    idx INTEGER; count_pairs INTEGER; chosen UUID[]; metadata RECORD; old JSONB; malformed JSONB; item JSONB;
+DECLARE at TIMESTAMPTZ:=clock_timestamp()+INTERVAL '1 day 1 minute';
+    starts TIMESTAMPTZ:=clock_timestamp()+INTERVAL '2 days';
 BEGIN
     UPDATE public.automation_workflow_activations SET retired_at=coalesce(retired_at,greatest(clock_timestamp(),active_from)),cancelled_at=greatest(clock_timestamp(),retired_at,active_from) WHERE cancelled_at IS NULL;
     CREATE TEMP TABLE timed_backlog_sources(id UUID PRIMARY KEY);
     CREATE TEMP TABLE timed_backlog_seen(id UUID PRIMARY KEY);
-    FOR idx IN 1..4 LOOP
-        x:=pg_temp.timed_workflow(pg_temp.timed_fixture('trial.upcoming',starts),'trial.upcoming');
-        INSERT INTO pg_temp.timed_backlog_sources VALUES((x->>'source')::UUID);
-        WITH leads AS (
-            INSERT INTO public.leads(studio_id,first_name,last_name,source,stage)
-                SELECT (x->>'studio')::UUID,'Raw','No provenance','referral','inquiry' FROM generate_series(1,500) RETURNING id),
-        trials AS (
-            INSERT INTO public.lead_trial_appointments(studio_id,lead_id,starts_at,ends_at,timezone)
-                SELECT (x->>'studio')::UUID,id,starts,starts+INTERVAL '1 hour','UTC' FROM leads RETURNING id)
-        INSERT INTO pg_temp.timed_backlog_sources SELECT id FROM trials;
-    END LOOP;
+    INSERT INTO pg_temp.timed_backlog_setup_context VALUES(true,at,starts,NULL);
+END $$;
+CREATE FUNCTION pg_temp.timed_backlog_setup() RETURNS VOID LANGUAGE plpgsql AS $$
+DECLARE x JSONB; starts TIMESTAMPTZ;
+BEGIN
+    SELECT starts_at INTO STRICT starts FROM pg_temp.timed_backlog_setup_context WHERE singleton;
+    x:=pg_temp.timed_workflow(pg_temp.timed_fixture('trial.upcoming',starts),'trial.upcoming');
+    INSERT INTO pg_temp.timed_backlog_sources VALUES((x->>'source')::UUID);
+    WITH leads AS (
+        INSERT INTO public.leads(studio_id,first_name,last_name,source,stage)
+            SELECT (x->>'studio')::UUID,'Raw','No provenance','referral','inquiry' FROM generate_series(1,500) RETURNING id),
+    trials AS (
+        INSERT INTO public.lead_trial_appointments(studio_id,lead_id,starts_at,ends_at,timezone)
+            SELECT (x->>'studio')::UUID,id,starts,starts+INTERVAL '1 hour','UTC' FROM leads RETURNING id)
+    INSERT INTO pg_temp.timed_backlog_sources SELECT id FROM trials;
+    UPDATE pg_temp.timed_backlog_setup_context SET last_fixture=x WHERE singleton;
+END $$;
+-- Separate statements retain the existing 90-second limit and one transaction.
+SELECT pg_temp.timed_backlog_setup();
+SELECT pg_temp.timed_backlog_setup();
+SELECT pg_temp.timed_backlog_setup();
+SELECT pg_temp.timed_backlog_setup();
+DO $$
+DECLARE x JSONB; y JSONB; packet JSONB; result JSONB; at TIMESTAMPTZ;
+    starts TIMESTAMPTZ; s UUID; w UUID; v UUID; epoch BIGINT; last UUID; expected UUID;
+    idx INTEGER; count_pairs INTEGER; chosen UUID[]; metadata RECORD; old JSONB; malformed JSONB; item JSONB;
+BEGIN
+    SELECT reference_at,starts_at,last_fixture INTO STRICT at,starts,x FROM pg_temp.timed_backlog_setup_context WHERE singleton;
     SELECT t.studio_id,t.workflow_id,t.version_id,t.epoch INTO s,w,v,epoch FROM private.workflow_timer_activations t ORDER BY t.studio_id,t.activation_id LIMIT 1;
     INSERT INTO public.automation_workflow_activations(studio_id,workflow_id,version_id,epoch,active_from,retired_at,cancelled_at)
         SELECT s,w,v,epoch,clock_timestamp(),clock_timestamp(),clock_timestamp() FROM generate_series(1,150);
