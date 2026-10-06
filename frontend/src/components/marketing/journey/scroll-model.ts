@@ -45,6 +45,9 @@ export const LANDING_HASH_ALIASES = Object.freeze({
   "patterns-form": "the-weave",
   "floor-forms": "the-weave",
   "operations-trust": "faq",
+  // Retired chapters: the curtain's words and the sky's line became passages.
+  "the-problem": "product",
+  "the-path": "the-weave",
 } as const satisfies Readonly<Record<string, string>>);
 
 /** Returns the current target for a retired hash, or null when no rewrite is needed. */

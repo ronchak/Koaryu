@@ -59,6 +59,14 @@ export const PUBLIC_PLATFORM_PRICE = {
   scope: "studio",
 } as const;
 
+/**
+ * New studios' Koaryu Core trial, granted once per studio at Stripe Checkout
+ * (reserve_core_checkout_v2_atomic in supabase/migrations; the backend only
+ * accepts 30). Payment details are collected at Checkout; nothing is charged
+ * until the trial ends.
+ */
+export const PUBLIC_PLATFORM_TRIAL_DAYS = 30;
+
 export function publicPlatformPriceAmount(): string {
   return (PUBLIC_PLATFORM_PRICE.monthlyCents / 100).toString();
 }

@@ -44,10 +44,8 @@ describe("marketing content contract", () => {
       landingPageContent.story.map(({ id, scene, kind }) => [id, scene, kind]),
       [
         ["welcome", 0, "hero"],
-        ["the-problem", 0.1, "problem"],
         ["product", 0.288, "product"],
         ["features", 0.52, "features"],
-        ["the-path", 0.66, "path"],
         ["the-weave", 0.892, "weave"],
         ["studio", 1, "studio"],
       ],
@@ -70,14 +68,23 @@ describe("marketing content contract", () => {
       "Schedules",
       "Billing records",
     ]);
-    assert.equal(chapter("the-path").title, "Every class is a step toward the next belt.");
+    assert.equal(chapter("the-weave").title, "Your studio is not a spreadsheet.");
     assert.deepEqual(
       chapter("welcome").actions.map((action) => [action.label, action.href]),
       [
-        ["Create an account", "/signup"],
-        ["Try it", "/try"],
+        ["Start free trial", "/signup"],
+        ["Try the demo", "/try"],
       ],
     );
+    // The offer is the product's: one 30-day trial per studio, then the public price.
+    assert.equal(chapter("welcome").note, "30 days free, then $27 a month per studio.");
+    assert.equal(landingPageContent.close.lede, chapter("welcome").note);
+    assert.match(landingPageContent.pricing.trial, /^Free for 30 days/);
+    // Every moment of the day shows the real screen that handles it.
+    for (const moment of chapter("features").moments) {
+      assert.match(moment.shot.src, /^\/marketing\/product\/day-[a-z]+\.webp$/);
+      assert.ok(moment.shot.alt.length > 40);
+    }
     assert.equal(landingPageContent.tryIt.action.href, "/try");
     assert.match(landingPageContent.tryIt.miniature.caption, /Sample students/);
     assert.match(chapter("studio").caption, /Illustration with sample students/);
@@ -106,13 +113,13 @@ describe("marketing content contract", () => {
       [
         ["faq-fit", 3],
         ["faq-daily", 3],
-        ["faq-pricing", 2],
+        ["faq-pricing", 3],
         ["faq-limits", 2],
       ],
     );
     assert.deepEqual(
       landingPageContent.close.footerLinks.map((link) => link.href),
-      ["/features", "/use-cases", "/try", "/terms", "/privacy"],
+      ["/features", "/use-cases", "#pricing", "/try", "/login", "/terms", "/privacy"],
     );
 
     const serialized = JSON.stringify(landingPageContent);
@@ -152,8 +159,9 @@ describe("marketing content contract", () => {
     assert.equal(formatPublicPlatformPrice(), "$27");
     assert.equal(landingPageContent.pricing.amount, publicPlatformPriceAmount());
     assert.equal(landingPageContent.pricing.displayPrice, formatPublicPlatformPrice());
-    assert.match(chapter("welcome").lede, /\$27 per studio per month/);
-    assert.equal(landingPageContent.close.lede, "$27 per studio, per month.");
+    // The price sits in the offer, under the hero's actions and in the close.
+    assert.match(chapter("welcome").note, /\$27 a month per studio/);
+    assert.equal(landingPageContent.close.lede, "30 days free, then $27 a month per studio.");
     // The roster sizes all show the one price; no tiers are stored anywhere.
     assert.deepEqual(landingPageContent.pricing.rosterSizes, [25, 80, 200]);
 

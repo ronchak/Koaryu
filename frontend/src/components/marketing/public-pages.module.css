@@ -48,9 +48,27 @@
   gap: clamp(14px, 2.2vw, 30px);
 }
 
+.headerActions {
+  display: flex;
+  gap: clamp(14px, 1.8vw, 24px);
+  align-items: center;
+  justify-self: end;
+}
+
 .desktopSignIn {
   min-width: 44px;
-  justify-self: end;
+}
+
+/* The trial is the page's one primary action, so it waits in the header on every page. */
+.headerAction {
+  min-height: 40px;
+  padding: 10px 16px;
+  white-space: nowrap;
+  box-shadow: none;
+}
+
+.headerActionShort {
+  display: none;
 }
 
 .mobileNavigation {
@@ -367,6 +385,11 @@
     display: none;
   }
 
+  /* Sign in moves into the menu; the trial stays in reach. */
+  .desktopSignIn {
+    display: none;
+  }
+
   .mobileNavigation {
     display: block;
   }
@@ -401,6 +424,23 @@
     gap: 8px;
   }
 
+  .headerAction {
+    min-height: 44px;
+    padding: 10px 13px;
+  }
+}
+
+@media (max-width: 380px) {
+  .headerActionLong {
+    display: none;
+  }
+
+  .headerActionShort {
+    display: inline;
+  }
+}
+
+@media (max-width: 560px) {
   .legalHero {
     padding-block: 64px;
   }

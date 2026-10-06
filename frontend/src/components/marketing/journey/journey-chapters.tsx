@@ -5,9 +5,8 @@ import { Fragment, type CSSProperties, type ReactNode } from "react";
 import {
   landingPageContent,
   type FeaturesChapter as FeaturesContent,
+  type DayShot as DayShotContent,
   type HeroChapter as HeroContent,
-  type PathChapter as PathContent,
-  type ProblemChapter as ProblemContent,
   type ProductChapter as ProductContent,
   type StoryChapter,
   type StudioChapter as StudioContent,
@@ -76,18 +75,7 @@ function Hero({ chapter }: { chapter: HeroContent }) {
         <ChapterAction {...chapter.actions[0]} variant="primary" />
         <ChapterAction {...chapter.actions[1]} />
       </div>
-    </div>
-  );
-}
-
-function Problem({ chapter }: { chapter: ProblemContent }) {
-  return (
-    <div className={styles.problemCopy}>
-      <h2 className={styles.statementHeading}>{chapter.title}</h2>
-      <div className={styles.problemResponse}>
-        <p>{chapter.question}</p>
-        <p className={styles.problemAside}>{chapter.aside}</p>
-      </div>
+      <p className={styles.heroNote}>{chapter.note}</p>
     </div>
   );
 }
@@ -136,6 +124,31 @@ function Product({ chapter }: { chapter: ProductContent }) {
   );
 }
 
+/** Phones draw a screen at this fraction of its size, so its type stays readable. */
+const PHONE_SHOT_SCALE = 0.74;
+/** Narrowest phone column (px) a screen fits at that scale without running off the edge. */
+const PHONE_SHOT_ROOM = 300;
+
+/** The real screen for a moment: drawn at its own size, never stretched. */
+function DayShot({ shot }: { shot: DayShotContent }) {
+  const width = shot.width / 2;
+  return (
+    <figure
+      className={styles.dayShot}
+      data-wide={width * PHONE_SHOT_SCALE > PHONE_SHOT_ROOM ? "true" : undefined}
+      style={{ "--shot-width": `${width}px` } as CSSProperties}
+    >
+      <Image
+        src={shot.src}
+        width={shot.width}
+        height={shot.height}
+        alt={shot.alt}
+        sizes={`(max-width: 820px) ${Math.round(width * PHONE_SHOT_SCALE)}px, ${width}px`}
+      />
+    </figure>
+  );
+}
+
 /**
  * Features told as a day at the studio. The chapter scrolls on its own, so the
  * day reads naturally while the story waits; an ink line draws down the day.
@@ -161,19 +174,12 @@ function Features({ chapter }: { chapter: FeaturesContent }) {
               <Link href={moment.detail.href}>{moment.title}</Link>
             </h3>
             <p className={styles.dayText}>{moment.description}</p>
+            <DayShot shot={moment.shot} />
           </li>
         ))}
       </ol>
+      <p className={`${styles.caption} ${styles.dayCaption}`}>{chapter.caption}</p>
     </article>
-  );
-}
-
-/** A single line in the open sky, after flying through the door. */
-function Path({ chapter }: { chapter: PathContent }) {
-  return (
-    <div className={styles.pathCopy}>
-      <h2 className={styles.pathHeading}>{chapter.title}</h2>
-    </div>
   );
 }
 
@@ -259,14 +265,10 @@ function ChapterContent({ chapter }: { chapter: StoryChapter }): ReactNode {
   switch (chapter.kind) {
     case "hero":
       return <Hero chapter={chapter} />;
-    case "problem":
-      return <Problem chapter={chapter} />;
     case "product":
       return <Product chapter={chapter} />;
     case "features":
       return <Features chapter={chapter} />;
-    case "path":
-      return <Path chapter={chapter} />;
     case "weave":
       return <Weave chapter={chapter} />;
     case "studio":
@@ -279,12 +281,11 @@ function ChapterContent({ chapter }: { chapter: StoryChapter }): ReactNode {
  * the story is scrubbed. Keyed by the chapter the beat arrives at.
  */
 const INTERLUDES: Readonly<Record<string, number>> = {
-  // Short: the curtain's words arrive as soon as the brown has filled the screen.
-  "the-problem": 25,
-  product: 70,
+  // The dive: through the hill and its brown, down into the dojo.
+  product: 120,
   features: 80,
-  "the-path": 80,
-  "the-weave": 100,
+  // Through the door, across the sky, and the clouds lie down into the weave.
+  "the-weave": 190,
   studio: 90,
 };
 

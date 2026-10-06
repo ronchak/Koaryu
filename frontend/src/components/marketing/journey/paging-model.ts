@@ -277,23 +277,26 @@ const DEFAULT_BEAT: BeatSpec = Object.freeze({ ms: 900, exit: 0.42, enter: 0.6 }
 
 /** Beats keyed by the chapter they arrive at, sized to what the scene does on the way. */
 export const STORY_BEATS: Readonly<Record<string, BeatSpec>> = Object.freeze({
-  // The hills fall away and the curtain closes over them; its words arrive as
-  // soon as the brown fills the screen (a short arrival, not a fast one).
-  "the-problem": { ms: 640, exit: 0.3, enter: 0.34 },
-  // The curtain parts and the camera settles in the dojo.
-  product: { ms: 860, exit: 0.42, enter: 0.6 },
+  // One dive: the hills fall away, the camera passes through the hill's brown
+  // without stopping, and the curtain parts on the dojo.
+  product: {
+    ms: 1380,
+    exit: 0.3,
+    enter: 0.6,
+    via: [{ at: 0.4, scene: 0.1 }],
+  },
   // The door slides open on the painted sun.
   features: { ms: 1000, exit: 0.42, enter: 0.66 },
-  // Through the doorway into the open sky.
-  "the-path": { ms: 1080, exit: 0.4, enter: 0.6 },
-  // The clouds gather and lie down; the threads weave through each other.
+  // One flight: through the doorway into the open sky, where the clouds gather
+  // and lie down and the threads weave through each other.
   "the-weave": {
-    ms: 1400,
-    exit: 0.22,
+    ms: 1950,
+    exit: 0.4,
     enter: 0.46,
     via: [
-      { at: 0.16, scene: 0.768 },
-      { at: 0.44, scene: 0.83 },
+      { at: 0.34, scene: 0.66 },
+      { at: 0.45, scene: 0.768 },
+      { at: 0.63, scene: 0.83 },
     ],
   },
   // The woven floor lies down, the room rises and the class sits.

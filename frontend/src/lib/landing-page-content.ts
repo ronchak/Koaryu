@@ -2,6 +2,7 @@ import {
   formatPublicPlatformPrice,
   publicPlatformPriceAmount,
   PUBLIC_PAYMENTS_FEE_PERCENT,
+  PUBLIC_PLATFORM_TRIAL_DAYS,
 } from "./constants.ts";
 import {
   getMarketingPageByRef,
@@ -16,11 +17,9 @@ import {
  * as an ordinary product page: pricing, the hands-on demo, questions, the close.
  */
 
-export type StoryChapterId =
-  "welcome" | "the-problem" | "product" | "features" | "the-path" | "the-weave" | "studio";
+export type StoryChapterId = "welcome" | "product" | "features" | "the-weave" | "studio";
 
-export type StoryChapterKind =
-  "hero" | "problem" | "product" | "features" | "path" | "weave" | "studio";
+export type StoryChapterKind = "hero" | "product" | "features" | "weave" | "studio";
 
 /** Ink for copy set directly on the daytime scene. */
 export type JourneyInk = "dark" | "light";
@@ -55,12 +54,8 @@ export interface HeroChapter extends StoryChapterBase {
   headline: readonly [string, string];
   lede: string;
   actions: readonly [JourneyAction, JourneyAction];
-}
-
-export interface ProblemChapter extends StoryChapterBase {
-  kind: "problem";
-  question: string;
-  aside: string;
+  /** The offer, under the actions. */
+  note: string;
 }
 
 export interface ProductHighlight {
@@ -83,23 +78,31 @@ export interface ProductChapter extends StoryChapterBase {
   highlights: readonly ProductHighlight[];
 }
 
+/** A crop of the real screen that handles a moment, captured at 2x from preview mode. */
+export interface DayShot {
+  src: string;
+  /** Pixel size of the file; the crop is drawn at half this size. */
+  width: number;
+  height: number;
+  alt: string;
+}
+
 /** One moment of a day at the studio, and the part of Koaryu that handles it. */
 export interface DayMoment {
   time: string;
   title: string;
   description: string;
   detail: LandingDetailReference;
+  shot: DayShot;
 }
 
 export interface FeaturesChapter extends StoryChapterBase {
   kind: "features";
   lede: string;
   moments: readonly DayMoment[];
+  /** Under the day: whose data the screens show. */
+  caption: string;
   links: readonly [JourneyAction, JourneyAction];
-}
-
-export interface PathChapter extends StoryChapterBase {
-  kind: "path";
 }
 
 export interface WeaveChapter extends StoryChapterBase {
@@ -120,18 +123,14 @@ export interface StudioChapter extends StoryChapterBase {
 }
 
 export type StoryChapter =
-  | HeroChapter
-  | ProblemChapter
-  | ProductChapter
-  | FeaturesChapter
-  | PathChapter
-  | WeaveChapter
-  | StudioChapter;
+  HeroChapter | ProductChapter | FeaturesChapter | WeaveChapter | StudioChapter;
 
 export interface PricingSection {
   id: "pricing";
   title: string;
   lede: string;
+  /** The trial terms, beside the price. */
+  trial: string;
   amount: string;
   displayPrice: string;
   period: string;
@@ -142,6 +141,8 @@ export interface PricingSection {
   rosterNote: string;
   setupAction: JourneyAction;
   paymentsNote: { lead: string; label: string; href: string };
+  /** What happens after the trial button, step by step, as the product does it. */
+  start: { title: string; steps: readonly { title: string; text: string }[] };
 }
 
 export interface TryStudent {
@@ -213,6 +214,12 @@ function landingDetail(ref: MarketingPageRef): LandingDetailReference {
   };
 }
 
+/** The offer, said the same way wherever it appears. */
+const TRIAL_NOTE = `${PUBLIC_PLATFORM_TRIAL_DAYS} days free, then ${formatPublicPlatformPrice()} a month per studio.`;
+
+const TRIAL_ACTION: JourneyAction = { label: "Start free trial", href: "/signup" };
+const DEMO_ACTION: JourneyAction = { label: "Try the demo", href: "/try" };
+
 const dayMoments: readonly DayMoment[] = [
   {
     time: "7:00 AM",
@@ -220,6 +227,12 @@ const dayMoments: readonly DayMoment[] = [
     description:
       "First morning on Koaryu? Import your spreadsheet, map its columns to student fields and review the results before the first class.",
     detail: landingDetail({ kind: "useCase", slug: "spreadsheets-to-studio-crm" }),
+    shot: {
+      src: "/marketing/product/day-import.webp",
+      width: 1080,
+      height: 670,
+      alt: "Koaryu's import mapping each column of a spreadsheet, such as First Name, Last Name and Email, to a student field.",
+    },
   },
   {
     time: "7:30 AM",
@@ -227,6 +240,12 @@ const dayMoments: readonly DayMoment[] = [
     description:
       "Today's classes, students with attendance gaps and follow-ups that are due, on one screen.",
     detail: landingDetail({ kind: "useCase", slug: "student-retention" }),
+    shot: {
+      src: "/marketing/product/day-dashboard.webp",
+      width: 1140,
+      height: 384,
+      alt: "The dashboard's Classes Today panel: three sessions, each with how many students have checked in.",
+    },
   },
   {
     time: "3:45 PM",
@@ -234,6 +253,12 @@ const dayMoments: readonly DayMoment[] = [
     description:
       "Add the lead, note the visit and set a follow-up date. Due and overdue follow-ups wait in one queue.",
     detail: landingDetail({ kind: "useCase", slug: "trial-to-enrollment" }),
+    shot: {
+      src: "/marketing/product/day-lead.webp",
+      width: 800,
+      height: 744,
+      alt: "A trial lead with contact details and a follow-up due today, ready to move to Trial Scheduled.",
+    },
   },
   {
     time: "4:30 PM",
@@ -241,6 +266,12 @@ const dayMoments: readonly DayMoment[] = [
     description:
       "Each child keeps their own profile, program, rank and history. Guardians and payers are recorded separately.",
     detail: landingDetail({ kind: "feature", slug: "student-management" }),
+    shot: {
+      src: "/marketing/product/day-family.webp",
+      width: 920,
+      height: 504,
+      alt: "A student's primary guardian, recorded on the student's own profile with name, email, phone and relation.",
+    },
   },
   {
     time: "6:00 PM",
@@ -248,6 +279,12 @@ const dayMoments: readonly DayMoment[] = [
     description:
       "Open today's roster and mark Present, Late or Absent. Classes attended count toward the next rank.",
     detail: landingDetail({ kind: "feature", slug: "attendance" }),
+    shot: {
+      src: "/marketing/product/day-attendance.webp",
+      width: 1152,
+      height: 880,
+      alt: "A class roster: three of twenty students present, with each student checked in by a tap.",
+    },
   },
   {
     time: "7:15 PM",
@@ -255,6 +292,12 @@ const dayMoments: readonly DayMoment[] = [
     description:
       "Check class counts, time at rank and instructor approval for each student before deciding whom to test.",
     detail: landingDetail({ kind: "feature", slug: "belt-tracking" }),
+    shot: {
+      src: "/marketing/product/day-ranks.webp",
+      width: 1080,
+      height: 592,
+      alt: "A rank plan: White Belt with stripes, each requiring a number of classes and months at rank.",
+    },
   },
   {
     time: "8:00 PM",
@@ -262,6 +305,12 @@ const dayMoments: readonly DayMoment[] = [
     description:
       "Payers, invoices and cash or check payments in one place. Instructors never see billing.",
     detail: landingDetail({ kind: "feature", slug: "billing" }),
+    shot: {
+      src: "/marketing/product/day-billing.webp",
+      width: 600,
+      height: 830,
+      alt: "Payers with their status, current, past due or externally paid, and outstanding balances.",
+    },
   },
 ];
 
@@ -313,6 +362,10 @@ const faqGroups: readonly FaqGroup[] = [
     title: "Pricing & payments",
     items: [
       {
+        question: "How does the free trial work?",
+        answer: `New studios get ${PUBLIC_PLATFORM_TRIAL_DAYS} days of Koaryu with every feature. You add a payment method at checkout and nothing is charged until the trial ends. Cancel before then from Billing and you pay nothing.`,
+      },
+      {
         question: `What does ${formatPublicPlatformPrice()} a month include?`,
         answer:
           "One studio's students, ranks, leads, scheduling, attendance, reports and billing records. There are no per-student tiers.",
@@ -351,22 +404,9 @@ const story = [
     ink: "dark",
     kicker: "For independent martial arts schools",
     headline: ["Run the school.", "Teach the art."],
-    lede: `Students, ranks, attendance and trial follow-ups in one calm place. ${formatPublicPlatformPrice()} per studio per month.`,
-    actions: [
-      { label: "Create an account", href: "/signup" },
-      { label: "Try it", href: "/try" },
-    ],
-  },
-  {
-    id: "the-problem",
-    kind: "problem",
-    title: "Your studio is not a spreadsheet.",
-    label: "Spreadsheets",
-    scene: 0.1,
-    ink: "light",
-    question:
-      "Yet the roster, belt ranks, trial follow-ups and payment notes still live in five of them.",
-    aside: "Class starts in ten minutes. Which one is up to date?",
+    lede: "The roster, belt ranks, attendance and trial follow-ups in one place, instead of five spreadsheets.",
+    actions: [TRIAL_ACTION, DEMO_ACTION],
+    note: TRIAL_NOTE,
   },
   {
     id: "product",
@@ -409,27 +449,20 @@ const story = [
     ink: "dark",
     lede: "A day at the studio, from the first coffee to the last class. Built around how a dojo actually runs.",
     moments: dayMoments,
+    caption: "Koaryu screens, shown with sample studio data.",
     links: [
       { label: "All features", href: "/features" },
       { label: "Workflow guides", href: "/use-cases" },
     ],
   },
   {
-    id: "the-path",
-    kind: "path",
-    title: "Every class is a step toward the next belt.",
-    label: "The path",
-    scene: 0.66,
-    ink: "dark",
-  },
-  {
     id: "the-weave",
     kind: "weave",
-    title: "Everything your studio runs on, woven into one place.",
+    title: "Your studio is not a spreadsheet.",
     label: "Woven together",
     scene: 0.892,
     ink: "dark",
-    lede: "Students, families, belt ranks, attendance, trial leads, schedules and billing records, held in one studio workspace instead of five spreadsheets.",
+    lede: "Every part of Koaryu works from the same record of each student, so the roster, the belt tracker, the follow-up queue and the billing records always agree.",
     threads: [
       "Students",
       "Families",
@@ -447,11 +480,8 @@ const story = [
     label: "The class",
     scene: 1,
     ink: "dark",
-    lede: "One place for a small school's students and families, belt ranks, attendance, trials and billing records, so the mat gets your attention.",
-    actions: [
-      { label: "Create an account", href: "/signup" },
-      { label: "Try it", href: "/try" },
-    ],
+    lede: `Set up your studio in minutes, then bring your roster over from a spreadsheet. Every feature is yours free for ${PUBLIC_PLATFORM_TRIAL_DAYS} days.`,
+    actions: [TRIAL_ACTION, DEMO_ACTION],
     caption: "Illustration with sample students.",
     handoffLabel: "Get started",
   },
@@ -461,10 +491,11 @@ const pricing: PricingSection = {
   id: "pricing",
   title: "One price. Every student.",
   lede: "Every feature for every student on your roster, in one studio subscription.",
+  trial: `Free for ${PUBLIC_PLATFORM_TRIAL_DAYS} days, then billed monthly. Cancel any time.`,
   amount: publicPlatformPriceAmount(),
   displayPrice: formatPublicPlatformPrice(),
   period: "per studio, per month",
-  plan: { name: "Studio plan", scope: "One studio, every program" },
+  plan: { name: "Koaryu Core", scope: "One studio, every program" },
   included: [
     "Students & families",
     "Ranks & belt tests",
@@ -477,11 +508,23 @@ const pricing: PricingSection = {
   ],
   rosterSizes: [25, 80, 200],
   rosterNote: "No per-student tiers. Grow your roster without growing your bill.",
-  setupAction: { label: "Create an account", href: "/signup" },
+  setupAction: TRIAL_ACTION,
   paymentsNote: {
     lead: "Collecting tuition online?",
     label: "See Pricing & payments",
     href: "#faq-pricing",
+  },
+  start: {
+    title: "From sign-up to your first class",
+    steps: [
+      { title: "Create your account", text: "With email, Google or Microsoft." },
+      { title: "Name your studio", text: "Its name and timezone. That's the whole setup form." },
+      {
+        title: "Start your trial",
+        text: `Add a payment method at checkout. Nothing is charged for ${PUBLIC_PLATFORM_TRIAL_DAYS} days.`,
+      },
+      { title: "Bring your roster", text: "Import your spreadsheet, then set up your belts." },
+    ],
   },
 };
 
@@ -497,8 +540,8 @@ const tryIt: TrySection = {
     },
     { title: "Add a trial lead", description: "Then work the follow-up queue." },
   ],
-  action: { label: "Try it", href: "/try" },
-  secondaryAction: { label: "Create an account", href: "/signup" },
+  action: DEMO_ACTION,
+  secondaryAction: TRIAL_ACTION,
   miniature: {
     studio: "Riverside Karate",
     className: "Kids Karate",
@@ -545,19 +588,21 @@ const tryIt: TrySection = {
 const faq: FaqSection = {
   id: "faq",
   title: "Questions owners ask",
-  lede: "Straight answers, including what Koaryu doesn't do yet.",
+  lede: "Straight answers about switching, pricing and the day to day.",
   groups: faqGroups,
 };
 
 const close: CloseSection = {
   id: "begin",
   title: "Enough admin. Go teach.",
-  lede: `${formatPublicPlatformPrice()} per studio, per month.`,
-  action: { label: "Create an account", href: "/signup" },
+  lede: TRIAL_NOTE,
+  action: TRIAL_ACTION,
   footerLinks: [
     { label: "Features", href: "/features" },
     { label: "Workflows", href: "/use-cases" },
-    { label: "Try it", href: "/try" },
+    { label: "Pricing", href: "#pricing" },
+    { label: "Demo", href: "/try" },
+    { label: "Sign in", href: "/login" },
     { label: "Terms", href: "/terms" },
     { label: "Privacy", href: "/privacy" },
   ],

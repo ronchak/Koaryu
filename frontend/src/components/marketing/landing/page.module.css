@@ -124,6 +124,13 @@
   letter-spacing: 0;
 }
 
+.trial {
+  margin: 22px 0 0;
+  color: var(--affirm);
+  font-size: 15px;
+  font-weight: 650;
+}
+
 .note {
   margin: 18px 0 0;
   color: var(--muted);
@@ -203,6 +210,57 @@
   stroke-linecap: round;
   stroke-linejoin: round;
   stroke-width: 2;
+}
+
+/* What the trial button leads to, in the product's own order. */
+.start {
+  grid-column: 1 / -1;
+  padding-top: clamp(28px, 4vh, 44px);
+  border-top: 1px solid var(--rule);
+}
+
+.startTitle {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 680;
+}
+
+.steps {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 20px clamp(20px, 3vw, 40px);
+  margin: 18px 0 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: step;
+}
+
+.steps li {
+  display: grid;
+  gap: 6px;
+  align-content: start;
+  counter-increment: step;
+}
+
+.steps li::before {
+  color: var(--wood);
+  font-size: 12px;
+  font-weight: 720;
+  font-variant-numeric: tabular-nums;
+  content: counter(step, decimal-leading-zero);
+}
+
+.stepTitle {
+  font-size: 16px;
+  font-weight: 690;
+  letter-spacing: -0.01em;
+}
+
+.stepText {
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.5;
 }
 
 .planFooter {
@@ -1001,6 +1059,10 @@
 
   .faqHeader {
     position: static;
+  }
+
+  .steps {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 

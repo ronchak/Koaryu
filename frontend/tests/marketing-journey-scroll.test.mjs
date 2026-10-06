@@ -43,8 +43,8 @@ import {
 const H = 1000;
 const stops = [
   { id: "welcome", y: 0, scene: 0 },
-  { id: "the-problem", y: 1500, scene: 0.1 },
-  { id: "product", y: 3200, scene: 0.288 },
+  { id: "product", y: 1500, scene: 0.288 },
+  { id: "features", y: 3200, scene: 0.52 },
   { id: "studio", y: 6000, scene: 1 },
   { id: "handoff", y: 6700, scene: 1 },
 ];
@@ -188,12 +188,12 @@ describe("Stops, beats and motion", () => {
   it("holds each stop's frame while its copy is on screen and plays the beat in between", () => {
     const keyframes = storyKeyframes(stops, H);
     assert.equal(progressForScroll(0, keyframes), 0);
-    assert.equal(progressForScroll(1500, keyframes), 0.1);
+    assert.equal(progressForScroll(1500, keyframes), 0.288);
     // The copy leaves before the scene moves...
-    const beat = STORY_BEATS["the-problem"];
+    const beat = STORY_BEATS.product;
     assert.equal(progressForScroll(beat.exit * H - 1, keyframes), 0);
     // ...and the scene has arrived before the next copy settles.
-    assert.equal(progressForScroll(1500 - beat.enter * H + 1, keyframes), 0.1);
+    assert.equal(progressForScroll(1500 - beat.enter * H + 1, keyframes), 0.288);
     const positions = keyframes.map(({ scrollY }) => scrollY);
     assert.deepEqual(
       positions,
@@ -210,8 +210,8 @@ describe("Stops, beats and motion", () => {
 
   it("paces the weave through its own keyframes", () => {
     const weave = [
-      { id: "the-path", y: 0, scene: 0.66 },
-      { id: "the-weave", y: 2200, scene: 0.892 },
+      { id: "features", y: 0, scene: 0.52 },
+      { id: "the-weave", y: 2900, scene: 0.892 },
     ];
     const keyframes = storyKeyframes(weave, H);
     for (const step of STORY_BEATS["the-weave"].via) {
@@ -243,7 +243,7 @@ describe("Stops, beats and motion", () => {
 
   it("plans a neighbour move by its beat and longer moves as one eased path", () => {
     const next = planMove(stops, 0, 1, { viewportHeight: H });
-    const beat = STORY_BEATS["the-problem"];
+    const beat = STORY_BEATS.product;
     assert.ok(next.duration >= beat.ms);
     assert.ok(next.duration <= 2400);
     assert.equal(next.to, 1500);
@@ -290,7 +290,7 @@ describe("Stops, beats and motion", () => {
 
 describe("Copy held in place while its screen moves", () => {
   it("fades in where it rests only once the scene has settled", () => {
-    for (const id of ["the-problem", "product", "features", "the-path", "the-weave", "studio"]) {
+    for (const id of ["product", "features", "the-weave", "studio"]) {
       const { enter } = beatFor(id);
       // Before the scene settles (the beat's enter point) the copy is not shown at all.
       assert.equal(copyReveal(enter, enter, 0.3).opacity, 0, id);
@@ -305,15 +305,18 @@ describe("Copy held in place while its screen moves", () => {
   });
 
   it("is gone before the next scene starts to move", () => {
-    for (const id of ["the-problem", "product", "features", "the-path", "the-weave", "studio"]) {
+    for (const id of ["product", "features", "the-weave", "studio"]) {
       const { exit } = beatFor(id);
       assert.equal(copyReveal(-exit, 0.6, exit).opacity, 0, id);
     }
   });
 
-  it("brings the curtain's words in soon after the brown fills the screen", () => {
-    assert.ok(beatFor("the-problem").enter <= 0.4);
-    assert.ok(beatFor("the-weave").ms <= 1500);
+  it("plays the brown and the sky as passages, never as stops", () => {
+    // The dive passes through the hill's brown on its way into the dojo...
+    assert.ok(beatFor("product").via.some(({ scene }) => scene === 0.1));
+    // ...and the flight through the door crosses the sky before the clouds lie down.
+    assert.ok(beatFor("the-weave").via.some(({ scene }) => scene === 0.66));
+    assert.ok(!landingPageContent.story.some(({ scene }) => scene === 0.1 || scene === 0.66));
   });
 });
 
@@ -418,6 +421,9 @@ describe("Scene helpers and old links", () => {
       assert.equal(resolveLegacyHash(`#${from}`), to);
     }
     assert.equal(resolveLegacyHash("#studio-view"), "product");
+    // The curtain's and the sky's old links land on the chapters that carry their words now.
+    assert.equal(resolveLegacyHash("#the-problem"), "product");
+    assert.equal(resolveLegacyHash("#the-path"), "the-weave");
     assert.equal(resolveLegacyHash("#faq-roadmap"), "faq-limits");
   });
 });

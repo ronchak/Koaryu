@@ -8,7 +8,7 @@ describe("public document navigation", () => {
       { href: "/features", label: "Features" },
       { href: "/use-cases", label: "Workflows" },
       { href: "/#pricing", label: "Pricing" },
-      { href: "/try", label: "Try it" },
+      { href: "/try", label: "Demo" },
     ]);
     assert.equal(new Set(publicNavLinks.map(({ href }) => href)).size, publicNavLinks.length);
   });

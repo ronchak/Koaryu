@@ -67,7 +67,7 @@ export const tryPageContent = {
     title: "Three things to try",
     allDone: "That's a class night in Koaryu.",
     allDoneDetail: "Your own roster, ranks and leads are a few minutes away.",
-    action: { label: "Create an account", href: "/signup" },
+    action: { label: "Start free trial", href: "/signup" },
   },
   studio: {
     tasks: [
@@ -241,7 +241,7 @@ export const tryPageContent = {
     },
     caption: "Belt tracker, shown with sample studio data.",
     actions: [
-      { label: "Create an account", href: "/signup" },
+      { label: "Start free trial", href: "/signup" },
       { label: "Back to the home page", href: "/" },
     ],
   },

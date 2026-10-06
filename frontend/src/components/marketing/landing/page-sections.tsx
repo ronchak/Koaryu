@@ -32,6 +32,7 @@ function Pricing() {
           {pricing.displayPrice}
           <span className={styles.pricePeriod}>{pricing.period}</span>
         </p>
+        <p className={styles.trial}>{pricing.trial}</p>
         <div className={styles.actions}>
           <ChapterAction {...pricing.setupAction} variant="primary" className={styles.action} />
         </div>
@@ -64,6 +65,17 @@ function Pricing() {
             ))}
           </dl>
         </div>
+      </div>
+      <div className={styles.start}>
+        <h3 className={styles.startTitle}>{pricing.start.title}</h3>
+        <ol className={styles.steps}>
+          {pricing.start.steps.map((step) => (
+            <li key={step.title}>
+              <span className={styles.stepTitle}>{step.title}</span>
+              <span className={styles.stepText}>{step.text}</span>
+            </li>
+          ))}
+        </ol>
       </div>
     </section>
   );
