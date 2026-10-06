@@ -5801,3 +5801,571 @@ BEGIN
     END LOOP;
 END;
 $run_metadata_privileges$;
+
+-- One read-only current-fact authority. Preview observes a statement snapshot;
+-- later effect owners must lock sources and pass their own final reference clock.
+CREATE FUNCTION private.workflow_fact_text_v1(p_value TEXT) RETURNS JSONB
+LANGUAGE sql IMMUTABLE SECURITY INVOKER SET search_path='' AS $$
+    SELECT jsonb_build_object('kind','text','value',left(p_value,5001))
+$$;
+
+-- Auth grants remain narrow: no metadata, session, invited-email or token access.
+CREATE FUNCTION private.workflow_staff_auth_email_v1(p_studio_id UUID,p_user_id UUID) RETURNS TEXT
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path='' AS $$
+    SELECT private.automation_normalize_email(u.email) FROM auth.users u
+    WHERE u.id=p_user_id AND (SELECT count(*) FROM public.staff_roles r WHERE r.user_id=u.id)=1
+        AND EXISTS(SELECT 1 FROM public.staff_roles r WHERE r.user_id=u.id AND r.studio_id=p_studio_id
+            AND r.archived_at IS NULL AND r.role IN ('admin','front_desk','instructor'))
+$$;
+CREATE FUNCTION private.workflow_current_staff_recipient_v1(p_studio_id UUID,p_user_id UUID) RETURNS JSONB
+LANGUAGE plpgsql STABLE SECURITY INVOKER SET search_path='' AS $$
+DECLARE v_count INTEGER; v_email TEXT; v_name TEXT; v_reason TEXT;
+BEGIN
+    SELECT count(*) INTO v_count FROM public.staff_roles WHERE user_id=p_user_id;
+    IF v_count>1 THEN
+        RETURN jsonb_build_object('decision','unavailable','reason','staff_membership_ambiguous','email',NULL,'name',NULL);
+    END IF;
+    IF NOT EXISTS(SELECT 1 FROM public.staff_roles WHERE user_id=p_user_id AND studio_id=p_studio_id
+        AND archived_at IS NULL AND role IN ('admin','front_desk','instructor')) THEN
+        RETURN jsonb_build_object('decision','skip','reason','staff_unavailable','email',NULL,'name',NULL);
+    END IF;
+    v_email:=private.workflow_staff_auth_email_v1(p_studio_id,p_user_id);
+    SELECT legal_first_name||' '||legal_last_name INTO v_name FROM public.staff_profiles WHERE user_id=p_user_id;
+    IF v_email IS NULL THEN v_reason:='invalid_email'; END IF;
+    RETURN jsonb_build_object('decision',CASE WHEN v_reason IS NULL THEN 'ready' ELSE 'skip' END,
+        'reason',v_reason,'email',v_email,'name',v_name);
+END $$;
+
+-- Pending scopes are uncertainty, never an invitation to run the comparator.
+CREATE FUNCTION private.workflow_current_rank_authority_v1(p_studio_id UUID,p_student_id UUID,p_membership_id UUID) RETURNS JSONB
+LANGUAGE sql STABLE SECURITY INVOKER SET search_path='' AS $$
+    SELECT jsonb_build_object('available',c.id IS NOT NULL AND NOT c.tombstoned
+        AND c.context=t.context AND NOT EXISTS(SELECT 1 FROM private.workflow_rank_scopes s
+            WHERE s.studio_id=p_studio_id AND s.student_id=p_student_id),
+        'generation',c.generation,'context',t.context,'pending',EXISTS(SELECT 1 FROM private.workflow_rank_scopes s
+            WHERE s.studio_id=p_studio_id AND s.student_id=p_student_id))
+    FROM (SELECT private.workflow_rank_tuple_v1(p_studio_id,p_student_id,p_membership_id) context) t
+    LEFT JOIN private.workflow_rank_contexts c ON c.studio_id=p_studio_id AND c.student_id=p_student_id
+        AND c.student_program_membership_id IS NOT DISTINCT FROM p_membership_id
+$$;
+
+CREATE FUNCTION private.workflow_current_source_facts_v1(
+    p_studio_id UUID,p_event_type TEXT,p_subject_id UUID,p_captured_context JSONB,p_trigger_config JSONB,
+    p_reference_at TIMESTAMPTZ,p_recipient_ids TEXT[]
+) RETURNS JSONB LANGUAGE plpgsql STABLE SECURITY INVOKER SET search_path='' AS $$
+DECLARE
+    cat JSONB:=private.workflow_catalog_v1(); meta JSONB:=cat#>ARRAY['triggers',p_event_type];
+    studio public.studios; student public.students; promotion public.promotions; lead public.leads;
+    trial public.lead_trial_appointments; event public.belt_test_events; recipient public.belt_test_recipients;
+    invoice public.billing_invoices; payment public.billing_payments; payer public.billing_payers;
+    program public.programs; rank public.belt_ranks; ladder public.belt_ladders;
+    context JSONB:=p_captured_context; expected JSONB; authority JSONB; finance JSONB; evidence JSONB;
+    conditions JSONB:='{}'; templates JSONB:='{}'; anchors JSONB:='{}'; recipients JSONB:='{}'; addresses JSONB:='{}';
+    source_found BOOLEAN:=false; reason TEXT; unavailable BOOLEAN:=false; context_bad BOOLEAN:=false; current_context_bad BOOLEAN:=false;
+    student_id UUID; lead_id UUID; program_id UUID; membership_id UUID; rank_id UUID; filter_id UUID;
+    generation JSONB; settlement_generation BIGINT; today DATE; captured_due DATE; zone TEXT; minor BOOLEAN; on_hold BOOLEAN; approval_current BOOLEAN:=false;
+    policy TEXT; email TEXT; name TEXT; kind TEXT; contact_reason TEXT; contact_decision TEXT; staff JSONB; guardian RECORD;
+    fields TEXT[]; k TEXT; value JSONB; is_trial BOOLEAN:=p_event_type LIKE 'trial.%';
+    is_belt BOOLEAN:=p_event_type LIKE 'belt_test.%'; is_invoice BOOLEAN:=p_event_type LIKE 'invoice.%';
+BEGIN
+    IF p_studio_id IS NULL OR p_subject_id IS NULL OR meta IS NULL OR p_reference_at IS NULL
+        OR NOT isfinite(p_reference_at) OR p_reference_at NOT BETWEEN TIMESTAMPTZ '0001-01-01 00:00:00+00' AND TIMESTAMPTZ '9999-12-31 23:59:59.999999+00'
+        OR p_recipient_ids IS NULL OR cardinality(p_recipient_ids)>4
+        OR cardinality(p_recipient_ids)<>(SELECT count(DISTINCT x) FROM unnest(p_recipient_ids) x)
+        OR EXISTS(SELECT 1 FROM unnest(p_recipient_ids) x WHERE x IS NULL OR NOT meta->'recipient_ids' ? x)
+        OR NOT private.workflow_json_keys_v1(p_trigger_config,ARRAY['event_type','program_id','offset_minutes'],ARRAY['event_type','program_id'])
+        OR p_trigger_config->>'event_type' IS DISTINCT FROM p_event_type
+        OR (p_trigger_config->'program_id'<>'null'::JSONB AND NOT coalesce(private.workflow_typed_value_v1(p_trigger_config->'program_id',cat#>'{fields,program.id}'),false)) THEN
+        RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST';
+    END IF;
+    filter_id:=(p_trigger_config->>'program_id')::UUID;
+    SELECT * INTO studio FROM public.studios WHERE id=p_studio_id;
+    IF studio.id IS NULL THEN RAISE EXCEPTION USING ERRCODE='P0002',MESSAGE='AUTOMATION_NOT_FOUND'; END IF;
+    zone:=CASE WHEN EXISTS(SELECT 1 FROM pg_catalog.pg_timezone_names z WHERE z.name=studio.timezone) THEN studio.timezone ELSE 'UTC' END;
+    today:=(p_reference_at AT TIME ZONE zone)::DATE;
+    -- The primary record determines scoped404 independently from any missing parent.
+    CASE
+    WHEN p_event_type='student.enrolled' THEN
+        SELECT * INTO student FROM public.students WHERE studio_id=p_studio_id AND id=p_subject_id;
+        source_found:=student.id IS NOT NULL; student_id:=student.id;
+        IF p_captured_context IS NOT NULL THEN
+            context_bad:=NOT private.workflow_json_keys_v1(context,ARRAY['student_id','matched_program_ids'],ARRAY['student_id','matched_program_ids'])
+                OR context->'student_id' IS DISTINCT FROM to_jsonb(p_subject_id) OR jsonb_typeof(context->'matched_program_ids') IS DISTINCT FROM 'array';
+            IF NOT context_bad THEN
+                context_bad:=jsonb_array_length(context->'matched_program_ids')>25 OR EXISTS(SELECT 1 FROM jsonb_array_elements(context->'matched_program_ids') v
+                    WHERE NOT coalesce(private.workflow_typed_value_v1(v,cat#>'{fields,program.id}'),false));
+            END IF;
+        END IF;
+    WHEN p_event_type='student.promoted' THEN
+        SELECT * INTO promotion FROM public.promotions WHERE studio_id=p_studio_id AND id=p_subject_id;
+        source_found:=promotion.id IS NOT NULL; student_id:=promotion.student_id;
+        membership_id:=promotion.command_membership_id; program_id:=promotion.command_program_id; rank_id:=promotion.to_rank_id;
+        IF source_found AND promotion.transition_kind IS DISTINCT FROM 'promotion' THEN reason:='promotion_unavailable'; END IF;
+        IF p_captured_context IS NULL THEN
+            SELECT e.context INTO context FROM private.automation_workflow_events e WHERE e.studio_id=p_studio_id
+                AND e.event_type=p_event_type AND e.source_key=p_subject_id::TEXT AND e.subject_id=p_subject_id AND e.subject_kind='promotion';
+        END IF;
+        expected:=jsonb_build_object('promotion_id',p_subject_id,'student_id',student_id,'student_program_membership_id',membership_id,
+            'program_id',program_id,'rank_id',rank_id);
+        context_bad:=context IS NULL OR NOT private.workflow_json_keys_v1(context,
+            ARRAY['promotion_id','student_id','student_program_membership_id','program_id','rank_id','from_rank_id','rank_context_generation'],
+            ARRAY['promotion_id','student_id','student_program_membership_id','program_id','rank_id','rank_context_generation'])
+            OR NOT coalesce(private.workflow_integer_v1(context->'rank_context_generation',1,9223372036854775807),false)
+            OR (context ? 'from_rank_id' AND context->'from_rank_id' IS DISTINCT FROM coalesce(to_jsonb(promotion.command_from_rank_id),'null'::JSONB));
+        IF NOT context_bad AND NOT context @> expected THEN reason:=coalesce(reason,'source_context_changed'); END IF;
+        generation:=context->'rank_context_generation';
+        IF NOT context_bad THEN conditions:=jsonb_build_object('program.id',program_id); END IF;
+        IF rank_id IS NOT NULL THEN conditions:=conditions||jsonb_build_object('promotion.rank_id',rank_id); END IF;
+        IF promotion.to_rank_name_snapshot IS NOT NULL THEN templates:=jsonb_build_object('rank_name',private.workflow_fact_text_v1(promotion.to_rank_name_snapshot)); END IF;
+    WHEN p_event_type IN ('lead.created','lead.stage_changed') THEN
+        SELECT * INTO lead FROM public.leads WHERE studio_id=p_studio_id AND id=p_subject_id;
+        source_found:=lead.id IS NOT NULL; lead_id:=lead.id; program_id:=lead.program_id;
+        IF p_captured_context IS NOT NULL THEN
+            fields:=CASE WHEN p_event_type='lead.created' THEN ARRAY['lead_id','program_id','stage'] ELSE ARRAY['lead_id','program_id','activity_id','old_stage','stage'] END;
+            context_bad:=NOT private.workflow_json_keys_v1(context,fields,fields)
+                OR context->'lead_id' IS DISTINCT FROM to_jsonb(p_subject_id)
+                OR NOT coalesce(private.workflow_typed_value_v1(context->'stage',cat#>'{fields,lead.stage}'),false)
+                OR (context->'program_id'<>'null'::JSONB AND NOT coalesce(private.workflow_typed_value_v1(context->'program_id',cat#>'{fields,program.id}'),false));
+            IF p_event_type='lead.stage_changed' THEN
+                context_bad:=context_bad OR NOT coalesce(private.workflow_typed_value_v1(context->'old_stage',cat#>'{fields,lead.stage}'),false)
+                    OR NOT coalesce(private.workflow_typed_value_v1(context->'activity_id',cat#>'{fields,program.id}'),false);
+            END IF;
+        END IF;
+    WHEN is_trial THEN
+        SELECT * INTO trial FROM public.lead_trial_appointments WHERE studio_id=p_studio_id AND id=p_subject_id;
+        source_found:=trial.id IS NOT NULL; lead_id:=trial.lead_id; program_id:=trial.program_id;
+        expected:=jsonb_build_object('appointment_id',p_subject_id,'lead_id',lead_id,'program_id',program_id,'revision',trial.revision,'status',trial.status);
+        IF p_captured_context IS NOT NULL THEN
+            context_bad:=NOT private.workflow_json_keys_v1(context,ARRAY['appointment_id','lead_id','program_id','revision','status'],ARRAY['appointment_id','lead_id','program_id','revision','status'])
+                OR NOT coalesce(private.workflow_integer_v1(context->'revision',1,9223372036854775807),false);
+            IF NOT context_bad AND context IS DISTINCT FROM expected THEN reason:='source_context_changed'; END IF;
+        END IF;
+        IF source_found AND (trial.status IS DISTINCT FROM CASE WHEN p_event_type IN ('trial.scheduled','trial.upcoming') THEN 'scheduled' ELSE substr(p_event_type,7) END
+            OR (p_event_type IN ('trial.scheduled','trial.upcoming') AND trial.starts_at BETWEEN TIMESTAMPTZ '0001-01-01+00' AND TIMESTAMPTZ '9999-12-31 23:59:59.999999+00' AND trial.starts_at<=p_reference_at)) THEN reason:='trial_unavailable'; END IF;
+        IF p_event_type='trial.no_show' AND trial.rebooking_superseded THEN reason:='trial_rebooked'; END IF;
+        IF source_found THEN
+            conditions:=jsonb_build_object('trial.status',trial.status);
+            templates:=jsonb_build_object('trial_location',private.workflow_fact_text_v1(trial.location));
+            IF trial.starts_at BETWEEN TIMESTAMPTZ '0001-01-01+00' AND TIMESTAMPTZ '9999-12-31 23:59:59.999999+00'
+                AND trial.ends_at>trial.starts_at AND isfinite(trial.ends_at)
+                AND EXISTS(SELECT 1 FROM pg_catalog.pg_timezone_names z WHERE z.name=trial.timezone) THEN
+                templates:=templates||jsonb_build_object('trial_start',jsonb_build_object('kind','event_time','instant',private.automation_utc_text_v1(trial.starts_at),'timezone',trial.timezone));
+                IF meta->'delay_fields' ? 'trial.starts_at' THEN anchors:=jsonb_build_object('trial.starts_at',private.automation_utc_text_v1(trial.starts_at)); END IF;
+            ELSE unavailable:=true; END IF;
+        END IF;
+    WHEN is_belt THEN
+        SELECT * INTO recipient FROM public.belt_test_recipients WHERE studio_id=p_studio_id AND id=p_subject_id;
+        source_found:=recipient.id IS NOT NULL; student_id:=recipient.student_id; membership_id:=recipient.student_program_membership_id;
+        program_id:=recipient.approved_program_id; rank_id:=recipient.approved_current_rank_id; generation:=to_jsonb(recipient.approved_rank_context_generation);
+        SELECT * INTO event FROM public.belt_test_events WHERE studio_id=p_studio_id AND id=recipient.event_id;
+        expected:=jsonb_build_object('event_id',recipient.event_id,'student_id',student_id,'student_program_membership_id',membership_id,
+            'approved_program_id',program_id,'approved_current_rank_id',rank_id,'approved_target_rank_id',recipient.approved_target_rank_id,
+            'approved_schedule_revision',recipient.approved_schedule_revision,'approval_revision',recipient.revision,'approved_rank_context_generation',recipient.approved_rank_context_generation);
+        IF p_captured_context IS NOT NULL THEN
+            fields:=ARRAY['event_id','student_id','student_program_membership_id','approved_program_id','approved_current_rank_id','approved_target_rank_id','approved_schedule_revision','approval_revision','approved_rank_context_generation'];
+            context_bad:=NOT private.workflow_json_keys_v1(context,fields,fields);
+            IF NOT context_bad AND context IS DISTINCT FROM expected THEN reason:='approval_changed'; END IF;
+        END IF;
+        IF source_found AND (event.id IS NULL OR recipient.state<>'approved' OR event.status<>'scheduled'
+            OR (event.starts_at BETWEEN TIMESTAMPTZ '0001-01-01+00' AND TIMESTAMPTZ '9999-12-31 23:59:59.999999+00' AND event.starts_at<=p_reference_at) OR event.schedule_revision<>recipient.approved_schedule_revision) THEN reason:='belt_test_unavailable'; END IF;
+        IF event.id IS NOT NULL THEN
+            conditions:=jsonb_build_object('belt_test.event_scheduled',event.status='scheduled');
+            templates:=jsonb_build_object('event_name',private.workflow_fact_text_v1(event.name),'event_location',private.workflow_fact_text_v1(event.location));
+            IF event.starts_at BETWEEN TIMESTAMPTZ '0001-01-01+00' AND TIMESTAMPTZ '9999-12-31 23:59:59.999999+00'
+                AND event.ends_at>event.starts_at AND isfinite(event.ends_at)
+                AND EXISTS(SELECT 1 FROM pg_catalog.pg_timezone_names z WHERE z.name=event.timezone) THEN
+                templates:=templates||jsonb_build_object('event_start',jsonb_build_object('kind','event_time','instant',private.automation_utc_text_v1(event.starts_at),'timezone',event.timezone));
+                anchors:=jsonb_build_object('belt_test.starts_at',private.automation_utc_text_v1(event.starts_at));
+            ELSE unavailable:=true; END IF;
+        END IF;
+    WHEN is_invoice THEN
+        IF p_event_type='invoice.payment_failed' THEN
+            SELECT * INTO payment FROM public.billing_payments WHERE studio_id=p_studio_id AND id=p_subject_id;
+            source_found:=payment.id IS NOT NULL;
+            SELECT * INTO invoice FROM public.billing_invoices WHERE studio_id=p_studio_id AND id=payment.invoice_id;
+            IF source_found AND payment.status<>'failed' THEN reason:='payment_not_failed'; END IF;
+            IF p_captured_context IS NULL THEN
+                SELECT e.context INTO context FROM private.automation_workflow_events e WHERE e.studio_id=p_studio_id
+                    AND e.event_type=p_event_type AND e.source_key=p_subject_id::TEXT AND e.subject_id=p_subject_id AND e.subject_kind='invoice';
+            END IF;
+            context_bad:=context IS NULL OR NOT private.workflow_json_keys_v1(context,
+                ARRAY['payment_id','invoice_id','payer_id','invoice_settlement_generation','payment_evidence'],
+                ARRAY['payment_id','invoice_id','payer_id','invoice_settlement_generation','payment_evidence'])
+                OR NOT coalesce(private.workflow_integer_v1(context->'invoice_settlement_generation',1,9223372036854775807),false)
+                OR NOT coalesce(private.workflow_payment_evidence_valid_v1(context->'payment_evidence'),false);
+        ELSE
+            SELECT * INTO invoice FROM public.billing_invoices WHERE studio_id=p_studio_id AND id=p_subject_id;
+            source_found:=invoice.id IS NOT NULL;
+            IF p_captured_context IS NOT NULL THEN
+                fields:=ARRAY['invoice_id','payer_id','due_date','stripe_account_id','stripe_customer_id','stripe_invoice_id','connect_account_generation','currency'];
+                context_bad:=NOT private.workflow_json_keys_v1(context,fields,fields)
+                    OR NOT coalesce(private.workflow_typed_value_v1(context->'invoice_id',cat#>'{fields,program.id}'),false)
+                    OR NOT coalesce(private.workflow_typed_value_v1(context->'payer_id',cat#>'{fields,program.id}'),false)
+                    OR NOT coalesce(private.workflow_integer_v1(context->'connect_account_generation',1,2147483647),false)
+                    OR jsonb_typeof(context->'currency') IS DISTINCT FROM 'string' OR context->>'currency' !~ '^[A-Za-z]{3}$'
+                    OR jsonb_typeof(context->'due_date') IS DISTINCT FROM 'string' OR context->>'due_date' !~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$';
+                FOREACH k IN ARRAY ARRAY['stripe_account_id','stripe_customer_id','stripe_invoice_id'] LOOP
+                    context_bad:=context_bad OR jsonb_typeof(context->k) IS DISTINCT FROM 'string'
+                        OR octet_length(context->>k) NOT BETWEEN 1 AND 255 OR context->>k !~ '^[!-~]+$';
+                END LOOP;
+                IF NOT context_bad THEN
+                    BEGIN
+                        captured_due:=(context->>'due_date')::DATE;
+                        context_bad:=NOT isfinite(captured_due) OR captured_due NOT BETWEEN DATE '0001-01-01' AND DATE '9999-12-31'
+                            OR to_char(captured_due,'YYYY-MM-DD') IS DISTINCT FROM context->>'due_date';
+                    EXCEPTION WHEN invalid_datetime_format OR datetime_field_overflow THEN context_bad:=true;
+                    END;
+                END IF;
+                -- Equality is meaningful only for known current comparison values.
+                -- This validates scalar shape; the existing financial reader still
+                -- owns provider/payer agreement, unit provenance and settlement.
+                current_context_bad:=invoice.currency IS NULL OR invoice.currency !~ '^[A-Za-z]{3}$'
+                    OR (invoice.due_date IS NOT NULL AND (NOT isfinite(invoice.due_date)
+                        OR invoice.due_date NOT BETWEEN DATE '0001-01-01' AND DATE '9999-12-31'));
+                k:=invoice.metadata->>'connect_account_generation';
+                IF k IS NULL OR length(k) NOT BETWEEN 1 AND 10 OR k !~ '^[1-9][0-9]*$' THEN current_context_bad:=true;
+                ELSIF k::NUMERIC>2147483647 THEN current_context_bad:=true; END IF;
+                FOREACH k IN ARRAY ARRAY['stripe_account_id','stripe_customer_id','stripe_invoice_id'] LOOP
+                    value:=to_jsonb(invoice)->k;
+                    current_context_bad:=current_context_bad OR jsonb_typeof(value) IS DISTINCT FROM 'string'
+                        OR octet_length(value#>>'{}') NOT BETWEEN 1 AND 255 OR value#>>'{}' !~ '^[!-~]+$';
+                END LOOP;
+                IF current_context_bad THEN unavailable:=true;
+                ELSIF NOT context_bad AND invoice.due_date IS NOT NULL AND (context->'invoice_id' IS DISTINCT FROM to_jsonb(invoice.id)
+                    OR context->'payer_id' IS DISTINCT FROM coalesce(to_jsonb(invoice.payer_id),'null'::JSONB)
+                    OR captured_due IS DISTINCT FROM invoice.due_date OR upper(context->>'currency') IS DISTINCT FROM upper(invoice.currency)
+                    OR context->>'stripe_account_id' IS DISTINCT FROM invoice.stripe_account_id
+                    OR context->>'stripe_customer_id' IS DISTINCT FROM invoice.stripe_customer_id
+                    OR context->>'stripe_invoice_id' IS DISTINCT FROM invoice.stripe_invoice_id
+                    OR context->>'connect_account_generation' IS DISTINCT FROM invoice.metadata->>'connect_account_generation') THEN reason:='source_context_changed'; END IF;
+            END IF;
+        END IF;
+        SELECT * INTO payer FROM public.billing_payers WHERE studio_id=p_studio_id AND id=invoice.payer_id;
+        IF source_found AND (invoice.id IS NULL OR payer.id IS NULL) THEN reason:='invoice_parent_missing'; END IF;
+        IF invoice.id IS NOT NULL THEN
+            conditions:=jsonb_build_object('invoice.open_balance',invoice.status='open' AND invoice.amount_remaining_cents>0);
+            IF invoice.collection_method IS NULL OR invoice.collection_method IN ('send_invoice','charge_automatically') THEN
+                conditions:=conditions||jsonb_build_object('invoice.collection_method',invoice.collection_method);
+            END IF;
+            IF invoice.due_date IS NULL OR (isfinite(invoice.due_date) AND invoice.due_date BETWEEN DATE '0001-01-01' AND DATE '9999-12-31') THEN
+                conditions:=conditions||jsonb_build_object('invoice.overdue',invoice.status='open' AND invoice.amount_remaining_cents>0
+                    AND coalesce(invoice.due_date<today,false));
+                templates:=templates||jsonb_build_object('invoice_due_date',jsonb_build_object('kind','date','value',to_char(invoice.due_date,'YYYY-MM-DD')));
+                IF p_event_type='invoice.overdue' AND (invoice.due_date IS NULL OR invoice.due_date>=today) THEN reason:=coalesce(reason,'invoice_not_overdue'); END IF;
+            ELSIF p_event_type='invoice.overdue' THEN unavailable:=true; END IF;
+            IF invoice.status<>'open' OR invoice.amount_remaining_cents<=0 THEN reason:=coalesce(reason,'invoice_not_open'); END IF;
+            IF coalesce(invoice.metadata->'demo'='true'::JSONB,false) OR coalesce(payer.metadata->'demo'='true'::JSONB,false)
+                OR coalesce(payment.metadata->'demo'='true'::JSONB,false) THEN reason:=coalesce(reason,'demo_source'); END IF;
+            -- A known newer committed settlement remains a successor even when
+            -- unrelated current financial facts are unavailable. Never repair it.
+            IF p_event_type='invoice.payment_failed' AND NOT context_bad
+                AND context->'payment_id'=to_jsonb(payment.id) AND context->'invoice_id'=to_jsonb(invoice.id)
+                AND context#>'{payment_evidence,invalid_fields}'='[]'::JSONB THEN
+                SELECT a.generation INTO settlement_generation FROM private.workflow_invoice_settlement_authority a
+                    WHERE a.studio_id=p_studio_id AND a.invoice_id=invoice.id;
+                IF settlement_generation>(context->>'invoice_settlement_generation')::BIGINT THEN reason:=coalesce(reason,'payment_settled');
+                ELSIF settlement_generation IS NULL OR settlement_generation<(context->>'invoice_settlement_generation')::BIGINT THEN unavailable:=true; END IF;
+            END IF;
+            finance:=private.workflow_invoice_financial_context_v1(p_studio_id,invoice.id,payment.id);
+            IF finance->'available' IS DISTINCT FROM 'true'::JSONB THEN unavailable:=true;
+            ELSE
+                templates:=templates||jsonb_build_object('invoice_balance',jsonb_build_object('kind','money',
+                    'amount_minor_units',invoice.amount_remaining_cents,'currency',finance->'currency','unit_convention',finance->'unit_convention'));
+            END IF;
+            templates:=templates||jsonb_build_object('invoice_number',private.workflow_fact_text_v1(invoice.invoice_number));
+            IF p_event_type='invoice.payment_failed' AND NOT context_bad THEN
+                evidence:=private.workflow_payment_evidence_v1(payment);
+                -- The evidence normalizer records malformed nonnull values as
+                -- null plus invalid_fields. Those are unknown, not new identities.
+                IF evidence->'invalid_fields' IS DISTINCT FROM '[]'::JSONB
+                    OR EXISTS(SELECT 1 FROM jsonb_each(evidence) x WHERE x.key IN
+                        ('currency','stripe_account_id','stripe_customer_id','stripe_invoice_id','connect_account_generation') AND x.value='null'::JSONB) THEN unavailable:=true;
+                ELSIF context->'payment_id' IS DISTINCT FROM to_jsonb(payment.id) OR context->'invoice_id' IS DISTINCT FROM to_jsonb(invoice.id)
+                    OR context->'payer_id' IS DISTINCT FROM to_jsonb(payer.id) THEN reason:=coalesce(reason,'source_context_changed');
+                ELSIF context#>>'{payment_evidence,status}' IS DISTINCT FROM 'failed'
+                    OR context#>'{payment_evidence,invalid_fields}' IS DISTINCT FROM '[]'::JSONB
+                    OR context#>'{payment_evidence,payment_id}' IS DISTINCT FROM context->'payment_id'
+                    OR context#>'{payment_evidence,invoice_id}' IS DISTINCT FROM context->'invoice_id'
+                    OR context#>'{payment_evidence,payer_id}' IS DISTINCT FROM context->'payer_id'
+                    OR EXISTS(SELECT 1 FROM jsonb_each(context->'payment_evidence') x WHERE x.key IN
+                        ('currency','stripe_account_id','stripe_customer_id','stripe_invoice_id','connect_account_generation') AND x.value='null'::JSONB) THEN unavailable:=true;
+                ELSIF EXISTS(SELECT 1 FROM jsonb_each(context->'payment_evidence') x WHERE x.key IN
+                    ('payment_id','payer_id','invoice_id','stripe_account_id','stripe_customer_id','stripe_invoice_id','connect_account_generation')
+                    AND x.value IS DISTINCT FROM evidence->x.key) THEN reason:=coalesce(reason,'source_context_changed');
+                ELSIF context#>'{payment_evidence,currency}' IS DISTINCT FROM evidence->'currency' THEN
+                    IF finance->'available'='true'::JSONB THEN reason:=coalesce(reason,'source_context_changed'); ELSE unavailable:=true; END IF;
+                ELSIF finance->'available'='true'::JSONB AND context->'invoice_settlement_generation' IS DISTINCT FROM finance->'invoice_settlement_generation' THEN
+                    reason:=coalesce(reason,'payment_settled');
+                END IF;
+            END IF;
+        END IF;
+    ELSE RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST';
+    END CASE;
+    -- A present durable context is never repaired by current equality. Validate
+    -- its stored types before interpreting a difference as a known successor.
+    IF context IS NOT NULL AND p_event_type<>'invoice.overdue' THEN
+        IF jsonb_typeof(context) IS DISTINCT FROM 'object' THEN context_bad:=true;
+        ELSE
+            FOR k,value IN SELECT x.key,x.value FROM jsonb_each(context) x LOOP
+                IF k IN ('rank_context_generation','approved_rank_context_generation','approved_schedule_revision','approval_revision','revision','invoice_settlement_generation') THEN
+                    context_bad:=context_bad OR NOT coalesce(private.workflow_integer_v1(value,1,9223372036854775807),false);
+                ELSIF k IN ('stage','old_stage') THEN
+                    context_bad:=context_bad OR NOT coalesce(private.workflow_typed_value_v1(value,cat#>'{fields,lead.stage}'),false);
+                ELSIF k='status' THEN
+                    context_bad:=context_bad OR NOT coalesce(private.workflow_typed_value_v1(value,cat#>'{fields,trial.status}'),false);
+                ELSIF k NOT IN ('matched_program_ids','payment_evidence') THEN
+                    context_bad:=context_bad OR NOT (coalesce(private.workflow_typed_value_v1(value,cat#>'{fields,program.id}'),false)
+                        OR (value='null'::JSONB AND k IN ('program_id','student_program_membership_id','approved_program_id','approved_current_rank_id','from_rank_id')));
+                END IF;
+            END LOOP;
+        END IF;
+        -- Malformed context differences are unknown, not a fabricated successor.
+        IF context_bad AND reason IN ('source_context_changed','approval_changed') THEN reason:=NULL; END IF;
+    END IF;
+    IF NOT source_found THEN reason:='source_missing'; END IF;
+    -- Resolve exact current parents before optional contact/render availability.
+    IF student_id IS NOT NULL THEN
+        IF student.id IS NULL THEN SELECT * INTO student FROM public.students WHERE studio_id=p_studio_id AND id=student_id; END IF;
+        IF student.id IS NULL OR student.deleted_at IS NOT NULL THEN reason:=coalesce(reason,'student_unavailable');
+        ELSIF student.status<>'active' THEN reason:=coalesce(reason,'inactive'); END IF;
+        IF student.id IS NOT NULL THEN
+            conditions:=conditions||jsonb_build_object('student.status',student.status);
+            IF (student.hold_start_date IS NULL OR isfinite(student.hold_start_date)) AND (student.hold_end_date IS NULL OR isfinite(student.hold_end_date)) THEN
+                on_hold:=student.hold_start_date IS NOT NULL AND student.hold_start_date<=today AND (student.hold_end_date IS NULL OR student.hold_end_date>=today);
+                conditions:=conditions||jsonb_build_object('student.on_hold',on_hold);
+                IF on_hold THEN reason:=coalesce(reason,'on_hold'); END IF;
+            ELSE unavailable:=true; END IF;
+            minor:=CASE WHEN student.date_of_birth IS NULL THEN coalesce(student.is_minor,false)
+                WHEN isfinite(student.date_of_birth) AND student.date_of_birth BETWEEN DATE '0001-01-01' AND today
+                THEN student.date_of_birth>(today-INTERVAL '18 years')::DATE END;
+            IF minor IS NOT NULL THEN conditions:=conditions||jsonb_build_object('student.is_minor',minor); END IF;
+            templates:=templates||jsonb_build_object('student_first_name',private.workflow_fact_text_v1(CASE WHEN private.workflow_blank_v1(to_jsonb(student.preferred_name)) THEN student.legal_first_name ELSE student.preferred_name END));
+        END IF;
+    END IF;
+    IF lead_id IS NOT NULL THEN
+        IF lead.id IS NULL THEN SELECT * INTO lead FROM public.leads WHERE studio_id=p_studio_id AND id=lead_id; END IF;
+        IF lead.id IS NULL THEN reason:=coalesce(reason,'lead_unavailable');
+        ELSE
+            conditions:=conditions||jsonb_build_object('lead.stage',lead.stage,'lead.unconverted',lead.converted_student_id IS NULL AND lead.stage<>'enrolled');
+            IF lead.source IN ('walk_in','referral','social','search','website','other') THEN conditions:=conditions||jsonb_build_object('lead.source',lead.source); END IF;
+            IF lead.converted_student_id IS NOT NULL OR lead.stage NOT IN ('inquiry','trial_scheduled','trial_completed','offer_sent') THEN reason:=coalesce(reason,'lead_closed'); END IF;
+            templates:=templates||jsonb_build_object('lead_first_name',private.workflow_fact_text_v1(lead.first_name));
+        END IF;
+    END IF;
+    IF meta->'field_ids' ? 'program.id' AND NOT (p_event_type='student.promoted' AND context_bad) THEN conditions:=conditions||jsonb_build_object('program.id',program_id); END IF;
+    IF program_id IS NOT NULL THEN
+        SELECT * INTO program FROM public.programs WHERE studio_id=p_studio_id AND id=program_id AND archived_at IS NULL;
+        IF program.id IS NULL THEN reason:=coalesce(reason,'program_unavailable'); END IF;
+    END IF;
+    IF p_event_type='student.promoted' AND NOT context_bad THEN
+        IF program_id IS NULL THEN templates:=templates||jsonb_build_object('program_name',private.workflow_fact_text_v1(NULL));
+        ELSIF program.id IS NOT NULL THEN templates:=templates||jsonb_build_object('program_name',private.workflow_fact_text_v1(program.name)); END IF;
+    END IF;
+    IF filter_id IS NOT NULL AND NOT (p_event_type='student.promoted' AND context_bad) THEN
+        IF p_event_type='student.enrolled' THEN
+            IF NOT EXISTS(SELECT 1 FROM public.student_program_memberships m JOIN public.programs p ON p.studio_id=m.studio_id AND p.id=m.program_id
+                WHERE m.studio_id=p_studio_id AND m.student_id=student.id AND m.program_id=filter_id AND m.status IN ('active','paused') AND m.ended_at IS NULL AND p.archived_at IS NULL)
+                OR (p_captured_context IS NOT NULL AND NOT context_bad AND NOT context->'matched_program_ids' @> jsonb_build_array(filter_id)) THEN reason:=coalesce(reason,'program_unavailable'); END IF;
+        ELSIF program_id IS DISTINCT FROM filter_id THEN reason:=coalesce(reason,'program_unavailable'); END IF;
+    END IF;
+    IF (p_event_type='student.promoted' OR is_belt) AND student.id IS NOT NULL THEN
+        authority:=private.workflow_current_rank_authority_v1(p_studio_id,student.id,membership_id);
+        IF authority->'pending'='true'::JSONB THEN unavailable:=true;
+        ELSE
+        IF NOT context_bad THEN
+        IF authority#>'{context,source_exists}' IS DISTINCT FROM 'true'::JSONB OR authority#>'{context,live}' IS DISTINCT FROM 'true'::JSONB THEN
+            reason:=coalesce(reason,'rank_context_lost');
+        ELSIF authority->'available' IS DISTINCT FROM 'true'::JSONB THEN unavailable:=true;
+        ELSIF authority#>'{context,program_id}' IS DISTINCT FROM coalesce(to_jsonb(program_id),'null'::JSONB)
+            OR authority#>'{context,rank_id}' IS DISTINCT FROM coalesce(to_jsonb(rank_id),'null'::JSONB) THEN reason:=coalesce(reason,'rank_context_changed');
+        ELSIF (authority->>'generation')::BIGINT<(generation#>>'{}')::BIGINT THEN unavailable:=true;
+        ELSIF authority->'generation' IS DISTINCT FROM generation THEN reason:=coalesce(reason,'rank_context_superseded'); END IF;
+        END IF;
+        IF rank_id IS NOT NULL THEN
+            SELECT * INTO rank FROM public.belt_ranks WHERE studio_id=p_studio_id AND id=rank_id;
+            IF rank.id IS NULL THEN reason:=coalesce(reason,'rank_unavailable'); END IF;
+        ELSIF p_event_type='student.promoted' THEN reason:=coalesce(reason,'rank_unavailable'); END IF;
+        SELECT * INTO ladder FROM public.belt_ladders WHERE studio_id=p_studio_id AND id=CASE WHEN is_belt THEN event.ladder_id ELSE rank.ladder_id END;
+        IF ladder.id IS NULL
+            OR (rank.id IS NOT NULL AND rank.ladder_id IS DISTINCT FROM ladder.id)
+            OR (NOT context_bad AND ladder.program_id IS NOT NULL AND ladder.program_id IS DISTINCT FROM program_id)
+            OR (is_belt AND ladder.program_id IS DISTINCT FROM event.program_id)
+            OR (is_belt AND membership_id IS NULL AND event.program_id IS NOT NULL) THEN reason:=coalesce(reason,'ladder_unavailable'); END IF;
+        IF is_belt AND NOT EXISTS(SELECT 1 FROM public.belt_ranks WHERE studio_id=p_studio_id AND id=recipient.approved_target_rank_id AND ladder_id=ladder.id) THEN reason:=coalesce(reason,'rank_unavailable'); END IF;
+        END IF;
+        approval_current:=reason IS NULL AND NOT unavailable AND NOT context_bad;
+    END IF;
+    IF is_belt THEN
+        -- Unknown authority is omitted; a known terminal source is diagnostic false.
+        IF reason IS NOT NULL OR (NOT unavailable AND NOT context_bad) THEN conditions:=conditions||jsonb_build_object('belt_test.approval_current',approval_current); END IF;
+    END IF;
+    unavailable:=unavailable OR context_bad;
+    templates:=templates||jsonb_build_object('studio_name',private.workflow_fact_text_v1(studio.name));
+    -- Resolve each role independently; no global recipient_name or guardian fallback.
+    FOREACH policy IN ARRAY p_recipient_ids LOOP
+        email:=NULL; name:=NULL; kind:=NULL; contact_reason:=NULL; contact_decision:='skip';
+        CASE policy
+        WHEN 'student_or_guardian' THEN
+            IF student.id IS NULL THEN contact_reason:='student_unavailable';
+            ELSIF minor IS NULL THEN contact_reason:='invalid_birth_date'; contact_decision:='unavailable';
+            ELSIF NOT minor THEN email:=private.automation_normalize_email(student.email); name:=student.legal_first_name||' '||student.legal_last_name; kind:='student';
+            ELSE
+                SELECT count(*) FILTER(WHERE private.automation_normalize_email(g.email) IS NOT NULL) valid_count,
+                    count(*) FILTER(WHERE g.is_primary_contact) primary_count,
+                    count(*) FILTER(WHERE g.is_primary_contact AND private.automation_normalize_email(g.email) IS NOT NULL) valid_primary_count,
+                    max(private.automation_normalize_email(g.email)) FILTER(WHERE g.is_primary_contact) primary_email,
+                    max(g.first_name||' '||g.last_name) FILTER(WHERE g.is_primary_contact) primary_name,
+                    max(private.automation_normalize_email(g.email)) any_email,
+                    max(g.first_name||' '||g.last_name) FILTER(WHERE private.automation_normalize_email(g.email) IS NOT NULL) any_name
+                    INTO guardian FROM public.student_guardians sg JOIN public.guardians g ON g.id=sg.guardian_id AND g.studio_id=p_studio_id WHERE sg.student_id=student.id;
+                IF guardian.primary_count>1 OR (guardian.valid_primary_count=0 AND guardian.valid_count>1) THEN contact_reason:='guardian_ambiguous';
+                ELSIF guardian.primary_count=1 AND guardian.valid_primary_count=1 THEN email:=guardian.primary_email; name:=guardian.primary_name;
+                ELSIF guardian.primary_count<=1 AND guardian.valid_count=1 THEN email:=guardian.any_email; name:=guardian.any_name;
+                ELSE contact_reason:='guardian_missing'; END IF;
+                kind:='guardian';
+            END IF;
+        WHEN 'lead_or_guardian' THEN
+            IF lead.id IS NULL THEN contact_reason:='lead_unavailable';
+            ELSIF lead.is_minor IS NULL THEN contact_reason:='minority_unavailable'; contact_decision:='unavailable';
+            ELSIF lead.is_minor THEN email:=private.automation_normalize_email(lead.guardian_email); name:=lead.guardian_name; kind:='guardian';
+            ELSE email:=private.automation_normalize_email(lead.email); name:=lead.first_name||' '||lead.last_name; kind:='lead'; END IF;
+        WHEN 'assigned_staff' THEN
+            staff:=private.workflow_current_staff_recipient_v1(p_studio_id,lead.assigned_staff_id);
+            contact_decision:=staff->>'decision'; contact_reason:=staff->>'reason'; email:=staff->>'email'; name:=staff->>'name'; kind:='assigned_staff';
+        WHEN 'invoice_payer' THEN
+            IF payer.id IS NULL THEN contact_reason:='payer_unavailable';
+            ELSE email:=private.automation_normalize_email(payer.email); name:=payer.display_name; kind:='invoice_payer'; END IF;
+        END CASE;
+        IF contact_reason IS NULL AND email IS NULL THEN contact_reason:='invalid_email'; END IF;
+        IF contact_reason IS NULL AND EXISTS(SELECT 1 FROM public.automation_suppressions WHERE studio_id=p_studio_id AND recipient_email=email) THEN contact_reason:='suppressed'; END IF;
+        IF contact_reason IS NULL THEN contact_decision:='ready';
+        ELSE
+            IF contact_decision<>'unavailable' THEN contact_decision:='skip'; END IF;
+            email:=NULL; kind:=NULL;
+        END IF;
+        recipients:=recipients||jsonb_build_object(policy,jsonb_build_object('decision',contact_decision,'reason',contact_reason,
+            'template_facts',CASE WHEN contact_decision='unavailable' THEN '{}'::JSONB ELSE jsonb_build_object('recipient_name',private.workflow_fact_text_v1(name)) END));
+        addresses:=addresses||jsonb_build_object(policy,jsonb_build_object('email',email,'kind',kind));
+    END LOOP;
+    -- Catalog applicability is the final closed-map boundary.
+    SELECT coalesce(jsonb_object_agg(e.key,e.value),'{}'::JSONB) INTO conditions FROM jsonb_each(conditions) e
+        WHERE meta->'field_ids' ? e.key AND (private.workflow_typed_value_v1(e.value,cat#>ARRAY['fields',e.key])
+            OR (e.value='null'::JSONB AND cat#>ARRAY['fields',e.key,'nullable']='true'::JSONB));
+    SELECT coalesce(jsonb_object_agg(e.key,e.value),'{}'::JSONB) INTO templates FROM jsonb_each(templates) e WHERE meta->'template_variables' ? e.key;
+    RETURN jsonb_build_object('entity_found',source_found,'facts',jsonb_build_object(
+        'source_decision',CASE WHEN reason IS NOT NULL THEN 'ineligible' WHEN unavailable THEN 'unavailable' ELSE 'eligible' END,
+        'source_reason',coalesce(reason,CASE WHEN unavailable THEN 'facts_unavailable' END),
+        'condition_facts',conditions,'template_facts',templates,'anchors',anchors,'recipients',recipients),'recipient_addresses',addresses);
+END $$;
+
+-- Same tenant-reference predicates as the retained validate read, without its
+-- actor locks. Structural validation must finish before any reference UUID cast.
+CREATE FUNCTION private.workflow_graph_read_issues_v1(p_studio_id UUID,p_graph JSONB) RETURNS JSONB
+LANGUAGE plpgsql STABLE SECURITY INVOKER SET search_path='' AS $$
+DECLARE issues JSONB;
+BEGIN
+    issues:=private.workflow_validate_v1(p_graph,'{}',false);
+    IF issues<>'[]'::JSONB THEN RETURN issues; END IF;
+    WITH nodes AS (
+        SELECT n->>'id' node_id,
+            CASE WHEN n->>'type'='trigger' THEN 'program.id' ELSE n->'config'->>'field' END kind,
+            CASE WHEN n->>'type'='trigger' THEN 'config.program_id' ELSE 'config.value' END field,
+            CASE WHEN n->>'type'='trigger' THEN n->'config'->'program_id' ELSE n->'config'->'value' END value
+        FROM jsonb_array_elements(p_graph->'nodes') n
+        WHERE n->>'type'='trigger' OR n->>'type'='condition' AND n->'config'->>'field' IN ('program.id','promotion.rank_id')
+    ), refs AS (
+        SELECT n.node_id,n.kind,n.field,(v.value#>>'{}')::UUID id FROM nodes n
+        CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN n.value IS NULL OR n.value='null' THEN '[]'::JSONB
+            WHEN jsonb_typeof(n.value)='array' THEN n.value ELSE jsonb_build_array(n.value) END) v(value)
+    ), all_issues AS (
+        SELECT jsonb_build_object('code','reference_unavailable','message','Choose an available program or rank.',
+            'node_id',r.node_id,'edge_id',NULL,'field',r.field) issue
+        FROM refs r
+        LEFT JOIN public.programs p ON r.kind='program.id' AND p.studio_id=p_studio_id AND p.id=r.id
+        LEFT JOIN public.belt_ranks b ON r.kind='promotion.rank_id' AND b.studio_id=p_studio_id AND b.id=r.id
+        WHERE r.kind='program.id' AND p.id IS NULL OR r.kind='promotion.rank_id' AND b.id IS NULL
+        UNION SELECT value FROM jsonb_array_elements(private.workflow_validate_v1(p_graph,'{}',true))
+    )
+    SELECT coalesce(jsonb_agg(issue ORDER BY (issue->>'node_id') COLLATE "C" NULLS FIRST,
+        (issue->>'field') COLLATE "C" NULLS FIRST,(issue->>'code') COLLATE "C",issue::TEXT COLLATE "C"),'[]'::JSONB) INTO issues FROM all_issues;
+    RETURN issues;
+END $$;
+CREATE FUNCTION private.workflow_simulation_projection_v1(
+    p_studio_id UUID,p_workflow_id UUID,p_graph JSONB,p_context JSONB,p_reference_at TIMESTAMPTZ
+) RETURNS JSONB LANGUAGE plpgsql STABLE SECURITY INVOKER SET search_path='' AS $$
+DECLARE issues JSONB; event_type TEXT; trigger_node JSONB; trigger_count INTEGER; built JSONB; result JSONB;
+    policies TEXT[]; meta JSONB; uuid_meta JSONB:=private.workflow_catalog_v1()#>'{fields,program.id}';
+BEGIN
+    IF p_workflow_id IS NULL THEN RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST'; END IF;
+    PERFORM 1 FROM public.automation_workflows WHERE studio_id=p_studio_id AND id=p_workflow_id;
+    IF NOT FOUND THEN RAISE EXCEPTION USING ERRCODE='P0002',MESSAGE='AUTOMATION_NOT_FOUND'; END IF;
+    IF NOT private.workflow_json_keys_v1(p_context,ARRAY['kind','entity_type','entity_id'],ARRAY['kind'])
+        OR p_context->>'kind' NOT IN ('synthetic','entity') OR jsonb_typeof(p_context->'kind') IS DISTINCT FROM 'string'
+        OR (p_context->>'kind'='synthetic' AND NOT private.workflow_json_keys_v1(p_context,ARRAY['kind'],ARRAY['kind']))
+        OR (p_context->>'kind'='entity' AND (NOT p_context ?& ARRAY['entity_type','entity_id']
+            OR p_context->>'entity_type' NOT IN ('student','promotion','lead','trial_appointment','invoice','payment','belt_test_recipient')
+            OR jsonb_typeof(p_context->'entity_type') IS DISTINCT FROM 'string'
+            OR NOT coalesce(private.workflow_typed_value_v1(p_context->'entity_id',uuid_meta),false))) THEN
+        RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST';
+    END IF;
+    issues:=private.workflow_graph_read_issues_v1(p_studio_id,p_graph);
+    IF jsonb_typeof(p_graph->'nodes')='array' THEN
+        SELECT count(*) INTO trigger_count FROM jsonb_array_elements(p_graph->'nodes') n WHERE n->>'type'='trigger';
+        IF trigger_count=1 THEN
+            SELECT n INTO trigger_node FROM jsonb_array_elements(p_graph->'nodes') n WHERE n->>'type'='trigger';
+            meta:=private.workflow_catalog_v1()#>ARRAY['triggers',trigger_node#>>'{config,event_type}'];
+            IF meta IS NOT NULL THEN event_type:=trigger_node#>>'{config,event_type}'; END IF;
+        END IF;
+    END IF;
+    IF event_type IS NOT NULL AND p_context->>'kind'='entity' AND p_context->>'entity_type' IS DISTINCT FROM meta->>'simulation_entity_type' THEN
+        issues:=issues||jsonb_build_array(jsonb_build_object('code','context_mismatch','message','Select the entity type for this trigger.',
+            'node_id',trigger_node->>'id','edge_id',NULL,'field','context.entity_type'));
+    END IF;
+    IF issues='[]'::JSONB AND p_context->>'kind'='entity' THEN
+        SELECT coalesce(array_agg(DISTINCT n#>>'{config,recipient}' ORDER BY n#>>'{config,recipient}'),'{}'::TEXT[]) INTO policies
+            FROM jsonb_array_elements(p_graph->'nodes') n WHERE n->>'type'='email';
+        built:=private.workflow_current_source_facts_v1(p_studio_id,event_type,(p_context->>'entity_id')::UUID,NULL,
+            trigger_node->'config',p_reference_at,policies);
+        IF built->'entity_found' IS DISTINCT FROM 'true'::JSONB THEN RAISE EXCEPTION USING ERRCODE='P0002',MESSAGE='AUTOMATION_NOT_FOUND'; END IF;
+        result:=built->'facts';
+    END IF;
+    RETURN jsonb_build_object('studio_id',p_studio_id,'workflow_id',p_workflow_id,'context',p_context,
+        'reference_time',private.automation_utc_text_v1(p_reference_at),'valid',issues='[]'::JSONB,'issues',issues,'event_type',event_type,'facts',result);
+END $$;
+CREATE FUNCTION public.get_automation_workflow_simulation_facts_v1(
+    p_studio_id UUID,p_actor_id UUID,p_workflow_id UUID,p_graph JSONB,p_context JSONB
+) RETURNS JSONB LANGUAGE plpgsql VOLATILE SECURITY INVOKER SET search_path='' AS $$
+DECLARE at TIMESTAMPTZ; result JSONB;
+BEGIN
+    PERFORM private.workflow_require_actor_v1(p_studio_id,p_actor_id);
+    at:=clock_timestamp();
+    SELECT private.workflow_simulation_projection_v1(p_studio_id,p_workflow_id,p_graph,p_context,at) INTO result;
+    RETURN jsonb_build_object('payload',result);
+END $$;
+CREATE FUNCTION public.get_belt_test_recipient_v1(p_studio_id UUID,p_actor_id UUID,p_event_id UUID,p_recipient_id UUID) RETURNS JSONB
+LANGUAGE plpgsql VOLATILE SECURITY INVOKER SET search_path='' AS $$
+DECLARE result JSONB;
+BEGIN
+    IF p_studio_id IS NULL OR p_actor_id IS NULL OR p_event_id IS NULL OR p_recipient_id IS NULL THEN
+        RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST';
+    END IF;
+    PERFORM private.workflow_require_actor_v1(p_studio_id,p_actor_id);
+    SELECT private.belt_test_recipient_payload_v1(r) INTO result FROM public.belt_test_recipients r
+        JOIN public.belt_test_events e ON e.studio_id=r.studio_id AND e.id=r.event_id
+        WHERE r.studio_id=p_studio_id AND r.event_id=p_event_id AND r.id=p_recipient_id;
+    IF result IS NULL THEN RAISE EXCEPTION USING ERRCODE='P0002',MESSAGE='AUTOMATION_NOT_FOUND'; END IF;
+    RETURN jsonb_build_object('payload',result);
+END $$;
+DO $current_fact_privileges$
+DECLARE r RECORD;
+BEGIN
+    FOR r IN SELECT p.oid::REGPROCEDURE identity FROM pg_catalog.pg_proc p JOIN pg_catalog.pg_namespace n ON n.oid=p.pronamespace
+        WHERE (n.nspname='private' AND p.proname IN ('workflow_fact_text_v1','workflow_staff_auth_email_v1','workflow_current_staff_recipient_v1',
+            'workflow_current_rank_authority_v1','workflow_current_source_facts_v1','workflow_graph_read_issues_v1','workflow_simulation_projection_v1'))
+        OR (n.nspname='public' AND p.proname IN ('get_automation_workflow_simulation_facts_v1','get_belt_test_recipient_v1')) LOOP
+        EXECUTE format('ALTER FUNCTION %s OWNER TO postgres',r.identity);
+        EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC,anon,authenticated,service_role',r.identity);
+        EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO service_role',r.identity);
+    END LOOP;
+END;
+$current_fact_privileges$;
