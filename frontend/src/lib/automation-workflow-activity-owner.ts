@@ -168,6 +168,8 @@ export function createWorkflowActivityOwner(
     );
   };
   const publish = (notify = true) => {
+    if (storageStatus === "ready" && [...entries.values()].some((entry) => entry.transition))
+      storageStatus = "blocked";
     snapshot = Object.freeze({
       operations: Object.freeze(
         new Map([...entries].map(([key, entry]) => [key, operation(entry)])),
@@ -246,7 +248,7 @@ export function createWorkflowActivityOwner(
       }
       storageStatus = "ready";
       publish(notify);
-      return true;
+      return snapshot.storage.status === "ready";
     } catch {
       if (current()) {
         storageStatus = "blocked";
