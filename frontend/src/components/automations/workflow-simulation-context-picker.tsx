@@ -114,6 +114,13 @@ function RecordChoices({
     cursor?: string;
     back: (string | undefined)[];
   } | null>(null);
+  const publication = useRef<{
+    rows: typeof leads.leads;
+    current(): boolean;
+    valid: boolean;
+  } | null>(null);
+  const retiredArrays = useRef(new WeakSet<typeof leads.leads>());
+  const observedArray = useRef<typeof leads.leads | null>(null);
   const nested = ["promotion", "trial_appointment", "belt_test_recipient"].includes(entityType);
   const level = nested && parent ? 1 : 0;
   const kind =
@@ -141,20 +148,38 @@ function RecordChoices({
       controllers.forEach((abort) => abort?.abort());
     };
   }, []);
-  useEffect(() => {
+  useLayoutEffect(() => {
+    const observed = publication.current;
+    const available = Boolean(leadRead?.current() && leads.leadsLoaded && !leads.leadsLoadError);
+    if (observed?.valid && (!available || observed.rows !== leads.leads || !observed.current())) {
+      observed.valid = false;
+      retiredArrays.current.add(observed.rows);
+    }
     if (!leadRead) return;
+    const freshArray = observedArray.current !== leads.leads;
+    observedArray.current = leads.leads;
     const ready =
-      leadRead.current() &&
-      leads.leadsLoaded &&
-      !leads.leadsLoadError &&
-      leads.leads !== leadRead.before;
+      available &&
+      leads.leads !== leadRead.before &&
+      !retiredArrays.current.has(leads.leads) &&
+      (observed?.valid || freshArray);
+    const published = ready
+      ? observed?.valid && observed.rows === leads.leads
+        ? observed
+        : { rows: leads.leads, current: leadRead.current, valid: true }
+      : null;
+    if (published) publication.current = published;
     const rows = leads.leads.map((row) => ({
       id: row.id,
       label: `${row.first_name} ${row.last_name} · ${row.stage} · ${reference(row.id)}`,
       isCurrent: () =>
-        leadRead.current() &&
-        latest.current.leads.leads === leads.leads &&
-        !latest.current.leads.leadsLoadError,
+        Boolean(
+          published?.valid &&
+          published.current() &&
+          latest.current.leads.leads === published.rows &&
+          latest.current.leads.leadsLoaded &&
+          !latest.current.leads.leadsLoadError,
+        ),
     }));
     setPages((old) => [
       {
@@ -168,7 +193,17 @@ function RecordChoices({
       },
       old[1],
     ]);
-  }, [leadRead, leads.leads, leads.leadsLoaded, leads.leadsLoadError]);
+    if (value && !value.isCurrent() && isCurrent()) onChange(null);
+  }, [
+    leadRead,
+    leads.leads,
+    leads.leadsLoaded,
+    leads.leadsLoadError,
+    leads.trialAppointments.trialStorage.isCurrent,
+    isCurrent,
+    onChange,
+    value,
+  ]);
   const invalidate = (index: number) => {
     requests.current[index]++;
     aborts.current[index]?.abort();
