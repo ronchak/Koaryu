@@ -421,3 +421,9 @@ The browser workflow workspace owns activity reads, simulations, and recovery fo
 ```bash
 node --experimental-strip-types --test tests/workflow-activity-state.test.mjs tests/workflow-activity-owner.test.mjs tests/workflow-activity-mounted.test.mjs
 ```
+
+Workflow tools simulate the current saved workflow's graph with a synthetic sample or an explicitly selected current record. Run history preserves published version context and pending cancellation recovery. Select an email node to request a synthetic sample for your verified account, then use Check result for an uncertain outcome.
+
+Local presentation proof: `node --experimental-strip-types --test tests/workflow-tools-mounted.test.mjs tests/workflow-context-picker-mounted.test.mjs`. Manual synthetic fixture: `PORT=4338 node --experimental-strip-types tests/helpers/workflow-tools-fixture.mjs --serve`; it binds to `127.0.0.1` and closes with Ctrl-C. Add `--preview` to inspect the live-only explanations without activity or record I/O.
+
+These synthetic proofs do not establish operational test email. Actual route mounting, coordinated capability checks, and real SQL/HTTP verification remain final feature acceptance gates.
