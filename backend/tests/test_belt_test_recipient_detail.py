@@ -446,11 +446,12 @@ def test_detail_openapi_reuses_complete_dto_with_identity_only(api):
     assert len(routes.detail_router.routes) == 1
 
 
-def test_composed_app_retains_existing_recipient_routes_without_detail_mount():
+def test_composed_app_mounts_each_recipient_route_once_with_exact_detail_contract():
     base = BASE + "/{event_id}/recipients"
     expected = {
         (base, "GET"): routes.list_belt_test_recipients,
         (base + "/approve", "POST"): routes.approve_belt_test_recipients,
+        (base + "/{recipient_id}", "GET"): routes.get_belt_test_recipient,
         (base + "/{recipient_id}/revoke", "POST"): routes.revoke_belt_test_recipient,
     }
     actual = [
@@ -461,4 +462,13 @@ def test_composed_app_retains_existing_recipient_routes_without_detail_mount():
     ]
     assert len(actual) == len(expected)
     assert {(path, method): handler for path, method, handler in actual} == expected
-    assert base + "/{recipient_id}" not in composed_app.openapi()["paths"]
+    contract = composed_app.openapi()["paths"][base + "/{recipient_id}"]
+    assert set(contract) == {"get"}
+    detail = contract["get"]
+    assert detail["responses"]["200"]["content"]["application/json"]["schema"] == {
+        "$ref": "#/components/schemas/BeltTestRecipientResponse"
+    }
+    assert "requestBody" not in detail
+    assert {
+        (param["name"], param["in"]) for param in detail["parameters"] if param["in"] != "header"
+    } == {("event_id", "path"), ("recipient_id", "path")}

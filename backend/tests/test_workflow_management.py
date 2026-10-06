@@ -1234,3 +1234,103 @@ def test_unknown_missing_rpc_and_transport_errors_are_safe_unavailable(database,
     database.handlers[rpc] = failure
     assert_unavailable(lambda: invoke(WorkflowManagementService(database), rpc))
     assert database.execute_calls == [rpc]
+
+
+def test_typed_test_email_receipt_preserves_original_queued_acknowledgment(database):
+    acknowledgment = {"operation_id": OPERATION, "test_delivery_id": OTHER, "state": "queued"}
+    database.handlers[OPERATION_RPC] = operation_receipt(
+        "test_email.create", acknowledgment, "test_delivery", OTHER
+    )
+    response = WorkflowManagementService(database).operation(
+        STUDIO, ACTOR, UUID(OPERATION), "admin"
+    )
+    assert isinstance(response, schema.TestEmailOperationResponse)
+    assert response.result.model_dump(mode="json") == acknowledgment
+    assert "studio_id" not in response.result.model_dump()
+    assert database.rpc_calls == [
+        (
+            OPERATION_RPC,
+            {
+                "p_studio_id": STUDIO,
+                "p_actor_id": ACTOR,
+                "p_operation_id": OPERATION,
+            },
+        )
+    ]
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("operation_id", OTHER),
+        ("test_delivery_id", WORKFLOW),
+        ("state", "accepted"),
+        ("state", "sending"),
+        ("state", "failed"),
+        ("state", "unknown"),
+        ("recipient_email", "PRIVATE@example.com"),
+        ("provider_request_id", "private-provider-id"),
+        ("reason", "sender_unavailable"),
+    ],
+)
+def test_test_email_receipt_rejects_current_state_private_data_and_wrong_identity(
+    database, field, value
+):
+    acknowledgment = {
+        "operation_id": OPERATION,
+        "test_delivery_id": OTHER,
+        "state": "queued",
+        field: value,
+    }
+    database.handlers[OPERATION_RPC] = operation_receipt(
+        "test_email.create", acknowledgment, "test_delivery", OTHER
+    )
+    assert_unavailable(
+        lambda: WorkflowManagementService(database).operation(
+            STUDIO, ACTOR, UUID(OPERATION), "admin"
+        )
+    )
+
+
+@pytest.mark.parametrize("field", ["operation_id", "test_delivery_id", "state"])
+def test_test_email_receipt_requires_complete_original_acknowledgment(database, field):
+    acknowledgment = {"operation_id": OPERATION, "test_delivery_id": OTHER, "state": "queued"}
+    acknowledgment.pop(field)
+    database.handlers[OPERATION_RPC] = operation_receipt(
+        "test_email.create", acknowledgment, "test_delivery", OTHER
+    )
+    assert_unavailable(
+        lambda: WorkflowManagementService(database).operation(
+            STUDIO, ACTOR, UUID(OPERATION), "admin"
+        )
+    )
+
+
+@pytest.mark.parametrize("role", ["front_desk", "instructor", "student"])
+def test_test_email_receipt_keeps_current_admin_history_authority(database, role):
+    database.handlers[OPERATION_RPC] = operation_receipt(
+        "test_email.create",
+        {
+            "operation_id": OPERATION,
+            "test_delivery_id": OTHER,
+            "state": "queued",
+        },
+        "test_delivery",
+        OTHER,
+    )
+    with pytest.raises(HTTPException) as caught:
+        WorkflowManagementService(database).operation(STUDIO, ACTOR, UUID(OPERATION), role)
+    assert caught.value.status_code == 403
+
+
+def test_test_email_receipt_is_reachable_through_actual_installed_sdk():
+    acknowledgment = {"operation_id": OPERATION, "test_delivery_id": OTHER, "state": "queued"}
+    result = operation_receipt("test_email.create", acknowledgment, "test_delivery", OTHER)
+    client = SyntheticPostgrestClient(lambda request: httpx.Response(200, json=result))
+    try:
+        response = WorkflowManagementService(client).operation(
+            STUDIO, ACTOR, UUID(OPERATION), "admin"
+        )
+        assert response.result.model_dump(mode="json") == acknowledgment
+    finally:
+        client.aclose()
