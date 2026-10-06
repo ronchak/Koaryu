@@ -32,18 +32,18 @@ const setJournal = (f, entries) => f.saved.set(JOURNAL, JSON.stringify({ version
 const check = (w, target = testTarget) => w.activity.checkResult(target);
 const throws = async (call, pattern) => assert.rejects(Promise.resolve().then(call), pattern);
 const names = (f) => f.calls.map((call) => call.name);
-function failReadback(f, when = () => true) {
+function failReadback(f, when = () => true, failures = 1) {
   const get = f.storage.getItem,
     set = f.storage.setItem;
-  let failed = false,
-    written = false;
+  let written = false;
   f.storage.setItem = (key, value) => {
     set(key, value);
     if (key === JOURNAL && when(JSON.parse(value).entries)) written = true;
   };
   f.storage.getItem = (key) => {
-    if (key === JOURNAL && written && !failed) {
-      failed = true;
+    if (key === JOURNAL && written && failures > 0) {
+      written = false;
+      failures--;
       throw new Error("failed readback");
     }
     return get(key);
@@ -855,6 +855,94 @@ test("Check result preserves run404/rejection status and completes terminal Dism
       assert.equal(operation(w, target).locked, false);
     }
   }
+});
+
+test("two failed readbacks keep every publication blocked until explicit recovery verifies the intended transition", async () => {
+  const f = fixture(),
+    w = await opened(f),
+    publications = [];
+  f.responses.sendTestEmail = (_workflow, body) => delivery("accepted", body.operation_id);
+  await create(w);
+  failReadback(f, () => true, 2);
+  await throws(
+    () => w.activity.createAnotherTest(ids.workflow, graph(), nodeId, ids.operation),
+    /storage/,
+  );
+  const unsubscribe = w.activity.subscribe(() =>
+    publications.push(w.activity.getSnapshot().storage.status),
+  );
+  await w.activity.checkStorage();
+  assert.equal(markers(f)[0].operation_id, ids.operation);
+  assert.equal(operation(w).operationId, ids.operation);
+  assert.equal(operation(w).locked, true);
+  assert.equal(w.activity.getSnapshot().storage.status, "blocked");
+  await throws(
+    () => w.activity.createAnotherTest(ids.workflow, graph(), nodeId, ids.operation),
+    /storage/,
+  );
+  await throws(() => w.activity.dismissTestResult(ids.workflow, ids.operation), /storage/);
+  await w.openWorkflow(ids.other, true);
+  await throws(() => w.activity.createTest(ids.other, graph(), nodeId), /storage/);
+  assert.ok(publications.length > 0);
+  assert.equal(
+    publications.every((status) => status === "blocked"),
+    true,
+  );
+  assert.equal(f.calls.length, 1);
+  await w.activity.checkStorage();
+  assert.equal(w.activity.getSnapshot().storage.status, "ready");
+  assert.equal(operation(w).current.state, "accepted");
+  assert.equal(f.calls.length, 1);
+  await w.openWorkflow(ids.workflow, true);
+  await w.activity.createAnotherTest(ids.workflow, graph(), nodeId, ids.operation);
+  const next = operation(w);
+  assert.notEqual(next.operationId, ids.operation);
+  assert.equal(w.activity.getSnapshot().storage.status, "ready");
+  assert.equal(f.calls.length, 2);
+  await w.activity.dismissTestResult(ids.workflow, next.operationId);
+  assert.equal(markers(f).length, 0);
+  assert.equal(w.activity.getSnapshot().storage.status, "ready");
+  unsubscribe();
+});
+
+test("another target's in-flight alias persistence cannot announce ready over an unresolved transition", async () => {
+  const f = fixture(),
+    w = await opened(f),
+    gate = deferred(),
+    publications = [];
+  f.responses.sendTestEmail = (workflowId, body) =>
+    workflowId === ids.other ? gate.promise : delivery("accepted", body.operation_id);
+  await create(w);
+  await w.openWorkflow(ids.other, true);
+  const other = w.activity.createTest(ids.other, graph(), nodeId);
+  await tick();
+  const otherId = f.calls[1].args[1].operation_id;
+  await w.openWorkflow(ids.workflow, true);
+  failReadback(f, () => true, 2);
+  await throws(
+    () => w.activity.createAnotherTest(ids.workflow, graph(), nodeId, ids.operation),
+    /storage/,
+  );
+  await w.activity.checkStorage();
+  const unsubscribe = w.activity.subscribe(() =>
+    publications.push(w.activity.getSnapshot().storage.status),
+  );
+  gate.resolve(delivery("accepted", otherId));
+  await other;
+  assert.equal(operation(w, { kind: "test", workflowId: ids.other }).current.state, "accepted");
+  assert.ok(publications.length > 0);
+  assert.equal(
+    publications.every((status) => status === "blocked"),
+    true,
+  );
+  assert.equal(w.activity.getSnapshot().storage.status, "blocked");
+  assert.equal(f.calls.length, 2);
+  await check(w);
+  assert.equal(w.activity.getSnapshot().storage.status, "ready");
+  assert.equal(operation(w).operationId, ids.operation);
+  assert.equal(markers(f).length, 2);
+  assert.equal(f.calls.length, 2);
+  unsubscribe();
 });
 
 test("unsent replacement recovery preserves other owners and exact prior marker when write never changed it", async () => {
