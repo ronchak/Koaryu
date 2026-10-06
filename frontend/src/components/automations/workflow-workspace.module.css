@@ -222,3 +222,133 @@
     flex-grow: 1;
   }
 }
+.workflowTools,
+.toolStack,
+.recordPicker,
+.runDetail {
+  display: grid;
+  gap: 0.85rem;
+  min-width: 0;
+}
+.toolPanel {
+  align-content: start;
+  overflow-wrap: anywhere;
+}
+.toolPanel h3,
+.toolPanel h4 {
+  font-size: 1rem;
+  font-weight: 650;
+}
+.toolPanel p {
+  line-height: 1.5;
+}
+.toolRows {
+  display: grid;
+  gap: 0.65rem;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+.toolRows > li,
+.trace > li,
+.runDetail {
+  display: grid;
+  gap: 0.5rem;
+  min-width: 0;
+  padding: 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.toolRows button {
+  text-align: left;
+}
+.toolRows button[aria-pressed="true"] {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.recordPicker {
+  padding: 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-raised);
+}
+.toolField {
+  display: grid;
+  gap: 0.4rem;
+  font-size: 0.9rem;
+  min-width: 0;
+}
+.toolField input {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text-primary);
+}
+.toolField input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+.trace {
+  display: grid;
+  gap: 0.65rem;
+  padding: 0;
+  margin: 0;
+  list-style-position: inside;
+}
+.sampleText {
+  display: grid;
+  gap: 0.4rem;
+  border-left: 3px solid var(--accent);
+  padding-left: 0.75rem;
+}
+.sampleText pre {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: inherit;
+}
+.toolModal {
+  width: min(560px, calc(100vw - 2rem));
+  max-height: calc(100dvh - 2rem);
+  padding: 1.25rem;
+  overflow-y: auto;
+  overflow-wrap: anywhere;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--text-primary);
+  box-shadow: 0 20px 60px #0005;
+}
+.toolModalRoot {
+  color: var(--text-primary);
+}
+.toolPanel button,
+.toolModal button {
+  max-width: 100%;
+  min-height: 44px;
+}
+@media (min-width: 1100px) {
+  .workflowTools {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+  }
+  .workflowTools > :first-child {
+    grid-row: span 2;
+  }
+}
+@media (max-width: 479px) {
+  .toolRows > li,
+  .trace > li,
+  .recordPicker,
+  .runDetail {
+    padding: 0.6rem;
+  }
+  .toolModal {
+    padding: 1rem;
+  }
+}

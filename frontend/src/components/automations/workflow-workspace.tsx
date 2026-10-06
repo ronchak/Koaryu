@@ -29,6 +29,10 @@ import {
 } from "@/lib/automation-workflow-preview";
 import type { WorkflowCommand } from "@/lib/automation-workflow-types";
 import type { WorkflowReferenceChoices } from "@/lib/automation-workflow-catalog";
+import { WorkflowSimulationPanel } from "./workflow-simulation-panel";
+import { WorkflowRunHistory } from "./workflow-run-history";
+import { WorkflowTestEmailPanel } from "./workflow-test-email-panel";
+import type { WorkflowSimulationSelection } from "./workflow-simulation-context-picker";
 import { WorkflowGraphEditor } from "./workflow-graph-editor";
 import { WorkflowNodeInspector } from "./workflow-node-inspector";
 import styles from "./workflow-workspace.module.css";
@@ -298,6 +302,38 @@ function WorkspaceView({
     setCancelPending(false);
   }
   const preview = state.mode === "preview";
+  const toolGraph = editor ? workflowEditorContent(editor).graph : null;
+  const triggers = toolGraph?.nodes.filter((node) => node.type === "trigger") ?? [];
+  const eventType = triggers.length === 1 ? triggers[0].config.event_type : null;
+  const simulationEntityType =
+    eventType && state.catalog && Object.hasOwn(state.catalog.triggers, eventType)
+      ? state.catalog.triggers[eventType].simulation_entity_type
+      : null;
+  const contextKey = JSON.stringify([targetKey, simulationEntityType]);
+  const [context, setContext] = useState<{
+    key: string;
+    value: WorkflowSimulationSelection | null;
+  }>(() => ({
+    key: contextKey,
+    value: {
+      context: { kind: "synthetic" },
+      label: "Synthetic sample",
+      isCurrent: () => owner.isCurrent(),
+    },
+  }));
+  if (context.key !== contextKey)
+    setContext({
+      key: contextKey,
+      value: {
+        context: { kind: "synthetic" },
+        label: "Synthetic sample",
+        isCurrent: () => owner.isCurrent(),
+      },
+    });
+  useLayoutEffect(() => {
+    if (!preview && owner.isCurrent() && owner.activity.getSnapshot().storage.isCurrent())
+      owner.activity.invalidateSimulation();
+  }, [owner, preview, contextKey]);
   const dirty = editor ? workflowEditorDirty(editor) : false;
   useEffect(() => {
     if (!dirty) return;
@@ -372,6 +408,14 @@ function WorkspaceView({
     owner.isCurrent() &&
     owner.getSnapshot().editor?.target.kind === editor.target.kind &&
     owner.getSnapshot().editor?.target.id === editor.target.id;
+  const toolsCurrent = () =>
+    ownsEditor() && (preview || owner.activity.getSnapshot().storage.isCurrent());
+  const selectContext = (value: WorkflowSimulationSelection | null) => {
+    if (!toolsCurrent()) return;
+    if (!preview) owner.activity.invalidateSimulation();
+    setContext({ key: contextKey, value });
+  };
+  const emailNode = toolGraph?.nodes.find((node) => node.id === selected && node.type === "email");
   const edit: Owner["edit"] = (change) => {
     if (ownsEditor()) owner.edit(change);
   };
@@ -593,6 +637,40 @@ function WorkspaceView({
       ) : (
         <p role="status">Loading workflow choices...</p>
       )}
+      {toolGraph ? (
+        <div className={styles.workflowTools}>
+          <WorkflowSimulationPanel
+            activity={owner.activity}
+            workflowId={editor.workflowId}
+            graph={toolGraph}
+            catalog={state.catalog}
+            selection={context.value}
+            onSelectionChange={selectContext}
+            onSelectNode={setSelected}
+            isCurrent={toolsCurrent}
+            preview={preview}
+          />
+          <WorkflowRunHistory
+            activity={owner.activity}
+            workflowId={editor.workflowId}
+            catalog={state.catalog}
+            simulationEntityType={simulationEntityType}
+            onUseRecord={selectContext}
+            isCurrent={toolsCurrent}
+            preview={preview}
+          />
+          <WorkflowTestEmailPanel
+            activity={owner.activity}
+            workflowId={editor.workflowId}
+            graph={toolGraph}
+            emailNodeId={emailNode?.id ?? null}
+            canTestEmail={state.catalog?.capabilities.can_test_email === true}
+            disabledReason={state.catalog?.capabilities.disabled_reason ?? null}
+            isCurrent={toolsCurrent}
+            preview={preview}
+          />
+        </div>
+      ) : null}
       <section className={styles.sheet} aria-label="Workflow checks">
         <h2>Workflow checks</h2>
         {state.reads.validation.error ? (

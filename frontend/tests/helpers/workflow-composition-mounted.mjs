@@ -7,7 +7,7 @@ import { frontend, fixtureTheme } from "./workflow-graph-fixture.mjs";
 import { detail, ids } from "./workflow-workspace-fixture.mjs";
 
 const cssFiles = ["workflow-workspace", "workflow-graph-editor", "workflow-node-inspector"];
-const stubs = {};
+const stubs = { "@/components/leads/leads-ledger.module.css": "module.exports={}" };
 let css =
   fixtureTheme +
   "button,input,textarea,select{font:inherit}button{cursor:pointer}h1,h2,h3,h4,p{margin:0}#fixture-bar{display:flex;gap:8px;padding:8px;background:var(--surface);flex-wrap:wrap}#fixture-bar button{min-height:44px}";
