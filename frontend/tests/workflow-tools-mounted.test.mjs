@@ -629,3 +629,77 @@ test("local lead filtering preserves a current simulation until the selected rec
     assert.equal(contexts[1].entity_id, "00000000-0000-4000-8000-000000000001");
     assert.equal(await page.evaluate(() => window.fixture.sources.length), 1);
   }));
+
+test("external failed lead refresh clears the composed selection and trace before any metadata rerender", () =>
+  mountTools(async (page) => {
+    await button(page, "Choose real record").click();
+    await button(page, "Load lead records").click();
+    const row = page.getByRole("button", { name: /^Casey Lead/ });
+    await row.click();
+    await button(page, "Simulate").click();
+    await expect(simulation(page).getByRole("heading", { name: "Visited path" })).toBeVisible();
+    await page.evaluate(async () => {
+      const f = window.fixture;
+      f.errors.leads = 503;
+      await f.refreshLeads().catch(() => {});
+    });
+    await expect(row).toBeDisabled();
+    await expect(button(page, "Simulate")).toBeDisabled();
+    await expect(simulation(page).getByRole("heading", { name: "Visited path" })).toHaveCount(0);
+    await page.evaluate(() => {
+      const f = window.fixture;
+      delete f.errors.leads;
+      f.hold.leads = true;
+      f.externalRefresh = f.refreshLeads();
+    });
+    await flush(page);
+    await expect(row).toBeDisabled();
+    await expect(button(page, "Simulate")).toBeDisabled();
+    await page.evaluate(() =>
+      window.fixture.owner().edit({ kind: "metadata", name: "During held external retry" }),
+    );
+    await expect(simulation(page).getByRole("heading", { name: "Visited path" })).toHaveCount(0);
+    assert.deepEqual(
+      await page.evaluate(() => ({
+        held: window.fixture.held.filter((row) => !row.done).length,
+        sources: window.fixture.sources.length,
+        simulations: window.fixture.simulations.length,
+      })),
+      { held: 1, sources: 3, simulations: 1 },
+    );
+    await page.evaluate(async () => {
+      const f = window.fixture;
+      f.hold.leads = false;
+      f.release("leads");
+      await f.externalRefresh;
+    });
+    await expect(row).toBeEnabled();
+    await expect(button(page, "Simulate")).toBeDisabled();
+    await expect(simulation(page).getByRole("heading", { name: "Visited path" })).toHaveCount(0);
+    await row.click();
+    await button(page, "Simulate").click();
+    await expect(simulation(page).getByRole("heading", { name: "Visited path" })).toBeVisible();
+    assert.equal(await page.evaluate(() => window.fixture.simulations.length), 2);
+    assert.equal(await page.evaluate(() => window.fixture.sources.length), 3);
+  }));
+
+test("an unrelated lead-cache failure preserves a valid recent-history selection and its trace", () =>
+  mountTools(async (page) => {
+    await button(page, "Choose real record").click();
+    await button(page, "Load lead records").click();
+    await expect(page.getByRole("button", { name: /^Casey Lead/ })).toBeEnabled();
+    await button(page, "Load history").click();
+    await button(page, "Use this recent record").click();
+    await button(page, "Simulate").click();
+    await expect(simulation(page).getByRole("heading", { name: "Visited path" })).toBeVisible();
+    await page.evaluate(async () => {
+      const f = window.fixture;
+      f.errors.leads = 503;
+      await f.refreshLeads().catch(() => {});
+    });
+    await expect(page.getByRole("button", { name: /^Casey Lead/ })).toBeDisabled();
+    await expect(button(page, "Simulate")).toBeEnabled();
+    await expect(simulation(page).getByRole("heading", { name: "Visited path" })).toBeVisible();
+    await expect(simulation(page)).toContainText("Context: Synthetic 🥋 lead");
+    assert.equal(await page.evaluate(() => window.fixture.simulations.length), 1);
+  }));

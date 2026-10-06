@@ -521,3 +521,139 @@ test("large returned lead collection renders 50 matches and searches the full lo
     },
     { picker: true, entityType: "lead" },
   ));
+
+test("lead publication predicates stay revoked across repeated external failures and resource restoration", () =>
+  mountTools(
+    async (page) => {
+      await chooseReal(page);
+      await button(page, "Load lead records").click();
+      const row = picker(page).getByRole("button", { name: /^Casey Lead/ });
+      await page.evaluate(() => {
+        window.expiredSelections = [];
+      });
+      for (const invalidation of ["error", "error", "resource"]) {
+        await row.click();
+        await page.evaluate(async (invalidation) => {
+          const f = window.fixture;
+          window.expiredSelections.push(f.selection);
+          if (invalidation === "error") {
+            f.errors.leads = 503;
+            await f.refreshLeads().catch(() => {});
+          } else {
+            f.sourceEpoch++;
+            f.notify();
+          }
+        }, invalidation);
+        await expect(row).toBeDisabled();
+        assert.equal(await selected(page), null);
+        assert.equal(
+          await page.evaluate(() => window.expiredSelections.every((item) => !item.isCurrent())),
+          true,
+        );
+        await page.evaluate((invalidation) => {
+          const f = window.fixture;
+          if (invalidation === "resource") {
+            f.sourceEpoch--;
+            f.notify();
+          }
+          delete f.errors.leads;
+          f.hold.leads = true;
+          f.externalRefresh = f.refreshLeads();
+        }, invalidation);
+        await flush(page);
+        await expect(row).toBeDisabled();
+        assert.equal(
+          await page.evaluate(() => window.expiredSelections.every((item) => !item.isCurrent())),
+          true,
+        );
+        await page.evaluate(async () => {
+          const f = window.fixture;
+          f.hold.leads = false;
+          f.release("leads");
+          await f.externalRefresh;
+        });
+        await expect(row).toBeEnabled();
+        assert.equal(await selected(page), null);
+        assert.equal(
+          await page.evaluate(() => window.expiredSelections.every((item) => !item.isCurrent())),
+          true,
+        );
+      }
+      await row.click();
+      assert.equal(await page.evaluate(() => window.fixture.selection.isCurrent()), true);
+      assert.equal((await sourceCalls(page, "leads")).length, 6);
+    },
+    { picker: true, entityType: "lead" },
+  ));
+
+test("trial lead-parent publication cannot revive after an external failure and fresh retry", () =>
+  mountTools(
+    async (page) => {
+      await chooseReal(page);
+      await chooseParent(page, "lead");
+      await button(page, "Load trial appointment records").click();
+      const row = picker(page).getByRole("button", { name: /^Casey Lead.*North studio/ });
+      await row.click();
+      await page.evaluate(async () => {
+        const f = window.fixture;
+        window.oldTrial = f.selection;
+        f.errors.leads = 503;
+        await f.refreshLeads().catch(() => {});
+      });
+      await expect(button(page, "Change parent record")).toBeEnabled();
+      await expect(picker(page)).toContainText("parent selection is no longer current");
+      assert.equal(await page.evaluate(() => window.oldTrial.isCurrent()), false);
+      await page.evaluate(() => {
+        const f = window.fixture;
+        delete f.errors.leads;
+        f.hold.leads = true;
+        f.externalRefresh = f.refreshLeads();
+      });
+      await flush(page);
+      await expect(row).toBeDisabled();
+      assert.equal(await page.evaluate(() => window.oldTrial.isCurrent()), false);
+      await page.evaluate(async () => {
+        const f = window.fixture;
+        f.hold.leads = false;
+        f.release("leads");
+        await f.externalRefresh;
+      });
+      await expect(row).toBeDisabled();
+      assert.equal(await page.evaluate(() => window.oldTrial.isCurrent()), false);
+      await button(page, "Change parent record").click();
+      await chooseParent(page, "lead");
+      await button(page, "Load trial appointment records").click();
+      await row.click();
+      assert.equal(await page.evaluate(() => window.fixture.selection.isCurrent()), true);
+      assert.equal(await page.evaluate(() => window.oldTrial.isCurrent()), false);
+      assert.equal((await sourceCalls(page, "trials")).length, 2);
+    },
+    { picker: true, entityType: "trial_appointment" },
+  ));
+
+test("fresh unloaded provider remount does not retire its new lead publication", () =>
+  mountTools(
+    async (page) => {
+      await chooseReal(page);
+      await button(page, "Load lead records").click();
+      await picker(page)
+        .getByRole("button", { name: /^Casey Lead/ })
+        .click();
+      await page.evaluate(() => {
+        window.oldLead = window.fixture.selection;
+        window.fixture.unmount();
+      });
+      await flush(page);
+      await page.evaluate(() => window.fixture.mount());
+      await flush(page);
+      assert.equal(await page.evaluate(() => window.oldLead.isCurrent()), false);
+      await chooseReal(page);
+      await button(page, "Load lead records").click();
+      await picker(page)
+        .getByRole("button", { name: /^Casey Lead/ })
+        .click();
+      assert.equal(await page.evaluate(() => window.fixture.selection.isCurrent()), true);
+      assert.equal(await page.evaluate(() => window.oldLead.isCurrent()), false);
+    },
+    { picker: true, entityType: "lead" },
+  ));

@@ -169,6 +169,7 @@ function Stores({children}){
  const current=()=>f.role==='admin'&&f.sourceEpoch===resourceEpoch&&f.epoch===identityEpoch;
  const ready=async(kind,query)=>{const epoch=f.epoch,sourceEpoch=f.sourceEpoch;const items=await f.source(kind,query);return {status:'ready',value:{items,next_cursor:query.cursor?null:'source opaque+/=',has_more:!query.cursor},isCurrent:()=>epoch===f.epoch&&sourceEpoch===f.sourceEpoch}};
  const refreshLeads=()=>refreshLiveLeadDataset({beginLiveAuthRequest:begin,scopeRef:scope,fetchLeads:()=>f.source('leads'),setLeads,setLeadsLoaded,setLeadsLoadError});
+ f.refreshLeads=refreshLeads;
  f.supersedeLeads=()=>{scope.current.sequence++;};f.setLeadsError=setLeadsLoadError;f.resetLeads=()=>{scope.current=createResourceScope();f.sourceEpoch++;setLeads([]);setLeadsLoaded(true);f.notify()};
  const trialAppointments={trialStorage:{status:'ready',isCurrent:current},listTrialAppointments:(leadId,query)=>ready('trials',{...query,leadId})};
  const beltTests={storage:{status:'ready',isCurrent:current},listEvents:query=>ready('events',query),listRecipients:(eventId,query)=>ready('recipients',{...query,eventId})};
