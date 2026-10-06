@@ -352,14 +352,14 @@ def _walk(
                 port = "yes" if matched else "no"
         elif node.type == "delay":
             if node.config.mode == "duration":
-                due = reference_time + timedelta(minutes=node.config.minutes)
+                anchor, minutes = reference_time, node.config.minutes
             else:
                 anchor = facts.anchors.get(node.config.field)
-                due = (
-                    anchor + timedelta(minutes=node.config.offset_minutes)
-                    if anchor is not None
-                    else None
-                )
+                minutes = node.config.offset_minutes
+            try:
+                due = anchor + timedelta(minutes=minutes) if anchor is not None else None
+            except OverflowError:
+                due = None
             row["scheduled_at"] = due
             if due is None or due > reference_time:
                 row.update(outcome="waiting", reason="facts_unavailable" if due is None else None)
