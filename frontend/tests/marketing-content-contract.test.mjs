@@ -87,13 +87,13 @@ describe("marketing content contract", () => {
     assert.deepEqual(
       chapter("features").moments.map((moment) => moment.detail.href),
       [
+        "/use-cases/spreadsheets-to-studio-crm",
         "/use-cases/student-retention",
         "/use-cases/trial-to-enrollment",
         "/features/student-management",
         "/features/attendance",
         "/features/belt-tracking",
         "/features/billing",
-        "/use-cases/spreadsheets-to-studio-crm",
       ],
     );
     assert.deepEqual(

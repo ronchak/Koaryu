@@ -1003,6 +1003,19 @@ export function sceneState(
   return state;
 }
 
+/** The top of the seated class (the highest head), in scene units, once it has sat. */
+export function classTop(frame: SceneFrame): number {
+  const presence = frame.variant === "portrait" ? 1.18 : 1;
+  return Math.min(
+    ...STUDENT_SEATS.map((seat) => {
+      const horizontal = 0.5 + (seat.horizontal - 0.5) * frame.studentSpread;
+      const point = floorPoint(horizontal * U_SPAN, seat.depth * V_SPAN, 330);
+      const scale = (mix(FLOOR_FAR, FLOOR_NEAR, seat.depth) / 440) * presence;
+      return point.y + (HEAD_Y - 58 - (seat.bun ? 38 : 0)) * scale;
+    }),
+  );
+}
+
 /** Writes only the attributes that differ, so an idle frame costs no style invalidation. */
 export function applySceneState(
   root: SVGSVGElement,

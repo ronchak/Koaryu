@@ -279,11 +279,12 @@ function ChapterContent({ chapter }: { chapter: StoryChapter }): ReactNode {
  * the story is scrubbed. Keyed by the chapter the beat arrives at.
  */
 const INTERLUDES: Readonly<Record<string, number>> = {
-  "the-problem": 50,
+  // Short: the curtain's words arrive as soon as the brown has filled the screen.
+  "the-problem": 25,
   product: 70,
   features: 80,
   "the-path": 80,
-  "the-weave": 120,
+  "the-weave": 100,
   studio: 90,
 };
 

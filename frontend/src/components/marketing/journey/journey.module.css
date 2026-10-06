@@ -679,7 +679,7 @@
 .chapter[data-kind="features"] .frame {
   align-items: start;
   padding-top: max(calc(var(--journey-masthead) + 24px), 40svh);
-  padding-bottom: 12svh;
+  padding-bottom: 18svh;
 }
 
 .daySheet {
@@ -851,7 +851,6 @@
 
   position: relative;
   height: calc(100svh + var(--handoff-run));
-  view-timeline: --studio block;
 }
 
 .handoffMarker {
@@ -1217,95 +1216,6 @@
   }
 }
 
-/* Gone well before the hills start to fall away, so it never fades across them. */
-@keyframes heroAway {
-  0% {
-    opacity: 1;
-    transform: none;
-  }
-
-  40% {
-    opacity: 0;
-  }
-
-  100% {
-    opacity: 0;
-    transform: translateY(18vh);
-  }
-}
-
-/*
- * Copy arrives near where it rests rather than riding up from the bottom edge:
- * the transform takes back most of the scroll across its range (58svh, entry
- * 42% to 100%), so it rises 96px into place; it turns opaque in the first
- * sixth of that, so no half-seen card lingers over the art.
- */
-@keyframes revealIn {
-  from {
-    opacity: 0;
-    transform: translateY(calc(96px - 58svh));
-  }
-
-  16% {
-    opacity: 1;
-  }
-
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-
-/*
- * And leaves quickly, lifting 36px as it fades where it stands (the transform
- * takes back the 18svh it scrolls), gone before the scene begins to move and
- * never carried up under the masthead.
- */
-@keyframes revealOut {
-  from {
-    opacity: 1;
-    transform: none;
-  }
-
-  to {
-    opacity: 0;
-    transform: translateY(calc(18svh - 36px));
-  }
-}
-
-/*
- * Moving the closing line up by the distance its section has yet to scroll
- * keeps it in place on the wall, so it never crosses the class; it is written
- * there as the class settles.
- */
-@keyframes writeOnWall {
-  0% {
-    opacity: 0;
-    transform: translateY(-100svh);
-  }
-
-  76% {
-    opacity: 0;
-  }
-
-  100% {
-    opacity: 1;
-    transform: none;
-  }
-}
-
-@keyframes phoneRise {
-  from {
-    opacity: 0;
-    transform: translateY(120px);
-  }
-
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-
 @keyframes momentArrive {
   from {
     opacity: 0.3;
@@ -1399,72 +1309,27 @@
       animation-timeline: scroll(root);
     }
 
-    /* The hero copy drifts down more slowly than the page and fades as the camera dives. */
-    .heroCopy {
-      animation: heroAway linear both;
-      animation-timeline: scroll(root);
-      animation-range: 0svh 40svh;
-    }
-
     /*
-     * Each chapter's copy rises in as its screen arrives and lifts away as it
-     * leaves. The ranges sit inside the beats (paging-model STORY_BEATS): copy
-     * starts to arrive only once the scene has settled (entry 42% < every
-     * beat's enter) and is gone before the scene starts to move (exit 18% <
-     * every beat's exit), so copy never crosses moving art.
+     * The day inks itself in: the line follows the reading position and each
+     * moment arrives as it is reached. The ranges end within the panel's
+     * scroll, so the last moment is reached before the next gesture pages on.
      */
-    .chapter:not([data-kind="hero"]) .panel {
-      animation:
-        revealIn linear both,
-        revealOut linear forwards;
-      animation-timeline: view(), view();
-      animation-range:
-        entry 42% entry 100%,
-        exit 0% exit 18%;
-    }
-
-    /* Over the loom the words appear in place in the sky, never across the strands. */
-    .chapter[data-kind="weave"] .panel {
-      animation:
-        writeOnWall linear both,
-        revealOut linear forwards;
-      animation-timeline: view(), view();
-      animation-range:
-        entry 0% entry 100%,
-        exit 0% exit 18%;
-    }
-
-    /* The screens stand up a beat after the card. */
-    .productPhone {
-      animation: phoneRise linear both;
-      animation-timeline: view();
-      animation-range: entry 0% cover 40%;
-    }
-
-    /* The closing line is written on the wall as the class settles, not carried over it. */
-    .studioHeading {
-      animation: writeOnWall linear both;
-      animation-timeline: --studio;
-      animation-range: entry 0% entry 100%;
-    }
-
-    /* The day inks itself in: the line follows the reading position and each moment arrives as it is reached. */
     .dayList::after {
       animation: ink linear both;
       animation-timeline: --day;
-      animation-range: entry 40% exit 40%;
+      animation-range: entry 40% exit 10%;
     }
 
     .dayMoment {
       animation: momentArrive linear both;
       animation-timeline: view();
-      animation-range: cover 18% cover 34%;
+      animation-range: cover 10% cover 22%;
     }
 
     .dayDot {
       animation: dotFill linear both;
       animation-timeline: view();
-      animation-range: cover 34% cover 38%;
+      animation-range: cover 22% cover 26%;
     }
   }
 }
@@ -1514,7 +1379,11 @@
     padding-inline: 16px;
   }
 
-  /* Phones: the card, then the phone screen in front of the desktop screen running off the edge. */
+  /*
+   * Phones: the card, then the two screens side by side at one height, nothing
+   * overlapping and nothing off the edge. The desktop screen shows its left
+   * part (navigation and the first columns of the tracker).
+   */
   .productStage {
     gap: 22px;
   }
@@ -1536,45 +1405,48 @@
     display: none;
   }
 
-  .productFigure {
-    overflow-x: clip;
-    margin-inline: -16px;
-    padding: 0 16px;
-  }
-
   .productScreens {
+    --phone-width: min(34%, calc((34svh - 10px) * 0.513));
+
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) var(--phone-width);
+    gap: 12px;
     padding: 0;
   }
 
+  /* As tall as the phone beside it; the screenshot fills it from its top-left corner. */
   .productDesktop {
-    position: absolute;
-    top: 7%;
-    left: 30%;
-    width: 128%;
+    position: relative;
+    border-radius: 12px;
   }
 
-  .productFigure .caption {
-    position: relative;
-    z-index: 1;
-    margin-top: 18px;
+  .productDesktop img {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: auto;
+    max-width: none;
+    height: 100%;
   }
 
   .productPhone {
     position: relative;
-    left: 2%;
-    width: min(46%, 190px);
+    left: auto;
+    width: auto;
     border-width: 5px;
-    border-radius: 22px;
+    border-radius: 18px;
+    box-shadow: 0 24px 44px rgb(36 24 10 / 26%);
   }
 
   .productFigure .caption {
+    margin-top: 14px;
     text-align: left;
   }
 
   .chapter[data-kind="features"] .frame {
     padding-inline: 14px;
     padding-top: 42svh;
-    padding-bottom: 8svh;
+    padding-bottom: 16svh;
   }
 
   .daySheet {
@@ -1654,17 +1526,24 @@
     min-height: 0;
   }
 
+  /*
+   * The frame is drawn outside the picture, so the picture is inset by the
+   * frame's width: the frame's outer edge lines up with the copy column, with
+   * equal margins, and the caption sits clear below it.
+   */
   .pictureSlot {
     --frame-width: 9px;
 
     flex: 1 1 auto;
     min-height: 0;
     max-height: 46svh;
+    width: auto;
+    margin: calc(var(--frame-width) + 1px);
     aspect-ratio: auto;
   }
 
   .studioCaption {
-    margin-top: 16px;
+    margin-top: 12px;
     text-align: left;
   }
 
@@ -1681,8 +1560,42 @@
     max-width: 360px;
   }
 
+  /* Both actions on one row, even at 320, to leave the picture room. */
   .studioDetail .actions {
-    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .studioDetail .action {
+    min-width: 0;
+  }
+
+  /* The narrowest phones give the primary action the room to stay on one line. */
+  @media (max-width: 360px) {
+    .studioDetail .actions {
+      grid-template-columns: minmax(0, 1fr) auto;
+    }
+  }
+
+  /* Short phones (and phones with their toolbars showing) tighten the closing copy. */
+  @media (max-height: 720px) {
+    .studioPin {
+      gap: 14px;
+      padding-top: calc(var(--journey-masthead) + 14px);
+    }
+
+    .studioHeading {
+      font-size: clamp(30px, 8.6vw, 40px);
+    }
+
+    .studioLede {
+      margin-top: 10px;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    .studioDetail .actions {
+      margin-top: 14px;
+    }
   }
 
   /* Phones read the story full width; the belt line along the top shows the way. */

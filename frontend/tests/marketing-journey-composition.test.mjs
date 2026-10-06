@@ -52,8 +52,11 @@ describe("Landing composition", () => {
     assert.match(journeyCss, /animation-timeline:\s*--day/);
     const features = landingPageContent.story.find((chapter) => chapter.kind === "features");
     assert.equal(features.moments.length, 7);
-    assert.equal(features.moments[0].time, "7:30 AM");
-    assert.equal(features.moments.at(-1).time, "Sunday");
+    // The day starts by bringing the roster over, and every moment has a time of day.
+    assert.equal(features.moments[0].time, "7:00 AM");
+    assert.equal(features.moments[0].title, "Bring your roster over");
+    assert.equal(features.moments.at(-1).time, "8:00 PM");
+    assert.ok(features.moments.every(({ time }) => /^\d{1,2}:\d{2} [AP]M$/.test(time)));
   });
 
   it("shows the real product on desktop and phone with its sample-data caption", () => {

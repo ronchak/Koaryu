@@ -215,6 +215,13 @@ function landingDetail(ref: MarketingPageRef): LandingDetailReference {
 
 const dayMoments: readonly DayMoment[] = [
   {
+    time: "7:00 AM",
+    title: "Bring your roster over",
+    description:
+      "First morning on Koaryu? Import your spreadsheet, map its columns to student fields and review the results before the first class.",
+    detail: landingDetail({ kind: "useCase", slug: "spreadsheets-to-studio-crm" }),
+  },
+  {
     time: "7:30 AM",
     title: "Open the dashboard",
     description:
@@ -255,13 +262,6 @@ const dayMoments: readonly DayMoment[] = [
     description:
       "Payers, invoices and cash or check payments in one place. Instructors never see billing.",
     detail: landingDetail({ kind: "feature", slug: "billing" }),
-  },
-  {
-    time: "Sunday",
-    title: "Bring your roster over",
-    description:
-      "Import your spreadsheet: map the columns to student fields, review the results, and you're set up.",
-    detail: landingDetail({ kind: "useCase", slug: "spreadsheets-to-studio-crm" }),
   },
 ];
 

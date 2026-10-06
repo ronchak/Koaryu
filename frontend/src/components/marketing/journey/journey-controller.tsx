@@ -11,12 +11,15 @@ import {
 
 import { landingPageContent } from "../../../lib/landing-page-content.ts";
 import { MarketingHeader } from "../public-pages";
-import { JourneyScene, type JourneySceneHandle } from "./journey-scene";
+import { JourneyScene, classTop, type JourneySceneHandle } from "./journey-scene";
 import {
   INITIAL_WHEEL_GESTURE_STATE,
   STOP_TOLERANCE_PX,
+  beatFor,
   canScrollablePanelMove,
+  classFocus,
   copyClearance,
+  copyReveal,
   decideJourneyKey,
   decideTouchChapter,
   handoffGeometry,
@@ -54,8 +57,8 @@ const CAMERA_EASING = 0.24;
 const SETTLE_AFTER_MS = 280;
 const COMPACT_QUERY = "(max-width: 820px)";
 const MOTION_QUERY = "(prefers-reduced-motion: reduce)";
-/** Where the class sits in the scene layer, as a fraction of its height, for the framed picture. */
-const PICTURE_FOCUS = Object.freeze({ wide: 0.62, tall: 0.7 });
+/** Where the class sits in the scene layer on wide screens, as a fraction of its height, for the framed picture. */
+const PICTURE_FOCUS = Object.freeze({ wide: 0.62 });
 const MASTHEAD_DIRECTION_PX = 6;
 /** Jumps longer than this many screens cut through a veil. */
 const FAR_SCREENS = 3.2;
@@ -81,6 +84,16 @@ function metricsFor(element: HTMLElement): ScrollMetrics {
     scrollHeight: element.scrollHeight,
     clientHeight: element.clientHeight,
   };
+}
+
+interface Reveal {
+  readonly element: HTMLElement;
+  readonly y: number;
+  readonly enter: number;
+  readonly exit: number;
+  /** The studio headline stays put through the hand-off once it has arrived. */
+  readonly arriveOnly: boolean;
+  applied: string;
 }
 
 interface CopyBox {
@@ -167,6 +180,8 @@ export function JourneyController({ children }: JourneyControllerProps) {
     let slot: PictureRect | null = null;
     let studioElement: HTMLElement | null = null;
     let copyBoxes: CopyBox[] = [];
+    let pictureFocus: number = PICTURE_FOCUS.wide;
+    let reveals: Reveal[] = [];
     let frameWidth = 16;
     let motion: Motion | null = null;
     let motionStart = 0;
@@ -207,6 +222,27 @@ export function JourneyController({ children }: JourneyControllerProps) {
         scene: Number(element.dataset.scene ?? 0),
       }));
       panels = elements.map((element) => element.querySelector<HTMLElement>("[data-panel]"));
+      // Every chapter's copy, held in place and faded by the scroll (see copyReveal).
+      for (const reveal of reveals) {
+        reveal.element.style.opacity = "";
+        reveal.element.style.transform = "";
+      }
+      reveals = [];
+      elements.forEach((element, index) => {
+        const stop = stops[index]!;
+        const next = stops[index + 1];
+        const copy =
+          panels[index] ?? element.querySelector<HTMLElement>("[data-handoff-copy='heading']");
+        if (!copy || stop.id === "handoff") return;
+        reveals.push({
+          element: copy,
+          y: stop.y,
+          enter: beatFor(stop.id).enter,
+          exit: next ? beatFor(next.id).exit : 0,
+          arriveOnly: !panels[index],
+          applied: "",
+        });
+      });
       keyframes = storyKeyframes(stops, viewportHeight);
       scenes = stops.map(({ scene }) => scene);
       classY = stops.find(({ id }) => id === "studio")?.y ?? 0;
@@ -236,6 +272,25 @@ export function JourneyController({ children }: JourneyControllerProps) {
         setFrame(nextFrame);
         setLayerSize({ width: Math.round(width), height: Math.round(height) });
       }
+      // Tall screens compose the class inside the frame from where it actually sits.
+      pictureFocus = PICTURE_FOCUS.wide;
+      if (slot && layerWidth < layerHeight) {
+        const sceneFrame = frameForDimensions(layerWidth, layerHeight);
+        const [, top, , viewHeight] = sceneFrame.viewBox.split(" ").map(Number) as [
+          number,
+          number,
+          number,
+          number,
+        ];
+        const scale = Math.max(layerWidth / SCENE_WIDTH, layerHeight / viewHeight);
+        const offset = (layerHeight - viewHeight * scale) / 2;
+        pictureFocus = classFocus({
+          layerWidth,
+          layerHeight,
+          slot,
+          classTop: offset + (classTop(sceneFrame) - top) * scale,
+        });
+      }
       // The copy beside the picture, and how far clear of the settled frame it sits.
       const pin = pinned?.getBoundingClientRect();
       copyBoxes = [];
@@ -244,7 +299,7 @@ export function JourneyController({ children }: JourneyControllerProps) {
           layerWidth,
           layerHeight,
           slot,
-          focusY: layerWidth < layerHeight ? PICTURE_FOCUS.tall : PICTURE_FOCUS.wide,
+          focusY: pictureFocus,
           progress: 1,
         }).rect;
         for (const element of pinned!.querySelectorAll<HTMLElement>("[data-handoff-copy]")) {
@@ -331,7 +386,7 @@ export function JourneyController({ children }: JourneyControllerProps) {
         layerWidth,
         layerHeight,
         slot,
-        focusY: layerWidth < layerHeight ? PICTURE_FOCUS.tall : PICTURE_FOCUS.wide,
+        focusY: pictureFocus,
         progress,
       });
       const [top, right, bottom, left] = geometry.inset;
@@ -347,6 +402,28 @@ export function JourneyController({ children }: JourneyControllerProps) {
       ring.style.opacity = String(Math.min(1, progress * 2.4).toFixed(3));
       // Text never shares the screen with a passing edge or frame: it waits, then returns.
       clearCopy(progress >= 1 ? null : rect);
+    };
+
+    const applyReveals = (y: number) => {
+      const still = reduced();
+      for (const reveal of reveals) {
+        const offset = (reveal.y - y) / viewportHeight;
+        let opacity = "";
+        let transform = "";
+        if (!still && Math.abs(offset) < 1.5 && !(reveal.arriveOnly && offset <= 0)) {
+          const { opacity: shown, drift } = copyReveal(offset, reveal.enter, reveal.exit);
+          opacity = shown >= 0.999 ? "" : shown.toFixed(3);
+          const hold = -offset * viewportHeight + drift;
+          transform = Math.abs(hold) < 0.25 ? "" : `translate3d(0, ${hold.toFixed(1)}px, 0)`;
+        } else if (!still && Math.abs(offset) >= 1.5) {
+          opacity = "0";
+        }
+        const key = `${opacity}|${transform}`;
+        if (key === reveal.applied) continue;
+        reveal.applied = key;
+        reveal.element.style.opacity = opacity;
+        reveal.element.style.transform = transform;
+      }
     };
 
     const tick = (now: number) => {
@@ -385,6 +462,7 @@ export function JourneyController({ children }: JourneyControllerProps) {
         setFlag("tone", mastheadTone(displayed, viewBoxHeight));
       }
       applyPicture(y);
+      applyReveals(y);
       setFlag("scrolled", y > 8 && !mastheadOverHills(displayed, viewBoxHeight) ? "true" : "false");
 
       // On phones the masthead steps aside while the page is read downward.
@@ -411,7 +489,8 @@ export function JourneyController({ children }: JourneyControllerProps) {
     const preparePanel = (index: number, fromY: number) => {
       const panel = panels[index];
       const stop = stops[index];
-      if (!panel || !stop) return;
+      // Settling back onto the chapter the reader is in keeps their place in its panel.
+      if (!panel || !stop || Math.abs(stop.y - fromY) < viewportHeight * 0.5) return;
       // Arriving from above starts at the top of the day; from below, at its end.
       panel.scrollTop = stop.y >= fromY ? 0 : panel.scrollHeight;
     };

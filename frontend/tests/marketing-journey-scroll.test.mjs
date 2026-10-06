@@ -5,8 +5,11 @@ import { landingPageContent } from "../src/lib/landing-page-content.ts";
 import {
   INITIAL_WHEEL_GESTURE_STATE,
   STORY_BEATS,
+  beatFor,
   canScrollablePanelMove,
+  classFocus,
   copyClearance,
+  copyReveal,
   decideJourneyKey,
   decideTouchChapter,
   handoffGeometry,
@@ -282,6 +285,57 @@ describe("Stops, beats and motion", () => {
     });
     assert.equal(start.scale, 1);
     assert.deepEqual(start.inset, [0, 0, 0, 0]);
+  });
+});
+
+describe("Copy held in place while its screen moves", () => {
+  it("fades in where it rests only once the scene has settled", () => {
+    for (const id of ["the-problem", "product", "features", "the-path", "the-weave", "studio"]) {
+      const { enter } = beatFor(id);
+      // Before the scene settles (the beat's enter point) the copy is not shown at all.
+      assert.equal(copyReveal(enter, enter, 0.3).opacity, 0, id);
+      assert.equal(copyReveal(enter * 0.95, enter, 0.3).opacity, 0, id);
+      const resting = copyReveal(0, enter, 0.3);
+      assert.deepEqual(resting, { opacity: 1, drift: 0 });
+      // A calm fade: a few px of drift at most, never a slide.
+      for (let offset = enter; offset > 0; offset -= enter / 20) {
+        assert.ok(Math.abs(copyReveal(offset, enter, 0.3).drift) <= 10);
+      }
+    }
+  });
+
+  it("is gone before the next scene starts to move", () => {
+    for (const id of ["the-problem", "product", "features", "the-path", "the-weave", "studio"]) {
+      const { exit } = beatFor(id);
+      assert.equal(copyReveal(-exit, 0.6, exit).opacity, 0, id);
+    }
+  });
+
+  it("brings the curtain's words in soon after the brown fills the screen", () => {
+    assert.ok(beatFor("the-problem").enter <= 0.4);
+    assert.ok(beatFor("the-weave").ms <= 1500);
+  });
+});
+
+describe("The framed class on tall screens", () => {
+  it("keeps every head inside the frame with wall above it", () => {
+    for (const [width, height, slotHeight] of [
+      [390, 664, 272],
+      [390, 844, 388],
+      [320, 568, 158],
+      [430, 932, 429],
+    ]) {
+      const slot = { left: 32, top: 400, width: width - 64, height: slotHeight };
+      const classTop = height * 0.48;
+      const focus = classFocus({ layerWidth: width, layerHeight: height, slot, classTop });
+      const cropHeight = Math.min(height, width / (slot.width / slot.height));
+      const cropTop = focus * height - cropHeight / 2;
+      assert.ok(
+        cropTop >= -0.5 && cropTop + cropHeight <= height + 0.5,
+        `${width}x${height} in the scene`,
+      );
+      assert.ok(cropTop < classTop - cropHeight * 0.1, `${width}x${height} heads clear of the top`);
+    }
   });
 });
 

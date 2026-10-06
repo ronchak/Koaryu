@@ -277,8 +277,9 @@ const DEFAULT_BEAT: BeatSpec = Object.freeze({ ms: 900, exit: 0.42, enter: 0.6 }
 
 /** Beats keyed by the chapter they arrive at, sized to what the scene does on the way. */
 export const STORY_BEATS: Readonly<Record<string, BeatSpec>> = Object.freeze({
-  // The hills fall away and the curtain closes over them.
-  "the-problem": { ms: 640, exit: 0.3, enter: 0.62 },
+  // The hills fall away and the curtain closes over them; its words arrive as
+  // soon as the brown fills the screen (a short arrival, not a fast one).
+  "the-problem": { ms: 640, exit: 0.3, enter: 0.34 },
   // The curtain parts and the camera settles in the dojo.
   product: { ms: 860, exit: 0.42, enter: 0.6 },
   // The door slides open on the painted sun.
@@ -287,7 +288,7 @@ export const STORY_BEATS: Readonly<Record<string, BeatSpec>> = Object.freeze({
   "the-path": { ms: 1080, exit: 0.4, enter: 0.6 },
   // The clouds gather and lie down; the threads weave through each other.
   "the-weave": {
-    ms: 1900,
+    ms: 1400,
     exit: 0.22,
     enter: 0.46,
     via: [
@@ -669,4 +670,58 @@ export function copyClearance(
   const span = Math.max(1, Math.min(COPY_RETURN_PX, settled - start));
   const ramp = (distance: number) => Math.min(1, Math.max(0, (distance - start) / span));
   return Math.max(onWall ? ramp(inside) : 0, ramp(outside));
+}
+
+/** Copy drifts this far (px) as it fades in or out where it rests. */
+export const COPY_DRIFT_PX = 10;
+
+export interface CopyReveal {
+  readonly opacity: number;
+  /** Offset from the resting place, px (down while arriving, up while leaving). */
+  readonly drift: number;
+}
+
+const smoothstep = (value: number) => {
+  const t = Math.min(1, Math.max(0, value));
+  return t * t * (3 - 2 * t);
+};
+
+/**
+ * Copy is held at its resting place while its screen scrolls in and out, so it
+ * never rides across moving art or under the masthead: it fades in once the
+ * scene beneath has settled and fades out before the scene starts to move.
+ * `offset` is where the chapter sits, in screen heights below its stop (negative
+ * once it is leaving); `enter` is the arriving beat's settle point and `exit`
+ * the next beat's departure (both from STORY_BEATS).
+ */
+export function copyReveal(offset: number, enter: number, exit: number): CopyReveal {
+  if (offset > 0) {
+    // A margin after the scene settles, so a slow frame never shows copy over moving art.
+    const start = enter * 0.82;
+    const full = enter * 0.42;
+    const shown = smoothstep((start - offset) / Math.max(0.001, start - full));
+    return { opacity: shown, drift: (1 - shown) * COPY_DRIFT_PX };
+  }
+  const by = Math.max(0.04, Math.min(0.16, exit * 0.7));
+  const shown = 1 - smoothstep(-offset / by);
+  return { opacity: shown, drift: (shown - 1) * COPY_DRIFT_PX };
+}
+
+/**
+ * Where to centre the framed picture's crop (a fraction of the layer height)
+ * so the seated class is composed inside a tall screen's frame: the heads a
+ * little below the frame's top edge, never cut, the floor below them.
+ */
+export function classFocus(input: {
+  readonly layerWidth: number;
+  readonly layerHeight: number;
+  readonly slot: PictureRect;
+  /** The top of the class on the layer, px. */
+  readonly classTop: number;
+}): number {
+  const { layerWidth: width, layerHeight: height, slot } = input;
+  const aspect = slot.width / Math.max(1, slot.height);
+  const cropHeight = Math.min(height, width / aspect);
+  const top = Math.min(height - cropHeight, Math.max(0, input.classTop - cropHeight * 0.18));
+  return (top + cropHeight / 2) / Math.max(1, height);
 }
