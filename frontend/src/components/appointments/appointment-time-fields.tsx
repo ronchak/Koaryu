@@ -52,7 +52,13 @@ export function AppointmentTimeFields({
   const id = useId();
   const [attempt, setAttempt] = useState(0);
   const [zones] = useState(() => ["UTC", ...Intl.supportedValuesOf("timeZone")]);
-  const fieldKey = JSON.stringify(draft.fields);
+  const occurrenceKey = JSON.stringify([
+    draft.fields,
+    draft.original?.starts_at ?? null,
+    draft.original?.ends_at ?? null,
+    draft.original?.timezone ?? null,
+    draft.scheduleEdited,
+  ]);
   const [occurrences, setOccurrences] = useState<{
     key: string;
     result: Extract<AppointmentTimeResolution, { status: "needs_choice" }>;
@@ -69,7 +75,7 @@ export function AppointmentTimeFields({
       .then((result) => {
         if (!current) return;
         setConversion({ draft, result });
-        if (result.status === "needs_choice") setOccurrences({ key: fieldKey, result });
+        if (result.status === "needs_choice") setOccurrences({ key: occurrenceKey, result });
         onResolution(draft, result);
       })
       .catch(() => {
@@ -78,10 +84,10 @@ export function AppointmentTimeFields({
     return () => {
       current = false;
     };
-  }, [draft, attempt, onResolution, fieldKey]);
+  }, [draft, attempt, onResolution, occurrenceKey]);
   const resolved = conversion?.draft === draft ? conversion : null;
   const result = resolved?.result;
-  const choices = occurrences?.key === fieldKey ? occurrences.result : null;
+  const choices = occurrences?.key === occurrenceKey ? occurrences.result : null;
   const fields: [keyof Fields, string, string][] = [
     ["startDate", "Start date", "date"],
     ["startTime", "Start time", "time"],
