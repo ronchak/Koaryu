@@ -389,6 +389,19 @@ Trial commands use the shared lead reservation and retained recovery owner. A wa
 
 Run `node --experimental-strip-types --test tests/trial-appointment-panel-mounted.test.mjs tests/appointment-time.test.mjs tests/trial-appointment-operation.test.mjs tests/trial-appointment-mounted.test.mjs` from `frontend/` for synthetic trial proof. To prepare a disposable manual fixture, run `node tests/helpers/trial-appointment-fixture.mjs /tmp/koaryu-trial-panel-qa`, then serve that directory on loopback. The fixture uses the actual page, provider, inspector and time controls with synthetic auth/API. Its visible controls exercise lost responses, held reads, removed leads and reference failures. Stop the server and remove the temporary directory after review. Inspect the normal preview Next build separately for production CSS and lazy Temporal chunk loading.
 
+### Belt-test events
+
+Administrators can open `/belt-tests` from Belt Tracker, choose an explicit belt plan,
+save a draft with complete times, schedule or cancel an event, and review recorded approvals.
+Preview uses sample records with no live requests or journal writes. Approvals and
+Reapprove use explicit student/membership pairs; neither promotes students nor guarantees delivery.
+Event fields and candidate selections stay local. Owned event/query navigation asks
+before discarding changes. Leaving the page or reloading discards unsaved input;
+pending command results remain available through Check result without repeating the command.
+
+Run `node --experimental-strip-types --test tests/belt-test-panel-mounted.test.mjs tests/belt-test-mounted.test.mjs tests/belt-test-operation.test.mjs tests/belt-test-contract.test.mjs tests/appointment-time.test.mjs` from `frontend/`.
+For manual review, run `node tests/helpers/belt-test-fixture.mjs /tmp/koaryu-belt-test-qa` and serve that disposable directory on loopback. Visible synthetic controls exercise lost responses, held reads, reference failures, missing events, reapproval and invalid recipient observations. Stop the server and remove the directory afterward. Check the normal preview Next build separately for production layout and lazy timezone loading.
+
 ## Workflow editor
 
 Admins can open the workflow catalog at `/automations`, choose a template, or start an empty draft. Template and duplicate actions allocate a local draft address before navigation. A backend workflow is created only by Save draft. Unsaved edits and Undo history survive client navigation in the same browser page; reloading the page does not preserve unsaved content. A pending action retains only its recovery marker so Check result can resolve it without repeating the command.
