@@ -117,6 +117,7 @@ CREATE TABLE public.automation_workflow_runs (
     lease_expires_at TIMESTAMPTZ CHECK (isfinite(lease_expires_at)),
     revision BIGINT NOT NULL DEFAULT 1 CHECK (revision>0),
     reason TEXT CHECK (reason ~ '^[a-z][a-z0-9_]{0,79}$'),
+    deferral_count INTEGER NOT NULL DEFAULT 0 CHECK (deferral_count BETWEEN 0 AND 7),
     cancel_requested_at TIMESTAMPTZ CHECK (cancel_requested_at BETWEEN TIMESTAMPTZ '0001-01-01 00:00:00+00' AND TIMESTAMPTZ '9999-12-31 23:59:59.999999+00'),
     cancel_reason TEXT CHECK (cancel_reason ~ '^[a-z][a-z0-9_]{0,79}$'),
     CHECK ((cancel_requested_at IS NULL)=(cancel_reason IS NULL)),
@@ -6369,3 +6370,501 @@ BEGIN
     END LOOP;
 END;
 $current_fact_privileges$;
+
+-- Bounded nonmail execution. Sending recovery remains with the later atomic mail owner.
+CREATE TABLE private.automation_workflow_dispatch_cursor (
+    singleton BOOLEAN PRIMARY KEY DEFAULT true CHECK (singleton),
+    last_studio_id UUID,
+    updated_at TIMESTAMPTZ NOT NULL CHECK (isfinite(updated_at))
+);
+INSERT INTO private.automation_workflow_dispatch_cursor(singleton,updated_at) VALUES(true,clock_timestamp());
+CREATE INDEX automation_workflow_runs_studio_due ON public.automation_workflow_runs(studio_id,next_due_at,created_at,id)
+    WHERE state IN ('queued','waiting','claimed','running');
+CREATE TABLE private.automation_workflow_follow_up_actions (
+    studio_id UUID NOT NULL,
+    run_id UUID NOT NULL,
+    step_id UUID NOT NULL,
+    node_id TEXT NOT NULL,
+    lead_id UUID NOT NULL,
+    activity_id UUID NOT NULL UNIQUE,
+    previous_due_date DATE CHECK (previous_due_date BETWEEN DATE '0001-01-01' AND DATE '9999-12-31'),
+    due_date DATE NOT NULL CHECK (due_date BETWEEN DATE '0001-01-01' AND DATE '9999-12-31'),
+    created_at TIMESTAMPTZ NOT NULL CHECK (created_at BETWEEN TIMESTAMPTZ '0001-01-01+00' AND TIMESTAMPTZ '9999-12-31 23:59:59.999999+00'),
+    PRIMARY KEY(run_id,node_id),
+    FOREIGN KEY(studio_id,run_id,step_id,node_id)
+        REFERENCES private.automation_workflow_run_steps(studio_id,run_id,id,node_id) ON DELETE CASCADE
+);
+CREATE FUNCTION private.workflow_delay_due_identity_v1() RETURNS TRIGGER
+LANGUAGE plpgsql SECURITY INVOKER SET search_path='' AS $$
+BEGIN
+    IF OLD.node_type='delay' AND OLD.scheduled_at IS NOT NULL AND NEW.scheduled_at IS DISTINCT FROM OLD.scheduled_at THEN
+        RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_IMMUTABLE_RECORD';
+    END IF;
+    RETURN NEW;
+END $$;
+CREATE TRIGGER automation_workflow_delay_due_identity BEFORE UPDATE ON private.automation_workflow_run_steps
+    FOR EACH ROW EXECUTE FUNCTION private.workflow_delay_due_identity_v1();
+CREATE FUNCTION private.workflow_follow_up_receipt_identity_v1() RETURNS TRIGGER
+LANGUAGE plpgsql SECURITY INVOKER SET search_path='' AS $$
+DECLARE v_event private.automation_workflow_events; v_kind TEXT;
+BEGIN
+    SELECT s.node_type INTO v_kind FROM private.automation_workflow_run_steps s
+        WHERE s.studio_id=NEW.studio_id AND s.run_id=NEW.run_id AND s.id=NEW.step_id AND s.node_id=NEW.node_id;
+    SELECT e.* INTO v_event FROM private.automation_workflow_run_steps s
+        JOIN public.automation_workflow_runs r ON r.studio_id=s.studio_id AND r.id=s.run_id
+        JOIN private.automation_workflow_events e ON e.studio_id=r.studio_id AND e.id=r.event_id
+        WHERE s.studio_id=NEW.studio_id AND s.run_id=NEW.run_id AND s.id=NEW.step_id AND s.node_id=NEW.node_id;
+    IF NOT FOUND THEN RETURN NEW; END IF; -- Composite FK owns absent-parent rejection.
+    IF v_kind<>'lead_follow_up' OR ((
+        (v_event.event_type IN ('lead.created','lead.stage_changed') AND v_event.subject_id=NEW.lead_id)
+        OR (v_event.event_type LIKE 'trial.%' AND v_event.context->'lead_id'=to_jsonb(NEW.lead_id))) IS DISTINCT FROM true) THEN
+        RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST';
+    END IF;
+    RETURN NEW;
+END $$;
+CREATE TRIGGER automation_workflow_follow_up_receipt_identity BEFORE INSERT ON private.automation_workflow_follow_up_actions
+    FOR EACH ROW EXECUTE FUNCTION private.workflow_follow_up_receipt_identity_v1();
+CREATE TRIGGER automation_workflow_follow_up_receipt_immutable BEFORE UPDATE ON private.automation_workflow_follow_up_actions
+    FOR EACH ROW EXECUTE FUNCTION private.workflow_immutable_record_v1();
+
+CREATE FUNCTION private.workflow_run_position_v1(p_run public.automation_workflow_runs) RETURNS JSONB
+LANGUAGE sql IMMUTABLE SECURITY INVOKER SET search_path='' AS $$
+    SELECT jsonb_build_object('state',p_run.state,'current_node_id',p_run.current_node_id,
+        'next_due_at',private.automation_utc_text_v1(p_run.next_due_at),'reason',p_run.reason)
+$$;
+CREATE FUNCTION private.workflow_condition_result_v1(p_field TEXT,p_operator TEXT,p_expected JSONB,p_actual JSONB) RETURNS BOOLEAN
+LANGUAGE plpgsql IMMUTABLE SECURITY INVOKER SET search_path='' AS $$
+DECLARE meta JSONB:=private.workflow_catalog_v1()#>ARRAY['fields',p_field]; item JSONB; normalized JSONB:='[]';
+    values_to_check JSONB; actual JSONB; scalar TEXT; ordinal INTEGER:=0; expected_count INTEGER; valid BOOLEAN; matched BOOLEAN;
+BEGIN
+    IF meta IS NULL OR p_operator IS NULL OR NOT meta->'operators' ? p_operator OR p_expected IS NULL THEN
+        RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST';
+    END IF;
+    IF p_operator IN ('in','not_in') THEN
+        IF jsonb_typeof(p_expected) IS DISTINCT FROM 'array' THEN
+            RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST';
+        END IF;
+        expected_count:=jsonb_array_length(p_expected);
+        IF expected_count NOT BETWEEN 1 AND 100 THEN RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST'; END IF;
+        values_to_check:=p_expected;
+    ELSE expected_count:=1; values_to_check:=jsonb_build_array(p_expected); END IF;
+    -- Validate immutable expected values even when actual is missing. UUID normalization
+    -- matches Python UUID's string form, including braces, URNs and unhyphenated hex.
+    values_to_check:=values_to_check||jsonb_build_array(p_actual);
+    FOR item IN SELECT value FROM jsonb_array_elements(values_to_check) LOOP
+        ordinal:=ordinal+1; valid:=false;
+        IF item='null'::JSONB THEN
+            valid:=coalesce((meta->>'nullable')::BOOLEAN,false) AND (ordinal>expected_count OR p_operator IN ('eq','neq'));
+        ELSIF meta->>'value_type'='uuid' AND jsonb_typeof(item)='string' AND length(item#>>'{}')<=500 THEN
+            scalar:=replace(btrim(replace(replace(item#>>'{}','urn:',''),'uuid:',''),'{}'),'-','');
+            valid:=scalar ~* '^[0-9a-f]{32}$';
+            IF valid THEN item:=to_jsonb(scalar::UUID); END IF;
+        ELSE valid:=coalesce(private.workflow_typed_value_v1(item,meta),false); END IF;
+        IF ordinal<=expected_count THEN
+            IF NOT valid THEN RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST'; END IF;
+            normalized:=normalized||jsonb_build_array(item);
+        ELSE
+            IF p_actual IS NULL OR NOT valid THEN RETURN NULL; END IF;
+            actual:=item;
+        END IF;
+    END LOOP;
+    IF p_operator IN ('eq','neq') THEN
+        matched:=actual=normalized->0;
+        RETURN CASE WHEN p_operator='eq' THEN matched ELSE NOT matched END;
+    END IF;
+    IF actual='null'::JSONB THEN RETURN false; END IF;
+    matched:=normalized @> jsonb_build_array(actual);
+    RETURN CASE WHEN p_operator='in' THEN matched ELSE NOT matched END;
+END $$;
+
+-- Caller already owns clear, studio and subscription. No source acquisition may
+-- follow this owner. Discovery reads identify exact parents; locked facts decide.
+CREATE FUNCTION private.workflow_lock_run_sources_v1(p_studio_id UUID,p_event private.automation_workflow_events,p_trigger_config JSONB)
+RETURNS VOID LANGUAGE plpgsql VOLATILE SECURITY INVOKER SET search_path='' AS $$
+DECLARE v_lead public.leads; v_trial public.lead_trial_appointments; v_student public.students; v_promotion public.promotions;
+    v_recipient public.belt_test_recipients; v_event public.belt_test_events; v_membership public.student_program_memberships;
+    v_student_id UUID; v_membership_id UUID; v_program UUID; v_rank UUID; v_ladder UUID; v_invoice UUID;
+    v_program_ids UUID[]:='{}'; v_rank_ids UUID[]:='{}'; filter_id UUID:=(p_trigger_config->>'program_id')::UUID;
+BEGIN
+    IF p_event.event_type LIKE 'invoice.%' THEN
+        IF p_event.event_type='invoice.payment_failed' THEN
+            SELECT invoice_id INTO v_invoice FROM public.billing_payments WHERE studio_id=p_studio_id AND id=p_event.subject_id FOR UPDATE NOWAIT;
+        ELSE v_invoice:=p_event.subject_id; END IF;
+        PERFORM private.workflow_prepare_financial_context_v1(p_studio_id,v_invoice,
+            CASE WHEN p_event.event_type='invoice.payment_failed' THEN p_event.subject_id END);
+        RETURN;
+    END IF;
+    IF p_event.event_type LIKE 'lead.%' OR p_event.event_type LIKE 'trial.%' THEN
+        IF p_event.event_type LIKE 'trial.%' THEN
+            SELECT * INTO v_trial FROM public.lead_trial_appointments WHERE studio_id=p_studio_id AND id=p_event.subject_id;
+            SELECT * INTO v_lead FROM public.leads WHERE studio_id=p_studio_id AND id=v_trial.lead_id FOR UPDATE NOWAIT;
+            SELECT * INTO v_trial FROM public.lead_trial_appointments WHERE studio_id=p_studio_id AND id=p_event.subject_id FOR SHARE NOWAIT;
+            v_program_ids:=array_append(v_program_ids,v_trial.program_id);
+        ELSE
+            SELECT * INTO v_lead FROM public.leads WHERE studio_id=p_studio_id AND id=p_event.subject_id FOR UPDATE NOWAIT;
+        END IF;
+        v_program_ids:=v_program_ids||ARRAY[v_lead.program_id,filter_id];
+        PERFORM 1 FROM public.programs WHERE studio_id=p_studio_id AND id=ANY(v_program_ids) ORDER BY id FOR SHARE NOWAIT;
+        RETURN;
+    END IF;
+    IF p_event.event_type LIKE 'belt_test.%' THEN
+        SELECT * INTO v_recipient FROM public.belt_test_recipients WHERE studio_id=p_studio_id AND id=p_event.subject_id;
+        SELECT * INTO v_event FROM public.belt_test_events WHERE studio_id=p_studio_id AND id=v_recipient.event_id FOR SHARE NOWAIT;
+        v_student_id:=v_recipient.student_id; v_membership_id:=v_recipient.student_program_membership_id;
+        v_program_ids:=ARRAY[v_event.program_id,v_recipient.approved_program_id,filter_id];
+        v_rank_ids:=ARRAY[v_recipient.approved_current_rank_id,v_recipient.approved_target_rank_id]; v_ladder:=v_event.ladder_id;
+    ELSIF p_event.event_type='student.promoted' THEN
+        SELECT * INTO v_promotion FROM public.promotions WHERE studio_id=p_studio_id AND id=p_event.subject_id;
+        v_student_id:=v_promotion.student_id; v_membership_id:=v_promotion.command_membership_id;
+        v_program_ids:=ARRAY[v_promotion.command_program_id,filter_id]; v_rank_ids:=ARRAY[v_promotion.to_rank_id,v_promotion.command_from_rank_id];
+        SELECT ladder_id INTO v_ladder FROM public.belt_ranks WHERE studio_id=p_studio_id AND id=v_promotion.to_rank_id;
+    ELSE v_student_id:=p_event.subject_id; END IF;
+    SELECT * INTO v_student FROM public.students WHERE studio_id=p_studio_id AND id=v_student_id FOR UPDATE NOWAIT;
+    IF p_event.event_type='student.enrolled' THEN
+        IF filter_id IS NOT NULL THEN
+            PERFORM 1 FROM public.student_program_memberships WHERE studio_id=p_studio_id AND student_id=v_student_id
+                AND program_id=filter_id ORDER BY id FOR SHARE NOWAIT;
+            PERFORM 1 FROM public.programs WHERE studio_id=p_studio_id AND id=filter_id FOR SHARE NOWAIT;
+        END IF;
+        RETURN;
+    END IF;
+    -- Legacy rank authority depends on absence of a live membership. Own existing
+    -- rows, including ended ones; student ownership also excludes callback writers.
+    PERFORM 1 FROM public.student_program_memberships WHERE studio_id=p_studio_id AND student_id=v_student_id
+        AND (v_membership_id IS NULL OR id=v_membership_id) ORDER BY id FOR SHARE NOWAIT;
+    SELECT * INTO v_membership FROM public.student_program_memberships WHERE studio_id=p_studio_id
+        AND student_id=v_student_id AND id=v_membership_id;
+    v_program:=CASE WHEN v_membership_id IS NULL THEN v_student.program_id ELSE v_membership.program_id END;
+    v_rank:=CASE WHEN v_membership_id IS NULL THEN v_student.current_belt_rank_id ELSE v_membership.current_belt_rank_id END;
+    v_program_ids:=array_append(v_program_ids,v_program); v_rank_ids:=array_append(v_rank_ids,v_rank);
+    PERFORM 1 FROM public.belt_ladders WHERE studio_id=p_studio_id AND id=v_ladder FOR SHARE NOWAIT;
+    PERFORM 1 FROM public.belt_ranks WHERE studio_id=p_studio_id AND id=ANY(v_rank_ids) ORDER BY id FOR SHARE NOWAIT;
+    IF p_event.event_type='student.promoted' AND EXISTS(SELECT 1 FROM public.belt_ranks
+        WHERE studio_id=p_studio_id AND id=v_promotion.to_rank_id AND ladder_id IS DISTINCT FROM v_ladder) THEN
+        RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STUDIO_BUSY';
+    END IF;
+    PERFORM 1 FROM public.programs WHERE studio_id=p_studio_id AND id=ANY(v_program_ids) ORDER BY id FOR SHARE NOWAIT;
+    IF p_event.event_type LIKE 'belt_test.%' THEN
+        PERFORM 1 FROM public.belt_test_recipients WHERE studio_id=p_studio_id AND id=p_event.subject_id FOR SHARE NOWAIT;
+    ELSE PERFORM 1 FROM public.promotions WHERE studio_id=p_studio_id AND id=p_event.subject_id FOR SHARE NOWAIT; END IF;
+EXCEPTION WHEN lock_not_available THEN
+    RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STUDIO_BUSY';
+END $$;
+
+CREATE FUNCTION private.workflow_defer_owned_run_v1(p_studio_id UUID,p_run_id UUID,p_at TIMESTAMPTZ,p_reason TEXT)
+RETURNS public.automation_workflow_runs LANGUAGE plpgsql VOLATILE SECURITY INVOKER SET search_path='' AS $$
+DECLARE v_run public.automation_workflow_runs; due TIMESTAMPTZ;
+BEGIN
+    SELECT * INTO v_run FROM public.automation_workflow_runs WHERE studio_id=p_studio_id AND id=p_run_id;
+    IF v_run.id IS NULL OR v_run.state NOT IN ('claimed','running') OR v_run.cancel_requested_at IS NOT NULL
+        OR v_run.revision=9223372036854775807 OR p_at IS NULL OR NOT isfinite(p_at)
+        OR p_reason IS NULL OR p_reason NOT IN ('facts_unavailable','subscription_required','sender_unavailable') THEN
+        RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STATE_CONFLICT';
+    END IF;
+    due:=p_at+make_interval(secs=>least(3600,60*(1<<v_run.deferral_count)));
+    IF due NOT BETWEEN TIMESTAMPTZ '0001-01-01+00' AND TIMESTAMPTZ '9999-12-31 23:59:59.999999+00' THEN
+        RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STATE_CONFLICT';
+    END IF;
+    UPDATE public.automation_workflow_runs SET state='waiting',claim_token=NULL,lease_expires_at=NULL,
+        next_due_at=due,reason=p_reason,deferral_count=least(7,deferral_count+1),revision=revision+1,updated_at=p_at
+        WHERE studio_id=p_studio_id AND id=p_run_id RETURNING * INTO v_run;
+    RETURN v_run;
+END $$;
+CREATE FUNCTION private.workflow_apply_lead_follow_up_v1(
+    p_studio_id UUID,p_run_id UUID,p_step_id UUID,p_node_id TEXT,p_lead_id UUID,p_config JSONB,p_at TIMESTAMPTZ
+) RETURNS VOID LANGUAGE plpgsql VOLATILE SECURITY INVOKER SET search_path='' AS $$
+DECLARE v_lead public.leads; zone TEXT; due DATE; activity UUID:=gen_random_uuid(); previous DATE;
+BEGIN
+    IF EXISTS(SELECT 1 FROM private.automation_workflow_follow_up_actions WHERE studio_id=p_studio_id AND run_id=p_run_id AND node_id=p_node_id) THEN
+        RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STATE_CONFLICT';
+    END IF;
+    SELECT * INTO v_lead FROM public.leads WHERE studio_id=p_studio_id AND id=p_lead_id;
+    IF v_lead.id IS NULL OR v_lead.converted_student_id IS NOT NULL OR v_lead.stage NOT IN ('inquiry','trial_scheduled','trial_completed','offer_sent') THEN
+        RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STATE_CONFLICT';
+    END IF;
+    SELECT CASE WHEN EXISTS(SELECT 1 FROM pg_catalog.pg_timezone_names z WHERE z.name=s.timezone) THEN s.timezone ELSE 'UTC' END
+        INTO zone FROM public.studios s WHERE id=p_studio_id;
+    previous:=v_lead.follow_up_date;
+    due:=(p_at AT TIME ZONE zone)::DATE+(p_config->>'due_in_days')::INTEGER;
+    IF (previous IS NOT NULL AND previous NOT BETWEEN DATE '0001-01-01' AND DATE '9999-12-31')
+        OR due NOT BETWEEN DATE '0001-01-01' AND DATE '9999-12-31' THEN
+        RAISE EXCEPTION USING ERRCODE='P57F1',MESSAGE='AUTOMATION_FACTS_UNAVAILABLE';
+    END IF;
+    due:=least(previous,due);
+    UPDATE public.leads SET follow_up_date=due WHERE studio_id=p_studio_id AND id=p_lead_id AND follow_up_date IS DISTINCT FROM due;
+    INSERT INTO public.lead_activities(id,studio_id,lead_id,activity_type,description,created_by,created_at)
+        VALUES(activity,p_studio_id,p_lead_id,'note','Automation follow-up due '||to_char(due,'YYYY-MM-DD')||'.'
+            ||CASE WHEN coalesce(p_config->>'note','')<>'' THEN ' '||(p_config->>'note') ELSE '' END,NULL,p_at);
+    INSERT INTO private.automation_workflow_follow_up_actions(studio_id,run_id,step_id,node_id,lead_id,activity_id,previous_due_date,due_date,created_at)
+        VALUES(p_studio_id,p_run_id,p_step_id,p_node_id,p_lead_id,activity,previous,due,p_at);
+EXCEPTION WHEN datetime_field_overflow THEN
+    RAISE EXCEPTION USING ERRCODE='P57F1',MESSAGE='AUTOMATION_FACTS_UNAVAILABLE';
+END $$;
+
+CREATE FUNCTION public.claim_automation_workflow_runs_v1(p_limit INTEGER DEFAULT 10) RETURNS JSONB
+LANGUAGE plpgsql VOLATILE SECURITY INVOKER SET search_path='' AS $$
+DECLARE cursor_row private.automation_workflow_dispatch_cursor; v_run public.automation_workflow_runs;
+    claims JSONB:='[]'; at TIMESTAMPTZ; last_studio UUID; token UUID; more BOOLEAN; i INTEGER;
+BEGIN
+    IF p_limit IS NULL OR p_limit NOT BETWEEN 1 AND 10 THEN RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST'; END IF;
+    SELECT * INTO cursor_row FROM private.automation_workflow_dispatch_cursor WHERE singleton FOR UPDATE SKIP LOCKED;
+    IF NOT FOUND AND NOT EXISTS(SELECT 1 FROM private.automation_workflow_dispatch_cursor WHERE singleton) THEN
+        RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STATE_CONFLICT';
+    END IF;
+    last_studio:=cursor_row.last_studio_id;
+    IF cursor_row.singleton THEN
+        FOR i IN 1..p_limit LOOP
+            at:=clock_timestamp();
+            -- Two ordered range scans wrap once. A busy run is skipped inside the
+            -- index scan, without acquiring a workflow or source parent.
+            SELECT * INTO v_run FROM public.automation_workflow_runs r WHERE r.state IN ('queued','waiting','claimed','running')
+                AND r.cancel_requested_at IS NULL AND r.next_due_at<=at AND (last_studio IS NULL OR r.studio_id>last_studio)
+                AND (r.state IN ('queued','waiting') OR r.lease_expires_at<=at)
+                ORDER BY r.studio_id,r.next_due_at,r.created_at,r.id LIMIT 1 FOR UPDATE SKIP LOCKED;
+            IF NOT FOUND AND last_studio IS NOT NULL THEN
+                SELECT * INTO v_run FROM public.automation_workflow_runs r WHERE r.state IN ('queued','waiting','claimed','running')
+                    AND r.cancel_requested_at IS NULL AND r.next_due_at<=at AND r.studio_id<=last_studio
+                    AND (r.state IN ('queued','waiting') OR r.lease_expires_at<=at)
+                    ORDER BY r.studio_id,r.next_due_at,r.created_at,r.id LIMIT 1 FOR UPDATE SKIP LOCKED;
+            END IF;
+            EXIT WHEN v_run.id IS NULL;
+            IF v_run.revision=9223372036854775807 THEN RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STATE_CONFLICT'; END IF;
+            at:=clock_timestamp(); token:=gen_random_uuid();
+            UPDATE public.automation_workflow_runs SET state='claimed',claim_token=token,lease_expires_at=at+INTERVAL '60 seconds',
+                revision=revision+1,updated_at=at WHERE studio_id=v_run.studio_id AND id=v_run.id RETURNING * INTO v_run;
+            last_studio:=v_run.studio_id;
+            UPDATE private.automation_workflow_dispatch_cursor SET last_studio_id=last_studio,updated_at=at WHERE singleton;
+            claims:=claims||jsonb_build_array(jsonb_build_object('studio_id',v_run.studio_id,'run_id',v_run.id,
+                'claim_token',token,'lease_expires_at',private.automation_utc_text_v1(v_run.lease_expires_at)));
+        END LOOP;
+    END IF;
+    at:=clock_timestamp();
+    SELECT EXISTS(SELECT 1 FROM public.automation_workflow_runs r WHERE r.state IN ('queued','waiting','claimed','running')
+        AND r.cancel_requested_at IS NULL AND r.next_due_at<=at AND (r.state IN ('queued','waiting') OR r.lease_expires_at<=at)) INTO more;
+    RETURN jsonb_build_object('payload',jsonb_build_object('claims',claims,'has_more',more));
+END $$;
+
+-- One transition owner keeps defer and advance's source, final-clock and lost-lease
+-- semantics identical. The exception block also rolls back financial preparation.
+CREATE FUNCTION private.workflow_transition_owned_v1(p_studio_id UUID,p_run_id UUID,p_claim_token UUID,p_step_limit INTEGER,p_reason TEXT)
+RETURNS JSONB LANGUAGE plpgsql VOLATILE SECURITY INVOKER SET search_path='' AS $$
+<<transition>>
+DECLARE v_run public.automation_workflow_runs; original public.automation_workflow_runs; v_workflow public.automation_workflows;
+    v_event private.automation_workflow_events; v_activation public.automation_workflow_activations;
+    v_version public.automation_workflow_versions; step private.automation_workflow_run_steps; prior private.automation_workflow_run_steps;
+    graph JSONB; trigger_config JSONB; node JSONB; edge JSONB; facts JSONB; value JSONB; result JSONB;
+    at TIMESTAMPTZ; due TIMESTAMPTZ; anchor TIMESTAMPTZ; reason TEXT; outcome TEXT:='lease_lost'; port TEXT;
+    count_steps INTEGER; max_sequence INTEGER; visit INTEGER; matched BOOLEAN; inserted BOOLEAN; lead_id UUID;
+BEGIN
+    IF p_studio_id IS NULL OR p_run_id IS NULL OR p_claim_token IS NULL OR p_step_limit IS NULL OR p_step_limit NOT BETWEEN 1 AND 10
+        OR (p_reason IS NOT NULL AND p_reason NOT IN ('facts_unavailable','subscription_required','sender_unavailable')) THEN
+        RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST';
+    END IF;
+    result:=jsonb_build_object('studio_id',p_studio_id,'run_id',p_run_id,'claim_token',p_claim_token);
+    SELECT * INTO original FROM public.automation_workflow_runs WHERE studio_id=p_studio_id AND id=p_run_id;
+    IF original.id IS NULL OR original.state NOT IN ('claimed','running') OR original.claim_token IS DISTINCT FROM p_claim_token
+        OR original.lease_expires_at<=clock_timestamp() THEN
+        RETURN jsonb_build_object('payload',result||jsonb_build_object('outcome','lease_lost','run',NULL));
+    END IF;
+    SELECT * INTO v_event FROM private.automation_workflow_events WHERE studio_id=p_studio_id AND id=original.event_id;
+    SELECT * INTO v_version FROM public.automation_workflow_versions WHERE studio_id=p_studio_id AND workflow_id=original.workflow_id AND id=original.version_id;
+    graph:=v_version.graph;
+    IF v_event.id IS NULL OR graph IS NULL OR private.workflow_validate_v1(graph,'{}',true) IS DISTINCT FROM '[]'::JSONB
+        OR private.workflow_hash_v1(graph) IS DISTINCT FROM v_version.graph_sha256 THEN
+        RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STATE_CONFLICT';
+    END IF;
+    SELECT n->'config' INTO trigger_config FROM jsonb_array_elements(graph->'nodes') n WHERE n->>'type'='trigger';
+    trigger_config:=jsonb_build_object('program_id',NULL)||trigger_config;
+    IF trigger_config->>'event_type' IS DISTINCT FROM v_event.event_type
+        OR private.workflow_catalog_v1()#>>ARRAY['triggers',v_event.event_type,'subject_kind'] IS DISTINCT FROM v_event.subject_kind THEN
+        RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST';
+    END IF;
+    IF NOT pg_catalog.pg_try_advisory_xact_lock_shared(pg_catalog.hashtextextended('koaryu.local-plan-clear:'||p_studio_id::TEXT,0)) THEN
+        RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STUDIO_BUSY';
+    END IF;
+    PERFORM 1 FROM public.studios WHERE id=p_studio_id FOR SHARE NOWAIT;
+    PERFORM 1 FROM public.studio_subscriptions WHERE studio_id=p_studio_id FOR SHARE NOWAIT;
+    PERFORM private.workflow_lock_run_sources_v1(p_studio_id,v_event,trigger_config);
+    SELECT * INTO v_workflow FROM public.automation_workflows WHERE studio_id=p_studio_id AND id=original.workflow_id FOR UPDATE NOWAIT;
+    SELECT * INTO v_run FROM public.automation_workflow_runs WHERE studio_id=p_studio_id AND id=p_run_id FOR UPDATE NOWAIT;
+    at:=clock_timestamp();
+    -- Preparation may validly cancel its own failed-payment run and clear its
+    -- token. Return that committed terminal truth before checking executable lease.
+    IF v_run.cancel_requested_at IS NOT NULL AND v_run.state IN ('completed','cancelled','failed','unknown') THEN
+        RETURN jsonb_build_object('payload',result||jsonb_build_object('outcome','stopped','run',private.workflow_run_position_v1(v_run)));
+    END IF;
+    IF v_run.id IS NULL OR v_run.state NOT IN ('claimed','running') OR v_run.claim_token IS DISTINCT FROM p_claim_token
+        OR v_run.lease_expires_at<=at THEN RAISE EXCEPTION USING ERRCODE='P57L1'; END IF;
+    IF v_workflow.id IS NULL OR ROW(v_run.workflow_id,v_run.version_id,v_run.event_id,v_run.activation_id,v_run.epoch)
+        IS DISTINCT FROM ROW(original.workflow_id,original.version_id,original.event_id,original.activation_id,original.epoch) THEN
+        RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STATE_CONFLICT';
+    END IF;
+    SELECT * INTO v_activation FROM public.automation_workflow_activations WHERE studio_id=p_studio_id
+        AND workflow_id=v_run.workflow_id AND version_id=v_run.version_id AND epoch=v_run.epoch AND id=v_run.activation_id;
+    IF v_activation.id IS NULL THEN RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STATE_CONFLICT'; END IF;
+    reason:=CASE WHEN v_workflow.status='paused' THEN 'workflow_paused' WHEN v_workflow.status='archived' THEN 'workflow_archived'
+        WHEN v_workflow.status<>'active' OR v_activation.cancelled_at IS NOT NULL OR v_run.epoch<>v_workflow.enrollment_epoch THEN 'workflow_republished' END;
+    IF v_run.cancel_requested_at IS NOT NULL THEN reason:=v_run.cancel_reason; END IF;
+    IF reason IS NOT NULL THEN
+        PERFORM private.workflow_cancel_runs_v1(p_studio_id,ARRAY[p_run_id],at,reason);
+        SELECT * INTO v_run FROM public.automation_workflow_runs WHERE studio_id=p_studio_id AND id=p_run_id;
+        RETURN jsonb_build_object('payload',result||jsonb_build_object('outcome','stopped','run',private.workflow_run_position_v1(v_run)));
+    END IF;
+    FOR visit IN 1..p_step_limit LOOP
+        at:=clock_timestamp();
+        IF v_run.lease_expires_at<=at THEN RAISE EXCEPTION USING ERRCODE='P57L1'; END IF;
+        SELECT n INTO node FROM jsonb_array_elements(graph->'nodes') n WHERE n->>'id'=v_run.current_node_id;
+        IF node IS NULL OR v_run.revision=9223372036854775807 THEN RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STATE_CONFLICT'; END IF;
+        -- Separate statement after every parent/target lock and at each reached node.
+        SELECT private.workflow_current_source_facts_v1(p_studio_id,v_event.event_type,v_event.subject_id,v_event.context,trigger_config,at,'{}') INTO value;
+        facts:=value->'facts';
+        IF facts->>'source_decision'='ineligible' THEN
+            PERFORM private.workflow_cancel_runs_v1(p_studio_id,ARRAY[p_run_id],at,facts->>'source_reason');
+            SELECT * INTO v_run FROM public.automation_workflow_runs WHERE studio_id=p_studio_id AND id=p_run_id;
+            outcome:='stopped'; EXIT;
+        END IF;
+        reason:=CASE WHEN facts->>'source_decision' IS DISTINCT FROM 'eligible' THEN 'facts_unavailable'
+            WHEN NOT private.automation_core_entitled(p_studio_id) THEN 'subscription_required' ELSE p_reason END;
+        IF reason IS NOT NULL THEN
+            v_run:=private.workflow_defer_owned_run_v1(p_studio_id,p_run_id,at,reason); outcome:='waiting'; EXIT;
+        END IF;
+        SELECT count(*),coalesce(max(sequence),0) INTO count_steps,max_sequence FROM private.automation_workflow_run_steps WHERE studio_id=p_studio_id AND run_id=p_run_id;
+        SELECT * INTO step FROM private.automation_workflow_run_steps WHERE studio_id=p_studio_id AND run_id=p_run_id AND node_id=v_run.current_node_id;
+        IF count_steps<>max_sequence OR count_steps>40 OR (step.id IS NOT NULL AND (step.sequence<>max_sequence OR step.finished_at IS NOT NULL)) THEN
+            RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STATE_CONFLICT';
+        END IF;
+        IF EXISTS(SELECT 1 FROM private.automation_workflow_run_steps s LEFT JOIN private.automation_workflow_run_steps previous
+            ON previous.run_id=s.run_id AND previous.sequence=s.sequence-1 WHERE s.studio_id=p_studio_id AND s.run_id=p_run_id
+            AND ((s.sequence=1 AND s.node_type<>'trigger') OR (s.sequence>1 AND (previous.finished_at IS NULL OR NOT EXISTS(
+                SELECT 1 FROM jsonb_array_elements(graph->'edges') e WHERE e->>'id'=previous.edge_id
+                    AND e->>'source'=previous.node_id AND e->>'target'=s.node_id)))
+                OR (s.sequence<max_sequence AND s.finished_at IS NULL))) THEN
+            RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STATE_CONFLICT';
+        END IF;
+        inserted:=step.id IS NULL;
+        IF inserted THEN
+            IF count_steps=40 THEN RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STATE_CONFLICT'; END IF;
+            IF count_steps=0 THEN
+                IF node->>'type'<>'trigger' THEN RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STATE_CONFLICT'; END IF;
+            ELSE
+                SELECT * INTO prior FROM private.automation_workflow_run_steps WHERE studio_id=p_studio_id AND run_id=p_run_id AND sequence=max_sequence;
+                IF prior.finished_at IS NULL OR NOT EXISTS(SELECT 1 FROM jsonb_array_elements(graph->'edges') e
+                    WHERE e->>'id'=prior.edge_id AND e->>'source'=prior.node_id AND e->>'target'=v_run.current_node_id) THEN
+                    RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STATE_CONFLICT';
+                END IF;
+            END IF;
+            INSERT INTO private.automation_workflow_run_steps(studio_id,run_id,sequence,node_id,node_type,outcome,entered_at)
+                VALUES(p_studio_id,p_run_id,count_steps+1,v_run.current_node_id,node->>'type','entered',at) RETURNING * INTO step;
+        END IF;
+        IF step.entered_at>at OR step.node_type IS DISTINCT FROM node->>'type' OR step.outcome NOT IN ('entered','waiting') THEN
+            RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STATE_CONFLICT';
+        END IF;
+        port:='next'; reason:=NULL; due:=NULL; outcome:='continue';
+        CASE node->>'type'
+        WHEN 'condition' THEN
+            matched:=private.workflow_condition_result_v1(node#>>'{config,field}',node#>>'{config,operator}',node#>'{config,value}',facts->'condition_facts'->(node#>>'{config,field}'));
+            IF matched IS NULL THEN reason:='facts_unavailable'; ELSE port:=CASE WHEN matched THEN 'yes' ELSE 'no' END; END IF;
+        WHEN 'delay' THEN
+            due:=step.scheduled_at;
+            IF due IS NULL THEN
+                BEGIN
+                    IF node#>>'{config,mode}'='duration' THEN
+                        due:=step.entered_at+make_interval(mins=>(node#>>'{config,minutes}')::INTEGER);
+                    ELSE
+                        value:=facts->'anchors'->(node#>>'{config,field}');
+                        IF value IS NOT NULL AND value<>'null'::JSONB THEN
+                            anchor:=private.automation_instant_v1(value);
+                            due:=anchor+make_interval(mins=>(node#>>'{config,offset_minutes}')::INTEGER);
+                        END IF;
+                    END IF;
+                EXCEPTION WHEN datetime_field_overflow OR invalid_parameter_value THEN due:=NULL;
+                END;
+                IF due NOT BETWEEN TIMESTAMPTZ '0001-01-01+00' AND TIMESTAMPTZ '9999-12-31 23:59:59.999999+00' THEN due:=NULL; END IF;
+                IF due IS NOT NULL THEN UPDATE private.automation_workflow_run_steps SET scheduled_at=due WHERE id=step.id; END IF;
+            END IF;
+            IF due IS NULL THEN reason:='facts_unavailable';
+            ELSIF due>at THEN
+                UPDATE private.automation_workflow_run_steps SET outcome='waiting',reason=NULL WHERE id=step.id;
+                UPDATE public.automation_workflow_runs SET state='waiting',claim_token=NULL,lease_expires_at=NULL,next_due_at=due,
+                    reason=NULL,revision=revision+1,updated_at=at WHERE studio_id=p_studio_id AND id=p_run_id RETURNING * INTO v_run;
+                outcome:='waiting'; EXIT;
+            END IF;
+        WHEN 'email' THEN
+            IF inserted OR step.outcome<>'entered' OR step.reason IS NOT NULL THEN
+                UPDATE private.automation_workflow_run_steps SET outcome='entered',reason=NULL WHERE id=step.id;
+                UPDATE public.automation_workflow_runs SET state='running',revision=revision+1,updated_at=at,reason=NULL
+                    WHERE studio_id=p_studio_id AND id=p_run_id RETURNING * INTO v_run;
+            END IF;
+            outcome:='email'; EXIT;
+        WHEN 'lead_follow_up' THEN
+            lead_id:=CASE WHEN v_event.subject_kind='lead' THEN v_event.subject_id ELSE (v_event.context->>'lead_id')::UUID END;
+            BEGIN
+                PERFORM private.workflow_apply_lead_follow_up_v1(p_studio_id,p_run_id,step.id,step.node_id,lead_id,node->'config',at);
+            EXCEPTION WHEN SQLSTATE 'P57F1' THEN reason:='facts_unavailable';
+            END;
+        WHEN 'trigger' THEN NULL;
+        WHEN 'end' THEN NULL;
+        ELSE RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STATE_CONFLICT';
+        END CASE;
+        IF reason IS NOT NULL THEN
+            UPDATE private.automation_workflow_run_steps SET outcome='waiting',reason=transition.reason WHERE id=step.id;
+            v_run:=private.workflow_defer_owned_run_v1(p_studio_id,p_run_id,at,reason); outcome:='waiting'; EXIT;
+        END IF;
+        edge:=NULL;
+        IF node->>'type'<>'end' THEN
+            SELECT e INTO edge FROM jsonb_array_elements(graph->'edges') e WHERE e->>'source'=step.node_id AND e->>'port'=port;
+            IF edge IS NULL THEN RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STATE_CONFLICT'; END IF;
+        END IF;
+        UPDATE private.automation_workflow_run_steps SET outcome=CASE WHEN node->>'type'='condition' THEN CASE WHEN matched THEN 'matched' ELSE 'not_matched' END ELSE 'completed' END,
+            edge_id=edge->>'id',reason=NULL,finished_at=at WHERE id=step.id;
+        UPDATE public.automation_workflow_runs SET current_node_id=coalesce(edge->>'target',current_node_id),
+            state=CASE WHEN edge IS NULL THEN 'completed' ELSE 'running' END,next_due_at=CASE WHEN edge IS NOT NULL THEN at END,
+            claim_token=CASE WHEN edge IS NOT NULL THEN claim_token END,lease_expires_at=CASE WHEN edge IS NOT NULL THEN lease_expires_at END,
+            reason=NULL,deferral_count=0,revision=revision+1,updated_at=at WHERE studio_id=p_studio_id AND id=p_run_id RETURNING * INTO v_run;
+        IF edge IS NULL THEN outcome:='stopped'; EXIT; END IF;
+    END LOOP;
+    RETURN jsonb_build_object('payload',result||jsonb_build_object('outcome',outcome,'run',private.workflow_run_position_v1(v_run)));
+EXCEPTION WHEN SQLSTATE 'P57L1' THEN
+    RETURN jsonb_build_object('payload',jsonb_build_object('studio_id',p_studio_id,'run_id',p_run_id,
+        'claim_token',p_claim_token,'outcome','lease_lost','run',NULL));
+WHEN lock_not_available THEN
+    RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STUDIO_BUSY';
+WHEN numeric_value_out_of_range THEN
+    RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STATE_CONFLICT';
+END $$;
+CREATE FUNCTION public.advance_automation_workflow_run_v1(p_studio_id UUID,p_run_id UUID,p_claim_token UUID,p_step_limit INTEGER DEFAULT 10)
+RETURNS JSONB LANGUAGE sql VOLATILE SECURITY INVOKER SET search_path='' AS $$
+    SELECT private.workflow_transition_owned_v1(p_studio_id,p_run_id,p_claim_token,p_step_limit,NULL)
+$$;
+CREATE FUNCTION public.defer_automation_workflow_run_v1(p_studio_id UUID,p_run_id UUID,p_claim_token UUID,p_reason TEXT)
+RETURNS JSONB LANGUAGE plpgsql VOLATILE SECURITY INVOKER SET search_path='' AS $$
+BEGIN
+    IF p_reason IS NULL OR p_reason NOT IN ('facts_unavailable','subscription_required','sender_unavailable') THEN
+        RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST';
+    END IF;
+    RETURN private.workflow_transition_owned_v1(p_studio_id,p_run_id,p_claim_token,1,p_reason);
+END $$;
+
+ALTER TABLE private.automation_workflow_dispatch_cursor OWNER TO postgres;
+ALTER TABLE private.automation_workflow_follow_up_actions OWNER TO postgres;
+ALTER TABLE private.automation_workflow_dispatch_cursor ENABLE ROW LEVEL SECURITY;
+ALTER TABLE private.automation_workflow_follow_up_actions ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON private.automation_workflow_dispatch_cursor,private.automation_workflow_follow_up_actions FROM PUBLIC,anon,authenticated,service_role;
+GRANT SELECT,UPDATE ON private.automation_workflow_dispatch_cursor TO service_role;
+GRANT SELECT,INSERT ON private.automation_workflow_follow_up_actions TO service_role;
+DO $advance_privileges$
+DECLARE r RECORD;
+BEGIN
+    FOR r IN SELECT p.oid::REGPROCEDURE identity,p.proname FROM pg_catalog.pg_proc p JOIN pg_catalog.pg_namespace n ON n.oid=p.pronamespace
+        WHERE (n.nspname='private' AND p.proname IN ('workflow_delay_due_identity_v1','workflow_follow_up_receipt_identity_v1',
+            'workflow_run_position_v1','workflow_condition_result_v1','workflow_lock_run_sources_v1','workflow_defer_owned_run_v1',
+            'workflow_apply_lead_follow_up_v1','workflow_transition_owned_v1'))
+        OR (n.nspname='public' AND p.proname IN ('claim_automation_workflow_runs_v1','advance_automation_workflow_run_v1','defer_automation_workflow_run_v1')) LOOP
+        EXECUTE format('ALTER FUNCTION %s OWNER TO postgres',r.identity);
+        EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC,anon,authenticated,service_role',r.identity);
+        IF r.proname NOT IN ('workflow_delay_due_identity_v1','workflow_follow_up_receipt_identity_v1') THEN
+            EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO service_role',r.identity);
+        END IF;
+    END LOOP;
+END;
+$advance_privileges$;
