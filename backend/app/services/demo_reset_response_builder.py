@@ -2,7 +2,7 @@ from collections.abc import Callable
 
 from supabase import Client
 
-from app.schemas.demo import DemoResetCounts, DemoResetResponse
+from app.schemas.demo import AutomationClearEffects, DemoResetCounts, DemoResetResponse
 from app.schemas.schedule import AttendanceResponse
 from app.services.belt_service import BeltService
 from app.services.demo_seed_common import DEMO_STUDIO_NAME
@@ -17,7 +17,7 @@ class DemoResetResponseBuilder:
         self.supabase = supabase
         self.date_for = date_for
 
-    async def build(self, studio_id: str) -> DemoResetResponse:
+    async def build(self, studio_id: str, automation: AutomationClearEffects) -> DemoResetResponse:
         students_page = await StudentService(self.supabase).list_students(
             studio_id=studio_id,
             search=None,
@@ -55,6 +55,7 @@ class DemoResetResponseBuilder:
 
         return DemoResetResponse(
             studio_name=DEMO_STUDIO_NAME,
+            automation=automation,
             programs=programs,
             students=students_page.items,
             leads=leads,

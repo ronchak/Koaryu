@@ -2,16 +2,16 @@ import uuid
 from datetime import date, datetime, time, timedelta, timezone
 from typing import Any, Optional
 
+from fastapi import HTTPException
 from postgrest.exceptions import APIError as PostgrestAPIError
 from supabase import Client
 
-from app.schemas.demo import DemoResetCounts
+from app.schemas.demo import AutomationClearEffects, DemoResetCounts
 from app.services.demo_seed_common import (
     DEMO_STUDIO_NAME,
     OPTIONAL_SCHEMA_ERROR_CODES,
     demo_seed_id,
 )
-from app.services.supabase_rpc import execute_required_rpc
 
 
 class DemoDataAccess:
@@ -75,18 +75,30 @@ class DemoDataAccess:
         )
         return (result.data or {}).get("name") or "My Studio"
 
-    def clear_demo_surface(self, studio_id: str) -> None:
-        self.clear_studio_surface(studio_id, include_platform_rows=False)
+    def clear_demo_surface(self, studio_id: str) -> AutomationClearEffects:
+        return self.clear_studio_surface(studio_id, include_platform_rows=False)
 
-    def clear_studio_surface(self, studio_id: str, *, include_platform_rows: bool) -> None:
-        execute_required_rpc(
-            self.supabase,
-            "clear_studio_operational_data_atomic",
-            {
-                "p_studio_id": studio_id,
-                "p_include_platform_rows": include_platform_rows,
-            },
-        )
+    def clear_studio_surface(
+        self, studio_id: str, *, include_platform_rows: bool
+    ) -> AutomationClearEffects:
+        # A lost or malformed reply may follow a committed clear. Never replay it.
+        try:
+            result = self.supabase.rpc(
+                "clear_studio_operational_data_v2",
+                {
+                    "p_studio_id": studio_id,
+                    "p_include_platform_rows": include_platform_rows,
+                },
+            ).execute()
+            envelope = result.data
+            if not isinstance(envelope, dict) or set(envelope) != {"payload"}:
+                raise ValueError("Invalid clear response envelope")
+            return AutomationClearEffects.model_validate(envelope["payload"])
+        except Exception:  # noqa: BLE001 - all uncertain replies share the safe boundary
+            raise HTTPException(
+                status_code=503,
+                detail="Studio data clear result could not be confirmed.",
+            ) from None
 
     def update_studio_for_demo(self, studio_id: str) -> None:
         self.supabase.table("studios").update(

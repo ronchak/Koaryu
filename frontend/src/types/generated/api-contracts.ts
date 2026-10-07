@@ -68,6 +68,18 @@ export interface ApiAuthResponse {
   role?: "admin" | "instructor" | "front_desk" | null;
 }
 
+export interface ApiAutomationClearEffects {
+  workflows_paused: number;
+  workflow_runs_cancelled: number;
+  workflow_cancellation_intents_added: number;
+  attendance_deliveries_cancelled: number;
+  belt_test_events_deleted: number;
+  belt_test_recipients_deleted: number;
+  sending_attempts_preserved: number;
+  unknown_attempts_preserved: number;
+  attendance_rule_paused: boolean;
+}
+
 export interface ApiAutomationDeliveryStatus {
   mode: "disabled" | "test" | "live";
   configured: boolean;
@@ -1144,6 +1156,7 @@ export interface ApiDemoResetCounts {
 
 export interface ApiDemoResetResponse {
   studio_name: string;
+  automation: ApiAutomationClearEffects;
   programs: ApiProgramResponse[];
   students: ApiStudentResponse[];
   leads: ApiLeadResponse[];
@@ -1959,6 +1972,7 @@ export interface ApiStudioCreate {
 
 export interface ApiStudioDataClearResponse {
   studio_name: string;
+  automation: ApiAutomationClearEffects;
   counts: ApiDemoResetCounts;
 }
 

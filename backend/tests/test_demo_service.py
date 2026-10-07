@@ -6,7 +6,7 @@ from tests.fakes.supabase import RpcBackedSupabase
 
 
 class FakeDemoClearSupabase(RpcBackedSupabase):
-    def _rpc_clear_studio_operational_data_atomic(self, params):
+    def _rpc_clear_studio_operational_data_v2(self, params):
         studio_id = params["p_studio_id"]
         clear_tables = [
             "students",
@@ -20,7 +20,19 @@ class FakeDemoClearSupabase(RpcBackedSupabase):
             self.tables[table] = [
                 row for row in self.tables.get(table, []) if row.get("studio_id") != studio_id
             ]
-        return []
+        return {
+            "payload": {
+                "workflows_paused": 2,
+                "workflow_runs_cancelled": 3,
+                "workflow_cancellation_intents_added": 1,
+                "attendance_deliveries_cancelled": 4,
+                "belt_test_events_deleted": 5,
+                "belt_test_recipients_deleted": 6,
+                "sending_attempts_preserved": 7,
+                "unknown_attempts_preserved": 8,
+                "attendance_rule_paused": True,
+            }
+        }
 
 
 class FailingSeedDemoService(DemoService):
@@ -130,8 +142,9 @@ class DemoResetOrchestrationTest(unittest.TestCase):
         self.assertEqual(response.studio_name, "Original Studio")
         self.assertEqual(response.counts.students, 1)
         self.assertEqual(response.counts.leads, 1)
+        self.assertEqual(response.automation.workflows_paused, 2)
         self.assertEqual(
-            [name for name, _params in supabase.rpc_calls], ["clear_studio_operational_data_atomic"]
+            [name for name, _params in supabase.rpc_calls], ["clear_studio_operational_data_v2"]
         )
         self.assertFalse(supabase.rpc_calls[0][1]["p_include_platform_rows"])
         direct_deletes = [entry for entry in supabase.query_log if entry["delete"]]
