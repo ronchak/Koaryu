@@ -305,8 +305,9 @@ the same validated identity scope.
 
 Roster URLs retain bounded filters/sort. One identity-scoped session return record
 retains cursor/scroll/focus for 30 minutes. Unknown write outcomes must not be
-replayed automatically. Automations is a planned feature under Help for the Core
-release. See `docs/verification/workflow-stabilization.md` for evidence and limits.
+replayed automatically. Admins can open Automations from the primary navigation
+for operational workflow tooling. See `docs/verification/workflow-stabilization.md`
+for evidence and limits.
 
 Run deterministic live-mode workflow checks without any external data plane:
 

@@ -13,6 +13,7 @@ import {
   Settings,
   UserPlus,
   Users,
+  Workflow,
   type LucideIcon,
 } from "lucide-react";
 import { AccountMenu } from "@/components/account-menu";
@@ -48,6 +49,7 @@ const NAV_ICONS: Record<string, LucideIcon> = {
   Settings,
   UserPlus,
   Users,
+  Workflow,
 };
 
 function NavigationLinks({ pathname, role }: { pathname: string; role?: string | null }) {
