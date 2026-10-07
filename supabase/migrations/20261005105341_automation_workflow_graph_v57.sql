@@ -9876,3 +9876,433 @@ BEGIN
     END LOOP;
 END;
 $graph_mail_privileges$;
+
+-- Foreground synthetic mail owns one immutable command and at most one real send.
+-- Selected templates and rendered bytes can be purged without erasing its truth.
+CREATE FUNCTION private.automation_test_rendered_valid_v1(p_rendered JSONB) RETURNS BOOLEAN
+LANGUAGE plpgsql IMMUTABLE SECURITY INVOKER SET search_path='' AS $$
+DECLARE subject TEXT:=p_rendered->>'subject'; body TEXT:=p_rendered->>'text_body'; ch TEXT;
+BEGIN
+    IF NOT private.workflow_json_keys_v1(p_rendered,ARRAY['subject','text_body','html_body'],ARRAY['subject','text_body','html_body'])
+        OR jsonb_typeof(p_rendered->'subject') IS DISTINCT FROM 'string' OR jsonb_typeof(p_rendered->'text_body') IS DISTINCT FROM 'string'
+        OR jsonb_typeof(p_rendered->'html_body') IS DISTINCT FROM 'string'
+        OR left(subject,7)<>'[Test] ' OR left(body,46)<>E'Synthetic automation test. Sample data only.\n\n'
+        OR length(subject)>207 OR octet_length(subject)>807 OR length(body)>20046 OR octet_length(body)>80046
+        OR length(p_rendered->>'html_body')>120317 OR octet_length(p_rendered->>'html_body')>120317
+        OR btrim(substr(subject,8),U&'\0009\000A\000B\000C\000D\001C\001D\001E\001F\0020\0085\00A0\1680\2000\2001\2002\2003\2004\2005\2006\2007\2008\2009\200A\2028\2029\202F\205F\3000')='' OR btrim(substr(body,47),U&'\0009\000A\000B\000C\000D\001C\001D\001E\001F\0020\0085\00A0\1680\2000\2001\2002\2003\2004\2005\2006\2007\2008\2009\200A\2028\2029\202F\205F\3000')='' THEN RETURN false; END IF;
+    FOR ch IN SELECT regexp_split_to_table(subject,'') LOOP
+        IF ascii(ch)<32 OR ascii(ch) BETWEEN 127 AND 159 THEN RETURN false; END IF;
+    END LOOP;
+    FOR ch IN SELECT regexp_split_to_table(body,'') LOOP
+        IF (ascii(ch)<32 AND ascii(ch) NOT IN (9,10)) OR ascii(ch) BETWEEN 127 AND 159 THEN RETURN false; END IF;
+    END LOOP;
+    -- Compare only the established plain-text escaping profile, never render a template.
+    RETURN p_rendered->>'html_body'='<div style="white-space: pre-wrap">'||
+        replace(replace(replace(replace(replace(body,'&','&amp;'),'<','&lt;'),'>','&gt;'),'"','&quot;'),'''','&#x27;')||'</div>';
+END $$;
+
+CREATE TABLE private.automation_test_email_scopes (
+    id UUID PRIMARY KEY, studio_id UUID NOT NULL REFERENCES public.studios(id) ON DELETE CASCADE,
+    actor_id UUID NOT NULL, workflow_id UUID NOT NULL, operation_id UUID NOT NULL,
+    request_fingerprint TEXT NOT NULL CHECK(request_fingerprint ~ '^[a-f0-9]{64}$'),
+    scope_fingerprint TEXT NOT NULL CHECK(scope_fingerprint ~ '^[a-f0-9]{64}$'),
+    execution_token UUID NOT NULL UNIQUE, reference_time TIMESTAMPTZ NOT NULL CHECK(private.automation_sender_instant_v1(reference_time)),
+    execution_expires_at TIMESTAMPTZ NOT NULL CHECK(execution_expires_at=reference_time+INTERVAL '60 seconds'),
+    recipient_email TEXT NOT NULL CHECK(private.automation_normalize_email(recipient_email)=recipient_email AND private.automation_normalize_email(recipient_email) IS NOT NULL),
+    reply_to TEXT NOT NULL CHECK(private.automation_normalize_email(reply_to)=reply_to AND private.automation_normalize_email(reply_to) IS NOT NULL),
+    sender_binding TEXT NOT NULL CHECK(sender_binding ~ '^[a-f0-9]{64}$'),
+    state TEXT NOT NULL CHECK(state IN ('queued','sending','accepted','failed','unknown')),
+    reason TEXT CHECK(reason IN ('invalid_email_template','invalid_email_context','unsupported_currency','invalid_email_url','facts_unavailable',
+        'sender_unavailable','subscription_required','recipient_changed','recipient_suppressed','lease_expired','budget_exhausted')),
+    preparation_id UUID, attempt_id UUID UNIQUE,
+    created_at TIMESTAMPTZ NOT NULL CHECK(created_at=reference_time),
+    updated_at TIMESTAMPTZ NOT NULL CHECK(private.automation_sender_instant_v1(updated_at) AND updated_at>=created_at),
+    settled_at TIMESTAMPTZ CHECK(private.automation_sender_instant_v1(settled_at) AND settled_at>=created_at),
+    UNIQUE(studio_id,operation_id), UNIQUE(studio_id,id),
+    CHECK((state IN ('queued','sending') AND reason IS NULL AND settled_at IS NULL)
+        OR (state IN ('accepted','failed','unknown') AND settled_at IS NOT NULL)),
+    CHECK((state IN ('sending','accepted','unknown') AND attempt_id IS NOT NULL) OR state IN ('queued','failed')),
+    CHECK(state<>'queued' OR attempt_id IS NULL), CHECK(attempt_id IS NULL OR preparation_id IS NOT NULL)
+);
+CREATE TABLE private.automation_test_email_payloads (
+    scope_id UUID PRIMARY KEY, studio_id UUID NOT NULL,
+    selection JSONB NOT NULL CHECK(jsonb_typeof(selection)='object' AND octet_length(selection::TEXT)<=32000),
+    rendered JSONB CHECK(rendered IS NULL OR private.automation_test_rendered_valid_v1(rendered)),
+    FOREIGN KEY(studio_id,scope_id) REFERENCES private.automation_test_email_scopes(studio_id,id) ON DELETE CASCADE
+);
+CREATE INDEX automation_test_email_scope_expiry ON private.automation_test_email_scopes(studio_id,execution_expires_at,id) WHERE state='queued';
+
+CREATE FUNCTION private.automation_test_scope_identity_v1() RETURNS TRIGGER
+LANGUAGE plpgsql SECURITY INVOKER SET search_path='' AS $$
+DECLARE actual private.automation_email_attempt_reservations;
+BEGIN
+    IF (to_jsonb(NEW)-ARRAY['state','reason','preparation_id','attempt_id','updated_at','settled_at'])
+        IS DISTINCT FROM (to_jsonb(OLD)-ARRAY['state','reason','preparation_id','attempt_id','updated_at','settled_at'])
+        OR (OLD.state<>'queued' AND NEW.preparation_id IS DISTINCT FROM OLD.preparation_id)
+        OR (OLD.attempt_id IS NOT NULL AND NEW.attempt_id IS DISTINCT FROM OLD.attempt_id)
+        OR (OLD.preparation_id IS NOT NULL AND NEW.preparation_id IS DISTINCT FROM OLD.preparation_id)
+        OR (OLD.state IN ('accepted','failed','unknown') AND NEW IS DISTINCT FROM OLD)
+        OR (OLD.state='sending' AND NEW.state NOT IN ('sending','accepted','failed','unknown'))
+        OR NEW.updated_at<OLD.updated_at THEN
+        RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_IMMUTABLE_RECORD'; END IF;
+    IF NEW.attempt_id IS NOT NULL THEN
+        SELECT * INTO actual FROM private.automation_email_attempt_reservations WHERE id=NEW.attempt_id;
+        IF actual.id IS NULL OR ROW(actual.studio_id,actual.scope_kind,actual.scope_id,actual.node_id,actual.owner_token,actual.recipient_email,actual.preparation_id,actual.state)
+            IS DISTINCT FROM ROW(NEW.studio_id,'test'::TEXT,NEW.id,NULL::TEXT,NEW.execution_token,NEW.recipient_email,NEW.preparation_id,NEW.state) THEN
+            RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST'; END IF;
+    END IF;
+    RETURN NEW;
+END $$;
+CREATE FUNCTION private.automation_test_payload_identity_v1() RETURNS TRIGGER
+LANGUAGE plpgsql SECURITY INVOKER SET search_path='' AS $$
+DECLARE scope private.automation_test_email_scopes;
+BEGIN
+    SELECT * INTO scope FROM private.automation_test_email_scopes WHERE studio_id=NEW.studio_id AND id=NEW.scope_id;
+    IF scope.id IS NULL OR (TG_OP='INSERT' AND (scope.state<>'queued' OR NEW.rendered IS NOT NULL))
+        OR (TG_OP='UPDATE' AND (ROW(NEW.scope_id,NEW.studio_id,NEW.selection) IS DISTINCT FROM ROW(OLD.scope_id,OLD.studio_id,OLD.selection)
+            OR OLD.rendered IS NOT NULL OR NEW.rendered IS NULL OR scope.state<>'sending' OR scope.attempt_id IS NULL)) THEN
+        RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_IMMUTABLE_RECORD'; END IF;
+    RETURN NEW;
+END $$;
+CREATE FUNCTION private.automation_test_clear_owned_v1(p_studio_id UUID) RETURNS BOOLEAN
+LANGUAGE sql VOLATILE SECURITY INVOKER SET search_path='' AS $$
+    SELECT EXISTS(SELECT 1 FROM pg_catalog.pg_locks l WHERE l.locktype='advisory' AND l.pid=pg_catalog.pg_backend_pid()
+        AND l.database=(SELECT oid FROM pg_catalog.pg_database WHERE datname=current_database())
+        AND l.classid=((pg_catalog.hashtextextended('koaryu.local-plan-clear:'||p_studio_id::TEXT,0)>>32)&4294967295)::OID
+        AND l.objid=(pg_catalog.hashtextextended('koaryu.local-plan-clear:'||p_studio_id::TEXT,0)&4294967295)::OID
+        AND l.objsubid=1 AND l.mode='ExclusiveLock' AND l.granted)
+$$;
+CREATE FUNCTION private.automation_test_payload_delete_v1() RETURNS TRIGGER
+LANGUAGE plpgsql SECURITY INVOKER SET search_path='' AS $$
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM public.studios WHERE id=OLD.studio_id) THEN RETURN OLD; END IF;
+    IF NOT private.automation_test_clear_owned_v1(OLD.studio_id)
+        OR EXISTS(SELECT 1 FROM private.automation_test_email_scopes WHERE studio_id=OLD.studio_id AND id=OLD.scope_id AND state='queued') THEN
+        RAISE EXCEPTION USING ERRCODE='42501',MESSAGE='AUTOMATION_PAYLOAD_CLEAR_REQUIRED'; END IF;
+    RETURN OLD;
+END $$;
+CREATE TRIGGER automation_test_scope_identity BEFORE UPDATE ON private.automation_test_email_scopes FOR EACH ROW EXECUTE FUNCTION private.automation_test_scope_identity_v1();
+CREATE TRIGGER automation_test_payload_identity BEFORE INSERT OR UPDATE ON private.automation_test_email_payloads FOR EACH ROW EXECUTE FUNCTION private.automation_test_payload_identity_v1();
+CREATE TRIGGER automation_test_payload_delete BEFORE DELETE ON private.automation_test_email_payloads FOR EACH ROW EXECUTE FUNCTION private.automation_test_payload_delete_v1();
+
+-- Only this narrow projection reads Auth. Authority uses current relational roles.
+CREATE FUNCTION private.automation_test_verified_email_v1(p_actor_id UUID) RETURNS TEXT
+LANGUAGE sql VOLATILE SECURITY DEFINER SET search_path='' AS $$
+    SELECT private.automation_normalize_email(u.email) FROM auth.users u WHERE u.id=p_actor_id AND u.email_confirmed_at IS NOT NULL
+$$;
+CREATE FUNCTION private.automation_test_actor_v1(p_studio_id UUID,p_actor_id UUID) RETURNS VOID
+LANGUAGE plpgsql VOLATILE SECURITY INVOKER SET search_path='' AS $$
+BEGIN
+    IF p_studio_id IS NULL OR p_actor_id IS NULL THEN RAISE EXCEPTION USING ERRCODE='42501',MESSAGE='AUTOMATION_ADMIN_REQUIRED'; END IF;
+    IF NOT pg_catalog.pg_try_advisory_xact_lock_shared(pg_catalog.hashtextextended('koaryu.local-plan-clear:'||p_studio_id::TEXT,0)) THEN
+        RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STUDIO_BUSY'; END IF;
+    IF NOT private.workflow_lock_recipient_auth_v1(p_actor_id) THEN RAISE EXCEPTION USING ERRCODE='42501',MESSAGE='AUTOMATION_ADMIN_REQUIRED'; END IF;
+    PERFORM private.workflow_require_actor_v1(p_studio_id,p_actor_id);
+EXCEPTION WHEN lock_not_available THEN RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STUDIO_BUSY';
+END $$;
+CREATE FUNCTION private.automation_test_result_v1(p_scope private.automation_test_email_scopes) RETURNS JSONB
+LANGUAGE sql IMMUTABLE SECURITY INVOKER SET search_path='' AS $$
+    SELECT jsonb_build_object('operation_id',p_scope.operation_id,'test_delivery_id',p_scope.id,'state',p_scope.state)
+$$;
+CREATE FUNCTION private.automation_test_allowed_v1(p_allowed TEXT[]) RETURNS BOOLEAN
+LANGUAGE sql IMMUTABLE SECURITY INVOKER SET search_path='' AS $$
+    SELECT p_allowed IS NOT NULL AND cardinality(p_allowed)<=100 AND NOT EXISTS(SELECT 1 FROM unnest(p_allowed) email
+        WHERE email IS NULL OR private.automation_normalize_email(email) IS NULL OR private.automation_normalize_email(email)<>email)
+        AND p_allowed=ARRAY(SELECT DISTINCT email FROM unnest(p_allowed) email ORDER BY email)
+$$;
+CREATE FUNCTION private.automation_test_execution_v1(p_scope private.automation_test_email_scopes,p_selection JSONB) RETURNS JSONB
+LANGUAGE sql IMMUTABLE SECURITY INVOKER SET search_path='' AS $$
+    SELECT jsonb_build_object('execution_token',p_scope.execution_token,'lease_expires_at',private.automation_utc_text_v1(p_scope.execution_expires_at),
+        'scope_fingerprint',p_scope.scope_fingerprint,'reference_time',private.automation_utc_text_v1(p_scope.reference_time),
+        'event_type',p_selection#>>'{trigger,event_type}','trigger_context',jsonb_build_object('program_id',p_selection#>'{trigger,program_id}',
+            'offset_minutes',p_selection#>'{trigger,offset_minutes}'),'email_node_id',p_selection->>'email_node_id',
+        'recipient_policy',p_selection#>>'{email,recipient}','subject_template',p_selection#>>'{email,subject_template}',
+        'body_template',p_selection#>>'{email,body_template}','recipient_email',p_scope.recipient_email,'reply_to',p_scope.reply_to)
+$$;
+
+CREATE FUNCTION public.create_automation_test_email_v1(p_studio_id UUID,p_actor_id UUID,p_workflow_id UUID,p_operation_id UUID,
+    p_graph JSONB,p_email_node_id TEXT,p_runtime JSONB,p_replay_only BOOLEAN DEFAULT false) RETURNS JSONB
+LANGUAGE plpgsql VOLATILE SECURITY INVOKER SET search_path='' AS $$
+DECLARE receipt private.automation_command_operations; scope private.automation_test_email_scopes; fingerprint TEXT; selection JSONB;
+    trigger_config JSONB; email_config JSONB; recipient TEXT; reply TEXT; allowed TEXT[]; at TIMESTAMPTZ;
+BEGIN
+    PERFORM private.automation_test_actor_v1(p_studio_id,p_actor_id);
+    IF p_workflow_id IS NULL OR p_operation_id IS NULL OR p_email_node_id IS NULL OR p_email_node_id !~ '^[A-Za-z0-9_-]{1,64}$'
+        OR p_graph IS NULL OR p_replay_only IS NULL THEN RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST'; END IF;
+    fingerprint:=private.workflow_hash_v1(jsonb_build_object('command','test_email.create','studio_id',p_studio_id,'actor_id',p_actor_id,
+        'workflow_id',p_workflow_id,'operation_id',p_operation_id,'graph',p_graph,'email_node_id',p_email_node_id));
+    IF NOT pg_catalog.pg_try_advisory_xact_lock(pg_catalog.hashtextextended('automation.operation:'||p_studio_id::TEXT||':'||p_operation_id::TEXT,0)) THEN
+        RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STUDIO_BUSY'; END IF;
+    SELECT * INTO receipt FROM private.automation_command_operations WHERE studio_id=p_studio_id AND operation_id=p_operation_id;
+    IF receipt.operation_id IS NOT NULL THEN
+        IF ROW(receipt.actor_id,receipt.command,receipt.request_fingerprint) IS DISTINCT FROM ROW(p_actor_id,'test_email.create'::TEXT,fingerprint) THEN
+            RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_OPERATION_CONFLICT'; END IF;
+        RETURN jsonb_build_object('payload',jsonb_build_object('studio_id',p_studio_id,'actor_id',p_actor_id,'workflow_id',p_workflow_id,
+            'result',receipt.result,'replayed',true,'execution',NULL));
+    END IF;
+    IF p_replay_only THEN RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STATE_CONFLICT'; END IF;
+    IF private.workflow_validate_v1(p_graph,'{}',true)<>'[]'::JSONB THEN RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST'; END IF;
+    PERFORM private.workflow_require_graph_tenant_v1(p_studio_id,p_graph);
+    PERFORM 1 FROM public.automation_workflows WHERE studio_id=p_studio_id AND id=p_workflow_id FOR SHARE NOWAIT;
+    IF NOT FOUND THEN RAISE EXCEPTION USING ERRCODE='P0002',MESSAGE='AUTOMATION_NOT_FOUND'; END IF;
+    SELECT value->'config' INTO trigger_config FROM jsonb_array_elements(p_graph->'nodes') WHERE value->>'type'='trigger';
+    SELECT value->'config' INTO email_config FROM jsonb_array_elements(p_graph->'nodes') WHERE value->>'id'=p_email_node_id AND value->>'type'='email';
+    IF email_config IS NULL OR NOT private.workflow_json_keys_v1(p_runtime,ARRAY['sender_binding','default_reply_to','allowed_recipients'],ARRAY['sender_binding','default_reply_to','allowed_recipients'])
+        OR jsonb_typeof(p_runtime->'sender_binding') IS DISTINCT FROM 'string' OR p_runtime->>'sender_binding' !~ '^[a-f0-9]{64}$'
+        OR jsonb_typeof(p_runtime->'default_reply_to') IS DISTINCT FROM 'string'
+        OR private.automation_normalize_email(p_runtime->>'default_reply_to') IS NULL
+        OR private.automation_normalize_email(p_runtime->>'default_reply_to')<>p_runtime->>'default_reply_to'
+        OR jsonb_typeof(p_runtime->'allowed_recipients') IS DISTINCT FROM 'array' THEN
+        RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST'; END IF;
+    IF EXISTS(SELECT 1 FROM jsonb_array_elements(p_runtime->'allowed_recipients') WHERE jsonb_typeof(value)<>'string') THEN
+        RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST'; END IF;
+    SELECT ARRAY(SELECT jsonb_array_elements_text(p_runtime->'allowed_recipients')) INTO allowed;
+    IF NOT private.automation_test_allowed_v1(allowed) THEN RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST'; END IF;
+    recipient:=private.automation_test_verified_email_v1(p_actor_id);
+    IF recipient IS NULL OR (cardinality(allowed)>0 AND NOT recipient=ANY(allowed)) THEN
+        RAISE EXCEPTION USING ERRCODE='42501',MESSAGE='AUTOMATION_ADMIN_REQUIRED'; END IF;
+    reply:=coalesce(private.automation_normalize_email(email_config->>'reply_to_email'),p_runtime->>'default_reply_to');
+    selection:=jsonb_build_object('trigger',trigger_config,'email_node_id',p_email_node_id,'email',email_config);
+    at:=clock_timestamp(); scope.id:=gen_random_uuid(); scope.execution_token:=gen_random_uuid();
+    INSERT INTO private.automation_test_email_scopes(id,studio_id,actor_id,workflow_id,operation_id,request_fingerprint,scope_fingerprint,
+        execution_token,reference_time,execution_expires_at,recipient_email,reply_to,sender_binding,state,created_at,updated_at)
+        VALUES(scope.id,p_studio_id,p_actor_id,p_workflow_id,p_operation_id,fingerprint,private.workflow_hash_v1(jsonb_build_object(
+            'test_delivery_id',scope.id,'request_fingerprint',fingerprint,'selection',selection,'recipient_email',recipient,'reply_to',reply,
+            'sender_binding',p_runtime->>'sender_binding','reference_time',private.automation_utc_text_v1(at))),scope.execution_token,
+            at,at+INTERVAL '60 seconds',recipient,reply,p_runtime->>'sender_binding','queued',at,at) RETURNING * INTO scope;
+    INSERT INTO private.automation_test_email_payloads(scope_id,studio_id,selection) VALUES(scope.id,p_studio_id,selection);
+    INSERT INTO private.automation_command_operations(studio_id,operation_id,actor_id,command,request_fingerprint,entity_type,entity_id,result,committed_at)
+        VALUES(p_studio_id,p_operation_id,p_actor_id,'test_email.create',fingerprint,'test_delivery',scope.id,private.automation_test_result_v1(scope),at);
+    RETURN jsonb_build_object('payload',jsonb_build_object('studio_id',p_studio_id,'actor_id',p_actor_id,'workflow_id',p_workflow_id,
+        'result',private.automation_test_result_v1(scope),'replayed',false,'execution',private.automation_test_execution_v1(scope,selection)));
+EXCEPTION WHEN lock_not_available THEN RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STUDIO_BUSY';
+END $$;
+
+CREATE FUNCTION private.automation_test_original_v1(p_studio_id UUID,p_scope_id UUID,p_token UUID) RETURNS private.automation_test_email_scopes
+LANGUAGE plpgsql VOLATILE SECURITY INVOKER SET search_path='' AS $$
+DECLARE scope private.automation_test_email_scopes;
+BEGIN
+    IF NOT pg_catalog.pg_try_advisory_xact_lock_shared(pg_catalog.hashtextextended('koaryu.local-plan-clear:'||p_studio_id::TEXT,0)) THEN
+        RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STUDIO_BUSY'; END IF;
+    PERFORM 1 FROM public.studios WHERE id=p_studio_id FOR KEY SHARE NOWAIT;
+    SELECT * INTO scope FROM private.automation_test_email_scopes WHERE studio_id=p_studio_id AND id=p_scope_id FOR UPDATE NOWAIT;
+    IF p_token IS NULL OR scope.execution_token IS DISTINCT FROM p_token THEN RETURN NULL; END IF;
+    RETURN scope;
+EXCEPTION WHEN lock_not_available THEN RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STUDIO_BUSY';
+END $$;
+CREATE FUNCTION private.automation_test_fail_v1(p_scope private.automation_test_email_scopes,p_reason TEXT) RETURNS private.automation_test_email_scopes
+LANGUAGE plpgsql VOLATILE SECURITY INVOKER SET search_path='' AS $$
+DECLARE preparation private.automation_sender_preparations; at TIMESTAMPTZ;
+BEGIN
+    IF p_scope.state<>'queued' OR p_scope.attempt_id IS NOT NULL THEN RETURN p_scope; END IF;
+    PERFORM private.automation_email_scope_lock_v1(p_scope.studio_id,'test',p_scope.id,NULL,p_scope.recipient_email);
+    IF p_scope.preparation_id IS NOT NULL THEN
+        SELECT * INTO preparation FROM private.automation_sender_preparations WHERE id=p_scope.preparation_id;
+        IF preparation.probe_token IS NOT NULL THEN
+            PERFORM private.automation_sender_release_probe_v1(preparation.id,preparation.preparation_token,preparation.probe_token);
+        END IF;
+    END IF;
+    at:=clock_timestamp();
+    UPDATE private.automation_test_email_scopes SET state='failed',reason=p_reason,settled_at=at,updated_at=at WHERE id=p_scope.id RETURNING * INTO p_scope;
+    RETURN p_scope;
+END $$;
+CREATE FUNCTION private.automation_test_expire_v1(p_scope private.automation_test_email_scopes) RETURNS private.automation_test_email_scopes
+LANGUAGE plpgsql VOLATILE SECURITY INVOKER SET search_path='' AS $$
+DECLARE actual private.automation_email_attempt_reservations; settled JSONB;
+BEGIN
+    IF p_scope.state='queued' AND p_scope.execution_expires_at<=clock_timestamp() THEN RETURN private.automation_test_fail_v1(p_scope,'lease_expired'); END IF;
+    IF p_scope.state='sending' THEN
+        SELECT * INTO actual FROM private.automation_email_attempt_reservations WHERE id=p_scope.attempt_id;
+        IF actual.lease_expires_at<=clock_timestamp() THEN
+            settled:=private.automation_email_attempt_expire_v1(actual.id);
+            IF settled->>'outcome' IN ('confirmed','replayed') THEN
+                UPDATE private.automation_test_email_scopes SET state=settled->>'state',reason='lease_expired',
+                    settled_at=(settled->>'settled_at')::TIMESTAMPTZ,updated_at=(settled->>'settled_at')::TIMESTAMPTZ WHERE id=p_scope.id RETURNING * INTO p_scope;
+            END IF;
+        END IF;
+    END IF;
+    RETURN p_scope;
+END $$;
+CREATE FUNCTION private.automation_test_own_v1(p_studio_id UUID,p_actor_id UUID,p_scope_id UUID,p_token UUID,p_allowed TEXT[]) RETURNS private.automation_test_email_scopes
+LANGUAGE plpgsql VOLATILE SECURITY INVOKER SET search_path='' AS $$
+DECLARE scope private.automation_test_email_scopes; discovered private.automation_test_email_scopes; email TEXT;
+BEGIN
+    PERFORM private.automation_test_actor_v1(p_studio_id,p_actor_id);
+    IF NOT private.automation_test_allowed_v1(p_allowed) THEN RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST'; END IF;
+    SELECT * INTO discovered FROM private.automation_test_email_scopes WHERE studio_id=p_studio_id AND id=p_scope_id;
+    IF discovered.id IS NULL OR discovered.actor_id IS DISTINCT FROM p_actor_id OR discovered.execution_token IS DISTINCT FROM p_token OR p_token IS NULL THEN RETURN NULL; END IF;
+    PERFORM 1 FROM public.automation_workflows WHERE studio_id=p_studio_id AND id=discovered.workflow_id FOR SHARE NOWAIT;
+    IF NOT FOUND THEN RETURN NULL; END IF;
+    -- Every source and workflow precedes the scope, and all common sender locks.
+    SELECT * INTO scope FROM private.automation_test_email_scopes WHERE studio_id=p_studio_id AND id=p_scope_id FOR UPDATE NOWAIT;
+    scope:=private.automation_test_expire_v1(scope);
+    IF scope.state='queued' THEN
+        email:=private.automation_test_verified_email_v1(p_actor_id);
+        IF email IS DISTINCT FROM scope.recipient_email OR (cardinality(p_allowed)>0 AND NOT email=ANY(p_allowed)) THEN
+            RETURN private.automation_test_fail_v1(scope,'recipient_changed'); END IF;
+        IF NOT EXISTS(SELECT 1 FROM private.automation_test_email_payloads WHERE scope_id=scope.id) THEN
+            RETURN private.automation_test_fail_v1(scope,'sender_unavailable'); END IF;
+    END IF;
+    RETURN scope;
+EXCEPTION WHEN lock_not_available THEN RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STUDIO_BUSY';
+END $$;
+
+CREATE FUNCTION public.claim_automation_test_sender_preparation_v1(p_studio_id UUID,p_actor_id UUID,p_test_delivery_id UUID,p_execution_token UUID,
+    p_preparation_id UUID,p_sender_binding TEXT,p_allowed_recipients TEXT[]) RETURNS JSONB
+LANGUAGE plpgsql VOLATILE SECURITY INVOKER SET search_path='' AS $$
+DECLARE scope private.automation_test_email_scopes; reply JSONB; gate private.automation_sender_gate;
+BEGIN
+    IF p_preparation_id IS NULL OR p_sender_binding IS NULL OR p_sender_binding !~ '^[a-f0-9]{64}$' THEN
+        RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST'; END IF;
+    scope:=private.automation_test_own_v1(p_studio_id,p_actor_id,p_test_delivery_id,p_execution_token,p_allowed_recipients);
+    IF scope.id IS NULL OR scope.state<>'queued' OR scope.sender_binding IS DISTINCT FROM p_sender_binding
+        OR (scope.preparation_id IS NOT NULL AND scope.preparation_id<>p_preparation_id) THEN
+        SELECT * INTO gate FROM private.automation_sender_gate WHERE provider_key='microsoft_graph:primary';
+        IF gate.provider_key IS NULL THEN RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_SENDER_UNAVAILABLE'; END IF;
+        reply:=private.automation_sender_preparation_reply_v1(p_preparation_id,gate,NULL,'claim','preparation_stale');
+    ELSE
+        PERFORM private.automation_email_scope_lock_v1(scope.studio_id,'test',scope.id,NULL,scope.recipient_email);
+        BEGIN
+            reply:=private.automation_sender_claim_v1(p_preparation_id,p_sender_binding,'synthetic_recovery',scope.id);
+            IF scope.execution_expires_at<=clock_timestamp() THEN RAISE EXCEPTION USING ERRCODE='P57L1'; END IF;
+            IF (reply#>>'{payload,allowed}')::BOOLEAN THEN
+                UPDATE private.automation_test_email_scopes SET preparation_id=p_preparation_id,updated_at=clock_timestamp() WHERE id=scope.id;
+            END IF;
+        EXCEPTION WHEN SQLSTATE 'P57L1' THEN
+            scope:=private.automation_test_fail_v1(scope,'lease_expired');
+            SELECT * INTO gate FROM private.automation_sender_gate WHERE provider_key='microsoft_graph:primary';
+            reply:=private.automation_sender_preparation_reply_v1(p_preparation_id,gate,NULL,'claim','preparation_stale');
+        END;
+    END IF;
+    RETURN jsonb_build_object('payload',(reply->'payload')||jsonb_build_object('studio_id',p_studio_id,'test_delivery_id',p_test_delivery_id));
+END $$;
+
+CREATE FUNCTION public.finish_automation_test_email_preflight_v1(p_studio_id UUID,p_test_delivery_id UUID,p_execution_token UUID,p_reason TEXT) RETURNS JSONB
+LANGUAGE plpgsql VOLATILE SECURITY INVOKER SET search_path='' AS $$
+DECLARE scope private.automation_test_email_scopes; updated BOOLEAN:=false; replayed BOOLEAN:=false; result JSONB;
+BEGIN
+    IF p_reason IS NULL OR p_reason NOT IN ('invalid_email_template','invalid_email_context','unsupported_currency','invalid_email_url','facts_unavailable',
+        'sender_unavailable','subscription_required','recipient_changed','recipient_suppressed','lease_expired','budget_exhausted') THEN
+        RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST'; END IF;
+    scope:=private.automation_test_original_v1(p_studio_id,p_test_delivery_id,p_execution_token);
+    IF scope.id IS NOT NULL THEN
+        IF scope.state='failed' AND scope.attempt_id IS NULL AND scope.reason=p_reason THEN updated:=true; replayed:=true;
+        ELSIF scope.state='queued' THEN
+            scope:=private.automation_test_fail_v1(scope,CASE WHEN scope.execution_expires_at<=clock_timestamp() THEN 'lease_expired' ELSE p_reason END); updated:=true;
+        END IF;
+        IF updated THEN result:=private.automation_test_result_v1(scope); END IF;
+    END IF;
+    RETURN jsonb_build_object('payload',jsonb_build_object('studio_id',p_studio_id,'test_delivery_id',p_test_delivery_id,
+        'updated',updated,'replayed',replayed,'result',result));
+END $$;
+
+CREATE FUNCTION public.begin_automation_test_email_v1(p_studio_id UUID,p_actor_id UUID,p_test_delivery_id UUID,p_execution_token UUID,
+    p_preparation_id UUID,p_preparation_token UUID,p_probe_token UUID,p_allowed_recipients TEXT[],p_scope_fingerprint TEXT,p_rendered JSONB) RETURNS JSONB
+LANGUAGE plpgsql VOLATILE SECURITY INVOKER SET search_path='' AS $$
+DECLARE scope private.automation_test_email_scopes; admission JSONB; actual private.automation_email_attempt_reservations;
+    outcome TEXT:='lease_lost'; result JSONB; attempt JSONB; new_id UUID:=gen_random_uuid(); at TIMESTAMPTZ;
+BEGIN
+    IF p_preparation_id IS NULL OR p_preparation_token IS NULL OR p_scope_fingerprint IS NULL OR p_scope_fingerprint !~ '^[a-f0-9]{64}$'
+        OR private.automation_test_rendered_valid_v1(p_rendered) IS DISTINCT FROM true THEN
+        RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST'; END IF;
+    scope:=private.automation_test_own_v1(p_studio_id,p_actor_id,p_test_delivery_id,p_execution_token,p_allowed_recipients);
+    IF scope.id IS NOT NULL THEN
+        IF scope.attempt_id IS NOT NULL THEN outcome:='already_begun';
+        ELSIF scope.state='failed' THEN outcome:='stopped';
+        ELSIF scope.state='queued' THEN
+            IF scope.scope_fingerprint IS DISTINCT FROM p_scope_fingerprint OR scope.preparation_id IS DISTINCT FROM p_preparation_id THEN
+                scope:=private.automation_test_fail_v1(scope,'sender_unavailable'); outcome:='stopped';
+            ELSE
+                BEGIN
+                    admission:=private.automation_email_attempt_begin_v1(p_studio_id,'test',scope.id,NULL,new_id,scope.execution_token,scope.recipient_email,
+                        p_preparation_id,p_preparation_token,p_probe_token);
+                    at:=clock_timestamp();
+                    IF scope.execution_expires_at<=at THEN RAISE EXCEPTION USING ERRCODE='P57L1'; END IF;
+                    IF admission->>'outcome'='begun' THEN
+                        SELECT * INTO actual FROM private.automation_email_attempt_reservations WHERE id=new_id;
+                        UPDATE private.automation_test_email_scopes SET state='sending',attempt_id=actual.id,updated_at=at WHERE id=scope.id RETURNING * INTO scope;
+                        UPDATE private.automation_test_email_payloads SET rendered=p_rendered WHERE scope_id=scope.id;
+                        IF NOT FOUND THEN RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STATE_CONFLICT'; END IF;
+                        attempt:=jsonb_build_object('id',actual.id,'lease_expires_at',private.automation_utc_text_v1(actual.lease_expires_at),
+                            'credential_revision',actual.admitted_credential_revision,'sender_binding',actual.sender_binding,
+                            'message',p_rendered||jsonb_build_object('attempt_id',actual.id,'to_address',scope.recipient_email,'reply_to',scope.reply_to)); outcome:='begun';
+                    ELSE
+                        scope:=private.automation_test_fail_v1(scope,CASE admission->>'reason' WHEN 'recipient_suppressed' THEN 'recipient_suppressed' ELSE 'sender_unavailable' END); outcome:='stopped';
+                    END IF;
+                EXCEPTION WHEN SQLSTATE 'P57L1' THEN scope:=private.automation_test_fail_v1(scope,'lease_expired'); outcome:='stopped';
+                END;
+            END IF;
+        END IF;
+        IF outcome<>'lease_lost' THEN result:=private.automation_test_result_v1(scope); END IF;
+    END IF;
+    RETURN jsonb_build_object('payload',jsonb_build_object('studio_id',p_studio_id,'test_delivery_id',p_test_delivery_id,
+        'outcome',outcome,'result',result,'attempt',attempt));
+END $$;
+
+CREATE FUNCTION public.settle_automation_test_email_v1(p_studio_id UUID,p_test_delivery_id UUID,p_attempt_id UUID,p_execution_token UUID,p_result JSONB) RETURNS JSONB
+LANGUAGE plpgsql VOLATILE SECURITY INVOKER SET search_path='' AS $$
+DECLARE scope private.automation_test_email_scopes; settled JSONB; updated BOOLEAN:=false; replayed BOOLEAN:=false; v_state TEXT; result JSONB;
+BEGIN
+    scope:=private.automation_test_original_v1(p_studio_id,p_test_delivery_id,p_execution_token);
+    IF scope.id IS NOT NULL AND p_attempt_id IS NOT NULL AND scope.attempt_id=p_attempt_id THEN
+        settled:=private.automation_email_attempt_settle_v1(p_attempt_id,p_execution_token,p_result);
+        IF settled->>'outcome' IN ('confirmed','replayed') THEN
+            replayed:=settled->>'outcome'='replayed'; updated:=true; v_state:=settled->>'state';
+            IF scope.state='sending' THEN
+                UPDATE private.automation_test_email_scopes SET state=v_state,reason=NULL,
+                    settled_at=(settled->>'settled_at')::TIMESTAMPTZ,updated_at=(settled->>'settled_at')::TIMESTAMPTZ WHERE id=scope.id RETURNING * INTO scope;
+            END IF;
+            result:=private.automation_test_result_v1(scope);
+        END IF;
+    END IF;
+    RETURN jsonb_build_object('payload',jsonb_build_object('studio_id',p_studio_id,'test_delivery_id',p_test_delivery_id,'attempt_id',p_attempt_id,
+        'updated',updated,'replayed',replayed,'state',v_state,'result',result));
+END $$;
+CREATE FUNCTION public.get_automation_test_email_v1(p_studio_id UUID,p_actor_id UUID,p_test_delivery_id UUID) RETURNS JSONB
+LANGUAGE plpgsql VOLATILE SECURITY INVOKER SET search_path='' AS $$
+DECLARE scope private.automation_test_email_scopes;
+BEGIN
+    PERFORM private.automation_test_actor_v1(p_studio_id,p_actor_id);
+    SELECT * INTO scope FROM private.automation_test_email_scopes WHERE studio_id=p_studio_id AND id=p_test_delivery_id FOR UPDATE NOWAIT;
+    IF scope.id IS NULL THEN RAISE EXCEPTION USING ERRCODE='P0002',MESSAGE='AUTOMATION_NOT_FOUND'; END IF;
+    scope:=private.automation_test_expire_v1(scope);
+    RETURN jsonb_build_object('payload',jsonb_build_object('studio_id',p_studio_id,'workflow_id',scope.workflow_id,'result',private.automation_test_result_v1(scope)));
+EXCEPTION WHEN lock_not_available THEN RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STUDIO_BUSY';
+END $$;
+
+-- Next clear owner calls this before deleting payloads, under its exclusive gate.
+CREATE FUNCTION private.automation_test_invalidate_queued_v1(p_studio_id UUID) RETURNS VOID
+LANGUAGE plpgsql VOLATILE SECURITY INVOKER SET search_path='' AS $$
+DECLARE scope private.automation_test_email_scopes;
+BEGIN
+    IF NOT private.automation_test_clear_owned_v1(p_studio_id) THEN RAISE EXCEPTION USING ERRCODE='42501',MESSAGE='AUTOMATION_PAYLOAD_CLEAR_REQUIRED'; END IF;
+    FOR scope IN SELECT * FROM private.automation_test_email_scopes WHERE studio_id=p_studio_id AND state='queued' ORDER BY id FOR UPDATE NOWAIT LOOP
+        PERFORM private.automation_test_fail_v1(scope,'sender_unavailable');
+    END LOOP;
+END $$;
+
+ALTER TABLE private.automation_test_email_scopes OWNER TO postgres;
+ALTER TABLE private.automation_test_email_payloads OWNER TO postgres;
+ALTER TABLE private.automation_test_email_scopes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE private.automation_test_email_payloads ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON private.automation_test_email_scopes,private.automation_test_email_payloads FROM PUBLIC,anon,authenticated,service_role;
+GRANT SELECT,INSERT,UPDATE ON private.automation_test_email_scopes TO service_role;
+GRANT SELECT,INSERT,UPDATE,DELETE ON private.automation_test_email_payloads TO service_role;
+CREATE POLICY reject_client_access ON private.automation_test_email_scopes AS RESTRICTIVE FOR ALL TO anon,authenticated USING(false) WITH CHECK(false);
+CREATE POLICY reject_client_access ON private.automation_test_email_payloads AS RESTRICTIVE FOR ALL TO anon,authenticated USING(false) WITH CHECK(false);
+DO $test_mail_privileges$
+DECLARE r RECORD;
+BEGIN
+    FOR r IN SELECT p.oid::REGPROCEDURE identity,p.prorettype FROM pg_catalog.pg_proc p JOIN pg_catalog.pg_namespace n ON n.oid=p.pronamespace
+        WHERE (n.nspname='private' AND p.proname IN ('automation_test_rendered_valid_v1','automation_test_scope_identity_v1','automation_test_payload_identity_v1',
+            'automation_test_clear_owned_v1','automation_test_payload_delete_v1','automation_test_verified_email_v1','automation_test_actor_v1',
+            'automation_test_result_v1','automation_test_allowed_v1','automation_test_execution_v1','automation_test_original_v1','automation_test_fail_v1',
+            'automation_test_expire_v1','automation_test_own_v1','automation_test_invalidate_queued_v1'))
+        OR (n.nspname='public' AND p.proname IN ('create_automation_test_email_v1','claim_automation_test_sender_preparation_v1',
+            'finish_automation_test_email_preflight_v1','begin_automation_test_email_v1','settle_automation_test_email_v1','get_automation_test_email_v1')) LOOP
+        EXECUTE format('ALTER FUNCTION %s OWNER TO postgres',r.identity);
+        EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC,anon,authenticated,service_role',r.identity);
+        IF r.prorettype<>'trigger'::REGTYPE THEN EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO service_role',r.identity); END IF;
+    END LOOP;
+END;
+$test_mail_privileges$;
