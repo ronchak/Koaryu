@@ -7,7 +7,19 @@ import { test } from "node:test";
 import { compileCommonJsModule } from "./helpers/store-browser-harness.mjs";
 const require = createRequire(import.meta.url);
 const root = resolve(import.meta.dirname, "../..");
-const python = resolve(root, "backend/venv/bin/python");
+function previewPythonPath() {
+  const override = process.env.PYTHON?.trim();
+  if (override) return override;
+  if (process.platform === "win32") return "python";
+  const local = resolve(root, "backend/venv/bin/python");
+  try {
+    execFileSync("test", ["-x", local], { cwd: root });
+    return local;
+  } catch {
+    return "python3";
+  }
+}
+const python = previewPythonPath();
 const generator = resolve(root, "scripts/generate-workflow-preview-catalog.py");
 
 test("preview snapshot matches the actual pure catalog, is deterministic and detects deliberate drift", () => {

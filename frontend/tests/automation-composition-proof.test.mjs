@@ -153,6 +153,7 @@ test("proof HTML CLI flushes the complete bundle without starting a server", () 
   const html = execFileSync(
     process.execPath,
     [
+      "--experimental-strip-types",
       fileURLToPath(new URL("./helpers/workflow-composition-mounted.mjs", import.meta.url)),
       "--proof-html",
     ],

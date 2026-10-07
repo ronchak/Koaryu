@@ -1205,6 +1205,7 @@ def serve_application(http, ids, options):
         result = subprocess.run(
             [
                 options.node,
+                "--experimental-strip-types",
                 str(ROOT / "frontend/tests/helpers/workflow-composition-mounted.mjs"),
                 "--proof-html",
             ],

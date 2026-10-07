@@ -272,6 +272,8 @@ for (const close of ["Escape", "Keep reviewing", "backdrop"])
       else if (close === "backdrop")
         await page.locator(".koaryu-modal-backdrop").click({ position: { x: 2, y: 2 } });
       else await button(page, close).click();
+      await expect(page.getByRole("dialog", { name: "Cancel this run?" })).toHaveCount(0);
+      await expect(button(page, "Cancel this run")).toBeFocused();
       assert.equal(
         await page.evaluate(
           () => document.activeElement === window.openerProbe && window.openerProbe.isConnected,
