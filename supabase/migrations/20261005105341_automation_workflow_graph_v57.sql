@@ -7034,6 +7034,7 @@ DECLARE cursor_row private.automation_workflow_dispatch_cursor; v_run public.aut
     claims JSONB:='[]'; at TIMESTAMPTZ; last_studio UUID; token UUID; more BOOLEAN; i INTEGER;
 BEGIN
     IF p_limit IS NULL OR p_limit NOT BETWEEN 1 AND 10 THEN RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST'; END IF;
+    PERFORM private.workflow_expire_email_attempts_v1(100);
     SELECT * INTO cursor_row FROM private.automation_workflow_dispatch_cursor WHERE singleton FOR UPDATE SKIP LOCKED;
     IF NOT FOUND AND NOT EXISTS(SELECT 1 FROM private.automation_workflow_dispatch_cursor WHERE singleton) THEN
         RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STATE_CONFLICT';
@@ -9216,3 +9217,662 @@ BEGIN
         IF item.prorettype<>'trigger'::REGTYPE THEN EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO service_role',item.identity); END IF;
     END LOOP;
 END $legacy_privileges$;
+
+-- Graph mail uses the common real-attempt owner. Bodies and plaintext footer
+-- pins are disposable payloads; run/step/attempt truth remains body-free.
+CREATE FUNCTION private.workflow_email_rendered_valid_v1(p_rendered JSONB) RETURNS BOOLEAN
+LANGUAGE sql IMMUTABLE SECURITY INVOKER SET search_path='' AS $$
+    SELECT private.workflow_json_keys_v1(p_rendered,ARRAY['subject','text_body','html_body'],ARRAY['subject','text_body','html_body'])
+        AND jsonb_typeof(p_rendered->'subject')='string' AND length(p_rendered->>'subject')<=200 AND octet_length(p_rendered->>'subject')<=800
+        AND jsonb_typeof(p_rendered->'text_body')='string' AND length(p_rendered->>'text_body')<=22084 AND octet_length(p_rendered->>'text_body')<=88228
+        AND jsonb_typeof(p_rendered->'html_body')='string' AND length(p_rendered->>'html_body')<=132383 AND octet_length(p_rendered->>'html_body')<=132383
+$$;
+CREATE TABLE private.workflow_email_unsubscribe_pins (
+    studio_id UUID NOT NULL,run_id UUID NOT NULL,step_id UUID NOT NULL,node_id TEXT NOT NULL,
+    first_attempt_id UUID NOT NULL REFERENCES private.automation_workflow_email_attempts(id) ON DELETE CASCADE,
+    unsubscribe_token TEXT NOT NULL CHECK(unsubscribe_token ~ '^[a-f0-9]{64}$'),
+    created_at TIMESTAMPTZ NOT NULL CHECK(private.automation_sender_instant_v1(created_at)),
+    PRIMARY KEY(run_id,node_id),
+    FOREIGN KEY(studio_id,run_id,step_id,node_id) REFERENCES private.automation_workflow_run_steps(studio_id,run_id,id,node_id) ON DELETE CASCADE
+);
+CREATE TABLE private.workflow_email_attempt_payloads (
+    attempt_id UUID PRIMARY KEY REFERENCES private.automation_workflow_email_attempts(id) ON DELETE CASCADE,
+    studio_id UUID NOT NULL,run_id UUID NOT NULL,step_id UUID NOT NULL,node_id TEXT NOT NULL,
+    plan_fingerprint TEXT NOT NULL CHECK(plan_fingerprint ~ '^[a-f0-9]{64}$'),
+    reply_to TEXT NOT NULL CHECK(private.automation_normalize_email(reply_to) IS NOT NULL AND private.automation_normalize_email(reply_to)=reply_to),
+    rendered JSONB NOT NULL CHECK(private.workflow_email_rendered_valid_v1(rendered)),
+    selected_template_facts JSONB NOT NULL CHECK(jsonb_typeof(selected_template_facts)='object' AND octet_length(selected_template_facts::TEXT)<=320000),
+    created_at TIMESTAMPTZ NOT NULL CHECK(private.automation_sender_instant_v1(created_at)),
+    FOREIGN KEY(studio_id,run_id,step_id,node_id) REFERENCES private.automation_workflow_run_steps(studio_id,run_id,id,node_id) ON DELETE CASCADE
+);
+CREATE INDEX automation_email_attempts_workflow_expiry ON private.automation_email_attempt_reservations(lease_expires_at,id)
+    WHERE scope_kind='workflow' AND state='sending';
+CREATE FUNCTION private.workflow_email_payload_identity_v1() RETURNS TRIGGER
+LANGUAGE plpgsql SECURITY INVOKER SET search_path='' AS $$
+DECLARE actual private.automation_workflow_email_attempts;
+BEGIN
+    IF TG_OP='UPDATE' THEN
+        IF NEW IS DISTINCT FROM OLD THEN RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_IMMUTABLE_RECORD'; END IF;
+        RETURN NEW;
+    END IF;
+    SELECT * INTO actual FROM private.automation_workflow_email_attempts
+        WHERE id=CASE WHEN TG_TABLE_NAME='workflow_email_unsubscribe_pins' THEN (to_jsonb(NEW)->>'first_attempt_id')::UUID ELSE (to_jsonb(NEW)->>'attempt_id')::UUID END;
+    IF actual.id IS NOT NULL AND (ROW(actual.studio_id,actual.run_id,actual.step_id,actual.node_id)
+        IS DISTINCT FROM ROW(NEW.studio_id,NEW.run_id,NEW.step_id,NEW.node_id)
+        OR (TG_TABLE_NAME='workflow_email_unsubscribe_pins' AND actual.attempt_number<>1)) THEN
+        RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST';
+    END IF;
+    RETURN NEW;
+END $$;
+CREATE FUNCTION private.workflow_email_payload_delete_v1() RETURNS TRIGGER
+LANGUAGE plpgsql SECURITY INVOKER SET search_path='' AS $$
+DECLARE key BIGINT:=pg_catalog.hashtextextended('koaryu.local-plan-clear:'||OLD.studio_id::TEXT,0);
+BEGIN
+    IF NOT EXISTS(SELECT 1 FROM public.studios WHERE id=OLD.studio_id) THEN RETURN OLD; END IF;
+    IF NOT EXISTS(SELECT 1 FROM public.automation_workflow_runs WHERE studio_id=OLD.studio_id AND id=OLD.run_id AND cancel_requested_at IS NOT NULL)
+        OR NOT EXISTS(SELECT 1 FROM pg_catalog.pg_locks l WHERE l.locktype='advisory' AND l.pid=pg_catalog.pg_backend_pid()
+            AND l.database=(SELECT oid FROM pg_catalog.pg_database WHERE datname=current_database())
+            AND l.classid=((key>>32)&4294967295)::OID AND l.objid=(key&4294967295)::OID AND l.objsubid=1
+            AND l.mode='ExclusiveLock' AND l.granted) THEN
+        RAISE EXCEPTION USING ERRCODE='42501',MESSAGE='AUTOMATION_PAYLOAD_CLEAR_REQUIRED';
+    END IF;
+    RETURN OLD;
+END $$;
+CREATE TRIGGER workflow_email_pins_identity BEFORE INSERT OR UPDATE ON private.workflow_email_unsubscribe_pins
+    FOR EACH ROW EXECUTE FUNCTION private.workflow_email_payload_identity_v1();
+CREATE TRIGGER workflow_email_payloads_identity BEFORE INSERT OR UPDATE ON private.workflow_email_attempt_payloads
+    FOR EACH ROW EXECUTE FUNCTION private.workflow_email_payload_identity_v1();
+CREATE TRIGGER workflow_email_pins_delete BEFORE DELETE ON private.workflow_email_unsubscribe_pins
+    FOR EACH ROW EXECUTE FUNCTION private.workflow_email_payload_delete_v1();
+CREATE TRIGGER workflow_email_payloads_delete BEFORE DELETE ON private.workflow_email_attempt_payloads
+    FOR EACH ROW EXECUTE FUNCTION private.workflow_email_payload_delete_v1();
+
+-- The sole Auth exception returns only ownership success. UPDATE excludes
+-- non-key email changes and FK-backed insertions of absent roles/profiles.
+CREATE FUNCTION private.workflow_lock_recipient_auth_v1(p_user_id UUID) RETURNS BOOLEAN
+LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path='' AS $$
+BEGIN
+    PERFORM 1 FROM auth.users WHERE id=p_user_id FOR UPDATE NOWAIT;
+    RETURN FOUND;
+END $$;
+
+CREATE FUNCTION private.workflow_email_source_inventory_v1(p_studio_id UUID,p_event private.automation_workflow_events,p_trigger_config JSONB,p_recipient_policy TEXT) RETURNS JSONB
+LANGUAGE plpgsql STABLE SECURITY INVOKER SET search_path='' AS $$
+#variable_conflict use_column
+<<source_owner>>
+DECLARE lead public.leads; trial public.lead_trial_appointments; student public.students; promotion public.promotions; recipient public.belt_test_recipients; belt public.belt_test_events; membership public.student_program_memberships; ladder public.belt_ladders; invoice public.billing_invoices; payment public.billing_payments; account public.studio_payment_accounts; settlement private.workflow_invoice_settlement_authority; item RECORD;
+    complete BOOLEAN:=true; parents JSONB:='{}'; generations JSONB:='{}'; filter_id UUID:=(p_trigger_config->>'program_id')::UUID;
+    student_id UUID; membership_id UUID; ladder_id UUID; invoice_id UUID; rank_generation BIGINT;
+    program_ids UUID[]:='{}'; rank_ids UUID[]:='{}'; candidates UUID[]; payments UUID[];
+BEGIN
+    IF p_event.event_type LIKE 'invoice.%' THEN
+    IF p_event.event_type='invoice.payment_failed' THEN
+    SELECT * INTO payment FROM public.billing_payments WHERE studio_id=p_studio_id AND id=p_event.subject_id;
+    complete:=complete AND payment.id IS NOT NULL;
+    IF payment.id IS NOT NULL THEN parents:=parents||jsonb_build_object('public.billing_payments:'||payment.id::TEXT,true); END IF;
+    invoice_id:=payment.invoice_id; ELSE invoice_id:=p_event.subject_id; END IF;
+    SELECT * INTO invoice FROM public.billing_invoices WHERE studio_id=p_studio_id AND id=source_owner.invoice_id;
+    complete:=complete AND invoice.id IS NOT NULL;
+    IF invoice.id IS NOT NULL THEN parents:=parents||jsonb_build_object('public.billing_invoices:'||invoice.id::TEXT,true); END IF;
+    SELECT coalesce(array_agg(payment_id ORDER BY payment_id),'{}'::UUID[]) INTO candidates FROM (SELECT payment_id FROM private.workflow_payment_settlement_observations WHERE studio_id=p_studio_id AND invoice_id=source_owner.invoice_id AND uncertain ORDER BY payment_id LIMIT 20) bounded;
+    SELECT coalesce(array_agg(id ORDER BY id),'{}'::UUID[]) INTO payments FROM public.billing_payments WHERE studio_id=p_studio_id AND (id=payment.id OR id=ANY(candidates) OR (invoice_id=source_owner.invoice_id AND status IN ('succeeded','refunded','disputed','externally_recorded')));
+    FOR item IN SELECT * FROM public.billing_payments WHERE studio_id=p_studio_id AND id=ANY(payments) ORDER BY id LOOP parents:=parents||jsonb_build_object('public.billing_payments:'||item.id::TEXT,true); END LOOP;
+    FOR item IN SELECT * FROM public.billing_payers WHERE studio_id=p_studio_id AND (id=invoice.payer_id OR id IN (SELECT payer_id FROM public.billing_payments WHERE studio_id=p_studio_id AND id=ANY(payments))) ORDER BY id LOOP parents:=parents||jsonb_build_object('public.billing_payers:'||item.id::TEXT,true); END LOOP;
+    complete:=complete AND invoice.payer_id IS NOT NULL AND parents ? ('public.billing_payers:'||invoice.payer_id::TEXT) AND NOT EXISTS(SELECT 1 FROM public.billing_payments p WHERE p.studio_id=p_studio_id AND p.id=ANY(payments) AND (p.payer_id IS NULL OR NOT parents ? ('public.billing_payers:'||p.payer_id::TEXT)));
+    SELECT * INTO account FROM public.studio_payment_accounts WHERE studio_id=p_studio_id;
+    complete:=complete AND account.studio_id IS NOT NULL;
+    IF account.studio_id IS NOT NULL THEN parents:=parents||jsonb_build_object('public.studio_payment_accounts:'||account.studio_id::TEXT,true); END IF;
+    SELECT * INTO settlement FROM private.workflow_invoice_settlement_authority WHERE studio_id=p_studio_id AND invoice_id=source_owner.invoice_id;
+    complete:=complete AND settlement.invoice_id IS NOT NULL;
+    IF settlement.invoice_id IS NOT NULL THEN parents:=parents||jsonb_build_object('private.workflow_invoice_settlement_authority:'||settlement.invoice_id::TEXT,true); END IF;
+    FOR item IN SELECT * FROM private.workflow_payment_settlement_observations WHERE studio_id=p_studio_id AND payment_id=ANY(payments) ORDER BY payment_id LOOP parents:=parents||jsonb_build_object('private.workflow_payment_settlement_observations:'||item.payment_id::TEXT,true); END LOOP;
+    generations:=jsonb_build_object('invoice_settlement_generation',settlement.generation,'account_generation',account.metadata->'connect_account_generation');
+    ELSIF p_event.event_type LIKE 'lead.%' OR p_event.event_type LIKE 'trial.%' THEN
+    IF p_event.event_type LIKE 'trial.%' THEN
+    SELECT * INTO trial FROM public.lead_trial_appointments WHERE studio_id=p_studio_id AND id=p_event.subject_id;
+    SELECT * INTO lead FROM public.leads WHERE studio_id=p_studio_id AND id=trial.lead_id;
+    complete:=complete AND lead.id IS NOT NULL;
+    IF lead.id IS NOT NULL THEN parents:=parents||jsonb_build_object('public.leads:'||lead.id::TEXT,true); END IF;
+    SELECT * INTO trial FROM public.lead_trial_appointments WHERE studio_id=p_studio_id AND id=p_event.subject_id;
+    complete:=complete AND trial.id IS NOT NULL;
+    IF trial.id IS NOT NULL THEN parents:=parents||jsonb_build_object('public.lead_trial_appointments:'||trial.id::TEXT,true); END IF;
+    generations:=jsonb_build_object('trial_revision',trial.revision,'trial_rebooking_superseded',trial.rebooking_superseded); program_ids:=array_append(program_ids,trial.program_id); ELSE
+    SELECT * INTO lead FROM public.leads WHERE studio_id=p_studio_id AND id=p_event.subject_id;
+    complete:=complete AND lead.id IS NOT NULL;
+    IF lead.id IS NOT NULL THEN parents:=parents||jsonb_build_object('public.leads:'||lead.id::TEXT,true); END IF;
+    END IF; program_ids:=program_ids||ARRAY[lead.program_id,filter_id];
+    FOR item IN SELECT * FROM public.programs WHERE studio_id=p_studio_id AND id=ANY(program_ids) ORDER BY id LOOP parents:=parents||jsonb_build_object('public.programs:'||item.id::TEXT,true); END LOOP;
+    complete:=complete AND NOT EXISTS(SELECT 1 FROM unnest(program_ids) id WHERE id IS NOT NULL AND NOT parents ? ('public.programs:'||id::TEXT));
+    IF p_recipient_policy='assigned_staff' AND lead.assigned_staff_id IS NOT NULL THEN
+    parents:=parents||jsonb_build_object('recipient_auth:'||lead.assigned_staff_id::TEXT,true);
+    FOR item IN SELECT * FROM public.staff_roles WHERE user_id=lead.assigned_staff_id ORDER BY id LOOP parents:=parents||jsonb_build_object('public.staff_roles:'||item.id::TEXT,true); END LOOP;
+    FOR item IN SELECT * FROM public.staff_profiles WHERE user_id=lead.assigned_staff_id ORDER BY user_id LOOP parents:=parents||jsonb_build_object('public.staff_profiles:'||item.user_id::TEXT,true); END LOOP;
+    END IF; ELSE
+    IF p_event.event_type LIKE 'belt_test.%' THEN
+    SELECT * INTO recipient FROM public.belt_test_recipients WHERE studio_id=p_studio_id AND id=p_event.subject_id;
+    SELECT * INTO belt FROM public.belt_test_events WHERE studio_id=p_studio_id AND id=recipient.event_id;
+    complete:=complete AND belt.id IS NOT NULL;
+    IF belt.id IS NOT NULL THEN parents:=parents||jsonb_build_object('public.belt_test_events:'||belt.id::TEXT,true); END IF;
+    student_id:=recipient.student_id; membership_id:=recipient.student_program_membership_id; ladder_id:=belt.ladder_id; program_ids:=ARRAY[belt.program_id,recipient.approved_program_id,filter_id]; rank_ids:=ARRAY[recipient.approved_current_rank_id,recipient.approved_target_rank_id];
+    ELSIF p_event.event_type='student.promoted' THEN SELECT * INTO promotion FROM public.promotions WHERE studio_id=p_studio_id AND id=p_event.subject_id; student_id:=promotion.student_id; membership_id:=promotion.command_membership_id; program_ids:=ARRAY[promotion.command_program_id,filter_id]; rank_ids:=ARRAY[promotion.to_rank_id,promotion.command_from_rank_id]; SELECT r.ladder_id INTO ladder_id FROM public.belt_ranks r WHERE studio_id=p_studio_id AND id=promotion.to_rank_id; ELSE student_id:=p_event.subject_id; END IF;
+    SELECT * INTO student FROM public.students WHERE studio_id=p_studio_id AND id=source_owner.student_id;
+    complete:=complete AND student.id IS NOT NULL;
+    IF student.id IS NOT NULL THEN parents:=parents||jsonb_build_object('public.students:'||student.id::TEXT,true); END IF;
+    IF p_event.event_type='student.enrolled' THEN
+    FOR item IN SELECT * FROM public.student_program_memberships WHERE studio_id=p_studio_id AND student_id=source_owner.student_id AND program_id=filter_id ORDER BY id LOOP parents:=parents||jsonb_build_object('public.student_program_memberships:'||item.id::TEXT,true); END LOOP;
+    program_ids:=ARRAY[filter_id]; ELSE
+    FOR item IN SELECT * FROM public.student_program_memberships WHERE studio_id=p_studio_id AND student_id=source_owner.student_id AND (membership_id IS NULL OR id=membership_id) ORDER BY id LOOP parents:=parents||jsonb_build_object('public.student_program_memberships:'||item.id::TEXT,true); END LOOP;
+    SELECT * INTO membership FROM public.student_program_memberships WHERE studio_id=p_studio_id AND student_id=source_owner.student_id AND id=membership_id;
+    complete:=complete AND (membership_id IS NULL OR parents ? ('public.student_program_memberships:'||membership_id::TEXT)); program_ids:=array_append(program_ids,CASE WHEN membership_id IS NULL THEN student.program_id ELSE membership.program_id END); rank_ids:=array_append(rank_ids,CASE WHEN membership_id IS NULL THEN student.current_belt_rank_id ELSE membership.current_belt_rank_id END);
+    SELECT * INTO ladder FROM public.belt_ladders WHERE studio_id=p_studio_id AND id=source_owner.ladder_id;
+    complete:=complete AND ladder.id IS NOT NULL;
+    IF ladder.id IS NOT NULL THEN parents:=parents||jsonb_build_object('public.belt_ladders:'||ladder.id::TEXT,true); END IF;
+    FOR item IN SELECT * FROM public.belt_ranks WHERE studio_id=p_studio_id AND id=ANY(rank_ids) ORDER BY id LOOP parents:=parents||jsonb_build_object('public.belt_ranks:'||item.id::TEXT,true); END LOOP;
+    complete:=complete AND NOT EXISTS(SELECT 1 FROM unnest(rank_ids) id WHERE id IS NOT NULL AND NOT parents ? ('public.belt_ranks:'||id::TEXT));
+    END IF;
+    FOR item IN SELECT * FROM public.programs WHERE studio_id=p_studio_id AND id=ANY(program_ids) ORDER BY id LOOP parents:=parents||jsonb_build_object('public.programs:'||item.id::TEXT,true); END LOOP;
+    complete:=complete AND NOT EXISTS(SELECT 1 FROM unnest(program_ids) id WHERE id IS NOT NULL AND NOT parents ? ('public.programs:'||id::TEXT));
+    IF p_event.event_type LIKE 'belt_test.%' THEN
+    SELECT * INTO recipient FROM public.belt_test_recipients WHERE studio_id=p_studio_id AND id=p_event.subject_id;
+    complete:=complete AND recipient.id IS NOT NULL;
+    IF recipient.id IS NOT NULL THEN parents:=parents||jsonb_build_object('public.belt_test_recipients:'||recipient.id::TEXT,true); END IF;
+    generations:=jsonb_build_object('approval_revision',recipient.revision,'schedule_revision',belt.schedule_revision,'approved_rank_context_generation',recipient.approved_rank_context_generation); ELSIF p_event.event_type='student.promoted' THEN
+    SELECT * INTO promotion FROM public.promotions WHERE studio_id=p_studio_id AND id=p_event.subject_id;
+    complete:=complete AND promotion.id IS NOT NULL;
+    IF promotion.id IS NOT NULL THEN parents:=parents||jsonb_build_object('public.promotions:'||promotion.id::TEXT,true); END IF;
+    END IF;
+    IF p_event.event_type='student.promoted' OR p_event.event_type LIKE 'belt_test.%' THEN SELECT generation INTO rank_generation FROM private.workflow_rank_contexts WHERE studio_id=p_studio_id AND student_id=source_owner.student_id AND student_program_membership_id IS NOT DISTINCT FROM membership_id; generations:=generations||jsonb_build_object('rank_context_generation',rank_generation); END IF;
+    IF p_recipient_policy='student_or_guardian' THEN
+    FOR item IN SELECT * FROM public.student_guardians WHERE student_id=source_owner.student_id ORDER BY id LOOP parents:=parents||jsonb_build_object('public.student_guardians:'||item.id::TEXT,true); END LOOP;
+    FOR item IN SELECT * FROM public.guardians WHERE studio_id=p_studio_id AND id IN (SELECT guardian_id FROM public.student_guardians WHERE student_id=source_owner.student_id) ORDER BY id LOOP parents:=parents||jsonb_build_object('public.guardians:'||item.id::TEXT,true); END LOOP;
+    complete:=complete AND NOT EXISTS(SELECT 1 FROM public.student_guardians g WHERE g.student_id=source_owner.student_id AND NOT parents ? ('public.guardians:'||g.guardian_id::TEXT)); END IF; END IF;
+    RETURN jsonb_build_object('complete',complete,'authority',jsonb_build_object('parents',parents,'generations',generations));
+END $$;
+
+CREATE FUNCTION private.workflow_lock_email_sources_v1(p_studio_id UUID,p_event private.automation_workflow_events,p_trigger_config JSONB,p_recipient_policy TEXT) RETURNS JSONB
+LANGUAGE plpgsql VOLATILE SECURITY INVOKER SET search_path='' AS $$
+#variable_conflict use_column
+<<source_owner>>
+DECLARE lead public.leads; trial public.lead_trial_appointments; student public.students; promotion public.promotions; recipient public.belt_test_recipients; belt public.belt_test_events; membership public.student_program_memberships; ladder public.belt_ladders; invoice public.billing_invoices; payment public.billing_payments; account public.studio_payment_accounts; settlement private.workflow_invoice_settlement_authority; item RECORD;
+    complete BOOLEAN:=true; parents JSONB:='{}'; generations JSONB:='{}'; filter_id UUID:=(p_trigger_config->>'program_id')::UUID;
+    student_id UUID; membership_id UUID; ladder_id UUID; invoice_id UUID; rank_generation BIGINT;
+    program_ids UUID[]:='{}'; rank_ids UUID[]:='{}'; candidates UUID[]; payments UUID[];
+BEGIN
+    IF p_event.event_type LIKE 'invoice.%' THEN
+    IF p_event.event_type='invoice.payment_failed' THEN
+    SELECT * INTO payment FROM public.billing_payments WHERE studio_id=p_studio_id AND id=p_event.subject_id FOR UPDATE NOWAIT;
+    complete:=complete AND payment.id IS NOT NULL;
+    IF payment.id IS NOT NULL THEN parents:=parents||jsonb_build_object('public.billing_payments:'||payment.id::TEXT,true); END IF;
+    invoice_id:=payment.invoice_id; ELSE invoice_id:=p_event.subject_id; END IF;
+    SELECT * INTO invoice FROM public.billing_invoices WHERE studio_id=p_studio_id AND id=source_owner.invoice_id FOR SHARE NOWAIT;
+    complete:=complete AND invoice.id IS NOT NULL;
+    IF invoice.id IS NOT NULL THEN parents:=parents||jsonb_build_object('public.billing_invoices:'||invoice.id::TEXT,true); END IF;
+    IF invoice_id IS NOT NULL AND NOT pg_catalog.pg_try_advisory_xact_lock(pg_catalog.hashtextextended('koaryu.workflow-invoice-settlement:'||p_studio_id::TEXT||':'||invoice_id::TEXT,0)) THEN RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STUDIO_BUSY'; END IF;
+    SELECT coalesce(array_agg(payment_id ORDER BY payment_id),'{}'::UUID[]) INTO candidates FROM (SELECT payment_id FROM private.workflow_payment_settlement_observations WHERE studio_id=p_studio_id AND invoice_id=source_owner.invoice_id AND uncertain ORDER BY payment_id LIMIT 20) bounded;
+    SELECT coalesce(array_agg(id ORDER BY id),'{}'::UUID[]) INTO payments FROM public.billing_payments WHERE studio_id=p_studio_id AND (id=payment.id OR id=ANY(candidates) OR (invoice_id=source_owner.invoice_id AND status IN ('succeeded','refunded','disputed','externally_recorded')));
+    FOR item IN SELECT * FROM public.billing_payments WHERE studio_id=p_studio_id AND id=ANY(payments) ORDER BY id FOR UPDATE NOWAIT LOOP parents:=parents||jsonb_build_object('public.billing_payments:'||item.id::TEXT,true); END LOOP;
+    FOR item IN SELECT * FROM public.billing_payers WHERE studio_id=p_studio_id AND (id=invoice.payer_id OR id IN (SELECT payer_id FROM public.billing_payments WHERE studio_id=p_studio_id AND id=ANY(payments))) ORDER BY id FOR SHARE NOWAIT LOOP parents:=parents||jsonb_build_object('public.billing_payers:'||item.id::TEXT,true); END LOOP;
+    complete:=complete AND invoice.payer_id IS NOT NULL AND parents ? ('public.billing_payers:'||invoice.payer_id::TEXT) AND NOT EXISTS(SELECT 1 FROM public.billing_payments p WHERE p.studio_id=p_studio_id AND p.id=ANY(payments) AND (p.payer_id IS NULL OR NOT parents ? ('public.billing_payers:'||p.payer_id::TEXT)));
+    SELECT * INTO account FROM public.studio_payment_accounts WHERE studio_id=p_studio_id FOR SHARE NOWAIT;
+    complete:=complete AND account.studio_id IS NOT NULL;
+    IF account.studio_id IS NOT NULL THEN parents:=parents||jsonb_build_object('public.studio_payment_accounts:'||account.studio_id::TEXT,true); END IF;
+    SELECT * INTO settlement FROM private.workflow_invoice_settlement_authority WHERE studio_id=p_studio_id AND invoice_id=source_owner.invoice_id FOR UPDATE NOWAIT;
+    complete:=complete AND settlement.invoice_id IS NOT NULL;
+    IF settlement.invoice_id IS NOT NULL THEN parents:=parents||jsonb_build_object('private.workflow_invoice_settlement_authority:'||settlement.invoice_id::TEXT,true); END IF;
+    FOR item IN SELECT * FROM private.workflow_payment_settlement_observations WHERE studio_id=p_studio_id AND payment_id=ANY(payments) ORDER BY payment_id FOR UPDATE NOWAIT LOOP parents:=parents||jsonb_build_object('private.workflow_payment_settlement_observations:'||item.payment_id::TEXT,true); END LOOP;
+    generations:=jsonb_build_object('invoice_settlement_generation',settlement.generation,'account_generation',account.metadata->'connect_account_generation');
+    PERFORM private.workflow_prepare_financial_context_v1(p_studio_id,invoice_id,CASE WHEN p_event.event_type='invoice.payment_failed' THEN payment.id END);
+    ELSIF p_event.event_type LIKE 'lead.%' OR p_event.event_type LIKE 'trial.%' THEN
+    IF p_event.event_type LIKE 'trial.%' THEN
+    SELECT * INTO trial FROM public.lead_trial_appointments WHERE studio_id=p_studio_id AND id=p_event.subject_id;
+    SELECT * INTO lead FROM public.leads WHERE studio_id=p_studio_id AND id=trial.lead_id FOR UPDATE NOWAIT;
+    complete:=complete AND lead.id IS NOT NULL;
+    IF lead.id IS NOT NULL THEN parents:=parents||jsonb_build_object('public.leads:'||lead.id::TEXT,true); END IF;
+    SELECT * INTO trial FROM public.lead_trial_appointments WHERE studio_id=p_studio_id AND id=p_event.subject_id FOR SHARE NOWAIT;
+    complete:=complete AND trial.id IS NOT NULL;
+    IF trial.id IS NOT NULL THEN parents:=parents||jsonb_build_object('public.lead_trial_appointments:'||trial.id::TEXT,true); END IF;
+    generations:=jsonb_build_object('trial_revision',trial.revision,'trial_rebooking_superseded',trial.rebooking_superseded); program_ids:=array_append(program_ids,trial.program_id); ELSE
+    SELECT * INTO lead FROM public.leads WHERE studio_id=p_studio_id AND id=p_event.subject_id FOR UPDATE NOWAIT;
+    complete:=complete AND lead.id IS NOT NULL;
+    IF lead.id IS NOT NULL THEN parents:=parents||jsonb_build_object('public.leads:'||lead.id::TEXT,true); END IF;
+    END IF; program_ids:=program_ids||ARRAY[lead.program_id,filter_id];
+    FOR item IN SELECT * FROM public.programs WHERE studio_id=p_studio_id AND id=ANY(program_ids) ORDER BY id FOR SHARE NOWAIT LOOP parents:=parents||jsonb_build_object('public.programs:'||item.id::TEXT,true); END LOOP;
+    complete:=complete AND NOT EXISTS(SELECT 1 FROM unnest(program_ids) id WHERE id IS NOT NULL AND NOT parents ? ('public.programs:'||id::TEXT));
+    IF p_recipient_policy='assigned_staff' AND lead.assigned_staff_id IS NOT NULL THEN
+    complete:=private.workflow_lock_recipient_auth_v1(lead.assigned_staff_id) AND complete;
+    parents:=parents||jsonb_build_object('recipient_auth:'||lead.assigned_staff_id::TEXT,true);
+    FOR item IN SELECT * FROM public.staff_roles WHERE user_id=lead.assigned_staff_id ORDER BY id FOR SHARE NOWAIT LOOP parents:=parents||jsonb_build_object('public.staff_roles:'||item.id::TEXT,true); END LOOP;
+    FOR item IN SELECT * FROM public.staff_profiles WHERE user_id=lead.assigned_staff_id ORDER BY user_id FOR SHARE NOWAIT LOOP parents:=parents||jsonb_build_object('public.staff_profiles:'||item.user_id::TEXT,true); END LOOP;
+    END IF; ELSE
+    IF p_event.event_type LIKE 'belt_test.%' THEN
+    SELECT * INTO recipient FROM public.belt_test_recipients WHERE studio_id=p_studio_id AND id=p_event.subject_id;
+    SELECT * INTO belt FROM public.belt_test_events WHERE studio_id=p_studio_id AND id=recipient.event_id FOR SHARE NOWAIT;
+    complete:=complete AND belt.id IS NOT NULL;
+    IF belt.id IS NOT NULL THEN parents:=parents||jsonb_build_object('public.belt_test_events:'||belt.id::TEXT,true); END IF;
+    student_id:=recipient.student_id; membership_id:=recipient.student_program_membership_id; ladder_id:=belt.ladder_id; program_ids:=ARRAY[belt.program_id,recipient.approved_program_id,filter_id]; rank_ids:=ARRAY[recipient.approved_current_rank_id,recipient.approved_target_rank_id];
+    ELSIF p_event.event_type='student.promoted' THEN SELECT * INTO promotion FROM public.promotions WHERE studio_id=p_studio_id AND id=p_event.subject_id; student_id:=promotion.student_id; membership_id:=promotion.command_membership_id; program_ids:=ARRAY[promotion.command_program_id,filter_id]; rank_ids:=ARRAY[promotion.to_rank_id,promotion.command_from_rank_id]; SELECT r.ladder_id INTO ladder_id FROM public.belt_ranks r WHERE studio_id=p_studio_id AND id=promotion.to_rank_id; ELSE student_id:=p_event.subject_id; END IF;
+    SELECT * INTO student FROM public.students WHERE studio_id=p_studio_id AND id=source_owner.student_id FOR UPDATE NOWAIT;
+    complete:=complete AND student.id IS NOT NULL;
+    IF student.id IS NOT NULL THEN parents:=parents||jsonb_build_object('public.students:'||student.id::TEXT,true); END IF;
+    IF p_event.event_type='student.enrolled' THEN
+    FOR item IN SELECT * FROM public.student_program_memberships WHERE studio_id=p_studio_id AND student_id=source_owner.student_id AND program_id=filter_id ORDER BY id FOR SHARE NOWAIT LOOP parents:=parents||jsonb_build_object('public.student_program_memberships:'||item.id::TEXT,true); END LOOP;
+    program_ids:=ARRAY[filter_id]; ELSE
+    FOR item IN SELECT * FROM public.student_program_memberships WHERE studio_id=p_studio_id AND student_id=source_owner.student_id AND (membership_id IS NULL OR id=membership_id) ORDER BY id FOR SHARE NOWAIT LOOP parents:=parents||jsonb_build_object('public.student_program_memberships:'||item.id::TEXT,true); END LOOP;
+    SELECT * INTO membership FROM public.student_program_memberships WHERE studio_id=p_studio_id AND student_id=source_owner.student_id AND id=membership_id;
+    complete:=complete AND (membership_id IS NULL OR parents ? ('public.student_program_memberships:'||membership_id::TEXT)); program_ids:=array_append(program_ids,CASE WHEN membership_id IS NULL THEN student.program_id ELSE membership.program_id END); rank_ids:=array_append(rank_ids,CASE WHEN membership_id IS NULL THEN student.current_belt_rank_id ELSE membership.current_belt_rank_id END);
+    SELECT * INTO ladder FROM public.belt_ladders WHERE studio_id=p_studio_id AND id=source_owner.ladder_id FOR SHARE NOWAIT;
+    complete:=complete AND ladder.id IS NOT NULL;
+    IF ladder.id IS NOT NULL THEN parents:=parents||jsonb_build_object('public.belt_ladders:'||ladder.id::TEXT,true); END IF;
+    FOR item IN SELECT * FROM public.belt_ranks WHERE studio_id=p_studio_id AND id=ANY(rank_ids) ORDER BY id FOR SHARE NOWAIT LOOP parents:=parents||jsonb_build_object('public.belt_ranks:'||item.id::TEXT,true); END LOOP;
+    complete:=complete AND NOT EXISTS(SELECT 1 FROM unnest(rank_ids) id WHERE id IS NOT NULL AND NOT parents ? ('public.belt_ranks:'||id::TEXT));
+    END IF;
+    FOR item IN SELECT * FROM public.programs WHERE studio_id=p_studio_id AND id=ANY(program_ids) ORDER BY id FOR SHARE NOWAIT LOOP parents:=parents||jsonb_build_object('public.programs:'||item.id::TEXT,true); END LOOP;
+    complete:=complete AND NOT EXISTS(SELECT 1 FROM unnest(program_ids) id WHERE id IS NOT NULL AND NOT parents ? ('public.programs:'||id::TEXT));
+    IF p_event.event_type LIKE 'belt_test.%' THEN
+    SELECT * INTO recipient FROM public.belt_test_recipients WHERE studio_id=p_studio_id AND id=p_event.subject_id FOR SHARE NOWAIT;
+    complete:=complete AND recipient.id IS NOT NULL;
+    IF recipient.id IS NOT NULL THEN parents:=parents||jsonb_build_object('public.belt_test_recipients:'||recipient.id::TEXT,true); END IF;
+    generations:=jsonb_build_object('approval_revision',recipient.revision,'schedule_revision',belt.schedule_revision,'approved_rank_context_generation',recipient.approved_rank_context_generation); ELSIF p_event.event_type='student.promoted' THEN
+    SELECT * INTO promotion FROM public.promotions WHERE studio_id=p_studio_id AND id=p_event.subject_id FOR SHARE NOWAIT;
+    complete:=complete AND promotion.id IS NOT NULL;
+    IF promotion.id IS NOT NULL THEN parents:=parents||jsonb_build_object('public.promotions:'||promotion.id::TEXT,true); END IF;
+    END IF;
+    IF p_event.event_type='student.promoted' OR p_event.event_type LIKE 'belt_test.%' THEN SELECT generation INTO rank_generation FROM private.workflow_rank_contexts WHERE studio_id=p_studio_id AND student_id=source_owner.student_id AND student_program_membership_id IS NOT DISTINCT FROM membership_id; generations:=generations||jsonb_build_object('rank_context_generation',rank_generation); END IF;
+    IF p_recipient_policy='student_or_guardian' THEN
+    FOR item IN SELECT * FROM public.student_guardians WHERE student_id=source_owner.student_id ORDER BY id FOR SHARE NOWAIT LOOP parents:=parents||jsonb_build_object('public.student_guardians:'||item.id::TEXT,true); END LOOP;
+    FOR item IN SELECT * FROM public.guardians WHERE studio_id=p_studio_id AND id IN (SELECT guardian_id FROM public.student_guardians WHERE student_id=source_owner.student_id) ORDER BY id FOR SHARE NOWAIT LOOP parents:=parents||jsonb_build_object('public.guardians:'||item.id::TEXT,true); END LOOP;
+    complete:=complete AND NOT EXISTS(SELECT 1 FROM public.student_guardians g WHERE g.student_id=source_owner.student_id AND NOT parents ? ('public.guardians:'||g.guardian_id::TEXT)); END IF; END IF;
+    RETURN jsonb_build_object('complete',complete,'authority',jsonb_build_object('parents',parents,'generations',generations));
+    EXCEPTION WHEN lock_not_available THEN RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STUDIO_BUSY';
+END $$;
+
+CREATE FUNCTION private.workflow_email_selected_values_v1(p_node JSONB,p_facts JSONB) RETURNS JSONB
+LANGUAGE sql IMMUTABLE SECURITY INVOKER SET search_path='' AS $$
+    SELECT coalesce(jsonb_object_agg(name,jsonb_build_object('present',values ? name,'value',values->name)),'{}'::JSONB)
+    FROM (SELECT DISTINCT match[1] name FROM regexp_matches((p_node#>>'{config,subject_template}')||E'\n'||(p_node#>>'{config,body_template}'),'\{\{([a-z][a-z0-9_]*)\}\}','g') match) names
+    CROSS JOIN LATERAL (SELECT (p_facts->'template_facts')||coalesce(p_facts#>ARRAY['recipients',p_node#>>'{config,recipient}','template_facts'],'{}') values) selected
+$$;
+CREATE FUNCTION private.workflow_email_fingerprint_v1(p_identity JSONB,p_selected_values JSONB) RETURNS TEXT
+LANGUAGE sql IMMUTABLE SECURITY INVOKER SET search_path='' AS $$
+    SELECT private.workflow_hash_v1(jsonb_build_object('identity',p_identity,'selected_values',p_selected_values))
+$$;
+CREATE FUNCTION private.workflow_email_parameters_valid_v1(p_token TEXT,p_allowed TEXT[],p_reply TEXT,p_api TEXT) RETURNS BOOLEAN
+LANGUAGE sql IMMUTABLE SECURITY INVOKER SET search_path='' AS $$
+    SELECT p_token ~ '^[a-f0-9]{64}$' AND private.automation_normalize_email(p_reply) IS NOT NULL AND private.automation_normalize_email(p_reply)=p_reply
+        AND p_allowed IS NOT NULL AND coalesce(array_ndims(p_allowed),1)=1 AND array_position(p_allowed,NULL) IS NULL
+        AND NOT EXISTS(SELECT 1 FROM unnest(p_allowed) a WHERE private.automation_normalize_email(a) IS NULL OR private.automation_normalize_email(a) IS DISTINCT FROM a)
+        AND length(p_api)+89<=2048 AND p_api ~ '^https://[A-Za-z0-9.-]+(:443)?/api/v1$'
+        AND split_part(substr(p_api,9),'/',1) LIKE '%.%' AND lower(split_part(substr(p_api,9),'/',1)) !~ '(^|\.)localhost(:443)?$'
+$$;
+CREATE FUNCTION private.workflow_email_plan_v1(p_run public.automation_workflow_runs,p_event private.automation_workflow_events,
+    p_graph JSONB,p_node JSONB,p_reference_at TIMESTAMPTZ,p_unsubscribe_token TEXT,p_allowed_recipients TEXT[],p_default_reply_to TEXT,p_public_api_url TEXT)
+RETURNS JSONB LANGUAGE plpgsql STABLE SECURITY INVOKER SET search_path='' AS $$
+DECLARE trigger_config JSONB; source JSONB; facts JSONB; address JSONB; recipient JSONB; inventory JSONB; identity JSONB;
+    workflow public.automation_workflows; activation public.automation_workflow_activations; first_attempt private.automation_workflow_email_attempts;
+    token TEXT; url TEXT; reply TEXT; policy TEXT:=p_node#>>'{config,recipient}'; reason TEXT; disposition TEXT:='send';
+BEGIN
+    SELECT n->'config' INTO trigger_config FROM jsonb_array_elements(p_graph->'nodes') n WHERE n->>'type'='trigger';
+    source:=private.workflow_current_source_facts_v1(p_run.studio_id,p_event.event_type,p_event.subject_id,p_event.context,trigger_config,p_reference_at,ARRAY[policy]);
+    facts:=source->'facts'; recipient:=facts#>ARRAY['recipients',policy]; address:=source#>ARRAY['recipient_addresses',policy];
+    inventory:=private.workflow_email_source_inventory_v1(p_run.studio_id,p_event,trigger_config,policy);
+    SELECT * INTO workflow FROM public.automation_workflows WHERE studio_id=p_run.studio_id AND id=p_run.workflow_id;
+    SELECT * INTO activation FROM public.automation_workflow_activations WHERE studio_id=p_run.studio_id AND id=p_run.activation_id;
+    SELECT * INTO first_attempt FROM private.automation_workflow_email_attempts WHERE studio_id=p_run.studio_id AND run_id=p_run.id AND node_id=p_node->>'id' AND attempt_number=1;
+    SELECT unsubscribe_token INTO token FROM private.workflow_email_unsubscribe_pins WHERE studio_id=p_run.studio_id AND run_id=p_run.id AND node_id=p_node->>'id';
+    token:=coalesce(token,p_unsubscribe_token); url:=p_public_api_url||'/automations/unsubscribe#'||token;
+    reply:=coalesce(private.automation_normalize_email(nullif(btrim(p_node#>>'{config,reply_to_email}'),' ')),p_default_reply_to);
+    reason:=CASE WHEN p_run.cancel_requested_at IS NOT NULL THEN p_run.cancel_reason
+        WHEN workflow.status='paused' THEN 'workflow_paused' WHEN workflow.status='archived' THEN 'workflow_archived'
+        WHEN workflow.id IS NULL OR workflow.status<>'active' OR activation.cancelled_at IS NOT NULL OR activation.epoch<>workflow.enrollment_epoch THEN 'workflow_republished'
+        WHEN facts->>'source_decision'='ineligible' THEN facts->>'source_reason' END;
+    IF reason IS NOT NULL THEN disposition:='stop';
+    ELSIF facts->>'source_decision' IS DISTINCT FROM 'eligible' OR inventory->'complete' IS DISTINCT FROM 'true'::JSONB THEN disposition:='wait'; reason:='facts_unavailable';
+    ELSIF NOT private.automation_core_entitled(p_run.studio_id) THEN disposition:='wait'; reason:='subscription_required';
+    ELSIF p_event.event_type='invoice.overdue' AND EXISTS(SELECT 1 FROM private.workflow_invoice_episode_pending p WHERE p.studio_id=p_run.studio_id AND p.invoice_id=p_event.subject_id AND p.backend_pid=pg_catalog.pg_backend_pid() AND p.transaction_id=pg_catalog.pg_current_xact_id()) THEN disposition:='wait'; reason:='facts_unavailable';
+    ELSIF first_attempt.id IS NOT NULL AND (NOT EXISTS(SELECT 1 FROM private.workflow_email_unsubscribe_pins WHERE run_id=p_run.id AND node_id=p_node->>'id')
+        OR NOT EXISTS(SELECT 1 FROM private.workflow_email_attempt_payloads WHERE attempt_id=first_attempt.id)) THEN disposition:='wait'; reason:='facts_unavailable';
+    ELSIF recipient->>'decision'='unavailable' THEN disposition:='wait'; reason:='facts_unavailable';
+    ELSIF recipient->>'decision' IS DISTINCT FROM 'ready' THEN disposition:='skip'; reason:=coalesce(recipient->>'reason','recipient_unavailable');
+    ELSIF first_attempt.id IS NOT NULL AND ROW(address->>'email',address->>'kind') IS DISTINCT FROM ROW(first_attempt.recipient_email,first_attempt.recipient_kind) THEN disposition:='skip'; reason:='contact_changed';
+    ELSIF cardinality(p_allowed_recipients)>0 AND NOT (address->>'email'=ANY(p_allowed_recipients)) THEN disposition:='skip'; reason:='recipient_not_allowed';
+    END IF;
+    identity:=jsonb_build_object('studio_id',p_run.studio_id,'run_id',p_run.id,'version_id',p_run.version_id,'activation_id',p_run.activation_id,'epoch',p_run.epoch,
+        'node',p_node,'event_id',p_event.id,'event_type',p_event.event_type,'source_authority',inventory->'authority',
+        'recipient_policy',policy,'recipient_email',address->'email','recipient_kind',address->'kind','reply_to',reply,'unsubscribe_token',token,'unsubscribe_url',url);
+    RETURN jsonb_build_object('fingerprint',private.workflow_email_fingerprint_v1(identity,private.workflow_email_selected_values_v1(p_node,facts)),
+        'disposition',disposition,'reason',reason,'event_type',p_event.event_type,'recipient_policy',policy,'recipient_email',address->'email','recipient_kind',address->'kind',
+        'subject_template',p_node#>>'{config,subject_template}','body_template',p_node#>>'{config,body_template}','reply_to',reply,'unsubscribe_token',token,'unsubscribe_url',url,'facts',facts);
+END $$;
+CREATE FUNCTION public.get_workflow_email_plan_v1(p_studio_id UUID,p_run_id UUID,p_claim_token UUID,p_node_id TEXT,
+    p_candidate_unsubscribe_token TEXT,p_allowed_recipients TEXT[],p_default_reply_to TEXT,p_public_api_url TEXT) RETURNS JSONB
+LANGUAGE plpgsql STABLE SECURITY INVOKER SET search_path='' AS $$
+DECLARE result JSONB; at TIMESTAMPTZ:=statement_timestamp();
+BEGIN
+    IF p_studio_id IS NULL OR p_run_id IS NULL OR p_claim_token IS NULL OR p_node_id IS NULL OR p_node_id !~ '^[A-Za-z0-9_-]{1,64}$'
+        OR private.workflow_email_parameters_valid_v1(p_candidate_unsubscribe_token,p_allowed_recipients,p_default_reply_to,p_public_api_url) IS DISTINCT FROM true THEN
+        RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST';
+    END IF;
+    -- Every nested STABLE read inherits this statement's one snapshot and clock.
+    SELECT jsonb_build_object('outcome','planned','run',private.workflow_run_position_v1(r),'plan',private.workflow_email_plan_v1(r,e,v.graph,n,at,p_candidate_unsubscribe_token,p_allowed_recipients,p_default_reply_to,p_public_api_url)) INTO result
+        FROM public.automation_workflow_runs r JOIN private.automation_workflow_events e ON e.studio_id=r.studio_id AND e.id=r.event_id
+        JOIN public.automation_workflow_versions v ON v.studio_id=r.studio_id AND v.workflow_id=r.workflow_id AND v.id=r.version_id
+        CROSS JOIN LATERAL jsonb_array_elements(v.graph->'nodes') n
+        JOIN private.automation_workflow_run_steps s ON s.studio_id=r.studio_id AND s.run_id=r.id AND s.node_id=p_node_id AND s.node_type='email' AND s.finished_at IS NULL
+        WHERE r.studio_id=p_studio_id AND r.id=p_run_id AND r.current_node_id=p_node_id AND n->>'id'=p_node_id AND n->>'type'='email'
+        AND r.state IN ('claimed','running') AND r.claim_token=p_claim_token AND r.lease_expires_at>at;
+    RETURN jsonb_build_object('payload',jsonb_build_object('studio_id',p_studio_id,'run_id',p_run_id,'claim_token',p_claim_token,'node_id',p_node_id)
+        ||coalesce(result,jsonb_build_object('outcome','lease_lost','run',NULL,'plan',NULL)));
+END $$;
+
+CREATE FUNCTION private.workflow_email_finish_step_v1(p_studio_id UUID,p_run_id UUID,p_step_id UUID,p_node_id TEXT,
+    p_at TIMESTAMPTZ,p_outcome TEXT,p_reason TEXT,p_release_claim BOOLEAN) RETURNS public.automation_workflow_runs
+LANGUAGE plpgsql VOLATILE SECURITY INVOKER SET search_path='' AS $$
+DECLARE v_run public.automation_workflow_runs; edge JSONB;
+BEGIN
+    SELECT * INTO v_run FROM public.automation_workflow_runs WHERE studio_id=p_studio_id AND id=p_run_id;
+    SELECT e INTO edge FROM public.automation_workflow_versions v CROSS JOIN LATERAL jsonb_array_elements(v.graph->'edges') e
+        WHERE v.studio_id=p_studio_id AND v.workflow_id=v_run.workflow_id AND v.id=v_run.version_id AND e->>'source'=p_node_id AND e->>'port'='next';
+    IF edge IS NULL OR v_run.current_node_id IS DISTINCT FROM p_node_id OR v_run.revision=9223372036854775807 THEN
+        RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STATE_CONFLICT';
+    END IF;
+    UPDATE private.automation_workflow_run_steps SET outcome=p_outcome,reason=p_reason,edge_id=edge->>'id',finished_at=p_at WHERE studio_id=p_studio_id AND run_id=p_run_id AND id=p_step_id AND finished_at IS NULL;
+    IF NOT FOUND THEN RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STATE_CONFLICT'; END IF;
+    UPDATE public.automation_workflow_runs SET current_node_id=edge->>'target',state=CASE WHEN p_release_claim THEN 'queued' ELSE 'running' END,next_due_at=p_at,
+        claim_token=CASE WHEN NOT p_release_claim THEN claim_token END,lease_expires_at=CASE WHEN NOT p_release_claim THEN lease_expires_at END,
+        reason=NULL,deferral_count=0,revision=revision+1,updated_at=p_at WHERE studio_id=p_studio_id AND id=p_run_id RETURNING * INTO v_run;
+    RETURN v_run;
+END $$;
+-- Source-first claim owner. A lost lease rolls back financial preparation in this
+-- function's savepoint; real monotonic self-cancellation remains terminal truth.
+CREATE FUNCTION private.workflow_email_own_v1(p_studio_id UUID,p_run_id UUID,p_claim_token UUID,p_node_id TEXT,
+    p_unsubscribe_token TEXT,p_allowed_recipients TEXT[],p_default_reply_to TEXT,p_public_api_url TEXT) RETURNS JSONB
+LANGUAGE plpgsql VOLATILE SECURITY INVOKER SET search_path='' AS $$
+DECLARE original public.automation_workflow_runs; v_run public.automation_workflow_runs; workflow public.automation_workflows;
+    event private.automation_workflow_events; version public.automation_workflow_versions; activation public.automation_workflow_activations;
+    step private.automation_workflow_run_steps; node JSONB; trigger_config JSONB; ownership JSONB; current_ownership JSONB; plan JSONB; at TIMESTAMPTZ;
+BEGIN
+    IF p_studio_id IS NULL OR p_run_id IS NULL OR p_claim_token IS NULL OR p_node_id IS NULL OR p_node_id !~ '^[A-Za-z0-9_-]{1,64}$'
+        OR private.workflow_email_parameters_valid_v1(p_unsubscribe_token,p_allowed_recipients,p_default_reply_to,p_public_api_url) IS DISTINCT FROM true THEN
+        RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST';
+    END IF;
+    SELECT * INTO original FROM public.automation_workflow_runs WHERE studio_id=p_studio_id AND id=p_run_id;
+    IF original.id IS NULL OR original.state NOT IN ('claimed','running') OR original.claim_token IS DISTINCT FROM p_claim_token OR original.lease_expires_at<=clock_timestamp() OR original.current_node_id IS DISTINCT FROM p_node_id THEN
+        RETURN jsonb_build_object('outcome','lease_lost','run',NULL);
+    END IF;
+    SELECT * INTO event FROM private.automation_workflow_events WHERE studio_id=p_studio_id AND id=original.event_id;
+    SELECT * INTO version FROM public.automation_workflow_versions WHERE studio_id=p_studio_id AND workflow_id=original.workflow_id AND id=original.version_id;
+    SELECT n INTO node FROM jsonb_array_elements(version.graph->'nodes') n WHERE n->>'id'=p_node_id AND n->>'type'='email';
+    SELECT n->'config' INTO trigger_config FROM jsonb_array_elements(version.graph->'nodes') n WHERE n->>'type'='trigger';
+    IF event.id IS NULL OR node IS NULL OR trigger_config->>'event_type' IS DISTINCT FROM event.event_type OR private.workflow_hash_v1(version.graph) IS DISTINCT FROM version.graph_sha256 THEN
+        RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STATE_CONFLICT';
+    END IF;
+    IF NOT pg_catalog.pg_try_advisory_xact_lock_shared(pg_catalog.hashtextextended('koaryu.local-plan-clear:'||p_studio_id::TEXT,0)) THEN
+        RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STUDIO_BUSY';
+    END IF;
+    PERFORM 1 FROM public.studios WHERE id=p_studio_id FOR SHARE NOWAIT;
+    PERFORM 1 FROM public.studio_subscriptions WHERE studio_id=p_studio_id FOR SHARE NOWAIT;
+    ownership:=private.workflow_lock_email_sources_v1(p_studio_id,event,trigger_config,node#>>'{config,recipient}');
+    SELECT * INTO workflow FROM public.automation_workflows WHERE studio_id=p_studio_id AND id=original.workflow_id FOR UPDATE NOWAIT;
+    SELECT * INTO v_run FROM public.automation_workflow_runs WHERE studio_id=p_studio_id AND id=p_run_id FOR UPDATE NOWAIT;
+    at:=clock_timestamp();
+    IF v_run.cancel_requested_at IS NOT NULL AND v_run.state IN ('completed','cancelled','failed','unknown') THEN
+        RETURN jsonb_build_object('outcome','stopped','run',private.workflow_run_position_v1(v_run));
+    END IF;
+    IF v_run.id IS NULL OR v_run.state NOT IN ('claimed','running') OR v_run.claim_token IS DISTINCT FROM p_claim_token OR v_run.lease_expires_at<=at THEN RAISE EXCEPTION USING ERRCODE='P57L1'; END IF;
+    IF workflow.id IS NULL OR ROW(v_run.workflow_id,v_run.version_id,v_run.event_id,v_run.activation_id,v_run.epoch,v_run.current_node_id)
+        IS DISTINCT FROM ROW(original.workflow_id,original.version_id,original.event_id,original.activation_id,original.epoch,p_node_id) THEN
+        RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STATE_CONFLICT';
+    END IF;
+    SELECT * INTO activation FROM public.automation_workflow_activations WHERE studio_id=p_studio_id AND id=v_run.activation_id AND workflow_id=v_run.workflow_id AND version_id=v_run.version_id AND epoch=v_run.epoch;
+    SELECT * INTO step FROM private.automation_workflow_run_steps WHERE studio_id=p_studio_id AND run_id=p_run_id AND node_id=p_node_id FOR UPDATE NOWAIT;
+    IF activation.id IS NULL OR step.id IS NULL OR step.node_type<>'email' OR step.finished_at IS NOT NULL THEN RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STATE_CONFLICT'; END IF;
+    plan:=private.workflow_email_plan_v1(v_run,event,version.graph,node,at,p_unsubscribe_token,p_allowed_recipients,p_default_reply_to,p_public_api_url);
+    IF plan->>'disposition'='stop' THEN
+        PERFORM private.workflow_cancel_runs_v1(p_studio_id,ARRAY[p_run_id],at,plan->>'reason');
+        UPDATE private.automation_workflow_run_steps SET outcome='cancelled',reason=plan->>'reason',finished_at=at WHERE id=step.id AND finished_at IS NULL;
+        SELECT * INTO v_run FROM public.automation_workflow_runs WHERE studio_id=p_studio_id AND id=p_run_id;
+        RETURN jsonb_build_object('outcome','stopped','run',private.workflow_run_position_v1(v_run));
+    END IF;
+    current_ownership:=private.workflow_email_source_inventory_v1(p_studio_id,event,trigger_config,node#>>'{config,recipient}');
+    IF ownership->'complete' IS DISTINCT FROM 'true'::JSONB OR current_ownership#>'{authority,parents}' IS DISTINCT FROM ownership#>'{authority,parents}' THEN
+        v_run:=private.workflow_defer_owned_run_v1(p_studio_id,p_run_id,at,'facts_unavailable');
+        RETURN jsonb_build_object('outcome','waiting','run',private.workflow_run_position_v1(v_run));
+    END IF;
+    RETURN jsonb_build_object('outcome','owned','run',to_jsonb(v_run),'event',to_jsonb(event),'graph',version.graph,'node',node,'step_id',step.id,'plan',plan);
+EXCEPTION WHEN SQLSTATE 'P57L1' THEN RETURN jsonb_build_object('outcome','lease_lost','run',NULL);
+    WHEN lock_not_available THEN RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STUDIO_BUSY';
+END $$;
+CREATE FUNCTION public.resolve_workflow_email_without_attempt_v1(p_studio_id UUID,p_run_id UUID,p_claim_token UUID,p_node_id TEXT,
+    p_plan_fingerprint TEXT,p_unsubscribe_token TEXT,p_allowed_recipients TEXT[],p_default_reply_to TEXT,p_public_api_url TEXT,p_resolution JSONB) RETURNS JSONB
+LANGUAGE plpgsql VOLATILE SECURITY INVOKER SET search_path='' AS $$
+DECLARE owned JSONB; plan JSONB; v_run public.automation_workflow_runs; outcome TEXT; reason TEXT; kind TEXT:=p_resolution->>'kind'; result JSONB;
+BEGIN
+    IF p_plan_fingerprint IS NULL OR p_plan_fingerprint !~ '^[a-f0-9]{64}$'
+        OR kind IS NULL OR kind NOT IN ('plan_decision','render_failed','facts_unavailable','sender_unavailable')
+        OR NOT private.workflow_json_keys_v1(p_resolution,CASE WHEN kind='render_failed' THEN ARRAY['kind','reason'] ELSE ARRAY['kind'] END,CASE WHEN kind='render_failed' THEN ARRAY['kind','reason'] ELSE ARRAY['kind'] END)
+        OR (kind='render_failed' AND (p_resolution->>'reason' IS NULL OR p_resolution->>'reason' NOT IN ('unsupported_currency','invalid_email_template','invalid_email_context'))) THEN
+        RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST';
+    END IF;
+    owned:=private.workflow_email_own_v1(p_studio_id,p_run_id,p_claim_token,p_node_id,p_unsubscribe_token,p_allowed_recipients,p_default_reply_to,p_public_api_url);
+    outcome:=owned->>'outcome';
+    IF outcome='owned' THEN
+        v_run:=jsonb_populate_record(NULL::public.automation_workflow_runs,owned->'run'); plan:=owned->'plan';
+        IF plan->>'fingerprint' IS DISTINCT FROM p_plan_fingerprint OR (kind='plan_decision' AND plan->>'disposition'='send') THEN outcome:='stale_plan';
+        ELSIF plan->>'disposition'='wait' OR kind IN ('facts_unavailable','sender_unavailable') THEN
+            reason:=CASE WHEN plan->>'disposition'='wait' THEN plan->>'reason' ELSE kind END;
+            v_run:=private.workflow_defer_owned_run_v1(p_studio_id,p_run_id,clock_timestamp(),reason); outcome:='waiting';
+        ELSE
+            reason:=CASE WHEN kind='render_failed' THEN p_resolution->>'reason' ELSE plan->>'reason' END;
+            v_run:=private.workflow_email_finish_step_v1(p_studio_id,p_run_id,(owned->>'step_id')::UUID,p_node_id,clock_timestamp(),'skipped',reason,false); outcome:='continue';
+        END IF;
+        result:=private.workflow_run_position_v1(v_run);
+    ELSE result:=owned->'run'; END IF;
+    RETURN jsonb_build_object('payload',jsonb_build_object('studio_id',p_studio_id,'run_id',p_run_id,'claim_token',p_claim_token,'node_id',p_node_id,'outcome',outcome,'run',result));
+END $$;
+
+CREATE FUNCTION public.begin_workflow_email_v1(p_studio_id UUID,p_run_id UUID,p_claim_token UUID,p_node_id TEXT,
+    p_plan_fingerprint TEXT,p_unsubscribe_token TEXT,p_allowed_recipients TEXT[],p_default_reply_to TEXT,p_public_api_url TEXT,
+    p_rendered JSONB,p_preparation_id UUID,p_preparation_token UUID,p_probe_token UUID DEFAULT NULL) RETURNS JSONB
+LANGUAGE plpgsql VOLATILE SECURITY INVOKER SET search_path='' AS $$
+DECLARE owned JSONB; plan JSONB; fresh_plan JSONB; admission JSONB; attempt_payload JSONB; result JSONB;
+    v_run public.automation_workflow_runs; event private.automation_workflow_events; actual private.automation_email_attempt_reservations;
+    prior UUID; new_id UUID:=gen_random_uuid(); outcome TEXT; reason TEXT; at TIMESTAMPTZ; retry TIMESTAMPTZ; starts TIMESTAMPTZ;
+BEGIN
+    IF p_plan_fingerprint IS NULL OR p_plan_fingerprint !~ '^[a-f0-9]{64}$' OR p_preparation_id IS NULL OR p_preparation_token IS NULL
+        OR private.workflow_email_rendered_valid_v1(p_rendered) IS DISTINCT FROM true
+        OR private.workflow_email_parameters_valid_v1(p_unsubscribe_token,p_allowed_recipients,p_default_reply_to,p_public_api_url) IS DISTINCT FROM true THEN
+        RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST';
+    END IF;
+    -- A claim can yield only one actual begin for this node, even after settlement.
+    SELECT a.id INTO prior FROM private.automation_email_attempt_reservations a WHERE a.studio_id=p_studio_id AND a.scope_kind='workflow' AND a.scope_id=p_run_id AND a.node_id=p_node_id AND a.owner_token=p_claim_token AND a.origin='actual';
+    IF prior IS NOT NULL THEN
+        SELECT * INTO v_run FROM public.automation_workflow_runs WHERE studio_id=p_studio_id AND id=p_run_id;
+        IF v_run.id IS NULL THEN outcome:='lease_lost'; result:=NULL; ELSE outcome:='already_begun'; result:=private.workflow_run_position_v1(v_run); END IF;
+    ELSE
+        owned:=private.workflow_email_own_v1(p_studio_id,p_run_id,p_claim_token,p_node_id,p_unsubscribe_token,p_allowed_recipients,p_default_reply_to,p_public_api_url);
+        outcome:=owned->>'outcome';
+        IF outcome='owned' THEN
+            v_run:=jsonb_populate_record(NULL::public.automation_workflow_runs,owned->'run'); event:=jsonb_populate_record(NULL::private.automation_workflow_events,owned->'event'); plan:=owned->'plan';
+            IF plan->>'fingerprint' IS DISTINCT FROM p_plan_fingerprint THEN outcome:='stale_plan';
+            ELSIF plan->>'disposition'='wait' THEN
+                v_run:=private.workflow_defer_owned_run_v1(p_studio_id,p_run_id,clock_timestamp(),plan->>'reason'); outcome:='waiting';
+            ELSIF plan->>'disposition'='skip' THEN
+                v_run:=private.workflow_email_finish_step_v1(p_studio_id,p_run_id,(owned->>'step_id')::UUID,p_node_id,clock_timestamp(),'skipped',plan->>'reason',true); outcome:='skipped';
+            ELSE
+                BEGIN
+                    admission:=private.automation_email_attempt_begin_v1(p_studio_id,'workflow',p_run_id,p_node_id,new_id,p_claim_token,plan->>'recipient_email',p_preparation_id,p_preparation_token,p_probe_token);
+                    -- Common admission may wait on its gate/preparation. All sources
+                    -- are already frozen, but clocks and lease must be sampled again.
+                    at:=clock_timestamp();
+                    IF v_run.lease_expires_at<=at THEN RAISE EXCEPTION USING ERRCODE='P57L1'; END IF;
+                    fresh_plan:=private.workflow_email_plan_v1(v_run,event,owned->'graph',owned->'node',at,p_unsubscribe_token,p_allowed_recipients,p_default_reply_to,p_public_api_url);
+                    IF fresh_plan->>'disposition'='stop' OR fresh_plan->>'fingerprint' IS DISTINCT FROM p_plan_fingerprint OR fresh_plan->>'disposition' IS DISTINCT FROM 'send' THEN
+                        RAISE EXCEPTION USING ERRCODE='P57T1';
+                    END IF;
+                    IF admission->>'outcome'='begun' THEN
+                        SELECT * INTO actual FROM private.automation_email_attempt_reservations WHERE id=new_id;
+                        INSERT INTO private.automation_workflow_email_attempts(id,studio_id,run_id,step_id,node_id,attempt_number,state,recipient_email,recipient_kind,began_at)
+                            VALUES(actual.id,p_studio_id,p_run_id,(owned->>'step_id')::UUID,p_node_id,actual.attempt_number,'sending',actual.recipient_email,plan->>'recipient_kind',actual.actual_began_at);
+                        IF actual.attempt_number=1 THEN
+                            INSERT INTO private.workflow_email_unsubscribe_pins(studio_id,run_id,step_id,node_id,first_attempt_id,unsubscribe_token,created_at)
+                                VALUES(p_studio_id,p_run_id,(owned->>'step_id')::UUID,p_node_id,actual.id,plan->>'unsubscribe_token',actual.actual_began_at);
+                            PERFORM private.automation_bind_unsubscribe_token_v1(p_studio_id,plan->>'unsubscribe_token',actual.recipient_email);
+                        END IF;
+                        INSERT INTO private.workflow_email_attempt_payloads(attempt_id,studio_id,run_id,step_id,node_id,plan_fingerprint,reply_to,rendered,selected_template_facts,created_at)
+                            VALUES(actual.id,p_studio_id,p_run_id,(owned->>'step_id')::UUID,p_node_id,p_plan_fingerprint,plan->>'reply_to',p_rendered,
+                                private.workflow_email_selected_values_v1(owned->'node',plan->'facts'),actual.actual_began_at);
+                        UPDATE private.automation_workflow_run_steps SET outcome='sending',reason=NULL WHERE id=(owned->>'step_id')::UUID;
+                        UPDATE public.automation_workflow_runs SET state='sending',next_due_at=NULL,lease_expires_at=actual.lease_expires_at,
+                            reason=NULL,deferral_count=0,revision=revision+1,updated_at=actual.actual_began_at WHERE studio_id=p_studio_id AND id=p_run_id RETURNING * INTO v_run;
+                        attempt_payload:=jsonb_build_object('id',actual.id,'attempt_number',actual.attempt_number,'lease_expires_at',private.automation_utc_text_v1(actual.lease_expires_at),
+                            'credential_revision',actual.admitted_credential_revision,'sender_binding',actual.sender_binding,
+                            'message',p_rendered||jsonb_build_object('to_address',actual.recipient_email,'reply_to',plan->>'reply_to','attempt_id',actual.id)); outcome:='begun';
+                    ELSE
+                        reason:=admission->>'reason'; retry:=(admission->>'retry_at')::TIMESTAMPTZ;
+                        starts:=CASE WHEN event.event_type IN ('trial.scheduled','trial.upcoming') THEN private.automation_instant_v1(plan#>'{facts,anchors,trial.starts_at}')
+                            WHEN event.event_type LIKE 'belt_test.%' THEN private.automation_instant_v1(plan#>'{facts,anchors,belt_test.starts_at}') END;
+                        IF reason IN ('recipient_suppressed','scope_terminal','retry_exhausted') OR (reason='rate_limited' AND starts IS NOT NULL AND retry>=starts) THEN
+                            v_run:=private.workflow_email_finish_step_v1(p_studio_id,p_run_id,(owned->>'step_id')::UUID,p_node_id,at,'skipped',CASE WHEN reason='rate_limited' THEN 'event_window_exhausted' ELSE reason END,true); outcome:='skipped';
+                        ELSE
+                            v_run:=private.workflow_defer_owned_run_v1(p_studio_id,p_run_id,at,'sender_unavailable');
+                            IF retry>v_run.next_due_at THEN UPDATE public.automation_workflow_runs SET next_due_at=retry WHERE id=p_run_id RETURNING * INTO v_run; END IF;
+                            outcome:='waiting';
+                        END IF;
+                    END IF;
+                EXCEPTION WHEN SQLSTATE 'P57T1' THEN
+                    -- Admission, frequency, probe and attempt writes roll back before
+                    -- projecting the fresh no-attempt decision.
+                    IF fresh_plan->>'disposition'='stop' THEN
+                        PERFORM private.workflow_cancel_runs_v1(p_studio_id,ARRAY[p_run_id],clock_timestamp(),fresh_plan->>'reason');
+                        UPDATE private.automation_workflow_run_steps SET outcome='cancelled',reason=fresh_plan->>'reason',finished_at=clock_timestamp() WHERE id=(owned->>'step_id')::UUID;
+                        SELECT * INTO v_run FROM public.automation_workflow_runs WHERE id=p_run_id; outcome:='stopped';
+                    ELSE outcome:='stale_plan'; END IF;
+                END;
+            END IF;
+            result:=private.workflow_run_position_v1(v_run);
+        ELSE result:=owned->'run'; END IF;
+    END IF;
+    RETURN jsonb_build_object('payload',jsonb_build_object('studio_id',p_studio_id,'run_id',p_run_id,'claim_token',p_claim_token,'node_id',p_node_id,'outcome',outcome,'run',result,'attempt',attempt_payload));
+EXCEPTION WHEN SQLSTATE 'P57L1' THEN
+    RETURN jsonb_build_object('payload',jsonb_build_object('studio_id',p_studio_id,'run_id',p_run_id,'claim_token',p_claim_token,'node_id',p_node_id,'outcome','lease_lost','run',NULL,'attempt',NULL));
+    WHEN lock_not_available THEN RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STUDIO_BUSY';
+END $$;
+
+CREATE FUNCTION private.workflow_email_project_settlement_v1(p_attempt_id UUID,p_replayed BOOLEAN) RETURNS public.automation_workflow_runs
+LANGUAGE plpgsql VOLATILE SECURITY INVOKER SET search_path='' AS $$
+DECLARE actual private.automation_email_attempt_reservations; metadata private.automation_workflow_email_attempts;
+    v_run public.automation_workflow_runs; at TIMESTAMPTZ; due TIMESTAMPTZ; v_reason TEXT;
+BEGIN
+    SELECT * INTO actual FROM private.automation_email_attempt_reservations WHERE id=p_attempt_id;
+    SELECT * INTO metadata FROM private.automation_workflow_email_attempts WHERE id=p_attempt_id;
+    SELECT * INTO v_run FROM public.automation_workflow_runs WHERE studio_id=metadata.studio_id AND id=metadata.run_id;
+    IF actual.id IS NULL OR metadata.id IS NULL OR v_run.id IS NULL THEN RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STATE_CONFLICT'; END IF;
+    IF p_replayed THEN RETURN v_run; END IF;
+    IF metadata.state<>'sending' OR actual.state='sending' OR v_run.state<>'sending' OR v_run.current_node_id<>metadata.node_id
+        OR v_run.claim_token IS DISTINCT FROM actual.owner_token OR v_run.revision=9223372036854775807 THEN
+        RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STATE_CONFLICT';
+    END IF;
+    at:=actual.settled_at; v_reason:=actual.result->>'error_code';
+    UPDATE private.automation_workflow_email_attempts SET state=actual.state,reason=v_reason,settled_at=at,
+        submission_evidence=actual.result->>'submission_evidence',failure_scope=actual.result->>'failure_scope' WHERE id=metadata.id;
+    IF v_run.cancel_requested_at IS NOT NULL OR actual.state='unknown' THEN
+        UPDATE private.automation_workflow_run_steps SET outcome=actual.state,reason=v_reason,finished_at=at WHERE id=metadata.step_id;
+        UPDATE public.automation_workflow_runs SET state=CASE WHEN cancel_requested_at IS NOT NULL THEN 'cancelled' ELSE 'unknown' END,
+            reason=coalesce(cancel_reason,v_reason,'provider_submission_unknown'),claim_token=NULL,lease_expires_at=NULL,next_due_at=NULL,revision=revision+1,updated_at=at
+            WHERE id=v_run.id RETURNING * INTO v_run;
+    ELSIF actual.state='accepted' THEN
+        v_run:=private.workflow_email_finish_step_v1(metadata.studio_id,metadata.run_id,metadata.step_id,metadata.node_id,at,'accepted',NULL,true);
+    ELSIF actual.attempt_number>=3 OR (actual.result->>'outcome'='permanent_failure' AND actual.result->>'failure_scope'='message') THEN
+        v_run:=private.workflow_email_finish_step_v1(metadata.studio_id,metadata.run_id,metadata.step_id,metadata.node_id,at,'failed',CASE WHEN actual.attempt_number>=3 THEN 'retry_exhausted' ELSE v_reason END,true);
+    ELSIF actual.result->>'outcome'='retryable_failure' OR actual.result->>'failure_scope' IN ('sender_auth','sender_transient') THEN
+        due:=at+make_interval(secs=>least(3600,greatest(60*(1<<(actual.attempt_number-1)),coalesce((actual.result->>'retry_after_seconds')::INTEGER,0))));
+        UPDATE private.automation_workflow_run_steps SET outcome='waiting',reason=v_reason WHERE id=metadata.step_id;
+        UPDATE public.automation_workflow_runs SET state='waiting',next_due_at=due,claim_token=NULL,lease_expires_at=NULL,reason=coalesce(v_reason,'sender_unavailable'),
+            deferral_count=0,revision=revision+1,updated_at=at WHERE id=v_run.id RETURNING * INTO v_run;
+    ELSE
+        UPDATE private.automation_workflow_run_steps SET outcome='failed',reason=v_reason,finished_at=at WHERE id=metadata.step_id;
+        UPDATE public.automation_workflow_runs SET state='failed',next_due_at=NULL,claim_token=NULL,lease_expires_at=NULL,reason=coalesce(v_reason,'provider_rejected'),revision=revision+1,updated_at=at WHERE id=v_run.id RETURNING * INTO v_run;
+    END IF;
+    RETURN v_run;
+END $$;
+CREATE FUNCTION public.settle_workflow_email_v1(p_studio_id UUID,p_attempt_id UUID,p_claim_token UUID,p_result JSONB) RETURNS JSONB
+LANGUAGE plpgsql VOLATILE SECURITY INVOKER SET search_path='' AS $$
+DECLARE metadata private.automation_workflow_email_attempts; actual private.automation_email_attempt_reservations;
+    v_run public.automation_workflow_runs; settlement JSONB; result JSONB:=jsonb_build_object('studio_id',p_studio_id,'attempt_id',p_attempt_id,'updated',false,'replayed',false,'state',NULL,'reason',NULL,'run',NULL);
+BEGIN
+    SELECT * INTO metadata FROM private.automation_workflow_email_attempts WHERE studio_id=p_studio_id AND id=p_attempt_id;
+    SELECT * INTO actual FROM private.automation_email_attempt_reservations WHERE id=p_attempt_id AND studio_id=p_studio_id AND scope_kind='workflow' AND origin='actual';
+    IF metadata.id IS NULL OR actual.id IS NULL OR p_claim_token IS NULL OR actual.owner_token IS DISTINCT FROM p_claim_token OR actual.scope_id IS DISTINCT FROM metadata.run_id OR actual.node_id IS DISTINCT FROM metadata.node_id THEN RETURN jsonb_build_object('payload',result); END IF;
+    IF NOT pg_catalog.pg_try_advisory_xact_lock_shared(pg_catalog.hashtextextended('koaryu.local-plan-clear:'||p_studio_id::TEXT,0)) THEN RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STUDIO_BUSY'; END IF;
+    PERFORM 1 FROM public.studios WHERE id=p_studio_id FOR KEY SHARE NOWAIT;
+    SELECT * INTO v_run FROM public.automation_workflow_runs WHERE studio_id=p_studio_id AND id=metadata.run_id;
+    PERFORM 1 FROM public.automation_workflows WHERE studio_id=p_studio_id AND id=v_run.workflow_id FOR UPDATE NOWAIT;
+    SELECT * INTO v_run FROM public.automation_workflow_runs WHERE studio_id=p_studio_id AND id=metadata.run_id FOR UPDATE NOWAIT;
+    IF v_run.id IS NULL THEN RETURN jsonb_build_object('payload',result); END IF;
+    PERFORM 1 FROM private.automation_workflow_email_attempts WHERE id=metadata.id FOR UPDATE NOWAIT;
+    settlement:=private.automation_email_attempt_settle_v1(p_attempt_id,p_claim_token,p_result);
+    IF settlement->>'outcome'='refused' THEN RETURN jsonb_build_object('payload',result); END IF;
+    v_run:=private.workflow_email_project_settlement_v1(p_attempt_id,settlement->>'outcome'='replayed');
+    result:=result||jsonb_build_object('updated',true,'replayed',settlement->>'outcome'='replayed','state',settlement->>'state','reason',settlement#>'{result,error_code}','run',private.workflow_run_position_v1(v_run));
+    RETURN jsonb_build_object('payload',result);
+EXCEPTION WHEN lock_not_available THEN RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STUDIO_BUSY';
+END $$;
+
+-- Raw lease/id LIMIT precedes ownership. Acquire the entire parent union before
+-- entering the common gate, because returning keeps every transaction lock.
+CREATE FUNCTION private.workflow_expire_email_attempts_v1(p_limit INTEGER DEFAULT 100) RETURNS INTEGER
+LANGUAGE plpgsql VOLATILE SECURITY INVOKER SET search_path='' AS $$
+DECLARE ids UUID[]; item RECORD; result JSONB; count_expired INTEGER:=0; cutoff TIMESTAMPTZ:=clock_timestamp();
+BEGIN
+    IF p_limit IS NULL OR p_limit NOT BETWEEN 1 AND 100 THEN RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST'; END IF;
+    SELECT coalesce(array_agg(id ORDER BY lease_expires_at,id),'{}'::UUID[]) INTO ids FROM (
+        SELECT id,lease_expires_at FROM private.automation_email_attempt_reservations WHERE scope_kind='workflow' AND origin='actual' AND state='sending' AND lease_expires_at<=cutoff ORDER BY lease_expires_at,id LIMIT p_limit) raw;
+    FOR item IN SELECT DISTINCT studio_id FROM private.automation_email_attempt_reservations WHERE id=ANY(ids) ORDER BY studio_id LOOP
+        IF NOT pg_catalog.pg_try_advisory_xact_lock_shared(pg_catalog.hashtextextended('koaryu.local-plan-clear:'||item.studio_id::TEXT,0)) THEN RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STUDIO_BUSY'; END IF;
+        PERFORM 1 FROM public.studios WHERE id=item.studio_id FOR KEY SHARE NOWAIT;
+    END LOOP;
+    PERFORM 1 FROM public.automation_workflows w WHERE EXISTS(SELECT 1 FROM public.automation_workflow_runs r JOIN private.automation_email_attempt_reservations a ON a.studio_id=r.studio_id AND a.scope_id=r.id WHERE a.id=ANY(ids) AND r.workflow_id=w.id AND r.studio_id=w.studio_id) ORDER BY w.studio_id,w.id FOR UPDATE NOWAIT;
+    PERFORM 1 FROM public.automation_workflow_runs r WHERE EXISTS(SELECT 1 FROM private.automation_email_attempt_reservations a WHERE a.id=ANY(ids) AND a.studio_id=r.studio_id AND a.scope_id=r.id) ORDER BY r.studio_id,r.id FOR UPDATE NOWAIT;
+    PERFORM 1 FROM private.automation_workflow_email_attempts WHERE id=ANY(ids) ORDER BY studio_id,id FOR UPDATE NOWAIT;
+    FOR item IN SELECT * FROM private.automation_email_attempt_reservations WHERE id=ANY(ids) ORDER BY studio_id,scope_id,node_id,id LOOP
+        PERFORM private.automation_email_scope_lock_v1(item.studio_id,'workflow',item.scope_id,item.node_id,item.recipient_email);
+        PERFORM 1 FROM private.automation_email_credentials WHERE provider_key=item.provider_key FOR SHARE NOWAIT;
+        PERFORM 1 FROM private.automation_email_attempt_reservations WHERE id=item.id FOR UPDATE NOWAIT;
+    END LOOP;
+    FOR item IN SELECT * FROM private.automation_email_attempt_reservations WHERE id=ANY(ids) ORDER BY lease_expires_at,id LOOP
+        result:=private.automation_email_attempt_expire_v1(item.id);
+        IF result->>'outcome'='confirmed' THEN
+            IF EXISTS(SELECT 1 FROM private.automation_workflow_email_attempts WHERE id=item.id) THEN
+                PERFORM private.workflow_email_project_settlement_v1(item.id,false);
+            ELSIF EXISTS(SELECT 1 FROM public.studios WHERE id=item.studio_id) THEN
+                RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STATE_CONFLICT';
+            END IF;
+            count_expired:=count_expired+1;
+        END IF;
+    END LOOP;
+    RETURN count_expired;
+EXCEPTION WHEN lock_not_available THEN RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STUDIO_BUSY';
+END $$;
+ALTER TABLE private.workflow_email_unsubscribe_pins OWNER TO postgres;
+ALTER TABLE private.workflow_email_attempt_payloads OWNER TO postgres;
+ALTER TABLE private.workflow_email_unsubscribe_pins ENABLE ROW LEVEL SECURITY;
+ALTER TABLE private.workflow_email_attempt_payloads ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON private.workflow_email_unsubscribe_pins,private.workflow_email_attempt_payloads FROM PUBLIC,anon,authenticated,service_role;
+GRANT SELECT,INSERT,DELETE ON private.workflow_email_unsubscribe_pins,private.workflow_email_attempt_payloads TO service_role;
+CREATE POLICY reject_client_access ON private.workflow_email_unsubscribe_pins AS RESTRICTIVE FOR ALL TO anon,authenticated USING(false) WITH CHECK(false);
+CREATE POLICY reject_client_access ON private.workflow_email_attempt_payloads AS RESTRICTIVE FOR ALL TO anon,authenticated USING(false) WITH CHECK(false);
+DO $graph_mail_privileges$
+DECLARE r RECORD;
+BEGIN
+    FOR r IN SELECT p.oid::REGPROCEDURE identity,p.proname FROM pg_catalog.pg_proc p JOIN pg_catalog.pg_namespace n ON n.oid=p.pronamespace
+        WHERE (n.nspname='private' AND p.proname IN ('workflow_email_rendered_valid_v1','workflow_email_payload_identity_v1','workflow_email_payload_delete_v1',
+            'workflow_lock_recipient_auth_v1','workflow_email_source_inventory_v1','workflow_lock_email_sources_v1','workflow_email_selected_values_v1',
+            'workflow_email_fingerprint_v1','workflow_email_parameters_valid_v1','workflow_email_plan_v1','workflow_email_finish_step_v1',
+            'workflow_email_own_v1','workflow_email_project_settlement_v1','workflow_expire_email_attempts_v1'))
+        OR (n.nspname='public' AND p.proname IN ('get_workflow_email_plan_v1','resolve_workflow_email_without_attempt_v1','begin_workflow_email_v1','settle_workflow_email_v1')) LOOP
+        EXECUTE format('ALTER FUNCTION %s OWNER TO postgres',r.identity);
+        EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC,anon,authenticated,service_role',r.identity);
+        IF r.proname NOT IN ('workflow_email_payload_identity_v1','workflow_email_payload_delete_v1') THEN EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO service_role',r.identity); END IF;
+    END LOOP;
+END;
+$graph_mail_privileges$;
