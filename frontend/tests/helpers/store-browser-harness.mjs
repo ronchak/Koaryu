@@ -197,6 +197,7 @@ export function bundle(
   };
   if (identityLifecycle) {
     Object.assign(stubs, {
+      "next/link": `exports.__esModule=true;exports.default=({children,href,prefetch,...props})=>require('react').createElement('a',{href:typeof href==='string'?href:href.pathname,...props},children);`,
       "@/components/icons/martial-arts-belt": `exports.MartialArtsBelt=()=>null;`,
       "lucide-react": `module.exports=new Proxy({},{get:()=>()=>null});`,
       "@/components/header": `exports.Header=()=>null;`,
