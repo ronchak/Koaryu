@@ -17,3 +17,24 @@ frontend/src/lib/student-roster-location.ts:generic-api-key:34
 
 # Deterministic synthetic UUID used only by WorkerDatabase and httpx.MockTransport.
 bd73fed9fa4da97bc5e7ed1f7070246379982ac1:backend/tests/test_automation_service.py:generic-api-key:576
+
+# Public browser sessionStorage journal names, not credentials or access tokens.
+8c30eace7024ffac780dfb8ef155a97dac1c2f7b:frontend/tests/helpers/belt-test-mounted.mjs:generic-api-key:9
+97eee8dd59d8f3481586a2d07704e8d86218f227:frontend/tests/helpers/belt-test-mounted.mjs:generic-api-key:9
+97eee8dd59d8f3481586a2d07704e8d86218f227:frontend/src/lib/belt-test-operation.ts:generic-api-key:138
+8c30eace7024ffac780dfb8ef155a97dac1c2f7b:frontend/src/lib/belt-test-operation.ts:generic-api-key:138
+a0e720683af6d5f5d9c5f9ab552b3b64a4ef9f04:frontend/tests/helpers/trial-appointment-mounted.mjs:generic-api-key:7
+fc166fe41f9be77f68e02fd0a6a3823ec421d47b:frontend/tests/helpers/trial-appointment-mounted.mjs:generic-api-key:7
+a0e720683af6d5f5d9c5f9ab552b3b64a4ef9f04:frontend/src/lib/trial-appointment-operation.ts:generic-api-key:85
+fc166fe41f9be77f68e02fd0a6a3823ec421d47b:frontend/src/lib/trial-appointment-operation.ts:generic-api-key:85
+# The same identifiers in the separate current-tree scan.
+frontend/src/lib/belt-test-operation.ts:generic-api-key:138
+frontend/tests/helpers/belt-test-mounted.mjs:generic-api-key:9
+frontend/src/lib/trial-appointment-operation.ts:generic-api-key:85
+frontend/tests/helpers/trial-appointment-mounted.mjs:generic-api-key:7
+
+# SHA256 fixture provenance, verified against api-contracts.ts at source_sha.
+6d9205193d087f6d46375ee22c0414a4e8af2f7f:frontend/tests/fixtures/belt-test-contract.json:generic-api-key:10
+043a103cd2c808cdfa8aa93e3f61836c002c3512:frontend/tests/fixtures/belt-test-contract.json:generic-api-key:10
+# The same provenance digest in the separate current-tree scan.
+frontend/tests/fixtures/belt-test-contract.json:generic-api-key:10
