@@ -244,3 +244,163 @@ def test_positive_sdk_reads_use_actual_membership_and_single_row_owners():
         assert all("WHERE" in statement for statement in reads)
     finally:
         close_supabase_client(client)
+
+
+@pytest.mark.parametrize(
+    "event", ["trial.scheduled", "belt_test.approved", "invoice.payment_failed"]
+)
+def test_representative_graphs_use_real_catalog_validation(event):
+    from app.schemas.workflow import WorkflowGraph
+    from app.services.workflow_catalog import CATALOG
+    from app.services.workflow_graph import validate_workflow_graph
+
+    value = WorkflowGraph.model_validate(proof.graph(event))
+    assert validate_workflow_graph(value, catalog=CATALOG).valid
+
+
+def test_representative_command_window_and_recipient_jsonb():
+    from app.schemas.belt_test import BeltTestEventCreate
+    from app.schemas.belt_test_recipient import BeltTestRecipientApprove
+    from app.schemas.trial_appointment import TrialAppointmentCreate
+
+    window = proof.future_window()
+    trial = TrialAppointmentCreate.model_validate(
+        {
+            "operation_id": IDS["actor"],
+            **window,
+            "location": "Trial room",
+            "program_id": IDS["studio"],
+        }
+    )
+    event = BeltTestEventCreate.model_validate(
+        {
+            "operation_id": IDS["actor"],
+            **window,
+            "name": "Composition belt test",
+            "ladder_id": IDS["studio"],
+            "status": "scheduled",
+            "location": "Belt room",
+        }
+    )
+    recipients = [{"student_id": IDS["actor"], "student_program_membership_id": None}]
+    BeltTestRecipientApprove.model_validate(
+        {
+            "operation_id": IDS["actor"],
+            "expected_event_revision": 1,
+            "recipients": recipients,
+        }
+    )
+    assert event.starts_at == trial.starts_at
+    assert proof.display_instant(window["starts_at"]).endswith("+00:00 [UTC]")
+    assert proof.rpc_value("p_recipients", recipients) == proof.quote(recipients)
+    assert "TEXT[]" not in proof.rpc_value("p_recipients", recipients)
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "mutate_lead_trial_appointment_v1",
+        "get_lead_trial_appointment_v1",
+        "mutate_belt_test_event_v1",
+        "get_belt_test_event_v1",
+        "approve_belt_test_recipients_v1",
+        "get_belt_test_recipient_v1",
+    ],
+)
+def test_representative_bridge_exact_arguments_and_refusals(bridge, name):
+    adapter, statements = bridge
+    params = {key: IDS["actor"] for key in adapter.contracts[name]}
+    for key in ("p_expected_revision", "p_expected_event_revision"):
+        if key in params:
+            params[key] = 1
+    if "p_request" in params:
+        params["p_request"] = {"action": "create"}
+    if "p_recipients" in params:
+        params["p_recipients"] = [
+            {"student_id": IDS["actor"], "student_program_membership_id": None}
+        ]
+    url = "https://composition.example.invalid/rest/v1/rpc/" + name
+    # Only SQL error transport is returned. This establishes no domain success.
+    assert adapter(httpx.Request("POST", url, json=params)).status_code == 400
+    assert "SELECT public." + name + "(" in statements[-1]
+    if "p_recipients" in params:
+        assert "p_recipients=>" in statements[-1] and "::TEXT[]" not in statements[-1]
+    before = len(statements)
+    for bad in ({**params, "extra": True}, {k: v for k, v in params.items() if k != "p_actor_id"}):
+        with pytest.raises(RuntimeError, match="contract"):
+            adapter(httpx.Request("POST", url, json=bad))
+    assert len(statements) == before
+
+
+def test_served_forwarding_preserves_owner_body_errors_and_current_response():
+    calls = []
+
+    def transport(request):
+        calls.append(request)
+        return httpx.Response(
+            503, content=b'{"detail":"unavailable"}', headers={"X-Request-Id": "opaque"}
+        )
+
+    with httpx.Client(
+        base_url="http://testserver", transport=httpx.MockTransport(transport)
+    ) as client:
+        client.headers.clear()
+        headers = {
+            "Authorization": "Bearer composition-synthetic-token",
+            "X-Studio-Id": IDS["studio"],
+            "Cookie": "koaryu-active-studio=" + IDS["studio"],
+            "Content-Type": "application/json",
+        }
+        body = b'{"operation_id":"opaque"}'
+        reply = proof.forward_served_request(
+            client, "POST", "/api/v1/automations/workflows", headers, body
+        )
+        assert reply.status_code == 503 and reply.content == b'{"detail":"unavailable"}'
+        assert reply.headers["X-Request-Id"] == "opaque"
+        assert calls[0].content == body
+        assert calls[0].headers["X-Studio-Id"] == IDS["studio"]
+        assert calls[0].headers["Cookie"] == headers["Cookie"]
+        proof.forward_served_request(client, "GET", "/api/v1/automations/catalog", {}, b"")
+        assert "Authorization" not in calls[-1].headers and "X-Studio-Id" not in calls[-1].headers
+        client.headers["Authorization"] = "must-not-be-injected"
+        with pytest.raises(RuntimeError, match="inject owner"):
+            proof.forward_served_request(client, "GET", "/api/v1/automations/catalog", {}, b"")
+
+
+@pytest.mark.parametrize(
+    "method,target,body",
+    [
+        ("GET", "http://example.invalid/api/v1/automations/catalog", b""),
+        ("GET", "//example.invalid/api/v1/automations/catalog", b""),
+        ("GET", "/api/v1/automations/catalog#fragment", b""),
+        ("GET", "/api/v1/students", b""),
+        ("DELETE", "/api/v1/automations/workflows", b""),
+        ("POST", "/api/v1/automations/workflows", b"x" * (proof.MAX_REQUEST_BYTES + 1)),
+    ],
+)
+def test_served_refusals_do_not_forward(method, target, body):
+    def unexpected(_request):
+        pytest.fail("Refused request reached application")
+
+    with (
+        httpx.Client(transport=httpx.MockTransport(unexpected)) as client,
+        pytest.raises(RuntimeError),
+    ):
+        proof.forward_served_request(client, method, target, {}, body)
+
+
+def test_served_redirect_is_not_followed():
+    calls = []
+
+    def redirect(request):
+        calls.append(request)
+        return httpx.Response(307, headers={"Location": "https://example.invalid"})
+
+    with (
+        httpx.Client(
+            base_url="http://testserver", transport=httpx.MockTransport(redirect)
+        ) as client,
+        pytest.raises(RuntimeError, match="redirect refused"),
+    ):
+        proof.forward_served_request(client, "GET", "/api/v1/automations/catalog", {}, b"")
+    assert len(calls) == 1

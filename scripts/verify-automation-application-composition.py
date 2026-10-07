@@ -3,7 +3,7 @@
 
 Requires an explicitly supplied final V57 template in the existing PG17 verifier
 cluster. Never installs migrations. Only the uniquely named clone is modified.
-Trial, belt, payment and served UI joins remain unproven and require final execution.
+Source wiring alone is not positive SQL or served UI evidence.
 """
 
 import argparse
@@ -11,12 +11,17 @@ import hashlib
 import json
 import os
 import re
+import signal
+import subprocess
 import sys
 import time
 from contextlib import ExitStack, contextmanager
+from datetime import datetime, timedelta, timezone
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
+from urllib.parse import urlsplit
 from uuid import uuid4
 
 from local_postgres_verification import ACL_SQL, CONSTRAINT_SQL, LocalPostgres, require
@@ -193,6 +198,21 @@ def rpc_contracts():
         | {"p_workflow_id", "p_limit", "p_cursor"},
         "get_automation_workflow_run_v1": scope | {"p_run_id"},
         "create_lead_atomic_v1": scope | {"p_operation_id", "p_request"},
+        "mutate_lead_trial_appointment_v1": scope
+        | {
+            "p_lead_id",
+            "p_appointment_id",
+            "p_operation_id",
+            "p_expected_revision",
+            "p_request",
+        },
+        "get_lead_trial_appointment_v1": scope | {"p_lead_id", "p_appointment_id"},
+        "mutate_belt_test_event_v1": scope
+        | {"p_event_id", "p_operation_id", "p_expected_revision", "p_request"},
+        "get_belt_test_event_v1": scope | {"p_event_id"},
+        "approve_belt_test_recipients_v1": scope
+        | {"p_event_id", "p_operation_id", "p_expected_event_revision", "p_recipients"},
+        "get_belt_test_recipient_v1": scope | {"p_event_id", "p_recipient_id"},
         "process_automation_workflow_occurrences_v1": {"p_limit"},
         "enqueue_missed_class_automations_v1": {"p_limit", "p_allowed_recipients"},
         "claim_missed_class_automations_v1": {"p_limit", "p_allowed_recipients"},
@@ -390,6 +410,50 @@ COMMIT;""")
     return ids
 
 
+def future_window():
+    start = (datetime.now(timezone.utc) + timedelta(days=7)).replace(microsecond=0)
+    return {
+        "starts_at": start.isoformat(),
+        "ends_at": (start + timedelta(hours=1)).isoformat(),
+        "timezone": "UTC",
+    }
+
+
+def display_instant(value):
+    return (
+        datetime.fromisoformat(value.replace("Z", "+00:00")).isoformat(sep=" ")
+        + " [UTC]"
+    )
+
+
+def seed_representative_prerequisites(sql, ids):
+    """Trusted source prerequisites only; deferred owners establish their context."""
+    sources = {
+        key: str(uuid4()) for key in ("ladder", "rank", "student", "payer", "invoice")
+    }
+    studio, program = ids["studio"], ids["program"]
+    ladder, rank, student, payer, invoice = (
+        sources[key] for key in ("ladder", "rank", "student", "payer", "invoice")
+    )
+    account, customer = "acct_" + studio.replace("-", ""), "cus_" + payer
+    sql(f"""BEGIN;
+INSERT INTO public.belt_ladders(id,studio_id,name,program_id) VALUES('{ladder}','{studio}','Composition ladder',NULL);
+INSERT INTO public.belt_ranks(id,studio_id,ladder_id,name,display_order,min_classes,min_months)
+ VALUES('{rank}','{studio}','{ladder}','White',0,0,0);
+INSERT INTO public.students(id,studio_id,legal_first_name,legal_last_name,status,email,program_id,current_belt_rank_id,membership_start_date,is_minor,date_of_birth)
+ VALUES('{student}','{studio}','Student','Person','active','student@example.invalid','{program}',NULL,CURRENT_DATE-120,false,'1990-01-01');
+INSERT INTO public.studio_payment_accounts(studio_id,stripe_connected_account_id,metadata)
+ VALUES('{studio}','{account}','{{"connect_account_generation":1}}');
+INSERT INTO public.billing_payers(id,studio_id,display_name,email,stripe_account_id,stripe_customer_id,connect_account_generation)
+ VALUES('{payer}','{studio}','Composition payer','payer@example.invalid','{account}','{customer}',1);
+INSERT INTO public.billing_invoices(id,studio_id,payer_id,status,currency,amount_due_cents,amount_paid_cents,amount_remaining_cents,due_date,
+ invoice_number,collection_method,stripe_account_id,stripe_customer_id,stripe_invoice_id,metadata)
+ VALUES('{invoice}','{studio}','{payer}','open','usd',1234,0,1234,CURRENT_DATE+7,
+ 'COMPOSITION-1','send_invoice','{account}','{customer}','in_{invoice}','{{"connect_account_generation":1}}');
+COMMIT;""")
+    return sources
+
+
 def settings_for(ids):
     from cryptography.fernet import Fernet
 
@@ -412,22 +476,44 @@ def settings_for(ids):
     )
 
 
-def graph():
+def graph(event="lead.created"):
+    recipient, subject, body = {
+        "lead.created": (
+            "lead_or_guardian",
+            "Hello {{recipient_name}}",
+            "A message from {{studio_name}}.",
+        ),
+        "trial.scheduled": (
+            "lead_or_guardian",
+            "Trial {{trial_start}}",
+            "Location: {{trial_location}}",
+        ),
+        "belt_test.approved": (
+            "student_or_guardian",
+            "Invitation to {{event_name}}",
+            "At {{event_start}} in {{event_location}}",
+        ),
+        "invoice.payment_failed": (
+            "invoice_payer",
+            "Invoice {{invoice_number}}",
+            "Balance: {{invoice_balance}}",
+        ),
+    }[event]
     return {
         "schema_version": 1,
         "nodes": [
             {
                 "id": "trigger",
                 "type": "trigger",
-                "config": {"event_type": "lead.created"},
+                "config": {"event_type": event},
             },
             {
                 "id": "email",
                 "type": "email",
                 "config": {
-                    "recipient": "lead_or_guardian",
-                    "subject_template": "Hello {{recipient_name}}",
-                    "body_template": "A message from {{studio_name}}.",
+                    "recipient": recipient,
+                    "subject_template": subject,
+                    "body_template": body,
                     "reply_to_email": "",
                 },
             },
@@ -443,8 +529,11 @@ def graph():
 @contextmanager
 def application(bridge, settings, transport_factory):
     from app.api.v1.endpoints import (
+        belt_test_recipients,
+        belt_tests,
         demo,
         leads,
+        trial_appointments,
         workflow_management,
         workflow_runs,
         workflow_simulation,
@@ -464,6 +553,9 @@ def application(bridge, settings, transport_factory):
     app = FastAPI()
     for module in (
         demo,
+        trial_appointments,
+        belt_tests,
+        belt_test_recipients,
         leads,
         workflow_management,
         workflow_runs,
@@ -471,6 +563,8 @@ def application(bridge, settings, transport_factory):
         workflow_test_email,
     ):
         app.include_router(module.router, prefix="/api/v1")
+    app.include_router(trial_appointments.detail_router, prefix="/api/v1")
+    app.include_router(belt_test_recipients.detail_router, prefix="/api/v1")
     register_error_handlers(app)
 
     def synthetic_identity(authorization: str = Header()):
@@ -526,7 +620,7 @@ def application(bridge, settings, transport_factory):
         close_supabase_client(client)
 
 
-def journey(sql):
+def journey(sql, *, serve=None):
     import httpx
     from app.db.supabase import close_supabase_client
     from app.services.automation_coordinator import process_automation_batch
@@ -580,7 +674,7 @@ def journey(sql):
             == [{"emailAddress": {"address": expected_recipient}}],
             "Unexpected recipient",
         )
-        submissions.append(message["subject"])
+        submissions.append(message)
         if ambiguous:
             raise httpx.ReadTimeout("Synthetic ambiguous submission", request=request)
         return httpx.Response(202, headers={"request-id": str(uuid4())})
@@ -595,6 +689,9 @@ def journey(sql):
         )
 
     with application(bridge, settings, transport) as http:
+        if serve is not None:
+            expected_recipient = "actor@example.invalid"
+            return serve_application(http, ids, serve)
 
         def request(method, path, expected=200, **kwargs):
             reply = http.request(method, "/api/v1" + path, **kwargs)
@@ -609,6 +706,20 @@ def journey(sql):
             catalog["capabilities"]["can_start"]
             and catalog["capabilities"]["can_test_email"],
             "Actual capability gate unavailable",
+        )
+        # Created before lead.created activation, so this fixture cannot enroll
+        # in the welcome workflow or consume its later trial spacing reservation.
+        trial_lead = request(
+            "POST",
+            "/leads",
+            expected=201,
+            json={
+                "operation_id": str(uuid4()),
+                "first_name": "Trial",
+                "last_name": "Lead",
+                "email": "trial@example.invalid",
+                "program_id": ids["program"],
+            },
         )
         operation = str(uuid4())
         body = {
@@ -674,6 +785,183 @@ def journey(sql):
             and history["attempts"][0]["state"] == "accepted",
             "Actual run history did not record acceptance",
         )
+
+        def activate(event):
+            value = request(
+                "POST",
+                "/automations/workflows",
+                expected=201,
+                json={
+                    "operation_id": str(uuid4()),
+                    "name": "Composition " + event,
+                    "description": "",
+                    "graph": graph(event),
+                    "layout": {},
+                },
+            )
+            event_route = "/automations/workflows/" + value["id"]
+            for action in ("publish", "start"):
+                value = request(
+                    "POST",
+                    event_route + "/" + action,
+                    json={
+                        "operation_id": str(uuid4()),
+                        "expected_revision": value["revision"],
+                    },
+                )
+            return event_route
+
+        def accepted(event_route, recipient, fragments, event_type, subject_id):
+            nonlocal expected_recipient
+            expected_recipient = recipient
+            before_send = len(submissions)
+            result = process_automation_batch(
+                settings,
+                first_engine="attendance",
+                deadline_monotonic=time.monotonic() + WORK_BUDGET_SECONDS,
+                client_factory=bridge.client,
+                transport_factory=transport,
+            )
+            require(
+                result.workflows is not None
+                and result.workflows.accepted == 1
+                and len(submissions) == before_send + 1,
+                "Representative delivery not accepted once",
+            )
+            message = submissions[-1]
+            rendered = message["subject"] + "\n" + message["body"]["content"]
+            require(
+                all(fragment in rendered for fragment in fragments),
+                "Saved source rendering differs",
+            )
+            captured = request("GET", event_route + "/runs")["items"]
+            require(
+                len(captured) == 1
+                and captured[0]["event_type"] == event_type
+                and captured[0]["subject_id"] == subject_id,
+                "Expected one captured run for the exact source event",
+            )
+            detail = request("GET", "/automations/runs/" + captured[0]["id"])
+            require(
+                len(detail["attempts"]) == 1
+                and detail["attempts"][0]["state"] == "accepted",
+                "Representative attempt history missing",
+            )
+
+        window = future_window()
+        trial_route = activate("trial.scheduled")
+        appointment = request(
+            "POST",
+            "/leads/" + trial_lead["id"] + "/trial-appointments",
+            expected=201,
+            json={
+                "operation_id": str(uuid4()),
+                **window,
+                "location": "Trial room",
+                "program_id": ids["program"],
+            },
+        )
+        require(
+            request(
+                "GET",
+                "/leads/"
+                + trial_lead["id"]
+                + "/trial-appointments/"
+                + appointment["id"],
+            )
+            == appointment
+            and appointment["revision"] == 1
+            and appointment["lead_id"] == trial_lead["id"],
+            "Exact trial identity/revision differs",
+        )
+        accepted(
+            trial_route,
+            "trial@example.invalid",
+            [display_instant(appointment["starts_at"]), "Trial room"],
+            "trial.scheduled",
+            appointment["id"],
+        )
+
+        sources = seed_representative_prerequisites(sql, ids)
+        belt_route = activate("belt_test.approved")
+        event = request(
+            "POST",
+            "/belt-tests",
+            expected=201,
+            json={
+                "operation_id": str(uuid4()),
+                "name": "Composition belt test",
+                "ladder_id": sources["ladder"],
+                **window,
+                "location": "Belt room",
+                "status": "scheduled",
+            },
+        )
+        event_path = "/belt-tests/" + event["id"]
+        approval = request(
+            "POST",
+            event_path + "/recipients/approve",
+            json={
+                "operation_id": str(uuid4()),
+                "expected_event_revision": event["revision"],
+                "recipients": [
+                    {
+                        "student_id": sources["student"],
+                        "student_program_membership_id": None,
+                    }
+                ],
+            },
+        )
+        recipient = approval["items"][0]
+        require(
+            request("GET", event_path) == event
+            and approval["event_revision"] == event["revision"]
+            and recipient["revision"] == 1
+            and recipient["state"] == "approved"
+            and request("GET", event_path + "/recipients/" + recipient["id"])
+            == recipient,
+            "Belt approval changed event revision or exact recipient differs",
+        )
+        accepted(
+            belt_route,
+            "student@example.invalid",
+            [event["name"], display_instant(event["starts_at"])],
+            "belt_test.approved",
+            recipient["id"],
+        )
+        require(
+            sql(
+                f"SELECT current_belt_rank_id IS NULL FROM public.students WHERE id={quote(sources['student'])};"
+            )
+            == "t",
+            "Belt approval changed current rank",
+        )
+
+        payment_route = activate("invoice.payment_failed")
+        # A fresh real billing row invokes the capture trigger. No private event,
+        # invoice episode or overdue history is manufactured by this runner.
+        payment = str(uuid4())
+        sql(f"""INSERT INTO public.billing_payments(
+ id,studio_id,payer_id,invoice_id,status,amount_cents,currency,stripe_account_id,
+ stripe_customer_id,stripe_invoice_id,connect_account_generation,payment_method_type,idempotency_key)
+ SELECT '{payment}',studio_id,payer_id,id,'failed',1234,'usd',stripe_account_id,
+ stripe_customer_id,stripe_invoice_id,1,'card','{payment}' FROM public.billing_invoices
+ WHERE id={quote(sources["invoice"])};""")
+        accepted(
+            payment_route,
+            "payer@example.invalid",
+            ["COMPOSITION-1", "USD 12.34"],
+            "invoice.payment_failed",
+            payment,
+        )
+        require(
+            sql(
+                f"SELECT count(*) FROM public.billing_payments WHERE id='{payment}' AND invoice_id={quote(sources['invoice'])};"
+            )
+            == "1",
+            "Payment is not linked to the fixture invoice",
+        )
+
         test_body = {
             "operation_id": str(uuid4()),
             "email_node_id": "email",
@@ -682,7 +970,8 @@ def journey(sql):
         expected_recipient = "actor@example.invalid"
         tested = request("POST", route + "/test-email", json=test_body)
         require(
-            tested["state"] == "accepted" and submissions[-1].startswith("[Test] "),
+            tested["state"] == "accepted"
+            and submissions[-1]["subject"].startswith("[Test] "),
             "Synthetic test label/result missing",
         )
         queued = request("GET", "/automations/operations/" + test_body["operation_id"])
@@ -723,8 +1012,10 @@ def journey(sql):
             headers={"X-Koaryu-Destructive-Action": "clear-studio-data"},
         )
         require(
-            cleared["counts"]["leads"] == 1
-            and cleared["automation"]["workflows_paused"] == 1,
+            cleared["counts"]["leads"] == 2
+            and cleared["counts"]["students"] == 1
+            and cleared["counts"]["belt_ranks"] == 1
+            and cleared["automation"]["workflows_paused"] == 4,
             "Clear effects missing actual lead/workflow",
         )
         require(
@@ -765,6 +1056,9 @@ def journey(sql):
         "journeys": [
             "lost committed create receipt/current",
             "lead capture/render/Graph acceptance/history",
+            "trial scheduled HTTP/capture/render/Graph acceptance",
+            "belt approval HTTP/capture/render/Graph acceptance",
+            "fresh payment failure trigger/render/Graph acceptance",
             "test queued receipt/current",
             "unknown submission replay without resend",
             "clear actual effects",
@@ -774,7 +1068,199 @@ def journey(sql):
             "Graph MockTransport",
             "base records and encrypted credentials",
         ],
-        "unproven_remaining_joins": ["trial", "belt", "payment", "served UI"],
+        "unproven_remaining_joins": ["served UI"],
+    }
+
+
+MAX_REQUEST_BYTES = 1024 * 1024
+UUID_PATH = (
+    r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
+)
+SERVED_ROUTES = {
+    "GET": [
+        r"/automations/catalog",
+        r"/automations/workflows",
+        rf"/automations/workflows/{UUID_PATH}(?:/runs)?",
+        rf"/automations/(?:runs|operations|test-deliveries)/{UUID_PATH}",
+    ],
+    "POST": [
+        r"/automations/workflows",
+        r"/automations/workflows/validate",
+        rf"/automations/workflows/{UUID_PATH}/(?:publish|start|pause|archive|simulate|test-email)",
+    ],
+    "PUT": [rf"/automations/workflows/{UUID_PATH}"],
+}
+
+
+def forward_served_request(http, method, target, headers, body):
+    """Forward the bounded fixture API unchanged, including errors and unknowns."""
+    parsed = urlsplit(target)
+    require(
+        not parsed.scheme
+        and not parsed.netloc
+        and not parsed.fragment
+        and parsed.path.startswith("/api/v1/"),
+        "Unexpected served destination",
+    )
+    path = parsed.path.removeprefix("/api/v1")
+    require(
+        any(re.fullmatch(route, path) for route in SERVED_ROUTES.get(method, [])),
+        "Unexpected served method/path",
+    )
+    require(len(body) <= MAX_REQUEST_BYTES, "Served request exceeds 1 MiB")
+    supported = {"authorization", "x-studio-id", "content-type", "accept", "cookie"}
+    forwarded = {
+        key: value for key, value in headers.items() if key.lower() in supported
+    }
+    # TestClient's journey defaults must never fill a browser's missing identity.
+    require(
+        not http.headers.get("Authorization") and not http.headers.get("X-Studio-Id"),
+        "Served client must not inject owner headers",
+    )
+    response = http.request(
+        method, target, headers=forwarded, content=body, follow_redirects=False
+    )
+    require(not 300 <= response.status_code < 400, "Served redirect refused")
+    return response
+
+
+def serve_application(http, ids, options):
+    """Fresh clone, same actual application, finite loopback fixture lifetime."""
+    http.headers.clear()
+    observations = []
+    html = b""
+    handled = 0
+
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self, *_args):
+            pass
+
+        def handle_one_request(self):
+            nonlocal handled
+            handled += 1
+            self.connection.settimeout(5)
+            super().handle_one_request()
+
+        def dispatch(self):
+            self.close_connection = True
+            if (
+                self.headers.get("Host") != address
+                or self.headers.get("Origin", origin) != origin
+            ):
+                self.send_error(403)
+                return
+            length = self.headers.get("Content-Length", "0")
+            if self.headers.get("Transfer-Encoding") or not length.isdecimal():
+                self.send_error(400)
+                return
+            if int(length) > MAX_REQUEST_BYTES:
+                self.send_error(413)
+                return
+            body = self.rfile.read(int(length))
+            if len(body) != int(length):
+                self.send_error(400)
+                return
+            if self.command == "GET" and self.path == "/" and not body:
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                payload = html
+            else:
+                try:
+                    response = forward_served_request(
+                        http, self.command, self.path, self.headers, body
+                    )
+                except RuntimeError:
+                    self.send_error(400)
+                    return
+                observations.append(
+                    {
+                        "method": self.command,
+                        "path": urlsplit(self.path).path,
+                        "status": response.status_code,
+                        "matching_studio_header": self.headers.get("X-Studio-Id")
+                        == ids["studio"],
+                    }
+                )
+                self.send_response(response.status_code)
+                for key, value in response.headers.multi_items():
+                    if key.lower() not in {
+                        "content-length",
+                        "transfer-encoding",
+                        "connection",
+                    }:
+                        self.send_header(key, value)
+                payload = response.content
+            self.send_header("Content-Length", str(len(payload)))
+            self.send_header("Connection", "close")
+            self.end_headers()
+            self.wfile.write(payload)
+
+        do_GET = do_POST = do_PUT = do_DELETE = do_PATCH = do_OPTIONS = dispatch
+
+    # Loopback and an ephemeral port are fixed, not caller-controlled bind targets.
+    with HTTPServer(("127.0.0.1", 0), Handler) as server:
+        server.timeout = 0.5
+        address = f"127.0.0.1:{server.server_port}"
+        origin = "http://" + address
+        result = subprocess.run(
+            [
+                options.node,
+                str(ROOT / "frontend/tests/helpers/workflow-composition-mounted.mjs"),
+                "--proof-html",
+            ],
+            input=json.dumps(
+                {
+                    "apiUrl": origin + "/api/v1",
+                    "actorId": ids["actor"],
+                    "studioId": ids["studio"],
+                    "token": "composition-synthetic-token",
+                }
+            ),
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=True,
+        )
+        html = result.stdout.encode()
+        require(html.startswith(b"<!doctype html>"), "Fixture HTML was not produced")
+        print(
+            json.dumps(
+                {
+                    "fixture_url": origin,
+                    "synthetic_boundaries": [
+                        "Auth",
+                        "Graph MockTransport",
+                        "picker collections",
+                    ],
+                    "expires_in_seconds": options.seconds,
+                }
+            ),
+            flush=True,
+        )
+        deadline = time.monotonic() + options.seconds
+        stopping = False
+
+        def stop(_signum, _frame):
+            nonlocal stopping
+            stopping = True
+
+        previous = {
+            sig: signal.signal(sig, stop) for sig in (signal.SIGINT, signal.SIGTERM)
+        }
+        try:
+            while handled < options.max_requests:
+                if stopping or time.monotonic() >= deadline:
+                    break
+                server.handle_request()
+        finally:
+            for sig, handler in previous.items():
+                signal.signal(sig, handler)
+    return {
+        "mode": "served",
+        "requests": observations,
+        "unproven_remaining_joins": [
+            "UI assertions require the separate browser proof"
+        ],
     }
 
 
@@ -784,6 +1270,28 @@ def main(arguments=None):
     parser.add_argument("--socket", required=True)
     parser.add_argument("--port", required=True, choices=["5432"])
     parser.add_argument("--final-v57-template", required=True)
+    parser.add_argument(
+        "--serve",
+        action="store_true",
+        help="Serve a fresh fixture instead of running the automated journey",
+    )
+    parser.add_argument(
+        "--node", default="node", help="Node 22+ executable used only by --serve"
+    )
+    parser.add_argument(
+        "--serve-seconds",
+        type=int,
+        default=900,
+        choices=range(1, 3601),
+        metavar="1..3600",
+    )
+    parser.add_argument(
+        "--serve-max-requests",
+        type=int,
+        default=4000,
+        choices=range(1, 10001),
+        metavar="1..10000",
+    )
     args = parser.parse_args(arguments)
     configure_test_environment()
     require_final_declarations()
@@ -804,11 +1312,20 @@ def main(arguments=None):
                     "Composition SQL execution failed; private diagnostics withheld"
                 ) from None
 
-        evidence = journey(sql)
+        serve = (
+            SimpleNamespace(
+                node=args.node,
+                seconds=args.serve_seconds,
+                max_requests=args.serve_max_requests,
+            )
+            if args.serve
+            else None
+        )
+        evidence = journey(sql, serve=serve)
     print(
         json.dumps(
             {
-                "outcome": "passed",
+                "outcome": "served_session_closed" if args.serve else "passed",
                 "owned_clone_removed": True,
                 "base_and_template_unchanged": True,
                 **evidence,

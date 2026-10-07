@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 import { runInNewContext, Script } from "node:vm";
 import { createCommonJsPacker } from "./helpers/store-browser-harness.mjs";
@@ -22,6 +24,7 @@ function realClient(forward) {
     URL,
     Response,
     Headers,
+    TextEncoder,
     AbortController,
     setTimeout,
     clearTimeout,
@@ -115,4 +118,51 @@ test("forwarder preserves response object and refuses unrelated requests", async
     `${apiUrl}?override=1`,
   ])
     assert.throws(() => createCompositionProofFetch(url, () => {}));
+});
+
+test("proof body bound refuses oversized and unsupported bodies before forwarding", async () => {
+  let calls = 0;
+  const forward = createCompositionProofFetch(apiUrl, async () => {
+    calls++;
+    return Response.json({});
+  });
+  for (const body of ["x".repeat(1024 * 1024 + 1), "é".repeat(1024 * 1024), new Uint8Array(2)])
+    await assert.rejects(forward(`${apiUrl}/automations/workflows`, { method: "POST", body }));
+  assert.equal(calls, 0);
+  await forward(`${apiUrl}/automations/workflows`, {
+    method: "POST",
+    body: "x".repeat(1024 * 1024),
+  });
+  assert.equal(calls, 1);
+});
+test("proof verifies the active studio cookie before mount and default fixture stays synthetic", () => {
+  const proof = bundleWorkflowComposition({ proof: { apiUrl, actorId, studioId, token } });
+  assert.ok(proof.includes("Composition active studio cookie missing before mount"));
+  assert.ok(
+    proof.indexOf("f.publish();") <
+      proof.indexOf("Composition active studio cookie missing before mount"),
+  );
+  const normal = bundleWorkflowComposition();
+  new Script(normal);
+  assert.ok(normal.includes("exports.api={get:(path,token)=>window.fixture.read"));
+  assert.ok(normal.includes("Enable synthetic delivery"));
+  assert.ok(!normal.includes("Composition active studio cookie missing before mount"));
+});
+
+test("proof HTML CLI flushes the complete bundle without starting a server", () => {
+  const html = execFileSync(
+    process.execPath,
+    [
+      fileURLToPath(new URL("./helpers/workflow-composition-mounted.mjs", import.meta.url)),
+      "--proof-html",
+    ],
+    {
+      input: JSON.stringify({ apiUrl, actorId, studioId, token }),
+      encoding: "utf8",
+      maxBuffer: 16 * 1024 * 1024,
+    },
+  );
+  assert.ok(html.startsWith("<!doctype html>"));
+  assert.ok(html.endsWith("</script></body></html>"));
+  assert.ok(html.includes("Composition active studio cookie missing before mount"));
 });

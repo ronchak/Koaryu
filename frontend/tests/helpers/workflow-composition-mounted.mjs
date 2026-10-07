@@ -83,6 +83,11 @@ export function createCompositionProofFetch(baseUrl, forward) {
       return Response.json([], { headers: { "X-Composition-Source": "fixture-only-picker" } });
     if (!(routes[method] ?? []).some((pattern) => new RegExp(`^${pattern}$`, "i").test(path)))
       throw Error("Request is outside the bounded automation proof");
+    if (
+      init.body != null &&
+      (typeof init.body !== "string" || new TextEncoder().encode(init.body).length > 1024 * 1024)
+    )
+      throw Error("Composition request exceeds the 1 MiB text body bound");
     return forward(input, { ...init, redirect: "error" });
   };
 }
@@ -142,6 +147,7 @@ f.switchStudio=()=>{
 };
 f.publish=()=>{setActiveStudioIdCookie(f.studio);if(!f.preview)publishAccessIdentity({user:{id:f.user},studio_id:f.studio,role:f.role,membership_status:'active'},true);};
 f.publish();
+${proof ? `if(!document.cookie.split(';').some(part=>part.trim()==='koaryu-active-studio='+f.studio))throw Error('Composition active studio cookie missing before mount');` : ""}
 f.change=patch=>{const identity=['user','studio','role','ready'].some(key=>Object.hasOwn(patch,key)&&patch[key]!==f[key]);if(identity){f.epoch++;if(!f.preview)invalidateAccessIdentity();}Object.assign(f,patch);f.publish();f.notify();};
 f.owner=()=>getBrowserWorkflowWorkspace(f.preview?{mode:'preview',source:require('@/lib/automation-workflow-preview').workflowPreviewSource}:{mode:'live',owner:{userId:f.user,studioId:f.studio,role:f.role},token:f.token});
 f.read=async(path,token)=>{
@@ -239,41 +245,46 @@ f.unmount=()=>root.render(null);f.mount=()=>root.render(React.createElement(${se
 export const compositionHtml = (options) =>
   `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Workflow composition fixture</title><style>${css}</style></head><body><div id="root"></div><script>${bundleWorkflowComposition(options).replaceAll("</script", "<\\/script")}</script></body></html>`;
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
-  const port = Number(process.env.PORT ?? 4325);
-  const routeArgument = process.argv.indexOf("--route");
-  const initialRoute = routeArgument === -1 ? "/automations" : process.argv[routeArgument + 1];
-  const uuid = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
-  if (
-    typeof initialRoute !== "string" ||
-    !new RegExp(`^/automations(?:/${uuid}|/new\\?draft=${uuid})?$`, "i").test(initialRoute)
-  )
-    throw Error(
-      "--route requires /automations, /automations/<UUID>, or /automations/new?draft=<UUID>.",
-    );
-  const html = compositionHtml({
-    preview: process.argv.includes("--preview"),
-    route: initialRoute,
-  });
-  if (process.argv.includes("--write")) {
-    const dir = "/tmp/koaryu-ui04b-fixture";
-    mkdirSync(dir, { recursive: true });
-    writeFileSync(resolve(dir, "index.html"), html);
-    console.log(`${dir}/index.html`);
-  } else if (process.argv.includes("--serve")) {
-    const server = createServer((_request, response) => {
-      response.writeHead(200, { "Content-Type": "text/html" });
-      response.end(html);
+  if (process.argv.includes("--proof-html")) {
+    const proof = JSON.parse(readFileSync(0, "utf8"));
+    process.stdout.write(compositionHtml({ proof }));
+  } else {
+    const port = Number(process.env.PORT ?? 4325);
+    const routeArgument = process.argv.indexOf("--route");
+    const initialRoute = routeArgument === -1 ? "/automations" : process.argv[routeArgument + 1];
+    const uuid = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
+    if (
+      typeof initialRoute !== "string" ||
+      !new RegExp(`^/automations(?:/${uuid}|/new\\?draft=${uuid})?$`, "i").test(initialRoute)
+    )
+      throw Error(
+        "--route requires /automations, /automations/<UUID>, or /automations/new?draft=<UUID>.",
+      );
+    const html = compositionHtml({
+      preview: process.argv.includes("--preview"),
+      route: initialRoute,
     });
-    server.listen(port, "127.0.0.1", () =>
-      console.log(`Synthetic workflow fixture: http://127.0.0.1:${port}`),
-    );
-    for (const signal of ["SIGINT", "SIGTERM"])
-      process.once(signal, () => {
-        server.close();
-        server.closeAllConnections();
+    if (process.argv.includes("--write")) {
+      const dir = "/tmp/koaryu-ui04b-fixture";
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(resolve(dir, "index.html"), html);
+      console.log(`${dir}/index.html`);
+    } else if (process.argv.includes("--serve")) {
+      const server = createServer((_request, response) => {
+        response.writeHead(200, { "Content-Type": "text/html" });
+        response.end(html);
       });
-  } else
-    throw Error(
-      "Use --write or --serve; optional --preview and --route <path>. No external I/O is used.",
-    );
+      server.listen(port, "127.0.0.1", () =>
+        console.log(`Synthetic workflow fixture: http://127.0.0.1:${port}`),
+      );
+      for (const signal of ["SIGINT", "SIGTERM"])
+        process.once(signal, () => {
+          server.close();
+          server.closeAllConnections();
+        });
+    } else
+      throw Error(
+        "Use --write or --serve; optional --preview and --route <path>. No external I/O is used.",
+      );
+  }
 }
