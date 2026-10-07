@@ -284,9 +284,10 @@ const INTERLUDES: Readonly<Record<string, number>> = {
   // The dive: through the hill and its brown, down into the dojo.
   product: 120,
   features: 80,
-  // Through the door, across the sky, and the clouds lie down into the weave.
-  "the-weave": 190,
-  studio: 90,
+  // Through the door and across the sky, into the clouds.
+  "the-weave": 110,
+  // The clouds lie down into the weave, and the weave into the room.
+  studio: 190,
 };
 
 /** The paged story: one composed chapter per screen, with open scroll between them. */

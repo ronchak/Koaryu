@@ -210,11 +210,11 @@ describe("Stops, beats and motion", () => {
 
   it("paces the weave through its own keyframes", () => {
     const weave = [
-      { id: "features", y: 0, scene: 0.52 },
-      { id: "the-weave", y: 2900, scene: 0.892 },
+      { id: "the-weave", y: 0, scene: 0.695 },
+      { id: "studio", y: 2600, scene: 1 },
     ];
     const keyframes = storyKeyframes(weave, H);
-    for (const step of STORY_BEATS["the-weave"].via) {
+    for (const step of STORY_BEATS.studio.via) {
       assert.ok(keyframes.some(({ scene }) => scene === step.scene));
     }
   });
@@ -316,6 +316,8 @@ describe("Copy held in place while its screen moves", () => {
     assert.ok(beatFor("product").via.some(({ scene }) => scene === 0.1));
     // ...and the flight through the door crosses the sky before the clouds lie down.
     assert.ok(beatFor("the-weave").via.some(({ scene }) => scene === 0.66));
+    // ...and the clouds lie down and weave into the floor on the way to the class.
+    assert.ok(beatFor("studio").via.some(({ scene }) => scene === 0.892));
     assert.ok(!landingPageContent.story.some(({ scene }) => scene === 0.1 || scene === 0.66));
   });
 });
@@ -397,7 +399,8 @@ describe("Scene helpers and old links", () => {
   it("shows only chapter still frames for reduced motion", () => {
     const scenes = landingPageContent.story.map(({ scene }) => scene);
     assert.equal(stillFrame(0.04, scenes), 0);
-    assert.equal(stillFrame(0.8, scenes), 0.892);
+    // The weave is a passage now; still frames rest on the clouds that carry its words.
+    assert.equal(stillFrame(0.8, scenes), 0.695);
     assert.deepEqual(
       scenes,
       [...scenes].sort((a, b) => a - b),

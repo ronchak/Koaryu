@@ -459,8 +459,8 @@ const story = [
     id: "the-weave",
     kind: "weave",
     title: "Your studio is not a spreadsheet.",
-    label: "Woven together",
-    scene: 0.892,
+    label: "One record",
+    scene: 0.695,
     ink: "dark",
     lede: "Every part of Koaryu works from the same record of each student, so the roster, the belt tracker, the follow-up queue and the billing records always agree.",
     threads: [

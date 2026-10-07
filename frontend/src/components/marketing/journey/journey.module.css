@@ -841,7 +841,7 @@
   opacity: 0.7;
 }
 
-/* The weave: the words sit in the sky above the loom */
+/* The clouds: the words sit in the clear sky above them */
 
 .chapter[data-kind="weave"] .frame {
   align-items: start;
@@ -1389,6 +1389,12 @@
   .weaveCopy,
   .daySheet {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* A phone frames the clouds high, under the sun; the clear sky is below them. */
+  .chapter[data-kind="weave"] .frame {
+    align-items: end;
+    padding-bottom: clamp(44px, 7svh, 72px);
   }
 
   .chapter[data-kind="product"] .frame {

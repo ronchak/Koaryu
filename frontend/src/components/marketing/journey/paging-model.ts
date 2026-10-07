@@ -287,20 +287,25 @@ export const STORY_BEATS: Readonly<Record<string, BeatSpec>> = Object.freeze({
   },
   // The door slides open on the painted sun.
   features: { ms: 1000, exit: 0.42, enter: 0.66 },
-  // One flight: through the doorway into the open sky, where the clouds gather
-  // and lie down and the threads weave through each other.
+  // One flight: through the doorway into the open sky, where the clouds gather.
   "the-weave": {
-    ms: 1950,
+    ms: 1300,
     exit: 0.4,
-    enter: 0.46,
+    enter: 0.5,
+    via: [{ at: 0.45, scene: 0.66 }],
+  },
+  // The clouds lie down and the threads weave through each other, then the
+  // woven floor lies down, the room rises and the class sits.
+  studio: {
+    ms: 2000,
+    exit: 0.4,
+    enter: 0.6,
     via: [
-      { at: 0.34, scene: 0.66 },
-      { at: 0.45, scene: 0.768 },
-      { at: 0.63, scene: 0.83 },
+      { at: 0.12, scene: 0.768 },
+      { at: 0.36, scene: 0.83 },
+      { at: 0.6, scene: 0.892 },
     ],
   },
-  // The woven floor lies down, the room rises and the class sits.
-  studio: { ms: 1450, exit: 0.42, enter: 0.6 },
   // The class becomes a framed picture and the page turns white. No copy moves.
   handoff: { ms: 1150, exit: 0, enter: 0 },
 });
