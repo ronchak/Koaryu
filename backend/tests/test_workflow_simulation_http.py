@@ -383,6 +383,7 @@ def test_openapi_contains_only_exact_public_dtos_and_required_fields(api):
 
 
 def test_composed_app_mounts_simulation_once_and_keeps_existing_routes():
+    from app.api.v1.endpoints import workflow_test_email
     from app.main import app
 
     paths = app.openapi()["paths"]
@@ -404,8 +405,21 @@ def test_composed_app_mounts_simulation_once_and_keeps_existing_routes():
     } == {("workflow_id", "path")}
     assert set(paths["/api/v1/automations/workflows/{workflow_id}"]) == {"get", "put"}
     assert set(paths["/api/v1/automations/missed-class"]) == {"get", "put"}
-    assert "/api/v1/automations/workflows/{workflow_id}/test-email" not in paths
-    assert "/api/v1/automations/test-deliveries/{test_delivery_id}" not in paths
+    for test_path, method, handler in (
+        (
+            "/api/v1/automations/workflows/{workflow_id}/test-email",
+            "POST",
+            workflow_test_email.test_workflow_email,
+        ),
+        (
+            "/api/v1/automations/test-deliveries/{test_delivery_id}",
+            "GET",
+            workflow_test_email.get_test_email,
+        ),
+    ):
+        matches = [route for route in iter_route_contexts(app.routes) if route.path == test_path]
+        assert len(matches) == 1 and matches[0].endpoint is handler
+        assert matches[0].methods == {method} and set(paths[test_path]) == {method.lower()}
     assert not any(
         name.startswith(("_Facts", "_Payload")) for name in app.openapi()["components"]["schemas"]
     )
