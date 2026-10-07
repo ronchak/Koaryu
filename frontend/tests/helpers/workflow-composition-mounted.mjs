@@ -30,6 +30,63 @@ export const workflowCompositionCss = css;
 const snapshot = JSON.parse(
   readFileSync(resolve(frontend, "src/lib/generated/workflow-preview-catalog.json"), "utf8"),
 );
+// Proof mode forwards automation responses unchanged. Unrelated picker reads
+// stay explicitly synthetic and cannot establish current source authority.
+export function createCompositionProofFetch(baseUrl, forward) {
+  const base = new URL(baseUrl);
+  if (
+    base.protocol !== "http:" ||
+    !["127.0.0.1", "[::1]"].includes(base.hostname) ||
+    base.pathname !== "/api/v1" ||
+    base.username ||
+    base.password ||
+    base.search ||
+    base.hash
+  )
+    throw Error("Composition proof requires an explicit loopback /api/v1 URL");
+  const uuid = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
+  const routes = {
+    GET: [
+      "/automations/catalog",
+      "/automations/workflows",
+      `/automations/workflows/${uuid}`,
+      `/automations/workflows/${uuid}/runs`,
+      `/automations/runs/${uuid}`,
+      `/automations/operations/${uuid}`,
+      `/automations/test-deliveries/${uuid}`,
+    ],
+    POST: [
+      "/automations/workflows",
+      "/automations/workflows/validate",
+      `/automations/workflows/${uuid}/(?:publish|start|pause|archive|simulate|test-email)`,
+    ],
+    PUT: [`/automations/workflows/${uuid}`],
+  };
+  return async (input, init = {}) => {
+    const url = new URL(input);
+    if (
+      url.origin !== base.origin ||
+      url.username ||
+      url.password ||
+      url.hash ||
+      !url.pathname.startsWith(base.pathname + "/")
+    )
+      throw Error("Unexpected proof destination");
+    const path = url.pathname.slice(base.pathname.length);
+    const method = init.method ?? "GET";
+    if (
+      method === "GET" &&
+      ((path === "/belts/ladders" && !url.search) ||
+        (path === "/programs" &&
+          ["", "?include_archived=false", "?include_archived=true"].includes(url.search)))
+    )
+      return Response.json([], { headers: { "X-Composition-Source": "fixture-only-picker" } });
+    if (!(routes[method] ?? []).some((pattern) => new RegExp(`^${pattern}$`, "i").test(path)))
+      throw Error("Request is outside the bounded automation proof");
+    return forward(input, { ...init, redirect: "error" });
+  };
+}
+
 export function bundleWorkflowComposition(options = {}) {
   const settings = {
     preview: false,
@@ -38,7 +95,18 @@ export function bundleWorkflowComposition(options = {}) {
     mode: "production",
     ...options,
   };
-  const { add, modules } = createCommonJsPacker({
+  const proof = settings.proof;
+  if (proof) {
+    createCompositionProofFetch(proof.apiUrl, () => {});
+    if (
+      settings.preview ||
+      !/^[0-9a-f-]{36}$/i.test(proof.actorId) ||
+      !/^[0-9a-f-]{36}$/i.test(proof.studioId) ||
+      proof.token !== "composition-synthetic-token"
+    )
+      throw Error("Proof mode requires the explicit synthetic SQL fixture identity");
+  }
+  const moduleStubs = {
     ...stubs,
     "./generated/workflow-preview-catalog.json": `module.exports=${JSON.stringify(snapshot)}`,
     "@xyflow/react/dist/style.css": "module.exports={}",
@@ -129,15 +197,44 @@ function Stores({children}){
 }
 export default function Fixture(){React.useSyncExternalStore(f.subscribe,()=>f.version,()=>f.version);const address=new URL(f.route,'http://localhost');const draft=address.searchParams.get('draft');return <Stores key={f.epoch}><div id="fixture-bar"><span>Synthetic local fixture</span><button onClick={()=>f.router.push('/automations')}>Catalog fixture</button><button onClick={()=>f.change({token:f.token+'x'})}>Renew token fixture</button><button onClick={()=>{document.documentElement.style.cssText='color-scheme:light;--surface:#fff;--surface-raised:#f7f8fa;--surface-hover:#eef0f3;--border:#ccc;--text-primary:#17202a;--text-secondary:#536071;--accent:#795715';document.body.style.background='#f4f5f7';}}>Light fixture</button><button disabled={f.preview} onClick={()=>{f.catalog.capabilities={can_start:true,can_test_email:false,disabled_reason:null};f.catalog.delivery_status={mode:'live',configured:true,can_enable:true,sender:'synthetic@example.invalid',test_recipient:null,reason:null};f.catalog.scheduler.enabled=true;void f.owner().loadCatalog();}}>Enable synthetic delivery</button><button disabled={f.preview} onClick={()=>f.switchStudio()}>Switch synthetic studio</button><button disabled={!f.requests.some(req=>req.studio===f.studio&&!req.completed)} onClick={()=>{f.complete(f.requests.findLastIndex(req=>req.studio===f.studio&&!req.completed));f.notify();}}>Complete action fixture</button></div>{f.route==='/automations'?<WorkflowCatalogPanel/>:<WorkflowWorkspace key={f.route} {...(address.pathname==='/automations/new'?{draftId:draft}:{workflowId:address.pathname.split('/').at(-1)})}/>}</Stores>}
 `,
-  });
+  };
+  if (proof) {
+    delete moduleStubs["@/lib/api"];
+    moduleStubs["composition-fixture.tsx"] = moduleStubs["composition-fixture.tsx"].replace(
+      /<div id="fixture-bar">.*?<\/div>/,
+      '<div id="fixture-bar">Actual automation API; synthetic Auth and fixture-only pickers</div>',
+    );
+  }
+  const { add, modules } = createCommonJsPacker(moduleStubs);
   const react = add("react"),
     dom = add("react-dom/client"),
     fixture = add("composition-fixture.tsx");
-  return `(()=>{const process={env:{NODE_ENV:${JSON.stringify(settings.mode)}}};const modules=[${modules.join(",")}],cache={};function require(id){if(cache[id])return cache[id].exports;const module=cache[id]={exports:{}};modules[id](module,module.exports,require);return module.exports;}
+  let source = `(()=>{const process={env:{NODE_ENV:${JSON.stringify(settings.mode)}}};const modules=[${modules.join(",")}],cache={};function require(id){if(cache[id])return cache[id].exports;const module=cache[id]={exports:{}};modules[id](module,module.exports,require);return module.exports;}
 window.fixture={preview:${settings.preview},role:${JSON.stringify(settings.role)},route:${JSON.stringify(settings.route)},ready:true,user:'${ids.user}',studio:'${ids.studio}',token:'token-1',epoch:0,version:0,auth:new Set(),listeners:new Set(),authCalls:0,reads:[],requests:[],receipts:{},hold:{},held:[],errors:{},programs:[],ladders:[],sideEffects:0};
 const f=window.fixture;f.subscribe=fn=>{f.listeners.add(fn);return()=>f.listeners.delete(fn)};f.notify=()=>{f.version++;for(const fn of f.listeners)fn()};f.router={push:route=>{f.route=route;f.notify()},replace:route=>{f.route=route;f.notify()}};
 const React=require(${react}),root=require(${dom}).createRoot(document.getElementById('root')),Fixture=require(${fixture}).default;
 f.unmount=()=>root.render(null);f.mount=()=>root.render(React.createElement(${settings.mode === "development" ? "React.StrictMode" : "React.Fragment"},null,React.createElement(Fixture)));f.mount();})();`;
+  if (proof) {
+    source = source
+      .replace(
+        `NODE_ENV:${JSON.stringify(settings.mode)}`,
+        `NODE_ENV:${JSON.stringify(settings.mode)},NEXT_PUBLIC_API_URL:${JSON.stringify(proof.apiUrl)},NEXT_PUBLIC_USE_API_PROXY:"false"`,
+      )
+      .replace(
+        `user:'${ids.user}',studio:'${ids.studio}',token:'token-1'`,
+        `user:${JSON.stringify(proof.actorId)},studio:${JSON.stringify(proof.studioId)},token:${JSON.stringify(proof.token)}`,
+      )
+      .replace(
+        "const React=require(",
+        () =>
+          `window.fetch=(${createCompositionProofFetch.toString()})(${JSON.stringify(proof.apiUrl)},window.fetch.bind(window));const React=require(`,
+      )
+      .replace(
+        "Synthetic local fixture",
+        "Actual automation API; synthetic Auth and fixture-only pickers",
+      );
+  }
+  return source;
 }
 export const compositionHtml = (options) =>
   `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Workflow composition fixture</title><style>${css}</style></head><body><div id="root"></div><script>${bundleWorkflowComposition(options).replaceAll("</script", "<\\/script")}</script></body></html>`;
