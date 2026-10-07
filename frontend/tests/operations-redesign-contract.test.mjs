@@ -787,7 +787,6 @@ describe("operations behavior proof", () => {
   it("mounts the missed-class editor and the workflow catalog beside live queues", () => {
     const automations = source("src/app/(dashboard)/automations/page.tsx");
 
-
     assert.doesNotMatch(
       automations,
       /<form|<input|<select|<textarea|onChange=|type="checkbox"|role="switch"|\bfetch\s*\(|\bapi\.|\baxios\b|process\.env|isPreviewMode|useEffect|useState/,
