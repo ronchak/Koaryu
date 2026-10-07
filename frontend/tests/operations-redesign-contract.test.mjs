@@ -809,7 +809,7 @@ describe("operations behavior proof", () => {
     const operationsStyles = source("src/components/operations/operations-surface.module.css");
     assert.match(
       settings,
-      /canAccessSettings\(currentRole\) \? <AdminSettingsContent \/> : <SettingsAccessNotice \/>/,
+      /canAccessSettings\(\s*currentRole\s*\)\s*\?\s*<AdminSettingsContent\s+key\s*=\s*\{\s*JSON\.stringify\(\s*\[\s*currentUserId\s*,\s*currentStudioId\s*,\s*currentRole\s*,\s*identityGeneration\s*\]\s*\)\s*\}\s*\/>\s*:\s*<SettingsAccessNotice\s*\/>/,
     );
     assert.match(settings, /<Header title="Settings" \/>/);
     assert.doesNotMatch(settings, /Studio configuration and preferences/);
