@@ -9269,7 +9269,8 @@ LANGUAGE plpgsql SECURITY INVOKER SET search_path='' AS $$
 DECLARE key BIGINT:=pg_catalog.hashtextextended('koaryu.local-plan-clear:'||OLD.studio_id::TEXT,0);
 BEGIN
     IF NOT EXISTS(SELECT 1 FROM public.studios WHERE id=OLD.studio_id) THEN RETURN OLD; END IF;
-    IF NOT EXISTS(SELECT 1 FROM public.automation_workflow_runs WHERE studio_id=OLD.studio_id AND id=OLD.run_id AND cancel_requested_at IS NOT NULL)
+    IF NOT EXISTS(SELECT 1 FROM public.automation_workflow_runs WHERE studio_id=OLD.studio_id AND id=OLD.run_id
+        AND (cancel_requested_at IS NOT NULL OR state IN ('completed','failed','cancelled')))
         OR NOT EXISTS(SELECT 1 FROM pg_catalog.pg_locks l WHERE l.locktype='advisory' AND l.pid=pg_catalog.pg_backend_pid()
             AND l.database=(SELECT oid FROM pg_catalog.pg_database WHERE datname=current_database())
             AND l.classid=((key>>32)&4294967295)::OID AND l.objid=(key&4294967295)::OID AND l.objsubid=1
@@ -10306,3 +10307,218 @@ BEGIN
     END LOOP;
 END;
 $test_mail_privileges$;
+
+-- Operational clear owns cancellation and retention before the retained V44
+-- business delete sequence. No provider gate or sender recovery is involved.
+CREATE FUNCTION private.automation_clear_statement_fence_v1() RETURNS TRIGGER
+LANGUAGE plpgsql VOLATILE SECURITY INVOKER SET search_path='' AS $$
+DECLARE keys BIGINT[]; studios UUID[]; marker JSONB;
+BEGIN
+    -- Inspect this backend's actual bigint exclusive keys before any studio
+    -- hash lookup. Ordinary deletes without such locks need no studio scan.
+    SELECT array_agg((l.classid::BIGINT<<32)|l.objid::BIGINT)
+        INTO keys FROM pg_catalog.pg_locks l
+        WHERE l.locktype='advisory' AND l.pid=pg_catalog.pg_backend_pid()
+            AND l.database=(SELECT oid FROM pg_catalog.pg_database WHERE datname=current_database())
+            AND l.granted AND l.mode='ExclusiveLock' AND l.objsubid=1;
+    IF keys IS NULL THEN RETURN NULL; END IF;
+    SELECT array_agg(s.id ORDER BY s.id) INTO studios FROM public.studios s
+        WHERE pg_catalog.hashtextextended('koaryu.local-plan-clear:'||s.id::TEXT,0)=ANY(keys);
+    IF studios IS NULL THEN RETURN NULL; END IF;
+    IF cardinality(studios)<>1 THEN
+        RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STUDIO_BUSY';
+    END IF;
+    BEGIN
+        marker:=nullif(current_setting('koaryu.automation_clear_owner',true),'')::JSONB;
+    EXCEPTION WHEN invalid_text_representation THEN
+        RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STUDIO_BUSY';
+    END;
+    IF marker IS DISTINCT FROM jsonb_build_object('studio_id',studios[1],
+        'backend_pid',pg_catalog.pg_backend_pid(),'transaction_id',pg_catalog.pg_current_xact_id()::TEXT) THEN
+        RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STUDIO_BUSY';
+    END IF;
+    RETURN NULL;
+END $$;
+-- The full predecessor always contains billing_disputes. This statement guard
+-- fires even for an empty studio in a cached pre-installation V44 body.
+CREATE TRIGGER automation_clear_current_owner BEFORE DELETE ON public.billing_disputes
+    FOR EACH STATEMENT EXECUTE FUNCTION private.automation_clear_statement_fence_v1();
+
+CREATE FUNCTION private.clear_studio_operational_data_v2(p_studio_id UUID,p_include_platform_rows BOOLEAN DEFAULT false)
+RETURNS JSONB LANGUAGE plpgsql VOLATILE SECURITY INVOKER SET search_path='' AS $$
+DECLARE v_student_ids UUID[]; v_guardian_ids UUID[]; run_ids UUID[]; cancellation JSONB;
+    at TIMESTAMPTZ; prior_marker TEXT; effects JSONB;
+    workflows_paused INTEGER; attendance_rule_paused BOOLEAN; attendance_deliveries_cancelled INTEGER;
+    belt_test_events_deleted INTEGER; belt_test_recipients_deleted INTEGER;
+    sending_attempts_preserved INTEGER; unknown_attempts_preserved INTEGER;
+BEGIN
+    IF p_studio_id IS NULL THEN
+        RAISE EXCEPTION 'Studio operational clear requires a studio id.' USING ERRCODE='22023';
+    END IF;
+    PERFORM pg_catalog.pg_advisory_xact_lock(
+        pg_catalog.hashtextextended('koaryu.local-plan-clear:'||p_studio_id::TEXT,0));
+    PERFORM 1 FROM public.studios WHERE id=p_studio_id FOR UPDATE NOWAIT;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Studio not found for operational clear.' USING ERRCODE='P0001';
+    END IF;
+    -- Own all parent rows before observing common attempts. A callback or a
+    -- complete claim/expiry transaction may retain its locks after helper return.
+    PERFORM 1 FROM public.automation_workflows WHERE studio_id=p_studio_id ORDER BY id FOR UPDATE NOWAIT;
+    PERFORM 1 FROM public.automation_rules WHERE studio_id=p_studio_id FOR UPDATE NOWAIT;
+    PERFORM 1 FROM public.automation_workflow_runs WHERE studio_id=p_studio_id ORDER BY id FOR UPDATE NOWAIT;
+    PERFORM 1 FROM private.automation_test_email_scopes WHERE studio_id=p_studio_id ORDER BY id FOR UPDATE NOWAIT;
+    PERFORM 1 FROM public.automation_deliveries WHERE studio_id=p_studio_id ORDER BY id FOR UPDATE NOWAIT;
+    PERFORM 1 FROM private.automation_workflow_email_attempts WHERE studio_id=p_studio_id ORDER BY id FOR UPDATE NOWAIT;
+    PERFORM 1 FROM private.automation_email_attempt_reservations WHERE studio_id=p_studio_id
+        ORDER BY scope_kind,scope_id,node_id,id FOR UPDATE NOWAIT;
+    SELECT count(*) FILTER(WHERE state='sending'),count(*) FILTER(WHERE state='unknown')
+        INTO sending_attempts_preserved,unknown_attempts_preserved
+        FROM private.automation_email_attempt_reservations WHERE studio_id=p_studio_id;
+    at:=clock_timestamp();
+    UPDATE public.automation_workflows SET status='paused',revision=revision+1,updated_at=at
+        WHERE studio_id=p_studio_id AND status='active';
+    GET DIAGNOSTICS workflows_paused=ROW_COUNT;
+    UPDATE public.automation_workflow_activations SET retired_at=coalesce(retired_at,at),cancelled_at=at
+        WHERE studio_id=p_studio_id AND cancelled_at IS NULL;
+    SELECT coalesce(array_agg(id ORDER BY id),'{}'::UUID[]) INTO run_ids FROM public.automation_workflow_runs
+        WHERE studio_id=p_studio_id AND state IN ('queued','waiting','claimed','running','sending','unknown');
+    cancellation:=private.workflow_cancel_runs_v1(p_studio_id,run_ids,at,'operational_clear');
+    UPDATE public.automation_rules SET enabled=false,revision=revision+1,updated_at=at
+        WHERE studio_id=p_studio_id AND enabled;
+    attendance_rule_paused:=FOUND;
+    UPDATE public.automation_deliveries SET state='skipped',reason='rule_paused',claim_token=NULL,
+        lease_expires_at=NULL,settled_at=at,updated_at=at
+        WHERE studio_id=p_studio_id AND state IN ('queued','claimed','retry_wait');
+    GET DIAGNOSTICS attendance_deliveries_cancelled=ROW_COUNT;
+    PERFORM private.automation_test_invalidate_queued_v1(p_studio_id);
+    prior_marker:=current_setting('koaryu.automation_clear_owner',true);
+    PERFORM set_config('koaryu.automation_clear_owner',jsonb_build_object('studio_id',p_studio_id,
+        'backend_pid',pg_catalog.pg_backend_pid(),'transaction_id',pg_catalog.pg_current_xact_id()::TEXT)::TEXT,true);
+    BEGIN
+        DELETE FROM private.workflow_email_attempt_payloads WHERE studio_id=p_studio_id;
+        DELETE FROM private.workflow_email_unsubscribe_pins WHERE studio_id=p_studio_id;
+        DELETE FROM private.automation_test_email_payloads WHERE studio_id=p_studio_id;
+        DELETE FROM public.belt_test_recipients WHERE studio_id=p_studio_id;
+        GET DIAGNOSTICS belt_test_recipients_deleted=ROW_COUNT;
+        DELETE FROM public.belt_test_events WHERE studio_id=p_studio_id;
+        GET DIAGNOSTICS belt_test_events_deleted=ROW_COUNT;
+    SELECT COALESCE(array_agg(id), ARRAY[]::UUID[])
+      INTO v_student_ids
+      FROM public.students
+     WHERE studio_id = p_studio_id;
+
+    SELECT COALESCE(array_agg(id), ARRAY[]::UUID[])
+      INTO v_guardian_ids
+      FROM public.guardians
+     WHERE studio_id = p_studio_id;
+
+    IF to_regclass('public.billing_disputes') IS NOT NULL THEN
+        DELETE FROM public.billing_disputes WHERE studio_id = p_studio_id;
+    END IF;
+    IF to_regclass('public.billing_refunds') IS NOT NULL THEN
+        DELETE FROM public.billing_refunds WHERE studio_id = p_studio_id;
+    END IF;
+    IF to_regclass('public.billing_payments') IS NOT NULL THEN
+        DELETE FROM public.billing_payments WHERE studio_id = p_studio_id;
+    END IF;
+    IF to_regclass('public.billing_invoice_items') IS NOT NULL THEN
+        DELETE FROM public.billing_invoice_items WHERE studio_id = p_studio_id;
+    END IF;
+    IF to_regclass('public.billing_invoices') IS NOT NULL THEN
+        DELETE FROM public.billing_invoices WHERE studio_id = p_studio_id;
+    END IF;
+    IF to_regclass('public.student_billing_enrollments') IS NOT NULL THEN
+        DELETE FROM public.student_billing_enrollments WHERE studio_id = p_studio_id;
+    END IF;
+    IF to_regclass('public.billing_subscriptions') IS NOT NULL THEN
+        DELETE FROM public.billing_subscriptions WHERE studio_id = p_studio_id;
+    END IF;
+    IF to_regclass('public.billing_plan_programs') IS NOT NULL THEN
+        DELETE FROM public.billing_plan_programs WHERE studio_id = p_studio_id;
+    END IF;
+    IF to_regclass('public.billing_plan_prices') IS NOT NULL THEN
+        DELETE FROM public.billing_plan_prices WHERE studio_id = p_studio_id;
+    END IF;
+    IF to_regclass('public.billing_plans') IS NOT NULL THEN
+        DELETE FROM public.billing_plans WHERE studio_id = p_studio_id;
+    END IF;
+    IF to_regclass('public.billing_payers') IS NOT NULL THEN
+        DELETE FROM public.billing_payers WHERE studio_id = p_studio_id;
+    END IF;
+    IF to_regclass('public.email_usage_events') IS NOT NULL THEN
+        DELETE FROM public.email_usage_events WHERE studio_id = p_studio_id;
+    END IF;
+    IF to_regclass('public.export_jobs') IS NOT NULL THEN
+        DELETE FROM public.export_jobs WHERE studio_id = p_studio_id;
+    END IF;
+
+    IF p_include_platform_rows THEN
+        IF to_regclass('public.studio_payment_accounts') IS NOT NULL THEN
+            DELETE FROM public.studio_payment_accounts WHERE studio_id = p_studio_id;
+        END IF;
+        IF to_regclass('public.studio_subscriptions') IS NOT NULL THEN
+            DELETE FROM public.studio_subscriptions WHERE studio_id = p_studio_id;
+        END IF;
+    END IF;
+
+    DELETE FROM public.attendance WHERE studio_id = p_studio_id;
+    DELETE FROM public.promotions WHERE studio_id = p_studio_id;
+
+    IF to_regclass('public.student_program_memberships') IS NOT NULL THEN
+        DELETE FROM public.student_program_memberships WHERE studio_id = p_studio_id;
+    END IF;
+
+    DELETE FROM public.lead_activities WHERE studio_id = p_studio_id;
+    DELETE FROM public.student_import_runs WHERE studio_id = p_studio_id;
+    DELETE FROM public.leads WHERE studio_id = p_studio_id;
+
+    IF cardinality(v_student_ids) > 0 THEN
+        DELETE FROM public.student_guardians WHERE student_id = ANY(v_student_ids);
+    END IF;
+    IF cardinality(v_guardian_ids) > 0 THEN
+        DELETE FROM public.student_guardians WHERE guardian_id = ANY(v_guardian_ids);
+    END IF;
+
+    DELETE FROM public.class_sessions WHERE studio_id = p_studio_id;
+    DELETE FROM public.class_templates WHERE studio_id = p_studio_id;
+    DELETE FROM public.students WHERE studio_id = p_studio_id;
+    DELETE FROM public.guardians WHERE studio_id = p_studio_id;
+    DELETE FROM public.belt_ranks WHERE studio_id = p_studio_id;
+    DELETE FROM public.belt_ladders WHERE studio_id = p_studio_id;
+    DELETE FROM public.programs WHERE studio_id = p_studio_id;
+
+        effects:=jsonb_build_object('workflows_paused',workflows_paused,
+            'workflow_runs_cancelled',(cancellation->>'cancelled_count')::INTEGER,
+            'workflow_cancellation_intents_added',(cancellation->>'intent_count')::INTEGER,
+            'attendance_rule_paused',attendance_rule_paused,'attendance_deliveries_cancelled',attendance_deliveries_cancelled,
+            'belt_test_events_deleted',belt_test_events_deleted,'belt_test_recipients_deleted',belt_test_recipients_deleted,
+            'sending_attempts_preserved',sending_attempts_preserved,'unknown_attempts_preserved',unknown_attempts_preserved);
+        PERFORM set_config('koaryu.automation_clear_owner',coalesce(prior_marker,''),true);
+    EXCEPTION WHEN OTHERS THEN
+        PERFORM set_config('koaryu.automation_clear_owner',coalesce(prior_marker,''),true);
+        RAISE;
+    END;
+    RETURN jsonb_build_object('payload',effects);
+EXCEPTION WHEN lock_not_available THEN
+    RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STUDIO_BUSY';
+END $$;
+
+CREATE FUNCTION public.clear_studio_operational_data_v2(p_studio_id UUID,p_include_platform_rows BOOLEAN DEFAULT false)
+RETURNS JSONB LANGUAGE sql VOLATILE SECURITY INVOKER SET search_path='' AS $$
+    SELECT private.clear_studio_operational_data_v2(p_studio_id,p_include_platform_rows)
+$$;
+CREATE OR REPLACE FUNCTION public.clear_studio_operational_data_atomic(p_studio_id UUID,p_include_platform_rows BOOLEAN DEFAULT false)
+RETURNS VOID LANGUAGE plpgsql VOLATILE SECURITY INVOKER SET search_path=public,pg_temp AS $$
+BEGIN
+    PERFORM private.clear_studio_operational_data_v2(p_studio_id,p_include_platform_rows);
+END $$;
+ALTER FUNCTION private.automation_clear_statement_fence_v1() OWNER TO postgres;
+REVOKE ALL ON FUNCTION private.automation_clear_statement_fence_v1() FROM PUBLIC,anon,authenticated,service_role;
+ALTER FUNCTION private.clear_studio_operational_data_v2(UUID,BOOLEAN) OWNER TO postgres;
+REVOKE ALL ON FUNCTION private.clear_studio_operational_data_v2(UUID,BOOLEAN) FROM PUBLIC,anon,authenticated,service_role;
+GRANT EXECUTE ON FUNCTION private.clear_studio_operational_data_v2(UUID,BOOLEAN) TO service_role;
+ALTER FUNCTION public.clear_studio_operational_data_v2(UUID,BOOLEAN) OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.clear_studio_operational_data_v2(UUID,BOOLEAN) FROM PUBLIC,anon,authenticated,service_role;
+GRANT EXECUTE ON FUNCTION public.clear_studio_operational_data_v2(UUID,BOOLEAN) TO service_role;
+-- CREATE OR REPLACE preserves the old VOID default, owner and ACL.
+GRANT DELETE ON public.belt_test_recipients,public.belt_test_events TO service_role;
