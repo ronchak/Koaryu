@@ -34,6 +34,9 @@ import {
   stopAt,
   stopToward,
   storyKeyframes,
+  storyCuts,
+  cutDip,
+  type StoryCut,
   type Motion,
   type PictureRect,
   type ScrollMetrics,
@@ -172,6 +175,8 @@ export function JourneyController({ children }: JourneyControllerProps) {
     let stops: StoryStop[] = [];
     let panels: (HTMLElement | null)[] = [];
     let keyframes: SceneKeyframe[] = [];
+    let cuts: StoryCut[] = [];
+    let appliedDip = "";
     let scenes: number[] = [];
     let classY = 0;
     let pageY = 0;
@@ -254,6 +259,7 @@ export function JourneyController({ children }: JourneyControllerProps) {
         });
       });
       keyframes = storyKeyframes(stops, viewportHeight);
+      cuts = storyCuts(stops, viewportHeight);
       scenes = stops.map(({ scene }) => scene);
       classY = stops.find(({ id }) => id === "studio")?.y ?? 0;
       pageY = stops[stops.length - 1]?.y ?? 0;
@@ -443,6 +449,12 @@ export function JourneyController({ children }: JourneyControllerProps) {
       }
     };
 
+    const acrossCut = (from: number, to: number) =>
+      cuts.some((cut) => {
+        const middle = (cut.from + cut.to) / 2;
+        return (from - middle) * (to - middle) < 0;
+      });
+
     const tick = (now: number) => {
       frameRequest = 0;
       let y = window.scrollY;
@@ -466,7 +478,8 @@ export function JourneyController({ children }: JourneyControllerProps) {
       const target = progressForScroll(y, keyframes);
       if (reduced()) {
         displayed = stillFrame(target, scenes);
-      } else if (motion || Number.isNaN(displayed)) {
+      } else if (motion || Number.isNaN(displayed) || acrossCut(displayed, target)) {
+        // The camera never eases through a cut: the skipped scene stays unseen.
         displayed = target;
       } else {
         const distance = target - displayed;
@@ -480,6 +493,13 @@ export function JourneyController({ children }: JourneyControllerProps) {
       }
       applyPicture(y);
       applyReveals(y);
+      // Across a cut the art dips into the paper ground and comes back.
+      const dip = reduced() ? 0 : cutDip(cuts, y);
+      const dipOpacity = dip > 0.001 ? (1 - dip * dip * (3 - 2 * dip)).toFixed(3) : "";
+      if (dipOpacity !== appliedDip) {
+        appliedDip = dipOpacity;
+        layer.style.opacity = dipOpacity;
+      }
       setFlag("scrolled", y > 8 && !mastheadOverHills(displayed, viewBoxHeight) ? "true" : "false");
 
       // On phones the masthead steps aside while the page is read downward. It

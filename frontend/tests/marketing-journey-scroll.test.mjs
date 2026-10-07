@@ -23,6 +23,8 @@ import {
   stopAt,
   stopToward,
   storyKeyframes,
+  storyCuts,
+  cutDip,
 } from "../src/components/marketing/journey/paging-model.ts";
 import {
   LANDING_HASH_ALIASES,
@@ -209,15 +211,26 @@ describe("Stops, beats and motion", () => {
     assert.deepEqual(storyKeyframes([], H), []);
   });
 
-  it("paces the weave through its own keyframes", () => {
-    const weave = [
+  it("cuts from the clouds to the room through a dip, never playing the scene between", () => {
+    const pair = [
       { id: "the-weave", y: 0, scene: 0.685 },
-      { id: "studio", y: 2600, scene: 1 },
+      { id: "studio", y: 1900, scene: 1 },
     ];
-    const keyframes = storyKeyframes(weave, H);
-    for (const step of STORY_BEATS.studio.via) {
-      assert.ok(keyframes.some(({ scene }) => scene === step.scene));
-    }
+    const keyframes = storyKeyframes(pair, H);
+    const [cut] = storyCuts(pair, H);
+    const { at, scene } = STORY_BEATS.studio.cut;
+    assert.equal(cut.to, scene);
+    assert.equal(cut.y, 0.4 * H + (1900 - 0.6 * H - 0.4 * H) * at);
+    // The clouds hold right up to the cut, and the room is there right after it.
+    assert.equal(progressForScroll(cut.y - 1, keyframes), 0.685);
+    assert.ok(progressForScroll(cut.y + 1, keyframes) >= scene);
+    // No keyframe lands inside the weave.
+    assert.ok(!keyframes.some((frame) => frame.scene > 0.69 && frame.scene < scene));
+    // The art is gone at the cut and back before either stop.
+    assert.equal(cutDip([cut], cut.y), 1);
+    assert.equal(cutDip([cut], 0), 0);
+    assert.equal(cutDip([cut], 1900), 0);
+    assert.equal(cutDip([cut], cut.y + cut.reach / 2), 0.5);
   });
 
   it("draws a monotone, smooth curve that never overshoots a knot", () => {
@@ -317,10 +330,8 @@ describe("Copy held in place while its screen moves", () => {
     assert.ok(beatFor("product").via.some(({ scene }) => scene === 0.1));
     // ...and the flight through the door crosses the sky before the clouds lie down.
     assert.ok(beatFor("the-weave").via.some(({ scene }) => scene === 0.66));
-    // ...and the clouds lie down and weave into the floor on the way to the class,
-    // passing the finished mat and the risen room without holding on either.
-    const passage = beatFor("studio").via.map(({ scene }) => scene);
-    assert.ok(passage.includes(0.886) && passage.includes(0.958));
+    // ...and the clouds dip straight to the risen room on the way to the class.
+    assert.equal(beatFor("studio").cut.scene, 0.958);
     assert.ok(!landingPageContent.story.some(({ scene }) => scene > 0.7 && scene < 1));
     assert.ok(!landingPageContent.story.some(({ scene }) => scene === 0.1 || scene === 0.66));
   });

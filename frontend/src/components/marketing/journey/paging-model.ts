@@ -265,13 +265,19 @@ export interface StoryStop {
  * heights before the next stop, so the incoming copy rises over a finished
  * frame. `via` paces the beat in between with extra scene keyframes (fractions
  * of the beat's scroll span). `ms` is the beat's own duration when paged.
+ * `cut` (a fraction of the span) skips the scene in between: the art dips to
+ * the paper ground there and comes back on the far side of the cut.
  */
 export interface BeatSpec {
   readonly ms: number;
   readonly exit: number;
   readonly enter: number;
   readonly via?: readonly { readonly at: number; readonly scene: number }[];
+  readonly cut?: { readonly at: number; readonly scene: number };
 }
+
+/** How much of a cut beat's span the art takes to dip out, and again to come back. */
+export const CUT_DIP = 0.24;
 
 const DEFAULT_BEAT: BeatSpec = Object.freeze({ ms: 900, exit: 0.42, enter: 0.6 });
 
@@ -294,19 +300,13 @@ export const STORY_BEATS: Readonly<Record<string, BeatSpec>> = Object.freeze({
     enter: 0.5,
     via: [{ at: 0.45, scene: 0.66 }],
   },
-  // The clouds gather and lie down as strips, the kraft weaves through them,
-  // and the mat lies down as the room rises and the class sits. Paced so no
-  // stage holds still on the way.
+  // The clouds dip into the paper and the finished room comes up out of it,
+  // where the class sits down.
   studio: {
-    ms: 1900,
+    ms: 1150,
     exit: 0.4,
     enter: 0.6,
-    via: [
-      { at: 0.15, scene: 0.756 },
-      { at: 0.32, scene: 0.83 },
-      { at: 0.5, scene: 0.886 },
-      { at: 0.76, scene: 0.958 },
-    ],
+    cut: { at: 0.45, scene: 0.958 },
   },
   // The class becomes a framed picture and the page turns white. No copy moves.
   handoff: { ms: 1150, exit: 0, enter: 0 },
@@ -350,11 +350,48 @@ export function storyKeyframes(
       end = Math.max(end, middle);
     }
     push(start, from.scene);
+    if (beat.cut) {
+      const at = start + (end - start) * beat.cut.at;
+      push(at, from.scene);
+      push(at, beat.cut.scene);
+    }
     for (const step of beat.via ?? []) push(start + (end - start) * step.at, step.scene);
     push(end, to.scene);
     push(to.y, to.scene);
   }
   return keyframes;
+}
+
+export interface StoryCut {
+  /** Scroll position of the cut, and how far either side of it the art is dipped. */
+  readonly y: number;
+  readonly reach: number;
+  /** The scene on either side; the camera never travels between them. */
+  readonly from: number;
+  readonly to: number;
+}
+
+/** The cuts between stops, for the dip that hides each one. */
+export function storyCuts(stops: readonly StoryStop[], viewportHeight: number): StoryCut[] {
+  const cuts: StoryCut[] = [];
+  for (let index = 1; index < stops.length; index += 1) {
+    const from = stops[index - 1]!;
+    const to = stops[index]!;
+    const { cut, exit, enter } = beatFor(to.id);
+    if (!cut) continue;
+    const start = from.y + exit * viewportHeight;
+    const end = to.y - enter * viewportHeight;
+    const span = Math.max(1, end - start);
+    cuts.push({ y: start + span * cut.at, reach: span * CUT_DIP, from: from.scene, to: cut.scene });
+  }
+  return cuts;
+}
+
+/** How far the art is dipped into the paper at a scroll position: 0 clear, 1 gone. */
+export function cutDip(cuts: readonly StoryCut[], y: number): number {
+  let dip = 0;
+  for (const cut of cuts) dip = Math.max(dip, 1 - Math.abs(y - cut.y) / cut.reach);
+  return Math.max(0, Math.min(1, dip));
 }
 
 /** Index of the stop the position rests on, or -1 between stops. */

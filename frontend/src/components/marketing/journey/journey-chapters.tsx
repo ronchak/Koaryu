@@ -286,8 +286,8 @@ const INTERLUDES: Readonly<Record<string, number>> = {
   features: 80,
   // Through the door and across the sky, into the clouds.
   "the-weave": 110,
-  // The clouds lie down into the weave, and the weave into the room.
-  studio: 190,
+  // The clouds dip into the paper, and the room comes up out of it.
+  studio: 100,
 };
 
 /** The paged story: one composed chapter per screen, with open scroll between them. */
