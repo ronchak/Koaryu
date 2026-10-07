@@ -337,3 +337,20 @@ and same-identity token renewal. Observed sign-out, user/studio/role replacement
 USER_UPDATED, or access reset suppresses file handoff. The request releases its
 Auth listener when it settles. See [identity lifetime verification](../docs/verification/identity-lifetime.md)
 for the mounted regression coverage and its limits.
+
+## Social link previews
+
+Public pages share `/opengraph-image` (1200 × 630 PNG), with its absolute
+production URL and alt text in `src/lib/social-preview.ts`. Include the shared
+image whenever defining `openGraph` or `twitter`: Next.js replaces these nested
+metadata objects instead of deeply merging them. Twitter uses `summary_large_image`.
+
+`src/app/opengraph-image.tsx` renders the existing vector brand mark and palette
+once at build time (`force-static`), using Next.js's bundled font. It requires no
+authentication, remote asset/font fetch, or runtime image-generation service.
+After editing it, build and visually inspect the generated PNG. Run
+`npx playwright test e2e/social-preview-metadata.spec.ts --workers=1` against a
+loopback production build (`KOARYU_E2E_FRONTEND_URL` selects the origin). These
+checks also run in release-candidate CI. Existing social-platform previews may
+remain cached after a separately approved deployment; this source change does
+not invalidate their caches.

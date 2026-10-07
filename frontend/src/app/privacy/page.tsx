@@ -1,3 +1,4 @@
+import { SOCIAL_PREVIEW_IMAGE } from "@/lib/social-preview";
 import type { Metadata } from "next";
 
 import { LegalDocument } from "@/components/marketing/legal-document";
@@ -7,6 +8,7 @@ export const metadata: Metadata = {
   description: "How Koaryu handles account, studio, student, and billing information.",
   alternates: { canonical: "https://koaryu.app/privacy" },
   openGraph: {
+    images: [SOCIAL_PREVIEW_IMAGE],
     title: "Privacy Policy | Koaryu",
     description: "How Koaryu handles account, studio, student, and billing information.",
     url: "https://koaryu.app/privacy",

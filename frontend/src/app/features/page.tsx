@@ -1,3 +1,4 @@
+import { SOCIAL_PREVIEW_IMAGE } from "@/lib/social-preview";
 import type { Metadata } from "next";
 import { BreadcrumbJsonLd, PageStructuredData } from "@/components/marketing/public-pages";
 import { FeatureIndexPage } from "@/components/marketing/feature-pages";
@@ -16,6 +17,7 @@ export const metadata: Metadata = {
   description,
   alternates: { canonical: "https://koaryu.app/features" },
   openGraph: {
+    images: [SOCIAL_PREVIEW_IMAGE],
     title: "Martial Arts Studio Software Features | Koaryu",
     description,
     url: "https://koaryu.app/features",
