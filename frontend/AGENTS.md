@@ -35,6 +35,7 @@ Use this file for work under `frontend/`. Fall back to the repo root `AGENTS.md`
 - Preview smoke e2e: `cd frontend && npm run test:e2e:preview-smoke` against a running preview-mode frontend
 - Landing page mobile checks: `cd frontend && npx playwright test e2e/marketing-journey-mobile.spec.ts e2e/marketing-journey-history.spec.ts --workers=1` against a loopback frontend. Covers 12 mobile stops and 14 desktop chapters across small phones, landscape, tablet, direct guide links, visible answers, stationary swipe navigation, FAQ and history behavior.
 - Linked marketing-page checks: `cd frontend && npx playwright test e2e/marketing-pages.spec.ts --workers=1` against a loopback frontend. Covers the 11 marketing guides, permanent redirects from Explore/About/the family guide, unknown-slug 404s, useful link and download outcomes, mobile/desktop overflow, touch targets, navigation without JavaScript, local anchors, and landing/document history. Repeat with `--browser=webkit` for WebKit.
+- Social preview checks: `cd frontend && npx playwright test e2e/social-preview-metadata.spec.ts --workers=1` against a loopback frontend. Checks raw crawler HTML and the public PNG without browser JavaScript or authentication.
 - Build: `cd frontend && npm run build`
 - Analyze bundle: `cd frontend && npm run analyze`
 
