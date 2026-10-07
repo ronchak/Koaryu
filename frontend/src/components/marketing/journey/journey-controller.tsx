@@ -64,9 +64,7 @@ const MASTHEAD_DIRECTION_PX = 6;
 const FAR_SCREENS = 3.2;
 const VEIL_MS = 190;
 
-const weave = landingPageContent.story.find((chapter) => chapter.kind === "weave");
 const studio = landingPageContent.story.find((chapter) => chapter.kind === "studio");
-const THREADS = weave?.threads ?? [];
 
 /** Rail entries: every chapter, then the hand-off where the page begins. */
 export const RAIL_STOPS: readonly { id: string; label: string; title: string }[] = [
@@ -1053,12 +1051,7 @@ export function JourneyController({ children }: JourneyControllerProps) {
           <div ref={sceneLayerRef} className={styles.sceneLayer}>
             <JourneyScene ref={sceneRef} frame={frame} />
             {/* The weave is part of the picture: it takes the scene's paper grain. */}
-            <WeaveLoom
-              ref={loomRef}
-              width={layerSize.width}
-              height={layerSize.height}
-              threads={THREADS}
-            />
+            <WeaveLoom ref={loomRef} width={layerSize.width} height={layerSize.height} />
           </div>
           {/* The timber frame the story has been inside all along. */}
           <div ref={ringRef} className={styles.pictureRing} />

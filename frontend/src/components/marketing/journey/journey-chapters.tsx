@@ -183,7 +183,7 @@ function Features({ chapter }: { chapter: FeaturesContent }) {
   );
 }
 
-/** Over the loom: the threads are drawn in the art; the words say what they are. */
+/** On the gathered clouds: the words, before the clouds lie down into the weave. */
 function Weave({ chapter }: { chapter: WeaveContent }) {
   return (
     <div className={styles.weaveCopy}>

@@ -105,11 +105,10 @@ export interface FeaturesChapter extends StoryChapterBase {
   links: readonly [JourneyAction, JourneyAction];
 }
 
+/** The words rest on the gathered clouds; the weave plays on the way to the class. */
 export interface WeaveChapter extends StoryChapterBase {
   kind: "weave";
   lede: string;
-  /** The studio's scattered threads, written along the strands of the weave. */
-  threads: readonly string[];
 }
 
 /** The seated class, then the hand-off into the page. */
@@ -460,18 +459,9 @@ const story = [
     kind: "weave",
     title: "Your studio is not a spreadsheet.",
     label: "One record",
-    scene: 0.695,
+    scene: 0.685,
     ink: "dark",
     lede: "Every part of Koaryu works from the same record of each student, so the roster, the belt tracker, the follow-up queue and the billing records always agree.",
-    threads: [
-      "Students",
-      "Families",
-      "Belt ranks",
-      "Attendance",
-      "Trial leads",
-      "Schedules",
-      "Billing records",
-    ],
   },
   {
     id: "studio",

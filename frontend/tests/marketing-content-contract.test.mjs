@@ -46,7 +46,7 @@ describe("marketing content contract", () => {
         ["welcome", 0, "hero"],
         ["product", 0.288, "product"],
         ["features", 0.52, "features"],
-        ["the-weave", 0.695, "weave"],
+        ["the-weave", 0.685, "weave"],
         ["studio", 1, "studio"],
       ],
     );
@@ -58,16 +58,8 @@ describe("marketing content contract", () => {
     assertPlainJsonValue(landingPageContent);
   });
 
-  it("weaves the studio's real records and points people to the hands-on demo", () => {
-    assert.deepEqual(chapter("the-weave").threads, [
-      "Students",
-      "Families",
-      "Belt ranks",
-      "Attendance",
-      "Trial leads",
-      "Schedules",
-      "Billing records",
-    ]);
+  it("rests the one-record line on the clouds and points people to the hands-on demo", () => {
+    assert.ok(!("threads" in chapter("the-weave")));
     assert.equal(chapter("the-weave").title, "Your studio is not a spreadsheet.");
     assert.deepEqual(
       chapter("welcome").actions.map((action) => [action.label, action.href]),

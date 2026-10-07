@@ -19,7 +19,6 @@ export interface WeaveLoomHandle {
 interface WeaveLoomProps {
   readonly width: number;
   readonly height: number;
-  readonly threads: readonly string[];
 }
 
 function set(element: Element | null | undefined, name: string, value: string) {
@@ -40,7 +39,6 @@ interface LoomElements {
   readonly warps: Element[];
   readonly shadows: Element[][];
   readonly clouds: Element[];
-  readonly labels: Element[];
   readonly wefts: Element[];
   readonly slides: Element[];
   readonly reaches: Element[];
@@ -56,12 +54,12 @@ interface LoomElements {
  * wipes instead of dissolves when it hands over to the room.
  */
 export const WeaveLoom = forwardRef<WeaveLoomHandle, WeaveLoomProps>(function WeaveLoom(
-  { width, height, threads },
+  { width, height },
   ref,
 ) {
   const rawId = useId();
   const id = (name: string) => `koaryu-loom-${rawId.replace(/[^a-zA-Z0-9_-]/g, "")}-${name}`;
-  const layout = useMemo(() => loomLayout(width, height, threads), [width, height, threads]);
+  const layout = useMemo(() => loomLayout(width, height), [width, height]);
   const rootRef = useRef<HTMLDivElement>(null);
   const skyRef = useRef<HTMLDivElement>(null);
   const washRef = useRef<HTMLDivElement>(null);
@@ -95,7 +93,6 @@ export const WeaveLoom = forwardRef<WeaveLoomHandle, WeaveLoomProps>(function We
             warps,
             shadows: warps.map((group) => Array.from(group.querySelectorAll("[data-shadow]"))),
             clouds: all("[data-cloud]"),
-            labels: all("[data-label]"),
             wefts: all("[data-weft]"),
             slides: all("[data-slide]"),
             reaches: all("[data-reach]"),
@@ -103,14 +100,18 @@ export const WeaveLoom = forwardRef<WeaveLoomHandle, WeaveLoomProps>(function We
             texture: svg.querySelector("[data-texture]"),
           };
         }
+        // A new layout is a fresh render, so nothing of it has been drawn yet.
+        if (last.layout !== layout) last.frame = null;
         last.layout = layout;
-        last.frame = frame;
         const elements = last.elements;
 
         if (root.dataset.visible !== String(frame.visible)) {
           root.dataset.visible = String(frame.visible);
         }
+        // Only frames that were drawn count as drawn: a page opened on the class
+        // never drew the weave, so paging back must draw every strip.
         if (!frame.visible) return;
+        last.frame = frame;
 
         // The sky: washed in over the clouds, then lifted off the wall from the floor line up.
         setStyle(washRef.current, "opacity", String(frame.wash));
@@ -164,11 +165,6 @@ export const WeaveLoom = forwardRef<WeaveLoomHandle, WeaveLoomProps>(function We
           set(near, "transform", `translate(0 ${warp.shadow.toFixed(1)})`);
           set(elements.clouds[index], "opacity", String(warp.cloud));
         });
-        frame.labels.forEach((label, index) => {
-          const text = elements.labels[index];
-          set(text, "opacity", String(label.opacity));
-          set(text, "transform", label.shift ? `translate(${label.shift} 0)` : "");
-        });
         frame.wefts.forEach((woven, index) => {
           if (previous && previous.wefts[index] === woven) return;
           const group = elements.wefts[index];
@@ -188,7 +184,7 @@ export const WeaveLoom = forwardRef<WeaveLoomHandle, WeaveLoomProps>(function We
     [height, layout],
   );
 
-  const { visible, matTop, matBottom, shadow, warps, wefts, over, fontSize, weftTop } = layout;
+  const { visible, matTop, matBottom, shadow, warps, wefts, over, grain, weftTop } = layout;
   const left = visible.left - 160;
   const right = visible.right + 160;
   // Crossings redraw the warp a little either side of the weft, over all of the weft's own shadow.
@@ -218,16 +214,16 @@ export const WeaveLoom = forwardRef<WeaveLoomHandle, WeaveLoomProps>(function We
                 <pattern
                   id={id("fibre")}
                   patternUnits="userSpaceOnUse"
-                  width={fontSize * 8}
-                  height={fontSize * 8}
+                  width={grain}
+                  height={grain}
                 >
-                  <image href="/marketing/washi.webp" width={fontSize * 8} height={fontSize * 8} />
+                  <image href="/marketing/washi.webp" width={grain} height={grain} />
                 </pattern>
-                {warps.map((warp, row) => (
-                  <path key={warp.label} id={id(`live-${row}`)} data-live="" />
+                {warps.map((_, row) => (
+                  <path key={row} id={id(`live-${row}`)} data-live="" />
                 ))}
                 {warps.map((warp, row) => (
-                  <path key={warp.label} id={id(`strip-${row}`)} d={warpPath(layout, warp, 1)} />
+                  <path key={row} id={id(`strip-${row}`)} d={warpPath(layout, warp, 1)} />
                 ))}
                 {wefts.map((weft, column) => (
                   <clipPath key={column} id={id(`reach-${column}`)}>
@@ -264,7 +260,7 @@ export const WeaveLoom = forwardRef<WeaveLoomHandle, WeaveLoomProps>(function We
               />
 
               {warps.map((warp, row) => (
-                <g key={warp.label} data-warp={row}>
+                <g key={row} data-warp={row}>
                   <use
                     href={`#${id(`live-${row}`)}`}
                     data-shadow=""
@@ -340,21 +336,6 @@ export const WeaveLoom = forwardRef<WeaveLoomHandle, WeaveLoomProps>(function We
                 fill={`url(#${id("fibre")})`}
                 opacity="0"
               />
-
-              {warps.map((warp, row) => (
-                <text
-                  key={warp.label}
-                  data-label={row}
-                  className={styles.loomLabel}
-                  x={warp.labelX + fontSize * 0.8}
-                  y={warp.y + warp.thickness / 2}
-                  fontSize={fontSize}
-                  dominantBaseline="central"
-                  opacity="0"
-                >
-                  {warp.label}
-                </text>
-              ))}
             </svg>
           </div>
         </div>

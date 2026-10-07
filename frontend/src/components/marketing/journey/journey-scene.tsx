@@ -829,7 +829,9 @@ export function sceneState(
     const topLeft = camera.project(VIEW.doorLeft + PANEL_WIDTH - slide, VIEW.doorTop);
     const bottomRight = camera.project(VIEW.doorLeft + PANEL_WIDTH + slide, VIEW.doorBottom);
     const scale = mix(1, 1.42, easeInOut(through)) * mix(1, 0.72, easeInOut(sky));
-    const rise = mix(0, -230, easeInOut(sky)) + mix(0, -180, easeInOut(clouds));
+    // Most of the climb happens in the clouds, so the sun still hangs clear of
+    // the masthead where the words rest; the flight ends at the same height.
+    const rise = mix(0, -60, easeInOut(sky)) + mix(0, -350, easeInOut(clouds));
     state.sky = { display: "inline", opacity: String(round2(skyOpacity)) };
     state["sky-window"] = {
       x: String(round2(topLeft.x)),

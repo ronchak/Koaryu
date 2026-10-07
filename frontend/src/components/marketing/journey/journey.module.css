@@ -57,7 +57,6 @@
   --loom-shadow-near: 0.2;
   --loom-shadow-far: 0.09;
   --loom-fibre: 0.55;
-  --loom-label: #4b3a20;
   --loom-seam: rgb(61 41 16 / 26%);
 
   position: relative;
@@ -95,7 +94,6 @@
   --loom-shadow-near: 0.34;
   --loom-shadow-far: 0.16;
   --loom-fibre: 0.4;
-  --loom-label: #1d1a22;
   --loom-seam: rgb(5 4 10 / 46%);
 }
 
@@ -264,19 +262,6 @@
 
 .loomFibre {
   fill-opacity: var(--loom-fibre);
-}
-
-/* Printed on the strip in the scene's ink, so the paper shows through it. */
-.loomLabel {
-  fill: var(--loom-label);
-  font-family: inherit;
-  font-weight: 640;
-  letter-spacing: -0.005em;
-  mix-blend-mode: multiply;
-}
-
-:global(html[data-scene="night"]) .loomLabel {
-  mix-blend-mode: normal;
 }
 
 /* The timber frame the story has been inside all along; it appears as the class becomes a picture. */
@@ -844,8 +829,8 @@
 /* The clouds: the words sit in the clear sky above them */
 
 .chapter[data-kind="weave"] .frame {
-  align-items: start;
-  padding-top: calc(var(--journey-masthead) + clamp(28px, 7vh, 84px));
+  align-items: end;
+  padding-bottom: clamp(56px, 13vh, 150px);
 }
 
 .weaveCopy {

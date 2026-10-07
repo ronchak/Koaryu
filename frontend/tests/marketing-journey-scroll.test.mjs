@@ -34,6 +34,7 @@ import {
 } from "../src/components/marketing/journey/scroll-model.ts";
 import {
   LOOM_PHASES,
+  LOOM_ROWS,
   loomFrame,
   loomLayout,
   warpPath,
@@ -210,7 +211,7 @@ describe("Stops, beats and motion", () => {
 
   it("paces the weave through its own keyframes", () => {
     const weave = [
-      { id: "the-weave", y: 0, scene: 0.695 },
+      { id: "the-weave", y: 0, scene: 0.685 },
       { id: "studio", y: 2600, scene: 1 },
     ];
     const keyframes = storyKeyframes(weave, H);
@@ -316,8 +317,11 @@ describe("Copy held in place while its screen moves", () => {
     assert.ok(beatFor("product").via.some(({ scene }) => scene === 0.1));
     // ...and the flight through the door crosses the sky before the clouds lie down.
     assert.ok(beatFor("the-weave").via.some(({ scene }) => scene === 0.66));
-    // ...and the clouds lie down and weave into the floor on the way to the class.
-    assert.ok(beatFor("studio").via.some(({ scene }) => scene === 0.892));
+    // ...and the clouds lie down and weave into the floor on the way to the class,
+    // passing the finished mat and the risen room without holding on either.
+    const passage = beatFor("studio").via.map(({ scene }) => scene);
+    assert.ok(passage.includes(0.886) && passage.includes(0.958));
+    assert.ok(!landingPageContent.story.some(({ scene }) => scene > 0.7 && scene < 1));
     assert.ok(!landingPageContent.story.some(({ scene }) => scene === 0.1 || scene === 0.66));
   });
 });
@@ -400,7 +404,7 @@ describe("Scene helpers and old links", () => {
     const scenes = landingPageContent.story.map(({ scene }) => scene);
     assert.equal(stillFrame(0.04, scenes), 0);
     // The weave is a passage now; still frames rest on the clouds that carry its words.
-    assert.equal(stillFrame(0.8, scenes), 0.695);
+    assert.equal(stillFrame(0.8, scenes), 0.685);
     assert.deepEqual(
       scenes,
       [...scenes].sort((a, b) => a - b),
@@ -432,48 +436,33 @@ describe("Scene helpers and old links", () => {
 });
 
 describe("The weave", () => {
-  const threads = landingPageContent.story.find((chapter) => chapter.kind === "weave").threads;
-
-  it("lays one labelled strand per thread across the floor, on screen", () => {
+  it("lays seven strands across the floor, on screen", () => {
     for (const [width, height] of [
       [1440, 900],
       [390, 844],
       [320, 640],
       [1920, 900],
     ]) {
-      const layout = loomLayout(width, height, threads);
-      assert.equal(layout.warps.length, threads.length);
+      const layout = loomLayout(width, height);
+      assert.equal(layout.warps.length, LOOM_ROWS);
       assert.ok(layout.wefts.length >= 8, `${width}x${height} wefts`);
-      for (const warp of layout.warps) {
-        assert.ok(warp.labelX >= layout.visible.left, `${warp.label} starts on screen`);
-        assert.ok(
-          warp.labelX + warp.labelWidth <= layout.visible.right,
-          `${warp.label} ends on screen`,
-        );
-        assert.ok(
-          warp.y + warp.thickness / 2 < layout.visible.bottom,
-          `${warp.label} label visible`,
-        );
-      }
+      layout.warps.forEach((warp, row) => {
+        assert.ok(warp.y >= layout.visible.top, `${width}x${height} strand ${row} on screen`);
+        assert.ok(warp.y < layout.visible.bottom, `${width}x${height} strand ${row} visible`);
+      });
       assert.ok(layout.floorFraction > layout.matTopFraction - 0.1);
     }
   });
 
-  it("weaves over and under, keeping every label on an unbroken float", () => {
-    const layout = loomLayout(1440, 900, threads);
-    layout.warps.forEach((warp, row) => {
-      layout.wefts.forEach((weft, column) => {
-        const underLabel =
-          weft.x + weft.width > warp.labelX && weft.x < warp.labelX + warp.labelWidth;
-        if (underLabel) assert.equal(layout.over[row][column], true);
-      });
-      const crossings = layout.over[row];
-      assert.ok(crossings.includes(true) && crossings.includes(false), "over and under");
+  it("weaves a plain over-and-under, with no blank floats", () => {
+    const layout = loomLayout(1440, 900);
+    layout.over.forEach((crossings, row) => {
+      crossings.forEach((over, column) => assert.equal(over, (row + column) % 2 === 0));
     });
   });
 
   it("hides the scene's morph under a full wash and hands back to the room", () => {
-    const layout = loomLayout(1440, 900, threads);
+    const layout = loomLayout(1440, 900);
     assert.equal(loomFrame(0.7, layout).visible, false);
     const woven = loomFrame(0.892, layout);
     assert.equal(woven.wash, 1);
@@ -483,18 +472,15 @@ describe("The weave", () => {
     assert.ok(
       woven.warps.every(({ settle, cloud, slide }) => settle === 1 && cloud === 0 && slide === 0),
     );
-    assert.ok(woven.labels.every(({ opacity }) => opacity === 1));
     // Fully covered while the scene shuffles its planks.
     for (const p of [0.802, 0.85, 0.89]) assert.equal(loomFrame(p, layout).wash, 1);
-    // The names stay printed on the mat as it lies down.
-    const lying = loomFrame(0.92, layout);
-    assert.ok(lying.lie > 0 && lying.labels.every(({ opacity }) => opacity === 1));
+    assert.ok(loomFrame(0.92, layout).lie > 0);
     assert.equal(loomFrame(LOOM_PHASES.floor[1], layout).visible, false);
     assert.match(warpPath(layout, layout.warps[0], 1), /^M/);
   });
 
   it("is cut paper: hand-cut edges, flat strips, no rounded ends", () => {
-    const layout = loomLayout(1440, 900, threads);
+    const layout = loomLayout(1440, 900);
     for (const warp of layout.warps) {
       assert.ok(
         warp.cutTop.some((cut) => cut !== 0),
@@ -512,7 +498,7 @@ describe("The weave", () => {
   });
 
   it("hands over to the room with wipes, never a dissolve", () => {
-    const layout = loomLayout(1440, 900, threads);
+    const layout = loomLayout(1440, 900);
     let wall = Number.POSITIVE_INFINITY;
     let floor = Number.NEGATIVE_INFINITY;
     for (let p = LOOM_PHASES.lie[0]; p < LOOM_PHASES.floor[1]; p += 0.002) {

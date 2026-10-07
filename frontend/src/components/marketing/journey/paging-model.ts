@@ -294,16 +294,18 @@ export const STORY_BEATS: Readonly<Record<string, BeatSpec>> = Object.freeze({
     enter: 0.5,
     via: [{ at: 0.45, scene: 0.66 }],
   },
-  // The clouds lie down and the threads weave through each other, then the
-  // woven floor lies down, the room rises and the class sits.
+  // The clouds gather and lie down as strips, the kraft weaves through them,
+  // and the mat lies down as the room rises and the class sits. Paced so no
+  // stage holds still on the way.
   studio: {
-    ms: 2000,
+    ms: 1900,
     exit: 0.4,
     enter: 0.6,
     via: [
-      { at: 0.12, scene: 0.768 },
-      { at: 0.36, scene: 0.83 },
-      { at: 0.6, scene: 0.892 },
+      { at: 0.15, scene: 0.756 },
+      { at: 0.32, scene: 0.83 },
+      { at: 0.5, scene: 0.886 },
+      { at: 0.76, scene: 0.958 },
     ],
   },
   // The class becomes a framed picture and the page turns white. No copy moves.
