@@ -15,10 +15,12 @@ from test_automation_email import email_settings
 from test_automation_email_credentials import CLIENT_ID, FakeCredentialDatabase, credential_state
 
 from app.db.supabase import close_supabase_client
+from app.schemas.workflow_management import WorkflowAvailability
 from app.services import release_schema_readiness as readiness
 from app.services import workflow_capabilities as capabilities
 from app.services.automation_email import email_delivery_status
 from app.services.automation_email_credentials import PROVIDER_KEY, CredentialCodec
+from app.services.automation_sender_status import SENDER_STATUS_RPC
 
 ACTOR = "10000000-0000-0000-0000-000000000001"
 OTHER_ACTOR = "10000000-0000-0000-0000-000000000002"
@@ -96,6 +98,7 @@ def capability_case(**settings_changes):
     rows = {
         capabilities.RELEASE_PREFLIGHT_RPC: exact_preflight_row(),
         V38: guarded_preflight(),
+        SENDER_STATUS_RPC: {"payload": {"mode": "ready", "reason": None}},
     }
     user = auth_user()
     auth_calls = []
@@ -390,6 +393,8 @@ def test_pinned_sdk_parses_responses_and_rejects_malformed_provider_data(fault):
             return httpx.Response(200, json=payload)
         name = request.url.path.rsplit("/", 1)[-1]
         assert request.method == "POST"
+        if name == SENDER_STATUS_RPC:
+            return httpx.Response(200, json={"payload": {"mode": "ready", "reason": None}})
         if name == "get_automation_email_credential_v1":
             return httpx.Response(200, json={} if fault == "credential_shape" else credential)
         if name == capabilities.RELEASE_PREFLIGHT_RPC:
@@ -418,6 +423,110 @@ def test_pinned_sdk_parses_responses_and_rejects_malformed_provider_data(fault):
     assert result["capabilities"]["can_test_email"] is (fault is None)
     assert result["capabilities"]["can_start"] is (fault is None or fault.startswith("auth_"))
     assert "synthetic-private-detail" not in json.dumps(result)
-    assert not any(
-        "send" in request.url.path or "token" in request.url.path for request in requests
+    assert all(
+        request.url.path.rsplit("/", 1)[-1]
+        in {
+            ACTOR,
+            SENDER_STATUS_RPC,
+            "get_automation_email_credential_v1",
+            V38,
+            capabilities.RELEASE_PREFLIGHT_RPC,
+        }
+        for request in requests
     )
+
+
+@pytest.mark.parametrize("worker", [False, True])
+@pytest.mark.parametrize("recipient", ["allowed", "excluded", "unverified", "mismatched"])
+@pytest.mark.parametrize(
+    "mode,code,public_reason,copy",
+    [
+        ("ready", None, None, None),
+        (
+            "cooldown",
+            "provider_throttled",
+            "unavailable",
+            "Email sending is temporarily paused; a test email may check recovery.",
+        ),
+        (
+            "auth_blocked",
+            "authentication_required",
+            "authentication_required",
+            "Normal email is blocked. Check sender setup, then send a test email.",
+        ),
+        (
+            "auth_blocked",
+            "sender_rejection_unclassified",
+            "unavailable",
+            "Normal email is blocked after a provider rejection. Check sender setup, then send a test email.",
+        ),
+        (None, None, "unavailable", "Email sender status is unavailable."),
+    ],
+)
+def test_current_gate_recovery_formula_and_truthful_copy(
+    worker, recipient, mode, code, public_reason, copy
+):
+    settings, client, rows, user, auth_calls = capability_case()
+    settings.AUTOMATION_WORKER_ENABLED = worker
+    rows[SENDER_STATUS_RPC] = {"payload": {"mode": mode, "reason": code}} if mode else None
+    if recipient == "excluded":
+        user.email = "excluded@example.com"
+    elif recipient == "unverified":
+        user.email_confirmed_at = None
+    elif recipient == "mismatched":
+        user.id = OTHER_ACTOR
+    result = capabilities.resolve_workflow_capabilities(client, settings, ACTOR)
+    WorkflowAvailability.model_validate(result)
+    assert result["delivery_status"]["configured"] is True
+    assert result["delivery_status"]["can_enable"] is (mode == "ready")
+    assert result["delivery_status"]["reason"] == public_reason
+    action = result["capabilities"]
+    assert action["can_start"] is (mode == "ready" and worker)
+    assert action["can_test_email"] is (mode is not None and recipient == "allowed")
+    if mode == "ready":
+        parts = []
+        if not worker:
+            parts.append("Workflow scheduling is disabled.")
+        if recipient != "allowed":
+            parts.append("Test email is unavailable for this account or recipient mode.")
+        assert action["disabled_reason"] == (" ".join(parts) or None)
+    else:
+        if mode is not None and recipient != "allowed":
+            copy += " Test email is also unavailable for this account or recipient mode."
+        assert action["disabled_reason"] == copy
+    assert auth_calls == ([ACTOR] if mode is not None else [])
+    names = [name for name, _ in client.calls]
+    assert names.count(SENDER_STATUS_RPC) == 1
+    assert names.count("get_automation_email_credential_v1") == 1
+    assert set(names) <= {
+        SENDER_STATUS_RPC,
+        "get_automation_email_credential_v1",
+        V38,
+        capabilities.RELEASE_PREFLIGHT_RPC,
+    }
+
+
+@pytest.mark.parametrize("mode", ["cooldown", "auth_blocked"])
+@pytest.mark.parametrize(
+    "fault", ["schema", "disabled", "provider", "missing", "corrupt", "config"]
+)
+def test_known_recovery_gate_does_not_bypass_prerequisites(mode, fault):
+    settings, client, rows, _, calls = capability_case()
+    rows[SENDER_STATUS_RPC] = {"payload": {"mode": mode, "reason": "authentication_required"}}
+    if fault == "schema":
+        rows[V38] = None
+    elif fault == "disabled":
+        settings.EMAIL_SEND_ENABLED = False
+    elif fault == "provider":
+        settings.EMAIL_PROVIDER = "disabled"
+    elif fault == "missing":
+        client.ciphertext, client.revision = None, 0
+    elif fault == "corrupt":
+        client.ciphertext = "invalid-ciphertext"
+    else:
+        settings.EMAIL_GRAPH_CLIENT_ID = "invalid"
+    result = capabilities.resolve_workflow_capabilities(client, settings, ACTOR)
+    WorkflowAvailability.model_validate(result)
+    assert result["capabilities"]["can_start"] is False
+    assert result["capabilities"]["can_test_email"] is False
+    assert calls == []

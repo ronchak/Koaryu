@@ -17,6 +17,7 @@ from app.api.v1.endpoints import (
     workflow_management,
     workflow_runs,
     workflow_simulation,
+    workflow_test_email,
 )
 from app.main import app
 from app.schemas.workflow import (
@@ -91,6 +92,16 @@ APPROVED_ROUTES = {
         "post": workflow_simulation.simulate_workflow
     },
 }
+APPROVED_ROUTES.update(
+    {
+        "/automations/workflows/{workflow_id}/test-email": {
+            "post": workflow_test_email.test_workflow_email
+        },
+        "/automations/test-deliveries/{test_delivery_id}": {
+            "get": workflow_test_email.get_test_email
+        },
+    }
+)
 LEGACY_RESPONSES = [
     ("/automations/missed-class", "get", "200", "MissedClassSettingsResponse"),
     ("/automations/missed-class", "put", "200", "MissedClassSettingsResponse"),
@@ -226,8 +237,8 @@ def test_operation_readback_exposes_only_accepted_command_variants(openapi):
         }
     )
     assert acknowledgment["properties"]["state"]["const"] == "queued"
-    assert "WorkflowTestEmailRequest" not in openapi["components"]["schemas"]
-    assert "WorkflowTestEmailResponse" not in openapi["components"]["schemas"]
+    assert "WorkflowTestEmailRequest" in openapi["components"]["schemas"]
+    assert "WorkflowTestEmailResponse" in openapi["components"]["schemas"]
 
 
 def test_real_graph_requests_and_responses_keep_typed_configs(openapi):

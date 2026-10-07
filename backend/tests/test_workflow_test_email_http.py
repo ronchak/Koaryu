@@ -1,4 +1,4 @@
-"""Unmounted real HTTP handlers backed only by synthetic SDK and mail transports."""
+"""Guarded HTTP handlers backed only by synthetic SDK and mail transports."""
 
 import json
 from types import SimpleNamespace
@@ -481,7 +481,7 @@ def test_http_private_success_fields_never_appear_in_response(api):
         assert secret not in response.text
 
 
-def test_unmounted_router_has_exact_public_openapi_contract(api):
+def test_guarded_router_has_exact_public_openapi_contract(api):
     document = api.client.get("/openapi.json").json()
     schemas = document["components"]["schemas"]
     expected = {

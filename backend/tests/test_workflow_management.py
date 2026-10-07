@@ -822,10 +822,10 @@ def test_malformed_or_contradictory_capabilities_never_enable_start(
 
 def test_actual_capability_dependency_fails_closed_without_ready_schema(monkeypatch):
     # Exercise the actual dependency in addition to mocked-boundary cases.
-    from app.services import workflow_capabilities
+    from app.services import automation_sender_status
 
     monkeypatch.setattr(
-        workflow_capabilities,
+        automation_sender_status,
         "email_delivery_status",
         lambda *_: deepcopy(READY["delivery_status"]),
     )
@@ -1334,3 +1334,23 @@ def test_test_email_receipt_is_reachable_through_actual_installed_sdk():
         assert response.result.model_dump(mode="json") == acknowledgment
     finally:
         client.aclose()
+
+
+@pytest.mark.parametrize("mode", ["test", "live"])
+@pytest.mark.parametrize("reason", ["authentication_required", "unavailable"])
+def test_recovery_test_availability_accepts_configured_closed_sender(mode, reason):
+    from app.schemas.workflow_management import WorkflowAvailability
+
+    value = deepcopy(READY)
+    value["delivery_status"].update(mode=mode, can_enable=False, reason=reason)
+    value["capabilities"].update(can_start=False, disabled_reason="Normal email is blocked.")
+    value["scheduler"]["enabled"] = False
+    assert WorkflowAvailability.model_validate(value).capabilities.can_test_email is True
+    for change in ({"configured": False}, {"mode": "disabled"}):
+        invalid = deepcopy(value)
+        invalid["delivery_status"].update(change)
+        with pytest.raises(ValueError):
+            WorkflowAvailability.model_validate(invalid)
+    value["capabilities"]["can_start"] = True
+    with pytest.raises(ValueError):
+        WorkflowAvailability.model_validate(value)

@@ -11,6 +11,7 @@ from test_automation_email import email_settings
 from test_automation_email_credentials import credential_state
 from test_workflow_capabilities import V38, exact_preflight_row, guarded_preflight
 
+from app.schemas.automation import MissedClassRuleUpdate
 from app.services import automation_service as service
 from app.services.automation_email import (
     DeliveryResult,
@@ -22,6 +23,7 @@ from app.services.automation_email_credentials import (
     CredentialCodec,
     CredentialEnvelope,
 )
+from app.services.automation_sender_status import SENDER_STATUS_RPC, EmailDeliveryObservation
 from app.services.microsoft_graph_email import PreparedEmailSender
 from app.services.workflow_capabilities import RELEASE_PREFLIGHT_RPC
 from tests.fakes.supabase import TableBackedSupabase
@@ -1118,7 +1120,9 @@ def test_legacy_due_probe_uses_sql_grant_and_exact_prepared_handle(runner, monke
 
 def test_legacy_rule_enable_still_requires_can_enable(runner, monkeypatch):
     monkeypatch.setattr(
-        service, "email_delivery_status", lambda *_: {"configured": True, "can_enable": False}
+        service,
+        "observe_email_delivery_status",
+        lambda *_: EmailDeliveryObservation({"configured": True, "can_enable": False}, None),
     )
     with pytest.raises(HTTPException) as caught:
         service.AutomationService(runner.database, runner.settings).save_rule(
@@ -1196,3 +1200,72 @@ def test_normal_preparation_still_rejects_auth_blocked_before_shared_completion(
         )
     transport.prepare.assert_not_called()
     assert [name for name, _ in database.executed] == ["claim_automation_sender_preparation_v1"]
+
+
+@pytest.mark.parametrize(
+    "mode,code,reason",
+    [
+        ("ready", None, None),
+        ("cooldown", "provider_throttled", "unavailable"),
+        ("auth_blocked", "authentication_required", "authentication_required"),
+        ("auth_blocked", "sender_rejection_unclassified", "unavailable"),
+        (None, None, "unavailable"),
+    ],
+)
+def test_attendance_public_status_and_enable_interlock_use_current_gate(runner, mode, code, reason):
+    db = runner.database
+    db.handlers[SENDER_STATUS_RPC] = {"payload": {"mode": mode, "reason": code}}
+    db.handlers["get_missed_class_automation_rule_v1"] = {"rule": None}
+    admin = service.AutomationService(db, runner.settings)
+    result = admin.get_rule("studio", "actor")
+    assert result.delivery_status.configured is True
+    assert result.delivery_status.can_enable is (mode == "ready")
+    assert result.delivery_status.reason == reason
+    assert [name for name, _ in db.executed] == [
+        "get_missed_class_automation_rule_v1",
+        "get_automation_email_credential_v1",
+        SENDER_STATUS_RPC,
+    ]
+    rule = result.rule.model_dump()
+    db.handlers["save_missed_class_automation_rule_v1"] = lambda p: {
+        "rule": {**rule, "enabled": p["p_enabled"], "revision": 1}
+    }
+    command = MissedClassRuleUpdate(
+        **{key: value for key, value in rule.items() if key not in {"revision", "updated_at"}},
+        expected_revision=0,
+    )
+    command.enabled = True
+    db.executed.clear()
+    if mode == "ready":
+        assert admin.save_rule("studio", "actor", command).rule.enabled is True
+    else:
+        with pytest.raises(HTTPException) as caught:
+            admin.save_rule("studio", "actor", command)
+        assert caught.value.status_code == 409
+        assert [name for name, _ in db.executed] == [
+            "get_automation_email_credential_v1",
+            SENDER_STATUS_RPC,
+        ]
+    db.executed.clear()
+    command.enabled = False
+    saved = admin.save_rule("studio", "actor", command)
+    assert saved.rule.enabled is False
+    assert saved.delivery_status.reason == reason
+    assert [name for name, _ in db.executed] == [
+        "get_automation_email_credential_v1",
+        SENDER_STATUS_RPC,
+        "save_missed_class_automation_rule_v1",
+    ]
+    runner.prepare.assert_not_called()
+    runner.send.assert_not_called()
+
+
+def test_ordinary_preparation_never_reads_advisory_public_sender_status(runner):
+    runner.database.handlers[SENDER_STATUS_RPC] = AssertionError(
+        "public status must not gate preparation"
+    )
+    assert_counts(runner.run(limit=1), processed=1, accepted=1)
+    names = [name for name, _ in runner.database.executed]
+    assert SENDER_STATUS_RPC not in names
+    assert "claim_automation_sender_preparation_v1" in names
+    runner.prepare.assert_called_once()

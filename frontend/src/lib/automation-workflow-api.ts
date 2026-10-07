@@ -159,7 +159,8 @@ export function assertWorkflowCatalog(value: unknown): asserts value is Workflow
   if (
     (value.capabilities.can_start &&
       (!value.delivery_status.can_enable || !value.scheduler.enabled)) ||
-    (value.capabilities.can_test_email && !value.delivery_status.can_enable) ||
+    (value.capabilities.can_test_email &&
+      (!value.delivery_status.configured || value.delivery_status.mode === "disabled")) ||
     (value.delivery_status.can_enable &&
       (!value.delivery_status.configured ||
         value.delivery_status.mode === "disabled" ||

@@ -320,7 +320,6 @@ generator = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(generator)
 before = generator.render_contracts()
 from app.main import app
-from app.api.v1.endpoints import workflow_test_email
 from fastapi.routing import iter_route_contexts
 paths = (
     "/api/v1/automations/workflows/{workflow_id}/simulate",
@@ -329,12 +328,20 @@ paths = (
 )
 assert set(app.openapi()["paths"][paths[0]]) == {"post"}
 assert sum(route.path == paths[0] for route in iter_route_contexts(app.routes)) == 1
-assert all(path not in app.openapi()["paths"] for path in paths[1:])
-app.include_router(workflow_test_email.router, prefix="/api/v1")
-app.openapi_schema = None
+assert all(sum(route.path == path for route in iter_route_contexts(app.routes)) == 1 for path in paths)
 assert all(path in app.openapi()["paths"] for path in paths)
+workflow_extras = {
+    ("app.schemas.workflow_simulation", "WorkflowSimulationRequest", "validation"),
+    ("app.schemas.workflow_simulation", "WorkflowSimulationResponse", "serialization"),
+    ("app.schemas.workflow_test_email", "WorkflowTestEmailRequest", "validation"),
+    ("app.schemas.workflow_test_email", "WorkflowTestEmailResponse", "serialization"),
+}
+assert workflow_extras <= set(generator.EXTRA_PYDANTIC_SCHEMA_MODELS)
+generator.EXTRA_PYDANTIC_SCHEMA_MODELS = tuple(
+    entry for entry in generator.EXTRA_PYDANTIC_SCHEMA_MODELS if entry not in workflow_extras
+)
 assert generator.render_contracts() == before
-assert generator.render_contracts() == before
+assert generator.render_contracts() == generator.TARGET.read_text()
 print("Mounted aliases are byte-identical.")
 """,
         ],

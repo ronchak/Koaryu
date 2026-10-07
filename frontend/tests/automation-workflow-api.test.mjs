@@ -885,3 +885,34 @@ test("already strict command, reason and operator enum checks continue rejecting
     assert.throws(() => assertWorkflowCatalog(response), unavailable);
   }
 });
+
+test("configured recovery test capability survives a closed sender and disabled worker", async () => {
+  for (const mode of ["test", "live"]) {
+    for (const reason of ["authentication_required", "unavailable"]) {
+      const response = enumCatalog();
+      response.delivery_status = {
+        ...response.delivery_status,
+        mode,
+        configured: true,
+        can_enable: false,
+        reason,
+      };
+      response.scheduler.enabled = false;
+      response.capabilities = {
+        can_start: false,
+        can_test_email: true,
+        disabled_reason: "Normal email is blocked.",
+      };
+      assert.doesNotThrow(() => assertWorkflowCatalog(response));
+      globalThis.fetch = async () => Response.json(response);
+      assert.deepEqual(await workflowApi.catalog(token), response);
+      for (const change of [{ configured: false }, { mode: "disabled" }]) {
+        const invalid = structuredClone(response);
+        Object.assign(invalid.delivery_status, change);
+        assert.throws(() => assertWorkflowCatalog(invalid), unavailable);
+      }
+      response.capabilities.can_start = true;
+      assert.throws(() => assertWorkflowCatalog(response), unavailable);
+    }
+  }
+});

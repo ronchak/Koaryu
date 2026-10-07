@@ -9,9 +9,9 @@ from uuid import UUID
 
 from app.services.automation_email import (
     delivery_configuration,
-    email_delivery_status,
     normalize_email_address,
 )
+from app.services.automation_sender_status import observe_email_delivery_status
 from app.services.generated_release_readiness import RELEASE_PREFLIGHT_RPC
 from app.services.release_schema_readiness import validate_release_schema_preflight
 from app.services.supabase_rpc import execute_required_rpc
@@ -99,22 +99,44 @@ def resolve_workflow_capabilities(client: Any, settings: Any, actor_id: Any) -> 
     This synchronous helper creates no client, refreshes no credential, and sends
     nothing. The test-mail owner must recheck identity immediately before sending.
     """
-    delivery = email_delivery_status(settings, client)
+    observation = observe_email_delivery_status(settings, client)
+    delivery, gate = observation.delivery_status, observation.gate
     ready = _schema_ready(client)
     worker_enabled = getattr(settings, "AUTOMATION_WORKER_ENABLED", False) is True
     sender_ready = delivery.get("can_enable") is True
     can_start = ready and sender_ready and worker_enabled
-    can_test_email = ready and sender_ready and _verified_test_recipient(client, settings, actor_id)
+    locally_ready = delivery.get("configured") is True and delivery.get("mode") in {"test", "live"}
+    can_test_email = (
+        ready
+        and locally_ready
+        and gate is not None
+        and _verified_test_recipient(client, settings, actor_id)
+    )
+    test_unavailable = "Test email is unavailable for this account or recipient mode."
     if not ready:
         reason = "Workflow setup is unavailable."
-    elif not sender_ready:
+    elif not locally_ready:
         reason = "Email sending is unavailable."
-    elif not worker_enabled and not can_test_email:
-        reason = "Workflow scheduling and test email are unavailable."
+    elif gate is None:
+        reason = "Email sender status is unavailable."
+    elif gate.mode != "ready":
+        if gate.mode == "cooldown":
+            reason = "Email sending is temporarily paused; a test email may check recovery."
+        elif gate.reason == "sender_rejection_unclassified":
+            reason = (
+                "Normal email is blocked after a provider rejection. "
+                "Check sender setup, then send a test email."
+            )
+        else:
+            reason = "Normal email is blocked. Check sender setup, then send a test email."
+        if not can_test_email:
+            reason += " Test email is also unavailable for this account or recipient mode."
     elif not worker_enabled:
         reason = "Workflow scheduling is disabled."
+        if not can_test_email:
+            reason += " " + test_unavailable
     elif not can_test_email:
-        reason = "Test email requires an available verified account email."
+        reason = test_unavailable
     else:
         reason = None
     return {

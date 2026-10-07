@@ -26,6 +26,7 @@ from app.api.v1.endpoints import (
     workflow_management,
     workflow_runs,
     workflow_simulation,
+    workflow_test_email,
 )
 
 router = APIRouter()
@@ -39,6 +40,7 @@ router.include_router(automations.worker_router)
 router.include_router(workflow_management.router)
 router.include_router(workflow_runs.router)
 router.include_router(workflow_simulation.router)
+router.include_router(workflow_test_email.router)
 router.include_router(dashboard.router)
 router.include_router(demo.router)
 router.include_router(platform_billing.router)

@@ -41,6 +41,7 @@ from app.services.automation_email import (
     sender_identity_binding,
 )
 from app.services.automation_email_credentials import PROVIDER_KEY
+from app.services.automation_sender_status import observe_email_delivery_status
 from app.services.microsoft_graph_email import PreparedEmailSender
 from app.services.studio_scope import get_platform_subscription_access
 
@@ -109,13 +110,16 @@ class AutomationService:
         ):
             raise HTTPException(503, UNAVAILABLE_DETAIL)
         return self._settings_response(
-            result["rule"], email_delivery_status(self.settings, self.supabase)
+            result["rule"],
+            observe_email_delivery_status(self.settings, self.supabase).delivery_status,
         )
 
     def save_rule(
         self, studio_id: str, actor_id: str, data: MissedClassRuleUpdate
     ) -> MissedClassSettingsResponse:
-        delivery_status = email_delivery_status(self.settings, self.supabase)
+        delivery_status = observe_email_delivery_status(
+            self.settings, self.supabase
+        ).delivery_status
         if data.enabled and delivery_status.get("can_enable") is not True:
             raise HTTPException(
                 409, "Email delivery must be ready before enabling this automation."

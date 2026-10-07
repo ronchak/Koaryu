@@ -343,7 +343,7 @@ class WorkflowAvailability(WorkflowManagementModel):
             raise ValueError("Invalid workflow delivery status.")
         if capabilities.can_start and (not delivery.can_enable or not self.scheduler.enabled):
             raise ValueError("Invalid workflow start capability.")
-        if capabilities.can_test_email and not delivery.can_enable:
+        if capabilities.can_test_email and (not delivery.configured or delivery.mode == "disabled"):
             raise ValueError("Invalid workflow test capability.")
         if (capabilities.disabled_reason is None) != (
             capabilities.can_start and capabilities.can_test_email

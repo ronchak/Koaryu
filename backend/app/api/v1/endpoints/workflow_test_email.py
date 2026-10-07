@@ -1,4 +1,4 @@
-"""Unmounted synthetic test routes pending Core's SQL and readiness proofs."""
+"""Guarded synthetic test routes; actual SQL composition proof remains pending."""
 
 import time
 from functools import partial
