@@ -28,7 +28,7 @@ from tests.fakes.supabase import FakeTableQuery, TableBackedSupabase
 
 ROOT_DIR = Path(__file__).resolve().parents[3]
 MANIFEST_PATH = ROOT_DIR / "performance" / "dashboard-summary-budget.json"
-FIXTURE_REVISION = "dashboard-summary-endpoint-fixture-v2"
+FIXTURE_REVISION = "dashboard-summary-endpoint-fixture-v3"
 STUDIO_ID = "fixture-studio"
 
 
@@ -282,6 +282,8 @@ def build_tables(cardinalities: dict[str, int]) -> dict[str, list[dict[str, Any]
     for index, row in enumerate(tables["attendance"]):
         row["student_id"] = students[index % student_count]["id"]
         row["session_id"] = tables["class_sessions"][index % len(tables["class_sessions"])]["id"]
+    for row in tables["leads"]:
+        row.update(first_name="Fixture", last_name="Lead", created_at="2026-01-01T00:00:00Z")
     tables["student_program_memberships"] = [
         {
             "id": f"membership-{index}",
@@ -368,7 +370,9 @@ def measure_profile(profile: str, git_sha: str) -> dict[str, Any]:
         nonlocal serialized_bytes
         response = Response()
         started = time.perf_counter()
-        payload = await get_dashboard_summary(response, "fixture-user", STUDIO_ID, supabase)
+        payload = await get_dashboard_summary(
+            response, "fixture-user", STUDIO_ID, supabase, include_follow_ups=True
+        )
         encoded = payload.model_dump_json().encode()
         stage_durations.append((time.perf_counter() - started) * 1000)
         serialized_bytes += len(encoded)

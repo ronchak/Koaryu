@@ -431,11 +431,12 @@ describe("privacy-safe performance evidence", () => {
     assert.equal(classifyResource("https://koaryu.app/api/support/tickets/private"), null);
     assert.deepEqual(
       sanitizeServerTiming(
-        "koaryu_summary_context;dur=2, koaryu_summary_facts;dur=3, koaryu_summary_total;dur=12.4, private;desc=customer@example.test, customer_123;dur=9",
+        "koaryu_summary_context;dur=2, koaryu_summary_facts;dur=3, koaryu_summary_lead_follow_ups;dur=1.5, koaryu_summary_total;dur=12.4, private;desc=customer@example.test, customer_123;dur=9",
       ),
       [
         { name: "koaryu_summary_context", duration_ms: 2 },
         { name: "koaryu_summary_facts", duration_ms: 3 },
+        { name: "koaryu_summary_lead_follow_ups", duration_ms: 1.5 },
         { name: "koaryu_summary_total", duration_ms: 12.4 },
       ],
     );
