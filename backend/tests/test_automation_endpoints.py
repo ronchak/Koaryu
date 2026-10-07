@@ -329,6 +329,13 @@ def test_unsubscribe_get_is_static_nonmutating_with_exact_script_csp(api):
     assert "location.hash.slice(1)" in script and "history.replaceState" in script
     assert 'method="post"' in response.text and 'type="hidden"' in response.text
     assert "Confirm unsubscribe</button>" in response.text
+    assert "<title>Unsubscribe from studio automation emails</title>" in response.text
+    assert "<h1>Unsubscribe from studio automation emails</h1>" in response.text
+    assert (
+        "Confirm to stop all current and future automation emails from this one studio "
+        "to the recipient email address that received this email. "
+        "This includes missed-class reminders."
+    ) in response.text
     assert response.headers["cache-control"] == "no-store"
     assert response.headers["referrer-policy"] == "no-referrer"
     assert "https://" not in response.text
@@ -346,6 +353,11 @@ def test_unsubscribe_post_valid_invalid_missing_and_repeat_are_generic(api):
     assert {r.status_code for r in responses} == {200}
     assert len({r.text for r in responses}) == 1
     assert token not in responses[0].text
+    assert "<title>Studio automation email preference</title>" in responses[0].text
+    assert (
+        "If the link was valid, all current and future automation emails from this studio "
+        "to the recipient email address are now unsubscribed."
+    ) in responses[0].text
     assert [params["p_token"] for _, params in database.rpc_calls] == [token, token, "invalid", ""]
     assert all(r.headers["cache-control"] == "no-store" for r in responses)
     client.post(OPTOUT + "?token=" + token, json={"token": token, "recipient": "other@example.com"})
@@ -455,7 +467,10 @@ def test_unsubscribe_invalid_fragment_has_accessible_error_and_disabled_button(a
     assert 'id="confirm" type="submit" disabled' in response.text
     assert 'id="link-error" role="status" aria-live="polite"' in response.text
     assert "/^[a-f0-9]{64}$/.test(token)" in response.text
-    assert "This unsubscribe link is missing or invalid" in response.text
+    assert (
+        "This unsubscribe link is missing or invalid. Please open the link from your email."
+        in response.text
+    )
     assert database.rpc_calls == []
 
 
@@ -466,6 +481,7 @@ def test_unsubscribe_database_fault_has_private_generic_page_and_headers(api):
     response = client.post(OPTOUT, data={"token": token})
     assert response.status_code == 503
     assert token not in response.text and "private DB text" not in response.text
+    assert "<title>Studio automation email preference</title>" in response.text
     assert response.headers["cache-control"] == "no-store"
     assert response.headers["referrer-policy"] == "no-referrer"
 

@@ -233,9 +233,11 @@ def assemble_plain_text_email(
     html = _plain_text_html(body)
     if unsubscribe_url is not None:
         url = _safe_https_url(unsubscribe_url, allow_fragment=True)
-        body += "\n\nUnsubscribe from these reminders: " + url
+        body += "\n\nUnsubscribe from this studio's automation emails: " + url
         html += (
-            '<p><a href="' + escape(url, quote=True) + '">Unsubscribe from these reminders</a></p>'
+            '<p><a href="'
+            + escape(url, quote=True)
+            + "\">Unsubscribe from this studio's automation emails</a></p>"
         )
     return EmailContent(subject=subject, text_body=body, html_body=html)
 

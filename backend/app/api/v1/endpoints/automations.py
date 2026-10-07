@@ -117,7 +117,7 @@ _UNSUBSCRIBE_SCRIPT = (
     'document.getElementById("token").value=token;'
     'document.getElementById("confirm").disabled=false;'
     '}else{document.getElementById("link-error").textContent='
-    '"This unsubscribe link is missing or invalid. Please open the link from your reminder email.";}'
+    '"This unsubscribe link is missing or invalid. Please open the link from your email.";}'
 )
 _SCRIPT_HASH = base64.b64encode(hashlib.sha256(_UNSUBSCRIBE_SCRIPT.encode()).digest()).decode()
 _UNSUBSCRIBE_HEADERS = {
@@ -132,9 +132,11 @@ _UNSUBSCRIBE_HEADERS = {
 _UNSUBSCRIBE_PAGE = (
     '<!doctype html><html lang="en"><head><meta charset="utf-8">'
     '<meta name="viewport" content="width=device-width, initial-scale=1">'
-    '<meta name="referrer" content="no-referrer"><title>Unsubscribe from reminders</title>'
-    "</head><body><main><h1>Unsubscribe from reminders</h1>"
-    "<p>Confirm to stop these missed-class reminders for this email address.</p>"
+    '<meta name="referrer" content="no-referrer"><title>Unsubscribe from studio automation emails</title>'
+    "</head><body><main><h1>Unsubscribe from studio automation emails</h1>"
+    "<p>Confirm to stop all current and future automation emails from this one studio "
+    "to the recipient email address that received this email. "
+    "This includes missed-class reminders.</p>"
     '<form method="post" action="unsubscribe">'
     '<input type="hidden" id="token" name="token" value="">'
     '<p id="link-error" role="status" aria-live="polite"></p>'
@@ -144,12 +146,13 @@ _UNSUBSCRIBE_PAGE = (
 )
 _UNSUBSCRIBE_CONFIRMATION = (
     '<!doctype html><html lang="en"><head><meta charset="utf-8">'
-    "<title>Reminder preference</title></head><body><main><h1>Request received</h1>"
-    "<p>If the link was valid, these reminders are now unsubscribed.</p></main></body></html>"
+    "<title>Studio automation email preference</title></head><body><main><h1>Request received</h1>"
+    "<p>If the link was valid, all current and future automation emails from this studio "
+    "to the recipient email address are now unsubscribed.</p></main></body></html>"
 )
 _UNSUBSCRIBE_ERROR = (
     '<!doctype html><html lang="en"><head><meta charset="utf-8">'
-    "<title>Reminder preference</title></head><body><main><h1>Please try again</h1>"
+    "<title>Studio automation email preference</title></head><body><main><h1>Please try again</h1>"
     "<p>Your preference could not be saved. Please try the link again shortly.</p>"
     "</main></body></html>"
 )

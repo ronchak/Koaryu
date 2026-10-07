@@ -328,7 +328,7 @@ def test_accepted_uses_snapshots_stable_identity_fragment_and_exact_settlement(r
     assert message.subject == "Hi Sam" and message.reply_to == "reply@example.com"
     assert UUID(message.attempt_id).version == 5
     assert runner.database.messages[DELIVERY_ID]["attempt_id"] == DELIVERY_ID + ":1"
-    url = message.text_body.split("Unsubscribe from these reminders: ")[1]
+    url = message.text_body.split("Unsubscribe from this studio's automation emails: ")[1]
     assert urlsplit(url).path == "/api/v1/automations/unsubscribe"
     assert urlsplit(url).fragment == "a" * 64 and urlsplit(url).query == ""
     assert runner.send.call_args.kwargs == {"deadline": 120.0}

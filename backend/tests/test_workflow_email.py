@@ -669,14 +669,16 @@ def test_date_only_values_preserve_calendar_date(value, expected):
 def test_footer_bytes_and_literal_assembly_braces():
     body = 'Body\t<plain> & "quoted"\n{{literal}}'
     content = assemble_plain_text_email("Subject", body, URL)
-    assert content.text_body == body + "\n\nUnsubscribe from these reminders: " + URL
+    assert (
+        content.text_body == body + "\n\nUnsubscribe from this studio's automation emails: " + URL
+    )
     assert (
         content.html_body
         == '<div style="white-space: pre-wrap">'
         + escape(body)
         + '</div><p><a href="'
         + escape(URL, quote=True)
-        + '">Unsubscribe from these reminders</a></p>'
+        + "\">Unsubscribe from this studio's automation emails</a></p>"
     )
     plain = assemble_plain_text_email("Subject", body)
     assert plain.text_body == body
