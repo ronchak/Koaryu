@@ -7833,3 +7833,784 @@ BEGIN
         IF r.prorettype<>'trigger'::REGTYPE THEN EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO service_role',r.identity); END IF;
     END LOOP;
 END $timed_privileges$;
+
+-- Common sender admission. Parents retain source, render and continuation authority.
+-- This section neither adopts legacy callers nor declares V57 release readiness.
+CREATE FUNCTION private.automation_sender_instant_v1(p_at TIMESTAMPTZ) RETURNS BOOLEAN
+LANGUAGE sql IMMUTABLE SECURITY INVOKER SET search_path='' AS $$
+    SELECT p_at BETWEEN TIMESTAMPTZ '0001-01-01 00:00:00+00' AND TIMESTAMPTZ '9999-12-31 23:59:59.999999+00'
+$$;
+
+CREATE FUNCTION private.automation_sender_preparation_result_valid_v1(p_result JSONB) RETURNS BOOLEAN
+LANGUAGE sql IMMUTABLE SECURITY INVOKER SET search_path='' AS $$
+    SELECT coalesce(private.workflow_json_keys_v1(p_result,
+        ARRAY['outcome','credential_revision','sender_binding','safe_reason','retry_after_seconds'],
+        ARRAY['outcome','credential_revision','sender_binding','safe_reason','retry_after_seconds'])
+        AND jsonb_typeof(p_result->'sender_binding')='string' AND p_result->>'sender_binding' ~ '^[a-f0-9]{64}$'
+        AND CASE WHEN p_result->>'outcome'='prepared' THEN
+            jsonb_typeof(p_result->'credential_revision')='number'
+            AND p_result->>'credential_revision' ~ '^[1-9][0-9]{0,18}$'
+            AND (p_result->>'credential_revision')::NUMERIC<=9223372036854775807
+            AND p_result->'safe_reason'='null'::JSONB AND p_result->'retry_after_seconds'='null'::JSONB
+        WHEN p_result->>'outcome' IN ('sender_transient','sender_auth') THEN
+            p_result->'credential_revision'='null'::JSONB AND jsonb_typeof(p_result->'safe_reason')='string'
+            AND p_result->>'safe_reason'=ANY(ARRAY['authentication_required','credential_refresh_conflict','credential_store_unavailable',
+                'invalid_message','provider_connection_failed','provider_rejected','provider_submission_unknown','provider_throttled',
+                'provider_unavailable','recipient_not_allowed','send_budget_exhausted','sending_disabled','setup_required',
+                'token_refresh_invalid','token_refresh_rejected','token_refresh_throttled','token_refresh_unavailable'])
+            AND (p_result->'retry_after_seconds'='null'::JSONB OR
+                (jsonb_typeof(p_result->'retry_after_seconds')='number' AND p_result->>'retry_after_seconds' ~ '^[1-9][0-9]{0,3}$'
+                    AND (p_result->>'retry_after_seconds')::NUMERIC<=3600))
+        ELSE false END,false)
+$$;
+
+CREATE FUNCTION private.automation_legacy_projection_valid_v1(p_projection JSONB) RETURNS BOOLEAN
+LANGUAGE sql IMMUTABLE SECURITY INVOKER SET search_path='' AS $$
+    SELECT coalesce(private.workflow_json_keys_v1(p_projection,ARRAY['state','reason'],ARRAY['state','reason'])
+        AND jsonb_typeof(p_projection->'state')='string' AND p_projection->>'state' IN ('accepted','retry_wait','failed','unknown')
+        AND (p_projection->'reason'='null'::JSONB OR (jsonb_typeof(p_projection->'reason')='string'
+            AND p_projection->>'reason'=ANY(ARRAY['rule_paused','subscription_required','student_unavailable','inactive','on_hold',
+                'invalid_birth_date','never_attended','recent_attendance','invalid_email','guardian_missing','guardian_ambiguous',
+                'suppressed','episode_already_attempted','attendance_changed','contact_changed','lease_expired','rate_limited',
+                'connection_failed','authentication_required','provider_rejected','provider_unknown','retry_exhausted','unavailable',
+                'recipient_not_allowed']))),false)
+$$;
+
+CREATE FUNCTION private.automation_delivery_result_v1(p_result JSONB,p_expected_revision BIGINT DEFAULT NULL) RETURNS JSONB
+LANGUAGE plpgsql IMMUTABLE SECURITY INVOKER SET search_path='' AS $$
+DECLARE revision BIGINT; request_id TEXT; code TEXT; valid BOOLEAN; outcome TEXT; evidence TEXT; scope TEXT;
+BEGIN
+    IF jsonb_typeof(p_result->'credential_revision')='number' AND p_result->>'credential_revision' ~ '^[1-9][0-9]{0,18}$' THEN
+        IF (p_result->>'credential_revision')::NUMERIC<=9223372036854775807 THEN revision:=(p_result->>'credential_revision')::BIGINT; END IF;
+    END IF;
+    IF jsonb_typeof(p_result->'provider_request_id')='string' AND p_result->>'provider_request_id' COLLATE "C" ~ '^[A-Za-z0-9_.:-]{1,200}$' THEN
+        request_id:=p_result->>'provider_request_id';
+    END IF;
+    outcome:=p_result->>'outcome'; evidence:=p_result->>'submission_evidence'; scope:=p_result->>'failure_scope';
+    code:=p_result->>'error_code';
+    IF outcome='accepted' THEN code:=NULL;
+    ELSIF jsonb_typeof(p_result->'error_code') IS DISTINCT FROM 'string' OR code<>ALL(ARRAY[
+        'authentication_required','credential_refresh_conflict','credential_store_unavailable','invalid_message',
+        'provider_connection_failed','provider_rejected','provider_submission_unknown','provider_throttled','provider_unavailable',
+        'recipient_not_allowed','send_budget_exhausted','sending_disabled','setup_required','token_refresh_invalid',
+        'token_refresh_rejected','token_refresh_throttled','token_refresh_unavailable']) THEN code:='provider_unavailable'; END IF;
+    valid:=private.workflow_json_keys_v1(p_result,
+        ARRAY['outcome','error_code','provider_request_id','retry_after_seconds','submission_evidence','failure_scope','credential_revision'],
+        ARRAY['outcome','error_code','provider_request_id','retry_after_seconds','submission_evidence','failure_scope','credential_revision'])
+        AND jsonb_typeof(p_result->'outcome')='string' AND outcome IN ('accepted','retryable_failure','permanent_failure','unknown')
+        AND (p_result->'credential_revision'='null'::JSONB OR revision IS NOT NULL)
+        AND (p_result->'submission_evidence'='null'::JSONB OR (jsonb_typeof(p_result->'submission_evidence')='string'
+            AND evidence IN ('not_submitted','rejected','accepted','unknown')))
+        AND (p_result->'failure_scope'='null'::JSONB OR (jsonb_typeof(p_result->'failure_scope')='string'
+            AND scope IN ('sender_auth','sender_transient','message','unclassified')));
+    IF p_result->'retry_after_seconds'<>'null'::JSONB THEN
+        IF jsonb_typeof(p_result->'retry_after_seconds')='number' AND p_result->>'retry_after_seconds' ~ '^[1-9][0-9]{0,4}$' THEN
+            valid:=valid AND (p_result->>'retry_after_seconds')::NUMERIC<=86400;
+        ELSE valid:=false; END IF;
+    END IF;
+    valid:=valid AND (revision IS NULL OR p_expected_revision IS NULL OR revision=p_expected_revision)
+        AND CASE outcome WHEN 'accepted' THEN (evidence IS NULL OR evidence='accepted') AND scope IS NULL
+            WHEN 'retryable_failure' THEN evidence IN ('not_submitted','rejected') AND scope IS DISTINCT FROM 'sender_auth'
+            WHEN 'permanent_failure' THEN evidence IN ('not_submitted','rejected') ELSE false END;
+    IF valid IS TRUE THEN
+        RETURN p_result||jsonb_build_object('error_code',code,'provider_request_id',request_id);
+    END IF;
+    RETURN jsonb_build_object('outcome','unknown','error_code','provider_submission_unknown','provider_request_id',request_id,
+        'retry_after_seconds',NULL,'submission_evidence','unknown','failure_scope','unclassified',
+        'credential_revision',CASE WHEN p_expected_revision IS NULL OR revision=p_expected_revision THEN revision END);
+END $$;
+
+CREATE FUNCTION private.automation_legacy_delivery_result_v1(p_result JSONB) RETURNS JSONB
+LANGUAGE plpgsql IMMUTABLE SECURITY INVOKER SET search_path='' AS $$
+DECLARE code TEXT; request_id TEXT; retry INTEGER;
+BEGIN
+    IF NOT private.workflow_json_keys_v1(p_result,ARRAY['outcome','error_code','provider_request_id','retry_after_seconds'],
+        ARRAY['outcome','error_code','provider_request_id','retry_after_seconds'])
+        OR jsonb_typeof(p_result->'outcome') IS DISTINCT FROM 'string'
+        OR p_result->>'outcome' NOT IN ('accepted','retryable_failure','permanent_failure','unknown') THEN
+        RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST';
+    END IF;
+    code:=CASE p_result->>'error_code' WHEN 'rate_limited' THEN 'provider_throttled' WHEN 'connection_failed' THEN 'provider_connection_failed'
+        WHEN 'authentication_required' THEN 'authentication_required' WHEN 'provider_rejected' THEN 'provider_rejected' ELSE 'provider_unavailable' END;
+    IF p_result->>'error_code'=ANY(ARRAY['authentication_required','credential_refresh_conflict','credential_store_unavailable','invalid_message',
+        'provider_connection_failed','provider_rejected','provider_submission_unknown','provider_throttled','provider_unavailable',
+        'recipient_not_allowed','send_budget_exhausted','sending_disabled','setup_required','token_refresh_invalid','token_refresh_rejected',
+        'token_refresh_throttled','token_refresh_unavailable']) THEN code:=p_result->>'error_code'; END IF;
+    IF p_result->>'outcome'='accepted' THEN code:=NULL;
+    ELSIF p_result->>'outcome'='unknown' THEN code:='provider_submission_unknown'; END IF;
+    IF jsonb_typeof(p_result->'provider_request_id')='string' AND p_result->>'provider_request_id' COLLATE "C" ~ '^[A-Za-z0-9_.:-]{1,200}$' THEN
+        request_id:=p_result->>'provider_request_id';
+    END IF;
+    IF jsonb_typeof(p_result->'retry_after_seconds')='number' AND p_result->>'retry_after_seconds' ~ '^[1-9][0-9]{0,4}$' THEN
+        IF (p_result->>'retry_after_seconds')::INTEGER<=86400 THEN retry:=(p_result->>'retry_after_seconds')::INTEGER; END IF;
+    END IF;
+    RETURN jsonb_build_object('outcome',p_result->>'outcome','error_code',code,'provider_request_id',request_id,
+        'retry_after_seconds',retry,'submission_evidence',NULL,'failure_scope',NULL,'credential_revision',NULL);
+END $$;
+
+CREATE TABLE private.automation_sender_gate (
+    provider_key TEXT PRIMARY KEY CHECK (provider_key='microsoft_graph:primary'),
+    generation BIGINT NOT NULL CHECK (generation>0),
+    mode TEXT NOT NULL CHECK (mode IN ('ready','cooldown','auth_blocked')),
+    reason TEXT CHECK (reason=ANY(ARRAY['authentication_required','credential_refresh_conflict','credential_store_unavailable','invalid_message',
+        'provider_connection_failed','provider_rejected','provider_submission_unknown','provider_throttled','provider_unavailable',
+        'recipient_not_allowed','send_budget_exhausted','sending_disabled','setup_required','token_refresh_invalid','token_refresh_rejected',
+        'token_refresh_throttled','token_refresh_unavailable','sender_rejection_unclassified'])),
+    sender_binding TEXT CHECK (sender_binding ~ '^[a-f0-9]{64}$'),
+    failed_credential_revision BIGINT CHECK (failed_credential_revision>0),
+    transient_failures INTEGER NOT NULL CHECK (transient_failures BETWEEN 0 AND 7),
+    next_probe_at TIMESTAMPTZ CHECK (private.automation_sender_instant_v1(next_probe_at)),
+    active_preparation_id UUID, active_probe_token UUID, active_attempt_id UUID,
+    probe_expires_at TIMESTAMPTZ CHECK (private.automation_sender_instant_v1(probe_expires_at)),
+    updated_at TIMESTAMPTZ NOT NULL CHECK (private.automation_sender_instant_v1(updated_at)),
+    CHECK ((mode='ready' AND reason IS NULL AND next_probe_at IS NULL)
+        OR (mode='cooldown' AND reason IS NOT NULL AND next_probe_at IS NOT NULL)
+        OR (mode='auth_blocked' AND reason IS NOT NULL AND next_probe_at IS NULL)),
+    CHECK ((active_preparation_id IS NULL AND active_probe_token IS NULL AND active_attempt_id IS NULL AND probe_expires_at IS NULL)
+        OR (mode<>'ready' AND active_preparation_id IS NOT NULL AND active_probe_token IS NOT NULL AND probe_expires_at IS NOT NULL))
+);
+CREATE TABLE private.automation_sender_preparations (
+    id UUID PRIMARY KEY, provider_key TEXT NOT NULL CHECK (provider_key='microsoft_graph:primary'),
+    kind TEXT NOT NULL CHECK (kind IN ('normal','cooldown_probe','synthetic_recovery')), test_scope_id UUID,
+    generation BIGINT NOT NULL CHECK (generation>0), sender_binding TEXT NOT NULL CHECK (sender_binding ~ '^[a-f0-9]{64}$'),
+    preparation_token UUID NOT NULL UNIQUE, probe_token UUID UNIQUE,
+    created_at TIMESTAMPTZ NOT NULL CHECK (private.automation_sender_instant_v1(created_at)),
+    lease_expires_at TIMESTAMPTZ NOT NULL CHECK (private.automation_sender_instant_v1(lease_expires_at)),
+    state TEXT NOT NULL CHECK (state IN ('pending','prepared','failed','expired')),
+    credential_revision BIGINT CHECK (credential_revision>0), result JSONB,
+    settled_at TIMESTAMPTZ CHECK (private.automation_sender_instant_v1(settled_at) AND settled_at>=created_at),
+    consumed_by_attempt_id UUID, consumed_at TIMESTAMPTZ CHECK (private.automation_sender_instant_v1(consumed_at) AND consumed_at>=created_at),
+    CHECK ((kind='synthetic_recovery')=(test_scope_id IS NOT NULL)),
+    CHECK (kind<>'normal' OR probe_token IS NULL), CHECK (kind<>'cooldown_probe' OR probe_token IS NOT NULL),
+    CHECK (lease_expires_at=created_at+INTERVAL '60 seconds'),
+    CHECK ((state IN ('pending','expired') AND credential_revision IS NULL AND result IS NULL AND settled_at IS NULL)
+        OR (state IN ('prepared','failed') AND result IS NOT NULL AND settled_at IS NOT NULL
+            AND private.automation_sender_preparation_result_valid_v1(result)
+            AND result->>'sender_binding'=sender_binding
+            AND ((state='prepared' AND credential_revision IS NOT NULL AND result->>'outcome'='prepared'
+                    AND result->>'credential_revision'=credential_revision::TEXT)
+                OR (state='failed' AND credential_revision IS NULL AND result->>'outcome' IN ('sender_auth','sender_transient'))))),
+    CHECK ((consumed_by_attempt_id IS NULL AND consumed_at IS NULL) OR
+        (consumed_by_attempt_id IS NOT NULL AND consumed_at IS NOT NULL AND probe_token IS NOT NULL AND state='prepared' AND consumed_at<lease_expires_at))
+);
+CREATE TABLE private.automation_email_attempt_reservations (
+    id UUID PRIMARY KEY, studio_id UUID NOT NULL REFERENCES public.studios(id) ON DELETE CASCADE,
+    provider_key TEXT NOT NULL CHECK (provider_key='microsoft_graph:primary'),
+    scope_kind TEXT NOT NULL CHECK (scope_kind IN ('legacy','workflow','test')), scope_id UUID NOT NULL,
+    node_id TEXT CHECK (node_id ~ '^[A-Za-z0-9_-]{1,64}$'),
+    recipient_email TEXT NOT NULL CHECK (private.automation_normalize_email(recipient_email) IS NOT NULL
+        AND private.automation_normalize_email(recipient_email)=recipient_email),
+    origin TEXT NOT NULL CHECK (origin IN ('actual','legacy_settlement_upper_bound','legacy_sending_upper_bound','cutover_fallback')),
+    protocol TEXT NOT NULL CHECK (protocol IN ('prepared','legacy_v1','historical')),
+    state TEXT NOT NULL CHECK (state IN ('sending','accepted','failed','unknown')),
+    frequency_state TEXT NOT NULL CHECK (frequency_state IN ('sending','accepted','unknown','released')),
+    actual_began_at TIMESTAMPTZ CHECK (private.automation_sender_instant_v1(actual_began_at)),
+    attempt_number INTEGER CHECK (attempt_number BETWEEN 1 AND 3),
+    conservative_anchor_at TIMESTAMPTZ CHECK (private.automation_sender_instant_v1(conservative_anchor_at)),
+    observed_legacy_ordinal INTEGER CHECK (observed_legacy_ordinal BETWEEN 0 AND 3),
+    owner_token UUID, lease_expires_at TIMESTAMPTZ CHECK (private.automation_sender_instant_v1(lease_expires_at)),
+    sender_generation BIGINT CHECK (sender_generation>0), sender_binding TEXT CHECK (sender_binding ~ '^[a-f0-9]{64}$'),
+    preparation_id UUID, preparation_token UUID, probe_token UUID, admitted_credential_revision BIGINT CHECK (admitted_credential_revision>0),
+    settled_at TIMESTAMPTZ CHECK (private.automation_sender_instant_v1(settled_at)), result JSONB, legacy_projection JSONB,
+    budget_at TIMESTAMPTZ GENERATED ALWAYS AS (coalesce(actual_began_at,conservative_anchor_at)) STORED,
+    CHECK ((scope_kind='workflow')=(node_id IS NOT NULL)), CHECK (scope_kind<>'test' OR attempt_number=1),
+    CHECK (frequency_state=CASE state WHEN 'failed' THEN 'released' ELSE state END),
+    CHECK ((origin='actual' AND actual_began_at IS NOT NULL AND attempt_number IS NOT NULL AND owner_token IS NOT NULL
+            AND lease_expires_at IS NOT NULL AND lease_expires_at=actual_began_at+INTERVAL '60 seconds'
+            AND conservative_anchor_at IS NULL AND observed_legacy_ordinal IS NULL AND sender_generation IS NOT NULL
+            AND ((protocol='prepared' AND sender_binding IS NOT NULL AND preparation_id IS NOT NULL AND preparation_token IS NOT NULL
+                    AND admitted_credential_revision IS NOT NULL)
+                OR (protocol='legacy_v1' AND scope_kind='legacy' AND sender_binding IS NULL AND preparation_id IS NULL
+                    AND preparation_token IS NULL AND probe_token IS NULL AND admitted_credential_revision IS NULL)))
+        OR (origin<>'actual' AND scope_kind='legacy' AND protocol='historical' AND actual_began_at IS NULL AND attempt_number IS NULL
+            AND conservative_anchor_at IS NOT NULL AND observed_legacy_ordinal IS NOT NULL AND sender_generation IS NULL
+            AND sender_binding IS NULL AND preparation_id IS NULL AND preparation_token IS NULL AND probe_token IS NULL
+            AND admitted_credential_revision IS NULL AND (owner_token IS NULL)=(lease_expires_at IS NULL))),
+    CHECK ((state='sending' AND result IS NULL AND settled_at IS NULL) OR (state<>'sending'
+        AND ((origin<>'actual' AND result IS NULL) OR (result IS NOT NULL AND settled_at IS NOT NULL
+            AND jsonb_typeof(result)='object' AND result->>'outcome'=CASE state WHEN 'accepted' THEN 'accepted' WHEN 'unknown' THEN 'unknown' ELSE result->>'outcome' END
+            AND (state<>'failed' OR result->>'outcome' IN ('retryable_failure','permanent_failure'))
+            AND (protocol<>'prepared' OR result=private.automation_delivery_result_v1(result,admitted_credential_revision))))
+        AND (settled_at IS NULL OR settled_at>=coalesce(actual_began_at,conservative_anchor_at)))),
+    CHECK (legacy_projection IS NULL OR (scope_kind='legacy' AND state<>'sending'
+        AND private.automation_legacy_projection_valid_v1(legacy_projection)
+        AND CASE state WHEN 'failed' THEN legacy_projection->>'state' IN ('failed','retry_wait') ELSE legacy_projection->>'state'=state END)),
+    CHECK (result IS NULL OR (private.workflow_json_keys_v1(result,
+        ARRAY['outcome','error_code','provider_request_id','retry_after_seconds','submission_evidence','failure_scope','credential_revision'],
+        ARRAY['outcome','error_code','provider_request_id','retry_after_seconds','submission_evidence','failure_scope','credential_revision'])
+        AND (protocol='prepared' OR (result->'credential_revision'='null'::JSONB AND
+            (result=private.automation_legacy_delivery_result_v1(result-ARRAY['submission_evidence','failure_scope','credential_revision'])
+                OR (state='unknown' AND result=private.automation_delivery_result_v1(result)))))))
+);
+CREATE INDEX automation_email_recipient_budget ON private.automation_email_attempt_reservations(studio_id,recipient_email,budget_at DESC,id)
+    WHERE frequency_state IN ('sending','accepted','unknown');
+CREATE UNIQUE INDEX automation_email_actual_ordinal ON private.automation_email_attempt_reservations(studio_id,scope_kind,scope_id,node_id,attempt_number)
+    NULLS NOT DISTINCT WHERE origin='actual';
+CREATE UNIQUE INDEX automation_email_historical_scope ON private.automation_email_attempt_reservations(studio_id,scope_id) WHERE origin<>'actual';
+CREATE UNIQUE INDEX automation_email_legacy_token ON private.automation_email_attempt_reservations(studio_id,scope_id,owner_token)
+    WHERE scope_kind='legacy' AND owner_token IS NOT NULL;
+CREATE INDEX automation_email_scope ON private.automation_email_attempt_reservations(studio_id,scope_kind,scope_id,node_id);
+
+CREATE FUNCTION private.automation_sender_gate_identity_v1() RETURNS TRIGGER
+LANGUAGE plpgsql SECURITY INVOKER SET search_path='' AS $$
+DECLARE preparation private.automation_sender_preparations; attempt private.automation_email_attempt_reservations;
+BEGIN
+    IF NEW.provider_key IS DISTINCT FROM OLD.provider_key OR NEW.generation<OLD.generation THEN
+        RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST';
+    END IF;
+    IF NEW.active_preparation_id IS NOT NULL THEN
+        SELECT * INTO preparation FROM private.automation_sender_preparations WHERE id=NEW.active_preparation_id;
+        IF preparation.id IS NULL OR ROW(preparation.generation,preparation.sender_binding,preparation.probe_token)
+            IS DISTINCT FROM ROW(NEW.generation,NEW.sender_binding,NEW.active_probe_token) THEN
+            RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST';
+        END IF;
+        IF NEW.active_attempt_id IS NULL THEN
+            IF preparation.consumed_by_attempt_id IS NOT NULL OR NEW.probe_expires_at IS DISTINCT FROM preparation.lease_expires_at THEN
+                RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST'; END IF;
+        ELSE
+            SELECT * INTO attempt FROM private.automation_email_attempt_reservations WHERE id=NEW.active_attempt_id;
+            IF preparation.consumed_by_attempt_id IS DISTINCT FROM NEW.active_attempt_id
+                OR (attempt.id IS NULL AND ROW(NEW.active_preparation_id,NEW.active_probe_token,NEW.active_attempt_id,NEW.probe_expires_at)
+                    IS DISTINCT FROM ROW(OLD.active_preparation_id,OLD.active_probe_token,OLD.active_attempt_id,OLD.probe_expires_at))
+                OR (attempt.id IS NOT NULL AND (attempt.state<>'sending'
+                    OR ROW(attempt.preparation_id,attempt.preparation_token,attempt.probe_token,attempt.lease_expires_at)
+                        IS DISTINCT FROM ROW(preparation.id,preparation.preparation_token,NEW.active_probe_token,NEW.probe_expires_at))) THEN
+                RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST'; END IF;
+        END IF;
+    END IF;
+    RETURN NEW;
+END $$;
+CREATE TRIGGER automation_sender_gate_identity BEFORE UPDATE ON private.automation_sender_gate
+    FOR EACH ROW EXECUTE FUNCTION private.automation_sender_gate_identity_v1();
+
+CREATE FUNCTION private.automation_sender_preparation_identity_v1() RETURNS TRIGGER
+LANGUAGE plpgsql SECURITY INVOKER SET search_path='' AS $$
+BEGIN
+    IF (to_jsonb(NEW)-ARRAY['state','credential_revision','result','settled_at','consumed_by_attempt_id','consumed_at'])
+        IS DISTINCT FROM (to_jsonb(OLD)-ARRAY['state','credential_revision','result','settled_at','consumed_by_attempt_id','consumed_at'])
+        OR (OLD.state<>'pending' AND ROW(NEW.state,NEW.credential_revision,NEW.result,NEW.settled_at)
+            IS DISTINCT FROM ROW(OLD.state,OLD.credential_revision,OLD.result,OLD.settled_at))
+        OR (OLD.consumed_by_attempt_id IS NOT NULL AND ROW(NEW.consumed_by_attempt_id,NEW.consumed_at)
+            IS DISTINCT FROM ROW(OLD.consumed_by_attempt_id,OLD.consumed_at)) THEN
+        RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST';
+    END IF;
+    RETURN NEW;
+END $$;
+CREATE TRIGGER automation_sender_preparation_identity BEFORE UPDATE ON private.automation_sender_preparations
+    FOR EACH ROW EXECUTE FUNCTION private.automation_sender_preparation_identity_v1();
+
+CREATE FUNCTION private.automation_email_attempt_identity_v1() RETURNS TRIGGER
+LANGUAGE plpgsql SECURITY INVOKER SET search_path='' AS $$
+BEGIN
+    -- PostgreSQL computes stored generated columns after BEFORE triggers. Their
+    -- immutable input clocks, rather than NEW.budget_at, prove identity here.
+    IF (to_jsonb(NEW)-ARRAY['state','frequency_state','result','settled_at','legacy_projection','budget_at'])
+        IS DISTINCT FROM (to_jsonb(OLD)-ARRAY['state','frequency_state','result','settled_at','legacy_projection','budget_at'])
+        OR (OLD.state<>'sending' AND ROW(NEW.state,NEW.frequency_state,NEW.result,NEW.settled_at)
+            IS DISTINCT FROM ROW(OLD.state,OLD.frequency_state,OLD.result,OLD.settled_at))
+        OR (OLD.legacy_projection IS NOT NULL AND NEW.legacy_projection IS DISTINCT FROM OLD.legacy_projection) THEN
+        RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST';
+    END IF;
+    RETURN NEW;
+END $$;
+CREATE TRIGGER automation_email_attempt_identity BEFORE UPDATE ON private.automation_email_attempt_reservations
+    FOR EACH ROW EXECUTE FUNCTION private.automation_email_attempt_identity_v1();
+
+CREATE FUNCTION private.automation_sender_gate_lock_v1() RETURNS private.automation_sender_gate
+LANGUAGE plpgsql SECURITY INVOKER SET search_path='' AS $$
+DECLARE gate private.automation_sender_gate; preparation private.automation_sender_preparations;
+BEGIN
+    SELECT * INTO gate FROM private.automation_sender_gate WHERE provider_key='microsoft_graph:primary' FOR UPDATE;
+    IF gate.provider_key IS NULL OR gate.generation IS NULL OR gate.generation<=0 OR gate.transient_failures IS NULL
+        OR gate.transient_failures NOT BETWEEN 0 AND 7 OR gate.mode IS NULL OR gate.mode NOT IN ('ready','cooldown','auth_blocked')
+        OR gate.failed_credential_revision<=0
+        OR (gate.sender_binding IS NOT NULL AND gate.sender_binding !~ '^[a-f0-9]{64}$')
+        OR private.automation_sender_instant_v1(gate.updated_at) IS DISTINCT FROM true
+        OR (gate.mode='ready' AND (gate.reason IS NOT NULL OR gate.next_probe_at IS NOT NULL OR gate.active_preparation_id IS NOT NULL))
+        OR (gate.mode='cooldown' AND (gate.reason IS NULL OR private.automation_sender_instant_v1(gate.next_probe_at) IS DISTINCT FROM true))
+        OR (gate.mode='auth_blocked' AND (gate.reason IS NULL OR gate.next_probe_at IS NOT NULL))
+        OR (gate.active_preparation_id IS NULL AND (gate.active_probe_token IS NOT NULL OR gate.active_attempt_id IS NOT NULL OR gate.probe_expires_at IS NOT NULL))
+        OR (gate.active_preparation_id IS NOT NULL AND (gate.active_probe_token IS NULL
+            OR private.automation_sender_instant_v1(gate.probe_expires_at) IS DISTINCT FROM true)) THEN
+        RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_SENDER_UNAVAILABLE';
+    END IF;
+    IF gate.reason IS NOT NULL AND gate.reason<>'sender_rejection_unclassified'
+        AND NOT private.automation_sender_preparation_result_valid_v1(jsonb_build_object('outcome','sender_transient',
+            'credential_revision',NULL,'sender_binding',repeat('a',64),'safe_reason',gate.reason,'retry_after_seconds',NULL)) THEN
+        RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_SENDER_UNAVAILABLE';
+    END IF;
+    IF gate.active_preparation_id IS NOT NULL THEN
+        SELECT * INTO preparation FROM private.automation_sender_preparations WHERE id=gate.active_preparation_id;
+        IF preparation.id IS NULL OR ROW(preparation.generation,preparation.sender_binding,preparation.probe_token,preparation.consumed_by_attempt_id)
+            IS DISTINCT FROM ROW(gate.generation,gate.sender_binding,gate.active_probe_token,gate.active_attempt_id)
+            OR (gate.active_attempt_id IS NULL AND gate.probe_expires_at IS DISTINCT FROM preparation.lease_expires_at) THEN
+            RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_SENDER_UNAVAILABLE';
+        END IF;
+    END IF;
+    RETURN gate;
+EXCEPTION WHEN undefined_table OR undefined_column THEN
+    RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_SENDER_UNAVAILABLE';
+END $$;
+
+CREATE FUNCTION private.automation_sender_retry_at_v1(p_gate private.automation_sender_gate,p_at TIMESTAMPTZ) RETURNS TIMESTAMPTZ
+LANGUAGE sql IMMUTABLE SECURITY INVOKER SET search_path='' AS $$
+    SELECT CASE WHEN p_gate.mode='cooldown' THEN greatest(p_gate.next_probe_at,p_gate.probe_expires_at,
+        CASE WHEN p_gate.active_attempt_id IS NOT NULL AND p_gate.probe_expires_at<=p_at THEN p_at+INTERVAL '60 seconds' END) END
+$$;
+
+CREATE FUNCTION private.automation_sender_preparation_reply_v1(p_id UUID,p_gate private.automation_sender_gate,
+    p_preparation private.automation_sender_preparations,p_outcome TEXT,p_reason TEXT) RETURNS JSONB
+LANGUAGE sql STABLE SECURITY INVOKER SET search_path='' AS $$
+    SELECT jsonb_build_object('payload',jsonb_build_object('preparation_id',p_id,'generation',p_gate.generation,
+        'preparation_token',p_preparation.preparation_token,'probe_token',p_preparation.probe_token,
+        'lease_expires_at',p_preparation.lease_expires_at,'retry_at',CASE WHEN p_preparation.id IS NULL
+            THEN private.automation_sender_retry_at_v1(p_gate,clock_timestamp()) END,'reason',p_reason)
+        ||CASE WHEN p_outcome='claim' THEN jsonb_build_object('allowed',p_preparation.id IS NOT NULL,'mode',p_gate.mode)
+            ELSE jsonb_build_object('outcome',p_outcome) END)
+$$;
+
+CREATE FUNCTION private.automation_email_scope_lock_v1(p_studio_id UUID,p_scope_kind TEXT,p_scope_id UUID,p_node_id TEXT,p_recipient TEXT) RETURNS VOID
+LANGUAGE plpgsql SECURITY INVOKER SET search_path='' AS $$
+BEGIN
+    IF NOT pg_catalog.pg_try_advisory_xact_lock(pg_catalog.hashtextextended('koaryu.automation-email-scope:'||
+        jsonb_build_array(p_studio_id::TEXT,p_scope_kind,p_scope_id::TEXT,p_node_id)::TEXT,0)) THEN
+        RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STUDIO_BUSY';
+    END IF;
+    IF NOT pg_catalog.pg_try_advisory_xact_lock(pg_catalog.hashtextextended(p_studio_id::TEXT||':'||p_recipient,0)) THEN
+        RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STUDIO_BUSY';
+    END IF;
+END $$;
+
+CREATE FUNCTION private.automation_sender_failure_v1(p_scope TEXT,p_reason TEXT,p_revision BIGINT,p_retry INTEGER,p_at TIMESTAMPTZ) RETURNS VOID
+LANGUAGE plpgsql SECURITY INVOKER SET search_path='' AS $$
+BEGIN
+    UPDATE private.automation_sender_gate SET generation=generation+1,
+        mode=CASE WHEN p_scope='sender_auth' OR mode='auth_blocked' THEN 'auth_blocked' ELSE 'cooldown' END,
+        reason=CASE WHEN mode='auth_blocked' AND p_scope<>'sender_auth' THEN reason ELSE p_reason END,
+        failed_credential_revision=CASE WHEN mode='auth_blocked' AND p_scope<>'sender_auth' THEN failed_credential_revision ELSE p_revision END,
+        transient_failures=CASE WHEN p_scope='sender_auth' THEN transient_failures ELSE least(7,transient_failures+1) END,
+        next_probe_at=CASE WHEN p_scope<>'sender_auth' AND mode<>'auth_blocked' THEN greatest(next_probe_at,
+            p_at+make_interval(secs=>least(3600,greatest(60*(2^transient_failures)::INTEGER,coalesce(p_retry,0))))) END,
+        active_preparation_id=NULL,active_probe_token=NULL,active_attempt_id=NULL,probe_expires_at=NULL,updated_at=p_at
+        WHERE provider_key='microsoft_graph:primary';
+    IF NOT FOUND THEN RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_SENDER_UNAVAILABLE'; END IF;
+END $$;
+
+CREATE FUNCTION private.automation_sender_release_probe_v1(p_preparation_id UUID,p_preparation_token UUID,p_probe_token UUID) RETURNS BOOLEAN
+LANGUAGE plpgsql SECURITY INVOKER SET search_path='' AS $$
+DECLARE gate private.automation_sender_gate; preparation private.automation_sender_preparations; at TIMESTAMPTZ;
+BEGIN
+    gate:=private.automation_sender_gate_lock_v1();
+    SELECT * INTO preparation FROM private.automation_sender_preparations WHERE id=p_preparation_id FOR UPDATE;
+    at:=clock_timestamp();
+    IF preparation.id IS NULL OR p_preparation_token IS NULL OR p_probe_token IS NULL
+        OR preparation.preparation_token IS DISTINCT FROM p_preparation_token OR preparation.probe_token IS DISTINCT FROM p_probe_token
+        OR preparation.consumed_by_attempt_id IS NOT NULL OR gate.active_attempt_id IS NOT NULL
+        OR gate.active_preparation_id IS DISTINCT FROM p_preparation_id OR gate.active_probe_token IS DISTINCT FROM p_probe_token THEN RETURN false; END IF;
+    UPDATE private.automation_sender_gate SET active_preparation_id=NULL,active_probe_token=NULL,probe_expires_at=NULL,updated_at=at
+        WHERE provider_key=gate.provider_key;
+    IF preparation.state='pending' AND preparation.lease_expires_at<=at THEN
+        UPDATE private.automation_sender_preparations SET state='expired' WHERE id=preparation.id;
+    END IF;
+    RETURN true;
+END $$;
+
+CREATE FUNCTION private.automation_sender_release_orphan_probe_v1() RETURNS BOOLEAN
+LANGUAGE plpgsql SECURITY INVOKER SET search_path='' AS $$
+DECLARE gate private.automation_sender_gate; at TIMESTAMPTZ;
+BEGIN
+    gate:=private.automation_sender_gate_lock_v1(); at:=clock_timestamp();
+    IF gate.active_attempt_id IS NULL OR gate.probe_expires_at>at OR EXISTS(
+        SELECT 1 FROM private.automation_email_attempt_reservations WHERE id=gate.active_attempt_id) THEN RETURN false; END IF;
+    UPDATE private.automation_sender_gate SET active_preparation_id=NULL,active_probe_token=NULL,active_attempt_id=NULL,
+        probe_expires_at=NULL,updated_at=at WHERE provider_key=gate.provider_key;
+    RETURN true;
+END $$;
+
+CREATE FUNCTION private.automation_sender_claim_v1(p_preparation_id UUID,p_sender_binding TEXT,
+    p_kind TEXT DEFAULT 'normal',p_test_scope_id UUID DEFAULT NULL) RETURNS JSONB
+LANGUAGE plpgsql SECURITY INVOKER SET search_path='' AS $$
+DECLARE gate private.automation_sender_gate; preparation private.automation_sender_preparations;
+    prior private.automation_sender_preparations; at TIMESTAMPTZ; kind TEXT; probe UUID; revision BIGINT;
+BEGIN
+    IF p_preparation_id IS NULL OR p_sender_binding IS NULL OR p_sender_binding !~ '^[a-f0-9]{64}$'
+        OR p_kind IS NULL OR p_kind NOT IN ('normal','synthetic_recovery') OR (p_kind='synthetic_recovery')<>(p_test_scope_id IS NOT NULL) THEN
+        RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST';
+    END IF;
+    -- Acquire credential ownership before the gate even if a pending preparation
+    -- settles while this claim waits. Fresh/pending claims do not require a row.
+    SELECT c.revision INTO revision FROM private.automation_email_credentials c
+        WHERE c.provider_key='microsoft_graph:primary' FOR SHARE NOWAIT;
+    gate:=private.automation_sender_gate_lock_v1();
+    SELECT * INTO preparation FROM private.automation_sender_preparations WHERE id=p_preparation_id FOR UPDATE;
+    IF preparation.id IS NOT NULL THEN
+        IF preparation.sender_binding<>p_sender_binding OR preparation.test_scope_id IS DISTINCT FROM p_test_scope_id
+            OR (preparation.kind='synthetic_recovery')<>(p_kind='synthetic_recovery') THEN
+            RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST';
+        END IF;
+        at:=clock_timestamp();
+        IF preparation.generation=gate.generation AND preparation.sender_binding=gate.sender_binding AND preparation.lease_expires_at>at
+            AND preparation.state IN ('pending','prepared') AND preparation.consumed_by_attempt_id IS NULL
+            AND (preparation.state='pending' OR preparation.credential_revision=revision)
+            AND ((preparation.probe_token IS NULL AND gate.mode='ready') OR
+                (preparation.probe_token IS NOT NULL AND gate.active_preparation_id=preparation.id
+                    AND gate.active_probe_token=preparation.probe_token AND gate.active_attempt_id IS NULL)) THEN
+            RETURN private.automation_sender_preparation_reply_v1(p_preparation_id,gate,preparation,'claim',NULL);
+        END IF;
+        RETURN private.automation_sender_preparation_reply_v1(p_preparation_id,gate,NULL,'claim','preparation_stale');
+    END IF;
+    IF gate.sender_binding IS DISTINCT FROM p_sender_binding THEN
+        UPDATE private.automation_sender_gate SET sender_binding=p_sender_binding,
+            generation=generation+CASE WHEN sender_binding IS NULL THEN 0 ELSE 1 END,
+            active_preparation_id=NULL,active_probe_token=NULL,active_attempt_id=NULL,probe_expires_at=NULL,updated_at=clock_timestamp()
+            WHERE provider_key=gate.provider_key RETURNING * INTO gate;
+    END IF;
+    PERFORM private.automation_sender_release_orphan_probe_v1();
+    gate:=private.automation_sender_gate_lock_v1(); at:=clock_timestamp();
+    IF gate.active_preparation_id IS NOT NULL AND gate.active_attempt_id IS NULL AND gate.probe_expires_at<=at THEN
+        SELECT * INTO prior FROM private.automation_sender_preparations WHERE id=gate.active_preparation_id;
+        PERFORM private.automation_sender_release_probe_v1(prior.id,prior.preparation_token,gate.active_probe_token);
+        gate:=private.automation_sender_gate_lock_v1(); at:=clock_timestamp();
+    END IF;
+    IF (gate.mode='auth_blocked' AND p_kind='normal') OR gate.active_preparation_id IS NOT NULL
+        OR (gate.mode='cooldown' AND gate.next_probe_at>at) THEN
+        RETURN private.automation_sender_preparation_reply_v1(p_preparation_id,gate,NULL,'claim','sender_unavailable');
+    END IF;
+    kind:=CASE WHEN p_kind='synthetic_recovery' THEN p_kind WHEN gate.mode='cooldown' THEN 'cooldown_probe' ELSE 'normal' END;
+    IF gate.mode<>'ready' THEN probe:=gen_random_uuid(); END IF;
+    INSERT INTO private.automation_sender_preparations(id,provider_key,kind,test_scope_id,generation,sender_binding,preparation_token,
+        probe_token,created_at,lease_expires_at,state)
+        VALUES(p_preparation_id,gate.provider_key,kind,p_test_scope_id,gate.generation,p_sender_binding,gen_random_uuid(),probe,at,at+INTERVAL '60 seconds','pending')
+        RETURNING * INTO preparation;
+    IF probe IS NOT NULL THEN
+        UPDATE private.automation_sender_gate SET active_preparation_id=preparation.id,active_probe_token=probe,
+            probe_expires_at=preparation.lease_expires_at,updated_at=at WHERE provider_key=gate.provider_key RETURNING * INTO gate;
+    END IF;
+    RETURN private.automation_sender_preparation_reply_v1(p_preparation_id,gate,preparation,'claim',NULL);
+EXCEPTION WHEN lock_not_available THEN RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STUDIO_BUSY';
+    WHEN undefined_table OR undefined_column THEN RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_SENDER_UNAVAILABLE';
+END $$;
+
+CREATE FUNCTION public.claim_automation_sender_preparation_v1(p_provider_key TEXT,p_preparation_id UUID,p_sender_binding TEXT) RETURNS JSONB
+LANGUAGE plpgsql SECURITY INVOKER SET search_path='' AS $$
+BEGIN
+    IF p_provider_key IS DISTINCT FROM 'microsoft_graph:primary' THEN
+        RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST'; END IF;
+    RETURN private.automation_sender_claim_v1(p_preparation_id,p_sender_binding);
+END $$;
+
+CREATE FUNCTION private.automation_sender_preparation_settle_v1(p_preparation_id UUID,p_preparation_token UUID,p_result JSONB) RETURNS JSONB
+LANGUAGE plpgsql SECURITY INVOKER SET search_path='' AS $$
+DECLARE gate private.automation_sender_gate; preparation private.automation_sender_preparations; revision BIGINT; at TIMESTAMPTZ; outcome TEXT;
+BEGIN
+    IF p_preparation_id IS NULL OR p_preparation_token IS NULL OR NOT private.automation_sender_preparation_result_valid_v1(p_result) THEN
+        RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST';
+    END IF;
+    IF p_result->>'outcome'='prepared' THEN
+        SELECT c.revision INTO revision FROM private.automation_email_credentials c WHERE c.provider_key='microsoft_graph:primary' FOR SHARE NOWAIT;
+    END IF;
+    gate:=private.automation_sender_gate_lock_v1();
+    SELECT * INTO preparation FROM private.automation_sender_preparations WHERE id=p_preparation_id FOR UPDATE;
+    at:=clock_timestamp();
+    IF preparation.id IS NULL OR preparation.preparation_token IS DISTINCT FROM p_preparation_token
+        OR preparation.sender_binding IS DISTINCT FROM p_result->>'sender_binding'
+        OR (preparation.result IS NOT NULL AND preparation.result IS DISTINCT FROM p_result) THEN
+        RETURN private.automation_sender_preparation_reply_v1(p_preparation_id,gate,NULL,'stale','preparation_stale');
+    END IF;
+    IF preparation.state='failed' THEN
+        outcome:=CASE gate.mode WHEN 'auth_blocked' THEN 'blocked' WHEN 'cooldown' THEN 'deferred' ELSE 'stale' END;
+        RETURN private.automation_sender_preparation_reply_v1(p_preparation_id,gate,NULL,outcome,
+            CASE WHEN outcome='stale' THEN 'preparation_stale' ELSE 'sender_unavailable' END);
+    END IF;
+    IF preparation.state='expired' OR preparation.lease_expires_at<=at OR preparation.consumed_by_attempt_id IS NOT NULL
+        OR (p_result->>'outcome'='prepared' AND (preparation.generation<>gate.generation
+            OR preparation.sender_binding IS DISTINCT FROM gate.sender_binding
+            OR (preparation.probe_token IS NULL AND gate.mode<>'ready') OR (preparation.probe_token IS NOT NULL AND
+                (gate.active_preparation_id IS DISTINCT FROM preparation.id OR gate.active_probe_token IS DISTINCT FROM preparation.probe_token OR gate.active_attempt_id IS NOT NULL))
+            OR revision IS DISTINCT FROM (p_result->>'credential_revision')::BIGINT)) THEN
+        RETURN private.automation_sender_preparation_reply_v1(p_preparation_id,gate,NULL,'stale','preparation_stale');
+    END IF;
+    IF preparation.state='pending' THEN
+        UPDATE private.automation_sender_preparations SET state=CASE WHEN p_result->>'outcome'='prepared' THEN 'prepared' ELSE 'failed' END,
+            credential_revision=CASE WHEN p_result->>'outcome'='prepared' THEN revision END,result=p_result,settled_at=at
+            WHERE id=preparation.id RETURNING * INTO preparation;
+        IF preparation.state='failed' THEN
+            PERFORM private.automation_sender_failure_v1(p_result->>'outcome',p_result->>'safe_reason',NULL,(p_result->>'retry_after_seconds')::INTEGER,at);
+            gate:=private.automation_sender_gate_lock_v1();
+        END IF;
+    END IF;
+    outcome:=CASE WHEN preparation.state='prepared' THEN 'prepared' WHEN gate.mode='auth_blocked' THEN 'blocked' ELSE 'deferred' END;
+    RETURN private.automation_sender_preparation_reply_v1(p_preparation_id,gate,
+        CASE WHEN outcome='prepared' THEN preparation END,outcome,CASE WHEN outcome<>'prepared' THEN 'sender_unavailable' END);
+EXCEPTION WHEN lock_not_available THEN RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STUDIO_BUSY';
+    WHEN undefined_table OR undefined_column THEN RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_SENDER_UNAVAILABLE';
+END $$;
+
+CREATE FUNCTION public.settle_automation_sender_preparation_v1(p_preparation_id UUID,p_preparation_token UUID,p_result JSONB) RETURNS JSONB
+LANGUAGE sql SECURITY INVOKER SET search_path='' AS $$
+    SELECT private.automation_sender_preparation_settle_v1(p_preparation_id,p_preparation_token,p_result)
+$$;
+
+CREATE FUNCTION private.automation_email_attempt_begin_v1(p_studio_id UUID,p_scope_kind TEXT,p_scope_id UUID,p_node_id TEXT,
+    p_attempt_id UUID,p_owner_token UUID,p_recipient_email TEXT,p_preparation_id UUID,p_preparation_token UUID,
+    p_probe_token UUID DEFAULT NULL,p_legacy_prior_attempts INTEGER DEFAULT NULL) RETURNS JSONB
+LANGUAGE plpgsql SECURITY INVOKER SET search_path='' AS $$
+DECLARE gate private.automation_sender_gate; preparation private.automation_sender_preparations;
+    attempt private.automation_email_attempt_reservations; revision BIGINT; at TIMESTAMPTZ; ordinal INTEGER; prior INTEGER;
+    charged TIMESTAMPTZ[]; retry TIMESTAMPTZ; reason TEXT; protocol TEXT; terminal BOOLEAN;
+BEGIN
+    IF p_studio_id IS NULL OR p_scope_id IS NULL OR p_attempt_id IS NULL OR p_owner_token IS NULL OR p_scope_kind IS NULL
+        OR p_scope_kind NOT IN ('legacy','workflow','test') OR (p_scope_kind='workflow')<>(p_node_id IS NOT NULL)
+        OR (p_node_id IS NOT NULL AND p_node_id !~ '^[A-Za-z0-9_-]{1,64}$')
+        OR private.automation_normalize_email(p_recipient_email) IS NULL
+        OR private.automation_normalize_email(p_recipient_email) IS DISTINCT FROM p_recipient_email
+        OR (p_preparation_id IS NULL)<>(p_preparation_token IS NULL)
+        OR (p_preparation_id IS NULL AND (p_scope_kind<>'legacy' OR p_probe_token IS NOT NULL))
+        OR (p_scope_kind='legacy' AND (p_legacy_prior_attempts IS NULL OR p_legacy_prior_attempts NOT BETWEEN 0 AND 2))
+        OR (p_scope_kind<>'legacy' AND p_legacy_prior_attempts IS NOT NULL) THEN
+        RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST';
+    END IF;
+    -- Establish FK ownership before scope/recipient/credential/gate. Never wait backward.
+    PERFORM 1 FROM public.studios WHERE id=p_studio_id FOR KEY SHARE NOWAIT;
+    IF NOT FOUND THEN RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST'; END IF;
+    PERFORM private.automation_email_scope_lock_v1(p_studio_id,p_scope_kind,p_scope_id,p_node_id,p_recipient_email);
+    IF p_preparation_id IS NOT NULL THEN
+        SELECT c.revision INTO revision FROM private.automation_email_credentials c WHERE c.provider_key='microsoft_graph:primary' FOR SHARE NOWAIT;
+    END IF;
+    gate:=private.automation_sender_gate_lock_v1();
+    SELECT * INTO attempt FROM private.automation_email_attempt_reservations WHERE id=p_attempt_id FOR UPDATE;
+    protocol:=CASE WHEN p_preparation_id IS NULL THEN 'legacy_v1' ELSE 'prepared' END;
+    IF attempt.id IS NOT NULL THEN
+        IF ROW(attempt.studio_id,attempt.scope_kind,attempt.scope_id,attempt.node_id,attempt.owner_token,attempt.recipient_email,
+            attempt.preparation_id,attempt.preparation_token,attempt.probe_token,attempt.protocol,attempt.origin)
+            IS DISTINCT FROM ROW(p_studio_id,p_scope_kind,p_scope_id,p_node_id,p_owner_token,p_recipient_email,
+                p_preparation_id,p_preparation_token,p_probe_token,protocol,'actual'::TEXT) THEN
+            RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST';
+        END IF;
+        RETURN jsonb_build_object('outcome','already_begun','attempt_id',attempt.id,'attempt_number',attempt.attempt_number,
+            'owner_token',NULL,'lease_expires_at',NULL,'generation',NULL,'reason','already_begun','retry_at',NULL);
+    END IF;
+    IF p_scope_kind='legacy' AND EXISTS(SELECT 1 FROM private.automation_email_attempt_reservations a
+        WHERE a.studio_id=p_studio_id AND a.scope_kind='legacy' AND a.scope_id=p_scope_id AND a.owner_token=p_owner_token) THEN
+        RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST';
+    END IF;
+    SELECT coalesce(max(coalesce(a.attempt_number,a.observed_legacy_ordinal)),0),coalesce(bool_or(a.state IN ('sending','accepted','unknown')),false)
+        INTO prior,terminal FROM private.automation_email_attempt_reservations a
+        WHERE a.studio_id=p_studio_id AND a.scope_kind=p_scope_kind AND a.scope_id=p_scope_id AND a.node_id IS NOT DISTINCT FROM p_node_id;
+    IF p_scope_kind='legacy' THEN
+        IF p_legacy_prior_attempts<prior THEN RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST'; END IF;
+        prior:=p_legacy_prior_attempts;
+    END IF;
+    IF p_preparation_id IS NOT NULL THEN
+        SELECT * INTO preparation FROM private.automation_sender_preparations WHERE id=p_preparation_id FOR UPDATE;
+    END IF;
+    at:=clock_timestamp(); ordinal:=prior+1;
+    IF terminal THEN reason:='scope_terminal';
+    ELSIF ordinal>(CASE WHEN p_scope_kind='test' THEN 1 ELSE 3 END) THEN reason:='retry_exhausted';
+    ELSIF EXISTS(SELECT 1 FROM public.automation_suppressions WHERE studio_id=p_studio_id AND recipient_email=p_recipient_email) THEN reason:='recipient_suppressed';
+    ELSIF protocol='legacy_v1' AND gate.mode<>'ready' THEN
+        reason:='sender_unavailable'; retry:=private.automation_sender_retry_at_v1(gate,at);
+    ELSIF protocol='prepared' AND (preparation.id IS NULL OR preparation.state<>'prepared'
+        OR preparation.preparation_token IS DISTINCT FROM p_preparation_token OR preparation.probe_token IS DISTINCT FROM p_probe_token
+        OR preparation.generation<>gate.generation OR preparation.sender_binding IS DISTINCT FROM gate.sender_binding
+        OR preparation.credential_revision IS DISTINCT FROM revision OR preparation.lease_expires_at<=at OR preparation.consumed_by_attempt_id IS NOT NULL
+        OR (preparation.kind='synthetic_recovery')<>(p_scope_kind='test')
+        OR (p_scope_kind='test' AND preparation.test_scope_id IS DISTINCT FROM p_scope_id)
+        OR (p_probe_token IS NULL AND gate.mode<>'ready')
+        OR (p_probe_token IS NOT NULL AND (gate.active_preparation_id IS DISTINCT FROM p_preparation_id
+            OR gate.active_probe_token IS DISTINCT FROM p_probe_token OR gate.active_attempt_id IS NOT NULL))) THEN reason:='preparation_stale';
+    ELSE
+        SELECT array_agg(budget_at ORDER BY budget_at DESC,id) INTO charged FROM (
+            SELECT budget_at,id FROM private.automation_email_attempt_reservations
+            WHERE studio_id=p_studio_id AND recipient_email=p_recipient_email AND frequency_state IN ('sending','accepted','unknown')
+                AND budget_at>at-INTERVAL '24 hours' ORDER BY budget_at DESC,id LIMIT 3) recent;
+        retry:=greatest(charged[1]+INTERVAL '60 minutes',charged[3]+INTERVAL '24 hours');
+        IF retry>at THEN reason:='rate_limited'; ELSE retry:=NULL; END IF;
+    END IF;
+    IF reason IS NOT NULL THEN
+        RETURN jsonb_build_object('outcome','denied','attempt_id',NULL,'attempt_number',NULL,'owner_token',NULL,
+            'lease_expires_at',NULL,'generation',NULL,'reason',reason,'retry_at',retry);
+    END IF;
+    INSERT INTO private.automation_email_attempt_reservations(id,studio_id,provider_key,scope_kind,scope_id,node_id,recipient_email,
+        origin,protocol,state,frequency_state,actual_began_at,attempt_number,owner_token,lease_expires_at,sender_generation,sender_binding,
+        preparation_id,preparation_token,probe_token,admitted_credential_revision)
+        VALUES(p_attempt_id,p_studio_id,gate.provider_key,p_scope_kind,p_scope_id,p_node_id,p_recipient_email,'actual',protocol,'sending','sending',
+            at,ordinal,p_owner_token,at+INTERVAL '60 seconds',gate.generation,preparation.sender_binding,p_preparation_id,p_preparation_token,
+            p_probe_token,preparation.credential_revision) RETURNING * INTO attempt;
+    IF p_probe_token IS NOT NULL THEN
+        UPDATE private.automation_sender_preparations SET consumed_by_attempt_id=attempt.id,consumed_at=at WHERE id=preparation.id;
+        UPDATE private.automation_sender_gate SET active_attempt_id=attempt.id,probe_expires_at=attempt.lease_expires_at,updated_at=at
+            WHERE provider_key=gate.provider_key;
+    END IF;
+    RETURN jsonb_build_object('outcome','begun','attempt_id',attempt.id,'attempt_number',attempt.attempt_number,'owner_token',attempt.owner_token,
+        'lease_expires_at',attempt.lease_expires_at,'generation',attempt.sender_generation,'reason',NULL,'retry_at',NULL);
+EXCEPTION WHEN lock_not_available THEN RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STUDIO_BUSY';
+    WHEN undefined_table OR undefined_column THEN RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_SENDER_UNAVAILABLE';
+END $$;
+
+CREATE FUNCTION private.automation_email_attempt_settle_v1(p_attempt_id UUID,p_owner_token UUID,p_result JSONB) RETURNS JSONB
+LANGUAGE plpgsql SECURITY INVOKER SET search_path='' AS $$
+<<settlement>>
+DECLARE attempt private.automation_email_attempt_reservations; gate private.automation_sender_gate;
+    preparation private.automation_sender_preparations; revision BIGINT; result JSONB; at TIMESTAMPTZ; state TEXT;
+    owns_probe BOOLEAN; recovery BOOLEAN; expired BOOLEAN; outcome TEXT:='confirmed';
+    refused JSONB:=jsonb_build_object('outcome','refused','attempt_id',p_attempt_id,'state',NULL,'result',NULL,'settled_at',NULL);
+BEGIN
+    SELECT * INTO attempt FROM private.automation_email_attempt_reservations WHERE id=p_attempt_id;
+    IF attempt.id IS NULL OR p_owner_token IS NULL OR attempt.owner_token IS DISTINCT FROM p_owner_token THEN RETURN refused; END IF;
+    PERFORM private.automation_email_scope_lock_v1(attempt.studio_id,attempt.scope_kind,attempt.scope_id,attempt.node_id,attempt.recipient_email);
+    IF attempt.protocol='prepared' THEN
+        SELECT c.revision INTO revision FROM private.automation_email_credentials c WHERE c.provider_key=attempt.provider_key FOR SHARE NOWAIT;
+    END IF;
+    gate:=private.automation_sender_gate_lock_v1();
+    IF attempt.preparation_id IS NOT NULL THEN
+        SELECT * INTO preparation FROM private.automation_sender_preparations WHERE id=attempt.preparation_id FOR UPDATE;
+    END IF;
+    SELECT * INTO attempt FROM private.automation_email_attempt_reservations WHERE id=p_attempt_id FOR UPDATE;
+    at:=clock_timestamp();
+    IF attempt.id IS NULL OR attempt.owner_token IS DISTINCT FROM p_owner_token THEN RETURN refused; END IF;
+    IF attempt.protocol='prepared' THEN result:=private.automation_delivery_result_v1(p_result,attempt.admitted_credential_revision);
+    ELSE result:=private.automation_legacy_delivery_result_v1(p_result); END IF;
+    IF attempt.state<>'sending' THEN
+        IF attempt.result IS DISTINCT FROM result THEN RETURN refused; END IF;
+        RETURN jsonb_build_object('outcome','replayed','attempt_id',attempt.id,'state',attempt.state,'result',attempt.result,'settled_at',attempt.settled_at);
+    END IF;
+    IF attempt.lease_expires_at IS NULL THEN RETURN refused; END IF;
+    expired:=attempt.lease_expires_at<=at;
+    IF expired THEN
+        result:=private.automation_delivery_result_v1(NULL,attempt.admitted_credential_revision);
+    END IF;
+    state:=CASE result->>'outcome' WHEN 'accepted' THEN 'accepted' WHEN 'unknown' THEN 'unknown' ELSE 'failed' END;
+    owns_probe:=attempt.probe_token IS NOT NULL AND ROW(gate.active_attempt_id,gate.active_preparation_id,gate.active_probe_token,gate.probe_expires_at)
+        IS NOT DISTINCT FROM ROW(attempt.id,attempt.preparation_id,attempt.probe_token,attempt.lease_expires_at);
+    recovery:=owns_probe AND NOT expired AND result->>'outcome'='accepted' AND result->>'submission_evidence'='accepted'
+        AND attempt.sender_generation=gate.generation AND attempt.sender_binding=gate.sender_binding
+        AND (result->>'credential_revision')::BIGINT=attempt.admitted_credential_revision AND revision=attempt.admitted_credential_revision
+        AND preparation.consumed_by_attempt_id=attempt.id AND preparation.preparation_token=attempt.preparation_token
+        AND (gate.mode='cooldown' OR (gate.mode='auth_blocked' AND preparation.kind='synthetic_recovery'));
+    UPDATE private.automation_email_attempt_reservations SET state=settlement.state,
+        frequency_state=CASE WHEN settlement.state='failed' THEN 'released' ELSE settlement.state END,
+        result=settlement.result,settled_at=at WHERE id=attempt.id RETURNING * INTO attempt;
+    IF recovery IS TRUE THEN
+        UPDATE private.automation_sender_gate SET mode='ready',reason=NULL,next_probe_at=NULL,transient_failures=0,
+            active_preparation_id=NULL,active_probe_token=NULL,active_attempt_id=NULL,probe_expires_at=NULL,updated_at=at WHERE provider_key=gate.provider_key;
+    ELSIF owns_probe THEN
+        UPDATE private.automation_sender_gate SET active_preparation_id=NULL,active_probe_token=NULL,active_attempt_id=NULL,
+            probe_expires_at=NULL,updated_at=at WHERE provider_key=gate.provider_key;
+    END IF;
+    -- Terminal pointer cleanup above never changes failure evidence. A new provider
+    -- observation separately fences all earlier preparation and probe generations.
+    IF state='unknown' AND attempt.origin='actual' THEN
+        PERFORM private.automation_sender_failure_v1('sender_transient','provider_submission_unknown',
+            (result->>'credential_revision')::BIGINT,NULL,at);
+    ELSIF state='failed' AND attempt.protocol='prepared' AND result->>'failure_scope' IS DISTINCT FROM 'message' THEN
+        PERFORM private.automation_sender_failure_v1(CASE WHEN result->>'failure_scope'='sender_auth' THEN 'sender_auth' ELSE 'sender_transient' END,
+            result->>'error_code',(result->>'credential_revision')::BIGINT,(result->>'retry_after_seconds')::INTEGER,at);
+    ELSIF state='failed' AND attempt.protocol<>'prepared' THEN
+        PERFORM private.automation_sender_failure_v1(CASE WHEN result->>'outcome'='permanent_failure' THEN 'sender_auth' ELSE 'sender_transient' END,
+            CASE WHEN result->>'outcome'='permanent_failure' THEN 'sender_rejection_unclassified' ELSE result->>'error_code' END,
+            NULL,(result->>'retry_after_seconds')::INTEGER,at);
+    END IF;
+    RETURN jsonb_build_object('outcome',outcome,'attempt_id',attempt.id,'state',attempt.state,'result',attempt.result,'settled_at',attempt.settled_at);
+EXCEPTION WHEN lock_not_available THEN RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STUDIO_BUSY';
+    WHEN undefined_table OR undefined_column THEN RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_SENDER_UNAVAILABLE';
+END $$;
+
+CREATE FUNCTION private.automation_email_attempt_expire_v1(p_attempt_id UUID) RETURNS JSONB
+LANGUAGE plpgsql SECURITY INVOKER SET search_path='' AS $$
+DECLARE attempt private.automation_email_attempt_reservations; result JSONB;
+BEGIN
+    SELECT * INTO attempt FROM private.automation_email_attempt_reservations WHERE id=p_attempt_id;
+    IF attempt.id IS NULL OR attempt.state<>'sending' OR attempt.lease_expires_at IS NULL OR attempt.lease_expires_at>clock_timestamp() THEN
+        RETURN jsonb_build_object('outcome','refused','attempt_id',p_attempt_id,'state',NULL,'result',NULL,'settled_at',NULL);
+    END IF;
+    result:=CASE WHEN attempt.protocol='prepared' THEN private.automation_delivery_result_v1(NULL)
+        ELSE jsonb_build_object('outcome','unknown','error_code',NULL,'provider_request_id',NULL,'retry_after_seconds',NULL) END;
+    RETURN private.automation_email_attempt_settle_v1(attempt.id,attempt.owner_token,result);
+END $$;
+
+CREATE FUNCTION private.automation_legacy_projection_pin_v1(p_attempt_id UUID,p_owner_token UUID,p_projection JSONB) RETURNS BOOLEAN
+LANGUAGE plpgsql SECURITY INVOKER SET search_path='' AS $$
+DECLARE attempt private.automation_email_attempt_reservations;
+BEGIN
+    IF NOT private.automation_legacy_projection_valid_v1(p_projection) THEN
+        RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST'; END IF;
+    SELECT * INTO attempt FROM private.automation_email_attempt_reservations WHERE id=p_attempt_id FOR UPDATE NOWAIT;
+    IF attempt.id IS NULL OR attempt.scope_kind<>'legacy' OR attempt.state='sending' OR attempt.owner_token IS DISTINCT FROM p_owner_token
+        OR (attempt.state='failed' AND p_projection->>'state' NOT IN ('failed','retry_wait'))
+        OR (attempt.state<>'failed' AND p_projection->>'state'<>attempt.state)
+        OR (attempt.legacy_projection IS NOT NULL AND attempt.legacy_projection IS DISTINCT FROM p_projection) THEN RETURN false; END IF;
+    IF attempt.legacy_projection IS NULL THEN
+        UPDATE private.automation_email_attempt_reservations SET legacy_projection=p_projection WHERE id=attempt.id;
+    END IF;
+    RETURN true;
+EXCEPTION WHEN lock_not_available THEN RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STUDIO_BUSY';
+END $$;
+
+INSERT INTO private.automation_sender_gate(provider_key,generation,mode,transient_failures,updated_at)
+    VALUES('microsoft_graph:primary',1,'ready',0,clock_timestamp());
+ALTER TABLE private.automation_sender_gate OWNER TO postgres;
+ALTER TABLE private.automation_sender_preparations OWNER TO postgres;
+ALTER TABLE private.automation_email_attempt_reservations OWNER TO postgres;
+ALTER TABLE private.automation_sender_gate ENABLE ROW LEVEL SECURITY;
+ALTER TABLE private.automation_sender_preparations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE private.automation_email_attempt_reservations ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON private.automation_sender_gate,private.automation_sender_preparations,private.automation_email_attempt_reservations FROM PUBLIC,anon,authenticated,service_role;
+GRANT SELECT,UPDATE ON private.automation_sender_gate TO service_role;
+GRANT SELECT,INSERT,UPDATE ON private.automation_sender_preparations,private.automation_email_attempt_reservations TO service_role;
+CREATE POLICY reject_client_access ON private.automation_sender_gate AS RESTRICTIVE FOR ALL TO anon,authenticated USING(false) WITH CHECK(false);
+CREATE POLICY reject_client_access ON private.automation_sender_preparations AS RESTRICTIVE FOR ALL TO anon,authenticated USING(false) WITH CHECK(false);
+CREATE POLICY reject_client_access ON private.automation_email_attempt_reservations AS RESTRICTIVE FOR ALL TO anon,authenticated USING(false) WITH CHECK(false);
+DO $sender_privileges$
+DECLARE r RECORD;
+BEGIN
+    FOR r IN SELECT p.oid::REGPROCEDURE identity,p.prorettype FROM pg_catalog.pg_proc p JOIN pg_catalog.pg_namespace n ON n.oid=p.pronamespace
+        WHERE (n.nspname='private' AND p.proname IN ('automation_sender_instant_v1','automation_sender_preparation_result_valid_v1',
+            'automation_legacy_projection_valid_v1','automation_legacy_delivery_result_v1','automation_sender_gate_identity_v1',
+            'automation_sender_preparation_identity_v1','automation_email_attempt_identity_v1','automation_sender_gate_lock_v1',
+            'automation_sender_retry_at_v1','automation_sender_preparation_reply_v1','automation_email_scope_lock_v1','automation_sender_failure_v1',
+            'automation_sender_claim_v1','automation_sender_preparation_settle_v1','automation_delivery_result_v1',
+            'automation_email_attempt_begin_v1','automation_email_attempt_settle_v1','automation_email_attempt_expire_v1',
+            'automation_legacy_projection_pin_v1','automation_sender_release_probe_v1','automation_sender_release_orphan_probe_v1'))
+            OR (n.nspname='public' AND p.proname IN ('claim_automation_sender_preparation_v1','settle_automation_sender_preparation_v1')) LOOP
+        EXECUTE format('ALTER FUNCTION %s OWNER TO postgres',r.identity);
+        EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC,anon,authenticated,service_role',r.identity);
+        IF r.prorettype<>'trigger'::REGTYPE THEN EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO service_role',r.identity); END IF;
+    END LOOP;
+END $sender_privileges$;
+
+-- Advisory provider state only. Configuration/codec checks remain server-owned;
+-- this read neither claims a probe nor refreshes, expires, repairs or binds one.
+CREATE FUNCTION public.get_automation_sender_status_v1(p_provider_key TEXT) RETURNS JSONB
+LANGUAGE plpgsql STABLE SECURITY INVOKER SET search_path='' AS $$
+DECLARE gate private.automation_sender_gate;
+BEGIN
+    IF p_provider_key IS DISTINCT FROM 'microsoft_graph:primary' THEN
+        RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST';
+    END IF;
+    SELECT * INTO gate FROM private.automation_sender_gate WHERE provider_key=p_provider_key;
+    IF gate.provider_key IS NULL OR gate.generation IS NULL OR gate.generation<=0 OR gate.transient_failures IS NULL
+        OR gate.transient_failures NOT BETWEEN 0 AND 7 OR gate.failed_credential_revision<=0
+        OR gate.mode IS NULL OR gate.mode NOT IN ('ready','cooldown','auth_blocked')
+        OR (gate.sender_binding IS NOT NULL AND gate.sender_binding !~ '^[a-f0-9]{64}$')
+        OR private.automation_sender_instant_v1(gate.updated_at) IS DISTINCT FROM true
+        OR (gate.mode='ready' AND (gate.reason IS NOT NULL OR gate.next_probe_at IS NOT NULL OR gate.active_preparation_id IS NOT NULL))
+        OR (gate.mode='cooldown' AND (gate.reason IS NULL OR private.automation_sender_instant_v1(gate.next_probe_at) IS DISTINCT FROM true))
+        OR (gate.mode='auth_blocked' AND (gate.reason IS NULL OR gate.next_probe_at IS NOT NULL))
+        OR (gate.active_preparation_id IS NULL AND (gate.active_probe_token IS NOT NULL OR gate.active_attempt_id IS NOT NULL OR gate.probe_expires_at IS NOT NULL))
+        OR (gate.active_preparation_id IS NOT NULL AND (gate.active_probe_token IS NULL
+            OR private.automation_sender_instant_v1(gate.probe_expires_at) IS DISTINCT FROM true)) THEN
+        RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_SENDER_UNAVAILABLE';
+    END IF;
+    IF gate.reason IS NOT NULL AND gate.reason<>'sender_rejection_unclassified'
+        AND NOT private.automation_sender_preparation_result_valid_v1(jsonb_build_object('outcome','sender_transient',
+            'credential_revision',NULL,'sender_binding',repeat('a',64),'safe_reason',gate.reason,'retry_after_seconds',NULL)) THEN
+        RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_SENDER_UNAVAILABLE';
+    END IF;
+    RETURN jsonb_build_object('payload',jsonb_build_object('mode',gate.mode,'reason',gate.reason));
+EXCEPTION WHEN undefined_table OR undefined_column THEN
+    RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_SENDER_UNAVAILABLE';
+END $$;
+ALTER FUNCTION public.get_automation_sender_status_v1(TEXT) OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.get_automation_sender_status_v1(TEXT) FROM PUBLIC,anon,authenticated,service_role;
+GRANT EXECUTE ON FUNCTION public.get_automation_sender_status_v1(TEXT) TO service_role;
