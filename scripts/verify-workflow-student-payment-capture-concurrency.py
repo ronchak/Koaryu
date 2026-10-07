@@ -411,7 +411,7 @@ OR (n.nspname='public' AND p.proname IN ('write_student_profile_atomic','write_s
         release(preceding_writer)
         installer = session(
             "capture_install_fresh",
-            "\\i " + psql_file(MIGRATION),
+            "\\i " + psql_file(MIGRATION) + "\nINSERT INTO supabase_migrations.schema_migrations(version,name) VALUES('20261005105341','automation_workflow_graph_v57');",
             hold=True,
             role="postgres",
         )
@@ -442,8 +442,8 @@ OR (n.nspname='public' AND p.proname IN ('write_student_profile_atomic','write_s
         )
         require(facts(old) == before_facts, "Installation rewrote business rows")
         require(
-            sql("SELECT count(*) FROM supabase_migrations.schema_migrations;") == "151",
-            "Partial V57 registered release history",
+            sql("SELECT count(*) FROM supabase_migrations.schema_migrations;") == "152",
+            "Complete V57 migration history differs",
         )
         after_functions = functions()
         retained = {
@@ -487,7 +487,7 @@ OR (n.nspname='public' AND p.proname IN ('write_student_profile_atomic','write_s
                     f"Wrapper or financial owner changed: {name}",
                 )
         passed(
-            "installation preserves business rows, 151-history and untouched wrapper/financial functions",
+            "installation preserves business rows, 152-history and untouched wrapper/financial functions",
             function_hashes={
                 name: {
                     "before": hashlib.sha256(entry["definition"].encode()).hexdigest(),

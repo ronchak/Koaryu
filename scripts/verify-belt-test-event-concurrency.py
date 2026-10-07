@@ -18,7 +18,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from uuid import uuid4
 
-from local_postgres_verification import LocalPostgres, require
+from local_postgres_verification import LocalPostgres, require, install_final_v57
 
 ROOT = Path(__file__).resolve().parents[1]
 MIGRATION = (
@@ -390,9 +390,9 @@ END $proof$; SELECT '{{}}'::jsonb;"""
     try:
         local.sql("postgres", f"CREATE DATABASE {database} TEMPLATE postgres;")
         owned = True
-        sql("BEGIN;" + MIGRATION.read_text() + "COMMIT;")
+        install_final_v57(local, database, ROOT)
         require(
-            sql("SELECT count(*) FROM supabase_migrations.schema_migrations;") == "151",
+            sql("SELECT count(*) FROM supabase_migrations.schema_migrations;") == "152",
             "Partial migration registered history",
         )
         for contract in (
@@ -898,10 +898,10 @@ END $proof$; SELECT '{{}}'::jsonb;"""
             "Historical migration bytes changed",
         )
         require(
-            sql("SELECT count(*) FROM supabase_migrations.schema_migrations;") == "151",
+            sql("SELECT count(*) FROM supabase_migrations.schema_migrations;") == "152",
             "Partial migration registered history",
         )
-        passed("151 historical hashes and migration history unchanged")
+        passed("151 historical hashes unchanged and complete 152 migration history")
     finally:
         for item in children:
             process = item["process"]
@@ -927,8 +927,8 @@ END $proof$; SELECT '{{}}'::jsonb;"""
                 "outcome": "passed",
                 "cases": cases,
                 "clone_cleaned": owned,
-                "partial_v57": True,
-                "migration_history_count": 151,
+                "complete_v57": True,
+                "migration_history_count": 152,
             },
             sort_keys=True,
         )

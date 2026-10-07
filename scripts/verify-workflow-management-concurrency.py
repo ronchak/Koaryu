@@ -18,7 +18,7 @@ from copy import deepcopy
 from pathlib import Path
 from uuid import uuid4
 
-from local_postgres_verification import LocalPostgres, require
+from local_postgres_verification import LocalPostgres, require, install_final_v57
 
 ROOT = Path(__file__).resolve().parents[1]
 MIGRATION = (
@@ -983,33 +983,8 @@ SELECT pg_sleep(0.003);""")
     try:
         local.sql("postgres", f"CREATE DATABASE {database} TEMPLATE postgres;")
         owned = True
-        local.run(
-            [
-                psql,
-                *local.connection,
-                f"--dbname={database}",
-                "--no-psqlrc",
-                "--set=ON_ERROR_STOP=1",
-                "--quiet",
-                "--single-transaction",
-                f"--file={MIGRATION}",
-            ]
-        )
-        require(
-            sql("SELECT count(*) FROM supabase_migrations.schema_migrations;") == "151",
-            "Pilot registered migration history",
-        )
-        passed(
-            "transactional draft migration from exact V56 without history registration"
-        )
-        require(
-            sql(
-                "SELECT to_regprocedure('public.koaryu_release_schema_preflight_v38()') IS NULL;"
-            )
-            == "t",
-            "Partial migration must not advertise V38 readiness",
-        )
-        passed("partial V57 retains absent workflow readiness guard")
+        readiness = install_final_v57(local, database, ROOT)
+        passed("complete strict V57 catalog and actual152 history", readiness=readiness)
         graph_parity()
         name_parity()
         contract_result = local.run(
@@ -1430,8 +1405,8 @@ FROM public.automation_workflow_activations WHERE workflow_id='{ids["workflow"]}
                 "outcome": "passed",
                 "cases": cases,
                 "clone_cleaned": owned,
-                "partial_v57": True,
-                "migration_history_count": 151,
+                "complete_v57": True,
+                "migration_history_count": 152,
             },
             sort_keys=True,
         )

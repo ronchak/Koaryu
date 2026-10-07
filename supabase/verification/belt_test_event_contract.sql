@@ -35,8 +35,8 @@ DO $$ DECLARE role_name TEXT; t TEXT; f REGPROCEDURE; BEGIN
     FOREACH t IN ARRAY ARRAY['belt_test_events','belt_test_recipients'] LOOP
         PERFORM pg_temp.belt_check((SELECT relrowsecurity AND relpersistence='p' AND pg_get_userbyid(relowner)='postgres'
             FROM pg_class WHERE oid=('public.'||t)::REGCLASS),'logged RLS owner '||t);
-        PERFORM pg_temp.belt_check(has_table_privilege('service_role','public.'||t,'SELECT,INSERT,UPDATE')
-            AND NOT has_table_privilege('service_role','public.'||t,'DELETE,TRUNCATE,REFERENCES,TRIGGER'),'exact service grants '||t);
+        PERFORM pg_temp.belt_check(has_table_privilege('service_role','public.'||t,'SELECT,INSERT,UPDATE,DELETE')
+            AND NOT has_table_privilege('service_role','public.'||t,'TRUNCATE,REFERENCES,TRIGGER'),'exact service grants '||t);
         PERFORM pg_temp.belt_check((SELECT count(*)=2 AND bool_and(NOT polpermissive) FROM pg_policy
             WHERE polrelid=('public.'||t)::REGCLASS),'restrictive policies '||t);
     END LOOP;

@@ -10,6 +10,8 @@ import sys
 from local_postgres_verification import ACL_SQL, CONSTRAINT_SQL, PAIR_PATH, LocalPostgres, normalization_plan, require
 
 MIGRATION = "20261004220435_missed_class_automation_v56.sql"
+import subprocess
+
 TABLES = ("auth.users", "public.studios", "public.staff_roles", "public.programs", "public.leads",
           "public.lead_activities", "public.lead_follow_up_operations", "public.students",
           "public.student_program_memberships", "public.guardians", "public.student_guardians", "public.audit_logs",
@@ -50,6 +52,7 @@ SELECT 'seeded';
 COMMIT;
 """
 
+CONTRACT_BASE = "611b1a7c885613d28d1861fd69f57190e5b302be"
 CONTRACT_SHA256 = "cf827777be54b8160890df6f87e4cca3d7909f9f14daad2fdf6b7d0528faaeca"
 
 
@@ -76,7 +79,7 @@ def main(arguments):
         "V55_STUDENT_PROFILE_STATE_SQL", "EXPECTED_V55_STUDENT_PROFILE_STATE",
         "V55_LEAD_CONVERSION_STATE_SQL", "EXPECTED_V55_LEAD_CONVERSION_STATE",
         "V55_LEAD_FOLLOW_UP_STATE_SQL", "EXPECTED_V55_LEAD_FOLLOW_UP_STATE",
-        "FINAL_OPERATIONAL_READINESS_SQL", "EXPECTED_OPERATIONAL_READINESS",
+        "V56_OPERATIONAL_READINESS_SQL", "EXPECTED_V56_OPERATIONAL_READINESS",
         "V56_CATALOG_STATE_SQL", "EXPECTED_V56_CATALOG_STATE", "EXPECTED_V56_RESTORED_CATALOG_STATE",
         "V56_RELEASE_MANIFEST_SQL", "EXPECTED_V56_RELEASE_MANIFEST",
         "V31_EXPECTATION_STATE_SQL", "EXPECTED_V56_EXPECTATION_STATE",
@@ -164,8 +167,9 @@ def main(arguments):
     predecessor("postgres")
     hashes = {p.name: hashlib.sha256(p.read_bytes()).hexdigest()
               for p in sorted((root / "supabase/migrations").glob("*.sql"))}
-    require(len(hashes) == 151 and list(hashes)[-2:] == [
-        "20260930192626_converted_lead_enrollment_v55.sql", MIGRATION], "Unexpected migration inventory")
+    require(len(hashes) == 152 and list(hashes)[-3:] == [
+        "20260930192626_converted_lead_enrollment_v55.sql", MIGRATION,
+        "20261005105341_automation_workflow_graph_v57.sql"], "Unexpected migration inventory")
     migration = root / "supabase/migrations" / MIGRATION
     mapping_bytes = PAIR_PATH.read_bytes()
     pairs = json.loads(mapping_bytes)
@@ -215,7 +219,7 @@ def main(arguments):
                        f"--command=INSERT INTO supabase_migrations.schema_migrations(version,name) VALUES('{version}','{name}');"])
             require(snapshot(database) == before, "Migration changed retained rows before continuation")
             checks = [
-                ("FINAL_OPERATIONAL_READINESS_SQL", "EXPECTED_OPERATIONAL_READINESS"),
+                ("V56_OPERATIONAL_READINESS_SQL", "EXPECTED_V56_OPERATIONAL_READINESS"),
                 ("V56_CATALOG_STATE_SQL", "EXPECTED_V56_RESTORED_CATALOG_STATE" if is_restored else "EXPECTED_V56_CATALOG_STATE"),
                 ("V56_RELEASE_MANIFEST_SQL", "EXPECTED_V56_RELEASE_MANIFEST"),
                 ("V31_EXPECTATION_STATE_SQL", "EXPECTED_V56_EXPECTATION_STATE"),
@@ -267,7 +271,15 @@ def main(arguments):
             ]
             values = {query: check(database, query, expected) for query, expected in checks}
             contract = root / "supabase/verification/missed_class_automation_contract.sql"
-            contract_bytes = contract.read_bytes()
+            require(local.run(["git", "-C", str(root), "rev-parse", "--is-shallow-repository"]) == "false",
+                    "Historical V56 contract requires full Git history")
+            local.run(["git", "-C", str(root), "merge-base", "--is-ancestor", CONTRACT_BASE, "HEAD"])
+            # This immutable V56 input predates the final shared V57 assertions.
+            # Preserve the original bytes and reviewed hash rather than repinning history.
+            contract_bytes = subprocess.check_output(
+                ["git", "-C", str(root), "show", CONTRACT_BASE + ":supabase/verification/missed_class_automation_contract.sql"],
+                env=local.env,
+            )
             require(hashlib.sha256(contract_bytes).hexdigest() == CONTRACT_SHA256,
                     "Automation business contract differs from its reviewed restore input")
             local.sql(database, contract_bytes.decode())

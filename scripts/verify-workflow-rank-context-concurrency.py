@@ -381,7 +381,7 @@ SELECT jsonb_agg(pg_temp.profile_error(statement) ORDER BY position) FROM unnest
             )
         installer["process"].stdin.write(
             MIGRATION.read_text()
-            + "\n"
+            + "\nINSERT INTO supabase_migrations.schema_migrations(version,name) VALUES('20261005105341','automation_workflow_graph_v57');\n"
             + source_snapshot
             + "\nSELECT 'RESULT_READY';\n"
         )
@@ -418,7 +418,7 @@ SELECT jsonb_agg(pg_temp.profile_error(statement) ORDER BY position) FROM unnest
             "Installation generated historical occurrences",
         )
         require(
-            sql("SELECT count(*) FROM supabase_migrations.schema_migrations;") == "151",
+            sql("SELECT count(*) FROM supabase_migrations.schema_migrations;") == "152",
             "Partial install registered history",
         )
         passed(

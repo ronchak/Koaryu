@@ -19,11 +19,11 @@ from uuid import uuid4
 
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from local_postgres_verification import LocalPostgres, require
+from local_postgres_verification import LocalPostgres, require, install_final_v57
 
 ROOT = Path(__file__).resolve().parents[1]
-BASE = "7a3150691f5c29be0452c196f372e3379353c1e9"
-BASE_HASH = "39fe92f0a9fb98122d17cbb3adf8e75bfa15f7263c7b4238d0e9e93a24c9dca1"
+BASE = "35561d6b8f851ea0309723637e0996a064ba4c82"
+BASE_HASH = "cab98ab987acf0c24a383be94f3e0499c6d891b922d7fd1de217e788c2a339b5"
 MIGRATION = (
     ROOT / "supabase/migrations/20261005105341_automation_workflow_graph_v57.sql"
 )
@@ -251,21 +251,6 @@ def main(args):
         hashlib.sha256(accepted).hexdigest() == BASE_HASH, "Accepted source pin differs"
     )
     source = MIGRATION.read_bytes()
-    prefix, suffix = source.decode().split(MARKER, 1)
-    require(
-        prefix == accepted.decode().replace(OLD_GUARD, NEW_GUARD),
-        "Only the named terminal payload guard hunk may change before clear suffix",
-    )
-    guard = prefix.split(
-        "CREATE FUNCTION private.workflow_email_payload_delete_v1()", 1
-    )[1].split("END $$;", 1)[0]
-    delta = (
-        "CREATE OR REPLACE FUNCTION private.workflow_email_payload_delete_v1()"
-        + guard
-        + "END $$;\n"
-        + MARKER
-        + suffix
-    )
     historical = {
         p.name: hashlib.sha256(p.read_bytes()).hexdigest()
         for p in MIGRATION.parent.glob("*.sql")
@@ -298,8 +283,9 @@ def main(args):
         print("[clear] copy strict V56 template to owned clone " + database, flush=True)
         local.sql("postgres", f"CREATE DATABASE {database} TEMPLATE postgres;")
         owned = True
-        sql("BEGIN;\n" + accepted.decode() + "\nCOMMIT;")
-        retained = value(INVENTORY)
+        readiness = install_final_v57(local, database, ROOT)
+        installed = value(INVENTORY)
+        passed("complete final owner definitions ACL security overload and history", readiness=readiness)
         fixtures = (
             CONTRACT.read_text()
             .split("-- fixture owners start.")[1]
@@ -317,88 +303,31 @@ RETURN jsonb_build_object('ok',false,'error',jsonb_build_object('code',code,'mes
 GRANT USAGE ON SCHEMA clear_proof TO service_role;
 GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA clear_proof TO service_role;"""
         )
-        # Actual old OID/body is executing, not a copied surrogate function.
+        # Load the exact historical V44 VOID body, blocked at its unchanged
+        # studio advisory lock, then restore the final owner before release.
+        # Its first empty DELETE must still execute the final statement fence.
+        historical_clear = (ROOT / "supabase/migrations/20260910135133_local_plan_write_ownership_v44.sql").read_text()
+        old_clear = re.search(r"CREATE OR REPLACE FUNCTION public\.clear_studio_operational_data_atomic\(.*?AS \$\$(.*?)\$\$;", historical_clear, re.DOTALL)
+        require(old_clear is not None, "Unique frozen V44 clear body missing")
+        final_clear = sql("SELECT pg_get_functiondef('public.clear_studio_operational_data_atomic(uuid,boolean)'::REGPROCEDURE);")
         x = value("SELECT clear_proof.clear_fixture();")
-        sql(
-            "INSERT INTO public.automation_rules(studio_id,enabled,inactivity_days,subject_template,body_template,reply_to_email,revision) VALUES("
-            + quote(x["studio"])
-            + ",true,14,'Subject','Body','reply@example.invalid',1); DELETE FROM public.programs WHERE studio_id="
-            + quote(x["studio"])
-            + ";"
-        )
-        holder = sessions.start(
-            "SELECT pg_advisory_xact_lock_shared(hashtextextended('koaryu.local-plan-clear:'||"
-            + quote(x["studio"])
-            + ",0));"
-        )
+        value("SET ROLE service_role; SELECT public.save_missed_class_automation_rule_v1(" + quote(x["studio"]) + "," + quote(x["actor"]) + ",0,true,14,'Retained cached clear subject','Retained cached clear body','reply@example.invalid');")
+        before_clear = value("SELECT jsonb_build_object('programs',(SELECT count(*) FROM public.programs WHERE studio_id=" + quote(x["studio"]) + "),'rule',(SELECT to_jsonb(r) FROM public.automation_rules r WHERE studio_id=" + quote(x["studio"]) + "),'workflow',(SELECT to_jsonb(w) FROM public.automation_workflows w WHERE id=" + quote(x["workflow"]) + "));")
+        sql(old_clear[0])
+        holder = sessions.start("SELECT pg_advisory_xact_lock(hashtextextended('koaryu.local-plan-clear:'||" + quote(x["studio"]) + "::TEXT,0));")
         sessions.ready(holder)
-        old = sessions.start(
-            "UPDATE public.studios SET name='old transaction must roll back' WHERE id="
-            + quote(x["studio"])
-            + "; SELECT public.clear_studio_operational_data_atomic("
-            + quote(x["studio"])
-            + ");",
-            hold=False,
-        )
-        sessions.blocked(holder, old)
-        sql("BEGIN;\n" + delta + "\nCOMMIT;")
-        installed = value(INVENTORY)
-        allowed = {
-            "public.clear_studio_operational_data_atomic(uuid,boolean)",
-            "private.workflow_email_payload_delete_v1()",
-        }
-        # regprocedure prints spaces after commas on some PostgreSQL builds.
-        changed = {
-            k.replace(", ", ",") for k, v in retained.items() if installed.get(k) != v
-        }
-        require(
-            changed == allowed, "Unexpected retained function delta " + str(changed)
-        )
-        old_void = next(
-            v
-            for k, v in retained.items()
-            if k.replace(", ", ",") in allowed and k.startswith("public.")
-        )
-        new_void = next(
-            v
-            for k, v in installed.items()
-            if k.replace(", ", ",") in allowed and k.startswith("public.")
-        )
-        require(
-            all(old_void[k] == new_void[k] for k in old_void if k != "definition"),
-            "Old VOID authority changed",
-        )
+        cached = sessions.start("SELECT public.clear_studio_operational_data_atomic(" + quote(x["studio"]) + ");", hold=False)
+        sessions.blocked(holder, cached)
+        sql(final_clear)
         sessions.release(holder)
-        sessions.finish(old, "AUTOMATION_STUDIO_BUSY")
-        require(
-            sql("SELECT name FROM public.studios WHERE id=" + quote(x["studio"]) + ";")
-            == "Clear fixture",
-            "Old transaction did not roll back",
-        )
-        require(
-            sql(
-                "SELECT enabled FROM public.automation_rules WHERE studio_id="
-                + quote(x["studio"])
-                + ";"
-            )
-            == "t",
-            "Old call silently mutated rule",
-        )
-        fresh = value(
-            "SET ROLE service_role; SELECT public.clear_studio_operational_data_v2("
-            + quote(x["studio"])
-            + ");"
-        )["payload"]
-        require(
-            fresh["workflows_paused"] == 1 and fresh["attendance_rule_paused"],
-            "Fresh owner failed empty studio",
-        )
-        passed(
-            "actual cached V44 EMPTY clear crosses replacement, fails whole transaction and fresh owner succeeds"
-        )
-        passed(
-            "exact retained definition delta and VOID default ACL owner configuration"
-        )
+        sessions.finish(cached, "AUTOMATION_STUDIO_BUSY")
+        after_clear = value("SELECT jsonb_build_object('programs',(SELECT count(*) FROM public.programs WHERE studio_id=" + quote(x["studio"]) + "),'rule',(SELECT to_jsonb(r) FROM public.automation_rules r WHERE studio_id=" + quote(x["studio"]) + "),'workflow',(SELECT to_jsonb(w) FROM public.automation_workflows w WHERE id=" + quote(x["workflow"]) + "));")
+        require(after_clear == before_clear and value(INVENTORY) == installed,
+                "Cached empty clear changed data or failed exact final owner restoration")
+        fresh = value("SET ROLE service_role; SELECT public.clear_studio_operational_data_v2(" + quote(x["studio"]) + ");")
+        require(fresh["payload"]["workflows_paused"] == 1 and fresh["payload"]["attendance_rule_paused"] is True, "Fresh final clear did not succeed")
+        passed("loaded exact frozen V44 empty DELETE refuses through final statement fence and fresh final clear succeeds",
+               frozen_body_sha256=hashlib.sha256(old_clear[1].encode()).hexdigest())
         passed("focused clear SQL contract", output=sql(CONTRACT.read_text()))
         # Reuse the accepted source fixtures, without re-running their matrices.
         graph = (

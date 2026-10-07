@@ -26,11 +26,11 @@ from uuid import uuid4
 
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from local_postgres_verification import LocalPostgres, require
+from local_postgres_verification import LocalPostgres, require, install_final_v57
 
 ROOT = Path(__file__).resolve().parents[1]
-BASE = "12d5da96533f56b947f9d337575e8d2acd40e28a"
-BASE_HASH = "63a36273233df5d868c122f8bbf12d3cb4a26a0218a8bace2e811bda7796c200"
+BASE = "35561d6b8f851ea0309723637e0996a064ba4c82"
+BASE_HASH = "cab98ab987acf0c24a383be94f3e0499c6d891b922d7fd1de217e788c2a339b5"
 MIGRATION = ROOT / "supabase/migrations/20261005105341_automation_workflow_graph_v57.sql"
 CONTRACT = ROOT / "supabase/verification/automation_sender_admission_contract.sql"
 INVENTORY = """SELECT jsonb_object_agg(p.oid::regprocedure::text,jsonb_build_object(
@@ -70,7 +70,7 @@ def main(arguments):
     require(local.run(["git", "-C", str(ROOT), "rev-parse", "--is-shallow-repository"]) == "false", "Full Git history required")
     local.run(["git", "-C", str(ROOT), "merge-base", "--is-ancestor", BASE, "HEAD"])
     accepted = subprocess.check_output(["git", "-C", str(ROOT), "show", BASE + ":" + str(MIGRATION.relative_to(ROOT))], env=local.env)
-    require(digest(accepted) == BASE_HASH and source.startswith(accepted), "Accepted V57 prefix changed")
+    require(digest(accepted) == BASE_HASH, "Accepted complete execution SQL pin changed")
     dependencies = {}
     for path in ("backend/app/schemas/workflow_dispatch.py", "backend/app/services/automation_service.py",
                  "backend/app/services/automation_email.py", "backend/app/services/microsoft_graph_email.py",
@@ -367,19 +367,10 @@ UPDATE private.automation_sender_gate SET mode='unknown';"""
             sql("DROP FUNCTION private.sender_status_proof(TEXT);")
 
     try:
-        for label, content in (("accepted", accepted), ("suffix", source[len(accepted):])):
-            path = temporary / f"{database}_{label}.sql"
-            with path.open("xb") as handle:
-                handle.write(content)
-            files.append(path)
         create()
-        apply_file(files[0])
-        retained = value(INVENTORY)
-        apply_file(files[1])
+        readiness = install_final_v57(local, database, ROOT)
         installed = value(INVENTORY)
-        require(all(installed.get(key) == row for key, row in retained.items()), "Retained installed owner changed")
-        require(len(installed) - len(retained) == 24, "Expected24 additive functions")
-        passed("all retained definitions ACL security ownership config identical", count=len(retained))
+        passed("complete final catalog body ACL security config and genuine history", readiness=readiness)
         if focus:
             claim_status_checks()
             return

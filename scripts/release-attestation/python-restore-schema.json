@@ -851,6 +851,29 @@
       "state": "v56",
       "query": "V56_AUTOMATION_FUNCTION_STATE_SQL",
       "expected": "EXPECTED_V56_AUTOMATION_FUNCTION_STATE"
+    },
+    "readiness-v57": {
+      "kind": "readiness",
+      "state": "v57"
+    },
+    "catalog-v57": {
+      "kind": "export",
+      "state": "v57",
+      "query": "V57_CATALOG_STATE_SQL",
+      "expected": "EXPECTED_V57_CATALOG_STATE",
+      "restored": "EXPECTED_V57_RESTORED_CATALOG_STATE"
+    },
+    "tables-v57": {
+      "kind": "export",
+      "state": "v57",
+      "query": "V57_AUTOMATION_TABLE_STATE_SQL",
+      "expected": "EXPECTED_V57_AUTOMATION_TABLE_STATE"
+    },
+    "functions-v57": {
+      "kind": "export",
+      "state": "v57",
+      "query": "V57_AUTOMATION_FUNCTION_STATE_SQL",
+      "expected": "EXPECTED_V57_AUTOMATION_FUNCTION_STATE"
     }
   },
   "cases": {
@@ -4203,6 +4226,56 @@
       "semanticManifests": [],
       "passLines": [
         "[restored V56] PASS retained V55 rows, rule CAS, guardian/hold eligibility, accepted/unknown episodes, suppression and credential revision continuation on canonical/restored copies"
+      ]
+    },
+    "v57": {
+      "format": "forward",
+      "base": "35561d6b8f851ea0309723637e0996a064ba4c82",
+      "inventoryFrom": "v56",
+      "docstring": "Prove retained V56 delivery and business facts survive complete V57 canonical/logical upgrade and execute final workflow contracts.",
+      "exports": [
+        [
+          "readiness-v56.query",
+          "readiness-v56.expected"
+        ],
+        [
+          "catalog-v56.query",
+          "catalog-v56.expected",
+          "catalog-v56.restored"
+        ],
+        [
+          "readiness-v57.query",
+          "readiness-v57.expected"
+        ],
+        [
+          "catalog-v57.query",
+          "catalog-v57.expected",
+          "catalog-v57.restored"
+        ],
+        [
+          "tables-v57.query",
+          "tables-v57.expected"
+        ],
+        [
+          "functions-v57.query",
+          "functions-v57.expected"
+        ]
+      ],
+      "predecessor": [
+        "readiness-v56",
+        "catalog-v56"
+      ],
+      "checks": [
+        "readiness-v57",
+        "catalog-v57",
+        "functions-v57"
+      ],
+      "absentFunctions": [
+        "public.koaryu_release_schema_preflight_v38()"
+      ],
+      "semanticManifests": [],
+      "passLines": [
+        "[restored V57] PASS retained V56 business and delivery truth, complete guarded schema and actual final workflow continuation on canonical/restored copies"
       ]
     }
   }

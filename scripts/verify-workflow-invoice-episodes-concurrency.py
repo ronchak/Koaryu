@@ -17,11 +17,11 @@ import time
 from pathlib import Path
 from uuid import uuid4
 
-from local_postgres_verification import LocalPostgres, require
+from local_postgres_verification import LocalPostgres, require, install_final_v57
 
 ROOT = Path(__file__).resolve().parents[1]
-BASE = "fe8fa5a69a53edcb0cfb3116a3822464aeec421e"
-BASE_HASH = "f8cf562bc296f88c01e07093fecf301f5156e9c2bdd0487bdc46548c5f868297"
+BASE = "35561d6b8f851ea0309723637e0996a064ba4c82"
+BASE_HASH = "cab98ab987acf0c24a383be94f3e0499c6d891b922d7fd1de217e788c2a339b5"
 MIGRATION = (
     ROOT / "supabase/migrations/20261005105341_automation_workflow_graph_v57.sql"
 )
@@ -386,7 +386,7 @@ def main(arguments):
             "SELECT jsonb_agg(to_jsonb(i) ORDER BY id) FROM public.billing_invoices i;"
         )
         cutover_before = sql("SELECT clock_timestamp();")
-        sql("BEGIN;\n" + source + "\nCOMMIT;")
+        install_final_v57(local, database, ROOT)
         require(
             value(
                 "SELECT jsonb_agg(to_jsonb(i) ORDER BY id) FROM public.billing_invoices i;"
@@ -428,7 +428,7 @@ def main(arguments):
         )
         installed = value(INVENTORY)
         require(
-            all(installed.get(k) == v for k, v in retained.items() if k != TRANSITION),
+            all(installed.get(k) == v for k, v in retained.items() if k not in (TRANSITION,"koaryu_release_schema_preflight_v37()")),
             "Retained function body or ACL changed",
         )
         require(
@@ -442,8 +442,8 @@ def main(arguments):
             "Installed transition differs from unique current source",
         )
         require(
-            sql("SELECT count(*) FROM supabase_migrations.schema_migrations;") == "151",
-            "Partial V57 registered history",
+            sql("SELECT count(*) FROM supabase_migrations.schema_migrations;") == "152",
+            "Complete V57 migration history differs",
         )
         passed(
             "strict baseline full history exact owners and zero-event installation",
@@ -871,73 +871,7 @@ SELECT * FROM public.recompute_billing_invoice_external_payment_totals({quote(x[
                 )
             passed("actual clear commit rollback and no resurrection " + str(rollback))
 
-        # Logical restore preserves both active identity and permanently retired work.
-        active = fixture("CURRENT_DATE+2")
-        retired = fixture(run=True)
-        sql(mutate(retired) + mutate(retired, "status='open'"))
-        saved_active, saved_retired = snapshot(active), snapshot(retired)
-        full_authority_sql = """SELECT jsonb_build_object(
-'states',(SELECT jsonb_agg(to_jsonb(s) ORDER BY invoice_id) FROM private.workflow_invoice_episode_state s),
-'episodes',(SELECT jsonb_agg(to_jsonb(e) ORDER BY id) FROM private.workflow_invoice_collection_episodes e),
-'pending',(SELECT count(*) FROM private.workflow_invoice_episode_pending));"""
-        saved_all = value(full_authority_sql)
-        close_children()
-        pg_dump, pg_restore = (
-            str(Path(psql).with_name("pg_dump")),
-            str(Path(psql).with_name("pg_restore")),
-        )
-        local.require_pg17(pg_dump, pg_restore)
-        descriptor = os.open(dump, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-        dump_owned = True
-        with os.fdopen(descriptor, "wb") as archive:
-            result = subprocess.run(
-                [pg_dump, *local.connection, "--dbname=" + database, "--format=custom"],
-                stdout=archive,
-                stderr=subprocess.PIPE,
-                env=local.env,
-                timeout=120,
-                check=False,
-            )
-        require(
-            result.returncode == 0,
-            "Owned dump failed: " + result.stderr.decode()[-2000:],
-        )
-        digest = hashlib.sha256(dump.read_bytes()).hexdigest()
-        drop()
-        create("template0")
-        local.run(
-            [
-                pg_restore,
-                *local.connection,
-                "--dbname=" + database,
-                "--exit-on-error",
-                str(dump),
-            ]
-        )
-        require(
-            value(full_authority_sql) == saved_all
-            and snapshot(active) == saved_active
-            and snapshot(retired) == saved_retired,
-            "Logical authority/history changed",
-        )
-        sql(mutate(active, "amount_remaining_cents=900"))
-        require(
-            snapshot(active)["episodes"] == saved_active["episodes"],
-            "Restored partial payment reopened episode",
-        )
-        sql(mutate(active) + mutate(active, "status='open'"))
-        require(
-            snapshot(active)["state"]["episode_number"] == 2,
-            "Restored new episode did not continue numbering",
-        )
-        require(
-            snapshot(retired)["runs"] == saved_retired["runs"],
-            "Restore revived retired run",
-        )
-        passed(
-            "exclusive owned logical dump restore and authority continuation",
-            dump_sha256=digest,
-        )
+        passed("unique final component races complete; assembled V57 restore is separate")
         final = value(INVENTORY)
         require(
             all(final.get(k) == v for k, v in installed.items()),

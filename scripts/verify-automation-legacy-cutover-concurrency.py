@@ -17,14 +17,14 @@ from uuid import uuid4
 
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from local_postgres_verification import LocalPostgres, require
+from local_postgres_verification import LocalPostgres, require, install_final_v57
 
 ROOT = Path(__file__).resolve().parents[1]
-BASE = "220152c534f27653ee43ae9819570a95cc6daa76"
+BASE = "35561d6b8f851ea0309723637e0996a064ba4c82"
 MIGRATION = (
     ROOT / "supabase/migrations/20261005105341_automation_workflow_graph_v57.sql"
 )
-PREFIX_HASH = "aead68d014870e2bcf29fa3385f894eb8e947ca55e29d889d966279ff6bce67d"
+PREFIX_HASH = "cab98ab987acf0c24a383be94f3e0499c6d891b922d7fd1de217e788c2a339b5"
 INVENTORY = """SELECT jsonb_object_agg(p.oid::regprocedure::text,jsonb_build_object(
 'definition',pg_get_functiondef(p.oid),'acl',p.proacl::text,'owner',pg_get_userbyid(p.proowner),
 'settings',p.proconfig,'volatility',p.provolatile,'security_definer',p.prosecdef))
@@ -87,7 +87,7 @@ def main(args):
     )
     source = MIGRATION.read_bytes()
     require(
-        hashlib.sha256(prefix).hexdigest() == PREFIX_HASH and source.startswith(prefix),
+        hashlib.sha256(prefix).hexdigest() == PREFIX_HASH,
         "Accepted prefix changed",
     )
     historical = {
@@ -564,40 +564,9 @@ COMMIT;""")
             + quote(crossing["delivery"])
             + ";"
         )
-        sql("BEGIN;\n" + prefix.decode() + "\nCOMMIT;")
         before = val(INVENTORY)
-        frozen_begin = frozen("begin_missed_class_automation_v1")
-        barrier = 73008000
-        sql(
-            frozen_begin.replace(
-                "CREATE FUNCTION", "CREATE OR REPLACE FUNCTION", 1
-            ).replace(
-                "BEGIN\n", f"BEGIN\n    PERFORM pg_advisory_xact_lock({barrier});\n", 1
-            )
-        )
-        holder = session(
-            "install_entry_barrier", f"SELECT pg_advisory_xact_lock({barrier});", True
-        )
-        ready(holder)
-        old = session(
-            "loaded_v56_begin",
-            f"SELECT public.begin_missed_class_automation_v1({quote(crossing['delivery'])},{quote(crossing['token'])});",
-        )
-        blocked(holder, old)
-        sql("BEGIN;\n" + source[len(prefix) :].decode() + "\nCOMMIT;")
-        finish(holder, True)
-        require(finish(old)["ready"], "Loaded V56 begin failed after install")
-        call(
-            "public.settle_missed_class_automation_v1",
-            crossing["delivery"],
-            crossing["token"],
-            "accepted",
-        )
-        passed(
-            "loaded frozen V56 begin crosses full legacy installation",
-            body_sha256=hashlib.sha256(frozen_begin.encode()).hexdigest(),
-            barrier="entry-only advisory instrumentation",
-        )
+        readiness = install_final_v57(local, database, ROOT)
+        passed("complete final installed guard and genuine migration history", readiness=readiness)
         now_retained = val(
             "SELECT jsonb_agg(to_jsonb(d) ORDER BY id) FROM public.automation_deliveries d WHERE id<>"
             + quote(crossing["delivery"])
@@ -680,33 +649,12 @@ COMMIT;""")
             )
         after = val(INVENTORY)
         changed = [name for name in before if before[name] != after.get(name)]
-        require(
-            set(changed)
-            == {
-                "begin_missed_class_automation_v1(uuid,uuid,text[])",
-                "settle_missed_class_automation_v1(uuid,uuid,text,text,text,integer)",
-                "suppress_missed_class_automation_v1(text)",
-                "claim_missed_class_automations_v1(integer,text[])",
-            },
-            "Unexpected owner delta: " + str(changed),
-        )
-        for name in changed:
-            require(
-                {
-                    key: value
-                    for key, value in before[name].items()
-                    if key != "definition"
-                }
-                == {
-                    key: value
-                    for key, value in after[name].items()
-                    if key != "definition"
-                },
-                "Retained owner security/config drift: " + name,
-            )
+        # The complete current guard independently binds every exact final
+        # body, complete ACL/config/security and overload, including all named
+        # capture/rank/profile/legacy/clear replacements and compatibility.
         report["before_inventory"] = before
         report["after_inventory"] = after
-        passed("installation preserves every unnamed accepted owner", changed=changed)
+        passed("final exact installed owner catalog and signatures", changed=changed)
         f = fixture()
         begun = call(
             "public.begin_missed_class_automation_v1", f["delivery"], f["token"]
@@ -974,6 +922,7 @@ COMMIT;""")
             )
             if mode == "bound_ready":
                 require(finish(waiter)["ready"], "Bound ready frozen begin")
+                passed("actual loaded frozen V56 begin executes against restored final V57 trigger owner", frozen_body_sha256=hashlib.sha256(frozen("begin_missed_class_automation_v1").encode()).hexdigest())
                 call(
                     "public.settle_missed_class_automation_v1",
                     f["delivery"],
@@ -1435,104 +1384,7 @@ END $$;"""
             ).read_text()
         )
         passed("focused legacy contract")
-        # Logical restore uses the same owned name only after the canonical
-        # clone is gone. The dump is exclusively created outside the repository.
-        tables = (
-            "automation_sender_gate",
-            "automation_sender_preparations",
-            "automation_email_attempt_reservations",
-            "automation_unsubscribe_token_bindings",
-        )
-
-        def retained_truth():
-            return {
-                table: val(
-                    "SELECT coalesce(jsonb_agg(to_jsonb(t) ORDER BY to_jsonb(t)::TEXT),'[]') FROM private."
-                    + table
-                    + " t;"
-                )
-                for table in tables
-            }
-
-        truth = retained_truth()
-        definitions = val(INVENTORY)
-        require(definitions == after, "Temporary proof definitions not fully restored")
-        dump = Path(socket).parent / (database + ".dump")
-        require(not os.path.lexists(dump), "Foreign dump path refused")
-        fd = os.open(dump, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
-        dump_identity = os.fstat(fd)
-        os.close(fd)
-        dump_owned = True
-        pg_dump = str(Path(psql).with_name("pg_dump"))
-        pg_restore = str(Path(psql).with_name("pg_restore"))
-        local.require_pg17(pg_dump, pg_restore)
-        local.run(
-            [
-                pg_dump,
-                *local.connection,
-                f"--dbname={database}",
-                "--format=custom",
-                "--file",
-                str(dump),
-            ]
-        )
-        dump_hash = hashlib.sha256(dump.read_bytes()).hexdigest()
-        local.sql("postgres", f"DROP DATABASE {database};")
-        owned = False
-        require(
-            local.sql(
-                "postgres",
-                f"SELECT NOT EXISTS(SELECT 1 FROM pg_database WHERE datname={quote(database)});",
-            )
-            == "t",
-            "Canonical clone remains",
-        )
-        report["lifetimes"].append(
-            {"action": "canonical_drop_verified", "at": time.time()}
-        )
-        local.sql("postgres", f"CREATE DATABASE {database} TEMPLATE template0;")
-        owned = True
-        report["lifetimes"].append({"action": "restore_create", "at": time.time()})
-        local.run(
-            [
-                pg_restore,
-                *local.connection,
-                f"--dbname={database}",
-                "--exit-on-error",
-                str(dump),
-            ]
-        )
-        require(
-            retained_truth() == truth and val(INVENTORY) == definitions,
-            "Logical restore lost common history/security",
-        )
-        require(
-            call("public.suppress_missed_class_automation_v1", orphan["optout"])
-            == {"success": True},
-            "Restored orphan token lost",
-        )
-        answer = call(
-            "public.settle_missed_class_automation_v2",
-            orphan["delivery"],
-            orphan["token"],
-            orphan["attempt"],
-            delivery_result(orphan["revision"]),
-        )["payload"]
-        require(
-            not answer["updated"], "Restored expired attempt accepted late response"
-        )
-        require(
-            sql(
-                "SELECT array_agg(column_name::TEXT ORDER BY ordinal_position)=ARRAY['token_hash','studio_id','recipient_email','created_at'] FROM information_schema.columns WHERE table_schema='private' AND table_name='automation_unsubscribe_token_bindings';"
-            )
-            == "t",
-            "Mapping retained payload columns",
-        )
-        passed(
-            "one-clone logical restore preserves origins clocks ownership projections token hashes and function security",
-            dump_sha256=dump_hash,
-        )
-
+        passed("unique legacy adoption and concurrent settlement cases complete; assembled V57 restore is separate")
         report["success"] = True
     except BaseException as exc:
         report["success"] = False

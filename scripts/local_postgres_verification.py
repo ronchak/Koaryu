@@ -62,7 +62,9 @@ def normalization_plan(source, restored, source_acls, restored_acls, pairs):
             schema, table, constraint = identity.split(".")
             statements.append(f"ALTER TABLE {quoted_identity(schema+'.'+table)} DROP CONSTRAINT {quoted_identity(constraint)}, "
                               f"ADD CONSTRAINT {quoted_identity(constraint)} {pair['replay_definition']};")
-    require(len(statements) == 6, "Expected exactly six billing CHECK replays")
+    recipient_pair = "private.automation_workflow_email_attempts.automation_workflow_email_attempts_recipient_email_check"
+    expected_replays = 7 if recipient_pair in pairs else 6
+    require(len(statements) == expected_replays, "Unexpected named CHECK replay count")
     require(source_acls.keys() == restored_acls.keys(), "Restore relation identities differ")
     for identity in sorted(source_acls):
         old, new = source_acls[identity], restored_acls[identity]
@@ -116,3 +118,24 @@ class LocalPostgres:
         require(all(re.search(r"\(PostgreSQL\) 17\.", version) for version in versions.values()),
                 "PostgreSQL 17 tools required")
         return versions
+
+
+def install_final_v57(local, database, root):
+    """Normal complete V57 installation in the caller's already-owned clone."""
+    migration = Path(root) / "supabase/migrations/20261005105341_automation_workflow_graph_v57.sql"
+    local.run([local.psql, *local.connection, f"--dbname={database}", "--no-psqlrc",
+               "--set=ON_ERROR_STOP=1", "--quiet", "--single-transaction", f"--file={migration}",
+               "--command=INSERT INTO supabase_migrations.schema_migrations(version,name) "
+               "VALUES('20261005105341','automation_workflow_graph_v57');"])
+    return require_final_v57(local, database, root)
+
+
+def require_final_v57(local, database, root):
+    """Bind component proof startup to the complete generated installed guard."""
+    row = json.loads(local.sql(database, "SELECT row_to_json(p) FROM public.koaryu_release_schema_preflight_v38() p;"))
+    versions = sorted(p.name[:14] for p in (Path(root) / "supabase/migrations").glob("*.sql"))
+    require(row == {"ready": True, "migration_count": len(versions), "migration_head": versions[-1],
+                    "pending_versions": [v for v in versions if v >= "20260727100000"],
+                    "security_failures": [], "manifest_version": "release-db-attestation-v57"},
+            "Complete installed V57 catalog/body/security/ACL/history differs: " + json.dumps(row))
+    return row

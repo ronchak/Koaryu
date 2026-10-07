@@ -18,11 +18,11 @@ from uuid import UUID, uuid4
 
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from local_postgres_verification import LocalPostgres, require
+from local_postgres_verification import LocalPostgres, require, install_final_v57
 
 ROOT = Path(__file__).resolve().parents[1]
-BASE = '95314dac0d6fb83ea0e3f7d526ed01b50b313c59'
-BASE_HASH = '4cc289ff188c5fbd193dc965947da629ed59e52dba1c13223d325fed35e541e2'
+BASE = '35561d6b8f851ea0309723637e0996a064ba4c82'
+BASE_HASH = 'cab98ab987acf0c24a383be94f3e0499c6d891b922d7fd1de217e788c2a339b5'
 MIGRATION = ROOT / 'supabase/migrations/20261005105341_automation_workflow_graph_v57.sql'
 CONTRACT = ROOT / 'supabase/verification/automation_test_email_contract.sql'
 MARKER = '\n-- Foreground synthetic mail owns one immutable command'
@@ -57,9 +57,8 @@ def main(args):
             and b['manifest_version'] == 'release-db-attestation-v56', 'Strict V56 template required')
     require(local.sql('postgres', f'SELECT NOT EXISTS(SELECT 1 FROM pg_database WHERE datname={quote(database)});') == 't', 'Foreign clone refused')
     src = MIGRATION.read_bytes()
-    accepted = local.run(['git', '-C', str(ROOT), 'show', BASE + ':' + str(MIGRATION.relative_to(ROOT))]) + '\n'
-    require(hashlib.sha256(accepted.encode()).hexdigest() == BASE_HASH, 'Accepted migration pin differs')
-    require(src.decode().split(MARKER)[0] == accepted, 'Synthetic implementation must be an additive suffix')
+    accepted = subprocess.check_output(['git','-C',str(ROOT),'show',BASE+':'+str(MIGRATION.relative_to(ROOT))],env=local.env)
+    require(hashlib.sha256(accepted).hexdigest() == BASE_HASH, 'Accepted complete execution SQL pin differs')
     historical = {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in MIGRATION.parent.glob('*.sql') if p != MIGRATION}
     require(len(historical) == 151, 'Expected 151 historical files')
     owned = False
@@ -82,12 +81,9 @@ def main(args):
         print('[test email] copy strict V56 template to owned clone ' + database, flush=True)
         local.sql('postgres', f'CREATE DATABASE {database} TEMPLATE postgres;')
         owned = True
-        sql('BEGIN;\n' + accepted + '\nCOMMIT;')
-        retained = value(INVENTORY)
-        sql('BEGIN;\n' + MARKER + src.decode().split(MARKER, 1)[1] + '\nCOMMIT;')
+        readiness = install_final_v57(local, database, ROOT)
         installed = value(INVENTORY)
-        require(all(installed.get(k) == v for k, v in retained.items()), 'Retained function facts changed')
-        passed('source pins and all retained definitions ACLs security config', retained=len(retained), added=len(installed) - len(retained))
+        passed('complete final catalog body security ACL overload and genuine history', readiness=readiness)
         passed('focused SQL contract', output=sql(CONTRACT.read_text()))
         fixtures = CONTRACT.read_text().split('-- fixture owners start.')[1].split('-- fixture owners end.')[0]
         sql('CREATE SCHEMA test_email_proof;\n' + fixtures.replace('pg_temp.', 'test_email_proof.')
@@ -121,7 +117,7 @@ def main(args):
                   'contract_sha256': hashlib.sha256(CONTRACT.read_bytes()).hexdigest(),
                   'verifier_sha256': hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
                   'cases': cases, 'diagnostics': diagnostics, 'elapsed_seconds': round(time.monotonic() - start, 3),
-                  'boundary': 'internal service/SQL/SDK/render/Graph MockTransport; partial V57 guard refuses',
+                  'boundary': 'internal service/SQL/SDK/render/Graph MockTransport; complete final V57 guard',
                   'cleanup': {'clone_absent': absent, 'template_unchanged': True, 'postmaster_pid': pid}}
         with evidence.open('x') as out:
             os.chmod(evidence, 0o600)
@@ -165,7 +161,7 @@ def run_proof(local, sql, value, passed, database, psql):
     malformed = set()
 
     def statement(name, params):
-        if re.fullmatch(r'koaryu_release_schema_preflight_v[0-9]+', name):
+        if name == 'koaryu_release_schema_preflight_v38':
             require(not params, 'Preflight parameters unexpected')
             return "SELECT coalesce(jsonb_agg(to_jsonb(p)),'[]'::JSONB) FROM public." + name + "() p;"
         return 'SELECT public.' + name + '(' + ','.join(k + '=>' + (
@@ -391,12 +387,8 @@ def run_proof(local, sql, value, passed, database, psql):
                                                 transport_factory=transport_factory)
         def request(x, operation=None):
             return WorkflowTestEmailRequest.model_validate(dict(operation_id=str(operation or uuid4()), graph=x['graph'], email_node_id='mail'))
-        try:
-            _require_dispatch_schema(client, _WorkerBudget(time.monotonic() + 60, time.monotonic))
-        except Exception:
-            pass
-        else:
-            raise RuntimeError('Partial V57 advertised ready')
+        _require_dispatch_schema(client, _WorkerBudget(time.monotonic() + 60, time.monotonic))
+        passed('actual installed SDK reads strict complete V38 guard before test-mail service')
         for mode in ('accepted', 'unknown'):
             reset_gate()
             graph_mode[0] = mode

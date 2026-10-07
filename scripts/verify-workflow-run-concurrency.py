@@ -18,7 +18,7 @@ from importlib.metadata import version
 from pathlib import Path
 from uuid import UUID, uuid4
 
-from local_postgres_verification import LocalPostgres, require
+from local_postgres_verification import LocalPostgres, require, install_final_v57
 
 ROOT = Path(__file__).resolve().parents[1]
 MIGRATION = (
@@ -244,13 +244,13 @@ UPDATE private.automation_workflow_email_attempts SET state='accepted',settled_a
         print("[workflow run] creating owned clone " + database, flush=True)
         local.sql("postgres", f"CREATE DATABASE {database} TEMPLATE postgres;")
         owned = True
-        sql("BEGIN;" + MIGRATION.read_text() + "COMMIT;")
+        install_final_v57(local, database, ROOT)
         require(
-            sql("SELECT count(*) FROM supabase_migrations.schema_migrations;") == "151",
-            "Partial V57 registered history",
+            sql("SELECT count(*) FROM supabase_migrations.schema_migrations;") == "152",
+            "Complete V57 migration history differs",
         )
         passed(
-            "transactional V57 apply without readiness closure",
+            "complete transactional V57 with strict readiness and genuine history",
             sha256=hashlib.sha256(MIGRATION.read_bytes()).hexdigest(),
         )
         print(

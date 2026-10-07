@@ -211,12 +211,12 @@ if [[ ${#verification_files[@]} -eq 0 ]]; then
   echo "ERROR: No contract files found in $VERIFICATION_DIR" >&2
   exit 1
 fi
-if [[ ${#migration_files[@]} -ne 151 ]]; then
-  echo "ERROR: Expected the canonical 151-migration chain, found ${#migration_files[@]}." >&2
+if [[ ${#migration_files[@]} -ne 152 ]]; then
+  echo "ERROR: Expected the canonical 152-migration chain, found ${#migration_files[@]}." >&2
   exit 1
 fi
-if [[ ${#verification_files[@]} -ne 57 ]]; then
-  echo "ERROR: Expected the canonical 57-contract inventory, found ${#verification_files[@]}." >&2
+if [[ ${#verification_files[@]} -ne 75 ]]; then
+  echo "ERROR: Expected the canonical 75-contract inventory, found ${#verification_files[@]}." >&2
   exit 1
 fi
 if [[ ! -f "$VERIFICATION_DIR/schedule_window_read_contract.sql" ]]; then
@@ -757,6 +757,10 @@ SQL
     run_interruptible python3 "$ROOT_DIR/scripts/verify-v55-v56-restore-contract.py" \
       "$PG_DUMP" "$PG_RESTORE" "$CREATEDB" "$PSQL" "$SOCKET_DIR" "$PG_PORT" "$TEMP_DIR" "$ROOT_DIR"
   fi
+  if [[ "$migration_filename" == "20261005105341_automation_workflow_graph_v57.sql" ]]; then
+    final_v57_migration_file="$migration_file"
+    break
+  fi
   echo "[migration $migration_index/$migration_total] RUN $migration_filename"
   if run_interruptible "$PSQL" "${psql_args[@]}" \
     --single-transaction \
@@ -1088,12 +1092,12 @@ echo "[V56 readiness] RUN exact final migration and manifest signal"
 operational_readiness="$({
   cd "$ROOT_DIR"
   node --input-type=module --eval \
-    "import { FINAL_OPERATIONAL_READINESS_SQL } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(FINAL_OPERATIONAL_READINESS_SQL);"
+    "import { V56_OPERATIONAL_READINESS_SQL } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(V56_OPERATIONAL_READINESS_SQL);"
 } | "$PSQL" "${psql_args[@]}" --tuples-only --no-align)"
 if (
   cd "$ROOT_DIR"
   node --input-type=module --eval \
-    "import { validateOperationalReadiness } from './scripts/studio-comp-migration-rollout.mjs'; validateOperationalReadiness(process.argv[1]);" \
+    "import { EXPECTED_V56_OPERATIONAL_READINESS } from './scripts/studio-comp-migration-rollout.mjs'; if (process.argv[1] !== EXPECTED_V56_OPERATIONAL_READINESS) process.exit(1);" \
     "$operational_readiness"
 ); then
   echo "[V56 readiness] PASS exact final migration and manifest signal"
@@ -2217,6 +2221,79 @@ else
   echo "[concurrency] FAIL autopay activation/disable serialization (exit $status)" >&2
   exit "$status"
 fi
+
+# Each component owns and drops one clone of the exact V56 template. Its
+# normal installer verifies the complete final guard before unique race cases.
+for proof in verify-workflow-management-concurrency.py verify-trial-appointment-concurrency.py verify-belt-test-event-concurrency.py verify-belt-test-recipient-concurrency.py verify-workflow-domain-capture-concurrency.py; do
+  echo "[V57 component] RUN $proof"
+  run_interruptible python3 "$ROOT_DIR/scripts/$proof" "$PSQL" "$SOCKET_DIR" "$PG_PORT"
+done
+while IFS='|' read -r proof clone; do
+  echo "[V57 component] RUN $proof"
+  run_interruptible python3 "$ROOT_DIR/scripts/$proof" "$PSQL" "$SOCKET_DIR" "$PG_PORT" "${clone}_$$"
+done <<'V57_COMPONENTS'
+verify-workflow-run-concurrency.py|koaryu_workflow_run
+verify-workflow-rank-context-concurrency.py|koaryu_rank_context
+verify-workflow-financial-authority-concurrency.py|koaryu_financial_authority
+verify-workflow-current-facts-concurrency.py|koaryu_current_facts
+verify-workflow-invoice-episodes-concurrency.py|koaryu_invoice_episode
+verify-workflow-advance-concurrency.py|koaryu_workflow_advance
+verify-workflow-timed-enrollment-concurrency.py|koaryu_workflow_timed
+V57_COMPONENTS
+# The unchanged expensive profile SQL runs once in the complete inventory below.
+run_interruptible python3 "$ROOT_DIR/scripts/verify-workflow-student-payment-capture-concurrency.py" "$PSQL" "$SOCKET_DIR" "$PG_PORT" "koaryu_student_payment_capture_$$" --skip-retained-profile
+while IFS='|' read -r proof clone; do
+  echo "[V57 sender/clear] RUN $proof"
+  run_interruptible python3 "$ROOT_DIR/scripts/$proof" "$PSQL" "$SOCKET_DIR" "$PG_PORT" "${clone}_$$" "$TEMP_DIR/${clone}_$$.json"
+done <<'V57_SENDER_COMPONENTS'
+verify-automation-legacy-cutover-concurrency.py|koaryu_legacy_cutover
+verify-workflow-graph-mail-concurrency.py|koaryu_graph_mail
+verify-automation-test-email-concurrency.py|koaryu_test_email
+verify-automation-clear-concurrency.py|koaryu_automation_clear
+V57_SENDER_COMPONENTS
+run_interruptible python3 "$ROOT_DIR/scripts/verify-automation-sender-admission-concurrency.py" "$PSQL" "$SOCKET_DIR" "$PG_PORT" "koaryu_sender_admission_$$" "$TEMP_DIR/sender-status-$$.json" --claim-status-only
+
+echo "[V57 upgrade/restore] RUN actual V56 canonical and logical continuation"
+run_interruptible python3 "$ROOT_DIR/scripts/verify-v56-v57-restore-contract.py" \
+  "$PG_DUMP" "$PG_RESTORE" "$CREATEDB" "$PSQL" "$SOCKET_DIR" "$PG_PORT" "$TEMP_DIR" "$ROOT_DIR"
+echo "[migration $migration_total/$migration_total] RUN complete V57"
+run_interruptible "$PSQL" "${psql_args[@]}" --single-transaction --file="$final_v57_migration_file" \
+  --command="INSERT INTO supabase_migrations.schema_migrations(version,name) VALUES('20261005105341','automation_workflow_graph_v57');"
+echo "[V57 readiness] RUN complete installed catalog and genuine history"
+final_readiness="$({ cd "$ROOT_DIR"; node --input-type=module --eval "import { FINAL_OPERATIONAL_READINESS_SQL } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(FINAL_OPERATIONAL_READINESS_SQL);"; } | "$PSQL" "${psql_args[@]}" --tuples-only --no-align)"
+(cd "$ROOT_DIR" && node --input-type=module --eval "import { validateOperationalReadiness } from './scripts/studio-comp-migration-rollout.mjs'; validateOperationalReadiness(process.argv[1]);" "$final_readiness")
+echo "[V57 readiness] PASS complete installed catalog and genuine history"
+
+echo "[V57 raw facts] RUN complete catalog body configuration and privilege contracts"
+while IFS='|' read -r query_export expected_export; do
+  actual="$({ cd "$ROOT_DIR"; node --input-type=module --eval "import * as m from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(m[process.argv[1]]);" "$query_export"; } | "$PSQL" "${psql_args[@]}" --tuples-only --no-align)"
+  expected="$(cd "$ROOT_DIR" && node --input-type=module --eval "import * as m from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(m[process.argv[1]]);" "$expected_export")"
+  if [[ "$actual" != "$expected" ]]; then echo "[V57 raw facts] FAIL $query_export" >&2; exit 1; fi
+done <<'V57_RAW_FACTS'
+V57_RELEASE_MANIFEST_SQL|EXPECTED_V57_RELEASE_MANIFEST
+V57_AUTOMATION_TABLE_STATE_SQL|EXPECTED_V57_AUTOMATION_TABLE_STATE
+V57_AUTOMATION_FUNCTION_STATE_SQL|EXPECTED_V57_AUTOMATION_FUNCTION_STATE
+V57_CATALOG_STATE_SQL|EXPECTED_V57_CATALOG_STATE
+V57_RAW_FACTS
+while IFS='|' read -r label mutation failure; do
+  echo "[V57 negative] RUN $label"
+  result="$({ printf 'BEGIN;\n%s\n' "$mutation"; printf "SELECT NOT ready AND '%s'=ANY(security_failures) FROM public.koaryu_release_schema_preflight_v38();\nROLLBACK;\n" "$failure"; } | "$PSQL" "${psql_args[@]}" --tuples-only --no-align --quiet)"
+  if [[ "$result" != t ]]; then echo "[V57 negative] FAIL $label: $result" >&2; exit 1; fi
+done <<'V57_NEGATIVES'
+missing sender status owner|DROP FUNCTION public.get_automation_sender_status_v1(TEXT);|automation_functions_v57
+changed terminal payload guard|UPDATE pg_proc SET prosrc=concat(prosrc,chr(10),'-- injected drift') WHERE oid='private.workflow_email_payload_delete_v1()'::REGPROCEDURE;|automation_functions_v57
+changed retained VOID clear|UPDATE pg_proc SET prosrc=concat(prosrc,chr(10),'-- injected drift') WHERE oid='public.clear_studio_operational_data_atomic(uuid,boolean)'::REGPROCEDURE;|automation_functions_v57
+unexpected owner|CREATE FUNCTION private.unexpected_v57_owner() RETURNS INTEGER LANGUAGE SQL AS 'SELECT 1';|automation_functions_v57
+unexpected overload|CREATE FUNCTION public.get_automation_sender_status_v1(INTEGER) RETURNS JSONB LANGUAGE SQL AS 'SELECT NULL::JSONB';|automation_functions_v57
+unexpected table|CREATE TABLE private.unexpected_v57_table(id INTEGER);|automation_tables_v57
+client payload privilege|GRANT SELECT ON private.automation_test_email_payloads TO authenticated;|automation_tables_v57
+client column privilege|GRANT SELECT(recipient_email) ON private.automation_email_attempt_reservations TO authenticated;|automation_tables_v57
+new scope RLS disabled|ALTER TABLE private.automation_test_email_scopes DISABLE ROW LEVEL SECURITY;|automation_tables_v57
+new scope unlogged|ALTER TABLE private.automation_test_email_payloads SET UNLOGGED;|automation_tables_v57
+missing expiry index|DROP INDEX private.automation_email_attempts_workflow_expiry;|automation_tables_v57
+preflight timezone drift|ALTER FUNCTION public.koaryu_release_schema_preflight_v38() SET TimeZone='America/Los_Angeles';|preflight_security_v57
+V57_NEGATIVES
+echo "[V57 raw facts] PASS all exact current catalog and drift refusals"
 
 verification_total=${#verification_files[@]}
 verification_index=0

@@ -18,7 +18,7 @@ from importlib.metadata import version
 from pathlib import Path
 from uuid import UUID, uuid4
 
-from local_postgres_verification import LocalPostgres, require
+from local_postgres_verification import LocalPostgres, require, install_final_v57
 
 ROOT = Path(__file__).resolve().parents[1]
 MIGRATION = (
@@ -215,12 +215,12 @@ def main(arguments):
         print("[current facts] creating owned clone " + database, flush=True)
         local.sql("postgres", f"CREATE DATABASE {database} TEMPLATE postgres;")
         owned = True
-        sql("BEGIN;\n" + include(MIGRATION) + "\nCOMMIT;")
+        install_final_v57(local, database, ROOT)
         require(
-            sql("SELECT count(*) FROM supabase_migrations.schema_migrations;") == "151",
-            "Partial V57 registered history",
+            sql("SELECT count(*) FROM supabase_migrations.schema_migrations;") == "152",
+            "Complete V57 migration history differs",
         )
-        passed("transactional V57 install preserves151 history", sha256=source_hash)
+        passed("complete guarded V57 install registers genuine152 history", sha256=source_hash)
         assertions = sql(CONTRACT.read_text())
         passed("complete rollback fact contract", assertions=assertions)
         # These retained contracts exercise dependencies; their bytes remain fixed.

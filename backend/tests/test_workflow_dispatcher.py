@@ -173,6 +173,9 @@ def settled(state="accepted", **changes):
     }
 
 
+READINESS_PREFIX = list(dict.fromkeys([RELEASE_PREFLIGHT_RPC, V38]))
+
+
 class WorkflowDatabase(WorkerDatabase):
     def __init__(self, settings):
         super().__init__(settings)
@@ -331,8 +334,7 @@ def test_exact_plan_render_prepare_begin_send_settle_and_release(runner):
     assert runner.requests(PLAN)[0]["p_candidate_unsubscribe_token"] != "a" * 64
     assert runner.requests(SETTLE)[0]["p_result"]["submission_evidence"] is None
     assert [name for name, _ in runner.database.executed] == [
-        RELEASE_PREFLIGHT_RPC,
-        V38,
+        *READINESS_PREFIX,
         CLAIM_RPC,
         ADVANCE,
         "get_automation_email_credential_v1",

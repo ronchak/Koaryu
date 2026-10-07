@@ -12,7 +12,7 @@ import time
 from pathlib import Path
 from uuid import uuid4
 
-from local_postgres_verification import LocalPostgres, require
+from local_postgres_verification import LocalPostgres, require, install_final_v57
 
 ROOT = Path(__file__).resolve().parents[1]
 MIGRATION = (
@@ -484,7 +484,7 @@ FROM public.automation_workflow_activations WHERE workflow_id='{ids["workflow"]}
         local.sql("postgres", f"CREATE DATABASE {database} TEMPLATE postgres;")
         owned = True
         print(f"[belt recipients] owned clone {database}", flush=True)
-        sql("BEGIN;" + MIGRATION.read_text() + "COMMIT;")
+        install_final_v57(local, database, ROOT)
         for contract in (
             "workflow_management_contract.sql",
             "trial_appointment_contract.sql",
@@ -1071,10 +1071,10 @@ WHERE r.id='{ids["run"]}' AND e.source_key IN ('sending','unknown');""")
             "Historical migration bytes changed",
         )
         require(
-            sql("SELECT count(*) FROM supabase_migrations.schema_migrations;") == "151",
+            sql("SELECT count(*) FROM supabase_migrations.schema_migrations;") == "152",
             "Partial migration registered history",
         )
-        passed("151 historical hashes and migration history unchanged")
+        passed("151 historical hashes unchanged and complete 152 migration history")
     finally:
         for item in children:
             process = item["process"]
@@ -1103,8 +1103,8 @@ WHERE r.id='{ids["run"]}' AND e.source_key IN ('sending','unknown');""")
                 "outcome": "passed",
                 "cases": cases,
                 "clone_cleaned": owned,
-                "partial_v57": True,
-                "migration_history_count": 151,
+                "complete_v57": True,
+                "migration_history_count": 152,
             },
             sort_keys=True,
         )

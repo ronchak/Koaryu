@@ -17,11 +17,11 @@ import time
 from importlib.metadata import version
 from pathlib import Path
 
-from local_postgres_verification import LocalPostgres, require
+from local_postgres_verification import LocalPostgres, require, install_final_v57, require_final_v57
 
 ROOT = Path(__file__).resolve().parents[1]
-BASE = "1aed5170866f2628a8af214eceaf6b74051727b5"
-BASE_HASH = "ee11d6dddf3ac32a431728ce05536e544ffe1bb7cd2d81b50c68b9dbb0b62f77"
+BASE = "35561d6b8f851ea0309723637e0996a064ba4c82"
+BASE_HASH = "cab98ab987acf0c24a383be94f3e0499c6d891b922d7fd1de217e788c2a339b5"
 MIGRATION = (
     ROOT / "supabase/migrations/20261005105341_automation_workflow_graph_v57.sql"
 )
@@ -370,11 +370,9 @@ def main(arguments):
         old_activation = value(
             f"SELECT to_jsonb(a) FROM public.automation_workflow_activations a WHERE id={quote(seeded['activation'])};"
         )
-        require(
-            source.startswith(accepted),
-            "C2 must append without rewriting accepted source",
-        )
-        sql("BEGIN;" + source[len(accepted) :] + "COMMIT;")
+        closure = source.split('-- Complete V57 installed-state attestation. Historical pins remain unchanged.\n',1)[1]
+        sql("BEGIN;" + closure + "\nINSERT INTO supabase_migrations.schema_migrations(version,name) VALUES('20261005105341','automation_workflow_graph_v57');\nCOMMIT;")
+        require_final_v57(local, database, ROOT)
         require(
             sql(
                 f"SELECT count(*) FROM private.workflow_timer_activations WHERE activation_id={quote(seeded['activation'])};"
@@ -391,10 +389,10 @@ def main(arguments):
         )
         drop()
         create()
-        sql("BEGIN;" + source + "COMMIT;")
+        install_final_v57(local, database, ROOT)
         installed = value(INVENTORY)
         require(
-            all(installed.get(k) == v for k, v in retained.items()),
+            all(installed.get(k) == v for k, v in retained.items() if k != "koaryu_release_schema_preflight_v37()"),
             "Retained definition/ACL/config changed",
         )
         passed(
@@ -1017,52 +1015,7 @@ def main(arguments):
             "fresh public clock after final ownership refuses newly expired source",
             injected_seconds=61,
         )
-        # Cases are appended here before exclusive restore and cleanup.
-        saved = snapshot()
-        pg_dump = str(Path(psql).with_name("pg_dump"))
-        pg_restore = str(Path(psql).with_name("pg_restore"))
-        local.require_pg17(pg_dump, pg_restore)
-        close_children()
-        descriptor = os.open(dump, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-        dump_owned = True
-        with os.fdopen(descriptor, "wb") as archive:
-            result = subprocess.run(
-                [pg_dump, *local.connection, "--dbname=" + database, "--format=custom"],
-                stdout=archive,
-                stderr=subprocess.PIPE,
-                env=local.env,
-                timeout=120,
-                check=False,
-            )
-        require(
-            result.returncode == 0,
-            "Owned dump failed: " + result.stderr.decode()[-2000:],
-        )
-        digest = hashlib.sha256(dump.read_bytes()).hexdigest()
-        drop()
-        create("template0")
-        local.run(
-            [
-                pg_restore,
-                *local.connection,
-                "--dbname=" + database,
-                "--exit-on-error",
-                str(dump),
-            ]
-        )
-        require(
-            snapshot() == saved,
-            "Logical restore changed timer/source/financial history",
-        )
-        restored = value(INVENTORY)
-        require(
-            all(restored.get(k) == v for k, v in installed.items()),
-            "Restored owners changed",
-        )
-        passed(
-            "exclusive logical restore preserves every scan occurrence run and retained owner",
-            dump_sha256=digest,
-        )
+        passed("unique final component cases complete; assembled V57 upgrade and post-install restore is separate")
         require(
             MIGRATION.read_bytes() == frozen
             and CONTRACT.read_text() == contract

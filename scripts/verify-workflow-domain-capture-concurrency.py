@@ -19,7 +19,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from uuid import uuid4
 
-from local_postgres_verification import LocalPostgres, require
+from local_postgres_verification import LocalPostgres, require, install_final_v57
 
 ROOT = Path(__file__).resolve().parents[1]
 MIGRATION = (
@@ -331,7 +331,7 @@ COMMIT;""")
         local.sql("postgres", f"CREATE DATABASE {database} TEMPLATE postgres;")
         owned = True
         print(f"[domain capture] owned clone {database}", flush=True)
-        sql("BEGIN;" + MIGRATION.read_text() + "COMMIT;")
+        install_final_v57(local, database, ROOT)
         for contract in (
             "workflow_management_contract.sql",
             "workflow_domain_capture_contract.sql",
@@ -1096,8 +1096,8 @@ UPDATE public.belt_test_recipients SET state='revoked',revision=revision+1,revok
             "Historical migration bytes changed",
         )
         require(
-            sql("SELECT count(*) FROM supabase_migrations.schema_migrations;") == "151",
-            "Partial V57 registered history",
+            sql("SELECT count(*) FROM supabase_migrations.schema_migrations;") == "152",
+            "Complete V57 migration history differs",
         )
         passed("151 historical migration hashes and history unchanged")
     finally:
@@ -1128,8 +1128,8 @@ UPDATE public.belt_test_recipients SET state='revoked',revision=revision+1,revok
                 "outcome": "passed",
                 "cases": cases,
                 "clone_cleaned": owned,
-                "partial_v57": True,
-                "migration_history_count": 151,
+                "complete_v57": True,
+                "migration_history_count": 152,
             },
             sort_keys=True,
         )

@@ -200,7 +200,8 @@ BEGIN
         WHERE (ns.nspname='public' AND p.proname LIKE '%automation%v1')
         OR (ns.nspname='private' AND (p.proname LIKE 'automation_%' OR p.proname='missed_class_automation_candidates')) LOOP
         PERFORM pg_temp.assert_automation(NOT has_function_privilege('anon',c.oid,'EXECUTE') AND NOT has_function_privilege('authenticated',c.oid,'EXECUTE'),'RPC/helper privilege revocation');
-        PERFORM pg_temp.assert_automation((SELECT NOT prosecdef AND proconfig=ARRAY['search_path=""'] FROM pg_proc WHERE oid=c.oid),'invoker empty search path');
+        PERFORM pg_temp.assert_automation((SELECT prosecdef=COALESCE(c.oid=to_regprocedure('private.automation_test_verified_email_v1(uuid)'),false)
+            AND proconfig=ARRAY['search_path=""'] FROM pg_proc WHERE oid=c.oid),'exact invoker/verified-Auth authority and empty search path');
     END LOOP;
     FOREACH original IN ARRAY ARRAY['public.automation_rules','public.automation_deliveries','public.automation_suppressions','private.automation_email_credentials'] LOOP
         PERFORM pg_temp.assert_automation(NOT has_table_privilege('anon',original,'SELECT,INSERT,UPDATE,DELETE') AND NOT has_table_privilege('authenticated',original,'SELECT,INSERT,UPDATE,DELETE'),'table privilege revocation');

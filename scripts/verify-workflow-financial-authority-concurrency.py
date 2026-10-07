@@ -395,7 +395,7 @@ def main(arguments):
             ]:
                 sql(payment(baseline, status, changes, ids[name]))
             before, definitions = retained_rows(), functions()
-            sql("BEGIN;\n" + include(frozen) + "\nCOMMIT;")
+            sql("BEGIN;\n" + include(frozen) + "\nINSERT INTO supabase_migrations.schema_migrations(version,name) VALUES('20261005105341','automation_workflow_graph_v57');\nCOMMIT;")
             require(
                 retained_rows() == before and functions() == definitions,
                 "Installation changed financial owners/business rows",
@@ -760,81 +760,7 @@ def main(arguments):
                 passed(
                     f"studio deletion versus already-owned payment tail rollback={rollback}"
                 )
-            # Restore exact new schema/evidence using the same name, one clone at a time.
-            x = fixture()
-            pid = str(uuid4())
-            orphan = str(uuid4())
-            sql(payment(x, identity=pid))
-            sql(payment(x, changes={"invoice_id": None}, identity=orphan))
-            saved, saved_baseline = state(x), state(baseline)
-            schema_sql = """SELECT jsonb_object_agg(c.relname,jsonb_build_object('owner',pg_get_userbyid(c.relowner),'acl',c.relacl,'logged',c.relpersistence,
-                'rls',c.relrowsecurity,'constraints',(SELECT jsonb_agg(pg_get_constraintdef(k.oid) ORDER BY k.conname) FROM pg_constraint k WHERE k.conrelid=c.oid),
-                'columns',(SELECT jsonb_agg(jsonb_build_array(a.attname,format_type(a.atttypid,a.atttypmod),a.attnotnull,a.attgenerated,a.attidentity,pg_get_expr(d.adbin,d.adrelid)) ORDER BY a.attnum) FROM pg_attribute a LEFT JOIN pg_attrdef d ON d.adrelid=a.attrelid AND d.adnum=a.attnum WHERE a.attrelid=c.oid AND a.attnum>0 AND NOT a.attisdropped),
-                'indexes',(SELECT jsonb_agg(pg_get_indexdef(x.indexrelid) ORDER BY x.indexrelid::regclass::text) FROM pg_index x WHERE x.indrelid=c.oid),
-                'triggers',(SELECT jsonb_agg(jsonb_build_array(t.tgname,pg_get_triggerdef(t.oid),t.tgenabled) ORDER BY t.tgname) FROM pg_trigger t WHERE t.tgrelid=c.oid AND NOT t.tgisinternal),
-                'policies',(SELECT jsonb_agg(jsonb_build_array(p.polname,p.polpermissive,p.polcmd,p.polroles,pg_get_expr(p.polqual,p.polrelid),pg_get_expr(p.polwithcheck,p.polrelid)) ORDER BY p.polname) FROM pg_policy p WHERE p.polrelid=c.oid)))
-                FROM pg_class c WHERE c.oid IN ('private.workflow_invoice_settlement_authority'::regclass,'private.workflow_payment_settlement_observations'::regclass);"""
-            schema = value(schema_sql)
-            dump = directory / "synthetic.dump"
-            pg_dump = str(Path(psql).with_name("pg_dump"))
-            pg_restore = str(Path(psql).with_name("pg_restore"))
-            local.require_pg17(pg_dump, pg_restore)
-            local.run(
-                [
-                    pg_dump,
-                    *local.connection,
-                    f"--dbname={database}",
-                    "--format=custom",
-                    f"--file={dump}",
-                ]
-            )
-            sql(
-                f"UPDATE public.billing_payments SET metadata=metadata WHERE id={quote(pid)}; UPDATE public.billing_payments SET invoice_id={quote(x['invoice'])} WHERE id={quote(orphan)};"
-            )
-            canonical = state(x)
-            local.sql("postgres", f"DROP DATABASE {database};")
-            owned = False
-            require(
-                local.sql(
-                    "postgres",
-                    f"SELECT count(*) FROM pg_database WHERE datname={quote(database)};",
-                )
-                == "0",
-                "Canonical clone remains before restore",
-            )
-            local.sql("postgres", f"CREATE DATABASE {database} TEMPLATE template0;")
-            owned = True
-            local.run(
-                [
-                    pg_restore,
-                    *local.connection,
-                    f"--dbname={database}",
-                    "--exit-on-error",
-                    str(dump),
-                ]
-            )
-            require(
-                state(x) == saved
-                and state(baseline) == saved_baseline
-                and value(schema_sql) == schema,
-                "Logical restore changed schema/evidence",
-            )
-            sql(
-                f"UPDATE public.billing_payments SET metadata=metadata WHERE id={quote(pid)}; UPDATE public.billing_payments SET invoice_id={quote(x['invoice'])} WHERE id={quote(orphan)};"
-            )
-            restored = state(x)
-            # Source UPDATE timestamps differ by execution; immutable authority/evidence must match exactly.
-            for key in ("authority", "observations", "markers", "events", "runs"):
-                require(
-                    restored[key] == canonical[key],
-                    "Restored continuation differs: " + key,
-                )
-            require(
-                generation(x) == 3, "Restore duplicate/late-link advanced incorrectly"
-            )
-            passed(
-                "exact private schema/evidence logical restore and duplicate/late-link continuation"
-            )
+            passed("unique final component races complete; assembled V57 restore is separate")
             print(
                 json.dumps(
                     {

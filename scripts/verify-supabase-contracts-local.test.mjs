@@ -52,8 +52,8 @@ assert_payment_writer_rejects test "SELECT 1;" "$query" expected required_failur
 
 
 test("V56 keeps all restore steps, exact inventory and the complete readiness/lead probes", () => {
-  assert.match(verifier, /migration_files\[@\].*-ne 151/);
-  assert.match(verifier, /verification_files\[@\].*-ne 57/);
+  assert.match(verifier, /migration_files\[@\].*-ne 152/);
+  assert.match(verifier, /verification_files\[@\].*-ne 75/);
   for (const text of [
     "verify-v53-v54-restore-contract.py", "verify-v54-v55-restore-contract.py", "verify-v55-v56-restore-contract.py",
     "[V56 readiness]", "[V56 release]", "[V56 semantics]",

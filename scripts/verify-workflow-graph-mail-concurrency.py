@@ -11,10 +11,10 @@ from pathlib import Path
 from uuid import uuid4
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from local_postgres_verification import LocalPostgres, require
+from local_postgres_verification import LocalPostgres, require, install_final_v57
 ROOT = Path(__file__).resolve().parents[1]
-BASE = 'd5205091c4967198efb1686e59f8851fcf37f987'
-BASE_HASH = 'cebd65968bd95fb49940b18bffe87dde1cc3ab01d0ccc347ffbc845c872bdf13'
+BASE = '35561d6b8f851ea0309723637e0996a064ba4c82'
+BASE_HASH = 'cab98ab987acf0c24a383be94f3e0499c6d891b922d7fd1de217e788c2a339b5'
 MIGRATION = ROOT / 'supabase/migrations/20261005105341_automation_workflow_graph_v57.sql'
 CONTRACT = ROOT / 'supabase/verification/workflow_graph_mail_contract.sql'
 MARKER = '\n-- Graph mail uses the common real-attempt owner.'
@@ -42,9 +42,8 @@ def main(args):
     require(b['ready'] and b['migration_count']==151 and b['migration_head']=='20261004220435' and b['manifest_version']=='release-db-attestation-v56','Strict V56 template required')
     require(local.sql('postgres',f'SELECT NOT EXISTS(SELECT 1 FROM pg_database WHERE datname={quote(database)});')=='t','Foreign clone refused')
     src=MIGRATION.read_bytes(); text=src.decode()
-    accepted=local.run(['git','-C',str(ROOT),'show',BASE+':'+str(MIGRATION.relative_to(ROOT))])+'\n'
-    require(hashlib.sha256(accepted.encode()).hexdigest()==BASE_HASH,'Accepted migration pin differs')
-    require(text.split(MARKER)[0].replace('    PERFORM private.workflow_expire_email_attempts_v1(100);\n','')==accepted,'Only named retained hook may change')
+    accepted = subprocess.check_output(['git','-C',str(ROOT),'show',BASE+':'+str(MIGRATION.relative_to(ROOT))],env=local.env)
+    require(hashlib.sha256(accepted).hexdigest() == BASE_HASH, 'Accepted complete execution SQL pin differs')
     historical={p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in MIGRATION.parent.glob('*.sql') if p!=MIGRATION}
     require(len(historical)==151,'Expected151 historical files')
     cases=[]; owned=False; start=time.monotonic(); diagnostics=[]
@@ -54,17 +53,9 @@ def main(args):
         cases.append({'case':name,'outcome':'passed',**details}); print('[graph mail] PASS '+name,flush=True)
     try:
         local.sql('postgres',f'CREATE DATABASE {database} TEMPLATE postgres;'); owned=True
-        sql('BEGIN;\n'+accepted+'\nCOMMIT;')
-        retained=value(INVENTORY)
-        # Additive suffix plus the one source-exact retained claim owner.
-        claim=text[text.index('CREATE FUNCTION public.claim_automation_workflow_runs_v1('):]
-        claim=claim[:claim.index('END $$;')+len('END $$;')].replace('CREATE FUNCTION','CREATE OR REPLACE FUNCTION',1)
-        sql('BEGIN;\n'+MARKER+text.split(MARKER,1)[1]+'\n'+claim+'\nCOMMIT;')
-        installed=value(INVENTORY)
-        changed=[key for key,row in retained.items() if installed.get(key)!=row]
-        require(changed==['claim_automation_workflow_runs_v1(integer)'],'Unexpected retained installed changes '+str(changed))
-        require(installed[changed[0]]=={**retained[changed[0]],'definition':retained[changed[0]]['definition'].replace('    SELECT * INTO cursor_row','    PERFORM private.workflow_expire_email_attempts_v1(100);\n    SELECT * INTO cursor_row')},'Claim hook is not source-exact')
-        passed('source pins and every retained definition ACL security config',retained=len(retained),new=len(installed)-len(retained))
+        readiness = install_final_v57(local, database, ROOT)
+        installed = value(INVENTORY)
+        passed('complete final catalog body security ACL overload and genuine history', readiness=readiness)
         contract=sql(CONTRACT.read_text()); passed('focused SQL contract',output=contract)
         # Reuse the accepted comprehensive fixture bytes, with a private proof schema.
         fixtures=(ROOT/'supabase/verification/workflow_advance_contract.sql').read_text().split('-- fixture owners start.')[1].split('-- fixture owners end.')[0]
@@ -126,6 +117,9 @@ def run_proof(local,sql,value,passed,database,psql):
                 require(request.method=='POST' and re.fullmatch('[a-z_0-9]+',name),'Unexpected SDK operation')
                 params=json.loads(request.content)
                 statement='SELECT public.'+name+'('+','.join(k+'=>'+('ARRAY['+','.join(map(quote,v))+']::TEXT[]' if isinstance(v,list) else quote(v)) for k,v in params.items())+');'
+                if name=='koaryu_release_schema_preflight_v38':
+                    require(params=={},'Readiness takes no parameters')
+                    statement='SELECT jsonb_agg(to_jsonb(r)) FROM public.koaryu_release_schema_preflight_v38() r;'
                 observed=value('SET ROLE service_role; SELECT graph_mail_proof.rpc('+quote(statement)+');')
                 requests.append({'rpc':name,'ok':observed['ok']})
                 return httpx.Response(200 if observed['ok'] else 400,json=observed.get('data',observed.get('error')))
@@ -314,10 +308,9 @@ def run_proof(local,sql,value,passed,database,psql):
         passed('real60-second expiry before retained cursor whole-call busy rollback and body-free unknown truth')
         reset_gate()
 
-        # The full release guard must still deny this deliberately partial schema.
-        try: _require_dispatch_schema(client,_WorkerBudget(time.monotonic()+60,time.monotonic))
-        except Exception: pass
-        else: raise RuntimeError('Partial schema advertised ready')
+        # The actual dispatcher requires the complete current guard. Its SDK
+        # bridge forwards the real preflight rather than fabricating readiness.
+        _require_dispatch_schema(client,_WorkerBudget(time.monotonic()+60,time.monotonic))
         graph_requests=[]
         def graph_handler(request):
             graph_requests.append({'method':request.method,'path':request.url.path,'body':json.loads(request.content)})
@@ -331,7 +324,7 @@ def run_proof(local,sql,value,passed,database,psql):
         actual=value('SELECT p.rendered FROM private.workflow_email_attempt_payloads p WHERE run_id='+quote(x['run'])+';')
         submitted=graph_requests[0]['body']['message']
         require(submitted['subject']==actual['subject'] and submitted['body']['content']==actual['html_body'],'Real Graph request differs from SQL bytes')
-        passed('bounded actual dispatcher email seam real SQL SDK codec renderer prepared Graph202, full guard denies partial schema',rpc_calls=len(requests),graph_requests=1)
+        passed('bounded actual dispatcher email seam real SQL SDK codec renderer prepared Graph202, real full guard requires installed final schema',rpc_calls=len(requests),graph_requests=1)
 
         x=fixture(); p=planned(x).plan; preparation=prep()
         absent_run=str(uuid4()); token=str(uuid4()); attempt_id=str(uuid4())

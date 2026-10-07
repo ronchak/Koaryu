@@ -75,6 +75,9 @@ def preparation_settled(params, **changes):
     }
 
 
+READINESS_PREFIX = list(dict.fromkeys([RELEASE_PREFLIGHT_RPC, V38]))
+
+
 class Clock:
     def __init__(self):
         self.now = 100.0
@@ -308,8 +311,7 @@ def test_not_ready_stops_before_enqueue_and_closes_client(runner):
     runner.database.ciphertext = "synthetic-invalid-ciphertext"
     assert_counts(runner.run(), processed=0, enqueued=0)
     assert [name for name, _ in runner.database.calls] == [
-        RELEASE_PREFLIGHT_RPC,
-        V38,
+        *READINESS_PREFIX,
         "get_automation_email_credential_v1",
     ]
     runner.send.assert_not_called()
@@ -599,8 +601,7 @@ def test_initial_credential_fetch_consumes_work_budget(runner):
     runner.database.on_execute = delay
     assert_counts(runner.run(), processed=0, enqueued=0)
     assert [name for name, _ in runner.database.executed] == [
-        RELEASE_PREFLIGHT_RPC,
-        V38,
+        *READINESS_PREFIX,
         "get_automation_email_credential_v1",
     ]
     runner.send.assert_not_called()
@@ -1061,7 +1062,7 @@ def test_reachable_legacy_v2_requires_actual_guarded_v57_before_work(runner, bad
     with pytest.raises(HTTPException) as caught:
         runner.run()
     assert caught.value.status_code == 503 and caught.value.detail == service.UNAVAILABLE_DETAIL
-    assert [name for name, _ in runner.database.executed] == [RELEASE_PREFLIGHT_RPC, V38]
+    assert [name for name, _ in runner.database.executed] == READINESS_PREFIX
     runner.prepare.assert_not_called()
     runner.send.assert_not_called()
     runner.closer.assert_called_once()

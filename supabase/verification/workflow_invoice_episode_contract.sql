@@ -281,6 +281,7 @@ BEGIN
     PERFORM private.workflow_finalize_invoice_episodes_v1();
     PERFORM pg_temp.episode_error(format('UPDATE private.workflow_invoice_collection_episodes SET closed_at=NULL,close_reason=NULL WHERE id=%L',old_id),'P0001','AUTOMATION_STATE_CONFLICT','episode cannot reopen');
     x:=pg_temp.episode_fixture(CURRENT_DATE+2,false,'{"connect_account_generation":1}',false); invoice:=(x->>'invoice')::UUID;
+    PERFORM pg_advisory_xact_lock(hashtextextended('koaryu.local-plan-clear:'||(x->>'studio'),0));
     DELETE FROM public.studios WHERE id=(x->>'studio')::UUID;
     PERFORM private.workflow_finalize_invoice_episodes_v1();
     PERFORM pg_temp.episode_check(NOT EXISTS(SELECT 1 FROM private.workflow_invoice_episode_state WHERE invoice_id=invoice)
@@ -330,6 +331,7 @@ BEGIN
     PERFORM private.workflow_finalize_invoice_episodes_v1();
     PERFORM pg_temp.episode_check((SELECT frozen_timezone='UTC' FROM private.workflow_invoice_collection_episodes WHERE invoice_id=invoice AND closed_at IS NULL),'unrecognized new episode zone freezes UTC');
     x:=pg_temp.episode_fixture(CURRENT_DATE+2,true,'{"connect_account_generation":1}',false); invoice:=(x->>'invoice')::UUID;
+    PERFORM pg_advisory_xact_lock(hashtextextended('koaryu.local-plan-clear:'||(x->>'studio'),0));
     DELETE FROM public.studios WHERE id=(x->>'studio')::UUID;
     PERFORM private.workflow_finalize_invoice_episodes_v1();
     PERFORM pg_temp.episode_check(NOT EXISTS(SELECT 1 FROM private.workflow_invoice_episode_state WHERE invoice_id=invoice)

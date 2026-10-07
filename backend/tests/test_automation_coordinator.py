@@ -26,6 +26,9 @@ SCAN = "process_automation_workflow_occurrences_v1"
 OCCURRENCES = {"created_event_count": 25, "enqueued_run_count": 25, "has_more": False}
 
 
+READINESS_PREFIX = list(dict.fromkeys([RELEASE_PREFLIGHT_RPC, V38]))
+
+
 class BatchFixture:
     def __init__(self, monkeypatch):
         self.settings = email_settings(AUTOMATION_WORKER_ENABLED=True)
@@ -133,7 +136,7 @@ def test_real_processors_share_actual_sdk_client_scan_and_deadline(batch, first)
     assert result.occurrences.created_event_count == 25
     assert result.has_more is (result.attendance.has_more or result.workflows.has_more)
     assert batch.names().count(SCAN) == 1
-    assert batch.names()[:3] == [RELEASE_PREFLIGHT_RPC, V38, SCAN]
+    assert batch.names()[: len(READINESS_PREFIX) + 1] == [*READINESS_PREFIX, SCAN]
     assert [p for n, p, _ in batch.requests if n == SCAN] == [{"p_limit": 25}]
     assert len(batch.clients) == 1 and batch.closes == batch.clients
     assert batch.clients[0][0].session.is_closed

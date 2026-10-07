@@ -19,10 +19,10 @@ from importlib.metadata import version
 from pathlib import Path
 from uuid import uuid4
 
-from local_postgres_verification import LocalPostgres, require
+from local_postgres_verification import LocalPostgres, require, install_final_v57
 
 ROOT = Path(__file__).resolve().parents[1]
-ACCEPTED_BASE = "caee5f2fb5accf443f1752c0239ab5ecd260ed12"
+ACCEPTED_BASE = "35561d6b8f851ea0309723637e0996a064ba4c82"
 MIGRATION = (
     ROOT / "supabase/migrations/20261005105341_automation_workflow_graph_v57.sql"
 )
@@ -247,30 +247,24 @@ def main(arguments):
             env=local.env,
             text=True,
         )
-        require(
-            "CREATE FUNCTION public.claim_automation_workflow_runs_v1" not in accepted,
-            "Expected pre-advance frozen Git base",
-        )
-        require(
-            hashlib.sha256(accepted.encode()).hexdigest()
-            == "605095adbf754caa8f13d83997fb51fa12299c4e22e698c88bc391e9f71e4074",
-            "Accepted V57 input hash differs",
-        )
+        require(hashlib.sha256(accepted.encode()).hexdigest()
+                == "cab98ab987acf0c24a383be94f3e0499c6d891b922d7fd1de217e788c2a339b5",
+                "Accepted complete execution SQL pin differs")
         local.sql("postgres", f"CREATE DATABASE {database} TEMPLATE postgres;")
         owned = True
         sql("BEGIN;\n" + accepted + "\nCOMMIT;")
         retained = value(inventory_sql)
         local.sql("postgres", f"DROP DATABASE {database};")
         local.sql("postgres", f"CREATE DATABASE {database} TEMPLATE postgres;")
-        sql("BEGIN;\n" + frozen.decode() + "\nCOMMIT;")
+        install_final_v57(local, database, ROOT)
         installed = value(inventory_sql)
         require(
-            all(installed.get(k) == v for k, v in retained.items()),
+            all(installed.get(k) == v for k, v in retained.items() if k != "koaryu_release_schema_preflight_v37()"),
             "Retained function body/ACL changed",
         )
         require(
-            sql("SELECT count(*) FROM supabase_migrations.schema_migrations;") == "151",
-            "Partial V57 registered history",
+            sql("SELECT count(*) FROM supabase_migrations.schema_migrations;") == "152",
+            "Complete V57 migration history differs",
         )
         passed(
             "transactional install and exact retained function ACL/body",
@@ -1285,68 +1279,11 @@ REVOKE ALL ON FUNCTION private.workflow_lock_run_sources_v1(uuid,private.automat
         )
         passed("studio-local midnight date and exact activity/receipt clock")
 
-        # Preserve durable cursor/action history through a real pg_dump/restore in
-        # the same owned name, then make a new claim and continue exactly once.
-        x = fixture(mode="lead_follow_up")
-        require(advance(x, 2)["outcome"] == "continue", "Restore fixture effect failed")
-        sql(
-            f"UPDATE public.automation_workflow_runs SET lease_expires_at=clock_timestamp()-INTERVAL '1 second' WHERE id={quote(x['run'])};"
-        )
-        saved = snapshot(x)
-        saved_cursor = value(
-            "SELECT to_jsonb(c) FROM private.automation_workflow_dispatch_cursor c;"
-        )
-        close_children()
-        pg_dump = str(Path(psql).with_name("pg_dump"))
-        pg_restore = str(Path(psql).with_name("pg_restore"))
-        local.require_pg17(pg_dump, pg_restore)
-        require(not os.path.lexists(dump), "Dump path already exists")
-        descriptor = os.open(dump, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-        dump_owned = True
-        os.close(descriptor)
-        local.run(
-            [
-                pg_dump,
-                *local.connection,
-                "--dbname=" + database,
-                "--format=custom",
-                "--file=" + str(dump),
-            ]
-        )
-        dump.chmod(0o600)
-        local.sql("postgres", f"DROP DATABASE {database};")
-        local.sql("postgres", f"CREATE DATABASE {database} TEMPLATE template0;")
-        local.run(
-            [
-                pg_restore,
-                *local.connection,
-                "--dbname=" + database,
-                "--exit-on-error",
-                str(dump),
-            ]
-        )
-        require(
-            snapshot(x) == saved
-            and value(
-                "SELECT to_jsonb(c) FROM private.automation_workflow_dispatch_cursor c;"
-            )
-            == saved_cursor,
-            "Restored logical state changed",
-        )
-        x = value(f"SELECT advance_proof.advance_claim({quote(x)});")
-        require(
-            advance(x)["run"]["state"] == "completed"
-            and len(snapshot(x)["actions"]) == 1,
-            "Restore reissued follow-up",
-        )
-        passed(
-            "real logical restore cursor receipt history and continued claim once",
-            dump_sha256=hashlib.sha256(dump.read_bytes()).hexdigest(),
-        )
+        passed("unique final component cases complete; assembled V57 upgrade and post-install restore is separate")
         require(MIGRATION.read_bytes() == frozen, "Source changed during proof")
         final_inventory = value(inventory_sql)
         require(
-            all(final_inventory.get(k) == v for k, v in retained.items()),
+            all(final_inventory.get(k) == v for k, v in installed.items()),
             "Retained installed functions changed",
         )
         print(

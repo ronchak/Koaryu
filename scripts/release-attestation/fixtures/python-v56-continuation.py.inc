@@ -1,5 +1,13 @@
             contract = root / "supabase/verification/missed_class_automation_contract.sql"
-            contract_bytes = contract.read_bytes()
+            require(local.run(["git", "-C", str(root), "rev-parse", "--is-shallow-repository"]) == "false",
+                    "Historical V56 contract requires full Git history")
+            local.run(["git", "-C", str(root), "merge-base", "--is-ancestor", CONTRACT_BASE, "HEAD"])
+            # This immutable V56 input predates the final shared V57 assertions.
+            # Preserve the original bytes and reviewed hash rather than repinning history.
+            contract_bytes = subprocess.check_output(
+                ["git", "-C", str(root), "show", CONTRACT_BASE + ":supabase/verification/missed_class_automation_contract.sql"],
+                env=local.env,
+            )
             require(hashlib.sha256(contract_bytes).hexdigest() == CONTRACT_SHA256,
                     "Automation business contract differs from its reviewed restore input")
             local.sql(database, contract_bytes.decode())
