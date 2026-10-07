@@ -1,8 +1,8 @@
 import ast
 import asyncio
-from concurrent.futures import Future
 import threading
 import time
+from concurrent.futures import Future
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -15,7 +15,6 @@ from app.api.v1.endpoints.billing import _audit_billing_action
 from app.core.deps import run_supabase_operation
 from app.core.provider_runtime import SupabaseLaneConfig, SupabaseProviderRuntime
 from app.services.platform_billing_service import AccessRepairInFlight
-
 
 ROOT = Path(__file__).parents[1]
 ENDPOINTS = ROOT / "app" / "api" / "v1" / "endpoints"
@@ -71,7 +70,10 @@ def test_lifespan_owns_runtime_and_shuts_it_down_off_event_loop():
 
     async def exercise():
         application = SimpleNamespace(state=SimpleNamespace())
-        with patch.object(main, "SupabaseProviderRuntime", FakeRuntime):
+        with (
+            patch.object(main, "SupabaseProviderRuntime", FakeRuntime),
+            patch.object(main, "settings", SimpleNamespace(AUTOMATION_WORKER_ENABLED=False)),
+        ):
             async with main._lifespan(application):
                 assert isinstance(application.state.supabase_provider_runtime, FakeRuntime)
                 calls["event_loop_thread"] = threading.get_ident()

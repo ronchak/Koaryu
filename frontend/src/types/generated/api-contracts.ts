@@ -68,6 +68,13 @@ export interface ApiAuthResponse {
   role?: "admin" | "instructor" | "front_desk" | null;
 }
 
+export interface ApiAutomationBatchResponse {
+  occurrences: ApiOccurrenceProcessResponse;
+  attendance: ApiMissedClassProcessResponse | null;
+  workflows: ApiWorkflowProcessResponse | null;
+  has_more: boolean;
+}
+
 export interface ApiAutomationClearEffects {
   workflows_paused: number;
   workflow_runs_cancelled: number;
@@ -1546,6 +1553,12 @@ export interface ApiMissedClassSettingsResponse {
   delivery_status: ApiAutomationDeliveryStatus;
 }
 
+export interface ApiOccurrenceProcessResponse {
+  created_event_count: number;
+  enqueued_run_count: number;
+  has_more: boolean;
+}
+
 export interface ApiOperationalAlertAcknowledgementResponse {
   episode_id: string;
   lifecycle_event: "acknowledged" | "already_acknowledged" | "closed";
@@ -2325,6 +2338,19 @@ export interface ApiWorkflowPresetMetadata {
   name: string;
   description: string;
   graph: ApiWorkflowGraph_Output;
+}
+
+export interface ApiWorkflowProcessResponse {
+  claimed: number;
+  processed: number;
+  accepted: number;
+  retry_wait: number;
+  failed: number;
+  unknown: number;
+  skipped: number;
+  completed: number;
+  waiting: number;
+  has_more: boolean;
 }
 
 export interface ApiWorkflowPublish {

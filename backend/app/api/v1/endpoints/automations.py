@@ -19,6 +19,7 @@ from app.core.deps import (
     get_supabase,
     run_supabase_operation,
 )
+from app.core.request_deadline import request_deadline
 from app.schemas.automation import (
     MissedClassActivityResponse,
     MissedClassPreviewRequest,
@@ -28,6 +29,9 @@ from app.schemas.automation import (
     MissedClassRuleUpdate,
     MissedClassSettingsResponse,
 )
+from app.schemas.automation_batch import AutomationBatchResponse
+from app.services.automation_coordinator import AutomationBatchUnavailable
+from app.services.automation_scheduler import AutomationBatchBusy
 from app.services.automation_service import (
     ADMIN_REQUIRED_DETAIL,
     WORK_BUDGET_SECONDS,
@@ -210,3 +214,26 @@ async def process_due_missed_class(
         limit=data.limit,
         deadline_monotonic=deadline,
     )
+
+
+@worker_router.post("/process-due", response_model=AutomationBatchResponse)
+async def process_due_automations(
+    request: Request,
+    data: MissedClassProcessRequest = _PROCESS_REQUEST_BODY,
+    internal_secret: str | None = Header(default=None, alias="X-Internal-Secret"),
+):
+    settings = get_settings()
+    _verify_secret(internal_secret, settings.AUTOMATION_WORKER_SECRET, "Automation worker")
+    if settings.AUTOMATION_WORKER_ENABLED is not True:
+        raise HTTPException(503, "Automation batch is unavailable.")
+    scheduler = getattr(request.app.state, "automation_scheduler", None)
+    if scheduler is None:
+        raise HTTPException(503, "Automation batch is unavailable.")
+    try:
+        return await scheduler.run_once(limit=data.limit, deadline_monotonic=request_deadline.get())
+    except AutomationBatchBusy:
+        raise HTTPException(
+            409, "Automation batch is already running.", headers={"Retry-After": "60"}
+        ) from None
+    except AutomationBatchUnavailable:
+        raise HTTPException(503, "Automation batch is unavailable.") from None

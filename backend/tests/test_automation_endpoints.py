@@ -404,6 +404,13 @@ def test_registered_openapi_has_exact_public_route_shapes():
     spec = app.openapi()
     assert set(spec["paths"][BASE]) == {"get", "put"}
     assert "post" in spec["paths"][INTERNAL]
+    combined = spec["paths"]["/api/v1/internal/automations/process-due"]["post"]
+    assert combined["responses"]["200"]["content"]["application/json"]["schema"] == {
+        "$ref": "#/components/schemas/AutomationBatchResponse"
+    }
+    assert spec["paths"][INTERNAL]["post"]["responses"]["200"]["content"]["application/json"][
+        "schema"
+    ] == {"$ref": "#/components/schemas/MissedClassProcessResponse"}
     for name in (
         "MissedClassRuleResponse",
         "MissedClassRuleUpdate",
@@ -476,3 +483,84 @@ def test_worker_default_body_and_unsafe_secret_do_not_create_client(api, monkeyp
     settings.AUTOMATION_WORKER_SECRET = "bad\nsecret"
     assert client.post(INTERNAL, json={}, headers={"X-Internal-Secret": "bad"}).status_code == 503
     factory.assert_not_called()
+
+
+COMBINED = "/api/v1/internal/automations/process-due"
+
+
+def test_combined_auth_precedes_runtime_lookup_and_disabled_is_unavailable(api):
+    client, _, settings, _ = api
+
+    class ForbiddenState:
+        def __getattr__(self, name):
+            raise AssertionError("unauthorized runtime lookup")
+
+    client.app.state = ForbiddenState()
+    for secret in (None, "wrong"):
+        headers = {} if secret is None else {"X-Internal-Secret": secret}
+        assert client.post(COMBINED, json={}, headers=headers).status_code == 403
+    response = client.post(
+        COMBINED, headers={"X-Internal-Secret": settings.AUTOMATION_WORKER_SECRET}
+    )
+    assert response.status_code == 503
+    assert response.json() == {"detail": "Automation batch is unavailable."}
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"limit": 0},
+        {"limit": 11},
+        {"limit": True},
+        {"limit": "1"},
+        {"clock": 1},
+        {"first_engine": "workflows"},
+    ],
+)
+def test_combined_input_preserves_strict_request_contract(api, payload):
+    client, _, settings, _ = api
+    response = client.post(
+        COMBINED, json=payload, headers={"X-Internal-Secret": settings.AUTOMATION_WORKER_SECRET}
+    )
+    assert response.status_code == 422
+
+
+def test_combined_response_deadline_default_limit_and_safe_failures(api):
+    from unittest.mock import AsyncMock
+
+    from test_automation_batch import batch_summary
+
+    from app.core.request_deadline import request_deadline
+    from app.schemas.automation_batch import AutomationBatchResponse
+    from app.services.automation_coordinator import AutomationBatchUnavailable
+    from app.services.automation_scheduler import AutomationBatchBusy
+
+    client, _, settings, _ = api
+    settings.AUTOMATION_WORKER_ENABLED = True
+    headers = {"X-Internal-Secret": settings.AUTOMATION_WORKER_SECRET}
+    assert client.post(COMBINED, headers=headers).status_code == 503
+    scheduler = SimpleNamespace(
+        run_once=AsyncMock(return_value=AutomationBatchResponse.model_validate(batch_summary()))
+    )
+    client.app.state.automation_scheduler = scheduler
+    token = request_deadline.set(123.0)
+    try:
+        response = client.post(COMBINED, headers=headers)
+    finally:
+        request_deadline.reset(token)
+    assert response.status_code == 200 and response.json() == batch_summary()
+    scheduler.run_once.assert_awaited_once_with(limit=10, deadline_monotonic=123.0)
+    for error, status, detail in [
+        (AutomationBatchBusy(), 409, "Automation batch is already running."),
+        (AutomationBatchUnavailable(), 503, "Automation batch is unavailable."),
+    ]:
+        scheduler.run_once.side_effect = error
+        response = client.post(COMBINED, json={"limit": 1}, headers=headers)
+        assert response.status_code == status
+        assert response.json() == {"detail": detail}
+        if status == 409:
+            assert response.headers["retry-after"] == "60"
+    settings.AUTOMATION_WORKER_SECRET = "bad\nsecret"
+    scheduler.run_once.reset_mock()
+    assert client.post(COMBINED, headers={"X-Internal-Secret": "bad"}).status_code == 503
+    scheduler.run_once.assert_not_called()

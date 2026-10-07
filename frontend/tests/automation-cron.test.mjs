@@ -21,7 +21,7 @@ const ENV_KEYS = [
 ];
 const ORIGINAL_ENV = Object.fromEntries(ENV_KEYS.map((key) => [key, process.env[key]]));
 const CRON_PATH = "/api/cron/automations/process-due";
-const WORKER_PATH = "/api/v1/internal/automations/missed-class/process-due";
+const WORKER_PATH = "/api/v1/internal/automations/process-due";
 const WORKER_SECRET = "W".repeat(40);
 const COUNT_KEYS = [
   "enqueued",
@@ -39,7 +39,7 @@ function request(authorization = "Bearer cron-secret") {
   });
 }
 
-function summary(overrides = {}) {
+function attendance(overrides = {}) {
   return {
     enqueued: 0,
     processed: 0,
@@ -51,6 +51,38 @@ function summary(overrides = {}) {
     has_more: false,
     ...overrides,
   };
+}
+
+function workflows(overrides = {}) {
+  const counts = attendance();
+  delete counts.enqueued;
+  return { claimed: 0, ...counts, completed: 0, waiting: 0, ...overrides };
+}
+
+function batch(overrides = {}) {
+  const body = {
+    occurrences: { created_event_count: 0, enqueued_run_count: 0, has_more: false },
+    attendance: attendance(),
+    workflows: workflows(),
+    ...overrides,
+  };
+  return {
+    ...body,
+    has_more:
+      body.occurrences.has_more ||
+      body.attendance === null ||
+      body.attendance.has_more ||
+      body.workflows === null ||
+      body.workflows.has_more,
+  };
+}
+
+function summary(overrides = {}) {
+  return batch({ attendance: attendance(overrides) });
+}
+
+function result(...batches) {
+  return { batches, has_more: batches.at(-1).has_more };
 }
 
 function pinnedJson(payload, status = 200) {
@@ -79,7 +111,7 @@ async function withoutEnvReads(keys, operation) {
   }
 }
 
-describe("missed-class automation cron", () => {
+describe("combined automation cron", () => {
   let calls;
   let elapsed;
   let httpsRequest;
@@ -228,7 +260,7 @@ describe("missed-class automation cron", () => {
     process.env.VERCEL_ENV = "preview";
     const result = await invoke();
     assert.equal(result.status, 200);
-    assert.deepEqual(await result.json(), summary());
+    assert.deepEqual(await result.json(), { batches: [summary()], has_more: false });
     assert.deepEqual(calls, [
       {
         transport: "https",
@@ -272,7 +304,7 @@ describe("missed-class automation cron", () => {
     assert.equal(calls.length, 0);
   });
 
-  it("aggregates at most three sequential successful batches and preserves the last has_more", async () => {
+  it("preserves at most three sequential confirmed batches and the last has_more", async () => {
     const batches = [
       summary({
         enqueued: 10,
@@ -297,16 +329,7 @@ describe("missed-class automation cron", () => {
     const result = await invoke();
     assert.equal(result.status, 200);
     assert.equal(calls.length, 3);
-    assert.deepEqual(
-      await result.json(),
-      summary({
-        enqueued: 13,
-        processed: 26,
-        accepted: 24,
-        skipped: 2,
-        has_more: true,
-      }),
-    );
+    assert.deepEqual(await result.json(), { batches, has_more: true });
   });
 
   it("stops as soon as the backend reports no actionable work", async () => {
@@ -320,7 +343,7 @@ describe("missed-class automation cron", () => {
     };
     const result = await invoke();
     assert.equal(calls.length, 2);
-    assert.deepEqual(await result.json(), summary({ enqueued: 12, processed: 12, accepted: 12 }));
+    assert.deepEqual(await result.json(), { batches, has_more: false });
   });
 
   it("stops after a zero-progress batch while preserving actionable-backlog truth", async () => {
@@ -328,7 +351,7 @@ describe("missed-class automation cron", () => {
       calls.push(options);
       return pinnedJson(summary({ has_more: true }));
     };
-    assert.deepEqual(await (await invoke()).json(), summary({ has_more: true }));
+    assert.deepEqual(await (await invoke()).json(), result(summary({ has_more: true })));
     assert.equal(calls.length, 1);
   });
 
@@ -343,7 +366,7 @@ describe("missed-class automation cron", () => {
     };
     assert.deepEqual(
       await (await invoke()).json(),
-      summary({ enqueued: 10, processed: 10, accepted: 10 }),
+      result(summary({ enqueued: 10, has_more: true }), summary({ processed: 10, accepted: 10 })),
     );
     assert.equal(calls.length, 2);
   });
@@ -358,7 +381,7 @@ describe("missed-class automation cron", () => {
       };
       const result = await invoke();
       assert.equal(result.status, 200);
-      assert.deepEqual(await result.json(), body);
+      assert.deepEqual(await result.json(), { batches: [body], has_more: body.has_more });
       assert.equal(calls.length, 1);
     }
   });
@@ -371,7 +394,7 @@ describe("missed-class automation cron", () => {
     };
     assert.deepEqual(
       await (await invoke()).json(),
-      summary({ processed: 1, accepted: 1, has_more: true }),
+      result(summary({ processed: 1, accepted: 1, has_more: true })),
     );
     assert.equal(calls.length, 1);
   });
@@ -384,7 +407,10 @@ describe("missed-class automation cron", () => {
     };
     assert.deepEqual(
       await (await invoke()).json(),
-      summary({ processed: 2, accepted: 2, has_more: true }),
+      result(
+        summary({ processed: 1, accepted: 1, has_more: true }),
+        summary({ processed: 1, accepted: 1, has_more: true }),
+      ),
     );
     assert.equal(calls.length, 2);
   });
@@ -398,7 +424,7 @@ describe("missed-class automation cron", () => {
 
   it("rejects extra private fields, missing keys, wrong types, and incoherent counters", async () => {
     const missing = summary();
-    delete missing.skipped;
+    delete missing.attendance.skipped;
     const bodies = [
       null,
       [],
@@ -406,8 +432,8 @@ describe("missed-class automation cron", () => {
       missing,
       { ...summary(), recipient_email: "private@example.test" },
       { ...summary(), provider_request_id: "must-not-leak" },
-      summary({ has_more: "false" }),
-      summary({ has_more: 0 }),
+      { ...summary(), has_more: "false" },
+      { ...summary(), has_more: 0 },
       summary({ processed: 1 }),
       summary({ accepted: 1 }),
       summary({ processed: 1, accepted: 1, skipped: 1 }),
@@ -433,6 +459,127 @@ describe("missed-class automation cron", () => {
     }
   });
 
+  it("preserves null engines and independent occurrence counters without inventing progress", async () => {
+    for (const overrides of [
+      { attendance: null },
+      { workflows: null },
+      { attendance: null, workflows: null },
+      { workflows: workflows({ claimed: 10, has_more: true }) },
+    ]) {
+      calls = [];
+      const body = batch(overrides);
+      httpsRequest = async (options) => {
+        calls.push(options);
+        return pinnedJson(body);
+      };
+      assert.deepEqual(await (await invoke()).json(), result(body));
+      assert.equal(calls.length, 1);
+    }
+    for (const counts of [
+      { created_event_count: 25, enqueued_run_count: 0 },
+      { created_event_count: 0, enqueued_run_count: 25 },
+    ]) {
+      calls = [];
+      const bodies = [
+        batch({ occurrences: { ...counts, has_more: true }, attendance: null }),
+        batch(),
+      ];
+      httpsRequest = async (options) => {
+        calls.push(options);
+        return pinnedJson(bodies[calls.length - 1]);
+      };
+      assert.deepEqual(await (await invoke()).json(), result(...bodies));
+      assert.equal(calls.length, 2);
+    }
+  });
+
+  it("continues on completed or waiting workflow progress and stops on uncertain workflow outcomes", async () => {
+    for (const outcome of [
+      "completed",
+      "waiting",
+      "accepted",
+      "skipped",
+      "retry_wait",
+      "failed",
+      "unknown",
+    ]) {
+      calls = [];
+      const first = batch({
+        workflows: workflows({ claimed: 1, processed: 1, [outcome]: 1, has_more: true }),
+      });
+      const bodies = [first, batch()];
+      httpsRequest = async (options) => {
+        calls.push(options);
+        return pinnedJson(bodies[calls.length - 1]);
+      };
+      const count = ["retry_wait", "failed", "unknown"].includes(outcome) ? 1 : 2;
+      assert.deepEqual(await (await invoke()).json(), result(...bodies.slice(0, count)));
+      assert.equal(calls.length, count);
+    }
+  });
+
+  it("rejects incomplete nested engines, occurrence overflow, and false outer backlog hints", async () => {
+    const bodies = [];
+    for (const section of ["occurrences", "attendance", "workflows"]) {
+      for (const key of Object.keys(batch()[section])) {
+        const missing = batch();
+        delete missing[section][key];
+        bodies.push(missing);
+      }
+      bodies.push({ ...batch(), [section]: {} }, { ...batch(), [section]: [] });
+      const extra = batch();
+      extra[section].private_detail = "must-not-leak";
+      bodies.push(extra);
+      const wrongBoolean = batch();
+      wrongBoolean[section].has_more = "false";
+      bodies.push(wrongBoolean);
+    }
+    for (const key of ["created_event_count", "enqueued_run_count"]) {
+      for (const count of [-1, 26, 1.5, true, "1", null]) {
+        const body = batch();
+        body.occurrences[key] = count;
+        bodies.push(body);
+      }
+    }
+    for (const key of Object.keys(workflows()).filter((key) => key !== "has_more")) {
+      for (const count of [-1, 11, 1.5, true, "1", null]) {
+        bodies.push(batch({ workflows: workflows({ [key]: count }) }));
+      }
+    }
+    bodies.push(
+      { ...batch(), has_more: true },
+      { ...batch({ attendance: null }), has_more: false },
+      { ...batch({ workflows: null }), has_more: false },
+      { ...batch(), occurrences: null },
+      batch({ workflows: workflows({ claimed: 0, processed: 1, completed: 1 }) }),
+      batch({ workflows: workflows({ claimed: 1, processed: 1 }) }),
+    );
+    for (const body of bodies) {
+      calls = [];
+      httpsRequest = async (options) => {
+        calls.push(options);
+        return pinnedJson(body);
+      };
+      const response = await invoke();
+      assert.equal(response.status, 502, JSON.stringify(body));
+      assert.deepEqual(await response.json(), {
+        detail: "Automation worker did not return a safe result.",
+      });
+      assert.equal(calls.length, 1);
+    }
+  });
+
+  it("stops on a busy response even when Retry-After is present", async () => {
+    httpsRequest = async (options) => {
+      calls.push(options);
+      const reply = pinnedJson({ detail: "Automation batch is already running." }, 409);
+      reply.headers["retry-after"] = "60";
+      return reply;
+    };
+    assert.equal((await invoke()).status, 502);
+    assert.equal(calls.length, 1);
+  });
+
   it("does not forward malformed JSON or invalid UTF-8", async () => {
     for (const body of [Buffer.from("{private@example.test"), Buffer.from([0xff])]) {
       httpsRequest = async () => ({ status: 200, headers: {}, body });
@@ -445,7 +592,7 @@ describe("missed-class automation cron", () => {
   });
 
   it("rejects every non-200 upstream status without forwarding private body details", async () => {
-    for (const status of [201, 202, 204, 301, 401, 429, 500, 503]) {
+    for (const status of [201, 202, 204, 301, 401, 409, 429, 500, 503]) {
       calls = [];
       httpsRequest = async (options) => {
         calls.push(options);
@@ -506,6 +653,7 @@ describe("missed-class automation cron", () => {
       staging: true,
       "codex/launch-readiness-candidate": false,
       "codex/missed-class-automations-20261004": false,
+      "codex/automation-graph-20261005": false,
     });
   });
 });
