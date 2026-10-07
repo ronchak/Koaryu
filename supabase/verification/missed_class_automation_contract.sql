@@ -4,6 +4,31 @@ SET LOCAL statement_timeout='60s';
 CREATE FUNCTION pg_temp.assert_automation(ok BOOLEAN,message TEXT) RETURNS VOID LANGUAGE plpgsql AS $$
 BEGIN IF ok IS DISTINCT FROM true THEN RAISE EXCEPTION 'Automation contract: %',message; END IF; END $$;
 GRANT EXECUTE ON FUNCTION pg_temp.assert_automation(BOOLEAN,TEXT) TO service_role;
+-- Test-only recovery exercises the accepted owners. Moving the synthetic probe
+-- due time is scheduling, not resetting mode, generation, failure or attempts.
+CREATE FUNCTION pg_temp.recover_legacy_sender(studio UUID) RETURNS VOID LANGUAGE plpgsql AS $$
+DECLARE prep JSONB; result JSONB; scope UUID:=gen_random_uuid(); attempt UUID:=gen_random_uuid(); owner UUID:=gen_random_uuid(); revision BIGINT;
+BEGIN
+    IF to_regclass('private.automation_sender_gate') IS NULL THEN RETURN; END IF;
+    IF (SELECT mode='ready' FROM private.automation_sender_gate) THEN RETURN; END IF;
+    INSERT INTO private.automation_email_credentials(provider_key,encrypted_credentials,revision)
+        VALUES('microsoft_graph:primary','synthetic-local-only',1) ON CONFLICT DO NOTHING;
+    SELECT c.revision INTO revision FROM private.automation_email_credentials c WHERE provider_key='microsoft_graph:primary';
+    UPDATE private.automation_sender_gate SET next_probe_at=clock_timestamp() WHERE mode='cooldown';
+    prep:=private.automation_sender_claim_v1(gen_random_uuid(),repeat('a',64),'synthetic_recovery',scope)->'payload';
+    PERFORM pg_temp.assert_automation((prep->>'allowed')::BOOLEAN,'synthetic recovery preparation');
+    result:=public.settle_automation_sender_preparation_v1((prep->>'preparation_id')::UUID,(prep->>'preparation_token')::UUID,
+        jsonb_build_object('outcome','prepared','credential_revision',revision,'sender_binding',repeat('a',64),
+            'safe_reason',NULL,'retry_after_seconds',NULL));
+    result:=private.automation_email_attempt_begin_v1(studio,'test',scope,NULL,attempt,owner,scope::TEXT||'@example.invalid',
+        (prep->>'preparation_id')::UUID,(prep->>'preparation_token')::UUID,(prep->>'probe_token')::UUID);
+    PERFORM pg_temp.assert_automation(result->>'outcome'='begun','synthetic recovery attempt');
+    result:=private.automation_email_attempt_settle_v1(attempt,owner,jsonb_build_object('outcome','accepted','error_code',NULL,
+        'provider_request_id',NULL,'retry_after_seconds',NULL,'submission_evidence','accepted','failure_scope',NULL,'credential_revision',revision));
+    PERFORM pg_temp.assert_automation(result->>'state'='accepted' AND (SELECT mode='ready' FROM private.automation_sender_gate),'synthetic recovery confirmed');
+END $$;
+GRANT EXECUTE ON FUNCTION pg_temp.recover_legacy_sender(UUID) TO service_role;
+
 DO $contract$
 #variable_conflict use_variable
 DECLARE
@@ -117,6 +142,7 @@ BEGIN
     PERFORM pg_temp.assert_automation((SELECT next_attempt_at<=clock_timestamp()+INTERVAL '1 day' FROM public.automation_deliveries WHERE id=delivery),'bounded retry-after');
     PERFORM pg_temp.assert_automation((public.claim_missed_class_automations_v1(10,ARRAY['new@example.invalid'])->>'has_more')::bool=false,'future retry is not has_more');
     FOR n IN 2..3 LOOP
+        PERFORM pg_temp.recover_legacy_sender(studio);
         UPDATE public.automation_deliveries SET next_attempt_at=now() WHERE id=delivery;
         j:=public.claim_missed_class_automations_v1(1);token:=(j#>>'{items,0,claim_token}')::uuid;
         j:=public.begin_missed_class_automation_v1(delivery,token);
@@ -200,6 +226,7 @@ BEGIN
         PERFORM pg_temp.assert_automation(private.automation_normalize_email(c#>>'{}') IS NULL,'rejected email parity');
     END LOOP;
 END $parity$;
+SET LOCAL statement_timeout='90s';
 DO $episodes$
 #variable_conflict use_variable
 DECLARE
@@ -224,6 +251,18 @@ BEGIN
         candidate.student_name,candidate.student_first_name,candidate.studio_name,candidate.recipient_email,candidate.recipient_name,candidate.recipient_kind,'Old','Old','reply@example.invalid',
         1,10,'accepted',1,now()-INTERVAL '20 days',encode(extensions.gen_random_bytes(32),'hex'),candidate.recipient_email
         FROM private.missed_class_automation_candidates(studio,14,student) candidate;
+    IF to_regclass('private.automation_email_attempt_reservations') IS NOT NULL THEN
+        -- This episode-only fixture models a cutover two hours earlier with no
+        -- settlement clock. The separate cutover suite tests today's fallback.
+        INSERT INTO private.automation_email_attempt_reservations(id,studio_id,provider_key,scope_kind,scope_id,recipient_email,
+            origin,protocol,state,frequency_state,conservative_anchor_at,observed_legacy_ordinal,legacy_projection)
+            VALUES(gen_random_uuid(),studio,'microsoft_graph:primary','legacy',delivery,'episode@example.invalid',
+                'cutover_fallback','historical','accepted','accepted',clock_timestamp()-INTERVAL '2 hours',1,
+                jsonb_build_object('state','accepted','reason',NULL));
+        PERFORM private.automation_bind_unsubscribe_token_v1(studio,d.unsubscribe_token,d.original_recipient_email)
+            FROM public.automation_deliveries d WHERE d.id=delivery;
+    END IF;
+
     SELECT * INTO c FROM private.missed_class_automation_candidates(studio,14,student);
     PERFORM pg_temp.assert_automation(c.skip_reason='episode_already_attempted','same attendance cannot repeat');
     UPDATE public.class_sessions SET date=today-15 WHERE id=old_session;
@@ -276,15 +315,23 @@ BEGIN
     PERFORM pg_temp.assert_automation((j#>>'{items,0,claim_token}')::uuid<>token,'expired claimed token replaced');
     PERFORM pg_temp.assert_automation((public.begin_missed_class_automation_v1(delivery,token)->>'ready')::bool=false,'stale claim cannot begin');
     token:=(j#>>'{items,0,claim_token}')::uuid;
+    PERFORM pg_temp.recover_legacy_sender(studio);
     j:=public.begin_missed_class_automation_v1(delivery,token);
     PERFORM pg_temp.assert_automation((j->>'ready')::bool,'new episode began');
-    UPDATE public.automation_deliveries SET lease_expires_at=now()-INTERVAL '1 second' WHERE id=delivery;
+    IF to_regclass('private.automation_email_attempt_reservations') IS NOT NULL THEN
+        -- Wait for the original actual send lease. Never shorten common truth.
+        PERFORM pg_sleep(greatest(0,extract(epoch FROM d.lease_expires_at-clock_timestamp()))+0.05)
+            FROM public.automation_deliveries d WHERE d.id=delivery;
+    ELSE
+        UPDATE public.automation_deliveries SET lease_expires_at=now()-INTERVAL '1 second' WHERE id=delivery;
+    END IF;
     j:=public.claim_missed_class_automations_v1(1,ARRAY['episode@example.invalid']);
     PERFORM pg_temp.assert_automation(jsonb_array_length(j->'items')=0 AND (SELECT state='unknown' FROM public.automation_deliveries WHERE id=delivery),'expired sending becomes unknown never reclaimed');
     PERFORM pg_temp.assert_automation((public.settle_missed_class_automation_v1(delivery,token,'accepted')->>'updated')::bool=false,'expired sending settle rejected');
     PERFORM pg_temp.assert_automation((public.enqueue_missed_class_automations_v1(1,ARRAY['episode@example.invalid'])->>'enqueued')::int=0,'unknown episode never automatically resends');
     RESET ROLE;
 END $episodes$;
+SET LOCAL statement_timeout='60s';
 
 DO $bounds$
 #variable_conflict use_variable
@@ -309,6 +356,7 @@ BEGIN
     j:=public.claim_missed_class_automations_v1(1,ARRAY['105@example.invalid']);
     delivery:=(j#>>'{items,0,id}')::uuid;token:=(j#>>'{items,0,claim_token}')::uuid;
     PERFORM pg_temp.assert_automation(delivery IS NOT NULL,'allowed queue entry is not starved by first batch');
+    PERFORM pg_temp.recover_legacy_sender(studio);
     j:=public.begin_missed_class_automation_v1(delivery,token,ARRAY['105@example.invalid']);
     PERFORM pg_temp.assert_automation(j#>>'{message,recipient_email}'='105@example.invalid','allowlisted dispatch uses genuine content');
     PERFORM public.settle_missed_class_automation_v1(delivery,token,'accepted');
@@ -420,6 +468,7 @@ BEGIN
         INSERT INTO public.attendance(studio_id,session_id,student_id,checked_in_at) VALUES(studio,session_id,student,now()-INTERVAL '20 days');
     END LOOP;
     SET LOCAL ROLE service_role;
+    PERFORM pg_temp.recover_legacy_sender(studio);
     rule_before:=public.save_missed_class_automation_rule_v1(studio,actor,0,true,14,'Subject','Body','reply@example.invalid');
     PERFORM public.enqueue_missed_class_automations_v1(10);
     j:=public.claim_missed_class_automations_v1(2);
@@ -486,6 +535,7 @@ BEGIN
         'claimed safe retry retains every immutable fact and retry eligibility');
     -- Each terminal result also refuses the deferral RPC without rewriting state.
     FOREACH outcome IN ARRAY ARRAY['accepted','unknown','permanent_failure'] LOOP
+        PERFORM pg_temp.recover_legacy_sender(studio);
         UPDATE public.automation_rules SET dispatch_deferred_until=NULL WHERE studio_id=studio;
         UPDATE public.automation_deliveries SET next_attempt_at=clock_timestamp()-INTERVAL '1 second' WHERE studio_id=studio;
         j:=public.claim_missed_class_automations_v1(1);

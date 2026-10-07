@@ -8614,3 +8614,605 @@ END $$;
 ALTER FUNCTION public.get_automation_sender_status_v1(TEXT) OWNER TO postgres;
 REVOKE ALL ON FUNCTION public.get_automation_sender_status_v1(TEXT) FROM PUBLIC,anon,authenticated,service_role;
 GRANT EXECUTE ON FUNCTION public.get_automation_sender_status_v1(TEXT) TO service_role;
+
+-- Legacy attendance delivery adopts the common sender without retaining payloads
+-- after its existing student cascade. The installation snapshot and late guards
+-- are one transaction; a busy delivery writer aborts installation immediately.
+LOCK TABLE public.automation_deliveries IN ACCESS EXCLUSIVE MODE NOWAIT;
+
+CREATE TABLE private.automation_unsubscribe_token_bindings (
+    token_hash TEXT PRIMARY KEY CHECK (token_hash ~ '^[a-f0-9]{64}$'),
+    studio_id UUID NOT NULL REFERENCES public.studios(id) ON DELETE CASCADE,
+    recipient_email TEXT NOT NULL CHECK (private.automation_normalize_email(recipient_email) IS NOT NULL
+        AND private.automation_normalize_email(recipient_email)=recipient_email),
+    created_at TIMESTAMPTZ NOT NULL CHECK (private.automation_sender_instant_v1(created_at))
+);
+CREATE INDEX automation_email_attempts_legacy_expiry
+    ON private.automation_email_attempt_reservations(lease_expires_at,id)
+    WHERE scope_kind='legacy' AND state='sending';
+
+CREATE FUNCTION private.automation_unsubscribe_binding_identity_v1() RETURNS TRIGGER
+LANGUAGE plpgsql SECURITY INVOKER SET search_path='' AS $$
+BEGIN
+    IF NEW IS DISTINCT FROM OLD THEN
+        RAISE EXCEPTION USING ERRCODE='23514',MESSAGE='Automation unsubscribe identity is immutable.';
+    END IF;
+    RETURN NEW;
+END $$;
+CREATE TRIGGER automation_unsubscribe_binding_identity BEFORE UPDATE ON private.automation_unsubscribe_token_bindings
+    FOR EACH ROW EXECUTE FUNCTION private.automation_unsubscribe_binding_identity_v1();
+
+CREATE FUNCTION private.automation_bind_unsubscribe_token_v1(p_studio_id UUID,p_token TEXT,p_recipient_email TEXT) RETURNS VOID
+LANGUAGE plpgsql SECURITY INVOKER SET search_path='' AS $$
+DECLARE binding private.automation_unsubscribe_token_bindings; v_hash TEXT;
+BEGIN
+    IF p_studio_id IS NULL OR p_token IS NULL OR p_token !~ '^[a-f0-9]{64}$'
+        OR private.automation_normalize_email(p_recipient_email) IS NULL
+        OR private.automation_normalize_email(p_recipient_email) IS DISTINCT FROM p_recipient_email THEN
+        RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST';
+    END IF;
+    v_hash:=encode(extensions.digest(p_token,'sha256'),'hex');
+    SELECT * INTO binding FROM private.automation_unsubscribe_token_bindings b WHERE b.token_hash=v_hash;
+    IF binding.token_hash IS NULL THEN
+        -- Callers already own their studio. The NOWAIT also makes late callbacks
+        -- refuse a concurrent studio cascade instead of acquiring backward.
+        PERFORM 1 FROM public.studios WHERE id=p_studio_id FOR KEY SHARE NOWAIT;
+        IF NOT FOUND THEN RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST'; END IF;
+        INSERT INTO private.automation_unsubscribe_token_bindings VALUES(v_hash,p_studio_id,p_recipient_email,clock_timestamp())
+            ON CONFLICT DO NOTHING;
+        SELECT * INTO binding FROM private.automation_unsubscribe_token_bindings b WHERE b.token_hash=v_hash;
+    END IF;
+    IF ROW(binding.studio_id,binding.recipient_email) IS DISTINCT FROM ROW(p_studio_id,p_recipient_email) THEN
+        RAISE EXCEPTION USING ERRCODE='23514',MESSAGE='Automation unsubscribe binding conflict.';
+    END IF;
+EXCEPTION WHEN lock_not_available THEN RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STUDIO_BUSY';
+END $$;
+
+DO $legacy_snapshot$
+DECLARE d public.automation_deliveries; cutover TIMESTAMPTZ:=clock_timestamp(); anchor TIMESTAMPTZ;
+    origin TEXT; token UUID; lease TIMESTAMPTZ;
+BEGIN
+    FOR d IN SELECT * FROM public.automation_deliveries ORDER BY studio_id,id LOOP
+        PERFORM 1 FROM public.studios WHERE id=d.studio_id FOR KEY SHARE NOWAIT;
+        IF NOT FOUND THEN RAISE EXCEPTION 'AUTOMATION_LEGACY_PARENT_MISMATCH'; END IF;
+        IF d.attempted_at IS NOT NULL AND d.unsubscribe_token ~ '^[a-f0-9]{64}$' THEN
+            PERFORM private.automation_bind_unsubscribe_token_v1(d.studio_id,d.unsubscribe_token,d.original_recipient_email);
+        END IF;
+        IF d.state NOT IN ('sending','accepted','unknown') THEN CONTINUE; END IF;
+        IF private.automation_normalize_email(d.original_recipient_email) IS NULL
+            OR private.automation_normalize_email(d.original_recipient_email) IS DISTINCT FROM d.original_recipient_email THEN
+            RAISE EXCEPTION USING ERRCODE='23514',MESSAGE='AUTOMATION_LEGACY_RECIPIENT_MISMATCH';
+        END IF;
+        anchor:=cutover; origin:='cutover_fallback'; token:=NULL; lease:=NULL;
+        IF d.state='sending' AND d.attempts>0 AND d.claim_token IS NOT NULL
+            AND private.automation_sender_instant_v1(d.lease_expires_at) IS TRUE THEN
+            token:=d.claim_token; lease:=d.lease_expires_at;
+        END IF;
+        IF private.automation_sender_instant_v1(d.attempted_at) IS TRUE THEN
+            IF d.state IN ('accepted','unknown') AND private.automation_sender_instant_v1(d.settled_at) IS TRUE
+                AND d.attempted_at<=d.settled_at AND d.settled_at<=cutover THEN
+                anchor:=d.settled_at; origin:='legacy_settlement_upper_bound';
+            ELSIF d.state='sending' AND token IS NOT NULL AND private.automation_sender_instant_v1(d.updated_at) IS TRUE
+                AND d.attempted_at<=d.updated_at AND d.updated_at<=cutover THEN
+                anchor:=d.updated_at; origin:='legacy_sending_upper_bound';
+            END IF;
+        END IF;
+        INSERT INTO private.automation_email_attempt_reservations(id,studio_id,provider_key,scope_kind,scope_id,
+            recipient_email,origin,protocol,state,frequency_state,conservative_anchor_at,observed_legacy_ordinal,
+            owner_token,lease_expires_at,legacy_projection)
+        VALUES(gen_random_uuid(),d.studio_id,'microsoft_graph:primary','legacy',d.id,d.original_recipient_email,
+            origin,'historical',d.state,d.state,anchor,d.attempts,token,lease,
+            CASE WHEN d.state<>'sending' THEN jsonb_build_object('state',d.state,'reason',d.reason) END);
+    END LOOP;
+END $legacy_snapshot$;
+
+CREATE FUNCTION private.automation_legacy_terminal_v1(p_result JSONB,p_attempts INTEGER) RETURNS JSONB
+LANGUAGE sql IMMUTABLE SECURITY INVOKER SET search_path='' AS $$
+    SELECT jsonb_build_object('state',CASE p_result->>'outcome' WHEN 'accepted' THEN 'accepted' WHEN 'unknown' THEN 'unknown'
+        WHEN 'permanent_failure' THEN 'failed' WHEN 'retryable_failure' THEN CASE WHEN p_attempts<3 THEN 'retry_wait' ELSE 'failed' END END,
+        'reason',CASE WHEN p_result->>'outcome'='accepted' THEN NULL WHEN p_result->>'outcome'='unknown' THEN 'provider_unknown'
+        WHEN p_result->>'outcome'='retryable_failure' AND p_attempts>=3 THEN 'retry_exhausted'
+        WHEN p_result->>'error_code' IN ('rate_limited','connection_failed','authentication_required','provider_rejected','unavailable')
+            THEN p_result->>'error_code'
+        ELSE CASE WHEN p_result->>'outcome'='retryable_failure' THEN 'unavailable' ELSE 'provider_rejected' END END)
+$$;
+
+CREATE FUNCTION private.automation_legacy_begin_v1(p_delivery_id UUID,p_claim_token UUID,p_allowed_recipients TEXT[],
+    p_preparation_id UUID DEFAULT NULL,p_preparation_token UUID DEFAULT NULL,p_probe_token UUID DEFAULT NULL) RETURNS JSONB
+LANGUAGE plpgsql SECURITY INVOKER SET search_path='' AS $$
+DECLARE d public.automation_deliveries; r public.automation_rules; c RECORD; v_reason TEXT;
+    admission JSONB; attempt private.automation_email_attempt_reservations; revision BIGINT; v_reference_at TIMESTAMPTZ; v_locked_recipient TEXT; v_defer BOOLEAN:=false;
+BEGIN
+    SELECT * INTO d FROM public.automation_deliveries WHERE id=p_delivery_id;
+    IF NOT FOUND THEN RETURN jsonb_build_object('ready',false,'state',NULL,'reason',NULL,'message',NULL); END IF;
+    IF NOT pg_catalog.pg_try_advisory_xact_lock_shared(pg_catalog.hashtextextended('koaryu.local-plan-clear:'||d.studio_id::TEXT,0)) THEN
+        RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STUDIO_BUSY';
+    END IF;
+    -- Match the existing parent/student writer order before owning the outbox row.
+    PERFORM 1 FROM public.studios WHERE id=d.studio_id FOR KEY SHARE;
+    SELECT * INTO r FROM public.automation_rules WHERE studio_id=d.studio_id FOR SHARE;
+    PERFORM 1 FROM public.studio_subscriptions WHERE studio_id=d.studio_id FOR SHARE;
+    PERFORM 1 FROM public.students WHERE id=d.student_id AND studio_id=d.studio_id FOR UPDATE;
+    PERFORM 1 FROM public.guardians g JOIN public.student_guardians sg ON sg.guardian_id=g.id
+        WHERE sg.student_id=d.student_id AND g.studio_id=d.studio_id ORDER BY g.id FOR SHARE OF g,sg;
+    PERFORM 1 FROM public.class_sessions cs JOIN public.attendance a ON a.session_id=cs.id AND a.studio_id=cs.studio_id
+        WHERE a.student_id=d.student_id AND a.studio_id=d.studio_id ORDER BY cs.id,a.id FOR SHARE OF cs,a;
+    SELECT * INTO d FROM public.automation_deliveries WHERE id=p_delivery_id FOR UPDATE;
+    IF NOT FOUND OR d.state<>'claimed' OR d.claim_token IS DISTINCT FROM p_claim_token OR d.lease_expires_at<=clock_timestamp() THEN
+        RETURN jsonb_build_object('ready',false,'state',d.state,'reason',NULL,'message',NULL);
+    END IF;
+    v_reference_at:=clock_timestamp();
+    IF r.dispatch_deferred_until>v_reference_at THEN
+        UPDATE public.automation_deliveries SET state=CASE WHEN attempted_at IS NULL THEN 'queued' ELSE 'retry_wait' END,
+            reason='unavailable',claim_token=NULL,lease_expires_at=NULL,next_attempt_at=greatest(next_attempt_at,r.dispatch_deferred_until),
+            updated_at=clock_timestamp() WHERE id=d.id RETURNING * INTO d;
+        RETURN jsonb_build_object('ready',false,'state',d.state,'reason',d.reason,'message',NULL);
+    END IF;
+    IF r.enabled IS DISTINCT FROM true THEN v_reason:='rule_paused';
+    ELSIF NOT private.automation_core_entitled(d.studio_id) THEN v_reason:='subscription_required';
+    ELSE
+        SELECT * INTO c FROM private.missed_class_automation_candidates(d.studio_id,r.inactivity_days,d.student_id,d.id,v_reference_at);
+        IF NOT FOUND THEN v_reason:='student_unavailable'; ELSE v_reason:=c.skip_reason; END IF;
+    END IF;
+    IF v_reason IS NULL THEN
+        -- Routing is needed to choose the suppression lock. Waiting for that
+        -- lock can cross a studio midnight, so the final evaluation uses one
+        -- fresh reference for age, holds, gap and attendance after the wait.
+        v_locked_recipient:=c.recipient_email;
+        PERFORM pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended(d.studio_id::text||':'||v_locked_recipient,0));
+        v_reference_at:=clock_timestamp();
+        IF d.lease_expires_at<=v_reference_at THEN
+            RETURN jsonb_build_object('ready',false,'state',d.state,'reason',NULL,'message',NULL);
+        END IF;
+        PERFORM private.automation_email_scope_lock_v1(d.studio_id,'legacy',d.id,NULL,v_locked_recipient);
+        IF p_preparation_id IS NOT NULL THEN
+            SELECT cr.revision INTO revision FROM private.automation_email_credentials cr
+                WHERE cr.provider_key='microsoft_graph:primary' FOR SHARE NOWAIT;
+        END IF;
+        PERFORM private.automation_sender_gate_lock_v1();
+        -- The existing final source evaluation follows the last possible wait.
+        v_reference_at:=clock_timestamp();
+        IF d.lease_expires_at<=v_reference_at THEN
+            RETURN jsonb_build_object('ready',false,'state',d.state,'reason',NULL,'message',NULL);
+        END IF;
+        SELECT * INTO c FROM private.missed_class_automation_candidates(d.studio_id,r.inactivity_days,d.student_id,d.id,v_reference_at);
+        IF NOT FOUND THEN v_reason:='student_unavailable';
+        ELSIF c.recipient_email IS DISTINCT FROM v_locked_recipient THEN
+            -- A birthday can move routing from guardian to student at midnight.
+            -- Defer instead of dispatching under the wrong key or taking a
+            -- second recipient lock in an inconsistent order.
+            v_reason:='contact_changed'; v_defer:=true;
+        ELSE
+            v_reason:=c.skip_reason;
+            IF NOT private.automation_core_entitled(d.studio_id) THEN v_reason:='subscription_required'; END IF;
+            IF COALESCE(cardinality(p_allowed_recipients),0)>0 AND (c.recipient_email=ANY(p_allowed_recipients)) IS DISTINCT FROM true THEN
+                v_reason:='recipient_not_allowed';
+            END IF;
+            IF d.attempted_at IS NOT NULL THEN
+                IF c.attendance_id IS DISTINCT FROM d.attendance_id OR c.last_attendance_date IS DISTINCT FROM d.attendance_date THEN v_reason:='attendance_changed';
+                ELSIF c.recipient_email IS DISTINCT FROM d.original_recipient_email THEN v_reason:='contact_changed'; END IF;
+            END IF;
+        END IF;
+    END IF;
+    IF v_reason IS NOT NULL THEN
+        UPDATE public.automation_deliveries SET
+            state=CASE WHEN NOT v_defer AND v_reason IN ('suppressed','episode_already_attempted','attendance_changed','contact_changed') THEN 'skipped' ELSE 'queued' END,
+            reason=v_reason,claim_token=NULL,lease_expires_at=NULL,next_attempt_at=clock_timestamp()+INTERVAL '1 hour',
+            settled_at=CASE WHEN NOT v_defer AND v_reason IN ('suppressed','episode_already_attempted','attendance_changed','contact_changed') THEN clock_timestamp() END,
+            updated_at=clock_timestamp() WHERE id=d.id RETURNING * INTO d;
+        RETURN jsonb_build_object('ready',false,'state',d.state,'reason',d.reason,'message',NULL);
+    END IF;
+    IF EXISTS(SELECT 1 FROM private.automation_email_attempt_reservations a WHERE a.studio_id=d.studio_id
+        AND a.scope_kind='legacy' AND a.scope_id=d.id AND a.state IN ('sending','accepted','unknown')) THEN
+        RETURN jsonb_build_object('ready',false,'state',d.state,'reason',d.reason,'message',NULL);
+    END IF;
+    IF d.attempts>=3 THEN
+        UPDATE public.automation_deliveries SET state='failed',reason='retry_exhausted',claim_token=NULL,lease_expires_at=NULL,
+            settled_at=clock_timestamp(),updated_at=clock_timestamp() WHERE id=d.id RETURNING * INTO d;
+        RETURN jsonb_build_object('ready',false,'state',d.state,'reason',d.reason,'message',NULL);
+    END IF;
+    admission:=private.automation_email_attempt_begin_v1(d.studio_id,'legacy',d.id,NULL,gen_random_uuid(),p_claim_token,
+        c.recipient_email,p_preparation_id,p_preparation_token,p_probe_token,d.attempts);
+    IF admission->>'outcome'<>'begun' THEN
+        IF admission->>'reason'='scope_terminal' OR admission->>'outcome'='already_begun' THEN
+            RETURN jsonb_build_object('ready',false,'state',d.state,'reason',d.reason,'message',NULL);
+        END IF;
+        v_reason:=CASE admission->>'reason' WHEN 'recipient_suppressed' THEN 'suppressed'
+            WHEN 'rate_limited' THEN 'rate_limited' WHEN 'retry_exhausted' THEN 'retry_exhausted' ELSE 'unavailable' END;
+        UPDATE public.automation_deliveries SET state=CASE v_reason WHEN 'suppressed' THEN 'skipped'
+            WHEN 'retry_exhausted' THEN 'failed' ELSE CASE WHEN attempts=0 THEN 'queued' ELSE 'retry_wait' END END,
+            reason=v_reason,claim_token=NULL,lease_expires_at=NULL,
+            next_attempt_at=greatest(next_attempt_at,coalesce((admission->>'retry_at')::TIMESTAMPTZ,clock_timestamp()+INTERVAL '1 hour')),
+            settled_at=CASE WHEN v_reason IN ('suppressed','retry_exhausted') THEN clock_timestamp() END,
+            updated_at=clock_timestamp() WHERE id=d.id RETURNING * INTO d;
+        RETURN jsonb_build_object('ready',false,'state',d.state,'reason',d.reason,'message',NULL);
+    END IF;
+    SELECT * INTO attempt FROM private.automation_email_attempt_reservations WHERE id=(admission->>'attempt_id')::UUID;
+    UPDATE public.automation_deliveries SET state='sending',attempts=attempts+1,
+        attempted_at=COALESCE(attempted_at,attempt.actual_began_at),lease_expires_at=attempt.lease_expires_at,
+        unsubscribe_token=COALESCE(unsubscribe_token,encode(extensions.gen_random_bytes(32),'hex')),
+        original_recipient_email=COALESCE(original_recipient_email,c.recipient_email),
+        attendance_id=CASE WHEN attempted_at IS NULL THEN c.attendance_id ELSE attendance_id END,
+        attendance_date=CASE WHEN attempted_at IS NULL THEN c.last_attendance_date ELSE attendance_date END,
+        attendance_checked_in_at=CASE WHEN attempted_at IS NULL THEN c.attendance_checked_in_at ELSE attendance_checked_in_at END,
+        attendance_occurred_at=CASE WHEN attempted_at IS NULL THEN c.attendance_occurred_at ELSE attendance_occurred_at END,
+        recipient_email=CASE WHEN attempted_at IS NULL THEN c.recipient_email ELSE recipient_email END,
+        recipient_name=CASE WHEN attempted_at IS NULL THEN c.recipient_name ELSE recipient_name END,
+        recipient_kind=CASE WHEN attempted_at IS NULL THEN c.recipient_kind ELSE recipient_kind END,
+        student_name=CASE WHEN attempted_at IS NULL THEN c.student_name ELSE student_name END,
+        student_first_name=CASE WHEN attempted_at IS NULL THEN c.student_first_name ELSE student_first_name END,
+        studio_name=CASE WHEN attempted_at IS NULL THEN c.studio_name ELSE studio_name END,
+        subject_template=CASE WHEN attempted_at IS NULL THEN r.subject_template ELSE subject_template END,
+        body_template=CASE WHEN attempted_at IS NULL THEN r.body_template ELSE body_template END,
+        reply_to_email=CASE WHEN attempted_at IS NULL THEN r.reply_to_email ELSE reply_to_email END,
+        rule_revision=CASE WHEN attempted_at IS NULL THEN r.revision ELSE rule_revision END,
+        days_absent=CASE WHEN attempted_at IS NULL THEN c.days_absent ELSE days_absent END,
+        reason=NULL,settled_at=NULL,updated_at=clock_timestamp() WHERE id=d.id RETURNING * INTO d;
+    RETURN jsonb_build_object('attempt_id',attempt.id,'lease_expires_at',attempt.lease_expires_at,
+        'credential_revision',attempt.admitted_credential_revision,'sender_binding',attempt.sender_binding,
+        'ready',true,'state',d.state,'reason',NULL,'message',jsonb_build_object(
+        'delivery_id',d.id,'attempt_id',d.id::text||':'||d.attempts::text,'student_first_name',d.student_first_name,
+        'studio_name',d.studio_name,'days_absent',d.days_absent,'recipient_email',d.recipient_email,
+        'subject_template',d.subject_template,'body_template',d.body_template,'reply_to_email',d.reply_to_email,
+        'unsubscribe_token',d.unsubscribe_token));
+EXCEPTION WHEN lock_not_available THEN RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STUDIO_BUSY';
+END $$;
+
+CREATE OR REPLACE FUNCTION public.begin_missed_class_automation_v1(p_delivery_id UUID,p_claim_token UUID,p_allowed_recipients TEXT[] DEFAULT NULL) RETURNS JSONB
+LANGUAGE sql SECURITY INVOKER SET search_path='' AS $$
+    SELECT private.automation_legacy_begin_v1(p_delivery_id,p_claim_token,p_allowed_recipients)
+        -ARRAY['attempt_id','lease_expires_at','credential_revision','sender_binding']
+$$;
+
+CREATE FUNCTION public.begin_missed_class_automation_v2(p_delivery_id UUID,p_claim_token UUID,p_preparation_id UUID,
+    p_preparation_token UUID,p_allowed_recipients TEXT[] DEFAULT NULL,p_probe_token UUID DEFAULT NULL) RETURNS JSONB
+LANGUAGE plpgsql SECURITY INVOKER SET search_path='' AS $$
+DECLARE result JSONB;
+BEGIN
+    IF p_delivery_id IS NULL OR p_claim_token IS NULL OR p_preparation_id IS NULL OR p_preparation_token IS NULL THEN
+        RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST';
+    END IF;
+    result:=private.automation_legacy_begin_v1(p_delivery_id,p_claim_token,p_allowed_recipients,
+        p_preparation_id,p_preparation_token,p_probe_token);
+    RETURN jsonb_build_object('payload',jsonb_build_object('delivery_id',p_delivery_id,'claim_token',p_claim_token,
+        'attempt_id',NULL,'lease_expires_at',NULL,'credential_revision',NULL,'sender_binding',NULL)||result);
+END $$;
+
+CREATE FUNCTION private.automation_legacy_delivery_transition_v1() RETURNS TRIGGER
+LANGUAGE plpgsql SECURITY INVOKER SET search_path='' AS $$
+DECLARE attempt private.automation_email_attempt_reservations; admission JSONB; settlement JSONB; result JSONB;
+    projection JSONB; r public.automation_rules; c RECORD; at TIMESTAMPTZ;
+BEGIN
+    IF NEW.state='sending' AND OLD.state<>'sending' THEN
+        IF OLD.state<>'claimed' OR OLD.attempts NOT BETWEEN 0 AND 2 OR NEW.attempts<>OLD.attempts+1
+            OR NEW.claim_token IS NULL OR NEW.claim_token IS DISTINCT FROM OLD.claim_token THEN
+            RAISE EXCEPTION USING ERRCODE='23514',MESSAGE='AUTOMATION_INVALID_LEGACY_TRANSITION';
+        END IF;
+        IF NOT pg_catalog.pg_try_advisory_xact_lock_shared(pg_catalog.hashtextextended('koaryu.local-plan-clear:'||OLD.studio_id::TEXT,0)) THEN
+            RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STUDIO_BUSY';
+        END IF;
+        PERFORM private.automation_email_scope_lock_v1(OLD.studio_id,'legacy',OLD.id,NULL,NEW.original_recipient_email);
+        SELECT * INTO attempt FROM private.automation_email_attempt_reservations
+            WHERE studio_id=OLD.studio_id AND scope_kind='legacy' AND scope_id=OLD.id AND owner_token=OLD.claim_token;
+        IF attempt.id IS NULL THEN
+            -- An already loaded V56 begin reaches this branch. All its source
+            -- locks are already held; only TRY/NOWAIT acquisitions go backward.
+            PERFORM private.automation_sender_gate_lock_v1();
+            at:=clock_timestamp();
+            SELECT * INTO r FROM public.automation_rules WHERE studio_id=OLD.studio_id;
+            SELECT * INTO c FROM private.missed_class_automation_candidates(OLD.studio_id,r.inactivity_days,OLD.student_id,OLD.id,at);
+            IF NOT FOUND OR r.enabled IS DISTINCT FROM true OR r.dispatch_deferred_until>at
+                OR OLD.lease_expires_at IS NULL OR OLD.lease_expires_at<=at
+                OR NOT private.automation_core_entitled(OLD.studio_id) OR c.skip_reason IS NOT NULL
+                OR c.recipient_email IS DISTINCT FROM NEW.original_recipient_email
+                OR c.attendance_id IS DISTINCT FROM NEW.attendance_id
+                OR c.last_attendance_date IS DISTINCT FROM NEW.attendance_date THEN
+                RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_SENDER_UNAVAILABLE';
+            END IF;
+            admission:=private.automation_email_attempt_begin_v1(OLD.studio_id,'legacy',OLD.id,NULL,gen_random_uuid(),
+                OLD.claim_token,NEW.original_recipient_email,NULL,NULL,NULL,OLD.attempts);
+            IF admission->>'outcome'<>'begun' THEN
+                RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_SENDER_UNAVAILABLE';
+            END IF;
+            SELECT * INTO attempt FROM private.automation_email_attempt_reservations WHERE id=(admission->>'attempt_id')::UUID;
+        END IF;
+        IF attempt.origin<>'actual' OR attempt.state<>'sending' OR attempt.attempt_number<>NEW.attempts
+            OR attempt.recipient_email IS DISTINCT FROM NEW.original_recipient_email
+            OR attempt.lease_expires_at<=clock_timestamp() THEN
+            RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_SENDER_UNAVAILABLE';
+        END IF;
+        NEW.lease_expires_at:=attempt.lease_expires_at;
+        PERFORM private.automation_bind_unsubscribe_token_v1(NEW.studio_id,NEW.unsubscribe_token,NEW.original_recipient_email);
+    ELSIF OLD.state='sending' AND NEW.state<>'sending' THEN
+        SELECT * INTO attempt FROM private.automation_email_attempt_reservations
+            WHERE studio_id=OLD.studio_id AND scope_kind='legacy' AND scope_id=OLD.id
+                AND owner_token IS NOT DISTINCT FROM OLD.claim_token;
+        IF attempt.id IS NULL OR NEW.state NOT IN ('accepted','retry_wait','failed','unknown') THEN
+            RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_SENDER_UNAVAILABLE';
+        END IF;
+        projection:=jsonb_build_object('state',NEW.state,'reason',NEW.reason);
+        IF attempt.state='sending' THEN
+            IF NEW.state='unknown' AND NEW.reason='lease_expired' THEN
+                IF attempt.origin<>'actual' AND (attempt.owner_token IS NULL OR attempt.lease_expires_at IS NULL) THEN
+                    -- No usable old sending ownership was observed at cutover.
+                    -- Only old claim expiry can establish this conservative truth.
+                    PERFORM private.automation_email_scope_lock_v1(attempt.studio_id,'legacy',attempt.scope_id,NULL,attempt.recipient_email);
+                    UPDATE private.automation_email_attempt_reservations SET state='unknown',frequency_state='unknown'
+                        WHERE id=attempt.id AND state='sending';
+                ELSE
+                    settlement:=private.automation_email_attempt_expire_v1(attempt.id);
+                    IF settlement->>'outcome'<>'confirmed' THEN
+                        RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_SENDER_UNAVAILABLE';
+                    END IF;
+                END IF;
+            ELSE
+                IF attempt.protocol='prepared' THEN
+                    -- A new parent must record its seven-field evidence before
+                    -- this transition. A cached old body cannot downgrade it.
+                    RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_SENDER_UNAVAILABLE';
+                END IF;
+                result:=jsonb_build_object('outcome',CASE NEW.state WHEN 'accepted' THEN 'accepted' WHEN 'unknown' THEN 'unknown'
+                    WHEN 'retry_wait' THEN 'retryable_failure' ELSE CASE WHEN NEW.reason='retry_exhausted' THEN 'retryable_failure' ELSE 'permanent_failure' END END,
+                    'error_code',NEW.reason,'provider_request_id',NEW.provider_request_id,'retry_after_seconds',NULL);
+                settlement:=private.automation_email_attempt_settle_v1(attempt.id,OLD.claim_token,result);
+                -- Frozen settle returns its local v_state. Rewriting NEW would
+                -- let an accepted response escape despite expired common truth.
+                IF settlement->>'outcome'<>'confirmed'
+                    OR settlement->>'state' IS DISTINCT FROM (CASE WHEN NEW.state='retry_wait' THEN 'failed' ELSE NEW.state END)
+                    OR (attempt.lease_expires_at<=(settlement->>'settled_at')::TIMESTAMPTZ
+                        AND projection<>jsonb_build_object('state','unknown','reason','lease_expired')) THEN
+                    RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_SENDER_UNAVAILABLE';
+                END IF;
+            END IF;
+            IF NOT private.automation_legacy_projection_pin_v1(attempt.id,attempt.owner_token,projection) THEN
+                RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_SENDER_UNAVAILABLE';
+            END IF;
+        ELSE
+            -- Current wrappers have already settled and pinned this exact pair.
+            IF attempt.legacy_projection IS DISTINCT FROM projection THEN
+                RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_SENDER_UNAVAILABLE';
+            END IF;
+        END IF;
+    END IF;
+    RETURN NEW;
+END $$;
+CREATE TRIGGER automation_legacy_delivery_transition BEFORE UPDATE ON public.automation_deliveries
+    FOR EACH ROW EXECUTE FUNCTION private.automation_legacy_delivery_transition_v1();
+
+CREATE FUNCTION private.automation_legacy_delivery_delete_v1() RETURNS TRIGGER
+LANGUAGE plpgsql SECURITY INVOKER SET search_path='' AS $$
+BEGIN
+    -- Actual studio removal owns both studio-only cascades. Operational clear
+    -- and student removal retain the independent reservation and token mapping.
+    IF NOT EXISTS(SELECT 1 FROM public.studios WHERE id=OLD.studio_id) THEN RETURN OLD; END IF;
+    IF OLD.state='sending' AND NOT EXISTS(SELECT 1 FROM private.automation_email_attempt_reservations
+        WHERE studio_id=OLD.studio_id AND scope_kind='legacy' AND scope_id=OLD.id) THEN
+        RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_SENDER_UNAVAILABLE';
+    END IF;
+    IF OLD.attempted_at IS NOT NULL AND OLD.unsubscribe_token ~ '^[a-f0-9]{64}$' AND NOT EXISTS(
+        SELECT 1 FROM private.automation_unsubscribe_token_bindings WHERE token_hash=encode(extensions.digest(OLD.unsubscribe_token,'sha256'),'hex')
+            AND studio_id=OLD.studio_id AND recipient_email=OLD.original_recipient_email) THEN
+        RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_SENDER_UNAVAILABLE';
+    END IF;
+    RETURN OLD;
+END $$;
+CREATE TRIGGER automation_legacy_delivery_delete BEFORE DELETE ON public.automation_deliveries
+    FOR EACH ROW EXECUTE FUNCTION private.automation_legacy_delivery_delete_v1();
+
+CREATE FUNCTION private.automation_legacy_settle_v1(p_delivery_id UUID,p_claim_token UUID,p_attempt_id UUID,p_result JSONB) RETURNS JSONB
+LANGUAGE plpgsql SECURITY INVOKER SET search_path='' AS $$
+DECLARE d public.automation_deliveries; attempt private.automation_email_attempt_reservations; settlement JSONB;
+    projection JSONB; result JSONB; retry INTEGER;
+    refused JSONB:=jsonb_build_object('delivery_id',p_delivery_id,'attempt_id',p_attempt_id,'updated',false,'replayed',false,'state',NULL,'reason',NULL);
+BEGIN
+    -- Always delivery before common ownership, including a concurrent cascade.
+    SELECT * INTO d FROM public.automation_deliveries WHERE id=p_delivery_id FOR UPDATE;
+    SELECT * INTO attempt FROM private.automation_email_attempt_reservations WHERE id=p_attempt_id;
+    IF attempt.id IS NULL OR attempt.scope_kind<>'legacy' OR attempt.scope_id IS DISTINCT FROM p_delivery_id
+        OR p_claim_token IS NULL OR attempt.owner_token IS DISTINCT FROM p_claim_token
+        OR (d.id IS NOT NULL AND d.studio_id IS DISTINCT FROM attempt.studio_id) THEN RETURN refused; END IF;
+    IF attempt.protocol='prepared' THEN
+        IF NOT private.workflow_json_keys_v1(p_result,
+            ARRAY['outcome','error_code','provider_request_id','retry_after_seconds','submission_evidence','failure_scope','credential_revision'],
+            ARRAY['outcome','error_code','provider_request_id','retry_after_seconds','submission_evidence','failure_scope','credential_revision']) THEN RETURN refused; END IF;
+        result:=private.automation_delivery_result_v1(p_result,attempt.admitted_credential_revision);
+    ELSE
+        IF NOT private.workflow_json_keys_v1(p_result,ARRAY['outcome','error_code','provider_request_id','retry_after_seconds'],
+            ARRAY['outcome','error_code','provider_request_id','retry_after_seconds']) THEN RETURN refused; END IF;
+        result:=p_result;
+    END IF;
+    settlement:=private.automation_email_attempt_settle_v1(attempt.id,p_claim_token,result);
+    IF settlement->>'outcome'='refused' THEN RETURN refused; END IF;
+    IF settlement->>'outcome'='replayed' THEN
+        SELECT * INTO attempt FROM private.automation_email_attempt_reservations WHERE id=attempt.id;
+        IF attempt.legacy_projection IS NULL THEN RETURN refused; END IF;
+        projection:=attempt.legacy_projection;
+    ELSE
+        IF settlement->>'state'='unknown' AND attempt.lease_expires_at<=(settlement->>'settled_at')::TIMESTAMPTZ THEN
+            projection:=jsonb_build_object('state','unknown','reason','lease_expired');
+        ELSE
+            projection:=private.automation_legacy_terminal_v1(result,coalesce(attempt.attempt_number,attempt.observed_legacy_ordinal));
+        END IF;
+        IF NOT private.automation_legacy_projection_pin_v1(attempt.id,p_claim_token,projection) THEN
+            RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_SENDER_UNAVAILABLE';
+        END IF;
+        IF d.id IS NOT NULL THEN
+            IF d.state<>'sending' OR d.claim_token IS DISTINCT FROM p_claim_token THEN
+                RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_SENDER_UNAVAILABLE';
+            END IF;
+            retry:=greatest(60,least(86400,coalesce((result->>'retry_after_seconds')::INTEGER,60*(2^d.attempts)::INTEGER)));
+            UPDATE public.automation_deliveries SET state=projection->>'state',reason=projection->>'reason',
+                provider_request_id=settlement->'result'->>'provider_request_id',next_attempt_at=clock_timestamp()+make_interval(secs=>retry),
+                claim_token=NULL,lease_expires_at=NULL,settled_at=(settlement->>'settled_at')::TIMESTAMPTZ,updated_at=clock_timestamp() WHERE id=d.id;
+        END IF;
+    END IF;
+    RETURN jsonb_build_object('delivery_id',p_delivery_id,'attempt_id',p_attempt_id,'updated',true,
+        'replayed',settlement->>'outcome'='replayed')||projection;
+END $$;
+
+CREATE FUNCTION public.settle_missed_class_automation_v2(p_delivery_id UUID,p_claim_token UUID,p_attempt_id UUID,p_result JSONB) RETURNS JSONB
+LANGUAGE plpgsql SECURITY INVOKER SET search_path='' AS $$
+BEGIN
+    IF p_delivery_id IS NULL OR p_claim_token IS NULL OR p_attempt_id IS NULL THEN
+        RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST';
+    END IF;
+    RETURN jsonb_build_object('payload',private.automation_legacy_settle_v1(p_delivery_id,p_claim_token,p_attempt_id,
+        private.automation_delivery_result_v1(p_result)));
+END $$;
+
+CREATE OR REPLACE FUNCTION public.settle_missed_class_automation_v1(p_delivery_id UUID,p_claim_token UUID,p_outcome TEXT,
+    p_error_code TEXT DEFAULT NULL,p_provider_request_id TEXT DEFAULT NULL,p_retry_after_seconds INTEGER DEFAULT NULL) RETURNS JSONB
+LANGUAGE plpgsql SECURITY INVOKER SET search_path='' AS $$
+DECLARE d public.automation_deliveries; attempt private.automation_email_attempt_reservations; result JSONB;
+BEGIN
+    IF p_outcome IS NULL OR p_outcome NOT IN ('accepted','retryable_failure','permanent_failure','unknown') THEN
+        RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='Invalid delivery outcome.';
+    END IF;
+    SELECT * INTO d FROM public.automation_deliveries WHERE id=p_delivery_id FOR UPDATE;
+    IF d.id IS NOT NULL AND (d.state<>'sending' OR d.claim_token IS DISTINCT FROM p_claim_token) THEN
+        RETURN jsonb_build_object('updated',false,'state',d.state);
+    END IF;
+    SELECT * INTO attempt FROM private.automation_email_attempt_reservations
+        WHERE scope_kind='legacy' AND scope_id=p_delivery_id AND owner_token=p_claim_token
+            AND (d.id IS NULL OR studio_id=d.studio_id);
+    IF attempt.id IS NULL OR attempt.protocol='prepared' THEN RETURN jsonb_build_object('updated',false,'state',d.state); END IF;
+    result:=private.automation_legacy_settle_v1(p_delivery_id,p_claim_token,attempt.id,jsonb_build_object(
+        'outcome',p_outcome,'error_code',p_error_code,'provider_request_id',p_provider_request_id,'retry_after_seconds',p_retry_after_seconds));
+    RETURN jsonb_build_object('updated',(result->>'updated')::BOOLEAN AND NOT (result->>'replayed')::BOOLEAN,
+        'state',CASE WHEN (result->>'updated')::BOOLEAN THEN result->>'state' ELSE d.state END);
+END $$;
+
+CREATE OR REPLACE FUNCTION public.suppress_missed_class_automation_v1(p_token TEXT) RETURNS JSONB
+LANGUAGE plpgsql SECURITY INVOKER SET search_path='' AS $$
+DECLARE binding private.automation_unsubscribe_token_bindings;
+BEGIN
+    IF p_token IS NOT NULL AND p_token ~ '^[a-f0-9]{64}$' THEN
+        SELECT * INTO binding FROM private.automation_unsubscribe_token_bindings WHERE token_hash=encode(extensions.digest(p_token,'sha256'),'hex');
+        IF FOUND THEN
+            PERFORM 1 FROM public.studios WHERE id=binding.studio_id FOR KEY SHARE;
+            IF NOT FOUND THEN RETURN jsonb_build_object('success',true); END IF;
+            PERFORM pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended(binding.studio_id::TEXT||':'||binding.recipient_email,0));
+            INSERT INTO public.automation_suppressions(studio_id,recipient_email) VALUES(binding.studio_id,binding.recipient_email) ON CONFLICT DO NOTHING;
+        END IF;
+    END IF;
+    RETURN jsonb_build_object('success',true);
+END $$;
+
+CREATE FUNCTION private.automation_expire_orphaned_legacy_attempts_v1(p_limit INTEGER DEFAULT 100) RETURNS INTEGER
+LANGUAGE plpgsql SECURITY INVOKER SET search_path='' AS $$
+DECLARE item private.automation_email_attempt_reservations; ids UUID[]; result JSONB; count INTEGER:=0; cutoff TIMESTAMPTZ:=clock_timestamp();
+BEGIN
+    IF p_limit IS NULL OR p_limit NOT BETWEEN 1 AND 100 THEN
+        RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='AUTOMATION_INVALID_REQUEST';
+    END IF;
+    -- MATERIALIZED bounds the raw ordered page before the parent anti-join.
+    -- Attached attempts consume page slots and are expired by the retained
+    -- claim UPDATE below, allowing a later invocation to reach later orphans.
+    WITH raw AS MATERIALIZED (
+        SELECT a.id,a.studio_id,a.scope_id FROM private.automation_email_attempt_reservations a
+        WHERE a.scope_kind='legacy' AND a.state='sending' AND a.lease_expires_at<=cutoff
+            AND private.automation_sender_instant_v1(a.lease_expires_at) IS TRUE
+        ORDER BY a.lease_expires_at,a.id LIMIT p_limit
+    ) SELECT array_agg(raw.id ORDER BY raw.id) INTO ids FROM raw WHERE NOT EXISTS(
+        SELECT 1 FROM public.automation_deliveries d WHERE d.studio_id=raw.studio_id AND d.id=raw.scope_id);
+    -- Own the entire chosen subset before taking the provider gate. These
+    -- locks remain held through the complete caller transaction.
+    FOR item IN SELECT * FROM private.automation_email_attempt_reservations WHERE id=ANY(ids) ORDER BY studio_id,id LOOP
+        PERFORM 1 FROM public.studios WHERE id=item.studio_id FOR KEY SHARE NOWAIT;
+        IF NOT FOUND THEN RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STUDIO_BUSY'; END IF;
+        PERFORM private.automation_email_scope_lock_v1(item.studio_id,'legacy',item.scope_id,NULL,item.recipient_email);
+        IF item.protocol='prepared' THEN
+            PERFORM 1 FROM private.automation_email_credentials WHERE provider_key=item.provider_key FOR SHARE NOWAIT;
+        END IF;
+        PERFORM 1 FROM private.automation_email_attempt_reservations WHERE id=item.id FOR UPDATE NOWAIT;
+    END LOOP;
+    FOR item IN SELECT * FROM private.automation_email_attempt_reservations WHERE id=ANY(ids) ORDER BY studio_id,id LOOP
+        IF item.state<>'sending' OR item.lease_expires_at>clock_timestamp() OR EXISTS(
+            SELECT 1 FROM public.automation_deliveries WHERE studio_id=item.studio_id AND id=item.scope_id) THEN CONTINUE; END IF;
+        result:=private.automation_email_attempt_expire_v1(item.id);
+        IF result->>'outcome'='confirmed' THEN
+            IF NOT private.automation_legacy_projection_pin_v1(item.id,item.owner_token,
+                jsonb_build_object('state','unknown','reason','lease_expired')) THEN
+                RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_SENDER_UNAVAILABLE';
+            END IF;
+            count:=count+1;
+        ELSIF result->>'outcome'<>'replayed' THEN
+            RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_SENDER_UNAVAILABLE';
+        END IF;
+    END LOOP;
+    RETURN count;
+EXCEPTION WHEN lock_not_available THEN RAISE EXCEPTION USING ERRCODE='P0001',MESSAGE='AUTOMATION_STUDIO_BUSY';
+END $$;
+
+CREATE OR REPLACE FUNCTION public.claim_missed_class_automations_v1(p_limit INTEGER DEFAULT 10,p_allowed_recipients TEXT[] DEFAULT NULL) RETURNS JSONB
+LANGUAGE plpgsql SECURITY INVOKER SET search_path='' AS $$
+DECLARE v_items JSONB:='[]'::jsonb; v_more BOOLEAN; v_rule public.automation_rules;
+    v_delivery public.automation_deliveries; v_scan INTEGER; v_visited UUID[]:='{}';
+BEGIN
+    IF p_limit IS NULL OR p_limit NOT BETWEEN 1 AND 10 THEN RAISE EXCEPTION USING ERRCODE='22023',MESSAGE='Invalid claim limit.'; END IF;
+    PERFORM private.automation_expire_orphaned_legacy_attempts_v1(100);
+    -- Sending expiry is recovery, not another attempt, even during a cooldown.
+    WITH expired AS (SELECT id FROM public.automation_deliveries WHERE state='sending' AND lease_expires_at<=clock_timestamp()
+        ORDER BY lease_expires_at,id LIMIT 100 FOR UPDATE SKIP LOCKED)
+    UPDATE public.automation_deliveries d SET state='unknown',reason='lease_expired',settled_at=clock_timestamp(),
+        claim_token=NULL,lease_expires_at=NULL,updated_at=clock_timestamp() FROM expired e WHERE d.id=e.id;
+    -- Rotate across studios, not a globally oldest row list. Ten bounded visits
+    -- still allow a sole ready studio to fill the caller's requested batch.
+    FOR v_scan IN 1..10 LOOP
+        EXIT WHEN jsonb_array_length(v_items)>=p_limit;
+        SELECT r.* INTO v_rule FROM public.automation_rules r
+        WHERE r.enabled AND (r.dispatch_deferred_until IS NULL OR r.dispatch_deferred_until<=clock_timestamp())
+            AND NOT r.studio_id=ANY(v_visited)
+            AND EXISTS(SELECT 1 FROM public.automation_deliveries d WHERE d.studio_id=r.studio_id
+                AND ((d.state IN ('queued','retry_wait') AND d.next_attempt_at<=clock_timestamp())
+                    OR (d.state='claimed' AND d.lease_expires_at<=clock_timestamp()))
+                AND (COALESCE(cardinality(p_allowed_recipients),0)=0 OR EXISTS(
+                    SELECT 1 FROM private.missed_class_automation_candidates(r.studio_id,r.inactivity_days,d.student_id,d.id) c
+                    WHERE c.recipient_email=ANY(p_allowed_recipients))))
+        ORDER BY r.last_dispatch_claim_at NULLS FIRST,r.studio_id LIMIT 1 FOR UPDATE OF r SKIP LOCKED;
+        EXIT WHEN NOT FOUND;
+        -- Advance even a busy parent so fixed oldest studios cannot monopolize
+        -- every invocation. These internal fields never change the rule draft.
+        UPDATE public.automation_rules SET last_dispatch_claim_at=clock_timestamp() WHERE studio_id=v_rule.studio_id;
+        BEGIN
+            PERFORM 1 FROM public.studios WHERE id=v_rule.studio_id FOR KEY SHARE NOWAIT;
+        EXCEPTION WHEN lock_not_available THEN
+            v_visited:=array_append(v_visited,v_rule.studio_id); CONTINUE;
+        END;
+        SELECT d.* INTO v_delivery FROM public.automation_deliveries d WHERE d.studio_id=v_rule.studio_id
+            AND ((d.state IN ('queued','retry_wait') AND d.next_attempt_at<=clock_timestamp())
+                OR (d.state='claimed' AND d.lease_expires_at<=clock_timestamp()))
+            AND (COALESCE(cardinality(p_allowed_recipients),0)=0 OR EXISTS(
+                SELECT 1 FROM private.missed_class_automation_candidates(v_rule.studio_id,v_rule.inactivity_days,d.student_id,d.id) c
+                WHERE c.recipient_email=ANY(p_allowed_recipients)))
+        ORDER BY d.next_attempt_at,d.created_at,d.id LIMIT 1 FOR UPDATE OF d SKIP LOCKED;
+        IF NOT FOUND THEN v_visited:=array_append(v_visited,v_rule.studio_id); CONTINUE; END IF;
+        UPDATE public.automation_deliveries SET state='claimed',claim_token=gen_random_uuid(),
+            lease_expires_at=clock_timestamp()+INTERVAL '60 seconds',next_attempt_at=clock_timestamp(),updated_at=clock_timestamp()
+            WHERE id=v_delivery.id RETURNING * INTO v_delivery;
+        v_items:=v_items||jsonb_build_array(jsonb_build_object('id',v_delivery.id,'claim_token',v_delivery.claim_token,'studio_id',v_delivery.studio_id));
+    END LOOP;
+    v_more:=private.automation_has_actionable_work(p_allowed_recipients);
+    RETURN jsonb_build_object('items',v_items,'has_more',v_more);
+END $$;
+
+ALTER TABLE private.automation_unsubscribe_token_bindings OWNER TO postgres;
+ALTER TABLE private.automation_unsubscribe_token_bindings ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON private.automation_unsubscribe_token_bindings FROM PUBLIC,anon,authenticated,service_role;
+GRANT SELECT,INSERT ON private.automation_unsubscribe_token_bindings TO service_role;
+CREATE POLICY reject_client_access ON private.automation_unsubscribe_token_bindings AS RESTRICTIVE
+    FOR ALL TO anon,authenticated USING(false) WITH CHECK(false);
+DO $legacy_privileges$
+DECLARE item RECORD;
+BEGIN
+    FOR item IN SELECT p.oid::REGPROCEDURE identity,p.prorettype FROM pg_catalog.pg_proc p
+        JOIN pg_catalog.pg_namespace n ON n.oid=p.pronamespace
+        WHERE (n.nspname='private' AND p.proname IN ('automation_bind_unsubscribe_token_v1','automation_legacy_begin_v1',
+            'automation_legacy_settle_v1','automation_legacy_terminal_v1','automation_legacy_delivery_transition_v1',
+            'automation_legacy_delivery_delete_v1','automation_unsubscribe_binding_identity_v1','automation_expire_orphaned_legacy_attempts_v1'))
+            OR (n.nspname='public' AND p.proname IN ('begin_missed_class_automation_v2','settle_missed_class_automation_v2')) LOOP
+        EXECUTE format('ALTER FUNCTION %s OWNER TO postgres',item.identity);
+        EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC,anon,authenticated,service_role',item.identity);
+        IF item.prorettype<>'trigger'::REGTYPE THEN EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO service_role',item.identity); END IF;
+    END LOOP;
+END $legacy_privileges$;

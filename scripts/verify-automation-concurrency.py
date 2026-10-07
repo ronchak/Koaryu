@@ -37,7 +37,33 @@ def main(arguments):
     def sql(statement):
         return local.sql(database, statement)
 
+    def recover_provider():
+        if (
+            sql("SELECT to_regclass('private.automation_sender_gate') IS NOT NULL;")
+            != "t"
+        ):
+            return
+        sql(
+            "DO $$ DECLARE d public.automation_deliveries; BEGIN FOR d IN SELECT * FROM public.automation_deliveries WHERE state='sending' LOOP "
+            "PERFORM public.settle_missed_class_automation_v1(d.id,d.claim_token,'accepted'); END LOOP; END $$;"
+        )
+        helper = (
+            Path(__file__).resolve().parents[1]
+            / "supabase/verification/automation_legacy_cutover_contract.sql"
+        ).read_text()
+        helpers = (
+            "BEGIN;"
+            + helper[helper.index("CREATE FUNCTION pg_temp.assert_legacy") :].split(
+                "DO $catalog$", 1
+            )[0]
+        )
+        sql(
+            helpers
+            + "SELECT pg_temp.recover_legacy_sender(id) FROM public.studios ORDER BY id LIMIT 1; COMMIT;"
+        )
+
     def fixture():
+        recover_provider()
         ids = {key: str(uuid4()) for key in ("actor", "studio", "student", "session")}
         ids["email"] = ids["student"] + "@example.invalid"
         sql(f"""BEGIN;
@@ -207,8 +233,26 @@ COMMIT;""")
     def suppressible():
         ids = fixture()
         prepare(ids)
-        ids["optout"] = json.loads(sql(begin(ids)))["message"]["unsubscribe_token"]
-        sql(settle(ids))
+        if (
+            sql(
+                "SELECT to_regclass('private.automation_email_attempt_reservations') IS NOT NULL;"
+            )
+            == "t"
+        ):
+            # Explicit aged historical fixture, not a rewritten actual begin.
+            ids["optout"] = uuid4().hex + uuid4().hex
+            sql(f"""BEGIN;
+UPDATE public.automation_deliveries SET state='accepted',attempts=1,attempted_at=clock_timestamp()-INTERVAL '2 hours',
+settled_at=clock_timestamp()-INTERVAL '2 hours',claim_token=NULL,lease_expires_at=NULL,
+unsubscribe_token='{ids["optout"]}',original_recipient_email=recipient_email WHERE id='{ids["delivery"]}';
+INSERT INTO private.automation_email_attempt_reservations(id,studio_id,provider_key,scope_kind,scope_id,recipient_email,
+origin,protocol,state,frequency_state,conservative_anchor_at,observed_legacy_ordinal,legacy_projection)
+VALUES(gen_random_uuid(),'{ids["studio"]}','microsoft_graph:primary','legacy','{ids["delivery"]}','{ids["email"]}',
+'legacy_settlement_upper_bound','historical','accepted','accepted',clock_timestamp()-INTERVAL '2 hours',1,'{{"state":"accepted","reason":null}}');
+SELECT private.automation_bind_unsubscribe_token_v1('{ids["studio"]}','{ids["optout"]}','{ids["email"]}'); COMMIT;""")
+        else:
+            ids["optout"] = json.loads(sql(begin(ids)))["message"]["unsubscribe_token"]
+            sql(settle(ids))
         student = str(uuid4())
         sql(f"""INSERT INTO public.students(id,studio_id,legal_first_name,legal_last_name,email)
 VALUES('{student}','{ids["studio"]}','Second','Student','{ids["email"]}');
@@ -870,6 +914,11 @@ END $clock_test$;"""
                 sql(
                     f"UPDATE public.automation_rules SET dispatch_deferred_until=clock_timestamp()-INTERVAL '1 day' WHERE studio_id IN ('{unverifiable['studio']}','{denied['studio']}'); "
                     f"UPDATE public.automation_deliveries SET next_attempt_at=clock_timestamp()-INTERVAL '1 day',lease_expires_at=CASE WHEN state='claimed' THEN clock_timestamp()-INTERVAL '1 day' ELSE lease_expires_at END WHERE studio_id IN ('{unverifiable['studio']}','{denied['studio']}') AND state IN ('queued','claimed','retry_wait');"
+                )
+                valid["email"] = str(uuid4()) + "@example.invalid"
+                all_emails = [unverifiable["email"], denied["email"], valid["email"]]
+                allowed = (
+                    "ARRAY[" + ",".join("'" + email + "'" for email in all_emails) + "]"
                 )
                 add_students(valid, 1)
                 require(
