@@ -62,12 +62,12 @@ function attendance(id, sessionId, status = "present") {
 }
 
 describe("dashboard page model", () => {
-  it("lets fresh local setup evidence override a stale incomplete summary", () => {
-    assert.equal(isDashboardSetupStepComplete(false, true), true);
+  it("uses authoritative setup flags ahead of retained local records", () => {
+    assert.equal(isDashboardSetupStepComplete(false, true), false);
     assert.equal(isDashboardSetupStepComplete(true, false), true);
     assert.equal(isDashboardSetupStepComplete(false, false), false);
     assert.equal(isDashboardSetupStepComplete(undefined, true), true);
-    assert.equal(isDashboardBeltSetupComplete(false, 0, 1), true);
+    assert.equal(isDashboardBeltSetupComplete(false, 0, 1), false);
     assert.equal(isDashboardBeltSetupComplete(false, 0, 0), false);
   });
 

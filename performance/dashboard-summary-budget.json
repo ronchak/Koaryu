@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "budget_manifest_version": "dashboard-summary-performance-v2",
-  "fixture_revision": "dashboard-summary-endpoint-fixture-v2",
+  "budget_manifest_version": "dashboard-summary-performance-v3",
+  "fixture_revision": "dashboard-summary-endpoint-fixture-v3",
   "privacy": "aggregate-only-no-payloads",
   "fixed_request": {
     "route": "dashboard-summary",
@@ -10,9 +10,9 @@
     "role": "admin"
   },
   "metric_semantics": {
-    "returned_row_count": "rows returned by Auth-context table executes plus aggregate RPC objects; Auth response bytes are not included",
-    "provider_response_bytes": "UTF-8 bytes of canonical aggregate provider envelopes, counted internally and never emitted",
-    "total_duration_ms": "wall time for seven real endpoint invocations with fake provider I/O; excludes old builder semantic reference and SQL/network cost",
+    "returned_row_count": "rows returned by Auth-context table executes, opted-in bounded follow-up reads and aggregate RPC objects; Auth response bytes are not included",
+    "provider_response_bytes": "UTF-8 bytes of canonical aggregate and bounded follow-up provider envelopes, counted internally and never emitted",
+    "total_duration_ms": "wall time for seven real endpoint invocations with bounded follow-ups opted in and fake provider I/O; excludes old builder semantic reference and SQL/network cost",
     "max_stage_duration_ms": "maximum successful endpoint invocation including serialization",
     "slow_backend_stage_count": "successful endpoint invocations above backend_stage_threshold_ms; descriptive evidence only, not a pass/fail budget, browser long-task, or INP metric",
     "peak_rss_bytes": "whole fixture-process peak resident memory sampled after fixture construction, the legacy semantic reference, and endpoint exercise; not endpoint-only allocation or deployed backend memory"
@@ -45,10 +45,10 @@
       },
       "budgets": {
         "request_count": 7,
-        "table_query_count": 28,
+        "table_query_count": 34,
         "rpc_count": 3,
-        "total_provider_call_count": 38,
-        "returned_row_count": 31,
+        "total_provider_call_count": 44,
+        "returned_row_count": 61,
         "provider_response_bytes": 30000,
         "serialized_response_payload_bytes": 30000,
         "total_duration_ms": 15000,
@@ -85,10 +85,10 @@
       },
       "budgets": {
         "request_count": 7,
-        "table_query_count": 28,
+        "table_query_count": 34,
         "rpc_count": 3,
-        "total_provider_call_count": 38,
-        "returned_row_count": 31,
+        "total_provider_call_count": 44,
+        "returned_row_count": 61,
         "provider_response_bytes": 30000,
         "serialized_response_payload_bytes": 30000,
         "total_duration_ms": 15000,
@@ -125,10 +125,10 @@
       },
       "budgets": {
         "request_count": 7,
-        "table_query_count": 28,
+        "table_query_count": 34,
         "rpc_count": 3,
-        "total_provider_call_count": 38,
-        "returned_row_count": 31,
+        "total_provider_call_count": 44,
+        "returned_row_count": 61,
         "provider_response_bytes": 30000,
         "serialized_response_payload_bytes": 30000,
         "total_duration_ms": 15000,

@@ -2,7 +2,7 @@
 
 import { useResumeRefresh } from "@/lib/use-resume-refresh";
 
-import { useCallback, useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { canViewDashboardBilling } from "@/lib/dashboard-billing-summary";
 import { buildDashboardPageComposition } from "@/lib/dashboard-page-composition";
 import {
@@ -48,6 +48,8 @@ type DashboardPageControllerOptions = {
     | "beltRanks"
     | "currentLadderId"
     | "loadEligibilityForLadder"
+    | "refreshDashboardPromotions"
+    | "dashboardPromotionsLoading"
     | "eligibility"
     | "eligibilityLadderId"
     | "eligibilityLoadError"
@@ -103,6 +105,8 @@ export function useDashboardPageController({
     beltLaddersLoadError,
     currentLadderId,
     loadEligibilityForLadder,
+    refreshDashboardPromotions,
+    dashboardPromotionsLoading,
     eligibility,
     eligibilityLadderId,
     eligibilityLoadError: eligibilityReadError,
@@ -123,6 +127,16 @@ export function useDashboardPageController({
   const { refreshStudents, students, studentsLoaded, studentsLoadError, studentsMayBePartial } =
     studentsStore;
   const { identityGeneration, currentStudioId, currentUserId, studioName } = studioStore;
+  const today = config.businessDate;
+  const visibilityScope = `${identityGeneration}:${currentUserId}:${currentStudioId}:${currentRole}:${today}`;
+  const visibleWidgetsRef = useRef<{ scope: string; ids: DashboardWidgetId[] }>({
+    scope: "",
+    ids: [],
+  });
+  const [promotionVisibility, setPromotionVisibility] = useState({ scope: "", visible: false });
+  const promotionsVisible =
+    promotionVisibility.scope === visibilityScope && promotionVisibility.visible;
+  const [visibleWidgetIds, setVisibleWidgetIds] = useState<DashboardWidgetId[]>([]);
 
   const summary = isPreviewMode ? null : dashboardSummary;
   const hasDashboardSummary = Boolean(summary);
@@ -163,29 +177,33 @@ export function useDashboardPageController({
   ]);
   const onVisibleWidgetsChange = useCallback(
     (ids: DashboardWidgetId[]) => {
+      const previous = visibleWidgetsRef.current;
+      const visible = ids.includes("promotions_due");
+      visibleWidgetsRef.current = { scope: visibilityScope, ids };
+      setVisibleWidgetIds((current) =>
+        current.length === ids.length && current.every((id, index) => id === ids[index])
+          ? current
+          : ids,
+      );
+      setPromotionVisibility((current) =>
+        current.scope === visibilityScope && current.visible === visible
+          ? current
+          : { scope: visibilityScope, visible },
+      );
       if (
-        !ids.includes("promotions_due") ||
-        !currentLadderId ||
-        eligibilityLadderId === currentLadderId ||
-        eligibilityPendingLadderId ||
-        eligibilityLoadError
-      )
-        return;
-      void loadEligibilityForLadder(currentLadderId).catch(() => undefined);
+        !isPreviewMode &&
+        visible &&
+        (previous.scope !== visibilityScope || !previous.ids.includes("promotions_due"))
+      ) {
+        void refreshDashboardPromotions().catch(() => undefined);
+      }
     },
-    [
-      currentLadderId,
-      eligibilityLadderId,
-      eligibilityPendingLadderId,
-      eligibilityLoadError,
-      loadEligibilityForLadder,
-    ],
+    [isPreviewMode, refreshDashboardPromotions, visibilityScope],
   );
   const isInitialDashboardLoading = !isDashboardIdentityReady;
   const hasPartialStudentSample = !isPreviewMode && studentsMayBePartial;
   const rosterSummaryPending = hasPartialStudentSample && !summary;
   const shouldShowLocalStudentDetails = !hasPartialStudentSample;
-  const today = config.businessDate;
   const canSeeBilling = canViewDashboardBilling({ currentRole, summary });
   const studentCount = students.length;
   const sessionCount = sessions.length;
@@ -200,13 +218,22 @@ export function useDashboardPageController({
   }, [summary]);
 
   const retryDashboardDatasets = useCallback(() => {
+    if (isPreviewMode) {
+      void Promise.allSettled([
+        loadEligibilityForLadder(currentLadderId, { force: true }),
+        refreshStudents(),
+        refreshPrograms({ includeArchived: true }),
+        refreshLeads(),
+        refreshSchedule(),
+      ]);
+      return;
+    }
     void Promise.allSettled([
       refreshDashboardSummary(),
-      loadEligibilityForLadder(currentLadderId, { force: true }),
-      refreshStudents(),
-      refreshPrograms({ includeArchived: true }),
-      refreshLeads(),
-      refreshSchedule(),
+      ...(visibleWidgetsRef.current.scope === visibilityScope &&
+      visibleWidgetsRef.current.ids.includes("promotions_due")
+        ? [refreshDashboardPromotions()]
+        : []),
     ]);
   }, [
     currentLadderId,
@@ -216,8 +243,20 @@ export function useDashboardPageController({
     refreshPrograms,
     refreshSchedule,
     refreshStudents,
+    isPreviewMode,
+    refreshDashboardPromotions,
+    visibilityScope,
   ]);
-  useResumeRefresh(retryDashboardDatasets);
+  useResumeRefresh(() => {
+    if (isPreviewMode) return;
+    return Promise.allSettled([
+      refreshDashboardSummary({ reason: "resume" }),
+      ...(visibleWidgetsRef.current.scope === visibilityScope &&
+      visibleWidgetsRef.current.ids.includes("promotions_due")
+        ? [refreshDashboardPromotions()]
+        : []),
+    ]);
+  });
 
   useEffect(() => {
     if (!isPreviewMode && isDashboardIdentityReady) {
@@ -307,8 +346,10 @@ export function useDashboardPageController({
         isPreviewMode,
         dashboardSummary: summary,
         dashboardSummaryLoaded,
-        datasetLoadError: setupReadiness.error,
-        allDatasetEvidenceReady: setupReadiness.status === "ready",
+        datasetLoadError: isPreviewMode ? setupReadiness.error : summaryReadiness.error,
+        allDatasetEvidenceReady: isPreviewMode
+          ? setupReadiness.status === "ready"
+          : summaryReadiness.status === "ready",
         canSeeBilling,
         canSeeLeads: normalizedRole === "admin" || normalizedRole === "front_desk",
         role: normalizedRole,
@@ -320,7 +361,9 @@ export function useDashboardPageController({
         leadsLoadError,
         scheduleStatus,
         scheduleLoadError,
-        eligibilityReady: beltEligibilityReadiness.status === "ready",
+        eligibilityReady:
+          (!dashboardPromotionsLoading && beltEligibilityReadiness.status === "ready") ||
+          Boolean(currentLadderId && eligibilityLadderId === currentLadderId),
         eligibilityLoadError,
         today,
         students,
@@ -336,6 +379,10 @@ export function useDashboardPageController({
       dashboardSummaryLoaded,
       setupReadiness.error,
       setupReadiness.status,
+      summaryReadiness.error,
+      summaryReadiness.status,
+      currentLadderId,
+      eligibilityLadderId,
       eligibility,
       eligibilityLoadError,
       hasDashboardSummary,
@@ -355,6 +402,7 @@ export function useDashboardPageController({
       canSeeBilling,
       normalizedRole,
       beltEligibilityReadiness.status,
+      dashboardPromotionsLoading,
     ],
   );
 
@@ -369,7 +417,14 @@ export function useDashboardPageController({
       onVisibleWidgetsChange,
       currentStudioId,
       currentUserId,
-      datasetLoadError: dashboardSummaryLoadError || datasetReadiness.error,
+      datasetLoadError: isPreviewMode
+        ? datasetReadiness.error
+        : dashboardSummaryLoadError ||
+          (promotionsVisible ? eligibilityLoadError : null) ||
+          (visibleWidgetIds.includes("lead_follow_ups") &&
+          widgetViewModels.lead_follow_ups.state === "unavailable"
+            ? "Lead follow-ups could not be loaded. Retry dashboard data to check again."
+            : null),
       isDashboardDataReady: datasetReadiness.status === "ready",
       hasDashboardSummary,
       hasPartialStudentSample,

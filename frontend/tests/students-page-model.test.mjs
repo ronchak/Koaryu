@@ -282,6 +282,35 @@ describe("students page model", () => {
     );
   });
 
+  it("trims local search terms without changing name, email, or program matching", () => {
+    const rows = buildStudentRows(
+      [
+        student("match", {
+          legal_first_name: "Ari",
+          legal_last_name: "Stone",
+          preferred_name: "Ace",
+          email: "ari@example.invalid",
+          program_memberships: [membership("kids", { program_name: "Kids BJJ" })],
+        }),
+        student("other", { legal_first_name: "Bo", legal_last_name: "Brown" }),
+      ],
+      [program("kids", "Kids BJJ")],
+      "2026-05-24",
+    );
+
+    for (const term of ["Ari", "Stone", "Ace", "ari@example.invalid", "Kids BJJ"]) {
+      for (const search of [term, ` ${term}`, `${term} `, `\t ${term} \n`]) {
+        assert.deepEqual(
+          filterStudentRows(rows, { ...FILTER_DEFAULTS, search }).map((row) => row.student.id),
+          ["match"],
+          JSON.stringify(search),
+        );
+      }
+    }
+    assert.equal(filterStudentRows(rows, { ...FILTER_DEFAULTS, search: " \t " }).length, 2);
+    assert.equal(filterStudentRows(rows, { ...FILTER_DEFAULTS, search: " missing " }).length, 0);
+  });
+
   it("preserves server-provided paging order when derived roster filters are disabled", () => {
     const rows = buildStudentRows(
       [

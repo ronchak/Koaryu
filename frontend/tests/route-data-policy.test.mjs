@@ -7,6 +7,10 @@ import {
 } from "../src/lib/dashboard-freshness.ts";
 
 test("route bootstrap requirements omit unrelated feature collections", () => {
+  assert.deepEqual(
+    [...bootstrapDatasets("dashboard")],
+    ["studio", "programs", "students", "belts"],
+  );
   for (const route of ["schedule", "settings"])
     assert.deepEqual(
       [...bootstrapDatasets(initialBootstrapView(`/${route}`))],

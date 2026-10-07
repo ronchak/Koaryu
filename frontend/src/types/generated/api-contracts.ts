@@ -1023,6 +1023,18 @@ export interface ApiDashboardSummaryLeadCounts {
   due_today_leads: number;
 }
 
+export interface ApiDashboardSummaryLeadFollowUp {
+  id: string;
+  first_name: string;
+  last_name: string;
+  follow_up_date: string;
+}
+
+export interface ApiDashboardSummaryLeadFollowUps {
+  available: boolean;
+  rows: ApiDashboardSummaryLeadFollowUp[];
+}
+
 export interface ApiDashboardSummaryNewStudentCounts {
   new_14: number;
   new_30: number;
@@ -1056,6 +1068,7 @@ export interface ApiDashboardSummaryResponse {
   emergency_contacts?: ApiDashboardSummaryEmergencyContacts | null;
   students: ApiDashboardSummaryStudentCounts;
   leads: ApiDashboardSummaryLeadCounts;
+  lead_follow_ups?: ApiDashboardSummaryLeadFollowUps | null;
   schedule: ApiDashboardSummaryScheduleCounts;
   belts: ApiDashboardSummaryBeltCounts;
   inactivity: ApiDashboardSummaryInactivityCounts;

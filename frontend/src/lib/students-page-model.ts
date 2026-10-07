@@ -332,7 +332,7 @@ export function filterStudentRows(
   }
 
   if (search.trim()) {
-    const q = search.toLowerCase();
+    const q = search.trim().toLowerCase();
     list = list.filter(
       (row) =>
         row.searchFields.legalFirstName.includes(q) ||

@@ -406,11 +406,13 @@ def test_streaming_read_runs_off_event_loop_and_preserves_heartbeat():
     ).tempfile.SpooledTemporaryFile
     read_started = threading.Event()
     release_read = threading.Event()
+    read_thread_ids = set()
 
     class BlockingSpool(real_factory):
         def read(self, *args, **kwargs):
+            read_thread_ids.add(threading.get_ident())
             read_started.set()
-            release_read.wait(2)
+            assert release_read.wait(10), "Test did not release the blocked read"
             return super().read(*args, **kwargs)
 
     supabase = TableBackedSupabase(
@@ -442,18 +444,20 @@ def test_streaming_read_runs_off_event_loop_and_preserves_heartbeat():
             return await _consume_response(response)
 
         async def scenario():
+            loop_thread_id = threading.get_ident()
             task = asyncio.create_task(consume())
-            for _ in range(100):
-                if read_started.is_set():
-                    break
-                await asyncio.sleep(0)
-            assert read_started.is_set()
             heartbeat_ticks = 0
-            for _ in range(20):
-                heartbeat_ticks += 1
-                await asyncio.sleep(0)
-            release_read.set()
-            body = await task
+            try:
+                # Worker startup depends on OS scheduling, not event-loop turns.
+                assert await asyncio.to_thread(read_started.wait, 5)
+                assert loop_thread_id not in read_thread_ids
+                for _ in range(20):
+                    heartbeat_ticks += 1
+                    await asyncio.sleep(0)
+                assert not task.done()
+            finally:
+                release_read.set()
+                body = await task
             return heartbeat_ticks, body
 
         heartbeat_ticks, body = asyncio.run(scenario())

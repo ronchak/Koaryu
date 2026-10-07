@@ -126,10 +126,10 @@ function loadBudgetManifest(path = MANIFEST_PATH) {
     "routes",
     "profiles",
   ], "budget manifest");
-  if (manifest.schema_version !== 1 || manifest.budget_manifest_version !== "dashboard-summary-performance-v2") {
+  if (manifest.schema_version !== 1 || manifest.budget_manifest_version !== "dashboard-summary-performance-v3") {
     throw new Error("performance budget manifest version is unsupported.");
   }
-  if (manifest.fixture_revision !== "dashboard-summary-endpoint-fixture-v2" || manifest.privacy !== "aggregate-only-no-payloads") {
+  if (manifest.fixture_revision !== "dashboard-summary-endpoint-fixture-v3" || manifest.privacy !== "aggregate-only-no-payloads") {
     throw new Error("performance budget manifest binding is unsupported.");
   }
   exactKeys(manifest.fixed_request, ["route", "date", "timezone", "role"], "fixed request");

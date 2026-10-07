@@ -55,6 +55,7 @@ async def get_dashboard_bootstrap(
     view: Literal[
         "dashboard", "students", "billing", "schedule", "settings", "leads", "reports", "training"
     ] = "dashboard",
+    bounded_dashboard: bool = False,
 ):
     async def _provider_operation(client):
         """Return the critical initial dashboard payload in a single request."""
@@ -65,6 +66,7 @@ async def get_dashboard_bootstrap(
             provider_owned=True,
             allow_partial=allow_partial,
             view=view,
+            bounded_dashboard=bounded_dashboard,
         )
 
     payload, timings = await run_supabase_operation(
@@ -84,6 +86,7 @@ async def get_dashboard_summary(
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
     supabase: ProviderDependency = Depends(get_supabase),
     fresh: bool = False,
+    include_follow_ups: bool = False,
 ):
     total_started = time.perf_counter()
     context_started = time.perf_counter()
@@ -102,6 +105,7 @@ async def get_dashboard_summary(
         timings=timings,
         total_started=total_started,
         fresh=fresh,
+        include_follow_ups=include_follow_ups,
     )
     server_timing = DashboardSummaryService.server_timing_value(timings)
     _set_private_dashboard_headers(response, server_timing)

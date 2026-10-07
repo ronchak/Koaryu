@@ -11,7 +11,12 @@ const flush = (page) =>
 async function fixturePage(browser, options = {}) {
   const page = await browser.newPage({ timezoneId: options.timezone });
   const origin = options.leadCreateRecovery ? "http://localhost/" : "http://fixture.local/";
-  if (options.now) await page.clock.install({ time: new Date(options.now) });
+  if (options.now) {
+    await page.clock.install({
+      time: new Date(new Date(options.now).getTime() - (options.pauseClock ? 60_000 : 0)),
+    });
+    if (options.pauseClock) await page.clock.pauseAt(new Date(options.now));
+  }
   await page.route("**/*", (route) =>
     route.request().url() === origin
       ? route.fulfill({ contentType: "text/html", body: '<div id="root"></div>' })
@@ -187,7 +192,7 @@ async function fixturePage(browser, options = {}) {
         }
         if (path === "/leads" && f.autoLeads) return [];
         if (path === "/leads") return new Promise((resolve) => f.leadReads.push(resolve));
-        if (path.startsWith("/dashboard/summary"))
+        if (path.startsWith("/dashboard/summary?include_follow_ups=true"))
           return new Promise((resolve, reject) => f.summaries.push({ resolve, reject }));
         if (path === "/students/student-1")
           return new Promise((resolve, reject) => f.details.push({ resolve, reject }));
@@ -322,7 +327,7 @@ test("confirmed live import refreshes selected-ladder eligibility after belt ref
 test("mounted lead actions preserve confirmed edits through token renewal, old GETs, and deletion", async () => {
   const browser = await chromium.launch();
   try {
-    const page = await fixturePage(browser);
+    const page = await fixturePage(browser, { path: "/leads" });
     await page.evaluate(() => {
       fixture.read = fixture.store.refreshLeads();
       fixture.save = fixture.store.updateLead("lead-1", { first_name: "Saved" });
@@ -658,6 +663,7 @@ test("studio midnight updates day-sensitive context without clearing a form draf
       path: "/students",
       studentForm: true,
       now: "2026-09-06T06:59:50Z",
+      pauseClock: true,
     });
     await page.getByRole("button", { name: "Open form", exact: true }).click();
     await page.getByLabel("Legal first name", { exact: false }).fill("Draft");
@@ -791,7 +797,7 @@ test("submitted student create and edit drafts stay locked and survive rejection
 test("a confirmed old write cannot repopulate protected data after sign-out", async () => {
   const browser = await chromium.launch();
   try {
-    const page = await fixturePage(browser);
+    const page = await fixturePage(browser, { path: "/leads" });
     await page.evaluate(() => {
       fixture.save = fixture.store.updateLead("lead-1", { first_name: "Saved" });
     });
@@ -858,6 +864,7 @@ test("Add class snapshots the selected studio day for both modes and retains an 
       scheduleForm: true,
       timezone: "Asia/Tokyo",
       now: "2026-09-06T06:59:50Z",
+      pauseClock: true,
     });
     await page.evaluate(() => fixture.mountSchedule());
     await page.waitForFunction(() => fixture.controller);
@@ -1076,14 +1083,17 @@ test("explicit refresh supersedes an older cached visit read", async () => {
       fixture.visit = fixture.store.refreshDashboardSummary({ reason: "visit" });
     });
     await page.waitForFunction(() => fixture.summaries.length === 1);
-    assert.equal(await page.evaluate(() => fixture.requests.at(-1).path), "/dashboard/summary");
+    assert.equal(
+      await page.evaluate(() => fixture.requests.at(-1).path),
+      "/dashboard/summary?include_follow_ups=true",
+    );
     await page.evaluate(() => {
       fixture.refresh = fixture.store.refreshDashboardSummary();
     });
     await page.waitForFunction(() => fixture.summaries.length === 2);
     assert.equal(
       await page.evaluate(() => fixture.requests.at(-1).path),
-      "/dashboard/summary?fresh=true",
+      "/dashboard/summary?include_follow_ups=true&fresh=true",
     );
     await page.evaluate(() =>
       fixture.summaries[1].resolve({
@@ -1349,7 +1359,7 @@ for (const coldAuthEvent of ["SIGNED_IN", "TOKEN_REFRESHED"]) {
   });
 }
 
-test("Dashboard navigation after cold Schedule recovery still requests the unloaded roster", async () => {
+test("explicit roster reconciliation after cold Schedule recovery loads the omitted roster", async () => {
   const browser = await chromium.launch();
   try {
     const page = await fixturePage(browser, { path: "/schedule", coldAuthEvent: "SIGNED_IN" });
@@ -1357,6 +1367,7 @@ test("Dashboard navigation after cold Schedule recovery still requests the unloa
       fixture.holdRosterRead = true;
       fixture.autoLeads = true;
       fixture.navigate("/dashboard");
+      void fixture.store.refreshStudents();
     });
     await page.waitForFunction(() => fixture.releaseRosterRead);
     await page.evaluate(() =>
@@ -2900,7 +2911,7 @@ test("a pending roster bulk write refuses the student's photo and keeps retry co
 test("keyed follow-up preserves confirmed results through renewal and a stale lead read", async () => {
   const browser = await chromium.launch();
   try {
-    const page = await fixturePage(browser);
+    const page = await fixturePage(browser, { path: "/leads" });
     await page.evaluate(() => {
       fixture.read = fixture.store.refreshLeads();
       fixture.command = {
@@ -2949,7 +2960,7 @@ test("keyed follow-up preserves confirmed results through renewal and a stale le
 test("keyed follow-up cannot restore lead data or navigate after sign-out", async () => {
   const browser = await chromium.launch();
   try {
-    const page = await fixturePage(browser, { leadController: true });
+    const page = await fixturePage(browser, { path: "/leads", leadController: true });
     await page.evaluate(() => {
       // fixture.local is an insecure synthetic origin; supply its missing UUID primitive.
       crypto.randomUUID ??= () => "3d606900-5b93-4b00-85a8-09afaa549d54";
@@ -2979,7 +2990,11 @@ test("keyed follow-up cannot restore lead data or navigate after sign-out", asyn
 });
 
 async function prepareFollowUpReplay(browser, { newerRead = false, enroll = false } = {}) {
-  const page = await fixturePage(browser, { leadController: true, leadControls: true });
+  const page = await fixturePage(browser, {
+    path: "/leads",
+    leadController: true,
+    leadControls: true,
+  });
   await page.evaluate(
     ({ enroll }) => {
       fixture.uuidSequence = 0;

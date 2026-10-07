@@ -12,7 +12,7 @@ export function isDashboardSetupStepComplete(
   summaryValue: boolean | null | undefined,
   liveValue: boolean,
 ) {
-  return summaryValue === true || liveValue;
+  return summaryValue ?? liveValue;
 }
 
 export function isDashboardBeltSetupComplete(

@@ -25,7 +25,41 @@ export type DashboardEmergencyContactsEnrichment = {
 export type DashboardWidgetSummaryEnrichments = {
   todaySchedule: DashboardTodayScheduleEnrichment;
   emergencyContacts: DashboardEmergencyContactsEnrichment;
+  leadFollowUps: {
+    available: boolean;
+    rows: Array<{ id: string; firstName: string; lastName: string; followUpDate: string }>;
+  };
 };
+
+function parseLeadFollowUps(value: unknown): DashboardWidgetSummaryEnrichments["leadFollowUps"] {
+  const unavailable = { available: false, rows: [] };
+  if (
+    !isRecord(value) ||
+    value.available !== true ||
+    !Array.isArray(value.rows) ||
+    value.rows.length > 5
+  )
+    return unavailable;
+  const rows: DashboardWidgetSummaryEnrichments["leadFollowUps"]["rows"] = [];
+  for (const row of value.rows) {
+    if (
+      !isRecord(row) ||
+      typeof row.id !== "string" ||
+      typeof row.first_name !== "string" ||
+      typeof row.last_name !== "string" ||
+      typeof row.follow_up_date !== "string" ||
+      !/^\d{4}-\d{2}-\d{2}$/.test(row.follow_up_date)
+    )
+      return unavailable;
+    rows.push({
+      id: row.id,
+      firstName: row.first_name,
+      lastName: row.last_name,
+      followUpDate: row.follow_up_date,
+    });
+  }
+  return { available: true, rows };
+}
 
 const unavailableTodaySchedule = (): DashboardTodayScheduleEnrichment => ({
   available: false,
@@ -129,10 +163,12 @@ export function readDashboardWidgetSummaryEnrichments(
     return {
       todaySchedule: unavailableTodaySchedule(),
       emergencyContacts: unavailableEmergencyContacts(),
+      leadFollowUps: { available: false, rows: [] },
     };
   }
   return {
     todaySchedule: parseTodaySchedule(summary.today_schedule),
     emergencyContacts: parseEmergencyContacts(summary.emergency_contacts),
+    leadFollowUps: parseLeadFollowUps(summary.lead_follow_ups),
   };
 }

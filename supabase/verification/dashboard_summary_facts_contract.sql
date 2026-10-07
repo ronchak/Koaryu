@@ -211,6 +211,11 @@ BEGIN
     INSERT INTO public.studio_payment_accounts (studio_id, charges_enabled)
     VALUES (v_small, true);
 
+    -- Plan against this transaction's fixtures, not earlier rolled-back suites.
+    -- Autovacuum cannot analyze these uncommitted rows for us.
+    ANALYZE public.students, public.class_sessions, public.attendance,
+        public.leads, public.billing_invoices;
+
     SET LOCAL ROLE service_role;
     v_denied := false;
     BEGIN
@@ -376,6 +381,10 @@ BEGIN
     SELECT v_medium, 'open', DATE '2026-05-20', 100, 100 FROM generate_series(1, 200);
     INSERT INTO public.billing_invoices (studio_id, status, due_date, amount_due_cents, amount_remaining_cents)
     SELECT v_large, 'open', DATE '2026-05-20', 100, 100 FROM generate_series(1, 201);
+    RESET ROLE;
+    ANALYZE public.leads, public.billing_invoices;
+    SET LOCAL ROLE service_role;
+
     v_fact := public.dashboard_summary_facts(v_empty, 'billing_visible', 'UTC', DATE '2026-05-20', 'dashboard-summary-v1');
     IF (v_fact->'students'->>'total_students')::INTEGER <> 0
        OR (v_fact->'leads'->>'active_leads')::INTEGER <> 0 THEN
