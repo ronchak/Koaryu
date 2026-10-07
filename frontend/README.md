@@ -254,6 +254,7 @@ Settings includes admin-only demo/data utilities intended for controlled demos a
 
 - Demo reset can replace working demo data when the backend allows it.
 - Clear studio data uses the shared confirmation dialog before deleting working studio records.
+- Both confirmations explain automation pauses, cancellation, retained sending attempts, and retained original operation history including saved details. Results list each returned automation effect separately and remain until dismissed or a new data action starts. Reset counts describe seeded records; clear counts describe removed records. Preview automation effects are labeled sample numbers. An incomplete success response leaves the outcome unconfirmed and does not apply the store update or trigger a retry.
 
 Both tools are destructive. They are designed to preserve Koaryu Core subscription/platform access rows, but they should still be used only against a disposable demo studio unless data loss is intended.
 

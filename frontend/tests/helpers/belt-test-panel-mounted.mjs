@@ -232,7 +232,20 @@ export function installBeltPanel({ fixture, STUDIO, route, options }) {
     else write.resolve(structuredClone(result));
   };
   f.resetBeltResource = async () => {
-    f.api.delete = async () => ({ studio_name: "Cleared" });
+    f.api.delete = async () => ({
+      studio_name: "Cleared",
+      automation: {
+        workflows_paused: 0,
+        workflow_runs_cancelled: 0,
+        workflow_cancellation_intents_added: 0,
+        attendance_deliveries_cancelled: 0,
+        belt_test_events_deleted: 0,
+        belt_test_recipients_deleted: 0,
+        sending_attempts_preserved: 0,
+        unknown_attempts_preserved: 0,
+        attendance_rule_paused: false,
+      },
+    });
     await f.store.clearStudioData();
   };
 }

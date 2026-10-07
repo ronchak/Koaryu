@@ -579,7 +579,20 @@ test("data clear and identity replacement prevent old program reads or write ack
         await page.waitForFunction(() => fixture.writes.length === 2);
         await page.evaluate(async () => {
           fixture.rows = [];
-          fixture.writes[1].resolve({ studio_name: "Cleared Studio" });
+          fixture.writes[1].resolve({
+            studio_name: "Cleared Studio",
+            automation: {
+              workflows_paused: 0,
+              workflow_runs_cancelled: 0,
+              workflow_cancellation_intents_added: 0,
+              attendance_deliveries_cancelled: 0,
+              belt_test_events_deleted: 0,
+              belt_test_recipients_deleted: 0,
+              sending_attempts_preserved: 0,
+              unknown_attempts_preserved: 0,
+              attendance_rule_paused: false,
+            },
+          });
           await fixture.clear;
         });
       }
