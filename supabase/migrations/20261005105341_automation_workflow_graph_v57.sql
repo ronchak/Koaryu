@@ -20,7 +20,11 @@ END;
 $predecessor$;
 
 -- Freeze the observed baseline before installing source callbacks.
-LOCK TABLE public.students,public.student_program_memberships,public.belt_ranks IN ACCESS EXCLUSIVE MODE;
+DO $migration_lock$
+BEGIN
+    LOCK TABLE public.students,public.student_program_memberships,public.belt_ranks IN ACCESS EXCLUSIVE MODE;
+END;
+$migration_lock$;
 
 -- Mechanical projection of workflow_catalog.CATALOG: full maps for these five keys.
 -- Reproduce with json.dumps(projection,sort_keys=True,separators=(',',':'),ensure_ascii=True).
@@ -3523,8 +3527,12 @@ $$;
 
 -- Installation excludes every existing payment under a lock that conflicts
 -- with INSERT/UPDATE/DELETE. Logical identities survive operational clear.
-LOCK TABLE public.studio_payment_accounts,public.billing_payers,public.billing_invoices,public.billing_payments
-    IN SHARE ROW EXCLUSIVE MODE NOWAIT;
+DO $migration_lock$
+BEGIN
+    LOCK TABLE public.studio_payment_accounts,public.billing_payers,public.billing_invoices,public.billing_payments
+        IN SHARE ROW EXCLUSIVE MODE NOWAIT;
+END;
+$migration_lock$;
 -- Settlement generations order committed evidence, never monetary totals.
 CREATE TABLE private.workflow_invoice_settlement_authority (
     studio_id UUID NOT NULL REFERENCES public.studios(id) ON DELETE CASCADE,
@@ -8619,7 +8627,11 @@ GRANT EXECUTE ON FUNCTION public.get_automation_sender_status_v1(TEXT) TO servic
 -- Legacy attendance delivery adopts the common sender without retaining payloads
 -- after its existing student cascade. The installation snapshot and late guards
 -- are one transaction; a busy delivery writer aborts installation immediately.
-LOCK TABLE public.automation_deliveries IN ACCESS EXCLUSIVE MODE NOWAIT;
+DO $migration_lock$
+BEGIN
+    LOCK TABLE public.automation_deliveries IN ACCESS EXCLUSIVE MODE NOWAIT;
+END;
+$migration_lock$;
 
 CREATE TABLE private.automation_unsubscribe_token_bindings (
     token_hash TEXT PRIMARY KEY CHECK (token_hash ~ '^[a-f0-9]{64}$'),
