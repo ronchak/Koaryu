@@ -1,8 +1,76 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { useEffect, useRef, useState, type CSSProperties, type MouseEvent } from "react";
 
 import styles from "./legal-document.module.css";
+
+/**
+ * Segmented switch between the legal documents. It lives in the shared legal
+ * layout, so it stays mounted across the navigation and its thumb slides; the
+ * thumb moves on click, before the next page arrives.
+ */
+export function LegalSwitcher({
+  documents,
+}: {
+  documents: ReadonlyArray<{ href: string; title: string }>;
+}) {
+  const pathname = usePathname() ?? "";
+  const [pending, setPending] = useState<string | null>(null);
+  const [settledPathname, setSettledPathname] = useState(pathname);
+  // Any route change, including Back and Forward, settles the chosen document.
+  if (settledPathname !== pathname) {
+    setSettledPathname(pathname);
+    setPending(null);
+  }
+  const target = pending ?? pathname;
+  const index = Math.max(
+    0,
+    documents.findIndex((item) => item.href === target),
+  );
+
+  function choose(event: MouseEvent<HTMLAnchorElement>, href: string) {
+    const newTab = event.metaKey || event.ctrlKey || event.shiftKey || event.altKey;
+    if (newTab || event.button !== 0 || href === pathname) return;
+    setPending(href);
+  }
+
+  return (
+    <nav
+      className={styles.switcher}
+      aria-label="Legal documents"
+      style={
+        {
+          "--legal-switch-count": documents.length,
+          "--legal-switch-index": index,
+        } as CSSProperties
+      }
+    >
+      {/* The thumb carries light copies of the labels, clipped to its shape, so
+          text changes colour exactly where the thumb covers it as it slides. */}
+      <span className={styles.switcherThumb} aria-hidden="true">
+        <span className={styles.switcherThumbLabels}>
+          {documents.map((item) => (
+            <span key={item.href}>{item.title}</span>
+          ))}
+        </span>
+      </span>
+      {documents.map((item) => (
+        <Link
+          key={item.href}
+          href={item.href}
+          className={styles.switcherLink}
+          aria-current={item.href === pathname ? "page" : undefined}
+          data-selected={item.href === target ? "" : undefined}
+          onClick={(event) => choose(event, item.href)}
+        >
+          {item.title}
+        </Link>
+      ))}
+    </nav>
+  );
+}
 
 export interface LegalContentsItem {
   id: string;

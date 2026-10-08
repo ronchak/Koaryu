@@ -12,11 +12,12 @@ import { legalContact, legalDocuments } from "../src/lib/legal-documents.ts";
 const require = createRequire(import.meta.url);
 const frontend = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
-function mountBundle(entry, fixtureSource) {
+function mountBundle(entry, fixtureSource, extraStubs = {}) {
   const modules = [];
   const ids = new Map();
   const stubs = {
     "next/link": `const React=require("react");const Link=({prefetch,...props})=>React.createElement("a",props);exports.__esModule=true;exports.default=Link;`,
+    ...extraStubs,
   };
 
   function add(request, importer = frontend) {
@@ -195,7 +196,7 @@ test("Privacy and Terms render complete legal document behavior", async () => {
       const page = await openFixture(browser);
       await page.addScriptTag({
         content: mountBundle(
-          `@/app/${contract.route}/page`,
+          `@/app/(legal)/${contract.route}/page`,
           `
         createRoot(document.getElementById('root')).render(React.createElement(Subject.default));
       `,
@@ -204,19 +205,6 @@ test("Privacy and Terms render complete legal document behavior", async () => {
       const article = page.getByRole("article", { name: entry.title });
       await article.waitFor();
       assert.equal(await page.getByRole("heading", { level: 1 }).textContent(), entry.title);
-
-      // Both documents are one switch apart, and the current one is marked.
-      const switcher = page.getByRole("navigation", { name: "Legal documents" }).getByRole("link");
-      assert.deepEqual(
-        await switcher.evaluateAll((links) => links.map((link) => link.getAttribute("href"))),
-        ["/terms", "/privacy"],
-      );
-      assert.equal(
-        await page
-          .locator('nav[aria-label="Legal documents"] a[aria-current="page"]')
-          .getAttribute("href"),
-        entry.href,
-      );
 
       assert.equal((await page.locator(`time[datetime="${entry.effective}"]`).count()) >= 1, true);
       for (const revision of entry.history) {
@@ -255,11 +243,73 @@ test("Privacy and Terms render complete legal document behavior", async () => {
       const fragments = await article
         .locator('a[href^="#"]')
         .evaluateAll((anchors) => anchors.map((anchor) => anchor.getAttribute("href")));
-      for (const fragment of fragments) {
+      // #main-content belongs to the shared legal layout, checked below.
+      for (const fragment of fragments.filter((href) => href !== "#main-content")) {
         assert.equal(await page.locator(fragment).count(), 1, fragment);
       }
       await page.close();
     }
+  } finally {
+    await browser.close();
+  }
+});
+
+test("Legal layout slides the document switch to the chosen document", async () => {
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await openFixture(browser);
+    await page.addScriptTag({
+      content: mountBundle(
+        "@/app/(legal)/layout",
+        `
+        window.fixturePathname = "/terms";
+        const root = createRoot(document.getElementById('root'));
+        window.renderLegal = () => root.render(
+          React.createElement(Subject.default, null, React.createElement('p', null, window.fixturePathname)),
+        );
+        window.renderLegal();
+      `,
+        {
+          "next/navigation": `exports.__esModule=true;exports.usePathname=()=>window.fixturePathname;`,
+        },
+      ),
+    });
+    const nav = page.getByRole("navigation", { name: "Legal documents" });
+    await nav.waitFor();
+    // Back to top in each document lands on the shell's main element.
+    assert.equal(await page.locator("main#main-content").count(), 1);
+    const state = () =>
+      nav.evaluate((element) => ({
+        index: element.style.getPropertyValue("--legal-switch-index"),
+        current: element.querySelector('[aria-current="page"]')?.getAttribute("href") ?? null,
+        selected: element.querySelector("[data-selected]")?.getAttribute("href") ?? null,
+      }));
+    assert.deepEqual(
+      await nav
+        .getByRole("link")
+        .evaluateAll((links) => links.map((link) => link.getAttribute("href"))),
+      ["/terms", "/privacy"],
+    );
+    assert.deepEqual(await state(), { index: "0", current: "/terms", selected: "/terms" });
+
+    // The thumb starts sliding on click, before the next route arrives.
+    await page.evaluate(() =>
+      document.addEventListener("click", (event) => event.preventDefault(), { capture: true }),
+    );
+    await nav.getByRole("link", { name: "Privacy Policy" }).click();
+    assert.deepEqual(await state(), { index: "1", current: "/terms", selected: "/privacy" });
+
+    // The layout stays mounted across the route change, so the thumb stays put.
+    await page.evaluate(() => {
+      window.fixturePathname = "/privacy";
+      window.renderLegal();
+    });
+    assert.deepEqual(await state(), { index: "1", current: "/privacy", selected: "/privacy" });
+
+    // A modified click opens a new tab and leaves the switch alone.
+    await nav.getByRole("link", { name: "Terms of Service" }).click({ modifiers: ["Meta"] });
+    assert.deepEqual(await state(), { index: "1", current: "/privacy", selected: "/privacy" });
+    await page.close();
   } finally {
     await browser.close();
   }

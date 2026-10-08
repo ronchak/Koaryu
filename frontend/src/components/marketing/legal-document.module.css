@@ -2,56 +2,114 @@
    reference tools a policy needs: numbered sections, stable deep links, a contents
    list that follows the reader, tables that stack on phones, and a clean print. */
 
+.switcherBar,
 .hero,
 .layout {
   width: min(100% - clamp(40px, 8vw, 112px), 1180px);
   margin-inline: auto;
 }
 
-.hero {
-  padding-top: clamp(36px, 5vw, 64px);
+.switcherBar {
+  padding-block: clamp(36px, 5vw, 64px) clamp(36px, 5vw, 56px);
 }
 
 .hero :where(h1, p, dl, dd) {
   margin: 0;
 }
 
+/* Equal segments, so the thumb travels exactly one segment per document. */
 .switcher {
-  display: inline-flex;
-  gap: 4px;
+  position: relative;
+  display: inline-grid;
+  grid-auto-columns: minmax(0, 1fr);
+  grid-auto-flow: column;
   padding: 4px;
-  margin-bottom: clamp(36px, 5vw, 56px);
   border: 1px solid var(--koaryu-rule-soft);
   border-radius: 9px;
   background: color-mix(in srgb, var(--koaryu-sheet) 70%, transparent);
+  isolation: isolate;
 }
 
-.switcher a {
-  display: inline-flex;
-  align-items: center;
-  min-height: 40px;
-  padding: 8px 14px;
+.switcherThumb,
+.switcherThumbLabels {
+  transition: transform 380ms cubic-bezier(0.32, 0.72, 0, 1);
+  /* Small compositor layers keep the slide smooth while the next page renders. */
+  will-change: transform;
+}
+
+.switcherThumb {
+  position: absolute;
+  z-index: 1;
+  top: 4px;
+  bottom: 4px;
+  left: 4px;
+  width: calc((100% - 8px) / var(--legal-switch-count, 2));
+  overflow: hidden;
   border-radius: 6px;
-  color: inherit;
+  background: var(--koaryu-deep-brown);
+  box-shadow: 0 2px 8px rgb(45 34 18 / 18%);
+  pointer-events: none;
+  transform: translateX(calc(var(--legal-switch-index, 0) * 100%));
+}
+
+/* Spans the whole track and moves against the thumb, so its labels stay
+   aligned with the links underneath. */
+.switcherThumbLabels {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  display: grid;
+  width: calc(var(--legal-switch-count, 2) * 100%);
+  grid-auto-columns: minmax(0, 1fr);
+  grid-auto-flow: column;
+  align-items: center;
+  color: var(--koaryu-ink-light);
+  transform: translateX(calc(var(--legal-switch-index, 0) * -100% / var(--legal-switch-count, 2)));
+  user-select: none;
+}
+
+.switcher .switcherLink,
+.switcherThumbLabels > span {
+  padding: 8px 16px;
   font-size: 13px;
   font-weight: 640;
   line-height: 1.2;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.switcher .switcherLink {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  border-radius: 6px;
+  color: inherit;
   text-decoration: none;
   opacity: 0.74;
-  transition:
-    background-color 160ms ease,
-    opacity 160ms ease;
+  transition: opacity 200ms ease;
 }
 
-.switcher a:hover {
+.switcher .switcherLink:hover {
   opacity: 1;
 }
 
-.hero .switcher a[aria-current="page"] {
-  color: var(--koaryu-ink-light);
-  background: var(--koaryu-deep-brown);
+.switcher .switcherLink[data-selected],
+.switcher .switcherLink[aria-current] {
   text-decoration: none;
-  opacity: 1;
+}
+
+/* Without forced colours' backgrounds the thumb would vanish; mark the page instead. */
+@media (forced-colors: active) {
+  .switcherThumb {
+    display: none;
+  }
+
+  .switcher .switcherLink[aria-current] {
+    text-decoration: underline;
+    text-underline-offset: 4px;
+  }
 }
 
 .eyebrow {
@@ -136,7 +194,7 @@
 }
 
 .printButton:focus-visible,
-.switcher a:focus-visible,
+.switcher .switcherLink:focus-visible,
 .contentsToggle > summary:focus-visible {
   outline: 2px solid currentColor;
   outline-offset: 3px;
@@ -429,8 +487,7 @@
   top: 0.78em;
   left: 4px;
   width: 9px;
-  height: 1.5px;
-  background: var(--koaryu-wood);
+  border-top: 1.5px solid var(--koaryu-wood);
   content: "";
 }
 
@@ -749,15 +806,13 @@
 
 @media (max-width: 640px) {
   .switcher {
-    display: flex;
+    display: grid;
     width: 100%;
   }
 
-  .switcher a {
-    flex: 1;
-    justify-content: center;
+  .switcher .switcherLink,
+  .switcherThumbLabels > span {
     padding-inline: 8px;
-    text-align: center;
   }
 
   .glanceList {
@@ -833,7 +888,9 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .switcher a,
+  .switcherThumb,
+  .switcherThumbLabels,
+  .switcher .switcherLink,
   .printButton,
   .contentsList a,
   .contentsList a::before,
@@ -846,7 +903,7 @@
 
 /* Print the policy itself: no site chrome, no paper grain, ink on white. */
 @media print {
-  .switcher,
+  .switcherBar,
   .printButton,
   .contents,
   .anchor,
@@ -861,6 +918,21 @@
 
   .hero {
     padding-block: 0 18px;
+  }
+
+  /* Print engines set display type heavier, so loosen the screen's tight tracking. */
+  .hero h1 {
+    letter-spacing: -0.02em;
+  }
+
+  .sectionHeading h2,
+  .glance h2,
+  .contactCard h2 {
+    letter-spacing: -0.01em;
+  }
+
+  .sectionHeading {
+    display: block;
   }
 
   .layout {
@@ -887,16 +959,75 @@
   }
 
   .section {
+    padding-top: 24px;
     break-inside: auto;
+  }
+
+  .section + .section {
+    margin-top: 28px;
+  }
+
+  /* Paged media fragments plain blocks reliably in every engine; grid and table
+     rows do not (Chromium let the next paragraph print over the last table row,
+     and WebKit can overlap grid items at a page break). */
+  .body,
+  .body :where(ul, ol),
+  .terms,
+  .closing {
+    display: block;
+  }
+
+  .body > * + *,
+  .body :where(ul, ol) > li + li,
+  .closing > * + * {
+    margin-top: 14px;
+  }
+
+  .body > h3 {
+    margin-top: 22px;
+  }
+
+  .table,
+  .table caption,
+  .table thead,
+  .table tbody {
+    display: block;
+    width: 100%;
+  }
+
+  .table tr {
+    display: grid;
+    grid-template-columns: 26% minmax(0, 1fr) 25%;
+    column-gap: 16px;
+    border-bottom: 1px solid #bbb;
+  }
+
+  .table th,
+  .table td {
+    display: block;
+    width: auto !important;
+    padding: 9px 0;
+    border: 0;
+  }
+
+  .table thead tr {
+    border-bottom-color: #777;
   }
 
   .sectionHeading,
   .table tr,
-  .glanceList > div {
+  .terms > div,
+  .history li,
+  .glanceList > div,
+  .callout,
+  .contactCard {
     break-inside: avoid;
   }
 
-  .sectionHeading {
+  .sectionHeading,
+  .table caption,
+  .table thead,
+  .body > h3 {
     break-after: avoid;
   }
 
@@ -904,5 +1035,13 @@
   .lede,
   .glanceList dd {
     color: #000;
+  }
+
+  .body ol > li::before {
+    color: #444;
+  }
+
+  .body ul > li::before {
+    border-top-color: #666;
   }
 }

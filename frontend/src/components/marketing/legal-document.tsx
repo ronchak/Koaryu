@@ -1,7 +1,10 @@
-import Link from "next/link";
 import type { ReactNode } from "react";
 
-import { LegalContents, LegalPrintButton } from "@/components/marketing/legal-contents";
+import {
+  LegalContents,
+  LegalPrintButton,
+  LegalSwitcher,
+} from "@/components/marketing/legal-contents";
 import { PublicPageShell } from "@/components/marketing/public-pages";
 import {
   formatLegalDate,
@@ -24,6 +27,23 @@ export interface LegalHighlight {
 }
 
 const GLANCE_ID = "at-a-glance";
+
+const switcherDocuments = Object.values(legalDocuments).map(({ href, title }) => ({ href, title }));
+
+/**
+ * Shared by /terms and /privacy through their route-group layout, so the site
+ * chrome and the document switch stay mounted and the switch can slide.
+ */
+export function LegalShell({ children }: { children: ReactNode }) {
+  return (
+    <PublicPageShell>
+      <div className={styles.switcherBar}>
+        <LegalSwitcher documents={switcherDocuments} />
+      </div>
+      {children}
+    </PublicPageShell>
+  );
+}
 
 function sectionNumber(index: number) {
   return String(index + 1).padStart(2, "0");
@@ -57,19 +77,8 @@ export function LegalDocument({
   ];
 
   return (
-    <PublicPageShell>
-      <header className={styles.hero} id="top">
-        <nav className={styles.switcher} aria-label="Legal documents">
-          {Object.values(legalDocuments).map((link) => (
-            <Link
-              key={link.href}
-              href={link.href}
-              aria-current={link.href === entry.href ? "page" : undefined}
-            >
-              {link.title}
-            </Link>
-          ))}
-        </nav>
+    <>
+      <header className={styles.hero}>
         <p className={styles.eyebrow}>Koaryu legal</p>
         <h1>{entry.title}</h1>
         <p className={styles.lede}>{description}</p>
@@ -167,13 +176,13 @@ export function LegalDocument({
               </ol>
             </section>
 
-            <a href="#top" className={styles.backToTop}>
+            <a href="#main-content" className={styles.backToTop}>
               Back to top
             </a>
           </footer>
         </article>
       </div>
-    </PublicPageShell>
+    </>
   );
 }
 
@@ -207,15 +216,18 @@ export function LegalDefinitions({
   );
 }
 
-/** A reference table whose rows stack into labelled blocks on phones. */
+/**
+ * A three-column reference table. Rows stack into labelled blocks on phones and
+ * print as blocks, so a page break never lets the next paragraph overlap a row.
+ */
 export function LegalTable({
   caption,
   columns,
   rows,
 }: {
   caption: string;
-  columns: readonly [string, ...string[]];
-  rows: ReadonlyArray<readonly [string, ...ReactNode[]]>;
+  columns: readonly [string, string, string];
+  rows: ReadonlyArray<readonly [string, ReactNode, ReactNode]>;
 }) {
   return (
     <table className={styles.table}>
