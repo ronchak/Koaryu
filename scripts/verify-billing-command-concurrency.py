@@ -252,18 +252,35 @@ SELECT jsonb_build_object('projected',count(*)) FROM projected;""",hold=False)
         second=start('clear_waits_profile',clear_call(f),hold=False)
         lock=wait_blocked(first,second)
         assert sql(f"SELECT count(*) FROM pg_locks l JOIN pg_stat_activity a USING(pid) WHERE a.application_name='{second['name']}' AND l.locktype='advisory' AND l.mode='ExclusiveLock' AND l.granted;")=='1'
-        # Resume the real public profile RPC in the student-owning transaction.
-        # If clear adds studio FOR UPDATE, its late audit FK forms a deadlock here.
-        first['process'].stdin.write(f"""SELECT (public.write_student_profile_atomic(
-'{f['student']}','{f['studio']}','{f['actor']}',
-'{{"notes":"Profile audit completed while clear waited"}}'::jsonb,
-NULL::uuid[],'[]'::jsonb,false,'student.updated')).id;
-SELECT 'RESULT_READY'; COMMIT;
+        # The final V57 profile owner refuses clear contention before mutation.
+        student_before = sql(f"SELECT to_jsonb(s) FROM public.students s WHERE id='{f['student']}';")
+        first['process'].stdin.write(f"""DO $profile$
+DECLARE rejected BOOLEAN:=false;
+BEGIN
+    BEGIN
+        PERFORM public.write_student_profile_atomic(
+            '{f['student']}','{f['studio']}','{f['actor']}',
+            '{{"notes":"Profile must not change while clear waited"}}'::jsonb,
+            NULL::uuid[],'[]'::jsonb,false,'student.updated');
+    EXCEPTION WHEN SQLSTATE 'P0001' THEN
+        IF SQLERRM IS DISTINCT FROM 'AUTOMATION_STUDIO_BUSY' THEN RAISE; END IF;
+        rejected:=true;
+    END;
+    IF NOT rejected THEN RAISE EXCEPTION 'Expected exact profile busy refusal'; END IF;
+END $profile$;
+SELECT 'RESULT_READY';
 """)
-        first['process'].stdin.close();ready(first);finish(first);ready(second);finish(second)
-        observed=json.loads(sql(f"SELECT jsonb_build_object('students',(SELECT count(*) FROM public.students WHERE id='{f['student']}'),'audits',(SELECT count(*) FROM public.audit_logs WHERE entity_id='{f['student']}' AND action='student.updated' AND actor_id='{f['actor']}' AND metadata->>'notes'='Profile audit completed while clear waited'));"))
-        assert observed=={'students':0,'audits':1},observed
-        results.append({'case':'real_profile_late_audit_completes_with_clear_advisory','lock':lock,'facts':observed})
+        first['process'].stdin.flush()
+        ready(first)
+        assert sql(f"SELECT to_jsonb(s) FROM public.students s WHERE id='{f['student']}';") == student_before
+        assert sql(f"SELECT count(*) FROM public.audit_logs WHERE entity_id='{f['student']}' AND action='student.updated';") == '0'
+        assert blocker(first,second), "Clear lost the outer student-lock wait"
+        release(first)
+        ready(second)
+        finish(second)
+        observed=json.loads(sql(f"SELECT jsonb_build_object('students',(SELECT count(*) FROM public.students WHERE id='{f['student']}'),'audits',(SELECT count(*) FROM public.audit_logs WHERE entity_id='{f['student']}' AND action='student.updated'));"))
+        assert observed=={'students':0,'audits':0},observed
+        results.append({'case':'profile_continuation_fails_closed_while_clear_owns_gate','lock':lock,'profile_rejected_before_mutation':True,'facts':observed})
 
         f=plan_fixture('program-delete-first')
         first=start('program_delete_owner',f"DELETE FROM public.programs WHERE id='{f['program']}';");ready(first)

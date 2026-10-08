@@ -18,7 +18,7 @@ import time
 from pathlib import Path
 from uuid import uuid4
 
-from local_postgres_verification import LocalPostgres, require
+from local_postgres_verification import LocalPostgres, require, require_final_v57
 
 ROOT = Path(__file__).resolve().parents[1]
 MIGRATION = (
@@ -395,10 +395,57 @@ def main(arguments):
             ]:
                 sql(payment(baseline, status, changes, ids[name]))
             before, definitions = retained_rows(), functions()
-            sql("BEGIN;\n" + include(frozen) + "\nINSERT INTO supabase_migrations.schema_migrations(version,name) VALUES('20261005105341','automation_workflow_graph_v57');\nCOMMIT;")
+            expectation_table = "private.koaryu_release_v31_expectations"
             require(
-                retained_rows() == before and functions() == definitions,
-                "Installation changed financial owners/business rows",
+                before[expectation_table]
+                == [
+                    {
+                        "expectation_key": "operational_contract_v31",
+                        "expected_sha256": "783e1a1a99b05067fd86e20165dc43e20d190b331e6ec89f82e48a20dbe625f8",
+                    }
+                ],
+                "Unexpected V56 operational expectation",
+            )
+            expected_rows = {
+                **before,
+                expectation_table: [
+                    {
+                        "expectation_key": "operational_contract_v31",
+                        "expected_sha256": "d01750a441a8ef88ea8c4ebdcdc971ca5c3eae67ea237717b64d60e7016e6c6c",
+                    }
+                ],
+            }
+            sql(
+                "BEGIN;\n"
+                + include(frozen)
+                + "\nINSERT INTO supabase_migrations.schema_migrations(version,name) VALUES('20261005105341','automation_workflow_graph_v57');\nCOMMIT;"
+            )
+            require_final_v57(local, database, ROOT)
+            installed_functions = functions()
+            clear_owner = "clear_studio_operational_data_atomic(uuid,boolean)"
+            require(
+                retained_rows() == expected_rows,
+                "Installation changed rows beyond the exact operational expectation transition",
+            )
+            require(
+                installed_functions.keys() == definitions.keys()
+                and {
+                    name
+                    for name in definitions
+                    if installed_functions[name] != definitions[name]
+                }
+                == {clear_owner}
+                and {
+                    key: value
+                    for key, value in installed_functions[clear_owner].items()
+                    if key != "definition"
+                }
+                == {
+                    key: value
+                    for key, value in definitions[clear_owner].items()
+                    if key != "definition"
+                },
+                "Installation changed financial owners beyond the attested clear definition",
             )
             require(
                 sql("SELECT count(*)=0 FROM private.automation_workflow_events;")
@@ -434,12 +481,12 @@ def main(arguments):
                 "Baseline payment exclusions changed",
             )
             passed(
-                "fresh exact install retains financial rows/functions and classifies baseline without occurrences",
+                "fresh exact install preserves business rows and ten owners, attests clear and its exact expectation transition, and classifies baseline without occurrences",
                 migration_sha256=migration_hash,
                 retained_table_count=len(retained_tables),
                 financial_owner_hashes={
                     name: hashlib.sha256(entry["definition"].encode()).hexdigest()
-                    for name, entry in definitions.items()
+                    for name, entry in installed_functions.items()
                 },
             )
             sql(
@@ -760,7 +807,9 @@ def main(arguments):
                 passed(
                     f"studio deletion versus already-owned payment tail rollback={rollback}"
                 )
-            passed("unique final component races complete; assembled V57 restore is separate")
+            passed(
+                "unique final component races complete; assembled V57 restore is separate"
+            )
             print(
                 json.dumps(
                     {

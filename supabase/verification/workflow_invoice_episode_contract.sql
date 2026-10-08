@@ -281,17 +281,11 @@ BEGIN
     PERFORM private.workflow_finalize_invoice_episodes_v1();
     PERFORM pg_temp.episode_error(format('UPDATE private.workflow_invoice_collection_episodes SET closed_at=NULL,close_reason=NULL WHERE id=%L',old_id),'P0001','AUTOMATION_STATE_CONFLICT','episode cannot reopen');
     x:=pg_temp.episode_fixture(CURRENT_DATE+2,false,'{"connect_account_generation":1}',false); invoice:=(x->>'invoice')::UUID;
-    PERFORM pg_advisory_xact_lock(hashtextextended('koaryu.local-plan-clear:'||(x->>'studio'),0));
     DELETE FROM public.studios WHERE id=(x->>'studio')::UUID;
     PERFORM private.workflow_finalize_invoice_episodes_v1();
     PERFORM pg_temp.episode_check(NOT EXISTS(SELECT 1 FROM private.workflow_invoice_episode_state WHERE invoice_id=invoice)
         AND NOT EXISTS(SELECT 1 FROM private.workflow_invoice_collection_episodes WHERE invoice_id=invoice)
         AND NOT EXISTS(SELECT 1 FROM private.workflow_invoice_episode_pending WHERE invoice_id=invoice),'actual studio delete never recreates state');
-    x:=pg_temp.episode_fixture(); invoice:=(x->>'invoice')::UUID;
-    PERFORM public.clear_studio_operational_data_atomic((x->>'studio')::UUID,false);
-    PERFORM private.workflow_finalize_invoice_episodes_v1();
-    PERFORM pg_temp.episode_check(NOT EXISTS(SELECT 1 FROM public.billing_invoices WHERE id=invoice)
-        AND (SELECT ever_removed AND current_episode_id IS NULL FROM private.workflow_invoice_episode_state WHERE invoice_id=invoice),'actual clear preserves logical closed history');
 END $$;
 -- Additional identity refusals use real pending source ownership. Diagnostic
 -- corruption below affects only new private rows and is rolled back by this file.
@@ -331,7 +325,6 @@ BEGIN
     PERFORM private.workflow_finalize_invoice_episodes_v1();
     PERFORM pg_temp.episode_check((SELECT frozen_timezone='UTC' FROM private.workflow_invoice_collection_episodes WHERE invoice_id=invoice AND closed_at IS NULL),'unrecognized new episode zone freezes UTC');
     x:=pg_temp.episode_fixture(CURRENT_DATE+2,true,'{"connect_account_generation":1}',false); invoice:=(x->>'invoice')::UUID;
-    PERFORM pg_advisory_xact_lock(hashtextextended('koaryu.local-plan-clear:'||(x->>'studio'),0));
     DELETE FROM public.studios WHERE id=(x->>'studio')::UUID;
     PERFORM private.workflow_finalize_invoice_episodes_v1();
     PERFORM pg_temp.episode_check(NOT EXISTS(SELECT 1 FROM private.workflow_invoice_episode_state WHERE invoice_id=invoice)
@@ -398,6 +391,16 @@ BEGIN
         AND private.workflow_invoice_episode_threshold_v1(NULL,'UTC') IS NULL
         AND private.workflow_invoice_episode_threshold_v1(CURRENT_DATE,NULL) IS NULL
         AND private.workflow_invoice_episode_threshold_v1(CURRENT_DATE,'unrecognized/proof') IS NULL,'threshold invalid inputs unavailable');
+END $$;
+-- Keep the transaction-wide clear gate after the independent studio cascades.
+DO $$
+DECLARE x JSONB; invoice UUID;
+BEGIN
+    x:=pg_temp.episode_fixture(); invoice:=(x->>'invoice')::UUID;
+    PERFORM public.clear_studio_operational_data_atomic((x->>'studio')::UUID,false);
+    PERFORM private.workflow_finalize_invoice_episodes_v1();
+    PERFORM pg_temp.episode_check(NOT EXISTS(SELECT 1 FROM public.billing_invoices WHERE id=invoice)
+        AND (SELECT ever_removed AND current_episode_id IS NULL FROM private.workflow_invoice_episode_state WHERE invoice_id=invoice),'actual clear preserves logical closed history');
 END $$;
 SELECT count(*) AS invoice_episode_assertions FROM pg_temp.episode_checks;
 ROLLBACK;

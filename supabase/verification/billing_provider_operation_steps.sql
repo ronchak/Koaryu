@@ -50,9 +50,9 @@ BEGIN
     -- The V28 restore harness retains the original V28 pin. This final-chain
     -- value is the V31-compatible repin after the resource-preservation owner changed.
     IF private.koaryu_release_provider_operation_steps_manifest_v28()
-       IS DISTINCT FROM CASE WHEN EXISTS(SELECT 1 FROM supabase_migrations.schema_migrations WHERE version='20261005105341')
+       IS DISTINCT FROM (CASE WHEN EXISTS(SELECT 1 FROM supabase_migrations.schema_migrations WHERE version='20261005105341')
           THEN '0:9f285d9d386666f8b42a6ce9d2c04eac3a6f897f979bb4e8d47c81c318ab5c53'
-          ELSE '0:6389e87cdb8a5db79c540f38da4fdc71aa56ed10fa5d5533518f470bf52f7dfc' END THEN
+          ELSE '0:6389e87cdb8a5db79c540f38da4fdc71aa56ed10fa5d5533518f470bf52f7dfc' END) THEN
         RAISE EXCEPTION 'V28 step manifest drifted: %',
             private.koaryu_release_provider_operation_steps_manifest_v28();
     END IF;

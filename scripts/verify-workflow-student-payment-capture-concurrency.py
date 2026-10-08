@@ -411,7 +411,9 @@ OR (n.nspname='public' AND p.proname IN ('write_student_profile_atomic','write_s
         release(preceding_writer)
         installer = session(
             "capture_install_fresh",
-            "\\i " + psql_file(MIGRATION) + "\nINSERT INTO supabase_migrations.schema_migrations(version,name) VALUES('20261005105341','automation_workflow_graph_v57');",
+            "\\i "
+            + psql_file(MIGRATION)
+            + "\nINSERT INTO supabase_migrations.schema_migrations(version,name) VALUES('20261005105341','automation_workflow_graph_v57');",
             hold=True,
             role="postgres",
         )
@@ -622,28 +624,72 @@ OR (n.nspname='public' AND p.proname IN ('write_student_profile_atomic','write_s
                 holder = session(kind + "_clear_first", clear(ids), hold=True)
                 ready(holder)
                 before = facts(ids)
-                finished(
-                    session(
-                        kind + "_clear_refused",
-                        payment(ids, linked=False)
-                        if kind == "payment"
-                        else source(ids),
-                    ),
-                    "LEAD_STUDIO_BUSY"
-                    if kind == "conversion"
-                    else "AUTOMATION_STUDIO_BUSY",
-                )
-                require(
-                    facts(ids) == before and not events(ids),
-                    "Clear contention left partial source/capture state",
-                )
-                release(holder, rollback)
-                if rollback:
-                    finished(session(kind + "_clear_retry", source(ids)))
-                    require(
-                        len(events(ids)) == event_count,
-                        "Source retry after rolled back clear failed",
+                if kind == "payment":
+                    writer = session(
+                        "unlinked_payment_studio_fk_wait", payment(ids, linked=False)
                     )
+                    blocked(holder, writer)
+                    require(
+                        facts(ids) == before
+                        and not events(ids)
+                        and sql(
+                            f"SELECT count(*) FROM private.workflow_payment_capture_markers WHERE payment_id='{ids['payment']}';"
+                        )
+                        == "0",
+                        "Studio FK contention left partial payment/capture state",
+                    )
+                    release(holder, rollback)
+                    finished(writer)
+                    payment_facts = json.loads(
+                        sql(f"""SELECT jsonb_build_object(
+                        'payment', (SELECT count(*)=1 AND bool_and(id='{ids["payment"]}' AND status='failed' AND payer_id IS NULL AND invoice_id IS NULL AND amount_cents=1000)
+                            FROM public.billing_payments WHERE studio_id='{ids["studio"]}'),
+                        'marker', (SELECT to_jsonb(m) FROM private.workflow_payment_capture_markers m WHERE payment_id='{ids["payment"]}'),
+                        'events', (SELECT count(*) FROM private.automation_workflow_events WHERE studio_id='{ids["studio"]}'),
+                        'runs', (SELECT count(*) FROM public.automation_workflow_runs WHERE studio_id='{ids["studio"]}'),
+                        'studio', EXISTS(SELECT 1 FROM public.studios WHERE id='{ids["studio"]}'),
+                        'payer', EXISTS(SELECT 1 FROM public.billing_payers WHERE id='{ids["payer"]}'),
+                        'invoice', EXISTS(SELECT 1 FROM public.billing_invoices WHERE id='{ids["invoice"]}'));""")
+                    )
+                    require(
+                        payment_facts
+                        == {
+                            "payment": True,
+                            "marker": {
+                                "payment_id": ids["payment"],
+                                "studio_id": ids["studio"],
+                                "eligible": True,
+                                "failure_seen": True,
+                            },
+                            "events": 1,
+                            "runs": 1 if rollback else 0,
+                            "studio": True,
+                            "payer": rollback,
+                            "invoice": rollback,
+                        },
+                        "Unlinked payment after clear changed serialized capture facts",
+                    )
+                else:
+                    finished(
+                        session(
+                            kind + "_clear_refused",
+                            source(ids),
+                        ),
+                        "LEAD_STUDIO_BUSY"
+                        if kind == "conversion"
+                        else "AUTOMATION_STUDIO_BUSY",
+                    )
+                    require(
+                        facts(ids) == before and not events(ids),
+                        "Clear contention left partial source/capture state",
+                    )
+                    release(holder, rollback)
+                    if rollback:
+                        finished(session(kind + "_clear_retry", source(ids)))
+                        require(
+                            len(events(ids)) == event_count,
+                            "Source retry after rolled back clear failed",
+                        )
                 passed(f"{kind} clear first rollback={rollback}")
                 ids = fixture()
                 workflow(ids, event_type)

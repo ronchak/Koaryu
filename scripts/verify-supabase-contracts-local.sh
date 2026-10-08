@@ -2144,9 +2144,6 @@ else
   exit "$status"
 fi
 
-echo "[concurrency] RUN billing command ownership and lock ordering"
-run_interruptible python3 "$ROOT_DIR/scripts/verify-billing-command-concurrency.py" "$PSQL" "$SOCKET_DIR" "$PG_PORT"
-
 echo "[concurrency] RUN rank transition replay and commit ordering"
 run_interruptible python3 "$ROOT_DIR/scripts/verify-student-write-concurrency.py" "$PSQL" "$SOCKET_DIR" "$PG_PORT"
 
@@ -2263,6 +2260,9 @@ echo "[V57 readiness] RUN complete installed catalog and genuine history"
 final_readiness="$({ cd "$ROOT_DIR"; node --input-type=module --eval "import { FINAL_OPERATIONAL_READINESS_SQL } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(FINAL_OPERATIONAL_READINESS_SQL);"; } | "$PSQL" "${psql_args[@]}" --tuples-only --no-align)"
 (cd "$ROOT_DIR" && node --input-type=module --eval "import { validateOperationalReadiness } from './scripts/studio-comp-migration-rollout.mjs'; validateOperationalReadiness(process.argv[1]);" "$final_readiness")
 echo "[V57 readiness] PASS complete installed catalog and genuine history"
+
+echo "[concurrency] RUN billing command ownership and lock ordering"
+run_interruptible python3 "$ROOT_DIR/scripts/verify-billing-command-concurrency.py" "$PSQL" "$SOCKET_DIR" "$PG_PORT"
 
 echo "[V57 raw facts] RUN complete catalog body configuration and privilege contracts"
 while IFS='|' read -r query_export expected_export; do

@@ -31,6 +31,9 @@ from local_postgres_verification import LocalPostgres, require, install_final_v5
 ROOT = Path(__file__).resolve().parents[1]
 BASE = "35561d6b8f851ea0309723637e0996a064ba4c82"
 BASE_HASH = "cab98ab987acf0c24a383be94f3e0499c6d891b922d7fd1de217e788c2a339b5"
+ACCEPTED_DEPENDENCY_BASELINES = {
+    "backend/app/services/automation_email.py": "35693d25429678ae77f3a7b5bddd6f3d352c5e5b",
+}
 MIGRATION = ROOT / "supabase/migrations/20261005105341_automation_workflow_graph_v57.sql"
 CONTRACT = ROOT / "supabase/verification/automation_sender_admission_contract.sql"
 INVENTORY = """SELECT jsonb_object_agg(p.oid::regprocedure::text,jsonb_build_object(
@@ -72,12 +75,24 @@ def main(arguments):
     accepted = subprocess.check_output(["git", "-C", str(ROOT), "show", BASE + ":" + str(MIGRATION.relative_to(ROOT))], env=local.env)
     require(digest(accepted) == BASE_HASH, "Accepted complete execution SQL pin changed")
     dependencies = {}
-    for path in ("backend/app/schemas/workflow_dispatch.py", "backend/app/services/automation_service.py",
-                 "backend/app/services/automation_email.py", "backend/app/services/microsoft_graph_email.py",
-                 "backend/app/services/automation_coordinator.py"):
-        frozen = subprocess.check_output(["git", "-C", str(ROOT), "show", BASE + ":" + path], env=local.env)
+    dependency_baselines = {}
+    for path in (
+        "backend/app/schemas/workflow_dispatch.py",
+        "backend/app/services/automation_service.py",
+        "backend/app/services/automation_email.py",
+        "backend/app/services/microsoft_graph_email.py",
+        "backend/app/services/automation_coordinator.py",
+    ):
+        dependency_base = ACCEPTED_DEPENDENCY_BASELINES.get(path, BASE)
+        frozen = subprocess.check_output(
+            ["git", "-C", str(ROOT), "show", dependency_base + ":" + path],
+            env=local.env,
+        )
+        dependency_baselines[path] = dependency_base
         dependencies[path] = digest(frozen)
-        require((ROOT / path).read_bytes() == frozen, "Accepted dependency changed: " + path)
+        require(
+            (ROOT / path).read_bytes() == frozen, "Accepted dependency changed: " + path
+        )
     historical = {p.name: digest(p.read_bytes()) for p in sorted(MIGRATION.parent.glob("*.sql")) if p != MIGRATION}
     require(len(historical) == 151, "Expected151 historical migrations")
     for name, checksum in historical.items():
@@ -91,10 +106,19 @@ def main(arguments):
     pid = pid_file.read_text().splitlines()[0]
     owned = dump_owned = False
     children, cases, lifetimes, files = [], [], [], []
-    report = {"source_sha256": digest(source), "contract_sha256": digest(CONTRACT.read_bytes()),
-              "runner_sha256": digest(Path(__file__).read_bytes()), "baseline": BASE, "historical": historical, "dependencies": dependencies,
-              "cases": cases, "lifetimes": lifetimes, "source_authority": "synthetic enclosing parents only",
-              "proof_scope": "claim_status_only" if focus else "complete_common_sender"}
+    report = {
+        "source_sha256": digest(source),
+        "contract_sha256": digest(CONTRACT.read_bytes()),
+        "runner_sha256": digest(Path(__file__).read_bytes()),
+        "baseline": BASE,
+        "historical": historical,
+        "dependencies": dependencies,
+        "dependency_baselines": dependency_baselines,
+        "cases": cases,
+        "lifetimes": lifetimes,
+        "source_authority": "synthetic enclosing parents only",
+        "proof_scope": "claim_status_only" if focus else "complete_common_sender",
+    }
 
     def sql(statement, role=False):
         return local.sql(database, "SET TIME ZONE 'UTC';\n" + ("SET ROLE service_role;\n" if role else "") + statement)

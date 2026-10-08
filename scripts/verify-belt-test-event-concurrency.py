@@ -722,14 +722,24 @@ END $proof$; SELECT '{{}}'::jsonb;"""
                         session("clear_retry", command),
                         None if rollback else "AUTOMATION_NOT_FOUND",
                     )
-                expected_revision = 2 if (command_first != rollback) else 1
+                committed_operations = 2 if (command_first != rollback) else 1
+                clear_committed = command_first or not rollback
+                clear_facts = facts(ids)
                 require(
-                    facts(ids)["revision"] == expected_revision,
-                    "Clear race revision wrong",
+                    clear_facts
+                    == {
+                        "events": 0 if clear_committed else 1,
+                        "audits": committed_operations,
+                        "receipts": committed_operations,
+                        "revision": None if clear_committed else 2,
+                        "schedule_revision": None if clear_committed else 2,
+                    },
+                    "Clear race event or retained command facts wrong",
                 )
                 passed(
                     f"actual clear command_first={command_first} rollback={rollback}",
                     blocking=evidence,
+                    facts=clear_facts,
                 )
 
         for command_first in (False, True):

@@ -432,6 +432,7 @@ DO $$
 DECLARE x JSONB; y JSONB; packet JSONB; result JSONB; at TIMESTAMPTZ;
     starts TIMESTAMPTZ; s UUID; w UUID; v UUID; epoch BIGINT; last UUID; expected UUID;
     idx INTEGER; count_pairs INTEGER; chosen UUID[]; metadata RECORD; old JSONB; malformed JSONB; item JSONB;
+    probe_event UUID; probe_recipients JSONB;
 BEGIN
     SELECT reference_at,starts_at,last_fixture INTO STRICT at,starts,x FROM pg_temp.timed_backlog_setup_context WHERE singleton;
     SELECT t.studio_id,t.workflow_id,t.version_id,t.epoch INTO s,w,v,epoch FROM private.workflow_timer_activations t ORDER BY t.studio_id,t.activation_id LIMIT 1;
@@ -516,10 +517,27 @@ BEGIN
     PERFORM pg_temp.timed_check((SELECT count(*)=36 FROM pg_temp.timed_belt_seen),'recipient continuation beyond 25 and equal parent coordinate');
     SET LOCAL enable_seqscan=off;
     SELECT id INTO last FROM public.belt_test_recipients WHERE studio_id=(x->>'studio')::UUID AND state='approved' ORDER BY id OFFSET 10 LIMIT 1;
-    EXECUTE format('EXPLAIN (ANALYZE,COSTS OFF,FORMAT JSON) SELECT r.id FROM public.belt_test_recipients r WHERE r.studio_id=%L AND r.event_id=%L
-        AND r.state=''approved'' AND r.id>%L ORDER BY r.id LIMIT 25',x->>'studio',x->>'parent',last) INTO result;
+    -- Give the event-qualified seek a representative same-studio distribution.
+    SELECT jsonb_agg(jsonb_build_object('student_id',student_id,'student_program_membership_id',student_program_membership_id))
+        INTO probe_recipients FROM public.belt_test_recipients
+        WHERE studio_id=(x->>'studio')::UUID AND event_id=(x->>'parent')::UUID AND state='approved';
+    BEGIN
+        FOR idx IN 1..4 LOOP
+            probe_event:=(public.mutate_belt_test_event_v1((x->>'studio')::UUID,(x->>'actor')::UUID,NULL,gen_random_uuid(),NULL,
+                jsonb_build_object('name','Sibling seek probe','ladder_id',x->'ladder','starts_at',private.automation_utc_text_v1(starts),
+                    'ends_at',private.automation_utc_text_v1(starts+INTERVAL '1 hour'),'timezone','UTC','status','scheduled'))#>>'{payload,id}')::UUID;
+            PERFORM public.approve_belt_test_recipients_v1((x->>'studio')::UUID,(x->>'actor')::UUID,probe_event,gen_random_uuid(),1,probe_recipients);
+        END LOOP;
+        ANALYZE public.belt_test_recipients;
+        EXECUTE format('EXPLAIN (ANALYZE,COSTS OFF,FORMAT JSON) SELECT r.id FROM public.belt_test_recipients r WHERE r.studio_id=%L AND r.event_id=%L
+            AND r.state=''approved'' AND r.id>%L ORDER BY r.id LIMIT 25',x->>'studio',x->>'parent',last) INTO result;
+        RAISE EXCEPTION USING ERRCODE='P57T3';
+    EXCEPTION WHEN SQLSTATE 'P57T3' THEN NULL;
+    END;
     INSERT INTO pg_temp.timed_plans VALUES('recipient typed seek with small-fixture seqscan disabled',result);
     PERFORM pg_temp.timed_check(result::TEXT LIKE '%belt_test_recipients_timer_scan%' AND result::TEXT LIKE '%Index Cond%','recipient indexed seek');
+    PERFORM pg_temp.timed_check((SELECT count(*)=36 FROM public.belt_test_recipients WHERE studio_id=(x->>'studio')::UUID)
+        AND (SELECT count(*)=1 FROM public.belt_test_events WHERE studio_id=(x->>'studio')::UUID),'recipient seek probe siblings roll back exactly');
     SET LOCAL enable_seqscan=on;
     FOR idx IN 1..4 LOOP PERFORM pg_temp.timed_workflow(x,'belt_test.upcoming'); END LOOP;
     UPDATE private.workflow_timer_activations SET last_threshold_at=NULL,last_event_id=NULL,last_source_id=NULL WHERE studio_id=(x->>'studio')::UUID;
@@ -531,6 +549,7 @@ BEGIN
     UPDATE public.belt_test_recipients SET state='revoked',revision=revision+1,revoked_at=clock_timestamp() WHERE studio_id=(x->>'studio')::UUID;
     INSERT INTO public.belt_test_events(studio_id,name,ladder_id,starts_at,ends_at,timezone,status)
         SELECT (x->>'studio')::UUID,'Empty raw parent',(x->>'ladder')::UUID,starts,starts+INTERVAL '1 hour','UTC','scheduled' FROM generate_series(1,150);
+    ANALYZE public.belt_test_events;
     SET LOCAL enable_seqscan=off;
     SELECT id INTO last FROM public.belt_test_events WHERE studio_id=(x->>'studio')::UUID ORDER BY starts_at,id OFFSET 50 LIMIT 1;
     EXECUTE format('EXPLAIN (ANALYZE,COSTS OFF,FORMAT JSON) SELECT * FROM public.belt_test_events e WHERE e.studio_id=%L AND e.status=''scheduled''
