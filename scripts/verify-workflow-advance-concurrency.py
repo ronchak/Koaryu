@@ -21,6 +21,8 @@ from uuid import uuid4
 
 from local_postgres_verification import LocalPostgres, require, install_final_v57
 
+import v57_retained_function_verification as retention
+
 ROOT = Path(__file__).resolve().parents[1]
 ACCEPTED_BASE = "35561d6b8f851ea0309723637e0996a064ba4c82"
 MIGRATION = (
@@ -259,7 +261,7 @@ def main(arguments):
         install_final_v57(local, database, ROOT)
         installed = value(inventory_sql)
         require(
-            all(installed.get(k) == v for k, v in retained.items() if k != "koaryu_release_schema_preflight_v37()"),
+            all(retention.retained_function_equal(k, v, installed.get(k)) for k, v in retained.items() if k != "koaryu_release_schema_preflight_v37()"),
             "Retained function body/ACL changed",
         )
         require(

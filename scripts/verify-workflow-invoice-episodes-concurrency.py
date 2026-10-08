@@ -19,6 +19,8 @@ from uuid import uuid4
 
 from local_postgres_verification import LocalPostgres, require, install_final_v57
 
+import v57_retained_function_verification as retention
+
 ROOT = Path(__file__).resolve().parents[1]
 BASE = "35561d6b8f851ea0309723637e0996a064ba4c82"
 BASE_HASH = "cab98ab987acf0c24a383be94f3e0499c6d891b922d7fd1de217e788c2a339b5"
@@ -106,11 +108,12 @@ def main(arguments):
         )
     old_functions, new_functions = source_functions(accepted), source_functions(source)
     for name, bodies in old_functions.items():
-        if name != "private.workflow_transition_owned_v1":
+        if name not in ("private.workflow_transition_owned_v1", retention.TIMED_FUNCTION):
             require(
                 new_functions.get(name) == bodies,
                 "Retained source body changed: " + name,
             )
+    retention.require_reviewed_timed_sources(old_functions[retention.TIMED_FUNCTION], new_functions[retention.TIMED_FUNCTION])
     require(
         len(new_functions["private.workflow_transition_owned_v1"]) == 1,
         "Ambiguous transition definition",
@@ -428,7 +431,7 @@ def main(arguments):
         )
         installed = value(INVENTORY)
         require(
-            all(installed.get(k) == v for k, v in retained.items() if k not in (TRANSITION,"koaryu_release_schema_preflight_v37()")),
+            all(retention.retained_function_equal(k, v, installed.get(k)) for k, v in retained.items() if k not in (TRANSITION,"koaryu_release_schema_preflight_v37()")),
             "Retained function body or ACL changed",
         )
         require(

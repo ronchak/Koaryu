@@ -224,9 +224,14 @@ if [[ ! -f "$VERIFICATION_DIR/schedule_window_read_contract.sql" ]]; then
   exit 1
 fi
 
+umask 077
+echo "[source setup] CHECK exact retained V57 source bodies"
+run_interruptible python3 "$ROOT_DIR/scripts/test_v57_retained_function_verification.py"
+run_interruptible python3 "$ROOT_DIR/scripts/check-v57-retained-source.py"
+echo "[source setup] PASS exact retained V57 source bodies"
+
 # PostgreSQL rejects long Unix socket paths, so this must not inherit a long
 # workspace-specific TMPDIR.
-umask 077
 TEMP_DIR="$(mktemp -d /tmp/koaryu-pg.XXXXXX)"
 DATA_DIR="$TEMP_DIR/data"
 SOCKET_DIR="$TEMP_DIR/socket"

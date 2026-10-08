@@ -45,6 +45,7 @@ Start here for repo-wide rules, then prefer the nearest package-level `AGENTS.md
 - Generate or verify the guarded studio-comp database rollout packet: `node scripts/studio-comp-migration-rollout.mjs --mode packet --candidate-sha <full-sha>`
 - Verify a pinned deployed Render/Vercel pair reports one exact SHA: `npm run verify:deployed-release -- --environment <staging|production> --expected-sha <full-sha> --frontend-origin <pinned-origin> --backend-api <pinned-api-v1>`
 - Capture privacy-safe dashboard timing evidence only after exact-SHA verification: `npm run capture:dashboard-performance -- <same release args> --storage-state <absolute-private-path>`
+- Check frozen V57 source bodies before database setup: `python3 scripts/check-v57-retained-source.py`
 - Verify all migrations and contract SQL on ephemeral PostgreSQL 17: `npm run check:supabase-contracts-local`
 - Inspect the next V38-to-V57 migration: `node scripts/studio-comp-migration-rollout.mjs --target <staging|production> --mode inspect --one-migration --candidate-sha <full-sha>`
 - Stripe Connect smoke check: `npm run dev:stripe-connect-smoke`

@@ -24,14 +24,13 @@ from local_postgres_verification import (
     require_final_v57,
 )
 
+import v57_retained_function_verification as retention
+
 ROOT = Path(__file__).resolve().parents[1]
 BASE = "35561d6b8f851ea0309723637e0996a064ba4c82"
 BASE_HASH = "cab98ab987acf0c24a383be94f3e0499c6d891b922d7fd1de217e788c2a339b5"
-TYPED_CANDIDATE = "private.workflow_timed_candidates_v1"
-TYPED_CANDIDATE_BODY_HASHES = (
-    "38ac23048c419ef2a64455aca124d0b8a5c46a122aaf6653e9170e5530685ca1",
-    "07e98ac269cc740feac349b98223d486bec3ad4670e4c6f81521173fd4074493",
-)
+TYPED_CANDIDATE = retention.TIMED_FUNCTION
+
 MIGRATION = (
     ROOT / "supabase/migrations/20261005105341_automation_workflow_graph_v57.sql"
 )
@@ -123,14 +122,8 @@ def main(arguments):
         ),
         "Unaffected retained source body changed",
     )
-    require(
-        len(old_functions[TYPED_CANDIDATE]) == len(new_functions[TYPED_CANDIDATE]) == 1
-        and tuple(
-            hashlib.sha256(functions[TYPED_CANDIDATE][0].encode()).hexdigest()
-            for functions in (old_functions, new_functions)
-        )
-        == TYPED_CANDIDATE_BODY_HASHES,
-        "Timed candidate destination repair differs from the reviewed old/new bodies",
+    retention.require_reviewed_timed_sources(
+        old_functions[TYPED_CANDIDATE], new_functions[TYPED_CANDIDATE]
     )
     baseline = local.sql(
         "postgres",

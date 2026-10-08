@@ -200,7 +200,7 @@ COMMIT;""")
             )
         )
 
-    def facts(ids):
+    def facts_sql(ids):
         expressions = []
         for table in (
             "students",
@@ -217,8 +217,18 @@ COMMIT;""")
                 quote(table),
                 f"(SELECT coalesce(jsonb_agg(to_jsonb(r) ORDER BY id),'[]') FROM public.{table} r WHERE studio_id='{ids['studio']}')",
             ]
-        return json.loads(
-            sql("SELECT jsonb_build_object(" + ",".join(expressions) + ");")
+        return "SELECT jsonb_build_object(" + ",".join(expressions) + ")"
+
+    def facts(ids):
+        return json.loads(sql(facts_sql(ids) + ";"))
+
+    def program_delete_truth_sql(ids):
+        return (
+            "SELECT jsonb_build_object('sources',(" + facts_sql(ids) + "),"
+            + "'program',(SELECT to_jsonb(p) FROM public.programs p WHERE id=" + quote(ids["program"]) + "),"
+            + "'ranks',(SELECT coalesce(jsonb_agg(to_jsonb(r) ORDER BY id),'[]') FROM public.belt_ranks r WHERE studio_id=" + quote(ids["studio"]) + "),"
+            + "'events',(SELECT coalesce(jsonb_agg(to_jsonb(e) ORDER BY id),'[]') FROM private.automation_workflow_events e WHERE studio_id=" + quote(ids["studio"]) + "),"
+            + "'runs',(SELECT coalesce(jsonb_agg(to_jsonb(r) ORDER BY id),'[]') FROM public.automation_workflow_runs r WHERE studio_id=" + quote(ids["studio"]) + "))"
         )
 
     def functions():
@@ -312,7 +322,7 @@ OR (n.nspname='public' AND p.proname IN ('write_student_profile_atomic','write_s
                 )
         raise RuntimeError("Session did not reach barrier")
 
-    def finished(item, expected_error=None):
+    def finished(item, expected_error=None, program_delete=False):
         code = item["process"].wait(timeout=25)
         for thread in item["threads"]:
             thread.join(timeout=2)
@@ -324,6 +334,20 @@ OR (n.nspname='public' AND p.proname IN ('write_student_profile_atomic','write_s
             if not stream.closed:
                 stream.close()
         errors = "\n".join(item["errors"])
+        if program_delete:
+            error_lines = [line for line in item["errors"] if line.startswith("ERROR:  ")]
+            guard = "ERROR:  P0001: Student current belt rank belongs to a different program."
+            constraint = "student_program_memberships_program_id_fkey"
+            fk = 'ERROR:  23503: update or delete on table "programs" violates foreign key constraint "' + constraint + '" on table "student_program_memberships"'
+            require(
+                code != 0 and len(error_lines) == 1
+                and (error_lines[0] == guard or (error_lines[0] == fk
+                     and "CONSTRAINT NAME:  " + constraint in item["errors"]
+                     and "SCHEMA NAME:  public" in item["errors"]
+                     and "TABLE NAME:  student_program_memberships" in item["errors"])),
+                "Expected exact protected program-delete refusal: " + errors,
+            )
+            return None
         if expected_error:
             require(
                 code != 0 and expected_error in errors,
@@ -880,7 +904,7 @@ OR (n.nspname='public' AND p.proname IN ('write_student_profile_atomic','write_s
                 hold=True,
             )
             ready(holder)
-            writer = session(kind + "_source", source(ids))
+            writer = session(kind + "_source", source(ids) + "\n" + program_delete_truth_sql(ids) + ";")
             blocked(holder, writer)
             parent = session(
                 kind + "_program_delete",
@@ -889,12 +913,13 @@ OR (n.nspname='public' AND p.proname IN ('write_student_profile_atomic','write_s
             )
             blocked(writer, parent)
             release(holder)
-            finished(writer)
-            # The retained student tenant guard rejects ON DELETE SET NULL once
-            # this source owns a program-scoped starting/promoted rank.
-            finished(
-                parent,
-                "P0001: Student current belt rank belongs to a different program.",
+            committed_truth = finished(writer)
+            # Restored FK trigger order may reach membership RESTRICT before
+            # the student's SET NULL wrong-program guard. Both protect deletion.
+            finished(parent, program_delete=True)
+            require(
+                json.loads(sql(program_delete_truth_sql(ids) + ";")) == committed_truth,
+                "Rejected program delete changed committed program/source/rank/membership/event truth",
             )
             passed(
                 f"{kind} source capture versus program delete no backward parent wait"
