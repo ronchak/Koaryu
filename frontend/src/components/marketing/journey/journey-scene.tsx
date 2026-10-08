@@ -160,7 +160,7 @@ interface NightPaint {
  * html[data-scene="night"] reads (journey-scene.module.css). Never use it on an
  * attribute that sceneState writes.
  */
-function night(paint: NightPaint, style?: CSSProperties) {
+function night(paint: NightPaint) {
   const properties: Record<string, string> = {};
   const classes: (string | undefined)[] = [];
   if (paint.fill) {
@@ -181,7 +181,7 @@ function night(paint: NightPaint, style?: CSSProperties) {
   }
   return {
     className: classes.filter(Boolean).join(" ") || undefined,
-    style: { ...style, ...properties } as CSSProperties,
+    style: properties as CSSProperties,
   };
 }
 
@@ -1168,8 +1168,9 @@ const SceneDefs = memo(function SceneDefs({ ids }: { readonly ids: SceneIds }) {
       <pattern id={ids.crumple} patternUnits="userSpaceOnUse" width="360" height="360">
         <image href="/marketing/crumple.webp" width="360" height="360" />
       </pattern>
+      {/* Washi as the shade it casts under multiply, laid with normal blending. */}
       <pattern id={ids.washi} patternUnits="userSpaceOnUse" width="220" height="220">
-        <image href="/marketing/washi.webp" width="220" height="220" />
+        <image href="/marketing/washi-shade.webp" width="220" height="220" />
       </pattern>
       <clipPath id={ids.back}>
         <rect
@@ -1535,7 +1536,7 @@ function Shoji({ x, y, width, height, columns, rows, strokeWidth = 7, ids }: Sho
         height={height}
         fill={`url(#${ids.washi})`}
         opacity="0.78"
-        {...night({ opacity: 0.6 }, { mixBlendMode: "multiply" })}
+        {...night({ opacity: 0.6 })}
       />
       <path
         d={shojiGridPath(x, y, width, height, columns, rows)}
@@ -1614,7 +1615,7 @@ function SideWall({ side, ids }: { readonly side: "left" | "right"; readonly ids
               points={polygonPoints(paper)}
               fill={`url(#${ids.washi})`}
               opacity="0.68"
-              {...night({ opacity: 0.55 }, { mixBlendMode: "multiply" })}
+              {...night({ opacity: 0.55 })}
             />
             <polygon
               points={polygonPoints(paper)}
@@ -1847,7 +1848,7 @@ const Dojo = memo(function Dojo({ ids }: { readonly ids: SceneIds }) {
               height={VIEW.doorTop - VIEW.backTop - 16}
               fill={`url(#${ids.washi})`}
               opacity="0.66"
-              {...night({ opacity: 0.55 }, { mixBlendMode: "multiply" })}
+              {...night({ opacity: 0.55 })}
             />
             <rect
               x={x + 5}
@@ -1930,7 +1931,7 @@ const Dojo = memo(function Dojo({ ids }: { readonly ids: SceneIds }) {
           height="200"
           fill={`url(#${ids.washi})`}
           opacity="0.82"
-          {...night({ opacity: 0.6 }, { mixBlendMode: "multiply" })}
+          {...night({ opacity: 0.6 })}
         />
         <rect x="0" y="0" width="86" height="14" fill={PALETTE.wood} {...NIGHT_FILL_WOOD} />
         <rect x="0" y="186" width="86" height="14" fill={PALETTE.wood} {...NIGHT_FILL_WOOD} />

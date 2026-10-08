@@ -164,7 +164,16 @@ describe("Journey scene rendering", () => {
       /<fe(?:Turbulence|DisplacementMap|DiffuseLighting|DropShadow)/,
     );
     assert.match(sceneSource, /\/marketing\/crumple\.webp/);
-    assert.match(sceneSource, /\/marketing\/washi\.webp/);
+    assert.match(sceneSource, /\/marketing\/washi-shade\.webp/);
+  });
+
+  // A composited layer or blend inside the art splits the camera-scaled dojo
+  // into dozens of layers held at the dive's zoom; the tab then runs out of
+  // tile memory after a trip through the door and back.
+  it("paints the art into the scene layer without layers or multiply blends of its own", () => {
+    const sceneRule = sceneCss.match(/\.scene\s*\{([^}]*)\}/)[1].replace(/\/\*[\s\S]*?\*\//g, "");
+    assert.doesNotMatch(sceneRule, /will-change|transform/);
+    assert.doesNotMatch(sceneSource, /mixBlendMode:\s*"multiply"/);
   });
 
   it("is decorative, pointer-inert, and uses valid local references", () => {

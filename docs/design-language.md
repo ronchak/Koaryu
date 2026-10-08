@@ -333,9 +333,11 @@ Shoji surfaces use a directional washi texture:
 - Alpha slope: `0.76`
 - Pattern tile: `220 × 220`
 - Pattern pigment: `#8B7B60` at `0.24` opacity
-- Typical multiply opacity: `0.66–0.82`
+- Typical surface opacity: `0.66–0.82`, laid as a multiply
 
 The `0.24` value belongs to the pigment inside the reusable pattern. The `0.66–0.82` range belongs to each surface consuming that already-dimmed pattern. Do not apply the consumer opacity directly to an undimmed `#8B7B60` fill.
+
+In the landing scene the multiply is baked: surfaces lay `washi-shade.webp`, the shade the grey washi casts under multiply (black at alpha × (1 − grey)), with normal blending. The result is the same, and no blend mode splits the camera-scaled scene into compositor layers.
 
 Washi belongs to paper architecture such as doors, transoms, and scrolls. Do not apply it indiscriminately to every content panel.
 

@@ -100,7 +100,7 @@ const inline = async (path) =>
   `data:image/webp;base64,${(await readFile(new URL(path, publicDir))).toString("base64")}`;
 const textures = Object.fromEntries(
   await Promise.all(
-    ["crumple", "washi", "scene-grain"].map(async (name) => [
+    ["crumple", "washi-shade", "scene-grain"].map(async (name) => [
       `/marketing/${name}.webp`,
       await inline(`marketing/${name}.webp`),
     ]),

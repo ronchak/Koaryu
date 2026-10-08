@@ -7,8 +7,12 @@
   overflow: visible;
   pointer-events: none;
   user-select: none;
-  transform-origin: 50% 56%;
-  will-change: transform;
+  /*
+   * No will-change or blend modes in here: the art paints into the scene
+   * layer. A layer of its own splits the dojo into dozens more, which Chrome
+   * keeps rastered at the camera's deepest zoom, so a trip through the door
+   * and back overruns the tab's tile memory and the page loses paint.
+   */
 }
 
 /*

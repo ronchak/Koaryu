@@ -46,4 +46,27 @@ for (const [name, source] of Object.entries(materials)) {
   const output = await raster.webp({ quality: 75, alphaQuality: 60, effort: 6 }).toBuffer();
   await writeFile(new URL(`../public/marketing/${name}.webp`, import.meta.url), output);
   console.log(`${name}.webp: ${output.length} bytes`);
+  if (name === "washi") await writeWashiShade(output);
+}
+
+// The scene lays washi with normal blending, as the shade it casts under multiply:
+// black at alpha × (1 − grey) darkens any paper exactly as multiplying the grey
+// washi did. A blend mode inside the camera-scaled scene splits it into compositor
+// layers that Chrome keeps rastered at the camera's deepest zoom.
+async function writeWashiShade(washi) {
+  const { data, info } = await sharp(washi)
+    .ensureAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+  const shade = Buffer.alloc(data.length);
+  for (let index = 0; index < data.length; index += 4) {
+    shade[index + 3] = Math.round(data[index + 3] * (1 - data[index] / 255));
+  }
+  const output = await sharp(shade, {
+    raw: { width: info.width, height: info.height, channels: 4 },
+  })
+    .webp({ lossless: true, effort: 6 })
+    .toBuffer();
+  await writeFile(new URL("../public/marketing/washi-shade.webp", import.meta.url), output);
+  console.log(`washi-shade.webp: ${output.length} bytes`);
 }
