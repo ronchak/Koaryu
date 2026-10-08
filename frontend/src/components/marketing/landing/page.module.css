@@ -677,7 +677,23 @@
 }
 
 .faqItem {
+  position: relative;
   border-bottom: 1px solid var(--rule);
+}
+
+/* A wood line draws along the row's rule under the pointer, then leaves the way it was going. */
+.faqItem::after {
+  position: absolute;
+  right: 0;
+  bottom: -1px;
+  left: 0;
+  height: 1.5px;
+  content: "";
+  background: var(--wood);
+  pointer-events: none;
+  transform: scaleX(0);
+  transform-origin: right;
+  transition: transform 460ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .faqItem summary {
@@ -698,11 +714,22 @@
   display: none;
 }
 
+.faqQuestion {
+  transition: transform 380ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* The plus sits on a wood disc that swells under the pointer. */
 .faqIcon {
   position: relative;
   flex: 0 0 auto;
   width: 11px;
   height: 11px;
+  margin-right: 4px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--wood) 0%, transparent);
+  transition:
+    transform 520ms cubic-bezier(0.34, 1.56, 0.64, 1),
+    box-shadow 280ms ease;
 }
 
 .faqIcon::before,
@@ -714,20 +741,56 @@
   height: 1.5px;
   content: "";
   background: currentColor;
-  transition: transform 200ms ease;
+  transition: transform 320ms cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 .faqIcon::after {
   transform: rotate(90deg);
 }
 
-.faqItem[open] .faqIcon::after {
+/* The plus lies down into a minus as the answer opens, and stands as it folds. */
+.faqItem[open]:not([data-closing]) .faqIcon::after {
   transform: rotate(0deg);
 }
 
-.faqItem p {
+.faqItem summary:hover .faqIcon,
+.faqItem summary:focus-visible .faqIcon {
+  box-shadow: 0 0 0 10px color-mix(in srgb, var(--wood) 18%, transparent);
+}
+
+.faqItem:has(> summary:focus-visible)::after {
+  transform: scaleX(1);
+  transform-origin: left;
+}
+
+@media (hover: hover) {
+  .faqItem:has(> summary:hover)::after {
+    transform: scaleX(1);
+    transform-origin: left;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .faqItem summary:hover .faqQuestion,
+  .faqItem summary:focus-visible .faqQuestion {
+    transform: translateX(6px);
+  }
+
+  .faqItem summary:hover .faqIcon,
+  .faqItem summary:focus-visible .faqIcon {
+    transform: rotate(180deg) scale(1.12);
+  }
+}
+
+/* The answer folds open under the question (faq-item.tsx animates its height). */
+.faqAnswer {
+  overflow: hidden;
+}
+
+.faqAnswer p {
   max-width: 62ch;
-  margin: 0 0 20px;
+  margin: 0;
+  padding-bottom: 20px;
   color: var(--muted);
   font-size: 15px;
   line-height: 1.6;
@@ -1162,6 +1225,8 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .faqItem::after,
+  .faqIcon,
   .faqIcon::before,
   .faqIcon::after {
     transition: none;

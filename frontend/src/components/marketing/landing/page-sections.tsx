@@ -6,6 +6,7 @@ import { landingPageContent } from "../../../lib/landing-page-content.ts";
 import { ChapterAction } from "../journey/journey-chapters";
 import { MarketingBrandLink } from "../marketing-primitives";
 import { CLOSE_RIDGES, CLOSE_RIDGE_PATHS } from "./close-hills";
+import { FaqItem } from "./faq-item";
 import styles from "./page.module.css";
 
 function Check() {
@@ -206,13 +207,7 @@ function Faq() {
           <section key={group.id} id={group.id} className={styles.faqGroup}>
             <h3>{group.title}</h3>
             {group.items.map((item) => (
-              <details key={item.question} className={styles.faqItem}>
-                <summary>
-                  <span>{item.question}</span>
-                  <span className={styles.faqIcon} aria-hidden="true" />
-                </summary>
-                <p>{item.answer}</p>
-              </details>
+              <FaqItem key={item.question} question={item.question} answer={item.answer} />
             ))}
           </section>
         ))}

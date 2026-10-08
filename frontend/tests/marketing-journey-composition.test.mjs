@@ -13,6 +13,7 @@ const controllerSource = source("../src/components/marketing/journey/journey-con
 const loomSource = source("../src/components/marketing/journey/weave-loom.tsx");
 const journeyCss = source("../src/components/marketing/journey/journey.module.css");
 const pageSource = source("../src/components/marketing/landing/page-sections.tsx");
+const faqSource = source("../src/components/marketing/landing/faq-item.tsx");
 const pageCss = source("../src/components/marketing/landing/page.module.css");
 const landingSource = source("../src/components/marketing/landing-page.tsx");
 
@@ -28,7 +29,7 @@ describe("Landing composition", () => {
       assert.ok(chapterSource.includes(element), element);
     }
     for (const element of ["<details", "<summary", "<footer", "<dl"]) {
-      assert.ok(pageSource.includes(element), element);
+      assert.ok(`${pageSource}${faqSource}`.includes(element), element);
     }
     // One h1 on the page: the hero.
     assert.equal(`${chapterSource}${pageSource}`.match(/<h1/g)?.length, 1);
