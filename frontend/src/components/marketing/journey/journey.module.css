@@ -809,13 +809,17 @@
   opacity: 0.76;
 }
 
-/* The real screen for the moment, at its own size, set into the sheet like a print. */
+/*
+ * The real screen for the moment, at its own size, set into the sheet like a
+ * print. The frame rounds just inside the screen's own corners (--shot-radius),
+ * so none of the app's backdrop shows in them.
+ */
 .dayShot {
   width: min(100%, var(--shot-width));
   margin: 18px 0 0;
   overflow: hidden;
   border: 1px solid var(--sheet-rule);
-  border-radius: 10px;
+  border-radius: var(--shot-radius, 10px);
   background: #fbf8f1;
   box-shadow: 0 14px 34px -18px rgb(36 24 10 / 34%);
 }

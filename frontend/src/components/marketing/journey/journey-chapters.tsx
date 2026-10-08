@@ -129,6 +129,13 @@ const PHONE_SHOT_SCALE = 0.74;
 /** Narrowest phone column (px) a screen fits at that scale without running off the edge. */
 const PHONE_SHOT_ROOM = 300;
 
+/**
+ * How far past a screen's own corner radius (CSS px) the print's frame rounds:
+ * its 1px border, and room for the clip to pass inside the corner's
+ * antialiased edge, where the app's backdrop is blended in.
+ */
+const SHOT_CORNER_CLEARANCE = 4;
+
 /** The real screen for a moment: drawn at its own size, never stretched. */
 function DayShot({ shot }: { shot: DayShotContent }) {
   const width = shot.width / 2;
@@ -136,7 +143,12 @@ function DayShot({ shot }: { shot: DayShotContent }) {
     <figure
       className={styles.dayShot}
       data-wide={width * PHONE_SHOT_SCALE > PHONE_SHOT_ROOM ? "true" : undefined}
-      style={{ "--shot-width": `${width}px` } as CSSProperties}
+      style={
+        {
+          "--shot-width": `${width}px`,
+          "--shot-radius": `${shot.corner / 2 + SHOT_CORNER_CLEARANCE}px`,
+        } as CSSProperties
+      }
     >
       <Image
         src={shot.src}

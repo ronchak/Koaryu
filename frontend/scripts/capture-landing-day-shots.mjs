@@ -10,7 +10,10 @@
  * are hidden, a few wide layouts are narrowed to a timeline column's width so nothing
  * truncates, and the billing crop keeps to the payer column: online tuition collection is
  * not generally available, so provider columns stay out of frame. Run with --only <name>
- * to recapture one screen.
+ * to recapture one screen. A crop that keeps a component's rounded corners has the app's
+ * backdrop baked in outside them: set the shot's `corner` in landing-page-content.ts to
+ * that radius in file pixels (the content contract test measures it), so the print's
+ * frame rounds inside it.
  */
 import { mkdir } from "node:fs/promises";
 import { join, resolve } from "node:path";

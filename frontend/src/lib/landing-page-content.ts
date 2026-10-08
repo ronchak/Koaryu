@@ -84,6 +84,12 @@ export interface DayShot {
   /** Pixel size of the file; the crop is drawn at half this size. */
   width: number;
   height: number;
+  /**
+   * Radius, in file pixels, of the screen's own rounded corners where the crop
+   * keeps them. The print's frame rounds just inside it, so none of the app's
+   * backdrop shows in a corner.
+   */
+  corner: number;
   alt: string;
 }
 
@@ -230,6 +236,7 @@ const dayMoments: readonly DayMoment[] = [
       src: "/marketing/product/day-import.webp",
       width: 1080,
       height: 670,
+      corner: 24,
       alt: "Koaryu's import mapping each column of a spreadsheet, such as First Name, Last Name and Email, to a student field.",
     },
   },
@@ -243,6 +250,7 @@ const dayMoments: readonly DayMoment[] = [
       src: "/marketing/product/day-dashboard.webp",
       width: 1140,
       height: 384,
+      corner: 22,
       alt: "The dashboard's Classes Today panel: three sessions, each with how many students have checked in.",
     },
   },
@@ -256,6 +264,7 @@ const dayMoments: readonly DayMoment[] = [
       src: "/marketing/product/day-lead.webp",
       width: 800,
       height: 744,
+      corner: 23,
       alt: "A trial lead with contact details and a follow-up due today, ready to move to Trial Scheduled.",
     },
   },
@@ -269,6 +278,7 @@ const dayMoments: readonly DayMoment[] = [
       src: "/marketing/product/day-family.webp",
       width: 920,
       height: 504,
+      corner: 23,
       alt: "A student's primary guardian, recorded on the student's own profile with name, email, phone and relation.",
     },
   },
@@ -282,6 +292,7 @@ const dayMoments: readonly DayMoment[] = [
       src: "/marketing/product/day-attendance.webp",
       width: 1152,
       height: 880,
+      corner: 36,
       alt: "A class roster: three of twenty students present, with each student checked in by a tap.",
     },
   },
@@ -295,6 +306,7 @@ const dayMoments: readonly DayMoment[] = [
       src: "/marketing/product/day-ranks.webp",
       width: 1080,
       height: 592,
+      corner: 23,
       alt: "A rank plan: White Belt with stripes, each requiring a number of classes and months at rank.",
     },
   },
@@ -308,6 +320,7 @@ const dayMoments: readonly DayMoment[] = [
       src: "/marketing/product/day-billing.webp",
       width: 600,
       height: 830,
+      corner: 25,
       alt: "Payers with their status, current, past due or externally paid, and outstanding balances.",
     },
   },

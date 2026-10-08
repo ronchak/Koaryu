@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, it } from "node:test";
+import sharp from "sharp";
 import {
   PUBLIC_PLATFORM_PRICE,
   formatPublicPlatformPrice,
@@ -80,6 +81,40 @@ describe("marketing content contract", () => {
     assert.equal(landingPageContent.tryIt.action.href, "/try");
     assert.match(landingPageContent.tryIt.miniature.caption, /Sample students/);
     assert.match(chapter("studio").caption, /Illustration with sample students/);
+  });
+
+  // A crop that keeps a screen's rounded corners has the app's backdrop baked
+  // in outside them; the print's frame must round at least that far.
+  it("frames each day screen inside its own rounded corners", async () => {
+    for (const { shot } of chapter("features").moments) {
+      const file = join(frontendRoot, "public", shot.src);
+      const { data, info } = await sharp(file).raw().toBuffer({ resolveWithObject: true });
+      assert.deepEqual([info.width, info.height], [shot.width, shot.height], shot.src);
+      const pixel = (x, y) => data.subarray((y * info.width + x) * info.channels).subarray(0, 3);
+      const differs = (a, b) => a.some((value, index) => Math.abs(value - b[index]) > 10);
+      let baked = 0;
+      for (const [x0, y0, dx, dy] of [
+        [0, 0, 1, 1],
+        [info.width - 1, 0, -1, 1],
+        [info.width - 1, info.height - 1, -1, -1],
+        [0, info.height - 1, 1, -1],
+      ]) {
+        // How far the corner's colour runs along each edge before the screen's own edge.
+        for (const [stepX, stepY] of [
+          [dx, 0],
+          [0, dy],
+        ]) {
+          const edge = pixel(x0 + stepX * 90, y0 + stepY * 90);
+          let run = 0;
+          while (run < 90 && differs(pixel(x0 + stepX * run, y0 + stepY * run), edge)) run += 1;
+          baked = Math.max(baked, run);
+        }
+      }
+      assert.ok(
+        baked <= shot.corner,
+        `${shot.src}: corners run ${baked}px, framed for ${shot.corner}px`,
+      );
+    }
   });
 
   it("preserves direct destinations and states current product limits once, plainly", () => {
