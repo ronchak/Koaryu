@@ -268,6 +268,7 @@ for (const close of ["Escape", "Keep reviewing", "backdrop"])
         );
       });
       await expect(page.getByRole("dialog", { name: "Cancel this run?" })).toBeVisible();
+      if (close === "Escape") await expect(button(page, "Keep reviewing")).toBeFocused();
       if (close === "Escape") await page.keyboard.press("Escape");
       else if (close === "backdrop")
         await page.locator(".koaryu-modal-backdrop").click({ position: { x: 2, y: 2 } });
