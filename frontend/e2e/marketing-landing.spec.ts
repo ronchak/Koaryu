@@ -22,7 +22,9 @@ async function openLanding(page: Page, hash = "") {
 }
 
 async function sceneProgress(page: Page) {
-  return Number(await page.locator("svg[data-scene-progress]").getAttribute("data-scene-progress"));
+  return Number(
+    await page.locator("svg[data-scene-progress]").first().getAttribute("data-scene-progress"),
+  );
 }
 
 async function centerChapter(page: Page, id: string) {
@@ -166,6 +168,7 @@ test("the scene holds still while a chapter is read and moves only between chapt
   });
   const driftBefore = await page
     .locator("svg[data-scene-progress]")
+    .first()
     .evaluate((svg) => (svg as SVGElement).style.transform);
   for (const step of [-120, 80, 120, -60]) {
     await page.mouse.wheel(0, step);
@@ -178,6 +181,7 @@ test("the scene holds still while a chapter is read and moves only between chapt
   expect(await sceneProgress(page)).toBe(0.52);
   const driftAfter = await page
     .locator("svg[data-scene-progress]")
+    .first()
     .evaluate((svg) => (svg as SVGElement).style.transform);
   expect(driftAfter).toMatch(/^scale\(/);
   // With snapping, small reading scrolls settle back onto the chapter, so the drift returns too.

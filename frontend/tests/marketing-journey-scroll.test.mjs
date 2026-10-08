@@ -24,7 +24,7 @@ import {
   stopToward,
   storyKeyframes,
   storyCuts,
-  cutDip,
+  cutCover,
 } from "../src/components/marketing/journey/paging-model.ts";
 import {
   LANDING_HASH_ALIASES,
@@ -211,7 +211,7 @@ describe("Stops, beats and motion", () => {
     assert.deepEqual(storyKeyframes([], H), []);
   });
 
-  it("cuts from the clouds to the room through a dip, never playing the scene between", () => {
+  it("dissolves from the clouds into the room, never playing the scene between", () => {
     const pair = [
       { id: "the-weave", y: 0, scene: 0.685 },
       { id: "studio", y: 1900, scene: 1 },
@@ -219,18 +219,23 @@ describe("Stops, beats and motion", () => {
     const keyframes = storyKeyframes(pair, H);
     const [cut] = storyCuts(pair, H);
     const { at, scene } = STORY_BEATS.studio.cut;
+    const end = 1900 - 0.6 * H;
     assert.equal(cut.to, scene);
-    assert.equal(cut.y, 0.4 * H + (1900 - 0.6 * H - 0.4 * H) * at);
+    assert.equal(cut.y, 0.4 * H + (end - 0.4 * H) * at);
     // The clouds hold right up to the cut, and the room is there right after it.
     assert.equal(progressForScroll(cut.y - 1, keyframes), 0.685);
     assert.ok(progressForScroll(cut.y + 1, keyframes) >= scene);
     // No keyframe lands inside the weave.
     assert.ok(!keyframes.some((frame) => frame.scene > 0.69 && frame.scene < scene));
-    // The art is gone at the cut and back before either stop.
-    assert.equal(cutDip([cut], cut.y), 1);
-    assert.equal(cutDip([cut], 0), 0);
-    assert.equal(cutDip([cut], 1900), 0);
-    assert.equal(cutDip([cut], cut.y + cut.reach / 2), 0.5);
+    // A still of the clouds covers the art as soon as the reader leaves them,
+    // hides the jump, and has dissolved into the room before the class's copy.
+    assert.equal(cutCover([cut], 0), null);
+    assert.deepEqual(cutCover([cut], 1), { scene: 0.685, opacity: 1 });
+    assert.equal(cutCover([cut], cut.y).opacity, 1);
+    assert.equal(cutCover([cut], cut.y + cut.reach / 2).opacity, 0.5);
+    assert.equal(cutCover([cut], cut.y + cut.reach), null);
+    assert.ok(cut.y + cut.reach < end);
+    assert.equal(cutCover([cut], 1900), null);
   });
 
   it("draws a monotone, smooth curve that never overshoots a knot", () => {

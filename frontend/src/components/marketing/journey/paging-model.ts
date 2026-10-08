@@ -265,8 +265,8 @@ export interface StoryStop {
  * heights before the next stop, so the incoming copy rises over a finished
  * frame. `via` paces the beat in between with extra scene keyframes (fractions
  * of the beat's scroll span). `ms` is the beat's own duration when paged.
- * `cut` (a fraction of the span) skips the scene in between: the art dips to
- * the paper ground there and comes back on the far side of the cut.
+ * `cut` (a fraction of the span) skips the scene in between: there the scene
+ * jumps to the far side under a still of the near side, which dissolves away.
  */
 export interface BeatSpec {
   readonly ms: number;
@@ -276,8 +276,8 @@ export interface BeatSpec {
   readonly cut?: { readonly at: number; readonly scene: number };
 }
 
-/** How much of a cut beat's span the art takes to dip out, and again to come back. */
-export const CUT_DIP = 0.24;
+/** How much of a cut beat's span the still of the near side takes to dissolve. */
+export const CUT_DISSOLVE = 0.5;
 
 const DEFAULT_BEAT: BeatSpec = Object.freeze({ ms: 900, exit: 0.42, enter: 0.6 });
 
@@ -300,13 +300,12 @@ export const STORY_BEATS: Readonly<Record<string, BeatSpec>> = Object.freeze({
     enter: 0.5,
     via: [{ at: 0.45, scene: 0.66 }],
   },
-  // The clouds dip into the paper and the finished room comes up out of it,
-  // where the class sits down.
+  // The clouds dissolve into the finished room as the class files in and sits.
   studio: {
-    ms: 1150,
+    ms: 1300,
     exit: 0.4,
     enter: 0.6,
-    cut: { at: 0.45, scene: 0.958 },
+    cut: { at: 0.12, scene: 0.958 },
   },
   // The class becomes a framed picture and the page turns white. No copy moves.
   handoff: { ms: 1150, exit: 0, enter: 0 },
@@ -363,7 +362,9 @@ export function storyKeyframes(
 }
 
 export interface StoryCut {
-  /** Scroll position of the cut, and how far either side of it the art is dipped. */
+  /** Where the reader leaves the near stop: its still covers the art from here. */
+  readonly start: number;
+  /** Scroll position of the cut, and how far past it the still dissolves. */
   readonly y: number;
   readonly reach: number;
   /** The scene on either side; the camera never travels between them. */
@@ -371,7 +372,7 @@ export interface StoryCut {
   readonly to: number;
 }
 
-/** The cuts between stops, for the dip that hides each one. */
+/** The cuts between stops, for the still that covers each one. */
 export function storyCuts(stops: readonly StoryStop[], viewportHeight: number): StoryCut[] {
   const cuts: StoryCut[] = [];
   for (let index = 1; index < stops.length; index += 1) {
@@ -382,16 +383,32 @@ export function storyCuts(stops: readonly StoryStop[], viewportHeight: number): 
     const start = from.y + exit * viewportHeight;
     const end = to.y - enter * viewportHeight;
     const span = Math.max(1, end - start);
-    cuts.push({ y: start + span * cut.at, reach: span * CUT_DIP, from: from.scene, to: cut.scene });
+    cuts.push({
+      start: from.y,
+      y: start + span * cut.at,
+      reach: span * CUT_DISSOLVE,
+      from: from.scene,
+      to: cut.scene,
+    });
   }
   return cuts;
 }
 
-/** How far the art is dipped into the paper at a scroll position: 0 clear, 1 gone. */
-export function cutDip(cuts: readonly StoryCut[], y: number): number {
-  let dip = 0;
-  for (const cut of cuts) dip = Math.max(dip, 1 - Math.abs(y - cut.y) / cut.reach);
-  return Math.max(0, Math.min(1, dip));
+/**
+ * The still of a cut's near side, laid over the art from the moment the reader
+ * leaves that stop: fully there until the cut, then dissolving into the far
+ * side. Null wherever no cut needs covering.
+ */
+export function cutCover(
+  cuts: readonly StoryCut[],
+  y: number,
+): { readonly scene: number; readonly opacity: number } | null {
+  for (const cut of cuts) {
+    if (y <= cut.start || y >= cut.y + cut.reach) continue;
+    const t = Math.max(0, (y - cut.y) / cut.reach);
+    return { scene: cut.from, opacity: 1 - t * t * (3 - 2 * t) };
+  }
+  return null;
 }
 
 /** Index of the stop the position rests on, or -1 between stops. */

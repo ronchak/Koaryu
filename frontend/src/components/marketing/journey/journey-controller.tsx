@@ -35,7 +35,7 @@ import {
   stopToward,
   storyKeyframes,
   storyCuts,
-  cutDip,
+  cutCover,
   type StoryCut,
   type Motion,
   type PictureRect,
@@ -66,6 +66,8 @@ const MASTHEAD_DIRECTION_PX = 6;
 /** Jumps longer than this many screens cut through a veil. */
 const FAR_SCREENS = 3.2;
 const VEIL_MS = 190;
+/** How far the still of a cut's near side drifts toward the reader as it dissolves. */
+const COVER_PUSH = 0.05;
 
 const studio = landingPageContent.story.find((chapter) => chapter.kind === "studio");
 
@@ -156,10 +158,13 @@ export function JourneyController({ children }: JourneyControllerProps) {
   const mastheadRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<JourneySceneHandle>(null);
   const loomRef = useRef<WeaveLoomHandle>(null);
+  const coverRef = useRef<HTMLDivElement>(null);
+  const coverSceneRef = useRef<JourneySceneHandle>(null);
   const engineRef = useRef<Engine | null>(null);
   const [frame, setFrame] = useState(() => frameForDimensions(SCENE_WIDTH, SCENE_HEIGHT));
   const [layerSize, setLayerSize] = useState({ width: SCENE_WIDTH, height: SCENE_HEIGHT });
   const [enhanced, setEnhanced] = useState(false);
+  const [coverReady, setCoverReady] = useState(false);
   const [active, setActive] = useState(0);
 
   useEffect(() => {
@@ -168,7 +173,8 @@ export function JourneyController({ children }: JourneyControllerProps) {
     const layer = sceneLayerRef.current;
     const ring = ringRef.current;
     const masthead = mastheadRef.current;
-    if (!root || !dock || !layer || !ring || !masthead) return;
+    const cover = coverRef.current;
+    if (!root || !dock || !layer || !ring || !masthead || !cover) return;
 
     const motionQuery = window.matchMedia(MOTION_QUERY);
     const compactQuery = window.matchMedia(COMPACT_QUERY);
@@ -176,7 +182,8 @@ export function JourneyController({ children }: JourneyControllerProps) {
     let panels: (HTMLElement | null)[] = [];
     let keyframes: SceneKeyframe[] = [];
     let cuts: StoryCut[] = [];
-    let appliedDip = "";
+    let appliedCover = "";
+    let coveredScene = Number.NaN;
     let scenes: number[] = [];
     let classY = 0;
     let pageY = 0;
@@ -493,12 +500,21 @@ export function JourneyController({ children }: JourneyControllerProps) {
       }
       applyPicture(y);
       applyReveals(y);
-      // Across a cut the art dips into the paper ground and comes back.
-      const dip = reduced() ? 0 : cutDip(cuts, y);
-      const dipOpacity = dip > 0.001 ? (1 - dip * dip * (3 - 2 * dip)).toFixed(3) : "";
-      if (dipOpacity !== appliedDip) {
-        appliedDip = dipOpacity;
-        layer.style.opacity = dipOpacity;
+      // Across a cut a still of the near side covers the jump, then dissolves
+      // into the far side, drifting toward the reader as it goes.
+      const still = reduced() ? null : cutCover(cuts, y);
+      const coverScene = still ? coverSceneRef.current : null;
+      const coverKey = still && coverScene ? still.opacity.toFixed(3) : "";
+      if (coverKey !== appliedCover) {
+        if (still && coverScene && still.scene !== coveredScene) {
+          coverScene.setProgress(still.scene);
+          coveredScene = still.scene;
+        }
+        appliedCover = coverKey;
+        cover.dataset.shown = coverKey ? "true" : "false";
+        cover.style.opacity = coverKey;
+        cover.style.transform =
+          still && coverKey ? `scale(${(1 + COVER_PUSH * (1 - still.opacity)).toFixed(4)})` : "";
       }
       setFlag("scrolled", y > 8 && !mastheadOverHills(displayed, viewBoxHeight) ? "true" : "false");
 
@@ -1026,6 +1042,19 @@ export function JourneyController({ children }: JourneyControllerProps) {
     };
   }, []);
 
+  // The cut's cover is a second copy of the art, built once the page is idle
+  // and never sent in the server's HTML.
+  useEffect(() => {
+    if (!enhanced || coverReady) return;
+    const build = () => setCoverReady(true);
+    if (typeof window.requestIdleCallback === "function") {
+      const handle = window.requestIdleCallback(build, { timeout: 1500 });
+      return () => window.cancelIdleCallback(handle);
+    }
+    const handle = window.setTimeout(build, 600);
+    return () => window.clearTimeout(handle);
+  }, [enhanced, coverReady]);
+
   // In-page links travel through the story instead of cutting to it.
   const onClickCapture = useCallback((event: ReactMouseEvent<HTMLDivElement>) => {
     if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
@@ -1072,6 +1101,14 @@ export function JourneyController({ children }: JourneyControllerProps) {
             <JourneyScene ref={sceneRef} frame={frame} />
             {/* The weave is part of the picture: it takes the scene's paper grain. */}
             <WeaveLoom ref={loomRef} width={layerSize.width} height={layerSize.height} />
+          </div>
+          {/* A still of a cut's near side, dissolving over the jump to the far side. */}
+          <div
+            ref={coverRef}
+            className={`${styles.sceneLayer} ${styles.sceneCover}`}
+            data-shown="false"
+          >
+            {coverReady ? <JourneyScene ref={coverSceneRef} frame={frame} /> : null}
           </div>
           {/* The timber frame the story has been inside all along. */}
           <div ref={ringRef} className={styles.pictureRing} />

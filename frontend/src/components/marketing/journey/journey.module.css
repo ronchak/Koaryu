@@ -148,6 +148,17 @@
   mix-blend-mode: multiply;
 }
 
+/* The still that covers a cut: the scene layer's twin, shown only while it dissolves. */
+.sceneCover {
+  display: none;
+  transform-origin: 50% 50%;
+  will-change: transform, opacity;
+}
+
+.sceneCover[data-shown="true"] {
+  display: block;
+}
+
 /*
  * The weave sits inside the scene layer, over the artwork and under its grain,
  * between the sky and the room. Its sky and its mat are each clipped by a pair
