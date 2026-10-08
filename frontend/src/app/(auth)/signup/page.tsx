@@ -8,6 +8,7 @@ import { getAuthCallbackUrl } from "@/lib/auth-redirect";
 import { clearActiveStudioIdCookie, setStudioStateCookie } from "@/lib/studio-state-cookie";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { LegalConsentNotice } from "@/components/auth/legal-consent-notice";
 import { SocialSignIn } from "@/components/auth/social-sign-in";
 
 export default function SignupPage() {
@@ -148,6 +149,8 @@ export default function SignupPage() {
           Create account
         </Button>
       </form>
+
+      <LegalConsentNotice action="creating an account or continuing with Google or Microsoft" />
 
       {/* Login link */}
       <div className="mt-5 pt-5 border-t border-border text-center">

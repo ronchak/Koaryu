@@ -9,6 +9,12 @@ nothing noticed when it stopped serving.
 one, add it here in the same change. If you find one that is not here, either
 document it or delete it.
 
+The [Privacy Policy](https://koaryu.app/privacy#sharing) names every provider that
+processes personal information, with what it does and where. When a provider that
+touches user, studio or payer data is added, removed or moves region, update the
+service-provider table in `frontend/src/app/privacy/page.tsx` in the same change and
+add a revision in `frontend/src/lib/legal-documents.ts`.
+
 Inventory baseline: 2026-08-24. September 20, 2026 historical release readback: both databases were V50, 145 migrations. Production frontend/backend served PR240 candidate `fe2a37bf97bb87897b3f8e03d83611c81d69b9c0`. Staging had last been verified at Microsoft sign-in candidate `cd2fb0ef0d2655f8f3192e85e93c1c5a95c78225` and was not changed or reverified for PR240. See [Microsoft SSO verification](microsoft-sso-setup.md#september-20-release-verification). At that readback, both web services were active; the staging billing cron remained suspended and production auto-deploy was off. Reinspect live state for future releases; the combined V55 candidate gates are in [Cutover Gates](cutover-gates.md). See [the completed verification](remediation/production-release-verification.md).
 
 ## Quick map

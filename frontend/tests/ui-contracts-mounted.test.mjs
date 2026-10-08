@@ -7,6 +7,8 @@ import { test } from "node:test";
 import { chromium } from "@playwright/test";
 import ts from "typescript";
 
+import { legalContact, legalDocuments } from "../src/lib/legal-documents.ts";
+
 const require = createRequire(import.meta.url);
 const frontend = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -186,19 +188,10 @@ test("Privacy and Terms render complete legal document behavior", async () => {
   const browser = await chromium.launch({ headless: true });
   try {
     for (const contract of [
-      {
-        route: "privacy",
-        navigation: "Privacy policy sections",
-        document: "Privacy policy",
-        sections: 7,
-      },
-      {
-        route: "terms",
-        navigation: "Terms of service sections",
-        document: "Terms of service",
-        sections: 6,
-      },
+      { route: "privacy", sections: 17 },
+      { route: "terms", sections: 21 },
     ]) {
+      const entry = legalDocuments[contract.route];
       const page = await openFixture(browser);
       await page.addScriptTag({
         content: mountBundle(
@@ -208,23 +201,63 @@ test("Privacy and Terms render complete legal document behavior", async () => {
       `,
         ),
       });
-      const article = page.getByRole("article", { name: contract.document });
+      const article = page.getByRole("article", { name: entry.title });
       await article.waitFor();
-      assert.equal(await page.getByRole("heading", { level: 1 }).count(), 1);
-      assert.equal(await page.locator('time[datetime="2026-05-19"]').count(), 1);
-      const links = page.getByRole("navigation", { name: contract.navigation }).getByRole("link");
-      assert.equal(await links.count(), contract.sections);
-      for (let index = 0; index < contract.sections; index += 1) {
+      assert.equal(await page.getByRole("heading", { level: 1 }).textContent(), entry.title);
+
+      // Both documents are one switch apart, and the current one is marked.
+      const switcher = page.getByRole("navigation", { name: "Legal documents" }).getByRole("link");
+      assert.deepEqual(
+        await switcher.evaluateAll((links) => links.map((link) => link.getAttribute("href"))),
+        ["/terms", "/privacy"],
+      );
+      assert.equal(
+        await page
+          .locator('nav[aria-label="Legal documents"] a[aria-current="page"]')
+          .getAttribute("href"),
+        entry.href,
+      );
+
+      assert.equal((await page.locator(`time[datetime="${entry.effective}"]`).count()) >= 1, true);
+      for (const revision of entry.history) {
+        assert.equal(await article.locator(`li time[datetime="${revision.date}"]`).count(), 1);
+      }
+
+      // Contents lists the summary and every numbered section, each landing on its own heading.
+      const links = page
+        .getByRole("navigation", { name: `${entry.title} contents` })
+        .getByRole("link");
+      assert.equal(await links.count(), contract.sections + 1);
+      const ids = new Set();
+      for (let index = 0; index < contract.sections + 1; index += 1) {
         const link = links.nth(index);
         const target = await link.getAttribute("href");
         assert.ok(target?.startsWith("#"));
+        ids.add(target);
         assert.equal(
           await page.locator(target).getByRole("heading", { level: 2 }).textContent(),
-          await link.textContent(),
+          await link.locator("span").last().textContent(),
         );
       }
+      assert.equal(ids.size, contract.sections + 1);
+      assert.equal(
+        await article.locator('a[href^="#"][aria-label^="Link to section"]').count(),
+        contract.sections,
+      );
+
       assert.ok((await article.locator("section p").count()) >= contract.sections);
-      assert.ok((await article.locator("aside").textContent())?.trim());
+      assert.ok((await article.locator("aside").first().textContent())?.trim());
+      assert.equal(
+        await article.locator(`a[href^="mailto:${legalContact.email}"]`).first().isVisible(),
+        true,
+      );
+      // Every in-page reference points at a section that exists.
+      const fragments = await article
+        .locator('a[href^="#"]')
+        .evaluateAll((anchors) => anchors.map((anchor) => anchor.getAttribute("href")));
+      for (const fragment of fragments) {
+        assert.equal(await page.locator(fragment).count(), 1, fragment);
+      }
       await page.close();
     }
   } finally {

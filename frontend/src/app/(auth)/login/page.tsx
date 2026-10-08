@@ -12,6 +12,7 @@ import { parseAuthProfileResponse } from "@/lib/store-bootstrap-model";
 import { syncStoredStudioSessionCookies } from "@/lib/store-session-cookies";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { LegalConsentNotice } from "@/components/auth/legal-consent-notice";
 import { SocialSignIn } from "@/components/auth/social-sign-in";
 import { CallbackError } from "@/components/auth/callback-error";
 
@@ -218,6 +219,8 @@ export default function LoginPage() {
           {mode === "password" ? "Sign in with magic link instead" : "Sign in with password instead"}
         </button>
       </div>
+
+      <LegalConsentNotice action="continuing" />
 
       {/* Signup link */}
       <div className="mt-5 pt-5 border-t border-border text-center">
