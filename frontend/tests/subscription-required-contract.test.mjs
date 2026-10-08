@@ -33,7 +33,7 @@ describe("subscription-required billing contract", () => {
     assert.match(pageSource, /checkout and portal actions are currently disabled/i);
     assert.match(pageSource, /Start Koaryu Core/);
     assert.match(pageSource, /Customer portal/);
-    assert.match(pageSource, /mailto:support@koaryu\.app/);
+    assert.match(pageSource, /mailto:\$\{SUPPORT_EMAIL\}\?subject=Koaryu%20Core%20access/);
     assert.match(pageSource, /parseAuthProfileResponse/);
     assert.match(pageSource, /syncStoredStudioSessionCookies/);
     assert.match(pageSource, /profile\.membership_status === "archived"/);

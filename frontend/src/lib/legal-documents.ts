@@ -1,3 +1,5 @@
+import { SUPPORT_EMAIL } from "./constants.ts";
+
 export type LegalDocumentKey = "terms" | "privacy";
 
 export interface LegalRevision {
@@ -16,7 +18,7 @@ export interface LegalDocumentEntry {
 
 /** One support inbox handles legal, privacy and account requests. */
 export const legalContact = {
-  email: "support@koaryu.app",
+  email: SUPPORT_EMAIL,
 } as const;
 
 export const legalDocuments: Record<LegalDocumentKey, LegalDocumentEntry> = {

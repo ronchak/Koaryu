@@ -49,6 +49,12 @@ export const APP_NAME = "Koaryu";
 export const APP_TAGLINE = "A warrior's flow.";
 export const APP_DESCRIPTION = "The daily operating system for independent martial arts studios.";
 
+/**
+ * The one inbox for support, legal and privacy mail. koaryu.app does not receive
+ * mail yet (docs/koaryu-operations.md, DOC1-05), so the owner's interim inbox is used.
+ */
+export const SUPPORT_EMAIL = "koaryu@outlook.com";
+
 // Advertised standard only; an activated studio's configured rate takes precedence.
 export const PUBLIC_PAYMENTS_FEE_PERCENT = 0.5;
 
