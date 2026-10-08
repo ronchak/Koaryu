@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { V57_RELEASE_MANIFEST_SQL, EXPECTED_V57_RELEASE_MANIFEST, V57_AUTOMATION_TABLE_STATE_SQL, V57_AUTOMATION_FUNCTION_STATE_SQL, EXPECTED_V57_CATALOG_STATE, EXPECTED_V57_RESTORED_CATALOG_STATE, EXPECTED_V57_AUTOMATION_TABLE_STATE, EXPECTED_V57_RESTORED_AUTOMATION_TABLE_STATE, EXPECTED_V57_AUTOMATION_FUNCTION_STATE, EXPECTED_V56_OPERATIONAL_READINESS } from "./studio-comp-migration-rollout.mjs";
+import { V57_RELEASE_MANIFEST_SQL, EXPECTED_V57_RELEASE_MANIFEST, V57_AUTOMATION_TABLE_STATE_SQL, V57_AUTOMATION_FUNCTION_STATE_SQL, EXPECTED_V57_CATALOG_STATE, EXPECTED_V57_RESTORED_CATALOG_STATE, EXPECTED_V57_AUTOMATION_TABLE_STATE, EXPECTED_V57_RESTORED_AUTOMATION_TABLE_STATE, EXPECTED_V57_PLATFORM_AUTOMATION_TABLE_STATE, EXPECTED_V57_RESTORED_PLATFORM_AUTOMATION_TABLE_STATE, EXPECTED_V57_AUTOMATION_FUNCTION_STATE, EXPECTED_V56_OPERATIONAL_READINESS } from "./studio-comp-migration-rollout.mjs";
 import { V56_RELEASE_MANIFEST_SQL, EXPECTED_V56_V55_COMPATIBILITY_SHA256, EXPECTED_V55_OPERATIONAL_READINESS, EXPECTED_V56_CATALOG_STATE, EXPECTED_V56_RESTORED_CATALOG_STATE, EXPECTED_V56_CRITICAL_SURFACE_MANIFEST, EXPECTED_V56_OPERATIONAL_MANIFEST_V10, EXPECTED_V56_OPERATIONAL_MANIFEST_V11, EXPECTED_V56_V30_REPLAY_REPAIRS_MANIFEST, EXPECTED_V56_V30_OPERATIONAL_CONTRACT, EXPECTED_V56_EXPECTATION_STATE, EXPECTED_V56_RESOURCE_OWNERSHIP_MANIFEST, EXPECTED_V56_OPERATIONAL_CONTRACT, EXPECTED_V56_OPERATIONAL_MANIFEST_V12, EXPECTED_V56_RELEASE_MANIFEST, EXPECTED_V56_AUTOMATION_TABLE_STATE, EXPECTED_V56_AUTOMATION_FUNCTION_STATE } from "./studio-comp-migration-rollout.mjs";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
@@ -586,6 +586,8 @@ const validV56RestoredFingerprint = validV56Fingerprint.replace(
 );
 const validFingerprint = `v57_catalog=${EXPECTED_V57_CATALOG_STATE};v57_tables=${EXPECTED_V57_AUTOMATION_TABLE_STATE};v57_functions=${EXPECTED_V57_AUTOMATION_FUNCTION_STATE};v57_release=${EXPECTED_V57_RELEASE_MANIFEST};v56_compat=${createHash("sha256").update(EXPECTED_V56_OPERATIONAL_READINESS).digest("hex")}`;
 const validRestoredFingerprint = validFingerprint.replace(EXPECTED_V57_CATALOG_STATE,EXPECTED_V57_RESTORED_CATALOG_STATE).replace(EXPECTED_V57_AUTOMATION_TABLE_STATE,EXPECTED_V57_RESTORED_AUTOMATION_TABLE_STATE);
+const validPlatformFingerprint = validFingerprint.replace(EXPECTED_V57_AUTOMATION_TABLE_STATE,EXPECTED_V57_PLATFORM_AUTOMATION_TABLE_STATE);
+const validRestoredPlatformFingerprint = validRestoredFingerprint.replace(EXPECTED_V57_RESTORED_AUTOMATION_TABLE_STATE,EXPECTED_V57_RESTORED_PLATFORM_AUTOMATION_TABLE_STATE);
 
 function historyColumn(column_name, data_type, udt_name, overrides = {}) {
   return {
@@ -1499,6 +1501,8 @@ describe("studio-comp migration rollout guard", () => {
     assert.deepEqual(approvedProviderFingerprintVariants(validFingerprint), [
       validFingerprint,
       validRestoredFingerprint,
+      validPlatformFingerprint,
+      validRestoredPlatformFingerprint,
     ]);
     assert.throws(
       () => approvedProviderFingerprintVariants(validRestoredFingerprint),
@@ -3503,7 +3507,7 @@ describe("studio-comp migration rollout guard", () => {
       ["v53", "20260930024404_student_profile_qa_v54.sql", "ca12f2b920bf8661dd47d04b13eb5f39de264f22943159dd1e5862e12c59cb61", "v54"],
       ["v54", "20260930192626_converted_lead_enrollment_v55.sql", "fc6bfd9b249ec888ae860d4f0d2952e0dc5a18f4801dd8f1049c2c2f33e9e573", "v55"],
       ["v55", "20261004220435_missed_class_automation_v56.sql", "9e85608dcbd14e5eb5a19ff4d1ffd4851659f44b3460239a7f008d6e79efd92f", "v56"],
-      ["v56", "20261005105341_automation_workflow_graph_v57.sql", "59c63851e97e986c98adc10fc75f2da783bdac7899a01a58edadf04530044339", "post"],
+      ["v56", "20261005105341_automation_workflow_graph_v57.sql", "5f1e5d3d51eca8d5ebb99bfd69a244ae85e82a67cc6bd30dde1a88fec11d8af4", "post"],
     ];
     for (const [state, filename, manifestSha256, expectedAfterState] of transitions) {
       const selected = oneMigrationPacket(packet, state);
@@ -4315,11 +4319,33 @@ describe("V52 lead command migration cutover with retained predecessors", () => 
     const packet = candidatePacket();
     assert.deepEqual(classifyStateSnapshot(postSnapshot(packet), packet), {state:"post",providerFingerprint:validFingerprint});
     assert.deepEqual(classifyStateSnapshot(v56Snapshot(packet), packet), {state:"v56",providerFingerprint:null});
-    assert.deepEqual(approvedProviderFingerprintVariants(validFingerprint), [validFingerprint,validRestoredFingerprint]);
+    assert.deepEqual(approvedProviderFingerprintVariants(validFingerprint), [validFingerprint,validRestoredFingerprint,validPlatformFingerprint,validRestoredPlatformFingerprint]);
     for (const change of [{v57ReleaseManifest:null},{v57AutomationTableState:null},{v57AutomationFunctionState:null},
                          {v56CompatibilityReadiness:null},{v56CompatibilityReadiness:EXPECTED_OPERATIONAL_READINESS}]) {
       assert.throws(()=>classifyStateSnapshot(postSnapshot(packet,change),packet));
     }
+  });
+  it("accepts only the four exact V57 table profiles with matching catalog and approval evidence", () => {
+    const packet = candidatePacket();
+    const profiles = [
+      [EXPECTED_V57_CATALOG_STATE, EXPECTED_V57_AUTOMATION_TABLE_STATE, validFingerprint],
+      [EXPECTED_V57_RESTORED_CATALOG_STATE, EXPECTED_V57_RESTORED_AUTOMATION_TABLE_STATE, validRestoredFingerprint],
+      [EXPECTED_V57_CATALOG_STATE, EXPECTED_V57_PLATFORM_AUTOMATION_TABLE_STATE, validPlatformFingerprint],
+      [EXPECTED_V57_RESTORED_CATALOG_STATE, EXPECTED_V57_RESTORED_PLATFORM_AUTOMATION_TABLE_STATE, validRestoredPlatformFingerprint],
+    ];
+    for (const [catalogState, v57AutomationTableState, providerFingerprint] of profiles) {
+      assert.deepEqual(classifyStateSnapshot(postSnapshot(packet, { catalogState, v57AutomationTableState }), packet, validPlatformFingerprint),
+        { state: "post", providerFingerprint });
+      assert.throws(() => classifyStateSnapshot(postSnapshot(packet, {
+        catalogState, v57AutomationTableState: v57AutomationTableState.slice(0, -1) + "z",
+      }), packet), /V57 complete catalog/);
+    }
+    for (const [catalogState, v57AutomationTableState] of [
+      [EXPECTED_V57_CATALOG_STATE, EXPECTED_V57_RESTORED_PLATFORM_AUTOMATION_TABLE_STATE],
+      [EXPECTED_V57_RESTORED_CATALOG_STATE, EXPECTED_V57_PLATFORM_AUTOMATION_TABLE_STATE],
+    ]) assert.throws(() => classifyStateSnapshot(postSnapshot(packet, { catalogState, v57AutomationTableState }), packet), /V57 complete catalog/);
+    assert.deepEqual(approvedProviderFingerprintVariants(validPlatformFingerprint), profiles.map(row => row[2]));
+    assert.throws(() => approvedProviderFingerprintVariants(validRestoredPlatformFingerprint), /exact canonical staging evidence/);
   });
   it("rejects final V56 readiness with missing or historical release safeguards", () => {
     const packet = candidatePacket();

@@ -10,6 +10,8 @@ import { test } from "node:test";
 import { CURRENT_RELEASE, migrationVersions, readinessTuple, releaseState } from "./release-attestation/states.mjs";
 import { renderCompatibility } from "./release-attestation/sql.mjs";
 import { renderPreflight } from "./release-attestation/preflight.mjs";
+import { render_automation_tables_v57 } from "./release-attestation/preflight-policy.mjs";
+import preflightSchema from "./release-attestation/preflight-schema.json" with { type: "json" };
 import { renderRankReceiptManifest, renderRankReturnManifest } from "./release-attestation/manifests.mjs";
 import manifestSchema from "./release-attestation/manifest-schema.json" with { type: "json" };
 import {
@@ -203,4 +205,21 @@ console.log(JSON.stringify([old,current]));
     assert.equal(incomplete.status, 1);
     assert.match(incomplete.stderr, new RegExp(`requires explicit canonical/restored evidence for ${nextId}`));
   } finally { fs.rmSync(temporary, { recursive: true, force: true }); }
+});
+
+
+test("V57 declares finite complete canonical and restored platform table profiles", () => {
+  const check = { id: "automation_tables_v57", ...preflightSchema.checks.automation_tables_v57 };
+  const sql = render_automation_tables_v57(check);
+  const pins = [check.expected, check.restoredExpected, check.platformExpected, check.platformRestoredExpected];
+  assert.equal(check.tables.length, 113);
+  assert.match(sql, new RegExp("NOT IN \\(" + pins.map(pin => "'" + pin + "'").join(",") + "\\)"));
+  assert.ok(sql.includes("IS DISTINCT FROM ARRAY["));
+  assert.ok(sql.includes("pg_catalog.aclexplode(a.attacl)"));
+  assert.ok(sql.includes("pg_catalog.aclexplode(COALESCE(c.relacl"));
+  for (const field of ["platformExpected", "platformRestoredExpected"]) {
+    assert.throws(() => render_automation_tables_v57({ ...check, [field]: undefined }), /both canonical and restored/);
+    assert.throws(() => render_automation_tables_v57({ ...check, [field]: "*" }), /exact SHA-256/);
+  }
+  assert.throws(() => render_automation_tables_v57({ ...check, platformExpected: check.expected }), /distinct exact SHA-256/);
 });

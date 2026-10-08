@@ -1273,11 +1273,19 @@ export const EXPECTED_V57_CATALOG_STATE = "column_acls=252:77ed54c37fb6a77a67823
 export const EXPECTED_V57_RESTORED_CATALOG_STATE = "column_acls=252:77ed54c37fb6a77a67823ac6a3c13e100fdfe9a15d417087eaa8335aca7984c4:0;columns=44:e16cf54c60e5caf11f3e0d7feb1d576436c4e5ca20ab6b1297ae8d61b63418ee:0;constraints=25:a47a52be64bc4119f8905431c4af3bbd81728b61f40c75fa218fbeb02713e166:0;functions=126:d040dbbbff2436976af5a443f46356396cb40d0db5dd93a627835d0798fa3f08:0;indexes=12:c78635a18852d4cbe8be1bc34861848ba904b06639038c292f84d56ca7be50a7:0;policies=16:259cc99c295d80442450cea438a462efd44748f2ace47456fca13133b52d17b8:0;scoped_constraints=191:ac1c5b8bd2202b318843d62691fec39501e3b58e2090447f8d7633b43dfdf3da:0;scoped_indexes=45:1bfef3f53dfb4665e9f438c66cc04baf062234ae4e47a66a1ae9b7c924c47486:0;sequences=3:27451af3027130cfb193bd4eb9f59221773a89e46bcb855a7a809df1b54a7574:0;table_acls=25:0b972e5cc9be4772e46edfdac6a45d9d6074c433df6cb139232028c9d637d06d:0;tables=22:d3352c35012f5c65edb3cf3b7c5b864f916357d6a11d732199fe30b04034962f:0;triggers=14:03a92971a8b66629aac9892448a2448e6844bfb7edd27c0c5448f17235e270e7:0";
 export const EXPECTED_V57_AUTOMATION_TABLE_STATE = "f9132b81f3965f9e9e7743ea6371c0389b94ca2f9d6f14f45b32d7bbdbab3067";
 export const EXPECTED_V57_RESTORED_AUTOMATION_TABLE_STATE = "eb5a65863ea250017acdee9d8eeaf6a2c6b3a75db3cddd36047db88756ef1a33";
-export const EXPECTED_V57_AUTOMATION_FUNCTION_STATE = "b9e4051348cb1da5d43c4068436ca70b935fc75481f038a9fb029bf0cf0bb925";
+export const EXPECTED_V57_PLATFORM_AUTOMATION_TABLE_STATE = preflightSchema.checks.automation_tables_v57.platformExpected;
+export const EXPECTED_V57_RESTORED_PLATFORM_AUTOMATION_TABLE_STATE = preflightSchema.checks.automation_tables_v57.platformRestoredExpected;
+const V57_TABLE_PROFILES = Object.freeze([
+  { name: "postgres-canonical", catalog: EXPECTED_V57_CATALOG_STATE, tables: EXPECTED_V57_AUTOMATION_TABLE_STATE },
+  { name: "postgres-restored", catalog: EXPECTED_V57_RESTORED_CATALOG_STATE, tables: EXPECTED_V57_RESTORED_AUTOMATION_TABLE_STATE },
+  { name: "supabase-canonical", catalog: EXPECTED_V57_CATALOG_STATE, tables: EXPECTED_V57_PLATFORM_AUTOMATION_TABLE_STATE },
+  { name: "supabase-restored", catalog: EXPECTED_V57_RESTORED_CATALOG_STATE, tables: EXPECTED_V57_RESTORED_PLATFORM_AUTOMATION_TABLE_STATE },
+].map(profile => Object.freeze(profile)));
+export const EXPECTED_V57_AUTOMATION_FUNCTION_STATE = "2515e1acbd2466587fbe797ecd6093bdc46c4dfbd742d94dc97e4cc43e315e7d";
 const V57_FUNCTIONS = Object.freeze([
   ...V56_FUNCTIONS.map(row => row[0] === "public.koaryu_release_schema_preflight_v37()"
     ? [row[0], "de34592dded4c2fbf485d46c475a1b623b1c603d2a017c7be5c9291c4a9e155a", ...row.slice(2)] : row),
-  ["public.koaryu_release_schema_preflight_v38()", "c6a6924efc79a84206721fce425c7453938a8eae00392ef204fe9952e2a65abd", V56_FUNCTIONS.at(-1)[2], V56_FUNCTIONS.at(-1)[3], "search_path=pg_catalog,TimeZone=UTC,DateStyle=ISO, YMD,IntervalStyle=postgres", ...V56_FUNCTIONS.at(-1).slice(5)],
+  ["public.koaryu_release_schema_preflight_v38()", "31014bfd35c507749621643cf4279479054d4fcb6ed79e7c60f3a2a612774542", V56_FUNCTIONS.at(-1)[2], V56_FUNCTIONS.at(-1)[3], "search_path=pg_catalog,TimeZone=UTC,DateStyle=ISO, YMD,IntervalStyle=postgres", ...V56_FUNCTIONS.at(-1).slice(5)],
 ]);
 export const EXPECTED_V57_RELEASE_MANIFEST = releaseManifest(V57_FUNCTIONS);
 export const V57_RELEASE_MANIFEST_SQL = releaseManifestSql(V57_FUNCTIONS, "v57_release_manifest");
@@ -4414,8 +4422,8 @@ export function classifyStateSnapshot(snapshot, packet, expectedProviderFingerpr
         || snapshot.v57ReleaseManifest !== EXPECTED_V57_RELEASE_MANIFEST
         || snapshot.v57AutomationFunctionState !== EXPECTED_V57_AUTOMATION_FUNCTION_STATE
         || snapshot.v56CompatibilityReadiness !== EXPECTED_V56_OPERATIONAL_READINESS
-        || snapshot.v57AutomationTableState !== (catalogState === EXPECTED_V57_CATALOG_STATE
-          ? EXPECTED_V57_AUTOMATION_TABLE_STATE : EXPECTED_V57_RESTORED_AUTOMATION_TABLE_STATE)) {
+        || !V57_TABLE_PROFILES.some(profile => profile.catalog === catalogState
+          && profile.tables === snapshot.v57AutomationTableState)) {
       throw new RolloutError("V57 complete catalog, definitions, security, ACLs or V56 compatibility differ.");
     }
     const providerFingerprint = v57ProviderFingerprint(catalogState, snapshot.v57AutomationTableState);
@@ -5203,9 +5211,10 @@ export function validateV27CatalogState(catalogState) {
 
 export function approvedProviderFingerprintVariants(stagingFingerprint) {
   if (typeof stagingFingerprint === "string" && stagingFingerprint.startsWith("v57_catalog=")) {
-    const canonical = v57ProviderFingerprint(EXPECTED_V57_CATALOG_STATE, EXPECTED_V57_AUTOMATION_TABLE_STATE);
-    if (stagingFingerprint !== canonical) throw new RolloutError("Approved provider fingerprint is not the exact canonical staging evidence shape.");
-    return [canonical, v57ProviderFingerprint(EXPECTED_V57_RESTORED_CATALOG_STATE, EXPECTED_V57_RESTORED_AUTOMATION_TABLE_STATE)];
+    const canonical = V57_TABLE_PROFILES.filter(profile => profile.catalog === EXPECTED_V57_CATALOG_STATE)
+      .map(profile => v57ProviderFingerprint(profile.catalog, profile.tables));
+    if (!canonical.includes(stagingFingerprint)) throw new RolloutError("Approved provider fingerprint is not the exact canonical staging evidence shape.");
+    return V57_TABLE_PROFILES.map(profile => v57ProviderFingerprint(profile.catalog, profile.tables));
   }
   if (typeof stagingFingerprint !== "string") {
     throw new RolloutError("Approved staging provider fingerprint is missing or malformed.");

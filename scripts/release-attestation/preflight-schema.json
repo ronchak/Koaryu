@@ -1420,7 +1420,9 @@
         "public.support_tickets"
       ],
       "expected": "f9132b81f3965f9e9e7743ea6371c0389b94ca2f9d6f14f45b32d7bbdbab3067",
-      "restoredExpected": "eb5a65863ea250017acdee9d8eeaf6a2c6b3a75db3cddd36047db88756ef1a33"
+      "restoredExpected": "eb5a65863ea250017acdee9d8eeaf6a2c6b3a75db3cddd36047db88756ef1a33",
+      "platformExpected": "d812e4f5cd823bd9985aab0231a04c88bc46f5d2dac81346c3f09967b8718c57",
+      "platformRestoredExpected": "e0b8a49b9fdd932ab0f1fdc8355ee0126079b0c3121896646a6c2c910e03409d"
     },
     "automation_functions_v57": {
       "kind": "automation_functions_v57",
@@ -1972,7 +1974,7 @@
         "public.write_student_profile_atomic(uuid,uuid,uuid,jsonb,uuid[],jsonb,boolean,text)",
         "public.write_student_profile_v2_atomic(uuid,uuid,uuid,jsonb,uuid[],jsonb,boolean,text)"
       ],
-      "expected": "b9e4051348cb1da5d43c4068436ca70b935fc75481f038a9fb029bf0cf0bb925"
+      "expected": "2515e1acbd2466587fbe797ecd6093bdc46c4dfbd742d94dc97e4cc43e315e7d"
     },
     "preflight_security_v57": {
       "kind": "preflight_security_v57"

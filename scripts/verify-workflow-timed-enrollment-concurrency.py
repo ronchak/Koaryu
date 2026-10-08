@@ -17,11 +17,21 @@ import time
 from importlib.metadata import version
 from pathlib import Path
 
-from local_postgres_verification import LocalPostgres, require, install_final_v57, require_final_v57
+from local_postgres_verification import (
+    LocalPostgres,
+    require,
+    install_final_v57,
+    require_final_v57,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 BASE = "35561d6b8f851ea0309723637e0996a064ba4c82"
 BASE_HASH = "cab98ab987acf0c24a383be94f3e0499c6d891b922d7fd1de217e788c2a339b5"
+TYPED_CANDIDATE = "private.workflow_timed_candidates_v1"
+TYPED_CANDIDATE_BODY_HASHES = (
+    "38ac23048c419ef2a64455aca124d0b8a5c46a122aaf6653e9170e5530685ca1",
+    "07e98ac269cc740feac349b98223d486bec3ad4670e4c6f81521173fd4074493",
+)
 MIGRATION = (
     ROOT / "supabase/migrations/20261005105341_automation_workflow_graph_v57.sql"
 )
@@ -107,9 +117,20 @@ def main(arguments):
     old_functions, new_functions = source_functions(accepted), source_functions(source)
     require(
         all(
-            new_functions.get(name) == bodies for name, bodies in old_functions.items()
+            new_functions.get(name) == bodies
+            for name, bodies in old_functions.items()
+            if name != TYPED_CANDIDATE
         ),
-        "Retained source body changed",
+        "Unaffected retained source body changed",
+    )
+    require(
+        len(old_functions[TYPED_CANDIDATE]) == len(new_functions[TYPED_CANDIDATE]) == 1
+        and tuple(
+            hashlib.sha256(functions[TYPED_CANDIDATE][0].encode()).hexdigest()
+            for functions in (old_functions, new_functions)
+        )
+        == TYPED_CANDIDATE_BODY_HASHES,
+        "Timed candidate destination repair differs from the reviewed old/new bodies",
     )
     baseline = local.sql(
         "postgres",
@@ -370,8 +391,27 @@ def main(arguments):
         old_activation = value(
             f"SELECT to_jsonb(a) FROM public.automation_workflow_activations a WHERE id={quote(seeded['activation'])};"
         )
-        closure = source.split('-- Complete V57 installed-state attestation. Historical pins remain unchanged.\n',1)[1]
-        sql("BEGIN;" + closure + "\nINSERT INTO supabase_migrations.schema_migrations(version,name) VALUES('20261005105341','automation_workflow_graph_v57');\nCOMMIT;")
+        candidate_start = source.index("CREATE FUNCTION " + TYPED_CANDIDATE + "(")
+        candidate_tail = source[candidate_start:]
+        marker = re.search(r"\bAS\s+(\$[A-Za-z_0-9]*\$)", candidate_tail)
+        require(marker is not None, "Typed candidate delimiter missing")
+        candidate_end = candidate_tail.index(marker.group(1), marker.end()) + len(
+            marker.group(1)
+        )
+        candidate_end = candidate_tail.index(";", candidate_end) + 1
+        candidate_statement = candidate_tail[:candidate_end].replace(
+            "CREATE FUNCTION", "CREATE OR REPLACE FUNCTION", 1
+        )
+        sql(candidate_statement)
+        closure = source.split(
+            "-- Complete V57 installed-state attestation. Historical pins remain unchanged.\n",
+            1,
+        )[1]
+        sql(
+            "BEGIN;"
+            + closure
+            + "\nINSERT INTO supabase_migrations.schema_migrations(version,name) VALUES('20261005105341','automation_workflow_graph_v57');\nCOMMIT;"
+        )
         require_final_v57(local, database, ROOT)
         require(
             sql(
@@ -391,12 +431,33 @@ def main(arguments):
         create()
         install_final_v57(local, database, ROOT)
         installed = value(INVENTORY)
+        candidate_signature = (
+            "private.workflow_timed_candidates_v1(integer,timestamp with time zone)"
+        )
         require(
-            all(installed.get(k) == v for k, v in retained.items() if k != "koaryu_release_schema_preflight_v37()"),
-            "Retained definition/ACL/config changed",
+            all(
+                installed.get(k) == v
+                for k, v in retained.items()
+                if k
+                not in ("koaryu_release_schema_preflight_v37()", candidate_signature)
+            ),
+            "Unaffected retained definition/ACL/config changed",
+        )
+        require(
+            {
+                key: value
+                for key, value in installed[candidate_signature].items()
+                if key != "definition"
+            }
+            == {
+                key: value
+                for key, value in retained[candidate_signature].items()
+                if key != "definition"
+            },
+            "Typed candidate repair changed ACL, ownership or settings",
         )
         passed(
-            "all retained function definitions ACL ownership and settings identical",
+            "unaffected retained definitions and complete function ACL ownership and settings identical",
             functions=len(retained),
         )
         contract_output = sql(contract)
@@ -1015,7 +1076,9 @@ def main(arguments):
             "fresh public clock after final ownership refuses newly expired source",
             injected_seconds=61,
         )
-        passed("unique final component cases complete; assembled V57 upgrade and post-install restore is separate")
+        passed(
+            "unique final component cases complete; assembled V57 upgrade and post-install restore is separate"
+        )
         require(
             MIGRATION.read_bytes() == frozen
             and CONTRACT.read_text() == contract

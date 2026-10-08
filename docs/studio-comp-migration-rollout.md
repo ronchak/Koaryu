@@ -2,6 +2,70 @@
 
 Status: **Historical V24–V38 rollout documentation. The latest [production packet](remediation/PRODUCTION-RELEASE.md) records a completed release. No unapplied packet is currently approved; future execution requires a newly generated candidate-specific packet and explicit owner authorization. Do not execute the historical commands below.**
 
+## V57 table catalog profiles
+
+V57 binds all 113 public/private tables to four named, exact catalog profiles:
+PostgreSQL canonical and restored, and Supabase canonical and restored. The
+original two digests remain accepted. The added Supabase profiles preserve the
+existing platform grants while requiring the same owners, columns, defaults,
+constraints, indexes, RLS, policies and triggers. Raw rollout inspection pairs
+each table digest with its corresponding canonical or restored catalog.
+
+On the pinned Supabase CLI 2.111.0 and PostgreSQL image 17.6.1.156, 38 legacy
+public tables retain four additional `service_role` privileges: `MAINTAIN`,
+`REFERENCES`, `TRIGGER` and `TRUNCATE`. All 152 grants come from `postgres` and
+are not grantable. The CLI's Data API bootstrap revokes default CRUD privileges
+but leaves these four defaults. The local PostgreSQL verifier starts with CRUD
+only. The complete observed difference is limited to these tables:
+
+- `public.account_deletion_requests`
+- `public.attendance`
+- `public.audit_logs`
+- `public.belt_ladders`
+- `public.belt_ranks`
+- `public.billing_adjustments`
+- `public.billing_disputes`
+- `public.billing_invoice_items`
+- `public.billing_invoice_retry_operation_aliases`
+- `public.billing_invoice_retry_operations`
+- `public.billing_invoices`
+- `public.billing_payers`
+- `public.billing_payments`
+- `public.billing_plan_prices`
+- `public.billing_plan_programs`
+- `public.billing_plans`
+- `public.billing_refunds`
+- `public.billing_subscriptions`
+- `public.class_sessions`
+- `public.class_templates`
+- `public.email_usage_events`
+- `public.export_jobs`
+- `public.guardians`
+- `public.lead_activities`
+- `public.leads`
+- `public.programs`
+- `public.promotions`
+- `public.staff_profiles`
+- `public.staff_roles`
+- `public.student_billing_enrollments`
+- `public.student_guardians`
+- `public.student_import_runs`
+- `public.student_program_memberships`
+- `public.students`
+- `public.studio_subscriptions`
+- `public.studios`
+- `public.support_ticket_events`
+- `public.support_tickets`
+
+The finite profile pins live in
+[`preflight-schema.json`](../scripts/release-attestation/preflight-schema.json)
+and generate the V38 guard. Both platform profiles were observed on disposable
+Supabase targets, including a genuine V56 logical restore before V57. New V57
+tables retain their explicit privileges. Unexpected client grants, column
+grants, extra service privileges or any other catalog change remain outside
+all four exact digests and fail readiness. This acceptance does not change
+historical grants or migration files.
+
 ## Combined schedule-window, Payments, and performance extension
 
 The completed V24 rollout remains the historical base described below. The

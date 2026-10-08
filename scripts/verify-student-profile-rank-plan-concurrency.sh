@@ -74,16 +74,40 @@ cleanup() {
     kill "$profile_pid" 2>/dev/null || true
     wait "$profile_pid" 2>/dev/null || true
   fi
-  "$PSQL_BINARY" "${psql_args[@]}" >/dev/null 2>&1 <<SQL || true
-DELETE FROM public.audit_logs WHERE studio_id = '$STUDIO_ID'::uuid;
-DELETE FROM public.student_program_memberships WHERE studio_id = '$STUDIO_ID'::uuid;
-DELETE FROM public.students WHERE studio_id = '$STUDIO_ID'::uuid;
-DELETE FROM public.belt_ranks WHERE studio_id = '$STUDIO_ID'::uuid;
-DELETE FROM public.belt_ladders WHERE studio_id = '$STUDIO_ID'::uuid;
-DELETE FROM public.programs WHERE studio_id = '$STUDIO_ID'::uuid;
-DELETE FROM public.studios WHERE id = '$STUDIO_ID'::uuid;
-DELETE FROM auth.users WHERE id = '$OWNER_ID'::uuid;
+  if ! "$PSQL_BINARY" "${psql_args[@]}" >/dev/null <<SQL
+BEGIN;
+DO \$cleanup_guard\$
+BEGIN
+  IF EXISTS(SELECT 1 FROM public.studios WHERE id = '$STUDIO_ID'::uuid
+      AND (owner_id IS DISTINCT FROM '$OWNER_ID'::uuid OR name IS DISTINCT FROM 'Student Lock Order Contract'))
+     OR EXISTS(SELECT 1 FROM auth.users WHERE id = '$OWNER_ID'::uuid
+      AND email IS DISTINCT FROM 'student-lock-order@example.invalid') THEN
+    RAISE EXCEPTION 'Rank fixture cleanup ownership differs';
+  END IF;
+END;
+\$cleanup_guard\$;
+DELETE FROM public.studios WHERE id = '$STUDIO_ID'::uuid AND owner_id = '$OWNER_ID'::uuid;
+DELETE FROM auth.users WHERE id = '$OWNER_ID'::uuid AND email = 'student-lock-order@example.invalid';
+DO \$cleanup_check\$
+BEGIN
+  IF EXISTS(SELECT 1 FROM public.studios WHERE id = '$STUDIO_ID'::uuid)
+     OR EXISTS(SELECT 1 FROM auth.users WHERE id = '$OWNER_ID'::uuid)
+     OR EXISTS(SELECT 1 FROM public.students WHERE studio_id = '$STUDIO_ID'::uuid)
+     OR EXISTS(SELECT 1 FROM public.student_program_memberships WHERE studio_id = '$STUDIO_ID'::uuid)
+     OR EXISTS(SELECT 1 FROM public.belt_ranks WHERE studio_id = '$STUDIO_ID'::uuid)
+     OR EXISTS(SELECT 1 FROM public.belt_ladders WHERE studio_id = '$STUDIO_ID'::uuid)
+     OR EXISTS(SELECT 1 FROM public.programs WHERE studio_id = '$STUDIO_ID'::uuid)
+     OR EXISTS(SELECT 1 FROM public.audit_logs WHERE studio_id = '$STUDIO_ID'::uuid) THEN
+    RAISE EXCEPTION 'Owned rank fixture remains after cleanup';
+  END IF;
+END;
+\$cleanup_check\$;
+COMMIT;
 SQL
+  then
+    echo "FAIL: owned student/rank fixture cleanup failed" >&2
+    exit 1
+  fi
   rm -f "$MARKER_PATH" "$RANK_PLAN_LOG" "$DELETE_MARKER_PATH" "$PROFILE_LOG"
 }
 trap cleanup EXIT
@@ -238,8 +262,8 @@ WHERE studio_id = '$STUDIO_ID'::uuid
 SQL
 
 # A direct DELETE reaches the rank trigger without the belt-plan RPC's
-# pre-locks. It must wait on the student before touching the membership, or it
-# forms the inverse cycle with a profile writer that already owns the student.
+# pre-locks. V57 refuses the held student with NOWAIT before changing a
+# membership; after the writer finishes, the assigned-rank RPC guard still applies.
 "$PSQL_BINARY" "${psql_args[@]}" >"$PROFILE_LOG" 2>&1 <<SQL &
 BEGIN;
 SELECT 1 FROM public.students WHERE id = '$STUDENT_ID'::uuid FOR UPDATE;
@@ -279,7 +303,8 @@ fi
 
 set +e
 delete_output="$("$PSQL_BINARY" "${psql_args[@]}" 2>&1 <<SQL
-SET statement_timeout = '6s';
+SET lock_timeout = '250ms';
+SET statement_timeout = '1s';
 DELETE FROM public.belt_ranks
 WHERE id = '$THIRD_RANK_ID'::uuid
   AND studio_id = '$STUDIO_ID'::uuid;
@@ -288,9 +313,21 @@ SQL
 delete_status=$?
 set -e
 
-if [[ $delete_status -eq 0 ]] || [[ "$delete_output" != *"must be deleted through sync_belt_ladder_ranks"* ]]; then
-  echo "FAIL: assigned direct rank deletion was not rejected before waiting on the profile write" >&2
+if [[ $delete_status -eq 0 ]] || [[ "$delete_output" != *"ERROR:  AUTOMATION_STUDIO_BUSY"* ]]; then
+  echo "FAIL: assigned direct rank deletion did not return the exact V57 busy refusal before waiting" >&2
   echo "$delete_output" >&2
+  exit 1
+fi
+
+busy_state="$("$PSQL_BINARY" "${psql_args[@]}" --tuples-only --no-align <<SQL
+SELECT EXISTS(SELECT 1 FROM public.belt_ranks WHERE id = '$THIRD_RANK_ID'::uuid)
+   AND (SELECT current_belt_rank_id = '$THIRD_RANK_ID'::uuid FROM public.students WHERE id = '$STUDENT_ID'::uuid)
+   AND (SELECT current_belt_rank_id = '$THIRD_RANK_ID'::uuid FROM public.student_program_memberships
+        WHERE student_id = '$STUDENT_ID'::uuid AND program_id = '$PROGRAM_ID'::uuid);
+SQL
+)"
+if [[ "$busy_state" != "t" ]]; then
+  echo "FAIL: busy direct deletion changed rank or membership state" >&2
   exit 1
 fi
 
@@ -301,6 +338,22 @@ if ! wait "$profile_pid"; then
   exit 1
 fi
 profile_pid=""
+
+set +e
+delete_output="$("$PSQL_BINARY" "${psql_args[@]}" 2>&1 <<SQL
+SET statement_timeout = '1s';
+DELETE FROM public.belt_ranks
+WHERE id = '$THIRD_RANK_ID'::uuid
+  AND studio_id = '$STUDIO_ID'::uuid;
+SQL
+)"
+delete_status=$?
+set -e
+if [[ $delete_status -eq 0 ]] || [[ "$delete_output" != *"must be deleted through sync_belt_ladder_ranks"* ]]; then
+  echo "FAIL: assigned direct rank deletion did not require the rank-plan RPC after the writer finished" >&2
+  echo "$delete_output" >&2
+  exit 1
+fi
 
 "$PSQL_BINARY" "${psql_args[@]}" >/dev/null <<SQL
 SELECT count(*)

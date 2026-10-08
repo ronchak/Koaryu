@@ -215,11 +215,6 @@ jobs:
       - name: Install pinned backend test runtime for offline SDK proofs
         run: python -m pip install -r backend/requirements-dev.txt
 
-      - name: Run isolated migration, restore, and concurrency proofs
-        env:
-          KOARYU_PG_BIN_DIR: /usr/lib/postgresql/17/bin
-        run: npm run check:supabase-contracts-local
-
       - name: Set up Supabase CLI
         id: supabase-cli
         uses: supabase/setup-cli@ab058987d8d6c725971f6cf9d0b5c98467e30bd1 # v1
@@ -252,6 +247,11 @@ jobs:
       - name: Stop disposable database
         if: ${{ always() && steps.supabase-cli.outcome == 'success' }}
         run: supabase stop --no-backup
+
+      - name: Run isolated migration, restore, and concurrency proofs
+        env:
+          KOARYU_PG_BIN_DIR: /usr/lib/postgresql/17/bin
+        run: npm run check:supabase-contracts-local
 
   performance-regression:
     name: Deterministic performance regression gate

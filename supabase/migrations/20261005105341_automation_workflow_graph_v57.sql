@@ -7388,7 +7388,8 @@ CREATE TRIGGER workflow_timer_activation_identity_v1 BEFORE UPDATE ON private.wo
 CREATE FUNCTION private.workflow_timed_candidates_v1(p_limit INTEGER,p_reference_at TIMESTAMPTZ) RETURNS JSONB
 LANGUAGE plpgsql VOLATILE SECURITY INVOKER SET search_path='' AS $$
 DECLARE dispatch private.workflow_timer_dispatch_cursor; timer private.workflow_timer_activations;
-    activation public.automation_workflow_activations; source RECORD; parent public.belt_test_events;
+    activation public.automation_workflow_activations; parent public.belt_test_events;
+    recipient_id UUID; source_id UUID; source_subject_id UUID; source_threshold_at TIMESTAMPTZ; source_starts_at TIMESTAMPTZ;
     pairs JSONB:='[]'; invoices TEXT[]:='{}'; invoice_key TEXT; more BOOLEAN:=false;
     global_studio UUID; global_activation UUID; global_wrapped BOOLEAN:=false;
     position_time TIMESTAMPTZ; position_source UUID; position_event UUID; wrapped BOOLEAN;
@@ -7464,17 +7465,17 @@ BEGIN
                 END IF;
                 parent_visits:=parent_visits+1; total_parents:=total_parents+1;
                 position_time:=parent.starts_at+shift; position_event:=parent.id;
-                FOR source IN EXECUTE $scan$SELECT r.id FROM public.belt_test_recipients r
+                FOR recipient_id IN EXECUTE $scan$SELECT r.id FROM public.belt_test_recipients r
                     WHERE r.studio_id=$1 AND r.event_id=$2 AND r.state='approved'$scan$
                     ||CASE WHEN position_source IS NOT NULL THEN ' AND r.id>$3' ELSE '' END
                     ||CASE WHEN wrapped AND parent.id=timer.last_event_id AND position_time=timer.last_threshold_at
                         AND timer.last_source_id IS NOT NULL THEN ' AND r.id<=$4' ELSE '' END
                     ||' ORDER BY r.id LIMIT $5'
                     USING timer.studio_id,parent.id,position_source,timer.last_source_id,pair_cap-decisions LOOP
-                    decisions:=decisions+1; position_source:=source.id;
+                    decisions:=decisions+1; position_source:=recipient_id;
                     pairs:=pairs||jsonb_build_array(jsonb_build_object('studio_id',timer.studio_id,'activation_id',timer.activation_id,
                         'workflow_id',timer.workflow_id,'version_id',timer.version_id,'epoch',timer.epoch,'event_type',timer.trigger_event_type,
-                        'subject_id',source.id,'source_record_id',source.id,'source_parent_id',parent.id,
+                        'subject_id',recipient_id,'source_record_id',recipient_id,'source_parent_id',parent.id,
                         'source_starts_at',private.automation_utc_text_v1(parent.starts_at),'threshold_at',private.automation_utc_text_v1(position_time)));
                 END LOOP;
                 -- A full page is conservatively partial. No lookahead row.
@@ -7495,7 +7496,7 @@ BEGIN
                         ||CASE WHEN retired_start IS NOT NULL THEN ' AND t.starts_at<$5' ELSE '' END
                         ||CASE WHEN position_time IS NOT NULL THEN ' AND (t.starts_at,t.id)>($6-$10,$7)' ELSE '' END
                         ||CASE WHEN wrapped THEN ' AND (t.starts_at,t.id)<=($8-$10,$9)' ELSE '' END
-                        ||' ORDER BY t.starts_at,t.id LIMIT 1' INTO source
+                        ||' ORDER BY t.starts_at,t.id LIMIT 1' INTO source_id,source_subject_id,source_threshold_at,source_starts_at
                         USING timer.studio_id,lower_start,upper_start,p_reference_at,retired_start,position_time,position_source,
                             timer.last_threshold_at,timer.last_source_id,shift;
                 ELSE
@@ -7505,25 +7506,25 @@ BEGIN
                         ||CASE WHEN activation.retired_at IS NOT NULL THEN ' AND e.threshold_at<$5' ELSE '' END
                         ||CASE WHEN position_time IS NOT NULL THEN ' AND (e.threshold_at,e.id)>($6,$7)' ELSE '' END
                         ||CASE WHEN wrapped THEN ' AND (e.threshold_at,e.id)<=($8,$9)' ELSE '' END
-                        ||' ORDER BY e.threshold_at,e.id LIMIT 1' INTO source
+                        ||' ORDER BY e.threshold_at,e.id LIMIT 1' INTO source_id,source_subject_id,source_threshold_at,source_starts_at
                         USING timer.studio_id,activation.active_from,NULL::TIMESTAMPTZ,p_reference_at,activation.retired_at,
                             position_time,position_source,timer.last_threshold_at,timer.last_source_id;
                 END IF;
-                IF source.id IS NULL THEN
+                IF source_id IS NULL THEN
                     IF NOT wrapped AND timer.last_threshold_at IS NOT NULL THEN
                         wrapped:=true; position_time:=NULL; position_source:=NULL; CONTINUE;
                     END IF;
                     EXIT;
                 END IF;
                 IF timer.trigger_event_type='invoice.overdue' THEN
-                    invoice_key:=timer.studio_id::TEXT||':'||source.subject_id::TEXT;
+                    invoice_key:=timer.studio_id::TEXT||':'||source_subject_id::TEXT;
                     IF NOT invoice_key=ANY(invoices) THEN invoices:=array_append(invoices,invoice_key); END IF;
                 END IF;
-                decisions:=decisions+1; position_time:=source.threshold_at; position_source:=source.id;
+                decisions:=decisions+1; position_time:=source_threshold_at; position_source:=source_id;
                 pairs:=pairs||jsonb_build_array(jsonb_build_object('studio_id',timer.studio_id,'activation_id',timer.activation_id,
                     'workflow_id',timer.workflow_id,'version_id',timer.version_id,'epoch',timer.epoch,'event_type',timer.trigger_event_type,
-                    'subject_id',source.subject_id,'source_record_id',source.id,'source_parent_id',NULL,
-                    'source_starts_at',private.automation_utc_text_v1(source.starts_at),'threshold_at',private.automation_utc_text_v1(source.threshold_at)));
+                    'subject_id',source_subject_id,'source_record_id',source_id,'source_parent_id',NULL,
+                    'source_starts_at',private.automation_utc_text_v1(source_starts_at),'threshold_at',private.automation_utc_text_v1(source_threshold_at)));
                 UPDATE private.workflow_timer_activations SET last_threshold_at=position_time,last_source_id=position_source,
                     updated_at=p_reference_at WHERE activation_id=timer.activation_id;
             END LOOP;
@@ -11885,7 +11886,7 @@ FROM (VALUES ('private.automation_command_operations'),
     ('public.support_ticket_events'),
     ('public.support_tickets')) required(name)
 LEFT JOIN pg_catalog.pg_class c ON c.oid=pg_catalog.to_regclass(required.name))::TEXT,'UTF8'),'sha256'),'hex'))
-       NOT IN ('f9132b81f3965f9e9e7743ea6371c0389b94ca2f9d6f14f45b32d7bbdbab3067','eb5a65863ea250017acdee9d8eeaf6a2c6b3a75db3cddd36047db88756ef1a33')
+       NOT IN ('f9132b81f3965f9e9e7743ea6371c0389b94ca2f9d6f14f45b32d7bbdbab3067','eb5a65863ea250017acdee9d8eeaf6a2c6b3a75db3cddd36047db88756ef1a33','d812e4f5cd823bd9985aab0231a04c88bc46f5d2dac81346c3f09967b8718c57','e0b8a49b9fdd932ab0f1fdc8355ee0126079b0c3121896646a6c2c910e03409d')
        OR (SELECT array_agg(n.nspname||'.'||c.relname ORDER BY (n.nspname||'.'||c.relname) COLLATE "C")
            FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace
            WHERE n.nspname IN ('public','private') AND c.relkind IN ('r','p'))
@@ -12458,7 +12459,7 @@ FROM (VALUES ('private.assert_billing_enrollment_transition_current_v1(public.bi
     ('public.write_student_profile_v2_atomic(uuid,uuid,uuid,jsonb,uuid[],jsonb,boolean,text)')) required(signature)
 LEFT JOIN pg_catalog.pg_proc p ON p.oid=pg_catalog.to_regprocedure(required.signature)
 LEFT JOIN pg_catalog.pg_language l ON l.oid=p.prolang)::TEXT,'UTF8'),'sha256'),'hex'))
-       IS DISTINCT FROM 'b9e4051348cb1da5d43c4068436ca70b935fc75481f038a9fb029bf0cf0bb925'
+       IS DISTINCT FROM '2515e1acbd2466587fbe797ecd6093bdc46c4dfbd742d94dc97e4cc43e315e7d'
        OR (SELECT array_agg(p.oid::REGPROCEDURE::TEXT ORDER BY p.oid::REGPROCEDURE::TEXT COLLATE "C")
            FROM pg_catalog.pg_proc p JOIN pg_catalog.pg_namespace n ON n.oid=p.pronamespace
            WHERE n.nspname IN ('public','private') AND p.prokind='f'

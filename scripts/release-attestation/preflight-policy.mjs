@@ -587,7 +587,14 @@ export function automationFunctionFactsV57(check) {
 }
 export const render_automation_tables_v57 = check => {
   const facts = automationTableFactsV57(check);
-  const expected = [check.expected, ...(check.restoredExpected ? [check.restoredExpected] : [])];
+  if (Boolean(check.platformExpected) !== Boolean(check.platformRestoredExpected)) {
+    throw new Error("V57 platform catalog profiles require both canonical and restored pins");
+  }
+  const expected = [check.expected, ...(check.restoredExpected ? [check.restoredExpected] : []),
+    ...(check.platformExpected ? [check.platformExpected, check.platformRestoredExpected] : [])];
+  if (expected.some(value => !/^[0-9a-f]{64}$/.test(value)) || new Set(expected).size !== expected.length) {
+    throw new Error("V57 table catalog profiles require distinct exact SHA-256 pins");
+  }
   return `    IF (SELECT encode(extensions.digest(convert_to((${facts})::TEXT,'UTF8'),'sha256'),'hex'))
        NOT IN (${expected.map(sqlLiteral).join(',')})
        OR (SELECT array_agg(n.nspname||'.'||c.relname ORDER BY (n.nspname||'.'||c.relname) COLLATE "C")
