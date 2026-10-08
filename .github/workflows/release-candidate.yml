@@ -203,10 +203,17 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y postgresql-17 postgresql-client-17
 
-      - name: Run isolated migration, restore, and concurrency proofs
-        env:
-          KOARYU_PG_BIN_DIR: /usr/lib/postgresql/17/bin
-        run: npm run check:supabase-contracts-local
+      - name: Set up Python for installed SDK composition proofs
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: |
+            backend/requirements.txt
+            backend/requirements-dev.txt
+
+      - name: Install pinned backend test runtime for offline SDK proofs
+        run: python -m pip install -r backend/requirements-dev.txt
 
       - name: Set up Supabase CLI
         id: supabase-cli
@@ -240,6 +247,11 @@ jobs:
       - name: Stop disposable database
         if: ${{ always() && steps.supabase-cli.outcome == 'success' }}
         run: supabase stop --no-backup
+
+      - name: Run isolated migration, restore, and concurrency proofs
+        env:
+          KOARYU_PG_BIN_DIR: /usr/lib/postgresql/17/bin
+        run: npm run check:supabase-contracts-local
 
   performance-regression:
     name: Deterministic performance regression gate

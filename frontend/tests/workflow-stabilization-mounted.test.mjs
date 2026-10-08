@@ -10,6 +10,7 @@ const flush = (page) =>
 
 async function fixturePage(browser, options = {}) {
   const page = await browser.newPage({ timezoneId: options.timezone });
+  const origin = options.leadCreateRecovery ? "http://localhost/" : "http://fixture.local/";
   if (options.now) {
     await page.clock.install({
       time: new Date(new Date(options.now).getTime() - (options.pauseClock ? 60_000 : 0)),
@@ -17,11 +18,11 @@ async function fixturePage(browser, options = {}) {
     if (options.pauseClock) await page.clock.pauseAt(new Date(options.now));
   }
   await page.route("**/*", (route) =>
-    route.request().url() === "http://fixture.local/"
+    route.request().url() === origin
       ? route.fulfill({ contentType: "text/html", body: '<div id="root"></div>' })
       : route.abort(),
   );
-  await page.goto("http://fixture.local/");
+  await page.goto(origin);
   await page.evaluate(() => {
     const f = (window.fixture = {
       identityObservations: [],
@@ -261,6 +262,12 @@ async function fixturePage(browser, options = {}) {
       coldAuthEvent: options.coldAuthEvent,
     },
   );
+  if (options.leadCreateRecovery)
+    await page.evaluate(() => {
+      fixture.session.user.id = "10000000-0000-4000-8000-000000000001";
+      fixture.auth.user = fixture.session.user;
+      fixture.auth.studio_id = "20000000-0000-4000-8000-000000000001";
+    });
   await page.addScriptTag({ content: bundle(options.mode ?? "production", options) });
   await page.waitForFunction(() => fixture.store?.identityReady);
   return page;
@@ -964,10 +971,14 @@ test("off-dashboard business commands do not fan out into uncached summary reads
   }
 });
 
-test("an unknown lead save stays locked until dismissal, then a new form is usable", async () => {
+test("an unknown lead save stays locked after dismissal and reopening", async () => {
   const browser = await chromium.launch();
   try {
-    const page = await fixturePage(browser, { path: "/leads", leadController: true });
+    const page = await fixturePage(browser, {
+      path: "/leads",
+      leadController: true,
+      leadCreateRecovery: true,
+    });
     await page.evaluate(() => {
       fixture.writeAttempts = 0;
       fixture.api.post = async () => {
@@ -980,7 +991,7 @@ test("an unknown lead save stays locked until dismissal, then a new form is usab
     await dialog.locator('[name="first_name"]').fill("Synthetic");
     await dialog.locator('[name="last_name"]').fill("Lead");
     await dialog.getByRole("button", { name: "Add lead", exact: true }).click();
-    await page.waitForFunction(() => fixture.leadController.addLeadOutcomeUnknown);
+    await page.waitForFunction(() => fixture.store.leadCreate.status === "unknown");
     assert.equal(
       await dialog.getByRole("button", { name: "Add lead", exact: true }).isEnabled(),
       false,
@@ -991,8 +1002,13 @@ test("an unknown lead save stays locked until dismissal, then a new form is usab
     await page.getByRole("button", { name: "New lead", exact: true }).click();
     assert.equal(
       await dialog.getByRole("button", { name: "Add lead", exact: true }).isEnabled(),
-      true,
+      false,
     );
+    assert.equal(
+      await dialog.getByRole("button", { name: "Check result", exact: true }).count(),
+      1,
+    );
+    assert.equal(await page.evaluate(() => fixture.writeAttempts), 1);
     await page.evaluate(() => fixture.root.unmount());
   } finally {
     await browser.close();

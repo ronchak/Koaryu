@@ -33,11 +33,15 @@ REQUEST_SCHEMA_SUFFIXES = (
     "Request",
 )
 EXTRA_PYDANTIC_SCHEMA_MODELS = (
-    ("app.schemas.student", "CsvImportOptions"),
-    ("app.schemas.student", "CsvImportRequest"),
-    ("app.schemas.student", "StudentListQueryContract"),
-    ("app.schemas.student", "StudentListResponse"),
-    ("app.schemas.schedule", "ClassSessionDeleteScope"),
+    ("app.schemas.student", "CsvImportOptions", "validation"),
+    ("app.schemas.student", "CsvImportRequest", "validation"),
+    ("app.schemas.student", "StudentListQueryContract", "validation"),
+    ("app.schemas.student", "StudentListResponse", "validation"),
+    ("app.schemas.schedule", "ClassSessionDeleteScope", "validation"),
+    ("app.schemas.workflow_simulation", "WorkflowSimulationRequest", "validation"),
+    ("app.schemas.workflow_simulation", "WorkflowSimulationResponse", "serialization"),
+    ("app.schemas.workflow_test_email", "WorkflowTestEmailRequest", "validation"),
+    ("app.schemas.workflow_test_email", "WorkflowTestEmailResponse", "serialization"),
 )
 
 
@@ -153,6 +157,8 @@ def is_required_property(
 ) -> bool:
     if prop_name in required:
         return True
+    if prop_schema.get("x-optional-on-wire") is True:
+        return False
     if is_request_schema(schema_name) or is_nullable(prop_schema):
         return False
     if schema_name in response_schema_names:
@@ -179,6 +185,9 @@ def schema_to_ts(schema: dict[str, Any]) -> str:
             if ts_type not in rendered:
                 rendered.append(ts_type)
         return " | ".join(rendered) or "unknown"
+
+    if "const" in schema:
+        return literal(schema["const"])
 
     if "enum" in schema:
         return " | ".join(literal(item) for item in schema["enum"]) or "never"
@@ -215,8 +224,16 @@ def schema_to_ts(schema: dict[str, Any]) -> str:
             lines.append("}")
             return "\n".join(lines)
         additional = schema.get("additionalProperties")
+        patterns = schema.get("patternProperties") or {}
+        if patterns:
+            value_types = [schema_to_ts(value) for value in patterns.values()]
+            if isinstance(additional, dict):
+                value_types.append(schema_to_ts(additional))
+            return f"Record<string, {' | '.join(dict.fromkeys(value_types))}>"
         if isinstance(additional, dict):
             return f"Record<string, {schema_to_ts(additional)}>"
+        if additional is False:
+            return "Record<string, never>"
         return "Record<string, unknown>"
 
     return "unknown"
@@ -246,22 +263,126 @@ def render_schema(schema_name: str, schema: dict[str, Any], response_schema_name
 def render_contracts() -> str:
     openapi = load_openapi()
     schemas = dict(openapi.get("components", {}).get("schemas", {}))
-    add_extra_pydantic_schemas(schemas)
+    serialization_roots = add_extra_pydantic_schemas(schemas)
     response_schema_names = collect_response_schema_names(openapi, schemas)
+    response_schema_names.update(expand_schema_refs(serialization_roots, schemas))
     chunks = [HEADER.rstrip()]
     for schema_name in sorted(schemas):
         chunks.append(render_schema(schema_name, schemas[schema_name], response_schema_names))
     return "\n\n".join(chunks) + "\n"
 
 
-def add_extra_pydantic_schemas(schemas: dict[str, Any]) -> None:
-    for module_name, model_name in EXTRA_PYDANTIC_SCHEMA_MODELS:
+def rewrite_schema_refs(
+    schema: dict[str, Any], names: dict[str, str]
+) -> dict[str, Any]:
+    """Rewrite schema references without traversing literal or extension data."""
+    prefix = "#/components/schemas/"
+
+    def rewrite_ref(value: Any) -> Any:
+        if isinstance(value, str) and value.startswith(prefix):
+            name = value[len(prefix) :]
+            return prefix + names.get(name, name)
+        return value
+
+    rewritten = dict(schema)
+    if "$ref" in schema:
+        rewritten["$ref"] = rewrite_ref(schema["$ref"])
+    discriminator = schema.get("discriminator")
+    if isinstance(discriminator, dict) and isinstance(
+        discriminator.get("mapping"), dict
+    ):
+        rewritten["discriminator"] = {
+            **discriminator,
+            "mapping": {
+                key: rewrite_ref(value)
+                for key, value in discriminator["mapping"].items()
+            },
+        }
+    for key in (
+        "properties",
+        "patternProperties",
+        "$defs",
+        "definitions",
+        "dependentSchemas",
+    ):
+        if isinstance(schema.get(key), dict):
+            rewritten[key] = {
+                name: rewrite_schema_refs(value, names)
+                if isinstance(value, dict)
+                else value
+                for name, value in schema[key].items()
+            }
+    for key in ("allOf", "anyOf", "oneOf", "prefixItems"):
+        if isinstance(schema.get(key), list):
+            rewritten[key] = [
+                rewrite_schema_refs(value, names) if isinstance(value, dict) else value
+                for value in schema[key]
+            ]
+    for key in (
+        "items",
+        "additionalProperties",
+        "unevaluatedProperties",
+        "unevaluatedItems",
+        "contains",
+        "propertyNames",
+        "not",
+        "if",
+        "then",
+        "else",
+        "contentSchema",
+    ):
+        if isinstance(schema.get(key), dict):
+            rewritten[key] = rewrite_schema_refs(schema[key], names)
+    return rewritten
+
+
+def add_extra_pydantic_schemas(schemas: dict[str, Any]) -> set[str]:
+    from fastapi.openapi.models import Schema
+
+    def normalized(schema: dict[str, Any]) -> str:
+        normalized_schema = Schema.model_validate(schema).model_dump(
+            mode="json", by_alias=True, exclude_none=True
+        )
+        return json.dumps(normalized_schema, sort_keys=True)
+
+    type_names: dict[str, str] = {}
+
+    def check_type_name(name: str) -> None:
+        ts_name = api_type_name(name)
+        if ts_name in type_names and type_names[ts_name] != name:
+            raise ValueError(
+                f"Generated API type name conflict: {ts_name} ({type_names[ts_name]}, {name})"
+            )
+        type_names[ts_name] = name
+
+    for name in schemas:
+        check_type_name(name)
+    serialization_roots: set[str] = set()
+    for module_name, model_name, mode in EXTRA_PYDANTIC_SCHEMA_MODELS:
         module = importlib.import_module(module_name)
         model = getattr(module, model_name)
-        schema = model.model_json_schema(ref_template="#/components/schemas/{model}")
-        for definition_name, definition_schema in (schema.pop("$defs", {}) or {}).items():
-            schemas.setdefault(definition_name, definition_schema)
-        schemas.setdefault(model_name, schema)
+        schema = model.model_json_schema(
+            mode=mode, ref_template="#/components/schemas/{model}"
+        )
+        definitions = schema.pop("$defs", {}) or {}
+        definitions[model_name] = schema
+        suffix = "Input" if mode == "validation" else "Output"
+        names = {
+            name: f"{name}-{suffix}" if f"{name}-{suffix}" in schemas else name
+            for name in definitions
+        }
+        for definition_name, definition_schema in definitions.items():
+            name = names[definition_name]
+            check_type_name(name)
+            definition = rewrite_schema_refs(definition_schema, names)
+            if name in schemas:
+                if normalized(schemas[name]) != normalized(definition):
+                    raise ValueError(f"Pydantic schema conflict: {model_name} / {name}")
+            else:
+                schemas[name] = definition
+        if mode == "serialization":
+            serialization_roots.add(names[model_name])
+    return serialization_roots
 
 
 def main() -> int:

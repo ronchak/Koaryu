@@ -1,0 +1,257 @@
+.editor {
+  min-width: 0;
+  color: var(--text-primary, #f3f5f7);
+  background: var(--surface, #12161b);
+  border: 1px solid var(--border, #232a33);
+  border-radius: 12px;
+  padding: 16px;
+}
+.editor *,
+.editor *::before,
+.editor *::after {
+  box-sizing: border-box;
+}
+.editor button,
+.editor select {
+  min-height: 44px;
+  max-width: 100%;
+  border: 1px solid var(--border, #232a33);
+  border-radius: 7px;
+  background: var(--surface-raised, #171c22);
+  color: inherit;
+  font: inherit;
+  font-size: 14px;
+  padding: 8px 12px;
+}
+.editor button {
+  cursor: pointer;
+}
+.editor button:hover:not(:disabled) {
+  background: var(--surface-hover, #1e2329);
+}
+.editor button:disabled,
+.editor select:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.editor button:focus-visible,
+.editor select:focus-visible,
+.canvas :global(.react-flow__node):focus-visible,
+.canvas :global(.react-flow__edge):focus-visible {
+  outline: 2px solid var(--accent, #d6b25e);
+  outline-offset: 3px;
+}
+.editor button[aria-pressed="true"] {
+  border-color: var(--accent, #d6b25e);
+}
+.heading,
+.toolbar,
+.addControl,
+.viewToggle,
+.connection {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.heading {
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+.heading h2 {
+  font-size: 18px;
+  margin: 0;
+}
+.toolbar {
+  align-items: end;
+}
+.addControl {
+  align-items: center;
+}
+.addControl label {
+  font-size: 14px;
+}
+.help,
+.selectedText {
+  color: var(--text-secondary, #98a2b3);
+  font-size: 14px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.selectedText {
+  margin-bottom: 0;
+}
+.selectedText strong {
+  color: var(--text-primary, #f3f5f7);
+}
+.notice {
+  min-height: 28px;
+  padding-top: 8px;
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+.notice[role="alert"],
+.issueBadge {
+  color: var(--accent, #d6b25e);
+}
+.issues {
+  border: 1px solid var(--accent, #d6b25e);
+  border-radius: 8px;
+  padding: 12px;
+  margin-top: 8px;
+}
+.issues p {
+  margin: 0 0 8px;
+}
+.issues ul {
+  margin: 0;
+  padding-left: 20px;
+}
+.issues button {
+  text-align: left;
+  overflow-wrap: anywhere;
+  margin: 4px 0;
+}
+.steps {
+  padding: 0;
+  margin: 12px 0 0;
+  list-style: none;
+  display: grid;
+  gap: 12px;
+}
+.step {
+  min-width: 0;
+  padding: 12px;
+  background: var(--surface-raised, #171c22);
+  border: 1px solid var(--border, #232a33);
+  border-radius: 8px;
+}
+.step[data-selected="true"] {
+  border-color: var(--accent, #d6b25e);
+}
+.editor .stepSelect {
+  display: grid;
+  text-align: left;
+  gap: 6px;
+  width: 100%;
+  overflow-wrap: anywhere;
+}
+.stepSelect span {
+  color: var(--text-secondary, #98a2b3);
+}
+.port {
+  margin-top: 12px;
+  min-width: 0;
+  font-size: 14px;
+}
+.port label {
+  display: block;
+  overflow-wrap: anywhere;
+  margin-bottom: 6px;
+}
+.connection > span {
+  flex: 1 1 160px;
+  overflow-wrap: anywhere;
+}
+.connection select {
+  flex: 1 1 160px;
+  min-width: 0;
+  width: 100%;
+}
+.issueBadge {
+  font-size: 12px;
+  margin: 6px 0 0;
+}
+.canvas {
+  width: 100%;
+  height: 480px;
+  min-width: 0;
+  border: 1px solid var(--border, #232a33);
+  border-radius: 8px;
+  overflow: hidden;
+  --xy-background-color: var(--surface, #12161b);
+  --xy-edge-stroke: var(--text-secondary, #98a2b3);
+  --xy-edge-stroke-selected: var(--accent, #d6b25e);
+  --xy-edge-label-color: var(--text-primary, #f3f5f7);
+  --xy-edge-label-background-color: var(--surface-raised, #171c22);
+  --xy-controls-button-background-color: var(--surface-raised, #171c22);
+  --xy-controls-button-background-color-hover: var(--surface-hover, #1e2329);
+  --xy-controls-button-color: var(--text-primary, #f3f5f7);
+  --xy-controls-button-border-color: var(--border, #232a33);
+}
+.nodeCard {
+  width: 240px;
+  height: 132px;
+  padding: 14px 42px 14px 14px;
+  border: 1px solid var(--border, #232a33);
+  border-radius: 8px;
+  background: var(--surface-raised, #171c22);
+  font-size: 13px;
+}
+.nodeCard strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.nodeCard p {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  margin: 8px 0 0;
+  color: var(--text-secondary, #98a2b3);
+  line-height: 1.4;
+}
+.nodeCard[data-selected="true"],
+.nodeCard[data-issue="true"] {
+  border-color: var(--accent, #d6b25e);
+}
+.portLabel {
+  position: absolute;
+  right: 10px;
+  transform: translateY(-50%);
+  color: var(--text-secondary, #98a2b3);
+  font-size: 11px;
+}
+.nodeCard :global(.react-flow__handle) {
+  width: 10px;
+  height: 10px;
+  background: var(--accent, #d6b25e);
+  border-color: var(--surface, #12161b);
+}
+.canvas :global(.react-flow__controls-button) {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 10px;
+  border-radius: 0;
+}
+.issueEdge :global(.react-flow__edge-path) {
+  stroke: var(--accent, #d6b25e);
+  stroke-dasharray: 5 3;
+}
+@media (max-width: 767px) {
+  .editor {
+    padding: 10px;
+  }
+  .toolbar {
+    align-items: stretch;
+  }
+  .addControl {
+    width: 100%;
+  }
+  .addControl label {
+    width: 100%;
+  }
+  .addControl select {
+    flex: 1;
+    min-width: 0;
+  }
+  .canvas {
+    height: 400px;
+  }
+  .step {
+    padding: 8px;
+  }
+}

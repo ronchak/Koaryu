@@ -329,6 +329,13 @@ def test_unsubscribe_get_is_static_nonmutating_with_exact_script_csp(api):
     assert "location.hash.slice(1)" in script and "history.replaceState" in script
     assert 'method="post"' in response.text and 'type="hidden"' in response.text
     assert "Confirm unsubscribe</button>" in response.text
+    assert "<title>Unsubscribe from studio automation emails</title>" in response.text
+    assert "<h1>Unsubscribe from studio automation emails</h1>" in response.text
+    assert (
+        "Confirm to stop all current and future automation emails from this one studio "
+        "to the recipient email address that received this email. "
+        "This includes missed-class reminders."
+    ) in response.text
     assert response.headers["cache-control"] == "no-store"
     assert response.headers["referrer-policy"] == "no-referrer"
     assert "https://" not in response.text
@@ -346,6 +353,11 @@ def test_unsubscribe_post_valid_invalid_missing_and_repeat_are_generic(api):
     assert {r.status_code for r in responses} == {200}
     assert len({r.text for r in responses}) == 1
     assert token not in responses[0].text
+    assert "<title>Studio automation email preference</title>" in responses[0].text
+    assert (
+        "If the link was valid, all current and future automation emails from this studio "
+        "to the recipient email address are now unsubscribed."
+    ) in responses[0].text
     assert [params["p_token"] for _, params in database.rpc_calls] == [token, token, "invalid", ""]
     assert all(r.headers["cache-control"] == "no-store" for r in responses)
     client.post(OPTOUT + "?token=" + token, json={"token": token, "recipient": "other@example.com"})
@@ -404,6 +416,13 @@ def test_registered_openapi_has_exact_public_route_shapes():
     spec = app.openapi()
     assert set(spec["paths"][BASE]) == {"get", "put"}
     assert "post" in spec["paths"][INTERNAL]
+    combined = spec["paths"]["/api/v1/internal/automations/process-due"]["post"]
+    assert combined["responses"]["200"]["content"]["application/json"]["schema"] == {
+        "$ref": "#/components/schemas/AutomationBatchResponse"
+    }
+    assert spec["paths"][INTERNAL]["post"]["responses"]["200"]["content"]["application/json"][
+        "schema"
+    ] == {"$ref": "#/components/schemas/MissedClassProcessResponse"}
     for name in (
         "MissedClassRuleResponse",
         "MissedClassRuleUpdate",
@@ -448,7 +467,10 @@ def test_unsubscribe_invalid_fragment_has_accessible_error_and_disabled_button(a
     assert 'id="confirm" type="submit" disabled' in response.text
     assert 'id="link-error" role="status" aria-live="polite"' in response.text
     assert "/^[a-f0-9]{64}$/.test(token)" in response.text
-    assert "This unsubscribe link is missing or invalid" in response.text
+    assert (
+        "This unsubscribe link is missing or invalid. Please open the link from your email."
+        in response.text
+    )
     assert database.rpc_calls == []
 
 
@@ -459,6 +481,7 @@ def test_unsubscribe_database_fault_has_private_generic_page_and_headers(api):
     response = client.post(OPTOUT, data={"token": token})
     assert response.status_code == 503
     assert token not in response.text and "private DB text" not in response.text
+    assert "<title>Studio automation email preference</title>" in response.text
     assert response.headers["cache-control"] == "no-store"
     assert response.headers["referrer-policy"] == "no-referrer"
 
@@ -476,3 +499,84 @@ def test_worker_default_body_and_unsafe_secret_do_not_create_client(api, monkeyp
     settings.AUTOMATION_WORKER_SECRET = "bad\nsecret"
     assert client.post(INTERNAL, json={}, headers={"X-Internal-Secret": "bad"}).status_code == 503
     factory.assert_not_called()
+
+
+COMBINED = "/api/v1/internal/automations/process-due"
+
+
+def test_combined_auth_precedes_runtime_lookup_and_disabled_is_unavailable(api):
+    client, _, settings, _ = api
+
+    class ForbiddenState:
+        def __getattr__(self, name):
+            raise AssertionError("unauthorized runtime lookup")
+
+    client.app.state = ForbiddenState()
+    for secret in (None, "wrong"):
+        headers = {} if secret is None else {"X-Internal-Secret": secret}
+        assert client.post(COMBINED, json={}, headers=headers).status_code == 403
+    response = client.post(
+        COMBINED, headers={"X-Internal-Secret": settings.AUTOMATION_WORKER_SECRET}
+    )
+    assert response.status_code == 503
+    assert response.json() == {"detail": "Automation batch is unavailable."}
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"limit": 0},
+        {"limit": 11},
+        {"limit": True},
+        {"limit": "1"},
+        {"clock": 1},
+        {"first_engine": "workflows"},
+    ],
+)
+def test_combined_input_preserves_strict_request_contract(api, payload):
+    client, _, settings, _ = api
+    response = client.post(
+        COMBINED, json=payload, headers={"X-Internal-Secret": settings.AUTOMATION_WORKER_SECRET}
+    )
+    assert response.status_code == 422
+
+
+def test_combined_response_deadline_default_limit_and_safe_failures(api):
+    from unittest.mock import AsyncMock
+
+    from test_automation_batch import batch_summary
+
+    from app.core.request_deadline import request_deadline
+    from app.schemas.automation_batch import AutomationBatchResponse
+    from app.services.automation_coordinator import AutomationBatchUnavailable
+    from app.services.automation_scheduler import AutomationBatchBusy
+
+    client, _, settings, _ = api
+    settings.AUTOMATION_WORKER_ENABLED = True
+    headers = {"X-Internal-Secret": settings.AUTOMATION_WORKER_SECRET}
+    assert client.post(COMBINED, headers=headers).status_code == 503
+    scheduler = SimpleNamespace(
+        run_once=AsyncMock(return_value=AutomationBatchResponse.model_validate(batch_summary()))
+    )
+    client.app.state.automation_scheduler = scheduler
+    token = request_deadline.set(123.0)
+    try:
+        response = client.post(COMBINED, headers=headers)
+    finally:
+        request_deadline.reset(token)
+    assert response.status_code == 200 and response.json() == batch_summary()
+    scheduler.run_once.assert_awaited_once_with(limit=10, deadline_monotonic=123.0)
+    for error, status, detail in [
+        (AutomationBatchBusy(), 409, "Automation batch is already running."),
+        (AutomationBatchUnavailable(), 503, "Automation batch is unavailable."),
+    ]:
+        scheduler.run_once.side_effect = error
+        response = client.post(COMBINED, json={"limit": 1}, headers=headers)
+        assert response.status_code == status
+        assert response.json() == {"detail": detail}
+        if status == 409:
+            assert response.headers["retry-after"] == "60"
+    settings.AUTOMATION_WORKER_SECRET = "bad\nsecret"
+    scheduler.run_once.reset_mock()
+    assert client.post(COMBINED, headers={"X-Internal-Secret": "bad"}).status_code == 503
+    scheduler.run_once.assert_not_called()

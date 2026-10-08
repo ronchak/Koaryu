@@ -1,5 +1,9 @@
 "use client";
 
+import type { BeltTestFacade } from "@/lib/belt-test-operation";
+
+import type { TrialAppointmentFacade } from "@/lib/trial-appointment-operation";
+
 import { createContext, useContext, type Context } from "react";
 
 import type {
@@ -41,6 +45,7 @@ import type {
   SessionAttendanceRefreshResult,
 } from "@/lib/schedule-store-model";
 import type { LeadFollowUpCommand, LeadOperations } from "@/lib/lead-operation-reservations";
+import type { LeadCreateView } from "@/lib/lead-create-operation";
 import type { LeadFollowUpOptions, LeadFollowUpResult } from "@/lib/store-lead-actions";
 import type { StudentListQuery } from "@/lib/student-list-page";
 import type { DemoResetResponse, StudioDataClearResponse } from "@/lib/studio-store-model";
@@ -56,6 +61,7 @@ export interface StoreContextValue {
   identityLoadError: string | null;
   studioLoadError: string | null;
   beltLaddersLoadError: string | null;
+  refreshBeltLadders: () => Promise<{ ladders: readonly BeltLadder[] }>;
   retryInitialization: () => void;
   subscriptionRequired: boolean;
   markSubscriptionRequired: () => void;
@@ -114,6 +120,10 @@ export interface StoreContextValue {
   leadsLoaded: boolean;
   leadsLoadError: string | null;
   addLead: (data: Partial<Lead>) => Promise<void>;
+  leadCreate: LeadCreateView;
+  trialAppointments: TrialAppointmentFacade;
+  beltTests: BeltTestFacade;
+  checkLeadCreateResult: () => Promise<void>;
   updateLead: (id: string, data: Partial<Lead>) => Promise<void>;
   deleteLead: (id: string) => Promise<void>;
   refreshLeads: () => Promise<Lead[]>;
@@ -260,6 +270,9 @@ export type LeadsStoreContextValue = Pick<
   | "leadsLoaded"
   | "leadsLoadError"
   | "addLead"
+  | "leadCreate"
+  | "trialAppointments"
+  | "checkLeadCreateResult"
   | "updateLead"
   | "deleteLead"
   | "refreshLeads"
@@ -269,6 +282,8 @@ export type LeadsStoreContextValue = Pick<
 >;
 export type BeltsStoreContextValue = Pick<
   StoreContextValue,
+  | "beltTests"
+  | "refreshBeltLadders"
   | "beltLaddersLoadError"
   | "beltLadders"
   | "beltRanks"

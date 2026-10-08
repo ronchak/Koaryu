@@ -1,0 +1,354 @@
+.workspace,
+.catalog {
+  display: grid;
+  gap: 1.25rem;
+  min-width: 0;
+  color: var(--text-primary);
+}
+.workspace {
+  max-width: 100rem;
+  margin: 0 auto;
+  padding: 1.25rem;
+}
+.catalog {
+  border-top: 1px solid var(--border);
+  padding: 1.25rem;
+}
+.sheet,
+.card {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1rem;
+  background: var(--surface);
+}
+.sheet {
+  display: grid;
+  gap: 0.85rem;
+}
+.topline,
+.sectionHeading,
+.facts,
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  align-items: center;
+  min-width: 0;
+}
+.topline,
+.sectionHeading {
+  justify-content: space-between;
+}
+.facts {
+  font-size: 0.875rem;
+}
+.facts strong,
+.badge {
+  text-transform: capitalize;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 0.2rem 0.65rem;
+}
+.muted,
+.card p,
+.metadata small {
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+}
+.notice {
+  padding: 0.85rem 1rem;
+  background: var(--surface-hover);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 0.9rem;
+  overflow-wrap: anywhere;
+}
+.workspace h2,
+.catalog h2 {
+  font-size: 1.2rem;
+  font-weight: 650;
+}
+.catalog h3 {
+  font-size: 1rem;
+  font-weight: 600;
+  margin-bottom: 0.75rem;
+}
+.catalog h4 {
+  font-weight: 600;
+}
+.catalog p {
+  line-height: 1.55;
+}
+.metadata {
+  display: grid;
+  gap: 1rem;
+}
+.metadata label {
+  display: grid;
+  gap: 0.4rem;
+  min-width: 0;
+  font-size: 0.9rem;
+  font-weight: 550;
+}
+.metadata input,
+.metadata textarea {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: 0.6rem 0.75rem;
+  background: var(--surface);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-weight: 400;
+}
+.metadata textarea {
+  resize: vertical;
+  min-height: 70px;
+}
+.workspace button,
+.catalog button,
+.dialog button {
+  min-height: 44px;
+  padding: 0.5rem 0.8rem;
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  font-size: 0.875rem;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.workspace button:hover,
+.catalog button:hover,
+.dialog button:hover {
+  background: var(--surface-hover);
+}
+.workspace button:disabled,
+.catalog button:disabled,
+.dialog button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.workspace button:focus-visible,
+.catalog button:focus-visible,
+.dialog button:focus-visible,
+.metadata input:focus-visible,
+.metadata textarea:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+.editorGrid {
+  display: grid;
+  align-items: start;
+  gap: 1rem;
+  min-width: 0;
+}
+.editorGrid > * {
+  min-width: 0;
+}
+.templates {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+  gap: 0.75rem;
+}
+.card {
+  display: grid;
+  gap: 0.6rem;
+  align-content: start;
+  overflow-wrap: anywhere;
+}
+.workflowList {
+  display: grid;
+  gap: 0.75rem;
+  list-style: none;
+  padding: 0;
+}
+.dialog {
+  width: min(560px, calc(100vw - 2rem));
+  max-height: calc(100dvh - 2rem);
+  margin: auto;
+  overflow-y: auto;
+  padding: 1.5rem;
+  background: var(--surface);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 20px 60px #0005;
+}
+.dialog::backdrop {
+  background: #0008;
+}
+.dialog h2 {
+  font-size: 1.15rem;
+  font-weight: 650;
+}
+.dialogBody {
+  display: grid;
+  gap: 1rem;
+  padding: 1rem 0;
+  font-size: 0.95rem;
+  line-height: 1.6;
+}
+.checkbox {
+  display: flex;
+  gap: 0.75rem;
+  align-items: start;
+}
+.checkbox input {
+  width: 20px;
+  height: 20px;
+  margin-top: 0.25rem;
+  flex: none;
+}
+@media (min-width: 1100px) {
+  .editorGrid {
+    grid-template-columns: minmax(0, 1fr) minmax(300px, 350px);
+  }
+  .metadata {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr);
+  }
+}
+@media (max-width: 479px) {
+  .workspace {
+    padding: 0.75rem;
+  }
+  .sheet,
+  .catalog {
+    padding: 0.85rem;
+  }
+  .actions button {
+    flex-grow: 1;
+  }
+}
+.workflowTools,
+.toolStack,
+.recordPicker,
+.runDetail {
+  display: grid;
+  gap: 0.85rem;
+  min-width: 0;
+}
+.toolPanel {
+  align-content: start;
+  overflow-wrap: anywhere;
+}
+.toolPanel h3,
+.toolPanel h4 {
+  font-size: 1rem;
+  font-weight: 650;
+}
+.toolPanel p {
+  line-height: 1.5;
+}
+.toolRows {
+  display: grid;
+  gap: 0.65rem;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+.toolRows > li,
+.trace > li,
+.runDetail {
+  display: grid;
+  gap: 0.5rem;
+  min-width: 0;
+  padding: 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.toolRows button {
+  text-align: left;
+}
+.toolRows button[aria-pressed="true"] {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.recordPicker {
+  padding: 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-raised);
+}
+.toolField {
+  display: grid;
+  gap: 0.4rem;
+  font-size: 0.9rem;
+  min-width: 0;
+}
+.toolField input {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text-primary);
+}
+.toolField input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+.trace {
+  display: grid;
+  gap: 0.65rem;
+  padding: 0;
+  margin: 0;
+  list-style-position: inside;
+}
+.sampleText {
+  display: grid;
+  gap: 0.4rem;
+  border-left: 3px solid var(--accent);
+  padding-left: 0.75rem;
+}
+.sampleText pre {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: inherit;
+}
+.toolModal {
+  width: min(560px, calc(100vw - 2rem));
+  max-height: calc(100dvh - 2rem);
+  padding: 1.25rem;
+  overflow-y: auto;
+  overflow-wrap: anywhere;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--text-primary);
+  box-shadow: 0 20px 60px #0005;
+}
+.toolModalRoot {
+  color: var(--text-primary);
+}
+.toolPanel button,
+.toolModal button {
+  max-width: 100%;
+  min-height: 44px;
+}
+@media (min-width: 1100px) {
+  .workflowTools {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+  }
+  .workflowTools > :first-child {
+    grid-row: span 2;
+  }
+}
+@media (max-width: 479px) {
+  .toolRows > li,
+  .trace > li,
+  .recordPicker,
+  .runDetail {
+    padding: 0.6rem;
+  }
+  .toolModal {
+    padding: 1rem;
+  }
+}

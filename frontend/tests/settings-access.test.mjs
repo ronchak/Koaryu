@@ -27,7 +27,7 @@ describe("settings route access boundary", () => {
     assert.match(pageSource, /import \{ canAccessSettings \} from "\.\/access-policy";/);
     assert.match(
       pageSource,
-      /canAccessSettings\(currentRole\) \? <AdminSettingsContent \/> : <SettingsAccessNotice \/>/,
+      /canAccessSettings\(currentRole\)[\s\S]*?<AdminSettingsContent\s+key=\{JSON\.stringify\([\s\S]*?\)\}\s*\/>[\s\S]*?<SettingsAccessNotice \/>/,
     );
 
     const noticeStart = pageSource.indexOf("function SettingsAccessNotice()");

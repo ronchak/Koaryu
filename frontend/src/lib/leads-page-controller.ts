@@ -22,6 +22,7 @@ import type {
   LeadOperation,
   LeadOperations,
 } from "@/lib/lead-operation-reservations";
+import type { LeadCreateView } from "@/lib/lead-create-operation";
 import type { LeadFollowUpOptions, LeadFollowUpResult } from "@/lib/store-lead-actions";
 import type { Lead, LeadActivity, LeadStage, LostReason, Program, StaffRoleName } from "@/types";
 
@@ -29,6 +30,8 @@ type LeadActivityStatus = "idle" | "loading" | "ready" | "error";
 
 type LeadStoreActions = {
   addLead: (data: Partial<Lead>) => Promise<void>;
+  leadCreate: LeadCreateView;
+  checkLeadCreateResult: () => Promise<void>;
   convertLeadToStudent: (leadId: string) => Promise<{ lead: Lead; studentId: string | null }>;
   followUpLead: (
     leadId: string,
@@ -48,10 +51,13 @@ type LeadsPageControllerOptions = LeadStoreActions & {
   programs: Program[];
   today: string;
   token: string | null;
+  trialRecoveryLeadIds?: ReadonlySet<string>;
 };
 
 export function useLeadsPageController({
   addLead,
+  leadCreate,
+  checkLeadCreateResult,
   baseLeads,
   convertLeadToStudent,
   currentRole,
@@ -63,6 +69,7 @@ export function useLeadsPageController({
   programs,
   today,
   token,
+  trialRecoveryLeadIds,
   updateLead,
 }: LeadsPageControllerOptions) {
   const router = useRouter();
@@ -71,8 +78,25 @@ export function useLeadsPageController({
   const [showAddLead, setShowAddLead] = useState(false);
   const [selectedLeadId, setSelectedLeadId] = useState<string | null>(null);
   const [showLost, setShowLost] = useState(false);
-  const [addLeadOutcomeUnknown, setAddLeadOutcomeUnknown] = useState(false);
-  const [isAddingLead, setIsAddingLead] = useState(false);
+  const modalGenerationRef = useRef(0);
+  const addEditGenerationRef = useRef(0);
+  const submittedFormRef = useRef<{ scope: string; modal: number; edit: number } | null>(null);
+  const addFlightRef = useRef(false);
+  const currentCreate = leadCreate.isCurrent() ? leadCreate : null;
+  const isAddingLead = currentCreate?.status === "submitting";
+  const isCheckingLead = currentCreate?.status === "checking";
+  const addLeadLocked = !currentCreate || currentCreate.locked;
+  const leadCreateMessage = currentCreate
+    ? currentCreate.message
+    : !isPreviewMode && canManageLeads && identityReady
+      ? "Your studio access needs to be checked. Reload this page before adding a lead."
+      : null;
+  const canCheckLeadCreate = Boolean(
+    currentCreate?.locked &&
+    ["unknown", "confirmed_needs_refresh", "storage_blocked", "rejected"].includes(
+      currentCreate.status,
+    ),
+  );
   const [addLeadError, setAddLeadError] = useState<string | null>(null);
   const scope = `${identityGeneration}:${identityReady}:${currentRole}:${isPreviewMode}`;
   // Null while unmounted. Row reservations live in the provider; this page scope
@@ -103,7 +127,15 @@ export function useLeadsPageController({
     setSelectedLeadId(null);
     setLeadActionError(null);
     setActionMessage(null);
+    setShowAddLead(false);
+    setAddLeadProgramId(null);
+    setAddLeadError(null);
   }
+  useLayoutEffect(() => {
+    modalGenerationRef.current += 1;
+    addFlightRef.current = false;
+    submittedFormRef.current = null;
+  }, [scope]);
   useLayoutEffect(() => {
     scopeRef.current = scope;
     selectedLeadIdRef.current = selectedLeadId;
@@ -198,7 +230,8 @@ export function useLeadsPageController({
     if (
       !selectedLeadId ||
       !pendingLeadIds.has(selectedLeadId) ||
-      followUpRecoveries.has(selectedLeadId)
+      followUpRecoveries.has(selectedLeadId) ||
+      trialRecoveryLeadIds?.has(selectedLeadId)
     ) {
       selectedLeadIdRef.current = null;
       setSelectedLeadId(null);
@@ -210,7 +243,8 @@ export function useLeadsPageController({
 
   function openAddLeadModal() {
     if (!canManageLeads) return;
-    if (!addLeadOutcomeUnknown) setAddLeadError(null);
+    setAddLeadError(null);
+    modalGenerationRef.current += 1;
     setAddLeadProgramId(null);
     setShowAddLead(true);
   }
@@ -218,7 +252,7 @@ export function useLeadsPageController({
   function closeAddLeadModal() {
     if (isAddingLead) return;
     setShowAddLead(false);
-    setAddLeadOutcomeUnknown(false);
+    modalGenerationRef.current += 1;
     setAddLeadProgramId(null);
   }
 
@@ -284,24 +318,70 @@ export function useLeadsPageController({
     }
   }
 
-  async function handleAddLead(data: Partial<Lead>) {
-    if (!canManageLeads || addLeadOutcomeUnknown) return;
+  function handleAddLeadFormEdit() {
+    if (scopeRef.current === scope) addEditGenerationRef.current += 1;
+  }
+  function changeAddLeadProgramId(id: string | null) {
+    handleAddLeadFormEdit();
+    setAddLeadProgramId(id);
+  }
+
+  async function runAddLeadAction(action: () => Promise<void>, submitting = false) {
+    if (
+      !canManageLeads ||
+      !identityReady ||
+      !leadCreate.isCurrent() ||
+      scopeRef.current !== scope ||
+      addFlightRef.current
+    )
+      return;
+    const generation = modalGenerationRef.current;
+    const operationScope = scope;
+    if (submitting) {
+      submittedFormRef.current = { scope, modal: generation, edit: addEditGenerationRef.current };
+    }
+    const originatingForm = submittedFormRef.current;
+    // A storage-only retry may restore dispatch without confirming any create.
+    const mayCloseForm =
+      submitting || ["unknown", "confirmed_needs_refresh"].includes(leadCreate.status);
+    const ownsUnchangedForm = () =>
+      Boolean(
+        originatingForm &&
+        originatingForm === submittedFormRef.current &&
+        originatingForm.scope === operationScope &&
+        originatingForm.modal === modalGenerationRef.current &&
+        originatingForm.edit === addEditGenerationRef.current,
+      );
+    const current = () =>
+      scopeRef.current === operationScope &&
+      modalGenerationRef.current === generation &&
+      leadCreate.isCurrent();
+    addFlightRef.current = true;
     setAddLeadError(null);
     setActionMessage(null);
-    setIsAddingLead(true);
-
     try {
-      await addLead(data);
-      setShowAddLead(false);
-      setAddLeadProgramId(null);
-      setActionMessage("Lead added to the pipeline.");
-    } catch (error) {
-      console.error("Failed to add lead", error);
-      if (error instanceof CommandOutcomeUnknown) setAddLeadOutcomeUnknown(true);
-      setAddLeadError(error instanceof Error ? error.message : "Could not add this lead.");
+      await action();
+      if (current() && mayCloseForm && ownsUnchangedForm()) {
+        submittedFormRef.current = null;
+        setShowAddLead(false);
+        setAddLeadProgramId(null);
+        if (isPreviewMode) setActionMessage("Lead added to the pipeline.");
+      }
+    } catch {
+      // Live status and recovery copy come from the retained owner, including
+      // unavailable current rows. Do not turn a failed read into a failed write.
+      if (current() && isPreviewMode) setAddLeadError("Could not add this lead.");
     } finally {
-      setIsAddingLead(false);
+      if (scopeRef.current === operationScope) addFlightRef.current = false;
     }
+  }
+  async function handleAddLead(data: Partial<Lead>) {
+    if (addLeadLocked) return;
+    await runAddLeadAction(() => addLead(data), true);
+  }
+  async function handleCheckLeadCreateResult() {
+    if (!canCheckLeadCreate) return;
+    await runAddLeadAction(checkLeadCreateResult);
   }
 
   async function handleLeadUpdate(
@@ -488,6 +568,7 @@ export function useLeadsPageController({
     dismissLeadActionError: () => setLeadActionError(null),
     getFollowUpInputValue,
     handleAddLead,
+    handleAddLeadFormEdit,
     handleAssignedStaff,
     handleConvertLead,
     handleMarkContacted,
@@ -497,19 +578,23 @@ export function useLeadsPageController({
     handleRescheduleLead,
     handleStageSelection,
     isAddingLead,
-    addLeadOutcomeUnknown,
+    addLeadLocked,
+    leadCreateMessage,
+    canCheckLeadCreate,
+    isCheckingLead,
+    handleCheckLeadCreateResult,
     leadActionError,
     model,
     openAddLeadModal,
     pendingLeadIds,
     followUpRecoveries,
-    recoveringLeadIds: new Set(followUpRecoveries.keys()),
+    recoveringLeadIds: new Set([...followUpRecoveries.keys(), ...(trialRecoveryLeadIds ?? [])]),
     retrySelectedLeadActivities,
     selectedLeadActivities,
     selectedLeadActivityError,
     selectedLeadActivityStatus,
     selectLead,
-    setAddLeadProgramId,
+    setAddLeadProgramId: changeAddLeadProgramId,
     setFollowUpInputValue,
     setShowLost,
     showAddLead,

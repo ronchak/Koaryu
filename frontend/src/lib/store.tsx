@@ -9,7 +9,7 @@ import { pendingCommands, subscribePendingCommands } from "@/lib/pending-command
 import { markDashboardFactsChanged, needsFreshDashboardFacts } from "@/lib/dashboard-freshness";
 import { beginResourceMutation, createResourceScope } from "@/lib/store-resource-scope";
 
-import React, { useState, useEffect, useLayoutEffect, useCallback, useRef, type ReactNode } from "react";
+import React, { useState, useEffect, useLayoutEffect, useCallback, useRef, useMemo, type ReactNode } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { api, isStaffArchivedError, isSubscriptionRequiredError } from "@/lib/api";
@@ -88,6 +88,7 @@ import {
   type ScheduleRangeRefreshIntent,
 } from "@/lib/schedule-store-model";
 import { useStoreBeltActions } from "@/lib/store-belt-actions";
+import { useStoreBeltTestActions } from "@/lib/store-belt-test-actions";
 import { useStoreLeadActions } from "@/lib/store-lead-actions";
 import { useStoreProgramActions } from "@/lib/store-program-actions";
 import { useStoreScheduleActions } from "@/lib/store-schedule-actions";
@@ -258,6 +259,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [leadsLoaded, setLeadsLoaded] = useState(isPreviewMode);
   const [leadsLoadError, setLeadsLoadError] = useState<string | null>(null);
   const leadsRef = useRef<Lead[]>(leads);
+  const beltTestResourceScopeRef = useRef(createResourceScope());
+  const resetBeltTestResourceScope = useCallback(() => {
+    beltTestResourceScopeRef.current.settle();
+    beltTestResourceScopeRef.current = createResourceScope();
+  }, []);
   const leadMutationScopeRef = useRef(createResourceScope());
   const beginLeadMutation = useCallback(() => beginResourceMutation(leadMutationScopeRef.current), []);
   const [beltLadders, setBeltLaddersState] = useState<BeltLadder[]>(() =>
@@ -697,6 +703,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [commitEligibilityRows]);
 
   const applyLiveStudioDataResetState = useCallback((state: LiveStudioDataResetState) => {
+    resetBeltTestResourceScope();
     beltsHydratedRef.current = false;
     resetProgramScope();
     resetStaffScope();
@@ -760,7 +767,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setEligibilityLoadError(state.eligibilityLoadError);
     promotionHistoryGenerationRef.current += 1;
     setPromotionHistoryCache(state.promotionHistoryCache);
-  }, [setPrograms, setProgramsLoaded, resetProgramScope, resetStaffScope, destructivelyResetScheduleCoordinator, setSessions, updateCurrentLadderId]);
+  }, [setPrograms, setProgramsLoaded, resetProgramScope, resetBeltTestResourceScope, resetStaffScope, destructivelyResetScheduleCoordinator, setSessions, updateCurrentLadderId]);
 
   const resetLiveStudioState = useCallback(() => {
     invalidateAccessIdentity();
@@ -888,6 +895,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [hydrated, pathname, router, subscriptionRequired]);
 
   const applyDemoResetResponse = useCallback((data: DemoResetResponse) => {
+    resetBeltTestResourceScope();
+    leadMutationScopeRef.current.settle();
+    leadMutationScopeRef.current = createResourceScope();
     resetProgramScope();
     setProgramsUsageLoaded(false);
     setProgramsUsageLoadError(null);
@@ -916,9 +926,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setSessions(data.sessions.sort(compareSessions));
     setAttendance(data.attendance);
     clearPromotionHistoryCache();
-  }, [setPrograms, setProgramsLoaded, resetProgramScope, applyLadderSelection, clearPromotionHistoryCache, commitEligibilityRows, commitStudents, destructivelyResetScheduleCoordinator, setSessions]);
+  }, [setPrograms, setProgramsLoaded, resetProgramScope, resetBeltTestResourceScope, applyLadderSelection, clearPromotionHistoryCache, commitEligibilityRows, commitStudents, destructivelyResetScheduleCoordinator, setSessions]);
 
   const applyClearedStudioData = useCallback((studioNameValue?: string) => {
+    resetBeltTestResourceScope();
+    leadMutationScopeRef.current.settle();
+    leadMutationScopeRef.current = createResourceScope();
     resetProgramScope();
     setProgramsUsageLoaded(false);
     setProgramsUsageLoadError(null);
@@ -952,7 +965,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setAttendance([]);
     clearEligibilityState();
     clearPromotionHistoryCache();
-  }, [setPrograms, setProgramsLoaded, resetProgramScope,
+  }, [setPrograms, setProgramsLoaded, resetProgramScope, resetBeltTestResourceScope,
     clearEligibilityState,
     clearPromotionHistoryCache,
     commitStudents,
@@ -1046,6 +1059,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       promotionHistoryByStudent: toPromotionHistoryByStudent(promotionHistoryCacheRef.current),
     });
   }, []);
+
+  const beltTests = useStoreBeltTestActions({
+    scope: identityReady && !subscriptionRequired && activeUserId && currentStudioId && currentRole === "admin"
+      ? { userId: activeUserId, studioId: currentStudioId, role: "admin" } : null,
+    isPreviewMode,
+    beginLiveAuthRequest,
+    resourceScopeRef: beltTestResourceScopeRef,
+    beltLaddersRef,
+    programsRef,
+    studentsRef,
+    previewEligibilityForLadder,
+  });
 
   const fetchEligibilityForLadder = useCallback(async (
     ladderId?: string | null,
@@ -1745,6 +1770,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const {
     addLead,
+    leadCreate,
+    checkLeadCreateResult,
+    trialAppointments,
     convertLeadToStudent,
     deleteLead,
     followUpLead,
@@ -1752,6 +1780,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     refreshLeads,
     updateLead,
   } = useStoreLeadActions({
+    leadCreateScope: identityReady && !subscriptionRequired && activeUserId && currentStudioId && currentRole
+      ? { userId: activeUserId, studioId: currentStudioId, role: currentRole } : null,
     businessDateRef,
     beginLeadMutation,
     leadMutationScopeRef,
@@ -1778,6 +1808,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     promoteStudent,
     setBeltRanks,
     setCurrentLadder,
+    refreshBeltLadders,
   } = useStoreBeltActions({
     applyLadderSelection,
     beginLiveAuthRequest,
@@ -2025,6 +2056,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     bulkUpdateStudentStatus: useReconciledProjectionCommand(bulkUpdateStudentStatus, beginProjectionCommand),
     importStudents: useReconciledProjectionCommand(importStudents, beginProjectionCommand),
     addLead: useReconciledProjectionCommand(addLead, beginProjectionCommand),
+    createTrialAppointment: useReconciledProjectionCommand(trialAppointments.createTrialAppointment, beginProjectionCommand),
+    updateTrialAppointment: useReconciledProjectionCommand(trialAppointments.updateTrialAppointment, beginProjectionCommand),
+    checkTrialAppointmentResult: useReconciledProjectionCommand(trialAppointments.checkTrialAppointmentResult, beginProjectionCommand),
+    checkLeadCreateResult: useReconciledProjectionCommand(checkLeadCreateResult, beginProjectionCommand),
     updateLead: useReconciledProjectionCommand(updateLead, beginProjectionCommand),
     deleteLead: useReconciledProjectionCommand(deleteLead, beginProjectionCommand),
     followUpLead: useReconciledProjectionCommand(followUpLead, beginProjectionCommand),
@@ -2041,6 +2076,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     addTemplate: useReconciledProjectionCommand(addTemplate, beginProjectionCommand),
     setBeltRanks: useReconciledProjectionCommand(setBeltRanks, beginProjectionCommand),
   };
+  const reconciledTrialAppointments = useMemo(() => Object.freeze({
+    ...trialAppointments,
+    createTrialAppointment: reconciledCommands.createTrialAppointment,
+    updateTrialAppointment: reconciledCommands.updateTrialAppointment,
+    checkTrialAppointmentResult: reconciledCommands.checkTrialAppointmentResult,
+  }), [trialAppointments, reconciledCommands.createTrialAppointment, reconciledCommands.updateTrialAppointment, reconciledCommands.checkTrialAppointmentResult]);
   const studentCommandOwnersRef = useRef(new Map<string, symbol>());
   const ownedStudentCommands = {
     updateStudent: useStudentCommandOwnership(
@@ -2083,6 +2124,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const contextValues = useStoreContextValues({
     addLead: reconciledCommands.addLead,
+    leadCreate,
+    checkLeadCreateResult: reconciledCommands.checkLeadCreateResult,
+    trialAppointments: reconciledTrialAppointments,
+    beltTests,
     addSession: reconciledCommands.addSession,
     addStudent: reconciledCommands.addStudent,
     addTemplate: reconciledCommands.addTemplate,
@@ -2141,6 +2186,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     promotionHistoryCache,
     refreshLeads,
     refreshPrograms,
+    refreshBeltLadders,
     refreshSchedule,
     refreshScheduleRange,
     refreshSessionAttendance,

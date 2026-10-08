@@ -13,7 +13,11 @@ interface AddLeadModalProps {
   activeStaff: StaffMember[];
   addLeadError: string | null;
   isAddingLead: boolean;
-  isOutcomeUnknown?: boolean;
+  createLocked: boolean;
+  createMessage: string | null;
+  canCheckResult: boolean;
+  isCheckingResult: boolean;
+  onCheckResult: () => void | Promise<void>;
   programById: Map<string, Program>;
   selectedProgramId: string | null;
   today: string;
@@ -21,6 +25,7 @@ interface AddLeadModalProps {
   onDismissError: () => void;
   onProgramChange: (programId: string | null) => void;
   onSubmit: (data: Partial<Lead>) => void | Promise<void>;
+  onEdit?: () => void;
 }
 
 export function AddLeadModal({
@@ -28,7 +33,11 @@ export function AddLeadModal({
   activeStaff,
   addLeadError,
   isAddingLead,
-  isOutcomeUnknown = false,
+  createLocked,
+  createMessage,
+  canCheckResult,
+  isCheckingResult,
+  onCheckResult,
   programById,
   selectedProgramId,
   today,
@@ -36,6 +45,7 @@ export function AddLeadModal({
   onDismissError,
   onProgramChange,
   onSubmit,
+  onEdit,
 }: AddLeadModalProps) {
   function closeIfIdle() {
     if (!isAddingLead) {
@@ -65,6 +75,7 @@ export function AddLeadModal({
         </button>
       </div>
       <form
+        onChange={onEdit}
         onSubmit={(event) => {
           event.preventDefault();
           const formData = new FormData(event.currentTarget);
@@ -94,6 +105,22 @@ export function AddLeadModal({
             {addLeadError}
           </DismissibleNotice>
         )}
+        {createMessage ? (
+          <div role="status" className="text-sm text-text-secondary">
+            <p>{createMessage}</p>
+            {canCheckResult ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                onClick={() => void onCheckResult()}
+                disabled={isCheckingResult}
+              >
+                Check result
+              </Button>
+            ) : null}
+          </div>
+        ) : null}
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div className="flex flex-col gap-1.5">
             <label htmlFor="lead-first-name" className="text-sm text-text-secondary font-medium">
@@ -258,12 +285,7 @@ export function AddLeadModal({
           <Button variant="ghost" size="sm" type="button" disabled={isAddingLead} onClick={onClose}>
             Cancel
           </Button>
-          <Button
-            variant="primary"
-            size="sm"
-            type="submit"
-            disabled={isAddingLead || isOutcomeUnknown}
-          >
+          <Button variant="primary" size="sm" type="submit" disabled={isAddingLead || createLocked}>
             {isAddingLead ? "Saving..." : "Add lead"}
           </Button>
         </div>

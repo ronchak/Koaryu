@@ -41,6 +41,13 @@ export const NAV_ITEMS: readonly NavItem[] = [
     prefetch: false,
     roles: ["admin", "front_desk"],
   },
+  {
+    label: "Automations",
+    href: "/automations",
+    icon: "Workflow",
+    prefetch: false,
+    roles: ["admin"],
+  },
   { label: "Reports", href: "/reports", icon: "BarChart3", prefetch: false },
   { label: "Settings", href: "/settings", icon: "Settings", prefetch: false },
 ] as const;

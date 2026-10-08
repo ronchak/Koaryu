@@ -49,7 +49,7 @@ class ReleaseSchemaReadinessTest(unittest.TestCase):
             with self.subTest(row=row), self.assertRaises(ReleaseSchemaNotReadyError):
                 validate_release_schema_preflight(row)
 
-    def test_coherent_v48_predecessor_cannot_satisfy_v56_readiness(self):
+    def test_coherent_v48_predecessor_cannot_satisfy_v57_readiness(self):
         previous = {
             "ready": True,
             "migration_count": 143,
@@ -61,7 +61,7 @@ class ReleaseSchemaReadinessTest(unittest.TestCase):
         with self.assertRaises(ReleaseSchemaNotReadyError):
             validate_release_schema_preflight(previous)
 
-    def test_exact_v53_predecessor_cannot_satisfy_v56_readiness(self):
+    def test_exact_v53_predecessor_cannot_satisfy_v57_readiness(self):
         previous = {
             "ready": True,
             "migration_count": 148,
@@ -73,7 +73,7 @@ class ReleaseSchemaReadinessTest(unittest.TestCase):
         with self.assertRaises(ReleaseSchemaNotReadyError):
             validate_release_schema_preflight(previous)
 
-    def test_exact_v54_predecessor_cannot_satisfy_v56_readiness(self):
+    def test_exact_v54_predecessor_cannot_satisfy_v57_readiness(self):
         previous = {
             "ready": True,
             "migration_count": 149,
@@ -85,7 +85,19 @@ class ReleaseSchemaReadinessTest(unittest.TestCase):
         with self.assertRaises(ReleaseSchemaNotReadyError):
             validate_release_schema_preflight(previous)
 
-    def test_exact_v55_predecessor_cannot_satisfy_v56_readiness(self):
+    def test_exact_v56_predecessor_cannot_satisfy_v57_readiness(self):
+        previous = {
+            "ready": True,
+            "migration_count": 151,
+            "migration_head": "20261004220435",
+            "pending_versions": EXPECTED_RELEASE_PENDING_VERSIONS[:67],
+            "security_failures": [],
+            "manifest_version": "release-db-attestation-v56",
+        }
+        with self.assertRaises(ReleaseSchemaNotReadyError):
+            validate_release_schema_preflight(previous)
+
+    def test_exact_v55_predecessor_cannot_satisfy_v57_readiness(self):
         previous = {
             "ready": True,
             "migration_count": 150,
@@ -136,7 +148,7 @@ class ReleaseSchemaReadinessTest(unittest.TestCase):
             return_value=client,
         ):
             assert_hosted_release_schema_ready()
-        self.assertEqual(calls, [("koaryu_release_schema_preflight_v37", {})])
+        self.assertEqual(calls, [("koaryu_release_schema_preflight_v38", {})])
 
     def test_hosted_check_does_not_fallback_on_provider_failure(self):
         calls = []
@@ -160,7 +172,7 @@ class ReleaseSchemaReadinessTest(unittest.TestCase):
             self.assertRaises(PostgrestAPIError),
         ):
             assert_hosted_release_schema_ready()
-        self.assertEqual(calls, [("koaryu_release_schema_preflight_v37", {})])
+        self.assertEqual(calls, [("koaryu_release_schema_preflight_v38", {})])
 
     def test_hosted_check_fails_closed_when_current_rpc_is_missing(self):
         calls = []
@@ -187,7 +199,7 @@ class ReleaseSchemaReadinessTest(unittest.TestCase):
             self.assertRaisesRegex(RuntimeError, "Apply the database migrations"),
         ):
             assert_hosted_release_schema_ready()
-        self.assertEqual(calls, [("koaryu_release_schema_preflight_v37", {})])
+        self.assertEqual(calls, [("koaryu_release_schema_preflight_v38", {})])
 
     def test_success_cache_rechecks_only_after_ttl(self):
         now = [10.0]

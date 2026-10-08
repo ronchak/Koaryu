@@ -70,6 +70,49 @@ persisted compiler state without deleting the production build or changing code.
 Keep the old cache until recovery is verified; increasing browser test timeouts
 does not repair a stalled compiler.
 
+## Trial appointment command and time checks
+
+`useLeadStore().trialAppointments` owns one pending trial command per lead. Its
+metadata-only session journal retains operation and owner IDs; explicit Check
+result reads the receipt, exact current appointment, then exact current lead.
+Unknown results never replay a mutation. An initially malformed journal blocks new trial
+commands without reserving ordinary lead rows; protected history reads still
+work. Explicit storage recheck only verifies and adopts metadata.
+
+Shared appointment time helpers preserve untouched saved instants, including
+fractions. New local schedules lazy-load Temporal and require an explicit choice
+for ambiguous times. A server-named zone unavailable locally remains readable,
+recoverable and cancelable; schedule editing requires a supported replacement.
+The facade tests use synthetic exact-detail responses. They do not establish
+runtime readiness of the backend exact-detail route, whose mounting is tracked separately.
+
+```bash
+node --experimental-strip-types --test tests/appointment-time.test.mjs tests/trial-appointment-operation.test.mjs tests/trial-appointment-mounted.test.mjs
+```
+
+## Lead creation recovery
+
+Add lead retains one operation ID before submitting. If confirmation is lost,
+**Check result** reads the original receipt and the current lead without repeating
+the create request. The blocker survives closing the form, navigating away,
+provider remounts, and reloads in the same browser session. Only the currently
+verified admin or original front desk owner can resume it. Other lead work remains
+available.
+
+The session-storage journal contains only operation, owner, studio and confirmed
+lead IDs. It never saves contact fields, notes, tokens or form contents. Unavailable
+or malformed storage blocks new creates. A missing receipt stays unresolved. If
+creation is confirmed but the current lead returns 404, the UI says that the lead
+was created but is no longer available. It publishes no historical receipt row.
+Clear/reset fences held reads while preserving unresolved operation markers.
+Preview keeps local sample creation and never uses this journal or live recovery.
+
+Run the synthetic recovery checks from `frontend/`:
+
+```bash
+node --experimental-strip-types --test tests/lead-create-operation.test.mjs tests/lead-create-mounted.test.mjs
+```
+
 ## Build
 
 ```bash
@@ -211,6 +254,7 @@ Settings includes admin-only demo/data utilities intended for controlled demos a
 
 - Demo reset can replace working demo data when the backend allows it.
 - Clear studio data uses the shared confirmation dialog before deleting working studio records.
+- Both confirmations explain automation pauses, cancellation, retained sending attempts, and retained original operation history including saved details. Results list each returned automation effect separately and remain until dismissed or a new data action starts. Reset counts describe seeded records; clear counts describe removed records. Preview automation effects are labeled sample numbers. An incomplete success response leaves the outcome unconfirmed and does not apply the store update or trigger a retry.
 
 Both tools are destructive. They are designed to preserve Koaryu Core subscription/platform access rows, but they should still be used only against a disposable demo studio unless data loss is intended.
 
@@ -261,8 +305,9 @@ the same validated identity scope.
 
 Roster URLs retain bounded filters/sort. One identity-scoped session return record
 retains cursor/scroll/focus for 30 minutes. Unknown write outcomes must not be
-replayed automatically. Automations is a planned feature under Help for the Core
-release. See `docs/verification/workflow-stabilization.md` for evidence and limits.
+replayed automatically. Admins can open Automations from the primary navigation
+for operational workflow tooling. See `docs/verification/workflow-stabilization.md`
+for evidence and limits.
 
 Run deterministic live-mode workflow checks without any external data plane:
 
@@ -337,3 +382,50 @@ and same-identity token renewal. Observed sign-out, user/studio/role replacement
 USER_UPDATED, or access reset suppresses file handoff. The request releases its
 Auth listener when it settles. See [identity lifetime verification](../docs/verification/identity-lifetime.md)
 for the mounted regression coverage and its limits.
+
+## Trial appointments
+
+Trial appointments live in the selected lead inspector for current admins. Preview labels all trial records as samples and performs no trial API or recovery-journal I/O. Program choices distinguish loading, failed refresh, and a ready empty list. Scheduling uses the chosen event timezone and requires an explicit occurrence when clocks move backward. Unsupported saved timezones and removed program context remain visible for history, repair, and cancellation.
+
+Trial commands use the shared lead reservation and retained recovery owner. A waiting result can be checked above the lead list even after its lead disappears. Check browser recovery record only rechecks storage; Check result reads the command result and current records. Neither action resubmits the command.
+
+Run `node --experimental-strip-types --test tests/trial-appointment-panel-mounted.test.mjs tests/appointment-time.test.mjs tests/trial-appointment-operation.test.mjs tests/trial-appointment-mounted.test.mjs` from `frontend/` for synthetic trial proof. To prepare a disposable manual fixture, run `node tests/helpers/trial-appointment-fixture.mjs /tmp/koaryu-trial-panel-qa`, then serve that directory on loopback. The fixture uses the actual page, provider, inspector and time controls with synthetic auth/API. Its visible controls exercise lost responses, held reads, removed leads and reference failures. Stop the server and remove the temporary directory after review. Inspect the normal preview Next build separately for production CSS and lazy Temporal chunk loading.
+
+### Belt-test events
+
+Administrators can open `/belt-tests` from Belt Tracker, choose an explicit belt plan,
+save a draft with complete times, schedule or cancel an event, and review recorded approvals.
+Preview uses sample records with no live requests or journal writes. Approvals and
+Reapprove use explicit student/membership pairs; neither promotes students nor guarantees delivery.
+Event fields and candidate selections stay local. Owned event/query navigation asks
+before discarding changes. Leaving the page or reloading discards unsaved input;
+pending command results remain available through Check result without repeating the command.
+
+Run `node --experimental-strip-types --test tests/belt-test-panel-mounted.test.mjs tests/belt-test-mounted.test.mjs tests/belt-test-operation.test.mjs tests/belt-test-contract.test.mjs tests/appointment-time.test.mjs` from `frontend/`.
+For manual review, run `node tests/helpers/belt-test-fixture.mjs /tmp/koaryu-belt-test-qa` and serve that disposable directory on loopback. Visible synthetic controls exercise lost responses, held reads, reference failures, missing events, reapproval and invalid recipient observations. Stop the server and remove the directory afterward. Check the normal preview Next build separately for production layout and lazy timezone loading.
+
+## Workflow editor
+
+Admins can open the workflow catalog at `/automations`, choose a template, or start an empty draft. Template and duplicate actions allocate a local draft address before navigation. A backend workflow is created only by Save draft. Unsaved edits and Undo history survive client navigation in the same browser page; reloading the page does not preserve unsaved content. A pending action retains only its recovery marker so Check result can resolve it without repeating the command.
+
+Preview uses the actual pure backend catalog copied into `src/lib/generated/workflow-preview-catalog.json`, with sample workflow and reference records and all live capabilities disabled. Regenerate it with `npm run generate:workflow-preview-catalog` from the repository root after changing `backend/app/services/workflow_catalog.py`, then run `npm run check:workflow-preview-catalog`. These commands use `backend/venv/bin/python`, with Python 3.11 or newer. They need no installed backend dependencies, settings, credentials, or network.
+
+Focused composition proof: `node --experimental-strip-types --test tests/workflow-composition-mounted.test.mjs tests/workflow-preview-catalog.test.mjs` from `frontend/`. For manual local review, `PORT=4325 node --experimental-strip-types tests/helpers/workflow-composition-mounted.mjs --serve` starts a disposable fixture on `127.0.0.1`; add `--preview` for zero-I/O sample mode. The fixture mounts the real catalog, editor, graph, inspector, operation owner, and reference action hooks with synthetic API/auth and store contexts. Its visible fixture controls can complete a pending synthetic action, enable synthetic delivery for Start confirmation, switch to a distinct synthetic studio catalog, renew a token, or select light mode. Pass `--route /automations/30000000-0000-4000-8000-000000000001` for a cold saved-workflow entry, or `--route "/automations/new?draft=40000000-0000-4000-8000-000000000001"` for a cold local draft. Stop it with Ctrl-C. `--write` instead writes a standalone fixture to `/tmp/koaryu-ui04b-fixture/index.html`; remove that temporary directory after review.
+
+Workflow activity contract and transport proof, using checked-in synthetic backend serializer fixtures:
+
+```sh
+node --experimental-strip-types --test tests/automation-workflow-activity-contract.test.mjs tests/automation-workflow-activity-api.test.mjs
+```
+
+The browser workflow workspace owns activity reads, simulations, and recovery for cancellation and test email. Recovery stores only administrator and target identifiers in session storage. Check result never repeats a send. A verified terminal sample needs explicit dismissal or a new sample intent before another test.
+
+```bash
+node --experimental-strip-types --test tests/workflow-activity-state.test.mjs tests/workflow-activity-owner.test.mjs tests/workflow-activity-mounted.test.mjs
+```
+
+Workflow tools simulate the current saved workflow's graph with a synthetic sample or an explicitly selected current record. Run history preserves published version context and pending cancellation recovery. Select an email node to request a synthetic sample for your verified account, then use Check result for an uncertain outcome.
+
+Local presentation proof: `node --experimental-strip-types --test tests/workflow-tools-mounted.test.mjs tests/workflow-context-picker-mounted.test.mjs`. Manual synthetic fixture: `PORT=4338 node --experimental-strip-types tests/helpers/workflow-tools-fixture.mjs --serve`; it binds to `127.0.0.1` and closes with Ctrl-C. Add `--preview` to inspect the live-only explanations without activity or record I/O.
+
+These synthetic proofs do not establish operational test email. Actual route mounting, coordinated capability checks, and real SQL/HTTP verification remain final feature acceptance gates.

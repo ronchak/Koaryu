@@ -124,20 +124,30 @@ whose frontend forwards them to the backend. Their cadence is enforced by
 | --- | --- | --- |
 | `/api/cron/account-deletions/process-due` | `0 8 * * *` | Processes account deletions that have passed their grace period |
 | `/api/cron/operational-alerts/evaluate` | `0 9 * * *` | Evaluates operational alert conditions |
-| `/api/cron/automations/process-due` | `0 18 * * *` | Missed-class candidate; pending deployment and activation |
+| `/api/cron/automations/process-due` | `0 18 * * *` | Daily automation recovery bridge; source defaults disabled |
 
-The missed-class candidate adds `/api/cron/automations/process-due` at `0 18 * * *`
-with a 60-second function limit. Its schedule and delivery are pending deployment
-and activation; this is not a third verified live cron. The bridge uses a
-55-second local budget for at most three sequential batches of 10, with a
-30-second timeout per backend call. It starts another only with at least 30
-seconds left. At most 30 rows are processed per daily invocation; backlog can
-remain for later runs. The backend budgets 25 seconds per batch. Both frontend
-and backend automation worker flags and the backend send flag remain false in
-this candidate. The bridge stops further batches after any `retry_wait`, `failed`,
-or `unknown` outcome; provider acceptance does not prove delivery. The daily
-schedule does not promise all due messages will be sent that day. See
-[missed-class scheduling](missed-class-automation.md#scheduled-work-and-pause-controls).
+The automation bridge keeps its daily `0 18 * * *` schedule and 60-second
+function limit. It calls the protected combined backend scheduler route with a
+55-second local budget, at most three sequential batches, a 30-second timeout
+per call, and at least 30 seconds remaining before each call. Its response
+preserves the confirmed batches and the last batch's backlog hint, including
+null engines that were not invoked. Up to 75 occurrence pair decisions can be
+made across three scans, with separate attendance and workflow counters of at
+most 10 per engine per batch. These are not delivered-email counts. A deferred,
+failed, unknown, busy, or malformed result stops further calls; a lost reply is
+never automatically replayed.
+
+When enabled, each Render web process owns an immediate-start, 60-second
+scheduler loop with one active batch and no queue. The daily Vercel bridge is a
+recovery caller to that same local scheduler. SQL retains ownership across
+replicas and the legacy direct missed-class route. The staging free service
+sleeps, so its loop cannot guarantee minute-level execution precision. Each
+batch uses one 25-second deadline and the scheduler bounds its own waiter and
+stop to 30 seconds; that does not bound total provider-runtime shutdown or
+cancel submitted mail. Both worker flags and the send flag remain false in
+source. This composition is source-only evidence, not a hosted activation or
+readiness claim. See
+[automation scheduling](missed-class-automation.md#scheduled-work-and-pause-controls).
 
 ## Render — backend
 
@@ -284,6 +294,10 @@ neither can be relaxed by accident.
 track its branch automatically. `git.deploymentEnabled["codex/missed-class-automations-20261004"]`
 is explicitly `false` so pushing the draft candidate does not trigger a deployment;
 [unspecified branches default to enabled](https://vercel.com/docs/project-configuration/git-configuration#gitdeploymentenabled).
+The automation graph
+candidate also declares `git.deploymentEnabled["codex/automation-graph-20261005"]`
+`false` in source control. Main, staging, prior candidate branches, regions, and
+cron schedules keep their existing settings.
 
 **A push to `main` therefore deploys nothing.** Production frontend and backend
 are each released explicitly after the database is migrated. If production looks

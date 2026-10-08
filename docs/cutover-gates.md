@@ -27,6 +27,14 @@ systems keep moving. Before acting, re-derive from the live systems: migration c
 from both databases, `mergeStateStatus` on the PR, `autoDeploy` on both Render services,
 and whether a restore path actually exists. Treat any written step as a hypothesis.
 
+## Release-candidate database checks
+
+The database job verifies Supabase startup, migration replay, lint, contracts and
+concurrency before the isolated PostgreSQL 17 suite. It attempts disposable-stack
+cleanup after CLI setup even when a platform check fails. The isolated suite runs
+only after the preceding steps succeed; the aggregate gate still requires the
+complete database job to pass.
+
 ## The ordering invariant
 
 Database, then backend, then frontend. Always.

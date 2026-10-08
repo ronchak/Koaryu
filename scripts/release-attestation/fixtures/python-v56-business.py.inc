@@ -1,3 +1,5 @@
+import subprocess
+
 TABLES = ("auth.users", "public.studios", "public.staff_roles", "public.programs", "public.leads",
           "public.lead_activities", "public.lead_follow_up_operations", "public.students",
           "public.student_program_memberships", "public.guardians", "public.student_guardians", "public.audit_logs",
@@ -38,4 +40,5 @@ SELECT 'seeded';
 COMMIT;
 """
 
+CONTRACT_BASE = "611b1a7c885613d28d1861fd69f57190e5b302be"
 CONTRACT_SHA256 = "cf827777be54b8160890df6f87e4cca3d7909f9f14daad2fdf6b7d0528faaeca"

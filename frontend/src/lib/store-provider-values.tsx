@@ -44,6 +44,10 @@ export type StoreContextProviderValues = {
 export function useStoreContextValues(input: StoreContextValueInputs): StoreContextProviderValues {
   const {
     addLead,
+    leadCreate,
+    checkLeadCreateResult,
+    trialAppointments,
+    beltTests,
     addSession,
     addStudent,
     addTemplate,
@@ -103,6 +107,7 @@ export function useStoreContextValues(input: StoreContextValueInputs): StoreCont
     promoteStudent,
     promotionHistoryCache,
     refreshLeads,
+    refreshBeltLadders,
     refreshPrograms,
     refreshScheduleRange,
     refreshSessionAttendance,
@@ -228,6 +233,9 @@ export function useStoreContextValues(input: StoreContextValueInputs): StoreCont
       leadsLoaded,
       leadsLoadError,
       addLead,
+      leadCreate,
+      checkLeadCreateResult,
+      trialAppointments,
       updateLead,
       deleteLead,
       refreshLeads,
@@ -237,6 +245,9 @@ export function useStoreContextValues(input: StoreContextValueInputs): StoreCont
     }),
     [
       addLead,
+      leadCreate,
+      checkLeadCreateResult,
+      trialAppointments,
       convertLeadToStudent,
       deleteLead,
       followUpLead,
@@ -283,7 +294,9 @@ export function useStoreContextValues(input: StoreContextValueInputs): StoreCont
 
   const beltsValue = useMemo<BeltsStoreContextValue>(
     () => ({
+      beltTests,
       beltLadders,
+      refreshBeltLadders,
       beltLaddersLoadError,
       beltRanks,
       currentLadderId,
@@ -304,7 +317,9 @@ export function useStoreContextValues(input: StoreContextValueInputs): StoreCont
       promoteStudent,
     }),
     [
+      beltTests,
       beltLadders,
+      refreshBeltLadders,
       beltLaddersLoadError,
       beltRanks,
       currentLadderId,

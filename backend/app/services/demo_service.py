@@ -2,7 +2,12 @@ from typing import Callable, Optional, TypeVar
 
 from supabase import Client
 
-from app.schemas.demo import DemoResetCounts, DemoResetResponse, StudioDataClearResponse
+from app.schemas.demo import (
+    AutomationClearEffects,
+    DemoResetCounts,
+    DemoResetResponse,
+    StudioDataClearResponse,
+)
 from app.services.demo_billing_seed import DemoBillingSeeder
 from app.services.demo_data_access import DemoDataAccess
 from app.services.demo_lead_seed import DemoLeadSeeder
@@ -53,19 +58,23 @@ class DemoService:
     def _studio_name(self, studio_id: str) -> str:
         return self.data_access.studio_name(studio_id)
 
-    def _clear_demo_surface(self, studio_id: str) -> None:
-        self.data_access.clear_demo_surface(studio_id)
+    def _clear_demo_surface(self, studio_id: str) -> AutomationClearEffects:
+        return self.data_access.clear_demo_surface(studio_id)
 
-    def _clear_studio_surface(self, studio_id: str, *, include_platform_rows: bool) -> None:
-        self.data_access.clear_studio_surface(
+    def _clear_studio_surface(
+        self, studio_id: str, *, include_platform_rows: bool
+    ) -> AutomationClearEffects:
+        return self.data_access.clear_studio_surface(
             studio_id, include_platform_rows=include_platform_rows
         )
 
     async def clear_studio_data(self, studio_id: str) -> StudioDataClearResponse:
         counts = self._clear_counts(studio_id)
         studio_name = self._studio_name(studio_id)
-        self._clear_studio_surface(studio_id, include_platform_rows=False)
-        return StudioDataClearResponse(studio_name=studio_name, counts=counts)
+        automation = self._clear_studio_surface(studio_id, include_platform_rows=False)
+        return StudioDataClearResponse(
+            studio_name=studio_name, counts=counts, automation=automation
+        )
 
     def _program_belt_seeder(self) -> DemoProgramBeltSeeder:
         return DemoProgramBeltSeeder(
@@ -230,7 +239,7 @@ class DemoService:
 
     async def reset_demo_studio(self, studio_id: str, actor_id: str) -> DemoResetResponse:
         try:
-            self._run_demo_reset_phase(
+            automation = self._run_demo_reset_phase(
                 "clear_existing_data", lambda: self._clear_demo_surface(studio_id)
             )
             self._run_demo_reset_phase(
@@ -245,9 +254,15 @@ class DemoService:
             self._handle_failed_demo_reset(studio_id, actor_id, exc.phase, original_error)
             if original_error is exc:
                 raise
+            if exc.phase == "clear_existing_data":
+                raise original_error from None
             raise original_error from exc
 
-        return await self._build_reset_response(studio_id)
+        return await self._build_reset_response(studio_id, automation)
 
-    async def _build_reset_response(self, studio_id: str) -> DemoResetResponse:
-        return await DemoResetResponseBuilder(self.supabase, self._date).build(studio_id)
+    async def _build_reset_response(
+        self, studio_id: str, automation: AutomationClearEffects
+    ) -> DemoResetResponse:
+        return await DemoResetResponseBuilder(self.supabase, self._date).build(
+            studio_id, automation
+        )

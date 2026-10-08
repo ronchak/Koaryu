@@ -43,12 +43,15 @@ export function renderPreflight(state) {
     if (typeof render !== "function") throw new Error(`Unknown preflight policy: ${check.kind}`);
     return render(check);
   });
-  const rendered = renderDirectPreflight(state, [
+  let rendered = renderDirectPreflight(state, [
     renderDirectHistory(state, {
       sequenceFailures: ["migration_history_sequence_v31", "migration_history_sequence_v30"],
       pendingLineWidths: [4, 4, 4, 4, 4, 4, 4, 4, 4, 2],
     }),
     ...checks,
   ], { separateTerminator: state.id === "v39" || state.id === "v40" });
-  return ["v52", "v53", "v56"].includes(state.id) ? rendered.replace(/^[ \t]+$/gm, "") : rendered;
+  if (state.id === "v57") {
+    rendered = rendered.replace(" SET search_path TO 'pg_catalog'\nAS", " SET search_path TO 'pg_catalog'\n SET TimeZone TO 'UTC'\n SET DateStyle TO 'ISO, YMD'\n SET IntervalStyle TO 'postgres'\nAS");
+  }
+  return ["v52", "v53", "v56", "v57"].includes(state.id) ? rendered.replace(/^[ \t]+$/gm, "") : rendered;
 }

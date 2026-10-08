@@ -52,8 +52,8 @@ assert_payment_writer_rejects test "SELECT 1;" "$query" expected required_failur
 
 
 test("V56 keeps all restore steps, exact inventory and the complete readiness/lead probes", () => {
-  assert.match(verifier, /migration_files\[@\].*-ne 151/);
-  assert.match(verifier, /verification_files\[@\].*-ne 57/);
+  assert.match(verifier, /migration_files\[@\].*-ne 152/);
+  assert.match(verifier, /verification_files\[@\].*-ne 75/);
   for (const text of [
     "verify-v53-v54-restore-contract.py", "verify-v54-v55-restore-contract.py", "verify-v55-v56-restore-contract.py",
     "[V56 readiness]", "[V56 release]", "[V56 semantics]",
@@ -90,4 +90,14 @@ test("final V56 semantics uses only V55 pins for changed lead/student definition
   assert.ok(uiContract.includes("public.koaryu_release_schema_preflight_v35()"));
   assert.ok(uiContract.includes("public.koaryu_release_schema_preflight_v34()"));
   assert.ok(uiContract.includes("(149,'20260930024404'), (150,'20260930192626')"));
+});
+
+
+test("current-candidate billing concurrency runs once after complete V57 readiness", () => {
+  const invocation = 'run_interruptible python3 "$ROOT_DIR/scripts/verify-billing-command-concurrency.py" "$PSQL" "$SOCKET_DIR" "$PG_PORT"';
+  assert.equal(verifier.split(invocation).length - 1, 1);
+  const readiness = verifier.indexOf('echo "[V57 readiness] PASS complete installed catalog and genuine history"');
+  const billing = verifier.indexOf(invocation);
+  const rawFacts = verifier.indexOf('echo "[V57 raw facts] RUN');
+  assert.ok(readiness >= 0 && readiness < billing && billing < rawFacts);
 });

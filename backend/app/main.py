@@ -3,13 +3,15 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
+
+from app.api.v1.endpoints.health import health_live, health_ready
+from app.api.v1.router import router as v1_router
 from app.core.config import get_settings
 from app.core.error_handlers import register_error_handlers
 from app.core.provider_runtime import SupabaseLaneConfig, SupabaseProviderRuntime
-from app.core.request_deadline import RequestDeadlineMiddleware
 from app.core.request_body_limits import RequestBodyLimitMiddleware
-from app.api.v1.endpoints.health import health_live, health_ready
-from app.api.v1.router import router as v1_router
+from app.core.request_deadline import RequestDeadlineMiddleware
+from app.services.automation_scheduler import AutomationScheduler
 
 settings = get_settings()
 settings.validate_runtime_configuration()
@@ -45,12 +47,22 @@ async def _lifespan(application: FastAPI):
         BULK_PROVIDER_CONFIG,
     )
     application.state.supabase_provider_runtime = runtime
+    application.state.automation_scheduler = None
+    scheduler = None
     try:
+        if settings.AUTOMATION_WORKER_ENABLED is True:
+            scheduler = AutomationScheduler(settings)
+            application.state.automation_scheduler = scheduler
+            await scheduler.start()
         yield
     finally:
-        # ThreadPoolExecutor.shutdown waits for provider work and cleanup;
-        # keep that blocking lifecycle operation off the ASGI event loop.
-        await asyncio.to_thread(runtime.shutdown)
+        try:
+            if scheduler is not None:
+                await scheduler.stop()
+        finally:
+            # Automation stop bounds its own waiter only. Provider shutdown may
+            # still wait for provider work and must stay off the ASGI event loop.
+            await asyncio.to_thread(runtime.shutdown)
 
 
 # The schema still builds in process for type generation and contract tests, but

@@ -181,39 +181,66 @@ before deciding whether any further action is appropriate.
 
 ## Scheduled work and pause controls
 
-The candidate schedule is daily at 18:00 UTC, `0 18 * * *`, on
-`GET /api/cron/automations/process-due`. It is pending deployment and activation.
-The existing Vercel project hosts the bridge; no new service or paid resource is
-required by this implementation. Existing scheduled jobs keep their cadence.
-Vercel executes the schedule only on production deployments. The fixed UTC time
-falls during the day for US studios; there is no per-studio send-time setting in
-this version.
+When `AUTOMATION_WORKER_ENABLED=true`, each backend web process owns one scheduler.
+It runs immediately on startup and ticks every 60 seconds while the process is
+awake. A busy tick is skipped without queuing another batch. Missed ticks do not
+accumulate. The staging free service can sleep, so this loop cannot promise
+minute-level execution precision there. This source change does not activate a
+hosted worker. Both worker switches and the send switch still default to false.
 
-The bridge authenticates `CRON_SECRET`, then forwards `AUTOMATION_WORKER_SECRET`
-in `X-Internal-Secret` to
-`POST /internal/automations/missed-class/process-due` under the pinned backend
-`/api/v1` base, with `{"limit":10}`. The route has `maxDuration=60` and a local
-55-second budget. It makes at most three sequential calls, each with a 30-second
-timeout, and starts another only with at least 30 seconds left. It stops when
-`has_more=false`, both `enqueued` and `processed` are zero, or a response is invalid,
-failed, or ambiguous. It never blindly retries a lost worker response.
-Any returned `retry_wait`, `failed`, or `unknown` count also stops further batches.
-Counts and `has_more` from completed batches remain truthful, including provider
-acceptance, which does not prove inbox delivery. The durable outbox owns retries;
-the bridge does not continue processing further batches after a deferred retry.
+The existing daily recovery bridge remains at 18:00 UTC, `0 18 * * *`, on
+`GET /api/cron/automations/process-due`. It uses the existing Vercel project,
+without a new service or paid resource. Existing schedules keep their cadence.
+Vercel runs this schedule on production deployments. The bridge authenticates
+`CRON_SECRET`, then forwards the dedicated `AUTOMATION_WORKER_SECRET` in
+`X-Internal-Secret` to `POST /internal/automations/process-due` under the pinned
+backend `/api/v1` base with `{"limit":10}`. The backend authenticates before
+looking up the lifespan-owned scheduler. A busy scheduler returns fixed `409`
+with `Retry-After: 60`; an absent, disabled, or unavailable scheduler returns
+fixed `503`. The bridge stops on either response and does not interpret
+`Retry-After` as an instruction to retry within the invocation.
 
-Each backend call has a 25-second work budget, including credential reads,
-refresh, persistence, and provider submission. No new send begins after its
-budget expires. This deadline controls admission of new stages and requests;
-it does not forcibly cancel an in-flight request. Late or ambiguous provider
-responses use the durable `sending`/`unknown` recovery rules. A daily invocation
-processes at most 30 rows and may process fewer. A larger queue remains visible
-for later runs. `has_more` describes work actionable now, excluding paused rules,
-studio cooldowns, future retries and live claims. It also includes eligible work
-that has not yet been queued. The daily cap does not promise that every due
-message will be sent that day.
+The bridge retains `maxDuration=60`, a 55-second local budget, at most three
+sequential calls, a 30-second timeout per call, and the requirement for at least
+30 seconds remaining before a call begins. Its successful response contains
+exactly `batches` and the last batch's `has_more`. Each confirmed batch retains
+its separate `occurrences`, `attendance`, `workflows`, and `has_more` summaries.
+Occurrence created/enqueued counters are independently bounded by 25. Attendance
+and workflow counters are bounded by 10 per engine. A null engine was not
+invoked; it is never converted to zero work. The outer hint conservatively ORs
+the occurrence and engine hints, treating a null engine as possible remaining
+work.
 
-The worker checks authoritative Core access without provider repair calls. Denied
+Continuation requires a true hint and positive occurrence creation/enqueue,
+attendance enqueue/processing, or workflow processing. Workflow claims alone do
+not count as progress. The bridge stops on zero progress, a false hint, or any
+`retry_wait`, `failed`, or `unknown` outcome. Invalid, uncertain, or lost replies
+return a fixed error even after an earlier confirmed batch. It never substitutes
+an earlier successful aggregate or blindly repeats a request that may have
+committed work. One daily invocation can make up to 75 occurrence pair decisions
+across three scans, with separate attendance and workflow counts. These are not
+delivered-email counts and do not promise completion of all due work that day.
+
+Each admitted batch owns one 25-second deadline, including a five-second
+settlement reserve, and a finite five-second no-redirect database SDK timeout.
+It checks the dispatch schema before its one occurrence scan, then alternates
+which engine goes first between admitted batches. The local scheduler permits
+one active batch and has no queue. SQL claims retain cross-caller ownership;
+this local slot does not govern other replicas or the retained direct
+`POST /internal/automations/missed-class/process-due` route. That old route keeps
+its original response and direct 25-second processing path.
+
+The scheduler bounds its shielded request and shutdown waits to 30 seconds.
+Shutdown stops admission and the timer before the existing provider runtime
+shuts down off the event loop. This does not bound the total provider-runtime
+shutdown. A timeout or cancellation of a waiter cannot cancel a submitted
+message or release an active owner's slot early. The daemon batch owner retains
+client cleanup, including after the waiter leaves; the event-loop thread never
+closes its client. Late or ambiguous submissions follow durable
+`sending`/`unknown` recovery rules. Provider acceptance still does not prove
+inbox delivery, and an unknown submission is never automatically resent.
+
+The missed-class processor checks authoritative Core access without provider repair calls. Denied
 or unverifiable entitlement defers that studio for one hour and releases only
 the matching unsent claim, then continues with other studios. Claim order rotates
 between studios, and claim priority advances before entitlement checks. Historical
@@ -252,8 +279,15 @@ venv/bin/python -m pytest tests/test_automation_email_config.py tests/test_confi
 Run `npm run check:env-examples` from the repository root to check declared
 settings, placeholder credentials, disabled flags, and provider inventory.
 
-The V56 database candidate contains 151 migrations and requires full preflight V37.
+The retained V56 verification covers 151 migrations and full preflight V37.
 The exact V55/V36 readiness consumer remains available only after V56 verifies.
 `npm run check:supabase-contracts-local` includes the V55-to-V56 canonical/logical
-restore proof, all 57 SQL contracts and 37 automation concurrency cases. These
-checks use synthetic local data and make no provider requests.
+restore proof, all 57 SQL contracts and 37 automation concurrency cases. Those retained V56
+checks use synthetic local data and make no provider requests; they do not attest
+the graph candidate's SQL or readiness.
+
+The combined scheduler, application lifespan, protected route, and nested cron
+contract have local source and controlled-callback coverage. Those tests do not
+prove actual SQL, provider transport, hosted cadence, or release readiness. The
+final assembled candidate still needs its owned SQL/readiness checks and exact
+application/transport composition proof before release or activation.

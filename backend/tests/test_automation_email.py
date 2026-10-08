@@ -63,7 +63,7 @@ def test_renderer_defaults_and_safe_footer():
         "https://api.example.com/api/v1/automations/unsubscribe/opaque?x=1&y=2",
     )
     assert content.subject == "We miss seeing Sam at Example studio"
-    assert "Unsubscribe from these reminders: https://" in content.text_body
+    assert "Unsubscribe from this studio's automation emails: https://" in content.text_body
     assert "?x=1&amp;y=2" in content.html_body
     assert "Sam" not in repr(content)
 

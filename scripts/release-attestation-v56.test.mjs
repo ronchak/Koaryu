@@ -16,7 +16,7 @@ const read = name => fs.readFileSync(new URL(name, import.meta.url), "utf8");
 const migration = read("../supabase/migrations/20261004220435_missed_class_automation_v56.sql");
 
 test("V56 requires exact V55 before effects and full installed facts before history registration", () => {
-  assert.equal(CURRENT_RELEASE, "v56");
+  assert.equal(CURRENT_RELEASE, "v57");
   const state = releaseState("v56", MIGRATION_VERSIONS);
   assert.equal(state.predecessor, "v55");
   assert.equal(state.count, 151);

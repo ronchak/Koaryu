@@ -567,3 +567,67 @@ function renderAutomationFacts(check, sql) {
 }
 export const render_automation_tables_v56 = check => renderAutomationFacts(check, AUTOMATION_TABLE_FACTS_V56_SQL);
 export const render_automation_functions_v56 = check => renderAutomationFacts(check, AUTOMATION_FUNCTION_FACTS_V56_SQL);
+
+// V57 binds the complete installed public/private catalog. The identities are
+// declared inputs; unexpected names fail just as missing names do. Reuse the
+// V56 raw metadata shape rather than reducing ownership to function bodies.
+export function automationTableFactsV57(check) {
+  const start = AUTOMATION_TABLE_FACTS_V56_SQL.indexOf('FROM (VALUES');
+  const end = AUTOMATION_TABLE_FACTS_V56_SQL.indexOf(' required(name)', start);
+  return AUTOMATION_TABLE_FACTS_V56_SQL.slice(0, start)
+    + `FROM (VALUES ${check.tables.map(name => `(${sqlLiteral(name)})`).join(',\n    ')})`
+    + AUTOMATION_TABLE_FACTS_V56_SQL.slice(end);
+}
+export function automationFunctionFactsV57(check) {
+  const start = AUTOMATION_FUNCTION_FACTS_V56_SQL.indexOf('FROM (VALUES');
+  const end = AUTOMATION_FUNCTION_FACTS_V56_SQL.indexOf(' required(signature)', start);
+  return AUTOMATION_FUNCTION_FACTS_V56_SQL.slice(0, start)
+    + `FROM (VALUES ${check.signatures.map(name => `(${sqlLiteral(name)})`).join(',\n    ')})`
+    + AUTOMATION_FUNCTION_FACTS_V56_SQL.slice(end);
+}
+export const render_automation_tables_v57 = check => {
+  const facts = automationTableFactsV57(check);
+  if (Boolean(check.platformExpected) !== Boolean(check.platformRestoredExpected)) {
+    throw new Error("V57 platform catalog profiles require both canonical and restored pins");
+  }
+  const expected = [check.expected, ...(check.restoredExpected ? [check.restoredExpected] : []),
+    ...(check.platformExpected ? [check.platformExpected, check.platformRestoredExpected] : [])];
+  if (expected.some(value => !/^[0-9a-f]{64}$/.test(value)) || new Set(expected).size !== expected.length) {
+    throw new Error("V57 table catalog profiles require distinct exact SHA-256 pins");
+  }
+  return `    IF (SELECT encode(extensions.digest(convert_to((${facts})::TEXT,'UTF8'),'sha256'),'hex'))
+       NOT IN (${expected.map(sqlLiteral).join(',')})
+       OR (SELECT array_agg(n.nspname||'.'||c.relname ORDER BY (n.nspname||'.'||c.relname) COLLATE "C")
+           FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace
+           WHERE n.nspname IN ('public','private') AND c.relkind IN ('r','p'))
+          IS DISTINCT FROM ARRAY[${check.tables.map(sqlLiteral).join(',')}]::TEXT[] THEN
+        v_failures:=array_append(v_failures,${sqlLiteral(check.id)});
+    END IF;`;
+};
+export const render_automation_functions_v57 = check => {
+  const facts = automationFunctionFactsV57(check);
+  return `    IF (SELECT encode(extensions.digest(convert_to((${facts})::TEXT,'UTF8'),'sha256'),'hex'))
+       IS DISTINCT FROM ${sqlLiteral(check.expected)}
+       OR (SELECT array_agg(p.oid::REGPROCEDURE::TEXT ORDER BY p.oid::REGPROCEDURE::TEXT COLLATE "C")
+           FROM pg_catalog.pg_proc p JOIN pg_catalog.pg_namespace n ON n.oid=p.pronamespace
+           WHERE n.nspname IN ('public','private') AND p.prokind='f'
+             AND p.oid <> pg_catalog.to_regprocedure('public.koaryu_release_schema_preflight_v38()'))
+          IS DISTINCT FROM ARRAY[${check.signatures.map(sqlLiteral).join(',')}]::TEXT[] THEN
+        v_failures:=array_append(v_failures,${sqlLiteral(check.id)});
+    END IF;`;
+};
+export const render_preflight_security_v57 = () => `    IF (SELECT count(*) FROM pg_catalog.pg_proc p JOIN pg_catalog.pg_namespace n ON n.oid=p.pronamespace
+        WHERE n.nspname='public' AND p.proname='koaryu_release_schema_preflight_v38') <> 1
+       OR NOT EXISTS (SELECT 1 FROM pg_catalog.pg_proc p
+        WHERE p.oid=pg_catalog.to_regprocedure('public.koaryu_release_schema_preflight_v38()')
+          AND p.proowner='postgres'::REGROLE AND p.prosecdef AND p.provolatile='s'
+          AND p.proretset AND p.proconfig=ARRAY['search_path=pg_catalog','TimeZone=UTC','DateStyle=ISO, YMD','IntervalStyle=postgres']::TEXT[]
+          AND (SELECT jsonb_agg(jsonb_build_array(
+                CASE WHEN a.grantee=0 THEN 'PUBLIC' ELSE pg_catalog.pg_get_userbyid(a.grantee)::TEXT END,
+                pg_catalog.pg_get_userbyid(a.grantor)::TEXT,a.privilege_type,a.is_grantable)
+                ORDER BY CASE WHEN a.grantee=0 THEN 'PUBLIC' ELSE pg_catalog.pg_get_userbyid(a.grantee)::TEXT END COLLATE "C",
+                    a.privilege_type,a.is_grantable)
+               FROM pg_catalog.aclexplode(COALESCE(p.proacl,pg_catalog.acldefault('f',p.proowner))) a)
+             = '[["postgres","postgres","EXECUTE",false],["service_role","postgres","EXECUTE",false]]'::JSONB) THEN
+        v_failures:=array_append(v_failures,'preflight_security_v57');
+    END IF;`;

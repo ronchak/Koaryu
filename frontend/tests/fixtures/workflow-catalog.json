@@ -1,0 +1,494 @@
+{
+  "source_sha": "a5d0e643d7ec1c9c44a99664cb1d59fc352c8bcb",
+  "source_path": "backend/app/services/workflow_catalog.py",
+  "catalog": {
+    "triggers": {
+      "student.enrolled": {
+        "id": "student.enrolled",
+        "label": "Student first enrolls",
+        "subject_kind": "student",
+        "simulation_entity_type": "student",
+        "recipient_ids": ["student_or_guardian"],
+        "field_ids": ["student.status", "student.on_hold", "student.is_minor"],
+        "template_variables": ["studio_name", "recipient_name", "student_first_name"],
+        "supports_offset": false,
+        "supports_program_filter": true,
+        "delay_fields": [],
+        "supports_lead_follow_up": false
+      },
+      "student.promoted": {
+        "id": "student.promoted",
+        "label": "Student earns a rank promotion",
+        "subject_kind": "promotion",
+        "simulation_entity_type": "promotion",
+        "recipient_ids": ["student_or_guardian"],
+        "field_ids": [
+          "student.status",
+          "student.on_hold",
+          "student.is_minor",
+          "program.id",
+          "promotion.rank_id"
+        ],
+        "template_variables": [
+          "studio_name",
+          "recipient_name",
+          "student_first_name",
+          "rank_name",
+          "program_name"
+        ],
+        "supports_offset": false,
+        "supports_program_filter": true,
+        "delay_fields": [],
+        "supports_lead_follow_up": false
+      },
+      "lead.created": {
+        "id": "lead.created",
+        "label": "Lead is created",
+        "subject_kind": "lead",
+        "simulation_entity_type": "lead",
+        "recipient_ids": ["lead_or_guardian", "assigned_staff"],
+        "field_ids": ["lead.stage", "lead.source", "lead.unconverted", "program.id"],
+        "template_variables": ["studio_name", "recipient_name", "lead_first_name"],
+        "supports_offset": false,
+        "supports_program_filter": true,
+        "delay_fields": [],
+        "supports_lead_follow_up": true
+      },
+      "lead.stage_changed": {
+        "id": "lead.stage_changed",
+        "label": "Lead stage changes",
+        "subject_kind": "lead",
+        "simulation_entity_type": "lead",
+        "recipient_ids": ["lead_or_guardian", "assigned_staff"],
+        "field_ids": ["lead.stage", "lead.source", "lead.unconverted", "program.id"],
+        "template_variables": ["studio_name", "recipient_name", "lead_first_name"],
+        "supports_offset": false,
+        "supports_program_filter": true,
+        "delay_fields": [],
+        "supports_lead_follow_up": true
+      },
+      "trial.scheduled": {
+        "id": "trial.scheduled",
+        "label": "Trial is scheduled",
+        "subject_kind": "trial",
+        "simulation_entity_type": "trial_appointment",
+        "recipient_ids": ["lead_or_guardian", "assigned_staff"],
+        "field_ids": [
+          "lead.stage",
+          "lead.source",
+          "lead.unconverted",
+          "trial.status",
+          "program.id"
+        ],
+        "template_variables": [
+          "studio_name",
+          "recipient_name",
+          "lead_first_name",
+          "trial_start",
+          "trial_location"
+        ],
+        "supports_offset": false,
+        "supports_program_filter": true,
+        "delay_fields": ["trial.starts_at"],
+        "supports_lead_follow_up": true
+      },
+      "trial.completed": {
+        "id": "trial.completed",
+        "label": "Trial is completed",
+        "subject_kind": "trial",
+        "simulation_entity_type": "trial_appointment",
+        "recipient_ids": ["lead_or_guardian", "assigned_staff"],
+        "field_ids": [
+          "lead.stage",
+          "lead.source",
+          "lead.unconverted",
+          "trial.status",
+          "program.id"
+        ],
+        "template_variables": [
+          "studio_name",
+          "recipient_name",
+          "lead_first_name",
+          "trial_start",
+          "trial_location"
+        ],
+        "supports_offset": false,
+        "supports_program_filter": true,
+        "delay_fields": [],
+        "supports_lead_follow_up": true
+      },
+      "trial.no_show": {
+        "id": "trial.no_show",
+        "label": "Trial is marked as missed",
+        "subject_kind": "trial",
+        "simulation_entity_type": "trial_appointment",
+        "recipient_ids": ["lead_or_guardian", "assigned_staff"],
+        "field_ids": [
+          "lead.stage",
+          "lead.source",
+          "lead.unconverted",
+          "trial.status",
+          "program.id"
+        ],
+        "template_variables": [
+          "studio_name",
+          "recipient_name",
+          "lead_first_name",
+          "trial_start",
+          "trial_location"
+        ],
+        "supports_offset": false,
+        "supports_program_filter": true,
+        "delay_fields": [],
+        "supports_lead_follow_up": true
+      },
+      "trial.upcoming": {
+        "id": "trial.upcoming",
+        "label": "Trial is approaching",
+        "subject_kind": "trial",
+        "simulation_entity_type": "trial_appointment",
+        "recipient_ids": ["lead_or_guardian", "assigned_staff"],
+        "field_ids": [
+          "lead.stage",
+          "lead.source",
+          "lead.unconverted",
+          "trial.status",
+          "program.id"
+        ],
+        "template_variables": [
+          "studio_name",
+          "recipient_name",
+          "lead_first_name",
+          "trial_start",
+          "trial_location"
+        ],
+        "supports_offset": true,
+        "supports_program_filter": true,
+        "delay_fields": ["trial.starts_at"],
+        "supports_lead_follow_up": true
+      },
+      "invoice.overdue": {
+        "id": "invoice.overdue",
+        "label": "Invoice becomes overdue",
+        "subject_kind": "invoice",
+        "simulation_entity_type": "invoice",
+        "recipient_ids": ["invoice_payer"],
+        "field_ids": ["invoice.overdue", "invoice.open_balance", "invoice.collection_method"],
+        "template_variables": [
+          "studio_name",
+          "recipient_name",
+          "invoice_number",
+          "invoice_balance",
+          "invoice_due_date"
+        ],
+        "supports_offset": false,
+        "supports_program_filter": false,
+        "delay_fields": [],
+        "supports_lead_follow_up": false
+      },
+      "invoice.payment_failed": {
+        "id": "invoice.payment_failed",
+        "label": "When a new payment first fails",
+        "subject_kind": "invoice",
+        "simulation_entity_type": "payment",
+        "recipient_ids": ["invoice_payer"],
+        "field_ids": ["invoice.overdue", "invoice.open_balance", "invoice.collection_method"],
+        "template_variables": [
+          "studio_name",
+          "recipient_name",
+          "invoice_number",
+          "invoice_balance",
+          "invoice_due_date"
+        ],
+        "supports_offset": false,
+        "supports_program_filter": false,
+        "delay_fields": [],
+        "supports_lead_follow_up": false
+      },
+      "belt_test.approved": {
+        "id": "belt_test.approved",
+        "label": "Student is approved for a belt test",
+        "subject_kind": "belt_test",
+        "simulation_entity_type": "belt_test_recipient",
+        "recipient_ids": ["student_or_guardian"],
+        "field_ids": [
+          "student.status",
+          "student.on_hold",
+          "student.is_minor",
+          "program.id",
+          "belt_test.event_scheduled",
+          "belt_test.approval_current"
+        ],
+        "template_variables": [
+          "studio_name",
+          "recipient_name",
+          "student_first_name",
+          "event_name",
+          "event_start",
+          "event_location"
+        ],
+        "supports_offset": false,
+        "supports_program_filter": true,
+        "delay_fields": ["belt_test.starts_at"],
+        "supports_lead_follow_up": false
+      },
+      "belt_test.upcoming": {
+        "id": "belt_test.upcoming",
+        "label": "Approved belt test is approaching",
+        "subject_kind": "belt_test",
+        "simulation_entity_type": "belt_test_recipient",
+        "recipient_ids": ["student_or_guardian"],
+        "field_ids": [
+          "student.status",
+          "student.on_hold",
+          "student.is_minor",
+          "program.id",
+          "belt_test.event_scheduled",
+          "belt_test.approval_current"
+        ],
+        "template_variables": [
+          "studio_name",
+          "recipient_name",
+          "student_first_name",
+          "event_name",
+          "event_start",
+          "event_location"
+        ],
+        "supports_offset": true,
+        "supports_program_filter": true,
+        "delay_fields": ["belt_test.starts_at"],
+        "supports_lead_follow_up": false
+      }
+    },
+    "fields": {
+      "student.status": {
+        "id": "student.status",
+        "label": "Student status",
+        "value_type": "enum",
+        "operators": ["eq", "neq", "in", "not_in"],
+        "nullable": false,
+        "values": ["active", "trialing", "inactive", "paused", "canceled"]
+      },
+      "student.on_hold": {
+        "id": "student.on_hold",
+        "label": "Student is on hold",
+        "value_type": "boolean",
+        "operators": ["eq", "neq"],
+        "nullable": false
+      },
+      "student.is_minor": {
+        "id": "student.is_minor",
+        "label": "Student is a minor",
+        "value_type": "boolean",
+        "operators": ["eq", "neq"],
+        "nullable": false
+      },
+      "lead.stage": {
+        "id": "lead.stage",
+        "label": "Lead stage",
+        "value_type": "enum",
+        "operators": ["eq", "neq", "in", "not_in"],
+        "nullable": false,
+        "values": [
+          "inquiry",
+          "trial_scheduled",
+          "trial_completed",
+          "offer_sent",
+          "enrolled",
+          "closed_lost"
+        ]
+      },
+      "lead.source": {
+        "id": "lead.source",
+        "label": "Lead source",
+        "value_type": "enum",
+        "operators": ["eq", "neq", "in", "not_in"],
+        "nullable": false,
+        "values": ["walk_in", "referral", "social", "search", "website", "other"]
+      },
+      "lead.unconverted": {
+        "id": "lead.unconverted",
+        "label": "Lead is unconverted",
+        "value_type": "boolean",
+        "operators": ["eq", "neq"],
+        "nullable": false
+      },
+      "trial.status": {
+        "id": "trial.status",
+        "label": "Trial status",
+        "value_type": "enum",
+        "operators": ["eq", "neq", "in", "not_in"],
+        "nullable": false,
+        "values": ["scheduled", "completed", "no_show", "canceled"]
+      },
+      "invoice.overdue": {
+        "id": "invoice.overdue",
+        "label": "Invoice is overdue",
+        "value_type": "boolean",
+        "operators": ["eq", "neq"],
+        "nullable": false
+      },
+      "invoice.open_balance": {
+        "id": "invoice.open_balance",
+        "label": "Invoice has an open balance",
+        "value_type": "boolean",
+        "operators": ["eq", "neq"],
+        "nullable": false
+      },
+      "invoice.collection_method": {
+        "id": "invoice.collection_method",
+        "label": "Invoice collection method",
+        "value_type": "enum",
+        "operators": ["eq", "neq", "in", "not_in"],
+        "nullable": true,
+        "values": ["send_invoice", "charge_automatically"]
+      },
+      "program.id": {
+        "id": "program.id",
+        "label": "Program",
+        "value_type": "uuid",
+        "operators": ["eq", "neq", "in", "not_in"],
+        "nullable": true
+      },
+      "promotion.rank_id": {
+        "id": "promotion.rank_id",
+        "label": "Promoted rank",
+        "value_type": "uuid",
+        "operators": ["eq", "neq", "in", "not_in"],
+        "nullable": false
+      },
+      "belt_test.event_scheduled": {
+        "id": "belt_test.event_scheduled",
+        "label": "Belt test is scheduled",
+        "value_type": "boolean",
+        "operators": ["eq", "neq"],
+        "nullable": false
+      },
+      "belt_test.approval_current": {
+        "id": "belt_test.approval_current",
+        "label": "Belt test approval is current",
+        "value_type": "boolean",
+        "operators": ["eq", "neq"],
+        "nullable": false
+      }
+    },
+    "recipients": {
+      "student_or_guardian": {
+        "id": "student_or_guardian",
+        "label": "Student or guardian"
+      },
+      "lead_or_guardian": {
+        "id": "lead_or_guardian",
+        "label": "Lead or guardian"
+      },
+      "invoice_payer": {
+        "id": "invoice_payer",
+        "label": "Invoice payer"
+      },
+      "assigned_staff": {
+        "id": "assigned_staff",
+        "label": "Assigned staff member"
+      }
+    },
+    "variables": {
+      "studio_name": {
+        "id": "studio_name",
+        "label": "Studio name",
+        "value_type": "string",
+        "fallback": null
+      },
+      "recipient_name": {
+        "id": "recipient_name",
+        "label": "Recipient name",
+        "value_type": "string",
+        "fallback": "there"
+      },
+      "student_first_name": {
+        "id": "student_first_name",
+        "label": "Student first name",
+        "value_type": "string",
+        "fallback": null
+      },
+      "rank_name": {
+        "id": "rank_name",
+        "label": "Promoted rank name",
+        "value_type": "string",
+        "fallback": null
+      },
+      "program_name": {
+        "id": "program_name",
+        "label": "Promotion program name",
+        "value_type": "string",
+        "fallback": "your program"
+      },
+      "lead_first_name": {
+        "id": "lead_first_name",
+        "label": "Lead first name",
+        "value_type": "string",
+        "fallback": null
+      },
+      "trial_start": {
+        "id": "trial_start",
+        "label": "Trial date and time",
+        "value_type": "string",
+        "fallback": null
+      },
+      "trial_location": {
+        "id": "trial_location",
+        "label": "Trial location",
+        "value_type": "string",
+        "fallback": "Please contact the studio for the location"
+      },
+      "invoice_number": {
+        "id": "invoice_number",
+        "label": "Invoice number",
+        "value_type": "string",
+        "fallback": "not numbered"
+      },
+      "invoice_balance": {
+        "id": "invoice_balance",
+        "label": "Current invoice balance",
+        "value_type": "string",
+        "fallback": null
+      },
+      "invoice_due_date": {
+        "id": "invoice_due_date",
+        "label": "Invoice due date",
+        "value_type": "string",
+        "fallback": "No due date listed"
+      },
+      "event_name": {
+        "id": "event_name",
+        "label": "Belt test name",
+        "value_type": "string",
+        "fallback": null
+      },
+      "event_start": {
+        "id": "event_start",
+        "label": "Belt test date and time",
+        "value_type": "string",
+        "fallback": null
+      },
+      "event_location": {
+        "id": "event_location",
+        "label": "Belt test location",
+        "value_type": "string",
+        "fallback": "Please contact the studio for the location"
+      }
+    },
+    "delay_fields": {
+      "trial.starts_at": {
+        "id": "trial.starts_at",
+        "label": "Trial start",
+        "value_type": "datetime",
+        "trigger_ids": ["trial.scheduled", "trial.upcoming"]
+      },
+      "belt_test.starts_at": {
+        "id": "belt_test.starts_at",
+        "label": "Belt test start",
+        "value_type": "datetime",
+        "trigger_ids": ["belt_test.approved", "belt_test.upcoming"]
+      }
+    }
+  }
+}

@@ -1,5 +1,6 @@
 import { useCallback, type Dispatch, type SetStateAction } from "react";
 
+import { CommandOutcomeUnknown } from "@/lib/command-outcome";
 import { api } from "@/lib/api";
 import {
   MOCK_ATTENDANCE,
@@ -25,6 +26,8 @@ import {
 import { beginResourceMutation, type ResourceScope } from "@/lib/store-resource-scope";
 import { KEYS, clearPreviewStorage, save } from "@/lib/store-storage";
 import {
+  isAutomationClearEffects,
+  PREVIEW_AUTOMATION_CLEAR_EFFECTS,
   buildPreviewDemoResetResponse,
   buildPreviewStudioDataClearResponse,
   type DemoResetResponse,
@@ -211,6 +214,7 @@ export function useStoreStudioActions({
       clearPreviewStorage();
       const previewResponse = buildPreviewDemoResetResponse({
         studioName: DEMO_STUDIO_NAME,
+        automation: { ...PREVIEW_AUTOMATION_CLEAR_EFFECTS },
         programs: MOCK_PROGRAMS,
         students: MOCK_STUDENTS,
         leads: MOCK_LEADS,
@@ -252,6 +256,12 @@ export function useStoreStudioActions({
       timeoutMs: 60000,
       timeoutMessage: "Demo reset is taking longer than expected. Please try again in a moment.",
     });
+    if (!isAutomationClearEffects(response?.automation)) {
+      throw new CommandOutcomeUnknown(
+        undefined,
+        "The studio data request may have completed, but its automation effects could not be confirmed. Check the studio before trying again.",
+      );
+    }
     if (!liveRequest.isCurrent()) {
       return response;
     }
@@ -273,6 +283,7 @@ export function useStoreStudioActions({
       clearPreviewStorage();
       const response = buildPreviewStudioDataClearResponse({
         studioName,
+        automation: { ...PREVIEW_AUTOMATION_CLEAR_EFFECTS },
         students: studentsRef.current,
         leads: leadsRef.current,
         beltRanks: beltRanksRef.current,
@@ -293,6 +304,12 @@ export function useStoreStudioActions({
       timeoutMessage:
         "Studio data clear is taking longer than expected. Please try again in a moment.",
     });
+    if (!isAutomationClearEffects(response?.automation)) {
+      throw new CommandOutcomeUnknown(
+        undefined,
+        "The studio data request may have completed, but its automation effects could not be confirmed. Check the studio before trying again.",
+      );
+    }
     if (!liveRequest.isCurrent()) {
       return response;
     }

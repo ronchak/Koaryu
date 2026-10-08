@@ -2,12 +2,16 @@
 
 import { useResumeRefresh } from "@/lib/use-resume-refresh";
 
-import { useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import { markDashboardReadiness } from "@/lib/performance";
 import { LeadLedgerLoading } from "@/components/leads/lead-ledger-loading";
 import { Header } from "@/components/header";
 import { AddLeadModal } from "@/components/leads/add-lead-modal";
 import { LeadDetailInspector } from "@/components/leads/lead-detail-modal";
+import {
+  LeadTrialAppointments,
+  TrialAppointmentRecovery,
+} from "@/components/leads/lead-trial-appointments";
 import { LeadLedgerLoadError, LeadPipelineBoard } from "@/components/leads/lead-pipeline-board";
 import { LostLeadsSection } from "@/components/leads/lost-leads-section";
 import { Button } from "@/components/ui/button";
@@ -18,8 +22,9 @@ import { UserPlus } from "lucide-react";
 import styles from "@/components/leads/leads-ledger.module.css";
 
 export default function LeadsPage() {
-  const { currentRole, isPreviewMode, token, businessDate } = useConfigStore();
-  const { programs, programsLoaded, programsLoadError, refreshPrograms } = useProgramStore();
+  const { currentRole, isPreviewMode, token, businessDate, studioTimezone } = useConfigStore();
+  const { programs, programsLoaded, programsLoadError, programsUsageLoadError, refreshPrograms } =
+    useProgramStore();
   const {
     staffMembers,
     staffLoaded,
@@ -31,14 +36,55 @@ export default function LeadsPage() {
   const {
     leads: baseLeads,
     addLead,
+    leadCreate,
+    checkLeadCreateResult,
     updateLead,
     convertLeadToStudent,
     followUpLead,
     leadOperations,
+    trialAppointments,
     leadsLoaded,
     leadsLoadError,
     refreshLeads,
   } = useLeadStore();
+  const trialReady =
+    identityReady &&
+    (isPreviewMode || currentRole === "admin") &&
+    trialAppointments.trialStorage.isCurrent();
+  const [trialLifetime, setTrialLifetime] = useState(() => ({
+    current: trialAppointments.trialStorage.isCurrent,
+    generation: 0,
+  }));
+  const [programRead, setProgramRead] = useState<"idle" | "loading" | "unavailable">("idle");
+  if (trialReady && !trialLifetime.current()) {
+    setProgramRead("idle");
+    setTrialLifetime({
+      current: trialAppointments.trialStorage.isCurrent,
+      generation: trialLifetime.generation + 1,
+    });
+  }
+  const trialRecoveryLeadIds = new Set(
+    [...trialAppointments.trialOperations.values()]
+      .filter(
+        (view) =>
+          view.isCurrent() &&
+          view.locked &&
+          view.ownsLeadReservation &&
+          !["submitting", "checking"].includes(view.status),
+      )
+      .map((view) => view.leadId),
+  );
+  const refreshTrialPrograms = async () => {
+    const current = trialLifetime.current;
+    if (!current()) return;
+    setProgramRead("loading");
+    try {
+      await refreshPrograms({ includeArchived: true, force: true });
+      if (current()) setProgramRead("idle");
+    } catch {
+      if (current()) setProgramRead("unavailable");
+    }
+  };
   // The existing staff endpoint is admin-only. Other roles must not wait on a
   // dataset they cannot read; admins need it for assignment names and selectors.
   const requiresStaff = currentRole === "admin";
@@ -51,6 +97,7 @@ export default function LeadsPage() {
     usefulReady &&
     programsLoaded &&
     !programsLoadError &&
+    !programsUsageLoadError &&
     (!requiresStaff || (staffLoaded && !staffLoadError));
   useEffect(
     () =>
@@ -63,6 +110,8 @@ export default function LeadsPage() {
   const today = businessDate;
   const controller = useLeadsPageController({
     addLead,
+    leadCreate,
+    checkLeadCreateResult,
     baseLeads,
     convertLeadToStudent,
     currentRole,
@@ -71,6 +120,7 @@ export default function LeadsPage() {
     identityReady,
     isPreviewMode,
     leadOperations,
+    trialRecoveryLeadIds,
     programs,
     today,
     token,
@@ -86,6 +136,20 @@ export default function LeadsPage() {
   });
   const { activePrograms, enrolledCount, lostLeads, programById, selectedLead, totalActive } =
     controller.model;
+  const observedTrials = useRef(new WeakSet<object>());
+  useEffect(() => {
+    if (!trialReady) return;
+    for (const view of trialAppointments.trialOperations.values()) {
+      if (
+        !view.isCurrent() ||
+        !["confirmed", "unavailable"].includes(view.status) ||
+        observedTrials.current.has(view)
+      )
+        continue;
+      observedTrials.current.add(view);
+      if (selectedLead?.id === view.leadId) controller.retrySelectedLeadActivities();
+    }
+  }, [trialReady, trialAppointments, selectedLead?.id, controller]);
   const activeStaff = staffMembers.filter((member) => member.status === "active");
   const staffById = new Map(staffMembers.map((member) => [member.id, member]));
   const currentAssignedStaff = selectedLead?.assigned_staff_id
@@ -119,6 +183,29 @@ export default function LeadsPage() {
         ) : null}
       </Header>
 
+      {trialReady && (
+        <TrialAppointmentRecovery
+          facade={trialAppointments}
+          leads={baseLeads}
+          pendingLeadIds={controller.pendingLeadIds}
+        />
+      )}
+
+      {!controller.showAddLead && controller.leadCreateMessage ? (
+        <div role="status" className="px-4 pt-4 text-sm text-text-secondary sm:px-6 lg:px-8">
+          <p>{controller.leadCreateMessage}</p>
+          {controller.canCheckLeadCreate ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              onClick={() => void controller.handleCheckLeadCreateResult()}
+            >
+              Check result
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
       {requiresStaff && staffLoadError ? (
         <div role="alert" className="px-4 pt-4 sm:px-6 lg:px-8">
           <p className="text-sm text-danger">Staff assignments are unavailable. {staffLoadError}</p>
@@ -194,6 +281,34 @@ export default function LeadsPage() {
               leadActionMessage={controller.actionMessage}
               pendingLeadIds={controller.pendingLeadIds}
               followUpRecovery={controller.followUpRecoveries.get(selectedLead.id) ?? null}
+              trialRecoveryPending={trialRecoveryLeadIds.has(selectedLead.id)}
+              trialAppointments={
+                trialReady ? (
+                  <LeadTrialAppointments
+                    key={`${identityGeneration}:${trialLifetime.generation}:${selectedLead.id}`}
+                    lead={selectedLead}
+                    facade={trialAppointments}
+                    timezone={studioTimezone}
+                    preview={isPreviewMode}
+                    reserved={controller.pendingLeadIds.has(selectedLead.id)}
+                    isCurrent={trialLifetime.current}
+                    references={{
+                      programs,
+                      status:
+                        programRead === "loading"
+                          ? "loading"
+                          : programsLoadError ||
+                              programsUsageLoadError ||
+                              programRead === "unavailable"
+                            ? "unavailable"
+                            : programsLoaded
+                              ? "ready"
+                              : "loading",
+                      retry: () => void refreshTrialPrograms(),
+                    }}
+                  />
+                ) : undefined
+              }
               onRetryFollowUp={controller.handleRetryFollowUp}
               programById={programById}
               today={today}
@@ -227,7 +342,11 @@ export default function LeadsPage() {
           activeStaff={activeStaff}
           addLeadError={controller.addLeadError}
           isAddingLead={controller.isAddingLead}
-          isOutcomeUnknown={controller.addLeadOutcomeUnknown}
+          createLocked={controller.addLeadLocked}
+          createMessage={controller.leadCreateMessage}
+          canCheckResult={controller.canCheckLeadCreate}
+          isCheckingResult={controller.isCheckingLead}
+          onCheckResult={controller.handleCheckLeadCreateResult}
           programById={programById}
           selectedProgramId={controller.addLeadProgramId}
           today={today}
@@ -235,6 +354,7 @@ export default function LeadsPage() {
           onDismissError={controller.dismissAddLeadError}
           onProgramChange={controller.setAddLeadProgramId}
           onSubmit={controller.handleAddLead}
+          onEdit={controller.handleAddLeadFormEdit}
         />
       )}
     </div>
