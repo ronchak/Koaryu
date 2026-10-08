@@ -811,15 +811,15 @@
 
 /*
  * The real screen for the moment, at its own size, set into the sheet like a
- * print. The frame rounds just inside the screen's own corners (--shot-radius),
- * so none of the app's backdrop shows in them.
+ * print. The frame rounds 4px wider than the screen's own corners (its border,
+ * and room past their antialiased edge), so none of the app's backdrop shows.
  */
 .dayShot {
   width: min(100%, var(--shot-width));
   margin: 18px 0 0;
   overflow: hidden;
   border: 1px solid var(--sheet-rule);
-  border-radius: var(--shot-radius, 10px);
+  border-radius: calc(var(--shot-corner-x) + 4px) / calc(var(--shot-corner-y) + 4px);
   background: #fbf8f1;
   box-shadow: 0 14px 34px -18px rgb(36 24 10 / 34%);
 }
@@ -1502,22 +1502,11 @@
   }
 
   /*
-   * Phones draw each screen at three quarters of its size so its type stays
-   * readable; a screen wider than the column runs off under a soft edge.
+   * Phones keep each screen in its moment's column, under its words and clear
+   * of the line: as large as the column allows, at most three quarters size.
    */
   .dayShot {
-    width: calc(100% + 40px);
-    max-width: calc(var(--shot-width) * 0.74);
-    margin-left: -40px;
-  }
-
-  .dayShot img {
-    width: calc(var(--shot-width) * 0.74);
-    max-width: none;
-  }
-
-  .dayShot[data-wide] {
-    mask-image: linear-gradient(90deg, #000 82%, transparent);
+    width: min(100%, calc(var(--shot-width) * 0.74));
   }
 
   .dayCaption {

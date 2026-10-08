@@ -124,17 +124,8 @@ function Product({ chapter }: { chapter: ProductContent }) {
   );
 }
 
-/** Phones draw a screen at this fraction of its size, so its type stays readable. */
+/** Phones draw a screen at no more than this fraction of its size, in its moment's column. */
 const PHONE_SHOT_SCALE = 0.74;
-/** Narrowest phone column (px) a screen fits at that scale without running off the edge. */
-const PHONE_SHOT_ROOM = 300;
-
-/**
- * How far past a screen's own corner radius (CSS px) the print's frame rounds:
- * its 1px border, and room for the clip to pass inside the corner's
- * antialiased edge, where the app's backdrop is blended in.
- */
-const SHOT_CORNER_CLEARANCE = 4;
 
 /** The real screen for a moment: drawn at its own size, never stretched. */
 function DayShot({ shot }: { shot: DayShotContent }) {
@@ -142,11 +133,12 @@ function DayShot({ shot }: { shot: DayShotContent }) {
   return (
     <figure
       className={styles.dayShot}
-      data-wide={width * PHONE_SHOT_SCALE > PHONE_SHOT_ROOM ? "true" : undefined}
       style={
         {
           "--shot-width": `${width}px`,
-          "--shot-radius": `${shot.corner / 2 + SHOT_CORNER_CLEARANCE}px`,
+          // The screen's own corner as a share of the print, so it holds at any scale.
+          "--shot-corner-x": `${((100 * shot.corner) / shot.width).toFixed(3)}%`,
+          "--shot-corner-y": `${((100 * shot.corner) / shot.height).toFixed(3)}%`,
         } as CSSProperties
       }
     >
