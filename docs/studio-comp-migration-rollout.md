@@ -66,6 +66,18 @@ grants, extra service privileges or any other catalog change remain outside
 all four exact digests and fail readiness. This acceptance does not change
 historical grants or migration files.
 
+Functions have one exact digest instead. Hosted projects provisioned with
+Supabase's legacy default function privileges also retain `service_role`
+`EXECUTE` on 17 retained trigger functions: `update_updated_at_column()` and
+the 16 `validate_*` table-integrity triggers. Clean replays and the pinned local
+Supabase stack never grant it, so the first hosted staging apply on October 9,
+2026 failed only `automation_functions_v57` and rolled back. Staging and
+production showed identical function facts. Trigger firing does not check the
+caller's `EXECUTE` privilege, so V57 revokes that grant before attesting and
+every target converges to the canonical postgres-only ACL. The V56-to-V57
+restore proof seeds those grants on its predecessor and requires them absent on
+both upgraded copies.
+
 ## Combined schedule-window, Payments, and performance extension
 
 The completed V24 rollout remains the historical base described below. The

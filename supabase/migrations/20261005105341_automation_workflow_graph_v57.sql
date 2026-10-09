@@ -26,6 +26,30 @@ BEGIN
 END;
 $migration_lock$;
 
+-- Hosted projects provisioned with Supabase's legacy default function privileges
+-- retain service_role EXECUTE on these retained trigger functions; clean replays
+-- never grant it. Trigger firing does not check the caller's EXECUTE privilege,
+-- so converge every target to the canonical postgres-only ACL before attesting.
+REVOKE EXECUTE ON FUNCTION
+    public.update_updated_at_column(),
+    public.validate_attendance_program_integrity(),
+    public.validate_billing_adjustment_refs(),
+    public.validate_billing_dispute_refs(),
+    public.validate_billing_invoice_item_refs(),
+    public.validate_billing_invoice_refs(),
+    public.validate_billing_payer_guardian(),
+    public.validate_billing_payment_refs(),
+    public.validate_billing_plan_program(),
+    public.validate_billing_refund_refs(),
+    public.validate_billing_subscription_refs(),
+    public.validate_class_session_program_integrity(),
+    public.validate_class_template_program_integrity(),
+    public.validate_lead_program_integrity(),
+    public.validate_student_billing_enrollment(),
+    public.validate_student_guardian_tenant_integrity(),
+    public.validate_student_profile_tenant_integrity()
+FROM service_role;
+
 -- Mechanical projection of workflow_catalog.CATALOG: full maps for these five keys.
 -- Reproduce with json.dumps(projection,sort_keys=True,separators=(',',':'),ensure_ascii=True).
 -- catalog-source-sha256: f575ad4f3676e0d6d2134c888c9d24ac756bff05a1525f5af95b51185385cb7a
