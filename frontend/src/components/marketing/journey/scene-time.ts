@@ -59,5 +59,9 @@ export function resolveScene(date: Date, search: string): SceneTime {
 /**
  * The pre-paint switch. Plain ES5 with no imports, wrapped so it can never
  * throw; any failure leaves the day scene, which is the server-rendered default.
+ * Written out in full rather than built from the constants above, so no value is
+ * ever spliced into script source; tests/marketing-scene-time.test.mjs checks it
+ * still carries those constants.
  */
-export const SCENE_TIME_SCRIPT = `(function(){var d=document.documentElement,s="day";try{var q=new URLSearchParams(location.search).get(${JSON.stringify(SCENE_QUERY_PARAM)});if(q==="night"||q==="day"){s=q}else{var p=new Intl.DateTimeFormat("en-US",{timeZone:${JSON.stringify(SCENE_TIME_ZONE)},hour:"numeric",hourCycle:"h23"}).formatToParts(new Date()),h=NaN;for(var i=0;i<p.length;i++){if(p[i].type==="hour")h=Number(p[i].value)%24}if(h>=${NIGHT_FROM_HOUR}||h<${DAY_FROM_HOUR})s="night"}}catch(e){s="day"}d.setAttribute(${JSON.stringify(SCENE_ATTRIBUTE)},s)})();`;
+export const SCENE_TIME_SCRIPT =
+  '(function(){var d=document.documentElement,s="day";try{var q=new URLSearchParams(location.search).get("scene");if(q==="night"||q==="day"){s=q}else{var p=new Intl.DateTimeFormat("en-US",{timeZone:"America/Los_Angeles",hour:"numeric",hourCycle:"h23"}).formatToParts(new Date()),h=NaN;for(var i=0;i<p.length;i++){if(p[i].type==="hour")h=Number(p[i].value)%24}if(h>=19||h<6)s="night"}}catch(e){s="day"}d.setAttribute("data-scene",s)})();';

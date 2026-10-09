@@ -10,7 +10,10 @@ import * as model from "../src/components/marketing/journey/scene-model.ts";
 import {
   DAY_FROM_HOUR,
   NIGHT_FROM_HOUR,
+  SCENE_ATTRIBUTE,
+  SCENE_QUERY_PARAM,
   SCENE_TIME_SCRIPT,
+  SCENE_TIME_ZONE,
   isNightHour,
   pacificHour,
   resolveScene,
@@ -152,6 +155,17 @@ describe("Scene time: the pre-paint script", () => {
     assert.ok(SCENE_TIME_SCRIPT.length < 700);
     assert.doesNotMatch(SCENE_TIME_SCRIPT, /=>|\blet\b|\bconst\b|`|\bimport\b|\brequire\b/);
     assert.match(SCENE_TIME_SCRIPT, /^\(function\(\)\{.*\}\)\(\);$/);
+  });
+
+  it("is written out with the same rules as the typed functions", () => {
+    for (const fragment of [
+      `.get(${JSON.stringify(SCENE_QUERY_PARAM)})`,
+      `timeZone:${JSON.stringify(SCENE_TIME_ZONE)}`,
+      `if(h>=${NIGHT_FROM_HOUR}||h<${DAY_FROM_HOUR})s="night"`,
+      `d.setAttribute(${JSON.stringify(SCENE_ATTRIBUTE)},s)`,
+    ]) {
+      assert.ok(SCENE_TIME_SCRIPT.includes(fragment), fragment);
+    }
   });
 });
 
