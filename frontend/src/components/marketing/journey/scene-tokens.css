@@ -1,0 +1,48 @@
+/*
+ * Scene tokens: colours for page chrome that sits on the illustrated world
+ * (masthead, belt progress line, copy set straight on the art). Day values
+ * equal the landing page's current literals, so adopting a token changes
+ * nothing by day; html[data-scene="night"] (set before first paint by
+ * scene-time-script) swaps in the night world's values. Tokens only: nothing
+ * here styles an element.
+ */
+:root {
+  /* The ground behind the scene, and copy set directly on the art. */
+  --scene-ground: #f7f3e9;
+  --scene-ink: #3b2f1c;
+  --scene-ink-soft: rgb(59 47 28 / 72%);
+  --scene-ink-on-dark: #f4eee1;
+  --scene-accent: #3b2f1c;
+  --scene-accent-ink: #f7f3e9;
+  /* Masthead grounds over light and dark art, its ink and its hairline. */
+  --scene-masthead-light: rgb(247 243 233 / 93%);
+  --scene-masthead-light-ink: #3b2f1c;
+  --scene-masthead-dark: rgb(52 39 22 / 90%);
+  --scene-masthead-dark-ink: #f4eee1;
+  --scene-masthead-line: rgb(59 47 28 / 18%);
+  --scene-masthead-line-dark: rgb(244 238 225 / 10%);
+  /* The belt progress line's first (white) and last (black) belts. */
+  --scene-belt-white: #ddd5c4;
+  --scene-belt-black: #1f1a16;
+}
+
+/*
+ * Night: indigo air, cream type, lantern-amber actions. Every frame of the
+ * night scene is dark at the top, so both masthead grounds are night ink.
+ */
+html[data-scene="night"] {
+  --scene-ground: #14121b;
+  --scene-ink: #f2e8d5;
+  --scene-ink-soft: rgb(242 232 213 / 76%);
+  --scene-ink-on-dark: #f2e8d5;
+  --scene-accent: #f0b866;
+  --scene-accent-ink: #1d140b;
+  --scene-masthead-light: rgb(18 16 26 / 84%);
+  --scene-masthead-light-ink: #f2e8d5;
+  --scene-masthead-dark: rgb(18 16 26 / 84%);
+  --scene-masthead-dark-ink: #f2e8d5;
+  --scene-masthead-line: rgb(242 232 213 / 10%);
+  --scene-masthead-line-dark: rgb(242 232 213 / 10%);
+  --scene-belt-white: #ece3d1;
+  --scene-belt-black: #0b0a0f;
+}

@@ -5,6 +5,7 @@ import {
   AccountPageShell,
   AccountSection,
 } from "@/components/account-page-shell";
+import { SUPPORT_EMAIL } from "@/lib/constants";
 
 export default function HelpPage() {
   return (
@@ -72,7 +73,7 @@ export default function HelpPage() {
         <AccountNotice>
           Use Contact support while signed in. Include the affected page, approximate time, staff
           role, steps, expected result, and a non-sensitive screenshot when useful. If the support
-          page is unavailable, email support@koaryu.app.
+          page is unavailable, email {SUPPORT_EMAIL}.
         </AccountNotice>
       </AccountSection>
     </AccountPageShell>

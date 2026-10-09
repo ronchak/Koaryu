@@ -155,7 +155,7 @@ test("support draft freezes on send, survives failure, and clears on success", a
     assert.equal(await page.getByLabel(label).inputValue(), value, label);
   }
   const mailto = await page.getByRole("link", { name: "Open email draft" }).getAttribute("href");
-  assert.ok(mailto?.startsWith("mailto:support@koaryu.app?"));
+  assert.ok(mailto?.startsWith("mailto:koaryu@outlook.com?"));
   assert.ok(decodeURIComponent(mailto).includes("The printer jams every morning."));
   await page.getByRole("button", { name: "Send request" }).click();
   await page.waitForFunction(() => fixture.writes.length === 2);

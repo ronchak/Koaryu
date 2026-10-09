@@ -1,4 +1,7 @@
-import { MarketingBrandLink } from "@/components/marketing/marketing-primitives";
+import {
+  MarketingActionLink,
+  MarketingBrandLink,
+} from "@/components/marketing/marketing-primitives";
 import { MarketingRoot } from "@/components/marketing/marketing-root";
 import {
   PublicDocumentLink,
@@ -20,9 +23,23 @@ export function MarketingHeader() {
             </PublicDocumentLink>
           ))}
         </nav>
-        <PublicDocumentLink href="/login" prefetch={false} className={styles.desktopSignIn}>
-          Sign in
-        </PublicDocumentLink>
+        <div className={styles.headerActions}>
+          <PublicDocumentLink href="/login" prefetch={false} className={styles.desktopSignIn}>
+            Sign in
+          </PublicDocumentLink>
+          <MarketingActionLink
+            href="/signup"
+            prefetch={false}
+            className={styles.headerAction}
+            aria-label="Start free trial"
+            data-header-action=""
+          >
+            <span className={styles.headerActionLong}>Start free trial</span>
+            <span className={styles.headerActionShort} aria-hidden="true">
+              Free trial
+            </span>
+          </MarketingActionLink>
+        </div>
         <PublicMobileNavigation>
           {publicNavLinks.map((link) => (
             <PublicDocumentLink key={link.href} href={link.href}>

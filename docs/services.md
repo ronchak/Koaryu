@@ -9,6 +9,15 @@ nothing noticed when it stopped serving.
 one, add it here in the same change. If you find one that is not here, either
 document it or delete it.
 
+The [Privacy Policy](https://koaryu.app/privacy#sharing) names every provider that
+processes personal information, with what it does and where. When a provider that
+touches user, studio or payer data is added, removed or moves region, update the
+service-provider table in `frontend/src/app/(legal)/privacy/page.tsx` in the same change and
+add a revision in `frontend/src/lib/legal-documents.ts`. The policy currently says
+Koaryu sends no email to students, families or leads; before
+[Microsoft automation mail](#microsoft-automation-mail) is enabled, update its
+Emails section, its provider table and the landing FAQ's limits answer.
+
 Inventory baseline: 2026-08-24. The last completed release verification, October 1, 2026 Pacific, recorded production and staging frontend/backend pairs at `0cf345be94f31eefbfa80be80bed3a8670680bf2` and both databases at exact V55, 150 migrations, head `20260930192626`. Both web services were active with auto-deploy off; the staging billing cron was restored to its original branch and five-minute schedule and suspended. See [the October 1 release record](remediation/october-1-release-verification.md). This documentation refresh did not repeat hosted verification. Reinspect live state for future releases and follow [Cutover Gates](cutover-gates.md).
 
 ## Quick map

@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/client";
 import { api } from "@/lib/api";
 import { ACCOUNT_ARCHIVED_ROUTE } from "@/lib/auth-route-model";
+import { SUPPORT_EMAIL } from "@/lib/constants";
 import { parseAuthProfileResponse } from "@/lib/store-bootstrap-model";
 import { syncStoredStudioSessionCookies } from "@/lib/store-session-cookies";
 import { useConfigStore } from "@/lib/store";
@@ -360,7 +361,7 @@ export default function SubscriptionRequiredPage() {
                   </Button>
                 ) : null}
                 <Button asChild variant={coreBillingEnabled ? "secondary" : "primary"} size="lg">
-                  <a href="mailto:support@koaryu.app?subject=Koaryu%20Core%20access">
+                  <a href={`mailto:${SUPPORT_EMAIL}?subject=Koaryu%20Core%20access`}>
                     Contact Koaryu support
                   </a>
                 </Button>

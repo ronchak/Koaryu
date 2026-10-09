@@ -1,0 +1,734 @@
+/*
+ * /try: a focused page around the working miniature. It wears the landing page's
+ * identity (heavy system-sans headline, the mustard and brown hills, the curtain
+ * brown band) so the two read as one site, and turns to dusk after seven in the
+ * evening (html[data-scene="night"]). Scroll effects are CSS scroll-driven
+ * animations behind feature and motion checks, over complete static states.
+ */
+
+[data-koaryu-marketing].root {
+  --try-masthead: 76px;
+  --try-gutter: clamp(20px, 4.4vw, 64px);
+  --try-band: #3a2c19;
+  --try-band-ink: #f4eee1;
+  --try-masthead-ground: rgb(247 243 233 / 92%);
+  --try-hero-bottom: clamp(84px, 11vh, 120px);
+
+  /* The landscape is anchored to the top of the demo (the window on desktop). */
+  --sky-lift: 300px;
+  --sun-x: 470px;
+  --sun-y: 0px;
+  --sun-r: 62px;
+  --ridge-top: -34px;
+  --ridge-height: max(56.25vw, 520px);
+  /* Below this depth the nearest ridge always covers, whatever the crop. */
+  --ridge-solid: max(51vw, 472px);
+  --ground-height: max(33.75vw, 260px);
+
+  color: var(--koaryu-ink);
+}
+
+/* The art brings its own surfaces; no page-wide grain over the app window. */
+[data-koaryu-marketing].root::after {
+  display: none;
+}
+
+:global(html[data-scene="night"]) .root {
+  --koaryu-paper: #15131c;
+  --koaryu-ink: #f1e9da;
+  --koaryu-ink-light: #f4eee1;
+  --koaryu-sheet: #231e2d;
+  --koaryu-sheet-raised: #2b2536;
+  --koaryu-sheet-warm: #2b2536;
+  --koaryu-deep-brown: #3a2f48;
+  --koaryu-line: rgb(241 233 218 / 14%);
+  --koaryu-rule: rgb(241 233 218 / 24%);
+  --koaryu-rule-soft: rgb(241 233 218 / 12%);
+  --try-band: #110f17;
+  --try-masthead-ground: rgb(21 19 28 / 88%);
+
+  color-scheme: dark;
+}
+
+/* ---------------------------------------------------------------- Skip link and masthead */
+
+.skipLink {
+  position: absolute;
+  z-index: 40;
+  top: 8px;
+  left: 20px;
+  padding: 14px 18px;
+  color: var(--koaryu-paper);
+  background: var(--koaryu-ink);
+  transform: translateY(-150%);
+}
+
+.skipLink:focus {
+  transform: translateY(0);
+}
+
+.masthead {
+  position: sticky;
+  z-index: 30;
+  top: 0;
+  border-bottom: 1px solid var(--koaryu-line);
+  background: var(--try-masthead-ground);
+}
+
+/* The shared header and footer line up with this page's wider grid. */
+@media (min-width: 821px) {
+  .masthead > header > div {
+    width: min(100% - 2 * var(--try-gutter), 1320px);
+  }
+
+  .footer > footer > div {
+    width: min(100% - 2 * var(--try-gutter), 1240px);
+  }
+}
+
+.masthead a[aria-current="page"] {
+  opacity: 1;
+  text-decoration: underline;
+  text-decoration-thickness: 1.5px;
+  text-underline-offset: 6px;
+}
+
+.masthead a:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 4px;
+}
+
+/* ---------------------------------------------------------------- Hero */
+
+.main {
+  position: relative;
+  z-index: 1;
+  display: block;
+  margin-top: calc(var(--try-masthead) * -1);
+}
+
+.main:focus {
+  outline: none;
+}
+
+.hero {
+  position: relative;
+  /* Clip, not hidden: the full-bleed landscape is cut at the page edge without a scroll container. */
+  overflow-x: clip;
+  padding: calc(var(--try-masthead) + clamp(14px, 2.4vh, 32px)) 0 var(--try-hero-bottom);
+}
+
+.sky {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: linear-gradient(180deg, #fbf8f0 0%, #f6f1e4 34%, #f3ecdb 58%, #efe4cb 100%);
+}
+
+.stars {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: none;
+  width: 100%;
+  height: 70%;
+  fill: #fff6e2;
+}
+
+.wisp {
+  position: absolute;
+  width: clamp(240px, 32vw, 520px);
+  height: auto;
+  fill: #ffffff;
+  opacity: 0.7;
+}
+
+.heroInner {
+  position: relative;
+  z-index: 1;
+  width: min(100% - 2 * var(--try-gutter), 1320px);
+  margin-inline: auto;
+}
+
+.intro {
+  display: grid;
+  grid-template-columns: auto minmax(0, 390px);
+  gap: 20px clamp(32px, 4vw, 64px);
+  align-items: end;
+  justify-content: start;
+  margin-bottom: clamp(22px, 3.4vh, 36px);
+}
+
+.title {
+  margin: 0;
+  font-size: clamp(40px, 5.1vw, 76px);
+  font-weight: 720;
+  line-height: 0.92;
+  letter-spacing: -0.045em;
+}
+
+.title span {
+  display: block;
+}
+
+.lede {
+  max-width: 44ch;
+  margin: 0 0 4px;
+  font-size: clamp(15px, 1.15vw, 17px);
+  font-weight: 470;
+  line-height: 1.5;
+  opacity: 0.8;
+}
+
+.stage {
+  position: relative;
+}
+
+/* ---------------------------------------------------------------- Landscape */
+
+.landscape {
+  position: absolute;
+  z-index: 0;
+  top: calc(var(--sky-lift) * -1);
+  bottom: calc(var(--try-hero-bottom) * -1);
+  left: 50%;
+  width: 100vw;
+  overflow: hidden;
+  pointer-events: none;
+  transform: translateX(-50%);
+}
+
+.sun,
+.moon {
+  position: absolute;
+  top: calc(var(--sky-lift) + var(--sun-y) - var(--sun-r));
+  left: calc(50% + var(--sun-x) - var(--sun-r));
+  width: calc(var(--sun-r) * 2);
+  height: calc(var(--sun-r) * 2);
+  border-radius: 50%;
+}
+
+.sun {
+  background: radial-gradient(circle at 42% 38%, #dbc49e 0%, #cdb389 78%);
+  box-shadow: calc(var(--sun-r) * 0.12) calc(var(--sun-r) * 0.18) 0 calc(var(--sun-r) * 0.05)
+    rgb(205 179 137 / 52%);
+}
+
+.sun::before,
+.moon::before {
+  position: absolute;
+  inset: -110%;
+  border-radius: 50%;
+  content: "";
+  background: radial-gradient(
+    circle,
+    rgb(255 246 224 / 80%) 0%,
+    rgb(251 235 203 / 28%) 34%,
+    rgb(246 227 189 / 0%) 68%
+  );
+}
+
+.moon {
+  display: none;
+  background: radial-gradient(circle at 40% 36%, #f6efdc 0%, #dcd3bd 80%);
+  box-shadow:
+    inset calc(var(--sun-r) * -0.16) calc(var(--sun-r) * -0.1) 0 rgb(170 158 140 / 28%),
+    0 0 calc(var(--sun-r) * 0.6) rgb(246 239 220 / 26%);
+}
+
+.moon::before {
+  background: radial-gradient(
+    circle,
+    rgb(214 205 236 / 26%) 0%,
+    rgb(150 140 190 / 10%) 38%,
+    rgb(120 110 170 / 0%) 70%
+  );
+}
+
+.ridges {
+  position: absolute;
+  top: calc(var(--sky-lift) + var(--ridge-top));
+  right: 0;
+  bottom: 0;
+  left: 0;
+  /* Under the five crests the nearest ridge's colour runs on down to the ground. */
+  background: linear-gradient(transparent var(--ridge-solid), var(--near) var(--ridge-solid));
+  --near: #7a612e;
+}
+
+.ridge {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: var(--ridge-height);
+  /* Each ridge runs on below its box, so sinking ridges never show an edge. */
+  overflow: visible;
+}
+
+.ridgeFill {
+  fill: var(--fill);
+}
+
+.crest {
+  display: none;
+  fill: none;
+  stroke: var(--rim);
+  stroke-linecap: round;
+  stroke-width: 2.4px;
+  vector-effect: non-scaling-stroke;
+  opacity: 0.85;
+}
+
+.ridge:nth-child(1) {
+  --fill: #efe2c0;
+  --rim: #f4b47c;
+}
+
+.ridge:nth-child(2) {
+  --fill: #e7cc97;
+  --rim: #d98a68;
+}
+
+.ridge:nth-child(3) {
+  --fill: #c9a75e;
+  --rim: #a9636a;
+}
+
+.ridge:nth-child(4) {
+  --fill: #a28341;
+  --rim: #6e4a5e;
+}
+
+.ridge:nth-child(5) {
+  --fill: #7a612e;
+  --rim: #3a2c40;
+}
+
+.ground {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: var(--ground-height);
+}
+
+.groundRidge {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.groundRidge:nth-child(1) path {
+  fill: #5b4523;
+}
+
+.groundRidge:nth-child(2) path {
+  fill: var(--try-band);
+}
+
+/* ---------------------------------------------------------------- The real thing */
+
+.real {
+  --koaryu-action-label: var(--try-band);
+
+  position: relative;
+  padding-top: clamp(64px, 9vw, 128px);
+  color: var(--try-band-ink);
+  background: var(--try-band);
+}
+
+.realInner {
+  display: grid;
+  width: min(100% - 2 * var(--try-gutter), 1240px);
+  grid-template-columns: minmax(0, 0.78fr) minmax(0, 1.22fr);
+  gap: clamp(40px, 6vw, 96px);
+  align-items: center;
+  margin-inline: auto;
+  padding-bottom: clamp(120px, 13vw, 190px);
+}
+
+.realTitle {
+  max-width: 10ch;
+  margin: 0;
+  font-size: clamp(40px, 4.8vw, 70px);
+  font-weight: 720;
+  line-height: 0.93;
+  letter-spacing: -0.045em;
+  text-wrap: balance;
+}
+
+.realLede {
+  max-width: 46ch;
+  margin: 22px 0 0;
+  font-size: clamp(15px, 1.25vw, 18px);
+  font-weight: 470;
+  line-height: 1.55;
+  opacity: 0.8;
+}
+
+.realPrice {
+  margin: 18px 0 0;
+  padding-top: 18px;
+  border-top: 1px solid rgb(244 238 225 / 16%);
+  font-size: 15px;
+  font-weight: 650;
+  line-height: 1.45;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 28px;
+}
+
+.action {
+  min-width: 168px;
+}
+
+.realFigure {
+  min-width: 0;
+  margin: 0;
+}
+
+.screens {
+  position: relative;
+  padding: 0 0 9% 10%;
+}
+
+.desktop {
+  overflow: hidden;
+  border: 1px solid rgb(244 238 225 / 16%);
+  border-radius: 10px;
+  background: #fbf7ee;
+  box-shadow: 0 44px 90px rgb(10 6 2 / 46%);
+}
+
+.desktop img,
+.phone img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.phone {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 25%;
+  overflow: hidden;
+  border: 5px solid #1d160d;
+  border-radius: 24px;
+  background: #1d160d;
+  box-shadow: 0 34px 60px rgb(10 6 2 / 52%);
+}
+
+.realCaption {
+  margin: 14px 0 0;
+  font-size: 12px;
+  font-weight: 560;
+  text-align: right;
+  opacity: 0.72;
+}
+
+/* Hills rise back into the light where the band ends. */
+.edge {
+  position: absolute;
+  right: 0;
+  bottom: -1px;
+  left: 0;
+  height: clamp(64px, 8vw, 120px);
+  pointer-events: none;
+}
+
+.edge svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.edge svg:nth-child(1) path {
+  fill: #7d6638;
+}
+
+.edge svg:nth-child(2) path {
+  fill: var(--koaryu-paper);
+}
+
+.footer {
+  position: relative;
+  z-index: 1;
+}
+
+/* ---------------------------------------------------------------- Night */
+
+:global(html[data-scene="night"]) .sky {
+  background: linear-gradient(
+    180deg,
+    #0f1229 0%,
+    #1b2044 30%,
+    #2e2b52 56%,
+    #4a3757 78%,
+    #6a4559 100%
+  );
+}
+
+:global(html[data-scene="night"]) .stars,
+:global(html[data-scene="night"]) .moon,
+:global(html[data-scene="night"]) .crest {
+  display: block;
+}
+
+:global(html[data-scene="night"]) .sun,
+:global(html[data-scene="night"]) .wisp {
+  display: none;
+}
+
+:global(html[data-scene="night"]) .ridges {
+  --near: #1e1a27;
+}
+
+:global(html[data-scene="night"]) .ridge:nth-child(1) {
+  --fill: #a8705e;
+}
+
+:global(html[data-scene="night"]) .ridge:nth-child(2) {
+  --fill: #7c4f4c;
+}
+
+:global(html[data-scene="night"]) .ridge:nth-child(3) {
+  --fill: #553641;
+}
+
+:global(html[data-scene="night"]) .ridge:nth-child(4) {
+  --fill: #322435;
+}
+
+:global(html[data-scene="night"]) .ridge:nth-child(5) {
+  --fill: #1e1a27;
+}
+
+:global(html[data-scene="night"]) .groundRidge:nth-child(1) path {
+  fill: #191621;
+}
+
+:global(html[data-scene="night"]) .lede {
+  opacity: 0.84;
+}
+
+:global(html[data-scene="night"]) .real {
+  --koaryu-action-label: #2a1d0d;
+}
+
+/* At night the way in is lamplit. */
+:global(html[data-scene="night"]) .real .action:first-child {
+  color: #ffc977;
+}
+
+:global(html[data-scene="night"]) .edge svg:nth-child(1) path {
+  fill: #2a2335;
+}
+
+/* ---------------------------------------------------------------- Page width */
+
+@media (max-width: 1100px) {
+  [data-koaryu-marketing].root {
+    --sky-lift: 240px;
+    --sun-x: 250px;
+    --sun-y: -54px;
+    --sun-r: 50px;
+    --ridge-top: -96px;
+  }
+
+  .intro {
+    margin-bottom: 120px;
+  }
+}
+
+@media (max-width: 900px) {
+  .intro {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 16px;
+  }
+
+  .realInner {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 44px;
+  }
+}
+
+@media (max-width: 820px) {
+  [data-koaryu-marketing].root {
+    --try-masthead: 72px;
+  }
+}
+
+@media (max-width: 720px) {
+  [data-koaryu-marketing].root {
+    --try-hero-bottom: 76px;
+    --sun-x: 96px;
+    --sun-y: -84px;
+    --sun-r: 34px;
+    --ridge-top: -150px;
+  }
+
+  .heroInner {
+    width: calc(100% - 24px);
+  }
+
+  .intro {
+    margin-bottom: 150px;
+    padding-inline: 8px;
+  }
+
+  .title {
+    font-size: clamp(34px, 10.4vw, 46px);
+  }
+
+  .lede {
+    font-size: 15px;
+  }
+
+  .realInner {
+    width: calc(100% - 40px);
+  }
+
+  .screens {
+    padding: 0 0 12% 14%;
+  }
+
+  .phone {
+    width: 32%;
+    border-width: 4px;
+    border-radius: 18px;
+  }
+
+  .action {
+    flex: 1 1 200px;
+  }
+}
+
+/* ---------------------------------------------------------------- Motion */
+
+@keyframes arrive {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+}
+
+@keyframes settle {
+  from {
+    transform: translateY(-18px);
+  }
+}
+
+@keyframes ground {
+  from {
+    border-bottom-color: transparent;
+    background-color: transparent;
+  }
+}
+
+@keyframes sink {
+  to {
+    transform: translateY(calc(var(--parallax) * 100vh));
+  }
+}
+
+@keyframes set {
+  to {
+    transform: translateY(32vh);
+  }
+}
+
+@keyframes heroAway {
+  to {
+    opacity: 0.2;
+    transform: translateY(-6vh);
+  }
+}
+
+@keyframes phoneRise {
+  from {
+    transform: translateY(16%);
+  }
+}
+
+@keyframes twinkle {
+  to {
+    opacity: 0.25;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .title span,
+  .lede {
+    animation: arrive 900ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  .title span:nth-child(2) {
+    animation-delay: 90ms;
+  }
+
+  .lede {
+    animation-delay: 180ms;
+  }
+
+  .sun,
+  .moon {
+    animation: settle 2600ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  .stars circle:nth-child(4n + 1) {
+    animation: twinkle 3.6s ease-in-out infinite alternate;
+  }
+
+  .stars circle:nth-child(7n + 2) {
+    animation: twinkle 5.2s ease-in-out 1.4s infinite alternate;
+  }
+
+  @supports (animation-timeline: scroll()) {
+    /* The masthead is clear over the sky and grounds itself as soon as the page moves. */
+    .masthead {
+      animation: ground linear both;
+      animation-timeline: scroll(root);
+      animation-range: 0 48px;
+    }
+
+    /* The hills sink at different rates and the sun sets behind the window as you scroll on. */
+    .ridge {
+      animation: sink linear both;
+      animation-timeline: scroll(root);
+      animation-range: 0 100vh;
+    }
+
+    .sun,
+    .moon {
+      animation:
+        settle 2600ms cubic-bezier(0.22, 1, 0.36, 1) both,
+        set linear both;
+      animation-timeline: auto, scroll(root);
+      animation-range:
+        normal,
+        0 90vh;
+    }
+
+    .intro {
+      animation: heroAway linear both;
+      animation-timeline: scroll(root);
+      animation-range: 0 70vh;
+    }
+  }
+
+  @supports (animation-timeline: view()) {
+    .phone {
+      animation: phoneRise linear both;
+      animation-timeline: view();
+      animation-range: entry 10% cover 46%;
+    }
+  }
+}

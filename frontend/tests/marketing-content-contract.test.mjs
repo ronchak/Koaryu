@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, it } from "node:test";
+import sharp from "sharp";
 import {
   PUBLIC_PLATFORM_PRICE,
   formatPublicPlatformPrice,
@@ -14,7 +15,7 @@ import { featurePages } from "../src/lib/marketing-pages.ts";
 const frontendRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 
 function chapter(id) {
-  const value = landingPageContent.chapters.find((item) => item.id === id);
+  const value = landingPageContent.story.find((item) => item.id === id);
   assert.ok(value, `missing ${id} chapter`);
   return value;
 }
@@ -39,70 +40,113 @@ function assertPlainJsonValue(value, path = "landingPageContent") {
 }
 
 describe("marketing content contract", () => {
-  it("keeps the complete Journey in exact chapter order with plain JSON-safe values", () => {
-    const expectedStops = [
-      ["welcome", 0.025, "hero"],
-      ["the-problem", 0.1, "problem"],
-      ["studio-view", 0.235, "morning"],
-      ["product", 0.288, "product-intro"],
-      ["features", 0.52, "features"],
-      ["use-cases", 0.64, "use-cases"],
-      ["signals-gather", 0.802, "transition"],
-      ["explore", 0.892, "explore"],
-      ["class-ready", 0.952, "transition"],
-      ["pricing", 1, "pricing"],
-      ["about", 1, "about"],
-      ["faq", 1, "faq"],
-      ["stillness", 1, "transition"],
-      ["begin", 1, "final"],
-    ];
-
+  it("keeps the paged story in exact chapter order with plain JSON-safe values", () => {
     assert.deepEqual(
-      landingPageContent.chapters.map(({ id, scene, kind }) => [id, scene, kind]),
-      expectedStops,
+      landingPageContent.story.map(({ id, scene, kind }) => [id, scene, kind]),
+      [
+        ["welcome", 0, "hero"],
+        ["product", 0.288, "product"],
+        ["features", 0.52, "features"],
+        ["the-weave", 0.685, "weave"],
+        ["studio", 1, "studio"],
+      ],
+    );
+    assert.deepEqual(
+      ["pricing", "tryIt", "faq", "close"].map((key) => landingPageContent[key].id),
+      ["pricing", "try", "faq", "begin"],
     );
     assert.deepEqual(JSON.parse(JSON.stringify(landingPageContent)), landingPageContent);
     assertPlainJsonValue(landingPageContent);
   });
 
-  it("preserves direct destinations and makes current product limits explicit", () => {
+  it("rests the one-record line on the clouds and points people to the hands-on demo", () => {
+    assert.ok(!("threads" in chapter("the-weave")));
+    assert.equal(chapter("the-weave").title, "Your studio is not a spreadsheet.");
     assert.deepEqual(
-      chapter("features").rows.map((row) => row.detail.href),
+      chapter("welcome").actions.map((action) => [action.label, action.href]),
       [
-        "/features/student-management",
-        "/features/belt-tracking",
-        "/features/attendance",
-        "/features/billing",
+        ["Start free trial", "/signup"],
+        ["Try the demo", "/try"],
       ],
     );
+    // The offer is the product's: one 30-day trial per studio, then the public price.
+    assert.equal(chapter("welcome").note, "30 days free, then $27 a month per studio.");
+    assert.equal(landingPageContent.close.lede, chapter("welcome").note);
+    assert.match(landingPageContent.pricing.trial, /^Free for 30 days/);
+    // Every moment of the day shows the real screen that handles it.
+    for (const moment of chapter("features").moments) {
+      assert.match(moment.shot.src, /^\/marketing\/product\/day-[a-z]+\.webp$/);
+      assert.ok(moment.shot.alt.length > 40);
+    }
+    assert.equal(landingPageContent.tryIt.action.href, "/try");
+    assert.match(landingPageContent.tryIt.miniature.caption, /Sample students/);
+    assert.match(chapter("studio").caption, /Illustration with sample students/);
+  });
+
+  // A crop that keeps a screen's rounded corners has the app's backdrop baked
+  // in outside them; the print's frame must round at least that far.
+  it("frames each day screen inside its own rounded corners", async () => {
+    for (const { shot } of chapter("features").moments) {
+      const file = join(frontendRoot, "public", shot.src);
+      const { data, info } = await sharp(file).raw().toBuffer({ resolveWithObject: true });
+      assert.deepEqual([info.width, info.height], [shot.width, shot.height], shot.src);
+      const pixel = (x, y) => data.subarray((y * info.width + x) * info.channels).subarray(0, 3);
+      const differs = (a, b) => a.some((value, index) => Math.abs(value - b[index]) > 10);
+      let baked = 0;
+      for (const [x0, y0, dx, dy] of [
+        [0, 0, 1, 1],
+        [info.width - 1, 0, -1, 1],
+        [info.width - 1, info.height - 1, -1, -1],
+        [0, info.height - 1, 1, -1],
+      ]) {
+        // How far the corner's colour runs along each edge before the screen's own edge.
+        for (const [stepX, stepY] of [
+          [dx, 0],
+          [0, dy],
+        ]) {
+          const edge = pixel(x0 + stepX * 90, y0 + stepY * 90);
+          let run = 0;
+          while (run < 90 && differs(pixel(x0 + stepX * run, y0 + stepY * run), edge)) run += 1;
+          baked = Math.max(baked, run);
+        }
+      }
+      assert.ok(
+        baked <= shot.corner,
+        `${shot.src}: corners run ${baked}px, framed for ${shot.corner}px`,
+      );
+    }
+  });
+
+  it("preserves direct destinations and states current product limits once, plainly", () => {
     assert.deepEqual(
-      chapter("use-cases").rows.map((row) => row.detail.href),
+      chapter("features").moments.map((moment) => moment.detail.href),
       [
         "/use-cases/spreadsheets-to-studio-crm",
         "/use-cases/student-retention",
         "/use-cases/trial-to-enrollment",
-        "/use-cases/tuition-cleanup",
-        "/use-cases/belt-test-readiness",
+        "/features/student-management",
+        "/features/attendance",
+        "/features/belt-tracking",
+        "/features/billing",
       ],
     );
     assert.deepEqual(
-      chapter("explore").routes.map((route) => route.href),
-      ["/features", "/use-cases", "/features/student-management#families"],
+      chapter("features").links.map((link) => link.href),
+      ["/features", "/use-cases"],
     );
-    assert.equal(chapter("features").rows.length, 4);
-    assert.equal(chapter("use-cases").rows.length, 5);
-    assert.equal(chapter("explore").routes.length, 3);
-    assert.equal(chapter("pricing").facts.length, 3);
-    assert.equal(chapter("pricing").setupAction.href, "/signup");
-    assert.equal(chapter("about").principles.length, 3);
-    assert.equal(chapter("about").link.href, "/features#fit");
+    assert.equal(landingPageContent.pricing.setupAction.href, "/signup");
     assert.deepEqual(
-      chapter("faq").groups.map((group) => group.items.length),
-      [3, 3, 4, 4, 4, 3],
+      landingPageContent.faq.groups.map((group) => [group.id, group.items.length]),
+      [
+        ["faq-fit", 3],
+        ["faq-daily", 3],
+        ["faq-pricing", 3],
+        ["faq-limits", 2],
+      ],
     );
     assert.deepEqual(
-      chapter("begin").footerLinks.map((link) => link.href),
-      ["/features", "/use-cases", "/terms", "/privacy"],
+      landingPageContent.close.footerLinks.map((link) => link.href),
+      ["/features", "/use-cases", "#pricing", "/try", "/login", "/terms", "/privacy"],
     );
 
     const serialized = JSON.stringify(landingPageContent);
@@ -111,10 +155,24 @@ describe("marketing content contract", () => {
     assert.match(serialized, /class-count, time-at-rank and instructor-approval requirements/);
     assert.match(serialized, /requires separate activation and is not generally available/);
     assert.match(serialized, /0\.5% per successful charge, plus Stripe fees/);
-    assert.match(serialized, /Instructors cannot access billing/);
-    assert.match(serialized, /Illustrative studio morning/);
-    assert.equal(chapter("studio-view").examples.length, 3);
+    assert.match(serialized, /cannot access billing/);
+    assert.match(serialized, /no multi-location dashboard/);
+    assert.match(serialized, /doesn't send automated email or SMS reminders/);
+    assert.match(serialized, /new billing exports are unavailable/);
+    assert.match(serialized, /shown with sample studio data/);
     assert.doesNotMatch(serialized, /already sorted|Koaryu’s now|web-first|Very convenient/);
+
+    // Limits live in the FAQ; the selling chapters say what Koaryu does.
+    const limitsCopy = /not generally available|requires separate activation/;
+    for (const section of [
+      ...landingPageContent.story,
+      landingPageContent.pricing,
+      landingPageContent.tryIt,
+      landingPageContent.close,
+    ]) {
+      assert.doesNotMatch(JSON.stringify(section), limitsCopy, section.id);
+    }
+    assert.equal(serialized.match(/not generally available/g)?.length, 1);
   });
 
   it("derives every authoritative public price representation from one fact", () => {
@@ -126,10 +184,13 @@ describe("marketing content contract", () => {
     });
     assert.equal(publicPlatformPriceAmount(), "27");
     assert.equal(formatPublicPlatformPrice(), "$27");
-    assert.equal(chapter("pricing").amount, publicPlatformPriceAmount());
-    assert.equal(chapter("pricing").displayPrice, formatPublicPlatformPrice());
-    assert.match(chapter("welcome").lede, /\$27 per studio per month/);
-    assert.equal(chapter("begin").lede, "$27 per studio, per month.");
+    assert.equal(landingPageContent.pricing.amount, publicPlatformPriceAmount());
+    assert.equal(landingPageContent.pricing.displayPrice, formatPublicPlatformPrice());
+    // The price sits in the offer, under the hero's actions and in the close.
+    assert.match(chapter("welcome").note, /\$27 a month per studio/);
+    assert.equal(landingPageContent.close.lede, "30 days free, then $27 a month per studio.");
+    // The roster sizes all show the one price; no tiers are stored anywhere.
+    assert.deepEqual(landingPageContent.pricing.rosterSizes, [25, 80, 200]);
 
     const constantsPath = join(frontendRoot, "src/lib/constants.ts");
     const constantsSource = readFileSync(constantsPath, "utf8");
@@ -158,13 +219,15 @@ describe("marketing content contract", () => {
     assert.doesNotMatch(source, /new\s+(?:Date|Map|Set)\b|\bSymbol\s*\(/);
   });
 
-  it("retires the old landing composition after the complete Journey takes ownership", () => {
+  it("composes the paged story and the product page under one controller", () => {
     const landingSource = readFileSync(
       join(frontendRoot, "src/components/marketing/landing-page.tsx"),
       "utf8",
     );
+    assert.match(landingSource, /<SceneTimeScript\s*\/>/);
     assert.match(landingSource, /<JourneyController>/);
-    assert.match(landingSource, /<JourneyChapters\s*\/>/);
+    assert.match(landingSource, /<JourneyStory\s*\/>/);
+    assert.match(landingSource, /<LandingPageSections\s*\/>/);
     assert.doesNotMatch(landingSource, /landing-page-legacy-content/);
     assert.equal(existsSync(join(frontendRoot, "src/lib/landing-page-legacy-content.ts")), false);
     assert.equal(existsSync(join(frontendRoot, "src/app/page.module.css")), false);

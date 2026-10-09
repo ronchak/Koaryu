@@ -1,138 +1,494 @@
+/*
+ * Act one: a paged story over a fixed illustration. Chapters are one screen
+ * tall with open scroll between them; the controller moves the document from
+ * stop to stop and the scene follows the scroll position. Copy rises and fades
+ * with the scroll through CSS scroll-driven animations where supported; every
+ * animated element has a complete static state. Act two (the page) lives in
+ * landing/page.module.css.
+ */
+
+[data-koaryu-marketing].landingRoot {
+  --page-ground: #fbfaf6;
+  --page-masthead: rgb(251 250 246 / 94%);
+
+  background: var(--page-ground);
+}
+
+[data-koaryu-marketing].landingRoot::after {
+  /* The scene layer carries its own baked grain. */
+  display: none;
+}
+
+:global(html[data-scene="night"]) [data-koaryu-marketing].landingRoot {
+  --page-ground: var(--scene-ground);
+  --page-masthead: var(--scene-masthead-light);
+}
+
 .journey {
+  --journey-gutter: clamp(20px, 6vw, 96px);
+  --journey-masthead: 76px;
+  /* The masthead as drawn, its bottom rule included. */
+  --journey-bar: 77px;
+  --koaryu-curtain: #3a2c19;
+  --journey-time: #7a612e;
+  --story-ink: var(--koaryu-ink);
+  --story-ink-light: var(--koaryu-ink-light);
+  --sheet: var(--koaryu-sheet);
+  --sheet-ink: var(--koaryu-ink);
+  --sheet-rule: var(--koaryu-rule-soft);
+  --sheet-shadow: 0 30px 70px rgb(36 24 10 / 18%);
+  --timber: #5a4423;
+  --timber-edge: rgb(36 24 10 / 40%);
+  /* The weave, by day: cream paper strips and kraft, woven on an umber backing card. */
+  --loom-sky-top: #f6e9cd;
+  --loom-sky-mid: #eedcb7;
+  --loom-sky-low: #e2cba3;
+  --loom-cloud: #f4e7cc;
+  --loom-ground: #7e623a;
+  --loom-warp-0: #f2e5c8;
+  --loom-warp-1: #ead7b0;
+  --loom-warp-2: #e2ca9c;
+  --loom-warp-3: #eedfbd;
+  --loom-weft-0: #cdae7c;
+  --loom-weft-1: #bf9c68;
+  --loom-weft-2: #d5ba8d;
+  --loom-weft-3: #b39060;
+  --loom-shadow: #3d2910;
+  --loom-shadow-near: 0.2;
+  --loom-shadow-far: 0.09;
+  --loom-fibre: 0.55;
+  --loom-seam: rgb(61 41 16 / 26%);
+
   position: relative;
-  min-height: 100dvh;
-  color: var(--koaryu-ink);
-  background: var(--koaryu-paper);
+  color: var(--story-ink);
 }
 
-.sceneLayer,
-.pager,
-.rail,
-.liveStatus,
-.menuButton {
-  display: none;
+/* Night: copy reads cream on the evening scene; sheets are lamplit umber. */
+:global(html[data-scene="night"]) .journey {
+  --story-ink: var(--scene-ink);
+  --story-ink-light: var(--scene-ink-on-dark);
+  --sheet: rgb(33 27 25 / 94%);
+  --sheet-ink: #f1e7d6;
+  --sheet-rule: rgb(241 231 214 / 14%);
+  --sheet-shadow: 0 30px 80px rgb(0 0 0 / 42%);
+  --journey-time: #e2b15e;
+  --koaryu-action-label: #1d1712;
+  --timber: #3a2a17;
+  --timber-edge: rgb(0 0 0 / 55%);
+  /* Moonlit paper over the night sky, on a dark card; the lamplit floor is laid over it. */
+  --loom-sky-top: #0e1229;
+  --loom-sky-mid: #192043;
+  --loom-sky-low: #2a3560;
+  /* The night clouds' own dusk blue, so the streaks read as the clouds lying down. */
+  --loom-cloud: #59649a;
+  --loom-ground: #17141d;
+  --loom-warp-0: #cfc6b3;
+  --loom-warp-1: #bdb3a0;
+  --loom-warp-2: #aaa08e;
+  --loom-warp-3: #c5bcaa;
+  --loom-weft-0: #8f7552;
+  --loom-weft-1: #7f6849;
+  --loom-weft-2: #9c815c;
+  --loom-weft-3: #735e42;
+  --loom-shadow: #05040a;
+  --loom-shadow-near: 0.34;
+  --loom-shadow-far: 0.16;
+  --loom-fibre: 0.4;
+  --loom-seam: rgb(5 4 10 / 46%);
 }
 
-.topbar {
-  position: sticky;
-  z-index: 12;
+/*
+ * The scene and its frame stand on one sticky stage. It holds them on screen
+ * through the story and lets go at the hand-off stop, where the copy's pin
+ * lets go too (the controller ends the dock one screen below that stop), so
+ * the framed picture leaves with the page on the browser's own scroll, never
+ * dragged after it by script.
+ */
+.stageDock {
+  position: absolute;
+  z-index: 0;
   top: 0;
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  gap: 24px;
-  align-items: center;
-  min-height: 68px;
-  padding: 10px clamp(20px, 3.2vw, 52px);
-  border-bottom: 1px solid var(--koaryu-line);
-  color: var(--koaryu-ink);
-  background: var(--koaryu-sheet);
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
 }
 
-.primaryNav {
-  display: flex;
-  gap: clamp(14px, 2.2vw, 34px);
-  align-items: center;
-  justify-content: center;
+.stage {
+  position: sticky;
+  top: 0;
+  height: 100lvh;
 }
 
-.signIn {
-  justify-self: end;
+.sceneLayer {
+  position: absolute;
+  z-index: 0;
+  top: 0;
+  left: 0;
+  /* Explicit viewport units, so the artwork is framed to the screen, not the scrollbar's leftover. */
+  width: 100vw;
+  /* The large viewport keeps the artwork still while mobile toolbars move. */
+  height: 100lvh;
+  overflow: hidden;
+  pointer-events: none;
+  contain: layout paint;
+  transform-origin: 0 0;
+  will-change: transform;
 }
 
-.mobileNav {
+.sceneLayer::after {
+  position: absolute;
+  inset: 0;
+  content: "";
+  background:
+    radial-gradient(ellipse 72% 72% at 50% 48%, rgb(255 255 255) 55%, rgb(214 204 188) 100%),
+    url("/marketing/scene-grain.webp") 0 0 / 360px 360px;
+  /* Both layers are baked once; multiplying them costs one composite per frame. */
+  background-blend-mode: multiply;
+  mix-blend-mode: multiply;
+}
+
+/* The still that covers a cut: the scene layer's twin, shown only while it dissolves. */
+.sceneCover {
   display: none;
+  transform-origin: 50% 50%;
+  will-change: transform, opacity;
 }
 
-.storyRegion {
+.sceneCover[data-shown="true"] {
   display: block;
 }
 
+/*
+ * The weave sits inside the scene layer, over the artwork and under its grain,
+ * between the sky and the room. Its sky and its mat are each clipped by a pair
+ * of opposed transforms, so the wipes that hand it to the room never repaint.
+ */
+.loom {
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  display: none;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.journey[data-enhanced="true"] .loom[data-visible="true"] {
+  display: block;
+}
+
+.loomSky,
+.loomFloor {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  will-change: transform;
+}
+
+.loomWash,
+.loomFloorInner,
+.loomMat {
+  position: absolute;
+  inset: 0;
+  will-change: transform;
+}
+
+.loomWash {
+  background: linear-gradient(
+    180deg,
+    var(--loom-sky-top) 0%,
+    var(--loom-sky-mid) 44%,
+    var(--loom-sky-low) 100%
+  );
+  opacity: 0;
+}
+
+/* The shadow the laid floor casts on the mat just ahead of its leading edge. */
+.loomSeam {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: clamp(10px, 2.2vh, 22px);
+  background: linear-gradient(180deg, var(--loom-seam), transparent);
+  opacity: 0;
+  will-change: transform;
+}
+
+.loomSvg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.loomGround {
+  fill: var(--loom-ground);
+}
+
+.loomCloud {
+  fill: var(--loom-cloud);
+}
+
+.loomShadow,
+.loomShadowFar {
+  fill: var(--loom-shadow);
+  opacity: var(--loom-shadow-near);
+}
+
+.loomShadowFar {
+  opacity: var(--loom-shadow-far);
+}
+
+.loomWarp[data-tone="0"] {
+  fill: var(--loom-warp-0);
+}
+
+.loomWarp[data-tone="1"] {
+  fill: var(--loom-warp-1);
+}
+
+.loomWarp[data-tone="2"] {
+  fill: var(--loom-warp-2);
+}
+
+.loomWarp[data-tone="3"] {
+  fill: var(--loom-warp-3);
+}
+
+.loomWeft[data-tone="0"] {
+  fill: var(--loom-weft-0);
+}
+
+.loomWeft[data-tone="1"] {
+  fill: var(--loom-weft-1);
+}
+
+.loomWeft[data-tone="2"] {
+  fill: var(--loom-weft-2);
+}
+
+.loomWeft[data-tone="3"] {
+  fill: var(--loom-weft-3);
+}
+
+.loomFibre {
+  fill-opacity: var(--loom-fibre);
+}
+
+/* The timber frame the story has been inside all along; it appears as the class becomes a picture. */
+.pictureRing {
+  position: absolute;
+  z-index: 0;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 0;
+  border-radius: 2px;
+  opacity: 0;
+  pointer-events: none;
+  box-shadow:
+    0 0 0 1.5px rgb(247 243 233 / 50%),
+    0 0 0 var(--frame-width, 16px) var(--timber),
+    0 0 0 calc(var(--frame-width, 16px) + 1px) var(--timber-edge),
+    0 60px 90px -30px rgb(36 24 10 / 45%);
+  will-change: transform, opacity;
+}
+
+/* A brief veil for far jumps, in the page's own ground. */
+.veil {
+  position: fixed;
+  z-index: 25;
+  inset: 0;
+  background: var(--page-ground, #fbfaf6);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 190ms ease;
+}
+
+.journey[data-veil="on"] .veil {
+  opacity: 1;
+}
+
+/* Skip link, belt progress and masthead */
+
+.skipLink {
+  position: absolute;
+  z-index: 40;
+  top: 8px;
+  left: 20px;
+  padding: 14px 18px;
+  color: var(--koaryu-paper);
+  background: var(--koaryu-ink);
+  transform: translateY(-150%);
+}
+
+.skipLink:focus {
+  transform: translateY(0);
+}
+
+/* Shown only where the scroll position can drive it. */
+.beltProgress {
+  display: none;
+}
+
+.masthead {
+  position: sticky;
+  z-index: 30;
+  top: 0;
+  border-bottom: 1px solid transparent;
+  color: var(--scene-masthead-light-ink, inherit);
+  /* Short, so a page turn never catches it half way between two grounds. */
+  transition:
+    background-color 200ms ease,
+    border-color 200ms ease,
+    color 200ms ease,
+    transform 260ms ease;
+}
+
+/* Transparent over the hero; once the story moves it takes a ground matching the art beneath. */
+.journey[data-scrolled="true"] .masthead {
+  border-bottom-color: var(--scene-masthead-line);
+  background: var(--scene-masthead-light);
+}
+
+.journey[data-scrolled="true"][data-tone="dark"] .masthead {
+  border-bottom-color: var(--scene-masthead-line-dark);
+  color: var(--scene-masthead-dark-ink);
+  background: var(--scene-masthead-dark);
+}
+
+/* On the page it grounds itself on the page. */
+.journey[data-zone="page"] .masthead {
+  border-bottom-color: var(--scene-masthead-line);
+  color: var(--scene-masthead-light-ink);
+  background: var(--page-masthead);
+}
+
+/* The trial button is cut from the masthead's ink, so its label takes the masthead's ground. */
+.journey[data-scrolled="true"][data-tone="dark"] .masthead {
+  --koaryu-action-label: #342716;
+}
+
+:global(html[data-scene="night"]) .masthead [data-header-action] {
+  --koaryu-action-label: var(--scene-accent-ink);
+
+  color: var(--scene-accent);
+}
+
+.journey[data-masthead-hidden="true"] .masthead {
+  transform: translateY(-101%);
+}
+
+/* Keyboard focus always brings the masthead back. */
+.journey .masthead:focus-within {
+  transform: none;
+}
+
+/* Chapters */
+
+.main {
+  position: relative;
+  z-index: 1;
+  display: block;
+  margin-top: calc(var(--journey-masthead) * -1);
+}
+
+.main:focus {
+  outline: none;
+}
+
+.story {
+  position: relative;
+}
+
+/* Each chapter is one composed screen. */
 .chapter {
   position: relative;
-  display: grid;
-  min-height: max(600px, 82dvh);
-  padding: clamp(72px, 9vw, 132px) clamp(20px, 7vw, 112px);
-  align-items: center;
-  scroll-margin-top: 68px;
-  border-bottom: 1px solid var(--koaryu-rule-soft);
-  overflow: clip;
+  height: 100svh;
+  scroll-margin-top: 0;
 }
 
 .chapter[data-ink="light"] {
-  color: var(--koaryu-ink-light);
-  background: var(--koaryu-deep-brown);
+  color: var(--story-ink-light);
 }
 
-.chapter[data-placement="upper"] {
-  align-items: start;
+/* A chapter whose content is taller than the screen scrolls on its own, inside its frame. */
+.panel {
+  height: 100%;
+  overflow: hidden auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+}
+
+.panel::-webkit-scrollbar {
+  display: none;
+}
+
+.frame {
+  display: grid;
+  box-sizing: border-box;
+  min-height: 100%;
+  padding: calc(var(--journey-masthead) + clamp(24px, 6vh, 72px)) var(--journey-gutter)
+    clamp(40px, 9vh, 104px);
+  align-items: center;
+}
+
+/* Open scroll between chapters, where each beat plays when the story is scrubbed. */
+.interlude {
+  height: calc(var(--interlude, 70) * 1svh);
+}
+
+/* Without scripts the scene stays on its first frame, so chapters set on dark art bring their own ground. */
+.journey:not([data-enhanced="true"]) .chapter[data-ink="light"] {
+  background: var(--koaryu-curtain);
 }
 
 .heroCopy,
-.problemCopy,
-.transitionCopy,
-.plane,
-.framedPlane,
-.faqShell {
+.weaveCopy,
+.productStage,
+.sheet {
   width: min(100%, 1180px);
   margin-inline: auto;
 }
 
-.heroCopy {
-  max-width: 1100px;
-}
-
-.kicker {
-  margin: 0 0 14px;
-  font-size: clamp(10px, 0.8vw, 12px);
-  font-weight: 730;
-  line-height: 1.25;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  opacity: 0.76;
-}
+/* Type */
 
 .heroHeading,
-.statementHeading,
-.planeHeading {
+.sheetHeading,
+.weaveHeading,
+.studioHeading {
   margin: 0;
   text-wrap: balance;
 }
 
 .heroHeading {
   max-width: 11ch;
-  font-size: clamp(58px, 9vw, 134px);
+  font-size: clamp(54px, 9vw, 134px);
   font-weight: 720;
   line-height: 0.88;
   letter-spacing: -0.045em;
 }
 
-.heroHeading span {
+.heroHeading span,
+.line {
   display: block;
 }
 
-.statementHeading {
-  max-width: 17ch;
-  font-size: clamp(42px, 6.8vw, 92px);
-  font-weight: 660;
-  line-height: 0.94;
+.sheetHeading {
+  max-width: 18ch;
+  font-size: clamp(32px, 3.4vw, 50px);
+  font-weight: 690;
+  line-height: 0.98;
   letter-spacing: -0.04em;
 }
 
-.planeHeading {
-  max-width: 17ch;
-  font-size: clamp(34px, 3.5vw, 50px);
-  font-weight: 675;
-  line-height: 0.94;
-  letter-spacing: -0.044em;
-}
-
 .lede {
-  max-width: 58ch;
-  margin: 22px 0 0;
-  font-size: clamp(14px, 1.45vw, 19px);
+  max-width: 54ch;
+  margin: 20px 0 0;
+  font-size: clamp(15px, 1.4vw, 19px);
   font-weight: 470;
   line-height: 1.55;
-  opacity: 0.76;
+  opacity: 0.8;
 }
 
 .actions {
@@ -143,1432 +499,1143 @@
 }
 
 .action {
-  min-width: 150px;
+  min-width: 156px;
 }
 
-.scrollHint {
-  margin: 44px 0 0;
-  font-size: 11px;
-  font-weight: 650;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  opacity: 0.72;
-}
-
-.problemCopy {
-  display: grid;
-  grid-template-columns: minmax(0, 1.15fr) minmax(260px, 0.72fr);
-  gap: clamp(48px, 9vw, 130px);
-  align-items: end;
-}
-
-.problemResponse {
-  padding-bottom: 8px;
-  font-size: clamp(15px, 1.55vw, 21px);
-  line-height: 1.55;
-  opacity: 0.76;
-}
-
-.problemResponse p {
-  margin: 0;
-}
-
-.problemAside {
-  margin-top: 28px !important;
-  font-size: 13px;
-  font-style: italic;
-  opacity: 0.82;
-}
-
-.plane,
-.framedPlane {
-  padding: clamp(22px, 2.5vw, 32px);
-  color: var(--koaryu-ink);
-  background: var(--koaryu-sheet);
-}
-
-.plane {
-  border-block: 1px solid var(--koaryu-rule);
-}
-
-.framedPlane {
-  max-width: 680px;
-  border: 1px solid var(--koaryu-rule);
-  border-radius: 9px;
-  box-shadow:
-    12px 12px 0 rgb(39 28 13 / 13%),
-    0 30px 76px rgb(36 24 10 / 24%);
-}
-
-.darkPlane {
-  margin-left: 0;
-  color: var(--koaryu-ink-light);
-  background: var(--koaryu-deep-brown);
-  --koaryu-action-label: var(--koaryu-deep-brown);
-}
-
-.morningPlane {
-  max-width: 720px;
-  margin-left: 0;
-}
-
-.proofBlock {
-  display: grid;
-  grid-template-columns: minmax(90px, 0.25fr) minmax(0, 1fr);
-  gap: 24px;
-  margin-top: 30px;
-  padding-top: 20px;
-  border-top: 1px solid var(--koaryu-rule-soft);
-  font-size: 14px;
-  line-height: 1.5;
-}
-
-.proofBlock p {
-  margin: 0;
-}
-
-.rowLabel {
-  font-size: 10px;
-  font-weight: 720;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  opacity: 0.76;
-}
-
-.ledgerPlane {
-  width: 100%;
-  max-width: 780px;
-  margin-left: 0;
-}
-
-.ledgerList,
-.bandList,
-.routeList,
-.statementList,
-.priceFacts,
-.faqList {
-  padding: 0;
-  margin: 24px 0 0;
-  list-style: none;
-}
-
-.ledgerRow {
-  display: grid;
-  grid-template-columns: minmax(100px, 0.35fr) minmax(0, 1fr);
-  gap: 14px;
-  padding: 13px 0;
-  border-top: 1px solid var(--koaryu-rule-soft);
-}
-
-.ledgerRow h3,
-.ledgerRow p,
-.bandRow h3,
-.bandRow p {
-  margin: 0;
-}
-
-.ledgerRow h3,
-.bandRow h3,
-.statementList dt,
-.priceFacts dt {
-  font-size: 13px;
-  font-weight: 710;
-  line-height: 1.35;
-  letter-spacing: -0.01em;
-}
-
-.ledgerRow a,
-.bandRow a,
-.routeRow a,
-.planeLink,
-.finalLinks a,
-.faqIndex a {
+.textLink {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  min-height: 44px;
   color: inherit;
+  font-size: 14px;
+  font-weight: 650;
   text-decoration: none;
 }
 
-.ledgerRow h3 a,
-.bandRow h3 a {
-  display: inline-flex;
-  min-height: 44px;
-  align-items: center;
+.textLink span {
+  transition: transform 200ms ease;
 }
 
-.ledgerRow p,
-.bandRow p,
-.statementList dd,
-.priceFacts dd {
-  font-size: 12.5px;
-  line-height: 1.48;
-  opacity: 0.76;
-}
-
-.planeLink {
-  display: inline-flex;
-  gap: 8px;
-  align-items: center;
-  min-height: 44px;
-  margin-top: 14px;
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.planeLink span,
-.routeRow a > span:last-child {
-  transition: transform 180ms ease;
-}
-
-.planeLink:hover span,
-.routeRow a:hover > span:last-child {
+.textLink:hover span {
   transform: translateX(3px);
 }
 
-.bandPlane {
-  align-self: end;
-}
-
-.bandHeading {
-  display: flex;
-  gap: 28px;
-  align-items: end;
-  justify-content: space-between;
-}
-
-.bandList {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  border-top: 1px solid var(--koaryu-rule-soft);
-}
-
-.bandRow {
-  min-width: 0;
-  padding: 18px 16px;
-  border-left: 1px solid var(--koaryu-rule-soft);
-}
-
-.bandRow:first-child {
-  padding-left: 0;
-  border-left: 0;
-}
-
-.bandRow p {
-  margin-top: 8px;
-}
-
-.transitionCopy {
-  max-width: 1100px;
-  margin-left: 0;
-}
-
-.mapPlane {
-  width: 100%;
-  max-width: 780px;
-  margin-right: 0;
-}
-
-.routeRow {
-  border-top: 1px solid var(--koaryu-rule-soft);
-}
-
-.routeRow a {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 18px;
-  align-items: center;
-  min-height: 74px;
-  padding: 12px 0;
-}
-
-.routeRow strong,
-.routeRow a > span:first-child > span,
-.routeRow small {
-  display: block;
-}
-
-.routeRow strong {
-  font-size: 15px;
-  font-weight: 650;
-}
-
-.routeRow a > span:first-child > span {
-  margin-top: 4px;
-  font-size: 12.5px;
-  line-height: 1.45;
-  opacity: 0.76;
-}
-
-.routeRow small {
-  margin-top: 7px;
-  font-size: 10px;
-  font-weight: 720;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  opacity: 0.76;
-}
-
-.pricePlane {
-  width: 100%;
-  max-width: 620px;
-  margin-left: 0;
-}
-
-.price {
-  margin: 30px 0 0;
-  font-size: clamp(74px, 9vw, 124px);
-  font-weight: 720;
-  line-height: 0.78;
-  letter-spacing: -0.07em;
-}
-
-.pricePeriod {
+.caption {
   margin: 14px 0 0;
+  font-size: 12px;
+  font-weight: 560;
+}
+
+/* Hero */
+
+.chapter[data-kind="hero"] .frame {
+  align-items: center;
+}
+
+.heroCopy {
+  padding-bottom: 6vh;
+}
+
+.heroKicker {
+  margin: 0 0 20px;
+  font-size: clamp(13px, 1.05vw, 15px);
+  font-weight: 640;
+  line-height: 1.3;
+  opacity: 0.74;
+}
+
+.heroLede {
+  max-width: 46ch;
+}
+
+.heroNote {
+  margin: 16px 0 0;
   font-size: 13px;
-  opacity: 0.76;
+  font-weight: 600;
+  opacity: 0.72;
 }
 
-.priceFacts > div,
-.statementList > div {
-  padding: 13px 0;
-  border-top: 1px solid var(--koaryu-rule-soft);
+/* Sheets: paper cards that sit on the scene */
+
+.sheet {
+  box-sizing: border-box;
+  padding: clamp(24px, 3vw, 44px);
+  border: 1px solid var(--sheet-rule);
+  border-radius: 10px;
+  color: var(--sheet-ink);
+  background: var(--sheet);
+  box-shadow:
+    0 1px 0 rgb(255 255 255 / 50%) inset,
+    var(--sheet-shadow);
 }
 
-.priceFacts dd,
-.statementList dd,
-.priceFacts dt,
-.statementList dt {
-  margin: 0;
+:global(html[data-scene="night"]) .sheet {
+  box-shadow:
+    0 1px 0 rgb(255 255 255 / 6%) inset,
+    var(--sheet-shadow);
 }
 
-.priceFacts dd,
-.statementList dd {
-  margin-top: 5px;
-}
+/* Product: the copy on a card, the real screens standing free over the dojo */
 
-.aboutPlane {
-  width: 100%;
-  max-width: 780px;
-  margin-left: 0;
-}
-
-.faqShell {
-  width: 100%;
-  max-width: 800px;
-  margin-left: 0;
-}
-
-.faqIndex {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px 16px;
-  margin-bottom: 10px;
-}
-
-.faqIndex a {
-  display: inline-flex;
-  min-width: 24px;
-  align-items: center;
-  justify-content: center;
-  min-height: 44px;
-  border-bottom: 2px solid transparent;
-  font-size: 10px;
-  font-weight: 720;
-  letter-spacing: 0.11em;
-  text-transform: uppercase;
-  opacity: 0.76;
-}
-
-.faqIndex a[aria-current="true"] {
-  border-bottom-color: currentColor;
-  opacity: 1;
-}
-
-.faqGroup + .faqGroup {
-  margin-top: 42px;
-  padding-top: 42px;
-  border-top: 1px solid var(--koaryu-rule);
-}
-
-.faqItem {
-  border-top: 1px solid var(--koaryu-rule-soft);
-}
-
-.faqQuestion {
+.productStage {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 16px;
+  width: min(100%, 1260px);
+  grid-template-columns: minmax(330px, 390px) minmax(0, 1fr);
+  gap: clamp(40px, 5vw, 80px);
   align-items: center;
-  width: 100%;
-  min-height: 44px;
-  padding: 11px 1px;
-  border: 0;
-  color: inherit;
-  background: transparent;
-  font: 650 13px/1.35 inherit;
-  text-align: left;
-  cursor: pointer;
 }
 
-.faqIcon {
-  font-size: 18px;
-  font-weight: 400;
-  opacity: 0.64;
-  transition: transform 250ms ease;
-}
-
-.faqAnswer {
-  padding: 0 28px 14px 1px;
-}
-
-.faqAnswer p {
+.productSheet {
+  position: relative;
+  z-index: 1;
+  width: auto;
   margin: 0;
-  font-size: 12.5px;
+}
+
+.productStage > * {
+  min-width: 0;
+}
+
+.productSheet .sheetHeading {
+  font-size: clamp(32px, 2.9vw, 42px);
+}
+
+.highlights {
+  display: grid;
+  gap: 14px;
+  margin: 26px 0 0;
+  padding-top: 22px;
+  border-top: 1px solid var(--sheet-rule);
+}
+
+.highlights div {
+  display: grid;
+  gap: 3px;
+}
+
+.highlights dt {
+  font-size: 14px;
+  font-weight: 680;
+}
+
+.highlights dd {
+  margin: 0;
+  font-size: 14px;
   line-height: 1.5;
   opacity: 0.76;
 }
 
-.finalPlane {
-  margin-inline: auto;
-  text-align: center;
+.productFigure {
+  position: relative;
+  z-index: 2;
+  margin: 0;
+}
+
+.productScreens {
+  position: relative;
+  padding-bottom: 7%;
+}
+
+.productDesktop {
+  overflow: hidden;
+  border: 1px solid var(--koaryu-rule);
+  border-radius: 10px;
   background: var(--koaryu-sheet-raised);
   box-shadow:
-    10px 10px 0 rgb(59 47 28 / 9%),
-    0 28px 70px rgb(49 36 17 / 15%);
+    0 2px 0 rgb(255 255 255 / 40%) inset,
+    0 44px 90px rgb(36 24 10 / 26%);
 }
 
-.finalPlane .planeHeading,
-.finalPlane .lede {
-  margin-inline: auto;
+.productDesktop img,
+.productPhone img {
+  display: block;
+  width: 100%;
+  height: auto;
 }
 
-.finalPlane .actions {
-  justify-content: center;
+.productPhone {
+  position: absolute;
+  bottom: 0;
+  left: -10%;
+  width: 24%;
+  overflow: hidden;
+  border: 6px solid #2b2115;
+  border-radius: 26px;
+  background: #2b2115;
+  box-shadow: 0 34px 60px rgb(36 24 10 / 34%);
 }
 
-.finalLinks {
+.productFigure .caption {
+  text-align: right;
+}
+
+:global(html[data-scene="night"]) .productDesktop {
+  border-color: rgb(241 231 214 / 16%);
+  box-shadow: 0 44px 100px rgb(0 0 0 / 50%);
+}
+
+/* The day: the door opens onto a tall paper panel that reads at its own pace */
+
+/* The day scrolls in a window that starts below the masthead, so no card runs on under the bar. */
+.chapter[data-kind="features"] .panel {
+  position: absolute;
+  inset: var(--journey-bar) 0 0;
+  height: auto;
+}
+
+.chapter[data-kind="features"] .frame {
+  align-items: start;
+  padding-top: max(24px, calc(40svh - var(--journey-bar)));
+  padding-bottom: 18svh;
+}
+
+.daySheet {
+  display: grid;
+  grid-template-columns: minmax(0, 0.82fr) minmax(0, 1.18fr);
+  gap: clamp(40px, 6vw, 104px);
+  padding: clamp(36px, 5vw, 76px) clamp(28px, 5vw, 76px);
+}
+
+.dayHeader {
+  position: sticky;
+  top: 48px;
+  align-self: start;
+}
+
+.dayHeader .sheetHeading {
+  max-width: 9ch;
+  font-size: clamp(36px, 4.4vw, 62px);
+}
+
+.dayHeader .lede {
+  max-width: 34ch;
+}
+
+.dayLinks {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 18px;
-  justify-content: center;
-  margin-top: 28px;
+  gap: 4px 26px;
+  margin-top: 18px;
 }
 
-.finalLinks a {
-  display: inline-flex;
-  align-items: center;
-  min-height: 44px;
-  font-size: 12px;
-  opacity: 0.76;
-}
-
-.copyright {
-  margin: 18px 0 0;
-  font-size: 11px;
-  opacity: 0.76;
-}
-
-.journey a:focus-visible,
-.journey button:focus-visible,
-.faqPanel:focus-visible {
-  outline: 2px solid currentColor;
-  outline-offset: 4px;
-}
-
-.faqPanel:focus-visible {
-  outline-offset: 3px;
-}
-
-/* Fixed positioning, hidden chapters, scene staging, and overflow lock are
-   intentionally unavailable until the client controller sets this marker. */
-.journey[data-enhanced="true"] {
-  height: 100dvh;
-  min-height: 0;
-  overflow: hidden;
-  overscroll-behavior: none;
-}
-
-.journey[data-enhanced="true"] .sceneLayer {
-  position: absolute;
-  z-index: 0;
-  inset: 0;
-  display: block;
-  overflow: hidden;
-}
-
-.journey[data-enhanced="true"] .topbar {
-  position: absolute;
-  z-index: 10;
-  inset: 0 0 auto;
-  color: var(--journey-chrome-color, var(--koaryu-ink));
-  background: transparent;
-  border-bottom-color: transparent;
-  transition: color 550ms ease;
-}
-
-.journey[data-enhanced="true"] .storyRegion {
-  position: absolute;
-  z-index: 2;
-  inset: 0;
-}
-
-.journey[data-enhanced="true"] .chapter {
-  position: absolute;
-  inset: 0;
-  min-height: 0;
-  padding: max(86px, env(safe-area-inset-top)) clamp(20px, 7vw, 112px)
-    max(70px, env(safe-area-inset-bottom));
-  border: 0;
-  color: var(--koaryu-ink);
-  background: transparent;
-  opacity: 0;
-  visibility: hidden;
-  pointer-events: none;
-  transform: translate3d(0, 12px, 0);
-  transition: none;
-}
-
-.journey[data-enhanced="true"] .chapter[aria-hidden="false"] {
-  z-index: 3;
-  opacity: 1;
-  visibility: visible;
-  pointer-events: auto;
-  transform: translate3d(0, 0, 0);
-  transition:
-    opacity 340ms cubic-bezier(0.16, 1, 0.3, 1) 260ms,
-    transform 340ms cubic-bezier(0.16, 1, 0.3, 1) 260ms,
-    visibility 0s;
-}
-
-.journey[data-enhanced="true"] .chapter[data-ink="light"] {
-  color: var(--koaryu-ink-light);
-}
-
-.journey[data-enhanced="true"] .chapter[data-kind="morning"] {
-  transition-delay: 0ms;
-  transition-duration: 200ms;
-}
-
-.journey[data-enhanced="true"] .chapter[data-kind="problem"] {
-  transition-delay: 660ms;
-}
-
-.journey[data-enhanced="true"] .chapter[data-placement="upper"] {
-  padding-top: clamp(110px, 14vh, 165px);
-}
-
-.journey[data-enhanced="true"] .ledgerPlane {
-  width: min(450px, 42%);
-  max-width: none;
-}
-
-.journey[data-enhanced="true"] .mapPlane {
-  width: min(500px, 46%);
-  max-width: none;
-}
-
-.journey[data-enhanced="true"] .pricePlane {
-  width: min(370px, 35%);
-  max-width: none;
-}
-
-.journey[data-enhanced="true"] .aboutPlane {
-  width: min(540px, 49%);
-  max-width: none;
-}
-
-.journey[data-enhanced="true"] .faqShell {
-  width: min(560px, 48%);
-  max-width: none;
-}
-
-.journey[data-enhanced="true"] .chapter[data-chapter-id="stillness"]::before {
-  position: absolute;
-  z-index: -1;
-  inset: 0;
-  content: "";
-  background: radial-gradient(
-    circle at 52% 58%,
-    rgb(248 225 179 / 42%),
-    rgb(123 86 35 / 8%) 44%,
-    rgb(48 34 18 / 18%)
-  );
-  animation: closing-wash 900ms cubic-bezier(0.16, 1, 0.3, 1) both;
-}
-
-@keyframes closing-wash {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
-.journey[data-enhanced="true"] .scrollHint {
-  animation: hint-bob 1800ms ease-in-out infinite;
-}
-
-@keyframes hint-bob {
-  50% {
-    transform: translateY(5px);
-  }
-}
-
-.journey[data-enhanced="true"] .faqPanel {
-  max-height: min(66dvh, 590px);
-  overflow: auto;
-  scrollbar-gutter: stable;
-  scrollbar-width: thin;
-  overscroll-behavior: contain;
-  touch-action: pan-y;
-}
-
-.journey[data-enhanced="true"] .faqGroup {
-  display: none;
+.dayList {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: clamp(40px, 6vh, 64px);
   margin: 0;
-  padding: 0;
-  border: 0;
+  padding: 6px 0 6px 52px;
+  list-style: none;
+  view-timeline: --day block;
 }
 
-.journey[data-enhanced="true"] .faqGroup[aria-hidden="false"] {
-  display: block;
-  animation: faq-group-in 220ms cubic-bezier(0.22, 0.75, 0.2, 1) both;
-}
-
-@keyframes faq-group-in {
-  from {
-    opacity: 0.58;
-    transform: translate3d(0, 6px, 0);
-  }
-  to {
-    opacity: 1;
-    transform: translate3d(0, 0, 0);
-  }
-}
-
-.journey[data-enhanced="true"] .faqAnswer {
-  max-height: 0;
-  padding-bottom: 0;
-  overflow: hidden;
-  opacity: 0;
-  transition:
-    max-height 420ms ease,
-    opacity 300ms ease,
-    padding-bottom 420ms ease;
-}
-
-.journey[data-enhanced="true"] .faqItem[data-open="true"] .faqAnswer {
-  max-height: min(40dvh, 320px);
-  padding-bottom: 14px;
-  opacity: 1;
-}
-
-.journey[data-enhanced="true"] .faqQuestion[aria-expanded="true"] .faqIcon {
-  transform: rotate(45deg);
-}
-
-.journey[data-enhanced="true"] .pager,
-.journey[data-enhanced="true"] .rail,
-.journey[data-enhanced="true"] .liveStatus {
+/* The track the ink follows, and the ink itself. */
+.dayList::before,
+.dayList::after {
   position: absolute;
-  z-index: 11;
-  display: flex;
+  top: 14px;
+  bottom: 18px;
+  left: 8px;
+  width: 2px;
+  border-radius: 2px;
+  content: "";
 }
 
-.pager {
-  left: clamp(14px, 2vw, 30px);
-  bottom: max(18px, env(safe-area-inset-bottom));
-  gap: 10px;
-  color: var(--journey-chrome-color, var(--koaryu-ink));
+.dayList::before {
+  background: var(--sheet-rule);
 }
 
-.pager button {
-  width: 44px;
-  height: 44px;
-  padding: 0;
-  border: 1px solid currentColor;
+.dayList::after {
+  background: currentColor;
+  transform-origin: top;
+}
+
+.dayMoment {
+  position: relative;
+}
+
+.dayDot {
+  position: absolute;
+  top: 1px;
+  left: -52px;
+  width: 18px;
+  height: 18px;
+  box-sizing: border-box;
+  border: 2px solid currentColor;
   border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 0 5px var(--sheet);
+}
+
+.dayTime {
+  margin: 0 0 6px;
+  color: var(--journey-time);
+  font-size: 13px;
+  font-weight: 720;
+  line-height: 1.4;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+}
+
+.dayTitle {
+  margin: 0;
+  font-size: clamp(19px, 1.7vw, 24px);
+  font-weight: 690;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+}
+
+.dayTitle a {
   color: inherit;
-  background: transparent;
-  font: 600 16px/1 inherit;
-  cursor: pointer;
+  text-decoration: none;
+  background-image: linear-gradient(currentColor, currentColor);
+  background-position: 0 100%;
+  background-repeat: no-repeat;
+  background-size: 0 1.5px;
+  transition: background-size 260ms ease;
+}
+
+.dayTitle a:hover,
+.dayTitle a:focus-visible {
+  background-size: 100% 1.5px;
+}
+
+.dayText {
+  max-width: 46ch;
+  margin: 8px 0 0;
+  font-size: 15px;
+  line-height: 1.6;
   opacity: 0.76;
 }
 
-.pager button:disabled {
-  cursor: default;
-  opacity: 0.24;
+/*
+ * The real screen for the moment, at its own size, set into the sheet like a
+ * print. The frame rounds 4px wider than the screen's own corners (its border,
+ * and room past their antialiased edge), so none of the app's backdrop shows.
+ */
+.dayShot {
+  width: min(100%, var(--shot-width));
+  margin: 18px 0 0;
+  overflow: hidden;
+  border: 1px solid var(--sheet-rule);
+  border-radius: calc(var(--shot-corner-x) + 4px) / calc(var(--shot-corner-y) + 4px);
+  background: #fbf8f1;
+  box-shadow: 0 14px 34px -18px rgb(36 24 10 / 34%);
 }
+
+.dayShot img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+:global(html[data-scene="night"]) .dayShot {
+  border-color: rgb(241 231 214 / 14%);
+  box-shadow: 0 18px 40px -16px rgb(0 0 0 / 60%);
+}
+
+.dayCaption {
+  grid-column: 2;
+  margin-top: 0;
+  opacity: 0.7;
+}
+
+/* The clouds: the words sit in the clear sky above them */
+
+.chapter[data-kind="weave"] .frame {
+  align-items: end;
+  padding-bottom: clamp(56px, 13vh, 150px);
+}
+
+.weaveCopy {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(260px, 0.75fr);
+  gap: 20px clamp(40px, 7vw, 120px);
+  align-items: end;
+}
+
+.weaveHeading {
+  max-width: 17ch;
+  font-size: clamp(36px, 4.4vw, 66px);
+  font-weight: 700;
+  line-height: 0.96;
+  letter-spacing: -0.043em;
+}
+
+.weaveLede {
+  max-width: 40ch;
+  margin: 0 0 6px;
+  font-size: clamp(15px, 1.2vw, 17px);
+}
+
+/* The class sits, then becomes a framed picture beside the same words */
+
+.studio {
+  --handoff-run: 70svh;
+  --handoff: 0;
+
+  position: relative;
+  height: calc(100svh + var(--handoff-run));
+}
+
+.handoffMarker {
+  position: absolute;
+  top: var(--handoff-run);
+  left: 0;
+  width: 1px;
+  height: 1px;
+  pointer-events: none;
+}
+
+.studioPin {
+  position: sticky;
+  top: 0;
+  display: grid;
+  box-sizing: border-box;
+  height: 100svh;
+  grid-template-columns: minmax(0, 0.78fr) minmax(0, 1.22fr);
+  gap: clamp(36px, 5vw, 88px);
+  align-items: start;
+  padding: calc(var(--journey-masthead) + clamp(48px, 12vh, 128px)) var(--journey-gutter) 0;
+}
+
+.studioHeading {
+  max-width: 10ch;
+  font-size: clamp(40px, 4.8vw, 74px);
+  font-weight: 720;
+  line-height: 0.93;
+  letter-spacing: -0.045em;
+}
+
+/*
+ * --clear-* (written by the controller) is 0 while the picture's edge or its
+ * frame passes through a block of copy, so text and frame never cross.
+ */
+.studioHeading .line {
+  opacity: var(--clear-heading, 1);
+}
+
+.studioDetail,
+.studioCaption {
+  transform: translateY(calc((1 - var(--handoff)) * 10px));
+}
+
+.studioDetail {
+  opacity: calc(clamp(0, calc((var(--handoff) - 0.55) * 2.4), 1) * var(--clear-detail, 1));
+}
+
+.studioCaption {
+  opacity: calc(clamp(0, calc((var(--handoff) - 0.55) * 2.4), 1) * var(--clear-caption, 1));
+}
+
+.studioLede {
+  max-width: 40ch;
+  margin: 24px 0 0;
+  font-size: clamp(15px, 1.25vw, 18px);
+  line-height: 1.55;
+  opacity: 0.82;
+}
+
+.studioFigure {
+  margin: 0;
+}
+
+.pictureSlot {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1.6;
+}
+
+.pictureStill {
+  display: none;
+}
+
+.pictureStill img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.studioCaption {
+  margin: 30px 0 0;
+  font-size: 12px;
+  font-weight: 560;
+  text-align: right;
+}
+
+/* Without scripts the hand-off is an ordinary composition with the class as a framed still. */
+.journey:not([data-enhanced="true"]) .studio {
+  height: auto;
+  background: var(--page-ground, #fbfaf6);
+}
+
+.journey:not([data-enhanced="true"]) .studioPin {
+  position: relative;
+  height: auto;
+  min-height: 100svh;
+}
+
+.journey:not([data-enhanced="true"]) .studioDetail,
+.journey:not([data-enhanced="true"]) .studioCaption {
+  opacity: 1;
+  transform: none;
+}
+
+.journey:not([data-enhanced="true"]) .pictureStill {
+  position: absolute;
+  inset: 0;
+  display: block;
+  box-shadow: 0 0 0 16px var(--timber);
+}
+
+/* Once the page has begun, the story's copy takes the page's ink. */
+.journey[data-zone="page"] .studio {
+  color: #2a2117;
+}
+
+:global(html[data-scene="night"]) .journey[data-zone="page"] .studio {
+  color: #efe6d6;
+}
+
+/* At night the class sits under lit shoji and lanterns; the line keeps a soft shadow of its own. */
+:global(html[data-scene="night"]) .journey[data-zone="story"] .studioHeading,
+:global(html[data-scene="night"]) .heroHeading {
+  text-shadow:
+    0 0 32px rgb(14 10 12 / 72%),
+    0 2px 8px rgb(14 10 12 / 45%);
+}
+
+/* Night actions are lantern-lit. */
+:global(html[data-scene="night"]) .action[data-variant="primary"] {
+  --koaryu-action-label: var(--scene-accent-ink);
+
+  color: var(--scene-accent);
+}
+
+/* Chapter rail: the current chapter is named; the full list opens on hover or focus */
 
 .rail {
+  --rail-ink: var(--story-ink);
+  --rail-halo: rgb(247 243 233 / 62%);
+  --rail-sheet: rgb(251 247 238 / 95%);
+  --rail-sheet-ink: var(--koaryu-ink);
+
+  position: fixed;
+  z-index: 31;
   top: 50%;
-  right: 4px;
-  flex-direction: column;
+  right: 6px;
+  display: none;
+  color: var(--rail-ink);
   transform: translateY(-50%);
-  color: var(--journey-chrome-color, var(--koaryu-ink));
+  transition:
+    color 500ms ease,
+    opacity 400ms ease,
+    transform 400ms ease;
+}
+
+.journey[data-enhanced="true"] .rail {
+  display: block;
+}
+
+.journey[data-tone="dark"] .rail {
+  --rail-ink: var(--koaryu-ink-light);
+  --rail-halo: rgb(43 32 14 / 46%);
+}
+
+:global(html[data-scene="night"]) .rail {
+  --rail-ink: #f1e7d6;
+  --rail-halo: rgb(12 10 16 / 50%);
+  --rail-sheet: rgb(30 25 32 / 95%);
+  --rail-sheet-ink: #f1e7d6;
+}
+
+/* The rail belongs to the story; on the page it steps away. */
+.journey[data-zone="page"] .rail {
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(12px, -50%);
+}
+
+.journey[data-zone="page"] .rail:focus-within {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(-50%);
+}
+
+.rail::before {
+  position: absolute;
+  z-index: -1;
+  inset: -10px 0 -10px -8px;
+  content: "";
+  border: 1px solid var(--koaryu-rule-soft);
+  border-radius: 10px;
+  background: var(--rail-sheet);
+  box-shadow: 0 18px 44px rgb(45 34 18 / 16%);
+  opacity: 0;
+  transform: translateX(8px);
+  transition:
+    opacity 200ms ease,
+    transform 260ms cubic-bezier(0.22, 1, 0.36, 1);
+  pointer-events: none;
+}
+
+.rail ol {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
 .rail button {
   display: grid;
-  width: 44px;
-  height: 24px;
+  grid-template-columns: auto 44px;
+  align-items: center;
+  justify-content: end;
+  width: 100%;
+  height: 26px;
   padding: 0;
-  place-items: center;
   border: 0;
   color: inherit;
   background: transparent;
+  font: inherit;
   cursor: pointer;
 }
 
-.rail button span {
+.railLabel {
+  display: inline-flex;
+  gap: 8px;
+  align-items: baseline;
+  margin-left: 10px;
+  padding: 5px 9px;
+  border-radius: 999px;
+  font-size: 12.5px;
+  font-weight: 560;
+  line-height: 1;
+  white-space: nowrap;
+  opacity: 0;
+  transform: translateX(6px);
+  transition:
+    opacity 180ms ease,
+    transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
+  pointer-events: none;
+}
+
+.railNumber {
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.55;
+}
+
+.railDot {
   display: block;
-  width: 4px;
-  height: 4px;
+  justify-self: center;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
   background: currentColor;
-  opacity: 0.32;
+  box-shadow: 0 0 0 2px var(--rail-halo);
+  opacity: 0.55;
   transition:
-    width 180ms ease,
-    height 180ms ease,
+    height 220ms cubic-bezier(0.22, 1, 0.36, 1),
     opacity 180ms ease;
 }
 
-.rail button[aria-current="step"] span {
-  width: 6px;
-  height: 6px;
-  opacity: 0.96;
+.rail button:hover .railDot {
+  opacity: 0.9;
+}
+
+.rail button[aria-current="step"] .railDot {
+  height: 16px;
+  border-radius: 3px;
+  opacity: 1;
+}
+
+.rail:is(:hover, :focus-within) {
+  --rail-halo: transparent;
+
+  color: var(--rail-sheet-ink);
+}
+
+.rail:is(:hover, :focus-within)::before {
+  opacity: 1;
+  transform: none;
+}
+
+.rail:is(:hover, :focus-within) .railLabel {
+  opacity: 0.72;
+  transform: none;
+  pointer-events: auto;
+}
+
+.rail button:is(:hover, :focus-visible) .railLabel,
+.rail button[aria-current="step"] .railLabel {
+  opacity: 1;
+}
+
+.rail button[aria-current="step"] .railLabel {
+  font-weight: 700;
+}
+
+/* On arrival the chapter is named on a small chip of its own, which then steps aside for the art. */
+.rail:not(:hover, :focus-within) button[aria-current="step"] .railLabel {
+  color: var(--rail-sheet-ink);
+  background: var(--rail-sheet);
+  box-shadow: 0 2px 10px rgb(45 34 18 / 10%);
+  animation: chipFlash 2600ms ease both;
+}
+
+@keyframes chipFlash {
+  0% {
+    opacity: 0;
+    transform: translateX(6px);
+  }
+
+  12%,
+  72% {
+    opacity: 1;
+    transform: none;
+  }
+
+  100% {
+    opacity: 0;
+    transform: none;
+  }
+}
+
+.rail:not(:hover, :focus-within) button[aria-current="step"] .railNumber {
+  display: none;
 }
 
 .rail button:focus-visible {
-  outline-width: 1px;
-  outline-offset: -4px;
+  outline: 0;
+}
+
+.rail button:focus-visible .railDot {
+  outline: 2px solid currentColor;
+  outline-offset: 3px;
 }
 
 .liveStatus {
+  position: absolute;
   width: 1px;
   height: 1px;
-  padding: 0;
-  margin: -1px;
   overflow: hidden;
-  clip: rect(0, 0, 0, 0);
+  clip-path: inset(50%);
   white-space: nowrap;
-  border: 0;
 }
 
-@media (max-width: 1000px) {
-  .journey[data-enhanced="true"] .chapter {
-    padding-inline: 50px;
-  }
-
-  .journey[data-enhanced="true"] .ledgerPlane {
-    width: min(450px, 52%);
-  }
-
-  .journey[data-enhanced="true"] .mapPlane {
-    width: min(500px, 56%);
-  }
-
-  .journey[data-enhanced="true"] .pricePlane {
-    width: min(370px, 45%);
-  }
-
-  .journey[data-enhanced="true"] .aboutPlane,
-  .journey[data-enhanced="true"] .faqShell {
-    width: min(560px, 60%);
-  }
+.textLink:focus-visible,
+.dayTitle a:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 3px;
 }
 
-@media (max-width: 820px), (max-width: 1024px) and (max-height: 500px) {
-  .topbar {
-    grid-template-columns: auto minmax(0, 1fr) auto;
-  }
+/* Motion */
 
-  .primaryNav {
-    justify-content: end;
-    flex-wrap: wrap;
-  }
-
-  .journey[data-enhanced="true"] .topbar {
-    grid-template-columns: auto 1fr auto auto;
-    gap: 10px;
-    padding-inline: 14px;
-  }
-
-  .journey[data-enhanced="true"] .primaryNav {
-    display: none;
-  }
-
-  .journey[data-enhanced="true"] .menuButton {
-    display: inline-grid;
-  }
-
-  .journey[data-enhanced="true"] .mobileNav {
-    position: absolute;
-    top: calc(100% + 4px);
-    right: 14px;
-    display: grid;
-    width: min(280px, calc(100vw - 28px));
-    padding: 12px 18px;
-    border: 1px solid var(--koaryu-rule);
-    border-radius: 8px;
-    color: var(--koaryu-ink);
-    background: var(--koaryu-sheet);
-    box-shadow:
-      8px 8px 0 rgb(45 34 18 / 8%),
-      0 18px 50px rgb(45 34 18 / 15%);
+@keyframes arrive {
+  from {
     opacity: 0;
-    visibility: hidden;
-    pointer-events: none;
-    transform: translateY(-8px);
-    transition:
-      opacity 200ms ease,
-      transform 200ms ease,
-      visibility 0s linear 200ms;
-  }
-
-  .journey[data-enhanced="true"][data-menu-open="true"] .mobileNav {
-    opacity: 1;
-    visibility: visible;
-    pointer-events: auto;
-    transform: translateY(0);
-    transition:
-      opacity 200ms ease,
-      transform 200ms ease,
-      visibility 0s;
-  }
-
-  .journey[data-enhanced="true"] .chapter {
-    padding: max(82px, env(safe-area-inset-top)) 20px max(66px, env(safe-area-inset-bottom));
-  }
-
-  .journey[data-enhanced="true"] .ledgerPlane,
-  .journey[data-enhanced="true"] .mapPlane,
-  .journey[data-enhanced="true"] .pricePlane,
-  .journey[data-enhanced="true"] .aboutPlane,
-  .journey[data-enhanced="true"] .faqShell {
-    width: 100%;
-    max-width: 560px;
-    margin-inline: auto;
-  }
-
-  .journey[data-enhanced="true"] .bandList {
-    grid-template-columns: 1fr;
-  }
-
-  .journey[data-enhanced="true"] .bandRow,
-  .journey[data-enhanced="true"] .bandRow:first-child {
-    display: grid;
-    grid-template-columns: minmax(120px, 0.4fr) minmax(0, 1fr);
-    gap: 14px;
-    padding: 10px 0;
-    border-top: 1px solid var(--koaryu-rule-soft);
-    border-left: 0;
-  }
-
-  .journey[data-enhanced="true"] .bandRow p {
-    margin: 0;
-  }
-
-  .journey[data-enhanced="true"] .problemCopy {
-    grid-template-columns: 1fr;
-    gap: 28px;
-  }
-
-  .journey[data-enhanced="true"] .pager {
-    left: 50%;
-    bottom: max(10px, env(safe-area-inset-bottom));
-    transform: translateX(-50%);
+    transform: translateY(22px);
   }
 }
 
-@media (max-width: 560px) {
-  .topbar {
+@keyframes momentArrive {
+  from {
+    opacity: 0.3;
+    transform: translateY(16px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes ink {
+  from {
+    transform: scaleY(0);
+  }
+
+  to {
+    transform: scaleY(1);
+  }
+}
+
+@keyframes dotFill {
+  from {
+    background: var(--sheet);
+  }
+
+  to {
+    background: currentColor;
+  }
+}
+
+@keyframes beltRank {
+  from {
+    clip-path: inset(0 100% 0 0);
+  }
+
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  /* The hero settles in on load: the line above, each headline line, then the rest. */
+  .heroKicker,
+  .heroHeading span,
+  .heroLede,
+  .heroActions,
+  .heroNote {
+    animation: arrive 900ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  .heroHeading span:first-child {
+    animation-delay: 90ms;
+  }
+
+  .heroHeading span:last-child {
+    animation-delay: 200ms;
+  }
+
+  .heroLede {
+    animation-delay: 340ms;
+  }
+
+  .heroActions,
+  .heroNote {
+    animation-delay: 440ms;
+  }
+}
+
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .beltProgress {
+      position: fixed;
+      z-index: 35;
+      top: 0;
+      right: 0;
+      left: 0;
+      display: block;
+      height: 3px;
+      background: linear-gradient(
+        90deg,
+        var(--scene-belt-white) 0 14.28%,
+        #d9a931 14.28% 28.57%,
+        #d9772e 28.57% 42.85%,
+        #5f7d3a 42.85% 57.14%,
+        #3e5c7e 57.14% 71.42%,
+        #6b4425 71.42% 85.71%,
+        var(--scene-belt-black) 85.71%
+      );
+      pointer-events: none;
+      animation: beltRank linear both;
+      animation-timeline: scroll(root);
+    }
+
+    /*
+     * The day inks itself in: the line follows the reading position and each
+     * moment arrives as it is reached. The ranges end within the panel's
+     * scroll, so the last moment is reached before the next gesture pages on.
+     */
+    .dayList::after {
+      animation: ink linear both;
+      animation-timeline: --day;
+      animation-range: entry 40% exit 10%;
+    }
+
+    .dayMoment {
+      animation: momentArrive linear both;
+      animation-timeline: view();
+      animation-range: cover 10% cover 22%;
+    }
+
+    .dayDot {
+      animation: dotFill linear both;
+      animation-timeline: view();
+      animation-range: cover 22% cover 26%;
+    }
+  }
+}
+
+/* Responsive */
+
+@media (max-width: 1100px) {
+  .productStage {
+    grid-template-columns: minmax(0, 1fr);
+    max-width: 760px;
+  }
+
+  .productPhone {
+    left: -3%;
+  }
+}
+
+@media (max-width: 820px) {
+  .journey {
+    --journey-masthead: 68px;
+    --journey-bar: 73px;
+  }
+
+  .frame {
+    padding-inline: 22px;
+    padding-top: calc(var(--journey-masthead) + 20px);
+    padding-bottom: 40px;
+  }
+
+  .weaveCopy,
+  .daySheet {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* A phone frames the clouds high, under the sun; the clear sky is below them. */
+  .chapter[data-kind="weave"] .frame {
+    align-items: end;
+    padding-bottom: clamp(44px, 7svh, 72px);
+  }
+
+  .chapter[data-kind="product"] .frame {
+    align-items: start;
     padding-inline: 16px;
   }
 
-  .primaryNav {
-    gap: 8px 16px;
+  /*
+   * Phones: the card, then the two screens side by side at one height, nothing
+   * overlapping and nothing off the edge. The desktop screen shows its left
+   * part (navigation and the first columns of the tracker).
+   */
+  .productStage {
+    gap: 22px;
   }
 
-  .chapter {
-    min-height: 0;
-    padding: 68px 18px;
+  .productSheet {
+    padding: 22px 20px;
   }
 
-  .heroHeading {
-    font-size: clamp(50px, 16vw, 72px);
+  .productSheet .sheetHeading {
+    font-size: 28px;
   }
 
-  .statementHeading {
-    font-size: clamp(38px, 12vw, 62px);
+  .productSheet .lede {
+    margin-top: 12px;
+    font-size: 15px;
   }
 
-  .planeHeading {
-    font-size: clamp(30px, 9.5vw, 44px);
+  .highlights {
+    display: none;
   }
 
-  .problemCopy,
-  .proofBlock,
-  .ledgerRow,
-  .bandHeading {
-    grid-template-columns: 1fr;
-  }
+  .productScreens {
+    --phone-width: min(34%, calc((34svh - 10px) * 0.513));
 
-  .bandHeading {
     display: grid;
+    grid-template-columns: minmax(0, 1fr) var(--phone-width);
+    gap: 12px;
+    padding: 0;
   }
 
-  .bandList {
-    grid-template-columns: 1fr;
+  /* As tall as the phone beside it; the screenshot fills it from its top-left corner. */
+  .productDesktop {
+    position: relative;
+    border-radius: 12px;
   }
 
-  .bandRow,
-  .bandRow:first-child {
-    padding: 14px 0;
-    border-top: 1px solid var(--koaryu-rule-soft);
-    border-left: 0;
+  .productDesktop img {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: auto;
+    max-width: none;
+    height: 100%;
+  }
+
+  .productPhone {
+    position: relative;
+    left: auto;
+    width: auto;
+    border-width: 5px;
+    border-radius: 18px;
+    box-shadow: 0 24px 44px rgb(36 24 10 / 26%);
+  }
+
+  .productFigure .caption {
+    margin-top: 14px;
+    text-align: left;
+  }
+
+  .chapter[data-kind="features"] .frame {
+    padding-inline: 14px;
+    padding-top: calc(42svh - var(--journey-bar));
+    padding-bottom: 16svh;
+  }
+
+  .daySheet {
+    gap: 30px;
+    padding: 28px 20px 36px;
+  }
+
+  .dayHeader {
+    position: static;
+  }
+
+  .dayList {
+    gap: 34px;
+    padding-left: 40px;
+  }
+
+  .dayList::before,
+  .dayList::after {
+    left: 6px;
+  }
+
+  .dayDot {
+    left: -40px;
+    width: 16px;
+    height: 16px;
+  }
+
+  .dayText {
+    font-size: 14.5px;
+  }
+
+  /*
+   * Phones keep each screen in its moment's column, under its words and clear
+   * of the line: as large as the column allows, at most three quarters size.
+   */
+  .dayShot {
+    width: min(100%, calc(var(--shot-width) * 0.74));
+  }
+
+  .dayCaption {
+    grid-column: 1;
+  }
+
+  .chapter[data-kind="weave"] .frame {
+    padding-top: calc(var(--journey-masthead) + 18px);
+  }
+
+  .weaveHeading {
+    font-size: clamp(30px, 8.6vw, 42px);
+  }
+
+  .weaveLede {
+    font-size: 14.5px;
+  }
+
+  .studioPin {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto 1fr;
+    gap: 22px;
+    padding: calc(var(--journey-masthead) + 22px) 22px max(22px, env(safe-area-inset-bottom));
+  }
+
+  .studioHeading {
+    font-size: clamp(34px, 10vw, 48px);
+  }
+
+  .studioLede {
+    margin-top: 14px;
+    font-size: 15px;
+  }
+
+  .studioDetail .actions {
+    margin-top: 18px;
+  }
+
+  .studioFigure {
+    display: flex;
+    flex-direction: column;
+    align-self: stretch;
+    justify-content: end;
+    min-height: 0;
+  }
+
+  /*
+   * The frame is drawn outside the picture, so the picture is inset by the
+   * frame's width: the frame's outer edge lines up with the copy column, with
+   * equal margins, and the caption sits clear below it.
+   */
+  .pictureSlot {
+    --frame-width: 9px;
+
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: 46svh;
+    width: auto;
+    margin: calc(var(--frame-width) + 1px);
+    aspect-ratio: auto;
+  }
+
+  .studioCaption {
+    margin-top: 12px;
+    text-align: left;
+  }
+
+  .pictureRing {
+    --frame-width: 9px;
   }
 
   .actions {
     display: grid;
   }
 
-  .action {
-    width: 100%;
+  .heroActions,
+  .studioDetail .actions {
+    max-width: 360px;
   }
 
-  .journey[data-enhanced="true"] .faqPanel {
-    max-height: calc(100dvh - 174px);
+  /* Both actions on one row, even at 320, to leave the picture room. */
+  .studioDetail .actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .journey[data-enhanced="true"] .chapter {
-    padding-inline: 20px 48px;
+  .studioDetail .action {
+    min-width: 0;
   }
 
-  .journey[data-enhanced="true"] .ledgerPlane {
-    padding: 18px 20px;
+  /* The narrowest phones give the primary action the room to stay on one line. */
+  @media (max-width: 360px) {
+    .studioDetail .actions {
+      grid-template-columns: minmax(0, 1fr) auto;
+    }
   }
 
-  .journey[data-enhanced="true"] .ledgerPlane .kicker {
-    margin-bottom: 10px;
+  /* Short phones (and phones with their toolbars showing) tighten the closing copy. */
+  @media (max-height: 720px) {
+    .studioPin {
+      gap: 14px;
+      padding-top: calc(var(--journey-masthead) + 14px);
+    }
+
+    .studioHeading {
+      font-size: clamp(30px, 8.6vw, 40px);
+    }
+
+    .studioLede {
+      margin-top: 10px;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    .studioDetail .actions {
+      margin-top: 14px;
+    }
   }
 
-  .journey[data-enhanced="true"] .ledgerPlane .planeHeading {
-    font-size: clamp(30px, 9vw, 40px);
-  }
-
-  .journey[data-enhanced="true"] .ledgerPlane .supportingLede {
-    margin-top: 11px;
-    font-size: 13px;
-  }
-
-  .journey[data-enhanced="true"] .ledgerPlane .ledgerList {
-    margin-top: 13px;
-  }
-
-  .journey[data-enhanced="true"] .ledgerPlane .ledgerRow {
-    gap: 4px;
-    padding-block: 9px;
-  }
-
-  .journey[data-enhanced="true"] .ledgerPlane .ledgerRow p {
-    font-size: 12px;
-    line-height: 1.42;
-  }
-
-  .journey[data-enhanced="true"] .ledgerPlane .planeLink {
-    margin-top: 6px;
-  }
-
-  .journey[data-enhanced="true"] .faqIndex {
-    gap: 2px 12px;
-  }
-
-  .journey[data-enhanced="true"] .faqIndex a {
-    min-height: 44px;
-  }
-}
-
-@media (min-width: 821px) and (max-height: 800px) {
-  .journey[data-enhanced="true"] .ledgerPlane .supportingLede,
-  .journey[data-enhanced="true"] .mapPlane .supportingLede,
-  .journey[data-enhanced="true"] .aboutPlane .supportingLede {
-    display: none;
-  }
-
-  .journey[data-enhanced="true"] .plane {
-    padding-block: 20px;
-  }
-}
-
-/* Server chapter fallback during the responsive handoff. The hydrated compact
-   controller replaces this tree with MobileJourneyChapter. */
-@media (max-width: 820px), (max-width: 1024px) and (max-height: 500px) {
-  .journey[data-enhanced="true"] .chapter,
-  .journey[data-enhanced="true"] .chapter[data-placement="upper"] {
-    inset: max(68px, env(safe-area-inset-top)) 0 max(68px, calc(env(safe-area-inset-bottom) + 58px));
-    display: flex;
-    flex-direction: column;
-    align-items: stretch;
-    padding: 18px 48px 24px 20px;
-    overflow-x: hidden;
-    overflow-y: auto;
-    overscroll-behavior-y: contain;
-    touch-action: pan-y pinch-zoom;
-    scrollbar-width: thin;
-    scroll-padding-block: 18px;
-    transform: none;
-  }
-
-  .journey[data-enhanced="true"] .chapter > * {
-    flex: 0 0 auto;
-    width: 100%;
-    max-width: 560px;
-    margin-block: auto;
-    margin-inline: auto;
-  }
-
-  .journey[data-enhanced="true"] .chapter[aria-hidden="false"] {
-    transition:
-      opacity 220ms ease 60ms,
-      visibility 0s;
-    transform: none;
-  }
-
-  .journey[data-enhanced="true"] .chapter[data-kind="problem"] {
-    transition-delay: 160ms;
-  }
-
-  .journey[data-enhanced="true"] .plane,
-  .journey[data-enhanced="true"] .framedPlane,
-  .journey[data-enhanced="true"] .ledgerPlane {
-    padding: 22px 20px;
-  }
-
-  .journey[data-enhanced="true"] .bandPlane {
-    align-self: auto;
-  }
-  .journey[data-enhanced="true"] .bandHeading {
-    display: block;
-  }
-
-  .journey[data-enhanced="true"] .bandList,
-  .journey[data-enhanced="true"] .bandRow,
-  .journey[data-enhanced="true"] .bandRow:first-child,
-  .journey[data-enhanced="true"] .ledgerRow {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 4px;
-  }
-
-  .journey[data-enhanced="true"] .bandRow,
-  .journey[data-enhanced="true"] .bandRow:first-child,
-  .journey[data-enhanced="true"] .ledgerRow {
-    padding-block: 12px;
-  }
-
-  .journey[data-enhanced="true"] .ledgerRow p,
-  .journey[data-enhanced="true"] .bandRow p,
-  .journey[data-enhanced="true"] .priceFacts dd,
-  .journey[data-enhanced="true"] .statementList dd,
-  .journey[data-enhanced="true"] .faqAnswer p,
-  .journey[data-enhanced="true"] .routeRow a > span > span {
-    display: block;
-    font-size: 14px;
-    line-height: 1.5;
-  }
-
-  .journey[data-enhanced="true"] .ledgerPlane .supportingLede,
-  .journey[data-enhanced="true"] .mapPlane .supportingLede,
-  .journey[data-enhanced="true"] .aboutPlane .supportingLede {
-    display: block;
-  }
-  .journey[data-enhanced="true"] .faqShell {
-    height: auto;
-  }
-  .journey[data-enhanced="true"] .faqPanel {
-    max-height: none;
-    overflow: visible;
-    scrollbar-gutter: auto;
-  }
-  .journey[data-enhanced="true"] .faqItem[data-open="true"] .faqAnswer {
-    max-height: none;
-  }
-
-  .journey[data-enhanced="true"] .pager button {
-    color: var(--koaryu-ink);
-    background: var(--koaryu-sheet);
-    opacity: 1;
-  }
-  .journey[data-enhanced="true"] .pager button:disabled {
-    opacity: 0.4;
-  }
-  .journey[data-enhanced="true"] .scrollHint {
-    margin-top: 24px;
-  }
-}
-
-@media (max-width: 560px) {
-  .journey[data-enhanced="true"] .heroHeading {
-    font-size: clamp(44px, 14vw, 64px);
-  }
-  .journey[data-enhanced="true"] .heroCopy .lede {
-    font-size: 14px;
-    line-height: 1.5;
-  }
-  .journey[data-enhanced="true"] .heroCopy .actions {
-    margin-top: 22px;
-  }
-}
-
-.mobileFaqTopic,
-.mobileHint,
-.mobileProgress {
-  display: none;
-}
-
-/* Mobile has a consistent frame of its own. Desktop rules above stay intact. */
-@media (max-width: 820px), (max-width: 1024px) and (max-height: 500px) {
-  .journey[data-enhanced="true"] .topbar {
-    grid-template-columns: minmax(0, 1fr) auto auto;
-    gap: 16px;
-    min-height: 64px;
-    padding: 10px 16px;
-    border: 0;
-    color: var(--journey-mobile-header-color, var(--koaryu-ink));
-    background: transparent;
-    transition: none;
-  }
-
-  .journey[data-enhanced="true"] .primaryNav {
-    display: none;
-  }
-  .journey[data-enhanced="true"] .mobileNav {
-    border: 0;
-    right: 16px;
-    width: min(360px, calc(100vw - 32px));
-    max-height: calc(100dvh - 160px);
-    overflow-y: auto;
-    overscroll-behavior: contain;
-    touch-action: pan-y;
-  }
-  .journey[data-enhanced="true"] .signIn {
-    grid-column: 2;
-    grid-row: 1;
-    opacity: 1;
-  }
-  .journey[data-enhanced="true"] .menuButton {
-    display: inline-grid;
-    grid-column: 3;
-    grid-row: 1;
-    border-radius: 8px;
-    border: 0;
-  }
-
-  .journey[data-enhanced="true"] .chapter,
-  .journey[data-enhanced="true"] .chapter[data-placement="upper"] {
-    inset: max(64px, env(safe-area-inset-top)) 0 max(88px, calc(env(safe-area-inset-bottom) + 80px));
-    padding: 18px 16px 22px;
-    scroll-padding-block: 18px;
-    mask-image: linear-gradient(
-      to bottom,
-      transparent,
-      #000 10px,
-      #000 calc(100% - 10px),
-      transparent
-    );
-  }
-
-  .journey[data-enhanced="true"] .chapter > * {
-    margin-block: 0;
-  }
-  .journey[data-enhanced="true"] .chapter > .heroCopy,
-  .journey[data-enhanced="true"] .chapter > .problemCopy,
-  .journey[data-enhanced="true"] .chapter > .transitionCopy {
-    margin-block: auto;
-  }
-  .journey[data-enhanced="true"] .chapter[data-placement="upper"] > .transitionCopy {
-    margin-block: 28px 0;
-  }
-
-  .journey[data-enhanced="true"] .plane,
-  .journey[data-enhanced="true"] .framedPlane,
-  .journey[data-enhanced="true"] .ledgerPlane {
-    padding: 22px;
-    border: 0;
-    border-radius: 12px;
-    box-shadow: 0 4px 16px rgb(45 34 18 / 7%);
-  }
-
-  .journey[data-enhanced="true"] .planeHeading,
-  .journey[data-enhanced="true"] .ledgerPlane .planeHeading {
-    max-width: none;
-    font-size: clamp(28px, 8vw, 36px);
-    line-height: 1.06;
-    letter-spacing: -0.035em;
-    text-wrap: pretty;
-  }
-  .journey[data-enhanced="true"] .heroHeading {
-    font-size: clamp(44px, 13vw, 62px);
-    line-height: 0.98;
-  }
-  .journey[data-enhanced="true"] .heroCopy .action:nth-child(2) {
-    background: var(--koaryu-paper);
-  }
-  .journey[data-enhanced="true"] .heroCopy .scrollHint {
-    color: var(--koaryu-paper);
-    opacity: 1;
-  }
-  .journey[data-enhanced="true"] .desktopHint {
-    display: none;
-  }
-  .journey[data-enhanced="true"] .mobileHint {
-    display: inline;
-  }
-
-  .journey[data-enhanced="true"] .kicker,
-  .journey[data-enhanced="true"] .ledgerPlane .kicker {
-    margin-bottom: 12px;
-    font-size: 10px;
-    letter-spacing: 0.14em;
-  }
-  .journey[data-enhanced="true"] .lede,
-  .journey[data-enhanced="true"] .ledgerPlane .supportingLede {
-    margin-top: 14px;
-    font-size: 15px;
-    line-height: 1.5;
-    opacity: 0.85;
-  }
-  .journey[data-enhanced="true"] .proofBlock {
-    grid-template-columns: 1fr;
-    gap: 10px;
-    margin-top: 22px;
-    padding-top: 16px;
-  }
-  .journey[data-enhanced="true"] .ledgerList,
-  .journey[data-enhanced="true"] .ledgerPlane .ledgerList,
-  .journey[data-enhanced="true"] .bandList,
-  .journey[data-enhanced="true"] .routeList {
-    margin-top: 18px;
-  }
-  .journey[data-enhanced="true"] .ledgerRow,
-  .journey[data-enhanced="true"] .ledgerPlane .ledgerRow,
-  .journey[data-enhanced="true"] .bandRow,
-  .journey[data-enhanced="true"] .bandRow:first-child {
-    gap: 0;
-    padding-block: 8px 14px;
-  }
-  .journey[data-enhanced="true"] .ledgerRow h3,
-  .journey[data-enhanced="true"] .bandRow h3 {
-    font-size: 15px;
-  }
-  .journey[data-enhanced="true"] .ledgerRow p,
-  .journey[data-enhanced="true"] .bandRow p {
-    opacity: 0.85;
-  }
-  .journey[data-enhanced="true"] .routeRow a {
-    gap: 14px;
-    padding-block: 16px;
-  }
-  .journey[data-enhanced="true"] .routeRow strong {
-    font-size: 16px;
-    line-height: 1.35;
-  }
-  .journey[data-enhanced="true"] .routeRow small {
-    font-size: 10px;
-    letter-spacing: 0.06em;
-  }
-  .journey[data-enhanced="true"] .price {
-    margin-top: 24px;
-    font-size: 80px;
-  }
-  .journey[data-enhanced="true"] .planeLink {
-    margin-top: 10px;
-    font-size: 13px;
-  }
-
-  .journey[data-enhanced="true"] .faqIndex {
-    display: none;
-  }
-  .journey[data-enhanced="true"] .mobileFaqTopic {
-    display: grid;
-    gap: 7px;
-    margin-bottom: 16px;
-    padding: 14px 18px;
-    border: 0;
-    border-radius: 12px;
-    color: var(--koaryu-ink);
-    background: var(--koaryu-paper);
-  }
-  .mobileFaqTopic > span {
-    font-size: 10px;
-    font-weight: 700;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-  }
-  .mobileFaqTopic select {
-    width: 100%;
-    min-height: 44px;
-    padding: 8px 12px;
-    border: 0;
-    border-radius: 7px;
-    font: inherit;
-    font-size: 16px;
-    color: var(--koaryu-ink);
-    background: var(--koaryu-sheet-raised);
-  }
-  .journey[data-enhanced="true"] .faqQuestion {
-    padding-block: 15px;
-    gap: 14px;
-    font-family: inherit;
-    font-size: 15px;
-    font-weight: 650;
-    line-height: 1.4;
-  }
-  .journey[data-enhanced="true"] .faqAnswer {
-    padding-right: 14px;
-  }
-
+  /* Phones read the story full width; the belt line along the top shows the way. */
   .journey[data-enhanced="true"] .rail {
     display: none;
-  }
-  .journey[data-enhanced="true"] .pager {
-    inset: auto 0 0;
-    display: grid;
-    grid-template-columns: 44px minmax(0, 1fr) 44px;
-    gap: 18px;
-    align-items: center;
-    min-height: max(76px, calc(env(safe-area-inset-bottom) + 68px));
-    padding: 10px 20px max(12px, env(safe-area-inset-bottom));
-    border: 0;
-    color: var(--journey-mobile-footer-color, var(--koaryu-ink));
-    background: transparent;
-    transform: none;
-  }
-  .journey[data-enhanced="true"] .pager > button {
-    border: 0;
-    color: inherit;
-    background: transparent;
-    opacity: 1;
-  }
-  .journey[data-enhanced="true"] .pager > button:disabled {
-    opacity: 0.3;
-  }
-  .mobileProgress {
-    display: grid;
-    min-width: 0;
-    text-align: center;
-  }
-  .mobileProgress > span {
-    font-size: 10px;
-    font-weight: 700;
-    letter-spacing: 0.12em;
-  }
-  .mobileProgress select {
-    width: 100%;
-    min-height: 44px;
-    padding: 4px 20px 4px 4px;
-    border: 0;
-    font: inherit;
-    font-size: 16px;
-    font-weight: 600;
-    color: inherit;
-    background: transparent;
-    text-align: center;
-    text-overflow: ellipsis;
-  }
-  .mobileProgress option {
-    color: var(--koaryu-ink);
-    background: var(--koaryu-paper);
-  }
-}
-
-@media (max-width: 820px), (max-width: 1024px) and (max-height: 500px) {
-  .journey[data-enhanced="true"][data-compact="true"] {
-    --mobile-header-height: 65px;
-    --mobile-footer-height: max(82px, calc(env(safe-area-inset-bottom) + 70px));
-    position: fixed;
-    inset: var(--journey-viewport-top, 0px) 0 auto;
-    width: 100%;
-    height: var(--journey-viewport-height, 100dvh);
-    touch-action: pan-x pinch-zoom;
-    overscroll-behavior: none;
-  }
-  .journey[data-enhanced="true"][data-zoomed="true"] {
-    touch-action: auto;
-  }
-  .journey[data-enhanced="true"] .topbar {
-    height: var(--mobile-header-height);
-    min-height: 0;
-  }
-  .journey[data-enhanced="true"] .pager {
-    height: var(--mobile-footer-height);
-    min-height: 0;
-  }
-  .journey[data-enhanced="true"] .mobileNav {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    max-height: none;
-    overflow: visible;
-  }
-}
-@media (max-width: 820px) and (max-height: 600px),
-  (min-width: 821px) and (max-width: 1024px) and (max-height: 500px) {
-  .journey[data-enhanced="true"][data-compact="true"] {
-    --mobile-header-height: 57px;
-    --mobile-footer-height: max(68px, calc(env(safe-area-inset-bottom) + 64px));
-  }
-  .journey[data-enhanced="true"] .topbar {
-    padding-block: 6px;
-  }
-  .journey[data-enhanced="true"] .pager {
-    padding-block: 4px max(4px, env(safe-area-inset-bottom));
-  }
-}
-
-/* The short mobile crop puts the pale room behind Daily admin's light copy.
-   Shade the scene itself so the artwork and transparent navigation stay visible. */
-.journey[data-enhanced="true"][data-compact="true"] .sceneLayer::after {
-  position: absolute;
-  z-index: 1;
-  inset: 0;
-  content: "";
-  pointer-events: none;
-  background: rgb(25 18 8 / 68%);
-  opacity: 0;
-  transition: opacity 360ms ease;
-}
-
-.journey[data-enhanced="true"][data-compact="true"][data-active-chapter="the-problem"]
-  .sceneLayer::after {
-  opacity: 1;
-  transition: none;
-}
-
-.journey[data-enhanced="true"][data-compact="true"][data-active-chapter="the-problem"] .topbar {
-  color: var(--koaryu-ink-light);
-}
-
-@media (pointer: coarse) {
-  .rail button {
-    width: 44px;
-    height: 24px;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .journey *,
-  .journey *::before,
-  .journey *::after {
-    scroll-behavior: auto !important;
-    animation-delay: 0ms !important;
-    animation-duration: 1ms !important;
-    animation-iteration-count: 1 !important;
-    transition-delay: 0ms !important;
-    transition-duration: 1ms !important;
-  }
-
-  .journey[data-enhanced="true"] .chapter[aria-hidden="false"] {
-    opacity: 1;
-    visibility: visible;
-    transform: none;
+  .masthead,
+  .rail,
+  .textLink span,
+  .dayTitle a {
+    transition: none;
   }
 }

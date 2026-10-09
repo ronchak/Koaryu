@@ -18,8 +18,10 @@ export const SCENE_PHASES = Object.freeze({
   sky: Object.freeze([0.6, 0.7] as const),
   clouds: Object.freeze([0.66, 0.802] as const),
   morph: Object.freeze([0.802, 0.892] as const),
-  floor: Object.freeze([0.892, 0.952] as const),
-  students: Object.freeze([0.952, 1] as const),
+  /** Under the loom: the room is built while the woven mat still covers the frame. */
+  floor: Object.freeze([0.892, 0.9] as const),
+  /** The class arrives once the loom has laid the floor (LOOM_PHASES.floor). */
+  students: Object.freeze([0.958, 1] as const),
 });
 
 export type ScenePoint = Readonly<{ x: number; y: number }>;
@@ -73,7 +75,8 @@ export function frameForDimensions(viewportWidth: number, viewportHeight: number
   const aspect = width / height;
   const viewBoxHeight = clamp(SCENE_WIDTH / aspect, SCENE_HEIGHT, 2000);
   const visibleHalfWidth = Math.min(SCENE_WIDTH / 2, (viewBoxHeight / 2) * aspect);
-  const studentSpread = clamp((visibleHalfWidth - 210) / (SCENE_WIDTH / 2 - 210), 0.34, 1);
+  // Narrow crops pull the seated class toward the center so nobody is cut off.
+  const studentSpread = clamp((visibleHalfWidth - 120) / (SCENE_WIDTH / 2 - 120), 0.5, 1);
 
   return Object.freeze({
     viewBox: `0 ${round2(SCENE_HEIGHT / 2 - viewBoxHeight / 2)} ${SCENE_WIDTH} ${round2(viewBoxHeight)}`,

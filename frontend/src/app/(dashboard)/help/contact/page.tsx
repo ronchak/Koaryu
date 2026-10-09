@@ -6,12 +6,13 @@ import { Bug, CheckCircle2, LifeBuoy, Mail, Send } from "lucide-react";
 import { AccountNotice, AccountPageShell, AccountSection } from "@/components/account-page-shell";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
+import { SUPPORT_EMAIL } from "@/lib/constants";
 import { useConfigStore } from "@/lib/store";
 import { useStudioStore } from "@/lib/store";
 import type { SupportTicket, SupportTicketSeverity, SupportTicketTopic } from "@/types";
 
 function encodeMailto(subject: string, body: string) {
-  return `mailto:support@koaryu.app?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  return `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
 }
 
 const topicOptions: { value: SupportTicketTopic; label: string }[] = [

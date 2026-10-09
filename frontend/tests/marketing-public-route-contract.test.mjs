@@ -17,7 +17,7 @@ import { formatPublicPlatformPrice } from "../src/lib/constants.ts";
 const detailPages = [...featurePages, ...useCasePages];
 
 describe("public marketing route contract", () => {
-  it("indexes eleven distinct marketing pages, home, and the two legal pages", () => {
+  it("indexes eleven distinct marketing pages, home, the hands-on demo and the two legal pages", () => {
     const entries = buildPublicSitemap({
       baseUrl: "https://koaryu.app",
       featurePages,
@@ -26,6 +26,7 @@ describe("public marketing route contract", () => {
     });
     const expected = [
       "/",
+      "/try",
       "/features",
       "/use-cases",
       "/privacy",
@@ -33,7 +34,7 @@ describe("public marketing route contract", () => {
       ...detailPages.map(({ href }) => href),
     ];
     assert.equal(detailPages.length, 9);
-    assert.equal(entries.length, 14);
+    assert.equal(entries.length, 15);
     assert.equal(new Set(entries.map(({ url }) => url)).size, entries.length);
     assert.deepEqual(
       entries.map(({ url }) => url).sort(),

@@ -7,6 +7,7 @@ export const publicNavLinks: PublicNavigationLink[] = [
   { href: "/features", label: "Features" },
   { href: "/use-cases", label: "Workflows" },
   { href: "/#pricing", label: "Pricing" },
+  { href: "/try", label: "Demo" },
 ];
 
 export const publicFooterLinks: PublicNavigationLink[] = [

@@ -227,7 +227,7 @@ export function FeatureIndexPage() {
               creating billing exports is essential to your move, those availability limits matter
               before you switch.
             </p>
-            <TextLink href="/signup">Create an account</TextLink>
+            <TextLink href="/signup">Start free trial</TextLink>
           </aside>
         </section>
       </article>

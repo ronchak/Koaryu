@@ -56,6 +56,12 @@ export const APP_NAME = "Koaryu";
 export const APP_TAGLINE = "A warrior's flow.";
 export const APP_DESCRIPTION = "The daily operating system for independent martial arts studios.";
 
+/**
+ * The one inbox for support, legal and privacy mail. koaryu.app does not receive
+ * mail yet (docs/koaryu-operations.md, DOC1-05), so the owner's interim inbox is used.
+ */
+export const SUPPORT_EMAIL = "koaryu@outlook.com";
+
 // Advertised standard only; an activated studio's configured rate takes precedence.
 export const PUBLIC_PAYMENTS_FEE_PERCENT = 0.5;
 
@@ -65,6 +71,14 @@ export const PUBLIC_PLATFORM_PRICE = {
   billingPeriod: "month",
   scope: "studio",
 } as const;
+
+/**
+ * New studios' Koaryu Core trial, granted once per studio at Stripe Checkout
+ * (reserve_core_checkout_v2_atomic in supabase/migrations; the backend only
+ * accepts 30). Payment details are collected at Checkout; nothing is charged
+ * until the trial ends.
+ */
+export const PUBLIC_PLATFORM_TRIAL_DAYS = 30;
 
 export function publicPlatformPriceAmount(): string {
   return (PUBLIC_PLATFORM_PRICE.monthlyCents / 100).toString();
