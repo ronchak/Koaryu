@@ -9,6 +9,8 @@ import { ModalFrame } from "@/components/ui/modal-frame";
 import { OperationsIndex, OperationsSurface } from "@/components/operations/operations-surface";
 import { ProgramsSection } from "@/components/settings/programs-section";
 import { StaffRolesSection } from "@/components/settings/staff-roles-section";
+import type { StudioDataClearResponse } from "@/lib/studio-store-model";
+import type { ApiAutomationClearEffects } from "@/types/generated/api-contracts";
 import { api } from "@/lib/api";
 import { useConfigStore, useStudioStore, useProgramStore } from "@/lib/store";
 import { AlertTriangle, Save, Check, RotateCcw, Trash2 } from "lucide-react";
@@ -17,7 +19,7 @@ import { canAccessSettings } from "./access-policy";
 type StudioDataConfirmAction = "demo-reset" | "clear-data" | null;
 
 export default function SettingsPage() {
-  const { currentRole, identityGeneration, identityReady, staffLoaded, staffLoadError, refreshStaff } = useStudioStore();
+  const { currentUserId, currentStudioId, currentRole, identityGeneration, identityReady, staffLoaded, staffLoadError, refreshStaff } = useStudioStore();
   const { programsLoaded, programsUsageLoaded, programsLoadError, programsUsageLoadError, refreshPrograms } = useProgramStore();
   useResumeRefresh(() => currentRole === "admin" ? Promise.allSettled([refreshStaff(), refreshPrograms({ includeArchived: true })]) : undefined);
   const completeReady = identityReady && (!canAccessSettings(currentRole)
@@ -29,7 +31,7 @@ export default function SettingsPage() {
   return (
     <OperationsSurface page="settings">
       <Header title="Settings" />
-      {canAccessSettings(currentRole) ? <AdminSettingsContent /> : <SettingsAccessNotice />}
+      {canAccessSettings(currentRole) ? <AdminSettingsContent key={JSON.stringify([currentUserId, currentStudioId, currentRole, identityGeneration])} /> : <SettingsAccessNotice />}
     </OperationsSurface>
   );
 }
@@ -65,17 +67,20 @@ function AdminSettingsContent() {
   const [isClearingData, setIsClearingData] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
-  const [demoResetMessage, setDemoResetMessage] = useState("");
   const [demoResetError, setDemoResetError] = useState("");
-  const [demoToolsEnabled, setDemoToolsEnabled] = useState(false);
-  const [clearDataMessage, setClearDataMessage] = useState("");
+  const [demoCapability, setDemoCapability] = useState<{ token: string; enabled: boolean } | null>(null);
+  const [dataResult, setDataResult] = useState<{ action: Exclude<StudioDataConfirmAction, null>; response: StudioDataClearResponse } | null>(null);
+  const dataActionRef = useRef(false);
+  const mountedRef = useRef(false);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
   const [clearDataError, setClearDataError] = useState("");
   const [confirmAction, setConfirmAction] = useState<StudioDataConfirmAction>(null);
   const savedTimeoutRef = useRef<number | null>(null);
-  const demoResetTimeoutRef = useRef<number | null>(null);
-  const clearDataTimeoutRef = useRef<number | null>(null);
   const name = hasEditedName ? nameDraft : studioName;
-  const canManageStudioData = currentRole === "admin" && (isPreviewMode || demoToolsEnabled);
+  const canManageStudioData = currentRole === "admin" && (isPreviewMode || (demoCapability?.token === token && demoCapability?.enabled === true));
   const confirmDialog = confirmAction === "demo-reset"
     ? {
         title: "Load demo studio?",
@@ -111,12 +116,12 @@ function AdminSettingsContent() {
       .get<{ enabled: boolean }>("/demo/capabilities", token)
       .then((result) => {
         if (!canceled) {
-          setDemoToolsEnabled(Boolean(result.enabled));
+          setDemoCapability({ token, enabled: result.enabled === true });
         }
       })
       .catch(() => {
         if (!canceled) {
-          setDemoToolsEnabled(false);
+          setDemoCapability({ token, enabled: false });
         }
       });
 
@@ -161,90 +166,38 @@ function AdminSettingsContent() {
     }
   }
 
-  async function runDemoReset() {
-    setIsResettingDemo(true);
-    setDemoResetError("");
-    setDemoResetMessage("");
-    setClearDataError("");
-    setClearDataMessage("");
-
-    try {
-      const result = await resetDemoData();
-      setNameDraft(result.studio_name);
-      setHasEditedName(false);
-      setDemoResetMessage(
-        `Demo reset: ${result.counts.students} students, ${result.counts.leads} leads, ${result.counts.class_sessions} classes.`
-      );
-
-      if (demoResetTimeoutRef.current) {
-        window.clearTimeout(demoResetTimeoutRef.current);
-      }
-
-      demoResetTimeoutRef.current = window.setTimeout(() => {
-        setDemoResetMessage("");
-        demoResetTimeoutRef.current = null;
-      }, 3500);
-    } catch (err: unknown) {
-      setDemoResetError(err instanceof Error ? err.message : "Failed to reset demo data");
-    } finally {
-      setIsResettingDemo(false);
-    }
-  }
-
-  function handleDemoReset() {
-    if (!canManageStudioData || isClearingData || isResettingDemo) {
-      return;
-    }
-
-    setConfirmAction("demo-reset");
-  }
-
-  async function runClearData() {
-    setIsClearingData(true);
-    setClearDataError("");
-    setClearDataMessage("");
-    setDemoResetError("");
-    setDemoResetMessage("");
-
-    try {
-      const result = await clearStudioData();
-      setNameDraft(result.studio_name);
-      setHasEditedName(false);
-      setClearDataMessage(
-        `Cleared: ${result.counts.students} students, ${result.counts.leads} leads, ${result.counts.class_sessions} classes.`
-      );
-
-      if (clearDataTimeoutRef.current) {
-        window.clearTimeout(clearDataTimeoutRef.current);
-      }
-
-      clearDataTimeoutRef.current = window.setTimeout(() => {
-        setClearDataMessage("");
-        clearDataTimeoutRef.current = null;
-      }, 3500);
-    } catch (err: unknown) {
-      setClearDataError(err instanceof Error ? err.message : "Failed to clear studio data");
-    } finally {
-      setIsClearingData(false);
-    }
-  }
-
-  function handleClearData() {
-    if (!canManageStudioData || isResettingDemo || isClearingData) {
-      return;
-    }
-
-    setConfirmAction("clear-data");
+  function requestStudioDataAction(action: Exclude<StudioDataConfirmAction, null>) {
+    if (!canManageStudioData || dataActionRef.current) return;
+    setConfirmAction(action);
   }
 
   async function handleConfirmStudioDataAction() {
     const action = confirmAction;
+    if (!action || !canManageStudioData || dataActionRef.current) return;
+    dataActionRef.current = true;
+    setDataResult(null);
     setConfirmAction(null);
-
-    if (action === "demo-reset") {
-      await runDemoReset();
-    } else if (action === "clear-data") {
-      await runClearData();
+    setIsResettingDemo(action === "demo-reset");
+    setIsClearingData(action === "clear-data");
+    setDemoResetError("");
+    setClearDataError("");
+    try {
+      const response = await (action === "demo-reset" ? resetDemoData() : clearStudioData());
+      if (!mountedRef.current) return;
+      setNameDraft(response.studio_name);
+      setHasEditedName(false);
+      setDataResult({ action, response });
+    } catch (err: unknown) {
+      if (!mountedRef.current) return;
+      const message = err instanceof Error ? err.message : "Could not confirm the studio data action. Check the studio before trying again.";
+      if (action === "demo-reset") setDemoResetError(message);
+      else setClearDataError(message);
+    } finally {
+      if (mountedRef.current) {
+        dataActionRef.current = false;
+        setIsResettingDemo(false);
+        setIsClearingData(false);
+      }
     }
   }
 
@@ -322,6 +275,7 @@ function AdminSettingsContent() {
                       These actions replace or permanently remove working studio records. Use them only when you mean
                       to reset this workspace.
                     </p>
+                    <p className="mt-2 text-xs text-text-secondary">{automationConsequences}</p>
                   </div>
                 </div>
 
@@ -338,7 +292,7 @@ function AdminSettingsContent() {
                     <Button
                       variant="secondary"
                       size="sm"
-                      onClick={handleDemoReset}
+                      onClick={() => requestStudioDataAction("demo-reset")}
                       isLoading={isResettingDemo}
                       disabled={!canManageStudioData || isClearingData}
                     >
@@ -346,7 +300,6 @@ function AdminSettingsContent() {
                       {isResettingDemo ? "Loading..." : "Load demo studio"}
                     </Button>
                   </div>
-                  {demoResetMessage && <p role="status" aria-live="polite" className="text-xs text-success">{demoResetMessage}</p>}
                   {demoResetError && <p role="alert" className="text-xs text-danger">{demoResetError}</p>}
 
                   <div className="flex items-start justify-between gap-4 flex-wrap border-t border-danger/15 pt-4">
@@ -360,7 +313,7 @@ function AdminSettingsContent() {
                     <Button
                       variant="danger"
                       size="sm"
-                      onClick={handleClearData}
+                      onClick={() => requestStudioDataAction("clear-data")}
                       isLoading={isClearingData}
                       disabled={!canManageStudioData || isResettingDemo}
                     >
@@ -368,7 +321,6 @@ function AdminSettingsContent() {
                       {isClearingData ? "Clearing..." : "Clear studio data"}
                     </Button>
                   </div>
-                  {clearDataMessage && <p role="status" aria-live="polite" className="text-xs text-success">{clearDataMessage}</p>}
                   {clearDataError && <p role="alert" className="text-xs text-danger">{clearDataError}</p>}
                 </div>
 
@@ -386,7 +338,8 @@ function AdminSettingsContent() {
           )}
         </div>
       </div>
-      {confirmDialog ? (
+      {dataResult && <StudioDataResult result={dataResult} preview={isPreviewMode} onDismiss={() => setDataResult(null)} />}
+      {confirmDialog && canManageStudioData ? (
         <ModalFrame
           role="alertdialog"
           ariaLabelledBy="studio-data-confirm-title"
@@ -403,7 +356,7 @@ function AdminSettingsContent() {
                 {confirmDialog.title}
               </h2>
               <p id="studio-data-confirm-description" className="mt-2 text-sm leading-6 text-text-secondary">
-                {confirmDialog.description}
+                {confirmDialog.description} {automationConsequences}
               </p>
             </div>
           </div>
@@ -420,4 +373,41 @@ function AdminSettingsContent() {
       ) : null}
     </>
   );
+}
+
+const automationConsequences = "Trial appointments and belt-test records are removed. Published workflows and the missed-class rule pause. Safe pending work is canceled; sending may finish. Saved automation definitions and original operation history, including saved details, are retained.";
+
+const effectLabels: Record<keyof ApiAutomationClearEffects, string> = {
+  workflows_paused: "Published workflows paused",
+  workflow_runs_cancelled: "Workflow runs canceled",
+  workflow_cancellation_intents_added: "Workflow cancellation requests added",
+  attendance_deliveries_cancelled: "Missed-class deliveries canceled",
+  belt_test_events_deleted: "Belt-test events removed",
+  belt_test_recipients_deleted: "Belt-test recipients removed",
+  sending_attempts_preserved: "Sending attempts retained; sending may finish",
+  unknown_attempts_preserved: "Attempts with unknown outcomes retained",
+  attendance_rule_paused: "Missed-class rule paused",
+};
+
+function StudioDataResult({ result, preview, onDismiss }: {
+  result: { action: Exclude<StudioDataConfirmAction, null>; response: StudioDataClearResponse };
+  preview: boolean;
+  onDismiss: () => void;
+}) {
+  const { counts, automation } = result.response;
+  return <section role="status" aria-label="Studio data result" className="mx-4 mb-8 max-w-5xl bg-surface p-4 sm:mx-8">
+    <h2 className="text-sm font-semibold text-text-primary">{result.action === "demo-reset" ? "Demo studio loaded" : "Studio data cleared"}</h2>
+    <p className="mt-2 text-sm text-text-secondary">
+      {result.action === "demo-reset" ? "Seeded" : "Removed"}: {counts.students} students, {counts.leads} leads, {counts.belt_ranks} belt ranks, {counts.class_sessions} classes, {counts.attendance_records} attendance records.
+    </p>
+    {preview && <p className="mt-2 text-sm text-text-secondary">Preview automation effects are sample numbers.</p>}
+    <dl className="my-3 grid gap-2 text-sm">
+      {(Object.keys(effectLabels) as (keyof ApiAutomationClearEffects)[]).map((key) => <div key={key} className="flex justify-between gap-4">
+        <dt className="min-w-0 text-text-secondary">{effectLabels[key]}</dt>
+        <dd className="shrink-0 font-medium text-text-primary">{typeof automation[key] === "boolean" ? (automation[key] ? "Yes" : "No") : automation[key]}</dd>
+      </div>)}
+    </dl>
+    <p className="mb-3 text-xs text-text-secondary">{automationConsequences}</p>
+    <Button variant="ghost" size="sm" onClick={onDismiss}>Dismiss result</Button>
+  </section>;
 }

@@ -54,6 +54,7 @@ const SAFE_SERVER_TIMING_NAMES = new Set([
   "koaryu_summary_route_total",
   "koaryu_summary_context",
   "koaryu_summary_facts",
+  "koaryu_summary_lead_follow_ups",
 ]);
 
 export function sanitizeServerTiming(value) {

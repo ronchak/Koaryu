@@ -10,13 +10,19 @@ const flush = (page) =>
 
 async function fixturePage(browser, options = {}) {
   const page = await browser.newPage({ timezoneId: options.timezone });
-  if (options.now) await page.clock.install({ time: new Date(options.now) });
+  const origin = options.leadCreateRecovery ? "http://localhost/" : "http://fixture.local/";
+  if (options.now) {
+    await page.clock.install({
+      time: new Date(new Date(options.now).getTime() - (options.pauseClock ? 60_000 : 0)),
+    });
+    if (options.pauseClock) await page.clock.pauseAt(new Date(options.now));
+  }
   await page.route("**/*", (route) =>
-    route.request().url() === "http://fixture.local/"
+    route.request().url() === origin
       ? route.fulfill({ contentType: "text/html", body: '<div id="root"></div>' })
       : route.abort(),
   );
-  await page.goto("http://fixture.local/");
+  await page.goto(origin);
   await page.evaluate(() => {
     const f = (window.fixture = {
       identityObservations: [],
@@ -100,12 +106,27 @@ async function fixturePage(browser, options = {}) {
     };
     f.supabase = {
       auth: {
-        getSession: async () => ({ data: { session: f.session } }),
+        getSession: async () => {
+          if (f.coldAuthEvent) {
+            await new Promise((resolve) => {
+              f.releaseInitialSession = resolve;
+            });
+          }
+          return { data: { session: f.session } };
+        },
         onAuthStateChange: (cb) => {
           f.emit = (event, session) => {
             f.session = session;
             cb(event, session);
           };
+          if (f.coldAuthEvent) {
+            // Stored-session recovery can notify before getSession resolves.
+            queueMicrotask(() => {
+              cb(f.coldAuthEvent, f.session);
+              cb("INITIAL_SESSION", f.session);
+              f.releaseInitialSession();
+            });
+          }
           return { data: { subscription: { unsubscribe() {} } } };
         },
       },
@@ -171,7 +192,7 @@ async function fixturePage(browser, options = {}) {
         }
         if (path === "/leads" && f.autoLeads) return [];
         if (path === "/leads") return new Promise((resolve) => f.leadReads.push(resolve));
-        if (path.startsWith("/dashboard/summary"))
+        if (path.startsWith("/dashboard/summary?include_follow_ups=true"))
           return new Promise((resolve, reject) => f.summaries.push({ resolve, reject }));
         if (path === "/students/student-1")
           return new Promise((resolve, reject) => f.details.push({ resolve, reject }));
@@ -214,13 +235,14 @@ async function fixturePage(browser, options = {}) {
     };
   });
   await page.evaluate(
-    ({ path, holdFeature, uncached, formProgram }) => {
+    ({ path, holdFeature, uncached, formProgram, coldAuthEvent }) => {
       if (path) {
         fixture.pathname = path;
         history.replaceState(null, "", path);
       }
       fixture.holdFeature = holdFeature;
       fixture.uncached = uncached;
+      fixture.coldAuthEvent = coldAuthEvent;
       if (formProgram)
         fixture.programRows = [
           {
@@ -237,8 +259,15 @@ async function fixturePage(browser, options = {}) {
       holdFeature: options.holdFeature,
       uncached: options.uncached,
       formProgram: options.formProgram,
+      coldAuthEvent: options.coldAuthEvent,
     },
   );
+  if (options.leadCreateRecovery)
+    await page.evaluate(() => {
+      fixture.session.user.id = "10000000-0000-4000-8000-000000000001";
+      fixture.auth.user = fixture.session.user;
+      fixture.auth.studio_id = "20000000-0000-4000-8000-000000000001";
+    });
   await page.addScriptTag({ content: bundle(options.mode ?? "production", options) });
   await page.waitForFunction(() => fixture.store?.identityReady);
   return page;
@@ -298,7 +327,7 @@ test("confirmed live import refreshes selected-ladder eligibility after belt ref
 test("mounted lead actions preserve confirmed edits through token renewal, old GETs, and deletion", async () => {
   const browser = await chromium.launch();
   try {
-    const page = await fixturePage(browser);
+    const page = await fixturePage(browser, { path: "/leads" });
     await page.evaluate(() => {
       fixture.read = fixture.store.refreshLeads();
       fixture.save = fixture.store.updateLead("lead-1", { first_name: "Saved" });
@@ -634,6 +663,7 @@ test("studio midnight updates day-sensitive context without clearing a form draf
       path: "/students",
       studentForm: true,
       now: "2026-09-06T06:59:50Z",
+      pauseClock: true,
     });
     await page.getByRole("button", { name: "Open form", exact: true }).click();
     await page.getByLabel("Legal first name", { exact: false }).fill("Draft");
@@ -767,7 +797,7 @@ test("submitted student create and edit drafts stay locked and survive rejection
 test("a confirmed old write cannot repopulate protected data after sign-out", async () => {
   const browser = await chromium.launch();
   try {
-    const page = await fixturePage(browser);
+    const page = await fixturePage(browser, { path: "/leads" });
     await page.evaluate(() => {
       fixture.save = fixture.store.updateLead("lead-1", { first_name: "Saved" });
     });
@@ -834,6 +864,7 @@ test("Add class snapshots the selected studio day for both modes and retains an 
       scheduleForm: true,
       timezone: "Asia/Tokyo",
       now: "2026-09-06T06:59:50Z",
+      pauseClock: true,
     });
     await page.evaluate(() => fixture.mountSchedule());
     await page.waitForFunction(() => fixture.controller);
@@ -940,10 +971,14 @@ test("off-dashboard business commands do not fan out into uncached summary reads
   }
 });
 
-test("an unknown lead save stays locked until dismissal, then a new form is usable", async () => {
+test("an unknown lead save stays locked after dismissal and reopening", async () => {
   const browser = await chromium.launch();
   try {
-    const page = await fixturePage(browser, { path: "/leads", leadController: true });
+    const page = await fixturePage(browser, {
+      path: "/leads",
+      leadController: true,
+      leadCreateRecovery: true,
+    });
     await page.evaluate(() => {
       fixture.writeAttempts = 0;
       fixture.api.post = async () => {
@@ -956,7 +991,7 @@ test("an unknown lead save stays locked until dismissal, then a new form is usab
     await dialog.locator('[name="first_name"]').fill("Synthetic");
     await dialog.locator('[name="last_name"]').fill("Lead");
     await dialog.getByRole("button", { name: "Add lead", exact: true }).click();
-    await page.waitForFunction(() => fixture.leadController.addLeadOutcomeUnknown);
+    await page.waitForFunction(() => fixture.store.leadCreate.status === "unknown");
     assert.equal(
       await dialog.getByRole("button", { name: "Add lead", exact: true }).isEnabled(),
       false,
@@ -967,8 +1002,13 @@ test("an unknown lead save stays locked until dismissal, then a new form is usab
     await page.getByRole("button", { name: "New lead", exact: true }).click();
     assert.equal(
       await dialog.getByRole("button", { name: "Add lead", exact: true }).isEnabled(),
-      true,
+      false,
     );
+    assert.equal(
+      await dialog.getByRole("button", { name: "Check result", exact: true }).count(),
+      1,
+    );
+    assert.equal(await page.evaluate(() => fixture.writeAttempts), 1);
     await page.evaluate(() => fixture.root.unmount());
   } finally {
     await browser.close();
@@ -1043,14 +1083,17 @@ test("explicit refresh supersedes an older cached visit read", async () => {
       fixture.visit = fixture.store.refreshDashboardSummary({ reason: "visit" });
     });
     await page.waitForFunction(() => fixture.summaries.length === 1);
-    assert.equal(await page.evaluate(() => fixture.requests.at(-1).path), "/dashboard/summary");
+    assert.equal(
+      await page.evaluate(() => fixture.requests.at(-1).path),
+      "/dashboard/summary?include_follow_ups=true",
+    );
     await page.evaluate(() => {
       fixture.refresh = fixture.store.refreshDashboardSummary();
     });
     await page.waitForFunction(() => fixture.summaries.length === 2);
     assert.equal(
       await page.evaluate(() => fixture.requests.at(-1).path),
-      "/dashboard/summary?fresh=true",
+      "/dashboard/summary?include_follow_ups=true&fresh=true",
     );
     await page.evaluate(() =>
       fixture.summaries[1].resolve({
@@ -1209,6 +1252,163 @@ test("detail resume continues after an independent belt-read failure", async () 
     });
     await page.waitForFunction(() => fixture.details.length === 2);
     await page.evaluate(() => fixture.details[1].resolve(fixture.student));
+  } finally {
+    await browser.close();
+  }
+});
+
+async function coldScheduleFixture(browser, coldAuthEvent = "SIGNED_IN") {
+  const page = await fixturePage(browser, {
+    path: "/schedule",
+    scheduleController: true,
+    coldAuthEvent,
+  });
+  await page.evaluate(() => {
+    fixture.scheduleRow = {
+      id: "cold-session",
+      date: fixture.store.businessDate,
+      name: "Cold roster class",
+      start_time: "10:00",
+      end_time: "11:00",
+      status: "scheduled",
+      attendance_count: 0,
+    };
+    fixture.rosterRows = Array.from({ length: 9 }, (_, index) => ({
+      ...fixture.student,
+      id: `student-${index}`,
+      status: index === 8 ? "paused" : index === 7 ? "trialing" : "active",
+    }));
+    fixture.holdRosterRead = true;
+    const get = fixture.api.get;
+    const post = fixture.api.post;
+    const windowData = () => ({ sessions: [fixture.scheduleRow], attendance: [], templates: [] });
+    fixture.api.get = (path, ...args) => {
+      if (path.startsWith("/schedule/window")) return Promise.resolve(windowData());
+      if (path.startsWith("/schedule/attendance")) return Promise.resolve([]);
+      if (path.startsWith("/students?") && fixture.failRosterRead)
+        return Promise.reject(new Error("Synthetic roster unavailable"));
+      return get(path, ...args);
+    };
+    fixture.api.post = (path, ...args) =>
+      path.startsWith("/schedule/window") ? Promise.resolve(windowData()) : post(path, ...args);
+    fixture.resolveRoster = (empty = false) =>
+      fixture.releaseRosterRead({
+        items: empty ? [] : fixture.rosterRows,
+        total: empty ? 0 : fixture.rosterRows.length,
+        page_size: 200,
+        page_ordinal: 1,
+        has_next: false,
+        next_cursor: null,
+      });
+    fixture.mountSchedule();
+  });
+  await page.waitForFunction(() => fixture.controller?.sessions.length === 1);
+  return page;
+}
+
+for (const coldAuthEvent of ["SIGNED_IN", "TOKEN_REFRESHED"]) {
+  test(`cold ${coldAuthEvent} recovery loads attendance students instead of accepting a cleared roster`, async () => {
+    const browser = await chromium.launch();
+    try {
+      const page = await coldScheduleFixture(browser, coldAuthEvent);
+      assert.equal(await page.evaluate(() => fixture.store.studentsLoaded), false);
+      await page.evaluate(() => fixture.controller.onOpenSession(fixture.controller.sessions[0]));
+      await page.waitForFunction(() => fixture.releaseRosterRead);
+      assert.deepEqual(
+        await page.evaluate(() => ({
+          complete: fixture.controller.isStudentRosterComplete,
+          loading: fixture.controller.isRefreshingStudentRoster,
+          candidates: fixture.controller.activeStudents.length,
+        })),
+        { complete: false, loading: true, candidates: 0 },
+      );
+      const rosterRequests = () =>
+        page.evaluate(() =>
+          fixture.requests.filter((request) => request.path.startsWith("/students?")),
+        );
+      assert.equal(
+        new URL((await rosterRequests())[0].path, "http://fixture.local").searchParams.get(
+          "full_roster",
+        ),
+        "1",
+      );
+      await page.evaluate(() => fixture.resolveRoster());
+      await page.waitForFunction(
+        () =>
+          fixture.controller.isStudentRosterComplete &&
+          !fixture.controller.isRefreshingStudentRoster,
+      );
+      assert.equal(await page.evaluate(() => fixture.controller.activeStudents.length), 8);
+      assert.equal(await page.evaluate(() => fixture.store.students.length), 9);
+      await page.evaluate(() => fixture.controller.onCloseSelectedSession());
+      await page.evaluate(() => fixture.controller.onOpenSession(fixture.controller.sessions[0]));
+      await flush(page);
+      assert.equal((await rosterRequests()).length, 1, "a confirmed complete roster is reused");
+      await page.evaluate(() => fixture.emit("SIGNED_OUT", null));
+      await page.waitForFunction(() => !fixture.store.identityReady);
+      assert.deepEqual(
+        await page.evaluate(() => ({
+          students: fixture.store.students,
+          loaded: fixture.store.studentsLoaded,
+        })),
+        { students: [], loaded: false },
+      );
+    } finally {
+      await browser.close();
+    }
+  });
+}
+
+test("explicit roster reconciliation after cold Schedule recovery loads the omitted roster", async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await fixturePage(browser, { path: "/schedule", coldAuthEvent: "SIGNED_IN" });
+    await page.evaluate(() => {
+      fixture.holdRosterRead = true;
+      fixture.autoLeads = true;
+      fixture.navigate("/dashboard");
+      void fixture.store.refreshStudents();
+    });
+    await page.waitForFunction(() => fixture.releaseRosterRead);
+    await page.evaluate(() =>
+      fixture.releaseRosterRead({
+        items: [fixture.student],
+        total: 1,
+        page_size: 200,
+        page_ordinal: 1,
+        has_next: false,
+      }),
+    );
+    await page.waitForFunction(() => fixture.store.studentsLoaded);
+    assert.equal(await page.evaluate(() => fixture.store.students.length), 1);
+  } finally {
+    await browser.close();
+  }
+});
+
+test("cold attendance recovery distinguishes failed reads from a confirmed empty roster", async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await coldScheduleFixture(browser);
+    await page.evaluate(() => {
+      fixture.failRosterRead = true;
+      fixture.controller.onOpenSession(fixture.controller.sessions[0]);
+    });
+    await page.waitForFunction(() => fixture.controller.studentRosterLoadError);
+    assert.equal(await page.evaluate(() => fixture.controller.isStudentRosterComplete), false);
+    await page.evaluate(() => fixture.controller.onCloseSelectedSession());
+    await page.evaluate(() => {
+      fixture.failRosterRead = false;
+      fixture.controller.onOpenSession(fixture.controller.sessions[0]);
+    });
+    await page.waitForFunction(() => fixture.releaseRosterRead);
+    await page.evaluate(() => fixture.resolveRoster(true));
+    await page.waitForFunction(
+      () =>
+        fixture.controller.isStudentRosterComplete && !fixture.controller.isRefreshingStudentRoster,
+    );
+    assert.equal(await page.evaluate(() => fixture.controller.activeStudents.length), 0);
+    assert.equal(await page.evaluate(() => fixture.controller.studentRosterLoadError), null);
   } finally {
     await browser.close();
   }
@@ -2711,7 +2911,7 @@ test("a pending roster bulk write refuses the student's photo and keeps retry co
 test("keyed follow-up preserves confirmed results through renewal and a stale lead read", async () => {
   const browser = await chromium.launch();
   try {
-    const page = await fixturePage(browser);
+    const page = await fixturePage(browser, { path: "/leads" });
     await page.evaluate(() => {
       fixture.read = fixture.store.refreshLeads();
       fixture.command = {
@@ -2760,7 +2960,7 @@ test("keyed follow-up preserves confirmed results through renewal and a stale le
 test("keyed follow-up cannot restore lead data or navigate after sign-out", async () => {
   const browser = await chromium.launch();
   try {
-    const page = await fixturePage(browser, { leadController: true });
+    const page = await fixturePage(browser, { path: "/leads", leadController: true });
     await page.evaluate(() => {
       // fixture.local is an insecure synthetic origin; supply its missing UUID primitive.
       crypto.randomUUID ??= () => "3d606900-5b93-4b00-85a8-09afaa549d54";
@@ -2790,7 +2990,11 @@ test("keyed follow-up cannot restore lead data or navigate after sign-out", asyn
 });
 
 async function prepareFollowUpReplay(browser, { newerRead = false, enroll = false } = {}) {
-  const page = await fixturePage(browser, { leadController: true, leadControls: true });
+  const page = await fixturePage(browser, {
+    path: "/leads",
+    leadController: true,
+    leadControls: true,
+  });
   await page.evaluate(
     ({ enroll }) => {
       fixture.uuidSequence = 0;

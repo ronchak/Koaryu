@@ -19,7 +19,7 @@ class DashboardSummaryPerformanceFixtureTest(unittest.TestCase):
             )
 
     def test_real_summary_measurement_has_expected_query_and_row_counts(self):
-        expected = {name: (27, 30) for name in ("small", "medium", "large")}
+        expected = {name: (33, 60) for name in ("small", "medium", "large")}
         for profile, (query_count, row_count) in expected.items():
             with self.subTest(profile=profile):
                 evidence = measure_profile(profile, "a" * 40)
@@ -33,7 +33,7 @@ class DashboardSummaryPerformanceFixtureTest(unittest.TestCase):
                 self.assertEqual(metrics["denied_rpc_count"], 0)
                 self.assertEqual(metrics["total_provider_call_count"], query_count + 10)
                 self.assertEqual(metrics["returned_row_count"], row_count)
-                # Context table rows plus three fact objects; no raw fixture rows emitted.
+                # Context rows, bounded follow-ups and three fact objects; no rows emitted.
                 self.assertTrue(metrics["data_ready"])
                 self.assertGreater(metrics["peak_rss_bytes"], 0)
                 self.assertGreater(metrics["serialized_response_payload_bytes"], 0)

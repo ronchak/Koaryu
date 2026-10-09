@@ -1,5 +1,6 @@
 "use client";
 import { useEffect } from "react";
+import Link from "next/link";
 import { markDashboardReadiness } from "@/lib/performance";
 
 import { BeltTrackerDialogs } from "@/components/belt-tracker/belt-tracker-dialogs";
@@ -18,7 +19,8 @@ export default function BeltTrackerPage() {
     eligibilityLoadError,
   } = useBeltStore();
   const { programsLoaded, programsLoadError } = useProgramStore();
-  const { retryInitialization, identityGeneration, identityReady } = useStudioStore();
+  const { retryInitialization, identityGeneration, identityReady, currentRole } = useStudioStore();
+  const { isPreviewMode } = useConfigStore();
   const loadError = beltLaddersLoadError || (!programsLoaded ? programsLoadError : null);
   const useful = identityReady && programsLoaded && !loadError;
   const complete =
@@ -36,6 +38,11 @@ export default function BeltTrackerPage() {
           {loadError ? "Belt plans unavailable" : "Loading belt plans"}
         </h1>
         {loadError && <p className="mt-2 text-sm">{loadError}</p>}
+        {(isPreviewMode || (identityReady && currentRole === "admin")) && (
+          <Link href="/belt-tests" className="inline-flex p-3">
+            Belt tests
+          </Link>
+        )}
         {loadError && (
           <button
             type="button"
@@ -52,6 +59,7 @@ export default function BeltTrackerPage() {
 }
 
 function ReadyBeltTrackerPage() {
+  const { isPreviewMode, currentRole } = useConfigStore();
   const controller = useBeltTrackerPageController({
     beltStore: useBeltStore(),
     config: useConfigStore(),
@@ -60,7 +68,10 @@ function ReadyBeltTrackerPage() {
 
   return (
     <>
-      <BeltTrackerShell {...controller.shellProps}>
+      <BeltTrackerShell
+        {...controller.shellProps}
+        showBeltTestsLink={isPreviewMode || currentRole === "admin"}
+      >
         {controller.tab === "eligibility" ? (
           <EligibilityPanel {...controller.eligibilityPanelProps} />
         ) : (

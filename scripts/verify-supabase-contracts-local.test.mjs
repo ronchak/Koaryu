@@ -51,17 +51,19 @@ assert_payment_writer_rejects test "SELECT 1;" "$query" expected required_failur
 }
 
 
-test("V55 keeps both restore steps, exact inventory and the complete readiness/lead probes", () => {
-  assert.match(verifier, /migration_files\[@\].*-ne 150/);
-  assert.match(verifier, /verification_files\[@\].*-ne 56/);
+test("V56 keeps all restore steps, exact inventory and the complete readiness/lead probes", () => {
+  assert.match(verifier, /migration_files\[@\].*-ne 152/);
+  assert.match(verifier, /verification_files\[@\].*-ne 75/);
   for (const text of [
-    "verify-v53-v54-restore-contract.py", "verify-v54-v55-restore-contract.py",
-    "[V55 readiness]", "[V55 release]", "[V55 semantics]",
+    "verify-v53-v54-restore-contract.py", "verify-v54-v55-restore-contract.py", "verify-v55-v56-restore-contract.py",
+    "[V56 readiness]", "[V56 release]", "[V56 semantics]",
     "V54_OPERATIONAL_READINESS_SQL|EXPECTED_V54_OPERATIONAL_READINESS",
     "V55_LEAD_CONVERSION_STATE_SQL|EXPECTED_V55_LEAD_CONVERSION_STATE",
     "V55_LEAD_FOLLOW_UP_STATE_SQL|EXPECTED_V55_LEAD_FOLLOW_UP_STATE",
-    "ARRAY[36,35,34,33,32,31,30,29,28,27,26,25,24,23,22,21,20,19,18]",
-    "verify-lead-command-concurrency.py",
+    "ARRAY[37,36,35,34,33,32,31,30,29,28,27,26,25,24,23,22,21,20,19,18]",
+    "verify-lead-command-concurrency.py", "verify-automation-concurrency.py",
+    "unlogged outbox|ALTER TABLE public.automation_deliveries SET UNLOGGED;",
+    "V56_AUTOMATION_TABLE_STATE_SQL|EXPECTED_V56_AUTOMATION_TABLE_STATE",
   ]) assert.ok(verifier.includes(text), text);
   assert.ok(verifier.indexOf('if [[ "$migration_filename" == "20260930192626')
     < verifier.indexOf('echo "[migration $migration_index/$migration_total] RUN'));
@@ -71,8 +73,8 @@ test("V55 keeps both restore steps, exact inventory and the complete readiness/l
 });
 
 
-test("final V55 semantics uses only V55 pins for changed lead/student definitions", () => {
-  const block = /done <<'V55_CHECKS'\n([\s\S]*?)\nV55_CHECKS/.exec(verifier)?.[1];
+test("final V56 semantics uses only V55 pins for changed lead/student definitions", () => {
+  const block = /done <<'V56_CHECKS'\n([\s\S]*?)\nV56_CHECKS/.exec(verifier)?.[1];
   assert.ok(block, "The final semantic loop must exist");
   for (const historical of ["V52_LEAD_FOLLOW_UP_STATE", "V54_STUDENT_PROFILE_STATE"]) {
     assert.ok(!block.includes(historical), historical);
@@ -88,4 +90,14 @@ test("final V55 semantics uses only V55 pins for changed lead/student definition
   assert.ok(uiContract.includes("public.koaryu_release_schema_preflight_v35()"));
   assert.ok(uiContract.includes("public.koaryu_release_schema_preflight_v34()"));
   assert.ok(uiContract.includes("(149,'20260930024404'), (150,'20260930192626')"));
+});
+
+
+test("current-candidate billing concurrency runs once after complete V57 readiness", () => {
+  const invocation = 'run_interruptible python3 "$ROOT_DIR/scripts/verify-billing-command-concurrency.py" "$PSQL" "$SOCKET_DIR" "$PG_PORT"';
+  assert.equal(verifier.split(invocation).length - 1, 1);
+  const readiness = verifier.indexOf('echo "[V57 readiness] PASS complete installed catalog and genuine history"');
+  const billing = verifier.indexOf(invocation);
+  const rawFacts = verifier.indexOf('echo "[V57 raw facts] RUN');
+  assert.ok(readiness >= 0 && readiness < billing && billing < rawFacts);
 });

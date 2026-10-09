@@ -81,6 +81,8 @@ DELETE FROM public.billing_payer_payment_consents WHERE studio_id='$studio_id'::
 DELETE FROM public.billing_payer_setup_requests WHERE studio_id='$studio_id'::UUID;
 DELETE FROM public.billing_provider_operations WHERE studio_id='$studio_id'::UUID;
 DELETE FROM public.billing_payers WHERE studio_id='$studio_id'::UUID;
+DELETE FROM private.stripe_connect_account_identity_guards
+WHERE stripe_connected_account_id='$account_id' AND mapped_studio_id='$studio_id'::UUID;
 DELETE FROM public.studio_payment_accounts WHERE studio_id='$studio_id'::UUID;
 DELETE FROM public.staff_roles WHERE studio_id='$studio_id'::UUID;
 DELETE FROM public.studios WHERE id='$studio_id'::UUID;

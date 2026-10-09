@@ -221,8 +221,8 @@ for (const mode of ["production", "development"]) {
       await page.waitForFunction(() => fixture.store.currentStudioId === "studio-user-d");
       assert.equal(
         await page.evaluate(() => fixture.store.leadsLoaded),
-        true,
-        "a fresh identity scope still accepts its initial lead snapshot",
+        false,
+        "Dashboard does not treat its omitted lead collection as an authoritative full list",
       );
       await page.evaluate(() => {
         for (const resolve of fixture.bootstrapWaiters) resolve();
@@ -798,6 +798,9 @@ for (const role of ["admin", "front_desk"]) {
           },
         };
       }, role);
+      await page.evaluate(() => {
+        fixture.pathname = "/leads";
+      });
       await page.addScriptTag({ content: bundle("production", { leadsPage: true }) });
       await page.waitForFunction(() => fixture.readiness.some((state) => state.useful));
       if (role === "admin") {
@@ -895,16 +898,16 @@ for (const outcome of ["success", "failure"]) {
             if (
               path.startsWith("/staff") ||
               path.startsWith("/programs") ||
-              path === "/dashboard/summary?fresh=true"
+              path === "/dashboard/summary?include_follow_ups=true&fresh=true"
             ) {
               if (token === "route-old-token") {
                 await new Promise((resolve) => fixture.waiters.push(resolve));
                 if (outcome === "failure") throw new Error("Expired token");
-                return path === "/dashboard/summary?fresh=true"
+                return path === "/dashboard/summary?include_follow_ups=true&fresh=true"
                   ? fixture.summary("2026-09-12T11:00:00Z")
                   : [{ id: "obsolete-row", name: "Obsolete" }];
               }
-              return path === "/dashboard/summary?fresh=true"
+              return path === "/dashboard/summary?include_follow_ups=true&fresh=true"
                 ? fixture.summary("2026-09-12T12:00:00Z")
                 : [];
             }
@@ -951,6 +954,9 @@ for (const outcome of ["success", "failure"]) {
           actions: [],
         });
       }, outcome);
+      await page.evaluate(() => {
+        fixture.pathname = "/leads";
+      });
       await page.addScriptTag({
         content: bundle("production", { leadsPage: true, programsSection: true }),
       });
@@ -1022,7 +1028,7 @@ for (const outcome of ["success", "failure"]) {
       assert.deepEqual(
         await page.evaluate(() =>
           fixture.requests
-            .filter((r) => r.path === "/dashboard/summary?fresh=true")
+            .filter((r) => r.path === "/dashboard/summary?include_follow_ups=true&fresh=true")
             .map((r) => r.token),
         ),
         ["route-old-token", "route-new-token"],
@@ -1578,7 +1584,8 @@ for (const failedDataset of ["leads", "students", "programs", "belts", "studio"]
                     }
                   : {},
               };
-            if (path === "/dashboard/summary") throw new Error("Summary unavailable");
+            if (path === "/dashboard/summary?include_follow_ups=true")
+              throw new Error("Summary unavailable");
             if (path.startsWith("/schedule/window"))
               return { sessions: [], templates: [], attendance: [] };
             if (path.startsWith("/programs?")) {
@@ -1610,7 +1617,7 @@ for (const failedDataset of ["leads", "students", "programs", "belts", "studio"]
         await page.evaluate(() => fixture.store.studentsLoaded),
         failedDataset !== "students",
       );
-      assert.equal(await page.evaluate(() => fixture.store.leadsLoaded), failedDataset !== "leads");
+      assert.equal(await page.evaluate(() => fixture.store.leadsLoaded), false);
       assert.equal(
         await page.evaluate(() => fixture.store.programsLoaded),
         failedDataset !== "programs",
@@ -1619,33 +1626,22 @@ for (const failedDataset of ["leads", "students", "programs", "belts", "studio"]
         await page.evaluate(() =>
           fixture.requests.filter((path) => !path.startsWith("/schedule/window")).sort(),
         ),
-        ["/dashboard/bootstrap?allow_partial=true", "/dashboard/summary"],
+        ["/dashboard/bootstrap?allow_partial=true", "/dashboard/summary?include_follow_ups=true"],
         "a partial response cannot trigger legacy dataset fan-out",
       );
-      if (failedDataset === "students") {
+      for (const widget of ["student_pulse", "lead_follow_ups", "setup_progress"]) {
         assert.equal(
-          await page.evaluate(() => fixture.dashboard.widgetViewModels.student_pulse.state),
+          await page.evaluate((widget) => fixture.dashboard.widgetViewModels[widget].state, widget),
           "error",
+          "live dashboard widgets report the failed summary",
         );
         assert.equal(
-          await page.evaluate(() => fixture.dashboard.widgetViewModels.student_pulse.metric),
+          await page.evaluate(
+            (widget) => fixture.dashboard.widgetViewModels[widget].metric,
+            widget,
+          ),
           undefined,
-          "failed roster is not zero active students",
-        );
-      } else {
-        assert.equal(
-          await page.evaluate(() => fixture.dashboard.widgetViewModels.student_pulse.metric),
-          "1",
-        );
-      }
-      if (failedDataset === "leads") {
-        assert.equal(
-          await page.evaluate(() => fixture.dashboard.widgetViewModels.lead_follow_ups.state),
-          "error",
-        );
-        assert.equal(
-          await page.evaluate(() => fixture.dashboard.widgetViewModels.lead_follow_ups.metric),
-          undefined,
+          "a failed summary cannot fall back to incomplete local totals",
         );
       }
       if (failedDataset === "belts" || failedDataset === "programs") {
@@ -1713,7 +1709,6 @@ for (const failedDataset of ["leads", "students", "programs", "belts", "studio"]
           fixture.store.identityReady &&
           fixture.store.studentsLoaded &&
           fixture.store.programsLoaded &&
-          fixture.store.leadsLoaded &&
           !fixture.store.studioLoadError &&
           !fixture.store.beltLaddersLoadError,
       );
@@ -1739,13 +1734,13 @@ for (const operation of ["add", "update", "delete", "convert"]) {
         const browser = await chromium.launch({ headless: true });
         try {
           const page = await browser.newPage();
-          await page.route("http://fixture.local/", (route) =>
+          await page.route("http://localhost/", (route) =>
             route.fulfill({ contentType: "text/html", body: '<div id="root"></div>' }),
           );
-          await page.goto("http://fixture.local/");
+          await page.goto("http://localhost/");
           await page.evaluate((operation) => {
             const user = {
-              id: "lead-race-user",
+              id: "10000000-0000-4000-8000-000000000001",
               email: "lead-race@example.test",
               legal_first_name: "Lead",
               legal_last_name: "Owner",
@@ -1754,7 +1749,7 @@ for (const operation of ["add", "update", "delete", "convert"]) {
             const profile = {
               user,
               membership_status: "active",
-              studio_id: "lead-race-studio",
+              studio_id: "20000000-0000-4000-8000-000000000001",
               role: "admin",
               staff_profiles_available: true,
             };
@@ -1762,7 +1757,12 @@ for (const operation of ["add", "update", "delete", "convert"]) {
               id: "existing-lead",
               first_name: "Original",
               last_name: "Lead",
-              stage: "new",
+              stage: "inquiry",
+              studio_id: profile.studio_id,
+              source: "walk_in",
+              is_minor: false,
+              created_at: "2026-10-05T00:00:00Z",
+              updated_at: "2026-10-05T00:00:00Z",
               converted_student_id: null,
             };
             const fixture = (window.fixture = {
@@ -1784,7 +1784,9 @@ for (const operation of ["add", "update", "delete", "convert"]) {
             fixture.api = {
               get: async (path) => {
                 fixture.requests.push(path);
-                if (path === "/dashboard/bootstrap?allow_partial=true") {
+                if (path === "/dashboard/workspace")
+                  return { auth: profile, studio: { name: "Lead race studio", timezone: "UTC" } };
+                if (path.startsWith("/dashboard/bootstrap?")) {
                   fixture.bootstrapCalls += 1;
                   const leads = structuredClone(fixture.dbLeads);
                   if (fixture.holdBootstrap)
@@ -1816,6 +1818,10 @@ for (const operation of ["add", "update", "delete", "convert"]) {
                     total: 1,
                     page_size: 200,
                   };
+                if (path === "/leads/30000000-0000-4000-8000-000000000001")
+                  return fixture.dbLeads.find(
+                    (lead) => lead.id === "30000000-0000-4000-8000-000000000001",
+                  );
                 if (path === "/leads") throw new Error("Leads refresh failed");
                 throw new Error(`Unexpected request ${path}`);
               },
@@ -1824,7 +1830,11 @@ for (const operation of ["add", "update", "delete", "convert"]) {
               fixture.mutationCalls += 1;
               let result;
               if (operation === "add") {
-                result = { ...initialLead, id: "created-lead", first_name: "Created" };
+                result = {
+                  ...initialLead,
+                  id: "30000000-0000-4000-8000-000000000001",
+                  first_name: "Created",
+                };
                 fixture.dbLeads = [result, ...fixture.dbLeads];
               } else if (operation === "delete") {
                 fixture.dbLeads = [];
@@ -1849,7 +1859,7 @@ for (const operation of ["add", "update", "delete", "convert"]) {
             fixture.startMutation = () => {
               fixture.mutation =
                 operation === "add"
-                  ? fixture.store.addLead({ first_name: "Created" })
+                  ? fixture.store.addLead({ first_name: "Created", last_name: "Lead" })
                   : operation === "update"
                     ? fixture.store.updateLead("existing-lead", { first_name: "Changed" })
                     : operation === "delete"
@@ -1857,7 +1867,12 @@ for (const operation of ["add", "update", "delete", "convert"]) {
                       : fixture.store.convertLeadToStudent("existing-lead");
             };
           }, operation);
-          await page.addScriptTag({ content: bundle("production", { layout: true }) });
+          await page.evaluate(() => {
+            fixture.pathname = "/leads";
+          });
+          await page.addScriptTag({
+            content: (operation === "add" ? buildBundle : bundle)("production", { layout: true }),
+          });
           await page.waitForFunction(
             () => fixture.store?.identityReady && fixture.store.leadsLoaded,
           );
@@ -2002,6 +2017,7 @@ test("real bootstrap transport survives its server budget and bounds a stalled b
         requests: [],
         aborts: [],
         signOutCalls: 0,
+        pathname: "/schedule",
       });
       fixture.payload = {
         auth: profile,

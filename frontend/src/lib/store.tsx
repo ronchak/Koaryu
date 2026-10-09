@@ -9,7 +9,7 @@ import { pendingCommands, subscribePendingCommands } from "@/lib/pending-command
 import { markDashboardFactsChanged, needsFreshDashboardFacts } from "@/lib/dashboard-freshness";
 import { beginResourceMutation, createResourceScope } from "@/lib/store-resource-scope";
 
-import React, { useState, useEffect, useCallback, useRef, type ReactNode } from "react";
+import React, { useState, useEffect, useLayoutEffect, useCallback, useRef, useMemo, type ReactNode } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { api, isStaffArchivedError, isSubscriptionRequiredError } from "@/lib/api";
@@ -88,6 +88,7 @@ import {
   type ScheduleRangeRefreshIntent,
 } from "@/lib/schedule-store-model";
 import { useStoreBeltActions } from "@/lib/store-belt-actions";
+import { useStoreBeltTestActions } from "@/lib/store-belt-test-actions";
 import { useStoreLeadActions } from "@/lib/store-lead-actions";
 import { useStoreProgramActions } from "@/lib/store-program-actions";
 import { useStoreScheduleActions } from "@/lib/store-schedule-actions";
@@ -184,7 +185,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [studioTimezone, setStudioTimezone] = useState("UTC");
   const businessDate = useStudioDay(studioTimezone);
   const businessDateRef = useRef(businessDate);
-  useEffect(() => { businessDateRef.current = businessDate; }, [businessDate]);
+  // Child route effects may request date-scoped projections. Publish the new
+  // business date before any passive effect can start or join yesterday's read.
+  useLayoutEffect(() => { businessDateRef.current = businessDate; }, [businessDate]);
   const [identityReady, setIdentityReady] = useState(false);
   const [identityLoadError, setIdentityLoadError] = useState<string | null>(null);
   const [identityGeneration, setIdentityGeneration] = useState(0);
@@ -217,10 +220,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   );
   const [studentsMayBePartial, setStudentsMayBePartial] = useState(false);
   const [dashboardSummary, setDashboardSummary] = useState<DashboardSummary | null>(null);
+  const [dashboardSummaryDate, setDashboardSummaryDate] = useState<string | null>(null);
+  const dashboardSummaryDateRef = useRef<string | null>(null);
   const [dashboardSummaryLoadError, setDashboardSummaryLoadError] = useState<string | null>(null);
   const [dashboardSummaryLoaded, setDashboardSummaryLoaded] = useState(isPreviewMode);
   const dashboardSummaryRequestSeqRef = useRef(0);
-  const dashboardSummaryFlightRef = useRef<{ sequence: number; fresh: boolean; promise: Promise<void> } | null>(null);
+  const dashboardSummaryFlightRef = useRef<{ sequence: number; businessDate: string; fresh: boolean; promise: Promise<void> } | null>(null);
   const studentsRef = useRef<Student[]>(students);
   const studentsRevisionRef = useRef(0);
   const studentMutationEpochRef = useRef(0);
@@ -254,6 +259,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [leadsLoaded, setLeadsLoaded] = useState(isPreviewMode);
   const [leadsLoadError, setLeadsLoadError] = useState<string | null>(null);
   const leadsRef = useRef<Lead[]>(leads);
+  const beltTestResourceScopeRef = useRef(createResourceScope());
+  const resetBeltTestResourceScope = useCallback(() => {
+    beltTestResourceScopeRef.current.settle();
+    beltTestResourceScopeRef.current = createResourceScope();
+  }, []);
   const leadMutationScopeRef = useRef(createResourceScope());
   const beginLeadMutation = useCallback(() => beginResourceMutation(leadMutationScopeRef.current), []);
   const [beltLadders, setBeltLaddersState] = useState<BeltLadder[]>(() =>
@@ -263,6 +273,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [beltLaddersLoadError, setBeltLaddersLoadError] = useState<string | null>(null);
   const [studioLoadError, setStudioLoadError] = useState<string | null>(null);
   const beltLaddersRef = useRef<BeltLadder[]>(beltLadders);
+  const beltMetadataRevisionRef = useRef(0);
   const [beltRanks, setBeltRanksState] = useState<BeltRank[]>(() =>
     isPreviewMode ? MOCK_BELT_LADDER.ranks : []
   );
@@ -351,6 +362,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   );
   const [eligibilityPendingLadderId, setEligibilityPendingLadderId] = useState<string | null>(null);
   const [eligibilityLoadError, setEligibilityLoadError] = useState<string | null>(null);
+  const [dashboardPromotionsLoading, setDashboardPromotionsLoading] = useState(false);
   const eligibilityCacheRef = useRef<Record<string, EligibilityEntry[]>>(
     isPreviewMode ? { [MOCK_BELT_LADDER.id]: MOCK_ELIGIBILITY } : {}
   );
@@ -398,16 +410,23 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  const refreshDashboardSummary = useCallback(async (options?: { reason?: "visit" }): Promise<void> => {
+  const refreshDashboardSummary = useCallback(async (options?: { reason?: "visit" | "resume" }): Promise<void> => {
     if (isPreviewMode) return Promise.resolve();
-    const fresh = options?.reason !== "visit" || needsFreshDashboardFacts();
+    const fresh = !options?.reason || needsFreshDashboardFacts();
+    const requestDate = businessDateRef.current;
     const existing = dashboardSummaryFlightRef.current;
-    if (existing?.sequence === dashboardSummaryRequestSeqRef.current && (!fresh || existing.fresh)) return existing.promise;
+    if (existing?.sequence === dashboardSummaryRequestSeqRef.current && existing.businessDate === requestDate && (!fresh || existing.fresh)) return existing.promise;
     const sequence = ++dashboardSummaryRequestSeqRef.current;
     const owner = beginLiveAuthRequest();
     const studioId = authoritativeStudioIdRef.current;
-    const isCurrent = () => sequence === dashboardSummaryRequestSeqRef.current && owner.isSameIdentity();
+    const isCurrent = () => sequence === dashboardSummaryRequestSeqRef.current && requestDate === businessDateRef.current && owner.isSameIdentity();
     setDashboardSummaryLoadError(null);
+    if (dashboardSummaryDateRef.current !== requestDate) {
+      dashboardSummaryDateRef.current = requestDate;
+      setDashboardSummaryDate(requestDate);
+      setDashboardSummary(null);
+      setDashboardSummaryLoaded(false);
+    }
     markPerformance("dashboard.summary_started");
     const fail = () => {
       if (isCurrent()) {
@@ -419,7 +438,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const request = beginLiveAuthRequest();
       return { ...request, canRetryAfterTokenChange: () => isCurrent() && request.canRetryAfterTokenChange() };
     }, async (request) => {
-      const summary = await api.get<DashboardSummary>(fresh ? "/dashboard/summary?fresh=true" : "/dashboard/summary", request.token,
+      const summary = await api.get<DashboardSummary>(`/dashboard/summary?include_follow_ups=true${fresh ? "&fresh=true" : ""}`, request.token,
         { timeoutMs: 35000, timeoutMessage: "Dashboard refresh timed out." });
       if (!isCurrent() || !request.isCurrent()) return;
       if (summary.auth.studio_id !== studioId) throw new Error("Dashboard scope changed. Please retry.");
@@ -430,7 +449,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }, fail).catch((error) => { fail(); throw error; }).finally(() => {
       if (dashboardSummaryFlightRef.current?.sequence === sequence) dashboardSummaryFlightRef.current = null;
     });
-    dashboardSummaryFlightRef.current = { sequence, fresh, promise };
+    dashboardSummaryFlightRef.current = { sequence, businessDate: requestDate, fresh, promise };
     return promise;
   }, [beginLiveAuthRequest, isPreviewMode]);
 
@@ -602,6 +621,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const applyLadderSelection = useCallback((ladders: BeltLadder[], preferredLadderId?: string | null) => {
+    beltMetadataRevisionRef.current += 1;
     setBeltLaddersLoadError(null);
     const orderedLadders = sortBeltLadders(ladders);
     const selectedLadder = selectBeltLadder(
@@ -683,6 +703,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [commitEligibilityRows]);
 
   const applyLiveStudioDataResetState = useCallback((state: LiveStudioDataResetState) => {
+    resetBeltTestResourceScope();
     beltsHydratedRef.current = false;
     resetProgramScope();
     resetStaffScope();
@@ -742,10 +763,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setEligibility(state.eligibility);
     setEligibilityLadderId(state.eligibilityLadderId);
     setEligibilityPendingLadderId(state.eligibilityPendingLadderId);
+    setDashboardPromotionsLoading(false);
     setEligibilityLoadError(state.eligibilityLoadError);
     promotionHistoryGenerationRef.current += 1;
     setPromotionHistoryCache(state.promotionHistoryCache);
-  }, [setPrograms, setProgramsLoaded, resetProgramScope, resetStaffScope, destructivelyResetScheduleCoordinator, setSessions, updateCurrentLadderId]);
+  }, [setPrograms, setProgramsLoaded, resetProgramScope, resetBeltTestResourceScope, resetStaffScope, destructivelyResetScheduleCoordinator, setSessions, updateCurrentLadderId]);
 
   const resetLiveStudioState = useCallback(() => {
     invalidateAccessIdentity();
@@ -873,6 +895,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [hydrated, pathname, router, subscriptionRequired]);
 
   const applyDemoResetResponse = useCallback((data: DemoResetResponse) => {
+    resetBeltTestResourceScope();
+    leadMutationScopeRef.current.settle();
+    leadMutationScopeRef.current = createResourceScope();
     resetProgramScope();
     setProgramsUsageLoaded(false);
     setProgramsUsageLoadError(null);
@@ -901,9 +926,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setSessions(data.sessions.sort(compareSessions));
     setAttendance(data.attendance);
     clearPromotionHistoryCache();
-  }, [setPrograms, setProgramsLoaded, resetProgramScope, applyLadderSelection, clearPromotionHistoryCache, commitEligibilityRows, commitStudents, destructivelyResetScheduleCoordinator, setSessions]);
+  }, [setPrograms, setProgramsLoaded, resetProgramScope, resetBeltTestResourceScope, applyLadderSelection, clearPromotionHistoryCache, commitEligibilityRows, commitStudents, destructivelyResetScheduleCoordinator, setSessions]);
 
   const applyClearedStudioData = useCallback((studioNameValue?: string) => {
+    resetBeltTestResourceScope();
+    leadMutationScopeRef.current.settle();
+    leadMutationScopeRef.current = createResourceScope();
     resetProgramScope();
     setProgramsUsageLoaded(false);
     setProgramsUsageLoadError(null);
@@ -937,7 +965,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setAttendance([]);
     clearEligibilityState();
     clearPromotionHistoryCache();
-  }, [setPrograms, setProgramsLoaded, resetProgramScope,
+  }, [setPrograms, setProgramsLoaded, resetProgramScope, resetBeltTestResourceScope,
     clearEligibilityState,
     clearPromotionHistoryCache,
     commitStudents,
@@ -1032,6 +1060,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  const beltTests = useStoreBeltTestActions({
+    scope: identityReady && !subscriptionRequired && activeUserId && currentStudioId && currentRole === "admin"
+      ? { userId: activeUserId, studioId: currentStudioId, role: "admin" } : null,
+    isPreviewMode,
+    beginLiveAuthRequest,
+    resourceScopeRef: beltTestResourceScopeRef,
+    beltLaddersRef,
+    programsRef,
+    studentsRef,
+    previewEligibilityForLadder,
+  });
+
   const fetchEligibilityForLadder = useCallback(async (
     ladderId?: string | null,
     options?: { signal?: AbortSignal; token?: string }
@@ -1058,7 +1098,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const loadEligibilityForLadder = useCallback(async (
     ladderId?: string | null,
-    options?: { force?: boolean }
+    options?: { force?: boolean; retainCurrent?: boolean }
   ): Promise<EligibilityEntry[]> => {
     const requestSeq = ++eligibilityRequestSeqRef.current;
     const liveRequest = isPreviewMode ? null : beginLiveAuthRequest();
@@ -1106,8 +1146,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       return cachedRows;
     }
 
-    commitEligibilityRows(null, []);
-    setEligibilityPendingLadderId(ladderId);
+    const retainCurrent = Boolean(options?.retainCurrent && cachedRows);
+    if (retainCurrent) {
+      commitEligibilityRows(ladderId, cachedRows);
+      setEligibilityPendingLadderId(null);
+    } else {
+      commitEligibilityRows(null, []);
+      setEligibilityPendingLadderId(ladderId);
+    }
 
     try {
       const rows = await readOwnedEligibility();
@@ -1119,13 +1165,61 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       return rows;
     } catch (error) {
       if (isCurrentEligibilityRequest()) {
-        commitEligibilityRows(null, []);
+        if (!retainCurrent) commitEligibilityRows(null, []);
         setEligibilityPendingLadderId(null);
         setEligibilityLoadError(error instanceof Error ? error.message : "Eligibility could not be loaded.");
       }
       throw error;
     }
   }, [beginLiveAuthRequest, commitEligibilityRows, fetchEligibilityForLadder, isPreviewMode]);
+
+  const dashboardPromotionsFlightRef = useRef<{
+    epoch: number; date: string; eligibilitySequence: number; promise: Promise<void>;
+  } | null>(null);
+  const dashboardPromotionsDateRef = useRef<string | null>(null);
+  const refreshDashboardPromotions = useCallback(async () => {
+    if (isPreviewMode) return;
+    const epoch = identityEpochRef.current;
+    const date = businessDateRef.current;
+    const existing = dashboardPromotionsFlightRef.current;
+    if (existing?.epoch === epoch && existing.date === date
+      && existing.eligibilitySequence === eligibilityRequestSeqRef.current) return existing.promise;
+    const owner = beginLiveAuthRequest();
+    if (dashboardPromotionsDateRef.current !== date) {
+      dashboardPromotionsDateRef.current = date;
+      eligibilityRequestSeqRef.current += 1;
+      eligibilityCacheRef.current = {};
+      commitEligibilityRows(null, []);
+    }
+    setDashboardPromotionsLoading(true);
+    setEligibilityLoadError(null);
+    const flight = { epoch, date, eligibilitySequence: eligibilityRequestSeqRef.current, promise: Promise.resolve() };
+    const isCurrent = () => owner.isSameIdentity() && date === businessDateRef.current
+      && dashboardPromotionsFlightRef.current === flight
+      && flight.eligibilitySequence === eligibilityRequestSeqRef.current;
+    const promise = withCurrentLiveAuthRead(beginLiveAuthRequest, async (request) => {
+      // This small metadata read also recovers a failed/omitted route bootstrap and
+      // notices a selected ladder removed or changed while Dashboard was hidden.
+      const ladders = await api.get<BeltLadder[]>("/belts/ladders", request.token);
+      if (!request.isCurrent() || !isCurrent()) return;
+      beltsHydratedRef.current = true;
+      const selected = applyLadderSelection(ladders);
+      const eligibilityRead = loadEligibilityForLadder(selected?.id ?? null, { force: true, retainCurrent: true });
+      flight.eligibilitySequence = eligibilityRequestSeqRef.current;
+      await eligibilityRead;
+    }, () => {}).catch((error) => {
+      if (isCurrent()) setEligibilityLoadError(error instanceof Error ? error.message : "Promotion eligibility could not be refreshed.");
+      throw error;
+    }).finally(() => {
+      if (dashboardPromotionsFlightRef.current === flight) {
+        dashboardPromotionsFlightRef.current = null;
+        if (owner.isSameIdentity()) setDashboardPromotionsLoading(false);
+      }
+    });
+    flight.promise = promise;
+    dashboardPromotionsFlightRef.current = flight;
+    return promise;
+  }, [applyLadderSelection, beginLiveAuthRequest, commitEligibilityRows, isPreviewMode, loadEligibilityForLadder]);
 
   // Belt Tracker owns its initial eligibility read. Dashboard requests it only for a selected panel.
   useEffect(() => {
@@ -1146,6 +1240,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     let authNotificationRevision = 0;
 
     async function initializeLive(providedSession?: Awaited<ReturnType<typeof supabase.auth.getSession>>["data"]["session"]) {
+      const beltMetadataRevisionAtStart = beltMetadataRevisionRef.current;
       const studentsRevisionAtStart = studentsRevisionRef.current;
       const programScope = programScopeRef.current;
       const programRevisionAtStart = programScope.revision;
@@ -1272,7 +1367,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           bootstrapRequestRef.current = featureRequest;
           try {
             criticalData = await withCurrentLiveAuthRead(beginLiveAuthRequest, (request) =>
-              api.get<BootstrapResponse>(`/dashboard/bootstrap?allow_partial=true&view=${view}`, request.token,
+              api.get<BootstrapResponse>(`/dashboard/bootstrap?allow_partial=true&view=${view}${view === "dashboard" ? "&bounded_dashboard=true" : ""}`, request.token,
                 { signal: featureRequest.controller.signal, timeoutMs: 35000, timeoutMessage: "Studio data loading timed out. Please retry." }), () => {});
           } catch (error) {
             if (featureRequest.controller.signal.aborted) return;
@@ -1301,6 +1396,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           setStudioLoadError(datasetErrors?.studio ?? null);
           const bootstrapSummary = criticalData.summary ?? null;
           if (dashboardSummaryRequestSeqRef.current === summarySequenceAtStart && bootstrapSummary) {
+            dashboardSummaryDateRef.current = businessDateRef.current;
+            setDashboardSummaryDate(businessDateRef.current);
             setDashboardSummary(bootstrapSummary);
             setDashboardSummaryLoaded(true);
           }
@@ -1332,7 +1429,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             setLeadsLoaded(!datasetErrors?.leads);
             setLeadsLoadError(datasetErrors?.leads ?? null);
           }
-          if (!includedDatasets.has("belts")) {
+          if (!includedDatasets.has("belts") || beltMetadataRevisionRef.current !== beltMetadataRevisionAtStart) {
             // Omitted datasets remain unloaded so their owning route can request them.
           } else if (datasetErrors?.belts) {
             beltsHydratedRef.current = true;
@@ -1348,7 +1445,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
         }
 
-        if (!isInitializationCurrent() || !["/dashboard", "/schedule"].includes(pathnameRef.current)) return;
+        if (!isInitializationCurrent() || pathnameRef.current !== "/schedule") return;
         markPerformance("schedule.deferred_started");
         void refreshSchedule().then(() => {
           markPerformance("schedule.deferred_finished");
@@ -1673,6 +1770,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const {
     addLead,
+    leadCreate,
+    checkLeadCreateResult,
+    trialAppointments,
     convertLeadToStudent,
     deleteLead,
     followUpLead,
@@ -1680,6 +1780,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     refreshLeads,
     updateLead,
   } = useStoreLeadActions({
+    leadCreateScope: identityReady && !subscriptionRequired && activeUserId && currentStudioId && currentRole
+      ? { userId: activeUserId, studioId: currentStudioId, role: currentRole } : null,
     businessDateRef,
     beginLeadMutation,
     leadMutationScopeRef,
@@ -1706,6 +1808,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     promoteStudent,
     setBeltRanks,
     setCurrentLadder,
+    refreshBeltLadders,
   } = useStoreBeltActions({
     applyLadderSelection,
     beginLiveAuthRequest,
@@ -1826,15 +1929,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (isPreviewMode || !identityReady || subscriptionRequired || initialFeaturePending) return;
     const timer = window.setTimeout(() => {
-      if (["/dashboard", "/belt-tracker"].includes(pathname) && !beltsHydratedRef.current) {
+      if (pathname === "/belt-tracker" && !beltsHydratedRef.current) {
         beltsHydratedRef.current = true;
         void refreshBeltsRef.current?.().catch(() => setBeltLaddersLoadError("Belt plans could not be loaded. Please retry."));
       }
-      if (pathname === "/dashboard" && scheduleStatus === "idle") void refreshSchedule().catch(() => undefined);
-      if (pathname === "/dashboard" && !studentsLoaded && !studentsLoadError) {
-        void refreshStudents().catch(() => undefined);
-      }
-      if (["/dashboard", "/leads", "/reports"].includes(pathname) && !leadsLoaded && !leadsLoadError) {
+      if (["/leads", "/reports"].includes(pathname) && !leadsLoaded && !leadsLoadError) {
         void refreshLeads().catch(() => undefined);
       }
       const needsPrograms = ["/dashboard", "/settings", "/leads", "/reports", "/schedule", "/belt-tracker"].includes(pathname)
@@ -1957,6 +2056,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     bulkUpdateStudentStatus: useReconciledProjectionCommand(bulkUpdateStudentStatus, beginProjectionCommand),
     importStudents: useReconciledProjectionCommand(importStudents, beginProjectionCommand),
     addLead: useReconciledProjectionCommand(addLead, beginProjectionCommand),
+    createTrialAppointment: useReconciledProjectionCommand(trialAppointments.createTrialAppointment, beginProjectionCommand),
+    updateTrialAppointment: useReconciledProjectionCommand(trialAppointments.updateTrialAppointment, beginProjectionCommand),
+    checkTrialAppointmentResult: useReconciledProjectionCommand(trialAppointments.checkTrialAppointmentResult, beginProjectionCommand),
+    checkLeadCreateResult: useReconciledProjectionCommand(checkLeadCreateResult, beginProjectionCommand),
     updateLead: useReconciledProjectionCommand(updateLead, beginProjectionCommand),
     deleteLead: useReconciledProjectionCommand(deleteLead, beginProjectionCommand),
     followUpLead: useReconciledProjectionCommand(followUpLead, beginProjectionCommand),
@@ -1973,6 +2076,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     addTemplate: useReconciledProjectionCommand(addTemplate, beginProjectionCommand),
     setBeltRanks: useReconciledProjectionCommand(setBeltRanks, beginProjectionCommand),
   };
+  const reconciledTrialAppointments = useMemo(() => Object.freeze({
+    ...trialAppointments,
+    createTrialAppointment: reconciledCommands.createTrialAppointment,
+    updateTrialAppointment: reconciledCommands.updateTrialAppointment,
+    checkTrialAppointmentResult: reconciledCommands.checkTrialAppointmentResult,
+  }), [trialAppointments, reconciledCommands.createTrialAppointment, reconciledCommands.updateTrialAppointment, reconciledCommands.checkTrialAppointmentResult]);
   const studentCommandOwnersRef = useRef(new Map<string, symbol>());
   const ownedStudentCommands = {
     updateStudent: useStudentCommandOwnership(
@@ -2015,6 +2124,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const contextValues = useStoreContextValues({
     addLead: reconciledCommands.addLead,
+    leadCreate,
+    checkLeadCreateResult: reconciledCommands.checkLeadCreateResult,
+    trialAppointments: reconciledTrialAppointments,
+    beltTests,
     addSession: reconciledCommands.addSession,
     addStudent: reconciledCommands.addStudent,
     addTemplate: reconciledCommands.addTemplate,
@@ -2034,8 +2147,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     currentRole,
     currentStudioId,
     currentUserId: activeUserId || "",
-    dashboardSummary,
-    dashboardSummaryLoaded,
+    dashboardSummary: dashboardSummaryDate === businessDate ? dashboardSummary : null,
+    dashboardSummaryLoaded: isPreviewMode || dashboardSummaryDate === businessDate ? dashboardSummaryLoaded : false,
     dashboardSummaryLoadError,
     refreshDashboardSummary,
     deleteLead: reconciledCommands.deleteLead,
@@ -2046,6 +2159,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     eligibility,
     eligibilityLadderId,
     eligibilityLoadError,
+    dashboardPromotionsLoading,
     eligibilityPendingLadderId,
     followUpLead: reconciledCommands.followUpLead,
     importStudents: reconciledCommands.importStudents,
@@ -2061,6 +2175,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     listStudentsPage,
     loadPromotionHistory,
     loadEligibilityForLadder,
+    refreshDashboardPromotions,
     markSubscriptionRequired,
     programs,
     programsLoaded,
@@ -2071,6 +2186,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     promotionHistoryCache,
     refreshLeads,
     refreshPrograms,
+    refreshBeltLadders,
     refreshSchedule,
     refreshScheduleRange,
     refreshSessionAttendance,

@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import {
+  PREVIEW_AUTOMATION_CLEAR_EFFECTS,
+  isAutomationClearEffects,
   buildPreviewDemoResetResponse,
   buildPreviewHydratedLadderState,
   buildPreviewStudioDataClearResponse,
@@ -175,6 +177,7 @@ describe("studio store model", () => {
 
   it("builds the preview demo reset response with fixture counts and sorted sessions", () => {
     const response = buildPreviewDemoResetResponse({
+      automation: { ...PREVIEW_AUTOMATION_CLEAR_EFFECTS },
       studioName: "River City Martial Arts",
       programs: [],
       students: [student("student-1")],
@@ -202,6 +205,7 @@ describe("studio store model", () => {
 
   it("builds preview clear responses from current in-memory counts", () => {
     const response = buildPreviewStudioDataClearResponse({
+      automation: { ...PREVIEW_AUTOMATION_CLEAR_EFFECTS },
       studioName: "",
       students: [student("student-1"), student("student-2")],
       leads: [lead("lead-1")],
@@ -212,6 +216,7 @@ describe("studio store model", () => {
 
     assert.deepEqual(response, {
       studio_name: "My Studio",
+      automation: { ...PREVIEW_AUTOMATION_CLEAR_EFFECTS },
       counts: {
         students: 2,
         leads: 1,
@@ -222,3 +227,25 @@ describe("studio store model", () => {
     });
   });
 });
+
+testEffects();
+function testEffects() {
+  it("accepts only the closed nine-field automation effects contract", () => {
+    const valid = { ...PREVIEW_AUTOMATION_CLEAR_EFFECTS };
+    assert.equal(isAutomationClearEffects(valid), true);
+    assert.equal(isAutomationClearEffects({ ...valid, attendance_rule_paused: false }), true);
+    for (const value of [null, undefined, [], {}, { ...valid, extra: 0 }]) {
+      assert.equal(isAutomationClearEffects(value), false);
+    }
+    for (const key of Object.keys(valid)) {
+      const missing = { ...valid };
+      delete missing[key];
+      assert.equal(isAutomationClearEffects(missing), false, key);
+      for (const invalid of key === "attendance_rule_paused"
+        ? [0, "false", null]
+        : [-1, 0.1, NaN, Infinity, "0", null, Number.MAX_SAFE_INTEGER + 1]) {
+        assert.equal(isAutomationClearEffects({ ...valid, [key]: invalid }), false, key);
+      }
+    }
+  });
+}

@@ -5,7 +5,9 @@
     "deploymentEnabled": {
       "main": false,
       "staging": true,
-      "codex/launch-readiness-candidate": false
+      "codex/launch-readiness-candidate": false,
+      "codex/missed-class-automations-20261004": false,
+      "codex/automation-graph-20261005": false
     }
   },
   "crons": [
@@ -16,6 +18,10 @@
     {
       "path": "/api/cron/operational-alerts/evaluate",
       "schedule": "0 9 * * *"
+    },
+    {
+      "path": "/api/cron/automations/process-due",
+      "schedule": "0 18 * * *"
     }
   ]
 }

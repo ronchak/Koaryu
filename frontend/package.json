@@ -21,11 +21,13 @@
     "test:e2e:preview-import": "KOARYU_PREVIEW_E2E=true playwright test e2e/student-import-idempotency-key.spec.ts"
   },
   "dependencies": {
+    "@js-temporal/polyfill": "0.5.1",
     "@supabase/ssr": "^0.10.2",
     "@supabase/supabase-js": "^2.103.3",
+    "@xyflow/react": "12.12.0",
     "ipaddr.js": "2.2.0",
     "lucide-react": "^1.8.0",
-    "next": "^16.3.6",
+    "next": "^16.3.8",
     "react": "19.2.4",
     "react-dom": "19.2.4"
   },
@@ -36,13 +38,13 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
-    "eslint-config-next": "^16.3.6",
+    "eslint-config-next": "^16.3.8",
     "prettier": "3.9.6",
     "tailwindcss": "^4",
     "typescript": "^5"
   },
   "overrides": {
     "postcss": "8.5.23",
-    "sharp": "0.35.4"
+    "sharp": "0.35.5"
   }
 }

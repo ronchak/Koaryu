@@ -109,6 +109,104 @@ function baseInput(overrides = {}) {
 }
 
 describe("dashboard widget view models", () => {
+  it("uses only bounded live follow-ups and keeps counts authoritative", () => {
+    const input = baseInput();
+    input.dashboardSummary.lead_follow_ups = {
+      available: true,
+      rows: [{ id: "due-1", first_name: "Mina", last_name: "Park", follow_up_date: input.today }],
+    };
+    input.composition.displayedLeadStats.dueTodayLeads = 2500;
+    input.leads = [
+      {
+        id: "stale-local",
+        first_name: "Old",
+        last_name: "Lead",
+        stage: "new",
+        follow_up_date: input.today,
+      },
+    ];
+    input.leadsLoaded = false;
+    input.leadsLoadError = "Unrelated full lead list failed";
+    const model = buildDashboardWidgetViewModels(input).lead_follow_ups;
+    assert.equal(model.state, "ready");
+    assert.equal(model.metric, "2500");
+    assert.deepEqual(model.rows, [{ label: "Mina Park", meta: input.today, href: "/leads" }]);
+    const forbidden = buildDashboardWidgetViewModels({
+      ...input,
+      role: "instructor",
+      canSeeLeads: false,
+    }).lead_follow_ups;
+    assert.equal(forbidden.state, "unavailable");
+    assert.deepEqual(forbidden.rows, []);
+  });
+
+  it("keeps missing or malformed lead projections unavailable without falling back to full leads", () => {
+    const input = baseInput({
+      leads: [{ first_name: "Old", last_name: "Lead", stage: "new", follow_up_date: "2026-08-01" }],
+    });
+    for (const projection of [
+      undefined,
+      { available: false, rows: [] },
+      { available: true, rows: [{ id: "bad" }] },
+      {
+        available: true,
+        rows: Array(6).fill({
+          id: "many",
+          first_name: "A",
+          last_name: "B",
+          follow_up_date: input.today,
+        }),
+      },
+    ]) {
+      const models = buildDashboardWidgetViewModels({
+        ...input,
+        dashboardSummary: { ...input.dashboardSummary, lead_follow_ups: projection },
+      });
+      assert.equal(models.lead_follow_ups.state, "unavailable");
+      assert.deepEqual(models.lead_follow_ups.rows, []);
+      assert.equal(models.needs_attention.state, "empty");
+    }
+    assert.equal(
+      buildDashboardWidgetViewModels({
+        ...input,
+        dashboardSummary: {
+          ...input.dashboardSummary,
+          lead_follow_ups: { available: true, rows: [] },
+        },
+      }).lead_follow_ups.state,
+      "empty",
+    );
+  });
+
+  it("settles a failed live summary without waiting for omitted full datasets", () => {
+    const models = buildDashboardWidgetViewModels(
+      baseInput({
+        dashboardSummary: null,
+        dashboardSummaryLoaded: true,
+        hasDashboardSummary: false,
+        datasetLoadError: "Summary failed",
+        allDatasetEvidenceReady: false,
+        studentsLoaded: false,
+        leadsLoaded: false,
+        scheduleStatus: "idle",
+      }),
+    );
+    for (const id of [
+      "needs_attention",
+      "classes_today",
+      "student_pulse",
+      "attendance",
+      "lead_follow_ups",
+      "billing_exceptions",
+      "setup_progress",
+      "recent_students",
+      "emergency_contacts",
+    ]) {
+      assert.equal(models[id].state, "error", id);
+      assert.equal(models[id].metric, undefined, id);
+    }
+  });
+
   it("represents ready and preview truth without relabeling fixture data as live", () => {
     const live = buildDashboardWidgetViewModels(baseInput());
     assert.equal(live.student_pulse.state, "ready");
@@ -298,12 +396,12 @@ describe("dashboard widget view models", () => {
         },
       }),
     );
-    assert.equal(partial.student_pulse.state, "partial");
+    assert.equal(partial.student_pulse.state, "error");
     assert.equal(partial.student_pulse.metric, undefined);
     assert.equal(partial.student_pulse.visual, undefined);
-    assert.equal(partial.recent_students.state, "partial");
+    assert.equal(partial.recent_students.state, "error");
     assert.deepEqual(partial.recent_students.rows, []);
-    assert.equal(partial.emergency_contacts.state, "unavailable");
+    assert.equal(partial.emergency_contacts.state, "error");
     assert.equal(partial.emergency_contacts.metric, undefined);
     assert.equal(partial.revenue_due.state, "unavailable");
     assert.equal(partial.revenue_due.metric, undefined);
@@ -335,13 +433,14 @@ describe("dashboard widget view models", () => {
         recentStudentRows: [],
       }),
     );
-    assert.equal(sampled.student_pulse.state, "partial");
-    assert.equal(sampled.recent_students.state, "partial");
+    assert.equal(sampled.student_pulse.state, "error");
+    assert.equal(sampled.recent_students.state, "error");
   });
 
-  it("labels a known attention subset partial while another applicable source is pending", () => {
+  it("labels a known preview attention subset partial while another applicable source is pending", () => {
     const models = buildDashboardWidgetViewModels(
       baseInput({
+        isPreviewMode: true,
         dashboardSummary: null,
         dashboardSummaryLoaded: false,
         hasDashboardSummary: false,
@@ -369,8 +468,8 @@ describe("dashboard widget view models", () => {
     assert.equal(models.needs_attention.metric, undefined);
     assert.equal(models.needs_attention.rows[0].label, "1 lead follow-up due");
     assert.equal(models.billing_exceptions.state, "loading");
-    assert.equal(models.classes_today.state, "loading");
-    assert.equal(models.emergency_contacts.state, "loading");
+    assert.equal(models.classes_today.state, "ready");
+    assert.equal(models.emergency_contacts.state, "empty");
   });
 
   it("withholds setup facts until the whole existing evidence set is ready", () => {

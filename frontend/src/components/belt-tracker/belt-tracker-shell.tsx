@@ -1,6 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
+import Link from "next/link";
 import { Header } from "@/components/header";
 import { ProgramPicker } from "@/components/programs/program-picker";
 import { DismissibleNotice } from "@/components/ui/dismissible-notice";
@@ -24,6 +25,7 @@ type BeltTrackerShellProps = {
   programsLoaded: boolean;
   selectedProgramId: string | null;
   tab: BeltTrackerTab;
+  showBeltTestsLink?: boolean;
 };
 
 const TABS: { id: BeltTrackerTab; label: string }[] = [
@@ -45,12 +47,24 @@ export function BeltTrackerShell({
   programsLoaded,
   selectedProgramId,
   tab,
+  showBeltTestsLink = false,
 }: BeltTrackerShellProps) {
   const visibleTabs = TABS.filter((item) => item.id !== "ladder" || canConfigureBelts);
 
   return (
     <div className={`flex min-h-full flex-col ${styles.beltPage}`}>
-      <Header title="Belt Tracker" />
+      <Header title="Belt Tracker">
+        {showBeltTestsLink &&
+          (dirty || isEditing || isSwitchingLadder ? (
+            <span aria-disabled="true" className="p-3 text-muted">
+              Belt tests
+            </span>
+          ) : (
+            <Link href="/belt-tests" className="inline-flex min-h-11 items-center px-3">
+              Belt tests
+            </Link>
+          ))}
+      </Header>
 
       <div className="flex-1 flex flex-col">
         <div className={`mx-4 sm:mx-6 lg:mx-8 ${styles.beltControls}`}>

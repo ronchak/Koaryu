@@ -30,6 +30,8 @@ Use this file for work under `backend/`. Fall back to the repo root `AGENTS.md` 
 - Start local API: `cd backend && venv/bin/python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8001`
 - Run all tests: `cd backend && venv/bin/python -m pytest tests`
 - Run targeted tests: `cd backend && venv/bin/python -m pytest tests/test_health_endpoints.py`
+- Check automation mail configuration and transport without provider access: `cd backend && venv/bin/python -m pytest tests/test_automation_email_config.py tests/test_automation_email.py tests/test_automation_email_credentials.py tests/test_microsoft_graph_email.py`
+- Inspect an initial encrypted mail credential import from the canonical reviewed checkout: `backend/venv/bin/python backend/scripts/bootstrap_automation_email.py --environment <staging|production> --candidate-sha <full-sha> --source-state <absolute-private-envelope> --source-key-file <absolute-private-key>`; see `docs/missed-class-automation.md` for the private wrapper amendment separately reviewed and installed October 4, 2026 Pacific, pending importer deployment/readiness, and separate production authorization.
 - Format Python: `cd backend && venv/bin/python -m ruff format .`
 - Check Python formatting: `cd backend && venv/bin/python -m ruff format --check .`
 

@@ -1,6 +1,6 @@
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, StrictBool
 
 from app.schemas.belt import BeltLadderResponse, EligibilityEntry
 from app.schemas.lead import LeadActivityResponse, LeadResponse
@@ -13,6 +13,20 @@ from app.schemas.schedule import (
 from app.schemas.student import StudentResponse
 
 
+class AutomationClearEffects(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    workflows_paused: int = Field(ge=0)
+    workflow_runs_cancelled: int = Field(ge=0)
+    workflow_cancellation_intents_added: int = Field(ge=0)
+    attendance_deliveries_cancelled: int = Field(ge=0)
+    belt_test_events_deleted: int = Field(ge=0)
+    belt_test_recipients_deleted: int = Field(ge=0)
+    sending_attempts_preserved: int = Field(ge=0)
+    unknown_attempts_preserved: int = Field(ge=0)
+    attendance_rule_paused: StrictBool
+
+
 class DemoResetCounts(BaseModel):
     students: int = 0
     leads: int = 0
@@ -23,6 +37,7 @@ class DemoResetCounts(BaseModel):
 
 class DemoResetResponse(BaseModel):
     studio_name: str
+    automation: AutomationClearEffects
     programs: list[ProgramResponse] = Field(default_factory=list)
     students: list[StudentResponse] = Field(default_factory=list)
     leads: list[LeadResponse] = Field(default_factory=list)
@@ -38,4 +53,5 @@ class DemoResetResponse(BaseModel):
 
 class StudioDataClearResponse(BaseModel):
     studio_name: str
+    automation: AutomationClearEffects
     counts: DemoResetCounts = Field(default_factory=DemoResetCounts)

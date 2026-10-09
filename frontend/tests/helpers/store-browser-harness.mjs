@@ -69,6 +69,7 @@ export function bundle(
     scheduleController = false,
     scheduleForm = false,
     dashboardController = false,
+    dashboardVisibleWidgets = null,
     beltPage = false,
     realApi = false,
     detailController = false,
@@ -127,6 +128,7 @@ export function bundle(
           "@/components/leads/lead-pipeline-board": `exports.LeadPipelineBoard=()=>null;exports.LeadLedgerLoadError=()=>null;`,
           "@/components/leads/lost-leads-section": `exports.LostLeadsSection=()=>null;`,
           "@/components/leads/leads-ledger.module.css": `module.exports={};`,
+          "./leads-ledger.module.css": `module.exports={};`,
           "@/components/ui/button": `exports.Button=({children,onClick})=>require('react').createElement('button',{onClick},children);`,
           "@/components/ui/dismissible-notice": `exports.DismissibleNotice=({children})=>children;`,
           "lucide-react": `exports.UserPlus=()=>null;`,
@@ -151,6 +153,11 @@ export function bundle(
           "@/components/dashboard-loading-skeleton": `exports.DashboardLoadingSkeleton=()=>require('react').createElement('div',{'data-preview-gate':'pending'});`,
           "./dashboard-shell.module.css": `module.exports={};`,
           "lucide-react": `for (const name of ['ArrowUpRight','CheckCircle2','CreditCard','Loader2','ShieldCheck']) exports[name]=()=>null;`,
+        }
+      : {}),
+    ...(beltPage
+      ? {
+          "next/link": `exports.__esModule=true;exports.default=({children,href,prefetch,...props})=>require('react').createElement('a',{href:typeof href==='string'?href:href.pathname,...props},children);`,
         }
       : {}),
     ...(beltPage === "editor"
@@ -190,6 +197,7 @@ export function bundle(
   };
   if (identityLifecycle) {
     Object.assign(stubs, {
+      "next/link": `exports.__esModule=true;exports.default=({children,href,prefetch,...props})=>require('react').createElement('a',{href:typeof href==='string'?href:href.pathname,...props},children);`,
       "@/components/icons/martial-arts-belt": `exports.MartialArtsBelt=()=>null;`,
       "lucide-react": `module.exports=new Proxy({},{get:()=>()=>null});`,
       "@/components/header": `exports.Header=()=>null;`,
@@ -322,7 +330,7 @@ window.fixture.renderRecordsLoading = (props) => {
   const dashboardObserver =
     dashboard === null
       ? ""
-      : `function DashboardObserver(){const store=useStore();window.fixture.dashboard=require(${dashboard}).useDashboardPageController({config:store,beltStore:store,dashboardStore:store,leadStore:store,programsStore:store,scheduleStore:store,studentsStore:store,studioStore:store}).contentProps;return null;}`;
+      : `${dashboardVisibleWidgets ? `function DashboardVisibilityObserver({callback,ready}){React.useEffect(()=>{if(ready)callback(${JSON.stringify(dashboardVisibleWidgets)})},[callback,ready]);return null;}` : ""}function DashboardObserver(){const store=useStore();window.fixture.dashboard=require(${dashboard}).useDashboardPageController({config:store,beltStore:store,dashboardStore:store,leadStore:store,programsStore:store,scheduleStore:store,studentsStore:store,studioStore:store}).contentProps;return ${dashboardVisibleWidgets ? "React.createElement(DashboardVisibilityObserver,{callback:window.fixture.dashboard.onVisibleWidgetsChange,ready:store.identityReady})" : "null"};}`;
   const leadHook = leadController ? add("@/lib/leads-page-controller") : null;
   const leadModal = leadController ? add("@/components/leads/add-lead-modal") : null;
   const leadBoard = leadControls ? add("@/components/leads/lead-pipeline-board") : null;
@@ -331,10 +339,10 @@ window.fixture.renderRecordsLoading = (props) => {
     leadHook === null
       ? ""
       : leadControls
-        ? `function LeadControllerFixture(){const store=useStore();const c=require(${leadHook}).useLeadsPageController({addLead:store.addLead,updateLead:store.updateLead,convertLeadToStudent:store.convertLeadToStudent,followUpLead:store.followUpLead,leadOperations:store.leadOperations,identityGeneration:store.identityGeneration,identityReady:store.identityReady,baseLeads:store.leads,currentRole:store.currentRole,isPreviewMode:store.isPreviewMode,programs:store.programs,today:store.businessDate,token:store.token});window.fixture.leadController=c;const selected=c.model.selectedLead;return React.createElement(React.Fragment,null,
+        ? `function LeadControllerFixture(){const store=useStore();const c=require(${leadHook}).useLeadsPageController({addLead:store.addLead,leadCreate:store.leadCreate,checkLeadCreateResult:store.checkLeadCreateResult,updateLead:store.updateLead,convertLeadToStudent:store.convertLeadToStudent,followUpLead:store.followUpLead,leadOperations:store.leadOperations,identityGeneration:store.identityGeneration,identityReady:store.identityReady,baseLeads:store.leads,currentRole:store.currentRole,isPreviewMode:store.isPreviewMode,programs:store.programs,today:store.businessDate,token:store.token});window.fixture.leadController=c;const selected=c.model.selectedLead;return React.createElement(React.Fragment,null,
 React.createElement(require(${leadBoard}).LeadPipelineBoard,{canManageLeads:c.canManageLeads,canConvertLeads:c.canConvertLeads,leads:c.model.obligationLedgerLeads,pendingLeadIds:c.pendingLeadIds,recoveringLeadIds:c.recoveringLeadIds,selectedLeadId:selected?.id??null,programById:new Map(),staffById:new Map(),today:store.businessDate,onAddLead:c.openAddLeadModal,onKeyboardMoveLead:c.handleKeyboardMoveLead,onSelectLead:c.selectLead}),
 selected?React.createElement(require(${leadInspector}).LeadDetailInspector,{lead:selected,activities:c.selectedLeadActivities,activityError:c.selectedLeadActivityError,activityStatus:c.selectedLeadActivityStatus,activeStaff:[],currentAssignedStaff:null,canManageLeads:c.canManageLeads,canConvertLeads:c.canConvertLeads,followUpValue:c.getFollowUpInputValue(selected),leadActionError:c.leadActionError,leadActionMessage:c.actionMessage,pendingLeadIds:c.pendingLeadIds,followUpRecovery:c.followUpRecoveries?.get(selected.id)??null,onRetryFollowUp:c.handleRetryFollowUp,programById:new Map(),today:store.businessDate,onAssignStaff:c.handleAssignedStaff,onClose:c.clearSelectedLead,onConvertLead:c.handleConvertLead,onDismissError:c.dismissLeadActionError,onDismissMessage:c.dismissActionMessage,onFollowUpValueChange:c.setFollowUpInputValue,onMarkContacted:c.handleMarkContacted,onMarkLost:c.handleMarkLost,onRetryActivities:c.retrySelectedLeadActivities,onRescheduleLead:c.handleRescheduleLead,onStageSelection:c.handleStageSelection}):null);}`
-        : `function LeadControllerFixture(){const store=useStore();const c=require(${leadHook}).useLeadsPageController({addLead:store.addLead,updateLead:store.updateLead,convertLeadToStudent:store.convertLeadToStudent,followUpLead:store.followUpLead,leadOperations:store.leadOperations,identityGeneration:store.identityGeneration,identityReady:store.identityReady,baseLeads:store.leads,currentRole:store.currentRole,isPreviewMode:store.isPreviewMode,programs:store.programs,today:store.businessDate,token:store.token});window.fixture.leadController=c;return React.createElement(React.Fragment,null,React.createElement('button',{onClick:c.openAddLeadModal},'New lead'),c.showAddLead?React.createElement(require(${leadModal}).AddLeadModal,{activePrograms:store.programs,activeStaff:[],programById:new Map(),selectedProgramId:c.addLeadProgramId,today:store.businessDate,addLeadError:c.addLeadError,isAddingLead:c.isAddingLead,isOutcomeUnknown:c.addLeadOutcomeUnknown,onClose:c.closeAddLeadModal,onDismissError:c.dismissAddLeadError,onProgramChange:c.setAddLeadProgramId,onSubmit:c.handleAddLead}):null);}`;
+        : `function LeadControllerFixture(){const store=useStore();const c=require(${leadHook}).useLeadsPageController({addLead:store.addLead,leadCreate:store.leadCreate,checkLeadCreateResult:store.checkLeadCreateResult,updateLead:store.updateLead,convertLeadToStudent:store.convertLeadToStudent,followUpLead:store.followUpLead,leadOperations:store.leadOperations,identityGeneration:store.identityGeneration,identityReady:store.identityReady,baseLeads:store.leads,currentRole:store.currentRole,isPreviewMode:store.isPreviewMode,programs:store.programs,today:store.businessDate,token:store.token});window.fixture.leadController=c;return React.createElement(React.Fragment,null,React.createElement('button',{onClick:c.openAddLeadModal},'New lead'),c.showAddLead?React.createElement(require(${leadModal}).AddLeadModal,{activePrograms:store.programs,activeStaff:[],programById:new Map(),selectedProgramId:c.addLeadProgramId,today:store.businessDate,addLeadError:c.addLeadError,isAddingLead:c.isAddingLead,createLocked:c.addLeadLocked,createMessage:c.leadCreateMessage,canCheckResult:c.canCheckLeadCreate,isCheckingResult:c.isCheckingLead,onCheckResult:c.handleCheckLeadCreateResult,onClose:c.closeAddLeadModal,onDismissError:c.dismissAddLeadError,onProgramChange:c.setAddLeadProgramId,onSubmit:c.handleAddLead}):null);}`;
   const form = studentForm ? add("@/components/students/student-form") : null;
   const formObserver =
     form === null

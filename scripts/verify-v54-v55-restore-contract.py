@@ -56,7 +56,7 @@ def main(arguments):
         "V29_OPERATIONAL_MANIFEST_SQL", "EXPECTED_V54_OPERATIONAL_MANIFEST_V10",
         "V30_OPERATIONAL_MANIFEST_SQL", "EXPECTED_V54_OPERATIONAL_MANIFEST_V11",
         "V54_STUDENT_PROFILE_STATE_SQL", "EXPECTED_V54_STUDENT_PROFILE_STATE",
-        "FINAL_OPERATIONAL_READINESS_SQL", "EXPECTED_OPERATIONAL_READINESS",
+        "V55_OPERATIONAL_READINESS_SQL", "EXPECTED_V55_OPERATIONAL_READINESS",
         "V55_CATALOG_STATE_SQL", "EXPECTED_V55_CATALOG_STATE", "EXPECTED_V55_RESTORED_CATALOG_STATE",
         "V55_RELEASE_MANIFEST_SQL", "EXPECTED_V55_RELEASE_MANIFEST",
         "V31_EXPECTATION_STATE_SQL", "EXPECTED_V55_EXPECTATION_STATE",
@@ -142,8 +142,10 @@ def main(arguments):
     predecessor("postgres")
     hashes = {p.name: hashlib.sha256(p.read_bytes()).hexdigest()
               for p in sorted((root / "supabase/migrations").glob("*.sql"))}
-    require(len(hashes) == 150 and list(hashes)[-2:] == [
-        "20260930024404_student_profile_qa_v54.sql", MIGRATION], "Unexpected migration inventory")
+    require(len(hashes) == 152 and list(hashes)[-4:] == [
+        "20260930024404_student_profile_qa_v54.sql", MIGRATION,
+        "20261004220435_missed_class_automation_v56.sql",
+        "20261005105341_automation_workflow_graph_v57.sql"], "Unexpected migration inventory")
     migration = root / "supabase/migrations" / MIGRATION
     mapping_bytes = PAIR_PATH.read_bytes()
     pairs = json.loads(mapping_bytes)
@@ -197,7 +199,7 @@ def main(arguments):
                        f"--command=INSERT INTO supabase_migrations.schema_migrations(version,name) VALUES('{version}','{name}');"])
             require(snapshot(database) == before, "Migration changed retained rows before continuation")
             checks = [
-                ("FINAL_OPERATIONAL_READINESS_SQL", "EXPECTED_OPERATIONAL_READINESS"),
+                ("V55_OPERATIONAL_READINESS_SQL", "EXPECTED_V55_OPERATIONAL_READINESS"),
                 ("V55_CATALOG_STATE_SQL", "EXPECTED_V55_RESTORED_CATALOG_STATE" if is_restored else "EXPECTED_V55_CATALOG_STATE"),
                 ("V55_RELEASE_MANIFEST_SQL", "EXPECTED_V55_RELEASE_MANIFEST"),
                 ("V31_EXPECTATION_STATE_SQL", "EXPECTED_V55_EXPECTATION_STATE"),

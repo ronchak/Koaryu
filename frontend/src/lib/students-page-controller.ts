@@ -789,7 +789,9 @@ export function useStudentsPageController({
     programsLoadError,
     programsLoaded,
     scheduleLoadError: inactivityScheduleError,
-    scheduleRequired: Boolean(inactivityThreshold && usesDerivedRosterFilters),
+    scheduleRequired: Boolean(
+      inactivityThreshold && usesDerivedRosterFilters && !config.isPreviewMode,
+    ),
     scheduleStatus: inactivityScheduleStatus,
     isDerivedRosterRefreshing,
     isPagedLoading,
