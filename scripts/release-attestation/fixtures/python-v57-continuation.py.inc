@@ -1,3 +1,5 @@
+            require(local.sql(database, HOSTED_LEGACY_GRANTS_SQL) == "0",
+                    "V57 must converge hosted legacy trigger-function grants to the canonical ACL")
             for timezone, datestyle, intervalstyle in (("UTC", "ISO, YMD", "postgres"),
                                                       ("America/Los_Angeles", "SQL, DMY", "sql_standard")):
                 guc_rows = local.sql(database, "BEGIN; SET LOCAL TimeZone='" + timezone + "'; SET LOCAL DateStyle='" + datestyle + "'; SET LOCAL IntervalStyle='" + intervalstyle + "'; "

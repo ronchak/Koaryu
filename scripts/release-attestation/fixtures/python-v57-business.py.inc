@@ -4,6 +4,30 @@ TABLES = ("auth.users", "public.studios", "public.staff_roles", "public.programs
           "public.studio_subscriptions", "public.class_sessions", "public.attendance",
           "public.automation_rules", "public.automation_deliveries", "public.automation_suppressions",
           "private.automation_email_credentials")
+# Hosted projects provisioned with Supabase's legacy default function privileges
+# retain service_role EXECUTE on these trigger functions; V57 must converge them.
+HOSTED_LEGACY_TRIGGER_FUNCTIONS = tuple(f"public.{name}()" for name in (
+    "update_updated_at_column",
+    "validate_attendance_program_integrity",
+    "validate_billing_adjustment_refs",
+    "validate_billing_dispute_refs",
+    "validate_billing_invoice_item_refs",
+    "validate_billing_invoice_refs",
+    "validate_billing_payer_guardian",
+    "validate_billing_payment_refs",
+    "validate_billing_plan_program",
+    "validate_billing_refund_refs",
+    "validate_billing_subscription_refs",
+    "validate_class_session_program_integrity",
+    "validate_class_template_program_integrity",
+    "validate_lead_program_integrity",
+    "validate_student_billing_enrollment",
+    "validate_student_guardian_tenant_integrity",
+    "validate_student_profile_tenant_integrity",
+))
+HOSTED_LEGACY_GRANTS_SQL = ("SELECT count(*) FROM unnest(ARRAY[" + ",".join(
+    f"'{signature}'" for signature in HOSTED_LEGACY_TRIGGER_FUNCTIONS)
+    + "]) s(signature) WHERE has_function_privilege('service_role', s.signature, 'EXECUTE');")
 SEED_SQL = """
 BEGIN;
 SET LOCAL TIME ZONE 'UTC';
@@ -48,6 +72,7 @@ BEGIN
     PERFORM public.save_automation_email_credential_v1('microsoft_graph:primary',0,'opaque-retained-v56-ciphertext');
 END;
 $seed$;
+""" + "GRANT EXECUTE ON FUNCTION " + ",".join(HOSTED_LEGACY_TRIGGER_FUNCTIONS) + """ TO service_role;
 SELECT 'seeded';
 COMMIT;
 """
