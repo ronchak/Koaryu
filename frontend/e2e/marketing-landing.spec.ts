@@ -344,19 +344,27 @@ test("on phones the masthead steps aside while reading down and returns on scrol
   await expect(journey).toHaveAttribute("data-masthead-hidden", "false");
 
   // Reading down the native page lets it step aside; any scroll up brings it back.
-  await openLanding(page, "#pricing");
-  await page.mouse.move(195, 400);
-  for (let step = 0; step < 3; step += 1) {
-    await page.mouse.wheel(0, 200);
-    await page.waitForTimeout(250);
-  }
+  // A fresh load lands there directly instead of travelling the story from the last stop.
+  await page.goto("about:blank");
+  await openLanding(page, "#try");
+  await settle(page);
+  await expect(journey).toHaveAttribute("data-zone", "page");
+  const top = await page.evaluate(() => window.scrollY);
+  await page.evaluate(() => window.scrollBy(0, 400));
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(top);
   await expect(journey).toHaveAttribute("data-masthead-hidden", "true");
-  await page.mouse.wheel(0, -120);
+  await settle(page);
+  await page.evaluate(() => window.scrollBy(0, -120));
   await expect(journey).toHaveAttribute("data-masthead-hidden", "false");
   await expect(page.locator("[data-header-action]")).toBeInViewport();
 
   // The desktop masthead always stays.
   await page.setViewportSize({ width: 1280, height: 800 });
-  for (let step = 0; step < 3; step += 1) await page.mouse.wheel(0, 200);
+  await page.goto("about:blank");
+  await openLanding(page, "#pricing");
+  await settle(page);
+  const desktopTop = await page.evaluate(() => window.scrollY);
+  await page.evaluate(() => window.scrollBy(0, 400));
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(desktopTop);
   await expect(journey).toHaveAttribute("data-masthead-hidden", "false");
 });
