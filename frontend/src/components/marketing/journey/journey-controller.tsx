@@ -701,8 +701,10 @@ export function JourneyController({ children }: JourneyControllerProps) {
       if (index === -1 && !element) return false;
       if (history !== "none") {
         const url = `${window.location.pathname}${window.location.search}${resolved === "welcome" ? "" : `#${resolved}`}`;
-        if (history === "push") window.history.pushState(null, "", url);
-        else window.history.replaceState(window.history.state, "", url);
+        const current = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+        // Following a link to where the reader already is only travels; Back still leaves.
+        if (history === "push" && url !== current) window.history.pushState(null, "", url);
+        else if (history === "replace") window.history.replaceState(window.history.state, "", url);
       }
       if (index !== -1) {
         goIndex(index);
@@ -1073,10 +1075,9 @@ export function JourneyController({ children }: JourneyControllerProps) {
       return;
     }
     const id = decodeURIComponent(destination.hash.slice(1));
-    if (engineRef.current?.go(id, "push")) {
-      event.preventDefault();
-      event.stopPropagation();
-    }
+    // preventDefault alone stops next/link; the click still bubbles so the
+    // mobile menu can close itself behind the travel.
+    if (engineRef.current?.go(id, "push")) event.preventDefault();
   }, []);
 
   const activeStop = RAIL_STOPS[active] ?? RAIL_STOPS[0]!;

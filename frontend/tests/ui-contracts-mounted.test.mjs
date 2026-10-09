@@ -304,6 +304,13 @@ test("Legal layout slides the document switch to the chosen document", async () 
       window.fixturePathname = "/privacy";
       window.renderLegal();
     });
+    // createRoot().render commits asynchronously; wait for the route change to land.
+    await page.waitForFunction(
+      () =>
+        document
+          .querySelector('nav[aria-label="Legal documents"] [aria-current="page"]')
+          ?.getAttribute("href") === "/privacy",
+    );
     assert.deepEqual(await state(), { index: "1", current: "/privacy", selected: "/privacy" });
 
     // A modified click opens a new tab and leaves the switch alone.
