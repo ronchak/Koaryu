@@ -62,47 +62,60 @@ export function StudentForm(props: StudentFormProps) {
   return (
     <ModalFrame
       rootClassName="p-4"
-      panelClassName="w-full max-w-[560px] bg-surface rounded-[18px] shadow-[var(--product-shadow-lifted)]"
+      panelClassName="w-full max-w-[600px] overflow-hidden rounded-[18px] border border-[var(--product-rule-soft,var(--border))] bg-[var(--product-lifted,var(--surface))] shadow-[var(--product-shadow-lifted)]"
       ariaLabelledBy="student-form-title"
       onBackdropClick={isLocked ? undefined : onClose}
     >
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-4 border-b border-border">
-        <h2 id="student-form-title" className="text-base font-semibold text-text-primary">
-          {isEdit ? "Edit student" : "Add student"}
-        </h2>
+      <div className="flex items-start justify-between gap-4 px-5 pt-5 pb-3">
+        <div className="min-w-0">
+          <h2
+            id="student-form-title"
+            className="text-xl font-extrabold tracking-[-0.03em] text-text-primary"
+          >
+            {isEdit ? "Edit student" : "Add student"}
+          </h2>
+          <p className="mt-1 text-[0.8125rem] text-text-secondary">
+            {isEdit
+              ? "Changes save to this student's record."
+              : "A name is enough to start; add contact and family details now or later."}
+          </p>
+        </div>
         <button
           type="button"
           aria-label={isEdit ? "Close edit student dialog" : "Close add student dialog"}
           onClick={handleClose}
           disabled={isLocked}
-          className="text-muted hover:text-text-secondary transition-colors cursor-pointer"
+          className="-mr-2 inline-flex h-10 w-10 flex-none items-center justify-center rounded-[10px] text-muted transition-colors hover:bg-[var(--hz-tile)] hover:text-text-primary cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
         >
           <X className="w-4 h-4" />
         </button>
       </div>
 
       {/* Tab nav */}
-      <div className="flex gap-1 border-b border-border p-1">
-        {studentFormTabs.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            onClick={() => setTab(t.id)}
-            disabled={isLocked}
-            className={`min-h-11 rounded-[10px] px-4 py-2.5 text-sm cursor-pointer transition-[color,background-color] duration-150 ${
-              tab === t.id
-                ? "bg-surface-raised text-text-primary"
-                : "text-muted hover:bg-surface-raised/60 hover:text-text-secondary"
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
+      <div className="border-b border-[var(--product-rule-soft,var(--border))] px-5 pb-4">
+        <div className="inline-flex max-w-full gap-1 overflow-x-auto rounded-[12px] bg-[var(--hz-tile,var(--surface-raised))] p-1">
+          {studentFormTabs.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => setTab(t.id)}
+              disabled={isLocked}
+              aria-pressed={tab === t.id}
+              className={`min-h-10 whitespace-nowrap rounded-[9px] px-4 py-2 text-sm font-semibold cursor-pointer transition-[color,background-color,box-shadow] duration-150 ${
+                tab === t.id
+                  ? "bg-surface text-text-primary shadow-[0_2px_8px_rgb(45_34_18/10%)]"
+                  : "text-text-secondary hover:text-text-primary"
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       <form onSubmit={handleSubmit}>
-        <fieldset disabled={isLocked} className="px-4 py-4 space-y-4 max-h-[60vh] overflow-y-auto">
+        <fieldset disabled={isLocked} className="px-5 py-5 space-y-4 max-h-[62vh] overflow-y-auto">
           {/* ---- Basic Info Tab ---- */}
           {tab === "info" && (
             <>
@@ -147,8 +160,8 @@ export function StudentForm(props: StudentFormProps) {
                 ) : null}
               </div>
               {canManageLifecycle ? (
-                <div className="rounded-[14px] border border-border bg-surface-raised/50 p-4">
-                  <p className="text-xs font-medium text-text-secondary mb-3">Hold / Vacation</p>
+                <div className="rounded-[12px] bg-[var(--hz-tile,var(--surface-raised))] p-4">
+                  <p className="text-sm font-semibold text-text-primary mb-3">Hold or vacation</p>
                   <div className="grid grid-cols-2 gap-3">
                     <Input
                       label="Hold start"
@@ -163,7 +176,7 @@ export function StudentForm(props: StudentFormProps) {
                       onChange={(e) => setField("holdEnd", e.target.value)}
                     />
                   </div>
-                  <p className="mt-2 text-xs text-muted">
+                  <p className="mt-2 text-[0.8125rem] text-text-secondary">
                     Students on an active hold are excluded from inactivity alerts until the hold
                     ends.
                   </p>
@@ -173,7 +186,7 @@ export function StudentForm(props: StudentFormProps) {
                 <div className="flex flex-col gap-1.5">
                   <label
                     htmlFor={statusSelectId}
-                    className="text-sm text-text-secondary font-medium"
+                    className="text-sm text-text-primary font-semibold"
                   >
                     Status
                   </label>
@@ -181,12 +194,12 @@ export function StudentForm(props: StudentFormProps) {
                     id={statusSelectId}
                     value={fields.status}
                     onChange={(e) => setField("status", e.target.value as typeof fields.status)}
-                    className="w-full px-3 py-2 text-sm bg-surface-raised border border-border rounded-[14px] text-text-primary focus:border-accent focus:outline-none"
+                    className="w-full min-h-10 px-3 py-2 text-sm bg-surface border border-[var(--product-rule,var(--border))] rounded-[10px] text-text-primary placeholder:text-muted focus:border-accent focus:outline-none focus:ring-2 focus:ring-[var(--hz-warn-wash)]"
                   >
                     <option value="active">Active</option>
-                    <option value="trialing">Trialing</option>
+                    <option value="trialing">Trial</option>
+                    <option value="paused">On hold</option>
                     <option value="inactive">Inactive</option>
-                    <option value="paused">Paused</option>
                     <option value="canceled">Canceled</option>
                   </select>
                 </div>
@@ -209,7 +222,7 @@ export function StudentForm(props: StudentFormProps) {
                 hint="Separate multiple tags with commas"
               />
               <div className="flex flex-col gap-1.5">
-                <label htmlFor={notesId} className="text-sm text-text-secondary font-medium">
+                <label htmlFor={notesId} className="text-sm text-text-primary font-semibold">
                   Notes
                 </label>
                 <textarea
@@ -218,7 +231,7 @@ export function StudentForm(props: StudentFormProps) {
                   onChange={(e) => setField("notes", e.target.value)}
                   placeholder="Any additional notes about this student..."
                   rows={3}
-                  className="w-full px-3 py-2 text-sm bg-surface-raised border border-border rounded-[14px] text-text-primary placeholder:text-muted focus:border-accent focus:outline-none resize-none"
+                  className="w-full min-h-10 px-3 py-2 text-sm bg-surface border border-[var(--product-rule,var(--border))] rounded-[10px] text-text-primary placeholder:text-muted focus:border-accent focus:outline-none focus:ring-2 focus:ring-[var(--hz-warn-wash)] resize-none"
                 />
               </div>
             </>
@@ -269,8 +282,11 @@ export function StudentForm(props: StudentFormProps) {
                   placeholder="92101"
                 />
               </div>
-              <div className="pt-2">
-                <p className="text-xs font-medium text-text-secondary mb-3">Emergency Contact</p>
+              <div className="rounded-[12px] bg-[var(--hz-tile,var(--surface-raised))] p-4">
+                <p className="text-sm font-semibold text-text-primary">Emergency contact</p>
+                <p className="mt-0.5 mb-3 text-[0.8125rem] text-text-secondary">
+                  Who to call if something happens on the mat.
+                </p>
                 <div className="grid grid-cols-2 gap-3">
                   <Input
                     label="Name"
@@ -301,8 +317,8 @@ export function StudentForm(props: StudentFormProps) {
           {/* ---- Guardian Tab ---- */}
           {tab === "guardian" && (
             <>
-              <div className="p-3 bg-surface-raised rounded-[14px] border border-border mb-4">
-                <p className="text-xs text-text-secondary">
+              <div className="rounded-[12px] bg-[var(--hz-tile,var(--surface-raised))] px-4 py-3">
+                <p className="text-[0.8125rem] text-text-secondary">
                   {isEdit && getEditableGuardian(initialData)
                     ? "Edit this guardian's details. Changes also appear for other students linked to this guardian. Other guardian links are kept."
                     : "Add one parent or guardian for this student."}
@@ -349,25 +365,13 @@ export function StudentForm(props: StudentFormProps) {
         </fieldset>
 
         {/* Footer */}
-        <div className="px-4 py-4 border-t border-border flex items-center justify-between">
-          {error && <p className="text-xs text-danger">{error}</p>}
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--product-rule-soft,var(--border))] px-5 py-4">
+          {error && <p className="text-[0.8125rem] text-danger">{error}</p>}
           <div className={`flex gap-2 ${error ? "" : "ml-auto"}`}>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={handleClose}
-              disabled={isLocked}
-            >
+            <Button type="button" variant="ghost" onClick={handleClose} disabled={isLocked}>
               Cancel
             </Button>
-            <Button
-              type="submit"
-              variant="primary"
-              size="sm"
-              isLoading={isLocked}
-              disabled={outcomeUnknown}
-            >
+            <Button type="submit" variant="primary" isLoading={isLocked} disabled={outcomeUnknown}>
               {isEdit ? "Save changes" : "Add student"}
             </Button>
           </div>
