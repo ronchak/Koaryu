@@ -66,12 +66,9 @@ function describeOutlook(outlook: BeltTrackerOutlook | undefined) {
 function outlookStats(outlook: BeltTrackerOutlook | undefined): HorizonStat[] {
   if (!outlook || outlook.state === "unavailable") return [];
   if (outlook.state === "loading") {
-    return [
-      "Ready to promote",
-      "Awaiting approval",
-      "Working toward next belt",
-      "On this plan",
-    ].map((label) => ({ id: label, label, pending: true }));
+    return ["Ready to promote", "Awaiting approval", "Still in progress", "On this plan"].map(
+      (label) => ({ id: label, label, pending: true }),
+    );
   }
   const { approval, closest, progress, ready, total } = outlook.summary;
   return [
@@ -91,9 +88,15 @@ function outlookStats(outlook: BeltTrackerOutlook | undefined): HorizonStat[] {
     },
     {
       id: "progress",
-      label: "Working toward next belt",
+      label: "Still in progress",
       value: progress,
-      note: closest ? `Closest: ${closest.student_name}` : "Everyone is ready",
+      note: closest
+        ? `Closest: ${closest.student_name}`
+        : progress > 0
+          ? "At the top of the plan"
+          : total > 0
+            ? "Everyone is ready"
+            : "No students yet",
     },
     {
       id: "total",

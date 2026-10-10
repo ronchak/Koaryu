@@ -18,6 +18,7 @@ import type { ApiBeltTestEventResponse as Event } from "@/types/generated/api-co
 import type { BeltLadder, Program } from "@/types";
 import { BeltTestEventEditor } from "./belt-test-event-editor";
 import { BeltTestRecipients } from "./belt-test-recipients";
+import { BeltTestDateLeaf, BeltTestStatusTag, beltTestWhen } from "./belt-test-status";
 import styles from "./belt-tests.module.css";
 import timeStyles from "@/components/leads/leads-ledger.module.css";
 
@@ -461,15 +462,19 @@ function CurrentWorkspace({
           </div>
         ))}
       </section>
-      <div className={styles.actions}>
-        <button type="button" onClick={() => navigate({ kind: "draft", id: crypto.randomUUID() })}>
-          New belt test
-        </button>
+      <div className={styles.toolbar}>
         {session.target && (
-          <button type="button" onClick={() => navigate(null)}>
-            Event list
+          <button type="button" onClick={() => navigate(null)} data-variant="quiet">
+            <span aria-hidden="true">←</span> Event list
           </button>
         )}
+        <button
+          type="button"
+          onClick={() => navigate({ kind: "draft", id: crypto.randomUUID() })}
+          data-variant={session.target ? "secondary" : "primary"}
+        >
+          New belt test
+        </button>
       </div>
       {!session.target ? (
         <section
@@ -477,17 +482,30 @@ function CurrentWorkspace({
           aria-label="Belt-test events"
           aria-busy={listLoading || (!page && !listError)}
         >
-          <h2>Belt-test events</h2>
-          <button type="button" disabled={listLoading} onClick={() => void loadList(cursor)}>
-            Refresh events
-          </button>
+          <div className={styles.panelHead}>
+            <div>
+              <h2>Belt-test events</h2>
+              <p>Open an event to edit it, choose candidates and record approvals.</p>
+            </div>
+            <button
+              type="button"
+              disabled={listLoading}
+              onClick={() => void loadList(cursor)}
+              data-variant="quiet"
+            >
+              Refresh events
+            </button>
+          </div>
           {!page && !listError && (
             <div className="koaryu-skeleton-reveal" role="status" aria-label="Loading events">
               {[0, 1, 2].map((row) => (
-                <article key={row} className={styles.row} aria-hidden="true">
-                  <div className="h-6 w-48 rounded bg-surface-raised" />
-                  <div className="h-6 w-64 max-w-full rounded bg-surface-raised" />
-                  <div className="h-11 w-48 rounded bg-surface-raised" />
+                <article key={row} className={styles.eventRow} aria-hidden="true">
+                  <span className={styles.dateLeaf} />
+                  <div className={styles.eventText}>
+                    <span className={styles.placeholder} data-width="title" />
+                    <span className={styles.placeholder} data-width="meta" />
+                  </div>
+                  <span className={styles.placeholder} data-width="button" />
                 </article>
               ))}
             </div>
@@ -506,19 +524,33 @@ function CurrentWorkspace({
               Retry events
             </button>
           )}
-          {page?.items.length === 0 && <p>No events on this page.</p>}
+          {page?.items.length === 0 && (
+            <p className={styles.calm}>
+              No events on this page. Create a belt test to schedule the next promotion day.
+            </p>
+          )}
           {page?.items.map((row) => (
-            <article key={row.id} className={styles.row}>
-              <h3>{row.name}</h3>
-              <p>
-                {row.status} · {row.location || "No location"}
-              </p>
-              <button type="button" onClick={() => navigate({ kind: "event", id: row.id })}>
+            <article key={row.id} className={styles.eventRow} data-status={row.status}>
+              <BeltTestDateLeaf event={row} />
+              <div className={styles.eventText}>
+                <div className={styles.eventTitle}>
+                  <h3>{row.name}</h3>
+                  <BeltTestStatusTag status={row.status} />
+                </div>
+                <p>
+                  {beltTestWhen(row)} · {row.location || "No location"}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => navigate({ kind: "event", id: row.id })}
+                data-variant="secondary"
+              >
                 Open {row.name}
               </button>
             </article>
           ))}
-          <div className={styles.actions}>
+          <div className={styles.pager}>
             <button
               type="button"
               disabled={listLoading || cursor === undefined}
@@ -588,21 +620,25 @@ function CurrentWorkspace({
         >
           <h2>Discard unsaved changes?</h2>
           <p>Your local event fields and candidate selection will be discarded.</p>
-          <button
-            type="button"
-            onClick={() => {
-              setNavigation(null);
-              router.replace(urlOf(session.target));
-            }}
-          >
-            Keep editing
-          </button>
-          <button
-            type="button"
-            onClick={() => applyNavigation(navigation.target, navigation.reload)}
-          >
-            Discard changes
-          </button>
+          <div className={styles.dialogActions}>
+            <button
+              type="button"
+              onClick={() => {
+                setNavigation(null);
+                router.replace(urlOf(session.target));
+              }}
+              data-variant="secondary"
+            >
+              Keep editing
+            </button>
+            <button
+              type="button"
+              onClick={() => applyNavigation(navigation.target, navigation.reload)}
+              data-variant="danger"
+            >
+              Discard changes
+            </button>
+          </div>
         </ModalFrame>
       )}
     </div>

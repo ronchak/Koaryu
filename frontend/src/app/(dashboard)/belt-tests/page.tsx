@@ -1,8 +1,10 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Header } from "@/components/header";
+import { HorizonPage } from "@/components/ui/horizon";
 import { BeltTestWorkspace } from "@/components/belt-tests/belt-test-workspace";
 import { isBeltTestTarget } from "@/lib/belt-test-contract";
-import styles from "@/components/belt-tracker/belt-tracker.module.css";
+import styles from "@/components/belt-tests/belt-tests.module.css";
 
 export default async function BeltTestsPage({
   searchParams,
@@ -24,9 +26,19 @@ export default async function BeltTestsPage({
   const requestedTarget =
     target && isBeltTestTarget(target) ? { ...target, id: target.id.toLowerCase() } : null;
   return (
-    <div className={`flex min-h-full flex-col ${styles.beltPage}`}>
-      <Header title="Belt tests" />
-      <BeltTestWorkspace requestedTarget={requestedTarget} />
+    <div className={styles.page}>
+      <Header
+        eyebrow="Belt Tracker"
+        title="Belt tests"
+        description="Schedule a test, approve the students who are ready for it, and keep the record."
+      >
+        <Link href="/belt-tracker" className={styles.headerLink}>
+          Open Belt Tracker
+        </Link>
+      </Header>
+      <HorizonPage>
+        <BeltTestWorkspace requestedTarget={requestedTarget} />
+      </HorizonPage>
     </div>
   );
 }
