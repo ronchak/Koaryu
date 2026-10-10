@@ -3572,3 +3572,59 @@ test("follow-up recovery row publication stays independent of confirmed writes t
     await browser.close();
   }
 });
+
+test("retained student details stay visible but cannot edit until the revisit verifies current data", async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await fixturePage(browser, { detailController: true, layout: true });
+    await mountOwnedStudentDetail(page);
+    await page.evaluate(() => fixture.unmountDetail());
+    await flush(page);
+    await page.evaluate(() => fixture.mountDetail());
+    await page.waitForFunction(() => fixture.details.length === 2);
+    assert.equal(await page.evaluate(() => fixture.detail.student.legal_first_name), "Ari");
+    assert.equal(await page.evaluate(() => fixture.detail.recordComplete), true);
+    assert.equal(await page.evaluate(() => fixture.detail.detailReady), false);
+    await page.evaluate(() => fixture.detail.onShowEdit());
+    assert.equal(await page.evaluate(() => fixture.detail.showEdit), false);
+    await page.evaluate(() =>
+      fixture.details[1].resolve({ ...fixture.student, legal_first_name: "Current" }),
+    );
+    await page.waitForFunction(() => fixture.detail.detailReady);
+    assert.equal(await page.evaluate(() => fixture.detail.student.legal_first_name), "Current");
+    await page.evaluate(() => fixture.detail.onShowEdit());
+    assert.equal(await page.evaluate(() => fixture.detail.showEdit), true);
+  } finally {
+    await browser.close();
+  }
+});
+
+for (const status of [403, 404, 503])
+  test(`retained student revisit failure ${status} blocks mutations`, async () => {
+    const browser = await chromium.launch();
+    try {
+      const page = await fixturePage(browser, { detailController: true, layout: true });
+      await mountOwnedStudentDetail(page);
+      await page.evaluate(() => fixture.unmountDetail());
+      await flush(page);
+      await page.evaluate(() => fixture.mountDetail());
+      await page.waitForFunction(() => fixture.details.length === 2);
+      await page.evaluate(
+        (status) => fixture.details[1].reject(new fixture.ApiError("Student unavailable", status)),
+        status,
+      );
+      await page.waitForFunction(() => fixture.detail.loadError === "Student unavailable");
+      assert.equal(await page.evaluate(() => fixture.detail.detailReady), false);
+      assert.equal(await page.evaluate(() => Boolean(fixture.detail.student)), status === 503);
+      await page.evaluate(() => {
+        fixture.detail.onShowEdit();
+        fixture.detail.onShowDeleteConfirm();
+      });
+      assert.equal(
+        await page.evaluate(() => fixture.detail.showEdit || fixture.detail.showDeleteConfirm),
+        false,
+      );
+    } finally {
+      await browser.close();
+    }
+  });

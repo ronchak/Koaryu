@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ModalFrame } from "@/components/ui/modal-frame";
 import {
@@ -11,6 +11,7 @@ import {
   useStudioStore,
 } from "@/lib/store";
 import { ApiError } from "@/lib/api";
+import { useRetainedState, useRetainedStore } from "@/lib/retained-state";
 import { beltTestTargetKey, type BeltTestTarget } from "@/lib/belt-test-contract";
 import type { BeltTestEventPage, BeltTestView } from "@/lib/belt-test-operation";
 import type { ApiBeltTestEventResponse as Event } from "@/types/generated/api-contracts";
@@ -18,6 +19,7 @@ import type { BeltLadder, Program } from "@/types";
 import { BeltTestEventEditor } from "./belt-test-event-editor";
 import { BeltTestRecipients } from "./belt-test-recipients";
 import styles from "./belt-tests.module.css";
+import timeStyles from "@/components/leads/leads-ledger.module.css";
 
 export type BeltTestReferences = Readonly<{
   status: "loading" | "ready" | "unavailable";
@@ -78,21 +80,44 @@ function CurrentWorkspace({
     { students } = useStudentStore();
   const { refreshPrograms } = programs;
   const { studioTimezone: timezone, isPreviewMode: preview } = useConfigStore();
-  const [session, setSession] = useState<Session>({
+  const retained = useRetainedStore();
+  const eventKey = useCallback(
+    (id: string) => `belt-tests:event:${preview ? "preview" : "live"}:${id.toLowerCase()}`,
+    [preview],
+  );
+  const [session, setSession] = useState<Session>(() => ({
     target: requestedTarget,
-    event: null,
+    event:
+      requestedTarget?.kind === "event"
+        ? (retained?.get<Readonly<Event>>(eventKey(requestedTarget.id)) ?? null)
+        : null,
     serial: 0,
     loading: requestedTarget?.kind === "event",
     error: null,
-  });
+  }));
   const sessionRef = useRef(session),
     alive = useRef(true),
     detailRequest = useRef(0),
     listRequest = useRef(0),
     referenceRequest = useRef(0);
-  const [page, setPage] = useState<BeltTestEventPage | null>(null);
-  const [cursor, setCursor] = useState<string | undefined>(),
-    [failedCursor, setFailedCursor] = useState<string | undefined>();
+  const [cursor, setCursor] = useRetainedState<string | undefined>(
+    `belt-tests:events:cursor:${preview ? "preview" : "live"}`,
+    undefined,
+  );
+  const listKey = useCallback(
+    (next?: string) =>
+      `belt-tests:events:${preview ? "preview" : "live"}:${JSON.stringify({ limit: 50, cursor: next ?? null })}`,
+    [preview],
+  );
+  const [page, setPage] = useRetainedState<BeltTestEventPage | null>(
+    retained ? listKey(cursor) : null,
+    null,
+  );
+  const cursorRef = useRef(cursor);
+  useLayoutEffect(() => {
+    cursorRef.current = cursor;
+  }, [cursor]);
+  const [failedCursor, setFailedCursor] = useState<string | undefined>();
   const [listLoading, setListLoading] = useState(false),
     [listError, setListError] = useState(false);
   const [referenceState, setReferenceState] = useState<{
@@ -124,10 +149,17 @@ function CurrentWorkspace({
     };
   }, []);
   const isCurrent = useCallback(() => alive.current && scopeCurrent(), [scopeCurrent]);
-  const install = useCallback((next: Session) => {
-    sessionRef.current = next;
-    setSession(next);
-  }, []);
+  const install = useCallback(
+    (next: Session) => {
+      if (next.target?.kind === "event") {
+        if (next.event) retained?.set(eventKey(next.target.id), next.event);
+        else retained?.delete(eventKey(next.target.id));
+      }
+      sessionRef.current = next;
+      setSession(next);
+    },
+    [eventKey, retained],
+  );
   const { listEvents, getEvent } = facade;
   const loadList = useCallback(
     async (next?: string) => {
@@ -147,7 +179,8 @@ function CurrentWorkspace({
           !result.isCurrent()
         )
           return;
-        setPage(result.value);
+        retained?.set(listKey(next), result.value);
+        if (!retained || cursorRef.current === next) setPage(result.value);
         setCursor(next);
       } catch {
         if (isCurrent() && request === listRequest.current) {
@@ -158,7 +191,7 @@ function CurrentWorkspace({
         if (isCurrent() && request === listRequest.current) setListLoading(false);
       }
     },
-    [isCurrent, listEvents],
+    [isCurrent, listEvents, listKey, retained, setCursor, setPage],
   );
   const loadDetail = useCallback(
     async (target: BeltTestTarget, serial: number, replacing = false) => {
@@ -231,7 +264,7 @@ function CurrentWorkspace({
   }, [isCurrent, preview, refreshBeltLadders, refreshPrograms]);
   useEffect(() => {
     queueMicrotask(() => {
-      void loadList();
+      void loadList(cursorRef.current);
       refreshReferences();
     });
   }, [loadList, refreshReferences]);
@@ -250,13 +283,17 @@ function CurrentWorkspace({
       }
       detailRequest.current++;
       const serial = sessionRef.current.serial + 1;
-      install({ target, event: null, serial, loading: target?.kind === "event", error: null });
+      const event =
+        target?.kind === "event"
+          ? (retained?.get<Readonly<Event>>(eventKey(target.id)) ?? null)
+          : null;
+      install({ target, event, serial, loading: target?.kind === "event", error: null });
       setFormDirty(false);
       setSelectionDirty(false);
       router.push(urlOf(target));
       if (target?.kind === "event") void loadDetail(target, serial);
     },
-    [install, isCurrent, loadDetail, router],
+    [eventKey, install, isCurrent, loadDetail, retained, router],
   );
   const navigate = useCallback(
     (target: BeltTestTarget | null, reload = false) => {
@@ -289,6 +326,26 @@ function CurrentWorkspace({
       )
         continue;
       seenOperations.current.add(view);
+      const cached = view.eventId ? retained?.get<Readonly<Event>>(eventKey(view.eventId)) : null;
+      if (view.currentEvent && cached && cached.revision > view.currentEvent.revision) continue;
+      if (view.eventId) {
+        if (view.currentEvent) retained?.set(eventKey(view.eventId), view.currentEvent);
+        else retained?.delete(eventKey(view.eventId));
+        setPage((previous) =>
+          previous
+            ? {
+                ...previous,
+                items: previous.items.flatMap((row) =>
+                  row.id !== view.eventId
+                    ? [row]
+                    : view.currentEvent
+                      ? [row.revision > view.currentEvent.revision ? row : view.currentEvent]
+                      : [],
+                ),
+              }
+            : previous,
+        );
+      }
       const active = sessionRef.current;
       if (active.target?.kind !== "event" || active.target.id !== view.eventId) continue;
       detailRequest.current++;
@@ -299,7 +356,7 @@ function CurrentWorkspace({
         error: view.currentEvent ? null : "This event is unavailable.",
       });
     }
-  }, [facade.operations, install, isCurrent]);
+  }, [eventKey, facade.operations, install, isCurrent, retained, setPage]);
   const references: BeltTestReferences = {
     status: preview
       ? "ready"
@@ -415,12 +472,26 @@ function CurrentWorkspace({
         )}
       </div>
       {!session.target ? (
-        <section className={styles.panel} aria-label="Belt-test events">
+        <section
+          className={styles.panel}
+          aria-label="Belt-test events"
+          aria-busy={listLoading || (!page && !listError)}
+        >
           <h2>Belt-test events</h2>
           <button type="button" disabled={listLoading} onClick={() => void loadList(cursor)}>
             Refresh events
           </button>
-          {listLoading && <p role="status">Loading events.</p>}
+          {!page && !listError && (
+            <div className="koaryu-skeleton-reveal" role="status" aria-label="Loading events">
+              {[0, 1, 2].map((row) => (
+                <article key={row} className={styles.row} aria-hidden="true">
+                  <div className="h-6 w-48 rounded bg-surface-raised" />
+                  <div className="h-6 w-64 max-w-full rounded bg-surface-raised" />
+                  <div className="h-11 w-48 rounded bg-surface-raised" />
+                </article>
+              ))}
+            </div>
+          )}
           {listError && (
             <p role="alert">
               Events could not be refreshed. Previously loaded events remain below.
@@ -466,7 +537,7 @@ function CurrentWorkspace({
         </section>
       ) : (
         <>
-          {session.loading && <p role="status">Loading current event.</p>}
+          {session.loading && !session.event && !formDirty && <EventPlaceholder />}
           {session.error && <p role="alert">{session.error}</p>}
           {session.error && (
             <button type="button" onClick={() => navigate(session.target, true)}>
@@ -534,6 +605,55 @@ function CurrentWorkspace({
           </button>
         </ModalFrame>
       )}
+    </div>
+  );
+}
+
+function EventPlaceholder() {
+  const field = (name: string) => (
+    <div key={name} className="space-y-1.5">
+      <div className="h-6 w-28 rounded bg-surface-raised" />
+      <div className="h-11 rounded bg-surface-raised" />
+    </div>
+  );
+  return (
+    <div
+      className="koaryu-skeleton-reveal grid min-w-0 gap-5"
+      role="status"
+      aria-label="Loading current event"
+      aria-busy="true"
+    >
+      <section className={styles.panel} aria-hidden="true">
+        <div className="h-7 w-48 rounded bg-surface-raised" />
+        <div className="h-6 w-64 max-w-full rounded bg-surface-raised" />
+        {["Name", "Belt plan"].map(field)}
+        <div className="h-6 w-48 rounded bg-surface-raised" />
+        <div className={styles.timeFields}>
+          <fieldset className={timeStyles.trialFields}>
+            <legend>Appointment time</legend>
+            {["Start date", "Start time", "End date", "End time", "Timezone"].map(field)}
+            <div className={`${timeStyles.trialWide} h-12 rounded bg-surface-raised`} />
+          </fieldset>
+        </div>
+        {field("Location")}
+        <div className="h-6 w-3/4 rounded bg-surface-raised" />
+        <div className={styles.actions}>
+          <div className="h-11 w-36 rounded bg-surface-raised" />
+          <div className="h-11 w-36 rounded bg-surface-raised" />
+        </div>
+      </section>
+      <section className={styles.panel} aria-hidden="true">
+        <h2>Candidates and recorded approvals</h2>
+        <div className="h-11 w-48 rounded bg-surface-raised" />
+        {[0, 1, 2].map((row) => (
+          <article key={row} className={styles.row}>
+            <div className="h-6 w-48 rounded bg-surface-raised" />
+            <div className="h-6 w-2/3 rounded bg-surface-raised" />
+          </article>
+        ))}
+        <h3>Recipient history</h3>
+        <div className="h-16 rounded bg-surface-raised" />
+      </section>
     </div>
   );
 }

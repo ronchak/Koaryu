@@ -27,7 +27,15 @@ import styles from "./workflow-graph-editor.module.css";
 
 const WorkflowCanvas = dynamic(() => import("./workflow-canvas"), {
   ssr: false,
-  loading: () => <p role="status">Loading graph…</p>,
+  loading: () => (
+    <div
+      className={`${styles.canvas} koaryu-skeleton-reveal bg-surface-raised`}
+      role="status"
+      aria-label="Loading graph"
+    >
+      <span className="sr-only">Loading graph</span>
+    </div>
+  ),
 });
 
 export type WorkflowGraphEditorProps = {
@@ -64,6 +72,10 @@ const subscribeWidth = (listener: () => void) => {
 };
 const desktopWidth = () => window.matchMedia("(min-width: 768px)").matches;
 const serverWidth = () => false;
+
+export function useWorkflowDefaultView(): "graph" | "steps" {
+  return useSyncExternalStore(subscribeWidth, desktopWidth, serverWidth) ? "graph" : "steps";
+}
 
 function nodeSummary(
   node: WorkflowSnapshot["graph"]["nodes"][number],
@@ -340,9 +352,9 @@ export function WorkflowGraphEditor({
   issues,
   presentation,
 }: WorkflowGraphEditorProps) {
-  const wide = useSyncExternalStore(subscribeWidth, desktopWidth, serverWidth);
+  const defaultView = useWorkflowDefaultView();
   const [choice, setChoice] = useState<"graph" | "steps" | null>(null);
-  const view = choice ?? (wide ? "graph" : "steps");
+  const view = choice ?? defaultView;
   const [addKind, setAddKind] = useState<AddKind>("email");
   const [notice, setNotice] = useState<{ message: string; error: boolean } | null>(null);
   const undo = () => {

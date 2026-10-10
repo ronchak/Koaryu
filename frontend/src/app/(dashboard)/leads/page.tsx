@@ -239,15 +239,28 @@ export default function LeadsPage() {
         </div>
       )}
 
+      {leadsLoaded && leadsLoadError ? (
+        <div role="alert" className="px-4 pt-4 sm:px-6 lg:px-8">
+          <p className="text-sm text-danger">{leadsLoadError} Showing the last loaded leads.</p>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => void refreshLeads().catch(() => undefined)}
+          >
+            Retry lead roster
+          </Button>
+        </div>
+      ) : null}
+
       <div className="flex-1 flex flex-col overflow-x-hidden">
         <div className={styles.leadWorkbench} data-inspector-open={Boolean(selectedLead)}>
-          {leadsLoadError ? (
+          {leadsLoadError && !leadsLoaded ? (
             <LeadLedgerLoadError
               error={leadsLoadError}
               onRetry={() => void refreshLeads().catch(() => undefined)}
             />
           ) : !leadsLoaded ? (
-            <LeadLedgerLoading />
+            <LeadLedgerLoading canManageLeads={controller.canManageLeads} />
           ) : (
             <LeadPipelineBoard
               canConvertLeads={controller.canConvertLeads}

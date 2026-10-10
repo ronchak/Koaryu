@@ -3,6 +3,7 @@ import { useResumeRefresh } from "@/lib/use-resume-refresh";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { markDashboardReadiness } from "@/lib/performance";
+import { useRetainedState } from "@/lib/retained-state";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   type BillingSetupStep,
@@ -23,7 +24,6 @@ import {
   getBillingUrlAfterConnectReturn,
   resolveBillingAuxiliaryReadiness,
   shouldSettleBillingLoadEarly,
-  shouldShowBillingLoading,
 } from "@/lib/billing-page-state";
 import { requirementGroupItems } from "@/lib/billing-page-utils";
 import { useBillingInvoiceController } from "@/lib/billing-invoice-controller";
@@ -130,6 +130,7 @@ export function useBillingPageController({
   }, [markSubscriptionRequired, router]);
   const {
     billingSystemStatus,
+    verifiedBillingSystemStatus,
     landing,
     ensureBilling,
     hasMoreHistory,
@@ -137,6 +138,7 @@ export function useBillingPageController({
     loadMoreHistory,
     enrollments,
     hasBillingLoadSettled,
+    hasVisibleTabData,
     invoices,
     isLoading,
     payers,
@@ -162,7 +164,7 @@ export function useBillingPageController({
     token,
   });
   const enabledWorkflowIds = enabledBillingWorkflowIds(
-    billingSystemStatus,
+    verifiedBillingSystemStatus,
     currentRole,
     isPreviewMode,
   );
@@ -187,13 +189,11 @@ export function useBillingPageController({
     connectOnboarding: connectOnboardingEnabled,
     connectPayments: connectPaymentsEnabled,
   });
-  const showPrimaryBillingLoading = shouldShowBillingLoading({
-    isPreviewMode,
-    hasPaymentAccount: paymentAccount !== null,
-    isLoading,
-    hasBillingLoadSettled,
-    error,
-  });
+  const [viewReady, setViewReady] = useRetainedState(
+    billingIdentityKey ? `billing:${billingIdentityKey}:view-ready:${activeTab}` : null,
+    false,
+  );
+  const hasRetainedView = hasVisibleTabData && viewReady;
   const auxiliaryReadiness = resolveBillingAuxiliaryReadiness({
     activeTab,
     bypassForConnectReturn: connectReturnPending,
@@ -203,7 +203,13 @@ export function useBillingPageController({
     studentsLoaded,
     studentsMayBePartial,
   });
-  const showBillingLoading = showPrimaryBillingLoading || (!isPreviewMode && isLoading && activeTab !== "overview") || auxiliaryReadiness.status === "loading";
+  const showBillingLoading = !hasRetainedView && (
+    (!isPreviewMode && !hasBillingLoadSettled) ||
+    auxiliaryReadiness.status === "loading"
+  );
+  useEffect(() => {
+    if (!viewReady && hasVisibleTabData && auxiliaryReadiness.status === "ready") setViewReady(true);
+  }, [auxiliaryReadiness.status, hasVisibleTabData, setViewReady, viewReady]);
   const billingPlatform = isPreviewMode ? PREVIEW_PLATFORM : platformBilling;
   const billingConnect = isPreviewMode ? PREVIEW_CONNECT : paymentAccount;
   const billingPlans = isPreviewMode ? PREVIEW_PLANS : plans;
@@ -504,6 +510,7 @@ export function useBillingPageController({
       isLoadingMore,
       loadMoreHistory,
       billingSetupCompleteCount,
+      billingSetupReady: isPreviewMode || Boolean(landing?.aggregates),
       billingSetupSteps,
       billingProviderCopy,
       connectEntityModal,
@@ -517,7 +524,7 @@ export function useBillingPageController({
       onDismissMessage: () => setMessage(""),
       onRefresh: () => void refreshRequiredBillingDatasets(),
       showBillingContent:
-        auxiliaryReadiness.status === "ready" && !showBillingLoading,
+        hasRetainedView || (auxiliaryReadiness.status === "ready" && !showBillingLoading),
       showBillingLoading,
       tabContentProps: {
         actions: billingActions,

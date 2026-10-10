@@ -2,6 +2,8 @@
 
 import { IntentPrefetchLink as Link } from "@/components/intent-prefetch-link";
 import { markDashboardReadiness } from "@/lib/performance";
+import { useRetainedState } from "@/lib/retained-state";
+import { DashboardLoadingPanel } from "@/components/dashboard/dashboard-overview-sections";
 import {
   Fragment,
   useCallback,
@@ -415,7 +417,7 @@ function WidgetContent({
 }) {
   if (model.state === "loading" || model.state === "error" || model.state === "unavailable") {
     return (
-      <div className={styles.stateBody}>
+      <div className={`${styles.stateBody} ${model.state === "loading" ? "koaryu-skeleton-reveal" : ""}`}>
         <p className={styles.detail}>{model.detail}</p>
         {Array.from({ length: stateRuleCapacity }, (_, index) => (
           <span className={styles.stateRule} aria-hidden="true" key={index} />
@@ -642,8 +644,15 @@ export function DashboardHome({
   const identityScope = identity
     ? `${identity.userId}\u0000${identity.studioId}\u0000${identity.role}`
     : null;
-  const [layout, setLayout] = useState<DashboardLayout>(() => buildDefaultDashboardLayout(currentRole));
-  const [resolvedLayoutScope, setResolvedLayoutScope] = useState<string | null>(null);
+  const [retainedLayout, setRetainedLayout] = useRetainedState<DashboardLayout>(
+    identityScope ? `dashboard:layout:${identityScope}` : null,
+    () => buildDefaultDashboardLayout(currentRole),
+  );
+  const [layout, setLayout] = useState<DashboardLayout>(retainedLayout);
+  const [resolvedLayoutScope, setResolvedLayoutScope] = useRetainedState<string | null>(
+    identityScope ? `dashboard:layout-resolved:${identityScope}` : null,
+    null,
+  );
   const layoutResolved = identityReady && identityScope !== null && resolvedLayoutScope === identityScope;
   const [isCustomizing, setIsCustomizing] = useState(false);
   const [isLibraryOpen, setIsLibraryOpen] = useState(false);
@@ -678,6 +687,7 @@ export function DashboardHome({
       const nextLayout = readDashboardLayout(getBrowserDashboardLayoutStorage(), identity).layout;
       layoutRef.current = nextLayout;
       setLayout(nextLayout);
+      setRetainedLayout(nextLayout);
       setPersistenceError(null);
       setResolvedLayoutScope(identityScope);
       setIsCustomizing(false);
@@ -709,7 +719,7 @@ export function DashboardHome({
     return () => {
       active = false;
     };
-  }, [identity, identityReady, identityScope]);
+  }, [identity, identityReady, identityScope, setRetainedLayout, setResolvedLayoutScope]);
 
   useEffect(() => {
     if (layoutResolved) onVisibleWidgetsChange(layout.items.map((item) => item.widget_id));
@@ -802,13 +812,14 @@ export function DashboardHome({
       const result = writeDashboardLayout(getBrowserDashboardLayoutStorage(), identity, next);
       layoutRef.current = result.layout;
       setLayout(result.layout);
+      if (result.ok) setRetainedLayout(result.layout);
       setPersistenceError(result.ok ? null : "This browser could not save your arrangement. It will reset after you leave or reload this page.");
       return;
     }
     layoutRef.current = next;
     setLayout(next);
     setPersistenceError("Your studio role is still loading, so this arrangement cannot be saved yet.");
-  }, [identity]);
+  }, [identity, setRetainedLayout]);
 
   const updateLayoutInMemory = useCallback((next: DashboardLayout) => {
     layoutRef.current = next;
@@ -1687,13 +1698,7 @@ export function DashboardHome({
       ) : null}
 
       {!layoutResolved ? (
-        <section className={styles.layoutLoading} id="dashboard-layout-status" role="status" aria-live="polite">
-          <span className={styles.layoutLoadingMark} aria-hidden="true" />
-          <div>
-            <strong>Arranging this studio’s Home</strong>
-            <p>Loading the saved panel geometry for your current role.</p>
-          </div>
-        </section>
+        <DashboardLoadingPanel layout={layout} />
       ) : (
         <section
           className={`${styles.canvas} ${isCustomizing ? styles.customizing : ""}`}

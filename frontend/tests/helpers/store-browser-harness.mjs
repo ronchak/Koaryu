@@ -83,6 +83,7 @@ export function bundle(
   if (!["production", "development"].includes(mode) || typeof preview !== "boolean")
     throw new Error("Unsupported fixture environment");
   const stubs = {
+    "@/components/belt-tracker/belt-tracker.module.css": `module.exports={};`,
     ...(leadControls ? { "./leads-ledger.module.css": `module.exports={};` } : {}),
     "next/navigation": `const subscribe=cb=>{window.addEventListener('fixture:navigate',cb);return ()=>window.removeEventListener('fixture:navigate',cb)};const pathname=()=>window.fixture.pathname??'/dashboard';exports.usePathname=()=>require('react').useSyncExternalStore(subscribe,pathname,pathname); exports.useParams=()=>({id:window.fixture.studentId??'student-1'}); exports.useSearchParams=()=>new URLSearchParams(window.fixture.search??window.location.search); const router={replace(path){(window.fixture.redirects??=[]).push(path)},push(path){(window.fixture.redirects??=[]).push(path)}}; exports.useRouter=()=>router;`,
     "@/lib/supabase/client": `exports.createClient=()=>window.fixture.supabase;`,
@@ -150,7 +151,6 @@ export function bundle(
           "@/components/operations/operations-surface": `exports.OperationsSurface=({children})=>require('react').createElement('section',{'data-recovery-page':'true'},children);`,
           "@/components/ui/button": `exports.Button=({children,onClick,disabled})=>require('react').createElement('button',{onClick,disabled},children);`,
           "@/components/logo": `exports.Logo=()=>null;`,
-          "@/components/dashboard-loading-skeleton": `exports.DashboardLoadingSkeleton=()=>require('react').createElement('div',{'data-preview-gate':'pending'});`,
           "./dashboard-shell.module.css": `module.exports={};`,
           "lucide-react": `for (const name of ['ArrowUpRight','CheckCircle2','CreditCard','Loader2','ShieldCheck']) exports[name]=()=>null;`,
         }
@@ -163,7 +163,7 @@ export function bundle(
     ...(beltPage === "editor"
       ? {
           "@/components/header": `exports.Header=()=>null;`,
-          "@/components/belt-tracker/eligibility-panel": `exports.EligibilityPanel=()=>null;`,
+          "@/components/belt-tracker/eligibility-panel": `exports.EligibilityPanel=exports.EligibilityLoading=()=>null;`,
           "@/components/icons/martial-arts-belt": `exports.MartialArtsBelt=()=>null;`,
           "./belt-tracker.module.css": `module.exports={};`,
           "./sliding-segmented-control.module.css": `module.exports={};`,
@@ -173,7 +173,7 @@ export function bundle(
         ? {
             "@/components/belt-tracker/belt-tracker-dialogs": `exports.BeltTrackerDialogs=()=>null;`,
             "@/components/belt-tracker/belt-tracker-shell": `exports.BeltTrackerShell=({children})=>children;`,
-            "@/components/belt-tracker/eligibility-panel": `exports.EligibilityPanel=()=>null;`,
+            "@/components/belt-tracker/eligibility-panel": `exports.EligibilityPanel=exports.EligibilityLoading=()=>null;`,
             "@/components/belt-tracker/rank-plan-panel": `exports.RankPlanPanel=()=>null;`,
             "@/lib/belt-tracker-page-controller": `exports.useBeltTrackerPageController=()=>({shellProps:{},eligibilityPanelProps:{},rankPlanPanelProps:{},dialogsProps:{},tab:'eligibility'});`,
           }
@@ -246,7 +246,7 @@ window.fixture.root=require(${dom}).createRoot(document.getElementById('root'));
     const session = add("@/components/schedule/session-detail-modal");
     const sidebar = add("@/components/students/student-detail-sidebar");
     const leadPipeline = add("@/components/leads/lead-pipeline-board");
-    const recordsLoading = add("@/components/records/records-loading");
+    const recordSkeleton = add("@/components/students/student-detail-skeleton");
     const segmentedControl = add("@/components/ui/sliding-segmented-control");
     const studentBadge = add("@/components/students/student-rank-badge");
     const rankVisuals = add("@/components/belt-tracker/rank-visuals");
@@ -256,7 +256,7 @@ const Mapping = require(${mapping}).StudentImportMappingStep;
 const Session = require(${session}).ScheduleSessionDetailModal;
 const Sidebar = require(${sidebar}).StudentDetailSidebar;
 const LeadLedgerLoadError = require(${leadPipeline}).LeadLedgerLoadError;
-const RecordsLoading = require(${recordsLoading}).RecordsLoading;
+const StudentDetailSkeleton = require(${recordSkeleton}).StudentDetailSkeleton;
 const SlidingSegmentedControl = require(${segmentedControl}).SlidingSegmentedControl;
 const ProgressBar = require(${rankVisuals}).ProgressBar;
 
@@ -304,8 +304,8 @@ window.fixture.renderLeadLedgerLoadError = (props) => {
   root.render(React.createElement(LeadLedgerLoadError, props));
 };
 
-window.fixture.renderRecordsLoading = (props) => {
-  root.render(React.createElement(RecordsLoading, props));
+window.fixture.renderStudentDetailSkeleton = (props) => {
+  root.render(React.createElement(StudentDetailSkeleton, props));
 };
 })();`;
   }
@@ -357,7 +357,7 @@ selected?React.createElement(require(${leadInspector}).LeadDetailInspector,{lead
   const detailObserver =
     detail === null
       ? ""
-      : `function DetailObserver(){const store=useStore();window.fixture.detail=require(${detail}).useStudentDetailPageController({config:store,studioStore:store,beltStore:store,programsStore:store,studentsStore:store}).contentProps;return null;}function DetailMount(){const [mounted,setMounted]=React.useState(false);window.fixture.mountDetail=()=>setMounted(true);window.fixture.unmountDetail=()=>setMounted(false);return mounted?React.createElement(DetailObserver):null;}`;
+      : `function DetailObserver(){const store=useStore();window.fixture.ApiError=require(${add("@/lib/api")}).ApiError;window.fixture.detail=require(${detail}).useStudentDetailPageController({config:store,studioStore:store,beltStore:store,programsStore:store,studentsStore:store}).contentProps;return null;}function DetailMount(){const [mounted,setMounted]=React.useState(false);window.fixture.mountDetail=()=>setMounted(true);window.fixture.unmountDetail=()=>setMounted(false);return mounted?React.createElement(DetailObserver):null;}`;
   const provider =
     preview || layout ? `require(${add("@/app/(dashboard)/layout")}).default` : "StoreProvider";
   // Older lifecycle cases supply one combined bootstrap fixture. Split only

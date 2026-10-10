@@ -3,6 +3,7 @@ import { createRequire } from "node:module";
 import { describe, it } from "node:test";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import * as billingLayout from "../src/components/billing/billing-layout.ts";
 import { createCommonJsPacker } from "./helpers/store-browser-harness.mjs";
 
 const require = createRequire(import.meta.url);
@@ -16,9 +17,20 @@ function loadBillingComponents() {
     "lucide-react": "module.exports=new Proxy({},{get:()=>()=>null});",
     "@/components/ui/button":
       'const React=require("react");exports.Button=({children,disabled})=>React.createElement("button",{disabled},children);',
+    "@/components/billing/billing-page-content":
+      "const pending=new Promise(()=>{});exports.BillingPageBody=()=>{throw pending;};",
+    "@/components/header":
+      'const React=require("react");exports.Header=({title,children})=>React.createElement("header",null,React.createElement("h1",null,title),children);',
+    "@/components/operations/operations-surface":
+      "exports.OperationsSurface=({children})=>children;",
+    "@/components/intent-prefetch-link":
+      'const React=require("react");exports.IntentPrefetchLink=({children,...props})=>React.createElement("a",props,children);',
     "@/components/ui/modal-frame":
       'const React=require("react");exports.ModalFrame=({children})=>React.createElement("div",null,children);',
   });
+  const pageId = add("@/app/(dashboard)/billing/page");
+  const chromeId = add("@/components/billing/billing-page-chrome");
+  const loadingId = add("@/components/billing/billing-page-loading");
   const sectionsId = add("@/components/billing/billing-page-sections");
   const familiesId = add("@/components/billing/billing-families-tab");
   const invoicesId = add("@/components/billing/billing-invoices-tab");
@@ -33,6 +45,10 @@ function loadBillingComponents() {
 
   const sections = packedRequire(sectionsId);
   const components = {
+    BillingPage: packedRequire(pageId).default,
+    BillingPageFrame: packedRequire(chromeId).BillingPageFrame,
+    BillingPageFallback: packedRequire(chromeId).BillingPageFallback,
+    BillingContentPlaceholder: packedRequire(loadingId).BillingContentPlaceholder,
     BillingOverviewTab: sections.BillingOverviewTab,
     BillingFamiliesTab: packedRequire(familiesId).BillingFamiliesTab,
     BillingInvoicesTab: packedRequire(invoicesId).BillingInvoicesTab,
@@ -42,7 +58,15 @@ function loadBillingComponents() {
   return components;
 }
 
-const { BillingFamiliesTab, BillingInvoicesTab, BillingOverviewTab } = loadBillingComponents();
+const {
+  BillingPage,
+  BillingPageFrame,
+  BillingPageFallback,
+  BillingContentPlaceholder,
+  BillingFamiliesTab,
+  BillingInvoicesTab,
+  BillingOverviewTab,
+} = loadBillingComponents();
 
 function payer(overrides) {
   return {
@@ -319,5 +343,105 @@ describe("payer collection facts", () => {
       text,
       /Uncollectible Only uncollectible Outstanding \$20 Overdue \$0 Uncollectible \$20/,
     );
+  });
+});
+
+describe("billing cold-load frame", () => {
+  it("matches the Suspense fallback to every requested tab and handles invalid or repeated tab parameters", async () => {
+    for (const requested of [
+      "overview",
+      "plans",
+      "families",
+      "enrollments",
+      "invoices",
+      "reports",
+      "unknown",
+      ["reports", "plans"],
+      undefined,
+    ]) {
+      const view = await BillingPage({ searchParams: Promise.resolve({ tab: requested }) });
+      const html = renderToStaticMarkup(view);
+      const activeTab = Array.isArray(requested)
+        ? requested[0]
+        : requested === "unknown" || requested === undefined
+          ? "overview"
+          : requested;
+      assert.match(html, new RegExp(`data-billing-placeholder="${activeTab}"`));
+      assert.equal((html.match(/koaryu-skeleton-reveal/g) ?? []).length, 1);
+    }
+  });
+  it("renders the real header, review and tab bar with one delayed placeholder and a neutral count", () => {
+    const html = renderToStaticMarkup(React.createElement(BillingPageFallback));
+    assert.match(html, /<h1>Billing<\/h1>/);
+    assert.match(html, /Billing review/);
+    assert.match(html, /Review status pending/);
+    assert.doesNotMatch(html, /0 of 5 ready|Loading billing\.\.\./);
+    assert.match(html, /aria-label="Billing views"/);
+    assert.match(html, /aria-busy="true"/);
+    assert.equal((html.match(/role="status"/g) ?? []).length, 1);
+    assert.equal((html.match(/koaryu-skeleton-reveal/g) ?? []).length, 1);
+    assert.ok(html.includes(billingLayout.billingOverviewMetricsClass));
+    assert.ok(html.includes(billingLayout.billingOverviewProvidersClass));
+  });
+
+  it("uses each loaded tab's column templates, form grids and metric bands", () => {
+    for (const [activeTab, layout] of Object.entries(billingLayout.billingLedgerLayout)) {
+      const html = renderToStaticMarkup(
+        React.createElement(BillingContentPlaceholder, { activeTab }),
+      );
+      assert.ok(html.includes(layout.header), activeTab);
+      assert.ok(html.includes(layout.row), activeTab);
+      assert.equal((html.match(/role="status"/g) ?? []).length, 1, activeTab);
+      if (activeTab === "enrollments")
+        assert.ok(html.includes(billingLayout.billingEnrollmentFormClass));
+    }
+    for (const canRefundPayments of [false, true]) {
+      const html = renderToStaticMarkup(
+        React.createElement(BillingContentPlaceholder, { activeTab: "reports", canRefundPayments }),
+      );
+      assert.ok(html.includes(billingLayout.billingReportMetricsClass));
+      assert.ok(html.includes(billingLayout.billingExternalPaymentFormClass));
+      assert.ok(html.includes(billingLayout.billingPaymentGridColumns(canRefundPayments)));
+      assert.ok(html.includes(billingLayout.billingPaymentHeaderClass));
+      assert.ok(html.includes(billingLayout.billingPaymentRowClass));
+    }
+  });
+
+  it("keeps settled content visible with the existing refreshing control", () => {
+    const noop = () => {};
+    const html = renderToStaticMarkup(
+      React.createElement(
+        BillingPageFrame,
+        {
+          activeTab: "reports",
+          billingBoundaryMessage: "Billing policy",
+          completedStepCount: 4,
+          setupReady: true,
+          error: "",
+          isLiveRestricted: false,
+          isLoading: true,
+          isRefreshDisabled: true,
+          message: "",
+          onChangeTab: noop,
+          onDismissError: noop,
+          onDismissMessage: noop,
+          onRefresh: noop,
+          setupSteps: Array.from({ length: 5 }, (_, i) => ({
+            id: String(i),
+            title: "Review",
+            description: "Review billing",
+            complete: i < 4,
+            actionLabel: "Review",
+          })),
+          showContent: true,
+          showLoading: false,
+        },
+        React.createElement("p", null, "Retained financial content"),
+      ),
+    );
+    assert.match(html, /4 of 5 ready/);
+    assert.match(html, /Refreshing\.\.\./);
+    assert.match(html, /Retained financial content/);
+    assert.doesNotMatch(html, /koaryu-skeleton-reveal|Loading billing/);
   });
 });

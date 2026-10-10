@@ -61,6 +61,18 @@ function calculateAge(dob: string | null | undefined, businessDate: string): str
   return age === null ? "—" : `${age} yrs`;
 }
 
+// Belt facts arrive after the record; a placeholder holds each value's place and
+// appears only if the read is slow, instead of flashing "Loading…" text.
+function FactPlaceholder({ className, label }: { className: string; label: string }) {
+  return (
+    <span
+      role="status"
+      aria-label={label}
+      className={`koaryu-skeleton-reveal inline-block rounded-full bg-surface-raised align-middle ${className}`}
+    />
+  );
+}
+
 export function StudentDetailSidebar({
   canManageRoster,
   student,
@@ -202,7 +214,7 @@ export function StudentDetailSidebar({
           ) : beltFactsUnavailable ? (
             <p className="text-sm text-text-secondary">Rank unavailable</p>
           ) : beltFactsLoading ? (
-            <p className="text-sm text-text-secondary">Loading rank…</p>
+            <FactPlaceholder className="h-5 w-24" label="Loading rank" />
           ) : (
             <p className="text-sm text-text-secondary">No rank assigned</p>
           )}
@@ -214,7 +226,7 @@ export function StudentDetailSidebar({
             {beltFactsUnavailable ? (
               "Unavailable"
             ) : beltFactsLoading ? (
-              "Loading…"
+              <FactPlaceholder className="h-4 w-16" label="Loading next rank" />
             ) : nextRank ? (
               <StudentRankBadge
                 name={nextRank.name}
@@ -233,26 +245,30 @@ export function StudentDetailSidebar({
         <div className="flex justify-between text-sm">
           <span className="text-muted text-xs">Last promotion</span>
           <span className="text-text-primary font-mono text-xs">
-            {beltFactsUnavailable
-              ? "Unavailable"
-              : beltFactsLoading
-                ? "Loading…"
-                : formatDateTime(latestPromotionAt)}
+            {beltFactsUnavailable ? (
+              "Unavailable"
+            ) : beltFactsLoading ? (
+              <FactPlaceholder className="h-3 w-20" label="Loading last promotion" />
+            ) : (
+              formatDateTime(latestPromotionAt)
+            )}
           </span>
         </div>
 
         <div className="flex justify-between text-sm">
           <span className="text-muted text-xs">Recorded promotions</span>
           <span className="text-text-primary font-mono text-xs">
-            {beltFactsUnavailable ? "Unavailable" : beltFactsLoading ? "Loading…" : promotionCount}
+            {beltFactsUnavailable ? (
+              "Unavailable"
+            ) : beltFactsLoading ? (
+              <FactPlaceholder className="h-3 w-6" label="Loading promotion count" />
+            ) : (
+              promotionCount
+            )}
           </span>
         </div>
 
-        {beltLoadError ? (
-          <p className="text-xs text-warning">{beltLoadError}</p>
-        ) : isLoadingBeltData ? (
-          <p className="text-xs text-muted">Loading belt history…</p>
-        ) : null}
+        {beltLoadError ? <p className="text-xs text-warning">{beltLoadError}</p> : null}
       </div>
 
       {student.tags.length > 0 && (

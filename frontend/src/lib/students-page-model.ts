@@ -211,11 +211,14 @@ export function buildStudentRosterLoadState({
   const dependenciesLoading = !programsLoaded || (scheduleRequired && scheduleStatus !== "ready");
   const rosterLoadError = usesDerivedRosterFilters ? studentsLoadError : pagedLoadError;
   const activeLoadError = dependencyLoadError || rosterLoadError;
+  // A complete roster that is being refreshed stays on screen; only missing or
+  // partial data blocks, because derived filters over a partial list are wrong.
   const isInitialRosterLoading = usesDerivedRosterFilters
-    ? !activeLoadError &&
-      (dependenciesLoading || !studentsLoaded || studentsMayBePartial || isDerivedRosterRefreshing)
+    ? !activeLoadError && (dependenciesLoading || !studentsLoaded || studentsMayBePartial)
     : !activeLoadError && (dependenciesLoading || !pagedLoaded);
-  const isRosterRefreshing = !usesDerivedRosterFilters && isPagedLoading && pagedLoaded;
+  const isRosterRefreshing = usesDerivedRosterFilters
+    ? isDerivedRosterRefreshing && !isInitialRosterLoading
+    : isPagedLoading && pagedLoaded;
   const visibleTotal = usesDerivedRosterFilters ? studentsCount : pagedTotal;
   const totalPages = Math.max(1, Math.ceil(pagedTotal / pageSize));
   const pageStart = pagedTotal === 0 ? 0 : (page - 1) * pageSize + 1;

@@ -549,6 +549,7 @@ export function useBeltTrackerPageController({
       collapsedGroups: collapsedEligibilityGroups,
       eligibilityGroups,
       eligibilityLoadError,
+      hasLoadedEligibility: eligibilityMatchesLadder,
       isEligibilityLoading,
       isEligibilityLoadErrorDismissed: isLoadNoticeDismissed("eligibility", eligibilityLoadError),
       isProgramsLoadErrorDismissed: isLoadNoticeDismissed("programs", programsLoadError),

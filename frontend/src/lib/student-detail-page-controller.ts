@@ -4,8 +4,15 @@ import { useResumeRefresh } from "@/lib/use-resume-refresh";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { safeStudentsReturn } from "@/lib/student-roster-location";
+import { useRetainedState, useRetainedStore } from "@/lib/retained-state";
+import {
+  readStudentSummary,
+  rememberStudentSummaries,
+  forgetStudentSummary,
+  forgetStudentRosterSnapshot,
+} from "@/lib/student-retained-data";
 import { withCurrentMinorStatus } from "./student-age";
-import { api } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
 import { buildStudentDetailModel, validateStudentPhotoFile } from "@/lib/student-detail-page-model";
 import type {
   BeltsStoreContextValue,
@@ -36,6 +43,7 @@ type StudentDetailPageControllerOptions = {
     | "deleteStudents"
     | "students"
     | "studentsLoaded"
+    | "studentsMayBePartial"
     | "updateStudent"
     | "uploadStudentPhoto"
   >;
@@ -63,6 +71,7 @@ export function useStudentDetailPageController({
     deleteStudents,
     students,
     studentsLoaded,
+    studentsMayBePartial,
     updateStudent,
     uploadStudentPhoto,
   } = studentsStore;
@@ -84,10 +93,24 @@ export function useStudentDetailPageController({
     };
   }, [scope]);
   const detailRevision = useRef(0);
-  const [hydration, setHydration] = useState<{ scope: string; student: Student } | null>(null);
+  // The last authoritative read of this student is kept for the session, so a
+  // revisit draws the record at once and revalidates it in place.
+  const retainedStore = useRetainedStore();
+  const [hydration, setHydration] = useRetainedState<{ scope: string; student: Student } | null>(
+    `students:detail:${id}`,
+    null,
+  );
+  const [verifiedScope, setVerifiedScope] = useState<string | null>(null);
+  const [unavailableScope, setUnavailableScope] = useState<string | null>(null);
   const hydratedStudent = hydration?.scope === scope ? hydration.student : null;
   const setHydratedStudent = (student: Student) => {
-    if (currentScope.current === scope) setHydration({ scope, student });
+    if (currentScope.current === scope) {
+      setHydration({ scope, student });
+      setVerifiedScope(scope);
+      setUnavailableScope(null);
+      rememberStudentSummaries(retainedStore, [student]);
+      forgetStudentRosterSnapshot(retainedStore);
+    }
   };
   const [retryNonce, setRetryNonce] = useState(0);
   const historyRetryNonceRef = useRef(0);
@@ -95,10 +118,10 @@ export function useStudentDetailPageController({
   const [isLoadingStudent, setIsLoadingStudent] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [fallbackBeltLadders, setFallbackBeltLadders] = useState<BeltLadder[]>([]);
-  const [promotionHistoryState, setPromotionHistoryState] = useState<{
+  const [promotionHistoryState, setPromotionHistoryState] = useRetainedState<{
     studentId: string;
     items: Promotion[];
-  } | null>(null);
+  } | null>(`students:promotions:${id}`, null);
   const [isLoadingFallbackBeltLadders, setIsLoadingFallbackBeltLadders] = useState(false);
   const [isLoadingPromotionHistory, setIsLoadingPromotionHistory] = useState(false);
   const [beltLoadError, setBeltLoadError] = useState<string | null>(null);
@@ -153,7 +176,14 @@ export function useStudentDetailPageController({
   const clearOwnedPhotoPreview = (url: string) =>
     setPhotoPreview((current) => (current?.url === url ? null : current));
 
-  const listStudent = useMemo(() => students.find((student) => student.id === id), [id, students]);
+  // Roster rows are complete student projections, so a row the roster already
+  // loaded can draw the whole record while its own read is in flight. A bounded
+  // projection elsewhere in the store only supplies the name in the header.
+  const rosterStudent = useMemo(() => readStudentSummary(retainedStore, id), [id, retainedStore]);
+  const storeStudent = useMemo(() => students.find((student) => student.id === id), [id, students]);
+  const listStudent = rosterStudent ?? storeStudent;
+  const listStudentComplete =
+    Boolean(rosterStudent) || (Boolean(storeStudent) && !studentsMayBePartial);
   const cachedPromotionHistory = promotionHistoryByStudent[id];
 
   const ownedPhotoPreviewUrl = photoPreview?.url ?? null;
@@ -173,6 +203,7 @@ export function useStudentDetailPageController({
       if (isPreviewMode || !token) return;
       const revision = detailRevision.current;
       setIsLoadingStudent(true);
+      setVerifiedScope(null);
       setLoadError(null);
 
       try {
@@ -181,12 +212,21 @@ export function useStudentDetailPageController({
         });
         if (mounted && currentScope.current === scope && detailRevision.current === revision) {
           setHydration({ scope, student: result });
+          setVerifiedScope(scope);
+          setUnavailableScope(null);
+          rememberStudentSummaries(retainedStore, [result]);
         }
       } catch (error) {
         if (error instanceof Error && error.name === "AbortError") {
           return;
         }
-        if (mounted) {
+        if (mounted && currentScope.current === scope && detailRevision.current === revision) {
+          setVerifiedScope(null);
+          if (error instanceof ApiError && (error.status === 403 || error.status === 404)) {
+            setHydration(null);
+            setUnavailableScope(scope);
+            forgetStudentSummary(retainedStore, id);
+          }
           setLoadError(error instanceof Error ? error.message : "Failed to load student");
         }
       } finally {
@@ -202,7 +242,7 @@ export function useStudentDetailPageController({
       mounted = false;
       controller.abort();
     };
-  }, [id, isPreviewMode, retryNonce, scope, token]);
+  }, [id, isPreviewMode, retryNonce, scope, setHydration, token, retainedStore]);
 
   useEffect(() => {
     let mounted = true;
@@ -296,15 +336,19 @@ export function useStudentDetailPageController({
     isPreviewMode,
     loadPromotionHistoryForStudent,
     retryNonce,
+    setPromotionHistoryState,
     token,
   ]);
 
-  const sourceStudent = hydratedStudent ?? listStudent;
+  const sourceStudent = unavailableScope === scope ? undefined : (hydratedStudent ?? listStudent);
   const student = useMemo(
     () => (sourceStudent ? withCurrentMinorStatus(sourceStudent, config.businessDate) : undefined),
     [config.businessDate, sourceStudent],
   );
-  const detailReady = isPreviewMode ? Boolean(student) : Boolean(hydratedStudent);
+  const detailReady = isPreviewMode
+    ? Boolean(student)
+    : verifiedScope === scope && Boolean(hydratedStudent);
+  const recordComplete = Boolean(student) && (Boolean(hydratedStudent) || listStudentComplete);
   const promotionHistory =
     promotionHistoryState?.studentId === id ? promotionHistoryState.items : EMPTY_PROMOTION_HISTORY;
   const beltLadders = storeBeltLadders.length > 0 ? storeBeltLadders : fallbackBeltLadders;
@@ -351,6 +395,8 @@ export function useStudentDetailPageController({
     try {
       await deleteStudents([id]);
       if (command.isCurrent()) {
+        setHydration(null);
+        forgetStudentSummary(retainedStore, id);
         setArchivedScope(command.scope);
         router.push(returnTo);
       }
@@ -438,6 +484,7 @@ export function useStudentDetailPageController({
       deleteError,
       detail,
       detailReady,
+      recordComplete,
       isDeleting,
       isLoadingBeltData,
       isLoadingStudent:

@@ -2,7 +2,7 @@
 
 import { IntentPrefetchLink as Link } from "@/components/intent-prefetch-link";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { AlertTriangle, CreditCard, ExternalLink, LogOut, Mail, ShieldCheck, Trash2, UserCircle, Users } from "lucide-react";
 import {
   AccountInfoRow,
@@ -17,6 +17,7 @@ import { ModalFrame } from "@/components/ui/modal-frame";
 import { createClient } from "@/lib/supabase/client";
 import { api } from "@/lib/api";
 import { useConfigStore } from "@/lib/store";
+import { useRetainedState, useRetainedStore } from "@/lib/retained-state";
 import { clearStoredStudioSessionCookies } from "@/lib/store-session-cookies";
 import { formatRoleLabel } from "@/lib/role-label";
 import { useStudioStore } from "@/lib/store";
@@ -26,6 +27,11 @@ type AccountConfirmAction = "schedule-deletion" | "transfer-ownership" | null;
 const isPreviewMode = process.env.NEXT_PUBLIC_PREVIEW_MODE === "true";
 
 export default function AccountSettingsPage() {
+  const retained = useRetainedStore();
+  return <AccountSettingsBody key={retained?.scope} />;
+}
+
+function AccountSettingsBody() {
   const { token } = useConfigStore();
   const { currentRole, currentUserId, refreshStaff, staffLoaded, staffMembers, studioName, userEmail } = useStudioStore();
   const router = useRouter();
@@ -36,7 +42,10 @@ export default function AccountSettingsPage() {
   const [isCancelingDeletion, setIsCancelingDeletion] = useState(false);
   const [isTransferringOwnership, setIsTransferringOwnership] = useState(false);
   const [isLoadingDeletionRequest, setIsLoadingDeletionRequest] = useState(!isPreviewMode);
-  const [deletionRequest, setDeletionRequest] = useState<AccountDeletionRequest | null>(null);
+  const [deletionRequest, setDeletionRequest] = useRetainedState<AccountDeletionRequest | null | undefined>(
+    `account:settings:deletion-request:${isPreviewMode ? "preview" : "live"}`,
+    isPreviewMode ? null : undefined,
+  );
   const [nextOwnerId, setNextOwnerId] = useState("");
   const [accessMessage, setAccessMessage] = useState("");
   const [accessError, setAccessError] = useState("");
@@ -49,6 +58,13 @@ export default function AccountSettingsPage() {
   const isAdmin = currentRole === "admin";
   // A schedule or cancel response is newer than any status read that started before it.
   const deletionRevisionRef = useRef(0);
+  const retained = useRetainedStore();
+  const lifetime = useRef<AbortController | null>(null);
+  useLayoutEffect(() => {
+    const controller = new AbortController();
+    lifetime.current = controller;
+    return () => controller.abort();
+  }, [retained]);
 
   useEffect(() => {
     if (!token) return;
@@ -58,10 +74,12 @@ export default function AccountSettingsPage() {
     api
       .get<AccountDeletionRequest | null>("/account/deletion-request", token, { signal: controller.signal })
       .then((request) => {
+        if (controller.signal.aborted) return;
         if (deletionRevisionRef.current === revisionAtStart) setDeletionRequest(request);
         setIsLoadingDeletionRequest(false);
       })
       .catch((error) => {
+        if (controller.signal.aborted) return;
         if (error instanceof Error && error.name === "AbortError") return;
         if (deletionRevisionRef.current === revisionAtStart) {
           setDeletionError(error instanceof Error ? error.message : "Could not load account deletion status.");
@@ -72,7 +90,7 @@ export default function AccountSettingsPage() {
     return () => {
       controller.abort();
     };
-  }, [token]);
+  }, [retained, setDeletionRequest, token]);
 
   useEffect(() => {
     if (!isAdmin || staffLoaded) return;
@@ -122,7 +140,8 @@ export default function AccountSettingsPage() {
   }
 
   async function runScheduleDeletion() {
-    if (!token) return;
+    const controller = lifetime.current;
+    if (!token || !controller || controller.signal.aborted) return;
 
     setIsSchedulingDeletion(true);
     setDeletionMessage("");
@@ -130,13 +149,15 @@ export default function AccountSettingsPage() {
 
     try {
       const request = await api.post<AccountDeletionRequest>("/account/deletion-request", {}, token);
+      if (controller.signal.aborted) return;
       deletionRevisionRef.current += 1;
       setDeletionRequest(request);
       setDeletionMessage(`Your account has been scheduled for deletion within 30 days. You have until ${formatDeadline(request.scheduled_for)} to cancel deletion.`);
     } catch (error) {
+      if (controller.signal.aborted) return;
       setDeletionError(error instanceof Error ? error.message : "Could not schedule account deletion.");
     } finally {
-      setIsSchedulingDeletion(false);
+      if (!controller.signal.aborted) setIsSchedulingDeletion(false);
     }
   }
 
@@ -146,7 +167,8 @@ export default function AccountSettingsPage() {
   }
 
   async function handleCancelDeletion() {
-    if (!token) return;
+    const controller = lifetime.current;
+    if (!token || !controller || controller.signal.aborted) return;
 
     setIsCancelingDeletion(true);
     setDeletionMessage("");
@@ -154,13 +176,15 @@ export default function AccountSettingsPage() {
 
     try {
       await api.post<AccountDeletionRequest | null>("/account/deletion-request/cancel", {}, token);
+      if (controller.signal.aborted) return;
       deletionRevisionRef.current += 1;
       setDeletionRequest(null);
       setDeletionMessage("Account deletion canceled.");
     } catch (error) {
+      if (controller.signal.aborted) return;
       setDeletionError(error instanceof Error ? error.message : "Could not cancel account deletion.");
     } finally {
-      setIsCancelingDeletion(false);
+      if (!controller.signal.aborted) setIsCancelingDeletion(false);
     }
   }
 
@@ -321,8 +345,11 @@ export default function AccountSettingsPage() {
       )}
 
       <AccountSection title="Account deletion" description="Request deletion for your Koaryu login account.">
-        {isLoadingDeletionRequest ? (
-          <p role="status" className="text-sm text-text-secondary">Checking account deletion status…</p>
+        {isLoadingDeletionRequest && deletionRequest === undefined ? (
+          <div role="status" aria-label="Checking account deletion status" aria-busy="true" className="koaryu-skeleton-reveal space-y-3">
+            <div aria-hidden="true" className="h-12 rounded-[6px] border border-border bg-surface-raised" />
+            <div aria-hidden="true" className="h-8 w-44 rounded-[6px] bg-surface-raised" />
+          </div>
         ) : deletionRequest ? (
           <div className="space-y-3">
             <AccountNotice>

@@ -4,6 +4,7 @@ import { useResumeRefresh } from "@/lib/use-resume-refresh";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toLocalDateKey } from "@/lib/date";
+import { useRetainedState } from "@/lib/retained-state";
 import type { ClassFormInitialValues, ClassFormSubmitPayload } from "@/lib/class-form-model";
 import {
   beginSessionAttendanceRefresh,
@@ -88,7 +89,6 @@ export function useSchedulePageController({
   const [rangeLoadAttempt, setRangeLoadAttempt] = useState(0);
   const [attendanceRefreshAttempt, setAttendanceRefreshAttempt] = useState(0);
   const resumedRangeRef = useRef<string | null>(null);
-  const [loadedRangeKey, setLoadedRangeKey] = useState<string | null>(null);
   const [refreshingRangeKey, setRefreshingRangeKey] = useState<string | null>(null);
   const [scheduleLoadError, setScheduleLoadError] = useState<string | null>(null);
   const [attendanceError, setAttendanceError] = useState<string | null>(null);
@@ -112,6 +112,11 @@ export function useSchedulePageController({
   );
 
   const visibleRangeKey = `${visibleRange.start}:${visibleRange.end}`;
+  const [rangeReadiness, setRangeReadiness] = useRetainedState(
+    `schedule:range:${visibleRangeKey}`,
+    { key: visibleRangeKey, loaded: false },
+  );
+  const hasLoadedRange = rangeReadiness.key === visibleRangeKey && rangeReadiness.loaded;
   const currentRangeKeyRef = useRef(visibleRangeKey);
 
   useEffect(() => {
@@ -142,7 +147,11 @@ export function useSchedulePageController({
       setRefreshingRangeKey(visibleRangeKey);
       try {
         await refreshScheduleRange(visibleRange.start, visibleRange.end, intent);
-        if (!cancelled) setLoadedRangeKey(visibleRangeKey);
+        if (!cancelled) {
+          setRangeReadiness((current) =>
+            current.key === visibleRangeKey ? { key: visibleRangeKey, loaded: true } : current,
+          );
+        }
       } catch (error) {
         if (!cancelled) {
           console.error("Failed to load schedule range", error);
@@ -161,6 +170,7 @@ export function useSchedulePageController({
   }, [
     rangeLoadAttempt,
     refreshScheduleRange,
+    setRangeReadiness,
     visibleRange.end,
     visibleRange.start,
     visibleRangeKey,
@@ -365,7 +375,7 @@ export function useSchedulePageController({
       programFilter,
       programs,
       scheduleLoadError,
-      hasLoadedRange: loadedRangeKey === visibleRangeKey,
+      hasLoadedRange,
       isRefreshingRange: refreshingRangeKey === visibleRangeKey,
       selectedSession,
       selectedSessionAttendance,

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import { Button } from "@/components/ui/button";
 import { ApiError, CommandOutcomeUnknown } from "@/lib/api";
 import { useConfigStore, useStudioStore } from "@/lib/store";
+import { useRetainedState } from "@/lib/retained-state";
 import {
   ACTIVITY_LABELS,
   DEMO_ACTIVITY,
@@ -63,16 +64,18 @@ export function MissedClassAutomation() {
 }
 
 function ScopedEditor({ token, isDemo }: { token: string | null; isDemo: boolean }) {
-  const [settings, setSettings] = useState<MissedClassSettingsResponse | null>(
+  const [settings, setSettings] = useRetainedState<MissedClassSettingsResponse | null>(
+    `automations:missed-class:settings:${isDemo ? "preview" : "live"}`,
     isDemo ? DEMO_SETTINGS : null,
   );
-  const [draft, setDraft] = useState<MissedClassPreviewRequest | null>(
-    isDemo ? ruleDraft(DEMO_SETTINGS.rule) : null,
+  const [draft, setDraft] = useState<MissedClassPreviewRequest | null>(() =>
+    settings ? ruleDraft(settings.rule) : null,
   );
   const [settingsLoading, setSettingsLoading] = useState(!isDemo);
   const [reloading, setReloading] = useState(false);
   const [settingsError, setSettingsError] = useState<string | null>(null);
-  const [activity, setActivity] = useState<MissedClassActivityResponse | null>(
+  const [activity, setActivity] = useRetainedState<MissedClassActivityResponse | null>(
+    `automations:missed-class:activity:${isDemo ? "preview" : "live"}`,
     isDemo ? DEMO_ACTIVITY : null,
   );
   const [activityLoading, setActivityLoading] = useState(!isDemo);
@@ -89,6 +92,8 @@ function ScopedEditor({ token, isDemo }: { token: string | null; isDemo: boolean
   const lifetime = useRef<AbortController | null>(null);
   const draftRef = useRef(draft);
   const draftGeneration = useRef(0);
+  const draftEdited = useRef(false);
+  const draftRevision = useRef(settings?.rule.revision ?? null);
   const previewGeneration = useRef<number | null>(null);
   const previewRequest = useRef(0);
   const settingsRequest = useRef(0);
@@ -127,9 +132,19 @@ function ScopedEditor({ token, isDemo }: { token: string | null; isDemo: boolean
         const result = await missedClassApi.settings(latestToken.current, controller.signal);
         if (controller.signal.aborted || request !== settingsRequest.current) return;
         setSettings(result);
-        if (replaceDraft || draftRef.current === null) {
+        const checkedDraft = readbackLock.current;
+        const needsDraftReview =
+          !replaceDraft &&
+          draftEdited.current &&
+          draftRevision.current !== result.rule.revision &&
+          !checkedDraft;
+        if (replaceDraft || !draftEdited.current || draftRef.current === null) {
           draftRef.current = ruleDraft(result.rule);
+          draftEdited.current = false;
+          draftRevision.current = result.rule.revision;
           setDraft(draftRef.current);
+        } else if (checkedDraft) {
+          draftRevision.current = result.rule.revision;
         }
         if (readbackLock.current) {
           setMessage(
@@ -137,8 +152,12 @@ function ScopedEditor({ token, isDemo }: { token: string | null; isDemo: boolean
           );
           setActionError(null);
         }
-        readbackLock.current = false;
-        setNeedsReadback(false);
+        readbackLock.current = needsDraftReview;
+        setNeedsReadback(needsDraftReview);
+        if (needsDraftReview)
+          setActionError(
+            "The saved rule changed while you were editing. Check the saved rule before saving. Your draft is preserved.",
+          );
       } catch (error) {
         if (!controller.signal.aborted && request === settingsRequest.current)
           setSettingsError(
@@ -152,7 +171,7 @@ function ScopedEditor({ token, isDemo }: { token: string | null; isDemo: boolean
         }
       }
     },
-    [invalidatePreview, isDemo],
+    [invalidatePreview, isDemo, setSettings],
   );
 
   const loadActivity = useCallback(async () => {
@@ -174,7 +193,7 @@ function ScopedEditor({ token, isDemo }: { token: string | null; isDemo: boolean
       if (!controller.signal.aborted && request === activityRequest.current)
         setActivityLoading(false);
     }
-  }, [isDemo]);
+  }, [isDemo, setActivity]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -189,6 +208,7 @@ function ScopedEditor({ token, isDemo }: { token: string | null; isDemo: boolean
 
   function edit(patch: Partial<MissedClassPreviewRequest>) {
     if (!draftRef.current || mutationLock.current || reloading) return;
+    draftEdited.current = true;
     draftRef.current = { ...draftRef.current, ...patch };
     setDraft(draftRef.current);
     invalidatePreview();
@@ -275,14 +295,23 @@ function ScopedEditor({ token, isDemo }: { token: string | null; isDemo: boolean
     setMessage(null);
     try {
       const result = await missedClassApi.save(
-        { ...submitted, enabled, expected_revision: settings.rule.revision },
+        {
+          ...submitted,
+          enabled,
+          expected_revision:
+            action === "pause"
+              ? settings.rule.revision
+              : (draftRevision.current ?? settings.rule.revision),
+        },
         latestToken.current,
         controller.signal,
       );
       if (controller.signal.aborted) return;
       setSettings(result);
+      draftRevision.current = result.rule.revision;
       if (action !== "pause") {
         draftRef.current = ruleDraft(result.rule);
+        draftEdited.current = false;
         setDraft(draftRef.current);
       }
       invalidatePreview();
@@ -355,290 +384,307 @@ function ScopedEditor({ token, isDemo }: { token: string | null; isDemo: boolean
               ? settings.rule.enabled
                 ? "Enabled"
                 : "Paused"
-              : "Loading"}
+              : "Rule status"}
         </span>
       </div>
 
-      {isDemo ? (
-        <p
-          className="rounded-md border border-border p-3 text-sm text-text-secondary"
-          role="status"
-        >
-          Demo only. Try editing and previewing with sample students. Nothing is saved or sent, and
-          this rule cannot be enabled.
-        </p>
-      ) : (
-        <div
-          className="space-y-2 rounded-md border border-border p-3 text-sm text-text-secondary"
-          aria-label="Email delivery status"
-        >
-          {ready && (
-            <>
-              <p className="break-words">
-                <strong className="font-medium text-text-primary">Sender</strong>{" "}
-                {ready.sender || "Not configured"}
-              </p>
-              <p>
-                {ready.mode === "live"
-                  ? "Live sending. Eligible recipients can receive email when the rule is enabled."
-                  : ready.mode === "test"
-                    ? "Test sending. Only the approved test recipient can receive messages. Other student messages are never redirected to that inbox."
-                    : "Sending is disabled. Paused rules can still be saved."}
-              </p>
-              {ready.mode === "test" && (
+      <div
+        className={`space-y-5 ${!settings && settingsLoading ? "koaryu-skeleton-reveal" : ""}`}
+        aria-busy={settingsLoading}
+      >
+        {isDemo ? (
+          <p
+            className="rounded-md border border-border p-3 text-sm text-text-secondary"
+            role="status"
+          >
+            Demo only. Try editing and previewing with sample students. Nothing is saved or sent,
+            and this rule cannot be enabled.
+          </p>
+        ) : (
+          <div
+            className="space-y-2 rounded-md border border-border p-3 text-sm text-text-secondary"
+            aria-label="Email delivery status"
+          >
+            {ready && (
+              <>
                 <p className="break-words">
-                  Approved test recipient: {ready.test_recipient || "Not configured"}
+                  <strong className="font-medium text-text-primary">Sender</strong>{" "}
+                  {ready.sender || "Not configured"}
                 </p>
-              )}
-              <p>
-                {ready.can_enable
-                  ? "Email is ready. Preview recipients before enabling or saving an enabled rule."
-                  : (readinessReasons[ready.reason ?? ""] ??
-                    "Email is not ready to enable. You can save a paused rule.")}
-              </p>
-            </>
-          )}
-          {settingsLoading && <p role="status">Loading settings...</p>}
-          {settingsError && (
-            <p role="alert" className="text-danger">
-              {settingsError}
-            </p>
-          )}
-          <div className="flex flex-wrap gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              className="min-h-11"
-              disabled={settingsLoading || saving}
-              onClick={() => void loadSettings()}
-            >
-              {needsReadback ? "Check saved rule" : "Refresh settings"}
-            </Button>
-            {draft && (
-              <Button
-                type="button"
-                variant="ghost"
-                className="min-h-11"
-                disabled={settingsLoading || saving}
-                onClick={() => void loadSettings(true)}
-              >
-                Reload saved rule and discard edits
-              </Button>
+                <p>
+                  {ready.mode === "live"
+                    ? "Live sending. Eligible recipients can receive email when the rule is enabled."
+                    : ready.mode === "test"
+                      ? "Test sending. Only the approved test recipient can receive messages. Other student messages are never redirected to that inbox."
+                      : "Sending is disabled. Paused rules can still be saved."}
+                </p>
+                {ready.mode === "test" && (
+                  <p className="break-words">
+                    Approved test recipient: {ready.test_recipient || "Not configured"}
+                  </p>
+                )}
+                <p>
+                  {ready.can_enable
+                    ? "Email is ready. Preview recipients before enabling or saving an enabled rule."
+                    : (readinessReasons[ready.reason ?? ""] ??
+                      "Email is not ready to enable. You can save a paused rule.")}
+                </p>
+              </>
             )}
-          </div>
-        </div>
-      )}
-
-      {draft && (
-        <div className="grid min-w-0 gap-6 lg:grid-cols-2">
-          <div className="min-w-0 space-y-4">
-            <fieldset disabled={saving || reloading} className="min-w-0 space-y-4">
-              <legend className="sr-only">Missed-class rule</legend>
-              <label className="block text-sm font-medium text-text-primary">
-                Days without attendance
-                <input
-                  className={fieldClass}
-                  type="number"
-                  min={1}
-                  max={90}
-                  step={1}
-                  value={draft.inactivity_days || ""}
-                  onChange={(event) => edit({ inactivity_days: Number(event.target.value) })}
-                />
-              </label>
-              <p className="text-xs leading-5 text-muted">
-                Active students with prior attendance qualify. Current holds, opt-outs and contacts
-                that cannot be safely selected are skipped. Minors receive email through their
-                guardian.
-              </p>
-              <label className="block text-sm font-medium text-text-primary">
-                Subject
-                <input
-                  className={fieldClass}
-                  maxLength={200}
-                  value={draft.subject_template}
-                  onChange={(event) => edit({ subject_template: event.target.value })}
-                />
-              </label>
-              <div>
-                <label
-                  htmlFor="missed-class-message"
-                  className="block text-sm font-medium text-text-primary"
-                >
-                  Message
-                </label>
-                <textarea
-                  id="missed-class-message"
-                  className={`${fieldClass} min-h-48 resize-y`}
-                  rows={8}
-                  maxLength={5000}
-                  value={draft.body_template}
-                  aria-describedby="template-help"
-                  onChange={(event) => edit({ body_template: event.target.value })}
-                />
+            {!settings && settingsLoading && (
+              <div role="status" aria-label="Loading settings" className="space-y-2">
+                <span className="sr-only">Loading settings...</span>
+                <div aria-hidden="true" className="h-5 w-48 rounded bg-surface-raised" />
+                <div aria-hidden="true" className="h-5 w-3/4 rounded bg-surface-raised" />
+                <div aria-hidden="true" className="h-5 w-2/3 rounded bg-surface-raised" />
               </div>
-              <p id="template-help" className="break-words text-xs leading-5 text-muted">
-                Plain text only. Available placeholders: {TEMPLATE_PLACEHOLDERS.join(", ")}. An
-                unsubscribe link is added when sending.
+            )}
+            {settingsError && (
+              <p role="alert" className="text-danger">
+                {settingsError}
               </p>
-              <label className="block text-sm font-medium text-text-primary">
-                Reply-to email
-                <input
-                  className={fieldClass}
-                  type="email"
-                  autoComplete="off"
-                  value={draft.reply_to_email}
-                  onChange={(event) => edit({ reply_to_email: event.target.value })}
-                />
-              </label>
-            </fieldset>
-            {invalidDraft && <p className="text-sm text-danger">{invalidDraft}</p>}
+            )}
             <div className="flex flex-wrap gap-2">
-              <Button
-                type="button"
-                variant="secondary"
-                className="min-h-11"
-                disabled={saving || reloading || previewLoading || !!invalidDraft}
-                onClick={() => void requestPreview()}
-              >
-                {previewLoading ? "Loading preview..." : "Preview recipients"}
-              </Button>
               <Button
                 type="button"
                 variant="outline"
                 className="min-h-11"
-                disabled={
-                  writeBlocked || !!invalidDraft || (!!settings?.rule.enabled && enableBlocked)
-                }
-                onClick={() => void save("save")}
+                disabled={settingsLoading || saving}
+                onClick={() => void loadSettings()}
               >
-                {saving
-                  ? "Saving..."
-                  : settings?.rule.enabled
-                    ? "Save enabled rule"
-                    : "Save paused rule"}
+                {needsReadback ? "Check saved rule" : "Refresh settings"}
               </Button>
-              {settings?.rule.enabled ? (
+              {draft && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="min-h-11"
+                  disabled={settingsLoading || saving}
+                  onClick={() => void loadSettings(true)}
+                >
+                  Reload saved rule and discard edits
+                </Button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {!draft && settingsLoading && <RuleFormPlaceholder />}
+        {draft && (
+          <div className="grid min-w-0 gap-6 lg:grid-cols-2">
+            <div className="min-w-0 space-y-4">
+              <fieldset disabled={saving || reloading} className="min-w-0 space-y-4">
+                <legend className="sr-only">Missed-class rule</legend>
+                <label className="block text-sm font-medium text-text-primary">
+                  Days without attendance
+                  <input
+                    className={fieldClass}
+                    type="number"
+                    min={1}
+                    max={90}
+                    step={1}
+                    value={draft.inactivity_days || ""}
+                    onChange={(event) => edit({ inactivity_days: Number(event.target.value) })}
+                  />
+                </label>
+                <p className="text-xs leading-5 text-muted">
+                  Active students with prior attendance qualify. Current holds, opt-outs and
+                  contacts that cannot be safely selected are skipped. Minors receive email through
+                  their guardian.
+                </p>
+                <label className="block text-sm font-medium text-text-primary">
+                  Subject
+                  <input
+                    className={fieldClass}
+                    maxLength={200}
+                    value={draft.subject_template}
+                    onChange={(event) => edit({ subject_template: event.target.value })}
+                  />
+                </label>
+                <div>
+                  <label
+                    htmlFor="missed-class-message"
+                    className="block text-sm font-medium text-text-primary"
+                  >
+                    Message
+                  </label>
+                  <textarea
+                    id="missed-class-message"
+                    className={`${fieldClass} min-h-48 resize-y`}
+                    rows={8}
+                    maxLength={5000}
+                    value={draft.body_template}
+                    aria-describedby="template-help"
+                    onChange={(event) => edit({ body_template: event.target.value })}
+                  />
+                </div>
+                <p id="template-help" className="break-words text-xs leading-5 text-muted">
+                  Plain text only. Available placeholders: {TEMPLATE_PLACEHOLDERS.join(", ")}. An
+                  unsubscribe link is added when sending.
+                </p>
+                <label className="block text-sm font-medium text-text-primary">
+                  Reply-to email
+                  <input
+                    className={fieldClass}
+                    type="email"
+                    autoComplete="off"
+                    value={draft.reply_to_email}
+                    onChange={(event) => edit({ reply_to_email: event.target.value })}
+                  />
+                </label>
+              </fieldset>
+              {invalidDraft && <p className="text-sm text-danger">{invalidDraft}</p>}
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className="min-h-11"
+                  disabled={saving || reloading || previewLoading || !!invalidDraft}
+                  onClick={() => void requestPreview()}
+                >
+                  {previewLoading ? "Loading preview..." : "Preview recipients"}
+                </Button>
                 <Button
                   type="button"
                   variant="outline"
                   className="min-h-11"
-                  disabled={writeBlocked}
-                  onClick={() => void save("pause")}
+                  disabled={
+                    writeBlocked || !!invalidDraft || (!!settings?.rule.enabled && enableBlocked)
+                  }
+                  onClick={() => void save("save")}
                 >
-                  Pause automation
+                  {saving
+                    ? "Saving..."
+                    : settings?.rule.enabled
+                      ? "Save enabled rule"
+                      : "Save paused rule"}
                 </Button>
-              ) : (
-                <Button
-                  type="button"
-                  className="min-h-11"
-                  disabled={enableBlocked}
-                  onClick={() => void save("enable")}
-                >
-                  Enable automation
-                </Button>
+                {settings?.rule.enabled ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="min-h-11"
+                    disabled={writeBlocked}
+                    onClick={() => void save("pause")}
+                  >
+                    Pause automation
+                  </Button>
+                ) : (
+                  <Button
+                    type="button"
+                    className="min-h-11"
+                    disabled={enableBlocked}
+                    onClick={() => void save("enable")}
+                  >
+                    Enable automation
+                  </Button>
+                )}
+              </div>
+              <p className="text-xs leading-5 text-muted">
+                Previewing does not send email. Changes to any field require a new preview before
+                enabling or saving an enabled rule. Pausing keeps the saved message.
+              </p>
+              {actionError && (
+                <p role="alert" className="text-sm text-danger">
+                  {actionError}
+                </p>
+              )}
+              {message && (
+                <p role="status" className="text-sm text-text-secondary">
+                  {message}
+                </p>
               )}
             </div>
-            <p className="text-xs leading-5 text-muted">
-              Previewing does not send email. Changes to any field require a new preview before
-              enabling or saving an enabled rule. Pausing keeps the saved message.
-            </p>
-            {actionError && (
-              <p role="alert" className="text-sm text-danger">
-                {actionError}
-              </p>
-            )}
-            {message && (
-              <p role="status" className="text-sm text-text-secondary">
-                {message}
-              </p>
-            )}
-          </div>
 
-          <div className="min-w-0 space-y-4" aria-labelledby="recipient-preview-title">
-            <h3 id="recipient-preview-title" className="text-base font-semibold text-text-primary">
-              Recipient preview
-            </h3>
-            {previewLoading && (
-              <p role="status" className="text-sm text-muted">
-                Checking recipients for this draft...
-              </p>
-            )}
-            {previewError && (
-              <p role="alert" className="text-sm text-danger">
-                {previewError}
-              </p>
-            )}
-            {!preview && !previewLoading && (
-              <p className="text-sm leading-6 text-text-secondary">
-                Preview this draft to see who qualifies, who is skipped and how the message reads.
-              </p>
-            )}
-            {preview && (
-              <>
-                <p role="status" className="text-sm text-text-secondary">
-                  {preview.eligible_count} eligible · {preview.skipped_count} skipped ·{" "}
-                  {isDemo ? "Sample date" : "Studio reference date"} {preview.reference_date}
+            <div className="min-w-0 space-y-4" aria-labelledby="recipient-preview-title">
+              <h3
+                id="recipient-preview-title"
+                className="text-base font-semibold text-text-primary"
+              >
+                Recipient preview
+              </h3>
+              {previewLoading && (
+                <p role="status" className="text-sm text-muted">
+                  Checking recipients for this draft...
                 </p>
-                {preview.truncated && (
-                  <p className="text-sm text-text-secondary">
-                    Showing up to 100 students. Totals include students beyond this preview.
+              )}
+              {previewError && (
+                <p role="alert" className="text-sm text-danger">
+                  {previewError}
+                </p>
+              )}
+              {!preview && !previewLoading && (
+                <p className="text-sm leading-6 text-text-secondary">
+                  Preview this draft to see who qualifies, who is skipped and how the message reads.
+                </p>
+              )}
+              {preview && (
+                <>
+                  <p role="status" className="text-sm text-text-secondary">
+                    {preview.eligible_count} eligible · {preview.skipped_count} skipped ·{" "}
+                    {isDemo ? "Sample date" : "Studio reference date"} {preview.reference_date}
                   </p>
-                )}
-                {sample && (
-                  <article
-                    className="min-w-0 rounded-lg p-4"
-                    data-automation-inset="true"
-                    aria-label="Email preview"
-                  >
-                    <p className="break-words text-xs text-muted">
-                      To {sample.recipient_name || sample.student_name} · {sample.recipient_email}
+                  {preview.truncated && (
+                    <p className="text-sm text-text-secondary">
+                      Showing up to 100 students. Totals include students beyond this preview.
                     </p>
-                    <h4 className="mt-3 break-words text-sm font-semibold text-text-primary">
-                      {sample.rendered_subject}
-                    </h4>
-                    <p className="mt-3 whitespace-pre-wrap break-words text-sm leading-6 text-text-secondary">
-                      {sample.rendered_body}
-                    </p>
-                  </article>
-                )}
-                {!preview.recipients.length && (
-                  <p className="text-sm text-muted">No students to show for this rule.</p>
-                )}
-                <ul className="min-w-0 divide-y divide-border">
-                  {preview.recipients.map((recipient) => (
-                    <li key={recipient.student_id} className="min-w-0 py-3 text-sm">
-                      <p className="break-words font-medium text-text-primary">
-                        {recipient.student_name}
+                  )}
+                  {sample && (
+                    <article
+                      className="min-w-0 rounded-lg p-4"
+                      data-automation-inset="true"
+                      aria-label="Email preview"
+                    >
+                      <p className="break-words text-xs text-muted">
+                        To {sample.recipient_name || sample.student_name} · {sample.recipient_email}
                       </p>
-                      {recipient.skip_reason ? (
-                        <p className="break-words text-muted">
-                          Skipped: {safeReason(recipient.skip_reason)}
+                      <h4 className="mt-3 break-words text-sm font-semibold text-text-primary">
+                        {sample.rendered_subject}
+                      </h4>
+                      <p className="mt-3 whitespace-pre-wrap break-words text-sm leading-6 text-text-secondary">
+                        {sample.rendered_body}
+                      </p>
+                    </article>
+                  )}
+                  {!preview.recipients.length && (
+                    <p className="text-sm text-muted">No students to show for this rule.</p>
+                  )}
+                  <ul className="min-w-0 divide-y divide-border">
+                    {preview.recipients.map((recipient) => (
+                      <li key={recipient.student_id} className="min-w-0 py-3 text-sm">
+                        <p className="break-words font-medium text-text-primary">
+                          {recipient.student_name}
                         </p>
-                      ) : (
-                        <>
-                          <p className="break-words text-text-secondary">
-                            {recipient.recipient_kind === "guardian" ? "Guardian" : "Student"}:{" "}
-                            {recipient.recipient_email}
+                        {recipient.skip_reason ? (
+                          <p className="break-words text-muted">
+                            Skipped: {safeReason(recipient.skip_reason)}
                           </p>
-                          <p className="text-xs text-muted">
-                            {recipient.days_absent} days absent · Last attendance{" "}
-                            {recipient.last_attendance_date}
-                          </p>
-                        </>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              </>
-            )}
+                        ) : (
+                          <>
+                            <p className="break-words text-text-secondary">
+                              {recipient.recipient_kind === "guardian" ? "Guardian" : "Student"}:{" "}
+                              {recipient.recipient_email}
+                            </p>
+                            <p className="text-xs text-muted">
+                              {recipient.days_absent} days absent · Last attendance{" "}
+                              {recipient.last_attendance_date}
+                            </p>
+                          </>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              )}
+            </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
       <section
         aria-labelledby="automation-activity-title"
         className="min-w-0 border-t border-border pt-5"
+        aria-busy={activityLoading}
       >
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h3 id="automation-activity-title" className="text-base font-semibold text-text-primary">
@@ -656,10 +702,23 @@ function ScopedEditor({ token, isDemo }: { token: string | null; isDemo: boolean
             </Button>
           )}
         </div>
-        {activityLoading && (
-          <p role="status" className="mt-2 text-sm text-muted">
-            Loading activity...
-          </p>
+        {!activity && activityLoading && (
+          <ul
+            className="koaryu-skeleton-reveal mt-2 min-w-0 divide-y divide-border"
+            role="status"
+            aria-label="Loading activity"
+          >
+            {[0, 1, 2].map((row) => (
+              <li key={row} className="min-w-0 space-y-2 py-3 text-sm" aria-hidden="true">
+                <div className="flex flex-wrap justify-between gap-2">
+                  <div className="h-5 w-36 rounded bg-surface-raised" />
+                  <div className="h-5 w-20 rounded bg-surface-raised" />
+                </div>
+                <div className="h-5 w-48 rounded bg-surface-raised" />
+                <div className="h-4 w-64 max-w-full rounded bg-surface-raised" />
+              </li>
+            ))}
+          </ul>
         )}
         {activityError && (
           <p role="alert" className="mt-2 text-sm text-danger">
@@ -703,5 +762,37 @@ function ScopedEditor({ token, isDemo }: { token: string | null; isDemo: boolean
         </ul>
       </section>
     </section>
+  );
+}
+
+function RuleFormPlaceholder() {
+  return (
+    <div className="grid min-w-0 gap-6 lg:grid-cols-2" aria-hidden="true">
+      <div className="min-w-0 space-y-4">
+        {["Days without attendance", "Subject", "Message", "Reply-to email"].map((label) => (
+          <div key={label} className="text-sm font-medium text-text-primary">
+            {label}
+            <div
+              className={`${fieldClass} bg-surface-raised ${label === "Message" ? "min-h-48" : ""}`}
+            />
+            {label === "Days without attendance" || label === "Message" ? (
+              <div className="mt-3 h-10 rounded bg-surface-raised" />
+            ) : null}
+          </div>
+        ))}
+        <div className="flex flex-wrap gap-2">
+          {[0, 1, 2].map((button) => (
+            <div key={button} className="h-11 w-36 rounded bg-surface-raised" />
+          ))}
+        </div>
+        <div className="h-10 rounded bg-surface-raised" />
+      </div>
+      <div className="min-w-0 space-y-4">
+        <h3 className="text-base font-semibold text-text-primary">Recipient preview</h3>
+        <p className="text-sm leading-6 text-text-secondary">
+          Preview this draft to see who qualifies, who is skipped and how the message reads.
+        </p>
+      </div>
+    </div>
   );
 }

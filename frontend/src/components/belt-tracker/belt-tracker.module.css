@@ -336,12 +336,6 @@
   border-radius: 10px;
 }
 
-.eligibilityWorkspace,
-.rankPlanWorkspace {
-  animation: belt-workspace-settle var(--product-motion-settle-duration) var(--product-motion-ease)
-    both;
-}
-
 .panelState {
   display: grid;
   min-height: 18rem;
@@ -406,15 +400,6 @@
   border-radius: 6px;
   background: var(--product-card-stock);
   animation: belt-state-change var(--product-motion-change-duration) var(--product-motion-ease) both;
-}
-
-@keyframes belt-workspace-settle {
-  from {
-    opacity: 0.92;
-  }
-  to {
-    opacity: 1;
-  }
 }
 
 @keyframes belt-dialog-open {

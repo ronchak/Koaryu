@@ -1169,3 +1169,27 @@ test("saved prototype-named operators keep their exact IDs in Graph and Steps", 
     );
   });
 });
+
+for (const width of [390, 1280])
+  test(`cold workflow uses the canvas and inspector frame at ${width}px`, async () => {
+    await mount({ route: savedRoute, width, hold: { detail: true } }, async (page) => {
+      await page.waitForFunction(() => fixture.held.some((read) => read.key === "detail"));
+      const placeholder = page.getByRole("status", {
+        name: "Loading workflow canvas",
+        exact: true,
+      });
+      await expect(placeholder).toHaveClass(/koaryu-skeleton-reveal/);
+      await expect(page.getByRole("button", { name: "All workflows" })).toBeVisible();
+      assert.equal(await page.getByText("Loading workflow...", { exact: true }).count(), 0);
+      assert.equal(await page.getByText("Opening workflows...", { exact: true }).count(), 0);
+      const region = width < 768 ? ".c1_editor" : ".c1_canvas";
+      if (width < 768) assert.equal(await placeholder.locator(".c1_steps").count(), 1);
+      const before = await placeholder.locator(region).boundingBox();
+      await page.evaluate(() => fixture.readyHeld("detail", fixture.current));
+      await expect(name(page)).toBeVisible();
+      const after = await page.locator(region).boundingBox();
+      assert.equal(before.width, after.width);
+      if (width >= 768) assert.equal(before.height, after.height);
+      assert.equal(await placeholder.count(), 0);
+    });
+  });

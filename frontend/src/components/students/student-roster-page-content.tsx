@@ -14,7 +14,6 @@ import {
   StudentRosterEmptyState,
   StudentRosterFooter,
   StudentRosterLoadError,
-  StudentRosterLoading,
   StudentRosterReadingRail,
   StudentRosterTable,
 } from "@/components/students/student-roster-sections";
@@ -34,6 +33,7 @@ const StudentForm = dynamic(
 );
 
 const QUICK_VIEW_MEDIA_QUERY = "(min-width: 1400px)";
+const ROSTER_PLACEHOLDER_ROWS = 8;
 
 function useQuickViewVisible() {
   const [isVisible, setIsVisible] = useState(false);
@@ -94,6 +94,7 @@ type StudentRosterPageContentProps = {
   onImportCsv: () => void;
   onNextPage: () => void;
   onOpenStudent: (studentId: string) => void;
+  onPrefetchStudent: (studentId: string) => void;
   onPreviousPage: () => void;
   onProgramFilterChange: (value: string) => void;
   onRetryRosterLoad: () => void;
@@ -169,6 +170,7 @@ export function StudentRosterPageContent({
   onImportCsv,
   onNextPage,
   onOpenStudent,
+  onPrefetchStudent,
   onPreviousPage,
   onProgramFilterChange,
   onRetryRosterLoad,
@@ -207,9 +209,14 @@ export function StudentRosterPageContent({
       <Header
         title="Students"
         description={
-          isInitialRosterLoading
-            ? "Loading roster"
-            : `${visibleTotal} ${visibleTotal === 1 ? "student" : "students"}`
+          isInitialRosterLoading ? (
+            <span
+              aria-hidden="true"
+              className="koaryu-skeleton-reveal inline-block h-3 w-20 rounded-full bg-surface-raised align-middle"
+            />
+          ) : (
+            `${visibleTotal} ${visibleTotal === 1 ? "student" : "students"}`
+          )
         }
       >
         {canManageRoster ? (
@@ -284,9 +291,7 @@ export function StudentRosterPageContent({
         <div className={`flex-1 ${styles.rosterViewport}`}>
           {activeLoadError ? (
             <StudentRosterLoadError activeLoadError={activeLoadError} onRetry={onRetryRosterLoad} />
-          ) : isInitialRosterLoading ? (
-            <StudentRosterLoading />
-          ) : filtered.length === 0 ? (
+          ) : !isInitialRosterLoading && filtered.length === 0 ? (
             <StudentRosterEmptyState
               canCreateStudents={canCreateStudents}
               canManageRoster={canManageRoster}
@@ -296,12 +301,19 @@ export function StudentRosterPageContent({
               onImportCsv={onImportCsv}
             />
           ) : (
-            <div className={styles.rosterWorkbench}>
+            // A cold load draws placeholder rows inside the same workbench, so the
+            // table, its columns and the quick-view rail do not move when rows land.
+            <div className={styles.rosterWorkbench} aria-busy={isInitialRosterLoading || undefined}>
+              {isInitialRosterLoading ? (
+                <p className="sr-only" role="status">
+                  Loading roster
+                </p>
+              ) : null}
               <div className={styles.rosterLedger}>
                 <StudentRosterTable
                   allSelected={allSelected}
                   canManageRoster={canManageRoster}
-                  filtered={filtered}
+                  filtered={isInitialRosterLoading ? [] : filtered}
                   focusedStudentId={focusedRow?.student.id ?? null}
                   handleSort={onSort}
                   inactivityByStudentId={inactivityByStudentId}
@@ -310,6 +322,8 @@ export function StudentRosterPageContent({
                   onFocusStudent={setFocusedStudentId}
                   onHoverStudent={isQuickViewVisible ? setFocusedStudentId : undefined}
                   onOpenStudent={onOpenStudent}
+                  onPrefetchStudent={onPrefetchStudent}
+                  placeholderRows={isInitialRosterLoading ? ROSTER_PLACEHOLDER_ROWS : 0}
                   programs={programs}
                   selectedIds={selectedIds}
                   sortDir={sortDir}
@@ -324,7 +338,8 @@ export function StudentRosterPageContent({
                     focusedRow ? (inactivityByStudentId.get(focusedRow.student.id) ?? null) : null
                   }
                   onOpenStudent={onOpenStudent}
-                  row={focusedRow}
+                  onPrefetchStudent={onPrefetchStudent}
+                  row={isInitialRosterLoading ? null : focusedRow}
                 />
               </div>
             </div>

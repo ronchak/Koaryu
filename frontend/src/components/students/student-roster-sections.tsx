@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import { ProgramBadge } from "@/components/programs/program-picker";
 import { StatusBadge } from "@/components/students/status-badge";
 import { StudentAvatar } from "@/components/students/student-avatar";
@@ -25,21 +26,6 @@ import {
   UserPlus,
 } from "lucide-react";
 import styles from "./student-records.module.css";
-
-export function StudentRosterLoading() {
-  return (
-    <div className="grid gap-px bg-border">
-      {Array.from({ length: 7 }).map((_, index) => (
-        <div key={index} className="grid gap-3 bg-surface px-4 py-4 sm:grid-cols-[2fr_1fr_1fr_1fr]">
-          <div className="h-4 w-44 animate-pulse rounded-[10px] bg-surface-raised motion-reduce:animate-none" />
-          <div className="h-4 w-24 animate-pulse rounded-[10px] bg-surface-raised motion-reduce:animate-none" />
-          <div className="h-4 w-28 animate-pulse rounded-[10px] bg-surface-raised motion-reduce:animate-none" />
-          <div className="h-4 w-20 animate-pulse rounded-[10px] bg-surface-raised motion-reduce:animate-none" />
-        </div>
-      ))}
-    </div>
-  );
-}
 
 export function StudentFormLoading() {
   return (
@@ -192,6 +178,8 @@ export function StudentRosterTable({
   onOpenStudent,
   onFocusStudent,
   onHoverStudent,
+  onPrefetchStudent,
+  placeholderRows = 0,
   programs,
   selectedIds,
   sortDir,
@@ -210,6 +198,9 @@ export function StudentRosterTable({
   onOpenStudent: (studentId: string) => void;
   onFocusStudent: (studentId: string) => void;
   onHoverStudent?: (studentId: string) => void;
+  onPrefetchStudent?: (studentId: string) => void;
+  /** Cold load: draw this many placeholder rows inside the real table. */
+  placeholderRows?: number;
   programs: Program[];
   selectedIds: Set<string>;
   sortDir: SortDir;
@@ -331,7 +322,44 @@ export function StudentRosterTable({
             )}
           </tr>
         </thead>
-        <tbody>
+        <tbody className={placeholderRows > 0 ? "koaryu-skeleton-reveal" : undefined}>
+          {Array.from({ length: placeholderRows }, (_, index) => (
+            <tr
+              key={`placeholder-${index}`}
+              className={styles.rosterPlaceholderRow}
+              aria-hidden="true"
+            >
+              {canManageRoster ? (
+                <td data-label="Select" className="p-0">
+                  <span className={styles.checkboxTarget}>
+                    <span className={styles.placeholderCheckbox} />
+                  </span>
+                </td>
+              ) : null}
+              <th scope="row" data-label="Student" className={styles.studentCell}>
+                <span className={styles.studentIdentityButton}>
+                  <span className={styles.placeholderAvatar} />
+                  <span className={styles.placeholderName} data-length={index % 3} />
+                </span>
+              </th>
+              <td data-label="Status" className={styles.statusCell}>
+                <span className={styles.placeholderPill} />
+              </td>
+              <td data-label="Programs" className={styles.programCell}>
+                <span className={styles.placeholderBar} data-length={(index + 1) % 3} />
+              </td>
+              <td data-column="contact" data-label="Contact" className={styles.contactCell} />
+              <td data-column="tags" data-label="Tags" className={styles.tagsCell} />
+              <td data-label="Member since" className={styles.memberSinceCell}>
+                <span className={styles.placeholderDate} />
+              </td>
+              {inactivityThreshold && (
+                <td data-label="Days inactive" className={styles.inactiveCell}>
+                  <span className={styles.placeholderDate} />
+                </td>
+              )}
+            </tr>
+          ))}
           {filtered.map((row) => {
             const { student } = row;
             const isSelected = selectedIds.has(student.id);
@@ -342,8 +370,14 @@ export function StudentRosterTable({
                 data-student-id={student.id}
                 data-state={student.status}
                 data-focused={focusedStudentId === student.id || undefined}
-                onFocusCapture={() => onFocusStudent(student.id)}
-                onPointerEnter={onHoverStudent ? () => onHoverStudent(student.id) : undefined}
+                onFocusCapture={() => {
+                  onFocusStudent(student.id);
+                  onPrefetchStudent?.(student.id);
+                }}
+                onPointerEnter={() => {
+                  onHoverStudent?.(student.id);
+                  onPrefetchStudent?.(student.id);
+                }}
                 onClick={() => onOpenStudent(student.id)}
                 className={styles.rosterRow}
                 data-selected={isSelected || undefined}
@@ -445,12 +479,19 @@ export function StudentRosterTable({
 export function StudentRosterReadingRail({
   inactivity,
   onOpenStudent,
+  onPrefetchStudent,
   row,
 }: {
   inactivity: string | null;
   onOpenStudent: (studentId: string) => void;
+  onPrefetchStudent?: (studentId: string) => void;
   row: StudentRosterRow | null;
 }) {
+  const quickViewStudentId = row?.student.id ?? null;
+  useEffect(() => {
+    if (quickViewStudentId) onPrefetchStudent?.(quickViewStudentId);
+  }, [onPrefetchStudent, quickViewStudentId]);
+
   if (!row) {
     return (
       <aside

@@ -100,17 +100,16 @@ describe("records workspace policies", () => {
       assert.equal(await page.evaluate(() => window.fixture.retries), 1);
 
       await page.evaluate(() =>
-        window.fixture.renderRecordsLoading({
-          description: "Loading student records.",
-          title: "Students",
-          variant: "roster",
+        window.fixture.renderStudentDetailSkeleton({
+          canManageRoster: true,
+          onBackToStudents: () => {},
         }),
       );
       const statuses = page.locator('[role="status"]');
       await statuses.first().waitFor();
       assert.equal(await statuses.count(), 1);
-      assert.equal(await page.locator('[aria-live="polite"]').count(), 1);
-      assert.equal(await statuses.textContent(), "Loading student records.");
+      // role=status supplies an implicit polite live region.
+      assert.equal(await statuses.textContent(), "Loading student");
     } finally {
       await browser.close();
     }

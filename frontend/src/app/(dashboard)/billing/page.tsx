@@ -1,29 +1,20 @@
-"use client";
-
 import { Suspense } from "react";
-import { BillingPageContent } from "@/components/billing/billing-page-content";
-import { useBillingPageController } from "@/lib/billing-page-controller";
-import { useConfigStore, useProgramStore, useStudentStore, useStudioStore } from "@/lib/store";
+import { BillingPageFallback } from "@/components/billing/billing-page-chrome";
+import { BillingPageBody } from "@/components/billing/billing-page-content";
+import { getBillingTabFromSearch } from "@/lib/billing-page-state";
 
-function BillingPageWithSearchParams() {
-  const config = useConfigStore();
-  const programsStore = useProgramStore();
-  const studentsStore = useStudentStore();
-  const studioStore = useStudioStore();
-  const { contentProps } = useBillingPageController({
-    config,
-    programsStore,
-    studentsStore,
-    studioStore,
-  });
-
-  return <BillingPageContent {...contentProps} />;
-}
-
-export default function BillingPage() {
+export default async function BillingPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
+}) {
+  const { tab } = await searchParams;
+  const activeTab = getBillingTabFromSearch(
+    new URLSearchParams({ tab: (Array.isArray(tab) ? tab[0] : tab) ?? "" }).toString(),
+  );
   return (
-    <Suspense fallback={null}>
-      <BillingPageWithSearchParams />
+    <Suspense fallback={<BillingPageFallback activeTab={activeTab} />}>
+      <BillingPageBody />
     </Suspense>
   );
 }
