@@ -947,3 +947,63 @@ for (const invalidation of ["role", "resource"])
     );
     assert.equal(await p.evaluate(() => f.writes.length), 0);
   });
+
+test("event rows remain on revisit while their current page revalidates", async (t) => {
+  const p = await mount(t);
+  await expect(p.getByRole("button", { name: "Open Sample belt test" })).toBeVisible();
+  await p.evaluate(() => f.showPage(false));
+  await p.getByRole("button", { name: "Open Sample belt test" }).waitFor({ state: "detached" });
+  await p.evaluate(() => {
+    f.holds.push("/belt-tests?limit=50");
+    f.showPage(true);
+  });
+  await p.waitForFunction(() => f.held.some((read) => read.path === "/belt-tests?limit=50"));
+  await expect(p.getByRole("button", { name: "Open Sample belt test" })).toBeVisible();
+  assert.equal(await p.getByRole("status", { name: "Loading events" }).count(), 0);
+});
+
+test("a retained event seeds the editor on revisit without weakening current reads", async (t) => {
+  const p = await open(t);
+  await p.evaluate(() => f.showPage(false));
+  await p
+    .getByRole("heading", { name: "Sample belt test", exact: true })
+    .waitFor({ state: "detached" });
+  await p.evaluate((id) => {
+    f.holds.push(`/belt-tests/${id}`);
+    f.showPage(true);
+  }, EVENT);
+  await p.waitForFunction((id) => f.held.some((read) => read.path === `/belt-tests/${id}`), EVENT);
+  await expect(p.getByRole("heading", { name: "Sample belt test", exact: true })).toBeVisible();
+  assert.equal(await p.getByRole("status", { name: "Loading current event" }).count(), 0);
+});
+
+test("revisiting a later event page keeps its rows and revalidates its retained cursor", async (t) => {
+  const p = await mount(t);
+  await expect(p.getByRole("button", { name: "Open Sample belt test" })).toBeVisible();
+  await p.evaluate((other) => {
+    f.eventPages = {
+      "/belt-tests?limit=50": { items: f.events, next_cursor: "opaque +/", has_more: true },
+      "/belt-tests?limit=50&cursor=opaque%20%2B%2F": {
+        items: [{ ...f.events[0], id: other, name: "Second page event" }],
+        next_cursor: null,
+        has_more: false,
+      },
+    };
+  }, OTHER);
+  await p.getByRole("button", { name: "Refresh events", exact: true }).click();
+  await expect(p.getByRole("button", { name: "Next event page" })).toBeEnabled();
+  await p.getByRole("button", { name: "Next event page" }).click();
+  await expect(p.getByRole("button", { name: "Open Second page event" })).toBeVisible();
+  await p.evaluate(() => f.showPage(false));
+  await p.getByRole("button", { name: "Open Second page event" }).waitFor({ state: "detached" });
+  await p.evaluate(() => {
+    f.holds.push("/belt-tests?limit=50&cursor=opaque%20%2B%2F");
+    f.showPage(true);
+  });
+  await p.waitForFunction(() =>
+    f.held.some((read) => read.path === "/belt-tests?limit=50&cursor=opaque%20%2B%2F"),
+  );
+  await expect(p.getByRole("button", { name: "Open Second page event" })).toBeVisible();
+  assert.equal(await p.getByRole("button", { name: "Open Sample belt test" }).count(), 0);
+  assert.equal(await p.getByRole("status", { name: "Loading events" }).count(), 0);
+});

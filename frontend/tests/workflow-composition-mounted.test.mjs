@@ -1169,3 +1169,25 @@ test("saved prototype-named operators keep their exact IDs in Graph and Steps", 
     );
   });
 });
+
+for (const width of [390, 1280])
+  test(`cold workflow uses the canvas and inspector frame at ${width}px`, async () => {
+    await mount({ route: savedRoute, width, hold: { detail: true } }, async (page) => {
+      await page.waitForFunction(() => fixture.held.some((read) => read.key === "detail"));
+      const placeholder = page.getByRole("status", {
+        name: "Loading workflow canvas",
+        exact: true,
+      });
+      await expect(placeholder).toHaveClass(/koaryu-skeleton-reveal/);
+      await expect(page.getByRole("button", { name: "All workflows" })).toBeVisible();
+      assert.equal(await page.getByText("Loading workflow...", { exact: true }).count(), 0);
+      assert.equal(await page.getByText("Opening workflows...", { exact: true }).count(), 0);
+      const before = await placeholder.locator(".c1_canvas").boundingBox();
+      await page.evaluate(() => fixture.readyHeld("detail", fixture.current));
+      await expect(name(page)).toBeVisible();
+      const after = await page.locator(".c1_canvas").boundingBox();
+      assert.equal(before.width, after.width);
+      assert.equal(before.height, after.height);
+      assert.equal(await placeholder.count(), 0);
+    });
+  });

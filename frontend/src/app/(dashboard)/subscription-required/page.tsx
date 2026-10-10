@@ -2,7 +2,7 @@
 
 import { publishAccessIdentity } from "@/lib/access-identity";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowUpRight, CheckCircle2, CreditCard, Loader2, ShieldCheck } from "lucide-react";
+import { ArrowUpRight, CheckCircle2, CreditCard, ShieldCheck } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { Header } from "@/components/header";
 import { OperationsSurface } from "@/components/operations/operations-surface";
@@ -218,9 +218,44 @@ export default function SubscriptionRequiredPage() {
       <div className="flex-1 overflow-auto px-4 py-10 sm:px-6 lg:px-8 lg:py-14">
         <div className="mx-auto max-w-[1080px]">
           {isLoading ? (
-            <div className="flex items-center gap-2 border-b border-border py-8 text-sm text-muted">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Checking workspace access...
+            <div
+              className="koaryu-skeleton-reveal"
+              role="status"
+              aria-label="Checking workspace access"
+              aria-busy="true"
+            >
+              <div className="border-b border-border pb-10" aria-hidden="true">
+                <div className="mb-5 h-4 w-40 rounded bg-surface-raised" />
+                <div className="grid gap-8 lg:grid-cols-[1.35fr_0.65fr] lg:items-end">
+                  <div>
+                    <div className="h-28 max-w-[780px] rounded bg-surface-raised sm:h-32" />
+                    <div className="mt-5 h-14 max-w-[680px] rounded bg-surface-raised" />
+                  </div>
+                  <div className="space-y-4">
+                    <div className="h-14 rounded bg-surface-raised" />
+                    <div className="h-16 rounded bg-surface-raised" />
+                  </div>
+                </div>
+              </div>
+              <div
+                className="grid gap-6 border-b border-border py-8 md:grid-cols-3"
+                aria-hidden="true"
+              >
+                {[0, 1, 2].map((column) => (
+                  <div key={column} className="space-y-2">
+                    <div className="h-4 w-4 rounded bg-surface-raised" />
+                    <div className="h-5 w-3/4 rounded bg-surface-raised" />
+                    <div className="h-12 rounded bg-surface-raised" />
+                  </div>
+                ))}
+              </div>
+              <div
+                className="flex flex-col gap-4 py-8 sm:flex-row sm:items-center sm:justify-between"
+                aria-hidden="true"
+              >
+                <div className="h-10 w-full max-w-xl rounded bg-surface-raised" />
+                <div className="h-12 w-52 shrink-0 rounded bg-surface-raised" />
+              </div>
             </div>
           ) : showAdminBillingDetails ? (
             <>

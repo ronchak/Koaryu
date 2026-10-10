@@ -20,7 +20,8 @@ function bundle(pageModule) {
   const react = add("react");
   const dom = add("react-dom/client");
   const subject = add(pageModule);
-  return `(()=>{const process={env:{NODE_ENV:'production'}};const modules=[${modules.join(",")}],cache={};function require(id){if(cache[id])return cache[id].exports;const m=cache[id]={exports:{}};modules[id](m,m.exports,require);return m.exports;}require(${dom}).createRoot(document.getElementById('root')).render(require(${react}).createElement(require(${subject}).default));})();`;
+  const retained = add("@/lib/retained-state");
+  return `(()=>{const process={env:{NODE_ENV:'production'}};const modules=[${modules.join(",")}],cache={};function require(id){if(cache[id])return cache[id].exports;const m=cache[id]={exports:{}};modules[id](m,m.exports,require);return m.exports;}const React=require(${react});function Fixture(){const config=React.useSyncExternalStore(window.fixture.subscribe,()=>window.fixture.config);const[shown,setShown]=React.useState(true);window.fixture.show=setShown;return React.createElement(require(${retained}).RetainedStateProvider,{scope:config.scope??'synthetic-studio'},shown?React.createElement(require(${subject}).default):null)}require(${dom}).createRoot(document.getElementById('root')).render(React.createElement(Fixture));})();`;
 }
 
 const sources = {
@@ -50,7 +51,11 @@ async function mountPage(source) {
       return () => listeners.delete(listener);
     };
     f.setToken = (token) => {
-      f.config = { token };
+      f.config = { ...f.config, token };
+      listeners.forEach((listener) => listener());
+    };
+    f.setScope = (scope) => {
+      f.config = { ...f.config, scope };
       listeners.forEach((listener) => listener());
     };
     f.studio = {
@@ -278,6 +283,123 @@ test("a failed cancellation leaves the pending status read in charge", async () 
   await page.evaluate(() => fixture.reads[1].resolve(null));
   await page.getByRole("button", { name: "Delete account" }).waitFor();
   assert.equal(await cancel.count(), 0);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+async function revisit(page) {
+  await page.evaluate(() => fixture.show(false));
+  await page.locator("main").waitFor({ state: "detached" });
+  await page.evaluate(() => fixture.show(true));
+}
+
+test("retained tickets survive revisit, failed revalidation and retry", async () => {
+  const { errors, page } = await mountPage(sources.support);
+  await page.waitForFunction(() => fixture.reads.length === 1);
+  await page.evaluate(
+    (value) => fixture.reads[0].resolve([value]),
+    ticket("cached", "Saved ticket", "2026-10-01T12:00:00Z"),
+  );
+  await page.getByText("Saved ticket", { exact: true }).waitFor();
+  await revisit(page);
+  await page.waitForFunction(() => fixture.reads.length === 2);
+  assert.deepEqual(await recentSubjects(page), ["Saved ticket"]);
+  assert.equal(
+    await page.getByRole("status", { name: "Loading recent support requests" }).count(),
+    0,
+  );
+  await page.evaluate(() => fixture.reads[1].reject(new Error("Revalidation unavailable")));
+  await page.getByRole("button", { name: "Retry recent requests" }).click();
+  await page.waitForFunction(() => fixture.reads.length === 3);
+  assert.deepEqual(await recentSubjects(page), ["Saved ticket"]);
+  assert.equal(
+    await page.getByRole("status", { name: "Loading recent support requests" }).count(),
+    0,
+  );
+  await page.evaluate(() => fixture.reads[2].resolve([]));
+  await page.getByText("No support requests have been created from this account yet.").waitFor();
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+for (const request of [null, scheduledDeletion])
+  test(`retained deletion status ${request ? "scheduled" : "empty"} survives a pending revisit read`, async () => {
+    const { errors, page } = await mountPage(sources.settings);
+    await page.waitForFunction(() => fixture.reads.length === 1);
+    await page.evaluate((value) => fixture.reads[0].resolve(value), request);
+    const label = request ? "Cancel deletion request" : "Delete account";
+    await page.getByRole("button", { name: label, exact: true }).waitFor();
+    await revisit(page);
+    await page.waitForFunction(() => fixture.reads.length === 2);
+    assert.equal(await page.getByRole("button", { name: label, exact: true }).count(), 1);
+    assert.equal(
+      await page.getByRole("status", { name: "Checking account deletion status" }).count(),
+      0,
+    );
+    assert.deepEqual(errors, []);
+    await page.close();
+  });
+
+for (const view of ["support", "settings"])
+  test(`${view} clears retained presentation when the identity scope changes`, async () => {
+    const { errors, page } = await mountPage(sources[view]);
+    await page.waitForFunction(() => fixture.reads.length === 1);
+    const value =
+      view === "support"
+        ? [ticket("old", "Old studio ticket", "2026-10-01T12:00:00Z")]
+        : scheduledDeletion;
+    await page.evaluate((value) => fixture.reads[0].resolve(value), value);
+    const cached =
+      view === "support"
+        ? page.getByText("Old studio ticket", { exact: true })
+        : page.getByRole("button", { name: "Cancel deletion request" });
+    await cached.waitFor();
+    await page.evaluate(() => fixture.setScope("new-identity-studio"));
+    await page.waitForFunction(() => fixture.reads.length === 2);
+    assert.equal(await cached.count(), 0);
+    assert.deepEqual(errors, []);
+    await page.close();
+  });
+
+test("an unmounted support submission cannot change the next visit's retained inbox", async () => {
+  const { errors, page } = await mountPage(sources.support);
+  await page.waitForFunction(() => fixture.reads.length === 1);
+  await page.evaluate(() => fixture.reads[0].resolve([]));
+  await page.getByLabel("Subject").fill("Old submitted ticket");
+  await page.getByLabel("Details").fill("The front desk printer jams on every receipt.");
+  await page.getByRole("button", { name: "Send request" }).click();
+  await page.waitForFunction(() => fixture.writes.length === 1);
+  await revisit(page);
+  await page.waitForFunction(() => fixture.reads.length === 2);
+  await page.evaluate(() => fixture.reads[1].resolve([]));
+  await page.getByText("No support requests have been created from this account yet.").waitFor();
+  await page.evaluate(
+    (value) => fixture.writes[0].resolve(value),
+    ticket("late", "Old submitted ticket", "2026-10-01T12:00:00Z"),
+  );
+  await revisit(page);
+  await page.waitForFunction(() => fixture.reads.length === 3);
+  assert.equal(await page.getByText("Old submitted ticket", { exact: true }).count(), 0);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test("an unmounted deletion submission cannot replace the next visit's retained status", async () => {
+  const { errors, page } = await mountPage(sources.settings);
+  await page.waitForFunction(() => fixture.reads.length === 1);
+  await page.evaluate(() => fixture.reads[0].resolve(null));
+  await page.getByRole("button", { name: "Delete account" }).click();
+  await page.getByLabel("Type DELETE to continue").fill("DELETE");
+  await page.getByRole("button", { name: "Schedule deletion", exact: true }).click();
+  await page.waitForFunction(() => fixture.writes.length === 1);
+  await revisit(page);
+  await page.waitForFunction(() => fixture.reads.length === 2);
+  await page.evaluate(() => fixture.reads[1].resolve(null));
+  await page.evaluate((value) => fixture.writes[0].resolve(value), scheduledDeletion);
+  await revisit(page);
+  await page.waitForFunction(() => fixture.reads.length === 3);
+  assert.equal(await page.getByRole("button", { name: "Cancel deletion request" }).count(), 0);
+  assert.equal(await page.getByRole("button", { name: "Delete account", exact: true }).count(), 1);
   assert.deepEqual(errors, []);
   await page.close();
 });

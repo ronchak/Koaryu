@@ -285,12 +285,14 @@ export async function buildBeltPanelFixture({
     react = add("react"),
     dom = add("react-dom/client"),
     store = add("@/lib/store"),
-    page = add("@/app/(dashboard)/belt-tests/page");
+    page = add("@/app/(dashboard)/belt-tests/page"),
+    retained = add("@/lib/retained-state");
   scripts.push(`(()=>{const process={env:{NODE_ENV:${JSON.stringify(strict ? "development" : "production")},NEXT_PUBLIC_PREVIEW_MODE:${JSON.stringify(String(preview))}}};const modules=[${modules.join(",")}],cache={};function require(id){if(cache[id])return cache[id].exports;const m=cache[id]={exports:{}};modules[id](m,m.exports,require);return m.exports;}
 const React=require(${react}),{StoreProvider,useStore}=require(${store}),Page=require(${page}).default;
 f.renderPage=Page;function Observer(){f.store=useStore();return null;}
-function PageMount(){const[route,setRoute]=React.useState(f.route),[page,setPage]=React.useState(null);f.navigate=next=>{f.route=next;f.redirects.push(next);history.replaceState(null,'',next);setRoute(next);window.dispatchEvent(new Event('belt:route'));};React.useEffect(()=>{let active=true;const params={};for(const[key,value]of new URLSearchParams(route.split('?')[1]))params[key]=key in params?[...Array.isArray(params[key])?params[key]:[params[key]],value]:value;Page({searchParams:Promise.resolve(params)}).then(result=>{if(active)setPage(result)}).catch(error=>{if(active)setPage(React.createElement('p',{role:'alert'},error.message))});return()=>{active=false}},[route]);return page;}
-function ProviderMount(){const[shown,setShown]=React.useState(true);f.showProvider=setShown;return shown?React.createElement(StoreProvider,null,React.createElement(Observer),React.createElement(PageMount)):null;}
+function PageMount(){const[route,setRoute]=React.useState(f.route),[page,setPage]=React.useState(null),[shown,setShown]=React.useState(true);f.showPage=setShown;f.navigate=next=>{f.route=next;f.redirects.push(next);history.replaceState(null,'',next);setRoute(next);window.dispatchEvent(new Event('belt:route'));};React.useEffect(()=>{let active=true;const params={};for(const[key,value]of new URLSearchParams(route.split('?')[1]))params[key]=key in params?[...Array.isArray(params[key])?params[key]:[params[key]],value]:value;Page({searchParams:Promise.resolve(params)}).then(result=>{if(active)setPage(result)}).catch(error=>{if(active)setPage(React.createElement('p',{role:'alert'},error.message))});return()=>{active=false}},[route]);return shown?page:null;}
+function RetainedPages(){const state=useStore();return React.createElement(require(${retained}).RetainedStateProvider,{scope:JSON.stringify([state.currentUserId,state.currentStudioId,state.identityGeneration])},React.createElement(PageMount));}
+function ProviderMount(){const[shown,setShown]=React.useState(true);f.showProvider=setShown;return shown?React.createElement(StoreProvider,null,React.createElement(Observer),React.createElement(RetainedPages)):null;}
 f.root=require(${dom}).createRoot(document.getElementById('root'));f.root.render(${strict ? "React.createElement(React.StrictMode,null,React.createElement(ProviderMount))" : "React.createElement(ProviderMount)"});})();`);
   return scripts.join("\n");
 }
