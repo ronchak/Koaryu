@@ -29,6 +29,7 @@ export interface MonthScheduleViewProps {
   maxVisibleEntries?: number;
   showHeader?: boolean;
   showTemplatePlaceholders?: boolean;
+  isLoading?: boolean;
   className?: string;
   onDayClick?: (date: Date) => void;
   onEntryClick?: (entry: MonthScheduleEntry) => void;
@@ -90,6 +91,7 @@ export function MonthScheduleView({
   maxVisibleEntries = 3,
   showHeader = true,
   showTemplatePlaceholders = false,
+  isLoading = false,
   className = "",
   onDayClick,
   onEntryClick,
@@ -220,12 +222,14 @@ export function MonthScheduleView({
                     isToday ? "bg-accent/[0.04]" : ""
                   }`}
                 >
-                  <button
-                    type="button"
-                    onClick={() => onDayClick?.(day.date)}
-                    aria-label={day.ariaLabel}
-                    className="absolute inset-0"
-                  />
+                  {!isLoading && (
+                    <button
+                      type="button"
+                      onClick={() => onDayClick?.(day.date)}
+                      aria-label={day.ariaLabel}
+                      className="absolute inset-0"
+                    />
+                  )}
 
                   {/* Day number and metadata */}
                   <div className="relative z-10 mb-2 flex items-start justify-between gap-2">
@@ -279,10 +283,17 @@ export function MonthScheduleView({
 
                   {/* Entries */}
                   <div className="relative z-10 flex flex-1 flex-col gap-1.5">
-                    {day.visibleEntries.length === 0 && (
-                      <div className="mt-2 border border-dashed border-border/80 px-2 py-2 text-[11px] text-muted">
-                        No scheduled classes
+                    {isLoading ? (
+                      <div aria-hidden="true" className="space-y-2 pt-2">
+                        <div className="h-3 w-3/4 rounded bg-surface-raised" />
+                        <div className="h-3 w-1/2 rounded bg-surface-raised" />
                       </div>
+                    ) : (
+                      day.visibleEntries.length === 0 && (
+                        <div className="mt-2 border border-dashed border-border/80 px-2 py-2 text-[11px] text-muted">
+                          No scheduled classes
+                        </div>
+                      )
                     )}
 
                     {day.visibleEntries.map((entry) => {
