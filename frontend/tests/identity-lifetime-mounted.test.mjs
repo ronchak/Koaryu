@@ -331,7 +331,7 @@ const row = (name) => ({
   needs_approval: false,
   is_eligible: true,
 });
-test("cached eligibility revalidates across renewal and retains rows after ordinary failure; force and mutation invalidate", async () => {
+test("cached eligibility revalidates across renewal and retains rows after ordinary failure; force retains rows and mutation invalidates", async () => {
   const page = await fixture();
   await settle(page, 0, { rows: [row("Initial")] });
   await page.evaluate(() => {
@@ -355,6 +355,8 @@ test("cached eligibility revalidates across renewal and retains rows after ordin
   });
   await flush(page);
   assert.equal(await page.evaluate(() => fixture.store.eligibilityPendingLadderId), "A");
+  assert.equal(await page.evaluate(() => fixture.store.eligibility[0].student_name), "Renewed");
+  assert.equal(await page.evaluate(() => fixture.store.eligibilityLadderId), "A");
   await page.evaluate(() => {
     void fixture.store.bulkUpdateStudentStatus(["student"], "inactive", { refreshMode: "local" });
   });
@@ -635,5 +637,34 @@ test("stale rendered report scope cannot borrow a newly published identity", asy
   await page.locator('[data-export-group="Owner Intelligence"] button').first().click();
   assert.equal(await page.evaluate(() => fixture.downloads.length), 0);
   assert.match(await page.locator("[data-report-appendix]").innerText(), /Sign in again/);
+  await page.close();
+});
+
+test("forced and resume eligibility reads retain the current ladder until atomic replacement", async () => {
+  const page = await fixture();
+  await settle(page, 0, { rows: [row("Visible")] });
+  await page.evaluate(() => {
+    void fixture.store.loadEligibilityForLadder("A", { force: true });
+  });
+  await flush(page);
+  assert.equal(await page.evaluate(() => fixture.store.eligibility[0].student_name), "Visible");
+  assert.equal(await page.evaluate(() => fixture.store.eligibilityPendingLadderId), "A");
+  await settle(page, 1, { rows: [row("Fresh")] });
+  assert.equal(await page.evaluate(() => fixture.store.eligibility[0].student_name), "Fresh");
+  await page.evaluate(() => window.dispatchEvent(new Event("koaryu:resume")));
+  await page.waitForFunction(() => fixture.reads.length === 3);
+  assert.equal(await page.evaluate(() => fixture.store.eligibility[0].student_name), "Fresh");
+  assert.equal(await page.evaluate(() => fixture.store.eligibilityPendingLadderId), "A");
+  await settle(page, 2, { rows: [] });
+  await page.waitForFunction(() => fixture.reads.length === 4);
+  await settle(page, 3, { rows: [] });
+  await page.evaluate(() => {
+    void fixture.store.loadEligibilityForLadder("A", { force: true });
+  });
+  await flush(page);
+  assert.equal(await page.evaluate(() => fixture.store.eligibilityLadderId), "A");
+  assert.equal(await page.evaluate(() => fixture.store.eligibility.length), 0);
+  await settle(page, 4, { rows: [row("After empty")] });
+  assert.equal(await page.evaluate(() => fixture.store.eligibility[0].student_name), "After empty");
   await page.close();
 });

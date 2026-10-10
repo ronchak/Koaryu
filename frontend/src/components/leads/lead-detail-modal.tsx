@@ -23,7 +23,7 @@ import styles from "./leads-ledger.module.css";
 interface LeadDetailInspectorProps {
   activities: LeadActivity[];
   activityError: string | null;
-  activityStatus: "idle" | "loading" | "ready" | "error";
+  activityStatus: "idle" | "loading" | "refreshing" | "ready" | "error";
   activeStaff: StaffMember[];
   currentAssignedStaff: StaffMember | null;
   canConvertLeads: boolean;
@@ -342,7 +342,11 @@ export function LeadDetailInspector({
           </div>
         )}
 
-        <section className="border-y border-border py-4" aria-labelledby="lead-activity-title">
+        <section
+          className="border-y border-border py-4"
+          aria-labelledby="lead-activity-title"
+          aria-busy={activityStatus === "loading" || activityStatus === "refreshing"}
+        >
           <div className="flex items-center justify-between gap-3">
             <div>
               <p className="text-xs font-semibold text-muted">Activity</p>
@@ -350,7 +354,7 @@ export function LeadDetailInspector({
                 Recorded follow-up trail
               </h3>
             </div>
-            {activityStatus === "loading" ? (
+            {activityStatus === "refreshing" ? (
               <Clock
                 aria-hidden="true"
                 className="h-4 w-4 animate-pulse text-muted motion-reduce:animate-none"
@@ -364,10 +368,22 @@ export function LeadDetailInspector({
                 Retry activity
               </Button>
             </div>
-          ) : activityStatus === "ready" && activities.length === 0 ? (
+          ) : null}
+          {(activityStatus === "ready" || activityStatus === "refreshing") &&
+          activities.length === 0 ? (
             <p className="mt-3 text-sm text-muted">
               No activity has been recorded for this lead yet.
             </p>
+          ) : activityStatus === "loading" && activities.length === 0 ? (
+            <div className="koaryu-skeleton-reveal mt-3 space-y-3" role="status" aria-live="polite">
+              <p className="sr-only">Loading lead activity.</p>
+              {Array.from({ length: 3 }).map((_, index) => (
+                <div key={index} className="border-l border-border pl-3" aria-hidden="true">
+                  <div className="h-4 w-3/4 rounded-[6px] bg-surface-raised" />
+                  <div className="mt-1 h-3 w-1/2 rounded-[6px] bg-surface-raised" />
+                </div>
+              ))}
+            </div>
           ) : (
             <ol className="mt-3 space-y-3">
               {activities.map((activity) => (

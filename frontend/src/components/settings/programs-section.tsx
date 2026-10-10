@@ -8,6 +8,9 @@ import { useProgramStore, useStudioStore } from "@/lib/store";
 import type { Program } from "@/types";
 import { Archive, Check, Plus, RefreshCw, RotateCcw, Save, Settings2 } from "lucide-react";
 
+const PROGRAM_ROW_CLASS =
+  "flex flex-col gap-3 px-4 py-3 md:min-h-14 md:flex-row md:items-center md:justify-between md:py-1";
+
 const COLOR_SWATCHES = ["#38BDF8", "#F59E0B", "#EF4444", "#22C55E", "#A855F7", "#94A3B8"];
 
 function usageLabel(program: Program, loaded: boolean, error: string | null) {
@@ -236,12 +239,36 @@ export function ProgramsSection() {
 
       <div className="divide-y divide-border overflow-hidden rounded-[10px] bg-surface-raised/30">
         {!programsLoaded ? (
-          <p className="p-4 text-sm text-muted">Loading programs...</p>
+          <div
+            className="koaryu-skeleton-reveal divide-y divide-border"
+            role="status"
+            aria-live="polite"
+            aria-busy="true"
+          >
+            <p className="sr-only">Loading programs.</p>
+            {Array.from({ length: 3 }).map((_, index) => (
+              <div key={index} className={PROGRAM_ROW_CLASS} aria-hidden="true">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="h-2.5 w-2.5 rounded-full bg-border" />
+                    <div className="h-5 w-36 max-w-full rounded-[6px] bg-border" />
+                  </div>
+                  <div className="mt-1 h-3 w-64 max-w-full rounded-[6px] bg-border" />
+                </div>
+                {canManage ? (
+                  <div className="flex items-center gap-2">
+                    <div className="h-11 w-16 rounded-[6px] bg-border" />
+                    <div className="h-11 w-20 rounded-[6px] bg-border" />
+                  </div>
+                ) : null}
+              </div>
+            ))}
+          </div>
         ) : sortedPrograms.length === 0 ? (
           <p className="p-4 text-sm text-muted">No programs created yet.</p>
         ) : (
           sortedPrograms.map((program) => (
-            <div key={program.id} className="flex flex-col gap-3 px-4 py-3 md:min-h-14 md:flex-row md:items-center md:justify-between md:py-1">
+            <div key={program.id} className={PROGRAM_ROW_CLASS}>
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: program.color_hex }} />

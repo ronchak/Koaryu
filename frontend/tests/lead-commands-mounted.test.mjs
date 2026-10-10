@@ -6,7 +6,7 @@ import { createCommonJsPacker } from "./helpers/store-browser-harness.mjs";
 function bundle() {
   const stubs = {
     "next/navigation": `exports.useRouter=()=>({push:p=>window.f.navigation.push(p)});`,
-    "@/lib/api": `exports.api={get:async(path)=>path==='/leads'?[...window.f.leads]:path.startsWith('/leads/')&&!path.endsWith('/activities')?window.f.leads.find(lead=>lead.id===path.split('/')[2]):[],post:(...args)=>window.f.request('post',...args),patch:(...args)=>window.f.request('patch',...args)};exports.ApiError=class ApiError extends Error{};exports.CommandOutcomeUnknown=require('@/lib/command-outcome').CommandOutcomeUnknown;window.f.Unknown=exports.CommandOutcomeUnknown;`,
+    "@/lib/api": `exports.api={get:async(path,token,options)=>path.endsWith('/activities')?window.f.activityRead(path,token,options):path==='/leads'?[...window.f.leads]:path.startsWith('/leads/')&&!path.endsWith('/activities')?window.f.leads.find(lead=>lead.id===path.split('/')[2]):[],post:(...args)=>window.f.request('post',...args),patch:(...args)=>window.f.request('patch',...args)};exports.ApiError=class ApiError extends Error{};exports.CommandOutcomeUnknown=require('@/lib/command-outcome').CommandOutcomeUnknown;window.f.Unknown=exports.CommandOutcomeUnknown;`,
     "@/components/programs/program-picker": `exports.ProgramBadge=()=>null;`,
     "lucide-react": `module.exports=new Proxy({},{get:()=>()=>null});`,
     "./leads-ledger.module.css": `module.exports={};`,
@@ -15,6 +15,7 @@ function bundle() {
   const react = add("react"),
     dom = add("react-dom/client");
   const resource = add("@/lib/store-resource-scope");
+  const retained = add("@/lib/retained-state");
   const hook = add("@/lib/leads-page-controller"),
     actions = add("@/lib/store-lead-actions");
   const board = add("@/components/leads/lead-pipeline-board"),
@@ -31,8 +32,8 @@ function bundle() {
     const selected=c.model.selectedLead;
     return React.createElement(React.Fragment,null,
       React.createElement(require(${board}).LeadPipelineBoard,{canManageLeads:true,canConvertLeads:true,leads:c.model.leads??leads,pendingLeadIds:c.pendingLeadIds,recoveringLeadIds:c.recoveringLeadIds,programById:new Map(),staffById:new Map(),today:'2026-09-26',onAddLead:c.openAddLeadModal,onKeyboardMoveLead:c.handleKeyboardMoveLead,onSelectLead:c.selectLead}),
-      selected?React.createElement(require(${detail}).LeadDetailInspector,{lead:selected,activities:c.selectedLeadActivities,activityError:null,activityStatus:'ready',activeStaff:[],currentAssignedStaff:null,canManageLeads:true,canConvertLeads:true,followUpValue:c.getFollowUpInputValue(selected),leadActionError:c.leadActionError,leadActionMessage:c.actionMessage,pendingLeadIds:c.pendingLeadIds,followUpRecovery:c.followUpRecoveries.get(selected.id)??null,onRetryFollowUp:c.handleRetryFollowUp,programById:new Map(),today:'2026-09-26',onAssignStaff:c.handleAssignedStaff,onClose:c.clearSelectedLead,onConvertLead:c.handleConvertLead,onDismissError:c.dismissLeadActionError,onDismissMessage:c.dismissActionMessage,onFollowUpValueChange:c.setFollowUpInputValue,onMarkContacted:c.handleMarkContacted,onMarkLost:c.handleMarkLost,onRetryActivities:c.retrySelectedLeadActivities,onRescheduleLead:c.handleRescheduleLead,onStageSelection:c.handleStageSelection}):null);
-  }f.root=require(${dom}).createRoot(document.getElementById('root'));f.root.render(React.createElement(App));})();`;
+      selected?React.createElement(require(${detail}).LeadDetailInspector,{lead:selected,activities:c.selectedLeadActivities,activityError:c.selectedLeadActivityError,activityStatus:c.selectedLeadActivityStatus,activeStaff:[],currentAssignedStaff:null,canManageLeads:true,canConvertLeads:true,followUpValue:c.getFollowUpInputValue(selected),leadActionError:c.leadActionError,leadActionMessage:c.actionMessage,pendingLeadIds:c.pendingLeadIds,followUpRecovery:c.followUpRecoveries.get(selected.id)??null,onRetryFollowUp:c.handleRetryFollowUp,programById:new Map(),today:'2026-09-26',onAssignStaff:c.handleAssignedStaff,onClose:c.clearSelectedLead,onConvertLead:c.handleConvertLead,onDismissError:c.dismissLeadActionError,onDismissMessage:c.dismissActionMessage,onFollowUpValueChange:c.setFollowUpInputValue,onMarkContacted:c.handleMarkContacted,onMarkLost:c.handleMarkLost,onRetryActivities:c.retrySelectedLeadActivities,onRescheduleLead:c.handleRescheduleLead,onStageSelection:c.handleStageSelection}):null);
+  }function Mount(){const [mounted,setMounted]=React.useState(true);f.setMounted=setMounted;return mounted?React.createElement(App):null;}f.root=require(${dom}).createRoot(document.getElementById('root'));f.root.render(React.createElement(require(${retained}).RetainedStateProvider,{scope:'activity-test'},React.createElement(Mount)));})();`;
 }
 const flush = (p) =>
   p.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
@@ -47,6 +48,14 @@ async function mount(browser, { preview = false, stage = "inquiry" } = {}) {
       window.f = {
         preview,
         navigation: [],
+        reads: [],
+        holdActivities: false,
+        activityRead(path, token, options) {
+          if (!this.holdActivities) return [];
+          return new Promise((resolve, reject) =>
+            this.reads.push({ path, token, options, resolve, reject }),
+          );
+        },
         writes: [],
         refreshes: 0,
         studentMutations: 0,
@@ -421,3 +430,78 @@ for (const preview of [false, true]) {
     });
   }
 }
+
+test("lead history survives reselection, refresh errors and page remounts without accepting stale reads", async () => {
+  const browser = await chromium.launch();
+  try {
+    const p = await mount(browser);
+    await p.evaluate(() => {
+      f.holdActivities = true;
+      f.c.selectLead("a");
+    });
+    await flush(p);
+    assert.equal(await p.evaluate(() => f.c.selectedLeadActivityStatus), "loading");
+    await p.evaluate(() =>
+      f.reads[0].resolve([
+        { id: "a-history", description: "A history", created_at: "2026-09-26T10:00:00Z" },
+      ]),
+    );
+    await flush(p);
+    await p.evaluate(() => f.c.selectLead("b"));
+    await flush(p);
+    assert.equal(await p.evaluate(() => f.c.selectedLeadActivities.length), 0);
+    await p.evaluate(() => f.reads[1].resolve([]));
+    await flush(p);
+    await p.evaluate(() => f.c.retrySelectedLeadActivities());
+    await flush(p);
+    assert.equal(await p.evaluate(() => f.c.selectedLeadActivityStatus), "refreshing");
+    assert.equal(await p.getByText("No activity has been recorded for this lead yet.").count(), 1);
+    await p.evaluate(() => f.c.selectLead("a"));
+    await flush(p);
+    assert.equal(await p.evaluate(() => f.c.selectedLeadActivities[0].description), "A history");
+    assert.equal(await p.evaluate(() => f.c.selectedLeadActivityStatus), "refreshing");
+    await p.evaluate(() =>
+      f.reads[2].resolve([
+        { id: "stale-b", description: "Stale B", created_at: "2026-09-26T10:00:00Z" },
+      ]),
+    );
+    await flush(p);
+    assert.equal(await p.getByText("Stale B", { exact: true }).count(), 0);
+    await p.evaluate(() => f.reads[3].reject(Error("Activity unavailable")));
+    await flush(p);
+    assert.equal(await p.getByText("A history", { exact: true }).count(), 1);
+    assert.equal(await p.getByText("Activity unavailable", { exact: true }).count(), 1);
+    await p.evaluate(() => f.setMounted(false));
+    await flush(p);
+    await p.evaluate(() => f.setMounted(true));
+    await flush(p);
+    await p.evaluate(() => f.c.selectLead("a"));
+    await flush(p);
+    assert.equal(await p.evaluate(() => f.c.selectedLeadActivities[0].description), "A history");
+    await p.evaluate(() => f.c.selectLead("a"));
+    await flush(p);
+    assert.equal(await p.evaluate(() => f.reads.length), 6);
+    await p.evaluate(() =>
+      f.reads[4].resolve([
+        { id: "stale-a", description: "Stale A", created_at: "2026-09-26T10:00:00Z" },
+      ]),
+    );
+    await flush(p);
+    assert.equal(await p.evaluate(() => f.c.selectedLeadActivities[0].description), "A history");
+    await p.evaluate(() => f.setScope(2));
+    await flush(p);
+    await p.evaluate(() => f.c.selectLead("a"));
+    await flush(p);
+    assert.equal(await p.evaluate(() => f.c.selectedLeadActivities.length), 0);
+    assert.equal(await p.evaluate(() => f.c.selectedLeadActivityStatus), "loading");
+    await p.evaluate(() =>
+      f.reads[5].resolve([
+        { id: "old-scope", description: "Old scope", created_at: "2026-09-26T10:00:00Z" },
+      ]),
+    );
+    await flush(p);
+    assert.equal(await p.getByText("Old scope", { exact: true }).count(), 0);
+  } finally {
+    await browser.close();
+  }
+});

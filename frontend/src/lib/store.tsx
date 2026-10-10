@@ -1146,10 +1146,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       return cachedRows;
     }
 
-    const retainCurrent = Boolean(options?.retainCurrent && cachedRows);
+    const retainCurrent = Boolean((options?.force || options?.retainCurrent) && cachedRows);
     if (retainCurrent) {
       commitEligibilityRows(ladderId, cachedRows);
-      setEligibilityPendingLadderId(null);
+      setEligibilityPendingLadderId(ladderId);
     } else {
       commitEligibilityRows(null, []);
       setEligibilityPendingLadderId(ladderId);
@@ -1993,7 +1993,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           const owner = request;
           void Promise.resolve(refreshBeltsRef.current?.()).then(async () => {
             if (disposed || !owner.isSameIdentity()) return;
-            if (pathnameRef.current === "/belt-tracker") await loadEligibilityForLadder(currentLadderIdRef.current, { force: true });
+            if (pathnameRef.current === "/belt-tracker") await loadEligibilityForLadder(currentLadderIdRef.current, { force: true, retainCurrent: true });
           }).catch(() => {
             if (!disposed && owner.isSameIdentity()) setBeltLaddersLoadError("Belt plans could not be refreshed. Please retry.");
           });

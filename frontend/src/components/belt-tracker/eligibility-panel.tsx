@@ -26,6 +26,7 @@ type EligibilityPanelProps = {
   collapsedGroups: Set<string>;
   eligibilityGroups: EligibilityGroup[];
   eligibilityLoadError: string | null;
+  hasLoadedEligibility: boolean;
   isEligibilityLoading: boolean;
   isEligibilityLoadErrorDismissed: boolean;
   isProgramsLoadErrorDismissed: boolean;
@@ -51,6 +52,7 @@ export function EligibilityPanel({
   collapsedGroups,
   eligibilityGroups,
   eligibilityLoadError,
+  hasLoadedEligibility,
   isEligibilityLoading,
   isEligibilityLoadErrorDismissed,
   isProgramsLoadErrorDismissed,
@@ -69,7 +71,7 @@ export function EligibilityPanel({
   previousRankByCurrentRankId,
   selectedProgramName,
 }: EligibilityPanelProps) {
-  const hasRetainedEligibility = eligibilityGroups.length > 0;
+  const hasRetainedEligibility = hasLoadedEligibility || eligibilityGroups.length > 0;
   const decisionCounts = eligibilityGroups.reduce(
     (counts, group) => {
       group.entries.forEach((entry) => {
@@ -88,6 +90,7 @@ export function EligibilityPanel({
       role="tabpanel"
       aria-labelledby="belt-tab-eligibility"
       className={`flex-1 min-w-0 ${styles.eligibilityWorkspace}`}
+      aria-busy={isEligibilityLoading}
     >
       {ladderError && (
         <div>
@@ -123,19 +126,8 @@ export function EligibilityPanel({
         </div>
       ) : null}
 
-      {isEligibilityLoading ? (
-        <div className={styles.eligibilitySkeleton} role="status">
-          <p className="sr-only">
-            Loading eligibility for {selectedProgramName || "this program"}...
-          </p>
-          {Array.from({ length: 7 }).map((_, row) => (
-            <div key={row} className={styles.eligibilitySkeletonRow} aria-hidden="true">
-              {Array.from({ length: 6 }).map((__, column) => (
-                <span key={column} className={styles.eligibilitySkeletonBar} />
-              ))}
-            </div>
-          ))}
-        </div>
+      {isEligibilityLoading && !hasLoadedEligibility && !hasRetainedEligibility ? (
+        <EligibilityLoading selectedProgramName={selectedProgramName} />
       ) : eligibilityLoadError && !hasRetainedEligibility ? null : eligibilityGroups.length ===
         0 ? (
         <div className={styles.panelState}>
@@ -182,29 +174,7 @@ export function EligibilityPanel({
           <div className={styles.eligibilityTableFrame}>
             <table className={styles.eligibilityTable}>
               <caption className="sr-only">Promotion readiness grouped by current rank</caption>
-              <thead>
-                <tr className="border-b border-border">
-                  <th className="px-6 py-3 text-left text-xs font-medium text-text-secondary">
-                    Student
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary">
-                    Current Rank
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary">
-                    Next Rank
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary w-44">
-                    Classes
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary w-44">
-                    Time at Rank
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary">
-                    Status
-                  </th>
-                  <th className="px-4 py-3"></th>
-                </tr>
-              </thead>
+              <EligibilityTableHead />
               <tbody>
                 {eligibilityGroups.map((group) => {
                   const isCollapsed = collapsedGroups.has(group.key);
@@ -385,6 +355,90 @@ export function EligibilityPanel({
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+function EligibilityTableHead() {
+  return (
+    <thead>
+      <tr className="border-b border-border">
+        <th className="px-6 py-3 text-left text-xs font-medium text-text-secondary">Student</th>
+        <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary">
+          Current Rank
+        </th>
+        <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary">Next Rank</th>
+        <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary w-44">
+          Classes
+        </th>
+        <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary w-44">
+          Time at Rank
+        </th>
+        <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary">Status</th>
+        <th className="px-4 py-3"></th>
+      </tr>
+    </thead>
+  );
+}
+
+export function EligibilityLoading({
+  selectedProgramName = null,
+}: {
+  selectedProgramName?: string | null;
+}) {
+  return (
+    <div
+      className="koaryu-skeleton-reveal flex flex-col gap-4"
+      role="status"
+      aria-live="polite"
+      aria-busy="true"
+    >
+      <p className="sr-only">Loading eligibility for {selectedProgramName || "this program"}.</p>
+      <div className={styles.decisionRegister} aria-hidden="true">
+        {["Ready", "Approval", "Progress"].map((label) => (
+          <div key={label}>
+            <span>{label}</span>
+            <strong>—</strong>
+          </div>
+        ))}
+      </div>
+      <div className={styles.eligibilityTableFrame} aria-hidden="true">
+        <table className={styles.eligibilityTable}>
+          <EligibilityTableHead />
+          <tbody>
+            <tr className={styles.rankGroupHeader}>
+              <td colSpan={7} className="px-4 py-3">
+                <div className="h-5 w-36 rounded-[6px] bg-border" />
+              </td>
+            </tr>
+            {Array.from({ length: 6 }).map((_, row) => (
+              <tr key={row} data-readiness="progress">
+                {[
+                  "Student",
+                  "Current rank",
+                  "Next rank",
+                  "Classes",
+                  "Time at rank",
+                  "Readiness",
+                  "Actions",
+                ].map((label, column) =>
+                  column === 0 ? (
+                    <th key={label} scope="row" data-label={label} className="px-6 py-3 text-left">
+                      <div className="h-5 w-28 max-w-full rounded-[6px] bg-border" />
+                    </th>
+                  ) : (
+                    <td key={label} data-label={label} className="px-4 py-3">
+                      <div
+                        className={`${column === 6 ? "h-9" : "h-5"} w-24 max-w-full rounded-[6px] bg-border`}
+                      />
+                    </td>
+                  ),
+                )}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
