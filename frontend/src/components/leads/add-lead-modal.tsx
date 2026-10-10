@@ -61,7 +61,10 @@ export function AddLeadModal({
       onBackdropClick={closeIfIdle}
     >
       <div className="flex items-center justify-between mb-6">
-        <h2 id="add-lead-title" className="text-base font-semibold text-text-primary">
+        <h2
+          id="add-lead-title"
+          className="text-[1.375rem] font-extrabold tracking-[-0.03em] text-text-primary"
+        >
           Add new lead
         </h2>
         <button
@@ -241,7 +244,7 @@ export function AddLeadModal({
           />
           Minor lead
         </label>
-        <div className="grid grid-cols-1 gap-3 border border-border bg-surface/60 p-3">
+        <div className="grid grid-cols-1 gap-3 rounded-[12px] border border-border bg-surface/60 p-3">
           <p className="text-xs font-medium text-text-secondary">Guardian details</p>
           <input
             aria-label="Guardian name"
