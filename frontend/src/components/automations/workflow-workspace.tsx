@@ -36,6 +36,8 @@ import type { WorkflowSimulationSelection } from "./workflow-simulation-context-
 import { WorkflowGraphEditor } from "./workflow-graph-editor";
 import { WorkflowNodeInspector } from "./workflow-node-inspector";
 import styles from "./workflow-workspace.module.css";
+import graphStyles from "./workflow-graph-editor.module.css";
+import inspectorStyles from "./workflow-node-inspector.module.css";
 
 export const validWorkflowId = (value: unknown): value is string =>
   typeof value === "string" &&
@@ -48,7 +50,13 @@ export const useWorkflowSnapshot = (owner: Owner) =>
   useSyncExternalStore(owner.subscribe, owner.getSnapshot, owner.getSnapshot);
 
 // The browser registry owns commands. A route owns only this subscription and its presentation.
-export function WorkflowAccess({ children }: { children: (owner: Owner) => ReactNode }) {
+export function WorkflowAccess({
+  children,
+  editor = false,
+}: {
+  children: (owner: Owner) => ReactNode;
+  editor?: boolean;
+}) {
   const { isPreviewMode, token, subscriptionRequired } = useConfigStore();
   const { identityReady, identityGeneration, currentRole, currentStudioId, currentUserId } =
     useStudioStore();
@@ -71,6 +79,7 @@ export function WorkflowAccess({ children }: { children: (owner: Owner) => React
       token={token ?? ""}
       userId={currentUserId}
       studioId={currentStudioId ?? ""}
+      editor={editor}
     >
       {children}
     </BrowserOwner>
@@ -81,12 +90,14 @@ function BrowserOwner({
   token,
   userId,
   studioId,
+  editor,
   children,
 }: {
   preview: boolean;
   token: string;
   userId: string;
   studioId: string;
+  editor: boolean;
   children: (owner: Owner) => ReactNode;
 }) {
   const [owner, setOwner] = useState<Owner | null>(null);
@@ -117,7 +128,99 @@ function BrowserOwner({
   return owner ? (
     <CurrentOwner owner={owner}>{children}</CurrentOwner>
   ) : (
-    <p role="status">Opening workflows...</p>
+    <WorkflowOpeningPlaceholder editor={editor} />
+  );
+}
+
+function WorkflowEditorPlaceholder() {
+  return (
+    <div
+      className={`${styles.editorGrid} koaryu-skeleton-reveal`}
+      role="status"
+      aria-label="Loading workflow canvas"
+      aria-busy="true"
+    >
+      <div className={graphStyles.editor} aria-hidden="true">
+        <div className={graphStyles.heading}>
+          <h2>Workflow steps</h2>
+        </div>
+        <div className="mb-4 h-11 rounded bg-surface-raised" />
+        <div className={`${graphStyles.canvas} bg-surface-raised`} />
+      </div>
+      <div className={inspectorStyles.inspector} aria-hidden="true">
+        <div className={inspectorStyles.header}>
+          <h2>Step settings</h2>
+        </div>
+        <div className={inspectorStyles.fields}>
+          {[0, 1, 2].map((field) => (
+            <div key={field} className="h-16 rounded bg-surface-raised" />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function WorkflowOpeningPlaceholder({ editor }: { editor: boolean }) {
+  const router = useRouter();
+  const { isPreviewMode } = useConfigStore();
+  if (!editor)
+    return (
+      <div
+        className={`${styles.catalog} koaryu-skeleton-reveal`}
+        role="status"
+        aria-label="Opening workflows"
+        aria-busy="true"
+      >
+        <div className={styles.templates} aria-hidden="true">
+          {[0, 1, 2].map((card) => (
+            <div key={card} className={`${styles.card} h-48 bg-surface-raised`} />
+          ))}
+        </div>
+      </div>
+    );
+  return (
+    <div className={styles.workspace}>
+      <div className={styles.topline}>
+        <button onClick={() => router.push("/automations")}>← All workflows</button>
+        <span>{isPreviewMode ? "Sample workspace" : "Workflow editor"}</span>
+      </div>
+      {isPreviewMode ? (
+        <p className={styles.notice}>
+          Sample only. Explore and edit these examples here. Saving, publishing, and sending are
+          unavailable.
+        </p>
+      ) : null}
+      <section
+        className={`${styles.sheet} koaryu-skeleton-reveal`}
+        role="status"
+        aria-label="Loading workflow"
+        aria-busy="true"
+      >
+        <div className={styles.metadata} aria-hidden="true">
+          <div className="space-y-2">
+            <div className="h-5 w-32 rounded bg-surface-raised" />
+            <div className="h-11 rounded bg-surface-raised" />
+            <div className="h-4 w-28 rounded bg-surface-raised" />
+          </div>
+          <div className="space-y-2">
+            <div className="h-5 w-32 rounded bg-surface-raised" />
+            <div className="h-[70px] rounded bg-surface-raised" />
+            <div className="h-4 w-28 rounded bg-surface-raised" />
+          </div>
+        </div>
+        <div className="h-7 w-2/3 rounded bg-surface-raised" aria-hidden="true" />
+        <div className="h-5 w-48 rounded bg-surface-raised" aria-hidden="true" />
+        {[0, 1].map((row) => (
+          <div key={row} className={styles.actions} aria-hidden="true">
+            {[0, 1, 2].map((button) => (
+              <div key={button} className="h-11 w-32 rounded bg-surface-raised" />
+            ))}
+          </div>
+        ))}
+      </section>
+      <WorkflowEditorPlaceholder />
+    </div>
   );
 }
 function CurrentOwner({
@@ -207,7 +310,7 @@ export function WorkflowWorkspace({
   draftId?: string;
 }) {
   return (
-    <WorkflowAccess>
+    <WorkflowAccess editor>
       {(owner) => (
         <WorkspaceView
           key={`${workflowId ?? "draft"}:${draftId ?? ""}`}
@@ -369,7 +472,7 @@ function WorkspaceView({
         </p>
       </WorkflowConfirmation>
     );
-  if (opening && !matches) return <p role="status">Loading workflow...</p>;
+  if (opening && !matches) return <WorkflowOpeningPlaceholder editor />;
   if (!editor || !matches)
     return (
       <div className={styles.notice}>
@@ -635,7 +738,7 @@ function WorkspaceView({
           disabled={Boolean(archived)}
         />
       ) : (
-        <p role="status">Loading workflow choices...</p>
+        <WorkflowEditorPlaceholder />
       )}
       {toolGraph ? (
         <div className={styles.workflowTools}>

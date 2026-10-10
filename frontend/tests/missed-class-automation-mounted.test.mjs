@@ -15,7 +15,8 @@ function bundle(mode = "production") {
   const react = add("react");
   const dom = add("react-dom/client");
   const subject = add("@/components/automations/missed-class-automation");
-  return `(()=>{const process={env:{NODE_ENV:${modeSource}}};const modules=[${modules.join(",")}],cache={};function require(id){if(cache[id])return cache[id].exports;const m=cache[id]={exports:{}};modules[id](m,m.exports,require);return m.exports;}window.f.root=require(${dom}).createRoot(document.getElementById('root'));window.f.root.render(require(${react}).createElement(require(${react}).StrictMode,null,require(${react}).createElement(require(${subject}).MissedClassAutomation)));})();`;
+  const retained = add("@/lib/retained-state");
+  return `(()=>{const process={env:{NODE_ENV:${modeSource}}};const modules=[${modules.join(",")}],cache={};function require(id){if(cache[id])return cache[id].exports;const m=cache[id]={exports:{}};modules[id](m,m.exports,require);return m.exports;}window.f.root=require(${dom}).createRoot(document.getElementById('root'));const React=require(${react});function Fixture(){const state=React.useSyncExternalStore(window.f.subscribe,window.f.getState);const[shown,setShown]=React.useState(true);window.f.show=setShown;return React.createElement(require(${retained}).RetainedStateProvider,{scope:JSON.stringify([state.isPreviewMode,state.currentUserId,state.currentStudioId,state.identityGeneration])},shown?React.createElement(require(${subject}).MissedClassAutomation):null)}window.f.root.render(React.createElement(React.StrictMode,null,React.createElement(Fixture)));})();`;
 }
 
 let browser;
@@ -37,7 +38,14 @@ async function mount(t, options = {}) {
   });
   await page.setContent('<div id="root"></div>');
   await page.evaluate((options) => {
-    const f = (window.f = { calls: [], previews: [], saves: [], reads: [], ...options });
+    const f = (window.f = {
+      calls: [],
+      previews: [],
+      saves: [],
+      reads: [],
+      activityReads: [],
+      ...options,
+    });
     const listeners = new Set();
     f.state = {
       token: "token-one",
@@ -143,6 +151,10 @@ async function mount(t, options = {}) {
     f.api = {
       get: (path, token, options) => {
         f.calls.push({ method: "GET", path, token });
+        if (path.includes("activity") && f.holdActivity)
+          return new Promise((resolve, reject) =>
+            f.activityReads.push({ resolve, reject, signal: options.signal }),
+          );
         if (path.includes("activity"))
           return f.failActivity
             ? Promise.reject(new Error("Activity unavailable"))
@@ -490,4 +502,54 @@ test("role revocation hides existing preview and activity without another reques
   await page.getByText("An Admin can set up missed-class emails and view recipients.").waitFor();
   assert.equal(await page.getByText("guardian@example.test", { exact: false }).count(), 0);
   assert.equal(await page.evaluate(() => window.f.calls.length), count);
+});
+
+test("retained saved rule and activity render on revisit while reads are pending", async (t) => {
+  const page = await mount(t);
+  await loaded(page);
+  await page.getByText("Activity Alex", { exact: true }).waitFor();
+  await page.getByLabel("Subject", { exact: true }).fill("Unsaved local subject");
+  await page.evaluate(() => {
+    f.show(false);
+  });
+  await page.locator("[data-missed-class-editor]").waitFor({ state: "detached" });
+  await page.evaluate(() => {
+    f.holdSettings = true;
+    f.holdActivity = true;
+    f.show(true);
+  });
+  await page.waitForFunction(() => f.reads.length === 1 && f.activityReads.length === 1);
+  assert.equal(
+    await page.getByLabel("Subject", { exact: true }).inputValue(),
+    "Hello {{student_first_name}}",
+  );
+  assert.equal(await page.getByText("Activity Alex", { exact: true }).count(), 1);
+  assert.equal(await page.getByRole("status", { name: "Loading settings" }).count(), 0);
+  assert.equal(await page.getByRole("status", { name: "Loading activity" }).count(), 0);
+  await page.evaluate(() => {
+    f.reads[0].reject(new Error("Settings unavailable"));
+    f.activityReads[0].reject(new Error("Activity unavailable"));
+  });
+  await page.getByText("Settings unavailable", { exact: true }).waitFor();
+  assert.equal(
+    await page.getByLabel("Subject", { exact: true }).inputValue(),
+    "Hello {{student_first_name}}",
+  );
+  assert.equal(await page.getByText("Activity Alex", { exact: true }).count(), 1);
+});
+
+test("cold rule and activity placeholders wait for data in the loaded layout", async (t) => {
+  const page = await mount(t, { holdSettings: true, holdActivity: true });
+  await page.getByRole("status", { name: "Loading settings" }).waitFor();
+  assert.equal(await page.locator(".koaryu-skeleton-reveal .lg\\:grid-cols-2").count(), 1);
+  assert.equal(
+    await page.getByRole("status", { name: "Loading activity" }).locator("li").count(),
+    3,
+  );
+  await page.evaluate(() => {
+    f.reads[0].resolve(f.settings);
+    f.activityReads[0].resolve(f.activity);
+  });
+  await loaded(page);
+  assert.equal(await page.getByRole("status", { name: "Loading settings" }).count(), 0);
 });

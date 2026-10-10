@@ -1,6 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Suspense,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useSearchParams } from "next/navigation";
 import { Bug, CheckCircle2, LifeBuoy, Mail, Send } from "lucide-react";
 import { AccountNotice, AccountPageShell, AccountSection } from "@/components/account-page-shell";
@@ -9,6 +17,7 @@ import { api } from "@/lib/api";
 import { SUPPORT_EMAIL } from "@/lib/constants";
 import { useConfigStore } from "@/lib/store";
 import { useStudioStore } from "@/lib/store";
+import { useRetainedState, useRetainedStore } from "@/lib/retained-state";
 import type { SupportTicket, SupportTicketSeverity, SupportTicketTopic } from "@/types";
 
 function encodeMailto(subject: string, body: string) {
@@ -40,6 +49,15 @@ function initialTopic() {
 }
 
 export default function ContactSupportPage() {
+  const retained = useRetainedStore();
+  return (
+    <Suspense fallback={<ContactSupportPlaceholder />}>
+      <ContactSupportBody key={retained?.scope} />
+    </Suspense>
+  );
+}
+
+function ContactSupportBody() {
   const searchParams = useSearchParams();
   const { token } = useConfigStore();
   const { studioName, userEmail, userName } = useStudioStore();
@@ -53,13 +71,23 @@ export default function ContactSupportPage() {
   const [expectedResult, setExpectedResult] = useState("");
   const [actualResult, setActualResult] = useState("");
   const [createdTicket, setCreatedTicket] = useState<SupportTicket | null>(null);
-  const [recentTickets, setRecentTickets] = useState<SupportTicket[]>([]);
+  const [recentTickets, setRecentTickets] = useRetainedState<SupportTicket[] | null>(
+    "help:contact:recent-tickets",
+    null,
+  );
   const [recentTicketsStatus, setRecentTicketsStatus] = useState<"loading" | "ready" | "error">(
     "loading",
   );
   const [recentTicketsError, setRecentTicketsError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const submittingRef = useRef(false);
+  const retained = useRetainedStore();
+  const lifetime = useRef<AbortController | null>(null);
+  useLayoutEffect(() => {
+    const controller = new AbortController();
+    lifetime.current = controller;
+    return () => controller.abort();
+  }, [retained]);
   const [formError, setFormError] = useState("");
   const pageContext = useMemo(() => {
     if (typeof window === "undefined") {
@@ -108,13 +136,19 @@ export default function ContactSupportPage() {
     (read: TicketsRead) => read.sequence === ticketReadSequenceRef.current,
     [],
   );
-  const commitTicketsRead = useCallback((read: TicketsRead, tickets: SupportTicket[]) => {
-    const confirmed = confirmedTicketsRef.current;
-    const confirmedSince = confirmed.slice(0, confirmed.length - read.confirmedAtStart);
-    const confirmedIds = new Set(confirmedSince.map((item) => item.id));
-    setRecentTickets([...confirmedSince, ...tickets.filter((item) => !confirmedIds.has(item.id))]);
-    setRecentTicketsStatus("ready");
-  }, []);
+  const commitTicketsRead = useCallback(
+    (read: TicketsRead, tickets: SupportTicket[]) => {
+      const confirmed = confirmedTicketsRef.current;
+      const confirmedSince = confirmed.slice(0, confirmed.length - read.confirmedAtStart);
+      const confirmedIds = new Set(confirmedSince.map((item) => item.id));
+      setRecentTickets([
+        ...confirmedSince,
+        ...tickets.filter((item) => !confirmedIds.has(item.id)),
+      ]);
+      setRecentTicketsStatus("ready");
+    },
+    [setRecentTickets],
+  );
 
   const loadRecentTickets = useCallback(
     async (signal?: AbortSignal) => {
@@ -128,7 +162,7 @@ export default function ContactSupportPage() {
       setRecentTicketsError("");
       try {
         const tickets = await api.get<SupportTicket[]>("/support/tickets", token, { signal });
-        if (isCurrentTicketsRead(read)) commitTicketsRead(read, tickets);
+        if (!signal?.aborted && isCurrentTicketsRead(read)) commitTicketsRead(read, tickets);
       } catch (error) {
         if (error instanceof Error && error.name === "AbortError") return;
         if (!isCurrentTicketsRead(read)) return;
@@ -154,7 +188,8 @@ export default function ContactSupportPage() {
       void api
         .get<SupportTicket[]>("/support/tickets", token, { signal: controller.signal })
         .then((tickets) => {
-          if (isCurrentTicketsRead(read)) commitTicketsRead(read, tickets);
+          if (!controller.signal.aborted && isCurrentTicketsRead(read))
+            commitTicketsRead(read, tickets);
         })
         .catch((error: unknown) => {
           if (error instanceof Error && error.name === "AbortError") return;
@@ -168,8 +203,9 @@ export default function ContactSupportPage() {
 
     return () => {
       controller.abort();
+      ticketReadSequenceRef.current += 1;
     };
-  }, [beginTicketsRead, commitTicketsRead, isCurrentTicketsRead, token]);
+  }, [beginTicketsRead, commitTicketsRead, isCurrentTicketsRead, retained, token]);
 
   const mailto = useMemo(() => {
     const selectedTopic = topicOptions.find((option) => option.value === topic)?.label || "Support";
@@ -212,7 +248,8 @@ export default function ContactSupportPage() {
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (submittingRef.current) return;
+    const controller = lifetime.current;
+    if (submittingRef.current || !controller || controller.signal.aborted) return;
     if (!token) {
       setFormError("You need to be signed in to send support requests.");
       return;
@@ -262,13 +299,14 @@ export default function ContactSupportPage() {
           networkErrorMessage: "Could not reach support. You can open an email draft instead.",
         },
       );
+      if (controller.signal.aborted) return;
       setCreatedTicket(ticket);
       confirmedTicketsRef.current = [
         ticket,
         ...confirmedTicketsRef.current.filter((item) => item.id !== ticket.id),
       ];
       setRecentTickets((current) =>
-        [ticket, ...current.filter((item) => item.id !== ticket.id)].slice(0, 5),
+        [ticket, ...(current ?? []).filter((item) => item.id !== ticket.id)].slice(0, 5),
       );
       setDetails("");
       setSubject("");
@@ -276,10 +314,13 @@ export default function ContactSupportPage() {
       setExpectedResult("");
       setActualResult("");
     } catch (error) {
+      if (controller.signal.aborted) return;
       setFormError(error instanceof Error ? error.message : "Could not send support request.");
     } finally {
-      submittingRef.current = false;
-      setIsSubmitting(false);
+      if (!controller.signal.aborted) {
+        submittingRef.current = false;
+        setIsSubmitting(false);
+      }
     }
   }
 
@@ -435,25 +476,7 @@ export default function ContactSupportPage() {
           </form>
         </AccountSection>
 
-        <AccountSection title="What to include">
-          <div className="space-y-4 text-sm text-text-secondary">
-            <div className="flex gap-3">
-              <LifeBuoy className="mt-0.5 h-4 w-4 flex-shrink-0 text-accent" />
-              <p>For account issues, include the login email and studio name.</p>
-            </div>
-            <div className="flex gap-3">
-              <Mail className="mt-0.5 h-4 w-4 flex-shrink-0 text-accent" />
-              <p>
-                For billing, include payer name, invoice number, and visible Stripe status if
-                available.
-              </p>
-            </div>
-            <div className="flex gap-3">
-              <Bug className="mt-0.5 h-4 w-4 flex-shrink-0 text-accent" />
-              <p>For bugs, include steps to reproduce and a screenshot when possible.</p>
-            </div>
-          </div>
-        </AccountSection>
+        <SupportContextAdvice />
       </div>
 
       <AccountNotice>
@@ -465,52 +488,124 @@ export default function ContactSupportPage() {
         title="Recent support requests"
         description="Use this as a lightweight ticket inbox while support tooling is still early."
       >
-        {recentTicketsStatus === "loading" ? (
-          <p role="status" className="text-sm text-text-secondary">
-            Loading recent support requests…
-          </p>
-        ) : recentTicketsStatus === "error" ? (
-          <div className="border-l-2 border-danger pl-4">
-            <p role="alert" className="text-sm text-danger">
-              {recentTicketsError}
-            </p>
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              className="mt-3"
-              onClick={() => void loadRecentTickets()}
-            >
-              Retry recent requests
-            </Button>
-          </div>
-        ) : recentTickets.length > 0 ? (
-          <div className="divide-y divide-border border-t border-b border-border">
-            {recentTickets.slice(0, 5).map((ticket) => (
-              <div
-                key={ticket.id}
-                className="grid gap-2 py-3 text-sm sm:grid-cols-[1fr_auto] sm:items-center"
+        <div aria-busy={recentTicketsStatus === "loading"}>
+          {recentTicketsStatus === "error" && (
+            <div className="mb-4 border-l-2 border-danger pl-4">
+              <p role="alert" className="text-sm text-danger">
+                {recentTicketsError}
+              </p>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                className="mt-3"
+                onClick={() => void loadRecentTickets()}
               >
-                <div className="min-w-0">
-                  <p className="truncate font-medium text-text-primary">{ticket.subject}</p>
-                  <p className="text-xs text-muted">
-                    {topicOptions.find((option) => option.value === ticket.topic)?.label ||
-                      ticket.topic}
-                    {" | "}
-                    {new Date(ticket.created_at).toLocaleDateString()}
-                  </p>
+                Retry recent requests
+              </Button>
+            </div>
+          )}
+          {recentTickets === null && recentTicketsStatus === "loading" ? (
+            <RecentTicketsPlaceholder />
+          ) : recentTickets && recentTickets.length > 0 ? (
+            <div className="divide-y divide-border border-t border-b border-border">
+              {recentTickets.slice(0, 5).map((ticket) => (
+                <div
+                  key={ticket.id}
+                  className="grid gap-2 py-3 text-sm sm:grid-cols-[1fr_auto] sm:items-center"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate font-medium text-text-primary">{ticket.subject}</p>
+                    <p className="text-xs text-muted">
+                      {topicOptions.find((option) => option.value === ticket.topic)?.label ||
+                        ticket.topic}
+                      {" | "}
+                      {new Date(ticket.created_at).toLocaleDateString()}
+                    </p>
+                  </div>
+                  <span className="rounded-[4px] border border-border px-2 py-1 text-xs text-text-secondary">
+                    {formatTicketStatus(ticket.status)}
+                  </span>
                 </div>
-                <span className="rounded-[4px] border border-border px-2 py-1 text-xs text-text-secondary">
-                  {formatTicketStatus(ticket.status)}
-                </span>
-              </div>
-            ))}
+              ))}
+            </div>
+          ) : recentTicketsStatus !== "error" ? (
+            <p className="text-sm text-text-secondary">
+              No support requests have been created from this account yet.
+            </p>
+          ) : null}
+        </div>
+      </AccountSection>
+    </AccountPageShell>
+  );
+}
+
+function RecentTicketsPlaceholder() {
+  return (
+    <div
+      className="koaryu-skeleton-reveal divide-y divide-border border-y border-border"
+      role="status"
+      aria-label="Loading recent support requests"
+    >
+      {[0, 1, 2].map((row) => (
+        <div
+          key={row}
+          className="grid gap-2 py-3 text-sm sm:grid-cols-[1fr_auto] sm:items-center"
+          aria-hidden="true"
+        >
+          <div className="min-w-0 space-y-1">
+            <div className="h-5 w-2/3 rounded bg-surface-raised" />
+            <div className="h-4 w-36 rounded bg-surface-raised" />
           </div>
-        ) : (
-          <p className="text-sm text-text-secondary">
-            No support requests have been created from this account yet.
-          </p>
-        )}
+          <div className="h-6 w-20 rounded-[4px] border border-border bg-surface-raised" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ContactSupportPlaceholder() {
+  return (
+    <AccountPageShell
+      family="help"
+      title="Contact support"
+      description="Send a focused support note with the context needed to resolve it quickly."
+    >
+      <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
+        <AccountSection title="Support request">
+          <div
+            className="koaryu-skeleton-reveal space-y-4"
+            role="status"
+            aria-label="Loading support request form"
+            aria-busy="true"
+          >
+            <div className="h-16 rounded bg-surface-raised" aria-hidden="true" />
+            <div className="grid gap-4 sm:grid-cols-[1fr_160px]" aria-hidden="true">
+              <div className="h-20 rounded bg-surface-raised" />
+              <div className="h-16 rounded bg-surface-raised" />
+            </div>
+            <div className="h-44 rounded bg-surface-raised" aria-hidden="true" />
+            <div className="space-y-4 border-y border-border py-4" aria-hidden="true">
+              <div className="h-16 rounded bg-surface-raised" />
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="h-32 rounded bg-surface-raised" />
+                <div className="h-32 rounded bg-surface-raised" />
+              </div>
+            </div>
+            <div className="h-8 w-64 max-w-full rounded bg-surface-raised" aria-hidden="true" />
+          </div>
+        </AccountSection>
+        <SupportContextAdvice />
+      </div>
+      <AccountNotice>
+        Koaryu saves support requests with your studio, login email, page context, and browser
+        details so follow-up can happen without making you re-explain the workflow.
+      </AccountNotice>
+      <AccountSection
+        title="Recent support requests"
+        description="Use this as a lightweight ticket inbox while support tooling is still early."
+      >
+        <RecentTicketsPlaceholder />
       </AccountSection>
     </AccountPageShell>
   );
@@ -521,4 +616,27 @@ function formatTicketStatus(status: SupportTicket["status"]) {
     .split("_")
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(" ");
+}
+
+function SupportContextAdvice() {
+  return (
+    <AccountSection title="What to include">
+      <div className="space-y-4 text-sm text-text-secondary">
+        <div className="flex gap-3">
+          <LifeBuoy className="mt-0.5 h-4 w-4 flex-shrink-0 text-accent" />
+          <p>For account issues, include the login email and studio name.</p>
+        </div>
+        <div className="flex gap-3">
+          <Mail className="mt-0.5 h-4 w-4 flex-shrink-0 text-accent" />
+          <p>
+            For billing, include payer name, invoice number, and visible Stripe status if available.
+          </p>
+        </div>
+        <div className="flex gap-3">
+          <Bug className="mt-0.5 h-4 w-4 flex-shrink-0 text-accent" />
+          <p>For bugs, include steps to reproduce and a screenshot when possible.</p>
+        </div>
+      </div>
+    </AccountSection>
+  );
 }
