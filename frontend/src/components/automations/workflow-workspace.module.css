@@ -1,206 +1,605 @@
+/*
+ * Automations in the Horizon language: paper panels on the warm ground, ink for
+ * the one primary action, tone washes for state. Product tokens come from the
+ * dashboard shell; the fallbacks keep standalone fixtures readable.
+ */
 .workspace,
 .catalog {
   display: grid;
-  gap: 1.25rem;
+  gap: 20px;
   min-width: 0;
-  color: var(--text-primary);
+  color: var(--product-ink, var(--text-primary));
+  font-size: 0.875rem;
 }
 .workspace {
-  max-width: 100rem;
+  width: 100%;
+  max-width: calc(76rem + 2 * var(--hz-gutter, clamp(16px, 2.4vw, 32px)));
   margin: 0 auto;
-  padding: 1.25rem;
+  padding: 0 var(--hz-gutter, clamp(16px, 2.4vw, 32px)) 48px;
 }
-.catalog {
-  border-top: 1px solid var(--border);
-  padding: 1.25rem;
+.catalog > :global([role="status"]) {
+  color: var(--product-soft-ink, var(--text-secondary));
 }
+
+/* Panels */
 .sheet,
-.card {
+.panel {
   min-width: 0;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 1rem;
-  background: var(--surface);
+  border: 1px solid var(--product-rule-soft, var(--border));
+  border-radius: 16px;
+  padding: 18px 20px 20px;
+  background: var(--product-paper, var(--surface));
+  box-shadow: var(--product-shadow-card, none);
 }
 .sheet {
   display: grid;
-  gap: 0.85rem;
+  gap: 14px;
 }
-.topline,
-.sectionHeading,
-.facts,
-.actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.65rem;
-  align-items: center;
-  min-width: 0;
+.panel {
+  display: grid;
+  gap: 14px;
 }
+.panelHead,
 .topline,
 .sectionHeading {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
   justify-content: space-between;
+  gap: 10px 16px;
 }
-.facts {
-  font-size: 0.875rem;
+.panelHead {
+  align-items: flex-start;
 }
-.facts strong,
-.badge {
-  text-transform: capitalize;
-  border: 1px solid var(--border);
-  border-radius: 20px;
-  padding: 0.2rem 0.65rem;
-}
-.muted,
-.card p,
-.metadata small {
-  color: var(--text-secondary);
-  font-size: 0.875rem;
-}
-.notice {
-  padding: 0.85rem 1rem;
-  background: var(--surface-hover);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  font-size: 0.9rem;
-  overflow-wrap: anywhere;
+.panelTitles {
+  display: grid;
+  min-width: 0;
+  flex: 1 1 18rem;
+  gap: 3px;
 }
 .workspace h2,
 .catalog h2 {
-  font-size: 1.2rem;
-  font-weight: 650;
-}
-.catalog h3 {
+  margin: 0;
   font-size: 1rem;
-  font-weight: 600;
-  margin-bottom: 0.75rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
 }
-.catalog h4 {
+.dialog h2 {
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 760;
+  letter-spacing: -0.02em;
+}
+.panelNote,
+.muted {
+  margin: 0;
+  color: var(--product-soft-ink, var(--text-secondary));
+  font-size: 0.8125rem;
+  line-height: 1.5;
+}
+.panelStatus {
+  margin: 0;
+  color: var(--product-soft-ink, var(--text-secondary));
+}
+.eyebrow {
+  margin: 0 0 2px;
+  color: var(--product-meta, var(--text-secondary));
+  font-size: 0.6875rem;
+  font-weight: 760;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.subhead {
+  margin: 4px 0 12px;
+  color: var(--product-soft-ink, var(--text-secondary));
+  font-size: 0.8125rem;
+  font-weight: 700;
+}
+.when {
+  margin-right: 2px;
+  color: var(--product-meta, var(--text-secondary));
+  font-size: 0.6875rem;
+  font-weight: 760;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Notices: one quiet strip, washed by tone. */
+.notice {
+  display: grid;
+  min-width: 0;
+  gap: 8px;
+  margin: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--product-rule-soft, var(--border));
+  border-radius: 12px;
+  background: var(--hz-tile, var(--surface-hover));
+  color: var(--product-ink, var(--text-primary));
+  font-size: 0.875rem;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+p.notice {
+  display: block;
+}
+.notice p {
+  margin: 0;
+}
+.notice[data-tone="sample"],
+.notice[data-tone="warn"] {
+  border-color: transparent;
+  background: var(--hz-warn-wash, var(--surface-hover));
+}
+.notice[data-tone="alert"] {
+  border-color: transparent;
+  background: var(--hz-alert-wash, var(--surface-hover));
+  color: var(--product-vermilion, var(--danger));
+}
+.workspace p[role="alert"]:not(.notice),
+.catalog p[role="alert"]:not(.notice) {
+  margin: 0;
+  color: var(--product-vermilion, var(--danger));
   font-weight: 600;
 }
-.catalog p {
-  line-height: 1.55;
+
+/* Buttons: paper secondaries, one ink primary, quiet tertiaries. */
+.workspace button,
+.catalog button,
+.dialog button {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0.5rem 0.9rem;
+  border: 1px solid var(--product-rule, var(--border));
+  border-radius: 10px;
+  background: var(--product-paper, var(--surface));
+  color: var(--product-ink, var(--text-primary));
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.25;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+  transition:
+    background-color 120ms ease-out,
+    border-color 120ms ease-out,
+    box-shadow 120ms ease-out;
+}
+.workspace button:hover:not(:disabled),
+.catalog button:hover:not(:disabled),
+.dialog button:hover:not(:disabled) {
+  background: var(--product-card-stock, var(--surface-hover));
+}
+.workspace button[data-variant="primary"],
+.catalog button[data-variant="primary"],
+.dialog button[data-variant="primary"] {
+  border-color: transparent;
+  background: var(--hz-cta, var(--accent));
+  color: var(--hz-cta-ink, var(--surface));
+  box-shadow: 0 8px 22px color-mix(in srgb, var(--hz-cta, var(--accent)) 22%, transparent);
+}
+.workspace button[data-variant="primary"]:hover:not(:disabled),
+.catalog button[data-variant="primary"]:hover:not(:disabled),
+.dialog button[data-variant="primary"]:hover:not(:disabled) {
+  background: var(--hz-cta, var(--accent));
+  box-shadow: 0 12px 28px color-mix(in srgb, var(--hz-cta, var(--accent)) 30%, transparent);
+}
+.workspace button[data-variant="quiet"],
+.catalog button[data-variant="quiet"] {
+  border-color: transparent;
+  background: transparent;
+  color: var(--product-soft-ink, var(--text-secondary));
+}
+.workspace button[data-variant="quiet"]:hover:not(:disabled),
+.catalog button[data-variant="quiet"]:hover:not(:disabled) {
+  background: var(--hz-tile, var(--surface-hover));
+  color: var(--product-ink, var(--text-primary));
+}
+.workspace button[data-variant="danger"] {
+  border-color: color-mix(in srgb, var(--product-vermilion, var(--danger)) 30%, transparent);
+  background: transparent;
+  color: var(--product-vermilion, var(--danger));
+}
+.workspace button[data-variant="danger"]:hover:not(:disabled) {
+  background: var(--hz-alert-wash, var(--surface-hover));
+}
+.workspace button[data-variant="back"] {
+  padding-left: 0.6rem;
+  border-color: transparent;
+  background: transparent;
+  color: var(--product-soft-ink, var(--text-secondary));
+}
+.workspace button[data-variant="back"]:hover {
+  color: var(--product-ink, var(--text-primary));
+}
+.workspace button:disabled,
+.catalog button:disabled,
+.dialog button:disabled {
+  opacity: 0.45;
+  box-shadow: none;
+  cursor: not-allowed;
+}
+.workspace button:focus-visible,
+.catalog button:focus-visible,
+.catalog a:focus-visible,
+.dialog button:focus-visible,
+.metadata input:focus-visible,
+.metadata textarea:focus-visible {
+  outline: 2px solid var(--product-focus, var(--accent));
+  outline-offset: 3px;
+}
+.actions {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.textLink {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  color: var(--product-wood, var(--accent));
+  font-weight: 700;
+  text-decoration: none;
+}
+.textLink:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* Workflow list */
+.workflowList {
+  display: grid;
+  margin: 0 -20px;
+  padding: 0;
+  list-style: none;
+}
+.workflowRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 8px 16px;
+  padding: 14px 20px 16px;
+  border-top: 1px solid var(--product-rule-soft, var(--border));
+}
+.workflowRow:hover {
+  background: color-mix(in srgb, var(--hz-tile, var(--surface-hover)) 55%, transparent);
+}
+.rowMain {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+.rowTitle {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+}
+.rowTitle h3 {
+  min-width: 0;
+  margin: 0;
+}
+.catalog .rowName {
+  justify-content: flex-start;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font-size: 0.9375rem;
+  font-weight: 700;
+  text-align: left;
+}
+.catalog .rowName:hover:not(:disabled) {
+  background: transparent;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.rowSentence {
+  margin: 0;
+  font-weight: 600;
+}
+.rowAside {
+  color: var(--product-meta, var(--text-secondary));
+  font-weight: 500;
+}
+.rowDescription {
+  margin: 0;
+  color: var(--product-soft-ink, var(--text-secondary));
+  line-height: 1.5;
+}
+.rowMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 14px;
+  margin: 4px 0 0;
+  color: var(--product-meta, var(--text-secondary));
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+}
+.rowFlag {
+  justify-self: start;
+  margin: 4px 0 0;
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: var(--hz-warn-wash, var(--surface-hover));
+  color: var(--product-straw, var(--text-primary));
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+.rowActions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.calm {
+  margin: 0;
+}
+.pager {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* Templates read as recipes: what starts it, then each step. */
+.templates {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr));
+  gap: 12px;
+}
+.card {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px;
+  border: 1px solid var(--product-rule-soft, var(--border));
+  border-radius: 14px;
+  background: var(--product-card-stock, var(--surface-raised));
+  overflow-wrap: anywhere;
+}
+.card h4 {
+  margin: 0;
+  font-size: 0.9375rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+.card p {
+  margin: 0;
+  color: var(--product-soft-ink, var(--text-secondary));
+  font-size: 0.8125rem;
+  line-height: 1.5;
+}
+.card .templateWhen {
+  color: var(--product-ink, var(--text-primary));
+  font-weight: 600;
+}
+.recipe {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin: 2px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.recipe li {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.75rem;
+  font-weight: 700;
+  line-height: 1.6;
+}
+.recipe li span {
+  padding: 1px 9px;
+  border-radius: 999px;
+  background: var(--product-paper, var(--surface));
+  box-shadow: inset 0 0 0 1px var(--product-rule-soft, var(--border));
+  color: var(--product-soft-ink, var(--text-secondary));
+}
+.recipe li + li::before {
+  margin-right: 4px;
+  color: var(--product-meta, var(--text-secondary));
+  font-weight: 500;
+  content: "→";
+}
+.recipe li[data-kind="email"] span,
+.recipe li[data-kind="lead_follow_up"] span {
+  background: var(--hz-affirm-wash, var(--surface));
+  box-shadow: none;
+  color: var(--product-affirm, var(--text-primary));
+}
+.recipe li[data-kind="condition"] span {
+  background: var(--hz-warn-wash, var(--surface));
+  box-shadow: none;
+  color: var(--product-straw, var(--text-primary));
+}
+.card .useTemplate {
+  align-self: flex-start;
+  margin-top: auto;
+}
+.card .recipe {
+  margin-bottom: 6px;
+}
+
+/* Workflow details */
+.details {
+  gap: 16px;
+}
+.topline {
+  padding-top: 2px;
+}
+.facts {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 14px;
+  color: var(--product-soft-ink, var(--text-secondary));
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+}
+.saveState {
+  margin: 0 0 0 auto;
+  color: var(--product-meta, var(--text-secondary));
+  font-size: 0.8125rem;
+}
+.saveState[data-dirty="true"] {
+  color: var(--product-straw, var(--text-primary));
+  font-weight: 700;
 }
 .metadata {
   display: grid;
-  gap: 1rem;
+  gap: 14px;
 }
 .metadata label {
   display: grid;
-  gap: 0.4rem;
   min-width: 0;
-  font-size: 0.9rem;
-  font-weight: 550;
+  gap: 6px;
+  color: var(--product-soft-ink, var(--text-secondary));
+  font-size: 0.8125rem;
+  font-weight: 650;
 }
 .metadata input,
 .metadata textarea {
   width: 100%;
   min-width: 0;
   min-height: 44px;
-  padding: 0.6rem 0.75rem;
-  background: var(--surface);
-  color: var(--text-primary);
-  border: 1px solid var(--border);
-  border-radius: 6px;
+  padding: 0.6rem 0.8rem;
+  border: 1px solid var(--product-rule, var(--border));
+  border-radius: 10px;
+  background: var(--product-card-stock, var(--surface));
+  color: var(--product-ink, var(--text-primary));
+  font: inherit;
+  font-size: 0.9375rem;
   font-weight: 400;
 }
+.metadata input {
+  font-size: 1.125rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
 .metadata textarea {
-  resize: vertical;
   min-height: 70px;
+  resize: vertical;
+  line-height: 1.5;
 }
-.workspace button,
-.catalog button,
-.dialog button {
-  min-height: 44px;
-  padding: 0.5rem 0.8rem;
-  color: var(--text-primary);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--surface);
-  font-size: 0.875rem;
-  cursor: pointer;
-  overflow-wrap: anywhere;
+.metadata small {
+  color: var(--product-meta, var(--text-secondary));
+  font-size: 0.75rem;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
 }
-.workspace button:hover,
-.catalog button:hover,
-.dialog button:hover {
-  background: var(--surface-hover);
+.commandBar {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--product-rule-soft, var(--border));
 }
-.workspace button:disabled,
-.catalog button:disabled,
-.dialog button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+.commandBar .actions[data-group="secondary"] {
+  gap: 4px;
 }
-.workspace button:focus-visible,
-.catalog button:focus-visible,
-.dialog button:focus-visible,
-.metadata input:focus-visible,
-.metadata textarea:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 3px;
-}
+
+/* Editor and tools */
 .editorGrid {
   display: grid;
-  align-items: start;
-  gap: 1rem;
   min-width: 0;
+  align-items: start;
+  gap: 16px;
 }
 .editorGrid > * {
   min-width: 0;
 }
-.templates {
+.checks ul,
+.issueList {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
-  gap: 0.75rem;
-}
-.card {
-  display: grid;
-  gap: 0.6rem;
-  align-content: start;
-  overflow-wrap: anywhere;
-}
-.workflowList {
-  display: grid;
-  gap: 0.75rem;
-  list-style: none;
+  gap: 6px;
+  margin: 0;
   padding: 0;
+  list-style: none;
 }
+.issueList button {
+  justify-content: flex-start;
+  width: 100%;
+  border-color: transparent;
+  background: var(--hz-warn-wash, var(--surface-hover));
+  text-align: left;
+}
+.checks > p {
+  margin: 0;
+  color: var(--product-soft-ink, var(--text-secondary));
+}
+
+/* Confirmation dialog */
 .dialog {
   width: min(560px, calc(100vw - 2rem));
   max-height: calc(100dvh - 2rem);
   margin: auto;
   overflow-y: auto;
-  padding: 1.5rem;
-  background: var(--surface);
-  color: var(--text-primary);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  box-shadow: 0 20px 60px #0005;
+  padding: 22px 24px;
+  border: 1px solid var(--product-rule-soft, var(--border));
+  border-radius: 16px;
+  background: var(--product-paper, var(--surface));
+  color: var(--product-ink, var(--text-primary));
+  box-shadow: var(--product-shadow-lifted, 0 20px 60px rgb(0 0 0 / 30%));
 }
 .dialog::backdrop {
-  background: #0008;
-}
-.dialog h2 {
-  font-size: 1.15rem;
-  font-weight: 650;
+  background: color-mix(in srgb, var(--product-ink, var(--text-primary)) 34%, transparent);
+  -webkit-backdrop-filter: blur(2px);
+  backdrop-filter: blur(2px);
 }
 .dialogBody {
   display: grid;
   gap: 1rem;
-  padding: 1rem 0;
-  font-size: 0.95rem;
+  padding: 0.75rem 0 1.25rem;
+  color: var(--product-soft-ink, var(--text-secondary));
+  font-size: 0.9375rem;
   line-height: 1.6;
+}
+.dialogBody p {
+  margin: 0;
+}
+.dialog .actions {
+  justify-content: flex-end;
+}
+.dialog .actions button:last-child {
+  border-color: transparent;
+  background: var(--hz-cta, var(--accent));
+  color: var(--hz-cta-ink, var(--surface));
 }
 .checkbox {
   display: flex;
-  gap: 0.75rem;
   align-items: start;
+  gap: 0.75rem;
+  color: var(--product-ink, var(--text-primary));
 }
 .checkbox input {
   width: 20px;
   height: 20px;
-  margin-top: 0.25rem;
   flex: none;
+  margin-top: 0.2rem;
+  accent-color: var(--product-wood, var(--accent));
 }
 @media (min-width: 1100px) {
   .editorGrid {
@@ -210,104 +609,198 @@
     grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr);
   }
 }
-@media (max-width: 479px) {
-  .workspace {
-    padding: 0.75rem;
+@media (max-width: 640px) {
+  .workflowList {
+    margin: 0 -16px;
   }
+  .workflowRow {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 12px 16px 14px;
+  }
+  .rowActions {
+    justify-content: flex-start;
+    margin-left: -0.9rem;
+  }
+  .saveState {
+    margin-left: 0;
+    flex-basis: 100%;
+  }
+}
+@media (max-width: 479px) {
   .sheet,
-  .catalog {
-    padding: 0.85rem;
+  .panel {
+    padding: 14px 16px 16px;
+    border-radius: 14px;
   }
   .actions button {
     flex-grow: 1;
   }
+  .commandBar .actions[data-group="secondary"] button {
+    flex-grow: 0;
+  }
 }
+
+/* Simulation, run history and sample email */
 .workflowTools,
 .toolStack,
 .recordPicker,
 .runDetail {
   display: grid;
-  gap: 0.85rem;
   min-width: 0;
+  gap: 12px;
 }
 .toolPanel {
   align-content: start;
   overflow-wrap: anywhere;
 }
+.toolPanel > p,
+.toolStack > p,
+.runDetail > p {
+  margin: 0;
+  color: var(--product-soft-ink, var(--text-secondary));
+  line-height: 1.5;
+}
 .toolPanel h3,
 .toolPanel h4 {
-  font-size: 1rem;
-  font-weight: 650;
+  margin: 4px 0 0;
+  font-size: 0.875rem;
+  font-weight: 700;
 }
-.toolPanel p {
-  line-height: 1.5;
+.toolPanel ul:not(.toolRows) {
+  margin: 0;
+  padding-left: 1.1rem;
 }
 .toolRows {
   display: grid;
-  gap: 0.65rem;
-  list-style: none;
-  padding: 0;
-  margin: 0;
   min-width: 0;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 .toolRows > li,
-.trace > li,
 .runDetail {
   display: grid;
-  gap: 0.5rem;
   min-width: 0;
-  padding: 0.8rem;
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  gap: 6px;
+  padding: 12px 14px;
+  border: 1px solid var(--product-rule-soft, var(--border));
+  border-radius: 12px;
+  background: var(--product-card-stock, var(--surface-raised));
+}
+.toolRows > li p {
+  margin: 0;
+  color: var(--product-soft-ink, var(--text-secondary));
+  font-size: 0.8125rem;
 }
 .toolRows button {
+  justify-content: flex-start;
   text-align: left;
 }
 .toolRows button[aria-pressed="true"] {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
+  border-color: var(--product-wood, var(--accent));
+  box-shadow: inset 0 0 0 1px var(--product-wood, var(--accent));
 }
 .recordPicker {
-  padding: 0.8rem;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--surface-raised);
+  padding: 14px;
+  border: 1px solid var(--product-rule-soft, var(--border));
+  border-radius: 12px;
+  background: var(--product-card-stock, var(--surface-raised));
 }
 .toolField {
   display: grid;
-  gap: 0.4rem;
-  font-size: 0.9rem;
   min-width: 0;
+  gap: 6px;
+  color: var(--product-soft-ink, var(--text-secondary));
+  font-size: 0.8125rem;
+  font-weight: 650;
 }
 .toolField input {
   width: 100%;
   min-width: 0;
   min-height: 44px;
-  padding: 0.6rem;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--surface);
-  color: var(--text-primary);
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--product-rule, var(--border));
+  border-radius: 10px;
+  background: var(--product-paper, var(--surface));
+  color: var(--product-ink, var(--text-primary));
+  font: inherit;
 }
 .toolField input:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--product-focus, var(--accent));
   outline-offset: 3px;
 }
+
+/* A visited path reads as a timeline: one ink line, one mark per step. */
 .trace {
   display: grid;
-  gap: 0.65rem;
-  padding: 0;
+  gap: 0;
   margin: 0;
-  list-style-position: inside;
+  padding: 0;
+  list-style: none;
+}
+.trace > li {
+  position: relative;
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+  padding: 0 0 14px 26px;
+}
+.trace > li::before {
+  position: absolute;
+  top: 15px;
+  left: 4px;
+  width: 11px;
+  height: 11px;
+  border: 2px solid var(--product-wood, var(--accent));
+  border-radius: 50%;
+  background: var(--product-paper, var(--surface));
+  content: "";
+}
+.trace > li::after {
+  position: absolute;
+  top: 30px;
+  bottom: 0;
+  left: 9px;
+  width: 1px;
+  background: var(--product-rule, var(--border));
+  content: "";
+}
+.trace > li:last-child::after {
+  display: none;
+}
+.trace > li:last-child {
+  padding-bottom: 0;
+}
+.trace p {
+  margin: 0;
+  color: var(--product-soft-ink, var(--text-secondary));
+  font-size: 0.8125rem;
+}
+.trace button {
+  justify-self: start;
+  text-align: left;
+  text-transform: capitalize;
 }
 .sampleText {
   display: grid;
-  gap: 0.4rem;
-  border-left: 3px solid var(--accent);
-  padding-left: 0.75rem;
+  gap: 4px;
+  padding: 10px 12px;
+  border-left: 3px solid var(--product-wood, var(--accent));
+  border-radius: 0 10px 10px 0;
+  background: var(--product-card-stock, var(--surface-raised));
 }
+.sampleText strong {
+  color: var(--product-meta, var(--text-secondary));
+  font-size: 0.6875rem;
+  font-weight: 760;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.sampleText p,
 .sampleText pre {
   margin: 0;
+  color: var(--product-ink, var(--text-primary));
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   font: inherit;
@@ -315,17 +808,17 @@
 .toolModal {
   width: min(560px, calc(100vw - 2rem));
   max-height: calc(100dvh - 2rem);
-  padding: 1.25rem;
+  padding: 22px 24px;
   overflow-y: auto;
   overflow-wrap: anywhere;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: var(--surface);
-  color: var(--text-primary);
-  box-shadow: 0 20px 60px #0005;
+  border: 1px solid var(--product-rule-soft, var(--border));
+  border-radius: 16px;
+  background: var(--product-paper, var(--surface));
+  color: var(--product-ink, var(--text-primary));
+  box-shadow: var(--product-shadow-lifted, 0 20px 60px rgb(0 0 0 / 30%));
 }
 .toolModalRoot {
-  color: var(--text-primary);
+  color: var(--product-ink, var(--text-primary));
 }
 .toolPanel button,
 .toolModal button {
@@ -343,12 +836,11 @@
 }
 @media (max-width: 479px) {
   .toolRows > li,
-  .trace > li,
   .recordPicker,
   .runDetail {
-    padding: 0.6rem;
+    padding: 10px 12px;
   }
   .toolModal {
-    padding: 1rem;
+    padding: 16px;
   }
 }

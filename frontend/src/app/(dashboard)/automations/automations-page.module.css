@@ -1,0 +1,106 @@
+.body {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+/* The first panel sits on the header's near ridge, as the Dashboard's stats do. */
+.page > :first-child {
+  position: relative;
+  z-index: 2;
+  margin-top: -36px;
+}
+
+.queues {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 0;
+  padding: 0 0 6px;
+  list-style: none;
+}
+
+.queues > li {
+  min-width: 0;
+  border-top: 1px solid var(--product-rule-soft, var(--border));
+}
+
+.queues > li:nth-child(even) {
+  border-left: 1px solid var(--product-rule-soft, var(--border));
+}
+
+.queue {
+  display: flex;
+  min-height: 76px;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 20px;
+  color: var(--product-ink, var(--text-primary));
+  text-decoration: none;
+  transition: background-color 120ms ease-out;
+}
+
+.queue:hover {
+  background: color-mix(in srgb, var(--hz-tile, var(--surface-hover)) 60%, transparent);
+}
+
+.queue:focus-visible {
+  outline: 2px solid var(--product-focus, var(--accent));
+  outline-offset: -3px;
+  border-radius: 12px;
+}
+
+.queueText {
+  display: grid;
+  min-width: 0;
+  flex: 1 1 auto;
+  gap: 2px;
+}
+
+.queueText strong {
+  font-size: 0.9375rem;
+  font-weight: 700;
+}
+
+.queueText span {
+  color: var(--product-soft-ink, var(--text-secondary));
+  font-size: 0.8125rem;
+  line-height: 1.45;
+}
+
+.queueArrow {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  color: var(--product-wood, var(--accent));
+  transition: transform 120ms ease-out;
+}
+
+.queue:hover .queueArrow {
+  transform: translateX(2px);
+}
+
+@media (max-width: 767px) {
+  .queues {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .queues > li:nth-child(even) {
+    border-left: 0;
+  }
+
+  .queue {
+    padding: 12px 16px;
+  }
+}
+
+@media (max-width: 640px) {
+  .page > :first-child {
+    margin-top: -28px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .queue,
+  .queueArrow {
+    transition: none;
+  }
+}

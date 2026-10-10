@@ -27,8 +27,9 @@ import {
   workflowPreviewSource,
   workflowPreviewReferences,
 } from "@/lib/automation-workflow-preview";
-import type { WorkflowCommand } from "@/lib/automation-workflow-types";
+import type { WorkflowCommand, WorkflowSummary } from "@/lib/automation-workflow-types";
 import type { WorkflowReferenceChoices } from "@/lib/automation-workflow-catalog";
+import kit from "@/components/ui/horizon.module.css";
 import { WorkflowSimulationPanel } from "./workflow-simulation-panel";
 import { WorkflowRunHistory } from "./workflow-run-history";
 import { WorkflowTestEmailPanel } from "./workflow-test-email-panel";
@@ -45,6 +46,16 @@ export const validWorkflowId = (value: unknown): value is string =>
 export const workflowAddress = (id: string) => {
   if (!validWorkflowId(id)) throw new Error("This workflow address is unavailable.");
   return `/automations/${id}`;
+};
+/** Status words for a workflow; the words carry the state and the tone only reinforces it. */
+export const workflowStatus: Record<
+  WorkflowSummary["status"],
+  { label: string; tone: "alert" | "warn" | "calm" | "neutral" }
+> = {
+  active: { label: "Active", tone: "calm" },
+  paused: { label: "Paused", tone: "warn" },
+  draft: { label: "Draft", tone: "neutral" },
+  archived: { label: "Archived", tone: "neutral" },
 };
 export const useWorkflowSnapshot = (owner: Owner) =>
   useSyncExternalStore(owner.subscribe, owner.getSnapshot, owner.getSnapshot);
@@ -194,11 +205,13 @@ function WorkflowOpeningPlaceholder({ editor }: { editor: boolean }) {
   return (
     <div className={styles.workspace}>
       <div className={styles.topline}>
-        <button onClick={() => router.push("/automations")}>← All workflows</button>
-        <span>{isPreviewMode ? "Sample workspace" : "Workflow editor"}</span>
+        <button data-variant="back" onClick={() => router.push("/automations")}>
+          ← All workflows
+        </button>
+        <span className={kit.tag}>{isPreviewMode ? "Sample workspace" : "Workflow editor"}</span>
       </div>
       {isPreviewMode ? (
-        <p className={styles.notice}>
+        <p className={styles.notice} data-tone="sample">
           Sample only. Explore and edit these examples here. Saving, publishing, and sending are
           unavailable.
         </p>
@@ -560,16 +573,39 @@ function WorkspaceView({
   return (
     <div className={styles.workspace} data-workflow-workspace={preview ? "preview" : "live"}>
       <div className={styles.topline}>
-        <button onClick={() => router.push("/automations")}>← All workflows</button>
-        <span>{preview ? "Sample workspace" : "Workflow editor"}</span>
+        <button data-variant="back" onClick={() => router.push("/automations")}>
+          ← All workflows
+        </button>
+        <span className={kit.tag}>{preview ? "Sample workspace" : "Workflow editor"}</span>
       </div>
       {preview ? (
-        <p className={styles.notice}>
+        <p className={styles.notice} data-tone="sample">
           Sample only. Explore and edit these examples here. Saving, publishing, and sending are
           unavailable.
         </p>
       ) : null}
-      <section className={styles.sheet} aria-label="Workflow details">
+      <section className={`${styles.sheet} ${styles.details}`} aria-label="Workflow details">
+        <div className={styles.facts} aria-label="Saved workflow status">
+          <span
+            className={kit.tag}
+            data-tone={current ? workflowStatus[current.status]?.tone : "neutral"}
+            data-dot="true"
+          >
+            {current ? (workflowStatus[current.status]?.label ?? current.status) : "Local draft"}
+          </span>
+          <span>
+            {current?.published_version_number
+              ? `Published version ${current.published_version_number}`
+              : "No published version"}
+          </span>
+          <span>
+            {current?.pending_run_count ?? 0} waiting · {current?.sending_run_count ?? 0} sending
+          </span>
+          <p className={styles.saveState} data-dirty={dirty ? "true" : undefined}>
+            {dirty ? "Unsaved local changes" : "All local changes saved"}
+            {current?.has_unpublished_changes ? " · Saved changes are not published" : ""}
+          </p>
+        </div>
         <div className={styles.metadata}>
           <label>
             Workflow name
@@ -598,83 +634,95 @@ function WorkspaceView({
             <small>{workflowTextLength(editor.description)} / 500 characters</small>
           </label>
         </div>
-        <div className={styles.facts} aria-label="Saved workflow status">
-          <strong>{current?.status ?? "Local draft"}</strong>
-          <span>
-            {current?.published_version_number
-              ? `Published version ${current.published_version_number}`
-              : "No published version"}
-          </span>
-          <span>
-            {current?.pending_run_count ?? 0} waiting · {current?.sending_run_count ?? 0} sending
-          </span>
-        </div>
-        <p className={styles.muted}>
-          {dirty ? "Unsaved local changes" : "All local changes saved"}
-          {current?.has_unpublished_changes ? " · Saved changes are not published" : ""}
-        </p>
         {editor.conflict ? (
-          <p role="alert">
+          <p className={styles.notice} data-tone="alert" role="alert">
             This workflow changed since you opened it. Your edits are preserved. Review the current
             status, then discard and reload before making another change.
           </p>
         ) : null}
-        <div className={styles.actions}>
-          <button
-            disabled={!canCommand || !validMetadata || !dirty}
-            onClick={() => submit(editor.workflowId ? "workflow.save" : "workflow.create")}
-          >
-            Save draft
-          </button>
-          <button
-            disabled={preview || state.reads.validation.loading}
-            onClick={() => {
-              const generation = lifetime.current;
-              void owner.validate().catch(() => {
-                if (generation === lifetime.current && ownsEditor())
-                  setNotice("Validation is unavailable. Your draft is unchanged.");
-              });
-            }}
-          >
-            Check workflow
-          </button>
-          <button
-            disabled={!canCommand || !editor.workflowId || dirty}
-            onClick={() => {
-              setCancelPending(false);
-              setConfirmation("workflow.publish");
-            }}
-          >
-            Publish
-          </button>
-          <button
-            disabled={
-              !canCommand ||
-              !current?.published_version_number ||
-              current.status === "active" ||
-              state.catalog?.capabilities.can_start !== true
-            }
-            onClick={() => setConfirmation("workflow.start")}
-          >
-            Start
-          </button>
-          <button
-            disabled={
-              !canCommand || !current?.published_version_number || current.status === "paused"
-            }
-            onClick={() => setConfirmation("workflow.pause")}
-          >
-            Pause
-          </button>
-          <button
-            disabled={!canCommand || !editor.workflowId}
-            onClick={() => setConfirmation("workflow.archive")}
-          >
-            Archive
-          </button>
-          <button disabled={locked} onClick={() => setConfirmation("duplicate")}>
-            Duplicate draft
-          </button>
+        <div className={styles.commandBar}>
+          <div className={styles.actions}>
+            <button
+              data-variant="primary"
+              disabled={!canCommand || !validMetadata || !dirty}
+              onClick={() => submit(editor.workflowId ? "workflow.save" : "workflow.create")}
+            >
+              Save draft
+            </button>
+            <button
+              disabled={preview || state.reads.validation.loading}
+              onClick={() => {
+                const generation = lifetime.current;
+                void owner.validate().catch(() => {
+                  if (generation === lifetime.current && ownsEditor())
+                    setNotice("Validation is unavailable. Your draft is unchanged.");
+                });
+              }}
+            >
+              Check workflow
+            </button>
+            <button
+              disabled={!canCommand || !editor.workflowId || dirty}
+              onClick={() => {
+                setCancelPending(false);
+                setConfirmation("workflow.publish");
+              }}
+            >
+              Publish
+            </button>
+            <button
+              disabled={
+                !canCommand ||
+                !current?.published_version_number ||
+                current.status === "active" ||
+                state.catalog?.capabilities.can_start !== true
+              }
+              onClick={() => setConfirmation("workflow.start")}
+            >
+              Start
+            </button>
+            <button
+              disabled={
+                !canCommand || !current?.published_version_number || current.status === "paused"
+              }
+              onClick={() => setConfirmation("workflow.pause")}
+            >
+              Pause
+            </button>
+          </div>
+          <div className={styles.actions} data-group="secondary">
+            <button
+              data-variant="quiet"
+              disabled={preview || !editor.workflowId || state.reads.detail.loading}
+              onClick={() => {
+                if (owner.isCurrent()) void owner.loadDetail().catch(() => {});
+                if (owner.isCurrent()) void owner.loadCatalog().catch(() => {});
+              }}
+            >
+              Refresh status
+            </button>
+            <button
+              data-variant="quiet"
+              disabled={locked || !editor.workflowId || opening}
+              onClick={() => setConfirmation("reload")}
+            >
+              Discard and reload
+            </button>
+            <button
+              data-variant="quiet"
+              disabled={locked}
+              onClick={() => setConfirmation("duplicate")}
+            >
+              Duplicate draft
+            </button>
+            <button
+              data-variant="danger"
+              disabled={!canCommand || !editor.workflowId}
+              onClick={() => setConfirmation("workflow.archive")}
+            >
+              Archive
+            </button>
+          </div>
         </div>
         {!preview && state.catalog?.capabilities.can_start === false ? (
           <p className={styles.muted}>
@@ -682,23 +730,6 @@ function WorkspaceView({
               "Starting is unavailable right now."}
           </p>
         ) : null}
-        <div className={styles.actions}>
-          <button
-            disabled={preview || !editor.workflowId || state.reads.detail.loading}
-            onClick={() => {
-              if (owner.isCurrent()) void owner.loadDetail().catch(() => {});
-              if (owner.isCurrent()) void owner.loadCatalog().catch(() => {});
-            }}
-          >
-            Refresh status
-          </button>
-          <button
-            disabled={locked || !editor.workflowId || opening}
-            onClick={() => setConfirmation("reload")}
-          >
-            Discard and reload
-          </button>
-        </div>
         {state.reads.detail.error ? (
           <p role="alert">
             Current workflow status could not be refreshed. The last loaded status is shown.
@@ -786,13 +817,20 @@ function WorkspaceView({
           />
         </div>
       ) : null}
-      <section className={styles.sheet} aria-label="Workflow checks">
-        <h2>Workflow checks</h2>
+      <section className={`${styles.sheet} ${styles.checks}`} aria-label="Workflow checks">
+        <div className={styles.sectionHeading}>
+          <h2>Workflow checks</h2>
+          {issues.length || editor.validation?.result.valid ? (
+            <span className={kit.tag} data-tone={issues.length ? "warn" : "calm"} data-dot="true">
+              {issues.length ? `${issues.length} to review` : "Passed"}
+            </span>
+          ) : null}
+        </div>
         {state.reads.validation.error ? (
           <p role="alert">Checks could not be completed. Try Check workflow again.</p>
         ) : null}
         {issues.length ? (
-          <ul>
+          <ul className={styles.issueList}>
             {issues.map((issue, index) => (
               <li key={index}>
                 {issue.node_id ? (

@@ -56,7 +56,12 @@ const WorkflowCard = memo(function WorkflowCard({
   isConnectable,
 }: NodeProps<CardNode>) {
   return (
-    <div className={styles.nodeCard} data-selected={selected} data-issue={data.issue}>
+    <div
+      className={styles.nodeCard}
+      data-kind={data.kind}
+      data-selected={selected}
+      data-issue={data.issue}
+    >
       {data.kind !== "trigger" ? (
         <Handle
           type="target"
