@@ -36,7 +36,7 @@ async function openRoster(page: Page, width: number) {
 }
 
 rosterUiTest(
-  "keeps desktop search, rows, and zero-fetch quick view composed",
+  "keeps desktop search and full-width rows composed without hover fetches",
   async ({ page }, testInfo) => {
     await openRoster(page, 1440);
 
@@ -78,47 +78,40 @@ rosterUiTest(
         url.searchParams.has("_rsc") &&
         headers.rsc === "1" &&
         headers["next-router-prefetch"] === "1";
-      // Router prefetch warms the existing navigation links; quick view must not read data.
+      // Router prefetch warms the existing navigation links; hovering a row must not read data.
       if (!isNavigationPrefetch) hoverRequests.push(request.url());
     });
     const firstStudentRow = page.locator("tbody tr").first();
     await firstStudentRow.hover();
-    await expect(page.getByLabel("Student quick view")).toHaveCount(0);
-    await expect(page.getByText("Quick view", { exact: true })).toBeVisible();
     await page.waitForTimeout(200);
     expect(hoverRequests).toEqual([]);
 
-    const workbenchGeometry = await page.locator("table").evaluate((table) => {
+    // Rows carry their own details: no quick-view panel takes width from the roster.
+    await expect(page.getByText("Quick view", { exact: true })).toHaveCount(0);
+    const rosterGeometry = await page.locator("table").evaluate((table) => {
       const ledger = table.getBoundingClientRect();
-      const rail = document
-        .querySelector("aside[aria-labelledby='student-reading-title']")
-        ?.getBoundingClientRect();
-      return { ledgerRight: ledger.right, railLeft: rail?.left ?? 0 };
+      const sheet = table.closest("section")?.getBoundingClientRect();
+      return { ledgerWidth: ledger.width, sheetWidth: sheet?.width ?? 0 };
     });
-    expect(workbenchGeometry.ledgerRight).toBeLessThan(workbenchGeometry.railLeft);
+    expect(rosterGeometry.ledgerWidth).toBeGreaterThan(rosterGeometry.sheetWidth - 4);
     await page.screenshot({ path: testInfo.outputPath("students-desktop.png"), fullPage: true });
   },
 );
 
-rosterUiTest(
-  "collapses the quick view before it can overlap the roster",
-  async ({ page }, testInfo) => {
-    await openRoster(page, 1200);
-    await expect(page.getByText("Quick view", { exact: true })).toBeHidden();
-    const overflow = await page.evaluate(
-      () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
-    );
-    expect(overflow).toBeLessThanOrEqual(1);
-    await page.screenshot({ path: testInfo.outputPath("students-medium.png"), fullPage: true });
-  },
-);
+rosterUiTest("fits the roster to a medium window without overflow", async ({ page }, testInfo) => {
+  await openRoster(page, 1200);
+  const overflow = await page.evaluate(
+    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+  );
+  expect(overflow).toBeLessThanOrEqual(1);
+  await page.screenshot({ path: testInfo.outputPath("students-medium.png"), fullPage: true });
+});
 
 rosterUiTest("renders an uncramped mobile roster", async ({ page }, testInfo) => {
   await openRoster(page, 390);
   await expect(
     page.getByText("Select all visible students", { exact: true }).first(),
   ).toBeVisible();
-  await expect(page.getByText("Quick view", { exact: true })).toBeHidden();
   const overflow = await page.evaluate(
     () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
   );

@@ -8,6 +8,9 @@ import { createCommonJsPacker } from "./helpers/store-browser-harness.mjs";
 const { add, modules } = createCommonJsPacker({
   "./student-records.module.css": "module.exports={};",
   "@/components/students/student-rank-badge": "exports.StudentRankBadge=()=>null;",
+  // The Horizon kit's stat links are not rendered by the profile sections.
+  "@/components/intent-prefetch-link": "exports.IntentPrefetchLink=()=>null;",
+  "lucide-react": "module.exports=new Proxy({},{get:()=>()=>null});",
 });
 const sectionId = add("@/components/students/student-detail-sections");
 const { StudentDetailSections } = runInNewContext(`(()=>{

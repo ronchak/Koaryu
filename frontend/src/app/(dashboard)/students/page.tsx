@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { markDashboardReadiness } from "@/lib/performance";
 import { StudentRosterPageContent } from "@/components/students/student-roster-page-content";
 import {
+  useBeltStore,
   useConfigStore,
   useProgramStore,
   useScheduleStore,
@@ -14,6 +15,8 @@ import { useStudentsPageController } from "@/lib/students-page-controller";
 
 export default function StudentsPage() {
   const studioStore = useStudioStore();
+  // Read-only: belt names and colours for rows whose membership carries only a rank id.
+  const { beltRanks } = useBeltStore();
   const controller = useStudentsPageController({
     config: useConfigStore(),
     programsStore: useProgramStore(),
@@ -36,5 +39,5 @@ export default function StudentsPage() {
     [identityGeneration, usefulReady, completeReady],
   );
 
-  return <StudentRosterPageContent {...controller.contentProps} />;
+  return <StudentRosterPageContent {...controller.contentProps} beltRanks={beltRanks} />;
 }

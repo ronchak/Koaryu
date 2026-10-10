@@ -1,10 +1,12 @@
 "use client";
 
-import { useEffect } from "react";
+import { useMemo } from "react";
 import { ProgramBadge } from "@/components/programs/program-picker";
 import { StatusBadge } from "@/components/students/status-badge";
+import { BeltSwatch } from "@/components/students/student-belt-swatch";
 import { StudentAvatar } from "@/components/students/student-avatar";
 import { Button } from "@/components/ui/button";
+import { CalmState, ToneTag } from "@/components/ui/horizon";
 import { ModalFrame } from "@/components/ui/modal-frame";
 import {
   buildStudentRosterEmptyState,
@@ -14,16 +16,17 @@ import {
   type StudentRosterRow,
 } from "@/lib/students-page-model";
 import { stopStudentSelectionPropagation } from "@/lib/student-selection-events";
-import type { Program } from "@/types";
+import type { BeltRank, Program, Student } from "@/types";
 import {
   AlertTriangle,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
   ChevronUp,
+  SearchX,
   Upload,
-  User,
   UserPlus,
+  Users,
 } from "lucide-react";
 import styles from "./student-records.module.css";
 
@@ -93,6 +96,98 @@ function getStudentName(row: StudentRosterRow) {
   return fullName || row.displayName;
 }
 
+type RosterBelt = {
+  key: string;
+  programName: string;
+  programColor: string | null;
+  rankName: string | null;
+  rankColor: string | null;
+};
+
+type RankLookup = ReadonlyMap<string, Pick<BeltRank, "name" | "color_hex">>;
+
+/** Current programs with the belt the student holds in each, from the roster row itself. */
+function rosterBelts(row: StudentRosterRow, programs: Program[], ranks: RankLookup): RosterBelt[] {
+  const memberships = (row.student.program_memberships ?? []).filter(
+    (membership) => membership.status !== "ended" && !membership.ended_at,
+  );
+  if (memberships.length > 0) {
+    return memberships.map((membership) => {
+      const program = programs.find((item) => item.id === membership.program_id);
+      const rank = membership.current_belt_rank_id
+        ? ranks.get(membership.current_belt_rank_id)
+        : undefined;
+      return {
+        key: membership.id,
+        programName: program?.name || membership.program_name || "Program",
+        programColor: program?.color_hex || membership.program_color_hex || null,
+        rankName: membership.current_belt_rank_name || rank?.name || null,
+        rankColor: membership.current_belt_rank_color || rank?.color_hex || null,
+      };
+    });
+  }
+  const studentRank = row.student.current_belt_rank_id
+    ? ranks.get(row.student.current_belt_rank_id)
+    : undefined;
+  return row.programs.map((program, index) => ({
+    key: program.id,
+    programName: program.name,
+    programColor: program.color_hex,
+    rankName: index === 0 ? (studentRank?.name ?? null) : null,
+    rankColor: index === 0 ? (studentRank?.color_hex ?? null) : null,
+  }));
+}
+
+function BeltSummary({
+  belts,
+  row,
+  programs,
+}: {
+  belts: RosterBelt[];
+  row: StudentRosterRow;
+  programs: Program[];
+}) {
+  if (belts.length === 0) {
+    const fallback = programs.find((program) => program.id === row.student.program_id);
+    return fallback ? (
+      <ProgramBadge program={fallback} />
+    ) : (
+      <span className={styles.quietValue}>No program</span>
+    );
+  }
+  const [first, ...rest] = belts;
+  return (
+    <div className={styles.beltSummary}>
+      <BeltSwatch color={first.rankColor} />
+      <div className={styles.beltCopy}>
+        <span className={styles.beltRank}>{first.rankName ?? "No rank yet"}</span>
+        <span className={styles.beltProgram}>
+          <span
+            aria-hidden="true"
+            className={styles.programDot}
+            style={first.programColor ? { backgroundColor: first.programColor } : undefined}
+          />
+          {first.programName}
+          {rest.length > 0 ? (
+            <span
+              className={styles.overflowCount}
+              title={rest.map((belt) => belt.programName).join(", ")}
+            >
+              +{rest.length} more
+            </span>
+          ) : null}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function primaryGuardianName(student: Student) {
+  const guardian =
+    student.guardians.find((item) => item.is_primary_contact) ?? student.guardians[0];
+  return guardian ? `${guardian.first_name} ${guardian.last_name}`.trim() : null;
+}
+
 export function StudentRosterLoadError({
   activeLoadError,
   onRetry,
@@ -101,15 +196,18 @@ export function StudentRosterLoadError({
   onRetry: () => void;
 }) {
   return (
-    <div className="flex flex-col items-center justify-center py-20">
-      <AlertTriangle aria-hidden="true" className="w-8 h-8 text-danger mb-3" />
-      <p className="text-sm text-text-secondary text-center max-w-md">
-        Koaryu could not load the student roster right now.
-      </p>
-      <p className="mt-2 text-xs text-muted text-center max-w-xl break-words">{activeLoadError}</p>
-      <Button variant="secondary" size="sm" className="mt-4" onClick={onRetry}>
-        Try again
-      </Button>
+    <div className={styles.rosterStateBody}>
+      <CalmState
+        tone="alert"
+        icon={<AlertTriangle />}
+        title="Koaryu could not load the student roster right now."
+        detail={<span className="break-words">{activeLoadError}</span>}
+        action={
+          <Button variant="secondary" size="sm" onClick={onRetry}>
+            Try again
+          </Button>
+        }
+      />
     </div>
   );
 }
@@ -136,48 +234,55 @@ export function StudentRosterEmptyState({
   });
 
   return (
-    <div className="flex flex-col items-center justify-center py-20">
-      <User aria-hidden="true" className="w-8 h-8 text-muted mb-3" />
-      <p className="text-sm text-text-secondary">{state.message}</p>
-      {state.showClearFilters ? (
-        <button
-          onClick={onClearFilters}
-          className="mt-3 text-sm text-accent hover:text-accent-hover cursor-pointer"
-        >
-          Clear filters
-        </button>
-      ) : state.showAddStudent || state.showImportCsv ? (
-        <div className="mt-4 flex items-center gap-3">
-          {state.showAddStudent ? (
-            <Button variant="primary" size="sm" onClick={onAddStudent}>
-              <UserPlus aria-hidden="true" className="w-3.5 h-3.5" />
-              Add student
+    <div className={styles.rosterStateBody}>
+      <CalmState
+        tone="neutral"
+        icon={hasActiveFilters ? <SearchX /> : <Users />}
+        title={state.message}
+        detail={
+          hasActiveFilters
+            ? "Try a different name or view, or clear the filters to see everyone."
+            : state.showImportCsv
+              ? "Bring your list across from a spreadsheet, or add students one at a time."
+              : undefined
+        }
+        action={
+          state.showClearFilters ? (
+            <Button variant="secondary" size="sm" onClick={onClearFilters}>
+              Clear filters
             </Button>
-          ) : null}
-          {state.showImportCsv ? (
-            <Button variant="secondary" size="sm" onClick={onImportCsv}>
-              <Upload aria-hidden="true" className="w-3.5 h-3.5" />
-              Import CSV
-            </Button>
-          ) : null}
-        </div>
-      ) : null}
+          ) : state.showAddStudent || state.showImportCsv ? (
+            <div className="flex flex-wrap items-center gap-2">
+              {state.showImportCsv ? (
+                <Button variant="secondary" size="sm" onClick={onImportCsv}>
+                  <Upload aria-hidden="true" className="w-3.5 h-3.5" />
+                  Import CSV
+                </Button>
+              ) : null}
+              {state.showAddStudent ? (
+                <Button variant="primary" size="sm" onClick={onAddStudent}>
+                  <UserPlus aria-hidden="true" className="w-3.5 h-3.5" />
+                  Add student
+                </Button>
+              ) : null}
+            </div>
+          ) : null
+        }
+      />
     </div>
   );
 }
 
 export function StudentRosterTable({
   allSelected,
+  beltRanks,
   canManageRoster,
   filtered,
-  focusedStudentId,
   handleSort,
   inactivityByStudentId,
   inactivityThreshold,
   isBulkCommandPending,
   onOpenStudent,
-  onFocusStudent,
-  onHoverStudent,
   onPrefetchStudent,
   placeholderRows = 0,
   programs,
@@ -188,16 +293,14 @@ export function StudentRosterTable({
   toggleSelectAll,
 }: {
   allSelected: boolean;
+  beltRanks?: readonly BeltRank[];
   canManageRoster: boolean;
   filtered: StudentRosterRow[];
-  focusedStudentId: string | null;
   handleSort: (key: SortKey) => void;
   inactivityByStudentId: ReadonlyMap<string, string>;
   inactivityThreshold: number | null;
   isBulkCommandPending: boolean;
   onOpenStudent: (studentId: string) => void;
-  onFocusStudent: (studentId: string) => void;
-  onHoverStudent?: (studentId: string) => void;
   onPrefetchStudent?: (studentId: string) => void;
   /** Cold load: draw this many placeholder rows inside the real table. */
   placeholderRows?: number;
@@ -208,6 +311,12 @@ export function StudentRosterTable({
   toggleSelect: (studentId: string) => void;
   toggleSelectAll: () => void;
 }) {
+  const rankById = useMemo<RankLookup>(
+    () => new Map((beltRanks ?? []).map((rank) => [rank.id, rank])),
+    [beltRanks],
+  );
+  const sortButtonClass =
+    "inline-flex min-h-9 items-center gap-1 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50";
   return (
     <>
       {canManageRoster ? (
@@ -222,11 +331,15 @@ export function StudentRosterTable({
           {allSelected ? "Deselect all visible students" : "Select all visible students"}
         </label>
       ) : null}
-      <table className={styles.rosterTable}>
+      <table
+        className={styles.rosterTable}
+        data-selectable={canManageRoster ? "true" : "false"}
+        data-inactivity={inactivityThreshold ? "true" : undefined}
+      >
         <thead>
-          <tr className="border-b border-border">
+          <tr>
             {canManageRoster ? (
-              <th data-column="select" className="w-14 p-0">
+              <th data-column="select" className="p-0">
                 <label className={styles.checkboxTarget}>
                   <input
                     type="checkbox"
@@ -241,60 +354,35 @@ export function StudentRosterTable({
                 </label>
               </th>
             ) : null}
-            <th
-              data-column="name"
-              aria-sort={getSortState("name", sortKey, sortDir)}
-              className="px-4 py-3 text-left text-xs font-medium text-text-secondary select-none"
-            >
+            <th data-column="name" aria-sort={getSortState("name", sortKey, sortDir)}>
               <button
                 type="button"
                 onClick={() => handleSort("name")}
                 aria-label={getSortButtonLabel("name", "name", sortKey, sortDir)}
                 disabled={isBulkCommandPending}
-                className="flex items-center gap-1 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
+                className={sortButtonClass}
               >
-                Name
+                Student
                 <SortIcon col="name" sortKey={sortKey} sortDir={sortDir} />
               </button>
             </th>
-            <th
-              data-column="status"
-              aria-sort={getSortState("status", sortKey, sortDir)}
-              className="px-4 py-3 text-left text-xs font-medium text-text-secondary select-none"
-            >
+            <th data-column="programs">Belt &amp; program</th>
+            <th data-column="status" aria-sort={getSortState("status", sortKey, sortDir)}>
               <button
                 type="button"
                 onClick={() => handleSort("status")}
                 aria-label={getSortButtonLabel("status", "status", sortKey, sortDir)}
                 disabled={isBulkCommandPending}
-                className="flex items-center gap-1 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
+                className={sortButtonClass}
               >
                 Status
                 <SortIcon col="status" sortKey={sortKey} sortDir={sortDir} />
               </button>
             </th>
-            <th
-              data-column="programs"
-              className="px-4 py-3 text-left text-xs font-medium text-text-secondary"
-            >
-              Programs
-            </th>
-            <th
-              data-column="contact"
-              className="px-4 py-3 text-left text-xs font-medium text-text-secondary"
-            >
-              Contact
-            </th>
-            <th
-              data-column="tags"
-              className="px-4 py-3 text-left text-xs font-medium text-text-secondary"
-            >
-              Tags
-            </th>
+            <th data-column="contact">Contact</th>
             <th
               data-column="member-since"
               aria-sort={getSortState("membership_start_date", sortKey, sortDir)}
-              className="px-4 py-3 text-left text-xs font-medium text-text-secondary select-none"
             >
               <button
                 type="button"
@@ -306,20 +394,16 @@ export function StudentRosterTable({
                   sortDir,
                 )}
                 disabled={isBulkCommandPending}
-                className="flex items-center gap-1 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
+                className={sortButtonClass}
               >
                 Member since
                 <SortIcon col="membership_start_date" sortKey={sortKey} sortDir={sortDir} />
               </button>
             </th>
-            {inactivityThreshold && (
-              <th
-                data-column="inactive"
-                className="px-4 py-3 text-left text-xs font-medium text-text-secondary"
-              >
-                Days inactive
-              </th>
-            )}
+            {inactivityThreshold ? <th data-column="inactive">Inactive for</th> : null}
+            <th data-column="open">
+              <span className="sr-only">Open</span>
+            </th>
           </tr>
         </thead>
         <tbody className={placeholderRows > 0 ? "koaryu-skeleton-reveal" : undefined}>
@@ -330,60 +414,61 @@ export function StudentRosterTable({
               aria-hidden="true"
             >
               {canManageRoster ? (
-                <td data-label="Select" className="p-0">
+                <td data-cell="select" className="p-0">
                   <span className={styles.checkboxTarget}>
                     <span className={styles.placeholderCheckbox} />
                   </span>
                 </td>
               ) : null}
-              <th scope="row" data-label="Student" className={styles.studentCell}>
+              <th scope="row" data-cell="name" className={styles.studentCell}>
                 <span className={styles.studentIdentityButton}>
                   <span className={styles.placeholderAvatar} />
                   <span className={styles.placeholderName} data-length={index % 3} />
                 </span>
               </th>
-              <td data-label="Status" className={styles.statusCell}>
-                <span className={styles.placeholderPill} />
-              </td>
-              <td data-label="Programs" className={styles.programCell}>
+              <td data-cell="programs">
                 <span className={styles.placeholderBar} data-length={(index + 1) % 3} />
               </td>
-              <td data-column="contact" data-label="Contact" className={styles.contactCell} />
-              <td data-column="tags" data-label="Tags" className={styles.tagsCell} />
-              <td data-label="Member since" className={styles.memberSinceCell}>
+              <td data-cell="status">
+                <span className={styles.placeholderPill} />
+              </td>
+              <td data-cell="contact" />
+              <td data-cell="since">
                 <span className={styles.placeholderDate} />
               </td>
-              {inactivityThreshold && (
-                <td data-label="Days inactive" className={styles.inactiveCell}>
+              {inactivityThreshold ? (
+                <td data-cell="inactive">
                   <span className={styles.placeholderDate} />
                 </td>
-              )}
+              ) : null}
+              <td data-cell="open" />
             </tr>
           ))}
           {filtered.map((row) => {
             const { student } = row;
             const isSelected = selectedIds.has(student.id);
             const studentName = getStudentName(row);
+            const guardianName = student.is_minor ? primaryGuardianName(student) : null;
+            const tags = [...row.visibleTags];
+            const moreTags = row.hiddenTagCount;
+            const belts = rosterBelts(row, programs, rankById);
+            const firstRankColor = belts.find((belt) => belt.rankColor)?.rankColor ?? null;
+            const inactivity = inactivityThreshold
+              ? inactivityByStudentId.get(student.id) || `${inactivityThreshold}+`
+              : null;
             return (
               <tr
                 key={student.id}
                 data-student-id={student.id}
                 data-state={student.status}
-                data-focused={focusedStudentId === student.id || undefined}
-                onFocusCapture={() => {
-                  onFocusStudent(student.id);
-                  onPrefetchStudent?.(student.id);
-                }}
-                onPointerEnter={() => {
-                  onHoverStudent?.(student.id);
-                  onPrefetchStudent?.(student.id);
-                }}
+                onFocusCapture={() => onPrefetchStudent?.(student.id)}
+                onPointerEnter={() => onPrefetchStudent?.(student.id)}
                 onClick={() => onOpenStudent(student.id)}
                 className={styles.rosterRow}
                 data-selected={isSelected || undefined}
               >
                 {canManageRoster ? (
-                  <td data-label="Select" className="p-0">
+                  <td data-cell="select" className="p-0">
                     <label
                       className={styles.checkboxTarget}
                       onClick={stopStudentSelectionPropagation}
@@ -402,7 +487,7 @@ export function StudentRosterTable({
                     </label>
                   </td>
                 ) : null}
-                <th scope="row" data-label="Student" className={styles.studentCell}>
+                <th scope="row" data-cell="name" className={styles.studentCell}>
                   <button
                     type="button"
                     onClick={(event) => {
@@ -413,177 +498,64 @@ export function StudentRosterTable({
                     aria-label={`Open ${studentName} profile`}
                     className={styles.studentIdentityButton}
                   >
-                    <StudentAvatar student={student} />
-                    <div className={styles.studentIdentityCopy}>
-                      <p className={styles.studentName}>
+                    <StudentAvatar student={student} size="md" ringColor={firstRankColor} />
+                    <span className={styles.studentIdentityCopy}>
+                      <span className={styles.studentName}>
                         {student.preferred_name || student.legal_first_name}{" "}
                         {student.legal_last_name}
-                      </p>
-                      {student.is_minor && <p className={styles.studentMeta}>Minor</p>}
-                    </div>
+                      </span>
+                      {student.is_minor || tags.length > 0 ? (
+                        <span className={styles.studentMeta}>
+                          {student.is_minor ? (
+                            <span>
+                              Minor
+                              {guardianName ? ` · Guardian ${guardianName}` : ""}
+                            </span>
+                          ) : null}
+                          {tags.map((tag) => (
+                            <span key={tag} className={styles.rosterTag}>
+                              {tag}
+                            </span>
+                          ))}
+                          {moreTags > 0 ? (
+                            <span className={styles.overflowCount}>+{moreTags}</span>
+                          ) : null}
+                        </span>
+                      ) : null}
+                    </span>
                   </button>
                 </th>
-                <td data-label="Status" className={styles.statusCell}>
+                <td data-cell="programs" className={styles.programCell}>
+                  <BeltSummary belts={belts} row={row} programs={programs} />
+                </td>
+                <td data-cell="status" className={styles.statusCell}>
                   <StatusBadge status={student.status} />
                 </td>
-                <td data-label="Programs" className={styles.programCell}>
-                  <div className={styles.programSummary}>
-                    {row.programs.length > 0 ? (
-                      <>
-                        <ProgramBadge program={row.programs[0]} />
-                        {row.programs.length > 1 ? (
-                          <span className={styles.overflowCount}>+{row.programs.length - 1}</span>
-                        ) : null}
-                      </>
-                    ) : (
-                      <ProgramBadge
-                        program={programs.find((program) => program.id === student.program_id)}
-                      />
-                    )}
-                  </div>
+                <td data-cell="contact" className={styles.contactCell}>
+                  {row.contact === "—" ? (
+                    <span className={styles.quietValue}>No contact on file</span>
+                  ) : (
+                    row.contact
+                  )}
                 </td>
-                <td data-column="contact" data-label="Contact" className={styles.contactCell}>
-                  {row.contact}
-                </td>
-                <td data-column="tags" data-label="Tags" className={styles.tagsCell}>
-                  <div className={styles.tagSummary}>
-                    {row.visibleTags[0] ? (
-                      <span>{row.visibleTags[0]}</span>
-                    ) : (
-                      <span aria-hidden="true">—</span>
-                    )}
-                    {row.visibleTags.length + row.hiddenTagCount > 1 ? (
-                      <span className={styles.overflowCount}>
-                        +{row.visibleTags.length + row.hiddenTagCount - 1}
-                      </span>
-                    ) : null}
-                  </div>
-                </td>
-                <td data-label="Member since" className={styles.memberSinceCell}>
+                <td data-cell="since" className={styles.memberSinceCell}>
+                  <span className={styles.mobileCellLabel}>Since </span>
                   {formatDate(student.membership_start_date)}
                 </td>
-                {inactivityThreshold && (
-                  <td data-label="Days inactive" className={styles.inactiveCell}>
-                    {inactivityByStudentId.get(student.id) || `${inactivityThreshold}+`}
+                {inactivity ? (
+                  <td data-cell="inactive" className={styles.inactiveCell}>
+                    <ToneTag tone="warn">{inactivity} days</ToneTag>
                   </td>
-                )}
+                ) : null}
+                <td data-cell="open" className={styles.openCell} aria-hidden="true">
+                  <ChevronRight className="h-4 w-4" />
+                </td>
               </tr>
             );
           })}
         </tbody>
       </table>
     </>
-  );
-}
-
-export function StudentRosterReadingRail({
-  inactivity,
-  onOpenStudent,
-  onPrefetchStudent,
-  row,
-}: {
-  inactivity: string | null;
-  onOpenStudent: (studentId: string) => void;
-  onPrefetchStudent?: (studentId: string) => void;
-  row: StudentRosterRow | null;
-}) {
-  const quickViewStudentId = row?.student.id ?? null;
-  useEffect(() => {
-    if (quickViewStudentId) onPrefetchStudent?.(quickViewStudentId);
-  }, [onPrefetchStudent, quickViewStudentId]);
-
-  if (!row) {
-    return (
-      <aside
-        className={`${styles.studentReadingRail} ${styles.emptyReadingRail}`}
-        aria-label="Student quick view"
-      >
-        <div className={styles.readingRailHeading}>
-          <span>Quick view</span>
-        </div>
-        <div className={styles.readingRailEmptyState}>
-          <User aria-hidden="true" />
-          <p>Hover over or focus a student to see their details here.</p>
-        </div>
-      </aside>
-    );
-  }
-
-  const { student } = row;
-  const studentName = getStudentName(row);
-  const guardian =
-    student.guardians.find((item) => item.is_primary_contact) ?? student.guardians[0];
-
-  return (
-    <aside className={styles.studentReadingRail} aria-labelledby="student-reading-title">
-      <div className={styles.readingRailHeading}>
-        <span>Quick view</span>
-        <StatusBadge status={student.status} />
-      </div>
-      <div className={styles.readingIdentity}>
-        <StudentAvatar student={student} />
-        <div>
-          <h2 id="student-reading-title">{studentName}</h2>
-          {student.is_minor ? <p>Minor student</p> : null}
-        </div>
-      </div>
-
-      <dl className={styles.readingFacts}>
-        <div>
-          <dt>Programs</dt>
-          <dd>
-            {row.programs.length > 0
-              ? row.programs.map((program) => program.name).join(", ")
-              : "No active program"}
-          </dd>
-        </div>
-        <div>
-          <dt>Contact</dt>
-          <dd>{row.contact}</dd>
-        </div>
-        <div>
-          <dt>Member since</dt>
-          <dd>{formatDate(student.membership_start_date || student.created_at)}</dd>
-        </div>
-        {inactivity ? (
-          <div>
-            <dt>Inactive</dt>
-            <dd>{inactivity}</dd>
-          </div>
-        ) : null}
-        {guardian ? (
-          <div>
-            <dt>Guardian</dt>
-            <dd>{`${guardian.first_name} ${guardian.last_name}`.trim()}</dd>
-          </div>
-        ) : null}
-      </dl>
-
-      {student.tags.length > 0 ? (
-        <div className={styles.readingTags} aria-label="Student tags">
-          {student.tags.map((tag) => (
-            <span key={tag}>{tag}</span>
-          ))}
-        </div>
-      ) : null}
-
-      {student.notes ? (
-        <div className={styles.readingNote}>
-          <p>Notes</p>
-          <span>{student.notes}</span>
-        </div>
-      ) : null}
-
-      <Button
-        variant="primary"
-        size="sm"
-        className={styles.openRecordButton}
-        data-open-student
-        onClick={() => onOpenStudent(student.id)}
-      >
-        Open full record
-      </Button>
-    </aside>
   );
 }
 
@@ -618,18 +590,21 @@ export function StudentRosterFooter({
   totalPages: number;
   usesDerivedRosterFilters: boolean;
 }) {
-  if (filteredCount === 0) {
+  const isPaged = !usesDerivedRosterFilters && (totalPages > 1 || hasNextPage || hasPreviousPage);
+  // The header already says how many; the footer only speaks when it adds a range.
+  const total = usesDerivedRosterFilters ? studentsCount : pagedTotal;
+  if (filteredCount === 0 || (!isPaged && filteredCount === total)) {
     return null;
   }
 
   return (
-    <div className="flex flex-col gap-3 border-t border-border px-8 py-3 sm:flex-row sm:items-center sm:justify-between">
-      <p className="text-xs text-muted">
+    <div className={styles.rosterFooter}>
+      <p>
         {usesDerivedRosterFilters
           ? `Showing ${filteredCount} of ${studentsCount} students`
           : `Showing ${pageStart}-${pageEnd} of ${pagedTotal} students`}
       </p>
-      {!usesDerivedRosterFilters && (totalPages > 1 || hasNextPage || hasPreviousPage) ? (
+      {isPaged ? (
         <div className="flex items-center gap-2">
           <Button
             variant="secondary"
@@ -640,7 +615,7 @@ export function StudentRosterFooter({
             <ChevronLeft aria-hidden="true" className="h-3.5 w-3.5" />
             Previous
           </Button>
-          <span className="min-w-20 text-center text-xs text-muted">
+          <span className="min-w-20 text-center text-[0.8125rem] text-muted tabular-nums">
             Page {page} of {totalPages}
           </span>
           <Button
