@@ -2,6 +2,7 @@
 
 import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { api, ApiError, isSubscriptionRequiredError } from "@/lib/api";
+import { useRetainedState } from "@/lib/retained-state";
 import {
   isMatchingRefundPayment,
   type RefundIdentity,
@@ -57,47 +58,119 @@ export function useBillingDataController({
   shouldSettleEarly,
   token,
 }: UseBillingDataControllerOptions) {
-  const [landing, setLanding] = useState<BillingLanding | null>(null);
-  const tokenRef = useRef(token);
-  const activeTabRef = useRef(activeTab);
-  const retainedRef = useRef(new Map<string, number>());
-  const errorsRef = useRef(new Map<string, string>());
-  const dataScopeRef = useRef<string | null>(null);
-  const paymentReadRevisionRef = useRef(0);
-  const [platformBilling, setPlatformBilling] = useState<PlatformBillingStatus | null>(null);
-  const [billingSystemStatus, setBillingSystemStatus] = useState<BillingSystemStatus | null>(null);
-  const [paymentAccount, setPaymentAccount] = useState<StudioPaymentAccount | null>(null);
-  const [plans, setPlans] = useState<BillingPlan[]>([]);
-  const [payers, setPayers] = useState<BillingPayer[]>([]);
-  const [enrollments, setEnrollments] = useState<StudentBillingEnrollment[]>([]);
-  const [enrollmentCursor, setEnrollmentCursor] = useState<string | null>(null);
-  const [invoiceCursor, setInvoiceCursor] = useState<string | null>(null);
-  const [paymentCursor, setPaymentCursor] = useState<string | null>(null);
-  const loadMoreInFlightRef = useRef<symbol | null>(null);
-  const [isLoadingMore, setIsLoadingMore] = useState(false);
-  const [invoices, setInvoices] = useState<BillingInvoice[]>([]);
-  const [payments, setPayments] = useState<BillingPayment[]>([]);
-  const [paymentCohortSummary, setPaymentCohortSummary] =
-    useState<BillingPaymentCohortSummary | null>(null);
-  const [settledTabs, setSettledTabs] = useState<ReadonlySet<string>>(() => new Set());
-  const [settledAttemptKey, setSettledAttemptKey] = useState<string | null>(null);
-  const markTabSettled = useCallback((key: string, settled: boolean, retain = false) => {
-    setSettledAttemptKey(settled ? key : null);
-    setSettledTabs((previous) => {
-      if (settled && !retain) return previous;
-      const next = new Set(previous);
-      if (settled) next.add(key);
-      else next.delete(key);
-      return next;
-    });
-  }, []);
-  const [loadedAccessKey, setLoadedAccessKey] = useState<string | null>(null);
   const activeAccessKey =
     token && canViewStudioBilling && !shouldSettleEarly
       ? identityKey
         ? `${identityKey}:${canManageKoaryuSubscription ? "subscription-admin" : "studio-billing"}`
         : null
       : null;
+  const retainedKey = activeAccessKey ? `billing:${activeAccessKey}` : null;
+  const [landing, setLanding] = useRetainedState<BillingLanding | null>(
+    retainedKey && `${retainedKey}:landing`,
+    null,
+  );
+  const tokenRef = useRef(token);
+  const activeTabRef = useRef(activeTab);
+  const [tabCache, setTabCache] = useRetainedState<ReadonlyMap<string, number>>(
+    retainedKey && `${retainedKey}:tab-cache`,
+    () => new Map(),
+  );
+  const retainedRef = useRef(tabCache);
+  const updateTabCache = useCallback(
+    (update: (cache: Map<string, number>) => void) => {
+      const next = new Map(retainedRef.current);
+      update(next);
+      retainedRef.current = next;
+      setTabCache(next);
+    },
+    [setTabCache],
+  );
+  const errorsRef = useRef(new Map<string, string>());
+  const dataScopeRef = useRef(activeAccessKey);
+  const paymentReadRevisionRef = useRef(0);
+  // Retained status is presentation only; verify capabilities again on each mount.
+  const verifiedAccessKeyRef = useRef<string | null>(null);
+  const [verifiedBillingStatus, setVerifiedBillingStatus] = useState<{
+    accessKey: string;
+    status: BillingSystemStatus | null;
+  } | null>(null);
+  const [verificationScope, setVerificationScope] = useState(activeAccessKey);
+  if (verificationScope !== activeAccessKey) {
+    setVerificationScope(activeAccessKey);
+    setVerifiedBillingStatus(null);
+  }
+  const [platformBilling, setPlatformBilling] = useRetainedState<PlatformBillingStatus | null>(
+    retainedKey && `${retainedKey}:platformBilling`,
+    null,
+  );
+  const [billingSystemStatus, setBillingSystemStatus] =
+    useRetainedState<BillingSystemStatus | null>(
+      retainedKey && `${retainedKey}:billingSystemStatus`,
+      null,
+    );
+  const [paymentAccount, setPaymentAccount] = useRetainedState<StudioPaymentAccount | null>(
+    retainedKey && `${retainedKey}:paymentAccount`,
+    null,
+  );
+  const [plans, setPlans] = useRetainedState<BillingPlan[]>(
+    retainedKey && `${retainedKey}:plans`,
+    [],
+  );
+  const [payers, setPayers] = useRetainedState<BillingPayer[]>(
+    retainedKey && `${retainedKey}:payers`,
+    [],
+  );
+  const [enrollments, setEnrollments] = useRetainedState<StudentBillingEnrollment[]>(
+    retainedKey && `${retainedKey}:enrollments`,
+    [],
+  );
+  const [enrollmentCursor, setEnrollmentCursor] = useRetainedState<string | null>(
+    retainedKey && `${retainedKey}:enrollmentCursor`,
+    null,
+  );
+  const [invoiceCursor, setInvoiceCursor] = useRetainedState<string | null>(
+    retainedKey && `${retainedKey}:invoiceCursor`,
+    null,
+  );
+  const [paymentCursor, setPaymentCursor] = useRetainedState<string | null>(
+    retainedKey && `${retainedKey}:paymentCursor`,
+    null,
+  );
+  const loadMoreInFlightRef = useRef<symbol | null>(null);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [invoices, setInvoices] = useRetainedState<BillingInvoice[]>(
+    retainedKey && `${retainedKey}:invoices`,
+    [],
+  );
+  const [payments, setPayments] = useRetainedState<BillingPayment[]>(
+    retainedKey && `${retainedKey}:payments`,
+    [],
+  );
+  const [paymentCohortSummary, setPaymentCohortSummary] =
+    useRetainedState<BillingPaymentCohortSummary | null>(
+      retainedKey && `${retainedKey}:paymentCohortSummary`,
+      null,
+    );
+  const [settledTabs, setSettledTabs] = useRetainedState<ReadonlySet<string>>(
+    retainedKey && `${retainedKey}:settledTabs`,
+    () => new Set(),
+  );
+  const [settledAttemptKey, setSettledAttemptKey] = useState<string | null>(null);
+  const [pendingAttemptKey, setPendingAttemptKey] = useState<string | null>(null);
+  const markTabSettled = useCallback(
+    (key: string, settled: boolean, retain = false) => {
+      setSettledAttemptKey(settled ? key : null);
+      setPendingAttemptKey(settled ? null : key);
+      if (settled && retain) {
+        setSettledTabs((previous) => new Set(previous).add(key));
+      }
+    },
+    [setSettledTabs],
+  );
+  const [loadedAccessKey, setLoadedAccessKey] = useRetainedState<string | null>(
+    retainedKey && `${retainedKey}:loadedAccessKey`,
+    null,
+  );
   const requestSequenceRef = useRef(0);
   const latestAccessKeyRef = useRef(activeAccessKey);
   const showTabError = useCallback(
@@ -126,20 +199,43 @@ export function useBillingDataController({
     setPaymentCohortSummary(null);
     setIsLoadingMore(false);
     loadMoreInFlightRef.current = null;
-    retainedRef.current.clear();
+    updateTabCache((cache) => cache.clear());
     errorsRef.current.clear();
     setSettledTabs(new Set());
     setSettledAttemptKey(null);
-  }, []);
+    setPendingAttemptKey(null);
+  }, [
+    setEnrollmentCursor,
+    setEnrollments,
+    setInvoiceCursor,
+    setInvoices,
+    setPayers,
+    setPaymentCohortSummary,
+    setPaymentCursor,
+    setPayments,
+    setPlans,
+    setSettledTabs,
+    updateTabCache,
+  ]);
   const resetBillingData = useCallback(() => {
     clearFinancialData();
     setLanding(null);
     setPlatformBilling(null);
     setBillingSystemStatus(null);
+    setVerifiedBillingStatus(null);
+    verifiedAccessKeyRef.current = null;
     setPaymentAccount(null);
     setLoadedAccessKey(null);
     setError("");
-  }, [clearFinancialData, setError]);
+  }, [
+    clearFinancialData,
+    setError,
+    setBillingSystemStatus,
+    setLanding,
+    setLoadedAccessKey,
+    setPaymentAccount,
+    setPlatformBilling,
+  ]);
 
   const isCurrentRequest = useCallback((requestId: number, access: BillingAccessSnapshot) => {
     return (
@@ -153,15 +249,19 @@ export function useBillingDataController({
 
   useLayoutEffect(() => {
     requestSequenceRef.current += 1;
-    retainedRef.current.clear();
     errorsRef.current.clear();
     setError("");
     latestAccessKeyRef.current = activeAccessKey;
+    verifiedAccessKeyRef.current = null;
     return () => {
       requestSequenceRef.current += 1;
       paymentReadRevisionRef.current += 1;
     };
   }, [activeAccessKey, setError]);
+
+  useLayoutEffect(() => {
+    retainedRef.current = tabCache;
+  }, [tabCache]);
 
   useLayoutEffect(() => {
     requestSequenceRef.current += 1;
@@ -182,13 +282,13 @@ export function useBillingDataController({
       setIsLoadingMore(false);
       loadMoreInFlightRef.current = null;
       if (force) {
-        retainedRef.current.clear();
+        updateTabCache((cache) => cache.clear());
         errorsRef.current.clear();
-        setSettledTabs(new Set());
       }
       const cacheKey = `${activeAccessKey}:${activeTab}`;
       const freshAt = retainedRef.current.get(cacheKey);
-      if (freshAt !== undefined && Date.now() - freshAt < 30_000) {
+      const tabIsFresh = freshAt !== undefined && Date.now() - freshAt < 30_000;
+      if (tabIsFresh && verifiedAccessKeyRef.current === activeAccessKey) {
         showTabError(cacheKey);
         markTabSettled(cacheKey, true, true);
         return;
@@ -200,7 +300,12 @@ export function useBillingDataController({
       showTabError(cacheKey, "");
       try {
         const freshLanding = retainedRef.current.get(`${activeAccessKey}:landing`);
-        if (force || freshLanding === undefined || Date.now() - freshLanding >= 30_000) {
+        if (
+          force ||
+          verifiedAccessKeyRef.current !== activeAccessKey ||
+          freshLanding === undefined ||
+          Date.now() - freshLanding >= 30_000
+        ) {
           const result = await api.get<BillingLanding>("/billing/landing", currentToken, {
             // The composed endpoint has a 30s provider deadline. Leave room for
             // admission, response headers, and the body before the browser aborts.
@@ -210,6 +315,11 @@ export function useBillingDataController({
           setLanding(result);
           setPlatformBilling(result.platform_status ?? null);
           setBillingSystemStatus(result.system_status ?? null);
+          setVerifiedBillingStatus({
+            accessKey: requestAccess.accessKey,
+            status: result.system_status ?? null,
+          });
+          verifiedAccessKeyRef.current = requestAccess.accessKey;
           setPaymentAccount(
             result.system_status?.payment_account ?? result.payment_account ?? null,
           );
@@ -228,9 +338,14 @@ export function useBillingDataController({
             return;
           }
           if (paymentReadRevisionRef.current === paymentRevision)
-            retainedRef.current.set(`${activeAccessKey}:landing`, Date.now());
+            updateTabCache((cache) => cache.set(`${activeAccessKey}:landing`, Date.now()));
           errorsRef.current.set(`${activeAccessKey}:landing`, result.errors.join(" "));
           showTabError(cacheKey);
+        }
+        // A revisit verifies access even while its fresh financial tab stays visible.
+        if (tabIsFresh && !force) {
+          markTabSettled(cacheKey, true, true);
+          return;
         }
         const requests: Promise<void>[] = [];
         const load = <T>(path: string, apply: (value: T) => void) => {
@@ -270,7 +385,7 @@ export function useBillingDataController({
         if (activeTab === "reports" && paymentReadRevisionRef.current !== paymentRevision) return;
         const failure = results.find((result) => result.status === "rejected");
         if (failure?.status === "rejected") throw failure.reason;
-        retainedRef.current.set(cacheKey, Date.now());
+        updateTabCache((cache) => cache.set(cacheKey, Date.now()));
         markTabSettled(cacheKey, true, true);
         setLoadedAccessKey(requestAccess.accessKey);
       } catch (err) {
@@ -297,6 +412,21 @@ export function useBillingDataController({
       onSubscriptionRequired,
       resetBillingData,
       showTabError,
+      setBillingSystemStatus,
+      setEnrollmentCursor,
+      setEnrollments,
+      setInvoiceCursor,
+      setInvoices,
+      setLanding,
+      setLoadedAccessKey,
+      setPayers,
+      setPaymentAccount,
+      setPaymentCohortSummary,
+      setPaymentCursor,
+      setPayments,
+      setPlans,
+      setPlatformBilling,
+      updateTabCache,
     ],
   );
   const refreshBilling = useCallback(() => loadBilling(true), [loadBilling]);
@@ -378,6 +508,12 @@ export function useBillingDataController({
     paymentCursor,
     isCurrentRequest,
     showTabError,
+    setEnrollmentCursor,
+    setEnrollments,
+    setInvoiceCursor,
+    setInvoices,
+    setPaymentCursor,
+    setPayments,
   ]);
 
   const identityUserId = identity?.userId;
@@ -398,8 +534,10 @@ export function useBillingDataController({
         return { status: "superseded" };
       const invalidatePaymentReads = () => {
         paymentReadRevisionRef.current += 1;
-        retainedRef.current.delete(`${activeAccessKey}:reports`);
-        retainedRef.current.delete(`${activeAccessKey}:landing`);
+        updateTabCache((cache) => {
+          cache.delete(`${activeAccessKey}:reports`);
+          cache.delete(`${activeAccessKey}:landing`);
+        });
         setPaymentCohortSummary(null);
       };
       invalidatePaymentReads();
@@ -488,6 +626,9 @@ export function useBillingDataController({
       onSubscriptionRequired,
       resetBillingData,
       setError,
+      setPaymentCohortSummary,
+      setPayments,
+      updateTabCache,
     ],
   );
 
@@ -547,6 +688,7 @@ export function useBillingDataController({
       resetBillingData,
       showTabError,
       setMessage,
+      setPaymentAccount,
       token,
     ],
   );
@@ -559,11 +701,18 @@ export function useBillingDataController({
 
   return {
     billingSystemStatus: hasVisibleBillingData ? billingSystemStatus : null,
+    verifiedBillingSystemStatus:
+      activeAccessKey && verifiedBillingStatus?.accessKey === activeAccessKey
+        ? verifiedBillingStatus.status
+        : null,
     enrollments: hasVisibleBillingData ? enrollments : [],
+    hasVisibleTabData: hasVisibleBillingData && settledTabs.has(`${activeAccessKey}:${activeTab}`),
     hasBillingLoadSettled:
       isPreviewMode || (activeAccessKey ? activeTabHasSettled : shouldSettleWithoutAccess),
     invoices: hasVisibleBillingData ? invoices : [],
-    isLoading: activeAccessKey ? !activeTabHasSettled : false,
+    isLoading: activeAccessKey
+      ? pendingAttemptKey === `${activeAccessKey}:${activeTab}` || !activeTabHasSettled
+      : false,
     payers: hasVisibleBillingData ? payers : [],
     paymentAccount: hasVisibleBillingData ? paymentAccount : null,
     paymentCohortSummary: hasVisibleBillingData ? paymentCohortSummary : null,

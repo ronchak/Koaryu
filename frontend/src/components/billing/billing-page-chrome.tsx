@@ -8,12 +8,13 @@ import {
   Download,
   FileText,
   ListChecks,
-  Loader2,
   Receipt,
   RefreshCw,
   ShieldCheck,
   Users,
 } from "lucide-react";
+import { BillingContentPlaceholder } from "./billing-page-loading";
+import { resolveBillingProviderCopy } from "@/lib/billing-policy";
 import { Header } from "@/components/header";
 import { OperationsSurface } from "@/components/operations/operations-surface";
 import { Button } from "@/components/ui/button";
@@ -39,6 +40,8 @@ export function BillingPageFrame({
   billingBoundaryMessage,
   children,
   completedStepCount,
+  setupReady,
+  canRefundPayments,
   error,
   isLiveRestricted,
   isLoading,
@@ -56,6 +59,8 @@ export function BillingPageFrame({
   billingBoundaryMessage: string;
   children: ReactNode;
   completedStepCount: number;
+  setupReady: boolean;
+  canRefundPayments?: boolean;
   error: string;
   isLiveRestricted: boolean;
   isLoading: boolean;
@@ -84,7 +89,11 @@ export function BillingPageFrame({
         </Button>
       </Header>
 
-      <div className="flex-1 p-4 sm:p-6" data-billing-ledger="six-views">
+      <div
+        className="flex-1 p-4 sm:p-6"
+        data-billing-ledger="six-views"
+        aria-busy={isLoading || showLoading}
+      >
         <div className="mx-auto max-w-[1240px] space-y-5">
           {isLiveRestricted ? (
             <BillingAccessLimitedNotice />
@@ -93,6 +102,7 @@ export function BillingPageFrame({
               <BillingSetupNavigation
                 activeTab={activeTab}
                 completedStepCount={completedStepCount}
+                ready={setupReady}
                 onChangeTab={onChangeTab}
                 steps={setupSteps}
               />
@@ -102,14 +112,20 @@ export function BillingPageFrame({
                 message={message}
                 onDismissError={onDismissError}
                 onDismissMessage={onDismissMessage}
-                showLoading={showLoading}
               />
 
               <section className="rounded-[14px] bg-warning/5 p-4 text-xs text-text-secondary">
                 {billingBoundaryMessage}
               </section>
 
-              {showContent ? children : null}
+              {showLoading ? (
+                <BillingContentPlaceholder
+                  activeTab={activeTab}
+                  canRefundPayments={canRefundPayments}
+                />
+              ) : showContent ? (
+                children
+              ) : null}
 
               <BillingPolicyNote />
             </>
@@ -135,11 +151,13 @@ export function BillingAccessLimitedNotice() {
 export function BillingSetupNavigation({
   activeTab,
   completedStepCount,
+  ready = true,
   onChangeTab,
   steps,
 }: {
   activeTab: BillingTab;
   completedStepCount: number;
+  ready?: boolean;
   onChangeTab: (tab: BillingTab) => void;
   steps: BillingSetupStep[];
 }) {
@@ -149,7 +167,7 @@ export function BillingSetupNavigation({
         <div className="grid border-b border-border px-4 py-4 sm:grid-cols-[minmax(12rem,0.35fr)_1fr] sm:gap-8 sm:px-5">
           <div>
             <p className="text-xs font-medium text-muted">
-              {completedStepCount} of {steps.length} ready
+              {ready ? `${completedStepCount} of ${steps.length} ready` : "Review status pending"}
             </p>
             <h2 className="mt-1 text-base font-semibold text-text-primary">Billing review</h2>
           </div>
@@ -196,13 +214,11 @@ export function BillingFeedbackNotices({
   message,
   onDismissError,
   onDismissMessage,
-  showLoading,
 }: {
   error: string;
   message: string;
   onDismissError: () => void;
   onDismissMessage: () => void;
-  showLoading: boolean;
 }) {
   return (
     <>
@@ -215,13 +231,6 @@ export function BillingFeedbackNotices({
         <DismissibleNotice tone="danger" onDismiss={onDismissError} className="text-xs">
           {error}
         </DismissibleNotice>
-      ) : null}
-
-      {showLoading ? (
-        <div className="flex items-center gap-2 text-sm text-muted">
-          <Loader2 className="h-4 w-4 animate-spin" />
-          Loading billing...
-        </div>
       ) : null}
     </>
   );
@@ -237,5 +246,78 @@ export function BillingPolicyNote() {
         <span>Soft student alert at 1,500 active students, with no database lockout.</span>
       </div>
     </section>
+  );
+}
+
+const pendingSetupSteps: BillingSetupStep[] = [
+  {
+    id: "payments",
+    title: "Review payment status",
+    description: "Review the studio's Stripe status.",
+    complete: false,
+    actionLabel: "Review setup",
+  },
+  {
+    id: "plans",
+    title: "Review tuition plans",
+    description:
+      "Review the studio's existing tuition plans. Plan changes are currently unavailable.",
+    complete: false,
+    actionLabel: "Review plans",
+  },
+  {
+    id: "families",
+    title: "Review families",
+    description: "Review existing payer accounts for parents, guardians, or adult students.",
+    complete: false,
+    actionLabel: "Review families",
+  },
+  {
+    id: "student-billing",
+    title: "Attach students",
+    description:
+      "Connect active students to the right family, tuition plan, collection mode, and billing dates.",
+    complete: false,
+    actionLabel: "Attach student",
+  },
+  {
+    id: "collect",
+    title: "Review invoices and payments",
+    description: "Record payer-level external payments and reconcile existing provider invoices.",
+    complete: false,
+    actionLabel: "Review invoices",
+  },
+];
+const noop = () => {};
+
+export function BillingPageFallback({ activeTab = "overview" }: { activeTab?: BillingTab }) {
+  const copy = resolveBillingProviderCopy({
+    isPreviewMode: false,
+    providerMode: undefined,
+    coreSubscription: false,
+    connectOnboarding: false,
+    connectPayments: false,
+  });
+  return (
+    <BillingPageFrame
+      activeTab={activeTab}
+      billingBoundaryMessage={copy.boundary}
+      completedStepCount={0}
+      setupReady={false}
+      error=""
+      isLiveRestricted={false}
+      isLoading={true}
+      isRefreshDisabled={true}
+      message=""
+      onChangeTab={noop}
+      onDismissError={noop}
+      onDismissMessage={noop}
+      onRefresh={noop}
+      setupSteps={pendingSetupSteps}
+      showContent={false}
+      showLoading={true}
+    >
+      {null}
+    </BillingPageFrame>
   );
 }

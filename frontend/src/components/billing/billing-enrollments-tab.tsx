@@ -2,6 +2,7 @@
 
 import type { FormEvent } from "react";
 import { Plus, Users } from "lucide-react";
+import { billingLedgerLayout, billingEnrollmentFormClass } from "./billing-layout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { formatBillingCalendarDate } from "@/lib/billing-page-utils";
@@ -81,7 +82,7 @@ export function BillingEnrollmentsTab({
           title="Attach external student billing"
           description="Admin and Front Desk can add a local record only. This does not create a Stripe subscription, charge a payer, or change training status."
         />
-        <form onSubmit={onCreateEnrollment} className="grid gap-3 lg:grid-cols-[1fr_1fr_1fr_0.8fr_0.7fr_0.7fr_0.7fr_auto] lg:items-end">
+        <form onSubmit={onCreateEnrollment} className={billingEnrollmentFormClass}>
           <div className="flex flex-col gap-1.5">
             <label className="text-sm font-medium text-text-secondary" htmlFor="enrollment-student">Student</label>
             <select id="enrollment-student" value={enrollmentStudentId} onChange={(event) => onEnrollmentStudentChange(event.target.value)} disabled={!canManageRoutineBilling || billingStudentOptions.length === 0} className="w-full rounded-[10px] border border-border bg-surface-raised px-3 py-2 text-sm text-text-primary">
@@ -118,7 +119,7 @@ export function BillingEnrollmentsTab({
       </section>
 
       <section className="overflow-hidden rounded-[14px] border border-border bg-surface">
-        <div className="hidden grid-cols-[1fr_1fr_0.8fr_1.35fr] gap-4 border-b border-border px-4 py-3 text-xs font-medium text-muted md:grid">
+        <div className={billingLedgerLayout.enrollments.header}>
           <span>Student</span><span>Plan</span><span>Dates</span><span>Billing state and actions</span>
         </div>
         {billingEnrollments.length === 0 ? (
@@ -140,7 +141,7 @@ export function BillingEnrollmentsTab({
             && enrollment.status === "active"
             && canUseWorkflow("enrollment.cancel.immediate");
           return (
-          <div key={enrollment.id} className="grid min-w-0 grid-cols-1 gap-3 border-b border-border px-4 py-3 text-sm last:border-b-0 md:min-h-14 md:grid-cols-[1fr_1fr_0.8fr_1.35fr] md:items-center md:gap-4 md:py-2">
+          <div key={enrollment.id} className={billingLedgerLayout.enrollments.row}>
             <div>
               <p className="mb-1 text-xs font-medium text-muted md:hidden">Student</p>
               <p className="font-medium text-text-primary">{studentNameById.get(enrollment.student_id) || "Student"}</p>

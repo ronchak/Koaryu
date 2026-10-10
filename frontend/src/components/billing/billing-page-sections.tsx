@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { billingOverviewMetricsClass, billingOverviewProvidersClass } from "./billing-layout";
 
 import {
   ArrowUpRight,
@@ -168,7 +169,7 @@ export function BillingOverviewTab({
   return (
     <div className="space-y-5">
       <section className="overflow-hidden bg-surface" aria-label="Billing exceptions and receivables" data-billing-money-band="exceptions-first">
-        <div className="grid gap-2 p-2 sm:grid-cols-2 xl:grid-cols-4">
+        <div className={billingOverviewMetricsClass}>
           {moneyBand.map((metric) => (
             <div key={metric.label} data-ledger-tone={metric.tone} className="rounded-[10px] bg-surface-raised/50 p-4">
               <p className="text-xs font-medium text-muted">{metric.label}</p>
@@ -182,7 +183,7 @@ export function BillingOverviewTab({
         </p>
       </section>
 
-      <div className="grid gap-5 lg:grid-cols-2">
+      <div className={billingOverviewProvidersClass}>
         <section className="rounded-[14px] border border-border bg-surface p-4">
           <SectionHeader icon={CreditCard} title="Koaryu Core" description="One flat software subscription: no student caps, no staff caps, no feature gates." />
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-4">

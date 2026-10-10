@@ -2,6 +2,13 @@
 
 import { useState, type FormEvent } from "react";
 import { Banknote, Plus } from "lucide-react";
+import {
+  billingExternalPaymentFormClass,
+  billingPaymentGridColumns,
+  billingPaymentHeaderClass,
+  billingPaymentRowClass,
+  billingReportMetricsClass,
+} from "./billing-layout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { formatDate, formatMoney } from "@/lib/billing-page-utils";
@@ -71,13 +78,11 @@ export function BillingReportsTab({
 }) {
   const [refundAmounts, setRefundAmounts] = useState<Record<string, string>>({});
   const [refundReasons, setRefundReasons] = useState<Record<string, RefundReason>>({});
-  const paymentGridColumns = refundController.canRefundPayments
-    ? "sm:grid-cols-[1fr_auto_auto_auto]"
-    : "sm:grid-cols-[1fr_auto_auto]";
+  const paymentGridColumns = billingPaymentGridColumns(refundController.canRefundPayments);
   const payerNameById = billingPayerNameById(billingPayers);
   return (
     <div className="space-y-5">
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className={billingReportMetricsClass}>
         <Metric
           label="UTC-month Stripe cohort"
           value={paymentCohortAvailable ? formatMoney(stripePaymentTotal) : "Unavailable"}
@@ -106,10 +111,7 @@ export function BillingReportsTab({
             {externalPaymentRecoveryMessage}
           </p>
         )}
-        <form
-          onSubmit={onRecordExternalPayment}
-          className="grid gap-3 md:grid-cols-[1fr_0.6fr_0.7fr_1fr_auto] md:items-end"
-        >
+        <form onSubmit={onRecordExternalPayment} className={billingExternalPaymentFormClass}>
           <div className="flex flex-col gap-1.5">
             <label className="text-sm text-text-secondary font-medium" htmlFor="external-payer">
               Payer
@@ -176,9 +178,7 @@ export function BillingReportsTab({
       </section>
 
       <section className="overflow-hidden rounded-[14px] border border-border bg-surface">
-        <div
-          className={`hidden gap-4 border-b border-border px-4 py-3 text-xs font-medium text-muted sm:grid ${paymentGridColumns}`}
-        >
+        <div className={`${billingPaymentHeaderClass} ${paymentGridColumns}`}>
           <span>Payment</span>
           <span>Payment accounting</span>
           <span>Status</span>
@@ -200,10 +200,7 @@ export function BillingReportsTab({
             );
             const refundReason = refundReasons[payment.id] ?? "requested_by_customer";
             return (
-              <div
-                key={payment.id}
-                className={`grid min-w-0 grid-cols-1 gap-3 border-b border-border px-4 py-3 text-sm last:border-b-0 sm:min-h-14 sm:items-center sm:gap-4 sm:py-1.5 ${paymentGridColumns}`}
-              >
+              <div key={payment.id} className={`${billingPaymentRowClass} ${paymentGridColumns}`}>
                 <div>
                   <p className="mb-1 text-xs font-medium text-muted sm:hidden">Payment</p>
                   <p className="font-medium text-text-primary">

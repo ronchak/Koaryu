@@ -1,6 +1,7 @@
 "use client";
 
 import { Receipt } from "lucide-react";
+import { billingLedgerLayout } from "./billing-layout";
 import { Button } from "@/components/ui/button";
 import { formatMoney, intervalLabel } from "@/lib/billing-page-utils";
 import type { BillingPlan } from "@/types";
@@ -30,7 +31,7 @@ export function BillingPlansTab({
       </section>
 
       <section className="overflow-hidden rounded-[14px] border border-border bg-surface">
-        <div className="hidden grid-cols-[1fr_auto_auto_auto_auto] gap-4 border-b border-border px-4 py-3 text-xs font-medium text-muted md:grid">
+        <div className={billingLedgerLayout.plans.header}>
           <span>Plan</span>
           <span>Amount</span>
           <span>Stripe</span>
@@ -41,10 +42,7 @@ export function BillingPlansTab({
           <p className="p-4 text-sm text-muted">No billing plans yet.</p>
         ) : (
           billingPlans.map((plan) => (
-            <div
-              key={plan.id}
-              className="grid min-w-0 grid-cols-1 gap-3 border-b border-border px-4 py-3 last:border-b-0 md:min-h-14 md:grid-cols-[1fr_auto_auto_auto_auto] md:items-center md:gap-4 md:py-2"
-            >
+            <div key={plan.id} className={billingLedgerLayout.plans.row}>
               <div className="min-w-0">
                 <p className="font-medium text-text-primary">{plan.name}</p>
                 <p className="mt-1 text-xs text-muted">
