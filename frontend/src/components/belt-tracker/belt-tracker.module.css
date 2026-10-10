@@ -1,405 +1,1157 @@
-.beltPage,
-.beltDialogRoot {
-  --bg: var(--product-ground);
-  --surface: var(--product-paper);
-  --surface-raised: var(--product-card-stock);
-  --border: var(--product-rule-soft);
-  --text-primary: var(--product-ink);
-  --text-secondary: var(--product-soft-ink);
-  --muted: var(--product-meta);
-  --accent: var(--product-wood);
-  --accent-contrast: var(--product-paper);
-  --success: var(--product-affirm);
-  --warning: var(--product-straw);
-  --danger: var(--product-vermilion);
-  color: var(--product-ink);
-  font-size: 0.8125rem;
-}
+/*
+ * Belt Tracker in the Horizon language. Belts are the hero: the rank colours
+ * are data colours (raw values from the studio's plan); everything else uses
+ * the --product-* and --hz-* tokens so day and night both follow the shell.
+ */
 
 .beltPage {
   min-width: 0;
-  background: var(--product-ground);
-}
-
-.beltPage > :global(header) {
-  background: var(--product-paper);
-}
-.beltPage :global(.text-xs),
-.beltDialogRoot :global(.text-xs) {
-  font-size: 0.8125rem;
-}
-
-.beltPage :is(input:not([type="checkbox"]):not([type="radio"]), select, textarea),
-.beltDialogRoot :is(input:not([type="checkbox"]):not([type="radio"]), select, textarea) {
-  min-height: 44px;
-  padding: 0.625rem 0.75rem;
-  border-color: var(--product-rule);
-  border-radius: 10px;
-  background: var(--product-card-stock);
-}
-
-.beltPage textarea,
-.beltDialogRoot textarea {
-  min-height: 5.5rem;
-}
-
-.beltPage :is(input, select, textarea):disabled,
-.beltDialogRoot :is(input, select, textarea):disabled,
-.beltPage :is(input, textarea):read-only,
-.beltDialogRoot :is(input, textarea):read-only {
-  cursor: not-allowed;
-  background: color-mix(in srgb, var(--product-paper) 72%, var(--product-ground));
-  color: var(--product-soft-ink);
-  opacity: 0.72;
-}
-
-.beltDialogRoot :global(.koaryu-modal-panel) {
-  max-height: calc(100dvh - 2rem);
-  overflow-y: auto;
-  border: 0 !important;
-  border-radius: 18px !important;
-  background: var(--product-lifted) !important;
-  box-shadow: var(--product-shadow-lifted);
-  animation: belt-dialog-open var(--product-motion-open-duration) var(--product-motion-ease) both;
+  color: var(--product-ink);
 }
 
 .beltPage :is(a, button, input, select, textarea, [tabindex]):focus-visible,
 .beltDialogRoot :is(a, button, input, select, textarea, [tabindex]):focus-visible {
-  outline: 2px solid var(--product-focus) !important;
+  outline: 2px solid var(--product-focus);
   outline-offset: 2px;
 }
-.beltPage button,
-.beltDialogRoot button {
-  min-width: 45px;
-  min-height: 45px;
-  border-radius: 10px;
+
+/* ---------- Belt swatch ---------- */
+
+.beltSwatch {
+  --belt-w: 44px;
+  --belt-h: 14px;
+  --belt-edge: color-mix(in srgb, var(--product-ink) 24%, transparent);
+  position: relative;
+  display: inline-block;
+  width: var(--belt-w);
+  height: var(--belt-h);
+  flex: 0 0 var(--belt-w);
+  border-radius: 4px;
+  background: var(--belt);
+  box-shadow: inset 0 0 0 1px var(--belt-edge);
+  vertical-align: middle;
 }
-.beltPage label:has(input:is([type="checkbox"], [type="radio"])),
-.beltDialogRoot label:has(input:is([type="checkbox"], [type="radio"])) {
-  display: flex;
-  min-width: 45px;
-  min-height: 45px;
+
+.beltSwatch[data-size="xs"] {
+  --belt-w: 22px;
+  --belt-h: 8px;
+  border-radius: 3px;
 }
-.eligibilityTable a {
-  min-height: 45px;
+
+.beltSwatch[data-size="sm"] {
+  --belt-w: 32px;
+  --belt-h: 11px;
+}
+
+.beltSwatch[data-size="lg"] {
+  --belt-w: 64px;
+  --belt-h: 20px;
+  border-radius: 5px;
+}
+
+/* The knot. */
+.beltSwatch::before {
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  left: 50%;
+  width: calc(var(--belt-h) * 0.95);
+  border-radius: 3px;
+  background: var(--belt);
+  box-shadow:
+    inset 0 0 0 1px var(--belt-edge),
+    0 1px 2px rgb(29 20 11 / 22%);
+  content: "";
+  transform: translateX(-50%);
+}
+
+.beltSwatch[data-size="xs"]::before {
+  top: -1px;
+  bottom: -1px;
+  box-shadow: inset 0 0 0 1px var(--belt-edge);
+}
+
+/* The tip on a sub-rank. */
+.beltSwatch[data-tip="true"]::after {
+  position: absolute;
+  top: 0;
+  right: 10%;
+  bottom: 0;
+  width: 18%;
+  background: var(--belt-tip);
+  box-shadow:
+    inset 0 1px 0 var(--belt-edge),
+    inset 0 -1px 0 var(--belt-edge);
+  content: "";
+}
+
+.beltSwatch[data-empty="true"] {
+  box-shadow: inset 0 0 0 1px var(--product-rule);
+}
+
+.rankBadge {
+  display: inline-flex;
+  max-width: 100%;
   align-items: center;
+  gap: 8px;
+  padding: 4px 10px 4px 8px;
+  border-radius: 999px;
+  background: var(--hz-tile);
+  color: var(--product-ink);
+  font-size: 0.8125rem;
+  font-weight: 650;
+  white-space: nowrap;
 }
+
+/* ---------- Requirement progress ---------- */
+
+.requirement {
+  display: grid;
+  min-width: 7.5rem;
+  max-width: 15rem;
+  gap: 6px;
+}
+
+.requirementCaption {
+  color: var(--product-meta);
+  font-size: 0.75rem;
+  font-weight: 650;
+}
+
+.requirementValue {
+  color: var(--product-soft-ink);
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+}
+
+.requirementValue strong {
+  color: var(--product-ink);
+  font-weight: 750;
+}
+
+.requirement[data-met="true"] .requirementValue strong {
+  color: var(--product-affirm);
+}
+
+.requirementTrack {
+  display: block;
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--product-ink) 9%, transparent);
+}
+
+.requirementFill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--hz-bar);
+  transition: width var(--product-motion-settle-duration) var(--product-motion-ease);
+}
+
+.requirement[data-met="true"] .requirementFill {
+  background: var(--product-affirm);
+}
+
+/* ---------- Shell ---------- */
 
 .beltControls {
-  position: sticky;
-  top: 56px;
-  z-index: 18;
   display: flex;
-  min-height: 56px;
+  min-width: 0;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 1rem;
-  margin-top: 0.75rem;
-  padding: 0.5rem;
-  border: 0 !important;
-  border-radius: 14px;
-  background: color-mix(in srgb, var(--product-paper) 90%, transparent);
-  box-shadow: var(--product-shadow-card);
-  backdrop-filter: blur(16px);
-}
-
-:global([data-navigation-placement="top"]) .beltControls {
-  top: 120px;
+  gap: 12px 16px;
 }
 
 .beltTabs {
   flex: 0 0 auto;
-  min-width: 12rem;
+  min-width: 15rem;
 }
 
 .beltProgramControl {
   display: flex;
   min-width: 0;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: flex-end;
+  gap: 8px 14px;
 }
 
 .beltProgramPicker {
-  width: min(22rem, 100%);
+  min-width: 0;
 }
+
 .beltProgramPicker > div {
   flex-direction: row;
   align-items: center;
-  gap: 0.75rem;
-}
-.beltProgramPicker label {
-  flex: 0 0 auto;
-  font-size: 0.75rem;
-}
-.beltProgramPicker select {
-  min-width: 12rem;
+  gap: 10px;
 }
 
-.beltActionNotice {
-  padding: 1rem clamp(1rem, 2.4vw, 2rem) 0;
+.beltProgramPicker label {
+  flex: 0 0 auto;
+  color: var(--product-soft-ink);
+  font-size: 0.8125rem;
+  font-weight: 650;
+}
+
+.beltProgramPicker select {
+  min-width: 15rem;
+  min-height: 44px;
+  padding: 0 2.25rem 0 0.875rem;
+  border: 1px solid var(--product-rule);
+  border-radius: 10px;
+  background-color: var(--product-paper);
+  color: var(--product-ink);
+  font-size: 0.875rem;
+  font-weight: 600;
 }
 
 .beltProgramLockNotice {
   margin: 0;
-  padding: 0.625rem clamp(1rem, 2.4vw, 2rem);
-  border-bottom: 1px solid var(--product-rule-soft);
-  background: var(--product-paper);
-  color: var(--warning);
+  color: var(--product-straw);
   font-size: 0.8125rem;
-  line-height: 1.4;
-}
-.eligibilityWorkspace {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-  padding: 1rem clamp(1rem, 2.4vw, 2rem) 2rem;
-}
-.decisionRegister {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0.5rem;
-  padding: 0.5rem;
-  border-radius: 14px;
-  background: var(--product-paper);
-  box-shadow: var(--product-shadow-card);
-}
-.decisionRegister > div {
-  display: flex;
-  min-height: 3rem;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-  padding: 0.5rem 0.75rem;
-  border-radius: 10px;
-  background: var(--product-sunk);
-}
-.decisionRegister > div[data-readiness="ready"] {
-  background: color-mix(in srgb, var(--product-paper) 88%, var(--success) 12%);
-}
-.decisionRegister > div[data-readiness="approval"] {
-  background: color-mix(in srgb, var(--product-paper) 88%, var(--warning) 12%);
-}
-.decisionRegister span {
-  color: var(--text-secondary);
-  font-size: 0.75rem;
-  font-weight: 600;
-  letter-spacing: 0;
-}
-.decisionRegister strong {
-  color: var(--text-primary);
-  font-family: var(--font-mono);
-  font-size: 1.15rem;
-  font-weight: 550;
-}
-.eligibilityTableFrame {
-  min-width: 0;
-  overflow-x: auto;
-  border-radius: 14px;
-}
-.eligibilityTable {
-  width: 100%;
-  min-width: 68rem;
-  border-collapse: separate;
-  border-spacing: 0;
-  border-radius: 14px;
-  background: var(--product-paper);
-  box-shadow: var(--product-shadow-card);
-  clip-path: inset(0 round 14px);
-  font-size: 0.8125rem;
-}
-.eligibilityTable thead {
-  position: static;
-  background: var(--product-card-stock);
-}
-.eligibilityTable thead th {
-  position: static;
-  background: var(--product-card-stock);
-}
-.eligibilityTable tbody th,
-.eligibilityTable tbody td {
-  border-bottom: 1px solid var(--border);
-}
-.eligibilityTable tbody tr[data-readiness] > th,
-.eligibilityTable tbody tr[data-readiness] > td {
-  padding-block: 5px !important;
-}
-.eligibilityTable tbody tr:last-child > * {
-  border-bottom: 0;
-}
-.eligibilityTable td[data-label="Actions"] > div {
-  flex-wrap: nowrap;
-}
-.eligibilityTable tbody tr[data-readiness="ready"] {
-  background: color-mix(in srgb, var(--product-paper) 96%, var(--success) 4%);
-}
-.eligibilityTable tbody tr[data-readiness="approval"] {
-  background: color-mix(in srgb, var(--product-paper) 95%, var(--warning) 5%);
-}
-.rankGroupHeader {
-  border-bottom: 1px solid var(--border);
-  background: var(--product-card-stock);
-}
-
-.rankPlanWorkspace {
-  padding: 1rem clamp(1rem, 2.4vw, 2rem) 2rem;
-}
-.rankPlan {
-  display: flex;
-  max-width: 64rem;
-  flex-direction: column;
-  gap: 1rem;
-}
-.rankPlanHeader {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 1rem;
-  padding: 1rem;
-  border-radius: 14px;
-  background: var(--product-paper);
-  box-shadow: var(--product-shadow-card);
-}
-.rankPlanHint {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  margin: 0;
-  color: var(--muted);
-  font-size: 0.8125rem;
-}
-.rankRail {
-  position: relative;
-  display: grid;
-  gap: 0.75rem;
-}
-.rankGroup {
-  position: relative;
-  margin: 0;
-  overflow: hidden;
-  border: 0 !important;
-  border-radius: 14px;
-  background: var(--product-paper);
-  box-shadow: var(--product-shadow-card);
-}
-.rankGroup[data-drop-target="true"] {
-  outline: 2px solid var(--product-focus);
-  outline-offset: 2px;
-  background: color-mix(in srgb, var(--product-paper) 94%, var(--product-focus) 6%);
-}
-.rankCollapseButton {
-  display: grid;
-  width: 2.75rem;
-  height: 2.75rem;
-  flex: none;
-  place-items: center;
-  color: var(--muted);
-  cursor: pointer;
-  transition:
-    color var(--product-motion-change-duration) var(--product-motion-ease),
-    background-color var(--product-motion-change-duration) var(--product-motion-ease);
-}
-.rankCollapseButton:hover {
-  background: var(--product-card-stock);
-  color: var(--text-secondary);
-}
-.rankIdentity {
-  display: flex;
-  min-width: 0;
-  flex: 1;
-  align-items: center;
-  gap: 0.75rem;
-}
-.rankActions button {
-  min-width: 2.75rem;
-  min-height: 2.75rem;
-}
-.tipIdentity {
-  display: flex;
-  min-width: 0;
-  flex: 1;
-  align-items: center;
-  gap: 0.65rem;
-}
-.tipRequirements {
-  white-space: nowrap;
-}
-.rankHeader,
-.tipRow {
-  min-height: 56px;
-  padding-block: 5px !important;
-}
-.rankPlan [data-belt-drag-handle],
-.rankPlan [data-tip-drag-handle] {
-  width: 45px;
-  height: 45px;
-  border-radius: 10px;
-}
-
-.panelState {
-  display: grid;
-  min-height: 18rem;
-  place-items: center;
-  border-radius: 14px;
-  background: var(--product-paper);
-  box-shadow: var(--product-shadow-card);
-  text-align: center;
-}
-
-.panelStateInner {
-  max-width: 32rem;
-  padding: 1rem;
-}
-
-.panelStateIcon {
-  display: grid;
-  width: 3rem;
-  height: 3rem;
-  margin: 0 auto 0.85rem;
-  place-items: center;
-  border-radius: 14px;
-  background: var(--product-sunk);
-  color: var(--product-soft-ink);
-}
-
-.panelStateIcon svg {
-  width: 1.5rem;
-  height: 1.5rem;
-}
-.panelStateTitle {
-  margin: 0 0 0.35rem;
-  color: var(--text-primary);
-  font-size: 1rem;
   font-weight: 650;
 }
 
-.eligibilitySkeleton {
-  display: grid;
-  gap: 1px;
-  overflow: hidden;
-  border-radius: 14px;
-  background: var(--border);
-  box-shadow: var(--product-shadow-card);
+.toolbarMeta {
+  color: var(--product-meta);
+  font-size: 0.8125rem;
 }
 
-.eligibilitySkeletonRow {
-  display: grid;
-  min-height: 3.5rem;
-  grid-template-columns: 1.5fr repeat(4, 1fr) 0.7fr;
-  gap: 0.75rem;
+.programPending {
+  width: 15rem;
+  height: 44px;
+  border-radius: 10px;
+  background: var(--hz-tile);
+}
+
+.headerLinkDisabled {
+  display: inline-flex;
+  min-height: 40px;
   align-items: center;
-  padding: 0.75rem;
+  gap: 8px;
+  padding: 0 16px;
+  border: 1px solid var(--product-rule);
+  border-radius: 10px;
+  color: var(--product-meta);
+  font-size: 0.875rem;
+  font-weight: 600;
+  opacity: 0.6;
+}
+
+.retryLine {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 16px;
+  padding: 12px 16px;
+  border: 1px dashed var(--product-rule);
+  border-radius: 12px;
+  color: var(--product-soft-ink);
+  font-size: 0.875rem;
+}
+
+.retryLine p {
+  margin: 0;
+}
+
+.calmActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* ---------- Promotions: workspace ---------- */
+
+.eligibilityWorkspace,
+.loadingStack {
+  display: grid;
+  min-width: 0;
+  gap: 20px;
+}
+
+/* Ready tiles */
+.readyGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(17.5rem, 1fr));
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.readyTile {
+  display: grid;
+  min-width: 0;
+  align-content: start;
+  gap: 12px;
+  padding: 14px 16px 16px;
+  border-radius: 14px;
+  background: var(--hz-tile);
+}
+
+.readyTile[data-readiness="approval"] {
+  background: color-mix(in srgb, var(--hz-tile) 55%, var(--hz-warn-wash));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--product-straw) 28%, transparent);
+}
+
+.readyTileHead {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.readyName {
+  display: inline-flex;
+  min-width: 0;
+  min-height: 40px;
+  align-items: center;
+  overflow: hidden;
+  color: var(--product-ink);
+  font-size: 1rem;
+  font-weight: 750;
+  letter-spacing: -0.01em;
+  text-decoration: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.readyName:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.beltStep {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 12px;
+  padding: 14px;
+  border-radius: 12px;
   background: var(--product-paper);
 }
 
-.eligibilitySkeletonRow:first-child {
-  background: var(--product-card-stock);
+.beltStepRank {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+  color: var(--product-soft-ink);
+  font-size: 0.8125rem;
 }
-.eligibilitySkeletonBar {
-  height: 0.75rem;
+
+.beltStepRank strong {
+  color: var(--product-ink);
+  font-size: 0.9375rem;
+  font-weight: 750;
+}
+
+.beltStepArrow {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  color: var(--product-meta);
+}
+
+.readyMeta {
+  margin: 0;
+  color: var(--product-soft-ink);
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.45;
+}
+
+.readyAction {
+  width: 100%;
+  min-height: 44px;
+}
+
+/* Ladder chart: one bar per rank, in the rank's own colour. */
+.ladderChart {
+  display: grid;
+  grid-template-columns: repeat(var(--ladder-steps, 8), minmax(4.5rem, 1fr));
+  gap: 2px;
+  margin: 0;
+  padding: 6px 16px 14px;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--product-rule-soft);
+  list-style: none;
+  scroll-snap-type: x proximity;
+  scrollbar-width: thin;
+}
+
+.ladderChart > li {
+  min-width: 0;
+  scroll-snap-align: start;
+}
+
+.ladderStep {
+  display: grid;
+  height: 100%;
+  min-height: 44px;
+  justify-items: center;
+  align-content: start;
+  gap: 6px;
+  padding: 8px 4px;
+  border-radius: 10px;
+  color: var(--product-ink);
+  text-decoration: none;
+  transition: background-color var(--product-motion-change-duration) ease-out;
+}
+
+a.ladderStep:hover {
+  background: var(--hz-tile);
+}
+
+.ladderCount {
+  font-size: 1.125rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 780;
+  letter-spacing: -0.02em;
+  line-height: 1;
+}
+
+.ladderChart > li[data-empty="true"] .ladderCount {
+  color: var(--product-meta);
+  font-weight: 600;
+}
+
+.ladderBarSlot {
+  display: flex;
+  width: 100%;
+  height: 84px;
+  align-items: flex-end;
+  justify-content: center;
+  border-bottom: 1px solid var(--product-rule);
+}
+
+.ladderBar {
+  position: relative;
+  width: min(34px, 72%);
+  height: max(calc(var(--share, 0) * 100%), 4px);
+  overflow: hidden;
+  border-radius: 4px 4px 0 0;
+  background: var(--belt);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--product-ink) 24%, transparent);
+}
+
+.ladderBar[data-tip="true"]::after {
+  position: absolute;
+  top: 8px;
+  right: 0;
+  left: 0;
+  height: 8px;
+  background: var(--belt-tip);
+  box-shadow:
+    inset 1px 0 0 color-mix(in srgb, var(--product-ink) 24%, transparent),
+    inset -1px 0 0 color-mix(in srgb, var(--product-ink) 24%, transparent);
+  content: "";
+}
+
+.ladderBar[data-placeholder="true"] {
+  background: var(--hz-tile);
+  box-shadow: none;
+}
+
+.ladderChart > li[data-empty="true"] .ladderBar {
+  display: none;
+}
+
+.ladderName {
+  color: var(--product-soft-ink);
+  font-size: 0.75rem;
+  font-weight: 650;
+  line-height: 1.25;
+  text-align: center;
+  text-wrap: balance;
+}
+
+.ladderReady {
+  min-height: 1em;
+  color: var(--product-affirm);
+  font-size: 0.6875rem;
+  font-weight: 750;
+  line-height: 1;
+}
+
+/* Students grouped by rank */
+.eligibilityTable {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 0.875rem;
+}
+
+.eligibilityTable thead th {
+  padding: 12px 12px 8px;
+  border-bottom: 1px solid var(--product-rule-soft);
+  color: var(--product-meta);
+  font-size: 0.75rem;
+  font-weight: 650;
+  text-align: left;
+}
+
+.eligibilityTable thead th:first-child {
+  padding-left: 20px;
+}
+
+.eligibilityTable thead th:nth-child(2),
+.eligibilityTable thead th:nth-child(3) {
+  width: 21%;
+}
+
+.eligibilityTable thead th:nth-child(4) {
+  width: 9.5rem;
+}
+
+.eligibilityTable thead th:nth-child(5) {
+  width: 15.5rem;
+}
+
+.rankGroupBody {
+  scroll-margin-top: 88px;
+}
+
+.rankGroupHeader > th {
+  padding: 0;
+  border-bottom: 1px solid var(--product-rule-soft);
+  background: color-mix(in srgb, var(--product-paper) 55%, var(--product-ground));
+  text-align: left;
+}
+
+.rankGroupBody + .rankGroupBody .rankGroupHeader > th {
+  border-top: 1px solid var(--product-rule-soft);
+}
+
+.rankGroupToggle {
+  display: flex;
+  width: 100%;
+  min-height: 60px;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 20px;
+  border: 0;
+  background: transparent;
+  color: var(--product-ink);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.rankGroupToggle:hover {
+  background: color-mix(in srgb, var(--hz-tile) 60%, transparent);
+}
+
+.rankGroupChevron {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  color: var(--product-meta);
+}
+
+.rankGroupTitle {
+  display: grid;
+  min-width: 0;
+  flex: 1 1 auto;
+  gap: 2px;
+}
+
+.rankGroupTitle strong {
+  font-size: 0.9375rem;
+  font-weight: 750;
+  letter-spacing: -0.01em;
+}
+
+.rankGroupTitle span {
+  color: var(--product-soft-ink);
+  font-size: 0.8125rem;
+  font-weight: 450;
+  line-height: 1.35;
+}
+
+.rankGroupTags {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.studentRow > :is(th, td) {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--product-rule-soft);
+  font-weight: 400;
+  text-align: left;
+  vertical-align: middle;
+}
+
+.studentRow > th {
+  padding-left: 48px;
+}
+
+.studentRow[data-readiness="ready"] > :is(th, td) {
+  background: color-mix(in srgb, var(--hz-affirm-wash) 70%, transparent);
+}
+
+.studentRow[data-readiness="approval"] > :is(th, td) {
+  background: color-mix(in srgb, var(--hz-warn-wash) 55%, transparent);
+}
+
+.rankGroupBody:last-child .studentRow:last-child > :is(th, td) {
+  border-bottom: 0;
+}
+
+.studentName {
+  display: inline-flex;
+  min-height: 40px;
+  align-items: center;
+  color: var(--product-ink);
+  font-weight: 650;
+  text-decoration: none;
+}
+
+.studentName:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.studentStep {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: -4px;
+  color: var(--product-soft-ink);
+  font-size: 0.75rem;
+}
+
+.rowActions {
+  display: flex;
+  flex-wrap: nowrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.rowActions button {
+  min-height: 40px;
+}
+
+/* Placeholders */
+.placeholderLine,
+.placeholderBelts,
+.placeholderButton,
+.placeholderBelt {
+  display: block;
   border-radius: 6px;
-  background: var(--product-card-stock);
-  animation: belt-state-change var(--product-motion-change-duration) var(--product-motion-ease) both;
+  background: color-mix(in srgb, var(--product-ink) 8%, transparent);
+}
+
+.placeholderLine {
+  width: 8rem;
+  max-width: 100%;
+  height: 0.875rem;
+}
+
+.placeholderLine[data-width="meta"] {
+  width: 11rem;
+}
+
+.placeholderLine[data-width="label"] {
+  width: 3rem;
+}
+
+.placeholderLine[data-width="bar"] {
+  width: 9rem;
+  height: 1.75rem;
+}
+
+.placeholderLine[data-width="button"] {
+  width: 6rem;
+  height: 2.25rem;
+  margin-left: auto;
+}
+
+.placeholderBelts {
+  height: 3rem;
+  border-radius: 12px;
+}
+
+.placeholderButton {
+  height: 44px;
+  border-radius: 10px;
+}
+
+.placeholderBelt {
+  width: 64px;
+  height: 20px;
+  margin-left: 28px;
+  border-radius: 5px;
+}
+
+/* ---------- Rank plan ---------- */
+
+.rankPlanWorkspace {
+  min-width: 0;
+}
+
+.rankPlan {
+  display: grid;
+  min-width: 0;
+  gap: 16px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.rankPlanHeader {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 20px;
+  border: 1px solid var(--product-rule-soft);
+  border-radius: 16px;
+  background: var(--product-paper);
+  box-shadow: var(--product-shadow-card);
+}
+
+.rankPlanTitles {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.rankPlanTitles h2 {
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 750;
+  letter-spacing: -0.015em;
+}
+
+.rankPlanTitles > p {
+  margin: 0;
+  color: var(--product-soft-ink);
+  font-size: 0.875rem;
+}
+
+.termLine {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  color: var(--product-meta);
+  font-size: 0.8125rem;
+}
+
+.termForm {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.termForm input {
+  width: 8rem;
+  min-height: 40px;
+  padding: 0 10px;
+  border: 1px solid var(--product-wood);
+  border-radius: 10px;
+  background: var(--product-paper);
+  color: var(--product-ink);
+  font-size: 0.875rem;
+}
+
+.termButton {
+  display: inline-flex;
+  min-height: 40px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: var(--hz-tile);
+  color: var(--product-ink);
+  cursor: pointer;
+  font-size: 0.8125rem;
+  font-weight: 700;
+}
+
+.termButton:hover {
+  border-color: var(--product-rule);
+}
+
+.rankPlanActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.rankPlanHint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  color: var(--product-meta);
+  font-size: 0.8125rem;
+}
+
+.iconButton {
+  display: inline-grid;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--product-meta);
+  cursor: pointer;
+  transition:
+    background-color var(--product-motion-change-duration) ease-out,
+    color var(--product-motion-change-duration) ease-out;
+}
+
+.iconButton:hover:not(:disabled) {
+  background: var(--hz-tile);
+  color: var(--product-ink);
+}
+
+.iconButton[data-tone="alert"]:hover:not(:disabled) {
+  background: var(--hz-alert-wash);
+  color: var(--product-vermilion);
+}
+
+.iconButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.35;
+}
+
+/* The ladder rail: each belt a rung, a line running through them. */
+.rankRail {
+  position: relative;
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.rankGroup {
+  position: relative;
+  min-width: 0;
+  border: 1px solid var(--product-rule-soft);
+  border-radius: 16px;
+  background: var(--product-paper);
+  box-shadow: var(--product-shadow-card);
+  transition:
+    opacity var(--product-motion-change-duration) ease-out,
+    box-shadow var(--product-motion-change-duration) ease-out;
+}
+
+.rankGroup + .rankGroup::before {
+  position: absolute;
+  top: -11px;
+  left: 84px;
+  width: 2px;
+  height: 10px;
+  background: var(--product-rule);
+  content: "";
+}
+
+.rankGroup[data-dragging="true"] {
+  opacity: 0.4;
+}
+
+.rankGroup[data-drop-target="true"] {
+  outline: 2px solid var(--product-wood);
+  outline-offset: 2px;
+}
+
+.rankHeader {
+  display: flex;
+  min-height: 64px;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px 8px 6px;
+  user-select: none;
+}
+
+.dragHandle {
+  display: inline-grid;
+  width: 40px;
+  height: 44px;
+  flex: 0 0 40px;
+  place-items: center;
+  border-radius: 10px;
+  color: var(--product-meta);
+  cursor: grab;
+}
+
+.dragHandle:hover {
+  background: var(--hz-tile);
+  color: var(--product-ink);
+}
+
+.dragHandle:active {
+  cursor: grabbing;
+}
+
+.dragHandle[draggable="false"] {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.rankCollapseButton {
+  display: inline-grid;
+  width: 40px;
+  height: 44px;
+  flex: 0 0 40px;
+  place-items: center;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--product-meta);
+  cursor: pointer;
+}
+
+.rankCollapseButton:hover {
+  background: var(--hz-tile);
+  color: var(--product-ink);
+}
+
+.rankIdentity {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 14px;
+}
+
+.rankText {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.rankName {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 750;
+  letter-spacing: -0.01em;
+}
+
+.rankMeta {
+  margin: 2px 0 0;
+  color: var(--product-soft-ink);
+  font-size: 0.8125rem;
+}
+
+.rankStudents {
+  flex: 0 0 auto;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--hz-tile);
+  color: var(--product-ink);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.rankStudents[data-empty="true"] {
+  background: transparent;
+  color: var(--product-meta);
+  font-weight: 600;
+}
+
+.rankActions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 2px;
+}
+
+.tipList {
+  display: grid;
+  gap: 2px;
+  margin: 0 12px 12px 92px;
+  padding-left: 14px;
+  border-left: 2px solid var(--product-rule-soft);
+}
+
+.tipRow {
+  display: flex;
+  min-height: 48px;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 4px 2px 0;
+  border-radius: 10px;
+  user-select: none;
+  transition:
+    background-color var(--product-motion-change-duration) ease-out,
+    opacity var(--product-motion-change-duration) ease-out;
+}
+
+.tipRow:hover {
+  background: color-mix(in srgb, var(--hz-tile) 70%, transparent);
+}
+
+.tipRow[data-dragging="true"] {
+  opacity: 0.3;
+}
+
+.tipRow[data-drop-target="true"] {
+  background: var(--hz-warn-wash);
+}
+
+.tipIdentity {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 12px;
+}
+
+.tipName {
+  color: var(--product-ink);
+  font-size: 0.875rem;
+  font-weight: 650;
+}
+
+.tipRequirements {
+  color: var(--product-meta);
+  font-size: 0.8125rem;
+  white-space: nowrap;
+}
+
+.addTipButton {
+  display: inline-flex;
+  width: fit-content;
+  min-height: 40px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--product-wood);
+  cursor: pointer;
+  font-size: 0.8125rem;
+  font-weight: 700;
+}
+
+.addTipButton:hover:not(:disabled) {
+  background: var(--hz-tile);
+}
+
+.addTipButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.unsavedLine {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--product-soft-ink);
+  font-size: 0.8125rem;
+}
+
+/* ---------- Dialogs ---------- */
+
+.beltDialogRoot :global(.koaryu-modal-panel) {
+  max-height: calc(100dvh - 2rem);
+  overflow-y: auto;
+  border: 1px solid var(--product-rule-soft) !important;
+  border-radius: 18px !important;
+  background: var(--product-paper) !important;
+  box-shadow: var(--product-shadow-lifted);
+  color: var(--product-ink);
+  animation: belt-dialog-open var(--product-motion-open-duration) var(--product-motion-ease) both;
+}
+
+.beltDialogRoot :is(input:not([type="checkbox"]):not([type="radio"]), select, textarea) {
+  min-height: 44px;
+  border-color: var(--product-rule);
+  border-radius: 10px;
+  background: var(--product-paper);
+}
+
+.beltDialogRoot textarea {
+  min-height: 5.5rem;
+}
+
+.beltDialogRoot button {
+  min-height: 44px;
+  border-radius: 10px;
+}
+
+.dialogTitle {
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 750;
+  letter-spacing: -0.015em;
+}
+
+.dialogLead {
+  margin: 4px 0 0;
+  color: var(--product-soft-ink);
+  font-size: 0.875rem;
+  line-height: 1.45;
+}
+
+.dialogStep {
+  display: grid;
+  gap: 12px;
+  margin: 16px 0;
+  padding: 16px;
+  border-radius: 14px;
+  background: var(--hz-tile);
+}
+
+.dialogStep > p {
+  margin: 0;
+  font-size: 0.9375rem;
+  font-weight: 700;
+}
+
+.dialogField {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+
+.dialogField label {
+  color: var(--product-soft-ink);
+  font-size: 0.8125rem;
+  font-weight: 650;
+}
+
+.dialogField textarea {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--product-rule);
+  color: var(--product-ink);
+  font-size: 0.875rem;
+  resize: vertical;
+}
+
+.dialogField textarea:focus {
+  border-color: var(--product-wood);
+  outline: none;
+}
+
+.dialogActions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 @keyframes belt-dialog-open {
@@ -413,31 +1165,9 @@
   }
 }
 
-@keyframes belt-state-change {
-  from {
-    opacity: 0.42;
-  }
-  to {
-    opacity: 0.9;
-  }
-}
+/* ---------- Narrow screens ---------- */
 
-@media (max-width: 1023px) {
-  .beltControls {
-    position: static;
-  }
-  .eligibilityTable thead th {
-    position: static;
-  }
-}
-
-@media (max-width: 1100px) {
-  .eligibilityWorkspace {
-    padding-inline: 0.85rem;
-  }
-  .eligibilityTableFrame {
-    overflow: visible;
-  }
+@media (max-width: 860px) {
   .eligibilityTable,
   .eligibilityTable tbody,
   .eligibilityTable tr,
@@ -446,212 +1176,195 @@
     display: block;
     width: 100%;
   }
+
   .eligibilityTable thead {
     display: none;
   }
-  .eligibilityTable tbody {
-    display: grid;
-    gap: 0.75rem;
+
+  .rankGroupToggle {
+    flex-wrap: wrap;
+    padding: 10px 16px;
   }
-  .eligibilityTable .rankGroupHeader {
-    padding: 0;
-    border: 0;
-    box-shadow: none;
+
+  .rankGroupTitle {
+    flex-basis: calc(100% - 100px);
   }
-  .eligibilityTable {
-    min-width: 0;
-    overflow: visible;
-    border-radius: 14px;
-    background: transparent;
-    box-shadow: none;
-    clip-path: none;
+
+  .rankGroupTags {
+    width: 100%;
+    justify-content: flex-start;
+    padding-left: 28px;
   }
-  .eligibilityTable .rankGroupHeader td {
-    padding: 0.75rem;
-    border-radius: 10px;
-    background: var(--product-card-stock);
-  }
-  .eligibilityTable tr[data-readiness] {
-    overflow: hidden;
-    padding: 0.65rem 0.85rem;
-    border-radius: 14px;
-    background: var(--product-paper);
-    box-shadow: var(--product-shadow-card);
-  }
-  .eligibilityTable tr[data-readiness] th,
-  .eligibilityTable tr[data-readiness] td {
-    display: grid;
-    grid-template-columns: minmax(6.4rem, 0.38fr) minmax(0, 1fr);
-    gap: 0.75rem;
-    align-items: center;
-    padding: 0.5rem 0;
-    border-bottom: 1px solid var(--border);
-    overflow-wrap: anywhere;
-  }
-  .eligibilityTable tr[data-readiness] td:last-child {
-    border-bottom: 0;
-  }
-  .eligibilityTable tr[data-readiness] th::before,
-  .eligibilityTable tr[data-readiness] td::before {
-    content: attr(data-label);
-    color: var(--muted);
-    font-size: 0.75rem;
-    font-weight: 600;
-    letter-spacing: 0;
-  }
-  .rankPlanWorkspace {
-    padding: 0.85rem;
-  }
-  .eligibilitySkeletonRow {
-    grid-template-columns: 1fr 1fr;
-  }
-  .eligibilitySkeletonRow > :nth-child(n + 5) {
+
+  .rankGroupTags:empty {
     display: none;
   }
-}
 
-@media (max-width: 820px) {
-  .rankHeader,
+  .studentRow {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 6px 16px;
+    padding: 10px 16px 12px;
+    border-bottom: 1px solid var(--product-rule-soft);
+  }
+
+  .studentRow[data-readiness="ready"] {
+    background: color-mix(in srgb, var(--hz-affirm-wash) 70%, transparent);
+  }
+
+  .studentRow[data-readiness="approval"] {
+    background: color-mix(in srgb, var(--hz-warn-wash) 55%, transparent);
+  }
+
+  .studentRow > :is(th, td) {
+    padding: 0 !important;
+    border: 0 !important;
+    background: transparent !important;
+  }
+
+  .studentRow > th {
+    grid-column: 1;
+  }
+
+  .studentRow > td[data-label="Status"] {
+    display: flex;
+    grid-column: 2;
+    grid-row: 1;
+    align-items: center;
+    justify-content: flex-end;
+  }
+
+  .studentRow > td:is([data-label="Classes"], [data-label="Time at rank"])::before {
+    display: block;
+    margin-bottom: 4px;
+    color: var(--product-meta);
+    content: attr(data-label);
+    font-size: 0.75rem;
+    font-weight: 650;
+  }
+
+  .studentRow > td[data-label="Actions"] {
+    grid-column: 1 / -1;
+  }
+
+  .studentRow > td[data-label="Actions"]:not(:has(button)) {
+    display: none;
+  }
+
+  .studentRow .requirement {
+    min-width: 0;
+    max-width: none;
+  }
+
+  .ladderChart {
+    grid-template-columns: repeat(var(--ladder-steps, 8), 4.75rem);
+  }
+
+  .rankHeader {
+    flex-wrap: wrap;
+  }
+
+  .rankIdentity {
+    flex-basis: calc(100% - 96px);
+  }
+
+  .rankHeader > .rankActions {
+    width: 100%;
+    justify-content: flex-end;
+    border-top: 1px solid var(--product-rule-soft);
+    padding-top: 4px;
+  }
+
+  .tipList {
+    margin-left: 24px;
+  }
+
   .tipRow {
     flex-wrap: wrap;
   }
-  .rankHeader > .rankActions {
-    margin-left: auto;
+
+  .tipIdentity {
+    flex-basis: calc(100% - 52px);
+    flex-wrap: wrap;
+    row-gap: 2px;
   }
+
   .tipRow > .rankActions {
     width: 100%;
     justify-content: flex-end;
-    padding-left: 3.1rem;
   }
 }
 
-@media (max-width: 720px) {
-  .beltControls {
+@media (max-width: 640px) {
+  .beltControls,
+  .beltProgramControl {
     align-items: stretch;
     flex-direction: column;
   }
+
   .beltTabs {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
-  }
-  .beltProgramControl,
-  .beltProgramPicker {
     width: 100%;
   }
+
   .beltProgramPicker > div {
     align-items: stretch;
     flex-direction: column;
-    gap: 0.4rem;
+    gap: 6px;
   }
-  .beltProgramPicker select {
+
+  .beltProgramPicker select,
+  .programPending {
+    width: 100%;
     min-width: 0;
   }
-  .decisionRegister {
-    grid-template-columns: 1fr;
+
+  .readyGrid {
+    grid-template-columns: minmax(0, 1fr);
   }
+
+  .rankIdentity {
+    gap: 10px;
+  }
+
+  .rankIdentity > .rankStudents {
+    display: none;
+  }
+
   .rankPlanHeader {
     align-items: stretch;
     flex-direction: column;
+    padding: 16px;
+  }
+
+  .rankPlanActions > * {
+    flex: 1 1 auto;
   }
 }
 
 @media print {
-  :global([data-koaryu-dashboard-shell="true"]),
-  :global(#main-content),
-  .beltPage {
-    background: #fff !important;
-    color: #000 !important;
-  }
-  :global([data-koaryu-dashboard-shell="true"] > aside),
-  :global([data-koaryu-dashboard-shell="true"] > [class*="mobileSpine"]) {
-    display: none !important;
-  }
-  :global(#main-content) {
-    width: 100% !important;
-    min-height: 0 !important;
-    margin-left: 0 !important;
-    overflow: visible !important;
-    transition: none !important;
-  }
-  .beltPage > header,
   .beltControls,
-  .beltProgramLockNotice,
   .rankActions,
+  .rowActions,
+  .dragHandle,
   .rankCollapseButton,
-  .beltPage :global([role="dialog"]) {
+  .readyAction {
     display: none !important;
   }
-  .eligibilityWorkspace,
-  .rankPlanWorkspace {
-    padding: 0;
-  }
-  .eligibilityTable thead th {
-    position: static;
-  }
-  .eligibilityTable tr,
+
+  .readyTile,
   .rankGroup {
     break-inside: avoid;
-  }
-  .decisionRegister,
-  .eligibilityTable,
-  .rankGroup,
-  .panelState {
-    border-radius: initial;
     box-shadow: none;
   }
 }
 
-@media (max-width: 420px) {
-  .eligibilityTable tr[data-readiness] th,
-  .eligibilityTable tr[data-readiness] td {
-    grid-template-columns: minmax(5.4rem, 0.36fr) minmax(0, 1fr);
-  }
-  .rankHeader {
-    display: grid;
-    grid-template-columns: 2.75rem 2.75rem minmax(0, 1fr);
-    gap: 0.35rem;
-    padding-inline: 0.5rem;
-  }
-  .rankIdentity {
-    grid-column: 3;
-    align-items: flex-start;
-    flex-direction: column;
-    gap: 0.3rem;
-  }
-  .rankActions {
-    width: 100%;
-    justify-content: flex-end;
-  }
-  .rankHeader > .rankActions {
-    grid-column: 1 / -1;
-  }
-  .tipRow {
-    display: grid;
-    grid-template-columns: 2rem minmax(0, 1fr);
-    align-items: center;
-  }
-  .tipIdentity,
-  .tipRequirements,
-  .tipRow > .rankActions {
-    grid-column: 2;
-  }
-  .tipRequirements {
-    white-space: normal;
-  }
-  .tipRow > .rankActions {
-    justify-content: flex-start;
-  }
-}
-
 @media (prefers-reduced-motion: reduce) {
-  .eligibilityWorkspace,
-  .rankPlanWorkspace,
-  .eligibilitySkeletonBar,
-  .beltDialogRoot :global(.koaryu-modal-panel),
-  .eligibilityWorkspace *,
-  .rankPlanWorkspace * {
+  .requirementFill,
+  .rankGroup,
+  .tipRow,
+  .ladderStep,
+  .beltDialogRoot :global(.koaryu-modal-panel) {
     transition: none !important;
     animation: none !important;
-    transform: none !important;
   }
 }

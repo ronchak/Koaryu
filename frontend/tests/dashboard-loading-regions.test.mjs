@@ -94,15 +94,17 @@ test("Home placeholder uses the saved widget footprints and tablet packing", () 
   }
 });
 
-test("eligibility placeholder uses the loaded seven-column table, summary rail and rank group", () => {
+test("eligibility placeholder uses the loaded ready tiles, rank ladder and five-column rank group", () => {
   const html = render(c.eligibility.EligibilityLoading, {});
-  assert.match(html, /class="decisionRegister"/);
+  assert.match(html, /class="readyGrid"/);
+  assert.equal((html.match(/class="readyTile"/g) ?? []).length, 3);
+  assert.match(html, /class="ladderChart"/);
   assert.match(html, /class="eligibilityTable"/);
   assert.match(html, /class="rankGroupHeader"/);
-  assert.match(html, /colSpan="7"|colspan="7"/);
+  assert.match(html, /colSpan="5"|colspan="5"/);
   const rows = html.match(/<tr[^>]*data-readiness="progress"[^>]*>[\s\S]*?<\/tr>/g) ?? [];
   assert.equal(rows.length, 6);
-  for (const row of rows) assert.equal((row.match(/data-label=/g) ?? []).length, 7);
+  for (const row of rows) assert.equal((row.match(/data-label=/g) ?? []).length, 5);
   assert.match(html, /koaryu-skeleton-reveal/);
 });
 

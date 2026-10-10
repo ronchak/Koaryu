@@ -461,3 +461,94 @@ export function buildEligibilityGroups(
       return left.label.localeCompare(right.label);
     });
 }
+
+export type EligibilitySummary = {
+  approval: number;
+  closest: EligibilityEntry | null;
+  progress: number;
+  ready: number;
+  total: number;
+};
+
+/** How far a student is toward both requirements, 0 to 1, each requirement capped at done. */
+export function eligibilityProgressShare(entry: EligibilityEntry) {
+  const classes = entry.classes_required
+    ? Math.min(1, entry.classes_since_promo / entry.classes_required)
+    : 1;
+  const time = entry.days_required ? Math.min(1, entry.days_at_rank / entry.days_required) : 1;
+  return (classes + time) / 2;
+}
+
+/** Headline counts for the page, plus the student closest to their next belt. */
+export function summarizeEligibility(groups: EligibilityGroup[]): EligibilitySummary {
+  const summary: EligibilitySummary = {
+    approval: 0,
+    closest: null,
+    progress: 0,
+    ready: 0,
+    total: 0,
+  };
+  let closestShare = -1;
+  for (const group of groups) {
+    for (const entry of group.entries) {
+      summary.total += 1;
+      if (!isEligibilityEntryReady(entry)) {
+        summary.progress += 1;
+        if (!entry.next_rank_id) continue;
+        const share = eligibilityProgressShare(entry);
+        if (share > closestShare) {
+          closestShare = share;
+          summary.closest = entry;
+        }
+      } else if (entry.needs_approval) summary.approval += 1;
+      else summary.ready += 1;
+    }
+  }
+  return summary;
+}
+
+export type RankLadderStep = {
+  approvalCount: number;
+  color?: string;
+  count: number;
+  eligibleCount: number;
+  key: string;
+  label: string;
+  rank?: BeltRank;
+};
+
+/** Every rank of the plan in order with how many students hold it; unplanned groups keep their place. */
+export function buildRankLadder(ranks: BeltRank[], groups: EligibilityGroup[]): RankLadderStep[] {
+  const groupByKey = new Map(groups.map((group) => [group.key, group]));
+  const ordered = [...ranks].sort((left, right) => left.display_order - right.display_order);
+  const step = (
+    group: EligibilityGroup | undefined,
+    identity: Pick<RankLadderStep, "color" | "key" | "label" | "rank">,
+  ): RankLadderStep => ({
+    ...identity,
+    approvalCount: group?.approvalCount ?? 0,
+    count: group?.entries.length ?? 0,
+    eligibleCount: group?.eligibleCount ?? 0,
+  });
+  const steps = ordered.map((rank) =>
+    step(groupByKey.get(rank.id), {
+      color: rank.color_hex,
+      key: rank.id,
+      label: rank.name,
+      rank,
+    }),
+  );
+  const planned = new Set(ordered.map((rank) => rank.id));
+  for (const group of groups) {
+    if (planned.has(group.key)) continue;
+    const extra = step(group, {
+      color: group.color,
+      key: group.key,
+      label: group.label,
+      rank: group.rank,
+    });
+    if (group.sortIndex < 0) steps.unshift(extra);
+    else steps.push(extra);
+  }
+  return steps;
+}

@@ -134,7 +134,7 @@ export function RankFormModal({
   return (
     <ModalFrame
       rootClassName={`p-4 ${styles.beltDialogRoot}`}
-      panelClassName="bg-bg rounded-[18px] w-full max-w-sm p-4 overflow-y-auto max-h-[90vh] shadow-[var(--product-shadow-lifted)]"
+      panelClassName="w-full max-w-md p-5 overflow-y-auto max-h-[90vh]"
       ariaLabelledBy="rank-form-title"
       onBackdropClick={onClose}
     >
