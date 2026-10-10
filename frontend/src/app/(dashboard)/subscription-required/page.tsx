@@ -7,6 +7,13 @@ import { useRouter } from "next/navigation";
 import { Header } from "@/components/header";
 import { OperationsSurface } from "@/components/operations/operations-surface";
 import { Button } from "@/components/ui/button";
+import {
+  HorizonPage,
+  HorizonPanel,
+  ToneChip,
+  ToneTag,
+  type HorizonTone,
+} from "@/components/ui/horizon";
 import { createClient } from "@/lib/supabase/client";
 import { api } from "@/lib/api";
 import { ACCOUNT_ARCHIVED_ROUTE } from "@/lib/auth-route-model";
@@ -79,10 +86,10 @@ export default function SubscriptionRequiredPage() {
   const canStartCheckout = coreBillingEnabled && !hasLiveStripeSubscription;
   const canOpenPortal = coreBillingEnabled && Boolean(billingStatus?.stripe_customer_id);
 
-  const statusTone = useMemo(() => {
-    if (hasAccess(billingStatus)) return "text-success";
-    if (currentStatus === "past_due" || currentStatus === "unpaid") return "text-danger";
-    return "text-warning";
+  const statusTone = useMemo<HorizonTone>(() => {
+    if (hasAccess(billingStatus)) return "calm";
+    if (currentStatus === "past_due" || currentStatus === "unpaid") return "alert";
+    return "warn";
   }, [billingStatus, currentStatus]);
 
   useEffect(() => {
@@ -207,6 +214,7 @@ export default function SubscriptionRequiredPage() {
   return (
     <OperationsSurface page="subscription-required">
       <Header
+        eyebrow="Koaryu Core"
         title={isAdmin ? "Subscription required" : "Workspace access required"}
         description={
           isAdmin
@@ -215,146 +223,144 @@ export default function SubscriptionRequiredPage() {
         }
       />
 
-      <div className="flex-1 overflow-auto px-4 py-10 sm:px-6 lg:px-8 lg:py-14">
-        <div className="mx-auto max-w-[1080px]">
-          {isLoading ? (
-            <div
-              className="koaryu-skeleton-reveal"
-              role="status"
-              aria-label="Checking workspace access"
-              aria-busy="true"
-            >
-              <div className="border-b border-border pb-10" aria-hidden="true">
-                <div className="mb-5 h-4 w-40 rounded bg-surface-raised" />
-                <div className="grid gap-8 lg:grid-cols-[1.35fr_0.65fr] lg:items-end">
-                  <div>
-                    <div className="h-28 max-w-[780px] rounded bg-surface-raised sm:h-32" />
-                    <div className="mt-5 h-14 max-w-[680px] rounded bg-surface-raised" />
+      <HorizonPage>
+        {isLoading ? (
+          <div
+            className="koaryu-skeleton-reveal"
+            role="status"
+            aria-label="Checking workspace access"
+            aria-busy="true"
+          >
+            <HorizonPanel>
+              <div aria-hidden="true" className="space-y-5">
+                <div className="h-4 w-40 rounded-md bg-surface-raised" />
+                <div className="grid gap-6 md:grid-cols-[1fr_auto] md:items-end">
+                  <div className="space-y-3">
+                    <div className="h-10 max-w-[560px] rounded-md bg-surface-raised" />
+                    <div className="h-12 max-w-[520px] rounded-md bg-surface-raised" />
                   </div>
-                  <div className="space-y-4">
-                    <div className="h-14 rounded bg-surface-raised" />
-                    <div className="h-16 rounded bg-surface-raised" />
-                  </div>
+                  <div className="h-16 w-40 rounded-md bg-surface-raised" />
+                </div>
+                <div className="grid gap-3 md:grid-cols-3">
+                  {[0, 1, 2].map((column) => (
+                    <div key={column} className="h-20 rounded-[12px] bg-surface-raised" />
+                  ))}
+                </div>
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="h-10 w-full max-w-md rounded-md bg-surface-raised" />
+                  <div className="h-11 w-52 shrink-0 rounded-[10px] bg-surface-raised" />
                 </div>
               </div>
-              <div
-                className="grid gap-6 border-b border-border py-8 md:grid-cols-3"
-                aria-hidden="true"
-              >
-                {[0, 1, 2].map((column) => (
-                  <div key={column} className="space-y-2">
-                    <div className="h-4 w-4 rounded bg-surface-raised" />
-                    <div className="h-5 w-3/4 rounded bg-surface-raised" />
-                    <div className="h-12 rounded bg-surface-raised" />
-                  </div>
-                ))}
-              </div>
-              <div
-                className="flex flex-col gap-4 py-8 sm:flex-row sm:items-center sm:justify-between"
-                aria-hidden="true"
-              >
-                <div className="h-10 w-full max-w-xl rounded bg-surface-raised" />
-                <div className="h-12 w-52 shrink-0 rounded bg-surface-raised" />
-              </div>
-            </div>
-          ) : showAdminBillingDetails ? (
-            <>
-              <div className="border-b border-border pb-10">
-                <div className="mb-5 inline-flex items-center gap-2 text-xs font-medium uppercase tracking-[0.14em] text-accent">
-                  <ShieldCheck className="h-4 w-4" />
-                  Koaryu Core access
-                </div>
-                <div className="grid gap-8 lg:grid-cols-[1.35fr_0.65fr] lg:items-end">
-                  <div>
-                    <h2 className="max-w-[780px] text-4xl font-semibold leading-tight text-text-primary sm:text-5xl">
+            </HorizonPanel>
+          </div>
+        ) : (
+          <HorizonPanel>
+            {showAdminBillingDetails ? (
+              <>
+                <div className="grid gap-6 md:grid-cols-[1fr_auto] md:items-start">
+                  <div className="min-w-0">
+                    <div className="mb-3 flex items-center gap-3">
+                      <ToneChip tone={statusTone} size={32}>
+                        <ShieldCheck />
+                      </ToneChip>
+                      <span className="text-sm font-semibold text-text-secondary">
+                        Koaryu Core access
+                      </span>
+                    </div>
+                    <h2 className="max-w-[640px] text-2xl font-extrabold leading-tight tracking-[-0.03em] text-text-primary sm:text-3xl">
                       {coreBillingEnabled
                         ? "Restore access through secure Stripe billing."
                         : "Support can restore workspace access safely."}
                     </h2>
-                    <p className="mt-5 max-w-[680px] text-base leading-7 text-text-secondary">
+                    <p className="mt-3 max-w-[600px] text-[15px] leading-7 text-text-secondary">
                       {coreBillingEnabled
                         ? "Start or manage the Koaryu Core subscription without changing student, staff, attendance, or tuition records."
                         : "Koaryu support can review the studio subscription without changing student, staff, attendance, or payment records."}
                     </p>
                   </div>
 
-                  <div className="space-y-4 lg:text-right">
+                  <dl className="grid min-w-[12rem] gap-3 rounded-[12px] bg-[var(--hz-tile)] p-4 md:text-right">
                     <div>
-                      <p className="text-xs uppercase tracking-[0.14em] text-muted">
-                        Current state
-                      </p>
-                      <p className={`mt-1 text-lg font-medium capitalize ${statusTone}`}>
-                        {statusLabel(currentStatus)}
-                      </p>
+                      <dt className="text-xs font-semibold text-muted">Current state</dt>
+                      <dd className="mt-1.5">
+                        <ToneTag tone={statusTone} className="capitalize">
+                          {statusLabel(currentStatus)}
+                        </ToneTag>
+                      </dd>
                     </div>
                     <div>
-                      <p className="text-xs uppercase tracking-[0.14em] text-muted">Koaryu Core</p>
-                      <p className="mt-1 text-3xl font-semibold text-text-primary">
+                      <dt className="text-xs font-semibold text-muted">Koaryu Core</dt>
+                      <dd className="mt-1 text-3xl font-extrabold tabular-nums tracking-[-0.04em] text-text-primary">
                         {price}
-                        <span className="text-sm font-normal text-muted"> / month</span>
-                      </p>
+                        <span className="ml-1 text-sm font-semibold tracking-normal text-muted">
+                          / month
+                        </span>
+                      </dd>
                     </div>
-                  </div>
+                  </dl>
                 </div>
-              </div>
 
-              <div className="grid gap-6 border-b border-border py-8 md:grid-cols-3">
-                <div className="space-y-2">
-                  <CheckCircle2 className="h-4 w-4 text-accent" />
-                  <p className="text-sm font-medium text-text-primary">
-                    {coreBillingEnabled ? "Self-service recovery" : "Support-mediated recovery"}
-                  </p>
-                  <p className="text-sm leading-6 text-text-secondary">
-                    {coreBillingEnabled
-                      ? "Authorized studio admins can open Stripe-hosted billing."
-                      : "No unsupported checkout control is presented."}
-                  </p>
-                </div>
-                <div className="space-y-2">
-                  <CheckCircle2 className="h-4 w-4 text-accent" />
-                  <p className="text-sm font-medium text-text-primary">
-                    {coreBillingEnabled
-                      ? "Stripe capability verified"
-                      : "Self-service is unavailable"}
-                  </p>
-                  <p className="text-sm leading-6 text-text-secondary">
-                    {coreBillingEnabled
-                      ? "The backend authorized Koaryu Core billing for this studio."
-                      : "Koaryu Core billing is not available for this studio right now."}
-                  </p>
-                </div>
-                <div className="space-y-2">
-                  <CheckCircle2 className="h-4 w-4 text-accent" />
-                  <p className="text-sm font-medium text-text-primary">
-                    Studio data stays preserved
-                  </p>
-                  <p className="text-sm leading-6 text-text-secondary">
-                    Access recovery does not delete operational history.
+                <ul className="mt-6 grid gap-3 md:grid-cols-3">
+                  {[
+                    {
+                      title: coreBillingEnabled
+                        ? "Self-service recovery"
+                        : "Support-mediated recovery",
+                      detail: coreBillingEnabled
+                        ? "Authorized studio admins can open Stripe-hosted billing."
+                        : "No unsupported checkout control is presented.",
+                    },
+                    {
+                      title: coreBillingEnabled
+                        ? "Stripe capability verified"
+                        : "Self-service is unavailable",
+                      detail: coreBillingEnabled
+                        ? "The backend authorized Koaryu Core billing for this studio."
+                        : "Koaryu Core billing is not available for this studio right now.",
+                    },
+                    {
+                      title: "Studio data stays preserved",
+                      detail: "Access recovery does not delete operational history.",
+                    },
+                  ].map((point) => (
+                    <li
+                      key={point.title}
+                      className="flex gap-3 rounded-[12px] border border-border p-4"
+                    >
+                      <CheckCircle2
+                        aria-hidden="true"
+                        className="mt-0.5 h-4 w-4 shrink-0 text-accent"
+                      />
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-text-primary">{point.title}</p>
+                        <p className="mt-1 text-sm leading-6 text-text-secondary">{point.detail}</p>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            ) : (
+              <div className="flex gap-4">
+                <ToneChip tone="warn">
+                  <ShieldCheck />
+                </ToneChip>
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-text-secondary">Workspace access</p>
+                  <h2 className="mt-1 max-w-[640px] text-2xl font-extrabold leading-tight tracking-[-0.03em] text-text-primary sm:text-3xl">
+                    {isAdmin
+                      ? "Contact Koaryu support to review workspace access."
+                      : "Ask a studio administrator or Koaryu support for help."}
+                  </h2>
+                  <p className="mt-3 max-w-[600px] text-[15px] leading-7 text-text-secondary">
+                    {isAdmin
+                      ? "Subscription details are unavailable right now. Studio data remains preserved while access is reviewed."
+                      : "Billing details are limited to studio administrators. Your studio data remains preserved while access is reviewed."}
                   </p>
                 </div>
               </div>
-            </>
-          ) : (
-            <div className="border-b border-border pb-10">
-              <div className="mb-5 inline-flex items-center gap-2 text-xs font-medium uppercase tracking-[0.14em] text-accent">
-                <ShieldCheck className="h-4 w-4" />
-                Workspace access
-              </div>
-              <h2 className="max-w-[780px] text-4xl font-semibold leading-tight text-text-primary sm:text-5xl">
-                {isAdmin
-                  ? "Contact Koaryu support to review workspace access."
-                  : "Ask a studio administrator or Koaryu support for help."}
-              </h2>
-              <p className="mt-5 max-w-[680px] text-base leading-7 text-text-secondary">
-                {isAdmin
-                  ? "Subscription details are unavailable right now. Studio data remains preserved while access is reviewed."
-                  : "Billing details are limited to studio administrators. Your studio data remains preserved while access is reviewed."}
-              </p>
-            </div>
-          )}
+            )}
 
-          {!isLoading ? (
-            <div className="flex flex-col gap-4 py-8 sm:flex-row sm:items-center sm:justify-between">
+            <div className="mt-6 flex flex-col gap-4 border-t border-border pt-5 sm:flex-row sm:items-center sm:justify-between">
               <div className="min-w-0">
                 {isAdmin ? (
                   <p className="text-sm text-text-secondary">
@@ -367,10 +373,14 @@ export default function SubscriptionRequiredPage() {
                     No subscription status, price, or payment details are shown on this page.
                   </p>
                 )}
-                {error ? <p className="mt-2 text-sm text-danger">{error}</p> : null}
+                {error ? (
+                  <p className="mt-2 rounded-[10px] bg-[var(--hz-alert-wash)] px-3 py-2 text-sm text-danger">
+                    {error}
+                  </p>
+                ) : null}
               </div>
 
-              <div className="flex flex-wrap gap-2">
+              <div className="flex shrink-0 flex-wrap gap-2">
                 {isAdmin && canStartCheckout ? (
                   <Button
                     variant="primary"
@@ -402,9 +412,9 @@ export default function SubscriptionRequiredPage() {
                 </Button>
               </div>
             </div>
-          ) : null}
-        </div>
-      </div>
+          </HorizonPanel>
+        )}
+      </HorizonPage>
     </OperationsSurface>
   );
 }
