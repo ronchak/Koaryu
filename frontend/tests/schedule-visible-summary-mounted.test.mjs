@@ -34,10 +34,28 @@ function bundle() {
   })();`;
 }
 
+// The stats strip reads the same visible range as the grids: classes in view, with
+// any recurring slots not yet generated as its note. The range and program scope
+// are said once, in the calendar toolbar.
 async function assertSummary(page, scheduled, recurringSlots, label, scope = "All programs") {
   const register = page.getByRole("region", { name: "Visible schedule range" });
-  const values = register.locator(":scope > div > p:last-child");
-  await expect(values).toHaveText([label, String(scheduled), String(recurringSlots), scope]);
+  if (scheduled === "Pending") {
+    await expect(register.getByLabel("Loading")).toHaveCount(4);
+    await expect(register.locator("[data-schedule-figure]")).toHaveCount(0);
+  } else {
+    await expect(register.locator('[data-schedule-figure="classes"]')).toHaveText(
+      String(scheduled),
+    );
+    await expect(register.locator('[data-schedule-figure="recurring"]')).toHaveText(
+      recurringSlots > 0
+        ? [`+${recurringSlots} recurring slot${recurringSlots === 1 ? "" : "s"}`]
+        : [],
+    );
+  }
+  await expect(page.locator("[data-schedule-range-label]")).toHaveText(label);
+  await expect(page.getByLabel("Filter schedule by program").locator("option:checked")).toHaveText(
+    scope,
+  );
 }
 
 async function mount(browser, { parallelSeries = false } = {}) {
@@ -111,7 +129,9 @@ test("rendered calendar totals follow month, week, day and program navigation", 
     await assertSummary(page, 2, 2, "October 2026", "Karate");
     await page.getByRole("button", { name: "Next month", exact: true }).click();
     await assertSummary(page, 0, 0, "November 2026", "Karate");
-    await expect(page.getByText("No scheduled classes", { exact: true })).toHaveCount(42);
+    // Empty days stay quiet: the month says it has no classes once.
+    await expect(page.getByText("No scheduled classes", { exact: true })).toHaveCount(0);
+    await expect(page.getByText("No classes in November 2026.", { exact: true })).toHaveCount(1);
     await page.getByLabel("Filter schedule by program").selectOption("");
     await assertSummary(page, 0, 0, "November 2026");
 

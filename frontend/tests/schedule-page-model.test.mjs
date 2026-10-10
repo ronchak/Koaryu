@@ -8,6 +8,8 @@ import {
   DEFAULT_SCHEDULE_PAGE_VIEW,
   formatScheduleDateKey,
   getActiveScheduleStudents,
+  getFocusedScheduleCanvas,
+  getScheduleRangeFigures,
   getScheduleTimeCanvasBounds,
   getScheduleSessionAttendance,
   getScheduleWeekDates,
@@ -281,5 +283,70 @@ describe("schedule page model", () => {
 
     assert.deepEqual(events, ["first-start", "second-start", "second-success"]);
     assert.deepEqual(pendingSnapshots.at(-1), []);
+  });
+});
+
+describe("schedule headline figures", () => {
+  const session = (id, date, extra = {}) => ({
+    id,
+    date,
+    name: id,
+    start_time: "16:00",
+    end_time: "17:00",
+    status: "scheduled",
+    attendance_count: 0,
+    capacity: null,
+    ...extra,
+  });
+
+  it("counts check-ins, seats, upcoming open seats and overlaps for the visible week only", () => {
+    const sessions = [
+      session("past-full", "2026-10-05", { attendance_count: 12, capacity: 12 }),
+      session("today-a", "2026-10-07", { attendance_count: 3, capacity: 20 }),
+      session("today-b", "2026-10-07", { start_time: "16:30", attendance_count: 2, capacity: 10 }),
+      session("canceled", "2026-10-08", { status: "canceled", attendance_count: 4, capacity: 8 }),
+      session("no-capacity", "2026-10-09", { attendance_count: 5 }),
+      session("next-week", "2026-10-12", { attendance_count: 9, capacity: 9 }),
+    ];
+    assert.deepEqual(
+      getScheduleRangeFigures({
+        businessDate: "2026-10-07",
+        currentDate: new Date(2026, 9, 7, 12),
+        view: "week",
+        sessions,
+        templates: [],
+      }),
+      {
+        scheduled: 5,
+        recurringSlots: 0,
+        checkIns: 22,
+        seats: 42,
+        openSeats: 25,
+        upcomingWithCapacity: 2,
+        overlaps: 2,
+      },
+    );
+  });
+
+  it("focuses the time canvas on the classes in view with room around them", () => {
+    assert.deepEqual(getFocusedScheduleCanvas([]), {
+      startMinute: 6 * 60,
+      endMinute: 22 * 60,
+      hourHeight: 72,
+    });
+    assert.deepEqual(
+      getFocusedScheduleCanvas([
+        { id: "a", start_time: "16:00", end_time: "16:45" },
+        { id: "b", start_time: "18:00", end_time: "19:30" },
+      ]),
+      { startMinute: 15 * 60, endMinute: 21 * 60, hourHeight: 112 },
+    );
+    assert.deepEqual(
+      getFocusedScheduleCanvas([
+        { id: "early", start_time: "06:00", end_time: "07:00" },
+        { id: "late", start_time: "20:00", end_time: "21:00" },
+      ]),
+      { startMinute: 5 * 60, endMinute: 22 * 60, hourHeight: 72 },
+    );
   });
 });

@@ -1,19 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
-import {
-  AlertCircle,
-  AlertTriangle,
-  Calendar,
-  Check,
-  Clock,
-  Repeat2,
-  Trash2,
-  Users,
-  X,
-} from "lucide-react";
+import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
+import { AlertCircle, Check, Clock, Repeat2, Search, Trash2, Users, X } from "lucide-react";
+import { getProgramColor } from "@/components/schedule/schedule-display";
 import { Button } from "@/components/ui/button";
 import { DismissibleNotice } from "@/components/ui/dismissible-notice";
+import { CalmState, ToneTag, type HorizonTone } from "@/components/schedule/horizon-parts";
 import { ModalFrame } from "@/components/ui/modal-frame";
 import {
   buildAttendanceByStudentId,
@@ -26,6 +18,7 @@ import {
   type SessionRosterRow,
 } from "@/lib/session-detail-model";
 import type { AttendanceRecord, AttendanceStatus, ClassSession, Program, Student } from "@/types";
+import styles from "./session-detail-modal.module.css";
 
 export type { ScheduleSessionDeleteScope } from "@/lib/session-detail-model";
 
@@ -57,11 +50,21 @@ export interface ScheduleSessionDetailModalProps {
 }
 
 const STATUS_ICON: Record<AttendanceStatus, ReactNode> = {
-  present: <Check className="w-3.5 h-3.5 text-success" />,
-  late: <Clock className="w-3.5 h-3.5 text-warning" />,
-  excused: <AlertCircle className="w-3.5 h-3.5 text-muted" />,
-  absent: <X className="w-3.5 h-3.5 text-danger" />,
+  present: <Check aria-hidden="true" />,
+  late: <Clock aria-hidden="true" />,
+  excused: <AlertCircle aria-hidden="true" />,
+  absent: <X aria-hidden="true" />,
 };
+
+const SESSION_STATUS_TONE: Record<ClassSession["status"], HorizonTone> = {
+  scheduled: "neutral",
+  in_progress: "warn",
+  completed: "calm",
+  canceled: "alert",
+};
+
+/** Search appears once a roster is long enough that scanning by eye is slower than typing. */
+const ROSTER_SEARCH_THRESHOLD = 10;
 
 export function ScheduleSessionDetailModal({
   canManageSchedule,
@@ -86,6 +89,7 @@ export function ScheduleSessionDetailModal({
   onDeleteSeries,
 }: ScheduleSessionDetailModalProps) {
   const [deleteConfirmSessionId, setDeleteConfirmSessionId] = useState<string | null>(null);
+  const [rosterQuery, setRosterQuery] = useState("");
 
   useEffect(() => {
     if (!open) return;
@@ -145,7 +149,10 @@ export function ScheduleSessionDetailModal({
   const activeProgram = activeSession.program_id
     ? programs.find((program) => program.id === activeSession.program_id)
     : null;
-  const programColor = activeProgram?.color_hex || "var(--accent)";
+  const programColor = getProgramColor(activeProgram);
+  const capacity = activeSession.capacity ?? null;
+  const fillRatio =
+    attendanceCountersReady && capacity ? Math.min(1, presentCount / capacity) : null;
   const emptyRosterMessage = isLoadingStudentRoster
     ? "Loading the student roster."
     : studentRosterError
@@ -153,96 +160,65 @@ export function ScheduleSessionDetailModal({
       : !isStudentRosterComplete
         ? "The student roster is incomplete. Attendance will be available after all students load."
         : "No active students. Add students first to take attendance.";
+  const showRosterSearch = students.length >= ROSTER_SEARCH_THRESHOLD;
+  const normalizedQuery = showRosterSearch ? rosterQuery.trim().toLocaleLowerCase() : "";
+  const matchesQuery = (row: SessionRosterRow) =>
+    !normalizedQuery || row.studentName.toLocaleLowerCase().includes(normalizedQuery);
+  const classProgramRows = rosterSections.classProgramRows.filter(matchesQuery);
+  const otherProgramRows = rosterSections.otherProgramRows.filter(matchesQuery);
+
+  function close() {
+    if (!isDeleting) {
+      setDeleteConfirmSessionId(null);
+      onClose();
+    }
+  }
 
   function renderRosterRows(rows: SessionRosterRow[], options?: { markDropIns?: boolean }) {
     return rows.map(
       ({ student, attendanceRecord, studentName, initials, programs: studentPrograms }) => {
-        const isCheckedIn = attendanceRecord && attendanceRecord.status !== "absent";
+        const status = attendanceRecord?.status ?? null;
         return (
-          <button
-            key={student.id}
-            data-attendance-student-id={student.id}
-            disabled={!attendanceCountersReady || pendingAttendanceStudentIds.has(student.id)}
-            onClick={async () => {
-              await onToggleAttendance(activeSession.id, student.id, studentName);
-            }}
-            className={`group relative w-full text-left transition-colors cursor-pointer disabled:cursor-not-allowed disabled:opacity-60 overflow-hidden ${
-              attendanceRecord ? "bg-surface-raised" : "bg-surface hover:bg-surface-raised/60"
-            }`}
-          >
-            <div className="flex items-center justify-between gap-3 px-3 py-3">
-              <div className="flex min-w-0 items-center gap-3">
-                {/* Avatar */}
-                <div
-                  className={`flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-[10px] ${
-                    isCheckedIn
-                      ? "border-success/30 bg-success/10"
-                      : attendanceRecord?.status === "absent"
-                        ? "border-danger/30 bg-danger/10"
-                        : "border-border bg-surface-raised"
-                  }`}
-                >
-                  {isCheckedIn ? (
-                    <Check className="w-3.5 h-3.5 text-success" />
-                  ) : attendanceRecord?.status === "absent" ? (
-                    <X className="w-3.5 h-3.5 text-danger" />
-                  ) : (
-                    <span className="text-[10px] font-semibold text-text-secondary">
-                      {initials}
-                    </span>
-                  )}
-                </div>
+          <li key={student.id}>
+            <button
+              type="button"
+              data-attendance-student-id={student.id}
+              data-status={status ?? "unmarked"}
+              disabled={!attendanceCountersReady || pendingAttendanceStudentIds.has(student.id)}
+              onClick={async () => {
+                await onToggleAttendance(activeSession.id, student.id, studentName);
+              }}
+              className={styles.rosterRow}
+            >
+              <span className={styles.avatar} aria-hidden="true">
+                {status ? STATUS_ICON[status] : initials}
+              </span>
 
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <p className="truncate text-sm font-medium text-text-primary">{studentName}</p>
-                    {(options?.markDropIns || attendanceRecord?.is_cross_program) && (
-                      <span className="shrink-0 rounded-full bg-warning/10 px-1.5 py-0.5 text-xs font-medium text-warning">
-                        Drop-in
-                      </span>
-                    )}
-                    {student.is_minor && (
-                      <span className="text-[10px] text-muted shrink-0">Minor</span>
-                    )}
-                  </div>
-                  {studentPrograms.length > 0 && (
-                    <p className="mt-0.5 text-[10px] text-muted truncate">
-                      {studentPrograms
-                        .slice(0, 2)
-                        .map((p) => p.name)
-                        .join(" · ")}
-                    </p>
+              <span className={styles.rosterText}>
+                <span className={styles.rosterNameLine}>
+                  <strong>{studentName}</strong>
+                  {(options?.markDropIns || attendanceRecord?.is_cross_program) && (
+                    <ToneTag tone="warn" dot={false}>
+                      Drop-in
+                    </ToneTag>
                   )}
-                </div>
-              </div>
-
-              {/* Status indicator */}
-              <div className="flex items-center gap-2 shrink-0">
-                {attendanceRecord ? (
-                  <>
-                    {STATUS_ICON[attendanceRecord.status]}
-                    <span
-                      className={`text-xs font-medium ${
-                        attendanceRecord.status === "present"
-                          ? "text-success"
-                          : attendanceRecord.status === "late"
-                            ? "text-warning"
-                            : attendanceRecord.status === "absent"
-                              ? "text-danger"
-                              : "text-muted"
-                      }`}
-                    >
-                      {attendanceRecord.status}
-                    </span>
-                  </>
-                ) : (
-                  <span className="text-[11px] text-muted group-hover:text-text-secondary transition-colors">
-                    Check in
-                  </span>
+                  {student.is_minor && <span className={styles.minor}>Minor</span>}
+                </span>
+                {studentPrograms.length > 0 && (
+                  <small>
+                    {studentPrograms
+                      .slice(0, 2)
+                      .map((p) => p.name)
+                      .join(" · ")}
+                  </small>
                 )}
-              </div>
-            </div>
-          </button>
+              </span>
+
+              <span className={styles.rosterStatus} data-status={status ?? "unmarked"}>
+                {status ? status : "Check in"}
+              </span>
+            </button>
+          </li>
         );
       },
     );
@@ -260,231 +236,212 @@ export function ScheduleSessionDetailModal({
   return (
     <ModalFrame
       rootClassName="p-4"
-      panelClassName="flex max-h-[85vh] w-full max-w-xl flex-col overflow-hidden rounded-[18px] bg-bg"
+      panelClassName={styles.sheet}
       ariaLabelledBy="schedule-session-detail-title"
-      onBackdropClick={() => {
-        if (!isDeleting) {
-          setDeleteConfirmSessionId(null);
-          onClose();
-        }
-      }}
+      onBackdropClick={close}
     >
-      {/* ── Header ── */}
-      <div className="flex items-start justify-between gap-4 border-b border-border p-4">
-        <div className="min-w-0">
-          <div className="flex items-center gap-3">
-            <h2
-              id="schedule-session-detail-title"
-              className="truncate text-lg font-semibold text-text-primary"
-            >
-              {activeSession.name}
-            </h2>
-            <span className="shrink-0 rounded-full bg-surface-raised px-2 py-0.5 text-xs font-medium text-text-secondary">
-              {SESSION_STATUS_LABELS[session.status]}
-            </span>
-          </div>
-          <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-text-secondary">
-            <span className="inline-flex items-center gap-1.5">
-              <Calendar className="w-3 h-3 text-muted" />
-              {sessionLabels.date}
-            </span>
-            <span className="inline-flex items-center gap-1.5">
-              <Clock className="w-3 h-3 text-muted" />
-              {sessionLabels.startTime} – {sessionLabels.endTime}
-            </span>
-            {hasClassProgram && (
-              <span className="inline-flex items-center gap-1.5">
-                <span className="w-2 h-2 shrink-0" style={{ backgroundColor: programColor }} />
-                {activeProgram?.name || "Program"}
-              </span>
-            )}
-            {isRecurring && (
-              <span className="inline-flex items-center gap-1.5">
-                <Repeat2 className="w-3 h-3 text-muted" />
-                Recurring
-              </span>
-            )}
-          </div>
-        </div>
-
-        <button
-          onClick={() => {
-            if (!isDeleting) {
-              setDeleteConfirmSessionId(null);
-              onClose();
-            }
-          }}
-          disabled={isDeleting}
-          className="shrink-0 rounded-[10px] p-1.5 text-muted transition-colors hover:bg-surface-raised hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-50"
-          aria-label="Close session details"
-        >
-          <X className="h-4 w-4" />
-        </button>
-      </div>
-
-      {/* ── Stat bar ── */}
       <div
-        className="grid shrink-0 grid-cols-3 gap-2 border-b border-border bg-surface p-2"
-        aria-busy={!attendanceCountersReady}
-        data-testid="attendance-summary"
+        className={styles.sheetInner}
+        style={{ "--program-color": programColor } as CSSProperties}
       >
-        <div className="rounded-[10px] bg-surface-raised px-4 py-3 text-center">
-          <p className="text-2xl font-semibold tabular-nums text-text-primary leading-none">
-            <span data-testid="attendance-present-count">
-              {attendanceCountersReady ? presentCount : "—"}
-            </span>
-            {attendanceCountersReady && activeSession.capacity ? (
-              <span className="text-sm font-normal text-muted">/{activeSession.capacity}</span>
-            ) : null}
-          </p>
-          <p className="mt-1.5 text-xs text-muted">Present</p>
-        </div>
-        <div className="rounded-[10px] bg-surface-raised px-4 py-3 text-center">
-          <p
-            className="text-2xl font-semibold tabular-nums text-text-primary leading-none"
-            data-testid="attendance-absent-count"
-          >
-            {attendanceCountersReady ? absentCount : "—"}
-          </p>
-          <p className="mt-1.5 text-xs text-muted">Absent</p>
-        </div>
-        <div className="rounded-[10px] bg-surface-raised px-4 py-3 text-center">
-          <p
-            className="text-2xl font-semibold tabular-nums text-text-primary leading-none"
-            data-testid="attendance-unmarked-count"
-          >
-            {attendanceCountersReady ? unmarkedCount : "—"}
-          </p>
-          <p className="mt-1.5 text-xs text-muted">Unmarked</p>
-        </div>
-      </div>
-
-      {/* ── Scrollable content ── */}
-      <div className="flex-1 overflow-y-auto">
-        {/* Notes */}
-        {activeSession.notes ? (
-          <div className="border-b border-border px-4 py-3">
-            <p className="text-xs font-medium text-muted">Notes</p>
-            <p className="mt-1 text-sm text-text-secondary">{activeSession.notes}</p>
+        {/* Header */}
+        <header className={styles.head}>
+          <div className={styles.headCopy}>
+            <p className={styles.eyebrow}>
+              {sessionLabels.date} · {sessionLabels.startTime} – {sessionLabels.endTime}
+            </p>
+            <div className={styles.titleRow}>
+              <h2 id="schedule-session-detail-title" className={styles.title}>
+                {activeSession.name}
+              </h2>
+              <ToneTag tone={SESSION_STATUS_TONE[session.status]}>
+                {SESSION_STATUS_LABELS[session.status]}
+              </ToneTag>
+            </div>
+            <div className={styles.meta}>
+              {hasClassProgram && (
+                <span className={styles.programName}>
+                  <i aria-hidden="true" />
+                  {activeProgram?.name || "Program"}
+                </span>
+              )}
+              {isRecurring && (
+                <span>
+                  <Repeat2 aria-hidden="true" />
+                  Recurring
+                </span>
+              )}
+              {capacity ? (
+                <span>
+                  <Users aria-hidden="true" />
+                  {capacity} seats
+                </span>
+              ) : null}
+            </div>
           </div>
-        ) : null}
 
-        {attendanceError ? (
-          <div className="px-6 pt-4">
+          <button
+            type="button"
+            onClick={close}
+            disabled={isDeleting}
+            className={styles.close}
+            aria-label="Close session details"
+          >
+            <X aria-hidden="true" />
+          </button>
+        </header>
+
+        {/* Attendance figures */}
+        <div
+          className={styles.summary}
+          aria-busy={!attendanceCountersReady}
+          data-testid="attendance-summary"
+        >
+          <div className={styles.present}>
+            <p className={styles.figureLabel}>Present</p>
+            <p className={styles.presentValue}>
+              <span data-testid="attendance-present-count">
+                {attendanceCountersReady ? presentCount : "—"}
+              </span>
+              {attendanceCountersReady && capacity ? <small>/{capacity}</small> : null}
+            </p>
+            <span className={styles.meter} aria-hidden="true">
+              <span style={{ width: `${(fillRatio ?? 0) * 100}%` }} />
+            </span>
+          </div>
+          <div
+            className={styles.figure}
+            data-tone={attendanceCountersReady && absentCount > 0 ? "absent" : undefined}
+          >
+            <p className={styles.figureLabel}>Absent</p>
+            <p className={styles.figureValue} data-testid="attendance-absent-count">
+              {attendanceCountersReady ? absentCount : "—"}
+            </p>
+          </div>
+          <div className={styles.figure}>
+            <p className={styles.figureLabel}>Unmarked</p>
+            <p className={styles.figureValue} data-testid="attendance-unmarked-count">
+              {attendanceCountersReady ? unmarkedCount : "—"}
+            </p>
+          </div>
+        </div>
+
+        <div className={styles.body}>
+          {activeSession.notes ? (
+            <div className={styles.notes}>
+              <p>Notes</p>
+              <p>{activeSession.notes}</p>
+            </div>
+          ) : null}
+
+          {attendanceError ? (
             <DismissibleNotice tone="danger" onDismiss={() => onDismissAttendanceError?.()}>
               {attendanceError}
             </DismissibleNotice>
-          </div>
-        ) : null}
+          ) : null}
 
-        {studentRosterError ? (
-          <div className="px-6 pt-4">
+          {studentRosterError ? (
             <DismissibleNotice tone="danger" onDismiss={() => onDismissStudentRosterError?.()}>
               {studentRosterError}
             </DismissibleNotice>
-          </div>
-        ) : null}
+          ) : null}
 
-        {/* ── Roster ── */}
-        <div className="p-4">
-          <div className="mb-4 flex items-center justify-between gap-4">
-            <div>
-              <p className="text-sm font-semibold text-text-primary">Attendance</p>
-              <p
-                className="mt-1 text-xs text-text-secondary"
-                role="status"
-                aria-live="polite"
-                data-attendance-commit-state={
-                  !attendanceCountersReady
-                    ? "unavailable"
-                    : pendingAttendanceStudentIds.size > 0
-                      ? "saving"
-                      : attendanceError
-                        ? "rollback-error"
-                        : "saved"
-                }
-              >
-                {attendanceCommitCopy}
-              </p>
-              {attendanceCountersReady ? (
-                <p className="mt-1 text-[11px] text-muted">
-                  Select a student to cycle attendance status.
+          {/* Roster */}
+          <section className={styles.roster} aria-labelledby="schedule-session-roster-title">
+            <div className={styles.rosterHead}>
+              <div>
+                <h3 id="schedule-session-roster-title" className={styles.rosterTitle}>
+                  Attendance
+                </h3>
+                <p
+                  className={styles.commit}
+                  role="status"
+                  aria-live="polite"
+                  data-attendance-commit-state={
+                    !attendanceCountersReady
+                      ? "unavailable"
+                      : pendingAttendanceStudentIds.size > 0
+                        ? "saving"
+                        : attendanceError
+                          ? "rollback-error"
+                          : "saved"
+                  }
+                >
+                  {attendanceCommitCopy}
                 </p>
+                {attendanceCountersReady ? (
+                  <p className={styles.hint}>
+                    Tap a student to check them in. Tap again for late, absent, then clear.
+                  </p>
+                ) : null}
+              </div>
+              {showRosterSearch ? (
+                <label className={styles.search}>
+                  <Search aria-hidden="true" />
+                  <span className="sr-only">Find a student</span>
+                  <input
+                    type="search"
+                    value={rosterQuery}
+                    placeholder="Find a student"
+                    onChange={(event) => setRosterQuery(event.target.value)}
+                  />
+                </label>
               ) : null}
             </div>
-            <span className="text-xs tabular-nums text-muted">
-              {attendanceCountersReady
-                ? `${presentCount}${activeSession.capacity ? `/${activeSession.capacity}` : ""} in`
-                : "Attendance counts unavailable"}
-            </span>
-          </div>
 
-          {students.length === 0 ? (
-            <div className="rounded-[10px] bg-surface px-4 py-10 text-center">
-              <Users className="mx-auto mb-2 h-5 w-5 text-muted" />
-              <p className="text-xs text-muted">{emptyRosterMessage}</p>
-            </div>
-          ) : (
-            <div className="space-y-5">
-              {/* Class program students */}
-              <div>
-                {hasClassProgram && (
-                  <div className="mb-2 flex items-center justify-between gap-3">
-                    <p className="text-xs font-medium text-muted">
-                      {activeProgram?.name || "Program"} students
+            {students.length === 0 ? (
+              <CalmState tone="neutral" icon={<Users />} title={emptyRosterMessage} />
+            ) : (
+              <div className={styles.rosterGroups}>
+                <div>
+                  {hasClassProgram && (
+                    <p className={styles.groupLabel}>
+                      <span>{activeProgram?.name || "Program"} students</span>
+                      <b>{rosterSections.classProgramRows.length}</b>
                     </p>
-                    <span className="text-xs tabular-nums text-muted">
-                      {rosterSections.classProgramRows.length}
-                    </span>
-                  </div>
-                )}
+                  )}
 
-                {rosterSections.classProgramRows.length > 0 ? (
-                  <div className="divide-y divide-border/60 overflow-hidden rounded-[10px] bg-surface-raised/30">
-                    {renderRosterRows(rosterSections.classProgramRows)}
-                  </div>
-                ) : (
-                  <div className="rounded-[10px] bg-surface-raised/40 px-4 py-4 text-xs text-muted">
-                    No active students are assigned to this class program yet.
+                  {classProgramRows.length > 0 ? (
+                    <ul className={styles.rosterList}>{renderRosterRows(classProgramRows)}</ul>
+                  ) : (
+                    <p className={styles.groupEmpty}>
+                      {normalizedQuery
+                        ? "No students in this program match that name."
+                        : "No active students are assigned to this class program yet."}
+                    </p>
+                  )}
+                </div>
+
+                {hasClassProgram && (
+                  <div>
+                    <p className={styles.groupLabel}>
+                      <span>Other program drop-ins</span>
+                      <b>{rosterSections.otherProgramRows.length}</b>
+                    </p>
+                    {otherProgramRows.length > 0 ? (
+                      <ul className={styles.rosterList}>
+                        {renderRosterRows(otherProgramRows, { markDropIns: true })}
+                      </ul>
+                    ) : (
+                      <p className={styles.groupEmpty}>
+                        {normalizedQuery
+                          ? "No drop-in students match that name."
+                          : "No other active students available for drop-in attendance."}
+                      </p>
+                    )}
                   </div>
                 )}
               </div>
+            )}
+          </section>
 
-              {/* Drop-ins */}
-              {hasClassProgram && (
+          {/* Delete */}
+          {canManageSchedule ? (
+            <section className={styles.danger} aria-label="Delete class">
+              <div className={styles.dangerHead}>
                 <div>
-                  <div className="mb-2 flex items-center justify-between gap-3">
-                    <p className="text-xs font-medium text-muted">Other program drop-ins</p>
-                    <span className="text-xs tabular-nums text-muted">
-                      {rosterSections.otherProgramRows.length}
-                    </span>
-                  </div>
-                  {rosterSections.otherProgramRows.length > 0 ? (
-                    <div className="divide-y divide-border/60 overflow-hidden rounded-[10px] bg-surface-raised/30">
-                      {renderRosterRows(rosterSections.otherProgramRows, { markDropIns: true })}
-                    </div>
-                  ) : (
-                    <div className="rounded-[10px] bg-surface-raised/40 px-4 py-4 text-xs text-muted">
-                      No other active students available for drop-in attendance.
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* ── Delete zone ── */}
-        {canManageSchedule ? (
-          <div className="border-t border-border p-4">
-            <div className="rounded-[14px] bg-danger/[0.03] p-4">
-              <div className="flex items-start justify-between gap-4">
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0 text-danger" />
-                    <p className="text-sm font-semibold text-text-primary">Delete class</p>
-                  </div>
-                  <p className="mt-1 text-xs text-muted">
+                  <p className={styles.dangerTitle}>Delete class</p>
+                  <p className={styles.dangerCopy}>
                     {isRecurring
                       ? canDeleteSeries
                         ? "This session belongs to a recurring series. Choose whether to delete this class or stop this series."
@@ -506,7 +463,7 @@ export function ScheduleSessionDetailModal({
                   </Button>
                 ) : (
                   <Button
-                    variant="ghost"
+                    variant="secondary"
                     size="sm"
                     disabled={isDeleting}
                     onClick={() => setDeleteConfirmSessionId(null)}
@@ -517,58 +474,58 @@ export function ScheduleSessionDetailModal({
                 )}
               </div>
 
-              {deleteError ? <p className="mt-3 text-xs text-danger">{deleteError}</p> : null}
+              {deleteError ? <p className={styles.dangerError}>{deleteError}</p> : null}
 
               {showDeleteConfirm ? (
-                <div className="mt-4 space-y-3 border-t border-danger/15 pt-4">
-                  <p className="text-xs font-medium text-muted">Confirm deletion</p>
+                <div className={styles.confirm}>
+                  <p className={styles.confirmLabel}>Confirm deletion</p>
 
-                  <div className="rounded-[10px] bg-bg/50 px-4 py-3">
-                    <p className="text-sm font-medium text-text-primary">Delete this class</p>
-                    <p className="mt-1 text-xs text-muted">
-                      Removes the selected occurrence and keeps the rest of the schedule intact.
-                    </p>
-                    <div className="mt-3 flex justify-end">
-                      <Button
-                        variant="danger"
-                        size="sm"
-                        isLoading={deleteInFlight === "session"}
-                        disabled={isDeleting}
-                        onClick={() => void handleDelete("session")}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                        Delete this class
-                      </Button>
+                  <div className={styles.confirmOption}>
+                    <div>
+                      <p className={styles.confirmTitle}>Delete this class</p>
+                      <p className={styles.dangerCopy}>
+                        Removes the selected occurrence and keeps the rest of the schedule intact.
+                      </p>
                     </div>
+                    <Button
+                      variant="danger"
+                      size="sm"
+                      isLoading={deleteInFlight === "session"}
+                      disabled={isDeleting}
+                      onClick={() => void handleDelete("session")}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                      Delete this class
+                    </Button>
                   </div>
 
                   {canDeleteSeries ? (
-                    <div className="rounded-[10px] bg-danger/10 px-4 py-3">
-                      <p className="text-sm font-medium text-text-primary">Stop this series</p>
-                      <p className="mt-1 text-xs text-muted">
-                        Removes this class and future recurring sessions that belong to the same
-                        series.
-                      </p>
-                      <div className="mt-3 flex justify-end">
-                        <Button
-                          variant="danger"
-                          size="sm"
-                          isLoading={deleteInFlight === "series"}
-                          disabled={isDeleting}
-                          onClick={() => void handleDelete("series")}
-                          className="!border-transparent !bg-danger !text-white hover:!bg-danger/80"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                          Stop this series
-                        </Button>
+                    <div className={styles.confirmOption} data-severity="series">
+                      <div>
+                        <p className={styles.confirmTitle}>Stop this series</p>
+                        <p className={styles.dangerCopy}>
+                          Removes this class and future recurring sessions that belong to the same
+                          series.
+                        </p>
                       </div>
+                      <Button
+                        variant="danger"
+                        size="sm"
+                        isLoading={deleteInFlight === "series"}
+                        disabled={isDeleting}
+                        onClick={() => void handleDelete("series")}
+                        className={styles.seriesButton}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                        Stop this series
+                      </Button>
                     </div>
                   ) : null}
                 </div>
               ) : null}
-            </div>
-          </div>
-        ) : null}
+            </section>
+          ) : null}
+        </div>
       </div>
     </ModalFrame>
   );

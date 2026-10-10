@@ -1,0 +1,24 @@
+/* A stat that filters the page in place: the kit's stat, as a button. */
+.statButton {
+  border: 0;
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--product-motion-change-duration, 120ms) ease-out;
+}
+
+.statButton:hover {
+  background: color-mix(in srgb, var(--product-card-stock, var(--surface)) 70%, transparent);
+}
+
+.statButton:focus-visible {
+  border-radius: 14px;
+  outline: 2px solid var(--product-focus, var(--accent));
+  outline-offset: -3px;
+}
+
+.statButton[aria-pressed="true"] {
+  background: var(--hz-tile);
+  box-shadow: inset 0 -3px 0 var(--product-wood, var(--accent));
+}
