@@ -250,6 +250,14 @@ button {
   animation: koaryu-skeleton-reveal var(--motion-medium) var(--ease-standard) 220ms both;
 }
 
+/* Surfaces that switch off all animation under reduced motion would otherwise
+   show placeholders at once; keep the delay, drop the fade. */
+@media (prefers-reduced-motion: reduce) {
+  .koaryu-skeleton-reveal.koaryu-skeleton-reveal {
+    animation: koaryu-skeleton-reveal 1ms linear 220ms both !important;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .koaryu-route-enter,
   .koaryu-modal-backdrop,

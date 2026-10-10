@@ -1,9 +1,12 @@
 "use client";
 
 import { Header } from "@/components/header";
-import { RecordsLoading } from "@/components/records/records-loading";
 import { StudentDetailSections } from "@/components/students/student-detail-sections";
 import { StudentDetailSidebar } from "@/components/students/student-detail-sidebar";
+import {
+  StudentDetailBodySkeleton,
+  StudentDetailSkeleton,
+} from "@/components/students/student-detail-skeleton";
 import { StudentForm } from "@/components/students/student-form";
 import { Button } from "@/components/ui/button";
 import { DismissibleNotice } from "@/components/ui/dismissible-notice";
@@ -22,6 +25,7 @@ export function StudentDetailPageContent({
   deleteError,
   detail,
   detailReady,
+  recordComplete,
   isDeleting,
   isLoadingBeltData,
   isLoadingStudent,
@@ -50,10 +54,9 @@ export function StudentDetailPageContent({
 }: StudentDetailPageContentProps) {
   if (isLoadingStudent) {
     return (
-      <RecordsLoading
-        title="Loading student"
-        description="Loading identity, training, guardian, and promotion history."
-        variant="folio"
+      <StudentDetailSkeleton
+        canManageRoster={canManageRoster}
+        onBackToStudents={onBackToStudents}
       />
     );
   }
@@ -115,29 +118,21 @@ export function StudentDetailPageContent({
         </div>
       ) : null}
 
-      {detailReady && loadError ? (
+      {loadError ? (
         <div className="px-6 pt-4" role="status">
-          <p>Showing the last loaded details. {loadError}</p>
+          <p>
+            {detailReady ? "Showing the last loaded details." : "Showing the roster's copy."}{" "}
+            {loadError}
+          </p>
           <Button variant="secondary" size="sm" onClick={onRetryDetail}>
             Retry student details
           </Button>
         </div>
       ) : null}
-      {!detailReady ? (
-        <div className="p-6" role={loadError ? "alert" : "status"}>
-          {loadError ? (
-            <>
-              <p>{loadError}</p>
-              <Button onClick={onRetryDetail}>Retry student details</Button>
-            </>
-          ) : (
-            <RecordsLoading
-              title="Loading student details"
-              description="Loading guardian, photo, and training details."
-              variant="folio"
-            />
-          )}
-        </div>
+      {/* A record known from the roster draws in full while its own read settles;
+          editing and archiving stay disabled until that read lands. */}
+      {!recordComplete ? (
+        <StudentDetailBodySkeleton />
       ) : (
         <div className="flex-1 p-4 sm:p-6 lg:p-8">
           <div

@@ -331,8 +331,11 @@ describe("roster presentation behavior", () => {
       };
       window.fixture.renderSidebar(window.fixture.sidebarProps);
     }, student);
-    await page.getByText("Loading rank…", { exact: true }).waitFor();
-    assert.equal(await page.getByText("Loading…", { exact: true }).count(), 3);
+    // Loading facts are delayed placeholders announced by name, never empty values.
+    await page.getByRole("status", { name: "Loading rank" }).waitFor({ state: "attached" });
+    for (const name of ["Loading next rank", "Loading last promotion", "Loading promotion count"]) {
+      assert.equal(await page.getByRole("status", { name }).count(), 1);
+    }
     assert.equal(await page.getByText(/No rank assigned|Top of ladder/).count(), 0);
     await page.evaluate(() =>
       window.fixture.renderSidebar({

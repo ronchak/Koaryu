@@ -141,7 +141,14 @@ export function StudentDetailSections({
         {beltLoadError ? (
           <p className="text-sm text-warning">{beltLoadError}</p>
         ) : isLoadingBeltData ? (
-          <p className="text-sm text-text-secondary">Loading belt and promotion history…</p>
+          <div
+            role="status"
+            aria-label="Loading promotion history"
+            className="koaryu-skeleton-reveal space-y-2.5"
+          >
+            <span aria-hidden="true" className="block h-3 w-56 rounded-full bg-surface-raised" />
+            <span aria-hidden="true" className="block h-3 w-40 rounded-full bg-surface-raised" />
+          </div>
         ) : promotionHistory.length === 0 ? (
           <div className="space-y-2">
             <p className="text-sm text-text-secondary">

@@ -10,48 +10,16 @@ import {
   type ReactNode,
   type SetStateAction,
 } from "react";
+import { createRetainedStore, type RetainedStore } from "@/lib/retained-store";
+
+export { createRetainedStore };
+export type { RetainedStore };
 
 // Page data that should survive navigation within one signed-in studio session.
 // Dashboard routes remount on every pathname change, so data kept in component
 // state was thrown away and refetched behind a blocking skeleton on each visit.
 // Retained values are scoped to one identity: a new identity generation or
 // studio starts an empty store, so one account never sees another's rows.
-
-const MAX_RETAINED_ENTRIES = 400;
-
-export type RetainedStore = {
-  readonly scope: string;
-  get<T>(key: string): T | undefined;
-  has(key: string): boolean;
-  set<T>(key: string, value: T): void;
-  delete(key: string): void;
-};
-
-export function createRetainedStore(scope: string, limit = MAX_RETAINED_ENTRIES): RetainedStore {
-  const entries = new Map<string, unknown>();
-  return {
-    scope,
-    get<T>(key: string) {
-      return entries.get(key) as T | undefined;
-    },
-    has(key: string) {
-      return entries.has(key);
-    },
-    set<T>(key: string, value: T) {
-      // Re-inserting keeps the most recently written keys at the end for eviction.
-      entries.delete(key);
-      entries.set(key, value);
-      while (entries.size > limit) {
-        const oldest = entries.keys().next().value;
-        if (oldest === undefined) break;
-        entries.delete(oldest);
-      }
-    },
-    delete(key: string) {
-      entries.delete(key);
-    },
-  };
-}
 
 const RetainedStateContext = createContext<RetainedStore | null>(null);
 

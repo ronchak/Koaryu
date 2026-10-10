@@ -438,6 +438,37 @@ describe("students page model", () => {
     );
   });
 
+  it("blocks a derived roster only while its student list is missing or partial", () => {
+    const base = {
+      programsLoadError: null,
+      programsLoaded: true,
+      scheduleLoadError: null,
+      scheduleRequired: false,
+      scheduleStatus: "idle",
+      isDerivedRosterRefreshing: true,
+      isPagedLoading: false,
+      page: 1,
+      pageSize: 50,
+      pagedLoadError: null,
+      pagedLoaded: false,
+      pagedTotal: 0,
+      studentsCount: 12,
+      studentsLoadError: null,
+      studentsLoaded: true,
+      studentsMayBePartial: true,
+      usesDerivedRosterFilters: true,
+    };
+    const partial = buildStudentRosterLoadState(base);
+    assert.equal(partial.isInitialRosterLoading, true);
+    assert.equal(partial.isRosterRefreshing, false);
+    const unloaded = buildStudentRosterLoadState({
+      ...base,
+      studentsLoaded: false,
+      studentsMayBePartial: false,
+    });
+    assert.equal(unloaded.isInitialRosterLoading, true);
+  });
+
   it("builds roster loading, pagination, and refreshing state", () => {
     assert.deepEqual(
       buildStudentRosterLoadState({
@@ -461,8 +492,9 @@ describe("students page model", () => {
       }),
       {
         activeLoadError: null,
-        isInitialRosterLoading: true,
-        isRosterRefreshing: false,
+        // A complete loaded roster stays visible while it refreshes.
+        isInitialRosterLoading: false,
+        isRosterRefreshing: true,
         pageEnd: 0,
         pageStart: 0,
         totalPages: 1,

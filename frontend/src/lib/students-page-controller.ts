@@ -2,7 +2,7 @@
 
 import { useResumeRefresh } from "@/lib/use-resume-refresh";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   consumeRosterReturn,
   loadRosterReturn,
@@ -14,6 +14,12 @@ import type { StudentRosterBulkPanel } from "@/components/students/student-roste
 import { buildStudentInactivityRows, formatInactivityDaysForRange } from "@/lib/student-insights";
 import { StudentRosterCursorError } from "@/lib/store-student-pages";
 import { buildStudentPagePath } from "@/lib/student-roster-query";
+import { useRetainedStore } from "@/lib/retained-state";
+import { prefetchRecordRoute } from "@/lib/route-prefetch";
+import {
+  readStudentRosterSnapshot,
+  rememberStudentRosterSnapshot,
+} from "@/lib/student-retained-data";
 import {
   hasStudentRosterSearchChanged,
   normalizeStudentListSearch,
@@ -161,6 +167,7 @@ export function useStudentsPageController({
       if (currentRosterScope.current === returnScope) currentRosterScope.current = null;
     };
   }, [returnScope]);
+  const retainedStore = useRetainedStore();
   const [initialReturn] = useState(() =>
     loadRosterReturn(returnScope, safeStudentsReturn(`/students?${searchParams}`)),
   );
@@ -419,6 +426,32 @@ export function useStudentsPageController({
       }),
     [config.token, currentStudioId, liveRosterQuery],
   );
+
+  // Returning to the roster redraws the page it left before the first paint; the
+  // load below then revalidates it in place instead of behind a skeleton.
+  const rosterRestoreAttemptedRef = useRef(false);
+  useLayoutEffect(() => {
+    if (rosterRestoreAttemptedRef.current) return;
+    rosterRestoreAttemptedRef.current = true;
+    if (usesDerivedRosterFilters) return;
+    const snapshot = readStudentRosterSnapshot(retainedStore);
+    if (
+      !snapshot ||
+      snapshot.queryKey !== liveRosterQueryKey ||
+      snapshot.page !== pageRef.current ||
+      snapshot.cursor !== pagedCursorRef.current
+    ) {
+      return;
+    }
+    cursorHistoryRef.current = new Map(snapshot.history);
+    setPagedStudents(snapshot.students);
+    setPagedTotal(snapshot.total);
+    setPagedHasNext(snapshot.hasNext);
+    setPagedHasPrevious(snapshot.hasPrevious);
+    setPagedNextCursor(snapshot.nextCursor);
+    setPagedPreviousCursor(snapshot.previousCursor);
+    setPagedLoaded(true);
+  }, [liveRosterQueryKey, retainedStore, usesDerivedRosterFilters]);
   const buildRosterPageQuery = useCallback(
     (requestedPage: number, requestedCursor: string | null): StudentListQuery => ({
       ...liveRosterQuery,
@@ -627,6 +660,18 @@ export function useStudentsPageController({
           setPagedStudents(result.items);
           setPagedTotal(result.total);
           setPagedLoaded(true);
+          rememberStudentRosterSnapshot(retainedStore, {
+            queryKey: requestQueryKey,
+            page: result.page_ordinal,
+            cursor: requestedCursor,
+            history: [...cursorHistoryRef.current],
+            students: result.items,
+            total: result.total,
+            hasNext: Boolean(nextCursor) && result.has_next,
+            hasPrevious: Boolean(previousCursor) && result.has_previous,
+            nextCursor,
+            previousCursor,
+          });
           return;
         }
       } catch (error) {
@@ -648,7 +693,13 @@ export function useStudentsPageController({
         }
       }
     },
-    [buildRosterPageQuery, listStudentsPage, liveRosterQueryKey, usesDerivedRosterFilters],
+    [
+      buildRosterPageQuery,
+      listStudentsPage,
+      liveRosterQueryKey,
+      retainedStore,
+      usesDerivedRosterFilters,
+    ],
   );
 
   useEffect(() => {
@@ -1175,6 +1226,12 @@ export function useStudentsPageController({
           return;
         }
         requestRosterPage(pageRef.current + 1, pagedNextCursor);
+      },
+      onPrefetchStudent: (studentId: string) => {
+        prefetchRecordRoute(
+          router,
+          `/students/${studentId}?returnTo=${encodeURIComponent(rosterHref)}`,
+        );
       },
       onOpenStudent: (studentId: string) => {
         saveRosterReturn({
