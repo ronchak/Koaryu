@@ -10,6 +10,7 @@ function bundle() {
     "@/lib/performance": `exports.markDashboardReadiness=()=>()=>{};`,
     "@/components/dataset-readiness-panel": `exports.DatasetReadinessErrorPanel=()=>null;`,
     "./dashboard-home.module.css": `module.exports={};`,
+    "./dashboard-horizon.module.css": `module.exports={};`,
   });
   const react = add("react"),
     dom = add("react-dom/client");

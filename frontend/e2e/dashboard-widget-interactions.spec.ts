@@ -182,7 +182,7 @@ dashboardWidgetTest(
           (widget) => widget.querySelector("header")?.getBoundingClientRect().height ?? 0,
         ),
       );
-    expect(new Set(bandHeights)).toEqual(new Set([44]));
+    expect(new Set(bandHeights)).toEqual(new Set([52]));
     await expect
       .poll(async () =>
         page
@@ -274,6 +274,9 @@ dashboardWidgetTest(
 
     const widget = page.locator('[data-widget-id="student_pulse"]');
     const target = page.locator('[data-widget-id="attendance"]');
+    // The Home greeting sits above the panels; bring the pair into view, clear of the
+    // auto-scroll edges, before pressing on it.
+    await widget.evaluate((node) => window.scrollBy(0, node.getBoundingClientRect().top - 240));
     const before = await widget.boundingBox();
     const targetBefore = await target.boundingBox();
     expect(before).not.toBeNull();

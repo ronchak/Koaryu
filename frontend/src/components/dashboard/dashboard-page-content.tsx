@@ -12,11 +12,13 @@ export function DashboardPageContent({
   currentStudioId,
   currentUserId,
   datasetLoadError,
+  greetingName,
   isDashboardDataReady,
   isDashboardIdentityReady,
   isPreviewMode,
   retryDashboardDatasets,
   studioDescription,
+  today,
   widgetViewModels,
 }: DashboardPageContentProps) {
   return (
@@ -29,10 +31,12 @@ export function DashboardPageContent({
       currentUserId={currentUserId}
       datasetLoadError={datasetLoadError}
       dataReady={isDashboardDataReady}
+      greetingName={greetingName}
       identityReady={isDashboardIdentityReady}
       isPreviewMode={isPreviewMode}
       retryDashboardDatasets={retryDashboardDatasets}
       studioDescription={studioDescription}
+      today={today}
       viewModels={widgetViewModels}
     />
   );

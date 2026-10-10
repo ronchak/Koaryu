@@ -136,6 +136,175 @@
   --product-shadow-lifted: inset 0 1px 2px rgb(255 255 255 / 9%), 0 22px 52px rgb(0 0 0 / 38%);
 }
 
+/*
+ * Horizon: the landing page's palette and hills, worn by the Dashboard first
+ * (layout.tsx sets data-surface on that route only). Day is the hills at noon;
+ * the dark theme is the landing's night scene: indigo ridges, lantern amber.
+ */
+.shellRoot[data-surface="horizon"] {
+  --product-ground: #f7f3e9;
+  --product-sunk: #efe6d3;
+  --product-paper: #fffcf5;
+  --product-card-stock: #fffdf8;
+  --product-lifted: #fffdf8;
+  --product-sheet: #fbf7ee;
+  --product-ink: #3b2f1c;
+  --product-soft-ink: #5f5241;
+  --product-meta: #74674f;
+  --product-rule: rgb(59 47 28 / 22%);
+  --product-rule-soft: rgb(59 47 28 / 12%);
+  --product-wood: #8a6a34;
+  --product-wood-deep: #6b5230;
+  --product-straw: #8a5c15;
+  --product-cobalt: #8a6a34;
+  --product-vermilion: #9c4530;
+  --product-affirm: #2f6b52;
+  --product-focus: #8a6a34;
+  --product-shadow-card:
+    inset 0 1px 0 rgb(255 255 255 / 70%), 0 10px 30px rgb(67 51 25 / 8%),
+    0 1px 3px rgb(67 51 25 / 8%);
+  --product-shadow-lifted: 0 22px 52px rgb(54 40 20 / 20%), 0 2px 8px rgb(54 40 20 / 10%);
+
+  --hz-sky: #ece3cf;
+  --hz-tile: #f4eee1;
+  --hz-ridge-0: #efe2c0;
+  --hz-ridge-1: #e7cc97;
+  --hz-ridge-2: #c9a75e;
+  --hz-ridge-3: #a28341;
+  --hz-ridge-4: #7a612e;
+  --hz-sun: #dcc191;
+  --hz-cta: #3b2f1c;
+  --hz-cta-ink: #f7f3e9;
+  --hz-alert-wash: rgb(156 69 48 / 9%);
+  --hz-warn-wash: rgb(201 167 94 / 22%);
+  --hz-affirm-wash: rgb(47 107 82 / 10%);
+  --hz-bar: #c9a75e;
+  --hz-bar-now: #7a612e;
+  --hz-seg-members: #25845a;
+  --hz-seg-trialing: #cf9f2e;
+  --hz-rail: #3b2f1c;
+  --hz-rail-deep: #2c2213;
+  --hz-rail-ink: #f4eee1;
+  --hz-rail-meta: rgb(244 238 225 / 66%);
+  --hz-rail-line: rgb(244 238 225 / 10%);
+  --hz-rail-active: rgb(244 238 225 / 11%);
+  --hz-rail-mark: #c9a75e;
+  --hz-grain-blend: multiply;
+  --hz-grain-opacity: 0.07;
+}
+
+:global([data-theme="dark"]) .shellRoot[data-surface="horizon"] {
+  --product-ground: #14121b;
+  --product-sunk: #1b1824;
+  --product-paper: #1e1a22;
+  --product-card-stock: #25202a;
+  --product-lifted: #28232e;
+  --product-sheet: #1e1a22;
+  --product-ink: #efe6d6;
+  --product-soft-ink: #cfc4b1;
+  --product-meta: #a99e8b;
+  --product-rule: rgb(239 230 214 / 18%);
+  --product-rule-soft: rgb(239 230 214 / 9%);
+  --product-wood: #e2b15e;
+  --product-wood-deep: #f0b866;
+  --product-straw: #f0b866;
+  --product-cobalt: #e2b15e;
+  --product-vermilion: #e8957d;
+  --product-affirm: #8cc7a4;
+  --product-focus: #f0b866;
+  --product-shadow-card: inset 0 1px 0 rgb(255 255 255 / 4%), 0 14px 34px rgb(0 0 0 / 34%);
+  --product-shadow-lifted: inset 0 1px 0 rgb(255 255 255 / 6%), 0 24px 56px rgb(0 0 0 / 46%);
+
+  --hz-sky: #1d1a2a;
+  --hz-tile: #25202a;
+  --hz-ridge-0: #4c4468;
+  --hz-ridge-1: #3f3859;
+  --hz-ridge-2: #322c48;
+  --hz-ridge-3: #272237;
+  --hz-ridge-4: #1c1828;
+  --hz-sun: #ece4cf;
+  --hz-cta: #f0b866;
+  --hz-cta-ink: #1d140b;
+  --hz-alert-wash: rgb(232 149 125 / 13%);
+  --hz-warn-wash: rgb(240 184 102 / 14%);
+  --hz-affirm-wash: rgb(140 199 164 / 13%);
+  --hz-bar: #8f7a4c;
+  --hz-bar-now: #f0b866;
+  --hz-seg-members: #3a9f6f;
+  --hz-seg-trialing: #b88c26;
+  --hz-rail: #100e16;
+  --hz-rail-deep: #0b0a10;
+  --hz-rail-ink: #f2e8d5;
+  --hz-rail-meta: rgb(242 232 213 / 62%);
+  --hz-rail-line: rgb(242 232 213 / 9%);
+  --hz-rail-active: rgb(240 184 102 / 12%);
+  --hz-rail-mark: #f0b866;
+  --hz-grain-blend: screen;
+  --hz-grain-opacity: 0.035;
+}
+
+.shellRoot[data-surface="horizon"] .slugBand {
+  display: none;
+}
+
+.shellRoot[data-surface="horizon"] :is(.spine, .commandBar, .mobileSpine) {
+  --bg: var(--hz-rail);
+  --surface: var(--hz-rail);
+  --surface-raised: var(--hz-rail-active);
+  --surface-hover: var(--hz-rail-active);
+  --border: var(--hz-rail-line);
+  --text-primary: var(--hz-rail-ink);
+  --text-secondary: var(--hz-rail-meta);
+  --muted: var(--hz-rail-meta);
+  --accent: var(--hz-rail-mark);
+  --accent-hover: var(--hz-rail-mark);
+  --product-focus: var(--hz-rail-mark);
+  border-color: var(--hz-rail-line);
+  background: linear-gradient(180deg, var(--hz-rail) 0%, var(--hz-rail-deep) 100%);
+  color: var(--hz-rail-ink);
+}
+
+.shellRoot[data-surface="horizon"] .mobileSpine {
+  backdrop-filter: none;
+}
+
+/* The account menu opens from the rail but reads as paper, like the cards. */
+.shellRoot[data-surface="horizon"] [data-account-menu-popover] {
+  --bg: var(--product-sunk);
+  --surface: var(--product-paper);
+  --surface-raised: var(--product-card-stock);
+  --surface-hover: var(--product-paper);
+  --border: var(--product-rule-soft);
+  --text-primary: var(--product-ink);
+  --text-secondary: var(--product-soft-ink);
+  --muted: var(--product-meta);
+  --accent: var(--product-wood);
+  --accent-hover: var(--product-wood-deep);
+  --product-focus: var(--product-wood);
+  color: var(--product-ink);
+}
+
+.shellRoot[data-surface="horizon"] .navLink,
+.shellRoot[data-surface="horizon"] .spineToggle {
+  color: var(--hz-rail-meta);
+}
+
+.shellRoot[data-surface="horizon"] .navLink:hover,
+.shellRoot[data-surface="horizon"] .spineToggle:hover {
+  background: var(--hz-rail-active);
+  color: var(--hz-rail-ink);
+}
+
+.shellRoot[data-surface="horizon"] .navLink[aria-current="page"] {
+  background: var(--hz-rail-active);
+  color: var(--hz-rail-ink);
+  box-shadow: inset 2px 0 0 var(--hz-rail-mark);
+}
+
+.shellRoot[data-surface="horizon"] .main {
+  background: var(--product-ground);
+}
+
 .skipLink {
   position: fixed;
   top: 0.75rem;
@@ -553,7 +722,9 @@
 
 @media print {
   .shellRoot,
-  :global([data-theme="dark"]) .shellRoot {
+  .shellRoot[data-surface="horizon"],
+  :global([data-theme="dark"]) .shellRoot,
+  :global([data-theme="dark"]) .shellRoot[data-surface="horizon"] {
     --product-ground: #fff;
     --product-sunk: #fff;
     --product-paper: #fff;

@@ -1,6 +1,7 @@
 import { NAV_ITEMS } from "./constants.ts";
 import type { DashboardPageComposition } from "./dashboard-page-composition";
 import type { DashboardWidgetId, DashboardWidgetRole } from "./dashboard-widget-catalog";
+import { describeFollowUpDue } from "./dashboard-horizon.ts";
 import { readDashboardWidgetSummaryEnrichments } from "./dashboard-widget-summary-adapter.ts";
 import { hasStaffPermission } from "./staff-permissions.ts";
 import type { ClassSession, EligibilityEntry, Lead, Student } from "@/types";
@@ -10,10 +11,24 @@ export type DashboardWidgetState =
 
 export type DashboardWidgetProvenance = "live" | "preview" | "partial" | "unavailable" | "error";
 
+export type DashboardWidgetTone = "alert" | "warn" | "calm";
+
+export type DashboardWidgetRowKind = "billing" | "lead" | "inactivity";
+
 export type DashboardWidgetRow = {
   label: string;
   meta?: string;
   href?: string;
+  kind?: DashboardWidgetRowKind;
+  tone?: DashboardWidgetTone;
+  note?: string;
+  swatches?: { from: string | null; to: string | null };
+};
+
+export type DashboardWidgetSegment = {
+  id: "members" | "trialing";
+  label: string;
+  value: number;
 };
 
 export type DashboardWidgetActionId =
@@ -43,6 +58,8 @@ export type DashboardWidgetViewModel = {
   actions: DashboardWidgetAction[];
   overflowCount?: number;
   visual?: DashboardWidgetVisual;
+  segments?: DashboardWidgetSegment[];
+  aside?: string;
 };
 
 export type DashboardWidgetViewModelInput = {
@@ -116,6 +133,16 @@ function sessionTime(value: string): string {
   const suffix = hour >= 12 ? "pm" : "am";
   const displayHour = hour % 12 || 12;
   return `${displayHour}:${minute}${suffix}`;
+}
+
+function leadDueRow(label: string, followUpDate: string, today: string): DashboardWidgetRow {
+  const note = describeFollowUpDue(followUpDate, today);
+  return {
+    label,
+    meta: followUpDate,
+    href: "/leads",
+    ...(note ? { note, tone: note === "Due today" ? ("warn" as const) : ("alert" as const) } : {}),
+  };
 }
 
 function hasNamedEmergencyContact(student: Student): boolean {
@@ -193,16 +220,20 @@ export function buildDashboardWidgetViewModels(
   const dueLeadRows: DashboardWidgetRow[] = !input.canSeeLeads
     ? []
     : input.isPreviewMode
-      ? previewDueLeads.map((lead) => ({
-          label: `${lead.first_name} ${lead.last_name}`.trim(),
-          meta: lead.follow_up_date ?? "Due",
-          href: "/leads",
-        }))
-      : summaryEnrichments.leadFollowUps.rows.map((lead) => ({
-          label: `${lead.firstName} ${lead.lastName}`.trim(),
-          meta: lead.followUpDate,
-          href: "/leads",
-        }));
+      ? previewDueLeads.map((lead) =>
+          leadDueRow(
+            `${lead.first_name} ${lead.last_name}`.trim(),
+            lead.follow_up_date ?? "Due",
+            input.today,
+          ),
+        )
+      : summaryEnrichments.leadFollowUps.rows.map((lead) =>
+          leadDueRow(`${lead.firstName} ${lead.lastName}`.trim(), lead.followUpDate, input.today),
+        );
+  const oldestDueLead = dueLeadRows
+    .map((row) => row.meta ?? "")
+    .filter((date) => /^\d{4}-\d{2}-\d{2}/.test(date))
+    .sort()[0];
   const previewTodaySessions = input.sessions
     .filter((session) => session.date === input.today && session.status !== "canceled")
     .sort((left, right) => left.start_time.localeCompare(right.start_time))
@@ -289,6 +320,8 @@ export function buildDashboardWidgetViewModels(
       label: `${displayedBillingSummary.paymentAttentionCount} billing exception${displayedBillingSummary.paymentAttentionCount === 1 ? "" : "s"}`,
       meta: "Review payment status",
       href: "/billing?tab=invoices",
+      kind: "billing",
+      tone: "alert",
     });
   }
   if (
@@ -297,10 +330,21 @@ export function buildDashboardWidgetViewModels(
     !leadAttentionFailed &&
     displayedLeadStats.dueTodayLeads > 0
   ) {
+    const oldestDueNote = oldestDueLead ? describeFollowUpDue(oldestDueLead, input.today) : null;
     attentionRows.push({
       label: `${displayedLeadStats.dueTodayLeads} lead follow-up${displayedLeadStats.dueTodayLeads === 1 ? "" : "s"} due`,
       meta: "Open follow-ups",
       href: "/leads",
+      kind: "lead",
+      tone: oldestDueNote && oldestDueNote !== "Due today" ? "alert" : "warn",
+      ...(oldestDueNote
+        ? {
+            note:
+              displayedLeadStats.dueTodayLeads > 1 && oldestDueNote !== "Due today"
+                ? `Oldest ${oldestDueNote}`
+                : oldestDueNote,
+          }
+        : {}),
     });
   }
   if (
@@ -312,6 +356,8 @@ export function buildDashboardWidgetViewModels(
       label: `${displayedInactivityStats.watch14} students inactive 14+ days`,
       meta: "Attendance watch",
       href: "/students?inactiveDays=14",
+      kind: "inactivity",
+      tone: "warn",
     });
   }
 
@@ -508,6 +554,29 @@ export function buildDashboardWidgetViewModels(
               label: "active students",
             }
           : undefined,
+      ...(studentPulseState === "ready"
+        ? {
+            // Active counts include trialing students; on-hold windows overlap both.
+            segments: [
+              {
+                id: "members" as const,
+                label: "Members",
+                value: Math.max(
+                  0,
+                  displayedStudentStats.activeStudents - displayedStudentStats.trialingStudents,
+                ),
+              },
+              {
+                id: "trialing" as const,
+                label: "Trialing",
+                value: displayedStudentStats.trialingStudents,
+              },
+            ],
+            ...(displayedStudentStats.onHoldStudents > 0
+              ? { aside: `${displayedStudentStats.onHoldStudents} on hold right now` }
+              : {}),
+          }
+        : {}),
     }),
     model(input, {
       id: "attendance",
@@ -579,6 +648,11 @@ export function buildDashboardWidgetViewModels(
               label: entry.student_name,
               meta: entry.next_rank_name ? `Ready for ${entry.next_rank_name}` : "Eligible",
               href: "/belt-tracker",
+              note: `${entry.classes_since_promo} ${entry.classes_since_promo === 1 ? "class" : "classes"} at rank`,
+              swatches: {
+                from: entry.current_rank_color ?? null,
+                to: entry.next_rank_color ?? null,
+              },
             }))
           : [],
       actions: [],

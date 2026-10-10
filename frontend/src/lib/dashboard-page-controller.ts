@@ -25,6 +25,7 @@ import {
 } from "@/lib/page-dataset-readiness";
 import { buildStudentInactivityRows } from "@/lib/student-insights";
 import { buildDashboardWidgetViewModels } from "@/lib/dashboard-widget-view-models";
+import { greetingName } from "@/lib/dashboard-horizon";
 import {
   type DashboardWidgetId,
   normalizeDashboardWidgetRole,
@@ -86,7 +87,12 @@ type DashboardPageControllerOptions = {
   >;
   studioStore: Pick<
     StudioStoreContextValue,
-    "identityGeneration" | "currentStudioId" | "currentUserId" | "studioName"
+    | "identityGeneration"
+    | "currentStudioId"
+    | "currentUserId"
+    | "legalFirstName"
+    | "studioName"
+    | "userName"
   >;
 };
 
@@ -126,7 +132,14 @@ export function useDashboardPageController({
     scheduleStore;
   const { refreshStudents, students, studentsLoaded, studentsLoadError, studentsMayBePartial } =
     studentsStore;
-  const { identityGeneration, currentStudioId, currentUserId, studioName } = studioStore;
+  const {
+    identityGeneration,
+    currentStudioId,
+    currentUserId,
+    legalFirstName,
+    studioName,
+    userName,
+  } = studioStore;
   const today = config.businessDate;
   const visibilityScope = `${identityGeneration}:${currentUserId}:${currentStudioId}:${currentRole}:${today}`;
   const visibleWidgetsRef = useRef<{ scope: string; ids: DashboardWidgetId[] }>({
@@ -426,6 +439,7 @@ export function useDashboardPageController({
             ? "Lead follow-ups could not be loaded. Retry dashboard data to check again."
             : null),
       isDashboardDataReady: datasetReadiness.status === "ready",
+      greetingName: greetingName(userName, legalFirstName),
       hasDashboardSummary,
       hasPartialStudentSample,
       isDashboardIdentityReady,

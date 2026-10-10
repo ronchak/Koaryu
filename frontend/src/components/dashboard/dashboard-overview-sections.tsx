@@ -49,12 +49,10 @@ export function DashboardLoadingPanel({ layout }: { layout: DashboardLayout }) {
                 <span>{DASHBOARD_WIDGET_BY_ID.get(item.widget_id)?.title}</span>
               </header>
               <div className={styles.widgetBody}>
-                <div className="h-6 w-1/3 rounded-[6px] bg-border" />
+                <div className="h-8 w-1/3 rounded-[8px] bg-border" />
                 <div className="mt-3 h-3 w-3/4 rounded-[6px] bg-border" />
+                <div className="mt-2 h-3 w-1/2 rounded-[6px] bg-border" />
               </div>
-              <footer className={styles.widgetFooting}>
-                <div className="h-3 w-24 rounded-[6px] bg-border" />
-              </footer>
             </article>
           );
         })}

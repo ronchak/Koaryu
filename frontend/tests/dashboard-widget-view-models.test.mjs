@@ -130,7 +130,9 @@ describe("dashboard widget view models", () => {
     const model = buildDashboardWidgetViewModels(input).lead_follow_ups;
     assert.equal(model.state, "ready");
     assert.equal(model.metric, "2500");
-    assert.deepEqual(model.rows, [{ label: "Mina Park", meta: input.today, href: "/leads" }]);
+    assert.deepEqual(model.rows, [
+      { label: "Mina Park", meta: input.today, href: "/leads", note: "Due today", tone: "warn" },
+    ]);
     const forbidden = buildDashboardWidgetViewModels({
       ...input,
       role: "instructor",

@@ -209,6 +209,7 @@ export function AccountMenu({
       {isMounted && position && (
         <div
           ref={panelRef}
+          data-account-menu-popover=""
           data-state={isOpen ? "open" : "closed"}
           data-placement={position.bottom ? "top" : "bottom"}
           className={`${styles.root} fixed z-50 flex gap-2 overflow-visible`}

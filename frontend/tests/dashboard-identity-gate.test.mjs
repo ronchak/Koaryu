@@ -27,7 +27,7 @@ function renderGate(
   const result = { exports: {} };
   const passthrough = ({ children }) => children;
   const imports = {
-    "next/navigation": { useRouter: () => ({}) },
+    "next/navigation": { usePathname: () => "/dashboard", useRouter: () => ({}) },
     "@/lib/supabase/client": { createClient: () => ({}) },
     "@/lib/store-session-cookies": {},
     "@/lib/retained-state": { RetainedStateProvider: passthrough },
