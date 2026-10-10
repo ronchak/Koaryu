@@ -8,8 +8,13 @@ import { Header } from "@/components/header";
 import { OperationsSurface } from "@/components/operations/operations-surface";
 import { ProgramBadge } from "@/components/programs/program-picker";
 import { ReportsDataExportsPanel } from "@/components/reports/reports-data-exports-panel";
+import styles from "@/components/reports/reports.module.css";
+import { HorizonPage } from "@/components/ui/horizon";
 import {
+  BarList,
+  BarRow,
   EmptyState,
+  MetricBand,
   MetricCard,
   Panel,
   PanelHeader,
@@ -33,6 +38,8 @@ import {
   useStudioStore,
 } from "@/lib/store";
 import { BarChart3, Calendar, TrendingUp, Users } from "lucide-react";
+
+const REPORTS_DESCRIPTION = "Where the lead pipeline stands, and how classes filled over the last 30 days.";
 
 export default function ReportsPage() {
   const { businessDate, isPreviewMode, token } = useConfigStore();
@@ -160,82 +167,38 @@ export default function ReportsPage() {
   if (!hasReportData && datasetReadiness.status === "error") {
     return (
       <OperationsSurface page="reports">
-        <Header title="Reports" />
-        <div className="flex-1 p-6 sm:p-8">
-          <div className="max-w-6xl">
-            <DatasetReadinessErrorPanel
-              error={datasetReadiness.error || "Report data could not be loaded."}
-              onRetry={retryReportsDatasets}
-              title="Reports are unavailable"
-            />
-          </div>
-        </div>
+        <Header title="Reports" description={REPORTS_DESCRIPTION} />
+        <HorizonPage>
+          <DatasetReadinessErrorPanel
+            error={datasetReadiness.error || "Report data could not be loaded."}
+            onRetry={retryReportsDatasets}
+            title="Reports are unavailable"
+          />
+        </HorizonPage>
       </OperationsSurface>
     );
   }
 
+  const funnelPeak = Math.max(1, ...leadMetrics.funnelRows.map((row) => row.count));
+  const sourcePeak = Math.max(1, ...leadMetrics.sourceRows.map((row) => row.total));
+  const programLeadPeak = Math.max(1, ...programLeadRows.map((row) => row.total));
+  const programAttendancePeak = Math.max(1, ...programAttendanceRows.map((row) => row.attendance));
+
   return (
     <OperationsSurface page="reports">
-      <Header title="Reports" />
+      <Header title="Reports" description={REPORTS_DESCRIPTION} />
       <article
-        className="flex-1 p-4 sm:p-8"
+        className={styles.document}
         data-reports-reading-document="true"
         aria-busy={isLoadingReport || reportScheduleStatus === "loading"}
       >
-        <div className="mx-auto max-w-6xl space-y-8">
-          {hasReportData && datasetReadiness.status === "error" && (
-            <DatasetReadinessErrorPanel
-              error={datasetReadiness.error || "Report data could not be refreshed."}
-              onRetry={retryReportsDatasets}
-              title="Reports could not refresh"
-            />
-          )}
-
-          <section
-            className="overflow-hidden bg-surface"
-            aria-label="Report scope and method"
-            data-report-method-sheet="true"
-          >
-            <div className="grid sm:grid-cols-3">
-              <div className="border-b border-border px-4 py-4 sm:border-b-0 sm:border-r">
-                <p className="text-xs font-medium text-muted">Lead scope</p>
-                <p className="mt-2 text-sm text-text-primary">Current loaded pipeline snapshot</p>
-              </div>
-              <div className="border-b border-border px-4 py-4 sm:border-b-0 sm:border-r">
-                <p className="text-xs font-medium text-muted">Attendance window</p>
-                <p className="mt-2 text-sm tabular-nums text-text-primary">
-                  {formatReportDate(lookbackStart)} – {formatReportDate(today)}
-                </p>
-              </div>
-              <div className="px-4 py-4">
-                <p className="text-xs font-medium text-muted">As of</p>
-                <p className="mt-2 text-sm tabular-nums text-text-primary">
-                  {formatReportDate(today)}
-                </p>
-              </div>
-            </div>
-            <p className="border-t border-border px-4 py-3 text-xs leading-5 text-text-secondary">
-              Method: lead figures group the pipeline currently loaded for this studio and are not a
-              30-day lead cohort. Attendance and utilization use non-canceled sessions dated inside
-              the inclusive 30-calendar-day window; unique attendees use that same session set.
-            </p>
-          </section>
-
-          {isLoadingReport && (
-            <span role="status" aria-live="polite" className="sr-only">
-              Loading report data...
-            </span>
-          )}
+        <HorizonPage>
           <div
-            className={`space-y-8 ${isLoadingReport ? "koaryu-skeleton-reveal" : ""}`}
+            className={`space-y-5 ${isLoadingReport ? "koaryu-skeleton-reveal" : ""}`}
             data-reports-loading={isLoadingReport ? "true" : undefined}
           >
-            {/* ── Headline comparison figures ── */}
-            <section
-              className="grid gap-2 bg-surface p-2 md:grid-cols-2 xl:grid-cols-[1.2fr_0.8fr_1.2fr_0.8fr]"
-              aria-label="Headline report figures"
-              data-report-figure-band="comparisons"
-            >
+            {/* ── Headline figures: the strip on the header's ridge ── */}
+            <MetricBand label="Headline report figures">
               <MetricCard
                 loading={isLoadingReport}
                 icon={BarChart3}
@@ -272,10 +235,18 @@ export default function ReportsPage() {
                     : "Add class capacities to unlock utilization"
                 }
               />
-            </section>
+            </MetricBand>
+
+            {hasReportData && datasetReadiness.status === "error" && (
+              <DatasetReadinessErrorPanel
+                error={datasetReadiness.error || "Report data could not be refreshed."}
+                onRetry={retryReportsDatasets}
+                title="Reports could not refresh"
+              />
+            )}
 
             {/* ── Lead Funnel + Lead Sources ── */}
-            <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+            <div className="grid gap-5 xl:grid-cols-[1.1fr_0.9fr]">
               <Panel>
                 <PanelHeader
                   title="Lead Funnel"
@@ -289,24 +260,16 @@ export default function ReportsPage() {
                 {isLoadingReport ? (
                   <ReportRowsLoading rows={5} funnel />
                 ) : (
-                  <div className="space-y-4">
+                  <BarList>
                     {leadMetrics.funnelRows.map((row) => (
-                      <div key={row.stage}>
-                        <div className="flex items-center justify-between text-sm mb-2">
-                          <span className="text-text-primary font-medium">{row.label}</span>
-                          <span className="tabular-nums text-text-secondary">{row.count}</span>
-                        </div>
-                        <div className="h-1.5 overflow-hidden rounded-full bg-surface-raised">
-                          <div
-                            className="h-full bg-[var(--operations-cobalt)] transition-[width] duration-150"
-                            style={{
-                              width: `${Math.max(row.share * 100, row.count > 0 ? 10 : 0)}%`,
-                            }}
-                          />
-                        </div>
-                      </div>
+                      <BarRow
+                        key={row.stage}
+                        label={row.label}
+                        share={row.count / funnelPeak}
+                        value={row.count}
+                      />
                     ))}
-                  </div>
+                  </BarList>
                 )}
               </Panel>
 
@@ -319,32 +282,24 @@ export default function ReportsPage() {
                 {isLoadingReport ? (
                   <ReportRowsLoading rows={4} />
                 ) : (
-                  <div className="divide-y divide-border border-t border-border">
+                  <BarList>
                     {leadMetrics.sourceRows.map((row) => (
-                      <div key={row.source} className="flex items-start justify-between gap-4 py-4">
-                        <div className="min-w-0">
-                          <p className="text-sm font-medium text-text-primary">{row.label}</p>
-                          <p className="text-xs text-text-secondary mt-1">
-                            {row.active} active · {row.enrolled} enrolled
-                          </p>
-                        </div>
-                        <div className="text-right shrink-0">
-                          <p className="text-base font-semibold tabular-nums text-text-primary">
-                            {row.total}
-                          </p>
-                          <p className="text-[11px] text-muted mt-0.5">
-                            {formatReportPercent(row.conversionRate)} conv.
-                          </p>
-                        </div>
-                      </div>
+                      <BarRow
+                        key={row.source}
+                        label={row.label}
+                        meta={`${row.active} active · ${row.enrolled} enrolled`}
+                        share={row.total / sourcePeak}
+                        value={row.total}
+                        valueNote={`${formatReportPercent(row.conversionRate)} conv.`}
+                      />
                     ))}
-                  </div>
+                  </BarList>
                 )}
               </Panel>
             </div>
 
             {/* ── Lead Programs + Program Attendance ── */}
-            <div className="grid gap-6 xl:grid-cols-2">
+            <div className="grid gap-5 xl:grid-cols-2">
               <Panel>
                 <PanelHeader
                   title="Lead Programs"
@@ -356,27 +311,22 @@ export default function ReportsPage() {
                 ) : programLeadRows.length === 0 ? (
                   <EmptyState message="Program selection will appear here as leads are captured." />
                 ) : (
-                  <div className="divide-y divide-border border-t border-border">
+                  <BarList>
                     {programLeadRows.map((row) => (
-                      <div
+                      <BarRow
                         key={row.programId || row.label}
-                        className="flex items-start justify-between gap-4 py-4"
-                      >
-                        <div className="min-w-0">
+                        label={
                           <ProgramBadge
                             program={row.programId ? programById.get(row.programId) : null}
                             fallback={row.label}
                           />
-                          <p className="text-xs text-text-secondary mt-2">
-                            {row.active} active · {row.enrolled} enrolled
-                          </p>
-                        </div>
-                        <p className="shrink-0 text-base font-semibold tabular-nums text-text-primary">
-                          {row.total}
-                        </p>
-                      </div>
+                        }
+                        meta={`${row.active} active · ${row.enrolled} enrolled`}
+                        share={row.total / programLeadPeak}
+                        value={row.total}
+                      />
                     ))}
-                  </div>
+                  </BarList>
                 )}
               </Panel>
 
@@ -391,30 +341,27 @@ export default function ReportsPage() {
                 ) : programAttendanceRows.length === 0 ? (
                   <EmptyState message="Program attendance will appear after classes are scheduled." />
                 ) : (
-                  <div className="divide-y divide-border border-t border-border">
+                  <BarList>
                     {programAttendanceRows.map((row) => (
-                      <div
+                      <BarRow
                         key={row.programId || row.label}
-                        className="flex items-start justify-between gap-4 py-4"
-                      >
-                        <div className="min-w-0">
+                        label={
                           <ProgramBadge
                             program={row.programId ? programById.get(row.programId) : null}
                             fallback={row.label}
                           />
-                          <p className="text-xs text-text-secondary mt-2">
-                            {row.sessions} sessions ·{" "}
-                            {row.capacity > 0
-                              ? `${formatReportPercent(row.attendanceWithCapacity / row.capacity)} utilization`
-                              : "No capacity tracked"}
-                          </p>
-                        </div>
-                        <p className="shrink-0 text-base font-semibold tabular-nums text-text-primary">
-                          {row.attendance}
-                        </p>
-                      </div>
+                        }
+                        meta={`${row.sessions} sessions · ${
+                          row.capacity > 0
+                            ? `${formatReportPercent(row.attendanceWithCapacity / row.capacity)} utilization`
+                            : "No capacity tracked"
+                        }`}
+                        share={row.attendance / programAttendancePeak}
+                        value={row.attendance}
+                        valueNote="check-ins"
+                      />
                     ))}
-                  </div>
+                  </BarList>
                 )}
               </Panel>
             </div>
@@ -426,7 +373,7 @@ export default function ReportsPage() {
                 subtitle={`Non-canceled sessions dated ${formatReportDate(lookbackStart)} through ${formatReportDate(today)}.`}
               >
                 {!isLoadingReport && (
-                  <div className="flex flex-wrap gap-2">
+                  <>
                     <StatBadge>{sessionRows.length} sessions</StatBadge>
                     <StatBadge>{uniqueAttendees} unique attendees</StatBadge>
                     <StatBadge>
@@ -434,7 +381,7 @@ export default function ReportsPage() {
                         ? `${attendanceMetrics.totalCapacity} total seats tracked`
                         : "No seat caps yet"}
                     </StatBadge>
-                  </div>
+                  </>
                 )}
               </PanelHeader>
 
@@ -442,92 +389,84 @@ export default function ReportsPage() {
                 <EmptyState message="No classes have been scheduled in the last 30 days yet, so attendance and utilization metrics are still warming up." />
               ) : (
                 <>
-                  <table className="hidden min-w-full text-sm sm:table print:table">
+                  <table className={`hidden sm:table print:table ${styles.table}`}>
                     <thead>
-                      <tr className="border-y border-border text-left text-xs text-muted">
-                        <th className="py-3 pl-5 pr-4 font-medium">Class</th>
-                        <th className="py-3 pr-4 font-medium">Date</th>
-                        <th className="py-3 pr-4 font-medium">Attendance</th>
-                        <th className="py-3 pr-4 font-medium">Capacity</th>
-                        <th className="py-3 pr-5 font-medium">Utilization</th>
+                      <tr>
+                        <th scope="col">Class</th>
+                        <th scope="col">Date</th>
+                        <th scope="col" className={styles.num}>
+                          Attendance
+                        </th>
+                        <th scope="col" className={styles.num}>
+                          Capacity
+                        </th>
+                        <th scope="col" className={styles.num}>
+                          Utilization
+                        </th>
                       </tr>
                     </thead>
                     <tbody>
                       {isLoadingReport
                         ? Array.from({ length: 5 }, (_, row) => (
-                            <tr
-                              key={row}
-                              aria-hidden="true"
-                              className="border-b border-border/50 last:border-0"
-                            >
+                            <tr key={row} aria-hidden="true">
                               {Array.from({ length: 5 }, (_, column) => (
-                                <td
-                                  key={column}
-                                  className={`py-3.5 pr-4 ${column === 0 ? "pl-5" : ""}`}
-                                >
-                                  <div className="h-5 w-3/4 rounded bg-surface-raised" />
+                                <td key={column}>
+                                  <div className="h-5 w-3/4 rounded-md bg-surface-raised" />
                                 </td>
                               ))}
                             </tr>
                           ))
                         : visibleSessionRows.map((session) => (
-                            <tr
-                              key={session.id}
-                              className="border-b border-border/50 last:border-0 hover:bg-surface-raised/30 transition-colors"
-                            >
-                              <td className="py-3.5 pl-5 pr-4 text-text-primary font-medium">
-                                {session.name}
-                              </td>
-                              <td className="py-3.5 pr-4 text-text-secondary">
+                            <tr key={session.id}>
+                              <td className="font-semibold text-text-primary">{session.name}</td>
+                              <td className="tabular-nums text-text-secondary">
                                 {formatReportDate(session.date)}
                               </td>
-                              <td className="py-3.5 pr-4 tabular-nums text-text-primary">
+                              <td className={`${styles.num} font-semibold text-text-primary`}>
                                 {session.attendees}
                               </td>
-                              <td className="py-3.5 pr-4 tabular-nums text-text-secondary">
+                              <td className={`${styles.num} text-text-secondary`}>
                                 {session.capacity ?? "—"}
                               </td>
-                              <td className="py-3.5 pr-5 tabular-nums text-text-secondary">
+                              <td className={`${styles.num} text-text-secondary`}>
                                 {formatReportPercent(session.utilization)}
                               </td>
                             </tr>
                           ))}
                     </tbody>
                   </table>
-                  <div className="divide-y divide-border border-y border-border sm:hidden print:hidden">
+                  <div className="divide-y divide-border sm:hidden print:hidden">
                     {isLoadingReport ? (
                       <ReportSessionCardsLoading rows={5} />
                     ) : (
                       visibleSessionRows.map((session) => (
                         <dl
                           key={session.id}
-                          className="grid grid-cols-2 gap-x-3 gap-y-2 py-4 text-sm"
+                          className="grid grid-cols-3 gap-x-3 gap-y-2 py-3.5 text-sm"
                         >
-                          <div className="col-span-2">
-                            <dt className="text-xs text-muted">Class</dt>
-                            <dd className="mt-1 font-medium text-text-primary">{session.name}</dd>
-                          </div>
-                          <div>
-                            <dt className="text-xs text-muted">Date</dt>
-                            <dd className="mt-1 text-text-secondary">
+                          <div className="col-span-3 flex items-baseline justify-between gap-3">
+                            <dt className="sr-only">Class</dt>
+                            <dd className="font-semibold text-text-primary">{session.name}</dd>
+                            <dt className="sr-only">Date</dt>
+                            <dd className="shrink-0 tabular-nums text-text-secondary">
                               {formatReportDate(session.date)}
                             </dd>
                           </div>
                           <div>
                             <dt className="text-xs text-muted">Attendance</dt>
-                            <dd className="mt-1 tabular-nums text-text-primary">
+                            <dd className="mt-0.5 font-semibold tabular-nums text-text-primary">
                               {session.attendees}
                             </dd>
                           </div>
                           <div>
                             <dt className="text-xs text-muted">Capacity</dt>
-                            <dd className="mt-1 tabular-nums text-text-secondary">
+                            <dd className="mt-0.5 tabular-nums text-text-secondary">
                               {session.capacity ?? "—"}
                             </dd>
                           </div>
                           <div>
                             <dt className="text-xs text-muted">Utilization</dt>
-                            <dd className="mt-1 tabular-nums text-text-secondary">
+                            <dd className="mt-0.5 tabular-nums text-text-secondary">
                               {formatReportPercent(session.utilization)}
                             </dd>
                           </div>
@@ -539,13 +478,46 @@ export default function ReportsPage() {
               )}
             </Panel>
           </div>
+          {isLoadingReport && (
+            <span role="status" aria-live="polite" className="sr-only">
+              Loading report data...
+            </span>
+          )}
+
+          <section
+            className={styles.panel}
+            aria-label="Report scope and method"
+            data-report-method-sheet="true"
+          >
+            <div className={styles.method}>
+              <div>
+                <p className={styles.methodLabel}>Lead scope</p>
+                <p className={styles.methodValue}>Current loaded pipeline snapshot</p>
+              </div>
+              <div>
+                <p className={styles.methodLabel}>Attendance window</p>
+                <p className={styles.methodValue}>
+                  {formatReportDate(lookbackStart)} – {formatReportDate(today)}
+                </p>
+              </div>
+              <div>
+                <p className={styles.methodLabel}>As of</p>
+                <p className={styles.methodValue}>{formatReportDate(today)}</p>
+              </div>
+            </div>
+            <p className={styles.methodNote}>
+              Method: lead figures group the pipeline currently loaded for this studio and are not a
+              30-day lead cohort. Attendance and utilization use non-canceled sessions dated inside
+              the inclusive 30-calendar-day window; unique attendees use that same session set.
+            </p>
+          </section>
 
           <ReportsDataExportsPanel
             isPreviewMode={isPreviewMode}
             token={token}
             currentRole={currentRole}
           />
-        </div>
+        </HorizonPage>
       </article>
     </OperationsSurface>
   );
