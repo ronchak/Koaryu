@@ -81,6 +81,11 @@
     padding-bottom: 52px;
   }
 
+  /* A phone crops the band to its middle; the sun would sit half off the edge. */
+  .header .hills circle {
+    display: none;
+  }
+
   .inner {
     padding-top: 20px;
   }
