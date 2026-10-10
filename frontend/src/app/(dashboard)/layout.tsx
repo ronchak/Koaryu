@@ -11,6 +11,7 @@ import { Sidebar } from "@/components/sidebar";
 import { useTheme } from "@/components/theme-provider";
 import { LegalNameBlockingScreen } from "@/components/account/legal-name-blocking-screen";
 import { StoreProvider, useProgramStore, useStudioStore } from "@/lib/store";
+import { RetainedStateProvider } from "@/lib/retained-state";
 import { shouldBlockForLegalName } from "@/lib/legal-name-model";
 import { useState } from "react";
 import styles from "@/components/dashboard-shell.module.css";
@@ -25,6 +26,8 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
   const { programsLoaded, programsLoadError, refreshPrograms } = useProgramStore();
   const {
     currentRole,
+    currentStudioId,
+    currentUserId,
     legalFirstName,
     legalLastName,
     staffProfilesAvailable,
@@ -143,7 +146,11 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
                 </button>
               </div>
             )}
-            <DashboardRouteTransition>{children}</DashboardRouteTransition>
+            <RetainedStateProvider
+              scope={`${identityGeneration}:${currentUserId ?? ""}:${currentStudioId ?? ""}`}
+            >
+              <DashboardRouteTransition>{children}</DashboardRouteTransition>
+            </RetainedStateProvider>
           </main>
         </>
       )}

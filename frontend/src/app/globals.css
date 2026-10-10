@@ -234,6 +234,22 @@ button {
   }
 }
 
+/* Cold-load placeholders hold their space from the first frame but stay invisible
+   briefly, so a load that finishes quickly never flashes a skeleton. Reduced motion
+   keeps the delay and drops the fade. */
+@keyframes koaryu-skeleton-reveal {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.koaryu-skeleton-reveal {
+  animation: koaryu-skeleton-reveal var(--motion-medium) var(--ease-standard) 220ms both;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .koaryu-route-enter,
   .koaryu-modal-backdrop,

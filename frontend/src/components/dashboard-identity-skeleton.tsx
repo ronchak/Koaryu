@@ -1,5 +1,4 @@
 import type { NavigationPlacement } from "@/components/theme-provider";
-import { DashboardLoadingSkeleton } from "@/components/dashboard-loading-skeleton";
 import { Logo } from "@/components/logo";
 import styles from "./dashboard-shell.module.css";
 
@@ -53,10 +52,11 @@ export function DashboardIdentitySkeleton({
             </button>
           </div>
         ) : (
-          <DashboardLoadingSkeleton
-            title="Loading workspace"
-            description="Confirming your account and studio access."
-          />
+          // The page draws its own placeholder once access is confirmed. A second,
+          // differently shaped skeleton here would only flash before it.
+          <p className="sr-only" role="status" aria-live="polite">
+            Loading workspace. Confirming your account and studio access.
+          </p>
         )}
       </main>
     </>
