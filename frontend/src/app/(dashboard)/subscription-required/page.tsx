@@ -1,19 +1,15 @@
 "use client";
 
 import { publishAccessIdentity } from "@/lib/access-identity";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ArrowUpRight, CheckCircle2, CreditCard, ShieldCheck } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { Header } from "@/components/header";
 import { OperationsSurface } from "@/components/operations/operations-surface";
 import { Button } from "@/components/ui/button";
-import {
-  HorizonPage,
-  HorizonPanel,
-  ToneChip,
-  ToneTag,
-  type HorizonTone,
-} from "@/components/ui/horizon";
+// The kit's stylesheet only: the kit module also carries the stats strip's router
+// link, which this recovery page (outside normal navigation) does not need.
+import kit from "@/components/ui/horizon.module.css";
 import { createClient } from "@/lib/supabase/client";
 import { api } from "@/lib/api";
 import { ACCOUNT_ARCHIVED_ROUTE } from "@/lib/auth-route-model";
@@ -49,6 +45,57 @@ function formatMoney(cents: number, currency = "usd") {
     currency: currency.toUpperCase(),
     maximumFractionDigits: cents % 100 === 0 ? 0 : 2,
   }).format(cents / 100);
+}
+
+type HorizonTone = "alert" | "warn" | "calm" | "neutral";
+
+// Local Horizon pieces drawn with the kit's own classes, so the look stays the kit's.
+function HorizonPage({ children }: { children: ReactNode }) {
+  return (
+    <div className={kit.page} data-width="wide">
+      {children}
+    </div>
+  );
+}
+
+function HorizonPanel({ children }: { children: ReactNode }) {
+  return (
+    <section className={kit.panel}>
+      <div className={kit.panelBody}>{children}</div>
+    </section>
+  );
+}
+
+function ToneTag({
+  children,
+  className = "",
+  tone,
+}: {
+  children: ReactNode;
+  className?: string;
+  tone: HorizonTone;
+}) {
+  return (
+    <span className={`${kit.tag} ${className}`.trim()} data-tone={tone} data-dot="true">
+      {children}
+    </span>
+  );
+}
+
+function ToneChip({
+  children,
+  size = 40,
+  tone,
+}: {
+  children: ReactNode;
+  size?: 32 | 40;
+  tone: HorizonTone;
+}) {
+  return (
+    <span className={kit.chip} data-tone={tone} data-size={size} aria-hidden="true">
+      {children}
+    </span>
+  );
 }
 
 function statusLabel(status?: string | null) {

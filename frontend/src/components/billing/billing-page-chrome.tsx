@@ -279,7 +279,9 @@ export function BillingSetupNavigation({
           <div className={styles.reviewText}>
             <h2 className={styles.reviewTitle}>Billing review</h2>
             <p className={styles.reviewCount}>
-              {ready ? `${completedStepCount} of ${steps.length} ready` : "Review status pending"}
+              <span>
+                {ready ? `${completedStepCount} of ${steps.length} ready` : "Review status pending"}
+              </span>
               <span className={styles.reviewWhy}>
                 {" · "}
                 Review provider state, plans, and families before posting external payments or
