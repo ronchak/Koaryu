@@ -1182,12 +1182,14 @@ for (const width of [390, 1280])
       await expect(page.getByRole("button", { name: "All workflows" })).toBeVisible();
       assert.equal(await page.getByText("Loading workflow...", { exact: true }).count(), 0);
       assert.equal(await page.getByText("Opening workflows...", { exact: true }).count(), 0);
-      const before = await placeholder.locator(".c1_canvas").boundingBox();
+      const region = width < 768 ? ".c1_editor" : ".c1_canvas";
+      if (width < 768) assert.equal(await placeholder.locator(".c1_steps").count(), 1);
+      const before = await placeholder.locator(region).boundingBox();
       await page.evaluate(() => fixture.readyHeld("detail", fixture.current));
       await expect(name(page)).toBeVisible();
-      const after = await page.locator(".c1_canvas").boundingBox();
+      const after = await page.locator(region).boundingBox();
       assert.equal(before.width, after.width);
-      assert.equal(before.height, after.height);
+      if (width >= 768) assert.equal(before.height, after.height);
       assert.equal(await placeholder.count(), 0);
     });
   });

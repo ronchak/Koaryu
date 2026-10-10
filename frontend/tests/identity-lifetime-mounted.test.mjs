@@ -431,6 +431,10 @@ test("Dashboard promotions_due owns lazy eligibility recovery", async () => {
   await page.evaluate(() => fixture.rotate("token-b"));
   await settle(page, 0, { error: true });
   await settle(page, 1);
+  await page.waitForFunction(() => fixture.reads.length === 3);
+  assert.equal(await page.evaluate(() => fixture.reads[2].token), "token-b");
+  assert.equal(await page.evaluate(() => fixture.store.eligibilityPendingLadderId), "A");
+  await settle(page, 2);
   assert.equal(await page.evaluate(() => fixture.store.eligibilityPendingLadderId), null);
   await page.close();
 });

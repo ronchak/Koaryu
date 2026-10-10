@@ -92,6 +92,8 @@ function ScopedEditor({ token, isDemo }: { token: string | null; isDemo: boolean
   const lifetime = useRef<AbortController | null>(null);
   const draftRef = useRef(draft);
   const draftGeneration = useRef(0);
+  const draftEdited = useRef(false);
+  const draftRevision = useRef(settings?.rule.revision ?? null);
   const previewGeneration = useRef<number | null>(null);
   const previewRequest = useRef(0);
   const settingsRequest = useRef(0);
@@ -130,9 +132,19 @@ function ScopedEditor({ token, isDemo }: { token: string | null; isDemo: boolean
         const result = await missedClassApi.settings(latestToken.current, controller.signal);
         if (controller.signal.aborted || request !== settingsRequest.current) return;
         setSettings(result);
-        if (replaceDraft || draftRef.current === null) {
+        const checkedDraft = readbackLock.current;
+        const needsDraftReview =
+          !replaceDraft &&
+          draftEdited.current &&
+          draftRevision.current !== result.rule.revision &&
+          !checkedDraft;
+        if (replaceDraft || !draftEdited.current || draftRef.current === null) {
           draftRef.current = ruleDraft(result.rule);
+          draftEdited.current = false;
+          draftRevision.current = result.rule.revision;
           setDraft(draftRef.current);
+        } else if (checkedDraft) {
+          draftRevision.current = result.rule.revision;
         }
         if (readbackLock.current) {
           setMessage(
@@ -140,8 +152,12 @@ function ScopedEditor({ token, isDemo }: { token: string | null; isDemo: boolean
           );
           setActionError(null);
         }
-        readbackLock.current = false;
-        setNeedsReadback(false);
+        readbackLock.current = needsDraftReview;
+        setNeedsReadback(needsDraftReview);
+        if (needsDraftReview)
+          setActionError(
+            "The saved rule changed while you were editing. Check the saved rule before saving. Your draft is preserved.",
+          );
       } catch (error) {
         if (!controller.signal.aborted && request === settingsRequest.current)
           setSettingsError(
@@ -192,6 +208,7 @@ function ScopedEditor({ token, isDemo }: { token: string | null; isDemo: boolean
 
   function edit(patch: Partial<MissedClassPreviewRequest>) {
     if (!draftRef.current || mutationLock.current || reloading) return;
+    draftEdited.current = true;
     draftRef.current = { ...draftRef.current, ...patch };
     setDraft(draftRef.current);
     invalidatePreview();
@@ -278,14 +295,23 @@ function ScopedEditor({ token, isDemo }: { token: string | null; isDemo: boolean
     setMessage(null);
     try {
       const result = await missedClassApi.save(
-        { ...submitted, enabled, expected_revision: settings.rule.revision },
+        {
+          ...submitted,
+          enabled,
+          expected_revision:
+            action === "pause"
+              ? settings.rule.revision
+              : (draftRevision.current ?? settings.rule.revision),
+        },
         latestToken.current,
         controller.signal,
       );
       if (controller.signal.aborted) return;
       setSettings(result);
+      draftRevision.current = result.rule.revision;
       if (action !== "pause") {
         draftRef.current = ruleDraft(result.rule);
+        draftEdited.current = false;
         setDraft(draftRef.current);
       }
       invalidatePreview();

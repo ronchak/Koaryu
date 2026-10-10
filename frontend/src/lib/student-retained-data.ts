@@ -60,3 +60,12 @@ export function rememberStudentSummaries(store: RetainedStore | null, students: 
 export function readStudentSummary(store: RetainedStore | null, id: string): Student | undefined {
   return store?.get<Map<string, Student>>(SUMMARIES_KEY)?.get(id);
 }
+
+export function forgetStudentSummary(store: RetainedStore | null, id: string) {
+  if (!store) return;
+  const next = new Map(store.get<Map<string, Student>>(SUMMARIES_KEY) ?? []);
+  next.delete(id);
+  store.set(SUMMARIES_KEY, next);
+  if (readStudentRosterSnapshot(store)?.students.some((student) => student.id === id))
+    forgetStudentRosterSnapshot(store);
+}

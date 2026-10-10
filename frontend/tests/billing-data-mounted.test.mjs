@@ -2589,7 +2589,7 @@ test("Billing renders one cold placeholder then keeps every view visible through
       retained: true,
       heldRead: "/billing/landing",
       search: "",
-      extraReads(path) {
+      extraReads: (path) => {
         if (path === "/billing/plans") return [];
         if (["/billing/enrollments/page", "/billing/invoices/page"].includes(path)) {
           return { items: [], next_cursor: null, complete: true };

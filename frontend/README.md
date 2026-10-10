@@ -279,7 +279,6 @@ frontends retain strict failure behavior. A same-identity token renewal keeps an
 in-flight Schedule range caller attached to the existing reconciliation owner;
 it cannot hide the newly reconciled range or replay attendance mutations.
 
-
 ## Workflow resource ownership
 
 Belt Tracker owns each rank-plan draft by ladder ID, including both ranks and the
@@ -429,3 +428,21 @@ Workflow tools simulate the current saved workflow's graph with a synthetic samp
 Local presentation proof: `node --experimental-strip-types --test tests/workflow-tools-mounted.test.mjs tests/workflow-context-picker-mounted.test.mjs`. Manual synthetic fixture: `PORT=4338 node --experimental-strip-types tests/helpers/workflow-tools-fixture.mjs --serve`; it binds to `127.0.0.1` and closes with Ctrl-C. Add `--preview` to inspect the live-only explanations without activity or record I/O.
 
 These synthetic proofs do not establish operational test email. Actual route mounting, coordinated capability checks, and real SQL/HTTP verification remain final feature acceptance gates.
+
+## Dashboard loading
+
+Dashboard pages own their cold-load placeholders. Keep their headers and layout visible, and
+reserve the same columns and rails as the loaded view. The `koaryu-skeleton-reveal` class
+holds placeholder space immediately and delays its appearance by 220 milliseconds.
+
+`RetainedStateProvider` keeps bounded page data in memory for the current user, studio and
+identity generation. `useRetainedState` restores successful data on revisits while existing
+reads revalidate it. Include resource, filter and date inputs in retained keys; keep errors,
+requests and unsaved form edits local. Identity changes discard retained values.
+Retained data never grants access or proves a mutation is safe. Billing rechecks capabilities
+on remount; student detail edits wait for a fresh record read. A definitive unavailable student
+read clears its retained record. Missed-class settings refresh an untouched seeded draft and
+require explicit saved-rule readback when a changed revision overlaps local edits.
+
+See [dashboard loading verification](../docs/verification/dashboard-loading-2026-10-09.md)
+for regression coverage and local browser evidence.

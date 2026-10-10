@@ -226,9 +226,9 @@ describe("roster presentation behavior", () => {
       };
       window.fixture.renderEligibility(window.fixture.eligibilityProps);
     }, eligibilityGroup);
-    await page.getByText("Loading eligibility for Kids...").waitFor();
-    assert.equal(await page.getByText("Ada Student", { exact: true }).count(), 0);
-    assert.equal(await page.getByRole("button", { name: /Promote|Demote/ }).count(), 0);
+    await page.getByText("Ada Student", { exact: true }).waitFor();
+    assert.equal(await page.getByText("Loading eligibility for Kids...").count(), 0);
+    assert.equal(await page.getByRole("button", { name: /Promote|Demote/ }).count(), 2);
 
     await page.evaluate(() =>
       window.fixture.renderEligibility({

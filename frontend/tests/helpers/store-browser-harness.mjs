@@ -246,7 +246,7 @@ window.fixture.root=require(${dom}).createRoot(document.getElementById('root'));
     const session = add("@/components/schedule/session-detail-modal");
     const sidebar = add("@/components/students/student-detail-sidebar");
     const leadPipeline = add("@/components/leads/lead-pipeline-board");
-    const recordsLoading = add("@/components/records/records-loading");
+    const recordSkeleton = add("@/components/students/student-detail-skeleton");
     const segmentedControl = add("@/components/ui/sliding-segmented-control");
     const studentBadge = add("@/components/students/student-rank-badge");
     const rankVisuals = add("@/components/belt-tracker/rank-visuals");
@@ -256,7 +256,7 @@ const Mapping = require(${mapping}).StudentImportMappingStep;
 const Session = require(${session}).ScheduleSessionDetailModal;
 const Sidebar = require(${sidebar}).StudentDetailSidebar;
 const LeadLedgerLoadError = require(${leadPipeline}).LeadLedgerLoadError;
-const RecordsLoading = require(${recordsLoading}).RecordsLoading;
+const StudentDetailSkeleton = require(${recordSkeleton}).StudentDetailSkeleton;
 const SlidingSegmentedControl = require(${segmentedControl}).SlidingSegmentedControl;
 const ProgressBar = require(${rankVisuals}).ProgressBar;
 
@@ -304,8 +304,8 @@ window.fixture.renderLeadLedgerLoadError = (props) => {
   root.render(React.createElement(LeadLedgerLoadError, props));
 };
 
-window.fixture.renderRecordsLoading = (props) => {
-  root.render(React.createElement(RecordsLoading, props));
+window.fixture.renderStudentDetailSkeleton = (props) => {
+  root.render(React.createElement(StudentDetailSkeleton, props));
 };
 })();`;
   }
@@ -357,7 +357,7 @@ selected?React.createElement(require(${leadInspector}).LeadDetailInspector,{lead
   const detailObserver =
     detail === null
       ? ""
-      : `function DetailObserver(){const store=useStore();window.fixture.detail=require(${detail}).useStudentDetailPageController({config:store,studioStore:store,beltStore:store,programsStore:store,studentsStore:store}).contentProps;return null;}function DetailMount(){const [mounted,setMounted]=React.useState(false);window.fixture.mountDetail=()=>setMounted(true);window.fixture.unmountDetail=()=>setMounted(false);return mounted?React.createElement(DetailObserver):null;}`;
+      : `function DetailObserver(){const store=useStore();window.fixture.ApiError=require(${add("@/lib/api")}).ApiError;window.fixture.detail=require(${detail}).useStudentDetailPageController({config:store,studioStore:store,beltStore:store,programsStore:store,studentsStore:store}).contentProps;return null;}function DetailMount(){const [mounted,setMounted]=React.useState(false);window.fixture.mountDetail=()=>setMounted(true);window.fixture.unmountDetail=()=>setMounted(false);return mounted?React.createElement(DetailObserver):null;}`;
   const provider =
     preview || layout ? `require(${add("@/app/(dashboard)/layout")}).default` : "StoreProvider";
   // Older lifecycle cases supply one combined bootstrap fixture. Split only

@@ -57,8 +57,6 @@
 .workspace {
   min-width: 0;
   padding: 0.75rem clamp(1rem, 2.4vw, 2rem) 2rem;
-  animation: leads-ledger-settle var(--product-motion-settle-duration) var(--product-motion-ease)
-    both;
 }
 
 .leadWorkbench {
@@ -369,8 +367,6 @@
   border-radius: 14px;
   background: var(--product-paper);
   box-shadow: var(--product-shadow-card);
-  animation: leads-ledger-settle var(--product-motion-settle-duration) var(--product-motion-ease)
-    both;
 }
 
 .stateFrame {
@@ -406,15 +402,6 @@
   background: var(--product-card-stock);
   animation: leads-state-change var(--product-motion-change-duration) var(--product-motion-ease)
     both;
-}
-
-@keyframes leads-ledger-settle {
-  from {
-    opacity: 0.92;
-  }
-  to {
-    opacity: 1;
-  }
 }
 
 @keyframes leads-dialog-open {

@@ -33,7 +33,7 @@ import { WorkflowSimulationPanel } from "./workflow-simulation-panel";
 import { WorkflowRunHistory } from "./workflow-run-history";
 import { WorkflowTestEmailPanel } from "./workflow-test-email-panel";
 import type { WorkflowSimulationSelection } from "./workflow-simulation-context-picker";
-import { WorkflowGraphEditor } from "./workflow-graph-editor";
+import { WorkflowGraphEditor, useWorkflowDefaultView } from "./workflow-graph-editor";
 import { WorkflowNodeInspector } from "./workflow-node-inspector";
 import styles from "./workflow-workspace.module.css";
 import graphStyles from "./workflow-graph-editor.module.css";
@@ -133,6 +133,7 @@ function BrowserOwner({
 }
 
 function WorkflowEditorPlaceholder() {
+  const view = useWorkflowDefaultView();
   return (
     <div
       className={`${styles.editorGrid} koaryu-skeleton-reveal`}
@@ -145,7 +146,18 @@ function WorkflowEditorPlaceholder() {
           <h2>Workflow steps</h2>
         </div>
         <div className="mb-4 h-11 rounded bg-surface-raised" />
-        <div className={`${graphStyles.canvas} bg-surface-raised`} />
+        {view === "graph" ? (
+          <div className={`${graphStyles.canvas} bg-surface-raised`} />
+        ) : (
+          <ol className={graphStyles.steps}>
+            {[0, 1, 2].map((row) => (
+              <li key={row} className={graphStyles.step}>
+                <div className="h-4 w-24 rounded bg-surface-hover" />
+                <div className="mt-2 h-3 w-3/4 rounded bg-surface-hover" />
+              </li>
+            ))}
+          </ol>
+        )}
       </div>
       <div className={inspectorStyles.inspector} aria-hidden="true">
         <div className={inspectorStyles.header}>

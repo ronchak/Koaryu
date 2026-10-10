@@ -442,6 +442,13 @@ test("enabled edits require a new preview, but pausing uses the saved message an
   );
   await page.getByText("Automation paused.", { exact: false }).waitFor();
   assert.equal(await page.getByLabel("Subject", { exact: true }).inputValue(), "");
+  await page.getByLabel("Subject", { exact: true }).fill("Valid preserved draft");
+  await page.getByRole("button", { name: "Save paused rule" }).click();
+  assert.equal(await page.evaluate(() => window.f.saves[1].body.expected_revision), 8);
+  assert.equal(
+    await page.evaluate(() => window.f.saves[1].body.subject_template),
+    "Valid preserved draft",
+  );
 });
 
 for (const phase of ["load", "preview", "save"]) {
@@ -552,4 +559,57 @@ test("cold rule and activity placeholders wait for data in the loaded layout", a
   });
   await loaded(page);
   assert.equal(await page.getByRole("status", { name: "Loading settings" }).count(), 0);
+});
+
+test("revisit replaces an untouched retained rule with the current saved rule", async (t) => {
+  const page = await mount(t);
+  await loaded(page);
+  await page.evaluate(() => f.show(false));
+  await page.locator("[data-missed-class-editor]").waitFor({ state: "detached" });
+  await page.evaluate(() => {
+    f.settings.rule = { ...f.settings.rule, subject_template: "Changed elsewhere", revision: 8 };
+    f.holdSettings = true;
+    f.show(true);
+  });
+  await page.waitForFunction(() => f.reads.length === 1);
+  assert.equal(
+    await page.getByLabel("Subject", { exact: true }).inputValue(),
+    "Hello {{student_first_name}}",
+  );
+  await page.evaluate(() => f.reads[0].resolve(structuredClone(f.settings)));
+  await page.waitForFunction(
+    () => document.querySelector('input[maxlength="200"]').value === "Changed elsewhere",
+  );
+  await page.getByRole("button", { name: "Save paused rule" }).click();
+  assert.equal(await page.evaluate(() => f.saves[0].body.expected_revision), 8);
+  assert.equal(await page.evaluate(() => f.saves[0].body.subject_template), "Changed elsewhere");
+});
+
+test("edits made while a retained rule refreshes require explicit readback before using a newer revision", async (t) => {
+  const page = await mount(t);
+  await loaded(page);
+  await page.evaluate(() => f.show(false));
+  await page.locator("[data-missed-class-editor]").waitFor({ state: "detached" });
+  await page.evaluate(() => {
+    f.holdSettings = true;
+    f.show(true);
+  });
+  await page.waitForFunction(() => f.reads.length === 1);
+  await page.getByLabel("Subject", { exact: true }).fill("Local draft");
+  await page.evaluate(() => {
+    f.settings.rule = { ...f.settings.rule, subject_template: "Changed elsewhere", revision: 9 };
+    f.reads[0].resolve(structuredClone(f.settings));
+  });
+  await page.getByRole("button", { name: "Check saved rule" }).waitFor();
+  assert.equal(await page.getByLabel("Subject", { exact: true }).inputValue(), "Local draft");
+  assert.equal(await page.getByRole("button", { name: "Save paused rule" }).isDisabled(), true);
+  assert.equal(await page.evaluate(() => f.saves.length), 0);
+  await page.getByRole("button", { name: "Reload saved rule and discard edits" }).click();
+  await page.evaluate(() => f.reads[1].resolve(structuredClone(f.settings)));
+  await page.waitForFunction(
+    () => document.querySelector('input[maxlength="200"]').value === "Changed elsewhere",
+  );
+  await page.getByRole("button", { name: "Save paused rule" }).click();
+  assert.equal(await page.evaluate(() => f.saves[0].body.expected_revision), 9);
+  assert.equal(await page.evaluate(() => f.saves[0].body.subject_template), "Changed elsewhere");
 });

@@ -30,6 +30,7 @@ function renderGate(
     "next/navigation": { useRouter: () => ({}) },
     "@/lib/supabase/client": { createClient: () => ({}) },
     "@/lib/store-session-cookies": {},
+    "@/lib/retained-state": { RetainedStateProvider: passthrough },
     "@/components/dashboard-route-transition": { DashboardRouteTransition: passthrough },
     "@/components/dashboard-shell": { DashboardSlugBand: () => "tenant-scope" },
     "@/components/dashboard-shell-readiness": { DashboardShellReadiness: () => null },
