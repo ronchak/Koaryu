@@ -82,7 +82,7 @@ def build_owner_kpi_summary(
         1
         for student in students
         if (start_date := _student_start_date(student, timezone=timezone))
-        and start_date >= today - timedelta(days=29)
+        and window_start <= start_date <= today
         and not student.get("deleted_at")
     )
     total_leads = len(leads)
