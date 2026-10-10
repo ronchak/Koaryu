@@ -163,10 +163,19 @@ describe("roster presentation behavior", () => {
     await page.evaluate(() => window.fixture.renderBadges());
     const badges = page.locator("#root > div > span");
     assert.equal(await badges.count(), 2);
-    for (const badge of await badges.all()) {
-      assert.equal(await badge.evaluate((node) => getComputedStyle(node).color), "rgb(0, 0, 0)");
-      assert.equal(await badge.locator('span[style*="rgb(34, 197, 94)"]').count(), 1);
-    }
+    const [studentBadge, rankBadge] = await badges.all();
+    assert.equal(
+      await studentBadge.evaluate((node) => getComputedStyle(node).color),
+      "rgb(0, 0, 0)",
+    );
+    assert.equal(await studentBadge.locator('span[style*="rgb(34, 197, 94)"]').count(), 1);
+    // The Belt Tracker names the rank beside a drawn belt; the tip is a band on that belt.
+    const tippedBelt = rankBadge.locator('[data-tip="true"]');
+    assert.equal(await tippedBelt.count(), 1);
+    assert.equal(
+      await tippedBelt.evaluate((node) => node.style.getPropertyValue("--belt-tip")),
+      "#22C55E",
+    );
   });
 
   it("distinguishes loading and unavailable student facts from confirmed empty data", async () => {
@@ -225,9 +234,10 @@ describe("roster presentation behavior", () => {
       };
       window.fixture.renderEligibility(window.fixture.eligibilityProps);
     }, eligibilityGroup);
-    await page.getByText("Ada Student", { exact: true }).waitFor();
+    await page.getByText("Ada Student", { exact: true }).first().waitFor();
     assert.equal(await page.getByText("Loading eligibility for Kids...").count(), 0);
-    assert.equal(await page.getByRole("button", { name: /Promote|Demote/ }).count(), 2);
+    // A ready student keeps Promote on their ready tile and Promote/Demote on their ladder row.
+    assert.equal(await page.getByRole("button", { name: /Promote|Demote/ }).count(), 3);
 
     await page.evaluate(() =>
       window.fixture.renderEligibility({
@@ -238,9 +248,10 @@ describe("roster presentation behavior", () => {
       }),
     );
     await page.getByText(/Showing the last loaded eligibility/).waitFor();
-    await page.getByText("Ada Student", { exact: true }).waitFor();
-    assert.equal(await page.getByRole("button", { name: "Promote", exact: true }).count(), 1);
-    assert.equal(await page.getByRole("button", { name: "Demote", exact: true }).count(), 1);
+    await page.getByText("Ada Student", { exact: true }).first().waitFor();
+    // Actions are named for the student and the rank they move to.
+    assert.equal(await page.getByRole("button", { name: /^Promote Ada Student\b/ }).count(), 2);
+    assert.equal(await page.getByRole("button", { name: /^Demote Ada Student\b/ }).count(), 1);
     await page.getByRole("button", { name: "Retry", exact: true }).click();
     assert.equal(await page.evaluate(() => window.fixture.retries), 1);
 
