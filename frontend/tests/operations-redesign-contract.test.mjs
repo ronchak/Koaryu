@@ -755,7 +755,7 @@ describe("operations behavior proof", () => {
     assert.match(chrome, /data-billing-book-index="six-views"/);
     assert.doesNotMatch(chrome, /data-billing-register-context|Open book|View book/);
     assert.match(chrome, /data-billing-setup-register="true"/);
-    assert.match(chrome, /<Header title="Billing">/);
+    assert.match(chrome, /<Header\s+title="Billing"/);
     assert.doesNotMatch(chrome, /String\(index \+ 1\)\.padStart/);
     assert.match(sections, /Reset Stripe connection\?/);
     assert.match(sections, /onConnectReset/);

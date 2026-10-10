@@ -7,6 +7,7 @@ import { createCommonJsPacker } from "./helpers/store-browser-harness.mjs";
 function bundle() {
   const { add, modules } = createCommonJsPacker({
     "lucide-react": `module.exports=new Proxy({},{get:()=>()=>null});`,
+    "@/components/intent-prefetch-link": `exports.IntentPrefetchLink=({children,href})=>require("react").createElement("a",{href},children);`,
   });
   const react = add("react");
   const dom = add("react-dom/client");

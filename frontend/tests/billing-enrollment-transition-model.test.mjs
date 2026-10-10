@@ -62,7 +62,9 @@ function loadBillingEnrollmentsTab() {
     }
     if (specifier === "./billing-page-sections") {
       return {
-        SectionHeader: ({ title }) => React.createElement("h2", null, title),
+        BillingEmpty: ({ title }) => React.createElement("p", null, title),
+        BillingPanel: ({ title, children }) =>
+          React.createElement("section", null, React.createElement("h2", null, title), children),
         StatusPill: ({ status }) => React.createElement("span", null, status),
       };
     }

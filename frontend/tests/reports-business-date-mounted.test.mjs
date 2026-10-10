@@ -15,6 +15,7 @@ function bundle() {
     "@/components/dataset-readiness-panel": `const React=require("react");exports.DatasetReadinessErrorPanel=({error,onRetry})=>React.createElement("div",{"data-testid":"reports-error"},error,React.createElement("button",{onClick:onRetry},"Retry reports"));`,
     "@/components/programs/program-picker": `const React=require("react");exports.ProgramBadge=({fallback})=>React.createElement("span",null,fallback);`,
     "@/components/reports/reports-data-exports-panel": `exports.ReportsDataExportsPanel=()=>null;`,
+    "@/components/intent-prefetch-link": `const React=require("react");exports.IntentPrefetchLink=({children,href})=>React.createElement("a",{href},children);`,
   });
   const react = add("react");
   const dom = add("react-dom/client");

@@ -48,6 +48,7 @@ function loadBillingComponents() {
     BillingPage: packedRequire(pageId).default,
     BillingPageFrame: packedRequire(chromeId).BillingPageFrame,
     BillingPageFallback: packedRequire(chromeId).BillingPageFallback,
+    BillingMoneyStats: packedRequire(chromeId).BillingMoneyStats,
     BillingContentPlaceholder: packedRequire(loadingId).BillingContentPlaceholder,
     BillingOverviewTab: sections.BillingOverviewTab,
     BillingFamiliesTab: packedRequire(familiesId).BillingFamiliesTab,
@@ -59,6 +60,7 @@ function loadBillingComponents() {
 }
 
 const {
+  BillingMoneyStats,
   BillingPage,
   BillingPageFrame,
   BillingPageFallback,
@@ -166,6 +168,25 @@ function renderOverview({
   );
 }
 
+function money(overrides = {}) {
+  return renderToStaticMarkup(
+    React.createElement(BillingMoneyStats, {
+      summary: {
+        activeStudents: 0,
+        activeSubscriptionCount: 0,
+        billingObservedAt: null,
+        currentMonthPaymentCount: 0,
+        failedInvoiceCount: 0,
+        openInvoiceTotal: 0,
+        paidRevenue: 0,
+        paymentCohortAvailable: true,
+        studentsLoaded: true,
+        ...overrides,
+      },
+    }),
+  );
+}
+
 describe("billing overview availability", () => {
   it("renders unavailable, zero, nonzero, and zero-allowance facts truthfully", () => {
     const scenarios = [
@@ -180,13 +201,17 @@ describe("billing overview availability", () => {
             /Message usage[\s\S]*Unavailable[\s\S]*Unavailable<\/p><p[^>]*>Estimated overage/,
           );
           assert.doesNotMatch(html, /style="width:/);
+          const strip = money({ paymentCohortAvailable: false, studentsLoaded: false });
+          assert.doesNotMatch(strip, /\$\d/);
+          assert.match(strip, /Complete cohort could not be loaded/);
+          assert.match(strip, /Student totals unavailable/);
         },
       },
       {
         name: "known zero",
         props: {},
         verify(html) {
-          assert.match(html, /Collected this UTC month<\/p><p[^>]*>\$0<\/p>/);
+          assert.match(money(), /Collected this UTC month<\/span><span[^>]*>\$0<\/span>/);
           assert.match(html, /UTC-month Stripe payment cohort<\/p><p[^>]*>\$0<\/p>/);
           assert.match(html, /UTC-month external payment cohort<\/p><p[^>]*>\$0<\/p>/);
           assert.match(html, /0 of 500 emails used this month/);
@@ -210,7 +235,8 @@ describe("billing overview availability", () => {
           stripePaymentTotal: 1200,
         },
         verify(html) {
-          assert.match(html, /Collected this UTC month<\/p><p[^>]*>\$46<\/p>/);
+          const strip = money({ paidRevenue: 4600 });
+          assert.match(strip, /Collected this UTC month<\/span><span[^>]*>\$46<\/span>/);
           assert.match(html, /UTC-month Stripe payment cohort<\/p><p[^>]*>\$12<\/p>/);
           assert.match(html, /UTC-month external payment cohort<\/p><p[^>]*>\$34<\/p>/);
           assert.match(html, /125 of 500 emails used this month/);
@@ -222,7 +248,7 @@ describe("billing overview availability", () => {
             "Collected this UTC month",
             "Student coverage",
           ];
-          const positions = labels.map((label) => html.indexOf(label));
+          const positions = labels.map((label) => strip.indexOf(label));
           assert.equal(
             positions.every((position) => position >= 0),
             true,

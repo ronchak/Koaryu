@@ -1,62 +1,96 @@
 import type { ElementType, ReactNode } from "react";
+import { CalmState, ToneTag } from "@/components/ui/horizon";
+import styles from "./reports.module.css";
 
+/** One headline figure in the stats strip that opens the report. */
 export function MetricCard({
-  icon: Icon,
   label,
   value,
   sub,
   loading = false,
 }: {
-  icon: ElementType;
+  /** Kept for callers; the strip reads as numbers first, so no icon is drawn. */
+  icon?: ElementType;
   label: string;
   value: string;
   sub: string;
   loading?: boolean;
 }) {
   return (
-    <figure className="bg-surface p-4" data-report-figure="headline">
-      <div className="flex items-center gap-3 mb-3">
-        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-surface-raised text-accent">
-          <Icon className="h-4 w-4" />
-        </div>
-        <span className="text-xs font-medium text-text-secondary">{label}</span>
-      </div>
+    <figure className={styles.figure} data-report-figure="headline">
+      <figcaption className={styles.figureLabel}>{label}</figcaption>
       {loading ? (
         <div aria-hidden="true">
-          <div className="h-[30px] w-20 rounded bg-surface-raised" />
-          <div className="mt-2 h-[19.5px] w-3/4 rounded bg-surface-raised" />
+          <span className={styles.pending} style={{ width: "3.25rem", height: "1.9rem" }} />
+          <span className={styles.pending} style={{ width: "75%", height: "1rem", marginTop: 6 }} />
         </div>
       ) : (
         <>
-          <p className="text-3xl font-semibold tabular-nums text-text-primary leading-none">
-            {value}
-          </p>
-          <p className="text-xs text-muted mt-2 leading-relaxed">{sub}</p>
+          <p className={styles.figureValue}>{value}</p>
+          <p className={styles.figureNote}>{sub}</p>
         </>
       )}
     </figure>
   );
 }
 
-export function ReportRowsLoading({ rows, funnel = false }: { rows: number; funnel?: boolean }) {
+export function MetricBand({ children, label }: { children: ReactNode; label: string }) {
   return (
-    <div
-      aria-hidden="true"
-      className={funnel ? "space-y-4" : "divide-y divide-border border-t border-border"}
-    >
+    <section className={styles.figures} aria-label={label} data-report-figure-band="comparisons">
+      {children}
+    </section>
+  );
+}
+
+/** A labelled single-series bar: the value is written beside it, the bar only shows scale. */
+export function BarRow({
+  label,
+  meta,
+  share,
+  value,
+  valueNote,
+}: {
+  label: ReactNode;
+  meta?: ReactNode;
+  /** 0..1 of the panel's largest value. */
+  share: number;
+  value: ReactNode;
+  valueNote?: ReactNode;
+}) {
+  const width = Math.max(0, Math.min(1, share)) * 100;
+  return (
+    <li className={styles.barRow}>
+      <div className={styles.barText}>
+        <span className={styles.barLabel}>
+          {label}
+          {meta ? <span className={styles.barMeta}>{meta}</span> : null}
+        </span>
+        <span className={styles.barValue}>
+          {value}
+          {valueNote ? <small>{valueNote}</small> : null}
+        </span>
+      </div>
+      <div className={styles.track} aria-hidden="true">
+        <div className={styles.fill} style={{ width: `${width}%` }} />
+      </div>
+    </li>
+  );
+}
+
+export function BarList({ children }: { children: ReactNode }) {
+  return <ul className={styles.bars}>{children}</ul>;
+}
+
+export function ReportRowsLoading({ rows }: { rows: number; funnel?: boolean }) {
+  return (
+    <ul aria-hidden="true" className={styles.bars}>
       {Array.from({ length: rows }, (_, index) => (
-        <div key={index} className={funnel ? "" : "py-4"}>
-          <div className={`h-5 w-3/4 rounded bg-surface-raised ${funnel ? "mb-2" : ""}`} />
-          <div
-            className={
-              funnel
-                ? "h-1.5 rounded-full bg-surface-raised"
-                : "mt-1 h-3 w-1/2 rounded bg-surface-raised"
-            }
-          />
-        </div>
+        <li key={index} className={styles.barRow}>
+          <div className="h-5 w-3/4 rounded-md bg-surface-raised" />
+          <div className={styles.track} />
+        </li>
       ))}
-    </div>
+    </ul>
   );
 }
 
@@ -66,7 +100,7 @@ export function ReportSessionCardsLoading({ rows }: { rows: number }) {
       {["Class", "Date", "Attendance", "Capacity", "Utilization"].map((label, column) => (
         <div key={label} className={column === 0 ? "col-span-2" : undefined}>
           <dt className="text-xs text-muted">{label}</dt>
-          <dd className="mt-1 h-5 w-3/4 rounded bg-surface-raised" />
+          <dd className="mt-1 h-5 w-3/4 rounded-md bg-surface-raised" />
         </div>
       ))}
     </dl>
@@ -75,7 +109,7 @@ export function ReportSessionCardsLoading({ rows }: { rows: number }) {
 
 export function Panel({ children, className = "" }: { children: ReactNode; className?: string }) {
   return (
-    <section className={`bg-surface p-4 ${className}`} data-report-section="reading-block">
+    <section className={`${styles.panel} ${className}`.trim()} data-report-section="reading-block">
       {children}
     </section>
   );
@@ -91,28 +125,20 @@ export function PanelHeader({
   children?: ReactNode;
 }) {
   return (
-    <div className="flex items-start justify-between gap-4 mb-5">
+    <div className={styles.panelHead}>
       <div className="min-w-0">
-        <h2 className="text-sm font-semibold text-text-primary">{title}</h2>
-        {subtitle && <p className="text-xs text-text-secondary mt-1 leading-relaxed">{subtitle}</p>}
+        <h2 className={styles.panelTitle}>{title}</h2>
+        {subtitle && <p className={styles.panelSubtitle}>{subtitle}</p>}
       </div>
-      {children}
+      {children ? <div className={styles.panelTags}>{children}</div> : null}
     </div>
   );
 }
 
 export function EmptyState({ message }: { message: string }) {
-  return (
-    <div className="rounded-[10px] bg-surface-raised/40 px-4 py-4 text-sm text-text-secondary">
-      {message}
-    </div>
-  );
+  return <CalmState tone="neutral" title={message} />;
 }
 
 export function StatBadge({ children }: { children: ReactNode }) {
-  return (
-    <span className="rounded-full bg-surface-raised px-2 py-1 text-xs text-text-secondary">
-      {children}
-    </span>
-  );
+  return <ToneTag dot={false}>{children}</ToneTag>;
 }
