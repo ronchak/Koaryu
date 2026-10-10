@@ -158,7 +158,7 @@ function StudentImportPreviewStat({
 }) {
   return (
     <div className={`bg-surface border p-4 text-center ${className} ${styles.previewStat}`}>
-      <p className={`text-2xl font-bold font-mono ${valueClassName}`}>{value}</p>
+      <p className={`text-2xl font-bold tabular-nums ${valueClassName}`}>{value}</p>
       <p className="text-xs text-muted mt-1">{label}</p>
     </div>
   );
@@ -252,10 +252,12 @@ function StudentImportReviewCard({
         <div className="flex items-center justify-between gap-4 flex-wrap">
           <div className="text-sm text-text-secondary">
             Student status aliases are on. Koaryu will clean up roster statuses like{" "}
-            <span className="font-mono">current</span> to <span className="font-mono">active</span>,{" "}
-            <span className="font-mono">on hold</span> to <span className="font-mono">paused</span>,
-            and <span className="font-mono">trial</span> to{" "}
-            <span className="font-mono">trialing</span>. Billing and payment statuses should stay
+            <span className="tabular-nums">current</span> to{" "}
+            <span className="tabular-nums">active</span>,{" "}
+            <span className="tabular-nums">on hold</span> to{" "}
+            <span className="tabular-nums">paused</span>, and{" "}
+            <span className="tabular-nums">trial</span> to{" "}
+            <span className="tabular-nums">trialing</span>. Billing and payment statuses should stay
             skipped for this import.
           </div>
           {beltTrackerHref ? (

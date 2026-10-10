@@ -9,6 +9,7 @@ import {
 } from "@/components/students/student-import-panels";
 import { StudentImportPreviewStep } from "@/components/students/student-import-preview-step";
 import { Button } from "@/components/ui/button";
+import { CalmState, HorizonPage } from "@/components/ui/horizon";
 import { DismissibleNotice } from "@/components/ui/dismissible-notice";
 import {
   STUDENT_IMPORT_STAGE_STEPS,
@@ -16,7 +17,7 @@ import {
   type StudentImportStage,
 } from "@/lib/student-import-page-model";
 import type { CsvImportOptions, CsvImportResult } from "@/types";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Lock } from "lucide-react";
 import styles from "./student-records.module.css";
 
 type ImportOptionChangeHandler = <K extends keyof CsvImportOptions>(
@@ -94,39 +95,49 @@ export function StudentImportPageContent({
   if (!canManageRoster) {
     return (
       <div className={`flex min-h-full flex-col ${styles.importPage}`}>
-        <Header title="Import Students">
-          <Button variant="ghost" size="sm" onClick={onBack}>
-            <ArrowLeft className="w-3.5 h-3.5" />
+        <Header eyebrow="Students" title="Import students">
+          <Button variant="secondary" onClick={onBack}>
+            <ArrowLeft aria-hidden="true" className="w-4 h-4" />
             Back
           </Button>
         </Header>
-        <div className="flex-1 p-8 text-sm text-text-secondary">
-          Only admins and front-desk staff can import students.
-        </div>
+        <HorizonPage width="medium" className="flex-1">
+          <CalmState
+            tone="neutral"
+            icon={<Lock />}
+            title="Only admins and front-desk staff can import students."
+          />
+        </HorizonPage>
       </div>
     );
   }
 
   return (
     <div className={`flex min-h-full flex-col ${styles.importPage}`}>
-      <Header title="Import Students">
-        <Button variant="ghost" size="sm" disabled={isLoading} onClick={onBack}>
-          <ArrowLeft className="w-3.5 h-3.5" />
+      <Header
+        eyebrow="Students"
+        title="Import students"
+        description="Bring your roster across from a spreadsheet: upload, match columns, check, import."
+      >
+        <Button variant="secondary" disabled={isLoading} onClick={onBack}>
+          <ArrowLeft aria-hidden="true" className="w-4 h-4" />
           Back
         </Button>
       </Header>
 
-      <div className={`flex-1 ${styles.importWorkspace}`}>
+      <HorizonPage className={`flex-1 ${styles.importWorkspace}`}>
         <div className={styles.importSheet}>
           <aside className={styles.importIndex} aria-label="Import worksheet progress">
-            <dl className="text-xs">
+            <dl className="text-[0.8125rem]">
               <div className="flex justify-between gap-3">
                 <dt className="text-muted">Source</dt>
-                <dd className="truncate text-text-primary">{fileName || "Awaiting CSV"}</dd>
+                <dd className="truncate font-semibold text-text-primary">
+                  {fileName || "Awaiting CSV"}
+                </dd>
               </div>
               <div className="mt-2 flex justify-between gap-3">
                 <dt className="text-muted">Rows</dt>
-                <dd className="font-mono text-text-primary">{rowCount || "—"}</dd>
+                <dd className="tabular-nums text-text-primary">{rowCount || "—"}</dd>
               </div>
             </dl>
             <div className={styles.importStages}>
@@ -200,7 +211,7 @@ export function StudentImportPageContent({
             ) : null}
           </div>
         </div>
-      </div>
+      </HorizonPage>
     </div>
   );
 }

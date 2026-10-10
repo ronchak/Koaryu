@@ -67,8 +67,10 @@ export function StudentImportUploadStep({
         role="button"
         tabIndex={0}
         aria-label="Select CSV file to import"
-        className={`border border-dashed rounded-[14px] p-4 text-center cursor-pointer transition-[background-color,border-color,color] duration-150 ${
-          dragOver ? "border-accent bg-accent/5" : "border-border hover:border-accent/50"
+        className={`rounded-[16px] border-2 border-dashed bg-surface px-6 py-12 text-center shadow-[var(--product-shadow-card)] cursor-pointer transition-[background-color,border-color,color] duration-150 ${
+          dragOver
+            ? "border-accent bg-[var(--hz-warn-wash)]"
+            : "border-[var(--product-rule,var(--border))] hover:border-accent/60"
         }`}
         onDrop={(event) => {
           event.preventDefault();
@@ -84,11 +86,13 @@ export function StudentImportUploadStep({
         onClick={openFilePicker}
         onKeyDown={handleUploadKeyDown}
       >
-        <Upload className="w-8 h-8 text-muted mx-auto mb-3" />
-        <p className="text-sm text-text-primary mb-1">
+        <span className="mx-auto mb-4 grid h-12 w-12 place-items-center rounded-[12px] bg-[var(--hz-tile)] text-accent">
+          <Upload aria-hidden="true" className="h-5 w-5" />
+        </span>
+        <p className="mb-1 text-base font-bold tracking-[-0.01em] text-text-primary">
           Drop your CSV file here, or click to select
         </p>
-        <p className="text-xs text-muted">
+        <p className="text-[0.8125rem] text-text-secondary">
           Supports .csv files exported from Google Sheets, Excel, or another spreadsheet tool
         </p>
         <input
@@ -103,9 +107,9 @@ export function StudentImportUploadStep({
         />
       </div>
 
-      <div className="mt-6 bg-surface border border-border rounded-[14px] p-4">
+      <div className="mt-5 rounded-[16px] border border-[var(--product-rule-soft,var(--border))] bg-surface p-4 shadow-[var(--product-shadow-card)]">
         <div className="mb-2 flex items-center justify-between gap-3">
-          <p className="text-xs font-medium text-text-secondary">Minimum name info</p>
+          <p className="text-sm font-semibold text-text-primary">Minimum name info</p>
           <a
             href="/demo-students.csv"
             download
@@ -179,17 +183,18 @@ export function StudentImportDonePanel({
       <h2 className="text-xl font-semibold text-text-primary mb-2">{doneTitle}</h2>
       <p className="text-sm text-text-secondary mb-1">
         <span
-          className={`font-mono font-bold ${importedCount > 0 ? "text-success" : "text-danger"}`}
+          className={`tabular-nums font-bold ${importedCount > 0 ? "text-success" : "text-danger"}`}
         >
           {importedCount}
         </span>{" "}
-        of <span className="font-mono font-bold text-text-primary">{importResult.valid_rows}</span>{" "}
+        of{" "}
+        <span className="tabular-nums font-bold text-text-primary">{importResult.valid_rows}</span>{" "}
         validated rows were imported.
       </p>
       {importResult.error_rows > 0 ? (
         <p className="text-sm text-text-secondary">
-          <span className="text-danger font-mono">{importResult.error_rows}</span> rows still have
-          blockers and were skipped.
+          <span className="text-danger tabular-nums">{importResult.error_rows}</span> rows still
+          have blockers and were skipped.
         </p>
       ) : null}
       {importResult.created_programs.length > 0 ? (
