@@ -10,6 +10,17 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { LegalConsentNotice } from "@/components/auth/legal-consent-notice";
 import { SocialSignIn } from "@/components/auth/social-sign-in";
+import { authErrorClassName, authNoticeClassName } from "@/components/auth/auth-messages";
+import {
+  SceneFootnote,
+  SceneIntro,
+  SceneSheet,
+  SceneSplit,
+  SceneSteps,
+  sceneLinkClassName,
+  sceneSheetTitleClassName,
+} from "@/components/auth/horizon-scene";
+import { PUBLIC_PLATFORM_TRIAL_DAYS, formatPublicPlatformPrice } from "@/lib/constants";
 
 export default function SignupPage() {
   const [fullName, setFullName] = useState("");
@@ -84,83 +95,110 @@ export default function SignupPage() {
   }
 
   return (
-    <div>
-      <h2 className="text-lg font-semibold text-text-primary mb-1">Create your account</h2>
-      <p className="text-sm text-text-secondary mb-5">Set up your studio in under two minutes.</p>
-
-      <SocialSignIn disabled={isLoading} onLoadingChange={setIsLoading} />
-
-      <form onSubmit={handleSignup} className="space-y-4">
-        <Input
-          label="Full name"
-          type="text"
-          placeholder="Alex Tanaka"
-          value={fullName}
-          onChange={(e) => setFullName(e.target.value)}
-          required
-          autoComplete="name"
+    <SceneSplit>
+      <SceneIntro
+        eyebrow="Start free trial"
+        title="Run the school. Teach the art."
+        titleId="signup-title"
+        lede={`Three short steps to your studio. ${PUBLIC_PLATFORM_TRIAL_DAYS} days free, then ${formatPublicPlatformPrice()} a month per studio.`}
+      >
+        <SceneSteps
+          label="Sign-up steps"
+          current={0}
+          steps={[
+            { title: "Create your account", detail: "Your name, email and a password." },
+            { title: "Set up your studio", detail: "Its name and timezone." },
+            {
+              title: `Start your ${PUBLIC_PLATFORM_TRIAL_DAYS}-day trial`,
+              detail: "Payment details are collected at Stripe Checkout.",
+            },
+          ]}
         />
-        <Input
-          label="Email"
-          type="email"
-          placeholder="you@yourstudio.com"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          required
-          autoComplete="email"
-        />
-        <Input
-          label="Password"
-          type="password"
-          placeholder="At least 8 characters"
-          value={password}
-          onChange={(e) => {
-            setPassword(e.target.value);
-            setConfirmPasswordError("");
-          }}
-          required
-          minLength={8}
-          autoComplete="new-password"
-        />
-        <Input
-          label="Confirm password"
-          type="password"
-          placeholder="Re-enter your password"
-          value={confirmPassword}
-          onChange={(e) => {
-            setConfirmPassword(e.target.value);
-            setConfirmPasswordError("");
-          }}
-          required
-          autoComplete="new-password"
-          error={confirmPasswordError}
-        />
-
-        {error && <p className="text-xs text-danger">{error}</p>}
-        {notice && <p className="text-xs text-success">{notice}</p>}
-
-        <Button
-          type="submit"
-          variant="secondary"
-          size="lg"
-          isLoading={isLoading}
-          className="w-full"
-        >
-          Create account
-        </Button>
-      </form>
-
-      <LegalConsentNotice action="creating an account or continuing with Google or Microsoft" />
-
-      {/* Login link */}
-      <div className="mt-5 pt-5 border-t border-border text-center">
-        <p className="text-sm text-text-secondary">
-          Already have an account?{" "}
-          <Link href="/login" className="text-accent hover:text-accent-hover font-medium">
-            Sign in
+        <p className="mt-6 text-sm text-text-secondary">
+          Not ready yet?{" "}
+          <Link href="/try" className={sceneLinkClassName}>
+            Try the demo
           </Link>
         </p>
-      </div>
-    </div>
+      </SceneIntro>
+      <SceneSheet labelledBy="signup-sheet-title">
+        <h2 id="signup-sheet-title" className={`${sceneSheetTitleClassName} mb-5`}>
+          Create your account
+        </h2>
+
+        <SocialSignIn disabled={isLoading} onLoadingChange={setIsLoading} />
+
+        <form onSubmit={handleSignup} className="space-y-4">
+          <Input
+            label="Full name"
+            type="text"
+            placeholder="Alex Tanaka"
+            value={fullName}
+            onChange={(e) => setFullName(e.target.value)}
+            required
+            autoComplete="name"
+          />
+          <Input
+            label="Email"
+            type="email"
+            placeholder="you@yourstudio.com"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+            autoComplete="email"
+          />
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Input
+              label="Password"
+              type="password"
+              placeholder="At least 8 characters"
+              value={password}
+              onChange={(e) => {
+                setPassword(e.target.value);
+                setConfirmPasswordError("");
+              }}
+              required
+              minLength={8}
+              autoComplete="new-password"
+            />
+            <Input
+              label="Confirm password"
+              type="password"
+              placeholder="Re-enter it"
+              value={confirmPassword}
+              onChange={(e) => {
+                setConfirmPassword(e.target.value);
+                setConfirmPasswordError("");
+              }}
+              required
+              autoComplete="new-password"
+              error={confirmPasswordError}
+            />
+          </div>
+
+          {error && <p className={authErrorClassName}>{error}</p>}
+          {notice && <p className={authNoticeClassName}>{notice}</p>}
+
+          <Button
+            type="submit"
+            variant="primary"
+            size="lg"
+            isLoading={isLoading}
+            className="w-full"
+          >
+            Create account
+          </Button>
+        </form>
+
+        <LegalConsentNotice action="creating an account or continuing with Google or Microsoft" />
+
+        <SceneFootnote>
+          Already have an account?{" "}
+          <Link href="/login" className={sceneLinkClassName}>
+            Sign in
+          </Link>
+        </SceneFootnote>
+      </SceneSheet>
+    </SceneSplit>
   );
 }

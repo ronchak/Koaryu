@@ -15,6 +15,16 @@ import { Input } from "@/components/ui/input";
 import { LegalConsentNotice } from "@/components/auth/legal-consent-notice";
 import { SocialSignIn } from "@/components/auth/social-sign-in";
 import { CallbackError } from "@/components/auth/callback-error";
+import { authErrorClassName } from "@/components/auth/auth-messages";
+import {
+  SceneFootnote,
+  SceneIntro,
+  SceneSheet,
+  SceneSplit,
+  sceneLinkClassName,
+  sceneSheetLedeClassName,
+  sceneSheetTitleClassName,
+} from "@/components/auth/horizon-scene";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -118,119 +128,121 @@ export default function LoginPage() {
 
   if (magicLinkSent) {
     return (
-      <div className="text-center">
-        <h2 className="text-lg font-semibold text-text-primary mb-2">
-          Check your email
-        </h2>
-        <p className="text-sm text-text-secondary mb-4">
-          We sent a sign-in link to <span className="text-text-primary font-mono text-xs">{email}</span>
-        </p>
-        <button
-          onClick={() => {
-            setMagicLinkSent(false);
-            setMode("password");
-          }}
-          className="text-sm text-accent hover:text-accent-hover cursor-pointer"
-        >
-          Back to sign in
-        </button>
-      </div>
+      <SceneSplit>
+        <SceneIntro
+          eyebrow="Sign in"
+          title="Your link is on its way."
+          lede="Open the link on this device to finish signing in to your studio."
+        />
+        <SceneSheet labelledBy="magic-link-sent-title">
+          <h2 id="magic-link-sent-title" className={sceneSheetTitleClassName}>
+            Check your email
+          </h2>
+          <p className={sceneSheetLedeClassName}>
+            We sent a sign-in link to{" "}
+            <span className="font-semibold text-text-primary break-all">{email}</span>.
+          </p>
+          <Button
+            type="button"
+            variant="secondary"
+            size="lg"
+            className="mt-6 w-full"
+            onClick={() => {
+              setMagicLinkSent(false);
+              setMode("password");
+            }}
+          >
+            Back to sign in
+          </Button>
+        </SceneSheet>
+      </SceneSplit>
     );
   }
 
   return (
-    <div>
-      <h2 className="text-lg font-semibold text-text-primary mb-5">
-        Sign in to your studio
-      </h2>
+    <SceneSplit>
+      <SceneIntro
+        eyebrow="Sign in"
+        title="Welcome back to the mat."
+        titleId="login-title"
+        lede="Today's classes, follow-ups and belt promotions are waiting where you left them."
+      />
+      <SceneSheet labelledBy="login-title">
+        <Suspense fallback={null}>
+          <CallbackError />
+        </Suspense>
+        <SocialSignIn disabled={isLoading} onLoadingChange={setIsLoading} />
 
-      <Suspense fallback={null}><CallbackError /></Suspense>
-      <SocialSignIn disabled={isLoading} onLoadingChange={setIsLoading} />
+        {mode === "password" ? (
+          <form onSubmit={handlePasswordLogin} className="space-y-4">
+            <Input
+              label="Email"
+              type="email"
+              placeholder="you@yourstudio.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+              autoComplete="email"
+            />
+            <Input
+              label="Password"
+              type="password"
+              placeholder="••••••••"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              autoComplete="current-password"
+            />
 
-      {mode === "password" ? (
-        <form onSubmit={handlePasswordLogin} className="space-y-4">
-          <Input
-            label="Email"
-            type="email"
-            placeholder="you@yourstudio.com"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-            autoComplete="email"
-          />
-          <Input
-            label="Password"
-            type="password"
-            placeholder="••••••••"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-            autoComplete="current-password"
-          />
+            {error && <p className={authErrorClassName}>{error}</p>}
 
-          {error && (
-            <p className="text-xs text-danger">{error}</p>
-          )}
+            <Button type="submit" variant="primary" size="lg" isLoading={isLoading} className="w-full">
+              Sign in
+            </Button>
+          </form>
+        ) : (
+          <form onSubmit={handleMagicLink} className="space-y-4">
+            <Input
+              label="Email"
+              type="email"
+              placeholder="you@yourstudio.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+              autoComplete="email"
+              hint="We'll email you a one-time link instead of asking for a password."
+            />
 
-          <Button
-            type="submit"
-            variant="secondary"
-            size="lg"
-            isLoading={isLoading}
-            className="w-full"
+            {error && <p className={authErrorClassName}>{error}</p>}
+
+            <Button type="submit" variant="primary" size="lg" isLoading={isLoading} className="w-full">
+              Send magic link
+            </Button>
+          </form>
+        )}
+
+        {/* Mode toggle */}
+        <div className="mt-3 text-center">
+          <button
+            type="button"
+            onClick={() => setMode(mode === "password" ? "magic-link" : "password")}
+            className="min-h-11 cursor-pointer rounded-[10px] px-3 text-sm font-semibold text-text-secondary transition-colors hover:text-text-primary"
           >
-            Sign in
-          </Button>
-        </form>
-      ) : (
-        <form onSubmit={handleMagicLink} className="space-y-4">
-          <Input
-            label="Email"
-            type="email"
-            placeholder="you@yourstudio.com"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-            autoComplete="email"
-          />
+            {mode === "password"
+              ? "Sign in with magic link instead"
+              : "Sign in with password instead"}
+          </button>
+        </div>
 
-          {error && (
-            <p className="text-xs text-danger">{error}</p>
-          )}
+        <LegalConsentNotice action="continuing" />
 
-          <Button
-            type="submit"
-            variant="secondary"
-            size="lg"
-            isLoading={isLoading}
-            className="w-full"
-          >
-            Send magic link
-          </Button>
-        </form>
-      )}
-
-      {/* Mode toggle */}
-      <div className="mt-4 text-center">
-        <button
-          onClick={() => setMode(mode === "password" ? "magic-link" : "password")}
-          className="text-xs text-muted hover:text-text-secondary cursor-pointer"
-        >
-          {mode === "password" ? "Sign in with magic link instead" : "Sign in with password instead"}
-        </button>
-      </div>
-
-      <LegalConsentNotice action="continuing" />
-
-      {/* Signup link */}
-      <div className="mt-5 pt-5 border-t border-border text-center">
-        <p className="text-sm text-text-secondary">
+        <SceneFootnote>
           New to Koaryu?{" "}
-          <Link href="/signup" className="text-accent hover:text-accent-hover font-medium">
-            Create an account
+          <Link href="/signup" className={sceneLinkClassName}>
+            Start free trial
           </Link>
-        </p>
-      </div>
-    </div>
+        </SceneFootnote>
+      </SceneSheet>
+    </SceneSplit>
   );
 }
