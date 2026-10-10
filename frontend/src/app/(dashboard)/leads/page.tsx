@@ -14,6 +14,12 @@ import {
 } from "@/components/leads/lead-trial-appointments";
 import { LeadLedgerLoadError, LeadPipelineBoard } from "@/components/leads/lead-pipeline-board";
 import { LostLeadsSection } from "@/components/leads/lost-leads-section";
+import { getLeadFigures, isSameLeadFocus, type LeadFocus } from "@/components/leads/lead-focus";
+import {
+  HorizonPage,
+  PlainHorizonStats,
+  type PlainHorizonStat,
+} from "@/components/schedule/horizon-parts";
 import { Button } from "@/components/ui/button";
 import { DismissibleNotice } from "@/components/ui/dismissible-notice";
 import { useLeadsPageController } from "@/lib/leads-page-controller";
@@ -56,6 +62,7 @@ export default function LeadsPage() {
     generation: 0,
   }));
   const [programRead, setProgramRead] = useState<"idle" | "loading" | "unavailable">("idle");
+  const [leadFocus, setLeadFocus] = useState<LeadFocus | null>(null);
   if (trialReady && !trialLifetime.current()) {
     setProgramRead("idle");
     setTrialLifetime({
@@ -156,6 +163,56 @@ export default function LeadsPage() {
     ? (staffById.get(selectedLead.assigned_staff_id) ?? null)
     : null;
 
+  const figures = getLeadFigures(controller.model.obligationLedgerLeads, today);
+  const statsPending = !leadsLoaded;
+  const toggleFocus = (focus: LeadFocus) =>
+    setLeadFocus((current) => (isSameLeadFocus(current, focus) ? null : focus));
+  const leadStats: PlainHorizonStat[] = [
+    {
+      id: "overdue",
+      label: "Overdue",
+      pending: statsPending,
+      value: figures.overdue,
+      tone: figures.overdue > 0 ? "alert" : "calm",
+      note:
+        figures.overdue > 0
+          ? `Oldest ${figures.oldestOverdueDays} ${figures.oldestOverdueDays === 1 ? "day" : "days"} late`
+          : "Nothing overdue",
+      onSelect: leadsLoaded ? () => toggleFocus({ kind: "overdue" }) : undefined,
+      selected: leadFocus?.kind === "overdue",
+    },
+    {
+      id: "today",
+      label: "Due today",
+      pending: statsPending,
+      value: figures.dueToday,
+      tone: figures.dueToday > 0 ? "warn" : undefined,
+      note: figures.dueToday > 0 ? "Calls to make today" : "None due today",
+      onSelect: leadsLoaded ? () => toggleFocus({ kind: "today" }) : undefined,
+      selected: leadFocus?.kind === "today",
+    },
+    {
+      id: "trials",
+      label: "Trials booked",
+      pending: statsPending,
+      value: figures.trialsBooked,
+      note: figures.trialsBooked > 0 ? "Confirm attendance" : "No trials waiting",
+      onSelect: leadsLoaded
+        ? () => toggleFocus({ kind: "stage", stage: "trial_scheduled" })
+        : undefined,
+      selected: leadFocus?.kind === "stage" && leadFocus.stage === "trial_scheduled",
+    },
+    {
+      id: "unassigned",
+      label: "Unassigned",
+      pending: statsPending,
+      value: figures.unassigned,
+      note: figures.unassigned > 0 ? "No owner yet" : "Every lead has an owner",
+      onSelect: leadsLoaded ? () => toggleFocus({ kind: "unassigned" }) : undefined,
+      selected: leadFocus?.kind === "unassigned",
+    },
+  ];
+
   return (
     <div className={`flex min-h-0 flex-1 flex-col ${styles.pageRoot}`}>
       <Header
@@ -169,185 +226,193 @@ export default function LeadsPage() {
         }
       >
         <Button
-          variant={controller.showLost ? "secondary" : "ghost"}
-          size="sm"
+          variant="secondary"
           onClick={() => controller.setShowLost(!controller.showLost)}
+          aria-pressed={controller.showLost}
         >
           {leadsLoaded ? `Lost (${lostLeads.length})` : "Lost"}
         </Button>
         {controller.canManageLeads ? (
-          <Button variant="primary" size="sm" onClick={controller.openAddLeadModal}>
-            <UserPlus className="w-3.5 h-3.5" />
+          <Button variant="primary" onClick={controller.openAddLeadModal}>
+            <UserPlus aria-hidden="true" className="h-4 w-4" />
             Add lead
           </Button>
         ) : null}
       </Header>
 
-      {trialReady && (
-        <TrialAppointmentRecovery
-          facade={trialAppointments}
-          leads={baseLeads}
-          pendingLeadIds={controller.pendingLeadIds}
-        />
-      )}
+      <HorizonPage className={styles.page}>
+        <PlainHorizonStats label="Lead follow-ups" items={leadStats} />
 
-      {!controller.showAddLead && controller.leadCreateMessage ? (
-        <div role="status" className="px-4 pt-4 text-sm text-text-secondary sm:px-6 lg:px-8">
-          <p>{controller.leadCreateMessage}</p>
-          {controller.canCheckLeadCreate ? (
+        {trialReady && (
+          <TrialAppointmentRecovery
+            facade={trialAppointments}
+            leads={baseLeads}
+            pendingLeadIds={controller.pendingLeadIds}
+          />
+        )}
+
+        {!controller.showAddLead && controller.leadCreateMessage ? (
+          <div role="status" className={styles.notice}>
+            <p>{controller.leadCreateMessage}</p>
+            {controller.canCheckLeadCreate ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                onClick={() => void controller.handleCheckLeadCreateResult()}
+              >
+                Check result
+              </Button>
+            ) : null}
+          </div>
+        ) : null}
+        {requiresStaff && staffLoadError ? (
+          <div role="alert" className={styles.notice}>
+            <p className="text-sm text-danger">
+              Staff assignments are unavailable. {staffLoadError}
+            </p>
             <Button
-              type="button"
-              size="sm"
               variant="secondary"
-              onClick={() => void controller.handleCheckLeadCreateResult()}
+              size="sm"
+              onClick={() => void refreshStaff().catch(() => undefined)}
             >
-              Check result
+              Retry staff assignments
             </Button>
-          ) : null}
-        </div>
-      ) : null}
-      {requiresStaff && staffLoadError ? (
-        <div role="alert" className="px-4 pt-4 sm:px-6 lg:px-8">
-          <p className="text-sm text-danger">Staff assignments are unavailable. {staffLoadError}</p>
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => void refreshStaff().catch(() => undefined)}
-          >
-            Retry staff assignments
-          </Button>
-        </div>
-      ) : requiresStaff && !staffLoaded ? (
-        <p role="status" className="px-4 pt-4 text-sm text-muted sm:px-6 lg:px-8">
-          Loading staff assignments...
-        </p>
-      ) : null}
+          </div>
+        ) : requiresStaff && !staffLoaded ? (
+          <p role="status" className={styles.notice}>
+            Loading staff assignments...
+          </p>
+        ) : null}
 
-      {controller.leadActionError && !selectedLead && (
-        <div className="px-4 pt-4 sm:px-6 lg:px-8">
-          <DismissibleNotice tone="danger" onDismiss={controller.dismissLeadActionError}>
-            {controller.leadActionError}
-          </DismissibleNotice>
-        </div>
-      )}
+        {controller.leadActionError && !selectedLead && (
+          <div className={styles.notice}>
+            <DismissibleNotice tone="danger" onDismiss={controller.dismissLeadActionError}>
+              {controller.leadActionError}
+            </DismissibleNotice>
+          </div>
+        )}
 
-      {controller.actionMessage && !selectedLead && (
-        <div className="px-4 pt-4 sm:px-6 lg:px-8">
-          <DismissibleNotice tone="success" onDismiss={controller.dismissActionMessage}>
-            {controller.actionMessage}
-          </DismissibleNotice>
-        </div>
-      )}
+        {controller.actionMessage && !selectedLead && (
+          <div className={styles.notice}>
+            <DismissibleNotice tone="success" onDismiss={controller.dismissActionMessage}>
+              {controller.actionMessage}
+            </DismissibleNotice>
+          </div>
+        )}
 
-      {leadsLoaded && leadsLoadError ? (
-        <div role="alert" className="px-4 pt-4 sm:px-6 lg:px-8">
-          <p className="text-sm text-danger">{leadsLoadError} Showing the last loaded leads.</p>
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => void refreshLeads().catch(() => undefined)}
-          >
-            Retry lead roster
-          </Button>
-        </div>
-      ) : null}
+        {leadsLoaded && leadsLoadError ? (
+          <div role="alert" className={styles.notice}>
+            <p className="text-sm text-danger">{leadsLoadError} Showing the last loaded leads.</p>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => void refreshLeads().catch(() => undefined)}
+            >
+              Retry lead roster
+            </Button>
+          </div>
+        ) : null}
 
-      <div className="flex-1 flex flex-col overflow-x-hidden">
-        <div className={styles.leadWorkbench} data-inspector-open={Boolean(selectedLead)}>
-          {leadsLoadError && !leadsLoaded ? (
-            <LeadLedgerLoadError
-              error={leadsLoadError}
-              onRetry={() => void refreshLeads().catch(() => undefined)}
-            />
-          ) : !leadsLoaded ? (
-            <LeadLedgerLoading canManageLeads={controller.canManageLeads} />
-          ) : (
-            <LeadPipelineBoard
-              canConvertLeads={controller.canConvertLeads}
-              canManageLeads={controller.canManageLeads}
-              leads={controller.model.obligationLedgerLeads}
-              pendingLeadIds={controller.pendingLeadIds}
-              recoveringLeadIds={controller.recoveringLeadIds}
-              programById={programById}
-              selectedLeadId={selectedLead?.id ?? null}
-              staffById={staffById}
-              today={today}
-              onAddLead={controller.openAddLeadModal}
-              onKeyboardMoveLead={controller.handleKeyboardMoveLead}
+        <div className={styles.leadArea}>
+          <div className={styles.leadWorkbench} data-inspector-open={Boolean(selectedLead)}>
+            {leadsLoadError && !leadsLoaded ? (
+              <LeadLedgerLoadError
+                error={leadsLoadError}
+                onRetry={() => void refreshLeads().catch(() => undefined)}
+              />
+            ) : !leadsLoaded ? (
+              <LeadLedgerLoading canManageLeads={controller.canManageLeads} />
+            ) : (
+              <LeadPipelineBoard
+                canConvertLeads={controller.canConvertLeads}
+                canManageLeads={controller.canManageLeads}
+                leads={controller.model.obligationLedgerLeads}
+                pendingLeadIds={controller.pendingLeadIds}
+                recoveringLeadIds={controller.recoveringLeadIds}
+                programById={programById}
+                selectedLeadId={selectedLead?.id ?? null}
+                staffById={staffById}
+                today={today}
+                focus={leadFocus}
+                onFocusChange={setLeadFocus}
+                onAddLead={controller.openAddLeadModal}
+                onKeyboardMoveLead={controller.handleKeyboardMoveLead}
+                onSelectLead={controller.selectLead}
+              />
+            )}
+
+            {selectedLead && (
+              <LeadDetailInspector
+                key={selectedLead.id}
+                activities={controller.selectedLeadActivities}
+                activityError={controller.selectedLeadActivityError}
+                activityStatus={controller.selectedLeadActivityStatus}
+                activeStaff={activeStaff}
+                currentAssignedStaff={currentAssignedStaff}
+                canConvertLeads={controller.canConvertLeads}
+                canManageLeads={controller.canManageLeads}
+                followUpValue={controller.getFollowUpInputValue(selectedLead)}
+                lead={selectedLead}
+                leadActionError={controller.leadActionError}
+                leadActionMessage={controller.actionMessage}
+                pendingLeadIds={controller.pendingLeadIds}
+                followUpRecovery={controller.followUpRecoveries.get(selectedLead.id) ?? null}
+                trialRecoveryPending={trialRecoveryLeadIds.has(selectedLead.id)}
+                trialAppointments={
+                  trialReady ? (
+                    <LeadTrialAppointments
+                      key={`${identityGeneration}:${trialLifetime.generation}:${selectedLead.id}`}
+                      lead={selectedLead}
+                      facade={trialAppointments}
+                      timezone={studioTimezone}
+                      preview={isPreviewMode}
+                      reserved={controller.pendingLeadIds.has(selectedLead.id)}
+                      isCurrent={trialLifetime.current}
+                      references={{
+                        programs,
+                        status:
+                          programRead === "loading"
+                            ? "loading"
+                            : programsLoadError ||
+                                programsUsageLoadError ||
+                                programRead === "unavailable"
+                              ? "unavailable"
+                              : programsLoaded
+                                ? "ready"
+                                : "loading",
+                        retry: () => void refreshTrialPrograms(),
+                      }}
+                    />
+                  ) : undefined
+                }
+                onRetryFollowUp={controller.handleRetryFollowUp}
+                programById={programById}
+                today={today}
+                onAssignStaff={controller.handleAssignedStaff}
+                onClose={controller.clearSelectedLead}
+                onConvertLead={controller.handleConvertLead}
+                onDismissError={controller.dismissLeadActionError}
+                onDismissMessage={controller.dismissActionMessage}
+                onFollowUpValueChange={controller.setFollowUpInputValue}
+                onMarkContacted={controller.handleMarkContacted}
+                onMarkLost={controller.handleMarkLost}
+                onRetryActivities={controller.retrySelectedLeadActivities}
+                onRescheduleLead={controller.handleRescheduleLead}
+                onStageSelection={controller.handleStageSelection}
+              />
+            )}
+          </div>
+
+          {controller.showLost && (
+            <LostLeadsSection
+              lostLeads={lostLeads}
+              onClose={() => controller.setShowLost(false)}
               onSelectLead={controller.selectLead}
             />
           )}
-
-          {selectedLead && (
-            <LeadDetailInspector
-              key={selectedLead.id}
-              activities={controller.selectedLeadActivities}
-              activityError={controller.selectedLeadActivityError}
-              activityStatus={controller.selectedLeadActivityStatus}
-              activeStaff={activeStaff}
-              currentAssignedStaff={currentAssignedStaff}
-              canConvertLeads={controller.canConvertLeads}
-              canManageLeads={controller.canManageLeads}
-              followUpValue={controller.getFollowUpInputValue(selectedLead)}
-              lead={selectedLead}
-              leadActionError={controller.leadActionError}
-              leadActionMessage={controller.actionMessage}
-              pendingLeadIds={controller.pendingLeadIds}
-              followUpRecovery={controller.followUpRecoveries.get(selectedLead.id) ?? null}
-              trialRecoveryPending={trialRecoveryLeadIds.has(selectedLead.id)}
-              trialAppointments={
-                trialReady ? (
-                  <LeadTrialAppointments
-                    key={`${identityGeneration}:${trialLifetime.generation}:${selectedLead.id}`}
-                    lead={selectedLead}
-                    facade={trialAppointments}
-                    timezone={studioTimezone}
-                    preview={isPreviewMode}
-                    reserved={controller.pendingLeadIds.has(selectedLead.id)}
-                    isCurrent={trialLifetime.current}
-                    references={{
-                      programs,
-                      status:
-                        programRead === "loading"
-                          ? "loading"
-                          : programsLoadError ||
-                              programsUsageLoadError ||
-                              programRead === "unavailable"
-                            ? "unavailable"
-                            : programsLoaded
-                              ? "ready"
-                              : "loading",
-                      retry: () => void refreshTrialPrograms(),
-                    }}
-                  />
-                ) : undefined
-              }
-              onRetryFollowUp={controller.handleRetryFollowUp}
-              programById={programById}
-              today={today}
-              onAssignStaff={controller.handleAssignedStaff}
-              onClose={controller.clearSelectedLead}
-              onConvertLead={controller.handleConvertLead}
-              onDismissError={controller.dismissLeadActionError}
-              onDismissMessage={controller.dismissActionMessage}
-              onFollowUpValueChange={controller.setFollowUpInputValue}
-              onMarkContacted={controller.handleMarkContacted}
-              onMarkLost={controller.handleMarkLost}
-              onRetryActivities={controller.retrySelectedLeadActivities}
-              onRescheduleLead={controller.handleRescheduleLead}
-              onStageSelection={controller.handleStageSelection}
-            />
-          )}
         </div>
-
-        {controller.showLost && (
-          <LostLeadsSection
-            lostLeads={lostLeads}
-            onClose={() => controller.setShowLost(false)}
-            onSelectLead={controller.selectLead}
-          />
-        )}
-      </div>
+      </HorizonPage>
 
       {controller.canManageLeads && controller.showAddLead && (
         <AddLeadModal

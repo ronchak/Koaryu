@@ -333,15 +333,24 @@ export function LeadTrialAppointments({
     : (page?.items ?? []);
   return (
     <section className={styles.trialPanel} aria-label="Trial appointments">
-      <h3>Trials</h3>
-      {preview && <p>Sample trial appointments. Changes stay in this preview.</p>}
-      <p>
+      <div className={styles.trialHead}>
+        <h3>Trials</h3>
+        <button
+          type="button"
+          className={styles.trialPrimary}
+          disabled={locked || !eligible}
+          onClick={() => open()}
+        >
+          Schedule trial
+        </button>
+      </div>
+      {preview && (
+        <p className={styles.trialHint}>Sample trial appointments. Changes stay in this preview.</p>
+      )}
+      <p className={styles.trialHint}>
         Scheduling requires a future start. Complete a trial after it starts, or mark it missed
         after it ends.
       </p>
-      <button type="button" disabled={locked || !eligible} onClick={() => open()}>
-        Schedule trial
-      </button>
       {detailLoading && <p role="status">Loading current appointment...</p>}
       {formError && (
         <div role="alert">
@@ -465,7 +474,7 @@ export function LeadTrialAppointments({
       </div>
       {page && rows.length === 0 && !loading && <p>No trial appointments on this page.</p>}
       {rows.map((row) => (
-        <article key={row.id} className={styles.trialHistory}>
+        <article key={row.id} className={styles.trialHistory} data-status={row.status}>
           <h4>{statusLabel[row.status]}</h4>
           <p>{appointmentSummary(row)}</p>
           <p>

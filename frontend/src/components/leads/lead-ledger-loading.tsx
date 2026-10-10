@@ -12,21 +12,13 @@ export function LeadLedgerLoading({ canManageLeads = true }: { canManageLeads?: 
       aria-busy="true"
     >
       <p className="sr-only">Loading follow-up obligations.</p>
-      <div className={styles.intro} aria-hidden="true">
-        <dl className={styles.totals}>
-          {["Overdue", "Due today", "Unassigned"].map((label) => (
-            <div key={label}>
-              <dt>{label}</dt>
-              <dd>—</dd>
-            </div>
-          ))}
-        </dl>
-      </div>
       <ol className={styles.stageRail} aria-hidden="true">
         {PIPELINE_STAGES.map((stage) => (
           <li key={stage.id}>
-            <strong>{stage.label}</strong>
-            <b>—</b>
+            <span className={styles.stageButton}>
+              <strong>{stage.label}</strong>
+              <b>—</b>
+            </span>
           </li>
         ))}
       </ol>
@@ -41,8 +33,11 @@ export function LeadLedgerLoading({ canManageLeads = true }: { canManageLeads?: 
               {Array.from({ length: 3 }).map((_, row) => (
                 <li key={row}>
                   <div className={styles.queueLead}>
-                    <div className={`${styles.stateBar} w-3/4`} />
-                    <div className={`${styles.stateBar} mt-1 w-1/2`} />
+                    <span className={styles.leadInitials} />
+                    <span className={styles.leadName}>
+                      <span className={`${styles.stateBar} w-3/4`} />
+                      <span className={`${styles.stateBar} mt-1 w-1/2`} />
+                    </span>
                   </div>
                   <div className={styles.queueAction}>
                     <div className={`${styles.stateBar} w-3/4`} />
@@ -54,8 +49,8 @@ export function LeadLedgerLoading({ canManageLeads = true }: { canManageLeads?: 
                   </div>
                   {canManageLeads ? (
                     <div className={styles.stageMoves}>
-                      <div className="h-11 w-11 rounded-[6px] bg-surface-raised" />
-                      <div className="h-11 w-11 rounded-[6px] bg-surface-raised" />
+                      <span className={styles.stageMovePlaceholder} />
+                      <span className={styles.stageMovePlaceholder} />
                     </div>
                   ) : null}
                 </li>

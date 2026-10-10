@@ -3,6 +3,7 @@
 import { fullName } from "@/lib/leads-page-model";
 import type { Lead } from "@/types";
 import { X } from "lucide-react";
+import styles from "./leads-ledger.module.css";
 
 interface LostLeadsSectionProps {
   lostLeads: Lead[];
@@ -16,34 +17,27 @@ export function LostLeadsSection({ lostLeads, onClose, onSelectLead }: LostLeads
   }
 
   return (
-    <div className="border-t border-border px-4 py-4 sm:px-6 lg:px-8">
-      <div className="flex items-center justify-between mb-3">
-        <h3 className="text-xs font-medium text-text-secondary">Closed Lost</h3>
-        <button
-          type="button"
-          aria-label="Hide closed lost leads"
-          onClick={onClose}
-          className="text-muted hover:text-text-primary cursor-pointer"
-        >
-          <X className="w-3.5 h-3.5" />
+    <section className={styles.lostPanel} aria-labelledby="lost-leads-title">
+      <div className={styles.lostHead}>
+        <h2 id="lost-leads-title">Closed Lost · {lostLeads.length}</h2>
+        <button type="button" aria-label="Hide closed lost leads" onClick={onClose}>
+          <X aria-hidden="true" />
         </button>
       </div>
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div className={styles.lostGrid}>
         {lostLeads.map((lead) => (
           <button
             type="button"
             key={lead.id}
             aria-label={`${fullName(lead)} lost lead card`}
             onClick={() => onSelectLead(lead.id)}
-            className="min-w-0 rounded-[10px] bg-surface p-3 text-left opacity-60 transition-opacity cursor-pointer hover:opacity-100"
+            className={styles.lostCard}
           >
-            <p className="break-words text-sm font-medium text-text-primary">{fullName(lead)}</p>
-            <p className="text-xs text-danger mt-1 capitalize">
-              {lead.lost_reason?.replace(/_/g, " ") || "Unknown"}
-            </p>
+            <strong>{fullName(lead)}</strong>
+            <span>{lead.lost_reason?.replace(/_/g, " ") || "Unknown"}</span>
           </button>
         ))}
       </div>
-    </div>
+    </section>
   );
 }
