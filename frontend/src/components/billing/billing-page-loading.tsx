@@ -1,7 +1,7 @@
 "use client";
 
-import { Banknote, CreditCard, Mail } from "lucide-react";
 import type { BillingTab } from "@/lib/billing-page-state";
+import { HorizonPanel } from "@/components/ui/horizon";
 import {
   billingEnrollmentFormClass,
   billingExternalPaymentFormClass,
@@ -13,10 +13,9 @@ import {
   billingPaymentRowClass,
   billingReportMetricsClass,
 } from "./billing-layout";
-import { SectionHeader } from "./billing-page-sections";
 
 function PlaceholderLine({ className = "h-4 w-24" }: { className?: string }) {
-  return <div className={`rounded bg-surface-raised ${className}`} />;
+  return <div className={`rounded-md bg-surface-raised ${className}`} />;
 }
 
 function PlaceholderForm({ className, fields }: { className: string; fields: number }) {
@@ -25,7 +24,7 @@ function PlaceholderForm({ className, fields }: { className: string; fields: num
       {Array.from({ length: fields }, (_, index) => (
         <div key={index} className="space-y-1.5">
           <PlaceholderLine className="h-5 w-20" />
-          <PlaceholderLine className="h-10 w-full" />
+          <PlaceholderLine className="h-11 w-full" />
         </div>
       ))}
     </div>
@@ -36,31 +35,43 @@ function PlaceholderLedger({
   columns,
   header,
   row,
+  title,
 }: {
   columns: number;
   header: string;
   row: string;
+  title: string;
 }) {
   return (
-    <section className="overflow-hidden rounded-[14px] border border-border bg-surface">
+    <HorizonPanel title={title} flush>
       <div className={header}>
         {Array.from({ length: columns }, (_, index) => (
-          <PlaceholderLine key={index} />
+          <PlaceholderLine key={index} className="h-4 w-16" />
         ))}
       </div>
       {Array.from({ length: 3 }, (_, index) => (
         <div key={index} className={row}>
           {Array.from({ length: columns }, (_, column) => (
-            <div key={column} className="space-y-2 py-2">
+            <div
+              key={column}
+              className={`space-y-2 ${column === 0 ? "col-span-2 lg:col-span-1 xl:col-span-1" : ""}`}
+            >
               <PlaceholderLine />
               <PlaceholderLine className="h-3 w-16" />
             </div>
           ))}
         </div>
       ))}
-    </section>
+    </HorizonPanel>
   );
 }
+
+const LEDGER_TITLES = {
+  plans: "Tuition plans",
+  families: "Families",
+  enrollments: "Student billing",
+  invoices: "Invoices",
+} as const;
 
 export function BillingContentPlaceholder({
   activeTab,
@@ -81,47 +92,25 @@ export function BillingContentPlaceholder({
       <div aria-hidden="true" className="space-y-5">
         {activeTab === "overview" ? (
           <>
-            <section className="overflow-hidden bg-surface">
-              <div className={billingOverviewMetricsClass}>
-                {[
-                  "Needs attention",
-                  "Open receivables",
-                  "Collected this UTC month",
-                  "Student coverage",
-                ].map((label) => (
-                  <div key={label} className="rounded-[10px] bg-surface-raised/50 p-4">
-                    <p className="text-xs font-medium text-muted">{label}</p>
-                    <PlaceholderLine className="mt-2 h-8 w-24" />
-                    <PlaceholderLine className="mt-1 h-5 w-full" />
-                  </div>
-                ))}
-              </div>
-              <div className="border-t border-border px-4 py-2">
-                <PlaceholderLine className="h-4 w-3/4" />
-              </div>
-            </section>
             <div className={billingOverviewProvidersClass}>
               {[
                 {
                   title: "Koaryu Core",
-                  icon: CreditCard,
                   description:
                     "One flat software subscription: no student caps, no staff caps, no feature gates.",
                 },
                 {
                   title: "Koaryu Payments",
-                  icon: Banknote,
                   description:
                     "Optional Stripe Connect add-on. Koaryu collects 0.5% only on successful processed transactions.",
                 },
-              ].map(({ title, icon, description }) => (
-                <section key={title} className="rounded-[14px] border border-border bg-surface p-4">
-                  <SectionHeader icon={icon} title={title} description={description} />
+              ].map(({ title, description }) => (
+                <HorizonPanel key={title} title={title} description={description}>
                   <div className="space-y-2 border-b border-border pb-4">
-                    <PlaceholderLine className="h-8 w-32" />
+                    <PlaceholderLine className="h-9 w-32" />
                     <PlaceholderLine className="h-4 w-full" />
                   </div>
-                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                  <div className={`mt-4 ${billingOverviewMetricsClass}`}>
                     {Array.from({ length: 4 }, (_, index) => (
                       <div key={index} className="space-y-2">
                         <PlaceholderLine className="h-3 w-24" />
@@ -129,37 +118,36 @@ export function BillingContentPlaceholder({
                       </div>
                     ))}
                   </div>
-                  <PlaceholderLine className="mt-4 h-8 w-48" />
-                </section>
+                  <PlaceholderLine className="mt-5 h-10 w-48" />
+                </HorizonPanel>
               ))}
             </div>
-            <section className="rounded-[14px] border border-border bg-surface p-4">
-              <SectionHeader
-                icon={Mail}
-                title="Message usage"
-                description="Automation is included for every studio. Only email volume above the included monthly allowance is metered."
-              />
+            <HorizonPanel
+              title="Message usage"
+              description="Automation is included for every studio. Only email volume above the included monthly allowance is metered."
+            >
               <PlaceholderLine className="h-2 w-full" />
               <PlaceholderLine className="mt-2 h-4 w-48" />
-            </section>
+            </HorizonPanel>
           </>
         ) : activeTab === "reports" ? (
           <>
-            <div className={billingReportMetricsClass}>
-              {["UTC-month Stripe cohort", "UTC-month external cohort"].map((label) => (
-                <div key={label} className="rounded-[14px] border border-border bg-surface p-4">
-                  <p className="text-xs text-muted">{label}</p>
-                  <PlaceholderLine className="mt-1 h-7 w-24" />
-                  <PlaceholderLine className="mt-1 h-4 w-full" />
-                </div>
-              ))}
-            </div>
-            <PlaceholderLine className="h-8 w-full" />
-            <section className="rounded-[14px] border border-border bg-surface p-4">
-              <SectionHeader icon={CreditCard} title="Record external payment" />
+            <HorizonPanel title="This UTC month">
+              <div className={billingReportMetricsClass}>
+                {["UTC-month Stripe cohort", "UTC-month external cohort"].map((label) => (
+                  <div key={label} className="space-y-2 rounded-[12px] bg-[var(--hz-tile)] p-4">
+                    <p className="text-xs text-muted">{label}</p>
+                    <PlaceholderLine className="h-8 w-24 bg-surface" />
+                    <PlaceholderLine className="h-4 w-full bg-surface" />
+                  </div>
+                ))}
+              </div>
+            </HorizonPanel>
+            <HorizonPanel title="Record external payment">
               <PlaceholderForm className={billingExternalPaymentFormClass} fields={5} />
-            </section>
+            </HorizonPanel>
             <PlaceholderLedger
+              title="Payments"
               columns={canRefundPayments ? 4 : 3}
               header={`${billingPaymentHeaderClass} ${billingPaymentGridColumns(canRefundPayments)}`}
               row={`${billingPaymentRowClass} ${billingPaymentGridColumns(canRefundPayments)}`}
@@ -167,21 +155,20 @@ export function BillingContentPlaceholder({
           </>
         ) : (
           <>
-            <section className="rounded-[14px] border border-border bg-surface p-4">
-              <PlaceholderLine className="mb-4 h-5 w-48" />
-              {activeTab === "enrollments" ? (
+            {activeTab === "enrollments" ? (
+              <HorizonPanel title="Attach external student billing">
                 <PlaceholderForm className={billingEnrollmentFormClass} fields={8} />
-              ) : (
-                <PlaceholderLine className="h-4 w-full" />
-              )}
-            </section>
-            {activeTab === "invoices" ? (
-              <section className="rounded-[14px] border border-border bg-surface p-4">
-                <PlaceholderLine className="mb-4 h-5 w-48" />
-                <PlaceholderLine className="h-5 w-full" />
-              </section>
+              </HorizonPanel>
             ) : null}
-            <PlaceholderLedger {...billingLedgerLayout[activeTab]} />
+            {activeTab === "invoices" ? (
+              <HorizonPanel title="Failed payment queue">
+                <PlaceholderLine className="h-12 w-full" />
+              </HorizonPanel>
+            ) : null}
+            <PlaceholderLedger
+              title={LEDGER_TITLES[activeTab]}
+              {...billingLedgerLayout[activeTab]}
+            />
           </>
         )}
       </div>

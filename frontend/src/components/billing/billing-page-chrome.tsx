@@ -1,12 +1,14 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import {
   CheckCircle2,
+  ChevronDown,
   Clock3,
   CreditCard,
   Download,
   FileText,
+  Info,
   ListChecks,
   Receipt,
   RefreshCw,
@@ -15,13 +17,16 @@ import {
 } from "lucide-react";
 import { BillingContentPlaceholder } from "./billing-page-loading";
 import { resolveBillingProviderCopy } from "@/lib/billing-policy";
+import { formatMoney } from "@/lib/billing-page-utils";
 import { Header } from "@/components/header";
 import { OperationsSurface } from "@/components/operations/operations-surface";
 import { Button } from "@/components/ui/button";
 import { DismissibleNotice } from "@/components/ui/dismissible-notice";
+import { HorizonPage, HorizonStats, ToneChip, type HorizonStat } from "@/components/ui/horizon";
 import { SetupStepList, type SetupStep } from "@/components/ui/overview";
 import { SectionHeader } from "./billing-page-sections";
-import { BILLING_TABS, type BillingTab } from "@/lib/billing-page-state";
+import { BILLING_TABS, getBillingUrlForTab, type BillingTab } from "@/lib/billing-page-state";
+import styles from "./billing.module.css";
 
 export type { BillingTab } from "@/lib/billing-page-state";
 export type BillingSetupStep = SetupStep;
@@ -35,6 +40,93 @@ const BILLING_TAB_PRESENTATION = {
   reports: { label: "Advanced", icon: Download },
 } as const;
 
+function plural(count: number, noun: string) {
+  return `${count} ${noun}${count === 1 ? "" : "s"}`;
+}
+
+/** The money facts the page already loads; the strip never derives a figure of its own. */
+export type BillingMoneySummary = {
+  activeStudents: number;
+  activeSubscriptionCount: number;
+  billingObservedAt: string | null;
+  currentMonthPaymentCount: number;
+  failedInvoiceCount: number;
+  openInvoiceTotal: number;
+  paidRevenue: number;
+  paymentCohortAvailable: boolean;
+  studentsLoaded: boolean;
+};
+
+/** Exceptions first: what needs attention, what is owed, what came in, who is covered. */
+export function BillingMoneyStats({
+  pending = false,
+  summary,
+}: {
+  pending?: boolean;
+  summary: BillingMoneySummary | null;
+}) {
+  const cohort = summary?.paymentCohortAvailable ?? false;
+  const failed = summary?.failedInvoiceCount ?? 0;
+  const items: HorizonStat[] = [
+    {
+      id: "attention",
+      label: "Needs attention",
+      pending,
+      value: cohort ? String(failed) : undefined,
+      note: cohort ? "Failed or past-due tuition" : "Unavailable",
+      tone: cohort && failed > 0 ? "alert" : undefined,
+      href: getBillingUrlForTab("", "invoices"),
+    },
+    {
+      id: "receivables",
+      label: "Open receivables",
+      pending,
+      value: cohort && summary ? formatMoney(summary.openInvoiceTotal) : undefined,
+      note: cohort ? "All outstanding invoices" : "Unavailable",
+      href: getBillingUrlForTab("", "invoices"),
+    },
+    {
+      id: "collected",
+      label: "Collected this UTC month",
+      pending,
+      value: cohort && summary ? formatMoney(summary.paidRevenue) : undefined,
+      note:
+        cohort && summary
+          ? `${plural(summary.currentMonthPaymentCount, "payment")}, net of adjustments`
+          : "Complete cohort could not be loaded",
+      href: getBillingUrlForTab("", "reports"),
+    },
+    {
+      id: "coverage",
+      label: "Student coverage",
+      pending,
+      value: summary?.studentsLoaded ? String(summary.activeStudents) : undefined,
+      note: summary?.studentsLoaded
+        ? `${plural(summary.activeSubscriptionCount, "active subscription")}`
+        : "Student totals unavailable",
+      href: getBillingUrlForTab("", "enrollments"),
+    },
+  ];
+  return (
+    <div className={styles.money}>
+      <HorizonStats items={items} label="Billing exceptions and receivables" />
+      {pending ? null : (
+        <p className={styles.scope}>
+          Scope: current studio · Observed{" "}
+          {summary?.billingObservedAt ? (
+            <time dateTime={summary.billingObservedAt}>
+              {new Date(summary.billingObservedAt).toLocaleString("en-US", { timeZone: "UTC" })} UTC
+            </time>
+          ) : (
+            "unavailable"
+          )}{" "}
+          · Current UTC-month net collected after confirmed adjustments
+        </p>
+      )}
+    </div>
+  );
+}
+
 export function BillingPageFrame({
   activeTab,
   billingBoundaryMessage,
@@ -47,6 +139,7 @@ export function BillingPageFrame({
   isLoading,
   isRefreshDisabled,
   message,
+  moneySummary = null,
   onChangeTab,
   onDismissError,
   onDismissMessage,
@@ -66,6 +159,8 @@ export function BillingPageFrame({
   isLoading: boolean;
   isRefreshDisabled: boolean;
   message: string;
+  /** Omitted while billing has not loaded; the strip then holds its place. */
+  moneySummary?: BillingMoneySummary | null;
   onChangeTab: (tab: BillingTab) => void;
   onDismissError: () => void;
   onDismissMessage: () => void;
@@ -76,10 +171,13 @@ export function BillingPageFrame({
 }) {
   return (
     <OperationsSurface page="billing">
-      <Header title="Billing">
+      <Header
+        title="Billing"
+        description="What needs attention, who pays for what, and what has come in."
+      >
         <Button
           variant="ghost"
-          size="sm"
+          size="md"
           onClick={onRefresh}
           disabled={isRefreshDisabled}
           isLoading={isLoading}
@@ -90,15 +188,20 @@ export function BillingPageFrame({
       </Header>
 
       <div
-        className="flex-1 p-4 sm:p-6"
+        className={styles.body}
         data-billing-ledger="six-views"
         aria-busy={isLoading || showLoading}
       >
-        <div className="mx-auto max-w-[1240px] space-y-5">
+        <HorizonPage>
           {isLiveRestricted ? (
             <BillingAccessLimitedNotice />
           ) : (
             <>
+              <BillingMoneyStats
+                pending={showLoading}
+                summary={showContent ? moneySummary : null}
+              />
+
               <BillingSetupNavigation
                 activeTab={activeTab}
                 completedStepCount={completedStepCount}
@@ -114,9 +217,10 @@ export function BillingPageFrame({
                 onDismissMessage={onDismissMessage}
               />
 
-              <section className="rounded-[14px] bg-warning/5 p-4 text-xs text-text-secondary">
-                {billingBoundaryMessage}
-              </section>
+              <p className={styles.boundary}>
+                <Info aria-hidden="true" />
+                <span>{billingBoundaryMessage}</span>
+              </p>
 
               {showLoading ? (
                 <BillingContentPlaceholder
@@ -130,7 +234,7 @@ export function BillingPageFrame({
               <BillingPolicyNote />
             </>
           )}
-        </div>
+        </HorizonPage>
       </div>
     </OperationsSurface>
   );
@@ -138,7 +242,7 @@ export function BillingPageFrame({
 
 export function BillingAccessLimitedNotice() {
   return (
-    <section className="rounded-[14px] bg-surface p-4">
+    <section className="rounded-[16px] border border-border bg-surface p-5 shadow-[var(--product-shadow-card)]">
       <SectionHeader
         icon={ShieldCheck}
         title="Billing access is limited"
@@ -161,31 +265,56 @@ export function BillingSetupNavigation({
   onChangeTab: (tab: BillingTab) => void;
   steps: BillingSetupStep[];
 }) {
+  const complete = ready && completedStepCount >= steps.length;
+  // Open while steps remain; once everything is ready the review folds to one line.
+  const [toggled, setToggled] = useState<boolean | null>(null);
+  const expanded = toggled ?? (ready && !complete);
   return (
     <>
-      <section className="overflow-hidden bg-surface" data-billing-setup-register="true">
-        <div className="grid border-b border-border px-4 py-4 sm:grid-cols-[minmax(12rem,0.35fr)_1fr] sm:gap-8 sm:px-5">
-          <div>
-            <p className="text-xs font-medium text-muted">
+      <section className={styles.review} data-billing-setup-register="true">
+        <div className={styles.reviewBar}>
+          <ToneChip tone={!ready ? "neutral" : complete ? "calm" : "warn"} size={32}>
+            {complete ? <CheckCircle2 /> : <Clock3 />}
+          </ToneChip>
+          <div className={styles.reviewText}>
+            <h2 className={styles.reviewTitle}>Billing review</h2>
+            <p className={styles.reviewCount}>
               {ready ? `${completedStepCount} of ${steps.length} ready` : "Review status pending"}
+              {" · "}
+              Review provider state, plans, and families before posting external payments or
+              reconciling open invoices.
             </p>
-            <h2 className="mt-1 text-base font-semibold text-text-primary">Billing review</h2>
           </div>
-          <p className="text-xs leading-5 text-text-secondary">
-            Review provider state, plans, and families before posting external payments or
-            reconciling open invoices.
-          </p>
+          {ready ? (
+            <span className={styles.reviewMeter} aria-hidden="true">
+              {steps.map((step) => (
+                <span key={step.id} data-complete={step.complete ? "true" : undefined} />
+              ))}
+            </span>
+          ) : null}
+          <button
+            type="button"
+            className={styles.reviewToggle}
+            aria-expanded={expanded}
+            aria-controls="billing-review-steps"
+            onClick={() => setToggled(!expanded)}
+          >
+            {expanded ? "Hide steps" : "Show steps"}
+            <ChevronDown aria-hidden="true" className="h-4 w-4" />
+          </button>
         </div>
-        <SetupStepList steps={steps} />
+        <div id="billing-review-steps" className={styles.reviewSteps} hidden={!expanded}>
+          <SetupStepList steps={steps} />
+        </div>
       </section>
 
       <nav
-        className="rounded-[14px] bg-surface p-2 shadow-[var(--product-shadow-card)]"
+        className={styles.views}
         aria-label="Billing views"
         data-billing-book-index="six-views"
         data-print-hide="true"
       >
-        <ol className="grid list-none grid-cols-2 gap-1 p-0 sm:grid-cols-3 xl:grid-cols-6">
+        <ol className={styles.viewList}>
           {BILLING_TABS.map((tab) => {
             const { icon: Icon, label } = BILLING_TAB_PRESENTATION[tab];
             const isActive = activeTab === tab;
@@ -195,10 +324,10 @@ export function BillingSetupNavigation({
                   type="button"
                   onClick={() => onChangeTab(tab)}
                   aria-pressed={isActive}
-                  className={`grid min-h-14 w-full grid-cols-[1fr_auto] items-center gap-x-2 rounded-[10px] px-3 py-2 text-left ${isActive ? "bg-accent/10 text-text-primary" : "text-text-secondary hover:bg-surface-raised"}`}
+                  className={styles.view}
                 >
-                  <strong className="text-xs font-semibold">{label}</strong>
-                  <Icon aria-hidden="true" className="h-3.5 w-3.5 text-muted" />
+                  <Icon aria-hidden="true" />
+                  <span>{label}</span>
                 </button>
               </li>
             );
@@ -223,12 +352,12 @@ export function BillingFeedbackNotices({
   return (
     <>
       {message ? (
-        <DismissibleNotice tone="success" onDismiss={onDismissMessage} className="text-xs">
+        <DismissibleNotice tone="success" onDismiss={onDismissMessage} className="text-sm">
           {message}
         </DismissibleNotice>
       ) : null}
       {error ? (
-        <DismissibleNotice tone="danger" onDismiss={onDismissError} className="text-xs">
+        <DismissibleNotice tone="danger" onDismiss={onDismissError} className="text-sm">
           {error}
         </DismissibleNotice>
       ) : null}
@@ -238,14 +367,16 @@ export function BillingFeedbackNotices({
 
 export function BillingPolicyNote() {
   return (
-    <section className="rounded-[14px] bg-surface p-4">
-      <div className="flex flex-wrap items-center gap-3 text-xs text-muted">
-        <CheckCircle2 className="h-4 w-4 text-success" />
-        <span>No student-count pricing. No staff-count pricing. No feature gates.</span>
-        <Clock3 className="h-4 w-4 text-warning" />
-        <span>Soft student alert at 1,500 active students, with no database lockout.</span>
-      </div>
-    </section>
+    <p className={styles.policy}>
+      <span>
+        <CheckCircle2 aria-hidden="true" className="text-success" />
+        No student-count pricing. No staff-count pricing. No feature gates.
+      </span>
+      <span>
+        <Clock3 aria-hidden="true" className="text-warning" />
+        Soft student alert at 1,500 active students, with no database lockout.
+      </span>
+    </p>
   );
 }
 

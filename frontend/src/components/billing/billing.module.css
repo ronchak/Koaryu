@@ -1,0 +1,506 @@
+/*
+ * Billing in the Horizon language. The operations surface still paints its
+ * legacy sheets onto the billing data attributes, so the page body is reset to
+ * the open ground here and every sheet is a Horizon panel instead.
+ */
+
+:global([data-operations-surface][data-operations-page="billing"]) .body.body[data-billing-ledger] {
+  border: 0 !important;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.body {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+/* Money strip and its scope line sit on the header's near ridge. */
+.money {
+  position: relative;
+  z-index: 2;
+  margin-top: -40px;
+}
+
+.scope {
+  margin: 8px 4px 0;
+  color: var(--product-meta, var(--muted));
+  font-size: 0.8125rem;
+  line-height: 1.45;
+}
+
+.scope time {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Billing review: one slim line once the studio is set up. */
+:global([data-operations-surface][data-operations-page="billing"])
+  .review.review[data-billing-setup-register] {
+  overflow: hidden;
+  border: 1px solid var(--product-rule-soft, var(--border)) !important;
+  border-radius: 16px;
+  background: var(--product-paper, var(--surface));
+  box-shadow: var(--product-shadow-card);
+}
+
+.reviewBar {
+  display: flex;
+  min-width: 0;
+  min-height: 60px;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 12px 10px 16px;
+}
+
+.reviewText {
+  display: grid;
+  min-width: 0;
+  flex: 1 1 auto;
+  gap: 1px;
+}
+
+.reviewTitle {
+  margin: 0;
+  color: var(--product-ink, var(--text-primary));
+  font-size: 0.9375rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.reviewCount {
+  margin: 0;
+  color: var(--product-soft-ink, var(--text-secondary));
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.reviewMeter {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 4px;
+}
+
+.reviewMeter span {
+  width: 22px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--hz-tile);
+  box-shadow: inset 0 0 0 1px var(--product-rule-soft, var(--border));
+}
+
+.reviewMeter span[data-complete="true"] {
+  background: var(--product-affirm, var(--success));
+  box-shadow: none;
+}
+
+.reviewToggle {
+  display: inline-flex;
+  min-height: 40px;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px;
+  border: 1px solid var(--product-rule, var(--border));
+  border-radius: 10px;
+  background: var(--product-paper, var(--surface));
+  color: var(--product-ink, var(--text-primary));
+  font-size: 0.8125rem;
+  font-weight: 650;
+  cursor: pointer;
+  transition: background-color var(--product-motion-change-duration, 120ms) ease-out;
+}
+
+.reviewToggle:hover {
+  background: var(--hz-tile);
+}
+
+.reviewToggle svg {
+  transition: transform var(--product-motion-change-duration, 120ms) ease-out;
+}
+
+.reviewToggle[aria-expanded="true"] svg {
+  transform: rotate(180deg);
+}
+
+.reviewSteps {
+  border-top: 1px solid var(--product-rule-soft, var(--border));
+}
+
+/* Views: a calm segmented control. */
+.views {
+  padding: 4px;
+  border: 1px solid var(--product-rule-soft, var(--border));
+  border-radius: 14px;
+  background: var(--hz-tile);
+}
+
+.viewList {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.view {
+  display: inline-flex;
+  width: 100%;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--product-soft-ink, var(--text-secondary));
+  font-size: 0.875rem;
+  font-weight: 650;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background-color var(--product-motion-change-duration, 120ms) ease-out,
+    color var(--product-motion-change-duration, 120ms) ease-out,
+    box-shadow var(--product-motion-change-duration, 120ms) ease-out;
+}
+
+.view svg {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  opacity: 0.75;
+}
+
+.view:hover {
+  color: var(--product-ink, var(--text-primary));
+  background: color-mix(in srgb, var(--product-paper, var(--surface)) 55%, transparent);
+}
+
+.view[aria-pressed="true"] {
+  background: var(--product-paper, var(--surface));
+  box-shadow:
+    0 1px 2px rgb(45 34 18 / 10%),
+    0 0 0 1px var(--product-rule-soft, var(--border));
+  color: var(--product-ink, var(--text-primary));
+}
+
+.view[aria-pressed="true"] svg {
+  opacity: 1;
+  color: var(--product-wood, var(--accent));
+}
+
+/* Boundary and policy notes: said once, quietly. */
+.boundary {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 11px 14px;
+  border-radius: 12px;
+  background: var(--hz-warn-wash);
+  color: var(--product-ink, var(--text-primary));
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+.boundary svg {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  margin-top: 2px;
+  color: var(--product-straw, var(--warning));
+}
+
+.policy {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 20px;
+  padding: 4px 4px 0;
+  color: var(--product-meta, var(--muted));
+  font-size: 0.8125rem;
+}
+
+.policy span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.policy svg {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 15px;
+}
+
+/* Ledger pieces shared by every tab. */
+.statusTag {
+  text-transform: capitalize;
+}
+
+.amounts {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.amounts div {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.amounts dt {
+  color: var(--product-meta, var(--muted));
+  font-size: 0.8125rem;
+}
+
+.amounts dd {
+  margin: 0;
+  color: var(--product-ink, var(--text-primary));
+  font-size: 0.875rem;
+  font-weight: 650;
+}
+
+.amounts div:first-child dd {
+  font-size: 0.9375rem;
+  font-weight: 760;
+}
+
+.amounts[data-tone="alert"] div:first-child dd {
+  color: var(--product-vermilion, var(--danger));
+}
+
+.queue {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.queue li + li {
+  border-top: 1px solid var(--product-rule-soft, var(--border));
+}
+
+.queueRow {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 16px;
+  padding: 14px 20px;
+}
+
+.queueWho {
+  display: flex;
+  min-width: 12rem;
+  flex: 1 1 14rem;
+  align-items: center;
+  gap: 14px;
+}
+
+.queueText {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.queueText strong {
+  font-size: 0.9375rem;
+  font-weight: 650;
+}
+
+.queueText span {
+  overflow-wrap: anywhere;
+  color: var(--product-soft-ink, var(--text-secondary));
+  font-size: 0.8125rem;
+}
+
+.queueAmounts {
+  flex: 0 0 auto;
+}
+
+.queueAction {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.inset {
+  padding: 4px 20px 20px;
+}
+
+.meter {
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--hz-tile);
+  box-shadow: inset 0 0 0 1px var(--product-rule-soft, var(--border));
+}
+
+.meter > div {
+  height: 100%;
+  border-radius: inherit;
+  background: var(--hz-bar-now);
+}
+
+.price {
+  margin: 0;
+  color: var(--product-ink, var(--text-primary));
+  font-size: 2rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  line-height: 1.1;
+}
+
+.price small {
+  margin-left: 4px;
+  color: var(--product-meta, var(--muted));
+  font-size: 0.875rem;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+.factValue {
+  font-variant-numeric: tabular-nums;
+}
+
+.figure {
+  display: grid;
+  gap: 4px;
+  padding: 16px 18px;
+  border-radius: 12px;
+  background: var(--hz-tile);
+}
+
+.figureLabel {
+  margin: 0;
+  color: var(--product-meta, var(--muted));
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.figureValue {
+  margin: 0;
+  color: var(--product-ink, var(--text-primary));
+  font-size: 1.75rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 780;
+  letter-spacing: -0.035em;
+  line-height: 1.15;
+}
+
+.figureHint {
+  margin: 0;
+  color: var(--product-soft-ink, var(--text-secondary));
+  font-size: 0.8125rem;
+  line-height: 1.45;
+}
+
+.checklist {
+  padding: 14px;
+  border-radius: 12px;
+  background: var(--hz-tile);
+}
+
+.sectionHead {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.sectionHead h2 {
+  margin: 0;
+  color: var(--product-ink, var(--text-primary));
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.sectionHead p {
+  margin: 2px 0 0;
+  color: var(--product-soft-ink, var(--text-secondary));
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+.programChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: var(--hz-tile);
+  color: var(--product-soft-ink, var(--text-secondary));
+  font-size: 0.75rem;
+  font-weight: 650;
+}
+
+.programDot {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 8px;
+  border-radius: 50%;
+  background: var(--program-color, var(--product-meta));
+}
+
+.pagedFooter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 4px;
+  color: var(--product-meta, var(--muted));
+  font-size: 0.8125rem;
+}
+
+@media (max-width: 1023px) {
+  .viewList {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .money {
+    margin-top: -36px;
+  }
+
+  .reviewMeter {
+    display: none;
+  }
+
+  .view {
+    flex-direction: column;
+    gap: 3px;
+    min-height: 54px;
+    padding: 6px 4px;
+    font-size: 0.75rem;
+    white-space: normal;
+    text-align: center;
+    line-height: 1.2;
+  }
+
+  .queueRow {
+    padding: 14px 16px;
+  }
+
+  .queueAmounts {
+    flex: 1 1 auto;
+    padding-left: 54px;
+  }
+
+  .inset {
+    padding: 4px 16px 16px;
+  }
+}
+
+@media print {
+  .views,
+  .reviewToggle {
+    display: none;
+  }
+}
