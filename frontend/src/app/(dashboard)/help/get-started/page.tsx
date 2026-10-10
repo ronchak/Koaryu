@@ -48,20 +48,20 @@ export default function GetStartedPage() {
       description="A practical first-day path for operating one Koaryu studio."
     >
       <AccountSection title="Recommended setup order">
-        <div className="space-y-3">
+        <div className="space-y-1">
           {steps.map((step, index) => {
             const Icon = step.icon;
             return (
               <Link
                 key={step.href}
                 href={step.href}
-                className="flex items-start gap-4 border-b border-border bg-surface px-1 py-4 last:border-b-0 hover:bg-surface-raised"
+                className="flex items-start gap-4 rounded-[12px] px-3 py-3 transition-colors hover:bg-[var(--hz-tile)]"
               >
-                <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center border-r border-border text-xs font-semibold text-accent">
+                <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-[var(--hz-cta)] text-xs font-bold text-[var(--hz-cta-ink)]">
                   {index + 1}
                 </span>
                 <span className="min-w-0 flex-1">
-                  <span className="flex items-center gap-2 text-sm font-medium text-text-primary">
+                  <span className="flex items-center gap-2 text-sm font-bold text-text-primary">
                     <Icon className="h-4 w-4 text-accent" />
                     {step.title}
                   </span>

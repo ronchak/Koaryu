@@ -1,0 +1,366 @@
+/* Settings in the Horizon language: an index rail beside paper panels. */
+
+.layout {
+  display: grid;
+  grid-template-columns: 13rem minmax(0, 1fr);
+  align-items: start;
+  gap: 24px;
+}
+
+/* The operations surface paints [data-settings-owner] as a sheet; here each
+   owner is only an anchor around a HorizonPanel, which draws its own paper. */
+.layout.layout.layout :global([data-settings-owner]) {
+  overflow: visible;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  scroll-margin-top: 24px;
+}
+
+.sections {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 20px;
+}
+
+.sections > * {
+  min-width: 0;
+}
+
+/* Index rail */
+.index {
+  position: sticky;
+  top: 24px;
+  min-width: 0;
+}
+
+.indexLabel {
+  margin: 0 0 8px;
+  padding-inline: 12px;
+  color: var(--product-meta, var(--muted));
+  font-size: 0.75rem;
+  font-weight: 760;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.index ul {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.index a {
+  position: relative;
+  display: grid;
+  min-height: 52px;
+  align-content: center;
+  gap: 1px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  color: var(--product-ink, var(--text-primary));
+  text-decoration: none;
+  transition: background-color 120ms ease-out;
+}
+
+.index a:hover {
+  background: var(--product-paper, var(--surface));
+}
+
+.index strong {
+  font-size: 0.875rem;
+  font-weight: 700;
+}
+
+.index small {
+  overflow: hidden;
+  color: var(--product-soft-ink, var(--text-secondary));
+  font-size: 0.8125rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.index a[data-tone="alert"] strong {
+  color: var(--product-vermilion, var(--danger));
+}
+
+/* Field rows: the save action sits with its field. */
+.fieldRow {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+.fieldRow > :first-child {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.fieldLabel {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--product-ink, var(--text-primary));
+  font-size: 0.875rem;
+  font-weight: 650;
+}
+
+.fieldStatus {
+  min-height: 1.25rem;
+  margin: 8px 0 0;
+  font-size: 0.8125rem;
+}
+
+/* Danger zone: set apart, alert-toned, consequences in plain words. */
+.dangerLead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 20px 0 12px;
+  padding-inline: 4px;
+  color: var(--product-vermilion, var(--danger));
+  font-size: 0.75rem;
+  font-weight: 760;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.dangerLead::after {
+  height: 1px;
+  flex: 1 1 auto;
+  background: color-mix(in srgb, var(--product-vermilion, var(--danger)) 28%, transparent);
+  content: "";
+}
+
+.danger {
+  border-color: color-mix(in srgb, var(--product-vermilion, var(--danger)) 32%, transparent);
+  box-shadow:
+    inset 0 3px 0 color-mix(in srgb, var(--product-vermilion, var(--danger)) 70%, transparent),
+    var(--product-shadow-card, 0 10px 30px rgb(0 0 0 / 8%));
+}
+
+.dangerNote {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--hz-alert-wash);
+  color: var(--product-soft-ink, var(--text-secondary));
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+.dangerNote p {
+  margin: 0;
+}
+
+.dangerNote p + p {
+  margin-top: 6px;
+}
+
+.dangerRows {
+  margin-top: 8px;
+}
+
+.dangerRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 24px;
+  padding: 16px 0;
+}
+
+.dangerRow + .dangerRow,
+.dangerRow + [role="alert"] + .dangerRow {
+  border-top: 1px solid var(--product-rule-soft, var(--border));
+}
+
+.dangerRow > div {
+  min-width: 0;
+  max-width: 40rem;
+  flex: 1 1 18rem;
+}
+
+.dangerRow strong {
+  display: block;
+  font-size: 0.9375rem;
+  font-weight: 700;
+}
+
+.dangerRow p {
+  margin: 2px 0 0;
+  color: var(--product-soft-ink, var(--text-secondary));
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+.result {
+  padding: 18px 20px;
+  border: 1px solid var(--product-rule-soft, var(--border));
+  border-radius: 16px;
+  background: var(--product-paper, var(--surface));
+  box-shadow: var(--product-shadow-card, 0 10px 30px rgb(0 0 0 / 8%));
+}
+
+.result dl {
+  display: grid;
+  gap: 0;
+  margin: 12px 0;
+}
+
+.result dl > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 7px 0;
+  border-top: 1px solid var(--product-rule-soft, var(--border));
+  font-size: 0.875rem;
+}
+
+.result dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+/* Roles at a glance */
+.roles {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.role {
+  display: grid;
+  min-width: 0;
+  align-content: start;
+  gap: 4px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--hz-tile);
+}
+
+.roleHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.roleHead strong {
+  font-size: 0.875rem;
+  font-weight: 700;
+}
+
+.roleCount {
+  font-size: 1.375rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 760;
+  letter-spacing: -0.03em;
+  line-height: 1;
+}
+
+.role p {
+  margin: 0;
+  color: var(--product-soft-ink, var(--text-secondary));
+  font-size: 0.8125rem;
+  line-height: 1.45;
+}
+
+.subhead {
+  margin: 0 0 10px;
+  color: var(--product-ink, var(--text-primary));
+  font-size: 0.875rem;
+  font-weight: 700;
+}
+
+.invite {
+  margin-top: 20px;
+  padding: 16px;
+  border: 1px dashed var(--product-rule, var(--border));
+  border-radius: 12px;
+}
+
+.roster {
+  overflow: hidden;
+  border: 1px solid var(--product-rule-soft, var(--border));
+  border-radius: 12px;
+}
+
+.programList {
+  overflow: hidden;
+  border: 1px solid var(--product-rule-soft, var(--border));
+  border-radius: 12px;
+}
+
+@media (max-width: 1023px) {
+  .layout {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 16px;
+  }
+
+  .index {
+    position: static;
+    margin-inline: calc(-1 * var(--hz-gutter, 16px));
+    overflow-x: auto;
+    padding-inline: var(--hz-gutter, 16px);
+    scrollbar-width: none;
+  }
+
+  .indexLabel {
+    display: none;
+  }
+
+  .index ul {
+    display: flex;
+    gap: 8px;
+    width: max-content;
+  }
+
+  .index a {
+    min-height: 44px;
+    padding: 6px 14px;
+    border: 1px solid var(--product-rule-soft, var(--border));
+    border-radius: 999px;
+    background: var(--product-paper, var(--surface));
+  }
+
+  .index small {
+    display: none;
+  }
+}
+
+@media (max-width: 720px) {
+  .roles {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .role {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .fieldRow {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .index a {
+    transition: none;
+  }
+}
+
+@media print {
+  .index {
+    display: none;
+  }
+
+  .layout {
+    display: block;
+  }
+}

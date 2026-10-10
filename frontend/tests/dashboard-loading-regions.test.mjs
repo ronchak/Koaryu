@@ -138,7 +138,7 @@ test("program and staff placeholders keep responsive row containers and accessib
   assert.match(programs, /flex flex-col gap-3 px-4 py-3 md:min-h-14 md:flex-row/);
   assert.match(
     staff,
-    /grid gap-3 p-3 md:min-h-14 md:grid-cols-\[minmax\(0,1fr\)_140px_100px_120px_180px\]/,
+    /grid gap-3 p-3 md:min-h-14 md:grid-cols-\[minmax\(0,1fr\)_132px_96px_112px_244px\]/,
   );
   assert.doesNotMatch(staff, /class="grid grid-cols-\[/);
   for (const html of [programs, staff]) {

@@ -3,10 +3,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { DismissibleNotice } from "@/components/ui/dismissible-notice";
+import { HorizonPanel, ToneTag } from "@/components/settings/horizon-parts";
 import { Input } from "@/components/ui/input";
 import { useProgramStore, useStudioStore } from "@/lib/store";
 import type { Program } from "@/types";
-import { Archive, Check, Plus, RefreshCw, RotateCcw, Save, Settings2 } from "lucide-react";
+import { Archive, Check, Plus, RefreshCw, RotateCcw, Save } from "lucide-react";
+import styles from "./settings.module.css";
 
 const PROGRAM_ROW_CLASS =
   "flex flex-col gap-3 px-4 py-3 md:min-h-14 md:flex-row md:items-center md:justify-between md:py-1";
@@ -138,26 +140,27 @@ export function ProgramsSection() {
   }
 
   return (
-    <section className="bg-surface p-4">
-      <div className="mb-4 flex items-start justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2">
-            <Settings2 className="h-4 w-4 text-accent" />
-            <h3 className="text-sm font-medium text-text-primary">Programs</h3>
-            <span className="rounded-full bg-surface-raised px-2 py-0.5 text-xs text-muted">{programs.length}</span>
-          </div>
-          <p className="mt-1 text-xs text-muted">Manage the programs that appear in Belt Tracker. Each program has one rank plan.</p>
-        </div>
+    <HorizonPanel
+      titleId="settings-programs-title"
+      title={
+        <span className="inline-flex items-center gap-2">
+          Programs
+          <ToneTag dot={false}>{programs.length}</ToneTag>
+        </span>
+      }
+      description="The programs that appear in Belt Tracker. Each program has one rank plan."
+      actions={
         <Button variant="ghost" size="sm" onClick={() => void refreshPrograms({ includeArchived: true }).catch(() => undefined)}>
           <RefreshCw className="h-3.5 w-3.5" />
           Refresh
         </Button>
-      </div>
+      }
+    >
 
       {canManage ? (
         <form
           onSubmit={handleSubmit}
-          className="mb-4 grid min-w-0 gap-3 border-b border-border pb-4 md:grid-cols-[1fr_1fr_auto]"
+          className="mb-5 grid min-w-0 gap-3 md:grid-cols-[1fr_1fr_auto]"
           data-program-form="true"
         >
           <fieldset disabled={isSaving} className="contents">
@@ -237,7 +240,7 @@ export function ProgramsSection() {
         </p>
       ) : null}
 
-      <div className="divide-y divide-border overflow-hidden rounded-[10px] bg-surface-raised/30">
+      <div className={`divide-y divide-border ${styles.programList}`}>
         {!programsLoaded ? (
           <div
             className="koaryu-skeleton-reveal divide-y divide-border"
@@ -265,18 +268,18 @@ export function ProgramsSection() {
             ))}
           </div>
         ) : sortedPrograms.length === 0 ? (
-          <p className="p-4 text-sm text-muted">No programs created yet.</p>
+          <p className="p-4 text-sm text-text-secondary">No programs yet. Create the first one above.</p>
         ) : (
           sortedPrograms.map((program) => (
             <div key={program.id} className={PROGRAM_ROW_CLASS}>
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: program.color_hex }} />
-                  <p className="font-medium text-text-primary">{program.name}</p>
-                  {program.is_system ? <span className="rounded-full bg-surface-raised px-1.5 py-0.5 text-xs text-muted">Protected</span> : null}
-                  {program.archived_at ? <span className="rounded-full bg-warning/10 px-1.5 py-0.5 text-xs text-warning">Archived</span> : null}
+                  <p className="font-semibold text-text-primary">{program.name}</p>
+                  {program.is_system ? <ToneTag dot={false}>Protected</ToneTag> : null}
+                  {program.archived_at ? <ToneTag tone="warn">Archived</ToneTag> : null}
                 </div>
-                <div className="mt-1 grid min-w-0 gap-0.5 text-xs text-muted md:flex md:items-center md:gap-1">
+                <div className="mt-1 grid min-w-0 gap-0.5 text-sm text-text-secondary md:flex md:items-center md:gap-1">
                   {program.description ? (
                     <p className="min-w-0 break-words md:truncate" title={program.description}>
                       {program.description}
@@ -316,6 +319,6 @@ export function ProgramsSection() {
           ))
         )}
       </div>
-    </section>
+    </HorizonPanel>
   );
 }

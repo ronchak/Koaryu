@@ -5,15 +5,18 @@ import { useEffect, useRef, useState } from "react";
 import { markDashboardReadiness } from "@/lib/performance";
 import { Header } from "@/components/header";
 import { Button } from "@/components/ui/button";
+import { CalmState, HorizonPage, HorizonPanel, ToneChip } from "@/components/settings/horizon-parts";
 import { ModalFrame } from "@/components/ui/modal-frame";
-import { OperationsIndex, OperationsSurface } from "@/components/operations/operations-surface";
+import { OperationsSurface } from "@/components/operations/operations-surface";
 import { ProgramsSection } from "@/components/settings/programs-section";
+import { SettingsIndex } from "@/components/settings/settings-index";
 import { StaffRolesSection } from "@/components/settings/staff-roles-section";
+import styles from "@/components/settings/settings.module.css";
 import type { StudioDataClearResponse } from "@/lib/studio-store-model";
 import type { ApiAutomationClearEffects } from "@/types/generated/api-contracts";
 import { api } from "@/lib/api";
 import { useConfigStore, useStudioStore, useProgramStore } from "@/lib/store";
-import { AlertTriangle, Save, Check, RotateCcw, Trash2 } from "lucide-react";
+import { AlertTriangle, Save, Check, Lock, RotateCcw, Trash2 } from "lucide-react";
 import { canAccessSettings } from "./access-policy";
 
 type StudioDataConfirmAction = "demo-reset" | "clear-data" | null;
@@ -30,7 +33,11 @@ export default function SettingsPage() {
 
   return (
     <OperationsSurface page="settings">
-      <Header title="Settings" />
+      <Header
+        eyebrow="Studio"
+        title="Settings"
+        description="Your studio's name, programs and who has access. Only admins see this page."
+      />
       {canAccessSettings(currentRole) ? <AdminSettingsContent key={JSON.stringify([currentUserId, currentStudioId, currentRole, identityGeneration])} /> : <SettingsAccessNotice />}
     </OperationsSurface>
   );
@@ -38,27 +45,25 @@ export default function SettingsPage() {
 
 function SettingsAccessNotice() {
   return (
-    <div className="flex-1 p-8">
-      <div className="max-w-3xl">
-        <section
-          aria-labelledby="settings-access-title"
-          className="rounded-[14px] bg-accent/10 p-4"
-        >
-          <h2 id="settings-access-title" className="text-sm font-medium text-text-primary">
-            Admin access required
-          </h2>
-          <p className="mt-1 text-sm leading-relaxed text-text-secondary">
-            Only studio admins can view and manage studio settings. Ask a studio admin if you need access.
-          </p>
-        </section>
-      </div>
-    </div>
+    <HorizonPage width="narrow">
+      <HorizonPanel title="Admin access required" titleId="settings-access-title">
+        <CalmState
+          tone="neutral"
+          icon={<Lock />}
+          title="Only studio admins can view and manage studio settings."
+          detail="Ask a studio admin if you need access."
+        />
+      </HorizonPanel>
+    </HorizonPage>
   );
 }
 
 function AdminSettingsContent() {
   const { isPreviewMode, token } = useConfigStore();
-  const { currentRole, studioName, setStudioName, resetDemoData, clearStudioData } = useStudioStore();
+  const { currentRole, studioName, setStudioName, resetDemoData, clearStudioData, staffMembers, staffLoaded } = useStudioStore();
+  const { programs, programsLoaded } = useProgramStore();
+  const activeProgramCount = (programs ?? []).filter((program) => !program.archived_at).length;
+  const staffCount = (staffMembers ?? []).filter((member) => member.status !== "archived").length;
   const [nameDraft, setNameDraft] = useState("");
   const [hasEditedName, setHasEditedName] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -203,168 +208,223 @@ function AdminSettingsContent() {
 
   return (
     <>
-      <OperationsIndex
-        label="Settings section index"
-        items={[
-          { href: "#studio", label: "Studio", meta: "Admin-owned identity" },
-          { href: "#programs", label: "Programs", meta: "Curriculum structure" },
-          { href: "#staff-roles", label: "Staff & roles", meta: "Access ownership" },
-          { href: "#data-controls", label: "Data controls", meta: "Restricted workspace actions" },
-        ]}
-      />
-      <div className="flex-1 p-4 sm:p-8" data-settings-folio="admin-ownership">
-        <div className="max-w-5xl space-y-8">
-          {/* Studio info */}
-          <section id="studio" className="scroll-mt-8 bg-surface p-4" data-settings-owner="studio-admin">
-            <p className="mb-1 text-xs font-medium text-muted">Owned by studio admin · Workspace identity</p>
-            <h2 className="mb-4 text-base font-semibold text-text-primary">Studio information</h2>
-            <div className="space-y-4">
-              <div className="flex flex-col gap-1.5">
-                <label htmlFor="settings-studio-name" className="text-xs text-text-secondary font-medium">Studio Name</label>
-                <input
-                  id="settings-studio-name"
-                  name="studio_name"
-                  type="text"
-                  value={name}
-                  disabled={isSaving}
-                  onChange={(e) => {
-                    if (savingRef.current) return;
-                    setHasEditedName(true);
-                    setNameDraft(e.target.value);
+      <HorizonPage>
+        <div className={styles.layout} data-settings-folio="admin-ownership">
+          <SettingsIndex
+            label="Settings section index"
+            items={[
+              { href: "#studio", label: "Studio", meta: studioName || "Name not set" },
+              {
+                href: "#programs",
+                label: "Programs",
+                meta: programsLoaded ? `${activeProgramCount} active` : "Curriculum structure",
+              },
+              {
+                href: "#staff-roles",
+                label: "Staff & roles",
+                meta: staffLoaded
+                  ? `${staffCount} ${staffCount === 1 ? "person" : "people"}`
+                  : "Access ownership",
+              },
+              {
+                href: "#data-controls",
+                label: "Data controls",
+                meta: canManageStudioData ? "Reset and clear" : "Locked",
+                tone: canManageStudioData ? "alert" : "neutral",
+              },
+            ]}
+          />
+          <div className={styles.sections}>
+            <div id="studio" data-settings-owner="studio-admin">
+              <HorizonPanel
+                title="Studio"
+                titleId="settings-studio-title"
+                description="The name your staff see across Koaryu."
+              >
+                <form
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    void handleSave();
                   }}
-                  placeholder="My Studio"
-                  className="w-full rounded-[10px] border border-border bg-surface-raised px-3 py-2 text-sm text-text-primary placeholder:text-muted"
-                />
-              </div>
-              <div className="flex items-center gap-2">
-                <Button variant="primary" size="sm" onClick={handleSave} isLoading={isSaving}>
-                  {saved ? <Check className="w-3.5 h-3.5" /> : <Save className="w-3.5 h-3.5" />}
-                  {saved ? "Saved" : isSaving ? "Saving..." : "Save"}
-                </Button>
-                {saved && <span className="text-xs text-success">Settings updated</span>}
-                {error && <span className="text-xs text-danger">{error}</span>}
-              </div>
-            </div>
-          </section>
-
-          <section id="programs" className="scroll-mt-8" data-settings-owner="program-admin">
-            <p className="px-4 pt-4 text-xs font-medium text-muted">Owned by studio admin · Curriculum structure</p>
-            <ProgramsSection />
-          </section>
-
-          <section id="staff-roles" className="scroll-mt-8" data-settings-owner="access-admin">
-            <p className="px-4 pt-4 text-xs font-medium text-muted">Owned by studio admin · Staff access</p>
-            <StaffRolesSection />
-          </section>
-
-          {/* Data section */}
-          {canManageStudioData ? (
-          <section id="data-controls" className="scroll-mt-8 bg-danger/5 p-4" data-settings-owner="restricted-admin">
-            <p className="mb-1 text-xs font-medium text-danger">Restricted admin ownership · Destructive workspace actions</p>
-            <h2 className="mb-1 text-base font-semibold text-text-primary">Studio data</h2>
-            <p className="text-xs text-text-secondary mb-4">
-              Replace or clear this studio&apos;s working records when preparing a demo or resetting a workspace.
-            </p>
-            <div className="space-y-4">
-              <div>
-                <div className="mb-4 flex items-start gap-3">
-                  <AlertTriangle className="w-4 h-4 text-danger mt-0.5 shrink-0" />
-                  <div>
-                    <p className="text-sm font-medium text-danger">Danger zone</p>
-                    <p className="text-xs text-text-secondary mt-1">
-                      These actions replace or permanently remove working studio records. Use them only when you mean
-                      to reset this workspace.
+                >
+                  <div className={styles.fieldRow}>
+                    <div>
+                      <label htmlFor="settings-studio-name" className={styles.fieldLabel}>
+                        Studio name
+                      </label>
+                      <input
+                        id="settings-studio-name"
+                        name="studio_name"
+                        type="text"
+                        value={name}
+                        disabled={isSaving}
+                        onChange={(e) => {
+                          if (savingRef.current) return;
+                          setHasEditedName(true);
+                          setNameDraft(e.target.value);
+                        }}
+                        placeholder="My Studio"
+                        className="w-full rounded-[10px] border border-border bg-surface-raised px-3 py-2 text-sm text-text-primary placeholder:text-muted"
+                      />
+                    </div>
+                    <Button type="submit" variant="primary" size="md" isLoading={isSaving}>
+                      {saved ? <Check className="w-3.5 h-3.5" /> : <Save className="w-3.5 h-3.5" />}
+                      {saved ? "Saved" : isSaving ? "Saving..." : "Save"}
+                    </Button>
+                  </div>
+                  {saved || error ? (
+                    <p className={styles.fieldStatus}>
+                      {saved && <span className="text-success">Settings updated</span>}
+                      {error && <span className="text-danger">{error}</span>}
                     </p>
-                    <p className="mt-2 text-xs text-text-secondary">{automationConsequences}</p>
-                  </div>
-                </div>
-
-                <div className="space-y-4">
-                  <div className="flex items-start justify-between gap-4 flex-wrap border-t border-danger/15 pt-4">
-                    <div>
-                      <p className="text-sm font-medium text-text-primary">Load demo studio</p>
-                      <p className="text-xs text-text-secondary">
-                        {isPreviewMode
-                          ? "Restore the browser preview dataset to a polished demo state."
-                          : "Replace this studio with demo students, leads, belts, classes, and billing examples."}
-                      </p>
-                    </div>
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      onClick={() => requestStudioDataAction("demo-reset")}
-                      isLoading={isResettingDemo}
-                      disabled={!canManageStudioData || isClearingData}
-                    >
-                      <RotateCcw className="w-3.5 h-3.5" />
-                      {isResettingDemo ? "Loading..." : "Load demo studio"}
-                    </Button>
-                  </div>
-                  {demoResetError && <p role="alert" className="text-xs text-danger">{demoResetError}</p>}
-
-                  <div className="flex items-start justify-between gap-4 flex-wrap border-t border-danger/15 pt-4">
-                    <div>
-                      <p className="text-sm font-medium text-text-primary">Clear studio data</p>
-                      <p className="text-xs text-text-secondary">
-                        Permanently deletes students, leads, programs, belts, schedule, attendance, and studio billing
-                        records. This cannot be undone.
-                      </p>
-                    </div>
-                    <Button
-                      variant="danger"
-                      size="sm"
-                      onClick={() => requestStudioDataAction("clear-data")}
-                      isLoading={isClearingData}
-                      disabled={!canManageStudioData || isResettingDemo}
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                      {isClearingData ? "Clearing..." : "Clear studio data"}
-                    </Button>
-                  </div>
-                  {clearDataError && <p role="alert" className="text-xs text-danger">{clearDataError}</p>}
-                </div>
-
-              </div>
+                  ) : null}
+                </form>
+              </HorizonPanel>
             </div>
-          </section>
-          ) : (
-            <section id="data-controls" className="scroll-mt-8 bg-surface p-4" data-settings-owner="restricted-admin">
-              <p className="mb-1 text-xs font-medium text-muted">Restricted admin ownership</p>
-              <h2 className="text-base font-semibold text-text-primary">Data controls</h2>
-              <p className="mt-2 text-sm text-text-secondary">
-                Reset and clear actions are unavailable unless this workspace is explicitly allowlisted for demo tooling.
-              </p>
-            </section>
-          )}
+
+            <div id="programs" data-settings-owner="program-admin">
+              <ProgramsSection />
+            </div>
+
+            <div id="staff-roles" data-settings-owner="access-admin">
+              <StaffRolesSection />
+            </div>
+
+            {/* Data section */}
+            {canManageStudioData ? (
+              <div id="data-controls" data-settings-owner="restricted-admin">
+                <p className={styles.dangerLead}>Danger zone</p>
+                <HorizonPanel
+                  className={styles.danger}
+                  title="Studio data"
+                  titleId="settings-data-title"
+                  description="Replace or clear this studio's working records when preparing a demo or resetting a workspace."
+                >
+                  <div className={styles.dangerNote}>
+                    <ToneChip tone="alert" size={32}>
+                      <AlertTriangle />
+                    </ToneChip>
+                    <div>
+                      <p>
+                        <strong className="text-danger">
+                          These actions replace or permanently remove working studio records.
+                        </strong>{" "}
+                        Use them only when you mean to reset this workspace.
+                      </p>
+                      <p>{automationConsequences}</p>
+                    </div>
+                  </div>
+
+                  <div className={styles.dangerRows}>
+                    <div className={styles.dangerRow}>
+                      <div>
+                        <strong>Load demo studio</strong>
+                        <p>
+                          {isPreviewMode
+                            ? "Restore the browser preview dataset to a polished demo state."
+                            : "Replace this studio with demo students, leads, belts, classes, and billing examples."}
+                        </p>
+                      </div>
+                      <Button
+                        variant="secondary"
+                        size="md"
+                        onClick={() => requestStudioDataAction("demo-reset")}
+                        isLoading={isResettingDemo}
+                        disabled={!canManageStudioData || isClearingData}
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" />
+                        {isResettingDemo ? "Loading..." : "Load demo studio"}
+                      </Button>
+                    </div>
+                    {demoResetError && (
+                      <p role="alert" className="text-sm text-danger">
+                        {demoResetError}
+                      </p>
+                    )}
+
+                    <div className={styles.dangerRow}>
+                      <div>
+                        <strong>Clear studio data</strong>
+                        <p>
+                          Permanently deletes students, leads, programs, belts, schedule, attendance,
+                          and studio billing records. This cannot be undone.
+                        </p>
+                      </div>
+                      <Button
+                        variant="danger"
+                        size="md"
+                        onClick={() => requestStudioDataAction("clear-data")}
+                        isLoading={isClearingData}
+                        disabled={!canManageStudioData || isResettingDemo}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        {isClearingData ? "Clearing..." : "Clear studio data"}
+                      </Button>
+                    </div>
+                    {clearDataError && (
+                      <p role="alert" className="text-sm text-danger">
+                        {clearDataError}
+                      </p>
+                    )}
+                  </div>
+                </HorizonPanel>
+              </div>
+            ) : (
+              <div id="data-controls" data-settings-owner="restricted-admin">
+                <HorizonPanel title="Data controls" titleId="settings-data-title">
+                  <CalmState
+                    tone="neutral"
+                    icon={<Lock />}
+                    title="Reset and clear are turned off"
+                    detail="Reset and clear actions are unavailable unless this workspace is explicitly allowlisted for demo tooling."
+                  />
+                </HorizonPanel>
+              </div>
+            )}
+            {dataResult && (
+              <StudioDataResult
+                result={dataResult}
+                preview={isPreviewMode}
+                onDismiss={() => setDataResult(null)}
+              />
+            )}
+          </div>
         </div>
-      </div>
-      {dataResult && <StudioDataResult result={dataResult} preview={isPreviewMode} onDismiss={() => setDataResult(null)} />}
+      </HorizonPage>
       {confirmDialog && canManageStudioData ? (
         <ModalFrame
           role="alertdialog"
           ariaLabelledBy="studio-data-confirm-title"
           ariaDescribedBy="studio-data-confirm-description"
           onBackdropClick={() => setConfirmAction(null)}
-          panelClassName="w-[min(92vw,28rem)] rounded-[18px] bg-surface p-4"
+          panelClassName="w-[min(92vw,30rem)] rounded-[18px] bg-surface p-5"
         >
           <div className="flex items-start gap-3">
-            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] bg-danger/10 text-danger">
-              <AlertTriangle className="h-4 w-4" />
-            </span>
+            <ToneChip tone="alert" size={40}>
+              <AlertTriangle />
+            </ToneChip>
             <div className="min-w-0">
-              <h2 id="studio-data-confirm-title" className="text-sm font-semibold text-text-primary">
+              <h2 id="studio-data-confirm-title" className="text-base font-bold text-text-primary">
                 {confirmDialog.title}
               </h2>
-              <p id="studio-data-confirm-description" className="mt-2 text-sm leading-6 text-text-secondary">
+              <p
+                id="studio-data-confirm-description"
+                className="mt-2 text-sm leading-6 text-text-secondary"
+              >
                 {confirmDialog.description} {automationConsequences}
               </p>
             </div>
           </div>
           <div className="mt-5 flex justify-end gap-2">
-            <Button type="button" variant="ghost" size="sm" onClick={() => setConfirmAction(null)}>
+            <Button type="button" variant="ghost" size="md" onClick={() => setConfirmAction(null)}>
               Cancel
             </Button>
-            <Button type="button" variant={confirmDialog.variant} size="sm" onClick={handleConfirmStudioDataAction}>
+            <Button
+              type="button"
+              variant={confirmDialog.variant}
+              size="md"
+              onClick={handleConfirmStudioDataAction}
+            >
               {confirmDialog.icon}
               {confirmDialog.actionText}
             </Button>
@@ -395,19 +455,39 @@ function StudioDataResult({ result, preview, onDismiss }: {
   onDismiss: () => void;
 }) {
   const { counts, automation } = result.response;
-  return <section role="status" aria-label="Studio data result" className="mx-4 mb-8 max-w-5xl bg-surface p-4 sm:mx-8">
-    <h2 className="text-sm font-semibold text-text-primary">{result.action === "demo-reset" ? "Demo studio loaded" : "Studio data cleared"}</h2>
-    <p className="mt-2 text-sm text-text-secondary">
-      {result.action === "demo-reset" ? "Seeded" : "Removed"}: {counts.students} students, {counts.leads} leads, {counts.belt_ranks} belt ranks, {counts.class_sessions} classes, {counts.attendance_records} attendance records.
-    </p>
-    {preview && <p className="mt-2 text-sm text-text-secondary">Preview automation effects are sample numbers.</p>}
-    <dl className="my-3 grid gap-2 text-sm">
-      {(Object.keys(effectLabels) as (keyof ApiAutomationClearEffects)[]).map((key) => <div key={key} className="flex justify-between gap-4">
-        <dt className="min-w-0 text-text-secondary">{effectLabels[key]}</dt>
-        <dd className="shrink-0 font-medium text-text-primary">{typeof automation[key] === "boolean" ? (automation[key] ? "Yes" : "No") : automation[key]}</dd>
-      </div>)}
-    </dl>
-    <p className="mb-3 text-xs text-text-secondary">{automationConsequences}</p>
-    <Button variant="ghost" size="sm" onClick={onDismiss}>Dismiss result</Button>
-  </section>;
+  return (
+    <section role="status" aria-label="Studio data result" className={styles.result}>
+      <h2 className="text-base font-bold text-text-primary">
+        {result.action === "demo-reset" ? "Demo studio loaded" : "Studio data cleared"}
+      </h2>
+      <p className="mt-2 text-sm text-text-secondary">
+        {result.action === "demo-reset" ? "Seeded" : "Removed"}: {counts.students} students,{" "}
+        {counts.leads} leads, {counts.belt_ranks} belt ranks, {counts.class_sessions} classes,{" "}
+        {counts.attendance_records} attendance records.
+      </p>
+      {preview && (
+        <p className="mt-2 text-sm text-text-secondary">
+          Preview automation effects are sample numbers.
+        </p>
+      )}
+      <dl>
+        {(Object.keys(effectLabels) as (keyof ApiAutomationClearEffects)[]).map((key) => (
+          <div key={key}>
+            <dt className="min-w-0 text-text-secondary">{effectLabels[key]}</dt>
+            <dd className="shrink-0 text-text-primary">
+              {typeof automation[key] === "boolean"
+                ? automation[key]
+                  ? "Yes"
+                  : "No"
+                : automation[key]}
+            </dd>
+          </div>
+        ))}
+      </dl>
+      <p className="mb-3 text-sm text-text-secondary">{automationConsequences}</p>
+      <Button variant="secondary" size="sm" onClick={onDismiss}>
+        Dismiss result
+      </Button>
+    </section>
+  );
 }
