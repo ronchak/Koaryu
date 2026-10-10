@@ -1,6 +1,7 @@
 "use client";
 
 import { AlertTriangle, ArrowUpRight, Receipt } from "lucide-react";
+import { billingLedgerLayout } from "./billing-layout";
 import { Button } from "@/components/ui/button";
 import {
   billingInvoiceReference,
@@ -81,7 +82,7 @@ export function BillingInvoicesTab({
       </section>
 
       <section className="overflow-hidden rounded-[14px] border border-border bg-surface">
-        <div className="hidden grid-cols-[1fr_auto_auto_auto_auto_auto] gap-4 border-b border-border px-4 py-3 text-xs font-medium text-muted md:grid">
+        <div className={billingLedgerLayout.invoices.header}>
           <span>Invoice</span><span>Due</span><span>Gross due</span><span>Invoice receivable</span><span>Status</span><span>Actions</span>
         </div>
         {billingInvoices.length === 0 ? (
@@ -98,7 +99,7 @@ export function BillingInvoicesTab({
             && (invoice.status === "draft" || invoice.status === "open")
             && canUseWorkflow("invoice.void");
           return (
-            <div key={invoice.id} className="grid min-w-0 grid-cols-1 gap-3 border-b border-border px-4 py-3 text-sm last:border-b-0 md:min-h-14 md:grid-cols-[1fr_auto_auto_auto_auto_auto] md:items-center md:gap-4 md:py-1.5">
+            <div key={invoice.id} className={billingLedgerLayout.invoices.row}>
               <div className="min-w-0">
                 <p className="mb-1 text-xs font-medium text-muted md:hidden">Invoice</p>
                 <p className="font-medium text-text-primary">{invoice.invoice_type.replace(/_/g, " ")}</p>

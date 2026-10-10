@@ -2,7 +2,11 @@
 
 import { BillingPageFrame } from "@/components/billing/billing-page-chrome";
 import { BillingTabContent } from "@/components/billing/billing-tab-content";
-import type { BillingPageController } from "@/lib/billing-page-controller";
+import {
+  useBillingPageController,
+  type BillingPageController,
+} from "@/lib/billing-page-controller";
+import { useConfigStore, useProgramStore, useStudentStore, useStudioStore } from "@/lib/store";
 
 type BillingPageContentProps = BillingPageController["contentProps"];
 
@@ -12,6 +16,7 @@ export function BillingPageContent({
   isLoadingMore,
   loadMoreHistory,
   billingSetupCompleteCount,
+  billingSetupReady,
   billingSetupSteps,
   billingProviderCopy,
   connectEntityModal,
@@ -57,6 +62,8 @@ export function BillingPageContent({
       <BillingPageFrame
         activeTab={activeTab}
         completedStepCount={billingSetupCompleteCount}
+        setupReady={billingSetupReady}
+        canRefundPayments={tabContentProps.refundController.canRefundPayments}
         billingBoundaryMessage={billingProviderCopy.boundary}
         error={error}
         isLiveRestricted={isLiveRestricted}
@@ -90,4 +97,18 @@ export function BillingPageContent({
       </BillingPageFrame>
     </>
   );
+}
+
+export function BillingPageBody() {
+  const config = useConfigStore();
+  const programsStore = useProgramStore();
+  const studentsStore = useStudentStore();
+  const studioStore = useStudioStore();
+  const { contentProps } = useBillingPageController({
+    config,
+    programsStore,
+    studentsStore,
+    studioStore,
+  });
+  return <BillingPageContent {...contentProps} />;
 }

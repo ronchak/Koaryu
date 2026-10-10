@@ -6,6 +6,7 @@ import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import * as billingLayout from "../src/components/billing/billing-layout.ts";
 import { compileCommonJsModule } from "./helpers/store-browser-harness.mjs";
 
 import {
@@ -28,6 +29,7 @@ function loadBillingEnrollmentsTab() {
   );
   const componentModule = { exports: {} };
   const testRequire = (specifier) => {
+    if (specifier === "./billing-layout") return billingLayout;
     if (specifier === "react/jsx-runtime") return require(specifier);
     if (specifier === "lucide-react") {
       return {

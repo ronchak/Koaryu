@@ -1,6 +1,7 @@
 "use client";
 
 import { Users } from "lucide-react";
+import { billingLedgerLayout } from "./billing-layout";
 import { Button } from "@/components/ui/button";
 import { formatMoney } from "@/lib/billing-page-utils";
 import { payerSetupActionLabel } from "@/lib/billing-payer-setup-model";
@@ -35,7 +36,7 @@ export function BillingFamiliesTab({
       </section>
 
       <section className="overflow-hidden rounded-[14px] border border-border bg-surface">
-        <div className="hidden grid-cols-[1.1fr_1fr_1fr_auto_1.3fr] gap-4 border-b border-border px-4 py-3 text-xs font-medium text-muted md:grid">
+        <div className={billingLedgerLayout.families.header}>
           <span>Payer</span>
           <span>Contact</span>
           <span>Stripe</span>
@@ -45,7 +46,7 @@ export function BillingFamiliesTab({
         {billingPayers.length === 0 ? (
           <p className="p-4 text-sm text-muted">No payer accounts yet.</p>
         ) : billingPayers.map((payer) => (
-          <div key={payer.id} className="grid min-w-0 grid-cols-1 gap-3 border-b border-border px-4 py-3 text-sm last:border-b-0 md:min-h-14 md:grid-cols-[1.1fr_1fr_1fr_auto_1.3fr] md:items-center md:gap-4 md:py-2">
+          <div key={payer.id} className={billingLedgerLayout.families.row}>
             <div className="min-w-0">
               <p className="mb-1 text-xs font-medium text-muted md:hidden">Payer</p>
               <p className="font-medium text-text-primary">{payer.display_name}</p>

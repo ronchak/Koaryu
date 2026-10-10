@@ -4,9 +4,15 @@ import { chromium } from "@playwright/test";
 import { createCommonJsPacker } from "./helpers/store-browser-harness.mjs";
 
 // Mount real billing hooks and page controls in local Chromium; replace I/O and decoration.
-function bundle({ realApi = false, refunds = false, pageController = false } = {}) {
+function bundle({
+  realApi = false,
+  refunds = false,
+  pageController = false,
+  retained = false,
+} = {}) {
   const stubs = {
-    "next/navigation": `exports.usePathname=()=>'/dashboard'; const router={replace(){}}; exports.useRouter=()=>router; const search=new URLSearchParams(window.fixture.search??'tab=reports'); exports.useSearchParams=()=>search;`,
+    "next/navigation": `exports.usePathname=()=>'/dashboard'; const router={replace(){}}; exports.useRouter=()=>router; const searches=new Map(); exports.useSearchParams=()=>{const query=window.fixture.search??'tab=reports';if(!searches.has(query))searches.set(query,new URLSearchParams(query));return searches.get(query);};`,
+    "@/lib/store": `exports.useConfigStore=()=>window.fixture.pageOptions.config;exports.useProgramStore=()=>window.fixture.pageOptions.programsStore;exports.useStudentStore=()=>window.fixture.pageOptions.studentsStore;exports.useStudioStore=()=>window.fixture.pageOptions.studioStore;`,
     "@/lib/supabase/client": `exports.createClient=()=>window.fixture.supabase;`,
     "@/lib/api": `class ApiError extends Error { constructor(message,status,detail){super(message);this.status=status;this.detail=detail;} } exports.ApiError=window.fixture.ApiError=ApiError; exports.api=window.fixture.api; exports.isSubscriptionRequiredError=e=>e.status===402; exports.isStaffArchivedError=e=>e.status===403&&/archived/i.test(e.message);`,
     "@/lib/performance": `exports.markPerformance=()=>{};exports.measurePerformance=()=>{};exports.markDashboardReadiness=()=>{};`,
@@ -16,7 +22,8 @@ function bundle({ realApi = false, refunds = false, pageController = false } = {
   if (pageController) {
     stubs["next/link"] =
       `const React=require("react");module.exports=({children,...props})=>React.createElement("a",props,children);`;
-    stubs["@/components/header"] = `exports.Header=({children})=>children;`;
+    stubs["@/components/header"] =
+      `const React=require("react");exports.Header=({title,children})=>React.createElement('header',null,React.createElement('h1',null,title),children);`;
     stubs["@/components/operations/operations-surface"] =
       `exports.OperationsSurface=({children})=>children;`;
   }
@@ -25,6 +32,7 @@ function bundle({ realApi = false, refunds = false, pageController = false } = {
   const react = add("react");
   const dom = add("react-dom/client");
   const controller = add("@/lib/billing-data-controller");
+  const retainedState = retained ? add("@/lib/retained-state") : null;
   const pageHook = pageController ? add("@/lib/billing-page-controller") : null;
   const pageContent = pageController ? add("@/components/billing/billing-page-content") : null;
   const refund = refunds ? add("@/lib/billing-refund-controller") : null;
@@ -36,12 +44,15 @@ function bundle({ realApi = false, refunds = false, pageController = false } = {
     ? `React.createElement(require(${reports}).BillingReportsTab,{billingPayers:[],billingPayments:state.payments,refundController:refunds,canManageRoutineBilling:false,externalAmount:'',externalMethod:'',externalNote:'',externalPayerId:'',externalPaymentReady:false,externalPaymentFormLocked:true,externalPaymentRecoveryMessage:'',externalPaymentIsRetry:false,externalPaymentTotal:0,isActionLoading:false,isLoadingAction:()=>false,onExternalAmountChange:()=>{},onExternalMethodChange:()=>{},onExternalNoteChange:()=>{},onExternalPayerChange:()=>{},onRecordExternalPayment:()=>{},paymentCohortAvailable:true,stripePaymentTotal:0})`
     : `React.createElement('output',null,JSON.stringify({landing:state.landing,plans:state.plans,payers:state.payers}))`;
   const observer = pageController
-    ? `function Observer(){const page=require(${pageHook}).useBillingPageController(window.fixture.pageOptions);window.fixture.page=page.contentProps;window.fixture.actions=page.contentProps.tabContentProps.actions;return React.createElement(require(${pageContent}).BillingPageContent,page.contentProps);}`
+    ? `function Observer(){const page=require(${pageHook}).useBillingPageController(window.fixture.pageOptions);window.fixture.page=page.contentProps;window.fixture.actions=page.contentProps.tabContentProps.actions;React.useLayoutEffect(()=>{window.fixture.commits.push({tab:page.contentProps.activeTab,loading:page.contentProps.showBillingLoading,content:page.contentProps.showBillingContent,setupReady:page.contentProps.billingSetupReady});});return React.createElement(require(${pageContent}).BillingPageContent,page.contentProps);}`
     : `function Observer(){const state=useBillingDataController(window.fixture.options);window.fixture.state=state;${refundObserver}React.useLayoutEffect(()=>{window.fixture.commits.push({tab:window.fixture.options.activeTab,settled:state.hasBillingLoadSettled,loading:state.isLoading,requestCount:window.fixture.requests.length});});React.useEffect(()=>{void state.ensureBilling();},[state.ensureBilling]);return ${rendered};}`;
-  return `(()=>{const process={env:{NODE_ENV:'production'}};const modules=[${modules.join(",")}],cache={};function require(id){if(cache[id])return cache[id].exports;const module=cache[id]={exports:{}};modules[id](module,module.exports,require);return module.exports;}const React=require(${react});const {useBillingDataController}=require(${controller});${observer}window.fixture.root=require(${dom}).createRoot(document.getElementById('root'));window.fixture.render=()=>window.fixture.root.render(React.createElement(Observer));window.fixture.remount=()=>{window.fixture.root.unmount();window.fixture.root=require(${dom}).createRoot(document.getElementById('root'));window.fixture.render();};window.fixture.render();})();`;
+  const mounted = retained
+    ? `function App(){const [instance,setInstance]=React.useState(0);window.fixture.remount=()=>setInstance(n=>n+1);const studio=window.fixture.pageOptions?.studioStore;const scope=studio?[studio.currentUserId,studio.currentStudioId,studio.identityGeneration].join(':'):window.fixture.options.identityKey;return React.createElement(require(${retainedState}).RetainedStateProvider,{scope},React.createElement(Observer,{key:instance}));}window.fixture.root=require(${dom}).createRoot(document.getElementById('root'));window.fixture.render=()=>window.fixture.root.render(React.createElement(App));window.fixture.render();`
+    : `window.fixture.root=require(${dom}).createRoot(document.getElementById('root'));window.fixture.render=()=>window.fixture.root.render(React.createElement(Observer));window.fixture.remount=()=>{window.fixture.root.unmount();window.fixture.root=require(${dom}).createRoot(document.getElementById('root'));window.fixture.render();};window.fixture.render();`;
+  return `(()=>{const process={env:{NODE_ENV:'production'}};const modules=[${modules.join(",")}],cache={};function require(id){if(cache[id])return cache[id].exports;const module=cache[id]={exports:{}};modules[id](module,module.exports,require);return module.exports;}const React=require(${react});const {useBillingDataController}=require(${controller});${observer}${mounted}})();`;
 }
 
-async function mountBillingFixture(browser) {
+async function mountBillingFixture(browser, { retained = false } = {}) {
   const page = await browser.newPage();
   await page.route("http://fixture.local/", (r) =>
     r.fulfill({ contentType: "text/html", body: '<div id="root"></div>' }),
@@ -105,7 +116,7 @@ async function mountBillingFixture(browser) {
       },
     };
   });
-  await page.addScriptTag({ content: bundle() });
+  await page.addScriptTag({ content: bundle({ retained }) });
   await page.waitForFunction(() => fixture.state?.hasBillingLoadSettled);
   return page;
 }
@@ -292,6 +303,8 @@ async function mountExternalPaymentFixture(
     storageFault = null,
     search = undefined,
     extraReads = undefined,
+    retained = false,
+    heldRead = null,
   } = {},
 ) {
   const page = await browser.newPage();
@@ -300,10 +313,12 @@ async function mountExternalPaymentFixture(
   );
   await page.goto("http://localhost:4173/");
   await page.evaluate(
-    ({ role, preview, workflow, storageFault }) => {
+    ({ role, preview, workflow, storageFault, heldRead }) => {
       const f = (window.fixture = {
         requests: [],
         posts: [],
+        commits: [],
+        heldRead,
         receipts: {},
         waiters: [],
         workflow,
@@ -383,6 +398,7 @@ async function mountExternalPaymentFixture(
       f.api = {
         get: async (path, token) => {
           f.requests.push({ path, token, identity: structuredClone(f.pageOptions.studioStore) });
+          if (path === f.heldRead) await new Promise((resolve) => f.waiters.push(resolve));
           if (f.failReads) throw new Error("Payment read failed");
           if (path === "/billing/landing")
             return {
@@ -398,8 +414,20 @@ async function mountExternalPaymentFixture(
             };
           if (path === "/billing/payers")
             return [
-              { id: "payer-1", display_name: "Family One" },
-              { id: "payer-2", display_name: "Family Two" },
+              {
+                id: "payer-1",
+                display_name: "Family One",
+                billing_status: "current",
+                balance_cents: 0,
+                autopay_status: "not_configured",
+              },
+              {
+                id: "payer-2",
+                display_name: "Family Two",
+                billing_status: "current",
+                balance_cents: 0,
+                autopay_status: "not_configured",
+              },
             ];
           if (path === "/billing/payments/page")
             return { items: Object.values(f.receipts), next_cursor: null, complete: true };
@@ -449,7 +477,7 @@ async function mountExternalPaymentFixture(
         },
       };
     },
-    { role, preview, workflow, storageFault },
+    { role, preview, workflow, storageFault, heldRead },
   );
   if (search !== undefined || extraReads !== undefined)
     await page.evaluate(
@@ -460,8 +488,10 @@ async function mountExternalPaymentFixture(
       },
       { search, extraReads: extraReads?.toString() },
     );
-  await page.addScriptTag({ content: bundle({ pageController: true }) });
-  await page.waitForFunction(() => fixture.page && !fixture.page.showBillingLoading);
+  await page.addScriptTag({ content: bundle({ pageController: true, retained }) });
+  await page.waitForFunction(
+    () => fixture.page && (fixture.heldRead || !fixture.page.showBillingLoading),
+  );
   return page;
 }
 
@@ -2410,6 +2440,218 @@ test("the Enrollments page says when more enrollments exist and loads every late
     const paths = await page.evaluate(() => fixture.requests.map((r) => r.path));
     assert.ok(!paths.includes("/billing/enrollments"));
     assert.ok(!paths.includes("/billing/subscriptions"));
+  } finally {
+    await browser.close();
+  }
+});
+
+test("Billing retains successful tabs, totals and paged history across page remounts while verifying current access", async () => {
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await mountBillingFixture(browser, { retained: true });
+    for (const tab of ["plans", "families", "enrollments", "invoices", "reports", "overview"]) {
+      await page.evaluate((activeTab) => {
+        fixture.options = { ...fixture.options, activeTab };
+        fixture.render();
+      }, tab);
+      await page.waitForFunction(
+        (tab) =>
+          fixture.commits.at(-1)?.tab === tab &&
+          fixture.state.hasVisibleTabData &&
+          !fixture.state.isLoading,
+        tab,
+      );
+    }
+    await page.evaluate(() => {
+      fixture.options = { ...fixture.options, activeTab: "reports" };
+      fixture.more = true;
+      fixture.render();
+    });
+    await page.evaluate(() => fixture.state.refreshBilling());
+    await page.evaluate(() => fixture.state.loadMoreHistory());
+    assert.equal(await page.evaluate(() => fixture.state.payments.length), 2);
+    const before = await page.evaluate(() => fixture.requests.length);
+    await page.evaluate(() => {
+      fixture.commits = [];
+      fixture.held = "/billing/landing";
+      fixture.remount();
+    });
+    await page.waitForFunction(() => fixture.waiters.length === 1);
+    assert.deepEqual(await page.evaluate(() => fixture.commits[0]), {
+      tab: "reports",
+      settled: true,
+      loading: false,
+      requestCount: before,
+    });
+    assert.equal(await page.evaluate(() => fixture.state.payments.length), 2);
+    assert.equal(await page.evaluate(() => fixture.state.paymentCohortSummary.payment_count), 1001);
+    assert.equal(await page.evaluate(() => fixture.state.hasMoreHistory), false);
+    assert.equal(
+      await page.evaluate(() => fixture.state.verifiedBillingSystemStatus),
+      null,
+      "retained provider capabilities cannot authorize the remounted page",
+    );
+    await page.evaluate(() => {
+      fixture.held = null;
+      fixture.waiters.splice(0).forEach((resolve) => resolve());
+    });
+    await page.waitForFunction(() => !fixture.state.isLoading);
+    assert.deepEqual(
+      await page.evaluate((n) => fixture.requests.slice(n).map((r) => r.path), before),
+      ["/billing/landing"],
+      "access is revalidated while the 30-second financial cache avoids re-reading the first page",
+    );
+    assert.equal(await page.evaluate(() => fixture.state.payments.length), 2);
+    for (const tab of ["plans", "families", "enrollments", "invoices", "reports", "overview"]) {
+      await page.evaluate((activeTab) => {
+        fixture.commits = [];
+        fixture.options = { ...fixture.options, activeTab };
+        fixture.remount();
+      }, tab);
+      await page.waitForFunction(() => fixture.commits.length > 0 && !fixture.state.isLoading);
+      assert.equal(await page.evaluate(() => fixture.commits[0].settled), true, tab);
+    }
+    await page.evaluate(() => {
+      fixture.held = "/billing/landing";
+      fixture.options = { ...fixture.options, identityKey: "other:studio:admin:2" };
+      fixture.render();
+    });
+    await page.waitForFunction(() => fixture.waiters.length === 1);
+    assert.equal(await page.evaluate(() => fixture.state.landing), null);
+    assert.deepEqual(await page.evaluate(() => fixture.state.payments), []);
+    await page.evaluate(() => {
+      fixture.held = null;
+      fixture.waiters.splice(0).forEach((resolve) => resolve());
+    });
+  } finally {
+    await browser.close();
+  }
+});
+
+test("Billing stale revisits and forced refresh keep successful data, but verified denial clears it", async () => {
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await mountBillingFixture(browser, { retained: true });
+    await page.evaluate(() => {
+      fixture.options = { ...fixture.options, activeTab: "plans" };
+      fixture.render();
+    });
+    await page.waitForFunction(() => fixture.state.plans.length === 1 && !fixture.state.isLoading);
+    await page.evaluate(() => {
+      fixture.originalNow = Date.now;
+      Date.now = () => fixture.originalNow() + 31_000;
+      fixture.held = "/billing/plans";
+      fixture.remount();
+    });
+    await page.waitForFunction(() => fixture.waiters.length === 1 && fixture.state.isLoading);
+    assert.equal(await page.evaluate(() => fixture.state.hasVisibleTabData), true);
+    assert.equal(await page.evaluate(() => fixture.state.plans.length), 1);
+    await page.evaluate(() => {
+      fixture.held = null;
+      fixture.waiters.splice(0).forEach((resolve) => resolve());
+    });
+    await page.waitForFunction(() => !fixture.state.isLoading);
+    await page.evaluate(() => {
+      fixture.held = "/billing/plans";
+      fixture.fail = "/billing/plans";
+      void fixture.state.refreshBilling();
+    });
+    await page.waitForFunction(() => fixture.waiters.length === 1 && fixture.state.isLoading);
+    assert.equal(await page.evaluate(() => fixture.state.hasVisibleTabData), true);
+    assert.equal(await page.evaluate(() => fixture.state.plans.length), 1);
+    await page.evaluate(() => {
+      fixture.held = null;
+      fixture.waiters.splice(0).forEach((resolve) => resolve());
+    });
+    await page.waitForFunction(() => !fixture.state.isLoading && fixture.error);
+    assert.equal(await page.evaluate(() => fixture.state.plans.length), 1);
+    await page.evaluate(() => {
+      fixture.fail = null;
+      fixture.denied = true;
+      return fixture.state.refreshBilling();
+    });
+    assert.deepEqual(await page.evaluate(() => fixture.state.plans), []);
+    assert.equal(await page.evaluate(() => fixture.state.hasVisibleTabData), false);
+    await page.evaluate(() => fixture.remount());
+    await page.waitForFunction(
+      () => fixture.state.hasBillingLoadSettled && !fixture.state.isLoading,
+    );
+    assert.deepEqual(await page.evaluate(() => fixture.state.plans), []);
+  } finally {
+    await browser.close();
+  }
+});
+
+test("Billing renders one cold placeholder then keeps every view visible through refresh and remount", async () => {
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await mountExternalPaymentFixture(browser, {
+      retained: true,
+      heldRead: "/billing/landing",
+      search: "",
+      extraReads(path) {
+        if (path === "/billing/plans") return [];
+        if (["/billing/enrollments/page", "/billing/invoices/page"].includes(path)) {
+          return { items: [], next_cursor: null, complete: true };
+        }
+      },
+    });
+    await page.waitForFunction(() => fixture.waiters.length === 1);
+    assert.equal(await page.getByRole("heading", { name: "Billing", exact: true }).count(), 1);
+    assert.equal(await page.getByRole("navigation", { name: "Billing views" }).count(), 1);
+    assert.equal(await page.locator("[data-billing-placeholder]").count(), 1);
+    assert.equal(await page.getByText("Review status pending", { exact: true }).count(), 1);
+    assert.equal(await page.getByText("0 of 5 ready", { exact: true }).count(), 0);
+    assert.equal(await page.getByText("Needs attention", { exact: true }).count(), 1);
+    await page.evaluate(() => {
+      fixture.heldRead = null;
+      fixture.waiters.splice(0).forEach((resolve) => resolve());
+    });
+    await page.waitForFunction(() => fixture.page.showBillingContent && !fixture.page.isLoading);
+    for (const tab of ["plans", "families", "enrollments", "invoices", "reports", "overview"]) {
+      await page.evaluate((tab) => {
+        fixture.search = tab === "overview" ? "" : `tab=${tab}`;
+        fixture.render();
+      }, tab);
+      await page.waitForFunction(
+        (tab) =>
+          fixture.page.activeTab === tab &&
+          fixture.page.showBillingContent &&
+          !fixture.page.isLoading,
+        tab,
+      );
+      await page.evaluate(() => {
+        fixture.heldRead = "/billing/landing";
+        fixture.page.onRefresh();
+      });
+      await page.waitForFunction(() => fixture.waiters.length === 1 && fixture.page.isLoading);
+      assert.equal(await page.locator("[data-billing-placeholder]").count(), 0, tab);
+      assert.equal(await page.evaluate(() => fixture.page.showBillingContent), true, tab);
+      await page.evaluate(() => {
+        fixture.heldRead = null;
+        fixture.waiters.splice(0).forEach((resolve) => resolve());
+      });
+      await page.waitForFunction(() => !fixture.page.isLoading);
+      await page.evaluate(() => {
+        fixture.heldRead = "/billing/landing";
+        fixture.commits = [];
+        fixture.remount();
+      });
+      await page.waitForFunction(() => fixture.waiters.length === 1);
+      assert.equal(await page.evaluate(() => fixture.commits[0].content), true, tab);
+      assert.equal(await page.evaluate(() => fixture.commits[0].loading), false, tab);
+      assert.equal(await page.locator("[data-billing-placeholder]").count(), 0, tab);
+      assert.equal(
+        await page.evaluate(() => fixture.actions.canUseWorkflow("payment.external.record")),
+        false,
+        "cached capabilities are presentation only until the current access read completes",
+      );
+      await page.evaluate(() => {
+        fixture.heldRead = null;
+        fixture.waiters.splice(0).forEach((resolve) => resolve());
+      });
+      await page.waitForFunction(() => !fixture.page.isLoading);
+    }
   } finally {
     await browser.close();
   }
