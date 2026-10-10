@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import re
 
-
 CSV_PAYMENT_STATUS_TOKENS = {
     "account",
     "balance",
@@ -180,23 +179,29 @@ def infer_csv_field_from_tokens(tokens: set[str]) -> str:
     if "dob" in tokens or "birthday" in tokens or {"birth", "date"} <= tokens:
         return "date_of_birth"
 
-    if (
-        {"full", "name"} <= tokens
-        or {"student", "name"} <= tokens
-        or {"student", "full", "name"} <= tokens
+    # Preferred-name declarations take precedence over legal-name hints.
+    if {"preferred", "name"} <= tokens or "nickname" in tokens or {"nick", "name"} <= tokens:
+        return "preferred_name"
+
+    # "First Last" or "Last, First" can describe the format of a full-name column.
+    if {"full", "name"} <= tokens or (
+        {"student", "name"} <= tokens
+        and tokens & {"first", "given", "forename"}
+        and tokens & {"last", "family", "surname"}
     ):
         return "full_name"
 
     if {"first", "name"} <= tokens or {"given", "name"} <= tokens or "forename" in tokens:
         return "legal_first_name"
-    if "given" in tokens or "child" in tokens:
-        return "legal_first_name"
 
     if {"last", "name"} <= tokens or {"family", "name"} <= tokens or "surname" in tokens:
         return "legal_last_name"
 
-    if {"preferred", "name"} <= tokens or "nickname" in tokens or {"nick", "name"} <= tokens:
-        return "preferred_name"
+    if {"student", "name"} <= tokens:
+        return "full_name"
+
+    if "given" in tokens or "child" in tokens:
+        return "legal_first_name"
 
     if {"membership", "start", "date"} <= tokens or {"membership", "date"} <= tokens:
         return "membership_start_date"
