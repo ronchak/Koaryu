@@ -2,6 +2,7 @@
 // re-sampled for a short header band, plus the greeting and the one-line brief.
 
 export const HORIZON_VIEWBOX = { width: 1600, height: 300 } as const;
+export const HORIZON_BAND_VIEWBOX = { width: 1600, height: 160 } as const;
 
 type Ridge = {
   readonly baseY: number;
@@ -20,10 +21,18 @@ const HORIZON_RIDGES: readonly Ridge[] = [
   { baseY: 300, amplitude: 28, frequency: 0.7, phase: 5.6 },
 ];
 
+// The page-header band: the same ridges, lower and flatter, under a short sky.
+const HORIZON_BAND_RIDGES: readonly Ridge[] = [
+  { baseY: 92, amplitude: 12, frequency: 0.9, phase: 0.4 },
+  { baseY: 114, amplitude: 14, frequency: 1.2, phase: 2.1 },
+  { baseY: 134, amplitude: 14, frequency: 0.8, phase: 4.3 },
+  { baseY: 152, amplitude: 12, frequency: 1.1, phase: 1.2 },
+  { baseY: 168, amplitude: 10, frequency: 0.7, phase: 5.6 },
+];
+
 type Point = readonly [number, number];
 
-function ridgeLine(ridge: Ridge, resolution = 46): Point[] {
-  const { width } = HORIZON_VIEWBOX;
+function ridgeLine(ridge: Ridge, width: number, resolution = 46): Point[] {
   const { baseY, amplitude, frequency, phase } = ridge;
   return Array.from({ length: resolution + 1 }, (_, index) => {
     const progress = index / resolution;
@@ -54,12 +63,28 @@ function smoothPath(points: readonly Point[]): string {
   return path;
 }
 
+function closedRidgePaths(
+  ridges: readonly Ridge[],
+  viewBox: { width: number; height: number },
+): readonly string[] {
+  return Object.freeze(
+    ridges.map(
+      (ridge) =>
+        `${smoothPath(ridgeLine(ridge, viewBox.width))} L${viewBox.width + 120} ${viewBox.height + 40} L-120 ${viewBox.height + 40} Z`,
+    ),
+  );
+}
+
 /** Closed ridge outlines, far to near, filled down past the bottom edge. */
-export const HORIZON_RIDGE_PATHS: readonly string[] = Object.freeze(
-  HORIZON_RIDGES.map(
-    (ridge) =>
-      `${smoothPath(ridgeLine(ridge))} L${HORIZON_VIEWBOX.width + 120} ${HORIZON_VIEWBOX.height + 40} L-120 ${HORIZON_VIEWBOX.height + 40} Z`,
-  ),
+export const HORIZON_RIDGE_PATHS: readonly string[] = closedRidgePaths(
+  HORIZON_RIDGES,
+  HORIZON_VIEWBOX,
+);
+
+/** The compact page-header version of the same hills. */
+export const HORIZON_BAND_RIDGE_PATHS: readonly string[] = closedRidgePaths(
+  HORIZON_BAND_RIDGES,
+  HORIZON_BAND_VIEWBOX,
 );
 
 export type DayPeriod = "morning" | "afternoon" | "evening";

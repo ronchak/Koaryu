@@ -164,33 +164,6 @@
     inset 0 1px 0 rgb(255 255 255 / 70%), 0 10px 30px rgb(67 51 25 / 8%),
     0 1px 3px rgb(67 51 25 / 8%);
   --product-shadow-lifted: 0 22px 52px rgb(54 40 20 / 20%), 0 2px 8px rgb(54 40 20 / 10%);
-
-  --hz-sky: #ece3cf;
-  --hz-tile: #f4eee1;
-  --hz-ridge-0: #efe2c0;
-  --hz-ridge-1: #e7cc97;
-  --hz-ridge-2: #c9a75e;
-  --hz-ridge-3: #a28341;
-  --hz-ridge-4: #7a612e;
-  --hz-sun: #dcc191;
-  --hz-cta: #3b2f1c;
-  --hz-cta-ink: #f7f3e9;
-  --hz-alert-wash: rgb(156 69 48 / 9%);
-  --hz-warn-wash: rgb(201 167 94 / 22%);
-  --hz-affirm-wash: rgb(47 107 82 / 10%);
-  --hz-bar: #c9a75e;
-  --hz-bar-now: #7a612e;
-  --hz-seg-members: #25845a;
-  --hz-seg-trialing: #cf9f2e;
-  --hz-rail: #3b2f1c;
-  --hz-rail-deep: #2c2213;
-  --hz-rail-ink: #f4eee1;
-  --hz-rail-meta: rgb(244 238 225 / 66%);
-  --hz-rail-line: rgb(244 238 225 / 10%);
-  --hz-rail-active: rgb(244 238 225 / 11%);
-  --hz-rail-mark: #c9a75e;
-  --hz-grain-blend: multiply;
-  --hz-grain-opacity: 0.07;
 }
 
 :global([data-theme="dark"]) .shellRoot[data-surface="horizon"] {
@@ -214,33 +187,6 @@
   --product-focus: #f0b866;
   --product-shadow-card: inset 0 1px 0 rgb(255 255 255 / 4%), 0 14px 34px rgb(0 0 0 / 34%);
   --product-shadow-lifted: inset 0 1px 0 rgb(255 255 255 / 6%), 0 24px 56px rgb(0 0 0 / 46%);
-
-  --hz-sky: #1d1a2a;
-  --hz-tile: #25202a;
-  --hz-ridge-0: #4c4468;
-  --hz-ridge-1: #3f3859;
-  --hz-ridge-2: #322c48;
-  --hz-ridge-3: #272237;
-  --hz-ridge-4: #1c1828;
-  --hz-sun: #ece4cf;
-  --hz-cta: #f0b866;
-  --hz-cta-ink: #1d140b;
-  --hz-alert-wash: rgb(232 149 125 / 13%);
-  --hz-warn-wash: rgb(240 184 102 / 14%);
-  --hz-affirm-wash: rgb(140 199 164 / 13%);
-  --hz-bar: #8f7a4c;
-  --hz-bar-now: #f0b866;
-  --hz-seg-members: #3a9f6f;
-  --hz-seg-trialing: #b88c26;
-  --hz-rail: #100e16;
-  --hz-rail-deep: #0b0a10;
-  --hz-rail-ink: #f2e8d5;
-  --hz-rail-meta: rgb(242 232 213 / 62%);
-  --hz-rail-line: rgb(242 232 213 / 9%);
-  --hz-rail-active: rgb(240 184 102 / 12%);
-  --hz-rail-mark: #f0b866;
-  --hz-grain-blend: screen;
-  --hz-grain-opacity: 0.035;
 }
 
 .shellRoot[data-surface="horizon"] .slugBand {
@@ -303,6 +249,50 @@
 
 .shellRoot[data-surface="horizon"] .main {
   background: var(--product-ground);
+}
+
+.studioCard {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.625rem;
+  margin: 0.25rem 0.6rem 0.75rem;
+  padding: 0.6rem 0.65rem;
+  border: 1px solid var(--hz-rail-line, var(--product-rule-soft));
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--hz-rail-ink, var(--product-ink)) 6%, transparent);
+}
+
+.studioMark {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+  place-items: center;
+  border-radius: 8px;
+  background: var(--hz-rail-mark, var(--product-wood));
+  color: var(--hz-rail, var(--product-paper));
+  font-size: 0.75rem;
+  font-weight: 760;
+}
+
+.studioText {
+  display: grid;
+  min-width: 0;
+  line-height: 1.25;
+}
+
+.studioText strong {
+  overflow: hidden;
+  font-size: 0.8125rem;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.studioText small {
+  color: var(--hz-rail-meta, var(--product-meta));
+  font-size: 0.6875rem;
 }
 
 .skipLink {

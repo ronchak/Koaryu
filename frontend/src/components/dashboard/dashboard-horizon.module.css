@@ -1,24 +1,3 @@
-/* Hills behind the greeting: the landing's ridges, fading into the ground. */
-.hills {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  -webkit-mask-image: linear-gradient(180deg, #000 58%, transparent 100%);
-  mask-image: linear-gradient(180deg, #000 58%, transparent 100%);
-  pointer-events: none;
-}
-
-.sun {
-  fill: var(--hz-sun);
-  opacity: 0.95;
-}
-
-.sunHalo {
-  fill: var(--hz-sun);
-  opacity: 0.35;
-}
-
 /* Studio pulse: four numbers on a frosted sheet over the near ridge. */
 .pulse {
   position: relative;
@@ -182,10 +161,6 @@
 }
 
 @media print {
-  .hills {
-    display: none;
-  }
-
   .pulse {
     box-shadow: none;
     backdrop-filter: none;

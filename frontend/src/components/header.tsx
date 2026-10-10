@@ -1,17 +1,30 @@
+import type { ReactNode } from "react";
+import { HorizonHills } from "@/components/ui/horizon-hills";
+import styles from "./header.module.css";
+
 interface HeaderProps {
-  title: React.ReactNode;
-  description?: React.ReactNode;
-  children?: React.ReactNode;
+  title: ReactNode;
+  description?: ReactNode;
+  /** A short label above the title, such as the section or a date. */
+  eyebrow?: ReactNode;
+  children?: ReactNode;
 }
 
-export function Header({ title, description, children }: HeaderProps) {
+/** Page header in the Horizon language: title and actions over the landing's hills. */
+export function Header({ title, description, eyebrow, children }: HeaderProps) {
   return (
-    <header className="koaryu-surface-transition flex flex-col gap-3 border-b border-border bg-bg px-4 py-4 sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:px-8 lg:py-5">
-      <div className="min-w-0">
-        <h1 className="text-lg font-semibold text-text-primary">{title}</h1>
-        {description && <p className="text-sm text-text-secondary mt-0.5">{description}</p>}
+    <header className="koaryu-surface-transition" data-koaryu-page-header="horizon">
+      <div className={styles.header}>
+        <HorizonHills variant="band" className={styles.hills} />
+        <div className={styles.inner}>
+          <div className={styles.copy}>
+            {eyebrow ? <p className={styles.eyebrow}>{eyebrow}</p> : null}
+            <h1 className={styles.title}>{title}</h1>
+            {description ? <p className={styles.description}>{description}</p> : null}
+          </div>
+          {children ? <div className={styles.actions}>{children}</div> : null}
+        </div>
       </div>
-      {children && <div className="flex flex-wrap items-center gap-2">{children}</div>}
     </header>
   );
 }

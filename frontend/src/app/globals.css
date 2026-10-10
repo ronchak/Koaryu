@@ -1,28 +1,60 @@
 @import "tailwindcss";
 
 /* =========================================
-   Koaryu Design System
-   Dark-mode-first. Linear/Vercel aesthetic.
+   Koaryu Design System: Horizon
    ========================================= */
 
+/*
+ * Horizon: the landing page's palette across the product. Light is the hills at
+ * noon (paper, ink, wood); dark is the landing's night scene (indigo, cream,
+ * lantern amber). The --hz-* tokens carry the scene itself: sky, ridges, sun,
+ * the ink call to action, tone washes and the validated chart pair.
+ */
 :root,
 [data-theme="dark"] {
   color-scheme: dark;
-  --bg: #0b0d10;
-  --surface: #12161b;
-  --surface-raised: #171c22;
-  --surface-hover: #1e2329;
-  --border: #232a33;
-  --text-primary: #f3f5f7;
-  --text-secondary: #98a2b3;
-  --muted: #667085;
-  --accent: #d6b25e;
-  --accent-hover: #c4a24e;
-  --accent-contrast: #0b0d10;
-  --success: #4caf7d;
-  --warning: #e8a23a;
-  --danger: #e05a5a;
-  --radius: 6px;
+  --bg: #14121b;
+  --surface: #1e1a22;
+  --surface-raised: #25202a;
+  --surface-hover: #2c2632;
+  --border: rgb(239 230 214 / 12%);
+  --text-primary: #efe6d6;
+  --text-secondary: #cfc4b1;
+  --muted: #a99e8b;
+  --accent: #e2b15e;
+  --accent-hover: #f0b866;
+  --accent-contrast: #1d140b;
+  --success: #8cc7a4;
+  --warning: #f0b866;
+  --danger: #e8957d;
+  --radius: 10px;
+
+  --hz-sky: #1d1a2a;
+  --hz-tile: #25202a;
+  --hz-ridge-0: #4c4468;
+  --hz-ridge-1: #3f3859;
+  --hz-ridge-2: #322c48;
+  --hz-ridge-3: #272237;
+  --hz-ridge-4: #1c1828;
+  --hz-sun: #ece4cf;
+  --hz-cta: #f0b866;
+  --hz-cta-ink: #1d140b;
+  --hz-alert-wash: rgb(232 149 125 / 13%);
+  --hz-warn-wash: rgb(240 184 102 / 14%);
+  --hz-affirm-wash: rgb(140 199 164 / 13%);
+  --hz-bar: #8f7a4c;
+  --hz-bar-now: #f0b866;
+  --hz-seg-members: #3a9f6f;
+  --hz-seg-trialing: #b88c26;
+  --hz-rail: #100e16;
+  --hz-rail-deep: #0b0a10;
+  --hz-rail-ink: #f2e8d5;
+  --hz-rail-meta: rgb(242 232 213 / 62%);
+  --hz-rail-line: rgb(242 232 213 / 9%);
+  --hz-rail-active: rgb(240 184 102 / 12%);
+  --hz-rail-mark: #f0b866;
+  --hz-grain-blend: screen;
+  --hz-grain-opacity: 0.035;
 
   --ease-standard: cubic-bezier(0.2, 0, 0, 1);
   --ease-emphasized: cubic-bezier(0.16, 1, 0.3, 1);
@@ -33,20 +65,47 @@
 
 [data-theme="light"] {
   color-scheme: light;
-  --bg: #f7f8fa;
-  --surface: #ffffff;
-  --surface-raised: #eef1f5;
-  --surface-hover: #e5e9f0;
-  --border: #d9dee7;
-  --text-primary: #111827;
-  --text-secondary: #4b5565;
-  --muted: #7a8494;
-  --accent: #b88922;
-  --accent-hover: #9b711a;
-  --accent-contrast: #111827;
-  --success: #27805a;
-  --warning: #b87618;
-  --danger: #c44545;
+  --bg: #f7f3e9;
+  --surface: #fffcf5;
+  --surface-raised: #f4eee1;
+  --surface-hover: #efe6d3;
+  --border: rgb(59 47 28 / 14%);
+  --text-primary: #3b2f1c;
+  --text-secondary: #5f5241;
+  --muted: #74674f;
+  --accent: #8a6a34;
+  --accent-hover: #6b5230;
+  --accent-contrast: #fffcf5;
+  --success: #2f6b52;
+  --warning: #8a5c15;
+  --danger: #9c4530;
+
+  --hz-sky: #ece3cf;
+  --hz-tile: #f4eee1;
+  --hz-ridge-0: #efe2c0;
+  --hz-ridge-1: #e7cc97;
+  --hz-ridge-2: #c9a75e;
+  --hz-ridge-3: #a28341;
+  --hz-ridge-4: #7a612e;
+  --hz-sun: #dcc191;
+  --hz-cta: #3b2f1c;
+  --hz-cta-ink: #f7f3e9;
+  --hz-alert-wash: rgb(156 69 48 / 9%);
+  --hz-warn-wash: rgb(201 167 94 / 22%);
+  --hz-affirm-wash: rgb(47 107 82 / 10%);
+  --hz-bar: #c9a75e;
+  --hz-bar-now: #7a612e;
+  --hz-seg-members: #25845a;
+  --hz-seg-trialing: #cf9f2e;
+  --hz-rail: #3b2f1c;
+  --hz-rail-deep: #2c2213;
+  --hz-rail-ink: #f4eee1;
+  --hz-rail-meta: rgb(244 238 225 / 66%);
+  --hz-rail-line: rgb(244 238 225 / 10%);
+  --hz-rail-active: rgb(244 238 225 / 11%);
+  --hz-rail-mark: #c9a75e;
+  --hz-grain-blend: multiply;
+  --hz-grain-opacity: 0.07;
 }
 
 @theme inline {
@@ -194,7 +253,9 @@ button {
 .koaryu-modal-backdrop {
   position: absolute;
   inset: 0;
-  background: color-mix(in srgb, black 62%, transparent);
+  background: color-mix(in srgb, #1d140b 46%, transparent);
+  -webkit-backdrop-filter: blur(3px);
+  backdrop-filter: blur(3px);
   animation: koaryu-fade-in var(--motion-medium) var(--ease-standard) both;
 }
 

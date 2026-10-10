@@ -27,8 +27,19 @@ export function createCommonJsPacker(stubs) {
   const modules = [];
   const ids = new Map();
 
+  // Stylesheets never execute in these bundles; class lookups return their own names.
+  const stylesheetStub = `module.exports=new Proxy({},{get:(_,key)=>key==='__esModule'?false:key});`;
+
   function add(specifier, parent = resolve(frontend, "entry.js")) {
     let key = specifier;
+    if (!(key in stubs) && /\.css$/.test(specifier)) {
+      key = `stylesheet:${specifier.startsWith(".") ? resolve(dirname(parent), specifier) : specifier}`;
+      if (ids.has(key)) return ids.get(key);
+      const id = modules.length;
+      ids.set(key, id);
+      modules.push(`function(module,exports,require){${stylesheetStub}\n}`);
+      return id;
+    }
     if (!(key in stubs)) {
       if (specifier.startsWith("@/")) key = resolve(frontend, "src", specifier.slice(2));
       else if (specifier.startsWith(".")) key = resolve(dirname(parent), specifier);

@@ -6,12 +6,13 @@ interface BadgeProps {
   className?: string;
 }
 
+// Horizon tone tags: a tinted pill whose words carry the state.
 const variantStyles: Record<BadgeVariant, string> = {
-  default: "bg-surface-raised text-text-secondary border-border",
-  success: "bg-success/10 text-success border-success/20",
-  warning: "bg-warning/10 text-warning border-warning/20",
-  danger: "bg-danger/10 text-danger border-danger/20",
-  accent: "bg-accent/10 text-accent border-accent/20",
+  default: "bg-[var(--hz-tile)] text-text-secondary border-transparent",
+  success: "bg-[var(--hz-affirm-wash)] text-success border-transparent",
+  warning: "bg-[var(--hz-warn-wash)] text-warning border-transparent",
+  danger: "bg-[var(--hz-alert-wash)] text-danger border-transparent",
+  accent: "bg-[var(--hz-warn-wash)] text-accent border-transparent",
 };
 
 export function Badge({ children, variant = "default", className = "" }: BadgeProps) {
@@ -19,9 +20,8 @@ export function Badge({ children, variant = "default", className = "" }: BadgePr
     <span
       className={`
         inline-flex items-center
-        px-2 py-0.5 text-xs font-medium
-        rounded-[4px] border
-        font-mono
+        px-2 py-0.5 text-xs font-semibold
+        rounded-full border
         ${variantStyles[variant]}
         ${className}
       `}

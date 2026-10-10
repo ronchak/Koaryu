@@ -21,26 +21,30 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   isLoading?: boolean;
 }
 
+// Horizon: one ink call to action per view (amber at night), paper secondaries.
 const variantStyles: Record<ButtonVariant, string> = {
-  primary: "bg-accent text-accent-contrast hover:bg-accent-hover font-medium",
-  secondary: "bg-surface-raised text-text-primary border border-border hover:bg-surface-hover",
-  danger: "bg-danger/10 text-danger border border-danger/20 hover:bg-danger/20",
+  primary:
+    "bg-[var(--hz-cta,var(--accent))] text-[var(--hz-cta-ink,var(--accent-contrast))] font-semibold shadow-[0_8px_22px_rgb(45_34_18/16%)] hover:-translate-y-px hover:shadow-[0_12px_28px_rgb(45_34_18/20%)]",
+  secondary:
+    "bg-surface text-text-primary border border-[var(--product-rule,var(--border))] hover:bg-surface-raised",
+  danger: "bg-[var(--hz-alert-wash)] text-danger border border-danger/25 hover:border-danger/45",
   ghost: "bg-transparent text-text-secondary hover:text-text-primary hover:bg-surface-raised",
-  outline: "bg-transparent text-text-primary border border-border hover:bg-surface-raised",
+  outline:
+    "bg-transparent text-text-primary border border-[var(--product-rule,var(--border))] hover:bg-surface-raised",
 };
 
 const sizeStyles: Record<ButtonSize, string> = {
-  sm: "px-2.5 py-1 text-xs",
-  md: "px-3.5 py-1.5 text-sm",
-  lg: "px-5 py-2.5 text-sm",
+  sm: "min-h-9 px-3 py-1.5 text-xs",
+  md: "min-h-10 px-4 py-2 text-sm",
+  lg: "min-h-11 px-5 py-2.5 text-sm",
 };
 
 const baseStyles = `
   inline-flex items-center justify-center gap-2
-  rounded-[6px] font-medium
+  rounded-[10px] font-semibold whitespace-nowrap
   transition-[background-color,border-color,color,opacity,box-shadow,transform] duration-150 ease-out
-  motion-reduce:transition-none
-  disabled:opacity-50 disabled:cursor-not-allowed
+  motion-reduce:transition-none motion-reduce:hover:translate-y-0
+  disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0
   cursor-pointer
 `;
 

@@ -3,13 +3,8 @@
 import { useSyncExternalStore } from "react";
 import { IntentPrefetchLink as Link } from "@/components/intent-prefetch-link";
 import { DASHBOARD_WIDGET_BY_ID, type DashboardWidgetId } from "@/lib/dashboard-widget-catalog";
-import {
-  dayPeriodForHour,
-  HORIZON_RIDGE_PATHS,
-  HORIZON_VIEWBOX,
-  horizonWeek,
-  type DayPeriod,
-} from "@/lib/dashboard-horizon";
+import { HorizonHills as HorizonHills_ } from "@/components/ui/horizon-hills";
+import { dayPeriodForHour, horizonWeek, type DayPeriod } from "@/lib/dashboard-horizon";
 import type { DashboardWidgetViewModel } from "@/lib/dashboard-widget-view-models";
 import styles from "./dashboard-horizon.module.css";
 
@@ -29,22 +24,7 @@ export function useDayPeriod(): DayPeriod | null {
 
 /** The landing page's hills and sun, drawn behind the Dashboard greeting. */
 export function HorizonHills() {
-  const { width, height } = HORIZON_VIEWBOX;
-  return (
-    <svg
-      className={styles.hills}
-      viewBox={`0 0 ${width} ${height}`}
-      preserveAspectRatio="xMidYMax slice"
-      aria-hidden="true"
-      focusable="false"
-    >
-      <circle className={styles.sun} cx="1160" cy="132" r="46" />
-      <circle className={styles.sunHalo} cx="1166" cy="138" r="46" />
-      {HORIZON_RIDGE_PATHS.map((path, index) => (
-        <path key={index} d={path} fill={`var(--hz-ridge-${index})`} />
-      ))}
-    </svg>
-  );
+  return <HorizonHills_ variant="hero" />;
 }
 
 type PulseCandidate = {

@@ -1,6 +1,6 @@
 "use client";
 
-import { usePathname, useRouter } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { clearStoredStudioSessionCookies } from "@/lib/store-session-cookies";
 import { DashboardRouteTransition } from "@/components/dashboard-route-transition";
@@ -18,7 +18,6 @@ import styles from "@/components/dashboard-shell.module.css";
 
 function DashboardInner({ children }: { children: React.ReactNode }) {
   const router = useRouter();
-  const pathname = usePathname();
   const [supabase] = useState(() => createClient());
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isSigningOut, setIsSigningOut] = useState(false);
@@ -73,7 +72,7 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
     <div
       className={styles.shellRoot}
       data-koaryu-dashboard-shell="true"
-      data-surface={pathname === "/dashboard" ? "horizon" : undefined}
+      data-surface="horizon"
       data-navigation-placement={navigationPlacement}
       data-spine-collapsed={navigationPlacement === "side" && isSidebarCollapsed ? "true" : "false"}
     >
