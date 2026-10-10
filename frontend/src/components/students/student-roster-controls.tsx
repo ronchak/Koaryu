@@ -1,24 +1,102 @@
 "use client";
 
+import { IntentPrefetchLink as Link } from "@/components/intent-prefetch-link";
+import { STUDENT_STATUS_DISPLAY } from "@/components/students/student-status";
 import { DismissibleNotice } from "@/components/ui/dismissible-notice";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { StudentRosterStatusFilter } from "@/lib/student-list-page";
 import type { SortDir, SortKey } from "@/lib/students-page-model";
 import type { Program, StudentStatus } from "@/types";
-import { AlertTriangle, Search, Trash2 } from "lucide-react";
+import { AlertTriangle, Clock, Search, Sparkles, Trash2, X } from "lucide-react";
 import styles from "./student-records.module.css";
 
 export type StudentRosterBulkPanel = "tags" | "status" | "delete";
 
-const STATUS_OPTIONS: { value: StudentRosterStatusFilter | ""; label: string }[] = [
-  { value: "", label: "All statuses" },
-  { value: "active", label: "Active" },
-  { value: "trialing", label: "Trial" },
-  { value: "inactive", label: "Inactive" },
-  { value: "paused", label: "Paused" },
-  { value: "canceled", label: "Canceled" },
+const STATUS_VALUES: StudentStatus[] = ["active", "trialing", "paused", "inactive", "canceled"];
+
+const STATUS_OPTIONS: { value: StudentStatus; label: string }[] = STATUS_VALUES.map((value) => ({
+  value,
+  label: STUDENT_STATUS_DISPLAY[value].label,
+}));
+
+const STATUS_LENSES: { value: StudentRosterStatusFilter | ""; label: string }[] = [
+  { value: "", label: "Everyone" },
+  ...STATUS_OPTIONS,
 ];
+
+/**
+ * The roster's views: every status one tap away (the status filter itself), and the
+ * two follow-up lists the Dashboard links to. It opens the page on the header's ridge.
+ */
+export function StudentRosterLenses({
+  hasNewStudentFilter,
+  inactivityThreshold,
+  isBulkCommandPending,
+  isNewStudentYtd,
+  newStudentDays,
+  onStatusFilterChange,
+  statusFilter,
+}: {
+  hasNewStudentFilter: boolean;
+  inactivityThreshold: number | null;
+  isBulkCommandPending: boolean;
+  isNewStudentYtd: boolean;
+  newStudentDays: number | null;
+  onStatusFilterChange: (value: StudentRosterStatusFilter | "") => void;
+  statusFilter: StudentRosterStatusFilter | "";
+}) {
+  const inactiveLabel = `Not seen ${inactivityThreshold ?? 14}+ days`;
+  const newLabel = isNewStudentYtd ? "New this year" : `New in ${newStudentDays ?? 30} days`;
+  return (
+    <nav className={styles.rosterLenses} aria-label="Roster views">
+      <div role="radiogroup" aria-label="Filter by status" className={styles.lensGroup}>
+        {STATUS_LENSES.map((lens) => {
+          const checked = statusFilter === lens.value;
+          const tone = lens.value ? STUDENT_STATUS_DISPLAY[lens.value].tone : undefined;
+          return (
+            <button
+              key={lens.value || "all"}
+              type="button"
+              role="radio"
+              aria-checked={checked}
+              disabled={isBulkCommandPending}
+              onClick={() => onStatusFilterChange(lens.value)}
+              className={styles.lens}
+              data-tone={tone}
+            >
+              {tone ? <span aria-hidden="true" className={styles.lensDot} /> : null}
+              {lens.label}
+            </button>
+          );
+        })}
+      </div>
+      <div className={styles.lensFollowUps}>
+        <span className={styles.lensFollowUpsLabel}>Follow up</span>
+        <Link
+          href={inactivityThreshold ? "/students" : "/students?inactiveDays=14"}
+          className={styles.lensLink}
+          aria-current={inactivityThreshold ? "true" : undefined}
+          title={inactivityThreshold ? "Show everyone again" : undefined}
+        >
+          <Clock aria-hidden="true" />
+          {inactiveLabel}
+          {inactivityThreshold ? <X aria-hidden="true" className={styles.lensLinkClear} /> : null}
+        </Link>
+        <Link
+          href={hasNewStudentFilter ? "/students" : "/students?newStudents=30"}
+          className={styles.lensLink}
+          aria-current={hasNewStudentFilter ? "true" : undefined}
+          title={hasNewStudentFilter ? "Show everyone again" : undefined}
+        >
+          <Sparkles aria-hidden="true" />
+          {newLabel}
+          {hasNewStudentFilter ? <X aria-hidden="true" className={styles.lensLinkClear} /> : null}
+        </Link>
+      </div>
+    </nav>
+  );
+}
 
 export function StudentRosterNotices({
   actionMessage,
@@ -41,75 +119,74 @@ export function StudentRosterNotices({
   onDismissActionMessage: () => void;
   onDismissRosterQueryNotice: () => void;
 }) {
+  const hasNotice =
+    Boolean(inactivityThreshold) ||
+    (hasNewStudentFilter && Boolean(newStudentStartDate)) ||
+    fullRosterRequested ||
+    Boolean(actionMessage);
+  if (!hasNotice) return null;
   return (
-    <>
+    <div className={styles.rosterNotices}>
       {inactivityThreshold ? (
-        <div className="px-8 pt-4">
-          <DismissibleNotice tone="warning" onDismiss={onDismissRosterQueryNotice}>
-            <div className="text-text-primary">
-              <p className="text-sm font-medium text-text-primary">
-                Showing students inactive for {inactivityThreshold}+ days
-              </p>
-              <p className="text-xs text-muted mt-0.5">
-                Current holds are excluded automatically from this list.
-              </p>
-            </div>
-          </DismissibleNotice>
-        </div>
+        <DismissibleNotice tone="warning" onDismiss={onDismissRosterQueryNotice}>
+          <div className="text-text-primary">
+            <p className="text-sm font-semibold text-text-primary">
+              Showing students inactive for {inactivityThreshold}+ days
+            </p>
+            <p className="text-[0.8125rem] text-text-secondary mt-0.5">
+              Current holds are excluded automatically from this list.
+            </p>
+          </div>
+        </DismissibleNotice>
       ) : null}
 
       {hasNewStudentFilter && newStudentStartDate ? (
-        <div className="px-8 pt-4">
-          <DismissibleNotice tone="success" onDismiss={onDismissRosterQueryNotice}>
-            <div className="text-text-primary">
-              <p className="text-sm font-medium text-text-primary">
-                {isNewStudentYtd
-                  ? "Showing new students year to date"
-                  : `Showing new students from the last ${newStudentDays} days`}
-              </p>
-              <p className="text-xs text-muted mt-0.5">
-                Current active, trialing, or paused students are filtered by membership start date.
-              </p>
-            </div>
-          </DismissibleNotice>
-        </div>
+        <DismissibleNotice tone="success" onDismiss={onDismissRosterQueryNotice}>
+          <div className="text-text-primary">
+            <p className="text-sm font-semibold text-text-primary">
+              {isNewStudentYtd
+                ? "Showing new students year to date"
+                : `Showing new students from the last ${newStudentDays} days`}
+            </p>
+            <p className="text-[0.8125rem] text-text-secondary mt-0.5">
+              Current active, trialing, or paused students are filtered by membership start date.
+            </p>
+          </div>
+        </DismissibleNotice>
       ) : null}
 
       {fullRosterRequested ? (
-        <div className="px-8 pt-4">
-          <DismissibleNotice tone="warning" onDismiss={onDismissRosterQueryNotice}>
-            <div className="text-text-primary">
-              <p className="text-sm font-medium text-text-primary">
-                Full roster requested for dashboard details
-              </p>
-              <p className="mt-0.5 text-xs text-muted">
-                This request includes all student records needed for retention and churn details.
-              </p>
-            </div>
-          </DismissibleNotice>
-        </div>
+        <DismissibleNotice tone="warning" onDismiss={onDismissRosterQueryNotice}>
+          <div className="text-text-primary">
+            <p className="text-sm font-semibold text-text-primary">
+              Full roster requested for dashboard details
+            </p>
+            <p className="mt-0.5 text-[0.8125rem] text-text-secondary">
+              This request includes all student records needed for retention and churn details.
+            </p>
+          </div>
+        </DismissibleNotice>
       ) : null}
 
       {actionMessage ? (
-        <div className="px-8 pt-4">
-          <DismissibleNotice tone="success" onDismiss={onDismissActionMessage}>
-            {actionMessage}
-          </DismissibleNotice>
-        </div>
+        <DismissibleNotice tone="success" onDismiss={onDismissActionMessage}>
+          {actionMessage}
+        </DismissibleNotice>
       ) : null}
-    </>
+    </div>
   );
 }
 
 export function StudentRosterToolbar({
   activeBulkPanel,
   canManageRoster,
+  hasActiveFilters,
   isBulkCommandPending,
   isRosterRefreshing,
+  onClearFilters,
   onProgramFilterChange,
   onSearchChange,
   onSort,
-  onStatusFilterChange,
   onToggleBulkPanel,
   programFilter,
   programs,
@@ -117,16 +194,16 @@ export function StudentRosterToolbar({
   selectedCount,
   sortDir,
   sortKey,
-  statusFilter,
 }: {
   activeBulkPanel: StudentRosterBulkPanel | null;
   canManageRoster: boolean;
+  hasActiveFilters?: boolean;
   isBulkCommandPending: boolean;
   isRosterRefreshing: boolean;
+  onClearFilters?: () => void;
   onProgramFilterChange: (value: string) => void;
   onSearchChange: (value: string) => void;
   onSort: (key: SortKey) => void;
-  onStatusFilterChange: (value: StudentRosterStatusFilter | "") => void;
   onToggleBulkPanel: (panel: StudentRosterBulkPanel) => void;
   programFilter: string;
   programs: Program[];
@@ -134,16 +211,17 @@ export function StudentRosterToolbar({
   selectedCount: number;
   sortDir: SortDir;
   sortKey: SortKey;
-  statusFilter: StudentRosterStatusFilter | "";
 }) {
+  const bulkButtonClass = (active: boolean) =>
+    `${styles.selectionAction} ${active ? styles.selectionActionActive : ""}`;
   return (
-    <div className={`mx-4 px-4 py-2 sm:mx-6 lg:mx-8 ${styles.rosterToolbar}`}>
+    <div className={styles.rosterToolbar}>
       <div className={styles.rosterSearchField}>
         <Search aria-hidden="true" className={styles.rosterSearchIcon} />
         <input
           type="text"
           aria-label="Search students"
-          placeholder="Search students..."
+          placeholder="Search by name, email or program"
           value={search}
           onChange={(event) => onSearchChange(event.target.value)}
           disabled={isBulkCommandPending}
@@ -152,22 +230,6 @@ export function StudentRosterToolbar({
       </div>
 
       <div className={styles.rosterFilterGroup}>
-        <select
-          aria-label="Filter by status"
-          value={statusFilter}
-          onChange={(event) =>
-            onStatusFilterChange(event.target.value as StudentRosterStatusFilter | "")
-          }
-          disabled={isBulkCommandPending}
-          className={styles.rosterFilterSelect}
-        >
-          {STATUS_OPTIONS.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </select>
-
         <select
           aria-label="Filter by program"
           value={programFilter}
@@ -208,29 +270,35 @@ export function StudentRosterToolbar({
           disabled={isBulkCommandPending}
           className={styles.mobileSortDirection}
         >
-          {sortDir === "asc" ? "Ascending" : "Descending"}
+          {sortDir === "asc" ? "A–Z" : "Z–A"}
         </button>
       </div>
 
-      {isRosterRefreshing ? (
-        <span className={styles.rosterRefreshState}>Updating roster…</span>
-      ) : null}
+      <div className={styles.rosterToolbarEnd}>
+        {isRosterRefreshing ? (
+          <span className={styles.rosterRefreshState}>Updating roster…</span>
+        ) : null}
+        {hasActiveFilters && onClearFilters ? (
+          <button
+            type="button"
+            onClick={onClearFilters}
+            disabled={isBulkCommandPending}
+            className={styles.clearFilters}
+          >
+            <X aria-hidden="true" />
+            Clear filters
+          </button>
+        ) : null}
+      </div>
 
       {canManageRoster && selectedCount > 0 ? (
-        <div
-          className={`flex flex-wrap items-center gap-2 rounded-[14px] border border-border bg-surface-raised px-3 py-2 ${styles.selectionBand}`}
-        >
-          <span className="text-xs text-text-secondary">{selectedCount} selected</span>
-          <span className="text-border">|</span>
+        <div className={styles.selectionBand}>
+          <span className={styles.selectionCount}>{selectedCount} selected</span>
           <button
             type="button"
             onClick={() => onToggleBulkPanel("tags")}
             disabled={isBulkCommandPending}
-            className={`min-h-11 px-2 text-xs cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 ${
-              activeBulkPanel === "tags"
-                ? "text-accent"
-                : "text-text-secondary hover:text-text-primary"
-            }`}
+            className={bulkButtonClass(activeBulkPanel === "tags")}
           >
             Add tag
           </button>
@@ -238,11 +306,7 @@ export function StudentRosterToolbar({
             type="button"
             onClick={() => onToggleBulkPanel("status")}
             disabled={isBulkCommandPending}
-            className={`min-h-11 px-2 text-xs cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 ${
-              activeBulkPanel === "status"
-                ? "text-accent"
-                : "text-text-secondary hover:text-text-primary"
-            }`}
+            className={bulkButtonClass(activeBulkPanel === "status")}
           >
             Change status
           </button>
@@ -250,7 +314,7 @@ export function StudentRosterToolbar({
             type="button"
             onClick={() => onToggleBulkPanel("delete")}
             disabled={isBulkCommandPending}
-            className="min-h-11 px-2 text-xs text-danger hover:text-danger/80 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
+            className={`${styles.selectionAction} ${styles.selectionActionDanger}`}
           >
             Archive
           </button>
@@ -299,50 +363,42 @@ export function StudentRosterBulkActionPanels({
   selectedCount: number;
   tagInput: string;
 }) {
+  const studentsWord = selectedCount === 1 ? "student" : "students";
   if (activeBulkPanel === "tags" && selectedCount > 0) {
     return (
-      <div className="px-8 pt-4">
-        <div className="rounded-[14px] border border-accent/20 bg-accent/5 px-4 py-3">
-          <div className="flex items-start justify-between gap-4 flex-wrap">
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-medium text-text-primary">
-                Add tags to {selectedCount} selected {selectedCount === 1 ? "student" : "students"}
-              </p>
-              <p className="text-xs text-muted mt-1">
-                Enter one or more comma-separated tags. Existing tags stay in place and duplicates
-                are ignored.
-              </p>
-              <div className="mt-3 max-w-xl">
-                <Input
-                  label="Tags to add"
-                  placeholder="vip, leadership, needs-follow-up"
-                  value={tagInput}
-                  onChange={(event) => onTagInputChange(event.target.value)}
-                  disabled={isBulkCommandPending}
-                  error={bulkActionError || undefined}
-                />
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={onCancelTags}
-                disabled={isBulkCommandPending}
-              >
-                Cancel
-              </Button>
-              <Button
-                variant="primary"
-                size="sm"
-                isLoading={isAddingTags}
-                disabled={isBulkCommandPending}
-                onClick={onAddTags}
-              >
-                Add tag
-              </Button>
-            </div>
+      <div className={styles.bulkPanel}>
+        <div className="min-w-0 flex-1">
+          <p className={styles.bulkTitle}>
+            Add tags to {selectedCount} selected {studentsWord}
+          </p>
+          <p className={styles.bulkDetail}>
+            Enter one or more comma-separated tags. Existing tags stay in place and duplicates are
+            ignored.
+          </p>
+          <div className="mt-3 max-w-xl">
+            <Input
+              label="Tags to add"
+              placeholder="vip, leadership, needs-follow-up"
+              value={tagInput}
+              onChange={(event) => onTagInputChange(event.target.value)}
+              disabled={isBulkCommandPending}
+              error={bulkActionError || undefined}
+            />
           </div>
+        </div>
+        <div className={styles.bulkActions}>
+          <Button variant="ghost" size="sm" onClick={onCancelTags} disabled={isBulkCommandPending}>
+            Cancel
+          </Button>
+          <Button
+            variant="primary"
+            size="sm"
+            isLoading={isAddingTags}
+            disabled={isBulkCommandPending}
+            onClick={onAddTags}
+          >
+            Add tag
+          </Button>
         </div>
       </div>
     );
@@ -350,59 +406,52 @@ export function StudentRosterBulkActionPanels({
 
   if (activeBulkPanel === "status" && selectedCount > 0) {
     return (
-      <div className="px-8 pt-4">
-        <div className="rounded-[14px] border border-accent/20 bg-accent/5 px-4 py-3">
-          <div className="flex items-start justify-between gap-4 flex-wrap">
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-medium text-text-primary">
-                Change status for {selectedCount} selected{" "}
-                {selectedCount === 1 ? "student" : "students"}
-              </p>
-              <p className="text-xs text-muted mt-1">
-                This updates the membership status for every selected student at once.
-              </p>
-              <div className="mt-3 max-w-xs">
-                <label className="text-sm text-text-secondary font-medium" htmlFor="bulk-status">
-                  New status
-                </label>
-                <select
-                  id="bulk-status"
-                  value={bulkStatus}
-                  onChange={(event) => onBulkStatusChange(event.target.value as StudentStatus)}
-                  disabled={isBulkCommandPending}
-                  className="mt-1 w-full px-3 py-2 text-sm bg-surface-raised border border-border rounded-[14px] text-text-primary focus:border-accent focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {STATUS_OPTIONS.filter((option) => option.value).map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-                {bulkActionError ? (
-                  <p className="text-xs text-danger mt-2">{bulkActionError}</p>
-                ) : null}
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={onCancelStatus}
-                disabled={isBulkCommandPending}
-              >
-                Cancel
-              </Button>
-              <Button
-                variant="primary"
-                size="sm"
-                isLoading={isUpdatingStatus}
-                disabled={isBulkCommandPending}
-                onClick={onBulkStatusUpdate}
-              >
-                Change status
-              </Button>
-            </div>
+      <div className={styles.bulkPanel}>
+        <div className="min-w-0 flex-1">
+          <p className={styles.bulkTitle}>
+            Change status for {selectedCount} selected {studentsWord}
+          </p>
+          <p className={styles.bulkDetail}>
+            This updates the membership status for every selected student at once.
+          </p>
+          <div className="mt-3 max-w-xs">
+            <label className="text-sm text-text-primary font-semibold" htmlFor="bulk-status">
+              New status
+            </label>
+            <select
+              id="bulk-status"
+              value={bulkStatus}
+              onChange={(event) => onBulkStatusChange(event.target.value as StudentStatus)}
+              disabled={isBulkCommandPending}
+              className="mt-1.5 w-full text-sm text-text-primary"
+            >
+              {STATUS_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+            {bulkActionError ? <p className="text-xs text-danger mt-2">{bulkActionError}</p> : null}
           </div>
+        </div>
+        <div className={styles.bulkActions}>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onCancelStatus}
+            disabled={isBulkCommandPending}
+          >
+            Cancel
+          </Button>
+          <Button
+            variant="primary"
+            size="sm"
+            isLoading={isUpdatingStatus}
+            disabled={isBulkCommandPending}
+            onClick={onBulkStatusUpdate}
+          >
+            Change status
+          </Button>
         </div>
       </div>
     );
@@ -410,43 +459,39 @@ export function StudentRosterBulkActionPanels({
 
   if ((activeBulkPanel === "delete" || deleteError) && selectedCount > 0) {
     return (
-      <div className="px-8 pt-4">
-        <div className="rounded-[14px] border border-danger/20 bg-danger/5 px-4 py-3">
-          <div className="flex items-start justify-between gap-4 flex-wrap">
-            <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <AlertTriangle className="w-4 h-4 text-danger flex-shrink-0" />
-                <p className="text-sm font-medium text-text-primary">
-                  Archive {selectedCount} selected {selectedCount === 1 ? "student" : "students"}?
-                </p>
-              </div>
-              <p className="text-xs text-muted mt-1">
-                This removes the selected students from the active roster and cannot be undone from
-                the UI.
-              </p>
-              {deleteError ? <p className="text-xs text-danger mt-2">{deleteError}</p> : null}
-            </div>
-            <div className="flex items-center gap-2">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={onCancelDelete}
-                disabled={isBulkCommandPending}
-              >
-                Cancel
-              </Button>
-              <Button
-                variant="danger"
-                size="sm"
-                isLoading={isDeleting}
-                disabled={isBulkCommandPending}
-                onClick={onDeleteSelected}
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-                Archive
-              </Button>
-            </div>
+      <div className={styles.bulkPanel} data-tone="alert">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <AlertTriangle aria-hidden="true" className="w-4 h-4 text-danger flex-shrink-0" />
+            <p className={styles.bulkTitle}>
+              Archive {selectedCount} selected {studentsWord}?
+            </p>
           </div>
+          <p className={styles.bulkDetail}>
+            This removes the selected students from the active roster and cannot be undone from the
+            UI.
+          </p>
+          {deleteError ? <p className="text-xs text-danger mt-2">{deleteError}</p> : null}
+        </div>
+        <div className={styles.bulkActions}>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onCancelDelete}
+            disabled={isBulkCommandPending}
+          >
+            Cancel
+          </Button>
+          <Button
+            variant="danger"
+            size="sm"
+            isLoading={isDeleting}
+            disabled={isBulkCommandPending}
+            onClick={onDeleteSelected}
+          >
+            <Trash2 aria-hidden="true" className="w-3.5 h-3.5" />
+            Archive
+          </Button>
         </div>
       </div>
     );

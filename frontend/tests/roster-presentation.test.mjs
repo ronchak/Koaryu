@@ -81,7 +81,7 @@ describe("roster presentation behavior", () => {
     }
   });
 
-  it("mounts mobile sort, responsive quick view, keyboard, open, selection, and both tip badges", async () => {
+  it("mounts mobile sort, inline row details, keyboard, open, selection, and both tip badges", async () => {
     const page = await browser.newPage({ viewport: { width: 820, height: 900 } });
     await page.setContent(
       `<style>*{box-sizing:border-box}.px-4{padding-left:1rem;padding-right:1rem}${rosterStyles}</style><main id="root"></main>`,
@@ -96,7 +96,8 @@ describe("roster presentation behavior", () => {
     await sort.waitFor();
     assert.equal(await sort.isVisible(), true);
     assert.equal(await page.locator("thead").isVisible(), false);
-    assert.equal(await page.locator("aside").isVisible(), false);
+    // Rows carry their own details; there is no permanent quick-view panel to fill.
+    assert.equal(await page.locator("aside").count(), 0);
     await sort.selectOption("status");
     await page.evaluate((props) => window.fixture.renderRoster(props), {
       ...rosterProps(),
@@ -106,10 +107,8 @@ describe("roster presentation behavior", () => {
     assert.deepEqual(await page.evaluate(() => window.fixture.sorts), ["status", "status"]);
 
     const beaRow = page.locator('[data-student-id="student-b"]');
-    await beaRow.hover();
-    assert.match(await page.getByLabel("Student quick view").textContent(), /Hover over or focus/);
+    assert.equal(await beaRow.getByText("student-b@example.test").isVisible(), true);
     await beaRow.getByRole("button", { name: "Open Bea Student profile" }).focus();
-    assert.match(await page.locator("aside").textContent(), /Bea Student/);
     await beaRow.getByRole("checkbox").click();
     await beaRow.getByRole("button", { name: "Open Bea Student profile" }).click();
     assert.deepEqual(
@@ -157,9 +156,9 @@ describe("roster presentation behavior", () => {
     });
     assert.equal(await sort.isVisible(), false);
     assert.equal(await page.locator("thead").isVisible(), true);
-    await page.locator('[data-student-id="student-a"]').hover();
-    assert.equal(await page.locator("aside").isVisible(), true);
-    assert.match(await page.locator("aside").textContent(), /Ada Student/);
+    const adaRow = page.locator('[data-student-id="student-a"]');
+    assert.equal(await adaRow.getByText("student-a@example.test").isVisible(), true);
+    assert.equal(await page.getByLabel("Student quick view").count(), 0);
 
     await page.evaluate(() => window.fixture.renderBadges());
     const badges = page.locator("#root > div > span");
