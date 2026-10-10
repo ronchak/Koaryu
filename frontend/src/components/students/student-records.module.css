@@ -941,45 +941,360 @@
   }
 }
 
-/* Profile and import ---------------------------------------------------- */
+/* Profile ---------------------------------------------------------------- */
 
-.folioGrid {
-  align-items: start;
-  max-width: 76rem;
+.folioPage > .folioSkeletonBody {
+  margin-top: 0;
 }
-.identityRail {
-  position: sticky;
-  top: 86px;
-}
-.folioLeaves {
+
+/* The person at a glance, on the header's ridge. */
+.identityBand {
+  position: relative;
+  z-index: 2;
+  display: grid;
   min-width: 0;
+  grid-template-columns: minmax(17rem, 0.9fr) minmax(0, 2fr);
+  margin-top: -40px;
+  border: 1px solid var(--product-rule-soft);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--product-paper) 90%, transparent);
+  box-shadow: var(--product-shadow-card);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
 }
-.folioSection {
-  overflow: hidden;
-  border: 0;
+.identityWho {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 18px;
+  padding: 22px 22px 18px;
+}
+.identityWhoCopy {
+  display: grid;
+  min-width: 0;
+  gap: 8px;
+}
+.identityName {
+  color: var(--product-ink);
+  font-size: 1.125rem;
+  font-weight: 760;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+}
+.identityLegal {
+  color: var(--product-meta);
+  font-size: 0.8125rem;
+}
+.identityTags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.identityPhoto {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-left: -10px;
+}
+.identityFacts {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-content: start;
+  border-left: 1px solid var(--product-rule-soft);
+}
+.identityFact {
+  display: grid;
+  min-width: 0;
+  align-content: start;
+  gap: 4px;
+  padding: 18px 20px;
+  border-bottom: 1px solid var(--product-rule-soft);
+}
+.identityFact:nth-child(3n + 2),
+.identityFact:nth-child(3n + 3) {
+  border-left: 1px solid var(--product-rule-soft);
+}
+.identityFact dt {
+  color: var(--product-meta);
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+.identityFact dd {
+  min-width: 0;
+  color: var(--product-ink);
+  font-size: 0.9375rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+.identityFact .identityFactNote {
+  color: var(--product-soft-ink);
+  font-size: 0.8125rem;
+  font-weight: 500;
+}
+.identityBeltValue {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+.identityQuiet {
+  color: var(--product-soft-ink);
+  font-weight: 550;
+}
+.identityPrograms {
+  display: grid;
+  gap: 2px;
+}
+.identityPrograms .beltProgram {
+  color: var(--product-soft-ink);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+.identityWarning {
+  grid-column: 1 / -1;
+  padding: 10px 20px 14px;
+  color: var(--product-straw);
+  font-size: 0.8125rem;
+}
+.beltSwatch[data-size="lg"] {
+  width: 40px;
+  height: 12px;
+}
+.beltSwatch[data-size="lg"]::after {
+  top: -4px;
+  width: 9px;
+  height: 20px;
+}
+
+.folioNotice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 16px;
+  padding: 14px 18px;
+  border: 1px solid var(--product-rule-soft);
   border-radius: 14px;
+  background: var(--hz-warn-wash);
+  color: var(--product-ink);
+  font-size: 0.875rem;
+}
+.folioNotice[data-tone="alert"] {
+  background: var(--hz-alert-wash);
+}
+
+.folioColumns {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1.55fr) minmax(18rem, 1fr);
+  align-items: start;
+  gap: 20px;
+}
+.folioMain,
+.folioSide {
+  display: grid;
+  min-width: 0;
+  gap: 20px;
+}
+.skeletonPanel {
+  padding: 18px 20px;
+  border: 1px solid var(--product-rule-soft);
+  border-radius: 16px;
   background: var(--product-paper);
   box-shadow: var(--product-shadow-card);
 }
-.folioSection + .folioSection {
-  margin-top: 1.15rem;
+
+.nextSteps {
+  display: grid;
+}
+.nextStep {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 20px;
+  border-top: 1px solid var(--product-rule-soft);
+}
+.nextStep:first-child {
+  border-top: 0;
+}
+.nextStep:last-child {
+  padding-bottom: 16px;
+}
+.nextStepCopy {
+  display: grid;
+  min-width: 0;
+  flex: 1 1 auto;
+  gap: 2px;
+}
+.nextStepCopy strong {
+  color: var(--product-ink);
+  font-size: 0.9375rem;
+  font-weight: 650;
+}
+.nextStepCopy span {
+  color: var(--product-soft-ink);
+  font-size: 0.8125rem;
+  line-height: 1.45;
+}
+.panelLink {
+  display: inline-flex;
+  min-height: 40px;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  padding: 0 4px;
+  color: var(--product-wood);
+  font-size: 0.875rem;
+  font-weight: 650;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.panelLink svg {
+  width: 15px;
+  height: 15px;
+}
+.panelLink:hover {
+  color: var(--product-ink);
+}
+
+.infoList {
+  display: grid;
+}
+.infoRow {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: 6.5rem minmax(0, 1fr);
+  gap: 12px;
+  padding: 9px 0;
+  border-top: 1px solid var(--product-rule-soft);
+}
+.infoRow:first-child {
+  padding-top: 2px;
+  border-top: 0;
+}
+.infoRow dt {
+  color: var(--product-meta);
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+.infoRow dd {
+  min-width: 0;
+  color: var(--product-ink);
+  font-size: 0.875rem;
+  overflow-wrap: anywhere;
+}
+.infoLink {
+  color: var(--product-ink);
+  text-decoration: underline;
+  text-decoration-color: var(--product-rule);
+  text-underline-offset: 3px;
+}
+.infoLink:hover {
+  text-decoration-color: var(--product-wood);
+}
+.panelQuiet {
+  color: var(--product-soft-ink);
+  font-size: 0.875rem;
+}
+
+.historyList {
+  display: grid;
 }
 .historyEntry {
-  position: relative;
-  padding-left: 1.25rem;
-  border-left: 1px solid var(--border);
+  display: grid;
+  min-width: 0;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 0;
+  border-top: 1px solid var(--product-rule-soft);
 }
-.historyEntry::before {
-  position: absolute;
-  top: 1rem;
-  left: -0.31rem;
-  width: 0.52rem;
-  height: 0.52rem;
-  border: 1px solid var(--surface);
-  border-radius: 50%;
-  background: var(--accent);
-  content: "";
+.historyEntry:first-child {
+  padding-top: 2px;
+  border-top: 0;
 }
+.historyCopy {
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+}
+.historyDate {
+  color: var(--product-meta);
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+@media (max-width: 1099px) {
+  .identityBand {
+    grid-template-columns: 1fr;
+  }
+  .identityFacts {
+    border-top: 1px solid var(--product-rule-soft);
+    border-left: 0;
+  }
+  /* One column: what to do, then how to reach them, then the record. */
+  .folioColumns {
+    grid-template-columns: 1fr;
+  }
+  .folioMain,
+  .folioSide {
+    display: contents;
+  }
+  .folioSide > * {
+    order: 1;
+  }
+  .folioMain > :not(:first-child) {
+    order: 2;
+  }
+}
+
+@media (max-width: 640px) {
+  .identityBand {
+    margin-top: -32px;
+  }
+  .identityWho {
+    padding: 16px;
+    gap: 14px;
+  }
+  .identityFacts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .identityFact {
+    padding: 14px 16px;
+  }
+  .identityFact:nth-child(3n + 2),
+  .identityFact:nth-child(3n + 3) {
+    border-left: 0;
+  }
+  .identityFact:nth-child(2n) {
+    border-left: 1px solid var(--product-rule-soft);
+  }
+  .nextStep {
+    display: grid;
+    grid-template-columns: 40px minmax(0, 1fr);
+    align-items: start;
+    padding-inline: 16px;
+  }
+  .nextStep > :nth-child(3) {
+    grid-column: 2;
+    justify-self: start;
+  }
+  .infoRow {
+    grid-template-columns: 5.5rem minmax(0, 1fr);
+  }
+  .historyEntry {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+  .historyDate {
+    grid-column: 2;
+  }
+}
+
+/* Import ----------------------------------------------------------------- */
 
 .importWorkspace {
   min-width: 0;
@@ -1082,16 +1397,12 @@
 }
 
 @media (max-width: 1023px) {
-  .identityRail,
   .importIndex {
     position: static;
   }
 }
 
 @media (max-width: 820px) {
-  .identityRail {
-    position: static;
-  }
   .importSheet {
     grid-template-columns: 1fr;
   }
@@ -1224,16 +1535,18 @@
     min-width: 0;
     min-height: 0;
   }
-  .identityRail {
-    position: static;
+  .identityBand {
+    margin-top: 0;
+    backdrop-filter: none;
   }
-  .folioSection {
+  .identityBand,
+  .folioColumns > * > * {
     break-inside: avoid;
     background: #fff;
     color: #000;
   }
   .rosterSheet,
-  .folioSection,
+  .identityBand,
   .importIndex,
   .worksheetSection,
   .mappingTable {
@@ -1244,7 +1557,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .rosterWorkspace,
-  .folioGrid,
+  .folioPage,
   .importSheet,
   .rosterPrintRoot :global(.koaryu-modal-panel),
   .folioRoot :global(.koaryu-modal-panel),

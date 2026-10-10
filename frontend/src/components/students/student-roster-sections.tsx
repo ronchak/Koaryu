@@ -1,8 +1,9 @@
 "use client";
 
-import { useMemo, type CSSProperties } from "react";
+import { useMemo } from "react";
 import { ProgramBadge } from "@/components/programs/program-picker";
 import { StatusBadge } from "@/components/students/status-badge";
+import { BeltSwatch } from "@/components/students/student-belt-swatch";
 import { StudentAvatar } from "@/components/students/student-avatar";
 import { Button } from "@/components/ui/button";
 import { CalmState, ToneTag } from "@/components/ui/horizon";
@@ -135,18 +136,6 @@ function rosterBelts(row: StudentRosterRow, programs: Program[], ranks: RankLook
     rankName: index === 0 ? (studentRank?.name ?? null) : null,
     rankColor: index === 0 ? (studentRank?.color_hex ?? null) : null,
   }));
-}
-
-/** A short belt drawn in the rank's own colour (a data colour, not a theme colour). */
-export function BeltSwatch({ color }: { color?: string | null }) {
-  return (
-    <span
-      aria-hidden="true"
-      className={styles.beltSwatch}
-      data-empty={color ? undefined : "true"}
-      style={color ? ({ "--belt-color": color } as CSSProperties) : undefined}
-    />
-  );
 }
 
 function BeltSummary({
