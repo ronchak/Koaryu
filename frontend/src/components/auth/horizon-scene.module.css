@@ -54,6 +54,11 @@
   transform: translateX(-50%);
 }
 
+/* A lone centred sheet would hide the sun; let it set to the right instead. */
+.scene:has(.solo) .sun {
+  left: 76%;
+}
+
 .sky .hills {
   top: auto;
   bottom: 0;

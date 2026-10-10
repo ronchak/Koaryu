@@ -4,7 +4,13 @@ import { useState, type FormEvent } from "react";
 import { LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { FocusedOperationsSheet } from "@/components/operations/operations-surface";
+import {
+  HorizonScene,
+  SceneSheet,
+  SceneSolo,
+  sceneSheetLedeClassName,
+  sceneSheetTitleClassName,
+} from "@/components/auth/horizon-scene";
 import { useStudioStore } from "@/lib/store";
 import { normalizeLegalNameDraft } from "@/lib/legal-name-model";
 
@@ -48,10 +54,13 @@ export function LegalNameBlockingScreen({
   }
 
   return (
-    <FocusedOperationsSheet page="legal-name" eyebrow="Account setup">
+    <HorizonScene>
+      <SceneSolo>
+      <SceneSheet labelledBy="legal-name-title" width="wide">
         <div className="space-y-2">
-          <h1 className="text-xl font-semibold text-text-primary">Add your legal name</h1>
-          <p className="text-sm leading-relaxed text-text-secondary">
+          <p className="text-xs font-bold uppercase tracking-[0.16em] text-muted">Account setup</p>
+          <h1 id="legal-name-title" className={sceneSheetTitleClassName}>Add your legal name</h1>
+          <p className={sceneSheetLedeClassName}>
             Enter your legal first and last name. These names are used for studio records and other official Koaryu records.
           </p>
         </div>
@@ -80,7 +89,7 @@ export function LegalNameBlockingScreen({
             {error}
           </p>
 
-          <Button type="submit" variant="primary" size="lg" isLoading={isSubmitting} disabled={!canSubmit}>
+          <Button type="submit" variant="primary" size="lg" isLoading={isSubmitting} disabled={!canSubmit} className="w-full">
             {isSubmitting ? "Saving legal name..." : "Save legal name"}
           </Button>
         </form>
@@ -99,6 +108,8 @@ export function LegalNameBlockingScreen({
             {isSigningOut ? "Signing out..." : "Sign out"}
           </Button>
         </div>
-    </FocusedOperationsSheet>
+      </SceneSheet>
+      </SceneSolo>
+    </HorizonScene>
   );
 }

@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { Logo } from "@/components/logo";
 import { HorizonHills } from "@/components/ui/horizon-hills";
+import { PUBLIC_PLATFORM_TRIAL_DAYS } from "@/lib/constants";
 import styles from "./horizon-scene.module.css";
 
 /*
@@ -119,6 +120,16 @@ export function SceneSteps({
     </ol>
   );
 }
+
+/** The road from sign-up to a running studio, shown on sign-up and studio setup. */
+export const TRIAL_STEPS = [
+  { title: "Create your account", detail: "Your name, email and a password." },
+  { title: "Set up your studio", detail: "Its name and timezone." },
+  {
+    title: `Start your ${PUBLIC_PLATFORM_TRIAL_DAYS}-day trial`,
+    detail: "Payment details are collected at Stripe Checkout.",
+  },
+] as const;
 
 /** A quiet line under the form, such as the switch between sign-in and sign-up. */
 export function SceneFootnote({ children }: { children: ReactNode }) {

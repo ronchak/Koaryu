@@ -40,16 +40,20 @@ export function DashboardIdentitySkeleton({
           <span className={styles.identityPlaceholder} />
         </div>
         {error ? (
-          <div className="p-6" role="alert">
-            <h1 className="text-lg font-semibold">Your workspace could not be loaded</h1>
-            <p className="mt-2 text-sm text-text-secondary">{error}</p>
-            <button
-              type="button"
-              onClick={onRetry}
-              className="mt-4 rounded border border-border px-4 py-2"
-            >
-              Retry workspace
-            </button>
+          <div className="p-6 sm:p-10" role="alert">
+            <div className="max-w-xl rounded-[16px] border border-border bg-surface p-6 shadow-[var(--product-shadow-card)]">
+              <h1 className="text-xl font-extrabold tracking-[-0.02em]">
+                Your workspace could not be loaded
+              </h1>
+              <p className="mt-2 text-sm leading-relaxed text-text-secondary">{error}</p>
+              <button
+                type="button"
+                onClick={onRetry}
+                className="mt-5 inline-flex min-h-11 items-center rounded-[10px] bg-[var(--hz-cta)] px-4 py-2 text-sm font-semibold text-[var(--hz-cta-ink)]"
+              >
+                Retry workspace
+              </button>
+            </div>
           </div>
         ) : (
           // The page draws its own placeholder once access is confirmed. A second,

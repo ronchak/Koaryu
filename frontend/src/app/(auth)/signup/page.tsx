@@ -17,6 +17,7 @@ import {
   SceneSheet,
   SceneSplit,
   SceneSteps,
+  TRIAL_STEPS,
   sceneLinkClassName,
   sceneSheetTitleClassName,
 } from "@/components/auth/horizon-scene";
@@ -102,18 +103,7 @@ export default function SignupPage() {
         titleId="signup-title"
         lede={`Three short steps to your studio. ${PUBLIC_PLATFORM_TRIAL_DAYS} days free, then ${formatPublicPlatformPrice()} a month per studio.`}
       >
-        <SceneSteps
-          label="Sign-up steps"
-          current={0}
-          steps={[
-            { title: "Create your account", detail: "Your name, email and a password." },
-            { title: "Set up your studio", detail: "Its name and timezone." },
-            {
-              title: `Start your ${PUBLIC_PLATFORM_TRIAL_DAYS}-day trial`,
-              detail: "Payment details are collected at Stripe Checkout.",
-            },
-          ]}
-        />
+        <SceneSteps label="Sign-up steps" current={0} steps={TRIAL_STEPS} />
         <p className="mt-6 text-sm text-text-secondary">
           Not ready yet?{" "}
           <Link href="/try" className={sceneLinkClassName}>

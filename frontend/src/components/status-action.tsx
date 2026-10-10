@@ -12,9 +12,11 @@ interface StatusActionProps {
   variant?: ActionVariant;
 }
 
+// Horizon: the ink call to action (amber at night) and paper secondaries.
 const actionStyles: Record<ActionVariant, string> = {
-  primary: "bg-accent text-accent-contrast hover:bg-accent-hover",
-  secondary: "border border-border bg-surface-raised text-text-primary hover:bg-surface-hover",
+  primary:
+    "bg-[var(--hz-cta)] text-[var(--hz-cta-ink)] shadow-[0_8px_22px_rgb(45_34_18/16%)] hover:-translate-y-px",
+  secondary: "border border-border bg-surface text-text-primary hover:bg-surface-raised",
   ghost: "text-text-secondary hover:bg-surface-raised hover:text-text-primary",
 };
 
@@ -26,9 +28,10 @@ export function StatusAction({
   variant = "primary",
 }: StatusActionProps) {
   const className = `
-    inline-flex min-h-10 items-center justify-center gap-2 rounded-[6px]
-    px-3.5 py-2 text-sm font-medium
-    transition-[background-color,border-color,color] duration-150 ease-out motion-reduce:transition-none
+    inline-flex min-h-11 items-center justify-center gap-2 rounded-[10px]
+    px-4 py-2 text-sm font-semibold
+    transition-[background-color,border-color,color,transform] duration-150 ease-out
+    motion-reduce:transition-none motion-reduce:hover:translate-y-0
     ${actionStyles[variant]}
   `;
   const content = (

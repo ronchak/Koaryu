@@ -4,7 +4,13 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { FocusedOperationsSheet } from "@/components/operations/operations-surface";
+import {
+  HorizonScene,
+  SceneSheet,
+  SceneSolo,
+  sceneSheetLedeClassName,
+  sceneSheetTitleClassName,
+} from "@/components/auth/horizon-scene";
 import { api } from "@/lib/api";
 import {
   acknowledgeConnectOnboardingBeforeNavigation,
@@ -94,24 +100,34 @@ export default function StripeConnectRefreshPage() {
   }, []);
 
   return (
-    <FocusedOperationsSheet page="connect-refresh" eyebrow="Stripe Connect">
-      <div className="text-center">
-        {error ? (
-          <>
-            <h1 className="text-base font-semibold text-text-primary">Stripe link expired</h1>
-            <p className="mt-2 text-sm text-muted">{error}</p>
-            <Button asChild variant="primary" size="sm" className="mt-5">
-              <Link href="/billing">Return to billing</Link>
-            </Button>
-          </>
-        ) : (
-          <div className="flex flex-col items-center gap-3">
-            <Loader2 className="h-5 w-5 animate-spin text-accent" />
-            <h1 className="text-base font-semibold text-text-primary">Opening Stripe...</h1>
-            <p className="text-sm text-muted">Creating a fresh secure onboarding link.</p>
-          </div>
-        )}
-      </div>
-    </FocusedOperationsSheet>
+    <HorizonScene homeHref="/dashboard">
+      <SceneSolo>
+        <SceneSheet labelledBy="connect-refresh-title">
+          <p className="text-xs font-bold uppercase tracking-[0.16em] text-muted">Stripe Connect</p>
+          {error ? (
+            <>
+              <h1 id="connect-refresh-title" className={`mt-2 ${sceneSheetTitleClassName}`}>
+                Stripe link expired
+              </h1>
+              <p className={sceneSheetLedeClassName}>{error}</p>
+              <Button asChild variant="primary" size="lg" className="mt-6 w-full">
+                <Link href="/billing">Return to billing</Link>
+              </Button>
+            </>
+          ) : (
+            <div role="status" aria-live="polite">
+              <h1
+                id="connect-refresh-title"
+                className={`mt-2 flex items-center gap-3 ${sceneSheetTitleClassName}`}
+              >
+                <Loader2 className="h-5 w-5 animate-spin text-accent" aria-hidden="true" />
+                Opening Stripe...
+              </h1>
+              <p className={sceneSheetLedeClassName}>Creating a fresh secure onboarding link.</p>
+            </div>
+          )}
+        </SceneSheet>
+      </SceneSolo>
+    </HorizonScene>
   );
 }
