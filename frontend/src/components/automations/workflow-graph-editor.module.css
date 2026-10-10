@@ -211,10 +211,14 @@
   border-color: var(--product-wood, var(--accent));
   box-shadow: inset 0 0 0 1px var(--product-wood, var(--accent));
 }
-.editor .stepSelect {
+.editor .stepSelect,
+.editor .stepSelect[aria-pressed="true"] {
   display: grid;
   width: 100%;
+  justify-content: stretch;
+  justify-items: start;
   gap: 4px;
+  padding-left: 4px;
   border-color: transparent;
   background: transparent;
   text-align: left;
@@ -344,7 +348,7 @@
 }
 .nodeCard[data-kind="delay"],
 .step[data-kind="delay"] {
-  --kind: var(--product-meta, var(--text-secondary));
+  --kind: color-mix(in srgb, var(--product-soft-ink, var(--text-secondary)) 40%, transparent);
   --kind-wash: var(--hz-tile, transparent);
 }
 .nodeCard[data-kind="email"],

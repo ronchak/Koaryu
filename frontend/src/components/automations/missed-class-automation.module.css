@@ -121,6 +121,7 @@
 }
 
 .previewColumn {
+  align-self: start;
   padding: 16px;
   border-radius: 14px;
   background: var(--product-card-stock, var(--surface-raised));
