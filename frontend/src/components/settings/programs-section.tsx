@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { DismissibleNotice } from "@/components/ui/dismissible-notice";
-import { HorizonPanel, ToneTag } from "@/components/settings/horizon-parts";
+import { HorizonPanel, ToneTag } from "@/components/ui/horizon-parts";
 import { Input } from "@/components/ui/input";
 import { useProgramStore, useStudioStore } from "@/lib/store";
 import type { Program } from "@/types";

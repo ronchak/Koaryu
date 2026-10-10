@@ -1,7 +1,7 @@
 import { IntentPrefetchLink as Link } from "@/components/intent-prefetch-link";
 import { Header } from "@/components/header";
 import { OperationsSurface } from "@/components/operations/operations-surface";
-import { HorizonPage, HorizonPanel, ToneChip } from "@/components/settings/horizon-parts";
+import { HorizonPage, HorizonPanel, ToneChip } from "@/components/ui/horizon-parts";
 import { Badge } from "@/components/ui/badge";
 import { crmLinkPrefetch } from "@/lib/constants";
 import type { LucideIcon } from "lucide-react";

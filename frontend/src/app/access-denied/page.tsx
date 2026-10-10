@@ -9,7 +9,7 @@ import {
   sceneSheetLedeClassName,
   sceneSheetTitleClassName,
 } from "@/components/auth/horizon-scene";
-import { ToneChip } from "@/components/settings/horizon-parts";
+import { ToneChip } from "@/components/ui/horizon-parts";
 
 export default function AccessDeniedPage() {
   return (

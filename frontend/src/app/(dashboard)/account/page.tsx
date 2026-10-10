@@ -11,7 +11,7 @@ import {
   UserCircle,
 } from "lucide-react";
 import { AccountLinkTile, AccountPageShell } from "@/components/account-page-shell";
-import { HorizonPanel, ToneTag } from "@/components/settings/horizon-parts";
+import { HorizonPanel, ToneTag } from "@/components/ui/horizon-parts";
 import { useStudioStore } from "@/lib/store";
 import { formatRoleLabel } from "@/lib/role-label";
 import styles from "@/components/account/account.module.css";

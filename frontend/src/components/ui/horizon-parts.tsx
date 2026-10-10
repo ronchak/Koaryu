@@ -1,11 +1,10 @@
 import type { ReactNode } from "react";
-import styles from "@/components/ui/horizon.module.css";
+import styles from "./horizon.module.css";
 
 /*
- * Link-free copies of the Horizon kit's panel primitives, drawn with the kit's
- * own stylesheet. `@/components/ui/horizon` imports a Next.js link for its stats
- * strip, which the mounted Settings and Account test bundles cannot load; these
- * keep those pages testable until the kit splits its link-free parts out.
+ * Horizon kit primitives with no routing dependency, so any client component
+ * and the Node test bundles can import them. `horizon.tsx` re-exports these
+ * alongside the linked stats strip.
  */
 
 export type HorizonTone = "alert" | "warn" | "calm" | "neutral";
@@ -128,6 +127,27 @@ export function CalmState({
         {detail ? <span>{detail}</span> : null}
       </div>
       {action ? <div className={styles.calmAction}>{action}</div> : null}
+    </div>
+  );
+}
+
+/** One row of filters, search and view switches above a list. */
+export function HorizonToolbar({
+  children,
+  className,
+  label,
+}: {
+  children: ReactNode;
+  className?: string;
+  label?: string;
+}) {
+  return (
+    <div
+      className={[styles.toolbar, className].filter(Boolean).join(" ")}
+      role={label ? "toolbar" : undefined}
+      aria-label={label}
+    >
+      {children}
     </div>
   );
 }

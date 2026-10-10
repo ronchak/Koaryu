@@ -11,7 +11,7 @@ import {
   sceneSheetLedeClassName,
   sceneSheetTitleClassName,
 } from "@/components/auth/horizon-scene";
-import { ToneChip } from "@/components/settings/horizon-parts";
+import { ToneChip } from "@/components/ui/horizon-parts";
 import { createClient } from "@/lib/supabase/client";
 import { clearStoredStudioSessionCookies } from "@/lib/store-session-cookies";
 

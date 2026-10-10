@@ -7,7 +7,7 @@ import {
   sceneSheetLedeClassName,
   sceneSheetTitleClassName,
 } from "@/components/auth/horizon-scene";
-import { ToneChip, type HorizonTone } from "@/components/settings/horizon-parts";
+import { ToneChip, type HorizonTone } from "@/components/ui/horizon-parts";
 
 type StatusTone = "missing" | "warning" | "danger" | "offline";
 

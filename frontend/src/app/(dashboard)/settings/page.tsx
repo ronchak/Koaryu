@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { markDashboardReadiness } from "@/lib/performance";
 import { Header } from "@/components/header";
 import { Button } from "@/components/ui/button";
-import { CalmState, HorizonPage, HorizonPanel, ToneChip } from "@/components/settings/horizon-parts";
+import { CalmState, HorizonPage, HorizonPanel, ToneChip } from "@/components/ui/horizon-parts";
 import { ModalFrame } from "@/components/ui/modal-frame";
 import { OperationsSurface } from "@/components/operations/operations-surface";
 import { ProgramsSection } from "@/components/settings/programs-section";

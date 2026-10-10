@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from "react"
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DismissibleNotice } from "@/components/ui/dismissible-notice";
-import { HorizonPanel, ToneTag } from "@/components/settings/horizon-parts";
+import { HorizonPanel, ToneTag } from "@/components/ui/horizon-parts";
 import { Input } from "@/components/ui/input";
 import { ModalFrame } from "@/components/ui/modal-frame";
 import { normalizeLegalName, normalizeLegalNameDraft } from "@/lib/legal-name-model";
