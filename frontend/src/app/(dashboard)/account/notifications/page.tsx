@@ -53,15 +53,15 @@ export default function NotificationsPage() {
         title="Notification categories"
         description="Delivery preferences are not enabled yet, so this page is intentionally read-only."
       >
-        <div className="space-y-3">
+        <div>
           {OPTIONS.map((option) => {
             const Icon = option.icon;
             return (
               <div
                 key={option.title}
-                className="flex w-full items-start gap-3 border-b border-border bg-surface px-1 py-4 text-left last:border-b-0"
+                className="flex w-full items-start gap-3 border-b border-border py-4 text-left first:pt-1 last:border-b-0 last:pb-1"
               >
-                <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center border-r border-border text-accent">
+                <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-[11px] bg-[var(--hz-tile)] text-accent">
                   <Icon className="h-4 w-4" />
                 </span>
                 <span className="min-w-0 flex-1">
@@ -72,7 +72,7 @@ export default function NotificationsPage() {
                     {option.description}
                   </span>
                 </span>
-                <span className="mt-1 flex-shrink-0 rounded-[4px] border border-border px-2 py-0.5 text-xs text-text-secondary">
+                <span className="mt-1 flex-shrink-0 rounded-full bg-[var(--hz-tile)] px-2.5 py-0.5 text-xs font-bold text-text-secondary">
                   {option.status}
                 </span>
               </div>

@@ -62,8 +62,8 @@ function AdminSettingsContent() {
   const { isPreviewMode, token } = useConfigStore();
   const { currentRole, studioName, setStudioName, resetDemoData, clearStudioData, staffMembers, staffLoaded } = useStudioStore();
   const { programs, programsLoaded } = useProgramStore();
-  const activeProgramCount = programs.filter((program) => !program.archived_at).length;
-  const staffCount = staffMembers.filter((member) => member.status !== "archived").length;
+  const activeProgramCount = (programs ?? []).filter((program) => !program.archived_at).length;
+  const staffCount = (staffMembers ?? []).filter((member) => member.status !== "archived").length;
   const [nameDraft, setNameDraft] = useState("");
   const [hasEditedName, setHasEditedName] = useState(false);
   const [isSaving, setIsSaving] = useState(false);

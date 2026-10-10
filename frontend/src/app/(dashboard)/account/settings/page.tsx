@@ -12,6 +12,7 @@ import {
   AccountSection,
 } from "@/components/account-page-shell";
 import { AccountNameSection } from "@/components/account/account-name-section";
+import styles from "@/components/account/account.module.css";
 import { Button } from "@/components/ui/button";
 import { ModalFrame } from "@/components/ui/modal-frame";
 import { createClient } from "@/lib/supabase/client";
@@ -234,7 +235,7 @@ function AccountSettingsBody() {
         />
       </AccountSection>
 
-      <div className="border-y border-border divide-y divide-border">
+      <div className={styles.tileGrid}>
         <AccountLinkTile
           href="/account/profile"
           icon={UserCircle}
@@ -344,11 +345,15 @@ function AccountSettingsBody() {
         </AccountSection>
       )}
 
-      <AccountSection title="Account deletion" description="Request deletion for your Koaryu login account.">
+      <AccountSection
+        tone="danger"
+        title="Account deletion"
+        description="Request deletion for your Koaryu login account."
+      >
         {isLoadingDeletionRequest && deletionRequest === undefined ? (
           <div role="status" aria-label="Checking account deletion status" aria-busy="true" className="koaryu-skeleton-reveal space-y-3">
-            <div aria-hidden="true" className="h-12 rounded-[6px] border border-border bg-surface-raised" />
-            <div aria-hidden="true" className="h-8 w-44 rounded-[6px] bg-surface-raised" />
+            <div aria-hidden="true" className="h-12 rounded-[12px] border border-border bg-surface-raised" />
+            <div aria-hidden="true" className="h-10 w-44 rounded-[10px] bg-surface-raised" />
           </div>
         ) : deletionRequest ? (
           <div className="space-y-3">
@@ -398,11 +403,11 @@ function AccountSettingsBody() {
           panelClassName="w-[min(92vw,28rem)] rounded-[6px] border border-border bg-surface p-5 shadow-2xl shadow-black/25"
         >
           <div className="flex items-start gap-3">
-            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[6px] bg-danger/10 text-danger">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[11px] bg-[var(--hz-alert-wash)] text-danger">
               <AlertTriangle className="h-4 w-4" />
             </span>
             <div className="min-w-0">
-              <h2 id="account-confirm-title" className="text-sm font-semibold text-text-primary">
+              <h2 id="account-confirm-title" className="text-base font-bold text-text-primary">
                 {confirmAction === "schedule-deletion" ? "Schedule account deletion?" : "Transfer studio ownership?"}
               </h2>
               <p id="account-confirm-description" className="mt-2 text-sm leading-6 text-text-secondary">
@@ -421,7 +426,7 @@ function AccountSettingsBody() {
                 autoComplete="off"
                 spellCheck={false}
                 aria-describedby="account-deletion-confirm-help"
-                className="min-h-11 px-3 py-2 font-mono text-sm"
+                className="min-h-11 px-3 py-2 text-sm font-semibold tracking-[0.12em]"
               />
               <span id="account-deletion-confirm-help" className="text-xs leading-5 text-muted">
                 Enter the word exactly as shown to confirm this request.

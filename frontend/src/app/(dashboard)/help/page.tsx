@@ -5,6 +5,7 @@ import {
   AccountPageShell,
   AccountSection,
 } from "@/components/account-page-shell";
+import styles from "@/components/account/account.module.css";
 import { SUPPORT_EMAIL } from "@/lib/constants";
 
 export default function HelpPage() {
@@ -14,7 +15,7 @@ export default function HelpPage() {
       title="Help center"
       description="Quick answers and support routes for running Koaryu in a real studio."
     >
-      <div className="border-y border-border divide-y divide-border">
+      <div className={styles.tileGrid}>
         <AccountLinkTile
           href="/help/get-started"
           icon={BookOpen}

@@ -20,6 +20,7 @@ import {
   type NavigationPlacement,
   type ThemePreference,
 } from "@/components/theme-provider";
+import styles from "@/components/account/account.module.css";
 
 function labelTheme(value: ThemePreference) {
   if (value === "dark") return "Dark";
@@ -49,7 +50,7 @@ export default function PersonalizationPage() {
             <p id="theme-preference-label" className="mb-2 text-sm font-medium text-text-primary">
               Theme
             </p>
-            <div className="grid border-y border-border sm:grid-cols-3 sm:divide-x sm:divide-border">
+            <div className={styles.choices}>
               {(["system", "dark", "light"] as ThemePreference[]).map((theme) => {
                 const selected = preference === theme;
                 const Icon = theme === "light" ? Sun : Moon;
@@ -59,18 +60,16 @@ export default function PersonalizationPage() {
                     type="button"
                     aria-pressed={selected}
                     onClick={() => setTheme(theme)}
-                    className={`min-h-32 border-b border-border p-4 text-left transition-colors last:border-b-0 sm:border-b-0 ${
-                      selected ? "bg-accent/10" : "bg-surface hover:bg-surface-raised"
-                    }`}
+                    className={styles.choice}
                   >
-                    <span className="mb-3 flex items-center justify-between">
+                    <span className="mb-2 flex items-center justify-between">
                       <Icon className="h-4 w-4 text-accent" />
                       {selected && <Check className="h-4 w-4 text-accent" />}
                     </span>
-                    <span className="block text-sm font-medium text-text-primary">
+                    <span className="block text-sm font-bold text-text-primary">
                       {labelTheme(theme)}
                     </span>
-                    <span className="mt-1 block text-xs text-muted">
+                    <span className="block text-sm text-text-secondary">
                       {theme === "system"
                         ? "Use your device setting."
                         : `Always use ${labelTheme(theme).toLowerCase()} mode.`}
@@ -88,7 +87,7 @@ export default function PersonalizationPage() {
             >
               Navigation
             </p>
-            <div className="grid border-y border-border sm:grid-cols-2 sm:divide-x sm:divide-border">
+            <div className={styles.choices}>
               {(["side", "top"] as NavigationPlacement[]).map((placement) => {
                 const selected = navigationPlacement === placement;
                 const Icon = placement === "side" ? LayoutPanelLeft : LayoutPanelTop;
@@ -98,18 +97,16 @@ export default function PersonalizationPage() {
                     type="button"
                     aria-pressed={selected}
                     onClick={() => setNavigationPlacement(placement)}
-                    className={`min-h-28 border-b border-border p-4 text-left transition-colors last:border-b-0 sm:border-b-0 ${
-                      selected ? "bg-accent/10" : "bg-surface hover:bg-surface-raised"
-                    }`}
+                    className={styles.choice}
                   >
-                    <span className="mb-3 flex items-center justify-between">
+                    <span className="mb-2 flex items-center justify-between">
                       <Icon className="h-4 w-4 text-accent" />
                       {selected && <Check className="h-4 w-4 text-accent" />}
                     </span>
-                    <span className="block text-sm font-medium text-text-primary">
+                    <span className="block text-sm font-bold text-text-primary">
                       {labelNavigationPlacement(placement)}
                     </span>
-                    <span className="mt-1 block text-xs text-muted">
+                    <span className="block text-sm text-text-secondary">
                       {placement === "side"
                         ? "Keep navigation in a collapsible desktop rail."
                         : "Move navigation into a horizontal desktop bar."}
@@ -146,24 +143,18 @@ export default function PersonalizationPage() {
         title="Language"
         description="Koaryu is currently English-first. Language switching is planned for a later localization pass."
       >
-        <div
-          id="language"
-          className="grid border-y border-border sm:grid-cols-2 sm:divide-x sm:divide-border"
-        >
-          <div
-            aria-current="true"
-            className="border-b border-border bg-accent/10 p-4 text-left opacity-80 sm:border-b-0"
-          >
-            <Palette className="mb-3 h-4 w-4 text-accent" />
-            <span className="block text-sm font-medium text-text-primary">Default</span>
-            <span className="mt-1 block text-xs text-muted">
+        <div id="language" className={styles.choices}>
+          <div aria-current="true" className={styles.choice} data-disabled="true">
+            <Palette className="mb-2 h-4 w-4 text-accent" />
+            <span className="block text-sm font-bold text-text-primary">Default</span>
+            <span className="block text-sm text-text-secondary">
               Koaryu currently uses the default English interface.
             </span>
           </div>
-          <div className="bg-surface-raised p-4 text-left opacity-60">
-            <Languages className="mb-3 h-4 w-4 text-accent" />
-            <span className="block text-sm font-medium text-text-primary">English (US)</span>
-            <span className="mt-1 block text-xs text-muted">
+          <div className={styles.choice} data-disabled="true">
+            <Languages className="mb-2 h-4 w-4 text-accent" />
+            <span className="block text-sm font-bold text-text-primary">English (US)</span>
+            <span className="block text-sm text-text-secondary">
               Language switching is planned for a later localization pass.
             </span>
           </div>
