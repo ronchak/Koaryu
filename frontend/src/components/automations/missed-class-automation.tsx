@@ -20,9 +20,24 @@ import {
   type MissedClassPreviewResponse,
   type MissedClassSettingsResponse,
 } from "@/lib/missed-class-automation";
+import kit from "@/components/ui/horizon.module.css";
+import styles from "./missed-class-automation.module.css";
 
 const fieldClass =
-  "mt-1 min-h-11 w-full min-w-0 rounded-md border border-border bg-surface px-3 py-2 text-sm text-text-primary disabled:opacity-60";
+  "mt-1.5 min-h-11 w-full min-w-0 rounded-[10px] border border-border bg-surface px-3 py-2 text-sm font-normal text-text-primary disabled:opacity-60";
+const ACTIVITY_TONES: Record<
+  MissedClassActivityResponse["items"][number]["state"],
+  "alert" | "warn" | "calm" | "neutral"
+> = {
+  queued: "neutral",
+  claimed: "neutral",
+  sending: "neutral",
+  accepted: "calm",
+  retry_wait: "warn",
+  failed: "alert",
+  unknown: "warn",
+  skipped: "neutral",
+};
 const readinessReasons: Record<string, string> = {
   setup_required: "Email setup is still needed. You can save a paused rule now.",
   sending_disabled: "Email sending is switched off. You can save a paused rule now.",
@@ -358,96 +373,105 @@ function ScopedEditor({ token, isDemo }: { token: string | null; isDemo: boolean
   const sample = preview?.recipients.find(
     (recipient) => !recipient.skip_reason && recipient.rendered_subject !== null,
   );
+  const status = isDemo
+    ? { label: "Sample data", tone: "neutral" }
+    : settings
+      ? settings.rule.enabled
+        ? { label: "Enabled", tone: "calm" }
+        : { label: "Paused", tone: "warn" }
+      : { label: "Rule status", tone: "neutral" };
 
   return (
     <section
       aria-labelledby="missed-class-title"
-      className="min-w-0 space-y-5 p-5 sm:p-6"
+      className={styles.panel}
       data-automation-sheet="true"
       data-missed-class-editor="true"
     >
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-xs font-medium text-accent">Attendance follow-up</p>
-          <h2 id="missed-class-title" className="mt-1 text-xl font-semibold text-text-primary">
-            Missed-class nudges
-          </h2>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-text-secondary">
+      <div className={styles.head}>
+        <span className={kit.chip} data-tone={status.tone} aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <rect x="3" y="4.5" width="18" height="16" rx="2.5" />
+            <path d="M3 9.5h18M8 2.5v4M16 2.5v4M10 13.5l4 4M14 13.5l-4 4" />
+          </svg>
+        </span>
+        <div className={styles.titles}>
+          <p className={styles.eyebrow}>Attendance follow-up</p>
+          <div className={styles.titleRow}>
+            <h2 id="missed-class-title">Missed-class nudges</h2>
+            <span className={kit.tag} data-tone={status.tone} data-dot="true">
+              {status.label}
+            </span>
+          </div>
+          {settings ? (
+            <p className={styles.rule}>
+              When an active student goes <b>{settings.rule.inactivity_days} days</b> without class
+              → one check-in email to them, or to their guardian.
+            </p>
+          ) : null}
+          <p className={styles.lede}>
             Send a friendly check-in after time away from class. Each student receives one message
             per absence period. A return to class starts a new period.
           </p>
         </div>
-        <span className="rounded-full bg-surface-raised px-3 py-1 text-xs font-semibold text-text-primary">
-          {isDemo
-            ? "Sample data"
-            : settings
-              ? settings.rule.enabled
-                ? "Enabled"
-                : "Paused"
-              : "Rule status"}
-        </span>
       </div>
 
       <div
-        className={`space-y-5 ${!settings && settingsLoading ? "koaryu-skeleton-reveal" : ""}`}
+        className={`grid min-w-0 gap-5 ${!settings && settingsLoading ? "koaryu-skeleton-reveal" : ""}`}
         aria-busy={settingsLoading}
       >
         {isDemo ? (
-          <p
-            className="rounded-md border border-border p-3 text-sm text-text-secondary"
-            role="status"
-          >
+          <p className={styles.delivery} data-tone="sample" role="status">
             Demo only. Try editing and previewing with sample students. Nothing is saved or sent,
             and this rule cannot be enabled.
           </p>
         ) : (
-          <div
-            className="space-y-2 rounded-md border border-border p-3 text-sm text-text-secondary"
-            aria-label="Email delivery status"
-          >
-            {ready && (
-              <>
-                <p className="break-words">
-                  <strong className="font-medium text-text-primary">Sender</strong>{" "}
-                  {ready.sender || "Not configured"}
-                </p>
-                <p>
-                  {ready.mode === "live"
-                    ? "Live sending. Eligible recipients can receive email when the rule is enabled."
-                    : ready.mode === "test"
-                      ? "Test sending. Only the approved test recipient can receive messages. Other student messages are never redirected to that inbox."
-                      : "Sending is disabled. Paused rules can still be saved."}
-                </p>
-                {ready.mode === "test" && (
+          <div className={styles.delivery} aria-label="Email delivery status">
+            <div className={styles.deliveryText}>
+              {ready && (
+                <>
                   <p className="break-words">
-                    Approved test recipient: {ready.test_recipient || "Not configured"}
+                    <strong className="font-semibold text-text-primary">Sender</strong>{" "}
+                    {ready.sender || "Not configured"}
                   </p>
-                )}
-                <p>
-                  {ready.can_enable
-                    ? "Email is ready. Preview recipients before enabling or saving an enabled rule."
-                    : (readinessReasons[ready.reason ?? ""] ??
-                      "Email is not ready to enable. You can save a paused rule.")}
+                  <p>
+                    {ready.mode === "live"
+                      ? "Live sending. Eligible recipients can receive email when the rule is enabled."
+                      : ready.mode === "test"
+                        ? "Test sending. Only the approved test recipient can receive messages. Other student messages are never redirected to that inbox."
+                        : "Sending is disabled. Paused rules can still be saved."}
+                  </p>
+                  {ready.mode === "test" && (
+                    <p className="break-words">
+                      Approved test recipient: {ready.test_recipient || "Not configured"}
+                    </p>
+                  )}
+                  <p>
+                    {ready.can_enable
+                      ? "Email is ready. Preview recipients before enabling or saving an enabled rule."
+                      : (readinessReasons[ready.reason ?? ""] ??
+                        "Email is not ready to enable. You can save a paused rule.")}
+                  </p>
+                </>
+              )}
+              {!settings && settingsLoading && (
+                <div role="status" aria-label="Loading settings" className="space-y-2">
+                  <span className="sr-only">Loading settings...</span>
+                  <div aria-hidden="true" className="h-5 w-48 rounded bg-surface-raised" />
+                  <div aria-hidden="true" className="h-5 w-3/4 rounded bg-surface-raised" />
+                  <div aria-hidden="true" className="h-5 w-2/3 rounded bg-surface-raised" />
+                </div>
+              )}
+              {settingsError && (
+                <p role="alert" className="font-semibold text-danger">
+                  {settingsError}
                 </p>
-              </>
-            )}
-            {!settings && settingsLoading && (
-              <div role="status" aria-label="Loading settings" className="space-y-2">
-                <span className="sr-only">Loading settings...</span>
-                <div aria-hidden="true" className="h-5 w-48 rounded bg-surface-raised" />
-                <div aria-hidden="true" className="h-5 w-3/4 rounded bg-surface-raised" />
-                <div aria-hidden="true" className="h-5 w-2/3 rounded bg-surface-raised" />
-              </div>
-            )}
-            {settingsError && (
-              <p role="alert" className="text-danger">
-                {settingsError}
-              </p>
-            )}
-            <div className="flex flex-wrap gap-2">
+              )}
+            </div>
+            <div className={styles.deliveryActions}>
               <Button
                 type="button"
-                variant="outline"
+                variant="secondary"
                 className="min-h-11"
                 disabled={settingsLoading || saving}
                 onClick={() => void loadSettings()}
@@ -472,10 +496,11 @@ function ScopedEditor({ token, isDemo }: { token: string | null; isDemo: boolean
         {!draft && settingsLoading && <RuleFormPlaceholder />}
         {draft && (
           <div className="grid min-w-0 gap-6 lg:grid-cols-2">
-            <div className="min-w-0 space-y-4">
+            <div className={styles.column}>
+              <h3 className={styles.subhead}>Rule</h3>
               <fieldset disabled={saving || reloading} className="min-w-0 space-y-4">
                 <legend className="sr-only">Missed-class rule</legend>
-                <label className="block text-sm font-medium text-text-primary">
+                <label className="block text-sm font-semibold text-text-primary">
                   Days without attendance
                   <input
                     className={fieldClass}
@@ -492,7 +517,7 @@ function ScopedEditor({ token, isDemo }: { token: string | null; isDemo: boolean
                   contacts that cannot be safely selected are skipped. Minors receive email through
                   their guardian.
                 </p>
-                <label className="block text-sm font-medium text-text-primary">
+                <label className="block text-sm font-semibold text-text-primary">
                   Subject
                   <input
                     className={fieldClass}
@@ -504,7 +529,7 @@ function ScopedEditor({ token, isDemo }: { token: string | null; isDemo: boolean
                 <div>
                   <label
                     htmlFor="missed-class-message"
-                    className="block text-sm font-medium text-text-primary"
+                    className="block text-sm font-semibold text-text-primary"
                   >
                     Message
                   </label>
@@ -522,7 +547,7 @@ function ScopedEditor({ token, isDemo }: { token: string | null; isDemo: boolean
                   Plain text only. Available placeholders: {TEMPLATE_PLACEHOLDERS.join(", ")}. An
                   unsubscribe link is added when sending.
                 </p>
-                <label className="block text-sm font-medium text-text-primary">
+                <label className="block text-sm font-semibold text-text-primary">
                   Reply-to email
                   <input
                     className={fieldClass}
@@ -533,7 +558,7 @@ function ScopedEditor({ token, isDemo }: { token: string | null; isDemo: boolean
                   />
                 </label>
               </fieldset>
-              {invalidDraft && <p className="text-sm text-danger">{invalidDraft}</p>}
+              {invalidDraft && <p className="text-sm font-semibold text-danger">{invalidDraft}</p>}
               <div className="flex flex-wrap gap-2">
                 <Button
                   type="button"
@@ -585,7 +610,7 @@ function ScopedEditor({ token, isDemo }: { token: string | null; isDemo: boolean
                 enabling or saving an enabled rule. Pausing keeps the saved message.
               </p>
               {actionError && (
-                <p role="alert" className="text-sm text-danger">
+                <p role="alert" className="text-sm font-semibold text-danger">
                   {actionError}
                 </p>
               )}
@@ -596,11 +621,11 @@ function ScopedEditor({ token, isDemo }: { token: string | null; isDemo: boolean
               )}
             </div>
 
-            <div className="min-w-0 space-y-4" aria-labelledby="recipient-preview-title">
-              <h3
-                id="recipient-preview-title"
-                className="text-base font-semibold text-text-primary"
-              >
+            <div
+              className={`${styles.column} ${styles.previewColumn}`}
+              aria-labelledby="recipient-preview-title"
+            >
+              <h3 id="recipient-preview-title" className={styles.subhead}>
                 Recipient preview
               </h3>
               {previewLoading && (
@@ -609,7 +634,7 @@ function ScopedEditor({ token, isDemo }: { token: string | null; isDemo: boolean
                 </p>
               )}
               {previewError && (
-                <p role="alert" className="text-sm text-danger">
+                <p role="alert" className="text-sm font-semibold text-danger">
                   {previewError}
                 </p>
               )}
@@ -620,7 +645,7 @@ function ScopedEditor({ token, isDemo }: { token: string | null; isDemo: boolean
               )}
               {preview && (
                 <>
-                  <p role="status" className="text-sm text-text-secondary">
+                  <p role="status" className={styles.summary}>
                     {preview.eligible_count} eligible · {preview.skipped_count} skipped ·{" "}
                     {isDemo ? "Sample date" : "Studio reference date"} {preview.reference_date}
                   </p>
@@ -631,14 +656,14 @@ function ScopedEditor({ token, isDemo }: { token: string | null; isDemo: boolean
                   )}
                   {sample && (
                     <article
-                      className="min-w-0 rounded-lg p-4"
+                      className={styles.letter}
                       data-automation-inset="true"
                       aria-label="Email preview"
                     >
                       <p className="break-words text-xs text-muted">
                         To {sample.recipient_name || sample.student_name} · {sample.recipient_email}
                       </p>
-                      <h4 className="mt-3 break-words text-sm font-semibold text-text-primary">
+                      <h4 className="mt-3 break-words text-base font-bold text-text-primary">
                         {sample.rendered_subject}
                       </h4>
                       <p className="mt-3 whitespace-pre-wrap break-words text-sm leading-6 text-text-secondary">
@@ -649,12 +674,21 @@ function ScopedEditor({ token, isDemo }: { token: string | null; isDemo: boolean
                   {!preview.recipients.length && (
                     <p className="text-sm text-muted">No students to show for this rule.</p>
                   )}
-                  <ul className="min-w-0 divide-y divide-border">
+                  <ul className={styles.recipients}>
                     {preview.recipients.map((recipient) => (
-                      <li key={recipient.student_id} className="min-w-0 py-3 text-sm">
-                        <p className="break-words font-medium text-text-primary">
-                          {recipient.student_name}
-                        </p>
+                      <li key={recipient.student_id}>
+                        <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+                          <p className="break-words font-semibold text-text-primary">
+                            {recipient.student_name}
+                          </p>
+                          <span
+                            className={kit.tag}
+                            data-tone={recipient.skip_reason ? "neutral" : "calm"}
+                            data-dot="true"
+                          >
+                            {recipient.skip_reason ? "Skipped" : "Eligible"}
+                          </span>
+                        </div>
                         {recipient.skip_reason ? (
                           <p className="break-words text-muted">
                             Skipped: {safeReason(recipient.skip_reason)}
@@ -665,7 +699,7 @@ function ScopedEditor({ token, isDemo }: { token: string | null; isDemo: boolean
                               {recipient.recipient_kind === "guardian" ? "Guardian" : "Student"}:{" "}
                               {recipient.recipient_email}
                             </p>
-                            <p className="text-xs text-muted">
+                            <p className={styles.meta}>
                               {recipient.days_absent} days absent · Last attendance{" "}
                               {recipient.last_attendance_date}
                             </p>
@@ -683,11 +717,11 @@ function ScopedEditor({ token, isDemo }: { token: string | null; isDemo: boolean
 
       <section
         aria-labelledby="automation-activity-title"
-        className="min-w-0 border-t border-border pt-5"
+        className={styles.activity}
         aria-busy={activityLoading}
       >
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <h3 id="automation-activity-title" className="text-base font-semibold text-text-primary">
+        <div className={styles.activityHead}>
+          <h3 id="automation-activity-title" className={styles.subhead}>
             Recent activity{isDemo ? " · Sample data" : ""}
           </h3>
           {!isDemo && (
@@ -704,12 +738,12 @@ function ScopedEditor({ token, isDemo }: { token: string | null; isDemo: boolean
         </div>
         {!activity && activityLoading && (
           <ul
-            className="koaryu-skeleton-reveal mt-2 min-w-0 divide-y divide-border"
+            className={`koaryu-skeleton-reveal ${styles.activityList}`}
             role="status"
             aria-label="Loading activity"
           >
             {[0, 1, 2].map((row) => (
-              <li key={row} className="min-w-0 space-y-2 py-3 text-sm" aria-hidden="true">
+              <li key={row} className="space-y-2" aria-hidden="true">
                 <div className="flex flex-wrap justify-between gap-2">
                   <div className="h-5 w-36 rounded bg-surface-raised" />
                   <div className="h-5 w-20 rounded bg-surface-raised" />
@@ -721,38 +755,38 @@ function ScopedEditor({ token, isDemo }: { token: string | null; isDemo: boolean
           </ul>
         )}
         {activityError && (
-          <p role="alert" className="mt-2 text-sm text-danger">
+          <p role="alert" className="text-sm font-semibold text-danger">
             {activityError}
           </p>
         )}
         {activity && !activity.items.length && (
-          <p className="mt-2 text-sm text-muted">No messages have been queued yet.</p>
+          <p className="text-sm text-muted">No messages have been queued yet.</p>
         )}
         {activity?.has_more && (
-          <p className="mt-2 text-xs text-muted">
+          <p className={styles.meta}>
             Showing the latest 50 entries. Older activity is not shown here.
           </p>
         )}
-        <ul className="mt-2 min-w-0 divide-y divide-border">
+        <ul className={styles.activityList}>
           {activity?.items.map((item) => (
-            <li key={item.id} className="min-w-0 py-3 text-sm">
-              <div className="flex flex-wrap justify-between gap-2">
-                <p className="break-words font-medium text-text-primary">{item.student_name}</p>
-                <p className="text-text-secondary">{ACTIVITY_LABELS[item.state]}</p>
+            <li key={item.id}>
+              <div className={styles.activityTop}>
+                <p className="break-words font-semibold text-text-primary">{item.student_name}</p>
+                <span className={kit.tag} data-tone={ACTIVITY_TONES[item.state]} data-dot="true">
+                  {ACTIVITY_LABELS[item.state]}
+                </span>
               </div>
               <p className="break-words text-text-secondary">{item.recipient_email}</p>
-              <p className="mt-1 break-words text-xs text-muted">
+              <p className={`break-words ${styles.meta}`}>
                 {item.created_at.replace("T", " ").replace("Z", " UTC")} · {item.attempts}{" "}
                 {item.attempts === 1 ? "attempt" : "attempts"}
                 {item.reason ? ` · ${safeReason(item.reason)}` : ""}
               </p>
               {item.state === "accepted" && (
-                <p className="mt-1 text-xs text-muted">
-                  Provider acceptance does not confirm inbox delivery.
-                </p>
+                <p className={styles.meta}>Provider acceptance does not confirm inbox delivery.</p>
               )}
               {item.state === "unknown" && (
-                <p className="mt-1 text-xs text-muted">
+                <p className={styles.meta}>
                   The send outcome could not be confirmed. This message will not be automatically
                   resent.
                 </p>
@@ -768,9 +802,10 @@ function ScopedEditor({ token, isDemo }: { token: string | null; isDemo: boolean
 function RuleFormPlaceholder() {
   return (
     <div className="grid min-w-0 gap-6 lg:grid-cols-2" aria-hidden="true">
-      <div className="min-w-0 space-y-4">
+      <div className={styles.column}>
+        <h3 className={styles.subhead}>Rule</h3>
         {["Days without attendance", "Subject", "Message", "Reply-to email"].map((label) => (
-          <div key={label} className="text-sm font-medium text-text-primary">
+          <div key={label} className="text-sm font-semibold text-text-primary">
             {label}
             <div
               className={`${fieldClass} bg-surface-raised ${label === "Message" ? "min-h-48" : ""}`}
@@ -787,8 +822,8 @@ function RuleFormPlaceholder() {
         </div>
         <div className="h-10 rounded bg-surface-raised" />
       </div>
-      <div className="min-w-0 space-y-4">
-        <h3 className="text-base font-semibold text-text-primary">Recipient preview</h3>
+      <div className={`${styles.column} ${styles.previewColumn}`}>
+        <h3 className={styles.subhead}>Recipient preview</h3>
         <p className="text-sm leading-6 text-text-secondary">
           Preview this draft to see who qualifies, who is skipped and how the message reads.
         </p>

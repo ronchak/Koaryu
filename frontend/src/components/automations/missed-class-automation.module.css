@@ -1,0 +1,236 @@
+/* Missed-class nudges as a Horizon panel: the rule in one sentence, then its parts. */
+.panel {
+  display: grid;
+  min-width: 0;
+  gap: 20px;
+  padding: 20px 22px 22px;
+  border: 1px solid var(--product-rule-soft, var(--border));
+  border-radius: 16px;
+  background: var(--product-paper, var(--surface));
+  box-shadow: var(--product-shadow-card, none);
+  color: var(--product-ink, var(--text-primary));
+}
+
+.head {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.titles {
+  display: grid;
+  min-width: 0;
+  flex: 1 1 auto;
+  gap: 4px;
+}
+
+.eyebrow {
+  margin: 0;
+  color: var(--product-meta, var(--muted));
+  font-size: 0.6875rem;
+  font-weight: 760;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.titleRow {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+}
+
+.titleRow h2 {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 800;
+  letter-spacing: -0.025em;
+}
+
+.rule {
+  margin: 4px 0 0;
+  font-size: 0.9375rem;
+  font-weight: 650;
+  line-height: 1.45;
+}
+
+.rule b {
+  font-weight: 800;
+}
+
+.lede {
+  max-width: 44rem;
+  margin: 0;
+  color: var(--product-soft-ink, var(--text-secondary));
+  font-size: 0.875rem;
+  line-height: 1.55;
+}
+
+/* Delivery readiness: one tinted strip with its actions on the right. */
+.delivery {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 16px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--hz-tile, var(--surface-raised));
+  color: var(--product-soft-ink, var(--text-secondary));
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+.delivery[data-tone="sample"] {
+  background: var(--hz-warn-wash, var(--surface-raised));
+  color: var(--product-ink, var(--text-primary));
+}
+
+.deliveryText {
+  display: grid;
+  min-width: 0;
+  flex: 1 1 22rem;
+  gap: 2px;
+}
+
+.deliveryText p {
+  margin: 0;
+}
+
+.deliveryActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.column {
+  display: grid;
+  min-width: 0;
+  align-content: start;
+  gap: 14px;
+}
+
+.subhead {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.previewColumn {
+  padding: 16px;
+  border-radius: 14px;
+  background: var(--product-card-stock, var(--surface-raised));
+  box-shadow: inset 0 0 0 1px var(--product-rule-soft, var(--border));
+}
+
+.letter {
+  min-width: 0;
+  padding: 16px 18px;
+  border: 1px solid var(--product-rule-soft, var(--border));
+  border-radius: 12px;
+  background: var(--product-paper, var(--surface));
+  box-shadow: var(--product-shadow-card, none);
+}
+
+.summary {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
+}
+
+.recipients {
+  display: grid;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.recipients > li {
+  min-width: 0;
+  padding: 10px 0;
+  border-top: 1px solid var(--product-rule-soft, var(--border));
+  font-size: 0.875rem;
+}
+
+.recipients > li:first-child {
+  border-top: 0;
+}
+
+/* Recent activity */
+.activity {
+  display: grid;
+  min-width: 0;
+  gap: 8px;
+  padding-top: 18px;
+  border-top: 1px solid var(--product-rule-soft, var(--border));
+}
+
+.activityHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.activityList {
+  display: grid;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.activityList > li {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+  padding: 12px 0;
+  border-top: 1px solid var(--product-rule-soft, var(--border));
+  font-size: 0.875rem;
+}
+
+.activityList > li:first-child {
+  border-top: 0;
+}
+
+.activityTop {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px 10px;
+}
+
+.activityTop p {
+  margin: 0;
+}
+
+.meta {
+  margin: 0;
+  color: var(--product-meta, var(--muted));
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 640px) {
+  .panel {
+    gap: 16px;
+    padding: 16px;
+    border-radius: 14px;
+  }
+
+  .head :global([aria-hidden="true"]:first-child) {
+    display: none;
+  }
+
+  .previewColumn {
+    padding: 14px;
+  }
+}

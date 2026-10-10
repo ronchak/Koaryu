@@ -1,31 +1,44 @@
+/* Step settings as a Horizon paper panel beside the canvas. */
 .inspector {
   box-sizing: border-box;
-  min-width: 0;
   width: 100%;
-  padding: 20px;
+  min-width: 0;
   margin-top: 16px;
-  border: 1px solid var(--border, #303944);
-  border-radius: 12px;
-  background: var(--surface, #12161b);
-  color: var(--text-primary, #f3f5f7);
+  padding: 18px 20px 20px;
+  border: 1px solid var(--product-rule-soft, var(--border));
+  border-radius: 16px;
+  background: var(--product-paper, var(--surface));
+  box-shadow: var(--product-shadow-card, none);
+  color: var(--product-ink, var(--text-primary));
+  font-size: 14px;
   overflow-wrap: anywhere;
 }
 .header {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
   flex-wrap: wrap;
-  gap: 12px;
-  margin-bottom: 16px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  margin-bottom: 14px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--product-rule-soft, var(--border));
 }
 .header h2 {
   margin: 0;
-  font-size: 20px;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+.inspector .header button {
+  border-color: transparent;
+  background: transparent;
+  color: var(--product-soft-ink, var(--text-secondary));
+  font-weight: 600;
 }
 .fields {
   display: grid;
-  gap: 14px;
   min-width: 0;
+  gap: 16px;
   margin: 0;
   padding: 0;
   border: 0;
@@ -33,12 +46,14 @@
 .field,
 .variablePicker {
   display: grid;
-  gap: 8px;
   min-width: 0;
+  gap: 6px;
 }
 .field label,
 .variablePicker span {
-  font-weight: 600;
+  color: var(--product-soft-ink, var(--text-secondary));
+  font-size: 13px;
+  font-weight: 650;
 }
 .variablePicker {
   margin-top: 10px;
@@ -52,11 +67,17 @@
   max-width: 100%;
   min-height: 44px;
   padding: 10px 12px;
-  border: 1px solid var(--border, #303944);
-  border-radius: 6px;
-  background: var(--surface-raised, #171c22);
+  border: 1px solid var(--product-rule, var(--border));
+  border-radius: 10px;
+  background: var(--product-card-stock, var(--surface-raised));
   color: inherit;
   font: inherit;
+}
+.inspector button {
+  background: var(--product-paper, var(--surface-raised));
+  font-weight: 600;
+  cursor: pointer;
+  white-space: normal;
 }
 .inspector input,
 .inspector select,
@@ -64,31 +85,30 @@
   width: 100%;
 }
 .inspector textarea {
+  line-height: 1.5;
   resize: vertical;
 }
-.inspector button {
-  cursor: pointer;
-  white-space: normal;
-}
 .inspector button:hover:not(:disabled) {
-  background: var(--surface-hover, #1e2329);
+  background: var(--product-card-stock, var(--surface-hover));
 }
 .inspector :is(input, select, textarea, button, summary, h2):focus-visible {
-  outline: 2px solid var(--accent, #d6b25e);
+  outline: 2px solid var(--product-focus, var(--accent));
   outline-offset: 3px;
 }
 .inspector :disabled {
+  opacity: 0.6;
   cursor: not-allowed;
-  opacity: 0.65;
 }
 .inspector summary {
   min-height: 44px;
   padding: 12px 0;
+  color: var(--product-soft-ink, var(--text-secondary));
+  font-weight: 650;
   cursor: pointer;
 }
 .help {
-  color: var(--text-secondary, #a7b0bd);
-  font-size: 14px;
+  color: var(--product-soft-ink, var(--text-secondary));
+  font-size: 13px;
   line-height: 1.5;
 }
 .help p,
@@ -96,31 +116,42 @@
   margin: 0;
 }
 .warning {
-  color: var(--danger, var(--text-primary, #f3f5f7));
+  color: var(--product-vermilion, var(--danger, var(--text-primary)));
+  font-weight: 600;
   line-height: 1.5;
 }
 .issueSummary {
   margin-bottom: 16px;
-  border-left: 3px solid var(--danger, var(--text-primary, #f3f5f7));
-  padding-left: 12px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--hz-alert-wash, transparent);
+  box-shadow: inset 3px 0 0 var(--product-vermilion, var(--danger, var(--text-primary)));
 }
 .issueSummary h3 {
-  font-size: 16px;
+  margin: 0 0 4px;
+  font-size: 14px;
+  font-weight: 700;
+}
+.issueSummary ul {
   margin: 0;
+  padding-left: 18px;
 }
 .members {
-  list-style: none;
-  padding: 0;
-  margin: 0;
   display: grid;
   gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 .members li {
   display: flex;
-  gap: 8px;
+  min-width: 0;
   align-items: center;
   justify-content: space-between;
-  min-width: 0;
+  gap: 8px;
+  padding: 4px 4px 4px 12px;
+  border-radius: 10px;
+  background: var(--hz-tile, var(--surface-raised));
 }
 .members span {
   min-width: 0;
@@ -140,10 +171,11 @@
 }
 @media (max-width: 480px) {
   .inspector {
-    padding: 12px;
+    padding: 14px;
   }
   .header {
     flex-direction: column;
+    align-items: stretch;
   }
   .header button {
     width: 100%;
