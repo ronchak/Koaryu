@@ -75,6 +75,7 @@ export function BeltTrackerShell({
             idPrefix="belt-tab"
             items={visibleTabs.map((item) => ({
               ...item,
+              disabled: !programsLoaded,
               controls: `belt-panel-${item.id}`,
             }))}
             mode="tabs"
@@ -90,10 +91,16 @@ export function BeltTrackerShell({
                   disabled={dirty || isEditing || isSwitchingLadder}
                 />
               </div>
+            ) : programsLoaded ? (
+              <span className="text-xs text-muted">No programs yet</span>
             ) : (
-              <span className="text-xs text-muted">
-                {programsLoaded ? "No programs yet" : "Loading programs..."}
-              </span>
+              <div
+                className="koaryu-skeleton-reveal h-11 w-44 rounded-[10px] bg-surface-raised"
+                role="status"
+                aria-live="polite"
+              >
+                <span className="sr-only">Loading programs.</span>
+              </div>
             )}
           </div>
         </div>

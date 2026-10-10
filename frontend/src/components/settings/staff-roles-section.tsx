@@ -75,19 +75,50 @@ function roleBadgeVariant(role: StaffRoleName) {
   return "warning";
 }
 
+const STAFF_ROW_CLASS =
+  "grid gap-3 p-3 md:min-h-14 md:grid-cols-[minmax(0,1fr)_140px_100px_120px_180px] md:items-center md:px-3 md:py-1";
+
+function StaffColumnHeader() {
+  return (
+    <div className="hidden min-h-11 gap-3 bg-surface-raised px-3 py-2 text-xs text-muted md:grid md:grid-cols-[minmax(0,1fr)_140px_100px_120px_180px] md:items-center">
+      {["Staff", "Role", "Status", "Date", "Action"].map((label) => (
+        <span key={label}>{label}</span>
+      ))}
+    </div>
+  );
+}
+
 function StaffSkeletonRows() {
   return (
-    <div className="divide-y divide-border overflow-hidden rounded-[10px] bg-surface-raised/30">
+    <div
+      className="koaryu-skeleton-reveal divide-y divide-border overflow-hidden rounded-[10px] bg-surface-raised/20"
+      role="status"
+      aria-live="polite"
+      aria-busy="true"
+    >
+      <p className="sr-only">Loading staff.</p>
+      <div aria-hidden="true">
+        <StaffColumnHeader />
+      </div>
       {Array.from({ length: 3 }).map((_, index) => (
-        <div key={index} className="grid grid-cols-[1fr_140px_100px_120px_180px] gap-3 p-3">
-          <div className="space-y-2">
-            <div className="h-3 w-36 rounded-[6px] bg-surface-raised" />
-            <div className="h-3 w-48 rounded-[6px] bg-surface-raised" />
+        <div key={index} className={STAFF_ROW_CLASS} aria-hidden="true">
+          <div className="min-w-0 space-y-2">
+            <div className="h-4 w-36 max-w-full rounded-[6px] bg-surface-raised" />
+            <div className="h-3 w-48 max-w-full rounded-[6px] bg-surface-raised" />
           </div>
-          <div className="h-7 rounded-[6px] bg-surface-raised" />
-          <div className="h-5 w-16 rounded-[6px] bg-surface-raised" />
-          <div className="h-3 w-20 rounded-[6px] bg-surface-raised" />
-          <div className="h-7 rounded-[6px] bg-surface-raised" />
+          <div>
+            <p className="mb-1 text-xs text-muted md:hidden">Role</p>
+            <div className="h-7 rounded-[6px] bg-surface-raised" />
+          </div>
+          <div>
+            <p className="mb-1 text-xs text-muted md:hidden">Status</p>
+            <div className="h-5 w-16 rounded-[6px] bg-surface-raised" />
+          </div>
+          <div>
+            <p className="mb-1 text-xs text-muted md:hidden">Date</p>
+            <div className="h-3 w-20 rounded-[6px] bg-surface-raised" />
+          </div>
+          <div className="h-11 rounded-[6px] bg-surface-raised" />
         </div>
       ))}
     </div>
@@ -202,9 +233,7 @@ function StaffRow({
     <div
       data-staff-status={member.status}
       aria-busy={isRolePending || isRemovePending || isLifecyclePending || isLegalNamePending}
-      className={`grid gap-3 p-3 md:min-h-14 md:grid-cols-[minmax(0,1fr)_140px_100px_120px_180px] md:items-center md:px-3 md:py-1 ${
-        isArchived ? "bg-warning/[0.06]" : ""
-      }`}
+      className={`${STAFF_ROW_CLASS} ${isArchived ? "bg-warning/[0.06]" : ""}`}
     >
       <div className="min-w-0">
         <StaffIdentity
@@ -973,13 +1002,7 @@ function StaffRolesEditor() {
           </div>
         ) : (
           <div className="divide-y divide-border overflow-hidden rounded-[10px] bg-surface-raised/20">
-            <div className="hidden min-h-11 gap-3 bg-surface-raised px-3 py-2 text-xs text-muted md:grid md:grid-cols-[minmax(0,1fr)_140px_100px_120px_180px] md:items-center">
-              <span>Staff</span>
-              <span>Role</span>
-              <span>Status</span>
-              <span>Date</span>
-              <span>Action</span>
-            </div>
+            <StaffColumnHeader />
             {visibleStaffMembers.map((member) => (
               <StaffRow
                 key={member.id}

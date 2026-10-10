@@ -4,6 +4,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api, CommandOutcomeUnknown } from "@/lib/api";
 import { hasStaffPermission } from "@/lib/staff-permissions";
+import { useRetainedState } from "@/lib/retained-state";
 import {
   PIPELINE_STAGES,
   buildLeadUpdateSuccessMessage,
@@ -26,7 +27,7 @@ import type { LeadCreateView } from "@/lib/lead-create-operation";
 import type { LeadFollowUpOptions, LeadFollowUpResult } from "@/lib/store-lead-actions";
 import type { Lead, LeadActivity, LeadStage, LostReason, Program, StaffRoleName } from "@/types";
 
-type LeadActivityStatus = "idle" | "loading" | "ready" | "error";
+type LeadActivityStatus = "idle" | "loading" | "refreshing" | "ready" | "error";
 
 type LeadStoreActions = {
   addLead: (data: Partial<Lead>) => Promise<void>;
@@ -109,7 +110,9 @@ export function useLeadsPageController({
   const [followUpDrafts, setFollowUpDrafts] = useState<Record<string, string>>({});
   const [optimisticLeads, setOptimisticLeads] = useState<Record<string, Lead>>({});
   const [addLeadProgramId, setAddLeadProgramId] = useState<string | null>(null);
-  const [selectedLeadActivities, setSelectedLeadActivities] = useState<LeadActivity[]>([]);
+  const [selectedLeadActivities, setSelectedLeadActivities] = useRetainedState<
+    LeadActivity[] | null
+  >(identityReady && selectedLeadId ? `leads:activity:${scope}:${selectedLeadId}` : null, null);
   const [selectedLeadActivityError, setSelectedLeadActivityError] = useState<string | null>(null);
   const [selectedLeadActivityStatus, setSelectedLeadActivityStatus] =
     useState<LeadActivityStatus>("idle");
@@ -121,7 +124,6 @@ export function useLeadsPageController({
     setRenderedScope(scope);
     setOptimisticLeads({});
     setFollowUpDrafts({});
-    setSelectedLeadActivities([]);
     setSelectedLeadActivityError(null);
     setSelectedLeadActivityStatus("idle");
     setSelectedLeadId(null);
@@ -195,7 +197,7 @@ export function useLeadsPageController({
   );
 
   useEffect(() => {
-    if (!selectedLeadId || isPreviewMode || !token) return;
+    if (!identityReady || !selectedLeadId || isPreviewMode || !token) return;
 
     const requestController = new AbortController();
     void api
@@ -203,12 +205,22 @@ export function useLeadsPageController({
         signal: requestController.signal,
       })
       .then((activities) => {
-        if (requestController.signal.aborted) return;
+        if (
+          requestController.signal.aborted ||
+          scopeRef.current !== scope ||
+          selectedLeadIdRef.current !== selectedLeadId
+        )
+          return;
         setSelectedLeadActivities(activities);
         setSelectedLeadActivityStatus("ready");
       })
       .catch((error: unknown) => {
-        if (requestController.signal.aborted) return;
+        if (
+          requestController.signal.aborted ||
+          scopeRef.current !== scope ||
+          selectedLeadIdRef.current !== selectedLeadId
+        )
+          return;
         setSelectedLeadActivityError(
           error instanceof Error ? error.message : "Could not load lead activity.",
         );
@@ -216,7 +228,15 @@ export function useLeadsPageController({
       });
 
     return () => requestController.abort();
-  }, [activityRefreshKey, isPreviewMode, selectedLeadId, token]);
+  }, [
+    activityRefreshKey,
+    identityReady,
+    isPreviewMode,
+    scope,
+    selectedLeadId,
+    token,
+    setSelectedLeadActivities,
+  ]);
 
   function getFollowUpInputValue(lead: Lead) {
     return getLeadFollowUpInputValue(lead, followUpDrafts, today);
@@ -235,7 +255,6 @@ export function useLeadsPageController({
     ) {
       selectedLeadIdRef.current = null;
       setSelectedLeadId(null);
-      setSelectedLeadActivities([]);
       setSelectedLeadActivityError(null);
       setSelectedLeadActivityStatus("idle");
     }
@@ -257,10 +276,10 @@ export function useLeadsPageController({
   }
 
   function selectLead(leadId: string) {
+    if (selectedLeadId === leadId) setActivityRefreshKey((current) => current + 1);
     setLeadActionError(null);
     selectedLeadIdRef.current = leadId;
     setSelectedLeadId(leadId);
-    setSelectedLeadActivities([]);
     if (isPreviewMode) {
       setSelectedLeadActivityError(null);
       setSelectedLeadActivityStatus("ready");
@@ -277,7 +296,6 @@ export function useLeadsPageController({
 
   function retrySelectedLeadActivities() {
     if (!selectedLeadId || isPreviewMode || !token) return;
-    setSelectedLeadActivities([]);
     setSelectedLeadActivityError(null);
     setSelectedLeadActivityStatus("loading");
     setActivityRefreshKey((current) => current + 1);
@@ -590,9 +608,12 @@ export function useLeadsPageController({
     followUpRecoveries,
     recoveringLeadIds: new Set([...followUpRecoveries.keys(), ...(trialRecoveryLeadIds ?? [])]),
     retrySelectedLeadActivities,
-    selectedLeadActivities,
+    selectedLeadActivities: selectedLeadActivities ?? [],
     selectedLeadActivityError,
-    selectedLeadActivityStatus,
+    selectedLeadActivityStatus:
+      selectedLeadActivityStatus === "loading" && selectedLeadActivities !== null
+        ? ("refreshing" as LeadActivityStatus)
+        : selectedLeadActivityStatus,
     selectLead,
     setAddLeadProgramId: changeAddLeadProgramId,
     setFollowUpInputValue,

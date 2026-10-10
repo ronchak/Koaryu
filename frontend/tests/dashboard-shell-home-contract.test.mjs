@@ -167,11 +167,12 @@ describe("dashboard shell and Home source contracts", () => {
     assert.doesNotMatch(homeSource, /QUICK_ACTION_ICONS\[index\]/);
   });
 
-  it("mounts Home on authoritative identity", () => {
+  it("keeps Home identity gating inside the page layout", () => {
     assert.match(controllerSource, /const isDashboardIdentityReady = Boolean\(/);
     assert.match(controllerSource, /isDashboardDataReady: datasetReadiness\.status === "ready"/);
     assert.match(controllerSource, /normalizeDashboardWidgetRole\(currentRole\)/);
-    assert.match(contentSource, /if \(!isDashboardIdentityReady\)/);
+    assert.doesNotMatch(contentSource, /if \(!isDashboardIdentityReady\)/);
+    assert.match(homeSource, /const layoutResolved = identityReady &&/);
     assert.match(contentSource, /dataReady=\{isDashboardDataReady\}/);
     assert.match(contentSource, /identityReady=\{isDashboardIdentityReady\}/);
   });

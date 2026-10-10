@@ -1,49 +1,67 @@
+import { PIPELINE_STAGES } from "@/lib/leads-page-model";
+import { LEAD_AGE_BANDS } from "@/lib/leads-age-bands";
 import styles from "./leads-ledger.module.css";
 
-const LEDGER_LOADING_ROWS = 6;
-
-function LeadLedgerIntroLoading() {
-  return (
-    <div className={styles.intro}>
-      <dl className={styles.totals} aria-hidden="true">
-        <div>
-          <dt>Overdue</dt>
-          <dd>—</dd>
-        </div>
-        <div>
-          <dt>Due today</dt>
-          <dd>—</dd>
-        </div>
-        <div>
-          <dt>Unassigned</dt>
-          <dd>—</dd>
-        </div>
-      </dl>
-    </div>
-  );
-}
-
-export function LeadLedgerLoading() {
+export function LeadLedgerLoading({ canManageLeads = true }: { canManageLeads?: boolean }) {
   return (
     <section
-      className={styles.workspace}
+      className={`${styles.workspace} koaryu-skeleton-reveal`}
       aria-label="Loading lead follow-up obligations"
       role="status"
+      aria-live="polite"
+      aria-busy="true"
     >
-      <LeadLedgerIntroLoading />
-      <p className="sr-only">Loading follow-up obligations…</p>
-      <div className={styles.stateFrame} aria-hidden="true">
-        <div className={styles.stateHeader}>
-          {Array.from({ length: 6 }).map((_, index) => (
-            <span key={index} className={styles.stateBar} />
+      <p className="sr-only">Loading follow-up obligations.</p>
+      <div className={styles.intro} aria-hidden="true">
+        <dl className={styles.totals}>
+          {["Overdue", "Due today", "Unassigned"].map((label) => (
+            <div key={label}>
+              <dt>{label}</dt>
+              <dd>—</dd>
+            </div>
           ))}
-        </div>
-        {Array.from({ length: LEDGER_LOADING_ROWS }).map((_, row) => (
-          <div key={row} className={styles.stateRow}>
-            {Array.from({ length: 6 }).map((__, column) => (
-              <span key={column} className={styles.stateBar} />
-            ))}
-          </div>
+        </dl>
+      </div>
+      <ol className={styles.stageRail} aria-hidden="true">
+        {PIPELINE_STAGES.map((stage) => (
+          <li key={stage.id}>
+            <strong>{stage.label}</strong>
+            <b>—</b>
+          </li>
+        ))}
+      </ol>
+      <div className={styles.ageQueue} aria-hidden="true">
+        {LEAD_AGE_BANDS.slice(0, 2).map((band) => (
+          <section key={band.id} className={styles.ageBand} data-age-band={band.id}>
+            <header>
+              <h2>{band.label}</h2>
+              <span>—</span>
+            </header>
+            <ol>
+              {Array.from({ length: 3 }).map((_, row) => (
+                <li key={row}>
+                  <div className={styles.queueLead}>
+                    <div className={`${styles.stateBar} w-3/4`} />
+                    <div className={`${styles.stateBar} mt-1 w-1/2`} />
+                  </div>
+                  <div className={styles.queueAction}>
+                    <div className={`${styles.stateBar} w-3/4`} />
+                    <div className={`${styles.stateBar} mt-1 w-1/2`} />
+                  </div>
+                  <div className={styles.queueContext}>
+                    <div className={`${styles.stateBar} w-3/4`} />
+                    <div className={`${styles.stateBar} mt-1 w-1/2`} />
+                  </div>
+                  {canManageLeads ? (
+                    <div className={styles.stageMoves}>
+                      <div className="h-11 w-11 rounded-[6px] bg-surface-raised" />
+                      <div className="h-11 w-11 rounded-[6px] bg-surface-raised" />
+                    </div>
+                  ) : null}
+                </li>
+              ))}
+            </ol>
+          </section>
         ))}
       </div>
     </section>
