@@ -1,11 +1,11 @@
 "use client";
 
-import { RankBadge } from "@/components/belt-tracker/rank-visuals";
+import { BeltSwatch } from "@/components/belt-tracker/rank-visuals";
 import { Button } from "@/components/ui/button";
 import { DismissibleNotice } from "@/components/ui/dismissible-notice";
 import { ModalFrame } from "@/components/ui/modal-frame";
 import type { BeltRank, EligibilityEntry } from "@/types";
-import { ChevronDown } from "lucide-react";
+import { ArrowRight, ChevronDown } from "lucide-react";
 import styles from "./belt-tracker.module.css";
 
 type DemotionConfirmModalProps = {
@@ -40,37 +40,42 @@ export function DemotionConfirmModal({
   return (
     <ModalFrame
       rootClassName={`p-4 ${styles.beltDialogRoot}`}
-      panelClassName="bg-bg rounded-[18px] w-full max-w-sm p-4 shadow-[var(--product-shadow-lifted)]"
+      panelClassName="w-full max-w-md p-5"
       ariaLabelledBy="confirm-demotion-title"
       onBackdropClick={onClose}
     >
-      <h2 id="confirm-demotion-title" className="text-base font-semibold text-text-primary">
+      <h2 id="confirm-demotion-title" className={styles.dialogTitle}>
         Confirm demotion
       </h2>
-      <div className="my-4 rounded-[14px] border border-border bg-surface p-4">
-        <p className="text-sm font-medium text-text-primary">{entry.student_name}</p>
-        <div className="mt-2 flex items-center gap-2">
-          {currentRank ? (
-            <RankBadge
-              name={currentRank.name}
-              color={currentRank.color_hex}
-              isTip={currentRank.is_tip}
-              tipColor={currentRank.tip_color_hex ?? undefined}
+      <p className={styles.dialogLead}>
+        A rank correction moves {entry.student_name} back one rank and keeps the reason on record.
+      </p>
+      <div className={styles.dialogStep}>
+        <p>{entry.student_name}</p>
+        <div className={styles.beltStep}>
+          <span className={styles.beltStepRank}>
+            <BeltSwatch
+              color={currentRank?.color_hex ?? entry.current_rank_color}
+              isTip={currentRank?.is_tip}
+              tipColor={currentRank?.tip_color_hex}
+              size="md"
             />
-          ) : null}
-          <span className="text-muted">{"\u2192"}</span>
-          <RankBadge
-            name={targetRank.name}
-            color={targetRank.color_hex}
-            isTip={targetRank.is_tip}
-            tipColor={targetRank.tip_color_hex ?? undefined}
-          />
+            <span>{currentRank?.name ?? entry.current_rank_name ?? "Current rank"}</span>
+          </span>
+          <ArrowRight aria-hidden="true" className={styles.beltStepArrow} />
+          <span className={styles.beltStepRank} data-next="true">
+            <BeltSwatch
+              color={targetRank.color_hex}
+              isTip={targetRank.is_tip}
+              tipColor={targetRank.tip_color_hex}
+              size="lg"
+            />
+            <strong>{targetRank.name}</strong>
+          </span>
         </div>
       </div>
-      <div className="mb-4 flex flex-col gap-1.5">
-        <label htmlFor="demotion-reason" className="text-sm font-medium text-text-secondary">
-          Reason (required)
-        </label>
+      <div className={styles.dialogField}>
+        <label htmlFor="demotion-reason">Reason (required)</label>
         <textarea
           id="demotion-reason"
           rows={3}
@@ -78,7 +83,6 @@ export function DemotionConfirmModal({
           value={reason}
           onChange={(event) => onReasonChange(event.target.value)}
           placeholder="Explain why this rank correction is needed"
-          className="w-full resize-none rounded-[14px] border border-border bg-surface-raised px-3 py-2 text-sm text-text-primary placeholder:text-muted focus:border-accent focus:outline-none"
         />
       </div>
       {error ? (
@@ -86,17 +90,12 @@ export function DemotionConfirmModal({
           {error}
         </DismissibleNotice>
       ) : null}
-      <div className="flex justify-end gap-2">
-        <Button variant="ghost" size="sm" onClick={onCancel} disabled={isDemoting}>
+      <div className={styles.dialogActions}>
+        <Button variant="ghost" onClick={onCancel} disabled={isDemoting}>
           Cancel
         </Button>
-        <Button
-          variant="secondary"
-          size="sm"
-          disabled={isDemoting || !reason.trim()}
-          onClick={onConfirm}
-        >
-          <ChevronDown className="h-3.5 w-3.5" />
+        <Button variant="danger" disabled={isDemoting || !reason.trim()} onClick={onConfirm}>
+          <ChevronDown aria-hidden="true" className="h-4 w-4" />
           {isDemoting ? "Demoting..." : "Confirm demotion"}
         </Button>
       </div>

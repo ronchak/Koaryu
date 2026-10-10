@@ -17,29 +17,24 @@ export function DeleteRankConfirmModal({
   return (
     <ModalFrame
       rootClassName={`p-4 ${styles.beltDialogRoot}`}
-      panelClassName="bg-bg rounded-[18px] w-full max-w-xs p-4 shadow-[var(--product-shadow-lifted)]"
+      panelClassName="w-full max-w-sm p-5"
       ariaLabelledBy="delete-rank-title"
       ariaDescribedBy="delete-rank-description"
       onBackdropClick={onCancel}
     >
-      <h2 id="delete-rank-title" className="text-base font-semibold text-text-primary mb-2">
+      <h2 id="delete-rank-title" className={styles.dialogTitle}>
         Delete rank?
       </h2>
-      <p id="delete-rank-description" className="text-sm text-text-secondary mb-4">
+      <p id="delete-rank-description" className={`${styles.dialogLead} mb-5`}>
         <strong className="text-text-primary">{name}</strong> will be permanently removed. Students
         at this rank may need reassignment.
       </p>
-      <div className="flex justify-end gap-2">
-        <Button variant="ghost" size="sm" onClick={onCancel}>
+      <div className={styles.dialogActions}>
+        <Button variant="ghost" onClick={onCancel}>
           Cancel
         </Button>
-        <Button
-          variant="primary"
-          size="sm"
-          onClick={onConfirm}
-          className="!bg-danger hover:!bg-danger/80"
-        >
-          <Trash2 className="w-3.5 h-3.5" /> Delete
+        <Button variant="danger" onClick={onConfirm}>
+          <Trash2 aria-hidden="true" className="h-4 w-4" /> Delete
         </Button>
       </div>
     </ModalFrame>

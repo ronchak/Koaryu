@@ -1,28 +1,77 @@
 "use client";
 
+import type { CSSProperties } from "react";
 import type { BeltRank } from "@/types";
-import { getRankColorTreatment, prefersDarkRankText } from "@/lib/rank-color-treatment";
+import styles from "./belt-tracker.module.css";
 
+export type BeltSwatchSize = "xs" | "sm" | "md" | "lg";
+
+/**
+ * A drawn belt: the rank's own colour (a data colour), a knot, and a tip band
+ * for sub-ranks. Decorative; the rank's name always sits beside it in words.
+ */
+export function BeltSwatch({
+  color,
+  isTip,
+  size = "md",
+  tipColor,
+}: {
+  color: string | null | undefined;
+  isTip?: boolean;
+  size?: BeltSwatchSize;
+  tipColor?: string | null;
+}) {
+  const style = {
+    "--belt": color || "var(--hz-tile)",
+    ...(isTip && tipColor ? { "--belt-tip": tipColor } : {}),
+  } as CSSProperties;
+  return (
+    <span
+      className={styles.beltSwatch}
+      data-size={size}
+      data-tip={isTip && tipColor ? "true" : undefined}
+      data-empty={color ? undefined : "true"}
+      style={style}
+      aria-hidden="true"
+    />
+  );
+}
+
+/** Progress toward one promotion requirement, in words and a thin bar. */
 export function ProgressBar({
+  caption,
   current,
   label,
   required,
   met,
+  unit,
 }: {
+  caption?: string;
   current: number;
   label: string;
   required: number;
   met: boolean;
+  unit?: string;
 }) {
   if (required <= 0) {
-    return <span className="text-xs text-muted">Not required</span>;
+    return (
+      <div className={styles.requirement} data-met="true">
+        {caption ? <span className={styles.requirementCaption}>{caption}</span> : null}
+        <span className={styles.requirementValue}>Not required</span>
+      </div>
+    );
   }
 
   const pct = Math.min(100, Math.round((current / required) * 100));
   return (
-    <div className="flex items-center gap-2 w-full">
-      <div
-        className="flex-1 h-1.5 bg-surface-raised rounded-full overflow-hidden"
+    <div className={styles.requirement} data-met={met ? "true" : undefined}>
+      {caption ? <span className={styles.requirementCaption}>{caption}</span> : null}
+      <span className={styles.requirementValue}>
+        <strong>{current.toLocaleString()}</strong> of {required.toLocaleString()}
+        {unit ? ` ${unit}` : ""}
+      </span>
+      <span
+        className={styles.requirementTrack}
         role="progressbar"
         aria-label={label}
         aria-valuemin={0}
@@ -30,20 +79,13 @@ export function ProgressBar({
         aria-valuenow={Math.min(current, required)}
         aria-valuetext={`${current} of ${required}`}
       >
-        <div
-          className={`h-full rounded-full transition-[background-color,width] ${met ? "bg-success" : "bg-accent"}`}
-          style={{ width: `${pct}%` }}
-        />
-      </div>
-      <span
-        className={`text-xs font-mono w-14 text-right ${met ? "text-success" : "text-text-secondary"}`}
-      >
-        {current}/{required}
+        <span className={styles.requirementFill} style={{ width: `${pct}%` }} />
       </span>
     </div>
   );
 }
 
+/** A rank named in words with its belt beside it. */
 export function RankBadge({
   name,
   color,
@@ -55,36 +97,9 @@ export function RankBadge({
   isTip?: boolean;
   tipColor?: string;
 }) {
-  const treatment = getRankColorTreatment(color);
-
-  if (isTip && tipColor) {
-    return (
-      <span
-        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-[10px] text-xs font-medium"
-        style={treatment}
-      >
-        <span
-          className="w-2 h-2 rounded-full border border-white/20 flex-shrink-0"
-          style={{ backgroundColor: color }}
-        />
-        {name}
-        <span
-          className="ml-0.5 w-1.5 h-3 rounded-sm flex-shrink-0"
-          style={{ backgroundColor: tipColor }}
-        />
-      </span>
-    );
-  }
-
   return (
-    <span
-      className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-[10px] text-xs font-medium"
-      style={treatment}
-    >
-      <span
-        className="w-2 h-2 rounded-full border border-white/30"
-        style={{ backgroundColor: color }}
-      />
+    <span className={styles.rankBadge}>
+      <BeltSwatch color={color} isTip={isTip} tipColor={tipColor} size="xs" />
       {name}
     </span>
   );
@@ -95,26 +110,14 @@ export function BeltVisual({
   size = "md",
 }: {
   rank: Pick<BeltRank, "color_hex" | "is_tip" | "tip_color_hex">;
-  size?: "sm" | "md";
+  size?: "sm" | "md" | "lg";
 }) {
-  const isLight = prefersDarkRankText(rank.color_hex);
-  const dims = size === "sm" ? "w-7 h-3" : "w-10 h-4";
   return (
-    <div
-      className={`relative ${dims} rounded-[6px] overflow-hidden flex-shrink-0`}
-      style={{
-        backgroundColor: rank.color_hex,
-        border: isLight ? "1px solid rgb(46 39 28 / 24%)" : "1px solid transparent",
-        boxShadow: "inset 0 1px 2px rgba(0,0,0,0.25)",
-      }}
-    >
-      <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-[3px] bg-black/20" />
-      {rank.is_tip && rank.tip_color_hex && (
-        <div
-          className="absolute right-0 inset-y-0 w-2.5"
-          style={{ backgroundColor: rank.tip_color_hex }}
-        />
-      )}
-    </div>
+    <BeltSwatch
+      color={rank.color_hex}
+      isTip={rank.is_tip}
+      tipColor={rank.tip_color_hex}
+      size={size}
+    />
   );
 }

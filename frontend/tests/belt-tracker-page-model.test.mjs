@@ -4,6 +4,7 @@ import { describe, it } from "node:test";
 import {
   appendTipToGroup,
   buildEligibilityGroups,
+  buildRankLadder,
   buildBeltTrackerProgramState,
   buildLoadNoticeDismissalKey,
   buildNewBeltRank,
@@ -11,6 +12,7 @@ import {
   buildPromotionRequestBody,
   createLocalRankId,
   deleteRankAndFollowingTips,
+  eligibilityProgressShare,
   flattenGroups,
   groupRanks,
   isEligibilityEntryReady,
@@ -18,6 +20,7 @@ import {
   moveTipWithinGroup,
   normalizeSubRankTermDraft,
   resolvePresetBeltName,
+  summarizeEligibility,
   updateRankFromForm,
   validatePromotionTarget,
 } from "../src/lib/belt-tracker-page-model.ts";
@@ -418,6 +421,88 @@ describe("belt tracker page model", () => {
     assert.equal(groups[1].approvalCount, 1);
     assert.equal(isEligibilityEntryReady(groups[1].entries[0]), true);
     assert.equal(isEligibilityEntryReady(groups[1].entries[2]), false);
+  });
+
+  it("summarizes readiness and names the student closest to a next belt", () => {
+    const ranks = [rank("white", { display_order: 0 }), rank("blue", { display_order: 1 })];
+    const groups = buildEligibilityGroups(
+      [
+        eligibilityEntry({ student_id: "far", student_name: "Far", classes_since_promo: 2 }),
+        eligibilityEntry({
+          student_id: "near",
+          student_name: "Near",
+          classes_since_promo: 9,
+          days_at_rank: 300,
+        }),
+        eligibilityEntry({
+          student_id: "top",
+          student_name: "Top of ladder",
+          classes_since_promo: 10,
+          next_rank_id: undefined,
+          next_rank_name: undefined,
+        }),
+        eligibilityEntry({
+          student_id: "ready",
+          classes_met: true,
+          time_met: true,
+        }),
+        eligibilityEntry({
+          student_id: "approval",
+          classes_met: true,
+          time_met: true,
+          needs_approval: true,
+        }),
+      ],
+      ranks,
+    );
+    const summary = summarizeEligibility(groups);
+    assert.deepEqual(
+      { ...summary, closest: summary.closest?.student_id },
+      { approval: 1, closest: "near", progress: 3, ready: 1, total: 5 },
+    );
+    assert.equal(
+      eligibilityProgressShare(eligibilityEntry({ classes_since_promo: 20, days_at_rank: 15 })),
+      0.75,
+    );
+    assert.deepEqual(summarizeEligibility([]), {
+      approval: 0,
+      closest: null,
+      progress: 0,
+      ready: 0,
+      total: 0,
+    });
+  });
+
+  it("lays every planned rank out in ladder order with its student count", () => {
+    const ranks = [
+      rank("blue", { name: "Blue", display_order: 2 }),
+      rank("white", { name: "White", display_order: 0 }),
+      rank("stripe", { name: "Stripe", display_order: 1, is_tip: true, tip_color_hex: "#EF4444" }),
+    ];
+    const groups = buildEligibilityGroups(
+      [
+        eligibilityEntry({ student_id: "a" }),
+        eligibilityEntry({ student_id: "b", classes_met: true, time_met: true }),
+        eligibilityEntry({
+          student_id: "c",
+          current_rank_id: undefined,
+          current_rank_name: undefined,
+          current_rank_color: undefined,
+        }),
+      ],
+      ranks,
+    );
+    const ladder = buildRankLadder(ranks, groups);
+    assert.deepEqual(
+      ladder.map((step) => [step.key, step.count, step.eligibleCount]),
+      [
+        ["unranked", 1, 0],
+        ["white", 2, 1],
+        ["stripe", 0, 0],
+        ["blue", 0, 0],
+      ],
+    );
+    assert.equal(ladder[2].rank?.tip_color_hex, "#EF4444");
   });
 
   it("validates promotion targets and builds the live API payload", () => {
