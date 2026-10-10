@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { LEAD_SOURCE_ICONS } from "@/components/leads/lead-source-icons";
-import { ProgramBadge } from "@/components/programs/program-picker";
+import { describeLeadDue, getLeadNextAction } from "@/components/leads/lead-focus";
+import { ToneTag } from "@/components/schedule/horizon-parts";
 import { Button } from "@/components/ui/button";
 import { DismissibleNotice } from "@/components/ui/dismissible-notice";
 import {
@@ -11,7 +12,6 @@ import {
   SOURCE_LABELS,
   formatDate,
   fullName,
-  getFollowUpStatusLabel,
   getNextStage,
   getProgramLabel,
   getStageLabel,
@@ -110,6 +110,10 @@ export function LeadDetailInspector({
     inspectorRef.current?.focus();
   }, [lead.id]);
 
+  const program = lead.program_id ? programById.get(lead.program_id) : null;
+  const due = describeLeadDue(lead.follow_up_date, today);
+  const isOpen = lead.stage !== "closed_lost" && lead.stage !== "enrolled";
+
   return (
     <aside
       ref={inspectorRef}
@@ -125,10 +129,10 @@ export function LeadDetailInspector({
       }}
     >
       <div className={styles.inspectorHeader}>
-        <p>Selected lead</p>
-        <h2 id="lead-detail-title" className="text-base font-semibold text-text-primary">
-          {fullName(lead)}
-        </h2>
+        <p>
+          {getStageLabel(lead.stage)} · {getProgramLabel(lead, program)}
+        </p>
+        <h2 id="lead-detail-title">{fullName(lead)}</h2>
         <button
           type="button"
           onClick={handleClose}
@@ -136,7 +140,7 @@ export function LeadDetailInspector({
           aria-label="Close lead details"
           className={styles.inspectorClose}
         >
-          <X className="w-4 h-4" />
+          <X aria-hidden="true" />
         </button>
       </div>
       <div className={styles.inspectorBody}>
@@ -151,125 +155,54 @@ export function LeadDetailInspector({
           </DismissibleNotice>
         )}
 
-        <div>
-          <label htmlFor="lead-detail-stage" className="block text-xs text-muted mb-1.5">
-            Stage
-          </label>
-          <select
-            id="lead-detail-stage"
-            value={lead.stage}
-            disabled={isPending || !canManageLeads}
-            onChange={(event) => {
-              void onStageSelection(lead, event.target.value as LeadStage);
-            }}
-            className="w-full px-3 py-1.5 text-sm bg-surface-raised border border-border text-text-primary focus:border-accent focus:outline-none"
-          >
-            {detailStageOptions.map((stage) => (
-              <option
-                key={stage.id}
-                value={stage.id}
-                disabled={stage.id === "enrolled" && !canConvertLeads}
-              >
-                {stage.label}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div className="space-y-2">
-          <p className="text-xs text-muted">Contact</p>
-          {lead.email && (
-            <div className="flex items-center gap-2 text-sm text-text-secondary">
-              <Mail className="w-3.5 h-3.5 text-muted" />
-              <span className="font-mono">{lead.email}</span>
-            </div>
-          )}
-          {lead.phone && (
-            <div className="flex items-center gap-2 text-sm text-text-secondary">
-              <Phone className="w-3.5 h-3.5 text-muted" />
-              <span className="font-mono">{lead.phone}</span>
-            </div>
-          )}
-        </div>
-
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <div>
-            <p className="text-xs text-muted mb-1">Source</p>
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs bg-surface-raised border border-border text-text-secondary">
-              {LEAD_SOURCE_ICONS[lead.source]}
-              {SOURCE_LABELS[lead.source]}
-            </span>
-          </div>
-          <div>
-            <p className="text-xs text-muted mb-1">Program</p>
-            <ProgramBadge
-              program={lead.program_id ? programById.get(lead.program_id) : null}
-              fallback={getProgramLabel(lead, null)}
-            />
-          </div>
-        </div>
-
-        {trialAppointments}
-
-        <div>
-          <label htmlFor="lead-detail-assignee" className="block text-xs text-muted mb-1.5">
-            Assigned staff
-          </label>
-          <select
-            id="lead-detail-assignee"
-            value={lead.assigned_staff_id ?? ""}
-            disabled={isPending || !canManageLeads}
-            onChange={(event) => void onAssignStaff(lead, event.target.value || null)}
-            className="min-h-11 w-full border border-border bg-surface-raised px-3 text-sm text-text-primary focus:border-accent focus:outline-none"
-          >
-            <option value="">Unassigned</option>
-            {assigneeChoices.map((member) => (
-              <option key={member.id} value={member.id}>
-                {member.full_name || member.email}
-                {member.status === "active" ? "" : ` · ${member.status}`}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        {lead.is_minor && lead.guardian_name && (
-          <div className="bg-surface border border-border p-3">
-            <p className="text-xs text-muted mb-2">Guardian</p>
-            <p className="text-sm text-text-primary">{lead.guardian_name}</p>
-            {lead.guardian_email && (
-              <p className="text-xs text-text-secondary font-mono mt-1">{lead.guardian_email}</p>
-            )}
-            {lead.guardian_phone && (
-              <p className="text-xs text-text-secondary font-mono mt-0.5">{lead.guardian_phone}</p>
-            )}
-          </div>
-        )}
-
-        <div className="bg-surface border border-border p-3 space-y-3">
-          <div className="flex items-center justify-between gap-3">
+        {/* The next step comes first: what to do, when, and the buttons to do it. */}
+        <section className={styles.nextStep} data-tone={isOpen ? due.tone : "neutral"}>
+          <div className={styles.nextStepHead}>
             <div>
-              <p className="text-xs text-muted">Follow-up date</p>
-              <p className="text-sm text-text-primary mt-1">
+              <p className={styles.fieldLabel}>Next step</p>
+              <p className={styles.nextStepTitle}>{getLeadNextAction(lead)}</p>
+              <p className={styles.nextStepDate}>
                 {lead.follow_up_date
                   ? formatDate(lead.follow_up_date, true)
                   : "No follow-up scheduled"}
               </p>
             </div>
-            {lead.follow_up_date && lead.follow_up_date <= today && (
-              <span
-                className={`px-2 py-1 text-xs ${
-                  lead.follow_up_date < today
-                    ? "bg-danger/10 text-danger"
-                    : "bg-warning/10 text-warning"
-                }`}
-              >
-                {getFollowUpStatusLabel(lead.follow_up_date, today)}
-              </span>
-            )}
+            {lead.follow_up_date && isOpen ? (
+              <ToneTag tone={due.tone} dot={due.tone !== "neutral"}>
+                {due.label}
+              </ToneTag>
+            ) : null}
           </div>
 
+          {canManageLeads && isOpen && (
+            <div className={styles.nextStepActions}>
+              {nextStage && (nextStage !== "enrolled" || canConvertLeads) && (
+                <Button
+                  variant="primary"
+                  size="md"
+                  disabled={isPending}
+                  onClick={() => {
+                    void onMarkContacted(lead, true);
+                  }}
+                >
+                  {nextStage === "enrolled" ? "Convert now" : `Move to ${getStageLabel(nextStage)}`}
+                </Button>
+              )}
+              <Button
+                variant="secondary"
+                size="md"
+                disabled={isPending}
+                onClick={() => {
+                  void onMarkContacted(lead, false);
+                }}
+              >
+                Mark contacted
+              </Button>
+            </div>
+          )}
+
           {canManageLeads ? (
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+            <div className={styles.reschedule}>
               <label htmlFor="lead-detail-follow-up-date" className="sr-only">
                 Follow-up date
               </label>
@@ -279,11 +212,10 @@ export function LeadDetailInspector({
                 value={followUpValue}
                 disabled={isPending}
                 onChange={(event) => onFollowUpValueChange(lead.id, event.target.value)}
-                className="w-full border border-border bg-surface-raised px-3 py-2 text-sm text-text-primary focus:border-accent focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
               />
               <Button
-                variant="secondary"
-                size="sm"
+                variant="outline"
+                size="md"
                 disabled={isPending}
                 onClick={() => {
                   void onRescheduleLead(lead);
@@ -295,7 +227,7 @@ export function LeadDetailInspector({
           ) : null}
 
           {canManageLeads && followUpRecovery && (
-            <div role="status" className="space-y-2">
+            <div role="status" className={styles.recovery}>
               <p>
                 {followUpRecovery === "confirmed"
                   ? "Follow-up saved. Refresh current lead details before making another change."
@@ -306,53 +238,132 @@ export function LeadDetailInspector({
               </Button>
             </div>
           )}
+        </section>
 
-          {canManageLeads && lead.stage !== "closed_lost" && lead.stage !== "enrolled" && (
-            <div className="flex flex-wrap gap-2">
-              <Button
-                variant="ghost"
-                size="sm"
-                disabled={isPending}
-                onClick={() => {
-                  void onMarkContacted(lead, false);
-                }}
-              >
-                Mark contacted
-              </Button>
-              {nextStage && (nextStage !== "enrolled" || canConvertLeads) && (
-                <Button
-                  variant="primary"
-                  size="sm"
-                  disabled={isPending}
-                  onClick={() => {
-                    void onMarkContacted(lead, true);
-                  }}
+        {lead.email || lead.phone ? (
+          <div className={styles.contact}>
+            <p className={styles.fieldLabel}>Contact</p>
+            {lead.phone && (
+              <a href={`tel:${lead.phone}`} className={styles.contactLink}>
+                <Phone aria-hidden="true" />
+                <span>{lead.phone}</span>
+              </a>
+            )}
+            {lead.email && (
+              <a href={`mailto:${lead.email}`} className={styles.contactLink}>
+                <Mail aria-hidden="true" />
+                <span>{lead.email}</span>
+              </a>
+            )}
+          </div>
+        ) : null}
+
+        <div className={styles.fieldGrid}>
+          <div>
+            <label htmlFor="lead-detail-stage" className={styles.fieldLabel}>
+              Stage
+            </label>
+            <select
+              id="lead-detail-stage"
+              value={lead.stage}
+              disabled={isPending || !canManageLeads}
+              onChange={(event) => {
+                void onStageSelection(lead, event.target.value as LeadStage);
+              }}
+            >
+              {detailStageOptions.map((stage) => (
+                <option
+                  key={stage.id}
+                  value={stage.id}
+                  disabled={stage.id === "enrolled" && !canConvertLeads}
                 >
-                  {nextStage === "enrolled" ? "Convert now" : `Move to ${getStageLabel(nextStage)}`}
-                </Button>
-              )}
-            </div>
-          )}
+                  {stage.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label htmlFor="lead-detail-assignee" className={styles.fieldLabel}>
+              Assigned staff
+            </label>
+            <select
+              id="lead-detail-assignee"
+              value={lead.assigned_staff_id ?? ""}
+              disabled={isPending || !canManageLeads}
+              onChange={(event) => void onAssignStaff(lead, event.target.value || null)}
+            >
+              <option value="">Unassigned</option>
+              {assigneeChoices.map((member) => (
+                <option key={member.id} value={member.id}>
+                  {member.full_name || member.email}
+                  {member.status === "active" ? "" : ` · ${member.status}`}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
+
+        <div className={styles.fieldGrid}>
+          <div>
+            <p className={styles.fieldLabel}>Source</p>
+            <span className={styles.factPill}>
+              {LEAD_SOURCE_ICONS[lead.source]}
+              {SOURCE_LABELS[lead.source]}
+            </span>
+          </div>
+          <div>
+            <p className={styles.fieldLabel}>Program</p>
+            <span
+              className={styles.factPill}
+              style={
+                {
+                  "--program-color": program?.color_hex || "var(--product-meta)",
+                } as CSSProperties
+              }
+            >
+              <i aria-hidden="true" />
+              {getProgramLabel(lead, program)}
+            </span>
+          </div>
+        </div>
+
+        {lead.is_minor && lead.guardian_name && (
+          <div className={styles.inspectorCard}>
+            <p className={styles.fieldLabel}>Guardian</p>
+            <p className={styles.cardStrong}>{lead.guardian_name}</p>
+            {lead.guardian_phone && (
+              <a href={`tel:${lead.guardian_phone}`} className={styles.contactLink}>
+                <Phone aria-hidden="true" />
+                <span>{lead.guardian_phone}</span>
+              </a>
+            )}
+            {lead.guardian_email && (
+              <a href={`mailto:${lead.guardian_email}`} className={styles.contactLink}>
+                <Mail aria-hidden="true" />
+                <span>{lead.guardian_email}</span>
+              </a>
+            )}
+          </div>
+        )}
+
+        {trialAppointments}
 
         {lead.notes && (
           <div>
-            <p className="text-xs text-muted mb-1">Notes</p>
-            <p className="text-sm text-text-secondary leading-relaxed">{lead.notes}</p>
+            <p className={styles.fieldLabel}>Notes</p>
+            <p className={styles.notes}>{lead.notes}</p>
           </div>
         )}
 
         <section
-          className="border-y border-border py-4"
+          className={styles.activity}
           aria-labelledby="lead-activity-title"
           aria-busy={activityStatus === "loading" || activityStatus === "refreshing"}
         >
-          <div className="flex items-center justify-between gap-3">
+          <div className={styles.activityHead}>
             <div>
-              <p className="text-xs font-semibold text-muted">Activity</p>
-              <h3 id="lead-activity-title" className="mt-1 text-sm font-semibold text-text-primary">
-                Recorded follow-up trail
-              </h3>
+              <p className={styles.fieldLabel}>Activity</p>
+              <h3 id="lead-activity-title">Recorded follow-up trail</h3>
             </div>
             {activityStatus === "refreshing" ? (
               <Clock
@@ -362,36 +373,36 @@ export function LeadDetailInspector({
             ) : null}
           </div>
           {activityStatus === "error" ? (
-            <div className="mt-3 text-sm text-danger">
+            <div className={styles.activityError}>
               <p>{activityError || "Could not load lead activity."}</p>
-              <Button variant="ghost" size="sm" className="mt-2" onClick={onRetryActivities}>
+              <Button variant="secondary" size="sm" className="mt-2" onClick={onRetryActivities}>
                 Retry activity
               </Button>
             </div>
           ) : null}
           {(activityStatus === "ready" || activityStatus === "refreshing") &&
           activities.length === 0 ? (
-            <p className="mt-3 text-sm text-muted">
-              No activity has been recorded for this lead yet.
-            </p>
+            <p className={styles.activityEmpty}>No activity has been recorded for this lead yet.</p>
           ) : activityStatus === "loading" && activities.length === 0 ? (
-            <div className="koaryu-skeleton-reveal mt-3 space-y-3" role="status" aria-live="polite">
+            <div
+              className={`koaryu-skeleton-reveal ${styles.activityList}`}
+              role="status"
+              aria-live="polite"
+            >
               <p className="sr-only">Loading lead activity.</p>
               {Array.from({ length: 3 }).map((_, index) => (
-                <div key={index} className="border-l border-border pl-3" aria-hidden="true">
-                  <div className="h-4 w-3/4 rounded-[6px] bg-surface-raised" />
-                  <div className="mt-1 h-3 w-1/2 rounded-[6px] bg-surface-raised" />
+                <div key={index} className={styles.activityItem} aria-hidden="true">
+                  <span className={`${styles.stateBar} w-3/4`} />
+                  <span className={`${styles.stateBar} mt-1 w-1/2`} />
                 </div>
               ))}
             </div>
           ) : (
-            <ol className="mt-3 space-y-3">
+            <ol className={styles.activityList}>
               {activities.map((activity) => (
-                <li key={activity.id} className="border-l border-border pl-3">
-                  <p className="text-sm text-text-primary">
-                    {activity.description || activity.activity_type.replace(/_/g, " ")}
-                  </p>
-                  <p className="mt-1 text-xs text-muted">
+                <li key={activity.id} className={styles.activityItem}>
+                  <p>{activity.description || activity.activity_type.replace(/_/g, " ")}</p>
+                  <p>
                     {new Date(activity.created_at).toLocaleString("en-US", {
                       month: "short",
                       day: "numeric",
@@ -407,20 +418,18 @@ export function LeadDetailInspector({
         </section>
 
         {lead.stage === "closed_lost" && lead.lost_reason && (
-          <div className="bg-danger/5 border border-danger/20 p-3">
-            <p className="text-xs text-danger mb-1">Lost reason</p>
-            <p className="text-sm text-text-primary capitalize">
-              {lead.lost_reason.replace(/_/g, " ")}
-            </p>
+          <div className={styles.lostReason}>
+            <p className={styles.fieldLabel}>Lost reason</p>
+            <p>{lead.lost_reason.replace(/_/g, " ")}</p>
           </div>
         )}
 
-        {canManageLeads ? (
-          <div className="flex flex-wrap gap-2 pt-2 border-t border-border">
-            {canConvertLeads && lead.stage !== "enrolled" && lead.stage !== "closed_lost" && (
+        {canManageLeads && isOpen ? (
+          <div className={styles.closeOut}>
+            {canConvertLeads && (
               <Button
-                variant="primary"
-                size="sm"
+                variant="secondary"
+                size="md"
                 disabled={isPending}
                 onClick={() => {
                   void onConvertLead(lead);
@@ -429,34 +438,31 @@ export function LeadDetailInspector({
                 Convert to student
               </Button>
             )}
-            {lead.stage !== "closed_lost" && lead.stage !== "enrolled" && (
-              <div className="flex min-w-0 flex-1 flex-wrap items-end gap-2 rounded-[10px] bg-danger/5 p-3">
-                <label className="min-w-40 flex-1 text-xs text-muted" htmlFor="lead-lost-reason">
-                  Lost reason
-                  <select
-                    id="lead-lost-reason"
-                    value={lostReason}
-                    disabled={isPending}
-                    onChange={(event) => setLostReason(event.target.value as LostReason)}
-                    className="mt-1 min-h-11 w-full border border-border bg-surface-raised px-2 text-sm text-text-primary"
-                  >
-                    {Object.entries(LOST_REASON_LABELS).map(([value, label]) => (
-                      <option key={value} value={value}>
-                        {label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <Button
-                  variant="danger"
-                  size="sm"
+            <div className={styles.markLost}>
+              <label htmlFor="lead-lost-reason">
+                Lost reason
+                <select
+                  id="lead-lost-reason"
+                  value={lostReason}
                   disabled={isPending}
-                  onClick={() => void onMarkLost(lead, lostReason)}
+                  onChange={(event) => setLostReason(event.target.value as LostReason)}
                 >
-                  Mark lost
-                </Button>
-              </div>
-            )}
+                  {Object.entries(LOST_REASON_LABELS).map(([value, label]) => (
+                    <option key={value} value={value}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <Button
+                variant="danger"
+                size="md"
+                disabled={isPending}
+                onClick={() => void onMarkLost(lead, lostReason)}
+              >
+                Mark lost
+              </Button>
+            </div>
           </div>
         ) : null}
       </div>
