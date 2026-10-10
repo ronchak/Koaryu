@@ -280,9 +280,11 @@ export function BillingSetupNavigation({
             <h2 className={styles.reviewTitle}>Billing review</h2>
             <p className={styles.reviewCount}>
               {ready ? `${completedStepCount} of ${steps.length} ready` : "Review status pending"}
-              {" · "}
-              Review provider state, plans, and families before posting external payments or
-              reconciling open invoices.
+              <span className={styles.reviewWhy}>
+                {" · "}
+                Review provider state, plans, and families before posting external payments or
+                reconciling open invoices.
+              </span>
             </p>
           </div>
           {ready ? (

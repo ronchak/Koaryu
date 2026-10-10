@@ -469,6 +469,15 @@
     margin-top: -36px;
   }
 
+  /* Phones: labels and notes wrap so no figure loses its meaning. */
+  .money section span {
+    white-space: normal;
+  }
+
+  .reviewWhy {
+    display: none;
+  }
+
   .reviewMeter {
     display: none;
   }
