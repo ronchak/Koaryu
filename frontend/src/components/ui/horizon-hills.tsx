@@ -18,7 +18,7 @@ export function HorizonHills({
 }) {
   const box = variant === "band" ? HORIZON_BAND_VIEWBOX : HORIZON_VIEWBOX;
   const paths = variant === "band" ? HORIZON_BAND_RIDGE_PATHS : HORIZON_RIDGE_PATHS;
-  const sunCircle = variant === "band" ? { cx: 1240, cy: 64, r: 26 } : { cx: 1160, cy: 132, r: 46 };
+  const sunCircle = variant === "band" ? { cx: 1010, cy: 70, r: 24 } : { cx: 1160, cy: 132, r: 46 };
   return (
     <svg
       className={[styles.hills, className].filter(Boolean).join(" ")}
