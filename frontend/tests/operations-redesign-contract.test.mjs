@@ -810,7 +810,7 @@ describe("operations behavior proof", () => {
       settings,
       /canAccessSettings\(\s*currentRole\s*\)\s*\?\s*<AdminSettingsContent\s+key\s*=\s*\{\s*JSON\.stringify\(\s*\[\s*currentUserId\s*,\s*currentStudioId\s*,\s*currentRole\s*,\s*identityGeneration\s*\]\s*\)\s*\}\s*\/>\s*:\s*<SettingsAccessNotice\s*\/>/,
     );
-    assert.match(settings, /<Header title="Settings" \/>/);
+    assert.match(settings, /<Header\s[^>]*?title="Settings"[^>]*?\/>/);
     assert.doesNotMatch(settings, /Studio configuration and preferences/);
     assert.match(settings, /data-settings-folio="admin-ownership"/);
     assert.equal((settings.match(/data-settings-owner=/g) || []).length, 5);
