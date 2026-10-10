@@ -24,7 +24,7 @@ describe("schedule range intent contracts", () => {
   it("keeps Reports and other analytics callers on the read-only path", () => {
     assert.match(
       reportsPageSource,
-      /refreshScheduleRange\([\s\S]*?reportScheduleRange\.endDate,\s*"read"\s*\)/,
+      /refreshScheduleRange\([\s\S]*?reportScheduleRange\.endDate,\s*"read",?\s*\)/,
     );
     assert.doesNotMatch(reportsPageSource, /"materialize"/);
     assert.match(

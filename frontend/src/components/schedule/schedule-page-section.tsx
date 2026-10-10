@@ -228,6 +228,8 @@ export function SchedulePageSection({
     WEEK_TIME_COLUMN_WIDTH + WEEK_DAY_COUNT * weekDayMinWidth,
   );
   const weekGridTemplateColumns = `${WEEK_TIME_COLUMN_WIDTH}px repeat(${WEEK_DAY_COUNT}, minmax(${weekDayMinWidth}px, 1fr))`;
+  const showCalendar = hasLoadedRange || !scheduleLoadError;
+  const calendarLoadingClass = hasLoadedRange ? "" : "koaryu-skeleton-reveal";
 
   function renderTimeColumn(date: Date, compact: boolean) {
     const key = formatScheduleDateKey(date);
@@ -248,7 +250,13 @@ export function SchedulePageSection({
             }}
           />
         ))}
-        {blocks.map((block) => {
+        {!hasLoadedRange && (
+          <div
+            aria-hidden="true"
+            className="absolute inset-x-2 top-12 h-16 rounded bg-surface-raised"
+          />
+        )}
+        {(hasLoadedRange ? blocks : []).map((block) => {
           const top =
             ((block.startMinute - canvasBounds.startMinute) / 60) * SCHEDULE_CANVAS_PIXELS_PER_HOUR;
           const height =
@@ -521,27 +529,28 @@ export function SchedulePageSection({
         ) : null}
 
         {!hasLoadedRange ? (
-          <div
-            role="status"
-            aria-busy={isRefreshingRange}
-            className="m-6 rounded-[10px] bg-surface-raised p-6 text-sm text-muted"
-          >
-            {scheduleLoadError
-              ? "This calendar range is unavailable. Retry or choose another range."
-              : "Loading this calendar range..."}
-          </div>
+          scheduleLoadError ? (
+            <p role="status" className="px-6 pt-3 text-sm text-muted">
+              This calendar range is unavailable. Retry or choose another range.
+            </p>
+          ) : (
+            <span role="status" aria-live="polite" className="sr-only">
+              Loading this calendar range...
+            </span>
+          )
         ) : isRefreshingRange ? (
           <p role="status" className="px-6 pt-3 text-xs text-muted">
             Refreshing calendar. Showing the last loaded schedule.
           </p>
         ) : null}
 
-        {hasLoadedRange && view === "month" && (
-          <div className="flex-1 p-3 sm:p-6">
+        {showCalendar && view === "month" && (
+          <div className={`flex-1 p-3 sm:p-6 ${calendarLoadingClass}`} aria-busy={!hasLoadedRange}>
             <MonthScheduleView
               month={currentDate}
-              sessions={filteredSessions}
-              templates={filteredTemplates}
+              sessions={hasLoadedRange ? filteredSessions : []}
+              templates={hasLoadedRange ? filteredTemplates : []}
+              isLoading={!hasLoadedRange}
               selectedDate={currentDate}
               today={parseCalendarDate(businessDate)}
               maxVisibleEntries={3}
@@ -561,10 +570,11 @@ export function SchedulePageSection({
           </div>
         )}
 
-        {hasLoadedRange && view === "week" && (
+        {showCalendar && view === "week" && (
           <>
             <div
-              className="flex-1 overflow-x-auto overscroll-x-contain"
+              className={`flex-1 overflow-x-auto overscroll-x-contain ${calendarLoadingClass}`}
+              aria-busy={!hasLoadedRange}
               data-schedule-screen-week="true"
               data-schedule-scroll-owner="internal"
               role="region"
@@ -631,7 +641,7 @@ export function SchedulePageSection({
             </div>
 
             <section data-schedule-print-week="true" aria-label="Weekly schedule">
-              {weekDates.map((date) => {
+              {(hasLoadedRange ? weekDates : []).map((date) => {
                 const key = formatScheduleDateKey(date);
                 const entries = (layoutsByDate[key] || []).map((block) => block.item);
                 return (
@@ -743,8 +753,11 @@ export function SchedulePageSection({
           </>
         )}
 
-        {hasLoadedRange && view === "day" && (
-          <div className="flex-1 px-3 py-6 sm:px-8">
+        {showCalendar && view === "day" && (
+          <div
+            className={`flex-1 px-3 py-6 sm:px-8 ${calendarLoadingClass}`}
+            aria-busy={!hasLoadedRange}
+          >
             <div className="mb-5 flex flex-wrap items-end justify-between gap-3 border-b border-border pb-3">
               <h2 className="text-sm font-semibold text-text-primary">
                 {currentDate.toLocaleDateString("en-US", {
@@ -759,7 +772,8 @@ export function SchedulePageSection({
               </p>
             </div>
 
-            {(entriesByDate[formatScheduleDateKey(currentDate)] || []).length === 0 ? (
+            {hasLoadedRange &&
+            (entriesByDate[formatScheduleDateKey(currentDate)] || []).length === 0 ? (
               <div className="rounded-[14px] bg-surface py-16 text-center shadow-[var(--product-shadow-card)]">
                 <Calendar aria-hidden="true" className="w-5 h-5 text-muted mx-auto mb-3" />
                 <p className="text-sm text-text-secondary">No sessions scheduled for this day.</p>

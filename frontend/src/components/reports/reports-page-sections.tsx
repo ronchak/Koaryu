@@ -5,11 +5,13 @@ export function MetricCard({
   label,
   value,
   sub,
+  loading = false,
 }: {
   icon: ElementType;
   label: string;
   value: string;
   sub: string;
+  loading?: boolean;
 }) {
   return (
     <figure className="bg-surface p-4" data-report-figure="headline">
@@ -19,10 +21,56 @@ export function MetricCard({
         </div>
         <span className="text-xs font-medium text-text-secondary">{label}</span>
       </div>
-      <p className="text-3xl font-semibold tabular-nums text-text-primary leading-none">{value}</p>
-      <p className="text-xs text-muted mt-2 leading-relaxed">{sub}</p>
+      {loading ? (
+        <div aria-hidden="true">
+          <div className="h-[30px] w-20 rounded bg-surface-raised" />
+          <div className="mt-2 h-[19.5px] w-3/4 rounded bg-surface-raised" />
+        </div>
+      ) : (
+        <>
+          <p className="text-3xl font-semibold tabular-nums text-text-primary leading-none">
+            {value}
+          </p>
+          <p className="text-xs text-muted mt-2 leading-relaxed">{sub}</p>
+        </>
+      )}
     </figure>
   );
+}
+
+export function ReportRowsLoading({ rows, funnel = false }: { rows: number; funnel?: boolean }) {
+  return (
+    <div
+      aria-hidden="true"
+      className={funnel ? "space-y-4" : "divide-y divide-border border-t border-border"}
+    >
+      {Array.from({ length: rows }, (_, index) => (
+        <div key={index} className={funnel ? "" : "py-4"}>
+          <div className={`h-5 w-3/4 rounded bg-surface-raised ${funnel ? "mb-2" : ""}`} />
+          <div
+            className={
+              funnel
+                ? "h-1.5 rounded-full bg-surface-raised"
+                : "mt-1 h-3 w-1/2 rounded bg-surface-raised"
+            }
+          />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export function ReportSessionCardsLoading({ rows }: { rows: number }) {
+  return Array.from({ length: rows }, (_, index) => (
+    <dl key={index} aria-hidden="true" className="grid grid-cols-2 gap-x-3 gap-y-2 py-4 text-sm">
+      {["Class", "Date", "Attendance", "Capacity", "Utilization"].map((label, column) => (
+        <div key={label} className={column === 0 ? "col-span-2" : undefined}>
+          <dt className="text-xs text-muted">{label}</dt>
+          <dd className="mt-1 h-5 w-3/4 rounded bg-surface-raised" />
+        </div>
+      ))}
+    </dl>
+  ));
 }
 
 export function Panel({ children, className = "" }: { children: ReactNode; className?: string }) {

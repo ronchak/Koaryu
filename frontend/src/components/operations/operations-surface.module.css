@@ -271,97 +271,6 @@
   padding: 0 0 1rem;
 }
 
-.loading {
-  flex: 1;
-  display: grid;
-  grid-template-columns: minmax(14rem, 20rem) minmax(0, 1fr);
-  gap: clamp(1.5rem, 5vw, 4rem);
-  padding: clamp(1.25rem, 5vw, 4rem);
-}
-
-.loadingIntro {
-  align-self: start;
-  padding-block: clamp(0.75rem, 3vw, 2rem);
-}
-
-.loading h1 {
-  max-width: 11ch;
-  margin: 0;
-  font-size: clamp(2rem, 5vw, 4rem);
-  letter-spacing: -0.04em;
-  line-height: 0.98;
-}
-
-.loading p:not(.eyebrow) {
-  max-width: 30rem;
-  color: var(--text-secondary);
-  font-size: 0.8125rem;
-  line-height: 1.6;
-}
-
-.loading .eyebrow {
-  padding-inline: 0;
-}
-
-.loadingWorkbench {
-  align-self: start;
-  padding: 8px;
-  border-radius: 14px;
-  background: var(--product-paper, var(--surface));
-  box-shadow: var(--product-shadow-card);
-}
-
-.loadingIndex {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
-}
-
-.loadingIndex span {
-  min-height: 44px;
-  display: grid;
-  align-items: center;
-  padding: 8px 12px;
-  border-radius: 10px;
-  background: var(--product-card-stock, var(--surface-raised));
-  color: var(--text-secondary);
-  font-size: 0.75rem;
-  font-weight: 650;
-}
-
-.loadingRules {
-  display: grid;
-  gap: 8px;
-  margin-top: 8px;
-}
-
-.loadingRules span {
-  display: block;
-  height: 44px;
-  border-radius: 8px;
-  background: var(--product-card-stock, var(--surface-raised));
-  opacity: 0.72;
-  animation: operations-settle var(--product-motion-settle-duration, 220ms)
-    var(--product-motion-ease, ease-out) both;
-}
-
-.loading[data-loading-family="schedule"] .loadingWorkbench {
-  min-width: 42rem;
-}
-
-.loading[data-loading-family="reports"] .loadingRules {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
-@keyframes operations-settle {
-  from {
-    opacity: 0.25;
-  }
-  to {
-    opacity: 0.72;
-  }
-}
-
 @media (max-width: 1023px) {
   .index {
     position: static;
@@ -375,20 +284,6 @@
 
   .index ul {
     grid-template-columns: 1fr 1fr;
-  }
-
-  .loading {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .loadingWorkbench,
-  .loading[data-loading-family="schedule"] .loadingWorkbench {
-    min-width: 0;
-  }
-
-  .loadingIndex,
-  .loading[data-loading-family="reports"] .loadingRules {
-    grid-template-columns: 1fr;
   }
 
   .surface[data-operations-page="settings"] :global([data-program-form="true"]) {
