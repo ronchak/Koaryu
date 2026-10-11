@@ -21,6 +21,7 @@ import {
   followUpLabel,
   initialTryState,
   leadBand,
+  leadsInBand,
   leadTotals,
   nextAction,
   nextMark,
@@ -95,6 +96,33 @@ describe("Try: attendance and ranks", () => {
 });
 
 describe("Try: the follow-up queue", () => {
+  it("places a newly added earlier follow-up before existing upcoming leads without mutating state", () => {
+    const added = reduce(start, { type: "addLead", lead: newLead });
+    const originalOrder = added.leads.map((lead) => lead.id);
+    assert.deepEqual(
+      leadsInBand(added.leads, "upcoming").map((lead) => lead.name),
+      ["Jordan Rivera", "Tyler Brooks"],
+    );
+    assert.deepEqual(
+      added.leads.map((lead) => lead.id),
+      originalOrder,
+    );
+    assert.match(sources["try-demo.tsx"], /leadsInBand\(state\.leads, band\.id\)/);
+  });
+
+  it("sorts overdue follow-ups oldest first and preserves equal-date and completed ordering", () => {
+    const sameDay = { ...leads[0], id: "same-day" };
+    const completed = { ...leads[3], id: "completed", stage: "enrolled" };
+    const earlierCompleted = { ...leads[0], id: "earlier-completed", stage: "enrolled" };
+    const input = [leads[1], completed, leads[0], sameDay, earlierCompleted];
+    assert.deepEqual(
+      leadsInBand(input, "overdue-1").map((lead) => lead.id),
+      [leads[0].id, "same-day", leads[1].id],
+    );
+    assert.deepEqual(leadsInBand(input, "done"), [completed, earlierCompleted]);
+    assert.deepEqual(leadsInBand(input, "today"), []);
+  });
+
   it("queues leads by how overdue they are, with Koaryu's next actions", () => {
     assert.deepEqual(leads.map(leadBand), ["overdue-1", "overdue-1", "today", "upcoming"]);
     assert.deepEqual(leadTotals(leads), {
