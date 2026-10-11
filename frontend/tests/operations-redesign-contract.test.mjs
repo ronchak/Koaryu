@@ -263,7 +263,7 @@ describe("operations behavior proof", () => {
         }),
       );
       await page.locator('[data-schedule-time-canvas="day"]').waitFor();
-      assert.equal(await page.getByText("No sessions scheduled for this day.").count(), 0);
+      assert.equal(await page.getByText("No classes on this day.").count(), 0);
 
       await page.evaluate(
         (props) => fixture.renderSchedule(props),
@@ -274,7 +274,7 @@ describe("operations behavior proof", () => {
           view: "day",
         }),
       );
-      await page.getByText("No sessions scheduled for this day.").waitFor();
+      await page.getByText("No classes on this day.").waitFor();
       assert.equal(await page.locator("[data-time-canvas-block]").count(), 0);
 
       await page.evaluate(
@@ -334,7 +334,9 @@ describe("operations behavior proof", () => {
         );
         const owner = page.locator('[data-schedule-screen-week="true"]');
         await owner.waitFor();
-        const expectedScreenWidth = Math.max(1040, 72 + 7 * entriesPerDay * 48);
+        // The grid fills the 816px owner, or expands to the 56px time column
+        // plus seven days with an 88px floor and 64px per simultaneous lane.
+        const expectedScreenWidth = Math.max(816, 56 + 7 * Math.max(88, entriesPerDay * 64));
         const screenGeometry = await owner.evaluate((element) => ({
           clientWidth: element.clientWidth,
           scrollWidth: element.scrollWidth,

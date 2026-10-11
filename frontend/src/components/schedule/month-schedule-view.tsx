@@ -1,9 +1,9 @@
 "use client";
 
-import { useMemo, type CSSProperties } from "react";
-import { CalendarClock, Layers3 } from "lucide-react";
+import { useMemo, useState, type CSSProperties } from "react";
+import { CalendarCheck, CalendarClock, ChevronDown, Layers3 } from "lucide-react";
 
-import { getProgramColor, getSessionFill } from "@/components/schedule/schedule-display";
+import { getProgramColor, getSessionFill, pluralize } from "@/components/schedule/schedule-display";
 import type { ClassSession, ClassTemplate, Program } from "@/types";
 import {
   MONTH_DAY_NAMES,
@@ -60,12 +60,20 @@ interface MonthScheduleDay {
   date: Date;
   dateKey: string;
   inCurrentMonth: boolean;
-  visibleEntries: MonthScheduleEntry[];
+  /** Every entry, in time order; the grid shows the first `maxVisibleEntries`. */
+  entries: MonthScheduleEntry[];
   hiddenEntries: MonthScheduleEntry[];
   sessionCount: number;
   templateCount: number;
   conflictingSessionIds: Set<string>;
-  conflictCount: number;
+  /** Before today in the business month, folded away in the agenda. */
+  past: boolean;
+  /** Classes on this day, or while loading the recurring ones it will have. */
+  hasKnownClasses: boolean;
+  /** All seven days of its week are in another month, so the grid skips the row. */
+  rowOutOfMonth: boolean;
+  /** The grid's last drawn row, which needs no bottom rule. */
+  rowLast: boolean;
   ariaLabel: string;
   monthLabel: string;
 }
@@ -79,7 +87,7 @@ export function MonthScheduleView({
   programById = EMPTY_PROGRAMS,
   selectedDate,
   today = new Date(),
-  maxVisibleEntries = 3,
+  maxVisibleEntries = 4,
   showHeader = true,
   showTemplatePlaceholders = false,
   isLoading = false,
@@ -105,17 +113,34 @@ export function MonthScheduleView({
     [monthKey, sessions],
   );
 
+  const isBusinessMonth = isDateInMonth(today, month);
+  const outOfMonthRows = useMemo(() => {
+    const rows = new Set<number>();
+    for (let row = 0; row * 7 < monthDays.length; row += 1) {
+      const week = monthDays.slice(row * 7, row * 7 + 7);
+      if (week.every((date) => !isDateInMonth(date, month))) rows.add(row);
+    }
+    return rows;
+  }, [month, monthDays]);
+  const lastDrawnRow = useMemo(() => {
+    let row = Math.ceil(monthDays.length / 7) - 1;
+    while (row > 0 && outOfMonthRows.has(row)) row -= 1;
+    return row;
+  }, [monthDays.length, outOfMonthRows]);
+
   const calendarDays = useMemo<MonthScheduleDay[]>(
     () =>
-      monthDays.map((date) => {
+      monthDays.map((date, index) => {
         const dateKey = toCalendarDateKey(date);
-        const entries = buildEntriesForDate({
+        const inCurrentMonth = isDateInMonth(date, month);
+        const known = buildEntriesForDate({
           date,
           sessionsByDate,
           templatesByDay,
           showTemplatePlaceholders,
         });
-        const visibleEntries = entries.slice(0, maxVisibleEntries);
+        // Nothing is drawn until the range loads; recurring classes still predict the fold.
+        const entries = isLoading ? [] : known;
         const hiddenEntries = entries.slice(maxVisibleEntries);
         const sessionCount = entries.reduce(
           (count, entry) => count + (entry.kind === "session" ? 1 : 0),
@@ -123,17 +148,21 @@ export function MonthScheduleView({
         );
         const daySessions = sessionsByDate.get(dateKey) ?? [];
         const conflictingSessionIds = getConflictingSessionIds(daySessions);
+        const row = Math.floor(index / 7);
 
         return {
           date,
           dateKey,
-          inCurrentMonth: isDateInMonth(date, month),
-          visibleEntries,
+          inCurrentMonth,
+          entries,
           hiddenEntries,
           sessionCount,
           templateCount: entries.length - sessionCount,
           conflictingSessionIds,
-          conflictCount: conflictingSessionIds.size,
+          past: isBusinessMonth && inCurrentMonth && dateKey < todayKey,
+          hasKnownClasses: known.length > 0,
+          rowOutOfMonth: outOfMonthRows.has(row),
+          rowLast: row === lastDrawnRow,
           ariaLabel: `Open ${date.toLocaleDateString("en-US", {
             weekday: "long",
             month: "long",
@@ -143,7 +172,19 @@ export function MonthScheduleView({
           monthLabel: date.toLocaleDateString("en-US", { month: "short" }),
         };
       }),
-    [maxVisibleEntries, month, monthDays, sessionsByDate, showTemplatePlaceholders, templatesByDay],
+    [
+      isBusinessMonth,
+      isLoading,
+      lastDrawnRow,
+      maxVisibleEntries,
+      month,
+      monthDays,
+      outOfMonthRows,
+      sessionsByDate,
+      showTemplatePlaceholders,
+      templatesByDay,
+      todayKey,
+    ],
   );
 
   const monthlyTemplateGapCount = useMemo(() => {
@@ -158,10 +199,15 @@ export function MonthScheduleView({
   }, [calendarDays, showTemplatePlaceholders]);
 
   const monthIsEmpty =
-    !isLoading &&
-    calendarDays.every(
-      (day) => !day.inCurrentMonth || day.visibleEntries.length + day.hiddenEntries.length === 0,
-    );
+    !isLoading && calendarDays.every((day) => !day.inCurrentMonth || day.entries.length === 0);
+
+  // Today first: the agenda folds this month's earlier class days into one row.
+  // While loading, recurring classes decide it, so today's row does not move.
+  const [fold, setFold] = useState({ monthKey, open: false });
+  if (fold.monthKey !== monthKey) setFold({ monthKey, open: false });
+  const showPast = fold.monthKey === monthKey && fold.open;
+  const pastClassDays = calendarDays.filter((day) => day.past && day.hasKnownClasses).length;
+  const showEarlier = pastClassDays > 0;
 
   return (
     <div className={`${styles.month} ${className}`} data-month-schedule-view="true">
@@ -202,12 +248,27 @@ export function MonthScheduleView({
         ))}
       </div>
 
+      {showEarlier ? (
+        <button
+          type="button"
+          className={styles.monthEarlier}
+          aria-expanded={showPast}
+          onClick={() => setFold({ monthKey, open: !showPast })}
+        >
+          {showPast
+            ? "Hide earlier days"
+            : isLoading
+              ? "Earlier this month"
+              : `Earlier this month (${pluralize(pastClassDays, "day")})`}
+          <ChevronDown aria-hidden="true" />
+        </button>
+      ) : null}
+
       {/* Calendar grid */}
-      <div className={styles.monthGrid}>
+      <div className={styles.monthGrid} data-month-show-past={showPast ? "true" : undefined}>
         {calendarDays.map((day) => {
           const isToday = day.dateKey === todayKey;
           const isSelected = day.dateKey === selectedDateKey;
-          const entryCount = day.visibleEntries.length + day.hiddenEntries.length;
           return (
             <div
               key={day.dateKey}
@@ -215,7 +276,10 @@ export function MonthScheduleView({
               data-month-day-scope={day.inCurrentMonth ? "in-month" : "out-of-month"}
               data-month-day-today={isToday ? "true" : "false"}
               data-month-day-selected={isSelected ? "true" : "false"}
-              data-month-day-empty={entryCount === 0 ? "true" : "false"}
+              data-month-day-empty={day.entries.length === 0 ? "true" : "false"}
+              data-month-day-past={day.past ? "true" : undefined}
+              data-month-row-scope={day.rowOutOfMonth ? "out-of-month" : undefined}
+              data-month-row-last={day.rowLast ? "true" : undefined}
               className={styles.monthDay}
             >
               {!isLoading && (
@@ -227,7 +291,7 @@ export function MonthScheduleView({
                 />
               )}
 
-              {/* Day number and the one fact worth flagging */}
+              {/* Day number; each overlapping class says Overlaps itself */}
               <div className={styles.monthDayHead}>
                 <span className={styles.monthDayNumber}>{day.date.getDate()}</span>
                 <span className={styles.monthDayName}>{MONTH_DAY_NAMES[day.date.getDay()]}</span>
@@ -235,11 +299,6 @@ export function MonthScheduleView({
                   <span className={styles.monthDayMonth}>{day.monthLabel}</span>
                 ) : null}
                 {isToday && <span className={styles.monthTodayWord}>Today</span>}
-                {day.conflictCount > 0 && (
-                  <span className={styles.monthConflict}>
-                    {day.conflictCount} overlap{day.conflictCount === 1 ? "" : "s"}
-                  </span>
-                )}
               </div>
 
               {/* Entries */}
@@ -251,7 +310,8 @@ export function MonthScheduleView({
                   </div>
                 ) : null}
 
-                {day.visibleEntries.map((entry) => {
+                {day.entries.map((entry, index) => {
+                  const overflow = index >= maxVisibleEntries ? "true" : undefined;
                   if (entry.kind === "session") {
                     const program = entry.session.program_id
                       ? programById.get(entry.session.program_id)
@@ -270,20 +330,26 @@ export function MonthScheduleView({
                         className={styles.chip}
                         data-conflict={conflicted ? "true" : undefined}
                         data-canceled={canceled ? "true" : undefined}
+                        data-month-entry-overflow={overflow}
                         style={{ "--program-color": getProgramColor(program) } as CSSProperties}
                       >
-                        <span className={styles.chipLine}>
-                          <span className={styles.chipTime}>
-                            {formatScheduleTime(entry.session.start_time)}
-                          </span>
+                        <span className={styles.chipTime}>
+                          {formatScheduleTime(entry.session.start_time)}
+                        </span>
+                        {fill ? <span className={styles.chipFill}>{fill}</span> : null}
+                        <span className={styles.chipBody}>
+                          <span className={styles.chipName}>{entry.session.name}</span>
                           {canceled ? (
-                            <span className={styles.chipFill}>Canceled</span>
-                          ) : fill ? (
-                            <span className={styles.chipFill}>{fill}</span>
+                            <span className={styles.chipStatus} data-status="canceled">
+                              Canceled
+                            </span>
+                          ) : conflicted ? (
+                            <span className={styles.chipStatus}>Overlaps</span>
                           ) : null}
                         </span>
-                        <span className={styles.chipName}>{entry.session.name}</span>
-                        {conflicted ? <span className={styles.chipConflict}>Overlaps</span> : null}
+                        {isToday ? (
+                          <CalendarCheck aria-hidden="true" className={styles.chipAction} />
+                        ) : null}
                       </button>
                     );
                   }
@@ -297,15 +363,16 @@ export function MonthScheduleView({
                       aria-label={`Pending template slot: ${entry.template.name} at ${formatScheduleTime(entry.template.start_time)}`}
                       className={styles.chip}
                       data-template="true"
+                      data-month-entry-overflow={overflow}
                       style={{ "--program-color": getProgramColor(program) } as CSSProperties}
                     >
-                      <span className={styles.chipLine}>
-                        <span className={styles.chipTime}>
-                          {formatScheduleTime(entry.template.start_time)}
-                        </span>
-                        <span className={styles.chipFill}>Recurring</span>
+                      <span className={styles.chipTime}>
+                        {formatScheduleTime(entry.template.start_time)}
                       </span>
-                      <span className={styles.chipName}>{entry.template.name}</span>
+                      <span className={styles.chipFill}>Recurring</span>
+                      <span className={styles.chipBody}>
+                        <span className={styles.chipName}>{entry.template.name}</span>
+                      </span>
                     </div>
                   );
                 })}

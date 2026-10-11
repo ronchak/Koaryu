@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, type CSSProperties } from "react";
+import { useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { CalendarCheck, CalendarPlus, ChevronLeft, ChevronRight, Plus, X } from "lucide-react";
 
 import { Header } from "@/components/header";
@@ -9,19 +9,11 @@ import {
   formatClockTime,
   getProgramColor,
   getSessionFill,
-  getSessionFillRatio,
   pluralize,
 } from "@/components/schedule/schedule-display";
 import { Button } from "@/components/ui/button";
 import { DismissibleNotice } from "@/components/ui/dismissible-notice";
-import {
-  CalmState,
-  HorizonPage,
-  HorizonPanel,
-  PlainHorizonStats as HorizonStats,
-  ToneTag,
-  type PlainHorizonStat as HorizonStat,
-} from "@/components/schedule/horizon-parts";
+import { CalmState, HorizonPage, ToneTag } from "@/components/schedule/horizon-parts";
 import { SlidingSegmentedControl } from "@/components/ui/sliding-segmented-control";
 import {
   buildEntriesForDate,
@@ -32,13 +24,14 @@ import {
 } from "@/lib/schedule-calendar";
 import {
   formatScheduleDateKey,
-  getScheduleRangeFigures,
-  getFocusedScheduleCanvas,
+  getScheduleCanvasRange,
   getScheduleWeekDates,
   getVisibleScheduleRange,
   layoutScheduleTimeItems,
+  SCHEDULE_CANVAS_PIXELS_PER_HOUR,
   type SchedulePageView,
 } from "@/lib/schedule-page-model";
+import { useStudioClock } from "@/lib/use-studio-clock";
 import type { ClassSession, ClassTemplate, Program } from "@/types";
 import styles from "./schedule.module.css";
 
@@ -51,6 +44,8 @@ interface SchedulePageSectionProps {
   sessions: ClassSession[];
   templates: ClassTemplate[];
   programs: Program[];
+  /** The studio's timezone, for the now line on today's column; none without it. */
+  studioTimezone?: string;
   scheduleLoadError: string | null;
   hasLoadedRange: boolean;
   isRefreshingRange: boolean;
@@ -73,10 +68,20 @@ interface SchedulePageSectionProps {
 const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const SCHEDULE_VIEWS: SchedulePageView[] = ["month", "week", "day"];
 const DATE_RANGE_SEPARATOR = String.fromCharCode(8211);
-const WEEK_CANVAS_MIN_WIDTH = 1040;
-const WEEK_TIME_COLUMN_WIDTH = 72;
+const WEEK_CANVAS_MIN_WIDTH = 672;
+const WEEK_TIME_COLUMN_WIDTH = 56;
 const WEEK_DAY_COUNT = 7;
-const SESSION_LANE_MIN_WIDTH = 48;
+const WEEK_DAY_MIN_WIDTH = 88;
+const SESSION_LANE_MIN_WIDTH = 64;
+/** A sheet this narrow is a phone: Week reads as an agenda and Day draws taller hours. */
+const PHONE_SHEET_MAX_WIDTH = 608;
+const PHONE_DAY_HOUR_HEIGHT = 56;
+/** Every text line in a block is 14px, so a block shows only whole lines. */
+const BLOCK_LINE_HEIGHT = 14;
+const BLOCK_MIN_HEIGHT = 36;
+const BLOCK_PADDING_BLOCK = 6;
+const PENDING_TILE_MINUTE = 16 * 60;
+const NO_SESSIONS = new Map<string, ClassSession[]>();
 
 type TimeCanvasEntry = {
   id: string;
@@ -106,6 +111,17 @@ function getSessionButtonLabel(session: ClassSession) {
   return `Open ${session.name} at ${formatTime(session.start_time)}`;
 }
 
+function getAttendanceLabel(session: ClassSession) {
+  return `Take attendance for ${session.name} at ${formatTime(session.start_time)}`;
+}
+
+/** "4:00–4:45 PM", or "11:30 AM–12:30 PM" across noon. */
+function formatTimeRange(start: string, end: string) {
+  const from = formatTime(start);
+  const to = formatTime(end);
+  return from.slice(-2) === to.slice(-2) ? `${from.slice(0, -3)}–${to}` : `${from}–${to}`;
+}
+
 function formatCanvasHour(minute: number) {
   const hour = Math.floor(minute / 60) % 24;
   if (hour === 0) return "12 AM";
@@ -117,6 +133,45 @@ function formatLongDate(date: Date) {
   return date.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
 }
 
+/** "October 11 – 17, 2026", "October 26 – November 1, 2026" or across a new year in full. */
+function formatWeekLabel(first: Date, last: Date) {
+  if (first.getFullYear() !== last.getFullYear()) {
+    const full = (date: Date) =>
+      date.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
+    return `${full(first)} ${DATE_RANGE_SEPARATOR} ${full(last)}`;
+  }
+  const month = (date: Date) => date.toLocaleDateString("en-US", { month: "long" });
+  const end =
+    first.getMonth() === last.getMonth() ? `${last.getDate()}` : `${month(last)} ${last.getDate()}`;
+  return `${month(first)} ${first.getDate()} ${DATE_RANGE_SEPARATOR} ${end}, ${last.getFullYear()}`;
+}
+
+/** A length on the time canvas, in the sheet's hours (48px, or 56px for Day on a phone). */
+function hours(value: number) {
+  return `calc(var(--hour, ${SCHEDULE_CANVAS_PIXELS_PER_HOUR}px) * ${Number(value.toFixed(4))})`;
+}
+
+/**
+ * Whether the sheet is phone-width. Null until measured: both layouts render
+ * until then and the sheet's container queries show the right one, so the
+ * first paint never shifts. Measured before paint, so only one stays mounted.
+ */
+function usePhoneSheet() {
+  const ref = useRef<HTMLElement>(null);
+  const [phone, setPhone] = useState<boolean | null>(null);
+  useLayoutEffect(() => {
+    const element = ref.current;
+    if (!element) return;
+    const update = (width: number) => setPhone(width <= PHONE_SHEET_MAX_WIDTH);
+    update(element.clientWidth);
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(([entry]) => update(entry.contentRect.width));
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+  return [ref, phone] as const;
+}
+
 export function SchedulePageSection({
   businessDate,
   canManageSchedule,
@@ -126,6 +181,7 @@ export function SchedulePageSection({
   sessions,
   templates,
   programs,
+  studioTimezone,
   scheduleLoadError,
   hasLoadedRange,
   isRefreshingRange,
@@ -146,6 +202,8 @@ export function SchedulePageSection({
   const today = businessDate;
   const todayDate = useMemo(() => parseCalendarDate(businessDate), [businessDate]);
   const weekDates = useMemo(() => getScheduleWeekDates(currentDate), [currentDate]);
+  const [calendarRef, phoneSheet] = usePhoneSheet();
+  const studioMinute = useStudioClock(studioTimezone);
   const activePrograms = useMemo(
     () => programs.filter((program) => !program.archived_at),
     [programs],
@@ -166,17 +224,6 @@ export function SchedulePageSection({
         : templates,
     [programFilter, templates],
   );
-  const figures = useMemo(
-    () =>
-      getScheduleRangeFigures({
-        businessDate,
-        currentDate,
-        view,
-        sessions: filteredSessions,
-        templates: filteredTemplates,
-      }),
-    [businessDate, currentDate, view, filteredSessions, filteredTemplates],
-  );
   const visibleRange = useMemo(
     () => getVisibleScheduleRange(currentDate, view),
     [currentDate, view],
@@ -188,16 +235,21 @@ export function SchedulePageSection({
   const sessionsByDate = useMemo(() => groupSessionsByDate(filteredSessions), [filteredSessions]);
   const templatesByDay = useMemo(() => groupTemplatesByDay(filteredTemplates), [filteredTemplates]);
   const todaySessions = useMemo(() => sessionsByDate.get(today) ?? [], [sessionsByDate, today]);
-  const todayConflicts = useMemo(() => getConflictingSessionIds(todaySessions), [todaySessions]);
   const todayCheckIns = todaySessions.reduce(
     (total, session) =>
       total + (session.status === "canceled" ? 0 : Math.max(0, session.attendance_count || 0)),
     0,
   );
-  // The Day view of today already is today's list; elsewhere today gets its own panel.
-  const showTodayPanel =
-    todayInView && view !== "day" && (!hasLoadedRange || todaySessions.length > 0);
+  // The Day view of today already is today's list, and on a phone today's
+  // classes open the agendas; elsewhere the bar keeps attendance one tap away.
+  const showTodayBar =
+    todayInView &&
+    view !== "day" &&
+    phoneSheet !== true &&
+    (!hasLoadedRange || todaySessions.length > 0);
 
+  // Until the range loads, the studio's recurring classes already give the canvas its hours.
+  const canvasSessionsByDate = hasLoadedRange ? sessionsByDate : NO_SESSIONS;
   const entriesByDate = useMemo(() => {
     const grouped: Record<string, TimeCanvasEntry[]> = {};
     const dates = view === "day" ? [currentDate] : weekDates;
@@ -205,7 +257,7 @@ export function SchedulePageSection({
       const key = formatScheduleDateKey(date);
       grouped[key] = buildEntriesForDate({
         date,
-        sessionsByDate,
+        sessionsByDate: canvasSessionsByDate,
         templatesByDay,
         showTemplatePlaceholders: true,
       }).map((entry) =>
@@ -227,7 +279,7 @@ export function SchedulePageSection({
       );
     });
     return grouped;
-  }, [currentDate, sessionsByDate, templatesByDay, view, weekDates]);
+  }, [canvasSessionsByDate, currentDate, templatesByDay, view, weekDates]);
   const layoutsByDate = useMemo(
     () =>
       Object.fromEntries(
@@ -238,20 +290,22 @@ export function SchedulePageSection({
       ),
     [entriesByDate],
   );
-  const canvasBounds = useMemo(
-    () => getFocusedScheduleCanvas(Object.values(entriesByDate).flat()),
+  const canvasRange = useMemo(
+    () => getScheduleCanvasRange(Object.values(entriesByDate).flat()),
     [entriesByDate],
   );
   const canvasHourMarks = useMemo(
     () =>
       Array.from(
-        { length: Math.floor((canvasBounds.endMinute - canvasBounds.startMinute) / 60) + 1 },
-        (_, index) => canvasBounds.startMinute + index * 60,
+        { length: Math.floor((canvasRange.endMinute - canvasRange.startMinute) / 60) + 1 },
+        (_, index) => canvasRange.startMinute + index * 60,
       ),
-    [canvasBounds.endMinute, canvasBounds.startMinute],
+    [canvasRange.endMinute, canvasRange.startMinute],
   );
-  const canvasHeight =
-    ((canvasBounds.endMinute - canvasBounds.startMinute) / 60) * canvasBounds.hourHeight;
+  const canvasHours = (canvasRange.endMinute - canvasRange.startMinute) / 60;
+  // The hour height CSS draws, so each block knows how many whole lines it holds.
+  const hourHeight =
+    view === "day" && phoneSheet ? PHONE_DAY_HOUR_HEIGHT : SCHEDULE_CANVAS_PIXELS_PER_HOUR;
   const peakWeekLaneCount = useMemo(
     () =>
       weekDates.reduce((peak, date) => {
@@ -261,7 +315,7 @@ export function SchedulePageSection({
       }, 1),
     [layoutsByDate, weekDates],
   );
-  const weekDayMinWidth = peakWeekLaneCount * SESSION_LANE_MIN_WIDTH;
+  const weekDayMinWidth = Math.max(WEEK_DAY_MIN_WIDTH, peakWeekLaneCount * SESSION_LANE_MIN_WIDTH);
   const weekCanvasMinWidth = Math.max(
     WEEK_CANVAS_MIN_WIDTH,
     WEEK_TIME_COLUMN_WIDTH + WEEK_DAY_COUNT * weekDayMinWidth,
@@ -269,53 +323,9 @@ export function SchedulePageSection({
   const weekGridTemplateColumns = `${WEEK_TIME_COLUMN_WIDTH}px repeat(${WEEK_DAY_COUNT}, minmax(${weekDayMinWidth}px, 1fr))`;
   const showCalendar = hasLoadedRange || !scheduleLoadError;
   const calendarLoadingClass = hasLoadedRange ? "" : "koaryu-skeleton-reveal";
-  const rangeNoun = view === "month" ? "month" : view === "week" ? "week" : "day";
   const selectedProgram = programFilter ? programById.get(programFilter) : null;
-
-  const stats: HorizonStat[] = [
-    {
-      id: "classes",
-      label: "Classes",
-      pending: !hasLoadedRange,
-      value: <span data-schedule-figure="classes">{figures.scheduled}</span>,
-      note:
-        figures.recurringSlots > 0 ? (
-          <span data-schedule-figure="recurring">
-            +{pluralize(figures.recurringSlots, "recurring slot")}
-          </span>
-        ) : (
-          `This ${rangeNoun}`
-        ),
-    },
-    {
-      id: "checked-in",
-      label: "Checked in",
-      pending: !hasLoadedRange,
-      value: <span data-schedule-figure="check-ins">{figures.checkIns}</span>,
-      note: figures.seats > 0 ? `of ${figures.seats} seats` : "No class capacity set",
-    },
-    {
-      id: "open-seats",
-      label: "Open seats",
-      pending: !hasLoadedRange,
-      value:
-        figures.upcomingWithCapacity > 0 ? (
-          <span data-schedule-figure="open-seats">{figures.openSeats}</span>
-        ) : undefined,
-      note:
-        figures.upcomingWithCapacity > 0
-          ? `In ${pluralize(figures.upcomingWithCapacity, "upcoming class", "upcoming classes")}`
-          : `No upcoming classes this ${rangeNoun}`,
-    },
-    {
-      id: "overlaps",
-      label: "Overlaps",
-      pending: !hasLoadedRange,
-      value: <span data-schedule-figure="overlaps">{figures.overlaps}</span>,
-      tone: figures.overlaps > 0 ? "alert" : "calm",
-      note: figures.overlaps > 0 ? "Classes share a time" : "No double-booked times",
-    },
-  ];
+  const showProgramFilter = activePrograms.length > 1 || Boolean(programFilter);
+  const dayEntries = entriesByDate[formatScheduleDateKey(currentDate)] || [];
 
   const headerDescription = todayKnown
     ? todaySessions.length === 0
@@ -329,42 +339,72 @@ export function SchedulePageSection({
     const key = formatScheduleDateKey(date);
     const blocks = layoutsByDate[key] || [];
     const conflicts = getConflictingSessionIds(sessionsByDate.get(key) ?? []);
+    const isToday = key === today;
+    const nowMinute =
+      isToday &&
+      studioMinute !== null &&
+      studioMinute >= canvasRange.startMinute &&
+      studioMinute <= canvasRange.endMinute
+        ? studioMinute
+        : null;
+    // One tile where the day's first recurring class will land.
+    const pendingMinute = Math.min(
+      Math.max(blocks[0]?.startMinute ?? PENDING_TILE_MINUTE, canvasRange.startMinute),
+      canvasRange.endMinute - 60,
+    );
     return (
       <div
         className={`relative ${styles.canvasDay}`}
-        style={{ height: canvasHeight }}
+        style={{ height: hours(canvasHours) }}
         data-time-canvas-day={key}
-        data-today={compact && key === today ? "true" : undefined}
+        data-today={compact && isToday ? "true" : undefined}
       >
         {canvasHourMarks.map((minute) => (
           <span
             key={minute}
             aria-hidden="true"
             className={`pointer-events-none absolute inset-x-0 ${styles.hourRule}`}
-            style={{
-              top: ((minute - canvasBounds.startMinute) / 60) * canvasBounds.hourHeight,
-            }}
+            style={{ top: hours((minute - canvasRange.startMinute) / 60) }}
           />
         ))}
         {!hasLoadedRange && (
-          <div aria-hidden="true" className={`absolute inset-x-0 ${styles.canvasPlaceholder}`} />
+          <div
+            aria-hidden="true"
+            className={`absolute inset-x-0 ${styles.canvasPlaceholder}`}
+            style={{ top: hours((pendingMinute - canvasRange.startMinute) / 60) }}
+          />
         )}
         {(hasLoadedRange ? blocks : []).map((block) => {
-          const top =
-            ((block.startMinute - canvasBounds.startMinute) / 60) * canvasBounds.hourHeight;
-          const height = ((block.endMinute - block.startMinute) / 60) * canvasBounds.hourHeight;
-          const targetHeight = Math.max(44, height);
-          const targetTop = Math.max(0, top - (targetHeight - height) / 2);
+          const startHours = (block.startMinute - canvasRange.startMinute) / 60;
+          const durationHours = (block.endMinute - block.startMinute) / 60;
+          const top = hours(startHours);
+          const duration = hours(durationHours);
+          const visibleHeight = `max(${BLOCK_MIN_HEIGHT}px, ${duration})`;
+          const targetHeight = `max(44px, ${duration})`;
+          // The target is centred on the block, but never above the canvas.
+          const targetInset = `(${targetHeight} - ${visibleHeight}) / 2`;
+          const targetTop = `max(0px, ${top} - ${targetInset})`;
+          const blockLines = Math.max(
+            1,
+            Math.floor(
+              (Math.max(BLOCK_MIN_HEIGHT, durationHours * hourHeight) - BLOCK_PADDING_BLOCK) /
+                BLOCK_LINE_HEIGHT,
+            ),
+          );
           const laneWidth = 100 / block.laneCount;
           const left = laneWidth * block.lane;
-          const sessionWidth = `max(44px, calc(${laneWidth}% - 4px))`;
-          const sessionLeft = `min(calc(${left}% + 2px), calc(100% - ${sessionWidth} - 2px))`;
+          const laneLeft = `calc(${left}% + 1px)`;
+          const laneBlockWidth = `calc(${laneWidth}% - 2px)`;
+          const sessionWidth = `max(44px, ${laneBlockWidth})`;
+          const sessionLeft = `min(${laneLeft}, calc(100% - ${sessionWidth} - 1px))`;
+          const sharedLane = block.laneCount >= 2 ? "true" : undefined;
           const entry = block.item;
           const session = entry.session;
           const template = entry.template;
           const programId = session?.program_id || template?.program_id || null;
           const program = programId ? programById.get(programId) : null;
           const title = session?.name || template?.name || "Class";
+          const timeRange = formatTimeRange(entry.start_time, entry.end_time);
 
           if (!session) {
             return (
@@ -374,23 +414,37 @@ export function SchedulePageSection({
                 style={
                   {
                     top,
-                    height,
-                    left: `calc(${left}% + 2px)`,
-                    width: `calc(${laneWidth}% - 4px)`,
+                    height: visibleHeight,
+                    left: laneLeft,
+                    width: laneBlockWidth,
                     "--program-color": getProgramColor(program),
+                    "--block-lines": blockLines,
                   } as CSSProperties
                 }
+                title={`${title} · ${timeRange} · Recurring`}
                 data-time-canvas-block="template"
                 data-time-canvas-visible={`${entry.kind}:${entry.id}`}
+                data-shared-lane={sharedLane}
+                data-compact={compact ? "true" : undefined}
               >
-                <strong>{title}</strong>
-                <span>{formatTime(entry.start_time)} · recurring slot</span>
+                <span className={styles.canvasLines}>
+                  <strong className={styles.canvasTitle}>{title}</strong>
+                  <span className={styles.canvasMeta}>Recurring</span>
+                </span>
               </div>
             );
           }
 
-          const fillLabel = session.status === "canceled" ? "Canceled" : getSessionFill(session);
+          const canceled = session.status === "canceled";
+          const fill = getSessionFill(session);
+          const fillLabel = canceled ? "Canceled" : fill;
           const overlaps = conflicts.has(session.id);
+          // A name cut at a whole line is still said in full on hover.
+          const hoverTitle = [title, timeRange, fillLabel].filter(Boolean).join(" · ");
+          const dayFacts = [
+            fillLabel && !canceled && session.capacity ? `${fillLabel} checked in` : fillLabel,
+            program?.name,
+          ].filter(Boolean);
           return (
             <button
               key={entry.id}
@@ -429,6 +483,7 @@ export function SchedulePageSection({
                 onOpenSession(session);
               }}
               aria-label={getSessionButtonLabel(session)}
+              title={hoverTitle}
               className={`absolute ${styles.canvasTarget}`}
               style={
                 {
@@ -445,43 +500,61 @@ export function SchedulePageSection({
               <span
                 aria-hidden="true"
                 className={`absolute inset-x-0 ${styles.canvasBlock}`}
-                style={{ height, top: top - targetTop, overflow: "hidden" }}
+                style={
+                  {
+                    height: visibleHeight,
+                    top: `min(${top}, ${targetInset})`,
+                    overflow: "hidden",
+                    "--block-lines": blockLines,
+                  } as CSSProperties
+                }
                 data-time-canvas-visible={`${entry.kind}:${entry.id}`}
                 data-conflict={overlaps ? "true" : undefined}
-                data-canceled={session.status === "canceled" ? "true" : undefined}
+                data-canceled={canceled ? "true" : undefined}
                 data-compact={compact ? "true" : undefined}
+                data-shared-lane={sharedLane}
               >
                 {compact ? (
-                  <>
-                    <span className={styles.canvasTime}>{formatTime(entry.start_time)}</span>
+                  <span className={styles.canvasLines}>
                     <strong className={styles.canvasTitle}>{title}</strong>
-                    {fillLabel ? <span className={styles.canvasMeta}>{fillLabel}</span> : null}
+                    <span className={styles.canvasMeta}>
+                      {formatTime(entry.start_time)}
+                      {fillLabel ? ` · ${fillLabel}` : ""}
+                    </span>
                     {overlaps ? <b className={styles.overlapWord}>Overlaps</b> : null}
-                  </>
+                    {program ? <span className={styles.canvasProgram}>{program.name}</span> : null}
+                  </span>
                 ) : (
-                  <>
+                  <span className={styles.canvasLines}>
                     <span className={styles.canvasLine}>
-                      <strong className={styles.canvasTitle}>{title}</strong>
-                      <span className={styles.canvasTime}>
-                        {formatTime(entry.start_time)}–{formatTime(entry.end_time)}
+                      <strong className={styles.canvasTitle}>{title}</strong>{" "}
+                      <span className={styles.canvasTime}>{timeRange}</span>
+                    </span>
+                    {dayFacts.length > 0 || overlaps ? (
+                      <span className={styles.canvasMeta}>
+                        {dayFacts.join(" · ")}
+                        {overlaps ? (
+                          <>
+                            {dayFacts.length > 0 ? " · " : ""}
+                            <b className={styles.overlapWord}>Overlaps</b>
+                          </>
+                        ) : null}
                       </span>
-                    </span>
-                    <span className={styles.canvasLine}>
-                      {fillLabel ? (
-                        <span className={styles.canvasMeta}>
-                          {fillLabel}
-                          {session.capacity && session.status !== "canceled" ? " checked in" : ""}
-                        </span>
-                      ) : null}
-                      {program ? <span className={styles.canvasMeta}>{program.name}</span> : null}
-                      {overlaps ? <b className={styles.overlapWord}>Overlaps</b> : null}
-                    </span>
-                  </>
+                    ) : null}
+                  </span>
                 )}
               </span>
             </button>
           );
         })}
+        {nowMinute !== null ? (
+          <span
+            aria-hidden="true"
+            className={`absolute inset-x-0 ${styles.nowLine}`}
+            style={{ top: hours((nowMinute - canvasRange.startMinute) / 60) }}
+            data-schedule-now-line="true"
+          />
+        ) : null}
       </div>
     );
   }
@@ -490,16 +563,14 @@ export function SchedulePageSection({
     return (
       <div
         className={`relative ${styles.hourColumn}`}
-        style={{ height: canvasHeight }}
+        style={{ height: hours(canvasHours) }}
         aria-hidden="true"
       >
         {canvasHourMarks.map((minute) => (
           <span
             key={minute}
             className={`absolute ${styles.hourLabel}`}
-            style={{
-              top: ((minute - canvasBounds.startMinute) / 60) * canvasBounds.hourHeight,
-            }}
+            style={{ top: hours((minute - canvasRange.startMinute) / 60) }}
           >
             {formatCanvasHour(minute)}
           </span>
@@ -525,91 +596,172 @@ export function SchedulePageSection({
       });
     }
 
-    return `${weekDates[0].toLocaleDateString("en-US", {
-      month: "long",
-      day: "numeric",
-    })} ${DATE_RANGE_SEPARATOR} ${weekDates[6].toLocaleDateString("en-US", {
-      month: "long",
-      day: "numeric",
-      year: "numeric",
-    })}`;
+    return formatWeekLabel(weekDates[0], weekDates[6]);
   }
 
-  function renderTodayPanel() {
+  function renderTodayBar() {
     return (
-      <HorizonPanel
-        className={styles.todayPanel}
-        title="Today's classes"
-        titleId="schedule-today-title"
+      <section
+        className={styles.todayBar}
+        aria-labelledby="schedule-today-title"
+        data-schedule-today-bar="true"
       >
+        <h2 id="schedule-today-title" className={styles.todayTitle}>
+          <CalendarCheck aria-hidden="true" />
+          Take attendance
+        </h2>
         {!hasLoadedRange ? (
           <div className={styles.todayList} aria-hidden="true">
             {[0, 1, 2].map((index) => (
-              <div key={index} className={`${styles.todayCard} ${styles.todayCardPending}`}>
-                <span className={styles.pendingBar} />
-                <span className={styles.pendingBar} data-width="short" />
-              </div>
+              <span key={index} className={styles.todayChipPending} />
             ))}
           </div>
         ) : (
-          <ol className={styles.todayList} data-schedule-today="true">
+          <ol className={styles.todayList} data-schedule-today="true" aria-label="Today's classes">
             {todaySessions.map((session) => {
               const program = session.program_id ? programById.get(session.program_id) : null;
-              const ratio = getSessionFillRatio(session);
               const canceled = session.status === "canceled";
-              const overlaps = todayConflicts.has(session.id);
+              const fill = getSessionFill(session);
               return (
                 <li key={session.id}>
                   <button
                     type="button"
-                    className={styles.todayCard}
+                    className={styles.todayChip}
                     data-schedule-today-session={session.id}
                     data-canceled={canceled ? "true" : undefined}
-                    aria-label={`Take attendance for ${session.name} at ${formatTime(session.start_time)}`}
+                    aria-label={getAttendanceLabel(session)}
                     onClick={() => onOpenSession(session)}
                     style={{ "--program-color": getProgramColor(program) } as CSSProperties}
                   >
-                    <span className={styles.todayTop}>
-                      <time className={styles.todayTime}>
-                        {formatTime(session.start_time)}
-                        <span> – {formatTime(session.end_time)}</span>
-                      </time>
-                      {canceled ? <ToneTag>Canceled</ToneTag> : null}
-                      {overlaps && !canceled ? <ToneTag tone="alert">Overlaps</ToneTag> : null}
-                    </span>
-                    <strong className={styles.todayName}>{session.name}</strong>
-                    <span className={styles.todayProgram}>
-                      <i aria-hidden="true" />
-                      {program?.name ?? "All programs"}
-                    </span>
-                    <span className={styles.todayFill}>
-                      {ratio !== null ? (
-                        <span className={styles.meter} aria-hidden="true">
-                          <span style={{ width: `${ratio * 100}%` }} />
-                        </span>
-                      ) : null}
-                      <span>
-                        <b>{canceled ? "—" : session.attendance_count}</b>
-                        {session.capacity && !canceled ? ` / ${session.capacity}` : ""} checked in
-                      </span>
-                    </span>
-                    <span className={styles.todayAction}>
-                      <CalendarCheck aria-hidden="true" />
-                      Take attendance
-                    </span>
+                    <time className={styles.todayChipTime}>{formatTime(session.start_time)}</time>
+                    <strong className={styles.todayChipName}>{session.name}</strong>
+                    {fill ? <span className={styles.todayChipFill}>{fill}</span> : null}
+                    {canceled ? <ToneTag>Canceled</ToneTag> : null}
                   </button>
                 </li>
               );
             })}
           </ol>
         )}
-      </HorizonPanel>
+      </section>
     );
   }
 
+  function renderAgendaEntry(entry: TimeCanvasEntry, isToday: boolean, conflicts: Set<string>) {
+    const session = entry.session;
+    const programId = session?.program_id || entry.template?.program_id || null;
+    const program = programId ? programById.get(programId) : null;
+    const style = { "--program-color": getProgramColor(program) } as CSSProperties;
+    const name = session?.name || entry.template?.name || "Class";
+    const time = <time className={styles.agendaTime}>{formatTime(entry.start_time)}</time>;
+
+    if (!session) {
+      return (
+        <div className={styles.agendaRow} data-template="true" style={style}>
+          <span className={styles.agendaBar} aria-hidden="true" />
+          {time}
+          <span className={styles.agendaText}>
+            <span className={styles.agendaName}>{name}</span>
+          </span>
+          <span className={styles.agendaFill}>Recurring</span>
+        </div>
+      );
+    }
+
+    const canceled = session.status === "canceled";
+    const fill = getSessionFill(session);
+    return (
+      <button
+        type="button"
+        className={styles.agendaRow}
+        aria-label={isToday ? getAttendanceLabel(session) : getSessionButtonLabel(session)}
+        data-canceled={canceled ? "true" : undefined}
+        data-action={isToday ? "attendance" : undefined}
+        onClick={() => onOpenSession(session)}
+        style={style}
+      >
+        <span className={styles.agendaBar} aria-hidden="true" />
+        {time}
+        <span className={styles.agendaText}>
+          <span className={styles.agendaName}>{name}</span>
+          {canceled ? (
+            <ToneTag>Canceled</ToneTag>
+          ) : conflicts.has(session.id) ? (
+            <ToneTag tone="alert">Overlaps</ToneTag>
+          ) : null}
+        </span>
+        {fill ? <span className={styles.agendaFill}>{fill}</span> : null}
+        {isToday ? <CalendarCheck aria-hidden="true" className={styles.agendaAction} /> : null}
+      </button>
+    );
+  }
+
+  /** Week on a phone: every day stacked, today's classes one tap from attendance. */
+  function renderWeekAgenda() {
+    return (
+      <ol
+        className={`${styles.agenda} ${phoneSheet ? calendarLoadingClass : ""}`}
+        data-schedule-agenda="week"
+        aria-busy={!hasLoadedRange}
+      >
+        {weekDates.map((date) => {
+          const key = formatScheduleDateKey(date);
+          const isToday = key === today;
+          const entries = hasLoadedRange ? entriesByDate[key] || [] : [];
+          const conflicts = getConflictingSessionIds(sessionsByDate.get(key) ?? []);
+          return (
+            <li
+              key={key}
+              className={styles.agendaDay}
+              data-schedule-agenda-day={key}
+              data-today={isToday ? "true" : undefined}
+            >
+              <div className={styles.agendaDayLine}>
+                <button
+                  type="button"
+                  className={styles.agendaDayHead}
+                  aria-label={`Open ${formatLongDate(date)}`}
+                  aria-current={isToday ? "date" : undefined}
+                  onClick={() => {
+                    onSelectDate(date);
+                    onViewChange("day");
+                  }}
+                >
+                  <span className={styles.agendaDayName}>{DAY_NAMES[date.getDay()]}</span>
+                  <span className={styles.agendaDayNumber}>{date.getDate()}</span>
+                  {isToday ? <span className={styles.agendaTodayWord}>Today</span> : null}
+                </button>
+                {hasLoadedRange && entries.length === 0 ? (
+                  <span className={styles.agendaEmpty}>No classes</span>
+                ) : null}
+              </div>
+              {!hasLoadedRange ? (
+                <div className={styles.agendaRows} aria-hidden="true">
+                  <span className={styles.agendaPending} />
+                </div>
+              ) : entries.length > 0 ? (
+                <ul className={styles.agendaRows}>
+                  {entries.map((entry) => (
+                    <li key={`${entry.kind}-${entry.id}`}>
+                      {renderAgendaEntry(entry, isToday, conflicts)}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </li>
+          );
+        })}
+      </ol>
+    );
+  }
+
+  const hasNotices = Boolean(
+    scheduleLoadError || actionMessage || (routeTargetNotice && onDismissRouteTargetNotice),
+  );
+
   return (
     <>
-      <Header eyebrow={formatLongDate(todayDate)} title="Schedule" description={headerDescription}>
+      <Header title="Schedule" description={headerDescription} reserveDescription>
         {canManageSchedule ? (
           <Button variant="primary" onClick={onOpenAddClass}>
             <Plus aria-hidden="true" className="h-4 w-4" />
@@ -619,32 +771,11 @@ export function SchedulePageSection({
       </Header>
 
       <HorizonPage className={styles.page}>
-        <HorizonStats label="Visible schedule range" items={stats} />
-
-        {scheduleLoadError ? (
-          <DismissibleNotice tone="danger" onDismiss={onDismissScheduleLoadError}>
-            {scheduleLoadError}
-            <Button variant="ghost" size="sm" onClick={onRetryRange}>
-              Retry
-            </Button>
-          </DismissibleNotice>
-        ) : null}
-
-        {actionMessage ? (
-          <DismissibleNotice tone="success" onDismiss={onDismissActionMessage}>
-            {actionMessage}
-          </DismissibleNotice>
-        ) : null}
-
-        {routeTargetNotice && onDismissRouteTargetNotice ? (
-          <DismissibleNotice tone="warning" onDismiss={onDismissRouteTargetNotice}>
-            {routeTargetNotice}
-          </DismissibleNotice>
-        ) : null}
-
-        {showTodayPanel ? renderTodayPanel() : null}
-
-        <section className={styles.calendar} aria-labelledby="schedule-range-label">
+        <section
+          ref={calendarRef}
+          className={styles.calendar}
+          aria-labelledby="schedule-range-label"
+        >
           <div className={styles.toolbar}>
             <div className={styles.dateNav} role="group" aria-label="Schedule date navigation">
               <button
@@ -677,40 +808,42 @@ export function SchedulePageSection({
               {getToolbarLabel()}
             </h2>
             <div className={styles.toolbarEnd}>
-              <div
-                className={styles.programFilter}
-                style={
-                  selectedProgram
-                    ? ({ "--program-color": getProgramColor(selectedProgram) } as CSSProperties)
-                    : undefined
-                }
-                data-selected={programFilter ? "true" : undefined}
-              >
-                <select
-                  value={programFilter}
-                  onChange={(event) => onProgramFilterChange(event.target.value)}
-                  aria-label="Filter schedule by program"
-                  data-schedule-program-filter={programFilter ? "selected" : "all"}
-                  className={styles.programSelect}
+              {showProgramFilter ? (
+                <div
+                  className={styles.programFilter}
+                  style={
+                    selectedProgram
+                      ? ({ "--program-color": getProgramColor(selectedProgram) } as CSSProperties)
+                      : undefined
+                  }
+                  data-selected={programFilter ? "true" : undefined}
                 >
-                  <option value="">All programs</option>
-                  {activePrograms.map((program) => (
-                    <option key={program.id} value={program.id}>
-                      {program.name}
-                    </option>
-                  ))}
-                </select>
-                {programFilter ? (
-                  <button
-                    type="button"
-                    className={styles.clearFilter}
-                    aria-label="Show every program"
-                    onClick={() => onProgramFilterChange("")}
+                  <select
+                    value={programFilter}
+                    onChange={(event) => onProgramFilterChange(event.target.value)}
+                    aria-label="Filter schedule by program"
+                    data-schedule-program-filter={programFilter ? "selected" : "all"}
+                    className={styles.programSelect}
                   >
-                    <X aria-hidden="true" />
-                  </button>
-                ) : null}
-              </div>
+                    <option value="">All programs</option>
+                    {activePrograms.map((program) => (
+                      <option key={program.id} value={program.id}>
+                        {program.name}
+                      </option>
+                    ))}
+                  </select>
+                  {programFilter ? (
+                    <button
+                      type="button"
+                      className={styles.clearFilter}
+                      aria-label="Show every program"
+                      onClick={() => onProgramFilterChange("")}
+                    >
+                      <X aria-hidden="true" />
+                    </button>
+                  ) : null}
+                </div>
+              ) : null}
               <SlidingSegmentedControl
                 activeValue={view}
                 ariaLabel="Schedule view"
@@ -724,6 +857,33 @@ export function SchedulePageSection({
               />
             </div>
           </div>
+
+          {hasNotices ? (
+            <div className={styles.notices}>
+              {scheduleLoadError ? (
+                <DismissibleNotice tone="danger" onDismiss={onDismissScheduleLoadError}>
+                  {scheduleLoadError}
+                  <Button variant="ghost" size="sm" onClick={onRetryRange}>
+                    Retry
+                  </Button>
+                </DismissibleNotice>
+              ) : null}
+
+              {actionMessage ? (
+                <DismissibleNotice tone="success" onDismiss={onDismissActionMessage}>
+                  {actionMessage}
+                </DismissibleNotice>
+              ) : null}
+
+              {routeTargetNotice && onDismissRouteTargetNotice ? (
+                <DismissibleNotice tone="warning" onDismiss={onDismissRouteTargetNotice}>
+                  {routeTargetNotice}
+                </DismissibleNotice>
+              ) : null}
+            </div>
+          ) : null}
+
+          {showTodayBar ? renderTodayBar() : null}
 
           {!hasLoadedRange ? (
             scheduleLoadError ? (
@@ -749,12 +909,12 @@ export function SchedulePageSection({
               <MonthScheduleView
                 month={currentDate}
                 sessions={hasLoadedRange ? filteredSessions : []}
-                templates={hasLoadedRange ? filteredTemplates : []}
+                templates={filteredTemplates}
                 programById={programById}
                 isLoading={!hasLoadedRange}
                 selectedDate={currentDate}
                 today={todayDate}
-                maxVisibleEntries={3}
+                maxVisibleEntries={4}
                 showHeader={false}
                 showTemplatePlaceholders
                 onDayClick={onSelectDate}
@@ -773,50 +933,54 @@ export function SchedulePageSection({
 
           {showCalendar && view === "week" && (
             <>
-              <div
-                className={`flex-1 overflow-x-auto overscroll-x-contain ${styles.weekScroller} ${calendarLoadingClass}`}
-                aria-busy={!hasLoadedRange}
-                data-schedule-screen-week="true"
-                data-schedule-scroll-owner="internal"
-                role="region"
-                tabIndex={0}
-                aria-label="Scrollable weekly time canvas"
-              >
+              {phoneSheet !== true ? (
                 <div
-                  className={styles.canvas}
-                  style={{ minWidth: weekCanvasMinWidth }}
-                  data-schedule-time-canvas="week"
-                  data-schedule-week-peak-lanes={peakWeekLaneCount}
+                  className={`flex-1 overflow-x-auto overscroll-x-contain ${styles.weekScroller} ${phoneSheet === false ? calendarLoadingClass : ""}`}
+                  aria-busy={!hasLoadedRange}
+                  data-schedule-screen-week="true"
+                  data-schedule-scroll-owner="internal"
+                  role="region"
+                  tabIndex={0}
+                  aria-label="Scrollable weekly time canvas"
                 >
                   <div
-                    className={`grid ${styles.weekHead}`}
-                    style={{ gridTemplateColumns: weekGridTemplateColumns }}
+                    className={styles.canvas}
+                    style={{ minWidth: weekCanvasMinWidth }}
+                    data-schedule-time-canvas="week"
+                    data-schedule-week-peak-lanes={peakWeekLaneCount}
                   >
-                    <div className={styles.weekCorner} aria-hidden="true" />
-                    {weekDates.map((date) => {
-                      const key = formatScheduleDateKey(date);
-                      const isToday = key === today;
-                      return (
-                        <div
-                          key={key}
-                          className={styles.weekDay}
-                          data-today={isToday ? "true" : undefined}
-                          aria-current={isToday ? "date" : undefined}
-                        >
-                          <p className={styles.weekDayName}>{DAY_NAMES[date.getDay()]}</p>
-                          <p className={styles.weekDayNumber}>{date.getDate()}</p>
-                        </div>
-                      );
-                    })}
-                  </div>
-                  <div className="grid" style={{ gridTemplateColumns: weekGridTemplateColumns }}>
-                    {renderHourColumn()}
-                    {weekDates.map((date) => (
-                      <div key={formatScheduleDateKey(date)}>{renderTimeColumn(date, true)}</div>
-                    ))}
+                    <div
+                      className={`grid ${styles.weekHead}`}
+                      style={{ gridTemplateColumns: weekGridTemplateColumns }}
+                    >
+                      <div className={styles.weekCorner} aria-hidden="true" />
+                      {weekDates.map((date) => {
+                        const key = formatScheduleDateKey(date);
+                        const isToday = key === today;
+                        return (
+                          <div
+                            key={key}
+                            className={styles.weekDay}
+                            data-today={isToday ? "true" : undefined}
+                            aria-current={isToday ? "date" : undefined}
+                          >
+                            <span className={styles.weekDayName}>{DAY_NAMES[date.getDay()]}</span>
+                            <span className={styles.weekDayNumber}>{date.getDate()}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <div className="grid" style={{ gridTemplateColumns: weekGridTemplateColumns }}>
+                      {renderHourColumn()}
+                      {weekDates.map((date) => (
+                        <div key={formatScheduleDateKey(date)}>{renderTimeColumn(date, true)}</div>
+                      ))}
+                    </div>
                   </div>
                 </div>
-              </div>
+              ) : null}
+
+              {phoneSheet !== false ? renderWeekAgenda() : null}
 
               <section data-schedule-print-week="true" aria-label="Weekly schedule">
                 {(hasLoadedRange ? weekDates : []).map((date) => {
@@ -830,7 +994,7 @@ export function SchedulePageSection({
                         </strong>
                       </header>
                       {entries.length === 0 ? (
-                        <p data-schedule-print-empty="true">No sessions scheduled.</p>
+                        <p data-schedule-print-empty="true">No classes.</p>
                       ) : null}
                       {entries.map((entry) => {
                         const programId =
@@ -938,26 +1102,27 @@ export function SchedulePageSection({
               className={`${styles.dayFrame} ${calendarLoadingClass}`}
               aria-busy={!hasLoadedRange}
             >
-              {hasLoadedRange &&
-              (entriesByDate[formatScheduleDateKey(currentDate)] || []).length === 0 ? (
-                <CalmState
-                  tone="neutral"
-                  icon={<CalendarPlus />}
-                  title="No sessions scheduled for this day."
-                  detail={
-                    canManageSchedule
-                      ? "Add a class here, or move to another day."
-                      : "Move to another day to see its classes."
-                  }
-                  action={
-                    canManageSchedule ? (
-                      <Button variant="secondary" size="sm" onClick={onOpenAddClass}>
-                        <Plus aria-hidden="true" className="h-3.5 w-3.5" />
-                        Add class
-                      </Button>
-                    ) : null
-                  }
-                />
+              {hasLoadedRange && dayEntries.length === 0 ? (
+                <div className={styles.dayEmpty}>
+                  <CalmState
+                    tone="neutral"
+                    icon={<CalendarPlus />}
+                    title="No classes on this day."
+                    detail={
+                      canManageSchedule
+                        ? "Add a class here, or move to another day."
+                        : "Move to another day to see its classes."
+                    }
+                    action={
+                      canManageSchedule ? (
+                        <Button variant="secondary" size="sm" onClick={onOpenAddClass}>
+                          <Plus aria-hidden="true" className="h-3.5 w-3.5" />
+                          Add class
+                        </Button>
+                      ) : null
+                    }
+                  />
+                </div>
               ) : (
                 <div
                   className={`grid ${styles.canvas} ${styles.dayCanvas}`}

@@ -34,28 +34,23 @@ function bundle() {
   })();`;
 }
 
-// The stats strip reads the same visible range as the grids: classes in view, with
-// any recurring slots not yet generated as its note. The range and program scope
-// are said once, in the calendar toolbar.
+// Verify the records the calendar renders, including recurring occupancy and
+// adjacent-month cells. Range and program scope remain in the toolbar.
 async function assertSummary(page, scheduled, recurringSlots, label, scope = "All programs") {
-  const register = page.getByRole("region", { name: "Visible schedule range" });
-  if (scheduled === "Pending") {
-    await expect(register.getByLabel("Loading")).toHaveCount(4);
-    await expect(register.locator("[data-schedule-figure]")).toHaveCount(0);
-  } else {
-    await expect(register.locator('[data-schedule-figure="classes"]')).toHaveText(
-      String(scheduled),
-    );
-    await expect(register.locator('[data-schedule-figure="recurring"]')).toHaveText(
-      recurringSlots > 0
-        ? [`+${recurringSlots} recurring slot${recurringSlots === 1 ? "" : "s"}`]
-        : [],
-    );
-  }
   await expect(page.locator("[data-schedule-range-label]")).toHaveText(label);
   await expect(page.getByLabel("Filter schedule by program").locator("option:checked")).toHaveText(
     scope,
   );
+  const month = page.locator("[data-month-schedule-view]");
+  const real = (await month.count())
+    ? month.locator("button.chip")
+    : page.locator('[data-time-canvas-block="session"]');
+  const recurring = (await month.count())
+    ? month.locator('[data-template="true"]')
+    : page.locator('[data-time-canvas-block="template"]');
+  await expect(real).toHaveCount(scheduled === "Pending" ? 0 : scheduled);
+  await expect(recurring).toHaveCount(recurringSlots === "Pending" ? 0 : recurringSlots);
+  if (scheduled === "Pending") await expect(page.locator(".koaryu-skeleton-reveal")).toHaveCount(1);
 }
 
 async function mount(browser, { parallelSeries = false } = {}) {
@@ -116,9 +111,9 @@ async function mount(browser, { parallelSeries = false } = {}) {
   return { page, errors };
 }
 
-// Mount the real summary and both real grids with cached records from other dates.
+// Mount both real grids with cached records from other dates.
 // Navigation and program controls are real; external services are never contacted.
-test("rendered calendar totals follow month, week, day and program navigation", async () => {
+test("rendered calendar entries follow month, week, day and program navigation", async () => {
   const browser = await chromium.launch({ headless: true });
   try {
     const { page, errors } = await mount(browser);
@@ -142,11 +137,11 @@ test("rendered calendar totals follow month, week, day and program navigation", 
     await page.getByRole("button", { name: "Jump to today" }).click();
     await assertSummary(page, 1, 0, "September 27 – October 3, 2026");
     await page.getByRole("button", { name: "Next week", exact: true }).click();
-    await assertSummary(page, 2, 0, "October 4 – October 10, 2026");
+    await assertSummary(page, 2, 0, "October 4 – 10, 2026");
     await page.getByLabel("Filter schedule by program").selectOption("karate");
-    await assertSummary(page, 1, 0, "October 4 – October 10, 2026", "Karate");
+    await assertSummary(page, 1, 0, "October 4 – 10, 2026", "Karate");
     await page.getByRole("button", { name: "Next week", exact: true }).click();
-    await assertSummary(page, 0, 1, "October 11 – October 17, 2026", "Karate");
+    await assertSummary(page, 0, 1, "October 11 – 17, 2026", "Karate");
     await expect(page.locator('[data-time-canvas-block="template"]')).toHaveCount(1);
 
     await page.getByRole("button", { name: "Day", exact: true }).click();
@@ -165,7 +160,7 @@ test("rendered calendar totals follow month, week, day and program navigation", 
   }
 });
 
-test("rendered recurring total matches cancellation and deletion behavior of the grid", async () => {
+test("rendered recurring slots match cancellation and deletion behavior of the grid", async () => {
   const browser = await chromium.launch({ headless: true });
   try {
     const { page, errors } = await mount(browser);
@@ -195,7 +190,7 @@ test("parallel series with identical names and times retain their own visible re
 
     await page.evaluate(() => fixture.setDate([2026, 9, 6, 12]));
     for (const [view, label] of [
-      ["Week", "October 4 – October 10, 2026"],
+      ["Week", "October 4 – 10, 2026"],
       ["Day", "Tuesday, October 6, 2026"],
     ]) {
       await page.getByRole("button", { name: view, exact: true }).click();

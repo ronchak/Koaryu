@@ -40,7 +40,9 @@ import { hasStaffPermission } from "@/lib/staff-permissions";
 import type { ClassSession } from "@/types";
 
 type SchedulePageControllerOptions = {
-  config: Pick<ConfigStoreContextValue, "currentRole" | "businessDate">;
+  /** `studioTimezone` draws the calendar's now line; without it there is none. */
+  config: Pick<ConfigStoreContextValue, "currentRole" | "businessDate"> &
+    Partial<Pick<ConfigStoreContextValue, "studioTimezone">>;
   programsStore: Pick<ProgramsStoreContextValue, "programs" | "refreshPrograms">;
   scheduleStore: Pick<
     ScheduleStoreContextValue,
@@ -475,6 +477,7 @@ export function useSchedulePageController({
       }),
       sessions,
       showAddClass,
+      studioTimezone: config.studioTimezone,
       templates,
       view,
       onCreateClass: handleCreateClass,

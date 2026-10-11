@@ -87,7 +87,7 @@ const settle = (page) => page.evaluate(() => new Promise((resolve) => setTimeout
 const pending = (page) => page.waitForFunction(() => !fixture.controller.hasLoadedRange);
 const ready = (page) => page.waitForFunction(() => fixture.controller.hasLoadedRange);
 
-test("Schedule reuses loaded ranges and totals on revisit and keeps them during retry and resume", async () => {
+test("Schedule reuses loaded ranges and classes on revisit and keeps them during retry and resume", async () => {
   const { page, errors } = await mountSchedule();
   try {
     await expect(page.getByRole("heading", { name: "Schedule", exact: true })).toHaveCount(1);
@@ -126,12 +126,9 @@ test("Schedule reuses loaded ranges and totals on revisit and keeps them during 
     await page.waitForFunction(() => fixture.reads.length === 2);
     await ready(page);
     await expect(page.locator(".koaryu-skeleton-reveal")).toHaveCount(0);
-    const register = page.getByRole("region", { name: "Visible schedule range" });
-    await expect(register.getByLabel("Loading")).toHaveCount(0);
-    const totals = page.locator(
-      '[data-schedule-range-label], [data-schedule-figure="classes"], [data-schedule-figure="check-ins"]',
-    );
-    await expect(totals).toHaveText(["1", "0", "September 2026"]);
+    const label = page.locator("[data-schedule-range-label]");
+    await expect(label).toHaveText("September 2026");
+    await expect(month.getByText("Karate", { exact: true })).toHaveCount(1);
     await page.evaluate(() => fixture.reads[1].reject(new Error("Refresh failed")));
     await expect(
       page.getByText("Could not load this calendar range. Please try again."),
@@ -139,14 +136,16 @@ test("Schedule reuses loaded ranges and totals on revisit and keeps them during 
     await expect(month.getByText("Karate", { exact: true })).toHaveCount(1);
     await page.getByRole("button", { name: "Retry", exact: true }).click();
     await page.waitForFunction(() => fixture.reads.length === 3);
-    await expect(totals).toHaveText(["1", "0", "September 2026"]);
+    await expect(label).toHaveText("September 2026");
+    await expect(month.getByText("Karate", { exact: true })).toHaveCount(1);
     await page.evaluate(() => fixture.reads[2].resolve());
     await page.waitForFunction(() => !fixture.controller.isRefreshingRange);
     await page.evaluate(() => window.dispatchEvent(new Event("koaryu:data-refresh")));
     await page.waitForFunction(() => fixture.reads.length === 4);
     assert.equal(await page.evaluate(() => fixture.reads[3].args[2]), "read");
     await expect(page.locator(".koaryu-skeleton-reveal")).toHaveCount(0);
-    await expect(totals).toHaveText(["1", "0", "September 2026"]);
+    await expect(label).toHaveText("September 2026");
+    await expect(month.getByText("Karate", { exact: true })).toHaveCount(1);
     assert.deepEqual(errors, []);
   } finally {
     await page.close();

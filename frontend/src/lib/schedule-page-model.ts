@@ -1,7 +1,6 @@
 import type { AttendanceRecord, ClassSession, ClassTemplate, Student } from "@/types";
 import {
   buildEntriesForDate,
-  getConflictingSessionIds,
   groupSessionsByDate,
   groupTemplatesByDay,
   parseCalendarDate,
@@ -27,7 +26,8 @@ export type ScheduleTimeBlock<T extends ScheduleTimeItem> = {
 
 export const DEFAULT_SCHEDULE_PAGE_VIEW: SchedulePageView = "month";
 
-export const SCHEDULE_CANVAS_PIXELS_PER_HOUR = 72;
+/** Week and Day hour height; Day on a phone-width sheet draws 56px hours (set in CSS). */
+export const SCHEDULE_CANVAS_PIXELS_PER_HOUR = 48;
 
 export function scheduleTimeToMinute(value: string) {
   const [hoursText = "0", minutesText = "0"] = value.split(":");
@@ -54,18 +54,15 @@ export function getScheduleTimeCanvasBounds(items: ReadonlyArray<ScheduleTimeIte
   };
 }
 
-const FOCUSED_CANVAS_MIN_SPAN = 6 * 60;
-const FOCUSED_CANVAS_TARGET_HEIGHT = 960;
-const FOCUSED_CANVAS_MAX_HOUR_HEIGHT = 112;
+const SCHEDULE_CANVAS_MIN_SPAN = 6 * 60;
 
 /**
- * The hours worth drawing: an hour either side of the classes in view (at least
- * six hours), and taller hours when the span is short so each class has room for
- * its name, time and fill. Empty ranges keep the default studio day.
+ * The hours worth drawing: from the hour the first class starts to the hour the
+ * last one ends, at least six hours. Nothing in view keeps a 9-to-9 studio day.
  */
-export function getFocusedScheduleCanvas(items: ReadonlyArray<ScheduleTimeItem>) {
+export function getScheduleCanvasRange(items: ReadonlyArray<ScheduleTimeItem>) {
   if (items.length === 0) {
-    return { ...getScheduleTimeCanvasBounds(items), hourHeight: SCHEDULE_CANVAS_PIXELS_PER_HOUR };
+    return { startMinute: 9 * 60, endMinute: 21 * 60 };
   }
   const earliest = Math.min(...items.map((item) => scheduleTimeToMinute(item.start_time)));
   const latest = Math.max(
@@ -73,20 +70,13 @@ export function getFocusedScheduleCanvas(items: ReadonlyArray<ScheduleTimeItem>)
       Math.max(scheduleTimeToMinute(item.start_time) + 15, scheduleTimeToMinute(item.end_time)),
     ),
   );
-  let startMinute = Math.max(0, Math.floor(earliest / 60) * 60 - 60);
-  let endMinute = Math.min(24 * 60, Math.ceil(latest / 60) * 60 + 60);
-  if (endMinute - startMinute < FOCUSED_CANVAS_MIN_SPAN) {
-    endMinute = Math.min(24 * 60, startMinute + FOCUSED_CANVAS_MIN_SPAN);
-    startMinute = Math.max(0, endMinute - FOCUSED_CANVAS_MIN_SPAN);
+  let startMinute = Math.floor(earliest / 60) * 60;
+  let endMinute = Math.min(24 * 60, Math.ceil(latest / 60) * 60);
+  if (endMinute - startMinute < SCHEDULE_CANVAS_MIN_SPAN) {
+    endMinute = Math.min(24 * 60, startMinute + SCHEDULE_CANVAS_MIN_SPAN);
+    startMinute = Math.max(0, endMinute - SCHEDULE_CANVAS_MIN_SPAN);
   }
-  const hours = (endMinute - startMinute) / 60;
-  const hourHeight = Math.round(
-    Math.min(
-      FOCUSED_CANVAS_MAX_HOUR_HEIGHT,
-      Math.max(SCHEDULE_CANVAS_PIXELS_PER_HOUR, FOCUSED_CANVAS_TARGET_HEIGHT / hours),
-    ),
-  );
-  return { startMinute, endMinute, hourHeight };
+  return { startMinute, endMinute };
 }
 
 export function layoutScheduleTimeItems<T extends ScheduleTimeItem>(
@@ -316,74 +306,6 @@ export function getVisibleScheduleSummary({
   }
 
   return { scheduled: visibleSessions.length, recurringSlots };
-}
-
-export type ScheduleRangeFigures = {
-  scheduled: number;
-  recurringSlots: number;
-  /** Check-ins recorded on classes in view that were not canceled. */
-  checkIns: number;
-  /** Seats on classes in view that have a capacity and were not canceled. */
-  seats: number;
-  /** Unfilled seats on classes from the business date onward. */
-  openSeats: number;
-  upcomingWithCapacity: number;
-  /** Classes in view whose times overlap another class on the same day. */
-  overlaps: number;
-};
-
-/** The headline figures for the visible range, using the same sessions the calendar draws. */
-export function getScheduleRangeFigures({
-  businessDate,
-  currentDate,
-  view,
-  sessions,
-  templates,
-}: {
-  businessDate: string;
-  currentDate: Date;
-  view: SchedulePageView;
-  sessions: ClassSession[];
-  templates: ClassTemplate[];
-}): ScheduleRangeFigures {
-  const { scheduled, recurringSlots } = getVisibleScheduleSummary({
-    currentDate,
-    view,
-    sessions,
-    templates,
-  });
-  const range = getVisibleScheduleRange(currentDate, view);
-  const visibleSessions = sessions.filter(
-    (session) => session.date >= range.start && session.date <= range.end,
-  );
-  let checkIns = 0;
-  let seats = 0;
-  let openSeats = 0;
-  let upcomingWithCapacity = 0;
-  for (const session of visibleSessions) {
-    if (session.status === "canceled") continue;
-    const attended = Math.max(0, session.attendance_count || 0);
-    checkIns += attended;
-    if (!session.capacity) continue;
-    seats += session.capacity;
-    if (session.date >= businessDate) {
-      upcomingWithCapacity += 1;
-      openSeats += Math.max(0, session.capacity - attended);
-    }
-  }
-  let overlaps = 0;
-  for (const daySessions of groupSessionsByDate(visibleSessions).values()) {
-    overlaps += getConflictingSessionIds(daySessions).size;
-  }
-  return {
-    scheduled,
-    recurringSlots,
-    checkIns,
-    seats,
-    openSeats,
-    upcomingWithCapacity,
-    overlaps,
-  };
 }
 
 export function navigateScheduleDate(currentDate: Date, view: SchedulePageView, direction: number) {
