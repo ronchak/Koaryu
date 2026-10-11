@@ -988,6 +988,140 @@ export interface ApiDashboardBootstrapStudioSummary {
   logo_url?: string | null;
 }
 
+export interface ApiDashboardHomeActiveStudents {
+  total: number;
+  active: number;
+  trialing: number;
+  on_hold: number;
+}
+
+export interface ApiDashboardHomeAttendance {
+  window_days: number;
+  sessions: number;
+  seats_filled: number;
+  capacity: number;
+}
+
+export interface ApiDashboardHomeAwayItem {
+  kind: "away";
+  count: number;
+}
+
+export interface ApiDashboardHomeBelt {
+  name: string;
+  color?: string | null;
+}
+
+export interface ApiDashboardHomeClassRow {
+  id: string;
+  name: string;
+  start_time: string;
+  end_time: string;
+  checked_in: number;
+  capacity?: number | null;
+}
+
+export interface ApiDashboardHomeClassesToday {
+  total: number;
+  overflow: number;
+  rows: ApiDashboardHomeClassRow[];
+}
+
+export interface ApiDashboardHomeContactItem {
+  kind: "contact";
+  count: number;
+  student_id?: string | null;
+}
+
+export interface ApiDashboardHomeFollowUpRow {
+  id: string;
+  first_name: string;
+  last_name: string;
+  stage: "inquiry" | "trial_scheduled" | "trial_completed" | "offer_sent";
+  follow_up_date: string;
+}
+
+export interface ApiDashboardHomeFollowUpStats {
+  due_count: number;
+  overdue_count: number;
+  due_today_count: number;
+  oldest_due_date?: string | null;
+}
+
+export interface ApiDashboardHomeFollowUps {
+  rows: ApiDashboardHomeFollowUpRow[];
+}
+
+export interface ApiDashboardHomeNeedsAttention {
+  items: (ApiDashboardHomePaymentsItem | ApiDashboardHomeSetupItem | ApiDashboardHomeAwayItem | ApiDashboardHomeContactItem)[];
+}
+
+export interface ApiDashboardHomePaymentsItem {
+  kind: "payments";
+  count: number;
+}
+
+export interface ApiDashboardHomePromotionRow {
+  student_id: string;
+  name: string;
+  from: ApiDashboardHomeBelt | null;
+  to: ApiDashboardHomeBelt;
+  classes_at_rank: number;
+  needs_approval: boolean;
+}
+
+export interface ApiDashboardHomePromotionStats {
+  ready_count: number;
+  needs_approval: number;
+}
+
+export interface ApiDashboardHomeReadyToPromote {
+  rows: ApiDashboardHomePromotionRow[];
+}
+
+export interface ApiDashboardHomeRecentStudent {
+  id: string;
+  name: string;
+  status: string;
+  started_on?: string | null;
+}
+
+export interface ApiDashboardHomeResponse {
+  generated_at: string;
+  viewer: ApiDashboardHomeViewer;
+  studio?: ApiDashboardHomeStudio | null;
+  needs_attention?: ApiDashboardHomeNeedsAttention | null;
+  classes_today?: ApiDashboardHomeClassesToday | null;
+  stats?: ApiDashboardHomeStats | null;
+  follow_ups?: ApiDashboardHomeFollowUps | null;
+  ready_to_promote?: ApiDashboardHomeReadyToPromote | null;
+  recent_students?: ApiDashboardHomeRecentStudent[] | null;
+}
+
+export interface ApiDashboardHomeSetupItem {
+  kind: "setup";
+  count: number;
+  next_step: "programs" | "students" | "belts" | "classes" | "billing";
+}
+
+export interface ApiDashboardHomeStats {
+  active_students: ApiDashboardHomeActiveStudents;
+  attendance: ApiDashboardHomeAttendance;
+  follow_ups?: ApiDashboardHomeFollowUpStats | null;
+  promotions?: ApiDashboardHomePromotionStats | null;
+}
+
+export interface ApiDashboardHomeStudio {
+  id: string;
+  name: string;
+  timezone: string;
+  today: string;
+}
+
+export interface ApiDashboardHomeViewer {
+  role?: "admin" | "instructor" | "front_desk" | null;
+}
+
 export interface ApiDashboardSummaryAction {
   id: string;
   title: string;

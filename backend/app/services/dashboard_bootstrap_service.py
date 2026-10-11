@@ -26,6 +26,8 @@ logger = logging.getLogger(__name__)
 
 BOOTSTRAP_VIEW_DATASETS = {
     "dashboard": frozenset({"studio", "programs", "students", "leads", "belts"}),
+    # Home reads its facts from /dashboard/home; it needs only the studio and programs.
+    "home": frozenset({"studio", "programs"}),
     "students": frozenset({"studio", "programs", "students"}),
     "billing": frozenset({"studio"}),
     "schedule": frozenset({"studio", "programs"}),

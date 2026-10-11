@@ -15,7 +15,7 @@ decisions, dispatched subagents and review dispositions. It is updated at every 
 | Phase | Status | Gate evidence |
 | --- | --- | --- |
 | 0. Inventory and decisions | Gate passed 2026-10-10 | Sol reports 0A to 0F; Fable decisions in [`home-rebuild-decisions.md`](home-rebuild-decisions.md) |
-| 1. Backend contract | Not started | |
+| 1. Backend contract | Tests green; Astra review pending | Backend suite 11,112 passed, 1 pre-existing failure (below); `check:api-types` green; ruff format clean |
 | 2. Client data layer | Not started | |
 | 3. Frame and bands on the kit | Not started | |
 | 4. Edit Home | Not started | |
@@ -193,6 +193,14 @@ Full text: [`home-rebuild-decisions.md`](home-rebuild-decisions.md). Changes to 
   one file (brief 4.4 and 4.7 conflict; 4.7 wins).
 - Agenda rows carry studio-local `start_time` and `end_time` wall-clock strings, as the facts RPC
   stores them, rather than instants.
+- `GET /dashboard/home` materializes today's recurring sessions once when the facts RPC cannot
+  list today's classes, using the same idempotent RPC and permission check as
+  `POST /schedule/window/materialize`. Otherwise "Take attendance" would have no session to open
+  early in a month, because only the Schedule page materializes sessions today.
+- A failed or denied materialization write never fails Home; it only leaves today's classes
+  absent. Reading Home does not require write access.
+- Deep-link record ids are UUIDs only in live mode; preview mode also accepts the demo's short
+  ids (`sess-1`, `lead-1`) so demo links work.
 - The trimmed bootstrap is a new `view=home`, not a change to `view=dashboard`, so a backend
   deployed ahead of the frontend keeps serving the current page. Phase 5 removes the old view.
 
@@ -206,7 +214,11 @@ Full text: [`home-rebuild-decisions.md`](home-rebuild-decisions.md). Changes to 
 | 0D | Sol / explorer | Backend data sources for the payload | Done |
 | 0E | Sol / tools | Playwright census, preview mode | Done; see Baseline census |
 | 0F | Sol / explorer | Migration path after V57; lead stages; roster filters | Done; see Migration cost |
-| G0 | Fable / product | Phase 0 gate: D1 to D8 | Running |
+| G0 | Fable / product | Phase 0 gate: D1 to D8 | Done; approved with changes, see `home-rebuild-decisions.md` |
+| 1A | Opus 5.5 / backend | `GET /dashboard/home` route, schema, service; bootstrap `view=home` | Done (resumed once after an API rate limit) |
+| 1B | Sol / tests | Backend suite for `/dashboard/home`; regenerate API types | Done; found one bug (a transient error could mask a 403 between the two follow-up reads), fixed by the orchestrator |
+| 3A | Opus 5.5 / frontend | Schedule `date`/`session` and Leads `focus`/`lead` URL readers (decision 8; independent of Phases 1 and 2, so run in parallel) | Done; build green, preview browser check 24/24 |
+| 3B | Sol / tests | Tests for the deep-link readers | Done; found two Schedule races, fixed by 3A; 112 tests green |
 
 ## Review log (Astra)
 
@@ -214,4 +226,8 @@ None yet.
 
 ## Follow-ups (deferred polish)
 
-None yet.
+- A real "missing emergency contact" roster filter (front and back), in a later release (Fable D2).
+- Pre-existing, unrelated: `backend/tests/test_billing_landing_runtime.py::test_membership_and_projections_share_one_total_budget`
+  fails on `claude/horizon-dashboard` as well (HTTP 504 within its 0.4s budget on this machine).
+- Pre-existing, unrelated: `generate-release-attestation --check` mode mismatch on
+  `scripts/verify-v38-v39-restore-contract.py` in this working tree.

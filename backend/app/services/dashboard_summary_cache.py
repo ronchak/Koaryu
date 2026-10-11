@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import threading
 import time
+import weakref
 from collections import OrderedDict
 from concurrent.futures import Future
 from dataclasses import dataclass
@@ -47,6 +48,33 @@ class DashboardSummaryFactInvalidated(RuntimeError):
     """The source changed while a dashboard fact was being loaded."""
 
 
+# Every live fact cache (the summary's and Home's) registers itself so one
+# mutation call invalidates all of them without importing their owners.
+_registered_caches: weakref.WeakSet[DashboardSummaryFactCache] = weakref.WeakSet()
+_registry_lock = threading.Lock()
+
+
+def invalidate_dashboard_fact_caches(
+    studio_id: str,
+    *,
+    ladder_id: str | None = None,
+    domain: DashboardInvalidationDomain,
+) -> None:
+    """Invalidate a studio in every live dashboard fact cache.
+
+    Mutation callers use this instead of a specific cache so the summary and
+    Home caches cannot drift apart.
+    """
+
+    with _registry_lock:
+        caches = tuple(_registered_caches)
+    for cache in caches:
+        if ladder_id is None:
+            cache.invalidate(studio_id, domain=domain)
+        else:
+            cache.invalidate(studio_id, ladder_id=ladder_id, domain=domain)
+
+
 class DashboardSummaryFactCache(Generic[FactT]):
     """A process-local TTL cache with bounded single-flight loading.
 
@@ -72,6 +100,8 @@ class DashboardSummaryFactCache(Generic[FactT]):
         self._entries: OrderedDict[DashboardSummaryCacheKey, _CacheEntry[FactT]] = OrderedDict()
         self._inflight: dict[DashboardSummaryCacheKey, _Flight[FactT]] = {}
         self._generations: dict[str, int] = {}
+        with _registry_lock:
+            _registered_caches.add(self)
 
     async def get_or_load(
         self,

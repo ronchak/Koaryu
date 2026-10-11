@@ -463,6 +463,8 @@ def test_workspace_does_not_load_feature_projections_and_keeps_subscription_enfo
     [
         ("dashboard", False, ["belts", "leads", "programs", "students", "studio"]),
         ("dashboard", True, ["belts", "programs", "students", "studio"]),
+        ("home", False, ["programs", "studio"]),
+        ("home", True, ["programs", "studio"]),
         ("students", False, ["programs", "students", "studio"]),
         ("schedule", False, ["programs", "studio"]),
         ("settings", False, ["programs", "studio"]),
@@ -512,6 +514,9 @@ def test_bootstrap_omits_unrelated_route_queries(view, bounded_dashboard, expect
         ),
         patch("app.services.dashboard_bootstrap_service.ensure_platform_subscription_access"),
         patch.object(service, "_timed_fetch_with_isolated_client", side_effect=fetch),
+        patch(
+            "app.services.dashboard_bootstrap_service.StudentService.rows_to_responses"
+        ) as enrich_students,
     ):
         result, _ = asyncio.run(
             service.get_dashboard_bootstrap(
@@ -520,3 +525,8 @@ def test_bootstrap_omits_unrelated_route_queries(view, bounded_dashboard, expect
         )
     assert sorted(labels) == expected
     assert result.students == []
+    if view == "home":
+        enrich_students.assert_not_called()
+        assert result.leads == []
+        assert result.belt_ladders == []
+        assert result.primary_belt_ladder is None
