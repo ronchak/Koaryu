@@ -19,6 +19,7 @@ import type {
   ClassTemplateCreate,
   CsvImportOptions,
   CsvImportResult,
+  DashboardHome,
   DashboardSummary,
   DemoteStudent,
   EligibilityEntry,
@@ -71,6 +72,8 @@ export interface StoreContextValue {
   dashboardSummaryLoaded: boolean;
   dashboardSummaryLoadError: string | null;
   refreshDashboardSummary: (options?: { reason?: "visit" | "resume" }) => Promise<void>;
+  /** Reads Home's payload for the verified identity; rejects if that identity or studio changes. */
+  loadDashboardHome: (options: { fresh: boolean }) => Promise<DashboardHome>;
 
   students: Student[];
   studentsLoaded: boolean;
@@ -232,6 +235,7 @@ export type DashboardStoreContextValue = Pick<
   | "dashboardSummaryLoaded"
   | "dashboardSummaryLoadError"
   | "refreshDashboardSummary"
+  | "loadDashboardHome"
 >;
 export type StudentsStoreContextValue = Pick<
   StoreContextValue,

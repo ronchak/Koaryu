@@ -53,8 +53,9 @@ import type {
   EligibilityEntry, Promotion,
   Program,
   StaffMember,
-  StaffLegalNameResponse, StaffRoleName, DashboardSummary,
+  StaffLegalNameResponse, StaffRoleName, DashboardSummary, DashboardHome,
 } from "@/types";
+import { buildPreviewHomePayload } from "@/lib/dashboard/preview-home-payload";
 import {
   MOCK_STUDENTS,
   MOCK_SESSIONS,
@@ -885,6 +886,44 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setScheduleLoadError(restored.scheduleLoadError);
     setScheduleStatus(restored.scheduleStatus);
   }, [setProgramsLoaded, destructivelyResetScheduleCoordinator]);
+
+  // Home reads one payload. This returns it without storing it: `useHome` owns
+  // Home's state. Preview mode is selected here and nowhere else.
+  const loadDashboardHome = useCallback(async ({ fresh }: { fresh: boolean }): Promise<DashboardHome> => {
+    if (isPreviewMode) {
+      const role = currentRoleRef.current;
+      if (!role) throw new Error("Home is not available until studio access is verified.");
+      return buildPreviewHomePayload({ today: businessDateRef.current, role });
+    }
+    const owner = beginLiveAuthRequest();
+    const studioId = authoritativeStudioIdRef.current;
+    const isCurrent = () => owner.isSameIdentity() && authoritativeStudioIdRef.current === studioId;
+    const scopeChanged = () => new Error("Dashboard scope changed. Please retry.");
+    if (!studioId) throw scopeChanged();
+    try {
+      return await withCurrentLiveAuthRead(() => {
+        const request = beginLiveAuthRequest();
+        return { ...request, canRetryAfterTokenChange: () => isCurrent() && request.canRetryAfterTokenChange() };
+      }, async (request) => {
+        const payload = await api.get<DashboardHome>(`/dashboard/home${fresh ? "?fresh=true" : ""}`, request.token,
+          { timeoutMs: 35000, timeoutMessage: "Home refresh timed out." });
+        if (!isCurrent() || payload.studio?.id !== studioId) throw scopeChanged();
+        return payload;
+      }, () => {});
+    } catch (error) {
+      // Access failures take the store's existing paths: a lapsed subscription
+      // marks the studio, and a refused session or membership re-verifies the
+      // workspace, which signs out or resets identity if it is really gone.
+      if (isCurrent()) {
+        const status = error && typeof error === "object" && "status" in error ? Number(error.status) : null;
+        if (isSubscriptionRequiredError(error)) markSubscriptionRequired();
+        else if (status === 401 || status === 403 || isStaffArchivedError(error)) {
+          window.dispatchEvent(new CustomEvent(APP_RESUME_EVENT, { detail: { refreshData: false } }));
+        }
+      }
+      throw error;
+    }
+  }, [beginLiveAuthRequest, isPreviewMode, markSubscriptionRequired]);
 
   useEffect(() => {
     if (!hydrated || !subscriptionRequired || pathname === "/subscription-required") {
@@ -2151,6 +2190,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     dashboardSummaryLoaded: isPreviewMode || dashboardSummaryDate === businessDate ? dashboardSummaryLoaded : false,
     dashboardSummaryLoadError,
     refreshDashboardSummary,
+    loadDashboardHome,
     deleteLead: reconciledCommands.deleteLead,
     deleteSession: reconciledCommands.deleteSession,
     deleteStudentPhoto: ownedStudentCommands.deleteStudentPhoto,

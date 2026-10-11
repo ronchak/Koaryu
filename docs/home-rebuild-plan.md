@@ -10,13 +10,20 @@ decisions, dispatched subagents and review dispositions. It is updated at every 
 - Model roster as wired on this machine: Sol = `gpt-6.1-sol` through `codex exec`; Astra =
   `gpt-6-astra` through `codex exec review`; Opus 5.5 and Fable 5.1 = Claude subagents.
 
+## Pull requests
+
+| PR | Branch | Base | Status |
+| --- | --- | --- | --- |
+| [#275](https://github.com/ronchak/Koaryu/pull/275) Phase 1 backend contract | `claude/home-rebuild-p1` | `claude/horizon-dashboard` | Ready |
+| [#276](https://github.com/ronchak/Koaryu/pull/276) Schedule and Leads deep links | `claude/home-rebuild-links` | `claude/home-rebuild-p1` | Ready; Astra: SAFE TO MERGE |
+
 ## Phase status
 
 | Phase | Status | Gate evidence |
 | --- | --- | --- |
 | 0. Inventory and decisions | Gate passed 2026-10-10 | Sol reports 0A to 0F; Fable decisions in [`home-rebuild-decisions.md`](home-rebuild-decisions.md) |
-| 1. Backend contract | Tests green; Astra review pending | Backend suite 11,112 passed, 1 pre-existing failure (below); `check:api-types` green; ruff format clean |
-| 2. Client data layer | Not started | |
+| 1. Backend contract | Gate passed; PR #275 ready | Backend suite 11,112 passed, 1 pre-existing failure (below); `check:api-types` green; ruff format clean |
+| 2. Client data layer | Tests green; Astra review pending | Frontend suite 2,373/2,374 (one schedule-summary load flake, passes alone); 102 Home tests green; lint, tsc, Prettier clean |
 | 3. Frame and bands on the kit | Not started | |
 | 4. Edit Home | Not started | |
 | 5. Delete and document | Not started | |
@@ -199,6 +206,10 @@ Full text: [`home-rebuild-decisions.md`](home-rebuild-decisions.md). Changes to 
   early in a month, because only the Schedule page materializes sessions today.
 - A failed or denied materialization write never fails Home; it only leaves today's classes
   absent. Reading Home does not require write access.
+- `useHome` clears the shown payload and its retained copy on 401, 402 or 403, because retained data
+  never grants access (README "Dashboard loading"); ordinary errors keep the last payload.
+- Retained Home snapshots carry their identity scope (generation, user, studio, role) and never
+  serve another identity.
 - Deep-link record ids are UUIDs only in live mode; preview mode also accepts the demo's short
   ids (`sess-1`, `lead-1`) so demo links work.
 - The trimmed bootstrap is a new `view=home`, not a change to `view=dashboard`, so a backend
@@ -216,6 +227,10 @@ Full text: [`home-rebuild-decisions.md`](home-rebuild-decisions.md). Changes to 
 | 0F | Sol / explorer | Migration path after V57; lead stages; roster filters | Done; see Migration cost |
 | G0 | Fable / product | Phase 0 gate: D1 to D8 | Done; approved with changes, see `home-rebuild-decisions.md` |
 | 1A | Opus 5.5 / backend | `GET /dashboard/home` route, schema, service; bootstrap `view=home` | Done (resumed once after an API rate limit) |
+| 2B | Sol / fixtures | `preview-home-payload.ts` and its tests | Done; 14 tests green |
+| 2A | Opus 5.5 / frontend | `use-home.ts`, `home-model.ts`, store loader, freshness subscription | Done; fixed both 2D bugs (page-wide read order; date in the flight key) |
+| 2C | Sol / tests | `home-model` and `dashboard-freshness` Node tests | Done; 60 tests green, no bugs |
+| 2D | Sol / tests | Mounted `useHome` tests on the StoreProvider harness | Done; 28 tests, found two bugs (retained ordering after unmount; date flip joining a stale read) |
 | 1B | Sol / tests | Backend suite for `/dashboard/home`; regenerate API types | Done; found one bug (a transient error could mask a 403 between the two follow-up reads), fixed by the orchestrator |
 | 3A | Opus 5.5 / frontend | Schedule `date`/`session` and Leads `focus`/`lead` URL readers (decision 8; independent of Phases 1 and 2, so run in parallel) | Done; build green, preview browser check 24/24 |
 | 3B | Sol / tests | Tests for the deep-link readers | Done; found two Schedule races, fixed by 3A; 112 tests green |
@@ -230,14 +245,29 @@ Full text: [`home-rebuild-decisions.md`](home-rebuild-decisions.md). Changes to 
 | 2 | Follow-up counts and rows come from two snapshots and can contradict each other after an intervening edit | P1 | Accepted: derive counts from rows when they cover the boundary; otherwise validate, retry once, or omit |
 | 3 | The outer gather raises the first failure in section order, so a facts error can mask a 403 | P1 | Accepted: access failure wins, as in the inner gather |
 
-No P0 found. Astra confirmed studio scoping, identity before cache, billing separation, role omission,
+Fixed in `7f8e5e0`.
+
+### Phase 1, round 2 (`7f8e5e0`): SAFE TO MERGE
+
+No new findings. Astra confirmed each fix, including cancellation safety of the per-day lock and that
+billing-visible and billing-hidden reads stay separate.
+
+Round 1 also confirmed studio scoping, identity before cache, billing separation, role omission,
 the shared promotions entry, setup ordering, the missing-contact predicate, and unchanged legacy
 summary and bootstrap behaviour.
+
+### Deep links (#276): SAFE TO MERGE
+
+No P0 or P1 findings. Astra's read-only sandbox could not resolve Playwright for the mounted tests or
+run the build; both ran locally (112 tests green, build green).
 
 ## Follow-ups (deferred polish)
 
 - A real "missing emergency contact" roster filter (front and back), in a later release (Fable D2).
 - Pre-existing, unrelated: `backend/tests/test_billing_landing_runtime.py::test_membership_and_projections_share_one_total_budget`
   fails on `claude/horizon-dashboard` as well (HTTP 504 within its 0.4s budget on this machine).
+- Load flake, unrelated: `frontend/tests/schedule-visible-summary-mounted.test.mjs` "rendered recurring total
+  matches cancellation…" failed once in the full suite (`fixture.setDate is not a function`, its own fixture
+  not mounted yet) and passes alone.
 - Pre-existing, unrelated: `generate-release-attestation --check` mode mismatch on
   `scripts/verify-v38-v39-restore-contract.py` in this working tree.

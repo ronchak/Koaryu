@@ -71,6 +71,7 @@ export function useStoreContextValues(input: StoreContextValueInputs): StoreCont
     dashboardSummaryLoaded,
     dashboardSummaryLoadError,
     refreshDashboardSummary,
+    loadDashboardHome,
     deleteLead,
     deleteSession,
     deleteStudentPhoto,
@@ -186,8 +187,15 @@ export function useStoreContextValues(input: StoreContextValueInputs): StoreCont
       dashboardSummaryLoaded,
       dashboardSummaryLoadError,
       refreshDashboardSummary,
+      loadDashboardHome,
     }),
-    [dashboardSummary, dashboardSummaryLoaded, dashboardSummaryLoadError, refreshDashboardSummary],
+    [
+      dashboardSummary,
+      dashboardSummaryLoaded,
+      dashboardSummaryLoadError,
+      refreshDashboardSummary,
+      loadDashboardHome,
+    ],
   );
 
   const studentsValue = useMemo<StudentsStoreContextValue>(
