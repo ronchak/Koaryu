@@ -16,6 +16,7 @@ decisions, dispatched subagents and review dispositions. It is updated at every 
 | --- | --- | --- | --- |
 | [#275](https://github.com/ronchak/Koaryu/pull/275) Phase 1 backend contract | `claude/home-rebuild-p1` | `claude/horizon-dashboard` | Ready |
 | [#276](https://github.com/ronchak/Koaryu/pull/276) Schedule and Leads deep links | `claude/home-rebuild-links` | `claude/home-rebuild-p1` | Ready; Astra: SAFE TO MERGE |
+| [#277](https://github.com/ronchak/Koaryu/pull/277) Phase 2 client data layer | `claude/home-rebuild-p2` | `claude/home-rebuild-links` | Ready; Astra round 2: SAFE TO MERGE |
 
 ## Phase status
 
@@ -23,8 +24,8 @@ decisions, dispatched subagents and review dispositions. It is updated at every 
 | --- | --- | --- |
 | 0. Inventory and decisions | Gate passed 2026-10-10 | Sol reports 0A to 0F; Fable decisions in [`home-rebuild-decisions.md`](home-rebuild-decisions.md) |
 | 1. Backend contract | Gate passed; PR #275 ready | Backend suite 11,112 passed, 1 pre-existing failure (below); `check:api-types` green; ruff format clean |
-| 2. Client data layer | Tests green; Astra review pending | Frontend suite 2,373/2,374 (one schedule-summary load flake, passes alone); 102 Home tests green; lint, tsc, Prettier clean |
-| 3. Frame and bands on the kit | Not started | |
+| 2. Client data layer | Gate passed; PR #277 ready | Frontend suite 2,373/2,374 (one schedule-summary load flake, passes alone); 102 Home tests green; lint, tsc, Prettier clean |
+| 3. Frame and bands on the kit | Fable gate passed; tests green; Astra review pending | Frontend suite 2,440/2,441 (workflow-canvas load flake, 18/18 alone); build green; lint, tsc, Prettier clean |
 | 4. Edit Home | Not started | |
 | 5. Delete and document | Not started | |
 | 6. Shell and navigation | Not in scope (owner default: no) | |
@@ -115,6 +116,27 @@ Also found: `node scripts/generate-release-attestation.mjs --check` fails locall
 `scripts/verify-v38-v39-restore-contract.py` has mode 0600 in this working tree (expected
 0644). It predates this work and is left alone.
 
+### Phase 3 census (preview, after Fable's fixes)
+
+| Size | First actionable row Y | Page height |
+| --- | --- | --- |
+| 390x844 | 571 | 1752 (actions stack under text on phones, per M1) |
+| 834x1112 | 609 | 1581 |
+| 1000x614 | 609 | 1581 |
+| 1440x900 | 395 | 932 |
+
+### Phase 3 census (preview, before Fable's review)
+
+| Size | First actionable row Y | Page height |
+| --- | --- | --- |
+| 390x844 | 571 (was 683) | 1580 (was 2840) |
+| 834x1112 | 609 | 1533 |
+| 1000x614 | 609 (at the fold) | 1533 |
+| 1440x900 | 395 | 995 |
+
+The h1 is the greeting and never changed after first paint; no panel has a minimum height; preview
+mode makes no API requests.
+
 ### Inventory (0B)
 
 Shared code the deletion phase must preserve or move first:
@@ -128,21 +150,21 @@ Shared code the deletion phase must preserve or move first:
 - `e2e/preview-smoke.spec.ts` asserts the exact heading "Dashboard".
 - `capture-landing-day-shots.mjs` finds the crop by the text "Classes Today" and "Adult No-Gi".
 
-Frontend test dispositions (from 0B; revisited in Phase 5):
+Frontend test dispositions (from 0B; Phase 3 actuals noted; revisited in Phase 5):
 
 | Test | Disposition |
 | --- | --- |
 | `dashboard-billing-summary` | Rewrite against `home-model.ts` |
 | `dashboard-brief-greetings` | Keep |
-| `dashboard-home-mounted` | Rewrite against `home-page.tsx`, `use-home.ts`, `home-preferences.ts` |
+| `dashboard-home-mounted` | Deleted in Phase 3; its revisit coverage moved to `home-page-mounted` |
 | `dashboard-horizon` | Rewrite against `home-model.ts`; keep ridge checks for the kit |
 | `dashboard-identity-gate` | Keep |
 | `dashboard-layout-store` | Rewrite against `home-preferences.ts` |
 | `dashboard-loading-contract` | Keep |
-| `dashboard-loading-regions` | Rewrite the Home cases; keep the other pages' cases |
+| `dashboard-loading-regions` | Home cases rewritten in Phase 3; other pages' cases kept |
 | `dashboard-page-model` | Rewrite against `home-model.ts` |
-| `dashboard-performance-mounted` | Rewrite against `use-home.ts` |
-| `dashboard-shell-home-contract` | Rewrite; keep shell, readiness and purge assertions |
+| `dashboard-performance-mounted` | Rewritten in Phase 3: cold admin load is workspace + bootstrap (home) + `/dashboard/home`; revisit is `/dashboard/home` only |
+| `dashboard-shell-home-contract` | Rewritten in Phase 3; shell, readiness and purge assertions kept |
 | `dashboard-widget-catalog` | Rewrite against `home-preferences.ts` and `home-model.ts` |
 | `dashboard-widget-composition` | Delete |
 | `dashboard-widget-geometry` | Delete |
@@ -193,6 +215,23 @@ Full text: [`home-rebuild-decisions.md`](home-rebuild-decisions.md). Changes to 
 - **Paper grain:** dropped (owner decision 6, delegated to Fable).
 - **Orchestrator amendment:** belt pairs use a lucide arrow icon, not a Unicode arrow.
 
+### Product decisions (Fable, Phase 3 gate)
+
+- Confirmed: three questions in order, no fact twice below the header, first actionable row on the
+  phone's first screen, plain speech, both themes read as one system.
+- **M1** One row shape on phones: every work-row action under the title and meta.
+- **M2** The sun never sits under words: right edge or hidden at 641–1023px; description capped
+  before the sun at desktop widths.
+- **M3** Bands and panels never vanish: a section the server could not compute keeps its title and
+  link with a neutral "Couldn't check …" line; the sentence drops unknown clauses and never claims
+  "nothing needs you" while anything visible is unknown.
+- **M4** The refresh-error notice sits below the stats strip so the strip stays on the ridge.
+- **S1** "Couldn't refresh" uses the warn tone; "Couldn't load Home" stays alert.
+- Ruling: with the class count unknown and every visible needs input known and zero, the sentence is
+  "Nothing needs you."; it is empty only when a needs input is unknown and no clause remains.
+- Kept: the engineer's empty-state icons, header button icons and the moved sun; both "Take
+  attendance" actions on desktop (same class, an action echo, not a fact).
+
 ### Technical decisions (orchestrator)
 
 - `needs_attention` items carry facts (`kind`, `count`, kind-specific fields), not `label`,
@@ -231,6 +270,11 @@ Full text: [`home-rebuild-decisions.md`](home-rebuild-decisions.md). Changes to 
 | 2A | Opus 5.5 / frontend | `use-home.ts`, `home-model.ts`, store loader, freshness subscription | Done; fixed both 2D bugs (page-wide read order; date in the flight key) |
 | 2C | Sol / tests | `home-model` and `dashboard-freshness` Node tests | Done; 60 tests green, no bugs |
 | 2D | Sol / tests | Mounted `useHome` tests on the StoreProvider harness | Done; 28 tests, found two bugs (retained ordering after unmount; date flip joining a stale read) |
+| 3K | Opus 5.5 / kit | `Header` hero hills and reserved description, `HorizonWorkRow`/`HorizonWorkList`, `HorizonPanelLink`, ridge geometry moved into the kit, 3-stat phone rule | Done (`624e9f1`); band pixel-identical on other pages; stats 40px over the ridge at all sizes |
+| 3KT | Sol / tests | Kit tests | Done; 18 tests green, no bugs |
+| 3P | Opus 5.5 / page | `home-copy.ts`, `components/dashboard/home/*`, route swap, bootstrap `home` view, readiness | Done; build green; 13 old-page test failures handed to 3T |
+| G3 | Fable / product | Phase 3 visual gate | GATE PASSES after M1–M4 and S1 (confirmed from re-shot screenshots) |
+| 3T | Sol / tests | Fix the 13 old-page failures; home-copy and home-page tests; rewrite old Home tests; preview smoke heading | Done; 13 failures dispositioned; the orchestrator updated two sentence assertions to Fable's M3 ruling |
 | 1B | Sol / tests | Backend suite for `/dashboard/home`; regenerate API types | Done; found one bug (a transient error could mask a 403 between the two follow-up reads), fixed by the orchestrator |
 | 3A | Opus 5.5 / frontend | Schedule `date`/`session` and Leads `focus`/`lead` URL readers (decision 8; independent of Phases 1 and 2, so run in parallel) | Done; build green, preview browser check 24/24 |
 | 3B | Sol / tests | Tests for the deep-link readers | Done; found two Schedule races, fixed by 3A; 112 tests green |
@@ -261,11 +305,36 @@ summary and bootstrap behaviour.
 No P0 or P1 findings. Astra's read-only sandbox could not resolve Playwright for the mounted tests or
 run the build; both ran locally (112 tests green, build green).
 
+### Phase 2, round 1 (`c963842`): MERGE AFTER P0/P1 FIXES
+
+| # | Finding | Severity | Disposition |
+| --- | --- | --- | --- |
+| 1 | After a newer read is refused (403) and the page unmounts, an older successful read can repopulate the retained entry, so a revisit paints data before access is re-verified | P1 | Accepted: a refusal watermark per scope that survives unmount rejects older completions |
+| 2 | A facts-triggered read after a command can join a fresh read that started before the command and show pre-command counts until the next trigger | P2 | Accepted (cheap and user-visible after taking attendance): fact-change generation; queue one follow-up read |
+
+Astra's sandbox could not run the mounted suite (ESM Playwright through `NODE_PATH`); it reviewed its source.
+The model, preview and freshness suites passed (74 tests). Both fixed in `300b854`.
+
+### Phase 2, round 2 (`300b854`): SAFE TO MERGE
+
+No new findings; refusal ordering and fact generations confirmed, and a later successful read still
+recovers Home after a refusal.
+
 ## Follow-ups (deferred polish)
 
+- Fable L1: at 1000x614 the first row sits at the fold because the strip is 2x2 below 1024px;
+  consider a single-row strip from 768px (kit breakpoint, affects other pages).
+- Fable L2: the loading placeholder could draw the role's default panel frames so the page does not
+  grow on arrival.
+- Fable L3: three ink buttons on one desktop screen; if heavy after Phase 4, tint the band-level
+  emphasis and keep the header's ink.
+- Fable: at 1440 the longest D6 sentence wraps to a lone "weeks."; cosmetic.
+- Fable L5: preview "Red Tip" ranks render white swatches; confirm rank colours with live data.
 - A real "missing emergency contact" roster filter (front and back), in a later release (Fable D2).
 - Pre-existing, unrelated: `backend/tests/test_billing_landing_runtime.py::test_membership_and_projections_share_one_total_budget`
   fails on `claude/horizon-dashboard` as well (HTTP 504 within its 0.4s budget on this machine).
+- Load flake, unrelated: `frontend/tests/workflow-graph-mounted.test.mjs` "real canvas preserves finite
+  geometry…" fails occasionally in the full suite and passes alone (18/18).
 - Load flake, unrelated: `frontend/tests/schedule-visible-summary-mounted.test.mjs` "rendered recurring total
   matches cancellation…" failed once in the full suite (`fixture.setDate is not a function`, its own fixture
   not mounted yet) and passes alone.

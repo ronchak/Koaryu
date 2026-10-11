@@ -402,7 +402,8 @@ describe("Home agenda", () => {
     assert.deepEqual(model(data).agenda, { rows: [], overflow: null, total: 0 });
     delete data.classes_today;
     assert.equal(model(data).agenda, null);
-    assert.equal(model(data).sentence, null);
+    // No class count and nothing visible needs anyone: the quiet form without its anchor.
+    assert.deepEqual(model(data).sentence, { classes: null, clauses: [] });
   });
 
   it("phases cover unknown clock, before, exact start, during and exact end", () => {
@@ -830,10 +831,28 @@ describe("Home sentence", () => {
     assert.deepEqual(model(data).sentence.clauses, []);
   });
 
-  it("omitted agenda leaves sentence null even with visible needs", () => {
+  it("omitted agenda keeps visible needs without an anchor (Fable, Phase 3 M3)", () => {
     const data = sentencePayload({ role: "admin", classes: 3, payments: 1 });
     delete data.classes_today;
-    assert.equal(model(data).sentence, null);
+    assert.deepEqual(model(data).sentence, {
+      classes: null,
+      clauses: [{ kind: "payments", count: 1 }],
+    });
+  });
+
+  it("omitted agenda with every visible need known and zero is the quiet form", () => {
+    const data = sentencePayload({ role: "admin", classes: 3 });
+    delete data.classes_today;
+    assert.deepEqual(model(data).sentence, { classes: null, clauses: [] });
+  });
+
+  it("a missing section the role can see marks the sentence incomplete", () => {
+    const data = sentencePayload({ role: "admin", classes: 3, payments: 1 });
+    delete data.needs_attention;
+    const sentence = model(data).sentence;
+    assert.equal(sentence.incomplete, true);
+    assert.equal(sentence.classes, 3);
+    assert.ok(!sentence.clauses.some((clause) => clause.kind === "payments"));
   });
 });
 

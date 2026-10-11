@@ -30,7 +30,9 @@ for (const viewport of [
 
     await signInToPreview(page);
 
-    await expect(page.getByRole("heading", { name: "Dashboard", exact: true })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { level: 1, name: /^Good (morning|afternoon|evening)/ }),
+    ).toBeVisible();
     if (viewport.name === "mobile") {
       await expect(page.locator("aside")).toBeHidden();
     } else {
@@ -56,15 +58,19 @@ previewSmokeTest(
     await signInToPreview(page);
 
     for (const [path, heading] of [
-      ["/dashboard", "Dashboard"],
+      ["/dashboard", /^Good (morning|afternoon|evening)/],
       ["/students", "Students"],
       ["/billing", "Billing"],
       ["/reports", "Reports"],
     ] as const) {
       await page.goto(`${FRONTEND_URL}${path}`);
-      await expect(page.getByRole("heading", { name: heading, exact: true })).toBeVisible();
+      await expect(
+        page.getByRole("heading", { level: 1, name: heading, exact: typeof heading === "string" }),
+      ).toBeVisible();
       await page.reload();
-      await expect(page.getByRole("heading", { name: heading, exact: true })).toBeVisible();
+      await expect(
+        page.getByRole("heading", { level: 1, name: heading, exact: typeof heading === "string" }),
+      ).toBeVisible();
       await expect(page.getByText(/data is unavailable|reports are unavailable/i)).toHaveCount(0);
     }
 

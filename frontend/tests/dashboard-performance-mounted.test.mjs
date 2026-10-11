@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { homePayload } from "./helpers/home-fixtures.mjs";
 import { chromium } from "@playwright/test";
 
 // Set only for an explicit historical measurement. Normal tests always mount
@@ -118,6 +119,8 @@ async function mount(browser, options = {}) {
           is_system: false,
         },
       ];
+      f.homePayload = null;
+      f.homeRenders = [];
       f.summary = {
         auth: f.auth,
         generated_at: "2026-10-05T18:00:00Z",
@@ -211,6 +214,8 @@ async function mount(browser, options = {}) {
                 auth: f.auth,
                 studio: { name: "Synthetic studio", timezone: "America/Los_Angeles" },
               };
+            } else if (url.pathname === "/dashboard/home") {
+              result = f.homePayload;
             } else if (url.pathname === "/dashboard/bootstrap") {
               if (f.holdFeature)
                 await new Promise((done) => {
@@ -224,14 +229,15 @@ async function mount(browser, options = {}) {
                 auth: f.auth,
                 studio: { name: "Synthetic studio", timezone: "America/Los_Angeles" },
                 studio_name: "Synthetic studio",
-                students: f.students.slice(0, 200),
+                students: url.searchParams.get("view") === "home" ? [] : f.students.slice(0, 200),
                 students_total: f.students.length,
                 students_may_be_partial: f.students.length > 200,
                 students_page_size: 200,
-                leads: bounded ? [] : f.leads,
+                leads: bounded || url.searchParams.get("view") === "home" ? [] : f.leads,
                 programs: f.programs,
-                belt_ladders: ladders,
-                primary_belt_ladder: ladders[0] ?? null,
+                belt_ladders: url.searchParams.get("view") === "home" ? [] : ladders,
+                primary_belt_ladder:
+                  url.searchParams.get("view") === "home" ? null : (ladders[0] ?? null),
               };
               f.bounded = bounded;
             } else if (url.pathname === "/dashboard/summary") {
@@ -302,9 +308,17 @@ async function mount(browser, options = {}) {
   await page.evaluate((value) => {
     fixture.baseline = value;
   }, Boolean(baselineRoot));
+  if (options.homePage)
+    await page.evaluate(
+      (payload) => {
+        fixture.homePayload = payload;
+      },
+      homePayload(options.role ?? "admin", { rich: true }),
+    );
   await page.addScriptTag({
     content: bundle(options.mode ?? "production", {
-      dashboardController: true,
+      dashboardController: !options.homePage,
+      homePage: options.homePage,
       dashboardVisibleWidgets: options.visibleWidgets,
     }),
   });
@@ -346,56 +360,57 @@ async function stats(page, offset = 0) {
   }, offset);
 }
 
-test("Dashboard synthetic request and payload measurements", async (t) => {
+test("Home synthetic request and payload measurements", async (t) => {
   const browser = await chromium.launch();
   try {
     for (const leadCount of [25, 5000]) {
-      const page = await mount(browser, { leadCount });
-      await page.waitForFunction(() => fixture.store?.identityReady);
+      const page = await mount(browser, { leadCount, homePage: true });
+      await page.waitForFunction(() => fixture.home?.status === "ready");
       await settle(page);
       const cold = await stats(page);
-      await page.evaluate(() =>
-        fixture.dashboard.onVisibleWidgetsChange([
-          "student_pulse",
-          "classes_today",
-          "needs_attention",
-          "lead_follow_ups",
-        ]),
+      const paths = await page.evaluate(() => fixture.requests.map((r) => r.path));
+      assert.equal(paths.length, 3, JSON.stringify(paths));
+      assert.equal(paths.filter((p) => p === "/dashboard/workspace").length, 1);
+      assert.equal(
+        paths.filter(
+          (p) =>
+            p.startsWith("/dashboard/bootstrap?") &&
+            new URL(p, "http://fixture.local").searchParams.get("view") === "home",
+        ).length,
+        1,
       );
+      assert.equal(paths.filter((p) => p.startsWith("/dashboard/home")).length, 1);
+      assert.equal(cold.summary_reads, 0);
+      assert.equal(cold.eligibility_reads, 0);
+      assert.equal(cold.students_in_store, 0);
+      assert.equal(cold.leads_in_store, 0);
+      assert.ok(cold.serialized_response_bytes > 0);
+      assert.ok(
+        cold.bootstrap_response_bytes < 2000,
+        "Home bootstrap carries metadata, not full rosters",
+      );
+      await page.evaluate(() => fixture.unmountHome());
+      await settle(page);
       const offset = await page.evaluate(() => fixture.requests.length);
-      await page.evaluate(() => window.dispatchEvent(new Event("koaryu:resume")));
+      await page.evaluate(() => fixture.mountHome());
       await page.waitForFunction((start) => fixture.requests.length > start, offset);
       await settle(page);
-      const resume = await stats(page, offset);
+      assert.deepEqual(
+        await page.evaluate(
+          (start) => fixture.requests.slice(start).map((r) => r.path.split("?")[0]),
+          offset,
+        ),
+        ["/dashboard/home"],
+      );
       t.diagnostic(
         JSON.stringify({
-          version: baselineRoot ? "baseline" : "candidate",
-          fixture: "dashboard-mounted-v1",
-          students: 2500,
+          fixture: "home-mounted",
           leads: leadCount,
-          synthetic_feature_delay_ms: 100,
-          synthetic_read_delay_ms: 5,
-          semantics:
-            "mock API JSON bytes, not wire bytes; request order, not hosted latency or UI paint",
+          semantics: "synthetic JSON bytes, no hosted traffic",
           cold,
-          resume,
+          revisit: await stats(page, offset),
         }),
       );
-      if (baselineRoot) {
-        assert.equal(resume.roster_pages, 13);
-        assert.equal(resume.full_lead_reads, 1);
-        assert.equal(resume.eligibility_reads, 1);
-        assert.equal(cold.schedule_reads, 1);
-        assert.ok(cold.schedule_start_after_bootstrap_start_ms >= 100);
-      } else {
-        assert.equal(resume.roster_pages, 0);
-        assert.equal(resume.full_lead_reads, 0);
-        assert.equal(resume.eligibility_reads, 0);
-        assert.equal(cold.schedule_reads, 0);
-        assert.equal(resume.schedule_reads, 0);
-        assert.equal(cold.leads_in_store, 0);
-        assert.equal(resume.students_in_store, 200);
-      }
       await page.close();
     }
   } finally {

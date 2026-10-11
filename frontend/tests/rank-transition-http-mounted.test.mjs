@@ -16,6 +16,7 @@ async function mountedRankFixture(browser) {
   await page.goto("https://fixture.local/");
   await page.evaluate(() => {
     const f = (window.fixture = {
+      pathname: "/students",
       observations: [],
       requests: [],
       writes: [],
@@ -149,6 +150,7 @@ test("real rank commands keep known conflicts separate from unknown-result recov
                 staff_profiles_available: true,
               };
               const f = (window.fixture = {
+                pathname: "/students",
                 observations: [],
                 requests: [],
                 operationId: null,

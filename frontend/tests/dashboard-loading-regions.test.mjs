@@ -26,11 +26,7 @@ function components(fixture = {}) {
     "@/components/leads/leads-ledger.module.css": styles,
   });
   const ids = {
-    home: add("@/components/dashboard/dashboard-page-content"),
-    retained: add("@/lib/retained-state"),
-    catalog: add("@/lib/dashboard-widget-catalog"),
-    loading: add("@/components/dashboard/dashboard-overview-sections"),
-    layout: add("@/lib/dashboard-layout-store"),
+    home: add("@/components/dashboard/home/home-placeholder"),
     eligibility: add("@/components/belt-tracker/eligibility-panel"),
     leads: add("@/components/leads/lead-ledger-loading"),
     leadsPage: add("@/app/(dashboard)/leads/page"),
@@ -60,38 +56,18 @@ const fixture = {
 };
 const c = components(fixture);
 
-test("Home cold rendering is SSR safe and keeps its real heading outside the widget placeholder", () => {
-  const html = render(c.home.DashboardPageContent, {
-    currentRole: "admin",
-    currentUserId: "user",
-    currentStudioId: "studio",
-    identityGeneration: 1,
-    isDashboardIdentityReady: false,
-    isDashboardDataReady: false,
-    isPreviewMode: false,
-    widgetViewModels: {},
-    onVisibleWidgetsChange: () => {},
-    retryDashboardDatasets: () => {},
+test("Home placeholder reserves role stats and only band titles with one loading status", () => {
+  const html = render(c.home.HomePlaceholder, {
+    statIds: ["followUps", "promotions", "activeStudents", "attendance"],
   });
-  assert.match(html, /<h1 id="dashboard-home-heading">Dashboard<\/h1>/);
-  assert.equal((html.match(/koaryu-skeleton-reveal/g) ?? []).length, 1);
-  assert.match(html, /class="sequence"/);
-  assert.doesNotMatch(html, /Arranging this studio|Loading Dashboard<\//);
-});
-
-test("Home placeholder uses the saved widget footprints and tablet packing", () => {
-  const layout = c.layout.buildDefaultDashboardLayout("admin");
-  layout.items = c.layout.resizeDashboardLayoutItem(layout.items, layout.items[1].widget_id, "2x2");
-  const html = render(c.loading.DashboardLoadingPanel, { layout });
-  const articles = html.match(/<article\b[^>]*>/g) ?? [];
-  assert.equal(articles.length, layout.items.length);
-  for (const [index, item] of layout.items.entries()) {
-    const footprint = c.layout.getDashboardWidgetFootprint(item.size);
-    assert.ok(articles[index].includes(`data-widget-id="${item.widget_id}"`));
-    assert.ok(articles[index].includes(`--dashboard-column:${item.column + 1}`));
-    assert.ok(articles[index].includes(`--dashboard-row-span:${footprint.rows}`));
-    assert.ok(articles[index].includes("--dashboard-tablet-column:"));
-  }
+  assert.match(html, /aria-label="At a glance"/);
+  assert.match(html, /data-home-placeholder="attention"/);
+  assert.match(html, /data-home-placeholder="classes"/);
+  assert.match(html, /Needs attention/);
+  assert.match(html, /Today's classes|Today&#x27;s classes/);
+  assert.equal((html.match(/role="status"/g) ?? []).length, 1);
+  assert.match(html, /Loading Home/);
+  assert.doesNotMatch(html, /All clear|No classes today|Nobody to call today/);
 });
 
 test("eligibility placeholder uses the loaded ready tiles, rank ladder and five-column rank group", () => {
@@ -163,56 +139,6 @@ test("lead history remains visible alongside a refresh error", () => {
   assert.match(html, /Last loaded history/);
   assert.match(html, /History refresh failed/);
   assert.match(html, /Retry activity/);
-});
-
-test("retained Home renders the saved arrangement immediately while current identity still gates content", () => {
-  const scope = "user\u0000studio\u0000admin";
-  const saved = c.layout.buildDefaultDashboardLayout("admin");
-  saved.items = c.layout.resizeDashboardLayoutItem(saved.items, saved.items[1].widget_id, "2x2");
-  const models = Object.fromEntries(
-    c.catalog.DASHBOARD_WIDGET_CATALOG.map((widget) => [
-      widget.id,
-      {
-        id: widget.id,
-        state: "unavailable",
-        detail: "No data",
-        rows: [],
-        actions: [],
-        provenanceLabel: "Live",
-      },
-    ]),
-  );
-  function Seed({ ready }) {
-    const store = c.retained.useRetainedStore();
-    store.set(`dashboard:layout:${scope}`, saved);
-    store.set(`dashboard:layout-resolved:${scope}`, scope);
-    return React.createElement(c.home.DashboardPageContent, {
-      currentRole: "admin",
-      currentUserId: "user",
-      currentStudioId: "studio",
-      identityGeneration: 1,
-      isDashboardIdentityReady: ready,
-      isDashboardDataReady: false,
-      isPreviewMode: false,
-      widgetViewModels: models,
-      onVisibleWidgetsChange: () => {},
-      retryDashboardDatasets: () => {},
-    });
-  }
-  const html = (ready) =>
-    renderToStaticMarkup(
-      React.createElement(
-        c.retained.RetainedStateProvider,
-        { scope: "identity" },
-        React.createElement(Seed, { ready }),
-      ),
-    );
-  const ready = html(true);
-  assert.match(ready, /data-layout-resolved="true"/);
-  assert.doesNotMatch(ready, /id="dashboard-layout-status"/);
-  assert.match(ready, /data-size="2x2"/);
-  assert.match(html(false), /data-layout-resolved="false"/);
-  assert.match(html(false), /id="dashboard-layout-status"/);
 });
 
 test("a failed Leads refresh keeps the loaded board and adds a retry notice", () => {

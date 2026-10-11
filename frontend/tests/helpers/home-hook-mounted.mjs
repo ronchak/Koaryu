@@ -33,9 +33,9 @@ export async function until(page, predicate, message = "fixture did not settle")
 }
 
 export async function mountHome(browser, options = {}) {
-  const { mode = "production", preview = false, ...fixtureOptions } = options;
-  const key = `${mode}:${preview}`;
-  if (!sources.has(key)) sources.set(key, bundle(mode, { homeHook: true, preview }));
+  const { mode = "production", preview = false, homePage = false, ...fixtureOptions } = options;
+  const key = `${mode}:${preview}:${homePage}`;
+  if (!sources.has(key)) sources.set(key, bundle(mode, { homeHook: true, homePage, preview }));
   const page = await browser.newPage();
   page.setDefaultTimeout(3000);
   const errors = [];
@@ -46,7 +46,29 @@ export async function mountHome(browser, options = {}) {
       : route.abort(),
   );
   await page.goto("http://fixture.local/");
+  if (homePage)
+    await page.evaluate(() => {
+      // Playwright's fake performance.mark does not retain entries. Keep Chromium's
+      // implementation and record it at the controlled clock's frame time.
+      window.nativeHomePerformance = Object.fromEntries(
+        [
+          "mark",
+          "getEntriesByType",
+          "getEntriesByName",
+          "clearMarks",
+          "clearMeasures",
+          "measure",
+        ].map((key) => [key, performance[key].bind(performance)]),
+      );
+    });
   await page.clock.install({ time: START });
+  if (homePage)
+    await page.evaluate(() => {
+      const native = window.nativeHomePerformance;
+      Object.assign(performance, native, {
+        mark: (name, options) => native.mark(name, { ...options, startTime: performance.now() }),
+      });
+    });
   await page.clock.pauseAt(START);
   await page.evaluate((options) => {
     const f = (window.fixture = {

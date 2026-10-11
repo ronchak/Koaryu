@@ -81,6 +81,7 @@ export function bundle(
     scheduleForm = false,
     dashboardController = false,
     homeHook = false,
+    homePage = false,
     dashboardVisibleWidgets = null,
     beltPage = false,
     realApi = false,
@@ -221,6 +222,15 @@ export function bundle(
       "./sliding-segmented-control.module.css": `module.exports={};`,
     });
   }
+  if (homePage) {
+    Object.assign(stubs, {
+      "next/link": `exports.__esModule=true;exports.default=({children,href,prefetch,...props})=>require('react').createElement('a',{href,...props},children);`,
+      "lucide-react": `module.exports=new Proxy({},{get:(_,key)=>key==='createLucideIcon'?()=>()=>null:()=>null});`,
+    });
+    stubs["@/lib/dashboard/use-home"] =
+      `const hook=require(${JSON.stringify(resolve(frontend, "src/lib/dashboard/use-home.ts"))}).useHome;exports.useHome=()=>{const state=hook();window.fixture.home=state;window.fixture.homeRenders.push({status:state.status,payload:state.payload,error:state.error,asOf:state.asOf,isRevalidating:state.isRevalidating});return state;};`;
+    delete stubs["@/lib/performance"];
+  }
   if (realApi) delete stubs["@/lib/api"];
   const { add, modules } = createCommonJsPacker(stubs);
   if (identityLifecycle) {
@@ -339,11 +349,12 @@ window.fixture.renderStudentDetailSkeleton = (props) => {
       : `function ScheduleObserver(){const store=useStore();const controller=require(${schedule}).useSchedulePageController({config:store,programsStore:store,scheduleStore:store,studentsStore:store});window.fixture.controller=controller.contentProps;return React.createElement(React.Fragment,null,React.createElement('output',{'data-schedule-state':controller.contentProps.hasLoadedRange?'ready':controller.contentProps.scheduleLoadError?'error':'loading'}),${scheduleContent === null ? "null" : `React.createElement(require(${scheduleContent}).SchedulePageContent,controller.contentProps)`});}function ScheduleMount(){const [mounted,setMounted]=React.useState(false);window.fixture.mountSchedule=()=>setMounted(true);window.fixture.unmountSchedule=()=>setMounted(false);return mounted?React.createElement(ScheduleObserver):null;}`;
   const dashboard = dashboardController ? add("@/lib/dashboard-page-controller") : null;
   // Opt-in Home observer uses the real identity-scoped retained provider and hook.
-  const home = homeHook ? add("@/lib/dashboard/use-home") : null;
+  const home = homeHook || homePage ? add("@/lib/dashboard/use-home") : null;
+  const homePageModule = homePage ? add("@/components/dashboard/home/home-page") : null;
   const homeObserver =
     home === null
       ? ""
-      : `window.fixture.markFacts=require(${add("@/lib/dashboard-freshness")}).markDashboardFactsChanged;function HomeObserver(){const state=require(${home}).useHome();window.fixture.home=state;window.fixture.homeRenders.push({status:state.status,payload:state.payload,error:state.error,asOf:state.asOf,isRevalidating:state.isRevalidating});return null;}function HomeMount(){const store=useStore();const [mounted,setMounted]=React.useState(window.fixture.homeMounted!==false);window.fixture.mountHome=()=>setMounted(true);window.fixture.unmountHome=()=>setMounted(false);const scope=store.identityReady?store.identityGeneration+':'+store.currentUserId+':'+store.currentStudioId:null;return React.createElement(require(${add("@/lib/retained-state")}).RetainedStateProvider,{scope},mounted?React.createElement(HomeObserver):null);}`;
+      : `window.fixture.markFacts=require(${add("@/lib/dashboard-freshness")}).markDashboardFactsChanged;function HomeObserver(){${homePage ? `React.useLayoutEffect(()=>{(window.fixture.homeFirstFrames??=[]).push({status:document.querySelector('[data-home-status]')?.dataset.homeStatus,placeholders:document.querySelectorAll('[data-home-placeholder]').length});},[]);` : ""}${homePage ? `return React.createElement(require(${homePageModule}).HomePage);` : `const state=require(${home}).useHome();window.fixture.home=state;window.fixture.homeRenders.push({status:state.status,payload:state.payload,error:state.error,asOf:state.asOf,isRevalidating:state.isRevalidating});return null;`}}function HomeMount(){const store=useStore();const [mounted,setMounted]=React.useState(window.fixture.homeMounted!==false);window.fixture.mountHome=()=>setMounted(true);window.fixture.unmountHome=()=>setMounted(false);const scope=store.identityReady?store.identityGeneration+':'+store.currentUserId+':'+store.currentStudioId:null;return React.createElement(require(${add("@/lib/retained-state")}).RetainedStateProvider,{scope},mounted${homePage ? "&&store.identityReady" : ""}?React.createElement(HomeObserver):null);}`;
   const belt = beltPage ? add("@/app/(dashboard)/belt-tracker/page") : null;
   const dashboardObserver =
     dashboard === null

@@ -426,7 +426,7 @@ test("mounted detail ensures complete cached data, retains it after roster chang
 test("mounted summary reconciliation preserves saved records and rejects older summary responses", async () => {
   const browser = await chromium.launch();
   try {
-    const page = await fixturePage(browser);
+    const page = await fixturePage(browser, { path: "/students" });
     await page.evaluate(() => {
       fixture.oldSummary = fixture.store.refreshDashboardSummary();
       fixture.save = fixture.store.updateStudent("student-1", { legal_first_name: "Saved" });
@@ -435,6 +435,9 @@ test("mounted summary reconciliation preserves saved records and rejects older s
     await page.evaluate(() =>
       fixture.writes[0].resolve({ ...fixture.student, legal_first_name: "Saved" }),
     );
+    await page.evaluate(() => {
+      fixture.newSummary = fixture.store.refreshDashboardSummary();
+    });
     await page.waitForFunction(() => fixture.summaries.length === 2);
     await page.evaluate(() =>
       fixture.summaries[1].resolve({
@@ -1161,7 +1164,7 @@ test("Settings does not start a deferred belt read after its metadata projection
 test("resume access denial clears prior studio records", async () => {
   const browser = await chromium.launch();
   try {
-    const page = await fixturePage(browser);
+    const page = await fixturePage(browser, { path: "/students" });
     await page.waitForFunction(() => fixture.store.students.length > 0);
     await page.evaluate(() => {
       const original = fixture.api.get;
