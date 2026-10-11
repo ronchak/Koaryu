@@ -17,6 +17,7 @@ decisions, dispatched subagents and review dispositions. It is updated at every 
 | [#275](https://github.com/ronchak/Koaryu/pull/275) Phase 1 backend contract | `claude/home-rebuild-p1` | `claude/horizon-dashboard` | Ready |
 | [#276](https://github.com/ronchak/Koaryu/pull/276) Schedule and Leads deep links | `claude/home-rebuild-links` | `claude/home-rebuild-p1` | Ready; Astra: SAFE TO MERGE |
 | [#277](https://github.com/ronchak/Koaryu/pull/277) Phase 2 client data layer | `claude/home-rebuild-p2` | `claude/home-rebuild-links` | Ready; Astra round 2: SAFE TO MERGE |
+| [#278](https://github.com/ronchak/Koaryu/pull/278) Phase 3 page and kit | `claude/home-rebuild-p3` | `claude/home-rebuild-p2` | Ready; Astra: SAFE TO MERGE |
 
 ## Phase status
 
@@ -25,8 +26,8 @@ decisions, dispatched subagents and review dispositions. It is updated at every 
 | 0. Inventory and decisions | Gate passed 2026-10-10 | Sol reports 0A to 0F; Fable decisions in [`home-rebuild-decisions.md`](home-rebuild-decisions.md) |
 | 1. Backend contract | Gate passed; PR #275 ready | Backend suite 11,112 passed, 1 pre-existing failure (below); `check:api-types` green; ruff format clean |
 | 2. Client data layer | Gate passed; PR #277 ready | Frontend suite 2,373/2,374 (one schedule-summary load flake, passes alone); 102 Home tests green; lint, tsc, Prettier clean |
-| 3. Frame and bands on the kit | Fable gate passed; tests green; Astra review pending | Frontend suite 2,440/2,441 (workflow-canvas load flake, 18/18 alone); build green; lint, tsc, Prettier clean |
-| 4. Edit Home | Not started | |
+| 3. Frame and bands on the kit | Gate passed; PR #278 ready | Frontend suite 2,440/2,441 (workflow-canvas load flake, 18/18 alone); build green; lint, tsc, Prettier clean |
+| 4. Edit Home | In progress (owner chose Auth metadata) | |
 | 5. Delete and document | Not started | |
 | 6. Shell and navigation | Not in scope (owner default: no) | |
 
@@ -186,7 +187,7 @@ Proceeding with the defaults unless the owner objects.
 | 6 | Paper grain into `Header` or drop | Fable decides at the Phase 3 gate |
 | 7 | Phase 6 shell and navigation | No |
 | 8 | Add small, additive URL readers to Schedule (`date`, `session`) and Leads (`focus`, `lead`) so Home rows open the exact view | Yes; brief 4.2 calls for these views, and no other behaviour on those pages changes |
-| 9 | Preferences persistence path (see "Migration cost" below): (a) the brief's `home_preferences` table, which makes this a V58 release; (b) a studio-keyed namespace in the user's Auth metadata, written only by the backend, no migration | **Asked 2026-10-10.** Only Phase 4 depends on it. Orchestrator recommendation: (b) now, with (a) as a follow-up if the owner wants a table |
+| 9 | Preferences persistence path (see "Migration cost" below): (a) the brief's `home_preferences` table, which makes this a V58 release; (b) a studio-keyed namespace in the user's Auth metadata, written only by the backend, no migration | **Owner chose (b), Auth metadata, on 2026-10-11.** No migration; the backend checks membership and reconciles on every read |
 | 10 | No new SQL anywhere else in this rebuild (no roster filter for missing emergency contacts, no promotions RPC) | Yes; every new function or table is release work after V57 |
 
 ### Product decisions (Fable, Phase 0 gate)
@@ -275,6 +276,8 @@ Full text: [`home-rebuild-decisions.md`](home-rebuild-decisions.md). Changes to 
 | 3P | Opus 5.5 / page | `home-copy.ts`, `components/dashboard/home/*`, route swap, bootstrap `home` view, readiness | Done; build green; 13 old-page test failures handed to 3T |
 | G3 | Fable / product | Phase 3 visual gate | GATE PASSES after M1–M4 and S1 (confirmed from re-shot screenshots) |
 | 3T | Sol / tests | Fix the 13 old-page failures; home-copy and home-page tests; rewrite old Home tests; preview smoke heading | Done; 13 failures dispositioned; the orchestrator updated two sentence assertions to Fable's M3 ruling |
+| 4B | Opus 5.5 / backend | Preferences in Auth metadata: `preferences` on GET /dashboard/home, PUT /dashboard/home/preferences, server reconcile | Running |
+| 4F | Opus 5.5 / frontend | `home-preferences.ts`, sync hook, sign-out purge, Edit Home trigger and sheet | Running |
 | 1B | Sol / tests | Backend suite for `/dashboard/home`; regenerate API types | Done; found one bug (a transient error could mask a 403 between the two follow-up reads), fixed by the orchestrator |
 | 3A | Opus 5.5 / frontend | Schedule `date`/`session` and Leads `focus`/`lead` URL readers (decision 8; independent of Phases 1 and 2, so run in parallel) | Done; build green, preview browser check 24/24 |
 | 3B | Sol / tests | Tests for the deep-link readers | Done; found two Schedule races, fixed by 3A; 112 tests green |
@@ -320,6 +323,11 @@ The model, preview and freshness suites passed (74 tests). Both fixed in `300b85
 No new findings; refusal ordering and fact generations confirmed, and a later successful read still
 recovers Home after a refusal.
 
+### Phase 3 (`5254ca5`): SAFE TO MERGE
+
+No P0 to P3 findings that hide a bug. Astra noted that some shell retry-button assertions were dropped
+from the rewritten `dashboard-shell-home-contract` test; recorded as a follow-up to restore in Phase 5.
+
 ## Follow-ups (deferred polish)
 
 - Fable L1: at 1000x614 the first row sits at the fold because the strip is 2x2 below 1024px;
@@ -330,6 +338,8 @@ recovers Home after a refusal.
   emphasis and keep the header's ink.
 - Fable: at 1440 the longest D6 sentence wraps to a lone "weeks."; cosmetic.
 - Fable L5: preview "Red Tip" ranks render white swatches; confirm rank colours with live data.
+- Restore the shell identity-retry button assertions dropped from `dashboard-shell-home-contract` in
+  Phase 3 (Astra), when Phase 5 rewrites the remaining dashboard tests.
 - A real "missing emergency contact" roster filter (front and back), in a later release (Fable D2).
 - Pre-existing, unrelated: `backend/tests/test_billing_landing_runtime.py::test_membership_and_projections_share_one_total_budget`
   fails on `claude/horizon-dashboard` as well (HTTP 504 within its 0.4s budget on this machine).
