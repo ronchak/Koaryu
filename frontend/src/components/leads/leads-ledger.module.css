@@ -458,6 +458,13 @@ button.queueLead::after {
   outline-offset: -2px;
 }
 
+/* Cut text rises above the row's button so a click can open it in place. */
+.queueContext [data-cut="true"],
+.queueContext [data-open="true"] {
+  position: relative;
+  z-index: 1;
+}
+
 .ageBand .queueLead:disabled,
 .ageBand > ol > li:has(> .queueLead:disabled) :is(.leadInitials, .leadStage) {
   cursor: progress;

@@ -840,6 +840,21 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* The address carries its own ellipsis, so a click can open it in place. */
+.contactText {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Chrome breaks at <wbr> even on a no-wrap line, so the break waits for a click. */
+.contactText:not([data-open="true"]) wbr {
+  display: none;
+}
+/* An opened tag wraps; a pill would pinch two lines, so it softens to a rounded box. */
+.rosterTag[data-open="true"] {
+  border-radius: 8px;
+}
 .memberSinceCell {
   color: var(--product-soft-ink);
   font-variant-numeric: tabular-nums;

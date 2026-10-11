@@ -5,6 +5,7 @@ import { LEAD_SOURCE_ICONS } from "@/components/leads/lead-source-icons";
 import { describeLeadDue, getLeadNextAction } from "@/components/leads/lead-focus";
 import { ToneTag } from "@/components/schedule/horizon-parts";
 import { Button } from "@/components/ui/button";
+import { RevealText } from "@/components/ui/reveal-text";
 import { DismissibleNotice } from "@/components/ui/dismissible-notice";
 import {
   LOST_REASON_LABELS,
@@ -129,9 +130,9 @@ export function LeadDetailInspector({
       }}
     >
       <div className={styles.inspectorHeader}>
-        <p>
+        <RevealText as="p">
           {getStageLabel(lead.stage)} · {getProgramLabel(lead, program)}
-        </p>
+        </RevealText>
         <h2 id="lead-detail-title">{fullName(lead)}</h2>
         <button
           type="button"

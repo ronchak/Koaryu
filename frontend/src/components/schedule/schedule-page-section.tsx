@@ -13,6 +13,7 @@ import {
 } from "@/components/schedule/schedule-display";
 import { Button } from "@/components/ui/button";
 import { DismissibleNotice } from "@/components/ui/dismissible-notice";
+import { RevealText } from "@/components/ui/reveal-text";
 import { CalmState, HorizonPage, ToneTag } from "@/components/schedule/horizon-parts";
 import { SlidingSegmentedControl } from "@/components/ui/sliding-segmented-control";
 import {
@@ -419,6 +420,7 @@ export function SchedulePageSection({
                     width: laneBlockWidth,
                     "--program-color": getProgramColor(program),
                     "--block-lines": blockLines,
+                    "--block-height": visibleHeight,
                   } as CSSProperties
                 }
                 title={`${title} · ${timeRange} · Recurring`}
@@ -428,7 +430,9 @@ export function SchedulePageSection({
                 data-compact={compact ? "true" : undefined}
               >
                 <span className={styles.canvasLines}>
-                  <strong className={styles.canvasTitle}>{title}</strong>
+                  <RevealText as="strong" className={styles.canvasTitle}>
+                    {title}
+                  </RevealText>
                   <span className={styles.canvasMeta}>Recurring</span>
                 </span>
               </div>
@@ -506,6 +510,7 @@ export function SchedulePageSection({
                     top: `min(${top}, ${targetInset})`,
                     overflow: "hidden",
                     "--block-lines": blockLines,
+                    "--block-height": visibleHeight,
                   } as CSSProperties
                 }
                 data-time-canvas-visible={`${entry.kind}:${entry.id}`}
@@ -516,7 +521,9 @@ export function SchedulePageSection({
               >
                 {compact ? (
                   <span className={styles.canvasLines}>
-                    <strong className={styles.canvasTitle}>{title}</strong>
+                    <RevealText as="strong" className={styles.canvasTitle}>
+                      {title}
+                    </RevealText>
                     <span className={styles.canvasMeta}>
                       {formatTime(entry.start_time)}
                       {fillLabel ? ` · ${fillLabel}` : ""}

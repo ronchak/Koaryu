@@ -8,6 +8,7 @@ import { StudentAvatar } from "@/components/students/student-avatar";
 import { Button } from "@/components/ui/button";
 import { CalmState, ToneTag } from "@/components/ui/horizon";
 import { ModalFrame } from "@/components/ui/modal-frame";
+import { RevealText } from "@/components/ui/reveal-text";
 import {
   buildStudentRosterEmptyState,
   formatDate,
@@ -167,9 +168,9 @@ function BeltSummary({
             className={styles.programDot}
             style={first.programColor ? { backgroundColor: first.programColor } : undefined}
           />
-          <span className={styles.beltProgramName} title={first.programName}>
+          <RevealText className={styles.beltProgramName} title={first.programName}>
             {first.programName}
-          </span>
+          </RevealText>
           {rest.length > 0 ? (
             <span
               className={styles.overflowCount}
@@ -233,6 +234,19 @@ function PhoneBeltLine({
         </span>
       ) : null}
     </span>
+  );
+}
+
+/** An opened address wraps after its "@", not at its last letter. */
+function ContactText({ value }: { value: string }) {
+  const at = value.indexOf("@");
+  if (at <= 0) return <>{value}</>;
+  return (
+    <>
+      {value.slice(0, at + 1)}
+      <wbr />
+      {value.slice(at + 1)}
+    </>
   );
 }
 
@@ -555,9 +569,9 @@ export function StudentRosterTable({
                           </span>
                         ) : null}
                         {tags.map((tag) => (
-                          <span key={tag} className={styles.rosterTag} title={tag}>
+                          <RevealText key={tag} className={styles.rosterTag} title={tag}>
                             {tag}
-                          </span>
+                          </RevealText>
                         ))}
                         {moreTags > 0 ? (
                           <span
@@ -586,7 +600,9 @@ export function StudentRosterTable({
                 {row.contact === "—" ? (
                   <span className={styles.quietValue}>No contact on file</span>
                 ) : (
-                  row.contact
+                  <RevealText className={styles.contactText}>
+                    <ContactText value={row.contact} />
+                  </RevealText>
                 )}
               </td>
               <td data-cell="since" className={styles.memberSinceCell}>

@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { RevealText } from "@/components/ui/reveal-text";
 import { CalmState } from "@/components/schedule/horizon-parts";
 import {
   PIPELINE_STAGES,
@@ -235,23 +236,23 @@ export function LeadPipelineBoard({
                        * line is already in the row button's name, so it is read once.
                        */}
                       <span className={styles.queueContext}>
-                        <span
+                        <RevealText
                           className={styles.leadStage}
                           title={stageAndProgram}
                           aria-hidden="true"
                         >
                           {stageAndProgram}
-                        </span>
-                        <span className={styles.leadSource}>
+                        </RevealText>
+                        <RevealText className={styles.leadSource}>
                           {SOURCE_LABELS[lead.source]}
                           {lead.is_minor ? " · Minor" : ""}
-                        </span>
-                        <span
+                        </RevealText>
+                        <RevealText
                           className={styles.leadOwner}
                           data-unassigned={ownerName ? undefined : "true"}
                         >
                           {ownerName ?? "No owner"}
-                        </span>
+                        </RevealText>
                       </span>
                       {canManageLeads ? (
                         <div className={styles.stageMoves} aria-label={`Move ${name} one stage`}>

@@ -1105,6 +1105,36 @@ button.chip:hover {
   color: var(--product-soft-ink);
 }
 
+/*
+ * A cut name opened by a click unfolds over the grid until it is folded again:
+ * the block widens to fit the name (up to 12rem) and grows to its last line.
+ */
+.canvasBlock:has([data-open="true"]),
+.canvasTemplate:has([data-open="true"]) {
+  z-index: 4;
+  right: auto;
+  width: max-content !important;
+  min-width: 100%;
+  max-width: 12rem;
+  height: auto !important;
+  min-height: var(--block-height);
+  overflow: visible !important;
+  box-shadow: var(--product-shadow-card);
+}
+
+.canvasTemplate:has([data-open="true"]) {
+  min-width: 0;
+}
+
+.canvasTemplate:has([data-open="true"]) {
+  background: var(--product-paper);
+}
+
+.canvasBlock:has([data-open="true"]) .canvasLines,
+.canvasTemplate:has([data-open="true"]) .canvasLines {
+  max-height: none;
+}
+
 .canvasBlock[data-canceled="true"] .canvasTitle {
   color: var(--product-meta);
   text-decoration: line-through;

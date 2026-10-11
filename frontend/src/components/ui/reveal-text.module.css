@@ -1,0 +1,20 @@
+/* Cut text hints that it opens: a little more ink under the pointer, nothing at rest. */
+.reveal[data-cut="true"] {
+  cursor: pointer;
+}
+
+@media (hover: hover) {
+  .reveal[data-cut="true"]:hover {
+    color: var(--product-ink);
+  }
+}
+
+/* Opened, the text runs whole in place, wrapping where it must. */
+.reveal.reveal[data-open="true"] {
+  overflow: visible;
+  -webkit-line-clamp: unset;
+  overflow-wrap: break-word;
+  text-overflow: clip;
+  white-space: normal;
+  cursor: pointer;
+}
