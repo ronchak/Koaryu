@@ -8,7 +8,9 @@ read per request. Role shaping happens after the cache and is never cached.
 import asyncio
 import logging
 import time
-from dataclasses import dataclass
+from collections.abc import Iterator
+from contextlib import contextmanager
+from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
 from typing import Any, Awaitable, Callable, Optional, TypeVar
 
@@ -36,8 +38,11 @@ from app.services.dashboard_home_sections import (
     DashboardHomeFactMismatch,
     DashboardHomeFacts,
     DashboardHomePromotions,
+    build_follow_ups,
     build_needs_attention,
     build_promotions,
+    is_consistent_overdue_count,
+    overdue_count_from_rows,
     validate_dashboard_home_facts,
 )
 from app.services.dashboard_summary_cache import (
@@ -57,6 +62,7 @@ DASHBOARD_HOME_PROMOTIONS_FORMULA_VERSION = "dashboard-home-promotions-v1"
 BILLING_VISIBLE_ROLES = frozenset({"admin", "front_desk"})
 FOLLOW_UP_ROLES = frozenset({"admin", "front_desk"})
 PROMOTION_ROLES = frozenset({"admin", "instructor"})
+FOLLOW_UP_READ_ATTEMPTS = 2
 ACCESS_FAILURE_STATUS_CODES = frozenset({401, 402, 403, 409})
 ACCESS_FAILURE_PROVIDER_CODES = frozenset(
     {"42501", "28000", "28P01", "PGRST301", "PGRST302", "PGRST303"}
@@ -73,6 +79,36 @@ dashboard_home_fact_cache: DashboardSummaryFactCache[DashboardHomeFacts] = (
 dashboard_home_promotion_cache: DashboardSummaryFactCache[DashboardHomePromotions] = (
     DashboardSummaryFactCache()
 )
+
+
+@dataclass(slots=True)
+class _AgendaRecovery:
+    """Serializes writing one studio day's missing sessions within this process."""
+
+    lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    # Monotonic time the last successful write finished; requests that began
+    # reading before it reuse that write instead of writing again.
+    written_at: Optional[float] = None
+    users: int = 0
+
+
+# Entries live only while a Home request for that studio day is reading facts.
+_agenda_recoveries: dict[tuple[str, date], _AgendaRecovery] = {}
+
+
+@contextmanager
+def _agenda_recovery(studio_id: str, local_date: date) -> Iterator[_AgendaRecovery]:
+    recovery_key = (studio_id, local_date)
+    recovery = _agenda_recoveries.get(recovery_key)
+    if recovery is None:
+        recovery = _agenda_recoveries[recovery_key] = _AgendaRecovery()
+    recovery.users += 1
+    try:
+        yield recovery
+    finally:
+        recovery.users -= 1
+        if recovery.users == 0 and _agenda_recoveries.get(recovery_key) is recovery:
+            del _agenda_recoveries[recovery_key]
 
 
 @dataclass(frozen=True, slots=True)
@@ -209,8 +245,9 @@ class DashboardHomeService:
             not isinstance(rows, list)
             or not isinstance(count, int)
             or isinstance(count, bool)
-            or count < len(rows)
+            or len(rows) != min(count, DASHBOARD_HOME_FOLLOW_UP_LIMIT)
         ):
+            # Rows and count share one snapshot, so the bounded rows must be complete.
             raise ValueError("Home follow-up response is invalid")
         return [DashboardHomeFollowUpRow.model_validate(row) for row in rows], count
 
@@ -350,19 +387,40 @@ class DashboardHomeService:
             await cls(client).materialize_today(context.user_id, key)
             return True
 
-        async def facts_section() -> tuple[DashboardHomeFacts, Optional[str]]:
-            facts = await timed("facts", load_facts(use_cache=not fresh, after_materialize=False))
-            if facts.classes_today is None and not facts.materialization_attempted:
-                # The RPC cannot list today's classes until recurrences exist as
-                # session rows. Write them once, then drop the stale entry and
-                # re-read; the re-read is cached so a still-unavailable agenda
-                # is not written again until that entry expires.
-                if await best_effort("materialize", run(materialize)):
+        async def recover_agenda(
+            recovery: _AgendaRecovery, facts: DashboardHomeFacts, read_started: float
+        ) -> DashboardHomeFacts:
+            # The RPC cannot list today's classes until recurrences exist as
+            # session rows. Requests that read the same unavailable day queue
+            # here, so the day is written and invalidated once, not once per
+            # request (repeated invalidation would exhaust the cache's retry).
+            async with recovery.lock:
+                written_by_another = (
+                    recovery.written_at is not None and recovery.written_at >= read_started
+                )
+                if not written_by_another:
+                    # Each request writes with its own authorization; a denied or
+                    # failed write leaves the next queued request free to try.
+                    if not await best_effort("materialize", run(materialize)):
+                        return facts
+                    recovery.written_at = time.monotonic()
                     fact_cache.invalidate(studio_id, domain="dashboard")
-                    facts = await timed(
-                        "facts_after_materialize",
-                        load_facts(use_cache=not fresh, after_materialize=True),
-                    )
+                # Re-read this request's own key (visibility differs by role). It
+                # is cached, so a still-unavailable day is not written again until
+                # that entry expires.
+                return await timed(
+                    "facts_after_materialize",
+                    load_facts(use_cache=not fresh, after_materialize=True),
+                )
+
+        async def facts_section() -> tuple[DashboardHomeFacts, Optional[str]]:
+            with _agenda_recovery(studio_id, key.local_date) as recovery:
+                read_started = time.monotonic()
+                facts = await timed(
+                    "facts", load_facts(use_cache=not fresh, after_materialize=False)
+                )
+                if facts.classes_today is None and not facts.materialization_attempted:
+                    facts = await recover_agenda(recovery, facts, read_started)
             contact_student_id = None
             if role in CONTACT_ROLES and facts.missing_contact_count == 1:
                 contact_student_id = await optional_section(
@@ -375,36 +433,36 @@ class DashboardHomeService:
                 )
             return facts, contact_student_id
 
+        async def consistent_follow_ups() -> Optional[
+            tuple[DashboardHomeFollowUpStats, DashboardHomeFollowUps]
+        ]:
+            for _attempt in range(FOLLOW_UP_READ_ATTEMPTS):
+                rows, due_count = await run(
+                    lambda client: cls(client).fetch_due_follow_ups_sync(studio_id, today)
+                )
+                overdue_count = overdue_count_from_rows(rows, due_count, today)
+                if overdue_count is None:
+                    # Every returned row is overdue and more leads are due, so
+                    # only a separate count can say how many are overdue. It is
+                    # another snapshot: use it only if it agrees with the rows.
+                    counted = await run(
+                        lambda client: cls(client).fetch_overdue_follow_up_count_sync(
+                            studio_id, today
+                        )
+                    )
+                    if is_consistent_overdue_count(rows, due_count, today, counted):
+                        overdue_count = counted
+                if overdue_count is not None:
+                    return build_follow_ups(rows, due_count, overdue_count)
+            logger.warning("Home follow-ups omitted: overdue count disagreed with rows twice")
+            return None
+
         async def follow_ups_section() -> Optional[
             tuple[DashboardHomeFollowUpStats, DashboardHomeFollowUps]
         ]:
             if role not in FOLLOW_UP_ROLES:
                 return None
-            loaded = await optional_section(
-                "follow_ups",
-                _gather_or_raise(
-                    run(lambda client: cls(client).fetch_due_follow_ups_sync(studio_id, today)),
-                    run(
-                        lambda client: cls(client).fetch_overdue_follow_up_count_sync(
-                            studio_id, today
-                        )
-                    ),
-                ),
-            )
-            if loaded is None:
-                return None
-            (rows, due_count), overdue_count = loaded
-            # Two reads can straddle a write; never report more overdue than due.
-            overdue_count = min(overdue_count, due_count)
-            return (
-                DashboardHomeFollowUpStats(
-                    due_count=due_count,
-                    overdue_count=overdue_count,
-                    due_today_count=due_count - overdue_count,
-                    oldest_due_date=rows[0].follow_up_date if rows else None,
-                ),
-                DashboardHomeFollowUps(rows=rows),
-            )
+            return await optional_section("follow_ups", consistent_follow_ups())
 
         async def promotions_section() -> Optional[DashboardHomePromotions]:
             if role not in PROMOTION_ROLES or context.promotions_key is None:
@@ -418,16 +476,12 @@ class DashboardHomeService:
                 loader() if fresh else promotion_cache.get_or_load(context.promotions_key, loader),
             )
 
-        results = await asyncio.gather(
+        # An access denial in any section outranks a transient facts failure.
+        (facts, contact_student_id), follow_ups, promotions = await _gather_or_raise(
             facts_section(),
             follow_ups_section(),
             promotions_section(),
-            return_exceptions=True,
         )
-        for result in results:
-            if isinstance(result, BaseException):
-                raise result
-        (facts, contact_student_id), follow_ups, promotions = results
 
         payload = DashboardHomeResponse(
             generated_at=_utc_now(),
@@ -456,7 +510,7 @@ def _utc_now() -> datetime:
 
 
 async def _gather_or_raise(*awaitables: Awaitable[Any]) -> list[Any]:
-    """Run reads concurrently, wait for all, then raise a failure.
+    """Run sections concurrently, wait for all, then raise a failure.
 
     An access failure wins over any other, so a transient error in one read
     cannot hide a denial in another.

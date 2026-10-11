@@ -222,7 +222,17 @@ Full text: [`home-rebuild-decisions.md`](home-rebuild-decisions.md). Changes to 
 
 ## Review log (Astra)
 
-None yet.
+### Phase 1, round 1 (`ad32002`): MERGE AFTER P0/P1 FIXES
+
+| # | Finding | Severity | Disposition |
+| --- | --- | --- | --- |
+| 1 | Concurrent requests that each materialize and invalidate can exhaust the cache's retry and fail good requests | P1 | Accepted: serialize recovery per studio and date; re-check the cache after acquiring |
+| 2 | Follow-up counts and rows come from two snapshots and can contradict each other after an intervening edit | P1 | Accepted: derive counts from rows when they cover the boundary; otherwise validate, retry once, or omit |
+| 3 | The outer gather raises the first failure in section order, so a facts error can mask a 403 | P1 | Accepted: access failure wins, as in the inner gather |
+
+No P0 found. Astra confirmed studio scoping, identity before cache, billing separation, role omission,
+the shared promotions entry, setup ordering, the missing-contact predicate, and unchanged legacy
+summary and bootstrap behaviour.
 
 ## Follow-ups (deferred polish)
 

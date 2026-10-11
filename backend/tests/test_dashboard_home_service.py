@@ -479,13 +479,165 @@ def test_follow_up_stats_use_due_minus_overdue_and_oldest_row_or_null(empty):
     assert len(wire["follow_ups"]["rows"]) == (0 if empty else 6)
 
 
-def test_overdue_count_is_capped_when_reads_straddle_a_change(monkeypatch):
-    monkeypatch.setattr(
-        home.DashboardHomeService, "fetch_overdue_follow_up_count_sync", lambda *_: 99
+def lead(lead_id, follow_up_date, stage="inquiry"):
+    return {
+        "id": lead_id,
+        "studio_id": STUDIO,
+        "first_name": "Lead",
+        "last_name": lead_id,
+        "stage": stage,
+        "follow_up_date": follow_up_date,
+    }
+
+
+def follow_up_leads(*, overdue, due_today):
+    return [lead(f"o-{i}", "2026-10-0" + str(1 + i % 9)) for i in range(overdue)] + [
+        lead(f"t-{i}", TODAY.isoformat()) for i in range(due_today)
+    ]
+
+
+def churn_leads(monkeypatch, client, *, before=None, after=None):
+    """Change leads around each due-rows read, as a concurrent writer would."""
+    original = home.DashboardHomeService.fetch_due_follow_ups_sync
+    reads = []
+
+    def churned(self, studio_id, today):
+        if before:
+            before(client.tables["leads"], len(reads))
+        result = original(self, studio_id, today)
+        reads.append(result)
+        if after:
+            after(client.tables["leads"], len(reads))
+        return result
+
+    monkeypatch.setattr(home.DashboardHomeService, "fetch_due_follow_ups_sync", churned)
+    return reads
+
+
+def reschedule(leads, lead_ids, follow_up_date):
+    for row in leads:
+        if row["id"] in lead_ids:
+            row["follow_up_date"] = follow_up_date
+
+
+def overdue_count_queries(client):
+    return [q for q in client.query_log if q["table"] == "leads" and q["limit"] == 0]
+
+
+def follow_up_wire(client, role="front_desk"):
+    wire, _ = request(client, role)
+    return wire
+
+
+def test_all_due_rows_settle_overdue_and_skip_the_count_despite_an_intervening_reschedule(
+    monkeypatch,
+):
+    """(a) due_count fits the row limit: every due lead is a row; no second query."""
+    client = HomeSupabase()
+    client.tables["leads"] = follow_up_leads(overdue=3, due_today=2)
+    overdue_ids = {"o-0", "o-1", "o-2"}
+    churn_leads(
+        monkeypatch, client, after=lambda leads, _: reschedule(leads, overdue_ids, "2026-10-10")
     )
-    wire, _ = request(HomeSupabase(), "front_desk")
-    assert wire["stats"]["follow_ups"]["overdue_count"] == 8
-    assert wire["stats"]["follow_ups"]["due_today_count"] == 0
+    wire = follow_up_wire(client)
+    assert wire["stats"]["follow_ups"] == {
+        "due_count": 5,
+        "overdue_count": 3,
+        "due_today_count": 2,
+        "oldest_due_date": "2026-10-01",
+    }
+    assert sum(row["follow_up_date"] < "2026-10-10" for row in wire["follow_ups"]["rows"]) == 3
+    assert overdue_count_queries(client) == []
+
+
+def test_rows_ending_today_settle_overdue_and_skip_the_count_despite_an_intervening_reschedule(
+    monkeypatch,
+):
+    """(b) More are due, but the last row is due today, so every overdue lead is a row.
+
+    This is the reviewed failure: a reschedule between two snapshots reported
+    eight due, none overdue, beside three overdue rows.
+    """
+    client = HomeSupabase()
+    overdue_ids = {"l-1", "l-2", "l-3"}
+    churn_leads(
+        monkeypatch, client, after=lambda leads, _: reschedule(leads, overdue_ids, "2026-10-10")
+    )
+    wire = follow_up_wire(client)
+    assert wire["stats"]["follow_ups"] == {
+        "due_count": 8,
+        "overdue_count": 3,
+        "due_today_count": 5,
+        "oldest_due_date": "2026-10-08",
+    }
+    assert [row["id"] for row in wire["follow_ups"]["rows"]][:3] == ["l-1", "l-3", "l-2"]
+    assert overdue_count_queries(client) == []
+
+
+def test_all_overdue_rows_use_the_separate_count_when_it_agrees():
+    """(c) Every returned row is overdue and more are due: count the rest."""
+    client = HomeSupabase()
+    client.tables["leads"] = follow_up_leads(overdue=7, due_today=5)
+    wire = follow_up_wire(client)
+    assert wire["stats"]["follow_ups"] == {
+        "due_count": 12,
+        "overdue_count": 7,
+        "due_today_count": 5,
+        "oldest_due_date": "2026-10-01",
+    }
+    assert all(row["follow_up_date"] < "2026-10-10" for row in wire["follow_ups"]["rows"])
+    assert len(overdue_count_queries(client)) == 1
+
+
+@pytest.mark.parametrize(
+    "change,expected",
+    [
+        # Three overdue leads move to today: the count (4) undercounts six overdue rows.
+        (
+            lambda leads: reschedule(leads, {"o-0", "o-1", "o-2"}, "2026-10-10"),
+            {"due_count": 12, "overdue_count": 4, "due_today_count": 8},
+        ),
+        # Ten new overdue leads arrive: the count (17) exceeds the twelve due.
+        (
+            lambda leads: leads.extend(lead(f"n-{i}", "2026-10-02") for i in range(10)),
+            {"due_count": 22, "overdue_count": 17, "due_today_count": 5},
+        ),
+    ],
+)
+def test_inconsistent_separate_count_retries_the_pair_once_and_reports_the_retry(
+    monkeypatch, change, expected
+):
+    """(c) A count from another snapshot that contradicts the rows is not used."""
+    client = HomeSupabase()
+    client.tables["leads"] = follow_up_leads(overdue=7, due_today=5)
+    reads = churn_leads(
+        monkeypatch, client, after=lambda leads, count: change(leads) if count == 1 else None
+    )
+    wire = follow_up_wire(client)
+    stats = wire["stats"]["follow_ups"]
+    assert {name: stats[name] for name in expected} == expected
+    rows = wire["follow_ups"]["rows"]
+    assert sum(row["follow_up_date"] < "2026-10-10" for row in rows) <= stats["overdue_count"]
+    assert stats["oldest_due_date"] == rows[0]["follow_up_date"]
+    assert len(reads) == 2
+
+
+def test_follow_ups_are_omitted_when_the_count_disagrees_with_the_rows_twice(monkeypatch):
+    """(c) Still inconsistent after one retry: omit both follow-up sections."""
+    client = HomeSupabase()
+    client.tables["leads"] = follow_up_leads(overdue=7, due_today=5)
+    churning = {"o-0", "o-1", "o-2", "o-3", "o-4"}
+    # The same leads flip between overdue and today on either side of each read.
+    reads = churn_leads(
+        monkeypatch,
+        client,
+        before=lambda leads, _: reschedule(leads, churning, "2026-10-03"),
+        after=lambda leads, _: reschedule(leads, churning, "2026-10-10"),
+    )
+    wire = follow_up_wire(client)
+    assert "follow_ups" not in wire and "follow_ups" not in wire["stats"]
+    assert {"studio", "needs_attention", "classes_today", "recent_students"} <= set(wire)
+    assert len(reads) == 2 and len(overdue_count_queries(client)) == 2
 
 
 @pytest.mark.parametrize(
@@ -917,23 +1069,17 @@ def test_leads_failure_hides_only_follow_ups_sections_through_fastapi():
     assert "promotions" in wire["stats"]
 
 
-def test_follow_up_access_denial_is_fatal_even_when_the_other_read_fails(monkeypatch):
-    monkeypatch.setattr(
-        home.DashboardHomeService,
-        "fetch_due_follow_ups_sync",
-        Mock(side_effect=RuntimeError("rows temporarily unavailable")),
-    )
-    monkeypatch.setattr(
-        home.DashboardHomeService,
-        "fetch_overdue_follow_up_count_sync",
-        Mock(side_effect=HTTPException(status_code=403, detail="count access denied")),
-    )
-    response = wire_request(HomeSupabase())
-    assert response.status_code == 403, (
-        "Production bug: _gather_or_raise must propagate the count query's HTTP 403 "
-        "even when the row query also fails; expected 403, "
-        f"got {response.status_code} with follow-ups omitted"
-    )
+@pytest.mark.parametrize("needed", [True, False])
+def test_overdue_count_access_denial_is_fatal_whenever_the_count_is_read(monkeypatch, needed):
+    client = HomeSupabase()
+    if needed:
+        client.tables["leads"] = follow_up_leads(overdue=7, due_today=5)
+    count = Mock(side_effect=HTTPException(status_code=403, detail="count access denied"))
+    monkeypatch.setattr(home.DashboardHomeService, "fetch_overdue_follow_up_count_sync", count)
+    response = wire_request(client, "front_desk")
+    # When the rows settle the overdue count, the count query (and its denial) never runs.
+    assert response.status_code == (403 if needed else 200)
+    assert count.call_count == (1 if needed else 0)
 
 
 @pytest.mark.parametrize("status", [401, 402, 403, 409])
@@ -984,3 +1130,80 @@ def test_facts_failures_fail_whole_request_instead_of_returning_partial_home(fai
     assert response.status_code == 500, (
         "Production bug: failed or mismatched facts must fail the entire Home request"
     )
+
+
+def test_concurrent_unavailable_agenda_writes_and_invalidates_once_and_every_request_succeeds(
+    monkeypatch,
+):
+    client = HomeSupabase(agenda_available=False)
+    service = home.DashboardHomeService(client)
+    contexts = [
+        service.resolve_context_sync(f"user-{role}", STUDIO)
+        for role in ("admin", "front_desk", "instructor", "admin")
+    ]
+    fact_cache, promotion_cache = DashboardSummaryFactCache(), DashboardSummaryFactCache()
+    original_facts = home.DashboardHomeService.fetch_facts_sync
+    original_materialize = home.DashboardHomeService.materialize_today
+    writers = []
+
+    async def exercise():
+        release = asyncio.Event()
+        waiting = []
+
+        async def gated_facts(self, key, **kwargs):
+            if not release.is_set():
+                # Hold every first read until all requests share an unavailable agenda.
+                waiting.append(key.visibility)
+                await release.wait()
+            else:
+                # Keep re-reads in flight while any later write could land.
+                await asyncio.sleep(0.015)
+            return original_facts(self, key, **kwargs)
+
+        async def staggered_materialize(self, user_id, key):
+            writers.append(user_id)
+            await asyncio.sleep(0.01 * len(writers))
+            await original_materialize(self, user_id, key)
+
+        monkeypatch.setattr(home.DashboardHomeService, "fetch_facts_sync", gated_facts)
+        monkeypatch.setattr(home.DashboardHomeService, "materialize_today", staggered_materialize)
+        tasks = [
+            asyncio.create_task(
+                home.DashboardHomeService.get_dashboard_home_from_context(
+                    client, context, fact_cache=fact_cache, promotion_cache=promotion_cache
+                )
+            )
+            for context in contexts
+        ]
+        while sorted(waiting) != ["billing_hidden", "billing_visible"]:
+            await asyncio.sleep(0)
+        release.set()
+        return await asyncio.wait_for(asyncio.gather(*tasks), timeout=5)
+
+    responses = asyncio.run(exercise())
+    assert [payload.classes_today is not None for payload, _ in responses] == [True] * 4
+    assert len(writers) == 1
+    assert [name for name, _ in client.rpc_calls].count("materialize_recurring_class_sessions") == 1
+    assert fact_cache.generation(STUDIO) == 1
+    assert [payload.viewer.role for payload, _ in responses] == [
+        "admin",
+        "front_desk",
+        "instructor",
+        "admin",
+    ]
+    instructor = responses[2][0]
+    assert all(item.kind != "payments" for item in instructor.needs_attention.items)
+    assert home._agenda_recoveries == {}
+
+
+@pytest.mark.parametrize(
+    "role,denied_table",
+    [("admin", "leads"), ("front_desk", "leads"), ("instructor", "belt_ladders")],
+)
+def test_access_denial_in_any_section_wins_over_a_simultaneous_facts_failure(role, denied_table):
+    client = HomeSupabase()
+    client.facts_error = RuntimeError("facts temporarily unavailable")
+    client.table_failures[denied_table] = HTTPException(status_code=403, detail="access denied")
+    response = wire_request(client, role, raise_server_exceptions=False)
+    assert response.status_code == 403
+    assert response.json() == {"detail": "access denied"}

@@ -17,6 +17,7 @@ from app.schemas.belt import EligibilityEntry
 from app.schemas.dashboard_home import (
     DASHBOARD_HOME_ATTENTION_LIMIT,
     DASHBOARD_HOME_CLASS_ROW_LIMIT,
+    DASHBOARD_HOME_FOLLOW_UP_LIMIT,
     DASHBOARD_HOME_PROMOTION_LIMIT,
     DashboardHomeActiveStudents,
     DashboardHomeAttendance,
@@ -26,6 +27,9 @@ from app.schemas.dashboard_home import (
     DashboardHomeClassesToday,
     DashboardHomeClassRow,
     DashboardHomeContactItem,
+    DashboardHomeFollowUpRow,
+    DashboardHomeFollowUps,
+    DashboardHomeFollowUpStats,
     DashboardHomeNeedsAttention,
     DashboardHomePaymentsItem,
     DashboardHomePromotionRow,
@@ -359,6 +363,50 @@ def build_needs_attention(
             )
         )
     return DashboardHomeNeedsAttention(items=items[:DASHBOARD_HOME_ATTENTION_LIMIT])
+
+
+# ---- Follow-ups ----
+
+
+def _overdue_rows(rows: Sequence[DashboardHomeFollowUpRow], today: str) -> int:
+    return sum(1 for row in rows if row.follow_up_date < today)
+
+
+def overdue_count_from_rows(
+    rows: Sequence[DashboardHomeFollowUpRow], due_count: int, today: str
+) -> Optional[int]:
+    """The overdue count when the due rows alone settle it, else ``None``.
+
+    Rows are oldest first and share one snapshot with ``due_count``. When every
+    due lead was returned, or the last returned row is due today, every overdue
+    lead is among the rows.
+    """
+
+    if due_count <= DASHBOARD_HOME_FOLLOW_UP_LIMIT or (rows and rows[-1].follow_up_date == today):
+        return _overdue_rows(rows, today)
+    return None
+
+
+def is_consistent_overdue_count(
+    rows: Sequence[DashboardHomeFollowUpRow], due_count: int, today: str, overdue_count: int
+) -> bool:
+    """A separately counted overdue total cannot undercount the rows or exceed due."""
+
+    return _overdue_rows(rows, today) <= overdue_count <= due_count
+
+
+def build_follow_ups(
+    rows: Sequence[DashboardHomeFollowUpRow], due_count: int, overdue_count: int
+) -> tuple[DashboardHomeFollowUpStats, DashboardHomeFollowUps]:
+    return (
+        DashboardHomeFollowUpStats(
+            due_count=due_count,
+            overdue_count=overdue_count,
+            due_today_count=due_count - overdue_count,
+            oldest_due_date=rows[0].follow_up_date if rows else None,
+        ),
+        DashboardHomeFollowUps(rows=list(rows)),
+    )
 
 
 # ---- Promotions ----
