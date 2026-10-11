@@ -394,10 +394,12 @@ test("preferences save 409 suspends editing, hides retained Home, re-verifies id
     ]);
   });
 });
+const keyA = "koaryu:home-preferences:v1:user-a:studio-a";
+const storedA = (page) =>
+  page.evaluate((key) => JSON.parse(localStorage.getItem(key) ?? "null"), keyA);
 for (const pending of ["debounced", "in flight"])
   test(`a direct account switch retires the previous user's ${pending} save and local copy`, async () => {
     await withPage({ holdSave: pending === "in flight" }, async (page) => {
-      const keyA = "koaryu:home-preferences:v1:user-a:studio-a";
       await deliver(page);
       await open(page);
       await sheet(page).getByRole("switch", { name: "Show Follow-ups", exact: true }).click();
@@ -428,6 +430,77 @@ for (const pending of ["debounced", "in flight"])
       );
     });
   });
+for (const recovery of ["SIGNED_IN", "TOKEN_REFRESHED"])
+  test(`same-user ${recovery} after a recoverable session-check reset keeps the unsaved edit and retries it`, async () => {
+    await withPage({}, async (page) => {
+      await deliver(page);
+      await open(page);
+      await sheet(page).getByRole("switch", { name: "Show Follow-ups", exact: true }).click();
+      // The session check fails recoverably: identity is hidden, storage is kept.
+      await page.evaluate(() => {
+        const auth = window.fixture.supabase.auth;
+        auth.realGetSession = auth.getSession;
+        auth.getSession = async () => ({ data: { session: null }, error: Error("outage") });
+        window.fixture.store.retryInitialization();
+      });
+      await until(
+        page,
+        () => !window.fixture.store.identityReady && window.fixture.store.identityLoadError,
+      );
+      // The debounce lands during the outage and is refused before anything is sent.
+      await tick(page, 400);
+      assert.equal(await page.evaluate(() => window.fixture.saves.length), 0);
+      await page.evaluate((recovery) => {
+        const f = window.fixture;
+        f.supabase.auth.getSession = f.supabase.auth.realGetSession;
+        f.emit(
+          recovery,
+          recovery === "TOKEN_REFRESHED" ? { ...f.session, access_token: "token-a2" } : f.session,
+        );
+      }, recovery);
+      await until(
+        page,
+        () => window.fixture.store.identityReady && window.fixture.store.currentUserId === "user-a",
+      );
+      assert.deepEqual(await storedA(page), {
+        preferences: setHomePanelShown(defaults(), "follow_ups", false),
+        unsynced: true,
+      });
+      await until(page, () => window.fixture.homeReads.length === 2);
+      await deliver(page, "admin", undefined, 1);
+      assert.deepEqual(await ids(panels(page)), ["promotions"]);
+      await page.evaluate(() => window.fixture.visibility("hidden"));
+      await saved(page);
+      assert.deepEqual(
+        await page.evaluate(() => ({
+          auth: window.fixture.saves[0].headers.Authorization,
+          hidden: window.fixture.saves[0].body.hidden,
+        })),
+        {
+          auth: recovery === "TOKEN_REFRESHED" ? "Bearer token-a2" : "Bearer token-a",
+          hidden: ["follow_ups", "recent_students"],
+        },
+      );
+    });
+  });
+test("an ordinary token refresh keeps the unsaved edit and saves it with the new token", async () => {
+  await withPage({}, async (page) => {
+    await deliver(page);
+    await open(page);
+    await sheet(page).getByRole("switch", { name: "Show Follow-ups", exact: true }).click();
+    await page.evaluate(() => window.fixture.rotate("token-a2"));
+    await flush(page);
+    assert.equal(await page.evaluate(() => window.fixture.store.identityReady), true);
+    assert.equal((await storedA(page))?.unsynced, true);
+    assert.deepEqual(await ids(panels(page)), ["promotions"]);
+    await tick(page, 400);
+    await saved(page);
+    assert.equal(
+      await page.evaluate(() => window.fixture.saves[0].headers.Authorization),
+      "Bearer token-a2",
+    );
+  });
+});
 test("save loader refuses another identity before sending and rejects a response after scope changes", async () => {
   await withPage({ holdSave: true }, async (page) => {
     await deliver(page);

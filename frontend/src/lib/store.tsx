@@ -1677,7 +1677,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           || (!authoritativeIdentityRef.current && tokenRef.current !== session.access_token);
         if (needsInitialization) {
           // Another account signed in directly: the previous one's Home preferences go now.
-          if (authUserIdRef.current !== session.user.id) retireHomePreferencesOwner(null);
+          // Compare with their owner, not authUserIdRef: a recoverable reset clears that,
+          // and the same user signing back in must keep an unsaved edit.
+          const preferencesOwner = homePreferencesOwnerRef.current;
+          if (preferencesOwner && preferencesOwner.userId !== session.user.id) retireHomePreferencesOwner(null);
           // A new provider may receive INITIAL_SESSION before getSession resolves.
           // It has no local data to discard; mounting is not an access revocation.
           if (authUserIdRef.current || event !== "INITIAL_SESSION") resetLiveStudioState();

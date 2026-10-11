@@ -18,6 +18,7 @@ decisions, dispatched subagents and review dispositions. It is updated at every 
 | [#276](https://github.com/ronchak/Koaryu/pull/276) Schedule and Leads deep links | `claude/home-rebuild-links` | `claude/home-rebuild-p1` | Ready; Astra: SAFE TO MERGE |
 | [#277](https://github.com/ronchak/Koaryu/pull/277) Phase 2 client data layer | `claude/home-rebuild-p2` | `claude/home-rebuild-links` | Ready; Astra round 2: SAFE TO MERGE |
 | [#278](https://github.com/ronchak/Koaryu/pull/278) Phase 3 page and kit | `claude/home-rebuild-p3` | `claude/home-rebuild-p2` | Ready; Astra: SAFE TO MERGE |
+| [#279](https://github.com/ronchak/Koaryu/pull/279) Phase 4 Edit Home | `claude/home-rebuild-p4` | `claude/home-rebuild-p3` | Ready; Astra round 2's P1 fixed and verified by the orchestrator (140 tests) |
 
 ## Phase status
 
@@ -27,7 +28,7 @@ decisions, dispatched subagents and review dispositions. It is updated at every 
 | 1. Backend contract | Gate passed; PR #275 ready | Backend suite 11,112 passed, 1 pre-existing failure (below); `check:api-types` green; ruff format clean |
 | 2. Client data layer | Gate passed; PR #277 ready | Frontend suite 2,373/2,374 (one schedule-summary load flake, passes alone); 102 Home tests green; lint, tsc, Prettier clean |
 | 3. Frame and bands on the kit | Gate passed; PR #278 ready | Frontend suite 2,440/2,441 (workflow-canvas load flake, 18/18 alone); build green; lint, tsc, Prettier clean |
-| 4. Edit Home | Fable gate passed; tests green; Astra review pending | Frontend suite 2,482/2,482; build green; `e2e/edit-home.spec.ts` 12/12 twice; backend preferences suite green |
+| 4. Edit Home | Gate passed; PR #279 ready | Frontend suite 2,482/2,482; build green; `e2e/edit-home.spec.ts` 12/12 twice; backend preferences suite green |
 | 5. Delete and document | Planned | Notes below |
 | 6. Shell and navigation | Not in scope (owner default: no) | |
 
@@ -187,9 +188,15 @@ Frontend test dispositions (from 0B; Phase 3 actuals noted; revisited in Phase 5
 - Historical records (the remediation ledger, the previous plan, dated verification notes) keep
   their references; "nothing references the deleted code" applies to code, tests, scripts and current
   docs.
-- Mixed versions: once the summary route and `view=dashboard` are gone, a backend deployed ahead of
-  this frontend breaks the old page until the frontend deploys. Say so in the Phase 5 PR as a release
-  note for the owner's cutover.
+- Release order: production's current frontend calls `view=dashboard` and `/dashboard/summary`, and
+  the new frontend calls `/dashboard/home`, which only the new backend serves. So the backend
+  deletions ship in their own PR (Phase 5b), released only after the new frontend is live. Release
+  the Phase 1 to 5a backend first (it serves both), then the frontend, then 5b.
+- Auditor decisions adopted: keep a tiny sign-out purge of old `koaryu:dashboard-layout:` keys after
+  deleting the layout store; bootstrap `view` defaults to `home` when omitted (safer for unknown
+  callers than making it required); replace negative `/dashboard/summary` assertions with exact
+  request lists; document that `GET /dashboard/home` may materialize today's sessions; defer renaming
+  `dashboard_summary_cache.py` and its classes.
 
 ## Decisions
 
@@ -208,6 +215,7 @@ Proceeding with the defaults unless the owner objects.
 | 7 | Phase 6 shell and navigation | No |
 | 8 | Add small, additive URL readers to Schedule (`date`, `session`) and Leads (`focus`, `lead`) so Home rows open the exact view | Yes; brief 4.2 calls for these views, and no other behaviour on those pages changes |
 | 9 | Preferences persistence path (see "Migration cost" below): (a) the brief's `home_preferences` table, which makes this a V58 release; (b) a studio-keyed namespace in the user's Auth metadata, written only by the backend, no migration | **Owner chose (b), Auth metadata, on 2026-10-11.** No migration; the backend checks membership and reconciles on every read |
+| 11 | Remove the dead pre-Horizon palette in `dashboard-shell.module.css` (Phase 5) | **Owner: yes, 2026-10-11.** The slug band waits for Phase 6 |
 | 10 | No new SQL anywhere else in this rebuild (no roster filter for missing emergency contacts, no promotions RPC) | Yes; every new function or table is release work after V57 |
 
 ### Product decisions (Fable, Phase 0 gate)
@@ -315,6 +323,7 @@ Full text: [`home-rebuild-decisions.md`](home-rebuild-decisions.md). Changes to 
 | 4F | Opus 5.5 / frontend | `home-preferences.ts`, sync hook, sign-out purge, Edit Home trigger and sheet, kit `HorizonSheet` and `usePositionSettle` | Done; suite 2,441/2,441; preference saves no longer mark dashboard facts changed (`api.ts` option, default unchanged) |
 | G4 | Fable / product | Phase 4 Edit Home gate | GATE PASSES; no MUST or SHOULD |
 | 4FT | Sol / tests | Preferences unit, Edit Home mounted, `e2e/edit-home.spec.ts` replacing the grid spec | Done; suite 2,482/2,482; e2e found a multi-row drag bug, fixed by 4F (drag tracked on the window; recapture after reorder) along with a ModalFrame focus race; the orchestrator added the spec's wait for the sheet's opening animation |
+| 5A | Opus 5.5 / auditor | Read-only verified deletion plan and batches for Phase 5 | Done; plan in batches A to G (copy at `/tmp/home-rebuild/reports/5A-audit-plan.md`) |
 | 1B | Sol / tests | Backend suite for `/dashboard/home`; regenerate API types | Done; found one bug (a transient error could mask a 403 between the two follow-up reads), fixed by the orchestrator |
 | 3A | Opus 5.5 / frontend | Schedule `date`/`session` and Leads `focus`/`lead` URL readers (decision 8; independent of Phases 1 and 2, so run in parallel) | Done; build green, preview browser check 24/24 |
 | 3B | Sol / tests | Tests for the deep-link readers | Done; found two Schedule races, fixed by 3A; 112 tests green |
@@ -364,6 +373,26 @@ recovers Home after a refusal.
 
 No P0 to P3 findings that hide a bug. Astra noted that some shell retry-button assertions were dropped
 from the rewritten `dashboard-shell-home-contract` test; recorded as a follow-up to restore in Phase 5.
+
+### Phase 4, round 1 (`492920d`): MERGE AFTER P0/P1 FIXES
+
+| # | Finding | Severity | Disposition |
+| --- | --- | --- | --- |
+| 1 | The save resends the whole previously read metadata object, so a concurrent `full_name` change is reverted and, under GoTrue's merge semantics, null-valued keys are deleted | P0 | Accepted: send only `{"koaryu_home": …}` and rely on GoTrue's top-level merge; regression tests for null keys and an interleaved name change |
+| 2 | A direct signed-in A to signed-in B switch does not purge A's local preferences or dispose its sync | P1 | Accepted: purge and dispose on identity change |
+| 3 | After a save, a legitimate remote value equal to an earlier local value is ignored for the tab's lifetime | P1 | Accepted: staleness by read and edit generations, not a value blacklist |
+| 4 | A 409 (ambiguous membership) from the preferences PUT is not treated as an identity refusal | P1 | Accepted: suspend editing, clear retained access state, re-check identity |
+
+Fixed in `43c5fc2`.
+
+### Phase 4, round 2 (`43c5fc2`): MERGE AFTER P0/P1 FIXES
+
+| # | Finding | Severity | Disposition |
+| --- | --- | --- | --- |
+| 1 | A recoverable session-check reset clears the auth user ref, so the next token refresh for the same user retires (deletes) that user's unsaved layout edit | P1 | Accepted: compare against the preferences owner, not the cleared ref; regression tests. Verified by the orchestrator; no third Astra round (brief's two-round cap) |
+
+Astra confirmed the other fixes: one-key metadata patch with value-free lost-key logging, read stamps,
+409 suspension and recovery, and A to B purge.
 
 ## Follow-ups (deferred polish)
 
