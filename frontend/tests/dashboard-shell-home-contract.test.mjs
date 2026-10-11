@@ -54,10 +54,10 @@ describe("dashboard shell and Home source contracts", () => {
       shellStyles,
       /@media \(max-width: 1023px\)[\s\S]*\.shellRoot\s*\{[\s\S]*display:\s*flex;[\s\S]*flex-direction:\s*column;/,
     );
-    assert.match(shellStyles, /--product-focus:\s*#2f5d8f/);
+    assert.match(shellStyles, /--product-focus:\s*#8a6a34/);
     assert.match(
       shellStyles,
-      /:global\(\[data-theme="dark"\]\) \.shellRoot[\s\S]*--product-focus:\s*#85aedc/,
+      /:global\(\[data-theme="dark"\]\) \.shellRoot[\s\S]*--product-focus:\s*#f0b866/,
     );
     assert.match(
       shellStyles,
