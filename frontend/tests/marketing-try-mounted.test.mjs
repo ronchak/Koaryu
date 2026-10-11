@@ -6,6 +6,7 @@ import { createCommonJsPacker } from "./helpers/store-browser-harness.mjs";
 function demoBundle() {
   const { add, modules } = createCommonJsPacker({
     "lucide-react": `module.exports=new Proxy({},{get:()=>()=>null});`,
+    "@/components/icons/martial-arts-belt": `exports.MartialArtsBelt=()=>null;`,
     "next/link": `module.exports=({children,...props})=>require('react').createElement('a',props,children);`,
     "./try-demo.module.css": `module.exports={};`,
   });
@@ -29,7 +30,10 @@ test("demo keeps new follow-ups in due-date order through stage changes and rese
     await page.route("**/*", (route) => route.abort());
     await page.setContent('<div id="root"></div>');
     await page.addScriptTag({ content: demoBundle() });
-    await page.getByRole("button", { name: "Leads 2 overdue", exact: true }).click();
+    const leadsTab = page
+      .getByRole("navigation", { name: "Demo navigation" })
+      .getByRole("button", { name: /Leads/ });
+    await leadsTab.click();
     await page.getByRole("button", { name: "Add lead", exact: true }).click();
     await page
       .getByRole("dialog", { name: "Add lead" })
@@ -46,7 +50,7 @@ test("demo keeps new follow-ups in due-date order through stage changes and rese
     await page.getByRole("button", { name: "Move Jordan Rivera to the previous stage" }).click();
     assert.match(await upcoming.nth(0).innerText(), /Jordan Rivera/);
     await page.getByRole("button", { name: "Reset demo", exact: true }).click();
-    await page.getByRole("button", { name: "Leads 2 overdue", exact: true }).click();
+    await leadsTab.click();
     assert.equal(await upcoming.count(), 1);
     assert.match(await upcoming.nth(0).innerText(), /Tyler Brooks/);
     assert.deepEqual(errors, []);
