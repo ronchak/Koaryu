@@ -6,7 +6,7 @@ import { useStudioDay } from "@/lib/use-studio-day";
 import { initialBootstrapView, bootstrapDatasets } from "@/lib/bootstrap-route";
 import { APP_RESUME_EVENT, APP_DATA_REFRESH_EVENT } from "@/lib/app-resume";
 import { pendingCommands, subscribePendingCommands } from "@/lib/pending-commands";
-import { markDashboardFactsChanged, needsFreshDashboardFacts } from "@/lib/dashboard-freshness";
+import { markDashboardFactsChanged } from "@/lib/dashboard-freshness";
 import { beginResourceMutation, createResourceScope } from "@/lib/store-resource-scope";
 
 import React, { useState, useEffect, useLayoutEffect, useCallback, useRef, useMemo, type ReactNode } from "react";
@@ -53,7 +53,7 @@ import type {
   EligibilityEntry, Promotion,
   Program,
   StaffMember,
-  StaffLegalNameResponse, StaffRoleName, DashboardSummary, DashboardHome,
+  StaffLegalNameResponse, StaffRoleName, DashboardHome,
 } from "@/types";
 import { buildPreviewHomePayload } from "@/lib/dashboard/preview-home-payload";
 import { homeRoleClass } from "@/lib/dashboard/home-model";
@@ -230,13 +230,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     isPreviewMode ? Date.now() : null
   );
   const [studentsMayBePartial, setStudentsMayBePartial] = useState(false);
-  const [dashboardSummary, setDashboardSummary] = useState<DashboardSummary | null>(null);
-  const [dashboardSummaryDate, setDashboardSummaryDate] = useState<string | null>(null);
-  const dashboardSummaryDateRef = useRef<string | null>(null);
-  const [dashboardSummaryLoadError, setDashboardSummaryLoadError] = useState<string | null>(null);
-  const [dashboardSummaryLoaded, setDashboardSummaryLoaded] = useState(isPreviewMode);
-  const dashboardSummaryRequestSeqRef = useRef(0);
-  const dashboardSummaryFlightRef = useRef<{ sequence: number; businessDate: string; fresh: boolean; promise: Promise<void> } | null>(null);
   const studentsRef = useRef<Student[]>(students);
   const studentsRevisionRef = useRef(0);
   const studentMutationEpochRef = useRef(0);
@@ -373,7 +366,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   );
   const [eligibilityPendingLadderId, setEligibilityPendingLadderId] = useState<string | null>(null);
   const [eligibilityLoadError, setEligibilityLoadError] = useState<string | null>(null);
-  const [dashboardPromotionsLoading, setDashboardPromotionsLoading] = useState(false);
   const eligibilityCacheRef = useRef<Record<string, EligibilityEntry[]>>(
     isPreviewMode ? { [MOCK_BELT_LADDER.id]: MOCK_ELIGIBILITY } : {}
   );
@@ -420,49 +412,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       }),
     };
   }, []);
-
-  const refreshDashboardSummary = useCallback(async (options?: { reason?: "visit" | "resume" }): Promise<void> => {
-    if (isPreviewMode) return Promise.resolve();
-    const fresh = !options?.reason || needsFreshDashboardFacts();
-    const requestDate = businessDateRef.current;
-    const existing = dashboardSummaryFlightRef.current;
-    if (existing?.sequence === dashboardSummaryRequestSeqRef.current && existing.businessDate === requestDate && (!fresh || existing.fresh)) return existing.promise;
-    const sequence = ++dashboardSummaryRequestSeqRef.current;
-    const owner = beginLiveAuthRequest();
-    const studioId = authoritativeStudioIdRef.current;
-    const isCurrent = () => sequence === dashboardSummaryRequestSeqRef.current && requestDate === businessDateRef.current && owner.isSameIdentity();
-    setDashboardSummaryLoadError(null);
-    if (dashboardSummaryDateRef.current !== requestDate) {
-      dashboardSummaryDateRef.current = requestDate;
-      setDashboardSummaryDate(requestDate);
-      setDashboardSummary(null);
-      setDashboardSummaryLoaded(false);
-    }
-    markPerformance("dashboard.summary_started");
-    const fail = () => {
-      if (isCurrent()) {
-        setDashboardSummaryLoadError("Saved records are retained. Dashboard totals could not be refreshed. Please retry.");
-        setDashboardSummaryLoaded(true);
-      }
-    };
-    const promise = withCurrentLiveAuthRead(() => {
-      const request = beginLiveAuthRequest();
-      return { ...request, canRetryAfterTokenChange: () => isCurrent() && request.canRetryAfterTokenChange() };
-    }, async (request) => {
-      const summary = await api.get<DashboardSummary>(`/dashboard/summary?include_follow_ups=true${fresh ? "&fresh=true" : ""}`, request.token,
-        { timeoutMs: 35000, timeoutMessage: "Dashboard refresh timed out." });
-      if (!isCurrent() || !request.isCurrent()) return;
-      if (summary.auth.studio_id !== studioId) throw new Error("Dashboard scope changed. Please retry.");
-      setDashboardSummary(summary);
-      setDashboardSummaryLoaded(true);
-      markPerformance("dashboard.summary_finished");
-      measurePerformance("dashboard.summary_duration", "dashboard.summary_started", "dashboard.summary_finished");
-    }, fail).catch((error) => { fail(); throw error; }).finally(() => {
-      if (dashboardSummaryFlightRef.current?.sequence === sequence) dashboardSummaryFlightRef.current = null;
-    });
-    dashboardSummaryFlightRef.current = { sequence, businessDate: requestDate, fresh, promise };
-    return promise;
-  }, [beginLiveAuthRequest, isPreviewMode]);
 
   const reconcileScheduleAttempt = useCallback(async (
     intent: ScheduleRangeRefreshIntent
@@ -747,9 +696,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setProgramsLoadError(state.programsLoadError);
     setProgramsUsageLoaded(false);
     setProgramsUsageLoadError(null);
-    setDashboardSummaryLoadError(null);
-    setDashboardSummary(state.dashboardSummary);
-    setDashboardSummaryLoaded(state.dashboardSummaryLoaded);
     studentsRevisionRef.current += 1;
     setStudents(state.students);
     setStudentsLoaded(state.studentsLoaded);
@@ -774,7 +720,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setEligibility(state.eligibility);
     setEligibilityLadderId(state.eligibilityLadderId);
     setEligibilityPendingLadderId(state.eligibilityPendingLadderId);
-    setDashboardPromotionsLoading(false);
     setEligibilityLoadError(state.eligibilityLoadError);
     promotionHistoryGenerationRef.current += 1;
     setPromotionHistoryCache(state.promotionHistoryCache);
@@ -784,7 +729,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     invalidateAccessIdentity();
     identityEpochRef.current += 1;
     authGenerationRef.current = nextLiveStudioDataResetGeneration(authGenerationRef.current);
-    dashboardSummaryRequestSeqRef.current += 1;
     authUserIdRef.current = null;
     setCurrentUser(null);
     setStudioTimezone("UTC");
@@ -856,7 +800,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     invalidateAccessIdentity();
     identityEpochRef.current += 1;
     authGenerationRef.current = nextLiveStudioDataResetGeneration(authGenerationRef.current);
-    dashboardSummaryRequestSeqRef.current += 1;
 
     authUserIdRef.current = sessionUser.id;
     commitAuthoritativeAuthProfile(authProfile, undefined, false);
@@ -888,7 +831,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     invalidateAccessIdentity();
     identityEpochRef.current += 1;
     authGenerationRef.current = nextLiveStudioDataResetGeneration(authGenerationRef.current);
-    dashboardSummaryRequestSeqRef.current += 1;
     // Subscription access gates studio data, not an already verified identity.
     // The recovery page still needs the dashboard shell and legal-name gate.
     applyLiveStudioDataResetState(buildSubscriptionRequiredStudioResetState());
@@ -901,8 +843,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setStaffLoadError(restored.staffLoadError);
     setProgramsLoaded(restored.programsLoaded);
     setProgramsLoadError(restored.programsLoadError);
-    setDashboardSummary(restored.dashboardSummary);
-    setDashboardSummaryLoaded(restored.dashboardSummaryLoaded);
     setStudentsLoaded(restored.studentsLoaded);
     setStudentsLoadError(restored.studentsLoadError);
     setLeadsLoaded(restored.leadsLoaded);
@@ -1008,15 +948,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     resetProgramScope();
     setProgramsUsageLoaded(false);
     setProgramsUsageLoadError(null);
-    dashboardSummaryRequestSeqRef.current += 1;
     destructivelyResetScheduleCoordinator(true);
     setStudioNameState(data.studio_name);
     commitStudents(data.students);
     setPrograms(data.programs || programsRef.current);
     setProgramsLoaded(true);
     setProgramsLoadError(null);
-    setDashboardSummary(null);
-    setDashboardSummaryLoaded(true);
     setScheduleLoadError(null);
     setScheduleStatus("ready");
     setLeads(data.leads);
@@ -1042,7 +979,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     resetProgramScope();
     setProgramsUsageLoaded(false);
     setProgramsUsageLoadError(null);
-    dashboardSummaryRequestSeqRef.current += 1;
     destructivelyResetScheduleCoordinator(true);
     if (studioNameValue) {
       setStudioNameState(studioNameValue);
@@ -1052,8 +988,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setPrograms([]);
     setProgramsLoaded(true);
     setProgramsLoadError(null);
-    setDashboardSummary(null);
-    setDashboardSummaryLoaded(true);
     setScheduleLoadError(null);
     setScheduleStatus("ready");
     if (isPreviewMode) {
@@ -1280,55 +1214,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
   }, [beginLiveAuthRequest, commitEligibilityRows, fetchEligibilityForLadder, isPreviewMode]);
 
-  const dashboardPromotionsFlightRef = useRef<{
-    epoch: number; date: string; eligibilitySequence: number; promise: Promise<void>;
-  } | null>(null);
-  const dashboardPromotionsDateRef = useRef<string | null>(null);
-  const refreshDashboardPromotions = useCallback(async () => {
-    if (isPreviewMode) return;
-    const epoch = identityEpochRef.current;
-    const date = businessDateRef.current;
-    const existing = dashboardPromotionsFlightRef.current;
-    if (existing?.epoch === epoch && existing.date === date
-      && existing.eligibilitySequence === eligibilityRequestSeqRef.current) return existing.promise;
-    const owner = beginLiveAuthRequest();
-    if (dashboardPromotionsDateRef.current !== date) {
-      dashboardPromotionsDateRef.current = date;
-      eligibilityRequestSeqRef.current += 1;
-      eligibilityCacheRef.current = {};
-      commitEligibilityRows(null, []);
-    }
-    setDashboardPromotionsLoading(true);
-    setEligibilityLoadError(null);
-    const flight = { epoch, date, eligibilitySequence: eligibilityRequestSeqRef.current, promise: Promise.resolve() };
-    const isCurrent = () => owner.isSameIdentity() && date === businessDateRef.current
-      && dashboardPromotionsFlightRef.current === flight
-      && flight.eligibilitySequence === eligibilityRequestSeqRef.current;
-    const promise = withCurrentLiveAuthRead(beginLiveAuthRequest, async (request) => {
-      // This small metadata read also recovers a failed/omitted route bootstrap and
-      // notices a selected ladder removed or changed while Dashboard was hidden.
-      const ladders = await api.get<BeltLadder[]>("/belts/ladders", request.token);
-      if (!request.isCurrent() || !isCurrent()) return;
-      beltsHydratedRef.current = true;
-      const selected = applyLadderSelection(ladders);
-      const eligibilityRead = loadEligibilityForLadder(selected?.id ?? null, { force: true, retainCurrent: true });
-      flight.eligibilitySequence = eligibilityRequestSeqRef.current;
-      await eligibilityRead;
-    }, () => {}).catch((error) => {
-      if (isCurrent()) setEligibilityLoadError(error instanceof Error ? error.message : "Promotion eligibility could not be refreshed.");
-      throw error;
-    }).finally(() => {
-      if (dashboardPromotionsFlightRef.current === flight) {
-        dashboardPromotionsFlightRef.current = null;
-        if (owner.isSameIdentity()) setDashboardPromotionsLoading(false);
-      }
-    });
-    flight.promise = promise;
-    dashboardPromotionsFlightRef.current = flight;
-    return promise;
-  }, [applyLadderSelection, beginLiveAuthRequest, commitEligibilityRows, isPreviewMode, loadEligibilityForLadder]);
-
-  // Belt Tracker owns its initial eligibility read. Dashboard requests it only for a selected panel.
+  // Belt Tracker owns its initial eligibility read.
   useEffect(() => {
     if (pathname !== "/belt-tracker" || !identityReady || !currentLadderId
       || eligibilityLadderId === currentLadderId || eligibilityPendingLadderId
@@ -1398,7 +1284,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const sessionToken = session.access_token;
       if (tokenRef.current !== sessionToken) {
         authGenerationRef.current += 1;
-        dashboardSummaryRequestSeqRef.current += 1;
         destructivelyResetScheduleCoordinator();
       }
       const sessionGeneration = authGenerationRef.current;
@@ -1421,7 +1306,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setIdentityLoadError(null);
       setHydrated(true);
       markPerformance("auth.session_resolved");
-      const summarySequenceAtStart = dashboardSummaryRequestSeqRef.current;
 
       let workspaceRequest: ReturnType<typeof beginLiveAuthRequest> | null = null;
       const isInitializationCurrent = () => isCurrentSession()
@@ -1501,13 +1385,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           const datasetErrors = criticalData.dataset_errors;
           setStudioNameState(datasetErrors?.studio ? "" : resolveBootstrapStudioName(criticalData));
           setStudioLoadError(datasetErrors?.studio ?? null);
-          const bootstrapSummary = criticalData.summary ?? null;
-          if (dashboardSummaryRequestSeqRef.current === summarySequenceAtStart && bootstrapSummary) {
-            dashboardSummaryDateRef.current = businessDateRef.current;
-            setDashboardSummaryDate(businessDateRef.current);
-            setDashboardSummary(bootstrapSummary);
-            setDashboardSummaryLoaded(true);
-          }
           if (ownsProgramBootstrap()) {
             if (!datasetErrors?.programs) setPrograms(criticalData.programs || []);
             setProgramsUsageLoaded(false);
@@ -1626,8 +1503,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           }
           setLeadsLoaded(false);
           setLeadsLoadError(loadError);
-          setDashboardSummary(null);
-          setDashboardSummaryLoaded(true);
           setScheduleLoadError(loadError);
           setScheduleStatus("error");
           setHydrated(true);
@@ -2150,12 +2025,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     if (isPreviewMode) return () => {};
     markDashboardFactsChanged();
     const request = beginLiveAuthRequest();
-    dashboardSummaryRequestSeqRef.current += 1;
     return () => {
-      if (request.isSameIdentity()) {
-        markDashboardFactsChanged();
-        dashboardSummaryRequestSeqRef.current += 1;
-      }
+      if (request.isSameIdentity()) markDashboardFactsChanged();
     };
   }, [beginLiveAuthRequest, isPreviewMode]);
   const reconciledCommands = {
@@ -2256,10 +2127,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     currentRole,
     currentStudioId,
     currentUserId: activeUserId || "",
-    dashboardSummary: dashboardSummaryDate === businessDate ? dashboardSummary : null,
-    dashboardSummaryLoaded: isPreviewMode || dashboardSummaryDate === businessDate ? dashboardSummaryLoaded : false,
-    dashboardSummaryLoadError,
-    refreshDashboardSummary,
     loadDashboardHome,
     saveDashboardHomePreferences,
     deleteLead: reconciledCommands.deleteLead,
@@ -2270,7 +2137,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     eligibility,
     eligibilityLadderId,
     eligibilityLoadError,
-    dashboardPromotionsLoading,
     eligibilityPendingLadderId,
     followUpLead: reconciledCommands.followUpLead,
     importStudents: reconciledCommands.importStudents,
@@ -2286,7 +2152,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     listStudentsPage,
     loadPromotionHistory,
     loadEligibilityForLadder,
-    refreshDashboardPromotions,
     markSubscriptionRequired,
     programs,
     programsLoaded,

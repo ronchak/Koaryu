@@ -81,39 +81,6 @@ async function mount({ stage = "inquiry" } = {}) {
       role: "admin",
       staff_profiles_available: true,
     };
-    f.summary = {
-      auth: f.auth,
-      generated_at: "2020-01-01T00:00:00Z",
-      students: {
-        total_students: 0,
-        active_students: 0,
-        trialing_students: 0,
-        on_hold_students: 0,
-      },
-      leads: { active_leads: 2, enrolled_leads: 0, due_today_leads: 0 },
-      schedule: { today_sessions: 0 },
-      belts: { belt_count: 0, tip_count: 0 },
-      inactivity: { watch_14: 0, watch_30: 0, watch_90: 0 },
-      new_students: { new_14: 0, new_30: 0, new_90: 0, new_year_to_date: 0 },
-      operational: {
-        attendance_with_capacity: 0,
-        total_capacity: 0,
-        sessions_tracked: 0,
-        sessions_with_capacity: 0,
-        average_attendance: 0,
-      },
-      churn: { inactive_students: 0, canceled_students: 0, churn_marked_students: 0 },
-      test_readiness: { available: false },
-      billing: { can_view_billing: true },
-      setup: {
-        has_programs: false,
-        has_students: false,
-        has_belt_system: false,
-        has_weekly_classes: false,
-      },
-      recent_students: [],
-      actions: [],
-    };
     f.supabase = {
       auth: {
         getSession: async () => ({ data: { session: f.session } }),
@@ -142,9 +109,7 @@ async function mount({ stage = "inquiry" } = {}) {
             programs: [],
             belt_ladders: [],
             primary_belt_ladder: null,
-            summary: f.summary,
           };
-        if (path.startsWith("/dashboard/summary")) return f.summary;
         if (path.startsWith("/programs") || path.startsWith("/staff")) return [];
         if (path === "/leads") return copy();
         if (/^\/leads\/[^/]+\/activities$/.test(path)) return [];

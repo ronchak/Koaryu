@@ -4,7 +4,6 @@ import type {
   BeltRank,
   ClassSession,
   ClassTemplate,
-  DashboardSummary,
   EligibilityEntry,
   Lead,
   Program,
@@ -28,8 +27,6 @@ export interface LiveStudioDataResetState {
   programs: Program[];
   programsLoaded: boolean;
   programsLoadError: string | null;
-  dashboardSummary: DashboardSummary | null;
-  dashboardSummaryLoaded: boolean;
   students: Student[];
   studentsLoaded: boolean;
   studentsLoadError: string | null;
@@ -109,8 +106,6 @@ export function buildSignedOutStudioResetState(): LiveStudioDataResetState {
     programs: [],
     programsLoaded: false,
     programsLoadError: null,
-    dashboardSummary: null,
-    dashboardSummaryLoaded: true,
     students: [],
     // Auth recovery and identity changes reuse this reset. A cleared cache is
     // not an authoritative empty roster, even when the next bootstrap omits it.
@@ -161,8 +156,6 @@ export function buildSubscriptionAccessRestoreState() {
     staffLoadError: null,
     programsLoaded: false,
     programsLoadError: null,
-    dashboardSummary: null,
-    dashboardSummaryLoaded: false,
     studentsLoaded: false,
     studentsLoadError: null,
     leadsLoaded: false,

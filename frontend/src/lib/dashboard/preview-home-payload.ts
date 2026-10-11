@@ -10,7 +10,6 @@ import {
 } from "../mock-data.ts";
 import { DEMO_STUDIO_NAME, MOCK_BELT_LADDERS, MOCK_PROGRAMS } from "../preview-studio-data.ts";
 import { buildPreviewEligibilityForLadder } from "../preview-belt-eligibility.ts";
-import { selectDashboardBillingSummary } from "../dashboard-billing-summary.ts";
 import { buildEligibilityGroups, isEligibilityEntryReady } from "../belt-tracker-page-model.ts";
 import { buildStudentInactivityRows, isStudentOnHoldNow } from "../student-insights.ts";
 import { shiftDateKey } from "../date.ts";
@@ -46,10 +45,12 @@ export function buildPreviewHomePayload(input: {
       session.status !== "canceled" && session.date >= windowStart && session.date <= today,
   );
   const capacitySessions = windowSessions.filter((session) => (session.capacity ?? 0) > 0);
-  const billing = selectDashboardBillingSummary({ isPreviewMode: true, summary: null });
+  // The demo studio has plans and one payment that needs attention.
+  const paymentAttentionCount = 1;
+  const hasPlans = true;
   const items: ApiContracts.ApiDashboardHomeNeedsAttention["items"] = [];
-  if (role !== "instructor" && billing.paymentAttentionCount) {
-    items.push({ kind: "payments", count: billing.paymentAttentionCount });
+  if (role !== "instructor") {
+    items.push({ kind: "payments", count: paymentAttentionCount });
   }
 
   const setupSteps: [ApiContracts.ApiDashboardHomeSetupItem["next_step"], boolean][] = [
@@ -60,7 +61,7 @@ export function buildPreviewHomePayload(input: {
       "classes",
       MOCK_CLASS_TEMPLATES.some((template) => template.is_active) || MOCK_SESSIONS.length > 0,
     ],
-    ["billing", billing.hasPlans === true],
+    ["billing", hasPlans],
   ];
   const incompleteSteps = setupSteps.filter(([, complete]) => !complete);
   if (role === "admin" && incompleteSteps.length > 0) {

@@ -126,7 +126,6 @@ async function fixturePage({ ui = false, setup = false } = {}) {
               programs: [],
               belt_ladders: [],
               primary_belt_ladder: null,
-              summary: { auth: f.auth, students: { total: 0 } },
             };
           if (path.startsWith("/staff")) {
             const snapshot = structuredClone(
@@ -143,8 +142,6 @@ async function fixturePage({ ui = false, setup = false } = {}) {
           if (path.startsWith("/belts/ladders") || path.startsWith("/programs")) return [];
           if (path.startsWith("/schedule/window"))
             return { sessions: [], templates: [], attendance: [] };
-          if (path.startsWith("/dashboard/summary"))
-            return { auth: f.auth, students: { total: 0 } };
           throw new Error(`Unexpected GET ${path}`);
         },
         post: (path, body, token) => f.write("POST", path, body, token),

@@ -90,7 +90,10 @@ describe("dashboard shell and Home source contracts", () => {
       /authProfile\.membership_status === "active" \? authProfile\.studio_id \?\? null : null/,
     );
     assert.match(storeSource, /setCurrentStudioId\(null\)/);
-    assert.match(sessionSource, /purgeDashboardLayoutNamespace\(\)/);
+    assert.match(sessionSource, /purgeOldDashboardLayoutKeys\(\)/);
+    assert.match(sessionSource, /const OLD_DASHBOARD_LAYOUT_PREFIX = "koaryu:dashboard-layout:"/);
+    assert.match(sessionSource, /key\?\.startsWith\(OLD_DASHBOARD_LAYOUT_PREFIX\)/);
+    assert.match(sessionSource, /storage\.removeItem\(key\)/);
     assert.match(sessionSource, /purgeHomePreferencesNamespace\(\)/);
     assert.doesNotMatch(sessionSource, /koaryu-theme/);
   });

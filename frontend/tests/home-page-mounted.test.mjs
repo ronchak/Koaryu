@@ -359,7 +359,7 @@ test("Home revisit paints retained facts in the first commit and makes one Home 
     await page.close();
   }
 });
-test("a command on Home revalidates /dashboard/home without a /dashboard/summary read", async () => {
+test("a command on Home makes exactly one payload revalidation request", async () => {
   const { page, errors } = await mount();
   try {
     await deliver(page, homePayload());
@@ -389,11 +389,9 @@ test("a command on Home revalidates /dashboard/home without a /dashboard/summary
       ),
       ["/dashboard/home"],
     );
-    assert.equal(
-      await page.evaluate(
-        () => window.fixture.requests.filter((r) => r.path.startsWith("/dashboard/summary")).length,
-      ),
-      0,
+    assert.deepEqual(
+      await page.evaluate(() => window.fixture.requests.map((r) => r.path.split("?")[0])),
+      ["/dashboard/workspace", "/dashboard/bootstrap", "/dashboard/home", "/dashboard/home"],
     );
     await deliver(page, homePayload(), 1);
     await page.evaluate(() => window.fixture.command);

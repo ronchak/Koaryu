@@ -41,7 +41,7 @@ async function retry(page) {
 
 for (const mode of ["production", "development"]) {
   mounted(
-    `cold ${mode}: identity gates Home, one GET, pending state, no summary read`,
+    `cold ${mode}: identity gates Home, one GET and pending state`,
     async (page) => {
       assert.equal(await homeCount(page), 0);
       assert.equal((await state(page)).status, "loading");
@@ -64,11 +64,9 @@ for (const mode of ["production", "development"]) {
       await resolveHome(page);
       assert.equal((await state(page)).isRevalidating, false);
       assert.equal(await homeCount(page), 1);
-      assert.equal(
-        await page.evaluate(() =>
-          window.fixture.requests.some((r) => r.path.startsWith("/dashboard/summary")),
-        ),
-        false,
+      assert.deepEqual(
+        await page.evaluate(() => window.fixture.requests.map((r) => r.path.split("?")[0])),
+        ["/dashboard/workspace", "/dashboard/bootstrap", "/dashboard/home"],
       );
     },
     { mode, holdSession: true },

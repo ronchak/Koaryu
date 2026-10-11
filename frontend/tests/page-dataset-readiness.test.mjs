@@ -1,12 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import {
-  dashboardSummaryDataset,
-  eligibilityDataset,
-  loadedDataset,
-  resolvePageDatasetReadiness,
-} from "../src/lib/page-dataset-readiness.ts";
+import { loadedDataset, resolvePageDatasetReadiness } from "../src/lib/page-dataset-readiness.ts";
 
 describe("page dataset readiness", () => {
   it("allows unrelated datasets to remain unsettled when they are not declared", () => {
@@ -35,55 +30,6 @@ describe("page dataset readiness", () => {
         { error: "request timed out", label: "Schedule", status: "error" },
       ]),
       { error: "Schedule: request timed out", status: "error" },
-    );
-  });
-
-  it("requires a live dashboard summary but not a preview summary", () => {
-    assert.deepEqual(
-      dashboardSummaryDataset({ hasSummary: false, isPreviewMode: false, loaded: false }),
-      { error: null, label: "Dashboard summary", status: "loading" },
-    );
-    assert.equal(
-      dashboardSummaryDataset({ hasSummary: false, isPreviewMode: false, loaded: true }).status,
-      "error",
-    );
-    assert.equal(
-      dashboardSummaryDataset({ hasSummary: false, isPreviewMode: true, loaded: true }).status,
-      "ready",
-    );
-  });
-
-  it("requires eligibility for the selected ladder without blocking studios that have none", () => {
-    assert.equal(
-      eligibilityDataset({
-        currentLadderId: null,
-        error: null,
-        loadedLadderId: null,
-        pendingLadderId: null,
-      }).status,
-      "ready",
-    );
-    assert.equal(
-      eligibilityDataset({
-        currentLadderId: "ladder-1",
-        error: null,
-        loadedLadderId: null,
-        pendingLadderId: "ladder-1",
-      }).status,
-      "loading",
-    );
-    assert.deepEqual(
-      eligibilityDataset({
-        currentLadderId: "ladder-1",
-        error: "Eligibility timed out",
-        loadedLadderId: null,
-        pendingLadderId: null,
-      }),
-      {
-        error: "Eligibility timed out",
-        label: "Belt eligibility",
-        status: "error",
-      },
     );
   });
 });

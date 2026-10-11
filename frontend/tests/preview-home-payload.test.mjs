@@ -16,7 +16,6 @@ const {
 const { MOCK_BELT_LADDERS, MOCK_PROGRAMS, DEMO_STUDIO_NAME } =
   await import("../src/lib/preview-studio-data.ts");
 const { buildStudentInactivityRows } = await import("../src/lib/student-insights.ts");
-const { selectDashboardBillingSummary } = await import("../src/lib/dashboard-billing-summary.ts");
 const { shiftDateKey } = await import("../src/lib/date.ts");
 
 const today = MOCK_SESSIONS[0].date;
@@ -176,10 +175,7 @@ describe("preview Home payload", () => {
       payload.stats.active_students.on_hold,
       MOCK_STUDENTS.filter((student) => student.status === "paused").length,
     );
-    assert.equal(
-      payload.needs_attention.items.find((item) => item.kind === "payments").count,
-      selectDashboardBillingSummary({ isPreviewMode: true, summary: null }).paymentAttentionCount,
-    );
+    assert.equal(payload.needs_attention.items.find((item) => item.kind === "payments").count, 1);
     assert.equal(
       payload.needs_attention.items.find((item) => item.kind === "away").count,
       buildStudentInactivityRows(MOCK_STUDENTS, MOCK_SESSIONS, MOCK_ATTENDANCE, today).filter(

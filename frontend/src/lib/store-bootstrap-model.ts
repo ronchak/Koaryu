@@ -2,7 +2,6 @@ import type {
   AuthResponse,
   BeltLadder,
   DashboardBootstrapResponse,
-  DashboardSummary,
   Lead,
   Program,
   Student,
@@ -98,13 +97,6 @@ export function buildDeferredScheduleDateRange(
     return date.toISOString().slice(0, 10);
   };
   return { startDate: shift(-30), endDate: shift(60) };
-}
-
-export function isDashboardSummaryForStudio(
-  summary: DashboardSummary,
-  studioId: string | null,
-): boolean {
-  return summary.auth.studio_id === studioId;
 }
 
 export function isLiveAuthRequestCurrent({

@@ -26,7 +26,6 @@ import type {
   CsvImportOptions,
   CsvImportResult,
   DashboardHome,
-  DashboardSummary,
   DemoteStudent,
   EligibilityEntry,
   Lead,
@@ -74,10 +73,6 @@ export interface StoreContextValue {
   markSubscriptionRequired: () => void;
   clearSubscriptionRequired: () => void;
 
-  dashboardSummary: DashboardSummary | null;
-  dashboardSummaryLoaded: boolean;
-  dashboardSummaryLoadError: string | null;
-  refreshDashboardSummary: (options?: { reason?: "visit" | "resume" }) => Promise<void>;
   /** Reads Home's payload for the verified identity; rejects if that identity or studio changes. */
   loadDashboardHome: (options: { fresh: boolean }) => Promise<DashboardHome>;
   /**
@@ -160,8 +155,6 @@ export interface StoreContextValue {
     ladderId?: string | null,
     options?: { force?: boolean; retainCurrent?: boolean },
   ) => Promise<EligibilityEntry[]>;
-  refreshDashboardPromotions: () => Promise<void>;
-  dashboardPromotionsLoading: boolean;
   setBeltRanks: (
     ranks: BeltRank[],
     options: { ladderId: string; subRankTerm?: string },
@@ -245,12 +238,7 @@ export type ConfigStoreContextValue = Pick<
 >;
 export type DashboardStoreContextValue = Pick<
   StoreContextValue,
-  | "dashboardSummary"
-  | "dashboardSummaryLoaded"
-  | "dashboardSummaryLoadError"
-  | "refreshDashboardSummary"
-  | "loadDashboardHome"
-  | "saveDashboardHomePreferences"
+  "loadDashboardHome" | "saveDashboardHomePreferences"
 >;
 export type StudentsStoreContextValue = Pick<
   StoreContextValue,
@@ -309,8 +297,6 @@ export type BeltsStoreContextValue = Pick<
   | "currentLadderId"
   | "setCurrentLadder"
   | "loadEligibilityForLadder"
-  | "refreshDashboardPromotions"
-  | "dashboardPromotionsLoading"
   | "setBeltRanks"
   | "ladderName"
   | "subRankTerm"

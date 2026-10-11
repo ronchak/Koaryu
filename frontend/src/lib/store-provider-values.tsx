@@ -67,10 +67,6 @@ export function useStoreContextValues(input: StoreContextValueInputs): StoreCont
     currentRole,
     currentStudioId,
     currentUserId,
-    dashboardSummary,
-    dashboardSummaryLoaded,
-    dashboardSummaryLoadError,
-    refreshDashboardSummary,
     loadDashboardHome,
     saveDashboardHomePreferences,
     deleteLead,
@@ -82,8 +78,6 @@ export function useStoreContextValues(input: StoreContextValueInputs): StoreCont
     eligibilityLadderId,
     eligibilityLoadError,
     eligibilityPendingLadderId,
-    refreshDashboardPromotions,
-    dashboardPromotionsLoading,
     followUpLead,
     importStudents,
     inviteStaff,
@@ -184,21 +178,10 @@ export function useStoreContextValues(input: StoreContextValueInputs): StoreCont
 
   const dashboardValue = useMemo<DashboardStoreContextValue>(
     () => ({
-      dashboardSummary,
-      dashboardSummaryLoaded,
-      dashboardSummaryLoadError,
-      refreshDashboardSummary,
       loadDashboardHome,
       saveDashboardHomePreferences,
     }),
-    [
-      dashboardSummary,
-      dashboardSummaryLoaded,
-      dashboardSummaryLoadError,
-      refreshDashboardSummary,
-      loadDashboardHome,
-      saveDashboardHomePreferences,
-    ],
+    [loadDashboardHome, saveDashboardHomePreferences],
   );
 
   const studentsValue = useMemo<StudentsStoreContextValue>(
@@ -322,8 +305,6 @@ export function useStoreContextValues(input: StoreContextValueInputs): StoreCont
       promotionHistoryByStudent,
       loadPromotionHistory,
       loadEligibilityForLadder,
-      refreshDashboardPromotions,
-      dashboardPromotionsLoading,
       demoteStudent,
       promoteStudent,
     }),
@@ -342,8 +323,6 @@ export function useStoreContextValues(input: StoreContextValueInputs): StoreCont
       ladderName,
       loadPromotionHistory,
       loadEligibilityForLadder,
-      refreshDashboardPromotions,
-      dashboardPromotionsLoading,
       promotionHistoryByStudent,
       setCurrentLadder,
       promoteStudent,

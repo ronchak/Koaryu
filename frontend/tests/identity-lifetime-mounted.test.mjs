@@ -121,14 +121,12 @@ async function fixture({ view = "belt", layout = false, preview = false } = {}) 
               programs: f.programs,
               belt_ladders: f.ladders,
               primary_belt_ladder: f.ladders[0],
-              summary: null,
             };
           if (path.startsWith("/belts/eligibility?"))
             return new Promise((resolve, reject) => f.reads.push({ path, token, resolve, reject }));
           if (path === "/belts/ladders") return f.ladders;
           if (path.startsWith("/schedule/window"))
             return { sessions: [], templates: [], attendance: [] };
-          if (path.startsWith("/dashboard/summary")) return new Promise(() => {});
           if (path.startsWith("/programs")) return f.programs;
           if (path.startsWith("/students")) return [];
           if (path === "/leads") return [];

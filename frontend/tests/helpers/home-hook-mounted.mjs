@@ -163,10 +163,8 @@ export async function mountHome(browser, options = {}) {
             programs: [],
             belt_ladders: [],
             primary_belt_ladder: null,
-            summary: null,
           };
         if (path === "/auth/me") return f.profile();
-        if (path.startsWith("/dashboard/summary")) return null;
         if (path.startsWith("/schedule/window"))
           return { sessions: [], templates: [], attendance: [] };
         if (

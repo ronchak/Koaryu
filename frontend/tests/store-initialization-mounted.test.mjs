@@ -841,7 +841,7 @@ for (const role of ["admin", "front_desk"]) {
 }
 
 for (const outcome of ["success", "failure"]) {
-  test(`mounted route-owned staff, program and summary reads recover after token rotation (${outcome})`, async () => {
+  test(`mounted route-owned staff and program reads recover after token rotation (${outcome})`, async () => {
     const browser = await chromium.launch({ headless: true });
     try {
       const page = await browser.newPage();
@@ -896,64 +896,17 @@ for (const outcome of ["success", "failure"]) {
               };
             if (path.startsWith("/schedule/window"))
               return { sessions: [], templates: [], attendance: [] };
-            if (
-              path.startsWith("/staff") ||
-              path.startsWith("/programs") ||
-              path === "/dashboard/summary?include_follow_ups=true&fresh=true"
-            ) {
+            if (path.startsWith("/staff") || path.startsWith("/programs")) {
               if (token === "route-old-token") {
                 await new Promise((resolve) => fixture.waiters.push(resolve));
                 if (outcome === "failure") throw new Error("Expired token");
-                return path === "/dashboard/summary?include_follow_ups=true&fresh=true"
-                  ? fixture.summary("2026-09-12T11:00:00Z")
-                  : [{ id: "obsolete-row", name: "Obsolete" }];
+                return [{ id: "obsolete-row", name: "Obsolete" }];
               }
-              return path === "/dashboard/summary?include_follow_ups=true&fresh=true"
-                ? fixture.summary("2026-09-12T12:00:00Z")
-                : [];
+              return [];
             }
             throw new Error(`Unexpected request ${path}`);
           },
         };
-        fixture.summary = (generatedAt) => ({
-          auth: {
-            membership_status: "active",
-            studio_id: "route-studio",
-            role: "admin",
-            staff_profiles_available: true,
-            user,
-          },
-          generated_at: generatedAt,
-          students: {
-            total_students: 0,
-            active_students: 0,
-            trialing_students: 0,
-            on_hold_students: 0,
-          },
-          leads: { active_leads: 0, enrolled_leads: 0, due_today_leads: 0 },
-          schedule: { today_sessions: 0 },
-          belts: { belt_count: 0, tip_count: 0 },
-          inactivity: { watch_14: 0, watch_30: 0, watch_90: 0 },
-          new_students: { new_14: 0, new_30: 0, new_90: 0, new_year_to_date: 0 },
-          operational: {
-            attendance_with_capacity: 0,
-            total_capacity: 0,
-            sessions_tracked: 0,
-            sessions_with_capacity: 0,
-            average_attendance: 0,
-          },
-          churn: { inactive_students: 0, canceled_students: 0, churn_marked_students: 0 },
-          test_readiness: { available: false },
-          billing: { can_view_billing: true },
-          setup: {
-            has_programs: false,
-            has_students: false,
-            has_belt_system: false,
-            has_weekly_classes: false,
-          },
-          recent_students: [],
-          actions: [],
-        });
       }, outcome);
       await page.evaluate(() => {
         fixture.pathname = "/leads";
@@ -962,10 +915,7 @@ for (const outcome of ["success", "failure"]) {
         content: bundle("production", { leadsPage: true, programsSection: true }),
       });
       await page.waitForFunction(() => fixture.store?.identityReady);
-      await page.evaluate(() => {
-        void fixture.store.refreshDashboardSummary().catch(() => {});
-      });
-      await page.waitForFunction(() => fixture.waiters.length === 3);
+      await page.waitForFunction(() => fixture.waiters.length === 2);
       const generation = await page.evaluate(() => fixture.store.identityGeneration);
       await page.evaluate(() => {
         fixture.emit("TOKEN_REFRESHED", { ...fixture.session, access_token: "route-new-token" });
@@ -975,7 +925,6 @@ for (const outcome of ["success", "failure"]) {
         () =>
           fixture.store.staffLoaded &&
           fixture.store.programsUsageLoaded &&
-          fixture.store.dashboardSummaryLoaded &&
           fixture.readiness.at(-1)?.complete,
       );
       assert.equal(
@@ -1012,25 +961,6 @@ for (const outcome of ["success", "failure"]) {
       assert.deepEqual(
         await page.evaluate(() =>
           fixture.requests.filter((r) => r.path.startsWith("/programs")).map((r) => r.token),
-        ),
-        ["route-old-token", "route-new-token"],
-      );
-      assert.equal(
-        await page.evaluate(() => fixture.store.dashboardSummary?.generated_at),
-        "2026-09-12T12:00:00Z",
-      );
-      assert.equal(
-        await page.evaluate(
-          () => fixture.marks.filter((name) => name === "dashboard.summary_started").length,
-        ),
-        1,
-        "summary timing includes every auth replay",
-      );
-      assert.deepEqual(
-        await page.evaluate(() =>
-          fixture.requests
-            .filter((r) => r.path === "/dashboard/summary?include_follow_ups=true&fresh=true")
-            .map((r) => r.token),
         ),
         ["route-old-token", "route-new-token"],
       );

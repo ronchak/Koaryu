@@ -89,7 +89,6 @@ async function mountedRankFixture(browser) {
           programs: [],
           belt_ladders: [],
           primary_belt_ladder: null,
-          summary: { auth: f.auth, students: { total: 0 } },
         });
       if (path === "/students")
         return Response.json({
@@ -104,8 +103,6 @@ async function mountedRankFixture(browser) {
         return Response.json([]);
       }
       if (path === "/programs") return Response.json([]);
-      if (path === "/dashboard/summary")
-        return Response.json({ auth: f.auth, students: { total: 0 } });
       if (path === "/schedule/window")
         return Response.json({ sessions: [], templates: [], attendance: [] });
       throw new Error(`Unexpected ${method} ${path}`);
@@ -211,10 +208,7 @@ test("real rank commands keep known conflicts separate from unknown-result recov
                     programs: [],
                     belt_ladders: [],
                     primary_belt_ladder: null,
-                    summary: { auth, students: { total: 0 } },
                   });
-                if (path === "/dashboard/summary")
-                  return Response.json({ auth, students: { total: 0 } });
                 if (path === "/students")
                   return Response.json({
                     items: [],
