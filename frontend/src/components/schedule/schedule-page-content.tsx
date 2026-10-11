@@ -53,6 +53,7 @@ export function SchedulePageContent({
   pendingAttendanceIds,
   programFilter,
   programs,
+  routeTargetNotice,
   scheduleLoadError,
   hasLoadedRange,
   isRefreshingRange,
@@ -72,6 +73,7 @@ export function SchedulePageContent({
   onDismissActionMessage,
   onDismissAttendanceError,
   onDismissCreateClassError,
+  onDismissRouteTargetNotice,
   onDismissScheduleLoadError,
   onDismissStudentRosterLoadError,
   onJumpToToday,
@@ -99,6 +101,8 @@ export function SchedulePageContent({
         hasLoadedRange={hasLoadedRange}
         isRefreshingRange={isRefreshingRange}
         actionMessage={actionMessage}
+        routeTargetNotice={routeTargetNotice}
+        onDismissRouteTargetNotice={onDismissRouteTargetNotice}
         onNavigate={onNavigate}
         onJumpToToday={onJumpToToday}
         onViewChange={onViewChange}

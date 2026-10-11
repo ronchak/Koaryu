@@ -1,7 +1,9 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
+import { useSearchParams } from "next/navigation";
 import { markDashboardReadiness } from "@/lib/performance";
+import { parseScheduleTarget } from "@/lib/route-targets";
 import { SchedulePageContent } from "@/components/schedule/schedule-page-content";
 import { useSchedulePageController } from "@/lib/schedule-page-controller";
 import {
@@ -17,11 +19,19 @@ export default function SchedulePage() {
   const studentsStore = useStudentStore();
   const programsStore = useProgramStore();
   const scheduleStore = useScheduleStore();
+  const config = useConfigStore();
+  // Read during render so a link from another page opens on its day, not today's month.
+  const searchParams = useSearchParams();
+  const routeTarget = useMemo(
+    () => parseScheduleTarget(searchParams, { allowPreviewIds: config.isPreviewMode }),
+    [config.isPreviewMode, searchParams],
+  );
   const { contentProps } = useSchedulePageController({
-    config: useConfigStore(),
+    config,
     programsStore,
     scheduleStore,
     studentsStore,
+    routeTarget,
   });
 
   const usefulReady =

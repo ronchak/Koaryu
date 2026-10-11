@@ -2,7 +2,7 @@
 
 import { useResumeRefresh } from "@/lib/use-resume-refresh";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useRef, useState, useSyncExternalStore } from "react";
 import { markDashboardReadiness } from "@/lib/performance";
 import { LeadLedgerLoading } from "@/components/leads/lead-ledger-loading";
 import { Header } from "@/components/header";
@@ -23,9 +23,38 @@ import {
 import { Button } from "@/components/ui/button";
 import { DismissibleNotice } from "@/components/ui/dismissible-notice";
 import { useLeadsPageController } from "@/lib/leads-page-controller";
+import {
+  buildConsumedRouteHref,
+  LEADS_TARGET_PARAMS,
+  parseLeadsTarget,
+  type LeadsRouteTarget,
+} from "@/lib/route-targets";
 import { useConfigStore, useLeadStore, useProgramStore, useStudioStore } from "@/lib/store";
 import { UserPlus } from "lucide-react";
 import styles from "@/components/leads/leads-ledger.module.css";
+
+const LEADS_PATH = "/leads";
+
+function subscribeToHistory(onChange: () => void) {
+  window.addEventListener("popstate", onChange);
+  return () => window.removeEventListener("popstate", onChange);
+}
+
+// While a navigation is still rendering, the address can be the previous page's;
+// its query never belongs to Leads. React rereads it once the navigation commits.
+function readLeadsSearch() {
+  return window.location.pathname === LEADS_PATH ? window.location.search : null;
+}
+
+function readNoSearch() {
+  return null;
+}
+
+type LeadsRouteLink = { search: string | null; target: LeadsRouteTarget | null };
+
+function readLeadsRouteLink(search: string | null, allowPreviewIds: boolean): LeadsRouteLink {
+  return { search, target: search === null ? null : parseLeadsTarget(search, { allowPreviewIds }) };
+}
 
 export default function LeadsPage() {
   const { currentRole, isPreviewMode, token, businessDate, studioTimezone } = useConfigStore();
@@ -62,7 +91,30 @@ export default function LeadsPage() {
     generation: 0,
   }));
   const [programRead, setProgramRead] = useState<"idle" | "loading" | "unavailable">("idle");
-  const [leadFocus, setLeadFocus] = useState<LeadFocus | null>(null);
+  // `/leads?focus=overdue|today` starts on that focus; `/leads?lead=<id>` opens the
+  // lead once the roster has loaded. Both leave the address after use, because
+  // changing the focus here does not write it back.
+  const routeSearch = useSyncExternalStore(subscribeToHistory, readLeadsSearch, readNoSearch);
+  const [routeLink, setRouteLink] = useState(() => readLeadsRouteLink(routeSearch, isPreviewMode));
+  const [leadFocus, setLeadFocus] = useState<LeadFocus | null>(() =>
+    routeLink.target?.focus ? { kind: routeLink.target.focus } : null,
+  );
+  const [routeLeadId, setRouteLeadId] = useState(() => routeLink.target?.leadId ?? null);
+  if (routeSearch !== routeLink.search) {
+    const nextLink = readLeadsRouteLink(routeSearch, isPreviewMode);
+    setRouteLink(nextLink);
+    if (nextLink.target) {
+      const { focus, leadId } = nextLink.target;
+      if (focus) setLeadFocus({ kind: focus });
+      setRouteLeadId(leadId);
+    }
+  }
+  const hasRouteTarget = Boolean(routeLink.target);
+  useEffect(() => {
+    if (!hasRouteTarget || routeLeadId) return;
+    const href = buildConsumedRouteHref(window.location, LEADS_TARGET_PARAMS);
+    if (href !== null) window.history.replaceState(null, "", href);
+  }, [hasRouteTarget, routeLeadId]);
   if (trialReady && !trialLifetime.current()) {
     setProgramRead("idle");
     setTrialLifetime({
@@ -143,6 +195,21 @@ export default function LeadsPage() {
   });
   const { activePrograms, enrolledCount, lostLeads, programById, selectedLead, totalActive } =
     controller.model;
+  const openRouteLead = useEffectEvent(() => {
+    const leadId = routeLeadId;
+    if (!leadId) return;
+    setRouteLeadId(null);
+    // Unknown ids do nothing, and a lead someone has already opened stays open.
+    if (!selectedLead && controller.model.leads.some((lead) => lead.id === leadId)) {
+      controller.selectLead(leadId);
+    }
+  });
+  useEffect(() => {
+    if (!routeLeadId || !leadsLoaded) return;
+    // Once the roster has drawn, open the lead as a click on its row would.
+    const frame = requestAnimationFrame(() => openRouteLead());
+    return () => cancelAnimationFrame(frame);
+  }, [leadsLoaded, routeLeadId]);
   const observedTrials = useRef(new WeakSet<object>());
   useEffect(() => {
     if (!trialReady) return;

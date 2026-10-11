@@ -2,7 +2,7 @@
 
 import { useResumeRefresh } from "@/lib/use-resume-refresh";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { toLocalDateKey } from "@/lib/date";
 import { useRetainedState } from "@/lib/retained-state";
 import type { ClassFormInitialValues, ClassFormSubmitPayload } from "@/lib/class-form-model";
@@ -21,6 +21,13 @@ import {
   type SessionAttendanceRefreshState,
   type SchedulePageView,
 } from "@/lib/schedule-page-model";
+import {
+  buildConsumedRouteHref,
+  isSameScheduleTarget,
+  resolveScheduleTargetSession,
+  SCHEDULE_TARGET_PARAMS,
+  type ScheduleRouteTarget,
+} from "@/lib/route-targets";
 import type { ScheduleTemplateCreateResult } from "@/lib/schedule-store-model";
 import type { ScheduleSessionDeleteScope } from "@/lib/session-detail-model";
 import type {
@@ -51,13 +58,28 @@ type SchedulePageControllerOptions = {
     StudentsStoreContextValue,
     "refreshStudents" | "students" | "studentsLoaded" | "studentsMayBePartial"
   >;
+  /** A `/schedule?date=…&session=…` link to open, parsed by the page. */
+  routeTarget?: ScheduleRouteTarget | null;
 };
+
+type ScheduleRouteTargetNotice = { rangeKey: string; message: string };
+
+function scheduleDateAtNoon(dateKey: string) {
+  return new Date(`${dateKey}T12:00:00`);
+}
+
+/** The schedule never keeps a link's date or session in its address once used. */
+function consumeScheduleTargetUrl() {
+  const href = buildConsumedRouteHref(window.location, SCHEDULE_TARGET_PARAMS);
+  if (href !== null) window.history.replaceState(null, "", href);
+}
 
 export function useSchedulePageController({
   config,
   programsStore,
   scheduleStore,
   studentsStore,
+  routeTarget = null,
 }: SchedulePageControllerOptions) {
   const canManageSchedule = hasStaffPermission(config.currentRole, "manage_schedule");
   const { refreshStudents, students, studentsLoaded, studentsMayBePartial } = studentsStore;
@@ -73,8 +95,20 @@ export function useSchedulePageController({
     refreshSessionAttendance,
     toggleCheckIn,
   } = scheduleStore;
-  const [currentDate, setCurrentDate] = useState(() => new Date(`${config.businessDate}T12:00:00`));
-  const [view, setView] = useState<SchedulePageView>(DEFAULT_SCHEDULE_PAGE_VIEW);
+  // A linked date opens as its day; without one the page starts on today's month.
+  const [currentDate, setCurrentDate] = useState(() =>
+    scheduleDateAtNoon(routeTarget?.date ?? config.businessDate),
+  );
+  const [view, setView] = useState<SchedulePageView>(
+    routeTarget ? "day" : DEFAULT_SCHEDULE_PAGE_VIEW,
+  );
+  const [seenRouteTarget, setSeenRouteTarget] = useState(routeTarget);
+  const [pendingRouteSession, setPendingRouteSession] = useState(
+    routeTarget?.sessionId ? routeTarget : null,
+  );
+  const [routeTargetNotice, setRouteTargetNotice] = useState<ScheduleRouteTargetNotice | null>(
+    null,
+  );
   const [programFilter, setProgramFilter] = useState("");
   const [selectedSessionSnapshot, setSelectedSession] = useState<ClassSession | null>(null);
   const selectedSession = selectedSessionSnapshot
@@ -105,6 +139,18 @@ export function useSchedulePageController({
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [deleteInFlight, setDeleteInFlight] = useState<ScheduleSessionDeleteScope | null>(null);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
+  if (!isSameScheduleTarget(routeTarget, seenRouteTarget)) {
+    // A new link while the page is open; clearing the address back to null changes nothing.
+    setSeenRouteTarget(routeTarget);
+    if (routeTarget) {
+      setCurrentDate(scheduleDateAtNoon(routeTarget.date));
+      setView("day");
+      setPendingRouteSession(routeTarget.sessionId ? routeTarget : null);
+      setRouteTargetNotice(null);
+      // A session on the day already in view still waits for a fresh load of it.
+      if (routeTarget.sessionId) setRangeLoadAttempt((value) => value + 1);
+    }
+  }
 
   const visibleRange = useMemo(
     () => getVisibleScheduleRange(currentDate, view),
@@ -118,6 +164,39 @@ export function useSchedulePageController({
   );
   const hasLoadedRange = rangeReadiness.key === visibleRangeKey && rangeReadiness.loaded;
   const currentRangeKeyRef = useRef(visibleRangeKey);
+
+  // A linked session opens only after a successful load of a range holding its
+  // date, through the same path as its "Take attendance" button. It settles once:
+  // later refreshes, ranges and closing the modal never reopen it.
+  const settleRouteSession = useEffectEvent(
+    (rangeKey: string, start: string, end: string, loaded: ClassSession[]) => {
+      const target = pendingRouteSession;
+      if (!target) return;
+      setPendingRouteSession(null);
+      // The person moved on to other dates before the linked day loaded.
+      if (target.date < start || target.date > end) return;
+      const outcome = resolveScheduleTargetSession(
+        target,
+        Array.isArray(loaded) ? loaded : sessions,
+      );
+      if (outcome.kind === "open") {
+        openSession(outcome.session);
+        return;
+      }
+      setRouteTargetNotice({
+        rangeKey,
+        message:
+          outcome.kind === "canceled"
+            ? `${outcome.session.name} was canceled, so there is no attendance to take.`
+            : "That class is no longer on this day's schedule.",
+      });
+    },
+  );
+
+  useEffect(() => {
+    if (!seenRouteTarget || pendingRouteSession) return;
+    consumeScheduleTargetUrl();
+  }, [pendingRouteSession, seenRouteTarget]);
 
   useEffect(() => {
     currentRangeKeyRef.current = visibleRangeKey;
@@ -146,11 +225,12 @@ export function useSchedulePageController({
       setScheduleLoadError(null);
       setRefreshingRangeKey(visibleRangeKey);
       try {
-        await refreshScheduleRange(visibleRange.start, visibleRange.end, intent);
+        const loaded = await refreshScheduleRange(visibleRange.start, visibleRange.end, intent);
         if (!cancelled) {
           setRangeReadiness((current) =>
             current.key === visibleRangeKey ? { key: visibleRangeKey, loaded: true } : current,
           );
+          settleRouteSession(visibleRangeKey, visibleRange.start, visibleRange.end, loaded);
         }
       } catch (error) {
         if (!cancelled) {
@@ -317,6 +397,7 @@ export function useSchedulePageController({
 
   function openAddClass() {
     if (!canManageSchedule) return;
+    setPendingRouteSession(null);
     const selectedDay = toLocalDateKey(currentDate);
     setClassFormInitialValues({ date: selectedDay, startDate: selectedDay });
     setCreateClassError(null);
@@ -338,6 +419,12 @@ export function useSchedulePageController({
         })
         .finally(() => setIsRefreshingStudentRoster(false));
     }
+  }
+
+  // Choosing a class by hand abandons a link still waiting to open, even once closed.
+  function openSessionByHand(session: ClassSession) {
+    setPendingRouteSession(null);
+    openSession(session);
   }
 
   function closeSelectedSession() {
@@ -374,6 +461,8 @@ export function useSchedulePageController({
       pendingAttendanceIds,
       programFilter,
       programs,
+      routeTargetNotice:
+        routeTargetNotice?.rangeKey === visibleRangeKey ? routeTargetNotice.message : null,
       scheduleLoadError,
       hasLoadedRange,
       isRefreshingRange: refreshingRangeKey === visibleRangeKey,
@@ -401,13 +490,14 @@ export function useSchedulePageController({
       onDismissActionMessage: () => setActionMessage(null),
       onDismissAttendanceError: () => setAttendanceError(null),
       onDismissCreateClassError: () => setCreateClassError(null),
+      onDismissRouteTargetNotice: () => setRouteTargetNotice(null),
       onRetryRange: () => setRangeLoadAttempt((value) => value + 1),
       onDismissScheduleLoadError: () => setScheduleLoadError(null),
       onDismissStudentRosterLoadError: () => setStudentRosterLoadError(null),
       onJumpToToday: jumpToToday,
       onNavigate: navigate,
       onOpenAddClass: openAddClass,
-      onOpenSession: openSession,
+      onOpenSession: openSessionByHand,
       onCloseAddClass: closeAddClass,
       onCloseSelectedSession: closeSelectedSession,
       onProgramFilterChange: setProgramFilter,

@@ -55,6 +55,9 @@ interface SchedulePageSectionProps {
   hasLoadedRange: boolean;
   isRefreshingRange: boolean;
   actionMessage: string | null;
+  /** Why a linked class did not open, shown while its range is in view. */
+  routeTargetNotice?: string | null;
+  onDismissRouteTargetNotice?: () => void;
   onRetryRange: () => void;
   onNavigate: (direction: number) => void;
   onJumpToToday: () => void;
@@ -127,6 +130,8 @@ export function SchedulePageSection({
   hasLoadedRange,
   isRefreshingRange,
   actionMessage,
+  routeTargetNotice = null,
+  onDismissRouteTargetNotice,
   onNavigate,
   onRetryRange,
   onJumpToToday,
@@ -628,6 +633,12 @@ export function SchedulePageSection({
         {actionMessage ? (
           <DismissibleNotice tone="success" onDismiss={onDismissActionMessage}>
             {actionMessage}
+          </DismissibleNotice>
+        ) : null}
+
+        {routeTargetNotice && onDismissRouteTargetNotice ? (
+          <DismissibleNotice tone="warning" onDismiss={onDismissRouteTargetNotice}>
+            {routeTargetNotice}
           </DismissibleNotice>
         ) : null}
 
