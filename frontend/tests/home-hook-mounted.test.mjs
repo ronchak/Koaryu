@@ -572,3 +572,62 @@ mounted(
   },
   { preview: true },
 );
+
+mounted("a refusal is not undone by an older success that lands after navigation", async (page) => {
+  await coldReady(page);
+  await retry(page);
+  await page.evaluate(() => window.fixture.markFacts());
+  await tick(page, 300);
+  assert.equal(await homeCount(page), 3, "plain read A, then fresh read B");
+  await page.evaluate(() => {
+    window.fixture.holdWorkspace = true;
+    window.fixture.unmountHome();
+  });
+  await flush(page);
+  await rejectHome(page, 2, 403, "Access refused");
+  await until(page, () => Boolean(window.fixture.releaseWorkspace), "workspace recheck pending");
+  await resolveHome(page, 1, "before refusal");
+  const offset = await page.evaluate(() => window.fixture.homeRenders.length);
+  await page.evaluate(() => window.fixture.mountHome());
+  await until(page, () => window.fixture.homeReads.length === 4);
+  const revisit = await state(page);
+  assert.equal(revisit.name, null, "an older success restored data after a refusal");
+  assert.ok(["loading", "error"].includes(revisit.status));
+  await page.evaluate(() => window.fixture.releaseWorkspace());
+  await flush(page);
+  await resolveHome(page, 3, "verified again");
+  assert.equal((await state(page)).name, "verified again");
+  assert.ok(
+    await page.evaluate(
+      (offset) =>
+        window.fixture.homeRenders
+          .slice(offset)
+          .every((r) => r.payload === null || r.payload.studio.name === "verified again"),
+      offset,
+    ),
+    "Home painted refused or pre-refusal data before a fresh read succeeded",
+  );
+});
+
+mounted("a read after a command never joins a flight started before it", async (page) => {
+  await coldReady(page);
+  await page.evaluate(() => window.fixture.markFacts());
+  await tick(page, 300);
+  assert.equal(await homeCount(page), 2, "fresh read held in flight");
+  await page.evaluate(() => {
+    const finish = window.fixture.beginPendingCommand();
+    window.fixture.markFacts();
+    finish();
+    window.fixture.markFacts();
+  });
+  await tick(page, 300);
+  await resolveHome(page, 1, "before command");
+  assert.equal(await homeCount(page), 3, "post-command read joined the pre-command flight");
+  assert.equal(
+    await page.evaluate(() => window.fixture.homeReads[2].path),
+    "/dashboard/home?fresh=true",
+  );
+  await resolveHome(page, 2, "after command");
+  assert.equal((await state(page)).name, "after command");
+  assert.equal((await state(page)).isRevalidating, false);
+});

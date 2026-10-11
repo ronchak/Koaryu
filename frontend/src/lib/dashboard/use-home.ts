@@ -72,12 +72,16 @@ export function isHomeAccessError(error: unknown): boolean {
   return status === 401 || status === 402 || status === 403;
 }
 
-// Single flight per loader (one per StoreProvider), identity scope and business
-// date. A plain read joins a fresh read already in flight; a fresh read never
-// joins a plain one. Each flight records its start order across the page.
+// Single flight per loader (one per StoreProvider), identity scope, business
+// date and fact generation. A plain read joins a fresh read already in flight;
+// a fresh read never joins a plain one; no read joins one started before the
+// latest fact change. Each flight records its start order across the page.
 export type HomeFlight = { promise: Promise<DashboardHome>; order: number };
+type HomeFlightEntry = HomeFlight & { fresh: boolean; factsGeneration: number };
 let homeFlightOrder = 0;
-const flightsByLoader = new WeakMap<HomeLoader, Map<string, HomeFlight>>();
+let factsGeneration = 0;
+let tracksFactsGeneration = false;
+const flightsByLoader = new WeakMap<HomeLoader, Map<string, HomeFlightEntry[]>>();
 const flightListeners = new Set<() => void>();
 
 function notifyHomeFlights() {
@@ -91,9 +95,18 @@ function subscribeHomeFlights(listener: () => void) {
   };
 }
 
+// Lives for the page, so a command that settles while Home is closed still
+// keeps the next visit from joining a read started before it.
+function trackFactsGeneration() {
+  if (tracksFactsGeneration) return;
+  tracksFactsGeneration = true;
+  subscribeDashboardFactsChanged(() => {
+    factsGeneration += 1;
+  });
+}
+
 function hasHomeFlight(loader: HomeLoader, flightKey: string): boolean {
-  const flights = flightsByLoader.get(loader);
-  return Boolean(flights?.has(`${flightKey}:fresh`) || flights?.has(`${flightKey}:plain`));
+  return Boolean(flightsByLoader.get(loader)?.get(flightKey)?.length);
 }
 
 export function requestHomePayload(
@@ -101,27 +114,63 @@ export function requestHomePayload(
   flightKey: string,
   fresh: boolean,
 ): HomeFlight {
+  trackFactsGeneration();
   let flights = flightsByLoader.get(loader);
   if (!flights) {
     flights = new Map();
     flightsByLoader.set(loader, flights);
   }
+  const inFlight = flights.get(flightKey) ?? [];
+  const joinable = inFlight.filter((flight) => flight.factsGeneration === factsGeneration);
   const joined =
-    flights.get(`${flightKey}:fresh`) ?? (fresh ? undefined : flights.get(`${flightKey}:plain`));
+    joinable.find((flight) => flight.fresh) ??
+    (fresh ? undefined : joinable.find((flight) => !flight.fresh));
   if (joined) return joined;
-  const key = `${flightKey}:${fresh ? "fresh" : "plain"}`;
   const owner = flights;
   const promise = new Promise<DashboardHome>((resolve) => resolve(loader({ fresh }))).finally(
     () => {
-      if (owner.get(key)?.promise !== promise) return;
-      owner.delete(key);
+      const remaining = (owner.get(flightKey) ?? []).filter((flight) => flight.promise !== promise);
+      if (remaining.length > 0) owner.set(flightKey, remaining);
+      else owner.delete(flightKey);
       notifyHomeFlights();
     },
   );
-  const flight = { promise, order: ++homeFlightOrder };
-  flights.set(key, flight);
+  const flight = { promise, order: ++homeFlightOrder, fresh, factsGeneration };
+  flights.set(flightKey, [...inFlight, flight]);
   notifyHomeFlights();
   return flight;
+}
+
+// Page-wide outcomes per loader and identity scope, by read start order. They
+// outlive any one mount, so a read that lands after navigation is judged
+// against everything that settled meanwhile.
+type HomeOutcomes = { settled: number; refused: number };
+const outcomesByLoader = new WeakMap<HomeLoader, Map<string, HomeOutcomes>>();
+
+function latestRefusal(loader: HomeLoader, scope: string): number {
+  return outcomesByLoader.get(loader)?.get(scope)?.refused ?? 0;
+}
+
+/**
+ * Admits a read's success or access refusal before it may touch retained or
+ * shown data. Nothing started before a later settled read counts, and no
+ * success started before the latest refusal counts: only a read that began
+ * after the refusal can show data again. Joined handlers get the same answer.
+ */
+function admitOutcome(loader: HomeLoader, scope: string, order: number, refusal: boolean) {
+  let byScope = outcomesByLoader.get(loader);
+  if (!byScope) {
+    byScope = new Map();
+    outcomesByLoader.set(loader, byScope);
+  }
+  const outcomes = byScope.get(scope) ?? { settled: 0, refused: 0 };
+  if (order < outcomes.settled || (!refusal && order <= outcomes.refused)) return false;
+  byScope.set(scope, {
+    settled: Math.max(outcomes.settled, order),
+    refused: refusal ? Math.max(outcomes.refused, order) : outcomes.refused,
+  });
+  if (refusal && order > outcomes.refused) notifyHomeFlights();
+  return true;
 }
 
 /** Whether `next` may replace `current`: another identity's entry, or a read started earlier. */
@@ -168,6 +217,11 @@ export function useHome(): HomeState {
     subscribeHomeFlights,
     () => flightKey !== null && hasHomeFlight(loadDashboardHome, flightKey),
     () => false,
+  );
+  const refusedAt = useSyncExternalStore(
+    subscribeHomeFlights,
+    () => (scope === null ? 0 : latestRefusal(loadDashboardHome, scope)),
+    () => 0,
   );
 
   const scopeRef = useRef(scope);
@@ -230,45 +284,44 @@ export function useHome(): HomeState {
           store.delete(key);
         }
       };
+      const failureMessage = (error: unknown) =>
+        error instanceof Error && error.message ? error.message : "Home could not be loaded.";
       promise.then(
         (payload) => {
           if (attempts.pending === promise) attempts.pending = null;
-          const snapshot = { payload, receivedAt: Date.now(), scope, order };
+          const mounted = mountedRef.current;
+          if (mounted && (scopeRef.current !== scope || order <= attempts.applied)) return;
+          if (!admitOutcome(loadDashboardHome, scope, order, false)) return;
           // A read that lands after navigation still serves the next visit.
-          if (!mountedRef.current) {
-            retainUnderKey(snapshot);
-            return;
-          }
-          if (scopeRef.current !== scope || order <= attempts.applied) return;
-          attempts.applied = order;
+          const snapshot = { payload, receivedAt: Date.now(), scope, order };
           retainUnderKey(snapshot);
+          if (!mounted) return;
+          attempts.applied = order;
           setHeld(snapshot);
           setFailure(null);
         },
         (error: unknown) => {
           if (attempts.pending === promise) attempts.pending = null;
-          // Retained data never outlives a refusal: the viewer may have lost access.
-          const access = isHomeAccessError(error);
-          if (!mountedRef.current) {
-            if (access) forgetUnderKey();
+          const mounted = mountedRef.current;
+          if (!isHomeAccessError(error)) {
+            // A newer read is still in flight; it decides what an ordinary failure means.
+            if (!mounted || scopeRef.current !== scope) return;
+            if (order <= attempts.applied || order !== attempts.latest) return;
+            attempts.applied = order;
+            setFailure({ scope, message: failureMessage(error) });
             return;
           }
-          if (scopeRef.current !== scope || order <= attempts.applied) return;
-          // A newer read is still in flight; it decides what an ordinary failure means.
-          if (!access && order !== attempts.latest) return;
-          attempts.applied = order;
-          if (access) {
-            forgetUnderKey();
-            if (key !== retainedKeyRef.current) {
-              setRetained((current) => (supersedes({ scope, order }, current) ? null : current));
-            }
-            setHeld(null);
+          // Retained data never outlives a refusal: the viewer may have lost access.
+          // An ordinary failure since then proves nothing, so only settled reads win.
+          if (!admitOutcome(loadDashboardHome, scope, order, true)) return;
+          forgetUnderKey();
+          if (!mounted || scopeRef.current !== scope) return;
+          attempts.applied = Math.max(attempts.applied, order);
+          if (key !== retainedKeyRef.current) {
+            setRetained((current) => (supersedes({ scope, order }, current) ? null : current));
           }
-          setFailure({
-            scope,
-            message:
-              error instanceof Error && error.message ? error.message : "Home could not be loaded.",
-          });
+          setHeld(null);
+          setFailure({ scope, message: failureMessage(error) });
         },
       );
     },
@@ -323,13 +376,12 @@ export function useHome(): HomeState {
 
   const retry = useCallback(() => revalidate("retry"), [revalidate]);
 
-  const snapshot =
-    scope === null
-      ? null
-      : newerSnapshot(
-          retained?.scope === scope ? retained : null,
-          held?.scope === scope ? held : null,
-        );
+  // Only this identity's data, and only from reads started after its latest refusal.
+  const visible = (candidate: HomeSnapshot | null) =>
+    candidate !== null && candidate.scope === scope && candidate.order > refusedAt
+      ? candidate
+      : null;
+  const snapshot = scope === null ? null : newerSnapshot(visible(retained), visible(held));
   const payload = snapshot?.payload ?? null;
   const error = scope !== null && failure?.scope === scope ? failure.message : null;
   const status: HomeStatus = error !== null ? "error" : payload !== null ? "ready" : "loading";
