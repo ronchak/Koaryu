@@ -22,9 +22,8 @@ const entries = [
   "@/components/ui/horizon",
   "@/components/ui/horizon-work-row",
   "@/components/ui/horizon-ridges",
-  "@/lib/dashboard-horizon",
 ].map((entry) => add(entry));
-const [header, kit, workRows, ridges, dashboard] = new Function(
+const [header, kit, workRows, ridges] = new Function(
   "externalRequire",
   `const modules = [${modules.join(",")}], cache = {};
    function require(id) {
@@ -224,15 +223,11 @@ test("horizon exports the shared work-list, row, and panel-link implementations"
   }
 });
 
-test("dashboard-horizon re-exports the exact ridge paths and viewboxes", () => {
-  for (const name of [
-    "HORIZON_BAND_RIDGE_PATHS",
-    "HORIZON_BAND_VIEWBOX",
-    "HORIZON_RIDGE_PATHS",
-    "HORIZON_VIEWBOX",
-  ]) {
-    assert.ok(name in ridges, `${name} must exist in horizon-ridges`);
-    assert.equal(dashboard[name], ridges[name], `${name} must preserve the shared value identity`);
+test("draws five closed ridges, far to near", () => {
+  assert.equal(ridges.HORIZON_RIDGE_PATHS.length, 5);
+  for (const path of ridges.HORIZON_RIDGE_PATHS) {
+    assert.match(path, /^M-120\.0 /);
+    assert.match(path, /Z$/);
   }
 });
 
@@ -259,7 +254,6 @@ test("kit sources and rendered markup contain no cobalt token or unicode arrows"
   const paths = [
     "../src/components/header.tsx",
     "../src/components/header.module.css",
-    "../src/lib/dashboard-horizon.ts",
     ...readdirSync(new URL("../src/components/ui/", import.meta.url))
       .filter((name) => /^horizon(?:-|\.)/.test(name) && /\.(?:tsx?|css)$/.test(name))
       .map((name) => `../src/components/ui/${name}`),

@@ -19,8 +19,6 @@ function components(fixture = {}) {
     "@/components/dataset-readiness-panel": `exports.DatasetReadinessErrorPanel=()=>null;`,
     "@/components/programs/program-picker": `exports.ProgramBadge=()=>null;`,
     "@/lib/store": `exports.useConfigStore=exports.useStudioStore=exports.useProgramStore=exports.useLeadStore=()=>fixture;`,
-    "./dashboard-home.module.css": styles,
-    "./dashboard-horizon.module.css": styles,
     "./belt-tracker.module.css": styles,
     "./leads-ledger.module.css": styles,
     "@/components/leads/leads-ledger.module.css": styles,

@@ -18,8 +18,6 @@ src/components/billing/billing-enrollments-tab.tsx
 # Temporary source-text contracts in tests/billing-invoice-action-model.test.mjs.
 src/lib/billing-page-controller.ts
 src/components/billing/billing-invoices-tab.tsx
-# Temporary source-text contracts in tests/dashboard-shell-home-contract.test.mjs and tests/performance-evidence.test.mjs.
-src/components/dashboard/dashboard-home.tsx
 # Temporary source-text contracts in tests/dashboard-shell-home-contract.test.mjs.
 src/lib/store.tsx
 # Temporary source-text contracts in tests/legal-name-ui-contract.test.mjs.

@@ -19,11 +19,7 @@ import {
 } from "../scripts/capture-dashboard-performance.mjs";
 
 const homeSource = readFileSync(
-  new URL("../src/components/dashboard/dashboard-home.tsx", import.meta.url),
-  "utf8",
-);
-const controllerSource = readFileSync(
-  new URL("../src/lib/dashboard-page-controller.ts", import.meta.url),
+  new URL("../src/components/dashboard/home/home-page.tsx", import.meta.url),
   "utf8",
 );
 const captureSource = readFileSync(
@@ -342,22 +338,15 @@ describe("privacy-safe performance evidence", () => {
     assert.deepEqual(fixture.state(), { closed: true, verifications: 1, lateSizeCalls: 0 });
   });
 
-  it("separates identity-scoped shell readiness from aggregate data readiness", () => {
+  it("separates identity-scoped shell readiness from Home payload readiness", () => {
+    assert.match(homeSource, /const shellReady = identityReady/);
+    assert.match(homeSource, /const dataReady = shellReady && payload !== null/);
     assert.match(
       homeSource,
-      /data-koaryu-dashboard-shell-ready=\{layoutResolved \? "true" : "false"\}/,
+      /data-koaryu-dashboard-shell-ready=\{shellReady \? "true" : "false"\}/,
     );
-    assert.match(
-      homeSource,
-      /data-koaryu-dashboard-data-ready=\{layoutResolved && dataReady \? "true" : "false"\}/,
-    );
-    assert.match(homeSource, /data-koaryu-dashboard-ready=\{layoutResolved \? "true" : "false"\}/);
-    assert.match(
-      homeSource,
-      /const layoutResolved = identityReady && identityScope !== null && resolvedLayoutScope === identityScope/,
-    );
-    assert.match(homeSource, /readDashboardLayout\([\s\S]*setResolvedLayoutScope\(identityScope\)/);
-    assert.match(controllerSource, /isDashboardDataReady: datasetReadiness\.status === "ready"/);
+    assert.match(homeSource, /data-koaryu-dashboard-data-ready=\{dataReady \? "true" : "false"\}/);
+    assert.match(homeSource, /data-koaryu-dashboard-ready=\{shellReady \? "true" : "false"\}/);
     assert.match(captureSource, /data-koaryu-dashboard-data-ready="true"/);
     assert.doesNotMatch(captureSource, /data-koaryu-dashboard-ready="true"/);
   });
