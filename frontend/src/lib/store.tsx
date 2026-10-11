@@ -1406,7 +1406,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           bootstrapRequestRef.current = featureRequest;
           try {
             criticalData = await withCurrentLiveAuthRead(beginLiveAuthRequest, (request) =>
-              api.get<BootstrapResponse>(`/dashboard/bootstrap?allow_partial=true&view=${view}${view === "dashboard" ? "&bounded_dashboard=true" : ""}`, request.token,
+              api.get<BootstrapResponse>(`/dashboard/bootstrap?allow_partial=true&view=${view}`, request.token,
                 { signal: featureRequest.controller.signal, timeoutMs: 35000, timeoutMessage: "Studio data loading timed out. Please retry." }), () => {});
           } catch (error) {
             if (featureRequest.controller.signal.aborted) return;
@@ -2072,7 +2072,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     resetLiveStudioState, retryInitialization, router, subscriptionRequired]);
 
   // These confirmed business commands affect dashboard facts. Billing commands
-  // live outside this store; dashboard route entry also requests fresh facts.
+  // live outside this store. Home revalidates itself from the facts-changed mark.
   const beginProjectionCommand = useCallback(() => {
     if (isPreviewMode) return () => {};
     markDashboardFactsChanged();
@@ -2082,12 +2082,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       if (request.isSameIdentity()) {
         markDashboardFactsChanged();
         dashboardSummaryRequestSeqRef.current += 1;
-        if (pathnameRef.current === "/dashboard") {
-          void refreshDashboardSummary().catch(() => undefined);
-        }
       }
     };
-  }, [beginLiveAuthRequest, isPreviewMode, refreshDashboardSummary]);
+  }, [beginLiveAuthRequest, isPreviewMode]);
   const reconciledCommands = {
     addStudent: useReconciledProjectionCommand(addStudent, beginProjectionCommand),
     updateStudent: useReconciledProjectionCommand(updateStudent, beginProjectionCommand),

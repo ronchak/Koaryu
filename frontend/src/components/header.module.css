@@ -22,10 +22,35 @@
  */
 .header[data-hills="hero"] {
   min-height: 248px;
+  container: horizon-hero / inline-size;
 }
 
 .header[data-hills="hero"] .hills {
   height: 240px;
+}
+
+/*
+ * The hero's sun never sits under words. In a header narrower than 1024px it
+ * would meet the stacked sentence or the actions, so it is hidden (hidden
+ * beats colliding). From 1024px the copy ends 24px before its left edge.
+ * Geometry (horizon-hills.tsx): the 1600x300 viewBox is drawn 240px tall with
+ * `xMidYMax slice`, so it scales by max(W / 1600, 0.8) about the header's
+ * centre, and the sun's left edge (cx - r = 874) sits 74 units right of it.
+ * The copy starts at max(gutter, W / 2 - 38rem), as `.inner` centres 76rem.
+ */
+@container horizon-hero (max-width: 1023.98px) {
+  .header[data-hills="hero"] .hills circle {
+    display: none;
+  }
+}
+
+@container horizon-hero (min-width: 1024px) {
+  .header[data-hills="hero"] .copy {
+    max-width: calc(
+      50cqw + max(4.625cqw, 59.2px) - 24px -
+        max(var(--hz-gutter, clamp(16px, 2.4vw, 32px)), 50cqw - 38rem)
+    );
+  }
 }
 
 .inner {

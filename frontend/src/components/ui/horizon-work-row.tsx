@@ -1,7 +1,7 @@
 import { isValidElement, type ReactNode } from "react";
 import { ArrowRight } from "lucide-react";
 import { IntentPrefetchLink as Link } from "@/components/intent-prefetch-link";
-import { ToneTag, type HorizonTone } from "./horizon-parts";
+import { ToneTag, type HorizonDataAttributes, type HorizonTone } from "./horizon-parts";
 import styles from "./horizon.module.css";
 
 /*
@@ -9,8 +9,6 @@ import styles from "./horizon.module.css";
  * main action visible. These link through the app's router, so they live here
  * rather than in the routing-free horizon-parts; `horizon.tsx` re-exports them.
  */
-
-type DataAttributes = { [attribute: `data-${string}`]: string | number | boolean | undefined };
 
 export function HorizonWorkList({
   children,
@@ -42,7 +40,7 @@ export type HorizonWorkRowProps = {
   /** The action renders as the ink pill; otherwise a quiet text action. */
   emphasized?: boolean;
   className?: string;
-} & DataAttributes;
+} & HorizonDataAttributes;
 
 function isTextLeading(leading: ReactNode): boolean {
   if (typeof leading === "string" || typeof leading === "number") return true;

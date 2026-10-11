@@ -9,6 +9,11 @@ import styles from "./horizon.module.css";
 
 export type HorizonTone = "alert" | "warn" | "calm" | "neutral";
 
+/** `data-*` attributes a kit element passes through to its root, for tests and page hooks. */
+export type HorizonDataAttributes = {
+  [attribute: `data-${string}`]: string | number | boolean | undefined;
+};
+
 export function HorizonPage({
   children,
   className,
@@ -34,6 +39,7 @@ export function HorizonPanel({
   flush = false,
   title,
   titleId,
+  ...data
 }: {
   actions?: ReactNode;
   as?: "section" | "article" | "div" | "aside";
@@ -43,9 +49,10 @@ export function HorizonPanel({
   flush?: boolean;
   title?: ReactNode;
   titleId?: string;
-}) {
+} & HorizonDataAttributes) {
   return (
     <Element
+      {...data}
       className={[styles.panel, className].filter(Boolean).join(" ")}
       data-flush={flush ? "true" : undefined}
       aria-labelledby={title && titleId ? titleId : undefined}

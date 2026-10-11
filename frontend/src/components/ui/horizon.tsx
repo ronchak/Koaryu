@@ -1,6 +1,6 @@
 import type { CSSProperties, ReactNode } from "react";
 import { IntentPrefetchLink as Link } from "@/components/intent-prefetch-link";
-import type { HorizonTone } from "./horizon-parts";
+import type { HorizonDataAttributes, HorizonTone } from "./horizon-parts";
 import styles from "./horizon.module.css";
 
 /*
@@ -36,14 +36,16 @@ export function HorizonStats({
   className,
   items,
   label,
+  ...data
 }: {
   className?: string;
   items: readonly HorizonStat[];
   label: string;
-}) {
+} & HorizonDataAttributes) {
   if (items.length === 0) return null;
   return (
     <section
+      {...data}
       className={[styles.stats, className].filter(Boolean).join(" ")}
       aria-label={label}
       style={{ "--hz-stat-count": items.length } as CSSProperties}

@@ -535,6 +535,26 @@ a.workRow:hover .workAction:not([data-emphasized="true"]) {
   .panel[data-flush="true"] .workRow {
     padding-inline: 16px;
   }
+
+  /*
+   * One row shape on phones: the action always sits under the title and meta,
+   * left-aligned with the title, and the leading tile or time lines up with
+   * the title line rather than the row's centre.
+   */
+  .workRow {
+    align-items: flex-start;
+  }
+
+  .workBody {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+  }
+
+  .workText {
+    flex: 0 0 auto;
+    width: 100%;
+  }
 }
 
 @media (max-width: 640px), (pointer: coarse) {

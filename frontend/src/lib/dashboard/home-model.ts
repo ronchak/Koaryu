@@ -10,8 +10,9 @@ import type {
  * No React, Next or store imports, so Node tests import it directly. Numbers
  * stay numbers and nothing here is owner-facing copy: `home-copy.ts` turns
  * these facts into words. Every rule follows docs/home-rebuild-decisions.md.
- * A section the payload omits (role shaping by absence) maps to null or is
- * left out; only the sentence's approval/ready choice reads the role (D6).
+ * A section the payload omits maps to null or is left out; only the sentence
+ * reads the role, for its approval/ready choice (D6) and to tell a missing
+ * section the role could see (unknown) from one it may not (absent).
  */
 
 export type HomeStatus = "loading" | "error" | "ready";
@@ -87,6 +88,19 @@ export const HOME_SENTENCE_CLAUSE_ORDER = [
 ] as const;
 export type HomeSentenceClauseKind = (typeof HOME_SENTENCE_CLAUSE_ORDER)[number];
 export const HOME_SENTENCE_CLAUSE_LIMIT = 2;
+
+// D6 "Roles" column: who can see each needs clause. A clause the role can see
+// whose section the payload lacks is unknown, not zero.
+export const HOME_SENTENCE_CLAUSE_ROLES = {
+  payments: ["admin", "front_desk"],
+  followUpsOverdue: ["admin", "front_desk"],
+  setup: ["admin"],
+  approvals: ["admin"],
+  followUpsToday: ["admin", "front_desk"],
+  ready: ["admin", "instructor"],
+  away: ["admin", "front_desk", "instructor"],
+  contacts: ["admin", "front_desk"],
+} as const satisfies Record<HomeSentenceClauseKind, readonly HomeRole[]>;
 
 // D4 row budgets.
 export const HOME_FOLLOW_UP_LIMIT = 6;
@@ -193,8 +207,15 @@ export type HomePanels = {
 };
 
 export type HomeSentence = {
-  classes: number;
+  /** Today's class count; null when the agenda is unknown (the sentence has no anchor). */
+  classes: number | null;
+  /** Known non-zero needs, highest priority first, at most two. */
   clauses: { kind: HomeSentenceClauseKind; count: number }[];
+  /**
+   * Present when a needs input the role can see is unknown (its section is
+   * missing), so the sentence may never claim that nothing needs you.
+   */
+  incomplete?: true;
 };
 
 export type HomeModel = {
@@ -294,10 +315,7 @@ export function buildHomeModel({ state, role, nowMinutes }: HomeModelInput): Hom
           }
         : null,
     },
-    // The anchor needs a class count; without the agenda there is no true sentence.
-    sentence: agenda
-      ? buildSentence(payload, agenda.total, attention?.items ?? [], viewerRole)
-      : null,
+    sentence: buildSentence(payload, agenda?.total ?? null, attention?.items ?? null, viewerRole),
   };
 }
 
@@ -478,17 +496,34 @@ function buildAgenda(
   };
 }
 
+/**
+ * D6 with unknowns: a clause whose section is missing is dropped, and the
+ * sentence is marked incomplete if the role could have seen it. With no class
+ * count and no clause left, it says "Nothing needs you." only when every needs
+ * input the role can see is known and zero; otherwise it is null.
+ */
 function buildSentence(
   payload: DashboardHome,
-  classes: number,
-  attentionItems: readonly HomeAttentionItem[],
+  classes: number | null,
+  attentionItems: readonly HomeAttentionItem[] | null,
   role: HomeRole | null,
-): HomeSentence {
-  const attention = new Map(attentionItems.map((item) => [item.kind, item.count]));
+): HomeSentence | null {
+  const attention = new Map((attentionItems ?? []).map((item) => [item.kind, item.count]));
   const followUps = payload.stats?.follow_ups;
   const promotions = payload.stats?.promotions;
   const overdue = followUps?.overdue_count ?? 0;
   const needsApproval = promotions?.needs_approval ?? 0;
+  const attentionKnown = attentionItems !== null;
+  const known: Record<HomeSentenceClauseKind, boolean> = {
+    payments: attentionKnown,
+    followUpsOverdue: Boolean(followUps),
+    setup: attentionKnown,
+    approvals: Boolean(promotions),
+    followUpsToday: Boolean(followUps),
+    ready: Boolean(promotions),
+    away: attentionKnown,
+    contacts: attentionKnown,
+  };
   const counts: Record<HomeSentenceClauseKind, number> = {
     payments: attention.get("payments") ?? 0,
     followUpsOverdue: overdue,
@@ -502,12 +537,19 @@ function buildSentence(
     away: attention.get("away") ?? 0,
     contacts: attention.get("contact") ?? 0,
   };
-  return {
-    classes,
-    clauses: HOME_SENTENCE_CLAUSE_ORDER.filter((kind) => counts[kind] > 0)
-      .slice(0, HOME_SENTENCE_CLAUSE_LIMIT)
-      .map((kind) => ({ kind, count: counts[kind] })),
-  };
+  const clauses = HOME_SENTENCE_CLAUSE_ORDER.filter((kind) => known[kind] && counts[kind] > 0)
+    .slice(0, HOME_SENTENCE_CLAUSE_LIMIT)
+    .map((kind) => ({ kind, count: counts[kind] }));
+  // Without a role there is no telling a missing section from one the role may not see.
+  const incomplete =
+    role !== null &&
+    HOME_SENTENCE_CLAUSE_ORDER.some(
+      (kind) =>
+        !known[kind] && (HOME_SENTENCE_CLAUSE_ROLES[kind] as readonly HomeRole[]).includes(role),
+    );
+  // No anchor and no clause: only a role whose every needs input is known may hear it is quiet.
+  if (classes === null && clauses.length === 0 && (incomplete || role === null)) return null;
+  return incomplete ? { classes, clauses, incomplete: true } : { classes, clauses };
 }
 
 function classPhase(start: number | null, end: number | null, now: number | null): HomeClassPhase {

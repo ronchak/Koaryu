@@ -22,6 +22,8 @@ export function HorizonHills({
   const box = variant === "band" ? HORIZON_BAND_VIEWBOX : HORIZON_VIEWBOX;
   const paths = variant === "band" ? HORIZON_BAND_RIDGE_PATHS : HORIZON_RIDGE_PATHS;
   // Each sun sits clear of a header's right-aligned actions at common desktop widths.
+  // header.module.css keeps the hero's copy clear of this sun (left edge cx - r = 874)
+  // and hides it on headers narrower than 1024px; move both together.
   const sunCircle = variant === "band" ? { cx: 1010, cy: 70, r: 24 } : { cx: 920, cy: 132, r: 46 };
   return (
     <svg
