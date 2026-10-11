@@ -248,10 +248,10 @@ const dayMoments: readonly DayMoment[] = [
     detail: landingDetail({ kind: "useCase", slug: "student-retention" }),
     shot: {
       src: "/marketing/product/day-dashboard.webp",
-      width: 1140,
-      height: 384,
-      corner: 22,
-      alt: "The dashboard's Classes Today panel: three sessions, each with how many students have checked in.",
+      width: 1132,
+      height: 518,
+      corner: 32,
+      alt: "The dashboard's Today's classes panel: three sessions with check-in counts and a link to each class.",
     },
   },
   {

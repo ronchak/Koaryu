@@ -118,9 +118,11 @@ const shots = {
   },
   async dashboard() {
     await visit("/dashboard");
-    const card = await rect(await find("Classes Today", 3));
-    const last = await rect(await find("Adult No-Gi", 1));
-    await save("dashboard", { ...card, height: last.y + last.height + 18 - card.y });
+    const band = page.locator('[data-home-band="classes"]');
+    await band.scrollIntoViewIfNeeded();
+    const card = await band.boundingBox();
+    if (!card) throw new Error("Home's classes band is not visible.");
+    await save("dashboard", card);
   },
   async lead() {
     await visit("/leads");
