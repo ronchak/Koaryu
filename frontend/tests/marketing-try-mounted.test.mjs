@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { chromium } from "@playwright/test";
+import { chromium, expect } from "@playwright/test";
 import { createCommonJsPacker } from "./helpers/store-browser-harness.mjs";
 
 function demoBundle() {
@@ -40,19 +40,20 @@ test("demo keeps new follow-ups in due-date order through stage changes and rese
       .getByRole("button", { name: "Add lead", exact: true })
       .click();
     const upcoming = page.locator('[data-band="upcoming"] ol > li');
-    assert.match(await upcoming.nth(0).innerText(), /Jordan Rivera[\s\S]*Due Wed/);
-    assert.match(await upcoming.nth(1).innerText(), /Tyler Brooks[\s\S]*Due Thu/);
+    await expect(upcoming).toHaveCount(2);
+    await expect(upcoming.nth(0)).toContainText(/Jordan Rivera[\s\S]*Due Wed/);
+    await expect(upcoming.nth(1)).toContainText(/Tyler Brooks[\s\S]*Due Thu/);
     for (let step = 0; step < 4; step += 1) {
       await page.getByRole("button", { name: "Move Jordan Rivera to the next stage" }).click();
     }
-    assert.equal(await upcoming.count(), 1);
-    assert.match(await page.locator('[data-band="done"]').innerText(), /Jordan Rivera/);
+    await expect(upcoming).toHaveCount(1);
+    await expect(page.locator('[data-band="done"]')).toContainText("Jordan Rivera");
     await page.getByRole("button", { name: "Move Jordan Rivera to the previous stage" }).click();
-    assert.match(await upcoming.nth(0).innerText(), /Jordan Rivera/);
+    await expect(upcoming.nth(0)).toContainText("Jordan Rivera");
     await page.getByRole("button", { name: "Reset demo", exact: true }).click();
     await leadsTab.click();
-    assert.equal(await upcoming.count(), 1);
-    assert.match(await upcoming.nth(0).innerText(), /Tyler Brooks/);
+    await expect(upcoming).toHaveCount(1);
+    await expect(upcoming.nth(0)).toContainText("Tyler Brooks");
     assert.deepEqual(errors, []);
   } finally {
     await browser.close();
