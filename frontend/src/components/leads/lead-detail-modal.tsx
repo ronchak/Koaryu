@@ -284,7 +284,7 @@ export function LeadDetailInspector({
           </div>
           <div>
             <label htmlFor="lead-detail-assignee" className={styles.fieldLabel}>
-              Assigned staff
+              Owner
             </label>
             <select
               id="lead-detail-assignee"
@@ -292,7 +292,7 @@ export function LeadDetailInspector({
               disabled={isPending || !canManageLeads}
               onChange={(event) => void onAssignStaff(lead, event.target.value || null)}
             >
-              <option value="">Unassigned</option>
+              <option value="">No owner</option>
               {assigneeChoices.map((member) => (
                 <option key={member.id} value={member.id}>
                   {member.full_name || member.email}

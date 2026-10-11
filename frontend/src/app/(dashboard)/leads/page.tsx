@@ -14,12 +14,9 @@ import {
 } from "@/components/leads/lead-trial-appointments";
 import { LeadLedgerLoadError, LeadPipelineBoard } from "@/components/leads/lead-pipeline-board";
 import { LostLeadsSection } from "@/components/leads/lost-leads-section";
-import { getLeadFigures, isSameLeadFocus, type LeadFocus } from "@/components/leads/lead-focus";
-import {
-  HorizonPage,
-  PlainHorizonStats,
-  type PlainHorizonStat,
-} from "@/components/schedule/horizon-parts";
+import type { LeadFocus } from "@/components/leads/lead-focus";
+import { LeadStageStrip, LeadStageStripPlaceholder } from "@/components/leads/lead-stage-strip";
+import { HorizonPage } from "@/components/schedule/horizon-parts";
 import { Button } from "@/components/ui/button";
 import { DismissibleNotice } from "@/components/ui/dismissible-notice";
 import { useLeadsPageController } from "@/lib/leads-page-controller";
@@ -230,56 +227,6 @@ export default function LeadsPage() {
     ? (staffById.get(selectedLead.assigned_staff_id) ?? null)
     : null;
 
-  const figures = getLeadFigures(controller.model.obligationLedgerLeads, today);
-  const statsPending = !leadsLoaded;
-  const toggleFocus = (focus: LeadFocus) =>
-    setLeadFocus((current) => (isSameLeadFocus(current, focus) ? null : focus));
-  const leadStats: PlainHorizonStat[] = [
-    {
-      id: "overdue",
-      label: "Overdue",
-      pending: statsPending,
-      value: figures.overdue,
-      tone: figures.overdue > 0 ? "alert" : "calm",
-      note:
-        figures.overdue > 0
-          ? `Oldest ${figures.oldestOverdueDays} ${figures.oldestOverdueDays === 1 ? "day" : "days"} late`
-          : "Nothing overdue",
-      onSelect: leadsLoaded ? () => toggleFocus({ kind: "overdue" }) : undefined,
-      selected: leadFocus?.kind === "overdue",
-    },
-    {
-      id: "today",
-      label: "Due today",
-      pending: statsPending,
-      value: figures.dueToday,
-      tone: figures.dueToday > 0 ? "warn" : undefined,
-      note: figures.dueToday > 0 ? "Calls to make today" : "None due today",
-      onSelect: leadsLoaded ? () => toggleFocus({ kind: "today" }) : undefined,
-      selected: leadFocus?.kind === "today",
-    },
-    {
-      id: "trials",
-      label: "Trials booked",
-      pending: statsPending,
-      value: figures.trialsBooked,
-      note: figures.trialsBooked > 0 ? "Confirm attendance" : "No trials waiting",
-      onSelect: leadsLoaded
-        ? () => toggleFocus({ kind: "stage", stage: "trial_scheduled" })
-        : undefined,
-      selected: leadFocus?.kind === "stage" && leadFocus.stage === "trial_scheduled",
-    },
-    {
-      id: "unassigned",
-      label: "Unassigned",
-      pending: statsPending,
-      value: figures.unassigned,
-      note: figures.unassigned > 0 ? "No owner yet" : "Every lead has an owner",
-      onSelect: leadsLoaded ? () => toggleFocus({ kind: "unassigned" }) : undefined,
-      selected: leadFocus?.kind === "unassigned",
-    },
-  ];
-
   return (
     <div className={`flex min-h-0 flex-1 flex-col ${styles.pageRoot}`}>
       <Header
@@ -308,7 +255,19 @@ export default function LeadsPage() {
       </Header>
 
       <HorizonPage className={styles.page}>
-        <PlainHorizonStats label="Lead follow-ups" items={leadStats} />
+        {/* One strip opens the page: stage and owner filters on the queue below. */}
+        {leadsLoaded ? (
+          controller.model.obligationLedgerLeads.length > 0 ? (
+            <LeadStageStrip
+              focus={leadFocus}
+              leads={controller.model.obligationLedgerLeads}
+              onFocusChange={setLeadFocus}
+              today={today}
+            />
+          ) : null
+        ) : leadsLoadError ? null : (
+          <LeadStageStripPlaceholder />
+        )}
 
         {trialReady && (
           <TrialAppointmentRecovery

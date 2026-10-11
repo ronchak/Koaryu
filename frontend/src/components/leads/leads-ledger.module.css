@@ -1,7 +1,7 @@
 /*
- * Leads in the Horizon language: the follow-up queue is the page. Stats that
- * filter it sit on the header's ridge, stages read as one pipeline rail, and
- * every row says the next action and how late it is. Tokens only; both themes.
+ * Leads in the Horizon language: the follow-up queue is the page. One strip of
+ * stage and owner filters sits on the header's ridge, and every row says the next
+ * action and how late it is. Tokens only; both themes.
  */
 
 .pageRoot {
@@ -137,24 +137,43 @@
   line-height: 1.5;
 }
 
-/* Pipeline rail: one tile per stage, each filters the queue. */
+/*
+ * The strip that opens the page, on the header's ridge with the kit's glass: four
+ * stages and "No owner", each a filter on the queue. Tiles never truncate their
+ * label; a strip too narrow for all five scrolls instead.
+ */
 .stageRail {
+  position: relative;
+  z-index: 2;
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(max-content, 1fr));
   margin: 0;
   padding: 0;
-  overflow: hidden;
+  overflow: auto hidden;
   border: 1px solid var(--product-rule-soft);
   border-radius: 16px;
-  background: var(--product-paper);
+  background: color-mix(in srgb, var(--product-paper) 88%, transparent);
   box-shadow: var(--product-shadow-card);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
   list-style: none;
+  scroll-snap-type: x proximity;
+  scrollbar-width: none;
+}
+
+.stageRail::-webkit-scrollbar {
+  display: none;
+}
+
+.page > .stageRail:first-child {
+  margin-top: -40px;
 }
 
 .stageRail li {
   position: relative;
   display: flex;
   min-width: 0;
+  scroll-snap-align: start;
 }
 
 .stageRail li + li::before {
@@ -167,7 +186,7 @@
   content: "";
 }
 
-.stageButton {
+.stageRail .stageButton {
   position: relative;
   display: grid;
   width: 100%;
@@ -175,7 +194,7 @@
   min-height: 64px;
   align-content: center;
   gap: 2px;
-  padding: 12px 16px 14px;
+  padding: 10px 16px;
   border: 0;
   border-radius: 0 !important;
   background: transparent;
@@ -193,17 +212,17 @@ button.stageButton:hover {
   background: color-mix(in srgb, var(--hz-tile) 70%, transparent);
 }
 
-.stageButton[aria-pressed="true"] {
+.stageButton[aria-pressed="true"],
+button.stageButton[aria-pressed="true"]:hover {
   background: var(--hz-tile);
   box-shadow: inset 0 -3px 0 var(--product-wood);
 }
 
 .stageButton strong {
-  overflow: hidden;
   color: var(--product-meta);
   font-size: 0.8125rem;
   font-weight: 650;
-  text-overflow: ellipsis;
+  line-height: 16px;
   white-space: nowrap;
 }
 
@@ -260,11 +279,17 @@ button.stageButton:hover {
   height: 15px;
 }
 
-/* Queue */
+/*
+ * Queue: four bands in follow-up order. A row is three short lines by default and
+ * two lines in four columns once the queue is wide enough for them (see the
+ * container query below), so the inspector beside it narrows rows the same way a
+ * phone does.
+ */
 .ageQueue {
   display: grid;
   min-width: 0;
-  gap: 16px;
+  gap: 12px;
+  container: lead-queue / inline-size;
 }
 
 .ageBand {
@@ -278,9 +303,10 @@ button.stageButton:hover {
 
 .ageBand > header {
   display: flex;
+  min-height: 40px;
   align-items: center;
   gap: 10px;
-  padding: 14px 20px 10px;
+  padding: 9px 16px;
 }
 
 .ageBand > header::before {
@@ -305,6 +331,7 @@ button.stageButton:hover {
   font-size: 1rem;
   font-weight: 700;
   letter-spacing: -0.01em;
+  line-height: 20px;
 }
 
 .ageBand[data-tone="alert"] > header h2 {
@@ -313,8 +340,8 @@ button.stageButton:hover {
 
 .ageBand > header > span {
   display: inline-grid;
-  min-width: 24px;
-  height: 24px;
+  min-width: 22px;
+  height: 22px;
   place-items: center;
   padding-inline: 7px;
   border-radius: 999px;
@@ -337,17 +364,26 @@ button.stageButton:hover {
 
 .ageBand > ol {
   margin: 0;
-  padding: 0 8px 8px;
+  padding: 0 8px 6px;
   list-style: none;
 }
 
+/*
+ * Narrow row: name; next step and due; stage, program, source, minor and owner as
+ * one wrapping line. The one Next button sits beside the first two lines, so the
+ * longest line, the third, runs the full width under it.
+ */
 .ageBand > ol > li {
   position: relative;
   display: grid;
   min-width: 0;
-  grid-template-columns: minmax(12rem, 1.2fr) minmax(12rem, 1.3fr) minmax(8rem, 0.8fr) auto;
+  grid-template-areas:
+    "initials name next"
+    "initials action next"
+    "initials facts facts";
+  grid-template-columns: 28px minmax(0, 1fr) auto;
   align-items: center;
-  gap: 8px 16px;
+  gap: 2px 12px;
   padding: 8px 12px;
   border-radius: 12px;
   transition: background-color var(--product-motion-change-duration, 120ms) ease-out;
@@ -366,17 +402,41 @@ button.stageButton:hover {
   box-shadow: inset 3px 0 0 var(--product-wood);
 }
 
-.queueLead {
-  display: flex;
+.leadInitials {
+  display: inline-grid;
+  width: 28px;
+  height: 28px;
+  align-self: start;
+  grid-area: initials;
+  place-items: center;
+  border-radius: 8px;
+  background: var(--hz-tile);
+  color: var(--product-wood);
+  font-size: 0.6875rem;
+  font-weight: 750;
+  letter-spacing: 0.02em;
+}
+
+.ageBand .queueLead {
   min-width: 0;
-  align-items: center;
-  gap: 12px;
+  min-height: 0;
+  justify-self: start;
+  grid-area: name;
   padding: 0;
   border: 0;
+  border-radius: 0;
   background: transparent;
   color: var(--product-ink);
   cursor: pointer;
+  font-size: 0.9375rem;
+  font-weight: 700;
+  line-height: 19px;
+  overflow-wrap: anywhere;
   text-align: left;
+}
+
+.ageBand span.queueLead {
+  justify-self: stretch;
 }
 
 /* The whole row opens the lead; the stage arrows sit above this layer. */
@@ -388,81 +448,107 @@ button.queueLead::after {
   content: "";
 }
 
-.queueLead:disabled {
+/* Keyboard focus rings the row the button opens, not just the name. */
+.ageBand .queueLead:focus-visible {
+  outline: none !important;
+}
+
+.ageBand .queueLead:focus-visible::after {
+  outline: 2px solid var(--product-focus);
+  outline-offset: -2px;
+}
+
+.ageBand .queueLead:disabled,
+.ageBand > ol > li:has(> .queueLead:disabled) :is(.leadInitials, .leadStage) {
   cursor: progress;
   opacity: 0.6;
 }
 
-.leadInitials {
-  display: inline-grid;
-  width: 40px;
-  height: 40px;
-  flex: 0 0 40px;
-  place-items: center;
-  border-radius: 11px;
-  background: var(--hz-tile);
-  color: var(--product-wood);
-  font-size: 0.8125rem;
-  font-weight: 750;
-}
-
-.leadName {
-  display: grid;
+.queueAction {
+  display: block;
   min-width: 0;
-  gap: 2px;
-}
-
-.leadName strong {
-  overflow-wrap: anywhere;
-  font-size: 0.9375rem;
-  font-weight: 700;
-}
-
-.leadName > span:not(.stateBar),
-.queueContext small {
-  overflow: hidden;
-  color: var(--product-meta);
-  font-size: 0.8125rem;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.queueAction,
-.queueContext {
-  display: grid;
-  min-width: 0;
-  justify-items: start;
-  gap: 4px;
+  grid-area: action;
+  font-size: 0.875rem;
+  line-height: 18px;
 }
 
 .queueAction strong {
-  font-size: 0.875rem;
-  font-weight: 650;
+  font-weight: 600;
 }
 
-.queueContext > span {
-  overflow: hidden;
-  color: var(--product-soft-ink);
-  font-size: 0.875rem;
+.leadDue {
+  color: var(--product-meta);
+  font-size: 0.8125rem;
   font-weight: 600;
-  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.queueContext > span[data-unassigned="true"] {
-  color: var(--product-meta);
-  font-weight: 500;
+.leadDue[data-tone="alert"] {
+  color: var(--product-vermilion);
 }
 
+.queueContext {
+  display: block;
+  min-width: 0;
+  grid-area: facts;
+  color: var(--product-meta);
+  font-size: 0.8125rem;
+  line-height: 17px;
+  overflow-wrap: anywhere;
+}
+
+/*
+ * Separators belong to the narrow row's running lines; screen readers skip them.
+ * Each dot stays with the word before it, so a wrapped line never starts with one.
+ */
+.queueAction[data-due="true"] > strong::after {
+  content: "\a0·";
+  content: "\a0·" / "";
+}
+
+.leadSource::before,
+.leadOwner::before {
+  content: "\a0· ";
+  content: "\a0· " / "";
+}
+
+.queueContext .leadOwner[data-unassigned="true"] {
+  display: none;
+}
+
+.queueContext > .stateBar::before {
+  content: none;
+}
+
+/* Cold-load bars stand in for one line of text each, so placeholder rows keep the loaded height. */
+.ageBand > ol > li > span > .stateBar {
+  margin-block: 3px;
+}
+
+.queueContext > .stateBar + .stateBar {
+  display: none;
+}
+
+/* The 44px button may overhang the two 19px lines beside it by a few pixels. */
 .stageMoves {
   position: relative;
   z-index: 1;
   display: flex;
-  gap: 4px;
+  grid-area: next;
+  gap: 8px;
+  margin-block: -3px;
 }
 
-.stageMoves button {
+/* Narrow rows move a lead forward only; the inspector's stage choice moves it back. */
+.ageBand .stageMoves [data-move="previous"] {
+  display: none;
+}
+
+.ageBand .stageMoves button {
+  position: relative;
   display: grid;
+  width: 44px;
+  height: 44px;
   place-items: center;
   border: 1px solid var(--product-rule-soft);
   background: var(--product-paper);
@@ -470,14 +556,14 @@ button.queueLead::after {
   cursor: pointer;
 }
 
-.stageMoves button:hover:not(:disabled) {
+.ageBand .stageMoves button:hover:not(:disabled) {
   background: var(--hz-tile);
   color: var(--product-ink);
 }
 
-.stageMoves button:disabled {
-  cursor: not-allowed;
-  opacity: 0.35;
+/* A move that cannot happen leaves its place empty rather than showing a dead arrow. */
+.ageBand .stageMoves button:disabled {
+  visibility: hidden;
 }
 
 .stageMoves svg {
@@ -491,6 +577,148 @@ button.queueLead::after {
   height: 44px;
   border-radius: 10px;
   background: var(--hz-tile);
+}
+
+/*
+ * Wide row: 50px, two lines in four columns, with both arrows quiet until the row
+ * is hovered or holds focus. It needs about 700px of queue, so it applies from
+ * 821px and only while the inspector leaves the queue that much room.
+ */
+@media (min-width: 821px) {
+  @container lead-queue (min-width: 700px) {
+    .ageBand > ol > li {
+      min-height: 50px;
+      grid-template-areas:
+        "initials name action owner next"
+        "initials stage action source next";
+      grid-template-columns:
+        28px minmax(11.5rem, 1.2fr) minmax(12rem, 1.3fr) minmax(7rem, 0.7fr)
+        auto;
+      padding: 7px 12px;
+    }
+
+    .leadInitials {
+      align-self: center;
+    }
+
+    .ageBand .queueLead {
+      line-height: 18px;
+    }
+
+    .queueAction {
+      display: grid;
+      align-self: center;
+      justify-items: start;
+      gap: 2px;
+    }
+
+    .queueAction strong {
+      font-weight: 650;
+    }
+
+    .leadDue {
+      font-weight: 500;
+      line-height: 16px;
+    }
+
+    .queueContext {
+      display: contents;
+    }
+
+    .queueAction[data-due="true"] > strong::after,
+    .leadSource::before,
+    .leadOwner::before {
+      content: none;
+    }
+
+    .dueGap {
+      display: none;
+    }
+
+    .leadStage,
+    .leadSource {
+      min-width: 0;
+      overflow: hidden;
+      color: var(--product-meta);
+      font-size: 0.8125rem;
+      line-height: 16px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .leadStage {
+      grid-area: stage;
+    }
+
+    .leadSource {
+      grid-area: source;
+    }
+
+    .queueContext .leadOwner,
+    .queueContext .leadOwner[data-unassigned="true"] {
+      display: block;
+      min-width: 0;
+      grid-area: owner;
+      overflow: hidden;
+      color: var(--product-soft-ink);
+      font-size: 0.875rem;
+      font-weight: 600;
+      line-height: 18px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .queueContext .leadOwner[data-unassigned="true"] {
+      color: var(--product-meta);
+      font-weight: 500;
+    }
+
+    .stageMoves {
+      margin-block: 0;
+    }
+
+    .ageBand .stageMoves [data-move="previous"] {
+      display: grid;
+    }
+
+    .ageBand .stageMoves button {
+      width: 36px;
+      min-width: 36px;
+      height: 36px;
+      min-height: 36px;
+      border-color: transparent;
+      background: transparent;
+      opacity: 0.5;
+      transition:
+        opacity var(--product-motion-change-duration, 120ms) ease-out,
+        background-color var(--product-motion-change-duration, 120ms) ease-out;
+    }
+
+    /* A 44px target around each 36px arrow; the 8px gap keeps the two apart. */
+    .ageBand .stageMoves button::before {
+      position: absolute;
+      inset: -4px;
+      content: "";
+    }
+
+    .ageBand > ol > li:is(:hover, :focus-within) .stageMoves button {
+      color: var(--product-ink);
+      opacity: 1;
+    }
+
+    .stageMovePlaceholder {
+      width: 36px;
+      height: 36px;
+    }
+
+    .ageBand > ol > li > span > .stateBar {
+      margin-block: 0;
+    }
+
+    .queueContext > .stateBar + .stateBar {
+      display: block;
+    }
+  }
 }
 
 /* Inspector: the selected lead, next step first */
@@ -1199,51 +1427,9 @@ button.queueLead::after {
   }
 }
 
-@media (max-width: 1279px) {
-  .leadWorkbench[data-inspector-open="true"] .ageBand > ol > li {
-    grid-template-columns: minmax(0, 1fr) auto;
-  }
-
-  .leadWorkbench[data-inspector-open="true"] .queueAction,
-  .leadWorkbench[data-inspector-open="true"] .queueContext {
-    grid-column: 1;
-    padding-left: 52px;
-  }
-
-  .leadWorkbench[data-inspector-open="true"] .stageMoves {
-    grid-column: 2;
-    grid-row: 1;
-  }
-
-  .leadWorkbench[data-inspector-open="true"] .queueContext {
-    display: flex;
-    gap: 8px;
-  }
-}
-
 @media (max-width: 1023px) {
   .leadWorkbench[data-inspector-open="true"] {
     grid-template-columns: minmax(0, 1fr) minmax(19rem, 22rem);
-  }
-
-  .ageBand > ol > li {
-    grid-template-columns: minmax(0, 1fr) auto;
-  }
-
-  .queueAction,
-  .queueContext {
-    grid-column: 1;
-    padding-left: 52px;
-  }
-
-  .stageMoves {
-    grid-column: 2;
-    grid-row: 1;
-  }
-
-  .queueContext {
-    display: flex;
-    gap: 8px;
   }
 }
 
@@ -1258,38 +1444,83 @@ button.queueLead::after {
     max-height: none;
     order: -1;
   }
-
-  .stageRail {
-    grid-template-columns: repeat(5, minmax(9.5rem, 1fr));
-    overflow-x: auto;
-    scroll-snap-type: x proximity;
-  }
-
-  .stageRail li {
-    scroll-snap-align: start;
-  }
 }
 
 @media (max-width: 640px) {
-  .ageBand > header {
-    padding: 12px 14px 8px;
-  }
-
-  .ageBand > ol {
-    padding: 0 4px 6px;
-  }
-
+  /*
+   * Phones give the decorative initials' 40px to the text instead, so a row's
+   * next step and its stage line fit on one line each far more often (74px rows).
+   */
   .ageBand > ol > li {
-    padding: 10px;
+    grid-template-areas:
+      "name next"
+      "action next"
+      "facts facts";
+    grid-template-columns: minmax(0, 1fr) auto;
   }
 
-  .queueAction,
-  .queueContext {
-    padding-left: 0;
+  .ageBand .leadInitials {
+    display: none;
   }
 
-  .queueContext {
-    flex-wrap: wrap;
+  /* Phones: the strip is one row of 40px chips that scrolls sideways. */
+  .page > .stageRail:first-child {
+    margin-top: -32px;
+  }
+
+  .stageRail {
+    display: flex;
+    gap: 6px;
+    padding: 8px;
+    scroll-padding-inline: 8px;
+  }
+
+  .stageRail li {
+    flex: 0 0 auto;
+  }
+
+  .stageRail li + li::before {
+    display: none;
+  }
+
+  .stageRail .stageButton {
+    display: inline-flex;
+    width: auto;
+    min-height: 40px;
+    align-items: center;
+    gap: 6px;
+    padding: 0 14px;
+    border: 1px solid var(--product-rule-soft);
+    border-radius: 999px !important;
+    background: var(--product-card-stock);
+    white-space: nowrap;
+  }
+
+  .stageButton strong {
+    color: var(--product-soft-ink);
+    font-size: 0.875rem;
+  }
+
+  .stageButton b {
+    font-size: 0.875rem;
+    font-weight: 750;
+    letter-spacing: 0;
+    line-height: 1;
+  }
+
+  .stageRail li[data-empty="true"] .stageButton b {
+    font-weight: 650;
+  }
+
+  .stageButton[aria-pressed="true"],
+  button.stageButton[aria-pressed="true"]:hover {
+    border-color: transparent;
+    background: var(--hz-cta);
+    box-shadow: none;
+  }
+
+  .stageButton[aria-pressed="true"] :is(strong, b) {
+    color: var(--hz-cta-ink);
   }
 
   .inspectorBody {

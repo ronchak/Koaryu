@@ -25,79 +25,6 @@ const STATUS_LENSES: { value: StudentRosterStatusFilter | ""; label: string }[] 
   ...STATUS_OPTIONS,
 ];
 
-/**
- * The roster's views: every status one tap away (the status filter itself), and the
- * two follow-up lists the Dashboard links to. It opens the page on the header's ridge.
- */
-export function StudentRosterLenses({
-  hasNewStudentFilter,
-  inactivityThreshold,
-  isBulkCommandPending,
-  isNewStudentYtd,
-  newStudentDays,
-  onStatusFilterChange,
-  statusFilter,
-}: {
-  hasNewStudentFilter: boolean;
-  inactivityThreshold: number | null;
-  isBulkCommandPending: boolean;
-  isNewStudentYtd: boolean;
-  newStudentDays: number | null;
-  onStatusFilterChange: (value: StudentRosterStatusFilter | "") => void;
-  statusFilter: StudentRosterStatusFilter | "";
-}) {
-  const inactiveLabel = `Not seen ${inactivityThreshold ?? 14}+ days`;
-  const newLabel = isNewStudentYtd ? "New this year" : `New in ${newStudentDays ?? 30} days`;
-  return (
-    <nav className={styles.rosterLenses} aria-label="Roster views">
-      <div role="radiogroup" aria-label="Filter by status" className={styles.lensGroup}>
-        {STATUS_LENSES.map((lens) => {
-          const checked = statusFilter === lens.value;
-          const tone = lens.value ? STUDENT_STATUS_DISPLAY[lens.value].tone : undefined;
-          return (
-            <button
-              key={lens.value || "all"}
-              type="button"
-              role="radio"
-              aria-checked={checked}
-              disabled={isBulkCommandPending}
-              onClick={() => onStatusFilterChange(lens.value)}
-              className={styles.lens}
-              data-tone={tone}
-            >
-              {tone ? <span aria-hidden="true" className={styles.lensDot} /> : null}
-              {lens.label}
-            </button>
-          );
-        })}
-      </div>
-      <div className={styles.lensFollowUps}>
-        <span className={styles.lensFollowUpsLabel}>Follow up</span>
-        <Link
-          href={inactivityThreshold ? "/students" : "/students?inactiveDays=14"}
-          className={styles.lensLink}
-          aria-current={inactivityThreshold ? "true" : undefined}
-          title={inactivityThreshold ? "Show everyone again" : undefined}
-        >
-          <Clock aria-hidden="true" />
-          {inactiveLabel}
-          {inactivityThreshold ? <X aria-hidden="true" className={styles.lensLinkClear} /> : null}
-        </Link>
-        <Link
-          href={hasNewStudentFilter ? "/students" : "/students?newStudents=30"}
-          className={styles.lensLink}
-          aria-current={hasNewStudentFilter ? "true" : undefined}
-          title={hasNewStudentFilter ? "Show everyone again" : undefined}
-        >
-          <Sparkles aria-hidden="true" />
-          {newLabel}
-          {hasNewStudentFilter ? <X aria-hidden="true" className={styles.lensLinkClear} /> : null}
-        </Link>
-      </div>
-    </nav>
-  );
-}
-
 export function StudentRosterNotices({
   actionMessage,
   fullRosterRequested,
@@ -129,29 +56,20 @@ export function StudentRosterNotices({
     <div className={styles.rosterNotices}>
       {inactivityThreshold ? (
         <DismissibleNotice tone="warning" onDismiss={onDismissRosterQueryNotice}>
-          <div className="text-text-primary">
-            <p className="text-sm font-semibold text-text-primary">
-              Showing students inactive for {inactivityThreshold}+ days
-            </p>
-            <p className="text-[0.8125rem] text-text-secondary mt-0.5">
-              Current holds are excluded automatically from this list.
-            </p>
-          </div>
+          <p className="text-sm text-text-primary">
+            Showing students not seen for {inactivityThreshold}+ days. Students on hold are left
+            out.
+          </p>
         </DismissibleNotice>
       ) : null}
 
       {hasNewStudentFilter && newStudentStartDate ? (
         <DismissibleNotice tone="success" onDismiss={onDismissRosterQueryNotice}>
-          <div className="text-text-primary">
-            <p className="text-sm font-semibold text-text-primary">
-              {isNewStudentYtd
-                ? "Showing new students year to date"
-                : `Showing new students from the last ${newStudentDays} days`}
-            </p>
-            <p className="text-[0.8125rem] text-text-secondary mt-0.5">
-              Current active, trialing, or paused students are filtered by membership start date.
-            </p>
-          </div>
+          <p className="text-sm text-text-primary">
+            {isNewStudentYtd
+              ? "Showing students who joined this year, by membership start date."
+              : `Showing students who joined in the last ${newStudentDays} days, by membership start date.`}
+          </p>
         </DismissibleNotice>
       ) : null}
 
@@ -177,122 +95,211 @@ export function StudentRosterNotices({
   );
 }
 
+/**
+ * The roster's head, on the header's ridge: every status one tap away (the status
+ * filter itself), the two follow-up lists Home links to, then program and search.
+ * It stays at the top of the window while the roster scrolls under the side spine.
+ */
 export function StudentRosterToolbar({
   activeBulkPanel,
+  allSelected,
   canManageRoster,
   hasActiveFilters,
+  hasNewStudentFilter,
+  inactivityThreshold,
   isBulkCommandPending,
+  isNewStudentYtd,
   isRosterRefreshing,
+  newStudentDays,
   onClearFilters,
   onProgramFilterChange,
   onSearchChange,
   onSort,
+  onStatusFilterChange,
   onToggleBulkPanel,
+  onToggleSelectAll,
   programFilter,
   programs,
   search,
   selectedCount,
   sortDir,
   sortKey,
+  statusFilter,
 }: {
   activeBulkPanel: StudentRosterBulkPanel | null;
+  allSelected: boolean;
   canManageRoster: boolean;
   hasActiveFilters?: boolean;
+  hasNewStudentFilter: boolean;
+  inactivityThreshold: number | null;
   isBulkCommandPending: boolean;
+  isNewStudentYtd: boolean;
   isRosterRefreshing: boolean;
+  newStudentDays: number | null;
   onClearFilters?: () => void;
   onProgramFilterChange: (value: string) => void;
   onSearchChange: (value: string) => void;
   onSort: (key: SortKey) => void;
+  onStatusFilterChange: (value: StudentRosterStatusFilter | "") => void;
   onToggleBulkPanel: (panel: StudentRosterBulkPanel) => void;
+  onToggleSelectAll: () => void;
   programFilter: string;
   programs: Program[];
   search: string;
   selectedCount: number;
   sortDir: SortDir;
   sortKey: SortKey;
+  statusFilter: StudentRosterStatusFilter | "";
 }) {
+  const inactiveLabel = `Not seen ${inactivityThreshold ?? 14}+ days`;
+  const newLabel = isNewStudentYtd ? "New this year" : `New in ${newStudentDays ?? 30} days`;
+  const currentPrograms = programs.filter((program) => !program.archived_at);
   const bulkButtonClass = (active: boolean) =>
     `${styles.selectionAction} ${active ? styles.selectionActionActive : ""}`;
+  const selectAllLabel = allSelected
+    ? "Deselect all visible students"
+    : "Select all visible students";
   return (
     <div className={styles.rosterToolbar}>
-      <div className={styles.rosterSearchField}>
-        <Search aria-hidden="true" className={styles.rosterSearchIcon} />
-        <input
-          type="text"
-          aria-label="Search students"
-          placeholder="Search by name, email or program"
-          value={search}
-          onChange={(event) => onSearchChange(event.target.value)}
-          disabled={isBulkCommandPending}
-          className={styles.rosterSearchInput}
-        />
-      </div>
+      <nav className={styles.rosterControls} aria-label="Roster views">
+        {/* One strip of views: it scrolls sideways when it is wider than the sheet. */}
+        <div className={styles.lensStrip}>
+          <div role="radiogroup" aria-label="Filter by status" className={styles.lensGroup}>
+            {STATUS_LENSES.map((lens) => {
+              const checked = statusFilter === lens.value;
+              const tone = lens.value ? STUDENT_STATUS_DISPLAY[lens.value].tone : undefined;
+              return (
+                <button
+                  key={lens.value || "all"}
+                  type="button"
+                  role="radio"
+                  aria-checked={checked}
+                  disabled={isBulkCommandPending}
+                  onClick={() => onStatusFilterChange(lens.value)}
+                  className={styles.lens}
+                  data-tone={tone}
+                >
+                  {tone ? <span aria-hidden="true" className={styles.lensDot} /> : null}
+                  {lens.label}
+                </button>
+              );
+            })}
+          </div>
+          <div className={styles.lensFollowUps}>
+            <Link
+              href={inactivityThreshold ? "/students" : "/students?inactiveDays=14"}
+              className={styles.lensLink}
+              aria-current={inactivityThreshold ? "true" : undefined}
+              title={inactivityThreshold ? "Show everyone again" : undefined}
+            >
+              <Clock aria-hidden="true" />
+              {inactiveLabel}
+              {inactivityThreshold ? (
+                <X aria-hidden="true" className={styles.lensLinkClear} />
+              ) : null}
+            </Link>
+            <Link
+              href={hasNewStudentFilter ? "/students" : "/students?newStudents=30"}
+              className={styles.lensLink}
+              aria-current={hasNewStudentFilter ? "true" : undefined}
+              title={hasNewStudentFilter ? "Show everyone again" : undefined}
+            >
+              <Sparkles aria-hidden="true" />
+              {newLabel}
+              {hasNewStudentFilter ? (
+                <X aria-hidden="true" className={styles.lensLinkClear} />
+              ) : null}
+            </Link>
+          </div>
+        </div>
 
-      <div className={styles.rosterFilterGroup}>
-        <select
-          aria-label="Filter by program"
-          value={programFilter}
-          onChange={(event) => onProgramFilterChange(event.target.value)}
-          disabled={isBulkCommandPending}
-          className={styles.rosterFilterSelect}
-        >
-          <option value="">All programs</option>
-          {programs
-            .filter((program) => !program.archived_at)
-            .map((program) => (
+        {currentPrograms.length > 1 ? (
+          <select
+            aria-label="Filter by program"
+            value={programFilter}
+            onChange={(event) => onProgramFilterChange(event.target.value)}
+            disabled={isBulkCommandPending}
+            className={`${styles.rosterFilterSelect} ${styles.rosterProgramSelect}`}
+          >
+            <option value="">All programs</option>
+            {currentPrograms.map((program) => (
               <option key={program.id} value={program.id}>
                 {program.name}
               </option>
             ))}
-        </select>
-      </div>
-
-      <div className={styles.mobileSortControl}>
-        <label htmlFor="mobile-roster-sort">Sort</label>
-        <select
-          id="mobile-roster-sort"
-          aria-label="Sort students by"
-          value={sortKey}
-          onChange={(event) => onSort(event.target.value as SortKey)}
-          disabled={isBulkCommandPending}
-          className={styles.rosterFilterSelect}
-        >
-          <option value="name">Name</option>
-          <option value="status">Status</option>
-          <option value="membership_start_date">Member since</option>
-          <option value="created_at">Created</option>
-        </select>
-        <button
-          type="button"
-          aria-label={`Sort ${sortDir === "asc" ? "descending" : "ascending"}`}
-          onClick={() => onSort(sortKey)}
-          disabled={isBulkCommandPending}
-          className={styles.mobileSortDirection}
-        >
-          {sortDir === "asc" ? "A–Z" : "Z–A"}
-        </button>
-      </div>
-
-      <div className={styles.rosterToolbarEnd}>
-        {isRosterRefreshing ? (
-          <span className={styles.rosterRefreshState}>Updating roster…</span>
+          </select>
         ) : null}
-        {hasActiveFilters && onClearFilters ? (
+
+        <div className={styles.rosterSearchField}>
+          <Search aria-hidden="true" className={styles.rosterSearchIcon} />
+          <input
+            type="text"
+            aria-label="Search students"
+            placeholder="Search students"
+            value={search}
+            onChange={(event) => onSearchChange(event.target.value)}
+            disabled={isBulkCommandPending}
+            className={styles.rosterSearchInput}
+          />
+        </div>
+
+        {/* Phones only: the column headers sort everywhere else. */}
+        <div className={styles.mobileSortControl}>
+          <select
+            aria-label="Sort students by"
+            value={sortKey}
+            onChange={(event) => onSort(event.target.value as SortKey)}
+            disabled={isBulkCommandPending}
+            className={styles.rosterFilterSelect}
+          >
+            <option value="name">Name</option>
+            <option value="status">Status</option>
+            <option value="membership_start_date">Member since</option>
+            <option value="created_at">Created</option>
+          </select>
           <button
             type="button"
-            onClick={onClearFilters}
+            aria-label={`Sort ${sortDir === "asc" ? "descending" : "ascending"}`}
+            onClick={() => onSort(sortKey)}
             disabled={isBulkCommandPending}
-            className={styles.clearFilters}
+            className={styles.mobileSortDirection}
           >
-            <X aria-hidden="true" />
-            Clear filters
+            {sortDir === "asc" ? "A–Z" : "Z–A"}
           </button>
+        </div>
+
+        {hasActiveFilters || isRosterRefreshing ? (
+          <div className={styles.rosterToolbarEnd}>
+            {hasActiveFilters && onClearFilters ? (
+              <button
+                type="button"
+                onClick={onClearFilters}
+                disabled={isBulkCommandPending}
+                className={styles.clearFilters}
+              >
+                <X aria-hidden="true" />
+                Clear filters
+              </button>
+            ) : null}
+            {isRosterRefreshing ? (
+              <span className={styles.rosterRefreshState}>Updating roster…</span>
+            ) : null}
+          </div>
         ) : null}
-      </div>
+      </nav>
 
       {canManageRoster && selectedCount > 0 ? (
         <div className={styles.selectionBand}>
+          {/* Phones only: the column-head checkbox selects everyone above that. */}
+          <button
+            type="button"
+            onClick={onToggleSelectAll}
+            disabled={isBulkCommandPending}
+            aria-label={selectAllLabel}
+            className={`${styles.selectionAction} ${styles.selectionSelectAll}`}
+          >
+            {allSelected ? "Deselect all" : "Select all"}
+          </button>
           <span className={styles.selectionCount}>{selectedCount} selected</span>
           <button
             type="button"

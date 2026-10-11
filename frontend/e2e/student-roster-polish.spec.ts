@@ -52,8 +52,11 @@ rosterUiTest(
     });
     expect(searchGeometry.iconRight).toBeLessThanOrEqual(searchGeometry.textStart - 4);
     await expect(
-      page.getByText("Select all visible students", { exact: true }).first(),
-    ).toBeHidden();
+      page.getByRole("checkbox", { name: "Select all visible students", exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Select all visible students", exact: true }),
+    ).toHaveCount(0);
 
     const hoverRequests: string[] = [];
     const navigationPaths = new Set([
@@ -109,9 +112,20 @@ rosterUiTest("fits the roster to a medium window without overflow", async ({ pag
 
 rosterUiTest("renders an uncramped mobile roster", async ({ page }, testInfo) => {
   await openRoster(page, 390);
-  await expect(
-    page.getByText("Select all visible students", { exact: true }).first(),
-  ).toBeVisible();
+  const selectAll = page.getByRole("button", { name: "Select all visible students", exact: true });
+  await expect(selectAll).toHaveCount(0);
+  await page.locator("tbody tr").first().getByRole("checkbox").check();
+  await expect(selectAll).toBeVisible();
+  await expect(selectAll).toHaveText("Select all");
+  await selectAll.click();
+  const deselectAll = page.getByRole("button", {
+    name: "Deselect all visible students",
+    exact: true,
+  });
+  await expect(deselectAll).toBeVisible();
+  await expect(deselectAll).toHaveText("Deselect all");
+  await deselectAll.click();
+  await expect(selectAll).toHaveCount(0);
   const overflow = await page.evaluate(
     () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
   );

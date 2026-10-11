@@ -27,6 +27,7 @@ function components(fixture = {}) {
     home: add("@/components/dashboard/home/home-placeholder"),
     eligibility: add("@/components/belt-tracker/eligibility-panel"),
     leads: add("@/components/leads/lead-ledger-loading"),
+    leadStrip: add("@/components/leads/lead-stage-strip"),
     leadsPage: add("@/app/(dashboard)/leads/page"),
     detail: add("@/components/leads/lead-detail-modal"),
     programs: add("@/components/settings/programs-section"),
@@ -96,11 +97,17 @@ test("a loaded empty eligibility result keeps its empty state during refresh", (
   assert.doesNotMatch(html, /koaryu-skeleton-reveal|Loading eligibility/);
 });
 
-test("lead placeholder reserves all five stages and the responsive grouped action queue", () => {
+test("lead placeholders reserve five strip tiles and the responsive grouped action queue", () => {
   const html = render(c.leads.LeadLedgerLoading, { canManageLeads: true });
-  const rail = html.match(/<ol class="stageRail"[\s\S]*?<\/ol>/)?.[0] ?? "";
+  const strip = render(c.leadStrip.LeadStageStripPlaceholder);
+  const rail = strip.match(/<ol class="stageRail"[\s\S]*?<\/ol>/)?.[0] ?? "";
   assert.equal((rail.match(/<li>/g) ?? []).length, 5);
+  assert.match(rail, /No owner/);
+  assert.doesNotMatch(rail, /Enrolled/);
+  assert.doesNotMatch(strip + html, /aria-label="Lead follow-ups"/);
   assert.equal((html.match(/class="ageBand"/g) ?? []).length, 2);
+  assert.match(html, /data-age-band="overdue"/);
+  assert.match(html, /data-age-band="today"/);
   for (const name of ["queueLead", "queueAction", "queueContext", "stageMoves"])
     assert.equal((html.match(new RegExp(`class="${name}"`, "g")) ?? []).length, 6);
   assert.match(html, /koaryu-skeleton-reveal/);
@@ -165,6 +172,7 @@ test("a failed Leads refresh keeps the loaded board and adds a retry notice", ()
   const html = render(page.leadsPage.default);
   assert.match(html, /A Lead/);
   assert.match(html, /class="stageRail"/);
+  assert.doesNotMatch(html, /aria-label="Lead follow-ups"/);
   assert.match(html, /Refresh unavailable/);
   assert.match(html, /Retry lead roster/);
   assert.doesNotMatch(html, /could not be loaded|koaryu-skeleton-reveal/);

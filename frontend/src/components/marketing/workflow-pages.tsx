@@ -398,7 +398,7 @@ function TrialGuide() {
             ],
             [
               "After creation",
-              "Change Stage or Assigned staff; set a Follow-up date with Reschedule; Mark contacted; Mark lost; Convert to student.",
+              "Change Stage or Owner; set a Follow-up date with Reschedule; Mark contacted; Mark lost; Convert to student.",
               "Mark contacted clears the follow-up date. The adjacent Move to stage action also marks contact and clears the date. Reschedule afterward if a follow-up is still needed.",
             ],
           ]}

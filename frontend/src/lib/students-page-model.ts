@@ -307,8 +307,9 @@ export function buildStudentRows(
           .toLowerCase(),
       },
       contact: student.email || student.phone || primaryGuardian?.email || "\u2014",
-      visibleTags: student.tags.slice(0, 2),
-      hiddenTagCount: Math.max(0, student.tags.length - 2),
+      // One tag pill per row; the rest are counted (`+N`) and named in its title.
+      visibleTags: student.tags.slice(0, 1),
+      hiddenTagCount: Math.max(0, student.tags.length - 1),
     };
   });
 }

@@ -2,7 +2,7 @@ import { differenceInLocalDateKeys } from "../../lib/date.ts";
 import { PIPELINE_STAGES, formatDate } from "../../lib/leads-page-model.ts";
 import type { Lead, LeadStage } from "@/types";
 
-/** A quick filter on the follow-up queue, set from the stats strip or the stage rail. */
+/** A quick filter on the follow-up queue, set from the stage strip or a `/leads?focus=` link. */
 export type LeadFocus =
   | { kind: "overdue" }
   | { kind: "today" }

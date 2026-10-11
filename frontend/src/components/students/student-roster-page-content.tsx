@@ -4,7 +4,6 @@ import dynamic from "next/dynamic";
 import { Header } from "@/components/header";
 import {
   StudentRosterBulkActionPanels,
-  StudentRosterLenses,
   StudentRosterNotices,
   StudentRosterToolbar,
   type StudentRosterBulkPanel,
@@ -32,7 +31,7 @@ const StudentForm = dynamic(
   },
 );
 
-const ROSTER_PLACEHOLDER_ROWS = 8;
+const ROSTER_PLACEHOLDER_ROWS = 12;
 
 function studentsLabel(count: number) {
   return `${count} ${count === 1 ? "student" : "students"}`;
@@ -195,7 +194,6 @@ export function StudentRosterPageContent({
   return (
     <div className={`flex min-h-full flex-col ${styles.rosterPrintRoot}`}>
       <Header
-        eyebrow="Roster"
         title="Students"
         description={
           isInitialRosterLoading ? (
@@ -225,134 +223,138 @@ export function StudentRosterPageContent({
       </Header>
 
       <HorizonPage className={`flex-1 ${styles.rosterWorkspace}`}>
-        <StudentRosterLenses
-          hasNewStudentFilter={hasNewStudentFilter}
-          inactivityThreshold={inactivityThreshold}
-          isBulkCommandPending={isBulkCommandPending}
-          isNewStudentYtd={isNewStudentYtd}
-          newStudentDays={newStudentDays}
-          onStatusFilterChange={onStatusFilterChange}
-          statusFilter={statusFilter}
-        />
-
-        <StudentRosterNotices
-          actionMessage={actionMessage}
-          fullRosterRequested={fullRosterRequested}
-          hasNewStudentFilter={hasNewStudentFilter}
-          inactivityThreshold={inactivityThreshold}
-          isNewStudentYtd={isNewStudentYtd}
-          newStudentDays={newStudentDays}
-          newStudentStartDate={newStudentStartDate}
-          onDismissActionMessage={onDismissActionMessage}
-          onDismissRosterQueryNotice={onDismissRosterQueryNotice}
-        />
-
+        {/* One paper sheet on the header's ridge; its glass toolbar is the sheet's head. */}
         <section className={styles.rosterSheet} aria-label="Student roster">
           <StudentRosterToolbar
             activeBulkPanel={activeBulkPanel}
+            allSelected={allSelected}
             canManageRoster={canManageRoster}
             hasActiveFilters={hasActiveFilters}
+            hasNewStudentFilter={hasNewStudentFilter}
+            inactivityThreshold={inactivityThreshold}
             isBulkCommandPending={isBulkCommandPending}
+            isNewStudentYtd={isNewStudentYtd}
             isRosterRefreshing={isRosterRefreshing}
+            newStudentDays={newStudentDays}
             onClearFilters={onClearFilters}
             onProgramFilterChange={onProgramFilterChange}
             onSearchChange={onSearchChange}
             onSort={onSort}
+            onStatusFilterChange={onStatusFilterChange}
             onToggleBulkPanel={onToggleBulkPanel}
+            onToggleSelectAll={onToggleSelectAll}
             programFilter={programFilter}
             programs={programs}
             search={search}
             selectedCount={selectedCount}
             sortDir={sortDir}
             sortKey={sortKey}
+            statusFilter={statusFilter}
           />
 
-          {canManageRoster ? (
-            <StudentRosterBulkActionPanels
-              activeBulkPanel={activeBulkPanel}
-              bulkActionError={bulkActionError}
-              bulkStatus={bulkStatus}
-              deleteError={deleteError}
-              isAddingTags={isAddingTags}
-              isBulkCommandPending={isBulkCommandPending}
-              isDeleting={isDeleting}
-              isUpdatingStatus={isUpdatingStatus}
-              onAddTags={onAddTags}
-              onBulkStatusChange={onBulkStatusChange}
-              onBulkStatusUpdate={onBulkStatusUpdate}
-              onCancelDelete={onCancelDelete}
-              onCancelStatus={onCancelStatus}
-              onCancelTags={onCancelTags}
-              onDeleteSelected={onDeleteSelected}
-              onTagInputChange={onTagInputChange}
-              selectedCount={selectedCount}
-              tagInput={tagInput}
+          <div className={styles.rosterSheetBody}>
+            <StudentRosterNotices
+              actionMessage={actionMessage}
+              fullRosterRequested={fullRosterRequested}
+              hasNewStudentFilter={hasNewStudentFilter}
+              inactivityThreshold={inactivityThreshold}
+              isNewStudentYtd={isNewStudentYtd}
+              newStudentDays={newStudentDays}
+              newStudentStartDate={newStudentStartDate}
+              onDismissActionMessage={onDismissActionMessage}
+              onDismissRosterQueryNotice={onDismissRosterQueryNotice}
             />
-          ) : null}
 
-          <div className={styles.rosterViewport}>
-            {activeLoadError ? (
-              <StudentRosterLoadError
-                activeLoadError={activeLoadError}
-                onRetry={onRetryRosterLoad}
+            {canManageRoster ? (
+              <StudentRosterBulkActionPanels
+                activeBulkPanel={activeBulkPanel}
+                bulkActionError={bulkActionError}
+                bulkStatus={bulkStatus}
+                deleteError={deleteError}
+                isAddingTags={isAddingTags}
+                isBulkCommandPending={isBulkCommandPending}
+                isDeleting={isDeleting}
+                isUpdatingStatus={isUpdatingStatus}
+                onAddTags={onAddTags}
+                onBulkStatusChange={onBulkStatusChange}
+                onBulkStatusUpdate={onBulkStatusUpdate}
+                onCancelDelete={onCancelDelete}
+                onCancelStatus={onCancelStatus}
+                onCancelTags={onCancelTags}
+                onDeleteSelected={onDeleteSelected}
+                onTagInputChange={onTagInputChange}
+                selectedCount={selectedCount}
+                tagInput={tagInput}
               />
-            ) : !isInitialRosterLoading && filtered.length === 0 ? (
-              <StudentRosterEmptyState
-                canCreateStudents={canCreateStudents}
-                canManageRoster={canManageRoster}
-                hasActiveFilters={hasActiveFilters}
-                onAddStudent={onAddStudent}
-                onClearFilters={onClearFilters}
-                onImportCsv={onImportCsv}
-              />
-            ) : (
-              // A cold load draws placeholder rows inside the same table, so its
-              // columns do not move when rows land.
-              <div className={styles.rosterLedger} aria-busy={isInitialRosterLoading || undefined}>
-                {isInitialRosterLoading ? (
-                  <p className="sr-only" role="status">
-                    Loading roster
-                  </p>
-                ) : null}
-                <StudentRosterTable
-                  allSelected={allSelected}
-                  beltRanks={beltRanks}
-                  canManageRoster={canManageRoster}
-                  filtered={isInitialRosterLoading ? [] : filtered}
-                  handleSort={onSort}
-                  inactivityByStudentId={inactivityByStudentId}
-                  inactivityThreshold={inactivityThreshold}
-                  isBulkCommandPending={isBulkCommandPending}
-                  onOpenStudent={onOpenStudent}
-                  onPrefetchStudent={onPrefetchStudent}
-                  placeholderRows={isInitialRosterLoading ? ROSTER_PLACEHOLDER_ROWS : 0}
-                  programs={programs}
-                  selectedIds={selectedIds}
-                  sortDir={sortDir}
-                  sortKey={sortKey}
-                  toggleSelect={onToggleSelect}
-                  toggleSelectAll={onToggleSelectAll}
+            ) : null}
+
+            <div className={styles.rosterViewport}>
+              {activeLoadError ? (
+                <StudentRosterLoadError
+                  activeLoadError={activeLoadError}
+                  onRetry={onRetryRosterLoad}
                 />
-              </div>
-            )}
-          </div>
+              ) : !isInitialRosterLoading && filtered.length === 0 ? (
+                <StudentRosterEmptyState
+                  canCreateStudents={canCreateStudents}
+                  canManageRoster={canManageRoster}
+                  hasActiveFilters={hasActiveFilters}
+                  onAddStudent={onAddStudent}
+                  onClearFilters={onClearFilters}
+                  onImportCsv={onImportCsv}
+                />
+              ) : (
+                // A cold load draws placeholder rows inside the same table, so its
+                // columns do not move when rows land.
+                <div
+                  className={styles.rosterLedger}
+                  aria-busy={isInitialRosterLoading || undefined}
+                >
+                  {isInitialRosterLoading ? (
+                    <p className="sr-only" role="status">
+                      Loading roster
+                    </p>
+                  ) : null}
+                  <StudentRosterTable
+                    allSelected={allSelected}
+                    beltRanks={beltRanks}
+                    canManageRoster={canManageRoster}
+                    filtered={isInitialRosterLoading ? [] : filtered}
+                    handleSort={onSort}
+                    inactivityByStudentId={inactivityByStudentId}
+                    inactivityThreshold={inactivityThreshold}
+                    isBulkCommandPending={isBulkCommandPending}
+                    onOpenStudent={onOpenStudent}
+                    onPrefetchStudent={onPrefetchStudent}
+                    placeholderRows={isInitialRosterLoading ? ROSTER_PLACEHOLDER_ROWS : 0}
+                    programs={programs}
+                    selectedIds={selectedIds}
+                    sortDir={sortDir}
+                    sortKey={sortKey}
+                    toggleSelect={onToggleSelect}
+                    toggleSelectAll={onToggleSelectAll}
+                  />
+                </div>
+              )}
+            </div>
 
-          <StudentRosterFooter
-            filteredCount={filtered.length}
-            isBulkCommandPending={isBulkCommandPending}
-            isPagedLoading={isPagedLoading}
-            onNextPage={onNextPage}
-            onPreviousPage={onPreviousPage}
-            page={page}
-            pageEnd={pageEnd}
-            pageStart={pageStart}
-            pagedTotal={pagedTotal}
-            hasNextPage={hasNextPage}
-            hasPreviousPage={hasPreviousPage}
-            studentsCount={studentsCount}
-            totalPages={totalPages}
-            usesDerivedRosterFilters={usesDerivedRosterFilters}
-          />
+            <StudentRosterFooter
+              filteredCount={filtered.length}
+              isBulkCommandPending={isBulkCommandPending}
+              isPagedLoading={isPagedLoading}
+              onNextPage={onNextPage}
+              onPreviousPage={onPreviousPage}
+              page={page}
+              pageEnd={pageEnd}
+              pageStart={pageStart}
+              pagedTotal={pagedTotal}
+              hasNextPage={hasNextPage}
+              hasPreviousPage={hasPreviousPage}
+              studentsCount={studentsCount}
+              totalPages={totalPages}
+              usesDerivedRosterFilters={usesDerivedRosterFilters}
+            />
+          </div>
         </section>
       </HorizonPage>
 

@@ -167,7 +167,9 @@ function BeltSummary({
             className={styles.programDot}
             style={first.programColor ? { backgroundColor: first.programColor } : undefined}
           />
-          {first.programName}
+          <span className={styles.beltProgramName} title={first.programName}>
+            {first.programName}
+          </span>
           {rest.length > 0 ? (
             <span
               className={styles.overflowCount}
@@ -179,6 +181,58 @@ function BeltSummary({
         </span>
       </div>
     </div>
+  );
+}
+
+/** Phones: the first belt and program as one line of words, the program dot between them. */
+function PhoneBeltLine({
+  belts,
+  row,
+  programs,
+}: {
+  belts: RosterBelt[];
+  row: StudentRosterRow;
+  programs: Program[];
+}) {
+  if (belts.length === 0) {
+    const fallback = programs.find((program) => program.id === row.student.program_id);
+    return (
+      <span className={styles.phoneBelt}>
+        {fallback ? (
+          <>
+            <span
+              aria-hidden="true"
+              className={styles.programDot}
+              style={fallback.color_hex ? { backgroundColor: fallback.color_hex } : undefined}
+            />
+            {fallback.name}
+          </>
+        ) : (
+          "No program"
+        )}
+      </span>
+    );
+  }
+  const [first, ...rest] = belts;
+  return (
+    <span className={styles.phoneBelt}>
+      {first.rankName ?? "No rank yet"}{" "}
+      <span
+        aria-hidden="true"
+        className={styles.programDot}
+        style={first.programColor ? { backgroundColor: first.programColor } : undefined}
+      />
+      {first.programName}
+      {rest.length > 0 ? (
+        <span
+          className={styles.overflowCount}
+          title={rest.map((belt) => belt.programName).join(", ")}
+        >
+          {" "}
+          +{rest.length} more
+        </span>
+      ) : null}
+    </span>
   );
 }
 
@@ -318,244 +372,239 @@ export function StudentRosterTable({
   const sortButtonClass =
     "inline-flex min-h-9 items-center gap-1 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50";
   return (
-    <>
-      {canManageRoster ? (
-        <label className={styles.mobileSelectAll}>
-          <input
-            type="checkbox"
-            checked={allSelected}
-            onChange={toggleSelectAll}
-            disabled={isBulkCommandPending}
-            className={styles.checkboxControl}
-          />
-          {allSelected ? "Deselect all visible students" : "Select all visible students"}
-        </label>
-      ) : null}
-      <table
-        className={styles.rosterTable}
-        data-selectable={canManageRoster ? "true" : "false"}
-        data-inactivity={inactivityThreshold ? "true" : undefined}
-      >
-        <thead>
-          <tr>
-            {canManageRoster ? (
-              <th data-column="select" className="p-0">
-                <label className={styles.checkboxTarget}>
-                  <input
-                    type="checkbox"
-                    checked={allSelected}
-                    onChange={toggleSelectAll}
-                    disabled={isBulkCommandPending}
-                    className={styles.checkboxControl}
-                  />
-                  <span className="sr-only">
-                    {allSelected ? "Deselect all visible students" : "Select all visible students"}
-                  </span>
-                </label>
-              </th>
-            ) : null}
-            <th data-column="name" aria-sort={getSortState("name", sortKey, sortDir)}>
-              <button
-                type="button"
-                onClick={() => handleSort("name")}
-                aria-label={getSortButtonLabel("name", "name", sortKey, sortDir)}
-                disabled={isBulkCommandPending}
-                className={sortButtonClass}
-              >
-                Student
-                <SortIcon col="name" sortKey={sortKey} sortDir={sortDir} />
-              </button>
+    <table
+      className={styles.rosterTable}
+      data-selectable={canManageRoster ? "true" : "false"}
+      data-inactivity={inactivityThreshold ? "true" : undefined}
+    >
+      <thead>
+        <tr>
+          {canManageRoster ? (
+            <th data-column="select" className="p-0">
+              <label className={styles.checkboxTarget}>
+                <input
+                  type="checkbox"
+                  checked={allSelected}
+                  onChange={toggleSelectAll}
+                  disabled={isBulkCommandPending}
+                  className={styles.checkboxControl}
+                />
+                <span className="sr-only">
+                  {allSelected ? "Deselect all visible students" : "Select all visible students"}
+                </span>
+              </label>
             </th>
-            <th data-column="programs">Belt &amp; program</th>
-            <th data-column="status" aria-sort={getSortState("status", sortKey, sortDir)}>
-              <button
-                type="button"
-                onClick={() => handleSort("status")}
-                aria-label={getSortButtonLabel("status", "status", sortKey, sortDir)}
-                disabled={isBulkCommandPending}
-                className={sortButtonClass}
-              >
-                Status
-                <SortIcon col="status" sortKey={sortKey} sortDir={sortDir} />
-              </button>
-            </th>
-            <th data-column="contact">Contact</th>
-            <th
-              data-column="member-since"
-              aria-sort={getSortState("membership_start_date", sortKey, sortDir)}
+          ) : null}
+          <th data-column="name" aria-sort={getSortState("name", sortKey, sortDir)}>
+            <button
+              type="button"
+              onClick={() => handleSort("name")}
+              aria-label={getSortButtonLabel("name", "name", sortKey, sortDir)}
+              disabled={isBulkCommandPending}
+              className={sortButtonClass}
             >
-              <button
-                type="button"
-                onClick={() => handleSort("membership_start_date")}
-                aria-label={getSortButtonLabel(
-                  "member since date",
-                  "membership_start_date",
-                  sortKey,
-                  sortDir,
-                )}
-                disabled={isBulkCommandPending}
-                className={sortButtonClass}
-              >
-                Member since
-                <SortIcon col="membership_start_date" sortKey={sortKey} sortDir={sortDir} />
-              </button>
+              Student
+              <SortIcon col="name" sortKey={sortKey} sortDir={sortDir} />
+            </button>
+          </th>
+          <th data-column="programs">Belt &amp; program</th>
+          <th data-column="status" aria-sort={getSortState("status", sortKey, sortDir)}>
+            <button
+              type="button"
+              onClick={() => handleSort("status")}
+              aria-label={getSortButtonLabel("status", "status", sortKey, sortDir)}
+              disabled={isBulkCommandPending}
+              className={sortButtonClass}
+            >
+              Status
+              <SortIcon col="status" sortKey={sortKey} sortDir={sortDir} />
+            </button>
+          </th>
+          <th data-column="contact">Contact</th>
+          <th
+            data-column="member-since"
+            aria-sort={getSortState("membership_start_date", sortKey, sortDir)}
+          >
+            <button
+              type="button"
+              onClick={() => handleSort("membership_start_date")}
+              aria-label={getSortButtonLabel(
+                "member since date",
+                "membership_start_date",
+                sortKey,
+                sortDir,
+              )}
+              disabled={isBulkCommandPending}
+              className={sortButtonClass}
+            >
+              Member since
+              <SortIcon col="membership_start_date" sortKey={sortKey} sortDir={sortDir} />
+            </button>
+          </th>
+          {inactivityThreshold ? <th data-column="inactive">Not seen for</th> : null}
+          <th data-column="open">
+            <span className="sr-only">Open</span>
+          </th>
+        </tr>
+      </thead>
+      <tbody className={placeholderRows > 0 ? "koaryu-skeleton-reveal" : undefined}>
+        {Array.from({ length: placeholderRows }, (_, index) => (
+          <tr
+            key={`placeholder-${index}`}
+            className={styles.rosterPlaceholderRow}
+            aria-hidden="true"
+          >
+            {canManageRoster ? (
+              <td data-cell="select" className="p-0">
+                <span className={styles.checkboxTarget}>
+                  <span className={styles.placeholderCheckbox} />
+                </span>
+              </td>
+            ) : null}
+            <th scope="row" data-cell="name" className={styles.studentCell}>
+              <span className={styles.studentIdentityButton}>
+                <span className={styles.placeholderAvatar} />
+                <span className={styles.placeholderName} data-length={index % 3} />
+              </span>
             </th>
-            {inactivityThreshold ? <th data-column="inactive">Inactive for</th> : null}
-            <th data-column="open">
-              <span className="sr-only">Open</span>
-            </th>
+            <td data-cell="programs">
+              <span className={styles.placeholderBar} data-length={(index + 1) % 3} />
+            </td>
+            <td data-cell="status">
+              <span className={styles.placeholderPill} />
+            </td>
+            <td data-cell="contact" />
+            <td data-cell="since">
+              <span className={styles.placeholderDate} />
+            </td>
+            {inactivityThreshold ? (
+              <td data-cell="inactive">
+                <span className={styles.placeholderDate} />
+              </td>
+            ) : null}
+            <td data-cell="open" />
           </tr>
-        </thead>
-        <tbody className={placeholderRows > 0 ? "koaryu-skeleton-reveal" : undefined}>
-          {Array.from({ length: placeholderRows }, (_, index) => (
+        ))}
+        {filtered.map((row) => {
+          const { student } = row;
+          const isSelected = selectedIds.has(student.id);
+          const studentName = getStudentName(row);
+          const guardianName = student.is_minor ? primaryGuardianName(student) : null;
+          const tags = [...row.visibleTags];
+          const moreTags = row.hiddenTagCount;
+          const hiddenTags = student.tags.slice(tags.length);
+          const belts = rosterBelts(row, programs, rankById);
+          const firstRankColor = belts.find((belt) => belt.rankColor)?.rankColor ?? null;
+          const inactivity = inactivityThreshold
+            ? inactivityByStudentId.get(student.id) || `${inactivityThreshold}+`
+            : null;
+          return (
             <tr
-              key={`placeholder-${index}`}
-              className={styles.rosterPlaceholderRow}
-              aria-hidden="true"
+              key={student.id}
+              data-student-id={student.id}
+              data-state={student.status}
+              onFocusCapture={() => onPrefetchStudent?.(student.id)}
+              onPointerEnter={() => onPrefetchStudent?.(student.id)}
+              onClick={() => onOpenStudent(student.id)}
+              className={styles.rosterRow}
+              data-selected={isSelected || undefined}
             >
               {canManageRoster ? (
                 <td data-cell="select" className="p-0">
-                  <span className={styles.checkboxTarget}>
-                    <span className={styles.placeholderCheckbox} />
-                  </span>
+                  <label
+                    className={styles.checkboxTarget}
+                    onClick={stopStudentSelectionPropagation}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onClick={stopStudentSelectionPropagation}
+                      onChange={() => toggleSelect(student.id)}
+                      disabled={isBulkCommandPending}
+                      className={styles.checkboxControl}
+                    />
+                    <span className="sr-only">
+                      {isSelected ? `Deselect ${studentName}` : `Select ${studentName}`}
+                    </span>
+                  </label>
                 </td>
               ) : null}
               <th scope="row" data-cell="name" className={styles.studentCell}>
-                <span className={styles.studentIdentityButton}>
-                  <span className={styles.placeholderAvatar} />
-                  <span className={styles.placeholderName} data-length={index % 3} />
-                </span>
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onOpenStudent(student.id);
+                  }}
+                  data-open-student
+                  aria-label={`Open ${studentName} profile`}
+                  className={styles.studentIdentityButton}
+                >
+                  <StudentAvatar student={student} size="sm" ringColor={firstRankColor} />
+                  <span className={styles.studentIdentityCopy}>
+                    <span className={styles.studentName}>
+                      {student.preferred_name || student.legal_first_name} {student.legal_last_name}
+                    </span>
+                    <PhoneBeltLine belts={belts} row={row} programs={programs} />
+                    {student.is_minor || tags.length > 0 ? (
+                      <span className={styles.studentMeta}>
+                        {student.is_minor ? (
+                          // A named guardian already says this is a minor.
+                          <span className={styles.studentGuardian}>
+                            {guardianName ? `Guardian ${guardianName}` : "Minor"}
+                          </span>
+                        ) : null}
+                        {tags.map((tag) => (
+                          <span key={tag} className={styles.rosterTag} title={tag}>
+                            {tag}
+                          </span>
+                        ))}
+                        {moreTags > 0 ? (
+                          <span
+                            className={styles.overflowCount}
+                            title={hiddenTags.join(", ") || undefined}
+                          >
+                            +{moreTags}
+                          </span>
+                        ) : null}
+                      </span>
+                    ) : null}
+                  </span>
+                </button>
               </th>
-              <td data-cell="programs">
-                <span className={styles.placeholderBar} data-length={(index + 1) % 3} />
+              <td data-cell="programs" className={styles.programCell}>
+                <BeltSummary belts={belts} row={row} programs={programs} />
               </td>
-              <td data-cell="status">
-                <span className={styles.placeholderPill} />
+              <td data-cell="status" className={styles.statusCell}>
+                <StatusBadge status={student.status} />
               </td>
-              <td data-cell="contact" />
-              <td data-cell="since">
-                <span className={styles.placeholderDate} />
+              <td
+                data-cell="contact"
+                className={styles.contactCell}
+                title={row.contact === "—" ? undefined : row.contact}
+              >
+                {row.contact === "—" ? (
+                  <span className={styles.quietValue}>No contact on file</span>
+                ) : (
+                  row.contact
+                )}
               </td>
-              {inactivityThreshold ? (
-                <td data-cell="inactive">
-                  <span className={styles.placeholderDate} />
+              <td data-cell="since" className={styles.memberSinceCell}>
+                {formatDate(student.membership_start_date)}
+              </td>
+              {inactivity ? (
+                <td data-cell="inactive" className={styles.inactiveCell}>
+                  <ToneTag tone="warn">{inactivity} days</ToneTag>
                 </td>
               ) : null}
-              <td data-cell="open" />
+              <td data-cell="open" className={styles.openCell} aria-hidden="true">
+                <ChevronRight className="h-4 w-4" />
+              </td>
             </tr>
-          ))}
-          {filtered.map((row) => {
-            const { student } = row;
-            const isSelected = selectedIds.has(student.id);
-            const studentName = getStudentName(row);
-            const guardianName = student.is_minor ? primaryGuardianName(student) : null;
-            const tags = [...row.visibleTags];
-            const moreTags = row.hiddenTagCount;
-            const belts = rosterBelts(row, programs, rankById);
-            const firstRankColor = belts.find((belt) => belt.rankColor)?.rankColor ?? null;
-            const inactivity = inactivityThreshold
-              ? inactivityByStudentId.get(student.id) || `${inactivityThreshold}+`
-              : null;
-            return (
-              <tr
-                key={student.id}
-                data-student-id={student.id}
-                data-state={student.status}
-                onFocusCapture={() => onPrefetchStudent?.(student.id)}
-                onPointerEnter={() => onPrefetchStudent?.(student.id)}
-                onClick={() => onOpenStudent(student.id)}
-                className={styles.rosterRow}
-                data-selected={isSelected || undefined}
-              >
-                {canManageRoster ? (
-                  <td data-cell="select" className="p-0">
-                    <label
-                      className={styles.checkboxTarget}
-                      onClick={stopStudentSelectionPropagation}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={isSelected}
-                        onClick={stopStudentSelectionPropagation}
-                        onChange={() => toggleSelect(student.id)}
-                        disabled={isBulkCommandPending}
-                        className={styles.checkboxControl}
-                      />
-                      <span className="sr-only">
-                        {isSelected ? `Deselect ${studentName}` : `Select ${studentName}`}
-                      </span>
-                    </label>
-                  </td>
-                ) : null}
-                <th scope="row" data-cell="name" className={styles.studentCell}>
-                  <button
-                    type="button"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      onOpenStudent(student.id);
-                    }}
-                    data-open-student
-                    aria-label={`Open ${studentName} profile`}
-                    className={styles.studentIdentityButton}
-                  >
-                    <StudentAvatar student={student} size="md" ringColor={firstRankColor} />
-                    <span className={styles.studentIdentityCopy}>
-                      <span className={styles.studentName}>
-                        {student.preferred_name || student.legal_first_name}{" "}
-                        {student.legal_last_name}
-                      </span>
-                      {student.is_minor || tags.length > 0 ? (
-                        <span className={styles.studentMeta}>
-                          {student.is_minor ? (
-                            <span>
-                              Minor
-                              {guardianName ? ` · Guardian ${guardianName}` : ""}
-                            </span>
-                          ) : null}
-                          {tags.map((tag) => (
-                            <span key={tag} className={styles.rosterTag}>
-                              {tag}
-                            </span>
-                          ))}
-                          {moreTags > 0 ? (
-                            <span className={styles.overflowCount}>+{moreTags}</span>
-                          ) : null}
-                        </span>
-                      ) : null}
-                    </span>
-                  </button>
-                </th>
-                <td data-cell="programs" className={styles.programCell}>
-                  <BeltSummary belts={belts} row={row} programs={programs} />
-                </td>
-                <td data-cell="status" className={styles.statusCell}>
-                  <StatusBadge status={student.status} />
-                </td>
-                <td data-cell="contact" className={styles.contactCell}>
-                  {row.contact === "—" ? (
-                    <span className={styles.quietValue}>No contact on file</span>
-                  ) : (
-                    row.contact
-                  )}
-                </td>
-                <td data-cell="since" className={styles.memberSinceCell}>
-                  <span className={styles.mobileCellLabel}>Since </span>
-                  {formatDate(student.membership_start_date)}
-                </td>
-                {inactivity ? (
-                  <td data-cell="inactive" className={styles.inactiveCell}>
-                    <ToneTag tone="warn">{inactivity} days</ToneTag>
-                  </td>
-                ) : null}
-                <td data-cell="open" className={styles.openCell} aria-hidden="true">
-                  <ChevronRight className="h-4 w-4" />
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </>
+          );
+        })}
+      </tbody>
+    </table>
   );
 }
 

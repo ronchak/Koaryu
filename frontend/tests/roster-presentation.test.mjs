@@ -82,7 +82,7 @@ describe("roster presentation behavior", () => {
   });
 
   it("mounts mobile sort, inline row details, keyboard, open, selection, and both tip badges", async () => {
-    const page = await browser.newPage({ viewport: { width: 820, height: 900 } });
+    const page = await browser.newPage({ viewport: { width: 600, height: 900 } });
     await page.setContent(
       `<style>*{box-sizing:border-box}.px-4{padding-left:1rem;padding-right:1rem}${rosterStyles}</style><main id="root"></main>`,
     );
@@ -107,7 +107,7 @@ describe("roster presentation behavior", () => {
     assert.deepEqual(await page.evaluate(() => window.fixture.sorts), ["status", "status"]);
 
     const beaRow = page.locator('[data-student-id="student-b"]');
-    assert.equal(await beaRow.getByText("student-b@example.test").isVisible(), true);
+    assert.equal(await beaRow.getByText("student-b@example.test").isVisible(), false);
     await beaRow.getByRole("button", { name: "Open Bea Student profile" }).focus();
     await beaRow.getByRole("checkbox").click();
     await beaRow.getByRole("button", { name: "Open Bea Student profile" }).click();
@@ -122,7 +122,7 @@ describe("roster presentation behavior", () => {
       },
     );
 
-    await page.setViewportSize({ width: 601, height: 900 });
+    await page.setViewportSize({ width: 600, height: 900 });
     await page.locator(".rosterToolbar").evaluate((toolbar) => {
       toolbar.style.width = "521px";
     });

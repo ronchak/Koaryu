@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { CalmState, ToneTag } from "@/components/schedule/horizon-parts";
+import { CalmState } from "@/components/schedule/horizon-parts";
 import {
   PIPELINE_STAGES,
   SOURCE_LABELS,
@@ -17,7 +17,6 @@ import {
   describeLeadDue,
   describeLeadFocus,
   getLeadNextAction,
-  isSameLeadFocus,
   matchesLeadFocus,
   type LeadFocus,
 } from "./lead-focus";
@@ -42,12 +41,21 @@ interface LeadPipelineBoardProps {
 }
 
 const BAND_TONE: Record<LeadAgeBandId, "alert" | "warn" | "neutral"> = {
-  "overdue-8": "alert",
-  "overdue-3": "alert",
-  "overdue-1": "alert",
+  overdue: "alert",
   today: "warn",
   upcoming: "neutral",
   unscheduled: "neutral",
+};
+
+/*
+ * Rows say how late or how soon only where the band header does not: "Due today"
+ * and "Nothing due" already say it for every row in them.
+ */
+const BAND_SHOWS_DUE: Record<LeadAgeBandId, boolean> = {
+  overdue: true,
+  today: false,
+  upcoming: true,
+  unscheduled: false,
 };
 
 function initials(lead: Lead) {
@@ -115,8 +123,8 @@ export function LeadPipelineBoard({
   if (leads.length === 0) {
     return (
       <section className={styles.empty} aria-labelledby="lead-ledger-title">
-        <h2 id="lead-ledger-title">No open lead obligations.</h2>
-        <p>New inquiries will appear here in follow-up order.</p>
+        <h2 id="lead-ledger-title">No open leads.</h2>
+        <p>New inquiries show up here, soonest follow-up first.</p>
         {canManageLeads ? (
           <Button variant="primary" size="sm" onClick={onAddLead}>
             <UserPlus aria-hidden="true" className="h-3.5 w-3.5" />
@@ -129,28 +137,6 @@ export function LeadPipelineBoard({
 
   return (
     <section className={styles.workspace} aria-label="Open lead obligations">
-      <ol className={styles.stageRail} aria-label="Lead stages">
-        {PIPELINE_STAGES.map((stage) => {
-          const count = leads.filter((lead) => lead.stage === stage.id).length;
-          const stageFocus: LeadFocus = { kind: "stage", stage: stage.id };
-          const active = isSameLeadFocus(focus, stageFocus);
-          return (
-            <li key={stage.id} data-stage={stage.id} data-empty={count === 0 || undefined}>
-              <button
-                type="button"
-                className={styles.stageButton}
-                aria-pressed={active}
-                aria-label={`${stage.label}: ${count} ${count === 1 ? "lead" : "leads"}`}
-                onClick={() => setFocus(active ? null : stageFocus)}
-              >
-                <strong>{stage.label}</strong>
-                <b>{count}</b>
-              </button>
-            </li>
-          );
-        })}
-      </ol>
-
       {focus ? (
         <div className={styles.focusBar} role="status">
           <p>
@@ -197,9 +183,17 @@ export function LeadPipelineBoard({
                   const owner = lead.assigned_staff_id
                     ? staffById.get(lead.assigned_staff_id)
                     : null;
+                  const ownerName = owner?.full_name || owner?.email || null;
                   const isPending = pendingLeadIds.has(lead.id);
                   const isSelected = selectedLeadId === lead.id;
-                  const due = describeLeadDue(lead.follow_up_date, today);
+                  const due = BAND_SHOWS_DUE[band.id]
+                    ? describeLeadDue(lead.follow_up_date, today)
+                    : null;
+                  const name = fullName(lead);
+                  const stageAndProgram = `${getStageLabel(lead.stage)} · ${getProgramLabel(
+                    lead,
+                    lead.program_id ? programById.get(lead.program_id) : null,
+                  )}`;
                   return (
                     <li
                       key={lead.id}
@@ -207,53 +201,64 @@ export function LeadPipelineBoard({
                       data-follow-up-state={band.id}
                       aria-busy={isPending || undefined}
                     >
+                      <span className={styles.leadInitials} aria-hidden="true">
+                        {initials(lead)}
+                      </span>
+                      {/* The whole row opens the lead; the name is its visible label. */}
                       <button
                         type="button"
                         data-lead-id={lead.id}
                         className={styles.queueLead}
                         disabled={isPending && !recoveringLeadIds.has(lead.id)}
                         aria-pressed={isSelected}
+                        aria-label={`${name} ${stageAndProgram}`}
                         onClick={() => onSelectLead(lead.id)}
                       >
-                        <span className={styles.leadInitials} aria-hidden="true">
-                          {initials(lead)}
-                        </span>
-                        <span className={styles.leadName}>
-                          <strong>{fullName(lead)}</strong>
-                          <span>
-                            {getStageLabel(lead.stage)} ·{" "}
-                            {getProgramLabel(
-                              lead,
-                              lead.program_id ? programById.get(lead.program_id) : null,
-                            )}
-                          </span>
-                        </span>
+                        {name}
                       </button>
-                      <div className={styles.queueAction}>
+                      <span className={styles.queueAction} data-due={due ? "true" : undefined}>
                         <strong>{getLeadNextAction(lead)}</strong>
-                        {lead.stage === "enrolled" ? null : (
-                          <ToneTag tone={due.tone} dot={due.tone !== "neutral"}>
+                        {/*
+                         * A no-break space joins the due label to the step's last word,
+                         * so a wrap moves "attendance · Due tomorrow" down together.
+                         */}
+                        {due ? (
+                          <span className={styles.leadDue} data-tone={due.tone}>
+                            <span className={styles.dueGap}>{"\u00a0"}</span>
                             {due.label}
-                          </ToneTag>
-                        )}
-                      </div>
-                      <div className={styles.queueContext}>
-                        <span data-unassigned={owner ? undefined : "true"}>
-                          {owner?.full_name || owner?.email || "Unassigned"}
+                          </span>
+                        ) : null}
+                      </span>
+                      {/*
+                       * Desktop sets these in their own columns; narrow rows run them
+                       * together as one wrapping line under the next step. The stage
+                       * line is already in the row button's name, so it is read once.
+                       */}
+                      <span className={styles.queueContext}>
+                        <span
+                          className={styles.leadStage}
+                          title={stageAndProgram}
+                          aria-hidden="true"
+                        >
+                          {stageAndProgram}
                         </span>
-                        <small>
+                        <span className={styles.leadSource}>
                           {SOURCE_LABELS[lead.source]}
                           {lead.is_minor ? " · Minor" : ""}
-                        </small>
-                      </div>
-                      {canManageLeads ? (
-                        <div
-                          className={styles.stageMoves}
-                          aria-label={`Move ${fullName(lead)} one stage`}
+                        </span>
+                        <span
+                          className={styles.leadOwner}
+                          data-unassigned={ownerName ? undefined : "true"}
                         >
+                          {ownerName ?? "No owner"}
+                        </span>
+                      </span>
+                      {canManageLeads ? (
+                        <div className={styles.stageMoves} aria-label={`Move ${name} one stage`}>
                           <button
                             type="button"
-                            aria-label={`Move ${fullName(lead)} to the previous stage`}
+                            data-move="previous"
+                            aria-label={`Move ${name} to the previous stage`}
                             disabled={stageIndex <= 0 || isPending}
                             onClick={() => void onKeyboardMoveLead(lead, -1)}
                           >
@@ -261,7 +266,8 @@ export function LeadPipelineBoard({
                           </button>
                           <button
                             type="button"
-                            aria-label={`Move ${fullName(lead)} to the next stage`}
+                            data-move="next"
+                            aria-label={`Move ${name} to the next stage`}
                             disabled={
                               stageIndex < 0 ||
                               stageIndex >= PIPELINE_STAGES.length - 1 ||

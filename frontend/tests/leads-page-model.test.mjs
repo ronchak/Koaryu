@@ -326,8 +326,9 @@ it("classifies each age band once without changing follow-up order or enrolled s
     lead({ id: "unset" }),
   ];
   const bands = groupLeadsByAgeBand(leads, "2026-05-20");
+  assert.deepEqual([...bands.keys()], ["overdue", "today", "upcoming", "unscheduled"]);
   assert.deepEqual(
     [...bands.values()].map((rows) => rows.map((row) => row.id)),
-    [["old"], ["week"], ["recent"], ["today"], ["future"], ["enrolled", "unset"]],
+    [["old", "week", "recent"], ["today"], ["future"], ["enrolled", "unset"]],
   );
 });

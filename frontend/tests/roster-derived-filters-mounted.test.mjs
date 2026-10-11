@@ -122,6 +122,20 @@ for (const days of [14, 30, 90]) {
       await page.waitForFunction(() => !window.fixture.roster.isInitialRosterLoading);
       assert.equal(await page.locator('[data-student-id="student-a"]').count(), 1);
       assert.equal(await page.locator('[data-student-id="student-b"]').count(), 0);
+      assert.equal(
+        await page.getByRole("columnheader", { name: "Not seen for", exact: true }).count(),
+        1,
+      );
+      assert.equal(await page.getByRole("columnheader", { name: "Inactive for" }).count(), 0);
+      assert.equal(
+        await page
+          .getByText(
+            `Showing students not seen for ${days}+ days. Students on hold are left out.`,
+            { exact: true },
+          )
+          .count(),
+        1,
+      );
       assert.deepEqual(
         await page.evaluate(() => [fixture.pageReads.length, fixture.scheduleReads.length]),
         [0, 0],

@@ -219,7 +219,7 @@ export function AddLeadModal({
         </div>
         <div className="flex flex-col gap-1.5">
           <label htmlFor="lead-assigned-staff" className="text-sm text-text-secondary font-medium">
-            Assigned staff
+            Owner
           </label>
           <select
             id="lead-assigned-staff"
@@ -227,7 +227,7 @@ export function AddLeadModal({
             disabled={isAddingLead}
             className="min-h-11 w-full border border-border bg-surface-raised px-3 py-2 text-sm text-text-primary focus:border-accent focus:outline-none"
           >
-            <option value="">Unassigned</option>
+            <option value="">No owner</option>
             {activeStaff.map((member) => (
               <option key={member.id} value={member.id}>
                 {member.full_name || member.email}
