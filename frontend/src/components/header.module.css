@@ -15,6 +15,19 @@
   height: 150px;
 }
 
+/*
+ * Home's wide shot: the landing's hero ridges, rising higher behind the copy. The
+ * band's bottom padding and gradient stop still apply, so a stats strip that opens
+ * the page sits on the near ridge at the kit's offset, exactly as under the band.
+ */
+.header[data-hills="hero"] {
+  min-height: 248px;
+}
+
+.header[data-hills="hero"] .hills {
+  height: 240px;
+}
+
 .inner {
   position: relative;
   z-index: 1;
@@ -56,6 +69,11 @@
   line-height: 1.5;
 }
 
+/* One empty line held for a sentence that lands after first paint. */
+.description[data-reserved="true"] {
+  min-height: 1.5em;
+}
+
 .actions {
   display: flex;
   flex: 0 0 auto;
@@ -86,13 +104,24 @@
     display: none;
   }
 
+  /* Lower hills on a phone keep the stacked copy on clear sky. */
+  .header[data-hills="hero"] {
+    min-height: 0;
+  }
+
+  .header[data-hills="hero"] .hills {
+    height: 196px;
+  }
+
   .inner {
     padding-top: 20px;
   }
 }
 
 @media print {
-  .header {
+  .header,
+  .header[data-hills="hero"] {
+    min-height: 0;
     padding-bottom: 12px;
     background: none;
   }

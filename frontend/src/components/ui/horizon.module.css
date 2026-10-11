@@ -5,14 +5,14 @@
   inset: 0;
   width: 100%;
   height: 100%;
-  -webkit-mask-image: linear-gradient(180deg, #000 58%, transparent 100%);
-  mask-image: linear-gradient(180deg, #000 58%, transparent 100%);
+  -webkit-mask-image: linear-gradient(180deg, black 58%, transparent 100%);
+  mask-image: linear-gradient(180deg, black 58%, transparent 100%);
   pointer-events: none;
 }
 
 .hills[data-variant="band"] {
-  -webkit-mask-image: linear-gradient(180deg, #000 68%, transparent 100%);
-  mask-image: linear-gradient(180deg, #000 68%, transparent 100%);
+  -webkit-mask-image: linear-gradient(180deg, black 68%, transparent 100%);
+  mask-image: linear-gradient(180deg, black 68%, transparent 100%);
 }
 
 .sun {
@@ -325,6 +325,172 @@ a.stat:focus-visible {
   gap: 10px;
 }
 
+/* Work list: each row opens the thing that needs a hand, its action label part of the link. */
+.workList {
+  display: grid;
+  margin: 0 -10px;
+  padding: 0;
+  list-style: none;
+}
+
+.workItem {
+  min-width: 0;
+}
+
+.workItem + .workItem {
+  border-top: 1px solid var(--product-rule-soft, var(--border));
+}
+
+.workRow {
+  display: flex;
+  min-width: 0;
+  min-height: 40px;
+  align-items: center;
+  gap: 14px;
+  padding: 10px;
+  border-radius: 10px;
+  color: var(--product-ink, var(--text-primary));
+  font-size: 0.875rem;
+  line-height: 1.4;
+  text-decoration: none;
+}
+
+a.workRow {
+  transition: background-color var(--product-motion-change-duration, 120ms) ease-out;
+}
+
+a.workRow:hover {
+  background: color-mix(in srgb, var(--hz-tile) 70%, transparent);
+}
+
+a.workRow:focus-visible {
+  outline: 2px solid var(--product-focus, var(--accent));
+  outline-offset: -2px;
+}
+
+.workLeading {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+}
+
+/* A start time: plain ink in a steady column, never a tone wash. */
+.workLeading[data-leading="text"] {
+  min-width: 4.5rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* Text and action share a line until the action no longer fits; then it drops under the text. */
+.workBody {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+}
+
+.workText {
+  display: grid;
+  min-width: 0;
+  flex: 1 1 11rem;
+  gap: 2px;
+}
+
+.workTitle {
+  font-size: 0.9375rem;
+  font-weight: 700;
+  line-height: 1.35;
+  overflow-wrap: break-word;
+}
+
+.workMeta {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 8px;
+  color: var(--product-soft-ink, var(--text-secondary));
+  font-size: 0.8125rem;
+  line-height: 1.45;
+}
+
+.workAction {
+  display: inline-flex;
+  max-width: 100%;
+  flex: 0 0 auto;
+  align-items: center;
+  color: var(--product-wood, var(--accent));
+  font-size: 0.8125rem;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+a.workRow:hover .workAction:not([data-emphasized="true"]) {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.workAction[data-emphasized="true"] {
+  min-height: 40px;
+  padding: 0 14px;
+  border-radius: 10px;
+  background: var(--hz-cta, var(--product-ink));
+  color: var(--hz-cta-ink, var(--product-paper));
+}
+
+.panel[data-flush="true"] .workList {
+  margin-inline: 0;
+}
+
+.panel[data-flush="true"] .workRow {
+  padding-inline: 20px;
+  border-radius: 0;
+}
+
+/* A panel header's link to its source page: words and an arrow. */
+.panelLink {
+  display: inline-flex;
+  min-height: 40px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  border-radius: 10px;
+  color: var(--product-wood, var(--accent));
+  font-size: 0.8125rem;
+  font-weight: 650;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background-color var(--product-motion-change-duration, 120ms) ease-out;
+}
+
+/* Optically flush with the panel's edge, without making the header taller. */
+.panelActions > .panelLink {
+  margin: -10px -10px -10px 0;
+}
+
+.panelLink:hover {
+  background: color-mix(in srgb, var(--hz-tile) 70%, transparent);
+}
+
+.panelLink:focus-visible {
+  outline: 2px solid var(--product-focus, var(--accent));
+  outline-offset: -2px;
+}
+
+.panelLink :global(svg) {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  transition: transform var(--product-motion-change-duration, 120ms) ease-out;
+}
+
+.panelLink:hover :global(svg) {
+  transform: translateX(2px);
+}
+
 @media (max-width: 1023px) {
   .stats {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -336,6 +502,11 @@ a.stat:focus-visible {
 
   .stat:nth-child(n + 3) {
     border-top: 1px solid var(--product-rule-soft, var(--border));
+  }
+
+  /* An odd last stat (three on a phone) takes the whole bottom row. */
+  .stat:last-child:nth-child(odd) {
+    grid-column: 1 / -1;
   }
 }
 
@@ -359,6 +530,30 @@ a.stat:focus-visible {
 
   .calm {
     flex-wrap: wrap;
+  }
+
+  .panel[data-flush="true"] .workRow {
+    padding-inline: 16px;
+  }
+}
+
+@media (max-width: 640px), (pointer: coarse) {
+  .workRow {
+    min-height: 44px;
+  }
+
+  .panelLink {
+    min-height: 44px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .panelLink :global(svg) {
+    transition: none;
+  }
+
+  .panelLink:hover :global(svg) {
+    transform: none;
   }
 }
 

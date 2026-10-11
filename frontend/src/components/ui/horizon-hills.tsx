@@ -3,10 +3,13 @@ import {
   HORIZON_BAND_VIEWBOX,
   HORIZON_RIDGE_PATHS,
   HORIZON_VIEWBOX,
-} from "@/lib/dashboard-horizon";
+} from "./horizon-ridges";
 import styles from "./horizon.module.css";
 
-/** The landing page's ridges. `hero` fills the Dashboard greeting; `band` sits under page titles. */
+/**
+ * The landing page's ridges. `hero` is the wide shot (Home's header and the sign-in
+ * scene); `band` sits under every other page title.
+ */
 export function HorizonHills({
   className,
   sun = true,
@@ -18,7 +21,8 @@ export function HorizonHills({
 }) {
   const box = variant === "band" ? HORIZON_BAND_VIEWBOX : HORIZON_VIEWBOX;
   const paths = variant === "band" ? HORIZON_BAND_RIDGE_PATHS : HORIZON_RIDGE_PATHS;
-  const sunCircle = variant === "band" ? { cx: 1010, cy: 70, r: 24 } : { cx: 1160, cy: 132, r: 46 };
+  // Each sun sits clear of a header's right-aligned actions at common desktop widths.
+  const sunCircle = variant === "band" ? { cx: 1010, cy: 70, r: 24 } : { cx: 920, cy: 132, r: 46 };
   return (
     <svg
       className={[styles.hills, className].filter(Boolean).join(" ")}

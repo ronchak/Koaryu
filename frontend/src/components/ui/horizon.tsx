@@ -12,6 +12,12 @@ import styles from "./horizon.module.css";
 
 export * from "./horizon-parts";
 export { HorizonHills } from "./horizon-hills";
+export {
+  HorizonPanelLink,
+  HorizonWorkList,
+  HorizonWorkRow,
+  type HorizonWorkRowProps,
+} from "./horizon-work-row";
 
 export type HorizonStat = {
   id: string;
