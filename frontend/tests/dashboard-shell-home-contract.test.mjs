@@ -91,6 +91,7 @@ describe("dashboard shell and Home source contracts", () => {
     );
     assert.match(storeSource, /setCurrentStudioId\(null\)/);
     assert.match(sessionSource, /purgeDashboardLayoutNamespace\(\)/);
+    assert.match(sessionSource, /purgeHomePreferencesNamespace\(\)/);
     assert.doesNotMatch(sessionSource, /koaryu-theme/);
   });
 });

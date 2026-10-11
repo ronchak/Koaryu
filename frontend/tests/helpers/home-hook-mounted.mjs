@@ -33,9 +33,16 @@ export async function until(page, predicate, message = "fixture did not settle")
 }
 
 export async function mountHome(browser, options = {}) {
-  const { mode = "production", preview = false, homePage = false, ...fixtureOptions } = options;
-  const key = `${mode}:${preview}:${homePage}`;
-  if (!sources.has(key)) sources.set(key, bundle(mode, { homeHook: true, homePage, preview }));
+  const {
+    mode = "production",
+    preview = false,
+    homePage = false,
+    realApi = false,
+    ...fixtureOptions
+  } = options;
+  const key = `${mode}:${preview}:${homePage}:${realApi}`;
+  if (!sources.has(key))
+    sources.set(key, bundle(mode, { homeHook: true, homePage, preview, realApi }));
   const page = await browser.newPage();
   page.setDefaultTimeout(3000);
   const errors = [];
@@ -69,7 +76,10 @@ export async function mountHome(browser, options = {}) {
         mark: (name, options) => native.mark(name, { ...options, startTime: performance.now() }),
       });
     });
-  await page.clock.pauseAt(START);
+  // A loaded test machine may advance the newly installed clock before the
+  // next protocol call. Pause in the future, then restore the fixture date.
+  await page.clock.pauseAt(new Date(START.getTime() + 60_000));
+  await page.clock.setSystemTime(START);
   await page.evaluate((options) => {
     const f = (window.fixture = {
       pathname: "/dashboard",
@@ -178,6 +188,25 @@ export async function mountHome(browser, options = {}) {
     window.addEventListener("koaryu:resume", (event) => f.resumeEvents.push(event.detail));
     window.addEventListener("koaryu:data-refresh", () => f.refreshEvents++);
   }, fixtureOptions);
+  if (realApi)
+    await page.evaluate(() => {
+      // Real transport, synthetic responses: never dispatch a network request.
+      window.fetch = async (url, init = {}) => {
+        const path = new URL(url, location.href).pathname.replace(/^\/api\/v1/, "");
+        const f = window.fixture;
+        try {
+          const value =
+            init.method === "PUT"
+              ? await f.api.put(path, JSON.parse(init.body), init.headers, init)
+              : await f.api.get(path, init.headers, init);
+          return new Response(JSON.stringify(value), { status: 200 });
+        } catch (error) {
+          return new Response(JSON.stringify({ detail: error.message }), {
+            status: error.status ?? 500,
+          });
+        }
+      };
+    });
   await page.addScriptTag({ content: sources.get(key) });
   await flush(page);
   return { page, errors };

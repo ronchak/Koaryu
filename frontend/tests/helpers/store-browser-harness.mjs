@@ -158,7 +158,7 @@ export function bundle(
           "lucide-react": `module.exports=new Proxy({},{get:()=>()=>null});`,
         }
       : {}),
-    ...(subscriptionPage || realApi
+    ...(subscriptionPage || (realApi && !homePage)
       ? {
           "@/components/header": `exports.Header=()=>null;`,
           "@/components/operations/operations-surface": `exports.OperationsSurface=({children})=>require('react').createElement('section',{'data-recovery-page':'true'},children);`,
@@ -198,7 +198,7 @@ export function bundle(
           "@/components/dashboard-route-transition": `exports.DashboardRouteTransition=({children})=>children;`,
           "@/components/dashboard-shell": `exports.DashboardSlugBand=()=>null;`,
           "@/components/dashboard-shell-readiness": `exports.DashboardShellReadiness=({identityReady})=>{window.fixture.store=require("@/lib/store").useStore();window.fixture.identityObservations.push(identityReady);return null;};`,
-          ...(subscriptionPage || realApi
+          ...(subscriptionPage || (realApi && !homePage)
             ? {}
             : {
                 "@/components/dashboard-identity-skeleton": `exports.DashboardIdentitySkeleton=()=>require('react').createElement('div',{'data-preview-gate':'pending'});`,

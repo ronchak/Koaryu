@@ -27,8 +27,8 @@ decisions, dispatched subagents and review dispositions. It is updated at every 
 | 1. Backend contract | Gate passed; PR #275 ready | Backend suite 11,112 passed, 1 pre-existing failure (below); `check:api-types` green; ruff format clean |
 | 2. Client data layer | Gate passed; PR #277 ready | Frontend suite 2,373/2,374 (one schedule-summary load flake, passes alone); 102 Home tests green; lint, tsc, Prettier clean |
 | 3. Frame and bands on the kit | Gate passed; PR #278 ready | Frontend suite 2,440/2,441 (workflow-canvas load flake, 18/18 alone); build green; lint, tsc, Prettier clean |
-| 4. Edit Home | In progress (owner chose Auth metadata) | |
-| 5. Delete and document | Not started | |
+| 4. Edit Home | Fable gate passed; tests green; Astra review pending | Frontend suite 2,482/2,482; build green; `e2e/edit-home.spec.ts` 12/12 twice; backend preferences suite green |
+| 5. Delete and document | Planned | Notes below |
 | 6. Shell and navigation | Not in scope (owner default: no) | |
 
 ## Phase 0 findings
@@ -171,6 +171,26 @@ Frontend test dispositions (from 0B; Phase 3 actuals noted; revisited in Phase 5
 | `dashboard-widget-geometry` | Delete |
 | `dashboard-widget-view-models` | Rewrite against `home-model.ts` and the preview payload |
 
+## Phase 5 notes (gathered early)
+
+- The release-candidate workflow runs `npm run check:performance-regression`, which is bound to the
+  `dashboard-summary` route: manifest `performance/dashboard-summary-budget.json`
+  (`dashboard-summary-performance-v3`), fixture `backend/tests/performance/dashboard_summary_fixture.py`.
+  Deleting the summary route means moving this gate to `/dashboard/home` (new fixture, manifest and
+  budgets) in the same change, with `docs/performance-rollout.md`, `docs/performance-measurement.md`
+  and `docs/pr-verification-matrix.md`.
+- `frontend/scripts/capture-dashboard-performance.mjs` names the bootstrap and summary resources;
+  move it to `/dashboard/home` with its policy tests.
+- Keep: `lib/dashboard-freshness.ts`, `lib/dashboard-brief-greetings.ts` (account name section),
+  `lib/dashboard-shell-route.ts` (sidebar), `backend/app/services/dashboard_summary_cache.py` (Home's
+  cache), the `dashboard_summary_facts` RPC (Home reads it).
+- Historical records (the remediation ledger, the previous plan, dated verification notes) keep
+  their references; "nothing references the deleted code" applies to code, tests, scripts and current
+  docs.
+- Mixed versions: once the summary route and `view=dashboard` are gone, a backend deployed ahead of
+  this frontend breaks the old page until the frontend deploys. Say so in the Phase 5 PR as a release
+  note for the owner's cutover.
+
 ## Decisions
 
 ### For the owner (brief Section 9, plus decisions surfaced in Phase 0)
@@ -233,6 +253,14 @@ Full text: [`home-rebuild-decisions.md`](home-rebuild-decisions.md). Changes to 
 - Kept: the engineer's empty-state icons, header button icons and the moved sun; both "Take
   attendance" actions on desktop (same class, an action echo, not a fact).
 
+### Product decisions (Fable, Phase 4 gate)
+
+- Interaction approved on desktop (right sheet, light veil, page scrollable behind it) and phone
+  (full-height bottom sheet, pinned footer, 44px targets).
+- Focus on open stays on the first handle (the modal frame's rule; arrows work at once).
+- Always-shown rows stay greyed text, indented to the title column, with no lock or check icon.
+- Saving stays silent: no "Saved", no spinner; the change behind the sheet is the confirmation.
+
 ### Technical decisions (orchestrator)
 
 - `needs_attention` items carry facts (`kind`, `count`, kind-specific fields), not `label`,
@@ -250,6 +278,12 @@ Full text: [`home-rebuild-decisions.md`](home-rebuild-decisions.md). Changes to 
   never grants access (README "Dashboard loading"); ordinary errors keep the last payload.
 - Retained Home snapshots carry their identity scope (generation, user, studio, role) and never
   serve another identity.
+- Preferences are stored under one `koaryu_home` key in Auth `user_metadata`, holding only the
+  current studio's entry; the backend preserves every other metadata key and is the only writer the
+  app uses. A browser can still edit its own metadata, so every read is size-checked, validated and
+  reconciled; an entry naming no known panel reads as never saved.
+- A preferences save is not a studio-fact change: `api.ts` gained a per-request
+  `marksDashboardFacts: false` option used only by that PUT.
 - Deep-link record ids are UUIDs only in live mode; preview mode also accepts the demo's short
   ids (`sess-1`, `lead-1`) so demo links work.
 - The trimmed bootstrap is a new `view=home`, not a change to `view=dashboard`, so a backend
@@ -276,8 +310,11 @@ Full text: [`home-rebuild-decisions.md`](home-rebuild-decisions.md). Changes to 
 | 3P | Opus 5.5 / page | `home-copy.ts`, `components/dashboard/home/*`, route swap, bootstrap `home` view, readiness | Done; build green; 13 old-page test failures handed to 3T |
 | G3 | Fable / product | Phase 3 visual gate | GATE PASSES after M1–M4 and S1 (confirmed from re-shot screenshots) |
 | 3T | Sol / tests | Fix the 13 old-page failures; home-copy and home-page tests; rewrite old Home tests; preview smoke heading | Done; 13 failures dispositioned; the orchestrator updated two sentence assertions to Fable's M3 ruling |
-| 4B | Opus 5.5 / backend | Preferences in Auth metadata: `preferences` on GET /dashboard/home, PUT /dashboard/home/preferences, server reconcile | Running |
-| 4F | Opus 5.5 / frontend | `home-preferences.ts`, sync hook, sign-out purge, Edit Home trigger and sheet | Running |
+| 4B | Opus 5.5 / backend | Preferences in Auth metadata: `preferences` on GET /dashboard/home, PUT /dashboard/home/preferences, server reconcile | Done (`10c0054`); other-studio entries dropped on every write (orchestrator ruling) |
+| 4BT | Sol / tests | Preferences backend tests | Done; 263 green; one fix by the orchestrator (an entry naming no known panel reads as never saved) |
+| 4F | Opus 5.5 / frontend | `home-preferences.ts`, sync hook, sign-out purge, Edit Home trigger and sheet, kit `HorizonSheet` and `usePositionSettle` | Done; suite 2,441/2,441; preference saves no longer mark dashboard facts changed (`api.ts` option, default unchanged) |
+| G4 | Fable / product | Phase 4 Edit Home gate | GATE PASSES; no MUST or SHOULD |
+| 4FT | Sol / tests | Preferences unit, Edit Home mounted, `e2e/edit-home.spec.ts` replacing the grid spec | Done; suite 2,482/2,482; e2e found a multi-row drag bug, fixed by 4F (drag tracked on the window; recapture after reorder) along with a ModalFrame focus race; the orchestrator added the spec's wait for the sheet's opening animation |
 | 1B | Sol / tests | Backend suite for `/dashboard/home`; regenerate API types | Done; found one bug (a transient error could mask a 403 between the two follow-up reads), fixed by the orchestrator |
 | 3A | Opus 5.5 / frontend | Schedule `date`/`session` and Leads `focus`/`lead` URL readers (decision 8; independent of Phases 1 and 2, so run in parallel) | Done; build green, preview browser check 24/24 |
 | 3B | Sol / tests | Tests for the deep-link readers | Done; found two Schedule races, fixed by 3A; 112 tests green |
@@ -340,6 +377,8 @@ from the rewritten `dashboard-shell-home-contract` test; recorded as a follow-up
 - Fable L5: preview "Red Tip" ranks render white swatches; confirm rank colours with live data.
 - Restore the shell identity-retry button assertions dropped from `dashboard-shell-home-contract` in
   Phase 3 (Astra), when Phase 5 rewrites the remaining dashboard tests.
+- Fable (Phase 4) LATER: send the preferences PUT with `keepalive: true` so a tab closed inside the
+  400ms debounce still saves; low value today because Done and tab-hide flush.
 - A real "missing emergency contact" roster filter (front and back), in a later release (Fable D2).
 - Pre-existing, unrelated: `backend/tests/test_billing_landing_runtime.py::test_membership_and_projections_share_one_total_budget`
   fails on `claude/horizon-dashboard` as well (HTTP 504 within its 0.4s budget on this machine).
