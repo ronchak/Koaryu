@@ -432,6 +432,27 @@ on the studio clock and stable, both themes finished at every size including the
 plain speech, and a crisp landing crop whose corner matches the panel. Nothing blocks; notes are in
 the follow-ups below.
 
+## Owner follow-up: denser Students and Leads (2026-10-11)
+
+The owner asked to see more students and leads on one screen. Fable specified the change, Opus
+built it on `claude/roster-density` (stacked on `claude/home-rebuild-p5b`), Sol updated the tests.
+
+- **Students:** one merged toolbar on the ridge; 50px two-line rows with one tag and +N; the
+  guardian replaces "Minor ·"; the list/table boundary moves to 640px; phone rows drop contact and
+  member since; phone Select all lives in the selection band; shorter notices. Rows fully visible:
+  12 at 1440x900, 5 at 1000x614, 5 on a 390x844 phone.
+- **Leads:** the follow-up stats strip becomes a five-tile stage strip with "No owner"; four bands
+  (overdue, due today, upcoming, nothing due); quiet stage arrows on desktop and a single Next on
+  phones; "Owner" is the one word for the assignee. Capacity 12, 5 and 6 at the same sizes.
+- **Shell:** the 641-1023px header wraps and hides the theme sun.
+- **Fable: APPROVED WITH NOTES.** All four notes fixed: the inactivity view gives Student's slack to
+  program and contact at 1440; the phone belt line drops its second separator; "· Due tomorrow"
+  wraps with the step's last word; the inspector says "Owner" and "No owner".
+- **Verification:** frontend suite 2,445/2,445; `e2e/student-roster-polish.spec.ts` 3/3; lint, tsc
+  and Prettier clean; preview build green.
+- **Astra: SAFE TO MERGE**, no P0 or P1 findings. Its sandbox could not resolve lint or the loading
+  render tests, which ran locally in the full suite.
+
 ## Follow-ups (deferred polish)
 
 - Fable L1: at 1000x614 the first row sits at the fold because the strip is 2x2 below 1024px;
