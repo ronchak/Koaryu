@@ -1,6 +1,6 @@
 # Koaryu Home rebuild: living plan
 
-Contract: [`docs/home-rebuild-brief.md`](home-rebuild-brief.md). This file records phase status,
+Contract: [`docs/home-rebuild-brief.md`](home-rebuild-brief.md). **Status: Phases 0–5 complete (2026-10-11); Phase 6 not started (owner default: no).** This file records phase status,
 decisions, dispatched subagents and review dispositions. It is updated at every gate.
 
 - Orchestrator: Claude Opus 5.5 (this session).
@@ -29,7 +29,7 @@ decisions, dispatched subagents and review dispositions. It is updated at every 
 | 2. Client data layer | Gate passed; PR #277 ready | Frontend suite 2,373/2,374 (one schedule-summary load flake, passes alone); 102 Home tests green; lint, tsc, Prettier clean |
 | 3. Frame and bands on the kit | Gate passed; PR #278 ready | Frontend suite 2,440/2,441 (workflow-canvas load flake, 18/18 alone); build green; lint, tsc, Prettier clean |
 | 4. Edit Home | Gate passed; PR #279 ready | Frontend suite 2,482/2,482; build green; `e2e/edit-home.spec.ts` 12/12 twice; backend preferences suite green |
-| 5. Delete and document | 5a: A–D committed, F and G running; 5b (backend deletion) in progress | Notes below |
+| 5. Delete and document | Gate passed; PRs #280 and #281 ready | Full build green; performance gate green at `eaa549b`; residue sweep clean |
 | 6. Shell and navigation | Not in scope (owner default: no) | |
 
 ## Phase 0 findings
@@ -407,6 +407,31 @@ No P0 or P1 findings: deletions, resets, command reconciliation, Belt Tracker el
 sign-out purges, the gate's real auth and subscription path, aggregate-only evidence and CI wiring
 confirmed.
 
+### Phase 5b (`eaa549b`): SAFE TO MERGE
+
+No P0 or P1 findings: no live caller of the deleted code; Home's caches, the facts RPC, release
+tooling, contract inventory and the gate fixture intact; private headers unchanged; bootstrap views
+preserved; release order documented.
+
+## Final census (preview, all sizes, both themes)
+
+| Size | First actionable row Y | Page height | h1 changed | Min-heights |
+| --- | --- | --- | --- | --- |
+| 390x844 | 571 (bottom 678, inside the first screen) | 1792 | No | None |
+| 834x1112 | 609 | 1621 | No | None |
+| 1000x614 | 609 (at the fold; Fable L1) | 1621 | No | None |
+| 1440x900 | 395 | 972 | No | None |
+
+Screenshots: `/tmp/home-rebuild/final/` (first screen, full page and Edit Home sheet for every size
+and theme).
+
+## Final visual review (Fable): APPROVED WITH NOTES
+
+All five product checks pass: three questions in order with no fact twice, the greeting as the h1
+on the studio clock and stable, both themes finished at every size including the Edit Home sheet,
+plain speech, and a crisp landing crop whose corner matches the panel. Nothing blocks; notes are in
+the follow-ups below.
+
 ## Follow-ups (deferred polish)
 
 - Fable L1: at 1000x614 the first row sits at the fold because the strip is 2x2 below 1024px;
@@ -425,6 +450,17 @@ confirmed.
   load (`_fetch_latest_promotions_by_context` in `backend/app/services/belt_eligibility.py` loops over
   every context and row). Home caches it for 15 seconds; the old page paid the same cost on its own
   `/belts/eligibility` request. Worth optimizing separately.
+- Fable (final) LATER: the phone Edit Home sheet is full height with about 45% blank space; a
+  content-height bottom sheet would feel more native.
+- Fable (final) LATER: the white-belt swatch is nearly invisible on cream in light theme; give
+  swatches a firmer outline.
+- Fable (final) LATER: "At a glance" is named only in the Edit Home sheet's Always shown list.
+- Fable (final) LATER: the landing chapter copy promises classes, attendance gaps and follow-ups "on
+  one screen" while the crop shows only Today's classes; soften the caption or crop wider.
+- Fable (final) LATER: the demo seed shows "No emergency contact for 18 students" against 18 active
+  students; seed a few contacts so the demo looks lived-in.
+- Fable (final) LATER: at 834 and 1000 the stats strip is 2x2 with wide cells; four across would fit
+  at 1000 (same kit breakpoint as L1).
 - A real "missing emergency contact" roster filter (front and back), in a later release (Fable D2).
 - Pre-existing, unrelated: `backend/tests/test_billing_landing_runtime.py::test_membership_and_projections_share_one_total_budget`
   fails on `claude/horizon-dashboard` as well (HTTP 504 within its 0.4s budget on this machine).
