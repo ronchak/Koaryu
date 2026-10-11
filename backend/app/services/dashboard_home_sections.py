@@ -1,4 +1,4 @@
-"""Pure builders for the Home payload: fact validation, attention items, promotions.
+"""Pure builders for the Home payload: facts, attention items, promotions, preferences.
 
 Nothing here performs I/O. ``dashboard_home_service`` loads the inputs and
 applies role shaping; these functions turn provider data into response models
@@ -18,6 +18,7 @@ from app.schemas.dashboard_home import (
     DASHBOARD_HOME_ATTENTION_LIMIT,
     DASHBOARD_HOME_CLASS_ROW_LIMIT,
     DASHBOARD_HOME_FOLLOW_UP_LIMIT,
+    DASHBOARD_HOME_PREFERENCES_VERSION,
     DASHBOARD_HOME_PROMOTION_LIMIT,
     DashboardHomeActiveStudents,
     DashboardHomeAttendance,
@@ -31,7 +32,10 @@ from app.schemas.dashboard_home import (
     DashboardHomeFollowUps,
     DashboardHomeFollowUpStats,
     DashboardHomeNeedsAttention,
+    DashboardHomePanelId,
+    DashboardHomePanelSize,
     DashboardHomePaymentsItem,
+    DashboardHomePreferences,
     DashboardHomePromotionRow,
     DashboardHomePromotionStats,
     DashboardHomeReadyToPromote,
@@ -499,4 +503,90 @@ def build_promotions(
         ready_to_promote=DashboardHomeReadyToPromote(
             rows=[_promotion_row(entry) for entry in ordered[:DASHBOARD_HOME_PROMOTION_LIMIT]]
         ),
+    )
+
+
+# ---- Preferences ----
+
+# Default panel order. Appended panels take this order; recent_students starts hidden.
+HOME_PANEL_DEFAULT_ORDER: tuple[DashboardHomePanelId, ...] = (
+    "follow_ups",
+    "ready_to_promote",
+    "recent_students",
+)
+HOME_PANEL_DEFAULT_HIDDEN: frozenset[DashboardHomePanelId] = frozenset({"recent_students"})
+# The roles that receive each panel's section from GET /dashboard/home.
+HOME_PANEL_ROLES: Mapping[DashboardHomePanelId, frozenset[str]] = {
+    "follow_ups": frozenset({"admin", "front_desk"}),
+    "ready_to_promote": frozenset({"admin", "instructor"}),
+    "recent_students": frozenset({"admin", "front_desk", "instructor"}),
+}
+# The sizes each panel declares. None do in version one, so every size is dropped.
+HOME_PANEL_SIZES: Mapping[DashboardHomePanelId, frozenset[DashboardHomePanelSize]] = {}
+
+
+def entitled_home_panels(role: Optional[str]) -> tuple[DashboardHomePanelId, ...]:
+    """The optional panels this role may see, in default order."""
+
+    return tuple(panel for panel in HOME_PANEL_DEFAULT_ORDER if role in HOME_PANEL_ROLES[panel])
+
+
+def default_home_preferences(role: Optional[str]) -> DashboardHomePreferences:
+    order = list(entitled_home_panels(role))
+    return DashboardHomePreferences(
+        version=DASHBOARD_HOME_PREFERENCES_VERSION,
+        order=order,
+        hidden=[panel for panel in order if panel in HOME_PANEL_DEFAULT_HIDDEN],
+        size={},
+    )
+
+
+def reconcile_home_preferences(
+    stored: Any, role: Optional[str]
+) -> Optional[DashboardHomePreferences]:
+    """Fit stored or submitted preferences to what this role may see now.
+
+    Unknown, repeated and non-entitled ids are dropped; entitled ids missing
+    from ``order`` are appended in default order, hidden when ``hidden``
+    already lists them or their default is hidden; ``hidden`` becomes the
+    subset of ``order`` that is off, in ``order``'s order; ``size`` keeps only
+    sizes a panel declares. Returns ``None`` when the value is not a version-1
+    preferences object, so the caller can treat it as never saved.
+    """
+
+    if not isinstance(stored, Mapping):
+        return None
+    version = stored.get("version")
+    if type(version) is not int or version != DASHBOARD_HOME_PREFERENCES_VERSION:
+        return None
+    stored_order = stored.get("order")
+    stored_hidden = stored.get("hidden", ())
+    stored_size = stored.get("size", {})
+    if (
+        not isinstance(stored_order, (list, tuple))
+        or not isinstance(stored_hidden, (list, tuple))
+        or not isinstance(stored_size, Mapping)
+    ):
+        return None
+
+    entitled = entitled_home_panels(role)
+    order: list[DashboardHomePanelId] = []
+    for panel in stored_order:
+        if isinstance(panel, str) and panel in entitled and panel not in order:
+            order.append(panel)
+    appended = [panel for panel in entitled if panel not in order]
+    order.extend(appended)
+
+    off = {panel for panel in stored_hidden if isinstance(panel, str)}
+    off.update(panel for panel in appended if panel in HOME_PANEL_DEFAULT_HIDDEN)
+    size: dict[DashboardHomePanelId, DashboardHomePanelSize] = {}
+    for panel in order:
+        value = stored_size.get(panel)
+        if isinstance(value, str) and value in HOME_PANEL_SIZES.get(panel, frozenset()):
+            size[panel] = value
+    return DashboardHomePreferences(
+        version=DASHBOARD_HOME_PREFERENCES_VERSION,
+        order=order,
+        hidden=[panel for panel in order if panel in off],
+        size=size,
     )

@@ -6,9 +6,14 @@ from app.core.deps import ProviderDependency, run_supabase_operation
 
 from app.core.deps import get_current_user_id, get_requested_studio_id, get_supabase
 from app.schemas.dashboard_bootstrap import DashboardBootstrapResponse, DashboardWorkspaceResponse
-from app.schemas.dashboard_home import DashboardHomeResponse
+from app.schemas.dashboard_home import (
+    DashboardHomePreferences,
+    DashboardHomePreferencesUpdate,
+    DashboardHomeResponse,
+)
 from app.schemas.dashboard_summary import DashboardSummaryResponse
 from app.services.dashboard_bootstrap_service import DashboardBootstrapService
+from app.services.dashboard_home_preferences import DashboardHomePreferencesService
 from app.services.dashboard_home_service import DashboardHomeService
 from app.services.dashboard_summary_service import (
     PRIVATE_CACHE_CONTROL,
@@ -150,4 +155,25 @@ async def get_dashboard_home(
     )
     server_timing = DashboardHomeService.server_timing_value(timings)
     _set_private_dashboard_headers(response, server_timing)
+    return payload
+
+
+@router.put("/home/preferences", response_model=DashboardHomePreferences)
+async def put_dashboard_home_preferences(
+    preferences: DashboardHomePreferencesUpdate,
+    response: Response,
+    user_id: str = Depends(get_current_user_id),
+    requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
+    supabase: ProviderDependency = Depends(get_supabase),
+):
+    """Save the viewer's Home layout for their active studio; returns what was stored."""
+
+    payload = await run_supabase_operation(
+        supabase,
+        lambda client: DashboardHomePreferencesService(client).save_sync(
+            user_id, requested_studio_id, preferences
+        ),
+        lane="interactive",
+    )
+    _set_private_dashboard_headers(response)
     return payload

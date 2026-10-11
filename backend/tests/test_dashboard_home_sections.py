@@ -11,7 +11,10 @@ from app.services.dashboard_home_sections import (
     DashboardHomeFactMismatch,
     build_needs_attention,
     build_promotions,
+    default_home_preferences,
+    entitled_home_panels,
     order_like_belt_tracker,
+    reconcile_home_preferences,
     validate_dashboard_home_facts,
 )
 from app.services.dashboard_home_service import DASHBOARD_HOME_FACTS_FORMULA_VERSION
@@ -385,3 +388,128 @@ def test_empty_promotions_are_successful_empty_sections():
 def test_malformed_ready_rank_names_fail_instead_of_returning_a_partial_list(changes):
     with pytest.raises(ValueError, match="rank"):
         build_promotions([eligibility("invalid", **changes)], ["white"])
+
+
+@pytest.mark.parametrize(
+    "role,order",
+    [
+        ("admin", ["follow_ups", "ready_to_promote", "recent_students"]),
+        ("front_desk", ["follow_ups", "recent_students"]),
+        ("instructor", ["ready_to_promote", "recent_students"]),
+        (None, []),
+    ],
+)
+def test_home_preferences_defaults_and_entitlements_per_role(role, order):
+    assert entitled_home_panels(role) == tuple(order)
+    assert default_home_preferences(role).model_dump() == {
+        "version": 1,
+        "order": order,
+        "hidden": ["recent_students"] if order else [],
+        "size": {},
+    }
+
+
+@pytest.mark.parametrize(
+    "role,order,hidden",
+    [
+        (
+            "admin",
+            ["recent_students", "ready_to_promote", "follow_ups"],
+            ["recent_students", "follow_ups"],
+        ),
+        ("front_desk", ["recent_students", "follow_ups"], ["recent_students", "follow_ups"]),
+        ("instructor", ["recent_students", "ready_to_promote"], ["recent_students"]),
+    ],
+)
+def test_home_preferences_role_change_filters_order_hidden_and_sizes(role, order, hidden):
+    saved = {
+        "version": 1,
+        "order": ["recent_students", "ready_to_promote", "follow_ups"],
+        "hidden": ["follow_ups", "ghost", "recent_students"],
+        "size": {
+            "follow_ups": "compact",
+            "ready_to_promote": "expanded",
+            "recent_students": "expanded",
+        },
+    }
+    assert reconcile_home_preferences(saved, role).model_dump() == {
+        "version": 1,
+        "order": order,
+        "hidden": hidden,
+        "size": {},
+    }
+    assert saved["order"] == ["recent_students", "ready_to_promote", "follow_ups"]
+    assert saved["hidden"] == ["follow_ups", "ghost", "recent_students"]
+
+
+@pytest.mark.parametrize(
+    "role,order,hidden",
+    [
+        (
+            "admin",
+            ["follow_ups", "ready_to_promote", "recent_students"],
+            ["ready_to_promote", "recent_students"],
+        ),
+        ("front_desk", ["follow_ups", "recent_students"], ["recent_students"]),
+        (
+            "instructor",
+            ["ready_to_promote", "recent_students"],
+            ["ready_to_promote", "recent_students"],
+        ),
+    ],
+)
+def test_home_preferences_new_entitlements_append_in_default_order(role, order, hidden):
+    saved = {"version": 1, "order": ["follow_ups"], "hidden": ["ready_to_promote"], "size": {}}
+    assert reconcile_home_preferences(saved, role).model_dump() == {
+        "version": 1,
+        "order": order,
+        "hidden": hidden,
+        "size": {},
+    }
+
+
+def test_home_preferences_existing_visible_recent_students_stays_visible_on_upgrade():
+    saved = {"version": 1, "order": ["recent_students"], "hidden": [], "size": {}}
+    assert reconcile_home_preferences(saved, "admin").model_dump() == {
+        "version": 1,
+        "order": ["recent_students", "follow_ups", "ready_to_promote"],
+        "hidden": [],
+        "size": {},
+    }
+
+
+def test_home_preferences_reconcile_tolerates_junk_when_known_ids_survive():
+    saved = {
+        "version": 1,
+        "order": ["old_panel", "recent_students", "recent_students", 7, {"x": 1}, "follow_ups"],
+        "hidden": ["follow_ups", "ghost", ["unhashable"]],
+        "size": {"recent_students": "expanded", "follow_ups": ["bad"]},
+        "extra": True,
+    }
+    assert reconcile_home_preferences(saved, "front_desk").model_dump() == {
+        "version": 1,
+        "order": ["recent_students", "follow_ups"],
+        "hidden": ["follow_ups"],
+        "size": {},
+    }
+
+
+@pytest.mark.parametrize("version", [True, False, 2, "1", 1.0, None])
+def test_home_preferences_reconcile_rejects_non_integer_version_one(version):
+    assert reconcile_home_preferences({"version": version, "order": []}, "admin") is None
+
+
+@pytest.mark.parametrize(
+    "saved",
+    [
+        None,
+        "junk",
+        [],
+        {"version": 1},
+        {"version": 1, "order": "follow_ups"},
+        {"version": 1, "order": [], "hidden": {}},
+        {"version": 1, "order": [], "size": []},
+    ],
+)
+def test_home_preferences_reconcile_rejects_unreadable_shapes(saved):
+    assert reconcile_home_preferences(saved, "admin") is None

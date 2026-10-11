@@ -1061,6 +1061,20 @@ export interface ApiDashboardHomePaymentsItem {
   count: number;
 }
 
+export interface ApiDashboardHomePreferences {
+  version: 1;
+  order: ("follow_ups" | "ready_to_promote" | "recent_students")[];
+  hidden: ("follow_ups" | "ready_to_promote" | "recent_students")[];
+  size: Record<string, "compact" | "expanded">;
+}
+
+export interface ApiDashboardHomePreferencesUpdate {
+  version: 1;
+  order: ("follow_ups" | "ready_to_promote" | "recent_students")[];
+  hidden: ("follow_ups" | "ready_to_promote" | "recent_students")[];
+  size: Record<string, "compact" | "expanded">;
+}
+
 export interface ApiDashboardHomePromotionRow {
   student_id: string;
   name: string;
@@ -1096,6 +1110,7 @@ export interface ApiDashboardHomeResponse {
   follow_ups?: ApiDashboardHomeFollowUps | null;
   ready_to_promote?: ApiDashboardHomeReadyToPromote | null;
   recent_students?: ApiDashboardHomeRecentStudent[] | null;
+  preferences?: ApiDashboardHomePreferences | null;
 }
 
 export interface ApiDashboardHomeSetupItem {

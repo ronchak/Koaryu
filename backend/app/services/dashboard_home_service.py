@@ -3,6 +3,8 @@
 Identity and access are resolved before any cache lookup. The facts RPC result
 and the promotions result are cached per studio (15 seconds); follow-ups are
 read per request. Role shaping happens after the cache and is never cached.
+Saved preferences are identity data: they come from the same Auth read that
+resolves the viewer and never enter either cache.
 """
 
 import asyncio
@@ -24,12 +26,14 @@ from app.schemas.dashboard_home import (
     DashboardHomeFollowUpRow,
     DashboardHomeFollowUps,
     DashboardHomeFollowUpStats,
+    DashboardHomePreferences,
     DashboardHomeResponse,
     DashboardHomeStats,
     DashboardHomeViewer,
 )
 from app.services.auth_service import AuthService
 from app.services.belt_service import BeltService
+from app.services.dashboard_home_preferences import read_home_preferences
 from app.services.dashboard_home_sections import (
     CONTACT_ROLES,
     DASHBOARD_FACTS_RPC_FORMULA_VERSION,
@@ -119,6 +123,8 @@ class DashboardHomeRequestContext:
     auth: AuthResponse
     facts_key: Optional[DashboardSummaryCacheKey]
     promotions_key: Optional[DashboardSummaryCacheKey]
+    # Reconciled for this viewer's role; None when never saved or unreadable.
+    preferences: Optional[DashboardHomePreferences] = None
 
 
 def is_access_failure(error: BaseException) -> bool:
@@ -162,13 +168,17 @@ class DashboardHomeService:
         user_id: str,
         requested_studio_id: Optional[str] = None,
     ) -> DashboardHomeRequestContext:
-        auth = AuthService(self.supabase)._get_user_profile_sync(user_id, requested_studio_id)
+        identity = AuthService(self.supabase)
+        auth = identity._get_user_profile_sync(user_id, requested_studio_id)
         if not auth.studio_id:
             return DashboardHomeRequestContext(
                 user_id=user_id, auth=auth, facts_key=None, promotions_key=None
             )
 
         ensure_platform_subscription_access(self.supabase, auth.studio_id)
+        preferences = read_home_preferences(
+            identity.fetched_user_metadata, auth.studio_id, auth.role
+        )
         local_date, timezone_name = self._studio_today(self._fetch_studio_timezone(auth.studio_id))
         visibility: DashboardSummaryVisibility = (
             "billing_visible" if auth.role in BILLING_VISIBLE_ROLES else "billing_hidden"
@@ -191,6 +201,7 @@ class DashboardHomeService:
                 local_date=local_date,
                 formula_version=DASHBOARD_HOME_PROMOTIONS_FORMULA_VERSION,
             ),
+            preferences=preferences,
         )
 
     # ---- Provider reads and the one write ----
@@ -500,6 +511,7 @@ class DashboardHomeService:
             follow_ups=follow_ups[1] if follow_ups else None,
             ready_to_promote=promotions.ready_to_promote if promotions else None,
             recent_students=list(facts.recent_students),
+            preferences=context.preferences,
         )
         timings["total"] = (time.perf_counter() - total_started) * 1000
         return payload, timings

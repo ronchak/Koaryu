@@ -1,4 +1,4 @@
-"""Response contract for ``GET /dashboard/home``.
+"""Response contract for ``GET /dashboard/home`` and its saved preferences.
 
 Role shaping is by absence: a section or field the viewer may not see, or that
 the server could not compute, is omitted from the JSON rather than flagged.
@@ -9,18 +9,23 @@ Each model lists those fields in ``_absent_when_none``; every other ``None``
 from datetime import datetime
 from typing import Annotated, Any, ClassVar, Literal, Optional, Union
 
-from pydantic import BaseModel, ConfigDict, Field, model_serializer
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_serializer
 
 from app.schemas.staff import StaffRoleName
 
 DashboardHomeSetupStep = Literal["programs", "students", "belts", "classes", "billing"]
 DashboardHomeLeadStage = Literal["inquiry", "trial_scheduled", "trial_completed", "offer_sent"]
+# Optional Home panels; grows as panels are added.
+DashboardHomePanelId = Literal["follow_ups", "ready_to_promote", "recent_students"]
+DashboardHomePanelSize = Literal["compact", "expanded"]
 
 DASHBOARD_HOME_ATTENTION_LIMIT = 6
 DASHBOARD_HOME_CLASS_ROW_LIMIT = 5
 DASHBOARD_HOME_FOLLOW_UP_LIMIT = 6
 DASHBOARD_HOME_PROMOTION_LIMIT = 6
 DASHBOARD_HOME_ATTENDANCE_WINDOW_DAYS = 30
+DASHBOARD_HOME_PREFERENCES_VERSION = 1
+DASHBOARD_HOME_PREFERENCES_LIST_LIMIT = 8
 
 
 class DashboardHomeModel(BaseModel):
@@ -187,6 +192,35 @@ class DashboardHomeRecentStudent(DashboardHomeModel):
     started_on: Optional[str] = None
 
 
+class DashboardHomePreferences(BaseModel):
+    """One viewer's Home layout for one studio.
+
+    ``order`` lists every panel the viewer's role may see, visible or hidden;
+    ``hidden`` is the subset that is off. No panel declares sizes in version
+    one, so the server always returns ``size`` as ``{}``.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    version: Literal[1]
+    order: list[DashboardHomePanelId] = Field(max_length=DASHBOARD_HOME_PREFERENCES_LIST_LIMIT)
+    hidden: list[DashboardHomePanelId] = Field(max_length=DASHBOARD_HOME_PREFERENCES_LIST_LIMIT)
+    size: dict[DashboardHomePanelId, DashboardHomePanelSize] = Field(
+        max_length=DASHBOARD_HOME_PREFERENCES_LIST_LIMIT
+    )
+
+    @field_validator("order", "hidden")
+    @classmethod
+    def _unique_panels(cls, panels: list[str]) -> list[str]:
+        if len(set(panels)) != len(panels):
+            raise ValueError("must not list a panel twice")
+        return panels
+
+
+class DashboardHomePreferencesUpdate(DashboardHomePreferences):
+    """Body of ``PUT /dashboard/home/preferences``; reconciled for the viewer's role."""
+
+
 class DashboardHomeResponse(DashboardHomeModel):
     _absent_when_none = (
         "studio",
@@ -196,6 +230,7 @@ class DashboardHomeResponse(DashboardHomeModel):
         "follow_ups",
         "ready_to_promote",
         "recent_students",
+        "preferences",
     )
 
     generated_at: datetime
@@ -207,3 +242,10 @@ class DashboardHomeResponse(DashboardHomeModel):
     follow_ups: Optional[DashboardHomeFollowUps] = None
     ready_to_promote: Optional[DashboardHomeReadyToPromote] = None
     recent_students: Optional[list[DashboardHomeRecentStudent]] = None
+    preferences: Optional[DashboardHomePreferences] = Field(
+        default=None,
+        description=(
+            "Saved Home layout for this studio, reconciled for the viewer's role. "
+            "Absent when never saved or unreadable."
+        ),
+    )
