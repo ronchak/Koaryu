@@ -363,11 +363,12 @@ and photo uploads use a 190-second browser limit. Staging and preview traffic
 is excluded from production metric collection.
 
 The authenticated dashboard capture records allowlisted HTTP and browser resource
-timings for `/dashboard/workspace`, `/dashboard/bootstrap`, and `/dashboard/summary`
+timings for `/dashboard/workspace`, `/dashboard/bootstrap`, and `/dashboard/home`
 without retaining URLs, identifiers, or query values. Workspace does not emit
 `Server-Timing`, so its HTTP and resource timings are diagnostics only. Bootstrap
-and summary still require their existing successful responses, resource entries,
-and allowlisted `Server-Timing` measurements.
+and Home require successful responses, resource entries, and allowlisted
+`Server-Timing` measurements (Home's are the `koaryu_home_*` stages). Saving
+the layout through `/dashboard/home/preferences` is not counted as Home's payload.
 
 The synthetic mounted-test startup trace records fixture workspace/controller
 readiness. It does not prove deployed route usability or measure deployed backend memory.

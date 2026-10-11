@@ -88,19 +88,25 @@ npm --prefix frontend run analyze
 
 ## Deterministic Regression Gate
 
-The canonical local gate calls the real Dashboard summary endpoint, including
-fresh context resolution, cached RPC facts and response assembly, against fake
-provider I/O. It is not a browser or hosted database latency measurement. It runs the three
-fixed profiles in `performance/dashboard-summary-budget.json`: `small` (25
-students), `medium` (250 students), and `large` (2,500 students). Each profile
-uses the same fixed request, route and role. Supporting cardinalities vary
-independently, including attendance, memberships, leads, invoices, payments and
-Stripe events.
+The canonical local gate calls the real `GET /dashboard/home` endpoint,
+including fresh context resolution, the cached facts RPC, uncached follow-ups,
+cached promotions (belt eligibility) and response assembly, against fake
+provider I/O. It is not a browser or hosted database latency measurement. It
+runs the three fixed profiles in `performance/dashboard-home-budget.json`:
+`small` (25 students), `medium` (250 students), and `large` (2,500 students).
+Each profile uses the same fixed admin request and route. Cardinalities cover
+only the tables Home reads and vary independently: students, memberships,
+attendance, promotions and leads. Billing and schedule facts come from the
+faked RPC, so their tables are not sized.
 
 The versioned budget manifest is the owner of the profile ceilings and metric
-semantics. Its `dashboard-summary-performance-v2` manifest version and
-`dashboard-summary-endpoint-fixture-v2` fixture revision must remain bound to emitted
-evidence. The gate emits one aggregate-only JSON object to stdout. It never
+semantics. Its `dashboard-home-performance-v1` manifest version and
+`dashboard-home-endpoint-fixture-v1` fixture revision must remain bound to emitted
+evidence. Belt eligibility reads grow with the studio, so each profile has its
+own ceilings: count ceilings are the measured value plus one, byte ceilings
+carry about 20% headroom, and cache, authorization and materialization counts
+are exact. Remeasure and update the manifest in the same change whenever Home's
+reads change on purpose. The gate emits one aggregate-only JSON object to stdout. It never
 emits fixture rows, names, payloads, tenant identifiers, or other privacy-
 bearing data; the stdout result is run evidence and is ephemeral, not a
 tracked source artifact.
@@ -118,7 +124,8 @@ override to point the gate at a hosted service. The command fails when the
 worktree has tracked or untracked changes, the checked-out SHA differs from
 `--expected-sha`, a profile or route is missing,
 the manifest/fixture/privacy bindings differ, a metric is non-finite or over
-budget, or any privacy-bearing field appears in the aggregate evidence.
+budget, promotions load other than three times, any request materializes
+sessions, or any privacy-bearing field appears in the aggregate evidence.
 
 Release CI runs this same gate in a separate, bounded `performance-regression`
 job after establishing Node 22.13.0 and Python 3.11. It checks out and asserts
@@ -144,20 +151,20 @@ The verifier performs GET-only probes against pinned Koaryu targets, rejects red
 
 The browser harness records two separate readiness metrics. `dashboard_shell_ready_ms`
 comes from a committed visible shell mark scoped to the current route and identity
-generation. It does not prove that identity or owner data is present. The legacy
-shell/layout DOM attribute still requires identity and persisted layout resolution.
-`dashboard_ready_ms` comes from a committed complete-data mark after
-layout resolution and the controller's complete required-dataset aggregate is
-ready: students, programs, leads, schedule, dashboard summary, and
-selected-ladder belt eligibility. Preview semantics remain owned by the same
-resolver. Treat the latter as the true-data readiness measure. Identity and first-useful content have separate committed marks. Marks are written
+generation. It does not prove that owner data is present. Home's shell DOM
+attribute turns true once identity is ready.
+`dashboard_ready_ms` comes from the committed complete-data mark Home writes
+once its one `GET /dashboard/home` payload is present for the current
+identity; Home's data-ready DOM attribute turns true at the same time. Preview
+mode follows the same rule with its preview payload. Treat the latter as the true-data readiness measure. Identity and first-useful content have separate committed marks. Marks are written
 after a paint opportunity and retain only fixed route labels and numeric
 generations. The optional network-idle wait happens afterward and is excluded
 from readiness timings.
 Separately, evidence validation requires HTTP 200 responses from
-`/dashboard/bootstrap` and `/dashboard/summary`, resource timings, and at least one allowlisted
+`/dashboard/bootstrap` and `/dashboard/home`, resource timings, and at least one allowlisted
 finite, nonnegative `Server-Timing` duration for each response; those two
-responses alone do not prove the full true-data marker.
+responses alone do not prove the true-data marker. A `/dashboard/home/preferences`
+save is never counted as Home's payload.
 
 For a privacy-safe authenticated dashboard capture, create a Playwright storage-state file through the existing approved sign-in workflow, then run:
 
@@ -174,14 +181,14 @@ The harness requires a prior exact-SHA deployed-release verification before
 Chromium starts and a second exact-SHA verification after the browser closes.
 An alias move, frontend/backend SHA mismatch, failed readiness probe, missing
 resource timing, missing allowlisted server timing, non-finite metric, blocked
-write, or unknown-origin request invalidates the capture. It waits for the
-dashboard's explicit true-data marker, which requires layout resolution plus
-the controller's complete required-dataset aggregate: students, programs,
-leads, schedule, dashboard summary, and selected-ladder belt eligibility.
-Preview semantics remain owned by the same resolver. Separately, evidence
-validation requires HTTP 200 responses from `/dashboard/bootstrap` and
-`/dashboard/summary`, resource timings, and allowlisted
-`Server-Timing`; those two responses alone do not prove the full data marker.
+write, or unknown-origin request invalidates the capture. It waits for
+Home's explicit true-data marker, which requires authoritative identity and
+Home's one payload. Separately, evidence validation requires HTTP 200 responses
+from `/dashboard/bootstrap` and `/dashboard/home`, resource timings, and
+allowlisted `Server-Timing` (the bootstrap's `koaryu_*` and Home's
+`koaryu_home_*` stages); those two responses alone do not prove the data marker. `GET /dashboard/home` materializes today's
+recurring sessions when none exist yet, a write the GET-only guard cannot see,
+so capture against a settled account whose sessions for the day already exist.
 It emits only aggregate timing labels. It does not emit URLs, query strings,
 response bodies, tenant/user identifiers, credentials, or storage state. Keep
 the storage-state file private and delete it through the approved local

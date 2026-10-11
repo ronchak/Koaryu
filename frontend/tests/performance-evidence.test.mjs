@@ -42,7 +42,7 @@ function deferredCapture() {
     lateSizeCalls += 1;
     return lateSizes.promise;
   });
-  const pendingFailure = request("/api/dashboard/summary");
+  const pendingFailure = request("/api/dashboard/home");
   const failed = request("/private-failed");
   const respond = (request, status) =>
     page.emit("response", {
@@ -290,7 +290,7 @@ describe("privacy-safe performance evidence", () => {
       pending.map((entry) => [entry.resource, entry.status]),
       [
         ["other", 202],
-        ["dashboard-summary", 0],
+        ["dashboard-home", 0],
       ],
     );
     assert.equal(completed.length, 1);
@@ -417,16 +417,30 @@ describe("privacy-safe performance evidence", () => {
       classifyResource("https://koaryu.app/api/proxy/dashboard/workspace?studio=private"),
       "dashboard-workspace",
     );
+    assert.equal(
+      classifyResource("https://koaryu.app/api/proxy/dashboard/home?fresh=true"),
+      "dashboard-home",
+    );
+    assert.equal(
+      classifyResource("https://backend.invalid/api/v1/dashboard/home"),
+      "dashboard-home",
+    );
+    // Saving the layout is a separate request, never Home's payload.
+    assert.equal(classifyResource("https://koaryu.app/api/proxy/dashboard/home/preferences"), null);
     assert.equal(classifyResource("https://koaryu.app/api/support/tickets/private"), null);
     assert.deepEqual(
       sanitizeServerTiming(
-        "koaryu_summary_context;dur=2, koaryu_summary_facts;dur=3, koaryu_summary_lead_follow_ups;dur=1.5, koaryu_summary_total;dur=12.4, private;desc=customer@example.test, customer_123;dur=9",
+        "koaryu_home_context;dur=2, koaryu_home_facts;dur=3, koaryu_home_materialize;dur=4, koaryu_home_facts_after_materialize;dur=1, koaryu_home_contact;dur=0.5, koaryu_home_follow_ups;dur=1.5, koaryu_home_promotions;dur=6, koaryu_home_total;dur=12.4, koaryu_home_private;dur=8, private;desc=customer@example.test, customer_123;dur=9",
       ),
       [
-        { name: "koaryu_summary_context", duration_ms: 2 },
-        { name: "koaryu_summary_facts", duration_ms: 3 },
-        { name: "koaryu_summary_lead_follow_ups", duration_ms: 1.5 },
-        { name: "koaryu_summary_total", duration_ms: 12.4 },
+        { name: "koaryu_home_context", duration_ms: 2 },
+        { name: "koaryu_home_facts", duration_ms: 3 },
+        { name: "koaryu_home_materialize", duration_ms: 4 },
+        { name: "koaryu_home_facts_after_materialize", duration_ms: 1 },
+        { name: "koaryu_home_contact", duration_ms: 0.5 },
+        { name: "koaryu_home_follow_ups", duration_ms: 1.5 },
+        { name: "koaryu_home_promotions", duration_ms: 6 },
+        { name: "koaryu_home_total", duration_ms: 12.4 },
       ],
     );
   });
@@ -455,7 +469,7 @@ describe("privacy-safe performance evidence", () => {
           response_start_ms: 1,
           transfer_bytes: 0,
         },
-        { resource: "dashboard-summary", duration_ms: 3, response_start_ms: 2, transfer_bytes: 0 },
+        { resource: "dashboard-home", duration_ms: 3, response_start_ms: 2, transfer_bytes: 0 },
       ],
       server_timing: [
         {
@@ -469,9 +483,9 @@ describe("privacy-safe performance evidence", () => {
           server_timing: [{ name: "koaryu_total", duration_ms: 1.5 }],
         },
         {
-          resource: "dashboard-summary",
+          resource: "dashboard-home",
           status: 200,
-          server_timing: [{ name: "koaryu_summary_total", duration_ms: 2.5 }],
+          server_timing: [{ name: "koaryu_home_total", duration_ms: 2.5 }],
         },
       ],
     };
@@ -498,17 +512,17 @@ describe("privacy-safe performance evidence", () => {
         validateCapturedEvidence({
           ...evidence,
           server_timing: evidence.server_timing.filter(
-            (entry) => entry.resource !== "dashboard-summary",
+            (entry) => entry.resource !== "dashboard-home",
           ),
         }),
-      /missing for dashboard-summary/,
+      /missing for dashboard-home/,
     );
     assert.throws(
       () =>
         validateCapturedEvidence({
           ...evidence,
           server_timing: evidence.server_timing.map((entry) =>
-            entry.resource === "dashboard-summary" ? { ...entry, status: 500 } : entry,
+            entry.resource === "dashboard-home" ? { ...entry, status: 500 } : entry,
           ),
         }),
       /HTTP 200 responses/,
@@ -518,7 +532,7 @@ describe("privacy-safe performance evidence", () => {
         validateCapturedEvidence({
           ...evidence,
           server_timing: evidence.server_timing.map((entry) =>
-            entry.resource === "dashboard-summary" ? { ...entry, status: 204 } : entry,
+            entry.resource === "dashboard-home" ? { ...entry, status: 204 } : entry,
           ),
         }),
       /HTTP 200 responses/,
@@ -538,15 +552,15 @@ describe("privacy-safe performance evidence", () => {
         validateCapturedEvidence({
           ...evidence,
           server_timing: evidence.server_timing.map((entry) =>
-            entry.resource === "dashboard-summary"
+            entry.resource === "dashboard-home"
               ? {
                   ...entry,
-                  server_timing: [{ name: "koaryu_summary_total", duration_ms: Infinity }],
+                  server_timing: [{ name: "koaryu_home_total", duration_ms: Infinity }],
                 }
               : entry,
           ),
         }),
-      /missing for dashboard-summary/,
+      /missing for dashboard-home/,
     );
   });
 

@@ -22,7 +22,9 @@ test("read-only capture blocks provider-refresh GETs as well as writes and unkno
   assert.equal(check("/api/proxy/billing/landing"), "provider_refresh_reads");
   assert.equal(check("/api/v1/schedule/window/materialize", "POST"), "write_methods");
   assert.equal(check("/dashboard", "GET", false, "https://unknown.invalid"), "unknown_origins");
-  assert.equal(check("/api/v1/dashboard/summary"), null);
+  // Home's GET is allowed even though the server may materialize today's sessions.
+  assert.equal(check("/api/v1/dashboard/home"), null);
+  assert.equal(check("/api/proxy/dashboard/home/preferences", "PUT"), "write_methods");
 });
 test("disposable functional mode permits only exact refresh/materialization POST destinations", () => {
   assert.equal(check("/api/v1/schedule/window/materialize", "POST", true), null);

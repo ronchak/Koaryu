@@ -125,8 +125,8 @@ export function validateReleaseCandidateWorkflow(source) {
       "uses: actions/setup-python@v6",
       'python-version: "3.11"',
       "backend/requirements.txt",
-      "performance/dashboard-summary-budget.json",
-      "git ls-files --error-unmatch backend/requirements.txt performance/dashboard-summary-budget.json",
+      "performance/dashboard-home-budget.json",
+      "git ls-files --error-unmatch backend/requirements.txt performance/dashboard-home-budget.json",
       "KOARYU_PERFORMANCE_PYTHON: ${{ steps.setup-python.outputs.python-path }}",
       'run: npm run check:performance-regression -- --expected-sha "$EXPECTED_HEAD_SHA"',
     ];

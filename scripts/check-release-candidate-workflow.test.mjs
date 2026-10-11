@@ -126,13 +126,13 @@ test("release-candidate workflow rejects a replaced performance gate command", (
 
 test("release-candidate workflow requires the versioned performance budget manifest", () => {
   const weakened = workflow.replace(
-    /performance\/dashboard-summary-budget\.json/g,
+    /performance\/dashboard-home-budget\.json/g,
     "performance/removed-budget.json",
   );
 
   assert.match(
     validateReleaseCandidateWorkflow(weakened).join("\n"),
-    /missing control: performance\/dashboard-summary-budget\.json/,
+    /missing control: performance\/dashboard-home-budget\.json/,
   );
 });
 

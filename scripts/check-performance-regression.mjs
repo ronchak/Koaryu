@@ -6,7 +6,7 @@ import { resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const ROOT_DIR = fileURLToPath(new URL("..", import.meta.url));
-const MANIFEST_PATH = resolve(ROOT_DIR, "performance/dashboard-summary-budget.json");
+const MANIFEST_PATH = resolve(ROOT_DIR, "performance/dashboard-home-budget.json");
 const LOCAL_PYTHON_PATH = resolve(ROOT_DIR, "backend/venv/bin/python");
 const SHA_PATTERN = /^[0-9a-f]{40}$/;
 const TOP_LEVEL_FIELDS = [
@@ -26,6 +26,9 @@ const METRIC_FIELDS = [
   "concurrent_miss_rpc_count",
   "invalidation_rpc_count",
   "denied_rpc_count",
+  "materialize_rpc_count",
+  "promotion_load_count",
+  "follow_up_query_count",
   "table_query_count",
   "rpc_count",
   "total_provider_call_count",
@@ -45,6 +48,9 @@ const COUNT_FIELDS = new Set([
   "concurrent_miss_rpc_count",
   "invalidation_rpc_count",
   "denied_rpc_count",
+  "materialize_rpc_count",
+  "promotion_load_count",
+  "follow_up_query_count",
   "table_query_count",
   "rpc_count",
   "total_provider_call_count",
@@ -55,28 +61,25 @@ const COUNT_FIELDS = new Set([
   "peak_rss_bytes",
 ]);
 const DURATION_FIELDS = new Set(["total_duration_ms", "max_stage_duration_ms"]);
+// Only the tables GET /dashboard/home reads; billing and schedule facts come from the faked RPC.
 const CARDINALITY_FIELDS = [
   "students",
   "student_program_memberships",
-  "billing_payments",
-  "stripe_events",
+  "attendance",
+  "promotions",
+  "programs",
+  "belt_ladders",
+  "belt_ranks",
+  "leads",
   "staff_roles",
   "staff_profiles",
   "studio_subscriptions",
   "studios",
-  "leads",
-  "class_sessions",
-  "class_templates",
-  "attendance",
-  "programs",
-  "belt_ladders",
-  "belt_ranks",
-  "billing_payers",
-  "billing_invoices",
-  "billing_plans",
-  "studio_payment_accounts",
 ];
 const SEMANTIC_FIELDS = [
+  "promotion_load_count",
+  "follow_up_query_count",
+  "materialize_rpc_count",
   "returned_row_count",
   "provider_response_bytes",
   "total_duration_ms",
@@ -126,23 +129,23 @@ function loadBudgetManifest(path = MANIFEST_PATH) {
     "routes",
     "profiles",
   ], "budget manifest");
-  if (manifest.schema_version !== 1 || manifest.budget_manifest_version !== "dashboard-summary-performance-v3") {
+  if (manifest.schema_version !== 1 || manifest.budget_manifest_version !== "dashboard-home-performance-v1") {
     throw new Error("performance budget manifest version is unsupported.");
   }
-  if (manifest.fixture_revision !== "dashboard-summary-endpoint-fixture-v3" || manifest.privacy !== "aggregate-only-no-payloads") {
+  if (manifest.fixture_revision !== "dashboard-home-endpoint-fixture-v1" || manifest.privacy !== "aggregate-only-no-payloads") {
     throw new Error("performance budget manifest binding is unsupported.");
   }
   exactKeys(manifest.fixed_request, ["route", "date", "timezone", "role"], "fixed request");
   if (
-    manifest.fixed_request.route !== "dashboard-summary"
+    manifest.fixed_request.route !== "dashboard-home"
     || manifest.fixed_request.date !== "2026-05-20"
     || manifest.fixed_request.timezone !== "America/Los_Angeles"
     || manifest.fixed_request.role !== "admin"
   ) throw new Error("performance budget manifest fixed request is unsupported.");
   nonnegativeInteger(manifest.backend_stage_threshold_ms, "backend_stage_threshold_ms");
   exactKeys(manifest.metric_semantics, SEMANTIC_FIELDS, "metric semantics");
-  if (manifest.routes.length !== 1 || manifest.routes[0] !== "dashboard-summary") {
-    throw new Error("performance budget manifest must contain the dashboard-summary route once.");
+  if (manifest.routes.length !== 1 || manifest.routes[0] !== "dashboard-home") {
+    throw new Error("performance budget manifest must contain the dashboard-home route once.");
   }
   if (!isPlainObject(manifest.profiles)) throw new Error("performance budget profiles must be an object.");
   const profileNames = Object.keys(manifest.profiles).sort();
@@ -220,6 +223,14 @@ function validatePerformanceEvidence(evidence, manifest, expectedSha) {
       || entry.metrics.denied_rpc_count !== 0) {
       throw new Error(`${entry.profile} endpoint authorization or cache invariants failed.`);
     }
+    // Promotions load on the miss, the shared concurrent miss and after invalidation only.
+    if (entry.metrics.promotion_load_count !== 3) {
+      throw new Error(`${entry.profile} promotions cache invariant failed.`);
+    }
+    // The faked facts list today's classes, so a read-only GET never materializes sessions.
+    if (entry.metrics.materialize_rpc_count !== 0) {
+      throw new Error(`${entry.profile} materialized sessions during a read.`);
+    }
     seenProfiles.add(entry.profile);
     seenPairs.add(pair);
   }
@@ -269,7 +280,7 @@ function performancePythonPath() {
 function runFixture(profile, gitSha) {
   const pythonPath = performancePythonPath();
   const result = spawnSync(pythonPath, [
-    "backend/tests/performance/dashboard_summary_fixture.py",
+    "backend/tests/performance/dashboard_home_fixture.py",
     "--profile", profile,
     "--git-sha", gitSha,
   ], {
