@@ -1,10 +1,16 @@
 import {
   HOME_LINKS,
   HOME_STAT_ORDER,
+  type HomePanels,
   type HomeRole,
   type HomeStat,
   type HomeStatId,
 } from "./home-model.ts";
+import {
+  homeVisiblePanelIds,
+  reconcileHomePreferences,
+  type HomePanelId,
+} from "./home-preferences.ts";
 
 /*
  * What Home lays out for a role: the stats strip's slots and the optional
@@ -69,29 +75,22 @@ export function homeStatCells(
   );
 }
 
-// D4: optional panels in default order.
-export const HOME_PANEL_IDS = ["followUps", "promotions", "newStudents"] as const;
-export type HomePanelId = (typeof HOME_PANEL_IDS)[number];
-
-export const HOME_PANEL_ROLES = {
-  followUps: ["admin", "front_desk"],
-  promotions: ["admin", "instructor"],
-  newStudents: ["admin", "front_desk", "instructor"],
-} as const satisfies Record<HomePanelId, readonly HomeRole[]>;
-
-/** Off until the viewer turns it on in Edit Home (D4). */
-export const HOME_PANEL_DEFAULT_HIDDEN: readonly HomePanelId[] = ["newStudents"];
+// The page's name for each optional panel: its model section, its copy keys
+// and its `data-home-panel` value. Ids, roles and defaults live with the
+// preferences that order them (home-preferences.ts, D4).
+export const HOME_PANEL_KEYS = {
+  follow_ups: "followUps",
+  ready_to_promote: "promotions",
+  recent_students: "newStudents",
+} as const satisfies Record<HomePanelId, keyof HomePanels>;
+export type HomePanelKey = (typeof HOME_PANEL_KEYS)[HomePanelId];
+export type { HomePanelId };
 
 /**
- * The optional panels Home shows, in order: the role's D4 defaults. A shown
- * panel whose section the payload lacks says it couldn't check, rather than
- * vanishing. Phase 4's saved preferences replace the defaults.
+ * The optional panels Home shows, in the viewer's order: their preferences
+ * reconciled for the role, without the hidden ones. A shown panel whose
+ * section the payload lacks says it couldn't check, rather than vanishing.
  */
-export function defaultHomePanels(role: HomeRole | null): HomePanelId[] {
-  if (!role) return [];
-  return HOME_PANEL_IDS.filter(
-    (id) =>
-      (HOME_PANEL_ROLES[id] as readonly HomeRole[]).includes(role) &&
-      !HOME_PANEL_DEFAULT_HIDDEN.includes(id),
-  );
+export function homeVisiblePanels(preferences: unknown, role: HomeRole | null): HomePanelId[] {
+  return homeVisiblePanelIds(reconcileHomePreferences(preferences, role));
 }

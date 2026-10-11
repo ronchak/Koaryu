@@ -56,6 +56,13 @@ import type {
   StaffLegalNameResponse, StaffRoleName, DashboardSummary, DashboardHome,
 } from "@/types";
 import { buildPreviewHomePayload } from "@/lib/dashboard/preview-home-payload";
+import { homeRoleClass } from "@/lib/dashboard/home-model";
+import {
+  reconcileHomePreferences,
+  type HomePreferences,
+  type HomePreferencesScope,
+  type HomePreferencesWire,
+} from "@/lib/dashboard/home-preferences";
 import {
   MOCK_STUDENTS,
   MOCK_SESSIONS,
@@ -115,7 +122,7 @@ import {
   type BootstrapResponse,
 } from "@/lib/store-bootstrap-model";
 import { invalidateAccessIdentity, publishAccessIdentity } from "@/lib/access-identity";
-import { withCurrentLiveAuthRead } from "@/lib/store-action-types";
+import { canCommitLiveMutation, withCurrentLiveAuthRead } from "@/lib/store-action-types";
 import { routeForMembershipStatus } from "@/lib/auth-route-model";
 import {
   buildPreviewHydratedLadderState,
@@ -914,6 +921,43 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       // Access failures take the store's existing paths: a lapsed subscription
       // marks the studio, and a refused session or membership re-verifies the
       // workspace, which signs out or resets identity if it is really gone.
+      if (isCurrent()) {
+        const status = error && typeof error === "object" && "status" in error ? Number(error.status) : null;
+        if (isSubscriptionRequiredError(error)) markSubscriptionRequired();
+        else if (status === 401 || status === 403 || isStaffArchivedError(error)) {
+          window.dispatchEvent(new CustomEvent(APP_RESUME_EVENT, { detail: { refreshData: false } }));
+        }
+      }
+      throw error;
+    }
+  }, [beginLiveAuthRequest, isPreviewMode, markSubscriptionRequired]);
+
+  // Home preferences: one PUT for the identity the caller saves for, never another.
+  // It changes no studio facts, so it never marks them changed (no fresh re-read).
+  // It returns the stored value without keeping it: `useHomePreferences` owns it.
+  // Preview mode resolves here without a network call, like Home's read.
+  const saveDashboardHomePreferences = useCallback(async (
+    preferences: HomePreferences,
+    scope: HomePreferencesScope,
+  ): Promise<HomePreferencesWire> => {
+    if (isPreviewMode) {
+      const role = homeRoleClass(currentRoleRef.current);
+      if (!role) throw new Error("Home is not available until studio access is verified.");
+      return reconcileHomePreferences(preferences, role);
+    }
+    const isScope = () => authUserIdRef.current === scope.userId && authoritativeStudioIdRef.current === scope.studioId;
+    const scopeChanged = () => new Error("Dashboard scope changed. Please retry.");
+    if (!isScope()) throw scopeChanged();
+    const request = beginLiveAuthRequest();
+    const isCurrent = () => canCommitLiveMutation(request) && isScope();
+    try {
+      const saved = await api.put<HomePreferencesWire>("/dashboard/home/preferences", {
+        version: 1, order: preferences.order, hidden: preferences.hidden, size: preferences.size,
+      }, request.token, { timeoutMessage: "Saving Home timed out.", marksDashboardFacts: false });
+      if (!isCurrent()) throw scopeChanged();
+      return saved;
+    } catch (error) {
+      // The same access paths as Home's read.
       if (isCurrent()) {
         const status = error && typeof error === "object" && "status" in error ? Number(error.status) : null;
         if (isSubscriptionRequiredError(error)) markSubscriptionRequired();
@@ -2188,6 +2232,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     dashboardSummaryLoadError,
     refreshDashboardSummary,
     loadDashboardHome,
+    saveDashboardHomePreferences,
     deleteLead: reconciledCommands.deleteLead,
     deleteSession: reconciledCommands.deleteSession,
     deleteStudentPhoto: ownedStudentCommands.deleteStudentPhoto,

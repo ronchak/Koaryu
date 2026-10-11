@@ -7,6 +7,12 @@ import type { TrialAppointmentFacade } from "@/lib/trial-appointment-operation";
 import { createContext, useContext, type Context } from "react";
 
 import type {
+  HomePreferences,
+  HomePreferencesScope,
+  HomePreferencesWire,
+} from "@/lib/dashboard/home-preferences";
+
+import type {
   AttendanceRecord,
   BeltLadder,
   BeltRank,
@@ -74,6 +80,14 @@ export interface StoreContextValue {
   refreshDashboardSummary: (options?: { reason?: "visit" | "resume" }) => Promise<void>;
   /** Reads Home's payload for the verified identity; rejects if that identity or studio changes. */
   loadDashboardHome: (options: { fresh: boolean }) => Promise<DashboardHome>;
+  /**
+   * Saves Home preferences for `scope` only and resolves to the stored, reconciled
+   * value; rejects if the verified user or studio is not `scope` or changes in flight.
+   */
+  saveDashboardHomePreferences: (
+    preferences: HomePreferences,
+    scope: HomePreferencesScope,
+  ) => Promise<HomePreferencesWire>;
 
   students: Student[];
   studentsLoaded: boolean;
@@ -236,6 +250,7 @@ export type DashboardStoreContextValue = Pick<
   | "dashboardSummaryLoadError"
   | "refreshDashboardSummary"
   | "loadDashboardHome"
+  | "saveDashboardHomePreferences"
 >;
 export type StudentsStoreContextValue = Pick<
   StoreContextValue,

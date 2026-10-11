@@ -23,6 +23,26 @@
   min-width: 0;
 }
 
+/*
+ * D5: "Edit Home" in a 40px row right under the bands, right-aligned on every
+ * size. It sits closer to the bands and panels than the page's 20px rhythm,
+ * because it belongs to the panels below it.
+ */
+.editRow {
+  display: flex;
+  min-height: 40px;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.home .editRow {
+  margin-top: 12px;
+}
+
+.home .editRow + .panels {
+  margin-top: 8px;
+}
+
 /* "Two more classes": under the agenda rows, its words aligned with theirs. */
 .more {
   display: flex;

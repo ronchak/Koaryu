@@ -12,6 +12,8 @@ import styles from "./horizon.module.css";
 
 export * from "./horizon-parts";
 export { HorizonHills } from "./horizon-hills";
+export { usePositionSettle, type PositionSettle } from "./horizon-settle";
+export { HorizonSheet } from "./horizon-sheet";
 export {
   HorizonPanelLink,
   HorizonWorkList,

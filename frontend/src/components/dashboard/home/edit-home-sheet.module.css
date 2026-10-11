@@ -1,0 +1,162 @@
+/*
+ * Edit Home's rows. The sheet itself is the kit's HorizonSheet; this file only
+ * draws the two groups: greyed fixed bands, then panel rows with a handle, a
+ * title and a switch. Every control is a 44px touch target.
+ */
+
+.group + .group {
+  margin-top: 22px;
+}
+
+.groupLabel {
+  margin: 0 0 4px;
+  color: var(--product-meta, var(--muted));
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.list {
+  position: relative;
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.fixedRow,
+.row {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  background: var(--product-lifted, var(--surface));
+}
+
+.fixedRow + .fixedRow,
+.row + .row {
+  border-top: 1px solid var(--product-rule-soft, var(--border));
+}
+
+/* Greyed and still: the bands Home always shows. Text lines up with panel titles. */
+.fixedRow {
+  min-height: 48px;
+  padding-left: 54px;
+  color: var(--product-meta, var(--muted));
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+
+.row {
+  min-height: 56px;
+  gap: 10px;
+}
+
+.row[data-dragging="true"] {
+  z-index: 2;
+  border-radius: 10px;
+  box-shadow: var(--product-shadow-lifted, 0 22px 52px rgb(0 0 0 / 20%));
+}
+
+.handle,
+.switch {
+  display: inline-grid;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--product-soft-ink, var(--text-secondary));
+  cursor: pointer;
+}
+
+.handle {
+  width: 44px;
+  height: 44px;
+  cursor: grab;
+  touch-action: none;
+}
+
+.row[data-dragging="true"] .handle {
+  cursor: grabbing;
+}
+
+.handle:hover {
+  background: color-mix(in srgb, var(--hz-tile) 70%, transparent);
+  color: var(--product-ink, var(--text-primary));
+}
+
+.handle :global(svg) {
+  width: 18px;
+  height: 18px;
+}
+
+.handle:focus-visible,
+.switch:focus-visible {
+  outline: 2px solid var(--product-focus, var(--accent));
+  outline-offset: -2px;
+}
+
+.rowTitle {
+  min-width: 0;
+  flex: 1 1 auto;
+  color: var(--product-ink, var(--text-primary));
+  font-size: 0.9375rem;
+  font-weight: 700;
+  line-height: 1.35;
+  overflow-wrap: break-word;
+}
+
+/* A hidden panel keeps its row and place; its title goes soft. */
+.row[data-shown="false"] .rowTitle {
+  color: var(--product-soft-ink, var(--text-secondary));
+  font-weight: 600;
+}
+
+.switch {
+  width: 56px;
+  height: 44px;
+}
+
+.track {
+  position: relative;
+  display: block;
+  width: 42px;
+  height: 26px;
+  box-sizing: border-box;
+  border: 1px solid var(--product-rule, var(--border));
+  border-radius: 999px;
+  background: var(--hz-tile);
+  transition:
+    background-color var(--product-motion-change-duration, 120ms) ease-out,
+    border-color var(--product-motion-change-duration, 120ms) ease-out;
+}
+
+.thumb {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: var(--product-meta, var(--muted));
+  transition:
+    transform var(--product-motion-change-duration, 120ms) ease-out,
+    background-color var(--product-motion-change-duration, 120ms) ease-out;
+}
+
+.switch[aria-checked="true"] .track {
+  border-color: var(--product-wood, var(--accent));
+  background: var(--product-wood, var(--accent));
+}
+
+.switch[aria-checked="true"] .thumb {
+  background: var(--product-paper, var(--surface));
+  transform: translateX(16px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .track,
+  .thumb {
+    transition: none;
+  }
+}

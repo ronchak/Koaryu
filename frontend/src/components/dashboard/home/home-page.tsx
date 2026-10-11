@@ -1,11 +1,17 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { ClipboardCheck, TriangleAlert, UserPlus } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { ClipboardCheck, SlidersHorizontal, TriangleAlert, UserPlus } from "lucide-react";
 import { Header } from "@/components/header";
 import { IntentPrefetchLink as Link } from "@/components/intent-prefetch-link";
 import { Button } from "@/components/ui/button";
-import { CalmState, HorizonPage, HorizonStats, type HorizonStat } from "@/components/ui/horizon";
+import {
+  CalmState,
+  HorizonPage,
+  HorizonStats,
+  usePositionSettle,
+  type HorizonStat,
+} from "@/components/ui/horizon";
 import {
   HOME_COPY,
   homeEyebrow,
@@ -22,16 +28,19 @@ import {
   type HomeModel,
 } from "@/lib/dashboard/home-model";
 import {
-  defaultHomePanels,
+  HOME_PANEL_KEYS,
   homeStatCells,
   homeStatIdsForRole,
+  homeVisiblePanels,
   type HomePanelId,
   type HomeStatCell,
 } from "@/lib/dashboard/home-panels";
 import { useHome } from "@/lib/dashboard/use-home";
+import { useHomePreferences } from "@/lib/dashboard/use-home-preferences";
 import { markDashboardReadiness } from "@/lib/performance";
 import { hasStaffPermission } from "@/lib/staff-permissions";
 import { useConfigStore, useStudioStore } from "@/lib/store-contexts";
+import { EditHomeSheet } from "./edit-home-sheet";
 import { FollowUpsPanel } from "./follow-ups";
 import { HomePlaceholder } from "./home-placeholder";
 import { NeedsAttention } from "./needs-attention";
@@ -67,11 +76,11 @@ function statItems(stats: readonly HomeStatCell[]): HorizonStat[] {
 /** A panel the role has; a null section is one the server couldn't compute. */
 function HomePanel({ id, panels }: { id: HomePanelId; panels: HomeModel["panels"] }) {
   switch (id) {
-    case "followUps":
+    case "follow_ups":
       return <FollowUpsPanel rows={panels.followUps?.rows ?? null} />;
-    case "promotions":
+    case "ready_to_promote":
       return <ReadyToPromotePanel rows={panels.promotions?.rows ?? null} />;
-    case "newStudents":
+    case "recent_students":
       return <NewStudentsPanel rows={panels.newStudents?.rows ?? null} />;
   }
 }
@@ -114,6 +123,14 @@ export function HomePage() {
   const home = useHome();
   const role = homeRoleClass(currentRole);
   const { payload } = home;
+  const preferences = useHomePreferences(payload?.preferences);
+  const [editing, setEditing] = useState(false);
+  const editTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const wasEditingRef = useRef(false);
+  const panelSettle = usePositionSettle<HomePanelId>();
+  // The sheet edits the panels on screen, so it closes if they go (a refused read).
+  const canEdit = preferences.canEdit && payload !== null;
+  if (editing && !canEdit) setEditing(false);
 
   // D6: fixed at the first client render on the studio clock; it never changes after it appears.
   const [greeting] = useState(() =>
@@ -152,6 +169,36 @@ export function HomePage() {
       }),
     [dataReady, identityGeneration, identityReady],
   );
+
+  // Focus goes back to "Edit Home" when the sheet closes (D5).
+  useEffect(() => {
+    if (wasEditingRef.current && !editing) editTriggerRef.current?.focus();
+    wasEditingRef.current = editing;
+  }, [editing]);
+
+  // Edits apply at once; the panels behind the sheet settle into their new places.
+  const edits = {
+    onMove: (id: HomePanelId, offset: number) => {
+      panelSettle.capture();
+      preferences.move(id, offset);
+    },
+    onMoveTo: (id: HomePanelId, index: number) => {
+      panelSettle.capture();
+      preferences.moveTo(id, index);
+    },
+    onShow: (id: HomePanelId, shown: boolean) => {
+      panelSettle.capture();
+      preferences.setShown(id, shown);
+    },
+    onReset: () => {
+      panelSettle.capture();
+      preferences.reset();
+    },
+    onDone: () => {
+      preferences.flush();
+      setEditing(false);
+    },
+  };
 
   const takeAttendanceHref =
     model.agenda?.rows.find((row) => row.emphasized)?.href ?? homeScheduleHref(today);
@@ -192,7 +239,7 @@ export function HomePage() {
   } else if (payload === null) {
     body = <HomePlaceholder statIds={homeStatIdsForRole(role)} />;
   } else {
-    const panels = defaultHomePanels(role);
+    const panels = homeVisiblePanels(preferences.preferences, role);
     body = (
       <HorizonPage>
         {/* First in the page, so the strip sits on the header's ridge. */}
@@ -219,10 +266,25 @@ export function HomePage() {
             <TodaysClasses agenda={model.agenda} />
           </div>
         </div>
+        {/* D5: always here, even with every panel off; never in the Header. */}
+        <div className={styles.editRow}>
+          <Button
+            ref={editTriggerRef}
+            variant="ghost"
+            data-home-edit="trigger"
+            aria-haspopup="dialog"
+            aria-expanded={editing}
+            disabled={!canEdit}
+            onClick={() => setEditing(true)}
+          >
+            <SlidersHorizontal aria-hidden="true" className="h-4 w-4" />
+            {HOME_COPY.edit.trigger}
+          </Button>
+        </div>
         {panels.length > 0 ? (
           <div className={styles.panels}>
             {panels.map((id) => (
-              <div key={id} data-home-panel={id}>
+              <div key={id} ref={panelSettle.register(id)} data-home-panel={HOME_PANEL_KEYS[id]}>
                 <HomePanel id={id} panels={model.panels} />
               </div>
             ))}
@@ -254,6 +316,13 @@ export function HomePage() {
         {actions}
       </Header>
       {body}
+      {editing && canEdit ? (
+        <EditHomeSheet
+          preferences={preferences.preferences}
+          isDefault={preferences.isDefault}
+          {...edits}
+        />
+      ) : null}
     </div>
   );
 }

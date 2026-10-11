@@ -72,6 +72,7 @@ export function useStoreContextValues(input: StoreContextValueInputs): StoreCont
     dashboardSummaryLoadError,
     refreshDashboardSummary,
     loadDashboardHome,
+    saveDashboardHomePreferences,
     deleteLead,
     deleteSession,
     deleteStudentPhoto,
@@ -188,6 +189,7 @@ export function useStoreContextValues(input: StoreContextValueInputs): StoreCont
       dashboardSummaryLoadError,
       refreshDashboardSummary,
       loadDashboardHome,
+      saveDashboardHomePreferences,
     }),
     [
       dashboardSummary,
@@ -195,6 +197,7 @@ export function useStoreContextValues(input: StoreContextValueInputs): StoreCont
       dashboardSummaryLoadError,
       refreshDashboardSummary,
       loadDashboardHome,
+      saveDashboardHomePreferences,
     ],
   );
 
