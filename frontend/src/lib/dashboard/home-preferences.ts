@@ -309,6 +309,33 @@ export function purgeHomePreferencesNamespace(
 
 export const HOME_PREFERENCES_SAVE_DEBOUNCE_MS = 400;
 
+// One page-wide clock orders Home reads against confirmed saves and refusals:
+// a read that started before a save was confirmed may carry the value the save
+// replaced; one that started after it carries the server's current value.
+let preferencesClock = 0;
+const readStarts = new WeakMap<object, number>();
+
+/** Call as a Home read starts; stamp its payload with the result. */
+export function startHomeRead(): number {
+  return ++preferencesClock;
+}
+
+export function stampHomeRead(payload: object, startedAt: number): void {
+  readStarts.set(payload, startedAt);
+}
+
+/** When the read that produced `payload` started, or null if unknown. */
+export function homeReadStartedAt(payload: unknown): number | null {
+  return typeof payload === "object" && payload !== null ? (readStarts.get(payload) ?? null) : null;
+}
+
+/** Session, subscription and membership refusals, including an ambiguous membership (409). */
+export function isHomePreferencesRefusal(error: unknown): boolean {
+  if (!error || typeof error !== "object" || !("status" in error)) return false;
+  const status = Number((error as { status: unknown }).status);
+  return status === 401 || status === 402 || status === 403 || status === 409;
+}
+
 /** Saves for exactly this identity; resolves to the stored, reconciled value. */
 export type HomePreferencesSaver = (
   preferences: HomePreferences,
@@ -328,14 +355,22 @@ export type HomePreferencesSync = {
   setRole: (role: HomeRole) => void;
   /** The store's save loader; a value left unconfirmed by an earlier visit is retried. */
   setSaver: (saver: HomePreferencesSaver) => void;
+  /** Called once when a save is refused for access; it outlives the Home that set it. */
+  setRefusalListener: (listener: (() => void) | null) => void;
   /** A local edit: applies at once, writes the local copy and schedules a debounced save. */
   change: (next: HomePreferences) => void;
-  /** The `preferences` section of a Home payload; adopted only when no local edit is pending. */
-  offerServer: (raw: unknown) => void;
+  /**
+   * A Home payload's `preferences` and when its read started (`startHomeRead`).
+   * Adopted unless a local edit is pending or the read started before the
+   * latest confirmed save; a read started after a refusal lifts the suspension.
+   */
+  offerServer: (raw: unknown, readStartedAt?: number | null) => void;
   /** Sends a pending save now (Done, the page being hidden). */
   flush: () => void;
   /** An edit is waiting for its save, being saved, or was not confirmed. */
   isPending: () => boolean;
+  /** A save was refused for access: no edits or saves until a later read succeeds. */
+  isSuspended: () => boolean;
   dispose: () => void;
 };
 
@@ -348,10 +383,10 @@ const DEFAULT_TIMERS: HomePreferencesTimers = {
  * One identity's preferences between Home, its local copy and the server.
  * Every edit applies at once and is saved by one PUT after `debounceMs`; one
  * save is in flight at a time and the newest value always follows it. A failed
- * save keeps the local value and is retried on the next edit or flush. A Home
- * payload never overrides a pending edit, and never brings back a value this
- * tab has edited away from: a read that started before a save lands with the
- * value the save replaced, and must not undo it.
+ * save keeps the local value and is retried on the next edit or flush; a
+ * refused one suspends editing and saving until a Home read that started after
+ * the refusal succeeds. A Home payload never overrides a pending edit, and a
+ * read that started before the latest confirmed save never undoes it.
  */
 export function createHomePreferencesSync(options: {
   scope: HomePreferencesScope;
@@ -368,6 +403,7 @@ export function createHomePreferencesSync(options: {
   const timers = options.timers ?? DEFAULT_TIMERS;
   let role = options.role;
   let saver = options.saver ?? null;
+  let onRefused: (() => void) | null = null;
   const stored = readStoredHomePreferences(storage, scope, role);
   let value = stored?.preferences ?? defaultHomePreferences(role);
   let unsynced = stored?.unsynced ?? false;
@@ -375,8 +411,10 @@ export function createHomePreferencesSync(options: {
   let inFlight = false;
   let queued = false;
   let disposed = false;
-  // Values this tab edited away from; a late read carrying one of them is stale.
-  const replaced = new Set<string>();
+  // Clock readings: the latest confirmed save and the latest refusal (0: none).
+  let confirmedAt = 0;
+  let refusedAt = 0;
+  let suspended = false;
   const listeners = new Set<() => void>();
 
   const notify = () => {
@@ -398,7 +436,7 @@ export function createHomePreferencesSync(options: {
   };
 
   function send() {
-    if (disposed || !unsynced || !saver) return;
+    if (disposed || suspended || !unsynced || !saver) return;
     if (inFlight) {
       queued = true;
       return;
@@ -412,16 +450,25 @@ export function createHomePreferencesSync(options: {
     } catch (error) {
       request = Promise.reject(error);
     }
-    const settle = (saved: HomePreferences | null) => {
+    const settle = (saved: HomePreferences | null, error?: unknown) => {
       inFlight = false;
       const again = queued;
       queued = false;
       if (disposed) return;
+      if (!saved && isHomePreferencesRefusal(error)) {
+        // Access may be gone: stop here, keep the local value, retry once re-verified.
+        suspended = true;
+        refusedAt = ++preferencesClock;
+        cancelTimer();
+        notify();
+        onRefused?.();
+        return;
+      }
+      if (saved) confirmedAt = ++preferencesClock;
       if (saved && homePreferencesKey(value) === sentKey) {
         unsynced = false;
         // The server's reconciled value wins over what was sent.
         if (homePreferencesKey(saved) !== sentKey) {
-          replaced.add(sentKey);
           value = saved;
           notify();
         }
@@ -433,7 +480,7 @@ export function createHomePreferencesSync(options: {
     };
     request.then(
       (raw) => settle(parseHomePreferences(raw, role) ?? sending),
-      () => settle(null),
+      (error: unknown) => settle(null, error),
     );
   }
 
@@ -459,27 +506,36 @@ export function createHomePreferencesSync(options: {
       if (disposed) return;
       const first = saver === null;
       saver = next;
-      if (first && unsynced && timer === null && !inFlight) schedule();
+      if (first && unsynced && !suspended && timer === null && !inFlight) schedule();
+    },
+    setRefusalListener(listener) {
+      if (!disposed) onRefused = listener;
     },
     change(next) {
-      if (disposed) return;
+      if (disposed || suspended) return;
       const reconciled = reconcileHomePreferences(next, role);
-      const currentKey = homePreferencesKey(value);
-      if (homePreferencesKey(reconciled) === currentKey) return;
-      replaced.add(currentKey);
+      if (homePreferencesKey(reconciled) === homePreferencesKey(value)) return;
       value = reconciled;
       unsynced = true;
       persist();
       notify();
       schedule();
     },
-    offerServer(raw) {
-      if (disposed || raw === undefined || raw === null) return;
+    offerServer(raw, readStartedAt = null) {
+      if (disposed) return;
+      if (suspended) {
+        // Only a read that began after the refusal proves access again.
+        if (readStartedAt === null || readStartedAt <= refusedAt) return;
+        suspended = false;
+        notify();
+        if (unsynced && timer === null && !inFlight) schedule();
+      }
+      if (raw === undefined || raw === null) return;
       if (unsynced || inFlight || timer !== null) return;
+      // A read from before the latest confirmed save may carry the value it replaced.
+      if (confirmedAt > 0 && (readStartedAt === null || readStartedAt < confirmedAt)) return;
       const server = parseHomePreferences(raw, role);
-      if (!server) return;
-      const key = homePreferencesKey(server);
-      if (key === homePreferencesKey(value) || replaced.has(key)) return;
+      if (!server || homePreferencesKey(server) === homePreferencesKey(value)) return;
       value = server;
       persist();
       notify();
@@ -490,10 +546,12 @@ export function createHomePreferencesSync(options: {
       send();
     },
     isPending: () => unsynced || inFlight || timer !== null,
+    isSuspended: () => suspended,
     dispose() {
       disposed = true;
       cancelTimer();
       listeners.clear();
+      onRefused = null;
     },
   };
 }
@@ -521,4 +579,24 @@ export function homePreferencesSync(options: {
 export function forgetHomePreferencesSyncs(): void {
   for (const sync of syncs.values()) sync.dispose();
   syncs.clear();
+}
+
+/**
+ * Retires one identity's preferences (a direct account or studio switch):
+ * disposes its sync, so a debounced or in-flight save can neither send nor
+ * write again, and removes its local copy. Other identities are untouched.
+ */
+export function purgeHomePreferencesScope(
+  scope: HomePreferencesScope,
+  storage: HomePreferencesStorage | null | undefined = getBrowserHomePreferencesStorage(),
+): void {
+  const key = homePreferencesStorageKey(scope.userId, scope.studioId);
+  if (!key) return;
+  syncs.get(key)?.dispose();
+  syncs.delete(key);
+  try {
+    storage?.removeItem(key);
+  } catch {
+    // Storage refused; the disposed sync can no longer write the key back.
+  }
 }

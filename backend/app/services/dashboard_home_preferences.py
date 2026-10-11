@@ -12,10 +12,19 @@ studio's entry; any other entry is stale data from a previous membership and is
 dropped. The access token copies ``user_metadata`` into its claims, so the one
 entry is capped well below the session cookie budget.
 
-Concurrency: a save is a read-modify-write of the whole metadata object with no
-lock. One user's saves are rare and debounced by the client, so the cost of a
-race is one lost layout change or one stale copy of another top-level key
-written in the same instant. No lock is held across the Auth admin calls.
+Writes depend on GoTrue's merge. The admin update (``PUT /admin/users/{id}``)
+applies ``user_metadata`` through ``User.UpdateUserMetaData``, which sets each
+top-level key in the request whose value is not null, deletes each null one,
+and leaves every key the request omits untouched. The installed client
+(gotrue 2.12.4) sends the attributes unchanged. A save therefore sends only
+``{"koaryu_home": {"<studio_id>": <entry>}}``: that replaces our namespace
+wholesale (dropping other studios' entries) and never re-sends, reverts or
+deletes another key, such as a ``full_name`` changed in the same instant or a
+key whose stored value is null.
+
+Concurrency: the pre-read only decides whether a write is needed. With no lock,
+two saves of the same user racing can lose one layout change; nothing else is
+at risk. No lock is held across the Auth admin calls.
 """
 
 from __future__ import annotations
@@ -85,17 +94,32 @@ def read_home_preferences(
         return None
 
 
-def merge_home_preferences_metadata(
-    user_metadata: Mapping[str, Any], studio_id: str, entry: Mapping[str, Any]
-) -> dict[str, Any]:
-    """The complete ``user_metadata`` to send when saving ``entry`` for ``studio_id``.
+def home_preferences_metadata_update(studio_id: str, entry: Mapping[str, Any]) -> dict[str, Any]:
+    """The ``user_metadata`` patch that saves ``entry``: our one top-level key, nothing else.
 
-    Every other top-level key is copied exactly as read. The namespace is
-    rewritten to hold only this studio's entry: other studios' entries are
-    stale (an account belongs to one studio) and are dropped.
+    GoTrue merges top-level keys, so this replaces the whole namespace with this
+    studio's entry and leaves every other key as stored.
     """
 
-    return {**user_metadata, HOME_PREFERENCES_METADATA_KEY: {studio_id: dict(entry)}}
+    return {HOME_PREFERENCES_METADATA_KEY: {studio_id: dict(entry)}}
+
+
+def _log_lost_metadata_keys(before: Mapping[str, Any], response: Any) -> None:
+    """Report, never repair, top-level keys the update response no longer has."""
+
+    after = getattr(getattr(response, "user", None), "user_metadata", None)
+    if not isinstance(after, Mapping):
+        return
+    lost = [key for key in before if key != HOME_PREFERENCES_METADATA_KEY and key not in after]
+    if lost:
+        # Key names only; metadata values never reach the logs.
+        logger.error(
+            "Home preferences save lost Auth metadata keys",
+            extra={
+                "lost_key_count": len(lost),
+                "lost_keys": sorted(str(key)[:64] for key in lost)[:10],
+            },
+        )
 
 
 class DashboardHomePreferencesService:
@@ -133,7 +157,7 @@ class DashboardHomePreferencesService:
         if metadata is None:
             return {}
         if not isinstance(metadata, Mapping):
-            # Never overwrite metadata this service cannot read back intact.
+            # Do not write beside metadata this service cannot read.
             raise RuntimeError("Auth user metadata is not an object")
         return metadata
 
@@ -154,11 +178,12 @@ class DashboardHomePreferencesService:
         if serialized_bytes(entry) > HOME_PREFERENCES_ENTRY_MAX_BYTES:
             raise HTTPException(status_code=413, detail=PREFERENCES_TOO_LARGE_DETAIL)
 
-        # Read immediately before writing to keep the lost-update window small.
+        # The pre-read only decides whether to write; it is never sent back.
         metadata = self._read_user_metadata_sync(user_id)
-        merged = merge_home_preferences_metadata(metadata, studio_id, entry)
-        if merged != metadata:
-            # GoTrue merges top-level user_metadata keys on admin update; sending
-            # the complete object keeps every other key even where it would replace it.
-            self.supabase.auth.admin.update_user_by_id(user_id, {"user_metadata": merged})
+        update = home_preferences_metadata_update(studio_id, entry)
+        if metadata.get(HOME_PREFERENCES_METADATA_KEY) != update[HOME_PREFERENCES_METADATA_KEY]:
+            response = self.supabase.auth.admin.update_user_by_id(
+                user_id, {"user_metadata": update}
+            )
+            _log_lost_metadata_keys(metadata, response)
         return reconciled

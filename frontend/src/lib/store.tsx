@@ -58,7 +58,10 @@ import type {
 import { buildPreviewHomePayload } from "@/lib/dashboard/preview-home-payload";
 import { homeRoleClass } from "@/lib/dashboard/home-model";
 import {
+  purgeHomePreferencesScope,
   reconcileHomePreferences,
+  stampHomeRead,
+  startHomeRead,
   type HomePreferences,
   type HomePreferencesScope,
   type HomePreferencesWire,
@@ -797,11 +800,26 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     applyLiveStudioDataResetState(buildSignedOutStudioResetState());
   }, [applyLiveStudioDataResetState]);
 
+  // The user and studio whose Home preferences this tab holds. A direct switch to
+  // another user or studio, with no sign-out between, retires the previous
+  // owner's local copy and sync, so its debounced or in-flight save can neither
+  // be sent nor write its copy back. The same owner verified again keeps both.
+  const homePreferencesOwnerRef = useRef<HomePreferencesScope | null>(null);
+  const retireHomePreferencesOwner = useCallback((next: HomePreferencesScope | null) => {
+    const previous = homePreferencesOwnerRef.current;
+    if (previous && (previous.userId !== next?.userId || previous.studioId !== next?.studioId)) {
+      purgeHomePreferencesScope(previous);
+    }
+    homePreferencesOwnerRef.current = next;
+  }, []);
+
   const commitAuthoritativeAuthProfile = useCallback((
     authProfile: AuthProfileResponse,
     legalNameRead?: { revision: number; epoch: number },
     accessAllowed = true,
   ) => {
+    retireHomePreferencesOwner(authProfile.membership_status === "active" && authProfile.studio_id
+      ? { userId: authProfile.user.id, studioId: authProfile.studio_id } : null);
     publishAccessIdentity(authProfile, accessAllowed);
     authoritativeStudioIdRef.current = authProfile.studio_id ?? null;
     const identity = `${authProfile.user.id}:${authProfile.studio_id ?? ""}:${authProfile.role ?? ""}`;
@@ -829,7 +847,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setCurrentRole(authProfile.role ?? null);
     setStaffProfilesAvailable(isStaffProfilesAvailable(authProfile));
     setIdentityReady(true);
-  }, []);
+  }, [retireHomePreferencesOwner]);
 
   const applySubscriptionRequiredState = useCallback((
     authProfile: AuthProfileResponse,
@@ -900,7 +918,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     if (isPreviewMode) {
       const role = currentRoleRef.current;
       if (!role) throw new Error("Home is not available until studio access is verified.");
-      return buildPreviewHomePayload({ today: businessDateRef.current, role });
+      const payload = buildPreviewHomePayload({ today: businessDateRef.current, role });
+      stampHomeRead(payload, startHomeRead());
+      return payload;
     }
     const owner = beginLiveAuthRequest();
     const studioId = authoritativeStudioIdRef.current;
@@ -912,9 +932,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         const request = beginLiveAuthRequest();
         return { ...request, canRetryAfterTokenChange: () => isCurrent() && request.canRetryAfterTokenChange() };
       }, async (request) => {
+        // When it started orders its `preferences` against this tab's confirmed saves.
+        const startedAt = startHomeRead();
         const payload = await api.get<DashboardHome>(`/dashboard/home${fresh ? "?fresh=true" : ""}`, request.token,
           { timeoutMs: 35000, timeoutMessage: "Home refresh timed out." });
         if (!isCurrent() || payload.studio?.id !== studioId) throw scopeChanged();
+        stampHomeRead(payload, startedAt);
         return payload;
       }, () => {});
     } catch (error) {
@@ -957,11 +980,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       if (!isCurrent()) throw scopeChanged();
       return saved;
     } catch (error) {
-      // The same access paths as Home's read.
+      // The same access paths as Home's read. An ambiguous membership (409) is a
+      // refusal too: re-verify identity; the sync suspends and Home re-reads.
       if (isCurrent()) {
         const status = error && typeof error === "object" && "status" in error ? Number(error.status) : null;
         if (isSubscriptionRequiredError(error)) markSubscriptionRequired();
-        else if (status === 401 || status === 403 || isStaffArchivedError(error)) {
+        else if (status === 401 || status === 403 || status === 409 || isStaffArchivedError(error)) {
           window.dispatchEvent(new CustomEvent(APP_RESUME_EVENT, { detail: { refreshData: false } }));
         }
       }
@@ -1652,6 +1676,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           || event === "USER_UPDATED"
           || (!authoritativeIdentityRef.current && tokenRef.current !== session.access_token);
         if (needsInitialization) {
+          // Another account signed in directly: the previous one's Home preferences go now.
+          if (authUserIdRef.current !== session.user.id) retireHomePreferencesOwner(null);
           // A new provider may receive INITIAL_SESSION before getSession resolves.
           // It has no local data to discard; mounting is not an access revocation.
           if (authUserIdRef.current || event !== "INITIAL_SESSION") resetLiveStudioState();
@@ -1703,7 +1729,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       bootstrapRequestRef.current?.controller.abort();
       authListener?.subscription.unsubscribe();
     };
-  }, [setPrograms, setProgramsLoaded, applyAuthoritativeNoStudioState, applyLadderSelection, applySubscriptionRequiredState, beginLiveAuthRequest, clearPromotionHistoryCache, commitAuthoritativeAuthProfile, commitEligibilityRows, commitStudents, destructivelyResetScheduleCoordinator, initializationAttempt, isPreviewMode, markSubscriptionRequired, reconcileSchedule, refreshSchedule, resetLiveStudioState, router, supabase]);
+  }, [setPrograms, setProgramsLoaded, applyAuthoritativeNoStudioState, applyLadderSelection, applySubscriptionRequiredState, beginLiveAuthRequest, clearPromotionHistoryCache, commitAuthoritativeAuthProfile, commitEligibilityRows, commitStudents, destructivelyResetScheduleCoordinator, initializationAttempt, isPreviewMode, markSubscriptionRequired, reconcileSchedule, refreshSchedule, resetLiveStudioState, retireHomePreferencesOwner, router, supabase]);
 
   // ── Persist helpers (for preview mode) ──
   const persistStudents = useCallback((next: Student[]) => {

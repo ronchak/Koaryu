@@ -4,6 +4,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useSyncExternalStore 
 import { homeRoleClass } from "@/lib/dashboard/home-model";
 import {
   homePreferencesSync,
+  homeReadStartedAt,
   isDefaultHomePreferences,
   moveHomePanel,
   moveHomePanelTo,
@@ -13,15 +14,19 @@ import {
   type HomePanelId,
   type HomePreferences,
 } from "@/lib/dashboard/home-preferences";
+import { homeAccessScope, refuseHomeAccess } from "@/lib/dashboard/home-access";
 import { useConfigStore, useDashboardStore, useStudioStore } from "@/lib/store-contexts";
 
 /*
  * Home's preferences for the verified user and studio. First paint comes from
  * the local copy (or the role's defaults); the server's value from the Home
- * payload is adopted when it arrives unless a local edit is pending. Every edit
- * applies at once and is saved through the store's loader, debounced; Done and
- * the page being hidden flush it. The sync outlives this hook, so a save still
- * lands after Home unmounts. Nothing here ever shows one identity another's.
+ * payload is adopted when it arrives unless a local edit is pending or its read
+ * started before the latest confirmed save. Every edit applies at once and is
+ * saved through the store's loader, debounced; Done and the page being hidden
+ * flush it. The sync outlives this hook, so a save still lands after Home
+ * unmounts. A refused save (401, 402, 403, 409) suspends editing and hides
+ * Home's shown and retained data like a refused Home read, until a fresh read
+ * succeeds. Nothing here ever shows one identity another's.
  */
 
 export type HomePreferencesState = {
@@ -29,7 +34,7 @@ export type HomePreferencesState = {
   preferences: HomePreferences;
   /** At the role's defaults ("Reset to defaults" is disabled). */
   isDefault: boolean;
-  /** The verified identity can edit; until then the value is the defaults. */
+  /** The verified identity can edit: false until then, and while a refused save is unresolved. */
   canEdit: boolean;
   move: (id: HomePanelId, offset: number) => void;
   moveTo: (id: HomePanelId, index: number) => void;
@@ -41,10 +46,14 @@ export type HomePreferencesState = {
 
 const noSubscription = () => () => {};
 
-export function useHomePreferences(serverPreferences: unknown): HomePreferencesState {
+/** `payload` is the Home payload on screen (its `preferences` section, and when its read began). */
+export function useHomePreferences(
+  payload: { preferences?: unknown } | null,
+): HomePreferencesState {
   const { subscriptionRequired } = useConfigStore();
-  const { currentUserId, currentStudioId, currentRole, identityReady } = useStudioStore();
-  const { saveDashboardHomePreferences } = useDashboardStore();
+  const { currentUserId, currentStudioId, currentRole, identityGeneration, identityReady } =
+    useStudioStore();
+  const { loadDashboardHome, saveDashboardHomePreferences } = useDashboardStore();
   const role = homeRoleClass(currentRole);
   const userId = currentUserId.trim();
   const studioId = currentStudioId?.trim() ?? "";
@@ -59,6 +68,11 @@ export function useHomePreferences(serverPreferences: unknown): HomePreferencesS
     () => sync?.getSnapshot() ?? null,
     () => null,
   );
+  const suspended = useSyncExternalStore(
+    sync ? sync.subscribe : noSubscription,
+    () => sync?.isSuspended() ?? false,
+    () => false,
+  );
   // Reconciled at render too, so a role change never shows a panel for a moment.
   const preferences = useMemo(() => reconcileHomePreferences(snapshot, role), [role, snapshot]);
 
@@ -68,9 +82,16 @@ export function useHomePreferences(serverPreferences: unknown): HomePreferencesS
   useEffect(() => {
     sync?.setSaver(saveDashboardHomePreferences);
   }, [saveDashboardHomePreferences, sync]);
+  // Registered for the sync's lifetime, so a refusal after Home unmounts still
+  // hides the retained payload before the next visit paints it.
   useEffect(() => {
-    sync?.offerServer(serverPreferences);
-  }, [serverPreferences, sync]);
+    if (!sync || !role) return;
+    const scope = homeAccessScope({ identityGeneration, userId, studioId, role });
+    sync.setRefusalListener(() => refuseHomeAccess(loadDashboardHome, scope));
+  }, [identityGeneration, loadDashboardHome, role, studioId, sync, userId]);
+  useEffect(() => {
+    sync?.offerServer(payload?.preferences, homeReadStartedAt(payload));
+  }, [payload, sync]);
   useEffect(() => {
     if (!sync) return;
     const onVisibility = () => {
@@ -106,13 +127,13 @@ export function useHomePreferences(serverPreferences: unknown): HomePreferencesS
     () => ({
       preferences,
       isDefault: isDefaultHomePreferences(preferences, role),
-      canEdit: sync !== null,
+      canEdit: sync !== null && !suspended,
       move,
       moveTo,
       setShown,
       reset,
       flush,
     }),
-    [flush, move, moveTo, preferences, reset, role, setShown, sync],
+    [flush, move, moveTo, preferences, reset, role, setShown, suspended, sync],
   );
 }

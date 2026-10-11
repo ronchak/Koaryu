@@ -123,7 +123,7 @@ export function HomePage() {
   const home = useHome();
   const role = homeRoleClass(currentRole);
   const { payload } = home;
-  const preferences = useHomePreferences(payload?.preferences);
+  const preferences = useHomePreferences(payload);
   const [editing, setEditing] = useState(false);
   const editTriggerRef = useRef<HTMLButtonElement | null>(null);
   const wasEditingRef = useRef(false);

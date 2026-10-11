@@ -13,6 +13,12 @@ import {
   needsFreshDashboardFacts,
   subscribeDashboardFactsChanged,
 } from "@/lib/dashboard-freshness";
+import {
+  homeAccessScope,
+  latestHomeAccessRefusal,
+  nextHomeReadOrder,
+  subscribeHomeAccessRefusals,
+} from "@/lib/dashboard/home-access";
 import { homeRoleClass, type HomeRole, type HomeStatus } from "@/lib/dashboard/home-model";
 import { pendingCommands } from "@/lib/pending-commands";
 import { useRetainedState, useRetainedStore } from "@/lib/retained-state";
@@ -78,7 +84,6 @@ export function isHomeAccessError(error: unknown): boolean {
 // latest fact change. Each flight records its start order across the page.
 export type HomeFlight = { promise: Promise<DashboardHome>; order: number };
 type HomeFlightEntry = HomeFlight & { fresh: boolean; factsGeneration: number };
-let homeFlightOrder = 0;
 let factsGeneration = 0;
 let tracksFactsGeneration = false;
 const flightsByLoader = new WeakMap<HomeLoader, Map<string, HomeFlightEntry[]>>();
@@ -113,6 +118,8 @@ export function requestHomePayload(
   loader: HomeLoader,
   flightKey: string,
   fresh: boolean,
+  /** Never join a read started at or before this order (the latest refusal). */
+  notBefore = 0,
 ): HomeFlight {
   trackFactsGeneration();
   let flights = flightsByLoader.get(loader);
@@ -121,7 +128,9 @@ export function requestHomePayload(
     flightsByLoader.set(loader, flights);
   }
   const inFlight = flights.get(flightKey) ?? [];
-  const joinable = inFlight.filter((flight) => flight.factsGeneration === factsGeneration);
+  const joinable = inFlight.filter(
+    (flight) => flight.factsGeneration === factsGeneration && flight.order > notBefore,
+  );
   const joined =
     joinable.find((flight) => flight.fresh) ??
     (fresh ? undefined : joinable.find((flight) => !flight.fresh));
@@ -135,7 +144,7 @@ export function requestHomePayload(
       notifyHomeFlights();
     },
   );
-  const flight = { promise, order: ++homeFlightOrder, fresh, factsGeneration };
+  const flight = { promise, order: nextHomeReadOrder(), fresh, factsGeneration };
   flights.set(flightKey, [...inFlight, flight]);
   notifyHomeFlights();
   return flight;
@@ -202,9 +211,7 @@ export function useHome(): HomeState {
       ? { userId, studioId, role }
       : null;
   // The identity scope survives a business-date change; the retained key does not.
-  const scope = identity
-    ? `${identityGeneration}:${identity.userId}:${identity.studioId}:${identity.role}`
-    : null;
+  const scope = identity ? homeAccessScope({ identityGeneration, ...identity }) : null;
   const retainedKey = identity ? homeRetainedKey({ ...identity, businessDate }) : null;
   // A read started under yesterday's date is never joined after the date changes.
   const flightKey = scope === null ? null : `${scope}:${businessDate}`;
@@ -221,6 +228,12 @@ export function useHome(): HomeState {
   const refusedAt = useSyncExternalStore(
     subscribeHomeFlights,
     () => (scope === null ? 0 : latestRefusal(loadDashboardHome, scope)),
+    () => 0,
+  );
+  // A refused preferences save counts like a refused read (home-access.ts).
+  const externallyRefusedAt = useSyncExternalStore(
+    subscribeHomeAccessRefusals,
+    () => (scope === null ? 0 : latestHomeAccessRefusal(loadDashboardHome, scope)),
     () => 0,
   );
 
@@ -261,6 +274,10 @@ export function useHome(): HomeState {
         loadDashboardHome,
         flightKey,
         needsFreshDashboardFacts(),
+        Math.max(
+          latestRefusal(loadDashboardHome, scope),
+          latestHomeAccessRefusal(loadDashboardHome, scope),
+        ),
       );
       if (promise === attempts.pending) return;
       attempts.latest = Math.max(attempts.latest, order);
@@ -376,9 +393,19 @@ export function useHome(): HomeState {
 
   const retry = useCallback(() => revalidate("retry"), [revalidate]);
 
+  // A refusal outside Home's read hid what was shown; one fresh read re-verifies.
+  // A refused Home read never records one there, so this cannot loop.
+  const handledRefusalRef = useRef(externallyRefusedAt);
+  useEffect(() => {
+    if (externallyRefusedAt <= handledRefusalRef.current) return;
+    handledRefusalRef.current = externallyRefusedAt;
+    revalidate("retry");
+  }, [externallyRefusedAt, revalidate]);
+
   // Only this identity's data, and only from reads started after its latest refusal.
+  const hiddenThrough = Math.max(refusedAt, externallyRefusedAt);
   const visible = (candidate: HomeSnapshot | null) =>
-    candidate !== null && candidate.scope === scope && candidate.order > refusedAt
+    candidate !== null && candidate.scope === scope && candidate.order > hiddenThrough
       ? candidate
       : null;
   const snapshot = scope === null ? null : newerSnapshot(visible(retained), visible(held));

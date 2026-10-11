@@ -296,8 +296,30 @@ test("server preferences are adopted without pending edits and an older retained
     await page.evaluate(() => window.fixture.mountHome());
     await until(page, () => window.fixture.homeReads.length === 2);
     assert.deepEqual(await ids(panels(page)), ["newStudents", "promotions"]);
-    await deliver(page, "admin", server, 1);
+    // The revisit's own read started after the save, so the server already has it.
+    await deliver(page, "admin", setHomePanelShown(server, "follow_ups", false), 1);
     assert.deepEqual(await ids(panels(page)), ["newStudents", "promotions"]);
+  });
+});
+test("a read that started before a save lands late and is ignored; a read after it adopts a remote reset", async () => {
+  await withPage({}, async (page) => {
+    await deliver(page);
+    await page.evaluate(() => window.fixture.home.retry());
+    await until(page, () => window.fixture.homeReads.length === 2);
+    await open(page);
+    await sheet(page).getByRole("switch", { name: "Show Follow-ups", exact: true }).click();
+    await sheet(page).getByRole("button", { name: "Done", exact: true }).click();
+    await saved(page);
+    await flush(page);
+    // Started before the save: it carries the value the save replaced.
+    await deliver(page, "admin", defaults(), 1);
+    assert.deepEqual(await ids(panels(page)), ["promotions"]);
+    // Started after the save: another device reset Home, and that is the server's value now.
+    await page.evaluate(() => window.fixture.home.retry());
+    await until(page, () => window.fixture.homeReads.length === 3);
+    await deliver(page, "admin", defaults(), 2);
+    assert.deepEqual(await ids(panels(page)), ["followUps", "promotions"]);
+    assert.equal(await page.evaluate(() => window.fixture.saves.length), 1);
   });
 });
 test("a save does not trigger a fresh /dashboard/home re-read", async () => {
@@ -334,6 +356,76 @@ for (const status of [401, 402, 403])
           refreshData: false,
         });
       }
+    });
+  });
+test("preferences save 409 suspends editing, hides retained Home, re-verifies identity and re-reads", async () => {
+  await withPage({ saveError: 409 }, async (page) => {
+    await deliver(page);
+    await open(page);
+    await sheet(page).getByRole("switch", { name: "Show Follow-ups", exact: true }).click();
+    await sheet(page).getByRole("button", { name: "Done", exact: true }).click();
+    await saved(page);
+    await until(page, () => window.fixture.resumeEvents.length > 0);
+    assert.deepEqual(await page.evaluate(() => window.fixture.resumeEvents[0]), {
+      refreshData: false,
+    });
+    // Like a refused Home read: nothing read before the refusal is shown, and Home re-reads.
+    await until(page, () => window.fixture.homeReads.length === 2);
+    assert.equal(
+      await page.locator('[data-koaryu-dashboard-home="true"]').getAttribute("data-home-status"),
+      "loading",
+    );
+    assert.equal(await panels(page).count(), 0);
+    assert.equal(await trigger(page).count(), 0);
+    await tick(page, 1000);
+    assert.equal(await page.evaluate(() => window.fixture.saves.length), 1);
+    // A read that started after the refusal succeeds: editing resumes and the edit is retried.
+    await page.evaluate(() => {
+      window.fixture.saveError = undefined;
+    });
+    await deliver(page, "admin", undefined, 1);
+    assert.equal(await trigger(page).isDisabled(), false);
+    assert.deepEqual(await ids(panels(page)), ["promotions"]);
+    await tick(page, 400);
+    await until(page, () => window.fixture.saves.length === 2);
+    assert.deepEqual(await page.evaluate(() => window.fixture.saves[1].body.hidden), [
+      "follow_ups",
+      "recent_students",
+    ]);
+  });
+});
+for (const pending of ["debounced", "in flight"])
+  test(`a direct account switch retires the previous user's ${pending} save and local copy`, async () => {
+    await withPage({ holdSave: pending === "in flight" }, async (page) => {
+      const keyA = "koaryu:home-preferences:v1:user-a:studio-a";
+      await deliver(page);
+      await open(page);
+      await sheet(page).getByRole("switch", { name: "Show Follow-ups", exact: true }).click();
+      if (pending === "in flight") {
+        await sheet(page).getByRole("button", { name: "Done", exact: true }).click();
+        await saved(page);
+      }
+      assert.notEqual(await page.evaluate((key) => localStorage.getItem(key), keyA), null);
+      await page.evaluate(() =>
+        window.fixture.emit("SIGNED_IN", {
+          access_token: "token-b",
+          user: { id: "user-b", email: "b@example.test", user_metadata: {} },
+        }),
+      );
+      await until(
+        page,
+        () => window.fixture.store.identityReady && window.fixture.store.currentUserId === "user-b",
+      );
+      assert.equal(await page.evaluate((key) => localStorage.getItem(key), keyA), null);
+      if (pending === "in flight")
+        await page.evaluate(() => window.fixture.saves[0].resolve(window.fixture.saves[0].body));
+      await flush(page);
+      await tick(page, 1000);
+      assert.equal(await page.evaluate((key) => localStorage.getItem(key), keyA), null);
+      assert.deepEqual(
+        await page.evaluate(() => window.fixture.saves.map((save) => save.headers.Authorization)),
+        pending === "in flight" ? ["Bearer token-a"] : [],
+      );
     });
   });
 test("save loader refuses another identity before sending and rejects a response after scope changes", async () => {

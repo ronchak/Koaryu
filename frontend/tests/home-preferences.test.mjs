@@ -309,7 +309,7 @@ test("server save response differing from the sent value is adopted", async () =
   assert.equal(sync.isPending(), false);
   sync.dispose();
 });
-test("offerServer adopts idle values, ignores pending edits and values this tab replaced", async () => {
+test("offerServer adopts idle values, ignores pending edits and reads of unknown start after a save", async () => {
   const { sync, timers, saves } = engine();
   const server = p.moveHomePanel(defaults(), "ready_to_promote", -1);
   sync.offerServer(server);
@@ -328,6 +328,145 @@ test("offerServer adopts idle values, ignores pending edits and values this tab 
   sync.offerServer({ version: 2, order: [] });
   assert.deepEqual(sync.getSnapshot(), hidden());
   sync.dispose();
+});
+test("a read started before the latest confirmed save is stale; one started after it is adopted", async () => {
+  const { sync, timers, saves } = engine();
+  const beforeSave = p.startHomeRead();
+  sync.change(hidden());
+  timers.run();
+  const duringSave = p.startHomeRead();
+  saves[0].resolve(saves[0].value);
+  await settle();
+  // Late responses that began before the save was confirmed carry the value it replaced.
+  sync.offerServer(defaults(), beforeSave);
+  sync.offerServer(defaults(), duringSave);
+  assert.deepEqual(sync.getSnapshot(), hidden());
+  // Another device reset Home after the save: the same value as before is authoritative now.
+  sync.offerServer(defaults(), p.startHomeRead());
+  assert.deepEqual(sync.getSnapshot(), defaults());
+  // A later local save makes earlier reads stale again, whatever value they carry.
+  const beforeSecond = p.startHomeRead();
+  sync.change(hidden());
+  timers.run();
+  saves[1].resolve(saves[1].value);
+  await settle();
+  sync.offerServer(defaults(), beforeSecond);
+  assert.deepEqual(sync.getSnapshot(), hidden());
+  sync.offerServer(defaults(), p.startHomeRead());
+  assert.deepEqual(sync.getSnapshot(), defaults());
+  sync.dispose();
+});
+test("read stamps belong to their payload object and the clock only moves forward", () => {
+  const payload = {},
+    other = {};
+  const first = p.startHomeRead(),
+    second = p.startHomeRead();
+  assert.ok(second > first);
+  p.stampHomeRead(payload, first);
+  assert.equal(p.homeReadStartedAt(payload), first);
+  assert.equal(p.homeReadStartedAt(other), null);
+  assert.equal(p.homeReadStartedAt(null), null);
+  assert.equal(p.homeReadStartedAt(undefined), null);
+});
+test("refusals are 401, 402, 403 and 409 only", () => {
+  for (const status of [401, 402, 403, 409])
+    assert.equal(p.isHomePreferencesRefusal({ status }), true, String(status));
+  for (const status of [400, 404, 422, 500, undefined])
+    assert.equal(p.isHomePreferencesRefusal({ status }), false, String(status));
+  assert.equal(p.isHomePreferencesRefusal(Error("offline")), false);
+  assert.equal(p.isHomePreferencesRefusal(null), false);
+});
+for (const status of [401, 402, 403, 409])
+  test(`a ${status} save suspends edits and saves until a read started after the refusal`, async () => {
+    const { sync, timers, saves } = engine();
+    let refused = 0,
+      notified = 0;
+    sync.setRefusalListener(() => refused++);
+    sync.subscribe(() => notified++);
+    sync.change(hidden());
+    timers.run();
+    const beforeRefusal = p.startHomeRead();
+    saves[0].reject(Object.assign(Error("refused"), { status }));
+    await settle();
+    assert.equal(sync.isSuspended(), true);
+    assert.equal(refused, 1);
+    assert.equal(notified, 2);
+    assert.equal(sync.isPending(), true);
+    sync.change(defaults());
+    sync.flush();
+    timers.run();
+    assert.deepEqual(sync.getSnapshot(), hidden());
+    assert.equal(saves.length, 1);
+    // A read that began before the refusal proves nothing.
+    sync.offerServer(defaults(), beforeRefusal);
+    sync.offerServer(undefined, null);
+    assert.equal(sync.isSuspended(), true);
+    assert.deepEqual(sync.getSnapshot(), hidden());
+    // One that began after it succeeded: editing resumes and the unsaved edit is retried.
+    sync.offerServer(undefined, p.startHomeRead());
+    assert.equal(sync.isSuspended(), false);
+    timers.run();
+    assert.equal(saves.length, 2);
+    assert.deepEqual(saves[1].value, hidden());
+    saves[1].resolve(saves[1].value);
+    await settle();
+    assert.equal(sync.isPending(), false);
+    assert.equal(refused, 1);
+    sync.dispose();
+  });
+test("an ordinary failure does not suspend or call the refusal listener", async () => {
+  const { sync, timers, saves } = engine();
+  let refused = 0;
+  sync.setRefusalListener(() => refused++);
+  sync.change(hidden());
+  timers.run();
+  saves[0].reject(Object.assign(Error("outage"), { status: 500 }));
+  await settle();
+  assert.equal(sync.isSuspended(), false);
+  assert.equal(refused, 0);
+  sync.flush();
+  assert.equal(saves.length, 2);
+  saves[1].resolve(saves[1].value);
+  await settle();
+  sync.dispose();
+});
+test("purging one scope disposes its sync and local copy, and a late save cannot write it back", async () => {
+  const keyA = p.homePreferencesStorageKey(scope.userId, scope.studioId),
+    scopeB = { userId: "user-b", studioId: "studio-a" },
+    keyB = p.homePreferencesStorageKey(scopeB.userId, scopeB.studioId),
+    s = storage([[keyB, JSON.stringify({ preferences: hidden(), unsynced: false })]]);
+  const a = p.homePreferencesSync({ scope, role: "admin", storage: s });
+  const b = p.homePreferencesSync({ scope: scopeB, role: "admin", storage: s });
+  const save = deferred(),
+    sent = [];
+  a.setSaver((value) => {
+    sent.push(value);
+    return save.promise;
+  });
+  a.change(hidden());
+  a.flush();
+  assert.equal(sent.length, 1);
+  assert.equal(s.data.has(keyA), true);
+  p.purgeHomePreferencesScope(scope, s);
+  assert.equal(s.data.has(keyA), false);
+  assert.equal(s.data.has(keyB), true);
+  save.resolve(hidden());
+  await settle();
+  assert.equal(s.data.has(keyA), false);
+  a.change(defaults());
+  a.flush();
+  assert.equal(sent.length, 1);
+  assert.notEqual(p.homePreferencesSync({ scope, role: "admin", storage: s }), a);
+  assert.equal(p.homePreferencesSync({ scope: scopeB, role: "admin", storage: s }), b);
+  assert.deepEqual(b.getSnapshot(), hidden());
+  p.purgeHomePreferencesScope({ userId: "", studioId: "s" }, s);
+  p.purgeHomePreferencesScope(scopeB, {
+    ...s,
+    removeItem() {
+      throw Error("denied");
+    },
+  });
+  assert.notEqual(p.homePreferencesSync({ scope: scopeB, role: "admin", storage: s }), b);
 });
 test("an unconfirmed stored copy is retried when setSaver attaches", async () => {
   const s = storage();

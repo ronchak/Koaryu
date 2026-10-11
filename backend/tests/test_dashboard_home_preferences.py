@@ -36,13 +36,15 @@ def entry(order=PANELS, hidden=(), size=None, version=1):
 
 
 class FakeAuthAdmin:
-    """Model shallow top-level merge and full replacement, recording each call."""
+    """GoTrue's admin update: shallow top-level merge where null deletes a key."""
 
-    def __init__(self, metadata=None, semantics="merge"):
+    def __init__(self, metadata=None):
         self.metadata = deepcopy(metadata if metadata is not None else {})
-        self.semantics = semantics
         self.calls = []
         self.update_error = None
+        # Runs between our read and our write, like another writer.
+        self.before_update = None
+        self.response_metadata = None
 
     def get_user_by_id(self, user_id):
         self.calls.append(("get", user_id))
@@ -59,22 +61,21 @@ class FakeAuthAdmin:
         assert set(attributes) == {"user_metadata"}
         if self.update_error:
             raise self.update_error
-        updates = deepcopy(attributes["user_metadata"])
-        if self.semantics == "merge":
-            current = self.metadata.setdefault(user_id, {})
-            for key, value in updates.items():
-                if value is None:
-                    current.pop(key, None)
-                else:
-                    current[key] = value
-        else:
-            self.metadata[user_id] = updates
-        return SimpleNamespace(user=SimpleNamespace(id=user_id, user_metadata=updates))
+        if self.before_update:
+            self.before_update(self.metadata.setdefault(user_id, {}))
+        current = self.metadata.setdefault(user_id, {})
+        for key, value in deepcopy(attributes["user_metadata"]).items():
+            if value is None:
+                current.pop(key, None)
+            else:
+                current[key] = value
+        returned = self.response_metadata if self.response_metadata is not None else current
+        return SimpleNamespace(user=SimpleNamespace(id=user_id, user_metadata=deepcopy(returned)))
 
 
-def provider(metadata=None, *, semantics="merge", memberships=None):
+def provider(metadata=None, *, memberships=None):
     client = HomeSupabase()
-    client.auth = SimpleNamespace(admin=FakeAuthAdmin(metadata, semantics))
+    client.auth = SimpleNamespace(admin=FakeAuthAdmin(metadata))
     if memberships is not None:
         client.tables["staff_roles"] = memberships
     return client
@@ -266,7 +267,6 @@ def test_shared_fact_and_promotion_caches_never_retain_preferences(desk_saved):
         assert not hasattr(value, "preferences")
 
 
-@pytest.mark.parametrize("semantics", ["merge", "replace"])
 @pytest.mark.parametrize("existing_entry", [False, True], ids=["first-save", "replace-entry"])
 @pytest.mark.parametrize(
     "role,expected",
@@ -277,7 +277,7 @@ def test_shared_fact_and_promotion_caches_never_retain_preferences(desk_saved):
     ],
 )
 def test_put_reconciles_saving_role_preserves_metadata_and_replaces_entry(
-    semantics, existing_entry, role, expected
+    existing_entry, role, expected
 ):
     other_keys = {
         "full_name": "Ronak C",
@@ -289,7 +289,7 @@ def test_put_reconciles_saving_role_preserves_metadata_and_replaces_entry(
     initial = deepcopy(other_keys)
     if existing_entry:
         initial["koaryu_home"] = {STUDIO: entry(["follow_ups"])}
-    client = provider({user_id: initial}, semantics=semantics)
+    client = provider({user_id: initial})
     submitted = entry(
         ["recent_students", "follow_ups", "ready_to_promote"],
         ["follow_ups"],
@@ -298,18 +298,16 @@ def test_put_reconciles_saving_role_preserves_metadata_and_replaces_entry(
     response = put(client, submitted, role)
     assert response.status_code == 200, response.text
     assert response.json() == expected
-    complete = {**other_keys, "koaryu_home": {STUDIO: expected}}
-    assert client.auth.admin.metadata[user_id] == complete
+    assert client.auth.admin.metadata[user_id] == {**other_keys, "koaryu_home": {STUDIO: expected}}
     assert client.auth.admin.calls == [
         ("get", user_id),
-        ("update", user_id, {"user_metadata": complete}),
+        ("update", user_id, {"user_metadata": {"koaryu_home": {STUDIO: expected}}}),
     ]
     assert response.headers["cache-control"] == "no-store, private"
     assert response.headers["vary"] == "Authorization, X-Studio-Id, Cookie"
 
 
-@pytest.mark.parametrize("semantics", ["merge", "replace"])
-def test_put_drops_valid_junk_and_oversize_entries_for_other_studios(semantics):
+def test_put_drops_valid_junk_and_oversize_entries_for_other_studios():
     untouched = {
         "full_name": "Owner",
         "verified": True,
@@ -326,31 +324,29 @@ def test_put_drops_valid_junk_and_oversize_entries_for_other_studios(semantics):
                     "old-oversize": {**entry(), "padding": "x" * 2000},
                 },
             }
-        },
-        semantics=semantics,
+        }
     )
     response = put(client, entry(["recent_students"]))
     expected = entry(["recent_students", "follow_ups", "ready_to_promote"])
     assert response.status_code == 200, response.text
     assert response.json() == expected
-    complete = {**untouched, "koaryu_home": {STUDIO: expected}}
-    assert client.auth.admin.metadata["user-admin"] == complete
+    assert client.auth.admin.metadata["user-admin"] == {
+        **untouched,
+        "koaryu_home": {STUDIO: expected},
+    }
     assert client.auth.admin.calls == [
         ("get", "user-admin"),
-        ("update", "user-admin", {"user_metadata": complete}),
+        ("update", "user-admin", {"user_metadata": {"koaryu_home": {STUDIO: expected}}}),
     ]
 
 
-@pytest.mark.parametrize("semantics", ["merge", "replace"])
 @pytest.mark.parametrize("stale", [False, True], ids=["clean", "stale-studio"])
-def test_identical_resave_only_writes_when_stale_studio_needs_dropping(semantics, stale):
+def test_identical_resave_only_writes_when_stale_studio_needs_dropping(stale):
     saved = entry(PANELS, ["recent_students"])
     namespace = {STUDIO: saved}
     if stale:
         namespace["old-studio"] = entry()
-    client = provider(
-        {"user-admin": {"full_name": "Owner", "koaryu_home": namespace}}, semantics=semantics
-    )
+    client = provider({"user-admin": {"full_name": "Owner", "koaryu_home": namespace}})
     response = put(client, saved)
     assert response.status_code == 200, response.text
     assert response.json() == saved
@@ -361,6 +357,60 @@ def test_identical_resave_only_writes_when_stale_studio_needs_dropping(semantics
         "full_name": "Owner",
         "koaryu_home": {STUDIO: saved},
     }
+
+
+def test_put_sends_only_the_namespace_key_and_keeps_null_valued_keys():
+    stored = {
+        "full_name": "Owner",
+        "avatar_url": None,
+        "nested": {"x": None},
+        "koaryu_home": {STUDIO: entry(), "old-studio": entry()},
+    }
+    client = provider({"user-admin": stored})
+    response = put(client, entry(["recent_students"]))
+    expected = entry(["recent_students", "follow_ups", "ready_to_promote"])
+    assert response.status_code == 200, response.text
+    (_, _, attributes) = client.auth.admin.calls[-1]
+    assert list(attributes) == ["user_metadata"]
+    assert list(attributes["user_metadata"]) == ["koaryu_home"]
+    assert attributes["user_metadata"]["koaryu_home"] == {STUDIO: expected}
+    # A null-valued key would be deleted by GoTrue's merge if it were re-sent.
+    assert client.auth.admin.metadata["user-admin"] == {
+        "full_name": "Owner",
+        "avatar_url": None,
+        "nested": {"x": None},
+        "koaryu_home": {STUDIO: expected},
+    }
+
+
+def test_put_keeps_a_full_name_changed_between_read_and_write():
+    client = provider({"user-admin": {"full_name": "Old Name", "koaryu_home": {STUDIO: entry()}}})
+
+    def concurrent_rename(current):
+        current["full_name"] = "New Name"
+
+    client.auth.admin.before_update = concurrent_rename
+    response = put(client, entry(["recent_students"]))
+    assert response.status_code == 200, response.text
+    assert [call[0] for call in client.auth.admin.calls] == ["get", "update"]
+    assert client.auth.admin.metadata["user-admin"] == {
+        "full_name": "New Name",
+        "koaryu_home": {STUDIO: entry(["recent_students", "follow_ups", "ready_to_promote"])},
+    }
+
+
+def test_put_logs_lost_metadata_keys_without_values_or_repair(caplog):
+    secret = "value-that-must-not-be-logged"
+    client = provider({"user-admin": {"full_name": secret, "koaryu_home": {}}})
+    client.auth.admin.response_metadata = {"koaryu_home": {STUDIO: entry()}}
+    with caplog.at_level("ERROR", logger=preferences.__name__):
+        response = put(client, entry())
+    assert response.status_code == 200, response.text
+    assert [call[0] for call in client.auth.admin.calls] == ["get", "update"]
+    records = [r for r in caplog.records if r.name == preferences.__name__]
+    assert [r.levelname for r in records] == ["ERROR"]
+    assert records[0].lost_key_count == 1 and records[0].lost_keys == ["full_name"]
+    assert secret not in caplog.text and all(secret not in str(vars(r)) for r in records)
 
 
 INVALID_BODIES = [
