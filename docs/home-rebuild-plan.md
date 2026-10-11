@@ -29,7 +29,7 @@ decisions, dispatched subagents and review dispositions. It is updated at every 
 | 2. Client data layer | Gate passed; PR #277 ready | Frontend suite 2,373/2,374 (one schedule-summary load flake, passes alone); 102 Home tests green; lint, tsc, Prettier clean |
 | 3. Frame and bands on the kit | Gate passed; PR #278 ready | Frontend suite 2,440/2,441 (workflow-canvas load flake, 18/18 alone); build green; lint, tsc, Prettier clean |
 | 4. Edit Home | Gate passed; PR #279 ready | Frontend suite 2,482/2,482; build green; `e2e/edit-home.spec.ts` 12/12 twice; backend preferences suite green |
-| 5. Delete and document | Planned | Notes below |
+| 5. Delete and document | 5a: A–D committed, F and G running; 5b (backend deletion) in progress | Notes below |
 | 6. Shell and navigation | Not in scope (owner default: no) | |
 
 ## Phase 0 findings
@@ -324,6 +324,13 @@ Full text: [`home-rebuild-decisions.md`](home-rebuild-decisions.md). Changes to 
 | G4 | Fable / product | Phase 4 Edit Home gate | GATE PASSES; no MUST or SHOULD |
 | 4FT | Sol / tests | Preferences unit, Edit Home mounted, `e2e/edit-home.spec.ts` replacing the grid spec | Done; suite 2,482/2,482; e2e found a multi-row drag bug, fixed by 4F (drag tracked on the window; recapture after reorder) along with a ModalFrame focus race; the orchestrator added the spec's wait for the sheet's opening animation |
 | 5A | Opus 5.5 / auditor | Read-only verified deletion plan and batches for Phase 5 | Done; plan in batches A to G (copy at `/tmp/home-rebuild/reports/5A-audit-plan.md`) |
+| 5A-del | Sol / deletion | Batch A: 16 unreachable files and five old tests deleted; test edits | Done (`5be9350`); suite and build green |
+| 5BC | Opus 5.5 / store | Batches B and C: remove old summary plumbing from the store; delete the last three old libraries | Done; tsc, lint and build clean; 15 tests to update (5BC-T) |
+| 5BC-T | Sol / tests | Update tests that drove the removed store fields; exact request lists instead of negative summary checks | Done (`aad521a`) |
+| 5F | Sol / tools and docs | Landing crop recapture from the new agenda band; frontend README and AGENTS text for Home | Done (`c1b260a`); landing e2e green on rerun |
+| 5G | Sol / CSS | Remove the dead pre-Horizon palette (owner yes); pixel-compare before and after | Done (`57ab1b0`); 12 pairs pixel-identical |
+| 5E | Opus 5.5 / backend | Phase 5b: delete GET /dashboard/summary, its Python builder and schema, `view=dashboard` and `bounded_dashboard`; regenerate API types | Done; its tested backend-test patch applied by the orchestrator; backend suite 11,194 passed, 1 pre-existing failure |
+| 5D | Opus 5.5 / gate | Batch D (`d4d4ea9`; gate passes from a clean worktree, 3 profiles): performance gate moves from `dashboard-summary` to `dashboard-home` | Done; manifest `dashboard-home-performance-v1`, budgets measured per profile; capture script fixed for `/dashboard` |
 | 1B | Sol / tests | Backend suite for `/dashboard/home`; regenerate API types | Done; found one bug (a transient error could mask a 403 between the two follow-up reads), fixed by the orchestrator |
 | 3A | Opus 5.5 / frontend | Schedule `date`/`session` and Leads `focus`/`lead` URL readers (decision 8; independent of Phases 1 and 2, so run in parallel) | Done; build green, preview browser check 24/24 |
 | 3B | Sol / tests | Tests for the deep-link readers | Done; found two Schedule races, fixed by 3A; 112 tests green |
@@ -394,6 +401,12 @@ Fixed in `43c5fc2`.
 Astra confirmed the other fixes: one-key metadata patch with value-free lost-key logging, read stamps,
 409 suspension and recovery, and A to B purge.
 
+### Phase 5a (`57ab1b0`): SAFE TO MERGE
+
+No P0 or P1 findings: deletions, resets, command reconciliation, Belt Tracker eligibility, both
+sign-out purges, the gate's real auth and subscription path, aggregate-only evidence and CI wiring
+confirmed.
+
 ## Follow-ups (deferred polish)
 
 - Fable L1: at 1000x614 the first row sits at the fold because the strip is 2x2 below 1024px;
@@ -408,9 +421,16 @@ Astra confirmed the other fixes: one-key metadata patch with value-free lost-key
   Phase 3 (Astra), when Phase 5 rewrites the remaining dashboard tests.
 - Fable (Phase 4) LATER: send the preferences PUT with `keepalive: true` so a tab closed inside the
   400ms debounce still saves; low value today because Done and tab-hide flush.
+- Performance (5D): on the large fixture profile, belt eligibility costs about 0.5 s of CPU per promotions
+  load (`_fetch_latest_promotions_by_context` in `backend/app/services/belt_eligibility.py` loops over
+  every context and row). Home caches it for 15 seconds; the old page paid the same cost on its own
+  `/belts/eligibility` request. Worth optimizing separately.
 - A real "missing emergency contact" roster filter (front and back), in a later release (Fable D2).
 - Pre-existing, unrelated: `backend/tests/test_billing_landing_runtime.py::test_membership_and_projections_share_one_total_budget`
   fails on `claude/horizon-dashboard` as well (HTTP 504 within its 0.4s budget on this machine).
+- Pre-existing, unrelated: `e2e/preview-smoke.spec.ts` "public marketing pages render" (desktop and mobile)
+  expects marketing headings ("operating pieces behind a calmer martial arts studio", "find the page that
+  matches…") that no longer exist in `frontend/src`; the Home and dashboard smoke cases pass.
 - Load flake, unrelated: `frontend/tests/workflow-graph-mounted.test.mjs` "real canvas preserves finite
   geometry…" fails occasionally in the full suite and passes alone (18/18).
 - Load flake, unrelated: `frontend/tests/schedule-visible-summary-mounted.test.mjs` "rendered recurring total

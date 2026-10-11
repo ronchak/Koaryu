@@ -1,7 +1,6 @@
 """Home endpoint, provider reads, cache reuse, materialization and failures."""
 
 import asyncio
-from dataclasses import replace
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -18,7 +17,6 @@ from app.services.dashboard_summary_cache import (
     DashboardSummaryFactCache,
     invalidate_dashboard_fact_caches,
 )
-from app.services.dashboard_summary_service import dashboard_summary_fact_cache
 from tests.fakes.supabase import RpcBackedSupabase
 from tests.test_dashboard_home_sections import STUDIO, TODAY, eligibility, home_key, rpc_facts
 
@@ -939,38 +937,22 @@ def test_still_unavailable_agenda_can_materialize_again_after_fifteen_second_ttl
     assert promotion_load_count(client) == 2
 
 
-def test_shared_invalidation_evicts_summary_and_both_home_caches():
+def test_shared_invalidation_evicts_both_home_caches():
     client = HomeSupabase()
-    # The summary cache can hold arbitrary facts; use a distinct formula key.
-    summary_key = replace(home_key(), formula_version="dashboard-summary-v1")
 
     async def exercise():
-        async def summary_loader():
-            return {"version": 1}
-
-        await dashboard_summary_fact_cache.get_or_load(summary_key, summary_loader)
         await dashboard.get_dashboard_home(Response(), "user-admin", STUDIO, client)
-        caches = (
-            dashboard_summary_fact_cache,
-            home.dashboard_home_fact_cache,
-            home.dashboard_home_promotion_cache,
-        )
+        caches = (home.dashboard_home_fact_cache, home.dashboard_home_promotion_cache)
         generations = [cache.generation(STUDIO) for cache in caches]
         invalidate_dashboard_fact_caches(STUDIO, domain="dashboard")
         assert [cache.generation(STUDIO) for cache in caches] == [
             generation + 1 for generation in generations
         ]
-        loader = AsyncMock(return_value={"version": 2})
-        assert await dashboard_summary_fact_cache.get_or_load(summary_key, loader) == {"version": 2}
-        loader.assert_awaited_once()
         await dashboard.get_dashboard_home(Response(), "user-admin", STUDIO, client)
 
-    try:
-        asyncio.run(exercise())
-        assert len(client.rpc_calls) == 2
-        assert promotion_load_count(client) == 2
-    finally:
-        dashboard_summary_fact_cache.invalidate(STUDIO, domain="dashboard")
+    asyncio.run(exercise())
+    assert len(client.rpc_calls) == 2
+    assert promotion_load_count(client) == 2
 
 
 @pytest.mark.parametrize("remains_unavailable", [False, True])
@@ -978,11 +960,7 @@ def test_unavailable_agenda_materializes_today_checks_permission_rereads_once_an
     isolated_home, remains_unavailable
 ):
     client = HomeSupabase(agenda_available=False, remains_unavailable=remains_unavailable)
-    caches = (
-        dashboard_summary_fact_cache,
-        home.dashboard_home_fact_cache,
-        home.dashboard_home_promotion_cache,
-    )
+    caches = (home.dashboard_home_fact_cache, home.dashboard_home_promotion_cache)
     before = [cache.generation(STUDIO) for cache in caches]
     with patch.object(
         home, "resolve_write_staff_role_for_user", wraps=home.resolve_write_staff_role_for_user
@@ -1012,11 +990,7 @@ def test_unavailable_agenda_materializes_today_checks_permission_rereads_once_an
         assert client.rpc_calls == []
         assert ("classes_today" in second) is not remains_unavailable
         assert permission.call_count == 1
-        assert [cache.generation(STUDIO) for cache in caches] == [
-            before[0],
-            before[1] + 1,
-            before[2],
-        ]
+        assert [cache.generation(STUDIO) for cache in caches] == [before[0] + 1, before[1]]
         assert promotion_load_count(client) == 1
 
 

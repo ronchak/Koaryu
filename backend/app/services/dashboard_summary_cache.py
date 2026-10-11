@@ -48,7 +48,7 @@ class DashboardSummaryFactInvalidated(RuntimeError):
     """The source changed while a dashboard fact was being loaded."""
 
 
-# Every live fact cache (the summary's and Home's) registers itself so one
+# Every live fact cache (Home's facts and promotions) registers itself so one
 # mutation call invalidates all of them without importing their owners.
 _registered_caches: weakref.WeakSet[DashboardSummaryFactCache] = weakref.WeakSet()
 _registry_lock = threading.Lock()
@@ -62,8 +62,8 @@ def invalidate_dashboard_fact_caches(
 ) -> None:
     """Invalidate a studio in every live dashboard fact cache.
 
-    Mutation callers use this instead of a specific cache so the summary and
-    Home caches cannot drift apart.
+    Mutation callers use this instead of a specific cache so Home's fact and
+    promotion caches cannot drift apart.
     """
 
     with _registry_lock:

@@ -12,9 +12,9 @@ Direct PostgreSQL access remains out of scope. Reconsider it only if realistic
 250-student and 2,500-student load tests show that the RPC path misses a stated
 user-facing latency target.
 
-Dashboard summary facts already use one `dashboard_summary_facts` RPC. The
-server-paginated Students roster already uses one `list_student_roster` RPC.
-Those paths remain unchanged.
+Home's dashboard facts already use one `dashboard_summary_facts` RPC, called
+from `GET /dashboard/home`. The server-paginated Students roster already uses
+one `list_student_roster` RPC. Those paths remain unchanged.
 
 Schedule now loads one bounded page projection from `GET /schedule/window`.
 After FastAPI resolves the authorized studio, the endpoint calls the
@@ -54,8 +54,8 @@ and exact hosted readback is recorded.
 
 Backend:
 
-- `/dashboard/bootstrap` returns only the critical studio shell data. The compact owner summary loads afterward from `/dashboard/summary` so large-studio summary work cannot block the first Dashboard render.
-- If `/dashboard/summary` has production latency or correctness issues, keep the endpoint deployed but triage it separately; the Dashboard will continue rendering from the bootstrap slice while the summary request fails soft.
+- `/dashboard/bootstrap?view=home` returns only the critical studio shell data: the studio and its programs. Home's facts load afterward from one `GET /dashboard/home` so large-studio work cannot block the first Dashboard render.
+- If `/dashboard/home` has production latency or correctness issues, keep the endpoint deployed but triage it separately. The shell keeps rendering; Home shows a retryable error on a first load, and keeps its last facts with a refresh warning when a later read fails.
 
 Frontend:
 
@@ -198,8 +198,8 @@ Then complete the functional smoke:
 
 1. Visit `/health` on the deployed backend and `/api/v1/health` through the configured API base.
 2. Sign in as a studio user with Koaryu Core access.
-3. Open `/dashboard` and confirm the owner metrics render without console errors.
-4. Check the dashboard network response for `/dashboard/bootstrap`: it should include `Cache-Control: no-store, private`, `Vary: Authorization, X-Studio-Id`, and `Server-Timing`.
+3. Open `/dashboard` and confirm Home renders without console errors.
+4. Check the dashboard network responses for `/dashboard/bootstrap` and `/dashboard/home`: each should include `Cache-Control: no-store, private`, `Vary: Authorization, X-Studio-Id, Cookie`, and `Server-Timing`.
 5. Open `/students`; confirm the first page renders without a full-roster wait.
 6. Search a normal name, an accented name if present, and a no-match term. The page should show loading or updating copy while waiting and an action-oriented empty state when no results match.
 7. Use status and program filters, sort by name/status/member date, and move between pages if the studio has more than 50 students.
@@ -211,7 +211,7 @@ Then complete the functional smoke:
 
 Expected improvements:
 
-- Faster dashboard useful paint because the first render consumes the bounded bootstrap payload while compact owner metrics load afterward.
+- Faster dashboard useful paint because the shell renders from the bounded bootstrap payload while Home's one `GET /dashboard/home` payload loads afterward.
 - Less client CPU on dashboard and Students.
 - Less bandwidth and backend work from route prefetching heavy CRM areas.
 - Normal Students search/filter/sort should scale beyond the bootstrap student cap.
@@ -220,17 +220,17 @@ Known tradeoffs:
 
 - The normal Students roster now depends on backend round trips for search/filter/sort. Debounce and stable loading states should keep small studios feeling responsive.
 - Derived Students views retain the existing bounded roster RPC, query-bound cursors, exact totals and page-only enrichment. Bootstrap rows do not establish roster-page authority.
-- Summary-backed widgets, schedule widgets and optional eligibility report their own readiness. Required errors remain visible. First-useful content never substitutes for the complete-data metric.
+- Home renders from its one `GET /dashboard/home` payload. A section the server could not compute keeps its band and says so. Required errors remain visible. First-useful content never substitutes for the complete-data metric.
 - Production console performance logging is intentionally manual. There is no third-party telemetry sink in this pass.
 - The evidence harness is an operator-run point-in-time capture, not durable telemetry or an SLO monitor. Speed Insights and other retained/paid sinks remain uninstalled pending destination, sampling, retention, privacy, and cost decisions.
 
 ## Rollback Steps
 
-If dashboard summary causes issues:
+If Home causes issues:
 
-1. Confirm `/dashboard/bootstrap` still returns `200` quickly and `summary` is absent or null.
-2. Inspect `/dashboard/summary` server timing and backend logs for the slow or failing section.
-3. Confirm `/dashboard` still renders from the bootstrap roster slice while the summary request fails soft.
+1. Confirm `/dashboard/bootstrap?view=home` still returns `200` quickly with only the studio and programs.
+2. Inspect `/dashboard/home` server timing (`koaryu_home_*` stages) and backend logs for the slow or failing section.
+3. Confirm `/dashboard` still renders the shell and shows Home's retryable error, or its last facts with a refresh warning, while `/dashboard/home` fails.
 
 If the Students roster causes issues:
 
@@ -246,7 +246,7 @@ If production needs temporary performance debugging:
 ## Risk Register
 
 - Tenant leakage: all CRM reads still go through FastAPI endpoints or backend services with user/studio/subscription checks. Do not move service-role access to Next.
-- Incorrect dashboard counts: summary queries must use full-studio aggregate or scoped backend logic, not the 200-student bootstrap page.
+- Incorrect dashboard counts: Home's counts must use full-studio aggregates (the facts RPC) or scoped backend logic, not the 200-student bootstrap page.
 - Partial roster accuracy: local student mutations must preserve `studentsMayBePartial` unless a real full roster refresh succeeds.
 - Search grammar injection: backend Students search strips PostgREST delimiter and wildcard characters before building the raw `or` filter.
 - Hidden route errors: heavy/admin routes have reduced auto-prefetch, so route-level loading screens and direct smoke checks are part of release verification.
@@ -264,8 +264,9 @@ error instead of launching the legacy dataset fan-out.
 Before authoritative identity, the layout renders neutral geometry. Tenant
 labels, role actions and page content wait for the profile and legal-name gate.
 Program metadata and usage have separate readiness. Settings requests enriched
-usage when mounted and preserves valid counts during refresh. Dashboard loads
-eligibility only for selected panels that consume it; Belt Tracker owns its read.
+usage when mounted and preserves valid counts during refresh. Home computes
+promotions (belt eligibility) on the server inside `GET /dashboard/home` for the
+roles that see them; Belt Tracker owns its read.
 Students continues using the existing roster contract.
 
 Navigation links expose pending feedback through Next's `useLinkStatus`. There is
@@ -284,8 +285,8 @@ upstream deadline is 34 seconds for ordinary requests and 125 seconds for bulk
 requests, with cancellation when the caller or response consumer stops.
 
 The interactive PostgREST transport uses a 10-second per-I/O timeout and the bulk
-transport uses 30 seconds. Bootstrap’s five short-lived clients inherit their
-parent client’s budget; the isolated Stripe authorization read has a 10-second
+transport uses 30 seconds. Bootstrap’s short-lived clients (one per dataset its
+view loads, at most three) inherit their parent client’s budget; the isolated Stripe authorization read has a 10-second
 budget. These are not total multi-query deadlines. Existing
 caller waits and worker/queue capacity remain unchanged at 30 seconds with 4+16
 interactive slots and 120 seconds with 1+2 bulk slots. Capacity returns only when

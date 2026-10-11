@@ -298,8 +298,7 @@ node --experimental-strip-types --test tests/belt-editor-mounted.test.mjs
 studio timezone before feature reads. Student detail always ensures a complete
 record independently of the lightweight roster. Studio commands mark dashboard facts
 changed; Home reconciles with `/dashboard/home?fresh=true`. A failed refresh keeps
-known data and reports a warning. The backend still serves `/dashboard/summary`
-for older frontends until a later PR. Token renewal preserves confirmed writes
+known data and reports a warning. Token renewal preserves confirmed writes
 and roster position only within the same validated identity scope.
 
 Roster URLs retain bounded filters/sort. One identity-scoped session return record

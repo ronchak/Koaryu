@@ -191,7 +191,7 @@ EMPTY_DASHBOARD_HOME_PROMOTIONS = DashboardHomePromotions(
 
 
 def _check_accepted_contract(facts: Mapping[str, Any], key: DashboardSummaryCacheKey) -> None:
-    """Identity, request-match and billing-leak checks, copied from the summary adapter."""
+    """Identity, request-match and billing-leak checks on the facts RPC payload."""
 
     if _FORBIDDEN_IDENTITY_FIELDS.intersection(facts):
         raise DashboardHomeFactMismatch("dashboard facts contain identity data")
