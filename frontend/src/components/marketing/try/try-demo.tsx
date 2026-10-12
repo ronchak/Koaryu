@@ -47,7 +47,7 @@ import {
   followUpLabel,
   initialTryState,
   initials,
-  leadBand,
+  leadsInBand,
   leadTotals,
   nextAction,
   sessionSummary,
@@ -615,7 +615,7 @@ function LeadsView({
       </ol>
       <div className={s.queue} aria-label="Lead next-action queue">
         {LEAD_BANDS.map((band) => {
-          const leads = state.leads.filter((lead) => leadBand(lead) === band.id);
+          const leads = leadsInBand(state.leads, band.id);
           if (leads.length === 0) return null;
           return (
             <section key={band.id} className={s.band} data-band={band.id}>

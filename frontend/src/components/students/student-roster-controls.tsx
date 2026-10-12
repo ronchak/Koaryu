@@ -268,7 +268,7 @@ export function StudentRosterToolbar({
           </button>
         </div>
 
-        {hasActiveFilters || isRosterRefreshing ? (
+        {hasActiveFilters ? (
           <div className={styles.rosterToolbarEnd}>
             {hasActiveFilters && onClearFilters ? (
               <button
@@ -281,10 +281,12 @@ export function StudentRosterToolbar({
                 Clear filters
               </button>
             ) : null}
-            {isRosterRefreshing ? (
-              <span className={styles.rosterRefreshState}>Updating roster…</span>
-            ) : null}
           </div>
+        ) : null}
+        {isRosterRefreshing ? (
+          <span role="status" className="sr-only">
+            Updating roster…
+          </span>
         ) : null}
       </nav>
 

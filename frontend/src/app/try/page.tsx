@@ -1,3 +1,4 @@
+import { SOCIAL_PREVIEW_IMAGE } from "@/lib/social-preview";
 import type { Metadata } from "next";
 
 import { tryPageContent } from "@/components/marketing/try/try-content";
@@ -11,12 +12,14 @@ export const metadata: Metadata = {
   description: meta.description,
   alternates: { canonical: url },
   openGraph: {
+    images: [SOCIAL_PREVIEW_IMAGE],
     title: meta.title,
     description: meta.description,
     url,
   },
   twitter: {
-    card: "summary",
+    card: "summary_large_image",
+    images: [SOCIAL_PREVIEW_IMAGE],
     title: meta.title,
     description: meta.description,
   },

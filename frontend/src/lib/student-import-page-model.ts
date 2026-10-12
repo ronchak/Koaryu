@@ -560,10 +560,21 @@ function inferFieldFromTokens(tokens: Set<string>): string {
 
   if (tokens.has("dob") || tokens.has("birthday") || (tokens.has("birth") && tokens.has("date")))
     return "date_of_birth";
+  // Preferred-name declarations take precedence over legal-name hints.
+  if (
+    (tokens.has("preferred") && tokens.has("name")) ||
+    tokens.has("nickname") ||
+    (tokens.has("nick") && tokens.has("name"))
+  ) {
+    return "preferred_name";
+  }
+  // "First Last" or "Last, First" can describe the format of a full-name column.
   if (
     (tokens.has("full") && tokens.has("name")) ||
-    (tokens.has("student") && tokens.has("name")) ||
-    (tokens.has("student") && tokens.has("full") && tokens.has("name"))
+    (tokens.has("student") &&
+      tokens.has("name") &&
+      ["first", "given", "forename"].some((token) => tokens.has(token)) &&
+      ["last", "family", "surname"].some((token) => tokens.has(token)))
   ) {
     return "full_name";
   }
@@ -574,7 +585,6 @@ function inferFieldFromTokens(tokens: Set<string>): string {
   ) {
     return "legal_first_name";
   }
-  if (tokens.has("given") || tokens.has("child")) return "legal_first_name";
   if (
     (tokens.has("last") && tokens.has("name")) ||
     (tokens.has("family") && tokens.has("name")) ||
@@ -582,13 +592,10 @@ function inferFieldFromTokens(tokens: Set<string>): string {
   ) {
     return "legal_last_name";
   }
-  if (
-    (tokens.has("preferred") && tokens.has("name")) ||
-    tokens.has("nickname") ||
-    (tokens.has("nick") && tokens.has("name"))
-  ) {
-    return "preferred_name";
+  if (tokens.has("student") && tokens.has("name")) {
+    return "full_name";
   }
+  if (tokens.has("given") || tokens.has("child")) return "legal_first_name";
   if (
     (tokens.has("membership") && tokens.has("start") && tokens.has("date")) ||
     (tokens.has("membership") && tokens.has("date")) ||

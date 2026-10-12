@@ -471,3 +471,19 @@ require explicit saved-rule readback when a changed revision overlaps local edit
 
 See [dashboard loading verification](../docs/verification/dashboard-loading-2026-10-09.md)
 for regression coverage and local browser evidence.
+
+## Social link previews
+
+Public pages share `/opengraph-image`, a 1200 × 630 PNG. Its absolute production
+URL and alt text live in `src/lib/social-preview.ts`. Include the shared image
+whenever defining `openGraph` or `twitter`. Next.js replaces these nested
+metadata objects instead of deeply merging them. Twitter uses `summary_large_image`.
+
+`src/app/opengraph-image.tsx` renders the existing Koaryu mark and palette
+once at build time with `force-static`, using Next.js's bundled font. It needs no
+authentication, remote assets, font fetches, or runtime image service.
+After editing it, build and visually inspect the generated PNG. Run
+`npx playwright test e2e/social-preview-metadata.spec.ts --workers=1` against a
+loopback production build. `KOARYU_E2E_FRONTEND_URL` selects the origin. These
+checks also run in release-candidate CI and include `/try`. Social platforms may
+keep cached previews after deployment.

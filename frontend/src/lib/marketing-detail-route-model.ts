@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import type { MarketingPage, MarketingPageRef } from "./marketing-pages";
+import { SOCIAL_PREVIEW_IMAGE } from "./social-preview.ts";
 
 export type MarketingPageResolver = (ref: MarketingPageRef) => MarketingPage | undefined;
 export type MarketingDetailBasePath = "/features" | "/use-cases" | "/explore";
@@ -47,11 +48,13 @@ export function buildMarketingDetailMetadata(page: MarketingPage): Metadata {
     description: page.description,
     alternates: { canonical: url },
     twitter: {
-      card: "summary",
+      card: "summary_large_image",
+      images: [SOCIAL_PREVIEW_IMAGE],
       title: page.metaTitle,
       description: page.description,
     },
     openGraph: {
+      images: [SOCIAL_PREVIEW_IMAGE],
       title: page.metaTitle,
       description: page.description,
       url,

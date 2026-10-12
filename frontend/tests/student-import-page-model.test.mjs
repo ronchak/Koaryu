@@ -17,6 +17,7 @@ import {
   pluralize,
 } from "../src/lib/student-import-page-model.ts";
 import { splitCsvImportFullName } from "../src/lib/csv-import-mapping.ts";
+import { buildPreviewStudentImportResult } from "../src/lib/student-import-store-model.ts";
 
 const DEFAULT_PREVIEW_OPTIONS = {
   create_missing_programs: false,
@@ -75,6 +76,86 @@ describe("student import page model", () => {
         "Guardian Mobile": "guardian_phone",
       },
     );
+  });
+
+  it("prefers specific name fields over generic student-name inference", () => {
+    const cases = [
+      ["Student First Name", "legal_first_name"],
+      ["Student First Name (Required)", "legal_first_name"],
+      ["Student Last Name (Required)", "legal_last_name"],
+      ["Student Given Name", "legal_first_name"],
+      ["Student Family Name", "legal_last_name"],
+      ["Preferred First Name", "preferred_name"],
+      ["Preferred First Name (optional)", "preferred_name"],
+      ["Student Preferred Name", "preferred_name"],
+      ["Student Preferred First Name", "preferred_name"],
+      ["Student Nick Name", "preferred_name"],
+      ["Student Guardian Name", "guardian_name"],
+      ["Student Emergency Contact Name", "emergency_contact_name"],
+      ["Student Name", "full_name"],
+      ["Full Student Name", "full_name"],
+      ["Student Full Name (Required)", "full_name"],
+      ["Full Name (First Last)", "full_name"],
+      ["Full Name (Last, First)", "full_name"],
+      ["Student Full Name (First and Last)", "full_name"],
+      ["Student Name (Last, First)", "full_name"],
+      ["Child Full Name", "full_name"],
+      ["Child Last Name", "legal_last_name"],
+      ["Child", "legal_first_name"],
+      ["Given", "legal_first_name"],
+    ];
+
+    assert.deepEqual(autoMap(cases.map(([header]) => header)), Object.fromEntries(cases));
+  });
+
+  it("retains an auto-mapped student preferred name through preview import", () => {
+    const row = { "First Name": "Alex", "Last Name": "Rivera", "Student Preferred Name": "Lex" };
+    const execution = buildPreviewStudentImportResult({
+      rows: [row],
+      mapping: autoMap(Object.keys(row)),
+      options: DEFAULT_PREVIEW_OPTIONS,
+      programs: [],
+      beltLadders: [],
+      fallbackRanks: [],
+      existingStudents: [],
+      idFactory: () => "student-import-1",
+      now: () => new Date("2026-10-09T00:00:00.000Z"),
+      businessDate: "2026-10-09",
+    });
+
+    assert.equal(execution.result.imported_count, 1);
+    assert.equal(execution.result.error_rows, 0);
+    assert.deepEqual(execution.result.warnings, []);
+    assert.equal(execution.importedStudents[0].legal_first_name, "Alex");
+    assert.equal(execution.importedStudents[0].legal_last_name, "Rivera");
+    assert.equal(execution.importedStudents[0].preferred_name, "Lex");
+  });
+
+  it("preserves full-name splitting when auto-mapped headers include format hints", () => {
+    for (const [header, value] of [
+      ["Full Name (First Last)", "Alex Rivera"],
+      ["Full Name (Last, First)", "Rivera, Alex"],
+      ["Student Name (Last, First)", "Rivera, Alex"],
+      ["Student Name (Surname, Given)", "Rivera, Alex"],
+      ["Student Name (Surname, Forename)", "Rivera, Alex"],
+      ["Student Name (Family, Given)", "Rivera, Alex"],
+    ]) {
+      const execution = buildPreviewStudentImportResult({
+        rows: [{ [header]: value }],
+        mapping: autoMap([header]),
+        options: DEFAULT_PREVIEW_OPTIONS,
+        programs: [],
+        beltLadders: [],
+        fallbackRanks: [],
+        existingStudents: [],
+        idFactory: () => "student-import-1",
+        now: () => new Date("2026-10-09T00:00:00.000Z"),
+        businessDate: "2026-10-09",
+      });
+      assert.equal(execution.result.imported_count, 1, header);
+      assert.equal(execution.importedStudents[0].legal_first_name, "Alex", header);
+      assert.equal(execution.importedStudents[0].legal_last_name, "Rivera", header);
+    }
   });
 
   it("detects payment status headers without treating student status as billing", () => {
