@@ -706,16 +706,22 @@ button.chip:hover {
   display: none;
 }
 
-.monthPendingEntry .chipTime,
-.monthPendingEntry .chipName {
-  display: block;
-  height: 14px;
-  border-radius: 5px;
-  background: var(--hz-tile);
+.monthPendingText {
+  visibility: hidden;
 }
 
+.monthPendingEntry .chipTime,
 .monthPendingEntry .chipName {
-  width: 75%;
+  position: relative;
+}
+
+.monthPendingEntry .chipTime::after,
+.monthPendingEntry .chipName::after {
+  position: absolute;
+  inset: 2px 0;
+  border-radius: 5px;
+  background: var(--hz-tile);
+  content: "";
 }
 
 .moreButton.monthPendingMore {

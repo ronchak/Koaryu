@@ -62,8 +62,8 @@ interface MonthScheduleDay {
   inCurrentMonth: boolean;
   /** Every entry, in time order; the grid shows the first `maxVisibleEntries`. */
   entries: MonthScheduleEntry[];
-  /** Known row count while the range is still being materialized. */
-  pendingEntryCount: number;
+  /** Known entries reserve their text geometry while the range materializes. */
+  pendingEntries: MonthScheduleEntry[];
   hiddenEntries: MonthScheduleEntry[];
   sessionCount: number;
   templateCount: number;
@@ -157,7 +157,7 @@ export function MonthScheduleView({
           dateKey,
           inCurrentMonth,
           entries,
-          pendingEntryCount: isLoading ? known.length : 0,
+          pendingEntries: isLoading ? known : [],
           hiddenEntries,
           sessionCount,
           templateCount: entries.length - sessionCount,
@@ -306,33 +306,59 @@ export function MonthScheduleView({
 
               {/* Entries */}
               <div className={styles.monthEntries}>
-                {isLoading && day.pendingEntryCount === 0 ? (
+                {isLoading && day.pendingEntries.length === 0 ? (
                   <div aria-hidden="true" className={styles.monthPending}>
                     <span />
                     <span />
                   </div>
                 ) : null}
 
-                {Array.from({ length: day.pendingEntryCount }, (_, index) => (
-                  <div
-                    key={`pending-${index}`}
-                    aria-hidden="true"
-                    className={`${styles.chip} ${styles.monthPendingEntry}`}
-                    data-month-entry-overflow={index >= maxVisibleEntries ? "true" : undefined}
-                  >
-                    <span className={styles.chipTime} />
-                    <span className={styles.chipBody}>
-                      <span className={styles.chipName} />
-                    </span>
-                  </div>
-                ))}
+                {day.pendingEntries.map((entry, index) => {
+                  const details = entry.kind === "session" ? entry.session : entry.template;
+                  const fill =
+                    entry.kind === "session"
+                      ? getSessionFill(entry.session)
+                      : details.capacity
+                        ? `0/${details.capacity}`
+                        : null;
+                  return (
+                    <div
+                      key={`pending-${getEntryKey(entry)}`}
+                      aria-hidden="true"
+                      className={`${styles.chip} ${styles.monthPendingEntry}`}
+                      data-month-entry-overflow={index >= maxVisibleEntries ? "true" : undefined}
+                    >
+                      <span className={styles.chipTime}>
+                        <span className={styles.monthPendingText}>
+                          {formatScheduleTime(details.start_time)}
+                        </span>
+                      </span>
+                      {fill ? (
+                        <span className={`${styles.chipFill} ${styles.monthPendingText}`}>
+                          {fill}
+                        </span>
+                      ) : null}
+                      <span className={styles.chipBody}>
+                        <span className={styles.chipName}>
+                          <span className={styles.monthPendingText}>{details.name}</span>
+                        </span>
+                      </span>
+                      {isToday ? (
+                        <CalendarCheck
+                          aria-hidden="true"
+                          className={`${styles.chipAction} ${styles.monthPendingText}`}
+                        />
+                      ) : null}
+                    </div>
+                  );
+                })}
 
-                {day.pendingEntryCount > maxVisibleEntries ? (
+                {day.pendingEntries.length > maxVisibleEntries ? (
                   <div
                     aria-hidden="true"
                     className={`${styles.moreButton} ${styles.monthPendingMore}`}
                   >
-                    <span>+{day.pendingEntryCount - maxVisibleEntries} more</span>
+                    <span>+{day.pendingEntries.length - maxVisibleEntries} more</span>
                   </div>
                 ) : null}
 

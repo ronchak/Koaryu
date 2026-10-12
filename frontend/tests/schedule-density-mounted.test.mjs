@@ -29,11 +29,16 @@ function bundle() {
   const react = add("react");
   const dom = add("react-dom/client");
   const section = add(sectionPath);
+  const month = add("@/components/schedule/month-schedule-view");
   return `(()=>{const process={env:{NODE_ENV:'production'}};const modules=[${modules.join(",")}],cache={};function require(id){if(cache[id])return cache[id].exports;const m=cache[id]={exports:{}};modules[id](m,m.exports,require);return m.exports;}
     const React=require(${react}),{SchedulePageSection,formatWeekLabel}=require(${section});
     function App(){const f=window.fixture;const [props,setProps]=React.useState(f.initial);
       f.update=patch=>setProps(p=>({...p,...patch}));f.props=props;f.formatWeekLabel=formatWeekLabel;
       const noop=()=>{};
+      if(props.directMonth)return React.createElement('div',{className:'calendar'},React.createElement(require(${month}).MonthScheduleView,{
+        ...props,month:new Date(props.currentDate),today:new Date('2026-10-11T12:00:00Z'),
+        isLoading:!props.hasLoadedRange,showHeader:false,showTemplatePlaceholders:true
+      }));
       return React.createElement(SchedulePageSection,{
         canManageSchedule:true,programFilter:'',templates:[],programs:[],hasLoadedRange:true,
         isRefreshingRange:false,scheduleLoadError:null,actionMessage:null,
@@ -76,7 +81,7 @@ async function mount({ width = 1280, height = 900, view = "week", sessions = [],
   await page.route("**/*", (route) => route.abort());
   await page.clock.setFixedTime(new Date("2026-10-11T17:00:00Z"));
   await page.setContent(
-    '<style>html,body{width:100%;margin:0}*{box-sizing:border-box}button{font-family:inherit}.relative{position:relative}.absolute{position:absolute}.inset-x-0{left:0;right:0}.grid{display:grid}.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}</style><main id="root"></main>',
+    '<style>html,body{width:100%;margin:0;font-family:"Inter",ui-sans-serif,system-ui,sans-serif}*{box-sizing:border-box}button{font-family:inherit}.relative{position:relative}.absolute{position:absolute}.inset-x-0{left:0;right:0}.grid{display:grid}.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}</style><main id="root"></main>',
   );
   await page.addStyleTag({ content: headerCss });
   await page.addStyleTag({ content: scheduleCss });
@@ -93,7 +98,9 @@ async function mount({ width = 1280, height = 900, view = "week", sessions = [],
     },
   );
   await page.addScriptTag({ content: source });
-  await expect(page.locator("[data-schedule-range-label]")).toBeVisible();
+  await expect(
+    page.locator(props.directMonth ? "[data-month-schedule-view]" : "[data-schedule-range-label]"),
+  ).toBeVisible();
   return { page, errors };
 }
 
@@ -800,3 +807,67 @@ test("unknown empty Month remains loading and controls stay navigable without cl
     await page.close();
   }
 });
+
+const knownLongName =
+  "Beginning foundations and advanced movement practice for all of our youngest Karate students";
+
+for (const width of [390, 759, 760]) {
+  for (const directMonth of [false, true]) {
+    test(`known long Month name (${knownLongName.length} chars) keeps day and next-day geometry at ${width}px (${directMonth ? "direct entry" : "recurring template"})`, async () => {
+      const templates = [0, 1].map((day) => ({
+        id: `long-template-${day}`,
+        name: knownLongName,
+        day_of_week: day,
+        start_time: "16:00",
+        end_time: "16:45",
+        start_date: "2026-10-11",
+        end_date: "2026-10-12",
+        is_active: true,
+        capacity: 20,
+        program_id: null,
+      }));
+      const sessions = templates.map((template, i) => ({
+        ...session(`long-session-${i}`, `2026-10-${11 + i}`),
+        name: knownLongName,
+        template_id: template.id,
+        attendance_count: 0,
+      }));
+      const { page, errors } = await mount({
+        width,
+        height: 844,
+        view: "month",
+        directMonth,
+        templates: directMonth ? [] : templates,
+        sessions: directMonth ? sessions : [],
+        hasLoadedRange: false,
+      });
+      try {
+        const before = await monthGeometry(page);
+        await expect(page.locator(".monthGrid button")).toHaveCount(0);
+        const coldRows = page.locator(".monthPendingEntry");
+        await expect(coldRows).toHaveCount(2);
+        await expect(coldRows.first()).toHaveAttribute("aria-hidden", "true");
+        const pendingTextHidden = await coldRows
+          .locator(".monthPendingText")
+          .evaluateAll(
+            (nodes) =>
+              nodes.length > 0 &&
+              nodes.every((node) => getComputedStyle(node).visibility === "hidden"),
+          );
+        await update(page, { sessions, hasLoadedRange: true });
+        await expect(page.locator(".monthPendingEntry")).toHaveCount(0);
+        const after = await monthGeometry(page);
+        const dates = ["2026-10-11", "2026-10-12"];
+        const relevant = (geometry) => geometry.days.filter((day) => dates.includes(day.date));
+        console.log(
+          `known long ${knownLongName.length} chars ${width}px ${directMonth ? "direct" : "template"}: ${JSON.stringify({ before: relevant(before), after: relevant(after) })}`,
+        );
+        assert.deepEqual(relevant(before), relevant(after));
+        assert.equal(pendingTextHidden, true);
+        assert.deepEqual(errors, []);
+      } finally {
+        await page.close();
+      }
+    });
+  }
+}
