@@ -31,6 +31,7 @@ const requiredSnippets = [
   "npm run check:remediation-ledger",
   "npm run audit:support-privacy",
   "node --test scripts/verify-deployed-release.test.mjs",
+  'git show "$BASE_SHA:scripts/select-release-checks.mjs"',
 ];
 
 const candidateJobs = [
@@ -86,25 +87,92 @@ export function validateReleaseCandidateWorkflow(source) {
     );
   }
 
-  if (!source.includes("if: ${{ always() }}")) {
-    errors.push("The aggregate release-candidate gate must evaluate all job outcomes.");
-  }
-
   const aggregateBlock = source.slice(source.indexOf("  release-candidate:"));
-  const needsMatch = aggregateBlock.match(/\n    needs:\n((?:      - [^\n]+\n)+)/);
+  if (!aggregateBlock.includes("    if: ${{ always() }}")) {
+    errors.push(
+      "The aggregate release-candidate gate must evaluate all job outcomes.",
+    );
+  }
+  const needsMatch = aggregateBlock.match(
+    /\n    needs:\n((?:      - [^\n]+\n)+)/,
+  );
   const requiredNeeds = candidateJobs.map(({ job }) => job);
   const actualNeeds = needsMatch
-    ? needsMatch[1].match(/- ([^\n]+)/g)?.map((line) => line.slice(2)).sort() ?? []
+    ? (needsMatch[1]
+        .match(/- ([^\n]+)/g)
+        ?.map((line) => line.slice(2))
+        .sort() ?? [])
     : [];
-  if (JSON.stringify(actualNeeds) !== JSON.stringify([...requiredNeeds].sort())) {
-    errors.push("The aggregate gate must depend on every required candidate job exactly once.");
+  if (
+    JSON.stringify(actualNeeds) !== JSON.stringify([...requiredNeeds].sort())
+  ) {
+    errors.push(
+      "The aggregate gate must depend on every required candidate job exactly once.",
+    );
   }
 
   for (const { job, variable } of candidateJobs) {
     const envLine = `${variable}_RESULT: \${{ needs.${job}.result }}`;
     const assertion = `test "$${variable}_RESULT" = success`;
-    if (!aggregateBlock.includes(envLine) || !aggregateBlock.includes(assertion)) {
+    if (
+      !aggregateBlock.includes(envLine) ||
+      (job !== "database" && !aggregateBlock.includes(assertion))
+    ) {
       errors.push(`The aggregate gate must fail closed on ${job}.`);
+    }
+    if (job !== "database" && /^    if:/m.test(jobBlock(source, job) ?? "")) {
+      errors.push(`The ${job} job must remain unconditional.`);
+    }
+  }
+
+  const databaseBlock = jobBlock(source, "database") ?? "";
+  if (
+    !databaseBlock.includes("    needs: repository-controls") ||
+    !databaseBlock.includes(
+      "    if: ${{ needs.repository-controls.outputs.docs-only != 'true' }}",
+    )
+  ) {
+    errors.push(
+      "Database selection must depend on successful repository controls and only the docs-only output.",
+    );
+  }
+  const requiredSelectionControls = [
+    "docs-only: ${{ steps.scope.outputs.docs-only }}",
+    "id: scope",
+    "EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}",
+    "BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}",
+    "          selected=false\n",
+    'git merge-base --is-ancestor "$BASE_SHA" "$EXPECTED_HEAD_SHA"',
+    'git ls-tree "$BASE_SHA" -- scripts/select-release-checks.mjs',
+    '"$selector_entry" == "100644 blob "*',
+    'git show "$BASE_SHA:scripts/select-release-checks.mjs" > "$scope_script"',
+    'GITHUB_OUTPUT="$scope_output" node "$scope_script"',
+    'docs-only=true) selected=true ;;',
+    'echo "docs-only=$selected" >> "$GITHUB_OUTPUT"',
+  ];
+  for (const snippet of requiredSelectionControls) {
+    if (!repositoryControlsBlock.includes(snippet)) {
+      errors.push(
+        `Repository controls must bind documentation selection: ${snippet}`,
+      );
+    }
+  }
+  if (/node scripts\/select-release-checks\.mjs/.test(repositoryControlsBlock)) {
+    errors.push("Documentation selection must not execute the candidate's selector.");
+  }
+  const requiredDatabaseAssertions = [
+    "DOCS_ONLY: ${{ needs.repository-controls.outputs.docs-only }}",
+    'case "$DOCS_ONLY" in',
+    'true) test "$DATABASE_RESULT" = skipped ;;',
+    'false) test "$DATABASE_RESULT" = success ;;',
+    "*) exit 1 ;;",
+    "esac",
+  ];
+  for (const snippet of requiredDatabaseAssertions) {
+    if (!aggregateBlock.includes(snippet)) {
+      errors.push(
+        `The aggregate gate must fail closed on database selection: ${snippet}`,
+      );
     }
   }
 

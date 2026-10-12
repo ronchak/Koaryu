@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import test from "node:test";
+import { spawnSync } from "node:child_process";
 
 import { validateReleaseCandidateWorkflow } from "./check-release-candidate-workflow.mjs";
 
@@ -155,4 +156,113 @@ test("release-candidate workflow rejects a missing aggregate performance asserti
     validateReleaseCandidateWorkflow(weakened).join("\n"),
     /aggregate gate must fail closed on performance-regression/,
   );
+});
+
+test("database skips require the repository-owned documentation selection", () => {
+  for (const [before, after] of [
+    ["    needs: repository-controls\n", ""],
+    [
+      "    if: ${{ needs.repository-controls.outputs.docs-only != 'true' }}",
+      "    if: false",
+    ],
+    ["docs-only: ${{ steps.scope.outputs.docs-only }}", "docs-only: true"],
+    [
+      "BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}",
+      "BASE_SHA: main",
+    ],
+    ['true) test "$DATABASE_RESULT" = skipped ;;', "true) true ;;"],
+    ['false) test "$DATABASE_RESULT" = success ;;', "false) true ;;"],
+    ["*) exit 1 ;;", "*) true ;;"],
+    ['git show "$BASE_SHA:scripts/select-release-checks.mjs"', 'git show "HEAD:scripts/select-release-checks.mjs"'],
+    ['GITHUB_OUTPUT="$scope_output" node "$scope_script"', 'node scripts/select-release-checks.mjs'],
+    ['selected=false', 'selected=true'],
+  ]) {
+    assert.notEqual(workflow.replace(before, after), workflow, before);
+    assert.notDeepEqual(
+      validateReleaseCandidateWorkflow(workflow.replace(before, after)),
+      [],
+      before,
+    );
+  }
+});
+
+test("application and security jobs cannot acquire skip conditions", () => {
+  for (const job of [
+    "repository-controls",
+    "frontend",
+    "backend",
+    "performance-regression",
+    "static-analysis",
+  ]) {
+    const changed = workflow.replace(
+      `  ${job}:\n`,
+      `  ${job}:\n    if: false\n`,
+    );
+    assert.match(
+      validateReleaseCandidateWorkflow(changed).join("\n"),
+      /must remain unconditional/,
+    );
+  }
+});
+
+// Execute the actual aggregate shell rather than reimplementing its acceptance
+// logic in a test. The GHA runner uses errexit for its default bash run steps.
+const aggregateRun = workflow
+  .slice(workflow.indexOf("  release-candidate:"))
+  .split("        run: |\n")[1]
+  .split("\n")
+  .filter((line) => line.startsWith("          "))
+  .map((line) => line.slice(10))
+  .join("\n");
+function gate(overrides = {}) {
+  const env = {
+    PATH: process.env.PATH,
+    DOCS_ONLY: "false",
+    REPOSITORY_RESULT: "success",
+    FRONTEND_RESULT: "success",
+    BACKEND_RESULT: "success",
+    DATABASE_RESULT: "success",
+    PERFORMANCE_REGRESSION_RESULT: "success",
+    STATIC_ANALYSIS_RESULT: "success",
+    ...overrides,
+  };
+  return spawnSync("bash", ["-e", "-o", "pipefail", "-c", aggregateRun], {
+    env,
+  }).status;
+}
+
+test("actual aggregate accepts full checks or only the explicitly selected database skip", () => {
+  assert.equal(gate(), 0);
+  assert.equal(gate({ DOCS_ONLY: "true", DATABASE_RESULT: "skipped" }), 0);
+});
+
+test("actual aggregate refuses missing/unknown selection and failed, canceled or unexpected database outcomes", () => {
+  for (const value of ["", "unknown", "TRUE"])
+    assert.notEqual(gate({ DOCS_ONLY: value }), 0);
+  for (const result of ["skipped", "failure", "cancelled", ""])
+    assert.notEqual(gate({ DATABASE_RESULT: result }), 0);
+  for (const result of ["success", "failure", "cancelled", ""])
+    assert.notEqual(gate({ DOCS_ONLY: "true", DATABASE_RESULT: result }), 0);
+});
+
+test("actual documentation gate still refuses any other failed, skipped or canceled suite", () => {
+  for (const name of [
+    "REPOSITORY",
+    "FRONTEND",
+    "BACKEND",
+    "PERFORMANCE_REGRESSION",
+    "STATIC_ANALYSIS",
+  ]) {
+    for (const result of ["failure", "skipped", "cancelled", ""]) {
+      assert.notEqual(
+        gate({
+          DOCS_ONLY: "true",
+          DATABASE_RESULT: "skipped",
+          [`${name}_RESULT`]: result,
+        }),
+        0,
+        `${name}=${result}`,
+      );
+    }
+  }
 });
