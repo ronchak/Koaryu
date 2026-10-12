@@ -266,5 +266,3 @@ test("actual documentation gate still refuses any other failed, skipped or cance
     }
   }
 });
-
-test("intentional temporary enforcement failure", () => assert.fail("CI enforcement probe; never merge"));
