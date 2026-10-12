@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { after, before, test } from "node:test";
 import { chromium, expect } from "@playwright/test";
 import { createCommonJsPacker } from "./helpers/store-browser-harness.mjs";
+import { getConflictingSessionIds } from "../src/lib/schedule-calendar.ts";
 
 const sectionPath = fileURLToPath(
   new URL("../src/components/schedule/schedule-page-section.tsx", import.meta.url),
@@ -424,6 +425,206 @@ const geometryViewports = [
   { width: 1000, height: 614 },
   { width: 390, height: 844 },
 ];
+
+const shortCanvasCases = [
+  { width: 1440, height: 900, view: "week" },
+  { width: 1440, height: 900, view: "day" },
+  { width: 1000, height: 614, view: "week" },
+  { width: 1000, height: 614, view: "day" },
+  { width: 390, height: 844, view: "day" },
+];
+
+async function canvasGeometry(page) {
+  return page.locator('[data-time-canvas-day="2026-10-11"]:visible').evaluate((canvas) => {
+    const origin = canvas.getBoundingClientRect();
+    const rect = (node) => {
+      const { x, y, width, height } = node.getBoundingClientRect();
+      return { x: x - origin.x, y: y - origin.y, width, height };
+    };
+    return [...canvas.querySelectorAll("[data-time-canvas-visible]")].map((card) => ({
+      id: card.dataset.timeCanvasVisible,
+      visible: rect(card),
+      target: card.parentElement.matches("button") ? rect(card.parentElement) : null,
+    }));
+  });
+}
+
+function assertSeparateRectangles(geometry, kind) {
+  for (let i = 0; i < geometry.length; i += 1) {
+    for (let j = i + 1; j < geometry.length; j += 1) {
+      const a = geometry[i][kind] ?? geometry[i].visible;
+      const b = geometry[j][kind] ?? geometry[j].visible;
+      const intersects =
+        Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x) > 0.1 &&
+        Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y) > 0.1;
+      assert.equal(intersects, false, `${kind}: ${geometry[i].id} covers ${geometry[j].id}`);
+    }
+  }
+}
+
+async function clickCanvasTargets(page, sessions) {
+  const opened = [];
+  for (const item of sessions) {
+    const target = page.locator('[data-time-canvas-block="session"]').filter({
+      has: page.locator(`[data-time-canvas-visible="session:${item.id}"]`),
+    });
+    await target.scrollIntoViewIfNeeded();
+    const box = await target.boundingBox();
+    assert.ok(box.width >= 44 && box.height >= 44, `${item.id} keeps its touch target`);
+    // Click the bottom padding, outside the drawn short card, to check the
+    // enlarged interaction target belongs to the requested session.
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height - 1);
+    opened.push(await page.evaluate(() => fixture.opened.at(-1)));
+  }
+  return opened;
+}
+
+for (const viewport of shortCanvasCases) {
+  test(`short canvas classes stay separate in ${viewport.view} at ${viewport.width}x${viewport.height}`, async () => {
+    const sessions = [
+      session("Start A", undefined, "00:00", "00:15"),
+      session("Start B", undefined, "00:15", "00:30"),
+      session("Start C", undefined, "00:30", "01:00"),
+      session("Start D", undefined, "01:00", "01:30"),
+      session("Long A", undefined, "09:00", "10:00"),
+      session("Long B", undefined, "10:00", "11:00"),
+      session("Late A", undefined, "23:15", "23:30"),
+      session("Late B", undefined, "23:30", "23:45"),
+      session("Late C", undefined, "23:45", "24:00"),
+    ];
+    const { page, errors } = await mount({ ...viewport, sessions });
+    try {
+      const geometry = await canvasGeometry(page);
+      const clicked = await clickCanvasTargets(page, sessions);
+      console.log(
+        `short geometry ${viewport.view} ${viewport.width}x${viewport.height}: ${JSON.stringify({ geometry, clicked })}`,
+      );
+      assertSeparateRectangles(geometry, "visible");
+      assertSeparateRectangles(geometry, "target");
+      assert.deepEqual(
+        clicked,
+        sessions.map((item) => item.id),
+      );
+      const canvas = page.locator('[data-time-canvas-day="2026-10-11"]:visible');
+      await expect(canvas.locator('[data-overlap="true"],[data-conflict="true"]')).toHaveCount(0);
+      await expect(canvas.getByText("Overlaps", { exact: true })).toHaveCount(0);
+      const hourHeight = viewport.width === 390 ? 56 : 48;
+      for (const item of sessions) {
+        const card = geometry.find((entry) => entry.id === `session:${item.id}`);
+        const [hour, minute] = item.start_time.split(":").map(Number);
+        assert.ok(Math.abs(card.visible.y - (hour + minute / 60) * hourHeight) < 0.02);
+        await expect(
+          canvas.locator(`[data-time-canvas-visible="session:${item.id}"]`),
+        ).toContainText(item.name);
+        await expect(
+          canvas
+            .locator('[data-time-canvas-block="session"]')
+            .filter({ has: page.locator(`[data-time-canvas-visible="session:${item.id}"]`) }),
+        ).toHaveAttribute("title", new RegExp(item.name));
+      }
+      const longA = geometry.find((entry) => entry.id === "session:Long A");
+      const longB = geometry.find((entry) => entry.id === "session:Long B");
+      assert.equal(longA.visible.x, longB.visible.x);
+      assert.equal(longA.visible.width, longB.visible.width);
+      assert.ok(longA.visible.width > geometry[0].visible.width);
+      await page.getByRole("button", { name: "Week", exact: true }).click();
+      await expect(page.getByRole("button", { name: "Week", exact: true })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+      await expect(page.getByRole("button", { name: "Next week", exact: true })).toBeEnabled();
+      assert.deepEqual(errors, []);
+    } finally {
+      await page.close();
+    }
+  });
+
+  test(`short canvas reserves templates and canceled classes in ${viewport.view} at ${viewport.width}x${viewport.height}`, async () => {
+    const sessions = [
+      session("Overlap A", undefined, "08:00", "08:15"),
+      session("Overlap B", undefined, "08:05", "08:20"),
+      { ...session("Canceled", undefined, "08:10", "08:25"), status: "canceled" },
+      session("Adjacent", undefined, "08:25", "08:40"),
+      session("After template", undefined, "09:30", "09:45"),
+      ...Array.from({ length: 6 }, (_, index) =>
+        session(`Busy ${index}`, undefined, "12:00", "12:15"),
+      ),
+    ];
+    const templates = ["09:00", "09:15"].map((start, index) => ({
+      id: `short-template-${index}`,
+      name: `Recurring ${index}`,
+      day_of_week: 0,
+      start_time: start,
+      end_time: index === 0 ? "09:15" : "09:30",
+      start_date: "2026-10-01",
+      end_date: "2026-10-31",
+      is_active: true,
+      program_id: null,
+      capacity: 20,
+    }));
+    const { page, errors } = await mount({ ...viewport, sessions, templates });
+    try {
+      const geometry = await canvasGeometry(page);
+      assertSeparateRectangles(geometry, "visible");
+      assertSeparateRectangles(geometry, "target");
+      const clicked = await clickCanvasTargets(page, sessions);
+      console.log(
+        `mixed short geometry ${viewport.view} ${viewport.width}x${viewport.height}: ${JSON.stringify({ geometry, clicked })}`,
+      );
+      assert.deepEqual(
+        clicked,
+        sessions.map((item) => item.id),
+      );
+      const canvas = page.locator('[data-time-canvas-day="2026-10-11"]:visible');
+      const warningIds = await canvas
+        .locator('[data-conflict="true"]')
+        .evaluateAll((cards) =>
+          cards.map((card) => card.dataset.timeCanvasVisible.slice("session:".length)).sort(),
+        );
+      // The shared helper owns canceled-class warning policy. This assertion
+      // follows its current behavior and the separately integrated correction.
+      assert.deepEqual(warningIds, [...getConflictingSessionIds(sessions)].sort());
+      await expect(
+        canvas.locator('[data-time-canvas-visible="session:Overlap A"]'),
+      ).toHaveAttribute("data-conflict", "true");
+      await expect(
+        canvas.locator('[data-time-canvas-visible="session:Adjacent"]'),
+      ).not.toHaveAttribute("data-conflict", "true");
+      await expect(
+        canvas
+          .locator('[data-time-canvas-block="session"]')
+          .filter({ has: page.locator('[data-time-canvas-visible="session:Adjacent"]') }),
+      ).toHaveAttribute("data-overlap", "false");
+      await expect(
+        canvas
+          .locator('[data-time-canvas-block="session"]')
+          .filter({ has: page.locator('[data-time-canvas-visible="session:After template"]') }),
+      ).toHaveAttribute("data-overlap", "false");
+      await expect(canvas.locator('[data-time-canvas-block="template"]')).toHaveCount(2);
+      await expect(canvas.locator('[data-time-canvas-block="template"] button')).toHaveCount(0);
+      await expect(canvas.locator('[data-time-canvas-visible="session:Canceled"]')).toHaveAttribute(
+        "data-canceled",
+        "true",
+      );
+      if (viewport.view === "week") {
+        await expect(page.locator('[data-schedule-time-canvas="week"]')).toHaveAttribute(
+          "data-schedule-week-peak-lanes",
+          "6",
+        );
+      }
+      assert.deepEqual(
+        await page.evaluate(() => [
+          document.documentElement.scrollWidth,
+          document.documentElement.clientWidth,
+        ]),
+        [viewport.width, viewport.width],
+      );
+      assert.deepEqual(errors, []);
+    } finally {
+      await page.close();
+    }
+  });
+}
 
 async function monthGeometry(page, relative = false) {
   return page.locator("[data-month-schedule-view]").evaluate((month, relative) => {

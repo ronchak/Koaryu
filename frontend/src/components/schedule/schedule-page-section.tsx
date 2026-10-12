@@ -31,6 +31,7 @@ import {
   layoutScheduleTimeItems,
   SCHEDULE_CANVAS_PIXELS_PER_HOUR,
   type SchedulePageView,
+  type ScheduleTimeBlock,
 } from "@/lib/schedule-page-model";
 import { useStudioClock } from "@/lib/use-studio-clock";
 import type { ClassSession, ClassTemplate, Program } from "@/types";
@@ -92,6 +93,25 @@ type TimeCanvasEntry = {
   session?: ClassSession;
   template?: ClassTemplate;
 };
+
+function getCanvasOccupiedInterval(
+  block: Pick<ScheduleTimeBlock<TimeCanvasEntry>, "item" | "startMinute" | "endMinute">,
+  canvasStartMinute: number,
+  hourHeight: number,
+) {
+  const pixelsPerMinute = hourHeight / 60;
+  const top = (block.startMinute - canvasStartMinute) * pixelsPerMinute;
+  const visibleHeight = Math.max(
+    BLOCK_MIN_HEIGHT,
+    (block.endMinute - block.startMinute) * pixelsPerMinute,
+  );
+  const targetHeight = block.item.kind === "session" ? Math.max(44, visibleHeight) : visibleHeight;
+  const occupiedTop = Math.max(0, top - (targetHeight - visibleHeight) / 2);
+  return {
+    startMinute: canvasStartMinute + occupiedTop / pixelsPerMinute,
+    endMinute: canvasStartMinute + (occupiedTop + targetHeight) / pixelsPerMinute,
+  };
+}
 
 function isPointWithinTimeCanvasFootprint(
   footprint: Pick<DOMRect, "bottom" | "left" | "right" | "top">,
@@ -291,19 +311,25 @@ export function SchedulePageSection({
     });
     return grouped;
   }, [canvasSessionsByDate, currentDate, templatesByDay, view, weekDates]);
+  const canvasRange = useMemo(
+    () => getScheduleCanvasRange(Object.values(entriesByDate).flat()),
+    [entriesByDate],
+  );
+  // Match the actual CSS scale when reserving cards and their centred targets.
+  const hourHeight =
+    view === "day" && phoneSheet ? PHONE_DAY_HOUR_HEIGHT : SCHEDULE_CANVAS_PIXELS_PER_HOUR;
   const layoutsByDate = useMemo(
     () =>
       Object.fromEntries(
         Object.entries(entriesByDate).map(([key, entries]) => [
           key,
-          layoutScheduleTimeItems(entries),
+          layoutScheduleTimeItems(entries, {
+            getOccupiedInterval: (block) =>
+              getCanvasOccupiedInterval(block, canvasRange.startMinute, hourHeight),
+          }),
         ]),
       ),
-    [entriesByDate],
-  );
-  const canvasRange = useMemo(
-    () => getScheduleCanvasRange(Object.values(entriesByDate).flat()),
-    [entriesByDate],
+    [canvasRange.startMinute, entriesByDate, hourHeight],
   );
   const canvasHourMarks = useMemo(
     () =>
@@ -314,9 +340,18 @@ export function SchedulePageSection({
     [canvasRange.endMinute, canvasRange.startMinute],
   );
   const canvasHours = (canvasRange.endMinute - canvasRange.startMinute) / 60;
-  // The hour height CSS draws, so each block knows how many whole lines it holds.
-  const hourHeight =
-    view === "day" && phoneSheet ? PHONE_DAY_HOUR_HEIGHT : SCHEDULE_CANVAS_PIXELS_PER_HOUR;
+  const canvasOverhang = Math.max(
+    0,
+    ...Object.values(layoutsByDate)
+      .flat()
+      .map(
+        (block) =>
+          ((getCanvasOccupiedInterval(block, canvasRange.startMinute, hourHeight).endMinute -
+            canvasRange.endMinute) *
+            hourHeight) /
+          60,
+      ),
+  );
   const peakWeekLaneCount = useMemo(
     () =>
       weekDates.reduce((peak, date) => {
@@ -337,6 +372,12 @@ export function SchedulePageSection({
   const selectedProgram = programFilter ? programById.get(programFilter) : null;
   const showProgramFilter = activePrograms.length > 1 || Boolean(programFilter);
   const dayEntries = entriesByDate[formatScheduleDateKey(currentDate)] || [];
+  const dayLaneCount = (layoutsByDate[formatScheduleDateKey(currentDate)] || []).reduce(
+    (peak, block) => Math.max(peak, block.laneCount),
+    1,
+  );
+  const dayCanvasMinWidth =
+    (phoneSheet ? 44 : WEEK_TIME_COLUMN_WIDTH) + dayLaneCount * SESSION_LANE_MIN_WIDTH;
 
   const headerDescription = todayKnown
     ? todaySessions.length === 0
@@ -366,7 +407,7 @@ export function SchedulePageSection({
     return (
       <div
         className={`relative ${styles.canvasDay}`}
-        style={{ height: hours(canvasHours) }}
+        style={{ height: `calc(${hours(canvasHours)} + ${canvasOverhang}px)` }}
         data-time-canvas-day={key}
         data-today={compact && isToday ? "true" : undefined}
       >
@@ -1147,6 +1188,7 @@ export function SchedulePageSection({
             <div
               className={`${styles.dayFrame} ${calendarLoadingClass}`}
               aria-busy={!hasLoadedRange}
+              style={{ overflowX: "auto" }}
             >
               {hasLoadedRange && dayEntries.length === 0 ? (
                 <div className={styles.dayEmpty}>
@@ -1173,6 +1215,7 @@ export function SchedulePageSection({
                 <div
                   className={`grid ${styles.canvas} ${styles.dayCanvas}`}
                   data-schedule-time-canvas="day"
+                  style={{ minWidth: dayCanvasMinWidth }}
                 >
                   {renderHourColumn()}
                   {renderTimeColumn(currentDate, false)}
