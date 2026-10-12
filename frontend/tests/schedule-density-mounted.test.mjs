@@ -3,6 +3,8 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { after, before, test } from "node:test";
 import { chromium, expect } from "@playwright/test";
+import postcss from "postcss";
+import tailwind from "@tailwindcss/postcss";
 import { createCommonJsPacker } from "./helpers/store-browser-harness.mjs";
 import { getConflictingSessionIds } from "../src/lib/schedule-calendar.ts";
 
@@ -33,18 +35,60 @@ assert.ok(
   "The mounted fixture needs the production light-theme tokens",
 );
 
-function bundle() {
+// The filter cases include native select reset rules, real icons and distinct
+// CSS module classes. The original density fixture keeps its narrower contract.
+const globalCssPath = fileURLToPath(new URL("../src/app/globals.css", import.meta.url));
+const globalCss = (
+  await postcss([tailwind()]).process(readFileSync(globalCssPath, "utf8"), {
+    from: globalCssPath,
+  })
+).css;
+const controlStubs = {};
+let controlCss = globalCss;
+for (const [index, path] of [
+  "header",
+  "dashboard-shell",
+  "ui/horizon",
+  "schedule/horizon-parts",
+  "ui/sliding-segmented-control",
+  "operations/operations-surface",
+].entries()) {
+  const css = readFileSync(
+    new URL(`../src/components/${path}.module.css`, import.meta.url),
+    "utf8",
+  );
+  const classes = Object.fromEntries(
+    [...css.matchAll(/\.([a-zA-Z][\w-]*)/g)].map((match) => [
+      match[1],
+      `filter${index}_${match[1]}`,
+    ]),
+  );
+  const stub = `module.exports=${JSON.stringify(classes)}`;
+  controlStubs[`@/components/${path}.module.css`] = stub;
+  controlStubs[`./${path.split("/").at(-1)}.module.css`] = stub;
+  controlCss += css.replace(
+    /:global\(([^)]+)\)|\.([a-zA-Z][\w-]*)/g,
+    (_, global, local) => global ?? `.${classes[local]}`,
+  );
+}
+
+function bundle(realControls = false) {
   // Expose the private pure formatter in this test bundle only. The Sunday-start
   // calendar cannot itself produce the spec's Monday-start example ranges.
   const { add, modules } = createCommonJsPacker({
     [sectionPath]: readFileSync(sectionPath, "utf8") + "\nexport { formatWeekLabel };",
-    "lucide-react": `module.exports=new Proxy({},{get:()=>()=>null});`,
-    "./sliding-segmented-control.module.css": `module.exports={};`,
+    ...(realControls
+      ? controlStubs
+      : {
+          "lucide-react": `module.exports=new Proxy({},{get:()=>()=>null});`,
+          "./sliding-segmented-control.module.css": `module.exports={};`,
+        }),
   });
   const react = add("react");
   const dom = add("react-dom/client");
   const section = add(sectionPath);
   const month = add("@/components/schedule/month-schedule-view");
+  const operations = realControls ? add("@/components/operations/operations-surface") : null;
   return `(()=>{const process={env:{NODE_ENV:'production'}};const modules=[${modules.join(",")}],cache={};function require(id){if(cache[id])return cache[id].exports;const m=cache[id]={exports:{}};modules[id](m,m.exports,require);return m.exports;}
     const React=require(${react}),{SchedulePageSection,formatWeekLabel}=require(${section});
     function App(){const f=window.fixture;const [props,setProps]=React.useState(f.initial);
@@ -54,20 +98,23 @@ function bundle() {
         ...props,month:new Date(props.currentDate),today:new Date('2026-10-11T12:00:00Z'),
         isLoading:!props.hasLoadedRange,showHeader:false,showTemplatePlaceholders:true
       }));
-      return React.createElement(SchedulePageSection,{
+      const content=React.createElement(SchedulePageSection,{
+        key:props.sectionKey,
         canManageSchedule:true,programFilter:'',templates:[],programs:[],hasLoadedRange:true,
         isRefreshingRange:false,scheduleLoadError:null,actionMessage:null,
         onNavigate:noop,onJumpToToday:noop,onProgramFilterChange:noop,onOpenAddClass:noop,
         onRetryRange:noop,onDismissScheduleLoadError:noop,onDismissActionMessage:noop,
         ...props,currentDate:new Date(props.currentDate),
         onViewChange:view=>f.update({view}),onSelectDate:date=>f.update({currentDate:date.toISOString()}),
-        onOpenSession:session=>f.opened.push(session.id)
-      });}
+        onOpenSession:session=>f.opened.push(session.id),
+        onProgramFilterChange:programFilter=>{f.filterChanges.push(programFilter);f.update({programFilter})}
+      });return ${realControls ? `React.createElement(require(${operations}).OperationsSurface,{page:'schedule'},content)` : "content"};}
     require(${dom}).createRoot(document.getElementById('root')).render(React.createElement(App));
   })();`;
 }
 
 const source = bundle();
+const controlSource = bundle(true);
 let browser;
 before(async () => {
   browser = await chromium.launch();
@@ -88,7 +135,14 @@ const session = (id, date = "2026-10-11", start = "16:00", end = "16:45") => ({
   capacity: 20,
 });
 
-async function mount({ width = 1280, height = 900, view = "week", sessions = [], ...props } = {}) {
+async function mount({
+  width = 1280,
+  height = 900,
+  view = "week",
+  sessions = [],
+  realControls = false,
+  ...props
+} = {}) {
   const page = await browser.newPage({ viewport: { width, height }, timezoneId: "UTC" });
   page.setDefaultTimeout(6000);
   const errors = [];
@@ -98,17 +152,18 @@ async function mount({ width = 1280, height = 900, view = "week", sessions = [],
   await page.setContent(
     '<style>html,body{width:100%;margin:0;font-family:"Inter",ui-sans-serif,system-ui,sans-serif}*{box-sizing:border-box}button{font-family:inherit}.relative{position:relative}.absolute{position:absolute}.inset-x-0{left:0;right:0}.grid{display:grid}.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}</style><main id="root"></main>',
   );
-  await page.addStyleTag({ content: headerCss });
+  await page.addStyleTag({ content: realControls ? controlCss : headerCss });
   await page.addStyleTag({ content: scheduleCss });
-  await page.addStyleTag({ content: lightThemeCss.join("\n") });
-  await page.evaluate(() => {
+  if (!realControls) await page.addStyleTag({ content: lightThemeCss.join("\n") });
+  await page.evaluate((realControls) => {
     document.documentElement.dataset.theme = "light";
-    document.body.className = "shellRoot";
+    document.body.className = realControls ? "filter1_shellRoot" : "shellRoot";
     document.body.dataset.surface = "horizon";
-  });
+    if (realControls) document.body.dataset.koaryuDashboardShell = "true";
+  }, realControls);
   await page.evaluate(
     (initial) => {
-      window.fixture = { initial, opened: [] };
+      window.fixture = { initial, opened: [], filterChanges: [] };
     },
     {
       businessDate: "2026-10-11",
@@ -118,7 +173,7 @@ async function mount({ width = 1280, height = 900, view = "week", sessions = [],
       ...props,
     },
   );
-  await page.addScriptTag({ content: source });
+  await page.addScriptTag({ content: realControls ? controlSource : source });
   await expect(
     page.locator(props.directMonth ? "[data-month-schedule-view]" : "[data-schedule-range-label]"),
   ).toBeVisible();
@@ -128,6 +183,170 @@ async function mount({ width = 1280, height = 900, view = "week", sessions = [],
 async function update(page, props) {
   await page.evaluate((patch) => fixture.update(patch), props);
 }
+
+const longProgramName =
+  "Brazilian Jiu-Jitsu foundations, advanced movement, and youth sparring across every age group";
+const karate = { id: "karate", name: "Karate", color: "#2f6b52", archived_at: null };
+const longProgram = { id: "bjj", name: longProgramName, color: "#8a5c15", archived_at: null };
+
+async function filterGeometry(page) {
+  await page.evaluate(
+    () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+  );
+  return page.evaluate(() => {
+    const rect = (selector) => {
+      const node = document.querySelector(selector);
+      if (!node) return null;
+      const { x, y, width, height } = node.getBoundingClientRect();
+      return { x, y, width, height };
+    };
+    return {
+      toolbar: rect(".toolbar"),
+      calendar: rect("[data-month-schedule-view]"),
+      filter: rect(".programFilter"),
+      view: rect('[aria-label="Schedule view"]'),
+      date: rect('[aria-label="Schedule date navigation"]'),
+      range: rect("[data-schedule-range-label]"),
+      scrollWidth: document.documentElement.scrollWidth,
+      viewport: document.documentElement.clientWidth,
+    };
+  });
+}
+
+for (const viewport of [
+  { width: 390, height: 844 },
+  { width: 1000, height: 614 },
+]) {
+  test(`program option arrival and supplied selection preserve controls at ${viewport.width}x${viewport.height}`, async () => {
+    const { page, errors } = await mount({ ...viewport, view: "month", realControls: true });
+    try {
+      const select = page.getByRole("combobox", {
+        name: "Filter schedule by program",
+        exact: true,
+      });
+      const empty = await filterGeometry(page);
+      const measurements = { empty };
+      for (const [state, programs] of [
+        ["one", [karate]],
+        ["twoLong", [karate, longProgram]],
+      ]) {
+        await update(page, { programs });
+        measurements[state] = await filterGeometry(page);
+        assert.deepEqual(measurements[state], empty);
+      }
+      await expect(select).toBeVisible();
+      await expect(select.locator("option")).toHaveText([
+        "All programs",
+        "Karate",
+        longProgramName,
+      ]);
+      await select.selectOption("bjj");
+      await expect(select).toHaveValue("bjj");
+      await expect(select).toHaveAttribute("title", longProgramName);
+      await expect(select).toHaveAccessibleDescription(longProgramName);
+      await expect(select.locator('option[value="bjj"]')).toHaveText(longProgramName);
+      measurements.selected = await filterGeometry(page);
+      assert.deepEqual(measurements.selected, empty);
+      const clear = page.getByRole("button", { name: "Show every program", exact: true });
+      const slot = await page.locator(".programFilter").boundingBox();
+      const clearRect = await clear.boundingBox();
+      const selectRect = await select.boundingBox();
+      assert.ok(selectRect.width > 0 && selectRect.x + selectRect.width <= clearRect.x);
+      assert.ok(clearRect.x + clearRect.width <= slot.x + slot.width);
+      // Option revalidation and a component remount preserve the key supplied
+      // by the owner. This fixture does not promise navigation persistence.
+      await update(page, { programs: [] });
+      await expect(select).toHaveValue("bjj");
+      await expect(clear).toBeEnabled();
+      await expect(select.locator("option")).toHaveText([
+        "All programs",
+        "Selected program unavailable",
+      ]);
+      await expect(select.locator("option:checked")).toBeDisabled();
+      await expect(select).toHaveAccessibleDescription("Selected program unavailable");
+      measurements.unavailable = await filterGeometry(page);
+      assert.deepEqual(measurements.unavailable, empty);
+      await update(page, { hasLoadedRange: false });
+      await expect(page.locator(".monthGrid button")).toHaveCount(0);
+      assert.deepEqual(await page.evaluate(() => fixture.filterChanges), ["bjj"]);
+      // Loading already adds the desktop attendance placeholder bar. Compare
+      // remount against that same pending frame, not an unrelated ready frame.
+      const pending = await filterGeometry(page);
+      await update(page, { sectionKey: "remounted" });
+      await expect(select).toHaveValue("bjj");
+      assert.deepEqual(await filterGeometry(page), pending);
+      assert.deepEqual(await page.evaluate(() => fixture.filterChanges), ["bjj"]);
+      await update(page, { programs: [karate, longProgram], hasLoadedRange: true });
+      await expect(select).toHaveValue("bjj");
+      await expect(select).toHaveAttribute("title", longProgramName);
+      await expect(select).toHaveAccessibleDescription(longProgramName);
+      measurements.revalidated = await filterGeometry(page);
+      assert.deepEqual(measurements.revalidated, empty);
+      await clear.click();
+      await expect(select).toHaveValue("");
+      await expect(select).toHaveAttribute("title", "All programs");
+      assert.deepEqual(await page.evaluate(() => fixture.filterChanges), ["bjj", ""]);
+      assert.deepEqual(await filterGeometry(page), empty);
+      await update(page, { programs: [] });
+      await expect(select.locator("option")).toHaveText(["All programs"]);
+      assert.deepEqual(await filterGeometry(page), empty);
+      assert.equal(empty.scrollWidth, viewport.width);
+      console.log(
+        `program arrival ${viewport.width}x${viewport.height}: ${JSON.stringify(measurements)}`,
+      );
+      const lightColor = await select.evaluate((node) => getComputedStyle(node).color);
+      await page.evaluate(() => {
+        document.documentElement.dataset.theme = "dark";
+      });
+      assert.deepEqual(await filterGeometry(page), empty);
+      await expect
+        .poll(() => select.evaluate((node) => getComputedStyle(node).color))
+        .not.toBe(lightColor);
+      assert.deepEqual(errors, []);
+    } finally {
+      await page.close();
+    }
+  });
+}
+
+test("one active program isolates its classes and clear restores unassigned and archived classes", async () => {
+  const archived = { id: "archived", name: "Archived program", archived_at: "2026-10-01" };
+  const { page, errors } = await mount({
+    width: 390,
+    height: 844,
+    realControls: true,
+    programs: [karate, archived],
+    sessions: [
+      { ...session("Assigned"), program_id: "karate" },
+      session("Unassigned"),
+      { ...session("Archived class"), program_id: "archived" },
+    ],
+  });
+  try {
+    const select = page.getByRole("combobox", { name: "Filter schedule by program", exact: true });
+    const today = page.locator('[data-schedule-agenda-day="2026-10-11"]');
+    await expect(select.locator("option")).toHaveText(["All programs", "Karate"]);
+    await expect(today.locator("button.agendaRow")).toHaveCount(3);
+    await select.selectOption("karate");
+    await expect(today.locator("button.agendaRow")).toHaveCount(1);
+    await expect(today.getByText("Assigned", { exact: true })).toBeVisible();
+    await today
+      .getByRole("button", { name: "Take attendance for Assigned at 4:00 PM", exact: true })
+      .click();
+    assert.deepEqual(await page.evaluate(() => fixture.opened), ["Assigned"]);
+    await page.getByRole("button", { name: "Show every program", exact: true }).click();
+    await expect(today.locator("button.agendaRow")).toHaveCount(3);
+    await update(page, { programs: [], sessions: [], hasLoadedRange: false });
+    await expect(select.locator("option")).toHaveText(["All programs"]);
+    await expect(select).toHaveValue("");
+    await expect(page.locator("button.agendaRow")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /^Take attendance|^Open .* at/ })).toHaveCount(0);
+    assert.deepEqual(await page.evaluate(() => fixture.filterChanges), ["karate", ""]);
+    assert.deepEqual(errors, []);
+  } finally {
+    await page.close();
+  }
+});
 
 const hourLabels = (page) => page.locator(".hourColumn .hourLabel");
 

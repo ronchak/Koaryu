@@ -1,6 +1,6 @@
 "use client";
 
-import { useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { CalendarCheck, CalendarPlus, ChevronLeft, ChevronRight, Plus, X } from "lucide-react";
 
 import { Header } from "@/components/header";
@@ -225,6 +225,7 @@ export function SchedulePageSection({
   const weekDates = useMemo(() => getScheduleWeekDates(currentDate), [currentDate]);
   const [calendarRef, phoneSheet] = usePhoneSheet();
   const studioMinute = useStudioClock(studioTimezone);
+  const programDescriptionId = useId();
   const activePrograms = useMemo(
     () => programs.filter((program) => !program.archived_at),
     [programs],
@@ -370,7 +371,11 @@ export function SchedulePageSection({
   const showCalendar = hasLoadedRange || !scheduleLoadError;
   const calendarLoadingClass = hasLoadedRange ? "" : "koaryu-skeleton-reveal";
   const selectedProgram = programFilter ? programById.get(programFilter) : null;
-  const showProgramFilter = activePrograms.length > 1 || Boolean(programFilter);
+  const selectedProgramName = programFilter
+    ? (selectedProgram?.name ?? "Selected program unavailable")
+    : "All programs";
+  const selectedProgramUnavailable =
+    Boolean(programFilter) && !activePrograms.some((program) => program.id === programFilter);
   const dayEntries = entriesByDate[formatScheduleDateKey(currentDate)] || [];
   const dayLaneCount = (layoutsByDate[formatScheduleDateKey(currentDate)] || []).reduce(
     (peak, block) => Math.max(peak, block.laneCount),
@@ -895,42 +900,50 @@ export function SchedulePageSection({
               {getToolbarLabel()}
             </h2>
             <div className={styles.toolbarEnd}>
-              {showProgramFilter ? (
-                <div
-                  className={styles.programFilter}
-                  style={
-                    selectedProgram
-                      ? ({ "--program-color": getProgramColor(selectedProgram) } as CSSProperties)
-                      : undefined
-                  }
-                  data-selected={programFilter ? "true" : undefined}
+              <div
+                className={styles.programFilter}
+                style={
+                  selectedProgram
+                    ? ({ "--program-color": getProgramColor(selectedProgram) } as CSSProperties)
+                    : undefined
+                }
+                data-selected={programFilter ? "true" : undefined}
+              >
+                <select
+                  value={programFilter}
+                  onChange={(event) => onProgramFilterChange(event.target.value)}
+                  aria-label="Filter schedule by program"
+                  aria-describedby={programDescriptionId}
+                  title={selectedProgramName}
+                  data-schedule-program-filter={programFilter ? "selected" : "all"}
+                  className={styles.programSelect}
                 >
-                  <select
-                    value={programFilter}
-                    onChange={(event) => onProgramFilterChange(event.target.value)}
-                    aria-label="Filter schedule by program"
-                    data-schedule-program-filter={programFilter ? "selected" : "all"}
-                    className={styles.programSelect}
-                  >
-                    <option value="">All programs</option>
-                    {activePrograms.map((program) => (
-                      <option key={program.id} value={program.id}>
-                        {program.name}
-                      </option>
-                    ))}
-                  </select>
-                  {programFilter ? (
-                    <button
-                      type="button"
-                      className={styles.clearFilter}
-                      aria-label="Show every program"
-                      onClick={() => onProgramFilterChange("")}
-                    >
-                      <X aria-hidden="true" />
-                    </button>
+                  <option value="">All programs</option>
+                  {selectedProgramUnavailable ? (
+                    <option value={programFilter} disabled>
+                      {selectedProgramName}
+                    </option>
                   ) : null}
-                </div>
-              ) : null}
+                  {activePrograms.map((program) => (
+                    <option key={program.id} value={program.id}>
+                      {program.name}
+                    </option>
+                  ))}
+                </select>
+                <span id={programDescriptionId} className="sr-only">
+                  {selectedProgramName}
+                </span>
+                {programFilter ? (
+                  <button
+                    type="button"
+                    className={styles.clearFilter}
+                    aria-label="Show every program"
+                    onClick={() => onProgramFilterChange("")}
+                  >
+                    <X aria-hidden="true" />
+                  </button>
+                ) : null}
+              </div>
               <SlidingSegmentedControl
                 activeValue={view}
                 ariaLabel="Schedule view"

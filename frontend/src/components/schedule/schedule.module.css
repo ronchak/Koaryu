@@ -140,6 +140,9 @@
 
 .programFilter {
   display: flex;
+  /* Reserve the whole slot before options arrive, including selected controls. */
+  width: clamp(10rem, 20vw, 14rem);
+  flex: 0 0 clamp(10rem, 20vw, 14rem);
   min-width: 0;
   align-items: center;
   gap: 6px;
@@ -156,8 +159,11 @@
 }
 
 .programSelect {
-  min-width: 10rem;
-  max-width: 100%;
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  flex: 1 1 0;
+  padding-inline: 10px;
   border: 1px solid var(--product-rule-soft);
   color: var(--product-ink);
   font-size: 0.875rem;
@@ -1499,6 +1505,7 @@ button.agendaRow:hover {
   }
 
   .programFilter {
+    width: 0;
     flex: 1 1 10rem;
   }
 
