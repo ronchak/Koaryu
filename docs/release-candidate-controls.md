@@ -67,6 +67,8 @@ not candidate requirements.
 
 ## Enforcement changes and incidents
 
+The operational-alert evaluator's primary trigger is the director-operated home server's external scheduler at the required five-minute cadence; the committed Vercel cron is a daily 09:00 UTC backup. This resolves the Vercel funded-plan gate by moving the primary trigger source, not by weakening the cadence. Nobody may weaken the five-minute cadence merely to make a preview deploy.
+
 Test material executable workflow/ruleset changes with a disposable PR: a deliberate
 failure must block merge, and a new successful head must not reuse the failed head's
 status. Record the results; do not repeat this probe for instruction-only edits.
