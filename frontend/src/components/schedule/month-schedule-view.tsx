@@ -1,9 +1,10 @@
 "use client";
 
-import { useMemo } from "react";
-import { CalendarClock, Layers3, Users } from "lucide-react";
+import { useMemo, useState, type CSSProperties } from "react";
+import { CalendarCheck, CalendarClock, ChevronDown, Layers3 } from "lucide-react";
 
-import type { ClassSession, ClassTemplate } from "@/types";
+import { getProgramColor, getSessionFill, pluralize } from "@/components/schedule/schedule-display";
+import type { ClassSession, ClassTemplate, Program } from "@/types";
 import {
   MONTH_DAY_NAMES,
   buildEntriesForDate,
@@ -19,11 +20,14 @@ import {
   toCalendarDateKey,
   type MonthScheduleEntry,
 } from "@/lib/schedule-calendar";
+import styles from "./schedule.module.css";
 
 export interface MonthScheduleViewProps {
   month: Date;
   sessions: ClassSession[];
   templates?: ClassTemplate[];
+  /** Programs by id, so each class carries its program colour. */
+  programById?: ReadonlyMap<string, Program>;
   selectedDate?: Date | string | null;
   today?: Date;
   maxVisibleEntries?: number;
@@ -52,43 +56,38 @@ function getEntryKey(entry: MonthScheduleEntry) {
     : `template-${entry.template.id}-${entry.dateKey}`;
 }
 
-function getSessionMeta(session: ClassSession) {
-  if (session.capacity && session.attendance_count > 0) {
-    return `${session.attendance_count}/${session.capacity}`;
-  }
-
-  if (session.capacity) {
-    return `Cap ${session.capacity}`;
-  }
-
-  if (session.attendance_count > 0) {
-    return `${session.attendance_count} in`;
-  }
-
-  return session.status.replace("_", " ");
-}
-
 interface MonthScheduleDay {
   date: Date;
   dateKey: string;
   inCurrentMonth: boolean;
-  visibleEntries: MonthScheduleEntry[];
+  /** Every entry, in time order; the grid shows the first `maxVisibleEntries`. */
+  entries: MonthScheduleEntry[];
   hiddenEntries: MonthScheduleEntry[];
   sessionCount: number;
   templateCount: number;
   conflictingSessionIds: Set<string>;
-  conflictCount: number;
+  /** Before today in the business month, folded away in the agenda. */
+  past: boolean;
+  /** Classes on this day, or while loading the recurring ones it will have. */
+  hasKnownClasses: boolean;
+  /** All seven days of its week are in another month, so the grid skips the row. */
+  rowOutOfMonth: boolean;
+  /** The grid's last drawn row, which needs no bottom rule. */
+  rowLast: boolean;
   ariaLabel: string;
   monthLabel: string;
 }
+
+const EMPTY_PROGRAMS: ReadonlyMap<string, Program> = new Map();
 
 export function MonthScheduleView({
   month,
   sessions,
   templates = [],
+  programById = EMPTY_PROGRAMS,
   selectedDate,
   today = new Date(),
-  maxVisibleEntries = 3,
+  maxVisibleEntries = 4,
   showHeader = true,
   showTemplatePlaceholders = false,
   isLoading = false,
@@ -114,17 +113,34 @@ export function MonthScheduleView({
     [monthKey, sessions],
   );
 
+  const isBusinessMonth = isDateInMonth(today, month);
+  const outOfMonthRows = useMemo(() => {
+    const rows = new Set<number>();
+    for (let row = 0; row * 7 < monthDays.length; row += 1) {
+      const week = monthDays.slice(row * 7, row * 7 + 7);
+      if (week.every((date) => !isDateInMonth(date, month))) rows.add(row);
+    }
+    return rows;
+  }, [month, monthDays]);
+  const lastDrawnRow = useMemo(() => {
+    let row = Math.ceil(monthDays.length / 7) - 1;
+    while (row > 0 && outOfMonthRows.has(row)) row -= 1;
+    return row;
+  }, [monthDays.length, outOfMonthRows]);
+
   const calendarDays = useMemo<MonthScheduleDay[]>(
     () =>
-      monthDays.map((date) => {
+      monthDays.map((date, index) => {
         const dateKey = toCalendarDateKey(date);
-        const entries = buildEntriesForDate({
+        const inCurrentMonth = isDateInMonth(date, month);
+        const known = buildEntriesForDate({
           date,
           sessionsByDate,
           templatesByDay,
           showTemplatePlaceholders,
         });
-        const visibleEntries = entries.slice(0, maxVisibleEntries);
+        // Nothing is drawn until the range loads; recurring classes still predict the fold.
+        const entries = isLoading ? [] : known;
         const hiddenEntries = entries.slice(maxVisibleEntries);
         const sessionCount = entries.reduce(
           (count, entry) => count + (entry.kind === "session" ? 1 : 0),
@@ -132,17 +148,21 @@ export function MonthScheduleView({
         );
         const daySessions = sessionsByDate.get(dateKey) ?? [];
         const conflictingSessionIds = getConflictingSessionIds(daySessions);
+        const row = Math.floor(index / 7);
 
         return {
           date,
           dateKey,
-          inCurrentMonth: isDateInMonth(date, month),
-          visibleEntries,
+          inCurrentMonth,
+          entries,
           hiddenEntries,
           sessionCount,
           templateCount: entries.length - sessionCount,
           conflictingSessionIds,
-          conflictCount: conflictingSessionIds.size,
+          past: isBusinessMonth && inCurrentMonth && dateKey < todayKey,
+          hasKnownClasses: known.length > 0,
+          rowOutOfMonth: outOfMonthRows.has(row),
+          rowLast: row === lastDrawnRow,
           ariaLabel: `Open ${date.toLocaleDateString("en-US", {
             weekday: "long",
             month: "long",
@@ -152,7 +172,19 @@ export function MonthScheduleView({
           monthLabel: date.toLocaleDateString("en-US", { month: "short" }),
         };
       }),
-    [maxVisibleEntries, month, monthDays, sessionsByDate, showTemplatePlaceholders, templatesByDay],
+    [
+      isBusinessMonth,
+      isLoading,
+      lastDrawnRow,
+      maxVisibleEntries,
+      month,
+      monthDays,
+      outOfMonthRows,
+      sessionsByDate,
+      showTemplatePlaceholders,
+      templatesByDay,
+      todayKey,
+    ],
   );
 
   const monthlyTemplateGapCount = useMemo(() => {
@@ -166,26 +198,34 @@ export function MonthScheduleView({
     );
   }, [calendarDays, showTemplatePlaceholders]);
 
+  const monthIsEmpty =
+    !isLoading && calendarDays.every((day) => !day.inCurrentMonth || day.entries.length === 0);
+
+  // Today first: the agenda folds this month's earlier class days into one row.
+  // While loading, recurring classes decide it, so today's row does not move.
+  const [fold, setFold] = useState({ monthKey, open: false });
+  if (fold.monthKey !== monthKey) setFold({ monthKey, open: false });
+  const showPast = fold.monthKey === monthKey && fold.open;
+  const pastClassDays = calendarDays.filter((day) => day.past && day.hasKnownClasses).length;
+  const showEarlier = pastClassDays > 0;
+
   return (
-    <div className={`overflow-hidden bg-surface ${className}`} data-month-schedule-view="true">
+    <div className={`${styles.month} ${className}`} data-month-schedule-view="true">
       {showHeader && (
-        <div className="flex flex-col gap-3 border-b border-border px-4 py-4 md:flex-row md:items-center md:justify-between">
+        <div className={styles.monthHeader}>
           <div>
-            <p className="text-xs font-medium text-muted">Month view</p>
-            <h2 className="mt-1 text-lg font-semibold text-text-primary">
-              {formatMonthLabel(month)}
-            </h2>
-            <p className="mt-1 text-xs text-text-secondary">{formatMonthRange(month)}</p>
+            <h2>{formatMonthLabel(month)}</h2>
+            <p>{formatMonthRange(month)}</p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2 text-[11px] text-text-secondary">
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-surface-raised px-2.5 py-1">
-              <CalendarClock className="h-3.5 w-3.5" />
+          <div className={styles.monthHeaderFacts}>
+            <span>
+              <CalendarClock aria-hidden="true" />
               {monthlySessionCount} scheduled
             </span>
             {showTemplatePlaceholders && monthlyTemplateGapCount > 0 && (
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-surface-raised px-2.5 py-1">
-                <Layers3 className="h-3.5 w-3.5" />
+              <span>
+                <Layers3 aria-hidden="true" />
                 {monthlyTemplateGapCount} uncovered templates
               </span>
             )}
@@ -193,191 +233,171 @@ export function MonthScheduleView({
         </div>
       )}
 
-      <div>
-        <div className="min-w-0">
-          {/* Day name headers */}
-          <div className="hidden grid-cols-7 border-b border-border bg-surface-raised/60 xl:grid">
-            {MONTH_DAY_NAMES.map((dayName) => (
-              <div key={dayName} className="border-r border-border px-3 py-2 last:border-r-0">
-                <p className="text-xs font-medium text-muted">{dayName}</p>
-              </div>
-            ))}
+      {monthIsEmpty ? (
+        <p className={styles.monthEmpty} role="note">
+          No classes in {formatMonthLabel(month)}.
+        </p>
+      ) : null}
+
+      {/* Day name headers */}
+      <div className={styles.monthWeekdays} aria-hidden="true">
+        {MONTH_DAY_NAMES.map((dayName) => (
+          <div key={dayName}>
+            <p>{dayName}</p>
           </div>
+        ))}
+      </div>
 
-          {/* Calendar grid */}
-          <div className="grid grid-cols-2 xl:grid-cols-7">
-            {calendarDays.map((day) => {
-              const isToday = day.dateKey === todayKey;
-              const isSelected = day.dateKey === selectedDateKey;
-              return (
-                <div
-                  key={day.dateKey}
-                  data-month-schedule-day={day.dateKey}
-                  data-month-day-scope={day.inCurrentMonth ? "in-month" : "out-of-month"}
-                  data-month-day-today={isToday ? "true" : "false"}
-                  data-month-day-selected={isSelected ? "true" : "false"}
-                  className={`group relative flex min-h-[132px] flex-col border-r border-b border-border px-2.5 py-2 text-left transition-colors even:border-r-0 hover:bg-surface-raised/50 xl:min-h-[156px] xl:even:border-r xl:[&:nth-child(7n)]:border-r-0 ${
-                    day.inCurrentMonth ? "bg-surface" : "bg-bg text-text-secondary"
-                  } ${isSelected ? "ring-1 ring-inset ring-accent" : ""} ${
-                    isToday ? "bg-accent/[0.04]" : ""
-                  }`}
-                >
-                  {!isLoading && (
-                    <button
-                      type="button"
-                      onClick={() => onDayClick?.(day.date)}
-                      aria-label={day.ariaLabel}
-                      className="absolute inset-0"
-                    />
-                  )}
+      {showEarlier ? (
+        <button
+          type="button"
+          className={styles.monthEarlier}
+          aria-expanded={showPast}
+          onClick={() => setFold({ monthKey, open: !showPast })}
+        >
+          {showPast
+            ? "Hide earlier days"
+            : isLoading
+              ? "Earlier this month"
+              : `Earlier this month (${pluralize(pastClassDays, "day")})`}
+          <ChevronDown aria-hidden="true" />
+        </button>
+      ) : null}
 
-                  {/* Day number and metadata */}
-                  <div className="relative z-10 mb-2 flex items-start justify-between gap-2">
-                    <div className="flex items-center gap-2">
-                      <span
-                        className={`inline-flex h-7 min-w-7 items-center justify-center rounded-full px-2 text-sm font-semibold ${
-                          isToday
-                            ? "bg-accent text-accent-contrast"
-                            : day.inCurrentMonth
-                              ? "bg-surface-raised text-text-primary"
-                              : "bg-transparent text-muted"
-                        }`}
-                      >
-                        {day.date.getDate()}
-                      </span>
-                      <div className="flex flex-col">
-                        <span className="text-xs text-muted xl:hidden">
-                          {MONTH_DAY_NAMES[day.date.getDay()]}
-                        </span>
-                        <span
-                          className={`text-xs ${day.inCurrentMonth ? "text-muted" : "text-muted"}`}
-                        >
-                          {day.monthLabel}
-                        </span>
-                        {isToday && (
-                          <span className="text-[10px] font-medium text-accent">Today</span>
-                        )}
-                      </div>
-                    </div>
+      {/* Calendar grid */}
+      <div className={styles.monthGrid} data-month-show-past={showPast ? "true" : undefined}>
+        {calendarDays.map((day) => {
+          const isToday = day.dateKey === todayKey;
+          const isSelected = day.dateKey === selectedDateKey;
+          return (
+            <div
+              key={day.dateKey}
+              data-month-schedule-day={day.dateKey}
+              data-month-day-scope={day.inCurrentMonth ? "in-month" : "out-of-month"}
+              data-month-day-today={isToday ? "true" : "false"}
+              data-month-day-selected={isSelected ? "true" : "false"}
+              data-month-day-empty={day.entries.length === 0 ? "true" : "false"}
+              data-month-day-past={day.past ? "true" : undefined}
+              data-month-row-scope={day.rowOutOfMonth ? "out-of-month" : undefined}
+              data-month-row-last={day.rowLast ? "true" : undefined}
+              className={styles.monthDay}
+            >
+              {!isLoading && (
+                <button
+                  type="button"
+                  onClick={() => onDayClick?.(day.date)}
+                  aria-label={day.ariaLabel}
+                  className={styles.monthDayButton}
+                />
+              )}
 
-                    {(day.sessionCount > 0 || day.templateCount > 0) && (
-                      <div className="flex flex-col items-end gap-1">
-                        {day.sessionCount > 0 && (
-                          <span className="rounded-full bg-surface-raised px-2 py-0.5 text-xs font-medium text-text-primary">
-                            {day.sessionCount} {day.sessionCount === 1 ? "class" : "classes"}
-                          </span>
-                        )}
-                        {day.conflictCount > 0 && (
-                          <span className="rounded-full bg-danger/10 px-2 py-0.5 text-xs font-medium text-danger">
-                            {day.conflictCount} conflict{day.conflictCount === 1 ? "" : "s"}
-                          </span>
-                        )}
-                        {day.templateCount > 0 && (
-                          <span className="rounded-full border border-dashed border-border px-2 py-0.5 text-xs text-muted">
-                            {day.templateCount} pending
-                          </span>
-                        )}
-                      </div>
-                    )}
+              {/* Day number; each overlapping class says Overlaps itself */}
+              <div className={styles.monthDayHead}>
+                <span className={styles.monthDayNumber}>{day.date.getDate()}</span>
+                <span className={styles.monthDayName}>{MONTH_DAY_NAMES[day.date.getDay()]}</span>
+                {day.date.getDate() === 1 || !day.inCurrentMonth ? (
+                  <span className={styles.monthDayMonth}>{day.monthLabel}</span>
+                ) : null}
+                {isToday && <span className={styles.monthTodayWord}>Today</span>}
+              </div>
+
+              {/* Entries */}
+              <div className={styles.monthEntries}>
+                {isLoading ? (
+                  <div aria-hidden="true" className={styles.monthPending}>
+                    <span />
+                    <span />
                   </div>
+                ) : null}
 
-                  {/* Entries */}
-                  <div className="relative z-10 flex flex-1 flex-col gap-1.5">
-                    {isLoading ? (
-                      <div aria-hidden="true" className="space-y-2 pt-2">
-                        <div className="h-3 w-3/4 rounded bg-surface-raised" />
-                        <div className="h-3 w-1/2 rounded bg-surface-raised" />
-                      </div>
-                    ) : (
-                      day.visibleEntries.length === 0 && (
-                        <div className="mt-2 border border-dashed border-border/80 px-2 py-2 text-[11px] text-muted">
-                          No scheduled classes
-                        </div>
-                      )
-                    )}
-
-                    {day.visibleEntries.map((entry) => {
-                      if (entry.kind === "session") {
-                        return (
-                          <button
-                            key={getEntryKey(entry)}
-                            type="button"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              onEntryClick?.(entry);
-                            }}
-                            className={`flex min-h-11 items-start gap-2 rounded-[8px] border px-2 py-1.5 text-left transition-colors hover:bg-surface-hover ${
-                              day.conflictingSessionIds.has(entry.session.id)
-                                ? "border-danger/30 bg-danger/5 hover:border-danger/50"
-                                : "border-border bg-surface-raised hover:border-[color:var(--accent)]/40"
-                            }`}
-                          >
-                            <div className="min-w-[50px] text-[10px] font-medium text-muted">
-                              {formatScheduleTime(entry.session.start_time)}
-                            </div>
-                            <div className="min-w-0 flex-1">
-                              <p className="truncate text-[11px] font-medium text-text-primary">
-                                {entry.session.name}
-                              </p>
-                              <div className="mt-1 flex items-center gap-2 text-[10px] text-text-secondary">
-                                <span className="capitalize">{getSessionMeta(entry.session)}</span>
-                                {day.conflictingSessionIds.has(entry.session.id) && (
-                                  <span className="text-danger">Overlaps</span>
-                                )}
-                                {entry.session.capacity && (
-                                  <span className="inline-flex items-center gap-1">
-                                    <Users className="h-3 w-3" />
-                                    {entry.session.capacity}
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                          </button>
-                        );
-                      }
-
-                      return (
-                        <div
-                          key={getEntryKey(entry)}
-                          aria-label={`Pending template slot: ${entry.template.name} at ${formatScheduleTime(entry.template.start_time)}`}
-                          className="flex items-start gap-2 rounded-[8px] border border-dashed border-border bg-transparent px-2 py-1.5 text-left opacity-80"
-                        >
-                          <div className="min-w-[50px] text-[10px] font-medium text-muted">
-                            {formatScheduleTime(entry.template.start_time)}
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <p className="truncate text-[11px] text-text-secondary">
-                              {entry.template.name}
-                            </p>
-                            <p className="mt-1 text-xs text-muted">Template slot</p>
-                          </div>
-                        </div>
-                      );
-                    })}
-
-                    {day.hiddenEntries.length > 0 && (
+                {day.entries.map((entry, index) => {
+                  const overflow = index >= maxVisibleEntries ? "true" : undefined;
+                  if (entry.kind === "session") {
+                    const program = entry.session.program_id
+                      ? programById.get(entry.session.program_id)
+                      : null;
+                    const fill = getSessionFill(entry.session);
+                    const conflicted = day.conflictingSessionIds.has(entry.session.id);
+                    const canceled = entry.session.status === "canceled";
+                    return (
                       <button
+                        key={getEntryKey(entry)}
                         type="button"
                         onClick={(event) => {
                           event.stopPropagation();
-                          if (onMoreClick) {
-                            onMoreClick(day.date, day.hiddenEntries);
-                            return;
-                          }
-
-                          onDayClick?.(day.date);
+                          onEntryClick?.(entry);
                         }}
-                        className="mt-auto min-h-11 rounded-[8px] border border-border px-2 py-1.5 text-left text-xs font-medium text-accent transition-colors hover:bg-accent/10"
+                        className={styles.chip}
+                        data-conflict={conflicted ? "true" : undefined}
+                        data-canceled={canceled ? "true" : undefined}
+                        data-month-entry-overflow={overflow}
+                        style={{ "--program-color": getProgramColor(program) } as CSSProperties}
                       >
-                        +{day.hiddenEntries.length} more
+                        <span className={styles.chipTime}>
+                          {formatScheduleTime(entry.session.start_time)}
+                        </span>
+                        {fill ? <span className={styles.chipFill}>{fill}</span> : null}
+                        <span className={styles.chipBody}>
+                          <span className={styles.chipName}>{entry.session.name}</span>
+                          {canceled ? (
+                            <span className={styles.chipStatus} data-status="canceled">
+                              Canceled
+                            </span>
+                          ) : conflicted ? (
+                            <span className={styles.chipStatus}>Overlaps</span>
+                          ) : null}
+                        </span>
+                        {isToday ? (
+                          <CalendarCheck aria-hidden="true" className={styles.chipAction} />
+                        ) : null}
                       </button>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
+                    );
+                  }
+
+                  const program = entry.template.program_id
+                    ? programById.get(entry.template.program_id)
+                    : null;
+                  return (
+                    <div
+                      key={getEntryKey(entry)}
+                      aria-label={`Pending template slot: ${entry.template.name} at ${formatScheduleTime(entry.template.start_time)}`}
+                      className={styles.chip}
+                      data-template="true"
+                      data-month-entry-overflow={overflow}
+                      style={{ "--program-color": getProgramColor(program) } as CSSProperties}
+                    >
+                      <span className={styles.chipTime}>
+                        {formatScheduleTime(entry.template.start_time)}
+                      </span>
+                      <span className={styles.chipFill}>Recurring</span>
+                      <span className={styles.chipBody}>
+                        <span className={styles.chipName}>{entry.template.name}</span>
+                      </span>
+                    </div>
+                  );
+                })}
+
+                {day.hiddenEntries.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      if (onMoreClick) {
+                        onMoreClick(day.date, day.hiddenEntries);
+                        return;
+                      }
+
+                      onDayClick?.(day.date);
+                    }}
+                    className={styles.moreButton}
+                  >
+                    +{day.hiddenEntries.length} more
+                  </button>
+                )}
+              </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );

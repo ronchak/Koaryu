@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from "react"
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DismissibleNotice } from "@/components/ui/dismissible-notice";
+import { HorizonPanel, ToneTag } from "@/components/ui/horizon-parts";
 import { Input } from "@/components/ui/input";
 import { ModalFrame } from "@/components/ui/modal-frame";
 import { normalizeLegalName, normalizeLegalNameDraft } from "@/lib/legal-name-model";
@@ -25,8 +26,8 @@ import {
   RefreshCw,
   RotateCcw,
   Trash2,
-  Users,
 } from "lucide-react";
+import styles from "./settings.module.css";
 
 type PendingLifecycleAction = {
   id: string;
@@ -45,6 +46,45 @@ const ROLE_LABELS: Record<StaffRoleName, string> = {
 };
 
 const ROLE_OPTIONS: StaffRoleName[] = ["admin", "instructor", "front_desk"];
+
+// What each role can do, in the words staff use (staff-permissions.ts and the
+// navigation's role gates).
+const ROLE_SUMMARIES: Record<StaffRoleName, string> = {
+  admin: "Everything, including settings, staff, billing and automations.",
+  front_desk: "Students, leads, schedule, attendance and billing. No belt setup or promotions.",
+  instructor: "Takes attendance and promotes students.",
+};
+
+const ROLE_SUMMARY_ORDER: StaffRoleName[] = ["admin", "front_desk", "instructor"];
+
+function RolesAtAGlance({ members }: { members: StaffMember[] }) {
+  return (
+    <div className={styles.roles} aria-label="Roles at a glance" role="group">
+      {ROLE_SUMMARY_ORDER.map((role) => {
+        const holders = members.filter(
+          (member) => member.role === role && member.status !== "archived",
+        );
+        const pending = holders.filter((member) => member.status === "pending").length;
+        return (
+          <div key={role} className={styles.role}>
+            <div className={styles.roleHead}>
+              <strong>{ROLE_LABELS[role]}</strong>
+              <span className={styles.roleCount}>{holders.length}</span>
+            </div>
+            <p>{ROLE_SUMMARIES[role]}</p>
+            {pending > 0 ? (
+              <p>
+                <ToneTag tone="warn">
+                  {pending} invite{pending === 1 ? "" : "s"} pending
+                </ToneTag>
+              </p>
+            ) : null}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
 function formatDate(value: string) {
   const date = new Date(value);
@@ -76,11 +116,11 @@ function roleBadgeVariant(role: StaffRoleName) {
 }
 
 const STAFF_ROW_CLASS =
-  "grid gap-3 p-3 md:min-h-14 md:grid-cols-[minmax(0,1fr)_140px_100px_120px_180px] md:items-center md:px-3 md:py-1";
+  "grid gap-3 p-3 md:min-h-14 md:grid-cols-[minmax(0,1fr)_132px_96px_112px_244px] md:items-center md:px-3 md:py-1";
 
 function StaffColumnHeader() {
   return (
-    <div className="hidden min-h-11 gap-3 bg-surface-raised px-3 py-2 text-xs text-muted md:grid md:grid-cols-[minmax(0,1fr)_140px_100px_120px_180px] md:items-center">
+    <div className="hidden min-h-11 gap-3 bg-[var(--hz-tile)] px-3 py-2 text-xs font-semibold text-muted md:grid md:grid-cols-[minmax(0,1fr)_132px_96px_112px_244px] md:items-center">
       {["Staff", "Role", "Status", "Date", "Action"].map((label) => (
         <span key={label}>{label}</span>
       ))}
@@ -828,12 +868,8 @@ function StaffRolesEditor() {
 
   if (!canManageStaff) {
     return (
-      <section className="bg-surface p-4">
-        <div className="flex items-center gap-2 mb-3">
-          <Users className="w-4 h-4 text-accent" />
-          <h3 className="text-sm font-medium text-text-primary">Staff & Roles</h3>
-        </div>
-        <div className="rounded-[10px] bg-surface-raised p-4">
+      <HorizonPanel title="Staff & roles" titleId="settings-staff-title">
+        <div className="rounded-[12px] bg-[var(--hz-tile)] p-4">
           <p className="text-xs text-muted mb-2">Your role</p>
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">
@@ -847,25 +883,24 @@ function StaffRolesEditor() {
             </Badge>
           </div>
         </div>
-      </section>
+      </HorizonPanel>
     );
   }
 
   return (
     <>
-      <section className="bg-surface p-4">
-        <div className="flex items-start justify-between gap-3 mb-4">
-          <div>
-            <div className="flex items-center gap-2">
-              <Users className="w-4 h-4 text-accent" />
-              <h3 className="text-sm font-medium text-text-primary">Staff & Roles</h3>
-              <Badge variant="default">{visibleStaffMembers.length}</Badge>
-            </div>
-            <p className="text-xs text-muted mt-1">
-              Invite staff and manage their roles. {activeAdminCount} active{" "}
-              {activeAdminCount === 1 ? "admin" : "admins"}.
-            </p>
-          </div>
+      <HorizonPanel
+        titleId="settings-staff-title"
+        title={
+          <span className="inline-flex items-center gap-2">
+            Staff &amp; roles
+            <ToneTag dot={false}>{visibleStaffMembers.length}</ToneTag>
+          </span>
+        }
+        description={`Invite staff and manage their roles. ${activeAdminCount} active ${
+          activeAdminCount === 1 ? "admin" : "admins"
+        }.`}
+        actions={
           <div className="flex flex-wrap items-center justify-end gap-3">
             <label className="flex min-h-11 items-center gap-2 text-xs text-text-secondary">
               <input
@@ -890,74 +925,8 @@ function StaffRolesEditor() {
               Refresh
             </Button>
           </div>
-        </div>
-
-        <form onSubmit={handleInvite} className="grid gap-3 md:grid-cols-2 md:items-end mb-4">
-          <Input
-            label="Email"
-            type="email"
-            value={inviteEmail}
-            onChange={(event) => setInviteEmail(event.target.value)}
-            placeholder="instructor@example.com"
-            disabled={isCommandPending}
-            required
-          />
-          <Input
-            label="Display name"
-            value={inviteFullName}
-            onChange={(event) => setInviteFullName(event.target.value)}
-            placeholder="Their display name"
-            disabled={isCommandPending}
-            required
-          />
-          <Input
-            label="Legal first name"
-            value={inviteLegalFirstName}
-            onChange={(event) => setInviteLegalFirstName(event.target.value)}
-            placeholder="Legal first name"
-            autoComplete="given-name"
-            disabled={isCommandPending}
-            required
-          />
-          <Input
-            label="Legal last name"
-            value={inviteLegalLastName}
-            onChange={(event) => setInviteLegalLastName(event.target.value)}
-            placeholder="Legal last name"
-            autoComplete="family-name"
-            disabled={isCommandPending}
-            required
-          />
-          <div className="flex flex-col gap-1.5">
-            <label className="text-sm text-text-secondary font-medium" htmlFor="staff-role">
-              Role
-            </label>
-            <select
-              id="staff-role"
-              value={inviteRole}
-              onChange={(event) => setInviteRole(event.target.value as StaffRoleName)}
-              disabled={isCommandPending}
-              className="w-full rounded-[10px] border border-border bg-surface-raised px-3 py-2 text-sm text-text-primary disabled:opacity-50"
-            >
-              {ROLE_OPTIONS.map((role) => (
-                <option key={role} value={role}>
-                  {ROLE_LABELS[role]}
-                </option>
-              ))}
-            </select>
-          </div>
-          <Button
-            type="submit"
-            variant="primary"
-            size="md"
-            isLoading={inviteInFlight}
-            disabled={isCommandPending}
-          >
-            <MailPlus className="w-3.5 h-3.5" />
-            {inviteInFlight ? "Sending..." : "Send invite"}
-          </Button>
-        </form>
-
+        }
+      >
         {(message ||
           actionError ||
           (staffLoadError && dismissedStaffLoadError !== staffLoadError)) && (
@@ -992,16 +961,22 @@ function StaffRolesEditor() {
           </div>
         )}
 
+        {staffLoaded ? (
+          <div className="mb-4">
+            <RolesAtAGlance members={staffMembers} />
+          </div>
+        ) : null}
+
         {!staffLoaded ? (
           <StaffSkeletonRows />
         ) : visibleStaffMembers.length === 0 ? (
-          <div className="rounded-[10px] bg-surface-raised/30 p-4 text-sm text-text-secondary">
+          <div className="rounded-[12px] border border-dashed border-border p-4 text-sm text-text-secondary">
             {staffMembers.length > 0 && !showArchived
               ? "No active staff members. Turn on Show archived to view preserved archived rows."
               : "No staff invited yet."}
           </div>
         ) : (
-          <div className="divide-y divide-border overflow-hidden rounded-[10px] bg-surface-raised/20">
+          <div className={`divide-y divide-border ${styles.roster}`}>
             <StaffColumnHeader />
             {visibleStaffMembers.map((member) => (
               <StaffRow
@@ -1035,7 +1010,76 @@ function StaffRolesEditor() {
             ))}
           </div>
         )}
-      </section>
+
+        <div className={styles.invite}>
+          <h3 className={styles.subhead}>Invite someone</h3>
+          <form onSubmit={handleInvite} className="grid gap-3 md:grid-cols-2 md:items-end">
+            <Input
+              label="Email"
+              type="email"
+              value={inviteEmail}
+              onChange={(event) => setInviteEmail(event.target.value)}
+              placeholder="instructor@example.com"
+              disabled={isCommandPending}
+              required
+            />
+            <Input
+              label="Display name"
+              value={inviteFullName}
+              onChange={(event) => setInviteFullName(event.target.value)}
+              placeholder="Their display name"
+              disabled={isCommandPending}
+              required
+            />
+            <Input
+              label="Legal first name"
+              value={inviteLegalFirstName}
+              onChange={(event) => setInviteLegalFirstName(event.target.value)}
+              placeholder="Legal first name"
+              autoComplete="given-name"
+              disabled={isCommandPending}
+              required
+            />
+            <Input
+              label="Legal last name"
+              value={inviteLegalLastName}
+              onChange={(event) => setInviteLegalLastName(event.target.value)}
+              placeholder="Legal last name"
+              autoComplete="family-name"
+              disabled={isCommandPending}
+              required
+            />
+            <div className="flex flex-col gap-1.5">
+              <label className="text-sm text-text-secondary font-medium" htmlFor="staff-role">
+                Role
+              </label>
+              <select
+                id="staff-role"
+                value={inviteRole}
+                onChange={(event) => setInviteRole(event.target.value as StaffRoleName)}
+                disabled={isCommandPending}
+                className="w-full rounded-[10px] border border-border bg-surface-raised px-3 py-2 text-sm text-text-primary disabled:opacity-50"
+              >
+                {ROLE_OPTIONS.map((role) => (
+                  <option key={role} value={role}>
+                    {ROLE_LABELS[role]}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <Button
+              type="submit"
+              variant="primary"
+              size="md"
+              isLoading={inviteInFlight}
+              disabled={isCommandPending}
+            >
+              <MailPlus className="w-3.5 h-3.5" />
+              {inviteInFlight ? "Sending..." : "Send invite"}
+            </Button>
+          </form>
+        </div>
+      </HorizonPanel>
       {removeTarget ? (
         <ModalFrame
           role="alertdialog"

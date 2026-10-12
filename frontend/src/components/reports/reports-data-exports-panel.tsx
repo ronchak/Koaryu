@@ -3,10 +3,12 @@
 import { useEffect, useRef, useState } from "react";
 import { useStudioStore } from "@/lib/store";
 import { captureAccessIdentity } from "@/lib/access-identity";
-import { Download, FileText } from "lucide-react";
+import { Download } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { PanelHeader, StatBadge } from "@/components/reports/reports-page-sections";
+import { ToneTag } from "@/components/ui/horizon";
+import styles from "./reports.module.css";
 import { api } from "@/lib/api";
 import { toLocalDateKey } from "@/lib/date";
 import { canRunReportExport, getReportExportMinimumRole } from "@/lib/report-metrics";
@@ -116,67 +118,54 @@ function ExportGroupRegister({
   currentRole: StaffRoleName | null;
   onDownload: (report: ExportReport) => void;
 }) {
-  const headerClassName = group.emphasis
-    ? "flex min-h-14 w-full items-center justify-between gap-4 rounded-[10px] bg-accent/10 px-3 py-2 text-left"
-    : "flex min-h-14 w-full items-center justify-between gap-4 px-3 py-2 text-left";
-
   return (
-    <section data-export-group={group.title}>
-      <div className={headerClassName}>
-        <span className="flex min-w-0 items-center gap-3">
-          <FileText className="h-4 w-4 shrink-0 text-text-secondary" />
-          <span className="truncate text-sm font-semibold text-text-primary">{group.title}</span>
-          <span className="shrink-0 rounded-full bg-surface-raised px-2 py-0.5 text-xs text-text-secondary">
-            {group.reports.length} CSV
-          </span>
-        </span>
+    <section className={styles.exportGroup} data-export-group={group.title}>
+      <div className={styles.exportHead}>
+        <h3>{group.title}</h3>
+        <ToneTag tone={group.emphasis ? "warn" : "neutral"} dot={false}>
+          {group.reports.length} CSV
+        </ToneTag>
       </div>
 
-          <div className="divide-y divide-border pb-2">
-            {group.reports.map((report) => {
-              const isExporting = exportingReportId === report.id;
-              const minimumRole = getReportExportMinimumRole(report.id);
-              const isAuthorized = canRunReportExport(currentRole, report.id);
-              const isDisabled = Boolean(exportingReportId) || isPreviewMode || !isAuthorized;
+      <div className={styles.exportList}>
+        {group.reports.map((report) => {
+          const isExporting = exportingReportId === report.id;
+          const minimumRole = getReportExportMinimumRole(report.id);
+          const isAuthorized = canRunReportExport(currentRole, report.id);
+          const isDisabled = Boolean(exportingReportId) || isPreviewMode || !isAuthorized;
 
-              return (
-                <div
-                  key={report.id}
-                  className="flex min-h-14 items-center justify-between gap-2 px-3 py-1"
-                >
-                  <div className="min-w-0">
-                    <div className="flex min-w-0 items-center gap-2">
-                      <p className="min-w-0 break-words text-sm font-medium text-text-primary sm:truncate" title={report.title}>
-                        {report.title}
-                      </p>
-                      <span
-                        aria-label={`Minimum role: ${minimumRole === "front_desk" ? "Front desk" : "Admin"}${!isAuthorized ? ". Your role cannot download this report." : ""}`}
-                        className="shrink-0 rounded-full bg-surface-raised px-2 py-0.5 text-xs font-medium text-muted"
-                      >
-                        {minimumRole === "front_desk" ? "Front desk" : "Admin"}
-                        {!isAuthorized ? " · Unavailable" : ""}
-                      </span>
-                    </div>
-                    <p className="mt-0.5 truncate text-xs text-text-secondary" title={report.description}>
-                      {report.description}
-                    </p>
-                  </div>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="secondary"
-                    className="w-[84px] shrink-0 sm:w-[118px]"
-                    isLoading={isExporting}
-                    disabled={isDisabled}
-                    onClick={() => onDownload(report)}
-                  >
-                    {!isExporting ? <Download className="h-3.5 w-3.5" /> : null}
-                    CSV
-                  </Button>
+          return (
+            <div key={report.id} className={styles.exportRow}>
+              <div className={styles.exportText}>
+                <div className={styles.exportTitle}>
+                  <p title={report.title}>{report.title}</p>
+                  <span aria-label={`Minimum role: ${minimumRole === "front_desk" ? "Front desk" : "Admin"}${!isAuthorized ? ". Your role cannot download this report." : ""}`}>
+                    <ToneTag dot={false}>
+                      {minimumRole === "front_desk" ? "Front desk" : "Admin"}
+                      {!isAuthorized ? " · Unavailable" : ""}
+                    </ToneTag>
+                  </span>
                 </div>
-              );
-            })}
-          </div>
+                <p className={styles.exportDescription} title={report.description}>
+                  {report.description}
+                </p>
+              </div>
+              <Button
+                type="button"
+                size="md"
+                variant="secondary"
+                className="w-[92px] shrink-0"
+                isLoading={isExporting}
+                disabled={isDisabled}
+                onClick={() => onDownload(report)}
+              >
+                {!isExporting ? <Download className="h-3.5 w-3.5" /> : null}
+                CSV
+              </Button>
+            </div>
+          );
+        })}
+      </div>
     </section>
   );
 }
@@ -257,7 +246,7 @@ export function ReportsDataExportsPanel({
   }
 
   return (
-    <section className="bg-surface p-4" data-report-appendix="data-exports">
+    <section className={styles.panel} data-report-appendix="data-exports">
       <PanelHeader
         title="Data Exports"
         subtitle="Separate CSV downloads for the core records owned by this studio."
@@ -268,18 +257,18 @@ export function ReportsDataExportsPanel({
       </PanelHeader>
 
       {exportMessage ? (
-        <div className="mb-4 rounded-[10px] bg-success/10 px-4 py-3 text-sm text-success">
+        <p className={styles.notice} data-tone="calm">
           {exportMessage}
-        </div>
+        </p>
       ) : null}
 
       {exportError ? (
-        <div className="mb-4 rounded-[10px] bg-danger/10 px-4 py-3 text-sm text-danger">
+        <p className={styles.notice} data-tone="alert">
           {exportError}
-        </div>
+        </p>
       ) : null}
 
-      <div className="divide-y divide-border">
+      <div>
         {EXPORT_GROUPS.map((group) => (
           <ExportGroupRegister
             key={group.title}

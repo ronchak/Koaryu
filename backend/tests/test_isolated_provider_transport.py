@@ -16,7 +16,10 @@ from app.core.deps import run_supabase_operation
 from app.core.provider_runtime import SupabaseLaneConfig, SupabaseProviderRuntime
 from app.db.supabase import close_supabase_client, create_supabase_client
 from app.schemas.auth import AuthResponse, UserProfile
-from app.services.dashboard_bootstrap_service import DashboardBootstrapService
+from app.services.dashboard_bootstrap_service import (
+    BOOTSTRAP_VIEW_DATASETS,
+    DashboardBootstrapService,
+)
 from app.services.stripe_mutation_policy import LIVE_AUTHORIZATION_POSTGREST_TIMEOUT_SECONDS
 from app.services.stripe_service import StripeService
 
@@ -86,12 +89,15 @@ def bootstrap_auth():
     )
 
 
+# Between them these three views load all five datasets, three clients each.
+@pytest.mark.parametrize("view", ["students", "leads", "training"])
 @pytest.mark.parametrize("stalled", [False, True])
 @pytest.mark.parametrize("allow_partial", [False, True])
-def test_all_five_bootstrap_clients_inherit_budget_and_drain_before_capacity_returns(
-    nested_provider, stalled, allow_partial
+def test_every_bootstrap_client_inherits_budget_and_drains_before_capacity_returns(
+    nested_provider, stalled, allow_partial, view
 ):
     nested_provider.stall = stalled
+    datasets = BOOTSTRAP_VIEW_DATASETS[view]
     created = []
     closed = []
     clients = []
@@ -120,7 +126,7 @@ def test_all_five_bootstrap_clients_inherit_budget_and_drain_before_capacity_ret
 
             async def operation(client):
                 result = await DashboardBootstrapService(client).get_dashboard_bootstrap(
-                    "user-1", provider_owned=True, allow_partial=allow_partial
+                    "user-1", provider_owned=True, allow_partial=allow_partial, view=view
                 )
                 completed_payloads.append(result[0])
                 return result
@@ -144,23 +150,24 @@ def test_all_five_bootstrap_clients_inherit_budget_and_drain_before_capacity_ret
                 )
                 if allow_partial:
                     assert len(completed_payloads) == 1
-                    assert set(
-                        completed_payloads[0].dataset_errors.model_dump(exclude_none=True)
-                    ) == {"studio", "students", "leads", "belts", "programs"}
+                    assert (
+                        set(completed_payloads[0].dataset_errors.model_dump(exclude_none=True))
+                        == datasets
+                    )
                     assert completed_payloads[0].students_total is None
             else:
                 response, _timings = await run_supabase_operation(runtime, operation)
                 assert response.studio.id == "studio-1"
-                assert response.students_total == 0
-            assert len(created) == len(closed) == 5
-            assert len({identity for identity, _thread, _timeout in created}) == 5
+                assert response.students_total == (0 if "students" in datasets else None)
+            assert len(created) == len(closed) == len(datasets) == 3
+            assert len({identity for identity, _thread, _timeout in created}) == 3
             assert all(
                 identity != parent_id and timeout == 0.15 for identity, _thread, timeout in created
             )
             assert sorted(closed) == sorted(
                 (identity, thread) for identity, thread, _timeout in created
             )
-            assert nested_provider.requests == 5
+            assert nested_provider.requests == 3
             assert runtime.interactive_snapshot().active == 0
             assert await runtime.run_interactive(lambda _client: "recovered") == "recovered"
         finally:

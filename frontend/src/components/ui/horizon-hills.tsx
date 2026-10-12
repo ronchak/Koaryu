@@ -1,0 +1,53 @@
+import {
+  HORIZON_BAND_RIDGE_PATHS,
+  HORIZON_BAND_VIEWBOX,
+  HORIZON_RIDGE_PATHS,
+  HORIZON_VIEWBOX,
+} from "./horizon-ridges";
+import styles from "./horizon.module.css";
+
+/**
+ * The landing page's ridges. `hero` is the wide shot (Home's header and the sign-in
+ * scene); `band` sits under every other page title.
+ */
+export function HorizonHills({
+  className,
+  sun = true,
+  variant = "hero",
+}: {
+  className?: string;
+  sun?: boolean;
+  variant?: "hero" | "band";
+}) {
+  const box = variant === "band" ? HORIZON_BAND_VIEWBOX : HORIZON_VIEWBOX;
+  const paths = variant === "band" ? HORIZON_BAND_RIDGE_PATHS : HORIZON_RIDGE_PATHS;
+  // Each sun sits clear of a header's right-aligned actions at common desktop widths.
+  // header.module.css keeps the hero's copy clear of this sun (left edge cx - r = 874)
+  // and hides it on headers narrower than 1024px; move both together.
+  const sunCircle = variant === "band" ? { cx: 1010, cy: 70, r: 24 } : { cx: 920, cy: 132, r: 46 };
+  return (
+    <svg
+      className={[styles.hills, className].filter(Boolean).join(" ")}
+      data-variant={variant}
+      viewBox={`0 0 ${box.width} ${box.height}`}
+      preserveAspectRatio="xMidYMax slice"
+      aria-hidden="true"
+      focusable="false"
+    >
+      {sun ? (
+        <>
+          <circle className={styles.sun} {...sunCircle} />
+          <circle
+            className={styles.sunHalo}
+            cx={sunCircle.cx + 5}
+            cy={sunCircle.cy + 5}
+            r={sunCircle.r}
+          />
+        </>
+      ) : null}
+      {paths.map((path, index) => (
+        <path key={index} d={path} fill={`var(--hz-ridge-${index})`} />
+      ))}
+    </svg>
+  );
+}

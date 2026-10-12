@@ -26,7 +26,8 @@ export type ScheduleTimeBlock<T extends ScheduleTimeItem> = {
 
 export const DEFAULT_SCHEDULE_PAGE_VIEW: SchedulePageView = "month";
 
-export const SCHEDULE_CANVAS_PIXELS_PER_HOUR = 72;
+/** Week and Day hour height; Day on a phone-width sheet draws 56px hours (set in CSS). */
+export const SCHEDULE_CANVAS_PIXELS_PER_HOUR = 48;
 
 export function scheduleTimeToMinute(value: string) {
   const [hoursText = "0", minutesText = "0"] = value.split(":");
@@ -51,6 +52,31 @@ export function getScheduleTimeCanvasBounds(items: ReadonlyArray<ScheduleTimeIte
     startMinute: Math.min(defaultStart, Math.floor(earliest / 60) * 60),
     endMinute: Math.max(defaultEnd, Math.ceil(latest / 60) * 60),
   };
+}
+
+const SCHEDULE_CANVAS_MIN_SPAN = 6 * 60;
+
+/**
+ * The hours worth drawing: from the hour the first class starts to the hour the
+ * last one ends, at least six hours. Nothing in view keeps a 9-to-9 studio day.
+ */
+export function getScheduleCanvasRange(items: ReadonlyArray<ScheduleTimeItem>) {
+  if (items.length === 0) {
+    return { startMinute: 9 * 60, endMinute: 21 * 60 };
+  }
+  const earliest = Math.min(...items.map((item) => scheduleTimeToMinute(item.start_time)));
+  const latest = Math.max(
+    ...items.map((item) =>
+      Math.max(scheduleTimeToMinute(item.start_time) + 15, scheduleTimeToMinute(item.end_time)),
+    ),
+  );
+  let startMinute = Math.floor(earliest / 60) * 60;
+  let endMinute = Math.min(24 * 60, Math.ceil(latest / 60) * 60);
+  if (endMinute - startMinute < SCHEDULE_CANVAS_MIN_SPAN) {
+    endMinute = Math.min(24 * 60, startMinute + SCHEDULE_CANVAS_MIN_SPAN);
+    startMinute = Math.max(0, endMinute - SCHEDULE_CANVAS_MIN_SPAN);
+  }
+  return { startMinute, endMinute };
 }
 
 export function layoutScheduleTimeItems<T extends ScheduleTimeItem>(

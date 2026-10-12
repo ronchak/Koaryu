@@ -5,6 +5,7 @@ import { MartialArtsBelt } from "@/components/icons/martial-arts-belt";
 import { BeltVisual } from "@/components/belt-tracker/rank-visuals";
 import { Button } from "@/components/ui/button";
 import { DismissibleNotice } from "@/components/ui/dismissible-notice";
+import { CalmState, HorizonPanel, ToneTag } from "@/components/ui/horizon";
 import type { BeltGroup, TipDragPosition } from "@/lib/belt-tracker-page-model";
 import {
   ChevronDown,
@@ -16,6 +17,7 @@ import {
   Plus,
   Save,
   Trash2,
+  X,
 } from "lucide-react";
 import styles from "./belt-tracker.module.css";
 
@@ -60,11 +62,36 @@ type RankPlanPanelProps = {
   onToggleGroup: (rankId: string) => void;
   programsLoadError: string | null;
   saveError: string | null;
+  /** Students holding each rank, when eligibility for this plan is known. */
+  studentCountByRankId?: Map<string, number> | null;
   subRankTerm: string;
   termDraft: string;
   title: string;
   tipCount: number;
 };
+
+function requirementWords(rank: {
+  min_classes: number;
+  min_months: number;
+  requires_approval: boolean;
+}) {
+  return [
+    rank.min_classes > 0
+      ? `${rank.min_classes} ${rank.min_classes === 1 ? "class" : "classes"}`
+      : null,
+    rank.min_months > 0 ? `${rank.min_months} ${rank.min_months === 1 ? "month" : "months"}` : null,
+    rank.requires_approval ? "Instructor approval" : null,
+  ].filter((word): word is string => Boolean(word));
+}
+
+function StudentCount({ count }: { count: number | undefined }) {
+  if (count === undefined) return null;
+  return (
+    <span className={styles.rankStudents} data-empty={count === 0 ? "true" : undefined}>
+      {count === 0 ? "No students" : `${count} ${count === 1 ? "student" : "students"}`}
+    </span>
+  );
+}
 
 export function RankPlanPanel({
   collapsedGroups,
@@ -107,92 +134,91 @@ export function RankPlanPanel({
   onToggleGroup,
   programsLoadError,
   saveError,
+  studentCountByRankId = null,
   subRankTerm,
   termDraft,
   title,
   tipCount,
 }: RankPlanPanelProps) {
+  const countFor = (rankId: string) =>
+    studentCountByRankId ? (studentCountByRankId.get(rankId) ?? 0) : undefined;
   return (
     <div
       id="belt-panel-ladder"
       role="tabpanel"
       aria-labelledby="belt-tab-ladder"
-      className={`flex-1 overflow-y-auto ${styles.rankPlanWorkspace}`}
+      className={styles.rankPlanWorkspace}
     >
-      <fieldset disabled={isSaving} className={`m-0 min-w-0 border-0 p-0 ${styles.rankPlan}`}>
+      <fieldset disabled={isSaving} className={styles.rankPlan}>
         <div className={styles.rankPlanHeader}>
-          <div>
-            <h2 className="text-sm font-semibold text-text-primary">{title}</h2>
-            <p className="text-xs text-muted mt-0.5">
-              {groups.length} belts · {tipCount} {subRankTerm.toLowerCase()}s total
+          <div className={styles.rankPlanTitles}>
+            <h2>{title}</h2>
+            <p>
+              {groups.length} {groups.length === 1 ? "belt" : "belts"} · {tipCount}{" "}
+              {subRankTerm.toLowerCase()}
+              {tipCount === 1 ? "" : "s"}
             </p>
-
-            <div className="flex items-center gap-1.5 mt-2">
-              <Layers aria-hidden="true" className="w-3 h-3 text-muted" />
-              <span className="text-xs text-muted">Sub-rank term:</span>
+            <div className={styles.termLine}>
+              <Layers aria-hidden="true" className="h-3.5 w-3.5" />
+              <span>Sub-rank term:</span>
               {editingTerm ? (
-                <form onSubmit={onSubmitSubRankTerm} className="flex items-center gap-1">
+                <form onSubmit={onSubmitSubRankTerm} className={styles.termForm}>
                   <input
                     type="text"
                     value={termDraft}
                     onChange={(event) => onTermDraftChange(event.target.value)}
                     autoFocus
                     aria-label="Sub-rank term"
-                    className="px-1.5 py-0.5 text-xs bg-surface-raised border border-accent rounded-[10px] text-text-primary focus:outline-none w-20"
                   />
-                  <button
-                    type="submit"
-                    className="text-xs text-accent hover:text-accent/80 cursor-pointer font-medium"
-                  >
+                  <Button type="submit" variant="secondary" size="sm">
                     Save
-                  </button>
+                  </Button>
                   <button
                     type="button"
                     onClick={onStopEditingTerm}
                     aria-label="Cancel editing sub-rank term"
-                    className="text-xs text-muted hover:text-text-secondary cursor-pointer"
+                    className={styles.iconButton}
                   >
-                    ✕
+                    <X aria-hidden="true" className="h-3.5 w-3.5" />
                   </button>
                 </form>
               ) : (
                 <button
+                  type="button"
                   onClick={onStartEditingTerm}
                   aria-label="Edit sub-rank term"
-                  className="text-xs text-accent font-medium hover:underline cursor-pointer flex items-center gap-1"
+                  className={styles.termButton}
                 >
                   {subRankTerm}
-                  <Pencil aria-hidden="true" className="w-2.5 h-2.5" />
+                  <Pencil aria-hidden="true" className="h-3 w-3" />
                 </button>
               )}
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
+          <div className={styles.rankPlanActions}>
             {dirty && (
-              <Button variant="ghost" size="sm" disabled={isSaving} onClick={onDiscardChanges}>
+              <Button variant="ghost" disabled={isSaving} onClick={onDiscardChanges}>
                 Discard
               </Button>
             )}
             {dirty && (
               <Button
                 variant="primary"
-                size="sm"
                 disabled={isSaving || !currentProgramReady || editingTerm}
                 onClick={onSaveRanks}
               >
-                <Save aria-hidden="true" className="w-3.5 h-3.5" />
+                <Save aria-hidden="true" className="h-4 w-4" />
                 {isSaving ? "Saving..." : "Save ranks"}
               </Button>
             )}
             {groups.length > 0 ? (
               <Button
-                variant="secondary"
-                size="sm"
+                variant={dirty ? "secondary" : "primary"}
                 disabled={!currentProgramReady}
                 onClick={onAddBelt}
               >
-                <Plus aria-hidden="true" className="w-3.5 h-3.5" />
+                <Plus aria-hidden="true" className="h-4 w-4" />
                 Add belt
               </Button>
             ) : null}
@@ -218,30 +244,31 @@ export function RankPlanPanel({
 
         {groups.length > 0 ? (
           <p className={styles.rankPlanHint}>
-            <GripVertical aria-hidden="true" className="w-3 h-3" />
-            Drag to reorder, or use the arrow controls for precise moves.
+            <GripVertical aria-hidden="true" className="h-3.5 w-3.5" />
+            Lowest rank first. Drag to reorder, or use the arrows for precise moves.
           </p>
         ) : null}
 
-        <div className={styles.rankRail}>
+        <ol className={styles.rankRail} aria-label={`${title} ranks, lowest first`}>
           {groups.map((group, groupIndex) => {
             const isCollapsed = collapsedGroups.has(group.belt.id);
             const isDraggingThisGroup = draggingGroupIdx === groupIndex;
             const isDropTarget = dragOverGroupIdx === groupIndex && draggingGroupIdx !== groupIndex;
+            const beltWords = requirementWords(group.belt);
+            const tipWord = `${group.tips.length} ${subRankTerm.toLowerCase()}${group.tips.length !== 1 ? "s" : ""}`;
 
             return (
-              <div
+              <li
                 key={group.belt.id}
                 data-progression-stratum={groupIndex + 1}
                 data-drop-target={isDropTarget || undefined}
-                className={`${styles.rankGroup} border transition-[background-color,border-color,opacity] ${
-                  isDropTarget ? "border-accent bg-accent/5" : "border-border bg-surface"
-                } ${isDraggingThisGroup ? "opacity-40" : "opacity-100"}`}
+                data-dragging={isDraggingThisGroup || undefined}
+                className={styles.rankGroup}
               >
                 <div
                   onDragOver={(event) => onBeltDragOver(groupIndex, event)}
                   onDrop={() => onBeltDrop(groupIndex)}
-                  className={`flex items-center gap-3 px-4 py-3 cursor-default select-none ${styles.rankHeader}`}
+                  className={styles.rankHeader}
                 >
                   <span
                     draggable={!isSaving && currentProgramReady}
@@ -250,7 +277,7 @@ export function RankPlanPanel({
                     title={`Drag ${group.belt.name} to reorder`}
                     onDragStart={(event) => onBeltDragStart(groupIndex, event)}
                     onDragEnd={onBeltDragEnd}
-                    className="flex h-7 w-6 flex-shrink-0 cursor-grab items-center justify-center rounded-[10px] text-muted transition-colors hover:bg-surface-raised hover:text-text-primary active:cursor-grabbing"
+                    className={styles.dragHandle}
                   >
                     <GripVertical aria-hidden="true" className="h-4 w-4" />
                   </span>
@@ -264,45 +291,38 @@ export function RankPlanPanel({
                     className={styles.rankCollapseButton}
                   >
                     {isCollapsed ? (
-                      <ChevronRight aria-hidden="true" className="w-3.5 h-3.5" />
+                      <ChevronRight aria-hidden="true" className="h-4 w-4" />
                     ) : (
-                      <ChevronDown aria-hidden="true" className="w-3.5 h-3.5" />
+                      <ChevronDown aria-hidden="true" className="h-4 w-4" />
                     )}
                   </button>
 
                   <div className={styles.rankIdentity}>
-                    <BeltVisual rank={group.belt} />
-                    <div className="min-w-0">
-                      <p className="text-sm font-semibold text-text-primary">{group.belt.name}</p>
-                      <p className="text-xs text-muted mt-0.5">
-                        {group.belt.min_classes > 0 ? `${group.belt.min_classes} classes` : ""}
-                        {group.belt.min_classes > 0 && group.belt.min_months > 0 ? " · " : ""}
-                        {group.belt.min_months > 0 ? `${group.belt.min_months} months` : ""}
-                        {group.belt.requires_approval ? " · Approval" : ""}
-                        {!group.belt.min_classes &&
-                        !group.belt.min_months &&
-                        !group.belt.requires_approval
-                          ? groupIndex === 0
+                    <BeltVisual rank={group.belt} size="lg" />
+                    <div className={styles.rankText}>
+                      <p className={styles.rankName}>{group.belt.name}</p>
+                      <p className={styles.rankMeta}>
+                        {beltWords.length
+                          ? beltWords.join(" · ")
+                          : groupIndex === 0
                             ? "Starting belt"
-                            : "No requirements"
-                          : ""}
-                        {group.tips.length > 0
-                          ? ` · ${group.tips.length} ${subRankTerm.toLowerCase()}${group.tips.length !== 1 ? "s" : ""}`
-                          : ""}
+                            : "No requirements"}
+                        {group.tips.length > 0 ? ` · ${tipWord}` : ""}
                       </p>
                     </div>
+                    <StudentCount count={countFor(group.belt.id)} />
                   </div>
 
-                  <div className={`flex items-center gap-1 flex-shrink-0 ${styles.rankActions}`}>
+                  <div className={styles.rankActions}>
                     <button
                       type="button"
                       onClick={() => onMoveBelt(groupIndex, -1)}
                       disabled={groupIndex === 0}
                       aria-label={`Move ${group.belt.name} up`}
                       title="Move belt up"
-                      className="p-1.5 rounded-[10px] text-muted hover:text-text-primary hover:bg-surface-raised transition-colors cursor-pointer disabled:cursor-not-allowed disabled:opacity-35"
+                      className={styles.iconButton}
                     >
-                      <ChevronUp aria-hidden="true" className="w-3 h-3" />
+                      <ChevronUp aria-hidden="true" className="h-4 w-4" />
                     </button>
                     <button
                       type="button"
@@ -310,42 +330,34 @@ export function RankPlanPanel({
                       disabled={groupIndex === groups.length - 1}
                       aria-label={`Move ${group.belt.name} down`}
                       title="Move belt down"
-                      className="p-1.5 rounded-[10px] text-muted hover:text-text-primary hover:bg-surface-raised transition-colors cursor-pointer disabled:cursor-not-allowed disabled:opacity-35"
+                      className={styles.iconButton}
                     >
-                      <ChevronDown aria-hidden="true" className="w-3 h-3" />
+                      <ChevronDown aria-hidden="true" className="h-4 w-4" />
                     </button>
                     <button
                       type="button"
                       onClick={() => onEditRank(group.belt.id)}
                       aria-label={`Edit ${group.belt.name}`}
-                      className="p-1.5 rounded-[10px] text-muted hover:text-text-primary hover:bg-surface-raised transition-colors cursor-pointer"
+                      className={styles.iconButton}
                       title="Edit belt"
                     >
-                      <Pencil aria-hidden="true" className="w-3 h-3" />
+                      <Pencil aria-hidden="true" className="h-4 w-4" />
                     </button>
                     <button
                       type="button"
                       onClick={() => onDeleteRank(group.belt.id)}
                       aria-label={`Delete ${group.belt.name}`}
-                      className="p-1.5 rounded-[10px] text-muted hover:text-danger hover:bg-danger/10 transition-colors cursor-pointer"
+                      className={styles.iconButton}
+                      data-tone="alert"
                       title="Delete belt"
                     >
-                      <Trash2 aria-hidden="true" className="w-3 h-3" />
+                      <Trash2 aria-hidden="true" className="h-4 w-4" />
                     </button>
                   </div>
                 </div>
 
                 {!isCollapsed && (
-                  <div
-                    id={`rank-group-${group.belt.id}-tips`}
-                    className="mx-4 mb-3 border-l border-border pl-4"
-                  >
-                    {group.tips.length === 0 && (
-                      <p className="text-xs text-muted italic py-1 mb-1">
-                        No {subRankTerm.toLowerCase()}s configured.
-                      </p>
-                    )}
-
+                  <div id={`rank-group-${group.belt.id}-tips`} className={styles.tipList}>
                     {group.tips.map((tip, tipIndex) => {
                       const isTipDragging =
                         draggingTip?.gIdx === groupIndex && draggingTip?.tIdx === tipIndex;
@@ -353,15 +365,16 @@ export function RankPlanPanel({
                         dragOverTip?.gIdx === groupIndex &&
                         dragOverTip?.tIdx === tipIndex &&
                         !(draggingTip?.gIdx === groupIndex && draggingTip?.tIdx === tipIndex);
+                      const tipWords = requirementWords(tip);
 
                       return (
                         <div
                           key={tip.id}
                           onDragOver={(event) => onTipDragOver(groupIndex, tipIndex, event)}
                           onDrop={() => onTipDrop(groupIndex, tipIndex)}
-                          className={`flex items-center gap-2.5 py-2 px-2 rounded-[10px] mb-0.5 transition-[background-color,color,opacity] select-none ${styles.tipRow} ${
-                            isTipDragging ? "opacity-30" : "opacity-100"
-                          } ${isTipOver ? "bg-accent/10" : "hover:bg-surface-raised/60"}`}
+                          data-dragging={isTipDragging || undefined}
+                          data-drop-target={isTipOver || undefined}
+                          className={styles.tipRow}
                         >
                           <span
                             draggable={!isSaving && currentProgramReady}
@@ -370,34 +383,28 @@ export function RankPlanPanel({
                             title={`Drag ${tip.name} to reorder`}
                             onDragStart={(event) => onTipDragStart(groupIndex, tipIndex, event)}
                             onDragEnd={onTipDragEnd}
-                            className="flex h-6 w-5 flex-shrink-0 cursor-grab items-center justify-center rounded-[10px] text-muted/60 transition-colors hover:bg-surface-raised hover:text-text-primary active:cursor-grabbing"
+                            className={styles.dragHandle}
                           >
-                            <GripVertical aria-hidden="true" className="h-3 w-3" />
+                            <GripVertical aria-hidden="true" className="h-3.5 w-3.5" />
                           </span>
                           <div className={styles.tipIdentity}>
                             <BeltVisual rank={tip} size="sm" />
-                            <span className="text-xs text-text-secondary font-medium">
-                              {tip.name}
+                            <span className={styles.tipName}>{tip.name}</span>
+                            <span className={styles.tipRequirements}>
+                              {tipWords.length ? tipWords.join(" · ") : "No requirements"}
                             </span>
+                            <StudentCount count={countFor(tip.id)} />
                           </div>
-                          <span className={`text-xs text-muted ${styles.tipRequirements}`}>
-                            {tip.min_classes > 0 ? `${tip.min_classes} cl` : ""}
-                            {tip.min_classes > 0 && tip.min_months > 0 ? " · " : ""}
-                            {tip.min_months > 0 ? `${tip.min_months} mo` : ""}
-                            {tip.requires_approval ? " · ✓" : ""}
-                          </span>
-                          <div
-                            className={`flex items-center gap-0.5 flex-shrink-0 ${styles.rankActions}`}
-                          >
+                          <div className={styles.rankActions}>
                             <button
                               type="button"
                               onClick={() => onMoveTip(groupIndex, tipIndex, -1)}
                               disabled={tipIndex === 0}
                               aria-label={`Move ${tip.name} up`}
                               title={`Move ${subRankTerm.toLowerCase()} up`}
-                              className="p-1 rounded-[10px] text-muted hover:text-text-primary hover:bg-surface-raised transition-colors cursor-pointer disabled:cursor-not-allowed disabled:opacity-35"
+                              className={styles.iconButton}
                             >
-                              <ChevronUp aria-hidden="true" className="w-2.5 h-2.5" />
+                              <ChevronUp aria-hidden="true" className="h-3.5 w-3.5" />
                             </button>
                             <button
                               type="button"
@@ -405,25 +412,26 @@ export function RankPlanPanel({
                               disabled={tipIndex === group.tips.length - 1}
                               aria-label={`Move ${tip.name} down`}
                               title={`Move ${subRankTerm.toLowerCase()} down`}
-                              className="p-1 rounded-[10px] text-muted hover:text-text-primary hover:bg-surface-raised transition-colors cursor-pointer disabled:cursor-not-allowed disabled:opacity-35"
+                              className={styles.iconButton}
                             >
-                              <ChevronDown aria-hidden="true" className="w-2.5 h-2.5" />
+                              <ChevronDown aria-hidden="true" className="h-3.5 w-3.5" />
                             </button>
                             <button
                               type="button"
                               onClick={() => onEditRank(tip.id)}
                               aria-label={`Edit ${tip.name}`}
-                              className="p-1 rounded-[10px] text-muted hover:text-text-primary hover:bg-surface-raised transition-colors cursor-pointer"
+                              className={styles.iconButton}
                             >
-                              <Pencil aria-hidden="true" className="w-2.5 h-2.5" />
+                              <Pencil aria-hidden="true" className="h-3.5 w-3.5" />
                             </button>
                             <button
                               type="button"
                               onClick={() => onDeleteRank(tip.id)}
                               aria-label={`Delete ${tip.name}`}
-                              className="p-1 rounded-[10px] text-muted hover:text-danger hover:bg-danger/10 transition-colors cursor-pointer"
+                              className={styles.iconButton}
+                              data-tone="alert"
                             >
-                              <Trash2 aria-hidden="true" className="w-2.5 h-2.5" />
+                              <Trash2 aria-hidden="true" className="h-3.5 w-3.5" />
                             </button>
                           </div>
                         </div>
@@ -433,50 +441,45 @@ export function RankPlanPanel({
                     <button
                       type="button"
                       onClick={() => onAddTip(groupIndex)}
-                      className="flex items-center gap-1.5 text-xs text-muted hover:text-accent transition-colors cursor-pointer mt-1 py-1 px-2 rounded-[10px] hover:bg-surface-raised/60"
+                      className={styles.addTipButton}
                     >
-                      <Plus aria-hidden="true" className="w-3 h-3" />
+                      <Plus aria-hidden="true" className="h-3.5 w-3.5" />
                       Add {subRankTerm.toLowerCase()}
                     </button>
                   </div>
                 )}
-              </div>
+              </li>
             );
           })}
+        </ol>
 
-          {groups.length === 0 && (
-            <div className={styles.panelState}>
-              <div className={styles.panelStateInner}>
-                <span className={styles.panelStateIcon} aria-hidden="true">
-                  <MartialArtsBelt />
-                </span>
-                <h2 className={styles.panelStateTitle}>Build this program&apos;s rank plan</h2>
-                <p className="text-sm text-text-secondary">
-                  {hasCurrentLadder
-                    ? "No belts yet. Add your first belt to get started."
-                    : hasSelectedProgram
-                      ? "This program is still preparing its rank plan. Refresh programs and try again."
-                      : "Create a program in Settings before tracking belts."}
-                </p>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  className="mt-4"
-                  disabled={!currentProgramReady}
-                  onClick={onAddBelt}
-                >
-                  <Plus aria-hidden="true" className="w-3.5 h-3.5" />
+        {groups.length === 0 && (
+          <HorizonPanel>
+            <CalmState
+              tone="neutral"
+              icon={<MartialArtsBelt />}
+              title="Build this program's rank plan"
+              detail={
+                hasCurrentLadder
+                  ? "No belts yet. Add your first belt to get started."
+                  : hasSelectedProgram
+                    ? "This program is still preparing its rank plan. Refresh programs and try again."
+                    : "Create a program in Settings before tracking belts."
+              }
+              action={
+                <Button variant="primary" disabled={!currentProgramReady} onClick={onAddBelt}>
+                  <Plus aria-hidden="true" className="h-4 w-4" />
                   Add belt
                 </Button>
-              </div>
-            </div>
-          )}
-        </div>
+              }
+            />
+          </HorizonPanel>
+        )}
 
         {dirty && (
-          <p className="text-xs text-warning mt-3 flex items-center gap-1.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-warning animate-pulse" />
-            Unsaved changes to rank order.
+          <p className={styles.unsavedLine}>
+            <ToneTag tone="warn">Unsaved</ToneTag>
+            Changes to this rank plan are not saved yet.
           </p>
         )}
       </fieldset>

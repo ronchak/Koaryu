@@ -23,6 +23,8 @@ import type {
 import type { Student } from "@/types";
 import type { BeltTestReferences } from "./belt-test-workspace";
 import { referenceId, supportedBeltPlan } from "./belt-test-event-editor";
+import { BeltSwatch, ProgressBar } from "@/components/belt-tracker/rank-visuals";
+import { ToneTag } from "@/components/ui/horizon";
 import styles from "./belt-tests.module.css";
 
 const pairKey = (pair: BeltTestPair) =>
@@ -337,6 +339,12 @@ export function BeltTestRecipients({
       return wire;
     }
   };
+  const rankById = (id: string | null) =>
+    id === null
+      ? undefined
+      : references.ladders
+          .flatMap((ladder) => ladder.ranks)
+          .find((rank) => referenceId(rank.id) === referenceId(id));
   const rankName = (id: string | null) =>
     id === null
       ? "Unranked"
@@ -346,19 +354,33 @@ export function BeltTestRecipients({
         "Saved rank unavailable");
   return (
     <section className={styles.panel} aria-label="Belt-test recipients">
-      <h2>Candidates and recorded approvals</h2>
-      {preview && <p>Sample approval records only.</p>}
-      {mutable && (
-        <>
+      <div className={styles.panelHead}>
+        <div>
+          <h2>Candidates and recorded approvals</h2>
+          <p>
+            {!mutable
+              ? "Approvals recorded for this event."
+              : candidates && candidates.read.value.length > 0
+                ? `${candidates.read.value.filter(supported).length} of ${candidates.read.value.length} candidates meet their next rank's requirements and can be approved for this test.`
+                : "Students who meet their next rank's requirements can be approved for this test."}
+          </p>
+        </div>
+        {mutable && (
           <button
             type="button"
             disabled={candidateLoading}
             onClick={() =>
               selection.length ? setConfirmation({ kind: "refresh" }) : void loadCandidates()
             }
+            data-variant="quiet"
           >
             Refresh candidates
           </button>
+        )}
+      </div>
+      {preview && <p className={styles.quiet}>Sample approval records only.</p>}
+      {mutable && (
+        <>
           {candidateLoading && <p role="status">Loading event candidates.</p>}
           {candidateError && (
             <p role="alert">Candidates are unavailable. Previous rows remain for review.</p>
@@ -369,11 +391,21 @@ export function BeltTestRecipients({
               approval.
             </p>
           )}
-          {candidates?.read.value.length === 0 && <p>No candidates were returned.</p>}
+          {candidates?.read.value.length === 0 && (
+            <p className={styles.calm}>No candidates were returned.</p>
+          )}
           {candidates?.read.value.slice(candidatePage * 50, (candidatePage + 1) * 50).map((row) => {
             const checked = selection.some((item) => pairKey(item) === pairKey(row));
+            const currentRank = rankById(row.current_rank_id);
+            const nextRank = rankById(row.next_rank_id);
+            const ready = row.classes_met && row.time_met;
             return (
-              <article key={pairKey(row)} className={styles.row}>
+              <article
+                key={pairKey(row)}
+                className={styles.candidate}
+                data-checked={checked ? "true" : undefined}
+                data-selectable={supported(row) ? "true" : undefined}
+              >
                 <label className={styles.check}>
                   <input
                     type="checkbox"
@@ -390,118 +422,197 @@ export function BeltTestRecipients({
                   />
                   {row.student_name}
                 </label>
-                <p id={`candidate-${pairKey(row)}`}>{context(row)}</p>
-                <p>
-                  {row.current_rank_name ?? "Unranked"} to {row.next_rank_name ?? "No next rank"}
+                <p id={`candidate-${pairKey(row)}`} className={styles.candidateContext}>
+                  {context(row)}
                 </p>
-                <p>
-                  Classes: {row.classes_since_promo}/{row.classes_required} · Days at rank:{" "}
-                  {row.days_at_rank}/{row.days_required}
+                <p className={styles.beltLine}>
+                  <BeltSwatch
+                    color={row.current_rank_color}
+                    isTip={currentRank?.is_tip}
+                    tipColor={currentRank?.tip_color_hex}
+                    size="sm"
+                  />
+                  <span>{row.current_rank_name ?? "Unranked"}</span>
+                  <span aria-hidden="true">→</span>
+                  <span className="sr-only">to</span>
+                  <BeltSwatch
+                    color={row.next_rank_color}
+                    isTip={nextRank?.is_tip}
+                    tipColor={nextRank?.tip_color_hex}
+                    size="sm"
+                  />
+                  <strong>{row.next_rank_name ?? "No next rank"}</strong>
                 </p>
-                <p>
-                  {row.classes_met ? "Class requirement met" : "Class requirement unmet"} ·{" "}
-                  {row.time_met ? "Time requirement met" : "Time requirement unmet"}
-                  {row.needs_approval ? " · Approval required" : ""}
+                <div className={styles.candidateProgress}>
+                  <ProgressBar
+                    caption="Classes"
+                    label="Class requirement progress"
+                    current={row.classes_since_promo}
+                    required={row.classes_required}
+                    met={row.classes_met}
+                  />
+                  <ProgressBar
+                    caption="Days at rank"
+                    label="Time requirement progress"
+                    current={row.days_at_rank}
+                    required={row.days_required}
+                    met={row.time_met}
+                  />
+                </div>
+                <p className={styles.candidateTags}>
+                  {ready ? (
+                    <ToneTag tone="calm">Requirements met</ToneTag>
+                  ) : (
+                    <ToneTag tone="neutral" dot={false}>
+                      {row.classes_met ? "Class requirement met" : "Class requirement unmet"} ·{" "}
+                      {row.time_met ? "Time requirement met" : "Time requirement unmet"}
+                    </ToneTag>
+                  )}
+                  {row.needs_approval ? <ToneTag tone="warn">Approval required</ToneTag> : null}
                 </p>
               </article>
             );
           })}
-          <div className={styles.actions}>
-            <button
-              type="button"
-              disabled={candidatePage === 0}
-              onClick={() => setCandidatePage(candidatePage - 1)}
-            >
-              Previous candidates
-            </button>
-            <button
-              type="button"
-              disabled={!candidates || (candidatePage + 1) * 50 >= candidates.read.value.length}
-              onClick={() => setCandidatePage(candidatePage + 1)}
-            >
-              More candidates
-            </button>
-            <button type="button" disabled={!selection.length} onClick={() => select([])}>
-              Clear selection
-            </button>
-            <button
-              type="button"
-              disabled={!selection.length || !fresh || locked || detailsDirty}
-              onClick={() => requestApproval(selection)}
-            >
-              Approve selected ({selection.length}/100)
-            </button>
+          <div className={styles.approvalBar}>
+            <div className={styles.pager}>
+              <button
+                type="button"
+                disabled={candidatePage === 0}
+                onClick={() => setCandidatePage(candidatePage - 1)}
+                data-variant="quiet"
+              >
+                Previous candidates
+              </button>
+              <button
+                type="button"
+                disabled={!candidates || (candidatePage + 1) * 50 >= candidates.read.value.length}
+                onClick={() => setCandidatePage(candidatePage + 1)}
+                data-variant="quiet"
+              >
+                More candidates
+              </button>
+            </div>
+            <div className={styles.actions}>
+              <button
+                type="button"
+                disabled={!selection.length}
+                onClick={() => select([])}
+                data-variant="secondary"
+              >
+                Clear selection
+              </button>
+              <button
+                type="button"
+                disabled={!selection.length || !fresh || locked || detailsDirty}
+                onClick={() => requestApproval(selection)}
+                data-variant="primary"
+              >
+                Approve selected ({selection.length}/100)
+              </button>
+            </div>
           </div>
-          {selection.length > 0 && <p>Leaving this page or reloading discards unsaved changes.</p>}
+          {selection.length > 0 && (
+            <p className={styles.unsaved}>
+              Leaving this page or reloading discards unsaved changes.
+            </p>
+          )}
         </>
       )}
-      <h3>Recipient history</h3>
+      <div className={styles.subHead}>
+        <h3>Recipient history</h3>
+        <button
+          type="button"
+          disabled={historyLoading}
+          onClick={() => void loadHistory(historyError ? failedCursor : cursor)}
+          data-variant="quiet"
+        >
+          {historyError ? "Retry recipient history" : "Refresh recipient history"}
+        </button>
+      </div>
       {historyLoading && <p role="status">Loading recorded approvals.</p>}
       {historyError && (
         <p role="alert">
           Recipient history could not be refreshed. Previously loaded records remain below.
         </p>
       )}
-      <button
-        type="button"
-        disabled={historyLoading}
-        onClick={() => void loadHistory(historyError ? failedCursor : cursor)}
-      >
-        {historyError ? "Retry recipient history" : "Refresh recipient history"}
-      </button>
-      {history?.items.length === 0 && <p>No recorded approvals on this page.</p>}
+      {history?.items.length === 0 && (
+        <p className={styles.calm}>No recorded approvals on this page.</p>
+      )}
       {history?.items.map((row) => {
         const candidate = candidates?.read.value.find((item) => pairKey(item) === pairKey(row));
         const student = students.find(
           (item) => referenceId(item.id) === referenceId(row.student_id),
         );
         return (
-          <article className={styles.row} key={row.id}>
-            <h4>
-              {candidate?.student_name ??
-                (student ? displayName(student) : "Student name unavailable")}
-            </h4>
-            <p>
-              {row.state === "approved" ? "Recorded approval" : "Revoked"} ·{" "}
-              {dateLabel(row.approved_at)}
-            </p>
-            <p>
-              {rankName(row.approved_current_rank_id)} to {rankName(row.approved_target_rank_id)}
-            </p>
-            <p>
+          <article className={styles.recipient} key={row.id} data-state={row.state}>
+            <div className={styles.recipientHead}>
+              <h4>
+                {candidate?.student_name ??
+                  (student ? displayName(student) : "Student name unavailable")}
+              </h4>
+              <p className={styles.recipientState}>
+                {row.state === "approved" ? "Recorded approval" : "Revoked"} ·{" "}
+                {dateLabel(row.approved_at)}
+              </p>
+            </div>
+            <div className={styles.recipientBelts}>
+              <BeltSwatch
+                color={rankById(row.approved_current_rank_id)?.color_hex}
+                isTip={rankById(row.approved_current_rank_id)?.is_tip}
+                tipColor={rankById(row.approved_current_rank_id)?.tip_color_hex}
+                size="sm"
+              />
+              <p>
+                {rankName(row.approved_current_rank_id)} to {rankName(row.approved_target_rank_id)}
+              </p>
+              <BeltSwatch
+                color={rankById(row.approved_target_rank_id)?.color_hex}
+                isTip={rankById(row.approved_target_rank_id)?.is_tip}
+                tipColor={rankById(row.approved_target_rank_id)?.tip_color_hex}
+                size="sm"
+              />
+            </div>
+            <p className={styles.candidateContext}>
               {row.student_program_membership_id === null ? "No membership" : "Program membership"}
             </p>
             {row.approved_schedule_revision !== event.schedule_revision && (
-              <p>Recorded for a different schedule.</p>
+              <p className={styles.warnLine}>Recorded for a different schedule.</p>
             )}
-            <Link href={`/students/${row.student_id}`}>Open student record</Link>
-            {mutable && candidate && (
-              <button
-                type="button"
-                disabled={!fresh || !supported(candidate) || locked || detailsDirty}
-                onClick={() => requestApproval([candidate])}
-              >
-                Reapprove
-              </button>
-            )}
-            {mutable && row.state === "approved" && (
-              <button
-                type="button"
-                disabled={locked || detailsDirty || selection.length > 0}
-                aria-disabled={revokeLoading}
-                onClick={() => void prepareRevoke(row)}
-              >
-                {revokeLoading ? "Checking approval..." : "Revoke approval"}
-              </button>
-            )}
+            <div className={styles.actions}>
+              <Link href={`/students/${row.student_id}`} data-variant="quiet">
+                Open student record
+              </Link>
+              {mutable && candidate && (
+                <button
+                  type="button"
+                  disabled={!fresh || !supported(candidate) || locked || detailsDirty}
+                  onClick={() => requestApproval([candidate])}
+                  data-variant="secondary"
+                >
+                  Reapprove
+                </button>
+              )}
+              {mutable && row.state === "approved" && (
+                <button
+                  type="button"
+                  disabled={locked || detailsDirty || selection.length > 0}
+                  aria-disabled={revokeLoading}
+                  onClick={() => void prepareRevoke(row)}
+                  data-variant="danger"
+                >
+                  {revokeLoading ? "Checking approval..." : "Revoke approval"}
+                </button>
+              )}
+            </div>
           </article>
         );
       })}
-      <div className={styles.actions}>
+      <div className={styles.pager}>
         <button
           type="button"
           disabled={historyLoading || cursor === undefined}
           onClick={() => void loadHistory()}
+          data-variant="quiet"
         >
           Back to first recipient page
         </button>
@@ -509,6 +620,7 @@ export function BeltTestRecipients({
           type="button"
           disabled={historyLoading || !history?.next_cursor}
           onClick={() => void loadHistory(history!.next_cursor!)}
+          data-variant="quiet"
         >
           Next recipient page
         </button>
@@ -555,27 +667,30 @@ export function BeltTestRecipients({
           {confirmation.kind === "refresh" && (
             <p>Review the new candidates before selecting recipients again.</p>
           )}
-          <button type="button" onClick={() => setConfirmation(null)}>
-            Keep reviewing
-          </button>
-          <button
-            type="button"
-            disabled={locked && confirmation.kind !== "refresh"}
-            onClick={() => {
-              if (confirmation.kind === "approve") void approve(confirmation);
-              else if (confirmation.kind === "revoke") void revoke(confirmation);
-              else {
-                select([]);
-                void loadCandidates();
-              }
-            }}
-          >
-            {confirmation.kind === "approve"
-              ? "Confirm approval"
-              : confirmation.kind === "revoke"
-                ? "Confirm revoke"
-                : "Clear and refresh"}
-          </button>
+          <div className={styles.dialogActions}>
+            <button type="button" onClick={() => setConfirmation(null)} data-variant="secondary">
+              Keep reviewing
+            </button>
+            <button
+              type="button"
+              data-variant={confirmation.kind === "revoke" ? "danger" : "primary"}
+              disabled={locked && confirmation.kind !== "refresh"}
+              onClick={() => {
+                if (confirmation.kind === "approve") void approve(confirmation);
+                else if (confirmation.kind === "revoke") void revoke(confirmation);
+                else {
+                  select([]);
+                  void loadCandidates();
+                }
+              }}
+            >
+              {confirmation.kind === "approve"
+                ? "Confirm approval"
+                : confirmation.kind === "revoke"
+                  ? "Confirm revoke"
+                  : "Clear and refresh"}
+            </button>
+          </div>
         </ModalFrame>
       )}
     </section>

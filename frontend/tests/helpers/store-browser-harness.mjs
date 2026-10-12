@@ -27,8 +27,19 @@ export function createCommonJsPacker(stubs) {
   const modules = [];
   const ids = new Map();
 
+  // Stylesheets never execute in these bundles; class lookups return their own names.
+  const stylesheetStub = `module.exports=new Proxy({},{get:(_,key)=>key==='__esModule'?false:key});`;
+
   function add(specifier, parent = resolve(frontend, "entry.js")) {
     let key = specifier;
+    if (!(key in stubs) && /\.css$/.test(specifier)) {
+      key = `stylesheet:${specifier.startsWith(".") ? resolve(dirname(parent), specifier) : specifier}`;
+      if (ids.has(key)) return ids.get(key);
+      const id = modules.length;
+      ids.set(key, id);
+      modules.push(`function(module,exports,require){${stylesheetStub}\n}`);
+      return id;
+    }
     if (!(key in stubs)) {
       if (specifier.startsWith("@/")) key = resolve(frontend, "src", specifier.slice(2));
       else if (specifier.startsWith(".")) key = resolve(dirname(parent), specifier);
@@ -68,8 +79,8 @@ export function bundle(
     subscriptionPage = false,
     scheduleController = false,
     scheduleForm = false,
-    dashboardController = false,
-    dashboardVisibleWidgets = null,
+    homeHook = false,
+    homePage = false,
     beltPage = false,
     realApi = false,
     detailController = false,
@@ -145,7 +156,7 @@ export function bundle(
           "lucide-react": `module.exports=new Proxy({},{get:()=>()=>null});`,
         }
       : {}),
-    ...(subscriptionPage || realApi
+    ...(subscriptionPage || (realApi && !homePage)
       ? {
           "@/components/header": `exports.Header=()=>null;`,
           "@/components/operations/operations-surface": `exports.OperationsSurface=({children})=>require('react').createElement('section',{'data-recovery-page':'true'},children);`,
@@ -185,7 +196,7 @@ export function bundle(
           "@/components/dashboard-route-transition": `exports.DashboardRouteTransition=({children})=>children;`,
           "@/components/dashboard-shell": `exports.DashboardSlugBand=()=>null;`,
           "@/components/dashboard-shell-readiness": `exports.DashboardShellReadiness=({identityReady})=>{window.fixture.store=require("@/lib/store").useStore();window.fixture.identityObservations.push(identityReady);return null;};`,
-          ...(subscriptionPage || realApi
+          ...(subscriptionPage || (realApi && !homePage)
             ? {}
             : {
                 "@/components/dashboard-identity-skeleton": `exports.DashboardIdentitySkeleton=()=>require('react').createElement('div',{'data-preview-gate':'pending'});`,
@@ -209,6 +220,15 @@ export function bundle(
       "./sliding-segmented-control.module.css": `module.exports={};`,
     });
   }
+  if (homePage) {
+    Object.assign(stubs, {
+      "next/link": `exports.__esModule=true;exports.default=({children,href,prefetch,...props})=>require('react').createElement('a',{href,...props},children);`,
+      "lucide-react": `module.exports=new Proxy({},{get:(_,key)=>key==='createLucideIcon'?()=>()=>null:()=>null});`,
+    });
+    stubs["@/lib/dashboard/use-home"] =
+      `const hook=require(${JSON.stringify(resolve(frontend, "src/lib/dashboard/use-home.ts"))}).useHome;exports.useHome=()=>{const state=hook();window.fixture.home=state;window.fixture.homeRenders.push({status:state.status,payload:state.payload,error:state.error,asOf:state.asOf,isRevalidating:state.isRevalidating});return state;};`;
+    delete stubs["@/lib/performance"];
+  }
   if (realApi) delete stubs["@/lib/api"];
   const { add, modules } = createCommonJsPacker(stubs);
   if (identityLifecycle) {
@@ -217,7 +237,6 @@ export function bundle(
     const store = add("@/lib/store");
     const belt = add("@/app/(dashboard)/belt-tracker/page");
     const reports = add("@/components/reports/reports-data-exports-panel");
-    const dashboard = add("@/lib/dashboard-page-controller");
     const provider = layout
       ? `require(${add("@/app/(dashboard)/layout")}).default`
       : "StoreProvider";
@@ -225,9 +244,8 @@ export function bundle(
     const authority = add("@/lib/access-identity");
     return `(()=>{const process={env:{NODE_ENV:"production",NEXT_PUBLIC_PREVIEW_MODE:${preview ? '"true"' : '"false"'},NEXT_PUBLIC_API_URL:'http://fixture.local/api/v1'}};const modules=[${modules.join(",")}],cache={};function require(id){if(cache[id])return cache[id].exports;const module=cache[id]={exports:{}};modules[id](module,module.exports,require);return module.exports;}const React=require(${react});const {StoreProvider,useStore}=require(${store});window.fixture.api.download=require(${transport}).api.download;window.fixture.publishAccessIdentity=require(${authority}).publishAccessIdentity;const syntheticGet=window.fixture.api.get;window.fixture.api.get=(path,...args)=>path.startsWith("/belts/eligibility?")?require(${transport}).api.get(path,...args):syntheticGet(path,...args);
 function Reports(){const s=useStore();return React.createElement(require(${reports}).ReportsDataExportsPanel,{token:window.fixture.missingToken?null:s.token,currentRole:s.currentRole,isPreviewMode:s.isPreviewMode});}
-function Dashboard(){const s=useStore();const c=require(${dashboard}).useDashboardPageController({beltStore:s,config:s,dashboardStore:s,leadStore:s,programsStore:s,scheduleStore:s,studentsStore:s,studioStore:s});window.fixture.dashboard=c;return null;}
 function Observer(){window.fixture.store=useStore();return null;}
-function App(){const [scope,setScope]=React.useState(0);const [panel,setPanel]=React.useState(window.fixture.view);window.fixture.panel=setPanel;window.fixture.layout=on=>setScope(n=>on?Math.abs(n)+1:-Math.abs(n)-1);return scope<0?null:React.createElement(${provider},{key:scope},React.createElement(Observer),panel==='belt'?React.createElement(require(${belt}).default):panel==='reports'?React.createElement(Reports):panel==='dashboard'?React.createElement(Dashboard):null);}
+function App(){const [scope,setScope]=React.useState(0);const [panel,setPanel]=React.useState(window.fixture.view);window.fixture.panel=setPanel;window.fixture.layout=on=>setScope(n=>on?Math.abs(n)+1:-Math.abs(n)-1);return scope<0?null:React.createElement(${provider},{key:scope},React.createElement(Observer),panel==='belt'?React.createElement(require(${belt}).default):panel==='reports'?React.createElement(Reports):null);}
 window.fixture.root=require(${dom}).createRoot(document.getElementById('root'));window.fixture.root.render(React.createElement(App));})();`;
   }
   if (operationsComponents) {
@@ -325,12 +343,14 @@ window.fixture.renderStudentDetailSkeleton = (props) => {
     schedule === null
       ? ""
       : `function ScheduleObserver(){const store=useStore();const controller=require(${schedule}).useSchedulePageController({config:store,programsStore:store,scheduleStore:store,studentsStore:store});window.fixture.controller=controller.contentProps;return React.createElement(React.Fragment,null,React.createElement('output',{'data-schedule-state':controller.contentProps.hasLoadedRange?'ready':controller.contentProps.scheduleLoadError?'error':'loading'}),${scheduleContent === null ? "null" : `React.createElement(require(${scheduleContent}).SchedulePageContent,controller.contentProps)`});}function ScheduleMount(){const [mounted,setMounted]=React.useState(false);window.fixture.mountSchedule=()=>setMounted(true);window.fixture.unmountSchedule=()=>setMounted(false);return mounted?React.createElement(ScheduleObserver):null;}`;
-  const dashboard = dashboardController ? add("@/lib/dashboard-page-controller") : null;
-  const belt = beltPage ? add("@/app/(dashboard)/belt-tracker/page") : null;
-  const dashboardObserver =
-    dashboard === null
+  // Opt-in Home observer uses the real identity-scoped retained provider and hook.
+  const home = homeHook || homePage ? add("@/lib/dashboard/use-home") : null;
+  const homePageModule = homePage ? add("@/components/dashboard/home/home-page") : null;
+  const homeObserver =
+    home === null
       ? ""
-      : `${dashboardVisibleWidgets ? `function DashboardVisibilityObserver({callback,ready}){React.useEffect(()=>{if(ready)callback(${JSON.stringify(dashboardVisibleWidgets)})},[callback,ready]);return null;}` : ""}function DashboardObserver(){const store=useStore();window.fixture.dashboard=require(${dashboard}).useDashboardPageController({config:store,beltStore:store,dashboardStore:store,leadStore:store,programsStore:store,scheduleStore:store,studentsStore:store,studioStore:store}).contentProps;return ${dashboardVisibleWidgets ? "React.createElement(DashboardVisibilityObserver,{callback:window.fixture.dashboard.onVisibleWidgetsChange,ready:store.identityReady})" : "null"};}`;
+      : `window.fixture.markFacts=require(${add("@/lib/dashboard-freshness")}).markDashboardFactsChanged;function HomeObserver(){${homePage ? `React.useLayoutEffect(()=>{(window.fixture.homeFirstFrames??=[]).push({status:document.querySelector('[data-home-status]')?.dataset.homeStatus,placeholders:document.querySelectorAll('[data-home-placeholder]').length});},[]);` : ""}${homePage ? `return React.createElement(require(${homePageModule}).HomePage);` : `const state=require(${home}).useHome();window.fixture.home=state;window.fixture.homeRenders.push({status:state.status,payload:state.payload,error:state.error,asOf:state.asOf,isRevalidating:state.isRevalidating});return null;`}}function HomeMount(){const store=useStore();const [mounted,setMounted]=React.useState(window.fixture.homeMounted!==false);window.fixture.mountHome=()=>setMounted(true);window.fixture.unmountHome=()=>setMounted(false);const scope=store.identityReady?store.identityGeneration+':'+store.currentUserId+':'+store.currentStudioId:null;return React.createElement(require(${add("@/lib/retained-state")}).RetainedStateProvider,{scope},mounted${homePage ? "&&store.identityReady" : ""}?React.createElement(HomeObserver):null);}`;
+  const belt = beltPage ? add("@/app/(dashboard)/belt-tracker/page") : null;
   const leadHook = leadController ? add("@/lib/leads-page-controller") : null;
   const leadModal = leadController ? add("@/components/leads/add-lead-modal") : null;
   const leadBoard = leadControls ? add("@/components/leads/lead-pipeline-board") : null;
@@ -367,5 +387,5 @@ selected?React.createElement(require(${leadInspector}).LeadDetailInspector,{lead
     legacyBootstrapFixture && !realApi && !preview
       ? `const originalGet=window.fixture.api.get.bind(window.fixture.api);let projected;window.fixture.api.get=async(path,...args)=>{if(path==='/dashboard/workspace'){projected=await originalGet('/dashboard/bootstrap?allow_partial=true',...args);return projected;}if(path.startsWith('/dashboard/bootstrap?'))return projected;return originalGet(path,...args);};`
       : "";
-  return `(()=>{${legacyAdapter}const process={env:{NODE_ENV:${mode === "development" ? '"development"' : '"production"'},NEXT_PUBLIC_STUDENTS_PAGED_ROSTER:${pagedRoster ? '"true"' : '"false"'},NEXT_PUBLIC_PREVIEW_MODE:${preview ? '"true"' : '"false"'}}};const modules=[${modules.join(",")}],cache={};function require(id){if(cache[id])return cache[id].exports;const module=cache[id]={exports:{}};modules[id](module,module.exports,require);return module.exports;}const React=require(${react});window.fixture.beginPendingCommand=require(${pendingCommands}).beginPendingCommand;const {StoreProvider,useStore}=require(${store});${scheduleObserver}${dashboardObserver}${detailObserver}${rosterObserver}${formObserver}${leadObserver}function Observer(){const store=useStore();window.fixture.store=store;React.useEffect(()=>{window.fixture.observations.push({role:store.currentRole,ready:store.staffProfilesAvailable,user:store.currentUserId,studio:store.currentStudioId});});return React.createElement('output',null,store.staffProfilesAvailable?'ready':'pending');}window.fixture.root=require(${dom}).createRoot(document.getElementById('root'));window.fixture.root.render(React.createElement(${mode === "development" ? "React.StrictMode" : "React.Fragment"},null,React.createElement(${provider},null,React.createElement(Observer),${leads === null ? "null" : `React.createElement(require(${leads}).default)`},${programs === null ? "null" : `React.createElement(require(${programs}).ProgramsSection)`},${staff === null ? "null" : `React.createElement(require(${staff}).StaffRolesSection)`},${subscription === null ? "null" : `React.createElement(require(${subscription}).default)`},${schedule === null ? "null" : "React.createElement(ScheduleMount)"},${dashboard === null ? "null" : "React.createElement(DashboardObserver)"},${leadHook === null ? "null" : "React.createElement(LeadControllerFixture)"},${form === null ? "null" : "React.createElement(StudentFormFixture)"},${roster === null ? "null" : "React.createElement(RosterMount)"},${detail === null ? "null" : "React.createElement(DetailMount)"},${belt === null ? "null" : `React.createElement(require(${belt}).default)`})));})();`;
+  return `(()=>{${legacyAdapter}const process={env:{NODE_ENV:${mode === "development" ? '"development"' : '"production"'},NEXT_PUBLIC_STUDENTS_PAGED_ROSTER:${pagedRoster ? '"true"' : '"false"'},NEXT_PUBLIC_PREVIEW_MODE:${preview ? '"true"' : '"false"'}}};const modules=[${modules.join(",")}],cache={};function require(id){if(cache[id])return cache[id].exports;const module=cache[id]={exports:{}};modules[id](module,module.exports,require);return module.exports;}const React=require(${react});window.fixture.beginPendingCommand=require(${pendingCommands}).beginPendingCommand;const {StoreProvider,useStore}=require(${store});${scheduleObserver}${homeObserver}${detailObserver}${rosterObserver}${formObserver}${leadObserver}function Observer(){const store=useStore();window.fixture.store=store;React.useEffect(()=>{window.fixture.observations.push({role:store.currentRole,ready:store.staffProfilesAvailable,user:store.currentUserId,studio:store.currentStudioId});});return React.createElement('output',null,store.staffProfilesAvailable?'ready':'pending');}window.fixture.root=require(${dom}).createRoot(document.getElementById('root'));window.fixture.root.render(React.createElement(${mode === "development" ? "React.StrictMode" : "React.Fragment"},null,React.createElement(${provider},null,React.createElement(Observer),${leads === null ? "null" : `React.createElement(require(${leads}).default)`},${programs === null ? "null" : `React.createElement(require(${programs}).ProgramsSection)`},${staff === null ? "null" : `React.createElement(require(${staff}).StaffRolesSection)`},${subscription === null ? "null" : `React.createElement(require(${subscription}).default)`},${schedule === null ? "null" : "React.createElement(ScheduleMount)"},${home === null ? "null" : "React.createElement(HomeMount)"},${leadHook === null ? "null" : "React.createElement(LeadControllerFixture)"},${form === null ? "null" : "React.createElement(StudentFormFixture)"},${roster === null ? "null" : "React.createElement(RosterMount)"},${detail === null ? "null" : "React.createElement(DetailMount)"},${belt === null ? "null" : `React.createElement(require(${belt}).default)`})));})();`;
 }

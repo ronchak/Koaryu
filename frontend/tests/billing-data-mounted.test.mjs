@@ -16,6 +16,8 @@ function bundle({
     "@/lib/supabase/client": `exports.createClient=()=>window.fixture.supabase;`,
     "@/lib/api": `class ApiError extends Error { constructor(message,status,detail){super(message);this.status=status;this.detail=detail;} } exports.ApiError=window.fixture.ApiError=ApiError; exports.api=window.fixture.api; exports.isSubscriptionRequiredError=e=>e.status===402; exports.isStaffArchivedError=e=>e.status===403&&/archived/i.test(e.message);`,
     "@/lib/performance": `exports.markPerformance=()=>{};exports.measurePerformance=()=>{};exports.markDashboardReadiness=()=>{};`,
+    // The Horizon kit's stats strip links through IntentPrefetchLink; Next's router is not bundled here.
+    "@/components/intent-prefetch-link": `exports.IntentPrefetchLink=({children,href})=>require("react").createElement("a",{href},children);`,
   };
   if (refunds || pageController)
     stubs["lucide-react"] = `module.exports=new Proxy({},{get:()=>()=>null});`;

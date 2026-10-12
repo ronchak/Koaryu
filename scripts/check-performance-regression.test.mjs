@@ -20,7 +20,7 @@ function validEvidence() {
     backend_stage_threshold_ms: manifest.backend_stage_threshold_ms,
     profiles: Object.entries(manifest.profiles).map(([profile, definition]) => ({
       profile,
-      route: "dashboard-summary",
+      route: "dashboard-home",
       cardinalities: { ...definition.cardinalities },
       metrics: {
         request_count: 7,
@@ -29,6 +29,9 @@ function validEvidence() {
         concurrent_miss_rpc_count: 1,
         invalidation_rpc_count: 1,
         denied_rpc_count: 0,
+        materialize_rpc_count: 0,
+        promotion_load_count: 3,
+        follow_up_query_count: 12,
         table_query_count: 0,
         rpc_count: 3,
         total_provider_call_count: 10,
@@ -85,6 +88,7 @@ describe("deterministic performance evidence validator", () => {
     ["serialized_response_payload_bytes", "payload bytes"],
     ["total_provider_call_count", "provider calls"],
     ["returned_row_count", "rows"],
+    ["follow_up_query_count", "follow-up queries"],
     ["peak_rss_bytes", "RSS"],
   ]) {
     it(`rejects ${message} over budget`, () => {
@@ -132,6 +136,41 @@ describe("deterministic performance evidence validator", () => {
       }), manifest, SHA),
       /finite and nonnegative/,
     );
+  });
+
+  it("rejects promotions loads that bypass or duplicate the promotions cache", () => {
+    for (const count of [2, 4]) {
+      assert.throws(
+        () => validatePerformanceEvidence(mutateProfileEvidence((profile) => {
+          profile.metrics.promotion_load_count = count;
+        }), manifest, SHA),
+        /promotion_load_count exceeds|promotions cache invariant failed/,
+      );
+    }
+  });
+
+  it("rejects a read that materialized sessions", () => {
+    assert.throws(
+      () => validatePerformanceEvidence(mutateProfileEvidence((profile) => {
+        profile.metrics.materialize_rpc_count = 1;
+      }), manifest, SHA),
+      /materialize_rpc_count exceeds/,
+    );
+    const unbudgeted = structuredClone(manifest);
+    unbudgeted.profiles.small.budgets.materialize_rpc_count = 1;
+    assert.throws(
+      () => validatePerformanceEvidence(mutateProfileEvidence((profile) => {
+        profile.metrics.materialize_rpc_count = 1;
+      }), unbudgeted, SHA),
+      /materialized sessions during a read/,
+    );
+  });
+
+  it("binds the manifest to the Home route and fixture", () => {
+    assert.equal(manifest.budget_manifest_version, "dashboard-home-performance-v1");
+    assert.equal(manifest.fixture_revision, "dashboard-home-endpoint-fixture-v1");
+    assert.deepEqual(manifest.routes, ["dashboard-home"]);
+    assert.equal(manifest.fixed_request.route, "dashboard-home");
   });
 
   it("rejects false data readiness", () => {

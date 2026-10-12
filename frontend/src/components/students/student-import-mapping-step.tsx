@@ -112,7 +112,7 @@ export function StudentImportMappingStep({
       <div className="flex items-center gap-3">
         <FileText className="w-4 h-4 text-text-secondary" />
         <p className="text-sm text-text-primary font-medium">{fileName}</p>
-        <span className="text-xs text-muted font-mono">{rowCount} rows</span>
+        <span className="text-xs text-muted tabular-nums">{rowCount} rows</span>
         <button
           type="button"
           aria-label="Choose a different CSV file"
@@ -188,7 +188,7 @@ export function StudentImportMappingStep({
             <div key={header} className={styles.mappingRow}>
               <div className="px-4 py-3 border-r border-border">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <p className="text-sm text-text-primary font-mono truncate">{header}</p>
+                  <p className="text-sm text-text-primary tabular-nums truncate">{header}</p>
                   {selectedField ? (
                     <Badge variant={isDuplicate ? "danger" : isRequired ? "accent" : "default"}>
                       {KOARYU_FIELDS.find((item) => item.value === selectedField)?.label ||

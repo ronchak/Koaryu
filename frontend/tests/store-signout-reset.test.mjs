@@ -34,8 +34,6 @@ describe("store auth reset model", () => {
       staffLoadError: null,
       programsLoaded: false,
       programsLoadError: null,
-      dashboardSummary: null,
-      dashboardSummaryLoaded: false,
       studentsLoaded: false,
       studentsLoadError: null,
       leadsLoaded: false,
@@ -53,8 +51,6 @@ describe("store auth reset model", () => {
     assert.equal(reset.staffLoadError, null);
     assert.equal(reset.programsLoaded, false);
     assert.equal(reset.programsLoadError, null);
-    assert.equal(reset.dashboardSummary, null);
-    assert.equal(reset.dashboardSummaryLoaded, true);
     assert.equal(reset.studentsLoaded, false);
     assert.equal(reset.studentsLoadError, null);
     assert.equal(reset.studentsLastLoadedAt, null);

@@ -1,31 +1,23 @@
 import type { Lead } from "@/types";
 
-export type LeadAgeBandId =
-  "overdue-8" | "overdue-3" | "overdue-1" | "today" | "upcoming" | "unscheduled";
+export type LeadAgeBandId = "overdue" | "today" | "upcoming" | "unscheduled";
 
+/*
+ * Four bands in follow-up order. Overdue is one band: the ledger is already sorted
+ * oldest first and every row says how late it is. Leads with no follow-up date and
+ * enrolled leads have nothing due.
+ */
 export const LEAD_AGE_BANDS: { id: LeadAgeBandId; label: string }[] = [
-  { id: "overdue-8", label: "8+ days overdue" },
-  { id: "overdue-3", label: "3–7 days overdue" },
-  { id: "overdue-1", label: "1–2 days overdue" },
+  { id: "overdue", label: "Overdue" },
   { id: "today", label: "Due today" },
   { id: "upcoming", label: "Upcoming" },
-  { id: "unscheduled", label: "Unscheduled / completed" },
+  { id: "unscheduled", label: "Nothing due" },
 ];
-
-function dayDifference(date: string, today: string) {
-  const dayMs = 24 * 60 * 60 * 1000;
-  return Math.round(
-    (new Date(`${today}T00:00:00`).getTime() - new Date(`${date}T00:00:00`).getTime()) / dayMs,
-  );
-}
 
 function getLeadAgeBand(lead: Lead, today: string): LeadAgeBandId {
   if (!lead.follow_up_date || lead.stage === "enrolled") return "unscheduled";
-  const daysOverdue = dayDifference(lead.follow_up_date, today);
-  if (daysOverdue >= 8) return "overdue-8";
-  if (daysOverdue >= 3) return "overdue-3";
-  if (daysOverdue >= 1) return "overdue-1";
-  if (daysOverdue === 0) return "today";
+  if (lead.follow_up_date < today) return "overdue";
+  if (lead.follow_up_date === today) return "today";
   return "upcoming";
 }
 

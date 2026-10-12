@@ -29,10 +29,7 @@ function renderWithStoreContexts(child) {
     clearSubscriptionRequired: () => {},
     currentRole: "admin",
   };
-  const dashboard = {
-    dashboardSummary: null,
-    dashboardSummaryLoaded: true,
-  };
+  const dashboard = {};
   const students = {
     studentsLoaded: true,
     studentsLoadError: null,

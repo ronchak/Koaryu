@@ -60,6 +60,11 @@ interface ApiOptions {
   timeoutMs?: number | null;
   timeoutMessage?: string;
   networkErrorMessage?: string;
+  /**
+   * False for a write that changes no studio facts (Home preferences), so it
+   * neither re-reads dashboards nor bypasses their fact cache. Default: true.
+   */
+  marksDashboardFacts?: boolean;
 }
 
 interface FormApiOptions {
@@ -86,6 +91,7 @@ interface RequestRuntimeOptions {
   networkErrorMessage: string;
   commandTimeoutMessage?: string;
   commandNetworkMessage?: string;
+  marksDashboardFacts?: boolean;
 }
 
 function buildRequestHeaders({
@@ -122,6 +128,7 @@ async function executeApiRequest<T>(
     networkErrorMessage,
     commandTimeoutMessage,
     commandNetworkMessage,
+    marksDashboardFacts = true,
   }: RequestRuntimeOptions,
   consume: (response: Response) => Promise<T>,
 ): Promise<T> {
@@ -151,7 +158,7 @@ async function executeApiRequest<T>(
   const isCommand = !["GET", "HEAD", "OPTIONS"].includes(init.method ?? "GET");
   const finishCommand = isCommand ? beginPendingCommand() : undefined;
   // Some Billing status GETs reconcile provider state. Treat their facts as changed too.
-  const changesFacts = isCommand || path.startsWith("/billing/");
+  const changesFacts = marksDashboardFacts && (isCommand || path.startsWith("/billing/"));
   if (changesFacts) markDashboardFactsChanged();
   try {
     dispatched = !controller.signal.aborted;
@@ -314,6 +321,7 @@ async function apiFetch<T>(path: string, options: ApiOptions = {}): Promise<T> {
     timeoutMs,
     timeoutMessage = "Request timed out. Please try again.",
     networkErrorMessage = "Failed to reach the backend. Please try again.",
+    marksDashboardFacts,
   } = options;
 
   const headers = buildRequestHeaders({
@@ -339,6 +347,7 @@ async function apiFetch<T>(path: string, options: ApiOptions = {}): Promise<T> {
       networkErrorMessage,
       commandTimeoutMessage: options.timeoutMessage,
       commandNetworkMessage: options.networkErrorMessage,
+      marksDashboardFacts,
     },
     async (res) => {
       if (!res.ok) {

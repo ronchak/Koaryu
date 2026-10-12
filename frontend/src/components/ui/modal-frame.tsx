@@ -45,6 +45,8 @@ export function ModalFrame({
     const panel = panelRef.current;
 
     window.requestAnimationFrame(() => {
+      // A late frame must not pull focus back from wherever the user has moved it inside.
+      if (panel && document.activeElement && panel.contains(document.activeElement)) return;
       const nextFocus = panel?.querySelector<HTMLElement>(FOCUSABLE_SELECTOR) ?? panel;
       nextFocus?.focus();
     });

@@ -53,6 +53,7 @@ export function SchedulePageContent({
   pendingAttendanceIds,
   programFilter,
   programs,
+  routeTargetNotice,
   scheduleLoadError,
   hasLoadedRange,
   isRefreshingRange,
@@ -62,6 +63,7 @@ export function SchedulePageContent({
   isStudentRosterComplete,
   sessions,
   showAddClass,
+  studioTimezone,
   templates,
   view,
   onCloseAddClass,
@@ -72,6 +74,7 @@ export function SchedulePageContent({
   onDismissActionMessage,
   onDismissAttendanceError,
   onDismissCreateClassError,
+  onDismissRouteTargetNotice,
   onDismissScheduleLoadError,
   onDismissStudentRosterLoadError,
   onJumpToToday,
@@ -95,10 +98,13 @@ export function SchedulePageContent({
         sessions={sessions}
         templates={templates}
         programs={programs}
+        studioTimezone={studioTimezone}
         scheduleLoadError={scheduleLoadError}
         hasLoadedRange={hasLoadedRange}
         isRefreshingRange={isRefreshingRange}
         actionMessage={actionMessage}
+        routeTargetNotice={routeTargetNotice}
+        onDismissRouteTargetNotice={onDismissRouteTargetNotice}
         onNavigate={onNavigate}
         onJumpToToday={onJumpToToday}
         onViewChange={onViewChange}

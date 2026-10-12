@@ -8,6 +8,7 @@ import {
   DEFAULT_SCHEDULE_PAGE_VIEW,
   formatScheduleDateKey,
   getActiveScheduleStudents,
+  getScheduleCanvasRange,
   getScheduleTimeCanvasBounds,
   getScheduleSessionAttendance,
   getScheduleWeekDates,
@@ -281,5 +282,43 @@ describe("schedule page model", () => {
 
     assert.deepEqual(events, ["first-start", "second-start", "second-success"]);
     assert.deepEqual(pendingSnapshots.at(-1), []);
+  });
+});
+
+describe("schedule canvas range", () => {
+  it("uses 9 AM to 9 PM without classes and a six-hour minimum without padding", () => {
+    assert.deepEqual(getScheduleCanvasRange([]), { startMinute: 9 * 60, endMinute: 21 * 60 });
+    assert.deepEqual(
+      getScheduleCanvasRange([
+        { id: "a", start_time: "16:00", end_time: "16:45" },
+        { id: "b", start_time: "18:00", end_time: "19:30" },
+      ]),
+      { startMinute: 16 * 60, endMinute: 22 * 60 },
+    );
+    assert.deepEqual(
+      getScheduleCanvasRange([
+        { id: "early", start_time: "06:00", end_time: "07:00" },
+        { id: "late", start_time: "20:00", end_time: "21:00" },
+      ]),
+      { startMinute: 6 * 60, endMinute: 21 * 60 },
+    );
+  });
+
+  it("rounds outward to whole hours and shifts the six-hour minimum back at midnight", () => {
+    assert.deepEqual(
+      getScheduleCanvasRange([
+        { id: "early", start_time: "10:15", end_time: "11:00" },
+        { id: "late", start_time: "18:00", end_time: "19:30" },
+      ]),
+      { startMinute: 10 * 60, endMinute: 20 * 60 },
+    );
+    assert.deepEqual(
+      getScheduleCanvasRange([{ id: "late", start_time: "23:15", end_time: "23:45" }]),
+      { startMinute: 18 * 60, endMinute: 24 * 60 },
+    );
+    assert.deepEqual(
+      getScheduleCanvasRange([{ id: "zero-duration", start_time: "16:00", end_time: "16:00" }]),
+      { startMinute: 16 * 60, endMinute: 22 * 60 },
+    );
   });
 });

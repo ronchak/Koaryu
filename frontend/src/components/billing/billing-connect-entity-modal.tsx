@@ -24,11 +24,11 @@ function ConnectEntityModal({
   return (
     <ModalFrame
       rootClassName="p-4"
-      panelClassName="w-full max-w-md rounded-[18px] bg-bg p-4"
+      panelClassName="w-full max-w-md rounded-[18px] bg-surface p-5"
       ariaLabelledBy="connect-entity-title"
       onBackdropClick={onCancel}
     >
-      <h2 id="connect-entity-title" className="text-base font-semibold text-text-primary">
+      <h2 id="connect-entity-title" className="text-lg font-bold text-text-primary">
         Connect Stripe payments
       </h2>
       <p className="mt-2 text-sm text-muted">
@@ -66,7 +66,7 @@ function ConnectEntityModal({
                 value={value}
                 checked={connectEntityType === value}
                 onChange={() => onChangeEntityType(value)}
-                className="mt-1 accent-[#E5C15C]"
+                className="mt-1 accent-[var(--product-wood)]"
               />
               <span>
                 <span className="block text-sm font-medium text-text-primary">{label}</span>

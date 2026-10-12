@@ -976,7 +976,6 @@ export interface ApiDashboardBootstrapResponse {
   leads: ApiLeadResponse[];
   belt_ladders: ApiBeltLadderResponse[];
   primary_belt_ladder?: ApiBeltLadderResponse | null;
-  summary?: ApiDashboardSummaryResponse | null;
   dataset_errors?: ApiDashboardBootstrapDatasetErrors | null;
 }
 
@@ -988,165 +987,153 @@ export interface ApiDashboardBootstrapStudioSummary {
   logo_url?: string | null;
 }
 
-export interface ApiDashboardSummaryAction {
+export interface ApiDashboardHomeActiveStudents {
+  total: number;
+  active: number;
+  trialing: number;
+  on_hold: number;
+}
+
+export interface ApiDashboardHomeAttendance {
+  window_days: number;
+  sessions: number;
+  seats_filled: number;
+  capacity: number;
+}
+
+export interface ApiDashboardHomeAwayItem {
+  kind: "away";
+  count: number;
+}
+
+export interface ApiDashboardHomeBelt {
+  name: string;
+  color?: string | null;
+}
+
+export interface ApiDashboardHomeClassRow {
   id: string;
-  title: string;
-  description: string;
-  href: string;
-  tone: "accent" | "warning" | "success" | "danger" | "neutral";
-  meta?: string | null;
+  name: string;
+  start_time: string;
+  end_time: string;
+  checked_in: number;
+  capacity?: number | null;
 }
 
-export interface ApiDashboardSummaryBeltCounts {
-  belt_count: number;
-  tip_count: number;
+export interface ApiDashboardHomeClassesToday {
+  total: number;
+  overflow: number;
+  rows: ApiDashboardHomeClassRow[];
 }
 
-export interface ApiDashboardSummaryBillingAmounts {
-  available: boolean;
-  payment_attention_amount_cents?: number | null;
-  due_this_week_amount_cents?: number | null;
+export interface ApiDashboardHomeContactItem {
+  kind: "contact";
+  count: number;
+  student_id?: string | null;
 }
 
-export interface ApiDashboardSummaryBillingCounts {
-  can_view_billing: boolean;
-  payment_attention_count?: number | null;
-  has_plans?: boolean | null;
-  payments_ready?: boolean | null;
-  amounts?: ApiDashboardSummaryBillingAmounts | null;
-}
-
-export interface ApiDashboardSummaryChurnCounts {
-  inactive_students: number;
-  canceled_students: number;
-  churn_marked_students: number;
-  churn_rate?: number | null;
-}
-
-export interface ApiDashboardSummaryEmergencyContacts {
-  available: boolean;
-  active_students: number;
-  students_with_contact_name: number;
-  students_missing_contact_name: number;
-}
-
-export interface ApiDashboardSummaryInactivityCounts {
-  watch_14: number;
-  watch_30: number;
-  watch_90: number;
-}
-
-export interface ApiDashboardSummaryLeadCounts {
-  active_leads: number;
-  enrolled_leads: number;
-  due_today_leads: number;
-}
-
-export interface ApiDashboardSummaryLeadFollowUp {
+export interface ApiDashboardHomeFollowUpRow {
   id: string;
   first_name: string;
   last_name: string;
+  stage: "inquiry" | "trial_scheduled" | "trial_completed" | "offer_sent";
   follow_up_date: string;
 }
 
-export interface ApiDashboardSummaryLeadFollowUps {
-  available: boolean;
-  rows: ApiDashboardSummaryLeadFollowUp[];
+export interface ApiDashboardHomeFollowUpStats {
+  due_count: number;
+  overdue_count: number;
+  due_today_count: number;
+  oldest_due_date?: string | null;
 }
 
-export interface ApiDashboardSummaryNewStudentCounts {
-  new_14: number;
-  new_30: number;
-  new_90: number;
-  new_year_to_date: number;
+export interface ApiDashboardHomeFollowUps {
+  rows: ApiDashboardHomeFollowUpRow[];
 }
 
-export interface ApiDashboardSummaryOperationalCounts {
-  attendance_with_capacity: number;
-  total_capacity: number;
-  sessions_tracked: number;
-  sessions_with_capacity: number;
-  utilization_rate?: number | null;
-  average_attendance: number;
+export interface ApiDashboardHomeNeedsAttention {
+  items: (ApiDashboardHomePaymentsItem | ApiDashboardHomeSetupItem | ApiDashboardHomeAwayItem | ApiDashboardHomeContactItem)[];
 }
 
-export interface ApiDashboardSummaryRecentStudent {
+export interface ApiDashboardHomePaymentsItem {
+  kind: "payments";
+  count: number;
+}
+
+export interface ApiDashboardHomePreferences {
+  version: 1;
+  order: ("follow_ups" | "ready_to_promote" | "recent_students")[];
+  hidden: ("follow_ups" | "ready_to_promote" | "recent_students")[];
+  size: Record<string, "compact" | "expanded">;
+}
+
+export interface ApiDashboardHomePreferencesUpdate {
+  version: 1;
+  order: ("follow_ups" | "ready_to_promote" | "recent_students")[];
+  hidden: ("follow_ups" | "ready_to_promote" | "recent_students")[];
+  size: Record<string, "compact" | "expanded">;
+}
+
+export interface ApiDashboardHomePromotionRow {
+  student_id: string;
+  name: string;
+  from: ApiDashboardHomeBelt | null;
+  to: ApiDashboardHomeBelt;
+  classes_at_rank: number;
+  needs_approval: boolean;
+}
+
+export interface ApiDashboardHomePromotionStats {
+  ready_count: number;
+  needs_approval: number;
+}
+
+export interface ApiDashboardHomeReadyToPromote {
+  rows: ApiDashboardHomePromotionRow[];
+}
+
+export interface ApiDashboardHomeRecentStudent {
   id: string;
-  display_name: string;
+  name: string;
   status: string;
   started_on?: string | null;
 }
 
-export interface ApiDashboardSummaryResponse {
-  auth: ApiAuthResponse;
-  studio?: ApiDashboardSummaryStudio | null;
+export interface ApiDashboardHomeResponse {
   generated_at: string;
-  today?: string | null;
-  timezone?: string | null;
-  today_schedule?: ApiDashboardSummaryTodaySchedule | null;
-  emergency_contacts?: ApiDashboardSummaryEmergencyContacts | null;
-  students: ApiDashboardSummaryStudentCounts;
-  leads: ApiDashboardSummaryLeadCounts;
-  lead_follow_ups?: ApiDashboardSummaryLeadFollowUps | null;
-  schedule: ApiDashboardSummaryScheduleCounts;
-  belts: ApiDashboardSummaryBeltCounts;
-  inactivity: ApiDashboardSummaryInactivityCounts;
-  new_students: ApiDashboardSummaryNewStudentCounts;
-  operational: ApiDashboardSummaryOperationalCounts;
-  churn: ApiDashboardSummaryChurnCounts;
-  test_readiness: ApiDashboardSummaryTestReadinessCounts;
-  billing: ApiDashboardSummaryBillingCounts;
-  setup: ApiDashboardSummarySetupFlags;
-  recent_students: ApiDashboardSummaryRecentStudent[];
-  actions: ApiDashboardSummaryAction[];
+  viewer: ApiDashboardHomeViewer;
+  studio?: ApiDashboardHomeStudio | null;
+  needs_attention?: ApiDashboardHomeNeedsAttention | null;
+  classes_today?: ApiDashboardHomeClassesToday | null;
+  stats?: ApiDashboardHomeStats | null;
+  follow_ups?: ApiDashboardHomeFollowUps | null;
+  ready_to_promote?: ApiDashboardHomeReadyToPromote | null;
+  recent_students?: ApiDashboardHomeRecentStudent[] | null;
+  preferences?: ApiDashboardHomePreferences | null;
 }
 
-export interface ApiDashboardSummaryScheduleCounts {
-  today_sessions: number;
+export interface ApiDashboardHomeSetupItem {
+  kind: "setup";
+  count: number;
+  next_step: "programs" | "students" | "belts" | "classes" | "billing";
 }
 
-export interface ApiDashboardSummarySetupFlags {
-  has_programs: boolean;
-  has_students: boolean;
-  has_belt_system: boolean;
-  has_weekly_classes: boolean;
-  has_tuition_plans?: boolean | null;
+export interface ApiDashboardHomeStats {
+  active_students: ApiDashboardHomeActiveStudents;
+  attendance: ApiDashboardHomeAttendance;
+  follow_ups?: ApiDashboardHomeFollowUpStats | null;
+  promotions?: ApiDashboardHomePromotionStats | null;
 }
 
-export interface ApiDashboardSummaryStudentCounts {
-  total_students: number;
-  active_students: number;
-  trialing_students: number;
-  on_hold_students: number;
-}
-
-export interface ApiDashboardSummaryStudio {
+export interface ApiDashboardHomeStudio {
   id: string;
   name: string;
   timezone: string;
+  today: string;
 }
 
-export interface ApiDashboardSummaryTestReadinessCounts {
-  ready_to_test?: number | null;
-  needs_approval?: number | null;
-  available: boolean;
-}
-
-export interface ApiDashboardSummaryTodaySchedule {
-  available: boolean;
-  expected_counts_available: boolean;
-  rows: ApiDashboardSummaryTodaySession[];
-  overflow_count?: number | null;
-}
-
-export interface ApiDashboardSummaryTodaySession {
-  id: string;
-  start_time: string;
-  end_time: string;
-  name: string;
-  capacity?: number | null;
-  attendance_count: number;
-  expected_count?: number | null;
+export interface ApiDashboardHomeViewer {
+  role?: "admin" | "instructor" | "front_desk" | null;
 }
 
 export interface ApiDashboardWorkspaceResponse {

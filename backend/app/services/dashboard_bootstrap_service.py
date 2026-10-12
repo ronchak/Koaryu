@@ -25,7 +25,8 @@ from app.services.lead_reads import fetch_lead_rows
 logger = logging.getLogger(__name__)
 
 BOOTSTRAP_VIEW_DATASETS = {
-    "dashboard": frozenset({"studio", "programs", "students", "leads", "belts"}),
+    # Home reads its facts from /dashboard/home; it needs only the studio and programs.
+    "home": frozenset({"studio", "programs"}),
     "students": frozenset({"studio", "programs", "students"}),
     "billing": frozenset({"studio"}),
     "schedule": frozenset({"studio", "programs"}),
@@ -166,8 +167,7 @@ class DashboardBootstrapService:
         *,
         provider_owned: bool = False,
         allow_partial: bool = False,
-        view: str = "dashboard",
-        bounded_dashboard: bool = False,
+        view: str = "home",
     ) -> tuple[DashboardBootstrapResponse, dict[str, float]]:
         total_started = time.perf_counter()
         if provider_owned:
@@ -225,10 +225,6 @@ class DashboardBootstrapService:
 
         async def load_projection(label: str, method_name: str, project: Callable[[Any], Any]):
             if label not in BOOTSTRAP_VIEW_DATASETS[view]:
-                return None
-            # New clients use the summary's bounded follow-up rows. Older clients
-            # still require a complete list before they set leadsLoaded authority.
-            if label == "leads" and view == "dashboard" and bounded_dashboard:
                 return None
             started = time.perf_counter()
             try:

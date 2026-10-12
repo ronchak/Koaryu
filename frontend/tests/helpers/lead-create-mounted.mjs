@@ -1,6 +1,7 @@
 import { createCommonJsPacker } from "./store-browser-harness.mjs";
 
 export function bundleLeadCreateFixture(preview = false, { realControls = false } = {}) {
+  if (typeof preview !== "boolean") throw new Error("Unsupported fixture environment");
   const stubs = {
     "next/navigation": `const router={replace(p){window.f.redirects.push(p)},push(p){window.f.redirects.push(p)}};exports.useRouter=()=>router;exports.usePathname=()=>'/leads';exports.useParams=()=>({});exports.useSearchParams=()=>new URLSearchParams();`,
     "@/lib/supabase/client": `exports.createClient=()=>window.f.supabase;`,
@@ -22,7 +23,7 @@ export function bundleLeadCreateFixture(preview = false, { realControls = false 
   const dom = add("react-dom/client");
   const store = add("@/lib/store");
   const page = add("@/app/(dashboard)/leads/page");
-  return `(()=>{const process={env:{NODE_ENV:'production',NEXT_PUBLIC_PREVIEW_MODE:${JSON.stringify(String(preview))}}};const modules=[${modules.join(",")}],cache={};function require(id){if(cache[id])return cache[id].exports;const m=cache[id]={exports:{}};modules[id](m,m.exports,require);return m.exports;}
+  return `(()=>{const process={env:{NODE_ENV:'production',NEXT_PUBLIC_PREVIEW_MODE:${preview ? '"true"' : '"false"'}}};const modules=[${modules.join(",")}],cache={};function require(id){if(cache[id])return cache[id].exports;const m=cache[id]={exports:{}};modules[id](m,m.exports,require);return m.exports;}
 const React=require(${react});const {StoreProvider,useStore}=require(${store});const LeadsPage=require(${page}).default;
 function Observer(){window.f.store=useStore();return null;}
 function PageMount(){const [shown,setShown]=React.useState(true);window.f.showPage=setShown;return shown?React.createElement(LeadsPage):null;}
@@ -77,39 +78,6 @@ export async function mountLeadCreateFixture(
         role,
         staff_profiles_available: true,
       };
-      f.summary = {
-        auth: f.auth,
-        generated_at: "2020-01-01T00:00:00Z",
-        students: {
-          total_students: 0,
-          active_students: 0,
-          trialing_students: 0,
-          on_hold_students: 0,
-        },
-        leads: { active_leads: 2, enrolled_leads: 0, due_today_leads: 0 },
-        schedule: { today_sessions: 0 },
-        belts: { belt_count: 0, tip_count: 0 },
-        inactivity: { watch_14: 0, watch_30: 0, watch_90: 0 },
-        new_students: { new_14: 0, new_30: 0, new_90: 0, new_year_to_date: 0 },
-        operational: {
-          attendance_with_capacity: 0,
-          total_capacity: 0,
-          sessions_tracked: 0,
-          sessions_with_capacity: 0,
-          average_attendance: 0,
-        },
-        churn: { inactive_students: 0, canceled_students: 0, churn_marked_students: 0 },
-        test_readiness: { available: false },
-        billing: { can_view_billing: true },
-        setup: {
-          has_programs: false,
-          has_students: false,
-          has_belt_system: false,
-          has_weekly_classes: false,
-        },
-        recent_students: [],
-        actions: [],
-      };
       const authListeners = new Set();
       f.emit = (event, session) => {
         f.session = session;
@@ -155,9 +123,7 @@ export async function mountLeadCreateFixture(
               programs: f.programs,
               belt_ladders: [],
               primary_belt_ladder: null,
-              summary: f.summary,
             };
-          if (path.startsWith("/dashboard/summary")) return f.summary;
           if (path.startsWith("/programs")) return f.programs;
           if (path.startsWith("/staff")) return [];
           if (path === "/leads") return copy();

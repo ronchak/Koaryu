@@ -1,0 +1,416 @@
+/*
+ * Reports in the Horizon language. The operations surface paints legacy sheets
+ * onto the report data attributes, so each override below carries enough
+ * specificity to replace them with Horizon panels and the stats strip.
+ */
+
+.document {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+/* Headline figures: the stats strip on the header's ridge. */
+:global([data-operations-surface][data-operations-page="reports"])
+  .figures.figures[data-report-figure-band] {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0;
+  margin-top: -40px;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--product-rule-soft, var(--border)) !important;
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--product-paper, var(--surface)) 88%, transparent);
+  box-shadow: var(--product-shadow-card);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+}
+
+:global([data-operations-surface][data-operations-page="reports"])
+  .figures.figures[data-report-figure-band]
+  > figure {
+  border-radius: 0;
+}
+
+.figure {
+  position: relative;
+  display: grid;
+  min-width: 0;
+  align-content: start;
+  gap: 3px;
+  margin: 0;
+  padding: 16px 20px;
+  color: var(--product-ink, var(--text-primary));
+}
+
+.figure + .figure::before {
+  position: absolute;
+  top: 16px;
+  bottom: 16px;
+  left: 0;
+  width: 1px;
+  background: var(--product-rule-soft, var(--border));
+  content: "";
+}
+
+.figureLabel {
+  color: var(--product-meta, var(--muted));
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.figureValue {
+  margin: 0;
+  font-size: 1.875rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 760;
+  letter-spacing: -0.035em;
+  line-height: 1.1;
+}
+
+.figureNote {
+  margin: 0;
+  color: var(--product-soft-ink, var(--text-secondary));
+  font-size: 0.8125rem;
+  line-height: 1.4;
+}
+
+.pending {
+  display: block;
+  border-radius: 8px;
+  background: var(--product-rule-soft, var(--border));
+}
+
+/* Panels */
+:global([data-operations-surface][data-operations-page="reports"])
+  .panel.panel:is([data-report-section], [data-report-appendix], [data-report-method-sheet]) {
+  min-width: 0;
+  overflow: hidden;
+  padding: 18px 20px 20px;
+  border: 1px solid var(--product-rule-soft, var(--border)) !important;
+  border-radius: 16px;
+  background: var(--product-paper, var(--surface));
+  box-shadow: var(--product-shadow-card);
+  color: var(--product-ink, var(--text-primary));
+}
+
+:global([data-operations-surface][data-operations-page="reports"])
+  .panel.panel[data-report-method-sheet] {
+  padding: 0;
+  background: color-mix(in srgb, var(--product-paper, var(--surface)) 60%, transparent);
+  box-shadow: none;
+}
+
+.panelHead {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px 16px;
+  margin-bottom: 16px;
+}
+
+.panelTitle {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.panelSubtitle {
+  margin: 2px 0 0;
+  color: var(--product-soft-ink, var(--text-secondary));
+  font-size: 0.8125rem;
+  line-height: 1.45;
+}
+
+.panelTags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* Single-series bars: one sequential hue on a quiet track, values in text ink. */
+.bars {
+  display: grid;
+  gap: 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.barRow {
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+}
+
+.barText {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 0.875rem;
+}
+
+.barLabel {
+  min-width: 0;
+  font-weight: 650;
+}
+
+.barMeta {
+  display: block;
+  margin-top: 1px;
+  color: var(--product-soft-ink, var(--text-secondary));
+  font-size: 0.8125rem;
+  font-weight: 400;
+}
+
+.barValue {
+  flex: 0 0 auto;
+  font-variant-numeric: tabular-nums;
+  font-weight: 760;
+  text-align: right;
+}
+
+.barValue small {
+  display: block;
+  color: var(--product-meta, var(--muted));
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.track {
+  height: 8px;
+  overflow: hidden;
+  border-radius: 4px;
+  background: var(--hz-tile);
+}
+
+.fill {
+  height: 100%;
+  border-radius: 4px;
+  background: var(--hz-bar);
+  transition: width var(--product-motion-change-duration, 120ms) ease-out;
+}
+
+/* Method sheet */
+.method {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.method > div {
+  padding: 12px 20px;
+}
+
+.method > div + div {
+  border-left: 1px solid var(--product-rule-soft, var(--border));
+}
+
+.methodLabel {
+  margin: 0;
+  color: var(--product-meta, var(--muted));
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.methodValue {
+  margin: 2px 0 0;
+  font-size: 0.875rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
+}
+
+.methodNote {
+  margin: 0;
+  padding: 10px 20px 12px;
+  border-top: 1px solid var(--product-rule-soft, var(--border));
+  color: var(--product-soft-ink, var(--text-secondary));
+  font-size: 0.8125rem;
+  line-height: 1.5;
+}
+
+/* Table */
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+.table th {
+  padding: 0 12px 10px;
+  border-bottom: 1px solid var(--product-rule-soft, var(--border));
+  color: var(--product-meta, var(--muted));
+  font-size: 0.8125rem;
+  font-weight: 600;
+  text-align: left;
+}
+
+.table td {
+  padding: 12px;
+  border-bottom: 1px solid var(--product-rule-soft, var(--border));
+}
+
+.table tr:last-child td {
+  border-bottom: 0;
+}
+
+.table th:first-child,
+.table td:first-child {
+  padding-left: 0;
+}
+
+.table th:last-child,
+.table td:last-child {
+  padding-right: 0;
+}
+
+.table .num {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+/* Exports */
+.exportGroup + .exportGroup {
+  margin-top: 18px;
+}
+
+.exportHead {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.exportHead h3 {
+  margin: 0;
+  font-size: 0.9375rem;
+  font-weight: 700;
+}
+
+.exportList {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 24px;
+}
+
+.exportRow {
+  display: flex;
+  min-width: 0;
+  min-height: 60px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-top: 1px solid var(--product-rule-soft, var(--border));
+}
+
+.exportText {
+  min-width: 0;
+}
+
+.exportTitle {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+.exportTitle p {
+  margin: 0;
+  font-size: 0.875rem;
+  font-weight: 650;
+}
+
+.exportDescription {
+  margin: 2px 0 0;
+  color: var(--product-soft-ink, var(--text-secondary));
+  font-size: 0.8125rem;
+  line-height: 1.45;
+}
+
+.exportRow {
+  padding-block: 8px;
+}
+
+.notice {
+  margin: 0 0 14px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  font-size: 0.875rem;
+}
+
+.notice[data-tone="calm"] {
+  background: var(--hz-affirm-wash);
+  color: var(--product-affirm, var(--success));
+}
+
+.notice[data-tone="alert"] {
+  background: var(--hz-alert-wash);
+  color: var(--product-vermilion, var(--danger));
+}
+
+@media (max-width: 1023px) {
+  :global([data-operations-surface][data-operations-page="reports"])
+    .figures.figures[data-report-figure-band] {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .figure:nth-child(odd)::before {
+    display: none;
+  }
+
+  .figure:nth-child(n + 3) {
+    border-top: 1px solid var(--product-rule-soft, var(--border));
+  }
+
+  .exportList {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 640px) {
+  :global([data-operations-surface][data-operations-page="reports"])
+    .figures.figures[data-report-figure-band] {
+    margin-top: -36px;
+  }
+
+  .figure {
+    padding: 13px 15px;
+  }
+
+  .figureValue {
+    font-size: 1.5rem;
+  }
+
+  :global([data-operations-surface][data-operations-page="reports"])
+    .panel.panel:is([data-report-section], [data-report-appendix]) {
+    padding: 14px 16px 16px;
+  }
+
+  .method {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .method > div + div {
+    border-top: 1px solid var(--product-rule-soft, var(--border));
+    border-left: 0;
+  }
+
+  .methodNote {
+    padding-inline: 16px;
+  }
+}
+
+@media print {
+  :global([data-operations-surface][data-operations-page="reports"])
+    .figures.figures[data-report-figure-band] {
+    margin-top: 0;
+    backdrop-filter: none;
+  }
+}

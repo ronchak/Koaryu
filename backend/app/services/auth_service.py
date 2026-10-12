@@ -1,5 +1,5 @@
 import asyncio
-from typing import Optional
+from typing import Any, Optional
 
 from postgrest.exceptions import APIError as PostgrestAPIError
 from supabase import Client
@@ -17,6 +17,10 @@ def _is_optional_staff_profile_schema_error(exc: PostgrestAPIError) -> bool:
 class AuthService:
     def __init__(self, supabase: Client):
         self.supabase = supabase
+        # Raw Auth user_metadata from this instance's last profile read, kept so
+        # Home can read its saved preferences without a second admin call. It is
+        # not part of AuthResponse and this service never returns it.
+        self.fetched_user_metadata: Optional[dict[str, Any]] = None
 
     async def get_user_profile(
         self,
@@ -42,6 +46,9 @@ class AuthService:
 
         if not user:
             raise ValueError("User not found")
+        self.fetched_user_metadata = (
+            user.user_metadata if isinstance(user.user_metadata, dict) else None
+        )
 
         full_name = user.user_metadata.get("full_name") if user.user_metadata else None
 

@@ -16,7 +16,11 @@ export default async function WorkflowPage({
     notFound();
   return (
     <OperationsSurface page="automations">
-      <Header title="Workflow" />
+      <Header
+        eyebrow="Automations"
+        title="Workflow"
+        description="Shape the steps, check them, then publish. A first published version stays paused until you start it."
+      />
       <WorkflowWorkspace workflowId={workflowId.toLowerCase()} />
     </OperationsSurface>
   );

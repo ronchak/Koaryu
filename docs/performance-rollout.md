@@ -12,9 +12,9 @@ Direct PostgreSQL access remains out of scope. Reconsider it only if realistic
 250-student and 2,500-student load tests show that the RPC path misses a stated
 user-facing latency target.
 
-Dashboard summary facts already use one `dashboard_summary_facts` RPC. The
-server-paginated Students roster already uses one `list_student_roster` RPC.
-Those paths remain unchanged.
+Home's dashboard facts already use one `dashboard_summary_facts` RPC, called
+from `GET /dashboard/home`. The server-paginated Students roster already uses
+one `list_student_roster` RPC. Those paths remain unchanged.
 
 Schedule now loads one bounded page projection from `GET /schedule/window`.
 After FastAPI resolves the authorized studio, the endpoint calls the
@@ -54,8 +54,8 @@ and exact hosted readback is recorded.
 
 Backend:
 
-- `/dashboard/bootstrap` returns only the critical studio shell data. The compact owner summary loads afterward from `/dashboard/summary` so large-studio summary work cannot block the first Dashboard render.
-- If `/dashboard/summary` has production latency or correctness issues, keep the endpoint deployed but triage it separately; the Dashboard will continue rendering from the bootstrap slice while the summary request fails soft.
+- `/dashboard/bootstrap?view=home` returns only the critical studio shell data: the studio and its programs. Home's facts load afterward from one `GET /dashboard/home` so large-studio work cannot block the first Dashboard render.
+- If `/dashboard/home` has production latency or correctness issues, keep the endpoint deployed but triage it separately. The shell keeps rendering; Home shows a retryable error on a first load, and keeps its last facts with a refresh warning when a later read fails.
 
 Frontend:
 
@@ -88,19 +88,25 @@ npm --prefix frontend run analyze
 
 ## Deterministic Regression Gate
 
-The canonical local gate calls the real Dashboard summary endpoint, including
-fresh context resolution, cached RPC facts and response assembly, against fake
-provider I/O. It is not a browser or hosted database latency measurement. It runs the three
-fixed profiles in `performance/dashboard-summary-budget.json`: `small` (25
-students), `medium` (250 students), and `large` (2,500 students). Each profile
-uses the same fixed request, route and role. Supporting cardinalities vary
-independently, including attendance, memberships, leads, invoices, payments and
-Stripe events.
+The canonical local gate calls the real `GET /dashboard/home` endpoint,
+including fresh context resolution, the cached facts RPC, uncached follow-ups,
+cached promotions (belt eligibility) and response assembly, against fake
+provider I/O. It is not a browser or hosted database latency measurement. It
+runs the three fixed profiles in `performance/dashboard-home-budget.json`:
+`small` (25 students), `medium` (250 students), and `large` (2,500 students).
+Each profile uses the same fixed admin request and route. Cardinalities cover
+only the tables Home reads and vary independently: students, memberships,
+attendance, promotions and leads. Billing and schedule facts come from the
+faked RPC, so their tables are not sized.
 
 The versioned budget manifest is the owner of the profile ceilings and metric
-semantics. Its `dashboard-summary-performance-v2` manifest version and
-`dashboard-summary-endpoint-fixture-v2` fixture revision must remain bound to emitted
-evidence. The gate emits one aggregate-only JSON object to stdout. It never
+semantics. Its `dashboard-home-performance-v1` manifest version and
+`dashboard-home-endpoint-fixture-v1` fixture revision must remain bound to emitted
+evidence. Belt eligibility reads grow with the studio, so each profile has its
+own ceilings: count ceilings are the measured value plus one, byte ceilings
+carry about 20% headroom, and cache, authorization and materialization counts
+are exact. Remeasure and update the manifest in the same change whenever Home's
+reads change on purpose. The gate emits one aggregate-only JSON object to stdout. It never
 emits fixture rows, names, payloads, tenant identifiers, or other privacy-
 bearing data; the stdout result is run evidence and is ephemeral, not a
 tracked source artifact.
@@ -118,7 +124,8 @@ override to point the gate at a hosted service. The command fails when the
 worktree has tracked or untracked changes, the checked-out SHA differs from
 `--expected-sha`, a profile or route is missing,
 the manifest/fixture/privacy bindings differ, a metric is non-finite or over
-budget, or any privacy-bearing field appears in the aggregate evidence.
+budget, promotions load other than three times, any request materializes
+sessions, or any privacy-bearing field appears in the aggregate evidence.
 
 Release CI runs this same gate in a separate, bounded `performance-regression`
 job after establishing Node 22.13.0 and Python 3.11. It checks out and asserts
@@ -144,20 +151,20 @@ The verifier performs GET-only probes against pinned Koaryu targets, rejects red
 
 The browser harness records two separate readiness metrics. `dashboard_shell_ready_ms`
 comes from a committed visible shell mark scoped to the current route and identity
-generation. It does not prove that identity or owner data is present. The legacy
-shell/layout DOM attribute still requires identity and persisted layout resolution.
-`dashboard_ready_ms` comes from a committed complete-data mark after
-layout resolution and the controller's complete required-dataset aggregate is
-ready: students, programs, leads, schedule, dashboard summary, and
-selected-ladder belt eligibility. Preview semantics remain owned by the same
-resolver. Treat the latter as the true-data readiness measure. Identity and first-useful content have separate committed marks. Marks are written
+generation. It does not prove that owner data is present. Home's shell DOM
+attribute turns true once identity is ready.
+`dashboard_ready_ms` comes from the committed complete-data mark Home writes
+once its one `GET /dashboard/home` payload is present for the current
+identity; Home's data-ready DOM attribute turns true at the same time. Preview
+mode follows the same rule with its preview payload. Treat the latter as the true-data readiness measure. Identity and first-useful content have separate committed marks. Marks are written
 after a paint opportunity and retain only fixed route labels and numeric
 generations. The optional network-idle wait happens afterward and is excluded
 from readiness timings.
 Separately, evidence validation requires HTTP 200 responses from
-`/dashboard/bootstrap` and `/dashboard/summary`, resource timings, and at least one allowlisted
+`/dashboard/bootstrap` and `/dashboard/home`, resource timings, and at least one allowlisted
 finite, nonnegative `Server-Timing` duration for each response; those two
-responses alone do not prove the full true-data marker.
+responses alone do not prove the true-data marker. A `/dashboard/home/preferences`
+save is never counted as Home's payload.
 
 For a privacy-safe authenticated dashboard capture, create a Playwright storage-state file through the existing approved sign-in workflow, then run:
 
@@ -174,14 +181,14 @@ The harness requires a prior exact-SHA deployed-release verification before
 Chromium starts and a second exact-SHA verification after the browser closes.
 An alias move, frontend/backend SHA mismatch, failed readiness probe, missing
 resource timing, missing allowlisted server timing, non-finite metric, blocked
-write, or unknown-origin request invalidates the capture. It waits for the
-dashboard's explicit true-data marker, which requires layout resolution plus
-the controller's complete required-dataset aggregate: students, programs,
-leads, schedule, dashboard summary, and selected-ladder belt eligibility.
-Preview semantics remain owned by the same resolver. Separately, evidence
-validation requires HTTP 200 responses from `/dashboard/bootstrap` and
-`/dashboard/summary`, resource timings, and allowlisted
-`Server-Timing`; those two responses alone do not prove the full data marker.
+write, or unknown-origin request invalidates the capture. It waits for
+Home's explicit true-data marker, which requires authoritative identity and
+Home's one payload. Separately, evidence validation requires HTTP 200 responses
+from `/dashboard/bootstrap` and `/dashboard/home`, resource timings, and
+allowlisted `Server-Timing` (the bootstrap's `koaryu_*` and Home's
+`koaryu_home_*` stages); those two responses alone do not prove the data marker. `GET /dashboard/home` materializes today's
+recurring sessions when none exist yet, a write the GET-only guard cannot see,
+so capture against a settled account whose sessions for the day already exist.
 It emits only aggregate timing labels. It does not emit URLs, query strings,
 response bodies, tenant/user identifiers, credentials, or storage state. Keep
 the storage-state file private and delete it through the approved local
@@ -191,8 +198,8 @@ Then complete the functional smoke:
 
 1. Visit `/health` on the deployed backend and `/api/v1/health` through the configured API base.
 2. Sign in as a studio user with Koaryu Core access.
-3. Open `/dashboard` and confirm the owner metrics render without console errors.
-4. Check the dashboard network response for `/dashboard/bootstrap`: it should include `Cache-Control: no-store, private`, `Vary: Authorization, X-Studio-Id`, and `Server-Timing`.
+3. Open `/dashboard` and confirm Home renders without console errors.
+4. Check the dashboard network responses for `/dashboard/bootstrap` and `/dashboard/home`: each should include `Cache-Control: no-store, private`, `Vary: Authorization, X-Studio-Id, Cookie`, and `Server-Timing`.
 5. Open `/students`; confirm the first page renders without a full-roster wait.
 6. Search a normal name, an accented name if present, and a no-match term. The page should show loading or updating copy while waiting and an action-oriented empty state when no results match.
 7. Use status and program filters, sort by name/status/member date, and move between pages if the studio has more than 50 students.
@@ -204,7 +211,7 @@ Then complete the functional smoke:
 
 Expected improvements:
 
-- Faster dashboard useful paint because the first render consumes the bounded bootstrap payload while compact owner metrics load afterward.
+- Faster dashboard useful paint because the shell renders from the bounded bootstrap payload while Home's one `GET /dashboard/home` payload loads afterward.
 - Less client CPU on dashboard and Students.
 - Less bandwidth and backend work from route prefetching heavy CRM areas.
 - Normal Students search/filter/sort should scale beyond the bootstrap student cap.
@@ -213,17 +220,17 @@ Known tradeoffs:
 
 - The normal Students roster now depends on backend round trips for search/filter/sort. Debounce and stable loading states should keep small studios feeling responsive.
 - Derived Students views retain the existing bounded roster RPC, query-bound cursors, exact totals and page-only enrichment. Bootstrap rows do not establish roster-page authority.
-- Summary-backed widgets, schedule widgets and optional eligibility report their own readiness. Required errors remain visible. First-useful content never substitutes for the complete-data metric.
+- Home renders from its one `GET /dashboard/home` payload. A section the server could not compute keeps its band and says so. Required errors remain visible. First-useful content never substitutes for the complete-data metric.
 - Production console performance logging is intentionally manual. There is no third-party telemetry sink in this pass.
 - The evidence harness is an operator-run point-in-time capture, not durable telemetry or an SLO monitor. Speed Insights and other retained/paid sinks remain uninstalled pending destination, sampling, retention, privacy, and cost decisions.
 
 ## Rollback Steps
 
-If dashboard summary causes issues:
+If Home causes issues:
 
-1. Confirm `/dashboard/bootstrap` still returns `200` quickly and `summary` is absent or null.
-2. Inspect `/dashboard/summary` server timing and backend logs for the slow or failing section.
-3. Confirm `/dashboard` still renders from the bootstrap roster slice while the summary request fails soft.
+1. Confirm `/dashboard/bootstrap?view=home` still returns `200` quickly with only the studio and programs.
+2. Inspect `/dashboard/home` server timing (`koaryu_home_*` stages) and backend logs for the slow or failing section.
+3. Confirm `/dashboard` still renders the shell and shows Home's retryable error, or its last facts with a refresh warning, while `/dashboard/home` fails.
 
 If the Students roster causes issues:
 
@@ -239,7 +246,7 @@ If production needs temporary performance debugging:
 ## Risk Register
 
 - Tenant leakage: all CRM reads still go through FastAPI endpoints or backend services with user/studio/subscription checks. Do not move service-role access to Next.
-- Incorrect dashboard counts: summary queries must use full-studio aggregate or scoped backend logic, not the 200-student bootstrap page.
+- Incorrect dashboard counts: Home's counts must use full-studio aggregates (the facts RPC) or scoped backend logic, not the 200-student bootstrap page.
 - Partial roster accuracy: local student mutations must preserve `studentsMayBePartial` unless a real full roster refresh succeeds.
 - Search grammar injection: backend Students search strips PostgREST delimiter and wildcard characters before building the raw `or` filter.
 - Hidden route errors: heavy/admin routes have reduced auto-prefetch, so route-level loading screens and direct smoke checks are part of release verification.
@@ -257,8 +264,9 @@ error instead of launching the legacy dataset fan-out.
 Before authoritative identity, the layout renders neutral geometry. Tenant
 labels, role actions and page content wait for the profile and legal-name gate.
 Program metadata and usage have separate readiness. Settings requests enriched
-usage when mounted and preserves valid counts during refresh. Dashboard loads
-eligibility only for selected panels that consume it; Belt Tracker owns its read.
+usage when mounted and preserves valid counts during refresh. Home computes
+promotions (belt eligibility) on the server inside `GET /dashboard/home` for the
+roles that see them; Belt Tracker owns its read.
 Students continues using the existing roster contract.
 
 Navigation links expose pending feedback through Next's `useLinkStatus`. There is
@@ -277,8 +285,8 @@ upstream deadline is 34 seconds for ordinary requests and 125 seconds for bulk
 requests, with cancellation when the caller or response consumer stops.
 
 The interactive PostgREST transport uses a 10-second per-I/O timeout and the bulk
-transport uses 30 seconds. Bootstrap’s five short-lived clients inherit their
-parent client’s budget; the isolated Stripe authorization read has a 10-second
+transport uses 30 seconds. Bootstrap’s short-lived clients (one per dataset its
+view loads, at most three) inherit their parent client’s budget; the isolated Stripe authorization read has a 10-second
 budget. These are not total multi-query deadlines. Existing
 caller waits and worker/queue capacity remain unchanged at 30 seconds with 4+16
 interactive slots and 120 seconds with 1+2 bulk slots. Capacity returns only when

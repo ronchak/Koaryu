@@ -57,7 +57,7 @@ from app.services.student_photo_store import StudentPhotoStore
 from app.services.student_service import StudentService
 from app.services.student_roster_query import StudentRosterCursorError
 from app.services.staging_provider_enrollment_policy import allows_provider_enrollment_preparation
-from app.services.dashboard_summary_service import dashboard_summary_fact_cache
+from app.services.dashboard_summary_cache import invalidate_dashboard_fact_caches
 import json
 
 router = APIRouter(prefix="/students", tags=["students"])
@@ -487,7 +487,7 @@ async def bulk_archive_students(
     async def _provider_operation(client):
         service = StudentService(client)
         count = await service.archive_students(data, studio_id, user_id)
-        dashboard_summary_fact_cache.invalidate(studio_id, domain="dashboard")
+        invalidate_dashboard_fact_caches(studio_id, domain="dashboard")
         return {"updated": count}
 
     return await run_supabase_operation(

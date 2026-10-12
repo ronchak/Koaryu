@@ -182,7 +182,7 @@ This uses Next.js 16's built-in Turbopack analyzer (`next build --experimental-a
 
 ## Performance Rollout
 
-See [docs/performance-rollout.md](../docs/performance-rollout.md) before enabling the v0.1.1 rendering changes in production. The short version: keep `NEXT_PUBLIC_STUDENTS_PAGED_ROSTER=true`, let the dashboard route own summary loading after workspace access is verified, and use the documented switches only for rollback or short diagnostic windows.
+See [docs/performance-rollout.md](../docs/performance-rollout.md) before enabling the v0.1.1 rendering changes in production. The short version: keep `NEXT_PUBLIC_STUDENTS_PAGED_ROSTER=true`, let Home load `/dashboard/home` after workspace access is verified, and use the documented switches only for rollback or short diagnostic windows.
 
 ## Authenticated loading
 
@@ -193,15 +193,14 @@ An unavailable bootstrap shows a retryable identity error. It does not fan out
 into legacy dataset requests. Deploy a backend with `/dashboard/bootstrap`
 before this frontend; mixed versions without that endpoint are unsupported.
 
-Dashboard panels report their own loading and error states. Summary-backed
-panels can appear before schedule or promotion eligibility finishes. Eligibility
-loads when Promotions Due is selected or Belt Tracker opens. The original
-`data-koaryu-dashboard-data-ready` marker retains its aggregate requirements;
-`data-koaryu-dashboard-selected-data-ready` measures the selected panels, and
-`data-koaryu-dashboard-useful-ready` identifies the first ready data panel.
-Program metadata comes from bootstrap. Settings refreshes usage when opened,
-shows loading or unavailable usage explicitly, and retains successful usage
-while refreshing. Bootstrap rows never establish paginated roster authority.
+Home uses bootstrap's `home` view for studio and programs, and reads one
+payload from `/dashboard/home`, including promotions and preferences. It has
+one loading, error or ready state; panels do not fetch independently. Preview
+mode supplies the same payload shape locally. See Dashboard loading below for
+retained paint, revalidation and readiness markers.
+Settings refreshes usage when opened, shows loading or unavailable usage
+explicitly, and retains successful usage while refreshing. Bootstrap rows never
+establish paginated roster authority.
 
 Schedule initialization and visible calendar ranges use the same reconciliation
 queue. New ranges remain pending until their materialization completes. Refresh
@@ -262,7 +261,7 @@ The easiest way to deploy your Next.js app is to use the [Vercel Platform](https
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
 
-Pending staff, program-usage and deferred summary reads recover from token rotation
+Pending staff, program-usage and Home reads recover from token rotation
 through their existing owners, with at most two replays using the current token.
 Identity changes, sign-out and subscription revocation invalidate that recovery.
 Mutations are not replayed. A confirmed missing session or sign-out clears private
@@ -297,10 +296,10 @@ node --experimental-strip-types --test tests/belt-editor-mounted.test.mjs
 
 `/dashboard/workspace` establishes authoritative membership, subscription access and
 studio timezone before feature reads. Student detail always ensures a complete
-record independently of the lightweight roster. Dashboard commands reconcile with
-`/dashboard/summary?fresh=true`; a failed refresh keeps known data and reports a
-warning. Token renewal preserves confirmed writes and roster position only within
-the same validated identity scope.
+record independently of the lightweight roster. Studio commands mark dashboard facts
+changed; Home reconciles with `/dashboard/home?fresh=true`. A failed refresh keeps
+known data and reports a warning. Token renewal preserves confirmed writes
+and roster position only within the same validated identity scope.
 
 Roster URLs retain bounded filters/sort. One identity-scoped session return record
 retains cursor/scroll/focus for 30 minutes. Unknown write outcomes must not be
@@ -363,11 +362,12 @@ and photo uploads use a 190-second browser limit. Staging and preview traffic
 is excluded from production metric collection.
 
 The authenticated dashboard capture records allowlisted HTTP and browser resource
-timings for `/dashboard/workspace`, `/dashboard/bootstrap`, and `/dashboard/summary`
+timings for `/dashboard/workspace`, `/dashboard/bootstrap`, and `/dashboard/home`
 without retaining URLs, identifiers, or query values. Workspace does not emit
 `Server-Timing`, so its HTTP and resource timings are diagnostics only. Bootstrap
-and summary still require their existing successful responses, resource entries,
-and allowlisted `Server-Timing` measurements.
+and Home require successful responses, resource entries, and allowlisted
+`Server-Timing` measurements (Home's are the `koaryu_home_*` stages). Saving
+the layout through `/dashboard/home/preferences` is not counted as Home's payload.
 
 The synthetic mounted-test startup trace records fixture workspace/controller
 readiness. It does not prove deployed route usability or measure deployed backend memory.
@@ -434,6 +434,31 @@ These synthetic proofs do not establish operational test email. Actual route mou
 Dashboard pages own their cold-load placeholders. Keep their headers and layout visible, and
 reserve the same columns and rails as the loaded view. The `koaryu-skeleton-reveal` class
 holds placeholder space immediately and delays its appearance by 220 milliseconds.
+
+Home at `/dashboard` renders its bands from one `/dashboard/home` payload after
+workspace access is verified. The `home` bootstrap view loads studio and programs.
+`useHome` retains successful payloads by user, studio, role and business date
+for immediate revisit paint.
+It revalidates on mount, focus, return to a visible tab, each visible minute,
+business-date changes, fact changes after commands and Retry. The server's
+`studio.today` supplies the date; date changes keep the last payload on screen.
+One loading, error or ready state covers the page. Ordinary refresh errors keep
+the last payload with one retry notice; access refusals clear it.
+
+`data-koaryu-dashboard-shell-ready` means identity is ready.
+`data-koaryu-dashboard-data-ready` means the payload is rendered, including retained
+data during a refresh error. The `koaryu.visible.identity` mark tracks identity;
+`koaryu.visible.useful`, `koaryu.visible.complete` and
+`koaryu.visible.legacy-complete` fire when the payload is rendered.
+
+Edit Home shows, hides and reorders optional panels; the bands stay fixed.
+Preferences arrive in the Home payload and save through a debounced
+`PUT /dashboard/home/preferences`, flushed on Done and tab hide. The backend
+stores the current studio's preferences under `koaryu_home` in Auth user metadata.
+A local-storage copy keyed by user and studio supplies immediate paint; reads
+reconcile with the current role. Sign-out purges the namespace, and an account
+or studio change purges the previous identity's copy and disposes its sync.
+Preview edits stay local.
 
 `RetainedStateProvider` keeps bounded page data in memory for the current user, studio and
 identity generation. `useRetainedState` restores successful data on revisits while existing

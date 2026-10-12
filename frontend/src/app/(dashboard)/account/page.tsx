@@ -10,36 +10,43 @@ import {
   ShieldCheck,
   UserCircle,
 } from "lucide-react";
-import {
-  AccountInfoRow,
-  AccountLinkTile,
-  AccountPageShell,
-  AccountSection,
-} from "@/components/account-page-shell";
+import { AccountLinkTile, AccountPageShell } from "@/components/account-page-shell";
+import { HorizonPanel, ToneTag } from "@/components/ui/horizon-parts";
 import { useStudioStore } from "@/lib/store";
 import { formatRoleLabel } from "@/lib/role-label";
+import styles from "@/components/account/account.module.css";
 
 export default function AccountPage() {
   const { currentRole, studioName, userEmail, userName } = useStudioStore();
+  const initial = (userName || userEmail || "?").trim().charAt(0).toUpperCase() || "?";
 
   return (
     <AccountPageShell
       title="My account"
       description="Manage your Koaryu identity, preferences, subscription, and support options."
-      badge={formatRoleLabel(currentRole)}
     >
-      <AccountSection title="Account summary">
-        <AccountInfoRow label="Name" value={userName || "Not set"} />
-        <AccountInfoRow label="Email" value={userEmail || "Not available"} />
-        <AccountInfoRow label="Studio" value={studioName || "Not selected"} />
-        <AccountInfoRow
-          label="Role"
-          value={formatRoleLabel(currentRole)}
-          detail="Your role controls access to staff, billing, and data tools."
-        />
-      </AccountSection>
+      <HorizonPanel title="Account summary" titleId="account-summary-title">
+        <div className={styles.identity}>
+          <span className={styles.avatar} aria-hidden="true">
+            {initial}
+          </span>
+          <div className={styles.identityText}>
+            <p className={styles.identityName}>{userName || "Name not set"}</p>
+            <p className={styles.identityMeta}>{userEmail || "Email not available"}</p>
+            <p className={styles.identityMeta}>
+              {studioName || "No studio selected"}
+              {" · "}
+              <ToneTag dot={false}>{formatRoleLabel(currentRole)}</ToneTag>
+            </p>
+          </div>
+        </div>
+        <p className="mt-4 text-sm text-text-secondary">
+          Your role controls access to staff, billing, and data tools.
+        </p>
+      </HorizonPanel>
 
-      <div className="border-y border-border divide-y divide-border">
+      <h2 className={styles.groupTitle}>You</h2>
+      <div className={styles.tileGrid}>
         <AccountLinkTile
           href="/account/profile"
           icon={UserCircle}
@@ -64,6 +71,10 @@ export default function AccountPage() {
           title="Notifications"
           description="Review planned operational, billing, staff, and security notification categories."
         />
+      </div>
+
+      <h2 className={styles.groupTitle}>Studio, data and support</h2>
+      <div className={styles.tileGrid}>
         <AccountLinkTile
           href="/account/data"
           icon={Database}

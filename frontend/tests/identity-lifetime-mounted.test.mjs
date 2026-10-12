@@ -121,14 +121,12 @@ async function fixture({ view = "belt", layout = false, preview = false } = {}) 
               programs: f.programs,
               belt_ladders: f.ladders,
               primary_belt_ladder: f.ladders[0],
-              summary: null,
             };
           if (path.startsWith("/belts/eligibility?"))
             return new Promise((resolve, reject) => f.reads.push({ path, token, resolve, reject }));
           if (path === "/belts/ladders") return f.ladders;
           if (path.startsWith("/schedule/window"))
             return { sessions: [], templates: [], attendance: [] };
-          if (path.startsWith("/dashboard/summary")) return new Promise(() => {});
           if (path.startsWith("/programs")) return f.programs;
           if (path.startsWith("/students")) return [];
           if (path === "/leads") return [];
@@ -419,25 +417,21 @@ for (const failure of [false, true])
     await settle(page, 2);
     await page.close();
   });
-test("Dashboard promotions_due owns lazy eligibility recovery", async () => {
-  const page = await fixture({ view: "dashboard" });
-  // The actual dashboard controller requests eligibility only for its visible widget.
+test("Belt tracker owns eligibility recovery after credential renewal", async () => {
+  const page = await fixture({ view: "belt" });
   await page.waitForFunction(() => fixture.store.currentLadderId === "A");
-  assert.equal(await page.evaluate(() => fixture.reads.length), 0);
-  await page.evaluate(() =>
-    fixture.dashboard.contentProps.onVisibleWidgetsChange(["promotions_due"]),
-  );
   await flush(page);
   await page.evaluate(() => fixture.rotate("token-b"));
   await settle(page, 0, { error: true });
-  await settle(page, 1);
-  await page.waitForFunction(() => fixture.reads.length === 3);
-  assert.equal(await page.evaluate(() => fixture.reads[2].token), "token-b");
+  await page.waitForFunction(() => fixture.reads.length === 2);
+  assert.equal(await page.evaluate(() => fixture.reads[1].token), "token-b");
   assert.equal(await page.evaluate(() => fixture.store.eligibilityPendingLadderId), "A");
-  await settle(page, 2);
+  await settle(page, 1, { rows: [row("Recovered")] });
+  assert.equal(await page.evaluate(() => fixture.store.eligibility[0].student_name), "Recovered");
   assert.equal(await page.evaluate(() => fixture.store.eligibilityPendingLadderId), null);
   await page.close();
 });
+
 test("report invalidation after API resolution suppresses file even when abort cannot revoke the completed response", async () => {
   const page = await fixture({ view: "reports" });
   await page.evaluate(() => {

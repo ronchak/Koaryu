@@ -245,7 +245,9 @@ function ClassFormModalContent(props: ClassFormModalProps & { defaultMode: Class
     >
       <div className="flex items-center justify-between border-b border-border px-4 py-4">
         <div>
-          <h2 className="text-base font-semibold text-text-primary">{title}</h2>
+          <h2 className="text-[1.375rem] font-extrabold tracking-[-0.03em] text-text-primary">
+            {title}
+          </h2>
           <p className="text-xs text-muted mt-1">
             {allowRecurring
               ? "Create a weekly template or a one-off session."

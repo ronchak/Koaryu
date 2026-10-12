@@ -1,0 +1,590 @@
+/* Horizon kit. Tokens: --product-* inside the product shell, --hz-* everywhere. */
+
+.hills {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  -webkit-mask-image: linear-gradient(180deg, black 58%, transparent 100%);
+  mask-image: linear-gradient(180deg, black 58%, transparent 100%);
+  pointer-events: none;
+}
+
+.hills[data-variant="band"] {
+  -webkit-mask-image: linear-gradient(180deg, black 68%, transparent 100%);
+  mask-image: linear-gradient(180deg, black 68%, transparent 100%);
+}
+
+.sun {
+  fill: var(--hz-sun);
+  opacity: 0.95;
+}
+
+.sunHalo {
+  fill: var(--hz-sun);
+  opacity: 0.35;
+}
+
+/* Page body */
+.page {
+  width: 100%;
+  max-width: calc(76rem + 2 * var(--hz-gutter, clamp(16px, 2.4vw, 32px)));
+  margin-inline: auto;
+  padding: 0 var(--hz-gutter, clamp(16px, 2.4vw, 32px)) 48px;
+}
+
+.page[data-width="medium"] {
+  max-width: calc(58rem + 2 * var(--hz-gutter, clamp(16px, 2.4vw, 32px)));
+}
+
+.page[data-width="narrow"] {
+  max-width: calc(44rem + 2 * var(--hz-gutter, clamp(16px, 2.4vw, 32px)));
+}
+
+.page > * + * {
+  margin-top: 20px;
+}
+
+/* Stats strip; sits on the header's near ridge when it opens the page. */
+.stats {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: repeat(var(--hz-stat-count, 4), minmax(0, 1fr));
+  overflow: hidden;
+  border: 1px solid var(--product-rule-soft, var(--border));
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--product-paper, var(--surface)) 88%, transparent);
+  box-shadow: var(--product-shadow-card, 0 10px 30px rgb(0 0 0 / 8%));
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+}
+
+.page > .stats:first-child {
+  margin-top: -40px;
+}
+
+.stat {
+  position: relative;
+  display: grid;
+  min-width: 0;
+  min-height: 44px;
+  align-content: start;
+  gap: 3px;
+  padding: 16px 20px;
+  color: var(--product-ink, var(--text-primary));
+  text-decoration: none;
+}
+
+.stat + .stat::before {
+  position: absolute;
+  top: 16px;
+  bottom: 16px;
+  left: 0;
+  width: 1px;
+  background: var(--product-rule-soft, var(--border));
+  content: "";
+}
+
+a.stat {
+  transition: background-color var(--product-motion-change-duration, 120ms) ease-out;
+}
+
+a.stat:hover {
+  background: color-mix(in srgb, var(--product-card-stock, var(--surface)) 70%, transparent);
+}
+
+a.stat:focus-visible {
+  outline: 2px solid var(--product-focus, var(--accent));
+  outline-offset: -3px;
+  border-radius: 14px;
+}
+
+.statLabel {
+  overflow: hidden;
+  color: var(--product-meta, var(--muted));
+  font-size: 0.8125rem;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.statValue {
+  font-size: 1.875rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 760;
+  letter-spacing: -0.035em;
+  line-height: 1.1;
+}
+
+.statValue small {
+  margin-left: 3px;
+  color: var(--product-meta, var(--muted));
+  font-size: 0.875rem;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+.statPending {
+  display: block;
+  width: 3.25rem;
+  height: 1.9rem;
+  border-radius: 8px;
+  background: var(--product-rule-soft, var(--border));
+}
+
+.statNote {
+  overflow: hidden;
+  color: var(--product-soft-ink, var(--text-secondary));
+  font-size: 0.8125rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.statNote[data-tone="alert"] {
+  color: var(--product-vermilion, var(--danger));
+  font-weight: 600;
+}
+
+.statNote[data-tone="warn"] {
+  color: var(--product-straw, var(--warning));
+  font-weight: 600;
+}
+
+.statNote[data-tone="calm"] {
+  color: var(--product-affirm, var(--success));
+  font-weight: 600;
+}
+
+/* Panel */
+.panel {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--product-rule-soft, var(--border));
+  border-radius: 16px;
+  background: var(--product-paper, var(--surface));
+  box-shadow: var(--product-shadow-card, 0 10px 30px rgb(0 0 0 / 8%));
+  color: var(--product-ink, var(--text-primary));
+}
+
+.panelHead {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 20px 0;
+}
+
+.panelTitles {
+  min-width: 0;
+}
+
+.panelTitle {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.panelDescription {
+  margin: 2px 0 0;
+  color: var(--product-soft-ink, var(--text-secondary));
+  font-size: 0.8125rem;
+  line-height: 1.45;
+}
+
+.panelActions {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.panelBody {
+  min-width: 0;
+  padding: 14px 20px 18px;
+}
+
+.panel[data-flush="true"] .panelBody {
+  padding: 10px 0 0;
+}
+
+/* Tone tag and chip */
+.tag {
+  display: inline-flex;
+  max-width: 100%;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--hz-tile);
+  color: var(--product-soft-ink, var(--text-secondary));
+  font-size: 0.6875rem;
+  font-weight: 700;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
+.tag[data-dot="true"]::before {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 6px;
+  border-radius: 50%;
+  background: currentColor;
+  content: "";
+}
+
+.tag[data-tone="alert"],
+.chip[data-tone="alert"] {
+  background: var(--hz-alert-wash);
+  color: var(--product-vermilion, var(--danger));
+}
+
+.tag[data-tone="warn"],
+.chip[data-tone="warn"] {
+  background: var(--hz-warn-wash);
+  color: var(--product-straw, var(--warning));
+}
+
+.tag[data-tone="calm"],
+.chip[data-tone="calm"] {
+  background: var(--hz-affirm-wash);
+  color: var(--product-affirm, var(--success));
+}
+
+.chip {
+  display: inline-grid;
+  width: 40px;
+  height: 40px;
+  flex: 0 0 40px;
+  place-items: center;
+  border-radius: 11px;
+  background: var(--hz-tile);
+  color: var(--product-wood, var(--accent));
+}
+
+.chip[data-size="32"] {
+  width: 32px;
+  height: 32px;
+  flex-basis: 32px;
+  border-radius: 9px;
+}
+
+.chip :global(svg) {
+  width: 18px;
+  height: 18px;
+}
+
+.chip[data-size="32"] :global(svg) {
+  width: 16px;
+  height: 16px;
+}
+
+/* Calm state */
+.calm {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px;
+  border: 1px dashed var(--product-rule, var(--border));
+  border-radius: 12px;
+}
+
+.calmText {
+  display: grid;
+  min-width: 0;
+  flex: 1 1 auto;
+  gap: 2px;
+}
+
+.calmText strong {
+  font-size: 0.9375rem;
+  font-weight: 650;
+}
+
+.calmText span {
+  color: var(--product-soft-ink, var(--text-secondary));
+  font-size: 0.8125rem;
+  line-height: 1.45;
+}
+
+.calmAction {
+  flex: 0 0 auto;
+}
+
+/* Toolbar */
+.toolbar {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+/* Work list: each row opens the thing that needs a hand, its action label part of the link. */
+.workList {
+  display: grid;
+  margin: 0 -10px;
+  padding: 0;
+  list-style: none;
+}
+
+.workItem {
+  min-width: 0;
+}
+
+.workItem + .workItem {
+  border-top: 1px solid var(--product-rule-soft, var(--border));
+}
+
+.workRow {
+  display: flex;
+  min-width: 0;
+  min-height: 40px;
+  align-items: center;
+  gap: 14px;
+  padding: 10px;
+  border-radius: 10px;
+  color: var(--product-ink, var(--text-primary));
+  font-size: 0.875rem;
+  line-height: 1.4;
+  text-decoration: none;
+}
+
+a.workRow {
+  transition: background-color var(--product-motion-change-duration, 120ms) ease-out;
+}
+
+a.workRow:hover {
+  background: color-mix(in srgb, var(--hz-tile) 70%, transparent);
+}
+
+a.workRow:focus-visible {
+  outline: 2px solid var(--product-focus, var(--accent));
+  outline-offset: -2px;
+}
+
+.workLeading {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+}
+
+/* A start time: plain ink in a steady column, never a tone wash. */
+.workLeading[data-leading="text"] {
+  min-width: 4.5rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* Text and action share a line until the action no longer fits; then it drops under the text. */
+.workBody {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+}
+
+.workText {
+  display: grid;
+  min-width: 0;
+  flex: 1 1 11rem;
+  gap: 2px;
+}
+
+.workTitle {
+  font-size: 0.9375rem;
+  font-weight: 700;
+  line-height: 1.35;
+  overflow-wrap: break-word;
+}
+
+.workMeta {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 8px;
+  color: var(--product-soft-ink, var(--text-secondary));
+  font-size: 0.8125rem;
+  line-height: 1.45;
+}
+
+.workAction {
+  display: inline-flex;
+  max-width: 100%;
+  flex: 0 0 auto;
+  align-items: center;
+  color: var(--product-wood, var(--accent));
+  font-size: 0.8125rem;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+a.workRow:hover .workAction:not([data-emphasized="true"]) {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.workAction[data-emphasized="true"] {
+  min-height: 40px;
+  padding: 0 14px;
+  border-radius: 10px;
+  background: var(--hz-cta, var(--product-ink));
+  color: var(--hz-cta-ink, var(--product-paper));
+}
+
+.panel[data-flush="true"] .workList {
+  margin-inline: 0;
+}
+
+.panel[data-flush="true"] .workRow {
+  padding-inline: 20px;
+  border-radius: 0;
+}
+
+/* A panel header's link to its source page: words and an arrow. */
+.panelLink {
+  display: inline-flex;
+  min-height: 40px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  border-radius: 10px;
+  color: var(--product-wood, var(--accent));
+  font-size: 0.8125rem;
+  font-weight: 650;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background-color var(--product-motion-change-duration, 120ms) ease-out;
+}
+
+/* Optically flush with the panel's edge, without making the header taller. */
+.panelActions > .panelLink {
+  margin: -10px -10px -10px 0;
+}
+
+.panelLink:hover {
+  background: color-mix(in srgb, var(--hz-tile) 70%, transparent);
+}
+
+.panelLink:focus-visible {
+  outline: 2px solid var(--product-focus, var(--accent));
+  outline-offset: -2px;
+}
+
+.panelLink :global(svg) {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  transition: transform var(--product-motion-change-duration, 120ms) ease-out;
+}
+
+.panelLink:hover :global(svg) {
+  transform: translateX(2px);
+}
+
+@media (max-width: 1023px) {
+  .stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .stat:nth-child(odd)::before {
+    display: none;
+  }
+
+  .stat:nth-child(n + 3) {
+    border-top: 1px solid var(--product-rule-soft, var(--border));
+  }
+
+  /* An odd last stat (three on a phone) takes the whole bottom row. */
+  .stat:last-child:nth-child(odd) {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 640px) {
+  .stat {
+    padding: 13px 15px;
+  }
+
+  .statValue {
+    font-size: 1.5rem;
+  }
+
+  .panelHead {
+    flex-wrap: wrap;
+    padding: 14px 16px 0;
+  }
+
+  .panelBody {
+    padding: 12px 16px 16px;
+  }
+
+  .calm {
+    flex-wrap: wrap;
+  }
+
+  .panel[data-flush="true"] .workRow {
+    padding-inline: 16px;
+  }
+
+  /*
+   * One row shape on phones: the action always sits under the title and meta,
+   * left-aligned with the title, and the leading tile or time lines up with
+   * the title line rather than the row's centre.
+   */
+  .workRow {
+    align-items: flex-start;
+  }
+
+  .workBody {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+  }
+
+  .workText {
+    flex: 0 0 auto;
+    width: 100%;
+  }
+}
+
+@media (max-width: 640px), (pointer: coarse) {
+  .workRow {
+    min-height: 44px;
+  }
+
+  .panelLink {
+    min-height: 44px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .panelLink :global(svg) {
+    transition: none;
+  }
+
+  .panelLink:hover :global(svg) {
+    transform: none;
+  }
+}
+
+@media print {
+  .hills {
+    display: none;
+  }
+
+  .stats,
+  .panel {
+    box-shadow: none;
+    backdrop-filter: none;
+  }
+}

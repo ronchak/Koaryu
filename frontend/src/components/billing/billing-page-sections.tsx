@@ -1,28 +1,17 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type CSSProperties, type ReactNode } from "react";
 import { billingOverviewMetricsClass, billingOverviewProvidersClass } from "./billing-layout";
 
-import {
-  ArrowUpRight,
-  Banknote,
-  CheckCircle2,
-  Clock3,
-  CreditCard,
-  Link2,
-  Mail,
-  RotateCcw,
-  type LucideIcon,
-} from "lucide-react";
+import { ArrowUpRight, CheckCircle2, Clock3, CreditCard, Link2, RotateCcw, type LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { CalmState, HorizonPanel, ToneTag, type HorizonTone } from "@/components/ui/horizon";
 import { ModalFrame } from "@/components/ui/modal-frame";
-import { formatMoney, statusTone } from "@/lib/billing-page-utils";
-import type {
-  PlatformBillingStatus,
-  StudioPaymentAccount,
-} from "@/types";
+import { formatMoney } from "@/lib/billing-page-utils";
+import type { PlatformBillingStatus, StudioPaymentAccount } from "@/types";
 import type { BillingPlan } from "@/types";
 import { canStartCoreCheckout, type BillingProviderCopy } from "@/lib/billing-policy";
+import styles from "./billing.module.css";
 
 type BillingPeriodCopy = {
   label: string;
@@ -39,34 +28,128 @@ type ConnectRequirementItem = {
 type OpenBillingLink = (
   path: string,
   body: Record<string, string | undefined>,
-  action?: string
+  action?: string,
 ) => Promise<void>;
+
+const ALERT_STATUSES = new Set([
+  "past_due",
+  "failed",
+  "unpaid",
+  "action_required",
+  "deauthorized",
+  "uncollectible",
+  "disputed",
+]);
+const WARN_STATUSES = new Set([
+  "pending",
+  "open",
+  "upcoming",
+  "onboarding_incomplete",
+  "incomplete",
+  "incomplete_expired",
+  "paused",
+  "partially_refunded",
+  "refunded",
+  "pending_setup",
+]);
+const CALM_STATUSES = new Set([
+  "active",
+  "current",
+  "paid",
+  "succeeded",
+  "charges_enabled",
+  "trialing",
+  "externally_recorded",
+  "externally_paid",
+  "enabled",
+  "comped",
+]);
+
+/** Billing states mapped onto Horizon tones; the status words always stay visible. */
+export function billingStatusTone(status: string): HorizonTone {
+  if (ALERT_STATUSES.has(status)) return "alert";
+  if (WARN_STATUSES.has(status)) return "warn";
+  if (CALM_STATUSES.has(status)) return "calm";
+  return "neutral";
+}
 
 export function StatusPill({ status }: { status: string }) {
   return (
-    <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium ${statusTone(status)}`}>
+    <ToneTag tone={billingStatusTone(status)} className={styles.statusTag}>
       {status.replace(/_/g, " ")}
-    </span>
+    </ToneTag>
+  );
+}
+
+/** A Horizon panel for billing content. */
+export const BillingPanel = HorizonPanel;
+
+/** The one empty state of a flush ledger panel. */
+export function BillingEmpty({ title }: { title: string }) {
+  return (
+    <div className={styles.inset}>
+      <CalmState tone="neutral" title={title} />
+    </div>
+  );
+}
+
+/** Payer balances, each amount independent: a missing fact reads "Unavailable", never zero. */
+export function PayerBalances({
+  balanceCents,
+  overdueCents,
+  tone,
+  uncollectibleCents,
+}: {
+  balanceCents: number;
+  overdueCents?: number | null;
+  tone?: "alert";
+  uncollectibleCents?: number | null;
+}) {
+  return (
+    <dl className={styles.amounts} data-tone={tone}>
+      <div>
+        <dt>Outstanding</dt>
+        <dd>{formatMoney(balanceCents)}</dd>
+      </div>
+      <div>
+        <dt>Overdue</dt>
+        <dd>{overdueCents == null ? "Unavailable" : formatMoney(overdueCents)}</dd>
+      </div>
+      <div>
+        <dt>Uncollectible</dt>
+        <dd>{uncollectibleCents == null ? "Unavailable" : formatMoney(uncollectibleCents)}</dd>
+      </div>
+    </dl>
   );
 }
 
 export function Metric({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
-    <div className="rounded-[14px] border border-border bg-surface p-4">
-      <p className="text-xs text-muted">{label}</p>
-      <p className="mt-1 text-xl font-semibold text-text-primary">{value}</p>
-      {hint ? <p className="mt-1 text-xs text-text-secondary">{hint}</p> : null}
+    <div className={styles.figure}>
+      <p className={styles.figureLabel}>{label}</p>
+      <p className={styles.figureValue}>{value}</p>
+      {hint ? <p className={styles.figureHint}>{hint}</p> : null}
     </div>
   );
 }
 
-export function SectionHeader({ icon: Icon, title, description }: { icon: LucideIcon; title: string; description?: string }) {
+export function SectionHeader({
+  icon: Icon,
+  title,
+  description,
+}: {
+  icon: LucideIcon;
+  title: string;
+  description?: string;
+}) {
   return (
-    <div className="mb-4 flex items-start gap-2">
-      <Icon className="mt-0.5 h-4 w-4 text-accent" />
-      <div>
-        <h2 className="text-sm font-medium text-text-primary">{title}</h2>
-        {description ? <p className="mt-1 text-xs text-muted">{description}</p> : null}
+    <div className={`mb-4 ${styles.sectionHead}`}>
+      <span className="mt-0.5 inline-grid h-8 w-8 shrink-0 place-items-center rounded-[9px] bg-[var(--hz-tile)] text-accent">
+        <Icon aria-hidden="true" className="h-4 w-4" />
+      </span>
+      <div className="min-w-0">
+        <h2>{title}</h2>
+        {description ? <p>{description}</p> : null}
       </div>
     </div>
   );
@@ -74,19 +157,33 @@ export function SectionHeader({ icon: Icon, title, description }: { icon: Lucide
 
 export function ProgramChip({ program }: { program: BillingPlan["programs"][number] }) {
   return (
-    <span className="inline-flex items-center gap-1 rounded-full border border-border px-2 py-0.5 text-xs text-text-secondary">
-      <span className="h-2 w-2 rounded-full" style={{ backgroundColor: program.program_color_hex || "#94A3B8" }} />
+    <span className={styles.programChip}>
+      <span
+        aria-hidden="true"
+        className={styles.programDot}
+        style={
+          program.program_color_hex
+            ? ({ "--program-color": program.program_color_hex } as CSSProperties)
+            : undefined
+        }
+      />
       {program.program_name || "Program"}
     </span>
   );
 }
 
+function Fact({ label, children, hint }: { label: string; children: ReactNode; hint?: ReactNode }) {
+  return (
+    <div className="min-w-0">
+      <p className="text-xs text-muted">{label}</p>
+      <p className={`mt-1 text-sm font-semibold text-text-primary ${styles.factValue}`}>{children}</p>
+      {hint ? <p className="mt-1 text-xs leading-5 text-muted">{hint}</p> : null}
+    </div>
+  );
+}
+
 export function BillingOverviewTab({
-  activeStudents,
-  billingObservedAt,
-  activeSubscriptionCount,
   billingConnect,
-  currentMonthPaymentCount,
   billingPeriod,
   billingPlatform,
   billingProviderCopy,
@@ -97,28 +194,24 @@ export function BillingOverviewTab({
   connectActionLabel,
   connectRequirementItems,
   externalPaymentTotal,
-  failedInvoiceCount,
   hasStripeConnectedAccount,
   isActionLoading,
   isLoadingAction,
   onConnectClick,
   onConnectReset,
   openBillingLink,
-  openInvoiceTotal,
-  paidRevenue,
   paymentCohortAvailable,
   stripePaymentTotal,
-  studentsLoaded,
   coreCheckoutEnabled,
   corePortalEnabled,
   connectDashboardEnabled,
   connectOnboardingEnabled,
 }: {
-  activeStudents: number;
-  activeSubscriptionCount: number;
+  activeStudents?: number;
+  activeSubscriptionCount?: number;
   billingConnect: StudioPaymentAccount | null;
-  billingObservedAt: string | null;
-  currentMonthPaymentCount: number;
+  billingObservedAt?: string | null;
+  currentMonthPaymentCount?: number;
   billingPeriod: BillingPeriodCopy;
   billingPlatform: PlatformBillingStatus | null;
   billingProviderCopy: BillingProviderCopy;
@@ -129,18 +222,18 @@ export function BillingOverviewTab({
   connectActionLabel: string;
   connectRequirementItems: ConnectRequirementItem[];
   externalPaymentTotal: number;
-  failedInvoiceCount: number;
+  failedInvoiceCount?: number;
   hasStripeConnectedAccount: boolean;
   isActionLoading: boolean;
   isLoadingAction: (action: string) => boolean;
   onConnectClick: () => void;
   onConnectReset: () => Promise<void>;
   openBillingLink: OpenBillingLink;
-  openInvoiceTotal: number;
-  paidRevenue: number;
+  openInvoiceTotal?: number;
+  paidRevenue?: number;
   paymentCohortAvailable: boolean;
   stripePaymentTotal: number;
-  studentsLoaded: boolean;
+  studentsLoaded?: boolean;
   coreCheckoutEnabled: boolean;
   corePortalEnabled: boolean;
   connectDashboardEnabled: boolean;
@@ -149,168 +242,186 @@ export function BillingOverviewTab({
   const coreCheckoutAvailable = canStartCoreCheckout(billingPlatform);
   const [showConnectResetConfirm, setShowConnectResetConfirm] = useState(false);
   const emailUsage = billingPlatform?.email_usage;
-  const emailUsageProgress = emailUsage && emailUsage.included > 0
-    ? Math.min(100, (emailUsage.sent / emailUsage.included) * 100)
-    : null;
-  const moneyBand = [
-    { label: "Needs attention", value: paymentCohortAvailable ? String(failedInvoiceCount) : "Unavailable", helper: "Failed or past-due tuition", tone: "exception" },
-    { label: "Open receivables", value: paymentCohortAvailable ? formatMoney(openInvoiceTotal) : "Unavailable", helper: "All outstanding invoices", tone: "receivable" },
-    {
-      label: "Collected this UTC month",
-      value: paymentCohortAvailable ? formatMoney(paidRevenue) : "Unavailable",
-      helper: paymentCohortAvailable
-        ? `${currentMonthPaymentCount} payments, net of confirmed adjustments`
-        : "Complete cohort could not be loaded",
-      tone: "collected",
-    },
-    { label: "Student coverage", value: studentsLoaded ? String(activeStudents) : "Unavailable", helper: studentsLoaded ? `${activeSubscriptionCount} active subscriptions` : "Student totals unavailable", tone: "coverage" },
-  ];
+  const emailUsageProgress =
+    emailUsage && emailUsage.included > 0
+      ? Math.min(100, (emailUsage.sent / emailUsage.included) * 100)
+      : null;
+  const connectCompleteCount = connectRequirementItems.filter((item) => item.complete).length;
+  const checkoutBlocked = !canManageKoaryuSubscription || !coreCheckoutAvailable || isActionLoading;
+  const portalBlocked = !canOpenCustomerPortal || isActionLoading;
+  const onboardingBlocked = !canManageKoaryuSubscription || isActionLoading;
+  const dashboardBlocked = !canOpenStripeDashboard || !canManageKoaryuSubscription || isActionLoading;
 
   return (
     <div className="space-y-5">
-      <section className="overflow-hidden bg-surface" aria-label="Billing exceptions and receivables" data-billing-money-band="exceptions-first">
-        <div className={billingOverviewMetricsClass}>
-          {moneyBand.map((metric) => (
-            <div key={metric.label} data-ledger-tone={metric.tone} className="rounded-[10px] bg-surface-raised/50 p-4">
-              <p className="text-xs font-medium text-muted">{metric.label}</p>
-              <p className="mt-2 text-2xl font-semibold tabular-nums text-text-primary">{metric.value}</p>
-              <p className="mt-1 text-xs leading-5 text-text-secondary">{metric.helper}</p>
-            </div>
-          ))}
-        </div>
-        <p className="border-t border-border px-4 py-2 text-[11px] text-muted">
-          Scope: current studio · Observed {billingObservedAt ? <time dateTime={billingObservedAt}>{new Date(billingObservedAt).toLocaleString("en-US", { timeZone: "UTC" })} UTC</time> : "unavailable"} · Current UTC-month net collected after confirmed adjustments
-        </p>
-      </section>
-
       <div className={billingOverviewProvidersClass}>
-        <section className="rounded-[14px] border border-border bg-surface p-4">
-          <SectionHeader icon={CreditCard} title="Koaryu Core" description="One flat software subscription: no student caps, no staff caps, no feature gates." />
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-4">
-            <div>
-              <p className="text-2xl font-semibold text-text-primary">
-                {billingPlatform ? formatMoney(billingPlatform.monthly_price_cents, billingPlatform.currency) : "$27"}
-                <span className="text-sm font-normal text-muted"> / month</span>
-              </p>
-              <p className="mt-1 text-xs text-muted">30-day trial for new studios. Single physical location per subscription.</p>
-            </div>
-            {billingPlatform ? <StatusPill status={billingPlatform.status} /> : <StatusPill status="admin_managed" />}
+        <BillingPanel
+          title="Koaryu Core"
+          description="One flat software subscription: no student caps, no staff caps, no feature gates."
+          actions={
+            billingPlatform ? (
+              <StatusPill status={billingPlatform.status} />
+            ) : (
+              <StatusPill status="admin_managed" />
+            )
+          }
+        >
+          <div className="border-b border-border pb-4">
+            <p className={styles.price}>
+              {billingPlatform
+                ? formatMoney(billingPlatform.monthly_price_cents, billingPlatform.currency)
+                : "$27"}
+              <small>/ month</small>
+            </p>
+            <p className="mt-1.5 text-xs text-muted">
+              30-day trial for new studios. Single physical location per subscription.
+            </p>
           </div>
-          <div className="mt-4 grid gap-3 sm:grid-cols-2">
-            <div>
-              <p className="text-xs text-muted">{billingPeriod.label}</p>
-              <p className="mt-1 text-sm text-text-primary">{billingPeriod.value}</p>
-            </div>
-            <div>
-              <p className="text-xs text-muted">Plan policy</p>
-              <p className="mt-1 text-sm text-text-primary">All modules included</p>
-            </div>
+          <div className={`mt-4 ${billingOverviewMetricsClass}`}>
+            <Fact label={billingPeriod.label}>{billingPeriod.value}</Fact>
+            <Fact label="Plan policy">All modules included</Fact>
           </div>
-          <div className="mt-4 flex flex-wrap gap-2">
+          <div className="mt-5 flex flex-wrap gap-2">
             <Button
               variant="primary"
-              size="sm"
-              disabled={!coreCheckoutEnabled || !canManageKoaryuSubscription || !coreCheckoutAvailable || isActionLoading}
-              title={!coreCheckoutAvailable
-                ? billingPlatform?.comped || billingPlatform?.status === "comped"
-                  ? "Koaryu Core access is comped for this studio. No checkout is required."
-                  : billingPlatform && ["active", "trialing", "past_due", "unpaid", "paused"].includes(billingPlatform.status)
-                    ? "Koaryu Core billing already exists. Use the billing portal to manage it."
-                    : "Koaryu Core checkout is currently unavailable."
-                : coreCheckoutEnabled
-                  ? undefined
-                  : billingProviderCopy.coreSubscription}
+              size="md"
+              disabled={!coreCheckoutEnabled || checkoutBlocked}
+              title={
+                !coreCheckoutAvailable
+                  ? billingPlatform?.comped || billingPlatform?.status === "comped"
+                    ? "Koaryu Core access is comped for this studio. No checkout is required."
+                    : billingPlatform &&
+                        ["active", "trialing", "past_due", "unpaid", "paused"].includes(
+                          billingPlatform.status,
+                        )
+                      ? "Koaryu Core billing already exists. Use the billing portal to manage it."
+                      : "Koaryu Core checkout is currently unavailable."
+                  : coreCheckoutEnabled
+                    ? undefined
+                    : billingProviderCopy.coreSubscription
+              }
               isLoading={isLoadingAction("checkout")}
-              onClick={() => void openBillingLink("/platform-billing/checkout", {
-                success_url: window.location.href,
-                cancel_url: window.location.href,
-              }, "checkout")}
+              onClick={() =>
+                void openBillingLink(
+                  "/platform-billing/checkout",
+                  {
+                    success_url: window.location.href,
+                    cancel_url: window.location.href,
+                  },
+                  "checkout",
+                )
+              }
             >
               <CreditCard className="h-3.5 w-3.5" />
               {isLoadingAction("checkout") ? "Opening Stripe..." : "Start checkout"}
             </Button>
             <Button
               variant="secondary"
-              size="sm"
-              disabled={!corePortalEnabled || !canOpenCustomerPortal || isActionLoading}
+              size="md"
+              disabled={!corePortalEnabled || portalBlocked}
               isLoading={isLoadingAction("portal")}
-              title={!corePortalEnabled
-                ? billingProviderCopy.coreSubscription
-                : canOpenCustomerPortal
-                  ? undefined
-                  : "Available after Koaryu Core checkout creates a Stripe customer."}
-              onClick={() => void openBillingLink("/platform-billing/portal", {
-                return_url: window.location.href,
-              }, "portal")}
+              title={
+                !corePortalEnabled
+                  ? billingProviderCopy.coreSubscription
+                  : canOpenCustomerPortal
+                    ? undefined
+                    : "Available after Koaryu Core checkout creates a Stripe customer."
+              }
+              onClick={() =>
+                void openBillingLink(
+                  "/platform-billing/portal",
+                  {
+                    return_url: window.location.href,
+                  },
+                  "portal",
+                )
+              }
             >
               <ArrowUpRight className="h-3.5 w-3.5" />
               {isLoadingAction("portal") ? "Opening portal..." : "Customer portal"}
             </Button>
           </div>
-        </section>
+        </BillingPanel>
 
-        <section className="rounded-[14px] border border-border bg-surface p-4">
-          <SectionHeader icon={Banknote} title="Koaryu Payments" description="Optional Stripe Connect add-on. Koaryu collects 0.5% only on successful processed transactions." />
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-4">
-            <div>
-              <p className="text-sm font-medium text-text-primary">
-                {billingConnect?.charges_enabled ? "Stripe connected" : "Stripe not charging yet"}
-              </p>
-              <p className="mt-1 text-xs text-muted">Cash, checks, Zelle, Venmo, and outside processors cost nothing extra.</p>
-            </div>
-            {billingConnect ? <StatusPill status={billingConnect.status} /> : <StatusPill status="not_connected" />}
+        <BillingPanel
+          title="Koaryu Payments"
+          description="Optional Stripe Connect add-on. Koaryu collects 0.5% only on successful processed transactions."
+          actions={
+            billingConnect ? (
+              <StatusPill status={billingConnect.status} />
+            ) : (
+              <StatusPill status="not_connected" />
+            )
+          }
+        >
+          <div className="border-b border-border pb-4">
+            <p className="text-base font-bold text-text-primary">
+              {billingConnect?.charges_enabled ? "Stripe connected" : "Stripe not charging yet"}
+            </p>
+            <p className="mt-1 text-xs text-muted">
+              Cash, checks, Zelle, Venmo, and outside processors cost nothing extra.
+            </p>
           </div>
-          <div className="mt-4 grid gap-3 sm:grid-cols-2">
-            <div>
-              <p className="text-xs text-muted">Application fee</p>
-              <p className="mt-1 text-sm text-text-primary">{billingConnect ? `${billingConnect.platform_fee_bps / 100}%` : "0.5%"} on successful charges</p>
-            </div>
-            <div>
-              <p className="text-xs text-muted">Chargeback liability</p>
-              <p className="mt-1 text-sm text-text-primary">Studio account</p>
-            </div>
-            <div>
-              <p className="text-xs text-muted">UTC-month Stripe payment cohort</p>
-              <p className="mt-1 text-sm text-text-primary">{paymentCohortAvailable ? formatMoney(stripePaymentTotal) : "Unavailable"}</p>
-              <p className="mt-1 text-[11px] text-muted">
-                {billingProviderCopy.connectPayments}
-              </p>
-            </div>
-            <div>
-              <p className="text-xs text-muted">UTC-month external payment cohort</p>
-              <p className="mt-1 text-sm text-text-primary">{paymentCohortAvailable ? formatMoney(externalPaymentTotal) : "Unavailable"}</p>
-            </div>
+          <div className={`mt-4 ${billingOverviewMetricsClass}`}>
+            <Fact label="Application fee">
+              {billingConnect ? `${billingConnect.platform_fee_bps / 100}%` : "0.5%"} on successful
+              charges
+            </Fact>
+            <Fact label="Chargeback liability">Studio account</Fact>
+            <Fact
+              label="UTC-month Stripe payment cohort"
+              hint={
+                // The page's boundary note already states this copy once.
+                billingProviderCopy.boundary.includes(billingProviderCopy.connectPayments)
+                  ? undefined
+                  : billingProviderCopy.connectPayments
+              }
+            >
+              {paymentCohortAvailable ? formatMoney(stripePaymentTotal) : "Unavailable"}
+            </Fact>
+            <Fact label="UTC-month external payment cohort">
+              {paymentCohortAvailable ? formatMoney(externalPaymentTotal) : "Unavailable"}
+            </Fact>
           </div>
           {billingConnect?.stripe_connected_account_id ? (
-            <div className="mt-4 rounded-[10px] bg-surface-raised/60 p-3">
+            <div className={`mt-4 ${styles.checklist}`}>
               <div className="mb-2 flex items-center justify-between gap-2">
-                <p className="text-xs font-medium text-text-secondary">Stripe onboarding checklist</p>
-                <span className="text-[11px] text-muted">
-                  {connectRequirementItems.filter((item) => item.complete).length} / {connectRequirementItems.length} complete
-                </span>
+                <p className="text-sm font-semibold text-text-primary">
+                  Stripe onboarding checklist
+                </p>
+                <ToneTag
+                  tone={connectCompleteCount === connectRequirementItems.length ? "calm" : "warn"}
+                >
+                  {connectCompleteCount} / {connectRequirementItems.length} complete
+                </ToneTag>
               </div>
               <div className="grid gap-2 sm:grid-cols-2">
                 {connectRequirementItems.map((item) => (
-                  <div key={item.id} className="flex items-start gap-2 rounded-[10px] bg-bg/40 px-2.5 py-2">
+                  <div
+                    key={item.id}
+                    className="flex items-start gap-2 rounded-[10px] bg-surface px-3 py-2.5"
+                  >
                     {item.complete ? (
                       <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-success" />
                     ) : (
                       <Clock3 className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-warning" />
                     )}
                     <div className="min-w-0">
-                      <p className="text-xs font-medium text-text-primary">{item.label}</p>
-                      <p className="mt-0.5 text-[11px] leading-4 text-muted">{item.complete ? "Received by Stripe" : item.description}</p>
+                      <p className="text-xs font-semibold text-text-primary">{item.label}</p>
+                      <p className="mt-0.5 text-[11px] leading-4 text-muted">
+                        {item.complete ? "Received by Stripe" : item.description}
+                      </p>
                     </div>
                   </div>
                 ))}
               </div>
             </div>
           ) : null}
-          <div className="mt-4 flex flex-wrap gap-2">
+          <div className="mt-5 flex flex-wrap gap-2">
             <Button
               variant="primary"
-              size="sm"
-              disabled={!connectOnboardingEnabled || !canManageKoaryuSubscription || isActionLoading}
+              size="md"
+              disabled={!connectOnboardingEnabled || onboardingBlocked}
               title={connectOnboardingEnabled ? undefined : billingProviderCopy.connectOnboarding}
               isLoading={isLoadingAction("connect")}
               onClick={onConnectClick}
@@ -320,28 +431,38 @@ export function BillingOverviewTab({
             </Button>
             <Button
               variant="secondary"
-              size="sm"
-              disabled={!connectDashboardEnabled || !canOpenStripeDashboard || !canManageKoaryuSubscription || isActionLoading}
+              size="md"
+              disabled={!connectDashboardEnabled || dashboardBlocked}
               isLoading={isLoadingAction("dashboard")}
-              title={!connectDashboardEnabled
-                ? billingProviderCopy.connectOnboarding
-                : canOpenStripeDashboard
-                  ? "Open Stripe to review account status, requirements, payments, and payouts."
-                  : "Available after Stripe Connect creates an account."}
-              onClick={() => void openBillingLink("/billing/connect/dashboard-link", {
-                return_url: window.location.href,
-              }, "dashboard")}
+              title={
+                !connectDashboardEnabled
+                  ? billingProviderCopy.connectOnboarding
+                  : canOpenStripeDashboard
+                    ? "Open Stripe to review account status, requirements, payments, and payouts."
+                    : "Available after Stripe Connect creates an account."
+              }
+              onClick={() =>
+                void openBillingLink(
+                  "/billing/connect/dashboard-link",
+                  {
+                    return_url: window.location.href,
+                  },
+                  "dashboard",
+                )
+              }
             >
               <ArrowUpRight className="h-3.5 w-3.5" />
               {isLoadingAction("dashboard") ? "Opening Stripe..." : "Stripe dashboard"}
             </Button>
             {hasStripeConnectedAccount ? (
-              <span className="self-center text-xs text-muted">Reconnect is currently unavailable.</span>
+              <span className="self-center text-xs text-muted">
+                Reconnect is currently unavailable.
+              </span>
             ) : null}
             {canResetConnect ? (
               <Button
                 variant="danger"
-                size="sm"
+                size="md"
                 disabled={isActionLoading}
                 onClick={() => setShowConnectResetConfirm(true)}
               >
@@ -350,19 +471,18 @@ export function BillingOverviewTab({
               </Button>
             ) : null}
           </div>
-        </section>
+        </BillingPanel>
       </div>
 
-      <section className="rounded-[14px] border border-border bg-surface p-4">
-        <SectionHeader icon={Mail} title="Message usage" description="Automation is included for every studio. Only email volume above the included monthly allowance is metered." />
+      <BillingPanel
+        title="Message usage"
+        description="Automation is included for every studio. Only email volume above the included monthly allowance is metered."
+      >
         <div className="grid gap-4 md:grid-cols-[1fr_auto] md:items-center">
           <div>
             {emailUsageProgress !== null ? (
-              <div className="h-2 rounded-full bg-surface-raised">
-                <div
-                  className="h-2 rounded-full bg-accent"
-                  style={{ width: `${emailUsageProgress}%` }}
-                />
+              <div className={styles.meter}>
+                <div style={{ width: `${emailUsageProgress}%` }} />
               </div>
             ) : null}
             <p className="mt-2 text-xs text-muted">
@@ -371,30 +491,42 @@ export function BillingOverviewTab({
                 : "Unavailable"}
             </p>
           </div>
-          <div className="text-right">
-            <p className="text-sm font-medium text-text-primary">{emailUsage ? formatMoney(emailUsage.estimated_overage_cents) : "Unavailable"}</p>
+          <div className="md:text-right">
+            <p className={`text-xl font-bold text-text-primary ${styles.factValue}`}>
+              {emailUsage ? formatMoney(emailUsage.estimated_overage_cents) : "Unavailable"}
+            </p>
             <p className="text-xs text-muted">Estimated overage</p>
           </div>
         </div>
-      </section>
+      </BillingPanel>
       {showConnectResetConfirm ? (
         <ModalFrame
           role="alertdialog"
           ariaLabelledBy="connect-reset-title"
           ariaDescribedBy="connect-reset-description"
-          panelClassName="w-[min(92vw,30rem)] rounded-[18px] bg-surface p-4"
+          panelClassName="w-[min(92vw,30rem)] rounded-[18px] bg-surface p-5"
           onBackdropClick={() => setShowConnectResetConfirm(false)}
         >
-          <h2 id="connect-reset-title" className="text-base font-semibold text-text-primary">Reset Stripe connection?</h2>
+          <h2 id="connect-reset-title" className="text-lg font-bold text-text-primary">
+            Reset Stripe connection?
+          </h2>
           <p id="connect-reset-description" className="mt-2 text-sm leading-6 text-text-secondary">
-            This clears Koaryu&apos;s current connected-account reference so an admin can start onboarding again. Existing provider history is not edited here.
+            This clears Koaryu&apos;s current connected-account reference so an admin can start
+            onboarding again. Existing provider history is not edited here.
           </p>
           <div className="mt-5 flex justify-end gap-2">
-            <Button type="button" variant="ghost" size="sm" onClick={() => setShowConnectResetConfirm(false)}>Keep connection</Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="md"
+              onClick={() => setShowConnectResetConfirm(false)}
+            >
+              Keep connection
+            </Button>
             <Button
               type="button"
               variant="danger"
-              size="sm"
+              size="md"
               isLoading={isLoadingAction("connect-reset")}
               disabled={!canResetConnect || isActionLoading}
               onClick={() => {

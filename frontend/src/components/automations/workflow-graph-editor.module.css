@@ -1,10 +1,17 @@
+/*
+ * The workflow graph on Horizon paper: steps are cards edged by what they do
+ * (wood for the trigger, straw for checks, green for actions), joined by ink.
+ * Fallbacks keep standalone fixtures readable outside the product shell.
+ */
 .editor {
   min-width: 0;
-  color: var(--text-primary, #f3f5f7);
-  background: var(--surface, #12161b);
-  border: 1px solid var(--border, #232a33);
-  border-radius: 12px;
-  padding: 16px;
+  padding: 18px 20px 20px;
+  border: 1px solid var(--product-rule-soft, var(--border));
+  border-radius: 16px;
+  background: var(--product-paper, var(--surface));
+  box-shadow: var(--product-shadow-card, none);
+  color: var(--product-ink, var(--text-primary));
+  font-size: 14px;
 }
 .editor *,
 .editor *::before,
@@ -15,34 +22,42 @@
 .editor select {
   min-height: 44px;
   max-width: 100%;
-  border: 1px solid var(--border, #232a33);
-  border-radius: 7px;
-  background: var(--surface-raised, #171c22);
+  padding: 8px 12px;
+  border: 1px solid var(--product-rule, var(--border));
+  border-radius: 10px;
+  background: var(--product-paper, var(--surface-raised));
   color: inherit;
   font: inherit;
   font-size: 14px;
-  padding: 8px 12px;
+  font-weight: 600;
+}
+.editor select {
+  font-weight: 500;
+  background: var(--product-card-stock, var(--surface-raised));
 }
 .editor button {
   cursor: pointer;
+  transition:
+    background-color 120ms ease-out,
+    border-color 120ms ease-out;
 }
 .editor button:hover:not(:disabled) {
-  background: var(--surface-hover, #1e2329);
+  background: var(--product-card-stock, var(--surface-hover));
 }
 .editor button:disabled,
 .editor select:disabled {
-  opacity: 0.5;
+  opacity: 0.45;
   cursor: default;
 }
 .editor button:focus-visible,
 .editor select:focus-visible,
 .canvas :global(.react-flow__node):focus-visible,
 .canvas :global(.react-flow__edge):focus-visible {
-  outline: 2px solid var(--accent, #d6b25e);
+  outline: 2px solid var(--product-focus, var(--accent));
   outline-offset: 3px;
 }
 .editor button[aria-pressed="true"] {
-  border-color: var(--accent, #d6b25e);
+  border-color: var(--product-ink, var(--accent));
 }
 .heading,
 .toolbar,
@@ -56,170 +71,241 @@
 }
 .heading {
   justify-content: space-between;
-  margin-bottom: 12px;
+  margin-bottom: 14px;
 }
 .heading h2 {
-  font-size: 18px;
   margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+/* Graph / Steps reads as one segmented switch. */
+.viewToggle {
+  gap: 2px;
+  padding: 3px;
+  border-radius: 12px;
+  background: var(--hz-tile, var(--surface-raised));
+}
+.editor .viewToggle button {
+  min-width: 72px;
+  border-color: transparent;
+  background: transparent;
+  color: var(--product-soft-ink, var(--text-secondary));
+}
+.editor .viewToggle button[aria-pressed="true"] {
+  border-color: transparent;
+  background: var(--product-paper, var(--surface));
+  box-shadow: var(--product-shadow-card, none);
+  color: var(--product-ink, var(--text-primary));
 }
 .toolbar {
   align-items: end;
+  gap: 6px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--product-rule-soft, var(--border));
 }
 .addControl {
   align-items: center;
+  margin-right: 6px;
+}
+.toolbar > button {
+  padding-inline: 10px;
+  border-color: transparent;
+  background: transparent;
+  color: var(--product-soft-ink, var(--text-secondary));
+}
+.toolbar > button:hover:not(:disabled) {
+  background: var(--hz-tile, var(--surface-hover));
+  color: var(--product-ink, var(--text-primary));
 }
 .addControl label {
-  font-size: 14px;
+  color: var(--product-soft-ink, var(--text-secondary));
+  font-size: 13px;
+  font-weight: 650;
 }
 .help,
 .selectedText {
-  color: var(--text-secondary, #98a2b3);
-  font-size: 14px;
-  line-height: 1.6;
+  margin: 10px 0;
+  color: var(--product-meta, var(--text-secondary));
+  font-size: 13px;
+  line-height: 1.55;
   overflow-wrap: anywhere;
 }
 .selectedText {
   margin-bottom: 0;
+  color: var(--product-soft-ink, var(--text-secondary));
 }
 .selectedText strong {
-  color: var(--text-primary, #f3f5f7);
+  color: var(--product-ink, var(--text-primary));
 }
 .notice {
-  min-height: 28px;
+  min-height: 24px;
   padding-top: 8px;
-  font-size: 14px;
+  color: var(--product-soft-ink, var(--text-secondary));
+  font-size: 13px;
   overflow-wrap: anywhere;
 }
 .notice[role="alert"],
 .issueBadge {
-  color: var(--accent, #d6b25e);
+  color: var(--product-vermilion, var(--accent));
+  font-weight: 650;
 }
 .issues {
-  border: 1px solid var(--accent, #d6b25e);
-  border-radius: 8px;
-  padding: 12px;
   margin-top: 8px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--hz-warn-wash, var(--surface-raised));
+  box-shadow: inset 0 0 0 1px var(--product-rule-soft, var(--accent));
 }
 .issues p {
   margin: 0 0 8px;
+  font-weight: 650;
 }
 .issues ul {
+  display: grid;
+  gap: 4px;
   margin: 0;
-  padding-left: 20px;
+  padding: 0;
+  list-style: none;
 }
-.issues button {
+.editor .issues button {
+  width: 100%;
+  justify-content: flex-start;
+  margin: 0;
+  border-color: transparent;
+  background: var(--product-paper, var(--surface));
+  font-weight: 500;
   text-align: left;
   overflow-wrap: anywhere;
-  margin: 4px 0;
 }
+
+/* Steps view: the same cards as a list. */
 .steps {
-  padding: 0;
-  margin: 12px 0 0;
-  list-style: none;
   display: grid;
-  gap: 12px;
+  gap: 10px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
 }
 .step {
+  --kind: var(--product-rule, var(--border));
+  position: relative;
   min-width: 0;
-  padding: 12px;
-  background: var(--surface-raised, #171c22);
-  border: 1px solid var(--border, #232a33);
-  border-radius: 8px;
+  padding: 12px 12px 12px 16px;
+  overflow: hidden;
+  border: 1px solid var(--product-rule-soft, var(--border));
+  border-radius: 12px;
+  background: var(--product-card-stock, var(--surface-raised));
+}
+.step::before {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 4px;
+  background: var(--kind);
+  content: "";
 }
 .step[data-selected="true"] {
-  border-color: var(--accent, #d6b25e);
+  border-color: var(--product-wood, var(--accent));
+  box-shadow: inset 0 0 0 1px var(--product-wood, var(--accent));
 }
-.editor .stepSelect {
+.editor .stepSelect,
+.editor .stepSelect[aria-pressed="true"] {
   display: grid;
-  text-align: left;
-  gap: 6px;
   width: 100%;
+  justify-content: stretch;
+  justify-items: start;
+  gap: 4px;
+  padding-left: 4px;
+  border-color: transparent;
+  background: transparent;
+  text-align: left;
   overflow-wrap: anywhere;
 }
 .stepSelect span {
-  color: var(--text-secondary, #98a2b3);
+  color: var(--product-soft-ink, var(--text-secondary));
+  font-weight: 500;
 }
 .port {
-  margin-top: 12px;
   min-width: 0;
-  font-size: 14px;
+  margin-top: 10px;
+  font-size: 13px;
 }
 .port label {
   display: block;
-  overflow-wrap: anywhere;
   margin-bottom: 6px;
+  color: var(--product-soft-ink, var(--text-secondary));
+  overflow-wrap: anywhere;
 }
 .connection > span {
   flex: 1 1 160px;
   overflow-wrap: anywhere;
 }
 .connection select {
-  flex: 1 1 160px;
-  min-width: 0;
   width: 100%;
+  min-width: 0;
+  flex: 1 1 160px;
 }
 .issueBadge {
-  font-size: 12px;
   margin: 6px 0 0;
+  font-size: 12px;
 }
+
+/* Canvas: paper ground, ink edges, no React Flow blue. */
 .canvas {
   width: 100%;
   height: 480px;
   min-width: 0;
-  border: 1px solid var(--border, #232a33);
-  border-radius: 8px;
   overflow: hidden;
-  --xy-background-color: var(--surface, #12161b);
-  --xy-edge-stroke: var(--text-secondary, #98a2b3);
-  --xy-edge-stroke-selected: var(--accent, #d6b25e);
-  --xy-edge-label-color: var(--text-primary, #f3f5f7);
-  --xy-edge-label-background-color: var(--surface-raised, #171c22);
-  --xy-controls-button-background-color: var(--surface-raised, #171c22);
-  --xy-controls-button-background-color-hover: var(--surface-hover, #1e2329);
-  --xy-controls-button-color: var(--text-primary, #f3f5f7);
-  --xy-controls-button-border-color: var(--border, #232a33);
+  border: 1px solid var(--product-rule-soft, var(--border));
+  border-radius: 14px;
+  background: var(--product-ground, var(--surface));
+  --xy-background-color: var(--product-ground, var(--surface));
+  --xy-background-pattern-dots-color: var(--product-rule, var(--border));
+  --xy-edge-stroke: var(--product-soft-ink, var(--text-secondary));
+  --xy-edge-stroke-width: 1.5;
+  --xy-edge-stroke-selected: var(--product-wood, var(--accent));
+  --xy-edge-label-color: var(--product-soft-ink, var(--text-primary));
+  --xy-edge-label-background-color: var(--product-paper, var(--surface-raised));
+  --xy-connectionline-stroke: var(--product-wood, var(--accent));
+  --xy-connectionline-stroke-width: 2;
+  --xy-handle-background-color: var(--product-paper, var(--surface));
+  --xy-handle-border-color: var(--product-soft-ink, var(--text-secondary));
+  --xy-selection-background-color: color-mix(
+    in srgb,
+    var(--product-wood, var(--accent)) 10%,
+    transparent
+  );
+  --xy-selection-border: 1px dashed var(--product-wood, var(--accent));
+  --xy-node-boxshadow-selected: none;
+  --xy-attribution-background-color: transparent;
+  --xy-controls-box-shadow: var(--product-shadow-card, none);
+  --xy-controls-button-background-color: var(--product-paper, var(--surface-raised));
+  --xy-controls-button-background-color-hover: var(--product-card-stock, var(--surface-hover));
+  --xy-controls-button-color: var(--product-ink, var(--text-primary));
+  --xy-controls-button-color-hover: var(--product-ink, var(--text-primary));
+  --xy-controls-button-border-color: var(--product-rule-soft, var(--border));
 }
-.nodeCard {
-  width: 240px;
-  height: 132px;
-  padding: 14px 42px 14px 14px;
-  border: 1px solid var(--border, #232a33);
-  border-radius: 8px;
-  background: var(--surface-raised, #171c22);
-  font-size: 13px;
+.canvas :global(.react-flow__attribution a) {
+  color: var(--product-meta, var(--text-secondary));
 }
-.nodeCard strong {
-  display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.nodeCard p {
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  overflow-wrap: anywhere;
-  margin: 8px 0 0;
-  color: var(--text-secondary, #98a2b3);
-  line-height: 1.4;
-}
-.nodeCard[data-selected="true"],
-.nodeCard[data-issue="true"] {
-  border-color: var(--accent, #d6b25e);
-}
-.portLabel {
-  position: absolute;
-  right: 10px;
-  transform: translateY(-50%);
-  color: var(--text-secondary, #98a2b3);
+.canvas :global(.react-flow__edge-text) {
   font-size: 11px;
+  font-weight: 700;
 }
-.nodeCard :global(.react-flow__handle) {
-  width: 10px;
-  height: 10px;
-  background: var(--accent, #d6b25e);
-  border-color: var(--surface, #12161b);
+.canvas :global(.react-flow__edge-textbg) {
+  rx: 6;
+  ry: 6;
+}
+.canvas :global(.react-flow__edge.selected .react-flow__edge-path) {
+  stroke-width: 2.5;
+}
+.canvas :global(.react-flow__controls) {
+  overflow: hidden;
+  border: 1px solid var(--product-rule-soft, var(--border));
+  border-radius: 12px;
 }
 .canvas :global(.react-flow__controls-button) {
   min-width: 44px;
@@ -227,13 +313,132 @@
   padding: 10px;
   border-radius: 0;
 }
+.canvas :global(.react-flow__controls-button svg) {
+  fill: currentColor;
+}
+
+/* Step cards, edged by kind. */
+.nodeCard {
+  --kind: var(--product-rule, var(--border));
+  --kind-wash: var(--product-paper, var(--surface-raised));
+  width: 240px;
+  height: 132px;
+  padding: 14px 42px 14px 14px;
+  border: 1px solid var(--product-rule-soft, var(--border));
+  border-left: 5px solid var(--kind);
+  border-radius: 14px;
+  background: linear-gradient(180deg, var(--kind-wash) 0, var(--product-paper, transparent) 64px)
+    var(--product-paper, var(--surface-raised));
+  box-shadow: var(--product-shadow-card, none);
+  color: var(--product-ink, var(--text-primary));
+  font-size: 13px;
+  transition:
+    border-color 120ms ease-out,
+    box-shadow 120ms ease-out;
+}
+.nodeCard[data-kind="trigger"],
+.step[data-kind="trigger"] {
+  --kind: var(--product-wood, var(--accent));
+  --kind-wash: color-mix(in srgb, var(--hz-sun, var(--accent)) 24%, transparent);
+}
+.nodeCard[data-kind="condition"],
+.step[data-kind="condition"] {
+  --kind: var(--product-straw, var(--accent));
+  --kind-wash: var(--hz-warn-wash, transparent);
+}
+.nodeCard[data-kind="delay"],
+.step[data-kind="delay"] {
+  --kind: color-mix(in srgb, var(--product-soft-ink, var(--text-secondary)) 40%, transparent);
+  --kind-wash: var(--hz-tile, transparent);
+}
+.nodeCard[data-kind="email"],
+.nodeCard[data-kind="lead_follow_up"],
+.step[data-kind="email"],
+.step[data-kind="lead_follow_up"] {
+  --kind: var(--product-affirm, var(--accent));
+  --kind-wash: var(--hz-affirm-wash, transparent);
+}
+.nodeCard[data-kind="end"] {
+  border-style: dashed;
+  border-color: var(--product-rule, var(--border));
+  box-shadow: none;
+}
+.nodeCard strong {
+  display: block;
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 750;
+  letter-spacing: -0.01em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.nodeCard p {
+  display: -webkit-box;
+  margin: 6px 0 0;
+  overflow: hidden;
+  color: var(--product-soft-ink, var(--text-secondary));
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+.nodeCard .issueBadge {
+  position: absolute;
+  bottom: 10px;
+  left: 18px;
+  margin: 0;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--hz-alert-wash, transparent);
+  font-size: 11px;
+  font-weight: 700;
+}
+.nodeCard[data-selected="true"] {
+  border-color: var(--product-wood, var(--accent));
+  box-shadow:
+    0 0 0 2px var(--product-wood, var(--accent)),
+    var(--product-shadow-lifted, none);
+}
+.nodeCard[data-issue="true"] {
+  border-color: var(--product-vermilion, var(--accent));
+}
+.portLabel {
+  position: absolute;
+  right: 12px;
+  transform: translateY(-50%);
+  color: var(--product-meta, var(--text-secondary));
+  font-size: 11px;
+  font-weight: 700;
+}
+.nodeCard :global(.react-flow__handle) {
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--product-soft-ink, var(--surface));
+  background: var(--product-paper, var(--accent));
+}
+.nodeCard :global(.react-flow__handle.source) {
+  border-color: var(--product-paper, var(--surface));
+  background: var(--kind, var(--accent));
+}
+.nodeCard :global(.react-flow__handle-left) {
+  left: -1px;
+}
+.nodeCard :global(.react-flow__handle-right) {
+  right: -1px;
+}
 .issueEdge :global(.react-flow__edge-path) {
-  stroke: var(--accent, #d6b25e);
+  stroke: var(--product-vermilion, var(--accent));
   stroke-dasharray: 5 3;
+}
+@media (prefers-reduced-motion: reduce) {
+  .editor button,
+  .nodeCard {
+    transition: none;
+  }
 }
 @media (max-width: 767px) {
   .editor {
-    padding: 10px;
+    padding: 12px;
   }
   .toolbar {
     align-items: stretch;
@@ -245,13 +450,13 @@
     width: 100%;
   }
   .addControl select {
-    flex: 1;
     min-width: 0;
+    flex: 1;
   }
   .canvas {
     height: 400px;
   }
   .step {
-    padding: 8px;
+    padding: 8px 8px 8px 14px;
   }
 }

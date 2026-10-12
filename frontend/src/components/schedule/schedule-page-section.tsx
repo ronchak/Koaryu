@@ -1,30 +1,40 @@
 "use client";
 
-import { useMemo, type CSSProperties } from "react";
-import { Calendar, ChevronLeft, ChevronRight, Plus } from "lucide-react";
+import { useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { CalendarCheck, CalendarPlus, ChevronLeft, ChevronRight, Plus, X } from "lucide-react";
 
-import { ProgramBadge } from "@/components/programs/program-picker";
 import { Header } from "@/components/header";
 import { MonthScheduleView } from "@/components/schedule/month-schedule-view";
+import {
+  formatClockTime,
+  getProgramColor,
+  getSessionFill,
+  pluralize,
+} from "@/components/schedule/schedule-display";
 import { Button } from "@/components/ui/button";
 import { DismissibleNotice } from "@/components/ui/dismissible-notice";
+import { RevealText } from "@/components/ui/reveal-text";
+import { CalmState, HorizonPage, ToneTag } from "@/components/schedule/horizon-parts";
 import { SlidingSegmentedControl } from "@/components/ui/sliding-segmented-control";
 import {
   buildEntriesForDate,
+  getConflictingSessionIds,
   groupSessionsByDate,
   groupTemplatesByDay,
   parseCalendarDate,
 } from "@/lib/schedule-calendar";
 import {
   formatScheduleDateKey,
-  getScheduleTimeCanvasBounds,
+  getScheduleCanvasRange,
   getScheduleWeekDates,
-  getVisibleScheduleSummary,
+  getVisibleScheduleRange,
   layoutScheduleTimeItems,
   SCHEDULE_CANVAS_PIXELS_PER_HOUR,
   type SchedulePageView,
 } from "@/lib/schedule-page-model";
+import { useStudioClock } from "@/lib/use-studio-clock";
 import type { ClassSession, ClassTemplate, Program } from "@/types";
+import styles from "./schedule.module.css";
 
 interface SchedulePageSectionProps {
   businessDate: string;
@@ -35,10 +45,15 @@ interface SchedulePageSectionProps {
   sessions: ClassSession[];
   templates: ClassTemplate[];
   programs: Program[];
+  /** The studio's timezone, for the now line on today's column; none without it. */
+  studioTimezone?: string;
   scheduleLoadError: string | null;
   hasLoadedRange: boolean;
   isRefreshingRange: boolean;
   actionMessage: string | null;
+  /** Why a linked class did not open, shown while its range is in view. */
+  routeTargetNotice?: string | null;
+  onDismissRouteTargetNotice?: () => void;
   onRetryRange: () => void;
   onNavigate: (direction: number) => void;
   onJumpToToday: () => void;
@@ -54,10 +69,20 @@ interface SchedulePageSectionProps {
 const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const SCHEDULE_VIEWS: SchedulePageView[] = ["month", "week", "day"];
 const DATE_RANGE_SEPARATOR = String.fromCharCode(8211);
-const WEEK_CANVAS_MIN_WIDTH = 1040;
-const WEEK_TIME_COLUMN_WIDTH = 72;
+const WEEK_CANVAS_MIN_WIDTH = 672;
+const WEEK_TIME_COLUMN_WIDTH = 56;
 const WEEK_DAY_COUNT = 7;
-const SESSION_LANE_MIN_WIDTH = 48;
+const WEEK_DAY_MIN_WIDTH = 88;
+const SESSION_LANE_MIN_WIDTH = 64;
+/** A sheet this narrow is a phone: Week reads as an agenda and Day draws taller hours. */
+const PHONE_SHEET_MAX_WIDTH = 608;
+const PHONE_DAY_HOUR_HEIGHT = 56;
+/** Every text line in a block is 14px, so a block shows only whole lines. */
+const BLOCK_LINE_HEIGHT = 14;
+const BLOCK_MIN_HEIGHT = 36;
+const BLOCK_PADDING_BLOCK = 6;
+const PENDING_TILE_MINUTE = 16 * 60;
+const NO_SESSIONS = new Map<string, ClassSession[]>();
 
 type TimeCanvasEntry = {
   id: string;
@@ -81,16 +106,21 @@ function isPointWithinTimeCanvasFootprint(
   );
 }
 
-function formatTime(value: string) {
-  const [hoursText = "0", minutes = "00"] = value.split(":");
-  const hours = Number(hoursText);
-  const suffix = hours >= 12 ? "PM" : "AM";
-  const hour12 = hours === 0 ? 12 : hours > 12 ? hours - 12 : hours;
-  return `${hour12}:${minutes.slice(0, 2)} ${suffix}`;
-}
+const formatTime = formatClockTime;
 
 function getSessionButtonLabel(session: ClassSession) {
   return `Open ${session.name} at ${formatTime(session.start_time)}`;
+}
+
+function getAttendanceLabel(session: ClassSession) {
+  return `Take attendance for ${session.name} at ${formatTime(session.start_time)}`;
+}
+
+/** "4:00–4:45 PM", or "11:30 AM–12:30 PM" across noon. */
+function formatTimeRange(start: string, end: string) {
+  const from = formatTime(start);
+  const to = formatTime(end);
+  return from.slice(-2) === to.slice(-2) ? `${from.slice(0, -3)}–${to}` : `${from}–${to}`;
 }
 
 function formatCanvasHour(minute: number) {
@@ -98,6 +128,49 @@ function formatCanvasHour(minute: number) {
   if (hour === 0) return "12 AM";
   if (hour === 12) return "12 PM";
   return `${hour > 12 ? hour - 12 : hour} ${hour >= 12 ? "PM" : "AM"}`;
+}
+
+function formatLongDate(date: Date) {
+  return date.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
+}
+
+/** "October 11 – 17, 2026", "October 26 – November 1, 2026" or across a new year in full. */
+function formatWeekLabel(first: Date, last: Date) {
+  if (first.getFullYear() !== last.getFullYear()) {
+    const full = (date: Date) =>
+      date.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
+    return `${full(first)} ${DATE_RANGE_SEPARATOR} ${full(last)}`;
+  }
+  const month = (date: Date) => date.toLocaleDateString("en-US", { month: "long" });
+  const end =
+    first.getMonth() === last.getMonth() ? `${last.getDate()}` : `${month(last)} ${last.getDate()}`;
+  return `${month(first)} ${first.getDate()} ${DATE_RANGE_SEPARATOR} ${end}, ${last.getFullYear()}`;
+}
+
+/** A length on the time canvas, in the sheet's hours (48px, or 56px for Day on a phone). */
+function hours(value: number) {
+  return `calc(var(--hour, ${SCHEDULE_CANVAS_PIXELS_PER_HOUR}px) * ${Number(value.toFixed(4))})`;
+}
+
+/**
+ * Whether the sheet is phone-width. Null until measured: both layouts render
+ * until then and the sheet's container queries show the right one, so the
+ * first paint never shifts. Measured before paint, so only one stays mounted.
+ */
+function usePhoneSheet() {
+  const ref = useRef<HTMLElement>(null);
+  const [phone, setPhone] = useState<boolean | null>(null);
+  useLayoutEffect(() => {
+    const element = ref.current;
+    if (!element) return;
+    const update = (width: number) => setPhone(width <= PHONE_SHEET_MAX_WIDTH);
+    update(element.clientWidth);
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(([entry]) => update(entry.contentRect.width));
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+  return [ref, phone] as const;
 }
 
 export function SchedulePageSection({
@@ -109,10 +182,13 @@ export function SchedulePageSection({
   sessions,
   templates,
   programs,
+  studioTimezone,
   scheduleLoadError,
   hasLoadedRange,
   isRefreshingRange,
   actionMessage,
+  routeTargetNotice = null,
+  onDismissRouteTargetNotice,
   onNavigate,
   onRetryRange,
   onJumpToToday,
@@ -125,7 +201,10 @@ export function SchedulePageSection({
   onOpenAddClass,
 }: SchedulePageSectionProps) {
   const today = businessDate;
+  const todayDate = useMemo(() => parseCalendarDate(businessDate), [businessDate]);
   const weekDates = useMemo(() => getScheduleWeekDates(currentDate), [currentDate]);
+  const [calendarRef, phoneSheet] = usePhoneSheet();
+  const studioMinute = useStudioClock(studioTimezone);
   const activePrograms = useMemo(
     () => programs.filter((program) => !program.archived_at),
     [programs],
@@ -146,19 +225,32 @@ export function SchedulePageSection({
         : templates,
     [programFilter, templates],
   );
-  const visibleSummary = useMemo(
-    () =>
-      getVisibleScheduleSummary({
-        currentDate,
-        view,
-        sessions: filteredSessions,
-        templates: filteredTemplates,
-      }),
-    [currentDate, view, filteredSessions, filteredTemplates],
+  const visibleRange = useMemo(
+    () => getVisibleScheduleRange(currentDate, view),
+    [currentDate, view],
   );
+  // Today's classes are only known when the loaded range covers the business date.
+  const todayInView = today >= visibleRange.start && today <= visibleRange.end;
+  const todayKnown = todayInView && hasLoadedRange;
 
   const sessionsByDate = useMemo(() => groupSessionsByDate(filteredSessions), [filteredSessions]);
   const templatesByDay = useMemo(() => groupTemplatesByDay(filteredTemplates), [filteredTemplates]);
+  const todaySessions = useMemo(() => sessionsByDate.get(today) ?? [], [sessionsByDate, today]);
+  const todayCheckIns = todaySessions.reduce(
+    (total, session) =>
+      total + (session.status === "canceled" ? 0 : Math.max(0, session.attendance_count || 0)),
+    0,
+  );
+  // The Day view of today already is today's list, and on a phone today's
+  // classes open the agendas; elsewhere the bar keeps attendance one tap away.
+  const showTodayBar =
+    todayInView &&
+    view !== "day" &&
+    phoneSheet !== true &&
+    (!hasLoadedRange || todaySessions.length > 0);
+
+  // Until the range loads, the studio's recurring classes already give the canvas its hours.
+  const canvasSessionsByDate = hasLoadedRange ? sessionsByDate : NO_SESSIONS;
   const entriesByDate = useMemo(() => {
     const grouped: Record<string, TimeCanvasEntry[]> = {};
     const dates = view === "day" ? [currentDate] : weekDates;
@@ -166,7 +258,7 @@ export function SchedulePageSection({
       const key = formatScheduleDateKey(date);
       grouped[key] = buildEntriesForDate({
         date,
-        sessionsByDate,
+        sessionsByDate: canvasSessionsByDate,
         templatesByDay,
         showTemplatePlaceholders: true,
       }).map((entry) =>
@@ -188,7 +280,7 @@ export function SchedulePageSection({
       );
     });
     return grouped;
-  }, [currentDate, sessionsByDate, templatesByDay, view, weekDates]);
+  }, [canvasSessionsByDate, currentDate, templatesByDay, view, weekDates]);
   const layoutsByDate = useMemo(
     () =>
       Object.fromEntries(
@@ -199,20 +291,22 @@ export function SchedulePageSection({
       ),
     [entriesByDate],
   );
-  const canvasBounds = useMemo(
-    () => getScheduleTimeCanvasBounds(Object.values(entriesByDate).flat()),
+  const canvasRange = useMemo(
+    () => getScheduleCanvasRange(Object.values(entriesByDate).flat()),
     [entriesByDate],
   );
   const canvasHourMarks = useMemo(
     () =>
       Array.from(
-        { length: Math.floor((canvasBounds.endMinute - canvasBounds.startMinute) / 60) + 1 },
-        (_, index) => canvasBounds.startMinute + index * 60,
+        { length: Math.floor((canvasRange.endMinute - canvasRange.startMinute) / 60) + 1 },
+        (_, index) => canvasRange.startMinute + index * 60,
       ),
-    [canvasBounds.endMinute, canvasBounds.startMinute],
+    [canvasRange.endMinute, canvasRange.startMinute],
   );
-  const canvasHeight =
-    ((canvasBounds.endMinute - canvasBounds.startMinute) / 60) * SCHEDULE_CANVAS_PIXELS_PER_HOUR;
+  const canvasHours = (canvasRange.endMinute - canvasRange.startMinute) / 60;
+  // The hour height CSS draws, so each block knows how many whole lines it holds.
+  const hourHeight =
+    view === "day" && phoneSheet ? PHONE_DAY_HOUR_HEIGHT : SCHEDULE_CANVAS_PIXELS_PER_HOUR;
   const peakWeekLaneCount = useMemo(
     () =>
       weekDates.reduce((peak, date) => {
@@ -222,7 +316,7 @@ export function SchedulePageSection({
       }, 1),
     [layoutsByDate, weekDates],
   );
-  const weekDayMinWidth = peakWeekLaneCount * SESSION_LANE_MIN_WIDTH;
+  const weekDayMinWidth = Math.max(WEEK_DAY_MIN_WIDTH, peakWeekLaneCount * SESSION_LANE_MIN_WIDTH);
   const weekCanvasMinWidth = Math.max(
     WEEK_CANVAS_MIN_WIDTH,
     WEEK_TIME_COLUMN_WIDTH + WEEK_DAY_COUNT * weekDayMinWidth,
@@ -230,76 +324,148 @@ export function SchedulePageSection({
   const weekGridTemplateColumns = `${WEEK_TIME_COLUMN_WIDTH}px repeat(${WEEK_DAY_COUNT}, minmax(${weekDayMinWidth}px, 1fr))`;
   const showCalendar = hasLoadedRange || !scheduleLoadError;
   const calendarLoadingClass = hasLoadedRange ? "" : "koaryu-skeleton-reveal";
+  const selectedProgram = programFilter ? programById.get(programFilter) : null;
+  const showProgramFilter = activePrograms.length > 1 || Boolean(programFilter);
+  const dayEntries = entriesByDate[formatScheduleDateKey(currentDate)] || [];
+
+  const headerDescription = todayKnown
+    ? todaySessions.length === 0
+      ? "No classes today."
+      : `${pluralize(todaySessions.length, "class", "classes")} today${
+          todayCheckIns > 0 ? `, ${todayCheckIns} checked in so far` : ""
+        }.`
+    : undefined;
 
   function renderTimeColumn(date: Date, compact: boolean) {
     const key = formatScheduleDateKey(date);
     const blocks = layoutsByDate[key] || [];
+    const conflicts = getConflictingSessionIds(sessionsByDate.get(key) ?? []);
+    const isToday = key === today;
+    const nowMinute =
+      isToday &&
+      studioMinute !== null &&
+      studioMinute >= canvasRange.startMinute &&
+      studioMinute <= canvasRange.endMinute
+        ? studioMinute
+        : null;
+    // One tile where the day's first recurring class will land.
+    const pendingMinute = Math.min(
+      Math.max(blocks[0]?.startMinute ?? PENDING_TILE_MINUTE, canvasRange.startMinute),
+      canvasRange.endMinute - 60,
+    );
     return (
       <div
-        className="relative border-r border-border last:border-r-0"
-        style={{ height: canvasHeight }}
+        className={`relative ${styles.canvasDay}`}
+        style={{ height: hours(canvasHours) }}
         data-time-canvas-day={key}
+        data-today={compact && isToday ? "true" : undefined}
       >
         {canvasHourMarks.map((minute) => (
           <span
             key={minute}
             aria-hidden="true"
-            className="pointer-events-none absolute inset-x-0 border-t border-border/60"
-            style={{
-              top: ((minute - canvasBounds.startMinute) / 60) * SCHEDULE_CANVAS_PIXELS_PER_HOUR,
-            }}
+            className={`pointer-events-none absolute inset-x-0 ${styles.hourRule}`}
+            style={{ top: hours((minute - canvasRange.startMinute) / 60) }}
           />
         ))}
         {!hasLoadedRange && (
           <div
             aria-hidden="true"
-            className="absolute inset-x-2 top-12 h-16 rounded bg-surface-raised"
+            className={`absolute inset-x-0 ${styles.canvasPlaceholder}`}
+            style={{ top: hours((pendingMinute - canvasRange.startMinute) / 60) }}
           />
         )}
         {(hasLoadedRange ? blocks : []).map((block) => {
-          const top =
-            ((block.startMinute - canvasBounds.startMinute) / 60) * SCHEDULE_CANVAS_PIXELS_PER_HOUR;
-          const height =
-            ((block.endMinute - block.startMinute) / 60) * SCHEDULE_CANVAS_PIXELS_PER_HOUR;
-          const targetHeight = Math.max(44, height);
-          const targetTop = Math.max(0, top - (targetHeight - height) / 2);
+          const startHours = (block.startMinute - canvasRange.startMinute) / 60;
+          const durationHours = (block.endMinute - block.startMinute) / 60;
+          const top = hours(startHours);
+          const duration = hours(durationHours);
+          const visibleHeight = `max(${BLOCK_MIN_HEIGHT}px, ${duration})`;
+          const targetHeight = `max(44px, ${duration})`;
+          // The target is centred on the block, but never above the canvas.
+          const targetInset = `(${targetHeight} - ${visibleHeight}) / 2`;
+          const targetTop = `max(0px, ${top} - ${targetInset})`;
+          const blockLines = Math.max(
+            1,
+            Math.floor(
+              (Math.max(BLOCK_MIN_HEIGHT, durationHours * hourHeight) - BLOCK_PADDING_BLOCK) /
+                BLOCK_LINE_HEIGHT,
+            ),
+          );
           const laneWidth = 100 / block.laneCount;
           const left = laneWidth * block.lane;
-          const sessionWidth = `max(44px, calc(${laneWidth}% - 4px))`;
-          const sessionLeft = `min(calc(${left}% + 2px), calc(100% - ${sessionWidth} - 2px))`;
+          const laneLeft = `calc(${left}% + 1px)`;
+          const laneBlockWidth = `calc(${laneWidth}% - 2px)`;
+          const sessionWidth = `max(44px, ${laneBlockWidth})`;
+          const sessionLeft = `min(${laneLeft}, calc(100% - ${sessionWidth} - 1px))`;
+          const sharedLane = block.laneCount >= 2 ? "true" : undefined;
           const entry = block.item;
           const session = entry.session;
           const template = entry.template;
           const programId = session?.program_id || template?.program_id || null;
           const program = programId ? programById.get(programId) : null;
           const title = session?.name || template?.name || "Class";
+          const timeRange = formatTimeRange(entry.start_time, entry.end_time);
 
           if (!session) {
             return (
               <div
                 key={`template-${entry.id}`}
-                className="absolute overflow-hidden rounded-[8px] border border-dashed border-border bg-surface-raised px-2 py-1 text-left text-[10px] text-muted"
-                style={{
-                  top,
-                  height,
-                  left: `calc(${left}% + 2px)`,
-                  width: `calc(${laneWidth}% - 4px)`,
-                }}
+                className={`absolute ${styles.canvasTemplate}`}
+                style={
+                  {
+                    top,
+                    height: visibleHeight,
+                    left: laneLeft,
+                    width: laneBlockWidth,
+                    "--program-color": getProgramColor(program),
+                    "--block-lines": blockLines,
+                    "--block-height": visibleHeight,
+                  } as CSSProperties
+                }
+                title={`${title} · ${timeRange} · Recurring`}
                 data-time-canvas-block="template"
                 data-time-canvas-visible={`${entry.kind}:${entry.id}`}
+                data-shared-lane={sharedLane}
+                data-compact={compact ? "true" : undefined}
               >
-                <strong className="block truncate font-medium">{title}</strong>
-                <span>{formatTime(entry.start_time)} · recurring</span>
+                <span className={styles.canvasLines}>
+                  <RevealText as="strong" className={styles.canvasTitle}>
+                    {title}
+                  </RevealText>
+                  <span className={styles.canvasMeta}>Recurring</span>
+                </span>
               </div>
             );
           }
 
+          const canceled = session.status === "canceled";
+          const fill = getSessionFill(session);
+          const fillLabel = canceled ? "Canceled" : fill;
+          const overlaps = conflicts.has(session.id);
+          // A name cut at a whole line is still said in full on hover.
+          const hoverTitle = [title, timeRange, fillLabel].filter(Boolean).join(" · ");
+          const dayFacts = [
+            fillLabel && !canceled && session.capacity ? `${fillLabel} checked in` : fillLabel,
+            program?.name,
+          ].filter(Boolean);
           return (
             <button
               key={entry.id}
               type="button"
               onClick={(event) => {
                 if (event.detail === 0) {
+                  onOpenSession(session);
+                  return;
+                }
+
+                // A click on this block's own drawn card opens it, even when an opened
+                // name has just folded and the point now shows a neighbour.
+                const clickedCard =
+                  event.target instanceof Element
+                    ? event.target.closest("[data-time-canvas-visible]")
+                    : null;
+                if (clickedCard && event.currentTarget.contains(clickedCard)) {
                   onOpenSession(session);
                   return;
                 }
@@ -332,14 +498,15 @@ export function SchedulePageSection({
                 onOpenSession(session);
               }}
               aria-label={getSessionButtonLabel(session)}
-              className="absolute min-h-11 min-w-11 text-left"
+              title={hoverTitle}
+              className={`absolute ${styles.canvasTarget}`}
               style={
                 {
                   top: targetTop,
                   height: targetHeight,
                   left: sessionLeft,
                   width: sessionWidth,
-                  "--program-color": program?.color_hex || "var(--operations-cobalt)",
+                  "--program-color": getProgramColor(program),
                 } as CSSProperties
               }
               data-time-canvas-block="session"
@@ -347,23 +514,85 @@ export function SchedulePageSection({
             >
               <span
                 aria-hidden="true"
-                className="absolute inset-x-0 overflow-hidden border border-border bg-surface px-2 py-1 hover:border-accent"
-                style={{ height, top: top - targetTop }}
+                className={`absolute inset-x-0 ${styles.canvasBlock}`}
+                style={
+                  {
+                    height: visibleHeight,
+                    top: `min(${top}, ${targetInset})`,
+                    overflow: "hidden",
+                    "--block-lines": blockLines,
+                    "--block-height": visibleHeight,
+                  } as CSSProperties
+                }
                 data-time-canvas-visible={`${entry.kind}:${entry.id}`}
+                data-conflict={overlaps ? "true" : undefined}
+                data-canceled={canceled ? "true" : undefined}
+                data-compact={compact ? "true" : undefined}
+                data-shared-lane={sharedLane}
               >
-                <strong className="block truncate text-[11px] font-semibold text-text-primary">
-                  {title}
-                </strong>
-                <span className="block truncate text-[10px] tabular-nums text-text-secondary">
-                  {formatTime(entry.start_time)}–{formatTime(entry.end_time)}
-                </span>
-                {!compact && program ? (
-                  <span className="block truncate text-[10px] text-muted">{program.name}</span>
-                ) : null}
+                {compact ? (
+                  <span className={styles.canvasLines}>
+                    <RevealText as="strong" className={styles.canvasTitle}>
+                      {title}
+                    </RevealText>
+                    <span className={styles.canvasMeta}>
+                      {formatTime(entry.start_time)}
+                      {fillLabel ? ` · ${fillLabel}` : ""}
+                    </span>
+                    {overlaps ? <b className={styles.overlapWord}>Overlaps</b> : null}
+                    {program ? <span className={styles.canvasProgram}>{program.name}</span> : null}
+                  </span>
+                ) : (
+                  <span className={styles.canvasLines}>
+                    <span className={styles.canvasLine}>
+                      <strong className={styles.canvasTitle}>{title}</strong>{" "}
+                      <span className={styles.canvasTime}>{timeRange}</span>
+                    </span>
+                    {dayFacts.length > 0 || overlaps ? (
+                      <span className={styles.canvasMeta}>
+                        {dayFacts.join(" · ")}
+                        {overlaps ? (
+                          <>
+                            {dayFacts.length > 0 ? " · " : ""}
+                            <b className={styles.overlapWord}>Overlaps</b>
+                          </>
+                        ) : null}
+                      </span>
+                    ) : null}
+                  </span>
+                )}
               </span>
             </button>
           );
         })}
+        {nowMinute !== null ? (
+          <span
+            aria-hidden="true"
+            className={`absolute inset-x-0 ${styles.nowLine}`}
+            style={{ top: hours((nowMinute - canvasRange.startMinute) / 60) }}
+            data-schedule-now-line="true"
+          />
+        ) : null}
+      </div>
+    );
+  }
+
+  function renderHourColumn() {
+    return (
+      <div
+        className={`relative ${styles.hourColumn}`}
+        style={{ height: hours(canvasHours) }}
+        aria-hidden="true"
+      >
+        {canvasHourMarks.map((minute) => (
+          <span
+            key={minute}
+            className={`absolute ${styles.hourLabel}`}
+            style={{ top: hours((minute - canvasRange.startMinute) / 60) }}
+          >
+            {formatCanvasHour(minute)}
+          </span>
+        ))}
       </div>
     );
   }
@@ -385,299 +614,435 @@ export function SchedulePageSection({
       });
     }
 
-    return `${weekDates[0].toLocaleDateString("en-US", {
-      month: "long",
-      day: "numeric",
-    })} ${DATE_RANGE_SEPARATOR} ${weekDates[6].toLocaleDateString("en-US", {
-      month: "long",
-      day: "numeric",
-      year: "numeric",
-    })}`;
+    return formatWeekLabel(weekDates[0], weekDates[6]);
   }
+
+  function renderTodayBar() {
+    return (
+      <section
+        className={styles.todayBar}
+        aria-labelledby="schedule-today-title"
+        data-schedule-today-bar="true"
+      >
+        <h2 id="schedule-today-title" className={styles.todayTitle}>
+          <CalendarCheck aria-hidden="true" />
+          Take attendance
+        </h2>
+        {!hasLoadedRange ? (
+          <div className={styles.todayList} aria-hidden="true">
+            {[0, 1, 2].map((index) => (
+              <span key={index} className={styles.todayChipPending} />
+            ))}
+          </div>
+        ) : (
+          <ol className={styles.todayList} data-schedule-today="true" aria-label="Today's classes">
+            {todaySessions.map((session) => {
+              const program = session.program_id ? programById.get(session.program_id) : null;
+              const canceled = session.status === "canceled";
+              const fill = getSessionFill(session);
+              return (
+                <li key={session.id}>
+                  <button
+                    type="button"
+                    className={styles.todayChip}
+                    data-schedule-today-session={session.id}
+                    disabled={canceled}
+                    data-canceled={canceled ? "true" : undefined}
+                    aria-label={
+                      canceled ? getSessionButtonLabel(session) : getAttendanceLabel(session)
+                    }
+                    onClick={canceled ? undefined : () => onOpenSession(session)}
+                    style={{ "--program-color": getProgramColor(program) } as CSSProperties}
+                  >
+                    <time className={styles.todayChipTime}>{formatTime(session.start_time)}</time>
+                    <strong className={styles.todayChipName}>{session.name}</strong>
+                    {fill ? <span className={styles.todayChipFill}>{fill}</span> : null}
+                    {canceled ? <ToneTag>Canceled</ToneTag> : null}
+                  </button>
+                </li>
+              );
+            })}
+          </ol>
+        )}
+      </section>
+    );
+  }
+
+  function renderAgendaEntry(entry: TimeCanvasEntry, isToday: boolean, conflicts: Set<string>) {
+    const session = entry.session;
+    const programId = session?.program_id || entry.template?.program_id || null;
+    const program = programId ? programById.get(programId) : null;
+    const style = { "--program-color": getProgramColor(program) } as CSSProperties;
+    const name = session?.name || entry.template?.name || "Class";
+    const time = <time className={styles.agendaTime}>{formatTime(entry.start_time)}</time>;
+
+    if (!session) {
+      return (
+        <div className={styles.agendaRow} data-template="true" style={style}>
+          <span className={styles.agendaBar} aria-hidden="true" />
+          {time}
+          <span className={styles.agendaText}>
+            <span className={styles.agendaName}>{name}</span>
+          </span>
+          <span className={styles.agendaFill}>Recurring</span>
+        </div>
+      );
+    }
+
+    const canceled = session.status === "canceled";
+    const fill = getSessionFill(session);
+    return (
+      <button
+        type="button"
+        className={styles.agendaRow}
+        aria-label={isToday ? getAttendanceLabel(session) : getSessionButtonLabel(session)}
+        data-canceled={canceled ? "true" : undefined}
+        data-action={isToday ? "attendance" : undefined}
+        onClick={() => onOpenSession(session)}
+        style={style}
+      >
+        <span className={styles.agendaBar} aria-hidden="true" />
+        {time}
+        <span className={styles.agendaText}>
+          <span className={styles.agendaName}>{name}</span>
+          {canceled ? (
+            <ToneTag>Canceled</ToneTag>
+          ) : conflicts.has(session.id) ? (
+            <ToneTag tone="alert">Overlaps</ToneTag>
+          ) : null}
+        </span>
+        {fill ? <span className={styles.agendaFill}>{fill}</span> : null}
+        {isToday ? <CalendarCheck aria-hidden="true" className={styles.agendaAction} /> : null}
+      </button>
+    );
+  }
+
+  /** Week on a phone: every day stacked, today's classes one tap from attendance. */
+  function renderWeekAgenda() {
+    return (
+      <ol
+        className={`${styles.agenda} ${phoneSheet ? calendarLoadingClass : ""}`}
+        data-schedule-agenda="week"
+        aria-busy={!hasLoadedRange}
+      >
+        {weekDates.map((date) => {
+          const key = formatScheduleDateKey(date);
+          const isToday = key === today;
+          const entries = hasLoadedRange ? entriesByDate[key] || [] : [];
+          const conflicts = getConflictingSessionIds(sessionsByDate.get(key) ?? []);
+          return (
+            <li
+              key={key}
+              className={styles.agendaDay}
+              data-schedule-agenda-day={key}
+              data-today={isToday ? "true" : undefined}
+            >
+              <div className={styles.agendaDayLine}>
+                <button
+                  type="button"
+                  className={styles.agendaDayHead}
+                  aria-label={`Open ${formatLongDate(date)}`}
+                  aria-current={isToday ? "date" : undefined}
+                  onClick={() => {
+                    onSelectDate(date);
+                    onViewChange("day");
+                  }}
+                >
+                  <span className={styles.agendaDayName}>{DAY_NAMES[date.getDay()]}</span>
+                  <span className={styles.agendaDayNumber}>{date.getDate()}</span>
+                  {isToday ? <span className={styles.agendaTodayWord}>Today</span> : null}
+                </button>
+                {hasLoadedRange && entries.length === 0 ? (
+                  <span className={styles.agendaEmpty}>No classes</span>
+                ) : null}
+              </div>
+              {!hasLoadedRange ? (
+                <div className={styles.agendaRows} aria-hidden="true">
+                  <span className={styles.agendaPending} />
+                </div>
+              ) : entries.length > 0 ? (
+                <ul className={styles.agendaRows}>
+                  {entries.map((entry) => (
+                    <li key={`${entry.kind}-${entry.id}`}>
+                      {renderAgendaEntry(entry, isToday, conflicts)}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </li>
+          );
+        })}
+      </ol>
+    );
+  }
+
+  const hasNotices = Boolean(
+    scheduleLoadError || actionMessage || (routeTargetNotice && onDismissRouteTargetNotice),
+  );
 
   return (
     <>
-      <Header title="Schedule">
+      <Header title="Schedule" description={headerDescription} reserveDescription>
         {canManageSchedule ? (
-          <Button variant="primary" size="sm" onClick={onOpenAddClass}>
-            <Plus aria-hidden="true" className="w-3.5 h-3.5" />
+          <Button variant="primary" onClick={onOpenAddClass}>
+            <Plus aria-hidden="true" className="h-4 w-4" />
             Add class
           </Button>
         ) : null}
       </Header>
 
-      <div className="flex flex-1 flex-col" data-schedule-day-sheet="true">
+      <HorizonPage className={styles.page}>
         <section
-          className="grid gap-2 bg-surface p-2 sm:grid-cols-[1.25fr_0.75fr_0.75fr_1fr]"
-          aria-label="Visible schedule range"
-          data-schedule-register="visible-range"
+          ref={calendarRef}
+          className={styles.calendar}
+          aria-labelledby="schedule-range-label"
         >
-          <div className="rounded-[10px] bg-surface-raised px-4 py-3">
-            <p className="text-xs font-medium text-muted">Visible range</p>
-            <p className="mt-1 text-sm font-semibold text-text-primary">{getToolbarLabel()}</p>
-          </div>
-          <div className="rounded-[10px] bg-surface-raised px-4 py-3">
-            <p className="text-xs font-medium text-muted">Scheduled</p>
-            <p className="mt-1 text-lg font-semibold tabular-nums text-text-primary">
-              {hasLoadedRange ? visibleSummary.scheduled : "Pending"}
-            </p>
-          </div>
-          <div className="rounded-[10px] bg-surface-raised px-4 py-3">
-            <p className="text-xs font-medium text-muted">Recurring slots</p>
-            <p className="mt-1 text-lg font-semibold tabular-nums text-text-primary">
-              {hasLoadedRange ? visibleSummary.recurringSlots : "Pending"}
-            </p>
-          </div>
-          <div className="rounded-[10px] bg-surface-raised px-4 py-3">
-            <p className="text-xs font-medium text-muted">Program scope</p>
-            <p className="mt-1 text-sm text-text-primary">
-              {programFilter
-                ? programById.get(programFilter)?.name || "Selected program"
-                : "All programs"}
-            </p>
-          </div>
-        </section>
-        <div className="flex flex-col gap-3 border-b border-border px-4 py-3 sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:px-8 lg:py-4">
-          <div
-            className="flex min-w-0 flex-wrap items-center gap-1.5"
-            role="group"
-            aria-label="Schedule date navigation"
-          >
-            <button
-              type="button"
-              onClick={() => onNavigate(-1)}
-              aria-label={`Previous ${view}`}
-              className="inline-flex min-h-11 min-w-11 cursor-pointer items-center justify-center rounded-[10px] text-text-secondary transition-colors hover:bg-surface-raised"
-            >
-              <ChevronLeft aria-hidden="true" className="w-4 h-4" />
-            </button>
-            <button
-              type="button"
-              onClick={onJumpToToday}
-              aria-label="Jump to today"
-              className="min-h-11 cursor-pointer rounded-[10px] px-3 py-1 text-xs font-medium text-accent transition-colors hover:bg-accent/10"
-            >
-              Today
-            </button>
-            <button
-              type="button"
-              onClick={() => onNavigate(1)}
-              aria-label={`Next ${view}`}
-              className="inline-flex min-h-11 min-w-11 cursor-pointer items-center justify-center rounded-[10px] text-text-secondary transition-colors hover:bg-surface-raised"
-            >
-              <ChevronRight aria-hidden="true" className="w-4 h-4" />
-            </button>
-            <span className="w-full min-w-0 break-words pt-1 text-sm font-semibold tracking-tight text-text-primary sm:ml-3 sm:w-auto sm:pt-0">
-              {getToolbarLabel()}
-            </span>
-          </div>
-
-          <SlidingSegmentedControl
-            activeValue={view}
-            ariaLabel="Schedule view"
-            className="w-full sm:w-auto sm:min-w-56"
-            items={SCHEDULE_VIEWS.map((nextView) => ({
-              id: nextView,
-              label: nextView[0].toUpperCase() + nextView.slice(1),
-            }))}
-            onChange={onViewChange}
-            size="compact"
-          />
-        </div>
-
-        <div className="flex flex-col items-stretch gap-3 border-b border-border px-4 py-3 sm:flex-row sm:flex-wrap sm:items-center sm:px-6 lg:px-8">
-          <select
-            value={programFilter}
-            onChange={(event) => onProgramFilterChange(event.target.value)}
-            aria-label="Filter schedule by program"
-            data-schedule-program-filter={programFilter ? "selected" : "all"}
-            className="min-h-11 w-full border border-border bg-surface-raised px-3 py-1.5 text-sm text-text-primary focus:border-accent focus:outline-none sm:w-auto"
-          >
-            <option value="">All programs</option>
-            {activePrograms.map((program) => (
-              <option key={program.id} value={program.id}>
-                {program.name}
-              </option>
-            ))}
-          </select>
-          {programFilter ? (
-            <ProgramBadge program={programById.get(programFilter)} />
-          ) : (
-            <span className="break-words text-xs text-muted">
-              Showing classes from every program
-            </span>
-          )}
-        </div>
-
-        {scheduleLoadError ? (
-          <div className="px-6 sm:px-8 pt-4">
-            <DismissibleNotice tone="danger" onDismiss={onDismissScheduleLoadError}>
-              {scheduleLoadError}
-              <Button variant="ghost" size="sm" onClick={onRetryRange}>
-                Retry
-              </Button>
-            </DismissibleNotice>
-          </div>
-        ) : null}
-
-        {actionMessage ? (
-          <div className="px-6 sm:px-8 pt-4">
-            <DismissibleNotice tone="success" onDismiss={onDismissActionMessage}>
-              {actionMessage}
-            </DismissibleNotice>
-          </div>
-        ) : null}
-
-        {!hasLoadedRange ? (
-          scheduleLoadError ? (
-            <p role="status" className="px-6 pt-3 text-sm text-muted">
-              This calendar range is unavailable. Retry or choose another range.
-            </p>
-          ) : (
-            <span role="status" aria-live="polite" className="sr-only">
-              Loading this calendar range...
-            </span>
-          )
-        ) : isRefreshingRange ? (
-          <p role="status" className="px-6 pt-3 text-xs text-muted">
-            Refreshing calendar. Showing the last loaded schedule.
-          </p>
-        ) : null}
-
-        {showCalendar && view === "month" && (
-          <div className={`flex-1 p-3 sm:p-6 ${calendarLoadingClass}`} aria-busy={!hasLoadedRange}>
-            <MonthScheduleView
-              month={currentDate}
-              sessions={hasLoadedRange ? filteredSessions : []}
-              templates={hasLoadedRange ? filteredTemplates : []}
-              isLoading={!hasLoadedRange}
-              selectedDate={currentDate}
-              today={parseCalendarDate(businessDate)}
-              maxVisibleEntries={3}
-              showHeader={false}
-              showTemplatePlaceholders
-              onDayClick={onSelectDate}
-              onEntryClick={(entry) => {
-                if (entry.kind === "session") {
-                  onOpenSession(entry.session);
-                }
-              }}
-              onMoreClick={(date) => {
-                onSelectDate(date);
-                onViewChange("day");
-              }}
-            />
-          </div>
-        )}
-
-        {showCalendar && view === "week" && (
-          <>
-            <div
-              className={`flex-1 overflow-x-auto overscroll-x-contain ${calendarLoadingClass}`}
-              aria-busy={!hasLoadedRange}
-              data-schedule-screen-week="true"
-              data-schedule-scroll-owner="internal"
-              role="region"
-              tabIndex={0}
-              aria-label="Scrollable weekly time canvas"
-            >
-              <div
-                className="overflow-hidden bg-surface"
-                style={{ minWidth: weekCanvasMinWidth }}
-                data-schedule-time-canvas="week"
-                data-schedule-week-peak-lanes={peakWeekLaneCount}
+          <div className={styles.toolbar}>
+            <div className={styles.dateNav} role="group" aria-label="Schedule date navigation">
+              <button
+                type="button"
+                onClick={() => onNavigate(-1)}
+                aria-label={`Previous ${view}`}
+                className={styles.navButton}
               >
-                <div
-                  className="grid border-b border-border"
-                  style={{ gridTemplateColumns: weekGridTemplateColumns }}
-                >
-                  <div className="border-r border-border px-2 py-3 text-xs text-muted">
-                    Studio time
-                  </div>
-                  {weekDates.map((date) => {
-                    const key = formatScheduleDateKey(date);
-                    const isToday = key === today;
-                    return (
-                      <div
-                        key={key}
-                        className={`relative border-r border-border px-2 py-3 text-center last:border-r-0 ${isToday ? "bg-accent/10" : ""}`}
-                        aria-current={isToday ? "date" : undefined}
-                      >
-                        <p className="text-xs text-muted">{DAY_NAMES[date.getDay()]}</p>
-                        <p
-                          className={`mt-1 text-base tabular-nums ${isToday ? "font-semibold text-accent" : "text-text-primary"}`}
-                        >
-                          {date.getDate()}
-                        </p>
-                      </div>
-                    );
-                  })}
-                </div>
-                <div className="grid" style={{ gridTemplateColumns: weekGridTemplateColumns }}>
-                  <div
-                    className="relative border-r border-border"
-                    style={{ height: canvasHeight }}
-                    aria-hidden="true"
-                  >
-                    {canvasHourMarks.map((minute) => (
-                      <span
-                        key={minute}
-                        className="absolute right-2 -translate-y-1/2 text-[9px] tabular-nums text-muted"
-                        style={{
-                          top:
-                            ((minute - canvasBounds.startMinute) / 60) *
-                            SCHEDULE_CANVAS_PIXELS_PER_HOUR,
-                        }}
-                      >
-                        {formatCanvasHour(minute)}
-                      </span>
-                    ))}
-                  </div>
-                  {weekDates.map((date) => (
-                    <div key={formatScheduleDateKey(date)}>{renderTimeColumn(date, true)}</div>
-                  ))}
-                </div>
-              </div>
+                <ChevronLeft aria-hidden="true" />
+              </button>
+              <button
+                type="button"
+                onClick={onJumpToToday}
+                aria-label="Jump to today"
+                className={styles.todayButton}
+                data-current={todayInView ? "true" : undefined}
+              >
+                Today
+              </button>
+              <button
+                type="button"
+                onClick={() => onNavigate(1)}
+                aria-label={`Next ${view}`}
+                className={styles.navButton}
+              >
+                <ChevronRight aria-hidden="true" />
+              </button>
             </div>
+            <h2 id="schedule-range-label" className={styles.rangeLabel} data-schedule-range-label>
+              {getToolbarLabel()}
+            </h2>
+            <div className={styles.toolbarEnd}>
+              {showProgramFilter ? (
+                <div
+                  className={styles.programFilter}
+                  style={
+                    selectedProgram
+                      ? ({ "--program-color": getProgramColor(selectedProgram) } as CSSProperties)
+                      : undefined
+                  }
+                  data-selected={programFilter ? "true" : undefined}
+                >
+                  <select
+                    value={programFilter}
+                    onChange={(event) => onProgramFilterChange(event.target.value)}
+                    aria-label="Filter schedule by program"
+                    data-schedule-program-filter={programFilter ? "selected" : "all"}
+                    className={styles.programSelect}
+                  >
+                    <option value="">All programs</option>
+                    {activePrograms.map((program) => (
+                      <option key={program.id} value={program.id}>
+                        {program.name}
+                      </option>
+                    ))}
+                  </select>
+                  {programFilter ? (
+                    <button
+                      type="button"
+                      className={styles.clearFilter}
+                      aria-label="Show every program"
+                      onClick={() => onProgramFilterChange("")}
+                    >
+                      <X aria-hidden="true" />
+                    </button>
+                  ) : null}
+                </div>
+              ) : null}
+              <SlidingSegmentedControl
+                activeValue={view}
+                ariaLabel="Schedule view"
+                className={styles.viewSwitch}
+                items={SCHEDULE_VIEWS.map((nextView) => ({
+                  id: nextView,
+                  label: nextView[0].toUpperCase() + nextView.slice(1),
+                }))}
+                onChange={onViewChange}
+                size="compact"
+              />
+            </div>
+          </div>
 
-            <section data-schedule-print-week="true" aria-label="Weekly schedule">
-              {(hasLoadedRange ? weekDates : []).map((date) => {
-                const key = formatScheduleDateKey(date);
-                const entries = (layoutsByDate[key] || []).map((block) => block.item);
-                return (
-                  <section key={key} data-schedule-print-day={key}>
-                    <header data-schedule-print-day-header="true">
-                      <strong>
-                        {DAY_NAMES[date.getDay()]} {date.getDate()}
-                      </strong>
-                    </header>
-                    {entries.length === 0 ? (
-                      <p data-schedule-print-empty="true">No sessions scheduled.</p>
-                    ) : null}
-                    {entries.map((entry) => {
-                      const programId =
-                        entry.session?.program_id || entry.template?.program_id || null;
-                      const program = programId ? programById.get(programId) : null;
-                      return (
-                        <article
-                          key={`${entry.kind}-${entry.id}`}
-                          data-schedule-print-entry={entry.kind}
-                        >
-                          <span>
-                            {formatTime(entry.start_time)}–{formatTime(entry.end_time)}
-                          </span>
-                          <strong>{entry.session?.name || entry.template?.name || "Class"}</strong>
-                          {program ? <span>{program.name}</span> : null}
-                          {entry.kind === "template" ? <span>Recurring</span> : null}
-                        </article>
-                      );
-                    })}
-                  </section>
-                );
-              })}
-            </section>
+          {hasNotices ? (
+            <div className={styles.notices}>
+              {scheduleLoadError ? (
+                <DismissibleNotice tone="danger" onDismiss={onDismissScheduleLoadError}>
+                  {scheduleLoadError}
+                  <Button variant="ghost" size="sm" onClick={onRetryRange}>
+                    Retry
+                  </Button>
+                </DismissibleNotice>
+              ) : null}
 
-            <style>{`
+              {actionMessage ? (
+                <DismissibleNotice tone="success" onDismiss={onDismissActionMessage}>
+                  {actionMessage}
+                </DismissibleNotice>
+              ) : null}
+
+              {routeTargetNotice && onDismissRouteTargetNotice ? (
+                <DismissibleNotice tone="warning" onDismiss={onDismissRouteTargetNotice}>
+                  {routeTargetNotice}
+                </DismissibleNotice>
+              ) : null}
+            </div>
+          ) : null}
+
+          {showTodayBar ? renderTodayBar() : null}
+
+          {!hasLoadedRange ? (
+            scheduleLoadError ? (
+              <p role="status" className={styles.rangeStatus}>
+                This calendar range is unavailable. Retry or choose another range.
+              </p>
+            ) : (
+              <span role="status" aria-live="polite" className="sr-only">
+                Loading this calendar range...
+              </span>
+            )
+          ) : isRefreshingRange ? (
+            <p role="status" className={styles.rangeStatus}>
+              Refreshing calendar. Showing the last loaded schedule.
+            </p>
+          ) : null}
+
+          {showCalendar && view === "month" && (
+            <div
+              className={`${styles.monthFrame} ${calendarLoadingClass}`}
+              aria-busy={!hasLoadedRange}
+            >
+              <MonthScheduleView
+                month={currentDate}
+                sessions={hasLoadedRange ? filteredSessions : []}
+                templates={filteredTemplates}
+                programById={programById}
+                isLoading={!hasLoadedRange}
+                selectedDate={currentDate}
+                today={todayDate}
+                maxVisibleEntries={4}
+                showHeader={false}
+                showTemplatePlaceholders
+                onDayClick={onSelectDate}
+                onEntryClick={(entry) => {
+                  if (entry.kind === "session") {
+                    onOpenSession(entry.session);
+                  }
+                }}
+                onMoreClick={(date) => {
+                  onSelectDate(date);
+                  onViewChange("day");
+                }}
+              />
+            </div>
+          )}
+
+          {showCalendar && view === "week" && (
+            <>
+              {phoneSheet !== true ? (
+                <div
+                  className={`flex-1 overflow-x-auto overscroll-x-contain ${styles.weekScroller} ${phoneSheet === false ? calendarLoadingClass : ""}`}
+                  aria-busy={!hasLoadedRange}
+                  data-schedule-screen-week="true"
+                  data-schedule-scroll-owner="internal"
+                  role="region"
+                  tabIndex={0}
+                  aria-label="Scrollable weekly time canvas"
+                >
+                  <div
+                    className={styles.canvas}
+                    style={{ minWidth: weekCanvasMinWidth }}
+                    data-schedule-time-canvas="week"
+                    data-schedule-week-peak-lanes={peakWeekLaneCount}
+                  >
+                    <div
+                      className={`grid ${styles.weekHead}`}
+                      style={{ gridTemplateColumns: weekGridTemplateColumns }}
+                    >
+                      <div className={styles.weekCorner} aria-hidden="true" />
+                      {weekDates.map((date) => {
+                        const key = formatScheduleDateKey(date);
+                        const isToday = key === today;
+                        return (
+                          <div
+                            key={key}
+                            className={styles.weekDay}
+                            data-today={isToday ? "true" : undefined}
+                            aria-current={isToday ? "date" : undefined}
+                          >
+                            <span className={styles.weekDayName}>{DAY_NAMES[date.getDay()]}</span>
+                            <span className={styles.weekDayNumber}>{date.getDate()}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <div className="grid" style={{ gridTemplateColumns: weekGridTemplateColumns }}>
+                      {renderHourColumn()}
+                      {weekDates.map((date) => (
+                        <div key={formatScheduleDateKey(date)}>{renderTimeColumn(date, true)}</div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+
+              {phoneSheet !== false ? renderWeekAgenda() : null}
+
+              <section data-schedule-print-week="true" aria-label="Weekly schedule">
+                {(hasLoadedRange ? weekDates : []).map((date) => {
+                  const key = formatScheduleDateKey(date);
+                  const entries = (layoutsByDate[key] || []).map((block) => block.item);
+                  return (
+                    <section key={key} data-schedule-print-day={key}>
+                      <header data-schedule-print-day-header="true">
+                        <strong>
+                          {DAY_NAMES[date.getDay()]} {date.getDate()}
+                        </strong>
+                      </header>
+                      {entries.length === 0 ? (
+                        <p data-schedule-print-empty="true">No classes.</p>
+                      ) : null}
+                      {entries.map((entry) => {
+                        const programId =
+                          entry.session?.program_id || entry.template?.program_id || null;
+                        const program = programId ? programById.get(programId) : null;
+                        return (
+                          <article
+                            key={`${entry.kind}-${entry.id}`}
+                            data-schedule-print-entry={entry.kind}
+                          >
+                            <span>
+                              {formatTime(entry.start_time)}–{formatTime(entry.end_time)}
+                            </span>
+                            <strong>
+                              {entry.session?.name || entry.template?.name || "Class"}
+                            </strong>
+                            {program ? <span>{program.name}</span> : null}
+                            {entry.kind === "template" ? <span>Recurring</span> : null}
+                          </article>
+                        );
+                      })}
+                    </section>
+                  );
+                })}
+              </section>
+
+              <style>{`
             [data-schedule-print-week="true"] {
               display: none;
             }
@@ -750,70 +1115,48 @@ export function SchedulePageSection({
               }
             }
           `}</style>
-          </>
-        )}
+            </>
+          )}
 
-        {showCalendar && view === "day" && (
-          <div
-            className={`flex-1 px-3 py-6 sm:px-8 ${calendarLoadingClass}`}
-            aria-busy={!hasLoadedRange}
-          >
-            <div className="mb-5 flex flex-wrap items-end justify-between gap-3 border-b border-border pb-3">
-              <h2 className="text-sm font-semibold text-text-primary">
-                {currentDate.toLocaleDateString("en-US", {
-                  weekday: "long",
-                  month: "long",
-                  day: "numeric",
-                  year: "numeric",
-                })}
-              </h2>
-              <p className="text-xs text-muted">
-                Classes are placed by start time and duration. Overlaps share the same time lane.
-              </p>
-            </div>
-
-            {hasLoadedRange &&
-            (entriesByDate[formatScheduleDateKey(currentDate)] || []).length === 0 ? (
-              <div className="rounded-[14px] bg-surface py-16 text-center shadow-[var(--product-shadow-card)]">
-                <Calendar aria-hidden="true" className="w-5 h-5 text-muted mx-auto mb-3" />
-                <p className="text-sm text-text-secondary">No sessions scheduled for this day.</p>
-                {canManageSchedule ? (
-                  <Button variant="secondary" size="sm" className="mt-5" onClick={onOpenAddClass}>
-                    <Plus aria-hidden="true" className="w-3.5 h-3.5" />
-                    Add class
-                  </Button>
-                ) : null}
-              </div>
-            ) : (
-              <div
-                className="grid grid-cols-[4.5rem_minmax(0,1fr)] border-y border-border bg-surface"
-                data-schedule-time-canvas="day"
-              >
-                <div
-                  className="relative border-r border-border"
-                  style={{ height: canvasHeight }}
-                  aria-hidden="true"
-                >
-                  {canvasHourMarks.map((minute) => (
-                    <span
-                      key={minute}
-                      className="absolute right-2 -translate-y-1/2 text-[9px] tabular-nums text-muted"
-                      style={{
-                        top:
-                          ((minute - canvasBounds.startMinute) / 60) *
-                          SCHEDULE_CANVAS_PIXELS_PER_HOUR,
-                      }}
-                    >
-                      {formatCanvasHour(minute)}
-                    </span>
-                  ))}
+          {showCalendar && view === "day" && (
+            <div
+              className={`${styles.dayFrame} ${calendarLoadingClass}`}
+              aria-busy={!hasLoadedRange}
+            >
+              {hasLoadedRange && dayEntries.length === 0 ? (
+                <div className={styles.dayEmpty}>
+                  <CalmState
+                    tone="neutral"
+                    icon={<CalendarPlus />}
+                    title="No classes on this day."
+                    detail={
+                      canManageSchedule
+                        ? "Add a class here, or move to another day."
+                        : "Move to another day to see its classes."
+                    }
+                    action={
+                      canManageSchedule ? (
+                        <Button variant="secondary" size="sm" onClick={onOpenAddClass}>
+                          <Plus aria-hidden="true" className="h-3.5 w-3.5" />
+                          Add class
+                        </Button>
+                      ) : null
+                    }
+                  />
                 </div>
-                {renderTimeColumn(currentDate, false)}
-              </div>
-            )}
-          </div>
-        )}
-      </div>
+              ) : (
+                <div
+                  className={`grid ${styles.canvas} ${styles.dayCanvas}`}
+                  data-schedule-time-canvas="day"
+                >
+                  {renderHourColumn()}
+                  {renderTimeColumn(currentDate, false)}
+                </div>
+              )}
+            </div>
+          )}
+        </section>
+      </HorizonPage>
     </>
   );
 }

@@ -6,13 +6,13 @@ import { useStudioDay } from "@/lib/use-studio-day";
 import { initialBootstrapView, bootstrapDatasets } from "@/lib/bootstrap-route";
 import { APP_RESUME_EVENT, APP_DATA_REFRESH_EVENT } from "@/lib/app-resume";
 import { pendingCommands, subscribePendingCommands } from "@/lib/pending-commands";
-import { markDashboardFactsChanged, needsFreshDashboardFacts } from "@/lib/dashboard-freshness";
+import { markDashboardFactsChanged } from "@/lib/dashboard-freshness";
 import { beginResourceMutation, createResourceScope } from "@/lib/store-resource-scope";
 
 import React, { useState, useEffect, useLayoutEffect, useCallback, useRef, useMemo, type ReactNode } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { api, isStaffArchivedError, isSubscriptionRequiredError } from "@/lib/api";
+import { api, ApiError, isStaffArchivedError, isSubscriptionRequiredError } from "@/lib/api";
 import { markPerformance, measurePerformance } from "@/lib/performance";
 import {
   clearStoredStudioSessionCookies,
@@ -53,8 +53,19 @@ import type {
   EligibilityEntry, Promotion,
   Program,
   StaffMember,
-  StaffLegalNameResponse, StaffRoleName, DashboardSummary,
+  StaffLegalNameResponse, StaffRoleName, DashboardHome,
 } from "@/types";
+import { buildPreviewHomePayload } from "@/lib/dashboard/preview-home-payload";
+import { homeRoleClass } from "@/lib/dashboard/home-model";
+import {
+  purgeHomePreferencesScope,
+  reconcileHomePreferences,
+  stampHomeRead,
+  startHomeRead,
+  type HomePreferences,
+  type HomePreferencesScope,
+  type HomePreferencesWire,
+} from "@/lib/dashboard/home-preferences";
 import {
   MOCK_STUDENTS,
   MOCK_SESSIONS,
@@ -114,7 +125,7 @@ import {
   type BootstrapResponse,
 } from "@/lib/store-bootstrap-model";
 import { invalidateAccessIdentity, publishAccessIdentity } from "@/lib/access-identity";
-import { withCurrentLiveAuthRead } from "@/lib/store-action-types";
+import { canCommitLiveMutation, withCurrentLiveAuthRead } from "@/lib/store-action-types";
 import { routeForMembershipStatus } from "@/lib/auth-route-model";
 import {
   buildPreviewHydratedLadderState,
@@ -219,13 +230,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     isPreviewMode ? Date.now() : null
   );
   const [studentsMayBePartial, setStudentsMayBePartial] = useState(false);
-  const [dashboardSummary, setDashboardSummary] = useState<DashboardSummary | null>(null);
-  const [dashboardSummaryDate, setDashboardSummaryDate] = useState<string | null>(null);
-  const dashboardSummaryDateRef = useRef<string | null>(null);
-  const [dashboardSummaryLoadError, setDashboardSummaryLoadError] = useState<string | null>(null);
-  const [dashboardSummaryLoaded, setDashboardSummaryLoaded] = useState(isPreviewMode);
-  const dashboardSummaryRequestSeqRef = useRef(0);
-  const dashboardSummaryFlightRef = useRef<{ sequence: number; businessDate: string; fresh: boolean; promise: Promise<void> } | null>(null);
   const studentsRef = useRef<Student[]>(students);
   const studentsRevisionRef = useRef(0);
   const studentMutationEpochRef = useRef(0);
@@ -362,7 +366,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   );
   const [eligibilityPendingLadderId, setEligibilityPendingLadderId] = useState<string | null>(null);
   const [eligibilityLoadError, setEligibilityLoadError] = useState<string | null>(null);
-  const [dashboardPromotionsLoading, setDashboardPromotionsLoading] = useState(false);
   const eligibilityCacheRef = useRef<Record<string, EligibilityEntry[]>>(
     isPreviewMode ? { [MOCK_BELT_LADDER.id]: MOCK_ELIGIBILITY } : {}
   );
@@ -409,49 +412,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       }),
     };
   }, []);
-
-  const refreshDashboardSummary = useCallback(async (options?: { reason?: "visit" | "resume" }): Promise<void> => {
-    if (isPreviewMode) return Promise.resolve();
-    const fresh = !options?.reason || needsFreshDashboardFacts();
-    const requestDate = businessDateRef.current;
-    const existing = dashboardSummaryFlightRef.current;
-    if (existing?.sequence === dashboardSummaryRequestSeqRef.current && existing.businessDate === requestDate && (!fresh || existing.fresh)) return existing.promise;
-    const sequence = ++dashboardSummaryRequestSeqRef.current;
-    const owner = beginLiveAuthRequest();
-    const studioId = authoritativeStudioIdRef.current;
-    const isCurrent = () => sequence === dashboardSummaryRequestSeqRef.current && requestDate === businessDateRef.current && owner.isSameIdentity();
-    setDashboardSummaryLoadError(null);
-    if (dashboardSummaryDateRef.current !== requestDate) {
-      dashboardSummaryDateRef.current = requestDate;
-      setDashboardSummaryDate(requestDate);
-      setDashboardSummary(null);
-      setDashboardSummaryLoaded(false);
-    }
-    markPerformance("dashboard.summary_started");
-    const fail = () => {
-      if (isCurrent()) {
-        setDashboardSummaryLoadError("Saved records are retained. Dashboard totals could not be refreshed. Please retry.");
-        setDashboardSummaryLoaded(true);
-      }
-    };
-    const promise = withCurrentLiveAuthRead(() => {
-      const request = beginLiveAuthRequest();
-      return { ...request, canRetryAfterTokenChange: () => isCurrent() && request.canRetryAfterTokenChange() };
-    }, async (request) => {
-      const summary = await api.get<DashboardSummary>(`/dashboard/summary?include_follow_ups=true${fresh ? "&fresh=true" : ""}`, request.token,
-        { timeoutMs: 35000, timeoutMessage: "Dashboard refresh timed out." });
-      if (!isCurrent() || !request.isCurrent()) return;
-      if (summary.auth.studio_id !== studioId) throw new Error("Dashboard scope changed. Please retry.");
-      setDashboardSummary(summary);
-      setDashboardSummaryLoaded(true);
-      markPerformance("dashboard.summary_finished");
-      measurePerformance("dashboard.summary_duration", "dashboard.summary_started", "dashboard.summary_finished");
-    }, fail).catch((error) => { fail(); throw error; }).finally(() => {
-      if (dashboardSummaryFlightRef.current?.sequence === sequence) dashboardSummaryFlightRef.current = null;
-    });
-    dashboardSummaryFlightRef.current = { sequence, businessDate: requestDate, fresh, promise };
-    return promise;
-  }, [beginLiveAuthRequest, isPreviewMode]);
 
   const reconcileScheduleAttempt = useCallback(async (
     intent: ScheduleRangeRefreshIntent
@@ -736,9 +696,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setProgramsLoadError(state.programsLoadError);
     setProgramsUsageLoaded(false);
     setProgramsUsageLoadError(null);
-    setDashboardSummaryLoadError(null);
-    setDashboardSummary(state.dashboardSummary);
-    setDashboardSummaryLoaded(state.dashboardSummaryLoaded);
     studentsRevisionRef.current += 1;
     setStudents(state.students);
     setStudentsLoaded(state.studentsLoaded);
@@ -763,7 +720,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setEligibility(state.eligibility);
     setEligibilityLadderId(state.eligibilityLadderId);
     setEligibilityPendingLadderId(state.eligibilityPendingLadderId);
-    setDashboardPromotionsLoading(false);
     setEligibilityLoadError(state.eligibilityLoadError);
     promotionHistoryGenerationRef.current += 1;
     setPromotionHistoryCache(state.promotionHistoryCache);
@@ -773,7 +729,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     invalidateAccessIdentity();
     identityEpochRef.current += 1;
     authGenerationRef.current = nextLiveStudioDataResetGeneration(authGenerationRef.current);
-    dashboardSummaryRequestSeqRef.current += 1;
     authUserIdRef.current = null;
     setCurrentUser(null);
     setStudioTimezone("UTC");
@@ -789,11 +744,26 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     applyLiveStudioDataResetState(buildSignedOutStudioResetState());
   }, [applyLiveStudioDataResetState]);
 
+  // The user and studio whose Home preferences this tab holds. A direct switch to
+  // another user or studio, with no sign-out between, retires the previous
+  // owner's local copy and sync, so its debounced or in-flight save can neither
+  // be sent nor write its copy back. The same owner verified again keeps both.
+  const homePreferencesOwnerRef = useRef<HomePreferencesScope | null>(null);
+  const retireHomePreferencesOwner = useCallback((next: HomePreferencesScope | null) => {
+    const previous = homePreferencesOwnerRef.current;
+    if (previous && (previous.userId !== next?.userId || previous.studioId !== next?.studioId)) {
+      purgeHomePreferencesScope(previous);
+    }
+    homePreferencesOwnerRef.current = next;
+  }, []);
+
   const commitAuthoritativeAuthProfile = useCallback((
     authProfile: AuthProfileResponse,
     legalNameRead?: { revision: number; epoch: number },
     accessAllowed = true,
   ) => {
+    retireHomePreferencesOwner(authProfile.membership_status === "active" && authProfile.studio_id
+      ? { userId: authProfile.user.id, studioId: authProfile.studio_id } : null);
     publishAccessIdentity(authProfile, accessAllowed);
     authoritativeStudioIdRef.current = authProfile.studio_id ?? null;
     const identity = `${authProfile.user.id}:${authProfile.studio_id ?? ""}:${authProfile.role ?? ""}`;
@@ -821,7 +791,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setCurrentRole(authProfile.role ?? null);
     setStaffProfilesAvailable(isStaffProfilesAvailable(authProfile));
     setIdentityReady(true);
-  }, []);
+  }, [retireHomePreferencesOwner]);
 
   const applySubscriptionRequiredState = useCallback((
     authProfile: AuthProfileResponse,
@@ -830,7 +800,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     invalidateAccessIdentity();
     identityEpochRef.current += 1;
     authGenerationRef.current = nextLiveStudioDataResetGeneration(authGenerationRef.current);
-    dashboardSummaryRequestSeqRef.current += 1;
 
     authUserIdRef.current = sessionUser.id;
     commitAuthoritativeAuthProfile(authProfile, undefined, false);
@@ -862,7 +831,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     invalidateAccessIdentity();
     identityEpochRef.current += 1;
     authGenerationRef.current = nextLiveStudioDataResetGeneration(authGenerationRef.current);
-    dashboardSummaryRequestSeqRef.current += 1;
     // Subscription access gates studio data, not an already verified identity.
     // The recovery page still needs the dashboard shell and legal-name gate.
     applyLiveStudioDataResetState(buildSubscriptionRequiredStudioResetState());
@@ -875,8 +843,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setStaffLoadError(restored.staffLoadError);
     setProgramsLoaded(restored.programsLoaded);
     setProgramsLoadError(restored.programsLoadError);
-    setDashboardSummary(restored.dashboardSummary);
-    setDashboardSummaryLoaded(restored.dashboardSummaryLoaded);
     setStudentsLoaded(restored.studentsLoaded);
     setStudentsLoadError(restored.studentsLoadError);
     setLeadsLoaded(restored.leadsLoaded);
@@ -885,6 +851,90 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setScheduleLoadError(restored.scheduleLoadError);
     setScheduleStatus(restored.scheduleStatus);
   }, [setProgramsLoaded, destructivelyResetScheduleCoordinator]);
+
+  // Home reads one payload. This returns it without storing it: `useHome` owns
+  // Home's state. Preview mode is selected here and nowhere else.
+  const loadDashboardHome = useCallback(async ({ fresh }: { fresh: boolean }): Promise<DashboardHome> => {
+    if (isPreviewMode) {
+      const role = currentRoleRef.current;
+      if (!role) throw new Error("Home is not available until studio access is verified.");
+      const payload = buildPreviewHomePayload({ today: businessDateRef.current, role });
+      stampHomeRead(payload, startHomeRead());
+      return payload;
+    }
+    const owner = beginLiveAuthRequest();
+    const studioId = authoritativeStudioIdRef.current;
+    const isCurrent = () => owner.isSameIdentity() && authoritativeStudioIdRef.current === studioId;
+    const scopeChanged = () => new Error("Dashboard scope changed. Please retry.");
+    if (!studioId) throw scopeChanged();
+    try {
+      return await withCurrentLiveAuthRead(() => {
+        const request = beginLiveAuthRequest();
+        return { ...request, canRetryAfterTokenChange: () => isCurrent() && request.canRetryAfterTokenChange() };
+      }, async (request) => {
+        // When it started orders its `preferences` against this tab's confirmed saves.
+        const startedAt = startHomeRead();
+        const payload = await api.get<DashboardHome>(`/dashboard/home${fresh ? "?fresh=true" : ""}`, request.token,
+          { timeoutMs: 35000, timeoutMessage: "Home refresh timed out." });
+        if (!isCurrent()) throw scopeChanged();
+        if (payload.studio?.id !== studioId) {
+          throw new ApiError("Home studio access could not be verified. Please retry.", 403);
+        }
+        stampHomeRead(payload, startedAt);
+        return payload;
+      }, () => {});
+    } catch (error) {
+      // Access failures take the store's existing paths: a lapsed subscription
+      // marks the studio, and a refused session or membership re-verifies the
+      // workspace, which signs out or resets identity if it is really gone.
+      if (isCurrent()) {
+        const status = error && typeof error === "object" && "status" in error ? Number(error.status) : null;
+        if (isSubscriptionRequiredError(error)) markSubscriptionRequired();
+        else if (status === 401 || status === 403 || status === 409 || isStaffArchivedError(error)) {
+          window.dispatchEvent(new CustomEvent(APP_RESUME_EVENT, { detail: { refreshData: false } }));
+        }
+      }
+      throw error;
+    }
+  }, [beginLiveAuthRequest, isPreviewMode, markSubscriptionRequired]);
+
+  // Home preferences: one PUT for the identity the caller saves for, never another.
+  // It changes no studio facts, so it never marks them changed (no fresh re-read).
+  // It returns the stored value without keeping it: `useHomePreferences` owns it.
+  // Preview mode resolves here without a network call, like Home's read.
+  const saveDashboardHomePreferences = useCallback(async (
+    preferences: HomePreferences,
+    scope: HomePreferencesScope,
+  ): Promise<HomePreferencesWire> => {
+    if (isPreviewMode) {
+      const role = homeRoleClass(currentRoleRef.current);
+      if (!role) throw new Error("Home is not available until studio access is verified.");
+      return reconcileHomePreferences(preferences, role);
+    }
+    const isScope = () => authUserIdRef.current === scope.userId && authoritativeStudioIdRef.current === scope.studioId;
+    const scopeChanged = () => new Error("Dashboard scope changed. Please retry.");
+    if (!isScope()) throw scopeChanged();
+    const request = beginLiveAuthRequest();
+    const isCurrent = () => canCommitLiveMutation(request) && isScope();
+    try {
+      const saved = await api.put<HomePreferencesWire>("/dashboard/home/preferences", {
+        version: 1, order: preferences.order, hidden: preferences.hidden, size: preferences.size,
+      }, request.token, { timeoutMessage: "Saving Home timed out.", marksDashboardFacts: false });
+      if (!isCurrent()) throw scopeChanged();
+      return saved;
+    } catch (error) {
+      // The same access paths as Home's read. An ambiguous membership (409) is a
+      // refusal too: re-verify identity; the sync suspends and Home re-reads.
+      if (isCurrent()) {
+        const status = error && typeof error === "object" && "status" in error ? Number(error.status) : null;
+        if (isSubscriptionRequiredError(error)) markSubscriptionRequired();
+        else if (status === 401 || status === 403 || status === 409 || isStaffArchivedError(error)) {
+          window.dispatchEvent(new CustomEvent(APP_RESUME_EVENT, { detail: { refreshData: false } }));
+        }
+      }
+      throw error;
+    }
+  }, [beginLiveAuthRequest, isPreviewMode, markSubscriptionRequired]);
 
   useEffect(() => {
     if (!hydrated || !subscriptionRequired || pathname === "/subscription-required") {
@@ -901,15 +951,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     resetProgramScope();
     setProgramsUsageLoaded(false);
     setProgramsUsageLoadError(null);
-    dashboardSummaryRequestSeqRef.current += 1;
     destructivelyResetScheduleCoordinator(true);
     setStudioNameState(data.studio_name);
     commitStudents(data.students);
     setPrograms(data.programs || programsRef.current);
     setProgramsLoaded(true);
     setProgramsLoadError(null);
-    setDashboardSummary(null);
-    setDashboardSummaryLoaded(true);
     setScheduleLoadError(null);
     setScheduleStatus("ready");
     setLeads(data.leads);
@@ -935,7 +982,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     resetProgramScope();
     setProgramsUsageLoaded(false);
     setProgramsUsageLoadError(null);
-    dashboardSummaryRequestSeqRef.current += 1;
     destructivelyResetScheduleCoordinator(true);
     if (studioNameValue) {
       setStudioNameState(studioNameValue);
@@ -945,8 +991,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setPrograms([]);
     setProgramsLoaded(true);
     setProgramsLoadError(null);
-    setDashboardSummary(null);
-    setDashboardSummaryLoaded(true);
     setScheduleLoadError(null);
     setScheduleStatus("ready");
     if (isPreviewMode) {
@@ -1173,55 +1217,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
   }, [beginLiveAuthRequest, commitEligibilityRows, fetchEligibilityForLadder, isPreviewMode]);
 
-  const dashboardPromotionsFlightRef = useRef<{
-    epoch: number; date: string; eligibilitySequence: number; promise: Promise<void>;
-  } | null>(null);
-  const dashboardPromotionsDateRef = useRef<string | null>(null);
-  const refreshDashboardPromotions = useCallback(async () => {
-    if (isPreviewMode) return;
-    const epoch = identityEpochRef.current;
-    const date = businessDateRef.current;
-    const existing = dashboardPromotionsFlightRef.current;
-    if (existing?.epoch === epoch && existing.date === date
-      && existing.eligibilitySequence === eligibilityRequestSeqRef.current) return existing.promise;
-    const owner = beginLiveAuthRequest();
-    if (dashboardPromotionsDateRef.current !== date) {
-      dashboardPromotionsDateRef.current = date;
-      eligibilityRequestSeqRef.current += 1;
-      eligibilityCacheRef.current = {};
-      commitEligibilityRows(null, []);
-    }
-    setDashboardPromotionsLoading(true);
-    setEligibilityLoadError(null);
-    const flight = { epoch, date, eligibilitySequence: eligibilityRequestSeqRef.current, promise: Promise.resolve() };
-    const isCurrent = () => owner.isSameIdentity() && date === businessDateRef.current
-      && dashboardPromotionsFlightRef.current === flight
-      && flight.eligibilitySequence === eligibilityRequestSeqRef.current;
-    const promise = withCurrentLiveAuthRead(beginLiveAuthRequest, async (request) => {
-      // This small metadata read also recovers a failed/omitted route bootstrap and
-      // notices a selected ladder removed or changed while Dashboard was hidden.
-      const ladders = await api.get<BeltLadder[]>("/belts/ladders", request.token);
-      if (!request.isCurrent() || !isCurrent()) return;
-      beltsHydratedRef.current = true;
-      const selected = applyLadderSelection(ladders);
-      const eligibilityRead = loadEligibilityForLadder(selected?.id ?? null, { force: true, retainCurrent: true });
-      flight.eligibilitySequence = eligibilityRequestSeqRef.current;
-      await eligibilityRead;
-    }, () => {}).catch((error) => {
-      if (isCurrent()) setEligibilityLoadError(error instanceof Error ? error.message : "Promotion eligibility could not be refreshed.");
-      throw error;
-    }).finally(() => {
-      if (dashboardPromotionsFlightRef.current === flight) {
-        dashboardPromotionsFlightRef.current = null;
-        if (owner.isSameIdentity()) setDashboardPromotionsLoading(false);
-      }
-    });
-    flight.promise = promise;
-    dashboardPromotionsFlightRef.current = flight;
-    return promise;
-  }, [applyLadderSelection, beginLiveAuthRequest, commitEligibilityRows, isPreviewMode, loadEligibilityForLadder]);
-
-  // Belt Tracker owns its initial eligibility read. Dashboard requests it only for a selected panel.
+  // Belt Tracker owns its initial eligibility read.
   useEffect(() => {
     if (pathname !== "/belt-tracker" || !identityReady || !currentLadderId
       || eligibilityLadderId === currentLadderId || eligibilityPendingLadderId
@@ -1291,7 +1287,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const sessionToken = session.access_token;
       if (tokenRef.current !== sessionToken) {
         authGenerationRef.current += 1;
-        dashboardSummaryRequestSeqRef.current += 1;
         destructivelyResetScheduleCoordinator();
       }
       const sessionGeneration = authGenerationRef.current;
@@ -1314,7 +1309,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setIdentityLoadError(null);
       setHydrated(true);
       markPerformance("auth.session_resolved");
-      const summarySequenceAtStart = dashboardSummaryRequestSeqRef.current;
 
       let workspaceRequest: ReturnType<typeof beginLiveAuthRequest> | null = null;
       const isInitializationCurrent = () => isCurrentSession()
@@ -1367,7 +1361,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           bootstrapRequestRef.current = featureRequest;
           try {
             criticalData = await withCurrentLiveAuthRead(beginLiveAuthRequest, (request) =>
-              api.get<BootstrapResponse>(`/dashboard/bootstrap?allow_partial=true&view=${view}${view === "dashboard" ? "&bounded_dashboard=true" : ""}`, request.token,
+              api.get<BootstrapResponse>(`/dashboard/bootstrap?allow_partial=true&view=${view}`, request.token,
                 { signal: featureRequest.controller.signal, timeoutMs: 35000, timeoutMessage: "Studio data loading timed out. Please retry." }), () => {});
           } catch (error) {
             if (featureRequest.controller.signal.aborted) return;
@@ -1394,13 +1388,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           const datasetErrors = criticalData.dataset_errors;
           setStudioNameState(datasetErrors?.studio ? "" : resolveBootstrapStudioName(criticalData));
           setStudioLoadError(datasetErrors?.studio ?? null);
-          const bootstrapSummary = criticalData.summary ?? null;
-          if (dashboardSummaryRequestSeqRef.current === summarySequenceAtStart && bootstrapSummary) {
-            dashboardSummaryDateRef.current = businessDateRef.current;
-            setDashboardSummaryDate(businessDateRef.current);
-            setDashboardSummary(bootstrapSummary);
-            setDashboardSummaryLoaded(true);
-          }
           if (ownsProgramBootstrap()) {
             if (!datasetErrors?.programs) setPrograms(criticalData.programs || []);
             setProgramsUsageLoaded(false);
@@ -1519,8 +1506,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           }
           setLeadsLoaded(false);
           setLeadsLoadError(loadError);
-          setDashboardSummary(null);
-          setDashboardSummaryLoaded(true);
           setScheduleLoadError(loadError);
           setScheduleStatus("error");
           setHydrated(true);
@@ -1569,6 +1554,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           || event === "USER_UPDATED"
           || (!authoritativeIdentityRef.current && tokenRef.current !== session.access_token);
         if (needsInitialization) {
+          // Another account signed in directly: the previous one's Home preferences go now.
+          // Compare with their owner, not authUserIdRef: a recoverable reset clears that,
+          // and the same user signing back in must keep an unsaved edit.
+          const preferencesOwner = homePreferencesOwnerRef.current;
+          if (preferencesOwner && preferencesOwner.userId !== session.user.id) retireHomePreferencesOwner(null);
           // A new provider may receive INITIAL_SESSION before getSession resolves.
           // It has no local data to discard; mounting is not an access revocation.
           if (authUserIdRef.current || event !== "INITIAL_SESSION") resetLiveStudioState();
@@ -1620,7 +1610,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       bootstrapRequestRef.current?.controller.abort();
       authListener?.subscription.unsubscribe();
     };
-  }, [setPrograms, setProgramsLoaded, applyAuthoritativeNoStudioState, applyLadderSelection, applySubscriptionRequiredState, beginLiveAuthRequest, clearPromotionHistoryCache, commitAuthoritativeAuthProfile, commitEligibilityRows, commitStudents, destructivelyResetScheduleCoordinator, initializationAttempt, isPreviewMode, markSubscriptionRequired, reconcileSchedule, refreshSchedule, resetLiveStudioState, router, supabase]);
+  }, [setPrograms, setProgramsLoaded, applyAuthoritativeNoStudioState, applyLadderSelection, applySubscriptionRequiredState, beginLiveAuthRequest, clearPromotionHistoryCache, commitAuthoritativeAuthProfile, commitEligibilityRows, commitStudents, destructivelyResetScheduleCoordinator, initializationAttempt, isPreviewMode, markSubscriptionRequired, reconcileSchedule, refreshSchedule, resetLiveStudioState, retireHomePreferencesOwner, router, supabase]);
 
   // ── Persist helpers (for preview mode) ──
   const persistStudents = useCallback((next: Student[]) => {
@@ -2033,22 +2023,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     resetLiveStudioState, retryInitialization, router, subscriptionRequired]);
 
   // These confirmed business commands affect dashboard facts. Billing commands
-  // live outside this store; dashboard route entry also requests fresh facts.
+  // live outside this store. Home revalidates itself from the facts-changed mark.
   const beginProjectionCommand = useCallback(() => {
     if (isPreviewMode) return () => {};
     markDashboardFactsChanged();
     const request = beginLiveAuthRequest();
-    dashboardSummaryRequestSeqRef.current += 1;
     return () => {
-      if (request.isSameIdentity()) {
-        markDashboardFactsChanged();
-        dashboardSummaryRequestSeqRef.current += 1;
-        if (pathnameRef.current === "/dashboard") {
-          void refreshDashboardSummary().catch(() => undefined);
-        }
-      }
+      if (request.isSameIdentity()) markDashboardFactsChanged();
     };
-  }, [beginLiveAuthRequest, isPreviewMode, refreshDashboardSummary]);
+  }, [beginLiveAuthRequest, isPreviewMode]);
   const reconciledCommands = {
     addStudent: useReconciledProjectionCommand(addStudent, beginProjectionCommand),
     updateStudent: useReconciledProjectionCommand(updateStudent, beginProjectionCommand),
@@ -2147,10 +2130,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     currentRole,
     currentStudioId,
     currentUserId: activeUserId || "",
-    dashboardSummary: dashboardSummaryDate === businessDate ? dashboardSummary : null,
-    dashboardSummaryLoaded: isPreviewMode || dashboardSummaryDate === businessDate ? dashboardSummaryLoaded : false,
-    dashboardSummaryLoadError,
-    refreshDashboardSummary,
+    loadDashboardHome,
+    saveDashboardHomePreferences,
     deleteLead: reconciledCommands.deleteLead,
     deleteSession: reconciledCommands.deleteSession,
     deleteStudentPhoto: ownedStudentCommands.deleteStudentPhoto,
@@ -2159,7 +2140,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     eligibility,
     eligibilityLadderId,
     eligibilityLoadError,
-    dashboardPromotionsLoading,
     eligibilityPendingLadderId,
     followUpLead: reconciledCommands.followUpLead,
     importStudents: reconciledCommands.importStudents,
@@ -2175,7 +2155,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     listStudentsPage,
     loadPromotionHistory,
     loadEligibilityForLadder,
-    refreshDashboardPromotions,
     markSubscriptionRequired,
     programs,
     programsLoaded,

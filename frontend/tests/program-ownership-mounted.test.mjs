@@ -82,7 +82,6 @@ async function fixturePage({ holdBootstrap = false, showPrograms = false } = {})
         programs: structuredClone(f.rows),
         belt_ladders: [],
         primary_belt_ladder: null,
-        summary: { auth: f.auth, students: { total: 0 } },
       });
       f.supabase = {
         auth: {
@@ -128,8 +127,6 @@ async function fixturePage({ holdBootstrap = false, showPrograms = false } = {})
           if (path.startsWith("/belts/ladders")) return [];
           if (path.startsWith("/students?"))
             return { items: [], has_next: false, page_ordinal: 1, page_size: 200, total: 0 };
-          if (path.startsWith("/dashboard/summary"))
-            return { auth: f.auth, students: { total: 0 } };
           if (path.startsWith("/schedule/window"))
             return { sessions: [], templates: [], attendance: [] };
           throw new Error(`Unexpected read ${path}`);

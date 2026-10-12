@@ -61,7 +61,10 @@ export function AddLeadModal({
       onBackdropClick={closeIfIdle}
     >
       <div className="flex items-center justify-between mb-6">
-        <h2 id="add-lead-title" className="text-base font-semibold text-text-primary">
+        <h2
+          id="add-lead-title"
+          className="text-[1.375rem] font-extrabold tracking-[-0.03em] text-text-primary"
+        >
           Add new lead
         </h2>
         <button
@@ -216,7 +219,7 @@ export function AddLeadModal({
         </div>
         <div className="flex flex-col gap-1.5">
           <label htmlFor="lead-assigned-staff" className="text-sm text-text-secondary font-medium">
-            Assigned staff
+            Owner
           </label>
           <select
             id="lead-assigned-staff"
@@ -224,7 +227,7 @@ export function AddLeadModal({
             disabled={isAddingLead}
             className="min-h-11 w-full border border-border bg-surface-raised px-3 py-2 text-sm text-text-primary focus:border-accent focus:outline-none"
           >
-            <option value="">Unassigned</option>
+            <option value="">No owner</option>
             {activeStaff.map((member) => (
               <option key={member.id} value={member.id}>
                 {member.full_name || member.email}
@@ -241,7 +244,7 @@ export function AddLeadModal({
           />
           Minor lead
         </label>
-        <div className="grid grid-cols-1 gap-3 border border-border bg-surface/60 p-3">
+        <div className="grid grid-cols-1 gap-3 rounded-[12px] border border-border bg-surface/60 p-3">
           <p className="text-xs font-medium text-text-secondary">Guardian details</p>
           <input
             aria-label="Guardian name"

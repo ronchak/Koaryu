@@ -132,8 +132,8 @@ describe("students page model", () => {
       ["kids"],
     );
     assert.equal(rows[0].contact, "guardian@example.test");
-    assert.deepEqual(rows[0].visibleTags, ["paid", "vip"]);
-    assert.equal(rows[0].hiddenTagCount, 1);
+    assert.deepEqual(rows[0].visibleTags, ["paid"]);
+    assert.equal(rows[0].hiddenTagCount, 2);
     assert.match(rows[0].searchFields.programs, /adults/);
   });
 

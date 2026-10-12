@@ -38,3 +38,8 @@ frontend/tests/helpers/trial-appointment-mounted.mjs:generic-api-key:7
 043a103cd2c808cdfa8aa93e3f61836c002c3512:frontend/tests/fixtures/belt-test-contract.json:generic-api-key:10
 # The same provenance digest in the separate current-tree scan.
 frontend/tests/fixtures/belt-test-contract.json:generic-api-key:10
+
+# Python cache-key argument and boolean materialization flag, not a credential.
+ad3200270b8130877832923cd7823770fced5992:backend/app/services/dashboard_home_service.py:generic-api-key:343
+# The same function-call expression in the separate current-tree scan.
+backend/app/services/dashboard_home_service.py:generic-api-key:391

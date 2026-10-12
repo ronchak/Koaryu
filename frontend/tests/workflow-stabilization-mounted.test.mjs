@@ -33,7 +33,6 @@ async function fixturePage(browser, options = {}) {
       events: [],
       leadReads: [],
       writes: [],
-      summaries: [],
       details: [],
       importSubmissions: [],
     });
@@ -52,39 +51,6 @@ async function fixturePage(browser, options = {}) {
       membership_status: "active",
       role: "admin",
       staff_profiles_available: true,
-    };
-    f.summaryResponse = {
-      auth: f.auth,
-      generated_at: "2026-09-12T12:00:00Z",
-      students: {
-        total_students: 250,
-        active_students: 250,
-        trialing_students: 0,
-        on_hold_students: 0,
-      },
-      leads: { active_leads: 0, enrolled_leads: 0, due_today_leads: 0 },
-      schedule: { today_sessions: 0 },
-      belts: { belt_count: 0, tip_count: 0 },
-      inactivity: { watch_14: 0, watch_30: 0, watch_90: 0 },
-      new_students: { new_14: 0, new_30: 0, new_90: 0, new_year_to_date: 0 },
-      operational: {
-        attendance_with_capacity: 0,
-        total_capacity: 0,
-        sessions_tracked: 0,
-        sessions_with_capacity: 0,
-        average_attendance: 0,
-      },
-      churn: { inactive_students: 0, canceled_students: 0, churn_marked_students: 0 },
-      test_readiness: { available: false },
-      billing: { can_view_billing: true },
-      setup: {
-        has_programs: false,
-        has_students: true,
-        has_belt_system: false,
-        has_weekly_classes: false,
-      },
-      recent_students: [],
-      actions: [],
     };
     f.student = {
       id: "student-1",
@@ -156,7 +122,6 @@ async function fixturePage(browser, options = {}) {
             programs: f.programRows ?? [],
             belt_ladders: [],
             primary_belt_ladder: null,
-            summary: f.summaryResponse,
           };
         if (path.startsWith("/schedule/window"))
           return { sessions: [], attendance: [], templates: [] };
@@ -192,8 +157,6 @@ async function fixturePage(browser, options = {}) {
         }
         if (path === "/leads" && f.autoLeads) return [];
         if (path === "/leads") return new Promise((resolve) => f.leadReads.push(resolve));
-        if (path.startsWith("/dashboard/summary?include_follow_ups=true"))
-          return new Promise((resolve, reject) => f.summaries.push({ resolve, reject }));
         if (path === "/students/student-1")
           return new Promise((resolve, reject) => f.details.push({ resolve, reject }));
         if (path === "/belts/ladders") {
@@ -423,52 +386,6 @@ test("mounted detail ensures complete cached data, retains it after roster chang
   }
 });
 
-test("mounted summary reconciliation preserves saved records and rejects older summary responses", async () => {
-  const browser = await chromium.launch();
-  try {
-    const page = await fixturePage(browser);
-    await page.evaluate(() => {
-      fixture.oldSummary = fixture.store.refreshDashboardSummary();
-      fixture.save = fixture.store.updateStudent("student-1", { legal_first_name: "Saved" });
-    });
-    await page.waitForFunction(() => fixture.summaries.length === 1 && fixture.writes.length === 1);
-    await page.evaluate(() =>
-      fixture.writes[0].resolve({ ...fixture.student, legal_first_name: "Saved" }),
-    );
-    await page.waitForFunction(() => fixture.summaries.length === 2);
-    await page.evaluate(() =>
-      fixture.summaries[1].resolve({
-        ...fixture.summaryResponse,
-        students: { ...fixture.summaryResponse.students, total_students: 251 },
-      }),
-    );
-    await page.waitForFunction(
-      () => fixture.store.dashboardSummary.students.total_students === 251,
-    );
-    await page.evaluate(() => fixture.summaries[0].resolve(fixture.summaryResponse));
-    await page.evaluate(() => fixture.oldSummary);
-    assert.equal(
-      await page.evaluate(() => fixture.store.dashboardSummary.students.total_students),
-      251,
-    );
-    await page.evaluate(() => {
-      fixture.refresh = fixture.store.refreshDashboardSummary().catch(() => {});
-    });
-    await page.waitForFunction(() => fixture.summaries.length === 3);
-    await page.evaluate(() => fixture.summaries[2].reject(Error("Offline")));
-    await page.evaluate(() => fixture.refresh);
-    assert.equal(await page.evaluate(() => fixture.store.students[0].legal_first_name), "Saved");
-    assert.equal(
-      await page.evaluate(() => fixture.store.dashboardSummary.students.total_students),
-      251,
-    );
-    assert.match(await page.evaluate(() => fixture.store.dashboardSummaryLoadError), /retained/);
-    await page.evaluate(() => fixture.root.unmount());
-  } finally {
-    await browser.close();
-  }
-});
-
 for (const path of ["/students", "/billing"]) {
   test(`cold ${path} resolves protected workspace without unrelated feature waits`, async () => {
     const browser = await chromium.launch();
@@ -621,23 +538,10 @@ test("credential renewal during feature bootstrap recovers without stranding rou
   }
 });
 
-test("cross-studio summary and changed membership between workspace and features cannot commit", async () => {
+test("changed membership between workspace and features cannot commit", async () => {
   const browser = await chromium.launch();
   try {
     const page = await fixturePage(browser, { path: "/students", holdFeature: true });
-    await page.evaluate(() => {
-      fixture.read = fixture.store.refreshDashboardSummary().catch(() => {});
-    });
-    await page.waitForFunction(() => fixture.summaries.length === 1);
-    await page.evaluate(() =>
-      fixture.summaries[0].resolve({
-        ...fixture.summaryResponse,
-        auth: { ...fixture.auth, studio_id: "other-studio" },
-        students: { ...fixture.summaryResponse.students, total_students: 999 },
-      }),
-    );
-    await page.evaluate(() => fixture.read);
-    assert.equal(await page.evaluate(() => fixture.store.dashboardSummary), null);
     await page.evaluate(() =>
       fixture.releaseFeature({
         auth: { ...fixture.auth, role: "instructor" },
@@ -947,7 +851,7 @@ test("the fallback roster loads its first complete dataset after a Billing entry
   }
 });
 
-test("off-dashboard business commands do not fan out into uncached summary reads", async () => {
+test("off-Home business commands do not request the Home payload", async () => {
   const browser = await chromium.launch();
   try {
     const page = await fixturePage(browser, { path: "/leads" });
@@ -957,14 +861,10 @@ test("off-dashboard business commands do not fan out into uncached summary reads
       for (let i = 0; i < 30; i += 1)
         await fixture.store.updateLead("lead-1", { notes: `Edit ${i}` });
     });
-    assert.equal(await page.evaluate(() => fixture.summaries.length), 0);
-    await page.evaluate(() => {
-      fixture.navigate("/dashboard");
-      fixture.summaryRequest = fixture.store.refreshDashboardSummary();
-    });
-    await page.waitForFunction(() => fixture.summaries.length === 1);
-    await page.evaluate(() => fixture.summaries[0].resolve(fixture.summaryResponse));
-    await page.evaluate(() => fixture.summaryRequest);
+    assert.equal(
+      await page.evaluate(() => fixture.requests.some((r) => r.path.startsWith("/dashboard/home"))),
+      false,
+    );
     await page.evaluate(() => fixture.root.unmount());
   } finally {
     await browser.close();
@@ -1075,44 +975,6 @@ async function expectValue(input, expected) {
   assert.equal(await input.inputValue(), expected);
 }
 
-test("explicit refresh supersedes an older cached visit read", async () => {
-  const browser = await chromium.launch();
-  try {
-    const page = await fixturePage(browser);
-    await page.evaluate(() => {
-      fixture.visit = fixture.store.refreshDashboardSummary({ reason: "visit" });
-    });
-    await page.waitForFunction(() => fixture.summaries.length === 1);
-    assert.equal(
-      await page.evaluate(() => fixture.requests.at(-1).path),
-      "/dashboard/summary?include_follow_ups=true",
-    );
-    await page.evaluate(() => {
-      fixture.refresh = fixture.store.refreshDashboardSummary();
-    });
-    await page.waitForFunction(() => fixture.summaries.length === 2);
-    assert.equal(
-      await page.evaluate(() => fixture.requests.at(-1).path),
-      "/dashboard/summary?include_follow_ups=true&fresh=true",
-    );
-    await page.evaluate(() =>
-      fixture.summaries[1].resolve({
-        ...fixture.summaryResponse,
-        students: { ...fixture.summaryResponse.students, total_students: 251 },
-      }),
-    );
-    await page.evaluate(() => fixture.refresh);
-    await page.evaluate(() => fixture.summaries[0].resolve(fixture.summaryResponse));
-    await page.evaluate(() => fixture.visit);
-    assert.equal(
-      await page.evaluate(() => fixture.store.dashboardSummary.students.total_students),
-      251,
-    );
-  } finally {
-    await browser.close();
-  }
-});
-
 test("resuming a student detail forces a second promotion-history read", async () => {
   const browser = await chromium.launch();
   try {
@@ -1161,7 +1023,7 @@ test("Settings does not start a deferred belt read after its metadata projection
 test("resume access denial clears prior studio records", async () => {
   const browser = await chromium.launch();
   try {
-    const page = await fixturePage(browser);
+    const page = await fixturePage(browser, { path: "/students" });
     await page.waitForFunction(() => fixture.store.students.length > 0);
     await page.evaluate(() => {
       const original = fixture.api.get;

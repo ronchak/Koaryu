@@ -1,12 +1,14 @@
 "use client";
 
 import { BillingPageFrame } from "@/components/billing/billing-page-chrome";
+import { Button } from "@/components/ui/button";
 import { BillingTabContent } from "@/components/billing/billing-tab-content";
 import {
   useBillingPageController,
   type BillingPageController,
 } from "@/lib/billing-page-controller";
 import { useConfigStore, useProgramStore, useStudentStore, useStudioStore } from "@/lib/store";
+import styles from "./billing.module.css";
 
 type BillingPageContentProps = BillingPageController["contentProps"];
 
@@ -70,6 +72,17 @@ export function BillingPageContent({
         isLoading={isLoading}
         isRefreshDisabled={isRefreshDisabled}
         message={message}
+        moneySummary={{
+          activeStudents: tabContentProps.activeStudents,
+          activeSubscriptionCount: tabContentProps.activeSubscriptionCount,
+          billingObservedAt: tabContentProps.billingObservedAt,
+          currentMonthPaymentCount: tabContentProps.currentMonthPaymentCount,
+          failedInvoiceCount: tabContentProps.failedInvoiceCount,
+          openInvoiceTotal: tabContentProps.openInvoiceTotal,
+          paidRevenue: tabContentProps.paidRevenue,
+          paymentCohortAvailable: tabContentProps.paymentCohortAvailable,
+          studentsLoaded: tabContentProps.studentsLoaded,
+        }}
         onChangeTab={onChangeTab}
         onDismissError={onDismissError}
         onDismissMessage={onDismissMessage}
@@ -80,17 +93,18 @@ export function BillingPageContent({
       >
         <BillingTabContent {...tabContentProps} />
         {showPagedFooter && (
-          <div className="mt-4 flex items-center justify-between gap-4 text-sm text-muted">
+          <div className={`mt-4 ${styles.pagedFooter}`}>
             <span>{hasMoreHistory ? pagedCopy.more : pagedCopy.all}</span>
             {hasMoreHistory && (
-              <button
+              <Button
                 type="button"
-                className="rounded-lg border border-border px-4 py-2 text-ink"
+                variant="secondary"
+                size="md"
                 disabled={isLoadingMore}
                 onClick={() => void loadMoreHistory()}
               >
                 {isLoadingMore ? pagedCopy.loading : pagedCopy.load}
-              </button>
+              </Button>
             )}
           </div>
         )}

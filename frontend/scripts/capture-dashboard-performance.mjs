@@ -19,13 +19,14 @@ const SUPABASE_ORIGINS = Object.freeze({
   production: "https://mimguepumzsgmcaycdsh.supabase.co",
   staging: "https://nxgsektqsgrtyfhawxbc.supabase.co",
 });
+// Suffix matches: "/dashboard/home" does not match "/dashboard/home/preferences".
 const SAFE_RESOURCE_PATHS = Object.freeze({
   "/dashboard/workspace": "dashboard-workspace",
   "/dashboard/bootstrap": "dashboard-bootstrap",
-  "/dashboard/summary": "dashboard-summary",
+  "/dashboard/home": "dashboard-home",
 });
 const SAFE_RESOURCES = new Set(Object.values(SAFE_RESOURCE_PATHS));
-const REQUIRED_RESOURCES = new Set(["dashboard-bootstrap", "dashboard-summary"]);
+const REQUIRED_RESOURCES = new Set(["dashboard-bootstrap", "dashboard-home"]);
 const RENDER_RESOURCE_TYPES = new Set(["document", "script", "stylesheet", "image", "font"]);
 export const WEB_VITALS_STABILIZATION = Object.freeze({ timeout_ms: 10_000, quiet_window_ms: 500 });
 const SAFE_SERVER_TIMING_NAMES = new Set([
@@ -37,24 +38,15 @@ const SAFE_SERVER_TIMING_NAMES = new Set([
   "koaryu_total",
   "koaryu_route_total",
   "koaryu_request",
-  "koaryu_summary_student_rows",
-  "koaryu_summary_student_counts",
-  "koaryu_summary_lead_counts",
-  "koaryu_summary_schedule_counts",
-  "koaryu_summary_belt_counts",
-  "koaryu_summary_inactivity_counts",
-  "koaryu_summary_new_student_counts",
-  "koaryu_summary_operational_counts",
-  "koaryu_summary_churn_counts",
-  "koaryu_summary_test_readiness",
-  "koaryu_summary_billing_counts",
-  "koaryu_summary_setup_flags",
-  "koaryu_summary_recent_students",
-  "koaryu_summary_total",
-  "koaryu_summary_route_total",
-  "koaryu_summary_context",
-  "koaryu_summary_facts",
-  "koaryu_summary_lead_follow_ups",
+  // GET /dashboard/home stage labels (DashboardHomeService.server_timing_value).
+  "koaryu_home_context",
+  "koaryu_home_facts",
+  "koaryu_home_materialize",
+  "koaryu_home_facts_after_materialize",
+  "koaryu_home_contact",
+  "koaryu_home_follow_ups",
+  "koaryu_home_promotions",
+  "koaryu_home_total",
 ]);
 
 export function sanitizeServerTiming(value) {
@@ -182,8 +174,9 @@ export async function measureDashboardReady(
   route = "dashboard",
   { functional = false } = {},
 ) {
-  // These legacy attributes retain complete-data semantics. They are waits only;
-  // timestamps come from marks written after committed UI had a paint opportunity.
+  // Home sets these attributes from identity (shell) and its one payload (data).
+  // They are waits only; timestamps come from marks written after committed UI
+  // had a paint opportunity.
   if (route === "dashboard" && !functional) {
     await page
       .locator('[data-koaryu-dashboard-shell-ready="true"]')

@@ -21,10 +21,12 @@ class ArchiveSupabase(RpcBackedSupabase):
         super().__init__()
         self.result = result
         self.error = error
+        self.archive_completed = False
 
     def _rpc_archive_students_bulk_atomic(self, params):
         if self.error:
             raise self.error
+        self.archive_completed = True
         return self.result
 
 
@@ -80,8 +82,15 @@ class StudentBulkArchiveTest(unittest.TestCase):
 
     def test_endpoint_returns_updated_and_invalidates_dashboard_after_success(self):
         supabase = ArchiveSupabase(result=1)
+
+        def after_archive(*_args, **_kwargs):
+            self.assertTrue(supabase.archive_completed)
+            self.assertEqual(len(supabase.rpc_calls), 1)
+            self.assertEqual(supabase.rpc_calls[0][0], "archive_students_bulk_atomic")
+
         with patch(
-            "app.api.v1.endpoints.students.dashboard_summary_fact_cache.invalidate"
+            "app.api.v1.endpoints.students.invalidate_dashboard_fact_caches",
+            side_effect=after_archive,
         ) as invalidate:
             response = asyncio.run(
                 bulk_archive_students(
@@ -97,9 +106,7 @@ class StudentBulkArchiveTest(unittest.TestCase):
 
     def test_endpoint_does_not_invalidate_when_rpc_fails(self):
         error = PostgrestAPIError({"code": "P0002", "message": "provider detail"})
-        with patch(
-            "app.api.v1.endpoints.students.dashboard_summary_fact_cache.invalidate"
-        ) as invalidate:
+        with patch("app.api.v1.endpoints.students.invalidate_dashboard_fact_caches") as invalidate:
             with self.assertRaises(HTTPException) as raised:
                 asyncio.run(
                     bulk_archive_students(

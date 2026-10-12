@@ -6,7 +6,6 @@ import {
   buildDeferredScheduleDateRange,
   buildSessionUserProfile,
   isStaffProfilesAvailable,
-  isDashboardSummaryForStudio,
   isLiveAuthRequestCurrent,
   parseAuthProfileResponse,
   resolveBootstrapLadders,
@@ -23,55 +22,6 @@ function ladder(id, overrides = {}) {
     updated_at: "2026-05-01T00:00:00.000Z",
     ranks: [],
     ...overrides,
-  };
-}
-
-function dashboardSummary(studioId) {
-  return {
-    auth: {
-      user: { id: "user-1", email: "owner@example.test" },
-      staff_profiles_available: false,
-      studio_id: studioId,
-      role: "admin",
-    },
-    studio: studioId ? { id: studioId, name: "Studio", timezone: "America/Los_Angeles" } : null,
-    generated_at: "2026-05-24T12:00:00.000Z",
-    students: { total_students: 0, active_students: 0, trialing_students: 0, on_hold_students: 0 },
-    leads: { active_leads: 0, enrolled_leads: 0, due_today_leads: 0 },
-    schedule: { today_sessions: 0 },
-    belts: { belt_count: 0, tip_count: 0 },
-    inactivity: { watch_14: 0, watch_30: 0, watch_90: 0 },
-    new_students: { new_14: 0, new_30: 0, new_90: 0, new_year_to_date: 0 },
-    operational: {
-      attendance_with_capacity: 0,
-      total_capacity: 0,
-      sessions_tracked: 0,
-      sessions_with_capacity: 0,
-      utilization_rate: null,
-      average_attendance: 0,
-    },
-    churn: {
-      inactive_students: 0,
-      canceled_students: 0,
-      churn_marked_students: 0,
-      churn_rate: null,
-    },
-    test_readiness: { ready_to_test: null, needs_approval: null, available: false },
-    billing: {
-      can_view_billing: false,
-      payment_attention_count: null,
-      has_plans: null,
-      payments_ready: null,
-    },
-    setup: {
-      has_programs: false,
-      has_students: false,
-      has_belt_system: false,
-      has_weekly_classes: false,
-      has_tuition_plans: null,
-    },
-    recent_students: [],
-    actions: [],
   };
 }
 
@@ -168,12 +118,6 @@ describe("store bootstrap model", () => {
       startDate: "2026-04-24",
       endDate: "2026-07-23",
     });
-  });
-
-  it("accepts deferred dashboard summaries only for the current studio", () => {
-    assert.equal(isDashboardSummaryForStudio(dashboardSummary("studio-1"), "studio-1"), true);
-    assert.equal(isDashboardSummaryForStudio(dashboardSummary("studio-2"), "studio-1"), false);
-    assert.equal(isDashboardSummaryForStudio(dashboardSummary(null), "studio-1"), false);
   });
 
   it("accepts live auth request commits only for the same token generation", () => {

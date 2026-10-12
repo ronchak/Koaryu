@@ -21,7 +21,7 @@ export default async function ReleaseNotesPage() {
             <div className="space-y-5">
               {release.sections.map((section) => (
                 <section key={`${release.version}-${section.title}`} className="space-y-3">
-                  <h3 className="text-xs font-medium uppercase tracking-wide text-muted">
+                  <h3 className="text-xs font-bold uppercase tracking-[0.16em] text-muted">
                     {section.title}
                   </h3>
                   <ul className="space-y-3">

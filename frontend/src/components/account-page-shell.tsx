@@ -1,9 +1,12 @@
 import { IntentPrefetchLink as Link } from "@/components/intent-prefetch-link";
 import { Header } from "@/components/header";
 import { OperationsSurface } from "@/components/operations/operations-surface";
+import { HorizonPage, HorizonPanel, ToneChip } from "@/components/ui/horizon-parts";
 import { Badge } from "@/components/ui/badge";
 import { crmLinkPrefetch } from "@/lib/constants";
 import type { LucideIcon } from "lucide-react";
+import { ArrowRight } from "lucide-react";
+import styles from "@/components/account/account.module.css";
 
 interface AccountPageShellProps {
   title: string;
@@ -12,6 +15,8 @@ interface AccountPageShellProps {
   children: React.ReactNode;
   actions?: React.ReactNode;
   family?: "account" | "help";
+  /** A short label above the title; defaults to the page family. */
+  eyebrow?: string;
 }
 
 interface AccountSectionProps {
@@ -19,6 +24,8 @@ interface AccountSectionProps {
   description?: string;
   children: React.ReactNode;
   className?: string;
+  /** `danger` sets apart a section whose actions cannot be undone. */
+  tone?: "danger";
 }
 
 interface AccountLinkTileProps {
@@ -42,16 +49,21 @@ export function AccountPageShell({
   children,
   actions,
   family = "account",
+  eyebrow,
 }: AccountPageShellProps) {
   return (
     <OperationsSurface page={family}>
-      <Header title={title} description={description}>
+      <Header
+        eyebrow={eyebrow ?? (family === "help" ? "Help" : "Account")}
+        title={title}
+        description={description}
+      >
         {badge && <Badge variant="accent">{badge}</Badge>}
         {actions}
       </Header>
-      <div className="flex-1 px-4 py-6 sm:px-6 lg:px-8 lg:py-10">
-        <div className="mx-auto max-w-5xl space-y-8">{children}</div>
-      </div>
+      <HorizonPage width="medium">
+        <div className={styles.stack}>{children}</div>
+      </HorizonPage>
     </OperationsSurface>
   );
 }
@@ -61,15 +73,16 @@ export function AccountSection({
   description,
   children,
   className = "",
+  tone,
 }: AccountSectionProps) {
   return (
-    <section className={`border-y border-border bg-surface px-4 py-5 sm:px-5 ${className}`}>
-      <div className="mb-5 grid gap-1 sm:grid-cols-[minmax(10rem,0.32fr)_1fr] sm:gap-6">
-        <h2 className="text-sm font-semibold text-text-primary">{title}</h2>
-        {description && <p className="mt-1 text-sm text-text-secondary">{description}</p>}
-      </div>
+    <HorizonPanel
+      title={title}
+      description={description}
+      className={[tone === "danger" ? styles.danger : "", className].filter(Boolean).join(" ")}
+    >
       {children}
-    </section>
+    </HorizonPanel>
   );
 }
 
@@ -81,26 +94,18 @@ export function AccountLinkTile({
   badge,
 }: AccountLinkTileProps) {
   return (
-    <Link
-      href={href}
-      prefetch={crmLinkPrefetch(href)}
-      className="group grid min-h-20 grid-cols-[2.25rem_1fr_auto] items-center gap-3 border-b border-border bg-surface px-3 py-4 last:border-b-0 hover:bg-surface-raised motion-reduce:transition-none"
-    >
-      <span className="flex h-9 w-9 items-center justify-center border-r border-border text-accent">
-        <Icon className="h-4 w-4" aria-hidden="true" />
-      </span>
+    <Link href={href} prefetch={crmLinkPrefetch(href)} className={styles.tile}>
+      <ToneChip>
+        <Icon aria-hidden="true" />
+      </ToneChip>
       <span className="block min-w-0">
-        <span className="block text-sm font-medium text-text-primary">{title}</span>
-        <span className="mt-1 block text-sm leading-relaxed text-text-secondary">
-          {description}
-        </span>
+        <span className={styles.tileTitle}>{title}</span>
+        <span className={styles.tileText}>{description}</span>
       </span>
       {badge ? (
         <Badge>{badge}</Badge>
       ) : (
-        <span aria-hidden="true" className="text-accent">
-          →
-        </span>
+        <ArrowRight aria-hidden="true" className={`h-4 w-4 ${styles.tileArrow}`} />
       )}
     </Link>
   );
@@ -108,20 +113,20 @@ export function AccountLinkTile({
 
 export function AccountInfoRow({ label, value, detail }: AccountInfoRowProps) {
   return (
-    <div className="grid gap-1 border-b border-border py-3 last:border-b-0 sm:grid-cols-[minmax(10rem,0.32fr)_1fr] sm:items-start sm:gap-6">
+    <div className={styles.row}>
       <div>
-        <p className="text-sm font-medium text-text-primary">{label}</p>
-        {detail && <p className="text-xs text-muted">{detail}</p>}
+        <p className={styles.rowLabel}>{label}</p>
+        {detail && <p className={styles.rowDetail}>{detail}</p>}
       </div>
-      <div className="text-sm text-text-secondary">{value}</div>
+      <div className={styles.rowValue}>{value}</div>
     </div>
   );
 }
 
 export function AccountNotice({ children }: { children: React.ReactNode }) {
   return (
-    <div className="border-l-2 border-accent bg-surface-raised p-4 text-sm leading-relaxed text-text-secondary">
-      {children}
+    <div className={styles.notice}>
+      <div className="min-w-0">{children}</div>
     </div>
   );
 }

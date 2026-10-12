@@ -7,6 +7,12 @@ import type { TrialAppointmentFacade } from "@/lib/trial-appointment-operation";
 import { createContext, useContext, type Context } from "react";
 
 import type {
+  HomePreferences,
+  HomePreferencesScope,
+  HomePreferencesWire,
+} from "@/lib/dashboard/home-preferences";
+
+import type {
   AttendanceRecord,
   BeltLadder,
   BeltRank,
@@ -19,7 +25,7 @@ import type {
   ClassTemplateCreate,
   CsvImportOptions,
   CsvImportResult,
-  DashboardSummary,
+  DashboardHome,
   DemoteStudent,
   EligibilityEntry,
   Lead,
@@ -67,10 +73,16 @@ export interface StoreContextValue {
   markSubscriptionRequired: () => void;
   clearSubscriptionRequired: () => void;
 
-  dashboardSummary: DashboardSummary | null;
-  dashboardSummaryLoaded: boolean;
-  dashboardSummaryLoadError: string | null;
-  refreshDashboardSummary: (options?: { reason?: "visit" | "resume" }) => Promise<void>;
+  /** Reads Home's payload for the verified identity; rejects if that identity or studio changes. */
+  loadDashboardHome: (options: { fresh: boolean }) => Promise<DashboardHome>;
+  /**
+   * Saves Home preferences for `scope` only and resolves to the stored, reconciled
+   * value; rejects if the verified user or studio is not `scope` or changes in flight.
+   */
+  saveDashboardHomePreferences: (
+    preferences: HomePreferences,
+    scope: HomePreferencesScope,
+  ) => Promise<HomePreferencesWire>;
 
   students: Student[];
   studentsLoaded: boolean;
@@ -143,8 +155,6 @@ export interface StoreContextValue {
     ladderId?: string | null,
     options?: { force?: boolean; retainCurrent?: boolean },
   ) => Promise<EligibilityEntry[]>;
-  refreshDashboardPromotions: () => Promise<void>;
-  dashboardPromotionsLoading: boolean;
   setBeltRanks: (
     ranks: BeltRank[],
     options: { ladderId: string; subRankTerm?: string },
@@ -228,10 +238,7 @@ export type ConfigStoreContextValue = Pick<
 >;
 export type DashboardStoreContextValue = Pick<
   StoreContextValue,
-  | "dashboardSummary"
-  | "dashboardSummaryLoaded"
-  | "dashboardSummaryLoadError"
-  | "refreshDashboardSummary"
+  "loadDashboardHome" | "saveDashboardHomePreferences"
 >;
 export type StudentsStoreContextValue = Pick<
   StoreContextValue,
@@ -290,8 +297,6 @@ export type BeltsStoreContextValue = Pick<
   | "currentLadderId"
   | "setCurrentLadder"
   | "loadEligibilityForLadder"
-  | "refreshDashboardPromotions"
-  | "dashboardPromotionsLoading"
   | "setBeltRanks"
   | "ladderName"
   | "subRankTerm"

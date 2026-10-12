@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import { chromium } from "@playwright/test";
 import {
+  bundleLeadCreateFixture,
   mountLeadCreateFixture,
   flushLeadCreate as flush,
 } from "./helpers/lead-create-mounted.mjs";
@@ -11,6 +12,14 @@ before(async () => {
 });
 after(async () => {
   await browser?.close();
+});
+test("lead fixture accepts only boolean preview modes", () => {
+  for (const preview of ["true", "false", null, 0, {}, { toString: () => "true" }]) {
+    assert.throws(() => bundleLeadCreateFixture(preview), /Unsupported fixture environment/);
+  }
+  for (const preview of [true, false]) {
+    assert.ok(bundleLeadCreateFixture(preview).includes(`NEXT_PUBLIC_PREVIEW_MODE:"${preview}"`));
+  }
 });
 const KEY = "koaryu-lead-create-operations-v1";
 const button = (p, name) => p.getByRole("button", { name, exact: true });

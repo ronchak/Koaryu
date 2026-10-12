@@ -3,13 +3,14 @@
 import { DeleteRankConfirmModal } from "@/components/belt-tracker/delete-rank-confirm-modal";
 import { DemotionConfirmModal } from "@/components/belt-tracker/demotion-confirm-modal";
 import { RankFormModal, type RankFormData } from "@/components/belt-tracker/rank-form-modal";
-import { RankBadge } from "@/components/belt-tracker/rank-visuals";
+import { BeltSwatch } from "@/components/belt-tracker/rank-visuals";
 import { Button } from "@/components/ui/button";
 import { DismissibleNotice } from "@/components/ui/dismissible-notice";
+import { ToneTag } from "@/components/ui/horizon";
 import { ModalFrame } from "@/components/ui/modal-frame";
 import type { BeltGroup } from "@/lib/belt-tracker-page-model";
 import type { BeltRank, EligibilityEntry } from "@/types";
-import { Award } from "lucide-react";
+import { ArrowRight, Award } from "lucide-react";
 import styles from "./belt-tracker.module.css";
 
 type BeltTrackerDialogsProps = {
@@ -207,46 +208,51 @@ function PromotionConfirmModal({
   return (
     <ModalFrame
       rootClassName={`p-4 ${styles.beltDialogRoot}`}
-      panelClassName="bg-bg rounded-[18px] w-full max-w-sm p-4 shadow-[var(--product-shadow-lifted)]"
+      panelClassName="w-full max-w-md p-5"
       ariaLabelledBy="confirm-promotion-title"
       onBackdropClick={onClose}
     >
-      <h2 id="confirm-promotion-title" className="text-base font-semibold text-text-primary mb-4">
+      <h2 id="confirm-promotion-title" className={styles.dialogTitle}>
         Confirm Promotion
       </h2>
-      <div className="bg-surface border border-border rounded-[14px] p-4 mb-4">
-        <p className="text-sm text-text-primary font-medium">{promoteEntry.student_name}</p>
-        <div className="flex items-center gap-2 mt-2">
-          {promoteEntry.current_rank_name && promoteEntry.current_rank_color && (
-            <RankBadge
-              name={promoteEntry.current_rank_name}
+      <p className={styles.dialogLead}>
+        This records {promoteEntry.student_name}&apos;s new rank today.
+      </p>
+      <div className={styles.dialogStep}>
+        <p>{promoteEntry.student_name}</p>
+        <div className={styles.beltStep}>
+          <span className={styles.beltStepRank}>
+            <BeltSwatch
               color={promoteEntry.current_rank_color}
               isTip={currentRank?.is_tip}
-              tipColor={currentRank?.tip_color_hex ?? undefined}
+              tipColor={currentRank?.tip_color_hex}
+              size="md"
             />
-          )}
-          <span className="text-muted">{"\u2192"}</span>
-          {promoteEntry.next_rank_name && promoteEntry.next_rank_color && (
-            <RankBadge
-              name={promoteEntry.next_rank_name}
+            <span>{promoteEntry.current_rank_name ?? "Unranked"}</span>
+          </span>
+          <ArrowRight aria-hidden="true" className={styles.beltStepArrow} />
+          <span className={styles.beltStepRank} data-next="true">
+            <BeltSwatch
               color={promoteEntry.next_rank_color}
               isTip={nextRank?.is_tip}
-              tipColor={nextRank?.tip_color_hex ?? undefined}
+              tipColor={nextRank?.tip_color_hex}
+              size="lg"
             />
-          )}
+            <strong>{promoteEntry.next_rank_name}</strong>
+          </span>
         </div>
+        {promoteEntry.needs_approval ? (
+          <ToneTag tone="warn">This rank needs instructor approval</ToneTag>
+        ) : null}
       </div>
-      <div className="flex flex-col gap-1.5 mb-4">
-        <label htmlFor="promotion-notes" className="text-sm text-text-secondary font-medium">
-          Notes (optional)
-        </label>
+      <div className={styles.dialogField}>
+        <label htmlFor="promotion-notes">Notes (optional)</label>
         <textarea
           id="promotion-notes"
           rows={2}
           value={promotionNotes}
           onChange={(event) => onNotesChange(event.target.value)}
           placeholder="e.g. Excellent guard work"
-          className="w-full px-3 py-2 text-sm bg-surface-raised border border-border rounded-[14px] text-text-primary placeholder:text-muted focus:border-accent focus:outline-none resize-none"
         />
       </div>
       {promotionError && (
@@ -254,12 +260,12 @@ function PromotionConfirmModal({
           {promotionError}
         </DismissibleNotice>
       )}
-      <div className="flex justify-end gap-2">
-        <Button variant="ghost" size="sm" onClick={onCancel}>
+      <div className={styles.dialogActions}>
+        <Button variant="ghost" onClick={onCancel}>
           Cancel
         </Button>
-        <Button variant="primary" size="sm" disabled={isPromoting} onClick={onConfirm}>
-          <Award className="w-3.5 h-3.5" />
+        <Button variant="primary" disabled={isPromoting} onClick={onConfirm}>
+          <Award aria-hidden="true" className="h-4 w-4" />
           {isPromoting ? "Promoting..." : "Confirm promotion"}
         </Button>
       </div>

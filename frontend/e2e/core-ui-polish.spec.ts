@@ -162,13 +162,20 @@ coreUiTest(
     await search.pressSequentially("Maya", { delay: 20 });
     await expect(search).toHaveValue("Maya");
     await expect(page).toHaveURL(/\/students\?q=Maya/);
-    await page.getByRole("combobox", { name: "Filter by status" }).selectOption("active");
+    await page
+      .getByRole("radiogroup", { name: "Filter by status" })
+      .getByRole("radio", { name: "Active", exact: true })
+      .click();
     await expect(search).toHaveValue("Maya");
     await page.getByRole("button", { name: "Open Maya Chen profile" }).click();
     await expect(page.getByRole("heading", { name: "Maya Chen", exact: true })).toBeVisible();
     await page.getByRole("button", { name: "Back to students", exact: true }).click();
     await expect(search).toHaveValue("Maya");
-    await expect(page.getByRole("combobox", { name: "Filter by status" })).toHaveValue("active");
+    await expect(
+      page
+        .getByRole("radiogroup", { name: "Filter by status" })
+        .getByRole("radio", { name: "Active", exact: true }),
+    ).toHaveAttribute("aria-checked", "true");
     await expect(page.getByRole("button", { name: "Open Maya Chen profile" })).toBeFocused();
     await page.getByRole("link", { name: "Students", exact: true }).click();
     await expect(search).toHaveValue("");

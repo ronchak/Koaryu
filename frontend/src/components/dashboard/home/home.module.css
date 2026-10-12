@@ -1,0 +1,166 @@
+/*
+ * Home's page layout only. Every surface, row, tag and link comes from the
+ * Horizon kit; this file places them. No minimum heights on real content:
+ * panels flow to what they hold.
+ */
+
+.home {
+  min-width: 0;
+}
+
+/* Needs attention and Today's classes side by side; neither stretches to the other. */
+.bands,
+.panels {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: 20px;
+}
+
+.bands > *,
+.panels > * {
+  min-width: 0;
+}
+
+/*
+ * D5: "Edit Home" in a 40px row right under the bands, right-aligned on every
+ * size. It sits closer to the bands and panels than the page's 20px rhythm,
+ * because it belongs to the panels below it.
+ */
+.editRow {
+  display: flex;
+  min-height: 40px;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.home .editRow {
+  margin-top: 12px;
+}
+
+.home .editRow + .panels {
+  margin-top: 8px;
+}
+
+/* "Two more classes": under the agenda rows, its words aligned with theirs. */
+.more {
+  display: flex;
+  margin: 6px 0 -6px -10px;
+}
+
+/* A belt pair: swatch, name, arrow, swatch, name. */
+.belts {
+  display: inline-flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 10px;
+}
+
+.beltPair {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--product-ink, var(--text-primary));
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.beltPair :global(svg) {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 14px;
+  color: var(--product-soft-ink, var(--text-secondary));
+}
+
+/* The rank's own colour is a data colour; a student with no belt yet gets a hollow one. */
+.swatch {
+  display: inline-block;
+  width: 22px;
+  height: 8px;
+  flex: 0 0 22px;
+  box-sizing: border-box;
+  border: 1px solid color-mix(in srgb, var(--product-ink, currentColor) 24%, transparent);
+  border-radius: 3px;
+  background: var(--belt, var(--hz-tile));
+}
+
+.swatch[data-empty="true"] {
+  border: 1px dashed var(--product-rule, var(--border));
+  background: transparent;
+}
+
+/*
+ * Cold-load placeholder: the bands' real frames, with neutral bars where rows
+ * will land. The note bar holds a stat's note line, so the strip keeps its
+ * height when it fills.
+ */
+.placeholderNote {
+  display: inline-block;
+  width: 7rem;
+  max-width: 100%;
+  height: 9px;
+  border-radius: 999px;
+  background: var(--product-rule-soft, var(--border));
+  vertical-align: middle;
+}
+
+.placeholderRows {
+  display: grid;
+  margin: 0 -10px;
+  padding: 0;
+  list-style: none;
+}
+
+.placeholderRow {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px;
+}
+
+.placeholderRow + .placeholderRow {
+  border-top: 1px solid var(--product-rule-soft, var(--border));
+}
+
+.placeholderLeading {
+  width: 40px;
+  height: 40px;
+  flex: 0 0 40px;
+  border-radius: 11px;
+  background: var(--product-rule-soft, var(--border));
+}
+
+.placeholderLeading[data-kind="time"] {
+  width: 4.5rem;
+  height: 12px;
+  flex-basis: 4.5rem;
+  border-radius: 999px;
+}
+
+.placeholderLines {
+  display: grid;
+  min-width: 0;
+  flex: 1 1 auto;
+  gap: 8px;
+}
+
+.placeholderLine {
+  width: 62%;
+  height: 11px;
+  border-radius: 999px;
+  background: var(--product-rule-soft, var(--border));
+}
+
+.placeholderLine + .placeholderLine {
+  width: 38%;
+  height: 9px;
+}
+
+@media (max-width: 1023px) {
+  .bands,
+  .panels {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

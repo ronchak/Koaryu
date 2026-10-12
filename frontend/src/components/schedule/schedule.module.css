@@ -1,0 +1,1536 @@
+/*
+ * Schedule in the Horizon language: one paper sheet on the header's ridge. A
+ * one-line toolbar, a one-line Take attendance bar for today, then the calendar
+ * in fixed 48px hours. Program colour is data and stays on the class; everything
+ * else is --product-* and --hz-* tokens so the night theme follows.
+ */
+
+/*
+ * The sheet. Its toolbar keeps the glass of the kit's stats strip, so the hills
+ * show through its top 40px; everything below it is plain paper. `clip`, never
+ * `hidden`: the toolbar sticks to the window.
+ */
+.calendar {
+  position: relative;
+  z-index: 2;
+  min-width: 0;
+  overflow: clip;
+  border-radius: 16px;
+  /* The rule is a ring, not a border, so a seven-day week fits the sheet's full width. */
+  box-shadow:
+    0 0 0 1px var(--product-rule-soft),
+    var(--product-shadow-card);
+  color: var(--product-ink);
+  container-type: inline-size;
+}
+
+.calendar > :not(.toolbar) {
+  background-color: var(--product-paper);
+}
+
+.page > .calendar:first-child {
+  margin-top: -40px;
+}
+
+@media (max-width: 640px) {
+  .page > .calendar:first-child {
+    margin-top: -32px;
+  }
+}
+
+/* The calendar panel is the sheet; the views inside it stay flat. Doubled
+   classes outrank the operations surface's per-view sheet treatment. */
+.calendar.calendar.calendar :global([data-month-schedule-view]),
+.calendar.calendar.calendar :global([data-schedule-time-canvas="week"]),
+.calendar.calendar.calendar :global([data-schedule-time-canvas="day"]) {
+  border-radius: 0;
+  box-shadow: none;
+}
+
+/* Toolbar: one 61px line, two on a phone. Controls are the surface's 44px. */
+.toolbar {
+  position: relative;
+  z-index: 3;
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 8px;
+  border-bottom: 1px solid var(--product-rule-soft);
+  background: color-mix(in srgb, var(--product-paper) 88%, transparent);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+}
+
+@media (min-width: 1024px) {
+  :global([data-navigation-placement="side"]) .toolbar {
+    position: sticky;
+    top: 0;
+  }
+}
+
+.dateNav {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+}
+
+.navButton,
+.todayButton,
+.clearFilter {
+  display: inline-grid;
+  min-width: 44px;
+  min-height: 44px;
+  place-items: center;
+  border: 1px solid var(--product-rule-soft);
+  border-radius: 10px;
+  background: var(--product-card-stock);
+  color: var(--product-soft-ink);
+  cursor: pointer;
+  transition:
+    background-color var(--product-motion-change-duration, 120ms) ease-out,
+    color var(--product-motion-change-duration, 120ms) ease-out;
+}
+
+.navButton:hover,
+.todayButton:hover,
+.clearFilter:hover {
+  background: var(--hz-tile);
+  color: var(--product-ink);
+}
+
+.navButton svg,
+.clearFilter svg {
+  width: 18px;
+  height: 18px;
+}
+
+.todayButton {
+  padding-inline: 14px;
+  color: var(--product-ink);
+  font-size: 0.875rem;
+  font-weight: 700;
+}
+
+.todayButton[data-current="true"] {
+  border-color: transparent;
+  background: var(--hz-tile);
+}
+
+/* One line, never cut: a label that does not fit moves the controls down instead. */
+.rangeLabel {
+  flex: 1 1 10rem;
+  margin: 0;
+  font-size: 1.0625rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.25;
+  white-space: nowrap;
+}
+
+.toolbarEnd {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.programFilter {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+}
+
+.programFilter[data-selected="true"]::before {
+  width: 10px;
+  height: 10px;
+  flex: 0 0 10px;
+  margin-right: 2px;
+  border-radius: 50%;
+  background: var(--program-color);
+  content: "";
+}
+
+.programSelect {
+  min-width: 10rem;
+  max-width: 100%;
+  border: 1px solid var(--product-rule-soft);
+  color: var(--product-ink);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+/* 44px in all: the segments fill the control and the thumb stays inset. */
+.toolbar .viewSwitch {
+  min-width: 12rem;
+  padding: 0;
+}
+
+.notices {
+  display: grid;
+  gap: 8px;
+  padding: 8px 8px 0;
+}
+
+.notices:not(:has(+ .todayBar)) {
+  padding-bottom: 8px;
+}
+
+.rangeStatus {
+  margin: 0;
+  padding: 10px 16px 0;
+  color: var(--product-meta);
+  font-size: 0.8125rem;
+}
+
+/* Take attendance: today's classes as one line of 44px chips. */
+.todayBar {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 8px 16px;
+  padding: 8px 8px 8px 16px;
+  border-bottom: 1px solid var(--product-rule-soft);
+}
+
+.todayTitle {
+  display: inline-flex;
+  min-height: 44px;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--product-ink);
+  font-size: 0.8125rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.todayTitle svg {
+  width: 16px;
+  height: 16px;
+  color: var(--product-wood);
+}
+
+.todayList {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.todayList > li {
+  display: flex;
+  max-width: 100%;
+  flex: none;
+}
+
+.todayChip {
+  position: relative;
+  display: inline-flex;
+  max-width: 100%;
+  min-height: 44px;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px 0 16px;
+  border: 1px solid var(--product-rule-soft);
+  border-radius: 10px;
+  background: var(--product-card-stock);
+  color: var(--product-ink);
+  cursor: pointer;
+  text-align: left;
+  transition:
+    border-color var(--product-motion-change-duration, 120ms) ease-out,
+    box-shadow var(--product-motion-change-duration, 120ms) ease-out;
+}
+
+.todayChip::before {
+  position: absolute;
+  top: 8px;
+  bottom: 8px;
+  left: 6px;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--program-color);
+  content: "";
+}
+
+.todayChip:hover {
+  border-color: var(--product-rule);
+  box-shadow: var(--product-shadow-card);
+}
+
+.todayChip:focus-visible {
+  outline: 2px solid var(--product-focus) !important;
+  outline-offset: 2px;
+}
+
+.todayChip[data-canceled="true"] {
+  opacity: 0.72;
+}
+
+.todayChip[data-canceled="true"] .todayChipName {
+  text-decoration: line-through;
+}
+
+.todayChipTime {
+  flex: none;
+  color: var(--product-soft-ink);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+/* The whole name; it wraps only if one chip is wider than the sheet. */
+.todayChipName {
+  min-width: 0;
+  font-size: 0.8125rem;
+  font-weight: 680;
+  line-height: 1.25;
+}
+
+.todayChipFill {
+  flex: none;
+  color: var(--product-meta);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.todayChipPending {
+  display: block;
+  width: 9rem;
+  height: 44px;
+  border-radius: 10px;
+  background: var(--hz-tile);
+}
+
+/* Month */
+.monthFrame {
+  min-width: 0;
+}
+
+.month {
+  min-width: 0;
+  background: var(--product-paper);
+}
+
+.monthHeader {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--product-rule-soft);
+}
+
+.monthHeader h2 {
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 750;
+}
+
+.monthHeader p {
+  margin: 2px 0 0;
+  color: var(--product-meta);
+  font-size: 0.8125rem;
+}
+
+.monthHeaderFacts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.monthHeaderFacts span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--hz-tile);
+  color: var(--product-soft-ink);
+  font-size: 0.75rem;
+  font-weight: 650;
+}
+
+.monthHeaderFacts svg {
+  width: 14px;
+  height: 14px;
+}
+
+.monthEmpty {
+  margin: 0;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--product-rule-soft);
+  color: var(--product-soft-ink);
+  font-size: 0.875rem;
+}
+
+.monthWeekdays {
+  display: none;
+}
+
+/* The agenda folds the days before today into one row above it. */
+.monthEarlier {
+  display: flex;
+  width: 100%;
+  min-height: 44px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px;
+  border: 0;
+  border-bottom: 1px solid var(--product-rule-soft);
+  background: transparent;
+  color: var(--product-wood);
+  cursor: pointer;
+  font-size: 0.8125rem;
+  font-weight: 650;
+  text-align: left;
+}
+
+.monthEarlier:hover {
+  background: color-mix(in srgb, var(--hz-tile) 70%, transparent);
+}
+
+.monthEarlier svg {
+  width: 16px;
+  height: 16px;
+  transition: transform var(--product-motion-change-duration, 120ms) ease-out;
+}
+
+.monthEarlier[aria-expanded="true"] svg {
+  transform: rotate(180deg);
+}
+
+.monthGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.monthDay {
+  position: relative;
+  display: grid;
+  min-width: 0;
+  grid-template-columns: 3.5rem minmax(0, 1fr);
+  align-items: start;
+  gap: 6px 8px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--product-rule-soft);
+  background: var(--product-paper);
+  transition: background-color var(--product-motion-change-duration, 120ms) ease-out;
+}
+
+/* Narrow calendars read as an agenda: only days with classes, plus today. */
+.monthDay[data-month-day-scope="out-of-month"],
+.monthDay[data-month-day-empty="true"]:not([data-month-day-today="true"]) {
+  display: none;
+}
+
+.monthDay:hover {
+  background: color-mix(in srgb, var(--hz-tile) 70%, var(--product-paper));
+}
+
+.monthDay[data-month-day-today="true"] {
+  background: color-mix(in srgb, var(--hz-sun) 12%, var(--product-paper));
+}
+
+.monthDayButton {
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.monthDayButton:focus-visible {
+  outline-offset: -3px !important;
+}
+
+.monthDayHead,
+.monthEntries {
+  position: relative;
+  z-index: 1;
+  min-width: 0;
+  pointer-events: none;
+}
+
+/* Agenda date cell: "11 Sun" on one line, Today under it. */
+.monthDayHead {
+  display: flex;
+  min-height: 28px;
+  flex-wrap: wrap;
+  align-items: center;
+  align-content: center;
+  gap: 0 4px;
+}
+
+.monthDayNumber {
+  display: inline-grid;
+  height: 26px;
+  place-items: center;
+  border-radius: 8px;
+  color: var(--product-ink);
+  font-size: 0.9375rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 750;
+}
+
+.monthDay[data-month-day-today="true"] .monthDayNumber {
+  min-width: 26px;
+  padding-inline: 4px;
+  background: var(--hz-cta);
+  color: var(--hz-cta-ink);
+}
+
+.monthDay[data-month-day-scope="out-of-month"] .monthDayNumber {
+  color: var(--product-meta);
+  font-weight: 600;
+}
+
+.monthDayName,
+.monthDayMonth {
+  color: var(--product-meta);
+  font-size: 0.6875rem;
+  font-weight: 650;
+}
+
+/* The toolbar already names the month. */
+.monthDayMonth {
+  display: none;
+}
+
+.monthTodayWord {
+  flex-basis: 100%;
+  color: var(--product-wood);
+  font-size: 0.6875rem;
+  font-weight: 750;
+  line-height: 14px;
+}
+
+.monthEntries {
+  display: grid;
+  gap: 3px;
+}
+
+.monthPending {
+  display: grid;
+  gap: 6px;
+  padding-top: 4px;
+}
+
+.monthPending span {
+  display: block;
+  width: 75%;
+  height: 10px;
+  border-radius: 5px;
+  background: var(--hz-tile);
+}
+
+.monthPending span + span {
+  width: 50%;
+}
+
+/*
+ * Agenda chips are one-line rows: time, the name (wrapping) with its tag, then
+ * the fill at the right. The month grid rearranges the same children below.
+ */
+.chip {
+  position: relative;
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  min-height: 40px;
+  align-items: center;
+  gap: 2px 8px;
+  padding: 4px 10px 4px 12px;
+  border: 1px solid color-mix(in srgb, var(--program-color) 22%, var(--product-rule-soft));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--program-color) 8%, var(--product-paper));
+  color: var(--product-ink);
+  pointer-events: auto;
+  text-align: left;
+  transition:
+    border-color var(--product-motion-change-duration, 120ms) ease-out,
+    background-color var(--product-motion-change-duration, 120ms) ease-out;
+}
+
+/* Outranks the operations surface's 44px buttons; chips sit in a tappable day. */
+.calendar .monthGrid .chip {
+  min-height: 40px;
+}
+
+.chip::before {
+  position: absolute;
+  top: 7px;
+  bottom: 7px;
+  left: 5px;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--program-color);
+  content: "";
+}
+
+button.chip {
+  cursor: pointer;
+}
+
+button.chip:hover {
+  border-color: color-mix(in srgb, var(--program-color) 50%, var(--product-rule));
+  background: color-mix(in srgb, var(--program-color) 14%, var(--product-paper));
+}
+
+.chip[data-template="true"] {
+  border: 1px dashed var(--product-rule);
+  background: transparent;
+  color: var(--product-soft-ink);
+}
+
+.chip[data-template="true"]::before {
+  opacity: 0.45;
+}
+
+.chip[data-conflict="true"] {
+  border-color: color-mix(in srgb, var(--product-vermilion) 50%, transparent);
+}
+
+.chip[data-canceled="true"] .chipName {
+  color: var(--product-meta);
+  text-decoration: line-through;
+}
+
+.chipTime {
+  flex: 0 0 4rem;
+  order: 1;
+  color: var(--product-soft-ink);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+/* The name and its tag share one wrapping cell; the tag drops under a long name. */
+.chipBody {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  order: 2;
+  align-items: center;
+  gap: 2px 8px;
+}
+
+.chipName {
+  min-width: 0;
+  font-size: 0.8125rem;
+  font-weight: 650;
+  line-height: 18px;
+  overflow-wrap: anywhere;
+}
+
+.chip[data-template="true"] .chipName {
+  color: var(--product-soft-ink);
+}
+
+.chipStatus {
+  flex: none;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--hz-alert-wash);
+  color: var(--product-vermilion);
+  font-size: 0.6875rem;
+  font-weight: 750;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
+.chipStatus[data-status="canceled"] {
+  background: var(--hz-tile);
+  color: var(--product-soft-ink);
+  font-weight: 700;
+}
+
+.chipFill {
+  flex: none;
+  order: 3;
+  color: var(--product-meta);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.chipAction {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  order: 4;
+  color: var(--product-wood);
+}
+
+/* The agenda shows every class; only the grid needs "+N more". */
+.moreButton {
+  display: none;
+  position: relative;
+  min-height: 28px;
+  padding: 0 7px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--product-wood);
+  cursor: pointer;
+  font-size: 0.75rem;
+  font-weight: 700;
+  pointer-events: auto;
+  text-align: left;
+}
+
+.calendar .monthGrid .moreButton {
+  min-height: 28px;
+}
+
+.moreButton:hover {
+  background: var(--hz-tile);
+}
+
+@container (max-width: 759px) {
+  .monthGrid:not([data-month-show-past="true"]) .monthDay[data-month-day-past="true"] {
+    display: none;
+  }
+}
+
+/* Wide calendars: the real month grid. Cells shrink to what they hold. */
+@container (min-width: 760px) {
+  .monthWeekdays {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    border-bottom: 1px solid var(--product-rule-soft);
+  }
+
+  .monthWeekdays p {
+    margin: 0;
+    padding: 8px;
+    color: var(--product-meta);
+    font-size: 0.65625rem;
+    font-weight: 750;
+    letter-spacing: 0.12em;
+    line-height: 14px;
+    text-transform: uppercase;
+  }
+
+  .monthEarlier {
+    display: none;
+  }
+
+  .monthGrid {
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+  }
+
+  .monthDay,
+  .monthDay[data-month-day-scope="out-of-month"],
+  .monthDay[data-month-day-empty="true"]:not([data-month-day-today="true"]) {
+    display: flex;
+    min-height: 5.5rem;
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: flex-start;
+    gap: 4px;
+    padding: 6px;
+    border-right: 1px solid var(--product-rule-soft);
+  }
+
+  /* A row of the next month only (all of November's sixth row) is not drawn. */
+  .monthGrid .monthDay.monthDay[data-month-row-scope="out-of-month"] {
+    display: none;
+  }
+
+  .monthDay:nth-child(7n) {
+    border-right: 0;
+  }
+
+  .monthDay:nth-last-child(-n + 7) {
+    border-bottom: 0;
+  }
+
+  .monthDay[data-month-row-last="true"] {
+    border-bottom: 0;
+  }
+
+  .monthDay[data-month-day-scope="out-of-month"] {
+    background: color-mix(in srgb, var(--product-sunk) 45%, var(--product-paper));
+  }
+
+  .monthDay[data-month-day-selected="true"]:not([data-month-day-today="true"]) {
+    box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--product-wood) 35%, transparent);
+  }
+
+  .monthDayHead {
+    min-height: 26px;
+    flex-wrap: nowrap;
+    gap: 6px;
+  }
+
+  .monthDayNumber {
+    min-width: 26px;
+    padding-inline: 5px;
+    font-size: 0.84375rem;
+  }
+
+  .monthDayName {
+    display: none;
+  }
+
+  .monthDayMonth {
+    display: inline;
+  }
+
+  .monthTodayWord {
+    flex-basis: auto;
+  }
+
+  .chip {
+    display: grid;
+    grid-template-areas:
+      "time fill"
+      "name name"
+      "status status";
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-content: center;
+    gap: 0 6px;
+    padding: 4px 7px 4px 12px;
+  }
+
+  /* The body's name and tag take their own grid lines. */
+  .chipBody {
+    display: contents;
+  }
+
+  .chipTime {
+    grid-area: time;
+    font-size: 0.6875rem;
+    line-height: 14px;
+  }
+
+  .chipFill {
+    grid-area: fill;
+    font-size: 0.6875rem;
+    line-height: 14px;
+  }
+
+  .chipName {
+    grid-area: name;
+    font-size: 0.75rem;
+    line-height: 14px;
+  }
+
+  .chipStatus {
+    grid-area: status;
+    padding: 0;
+    background: none;
+    line-height: 14px;
+  }
+
+  .chipStatus[data-status="canceled"] {
+    grid-area: fill;
+    background: none;
+    color: var(--product-meta);
+    font-weight: 600;
+  }
+
+  .chipAction {
+    display: none;
+  }
+
+  .chip[data-month-entry-overflow="true"] {
+    display: none;
+  }
+
+  .moreButton {
+    display: block;
+    justify-self: start;
+  }
+}
+
+/* Week and day time canvas: fixed 48px hours. */
+.weekScroller {
+  min-width: 0;
+}
+
+.weekScroller:focus-visible {
+  outline-offset: -3px !important;
+}
+
+.canvas {
+  --hour: 48px;
+  background: var(--product-paper);
+}
+
+.weekHead {
+  border-bottom: 1px solid var(--product-rule-soft);
+}
+
+.weekCorner {
+  border-right: 1px solid var(--product-rule-soft);
+}
+
+.weekDay {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 6px;
+  border-right: 1px solid var(--product-rule-soft);
+}
+
+.weekDay:last-child {
+  border-right: 0;
+}
+
+.weekDayName {
+  color: var(--product-meta);
+  font-size: 0.6875rem;
+  font-weight: 750;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.weekDayNumber {
+  display: inline-grid;
+  min-width: 28px;
+  height: 28px;
+  place-items: center;
+  padding-inline: 4px;
+  border-radius: 8px;
+  font-size: 0.9375rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 750;
+}
+
+.weekDay[data-today="true"] .weekDayName {
+  color: var(--product-ink);
+}
+
+.weekDay[data-today="true"] .weekDayNumber {
+  background: var(--hz-cta);
+  color: var(--hz-cta-ink);
+}
+
+.hourColumn {
+  border-right: 1px solid var(--product-rule-soft);
+}
+
+.hourLabel {
+  right: 8px;
+  color: var(--product-meta);
+  font-size: 0.6875rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
+  transform: translateY(-50%);
+  white-space: nowrap;
+}
+
+.hourLabel:first-child {
+  transform: translateY(2px);
+}
+
+.hourLabel:last-child {
+  transform: translateY(calc(-100% - 2px));
+}
+
+.canvasDay {
+  border-right: 1px solid var(--product-rule-soft);
+}
+
+.canvasDay:last-child {
+  border-right: 0;
+}
+
+.canvasDay[data-today="true"] {
+  background: color-mix(in srgb, var(--hz-sun) 9%, transparent);
+}
+
+.hourRule {
+  border-top: 1px solid var(--product-rule-soft);
+}
+
+.canvasPlaceholder {
+  height: 36px;
+  margin-inline: 4px;
+  border-radius: 6px;
+  background: var(--hz-tile);
+}
+
+/* The studio's time of day, on today's column. */
+.nowLine {
+  z-index: 2;
+  height: 2px;
+  margin-top: -1px;
+  background: var(--hz-cta);
+  pointer-events: none;
+}
+
+.nowLine::before {
+  position: absolute;
+  top: -3px;
+  left: -4px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--hz-cta);
+  content: "";
+}
+
+.canvasTarget {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  text-align: left;
+}
+
+/*
+ * Blocks show whole 14px lines only: the section sets --block-lines from the
+ * block's height, and the lines below it are clipped, never half drawn.
+ */
+.canvasBlock,
+.canvasTemplate {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  padding: 3px 6px 3px 10px;
+  border-radius: 6px;
+  color: var(--product-ink);
+}
+
+.calendar.calendar.calendar .canvasBlock {
+  border-radius: 6px;
+}
+
+.canvasBlock {
+  border: 1px solid color-mix(in srgb, var(--program-color) 28%, var(--product-rule-soft));
+  background: color-mix(in srgb, var(--program-color) 12%, var(--product-paper));
+  transition: border-color var(--product-motion-change-duration, 120ms) ease-out;
+}
+
+.canvasTemplate {
+  border: 1px dashed var(--product-rule);
+  background: transparent;
+  color: var(--product-soft-ink);
+}
+
+.canvasBlock::before,
+.canvasTemplate::before {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  left: 3px;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--program-color);
+  content: "";
+}
+
+.canvasTemplate::before {
+  opacity: 0.45;
+}
+
+/* Shared lanes keep the geometry and tighten the type: 11px names that hyphenate. */
+.canvasBlock[data-shared-lane="true"],
+.canvasTemplate[data-shared-lane="true"] {
+  padding: 3px 4px 3px 6px;
+}
+
+.canvasBlock[data-shared-lane="true"]::before,
+.canvasTemplate[data-shared-lane="true"]::before {
+  left: 2px;
+  width: 2px;
+}
+
+.canvasTarget:hover .canvasBlock {
+  border-color: color-mix(in srgb, var(--program-color) 60%, var(--product-rule));
+}
+
+.canvasBlock[data-conflict="true"] {
+  border-color: color-mix(in srgb, var(--product-vermilion) 55%, transparent);
+}
+
+.canvasLines {
+  display: flex;
+  max-height: calc(var(--block-lines, 2) * 14px);
+  flex-direction: column;
+  overflow: hidden;
+  line-height: 14px;
+}
+
+.canvasLines > * {
+  display: block;
+  min-width: 0;
+  line-height: 14px;
+}
+
+.canvasTitle {
+  font-size: 0.75rem;
+  font-weight: 650;
+  overflow-wrap: break-word;
+}
+
+/*
+ * A name longer than its block ends in an ellipsis on the last whole line, so a
+ * browser that cannot hyphenate never shows a word cut short without a mark.
+ */
+.canvasLines > .canvasTitle {
+  display: -webkit-box;
+  flex: none;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: var(--block-lines, 2);
+}
+
+.canvasTemplate .canvasTitle {
+  color: var(--product-soft-ink);
+}
+
+/*
+ * A cut name opened by a click unfolds over the grid until it is folded again:
+ * the block widens to fit the name (up to 12rem) and grows to its last line.
+ */
+.canvasBlock:has([data-open="true"]),
+.canvasTemplate:has([data-open="true"]) {
+  z-index: 4;
+  right: auto;
+  width: max-content !important;
+  min-width: 100%;
+  max-width: 12rem;
+  height: auto !important;
+  min-height: var(--block-height);
+  overflow: visible !important;
+  box-shadow: var(--product-shadow-card);
+}
+
+.canvasTemplate:has([data-open="true"]) {
+  min-width: 0;
+}
+
+.canvasTemplate:has([data-open="true"]) {
+  background: var(--product-paper);
+}
+
+.canvasBlock:has([data-open="true"]) .canvasLines,
+.canvasTemplate:has([data-open="true"]) .canvasLines {
+  max-height: none;
+}
+
+.canvasBlock[data-canceled="true"] .canvasTitle {
+  color: var(--product-meta);
+  text-decoration: line-through;
+}
+
+.canvasMeta {
+  color: var(--product-soft-ink);
+  font-size: 0.6875rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  overflow-wrap: break-word;
+}
+
+.canvasTemplate .canvasMeta {
+  color: var(--product-meta);
+  font-weight: 500;
+}
+
+.overlapWord {
+  color: var(--product-vermilion);
+  font-size: 0.6875rem;
+  font-weight: 750;
+}
+
+.canvasProgram {
+  color: var(--product-meta);
+  font-size: 0.6875rem;
+}
+
+/* Day: the name and its time share one wrapping line, the facts the next. */
+.canvasLine {
+  font-size: 0.8125rem;
+}
+
+.canvasLine .canvasTitle {
+  font-size: 0.8125rem;
+  font-weight: 680;
+}
+
+.canvasTime {
+  color: var(--product-soft-ink);
+  font-size: 0.6875rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  vertical-align: top;
+  white-space: nowrap;
+}
+
+.canvasBlock:not([data-compact="true"]) .canvasMeta {
+  font-weight: 500;
+}
+
+.canvasBlock:not([data-compact="true"]) .canvasTitle,
+.canvasTemplate:not([data-compact="true"]) .canvasTitle {
+  font-size: 0.8125rem;
+  font-weight: 680;
+}
+
+/* A name in a shared lane drops to 11px and hyphenates; the time goes first when it needs every line. */
+.canvasBlock[data-shared-lane="true"] .canvasTitle,
+.canvasTemplate[data-shared-lane="true"] .canvasTitle {
+  font-size: 0.6875rem;
+  font-weight: 650;
+  line-height: 14px;
+  hyphens: auto;
+  overflow-wrap: break-word;
+}
+
+/* Day sits flush under the toolbar, like the week. */
+.dayFrame {
+  min-width: 0;
+}
+
+.dayCanvas {
+  grid-template-columns: 56px minmax(0, 1fr);
+}
+
+.dayEmpty {
+  padding: 16px;
+}
+
+/* Week on a phone: the week's agenda, every day stacked. */
+.agenda {
+  display: none;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.agendaDay {
+  padding: 0 0 6px;
+  border-bottom: 1px solid var(--product-rule);
+}
+
+.agendaDay:last-child {
+  border-bottom: 0;
+}
+
+.agendaDay[data-today="true"] {
+  background: color-mix(in srgb, var(--hz-sun) 12%, var(--product-paper));
+}
+
+.agendaDayLine {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  padding-right: 12px;
+}
+
+.agendaDayHead {
+  display: inline-flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px;
+  border: 0;
+  background: transparent;
+  color: var(--product-ink);
+  cursor: pointer;
+  text-align: left;
+}
+
+/* A 28px head line outranks the operations surface's 44px buttons. */
+.calendar .agenda .agendaDayHead {
+  min-height: 28px;
+}
+
+.agendaDayName {
+  color: var(--product-meta);
+  font-size: 0.6875rem;
+  font-weight: 750;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.agendaDayNumber {
+  display: inline-grid;
+  min-width: 26px;
+  height: 26px;
+  place-items: center;
+  border-radius: 8px;
+  font-size: 0.9375rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 750;
+}
+
+.agendaDay[data-today="true"] .agendaDayName {
+  color: var(--product-ink);
+}
+
+.agendaDay[data-today="true"] .agendaDayNumber {
+  padding-inline: 4px;
+  background: var(--hz-cta);
+  color: var(--hz-cta-ink);
+}
+
+.agendaTodayWord {
+  color: var(--product-wood);
+  font-size: 0.6875rem;
+  font-weight: 750;
+}
+
+.agendaEmpty {
+  flex: none;
+  color: var(--product-meta);
+  font-size: 0.75rem;
+}
+
+.agendaRows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.agendaRows > li + li {
+  border-top: 1px solid var(--product-rule-soft);
+}
+
+.agendaRow {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  min-height: 40px;
+  grid-template-columns: 3px 4rem minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 12px 9px 10px;
+  border: 0;
+  background: transparent;
+  color: var(--product-ink);
+  text-align: left;
+}
+
+.calendar .agenda .agendaRow {
+  min-height: 40px;
+}
+
+.agendaRow[data-action="attendance"] {
+  grid-template-columns: 3px 4rem minmax(0, 1fr) auto 16px;
+}
+
+button.agendaRow {
+  cursor: pointer;
+}
+
+button.agendaRow:hover {
+  background: color-mix(in srgb, var(--hz-tile) 70%, transparent);
+}
+
+.agendaBar {
+  grid-column: 1;
+  align-self: stretch;
+  min-height: 18px;
+  border-radius: 2px;
+  background: var(--program-color);
+}
+
+.agendaRow[data-template="true"] .agendaBar {
+  background: repeating-linear-gradient(to bottom, var(--program-color) 0 4px, transparent 4px 7px);
+  opacity: 0.6;
+}
+
+.agendaTime {
+  grid-column: 2;
+  color: var(--product-soft-ink);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.agendaText {
+  display: flex;
+  min-width: 0;
+  grid-column: 3;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 8px;
+}
+
+.agendaName {
+  min-width: 0;
+  font-size: 0.8125rem;
+  font-weight: 650;
+  line-height: 19px;
+  overflow-wrap: anywhere;
+}
+
+.agendaRow[data-template="true"] .agendaName {
+  color: var(--product-soft-ink);
+}
+
+.agendaRow[data-canceled="true"] .agendaName {
+  color: var(--product-meta);
+  text-decoration: line-through;
+}
+
+.agendaFill {
+  grid-column: 4;
+  color: var(--product-meta);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.agendaAction {
+  width: 16px;
+  height: 16px;
+  grid-column: 5;
+  color: var(--product-wood);
+}
+
+.agendaPending {
+  display: block;
+  width: 60%;
+  height: 14px;
+  margin: 13px 12px;
+  border-radius: 6px;
+  background: var(--hz-tile);
+}
+
+/* Below a wide desktop sheet, the bar's chips close up so three classes keep one line. */
+@container (max-width: 1023px) {
+  .todayList {
+    gap: 6px;
+  }
+
+  .todayChip {
+    padding: 0 10px 0 14px;
+  }
+}
+
+/* Phone-width sheet: two toolbar lines, no bar, Week as its agenda, taller Day hours. */
+@container (max-width: 608px) {
+  .toolbar {
+    gap: 6px 8px;
+  }
+
+  .rangeLabel {
+    min-width: 0;
+    flex: 1 1 0;
+    font-size: 0.9375rem;
+    white-space: normal;
+  }
+
+  .toolbarEnd {
+    flex: 1 1 100%;
+  }
+
+  .programFilter {
+    flex: 1 1 10rem;
+  }
+
+  .programSelect {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .toolbar .viewSwitch {
+    min-width: 0;
+    flex: 1 1 10rem;
+  }
+
+  /* Half a line each: tighter segments keep "Month" whole. */
+  .calendar .toolbar .viewSwitch button {
+    padding-inline: 6px;
+  }
+
+  .todayBar,
+  .weekScroller {
+    display: none;
+  }
+
+  .agenda {
+    display: block;
+  }
+
+  .dayCanvas {
+    --hour: 56px;
+    grid-template-columns: 44px minmax(0, 1fr);
+  }
+
+  .dayCanvas .hourLabel {
+    right: 6px;
+    font-size: 0.65625rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .todayChip,
+  .chip,
+  .monthDay,
+  .canvasBlock,
+  .monthEarlier svg {
+    transition: none;
+  }
+}
+
+@media print {
+  .todayBar,
+  .agenda,
+  .nowLine,
+  .monthEarlier {
+    display: none;
+  }
+
+  .calendar {
+    overflow: visible;
+    border: 0;
+    border-radius: 0;
+    background: #fff;
+    box-shadow: none;
+  }
+
+  .calendar > :not(.toolbar) {
+    background-color: transparent;
+  }
+
+  .toolbar {
+    position: static;
+    padding: 8px 0;
+    background: none;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+
+  /* Paper shows every day of the grid, as it always has. */
+  .monthGrid .monthDay.monthDay[data-month-day-scope="out-of-month"],
+  .monthGrid .monthDay.monthDay[data-month-day-past="true"],
+  .monthGrid .monthDay.monthDay[data-month-day-empty="true"]:not([data-month-day-today="true"]) {
+    display: flex;
+  }
+
+  .monthGrid .monthDay[data-month-row-last="true"]:not(:nth-last-child(-n + 7)) {
+    border-bottom: 1px solid var(--product-rule-soft);
+  }
+}

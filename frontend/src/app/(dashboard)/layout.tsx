@@ -72,6 +72,7 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
     <div
       className={styles.shellRoot}
       data-koaryu-dashboard-shell="true"
+      data-surface="horizon"
       data-navigation-placement={navigationPlacement}
       data-spine-collapsed={navigationPlacement === "side" && isSidebarCollapsed ? "true" : "false"}
     >

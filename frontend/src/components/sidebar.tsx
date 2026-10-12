@@ -22,6 +22,7 @@ import { MartialArtsBelt } from "@/components/icons/martial-arts-belt";
 import type { NavigationPlacement } from "@/components/theme-provider";
 import { Logo } from "./logo";
 import { NAV_ITEMS } from "@/lib/constants";
+import { formatDashboardRole } from "@/lib/dashboard-shell-route";
 import styles from "./dashboard-shell.module.css";
 
 interface SidebarProps {
@@ -34,6 +35,14 @@ interface SidebarProps {
   placement?: NavigationPlacement;
   isCollapsed?: boolean;
   onToggleCollapsed?: () => void;
+}
+
+function studioInitials(name: string): string {
+  const words = name
+    .replace(/['’]s\b/g, "")
+    .split(/\s+/)
+    .filter(Boolean);
+  return (words.length > 1 ? `${words[0][0]}${words[1][0]}` : name.slice(0, 2)).toUpperCase();
 }
 
 function isActiveRoute(pathname: string, href: string): boolean {
@@ -163,6 +172,17 @@ export function Sidebar({
               </button>
             ) : null}
           </div>
+          {!isCollapsed && studioName ? (
+            <div className={styles.studioCard}>
+              <span className={styles.studioMark} aria-hidden="true">
+                {studioInitials(studioName)}
+              </span>
+              <span className={styles.studioText}>
+                <strong>{studioName}</strong>
+                <small>{formatDashboardRole(role)}</small>
+              </span>
+            </div>
+          ) : null}
           <nav className={styles.spineNav} aria-label="Product navigation">
             <ul className={styles.spineList}>
               {isCollapsed && onToggleCollapsed ? (

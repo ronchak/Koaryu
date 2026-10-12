@@ -12,6 +12,8 @@ const PROVIDER_REFRESH_READS = new Set([
   "/billing/system/status",
   "/platform-billing/status",
 ]);
+// This guard sees only methods and paths. GET /dashboard/home can still write:
+// it materializes today's recurring sessions when none exist yet.
 const MATERIALIZATION_PATHS = new Set([
   "/schedule/window/materialize",
   "/schedule/sessions/materialize",

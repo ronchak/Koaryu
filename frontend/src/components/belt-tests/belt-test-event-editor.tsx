@@ -22,6 +22,7 @@ import {
 import type { BeltTestFacade } from "@/lib/belt-test-operation";
 import type { ApiBeltTestEventResponse as Event } from "@/types/generated/api-contracts";
 import type { BeltTestReferences } from "./belt-test-workspace";
+import { BeltTestStatusTag, beltTestWhen } from "./belt-test-status";
 import styles from "./belt-tests.module.css";
 
 export const referenceId = (id: string | null | undefined) =>
@@ -282,13 +283,24 @@ export function BeltTestEventEditor({
     form.location !== form.baseline?.location;
   return (
     <section className={styles.panel} aria-label="Belt-test details">
-      <h2>{event?.name ?? form.baseline?.name ?? "New belt test"}</h2>
+      <div className={styles.panelHead}>
+        <div>
+          <h2>{event?.name ?? form.baseline?.name ?? "New belt test"}</h2>
+          {event ? (
+            <p className={styles.eventMeta}>
+              <BeltTestStatusTag status={event.status} />
+              <span>
+                {beltTestWhen(event)} · {event.location || "No location"}
+              </span>
+            </p>
+          ) : (
+            <p>Name the test, pick the belt plan and set when and where it happens.</p>
+          )}
+        </div>
+      </div>
       {missing && <p>These unsaved fields remain local because the event is unavailable.</p>}
-      {preview && <p>Sample only. Changes stay in this preview session.</p>}
-      {event && (
-        <p>
-          {event.status} · {appointmentSummary(event)} · {event.location || "No location"}
-        </p>
+      {preview && (
+        <p className={styles.quiet}>Sample only. Changes stay in this preview session.</p>
       )}
       {references.status !== "ready" && (
         <p role="status">
@@ -310,34 +322,39 @@ export function BeltTestEventEditor({
       )}
       {editable ? (
         <>
-          <label>
-            Name
-            <input value={form.name} onChange={(e) => change({ ...form, name: e.target.value })} />
-          </label>
-          <label>
-            Belt plan
-            <select
-              aria-label="Belt plan"
-              value={form.ladder}
-              onChange={(e) => change({ ...form, ladder: e.target.value })}
-            >
-              <option value="">Choose a belt plan</option>
-              {form.ladder && !plan && (
-                <option value={form.ladder}>Unavailable saved belt plan</option>
-              )}
-              {references.ladders
-                .filter((row) => supportedBeltPlan(references, row.id, form.baseline))
-                .map((row) => (
-                  <option key={row.id} value={row.id}>
-                    {row.name}
-                  </option>
-                ))}
-            </select>
-          </label>
+          <div className={styles.fieldGrid}>
+            <label>
+              Name
+              <input
+                value={form.name}
+                onChange={(e) => change({ ...form, name: e.target.value })}
+              />
+            </label>
+            <label>
+              Belt plan
+              <select
+                aria-label="Belt plan"
+                value={form.ladder}
+                onChange={(e) => change({ ...form, ladder: e.target.value })}
+              >
+                <option value="">Choose a belt plan</option>
+                {form.ladder && !plan && (
+                  <option value={form.ladder}>Unavailable saved belt plan</option>
+                )}
+                {references.ladders
+                  .filter((row) => supportedBeltPlan(references, row.id, form.baseline))
+                  .map((row) => (
+                    <option key={row.id} value={row.id}>
+                      {row.name}
+                    </option>
+                  ))}
+              </select>
+            </label>
+          </div>
           {references.status === "ready" && !references.ladders.length && (
             <p>No belt plans are available.</p>
           )}
-          <p>Program: {programName}</p>
+          <p className={styles.quiet}>Program: {programName}</p>
           <div className={styles.timeFields}>
             <AppointmentTimeFields
               draft={form.time}
@@ -352,8 +369,14 @@ export function BeltTestEventEditor({
               onChange={(e) => change({ ...form, location: e.target.value })}
             />
           </label>
-          <p>Scheduling requires a future start. Completion is available after the start.</p>
-          {dirty && <p>Leaving this page or reloading discards unsaved changes.</p>}
+          <p className={styles.quiet}>
+            Scheduling requires a future start. Completion is available after the start.
+          </p>
+          {dirty && (
+            <p className={styles.unsaved}>
+              Leaving this page or reloading discards unsaved changes.
+            </p>
+          )}
           {review && (
             <p role="alert">
               Current details need review. Reload and discard local changes before saving again.
@@ -365,16 +388,18 @@ export function BeltTestEventEditor({
                 <button
                   type="button"
                   disabled={locked || review || !plan || !schedule || draftCompleted}
-                  onClick={() => request("draft")}
+                  onClick={() => request("create_scheduled")}
+                  data-variant="primary"
                 >
-                  Save draft
+                  Schedule event
                 </button>
                 <button
                   type="button"
                   disabled={locked || review || !plan || !schedule || draftCompleted}
-                  onClick={() => request("create_scheduled")}
+                  onClick={() => request("draft")}
+                  data-variant="secondary"
                 >
-                  Schedule event
+                  Save draft
                 </button>
               </>
             ) : (
@@ -383,6 +408,7 @@ export function BeltTestEventEditor({
                   type="button"
                   disabled={locked || review || !plan || !schedule || !eventEditable}
                   onClick={() => request("details")}
+                  data-variant={dirty ? "primary" : "secondary"}
                 >
                   Save details
                 </button>
@@ -391,6 +417,7 @@ export function BeltTestEventEditor({
                     type="button"
                     disabled={locked || dirty || selectionDirty || !savedContext}
                     onClick={() => request("scheduled")}
+                    data-variant={dirty ? "secondary" : "primary"}
                   >
                     Schedule event
                   </button>
@@ -400,6 +427,7 @@ export function BeltTestEventEditor({
                     type="button"
                     disabled={locked || dirty || selectionDirty || !savedContext}
                     onClick={() => request("completed")}
+                    data-variant="secondary"
                   >
                     Complete event
                   </button>
@@ -408,10 +436,11 @@ export function BeltTestEventEditor({
                   type="button"
                   disabled={locked || dirty || selectionDirty}
                   onClick={() => request("canceled")}
+                  data-variant="danger"
                 >
                   Cancel event
                 </button>
-                <button type="button" onClick={() => void reload()}>
+                <button type="button" onClick={() => void reload()} data-variant="quiet">
                   Reload current event
                 </button>
               </>
@@ -419,7 +448,7 @@ export function BeltTestEventEditor({
           </div>
         </>
       ) : (
-        <p>This event is history. Its details cannot be changed.</p>
+        <p className={styles.calm}>This event is history. Its details cannot be changed.</p>
       )}
       {message && <p role="status">{message}</p>}
       {intent && (
@@ -456,12 +485,19 @@ export function BeltTestEventEditor({
                 : "Name-only changes preserve recorded approvals."}
             </p>
           )}
-          <button type="button" onClick={() => setIntent(null)}>
-            Keep editing
-          </button>
-          <button type="button" disabled={locked} onClick={() => void save()}>
-            Confirm change
-          </button>
+          <div className={styles.dialogActions}>
+            <button type="button" onClick={() => setIntent(null)} data-variant="secondary">
+              Keep editing
+            </button>
+            <button
+              type="button"
+              disabled={locked}
+              onClick={() => void save()}
+              data-variant={intent === "canceled" ? "danger" : "primary"}
+            >
+              Confirm change
+            </button>
+          </div>
         </ModalFrame>
       )}
     </section>

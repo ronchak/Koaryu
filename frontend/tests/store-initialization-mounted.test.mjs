@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { chromium } from "@playwright/test";
+import { homePayload } from "./helpers/home-fixtures.mjs";
 import { bundle as buildBundle } from "./helpers/store-browser-harness.mjs";
 const bundle = (mode, options = {}) =>
   buildBundle(mode, { ...options, legacyBootstrapFixture: true });
@@ -840,7 +841,7 @@ for (const role of ["admin", "front_desk"]) {
 }
 
 for (const outcome of ["success", "failure"]) {
-  test(`mounted route-owned staff, program and summary reads recover after token rotation (${outcome})`, async () => {
+  test(`mounted route-owned staff and program reads recover after token rotation (${outcome})`, async () => {
     const browser = await chromium.launch({ headless: true });
     try {
       const page = await browser.newPage();
@@ -895,64 +896,17 @@ for (const outcome of ["success", "failure"]) {
               };
             if (path.startsWith("/schedule/window"))
               return { sessions: [], templates: [], attendance: [] };
-            if (
-              path.startsWith("/staff") ||
-              path.startsWith("/programs") ||
-              path === "/dashboard/summary?include_follow_ups=true&fresh=true"
-            ) {
+            if (path.startsWith("/staff") || path.startsWith("/programs")) {
               if (token === "route-old-token") {
                 await new Promise((resolve) => fixture.waiters.push(resolve));
                 if (outcome === "failure") throw new Error("Expired token");
-                return path === "/dashboard/summary?include_follow_ups=true&fresh=true"
-                  ? fixture.summary("2026-09-12T11:00:00Z")
-                  : [{ id: "obsolete-row", name: "Obsolete" }];
+                return [{ id: "obsolete-row", name: "Obsolete" }];
               }
-              return path === "/dashboard/summary?include_follow_ups=true&fresh=true"
-                ? fixture.summary("2026-09-12T12:00:00Z")
-                : [];
+              return [];
             }
             throw new Error(`Unexpected request ${path}`);
           },
         };
-        fixture.summary = (generatedAt) => ({
-          auth: {
-            membership_status: "active",
-            studio_id: "route-studio",
-            role: "admin",
-            staff_profiles_available: true,
-            user,
-          },
-          generated_at: generatedAt,
-          students: {
-            total_students: 0,
-            active_students: 0,
-            trialing_students: 0,
-            on_hold_students: 0,
-          },
-          leads: { active_leads: 0, enrolled_leads: 0, due_today_leads: 0 },
-          schedule: { today_sessions: 0 },
-          belts: { belt_count: 0, tip_count: 0 },
-          inactivity: { watch_14: 0, watch_30: 0, watch_90: 0 },
-          new_students: { new_14: 0, new_30: 0, new_90: 0, new_year_to_date: 0 },
-          operational: {
-            attendance_with_capacity: 0,
-            total_capacity: 0,
-            sessions_tracked: 0,
-            sessions_with_capacity: 0,
-            average_attendance: 0,
-          },
-          churn: { inactive_students: 0, canceled_students: 0, churn_marked_students: 0 },
-          test_readiness: { available: false },
-          billing: { can_view_billing: true },
-          setup: {
-            has_programs: false,
-            has_students: false,
-            has_belt_system: false,
-            has_weekly_classes: false,
-          },
-          recent_students: [],
-          actions: [],
-        });
       }, outcome);
       await page.evaluate(() => {
         fixture.pathname = "/leads";
@@ -961,10 +915,7 @@ for (const outcome of ["success", "failure"]) {
         content: bundle("production", { leadsPage: true, programsSection: true }),
       });
       await page.waitForFunction(() => fixture.store?.identityReady);
-      await page.evaluate(() => {
-        void fixture.store.refreshDashboardSummary().catch(() => {});
-      });
-      await page.waitForFunction(() => fixture.waiters.length === 3);
+      await page.waitForFunction(() => fixture.waiters.length === 2);
       const generation = await page.evaluate(() => fixture.store.identityGeneration);
       await page.evaluate(() => {
         fixture.emit("TOKEN_REFRESHED", { ...fixture.session, access_token: "route-new-token" });
@@ -974,7 +925,6 @@ for (const outcome of ["success", "failure"]) {
         () =>
           fixture.store.staffLoaded &&
           fixture.store.programsUsageLoaded &&
-          fixture.store.dashboardSummaryLoaded &&
           fixture.readiness.at(-1)?.complete,
       );
       assert.equal(
@@ -1011,25 +961,6 @@ for (const outcome of ["success", "failure"]) {
       assert.deepEqual(
         await page.evaluate(() =>
           fixture.requests.filter((r) => r.path.startsWith("/programs")).map((r) => r.token),
-        ),
-        ["route-old-token", "route-new-token"],
-      );
-      assert.equal(
-        await page.evaluate(() => fixture.store.dashboardSummary?.generated_at),
-        "2026-09-12T12:00:00Z",
-      );
-      assert.equal(
-        await page.evaluate(
-          () => fixture.marks.filter((name) => name === "dashboard.summary_started").length,
-        ),
-        1,
-        "summary timing includes every auth replay",
-      );
-      assert.deepEqual(
-        await page.evaluate(() =>
-          fixture.requests
-            .filter((r) => r.path === "/dashboard/summary?include_follow_ups=true&fresh=true")
-            .map((r) => r.token),
         ),
         ["route-old-token", "route-new-token"],
       );
@@ -1509,218 +1440,153 @@ for (const sessionFailure of ["returned", "thrown"]) {
 
 for (const failedDataset of ["leads", "students", "programs", "belts", "studio"]) {
   test(`partial bootstrap keeps useful routes open when ${failedDataset} fails`, async () => {
-    const browser = await chromium.launch({ headless: true });
+    const browser = await chromium.launch();
     try {
-      const page = await browser.newPage();
-      await page.route("http://fixture.local/", (route) =>
-        route.fulfill({ contentType: "text/html", body: '<div id="root"></div>' }),
-      );
-      await page.goto("http://fixture.local/");
-      await page.evaluate((failedDataset) => {
-        const user = {
-          id: "partial-user",
-          email: "partial@example.test",
-          legal_first_name: "Partial",
-          legal_last_name: "User",
-        };
-        const session = { access_token: "partial-token", user };
-        const profile = {
-          user,
-          membership_status: "active",
-          studio_id: "partial-studio",
-          role: "admin",
-          staff_profiles_available: true,
-        };
-        const student = {
-          id: "healthy-student",
-          legal_first_name: "Healthy",
-          legal_last_name: "Student",
-          status: "active",
-          tags: [],
-          created_at: "2026-09-01",
-          updated_at: "2026-09-01",
-          program_memberships: [],
-        };
-        const fixture = (window.fixture = {
-          observations: [],
-          identityObservations: [],
-          requests: [],
-          failedDataset,
-          programsRetryFails: true,
-        });
-        fixture.supabase = {
-          auth: {
-            getSession: async () => ({ data: { session }, error: null }),
-            onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }),
-          },
-        };
-        fixture.api = {
-          get: async (path) => {
-            fixture.requests.push(path);
-            if (path === "/dashboard/bootstrap?allow_partial=true")
-              return {
-                auth: profile,
-                studio_name: fixture.failedDataset === "studio" ? null : "Healthy studio",
-                students: fixture.failedDataset === "students" ? [] : [student],
-                students_total: fixture.failedDataset === "students" ? null : 1,
-                students_may_be_partial: fixture.failedDataset === "students",
-                programs:
-                  fixture.failedDataset === "programs"
-                    ? []
-                    : [
-                        {
-                          id: "healthy-program",
-                          name: "Healthy program",
-                          sort_order: 0,
-                          is_system: false,
-                        },
-                      ],
-                leads: [],
-                belt_ladders: [],
-                primary_belt_ladder: null,
-                dataset_errors: fixture.failedDataset
-                  ? {
-                      [fixture.failedDataset]: `${fixture.failedDataset} projection failed. Please retry.`,
-                    }
-                  : {},
-              };
-            if (path === "/dashboard/summary?include_follow_ups=true")
-              throw new Error("Summary unavailable");
-            if (path.startsWith("/schedule/window"))
-              return { sessions: [], templates: [], attendance: [] };
-            if (path.startsWith("/programs?")) {
-              if (fixture.programsRetryFails) throw new Error("Programs retry unavailable");
-              return [
-                { id: "healthy-program", name: "Healthy program", sort_order: 0, is_system: false },
-              ];
-            }
-            throw new Error(`Unexpected dataset fallback ${path}`);
-          },
-        };
-      }, failedDataset);
-      const errors = [];
-      page.on("pageerror", (error) => errors.push(error.message));
-      await page.addScriptTag({
-        content: bundle("production", {
-          layout: true,
-          dashboardController: true,
-          beltPage: failedDataset === "belts" || failedDataset === "programs",
-        }),
-      });
-      await page.waitForFunction(() => fixture.dashboard && fixture.store.dashboardSummaryLoaded);
-      assert.deepEqual(errors, []);
-      assert.equal(await page.locator('[data-preview-sidebar="ready"]').count(), 1);
-      assert.equal(await page.evaluate(() => fixture.store.identityReady), true);
-      assert.equal(await page.evaluate(() => fixture.store.identityLoadError), null);
-      assert.equal(await page.evaluate(() => fixture.dashboard.isInitialDashboardLoading), false);
-      assert.equal(
-        await page.evaluate(() => fixture.store.studentsLoaded),
-        failedDataset !== "students",
-      );
-      assert.equal(await page.evaluate(() => fixture.store.leadsLoaded), false);
-      assert.equal(
-        await page.evaluate(() => fixture.store.programsLoaded),
-        failedDataset !== "programs",
-      );
-      assert.deepEqual(
-        await page.evaluate(() =>
-          fixture.requests.filter((path) => !path.startsWith("/schedule/window")).sort(),
-        ),
-        ["/dashboard/bootstrap?allow_partial=true", "/dashboard/summary?include_follow_ups=true"],
-        "a partial response cannot trigger legacy dataset fan-out",
-      );
-      for (const widget of ["student_pulse", "lead_follow_ups", "setup_progress"]) {
-        assert.equal(
-          await page.evaluate((widget) => fixture.dashboard.widgetViewModels[widget].state, widget),
-          "error",
-          "live dashboard widgets report the failed summary",
+      const otherPath =
+        failedDataset === "belts"
+          ? "/belt-tracker"
+          : failedDataset === "leads"
+            ? "/leads"
+            : "/students";
+      for (const pathname of ["/dashboard", otherPath]) {
+        const page = await browser.newPage();
+        const errors = [];
+        page.on("pageerror", (error) => errors.push(error.message));
+        await page.route("**/*", (route) =>
+          route.request().url() === "http://fixture.local/"
+            ? route.fulfill({ contentType: "text/html", body: '<div id="root"></div>' })
+            : route.abort(),
         );
-        assert.equal(
-          await page.evaluate(
-            (widget) => fixture.dashboard.widgetViewModels[widget].metric,
-            widget,
-          ),
-          undefined,
-          "a failed summary cannot fall back to incomplete local totals",
-        );
-      }
-      if (failedDataset === "belts" || failedDataset === "programs") {
-        await page.getByRole("button", { name: "Retry belt plans" }).waitFor();
-      }
-      if (failedDataset === "belts") {
-        assert.equal(
-          await page.evaluate(() => fixture.dashboard.widgetViewModels.promotions_due.state),
-          "error",
-        );
-        assert.equal(
-          await page.evaluate(() => fixture.dashboard.widgetViewModels.promotions_due.metric),
-          undefined,
-        );
-        assert.equal(
-          await page.evaluate(() => fixture.dashboard.widgetViewModels.setup_progress.state),
-          "error",
-        );
-      }
-      if (failedDataset === "studio") {
-        assert.equal(await page.evaluate(() => fixture.store.studioName), "");
-        await page.getByRole("button", { name: "Retry studio details" }).waitFor();
-      }
-      if (failedDataset === "programs" || failedDataset === "leads") {
-        await page.evaluate(() => fixture.store.refreshPrograms().catch(() => undefined));
-        assert.equal(
-          await page.evaluate(() => fixture.store.programsLoadError),
-          failedDataset === "programs" ? "Programs retry unavailable" : null,
-        );
-        assert.equal(
-          await page.evaluate(() => fixture.store.programsUsageLoadError),
-          "Programs retry unavailable",
-        );
-        assert.equal(
-          await page.evaluate(() => fixture.store.programsLoaded),
-          failedDataset !== "programs",
-        );
-        assert.equal(
-          await page.getByRole("button", { name: "Retry programs", exact: true }).count(),
-          failedDataset === "programs" ? 1 : 0,
-          "usage-only failures stay out of the global metadata warning",
-        );
-        if (failedDataset === "programs") {
-          await page.evaluate(() => {
-            fixture.programsRetryFails = false;
-          });
-          await page.getByRole("button", { name: "Retry programs", exact: true }).click();
-          await page.waitForFunction(
-            () => fixture.store.programsLoaded && !fixture.store.programsLoadError,
-          );
-          assert.equal(
-            await page.getByRole("button", { name: "Retry programs", exact: true }).count(),
-            0,
-          );
-        }
-      }
-      await page.evaluate(() => {
-        fixture.failedDataset = null;
-        fixture.store.retryInitialization();
-      });
-      await page.waitForFunction(
-        () =>
-          fixture.requests.filter((path) => path === "/dashboard/bootstrap?allow_partial=true")
-            .length === 2 &&
-          fixture.store.identityReady &&
-          fixture.store.studentsLoaded &&
-          fixture.store.programsLoaded &&
-          !fixture.store.studioLoadError &&
-          !fixture.store.beltLaddersLoadError,
-      );
-      assert.equal(
+        await page.goto("http://fixture.local/");
         await page.evaluate(
+          ({ pathname, failedDataset, payload }) => {
+            const f = (window.fixture = {
+              pathname,
+              failedDataset,
+              observations: [],
+              requests: [],
+              marks: [],
+              homeRenders: [],
+            });
+            const user = {
+              id: "user-a",
+              email: "test@example.test",
+              legal_first_name: "Test",
+              legal_last_name: "Owner",
+            };
+            const auth = {
+              user,
+              studio_id: "studio-a",
+              membership_status: "active",
+              role: "admin",
+              staff_profiles_available: true,
+            };
+            f.supabase = {
+              auth: {
+                getSession: async () => ({
+                  data: { session: { access_token: "fixture-token", user } },
+                }),
+                onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }),
+              },
+            };
+            f.api = {
+              get: async (path) => {
+                f.requests.push(path);
+                if (path === "/dashboard/workspace")
+                  return { auth, studio: { name: "Studio", timezone: "UTC" } };
+                if (path.startsWith("/dashboard/home")) return payload;
+                if (path.startsWith("/dashboard/bootstrap"))
+                  return {
+                    auth,
+                    studio_name: "Studio",
+                    studio_timezone: "UTC",
+                    students: [
+                      {
+                        id: "student-1",
+                        legal_first_name: "Healthy",
+                        legal_last_name: "Student",
+                        status: "active",
+                        guardians: [],
+                        programs: [],
+                        tags: [],
+                      },
+                    ],
+                    leads: [],
+                    programs: [{ id: "program-1", name: "Healthy program", is_system: false }],
+                    belt_ladders: [],
+                    primary_belt_ladder: null,
+                    dataset_errors: f.failedDataset
+                      ? { [f.failedDataset]: `${f.failedDataset} projection failed. Please retry.` }
+                      : {},
+                  };
+                throw Error(`Unexpected dataset fallback ${path}`);
+              },
+            };
+          },
+          { pathname, failedDataset, payload: homePayload() },
+        );
+        await page.addScriptTag({
+          content: buildBundle("production", { homePage: pathname === "/dashboard" }),
+        });
+        await page.waitForFunction(
           () =>
-            fixture.requests.filter((path) => path === "/dashboard/bootstrap?allow_partial=true")
-              .length,
-        ),
-        2,
-      );
-      await page.evaluate(() => fixture.root.unmount());
+            fixture.store?.identityReady &&
+            fixture.requests.some((p) => p.startsWith("/dashboard/bootstrap")),
+        );
+        await page.waitForFunction(
+          () => fixture.store.programsLoaded || fixture.store.programsLoadError,
+        );
+        assert.equal(await page.evaluate(() => fixture.store.identityLoadError), null);
+        if (pathname === "/dashboard") {
+          await page.waitForFunction(() => fixture.home?.status === "ready");
+          assert.equal(await page.locator('[data-koaryu-dashboard-data-ready="true"]').count(), 1);
+          assert.equal(await page.evaluate(() => fixture.store.studentsLoaded), false);
+          assert.equal(await page.evaluate(() => fixture.store.beltLaddersLoadError), null);
+          assert.deepEqual(
+            await page.evaluate(() => fixture.requests.map((p) => p.split("?")[0]).sort()),
+            ["/dashboard/bootstrap", "/dashboard/home", "/dashboard/workspace"],
+          );
+          assert.ok(
+            await page.evaluate(() => fixture.requests.some((p) => p.includes("view=home"))),
+          );
+        } else {
+          const field = {
+            students: "studentsLoadError",
+            leads: "leadsLoadError",
+            belts: "beltLaddersLoadError",
+            programs: "programsLoadError",
+            studio: "studioLoadError",
+          }[failedDataset];
+          await page.waitForFunction((field) => Boolean(fixture.store[field]), field);
+          assert.match(
+            await page.evaluate((field) => fixture.store[field], field),
+            /projection failed/,
+          );
+          assert.equal(await page.evaluate(() => fixture.store.identityReady), true);
+          assert.equal(
+            await page.evaluate(() => fixture.requests.length),
+            2,
+            "failed datasets must not fan out to legacy reads",
+          );
+          await page.evaluate(() => {
+            fixture.failedDataset = null;
+            fixture.store.retryInitialization();
+          });
+          await page.waitForFunction(
+            (field) =>
+              fixture.requests.filter((p) => p.startsWith("/dashboard/bootstrap")).length === 2 &&
+              !fixture.store[field] &&
+              fixture.store.programsLoaded,
+            field,
+          );
+          if (failedDataset === "students")
+            assert.equal(await page.evaluate(() => fixture.store.studentsLoaded), true);
+          if (failedDataset === "belts")
+            assert.equal(await page.evaluate(() => fixture.store.beltLaddersLoadError), null);
+        }
+        assert.deepEqual(errors, []);
+        await page.close();
+      }
     } finally {
       await browser.close();
     }

@@ -1,7 +1,11 @@
-import { PIPELINE_STAGES } from "@/lib/leads-page-model";
 import { LEAD_AGE_BANDS } from "@/lib/leads-age-bands";
 import styles from "./leads-ledger.module.css";
 
+/*
+ * The queue while the roster loads: the first two bands with rows in the loaded
+ * shape. The strip above it (`LeadStageStripPlaceholder`) opens the page on the
+ * header's ridge, so the page renders it there.
+ */
 export function LeadLedgerLoading({ canManageLeads = true }: { canManageLeads?: boolean }) {
   return (
     <section
@@ -12,24 +16,6 @@ export function LeadLedgerLoading({ canManageLeads = true }: { canManageLeads?: 
       aria-busy="true"
     >
       <p className="sr-only">Loading follow-up obligations.</p>
-      <div className={styles.intro} aria-hidden="true">
-        <dl className={styles.totals}>
-          {["Overdue", "Due today", "Unassigned"].map((label) => (
-            <div key={label}>
-              <dt>{label}</dt>
-              <dd>—</dd>
-            </div>
-          ))}
-        </dl>
-      </div>
-      <ol className={styles.stageRail} aria-hidden="true">
-        {PIPELINE_STAGES.map((stage) => (
-          <li key={stage.id}>
-            <strong>{stage.label}</strong>
-            <b>—</b>
-          </li>
-        ))}
-      </ol>
       <div className={styles.ageQueue} aria-hidden="true">
         {LEAD_AGE_BANDS.slice(0, 2).map((band) => (
           <section key={band.id} className={styles.ageBand} data-age-band={band.id}>
@@ -40,22 +26,21 @@ export function LeadLedgerLoading({ canManageLeads = true }: { canManageLeads?: 
             <ol>
               {Array.from({ length: 3 }).map((_, row) => (
                 <li key={row}>
-                  <div className={styles.queueLead}>
-                    <div className={`${styles.stateBar} w-3/4`} />
-                    <div className={`${styles.stateBar} mt-1 w-1/2`} />
-                  </div>
-                  <div className={styles.queueAction}>
-                    <div className={`${styles.stateBar} w-3/4`} />
-                    <div className={`${styles.stateBar} mt-1 w-1/2`} />
-                  </div>
-                  <div className={styles.queueContext}>
-                    <div className={`${styles.stateBar} w-3/4`} />
-                    <div className={`${styles.stateBar} mt-1 w-1/2`} />
-                  </div>
+                  <span className={styles.leadInitials} />
+                  <span className={styles.queueLead}>
+                    <span className={`${styles.stateBar} w-3/4`} />
+                  </span>
+                  <span className={styles.queueAction}>
+                    <span className={`${styles.stateBar} w-3/4`} />
+                  </span>
+                  <span className={styles.queueContext}>
+                    <span className={`${styles.stateBar} ${styles.leadStage} w-1/2`} />
+                    <span className={`${styles.stateBar} ${styles.leadOwner} w-1/2`} />
+                  </span>
                   {canManageLeads ? (
                     <div className={styles.stageMoves}>
-                      <div className="h-11 w-11 rounded-[6px] bg-surface-raised" />
-                      <div className="h-11 w-11 rounded-[6px] bg-surface-raised" />
+                      <span className={styles.stageMovePlaceholder} data-move="previous" />
+                      <span className={styles.stageMovePlaceholder} data-move="next" />
                     </div>
                   ) : null}
                 </li>

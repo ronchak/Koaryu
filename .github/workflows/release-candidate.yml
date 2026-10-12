@@ -282,15 +282,15 @@ jobs:
           cache: pip
           cache-dependency-path: |
             backend/requirements.txt
-            performance/dashboard-summary-budget.json
+            performance/dashboard-home-budget.json
 
       - name: Install performance fixture runtime dependencies
         run: python -m pip install -r backend/requirements.txt
 
       - name: Verify versioned performance gate inputs
-        run: git ls-files --error-unmatch backend/requirements.txt performance/dashboard-summary-budget.json
+        run: git ls-files --error-unmatch backend/requirements.txt performance/dashboard-home-budget.json
 
-      - name: Run deterministic dashboard summary gate
+      - name: Run deterministic dashboard Home gate
         env:
           EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
           KOARYU_PERFORMANCE_PYTHON: ${{ steps.setup-python.outputs.python-path }}

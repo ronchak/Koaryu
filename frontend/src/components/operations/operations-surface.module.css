@@ -38,6 +38,11 @@
   background: color-mix(in srgb, var(--product-ground) 88%, transparent);
 }
 
+/* Horizon page headers paint their own sky and hills. */
+.surface > :global(header[data-koaryu-page-header]) {
+  background: none;
+}
+
 .surface :global(.bg-surface) {
   background-color: var(--product-paper, var(--surface));
 }

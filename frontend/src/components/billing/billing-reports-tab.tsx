@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
-import { Banknote, Plus } from "lucide-react";
+import { Plus } from "lucide-react";
 import {
   billingExternalPaymentFormClass,
   billingPaymentGridColumns,
@@ -27,7 +27,7 @@ import {
 } from "@/lib/billing-refund-model";
 import type { BillingRefundController } from "@/lib/billing-refund-controller";
 import type { BillingPayer, BillingPayment } from "@/types";
-import { Metric, SectionHeader, StatusPill } from "./billing-page-sections";
+import { BillingEmpty, BillingPanel, Metric, StatusPill } from "./billing-page-sections";
 
 export function BillingReportsTab({
   billingPayers,
@@ -82,38 +82,39 @@ export function BillingReportsTab({
   const payerNameById = billingPayerNameById(billingPayers);
   return (
     <div className="space-y-5">
-      <div className={billingReportMetricsClass}>
-        <Metric
-          label="UTC-month Stripe cohort"
-          value={paymentCohortAvailable ? formatMoney(stripePaymentTotal) : "Unavailable"}
-          hint="Net collected after confirmed refunds and balance-reversing disputes"
-        />
-        <Metric
-          label="UTC-month external cohort"
-          value={paymentCohortAvailable ? formatMoney(externalPaymentTotal) : "Unavailable"}
-          hint="External payments processed this UTC month"
-        />
-      </div>
-      <p className="text-xs text-muted">
-        These figures are the current UTC month payment cohort net of provider-confirmed refunds and
-        balance-reversing disputes. Adjustment event dates are outside this cohort, so this is not
-        cash movement or recognized revenue.
-      </p>
+      <BillingPanel
+        title="This UTC month"
+        description="These figures are the current UTC month payment cohort net of provider-confirmed refunds and balance-reversing disputes. Adjustment event dates are outside this cohort, so this is not cash movement or recognized revenue."
+      >
+        <div className={billingReportMetricsClass}>
+          <Metric
+            label="UTC-month Stripe cohort"
+            value={paymentCohortAvailable ? formatMoney(stripePaymentTotal) : "Unavailable"}
+            hint="Net collected after confirmed refunds and balance-reversing disputes"
+          />
+          <Metric
+            label="UTC-month external cohort"
+            value={paymentCohortAvailable ? formatMoney(externalPaymentTotal) : "Unavailable"}
+            hint="External payments processed this UTC month"
+          />
+        </div>
+      </BillingPanel>
 
-      <section className="rounded-[14px] border border-border bg-surface p-4">
-        <SectionHeader
-          icon={Banknote}
-          title="Record external payment"
-          description="Track cash, check, Zelle, Venmo, or outside-processor payments without charging a Koaryu platform fee."
-        />
+      <BillingPanel
+        title="Record external payment"
+        description="Track cash, check, Zelle, Venmo, or outside-processor payments without charging a Koaryu platform fee."
+      >
         {externalPaymentRecoveryMessage && (
-          <p className="mb-3 text-sm text-text-secondary" role="status">
+          <p
+            className="mb-3 rounded-[10px] bg-[var(--hz-warn-wash)] px-3 py-2 text-sm text-text-primary"
+            role="status"
+          >
             {externalPaymentRecoveryMessage}
           </p>
         )}
         <form onSubmit={onRecordExternalPayment} className={billingExternalPaymentFormClass}>
           <div className="flex flex-col gap-1.5">
-            <label className="text-sm text-text-secondary font-medium" htmlFor="external-payer">
+            <label className="text-sm font-semibold text-text-secondary" htmlFor="external-payer">
               Payer
             </label>
             <select
@@ -158,7 +159,7 @@ export function BillingReportsTab({
           />
           <Button
             type="submit"
-            size="sm"
+            size="md"
             disabled={
               !canManageRoutineBilling ||
               !externalPaymentReady ||
@@ -175,17 +176,17 @@ export function BillingReportsTab({
                 : "Record"}
           </Button>
         </form>
-      </section>
+      </BillingPanel>
 
-      <section className="overflow-hidden rounded-[14px] border border-border bg-surface">
+      <BillingPanel title="Payments" flush>
         <div className={`${billingPaymentHeaderClass} ${paymentGridColumns}`}>
           <span>Payment</span>
-          <span>Payment accounting</span>
+          <span className="text-right">Payment accounting</span>
           <span>Status</span>
           {refundController.canRefundPayments ? <span>Refund</span> : null}
         </div>
         {billingPayments.length === 0 ? (
-          <p className="p-4 text-sm text-muted">No payments recorded yet.</p>
+          <BillingEmpty title="No payments recorded yet." />
         ) : (
           billingPayments.map((payment) => {
             const adjustmentNotice = paymentAdjustmentNotice(payment);
@@ -201,29 +202,27 @@ export function BillingReportsTab({
             const refundReason = refundReasons[payment.id] ?? "requested_by_customer";
             return (
               <div key={payment.id} className={`${billingPaymentRowClass} ${paymentGridColumns}`}>
-                <div>
-                  <p className="mb-1 text-xs font-medium text-muted sm:hidden">Payment</p>
-                  <p className="font-medium text-text-primary">
-                    {payment.external_method || payment.payment_method_type || "Payment"}
-                  </p>
-                  <p className="break-words text-xs text-text-secondary [overflow-wrap:anywhere]">
+                <div className="col-span-2 min-w-0 lg:col-span-1">
+                  <p className="font-semibold text-text-primary">
                     {billingPayerLabel(payment.payer_id, payerNameById)}
+                  </p>
+                  <p className="break-words text-xs capitalize text-text-secondary [overflow-wrap:anywhere]">
+                    {payment.external_method || payment.payment_method_type || "Payment"}
                   </p>
                   <p className="text-xs text-muted">{billingPaymentReference(payment)}</p>
                   <p className="text-xs text-muted">
                     {payment.note || formatDate(payment.processed_at)}
                   </p>
                   {adjustmentNotice ? (
-                    <p className="mt-1 text-xs font-medium text-warning">{adjustmentNotice}</p>
+                    <p className="mt-1 text-xs font-semibold text-warning">{adjustmentNotice}</p>
                   ) : null}
                 </div>
-                <div className="text-left sm:text-right">
-                  <p className="mb-1 text-xs font-medium text-muted sm:hidden">
-                    Payment accounting
-                  </p>
-                  <p className="font-medium text-text-primary">
-                    Net collected{" "}
-                    {formatMoney(payment.net_collected_amount_cents, payment.currency)}
+                <div className="tabular-nums lg:text-right">
+                  <p className="text-text-primary">
+                    <span className="text-xs text-muted">Net collected </span>
+                    <span className="text-base font-bold">
+                      {formatMoney(payment.net_collected_amount_cents, payment.currency)}
+                    </span>
                   </p>
                   <p className="text-xs text-muted">
                     Gross paid {formatMoney(payment.gross_paid_amount_cents, payment.currency)}
@@ -245,11 +244,11 @@ export function BillingReportsTab({
                   ) : null}
                 </div>
                 <div>
-                  <p className="mb-1 text-xs font-medium text-muted sm:hidden">Status</p>
+                  <p className="mb-1 text-xs text-muted lg:hidden">Status</p>
                   <StatusPill status={payment.status} />
                 </div>
                 {refundController.canRefundPayments ? (
-                  <div className="flex min-w-[260px] flex-col gap-2">
+                  <div className="col-span-2 flex min-w-0 flex-col gap-2 lg:col-span-1">
                     {!refundController.refundActionReady && !refundController.refundStorageReady ? (
                       <p className="text-xs text-muted">Checking refund status...</p>
                     ) : !refundController.refundActionReady ? (
@@ -275,7 +274,7 @@ export function BillingReportsTab({
                             : "An earlier refund request needs confirmation. Recover its original amount and reason."}
                         </p>
                         <Button
-                          size="sm"
+                          size="md"
                           disabled={Boolean(refundController.activePaymentId) || isActionLoading}
                           isLoading={refundController.activePaymentId === payment.id}
                           onClick={() => {
@@ -334,7 +333,8 @@ export function BillingReportsTab({
                           <option value="fraudulent">Fraudulent</option>
                         </select>
                         <Button
-                          size="sm"
+                          variant="secondary"
+                          size="md"
                           disabled={
                             refundAmountCents === null ||
                             Boolean(refundController.activePaymentId) ||
@@ -374,7 +374,7 @@ export function BillingReportsTab({
             );
           })
         )}
-      </section>
+      </BillingPanel>
     </div>
   );
 }

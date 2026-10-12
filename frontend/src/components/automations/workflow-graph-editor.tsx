@@ -280,7 +280,12 @@ function StepList({
       </p>
       <ol className={styles.steps} aria-label="Workflow steps">
         {steps.map(({ node }) => (
-          <li key={node.id} className={styles.step} data-selected={selectedNodeId === node.id}>
+          <li
+            key={node.id}
+            className={styles.step}
+            data-kind={node.type}
+            data-selected={selectedNodeId === node.id}
+          >
             <button
               type="button"
               className={styles.stepSelect}

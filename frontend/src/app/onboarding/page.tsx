@@ -4,12 +4,20 @@ import { invalidateAccessIdentity } from "@/lib/access-identity";
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { Logo } from "@/components/logo";
-import { FocusedOperationsSheet } from "@/components/operations/operations-surface";
+import {
+  HorizonScene,
+  SceneIntro,
+  SceneSheet,
+  SceneSplit,
+  SceneSteps,
+  TRIAL_STEPS,
+  sceneSheetLedeClassName,
+  sceneSheetTitleClassName,
+} from "@/components/auth/horizon-scene";
+import { authErrorClassName } from "@/components/auth/auth-messages";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { api } from "@/lib/api";
-import { APP_TAGLINE } from "@/lib/constants";
 import { setActiveStudioIdCookie, setStudioStateCookie } from "@/lib/studio-state-cookie";
 import type { Studio } from "@/types";
 
@@ -184,24 +192,25 @@ export default function OnboardingPage() {
   }
 
   return (
-    <FocusedOperationsSheet page="onboarding" eyebrow="Studio setup">
-      <div className="mx-auto w-full max-w-[440px]">
-        {/* Logo */}
-        <div className="mb-8 text-center">
-          <div className="flex justify-center mb-3">
-            <Logo size="lg" />
-          </div>
-          <p className="text-sm text-muted">{APP_TAGLINE}</p>
-        </div>
+    <HorizonScene>
+      <SceneSplit>
+        <SceneIntro
+          eyebrow="Studio setup"
+          title="Name your dojo."
+          lede="Your account is ready. Two details about your studio, then you can continue to subscription setup."
+        >
+          <SceneSteps label="Sign-up steps" current={1} steps={TRIAL_STEPS} />
+        </SceneIntro>
 
-        {/* Onboarding card */}
-        <div className="border-y border-border bg-surface py-6">
-          <h2 className="text-lg font-semibold text-text-primary mb-1">Set up your studio</h2>
-          <p className="text-sm text-text-secondary mb-6">
+        <SceneSheet labelledBy="onboarding-title">
+          <h2 id="onboarding-title" className={sceneSheetTitleClassName}>
+            Set up your studio
+          </h2>
+          <p className={sceneSheetLedeClassName}>
             Name your studio and choose its timezone. You can then continue to subscription setup.
           </p>
 
-          <form onSubmit={handleSubmit} className="space-y-5">
+          <form onSubmit={handleSubmit} className="mt-6 space-y-5">
             <Input
               label="Studio name"
               type="text"
@@ -216,7 +225,7 @@ export default function OnboardingPage() {
             />
 
             <div className="flex flex-col gap-1.5">
-              <label htmlFor="timezone" className="text-sm text-text-secondary font-medium">
+              <label htmlFor="timezone" className="text-sm font-semibold text-text-primary">
                 Timezone
               </label>
               <select
@@ -227,7 +236,7 @@ export default function OnboardingPage() {
                   clearStoredIdempotencyKey();
                   setTimezone(e.target.value);
                 }}
-                className="w-full px-3 py-2 text-sm bg-surface-raised border border-border rounded-[6px] text-text-primary focus:border-accent focus:outline-none"
+                className="min-h-10 w-full rounded-[10px] border border-[var(--product-rule,var(--border))] bg-surface px-3 py-2 text-sm text-text-primary focus:border-accent focus:outline-none focus:ring-2 focus:ring-[var(--hz-warn-wash)]"
               >
                 {TIMEZONES.map((tz) => (
                   <option key={tz} value={tz}>
@@ -237,7 +246,7 @@ export default function OnboardingPage() {
               </select>
             </div>
 
-            {error && <p className="text-xs text-danger">{error}</p>}
+            {error && <p className={authErrorClassName}>{error}</p>}
 
             <Button
               type="submit"
@@ -249,12 +258,12 @@ export default function OnboardingPage() {
               Launch your dojo
             </Button>
           </form>
-        </div>
 
-        <p className="text-xs text-muted text-center mt-4">
-          You can update your studio name later in Settings.
-        </p>
-      </div>
-    </FocusedOperationsSheet>
+          <p className="mt-4 text-center text-sm text-text-secondary">
+            You can update your studio name later in Settings.
+          </p>
+        </SceneSheet>
+      </SceneSplit>
+    </HorizonScene>
   );
 }
