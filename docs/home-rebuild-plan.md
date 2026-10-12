@@ -453,6 +453,39 @@ built it on `claude/roster-density` (stacked on `claude/home-rebuild-p5b`), Sol 
 - **Astra: SAFE TO MERGE**, no P0 or P1 findings. Its sandbox could not resolve lint or the loading
   render tests, which ran locally in the full suite.
 
+## Owner follow-up: denser Schedule and click-to-open cut text (2026-10-11)
+
+The owner asked for the same pass on Schedule, then for cut text to open on click, subtly and not as
+a button. Fable specified Schedule; Opus built it on `claude/schedule-density` (stacked on
+`claude/roster-density`); Sol updated the tests.
+
+- **Schedule first screen:** the eyebrow date, the stats strip and the Today's classes cards go; the
+  header sentence keeps today's totals. One sheet on the ridge holds the toolbar (sticky under the
+  side spine), notices, a one-line Take attendance bar of today's classes (≥609px, not in Day), then
+  the calendar. Sheet top 125 / 200 / 265 at 1440x900 / 1000x614 / 390x844 (was ≈648 at 1440).
+- **Week and Day:** fixed 48px hours (56px Day on phones) over the hours the visible classes fill
+  (six-hour minimum; 9 AM to 9 PM when empty; templates only while loading); a studio-clock now
+  line; blocks show whole lines only. At 1440 the whole demo week (10 AM to 8 PM) is on the first
+  screen; at 1000x614, 5.2 hours.
+- **Month:** 5.5rem cells, four classes then "+N more", rows entirely in another month hidden (the 42
+  cells stay in the DOM), no per-day overlap badge. Four full weeks at 1440.
+- **Phones:** Week is a seven-day agenda (page 931px, was ≈2,490, no sideways scroll); Month is an
+  agenda starting at today with an "Earlier this month (N days)" fold; Day keeps its timeline.
+- **Shared lanes:** 11px hyphenated names. Chrome on macOS does not hyphenate (checked Chrome 154),
+  so a name that still does not fit ends in an ellipsis on its last whole line; Safari shows
+  "Tae Kwon / Do Funda- / mentals". Fable approved the clamp.
+- **Cut text opens on click** (`components/ui/reveal-text.tsx`): Students tags, program and email;
+  Leads stage, source, owner and the inspector line; Schedule week block and template names. A click
+  on cut text opens it in place instead of the row's action; a second click, a click elsewhere (which
+  still does its own thing) or Escape folds it. At rest only a little more ink on hover; not a
+  control, so the keyboard keeps the row's action. Left off the session modal's attendance roster,
+  where a click marks attendance.
+- **Fable:** spec, two fix rounds (attendance chips drop Overlaps; shared-lane type), the clamp and
+  RevealText all approved. Not done (optional): "Adult No-Gi" breaks at its hyphen in Chrome lanes.
+- **Verification:** frontend suite 2,452/2,452 plus `reveal-text-mounted` 14/14;
+  `e2e/schedule-attendance-counters.spec.ts` 3/3; lint, tsc and Prettier clean; preview build green.
+- **Astra:** Schedule commit `35d048a` SAFE TO MERGE (no P0/P1); click-to-open commit: see the PR.
+
 ## Follow-ups (deferred polish)
 
 - Fable L1: at 1000x614 the first row sits at the fold because the strip is 2x2 below 1024px;

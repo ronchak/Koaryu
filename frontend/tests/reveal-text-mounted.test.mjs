@@ -324,3 +324,40 @@ test("Leads queue reveals a cut owner above the stretched row button without sel
   await page.mouse.click(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
   assert.deepEqual(await opened(page), ["lead-1"]);
 });
+
+test("A click on an opened block's widened card over a neighbour opens that block, not the neighbour", async (t) => {
+  const sessions = [longText, "Mat"].map((name, index) => ({
+    id: `session-${index}`,
+    name,
+    date: "2026-10-11",
+    start_time: "17:30",
+    end_time: "18:30",
+    status: "scheduled",
+    program_id: null,
+    attendance_count: 3,
+    capacity: 20,
+  }));
+  const page = await mount(t, "schedule", { sessions });
+  const canvas = page.locator('[data-schedule-time-canvas="week"]');
+  const cut = canvas.locator(".canvasTitle.reveal").filter({ hasText: longText });
+  await expect(cut).toHaveAttribute("data-cut", "true");
+  await cut.click();
+  await expect(cut).toHaveAttribute("data-open", "true");
+  const card = cut.locator("xpath=ancestor::*[@data-time-canvas-visible][1]");
+  const neighbour = canvas.locator('[data-time-canvas-visible="session:session-1"]');
+  const meta = card.locator('[class*="canvasMeta"]').first();
+  const metaBox = await meta.boundingBox();
+  const neighbourBox = await neighbour.boundingBox();
+  assert.ok(
+    metaBox.x + metaBox.width > neighbourBox.x + 8,
+    "The opened card must widen over the neighbouring lane for this case",
+  );
+  // The fold lands before the button's handler, so the point now shows the neighbour.
+  await page.mouse.click(neighbourBox.x + 6, metaBox.y + metaBox.height / 2);
+  await folded(cut);
+  assert.deepEqual(
+    await opened(page),
+    ["session-0"],
+    "A click on the opened card opens its own session even after it folds",
+  );
+});

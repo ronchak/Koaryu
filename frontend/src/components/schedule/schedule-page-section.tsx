@@ -459,6 +459,17 @@ export function SchedulePageSection({
                   return;
                 }
 
+                // A click on this block's own drawn card opens it, even when an opened
+                // name has just folded and the point now shows a neighbour.
+                const clickedCard =
+                  event.target instanceof Element
+                    ? event.target.closest("[data-time-canvas-visible]")
+                    : null;
+                if (clickedCard && event.currentTarget.contains(clickedCard)) {
+                  onOpenSession(session);
+                  return;
+                }
+
                 const canvas = event.currentTarget.parentElement;
                 const visibleElement = document
                   .elementsFromPoint(event.clientX, event.clientY)
