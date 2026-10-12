@@ -17,6 +17,21 @@ const headerCss = readFileSync(
   new URL("../src/components/header.module.css", import.meta.url),
   "utf8",
 );
+// Keep the real theme variables that make loaded chip borders valid. Missing
+// variables can otherwise hide a placeholder's absent border in this fixture.
+const lightThemeCss = [
+  readFileSync(new URL("../src/app/globals.css", import.meta.url), "utf8").match(
+    /\[data-theme="light"\]\s*\{[^}]*\}/,
+  )?.[0],
+  readFileSync(
+    new URL("../src/components/dashboard-shell.module.css", import.meta.url),
+    "utf8",
+  ).match(/\.shellRoot\[data-surface="horizon"\]\s*\{[^}]*\}/)?.[0],
+];
+assert.ok(
+  lightThemeCss.every(Boolean),
+  "The mounted fixture needs the production light-theme tokens",
+);
 
 function bundle() {
   // Expose the private pure formatter in this test bundle only. The Sunday-start
@@ -85,6 +100,12 @@ async function mount({ width = 1280, height = 900, view = "week", sessions = [],
   );
   await page.addStyleTag({ content: headerCss });
   await page.addStyleTag({ content: scheduleCss });
+  await page.addStyleTag({ content: lightThemeCss.join("\n") });
+  await page.evaluate(() => {
+    document.documentElement.dataset.theme = "light";
+    document.body.className = "shellRoot";
+    document.body.dataset.surface = "horizon";
+  });
   await page.evaluate(
     (initial) => {
       window.fixture = { initial, opened: [] };
@@ -726,10 +747,23 @@ for (const viewport of geometryViewports) {
       await expect(page.getByText(/No classes/)).toHaveCount(0);
       const coldTop = (await monthGeometry(page)).frame.y;
       const cold = await monthGeometry(page, true);
+      const attendanceChipGeometry = (nodes) =>
+        nodes.map((node) => {
+          const { x, y, width, height } = node.getBoundingClientRect();
+          return { x, y, width, height, border: getComputedStyle(node).borderTopWidth };
+        });
+      const coldAttendance = await page
+        .locator(".todayChipLoading")
+        .evaluateAll(attendanceChipGeometry);
+      assert.ok(coldAttendance.every((chip) => chip.border === "1px"));
       await update(page, { sessions, hasLoadedRange: true });
       await expect(page.locator(".monthFrame")).toHaveAttribute("aria-busy", "false");
       const loadedTop = (await monthGeometry(page)).frame.y;
       const loaded = await monthGeometry(page, true);
+      assert.deepEqual(
+        await page.locator(".todayList .todayChip").evaluateAll(attendanceChipGeometry),
+        coldAttendance,
+      );
       console.log(
         `cold frame top ${viewport.width}x${viewport.height}: ${coldTop} -> ${loadedTop}`,
       );
@@ -847,6 +881,15 @@ for (const width of [390, 759, 760]) {
         const coldRows = page.locator(".monthPendingEntry");
         await expect(coldRows).toHaveCount(2);
         await expect(coldRows.first()).toHaveAttribute("aria-hidden", "true");
+        const border = (node) => {
+          const style = getComputedStyle(node);
+          return {
+            top: style.borderTopWidth,
+            bottom: style.borderBottomWidth,
+            style: style.borderTopStyle,
+          };
+        };
+        const coldBorder = await coldRows.first().evaluate(border);
         const pendingTextHidden = await coldRows
           .locator(".monthPendingText")
           .evaluateAll(
@@ -857,12 +900,15 @@ for (const width of [390, 759, 760]) {
         await update(page, { sessions, hasLoadedRange: true });
         await expect(page.locator(".monthPendingEntry")).toHaveCount(0);
         const after = await monthGeometry(page);
+        const loadedBorder = await page.locator("button.chip").first().evaluate(border);
         const dates = ["2026-10-11", "2026-10-12"];
         const relevant = (geometry) => geometry.days.filter((day) => dates.includes(day.date));
         console.log(
-          `known long ${knownLongName.length} chars ${width}px ${directMonth ? "direct" : "template"}: ${JSON.stringify({ before: relevant(before), after: relevant(after) })}`,
+          `known long ${knownLongName.length} chars ${width}px ${directMonth ? "direct" : "template"}: ${JSON.stringify({ before: relevant(before), after: relevant(after), coldBorder, loadedBorder })}`,
         );
         assert.deepEqual(relevant(before), relevant(after));
+        assert.deepEqual(coldBorder, loadedBorder);
+        assert.deepEqual(loadedBorder, { top: "1px", bottom: "1px", style: "solid" });
         assert.equal(pendingTextHidden, true);
         assert.deepEqual(errors, []);
       } finally {

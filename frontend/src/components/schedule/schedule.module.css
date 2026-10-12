@@ -697,7 +697,7 @@ button.chip:hover {
 
 /* Known recurring rows use the loaded chip geometry without class actions. */
 .monthPendingEntry {
-  border-color: transparent;
+  border: 1px solid transparent;
   background: transparent;
   pointer-events: none;
 }
