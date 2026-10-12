@@ -59,14 +59,12 @@ The local backend runs on `http://127.0.0.1:8001`.
 ## Verification
 
 - Run targeted pytest files for the area you changed.
-- Run `cd backend && venv/bin/python -m pytest tests` for broader service or routing changes.
-- After changing support or account-deletion behavior, also run:
-  - `supabase migration up --local`
-  - `supabase db lint --local --fail-on error`
-  - `SUPABASE_DB_TARGET=local scripts/verify-supabase-account-support.sh`
-  - `PYTHONPATH=backend backend/venv/bin/python -m pytest backend/tests/test_account_service.py backend/tests/test_staff_service_account_deletion.py backend/tests/test_support_service.py backend/tests/test_internal_endpoints.py`
+- Run `cd backend && venv/bin/python -m pytest tests` when shared service, auth or runtime changes affect other callers. Use its CI result instead of duplicating a full local run.
+- For support/account-deletion changes, run the affected tests from `backend/tests/test_account_service.py`, `backend/tests/test_staff_service_account_deletion.py`, `backend/tests/test_support_service.py` and `backend/tests/test_internal_endpoints.py`.
+- When those changes also affect database behavior, apply/lint the disposable local database and run `SUPABASE_DB_TARGET=local scripts/verify-supabase-account-support.sh`. Follow the root verification matrix; an application-only edit does not automatically need database replay.
 - If a changed support/account migration may already be recorded in local history, first confirm the local database is disposable and run `supabase db reset --local` so the checks exercise the current migration contents.
 - Run linked Supabase checks only when the task explicitly intends a release inspection and the linked project already has the migrations under review.
+- Reuse valid unchanged proof and use one focused review when risk warrants it. Stop after the affected checks and material findings are resolved.
 
 ## Done Checklist
 

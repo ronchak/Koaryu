@@ -1,69 +1,55 @@
-# Supabase Agent Guide
+# Supabase agent guide
 
-This directory holds Koaryu database migrations and verification SQL.
+Use the root verification rules and [verification matrix](../docs/pr-verification-matrix.md).
+This directory holds ordered migrations and SQL verification files. Do not edit
+generated `.temp/` state.
 
-Use this file for work under `supabase/`. Fall back to the repo root `AGENTS.md` for shared rules.
+## Authoring
 
-## Directory Layout
-
-- `migrations/`: ordered schema and policy changes
-- `verification/`: smoke checks and contract verification SQL
-- `.temp/`: local CLI state and generated metadata; do not edit manually
-
-## Migration Rules
-
-- Add new migrations instead of rewriting old applied migrations.
-- When adding a release version, extend exact-version fixtures in `verification/release_ui_atomic_contract.sql` and run that complete contract on the final schema. Generated attestation checks do not replace its manually maintained obsolete-readiness cases.
-- Use timestamped migration filenames that match the existing convention.
-- Keep schema, RLS, RPC, trigger, and index changes in migrations, not ad hoc notes.
-- When changing behavior that already has a verification SQL file, update or add the matching verification artifact.
-- Keep migration intent narrow and readable; split unrelated concerns into separate migrations when practical.
-
-## Common Tasks
-
-- Schema/table change: add a new migration and check whether related RLS, indexes, and backend assumptions also need updates.
-- RPC or trigger change: update the migration and add or revise the closest verification SQL smoke test.
-- Support/account change: follow the privacy constraints from `docs/support-triage.md` and include the focused account/support verification script in sign-off.
-- Belt ladder sync RPC change: the historical `sync_belt_ladder_ranks` migrations include several repair replacements. Treat `supabase/verification/belt_ladder_sync_smoke.sql` and the RPC privilege checks in `supabase/verification/account_support_controls.sql` as the current contract, and update them with any future RPC change instead of relying on migration history alone.
-
-## Safety Boundaries
-
-- Treat linked-project commands as potentially real infrastructure actions. Confirm the command is read-only or explicitly intended before running it.
-- Never expose raw support-ticket details, full requester emails, query-string page URLs, user agents, browser context, or student-record content in summaries.
-- Do not edit `.temp/` files by hand.
+- Add a narrow timestamped migration; do not rewrite applied history unless the
+  owner explicitly requests migration repair.
+- Update the nearest contract when changing a table, policy, RPC or trigger.
+  Check its backend callers and related permissions/indexes.
+- Keep meaningful permission, tenant, transaction, payment, retry and concurrency
+  assertions. Negative SQL tests must verify the expected error and raise their own
+  failure outside its handler; use `IS DISTINCT FROM` for nullable assertions.
+- Use synthetic fixtures. Do not skip an assertion because an unrelated fixture is
+  missing, and do not use production data for local contract proofs.
+- For a new release version, update exact readiness fixtures in
+  `verification/release_ui_atomic_contract.sql`; unknown states must remain refused.
+  Use the shared generator for declarations, not manual edits to generated files.
+  See [attestation authoring](../scripts/release-attestation/README.md).
 
 ## Verification
 
-- Default to `npm run check:supabase-contracts-local` while developing or reviewing migration and verification SQL. It replays the complete migration chain and every file under `supabase/verification/` on an ephemeral PostgreSQL 17 cluster without Docker, a cloud project, network access, or `.env` files.
-- The release-candidate database job runs assembled Supabase migration, lint, contract and concurrency checks first, cleans up that disposable stack, then runs the isolated PostgreSQL 17 suite. Every check remains required for a successful gate.
-- The local verifier replays all 152 migrations and 75 verification files. It checks the V38-to-V39 membership, V39-to-V40 rank-history, V40-to-V41 payer-balance, V41-to-V42 independent program-date, V42-to-V43 external-payment, V43-to-V44 local-plan, V44-to-V45 import-ownership, V45-to-V46 refund-recovery, V46-to-V47 completion-locking, V47-to-V48 activation-execution, V48-to-V49 unknown-subscription-term, V49-to-V50 current-invoice-fact, V50-to-V51 closeout lock-order, V51-to-V52 lead-command, V52-to-V53 dashboard-inactivity, V53-to-V54 student-profile, V54-to-V55 converted-lead enrollment and V55-to-V56 missed-class automation backup/restore upgrades with synthetic rows and retained backend contracts. The V43-to-V44 proof compares canonical and logically restored evidence and checks atomic plan, program-link, audit, and committed-snapshot continuation without a backfill. The former payer-only runner is now `scripts/verify-billing-command-concurrency.py`; it checks payer, external-payment, local-plan and invoice-closeout concurrency in 29 cases using the existing process helpers. It runs once after complete final V57 installation and readiness so its strict current-candidate metadata checks use the final schema. Its two closeout cases hold the invoice in a writer, prove an existing-key finalize/void retry waits there without holding its alias, resource or operation rows, then let the writer's new-key claim adopt the same operation. Its four activation cases prove fresh counts after commit/rollback, atomic first-attempt ownership, preserved legacy identity and exclusion of unresolved attempts. Its eight refund cases observe own/unrelated projection commit and rollback, competing leases and completion overlap, including different-key requests by the same or another active admin. V46 restore retains a pre-migration projected refund receipt and completes it on canonical/restored copies without another provider attempt or changes to its payment/refund rows. V47 also proves completed replay and the next refund owner after a logical restore. The former rank runner is now `scripts/verify-student-write-concurrency.py`; it retains five rank cases and adds eight import/clear/Auth/progress cases. V45 restore reuses the maintained import contracts from frozen bytes and records their hashes. Incomplete legacy imports fail closed; completed caches remain readable. The full suite includes the import receipt/marker/Auth-helper checks and exact function/privilege checks for current invoice, payer and attention facts. V50 changes no customer rows; its guarded expectation checksum update tracks the changed Dashboard read definition. V51 also changes no rows; its guarded checksum update tracks the reordered closeout claim, and V51 restore replays a retained completed and started closeout claim on canonical/restored copies. V52 adds atomic lead PATCH/history and keyed follow-up commands without rewriting existing leads. Its restore proof preserves source lead rows, executes the new commands on canonical/restored copies and verifies exact replay. V53 changes no retained rows. Its restore proof compares dashboard inactivity counts with the roster IDs for the same studio and business date on canonical and logically restored copies. V52 remains the exact guarded predecessor of V53. V54 adds student guardian corrections and studio-date DOB validation, and repairs only missing-DOB student minor flags from an explicit same-studio converted source lead. Its V53-to-V54 logical restore compares every retained row, permits only that scoped flag/update-timestamp repair, exercises guardian addition/patching and future-DOB rejection on both copies, and retains V53 backend readiness through the fully verified V54 consumer. The candidate V55 changes no retained business rows. Its `scripts/verify-v54-v55-restore-contract.py` proof preserves converted lead/student/guardian/membership and audit facts, restores enrollment with archived or null program interest, preserves explicit minor knowledge without a DOB, and proves exact retries on canonical and logically restored copies. V54 is the exact guarded predecessor of V55. V55 retains V35 compatibility only after the complete V55 state verifies; its conversion and follow-up definition pins change while V54 student writer/age rules and other business facts remain fixed. These candidate declarations do not claim a hosted rollout. `scripts/verify-lead-command-concurrency.py` runs 75 real-session cases covering stage commit/rollback ordering, follow-up replay/conflicts, conversion identity and independent leads. Eight V55 cases cover competing direct restorations, same/new follow-up keys and mixed restoration callers after an archived-program backward edit, under both commit and rollback, without another student, membership, guardian or conversion audit. Its 18 Auth-ordering cases cover actor PATCH, actor follow-up and assignee PATCH: cleanup-first and command-first schedules with commit/rollback, plus proof that Auth is already locked while membership or lead acquisition waits. The commands acquire actor/assignee Auth parents through the existing narrow helper, then all required staff memberships, then the studio parent with NOWAIT, before lead locks. The added 36 cases cover 24 actor/assignee admin archive/demotion schedules, two authorized front-desk demotions, six studio-busy rejection/retry schedules and four enrollment/operational-clear schedules. Studio contention returns the exact LEAD_STUDIO_BUSY conflict before lead, activity or receipt writes. Restore and concurrency tools share strict PostgreSQL 17 target validation and accept only the verifier's disposable Unix-socket cluster. Never pass them a hosted target or a production dump.
-- V56 requires exact V55 before any schema effect and verifies all installed contracts before history registration. `scripts/verify-v55-v56-restore-contract.py` preserves retained V55 rows and exercises rule CAS, guardian/hold eligibility, accepted/unknown delivery states, original-recipient suppression and encrypted credential revision continuation on canonical and logical copies. V56 full preflight V37 retains the exact V55/V36 consumer only after the complete new state verifies. Its catalog binds all four tables, logged persistence, complete ACLs, restrictive policies, eighteen functions and the immutable-delivery trigger. `scripts/verify-automation-concurrency.py` runs 37 real-session cases, including post-lock business dates, one-hour studio deferral and fair claiming. No provider requests are made.
-- V57 requires the exact ready V56 predecessor before effects, then attests the complete public/private catalog, function definitions, ACLs, overloads, RLS, indexes and triggers before genuine history registration. Its V38 guard fixes catalog deparse settings to UTC, ISO/YMD and postgres intervals while preserving caller settings; V37 compatibility delegates only after that full guard passes. The local driver runs historical/V56 proofs at V56, then each unique current component on an owned clone through normal V57 installation, and all 75 contracts on the final schema. `scripts/verify-v56-v57-restore-contract.py` verifies canonical and logically restored V56 upgrades, retained delivery truth and final continuation. Its single post-V57 backup restores all public/private/Auth tables including an actual committed follow-up receipt, validates the existing twelve CHECK representation pairs plus the named recipient-email BETWEEN replay, and requires full V38 readiness again. Detailed component restore matrices and the repeated profile sweep are represented once by those assembled owners.
-- The shared SQL runner restricts `linked` to Koaryu staging on session port 5432. It accepts the exact direct staging host or an official session pooler with the exact staging-project username, requires TLS, and rejects routing overrides. See `docs/operator-tooling.md`; never weaken this guard to run production contracts.
-- Use the Supabase CLI when the check depends on the assembled local Supabase stack or CLI linting. Apply files not yet in local history with `supabase migration up --local`. If a changed file may already be applied locally, first confirm the database is disposable and use `supabase db reset --local`; then lint with `supabase db lint --local --fail-on error`.
-- Run the focused RLS/security contract checks when changing table policies or tenant isolation: `SUPABASE_DB_TARGET=local scripts/verify-supabase-rls.sh`, or use `SUPABASE_DB_TARGET=linked SUPABASE_DB_URL='<private URL>' scripts/verify-supabase-rls.sh` only for an explicitly intended release inspection after linked migrations are present.
-- Run the focused account/support contract check when relevant: `SUPABASE_DB_TARGET=local scripts/verify-supabase-account-support.sh`, or provide the private linked database URL when intentionally checking a linked project.
-- Run the broad contract suite for release-shaped database changes with `npm run check:supabase-contracts-local`. When the check specifically requires a fully assembled local Supabase stack, use `SUPABASE_DB_TARGET=local scripts/verify-supabase-contracts.sh` after local migrations. Set `SUPABASE_DB_TARGET=linked` plus a private `SUPABASE_DB_URL` only for an explicitly intended release inspection after the linked project has received the new migrations.
-- The verification helpers use `psql` with `ON_ERROR_STOP=1` so multi-statement transactional contracts are not routed through the Supabase CLI prepared-statement query path.
-- Review and run the relevant SQL in `supabase/verification/` when changing RLS, RPCs, billing, support, or belt-ladder behavior.
-- Negative SQL tests must check the intended SQLSTATE/error and raise test failures outside the expected-error handler. Use `IS DISTINCT FROM` for nullable result assertions. Create fixture rows inside the rollback transaction instead of skipping behavior when an unrelated studio is absent.
-- The V53-to-V54 restore proof also derives synthetic missing legacy age function/trigger fixtures from V53 history and upgrades their canonical and logical restores through V55. Keep the existing correct trigger identity unchanged. Disabled or wrongly bound existing triggers must fail V54's strict installed facts check and roll back catalog, history, ACL and retained-row changes. These fixtures contain no production data.
-- Treat a local reset as destructive too: use `supabase db reset --local` only against a confirmed disposable local database. Run linked lint/contracts only for an explicitly intended release inspection after the linked migrations are present.
+Start with inventory/source/setup checks, then exercise affected contracts and
+races on a confirmed disposable database. For a new migration, prove the supported
+predecessor upgrade, intended row preservation/change, current readiness and restore
+continuation. Reuse unchanged historical proof; broaden when shared history,
+restore machinery, database versions or dependencies invalidate it.
 
-## Done Checklist
+- Apply unapplied files with `supabase migration up --local`. If changed files are
+  already recorded, reset only a confirmed disposable database with
+  `supabase db reset --local`. Then run `supabase db lint --local --fail-on error`.
+- Run the focused local helper or relevant SQL with `psql` and `ON_ERROR_STOP=1`.
+  Policy/tenant changes use `SUPABASE_DB_TARGET=local scripts/verify-supabase-rls.sh`;
+  account/support changes use `SUPABASE_DB_TARGET=local scripts/verify-supabase-account-support.sh`.
+- `npm run check:supabase-contracts-local` is the exhaustive PostgreSQL 17 runner.
+  It includes migration replay, historical restores, contracts and real-session
+  races. It has no selective mode: if a needed proof cannot be exercised separately,
+  use it once or rely on its required CI run. Do not invent skip flags.
+- Use assembled Supabase checks when behavior depends on the platform. Do not
+  repeat all ordinary PostgreSQL checks locally merely for a second environment.
+  Database checks remain mandatory for database/code/tooling changes; CI selection is described in [release controls](../docs/release-candidate-controls.md#current-ci-and-the-transition).
 
-- Add a new migration rather than mutating history.
-- Update the nearest verification SQL or helper when behavior changes.
-- Confirm linked-project commands are appropriate for the environment before running them.
+## Hosted boundaries
 
-## Important References
+Read [services](../docs/services.md), [cutover gates](../docs/cutover-gates.md) and
+the private operator policy before hosted database work. Linked contract checks
+require explicit inspection intent, applied migrations and the runner's exact
+staging/TLS connection guard. Never weaken that guard or run contracts on production.
+Restore/concurrency tools accept only their validated disposable local target.
+Keep credentials, dumps and customer/support details out of Git and summaries.
 
-- Support/privacy rules: `docs/support-triage.md`
-- Backend deployment and release checks: `docs/render-backend-deployment.md`
-- Repo overview: `README.md`
-
-## Attestation authoring
-
-Use the shared declarations and `npm run generate:release-attestation -- --output-dir /absolute/empty/directory` for repeated preflight/manifest and restore-check code. Read `scripts/release-attestation/README.md` from the repository root. Historical migration files remain immutable; business SQL and expected canonical/restored facts still require review. `npm run check:release-attestation` is part of candidate verification and does not execute SQL.
-
-When adding a release, update version-bound readiness fixtures and the exact count/head classification in `verification/release_ui_atomic_contract.sql`. Preserve unknown-state refusals; do not replace its known states with a permissive count range.
+The scripts and their contracts contain the detailed historical proof inventory;
+their presence is not an instruction to rerun every proof on every edit.
