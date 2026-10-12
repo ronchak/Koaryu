@@ -40,7 +40,7 @@ restore machinery, database versions or dependencies invalidate it.
   use it once or rely on its required CI run. Do not invent skip flags.
 - Use assembled Supabase checks when behavior depends on the platform. Do not
   repeat all ordinary PostgreSQL checks locally merely for a second environment.
-  Existing mandatory CI is described in [release controls](../docs/release-candidate-controls.md#current-ci-and-the-transition).
+  Database checks remain mandatory for database/code/tooling changes; CI selection is described in [release controls](../docs/release-candidate-controls.md#current-ci-and-the-transition).
 
 ## Hosted boundaries
 

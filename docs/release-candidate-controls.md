@@ -2,23 +2,31 @@
 
 ## Current CI and the transition
 
-The actual `.github/workflows/release-candidate.yml` runs on every PR without path
-filters. Its exact-head `Release candidate gate` remains required. It currently
-runs application checks and the complete database job even for documentation or
-UI edits. Updating instructions does not shorten that job or authorize bypassing it.
+The workflow runs for every PR without trigger path filters. Its exact-head
+`Release candidate gate` remains required. Repository controls compare the pinned
+base and checked-out candidate with a complete Git diff, including file modes and
+both sides of renames.
 
-The database job runs assembled Supabase startup, migrations, lint, contracts and
-races, stops that disposable stack, then runs the exhaustive PostgreSQL 17 replay,
-historical restore and concurrency suite. Both stages must succeed in the current
-workflow. Do not rerun the same suite locally just to wait for this CI result.
+Ordinary Markdown under `docs/`, root AGENTS/CLAUDE/README, the frontend
+AGENTS/CLAUDE/README, backend AGENTS/README and Supabase AGENTS qualify for the
+**documentation-only database fast path**. They skip the database job. Application,
+performance, repository and security checks still run. A database skip is accepted
+only when repository controls succeed and emit the explicit documentation selection;
+missing/invalid selection and unexpected skipped, failed or canceled jobs fail the gate.
 
-The intended simpler workflow is to run checks for affected areas, with broad
-coverage for shared database/runtime/verification changes or uncertain impact.
-Unrelated application/docs edits should not rerun historical database proofs.
-Implement that in a reviewed workflow/runner change, keeping the aggregate gate
-on the exact candidate and testing that relevant changes cannot evade coverage.
-Use conservative dependency/path selection; a general receipt/cache framework is
-not a prerequisite. Do not forge a pass, suppress failures or override protections.
+Every other path or file mode, mixed change, unavailable/non-ancestor comparison,
+empty diff and manual workflow run selects the full database suite. Changes to the
+selector, workflow, dependencies, SQL or test machinery also run the full suite.
+The selector records its choice and reason in the job summary. Do not use `[skip ci]`,
+labels or manual successful statuses to substitute for selection.
+
+When selected, the database job runs assembled Supabase startup, migrations, lint,
+contracts and races, stops that disposable stack, then runs the exhaustive
+PostgreSQL 17 replay, historical restore and concurrency suite. Both stages must
+pass. Use this CI result instead of also repeating the suite locally.
+
+Further selection for application changes is separate work. Unknown dependencies
+must continue to run broader checks; no general evidence-cache framework is required.
 
 ## Required checks
 

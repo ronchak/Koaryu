@@ -3,7 +3,7 @@
 Choose checks by what can break. Use existing tools; do not build a new proof or
 reporting framework for routine work. This policy applies to local verification
 and review. [Required CI](release-candidate-controls.md#current-ci-and-the-transition)
-remains enforced by the actual workflow.
+remains enforced by the actual workflow, including its documentation-only database fast path.
 
 | Change | Check | Broaden only when |
 | --- | --- | --- |

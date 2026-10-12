@@ -19,6 +19,8 @@ jobs:
     name: Candidate head and repository controls
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    outputs:
+      docs-only: ${{ steps.scope.outputs.docs-only }}
 
     steps:
       - name: Check out exact candidate head
@@ -36,6 +38,13 @@ jobs:
         uses: actions/setup-node@v6
         with:
           node-version: "22.13.0"
+
+      - name: Select database checks for the exact candidate
+        id: scope
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: node scripts/select-release-checks.mjs
 
       - name: Verify candidate workflow coverage
         run: npm run check:release-workflow
@@ -181,6 +190,8 @@ jobs:
     runs-on: ubuntu-latest
     # V55 isolated suite ~105 min + prior 30-min assembled Supabase budget + installation, runner, and future restore margin.
     timeout-minutes: 180
+    needs: repository-controls
+    if: ${{ needs.repository-controls.outputs.docs-only != 'true' }}
 
     steps:
       - name: Check out exact candidate head
@@ -363,6 +374,7 @@ jobs:
     steps:
       - name: Require every candidate suite
         env:
+          DOCS_ONLY: ${{ needs.repository-controls.outputs.docs-only }}
           REPOSITORY_RESULT: ${{ needs.repository-controls.result }}
           FRONTEND_RESULT: ${{ needs.frontend.result }}
           BACKEND_RESULT: ${{ needs.backend.result }}
@@ -373,6 +385,10 @@ jobs:
           test "$REPOSITORY_RESULT" = success
           test "$FRONTEND_RESULT" = success
           test "$BACKEND_RESULT" = success
-          test "$DATABASE_RESULT" = success
+          case "$DOCS_ONLY" in
+            true) test "$DATABASE_RESULT" = skipped ;;
+            false) test "$DATABASE_RESULT" = success ;;
+            *) exit 1 ;;
+          esac
           test "$PERFORMANCE_REGRESSION_RESULT" = success
           test "$STATIC_ANALYSIS_RESULT" = success
