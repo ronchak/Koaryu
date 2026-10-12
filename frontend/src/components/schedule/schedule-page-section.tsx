@@ -235,6 +235,16 @@ export function SchedulePageSection({
 
   const sessionsByDate = useMemo(() => groupSessionsByDate(filteredSessions), [filteredSessions]);
   const templatesByDay = useMemo(() => groupTemplatesByDay(filteredTemplates), [filteredTemplates]);
+  const todayTemplateEntries = useMemo(
+    () =>
+      buildEntriesForDate({
+        date: todayDate,
+        sessionsByDate: NO_SESSIONS,
+        templatesByDay,
+        showTemplatePlaceholders: true,
+      }).filter((entry) => entry.kind === "template"),
+    [templatesByDay, todayDate],
+  );
   const todaySessions = useMemo(() => sessionsByDate.get(today) ?? [], [sessionsByDate, today]);
   const todayCheckIns = todaySessions.reduce(
     (total, session) =>
@@ -628,7 +638,22 @@ export function SchedulePageSection({
           <CalendarCheck aria-hidden="true" />
           Take attendance
         </h2>
-        {!hasLoadedRange ? (
+        {!hasLoadedRange && todayTemplateEntries.length > 0 ? (
+          <ol className={styles.todayList} aria-hidden="true">
+            {todayTemplateEntries.map(({ template }) => (
+              <li key={template.id}>
+                <div className={`${styles.todayChip} ${styles.todayChipLoading}`}>
+                  <span className={styles.todayChipTime}>{formatTime(template.start_time)}</span>
+                  <strong className={styles.todayChipName}>{template.name}</strong>
+                  {/* Hidden text sizes the unknown attendance fact without displaying a count. */}
+                  <span className={styles.todayChipFill}>
+                    {template.capacity ? `0/${template.capacity}` : "0 in"}
+                  </span>
+                </div>
+              </li>
+            ))}
+          </ol>
+        ) : !hasLoadedRange ? (
           <div className={styles.todayList} aria-hidden="true">
             {[0, 1, 2].map((index) => (
               <span key={index} className={styles.todayChipPending} />
@@ -917,9 +942,9 @@ export function SchedulePageSection({
               </span>
             )
           ) : isRefreshingRange ? (
-            <p role="status" className={styles.rangeStatus}>
+            <span role="status" aria-live="polite" className="sr-only">
               Refreshing calendar. Showing the last loaded schedule.
-            </p>
+            </span>
           ) : null}
 
           {showCalendar && view === "month" && (

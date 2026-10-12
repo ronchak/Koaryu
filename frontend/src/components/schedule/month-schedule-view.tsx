@@ -62,6 +62,8 @@ interface MonthScheduleDay {
   inCurrentMonth: boolean;
   /** Every entry, in time order; the grid shows the first `maxVisibleEntries`. */
   entries: MonthScheduleEntry[];
+  /** Known row count while the range is still being materialized. */
+  pendingEntryCount: number;
   hiddenEntries: MonthScheduleEntry[];
   sessionCount: number;
   templateCount: number;
@@ -139,7 +141,7 @@ export function MonthScheduleView({
           templatesByDay,
           showTemplatePlaceholders,
         });
-        // Nothing is drawn until the range loads; recurring classes still predict the fold.
+        // Known classes reserve rows, but become actionable only once the range loads.
         const entries = isLoading ? [] : known;
         const hiddenEntries = entries.slice(maxVisibleEntries);
         const sessionCount = entries.reduce(
@@ -155,6 +157,7 @@ export function MonthScheduleView({
           dateKey,
           inCurrentMonth,
           entries,
+          pendingEntryCount: isLoading ? known.length : 0,
           hiddenEntries,
           sessionCount,
           templateCount: entries.length - sessionCount,
@@ -276,7 +279,7 @@ export function MonthScheduleView({
               data-month-day-scope={day.inCurrentMonth ? "in-month" : "out-of-month"}
               data-month-day-today={isToday ? "true" : "false"}
               data-month-day-selected={isSelected ? "true" : "false"}
-              data-month-day-empty={day.entries.length === 0 ? "true" : "false"}
+              data-month-day-empty={day.hasKnownClasses ? "false" : "true"}
               data-month-day-past={day.past ? "true" : undefined}
               data-month-row-scope={day.rowOutOfMonth ? "out-of-month" : undefined}
               data-month-row-last={day.rowLast ? "true" : undefined}
@@ -303,10 +306,33 @@ export function MonthScheduleView({
 
               {/* Entries */}
               <div className={styles.monthEntries}>
-                {isLoading ? (
+                {isLoading && day.pendingEntryCount === 0 ? (
                   <div aria-hidden="true" className={styles.monthPending}>
                     <span />
                     <span />
+                  </div>
+                ) : null}
+
+                {Array.from({ length: day.pendingEntryCount }, (_, index) => (
+                  <div
+                    key={`pending-${index}`}
+                    aria-hidden="true"
+                    className={`${styles.chip} ${styles.monthPendingEntry}`}
+                    data-month-entry-overflow={index >= maxVisibleEntries ? "true" : undefined}
+                  >
+                    <span className={styles.chipTime} />
+                    <span className={styles.chipBody}>
+                      <span className={styles.chipName} />
+                    </span>
+                  </div>
+                ))}
+
+                {day.pendingEntryCount > maxVisibleEntries ? (
+                  <div
+                    aria-hidden="true"
+                    className={`${styles.moreButton} ${styles.monthPendingMore}`}
+                  >
+                    <span>+{day.pendingEntryCount - maxVisibleEntries} more</span>
                   </div>
                 ) : null}
 

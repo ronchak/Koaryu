@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { after, before, test } from "node:test";
 import { chromium, expect } from "@playwright/test";
 import { createCommonJsPacker } from "./helpers/store-browser-harness.mjs";
@@ -20,6 +21,10 @@ require(${dom}).createRoot(document.getElementById('root')).render(React.createE
 }
 
 const source = bundle();
+const scheduleCss = readFileSync(
+  new URL("../src/components/schedule/schedule.module.css", import.meta.url),
+  "utf8",
+).replace(/:global\(([^)]+)\)/g, "$1");
 let browser;
 before(async () => {
   browser = await chromium.launch();
@@ -34,7 +39,10 @@ async function mountSchedule() {
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.route("**/*", (route) => route.abort());
-  await page.setContent('<div id="root"></div>');
+  await page.setContent(
+    '<style>*{box-sizing:border-box}.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}</style><div id="root"></div>',
+  );
+  await page.addStyleTag({ content: scheduleCss });
   await page.evaluate(() => {
     const listeners = new Set();
     const noop = async () => {};
@@ -138,6 +146,7 @@ test("Schedule reuses loaded ranges and classes on revisit and keeps them during
     await page.waitForFunction(() => fixture.reads.length === 3);
     await expect(label).toHaveText("September 2026");
     await expect(month.getByText("Karate", { exact: true })).toHaveCount(1);
+    await expect(month.getByRole("button", { name: /Karate/ })).toBeVisible();
     await page.evaluate(() => fixture.reads[2].resolve());
     await page.waitForFunction(() => !fixture.controller.isRefreshingRange);
     await page.evaluate(() => window.dispatchEvent(new Event("koaryu:data-refresh")));

@@ -12,6 +12,10 @@ const scheduleCss = readFileSync(
   new URL("../src/components/schedule/schedule.module.css", import.meta.url),
   "utf8",
 ).replace(/:global\(([^)]+)\)/g, "$1");
+const headerCss = readFileSync(
+  new URL("../src/components/header.module.css", import.meta.url),
+  "utf8",
+);
 
 function bundle() {
   // Expose the private pure formatter in this test bundle only. The Sunday-start
@@ -63,16 +67,17 @@ const session = (id, date = "2026-10-11", start = "16:00", end = "16:45") => ({
   capacity: 20,
 });
 
-async function mount({ width = 1280, view = "week", sessions = [], ...props } = {}) {
-  const page = await browser.newPage({ viewport: { width, height: 900 }, timezoneId: "UTC" });
+async function mount({ width = 1280, height = 900, view = "week", sessions = [], ...props } = {}) {
+  const page = await browser.newPage({ viewport: { width, height }, timezoneId: "UTC" });
   page.setDefaultTimeout(6000);
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.route("**/*", (route) => route.abort());
   await page.clock.setFixedTime(new Date("2026-10-11T17:00:00Z"));
   await page.setContent(
-    '<style>html,body{width:100%;margin:0}*{box-sizing:border-box}.relative{position:relative}.absolute{position:absolute}.inset-x-0{left:0;right:0}.grid{display:grid}</style><main id="root"></main>',
+    '<style>html,body{width:100%;margin:0}*{box-sizing:border-box}button{font-family:inherit}.relative{position:relative}.absolute{position:absolute}.inset-x-0{left:0;right:0}.grid{display:grid}.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}</style><main id="root"></main>',
   );
+  await page.addStyleTag({ content: headerCss });
   await page.addStyleTag({ content: scheduleCss });
   await page.evaluate(
     (initial) => {
@@ -408,6 +413,187 @@ test("desktop Month shows four entries and more, retains hidden row cells and ha
     await expect(page.locator("[data-schedule-range-label]")).toHaveText(
       "Sunday, October 11, 2026",
     );
+    assert.deepEqual(errors, []);
+  } finally {
+    await page.close();
+  }
+});
+
+const geometryViewports = [
+  { width: 1440, height: 900 },
+  { width: 1000, height: 614 },
+  { width: 390, height: 844 },
+];
+
+async function monthGeometry(page, relative = false) {
+  return page.locator("[data-month-schedule-view]").evaluate((month, relative) => {
+    const origin = relative ? month.getBoundingClientRect() : { x: 0, y: 0 };
+    const rect = (node) => {
+      const { x, y, width, height } = node.getBoundingClientRect();
+      return { x: x - origin.x, y: y - origin.y, width, height };
+    };
+    const visible = (node) => node.getBoundingClientRect().height > 0;
+    return {
+      frame: rect(month),
+      days: [...month.querySelectorAll("[data-month-schedule-day]")].filter(visible).map((day) => ({
+        date: day.dataset.monthScheduleDay,
+        ...rect(day),
+        rows: [...day.querySelectorAll(".chip,.moreButton")].filter(visible).map(rect),
+      })),
+    };
+  }, relative);
+}
+
+function recurringFixture() {
+  const templates = [...Array.from({ length: 6 }, (_, i) => ({ day: 0, i })), { day: 1, i: 6 }].map(
+    ({ day, i }) => ({
+      id: `template-${i}`,
+      name: `Class ${i + 1}`,
+      day_of_week: day,
+      start_time: `${String(9 + i).padStart(2, "0")}:00`,
+      end_time: `${String(9 + i).padStart(2, "0")}:45`,
+      start_date: "2026-10-01",
+      end_date: "2026-10-31",
+      is_active: true,
+      program_id: null,
+      capacity: 20,
+    }),
+  );
+  const sessions = Array.from(
+    { length: 31 },
+    (_, i) => `2026-10-${String(i + 1).padStart(2, "0")}`,
+  ).flatMap((date) =>
+    templates
+      .filter((t) => t.day_of_week === new Date(`${date}T12:00:00Z`).getDay())
+      .map((t) => ({
+        ...session(`${t.id}-${date}`, date, t.start_time, t.end_time),
+        name: t.name,
+        template_id: t.id,
+      })),
+  );
+  return { templates, sessions };
+}
+
+for (const viewport of geometryViewports) {
+  test(`background refresh preserves calendar geometry at ${viewport.width}x${viewport.height}`, async () => {
+    const { page, errors } = await mount({
+      ...viewport,
+      view: "month",
+      sessions: [session("Karate")],
+    });
+    try {
+      const before = await monthGeometry(page);
+      await update(page, { isRefreshingRange: true });
+      await expect(page.getByRole("status")).toHaveText(
+        "Refreshing calendar. Showing the last loaded schedule.",
+      );
+      const during = await monthGeometry(page);
+      console.log(
+        `refresh ${viewport.width}x${viewport.height}: top ${before.frame.y} -> ${during.frame.y}`,
+      );
+      assert.deepEqual(during, before);
+      await update(page, { isRefreshingRange: false });
+      await expect(page.getByRole("status")).toHaveCount(0);
+      assert.deepEqual(await monthGeometry(page), before);
+      assert.deepEqual(errors, []);
+    } finally {
+      await page.close();
+    }
+  });
+
+  test(`known recurring Month reserves days and rows at ${viewport.width}x${viewport.height}`, async () => {
+    const { templates, sessions } = recurringFixture();
+    const { page, errors } = await mount({
+      ...viewport,
+      view: "month",
+      templates,
+      hasLoadedRange: false,
+    });
+    try {
+      await expect(page.getByRole("status")).toHaveText("Loading this calendar range...");
+      await expect(page.locator(".monthFrame")).toHaveAttribute("aria-busy", "true");
+      await expect(page.locator(".monthGrid button")).toHaveCount(0);
+      await expect(page.locator("[data-schedule-today-bar] button")).toHaveCount(0);
+      await expect(page.locator(".todayChipLoading")).toHaveCount(viewport.width < 609 ? 0 : 6);
+      await expect(page.getByText(/No classes/)).toHaveCount(0);
+      const coldTop = (await monthGeometry(page)).frame.y;
+      const cold = await monthGeometry(page, true);
+      await update(page, { sessions, hasLoadedRange: true });
+      await expect(page.locator(".monthFrame")).toHaveAttribute("aria-busy", "false");
+      const loadedTop = (await monthGeometry(page)).frame.y;
+      const loaded = await monthGeometry(page, true);
+      console.log(
+        `cold frame top ${viewport.width}x${viewport.height}: ${coldTop} -> ${loadedTop}`,
+      );
+      const summarize = (geometry) => ({
+        height: geometry.frame.height,
+        dates: geometry.days.map((day) => day.date),
+        today: geometry.days.find((day) => day.date === "2026-10-11"),
+      });
+      console.log(
+        `recurring ${viewport.width}x${viewport.height}: ${JSON.stringify({ cold: summarize(cold), loaded: summarize(loaded) })}`,
+      );
+      assert.deepEqual(cold, loaded);
+      assert.equal(coldTop, loadedTop);
+      const today = page.locator('[data-month-schedule-day="2026-10-11"]');
+      await expect(today.locator("button.chip:visible")).toHaveCount(viewport.width < 760 ? 6 : 4);
+      await expect(today.locator(".moreButton:visible")).toHaveCount(viewport.width < 760 ? 0 : 1);
+      if (viewport.width < 760) {
+        assert.equal(cold.days[0].date, "2026-10-11");
+        await expect(page.locator('[data-month-schedule-day="2026-10-04"]')).toBeHidden();
+        await page
+          .getByRole("button", { name: "Earlier this month (2 days)", exact: true })
+          .click();
+        await expect(page.locator('[data-month-schedule-day="2026-10-04"]')).toBeVisible();
+      }
+      const once = {
+        ...session("Once", "2026-10-11", "20:00", "21:00"),
+        name: "A once-only workshop with a longer server-supplied class name",
+      };
+      await update(page, { sessions: [...sessions, once] });
+      await expect(today.locator("button.chip").filter({ hasText: once.name })).toHaveCount(1);
+      if (viewport.width < 760) {
+        await expect(today.locator("button.chip:visible")).toHaveCount(7);
+        assert.ok(
+          (await today.boundingBox()).height >
+            cold.days.find((day) => day.date === "2026-10-11").height,
+        );
+      } else {
+        await expect(today.getByRole("button", { name: "+3 more", exact: true })).toBeVisible();
+      }
+      assert.deepEqual(errors, []);
+    } finally {
+      await page.close();
+    }
+  });
+}
+
+test("unknown empty Month remains loading and controls stay navigable without class actions", async () => {
+  const { page, errors } = await mount({
+    width: 390,
+    height: 844,
+    view: "month",
+    hasLoadedRange: false,
+  });
+  try {
+    await expect(page.getByRole("status")).toHaveText("Loading this calendar range...");
+    await expect(page.getByText(/No classes/)).toHaveCount(0);
+    await expect(page.locator(".monthGrid button")).toHaveCount(0);
+    await expect(page.locator(".monthPending")).toHaveCount(42);
+    await expect(page.getByRole("button", { name: "Next month", exact: true })).toBeEnabled();
+    await expect(page.getByRole("button", { name: "Jump to today", exact: true })).toBeEnabled();
+    await page.getByRole("button", { name: "Week", exact: true }).click();
+    await expect(page.getByRole("button", { name: "Week", exact: true })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await expect(page.locator('[data-schedule-agenda="week"]')).toBeVisible();
+    assert.deepEqual(await page.evaluate(() => fixture.opened), []);
+    await page.getByRole("button", { name: "Month", exact: true }).click();
+    await update(page, { hasLoadedRange: true });
+    await expect(page.getByText("No classes in October 2026.", { exact: true })).toBeVisible();
+    await expect(page.getByRole("status")).toHaveCount(0);
+    await expect(page.locator(".monthPending,.todayChipLoading,.todayChipPending")).toHaveCount(0);
     assert.deepEqual(errors, []);
   } finally {
     await page.close();

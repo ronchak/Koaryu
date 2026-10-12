@@ -314,6 +314,21 @@
   background: var(--hz-tile);
 }
 
+.todayChip.todayChipLoading {
+  border-color: transparent;
+  background: var(--hz-tile);
+  cursor: default;
+  pointer-events: none;
+}
+
+.todayChipLoading::before {
+  display: none;
+}
+
+.todayChipLoading > * {
+  visibility: hidden;
+}
+
 /* Month */
 .monthFrame {
   min-width: 0;
@@ -678,6 +693,37 @@ button.chip:hover {
   flex: none;
   order: 4;
   color: var(--product-wood);
+}
+
+/* Known recurring rows use the loaded chip geometry without class actions. */
+.monthPendingEntry {
+  border-color: transparent;
+  background: transparent;
+  pointer-events: none;
+}
+
+.monthPendingEntry::before {
+  display: none;
+}
+
+.monthPendingEntry .chipTime,
+.monthPendingEntry .chipName {
+  display: block;
+  height: 14px;
+  border-radius: 5px;
+  background: var(--hz-tile);
+}
+
+.monthPendingEntry .chipName {
+  width: 75%;
+}
+
+.moreButton.monthPendingMore {
+  pointer-events: none;
+}
+
+.monthPendingMore span {
+  visibility: hidden;
 }
 
 /* The agenda shows every class; only the grid needs "+N more". */
