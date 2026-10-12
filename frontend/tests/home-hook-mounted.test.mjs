@@ -672,3 +672,157 @@ mounted("a read after a command never joins a flight started before it", async (
   assert.equal((await state(page)).name, "after command");
   assert.equal((await state(page)).isRevalidating, false);
 });
+
+async function overlappingReads(page) {
+  await coldReady(page);
+  await page.evaluate(() => {
+    window.fixture.holdWorkspace = true;
+    window.fixture.home.retry();
+  });
+  await until(page, () => window.fixture.homeReads.length === 2);
+  await page.evaluate(() => window.fixture.markFacts());
+  await tick(page, 300);
+  assert.equal(await homeCount(page), 3, "plain A and fresh B must overlap");
+}
+
+for (const status of [403, 409]) {
+  for (const unmounted of [false, true]) {
+    for (const successFirst of [false, true]) {
+      mounted(
+        `${status} refusal cuts off newer ${successFirst ? "settled" : "pending"} read ${unmounted ? "after unmount" : "while mounted"}`,
+        async (page) => {
+          await overlappingReads(page);
+          if (successFirst) await resolveHome(page, 2, "pre-refusal B");
+          if (unmounted) {
+            await page.evaluate(() => window.fixture.unmountHome());
+            await flush(page);
+          }
+          const offset = await page.evaluate(() => window.fixture.homeRenders.length);
+          await rejectHome(page, 1, status, "Access refused");
+          if (unmounted) {
+            await page.evaluate(() => window.fixture.mountHome());
+            await until(page, () => window.fixture.homeReads.length === 4);
+          } else {
+            assert.equal((await state(page)).name, null, "refusal must hide settled B too");
+            await retry(page);
+            assert.equal(await homeCount(page), 4, "retry must not join pre-refusal B");
+          }
+          assert.equal((await state(page)).name, null, "refused data painted on revisit");
+          if (!successFirst) {
+            await resolveHome(page, 2, "pre-refusal B");
+            assert.equal((await state(page)).name, null, "pending B restored refused data");
+          }
+          await page.evaluate(() => window.fixture.releaseWorkspace());
+          await flush(page);
+          await resolveHome(page, 3, "later verification");
+          assert.equal((await state(page)).name, "later verification");
+          assert.ok(
+            await page.evaluate(
+              (offset) =>
+                window.fixture.homeRenders
+                  .slice(offset)
+                  .every(
+                    (r) => r.payload === null || r.payload.studio.name === "later verification",
+                  ),
+              offset,
+            ),
+            "a result begun before refusal painted before later verification",
+          );
+          await page.evaluate(() => window.fixture.unmountHome());
+          await flush(page);
+          await page.evaluate(() => window.fixture.mountHome());
+          await until(page, () => window.fixture.homeReads.length === 5);
+          assert.equal((await state(page)).name, "later verification", "recovery is retained");
+        },
+      );
+    }
+  }
+}
+
+mounted("an already invalidated denial cannot hide later recovery", async (page) => {
+  await overlappingReads(page);
+  await rejectHome(page, 1, 403, "First refusal");
+  await retry(page);
+  assert.equal(await homeCount(page), 4, "recovery must start a new read");
+  await resolveHome(page, 3, "later verification");
+  await rejectHome(page, 2, 409, "Invalidated refusal");
+  assert.equal((await state(page)).name, "later verification");
+  assert.equal((await state(page)).error, null);
+  await page.evaluate(() => window.fixture.unmountHome());
+  await flush(page);
+  await page.evaluate(() => window.fixture.mountHome());
+  await until(page, () => window.fixture.homeReads.length === 5);
+  assert.equal((await state(page)).name, "later verification");
+});
+
+mounted("joined refusal handlers hide once and permit later verification", async (page) => {
+  await coldReady(page);
+  await retry(page);
+  await page.evaluate(() => window.fixture.unmountHome());
+  await flush(page);
+  await page.evaluate(() => window.fixture.mountHome());
+  await flush(page);
+  assert.equal(await homeCount(page), 2, "remounted handler joins A");
+  await page.evaluate(() => {
+    window.fixture.holdWorkspace = true;
+  });
+  await rejectHome(page, 1, 403, "Joined refusal");
+  assert.equal((await state(page)).name, null);
+  await retry(page);
+  assert.equal(await homeCount(page), 3);
+  await resolveHome(page, 2, "later verification");
+  assert.equal((await state(page)).name, "later verification");
+  await page.evaluate(() => window.fixture.unmountHome());
+  await flush(page);
+  await page.evaluate(() => window.fixture.mountHome());
+  await until(page, () => window.fixture.homeReads.length === 4);
+  assert.equal((await state(page)).name, "later verification");
+});
+
+for (const sameOwner of [false, true]) {
+  mounted(
+    `old denial cannot purge ${sameOwner ? "same-owner new generation" : "new identity"} retention`,
+    async (page) => {
+      await coldReady(page);
+      await retry(page);
+      const oldGeneration = await page.evaluate(() => window.fixture.store.identityGeneration);
+      if (sameOwner) {
+        await page.evaluate(() => window.fixture.emit("SIGNED_OUT", null));
+        await until(page, () => !window.fixture.store.identityReady);
+      }
+      await page.evaluate((sameOwner) => {
+        window.fixture.studioId = sameOwner ? "studio-a" : "studio-b";
+        window.fixture.emit("SIGNED_IN", {
+          access_token: "token-new",
+          user: {
+            id: sameOwner ? "user-a" : "user-b",
+            email: "new@example.test",
+            user_metadata: {},
+          },
+        });
+      }, sameOwner);
+      await until(
+        page,
+        () => window.fixture.homeReads.length === 3 && window.fixture.store.identityReady,
+      );
+      assert.ok(
+        await page.evaluate((old) => window.fixture.store.identityGeneration > old, oldGeneration),
+      );
+      await resolveHome(page, 2, "new identity verification");
+      const workspaceCount = await page.evaluate(() => window.fixture.workspaceReads.length);
+      await rejectHome(page, 1, 403, "Obsolete refusal");
+      assert.equal((await state(page)).name, "new identity verification");
+      assert.equal((await state(page)).error, null);
+      assert.equal(await page.evaluate(() => window.fixture.workspaceReads.length), workspaceCount);
+      await page.evaluate(() => window.fixture.unmountHome());
+      await flush(page);
+      await page.evaluate(() => window.fixture.mountHome());
+      await until(page, () => window.fixture.homeReads.length === 4);
+      assert.equal(
+        (await state(page)).name,
+        "new identity verification",
+        "old refusal purged current retained cell",
+      );
+    },
+  );
+}
