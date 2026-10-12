@@ -143,9 +143,10 @@ function toMinutes(time: string) {
 
 export function getConflictingSessionIds(sessions: ClassSession[]) {
   const conflictingIds = new Set<string>();
-  const sortedSessions = [...sessions].sort((left, right) =>
-    left.start_time.localeCompare(right.start_time),
-  );
+  // Keep canceled occurrences on the calendar, but they no longer reserve time.
+  const sortedSessions = sessions
+    .filter((session) => session.status !== "canceled")
+    .sort((left, right) => left.start_time.localeCompare(right.start_time));
 
   for (let index = 0; index < sortedSessions.length; index += 1) {
     const current = sortedSessions[index];
