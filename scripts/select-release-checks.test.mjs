@@ -82,6 +82,7 @@ test("any code, database, dependency, workflow, helper or unknown path selects t
     "scripts/README.md",
     "unknown.md",
   ]) {
+    r.git("checkout", "--detach", r.baseSha);
     r.write(name);
     r.commit();
     assert.equal(r.select().docsOnly, false, name);
