@@ -400,7 +400,7 @@ mounted(
   },
 );
 
-for (const status of [401, 403]) {
+for (const status of [401, 403, 409]) {
   mounted(
     `${status} clears payload and retained data, rechecks workspace without data refresh`,
     async (page) => {
@@ -438,6 +438,29 @@ for (const status of [401, 403]) {
       );
     },
   );
+}
+
+mounted("409 workspace denial keeps refused Home and retained payload hidden", async (page) => {
+  await coldReady(page);
+  await page.evaluate(() => {
+    window.fixture.workspaceError = 409;
+  });
+  await retry(page);
+  await rejectHome(page, 1, 409, "Membership ambiguous");
+  await until(page, () => window.fixture.workspaceReads.length === 2);
+  assert.equal((await state(page)).name, null);
+  assert.equal((await state(page)).status, "error");
+  assert.deepEqual(await page.evaluate(() => window.fixture.resumeEvents), [
+    { refreshData: false },
+  ]);
+  await page.evaluate(() => window.fixture.unmountHome());
+  await flush(page);
+  await page.evaluate(() => window.fixture.mountHome());
+  await until(page, () => window.fixture.homeReads.length === 3);
+  assert.equal((await state(page)).name, null, "workspace409 must not restore refused Home");
+});
+
+for (const status of [401, 403]) {
   mounted(`${status} denied workspace resets identity and removes Home payload`, async (page) => {
     await coldReady(page);
     await page.evaluate((status) => {
@@ -452,31 +475,40 @@ for (const status of [401, 403]) {
   });
 }
 
-mounted(
-  "loader rejects mismatched studio id",
-  async (page) => {
-    await until(page, () => window.fixture.store.identityReady);
-    await page.evaluate(() => {
-      window.fixture.loaderOutcome = null;
-      window.fixture.store.loadDashboardHome({ fresh: false }).then(
-        () => (window.fixture.loaderOutcome = "unexpected success"),
-        (error) => (window.fixture.loaderOutcome = error.message),
-      );
-    });
-    await until(page, () => window.fixture.homeReads.length === 1);
-    await page.evaluate(() => {
-      const payload = window.fixture.payload();
-      payload.studio.id = "studio-other";
-      window.fixture.homeReads[0].resolve(payload);
-    });
-    await until(page, () => window.fixture.loaderOutcome !== null);
-    assert.equal(
-      await page.evaluate(() => window.fixture.loaderOutcome),
-      "Dashboard scope changed. Please retry.",
-    );
-  },
-  { homeMounted: false },
-);
+for (const invalidStudio of ["missing", "mismatched"]) {
+  mounted(
+    `current ${invalidStudio} studio response clears Home and reverifies workspace`,
+    async (page) => {
+      await coldReady(page);
+      await page.evaluate(() => {
+        window.fixture.holdWorkspace = true;
+      });
+      await retry(page);
+      await page.evaluate((invalidStudio) => {
+        const payload = window.fixture.payload();
+        if (invalidStudio === "missing") delete payload.studio;
+        else payload.studio.id = "studio-other";
+        window.fixture.homeReads[1].resolve(payload);
+      }, invalidStudio);
+      await flush(page);
+      assert.equal((await state(page)).name, null);
+      assert.equal((await state(page)).status, "error");
+      await until(page, () => Boolean(window.fixture.releaseWorkspace));
+      assert.deepEqual(await page.evaluate(() => window.fixture.resumeEvents), [
+        { refreshData: false },
+      ]);
+      await page.evaluate(() => window.fixture.releaseWorkspace());
+      await flush(page);
+      await page.evaluate(() => window.fixture.unmountHome());
+      await flush(page);
+      await page.evaluate(() => window.fixture.mountHome());
+      await until(page, () => window.fixture.homeReads.length === 3);
+      assert.equal((await state(page)).name, null, "invalid response must purge retained Home");
+      await resolveHome(page, 2, "verified again");
+      assert.equal((await state(page)).name, "verified again");
+    },
+  );
+}
 
 mounted(
   "identity change in flight ignores old success and never displays previous user's payload",
@@ -497,6 +529,8 @@ mounted(
         window.fixture.store.currentUserId === "user-b" && window.fixture.homeReads.length === 3,
     );
     assert.equal((await state(page)).name, null);
+    await resolveHome(page, 2, "user-b data");
+    const workspaceReads = await page.evaluate(() => window.fixture.workspaceReads.length);
     await page.evaluate(() =>
       window.fixture.homeReads[1].resolve({
         ...window.fixture.payload("obsolete"),
@@ -509,9 +543,18 @@ mounted(
       null,
       "old scope failure must not become new scope's error",
     );
-    assert.equal((await state(page)).name, null);
-    await resolveHome(page, 2, "user-b data");
     assert.equal((await state(page)).name, "user-b data");
+    assert.equal(await page.evaluate(() => window.fixture.workspaceReads.length), workspaceReads);
+    assert.deepEqual(await page.evaluate(() => window.fixture.resumeEvents), []);
+    await page.evaluate(() => window.fixture.unmountHome());
+    await flush(page);
+    await page.evaluate(() => window.fixture.mountHome());
+    await flush(page);
+    assert.equal(
+      (await state(page)).name,
+      "user-b data",
+      "stale response must preserve new identity retention",
+    );
     assert.ok(
       await page.evaluate(
         (offset) =>

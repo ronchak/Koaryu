@@ -12,7 +12,7 @@ import { beginResourceMutation, createResourceScope } from "@/lib/store-resource
 import React, { useState, useEffect, useLayoutEffect, useCallback, useRef, useMemo, type ReactNode } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { api, isStaffArchivedError, isSubscriptionRequiredError } from "@/lib/api";
+import { api, ApiError, isStaffArchivedError, isSubscriptionRequiredError } from "@/lib/api";
 import { markPerformance, measurePerformance } from "@/lib/performance";
 import {
   clearStoredStudioSessionCookies,
@@ -876,7 +876,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         const startedAt = startHomeRead();
         const payload = await api.get<DashboardHome>(`/dashboard/home${fresh ? "?fresh=true" : ""}`, request.token,
           { timeoutMs: 35000, timeoutMessage: "Home refresh timed out." });
-        if (!isCurrent() || payload.studio?.id !== studioId) throw scopeChanged();
+        if (!isCurrent()) throw scopeChanged();
+        if (payload.studio?.id !== studioId) {
+          throw new ApiError("Home studio access could not be verified. Please retry.", 403);
+        }
         stampHomeRead(payload, startedAt);
         return payload;
       }, () => {});
@@ -887,7 +890,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       if (isCurrent()) {
         const status = error && typeof error === "object" && "status" in error ? Number(error.status) : null;
         if (isSubscriptionRequiredError(error)) markSubscriptionRequired();
-        else if (status === 401 || status === 403 || isStaffArchivedError(error)) {
+        else if (status === 401 || status === 403 || status === 409 || isStaffArchivedError(error)) {
           window.dispatchEvent(new CustomEvent(APP_RESUME_EVENT, { detail: { refreshData: false } }));
         }
       }

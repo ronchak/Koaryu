@@ -75,7 +75,7 @@ export function homeRetainedKey(scope: {
 export function isHomeAccessError(error: unknown): boolean {
   if (!error || typeof error !== "object" || !("status" in error)) return false;
   const status = Number((error as { status: unknown }).status);
-  return status === 401 || status === 402 || status === 403;
+  return status === 401 || status === 402 || status === 403 || status === 409;
 }
 
 // Single flight per loader (one per StoreProvider), identity scope, business
