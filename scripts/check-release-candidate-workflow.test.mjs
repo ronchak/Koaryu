@@ -173,6 +173,9 @@ test("database skips require the repository-owned documentation selection", () =
     ['true) test "$DATABASE_RESULT" = skipped ;;', "true) true ;;"],
     ['false) test "$DATABASE_RESULT" = success ;;', "false) true ;;"],
     ["*) exit 1 ;;", "*) true ;;"],
+    ['git show "$BASE_SHA:scripts/select-release-checks.mjs"', 'git show "HEAD:scripts/select-release-checks.mjs"'],
+    ['GITHUB_OUTPUT="$scope_output" node "$scope_script"', 'node scripts/select-release-checks.mjs'],
+    ['selected=false', 'selected=true'],
   ]) {
     assert.notEqual(workflow.replace(before, after), workflow, before);
     assert.notDeepEqual(

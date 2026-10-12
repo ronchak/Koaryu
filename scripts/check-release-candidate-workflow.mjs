@@ -31,7 +31,7 @@ const requiredSnippets = [
   "npm run check:remediation-ledger",
   "npm run audit:support-privacy",
   "node --test scripts/verify-deployed-release.test.mjs",
-  "run: node scripts/select-release-checks.mjs",
+  'git show "$BASE_SHA:scripts/select-release-checks.mjs"',
 ];
 
 const candidateJobs = [
@@ -141,7 +141,14 @@ export function validateReleaseCandidateWorkflow(source) {
     "id: scope",
     "EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}",
     "BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}",
-    "run: node scripts/select-release-checks.mjs",
+    "          selected=false\n",
+    'git merge-base --is-ancestor "$BASE_SHA" "$EXPECTED_HEAD_SHA"',
+    'git ls-tree "$BASE_SHA" -- scripts/select-release-checks.mjs',
+    '"$selector_entry" == "100644 blob "*',
+    'git show "$BASE_SHA:scripts/select-release-checks.mjs" > "$scope_script"',
+    'GITHUB_OUTPUT="$scope_output" node "$scope_script"',
+    'docs-only=true) selected=true ;;',
+    'echo "docs-only=$selected" >> "$GITHUB_OUTPUT"',
   ];
   for (const snippet of requiredSelectionControls) {
     if (!repositoryControlsBlock.includes(snippet)) {
@@ -149,6 +156,9 @@ export function validateReleaseCandidateWorkflow(source) {
         `Repository controls must bind documentation selection: ${snippet}`,
       );
     }
+  }
+  if (/node scripts\/select-release-checks\.mjs/.test(repositoryControlsBlock)) {
+    errors.push("Documentation selection must not execute the candidate's selector.");
   }
   const requiredDatabaseAssertions = [
     "DOCS_ONLY: ${{ needs.repository-controls.outputs.docs-only }}",

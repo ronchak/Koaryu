@@ -44,7 +44,25 @@ jobs:
         env:
           EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
-        run: node scripts/select-release-checks.mjs
+        run: |
+          selected=false
+          scope_dir="$(mktemp -d "$RUNNER_TEMP/koaryu-release-scope.XXXXXX")"
+          scope_script="$scope_dir/selector.mjs"
+          scope_output="$scope_dir/output"
+          if [[ "$BASE_SHA" =~ ^[0-9a-f]{40}$ ]] && git merge-base --is-ancestor "$BASE_SHA" "$EXPECTED_HEAD_SHA"; then
+            selector_entry="$(git ls-tree "$BASE_SHA" -- scripts/select-release-checks.mjs)"
+            if [[ "$selector_entry" == "100644 blob "* ]] && git show "$BASE_SHA:scripts/select-release-checks.mjs" > "$scope_script"; then
+              if GITHUB_OUTPUT="$scope_output" node "$scope_script"; then
+                selection="$(cat "$scope_output" 2>/dev/null || true)"
+                case "$selection" in
+                  docs-only=true) selected=true ;;
+                  docs-only=false) selected=false ;;
+                esac
+              fi
+            fi
+          fi
+          echo "docs-only=$selected" >> "$GITHUB_OUTPUT"
+          echo "Database selection from pinned base: docs-only=$selected" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Verify candidate workflow coverage
         run: npm run check:release-workflow

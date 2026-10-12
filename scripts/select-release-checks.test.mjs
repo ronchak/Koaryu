@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 
@@ -11,6 +11,47 @@ import {
   isDocumentationPath,
   selectReleaseChecks,
 } from "./select-release-checks.mjs";
+
+const workflow = fs.readFileSync(
+  new URL("../.github/workflows/release-candidate.yml", import.meta.url),
+  "utf8",
+);
+const scopeBlock = workflow.slice(
+  workflow.indexOf("      - name: Select database checks"),
+  workflow.indexOf("      - name: Verify candidate workflow coverage"),
+);
+const scopeRun = scopeBlock
+  .split("        run: |\n")[1]
+  .split("\n")
+  .filter((line) => line.startsWith("          "))
+  .map((line) => line.slice(10))
+  .join("\n");
+const selectorSource = fs.readFileSync(
+  new URL("./select-release-checks.mjs", import.meta.url),
+  "utf8",
+);
+
+function runScope(r) {
+  const dir = fs.mkdtempSync(path.join(r.cwd, "scope-output-"));
+  const output = path.join(dir, "output"),
+    summary = path.join(dir, "summary");
+  const result = spawnSync("bash", ["-e", "-o", "pipefail", "-c", scopeRun], {
+    cwd: r.cwd,
+    encoding: "utf8",
+    env: {
+      PATH: process.env.PATH,
+      RUNNER_TEMP: dir,
+      BASE_SHA: r.baseSha,
+      EXPECTED_HEAD_SHA: r.git("rev-parse", "HEAD"),
+      GITHUB_EVENT_NAME: "pull_request",
+      GITHUB_OUTPUT: output,
+      GITHUB_STEP_SUMMARY: summary,
+    },
+  });
+  assert.equal(result.status, 0, result.stderr);
+  r.scopeDiagnostics = `${result.stdout}\n${result.stderr}`;
+  return fs.readFileSync(output, "utf8");
+}
 
 function repository(t, initial = {}) {
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "koaryu-doc-selection-"));
@@ -222,4 +263,58 @@ test("the real CLI emits the exact selection and summary for a pinned documentat
     fs.readFileSync(summary, "utf8"),
     /not selected.*only ordinary documentation/,
   );
+});
+
+test("actual workflow bootstrap runs full checks when the base has no selector", (t) => {
+  const r = repository(t);
+  r.write("docs/change.md");
+  r.commit();
+  assert.equal(runScope(r), "docs-only=false\n");
+});
+
+test("actual workflow uses a regular trusted base selector for documentation", (t) => {
+  const r = repository(t, {
+    "scripts/select-release-checks.mjs": selectorSource,
+  });
+  r.write("docs/change.md");
+  r.commit();
+  assert.equal(runScope(r), "docs-only=true\n", r.scopeDiagnostics);
+});
+
+test("a candidate selector that approves every change cannot approve its own change", (t) => {
+  const r = repository(t, {
+    "scripts/select-release-checks.mjs": selectorSource,
+  });
+  r.write(
+    "scripts/select-release-checks.mjs",
+    'import fs from "node:fs"; fs.writeFileSync("candidate-ran", "bad"); fs.appendFileSync(process.env.GITHUB_OUTPUT, "docs-only=true\\n");\n',
+  );
+  r.write("supabase/migrations/change.sql");
+  r.commit();
+  assert.equal(runScope(r), "docs-only=false\n");
+  assert.equal(fs.existsSync(path.join(r.cwd, "candidate-ran")), false);
+});
+
+test("invalid or failed trusted-base output cannot authorize a database skip", (t) => {
+  for (const body of [
+    'import fs from "node:fs"; fs.appendFileSync(process.env.GITHUB_OUTPUT, "docs-only=maybe\\n");\n',
+    'import fs from "node:fs"; fs.appendFileSync(process.env.GITHUB_OUTPUT, "docs-only=true\\n"); process.exit(1);\n',
+    "process.exit(0);\n",
+  ]) {
+    const r = repository(t, { "scripts/select-release-checks.mjs": body });
+    r.write("docs/change.md");
+    r.commit();
+    assert.equal(runScope(r), "docs-only=false\n");
+  }
+});
+
+test("an executable trusted-base file cannot qualify as the regular pinned selector", (t) => {
+  const r = repository(t, {
+    "scripts/select-release-checks.mjs": selectorSource,
+  });
+  fs.chmodSync(path.join(r.cwd, "scripts/select-release-checks.mjs"), 0o755);
+  r.baseSha = r.commit();
+  r.write("docs/change.md");
+  r.commit();
+  assert.equal(runScope(r), "docs-only=false\n");
 });

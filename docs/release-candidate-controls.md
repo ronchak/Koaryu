@@ -3,9 +3,11 @@
 ## Current CI and the transition
 
 The workflow runs for every PR without trigger path filters. Its exact-head
-`Release candidate gate` remains required. Repository controls compare the pinned
-base and checked-out candidate with a complete Git diff, including file modes and
-both sides of renames.
+`Release candidate gate` remains required. Repository controls load the selector
+from the pinned base commit, then compare that base and the checked-out candidate
+with a complete Git diff, including file modes and both sides of renames. A changed
+candidate selector cannot approve its own changes. Missing/non-regular base selectors
+or failed/invalid output select the full database suite, including initial bootstrap.
 
 Ordinary Markdown under `docs/`, root AGENTS/CLAUDE/README, the frontend
 AGENTS/CLAUDE/README, backend AGENTS/README and Supabase AGENTS qualify for the

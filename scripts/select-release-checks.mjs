@@ -2,6 +2,9 @@ import fs from "node:fs";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
+// CI copies this module from the pinned base into RUNNER_TEMP. Keep it
+// self-contained: importing candidate helpers would defeat that trust boundary.
+
 const shaPattern = /^[0-9a-f]{40}$/;
 const guidePaths = new Set([
   "AGENTS.md",
@@ -95,7 +98,11 @@ export function selectReleaseChecks({ cwd, eventName, baseSha, headSha }) {
   }
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
+if (
+  process.argv[1] &&
+  fs.realpathSync(process.argv[1]) ===
+    fs.realpathSync(fileURLToPath(import.meta.url))
+) {
   const selection = selectReleaseChecks({
     cwd: process.cwd(),
     eventName: process.env.GITHUB_EVENT_NAME,
