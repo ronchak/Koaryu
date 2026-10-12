@@ -1,3 +1,4 @@
+import { SOCIAL_PREVIEW_IMAGE } from "@/lib/social-preview";
 import type { Metadata } from "next";
 import Link from "next/link";
 
@@ -24,6 +25,7 @@ export const metadata: Metadata = {
   description,
   alternates: { canonical: "https://koaryu.app/terms" },
   openGraph: {
+    images: [SOCIAL_PREVIEW_IMAGE],
     title: "Terms of Service | Koaryu",
     description,
     url: "https://koaryu.app/terms",

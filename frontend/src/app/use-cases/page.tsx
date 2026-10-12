@@ -1,3 +1,4 @@
+import { SOCIAL_PREVIEW_IMAGE } from "@/lib/social-preview";
 import type { Metadata } from "next";
 import { BreadcrumbJsonLd, PageStructuredData } from "@/components/marketing/public-pages";
 import { WorkflowIndexPage } from "@/components/marketing/workflow-pages";
@@ -9,6 +10,7 @@ export const metadata: Metadata = {
     "Prepare a roster CSV, review an attendance gap, follow up on a trial, check tuition records, or build a belt-test shortlist with worked Koaryu guides.",
   alternates: { canonical: "https://koaryu.app/use-cases" },
   openGraph: {
+    images: [SOCIAL_PREVIEW_IMAGE],
     title: "Studio Workflow Guides | Koaryu",
     description:
       "Worked guides for student imports, attendance-gap reviews, trial follow-up, tuition records, and belt-test preparation.",
