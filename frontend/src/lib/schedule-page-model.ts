@@ -24,6 +24,13 @@ export type ScheduleTimeBlock<T extends ScheduleTimeItem> = {
   overlaps: boolean;
 };
 
+export type ScheduleTimeLayoutOptions<T extends ScheduleTimeItem> = {
+  /** Reserve a drawn footprint without changing class times or overlap semantics. */
+  getOccupiedInterval?: (
+    block: Pick<ScheduleTimeBlock<T>, "item" | "startMinute" | "endMinute">,
+  ) => { startMinute: number; endMinute: number };
+};
+
 export const DEFAULT_SCHEDULE_PAGE_VIEW: SchedulePageView = "month";
 
 /** Week and Day hour height; Day on a phone-width sheet draws 56px hours (set in CSS). */
@@ -81,6 +88,7 @@ export function getScheduleCanvasRange(items: ReadonlyArray<ScheduleTimeItem>) {
 
 export function layoutScheduleTimeItems<T extends ScheduleTimeItem>(
   items: ReadonlyArray<T>,
+  options: ScheduleTimeLayoutOptions<T> = {},
 ): ScheduleTimeBlock<T>[] {
   const sorted: ScheduleTimeBlock<T>[] = items
     .map((item) => {
@@ -101,6 +109,7 @@ export function layoutScheduleTimeItems<T extends ScheduleTimeItem>(
         a.item.id.localeCompare(b.item.id),
     );
 
+  // Actual time groups determine overlap flags, independently of drawn lanes.
   let groupStart = 0;
   while (groupStart < sorted.length) {
     let groupEnd = groupStart + 1;
@@ -110,16 +119,41 @@ export function layoutScheduleTimeItems<T extends ScheduleTimeItem>(
       groupEnd += 1;
     }
 
+    for (let index = groupStart; index < groupEnd; index += 1) {
+      sorted[index].overlaps = groupEnd - groupStart > 1;
+    }
+    groupStart = groupEnd;
+  }
+
+  const occupied = sorted
+    .map((block, order) => ({
+      block,
+      order,
+      ...(options.getOccupiedInterval?.(block) ?? block),
+    }))
+    .sort(
+      (a, b) => a.startMinute - b.startMinute || a.endMinute - b.endMinute || a.order - b.order,
+    );
+
+  groupStart = 0;
+  while (groupStart < occupied.length) {
+    let groupEnd = groupStart + 1;
+    let latestEnd = occupied[groupStart].endMinute;
+    while (groupEnd < occupied.length && occupied[groupEnd].startMinute < latestEnd) {
+      latestEnd = Math.max(latestEnd, occupied[groupEnd].endMinute);
+      groupEnd += 1;
+    }
+
     const laneEnds: number[] = [];
     for (let index = groupStart; index < groupEnd; index += 1) {
-      const block = sorted[index];
-      const availableLane = laneEnds.findIndex((endMinute) => endMinute <= block.startMinute);
+      const interval = occupied[index];
+      const block = interval.block;
+      const availableLane = laneEnds.findIndex((endMinute) => endMinute <= interval.startMinute);
       block.lane = availableLane === -1 ? laneEnds.length : availableLane;
-      laneEnds[block.lane] = block.endMinute;
+      laneEnds[block.lane] = interval.endMinute;
     }
     for (let index = groupStart; index < groupEnd; index += 1) {
-      sorted[index].laneCount = laneEnds.length;
-      sorted[index].overlaps = laneEnds.length > 1;
+      occupied[index].block.laneCount = laneEnds.length;
     }
     groupStart = groupEnd;
   }

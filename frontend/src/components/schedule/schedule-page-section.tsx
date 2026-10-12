@@ -1,6 +1,6 @@
 "use client";
 
-import { useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { CalendarCheck, CalendarPlus, ChevronLeft, ChevronRight, Plus, X } from "lucide-react";
 
 import { Header } from "@/components/header";
@@ -31,6 +31,7 @@ import {
   layoutScheduleTimeItems,
   SCHEDULE_CANVAS_PIXELS_PER_HOUR,
   type SchedulePageView,
+  type ScheduleTimeBlock,
 } from "@/lib/schedule-page-model";
 import { useStudioClock } from "@/lib/use-studio-clock";
 import type { ClassSession, ClassTemplate, Program } from "@/types";
@@ -92,6 +93,25 @@ type TimeCanvasEntry = {
   session?: ClassSession;
   template?: ClassTemplate;
 };
+
+function getCanvasOccupiedInterval(
+  block: Pick<ScheduleTimeBlock<TimeCanvasEntry>, "item" | "startMinute" | "endMinute">,
+  canvasStartMinute: number,
+  hourHeight: number,
+) {
+  const pixelsPerMinute = hourHeight / 60;
+  const top = (block.startMinute - canvasStartMinute) * pixelsPerMinute;
+  const visibleHeight = Math.max(
+    BLOCK_MIN_HEIGHT,
+    (block.endMinute - block.startMinute) * pixelsPerMinute,
+  );
+  const targetHeight = block.item.kind === "session" ? Math.max(44, visibleHeight) : visibleHeight;
+  const occupiedTop = Math.max(0, top - (targetHeight - visibleHeight) / 2);
+  return {
+    startMinute: canvasStartMinute + occupiedTop / pixelsPerMinute,
+    endMinute: canvasStartMinute + (occupiedTop + targetHeight) / pixelsPerMinute,
+  };
+}
 
 function isPointWithinTimeCanvasFootprint(
   footprint: Pick<DOMRect, "bottom" | "left" | "right" | "top">,
@@ -205,6 +225,7 @@ export function SchedulePageSection({
   const weekDates = useMemo(() => getScheduleWeekDates(currentDate), [currentDate]);
   const [calendarRef, phoneSheet] = usePhoneSheet();
   const studioMinute = useStudioClock(studioTimezone);
+  const programDescriptionId = useId();
   const activePrograms = useMemo(
     () => programs.filter((program) => !program.archived_at),
     [programs],
@@ -235,6 +256,16 @@ export function SchedulePageSection({
 
   const sessionsByDate = useMemo(() => groupSessionsByDate(filteredSessions), [filteredSessions]);
   const templatesByDay = useMemo(() => groupTemplatesByDay(filteredTemplates), [filteredTemplates]);
+  const todayTemplateEntries = useMemo(
+    () =>
+      buildEntriesForDate({
+        date: todayDate,
+        sessionsByDate: NO_SESSIONS,
+        templatesByDay,
+        showTemplatePlaceholders: true,
+      }).filter((entry) => entry.kind === "template"),
+    [templatesByDay, todayDate],
+  );
   const todaySessions = useMemo(() => sessionsByDate.get(today) ?? [], [sessionsByDate, today]);
   const todayCheckIns = todaySessions.reduce(
     (total, session) =>
@@ -281,19 +312,25 @@ export function SchedulePageSection({
     });
     return grouped;
   }, [canvasSessionsByDate, currentDate, templatesByDay, view, weekDates]);
+  const canvasRange = useMemo(
+    () => getScheduleCanvasRange(Object.values(entriesByDate).flat()),
+    [entriesByDate],
+  );
+  // Match the actual CSS scale when reserving cards and their centred targets.
+  const hourHeight =
+    view === "day" && phoneSheet ? PHONE_DAY_HOUR_HEIGHT : SCHEDULE_CANVAS_PIXELS_PER_HOUR;
   const layoutsByDate = useMemo(
     () =>
       Object.fromEntries(
         Object.entries(entriesByDate).map(([key, entries]) => [
           key,
-          layoutScheduleTimeItems(entries),
+          layoutScheduleTimeItems(entries, {
+            getOccupiedInterval: (block) =>
+              getCanvasOccupiedInterval(block, canvasRange.startMinute, hourHeight),
+          }),
         ]),
       ),
-    [entriesByDate],
-  );
-  const canvasRange = useMemo(
-    () => getScheduleCanvasRange(Object.values(entriesByDate).flat()),
-    [entriesByDate],
+    [canvasRange.startMinute, entriesByDate, hourHeight],
   );
   const canvasHourMarks = useMemo(
     () =>
@@ -304,9 +341,18 @@ export function SchedulePageSection({
     [canvasRange.endMinute, canvasRange.startMinute],
   );
   const canvasHours = (canvasRange.endMinute - canvasRange.startMinute) / 60;
-  // The hour height CSS draws, so each block knows how many whole lines it holds.
-  const hourHeight =
-    view === "day" && phoneSheet ? PHONE_DAY_HOUR_HEIGHT : SCHEDULE_CANVAS_PIXELS_PER_HOUR;
+  const canvasOverhang = Math.max(
+    0,
+    ...Object.values(layoutsByDate)
+      .flat()
+      .map(
+        (block) =>
+          ((getCanvasOccupiedInterval(block, canvasRange.startMinute, hourHeight).endMinute -
+            canvasRange.endMinute) *
+            hourHeight) /
+          60,
+      ),
+  );
   const peakWeekLaneCount = useMemo(
     () =>
       weekDates.reduce((peak, date) => {
@@ -325,8 +371,18 @@ export function SchedulePageSection({
   const showCalendar = hasLoadedRange || !scheduleLoadError;
   const calendarLoadingClass = hasLoadedRange ? "" : "koaryu-skeleton-reveal";
   const selectedProgram = programFilter ? programById.get(programFilter) : null;
-  const showProgramFilter = activePrograms.length > 1 || Boolean(programFilter);
+  const selectedProgramName = programFilter
+    ? (selectedProgram?.name ?? "Selected program unavailable")
+    : "All programs";
+  const selectedProgramUnavailable =
+    Boolean(programFilter) && !activePrograms.some((program) => program.id === programFilter);
   const dayEntries = entriesByDate[formatScheduleDateKey(currentDate)] || [];
+  const dayLaneCount = (layoutsByDate[formatScheduleDateKey(currentDate)] || []).reduce(
+    (peak, block) => Math.max(peak, block.laneCount),
+    1,
+  );
+  const dayCanvasMinWidth =
+    (phoneSheet ? 44 : WEEK_TIME_COLUMN_WIDTH) + dayLaneCount * SESSION_LANE_MIN_WIDTH;
 
   const headerDescription = todayKnown
     ? todaySessions.length === 0
@@ -356,7 +412,7 @@ export function SchedulePageSection({
     return (
       <div
         className={`relative ${styles.canvasDay}`}
-        style={{ height: hours(canvasHours) }}
+        style={{ height: `calc(${hours(canvasHours)} + ${canvasOverhang}px)` }}
         data-time-canvas-day={key}
         data-today={compact && isToday ? "true" : undefined}
       >
@@ -628,7 +684,22 @@ export function SchedulePageSection({
           <CalendarCheck aria-hidden="true" />
           Take attendance
         </h2>
-        {!hasLoadedRange ? (
+        {!hasLoadedRange && todayTemplateEntries.length > 0 ? (
+          <ol className={styles.todayList} aria-hidden="true">
+            {todayTemplateEntries.map(({ template }) => (
+              <li key={template.id}>
+                <div className={`${styles.todayChip} ${styles.todayChipLoading}`}>
+                  <span className={styles.todayChipTime}>{formatTime(template.start_time)}</span>
+                  <strong className={styles.todayChipName}>{template.name}</strong>
+                  {/* Hidden text sizes the unknown attendance fact without displaying a count. */}
+                  <span className={styles.todayChipFill}>
+                    {template.capacity ? `0/${template.capacity}` : "0 in"}
+                  </span>
+                </div>
+              </li>
+            ))}
+          </ol>
+        ) : !hasLoadedRange ? (
           <div className={styles.todayList} aria-hidden="true">
             {[0, 1, 2].map((index) => (
               <span key={index} className={styles.todayChipPending} />
@@ -829,42 +900,50 @@ export function SchedulePageSection({
               {getToolbarLabel()}
             </h2>
             <div className={styles.toolbarEnd}>
-              {showProgramFilter ? (
-                <div
-                  className={styles.programFilter}
-                  style={
-                    selectedProgram
-                      ? ({ "--program-color": getProgramColor(selectedProgram) } as CSSProperties)
-                      : undefined
-                  }
-                  data-selected={programFilter ? "true" : undefined}
+              <div
+                className={styles.programFilter}
+                style={
+                  selectedProgram
+                    ? ({ "--program-color": getProgramColor(selectedProgram) } as CSSProperties)
+                    : undefined
+                }
+                data-selected={programFilter ? "true" : undefined}
+              >
+                <select
+                  value={programFilter}
+                  onChange={(event) => onProgramFilterChange(event.target.value)}
+                  aria-label="Filter schedule by program"
+                  aria-describedby={programDescriptionId}
+                  title={selectedProgramName}
+                  data-schedule-program-filter={programFilter ? "selected" : "all"}
+                  className={styles.programSelect}
                 >
-                  <select
-                    value={programFilter}
-                    onChange={(event) => onProgramFilterChange(event.target.value)}
-                    aria-label="Filter schedule by program"
-                    data-schedule-program-filter={programFilter ? "selected" : "all"}
-                    className={styles.programSelect}
-                  >
-                    <option value="">All programs</option>
-                    {activePrograms.map((program) => (
-                      <option key={program.id} value={program.id}>
-                        {program.name}
-                      </option>
-                    ))}
-                  </select>
-                  {programFilter ? (
-                    <button
-                      type="button"
-                      className={styles.clearFilter}
-                      aria-label="Show every program"
-                      onClick={() => onProgramFilterChange("")}
-                    >
-                      <X aria-hidden="true" />
-                    </button>
+                  <option value="">All programs</option>
+                  {selectedProgramUnavailable ? (
+                    <option value={programFilter} disabled>
+                      {selectedProgramName}
+                    </option>
                   ) : null}
-                </div>
-              ) : null}
+                  {activePrograms.map((program) => (
+                    <option key={program.id} value={program.id}>
+                      {program.name}
+                    </option>
+                  ))}
+                </select>
+                <span id={programDescriptionId} className="sr-only">
+                  {selectedProgramName}
+                </span>
+                {programFilter ? (
+                  <button
+                    type="button"
+                    className={styles.clearFilter}
+                    aria-label="Show every program"
+                    onClick={() => onProgramFilterChange("")}
+                  >
+                    <X aria-hidden="true" />
+                  </button>
+                ) : null}
+              </div>
               <SlidingSegmentedControl
                 activeValue={view}
                 ariaLabel="Schedule view"
@@ -917,9 +996,9 @@ export function SchedulePageSection({
               </span>
             )
           ) : isRefreshingRange ? (
-            <p role="status" className={styles.rangeStatus}>
+            <span role="status" aria-live="polite" className="sr-only">
               Refreshing calendar. Showing the last loaded schedule.
-            </p>
+            </span>
           ) : null}
 
           {showCalendar && view === "month" && (
@@ -1122,6 +1201,7 @@ export function SchedulePageSection({
             <div
               className={`${styles.dayFrame} ${calendarLoadingClass}`}
               aria-busy={!hasLoadedRange}
+              style={{ overflowX: "auto" }}
             >
               {hasLoadedRange && dayEntries.length === 0 ? (
                 <div className={styles.dayEmpty}>
@@ -1148,6 +1228,7 @@ export function SchedulePageSection({
                 <div
                   className={`grid ${styles.canvas} ${styles.dayCanvas}`}
                   data-schedule-time-canvas="day"
+                  style={{ minWidth: dayCanvasMinWidth }}
                 >
                   {renderHourColumn()}
                   {renderTimeColumn(currentDate, false)}

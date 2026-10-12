@@ -125,6 +125,75 @@ describe("schedule page model", () => {
     );
   });
 
+  it("reserves optional drawn footprints while retaining default time layout and actual overlap flags", () => {
+    const items = [
+      { id: "a", start_time: "00:00", end_time: "00:15" },
+      { id: "b", start_time: "00:15", end_time: "00:30" },
+      { id: "c", start_time: "00:30", end_time: "01:00" },
+      { id: "d", start_time: "01:00", end_time: "01:30" },
+      { id: "long-a", start_time: "09:00", end_time: "10:00" },
+      { id: "long-b", start_time: "10:00", end_time: "11:00" },
+    ];
+    const defaults = layoutScheduleTimeItems(items);
+    assert.ok(
+      defaults.every((block) => block.lane === 0 && block.laneCount === 1 && !block.overlaps),
+    );
+    const options = {
+      getOccupiedInterval: (block) => {
+        const visibleMinutes = Math.max(45, block.endMinute - block.startMinute);
+        const occupiedMinutes = Math.max(55, visibleMinutes);
+        const startMinute = Math.max(0, block.startMinute - (occupiedMinutes - visibleMinutes) / 2);
+        return { startMinute, endMinute: startMinute + occupiedMinutes };
+      },
+    };
+    const drawn = layoutScheduleTimeItems(items, options);
+    assert.deepEqual(
+      drawn.map((block) => block.lane),
+      [0, 1, 2, 0, 0, 0],
+    );
+    assert.deepEqual(
+      drawn.map((block) => block.laneCount),
+      [3, 3, 3, 3, 1, 1],
+    );
+    assert.ok(drawn.every((block) => !block.overlaps));
+    assert.deepEqual(
+      drawn.map(({ item, startMinute, endMinute }) => ({ item, startMinute, endMinute })),
+      defaults.map(({ item, startMinute, endMinute }) => ({ item, startMinute, endMinute })),
+    );
+    assert.deepEqual(layoutScheduleTimeItems([...items].reverse(), options), drawn);
+  });
+
+  it("keeps actual overlaps separate from a drawn group and sorts equal times by ID", () => {
+    const items = [
+      { id: "b", start_time: "23:00", end_time: "23:15" },
+      { id: "a", start_time: "23:00", end_time: "23:15" },
+      { id: "c", start_time: "23:15", end_time: "23:30" },
+    ];
+    const blocks = layoutScheduleTimeItems(items, {
+      getOccupiedInterval: (block) => ({
+        startMinute: block.startMinute - 5,
+        endMinute: block.startMinute + 50,
+      }),
+    });
+    assert.deepEqual(
+      blocks.map((block) => block.item.id),
+      ["a", "b", "c"],
+    );
+    assert.deepEqual(
+      blocks.map((block) => block.lane),
+      [0, 1, 2],
+    );
+    assert.deepEqual(
+      blocks.map((block) => block.laneCount),
+      [3, 3, 3],
+    );
+    assert.deepEqual(
+      blocks.map((block) => block.overlaps),
+      [true, true, false],
+    );
+    assert.equal(blocks[2].endMinute, 23 * 60 + 30);
+  });
+
   it("keeps attendance status filtering while deriving known ages and preserving explicit minor status without a birth date", () => {
     const birthday = student("active", "active", {
       date_of_birth: "2008-05-20",

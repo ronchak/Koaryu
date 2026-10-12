@@ -4,6 +4,7 @@ import {
   useCallback,
   useEffect,
   useEffectEvent,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -141,7 +142,6 @@ export function requestHomePayload(
       const remaining = (owner.get(flightKey) ?? []).filter((flight) => flight.promise !== promise);
       if (remaining.length > 0) owner.set(flightKey, remaining);
       else owner.delete(flightKey);
-      notifyHomeFlights();
     },
   );
   const flight = { promise, order: nextHomeReadOrder(), fresh, factsGeneration };
@@ -161,10 +161,10 @@ function latestRefusal(loader: HomeLoader, scope: string): number {
 }
 
 /**
- * Admits a read's success or access refusal before it may touch retained or
- * shown data. Nothing started before a later settled read counts, and no
- * success started before the latest refusal counts: only a read that began
- * after the refusal can show data again. Joined handlers get the same answer.
+ * Successes apply in read start order. A refusal cuts off every read already
+ * begun when it settles, even a newer read that has already succeeded. Only
+ * a read begun after that cutoff can recover. Duplicate or invalidated
+ * refusals cannot advance the cutoff again and hide a later recovery.
  */
 function admitOutcome(loader: HomeLoader, scope: string, order: number, refusal: boolean) {
   let byScope = outcomesByLoader.get(loader);
@@ -173,13 +173,15 @@ function admitOutcome(loader: HomeLoader, scope: string, order: number, refusal:
     outcomesByLoader.set(loader, byScope);
   }
   const outcomes = byScope.get(scope) ?? { settled: 0, refused: 0 };
-  if (order < outcomes.settled || (!refusal && order <= outcomes.refused)) return false;
+  const refused = Math.max(outcomes.refused, latestHomeAccessRefusal(loader, scope));
+  if (order <= refused || (!refusal && order < outcomes.settled)) return null;
+  const cutoff = refusal ? nextHomeReadOrder() : refused;
   byScope.set(scope, {
     settled: Math.max(outcomes.settled, order),
-    refused: refusal ? Math.max(outcomes.refused, order) : outcomes.refused,
+    refused: cutoff,
   });
-  if (refusal && order > outcomes.refused) notifyHomeFlights();
-  return true;
+  if (refusal) notifyHomeFlights();
+  return cutoff;
 }
 
 /** Whether `next` may replace `current`: another identity's entry, or a read started earlier. */
@@ -247,7 +249,7 @@ export function useHome(): HomeState {
     pending: Promise<DashboardHome> | null;
   }>({ latest: 0, applied: 0, lastStartedAt: -Infinity, pending: null });
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     scopeRef.current = scope;
     retainedKeyRef.current = retainedKey;
   }, [scope, retainedKey]);
@@ -284,8 +286,8 @@ export function useHome(): HomeState {
       attempts.pending = promise;
       const key = retainedKey;
       const store = retainedStore;
-      // Results apply in read start order, mounted or not: an older read never
-      // replaces a newer outcome. Writes go to the key the read was started for.
+      // Successful reads apply in start order, mounted or not. Writes go to
+      // the key the read was started for; refusals invalidate through their cutoff.
       const retainUnderKey = (snapshot: HomeSnapshot) => {
         if (mountedRef.current && key === retainedKeyRef.current) {
           setRetained((current) => (supersedes(snapshot, current) ? snapshot : current));
@@ -293,54 +295,61 @@ export function useHome(): HomeState {
           store.set(key, snapshot);
         }
       };
-      const forgetUnderKey = () => {
-        const refusal = { scope, order };
+      const forgetRefusedSnapshot = (current: HomeSnapshot | null | undefined, cutoff: number) =>
+        current?.scope === scope && current.order <= cutoff;
+      const forgetUnderKey = (cutoff: number) => {
         if (mountedRef.current && key === retainedKeyRef.current) {
-          setRetained((current) => (supersedes(refusal, current) ? null : current));
-        } else if (store && supersedes(refusal, store.get<HomeSnapshot | null>(key))) {
+          setRetained((current) => (forgetRefusedSnapshot(current, cutoff) ? null : current));
+        } else if (store && forgetRefusedSnapshot(store.get<HomeSnapshot | null>(key), cutoff)) {
           store.delete(key);
         }
       };
       const failureMessage = (error: unknown) =>
         error instanceof Error && error.message ? error.message : "Home could not be loaded.";
-      promise.then(
-        (payload) => {
-          if (attempts.pending === promise) attempts.pending = null;
-          const mounted = mountedRef.current;
-          if (mounted && (scopeRef.current !== scope || order <= attempts.applied)) return;
-          if (!admitOutcome(loadDashboardHome, scope, order, false)) return;
-          // A read that lands after navigation still serves the next visit.
-          const snapshot = { payload, receivedAt: Date.now(), scope, order };
-          retainUnderKey(snapshot);
-          if (!mounted) return;
-          attempts.applied = order;
-          setHeld(snapshot);
-          setFailure(null);
-        },
-        (error: unknown) => {
-          if (attempts.pending === promise) attempts.pending = null;
-          const mounted = mountedRef.current;
-          if (!isHomeAccessError(error)) {
-            // A newer read is still in flight; it decides what an ordinary failure means.
-            if (!mounted || scopeRef.current !== scope) return;
-            if (order <= attempts.applied || order !== attempts.latest) return;
+      // Publish completion only after admitting its outcome. Otherwise a
+      // pending-count update can paint retained data before a refusal hides it.
+      promise
+        .then(
+          (payload) => {
+            if (attempts.pending === promise) attempts.pending = null;
+            const mounted = mountedRef.current;
+            if (mounted && (scopeRef.current !== scope || order <= attempts.applied)) return;
+            if (admitOutcome(loadDashboardHome, scope, order, false) === null) return;
+            // A read that lands after navigation still serves the next visit.
+            const snapshot = { payload, receivedAt: Date.now(), scope, order };
+            retainUnderKey(snapshot);
+            if (!mounted) return;
             attempts.applied = order;
+            setHeld(snapshot);
+            setFailure(null);
+          },
+          (error: unknown) => {
+            if (attempts.pending === promise) attempts.pending = null;
+            const mounted = mountedRef.current;
+            if (!isHomeAccessError(error)) {
+              // A newer read is still in flight; it decides what an ordinary failure means.
+              if (!mounted || scopeRef.current !== scope) return;
+              if (order <= attempts.applied || order !== attempts.latest) return;
+              attempts.applied = order;
+              setFailure({ scope, message: failureMessage(error) });
+              return;
+            }
+            // The stable retained setter targets the mount's current cell. An
+            // obsolete identity must never purge its replacement's retained data.
+            if (mounted && scopeRef.current !== scope) return;
+            const cutoff = admitOutcome(loadDashboardHome, scope, order, true);
+            if (cutoff === null) return;
+            forgetUnderKey(cutoff);
+            if (!mounted) return;
+            attempts.applied = Math.max(attempts.applied, order);
+            if (key !== retainedKeyRef.current) {
+              setRetained((current) => (forgetRefusedSnapshot(current, cutoff) ? null : current));
+            }
+            setHeld(null);
             setFailure({ scope, message: failureMessage(error) });
-            return;
-          }
-          // Retained data never outlives a refusal: the viewer may have lost access.
-          // An ordinary failure since then proves nothing, so only settled reads win.
-          if (!admitOutcome(loadDashboardHome, scope, order, true)) return;
-          forgetUnderKey();
-          if (!mounted || scopeRef.current !== scope) return;
-          attempts.applied = Math.max(attempts.applied, order);
-          if (key !== retainedKeyRef.current) {
-            setRetained((current) => (supersedes({ scope, order }, current) ? null : current));
-          }
-          setHeld(null);
-          setFailure({ scope, message: failureMessage(error) });
-        },
-      );
+          },
+        )
+        .finally(notifyHomeFlights);
     },
     [flightKey, loadDashboardHome, retainedKey, retainedStore, scope, setRetained],
   );
