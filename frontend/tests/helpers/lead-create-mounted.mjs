@@ -1,6 +1,7 @@
 import { createCommonJsPacker } from "./store-browser-harness.mjs";
 
 export function bundleLeadCreateFixture(preview = false, { realControls = false } = {}) {
+  if (typeof preview !== "boolean") throw new Error("Unsupported fixture environment");
   const stubs = {
     "next/navigation": `const router={replace(p){window.f.redirects.push(p)},push(p){window.f.redirects.push(p)}};exports.useRouter=()=>router;exports.usePathname=()=>'/leads';exports.useParams=()=>({});exports.useSearchParams=()=>new URLSearchParams();`,
     "@/lib/supabase/client": `exports.createClient=()=>window.f.supabase;`,
@@ -22,7 +23,7 @@ export function bundleLeadCreateFixture(preview = false, { realControls = false 
   const dom = add("react-dom/client");
   const store = add("@/lib/store");
   const page = add("@/app/(dashboard)/leads/page");
-  return `(()=>{const process={env:{NODE_ENV:'production',NEXT_PUBLIC_PREVIEW_MODE:${JSON.stringify(String(preview))}}};const modules=[${modules.join(",")}],cache={};function require(id){if(cache[id])return cache[id].exports;const m=cache[id]={exports:{}};modules[id](m,m.exports,require);return m.exports;}
+  return `(()=>{const process={env:{NODE_ENV:'production',NEXT_PUBLIC_PREVIEW_MODE:${preview ? '"true"' : '"false"'}}};const modules=[${modules.join(",")}],cache={};function require(id){if(cache[id])return cache[id].exports;const m=cache[id]={exports:{}};modules[id](m,m.exports,require);return m.exports;}
 const React=require(${react});const {StoreProvider,useStore}=require(${store});const LeadsPage=require(${page}).default;
 function Observer(){window.f.store=useStore();return null;}
 function PageMount(){const [shown,setShown]=React.useState(true);window.f.showPage=setShown;return shown?React.createElement(LeadsPage):null;}

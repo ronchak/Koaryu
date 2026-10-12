@@ -646,9 +646,12 @@ export function SchedulePageSection({
                     type="button"
                     className={styles.todayChip}
                     data-schedule-today-session={session.id}
+                    disabled={canceled}
                     data-canceled={canceled ? "true" : undefined}
-                    aria-label={getAttendanceLabel(session)}
-                    onClick={() => onOpenSession(session)}
+                    aria-label={
+                      canceled ? getSessionButtonLabel(session) : getAttendanceLabel(session)
+                    }
+                    onClick={canceled ? undefined : () => onOpenSession(session)}
                     style={{ "--program-color": getProgramColor(program) } as CSSProperties}
                   >
                     <time className={styles.todayChipTime}>{formatTime(session.start_time)}</time>

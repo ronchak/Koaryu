@@ -38,7 +38,6 @@ const { Header } = header;
 const { HorizonWorkList, HorizonWorkRow, HorizonPanelLink, ToneChip } = kit;
 const render = (component, props, ...children) =>
   renderToStaticMarkup(React.createElement(component, props, ...children));
-const textContent = (html) => html.replace(/<[^>]*>/g, "");
 const forbidden = /--product-cobalt|[\u2192\u2197\u203a]/u;
 
 test("Header defaults to band hills and supports hero hills", () => {
@@ -122,7 +121,7 @@ test("HorizonWorkRow with href has exactly one link containing title, meta, and 
   assert.match(link[1], /href="\/dashboard\/leads\?focus=due_today"/);
   assert.doesNotMatch(link[2], /<a\b|<button\b/);
   for (const text of ["4:00 PM", "Two follow-ups", "Oldest 2 days overdue", "Open follow-ups"]) {
-    assert.ok(textContent(link[2]).includes(text), `${text} must be inside the row link`);
+    assert.ok(link[2].includes(`>${text}<`), `${text} must be inside the row link`);
   }
 });
 
@@ -131,7 +130,7 @@ test("HorizonWorkRow without href uses a plain div and no interactive action", (
   assert.match(html, /^<li\b[^>]*><div\b[^>]*class="workRow"/);
   assert.match(html, /<\/div><\/li>$/);
   assert.doesNotMatch(html, /<a\b|<button\b|role="(?:link|button)"/);
-  assert.ok(textContent(html).includes("The mat is quiet"));
+  assert.match(html, /<span[^>]*class="workAction"[^>]*>The mat is quiet<\/span>/);
 });
 
 test("HorizonWorkRow marks only an emphasized action", () => {
@@ -208,7 +207,10 @@ test("HorizonPanelLink renders text and a real aria-hidden ArrowRight svg withou
   assert.equal([...html.matchAll(/<a\b/g)].length, 1);
   assert.match(html, /href="\/dashboard\/leads"/);
   assert.match(html, /<span>All follow-ups<\/span>/);
-  assert.equal(textContent(html), "All follow-ups");
+  assert.deepEqual(
+    [...html.matchAll(/>([^<]+)</g)].map((match) => match[1]),
+    ["All follow-ups"],
+  );
   assert.equal([...html.matchAll(/<svg\b/g)].length, 1);
   const svg = html.match(/<svg\b([^>]*)>/)[1];
   assert.match(svg, /class="[^"]*lucide-arrow-right\b/);

@@ -234,6 +234,35 @@ test("desktop attendance bar has one accessible chip per today's session and no 
   }
 });
 
+test("canceled attendance shortcut is disabled while active classes and canceled calendar details remain accessible", async () => {
+  const canceled = {
+    ...session("Canceled class", "2026-10-11", "18:00", "18:45"),
+    status: "canceled",
+  };
+  const { page, errors } = await mount({ sessions: [canceled, session("Active class")] });
+  try {
+    const bar = page.locator("[data-schedule-today-bar]");
+    const shortcut = bar.locator('[data-schedule-today-session="Canceled class"]');
+    await expect(shortcut).toBeDisabled();
+    await expect(shortcut).toContainText("Canceled");
+    await expect(shortcut).not.toHaveAttribute("aria-label", /Take attendance/);
+    await shortcut.evaluate((button) => button.click());
+    assert.deepEqual(await page.evaluate(() => fixture.opened), []);
+    await bar
+      .getByRole("button", { name: "Take attendance for Active class at 4:00 PM", exact: true })
+      .click();
+    assert.deepEqual(await page.evaluate(() => fixture.opened), ["Active class"]);
+    await page
+      .locator('[data-time-canvas-block="session"]')
+      .filter({ has: page.locator('[data-canceled="true"]') })
+      .click();
+    assert.deepEqual(await page.evaluate(() => fixture.opened), ["Active class", "Canceled class"]);
+    assert.deepEqual(errors, []);
+  } finally {
+    await page.close();
+  }
+});
+
 test("canvas hour labels use outward rounding, six hours minimum, and 9-to-9 when empty", async () => {
   const { page, errors } = await mount({
     sessions: [
