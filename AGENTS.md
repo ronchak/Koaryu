@@ -71,7 +71,8 @@ historical handoffs do not authorize a new release.
 - Production migration/deployment authority belongs to the explicitly authorized
   named coordinator, never subagents. Billing activation and customer sending need
   their own authorization.
-- Keep the guarded merge, exact candidate checks and production auto-deploy off.
+- Keep the guarded merge and exact candidate checks enabled.
+- Keep production auto-deploy off.
 - Before a production migration, require a fresh backup with a verified disposable
   restore, inspection/dry-run evidence and the tool's exact confirmation. Announce
   each release action and verify it; pause 30 seconds before each production apply.
