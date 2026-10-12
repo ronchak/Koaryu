@@ -306,7 +306,7 @@ export default function LeadsPage() {
             </Button>
           </div>
         ) : requiresStaff && !staffLoaded ? (
-          <p role="status" className={styles.notice}>
+          <p role="status" className="sr-only">
             Loading staff assignments...
           </p>
         ) : null}

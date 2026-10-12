@@ -235,7 +235,7 @@ function CatalogView({ owner }: { owner: Owner }) {
           </button>
         </div>
         {state.reads.list.loading ? (
-          <p role="status" className={styles.panelStatus}>
+          <p role="status" className={state.list ? styles.srOnly : styles.panelStatus}>
             Loading workflows...
           </p>
         ) : null}
