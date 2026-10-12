@@ -204,6 +204,12 @@ export function leadBand(lead: DemoLead): LeadBand {
   return "upcoming";
 }
 
+export function leadsInBand(leads: readonly DemoLead[], band: LeadBand): DemoLead[] {
+  const matches = leads.filter((lead) => leadBand(lead) === band);
+  // Enrolled leads no longer have a due follow-up; keep their existing order.
+  return band === "done" ? matches : matches.sort((a, b) => a.dueIn - b.dueIn);
+}
+
 export function leadTotals(leads: readonly DemoLead[]) {
   const open = leads.filter((lead) => lead.stage !== "enrolled");
   return {
