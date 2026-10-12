@@ -1,133 +1,85 @@
-# Koaryu Agent Guide
+# Koaryu agent guide
 
-This repo is a small monorepo with distinct workflows by area:
+Koaryu is a monorepo: `frontend/` is Next.js on port 4000, `backend/` is
+FastAPI on port 8001, and `supabase/` holds migrations and SQL checks. Read
+the nearest package `AGENTS.md` for implementation details.
 
-- `frontend/`: Next.js App Router app on port `4000`
-- `backend/`: FastAPI app on port `8001`
-- `supabase/`: SQL migrations and verification scripts
-- `docs/`: deployment and operations runbooks
-- `scripts/`: shared local helpers
+## Working rules
 
-Start here for repo-wide rules, then prefer the nearest package-level `AGENTS.md` for task-specific instructions.
+- Make the smallest change that solves the request. Preserve existing patterns.
+- Leave unrelated changes and generated/build output alone.
+- Keep credentials, customer data, dumps and private operator evidence outside Git.
+- Update documentation when behavior or a recurring command changes.
+- Add migrations rather than rewriting applied history, unless migration repair is
+  explicitly requested.
 
-## Instruction Precedence
+## Verification and review
 
-- Follow the closest `AGENTS.md` to the files you are editing.
-- When instructions differ, use the more specific file over the repo root file.
-- Treat this root file as shared policy, not the place for package-level implementation detail.
+Test the behavior that changed. Use [the verification matrix](docs/pr-verification-matrix.md)
+to choose checks; it applies across packages.
 
-## Working Style
+- Copy, documentation and ordinary UI edits need focused checks, not database tests.
+- For application logic, run nearby tests and check the affected user flow. Add a
+  build or broader suite only for shared behavior, routing, auth or runtime changes.
+- For database behavior, check setup first, then affected SQL and relevant
+  permissions, tenant boundaries, payment/retry rules and races. Use a disposable
+  local database. Historical upgrade/restore sweeps are for changes that affect
+  those paths, not routine application edits.
+- Run an expensive suite once. Use its CI result instead of also running it locally
+  unless there is a specific environment difference or failure to investigate.
+  Reuse successful results when their relevant code, dependencies and setup match;
+  after a fix, rerun the affected checks.
+- Use one focused independent review for material security, financial, data-loss,
+  migration or verification-rule changes. Routine edits need a proportionate diff
+  review. Add review rounds or agents only for an unresolved risk or an owner request.
+- Report what changed, checks and results, and any material gap in a few lines.
+  Stop after sufficient evidence and resolved material findings. Optional cleanup
+  and style suggestions can be follow-ups.
 
-- Make the smallest safe change that solves the problem.
-- Preserve existing architecture and naming patterns unless the task explicitly asks for a refactor.
-- Do not edit generated or build-output folders such as `frontend/.next/`, `backend/.pytest_cache/`, or `supabase/.temp/`.
-- Keep secrets out of code, tests, logs, and docs. Never commit real credential values from `.env` files.
-- Avoid destructive data or git operations unless the user explicitly asks for them.
+The actual required GitHub checks still control merging. Do not bypass them or
+label unrun checks as passed. See [current CI enforcement](docs/release-candidate-controls.md#current-ci-and-the-transition)
+for the remaining full-suite requirement. While waiting, use a bounded watcher
+instead of repeated reasoning or review; report a new result, failure or blocker.
+If the client requires updates, keep them brief.
 
-## Repo Commands
+## Local commands
 
-- Start both apps: `npm run dev:up`
-- Stop both apps: `npm run dev:down`
-- Basic local health check: `npm run dev:health`
-- Check example environment files: `npm run check:env-examples`
-- Verify a fully assembled staging environment is isolated: `npm run verify:staging-isolation`
-- Audit support triage privacy docs/scripts: `npm run audit:support-privacy`
-- Regenerate frontend API contract types: `npm run generate:api-types`
-- Check generated frontend API contract types: `npm run check:api-types`
-- Check backend formatting: `cd backend && venv/bin/python -m ruff format --check .`
-- Check frontend formatting: `cd frontend && npm run format:check`
-- Check candidate-wide workflow coverage: `npm run check:release-workflow`
-- Check generated release statements, restore scripts and readiness metadata: `npm run check:release-attestation`
-- Regenerate remediation ledger counts after changing a finding's disposition or track: `npm run generate:remediation-ledger`
-- Check that ledger, `REMEDIATION.md` and `docs/remediation/HANDOFF.md` counts match the findings: `npm run check:remediation-ledger`
-- Summarize an approved private performance-log export: `npm run summarize:performance < /absolute/private/export.ndjson`
-- Check deterministic performance regression gate: `npm run check:performance-regression -- --expected-sha <full-sha>`
-- Generate or verify the guarded studio-comp database rollout packet: `node scripts/studio-comp-migration-rollout.mjs --mode packet --candidate-sha <full-sha>`
-- Verify a pinned deployed Render/Vercel pair reports one exact SHA: `npm run verify:deployed-release -- --environment <staging|production> --expected-sha <full-sha> --frontend-origin <pinned-origin> --backend-api <pinned-api-v1>`
-- Capture privacy-safe dashboard timing evidence only after exact-SHA verification: `npm run capture:dashboard-performance -- <same release args> --storage-state <absolute-private-path>`
-- Check frozen V57 source bodies before database setup: `python3 scripts/check-v57-retained-source.py`
-- Verify all migrations and contract SQL on ephemeral PostgreSQL 17: `npm run check:supabase-contracts-local`
-- Inspect the next V38-to-V57 migration: `node scripts/studio-comp-migration-rollout.mjs --target <staging|production> --mode inspect --one-migration --candidate-sha <full-sha>`
-- Stripe Connect smoke check: `npm run dev:stripe-connect-smoke`
+- Start/stop/health: `npm run dev:up`, `npm run dev:down`, `npm run dev:health`.
+- Frontend: `cd frontend && npm run lint -- <paths>` and focused tests.
+- Backend: `cd backend && venv/bin/python -m pytest <tests>`.
+- Changed API contracts: `npm run check:api-types`; regenerate when needed.
+- Changed release controls: `npm run check:release-workflow`.
+- Changed release declarations: `npm run check:release-attestation`.
+- Full database suite when needed: `npm run check:supabase-contracts-local`.
 
-## Monorepo Rules
+## Hosted work and production safety
 
-- Put cross-cutting guidance here; put stack-specific guidance in package `AGENTS.md` files.
-- When a package has its own `AGENTS.md`, follow the closest file for commands, constraints, and verification.
-- If a task spans multiple areas, verify each touched area with the smallest relevant checks instead of always running the full repo.
+Read [services](docs/services.md) before hosted work, and
+[cutover gates](docs/cutover-gates.md) before merging a release, migrating or deploying.
+For Koaryu release, backup, restore or credential work, also read the private
+`RELEASE-RUNBOOK.md` and `AUTHENTICATION.md` under
+`/Users/openclaw/.config/koaryu/operator/`. Database work also uses that directory's
+`DATABASE-VERIFICATION-POLICY.md`. Explicitly source `release-env.sh` with tracing
+disabled before release CLI work. Re-derive live state and the exact candidate;
+historical handoffs do not authorize a new release.
 
-## Area Map
+- Local disposable databases are the test target. Staging checks are for an
+  explicitly intended inspection or Supabase-specific behavior.
+- Never run contract SQL on production, even inside a rollback transaction.
+  Production database writes are limited to the owner-authorized guarded rollout
+  and its temporary pre-migration backup role.
+- Production migration/deployment authority belongs to the explicitly authorized
+  named coordinator, never subagents. Billing activation and customer sending need
+  their own authorization.
+- Keep the guarded merge, exact candidate checks and production auto-deploy off.
+- Before a production migration, require a fresh backup with a verified disposable
+  restore, inspection/dry-run evidence and the tool's exact confirmation. Announce
+  each release action and verify it; pause 30 seconds before each production apply.
+- Build the frontend for production using production settings. Never promote a
+  preview build. Verify the final frontend/backend pair serves the intended SHA.
+- Do not change hosted configuration, secrets or linked-project state unless asked.
+  Declare services in their provider manifests and `docs/services.md`.
 
-- `frontend/src/app/`: routes, layouts, route handlers, middleware-adjacent app behavior
-- `frontend/src/components/`: reusable UI and dashboard/public-page components
-- `frontend/src/lib/`: client/server helpers, stores, constants, data shaping
-- `frontend/tests/`: Node-based frontend tests
-- `backend/app/api/v1/endpoints/`: HTTP surface
-- `backend/app/services/`: business logic and orchestration
-- `backend/app/schemas/`: request/response and internal data contracts
-- `supabase/migrations/`: schema, RLS, RPC, trigger, and index history
-- `supabase/verification/`: SQL smoke checks and contract checks
-- `docs/`: runbooks and release/operations documentation
-
-## Verification Strategy
-
-- For frontend-only changes, prefer `cd frontend && npm run lint -- <paths>` and other narrow checks before full builds.
-- For backend-only changes, prefer `cd backend && venv/bin/python -m pytest <tests>`.
-- For developing and reviewing contract SQL, default to `npm run check:supabase-contracts-local`. It applies the complete migration chain and every file under `supabase/verification/` to an ephemeral PostgreSQL 17 cluster without Docker, network access, a cloud project, or `.env` files.
-- The release-candidate database job verifies the assembled Supabase stack and stops its disposable database before running this local PostgreSQL 17 suite, including logical restore and concurrency proofs. Both sets of checks remain required; a platform failure stops the job before the slower suite.
-- For database changes, apply files not yet in local history with `supabase migration up --local`. If a changed migration may already be applied locally, first confirm the database is disposable and use `supabase db reset --local`; then run `supabase db lint --local --fail-on error` and force local helpers with `SUPABASE_DB_TARGET=local`. Use linked checks only for an explicitly intended release inspection after the linked project has the migrations.
-- For release-shaped or cross-cutting changes, combine the relevant frontend, backend, and Supabase checks.
-- Every release-candidate PR must also receive the exact-head `Release candidate gate`; use `scripts/merge-release-pr.sh` with recorded head and base SHAs after the strict `main` ruleset is active.
-- For backend schema or response-contract changes, run `npm run check:api-types` and regenerate with `npm run generate:api-types` if needed.
-
-Database verification targets are:
-
-| Target | Use |
-| --- | --- |
-| local ephemeral cluster | Default for developing and reviewing contract SQL. |
-| `koaryu-staging` (`nxgsektqsgrtyfhawxbc`) | Cloud verification only when Supabase-specific behavior matters. Active as of 2026-08-15; the backend follows the `staging` branch, not `main`. |
-| production (`mimguepumzsgmcaycdsh`) | Read-only inspection only, except the two guarded operations below. Never run contract or migration SQL against it. |
-
-Contract files can create functions and triggers on real tables inside a transaction. A later `ROLLBACK` does not make production an acceptable target: never point contract or migration execution at production.
-
-Exactly two operations may write to production, both owner-authorized and both outside the contract/migration-SQL prohibition above:
-
-1. **The guarded rollout tool's production apply** (`scripts/studio-comp-migration-rollout.mjs --target production --mode apply`), which a named coordinating agent or operator may execute under explicit owner authorization.
-2. **The pre-migration backup role** — a temporary `CREATE ROLE` / `ALTER ROLE` / `DROP ROLE` used to take a verified `pg_dump` before an irreversible migration, because the project has no managed restore path.
-
-Nothing else. Both are described in `docs/cutover-gates.md`. A named coordinating agent may also deploy the backend and promote a production-target frontend build when the owner explicitly authorizes that release. Subagents do not receive production authority.
-
-Before each release action, announce the exact command, its effect and reversibility, and the immediate verification. Pause for 30 seconds before each production migration apply; staging and non-migration actions have no mandatory pause under the revised owner protocol. Use a separate announcement and standalone command for each action. A user interruption stops execution. Record the owner, executor, exact release, actions, timestamps and evidence. Follow the full [announce-and-pause protocol](docs/cutover-gates.md#owner-authorized-release-execution); authorization never waives technical release gates.
-
-## Safety Boundaries
-
-- Do not rewrite old Supabase migrations unless the task explicitly calls for migration repair. Add a new migration instead.
-- Do not change deployment secrets, Vercel config, Render config, or linked Supabase project state unless the task explicitly asks for it.
-- Declare every hosted service in its provider manifest (`render.yaml`, `frontend/vercel.json`) and in `docs/services.md`. A service configured only in a provider dashboard drifts silently and stops serving without anything in the repository noticing.
-- Do not expose raw support-ticket data in broad summaries. Follow the privacy rules in `docs/support-triage.md`.
-- Assume the worktree may already contain unrelated user changes. Do not revert or “clean up” edits you did not make.
-
-## Done Checklist
-
-- Update the smallest relevant `AGENTS.md` guidance when a recurring workflow or command changes.
-- Verify the touched area with targeted checks first, then broader checks only when the change surface warrants it.
-- If docs and code would drift, update the doc in the same change.
-
-## Important References
-
-- **Hosted services inventory: `docs/services.md`** — every Vercel, Render, Supabase
-  and Stripe environment, which copy is production, and where each secret lives.
-  Read it before reasoning about any deployed environment, and update it in the
-  same change whenever a hosted service is added, renamed, or removed. A hosted
-  service that is not listed there does not exist.
-- Repo overview and local setup: `README.md`
-- Frontend app guidance: `frontend/AGENTS.md`
-- Backend app guidance: `backend/AGENTS.md`
-- Database guidance: `supabase/AGENTS.md`
-- **Release cutover gates and traps: `docs/cutover-gates.md`** — read before merging a
-  release candidate, migrating a hosted database, or promoting a frontend. Covers what
-  blocks a cutover and what silently breaks one.
-- Render deployment runbook: `docs/render-backend-deployment.md`
-- Owner-run operator tools: `docs/operator-tooling.md`
-- Support triage/privacy runbook: `docs/support-triage.md`
-- PR verification matrix: `docs/pr-verification-matrix.md`
+Support privacy rules are in [support triage](docs/support-triage.md). Stack setup
+is in each package guide and `README.md`; operator mechanics are in
+[operator tooling](docs/operator-tooling.md).

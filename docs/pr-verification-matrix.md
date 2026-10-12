@@ -1,47 +1,41 @@
-# PR Verification Matrix
+# Verification by change
 
-Use this matrix to pick the smallest meaningful checks for a PR. Prefer targeted checks first, then broaden only when the changed surface crosses package boundaries or touches runtime, auth, billing, support, or database contracts.
+Choose checks by what can break. Use existing tools; do not build a new proof or
+reporting framework for routine work. This policy applies to local verification
+and review. [Required CI](release-candidate-controls.md#current-ci-and-the-transition)
+remains enforced by the actual workflow.
 
-## Core Rules
-
-- Record every command you ran in the PR body.
-- If a command cannot run locally, record the blocker and avoid substituting a weaker check as proof.
-- Run `git diff --check` before publishing any PR.
-- Run `npm run check:release-workflow` for workflow, merge-control, or release-process changes.
-- Run `npm run check:performance-regression -- --expected-sha <full-sha>` for the deterministic Home (`GET /dashboard/home`) performance gate. Set `KOARYU_PERFORMANCE_PYTHON` only when the worktree does not contain `backend/venv`.
-- Every release-candidate PR must receive the unfiltered, exact-head `Release candidate gate`; targeted local checks do not replace it.
-- Run API-contract checks whenever backend response schemas, endpoints, or generated frontend types might change.
-- Use `supabase migration up --local` for migrations not yet applied locally. If a changed migration may already be recorded in local history, first confirm the database is disposable and run `supabase db reset --local` so checks exercise the current file contents rather than a stale applied definition.
-- Do not run linked Supabase commands unless the PR explicitly intends a release inspection and the linked project already has the migrations under review.
-- Linked contract SQL is restricted to the exact Koaryu staging connection by the shared runner. See `docs/operator-tooling.md` for accepted session connection forms; production is never a contract-test target.
-
-## Matrix
-
-| Changed Area | Minimum Check | Add When Relevant |
+| Change | Check | Broaden only when |
 | --- | --- | --- |
-| Root scripts or repo commands | `git diff --check` and the script's syntax check when available | Exercise the script against a disposable/local target |
-| Performance manifest, fixture, runner, or release workflow | `npm run check:performance-regression -- --expected-sha <full-sha>` plus `node --test scripts/check-release-candidate-workflow.test.mjs scripts/check-performance-regression.test.mjs` | `npm run check:release-workflow`; hosted capture requires prior and post exact-SHA deployed-release verification |
-| `frontend/src/app/**` route/page | `cd frontend && npm run lint -- <paths>` | `cd frontend && npm run build` for routing, auth, middleware, proxy, or env-sensitive changes |
-| `frontend/src/components/**` UI | `cd frontend && npm run lint -- <paths>` | `cd frontend && npm run test` when changing state models or shared behavior |
-| `frontend/src/lib/**` helper/store | `cd frontend && npm run lint -- <paths>` plus `cd frontend && npm run test` or a focused Node test | Add/update `frontend/tests/*.test.mjs` for non-trivial data shaping |
-| `frontend/src/app/api/**` proxy/route handler | `cd frontend && npm run lint -- <paths>` | `cd frontend && npm run build`; review server-only secret handling |
-| Dashboard, billing, settings, import, or auth flows | Focused frontend tests plus lint on every touched frontend file | `cd frontend && npm run build` for auth, routing, proxy, runtime, or environment-sensitive changes; add a browser smoke or Playwright flow for user-visible navigation/workflow changes |
-| `backend/app/api/v1/endpoints/**` | `cd backend && venv/bin/python -m pytest <nearby endpoint tests>` | `npm run check:api-types` when response/request contracts may change |
-| `backend/app/services/**` | `cd backend && venv/bin/python -m pytest <nearby service tests>` | Broader backend suite for shared service dependencies |
-| `backend/app/schemas/**` | Focused schema tests | `npm run check:api-types`; regenerate with `npm run generate:api-types` when needed |
-| Backend auth, security, dependencies, or middleware | `PYTHONPATH=backend backend/venv/bin/python -m pytest backend/tests/test_security.py backend/tests/test_auth_deps.py backend/tests/test_config.py` | Run the full backend suite for shared auth/runtime changes; run API-contract checks when the HTTP surface changes |
-| Deployment/runtime/config (`render.yaml`, `backend/Dockerfile`, `backend/scripts/start-render.sh`, runtime files, env examples, `backend/app/core/config.py`) | `npm run check:env-examples` plus `PYTHONPATH=backend backend/venv/bin/python -m pytest backend/tests/test_config.py backend/tests/test_health_endpoints.py`; build the backend image when Docker runtime or allocator behavior changes | Run the frontend build when frontend environment/runtime behavior can change; perform a production-config startup smoke only with non-secret test values |
-| Stripe billing or webhooks | Relevant `backend/tests/test_billing_*.py` and `backend/tests/test_webhook_service.py` | Run `npm run dev:stripe-connect-smoke -- --confirm-stateful-target --account acct_...` only against the exact confirmed disposable local binding; invoke the Python script with `--target staging` only for the exact separately approved staging binding |
-| Support/account-deletion behavior | `npm run audit:support-privacy`, `supabase migration up --local`, `supabase db lint --local --fail-on error`, `SUPABASE_DB_TARGET=local scripts/verify-supabase-account-support.sh`, and `PYTHONPATH=backend backend/venv/bin/python -m pytest backend/tests/test_account_service.py backend/tests/test_staff_service_account_deletion.py backend/tests/test_support_service.py backend/tests/test_internal_endpoints.py` | If a changed migration may already be applied locally, reset only a confirmed disposable local database before rerunning the lint and smoke checks |
-| Supabase migrations/RLS/RPCs | Apply unapplied files with `supabase migration up --local`, or reset a confirmed disposable database with `supabase db reset --local` when changed files may already be in local history; then run `supabase db lint --local --fail-on error` plus the relevant local verification SQL and `SUPABASE_DB_TARGET=local scripts/verify-supabase-rls.sh` for table-policy or tenant-isolation changes | Run broad `SUPABASE_DB_TARGET=local scripts/verify-supabase-contracts.sh` after migrations; intentional linked contracts require a private `SUPABASE_DB_URL`, explicit release-inspection intent, and applied linked migrations |
-| Dependency manifests or lockfiles | Reinstall from the lock/requirements files and run the affected package tests | Frontend: `cd frontend && npm audit --omit=dev && npm run build`; backend: `backend/venv/bin/python -m pip check` and the broader pytest suite for shared dependency changes |
-| Docs-only | `git diff --check`, validate referenced paths, and use non-mutating `--help`/syntax checks for documented commands | Do not run linked/live commands solely to validate documentation without explicit authorization |
-| Generated API contracts | `npm run check:api-types` | `npm run generate:api-types` and commit generated changes when drift is intentional |
+| Copy or documentation | `git diff --check`, referenced paths and command accuracy | A documented operational rule changes; review that rule |
+| UI layout or styling | Lint touched files and inspect the affected screen | Shared state, navigation or accessibility behavior changes |
+| Frontend logic | Focused tests and lint | Shared behavior, routing, auth, proxy or environment changes need a build or browser flow |
+| Backend logic | Nearby pytest files | Shared services, auth, middleware or runtime affect other callers |
+| API schemas | Focused tests and `npm run check:api-types` | Dependent callers change; regenerate types if needed |
+| Payments, permissions, tenant boundaries or deletion | Affected success, refusal/recovery and retry tests; relevant races | Shared database rules or callers change |
+| SQL contracts or a verifier fixture | Reproduce the issue, check the intended assertion and run the affected group | Shared setup or dependencies invalidate other groups |
+| New migration or database behavior | Disposable apply/lint, supported predecessor upgrade, affected contracts/races, current readiness and restore continuation | Changed shared history, restore machinery or runtime requires historical paths |
+| Dependencies or runtime/config | Install/check the affected runtime and run its affected tests | Shared dependencies also affect database composition or other packages |
+| Release/workflow/merge controls | `npm run check:release-workflow` and focused checks for the changed control | Executable enforcement changes need exact-head CI and a focused independent review |
+| Home performance fixture, budget or runner | `npm run check:performance-regression -- --expected-sha <full-sha>` | Workflow changes also use `npm run check:release-workflow`; hosted capture requires exact-SHA verification |
+| Release declarations | `npm run check:release-attestation` and relevant readiness tests | Migration or restore behavior also changes |
 
-## PR Body Checklist
+For local database setup and target restrictions, follow [the database guide](../supabase/AGENTS.md).
+Never use production for contract testing. Hosted smoke checks and stateful Stripe
+tests need explicit task scope and the approved target.
 
-- Intent: what risk or capability this PR targets.
-- Purpose: why this change belongs now.
-- Goal: what future agents or maintainers can rely on after merge.
-- Validation: exact commands and their outcomes.
-- Gaps: commands not run, blocked checks, linked/live state intentionally avoided.
+Run an expensive check once per necessary environment. Use the CI result instead
+of duplicating it locally. Reuse an earlier result only when its relevant source,
+dependencies, fixtures and database/runtime setup are unchanged; a corrected
+verifier cannot reuse its own incorrect result. After a fix, rerun the affected
+group and its dependents. If impact cannot be determined, broaden the affected
+area once. Report failed or incomplete checks honestly.
+
+Use one focused independent review for material security, financial, data-loss,
+migration or verification-acceptance changes. Routine work needs a proportionate
+diff review. Further reviews need a concrete unresolved risk or an owner request.
+
+In the PR, briefly state what changed, validation and material gaps. Link an
+existing run instead of copying a full command diary. Freeze the candidate once
+ready; after required checks pass and material findings are resolved, use the
+guarded merge and stop. Deployment is a separate task.

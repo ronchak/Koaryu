@@ -82,9 +82,10 @@ If `npm run build` fails with missing Supabase URL or anon key errors, check the
 ## Verification
 
 - For targeted UI changes, run lint on the touched files first.
-- For utility changes with existing test coverage patterns, run `cd frontend && npm run test`.
+- For utility changes, run the nearby tests. Run the full frontend suite only when shared behavior affects other callers; use its CI result instead of duplicating it locally.
 - Run `cd frontend && npm run build` before signing off on changes that affect routing, middleware, auth bootstrapping, or environment-dependent pages.
 - When changing login, dashboard, settings, billing, or proxy behavior, also review the expectations documented in `frontend/README.md`.
+- Follow the root verification matrix for test selection, evidence reuse and review. Routine UI work does not need database suites or extra review rounds.
 
 ## Done Checklist
 
