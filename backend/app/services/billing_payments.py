@@ -542,7 +542,9 @@ class BillingPaymentManager:
         context: BillingProviderOperationContext,
     ) -> None:
         payment_id = str(payment.get("id") or "")
-        refund_status = str(refund.get("status") or "pending")
+        refund_status = refund.get("status")
+        if refund_status not in ("pending", "requires_action", "succeeded", "failed", "canceled"):
+            raise RuntimeError("payment_refund_audit_status_invalid")
         audit_action = (
             "billing.payment_refunded"
             if refund_status == "succeeded"
@@ -627,16 +629,22 @@ class BillingPaymentManager:
             raise RuntimeError("payment_refund_legacy_audit_ambiguous")
         if legacy.data:
             legacy_row = legacy.data[0]
-            if (
-                str(legacy_row.get("id") or "") == audit_id
-                or legacy_row.get("studio_id") != context.studio_id
-                or legacy_row.get("actor_id") != context.actor_id
-                or legacy_row.get("action") != audit_action
-                or legacy_row.get("entity_type") != "billing"
-                or str(legacy_row.get("entity_id") or "") != payment_id
-                or legacy_row.get("metadata") != expected_metadata
-            ):
+            if str(legacy_row.get("id") or "") == audit_id:
                 raise RuntimeError("payment_refund_legacy_audit_identity_mismatch")
+            try:
+                self._validate_refund_audit_row(
+                    legacy_row,
+                    audit_id=str(legacy_row.get("id") or ""),
+                    studio_id=context.studio_id,
+                    actor_id=context.actor_id,
+                    action=audit_action,
+                    payment_id=payment_id,
+                    metadata=expected_metadata,
+                )
+            except RuntimeError as invariant_exc:
+                raise RuntimeError(
+                    "payment_refund_legacy_audit_identity_mismatch"
+                ) from invariant_exc
             return
         try:
             self.supabase.table("audit_logs").insert(
@@ -682,6 +690,17 @@ class BillingPaymentManager:
         payment_id: str,
         metadata: dict[str, Any],
     ) -> None:
+        audit_metadata = audit.get("metadata")
+        if action == "billing.payment_refund_requested" and isinstance(audit_metadata, dict):
+            historical_status = audit_metadata.get("status")
+            current_status = metadata["status"]
+            # Request audits are immutable observations. An unresolved refund may
+            # progress, but a terminal audit cannot stand for a different outcome.
+            if current_status in ("pending", "requires_action", "failed", "canceled") and (
+                historical_status in ("pending", "requires_action")
+                or historical_status == current_status
+            ):
+                metadata = {**metadata, "status": historical_status}
         if (
             str(audit.get("id") or "") != audit_id
             or audit.get("studio_id") != studio_id
@@ -689,7 +708,7 @@ class BillingPaymentManager:
             or audit.get("action") != action
             or audit.get("entity_type") != "billing"
             or str(audit.get("entity_id") or "") != payment_id
-            or audit.get("metadata") != metadata
+            or audit_metadata != metadata
         ):
             raise RuntimeError("payment_refund_audit_identity_mismatch")
 
