@@ -470,6 +470,7 @@ def workflow_capabilities_for_role(
     scope_ready: dict[LiveBillingScope, bool],
     allowed_operations: dict[LiveBillingScope, frozenset[str]],
     transition_scheduler_ready: bool,
+    workflow_ready: dict[str, bool] | None = None,
 ) -> list[dict[str, object]]:
     if role not in {"admin", "front_desk"}:
         return []
@@ -484,10 +485,11 @@ def workflow_capabilities_for_role(
             denial_reason = workflow.denial_reason_code
         elif workflow.live_grant_scope is not None:
             scope = workflow.live_grant_scope
+            ready = (workflow_ready or {}).get(workflow.workflow_id, bool(scope_ready.get(scope)))
             if stripe_mode == "test":
-                enabled = bool(scope_ready.get(scope))
+                enabled = ready
             else:
-                enabled = bool(scope_ready.get(scope)) and set(workflow.stripe_operations).issubset(
+                enabled = ready and set(workflow.stripe_operations).issubset(
                     allowed_operations.get(scope, frozenset())
                 )
             if not enabled:

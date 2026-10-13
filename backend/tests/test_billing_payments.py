@@ -205,6 +205,222 @@ class BillingPaymentManagerTests(unittest.TestCase):
         audit = dict(facade.supabase.tables["audit_logs"][0])
         return facade, manager, payment, refund, data, operation, context, audit
 
+    def _project_refund_status(self, manager, refund, status):
+        return manager.projector.project_refund(
+            {
+                "id": refund["stripe_refund_id"],
+                "charge": refund["stripe_charge_id"],
+                "amount": refund["amount_cents"],
+                "reason": refund["reason"],
+                "metadata": refund["metadata"],
+                "status": status,
+            },
+            refund["stripe_account_id"],
+            event_created=100,
+        )
+
+    def test_completed_refund_replay_preserves_historical_request_audit_after_webhook(self):
+        transitions = (
+            ("pending", "requires_action"),
+            ("pending", "failed"),
+            ("pending", "canceled"),
+            ("requires_action", "pending"),
+            ("requires_action", "failed"),
+            ("requires_action", "canceled"),
+            ("failed", "failed"),
+            ("canceled", "canceled"),
+        )
+        for initial_status, current_status in transitions:
+            for audit_path in ("deterministic", "legacy", "conflict", "missing"):
+                with self.subTest(
+                    initial_status=initial_status, current_status=current_status, path=audit_path
+                ):
+                    facade, manager, _, refund, data, operation, _, audit = (
+                        self._completed_refund_audit_fixture(refund_status=initial_status)
+                    )
+                    projected = self._project_refund_status(manager, refund, current_status)
+                    self.assertEqual(projected["status"], current_status)
+                    if audit_path == "legacy":
+                        audit = {
+                            **audit,
+                            "id": "00000000-0000-4000-8000-000000007001",
+                            "metadata->>operation_id": operation["id"],
+                        }
+                    facade.supabase.tables["audit_logs"] = (
+                        [] if audit_path in ("conflict", "missing") else [audit]
+                    )
+                    if audit_path == "conflict":
+
+                        def lose_insert(table_name, _payloads, rows):
+                            if table_name == "audit_logs":
+                                facade.supabase.before_insert = None
+                                rows.append(dict(audit))
+                                raise conflict_error()
+
+                        facade.supabase.before_insert = lose_insert
+                    facade.supabase.query_log = []
+                    replay = asyncio.run(
+                        manager.refund_payment(
+                            "payment_1", data, "studio_1", "actor_1", "refund-key"
+                        )
+                    )
+                    self.assertEqual(replay.status, current_status)
+                    self.assertEqual(replay.stripe_refund_id, refund["stripe_refund_id"])
+                    saved_audits = facade.supabase.tables["audit_logs"]
+                    self.assertEqual(len(saved_audits), 1)
+                    if audit_path == "missing":
+                        self.assertEqual(
+                            saved_audits[0]["metadata"],
+                            {**audit["metadata"], "status": current_status},
+                        )
+                    else:
+                        self.assertEqual(saved_audits, [audit])
+                    queries = [q for q in facade.supabase.query_log if q["table"] == "audit_logs"]
+                    reads = [q for q in queries if q["columns"] == "*"]
+                    self.assertEqual(
+                        len(reads),
+                        {"deterministic": 1, "legacy": 2, "conflict": 3, "missing": 2}[audit_path],
+                    )
+                    self.assertTrue(all(q["limit"] in (1, 2) for q in reads))
+                    self.assertFalse(any(q["update"] is not None for q in queries))
+                    self.assertEqual(len(_FakeStripeService.refunds), 1)
+                    self.assertEqual(_FakeStripeService.retrieved_refunds, [])
+
+    def test_completed_refund_success_replay_uses_separate_strict_audit(self):
+        for initial_status in ("pending", "requires_action"):
+            with self.subTest(initial_status=initial_status):
+                facade, manager, _, refund, data, _, _, historical = (
+                    self._completed_refund_audit_fixture(refund_status=initial_status)
+                )
+                self._project_refund_status(manager, refund, "succeeded")
+                for _ in range(2):
+                    replay = asyncio.run(
+                        manager.refund_payment(
+                            "payment_1", data, "studio_1", "actor_1", "refund-key"
+                        )
+                    )
+                    self.assertEqual(replay.status, "succeeded")
+                audits = facade.supabase.tables["audit_logs"]
+                self.assertEqual(len(audits), 2)
+                self.assertEqual(audits[0], historical)
+                self.assertNotEqual(audits[1]["id"], historical["id"])
+                self.assertEqual(audits[1]["action"], "billing.payment_refunded")
+                self.assertEqual(audits[1]["metadata"]["status"], "succeeded")
+                audits[1]["metadata"]["status"] = "pending"
+                with self.assertRaises(HTTPException) as error:
+                    asyncio.run(
+                        manager.refund_payment(
+                            "payment_1", data, "studio_1", "actor_1", "refund-key"
+                        )
+                    )
+                self.assertEqual(error.exception.status_code, 503)
+                self.assertEqual(len(_FakeStripeService.refunds), 1)
+                self.assertEqual(_FakeStripeService.retrieved_refunds, [])
+
+    def test_historical_refund_audit_rejects_identity_and_status_changes_on_every_path(self):
+        for audit_path in ("deterministic", "legacy", "conflict"):
+            for field, value in (
+                ("actor_id", "actor_other"),
+                ("entity_type", "payment"),
+                ("amount_cents", 501),
+                ("stripe_refund_id", "re_other"),
+                ("operation_id", "operation_other"),
+                ("extra_metadata", True),
+                ("missing_metadata", "amount_cents"),
+                ("missing_metadata", "status"),
+                ("status", "unknown"),
+                ("status", None),
+                ("status", []),
+                ("status", "succeeded"),
+                ("status", "canceled"),
+            ):
+                # Legacy lookup excludes rows belonging to another operation.
+                if audit_path == "legacy" and field == "operation_id":
+                    continue
+                with self.subTest(path=audit_path, field=field, value=value):
+                    facade, manager, _, refund, data, operation, _, audit = (
+                        self._completed_refund_audit_fixture(refund_status="pending")
+                    )
+                    self._project_refund_status(manager, refund, "failed")
+                    if field in ("actor_id", "entity_type"):
+                        audit = {**audit, field: value}
+                    elif field == "missing_metadata":
+                        audit = {
+                            **audit,
+                            "metadata": {k: v for k, v in audit["metadata"].items() if k != value},
+                        }
+                    else:
+                        audit = {**audit, "metadata": {**audit["metadata"], field: value}}
+                    if audit_path == "legacy":
+                        audit = {
+                            **audit,
+                            "id": "00000000-0000-4000-8000-000000007001",
+                            "metadata->>operation_id": operation["id"],
+                        }
+                    facade.supabase.tables["audit_logs"] = (
+                        [] if audit_path == "conflict" else [audit]
+                    )
+                    if audit_path == "conflict":
+
+                        def lose_insert(table_name, _payloads, rows):
+                            if table_name == "audit_logs":
+                                facade.supabase.before_insert = None
+                                rows.append(dict(audit))
+                                raise conflict_error()
+
+                        facade.supabase.before_insert = lose_insert
+                    with self.assertRaises(HTTPException) as error:
+                        asyncio.run(
+                            manager.refund_payment(
+                                "payment_1", data, "studio_1", "actor_1", "refund-key"
+                            )
+                        )
+                    self.assertEqual(error.exception.status_code, 503)
+                    self.assertEqual(facade.supabase.tables["audit_logs"], [audit])
+                    self.assertEqual(len(_FakeStripeService.refunds), 1)
+                    self.assertEqual(_FakeStripeService.retrieved_refunds, [])
+
+    def test_completed_refund_replay_refuses_changed_terminal_request_audit(self):
+        for initial_status, current_status in (("failed", "canceled"), ("canceled", "failed")):
+            with self.subTest(initial_status=initial_status, current_status=current_status):
+                facade, manager, _, refund, data, _, _, audit = (
+                    self._completed_refund_audit_fixture(refund_status=initial_status)
+                )
+                projected = self._project_refund_status(manager, refund, current_status)
+                self.assertEqual(projected["status"], current_status)
+                with self.assertRaises(HTTPException) as error:
+                    asyncio.run(
+                        manager.refund_payment(
+                            "payment_1", data, "studio_1", "actor_1", "refund-key"
+                        )
+                    )
+                self.assertEqual(error.exception.status_code, 503)
+                self.assertEqual(facade.supabase.tables["audit_logs"], [audit])
+                self.assertEqual(len(_FakeStripeService.refunds), 1)
+                self.assertEqual(_FakeStripeService.retrieved_refunds, [])
+
+    def test_completed_refund_replay_refuses_invalid_current_status_even_without_audit(self):
+        for invalid_status in ("unknown", "invalid", "", None, []):
+            for missing_audit in (False, True):
+                with self.subTest(status=invalid_status, missing_audit=missing_audit):
+                    facade, manager, _, refund, data, _, _, audit = (
+                        self._completed_refund_audit_fixture(refund_status="pending")
+                    )
+                    refund["status"] = invalid_status
+                    facade.supabase.tables["audit_logs"] = [] if missing_audit else [audit]
+                    with self.assertRaises(HTTPException) as error:
+                        asyncio.run(
+                            manager.refund_payment(
+                                "payment_1", data, "studio_1", "actor_1", "refund-key"
+                            )
+                        )
+                    self.assertEqual(error.exception.status_code, 503)
+                    self.assertEqual(
+                        facade.supabase.tables["audit_logs"], [] if missing_audit else [audit]
+                    )
+                    self.assertEqual(len(_FakeStripeService.refunds), 1)
+                    self.assertEqual(_FakeStripeService.retrieved_refunds, [])
+
     def test_completed_refund_replay_repairs_exactly_one_audit_without_provider_call(self):
         for refund_status, expected_action in (
             ("succeeded", "billing.payment_refunded"),

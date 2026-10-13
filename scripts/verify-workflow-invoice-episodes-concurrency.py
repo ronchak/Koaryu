@@ -72,7 +72,7 @@ def main(arguments):
     historical = {
         p.name: hashlib.sha256(p.read_bytes()).hexdigest()
         for p in sorted(MIGRATION.parent.glob("*.sql"))
-        if p != MIGRATION
+        if p.name < MIGRATION.name
     }
     require(len(historical) == 151, "Expected151 historical migrations")
     require(
@@ -934,7 +934,7 @@ SELECT * FROM public.recompute_billing_invoice_external_payment_totals({quote(x[
             == {
                 p.name: hashlib.sha256(p.read_bytes()).hexdigest()
                 for p in sorted(MIGRATION.parent.glob("*.sql"))
-                if p != MIGRATION
+                if p.name < MIGRATION.name
             },
             "Historical files changed",
         )

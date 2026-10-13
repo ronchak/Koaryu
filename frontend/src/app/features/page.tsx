@@ -46,7 +46,7 @@ export default function FeaturesPage() {
             price: publicPlatformPriceAmount(),
             priceCurrency: PUBLIC_PLATFORM_PRICE.currency,
             category: "Subscription",
-            description: `${formatPublicPlatformPrice()} USD per month per studio for the Koaryu platform. Tuition collection requires separate studio activation and is not generally available.`,
+            description: `${formatPublicPlatformPrice()} USD per month per studio for the Koaryu platform. Eligible studios can collect tuition after completing Stripe onboarding and meeting payment-account requirements.`,
           },
         }}
       />

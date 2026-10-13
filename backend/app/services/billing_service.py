@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 from supabase import Client
 
@@ -404,10 +404,17 @@ class BillingService:
             enrollment_id, studio_id, actor_id, idempotency_key, reason_code
         )
 
-    async def process_due_enrollment_transitions(self, *, worker_id: str, limit: int = 25) -> dict:
+    async def process_due_enrollment_transitions(
+        self,
+        *,
+        worker_id: str,
+        limit: int = 25,
+        stop_requested: Callable[[], bool] | None = None,
+    ) -> dict:
         return await self._enrollment_manager().process_due_transitions(
             worker_id=worker_id,
             limit=limit,
+            stop_requested=stop_requested,
         )
 
     async def set_enrollment_status(

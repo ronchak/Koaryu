@@ -42,6 +42,7 @@ export const EXPECTED_SUPABASE_CONTRACTS = Object.freeze([
   "function_execution_security.sql",
   "lead_commands_atomic_contract.sql",
   "lead_conversion_atomic_contract.sql",
+  "live_billing_ga_contract.sql",
   "missed_class_automation_contract.sql",
   "operational_alert_activation.sql",
   "operational_alert_delivery_state.sql",

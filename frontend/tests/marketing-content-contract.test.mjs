@@ -153,7 +153,12 @@ describe("marketing content contract", () => {
     assert.match(serialized, /Student CSV import maps names, contacts, programs and current belts/);
     assert.match(serialized, /does not deduplicate existing students/);
     assert.match(serialized, /class-count, time-at-rank and instructor-approval requirements/);
-    assert.match(serialized, /requires separate activation and is not generally available/);
+    assert.match(
+      serialized,
+      /Eligible studios can collect tuition through optional Koaryu Payments/,
+    );
+    assert.match(serialized, /after completing Stripe onboarding/);
+    assert.match(serialized, /meeting payment-account requirements/);
     assert.match(serialized, /0\.5% per successful charge, plus Stripe fees/);
     assert.match(serialized, /cannot access billing/);
     assert.match(serialized, /no multi-location dashboard/);
@@ -163,7 +168,8 @@ describe("marketing content contract", () => {
     assert.doesNotMatch(serialized, /already sorted|Koaryu’s now|web-first|Very convenient/);
 
     // Limits live in the FAQ; the selling chapters say what Koaryu does.
-    const limitsCopy = /not generally available|requires separate activation/;
+    const limitsCopy =
+      /Eligible studios can collect tuition|Stripe onboarding|payment-account requirements/;
     for (const section of [
       ...landingPageContent.story,
       landingPageContent.pricing,
@@ -172,7 +178,7 @@ describe("marketing content contract", () => {
     ]) {
       assert.doesNotMatch(JSON.stringify(section), limitsCopy, section.id);
     }
-    assert.equal(serialized.match(/not generally available/g)?.length, 1);
+    assert.doesNotMatch(serialized, /not (?:yet )?generally available/);
   });
 
   it("derives every authoritative public price representation from one fact", () => {

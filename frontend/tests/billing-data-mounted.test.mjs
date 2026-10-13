@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { chromium } from "@playwright/test";
+import { APP_DATA_REFRESH_EVENT } from "../src/lib/app-resume.ts";
 import { createCommonJsPacker } from "./helpers/store-browser-harness.mjs";
 
 // Mount real billing hooks and page controls in local Chromium; replace I/O and decoration.
@@ -307,6 +308,8 @@ async function mountExternalPaymentFixture(
     extraReads = undefined,
     retained = false,
     heldRead = null,
+    auxiliaryStores = {},
+    holdStudents = false,
   } = {},
 ) {
   const page = await browser.newPage();
@@ -315,12 +318,15 @@ async function mountExternalPaymentFixture(
   );
   await page.goto("http://localhost:4173/");
   await page.evaluate(
-    ({ role, preview, workflow, storageFault, heldRead }) => {
+    ({ role, preview, workflow, storageFault, heldRead, auxiliaryStores, holdStudents }) => {
       const f = (window.fixture = {
         requests: [],
         posts: [],
         commits: [],
         heldRead,
+        holdStudents,
+        studentWaiters: [],
+        auxiliaryReads: [],
         receipts: {},
         waiters: [],
         workflow,
@@ -338,14 +344,31 @@ async function mountExternalPaymentFixture(
           programs: [],
           programsLoaded: true,
           programsLoadError: null,
-          refreshPrograms: async () => {},
+          ...auxiliaryStores.programs,
+          refreshPrograms: async () => {
+            f.auxiliaryReads.push("programs");
+            if (f.pageOptions.programsStore.programsLoadError)
+              throw new Error(f.pageOptions.programsStore.programsLoadError);
+          },
         },
         studentsStore: {
           students: [],
           studentsLoaded: true,
           studentsLoadError: null,
           studentsMayBePartial: false,
-          refreshStudents: async () => {},
+          ...auxiliaryStores.students,
+          refreshStudents: async () => {
+            f.auxiliaryReads.push("students");
+            if (f.holdStudents) await new Promise((resolve) => f.studentWaiters.push(resolve));
+            if (f.pageOptions.studentsStore.studentsLoadError)
+              throw new Error(f.pageOptions.studentsStore.studentsLoadError);
+            f.pageOptions.studentsStore = {
+              ...f.pageOptions.studentsStore,
+              studentsLoaded: true,
+              studentsMayBePartial: false,
+            };
+            f.render();
+          },
         },
         studioStore: {
           currentRole: role,
@@ -479,7 +502,7 @@ async function mountExternalPaymentFixture(
         },
       };
     },
-    { role, preview, workflow, storageFault, heldRead },
+    { role, preview, workflow, storageFault, heldRead, auxiliaryStores, holdStudents },
   );
   if (search !== undefined || extraReads !== undefined)
     await page.evaluate(
@@ -2653,6 +2676,202 @@ test("Billing renders one cold placeholder then keeps every view visible through
         fixture.waiters.splice(0).forEach((resolve) => resolve());
       });
       await page.waitForFunction(() => !fixture.page.isLoading);
+    }
+  } finally {
+    await browser.close();
+  }
+});
+
+// These rows are returned by the billing API even when auxiliary stores have never loaded.
+function billingTabReads(path) {
+  if (path === "/billing/plans")
+    return [
+      {
+        id: "plan-1",
+        name: "Monthly tuition",
+        status: "active",
+        amount_cents: 5000,
+        currency: "usd",
+        billing_interval: "month",
+        interval_count: 1,
+        programs: [{ program_id: "program-1", program_name: "Karate" }],
+      },
+    ];
+  if (path === "/billing/invoices/page")
+    return {
+      items: [
+        {
+          id: "invoice-1",
+          payer_id: "payer-1",
+          invoice_type: "tuition",
+          status: "open",
+          amount_due_cents: 5000,
+          invoice_receivable_amount_cents: 5000,
+          currency: "usd",
+          due_date: "2026-10-01",
+        },
+      ],
+      next_cursor: null,
+      complete: true,
+    };
+  if (path === "/billing/enrollments/page") return { items: [], next_cursor: null, complete: true };
+}
+
+test("Plans and Invoices render cold rows and refresh without unused auxiliary reads", async () => {
+  const browser = await chromium.launch({ headless: true });
+  try {
+    for (const tab of ["plans", "invoices"]) {
+      for (const failed of [false, true]) {
+        const page = await mountExternalPaymentFixture(browser, {
+          search: `tab=${tab}`,
+          heldRead: "/billing/landing",
+          extraReads: billingTabReads,
+          auxiliaryStores: {
+            programs: {
+              programsLoaded: false,
+              programsLoadError: failed ? "Programs failed" : null,
+            },
+            students: {
+              studentsLoaded: false,
+              studentsMayBePartial: true,
+              studentsLoadError: failed ? "Roster failed" : null,
+            },
+          },
+        });
+        const expectedReads = [
+          "/billing/landing",
+          ...(tab === "plans" ? ["/billing/plans"] : ["/billing/payers", "/billing/invoices/page"]),
+        ].sort();
+        for (const phase of ["cold", "manual", "resume"]) {
+          const before = phase === "cold" ? 0 : await page.evaluate(() => fixture.requests.length);
+          if (phase === "manual")
+            await page.getByRole("button", { name: "Refresh", exact: true }).click();
+          if (phase === "resume")
+            await page.evaluate(
+              (event) => window.dispatchEvent(new Event(event)),
+              APP_DATA_REFRESH_EVENT,
+            );
+          await page.waitForFunction(() => fixture.waiters.length === 1);
+          await page.evaluate(() => {
+            fixture.heldRead = null;
+            fixture.waiters.splice(0).forEach((resolve) => resolve());
+          });
+          await page.waitForFunction(() => !fixture.page.isLoading);
+          assert.equal(
+            await page.evaluate(() => fixture.page.showBillingContent),
+            true,
+            `${tab} ${phase}`,
+          );
+          assert.equal(await page.evaluate(() => fixture.page.error), "");
+          assert.equal(await page.locator("[data-billing-placeholder]").count(), 0);
+          await page
+            .getByText(tab === "plans" ? "Monthly tuition" : "Family One", { exact: true })
+            .waitFor();
+          if (tab === "plans") await page.getByText("Karate", { exact: true }).waitFor();
+          assert.deepEqual(await page.evaluate(() => fixture.auxiliaryReads), []);
+          assert.deepEqual(
+            await page.evaluate(
+              (n) =>
+                fixture.requests
+                  .slice(n)
+                  .map((r) => r.path)
+                  .sort(),
+              before,
+            ),
+            expectedReads,
+            `${tab} ${phase} reads only required billing data`,
+          );
+          await page.evaluate(() => {
+            fixture.heldRead = "/billing/landing";
+          });
+        }
+        await page.close();
+      }
+    }
+  } finally {
+    await browser.close();
+  }
+});
+
+test("Enrollments waits for the complete roster and refreshes it on manual and resume reads", async () => {
+  const browser = await chromium.launch({ headless: true });
+  try {
+    for (const studentsLoaded of [false, true]) {
+      const page = await mountExternalPaymentFixture(browser, {
+        search: "tab=enrollments",
+        heldRead: "/billing/landing",
+        holdStudents: true,
+        extraReads: billingTabReads,
+        auxiliaryStores: {
+          programs: { programsLoaded: false, programsLoadError: "Programs failed" },
+          students: { studentsLoaded, studentsMayBePartial: true },
+        },
+      });
+      await page.waitForFunction(
+        () => fixture.waiters.length === 1 && fixture.studentWaiters.length === 1,
+      );
+      await page.evaluate(() => {
+        fixture.heldRead = null;
+        fixture.waiters.splice(0).forEach((resolve) => resolve());
+      });
+      await page.waitForFunction(() => !fixture.page.isLoading);
+      assert.equal(await page.evaluate(() => fixture.page.showBillingLoading), true);
+      assert.equal(await page.evaluate(() => fixture.page.showBillingContent), false);
+      await page.evaluate(() => {
+        fixture.holdStudents = false;
+        fixture.studentWaiters.splice(0).forEach((resolve) => resolve());
+      });
+      await page.waitForFunction(() => fixture.page.showBillingContent);
+      assert.deepEqual(await page.evaluate(() => fixture.auxiliaryReads), ["students"]);
+      assert.deepEqual(
+        await page.evaluate(() => fixture.requests.map((r) => r.path).sort()),
+        [
+          "/billing/landing",
+          "/billing/payers",
+          "/billing/plans",
+          "/billing/enrollments/page",
+        ].sort(),
+      );
+      for (const phase of ["manual", "resume"]) {
+        const before = await page.evaluate(() => {
+          fixture.heldRead = "/billing/landing";
+          fixture.auxiliaryReads = [];
+          return fixture.requests.length;
+        });
+        if (phase === "manual")
+          await page.getByRole("button", { name: "Refresh", exact: true }).click();
+        else
+          await page.evaluate(
+            (event) => window.dispatchEvent(new Event(event)),
+            APP_DATA_REFRESH_EVENT,
+          );
+        await page.waitForFunction(() => fixture.waiters.length === 1);
+        await page.evaluate(() => {
+          fixture.heldRead = null;
+          fixture.waiters.splice(0).forEach((resolve) => resolve());
+        });
+        await page.waitForFunction(() => !fixture.page.isLoading);
+        assert.equal(await page.evaluate(() => fixture.page.showBillingContent), true);
+        assert.deepEqual(await page.evaluate(() => fixture.auxiliaryReads), ["students"]);
+        assert.deepEqual(
+          await page.evaluate(
+            (n) =>
+              fixture.requests
+                .slice(n)
+                .map((r) => r.path)
+                .sort(),
+            before,
+          ),
+          [
+            "/billing/landing",
+            "/billing/payers",
+            "/billing/plans",
+            "/billing/enrollments/page",
+          ].sort(),
+          phase,
+        );
+      }
+      await page.close();
     }
   } finally {
     await browser.close();

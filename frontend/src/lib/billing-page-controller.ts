@@ -59,10 +59,7 @@ import type {
 
 type BillingPageControllerOptions = {
   config: Pick<ConfigStoreContextValue, "isPreviewMode" | "markSubscriptionRequired" | "token">;
-  programsStore: Pick<
-    ProgramsStoreContextValue,
-    "programs" | "programsLoaded" | "programsLoadError" | "refreshPrograms"
-  >;
+  programsStore: Pick<ProgramsStoreContextValue, "programs">;
   studentsStore: Pick<
     StudentsStoreContextValue,
     | "refreshStudents"
@@ -89,7 +86,7 @@ export function useBillingPageController({
   const searchParams = useSearchParams();
   const { isPreviewMode, token, markSubscriptionRequired } = config;
   const { currentRole, currentStudioId, currentUserId, identityGeneration } = studioStore;
-  const { programs, programsLoaded, programsLoadError, refreshPrograms } = programsStore;
+  const { programs } = programsStore;
   const {
     refreshStudents,
     students,
@@ -197,8 +194,6 @@ export function useBillingPageController({
   const auxiliaryReadiness = resolveBillingAuxiliaryReadiness({
     activeTab,
     bypassForConnectReturn: connectReturnPending,
-    programsLoadError,
-    programsLoaded,
     studentsLoadError,
     studentsLoaded,
     studentsMayBePartial,
@@ -385,13 +380,7 @@ export function useBillingPageController({
   const billingSetupCompleteCount = billingSetupSteps.filter((step) => step.complete).length;
 
   useEffect(() => {
-    if (activeTab === "plans" && !programsLoaded) {
-      void refreshPrograms({ includeArchived: false }).catch(() => undefined);
-    }
-  }, [activeTab, programsLoaded, refreshPrograms]);
-
-  useEffect(() => {
-    if (!["enrollments", "invoices"].includes(activeTab) || (studentsLoaded && !studentsMayBePartial) || isPreviewMode) {
+    if (activeTab !== "enrollments" || (studentsLoaded && !studentsMayBePartial) || isPreviewMode) {
       return;
     }
 
@@ -459,14 +448,11 @@ export function useBillingPageController({
 
   const refreshRequiredBillingDatasets = useCallback(async () => {
     const requests: Promise<unknown>[] = [refreshBilling()];
-    if (["plans", "enrollments", "invoices"].includes(activeTab)) {
-      requests.push(refreshPrograms({ includeArchived: false }));
-    }
-    if (["enrollments", "invoices"].includes(activeTab)) {
+    if (activeTab === "enrollments") {
       requests.push(refreshStudents());
     }
     await Promise.allSettled(requests);
-  }, [activeTab, refreshBilling, refreshPrograms, refreshStudents]);
+  }, [activeTab, refreshBilling, refreshStudents]);
   useResumeRefresh(refreshRequiredBillingDatasets);
 
   useEffect(() => markDashboardReadiness("billing", identityGeneration, {

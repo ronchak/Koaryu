@@ -467,8 +467,8 @@ function TuitionGuide() {
       <p className={styles.scopeNote}>
         Admin and Front Desk can review billing records, attach external billing enrollments, record
         external payments, and refresh eligible existing Stripe invoices. Instructors cannot access
-        billing. Tuition collection requires separate activation for your studio and is not
-        generally available. New billing exports are unavailable.
+        billing. Eligible studios can collect tuition after completing Stripe onboarding and meeting
+        payment-account requirements. New billing exports are unavailable.
       </p>
       <section className={styles.section} aria-labelledby="billing-cases-heading">
         <h2 id="billing-cases-heading">Match the case to the record</h2>
@@ -498,7 +498,8 @@ function TuitionGuide() {
             <p>
               Stop before recording an external payment, which requires a payer. Have the studio
               Admin resolve the payer setup available for the studio. Family setup and collection
-              actions depend on activation; this form cannot supply a missing payer account.
+              actions depend on studio eligibility and action-specific permissions; this form cannot
+              supply a missing payer account.
             </p>
           </section>
           <section>

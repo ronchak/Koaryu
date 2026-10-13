@@ -1,8 +1,8 @@
 """Database-authoritative live Stripe mutation authorization.
 
 Application callers provide only the intended operation and its exact studio /
-account context.  The service-role RPC derives grants, checkpoint provenance,
-event drift, mapping generation, and current readiness from one locked database
+account context.  The service-role RPC derives GA operation eligibility, current unresolved
+events, mapping generation, and account readiness from one locked database
 snapshot immediately before the provider call.
 """
 
@@ -187,10 +187,16 @@ class StudioLiveBillingAuthorizationStore:
                 "p_stripe_connected_account_id": account_id,
                 "p_candidate_sha": self.expected_candidate_sha,
             }
-            result = self.supabase.rpc(
-                "authorize_studio_live_billing_mutation_atomic",
-                rpc_params,
-            ).execute()
+            if operation == "connect_onboarding_link.create" and bootstrap_context:
+                # The initial link requires the exact durable bootstrap context.
+                # Its locked RPC authorizes the account before KYC is complete.
+                result = self.supabase.rpc(special_rpc_name, special_rpc_params).execute()
+                special_rpc_name = None
+            else:
+                result = self.supabase.rpc(
+                    "authorize_studio_live_billing_mutation_atomic",
+                    rpc_params,
+                ).execute()
         except Exception:
             self._blocked(LIVE_AUTHORIZATION_UNAVAILABLE_DETAIL)
         row = result.data[0] if result.data else None
@@ -260,19 +266,24 @@ class StudioLiveBillingAuthorizationStore:
             self._blocked(LIVE_AUTHORIZATION_UNAVAILABLE_DETAIL)
         return row
 
-    def current_allowed_operations(
+    def supported_operations(
         self,
         *,
         studio_id: str,
     ) -> dict[LiveBillingScope, frozenset[str]]:
+        """Database policy catalog hints, never a provider mutation permit."""
+        if self.expected_candidate_sha is None:
+            return {}
         try:
             rows = (
-                self.supabase.table("studio_live_billing_authorizations")
-                .select("studio_id,scope,enabled,allowed_operations")
-                .eq("studio_id", studio_id)
-                .eq("enabled", True)
+                self.supabase.rpc(
+                    "studio_live_billing_supported_operations_v58",
+                    {"p_studio_id": studio_id, "p_candidate_sha": self.expected_candidate_sha},
+                )
                 .execute()
-            ).data or []
+                .data
+                or []
+            )
         except Exception:
             return {}
         result: dict[LiveBillingScope, frozenset[str]] = {}

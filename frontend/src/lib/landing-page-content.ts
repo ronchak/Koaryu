@@ -384,7 +384,7 @@ const faqGroups: readonly FaqGroup[] = [
       },
       {
         question: "Can families pay tuition through Koaryu?",
-        answer: `Online tuition collection through Koaryu Payments requires separate activation and is not generally available. When enabled, the standard fee is ${PUBLIC_PAYMENTS_FEE_PERCENT}% per successful charge, plus Stripe fees. In the meantime, record cash, check and other outside payments against each payer.`,
+        answer: `Eligible studios can collect tuition through optional Koaryu Payments after completing Stripe onboarding and meeting payment-account requirements. The standard fee is ${PUBLIC_PAYMENTS_FEE_PERCENT}% per successful charge, plus Stripe fees. You can also record cash, check and other outside payments against each payer.`,
       },
     ],
   },

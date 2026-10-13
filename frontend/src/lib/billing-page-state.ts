@@ -47,16 +47,12 @@ export function getBillingUrlAfterConnectReturn(search: string) {
 export function resolveBillingAuxiliaryReadiness({
   activeTab,
   bypassForConnectReturn,
-  programsLoadError,
-  programsLoaded,
   studentsLoadError,
   studentsLoaded,
   studentsMayBePartial,
 }: {
   activeTab: "overview" | "plans" | "families" | "enrollments" | "invoices" | "reports";
   bypassForConnectReturn: boolean;
-  programsLoadError: string | null;
-  programsLoaded: boolean;
   studentsLoadError: string | null;
   studentsLoaded: boolean;
   studentsMayBePartial: boolean;
@@ -65,12 +61,7 @@ export function resolveBillingAuxiliaryReadiness({
     return { error: null, status: "ready" as const };
   }
   const requiredDatasets: ReturnType<typeof loadedDataset>[] = [];
-  if (activeTab === "plans") {
-    requiredDatasets.push(
-      loadedDataset({ error: programsLoadError, label: "Programs", loaded: programsLoaded }),
-    );
-  }
-  if (["enrollments", "invoices"].includes(activeTab)) {
+  if (activeTab === "enrollments") {
     requiredDatasets.push(
       loadedDataset({
         error: studentsLoadError,

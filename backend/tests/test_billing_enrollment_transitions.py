@@ -659,6 +659,203 @@ def test_identity_drift_between_claim_and_mutation_reconciles_without_provider_w
     assert operation["state"] == "reconciliation_required"
 
 
+def _scheduled_whole_batch(count=2):
+    tables = _tables()
+    for number in range(2, count + 1):
+        tables["student_billing_enrollments"].append(
+            {
+                **copy.deepcopy(tables["student_billing_enrollments"][0]),
+                "id": f"enrollment_{number}",
+                "student_id": f"student_{number}",
+                "billing_subscription_id": f"group_{number}",
+                "stripe_subscription_id": f"sub_{number}",
+                "stripe_subscription_item_id": f"si_{number}",
+            }
+        )
+        tables["billing_subscriptions"].append(
+            {
+                **copy.deepcopy(tables["billing_subscriptions"][0]),
+                "id": f"group_{number}",
+                "stripe_subscription_id": f"sub_{number}",
+            }
+        )
+    facade = _EnrollmentFixture(tables)
+    workflow = _workflow(facade, now=datetime.fromisoformat(PERIOD_END) + timedelta(minutes=1))
+    for number in range(1, count + 1):
+        item = _item(f"si_{number}")
+        item["metadata"].update(
+            enrollment_id=f"enrollment_{number}",
+            student_id=f"student_{number}",
+            billing_subscription_id=f"group_{number}",
+        )
+        provider = _provider(items=[item])
+        provider["id"] = f"sub_{number}"
+        provider["metadata"]["billing_subscription_id"] = f"group_{number}"
+        _TransitionStripe.subscriptions[provider["id"]] = provider
+        workflow.schedule_period_end(
+            f"enrollment_{number}", "studio_1", "actor_1", f"schedule-{number}", "staff_requested"
+        )
+    _TransitionStripe.retrieve_calls.clear()
+    facade.supabase.rpc_calls.clear()
+    return facade, workflow
+
+
+@pytest.mark.parametrize("deferred_count", [1, 4])
+def test_due_batch_continues_from_deferred_readbacks_to_ready_intent(deferred_count):
+    facade, workflow = _scheduled_whole_batch(deferred_count + 1)
+    _TransitionStripe.subscriptions[f"sub_{deferred_count + 1}"]["status"] = "canceled"
+
+    result = workflow.process_due(worker_id="worker_1", limit=25, stop_requested=lambda: False)
+
+    assert result == {
+        "claimed": deferred_count + 1,
+        "completed": 1,
+        "reconciliation_required": 0,
+        "failed": 0,
+    }
+    assert len(_TransitionStripe.retrieve_calls) == deferred_count + 1
+    assert facade.supabase.tables["student_billing_enrollments"][-1]["status"] == "canceled"
+    assert (
+        len(
+            [
+                name
+                for name, _ in facade.supabase.rpc_calls
+                if name == "claim_due_billing_enrollment_transitions_v1"
+            ]
+        )
+        == 1
+    )
+
+
+def test_due_batch_many_deferrals_still_obeys_claim_limit():
+    facade, workflow = _scheduled_whole_batch(26)
+
+    result = workflow.process_due(worker_id="worker_1", limit=25, stop_requested=lambda: False)
+
+    assert result == {"claimed": 25, "completed": 0, "reconciliation_required": 0, "failed": 0}
+    assert len(_TransitionStripe.retrieve_calls) == 25
+    untouched = [
+        intent
+        for intent in facade.supabase.billing_enrollment_transition_intents.values()
+        if intent["enrollment_id"] == "enrollment_26"
+    ]
+    assert len(untouched) == 1 and untouched[0]["state"] == "scheduled"
+
+
+@pytest.mark.parametrize("entry", ["workflow", "manager", "service"])
+def test_due_stop_callback_refuses_claim_and_forwards_through_public_service(monkeypatch, entry):
+    facade, workflow = _scheduled_whole_batch()
+    callback = lambda: True
+    if entry == "workflow":
+        result = workflow.process_due(worker_id="worker_1", limit=25, stop_requested=callback)
+    else:
+        manager = _manager(facade)
+        if entry == "manager":
+            process = manager.process_due_transitions
+        else:
+            from app.services.billing_service import BillingService
+
+            service = BillingService.__new__(BillingService)
+            monkeypatch.setattr(service, "_enrollment_manager", lambda: manager)
+            process = service.process_due_enrollment_transitions
+        result = asyncio.run(process(worker_id="worker_1", limit=25, stop_requested=callback))
+
+    assert result == {"claimed": 0, "completed": 0, "reconciliation_required": 0, "failed": 0}
+    assert not facade.supabase.rpc_calls
+    assert not _TransitionStripe.retrieve_calls
+
+
+def test_due_stop_after_claim_leaves_entire_batch_unattempted(monkeypatch):
+    facade, workflow = _scheduled_whole_batch()
+    stopped = False
+    claim = workflow.operations.claim_due_enrollment_transitions
+
+    def claim_then_stop(**kwargs):
+        nonlocal stopped
+        intents = claim(**kwargs)
+        stopped = True
+        return intents
+
+    monkeypatch.setattr(workflow.operations, "claim_due_enrollment_transitions", claim_then_stop)
+    result = workflow.process_due(worker_id="worker_1", limit=25, stop_requested=lambda: stopped)
+
+    assert result == {"claimed": 2, "completed": 0, "reconciliation_required": 0, "failed": 0}
+    assert not _TransitionStripe.retrieve_calls
+    tail = [
+        intent
+        for intent in facade.supabase.billing_enrollment_transition_intents.values()
+        if intent["transition_kind"] == "execute_due"
+    ]
+    assert len(tail) == 2
+    assert all(
+        intent["state"] == "due_claimed" and not intent["provider_operation_id"] for intent in tail
+    )
+
+
+@pytest.mark.parametrize("first_status", ["active", "canceled"])
+def test_due_stop_during_intent_drains_current_and_leaves_tail_unattempted(
+    monkeypatch, first_status
+):
+    facade, workflow = _scheduled_whole_batch()
+    _TransitionStripe.subscriptions["sub_1"]["status"] = first_status
+    _TransitionStripe.subscriptions["sub_2"]["status"] = "canceled"
+    stopped = False
+    retrieve = workflow._retrieve_subscription
+
+    def retrieve_then_stop(snapshot):
+        nonlocal stopped
+        provider = retrieve(snapshot)
+        stopped = True
+        return provider
+
+    monkeypatch.setattr(workflow, "_retrieve_subscription", retrieve_then_stop)
+    result = workflow.process_due(worker_id="worker_1", limit=25, stop_requested=lambda: stopped)
+
+    assert result == {
+        "claimed": 2,
+        "completed": int(first_status == "canceled"),
+        "reconciliation_required": 0,
+        "failed": 0,
+    }
+    assert len(_TransitionStripe.retrieve_calls) == 1
+    tail = next(
+        intent
+        for intent in facade.supabase.billing_enrollment_transition_intents.values()
+        if intent["transition_kind"] == "execute_due" and intent["enrollment_id"] == "enrollment_2"
+    )
+    assert tail["state"] == "due_claimed" and tail["provider_operation_id"] is None
+    assert facade.supabase.tables["student_billing_enrollments"][1]["status"] == "active"
+
+
+@pytest.mark.parametrize("callback_enabled", [False, True])
+@pytest.mark.parametrize("status_code,counter", [(409, "failed"), (503, "reconciliation_required")])
+def test_due_attention_stops_only_when_callback_is_provided(
+    monkeypatch, callback_enabled, status_code, counter
+):
+    facade, workflow = _scheduled_whole_batch()
+    _TransitionStripe.subscriptions["sub_2"]["status"] = "canceled"
+    snapshot = workflow._snapshot_for_replay
+
+    def first_requires_attention(intent):
+        if intent["enrollment_id"] == "enrollment_1":
+            raise HTTPException(status_code=status_code, detail="attention")
+        return snapshot(intent)
+
+    monkeypatch.setattr(workflow, "_snapshot_for_replay", first_requires_attention)
+    result = workflow.process_due(
+        worker_id="worker_1",
+        limit=25,
+        stop_requested=(lambda: False) if callback_enabled else None,
+    )
+
+    assert result["claimed"] == 2 and result[counter] == 1
+    assert result["completed"] == int(not callback_enabled)
+    assert len(_TransitionStripe.retrieve_calls) == int(not callback_enabled)
+    assert facade.supabase.tables["student_billing_enrollments"][1]["status"] == (
+        "active" if callback_enabled else "canceled"
+    )
+
+
 def test_whole_due_uses_readback_without_second_provider_mutation():
     facade = _EnrollmentFixture(_tables())
     _TransitionStripe.subscriptions["sub_1"] = _provider(items=[_item()])

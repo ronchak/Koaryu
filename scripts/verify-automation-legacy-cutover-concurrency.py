@@ -93,7 +93,7 @@ def main(args):
     historical = {
         str(p.relative_to(ROOT)): hashlib.sha256(p.read_bytes()).hexdigest()
         for p in sorted(MIGRATION.parent.glob("*.sql"))
-        if p != MIGRATION
+        if p.name < MIGRATION.name
     }
     require(len(historical) == 151, "151 historical files required")
     for path, checksum in historical.items():

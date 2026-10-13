@@ -272,41 +272,7 @@ class BillingConnectActions:
         stripe_account_id = account.get("stripe_connected_account_id")
         if not stripe_account_id:
             return self.connect_accounts.response(account)
-        if self.connect_accounts.has_billing_history(studio_id):
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Reconnect requires support because this studio already has Stripe billing history.",
-            )
-
-        metadata = dict(account.get("metadata") or {})
-        previous_accounts = list(metadata.get("previous_stripe_connected_account_ids") or [])
-        previous_accounts.append(stripe_account_id)
-        metadata["previous_stripe_connected_account_ids"] = list(dict.fromkeys(previous_accounts))
-        metadata["connect_account_generation"] = (
-            int(metadata.get("connect_account_generation") or 1) + 1
-        )
-        account = self.connect_accounts.update(
-            studio_id,
-            {
-                "stripe_connected_account_id": None,
-                "status": "not_connected",
-                "charges_enabled": False,
-                "payouts_enabled": False,
-                "details_submitted": False,
-                "requirements_due": [],
-                "metadata": metadata,
-            },
-        )
-        record_billing_audit(
-            self.supabase,
-            studio_id,
-            actor_id,
-            "billing.connect_account_reset",
-            studio_id,
-            {
-                "previous_stripe_account_id": stripe_account_id,
-            },
-        )
+        account = self.connect_accounts.reset_atomic(studio_id, actor_id, account)
         return self.connect_accounts.response(account)
 
     async def create_dashboard_link(self, studio_id: str, actor_id: str) -> BillingLinkResponse:

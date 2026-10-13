@@ -30,7 +30,7 @@ Inventory baseline: 2026-08-24. The last completed release verification, October
 | Payments | Stripe live mode | Stripe test mode |
 | `LIVE_BILLING_ENABLED` | `true` (global interlock only) | `false` |
 | `CORE_SELF_CHECKOUT_ENABLED` | `true` (Koaryu Core only) | `false` |
-| Period-end billing worker | disabled; production cron awaits approval | Render Cron every 5 minutes, suspended September 14 |
+| Period-end billing worker | hosted disabled; candidate source declares timer enabled | Manifest flag true; cron suspended; disable hosted flag before candidate deploy |
 | `OPERATIONAL_ALERTS_ENABLED` | `false` | `false` |
 
 Neither production surface auto-deploys. Both require an explicit owner-authorized release —
@@ -184,9 +184,68 @@ Render service reference. Each run claims at most 25 transitions and waits up to
 seconds, beyond the backend bulk lane's 120-second deadline but below the five-minute
 cadence. A lost or failed response is safe to retry because the transition intent and
 provider mutation keep their durable idempotency identity. Render bills cron execution by runtime with a $1 monthly
-minimum for the service. The production web service keeps
-`BILLING_TRANSITION_SCHEDULER_ENABLED=false`; no production cron exists in this
-release task.
+minimum for the service. No production cron is provisioned. The candidate's
+`render.yaml` declares `BILLING_TRANSITION_SCHEDULER_ENABLED=true` as the desired
+final production setting. The effective hosted production flag remains false
+until the named root coordinator verifies the exact deployed candidate, inspects
+due transition intents, and explicitly enables it under owner authorization.
+This source declaration does not record a hosted activation.
+
+The candidate backend also includes a billing-transition timer in each web
+process. With `BILLING_TRANSITION_SCHEDULER_ENABLED=true`, it starts immediately
+and runs every 300 seconds without incoming requests. Each tick processes at most
+25 transitions through one call to the existing billing service with `limit=25`.
+The workflow checks shutdown and the effective enable flag before claiming work
+and before each intent. Deferred readbacks allow later claimed intents to run;
+an attention result stops further processing. Empty work or an unavailable result
+ends the tick. Each process admits one batch at a time with no queue; database
+claims and provider idempotency still coordinate other processes and the existing
+protected cron endpoint. Missed ticks are skipped.
+
+A batch gets one isolated client owned by a non-daemon thread through completion
+and cleanup. The timer waits at most 120 seconds, matching the bulk lane waiter,
+and the asynchronous shutdown waiter returns within 30 seconds. These are waiter
+limits, not work deadlines. The owner finishes the current unit and cleanup, then
+stops before attempting another intent. Unattempted claims keep their leases and
+become eligible again through the existing expired-lease checks. Ordinary Python
+interpreter exit waits for that thread even after the async shutdown waiter
+returns. Neither waiter timeout cancels submitted provider work or releases the
+active slot early.
+
+Both web services now declare `maxShutdownDelaySeconds: 300` in `render.yaml`.
+[Render's shutdown policy](https://render.com/docs/deploys#graceful-shutdown)
+sends SIGKILL when the configured grace period expires; its default is 30 seconds
+and the declared 300 seconds is the maximum supported by the
+[Blueprint setting](https://render.com/docs/blueprint-spec#maxshutdowndelayseconds).
+The grace period covers the whole process shutdown, including HTTP draining and
+other cleanup. An unusually slow current unit can still be terminated. Existing
+idempotency, provider readback and explicit reconciliation rules remain required;
+this change does not make ambiguous provider mutations safe to retry.
+
+The root coordinator's release packet must inspect, apply if needed, and verify
+the effective 300-second shutdown delay on both web services before candidate
+deployment or timer activation. Under the existing owner authorization and
+announce/pause gates, the verified Render CLI 2.26 command is
+`render services update <service-id> --max-shutdown-delay 300 --output json`.
+Read back each effective service setting after any update. This source declaration
+does not claim a hosted configuration change or add a paid service.
+
+The application default and reusable local/examples keep the flag false. The
+production manifest and its environment guard now require true as the intended
+final setting. The timer checks the effective flag before admission and before
+processing; disabling it stops new batches without canceling submitted work.
+A completed pass logs only validated integer counts for claimed, completed,
+reconciliation-required and failed transitions, including a zero-work pass.
+Nonzero failures or reconciliation counts also emit an attention warning.
+
+The staging manifest already sets the flag true. With this candidate, that starts
+the in-process timer even while the old Render cron is suspended. Before deploying
+or proving the candidate on staging, the named root coordinator must inspect due
+transition intents and disable the effective hosted staging flag, then verify
+that it is false. Any staging timer activation requires a separate explicit step
+after that inspection and exact-candidate deployment verification. Suspending the
+cron does not pause the in-process timer. The always-on production backend can
+run the timer; the sleeping free staging service cannot guarantee its cadence.
 
 Render service resume can build the current tracked branch even when auto-deploy is off. Pin and inspect that branch before resuming, then verify the actual deployed SHA. The September 29 production resume built the intended release from `main`; do not assume resume restores the previously serving artifact.
 

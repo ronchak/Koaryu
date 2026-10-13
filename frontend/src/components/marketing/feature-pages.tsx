@@ -160,9 +160,9 @@ export function FeatureIndexPage() {
                 outside Koaryu or attach an external billing record to a student.
               </p>
               <p className={styles.roleNote}>
-                Admin and Front Desk have routine billing access. Tuition collection needs separate
-                studio activation and is not generally available. New billing exports are
-                unavailable.
+                Admin and Front Desk have routine billing access. Eligible studios can collect
+                tuition after completing Stripe onboarding and meeting payment-account requirements.
+                New billing exports are unavailable.
               </p>
             </section>
             <section>
@@ -217,10 +217,9 @@ export function FeatureIndexPage() {
               students.
             </p>
             <p>
-              Separately activated Koaryu Payments has a standard fee of{" "}
-              {PUBLIC_PAYMENTS_FEE_PERCENT}% on successful charges, plus Stripe fees. Your
-              studio&apos;s configured rate may differ. Recording a payment received outside Koaryu
-              does not incur that processing fee.
+              Optional Koaryu Payments has a standard fee of {PUBLIC_PAYMENTS_FEE_PERCENT}% on
+              successful charges, plus Stripe fees. Your studio&apos;s configured rate may differ.
+              Recording a payment received outside Koaryu does not incur that processing fee.
             </p>
             <p>
               Creating an account does not activate tuition collection. If collecting tuition or
@@ -677,8 +676,8 @@ function BillingPage() {
     <>
       <PageHeading title="Billing records and tuition collection">
         Admin and Front Desk can review existing billing records and record payments received
-        outside Koaryu. Tuition collection requires separate activation for your studio and is not
-        generally available. Creating an account does not turn it on.
+        outside Koaryu. Eligible studios can collect tuition after completing Stripe onboarding and
+        meeting payment-account requirements. Creating an account does not turn it on.
       </PageHeading>
 
       <section
@@ -694,10 +693,9 @@ function BillingPage() {
             plan, and payments to your school are separate records and charges.
           </p>
           <p>
-            Separately activated Koaryu Payments has a standard fee of {PUBLIC_PAYMENTS_FEE_PERCENT}
-            % on successful charges, plus Stripe fees. Your studio&apos;s configured rate may
-            differ. Recording a cash, check, or other external payment does not incur that
-            processing fee.
+            Optional Koaryu Payments has a standard fee of {PUBLIC_PAYMENTS_FEE_PERCENT}% on
+            successful charges, plus Stripe fees. Your studio&apos;s configured rate may differ.
+            Recording a cash, check, or other external payment does not incur that processing fee.
           </p>
         </div>
       </section>
@@ -734,8 +732,8 @@ function BillingPage() {
             ],
             [
               "Collect or change tuition through Stripe",
-              "Separately activated studios, with action-specific permissions",
-              "Creating, finalizing, retrying, or voiding invoices and issuing refunds require Admin access and availability for the studio. In Families, Front Desk may prepare a link the payer uses to enter their own payment details when that action is enabled. These are not general signup capabilities.",
+              "Eligible studios, with action-specific permissions",
+              "Creating, finalizing, retrying, or voiding invoices and issuing refunds require Admin access and availability for the studio. In Families, Front Desk may prepare a link the payer uses to enter their own payment details when that action is enabled. Stripe onboarding and payment-account requirements still apply.",
             ],
             [
               "Create a billing export",

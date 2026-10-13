@@ -631,3 +631,13 @@ export const render_preflight_security_v57 = () => `    IF (SELECT count(*) FROM
              = '[["postgres","postgres","EXECUTE",false],["service_role","postgres","EXECUTE",false]]'::JSONB) THEN
         v_failures:=array_append(v_failures,'preflight_security_v57');
     END IF;`;
+
+// V58 keeps the complete catalog check and separately attests its own guard.
+export const render_live_billing_functions_v58 = check =>
+  render_automation_functions_v57(check).replace(
+    "p.oid <> pg_catalog.to_regprocedure('public.koaryu_release_schema_preflight_v38()')",
+    "p.oid <> pg_catalog.to_regprocedure('public.koaryu_release_schema_preflight_v39()')"
+  );
+export const render_preflight_security_v58 = () => render_preflight_security_v57()
+  .replaceAll("koaryu_release_schema_preflight_v38", "koaryu_release_schema_preflight_v39")
+  .replaceAll("preflight_security_v57", "preflight_security_v58");

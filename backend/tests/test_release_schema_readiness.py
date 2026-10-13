@@ -148,7 +148,7 @@ class ReleaseSchemaReadinessTest(unittest.TestCase):
             return_value=client,
         ):
             assert_hosted_release_schema_ready()
-        self.assertEqual(calls, [("koaryu_release_schema_preflight_v38", {})])
+        self.assertEqual(calls, [("koaryu_release_schema_preflight_v39", {})])
 
     def test_hosted_check_does_not_fallback_on_provider_failure(self):
         calls = []
@@ -172,7 +172,7 @@ class ReleaseSchemaReadinessTest(unittest.TestCase):
             self.assertRaises(PostgrestAPIError),
         ):
             assert_hosted_release_schema_ready()
-        self.assertEqual(calls, [("koaryu_release_schema_preflight_v38", {})])
+        self.assertEqual(calls, [("koaryu_release_schema_preflight_v39", {})])
 
     def test_hosted_check_fails_closed_when_current_rpc_is_missing(self):
         calls = []
@@ -199,7 +199,7 @@ class ReleaseSchemaReadinessTest(unittest.TestCase):
             self.assertRaisesRegex(RuntimeError, "Apply the database migrations"),
         ):
             assert_hosted_release_schema_ready()
-        self.assertEqual(calls, [("koaryu_release_schema_preflight_v38", {})])
+        self.assertEqual(calls, [("koaryu_release_schema_preflight_v39", {})])
 
     def test_success_cache_rechecks_only_after_ttl(self):
         now = [10.0]

@@ -59,6 +59,9 @@ class _PreflightSupabase(RpcBackedSupabase):
 
 
 class _LiveGrantSupabase(_PreflightSupabase):
+    def _rpc_studio_live_billing_supported_operations_v58(self, params):
+        return self.tables.get("studio_live_billing_authorizations", [])
+
     def _rpc_authorize_studio_live_billing_mutation_atomic(self, params):
         rows = self.tables.get("studio_live_billing_authorizations", [])
         for row in rows:
@@ -314,7 +317,7 @@ class BillingSystemStatusReporterTest(unittest.TestCase):
         self.assertFalse(response.mutation_capabilities.connect_onboarding)
         self.assertFalse(response.mutation_capabilities.connect_payments)
 
-    def test_refund_only_live_grant_enables_only_refund_workflow(self):
+    def test_refund_only_policy_response_enables_only_refund_workflow(self):
         response, supabase = self.live_grant_response(
             [
                 "connected_capability.readiness",
@@ -343,7 +346,7 @@ class BillingSystemStatusReporterTest(unittest.TestCase):
             {"connected_capability.readiness"},
         )
 
-    def test_plan_only_live_grant_enables_only_plan_sync_workflow(self):
+    def test_plan_only_policy_response_enables_only_plan_sync_workflow(self):
         response, supabase = self.live_grant_response(
             [
                 "connected_capability.readiness",
@@ -402,6 +405,83 @@ class BillingSystemStatusReporterTest(unittest.TestCase):
             and params.get("p_operation") == "connect_onboarding_link.create"
         ]
         self.assertEqual(onboarding_authorize_calls, [])
+
+    def test_ungranted_quiet_live_studio_has_ga_payment_and_dashboard_capabilities(self):
+        from app.services.billing_workflow_catalog import LIVE_SCOPE_OPERATIONS
+
+        class GaSupabase(_PreflightSupabase):
+            def _rpc_studio_live_billing_supported_operations_v58(self, params):
+                return [
+                    {
+                        "scope": scope,
+                        "allowed_operations": sorted(
+                            [
+                                op
+                                for op in ops
+                                if op
+                                not in {
+                                    "connect_account.branding.update",
+                                    "connect_branding_file.create",
+                                    "connected_customer.default_payment_method.update",
+                                }
+                            ]
+                        ),
+                    }
+                    for scope, ops in LIVE_SCOPE_OPERATIONS.items()
+                    if scope != "core_subscription"
+                ]
+
+            def _rpc_authorize_studio_live_billing_mutation_atomic(self, params):
+                if params["p_operation"] in {
+                    "connected_capability.readiness",
+                    "connect_dashboard_login_link.create",
+                }:
+                    return [
+                        {
+                            "authorized": True,
+                            "studio_id": params["p_studio_id"],
+                            "checkpoint_id": None,
+                        }
+                    ]
+                return []
+
+        async def load_account(_studio_id):
+            return _ready_account()
+
+        for events in (
+            [],
+            [
+                _processed_event(
+                    account_id=None, observed_at=datetime.now(timezone.utc) - timedelta(days=36)
+                ),
+                _processed_event(
+                    account_id="acct_1", observed_at=datetime.now(timezone.utc) - timedelta(days=36)
+                ),
+            ],
+        ):
+            supabase = GaSupabase(
+                {"studio_payment_accounts": [{"studio_id": "studio_1"}], "stripe_events": events},
+                begin=False,
+                resume_phase="support_required",
+            )
+            reporter = BillingSystemStatusReporter(
+                supabase,
+                settings=_settings(live_billing_enabled=True),
+                connect_accounts=_ConnectAccounts(),
+                payment_account_loader=load_account,
+            )
+            with patch.dict("os.environ", {"RENDER_GIT_COMMIT": "a" * 40}):
+                response = asyncio.run(reporter.get_system_status("studio_1"))
+            self.assertTrue(response.ready_for_configured_mode)
+            self.assertTrue(response.ready_for_live_payments)
+            self.assertFalse(response.mutation_capabilities.connect_onboarding)
+            workflows = {c.workflow_id: c.enabled for c in response.workflow_capabilities}
+            self.assertTrue(workflows["connect.dashboard"])
+            self.assertTrue(workflows["payment.refund"])
+            self.assertFalse(workflows["connect.onboarding"])
+            self.assertFalse(workflows["enrollment.pause.generic"])
+            self.assertNotIn("connect.branding", workflows)
+            self.assertNotIn("studio_live_billing_authorizations", supabase.tables)
 
     def test_readiness_fails_closed_on_pending_backlog(self):
         now = datetime.now(timezone.utc)
@@ -505,7 +585,7 @@ class BillingSystemStatusReporterTest(unittest.TestCase):
         self.assertEqual(health.stale_processing_count, 2)
         self.assertEqual(health.mode_mismatch_count, 1)
 
-    def test_readiness_fails_closed_on_stale_or_wrong_mode_webhook_observations(self):
+    def test_quiet_webhook_does_not_hide_wrong_mode_failure(self):
         now = datetime.now(timezone.utc)
         old = now - timedelta(days=36)
         rows = [
@@ -532,7 +612,7 @@ class BillingSystemStatusReporterTest(unittest.TestCase):
             next(
                 check for check in response.checks if check.name == "Recent Connect webhook"
             ).status,
-            "fail",
+            "pass",
         )
 
     def test_status_details_do_not_expose_exception_messages(self):

@@ -62,7 +62,7 @@ def main(arguments):
     historical = {
         p.name: hashlib.sha256(p.read_bytes()).hexdigest()
         for p in MIGRATION.parent.glob("*.sql")
-        if p != MIGRATION
+        if p.name < MIGRATION.name
     }
     require(len(historical) == 151, "Expected 151 immutable migrations")
 
@@ -1195,7 +1195,7 @@ ROLLBACK;
             == {
                 p.name: hashlib.sha256(p.read_bytes()).hexdigest()
                 for p in MIGRATION.parent.glob("*.sql")
-                if p != MIGRATION
+                if p.name < MIGRATION.name
             },
             "Historical migration changed",
         )

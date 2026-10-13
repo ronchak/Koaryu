@@ -117,7 +117,7 @@ const renderCriticalValues = new Map([
   ["STRIPE_MODE", "live"],
   ["LIVE_BILLING_ENABLED", "true"],
   ["CORE_SELF_CHECKOUT_ENABLED", "true"],
-  ["BILLING_TRANSITION_SCHEDULER_ENABLED", "false"],
+  ["BILLING_TRANSITION_SCHEDULER_ENABLED", "true"],
   ["OPERATIONAL_ALERTS_ENABLED", "false"],
   ["EMAIL_PROVIDER", "disabled"],
   ["EMAIL_SEND_ENABLED", "false"],
@@ -137,6 +137,7 @@ const RENDER_JEMALLOC_VERSION = "5.3.0-1";
 // differ. Each exception names both sides so neither value can drift silently.
 const productionRenderExampleDivergences = new Map([
   ["LIVE_BILLING_ENABLED", { exampleValue: "false", manifestValue: "true" }],
+  ["BILLING_TRANSITION_SCHEDULER_ENABLED", { exampleValue: "false", manifestValue: "true" }],
 ]);
 
 function isAllowedProductionRenderExampleDivergence(
@@ -373,6 +374,12 @@ function validateRenderDockerService(block, serviceName) {
         `render.yaml: ${serviceName} ${key} must equal ${JSON.stringify(expected)}`,
       );
     }
+  }
+  const shutdownDelays = [...block.matchAll(/^    maxShutdownDelaySeconds:[^\S\n]*([^\n]*)$/gm)];
+  if (shutdownDelays.length !== 1 || shutdownDelays[0][1].trim() !== "300") {
+    failures.push(
+      `render.yaml: ${serviceName} maxShutdownDelaySeconds must declare the integer 300 exactly once`,
+    );
   }
   for (const nativeKey of ["buildCommand", "startCommand"]) {
     if (renderScalar(block, nativeKey) !== null) {

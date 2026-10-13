@@ -1,6 +1,11 @@
 # Stripe live-billing reconciliation checkpoint v3
 
-This document is the current contract for producing and recording Koaryu Payments live-billing reconciliation evidence. It does not authorize a studio, enable a live mutation, change Stripe configuration, or approve a financial canary.
+V58 uses the GA eligibility policy in [the live billing runbook](stripe-live-billing-rollout.md).
+This document retains historical pilot and diagnostic tooling. Grant, revoke and checkpoint
+commands no longer enable or suspend Connect workflows, and daily renewal is not required.
+Use `LIVE_BILLING_ENABLED` as the global emergency stop; keep historical evidence intact.
+
+This document describes the diagnostic contract for producing and recording Koaryu Payments live-billing reconciliation evidence. It does not authorize a studio, enable a live mutation, change Stripe configuration, or approve a financial canary.
 
 ## Why v3 exists
 

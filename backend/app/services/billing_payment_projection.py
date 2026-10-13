@@ -199,10 +199,13 @@ class BillingPaymentEventProjector:
             "stripe_customer_id": customer_id,
             "stripe_invoice_id": invoice_id,
             "stripe_payment_intent_id": _stripe_id(intent),
-            "stripe_charge_id": charge_id,
+            # Failed/processing attempts can be replaced before this intent succeeds.
+            "stripe_charge_id": charge_id if status_value == "succeeded" else None,
             "stripe_account_id": account_id,
             "connect_account_generation": connect_account_generation,
-            "stripe_payment_method_id": _stripe_id(intent.get("payment_method")),
+            "stripe_payment_method_id": _stripe_id(intent.get("payment_method"))
+            if status_value == "succeeded"
+            else None,
             "status": status_value,
             "amount_cents": amount_cents,
             "refunded_amount_cents": 0,

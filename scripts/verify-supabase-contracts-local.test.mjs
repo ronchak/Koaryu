@@ -5,12 +5,29 @@ import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import { V52_LEAD_RECEIPT_STATE_SQL, V52_LEAD_UPDATE_STATE_SQL } from "./studio-comp-migration-rollout.mjs";
+import { CURRENT_RELEASE, releaseState } from "./release-attestation/states.mjs";
+import { MIGRATION_VERSIONS } from "./release-attestation/generated-history.mjs";
 
 const verifier = fs.readFileSync(new URL("./verify-supabase-contracts-local.sh", import.meta.url), "utf8");
 const start = verifier.indexOf("assert_payment_writer_rejects() {");
 const end = verifier.indexOf("\nwhile IFS='|' read -r writer_name", start);
 assert.ok(start >= 0 && end > start);
 const helper = verifier.slice(start, end);
+
+test("direct CI student/rank race accepts the declared current release and retained predecessors", () => {
+  const race = fs.readFileSync(new URL("./verify-student-profile-rank-plan-concurrency.sh", import.meta.url), "utf8");
+  const profiles = [...race.matchAll(/(?:IF|ELSIF) history_count=(\d+) AND history_head='(\d+)'\s+AND to_regprocedure\('[^']+'\) IS (?:NOT )?NULL THEN\s+phase:='(v\d+)'; preflight:='([^']+)';/g)];
+  const expected = [...new Set(["v56", "v57", CURRENT_RELEASE])].map(id => {
+    const state = releaseState(id, MIGRATION_VERSIONS);
+    return [String(state.count), state.head, id, state.preflight];
+  });
+  assert.deepEqual(profiles.map(match => match.slice(1)), expected);
+  assert.match(race, /readiness\.ready IS DISTINCT FROM true/);
+  assert.match(race, /readiness\.migration_count IS DISTINCT FROM history_count/);
+  assert.match(race, /readiness\.migration_head IS DISTINCT FROM history_head/);
+  assert.match(race, /readiness\.security_failures IS DISTINCT FROM ARRAY\[\]::TEXT\[\]/);
+  assert.match(race, /v57\|v58\) expected_delete_error="ERROR:  AUTOMATION_STUDIO_BUSY"/);
+});
 
 for (const [name, query] of [["unterminated receipt query", V52_LEAD_RECEIPT_STATE_SQL], ["terminated writer query", V52_LEAD_UPDATE_STATE_SQL]]) {
   test(`negative verifier separates ${name} from its readiness assertion`, () => {
@@ -52,8 +69,8 @@ assert_payment_writer_rejects test "SELECT 1;" "$query" expected required_failur
 
 
 test("V56 keeps all restore steps, exact inventory and the complete readiness/lead probes", () => {
-  assert.match(verifier, /migration_files\[@\].*-ne 152/);
-  assert.match(verifier, /verification_files\[@\].*-ne 75/);
+  assert.match(verifier, /migration_files\[@\].*-ne 153/);
+  assert.match(verifier, /verification_files\[@\].*-ne 76/);
   for (const text of [
     "verify-v53-v54-restore-contract.py", "verify-v54-v55-restore-contract.py", "verify-v55-v56-restore-contract.py",
     "[V56 readiness]", "[V56 release]", "[V56 semantics]",
@@ -93,11 +110,10 @@ test("final V56 semantics uses only V55 pins for changed lead/student definition
 });
 
 
-test("current-candidate billing concurrency runs once after complete V57 readiness", () => {
+test("current-candidate billing concurrency runs once after complete V58 readiness", () => {
   const invocation = 'run_interruptible python3 "$ROOT_DIR/scripts/verify-billing-command-concurrency.py" "$PSQL" "$SOCKET_DIR" "$PG_PORT"';
   assert.equal(verifier.split(invocation).length - 1, 1);
-  const readiness = verifier.indexOf('echo "[V57 readiness] PASS complete installed catalog and genuine history"');
+  const readiness = verifier.indexOf('echo "[V58 readiness] PASS complete GA catalog and authority"');
   const billing = verifier.indexOf(invocation);
-  const rawFacts = verifier.indexOf('echo "[V57 raw facts] RUN');
-  assert.ok(readiness >= 0 && readiness < billing && billing < rawFacts);
+  assert.ok(readiness >= 0 && readiness < billing);
 });

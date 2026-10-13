@@ -11,7 +11,7 @@ from pathlib import Path
 from uuid import uuid4
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from local_postgres_verification import LocalPostgres, require, install_final_v57
+from local_postgres_verification import LocalPostgres, require, install_final_v57, install_final_v58
 ROOT = Path(__file__).resolve().parents[1]
 BASE = '35561d6b8f851ea0309723637e0996a064ba4c82'
 BASE_HASH = 'cab98ab987acf0c24a383be94f3e0499c6d891b922d7fd1de217e788c2a339b5'
@@ -44,7 +44,7 @@ def main(args):
     src=MIGRATION.read_bytes(); text=src.decode()
     accepted = subprocess.check_output(['git','-C',str(ROOT),'show',BASE+':'+str(MIGRATION.relative_to(ROOT))],env=local.env)
     require(hashlib.sha256(accepted).hexdigest() == BASE_HASH, 'Accepted complete execution SQL pin differs')
-    historical={p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in MIGRATION.parent.glob('*.sql') if p!=MIGRATION}
+    historical={p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in MIGRATION.parent.glob('*.sql') if p.name<MIGRATION.name}
     require(len(historical)==151,'Expected151 historical files')
     cases=[]; owned=False; start=time.monotonic(); diagnostics=[]
     def sql(s): return local.sql(database,"SET TIME ZONE 'UTC';\n"+s)
@@ -54,9 +54,11 @@ def main(args):
     try:
         local.sql('postgres',f'CREATE DATABASE {database} TEMPLATE postgres;'); owned=True
         readiness = install_final_v57(local, database, ROOT)
-        installed = value(INVENTORY)
         passed('complete final catalog body security ACL overload and genuine history', readiness=readiness)
         contract=sql(CONTRACT.read_text()); passed('focused SQL contract',output=contract)
+        current_readiness = install_final_v58(local, database, ROOT)
+        passed('complete current V58 guard before application composition', readiness=current_readiness)
+        installed = value(INVENTORY)
         # Reuse the accepted comprehensive fixture bytes, with a private proof schema.
         fixtures=(ROOT/'supabase/verification/workflow_advance_contract.sql').read_text().split('-- fixture owners start.')[1].split('-- fixture owners end.')[0]
         sql('CREATE SCHEMA graph_mail_proof;\n'+'--'+fixtures.replace('pg_temp.','graph_mail_proof.')+'\nGRANT USAGE ON SCHEMA graph_mail_proof TO service_role; GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA graph_mail_proof TO service_role;')
@@ -78,7 +80,7 @@ def main(args):
         require(pid_path.read_text().splitlines()[0]==pid,'Template postmaster changed')
         require(local.sql('postgres','SELECT row_to_json(p) FROM public.koaryu_release_schema_preflight_v37() p;')==baseline,'Template state changed')
         require(MIGRATION.read_bytes()==src,'Source changed during proof')
-        require(historical=={p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in MIGRATION.parent.glob('*.sql') if p!=MIGRATION},'Historical files changed')
+        require(historical=={p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in MIGRATION.parent.glob('*.sql') if p.name<MIGRATION.name},'Historical files changed')
         report={'base':BASE,'source_sha256':hashlib.sha256(src).hexdigest(),'contract_sha256':hashlib.sha256(CONTRACT.read_bytes()).hexdigest(),'verifier_sha256':hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),'cases':cases,'diagnostics':diagnostics,'elapsed_seconds':round(time.monotonic()-start,3),'cleanup':{'clone_absent':True,'template_unchanged':True,'postmaster_pid':pid}}
         with evidence.open('x') as out: os.chmod(evidence,0o600); json.dump(report,out,indent=2); out.write('\n')
 
@@ -102,6 +104,7 @@ def run_proof(local,sql,value,passed,database,psql):
     from app.services.automation_email_credentials import CredentialCodec,CredentialState,CredentialRepository
     from app.services.microsoft_graph_email import MicrosoftGraphEmailTransport
     from app.services.workflow_dispatcher import _ClaimConsumer
+    from app.services.generated_release_readiness import RELEASE_PREFLIGHT_RPC
     from app.services.automation_service import _WorkerBudget,_require_dispatch_schema,_dispatch_rpc
     require(version('postgrest')=='0.17.2','Pinned SDK required')
     sql('''CREATE FUNCTION graph_mail_proof.rpc(statement TEXT) RETURNS JSONB LANGUAGE plpgsql AS $$
@@ -117,9 +120,9 @@ def run_proof(local,sql,value,passed,database,psql):
                 require(request.method=='POST' and re.fullmatch('[a-z_0-9]+',name),'Unexpected SDK operation')
                 params=json.loads(request.content)
                 statement='SELECT public.'+name+'('+','.join(k+'=>'+('ARRAY['+','.join(map(quote,v))+']::TEXT[]' if isinstance(v,list) else quote(v)) for k,v in params.items())+');'
-                if name=='koaryu_release_schema_preflight_v38':
+                if name in {'koaryu_release_schema_preflight_v38', RELEASE_PREFLIGHT_RPC}:
                     require(params=={},'Readiness takes no parameters')
-                    statement='SELECT jsonb_agg(to_jsonb(r)) FROM public.koaryu_release_schema_preflight_v38() r;'
+                    statement='SELECT jsonb_agg(to_jsonb(r)) FROM public.'+name+'() r;'
                 observed=value('SET ROLE service_role; SELECT graph_mail_proof.rpc('+quote(statement)+');')
                 requests.append({'rpc':name,'ok':observed['ok']})
                 return httpx.Response(200 if observed['ok'] else 400,json=observed.get('data',observed.get('error')))

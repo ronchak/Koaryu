@@ -247,10 +247,10 @@ const sections: readonly LegalSection[] = [
     body: (
       <>
         <p>
-          Koaryu Payments is optional, requires separate activation and is not yet generally
-          available. We decide which Studios are eligible, and we may limit, pause or end the
-          feature for a Studio, for example where Stripe requires it or where we see a risk of fraud
-          or loss.
+          Koaryu Payments is optional and available to eligible Studios after Stripe onboarding and
+          payment-account requirements are met. We decide which Studios are eligible, and we may
+          limit, pause or end the feature for a Studio, for example where Stripe requires it or
+          where we see a risk of fraud or loss.
         </p>
         <h3>Stripe&rsquo;s terms</h3>
         <p>
@@ -528,8 +528,8 @@ const sections: readonly LegalSection[] = [
             give you reasonable notice where practical.
           </li>
           <li>
-            <strong>Features in limited release.</strong> Features that are labeled as a preview or
-            that require separate activation, including Koaryu Payments, may change or end.
+            <strong>Features in limited release.</strong> Features labeled as a preview or limited
+            release may change or end.
           </li>
           <li>
             <strong>Your copies.</strong> We maintain backups for our own recovery purposes, but we

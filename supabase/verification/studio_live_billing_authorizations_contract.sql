@@ -1,3 +1,5 @@
+-- Historical pilot reconciliation and grant writer contract. Current GA authority
+-- is exercised separately in live_billing_ga_contract.sql.
 BEGIN;
 
 DO $access$
@@ -97,13 +99,17 @@ BEGIN
     -- The V25-to-V26 restore harness retains the historical V26 anchor. This
     -- final-chain assertion is the separately approved V37 compatibility pin.
     IF private.koaryu_release_operational_contract_v26()
-       <> '0:556935a0c58b3aca9509dd355798100efb1d147830875225fd8464e9a9736136' THEN
+       <> (CASE WHEN to_regprocedure('public.studio_live_billing_supported_operations_v58(uuid,text)') IS NOT NULL
+           THEN '0:eaae3521154ebb1416b3efc95d49f69a2aa583d236a4710b03fda985dae691c0'
+           ELSE '0:556935a0c58b3aca9509dd355798100efb1d147830875225fd8464e9a9736136' END) THEN
         RAISE EXCEPTION 'V26 operational contract has failures: %',
             private.koaryu_release_operational_contract_v26();
     END IF;
 
     IF private.koaryu_release_live_billing_v3_manifest_v25()
-       <> '0:3c2a6854c73a6e9c9704fabed38dac85b56eb26076add20c00ee97bed5bdc527' THEN
+       <> (CASE WHEN to_regprocedure('public.studio_live_billing_supported_operations_v58(uuid,text)') IS NOT NULL
+           THEN '0:45cb113e37c4ded47a36179688cb2cb5159567b949ffd038e74a63ee9f35ea73'
+           ELSE '0:3c2a6854c73a6e9c9704fabed38dac85b56eb26076add20c00ee97bed5bdc527' END) THEN
         RAISE EXCEPTION 'Schema-v3 release manifest drifted: %',
             private.koaryu_release_live_billing_v3_manifest_v25();
     END IF;
@@ -491,7 +497,7 @@ BEGIN
 
     SELECT *
       INTO v_result
-      FROM public.authorize_studio_live_billing_mutation_atomic(
+      FROM public.authorize_studio_live_billing_scope_v3(
           v_studio,
           'connected_invoice.pay',
           'connect_payments',
@@ -505,7 +511,7 @@ BEGIN
         RAISE EXCEPTION 'Exact schema-v3 payment scope did not authorize.';
     END IF;
 
-    PERFORM public.authorize_studio_live_billing_mutation_atomic(
+    PERFORM public.authorize_studio_live_billing_scope_v3(
         v_studio,
         'connected_invoice.pay',
         'connect_payments',
@@ -532,7 +538,7 @@ BEGIN
 
     SELECT *
       INTO v_result
-      FROM public.authorize_studio_live_billing_mutation_atomic(
+      FROM public.authorize_studio_live_billing_scope_v3(
           v_blank_studio,
           'connect_account.create',
           'connect_onboarding',
@@ -562,7 +568,7 @@ BEGIN
     )
     RETURNING id INTO v_pending_event;
 
-    PERFORM public.authorize_studio_live_billing_mutation_atomic(
+    PERFORM public.authorize_studio_live_billing_scope_v3(
         v_studio,
         'connected_invoice.pay',
         'connect_payments',
@@ -580,7 +586,7 @@ BEGIN
 
     SELECT *
       INTO v_result
-      FROM public.authorize_studio_live_billing_mutation_atomic(
+      FROM public.authorize_studio_live_billing_scope_v3(
           v_studio,
           'connected_invoice.pay',
           'connect_payments',
@@ -595,7 +601,7 @@ BEGIN
        SET metadata = jsonb_build_object('connect_account_generation', 2)
      WHERE studio_id = v_studio;
 
-    PERFORM public.authorize_studio_live_billing_mutation_atomic(
+    PERFORM public.authorize_studio_live_billing_scope_v3(
         v_studio,
         'connected_invoice.pay',
         'connect_payments',

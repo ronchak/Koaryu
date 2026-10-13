@@ -76,8 +76,9 @@ describe("public marketing route contract", () => {
       billing.proof.find(({ label }) => label === "Pricing").value,
       `${formatPublicPlatformPrice()} per month per studio`,
     );
-    assert.match(billing.summary, /separate activation/);
-    assert.match(billing.summary, /not generally available/);
+    assert.match(billing.summary, /Eligible studios can collect tuition/);
+    assert.match(billing.summary, /after completing Stripe onboarding/);
+    assert.match(billing.summary, /meeting payment-account requirements/);
     assert.match(billing.summary, /billing exports are unavailable/);
     assert.match(JSON.stringify(billing.sections), /does not settle a Stripe invoice/);
   });

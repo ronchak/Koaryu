@@ -52,7 +52,7 @@ def main(arguments):
     historical = {
         p.name: hashlib.sha256(p.read_bytes()).hexdigest()
         for p in MIGRATION.parent.glob("*.sql")
-        if p != MIGRATION
+        if p.name < MIGRATION.name
     }
     require(len(historical) == 151, "Expected151 immutable historical files")
     base_before = local.sql(
@@ -1338,7 +1338,7 @@ REVOKE ALL ON FUNCTION private.workflow_lock_run_sources_v1(uuid,private.automat
             == {
                 p.name: hashlib.sha256(p.read_bytes()).hexdigest()
                 for p in MIGRATION.parent.glob("*.sql")
-                if p != MIGRATION
+                if p.name < MIGRATION.name
             },
             "Historical files changed",
         )

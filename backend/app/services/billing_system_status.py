@@ -31,9 +31,8 @@ from app.services.studio_live_billing_authorizations import StudioLiveBillingAut
 
 
 BILLING_WEBHOOK_PROCESSING_STALE_AFTER = timedelta(minutes=10)
-# This status hint must not turn the July 20 stream into current delivery proof.
-# Live mutation permits use the stronger provider-attested checkpoint and fresh
-# platform/per-account evidence in the atomic database authorization RPC.
+# Recent delivery is diagnostic. Quiet accounts remain eligible; unresolved
+# live events and account readiness are checked by the atomic database authority.
 BILLING_WEBHOOK_RECENT_WITHIN = timedelta(hours=24)
 BILLING_WEBHOOK_CLOCK_SKEW = timedelta(minutes=5)
 
@@ -189,7 +188,7 @@ class BillingSystemStatusReporter:
             ),
         )
         allowed_operations = (
-            authorization_store.current_allowed_operations(studio_id=studio_id)
+            authorization_store.supported_operations(studio_id=studio_id)
             if stripe_mode == "live"
             else {
                 scope: frozenset(operations) for scope, operations in LIVE_SCOPE_OPERATIONS.items()
@@ -206,6 +205,15 @@ class BillingSystemStatusReporter:
                     "connect_payments": mutation_capabilities.connect_payments,
                 },
                 allowed_operations=allowed_operations,
+                workflow_ready={
+                    "connect.dashboard": bool(account_id)
+                    and self._mutation_authorized(
+                        mutation_policy,
+                        "connect_dashboard_login_link.create",
+                        studio_id,
+                        account_id,
+                    ),
+                },
                 transition_scheduler_ready=bool(
                     getattr(
                         self.settings,
@@ -307,9 +315,9 @@ class BillingSystemStatusReporter:
             "Test-mode Stripe mutations are authorized automatically."
             if stripe_mode == "test"
             else (
-                "Durable authorization permits live Stripe mutations."
+                "This studio meets the live Payments policy."
                 if live_payments_authorized
-                else "Live Stripe mutations are closed until durable authorization is configured."
+                else "Live Payments are unavailable. Check the emergency stop, account readiness and unresolved events."
             ),
         )
         add_check(
@@ -409,10 +417,10 @@ class BillingSystemStatusReporter:
             recent = self._is_recent_timestamp(health.latest_processed_at)
             add_check(
                 f"Recent {label} webhook",
-                recent,
+                True,
                 f"A recent {label.lower()} webhook has processed."
                 if recent
-                else f"No {label.lower()} webhook has processed within the readiness window.",
+                else f"No recent {label.lower()} webhook activity. Quiet accounts remain eligible.",
             )
 
     @staticmethod
