@@ -375,6 +375,12 @@ function validateRenderDockerService(block, serviceName) {
       );
     }
   }
+  const shutdownDelays = [...block.matchAll(/^    maxShutdownDelaySeconds:[^\S\n]*([^\n]*)$/gm)];
+  if (shutdownDelays.length !== 1 || shutdownDelays[0][1].trim() !== "300") {
+    failures.push(
+      `render.yaml: ${serviceName} maxShutdownDelaySeconds must declare the integer 300 exactly once`,
+    );
+  }
   for (const nativeKey of ["buildCommand", "startCommand"]) {
     if (renderScalar(block, nativeKey) !== null) {
       failures.push(`render.yaml: ${serviceName} must not declare native-runtime ${nativeKey}`);

@@ -193,16 +193,39 @@ This source declaration does not record a hosted activation.
 
 The candidate backend also includes a billing-transition timer in each web
 process. With `BILLING_TRANSITION_SCHEDULER_ENABLED=true`, it starts immediately
-and runs every 300 seconds without incoming requests, claiming at most 25
-transitions per batch through the existing billing service. Each process admits
-one batch at a time with no queue; database claims and provider idempotency still
-coordinate other processes and the existing protected cron endpoint. Missed ticks
-are skipped. A batch gets an isolated client owned by its daemon thread through
-completion and cleanup. The timer waits at most 120 seconds, matching the bulk
-lane waiter, and shutdown waits at most 30 seconds, matching automation shutdown.
-Neither timeout cancels submitted provider work or releases its active slot early.
-Process termination can still interrupt that work; durable recovery rules remain
-in the existing transition workflow.
+and runs every 300 seconds without incoming requests. Each tick processes at most
+25 transitions through sequential calls to the existing billing service with
+`limit=1`. The owner checks shutdown and the effective enable flag before each
+new unit. It stops that tick on empty work, a deferred readback, an attention
+result, or an unavailable result. Each process admits one batch at a time with no
+queue; database claims and provider idempotency still coordinate other processes
+and the existing protected cron endpoint. Missed ticks are skipped.
+
+A batch gets one isolated client owned by a non-daemon thread through completion
+and cleanup. The timer waits at most 120 seconds, matching the bulk lane waiter,
+and the asynchronous shutdown waiter returns within 30 seconds. These are waiter
+limits, not work deadlines. The owner finishes the current unit and cleanup, then
+stops before claiming another unit. Ordinary Python interpreter exit waits for
+that thread even after the async shutdown waiter returns. Neither waiter timeout
+cancels submitted provider work or releases the active slot early.
+
+Both web services now declare `maxShutdownDelaySeconds: 300` in `render.yaml`.
+[Render's shutdown policy](https://render.com/docs/deploys#graceful-shutdown)
+sends SIGKILL when the configured grace period expires; its default is 30 seconds
+and the declared 300 seconds is the maximum supported by the
+[Blueprint setting](https://render.com/docs/blueprint-spec#maxshutdowndelayseconds).
+The grace period covers the whole process shutdown, including HTTP draining and
+other cleanup. An unusually slow current unit can still be terminated. Existing
+idempotency, provider readback and explicit reconciliation rules remain required;
+this change does not make ambiguous provider mutations safe to retry.
+
+The root coordinator's release packet must inspect, apply if needed, and verify
+the effective 300-second shutdown delay on both web services before candidate
+deployment or timer activation. Under the existing owner authorization and
+announce/pause gates, the verified Render CLI 2.26 command is
+`render services update <service-id> --max-shutdown-delay 300 --output json`.
+Read back each effective service setting after any update. This source declaration
+does not claim a hosted configuration change or add a paid service.
 
 The application default and reusable local/examples keep the flag false. The
 production manifest and its environment guard now require true as the intended

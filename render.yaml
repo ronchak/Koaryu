@@ -8,6 +8,7 @@ services:
     dockerfilePath: ./Dockerfile
     dockerContext: .
     healthCheckPath: /health/ready
+    maxShutdownDelaySeconds: 300
     autoDeployTrigger: 'off'
     envVars:
       - key: FRONTEND_URL
@@ -128,6 +129,7 @@ services:
     dockerfilePath: ./Dockerfile
     dockerContext: .
     healthCheckPath: /health/ready
+    maxShutdownDelaySeconds: 300
     autoDeployTrigger: 'off'
     envVars:
       # ENVIRONMENT=staging is a hardened mode, not a relaxed one: the frontend

@@ -1,7 +1,12 @@
 """Billing timer ownership, flag gates and late cleanup without provider access."""
 
 import asyncio
+import os
+from pathlib import Path
+import subprocess
+import sys
 import threading
+import time
 from types import SimpleNamespace
 from uuid import UUID
 
@@ -17,7 +22,7 @@ def summary():
 
 
 class Controlled:
-    def __init__(self, *, held=False, failure=None, result=None):
+    def __init__(self, *, held=False, failure=None, result=None, results=None):
         self.settings = SimpleNamespace(BILLING_TRANSITION_SCHEDULER_ENABLED=True)
         self.now = 100.0
         self.sleeps = asyncio.Queue()
@@ -29,6 +34,7 @@ class Controlled:
             self.release.set()
         self.failure = failure
         self.result = summary() if result is None else result
+        self.results = iter(results) if results is not None else None
         self.clients = []
         self.calls = []
         self.closed = []
@@ -60,7 +66,7 @@ class Controlled:
         assert self.release.wait(3), "controlled batch was not released"
         if self.failure == "process":
             raise RuntimeError("private provider diagnostic")
-        return self.result
+        return next(self.results) if self.results is not None else self.result
 
     async def sleep(self, seconds):
         wake = asyncio.get_running_loop().create_future()
@@ -115,10 +121,10 @@ def test_immediate_periodic_batches_without_requests_skip_missed_ticks_and_fresh
         wake.set_result(None)
         delay, _ = await control.parked()
         assert delay == 150 and len(control.calls) == 3
-        assert {call[0]["limit"] for call in control.calls} == {25}
+        assert {call[0]["limit"] for call in control.calls} == {1}
         workers = [UUID(call[0]["worker_id"]) for call in control.calls]
         assert len(set(workers)) == 3 and all(worker.version == 4 for worker in workers)
-        assert all(call[2] and call[1] != threading.get_ident() for call in control.calls)
+        assert all(not call[2] and call[1] != threading.get_ident() for call in control.calls)
         assert all(client[2] == {"postgrest_client_timeout": 30.0} for client in control.clients)
         assert control.closed == [(client, owner) for client, owner, _ in control.clients]
         await subject.stop()
@@ -256,7 +262,7 @@ def test_safe_failures_release_slot_and_timer_can_retry(monkeypatch, caplog, fai
         {"claimed": 0, "completed": 0, "failed": 0},
         {**summary(), "raw": "private provider data"},
         {**summary(), "claimed": True},
-        {**summary(), "claimed": 26},
+        {**summary(), "claimed": 2},
         {**summary(), "completed": 1},
         {**summary(), "failed": -1},
     ],
@@ -405,7 +411,7 @@ def test_cleanup_keeps_slot_and_client_owned_after_processing_and_stop():
 
 @pytest.mark.parametrize(
     "result",
-    [summary(), {"claimed": 5, "completed": 2, "reconciliation_required": 1, "failed": 2}],
+    [summary(), {"claimed": 1, "completed": 0, "reconciliation_required": 0, "failed": 1}],
 )
 def test_completed_batch_logs_only_exact_validated_counts(caplog, result):
     caplog.set_level("INFO", logger=module.logger.name)
@@ -440,3 +446,184 @@ def test_completed_batch_logs_only_exact_validated_counts(caplog, result):
     assert record.levelname == "INFO" and record.exc_info is None
     warnings = [record.message for record in caplog.records if record.levelname == "WARNING"]
     assert warnings == (["billing_transition_batch_attention_required"] if result["failed"] else [])
+
+
+@pytest.mark.parametrize("units", [0, 3, 25])
+def test_tick_aggregates_units_with_one_client_and_stops_at_zero_or_limit(caplog, units):
+    caplog.set_level("INFO", logger=module.logger.name)
+    complete = {**summary(), "claimed": 1, "completed": 1}
+
+    async def scenario():
+        control = Controlled(results=[complete] * units + [summary(), complete])
+        await control.subject.start()
+        delay, _ = await control.parked()
+        assert delay == 300
+        assert len(control.calls) == min(units + 1, 25)
+        assert {call[0]["limit"] for call in control.calls} == {1}
+        assert len({call[0]["worker_id"] for call in control.calls}) == len(control.calls)
+        assert len({call[1] for call in control.calls}) == 1
+        assert len(control.clients) == len(control.closed) == 1
+        assert control.waits[0][0].result() == "completed"
+        await control.subject.stop()
+
+    asyncio.run(scenario())
+    completed = [
+        record
+        for record in caplog.records
+        if record.message.startswith("billing_transition_batch_completed")
+    ]
+    assert len(completed) == 1 and completed[0].args == (units, units, 0, 0)
+
+
+@pytest.mark.parametrize("pause", ["stop", "flag"])
+def test_current_unit_finishes_after_pause_without_claiming_another(caplog, pause):
+    caplog.set_level("INFO", logger=module.logger.name)
+    control = Controlled(held=True, result={**summary(), "claimed": 1, "completed": 1})
+    control.expire = True
+
+    async def scenario():
+        await control.subject.start()
+        assert await asyncio.to_thread(control.entered.wait, 1)
+        await control.parked()
+        source = control.waits[0][0]
+        if pause == "stop":
+            await control.subject.stop()
+        else:
+            control.settings.BILLING_TRANSITION_SCHEDULER_ENABLED = False
+        assert control.subject._active is source and not source.done()
+        assert not control.closed and len(control.calls) == 1
+        control.release.set()
+        assert await module._wait_for_source(source, timeout=1) == "completed"
+        assert len(control.calls) == len(control.closed) == 1
+        assert not control.calls[0][2]
+        await control.subject.stop()
+
+    try:
+        asyncio.run(scenario())
+    finally:
+        control.release.set()
+    completed = [
+        record
+        for record in caplog.records
+        if record.message.startswith("billing_transition_batch_completed")
+    ]
+    assert len(completed) == 1 and completed[0].args == (1, 1, 0, 0)
+
+
+@pytest.mark.parametrize(
+    "last,outcome",
+    [
+        ({**summary(), "claimed": 1, "failed": 1}, "attention_required"),
+        ({**summary(), "claimed": 1, "reconciliation_required": 1}, "attention_required"),
+        ({**summary(), "claimed": 1}, "deferred"),
+        ({"private": "provider data"}, "unavailable"),
+    ],
+)
+def test_drain_stops_after_attention_deferred_or_malformed_unit(caplog, last, outcome):
+    caplog.set_level("INFO", logger=module.logger.name)
+    complete = {**summary(), "claimed": 1, "completed": 1}
+
+    async def scenario():
+        control = Controlled(results=[complete, last, complete])
+        await control.subject.start()
+        delay, _ = await control.parked()
+        assert delay == 300 and len(control.calls) == 2
+        assert control.waits[0][0].result() == outcome
+        assert len(control.closed) == 1
+        await control.subject.stop()
+
+    asyncio.run(scenario())
+    completed = [
+        record
+        for record in caplog.records
+        if record.message.startswith("billing_transition_batch_completed")
+    ]
+    if outcome == "unavailable":
+        assert not completed
+    else:
+        assert len(completed) == 1
+        assert completed[0].args == (2, 1, last["reconciliation_required"], last["failed"])
+    if outcome == "deferred":
+        assert "billing_transition_batch_deferred" in caplog.text
+        assert "attention_required" not in caplog.text
+    assert "private" not in caplog.text and "provider data" not in caplog.text
+
+
+def test_ordinary_interpreter_exit_retains_current_unit_and_cleanup_after_bounded_stop(tmp_path):
+    script = r"""
+import asyncio
+from pathlib import Path
+import sys
+import time
+from types import SimpleNamespace
+from app.core.config import Settings
+Settings.model_config["env_file"] = None
+from app.services import billing_transition_scheduler as module
+
+folder = Path(sys.argv[1])
+module.STOP_SECONDS = 0.01
+module.WAIT_SECONDS = 0.01
+calls = []
+class Service:
+    async def process_due_enrollment_transitions(self, **kwargs):
+        calls.append(kwargs)
+        (folder / "entered").write_text("entered")
+        while not (folder / "release").exists():
+            time.sleep(0.01)
+        (folder / "finished").write_text(str(len(calls)))
+        return {"claimed": 1, "completed": 1, "reconciliation_required": 0, "failed": 0}
+
+def close(client):
+    (folder / "closed").write_text("closed")
+
+async def scenario():
+    subject = module.BillingTransitionScheduler(
+        SimpleNamespace(BILLING_TRANSITION_SCHEDULER_ENABLED=True),
+        client_factory=lambda **_: object(), client_closer=close,
+        service_factory=lambda _: Service(),
+    )
+    await subject.start()
+    while not (folder / "entered").exists():
+        await asyncio.sleep(0.01)
+    await subject.stop()
+    assert subject._active is not None and not subject._active.cancelled()
+
+asyncio.run(scenario())
+(folder / "main-returned").write_text("returned")
+"""
+    environment = {
+        "PATH": os.environ.get("PATH", ""),
+        "ENVIRONMENT": "test",
+        "SUPABASE_URL": "https://placeholder.supabase.co",
+    }
+    process = subprocess.Popen(
+        [sys.executable, "-c", script, str(tmp_path)],
+        cwd=Path(__file__).resolve().parents[1],
+        env=environment,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        deadline = time.monotonic() + 5
+        while not (tmp_path / "main-returned").exists() and time.monotonic() < deadline:
+            assert process.poll() is None, "child exited before bounded stop returned"
+            time.sleep(0.01)
+        assert (tmp_path / "main-returned").exists()
+        # The child has reached the end of its script. Only the active source
+        # keeps it alive; its main event loop and bounded stop have both finished.
+        time.sleep(0.1)
+        assert process.poll() is None
+        assert not (tmp_path / "finished").exists() and not (tmp_path / "closed").exists()
+        (tmp_path / "release").write_text("release")
+        stdout, stderr = process.communicate(timeout=5)
+        assert process.returncode == 0, (stdout, stderr)
+        assert (tmp_path / "finished").read_text() == "1"
+        assert (tmp_path / "closed").read_text() == "closed"
+    finally:
+        (tmp_path / "release").write_text("release")
+        try:
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait(timeout=5)

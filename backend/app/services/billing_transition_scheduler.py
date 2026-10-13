@@ -1,4 +1,4 @@
-"""Recurring billing work with one daemon-owned batch and no local queue."""
+"""Recurring billing work with one draining thread owner and no local queue."""
 
 from __future__ import annotations
 
@@ -100,40 +100,55 @@ class BillingTransitionScheduler:
                     return
             client = self._client_factory(postgrest_client_timeout=DATABASE_TIMEOUT_SECONDS)
             service = self._service_factory(client)
-            with self._lock:
-                if self._closed or not self._enabled():
-                    outcome = "disabled"
-                    return
-            # This async public method wraps synchronous database/provider work.
-            # Its loop belongs to the daemon, never to the ASGI waiter.
-            result = asyncio.run(
-                service.process_due_enrollment_transitions(
-                    worker_id=str(uuid4()), limit=BATCH_LIMIT
+            totals = dict.fromkeys(_RESULT_FIELDS, 0)
+            processed = False
+            outcome = "completed"
+            for _ in range(BATCH_LIMIT):
+                with self._lock:
+                    if self._closed or not self._enabled():
+                        if not processed:
+                            outcome = "disabled"
+                            return
+                        break
+                # Admit only one unit at a time so shutdown can stop further
+                # claims while the current synchronous provider operation drains.
+                result = asyncio.run(
+                    service.process_due_enrollment_transitions(worker_id=str(uuid4()), limit=1)
                 )
-            )
-            if (
-                type(result) is not dict
-                or set(result) != _RESULT_FIELDS
-                or any(
-                    type(value) is not int or not 0 <= value <= BATCH_LIMIT
-                    for value in result.values()
-                )
-                or sum(result[key] for key in _RESULT_FIELDS - {"claimed"}) > result["claimed"]
-            ):
-                raise ValueError("Invalid billing batch result.")
+                if (
+                    type(result) is not dict
+                    or set(result) != _RESULT_FIELDS
+                    or any(
+                        type(value) is not int or not 0 <= value <= 1 for value in result.values()
+                    )
+                    or sum(result[key] for key in _RESULT_FIELDS - {"claimed"}) > result["claimed"]
+                ):
+                    raise ValueError("Invalid billing unit result.")
+                processed = True
+                for key in _RESULT_FIELDS:
+                    totals[key] += result[key]
+                if result["failed"] or result["reconciliation_required"]:
+                    outcome = "attention_required"
+                    logger.warning("billing_transition_batch_attention_required")
+                    break
+                if result["claimed"] == 0:
+                    break
+                if result["completed"] == 0:
+                    # The existing workflow can defer a pending boundary readback.
+                    # Stop this scan without inventing a provider failure or retry.
+                    outcome = "deferred"
+                    logger.info("billing_transition_batch_deferred")
+                    break
             logger.info(
                 "billing_transition_batch_completed claimed=%d completed=%d "
                 "reconciliation_required=%d failed=%d",
-                result["claimed"],
-                result["completed"],
-                result["reconciliation_required"],
-                result["failed"],
+                totals["claimed"],
+                totals["completed"],
+                totals["reconciliation_required"],
+                totals["failed"],
             )
-            outcome = "completed"
-            if result["failed"] or result["reconciliation_required"]:
-                outcome = "attention_required"
-                logger.warning("billing_transition_batch_attention_required")
-        except BaseException:  # noqa: BLE001 - Daemon failures must not expose provider diagnostics.
+        except BaseException:  # noqa: BLE001 - Owner failures must not expose provider diagnostics.
+            outcome = "unavailable"
             logger.warning("billing_transition_batch_unavailable")
         finally:
             if client is not None:
@@ -157,7 +172,9 @@ class BillingTransitionScheduler:
                     target=self._run_source,
                     args=(source,),
                     name="billing-transition-batch",
-                    daemon=True,
+                    # Ordinary interpreter exit joins this owner through current
+                    # unit completion and cleanup. A host SIGKILL can still cut it off.
+                    daemon=False,
                 ).start()
             except Exception:  # noqa: BLE001 - A failed admission leaves no occupied slot.
                 self._active = None
@@ -180,7 +197,7 @@ class BillingTransitionScheduler:
         if source is not None:
             try:
                 await self._wait(source, timeout=max(0.0, STOP_SECONDS - (self._clock() - began)))
-            except Exception:  # noqa: BLE001, S110 - The daemon still owns submitted work and cleanup.
+            except Exception:  # noqa: BLE001, S110 - The owner still retains submitted work and cleanup.
                 pass
         # Like automation shutdown, bound this waiter, not submitted mutations.
         await asyncio.sleep(0)

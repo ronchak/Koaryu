@@ -49,6 +49,7 @@ services:
     rootDir: backend
     dockerfilePath: ./Dockerfile
     dockerContext: .
+    maxShutdownDelaySeconds: 300
     healthCheckPath: /health/ready
     autoDeployTrigger: 'off'
     envVars:
@@ -125,6 +126,7 @@ describe("environment example validation", () => {
     rootDir: backend
     dockerfilePath: ./Dockerfile
     dockerContext: .
+    maxShutdownDelaySeconds: 300
 `;
     const exactInstall = reviewedDockerfile
       .split("\n")
@@ -152,6 +154,7 @@ describe("environment example validation", () => {
     rootDir: backend
     dockerfilePath: ./Dockerfile
     dockerContext: .
+    maxShutdownDelaySeconds: 300
 `;
     const exactInstall = reviewedDockerfile
       .split("\n")
@@ -259,6 +262,7 @@ services:
     rootDir: backend
     dockerfilePath: ./Dockerfile
     dockerContext: .
+    maxShutdownDelaySeconds: 300
 `;
     assert.deepEqual(
       validateRenderDockerRuntime(
@@ -269,6 +273,41 @@ services:
       [],
     );
   });
+
+  for (const serviceName of ["koaryu", "koaryu-staging"]) {
+    for (const [label, declaration] of [
+      ["missing", ""],
+      ["default delay", "    maxShutdownDelaySeconds: 30\n"],
+      ["above platform limit", "    maxShutdownDelaySeconds: 301\n"],
+      ["string value", '    maxShutdownDelaySeconds: "300"\n'],
+      ["duplicate value", "    maxShutdownDelaySeconds: 300\n    maxShutdownDelaySeconds: 30\n"],
+    ]) {
+      it(`rejects ${label} shutdown delay on ${serviceName}`, () => {
+        const source = `${stagingRenderSource()}
+  - type: web
+    name: koaryu
+    runtime: docker
+    rootDir: backend
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    maxShutdownDelaySeconds: 300
+`;
+        const drifted = source.split(/(?=^  - type:)/m).map((block) => {
+          if (!block.includes(`    name: ${serviceName}\n`)) return block;
+          return block.replace("    maxShutdownDelaySeconds: 300\n", declaration);
+        }).join("");
+        assert.notEqual(drifted, source);
+        const failures = validateRenderDockerRuntime(
+          drifted,
+          reviewedDockerfile,
+          reviewedRenderStartScript,
+        );
+        assert.deepEqual(failures, [
+          `render.yaml: ${serviceName} maxShutdownDelaySeconds must declare the integer 300 exactly once`,
+        ]);
+      });
+    }
+  }
 
   it("rejects native runtime drift, inactive arena config, or an unverified preload", () => {
     const renderSource = `${stagingRenderSource()}
@@ -313,6 +352,7 @@ services:
     rootDir: backend
     dockerfilePath: ./Dockerfile
     dockerContext: .
+    maxShutdownDelaySeconds: 300
 `;
     const commentedStartScript = `
 # if ! grep -Fq "libjemalloc.so.2" /proc/self/maps; then
@@ -337,6 +377,7 @@ python -m uvicorn app.main:app --host 0.0.0.0 --port "\${PORT:-10000}"
     rootDir: backend
     dockerfilePath: ./Dockerfile
     dockerContext: .
+    maxShutdownDelaySeconds: 300
 `;
     const noExitStartScript = reviewedRenderStartScript.replace("  exit 1\n", "");
     const failures = validateRenderDockerRuntime(
@@ -357,6 +398,7 @@ python -m uvicorn app.main:app --host 0.0.0.0 --port "\${PORT:-10000}"
     rootDir: backend
     dockerfilePath: ./Dockerfile
     dockerContext: .
+    maxShutdownDelaySeconds: 300
 `;
     const noShebangStartScript = reviewedRenderStartScript.replace(
       "#!/bin/sh\n",
@@ -380,6 +422,7 @@ python -m uvicorn app.main:app --host 0.0.0.0 --port "\${PORT:-10000}"
     rootDir: backend
     dockerfilePath: ./Dockerfile
     dockerContext: .
+    maxShutdownDelaySeconds: 300
 `;
     const driftedDockerfile = `${reviewedDockerfile}
 FROM python:3.11.9-slim-bookworm
@@ -643,6 +686,7 @@ services:
     rootDir: backend
     dockerfilePath: ./Dockerfile
     dockerContext: .
+    maxShutdownDelaySeconds: 300
     dockerCommand: python -m app.services.billing_transition_cron
     schedule: "*/5 * * * *"
     autoDeployTrigger: 'off'
