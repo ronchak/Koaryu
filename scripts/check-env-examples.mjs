@@ -117,7 +117,7 @@ const renderCriticalValues = new Map([
   ["STRIPE_MODE", "live"],
   ["LIVE_BILLING_ENABLED", "true"],
   ["CORE_SELF_CHECKOUT_ENABLED", "true"],
-  ["BILLING_TRANSITION_SCHEDULER_ENABLED", "false"],
+  ["BILLING_TRANSITION_SCHEDULER_ENABLED", "true"],
   ["OPERATIONAL_ALERTS_ENABLED", "false"],
   ["EMAIL_PROVIDER", "disabled"],
   ["EMAIL_SEND_ENABLED", "false"],
@@ -137,6 +137,7 @@ const RENDER_JEMALLOC_VERSION = "5.3.0-1";
 // differ. Each exception names both sides so neither value can drift silently.
 const productionRenderExampleDivergences = new Map([
   ["LIVE_BILLING_ENABLED", { exampleValue: "false", manifestValue: "true" }],
+  ["BILLING_TRANSITION_SCHEDULER_ENABLED", { exampleValue: "false", manifestValue: "true" }],
 ]);
 
 function isAllowedProductionRenderExampleDivergence(

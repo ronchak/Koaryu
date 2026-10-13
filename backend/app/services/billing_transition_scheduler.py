@@ -121,6 +121,14 @@ class BillingTransitionScheduler:
                 or sum(result[key] for key in _RESULT_FIELDS - {"claimed"}) > result["claimed"]
             ):
                 raise ValueError("Invalid billing batch result.")
+            logger.info(
+                "billing_transition_batch_completed claimed=%d completed=%d "
+                "reconciliation_required=%d failed=%d",
+                result["claimed"],
+                result["completed"],
+                result["reconciliation_required"],
+                result["failed"],
+            )
             outcome = "completed"
             if result["failed"] or result["reconciliation_required"]:
                 outcome = "attention_required"

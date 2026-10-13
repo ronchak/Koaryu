@@ -262,6 +262,8 @@ def test_safe_failures_release_slot_and_timer_can_retry(monkeypatch, caplog, fai
     ],
 )
 def test_malformed_results_are_not_retained_or_logged(caplog, result):
+    caplog.set_level("INFO", logger=module.logger.name)
+
     async def scenario():
         control = Controlled(result=result)
         await control.subject.start()
@@ -272,6 +274,7 @@ def test_malformed_results_are_not_retained_or_logged(caplog, result):
 
     asyncio.run(scenario())
     assert "billing_transition_batch_unavailable" in caplog.text
+    assert "billing_transition_batch_completed" not in caplog.text
     assert "private" not in caplog.text
 
 
@@ -340,6 +343,7 @@ def test_start_stop_categories_and_timer_failure_are_sanitized(caplog):
     asyncio.run(scenario())
     assert [record.message for record in caplog.records] == [
         "billing_transition_scheduler_started",
+        "billing_transition_batch_completed claimed=0 completed=0 reconciliation_required=0 failed=0",
         "billing_transition_timer_unavailable",
         "billing_transition_scheduler_admission_closed",
     ]
@@ -397,3 +401,42 @@ def test_cleanup_keeps_slot_and_client_owned_after_processing_and_stop():
         asyncio.run(scenario())
     finally:
         release_close.set()
+
+
+@pytest.mark.parametrize(
+    "result",
+    [summary(), {"claimed": 5, "completed": 2, "reconciliation_required": 1, "failed": 2}],
+)
+def test_completed_batch_logs_only_exact_validated_counts(caplog, result):
+    caplog.set_level("INFO", logger=module.logger.name)
+
+    async def scenario():
+        control = Controlled(result=result)
+        await control.subject.start()
+        await control.parked()
+        assert len(control.calls) == 1
+        await control.subject.stop()
+
+    asyncio.run(scenario())
+    records = [
+        record
+        for record in caplog.records
+        if record.message.startswith("billing_transition_batch_completed")
+    ]
+    assert len(records) == 1
+    record = records[0]
+    counts = tuple(
+        result[key] for key in ("claimed", "completed", "reconciliation_required", "failed")
+    )
+    assert record.args == counts and all(type(value) is int for value in record.args)
+    assert (
+        record.message
+        == (
+            "billing_transition_batch_completed claimed=%d completed=%d "
+            "reconciliation_required=%d failed=%d"
+        )
+        % counts
+    )
+    assert record.levelname == "INFO" and record.exc_info is None
+    warnings = [record.message for record in caplog.records if record.levelname == "WARNING"]
+    assert warnings == (["billing_transition_batch_attention_required"] if result["failed"] else [])

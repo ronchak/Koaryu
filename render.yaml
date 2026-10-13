@@ -53,7 +53,7 @@ services:
       - key: BILLING_TRANSITION_WORKER_SECRET
         sync: false
       - key: BILLING_TRANSITION_SCHEDULER_ENABLED
-        value: "false"
+        value: "true"
       - key: OPERATIONAL_ALERTS_ENABLED
         value: "false"
       - key: OPERATIONAL_ALERT_WORKER_SECRET

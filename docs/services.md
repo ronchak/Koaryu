@@ -30,7 +30,7 @@ Inventory baseline: 2026-08-24. The last completed release verification, October
 | Payments | Stripe live mode | Stripe test mode |
 | `LIVE_BILLING_ENABLED` | `true` (global interlock only) | `false` |
 | `CORE_SELF_CHECKOUT_ENABLED` | `true` (Koaryu Core only) | `false` |
-| Period-end billing worker | disabled; backend timer available in candidate | Render Cron every 5 minutes, suspended September 14 |
+| Period-end billing worker | hosted disabled; candidate source declares timer enabled | Manifest flag true; cron suspended; disable hosted flag before candidate deploy |
 | `OPERATIONAL_ALERTS_ENABLED` | `false` | `false` |
 
 Neither production surface auto-deploys. Both require an explicit owner-authorized release —
@@ -184,9 +184,12 @@ Render service reference. Each run claims at most 25 transitions and waits up to
 seconds, beyond the backend bulk lane's 120-second deadline but below the five-minute
 cadence. A lost or failed response is safe to retry because the transition intent and
 provider mutation keep their durable idempotency identity. Render bills cron execution by runtime with a $1 monthly
-minimum for the service. The production web service keeps
-`BILLING_TRANSITION_SCHEDULER_ENABLED=false`; no production cron exists in this
-release task.
+minimum for the service. No production cron is provisioned. The candidate's
+`render.yaml` declares `BILLING_TRANSITION_SCHEDULER_ENABLED=true` as the desired
+final production setting. The effective hosted production flag remains false
+until the named root coordinator verifies the exact deployed candidate, inspects
+due transition intents, and explicitly enables it under owner authorization.
+This source declaration does not record a hosted activation.
 
 The candidate backend also includes a billing-transition timer in each web
 process. With `BILLING_TRANSITION_SCHEDULER_ENABLED=true`, it starts immediately
@@ -201,12 +204,22 @@ Neither timeout cancels submitted provider work or releases its active slot earl
 Process termination can still interrupt that work; durable recovery rules remain
 in the existing transition workflow.
 
-The flag defaults to false and is checked again before each admitted batch and
-before processing. Disabling it stops new batches without canceling submitted
-work. This is a source capability only; production remains disabled, and this
-change neither enables billing nor provisions a cron service. The production
-always-on backend can run the timer when separately authorized; the sleeping free
-staging service cannot guarantee this cadence.
+The application default and reusable local/examples keep the flag false. The
+production manifest and its environment guard now require true as the intended
+final setting. The timer checks the effective flag before admission and before
+processing; disabling it stops new batches without canceling submitted work.
+A completed pass logs only validated integer counts for claimed, completed,
+reconciliation-required and failed transitions, including a zero-work pass.
+Nonzero failures or reconciliation counts also emit an attention warning.
+
+The staging manifest already sets the flag true. With this candidate, that starts
+the in-process timer even while the old Render cron is suspended. Before deploying
+or proving the candidate on staging, the named root coordinator must inspect due
+transition intents and disable the effective hosted staging flag, then verify
+that it is false. Any staging timer activation requires a separate explicit step
+after that inspection and exact-candidate deployment verification. Suspending the
+cron does not pause the in-process timer. The always-on production backend can
+run the timer; the sleeping free staging service cannot guarantee its cadence.
 
 Render service resume can build the current tracked branch even when auto-deploy is off. Pin and inspect that branch before resuming, then verify the actual deployed SHA. The September 29 production resume built the intended release from `main`; do not assume resume restores the previously serving artifact.
 
