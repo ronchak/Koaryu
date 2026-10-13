@@ -462,6 +462,8 @@ export function useStoreScheduleActions({
           date: data.date || new Date().toISOString().split("T")[0],
           start_time: data.start_time || "18:00",
           end_time: data.end_time || "19:30",
+          instructor_id: data.instructor_id,
+          program_id: data.program_id,
           capacity: data.capacity,
           status: "scheduled",
           created_at: new Date().toISOString(),
