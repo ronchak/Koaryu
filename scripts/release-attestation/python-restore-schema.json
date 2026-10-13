@@ -874,6 +874,30 @@
       "state": "v57",
       "query": "V57_AUTOMATION_FUNCTION_STATE_SQL",
       "expected": "EXPECTED_V57_AUTOMATION_FUNCTION_STATE"
+    },
+    "readiness-v58": {
+      "kind": "readiness",
+      "state": "v58"
+    },
+    "catalog-v58": {
+      "kind": "export",
+      "state": "v58",
+      "query": "V58_CATALOG_STATE_SQL",
+      "expected": "EXPECTED_V58_CATALOG_STATE",
+      "restored": "EXPECTED_V58_RESTORED_CATALOG_STATE"
+    },
+    "tables-v58": {
+      "kind": "export",
+      "state": "v58",
+      "query": "V58_AUTOMATION_TABLE_STATE_SQL",
+      "expected": "EXPECTED_V58_AUTOMATION_TABLE_STATE",
+      "restored": "EXPECTED_V58_RESTORED_AUTOMATION_TABLE_STATE"
+    },
+    "functions-v58": {
+      "kind": "export",
+      "state": "v58",
+      "query": "V58_AUTOMATION_FUNCTION_STATE_SQL",
+      "expected": "EXPECTED_V58_AUTOMATION_FUNCTION_STATE"
     }
   },
   "cases": {
@@ -4276,6 +4300,59 @@
       "semanticManifests": [],
       "passLines": [
         "[restored V57] PASS retained V56 business and delivery truth, complete guarded schema and actual final workflow continuation on canonical/restored copies"
+      ]
+    },
+    "v58": {
+      "format": "forward",
+      "base": "6f6ffb72f07d496af9523be14bf0a1de9181e983",
+      "inventoryFrom": "v57",
+      "constraintPairs": "v57-restore-constraint-pairs.json",
+      "docstring": "Prove V57 expired pilot history and legacy bootstrap rows survive V58 GA upgrade and logical restore with exact current authority.",
+      "exports": [
+        [
+          "readiness-v57.query",
+          "readiness-v57.expected"
+        ],
+        [
+          "catalog-v57.query",
+          "catalog-v57.expected",
+          "catalog-v57.restored"
+        ],
+        [
+          "readiness-v58.query",
+          "readiness-v58.expected"
+        ],
+        [
+          "catalog-v58.query",
+          "catalog-v58.expected",
+          "catalog-v58.restored"
+        ],
+        [
+          "tables-v58.query",
+          "tables-v58.expected",
+          "tables-v58.restored"
+        ],
+        [
+          "functions-v58.query",
+          "functions-v58.expected"
+        ]
+      ],
+      "predecessor": [
+        "readiness-v57",
+        "catalog-v57"
+      ],
+      "checks": [
+        "readiness-v58",
+        "catalog-v58",
+        "tables-v58",
+        "functions-v58"
+      ],
+      "absentFunctions": [
+        "public.studio_live_billing_supported_operations_v58(uuid,text)"
+      ],
+      "semanticManifests": [],
+      "passLines": [
+        "[restored V58] PASS canonical/restored retained expired pilot history, legacy recovery denial, ungranted quiet studios and complete GA bootstrap continuation"
       ]
     }
   }

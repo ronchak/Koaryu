@@ -211,12 +211,12 @@ if [[ ${#verification_files[@]} -eq 0 ]]; then
   echo "ERROR: No contract files found in $VERIFICATION_DIR" >&2
   exit 1
 fi
-if [[ ${#migration_files[@]} -ne 152 ]]; then
-  echo "ERROR: Expected the canonical 152-migration chain, found ${#migration_files[@]}." >&2
+if [[ ${#migration_files[@]} -ne 153 ]]; then
+  echo "ERROR: Expected the canonical 153-migration chain, found ${#migration_files[@]}." >&2
   exit 1
 fi
-if [[ ${#verification_files[@]} -ne 75 ]]; then
-  echo "ERROR: Expected the canonical 75-contract inventory, found ${#verification_files[@]}." >&2
+if [[ ${#verification_files[@]} -ne 76 ]]; then
+  echo "ERROR: Expected the canonical 76-contract inventory, found ${#verification_files[@]}." >&2
   exit 1
 fi
 if [[ ! -f "$VERIFICATION_DIR/schedule_window_read_contract.sql" ]]; then
@@ -2262,8 +2262,8 @@ echo "[migration $migration_total/$migration_total] RUN complete V57"
 run_interruptible "$PSQL" "${psql_args[@]}" --single-transaction --file="$final_v57_migration_file" \
   --command="INSERT INTO supabase_migrations.schema_migrations(version,name) VALUES('20261005105341','automation_workflow_graph_v57');"
 echo "[V57 readiness] RUN complete installed catalog and genuine history"
-final_readiness="$({ cd "$ROOT_DIR"; node --input-type=module --eval "import { FINAL_OPERATIONAL_READINESS_SQL } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(FINAL_OPERATIONAL_READINESS_SQL);"; } | "$PSQL" "${psql_args[@]}" --tuples-only --no-align)"
-(cd "$ROOT_DIR" && node --input-type=module --eval "import { validateOperationalReadiness } from './scripts/studio-comp-migration-rollout.mjs'; validateOperationalReadiness(process.argv[1]);" "$final_readiness")
+final_readiness="$({ cd "$ROOT_DIR"; node --input-type=module --eval "import { V57_OPERATIONAL_READINESS_SQL } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(V57_OPERATIONAL_READINESS_SQL);"; } | "$PSQL" "${psql_args[@]}" --tuples-only --no-align)"
+(cd "$ROOT_DIR" && node --input-type=module --eval "import assert from 'node:assert/strict'; import { EXPECTED_V57_OPERATIONAL_READINESS } from './scripts/studio-comp-migration-rollout.mjs'; assert.equal(process.argv[1], EXPECTED_V57_OPERATIONAL_READINESS);" "$final_readiness")
 echo "[V57 readiness] PASS complete installed catalog and genuine history"
 
 echo "[concurrency] RUN billing command ownership and lock ordering"
@@ -2305,6 +2305,7 @@ verification_index=0
 for verification_file in "${verification_files[@]}"; do
   verification_index=$((verification_index + 1))
   verification_filename="$(basename "$verification_file")"
+  if [[ "$verification_filename" == "live_billing_ga_contract.sql" ]]; then continue; fi
 
   echo "[contract $verification_index/$verification_total] RUN $verification_filename"
   if run_interruptible "$PSQL" "${psql_args[@]}" --file="$verification_file"; then
@@ -2337,5 +2338,16 @@ else
   echo "[concurrency] FAIL operational alert clear/completion serialization (exit $status)" >&2
   exit "$status"
 fi
+
+echo "[V58 upgrade/restore] RUN retained pilot rows and GA continuation"
+run_interruptible python3 "$ROOT_DIR/scripts/verify-v57-v58-restore-contract.py" \
+  "$PG_DUMP" "$PG_RESTORE" "$CREATEDB" "$PSQL" "$SOCKET_DIR" "$PG_PORT" "$TEMP_DIR" "$ROOT_DIR"
+run_interruptible "$PSQL" "${psql_args[@]}" --single-transaction \
+  --file="$MIGRATION_DIR/20261013013243_live_billing_authority_repairs_v58.sql" \
+  --command="INSERT INTO supabase_migrations.schema_migrations(version,name) VALUES('20261013013243','live_billing_authority_repairs_v58');"
+final_readiness="$({ cd "$ROOT_DIR"; node --input-type=module --eval "import { FINAL_OPERATIONAL_READINESS_SQL } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(FINAL_OPERATIONAL_READINESS_SQL);"; } | "$PSQL" "${psql_args[@]}" --tuples-only --no-align)"
+(cd "$ROOT_DIR" && node --input-type=module --eval "import { validateOperationalReadiness } from './scripts/studio-comp-migration-rollout.mjs'; validateOperationalReadiness(process.argv[1]);" "$final_readiness")
+run_interruptible "$PSQL" "${psql_args[@]}" --file="$VERIFICATION_DIR/live_billing_ga_contract.sql"
+echo "[V58 readiness] PASS complete GA catalog and authority"
 
 echo "PASS: $migration_total migrations and $verification_total Supabase contracts verified on ephemeral PostgreSQL 17."

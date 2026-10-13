@@ -1,12 +1,23 @@
 # Stripe live billing rollout gate
 
-This runbook separates repository readiness from provider and financial authority. Phase A adds fail-closed code, SQL, owner tooling, and evidence validators. It does **not** enable live billing, change a Stripe object, record a production checkpoint, apply a production migration, rotate a secret, or run a financial canary.
+V58 replaces manual Payments pilot enrollment with automatic eligibility for all valid
+studios. Deploying this policy still follows the named coordinator's exact release gates.
+Repository implementation does not itself assert that the production release has happened.
 
-## Current production state — verified 2026-08-19
+`LIVE_BILLING_ENABLED` is the emergency stop. Turning it off blocks new live Connect
+mutations. Grants and checkpoint renewal are no longer routine availability work; their
+existing rows and diagnostic writers remain intact. Grant/revoke commands do not enable
+or suspend GA Payments; use the global emergency stop to block live mutations.
+Current failures must be investigated,
+not cleared by manufacturing fresh reconciliation evidence. Before launch, verify a current
+end-to-end webhook path and investigate known delivery gaps. Reports retain any unproven
+historical gap honestly.
+
+## Historical pilot production snapshot, 2026-08-19
 
 This snapshot is read-only evidence from the exact deployed backend
 `0bb07b84e5c0a56180c4f291142c8e77e1b9d31a`, production Supabase, and Stripe live
-mode. It records current truth; it does not authorize a mutation or financial canary.
+mode. It records historical truth; it does not authorize a mutation or financial canary.
 
 | Surface | Current disposition |
 | --- | --- |
@@ -91,22 +102,28 @@ a Koaryu Core-only demo.
 
 ## Authorization model
 
-`LIVE_BILLING_ENABLED` is the Koaryu Payments global emergency interlock and is
-necessary but insufficient. Every live Koaryu Payments mutation also needs one
-enabled, unexpired `studio_live_billing_authorizations` row for the exact studio and
-scope. Koaryu Core Checkout, customer portal, and their exact-object compensations are
-the separately authorized `CORE_SELF_CHECKOUT_ENABLED` path documented in
-`billing-boundary.md`; they do not require a Payments checkpoint or studio scope.
+`LIVE_BILLING_ENABLED` is necessary but insufficient. The service-only atomic database
+RPC validates the supported scope/operation and exact studio/account relationship, checks
+current generation through the owning workflow, and requires current KYC/readiness for
+payments. Python retains exact configured Stripe mode and deployed SHA presence checks.
+Core self-checkout and unused legacy Core grant paths retain their existing separate policy.
 
-The authorization table supports these scopes:
+The global event guard denies any retained failed live event, any in-scope live event that
+is not processed, and any connected event account that is neither mapped nor explicitly
+excluded. A mapped account takes precedence over exclusion. Fully processed known events
+and quiet accounts do not need fresh daily evidence. No checkpoint expiry, overlap chain,
+deployment binding, total mapping count or all-account freshness grants runtime permission.
 
-- `core_subscription`
-- `connect_onboarding`
-- `connect_payments`
+New onboarding requests store a null checkpoint as explicit GA provenance and preserve
+exact candidate, generation, request context, payload hashes and provider idempotency keys.
+Recovery remains bounded to 24 hours, with two-minute response receipts and terminal delivery
+or support-required barriers. An old non-null checkpoint request cannot silently resume under
+GA and requires support. Account links and dashboard access precede KYC; payment operations
+still require charges, payouts, submitted details and no outstanding requirements.
 
-Connect payment grants bind the exact Stripe account and current `connect_account_generation`. Reconnect/reset, revocation, expiry, readiness loss, missing explicit caller scope, a mismatched deployment SHA, an unresolved provider/event account, any relevant event not fully processed, or an absent/failing reconciliation checkpoint denies the mutation. The latest live checkpoint must match the exact `RENDER_GIT_COMMIT`, expire within 24 hours, contain zero unresolved accounts and failures, and include separately fresh matched platform delivery plus matched delivery for every mapped Connect account and generation. The database atomically locks and derives current grant, mapping, generation, readiness, checkpoint, per-account evidence, and current relevant event state; callers supply no eligibility boolean. A new pending, processing, failed, or unresolved-unmapped event denies the next live mutation until its current database disposition is resolved. An explicitly reviewed excluded account stays outside this relevant universe only while it remains unmapped.
-
-Only the service-role CLI calls the atomic grant/revoke/audit RPC. There is no public grant endpoint. Stripe-hosted Account Links remain admin-only, single-use onboarding URLs. Returning from Stripe triggers a read of account state; it never proves KYC or payment readiness.
+Historical grant/revoke/checkpoint RPCs remain service-only diagnostic tools. Their records
+are neither renewed nor deleted by V58. Stripe-hosted Account Links remain admin-only,
+single-use onboarding URLs; returning from Stripe never proves KYC or payment readiness.
 
 ## Responsibility boundaries
 
@@ -213,7 +230,7 @@ snapshot above. Continue to fail closed on any newly unresolved account or faile
 event. Never blanket-ignore unmapped accounts. A fresh read-only reconciliation remains
 required because a historical cleanup result does not prove current delivery.
 
-## Owner authorization commands
+## Historical pilot authorization and diagnostic commands
 
 All writes are dry runs unless `--execute` is supplied. Execute also requires a real Auth actor, exact Supabase project confirmation, and an interactive TTY.
 
@@ -246,7 +263,7 @@ unmapped account with `200` and records them as `ignored`. An unknown unmapped a
 continues to fail closed with `503` until it is mapped or reviewed and excluded. A mapped
 account always follows normal projection even if contradictory disposition data exists.
 
-An all-clear reconciliation JSON may be recorded only through `record-checkpoint`. The CLI hashes the exact report bytes and independently re-probes the pinned production readiness URL. The database binds the exact candidate, bounded event window, local ingest watermark, platform proof, and every account/generation proof, and bounds checkpoint expiry to 24 hours. Runtime compares that candidate to its deployed `RENDER_GIT_COMMIT` and rechecks current database state atomically.
+An all-clear reconciliation JSON may be recorded only through `record-checkpoint`. The CLI hashes the exact report bytes and independently re-probes the pinned production readiness URL. The database binds the exact candidate, bounded event window, local ingest watermark, platform proof, and every account/generation proof, and bounds checkpoint expiry to 24 hours. This is diagnostic provenance. V58 runtime authorization uses the current GA checks above, while the deployed SHA must still be present and bootstrap requests remain candidate-bound.
 
 ## Exact-candidate test-provider rehearsal
 
@@ -283,39 +300,39 @@ This rehearsal is test mode only. Live money movement remains excluded unless th
 
 For a mid-flight readiness or authorization flip, never issue a second mutation. Preserve the deterministic idempotency key, read the provider object and matching event ID, allow webhook reconciliation to converge local state, and stop for operator review if the outcome stays unknown. An uncertain initial Account Link call may retry only under its still-live bootstrap with the same stored idempotency key and exact context; it does not receive a new permit. A matching idempotency key does not by itself prove that Stripe returned a still-usable single-use link. An expired, consumed, changed, or otherwise unverifiable response becomes support-required. Branding upload has no automatic retry.
 
-Before the first live Connect request, billing status calls a service-role-only read-only preflight. It can report that the exact studio/generation may begin or resume, but it neither accepts nor stores a token, creates or consumes a permit, nor overrides endpoint authorization. The onboarding endpoint remains authoritative and repeats the exact atomic checks immediately before each provider mutation, so a mapping, candidate, checkpoint, event, readiness, or generation race fails closed. The browser receives only the capability boolean; the stable recovery handle, canonical recovery inputs, payload digests, and idempotency keys never appear in client responses or logs.
+Before the first live Connect request, billing status calls a service-role-only read-only preflight. It can report that the exact studio/generation may begin or resume, but it neither accepts nor stores a token, creates or consumes a permit, nor overrides endpoint authorization. The onboarding endpoint remains authoritative and repeats the exact atomic checks immediately before each provider mutation, so a mapping, candidate, event, readiness, or generation race fails closed. The browser receives only the capability boolean; the stable recovery handle, canonical recovery inputs, payload digests, and idempotency keys never appear in client responses or logs.
 
-The endpoint prepares one database bootstrap row before the first provider call. That row binds one studio and account generation, the exact deployed SHA/readiness checkpoint, canonical account-create and initial-link contexts, payload digests, and both deterministic idempotency keys. Its only evidence exception is the newly created account generation's initial hosted Account Link. Every pre-existing mapping and every later Account Link remains checkpoint-bound. If the account-create response, database bind, or initial Account-Link response is uncertain, a same-request-context retry reloads that same row, rechecks the authenticated studio, exact candidate/checkpoint/generation/current events and stored provider-account mapping, and reuses the original provider idempotency key. It never prepares a second permit or broad authorization. Changed URLs, business/entity context, account mapping, candidate, generation, response identity, or payload are support-required. Recovery expiry or irreconcilable state is also support-required for that generation; operators must reconcile the provider result before any separately reviewed rollover.
+The endpoint prepares one database bootstrap row before the first provider call. That row binds one studio and account generation, the exact deployed SHA and explicit null GA checkpoint provenance, canonical account-create and initial-link contexts, payload digests, and both deterministic idempotency keys. The first hosted Account Link uses its dedicated bootstrap authority before KYC. Later Account Links use ordinary GA operation authority. If the account-create response, database bind, or initial Account-Link response is uncertain, a same-request-context retry reloads that same row, rechecks the authenticated studio, exact candidate/generation/current events and stored provider-account mapping, and reuses the original provider idempotency key. It never prepares a second permit or broad authorization. Changed URLs, business/entity context, account mapping, candidate, generation, response identity, or payload are support-required. Recovery expiry or irreconcilable state is also support-required for that generation; operators must reconcile the provider result before any separately reviewed rollover.
 
 The initial Account-Link response uses a two-step delivery boundary. The admin response is `Cache-Control: no-store` and contains `pending_url`, not the ordinary `url` field, plus one high-entropy, short-lived, non-authorizing receipt. The database stores only the receipt and provider-response hashes. The browser must parse the response, acknowledge the exact receipt through the admin-only endpoint, receive acknowledgement success, and only then navigate. The acknowledgement derives studio and admin identity from the authenticated server request and cannot grant provider authority. A lost acknowledgement response may retry only the same receipt; a same-key provider-response retry rotates the pending receipt so a stale response cannot retire the bootstrap. Receipt expiry, mapping/candidate/event drift, or any ambiguous response becomes support-required. `initial_link_delivered_at` means only that the authenticated browser safely received the URL; it does not prove Stripe consumed it, onboarding completed, KYC passed, or the account is ready.
 
-After delivery acknowledgement, that generation's bootstrap is permanently retired. A client crash after retirement never reopens it. A genuinely fresh later Account Link must use ordinary `connect_onboarding_link.create` authorization against a current per-account checkpoint and a distinct caller `Idempotency-Key`; an exact client retry derives the same ordinary Stripe key, while a new intentional request derives a new key. An old client looking for `url` fails closed because the Connect response exposes only `pending_url`.
+After delivery acknowledgement, that generation's bootstrap is permanently retired. A client crash after retirement never reopens it. A genuinely fresh later Account Link must use ordinary `connect_onboarding_link.create` authorization against the current exact account/generation and event state and a distinct caller `Idempotency-Key`; an exact client retry derives the same ordinary Stripe key, while a new intentional request derives a new key. An old client looking for `url` fails closed because the Connect response exposes only `pending_url`.
 
-Every in-scope platform or mapped Connect event in the bounded reconciliation universe must be `processed`. Pending, processing, failed, or ignored relevant events—including `account.application.deauthorized`—deny checkpointing and mutation authorization. A reviewed excluded account that is not locally mapped remains outside that universe; its intentionally ignored rows do not block an otherwise valid studio grant.
+Every in-scope platform or mapped Connect event in the bounded reconciliation universe must be `processed`. Pending, processing, failed, or ignored relevant events—including `account.application.deauthorized`—deny checkpointing and mutation authorization. A reviewed excluded account that is not locally mapped remains outside that universe; its intentionally ignored rows do not block an otherwise eligible studio.
 
-## One-studio canary: preregister before enabling
+## Attended financial canary: preregister the test
 
-The director must approve the named studio, exact candidate SHA, connected account ID/generation, maximum grant expiry, operator/backup operator, observation window, and financial ceiling before any live configuration change.
+An agent-run financial canary needs separate owner approval for the named studio, exact candidate SHA, connected account ID/generation, named payer, consent, amount, operator coverage and observation window. This limits the attended test; GA availability does not require enrollment or promotion one studio at a time.
 
-Promote only when all are true:
+Run the approved canary only when all are true:
 
-- exact production health SHA matches the checkpoint and approved candidate;
-- newest checkpoint is unexpired and all-clear, including current endpoint delivery proof;
+- exact production health SHA matches the approved candidate;
+- current endpoint delivery evidence and reconciliation findings have been reviewed;
 - all provider accounts and event accounts are mapped or explicitly excluded;
 - zero failed, pending, stale-processing, duplicate, or mode-mismatched canary events;
 - the canary Connect account remains charges/payouts/details enabled with no requirements due;
 - one and only one intended idempotency key/provider object/event chain exists;
 - local invoice, payment, refund/dispute, payer balance, and authoritative remaining balance converge;
-- operator and backup operator can revoke the scope and set the global flag false;
+- operator and backup operator can set the global flag false;
 - secret rotation has a named human owner and approved window.
 
 Abort immediately on any of these:
 
-- deployment/checkpoint SHA mismatch, authorization expiry/revocation, reconnect generation change, readiness/KYC loss, or endpoint proof expiry;
+- deployment SHA mismatch, reconnect generation change, readiness/KYC loss, or failed endpoint delivery;
 - an unscoped mutation attempt, automatic retry, duplicate provider object, unexpected charge/fee/payout, or unknown financial outcome;
 - any new failed/unmapped/mode-mismatched event, webhook silence, projection divergence, or inability to correlate by event ID;
 - loss of operator/backup coverage or inability to execute rollback.
 
-Rollback order is: stop new actions; revoke the studio scopes; set `LIVE_BILLING_ENABLED=false` through the separately approved configuration path; preserve event/object IDs; reconcile already-sent requests by idempotency/event readback without a second mutation; and escalate any financial state to the director. Database migration rollback is not the incident response and must not delete provenance.
+Rollback order is: stop new actions; set `LIVE_BILLING_ENABLED=false` through the separately approved configuration path; preserve event/object IDs; reconcile already-sent requests by idempotency/event readback without a second mutation; and escalate any financial state to the director. Database migration rollback is not the incident response and must not delete provenance.
 
-Promotion beyond one studio and any financial canary are separate director decisions. Passing this runbook does not authorize either.
+The GA product decision covers all eligible studios. Passing these checks does not authorize an agent-run financial canary or change production release authority.

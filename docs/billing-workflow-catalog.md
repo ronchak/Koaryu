@@ -28,10 +28,13 @@ remains false until its separately approved scheduler exists. Revocation stays
 available so an existing scheduled intent can still be withdrawn if the worker is
 disabled.
 
-`studio_live_billing_authorizations.allowed_operations` is the live grant owner.
-Enabled grants must contain a nonempty, byte-sorted, duplicate-free list drawn from the
-exact operation set for their scope. Empty, null, wildcard, prefix, duplicate, and
-unknown values fail closed in both the operator client and V30 database RPC.
+V58 derives supported Connect operations from one exact database policy catalog.
+`studio_live_billing_supported_operations_v58` supplies service-only capability hints;
+each Stripe mutation still obtains a current atomic permit. Historical pilot grant rows
+do not control GA capabilities. Branding remains internal-only, customer default payment
+method mutation stays unsupported, and exact subscription schedule operations are included.
+An existing account's dashboard capability is checked independently of initial-link recovery
+and KYC. Onboarding links do not require charges to be enabled; payment workflows do.
 
 Payer create and update are local database workflows. They never create or update a
 Stripe customer implicitly; `payer.sync` is the only named customer mutation owner and

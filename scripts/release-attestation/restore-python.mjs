@@ -169,8 +169,9 @@ function inventory(spec, filenames, target, versions) {
     require(len(hashes) == ${filenames.length} and list(hashes)[${membership ? `${anchor.count - 1}:` : `-${suffix.length}:`}] == ${list}`;
 }
 
-function mapping() {
-  return `    mapping_bytes = PAIR_PATH.read_bytes()
+function mapping(spec) {
+  if (spec.constraintPairs && !/^v[0-9]+-restore-constraint-pairs\.json$/.test(spec.constraintPairs)) throw new Error("Invalid constraint pair fixture");
+  return `    mapping_bytes = ${spec.constraintPairs ? `Path(__file__).with_name(${quote(spec.constraintPairs)})` : "PAIR_PATH"}.read_bytes()
     pairs = json.loads(mapping_bytes)`;
 }
 
@@ -415,7 +416,7 @@ export function renderPythonRestore(id, filenames, versions) {
   if (membership) blocks.push(databaseNames(target, previous, balance));
   blocks.push(inventory(spec, sorted, target, versions));
   if (balance) blocks.push(migrationPath);
-  blocks.push(mapping());
+  blocks.push(mapping(spec));
   if (!membership) blocks.push(databaseNames(target, previous, balance));
   blocks.push(createDatabases(balance));
   if (!balance) blocks.push(raw`        sql(source, "BEGIN;\n" + SEED_SQL + "\nCOMMIT;")

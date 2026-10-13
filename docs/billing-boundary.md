@@ -12,13 +12,18 @@ cannot receive another trial. Production currently uses the live, active `$27 US
 monthly price. This path is controlled by `CORE_SELF_CHECKOUT_ENABLED` and does not
 grant any Koaryu Payments or tuition authority.
 
-Koaryu Payments has five separate product facts. A workflow may be implemented without
-being available to a studio. The [billing workflow catalog](billing-workflow-catalog.md)
-records whether each named workflow is implemented and which staff roles may use it.
-The environment switch is a separate global interlock. Live provider mutations also
-require an enabled, unexpired grant for the exact studio and every exact operation.
-Commercial availability is a separate product decision again. No current studio grant
-is asserted here, and tuition collection must not be presented as generally available.
+V58 makes supported Koaryu Payments workflows available to every eligible studio.
+The [billing workflow catalog](billing-workflow-catalog.md) defines supported operations
+and staff roles. `LIVE_BILLING_ENABLED` remains the global emergency stop. The database
+checks the exact studio/account, current account generation, payment readiness and
+current unresolved live events before each provider mutation. No studio grant or daily
+checkpoint renewal is required. Staff roles, Core entitlement, payer consent, amount
+limits, provider ownership and idempotency remain enforced by their existing owners.
+
+Quiet accounts remain eligible after 24 hours without activity. A new studio can onboard
+without changing another studio's eligibility. Failed live events, nonprocessed in-scope
+live events and unresolved unmapped live accounts conservatively stop all live Connect
+mutations until resolved. Historical reconciliation reports and grants remain audit data.
 
 Preview-mode actions are demonstrations only and do not change provider state.
 Koaryu Core Checkout remains separate from tuition activation.
@@ -178,9 +183,9 @@ Local plan writes and external-payment writes commit their domain record and ori
 
 Application deployment, production migration, and live Stripe activation are three independent approvals. On 2026-08-04, the product owner approved live Koaryu Core Checkout and Customer Portal activation. On 2026-08-13, the product owner approved production self-service Core checkout for newly registered studios. On 2026-08-14, the product owner directed the release to continue through production with Core self-checkout and signup enabled. That release authorization includes the two bounded compensating operations required to make Core checkout fail closed: expiring a newly created session that loses its database reservation, and canceling the exact subscription from a Checkout completion whose reservation was invalidated. It does not authorize generic subscription cancellation, refunds, Connect onboarding, Connect payments, tuition collection, or other Stripe mutations.
 
-On 2026-08-16, Ronak explicitly authorized the required production migration, exact-candidate application deployment, and repository alignment for the already-live global `LIVE_BILLING_ENABLED=true` interlock. That approval creates no studio scope or reconciliation checkpoint and authorizes no provider mutation, tenant financial permission, live Connect or tuition mutation, or live-money action. Those actions require separate approval and remain fail-closed behind the enabled, unexpired exact-studio scope and exact-candidate all-clear reconciliation checkpoint requirements below.
+On 2026-08-16, Ronak explicitly authorized the required production migration, exact-candidate application deployment, and repository alignment for the already-live global `LIVE_BILLING_ENABLED=true` interlock. That approval creates no studio scope or reconciliation checkpoint and authorizes no provider mutation, tenant financial permission, live Connect or tuition mutation, or live-money action. That was the historical pilot policy. V58 replaces pilot enrollment with the GA eligibility policy above; production release and financial canary authority remain separate.
 
-`CORE_SELF_CHECKOUT_ENABLED` is the production-only interlock for the three user-facing Core operations plus those two exact-object compensations. It requires an exact deployed `RENDER_GIT_COMMIT`, an authenticated studio Admin at the endpoint boundary, and an explicit studio ID at the central Stripe mutation policy. A cancellation is allowed only for the subscription ID rejected by the atomic checkout-acceptance decision. An expiration is allowed only for the session ID returned by a failed publish or stored by the atomic comp invalidation; completed sessions are never expired. A paid invalid completion must first persist a durable `core_checkout_compensations` receipt so cancellation cannot erase the refund/credit work queue. The interlock never authorizes a generic `customer.*` or `subscription.*` operation. `LIVE_BILLING_ENABLED` remains `false` by default and in staging, while production intentionally sets it to `true` as the necessary global interlock for Connect and tuition mutations. The production value alone creates no studio scope, reconciliation checkpoint, provider authority, or tenant financial permission. Each operation still requires an enabled, unexpired exact-studio scope and exact-candidate all-clear reconciliation checkpoint as defined in `stripe-live-billing-rollout.md`.
+`CORE_SELF_CHECKOUT_ENABLED` is the production-only interlock for the three user-facing Core operations plus those two exact-object compensations. It requires an exact deployed `RENDER_GIT_COMMIT`, an authenticated studio Admin at the endpoint boundary, and an explicit studio ID at the central Stripe mutation policy. A cancellation is allowed only for the subscription ID rejected by the atomic checkout-acceptance decision. An expiration is allowed only for the session ID returned by a failed publish or stored by the atomic comp invalidation; completed sessions are never expired. A paid invalid completion must first persist a durable `core_checkout_compensations` receipt so cancellation cannot erase the refund/credit work queue. The interlock never authorizes a generic `customer.*` or `subscription.*` operation. `LIVE_BILLING_ENABLED` remains `false` by default and in staging, while production intentionally sets it to `true` as the necessary global interlock for Connect and tuition mutations. The production value alone creates no studio scope, reconciliation checkpoint, provider authority, or tenant financial permission. Each Connect operation still obtains the exact GA database permit described in `stripe-live-billing-rollout.md`.
 
 Activation execution must name each exact transition and prove in Stripe test mode:
 

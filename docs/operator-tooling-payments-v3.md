@@ -1,5 +1,10 @@
 # Koaryu Payments schema-v3 operator tooling
 
+V58 uses the GA eligibility policy in [the live billing runbook](stripe-live-billing-rollout.md).
+This document retains historical pilot and diagnostic tooling. Grant, revoke and checkpoint
+commands no longer enable or suspend Connect workflows, and daily renewal is not required.
+Use `LIVE_BILLING_ENABLED` as the global emergency stop; keep historical evidence intact.
+
 This is the operator reference for the Payments 1/6 reconciliation and live-authorization checkpoint contract. Commands are dry-run or read-only unless `--execute` is explicitly supplied. Repository work, CI, and review must never supply it.
 
 ## Safety boundary

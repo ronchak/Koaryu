@@ -133,7 +133,8 @@ def install_final_v57(local, database, root):
 def require_final_v57(local, database, root):
     """Bind component proof startup to the complete generated installed guard."""
     row = json.loads(local.sql(database, "SELECT row_to_json(p) FROM public.koaryu_release_schema_preflight_v38() p;"))
-    versions = sorted(p.name[:14] for p in (Path(root) / "supabase/migrations").glob("*.sql"))
+    versions = sorted(p.name[:14] for p in (Path(root) / "supabase/migrations").glob("*.sql")
+                      if p.name[:14] <= "20261005105341")
     require(row == {"ready": True, "migration_count": len(versions), "migration_head": versions[-1],
                     "pending_versions": [v for v in versions if v >= "20260727100000"],
                     "security_failures": [], "manifest_version": "release-db-attestation-v57"},
