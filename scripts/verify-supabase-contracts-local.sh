@@ -2266,8 +2266,6 @@ final_readiness="$({ cd "$ROOT_DIR"; node --input-type=module --eval "import { V
 (cd "$ROOT_DIR" && node --input-type=module --eval "import assert from 'node:assert/strict'; import { EXPECTED_V57_OPERATIONAL_READINESS } from './scripts/studio-comp-migration-rollout.mjs'; assert.equal(process.argv[1], EXPECTED_V57_OPERATIONAL_READINESS);" "$final_readiness")
 echo "[V57 readiness] PASS complete installed catalog and genuine history"
 
-echo "[concurrency] RUN billing command ownership and lock ordering"
-run_interruptible python3 "$ROOT_DIR/scripts/verify-billing-command-concurrency.py" "$PSQL" "$SOCKET_DIR" "$PG_PORT"
 
 echo "[V57 raw facts] RUN complete catalog body configuration and privilege contracts"
 while IFS='|' read -r query_export expected_export; do
@@ -2349,5 +2347,8 @@ final_readiness="$({ cd "$ROOT_DIR"; node --input-type=module --eval "import { F
 (cd "$ROOT_DIR" && node --input-type=module --eval "import { validateOperationalReadiness } from './scripts/studio-comp-migration-rollout.mjs'; validateOperationalReadiness(process.argv[1]);" "$final_readiness")
 run_interruptible "$PSQL" "${psql_args[@]}" --file="$VERIFICATION_DIR/live_billing_ga_contract.sql"
 echo "[V58 readiness] PASS complete GA catalog and authority"
+
+echo "[concurrency] RUN billing command ownership and lock ordering"
+run_interruptible python3 "$ROOT_DIR/scripts/verify-billing-command-concurrency.py" "$PSQL" "$SOCKET_DIR" "$PG_PORT"
 
 echo "PASS: $migration_total migrations and $verification_total Supabase contracts verified on ephemeral PostgreSQL 17."

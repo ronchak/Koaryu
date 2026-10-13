@@ -254,7 +254,7 @@ def main(args):
     historical = {
         p.name: hashlib.sha256(p.read_bytes()).hexdigest()
         for p in MIGRATION.parent.glob("*.sql")
-        if p != MIGRATION
+        if p.name < MIGRATION.name
     }
     require(len(historical) == 151, "151 historical files required")
     files = [MIGRATION, CONTRACT, Path(__file__)]
@@ -394,7 +394,7 @@ GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA clear_proof TO service_role;"""
             == {
                 p.name: hashlib.sha256(p.read_bytes()).hexdigest()
                 for p in MIGRATION.parent.glob("*.sql")
-                if p != MIGRATION
+                if p.name < MIGRATION.name
             },
             "Historical files changed",
         )

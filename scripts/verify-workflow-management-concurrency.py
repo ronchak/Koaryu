@@ -91,7 +91,7 @@ def main(arguments):
     historical = {
         p.name: hashlib.sha256(p.read_bytes()).hexdigest()
         for p in MIGRATION.parent.glob("*.sql")
-        if p != MIGRATION
+        if p.name < MIGRATION.name
     }
     require(len(historical) == 151, "Expected exactly 151 historical migrations")
     simple = {
@@ -1374,7 +1374,7 @@ FROM public.automation_workflow_activations WHERE workflow_id='{ids["workflow"]}
             {
                 p.name: hashlib.sha256(p.read_bytes()).hexdigest()
                 for p in MIGRATION.parent.glob("*.sql")
-                if p != MIGRATION
+                if p.name < MIGRATION.name
             }
             == historical,
             "Historical migration bytes changed",

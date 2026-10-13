@@ -18,7 +18,7 @@ from uuid import UUID, uuid4
 
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from local_postgres_verification import LocalPostgres, require, install_final_v57
+from local_postgres_verification import LocalPostgres, require, install_final_v57, install_final_v58
 
 ROOT = Path(__file__).resolve().parents[1]
 BASE = '35561d6b8f851ea0309723637e0996a064ba4c82'
@@ -59,7 +59,7 @@ def main(args):
     src = MIGRATION.read_bytes()
     accepted = subprocess.check_output(['git','-C',str(ROOT),'show',BASE+':'+str(MIGRATION.relative_to(ROOT))],env=local.env)
     require(hashlib.sha256(accepted).hexdigest() == BASE_HASH, 'Accepted complete execution SQL pin differs')
-    historical = {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in MIGRATION.parent.glob('*.sql') if p != MIGRATION}
+    historical = {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in MIGRATION.parent.glob('*.sql') if p.name < MIGRATION.name}
     require(len(historical) == 151, 'Expected 151 historical files')
     owned = False
     start = time.monotonic()
@@ -82,9 +82,11 @@ def main(args):
         local.sql('postgres', f'CREATE DATABASE {database} TEMPLATE postgres;')
         owned = True
         readiness = install_final_v57(local, database, ROOT)
-        installed = value(INVENTORY)
         passed('complete final catalog body security ACL overload and genuine history', readiness=readiness)
         passed('focused SQL contract', output=sql(CONTRACT.read_text()))
+        current_readiness = install_final_v58(local, database, ROOT)
+        passed('complete current V58 guard before application composition', readiness=current_readiness)
+        installed = value(INVENTORY)
         fixtures = CONTRACT.read_text().split('-- fixture owners start.')[1].split('-- fixture owners end.')[0]
         sql('CREATE SCHEMA test_email_proof;\n' + fixtures.replace('pg_temp.', 'test_email_proof.')
             + '\nGRANT USAGE ON SCHEMA test_email_proof TO service_role; GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA test_email_proof TO service_role;')
@@ -112,12 +114,12 @@ def main(args):
         require(pid_path.read_text().splitlines()[0] == pid, 'Postmaster changed')
         require(local.sql('postgres', 'SELECT row_to_json(p) FROM public.koaryu_release_schema_preflight_v37() p;') == baseline, 'Template state changed')
         require(MIGRATION.read_bytes() == src, 'Source changed during proof')
-        require(historical == {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in MIGRATION.parent.glob('*.sql') if p != MIGRATION}, 'Historical source changed')
+        require(historical == {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in MIGRATION.parent.glob('*.sql') if p.name < MIGRATION.name}, 'Historical source changed')
         report = {'base': BASE, 'source_sha256': hashlib.sha256(src).hexdigest(),
                   'contract_sha256': hashlib.sha256(CONTRACT.read_bytes()).hexdigest(),
                   'verifier_sha256': hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
                   'cases': cases, 'diagnostics': diagnostics, 'elapsed_seconds': round(time.monotonic() - start, 3),
-                  'boundary': 'internal service/SQL/SDK/render/Graph MockTransport; complete final V57 guard',
+                  'boundary': 'internal service/SQL/SDK/render/Graph MockTransport; verified V57 contract and complete current V58 guard',
                   'cleanup': {'clone_absent': absent, 'template_unchanged': True, 'postmaster_pid': pid}}
         with evidence.open('x') as out:
             os.chmod(evidence, 0o600)
@@ -139,6 +141,7 @@ def run_proof(local, sql, value, passed, database, psql):
     from importlib.metadata import version
     from postgrest import SyncPostgrestClient
     from postgrest.utils import SyncClient
+    from app.services.generated_release_readiness import RELEASE_PREFLIGHT_RPC
     from app.schemas import workflow_dispatch as common
     from app.schemas.workflow_test_email import WorkflowTestEmailRequest
     from app.schemas.workflow_management import TestEmailOperationResponse
@@ -161,7 +164,7 @@ def run_proof(local, sql, value, passed, database, psql):
     malformed = set()
 
     def statement(name, params):
-        if name == 'koaryu_release_schema_preflight_v38':
+        if name in {'koaryu_release_schema_preflight_v38', RELEASE_PREFLIGHT_RPC}:
             require(not params, 'Preflight parameters unexpected')
             return "SELECT coalesce(jsonb_agg(to_jsonb(p)),'[]'::JSONB) FROM public." + name + "() p;"
         return 'SELECT public.' + name + '(' + ','.join(k + '=>' + (

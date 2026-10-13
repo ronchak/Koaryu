@@ -49,8 +49,11 @@ BEGIN
   ELSIF history_count=152 AND history_head='20261005105341'
      AND to_regprocedure('public.koaryu_release_schema_preflight_v38()') IS NOT NULL THEN
     phase:='v57'; preflight:='public.koaryu_release_schema_preflight_v38()';
+  ELSIF history_count=153 AND history_head='20261013013243'
+     AND to_regprocedure('public.koaryu_release_schema_preflight_v39()') IS NOT NULL THEN
+    phase:='v58'; preflight:='public.koaryu_release_schema_preflight_v39()';
   ELSE
-    RAISE EXCEPTION 'Student/rank race requires exact V56 or V57 history';
+    RAISE EXCEPTION 'Student/rank race requires exact V56, V57 or V58 history';
   END IF;
   EXECUTE 'SELECT * FROM '||preflight INTO readiness;
   IF readiness.ready IS DISTINCT FROM true OR readiness.migration_count IS DISTINCT FROM history_count
@@ -68,7 +71,7 @@ SQL
 )"
 case "$rank_schema_phase" in
   v56) expected_delete_error="ERROR:  Assigned belt ranks must be deleted through sync_belt_ladder_ranks." ;;
-  v57) expected_delete_error="ERROR:  AUTOMATION_STUDIO_BUSY" ;;
+  v57|v58) expected_delete_error="ERROR:  AUTOMATION_STUDIO_BUSY" ;;
   *) echo "Unsupported student/rank race schema phase." >&2; exit 1 ;;
 esac
 echo "Student/rank concurrency schema phase: $rank_schema_phase"

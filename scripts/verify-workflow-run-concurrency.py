@@ -48,7 +48,7 @@ def main(arguments):
     historical = {
         p.name: hashlib.sha256(p.read_bytes()).hexdigest()
         for p in MIGRATION.parent.glob("*.sql")
-        if p != MIGRATION
+        if p.name < MIGRATION.name
     }
     require(len(historical) == 151, "Expected151 immutable migrations")
 
@@ -1076,7 +1076,7 @@ WHERE id='{x["run"]}' AND cancel_requested_at IS NULL AND EXISTS(SELECT 1 FROM p
             == {
                 p.name: hashlib.sha256(p.read_bytes()).hexdigest()
                 for p in MIGRATION.parent.glob("*.sql")
-                if p != MIGRATION
+                if p.name < MIGRATION.name
             },
             "Historical migration changed",
         )

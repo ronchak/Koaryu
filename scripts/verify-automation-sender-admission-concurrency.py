@@ -93,7 +93,7 @@ def main(arguments):
         require(
             (ROOT / path).read_bytes() == frozen, "Accepted dependency changed: " + path
         )
-    historical = {p.name: digest(p.read_bytes()) for p in sorted(MIGRATION.parent.glob("*.sql")) if p != MIGRATION}
+    historical = {p.name: digest(p.read_bytes()) for p in sorted(MIGRATION.parent.glob("*.sql")) if p.name < MIGRATION.name}
     require(len(historical) == 151, "Expected151 historical migrations")
     for name, checksum in historical.items():
         frozen = subprocess.check_output(["git", "-C", str(ROOT), "show", BASE + ":supabase/migrations/" + name], env=local.env)
@@ -796,7 +796,7 @@ UPDATE private.automation_sender_gate SET mode='unknown';"""
         require(digest(dump.read_bytes()) == dump_hash, "Owned dump changed during restore")
         passed("logical restore exact common rows projection catalog ACL functions and replay", dump_sha256=dump_hash)
         require(MIGRATION.read_bytes() == source and digest(CONTRACT.read_bytes()) == report["contract_sha256"], "Proof source changed while running")
-        require({p.name: digest(p.read_bytes()) for p in MIGRATION.parent.glob("*.sql") if p != MIGRATION} == historical, "Historical bytes changed")
+        require({p.name: digest(p.read_bytes()) for p in MIGRATION.parent.glob("*.sql") if p.name < MIGRATION.name} == historical, "Historical bytes changed")
     except BaseException as exc:
         report["failure"] = {"type": type(exc).__name__, "message": str(exc)}
         raise
