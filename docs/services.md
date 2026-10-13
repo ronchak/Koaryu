@@ -30,7 +30,7 @@ Inventory baseline: 2026-08-24. The last completed release verification, October
 | Payments | Stripe live mode | Stripe test mode |
 | `LIVE_BILLING_ENABLED` | `true` (global interlock only) | `false` |
 | `CORE_SELF_CHECKOUT_ENABLED` | `true` (Koaryu Core only) | `false` |
-| Period-end billing worker | disabled; production cron awaits approval | Render Cron every 5 minutes, suspended September 14 |
+| Period-end billing worker | disabled; backend timer available in candidate | Render Cron every 5 minutes, suspended September 14 |
 | `OPERATIONAL_ALERTS_ENABLED` | `false` | `false` |
 
 Neither production surface auto-deploys. Both require an explicit owner-authorized release —
@@ -187,6 +187,26 @@ provider mutation keep their durable idempotency identity. Render bills cron exe
 minimum for the service. The production web service keeps
 `BILLING_TRANSITION_SCHEDULER_ENABLED=false`; no production cron exists in this
 release task.
+
+The candidate backend also includes a billing-transition timer in each web
+process. With `BILLING_TRANSITION_SCHEDULER_ENABLED=true`, it starts immediately
+and runs every 300 seconds without incoming requests, claiming at most 25
+transitions per batch through the existing billing service. Each process admits
+one batch at a time with no queue; database claims and provider idempotency still
+coordinate other processes and the existing protected cron endpoint. Missed ticks
+are skipped. A batch gets an isolated client owned by its daemon thread through
+completion and cleanup. The timer waits at most 120 seconds, matching the bulk
+lane waiter, and shutdown waits at most 30 seconds, matching automation shutdown.
+Neither timeout cancels submitted provider work or releases its active slot early.
+Process termination can still interrupt that work; durable recovery rules remain
+in the existing transition workflow.
+
+The flag defaults to false and is checked again before each admitted batch and
+before processing. Disabling it stops new batches without canceling submitted
+work. This is a source capability only; production remains disabled, and this
+change neither enables billing nor provisions a cron service. The production
+always-on backend can run the timer when separately authorized; the sleeping free
+staging service cannot guarantee this cadence.
 
 Render service resume can build the current tracked branch even when auto-deploy is off. Pin and inspect that branch before resuming, then verify the actual deployed SHA. The September 29 production resume built the intended release from `main`; do not assume resume restores the previously serving artifact.
 

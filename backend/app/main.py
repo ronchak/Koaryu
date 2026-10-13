@@ -12,6 +12,7 @@ from app.core.provider_runtime import SupabaseLaneConfig, SupabaseProviderRuntim
 from app.core.request_body_limits import RequestBodyLimitMiddleware
 from app.core.request_deadline import RequestDeadlineMiddleware
 from app.services.automation_scheduler import AutomationScheduler
+from app.services.billing_transition_scheduler import BillingTransitionScheduler
 
 settings = get_settings()
 settings.validate_runtime_configuration()
@@ -48,19 +49,29 @@ async def _lifespan(application: FastAPI):
     )
     application.state.supabase_provider_runtime = runtime
     application.state.automation_scheduler = None
+    application.state.billing_transition_scheduler = None
     scheduler = None
+    billing_scheduler = None
     try:
         if settings.AUTOMATION_WORKER_ENABLED is True:
             scheduler = AutomationScheduler(settings)
             application.state.automation_scheduler = scheduler
             await scheduler.start()
+        if getattr(settings, "BILLING_TRANSITION_SCHEDULER_ENABLED", False) is True:
+            billing_scheduler = BillingTransitionScheduler(settings)
+            application.state.billing_transition_scheduler = billing_scheduler
+            await billing_scheduler.start()
         yield
     finally:
         try:
-            if scheduler is not None:
-                await scheduler.stop()
+            try:
+                if billing_scheduler is not None:
+                    await billing_scheduler.stop()
+            finally:
+                if scheduler is not None:
+                    await scheduler.stop()
         finally:
-            # Automation stop bounds its own waiter only. Provider shutdown may
+            # Scheduler stops bound their own waiters only. Provider shutdown may
             # still wait for provider work and must stay off the ASGI event loop.
             await asyncio.to_thread(runtime.shutdown)
 
