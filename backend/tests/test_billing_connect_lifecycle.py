@@ -339,7 +339,6 @@ class BillingConnectLifecycleTest(BillingPaymentsLifecycleTestBase):
                 "authorize_studio_live_billing_mutation_atomic",
                 "authorize_connect_onboarding_bootstrap_account_create_v2",
                 "bind_connect_onboarding_bootstrap_account_v2",
-                "authorize_studio_live_billing_mutation_atomic",
                 "authorize_connect_onboarding_bootstrap_initial_link_v2",
                 "record_connect_onboarding_bootstrap_initial_link_response",
                 "acknowledge_connect_onboarding_bootstrap_initial_link_delivery",
