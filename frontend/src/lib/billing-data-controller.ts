@@ -355,8 +355,7 @@ export function useBillingDataController({
             }),
           );
         };
-        if (["plans", "enrollments"].includes(activeTab))
-          load("/billing/plans", setPlans);
+        if (["plans", "enrollments"].includes(activeTab)) load("/billing/plans", setPlans);
         if (["families", "enrollments", "invoices", "reports"].includes(activeTab))
           load("/billing/payers", setPayers);
         // Enrollments are paged so none are silently cut off. Live subscription totals
