@@ -57,28 +57,58 @@ class BillingConnectAccountStore:
             )
         return account
 
-    def has_billing_history(self, studio_id: str) -> bool:
-        checks = (
-            ("billing_plans", "stripe_price_id"),
-            ("billing_payers", "stripe_customer_id"),
-            ("billing_subscriptions", "stripe_subscription_id"),
-            ("billing_invoices", "stripe_invoice_id"),
-            ("billing_payments", "stripe_payment_intent_id"),
-            ("billing_refunds", "stripe_refund_id"),
-            ("billing_disputes", "stripe_dispute_id"),
-        )
-        for table, column in checks:
-            result = (
-                self.supabase.table(table)
-                .select("id")
-                .eq("studio_id", studio_id)
-                .not_.is_(column, "null")
-                .limit(1)
-                .execute()
-            )
-            if result.data:
-                return True
-        return False
+    def reset_atomic(
+        self, studio_id: str, actor_id: str, account: dict[str, Any]
+    ) -> dict[str, Any]:
+        try:
+            result = self.supabase.rpc(
+                "reset_stripe_connect_account_atomic_v58",
+                {
+                    "p_studio_id": studio_id,
+                    "p_actor_id": actor_id,
+                    "p_expected_stripe_connected_account_id": account.get(
+                        "stripe_connected_account_id"
+                    ),
+                    "p_expected_connect_account_generation": int(
+                        (account.get("metadata") or {}).get("connect_account_generation") or 1
+                    ),
+                },
+            ).execute()
+        except Exception as exc:
+            if getattr(exc, "code", None) == "55P03":
+                raise HTTPException(
+                    status_code=409,
+                    detail="Stripe account activity is in progress. Retry the reset shortly.",
+                    headers={"Retry-After": "1"},
+                ) from exc
+            raise
+        payload = result.data
+        if not isinstance(payload, dict):
+            raise HTTPException(status_code=500, detail="Invalid Stripe account reset response.")
+        outcome = payload.get("outcome")
+        errors = {
+            "actor_denied": (403, "Only active studio admins can reset Stripe Payments."),
+            "not_found": (404, "Payment account not found."),
+            "stale_account": (409, "Stripe account changed. Refresh and retry the reset."),
+            "billing_history": (
+                409,
+                "Reconnect requires support because this studio already has Stripe billing history.",
+            ),
+            "provider_operation_pending": (
+                409,
+                "Stripe billing work is unresolved. Retry after it finishes or contact support.",
+            ),
+            "event_pending": (
+                409,
+                "Stripe webhook work is unresolved. Retry after it finishes or contact support.",
+            ),
+        }
+        if outcome in errors:
+            code, detail = errors[outcome]
+            raise HTTPException(status_code=code, detail=detail)
+        if outcome not in {"reset", "no_change"} or not isinstance(payload.get("account"), dict):
+            raise HTTPException(status_code=500, detail="Invalid Stripe account reset response.")
+        return payload["account"]
 
     def update(self, studio_id: str, update: dict[str, Any]) -> dict[str, Any]:
         result = (

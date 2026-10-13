@@ -188,3 +188,130 @@ BEGIN
 END;
 $ga$;
 ROLLBACK;
+
+-- Reset retires only the locked current identity and leaves other studios eligible.
+BEGIN;
+CREATE FUNCTION pg_temp.reset_audit_fault() RETURNS TRIGGER LANGUAGE plpgsql AS $$
+BEGIN RAISE EXCEPTION USING ERRCODE='P0099',MESSAGE='reset audit fault'; END $$;
+DO $reset$
+DECLARE
+    owner_id UUID:=gen_random_uuid(); actor UUID:=gen_random_uuid(); outsider UUID:=gen_random_uuid();
+    studio UUID:=gen_random_uuid(); other_studio UUID:=gen_random_uuid();
+    result JSONB; original JSONB; status_name TEXT; operation_id UUID;
+    audit_count BIGINT;
+BEGIN
+    IF has_function_privilege('anon','public.reset_stripe_connect_account_atomic_v58(uuid,uuid,text,integer)','EXECUTE')
+       OR has_function_privilege('authenticated','public.reset_stripe_connect_account_atomic_v58(uuid,uuid,text,integer)','EXECUTE')
+       OR NOT has_function_privilege('service_role','public.reset_stripe_connect_account_atomic_v58(uuid,uuid,text,integer)','EXECUTE') THEN
+        RAISE EXCEPTION 'Reset RPC privilege differs';
+    END IF;
+    INSERT INTO auth.users(id,aud,role,email) VALUES
+        (owner_id,'authenticated','authenticated',owner_id||'@example.invalid'),
+        (actor,'authenticated','authenticated',actor||'@example.invalid'),
+        (outsider,'authenticated','authenticated',outsider||'@example.invalid');
+    UPDATE auth.users SET email_confirmed_at=now() WHERE id IN (owner_id,actor,outsider);
+    INSERT INTO public.studios(id,name,slug,owner_id) VALUES
+        (studio,'Reset contract',studio::TEXT,owner_id),(other_studio,'Unaffected contract',other_studio::TEXT,outsider);
+    INSERT INTO public.staff_roles(studio_id,user_id,role) VALUES(studio,owner_id,'admin'),(studio,actor,'admin'),(other_studio,outsider,'admin');
+    INSERT INTO public.studio_payment_accounts(studio_id,stripe_connected_account_id,status,charges_enabled,payouts_enabled,details_submitted,requirements_due,metadata) VALUES
+        (studio,'acct_ResetContract','action_required',false,false,false,ARRAY['external_account'],
+            '{"connect_account_generation":3,"previous_stripe_connected_account_ids":["acct_UntrustedHistory"],"preserved":true}'),
+        (other_studio,'acct_ResetUnaffected','charges_enabled',true,true,true,ARRAY[]::TEXT[],'{}');
+    INSERT INTO public.stripe_events(stripe_event_id,stripe_account_id,livemode,type,payload,processing_status)
+        VALUES('evt_ResetContract','acct_ResetContract',true,'account.updated','{}','processed');
+    SELECT to_jsonb(a) INTO original FROM public.studio_payment_accounts a WHERE studio_id=studio;
+    PERFORM public.authorize_studio_live_billing_mutation_atomic(other_studio,'connected_invoice.pay','connect_payments','acct_ResetUnaffected',repeat('a',40));
+    IF NOT FOUND THEN RAISE EXCEPTION 'Unaffected studio initially denied'; END IF;
+
+    result:=public.reset_stripe_connect_account_atomic_v58(studio,outsider,'acct_ResetContract',3);
+    IF result->>'outcome' IS DISTINCT FROM 'actor_denied' THEN RAISE EXCEPTION 'Wrong tenant actor accepted'; END IF;
+    result:=public.reset_stripe_connect_account_atomic_v58(studio,gen_random_uuid(),'acct_ResetContract',3);
+    IF result->>'outcome' IS DISTINCT FROM 'actor_denied' THEN RAISE EXCEPTION 'Fake actor accepted'; END IF;
+    UPDATE public.staff_roles SET archived_at=now() WHERE user_id=actor;
+    result:=public.reset_stripe_connect_account_atomic_v58(studio,actor,'acct_ResetContract',3);
+    IF result->>'outcome' IS DISTINCT FROM 'actor_denied' THEN RAISE EXCEPTION 'Archived actor accepted'; END IF;
+    UPDATE public.staff_roles SET archived_at=NULL,role='front_desk' WHERE user_id=actor;
+    result:=public.reset_stripe_connect_account_atomic_v58(studio,actor,'acct_ResetContract',3);
+    IF result->>'outcome' IS DISTINCT FROM 'actor_denied' THEN RAISE EXCEPTION 'Nonadmin accepted'; END IF;
+    UPDATE public.staff_roles SET role='admin' WHERE user_id=actor;
+    result:=public.reset_stripe_connect_account_atomic_v58(studio,actor,'acct_ResetUnaffected',3);
+    IF result->>'outcome' IS DISTINCT FROM 'stale_account' THEN RAISE EXCEPTION 'Wrong account accepted'; END IF;
+    result:=public.reset_stripe_connect_account_atomic_v58(studio,actor,'acct_ResetContract',2);
+    IF result->>'outcome' IS DISTINCT FROM 'stale_account' THEN RAISE EXCEPTION 'Stale generation accepted'; END IF;
+
+    FOREACH status_name IN ARRAY ARRAY['pending','processing','failed'] LOOP
+        UPDATE public.stripe_events SET processing_status=status_name WHERE stripe_event_id='evt_ResetContract';
+        result:=public.reset_stripe_connect_account_atomic_v58(studio,actor,'acct_ResetContract',3);
+        IF result->>'outcome' IS DISTINCT FROM 'event_pending' THEN RAISE EXCEPTION 'Unresolved event accepted: %',status_name; END IF;
+        PERFORM public.authorize_studio_live_billing_mutation_atomic(other_studio,'connected_invoice.pay','connect_payments','acct_ResetUnaffected',repeat('a',40));
+        IF FOUND THEN RAISE EXCEPTION 'Unresolved event failed to block GA'; END IF;
+    END LOOP;
+    UPDATE public.stripe_events SET processing_status='processed' WHERE stripe_event_id='evt_ResetContract';
+    -- A stale-generation operation remains unresolved and cannot be hidden by reset.
+    INSERT INTO public.billing_provider_operations(studio_id,actor_id,operation_type,caller_request_key,request_sha256,stripe_connected_account_id,connect_account_generation)
+        VALUES(studio,actor,'payer.sync','reset-contract',repeat('b',64),'acct_ResetContract',1) RETURNING id INTO operation_id;
+    result:=public.reset_stripe_connect_account_atomic_v58(studio,actor,'acct_ResetContract',3);
+    IF result->>'outcome' IS DISTINCT FROM 'provider_operation_pending' THEN RAISE EXCEPTION 'Unresolved old-generation operation accepted'; END IF;
+    DELETE FROM public.billing_provider_operations WHERE id=operation_id;
+    INSERT INTO public.billing_plans(studio_id,name,amount_cents,stripe_price_id) VALUES(studio,'History plan',100,'price_ResetHistory');
+    result:=public.reset_stripe_connect_account_atomic_v58(studio,actor,'acct_ResetContract',3);
+    IF result->>'outcome' IS DISTINCT FROM 'billing_history' THEN RAISE EXCEPTION 'Billing history accepted'; END IF;
+    DELETE FROM public.billing_plans WHERE studio_id=studio;
+    IF (SELECT to_jsonb(a) FROM public.studio_payment_accounts a WHERE studio_id=studio) IS DISTINCT FROM original
+       OR EXISTS(SELECT 1 FROM public.stripe_connect_account_dispositions WHERE stripe_connected_account_id='acct_ResetContract')
+       OR EXISTS(SELECT 1 FROM public.audit_logs WHERE studio_id=studio AND action='billing.connect_account_reset') THEN
+        RAISE EXCEPTION 'Refused reset mutated state';
+    END IF;
+
+    CREATE TRIGGER reset_audit_fault BEFORE INSERT ON public.audit_logs FOR EACH ROW
+        WHEN (NEW.action='billing.connect_account_reset') EXECUTE FUNCTION pg_temp.reset_audit_fault();
+    BEGIN
+        PERFORM public.reset_stripe_connect_account_atomic_v58(studio,actor,'acct_ResetContract',3);
+        RAISE EXCEPTION 'Audit fault did not abort reset';
+    EXCEPTION WHEN SQLSTATE 'P0099' THEN NULL;
+    END;
+    DROP TRIGGER reset_audit_fault ON public.audit_logs;
+    IF (SELECT to_jsonb(a) FROM public.studio_payment_accounts a WHERE studio_id=studio) IS DISTINCT FROM original
+       OR EXISTS(SELECT 1 FROM public.stripe_connect_account_dispositions WHERE stripe_connected_account_id='acct_ResetContract')
+       OR EXISTS(SELECT 1 FROM public.audit_logs WHERE studio_id=studio AND action='billing.connect_account_reset')
+       OR (SELECT mapped_studio_id FROM private.stripe_connect_account_identity_guards WHERE stripe_connected_account_id='acct_ResetContract') IS DISTINCT FROM studio THEN
+        RAISE EXCEPTION 'Fault did not roll back reset, exclusion, identity and audit';
+    END IF;
+    result:=public.reset_stripe_connect_account_atomic_v58(studio,actor,'acct_ResetContract',3);
+    IF result->>'outcome' IS DISTINCT FROM 'reset'
+       OR result#>>'{account,stripe_connected_account_id}' IS NOT NULL
+       OR result#>>'{account,status}' IS DISTINCT FROM 'not_connected'
+       OR result#>'{account,requirements_due}' IS DISTINCT FROM '[]'::JSONB
+       OR result#>'{account,metadata}' IS DISTINCT FROM '{"connect_account_generation":4,"previous_stripe_connected_account_ids":["acct_UntrustedHistory","acct_ResetContract"],"preserved":true}'::JSONB
+       OR NOT EXISTS(SELECT 1 FROM public.stripe_connect_account_dispositions WHERE stripe_connected_account_id='acct_ResetContract' AND excluded AND actor_id=actor)
+       OR EXISTS(SELECT 1 FROM public.stripe_connect_account_dispositions WHERE stripe_connected_account_id='acct_UntrustedHistory')
+       OR NOT EXISTS(SELECT 1 FROM private.stripe_connect_account_identity_guards WHERE stripe_connected_account_id='acct_ResetContract' AND excluded AND mapped_studio_id IS NULL) THEN
+        RAISE EXCEPTION 'Reset retirement state differs: %',result;
+    END IF;
+    SELECT count(*) INTO audit_count FROM public.audit_logs WHERE studio_id=studio AND actor_id=actor AND action='billing.connect_account_reset'
+        AND entity_type='billing' AND entity_id=studio AND metadata='{"previous_stripe_account_id":"acct_ResetContract"}'::JSONB;
+    IF audit_count<>1 THEN RAISE EXCEPTION 'Reset audit differs'; END IF;
+    result:=public.reset_stripe_connect_account_atomic_v58(studio,actor,'acct_ResetContract',3);
+    IF result->>'outcome' IS DISTINCT FROM 'stale_account' THEN RAISE EXCEPTION 'Stale retry accepted'; END IF;
+    result:=public.reset_stripe_connect_account_atomic_v58(studio,actor,NULL,4);
+    IF result->>'outcome' IS DISTINCT FROM 'no_change' THEN RAISE EXCEPTION 'Disconnected retry mutated'; END IF;
+    result:=public.reset_stripe_connect_account_atomic_v58(studio,outsider,NULL,4);
+    IF result->>'outcome' IS DISTINCT FROM 'actor_denied' THEN RAISE EXCEPTION 'No-op skipped admin check'; END IF;
+    IF (SELECT count(*) FROM public.audit_logs WHERE studio_id=studio AND action='billing.connect_account_reset')<>1 THEN RAISE EXCEPTION 'Duplicate reset audit'; END IF;
+    PERFORM public.authorize_studio_live_billing_mutation_atomic(other_studio,'connected_invoice.pay','connect_payments','acct_ResetUnaffected',repeat('a',40));
+    IF NOT FOUND THEN RAISE EXCEPTION 'Reset denied unrelated studio'; END IF;
+    BEGIN
+        UPDATE public.studio_payment_accounts SET stripe_connected_account_id='acct_ResetContract' WHERE studio_id=studio;
+        RAISE EXCEPTION 'Retired account remapped';
+    EXCEPTION WHEN check_violation THEN NULL;
+    END;
+    UPDATE public.stripe_events SET processing_status='failed' WHERE stripe_event_id='evt_ResetContract';
+    PERFORM public.authorize_studio_live_billing_mutation_atomic(other_studio,'connected_invoice.pay','connect_payments','acct_ResetUnaffected',repeat('a',40));
+    IF FOUND THEN RAISE EXCEPTION 'Excluded failure bypassed GA'; END IF;
+    UPDATE public.stripe_events SET processing_status='processed',stripe_account_id='acct_ResetUnknown' WHERE stripe_event_id='evt_ResetContract';
+    PERFORM public.authorize_studio_live_billing_mutation_atomic(other_studio,'connected_invoice.pay','connect_payments','acct_ResetUnaffected',repeat('a',40));
+    IF FOUND THEN RAISE EXCEPTION 'Unknown account bypassed GA'; END IF;
+END;
+$reset$;
+ROLLBACK;
+SELECT 'connect reset retirement contract passed' AS result;

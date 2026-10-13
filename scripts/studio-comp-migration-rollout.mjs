@@ -1304,7 +1304,7 @@ export const EXPECTED_V58_CATALOG_STATE = "column_acls=252:77ed54c37fb6a77a67823
 export const EXPECTED_V58_RESTORED_CATALOG_STATE = "column_acls=252:77ed54c37fb6a77a67823ac6a3c13e100fdfe9a15d417087eaa8335aca7984c4:0;columns=44:e16cf54c60e5caf11f3e0d7feb1d576436c4e5ca20ab6b1297ae8d61b63418ee:0;constraints=25:a47a52be64bc4119f8905431c4af3bbd81728b61f40c75fa218fbeb02713e166:0;functions=126:13b89de197c64f4281eccaaf6fdfbc6f8d194896b11f47c39cd8b2d61f68a83c:0;indexes=12:c78635a18852d4cbe8be1bc34861848ba904b06639038c292f84d56ca7be50a7:0;policies=16:259cc99c295d80442450cea438a462efd44748f2ace47456fca13133b52d17b8:0;scoped_constraints=191:ac1c5b8bd2202b318843d62691fec39501e3b58e2090447f8d7633b43dfdf3da:0;scoped_indexes=45:1bfef3f53dfb4665e9f438c66cc04baf062234ae4e47a66a1ae9b7c924c47486:0;sequences=3:27451af3027130cfb193bd4eb9f59221773a89e46bcb855a7a809df1b54a7574:0;table_acls=25:0b972e5cc9be4772e46edfdac6a45d9d6074c433df6cb139232028c9d637d06d:0;tables=22:d3352c35012f5c65edb3cf3b7c5b864f916357d6a11d732199fe30b04034962f:0;triggers=14:03a92971a8b66629aac9892448a2448e6844bfb7edd27c0c5448f17235e270e7:0";
 export const EXPECTED_V58_AUTOMATION_TABLE_STATE = "90cbd2b2139f3975294c9bbe99ea24cc0943ea6a1345dbdd1edb37aa41fc33d3";
 export const EXPECTED_V58_RESTORED_AUTOMATION_TABLE_STATE = "e8b20992404a7b771ac0d14036ee9119cf86ca0cb373597623deb5d1b4369fb1";
-export const EXPECTED_V58_AUTOMATION_FUNCTION_STATE = "e727464490d51c331355ef3fb083d67384bf2ede889a1a72bb6cc9d52ed71ff7";
+export const EXPECTED_V58_AUTOMATION_FUNCTION_STATE = "0068d8ee28c824a8a34ce020a6c81ec3f3d8aeb9f1a2a81f545ede3c52b214b2";
 export const EXPECTED_V58_PLATFORM_AUTOMATION_TABLE_STATE = preflightSchema.checks.live_billing_tables_v58.platformExpected;
 export const EXPECTED_V58_RESTORED_PLATFORM_AUTOMATION_TABLE_STATE = preflightSchema.checks.live_billing_tables_v58.platformRestoredExpected;
 const V58_TABLE_PROFILES = Object.freeze([
@@ -1316,7 +1316,7 @@ const V58_TABLE_PROFILES = Object.freeze([
 const V58_FUNCTIONS = Object.freeze([
   ...V57_FUNCTIONS.map(row => row[0] === "public.koaryu_release_schema_preflight_v38()"
     ? [row[0], "95b4ed497b4071ad325985d7270352ac169d33459864325d7432e2806d7435aa", row[2], row[3], "search_path=pg_catalog", ...row.slice(5)] : row),
-  ["public.koaryu_release_schema_preflight_v39()", "c63e30734883c41153c5ccfd5c27562532786102dff58184928304bb276494ee", ...V57_FUNCTIONS.at(-1).slice(2)],
+  ["public.koaryu_release_schema_preflight_v39()", "7f56963d1bd6237e127773b484540059854681351cd665f2a29c813b9c3cf69b", ...V57_FUNCTIONS.at(-1).slice(2)],
 ]);
 export const EXPECTED_V58_RELEASE_MANIFEST = releaseManifest(V58_FUNCTIONS);
 export const V58_RELEASE_MANIFEST_SQL = releaseManifestSql(V58_FUNCTIONS, "v58_release_manifest");

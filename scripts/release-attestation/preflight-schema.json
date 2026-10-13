@@ -2592,6 +2592,7 @@
         "public.reserve_billing_autopay_activation_v31(uuid,uuid,uuid,uuid,uuid,text,integer,text,text,numeric)",
         "public.reserve_core_checkout_atomic(uuid)",
         "public.reserve_core_checkout_v2_atomic(uuid)",
+        "public.reset_stripe_connect_account_atomic_v58(uuid,uuid,text,integer)",
         "public.resolve_workflow_email_without_attempt_v1(uuid,uuid,uuid,text,text,text,text[],text,text,jsonb)",
         "public.revoke_belt_test_recipient_v1(uuid,uuid,uuid,uuid,uuid,bigint)",
         "public.revoke_billing_enrollment_transition_v1(uuid,uuid,uuid,bigint,text,text,text,uuid,integer)",
@@ -2656,7 +2657,7 @@
         "public.write_student_profile_atomic(uuid,uuid,uuid,jsonb,uuid[],jsonb,boolean,text)",
         "public.write_student_profile_v2_atomic(uuid,uuid,uuid,jsonb,uuid[],jsonb,boolean,text)"
       ],
-      "expected": "e727464490d51c331355ef3fb083d67384bf2ede889a1a72bb6cc9d52ed71ff7"
+      "expected": "0068d8ee28c824a8a34ce020a6c81ec3f3d8aeb9f1a2a81f545ede3c52b214b2"
     },
     "preflight_security_v58": {
       "kind": "preflight_security_v58"

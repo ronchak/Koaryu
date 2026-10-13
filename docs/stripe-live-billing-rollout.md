@@ -336,3 +336,11 @@ Abort immediately on any of these:
 Rollback order is: stop new actions; set `LIVE_BILLING_ENABLED=false` through the separately approved configuration path; preserve event/object IDs; reconcile already-sent requests by idempotency/event readback without a second mutation; and escalate any financial state to the director. Database migration rollback is not the incident response and must not delete provenance.
 
 The GA product decision covers all eligible studios. Passing these checks does not authorize an agent-run financial canary or change production release authority.
+
+Unused Connect accounts can be reset by a current studio admin. The reset RPC checks
+billing history and unresolved provider/webhook work under database locks, then clears
+the mapping, advances its generation, excludes the retired identity, and writes the
+audit in one transaction. Later webhooks from that retired account use the existing
+excluded-account ignore path. A concurrent write returns HTTP 409 with `Retry-After: 1`;
+retry starts from a fresh account read. History or unresolved work requires completion
+or support before reset. Unknown accounts and failed events still block live permits.

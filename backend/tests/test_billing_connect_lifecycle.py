@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime, timedelta, timezone
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from fastapi import HTTPException
 
@@ -1727,21 +1727,38 @@ class BillingConnectLifecycleTest(BillingPaymentsLifecycleTestBase):
             }
         )
 
+        reset_account = {
+            **service.supabase.tables["studio_payment_accounts"][0],
+            "stripe_connected_account_id": None,
+            "status": "not_connected",
+            "requirements_due": [],
+            "metadata": {
+                "previous_stripe_connected_account_ids": ["acct_stale"],
+                "connect_account_generation": 2,
+            },
+        }
+        rpc = Mock()
+        rpc.return_value.execute.return_value.data = {"outcome": "reset", "account": reset_account}
+        service.supabase.rpc = rpc
+
         response = asyncio.run(service.reset_connect_account("studio_1", "user_1"))
 
         self.assertEqual(response.status, "not_connected")
         self.assertIsNone(response.stripe_connected_account_id)
-        self.assertEqual(
-            service.supabase.tables["studio_payment_accounts"][0]["metadata"][
-                "previous_stripe_connected_account_ids"
-            ],
-            ["acct_stale"],
+        rpc.assert_called_once_with(
+            "reset_stripe_connect_account_atomic_v58",
+            {
+                "p_studio_id": "studio_1",
+                "p_actor_id": "user_1",
+                "p_expected_stripe_connected_account_id": "acct_stale",
+                "p_expected_connect_account_generation": 1,
+            },
         )
-        self.assertEqual(
-            service.supabase.tables["studio_payment_accounts"][0]["metadata"][
-                "connect_account_generation"
-            ],
-            2,
+        self.assertFalse(
+            any(
+                row["insert"] is not None or row["update"] is not None
+                for row in service.supabase.query_log
+            )
         )
 
     def test_connect_reset_blocks_when_stripe_history_exists(self):
@@ -1772,6 +1789,9 @@ class BillingConnectLifecycleTest(BillingPaymentsLifecycleTestBase):
                 "billing_disputes": [],
             }
         )
+
+        service.supabase.rpc = Mock()
+        service.supabase.rpc.return_value.execute.return_value.data = {"outcome": "billing_history"}
 
         with self.assertRaises(HTTPException) as context:
             asyncio.run(service.reset_connect_account("studio_1", "user_1"))
