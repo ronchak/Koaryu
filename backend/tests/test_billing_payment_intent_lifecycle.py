@@ -58,6 +58,144 @@ class BillingPaymentIntentLifecycleTest(BillingPaymentsLifecycleTestBase):
         }
         return service, intent
 
+    def test_retried_intent_binds_successful_attempt_and_its_adjustments(self):
+        for early_events in (
+            ("payment_failed", "processing"),
+            ("processing", "payment_failed"),
+        ):
+            with self.subTest(early_events=early_events):
+                service, intent = self.payment_facts_fixture()
+                payment_events = service._webhook_projector()._payment_events()
+                for index, event in enumerate(early_events, start=1):
+                    payment_events.project_payment_intent(
+                        {
+                            **intent,
+                            "status": "requires_payment_method"
+                            if event == "payment_failed"
+                            else event,
+                            "amount_received": 0,
+                            "latest_charge": f"ch_attempt_{index}",
+                            "payment_method": f"pm_attempt_{index}",
+                        },
+                        "acct_1",
+                        f"payment_intent.{event}",
+                        index * 100,
+                    )
+                    payment = service.supabase.tables["billing_payments"][0]
+                    self.assertIsNone(payment["stripe_charge_id"])
+                    self.assertIsNone(payment["stripe_payment_method_id"])
+                    self.assertEqual(payment["net_collected_amount_cents"], 0)
+                    self.assertEqual(payment["refundable_amount_cents"], 0)
+
+                payment_id = payment["id"]
+                payment_events.project_payment_intent(
+                    {**intent, "latest_charge": "ch_success", "payment_method": "pm_success"},
+                    "acct_1",
+                    "payment_intent.succeeded",
+                    300,
+                )
+                payment = service.supabase.tables["billing_payments"][0]
+                self.assertEqual(len(service.supabase.tables["billing_payments"]), 1)
+                self.assertEqual(payment["id"], payment_id)
+                self.assertEqual(payment["status"], "succeeded")
+                self.assertEqual(payment["stripe_charge_id"], "ch_success")
+                self.assertEqual(payment["stripe_payment_method_id"], "pm_success")
+                self.assertEqual(payment["net_collected_amount_cents"], 1000)
+                self.assertEqual(payment["refundable_amount_cents"], 1000)
+
+                payment_events.project_refund(
+                    {
+                        "id": "re_success",
+                        "charge": "ch_success",
+                        "payment_intent": "pi_1",
+                        "amount": 400,
+                        "currency": "usd",
+                        "status": "succeeded",
+                        "metadata": {"studio_id": "studio_1"},
+                    },
+                    "acct_1",
+                    event_created=400,
+                )
+                refund = service.supabase.tables["billing_refunds"][0]
+                payment = service.supabase.tables["billing_payments"][0]
+                self.assertEqual(refund["payment_id"], payment_id)
+                self.assertEqual(payment["refunded_amount_cents"], 400)
+                self.assertEqual(payment["net_collected_amount_cents"], 600)
+                self.assertEqual(payment["refundable_amount_cents"], 600)
+
+                payment_events.project_dispute(
+                    {
+                        "id": "dp_success",
+                        "charge": "ch_success",
+                        "payment_intent": "pi_1",
+                        "amount": 200,
+                        "currency": "usd",
+                        "status": "needs_response",
+                        "metadata": {"studio_id": "studio_1"},
+                    },
+                    "acct_1",
+                    event_created=500,
+                )
+                dispute = service.supabase.tables["billing_disputes"][0]
+                payment = service.supabase.tables["billing_payments"][0]
+                self.assertEqual(dispute["payment_id"], payment_id)
+                self.assertEqual(payment["status"], "disputed")
+                self.assertEqual(payment["refunded_amount_cents"], 400)
+                self.assertEqual(payment["disputed_amount_cents"], 200)
+                self.assertEqual(payment["net_collected_amount_cents"], 400)
+                self.assertEqual(payment["refundable_amount_cents"], 400)
+                self.assertFalse(payment["adjustment_reconciliation_required"])
+
+    def test_same_second_success_binds_identity_and_rejects_stale_or_regressive_attempts(self):
+        service, intent = self.payment_facts_fixture()
+        payment_events = service._webhook_projector()._payment_events()
+        for event in ("payment_failed", "processing", "succeeded"):
+            payment_events.project_payment_intent(
+                {
+                    **intent,
+                    "latest_charge": f"ch_{event}",
+                    "payment_method": f"pm_{event}",
+                    "amount_received": 1000 if event == "succeeded" else 0,
+                },
+                "acct_1",
+                f"payment_intent.{event}",
+                300,
+            )
+        payment = service.supabase.tables["billing_payments"][0]
+        self.assertEqual(payment["stripe_charge_id"], "ch_succeeded")
+        self.assertEqual(payment["stripe_payment_method_id"], "pm_succeeded")
+        expected = dict(payment)
+        for event, event_created in (
+            ("succeeded", 200),
+            ("processing", 300),
+            ("payment_failed", 300),
+        ):
+            with self.subTest(event=event, event_created=event_created):
+                payment_events.project_payment_intent(
+                    {**intent, "latest_charge": "ch_other", "payment_method": "pm_other"},
+                    "acct_1",
+                    f"payment_intent.{event}",
+                    event_created,
+                )
+                self.assertEqual(service.supabase.tables["billing_payments"][0], expected)
+
+    def test_historical_failed_attempt_identity_is_not_silently_repaired(self):
+        service, intent = self.payment_facts_fixture()
+        payment_events = service._webhook_projector()._payment_events()
+        payment_events.project_payment_intent(
+            {**intent, "amount_received": 0}, "acct_1", "payment_intent.payment_failed", 100
+        )
+        # Simulate an identity pinned before success by the previous projector.
+        service.supabase.tables["billing_payments"][0].update(
+            stripe_charge_id="ch_historical", stripe_payment_method_id="pm_historical"
+        )
+        payment_events.project_payment_intent(
+            {**intent, "payment_method": "pm_success"}, "acct_1", "payment_intent.succeeded", 200
+        )
+        payment = service.supabase.tables["billing_payments"][0]
+        self.assertEqual(payment["stripe_charge_id"], "ch_historical")
+        self.assertEqual(payment["stripe_payment_method_id"], "pm_historical")
+
     def test_success_sources_keep_one_payment_in_its_original_utc_month(self):
         collected = datetime(2026, 6, 30, 23, 59, 59, tzinfo=timezone.utc)
         observed = datetime(2026, 7, 10, tzinfo=timezone.utc)
@@ -135,6 +273,8 @@ class BillingPaymentIntentLifecycleTest(BillingPaymentsLifecycleTestBase):
                             "processed_at": winner_time,
                             "last_stripe_event_created": winner_event,
                             "status": "succeeded",
+                            "stripe_charge_id": "ch_winner",
+                            "stripe_payment_method_id": "pm_winner",
                             "amount_cents": 1000,
                             "net_collected_amount_cents": 1000,
                             "refundable_amount_cents": 1000,
@@ -148,6 +288,8 @@ class BillingPaymentIntentLifecycleTest(BillingPaymentsLifecycleTestBase):
                 )
                 payment = service.supabase.tables["billing_payments"][0]
                 self.assertEqual(payment["processed_at"], winner_time)
+                self.assertEqual(payment["stripe_charge_id"], "ch_winner")
+                self.assertEqual(payment["stripe_payment_method_id"], "pm_winner")
                 self.assertEqual(payment["last_stripe_event_created"], max(200, winner_event))
                 updates = [
                     query
@@ -246,6 +388,7 @@ class BillingPaymentIntentLifecycleTest(BillingPaymentsLifecycleTestBase):
                     payment_events = service._webhook_projector()._payment_events()
                     # A partial capture can collect less than the intended amount.
                     intent["amount"] = 2000
+                    intent["payment_method"] = "pm_success"
                     payment_events.project_payment_intent(
                         intent, "acct_1", "payment_intent.succeeded", 100
                     )
@@ -281,6 +424,8 @@ class BillingPaymentIntentLifecycleTest(BillingPaymentsLifecycleTestBase):
                             "id",
                             "status",
                             "processed_at",
+                            "stripe_charge_id",
+                            "stripe_payment_method_id",
                             "amount_cents",
                             "refunded_amount_cents",
                             "disputed_amount_cents",
@@ -295,7 +440,13 @@ class BillingPaymentIntentLifecycleTest(BillingPaymentsLifecycleTestBase):
                         1000 if terminal == "succeeded" else 0,
                     )
                     payment_events.project_payment_intent(
-                        {**intent, "amount_received": 0, "status": incoming},
+                        {
+                            **intent,
+                            "amount_received": 0,
+                            "status": incoming,
+                            "latest_charge": "ch_later_attempt",
+                            "payment_method": "pm_later_attempt",
+                        },
                         "acct_1",
                         f"payment_intent.{incoming}",
                         200,
