@@ -194,20 +194,23 @@ This source declaration does not record a hosted activation.
 The candidate backend also includes a billing-transition timer in each web
 process. With `BILLING_TRANSITION_SCHEDULER_ENABLED=true`, it starts immediately
 and runs every 300 seconds without incoming requests. Each tick processes at most
-25 transitions through sequential calls to the existing billing service with
-`limit=1`. The owner checks shutdown and the effective enable flag before each
-new unit. It stops that tick on empty work, a deferred readback, an attention
-result, or an unavailable result. Each process admits one batch at a time with no
-queue; database claims and provider idempotency still coordinate other processes
-and the existing protected cron endpoint. Missed ticks are skipped.
+25 transitions through one call to the existing billing service with `limit=25`.
+The workflow checks shutdown and the effective enable flag before claiming work
+and before each intent. Deferred readbacks allow later claimed intents to run;
+an attention result stops further processing. Empty work or an unavailable result
+ends the tick. Each process admits one batch at a time with no queue; database
+claims and provider idempotency still coordinate other processes and the existing
+protected cron endpoint. Missed ticks are skipped.
 
 A batch gets one isolated client owned by a non-daemon thread through completion
 and cleanup. The timer waits at most 120 seconds, matching the bulk lane waiter,
 and the asynchronous shutdown waiter returns within 30 seconds. These are waiter
 limits, not work deadlines. The owner finishes the current unit and cleanup, then
-stops before claiming another unit. Ordinary Python interpreter exit waits for
-that thread even after the async shutdown waiter returns. Neither waiter timeout
-cancels submitted provider work or releases the active slot early.
+stops before attempting another intent. Unattempted claims keep their leases and
+become eligible again through the existing expired-lease checks. Ordinary Python
+interpreter exit waits for that thread even after the async shutdown waiter
+returns. Neither waiter timeout cancels submitted provider work or releases the
+active slot early.
 
 Both web services now declare `maxShutdownDelaySeconds: 300` in `render.yaml`.
 [Render's shutdown policy](https://render.com/docs/deploys#graceful-shutdown)

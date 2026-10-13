@@ -90,6 +90,10 @@ class BillingTransitionScheduler:
                 target += (math.floor((now - target) / INTERVAL_SECONDS) + 1) * INTERVAL_SECONDS
             await self._sleep(max(0.0, target - now))
 
+    def _stop_requested(self) -> bool:
+        with self._lock:
+            return self._closed or not self._enabled()
+
     def _run_source(self, source):
         client = None
         outcome = "unavailable"
@@ -100,52 +104,38 @@ class BillingTransitionScheduler:
                     return
             client = self._client_factory(postgrest_client_timeout=DATABASE_TIMEOUT_SECONDS)
             service = self._service_factory(client)
-            totals = dict.fromkeys(_RESULT_FIELDS, 0)
-            processed = False
-            outcome = "completed"
-            for _ in range(BATCH_LIMIT):
-                with self._lock:
-                    if self._closed or not self._enabled():
-                        if not processed:
-                            outcome = "disabled"
-                            return
-                        break
-                # Admit only one unit at a time so shutdown can stop further
-                # claims while the current synchronous provider operation drains.
-                result = asyncio.run(
-                    service.process_due_enrollment_transitions(worker_id=str(uuid4()), limit=1)
+            if self._stop_requested():
+                outcome = "disabled"
+                return
+            result = asyncio.run(
+                service.process_due_enrollment_transitions(
+                    worker_id=str(uuid4()), limit=BATCH_LIMIT, stop_requested=self._stop_requested
                 )
-                if (
-                    type(result) is not dict
-                    or set(result) != _RESULT_FIELDS
-                    or any(
-                        type(value) is not int or not 0 <= value <= 1 for value in result.values()
-                    )
-                    or sum(result[key] for key in _RESULT_FIELDS - {"claimed"}) > result["claimed"]
-                ):
-                    raise ValueError("Invalid billing unit result.")
-                processed = True
-                for key in _RESULT_FIELDS:
-                    totals[key] += result[key]
-                if result["failed"] or result["reconciliation_required"]:
-                    outcome = "attention_required"
-                    logger.warning("billing_transition_batch_attention_required")
-                    break
-                if result["claimed"] == 0:
-                    break
-                if result["completed"] == 0:
-                    # The existing workflow can defer a pending boundary readback.
-                    # Stop this scan without inventing a provider failure or retry.
-                    outcome = "deferred"
-                    logger.info("billing_transition_batch_deferred")
-                    break
+            )
+            if (
+                type(result) is not dict
+                or set(result) != _RESULT_FIELDS
+                or any(
+                    type(value) is not int or not 0 <= value <= BATCH_LIMIT
+                    for value in result.values()
+                )
+                or sum(result[key] for key in _RESULT_FIELDS - {"claimed"}) > result["claimed"]
+            ):
+                raise ValueError("Invalid billing batch result.")
+            outcome = "completed"
+            if result["failed"] or result["reconciliation_required"]:
+                outcome = "attention_required"
+                logger.warning("billing_transition_batch_attention_required")
+            elif result["completed"] < result["claimed"]:
+                outcome = "deferred"
+                logger.info("billing_transition_batch_deferred")
             logger.info(
                 "billing_transition_batch_completed claimed=%d completed=%d "
                 "reconciliation_required=%d failed=%d",
-                totals["claimed"],
-                totals["completed"],
-                totals["reconciliation_required"],
-                totals["failed"],
+                result["claimed"],
+                result["completed"],
+                result["reconciliation_required"],
+                result["failed"],
             )
         except BaseException:  # noqa: BLE001 - Owner failures must not expose provider diagnostics.
             outcome = "unavailable"

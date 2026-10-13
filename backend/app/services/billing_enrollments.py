@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Callable
 
 from fastapi import HTTPException, status
 from postgrest.exceptions import APIError as PostgrestAPIError
@@ -366,9 +366,15 @@ class BillingEnrollmentManager:
             stripe_service_cls=self.stripe_service_cls,
         ).cancel_immediate(enrollment_id, studio_id, actor_id, idempotency_key, reason_code)
 
-    async def process_due_transitions(self, *, worker_id: str, limit: int) -> dict[str, int]:
+    async def process_due_transitions(
+        self,
+        *,
+        worker_id: str,
+        limit: int,
+        stop_requested: Callable[[], bool] | None = None,
+    ) -> dict[str, int]:
         return BillingEnrollmentTransitionWorkflow(
             self.records,
             self.connect_accounts,
             stripe_service_cls=self.stripe_service_cls,
-        ).process_due(worker_id=worker_id, limit=limit)
+        ).process_due(worker_id=worker_id, limit=limit, stop_requested=stop_requested)

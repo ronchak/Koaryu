@@ -279,22 +279,31 @@ class BillingEnrollmentTransitionWorkflow:
             mutation="revoke",
         )
 
-    def process_due(self, *, worker_id: str, limit: int = 25) -> dict[str, int]:
+    def process_due(
+        self,
+        *,
+        worker_id: str,
+        limit: int = 25,
+        stop_requested: Callable[[], bool] | None = None,
+    ) -> dict[str, int]:
         if not 1 <= limit <= 100:
             raise HTTPException(
                 status_code=400, detail="Due transition limit must be between 1 and 100."
             )
+        result = {"claimed": 0, "completed": 0, "reconciliation_required": 0, "failed": 0}
+        if stop_requested is not None and stop_requested():
+            return result
         intents = self.operations.claim_due_enrollment_transitions(
             worker_id=worker_id,
             limit=limit,
         )
-        result = {
-            "claimed": len(intents),
-            "completed": 0,
-            "reconciliation_required": 0,
-            "failed": 0,
-        }
+        result["claimed"] = len(intents)
         for intent in intents:
+            if stop_requested is not None and (
+                stop_requested() or result["failed"] or result["reconciliation_required"]
+            ):
+                # Leave unattempted claims for normal lease expiry and recovery.
+                break
             try:
                 try:
                     snapshot = self._snapshot_for_replay(intent)

@@ -121,7 +121,7 @@ def test_immediate_periodic_batches_without_requests_skip_missed_ticks_and_fresh
         wake.set_result(None)
         delay, _ = await control.parked()
         assert delay == 150 and len(control.calls) == 3
-        assert {call[0]["limit"] for call in control.calls} == {1}
+        assert {call[0]["limit"] for call in control.calls} == {25}
         workers = [UUID(call[0]["worker_id"]) for call in control.calls]
         assert len(set(workers)) == 3 and all(worker.version == 4 for worker in workers)
         assert all(not call[2] and call[1] != threading.get_ident() for call in control.calls)
@@ -262,7 +262,7 @@ def test_safe_failures_release_slot_and_timer_can_retry(monkeypatch, caplog, fai
         {"claimed": 0, "completed": 0, "failed": 0},
         {**summary(), "raw": "private provider data"},
         {**summary(), "claimed": True},
-        {**summary(), "claimed": 2},
+        {**summary(), "claimed": 26},
         {**summary(), "completed": 1},
         {**summary(), "failed": -1},
     ],
@@ -275,7 +275,7 @@ def test_malformed_results_are_not_retained_or_logged(caplog, result):
         await control.subject.start()
         await control.parked()
         assert control.waits[0][0].result() == "unavailable"
-        assert control.subject._active is None and len(control.closed) == 1
+        assert control.subject._active is None and len(control.closed) == len(control.calls) == 1
         await control.subject.stop()
 
     asyncio.run(scenario())
@@ -401,7 +401,7 @@ def test_cleanup_keeps_slot_and_client_owned_after_processing_and_stop():
         assert not source.done() and control.subject._active is source
         release_close.set()
         assert await module._wait_for_source(source, timeout=1) == "completed"
-        assert control.subject._active is None and len(control.closed) == 1
+        assert control.subject._active is None and len(control.closed) == len(control.calls) == 1
 
     try:
         asyncio.run(scenario())
@@ -448,35 +448,35 @@ def test_completed_batch_logs_only_exact_validated_counts(caplog, result):
     assert warnings == (["billing_transition_batch_attention_required"] if result["failed"] else [])
 
 
-@pytest.mark.parametrize("units", [0, 3, 25])
-def test_tick_aggregates_units_with_one_client_and_stops_at_zero_or_limit(caplog, units):
+@pytest.mark.parametrize("claimed,completed", [(0, 0), (3, 3), (25, 25), (2, 1), (25, 0)])
+def test_tick_claims_one_bounded_batch_and_logs_actual_counts(caplog, claimed, completed):
     caplog.set_level("INFO", logger=module.logger.name)
-    complete = {**summary(), "claimed": 1, "completed": 1}
+    result = {**summary(), "claimed": claimed, "completed": completed}
 
     async def scenario():
-        control = Controlled(results=[complete] * units + [summary(), complete])
+        control = Controlled(result=result)
         await control.subject.start()
         delay, _ = await control.parked()
         assert delay == 300
-        assert len(control.calls) == min(units + 1, 25)
-        assert {call[0]["limit"] for call in control.calls} == {1}
-        assert len({call[0]["worker_id"] for call in control.calls}) == len(control.calls)
-        assert len({call[1] for call in control.calls}) == 1
+        assert len(control.calls) == 1
+        assert control.calls[0][0]["limit"] == 25
+        assert control.calls[0][0]["stop_requested"]() is False
         assert len(control.clients) == len(control.closed) == 1
-        assert control.waits[0][0].result() == "completed"
+        assert control.waits[0][0].result() == ("deferred" if completed < claimed else "completed")
         await control.subject.stop()
 
     asyncio.run(scenario())
-    completed = [
+    records = [
         record
         for record in caplog.records
         if record.message.startswith("billing_transition_batch_completed")
     ]
-    assert len(completed) == 1 and completed[0].args == (units, units, 0, 0)
+    assert len(records) == 1 and records[0].args == (claimed, completed, 0, 0)
+    assert "attention_required" not in caplog.text
 
 
 @pytest.mark.parametrize("pause", ["stop", "flag"])
-def test_current_unit_finishes_after_pause_without_claiming_another(caplog, pause):
+def test_current_unit_finishes_after_pause_and_callback_stops_further_processing(caplog, pause):
     caplog.set_level("INFO", logger=module.logger.name)
     control = Controlled(held=True, result={**summary(), "claimed": 1, "completed": 1})
     control.expire = True
@@ -486,16 +486,21 @@ def test_current_unit_finishes_after_pause_without_claiming_another(caplog, paus
         assert await asyncio.to_thread(control.entered.wait, 1)
         await control.parked()
         source = control.waits[0][0]
+        stop_requested = control.calls[0][0]["stop_requested"]
+        assert stop_requested() is False
         if pause == "stop":
             await control.subject.stop()
         else:
             control.settings.BILLING_TRANSITION_SCHEDULER_ENABLED = False
+        assert stop_requested() is True
         assert control.subject._active is source and not source.done()
         assert not control.closed and len(control.calls) == 1
         control.release.set()
         assert await module._wait_for_source(source, timeout=1) == "completed"
         assert len(control.calls) == len(control.closed) == 1
         assert not control.calls[0][2]
+        await control.subject.run_once()
+        assert len(control.calls) == 1
         await control.subject.stop()
 
     try:
@@ -519,15 +524,17 @@ def test_current_unit_finishes_after_pause_without_claiming_another(caplog, paus
         ({"private": "provider data"}, "unavailable"),
     ],
 )
-def test_drain_stops_after_attention_deferred_or_malformed_unit(caplog, last, outcome):
+def test_tick_does_not_claim_again_after_attention_deferral_or_malformed_batch(
+    caplog, last, outcome
+):
     caplog.set_level("INFO", logger=module.logger.name)
     complete = {**summary(), "claimed": 1, "completed": 1}
 
     async def scenario():
-        control = Controlled(results=[complete, last, complete])
+        control = Controlled(results=[last, complete])
         await control.subject.start()
         delay, _ = await control.parked()
-        assert delay == 300 and len(control.calls) == 2
+        assert delay == 300 and len(control.calls) == 1
         assert control.waits[0][0].result() == outcome
         assert len(control.closed) == 1
         await control.subject.stop()
@@ -542,7 +549,7 @@ def test_drain_stops_after_attention_deferred_or_malformed_unit(caplog, last, ou
         assert not completed
     else:
         assert len(completed) == 1
-        assert completed[0].args == (2, 1, last["reconciliation_required"], last["failed"])
+        assert completed[0].args == (1, 0, last["reconciliation_required"], last["failed"])
     if outcome == "deferred":
         assert "billing_transition_batch_deferred" in caplog.text
         assert "attention_required" not in caplog.text
