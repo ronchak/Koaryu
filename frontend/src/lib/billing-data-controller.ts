@@ -355,7 +355,7 @@ export function useBillingDataController({
             }),
           );
         };
-        if (["plans", "enrollments", "invoices"].includes(activeTab))
+        if (["plans", "enrollments"].includes(activeTab))
           load("/billing/plans", setPlans);
         if (["families", "enrollments", "invoices", "reports"].includes(activeTab))
           load("/billing/payers", setPayers);

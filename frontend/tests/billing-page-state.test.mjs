@@ -64,76 +64,64 @@ describe("resolveBillingAuxiliaryReadiness", () => {
   const ready = {
     activeTab: "overview",
     bypassForConnectReturn: false,
-    programsLoadError: null,
-    programsLoaded: true,
     studentsLoadError: null,
     studentsLoaded: true,
     studentsMayBePartial: false,
   };
 
-  it("declares only the dataset consumed by the active billing tab", () => {
-    assert.equal(resolveBillingAuxiliaryReadiness(ready).status, "ready");
+  it("requires a complete roster only for enrollments", () => {
+    for (const activeTab of ["overview", "plans", "families", "invoices", "reports"]) {
+      for (const studentsLoadError of [null, "Roster failed"]) {
+        assert.deepEqual(
+          resolveBillingAuxiliaryReadiness({
+            ...ready,
+            activeTab,
+            studentsLoaded: false,
+            studentsMayBePartial: true,
+            studentsLoadError,
+          }),
+          { error: null, status: "ready" },
+          activeTab,
+        );
+      }
+    }
+    for (const roster of [
+      { studentsLoaded: false },
+      { studentsLoaded: true, studentsMayBePartial: true },
+    ]) {
+      assert.equal(
+        resolveBillingAuxiliaryReadiness({ ...ready, activeTab: "enrollments", ...roster }).status,
+        "loading",
+      );
+    }
     assert.equal(
-      resolveBillingAuxiliaryReadiness({
-        ...ready,
-        programsLoaded: false,
-      }).status,
+      resolveBillingAuxiliaryReadiness({ ...ready, activeTab: "enrollments" }).status,
       "ready",
-      "overview does not consume programs",
     );
     assert.equal(
       resolveBillingAuxiliaryReadiness({
         ...ready,
-        studentsLoadError: "Roster timed out",
-      }).status,
-      "ready",
-      "overview uses landing counts even if roster fails",
-    );
-    assert.equal(
-      resolveBillingAuxiliaryReadiness({
-        ...ready,
-        activeTab: "plans",
-        programsLoaded: false,
-        studentsLoadError: "Roster timed out",
-      }).status,
-      "loading",
-      "plans consume programs but not students",
-    );
-    assert.equal(
-      resolveBillingAuxiliaryReadiness({
-        ...ready,
-        activeTab: "families",
-        programsLoadError: "Programs failed",
-        programsLoaded: false,
-        studentsLoadError: "Roster failed",
+        activeTab: "enrollments",
         studentsLoaded: false,
+        studentsLoadError: "Roster failed",
       }).status,
-      "ready",
-      "families use billing data only",
+      "error",
     );
   });
 
   it("keeps Connect return synchronization independent from auxiliary datasets", () => {
+    const failedRoster = {
+      ...ready,
+      activeTab: "enrollments",
+      studentsLoadError: "Roster failed",
+      studentsLoaded: false,
+    };
     assert.deepEqual(
-      resolveBillingAuxiliaryReadiness({
-        ...ready,
-        bypassForConnectReturn: true,
-        programsLoadError: "Programs failed",
-        programsLoaded: false,
-        studentsLoadError: "Roster failed",
-        studentsLoaded: false,
-      }),
+      resolveBillingAuxiliaryReadiness({ ...failedRoster, bypassForConnectReturn: true }),
       { error: null, status: "ready" },
     );
-
     assert.equal(
-      resolveBillingAuxiliaryReadiness({
-        ...ready,
-        activeTab: "plans",
-        bypassForConnectReturn: false,
-        programsLoadError: "Programs failed",
-        programsLoaded: false,
-      }).status,
+      resolveBillingAuxiliaryReadiness(failedRoster).status,
       "error",
       "tab readiness resumes after Connect synchronization",
     );
