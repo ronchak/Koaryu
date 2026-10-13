@@ -128,8 +128,8 @@ export default function GetStartedPage() {
         </ul>
         <p className="mt-4 text-sm leading-6 text-text-secondary">
           Koaryu shows billing workflows only when the signed-in role and studio capabilities allow
-          them. Tuition collection needs separate activation for the exact studio and is not
-          generally available. Preview actions do not change provider state.
+          them. Eligible studios can collect tuition after completing Stripe onboarding and meeting
+          payment-account requirements. Preview actions do not change provider state.
         </p>
       </AccountSection>
 

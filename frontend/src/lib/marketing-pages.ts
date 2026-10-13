@@ -191,16 +191,16 @@ const featurePageDrafts: MarketingPageDraft[] = [
     eyebrow: "Billing",
     metaTitle: "Martial Arts Billing Records and Tuition Availability | Koaryu",
     description:
-      "Compare platform pricing, existing invoices and payers, external payment records, and tuition availability. Collection requires separate studio activation.",
+      "Compare platform pricing, existing invoices and payers, external payment records, and tuition availability. Eligible studios can collect tuition after completing Stripe onboarding and meeting payment-account requirements.",
     summary:
-      "Admin and Front Desk can review existing billing records. Tuition collection needs separate activation for your studio and is not generally available. New billing exports are unavailable.",
+      "Admin and Front Desk can review existing billing records. Eligible studios can collect tuition after completing Stripe onboarding and meeting payment-account requirements. New billing exports are unavailable.",
     icon: "credit-card",
     primaryAction: "Read the billing guide",
     sections: [
       {
         title: "Billing Records and Tuition Availability",
         description:
-          "Admin and Front Desk can review existing billing records. Tuition collection needs separate activation for your studio and is not generally available. New billing exports are unavailable.",
+          "Admin and Front Desk can review existing billing records. Eligible studios can collect tuition after completing Stripe onboarding and meeting payment-account requirements. New billing exports are unavailable.",
         bullets: [
           "An external payment is a payer-level record. It does not settle a Stripe invoice.",
           "Reconcile refreshes an existing Stripe invoice’s local status without charging the payer.",
@@ -217,8 +217,8 @@ const featurePageDrafts: MarketingPageDraft[] = [
       },
       {
         label: "Collection",
-        value: "Separate activation",
-        detail: "Not generally available.",
+        value: "Optional Stripe collection",
+        detail: "Requires Stripe onboarding and an account enabled to accept payments.",
       },
     ],
     related: [

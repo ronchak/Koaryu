@@ -25,8 +25,13 @@ export const legalDocuments: Record<LegalDocumentKey, LegalDocumentEntry> = {
   terms: {
     href: "/terms",
     title: "Terms of Service",
-    effective: "2026-10-08",
+    effective: "2026-10-12",
     history: [
+      {
+        date: "2026-10-12",
+        summary:
+          "Updated Koaryu Payments availability to reflect eligibility, Stripe onboarding and payment-account requirements.",
+      },
       {
         date: "2026-10-08",
         summary:
