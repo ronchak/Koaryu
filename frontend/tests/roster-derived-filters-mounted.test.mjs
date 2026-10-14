@@ -27,7 +27,7 @@ function bundle(pagedRoster = true) {
   const dom = add("react-dom/client");
   const controller = add("@/lib/students-page-controller");
   const content = add("@/components/students/student-roster-page-content");
-  return `(()=>{const process={env:{NODE_ENV:'production',NEXT_PUBLIC_STUDENTS_PAGED_ROSTER:'${pagedRoster}'}};const modules=[${modules.join(",")}],cache={};function require(id){if(cache[id])return cache[id].exports;const m=cache[id]={exports:{}};modules[id](m,m.exports,require);return m.exports;}const React=require(${react});const f=window.fixture;function Roster(){const c=require(${controller}).useStudentsPageController({config:f.config,programsStore:f.programsStore,scheduleStore:f.scheduleStore,studentsStore:f.studentsStore,studioStore:f.studioStore});f.roster=c.contentProps;return React.createElement(require(${content}).StudentRosterPageContent,c.contentProps);}function Navigation(){const [path,setPath]=React.useState(location.pathname);React.useEffect(()=>{const update=()=>setPath(location.pathname);window.addEventListener('fixture:navigate',update);window.addEventListener('popstate',update);return ()=>{window.removeEventListener('fixture:navigate',update);window.removeEventListener('popstate',update);};},[]);return path==='/students'?React.createElement(Roster):React.createElement('button',{onClick:()=>history.back()},'Back to students');}require(${dom}).createRoot(document.getElementById('root')).render(React.createElement(Navigation));})();`;
+  return `(()=>{const process={env:{NODE_ENV:'production',NEXT_PUBLIC_STUDENTS_PAGED_ROSTER:'${pagedRoster}'}};const modules=[${modules.join(",")}],cache={};function require(id){if(cache[id])return cache[id].exports;const m=cache[id]={exports:{}};modules[id](m,m.exports,require);return m.exports;}const React=require(${react});const f=window.fixture;function Roster(){const c=require(${controller}).useStudentsPageController({config:f.config,programsStore:f.programsStore,scheduleStore:f.scheduleStore,studentsStore:f.studentsStore,studioStore:f.studioStore});f.roster=c.contentProps;return React.createElement(require(${content}).StudentRosterPageContent,c.contentProps);}function Navigation(){const [path,setPath]=React.useState(location.pathname);const [instance,setInstance]=React.useState(0);f.remountRoster=()=>setInstance(value=>value+1);React.useEffect(()=>{const update=()=>setPath(location.pathname);window.addEventListener('fixture:navigate',update);window.addEventListener('popstate',update);return ()=>{window.removeEventListener('fixture:navigate',update);window.removeEventListener('popstate',update);};},[]);return path==='/students'?React.createElement(Roster,{key:instance}):React.createElement(React.Fragment,null,React.createElement('button',{onClick:()=>{f.studentsStore.deleteStudents([location.pathname.split('/').at(-1)]);history.back();}},'Archive student'),React.createElement('button',{onClick:()=>history.back()},'Back to students'));}require(${dom}).createRoot(document.getElementById('root')).render(React.createElement(Navigation));})();`;
 }
 
 const sources = { paged: bundle(), fallback: bundle(false) };
@@ -99,7 +99,13 @@ async function mount({ preview = true, paged = true, query = "", longRoster = fa
         addStudent: async () => {},
         bulkAddTagsToStudents: async () => {},
         bulkUpdateStudentStatus: async () => {},
-        deleteStudents: async () => {},
+        deleteStudents: async (ids) => {
+          students.splice(
+            0,
+            students.length,
+            ...students.filter((student) => !ids.includes(student.id)),
+          );
+        },
         listStudentsPage: async (query) => {
           f.pageReads.push(query);
           return {
@@ -260,6 +266,45 @@ test("returning from a lower roster row restores document scroll and row focus",
         document.activeElement?.closest("[data-student-id]")?.dataset.studentId === "student-35",
     );
     assert.ok(Math.abs((await page.evaluate(() => window.scrollY)) - offset) <= 1);
+    assert.deepEqual(errors, []);
+  } finally {
+    await page.close();
+  }
+});
+
+test("archiving the opened student restores scroll, consumes return state and does not retry on remount", async () => {
+  const { page, errors } = await mount({ preview: false, longRoster: true });
+  try {
+    await page.waitForFunction(
+      () => fixture.roster.filtered.length === 50 && !fixture.roster.isInitialRosterLoading,
+    );
+    const open = page.locator('[data-student-id="student-35"] button[data-open-student]');
+    await open.scrollIntoViewIfNeeded();
+    const offset = await page.evaluate(() => window.scrollY);
+    assert.ok(offset > 500);
+    await open.click();
+    await page.getByRole("button", { name: "Archive student", exact: true }).click();
+    await page.waitForFunction(
+      () => fixture.roster.filtered.length === 49 && !fixture.roster.isPagedLoading,
+    );
+    await page.waitForFunction(() => sessionStorage.getItem("koaryu.roster-return.v1") === null);
+    assert.equal(await page.locator('[data-student-id="student-35"]').count(), 0);
+    assert.ok(Math.abs((await page.evaluate(() => window.scrollY)) - offset) <= 1);
+    await page.evaluate(() => {
+      window.scrollTo(0, 0);
+      fixture.remountRoster();
+    });
+    await page.waitForFunction(
+      () => fixture.roster.filtered.length === 49 && !fixture.roster.isPagedLoading,
+    );
+    await page.evaluate(
+      () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+    );
+    assert.equal(await page.evaluate(() => window.scrollY), 0);
+    assert.equal(
+      await page.evaluate(() => sessionStorage.getItem("koaryu.roster-return.v1")),
+      null,
+    );
     assert.deepEqual(errors, []);
   } finally {
     await page.close();

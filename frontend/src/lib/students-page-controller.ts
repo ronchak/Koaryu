@@ -850,8 +850,7 @@ export function useStudentsPageController({
     if (!saved || isInitialRosterLoading || (!pagedLoaded && !usesDerivedRosterFilters)) return;
     const frame = requestAnimationFrame(() => {
       const row = document.querySelector(`[data-student-id="${CSS.escape(saved.focusId)}"]`);
-      if (!row) return;
-      row.querySelector<HTMLElement>("button[data-open-student]")?.focus({ preventScroll: true });
+      row?.querySelector<HTMLElement>("button[data-open-student]")?.focus({ preventScroll: true });
       window.scrollTo({ top: saved.scroll, behavior: "instant" });
       consumeRosterReturn(saved);
       initialReturnRef.current = null;
