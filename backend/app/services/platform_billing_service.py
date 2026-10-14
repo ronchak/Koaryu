@@ -275,6 +275,18 @@ class PlatformBillingService:
             return row
 
         if strict_repairs:
+            # Healthy rows need no provider repair or flight. In particular,
+            # overlapping Home contexts must not retry their identity reads.
+            row = getattr(self._select_subscription_result(studio_id), "data", None)
+            if row and not self._access_repair_pending(row):
+                row = _require_subscription_access_row(row)
+                window = self._active_access_repair_window(studio_id)
+                if window is not None:
+                    if window.row_fingerprint != self._row_fingerprint(row):
+                        logger.debug("Access repair window voided by a changed subscription row")
+                    self._discard_access_repair_window(studio_id, window)
+                return row
+
             while True:
                 with _access_repair_metadata_lock:
                     flight = _access_repair_flights.get(studio_id)

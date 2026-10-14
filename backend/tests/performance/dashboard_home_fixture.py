@@ -405,7 +405,9 @@ def build_tables(cardinalities: dict[str, int]) -> dict[str, list[dict[str, Any]
         "staff_profiles": [
             {"user_id": USER_ID, "legal_first_name": "Fixture", "legal_last_name": "User"}
         ],
-        "studio_subscriptions": [{"studio_id": STUDIO_ID, "status": "comped", "comped": True}],
+        "studio_subscriptions": [
+            {"studio_id": STUDIO_ID, "status": "comped", "comped": True, "trial_end": None}
+        ],
         "studios": [{"id": STUDIO_ID, "name": "Fixture Studio", "timezone": TIMEZONE}],
     }
 
