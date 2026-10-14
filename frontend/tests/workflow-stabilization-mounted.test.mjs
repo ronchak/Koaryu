@@ -3839,3 +3839,261 @@ test("conversion settling on mounted Belt Tracker starts one replacement eligibi
     await browser.close();
   }
 });
+
+for (const kind of ["membership", "subscription", "subscription-features", "denied"]) {
+  for (const accepted of [false, true]) {
+    test(`resume ${kind} recovery waits for ${accepted ? "accepted" : "rejected"} version`, async (t) => {
+      const browser = await chromium.launch();
+      try {
+        const page = await fixturePage(browser, {
+          path: "/leads",
+          resumeGuard: true,
+          pagedRoster: false,
+        });
+        await page.waitForFunction(() => fixture.store.leadsLoaded);
+        if (kind.startsWith("subscription")) {
+          await page.evaluate((kind) => {
+            fixture.store.markSubscriptionRequired();
+            if (kind === "subscription") fixture.navigate("/subscription-required");
+          }, kind);
+          await page.waitForFunction(() => fixture.store.subscriptionRequired);
+        }
+        await page.evaluate((kind) => {
+          fixture.baseline = fixture.requests.length;
+          fixture.baselineRedirects = (fixture.redirects ?? []).length;
+          fixture.versionReads = 0;
+          window.fetch = () => {
+            fixture.versionReads++;
+            return new Promise((resolve) => (fixture.finishVersion = resolve));
+          };
+          if (kind === "membership") fixture.auth = { ...fixture.auth, role: "instructor" };
+          if (kind === "denied") {
+            const get = fixture.api.get;
+            let denied = false;
+            fixture.api.get = (path, ...args) => {
+              if (path === "/dashboard/workspace" && !denied) {
+                denied = true;
+                fixture.requests.push({ path });
+                return Promise.reject(Object.assign(Error("Denied"), { status: 403 }));
+              }
+              return get(path, ...args);
+            };
+          }
+          window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true }));
+          window.dispatchEvent(new Event("online"));
+        }, kind);
+        await page.waitForFunction(
+          () =>
+            fixture.finishVersion &&
+            fixture.requests.slice(fixture.baseline).some((r) => r.path === "/dashboard/workspace"),
+        );
+        if (kind === "membership" || kind === "denied")
+          await page.waitForFunction(
+            () => !fixture.store.identityReady && Boolean(fixture.store.identityLoadError),
+          );
+        await flush(page);
+        assert.equal(await page.evaluate(() => fixture.versionReads), 1);
+        assert.equal(
+          await page.evaluate(
+            () =>
+              fixture.requests
+                .slice(fixture.baseline)
+                .filter((r) => r.path === "/dashboard/workspace").length,
+          ),
+          1,
+        );
+        assert.equal(
+          await page.evaluate(
+            () =>
+              fixture.requests
+                .slice(fixture.baseline)
+                .filter((r) => r.path.startsWith("/dashboard/bootstrap")).length,
+          ),
+          0,
+        );
+        assert.equal(
+          await page.evaluate(
+            () =>
+              fixture.redirects?.slice(fixture.baselineRedirects).includes("/dashboard") ?? false,
+          ),
+          false,
+        );
+        await page.evaluate(
+          (accepted) =>
+            fixture.finishVersion(
+              Response.json({
+                service: "koaryu-frontend",
+                environment: "production",
+                commit_sha: (accepted ? "a" : "b").repeat(40),
+              }),
+            ),
+          accepted,
+        );
+        if (accepted)
+          await page.waitForFunction(
+            () =>
+              fixture.store.identityReady &&
+              !fixture.store.subscriptionRequired &&
+              fixture.requests
+                .slice(fixture.baseline)
+                .filter((r) => r.path === "/dashboard/workspace").length === 2,
+          );
+        else await flush(page);
+        await flush(page);
+        assert.equal(
+          await page.evaluate(
+            () =>
+              fixture.requests
+                .slice(fixture.baseline)
+                .filter((r) => r.path === "/dashboard/workspace").length,
+          ),
+          accepted ? 2 : 1,
+        );
+        if (kind === "subscription")
+          assert.equal(
+            await page.evaluate(() =>
+              (fixture.redirects ?? []).slice(fixture.baselineRedirects).includes("/dashboard"),
+            ),
+            accepted,
+          );
+        else if (accepted)
+          await page.waitForFunction(
+            () =>
+              fixture.requests
+                .slice(fixture.baseline)
+                .filter((r) => r.path.startsWith("/dashboard/bootstrap")).length === 1,
+          );
+        else
+          assert.equal(
+            await page.evaluate(
+              () =>
+                fixture.requests
+                  .slice(fixture.baseline)
+                  .filter((r) => r.path.startsWith("/dashboard/bootstrap")).length,
+            ),
+            0,
+          );
+        if (!accepted && kind.startsWith("subscription"))
+          assert.equal(await page.evaluate(() => fixture.store.subscriptionRequired), true);
+        t.diagnostic(
+          `resume ${kind}: 1 version, ${accepted ? 2 : 1} workspace reads; feature reads before version: 0`,
+        );
+        await page.evaluate(() => fixture.root.unmount());
+      } finally {
+        await browser.close();
+      }
+    });
+  }
+}
+
+for (const status of ["none", "archived"]) {
+  test(`resume revoked ${status} membership redirects without features on rejected version`, async (t) => {
+    const browser = await chromium.launch();
+    try {
+      const page = await fixturePage(browser, { path: "/leads", resumeGuard: true });
+      await page.waitForFunction(() => fixture.store.leadsLoaded);
+      await page.evaluate((status) => {
+        fixture.baseline = fixture.requests.length;
+        fixture.auth = { ...fixture.auth, membership_status: status, studio_id: null, role: null };
+        window.fetch = () => new Promise((resolve) => (fixture.finishVersion = resolve));
+        window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true }));
+      }, status);
+      const target = status === "none" ? "/onboarding" : "/account-archived";
+      await page.waitForFunction((target) => fixture.redirects?.includes(target), target);
+      await flush(page);
+      assert.deepEqual(
+        await page.evaluate(() => fixture.requests.slice(fixture.baseline).map((r) => r.path)),
+        ["/dashboard/workspace"],
+      );
+      await page.evaluate(() =>
+        fixture.finishVersion(
+          Response.json({
+            service: "koaryu-frontend",
+            environment: "production",
+            commit_sha: "b".repeat(40),
+          }),
+        ),
+      );
+      await flush(page);
+      assert.equal(await page.evaluate(() => fixture.store.currentStudioId), null);
+      assert.deepEqual(
+        await page.evaluate(() => fixture.requests.slice(fixture.baseline).map((r) => r.path)),
+        ["/dashboard/workspace"],
+      );
+      t.diagnostic(
+        `revoked ${status}: 1 workspace request, 0 feature reads; redirect before version settles`,
+      );
+      await page.evaluate(() => fixture.root.unmount());
+    } finally {
+      await browser.close();
+    }
+  });
+}
+
+for (const supersedes of ["retry", "sign-out"]) {
+  test(`a newer ${supersedes} supersedes deferred resume initialization`, async () => {
+    const browser = await chromium.launch();
+    try {
+      const page = await fixturePage(browser, { path: "/leads", resumeGuard: true });
+      await page.waitForFunction(() => fixture.store.leadsLoaded);
+      await page.evaluate(() => {
+        fixture.baseline = fixture.requests.length;
+        fixture.auth = { ...fixture.auth, role: "instructor" };
+        window.fetch = () => new Promise((resolve) => (fixture.finishVersion = resolve));
+        const get = fixture.api.get;
+        let reads = 0;
+        fixture.api.get = (path, ...args) => {
+          if (path === "/dashboard/workspace" && ++reads === 2) {
+            fixture.requests.push({ path });
+            return new Promise((resolve) => (fixture.releaseManualWorkspace = resolve));
+          }
+          return get(path, ...args);
+        };
+        window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true }));
+      });
+      await page.waitForFunction(
+        () => !fixture.store.identityReady && Boolean(fixture.store.identityLoadError),
+      );
+      if (supersedes === "retry") {
+        await page.evaluate(() => fixture.store.retryInitialization());
+        await page.waitForFunction(() => Boolean(fixture.releaseManualWorkspace));
+      } else await page.evaluate(() => fixture.emit("SIGNED_OUT", null));
+      await page.evaluate(() =>
+        fixture.finishVersion(
+          Response.json({
+            service: "koaryu-frontend",
+            environment: "production",
+            commit_sha: "a".repeat(40),
+          }),
+        ),
+      );
+      await flush(page);
+      assert.equal(
+        await page.evaluate(
+          () =>
+            fixture.requests
+              .slice(fixture.baseline)
+              .filter((r) => r.path === "/dashboard/workspace").length,
+        ),
+        supersedes === "retry" ? 2 : 1,
+      );
+      if (supersedes === "retry") {
+        await page.evaluate(() =>
+          fixture.releaseManualWorkspace({
+            auth: fixture.auth,
+            studio: { name: "Test", timezone: "UTC" },
+          }),
+        );
+        await page.waitForFunction(
+          () => fixture.store.identityReady && fixture.store.currentRole === "instructor",
+        );
+      } else {
+        assert.equal(await page.evaluate(() => fixture.store.identityReady), false);
+        assert.ok(await page.evaluate(() => fixture.redirects.includes("/login")));
+      }
+      await page.evaluate(() => fixture.root.unmount());
+    } finally {
+      await browser.close();
+    }
+  });
+}

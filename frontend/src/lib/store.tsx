@@ -12,6 +12,7 @@ import { beginResourceMutation, createResourceScope } from "@/lib/store-resource
 import React, { useState, useEffect, useLayoutEffect, useCallback, useRef, useMemo, type ReactNode } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { clearActiveStudioIdCookie, getActiveStudioIdCookie } from "@/lib/studio-state-cookie";
 import { api, ApiError, isStaffArchivedError, isSubscriptionRequiredError } from "@/lib/api";
 import { markPerformance, measurePerformance } from "@/lib/performance";
 import {
@@ -206,7 +207,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const authoritativeStudioIdRef = useRef<string | null>(null);
   const identityEpochRef = useRef(0);
   const [initializationAttempt, setInitializationAttempt] = useState(0);
-  const retryInitialization = useCallback(() => setInitializationAttempt((value) => value + 1), []);
+  const initializationAttemptRef = useRef(0);
+  const [resumeInitialization, setResumeInitialization] = useState<{
+    epoch: number;
+    attempt: number;
+    versionDecision: Promise<boolean>;
+  } | null>(null);
+  const retryInitialization = useCallback(() => {
+    initializationAttemptRef.current += 1;
+    setInitializationAttempt(value => value + 1);
+  }, []);
   const [token, setToken] = useState<string | null>(null);
   const tokenRef = useRef<string | null>(null);
   const authGenerationRef = useRef(0);
@@ -1342,10 +1352,33 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         markPerformance("workspace.started");
         // Allow the server's 30s interactive budget plus response transfer time.
         const legalNameRead = { revision: selfLegalNameRevisionRef.current, epoch: identityEpochRef.current };
-        const workspaceData = await api.get<ApiDashboardWorkspaceResponse>("/dashboard/workspace", sessionToken, {
+        const readWorkspace = () => api.get<ApiDashboardWorkspaceResponse>("/dashboard/workspace", tokenRef.current ?? sessionToken, {
           timeoutMs: 35_000,
           timeoutMessage: "Workspace loading timed out. Please retry.",
         });
+        let workspaceData: ApiDashboardWorkspaceResponse;
+        try {
+          workspaceData = await readWorkspace();
+        } catch (error) {
+          const selectorDenied = error && typeof error === "object" && "status" in error
+            && Number(error.status) === 403 && !isStaffArchivedError(error);
+          if (!isInitializationCurrent() || !selectorDenied || !getActiveStudioIdCookie()) throw error;
+          // A redirect hint cannot prove that this selector is still a membership.
+          // Resolve once without it; only a verified workspace can restore access.
+          // The API proxy also reads this cookie, so omitting a browser header alone is insufficient.
+          clearActiveStudioIdCookie();
+          const profile = parseAuthProfileResponse(await api.get<unknown>(
+            "/auth/me", tokenRef.current ?? sessionToken, { omitStudioHeader: true }
+          ));
+          if (!isInitializationCurrent()) return;
+          if (profile.user.id !== session.user.id) throw new Error("Studio access could not be verified. Please retry.");
+          if (profile.membership_status !== "active" || !profile.studio_id) {
+            applyAuthoritativeNoStudioState(profile, session.user);
+            return;
+          }
+          syncStoredStudioSessionCookies(session.user.id, profile.studio_id, profile.membership_status);
+          workspaceData = await readWorkspace();
+        }
         markPerformance("workspace.finished");
         measurePerformance(
           "workspace.duration",
@@ -1995,7 +2028,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   });
 
   useEffect(() => {
-    if (isPreviewMode || !identityReady || subscriptionRequired || initialFeaturePending) return;
+    if (isPreviewMode || !identityReady || !currentStudioId || !currentRole || subscriptionRequired || initialFeaturePending) return;
     const timer = window.setTimeout(() => {
       if (pathname === "/belt-tracker" && !beltsHydratedRef.current) {
         beltsHydratedRef.current = true;
@@ -2011,9 +2044,24 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       }
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [beltRefreshGeneration, identityReady, initialFeaturePending, isPreviewMode, pathname, subscriptionRequired,
+  }, [beltRefreshGeneration, currentStudioId, currentRole, identityReady, initialFeaturePending, isPreviewMode, pathname, subscriptionRequired,
     studentsLoaded, studentsLoadError, leadsLoaded, leadsLoadError, programsLoaded, programsLoadError,
     refreshStudents, refreshLeads, refreshPrograms, refreshSchedule, scheduleStatus]);
+
+  // Access revocation disposes the resume listener immediately. Its version
+  // decision may authorize recovery later, only for the epoch that was cleared.
+  useEffect(() => {
+    if (!resumeInitialization) return;
+    let current = true;
+    const recovery = resumeInitialization;
+    void recovery.versionDecision.then(accepted => {
+      if (!current) return;
+      setResumeInitialization(value => value === recovery ? null : value);
+      if (accepted && initializationAttemptRef.current === recovery.attempt
+        && identityEpochRef.current === recovery.epoch) retryInitialization();
+    });
+    return () => { current = false; };
+  }, [resumeInitialization, retryInitialization]);
 
   useEffect(() => {
     if (isPreviewMode || !identityReady) return;
@@ -2040,14 +2088,23 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         const profile = parseAuthProfileResponse(workspace.auth);
         if (profile.user.id !== authUserIdRef.current || profile.studio_id !== authoritativeStudioIdRef.current
           || profile.role !== currentRoleRef.current || profile.membership_status !== "active") {
-          // A changed access scope cannot reuse any of the previous scope's records.
-          clearStoredStudioSessionCookies();
-          resetLiveStudioState();
-          retryInitialization();
+          // Clear obsolete access immediately; a rejected build cannot start features.
+          if (profile.user.id === authUserIdRef.current
+            && (profile.membership_status !== "active" || !profile.studio_id)) {
+            applyAuthoritativeNoStudioState(profile, profile.user);
+          } else {
+            clearStoredStudioSessionCookies();
+            resetLiveStudioState();
+            setIdentityLoadError("Workspace access changed. Please retry.");
+            setResumeInitialization({ epoch: identityEpochRef.current, attempt: initializationAttemptRef.current, versionDecision });
+          }
           return;
         }
         if (pendingCommands() || queued) { queued = true; return; }
         if (subscriptionRequired) {
+          const versionAccepted = await versionDecision;
+          if (disposed || !request.isSameIdentity() || !versionAccepted) return;
+          if (pendingCommands() || queued) { queued = true; return; }
           clearSubscriptionRequired();
           retryInitialization();
           if (pathnameRef.current === "/subscription-required") router.replace("/dashboard");
@@ -2085,7 +2142,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         } else if (isStaffArchivedError(error) || (error && typeof error === "object" && "status" in error && Number(error.status) === 403)) {
           clearStoredStudioSessionCookies();
           resetLiveStudioState();
-          retryInitialization();
+          setIdentityLoadError("Workspace access could not be verified. Please retry.");
+          setResumeInitialization({ epoch: identityEpochRef.current, attempt: initializationAttemptRef.current, versionDecision });
         } else {
           setStudioLoadError("Workspace refresh is unavailable. Your current work is retained. Please retry when connected.");
         }
@@ -2097,7 +2155,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const onResume = (event: Event) => {
       refreshDataAllowed = !(event instanceof CustomEvent && event.detail?.refreshData === false);
       versionAllowsRefresh = event instanceof CustomEvent && event.detail?.versionAllowsRefresh
-        ? event.detail.versionAllowsRefresh : Promise.resolve(true);
+        ? Promise.resolve(event.detail.versionAllowsRefresh).catch(() => false) : Promise.resolve(true);
       queued = true;
       void drain();
     };
@@ -2106,7 +2164,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     return () => { disposed = true; unsubscribe(); window.removeEventListener(APP_RESUME_EVENT, onResume); };
   }, [beginLiveAuthRequest, commitAuthoritativeAuthProfile, identityReady, isPreviewMode,
     clearSubscriptionRequired, markSubscriptionRequired,
-    resetLiveStudioState, retryInitialization, router, subscriptionRequired]);
+    applyAuthoritativeNoStudioState, resetLiveStudioState, retryInitialization, router, subscriptionRequired]);
 
   // These confirmed business commands affect dashboard facts. Billing commands
   // live outside this store. Home revalidates itself from the facts-changed mark.
