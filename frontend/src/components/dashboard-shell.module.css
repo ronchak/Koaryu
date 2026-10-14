@@ -278,23 +278,6 @@
   transition: margin-left var(--product-motion-travel-duration) var(--product-motion-ease);
 }
 
-.routeTravel {
-  animation: product-route-travel var(--product-motion-travel-duration) var(--product-motion-ease)
-    backwards;
-}
-
-@keyframes product-route-travel {
-  from {
-    opacity: 0.94;
-    transform: translateY(4px);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
 .shellRoot[data-spine-collapsed="true"] .main {
   margin-left: 72px;
 }
@@ -734,8 +717,7 @@
   .commandBar,
   .spineToggle,
   .navLink,
-  .skipLink,
-  .routeTravel {
+  .skipLink {
     animation: none;
     transition: none;
     transform: none;
