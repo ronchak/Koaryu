@@ -975,6 +975,79 @@ async function expectValue(input, expected) {
   assert.equal(await input.inputValue(), expected);
 }
 
+for (const fails of [false, true]) {
+  test(`Belt Tracker resume retains rows during one eligibility read (${fails ? "failure" : "success"})`, async () => {
+    const browser = await chromium.launch();
+    try {
+      const page = await fixturePage(browser, { path: "/belt-tracker" });
+      await page.evaluate(() => {
+        fixture.ladder = {
+          id: "ladder-selected",
+          name: "Selected",
+          sub_rank_term: "Stripe",
+          ranks: [],
+        };
+        fixture.prime = fixture.store.setCurrentLadder("ladder-selected");
+      });
+      await page.evaluate(() => fixture.prime);
+      await page.waitForFunction(() => fixture.store.eligibilityLadderId === "ladder-selected");
+      await page.evaluate(() => {
+        const get = fixture.api.get;
+        fixture.events = [];
+        fixture.api.get = (path, ...args) => {
+          if (path.startsWith("/belts/eligibility?")) {
+            fixture.events.push(path);
+            return new Promise((resolve, reject) => {
+              fixture.resumeEligibility = { resolve, reject };
+            });
+          }
+          return get(path, ...args);
+        };
+        window.dispatchEvent(new Event("koaryu:resume"));
+      });
+      await page.waitForFunction(
+        () =>
+          fixture.resumeEligibility &&
+          fixture.store.eligibilityPendingLadderId === "ladder-selected",
+      );
+      assert.deepEqual(await page.evaluate(() => fixture.store.eligibility), [
+        { student_id: "student-old", eligible: false },
+      ]);
+      assert.equal(await page.evaluate(() => fixture.store.currentLadderId), "ladder-selected");
+      assert.equal(await page.evaluate(() => fixture.store.eligibilityLadderId), "ladder-selected");
+      await page.evaluate((fails) => {
+        if (fails) fixture.resumeEligibility.reject(Error("Synthetic eligibility failure"));
+        else fixture.resumeEligibility.resolve([{ student_id: "student-new", eligible: true }]);
+      }, fails);
+      await page.waitForFunction(() => fixture.store.eligibilityPendingLadderId === null);
+      if (fails) {
+        await page.waitForFunction(
+          () =>
+            fixture.store.beltLaddersLoadError ===
+            "Belt plans could not be refreshed. Please retry.",
+        );
+        assert.equal(
+          await page.evaluate(() => fixture.store.eligibility[0].student_id),
+          "student-old",
+        );
+      } else {
+        await page.waitForFunction(
+          () => fixture.store.eligibility[0]?.student_id === "student-new",
+        );
+      }
+      await flush(page);
+      assert.deepEqual(
+        await page.evaluate(() =>
+          fixture.events.filter((path) => path.startsWith("/belts/eligibility?")),
+        ),
+        ["/belts/eligibility?ladder_id=ladder-selected"],
+      );
+    } finally {
+      await browser.close();
+    }
+  });
+}
+
 test("resuming a student detail forces a second promotion-history read", async () => {
   const browser = await chromium.launch();
   try {

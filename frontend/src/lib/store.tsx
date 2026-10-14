@@ -98,7 +98,7 @@ import {
   shouldPreserveScheduleMutationsOnAuthChange,
   type ScheduleRangeRefreshIntent,
 } from "@/lib/schedule-store-model";
-import { useStoreBeltActions } from "@/lib/store-belt-actions";
+import { useStoreBeltActions, type RefreshBeltsOptions } from "@/lib/store-belt-actions";
 import { useStoreBeltTestActions } from "@/lib/store-belt-test-actions";
 import { useStoreLeadActions } from "@/lib/store-lead-actions";
 import { useStoreProgramActions } from "@/lib/store-program-actions";
@@ -282,7 +282,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     isPreviewMode ? MOCK_BELT_LADDER.ranks : []
   );
   const beltRanksRef = useRef<BeltRank[]>(beltRanks);
-  const refreshBeltsRef = useRef<((preferredLadderId?: string | null) => Promise<void>) | null>(null);
+  const refreshBeltsRef = useRef<((preferredLadderId?: string | null, options?: RefreshBeltsOptions) => Promise<void>) | null>(null);
   const [sessions, setSessionsState] = useState<ClassSession[]>(() =>
     isPreviewMode ? MOCK_SESSIONS : []
   );
@@ -1981,10 +1981,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         if (pathnameRef.current === "/belt-tracker"
           || (pathnameRef.current.startsWith("/students/") && pathnameRef.current !== "/students/import")) {
           const owner = request;
-          void Promise.resolve(refreshBeltsRef.current?.()).then(async () => {
-            if (disposed || !owner.isSameIdentity()) return;
-            if (pathnameRef.current === "/belt-tracker") await loadEligibilityForLadder(currentLadderIdRef.current, { force: true, retainCurrent: true });
-          }).catch(() => {
+          void Promise.resolve(refreshBeltsRef.current?.(undefined, {
+            retainCurrent: true,
+            requireEligibility: pathnameRef.current === "/belt-tracker",
+          })).catch(() => {
             if (!disposed && owner.isSameIdentity()) setBeltLaddersLoadError("Belt plans could not be refreshed. Please retry.");
           });
         }
@@ -2019,7 +2019,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     window.addEventListener(APP_RESUME_EVENT, onResume);
     return () => { disposed = true; unsubscribe(); window.removeEventListener(APP_RESUME_EVENT, onResume); };
   }, [beginLiveAuthRequest, commitAuthoritativeAuthProfile, identityReady, isPreviewMode,
-    clearSubscriptionRequired, loadEligibilityForLadder, markSubscriptionRequired,
+    clearSubscriptionRequired, markSubscriptionRequired,
     resetLiveStudioState, retryInitialization, router, subscriptionRequired]);
 
   // These confirmed business commands affect dashboard facts. Billing commands

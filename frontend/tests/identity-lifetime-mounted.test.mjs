@@ -654,15 +654,15 @@ test("forced and resume eligibility reads retain the current ladder until atomic
   assert.equal(await page.evaluate(() => fixture.store.eligibility[0].student_name), "Fresh");
   assert.equal(await page.evaluate(() => fixture.store.eligibilityPendingLadderId), "A");
   await settle(page, 2, { rows: [] });
-  await page.waitForFunction(() => fixture.reads.length === 4);
-  await settle(page, 3, { rows: [] });
+  await flush(page);
+  assert.equal(await page.evaluate(() => fixture.reads.length), 3);
   await page.evaluate(() => {
     void fixture.store.loadEligibilityForLadder("A", { force: true });
   });
   await flush(page);
   assert.equal(await page.evaluate(() => fixture.store.eligibilityLadderId), "A");
   assert.equal(await page.evaluate(() => fixture.store.eligibility.length), 0);
-  await settle(page, 4, { rows: [row("After empty")] });
+  await settle(page, 3, { rows: [row("After empty")] });
   assert.equal(await page.evaluate(() => fixture.store.eligibility[0].student_name), "After empty");
   await page.close();
 });
