@@ -1864,9 +1864,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         beltMetadataRevisionRef.current += 1;
         const ladders = [...result.ladders];
         const previousLadders = new Map(beltLaddersRef.current.map(ladder => [ladder.id, ladder]));
+        // The list carries each ladder's ranks, so a rank-only edit by another
+        // staff member must count as a change, not just names and terms.
+        const ladderSignature = (ladder: BeltLadder) => JSON.stringify([
+          ladder.name, ladder.sub_rank_term, ladder.updated_at ?? null, ladder.ranks ?? [],
+        ]);
         if (ladders.length !== beltLaddersRef.current.length || ladders.some(ladder => {
           const previous = previousLadders.get(ladder.id);
-          return !previous || previous.name !== ladder.name || previous.sub_rank_term !== ladder.sub_rank_term;
+          return !previous || ladderSignature(previous) !== ladderSignature(ladder);
         })) {
           // Metadata does not reconcile the selected plan's ranks and labels.
           // Its normal route refresh must verify that snapshot on the next visit.
