@@ -224,7 +224,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [students, setStudents] = useState<Student[]>(() =>
     isPreviewMode ? MOCK_STUDENTS : []
   );
-  const [studentsLoaded, setStudentsLoaded] = useState(isPreviewMode);
+  const [studentsLoaded, setStudentsLoadedState] = useState(isPreviewMode);
+  const studentsLoadedRef = useRef(isPreviewMode);
+  const setStudentsLoaded = useCallback((loaded: boolean) => {
+    studentsLoadedRef.current = loaded;
+    setStudentsLoadedState(loaded);
+  }, []);
   const [studentsLoadError, setStudentsLoadError] = useState<string | null>(null);
   const [studentsLastLoadedAt, setStudentsLastLoadedAt] = useState<number | null>(() =>
     isPreviewMode ? Date.now() : null
@@ -622,10 +627,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       next: Student[] | ((current: Student[]) => Student[]),
       options?: { mayBePartial?: boolean }
     ) => {
+      const wasLoaded = studentsLoadedRef.current;
       setStudentsLoaded(true);
       setStudentsLoadError(null);
       setStudentsLastLoadedAt(Date.now());
-      setStudentsMayBePartial(Boolean(options?.mayBePartial));
+      // Updaters publish mutations, not authoritative roster snapshots. A
+      // single record cannot certify an unloaded or partial list as complete.
+      setStudentsMayBePartial(wasPartial => typeof next === "function"
+        ? wasPartial || !wasLoaded || Boolean(options?.mayBePartial)
+        : Boolean(options?.mayBePartial));
       setStudents((current) => {
         const resolved = typeof next === "function"
           ? (next as (current: Student[]) => Student[])(current)
@@ -634,7 +644,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         return resolved;
       });
     },
-    []
+    [setStudentsLoaded]
   );
 
   useSyncedRefValue(leadsRef, leads);
@@ -734,7 +744,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setEligibilityLoadError(state.eligibilityLoadError);
     promotionHistoryGenerationRef.current += 1;
     setPromotionHistoryCache(state.promotionHistoryCache);
-  }, [setPrograms, setProgramsLoaded, resetProgramScope, resetBeltTestResourceScope, resetStaffScope, destructivelyResetScheduleCoordinator, setSessions, updateCurrentLadderId]);
+  }, [setStudentsLoaded, setPrograms, setProgramsLoaded, resetProgramScope, resetBeltTestResourceScope, resetStaffScope, destructivelyResetScheduleCoordinator, setSessions, updateCurrentLadderId]);
 
   const resetLiveStudioState = useCallback(() => {
     invalidateAccessIdentity();
@@ -861,7 +871,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     destructivelyResetScheduleCoordinator();
     setScheduleLoadError(restored.scheduleLoadError);
     setScheduleStatus(restored.scheduleStatus);
-  }, [setProgramsLoaded, destructivelyResetScheduleCoordinator]);
+  }, [setStudentsLoaded, setProgramsLoaded, destructivelyResetScheduleCoordinator]);
 
   // Home reads one payload. This returns it without storing it: `useHome` owns
   // Home's state. Preview mode is selected here and nowhere else.
@@ -1105,7 +1115,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     return () => {
       window.clearTimeout(timer);
     };
-  }, [setPrograms, setProgramsLoaded, applyLadderSelection, commitEligibilityRows, commitStudents, isPreviewMode, setSessions]);
+  }, [setStudentsLoaded, setPrograms, setProgramsLoaded, applyLadderSelection, commitEligibilityRows, commitStudents, isPreviewMode, setSessions]);
 
   const previewEligibilityForLadder = useCallback((ladderId?: string | null): EligibilityEntry[] => {
     return buildPreviewEligibilityForLadder({
@@ -1364,7 +1374,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           setStudioLoadError(null);
           markPerformance("workspace.identity_ready");
           const initialPath = pathnameRef.current;
-          const view = initialBootstrapView(initialPath);
+          const view = initialBootstrapView(initialPath, {
+            isPreviewMode,
+            pagedRosterEnabled: process.env.NEXT_PUBLIC_STUDENTS_PAGED_ROSTER !== "false",
+          });
           if (!view) return;
           const includedDatasets = bootstrapDatasets(view);
           // The protected shell is now usable. Only the route's feature payload
@@ -1624,7 +1637,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       bootstrapRequestRef.current?.controller.abort();
       authListener?.subscription.unsubscribe();
     };
-  }, [setPrograms, setProgramsLoaded, applyAuthoritativeNoStudioState, applyLadderSelection, applySubscriptionRequiredState, beginLiveAuthRequest, clearPromotionHistoryCache, commitAuthoritativeAuthProfile, commitEligibilityRows, commitStudents, destructivelyResetScheduleCoordinator, initializationAttempt, isPreviewMode, markSubscriptionRequired, reconcileSchedule, refreshSchedule, resetLiveStudioState, retireHomePreferencesOwner, router, supabase]);
+  }, [setStudentsLoaded, setPrograms, setProgramsLoaded, applyAuthoritativeNoStudioState, applyLadderSelection, applySubscriptionRequiredState, beginLiveAuthRequest, clearPromotionHistoryCache, commitAuthoritativeAuthProfile, commitEligibilityRows, commitStudents, destructivelyResetScheduleCoordinator, initializationAttempt, isPreviewMode, markSubscriptionRequired, reconcileSchedule, refreshSchedule, resetLiveStudioState, retireHomePreferencesOwner, router, supabase]);
 
   // ── Persist helpers (for preview mode) ──
   const persistStudents = useCallback((next: Student[]) => {
@@ -1978,7 +1991,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       if (["/leads", "/reports"].includes(pathname) && !leadsLoaded && !leadsLoadError) {
         void refreshLeads().catch(() => undefined);
       }
-      const needsPrograms = ["/dashboard", "/settings", "/leads", "/reports", "/schedule", "/belt-tracker"].includes(pathname)
+      const needsPrograms = ["/settings", "/leads", "/reports", "/schedule", "/belt-tracker"].includes(pathname)
         || pathname === "/students" || pathname.startsWith("/students/");
       if (needsPrograms && !programsLoaded && !programsLoadError) {
         void refreshPrograms({ includeArchived: true }).catch(() => undefined);

@@ -1,11 +1,12 @@
 "use client";
 
 import { publishAccessIdentity } from "@/lib/access-identity";
-import { Suspense, useState } from "react";
+import { Suspense, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { api } from "@/lib/api";
+import { canPrefetchOnConnection, getPrefetchConnection } from "@/lib/intent-prefetch";
 import { getAuthCallbackUrl } from "@/lib/auth-redirect";
 import { ACCOUNT_ARCHIVED_ROUTE } from "@/lib/auth-route-model";
 import { parseAuthProfileResponse } from "@/lib/store-bootstrap-model";
@@ -35,6 +36,12 @@ export default function LoginPage() {
   const [magicLinkSent, setMagicLinkSent] = useState(false);
   const router = useRouter();
   const supabase = createClient();
+  const dashboardPrefetched = useRef(false);
+  const warmDashboard = () => {
+    if (dashboardPrefetched.current || !canPrefetchOnConnection(getPrefetchConnection())) return;
+    dashboardPrefetched.current = true;
+    router.prefetch("/dashboard");
+  };
 
   async function handlePasswordLogin(e: React.FormEvent) {
     e.preventDefault();
@@ -180,7 +187,8 @@ export default function LoginPage() {
               type="email"
               placeholder="you@yourstudio.com"
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              onFocus={warmDashboard}
+              onChange={(e) => { warmDashboard(); setEmail(e.target.value); }}
               required
               autoComplete="email"
             />
@@ -189,7 +197,8 @@ export default function LoginPage() {
               type="password"
               placeholder="••••••••"
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              onFocus={warmDashboard}
+              onChange={(e) => { warmDashboard(); setPassword(e.target.value); }}
               required
               autoComplete="current-password"
             />
@@ -207,7 +216,8 @@ export default function LoginPage() {
               type="email"
               placeholder="you@yourstudio.com"
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              onFocus={warmDashboard}
+              onChange={(e) => { warmDashboard(); setEmail(e.target.value); }}
               required
               autoComplete="email"
               hint="We'll email you a one-time link instead of asking for a password."

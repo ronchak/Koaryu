@@ -12,7 +12,7 @@ function bundle({
   retained = false,
 } = {}) {
   const stubs = {
-    "next/navigation": `exports.usePathname=()=>'/dashboard'; const router={replace(){}}; exports.useRouter=()=>router; const searches=new Map(); exports.useSearchParams=()=>{const query=window.fixture.search??'tab=reports';if(!searches.has(query))searches.set(query,new URLSearchParams(query));return searches.get(query);};`,
+    "next/navigation": `exports.usePathname=()=>'/dashboard'; const router={replace(path){(window.fixture.routerReplaces??=[]).push(path)}}; exports.useRouter=()=>router; const searches=new Map(); exports.useSearchParams=()=>{const query=require('react').useSyncExternalStore(cb=>{window.addEventListener('fixture:history',cb);return()=>window.removeEventListener('fixture:history',cb)},()=>window.fixture.search??'tab=reports');if(!searches.has(query))searches.set(query,new URLSearchParams(query));return searches.get(query);};`,
     "@/lib/store": `exports.useConfigStore=()=>window.fixture.pageOptions.config;exports.useProgramStore=()=>window.fixture.pageOptions.programsStore;exports.useStudentStore=()=>window.fixture.pageOptions.studentsStore;exports.useStudioStore=()=>window.fixture.pageOptions.studioStore;`,
     "@/lib/supabase/client": `exports.createClient=()=>window.fixture.supabase;`,
     "@/lib/api": `class ApiError extends Error { constructor(message,status,detail){super(message);this.status=status;this.detail=detail;} } exports.ApiError=window.fixture.ApiError=ApiError; exports.api=window.fixture.api; exports.isSubscriptionRequiredError=e=>e.status===402; exports.isStaffArchivedError=e=>e.status===403&&/archived/i.test(e.message);`,
@@ -2873,6 +2873,41 @@ test("Enrollments waits for the complete roster and refreshes it on manual and r
       }
       await page.close();
     }
+  } finally {
+    await browser.close();
+  }
+});
+
+test("Billing tab switching updates native history and query consumers without route navigation", async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await mountExternalPaymentFixture(browser, {
+      preview: true,
+      search: "tab=plans&keep=value",
+    });
+    await page.evaluate(() => {
+      const replace = history.replaceState.bind(history);
+      replace(null, "", "/billing?tab=plans&keep=value");
+      fixture.originalHistoryLength = history.length;
+      history.replaceState = (...args) => {
+        replace(...args);
+        fixture.search = location.search.slice(1);
+        window.dispatchEvent(new Event("fixture:history"));
+      };
+    });
+    const requests = [];
+    page.on("request", (request) => requests.push(request.url()));
+    for (const tab of ["invoices", "families", "overview"]) {
+      await page.evaluate((tab) => fixture.page.onChangeTab(tab), tab);
+      await page.waitForFunction((tab) => fixture.page.activeTab === tab, tab);
+      const url = new URL(page.url());
+      assert.equal(url.pathname, "/billing");
+      assert.equal(url.searchParams.get("keep"), "value");
+      assert.equal(url.searchParams.get("tab"), tab === "overview" ? null : tab);
+    }
+    assert.deepEqual(await page.evaluate(() => fixture.routerReplaces ?? []), []);
+    assert.equal(await page.evaluate(() => history.length === fixture.originalHistoryLength), true);
+    assert.deepEqual(requests, []);
   } finally {
     await browser.close();
   }

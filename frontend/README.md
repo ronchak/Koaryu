@@ -189,18 +189,22 @@ See [docs/performance-rollout.md](../docs/performance-rollout.md) before enablin
 The store initializes once per identity scope. Committing a role does not restart
 bootstrap or the Auth subscription. Token renewal preserves the identity and
 reconciles schedule reads; account/profile scope changes discard the old data.
-An unavailable bootstrap shows a retryable identity error. It does not fan out
-into legacy dataset requests. Deploy a backend with `/dashboard/bootstrap`
+An unavailable workspace read shows a retryable identity error. Feature bootstrap
+failures remain scoped to their datasets and do not fan out into legacy reads. Deploy a backend with `/dashboard/bootstrap`
 before this frontend; mixed versions without that endpoint are unsupported.
 
-Home uses bootstrap's `home` view for studio and programs, and reads one
-payload from `/dashboard/home`, including promotions and preferences. It has
+Home uses `/dashboard/workspace` for the shell and makes no bootstrap or
+program-list request. It reads one payload from `/dashboard/home`, including
+promotions and preferences. Live paged Students uses the metadata-only `home`
+bootstrap view; preview and the full-roster fallback keep `view=students`. It has
 one loading, error or ready state; panels do not fetch independently. Preview
 mode supplies the same payload shape locally. See Dashboard loading below for
 retained paint, revalidation and readiness markers.
 Settings refreshes usage when opened, shows loading or unavailable usage
 explicitly, and retains successful usage while refreshing. Bootstrap rows never
-establish paginated roster authority.
+establish paginated roster authority. Mutations preserve an incomplete roster's
+partial status; only an explicit complete read clears it. Billing Enrollments
+waits for that complete read before using the roster.
 
 Schedule initialization and visible calendar ranges use the same reconciliation
 queue. New ranges remain pending until their materialization completes. Refresh
@@ -326,8 +330,10 @@ See [refund completion verification](../docs/remediation/refund-completion-verif
 
 ## Navigation authentication recovery
 
-Navigation checks `/auth/me` when studio state needs refreshing and for billing
-access checks. These reads retry once on network failures or HTTP 502/503/504,
+Navigation checks `/auth/me` when studio state needs refreshing and for Billing
+Connect access checks. Ordinary Billing uses the verified workspace role for its
+restricted view; billing endpoints enforce access on every request. Billing tab
+changes use native history and do not request a new server route. These reads retry once on network failures or HTTP 502/503/504,
 with a four-second deadline per attempt including the response body. A short
 `Retry-After` is honored; longer waits return the unavailable page without an
 early retry. Invalid credentials, denied access, and malformed membership data
@@ -336,6 +342,11 @@ retain their existing handling. Request cancellation stops recovery.
 The backend shares an in-progress signing-key refresh across authentication
 requests. Followers await completion asynchronously for at most three seconds,
 then verify their own tokens. Expired keys are never reused to grant access.
+
+Navigation links use Next's default prefetch. Marked prefetch requests skip the
+session proxy; document and ordinary RSC navigations retain it. Automatic link
+prefetch stays off on save-data and 2G connections. Login warms Dashboard once
+on the first input focus or change; record-route intent prefetch remains in place.
 
 ### Navigation recovery
 
@@ -364,8 +375,8 @@ is excluded from production metric collection.
 The authenticated dashboard capture records allowlisted HTTP and browser resource
 timings for `/dashboard/workspace`, `/dashboard/bootstrap`, and `/dashboard/home`
 without retaining URLs, identifiers, or query values. Workspace does not emit
-`Server-Timing`, so its HTTP and resource timings are diagnostics only. Bootstrap
-and Home require successful responses, resource entries, and allowlisted
+`Server-Timing`, so its HTTP and resource timings are diagnostics only. Home
+requires a successful response, a resource entry, and allowlisted
 `Server-Timing` measurements (Home's are the `koaryu_home_*` stages). Saving
 the layout through `/dashboard/home/preferences` is not counted as Home's payload.
 
@@ -436,7 +447,7 @@ reserve the same columns and rails as the loaded view. The `koaryu-skeleton-reve
 holds placeholder space immediately and delays its appearance by 220 milliseconds.
 
 Home at `/dashboard` renders its bands from one `/dashboard/home` payload after
-workspace access is verified. The `home` bootstrap view loads studio and programs.
+workspace access is verified. Home does not request bootstrap or a program list.
 `useHome` retains successful payloads by user, studio, role and business date
 for immediate revisit paint.
 It revalidates on mount, focus, return to a visible tab, each visible minute,

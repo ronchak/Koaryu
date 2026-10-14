@@ -7,7 +7,7 @@ import {
 } from "../src/lib/dashboard-freshness.ts";
 
 test("route bootstrap requirements omit unrelated feature collections", () => {
-  assert.equal(initialBootstrapView("/dashboard"), "home");
+  assert.equal(initialBootstrapView("/dashboard"), null);
   assert.deepEqual([...bootstrapDatasets("home")], ["studio", "programs"]);
   for (const route of ["schedule", "settings"])
     assert.deepEqual(
@@ -25,7 +25,10 @@ test("route bootstrap requirements omit unrelated feature collections", () => {
   );
   assert.equal(initialBootstrapView("/billing"), null);
   assert.equal(initialBootstrapView("/account/settings"), null);
-  assert.equal(initialBootstrapView("/students/student-id"), "students");
+  assert.equal(initialBootstrapView("/students/student-id"), "home");
+  assert.equal(initialBootstrapView("/students"), "home");
+  assert.equal(initialBootstrapView("/students", { pagedRosterEnabled: false }), "students");
+  assert.equal(initialBootstrapView("/students", { isPreviewMode: true }), "students");
 });
 
 test("ordinary visits can reuse facts but local and other-tab writes demand fresh reconciliation", () => {

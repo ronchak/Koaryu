@@ -128,7 +128,7 @@ for (const scenario of [
   { name: "persistent outage", status: 503, target: "/503" },
   { name: "staff billing denial", status: 200, target: "/access-denied", role: "instructor" },
 ]) {
-  test(`billing navigation preserves ${scenario.name} handling`, async (t) => {
+  test(`Connect navigation preserves ${scenario.name} handling`, async (t) => {
     const previous = process.env.NEXT_PUBLIC_API_URL;
     process.env.NEXT_PUBLIC_API_URL = "https://api.example.test/api/v1";
     const fetch = t.mock.method(globalThis, "fetch", async () =>
@@ -142,7 +142,7 @@ for (const scenario of [
     );
     t.mock.method(console, "error", () => {});
     try {
-      const request = new NextRequest("https://example.test/billing");
+      const request = new NextRequest("https://example.test/billing/connect/refresh");
       request.cookies.set(
         studioCookies.STUDIO_STATE_COOKIE,
         studioCookies.serializeStudioStateCookie("synthetic-user", true, "active"),
@@ -150,7 +150,7 @@ for (const scenario of [
       const response = await loadMiddleware({ id: "synthetic-user" })(request);
       assert.equal(
         response.headers.get("location"),
-        `https://example.test${scenario.target}${scenario.target === "/503" ? "?returnTo=%2Fbilling" : ""}`,
+        `https://example.test${scenario.target}${scenario.target === "/503" ? "?returnTo=%2Fbilling%2Fconnect%2Frefresh" : ""}`,
       );
       assert.equal(fetch.mock.callCount(), 1);
       assert.equal(response.cookies.get("session-part-1")?.value, "synthetic-first");
@@ -178,6 +178,24 @@ for (const failure of [
     assert.equal(destination.searchParams.get("returnTo"), "/schedule?view=week");
     assert.equal(response.cookies.get(studioCookies.STUDIO_STATE_COOKIE), undefined);
     assert.equal(response.cookies.get(studioCookies.ACTIVE_STUDIO_COOKIE), undefined);
+    assert.match(response.headers.get("cache-control"), /private.*no-store/);
+  });
+}
+
+for (const pathname of ["/billing", "/billing/"]) {
+  test(`ordinary ${pathname} keeps session auth without an unconditional backend role read`, async (t) => {
+    const fetch = t.mock.method(globalThis, "fetch", () => {
+      throw Error("Unexpected backend auth read");
+    });
+    const request = new NextRequest(`https://example.test${pathname}`);
+    request.cookies.set(
+      studioCookies.STUDIO_STATE_COOKIE,
+      studioCookies.serializeStudioStateCookie("synthetic-user", true, "active"),
+    );
+    const response = await loadMiddleware({ id: "synthetic-user" })(request);
+    assert.equal(response.status, 200);
+    assert.equal(fetch.mock.callCount(), 0);
+    assert.equal(response.cookies.get("session-part-1")?.value, "synthetic-first");
     assert.match(response.headers.get("cache-control"), /private.*no-store/);
   });
 }

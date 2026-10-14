@@ -66,7 +66,7 @@ for (const mode of ["production", "development"]) {
       assert.equal(await homeCount(page), 1);
       assert.deepEqual(
         await page.evaluate(() => window.fixture.requests.map((r) => r.path.split("?")[0])),
-        ["/dashboard/workspace", "/dashboard/bootstrap", "/dashboard/home"],
+        ["/dashboard/workspace", "/dashboard/home"],
       );
     },
     { mode, holdSession: true },

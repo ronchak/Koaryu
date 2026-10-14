@@ -67,15 +67,20 @@ previewSmokeTest(
       await expect(
         page.getByRole("heading", { level: 1, name: heading, exact: typeof heading === "string" }),
       ).toBeVisible();
+      if (path === "/billing")
+        await expect(page.locator("[data-billing-placeholder]")).toHaveCount(0);
       await page.reload();
       await expect(
         page.getByRole("heading", { level: 1, name: heading, exact: typeof heading === "string" }),
       ).toBeVisible();
+      if (path === "/billing")
+        await expect(page.locator("[data-billing-placeholder]")).toHaveCount(0);
       await expect(page.getByText(/data is unavailable|reports are unavailable/i)).toHaveCount(0);
     }
 
     await page.goto(`${FRONTEND_URL}/billing?connect=return`);
     await expect(page.getByRole("heading", { name: "Billing", exact: true })).toBeVisible();
+    await expect(page.locator("[data-billing-placeholder]")).toHaveCount(0);
     await expect(page.getByText("Loading billing...", { exact: true })).toHaveCount(0);
     expectNoPageErrors(pageErrors);
   },

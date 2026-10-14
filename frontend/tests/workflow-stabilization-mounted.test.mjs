@@ -530,7 +530,15 @@ test("credential renewal during feature bootstrap recovers without stranding rou
     });
     await page.waitForFunction(() => fixture.featureWaiters.length === 2);
     await page.evaluate(() => fixture.featureWaiters[1](fixture.featurePayload));
-    await page.waitForFunction(() => fixture.store.studentsLoaded && fixture.store.programsLoaded);
+    await page.waitForFunction(() => fixture.store.programsLoaded);
+    assert.ok(
+      await page.evaluate(() =>
+        fixture.requests
+          .filter((r) => r.path.startsWith("/dashboard/bootstrap"))
+          .every((r) => r.path.endsWith("view=home")),
+      ),
+    );
+    assert.equal(await page.evaluate(() => fixture.store.studentsLoaded), false);
     assert.equal(await page.evaluate(() => fixture.store.identityReady), true);
     await page.evaluate(() => fixture.root.unmount());
   } finally {
@@ -721,7 +729,7 @@ test("a confirmed old write cannot repopulate protected data after sign-out", as
 test("archive settlement prevents a current-token roster read from resurrecting the student", async () => {
   const browser = await chromium.launch();
   try {
-    const page = await fixturePage(browser, { path: "/students" });
+    const page = await fixturePage(browser, { path: "/students", pagedRoster: false });
     await page.waitForFunction(() => fixture.store.studentsLoaded);
     await page.evaluate(() => {
       fixture.archive = fixture.store.deleteStudents(["student-1"]);
@@ -813,7 +821,10 @@ for (const entry of ["/students", "/billing"]) {
       const browser = await chromium.launch();
       try {
         const page = await fixturePage(browser, { path: entry });
-        if (entry === "/students") await page.waitForFunction(() => fixture.store.studentsLoaded);
+        if (entry === "/students") {
+          await page.waitForFunction(() => fixture.store.programsLoaded);
+          assert.equal(await page.evaluate(() => fixture.store.studentsLoaded), false);
+        }
         assert.equal(await page.evaluate(() => fixture.store.leadsLoaded), false);
         await page.evaluate((path) => {
           fixture.autoLeads = true;
@@ -1096,7 +1107,7 @@ test("Settings does not start a deferred belt read after its metadata projection
 test("resume access denial clears prior studio records", async () => {
   const browser = await chromium.launch();
   try {
-    const page = await fixturePage(browser, { path: "/students" });
+    const page = await fixturePage(browser, { path: "/students", pagedRoster: false });
     await page.waitForFunction(() => fixture.store.students.length > 0);
     await page.evaluate(() => {
       const original = fixture.api.get;
@@ -1983,6 +1994,9 @@ test("a pending recurring class cannot be submitted twice, and its confirmed for
 });
 
 async function mountOwnedStudentDetail(page) {
+  // Command ownership assertions inspect shared roster publications. Load that
+  // resource explicitly now that paged/detail bootstrap omits roster rows.
+  await page.evaluate(() => fixture.store.refreshStudents());
   await page.evaluate(() => {
     fixture.photoWrites = [];
     fixture.api.postForm = (path, _body, token) => {
@@ -2317,6 +2331,7 @@ async function replaceStudentDetailIdentity(page) {
   await page.waitForFunction(
     () => fixture.detail.detailReady && fixture.detail.student.legal_first_name === "Fresh",
   );
+  await page.evaluate(() => fixture.store.refreshStudents());
 }
 
 test("an archived student cannot navigate from an unmounted detail page", async () => {

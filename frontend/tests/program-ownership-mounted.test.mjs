@@ -29,6 +29,7 @@ async function fixturePage({ holdBootstrap = false, showPrograms = false } = {})
   await page.evaluate(
     ({ holdBootstrap }) => {
       const f = (window.fixture = {
+        pathname: "/settings",
         observations: [],
         requests: [],
         reads: [],
