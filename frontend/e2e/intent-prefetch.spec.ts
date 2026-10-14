@@ -6,6 +6,14 @@ if (enabled && !["localhost", "127.0.0.1"].includes(new URL(origin).hostname))
   throw new Error("Prefetch tests require loopback preview.");
 const check = enabled ? test : test.skip;
 
+test.beforeEach(async ({ page }) => {
+  const rate = Number(process.env.KOARYU_E2E_CPU_THROTTLE ?? "1");
+  if (rate > 1) {
+    const session = await page.context().newCDPSession(page);
+    await session.send("Emulation.setCPUThrottlingRate", { rate });
+  }
+});
+
 check(
   "a warmed static Billing navigation and local tab changes make no document or RSC requests",
   async ({ page }) => {
@@ -42,6 +50,7 @@ check(
       .click();
     await expect(page).toHaveURL(`${origin}/billing`);
     await expect(page.getByRole("heading", { name: "Billing", exact: true })).toBeVisible();
+    await expect(page.locator("[data-billing-placeholder]")).toHaveCount(0, { timeout: 15_000 });
     for (const [name, tab] of [
       ["Tuition Plans", "plans"],
       ["Invoices", "invoices"],
@@ -98,6 +107,7 @@ for (const connection of [
       await link.click();
       await expect(page).toHaveURL(`${origin}/billing`);
       await expect(page.getByRole("heading", { name: "Billing", exact: true })).toBeVisible();
+      await expect(page.locator("[data-billing-placeholder]")).toHaveCount(0, { timeout: 15_000 });
       expect(requests.length).toBeGreaterThan(0);
       expect(
         requests.every(

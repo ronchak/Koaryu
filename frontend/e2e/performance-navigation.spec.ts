@@ -104,6 +104,9 @@ for (const placement of ["side", "collapsed", "top", "mobile"] as const) {
           release();
         }
         await expect(page.getByRole("heading", { name: "Billing", exact: true })).toBeVisible();
+        await expect(page.locator("[data-billing-placeholder]")).toHaveCount(0, {
+          timeout: 15_000,
+        });
         await expect(page.locator('[data-koaryu-navigation-pending="true"]')).toHaveCount(0);
         expect(await link.boundingBox()).toEqual(bounds);
         await page.waitForFunction(() =>
