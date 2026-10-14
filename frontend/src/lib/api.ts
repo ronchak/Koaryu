@@ -157,8 +157,13 @@ async function executeApiRequest<T>(
   let dispatched = false;
   const isCommand = !["GET", "HEAD", "OPTIONS"].includes(init.method ?? "GET");
   const finishCommand = isCommand ? beginPendingCommand() : undefined;
-  // Some Billing status GETs reconcile provider state. Treat their facts as changed too.
-  const changesFacts = marksDashboardFacts && (isCommand || path.startsWith("/billing/"));
+  // Only these two GETs use the bounded SELECT-only billing page reader.
+  // Plans may ensure an account row; landing/status may reconcile provider state.
+  const factNeutralBillingPage =
+    (init.method ?? "GET") === "GET" &&
+    /^\/billing\/(?:invoices|payments)\/page(?:\?|$)/.test(path);
+  const changesFacts =
+    marksDashboardFacts && (isCommand || (path.startsWith("/billing/") && !factNeutralBillingPage));
   if (changesFacts) markDashboardFactsChanged();
   try {
     dispatched = !controller.signal.aborted;
