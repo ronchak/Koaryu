@@ -26,7 +26,7 @@ const SAFE_RESOURCE_PATHS = Object.freeze({
   "/dashboard/home": "dashboard-home",
 });
 const SAFE_RESOURCES = new Set(Object.values(SAFE_RESOURCE_PATHS));
-const REQUIRED_RESOURCES = new Set(["dashboard-bootstrap", "dashboard-home"]);
+const REQUIRED_RESOURCES = new Set(["dashboard-home"]);
 const RENDER_RESOURCE_TYPES = new Set(["document", "script", "stylesheet", "image", "font"]);
 export const WEB_VITALS_STABILIZATION = Object.freeze({ timeout_ms: 10_000, quiet_window_ms: 500 });
 const SAFE_SERVER_TIMING_NAMES = new Set([

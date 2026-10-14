@@ -140,6 +140,9 @@ class StudentResponseBuilderTenantScopeTest(unittest.TestCase):
                             "studio_id": "studio_1",
                             "first_name": "Gina",
                             "last_name": "Primary",
+                            "email": "gina@example.com",
+                            "phone": "555-0100",
+                            "relation": "parent",
                             "is_primary_contact": True,
                         },
                     },
@@ -164,6 +167,24 @@ class StudentResponseBuilderTenantScopeTest(unittest.TestCase):
         )
 
         self.assertEqual([guardian.id for guardian in guardians["student_1"]], ["guardian_1"])
+        self.assertEqual(
+            guardians["student_1"][0].model_dump(),
+            {
+                "id": "guardian_1",
+                "first_name": "Gina",
+                "last_name": "Primary",
+                "email": "gina@example.com",
+                "phone": "555-0100",
+                "relation": "parent",
+                "is_primary_contact": True,
+            },
+        )
+        self.assertEqual(len(supabase.query_log), 1)
+        self.assertEqual(
+            supabase.query_log[0]["columns"],
+            "student_id, guardian_id, "
+            "guardians(id, studio_id, first_name, last_name, email, phone, relation, is_primary_contact)",
+        )
 
     def test_membership_hydration_scopes_and_filters_by_student_studio(self):
         supabase = TableBackedSupabase(

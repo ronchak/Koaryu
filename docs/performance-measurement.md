@@ -18,6 +18,12 @@ Real SQL evidence comes from `npm run check:supabase-contracts-local`. The summa
 
 `frontend/scripts/capture-dashboard-performance.mjs` retains exact deployed-pair verification before and after capture. It rejects blocked writes, unknown origins and known Billing status GETs that may refresh provider state. Service workers are blocked so they cannot bypass browser request interception. A GET-only capture cannot certify all server-side reads as pure: subscription authorization itself can reconcile provider state. `GET /dashboard/home` also writes when the studio's recurring sessions for today do not exist yet: it materializes them through the same RPC as `POST /schedule/window/materialize`. The capture blocks that POST but cannot see the write inside Home's GET. Use a controlled, already settled account whose sessions for the day already exist, and do not describe this workflow as a production mutation guarantee.
 
+Home now uses only workspace verification and one `/dashboard/home` payload;
+its capture requires a successful Home response, browser resource timing and an
+allowlisted finite `koaryu_home_*` server timing. Bootstrap is not a required
+Home resource. Workspace observations remain diagnostic. Live paged Students
+requests metadata through `view=home`; the full-roster fallback keeps `view=students`.
+
 The separate functional command supports disposable staging data only:
 
 ```bash

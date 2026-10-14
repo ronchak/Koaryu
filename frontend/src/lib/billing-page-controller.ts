@@ -106,9 +106,9 @@ export function useBillingPageController({
   const changeBillingTab = useCallback((tab: BillingTab) => {
     const currentSearch = searchParams.toString();
     if (getBillingTabFromSearch(currentSearch) !== tab) {
-      router.replace(getBillingUrlForTab(currentSearch, tab), { scroll: false });
+      window.history.replaceState(null, "", getBillingUrlForTab(currentSearch, tab));
     }
-  }, [router, searchParams]);
+  }, [searchParams]);
 
   const canManageKoaryuSubscription = currentRole === "admin";
   const canViewStudioBilling = currentRole === "admin" || currentRole === "front_desk";

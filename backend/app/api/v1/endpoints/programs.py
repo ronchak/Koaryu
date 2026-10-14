@@ -26,7 +26,7 @@ async def list_programs(
     studio_id: str = Depends(get_current_studio_id),
     supabase: ProviderDependency = Depends(get_supabase),
 ):
-    async def _provider_operation(client):
+    def _provider_operation(client):
         return ProgramService(client).list_programs_sync(studio_id, include_archived)
 
     return await run_supabase_operation(

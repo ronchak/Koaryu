@@ -6,15 +6,7 @@ export type NavItem = {
   roles?: readonly string[];
 };
 
-const HEAVY_CRM_PREFETCH_PATHS = [
-  "/belt-tracker",
-  "/billing",
-  "/automations",
-  "/reports",
-  "/settings",
-  "/account/data",
-  "/account/settings",
-] as const;
+const HEAVY_CRM_PREFETCH_PATHS: readonly string[] = [];
 
 export function crmLinkPrefetch(href?: string): false | undefined {
   if (!href) {
@@ -31,25 +23,23 @@ export function crmLinkPrefetch(href?: string): false | undefined {
 export const NAV_ITEMS: readonly NavItem[] = [
   { label: "Dashboard", href: "/dashboard", icon: "LayoutDashboard" },
   { label: "Students", href: "/students", icon: "Users" },
-  { label: "Belt Tracker", href: "/belt-tracker", icon: "MartialArtsBelt", prefetch: false },
+  { label: "Belt Tracker", href: "/belt-tracker", icon: "MartialArtsBelt" },
   { label: "Leads", href: "/leads", icon: "UserPlus", roles: ["admin", "front_desk"] },
   { label: "Schedule", href: "/schedule", icon: "Calendar" },
   {
     label: "Billing",
     href: "/billing",
     icon: "CreditCard",
-    prefetch: false,
     roles: ["admin", "front_desk"],
   },
   {
     label: "Automations",
     href: "/automations",
     icon: "Workflow",
-    prefetch: false,
     roles: ["admin"],
   },
-  { label: "Reports", href: "/reports", icon: "BarChart3", prefetch: false },
-  { label: "Settings", href: "/settings", icon: "Settings", prefetch: false },
+  { label: "Reports", href: "/reports", icon: "BarChart3" },
+  { label: "Settings", href: "/settings", icon: "Settings" },
 ] as const;
 
 export const APP_NAME = "Koaryu";

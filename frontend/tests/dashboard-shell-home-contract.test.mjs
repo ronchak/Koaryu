@@ -45,11 +45,9 @@ describe("dashboard shell and Home source contracts", () => {
   });
 
   it("keeps shell responsiveness, focus, reduced-motion and target-size policies", () => {
-    assert.match(routeTransitionSource, /styles\.routeTravel/);
-    assert.doesNotMatch(routeTransitionSource, /koaryu-route-enter/);
-    const routeTravelRule = shellStyles.match(/\.routeTravel\s*\{[\s\S]*?\}/)?.[0] ?? "";
-    assert.match(routeTravelRule, /animation:[^;]*\bbackwards;/);
-    assert.doesNotMatch(routeTravelRule, /\b(?:both|forwards)\b/);
+    assert.match(routeTransitionSource, /<div key=\{pathname\}/);
+    assert.doesNotMatch(routeTransitionSource, /routeTravel|koaryu-route-enter/);
+    assert.doesNotMatch(shellStyles, /routeTravel|product-route-travel/);
     assert.match(
       shellStyles,
       /@media \(max-width: 1023px\)[\s\S]*\.shellRoot\s*\{[\s\S]*display:\s*flex;[\s\S]*flex-direction:\s*column;/,

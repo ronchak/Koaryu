@@ -437,11 +437,14 @@ def test_default_mode_still_initializes_missing_rows(options, allow_provider_rep
             "comped": False,
         }
     ]
-    assert database.query_log[1]["insert"] == {
-        "studio_id": "studio_1",
-        "status": "incomplete",
-        "comped": False,
-    }
+    inserts = [query["insert"] for query in database.query_log if query["insert"] is not None]
+    assert inserts == [
+        {
+            "studio_id": "studio_1",
+            "status": "incomplete",
+            "comped": False,
+        }
+    ]
 
 
 @pytest.mark.parametrize("options", [{}, {"read_only": False}])

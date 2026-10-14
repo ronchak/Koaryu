@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useRouter } from "next/navigation";
 import type { RankFormData } from "@/components/belt-tracker/rank-form-modal";
 import { useBeltRankDrag } from "@/components/belt-tracker/use-belt-rank-drag";
 import {
@@ -45,6 +46,7 @@ export function useBeltTrackerPageController({
   config,
   programsStore,
 }: BeltTrackerPageControllerOptions) {
+  const router = useRouter();
   const {
     beltLadders,
     beltRanks,
@@ -568,7 +570,7 @@ export function useBeltTrackerPageController({
       onStartPromotion: handleStartPromotion,
       onStartDemotion: handleStartDemotion,
       onToggleGroup: toggleEligibilityGroup,
-      onViewStudents: () => window.location.assign("/students"),
+      onViewStudents: () => router.push("/students"),
       programsLoadError,
       rankById,
       previousRankByCurrentRankId,

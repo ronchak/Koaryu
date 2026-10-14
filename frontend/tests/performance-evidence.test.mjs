@@ -445,7 +445,7 @@ describe("privacy-safe performance evidence", () => {
     );
   });
 
-  it("requires a ready dashboard, both successful resources, finite metrics, and zero blocks", () => {
+  it("requires successful Home evidence, finite metrics and zero blocks without bootstrap", () => {
     const evidence = {
       dashboard_shell_ready_ms: 8,
       dashboard_ready_ms: 10,
@@ -537,15 +537,21 @@ describe("privacy-safe performance evidence", () => {
         }),
       /HTTP 200 responses/,
     );
+    const noBootstrap = {
+      ...evidence,
+      resources: evidence.resources.filter((entry) => entry.resource !== "dashboard-bootstrap"),
+      server_timing: evidence.server_timing.filter(
+        (entry) => entry.resource !== "dashboard-bootstrap",
+      ),
+    };
+    assert.equal(validateCapturedEvidence(noBootstrap), noBootstrap);
     assert.throws(
       () =>
         validateCapturedEvidence({
-          ...evidence,
-          server_timing: evidence.server_timing.map((entry) =>
-            entry.resource === "dashboard-bootstrap" ? { ...entry, server_timing: [] } : entry,
-          ),
+          ...noBootstrap,
+          resources: noBootstrap.resources.filter((entry) => entry.resource !== "dashboard-home"),
         }),
-      /missing for dashboard-bootstrap/,
+      /missing for dashboard-home/,
     );
     assert.throws(
       () =>

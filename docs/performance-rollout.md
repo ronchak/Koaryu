@@ -54,7 +54,7 @@ and exact hosted readback is recorded.
 
 Backend:
 
-- `/dashboard/bootstrap?view=home` returns only the critical studio shell data: the studio and its programs. Home's facts load afterward from one `GET /dashboard/home` so large-studio work cannot block the first Dashboard render.
+- `/dashboard/workspace` supplies Home's verified shell. Home makes no bootstrap or program-list request and reads its facts from one `GET /dashboard/home`. Live paged Students uses the existing metadata-only `/dashboard/bootstrap?view=home`; the full-roster fallback keeps `view=students`.
 - If `/dashboard/home` has production latency or correctness issues, keep the endpoint deployed but triage it separately. The shell keeps rendering; Home shows a retryable error on a first load, and keeps its last facts with a refresh warning when a later read fails.
 
 Frontend:
@@ -161,9 +161,9 @@ after a paint opportunity and retain only fixed route labels and numeric
 generations. The optional network-idle wait happens afterward and is excluded
 from readiness timings.
 Separately, evidence validation requires HTTP 200 responses from
-`/dashboard/bootstrap` and `/dashboard/home`, resource timings, and at least one allowlisted
-finite, nonnegative `Server-Timing` duration for each response; those two
-responses alone do not prove the true-data marker. A `/dashboard/home/preferences`
+`/dashboard/home`, its resource timing, and at least one allowlisted
+finite, nonnegative `Server-Timing` duration; that response alone does not prove
+the true-data marker. Workspace timing is diagnostic, and bootstrap is not required. A `/dashboard/home/preferences`
 save is never counted as Home's payload.
 
 For a privacy-safe authenticated dashboard capture, create a Playwright storage-state file through the existing approved sign-in workflow, then run:
@@ -184,9 +184,9 @@ resource timing, missing allowlisted server timing, non-finite metric, blocked
 write, or unknown-origin request invalidates the capture. It waits for
 Home's explicit true-data marker, which requires authoritative identity and
 Home's one payload. Separately, evidence validation requires HTTP 200 responses
-from `/dashboard/bootstrap` and `/dashboard/home`, resource timings, and
-allowlisted `Server-Timing` (the bootstrap's `koaryu_*` and Home's
-`koaryu_home_*` stages); those two responses alone do not prove the data marker. `GET /dashboard/home` materializes today's
+from `/dashboard/home`, its resource timing, and allowlisted `Server-Timing`
+from Home's `koaryu_home_*` stages; that response alone does not prove the data
+marker. Workspace and any bootstrap observations remain diagnostic. `GET /dashboard/home` materializes today's
 recurring sessions when none exist yet, a write the GET-only guard cannot see,
 so capture against a settled account whose sessions for the day already exist.
 It emits only aggregate timing labels. It does not emit URLs, query strings,
@@ -199,21 +199,21 @@ Then complete the functional smoke:
 1. Visit `/health` on the deployed backend and `/api/v1/health` through the configured API base.
 2. Sign in as a studio user with Koaryu Core access.
 3. Open `/dashboard` and confirm Home renders without console errors.
-4. Check the dashboard network responses for `/dashboard/bootstrap` and `/dashboard/home`: each should include `Cache-Control: no-store, private`, `Vary: Authorization, X-Studio-Id, Cookie`, and `Server-Timing`.
+4. Confirm Dashboard makes no bootstrap or program-list request. Check `/dashboard/home` for `Cache-Control: no-store, private`, `Vary: Authorization, X-Studio-Id, Cookie`, and `Server-Timing`.
 5. Open `/students`; confirm the first page renders without a full-roster wait.
 6. Search a normal name, an accented name if present, and a no-match term. The page should show loading or updating copy while waiting and an action-oriented empty state when no results match.
 7. Use status and program filters, sort by name/status/member date, and move between pages if the studio has more than 50 students.
 8. Open a derived roster link such as `/students?inactiveDays=14`; it should not show partial bootstrap results as final data.
 9. Run one harmless bulk tag/status rehearsal in a disposable or demo studio and confirm the current page reloads without hydrating the full roster.
-10. Open `/billing`, `/belt-tracker`, `/reports`, `/settings`, and `/automations` once to confirm disabled auto-prefetch did not hide route-level errors.
+10. Open `/billing`, `/belt-tracker`, `/reports`, `/settings`, and `/automations` once using both warmed navigation and a forced prefetch miss to check route-level errors.
 
 ## What To Watch
 
 Expected improvements:
 
-- Faster dashboard useful paint because the shell renders from the bounded bootstrap payload while Home's one `GET /dashboard/home` payload loads afterward.
+- Faster dashboard useful paint because the shell renders from the verified workspace payload while Home's one `GET /dashboard/home` payload loads afterward.
 - Less client CPU on dashboard and Students.
-- Less bandwidth and backend work from route prefetching heavy CRM areas.
+- Prefetch requests skip the session proxy; ordinary navigation keeps authentication.
 - Normal Students search/filter/sort should scale beyond the bootstrap student cap.
 
 Known tradeoffs:
@@ -228,7 +228,7 @@ Known tradeoffs:
 
 If Home causes issues:
 
-1. Confirm `/dashboard/bootstrap?view=home` still returns `200` quickly with only the studio and programs.
+1. Confirm `/dashboard/workspace` returns `200` and Dashboard makes no bootstrap or program-list request.
 2. Inspect `/dashboard/home` server timing (`koaryu_home_*` stages) and backend logs for the slow or failing section.
 3. Confirm `/dashboard` still renders the shell and shows Home's retryable error, or its last facts with a refresh warning, while `/dashboard/home` fails.
 
@@ -258,8 +258,9 @@ If production needs temporary performance debugging:
 The live session initialization and Auth subscription have a stable owner. Role
 resolution does not restart bootstrap. Signout and identity changes clear old
 scope data; token renewal preserves the identity while outstanding requests keep
-the existing generation checks. A bootstrap outage shows a retryable identity
-error instead of launching the legacy dataset fan-out.
+the existing generation checks. A workspace outage shows a retryable identity
+error; feature projection failures stay scoped to their datasets without a global
+legacy request fan-out.
 
 Before authoritative identity, the layout renders neutral geometry. Tenant
 labels, role actions and page content wait for the profile and legal-name gate.
@@ -285,13 +286,58 @@ upstream deadline is 34 seconds for ordinary requests and 125 seconds for bulk
 requests, with cancellation when the caller or response consumer stops.
 
 The interactive PostgREST transport uses a 10-second per-I/O timeout and the bulk
-transport uses 30 seconds. Bootstrap’s short-lived clients (one per dataset its
-view loads, at most three) inherit their parent client’s budget; the isolated Stripe authorization read has a 10-second
-budget. These are not total multi-query deadlines. Existing
+transport uses 30 seconds. Bootstrap resolves context in one interactive-lane
+operation, then submits one short operation per selected dataset on its owning
+worker's persistent client, for `1 + N` admissions. Student mapping and membership
+enrichment stay inside the students operation. Students await the studio result
+on the ASGI loop before admission. Fatal failures and request cancellation cancel
+and join sibling tasks; already-admitted work stays accounted for until it drains.
+The isolated Stripe authorization read has a 10-second budget. These are not
+total multi-query deadlines. Existing
 caller waits and worker/queue capacity remain unchanged at 30 seconds with 4+16
 interactive slots and 120 seconds with 1+2 bulk slots. Capacity returns only when
 provider work ends, even after a caller stops waiting. No automatic money retry
 or rollback-on-abort assumption was added.
+
+Bootstrap dataset Server-Timing labels include fetching and projection work and
+exclude client construction. The successful `students` duration also excludes
+its ASGI-side wait for studio metadata and its lane queue. `total` starts before
+context admission and includes the complete orchestration. Historical dataset
+timings included client construction and closure and need that distinction when
+compared with current timings.
+
+Ignoring client setup, old per-request lane worker occupancy was approximately
+context plus the longest dataset read, with dataset reads on side threads. New
+aggregate lane worker occupancy is context plus the sum of dataset work, offset
+by removing per-dataset client construction and fresh TLS connections. This can
+increase lane demand under bursts; it does not establish a throughput improvement.
+After the frontend bootstrap changes, the typical live bootstrap is the metadata
+view containing studio and programs; Home itself does not request bootstrap.
+
+The warm fake-provider probe is reproducible from `backend/` with
+`venv/bin/python tests/performance/measure_bootstrap_lanes.py`. It compares the
+pre-U5 implementation at `12ecccab` with the current implementation using the
+real 4-worker, 16-queue runtime. It takes ten requests per view and variant.
+Synthetic costs are 2 ms for context, 8 ms for studio, 12 ms for programs,
+20 ms for students and 3 ms for membership enrichment. The old fake client
+factory simulates the audited 14.3 ms setup cost; no TLS or network is measured.
+These medians include scheduling overhead and are not production throughput data.
+
+| View | Measurement, ms | Before | After |
+| --- | --- | ---: | ---: |
+| home | studio label | 116.840 | 30.425 |
+| home | programs label | 137.624 | 93.280 |
+| home | total label | 164.896 | 100.361 |
+| home | aggregate lane worker occupancy | 166.595 | 121.966 |
+| students | studio label | 102.151 | 28.120 |
+| students | programs label | 143.785 | 91.189 |
+| students | students label | 150.299 | 128.243 |
+| students | total label | 201.867 | 164.326 |
+| students | aggregate lane worker occupancy | 203.079 | 203.532 |
+
+New client constructions per warm request fell from 2 to 0 for `home` and from
+3 to 0 for `students`. The students workload's aggregate worker demand stayed
+about the same in this probe even though its response finished sooner.
 
 The lane emits bounded aggregate metrics at most once a minute while work is
 active. Queue wait, operation duration, active work, saturation, caller timeout
@@ -325,7 +371,8 @@ is the database correctness and query-plan check. Deployment validation and the
 
 ## Bootstrap projection failures
 
-The frontend requests `/dashboard/bootstrap?allow_partial=true`. The backend
+Feature routes request `/dashboard/bootstrap?allow_partial=true&view=<view>`;
+Home uses workspace verification and its own payload instead. The backend
 still resolves authoritative identity and subscription access first. An isolated
 studio/student/lead/belt/program projection failure then returns a typed
 `dataset_errors` entry alongside healthy projections. Failed student totals are

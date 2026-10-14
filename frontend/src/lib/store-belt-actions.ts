@@ -50,6 +50,11 @@ import type {
   Student,
 } from "@/types";
 
+export type RefreshBeltsOptions = {
+  requireEligibility?: boolean;
+  retainCurrent?: boolean;
+};
+
 interface UseStoreBeltActionsArgs {
   applyLadderSelection: (
     ladders: BeltLadder[],
@@ -64,14 +69,16 @@ interface UseStoreBeltActionsArgs {
   ladderName: string;
   loadEligibilityForLadder: (
     ladderId?: string | null,
-    options?: { force?: boolean },
+    options?: { force?: boolean; retainCurrent?: boolean },
   ) => Promise<EligibilityEntry[]>;
   persistBeltRanks: (next: BeltRank[]) => void;
   persistStudents: (next: Student[]) => void;
   promotionHistoryCacheRef: StoreRef<PromotionHistoryCache>;
   promotionHistoryGenerationRef: StoreRef<number>;
   promotionHistoryRequestsRef: StoreRef<PromotionHistoryRequests>;
-  refreshBeltsRef: StoreRef<((preferredLadderId?: string | null) => Promise<void>) | null>;
+  refreshBeltsRef: StoreRef<
+    ((preferredLadderId?: string | null, options?: RefreshBeltsOptions) => Promise<void>) | null
+  >;
   refreshStudents: () => Promise<unknown>;
   setEligibilityLoadError: (error: string | null) => void;
   setEligibilityPendingLadderId: (ladderId: string | null) => void;
@@ -155,7 +162,7 @@ export function useStoreBeltActions({
   }, [beginLiveAuthRequest, isPreviewMode]);
 
   const refreshBelts = useCallback(
-    async (preferredLadderId?: string | null, options?: { requireEligibility?: boolean }) => {
+    async (preferredLadderId?: string | null, options?: RefreshBeltsOptions) => {
       if (isPreviewMode) {
         return;
       }
@@ -172,6 +179,7 @@ export function useStoreBeltActions({
           );
           const eligibilityRefresh = loadEligibilityForLadder(selectedLadder?.id ?? null, {
             force: true,
+            retainCurrent: options?.retainCurrent,
           });
           if (options?.requireEligibility) {
             await eligibilityRefresh;

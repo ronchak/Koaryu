@@ -98,7 +98,7 @@ import {
   shouldPreserveScheduleMutationsOnAuthChange,
   type ScheduleRangeRefreshIntent,
 } from "@/lib/schedule-store-model";
-import { useStoreBeltActions } from "@/lib/store-belt-actions";
+import { useStoreBeltActions, type RefreshBeltsOptions } from "@/lib/store-belt-actions";
 import { useStoreBeltTestActions } from "@/lib/store-belt-test-actions";
 import { useStoreLeadActions } from "@/lib/store-lead-actions";
 import { useStoreProgramActions } from "@/lib/store-program-actions";
@@ -224,7 +224,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [students, setStudents] = useState<Student[]>(() =>
     isPreviewMode ? MOCK_STUDENTS : []
   );
-  const [studentsLoaded, setStudentsLoaded] = useState(isPreviewMode);
+  const [studentsLoaded, setStudentsLoadedState] = useState(isPreviewMode);
+  const studentsLoadedRef = useRef(isPreviewMode);
+  const setStudentsLoaded = useCallback((loaded: boolean) => {
+    studentsLoadedRef.current = loaded;
+    setStudentsLoadedState(loaded);
+  }, []);
   const [studentsLoadError, setStudentsLoadError] = useState<string | null>(null);
   const [studentsLastLoadedAt, setStudentsLastLoadedAt] = useState<number | null>(() =>
     isPreviewMode ? Date.now() : null
@@ -274,6 +279,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     isPreviewMode ? MOCK_BELT_LADDERS : []
   );
   const beltsHydratedRef = useRef(false);
+  // Hydration tracks attempted route loads; metadata readiness requires success,
+  // including an authoritative empty result.
+  const beltLaddersLoadedRef = useRef(isPreviewMode);
+  const beltLaddersReadRef = useRef<{
+    isCurrent: () => boolean;
+    promise: Promise<{ ladders: readonly BeltLadder[] }>;
+  } | null>(null);
   const [beltLaddersLoadError, setBeltLaddersLoadError] = useState<string | null>(null);
   const [studioLoadError, setStudioLoadError] = useState<string | null>(null);
   const beltLaddersRef = useRef<BeltLadder[]>(beltLadders);
@@ -282,7 +294,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     isPreviewMode ? MOCK_BELT_LADDER.ranks : []
   );
   const beltRanksRef = useRef<BeltRank[]>(beltRanks);
-  const refreshBeltsRef = useRef<((preferredLadderId?: string | null) => Promise<void>) | null>(null);
+  const refreshBeltsRef = useRef<((preferredLadderId?: string | null, options?: RefreshBeltsOptions) => Promise<void>) | null>(null);
   const [sessions, setSessionsState] = useState<ClassSession[]>(() =>
     isPreviewMode ? MOCK_SESSIONS : []
   );
@@ -589,6 +601,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       preferredLadderId ?? currentLadderIdRef.current
     );
 
+    beltLaddersLoadedRef.current = true;
+    beltLaddersRef.current = orderedLadders;
     setBeltLaddersState(orderedLadders);
     updateCurrentLadderId(selectedLadder?.id ?? null);
     setLadderNameState(selectedLadder?.name || "");
@@ -613,10 +627,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       next: Student[] | ((current: Student[]) => Student[]),
       options?: { mayBePartial?: boolean }
     ) => {
+      const wasLoaded = studentsLoadedRef.current;
       setStudentsLoaded(true);
       setStudentsLoadError(null);
       setStudentsLastLoadedAt(Date.now());
-      setStudentsMayBePartial(Boolean(options?.mayBePartial));
+      // Updaters publish mutations, not authoritative roster snapshots. A
+      // single record cannot certify an unloaded or partial list as complete.
+      setStudentsMayBePartial(wasPartial => typeof next === "function"
+        ? wasPartial || !wasLoaded || Boolean(options?.mayBePartial)
+        : Boolean(options?.mayBePartial));
       setStudents((current) => {
         const resolved = typeof next === "function"
           ? (next as (current: Student[]) => Student[])(current)
@@ -625,7 +644,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         return resolved;
       });
     },
-    []
+    [setStudentsLoaded]
   );
 
   useSyncedRefValue(leadsRef, leads);
@@ -665,6 +684,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const applyLiveStudioDataResetState = useCallback((state: LiveStudioDataResetState) => {
     resetBeltTestResourceScope();
     beltsHydratedRef.current = false;
+    beltLaddersLoadedRef.current = false;
+    beltLaddersReadRef.current = null;
     resetProgramScope();
     resetStaffScope();
     leadMutationScopeRef.current.settle();
@@ -723,7 +744,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setEligibilityLoadError(state.eligibilityLoadError);
     promotionHistoryGenerationRef.current += 1;
     setPromotionHistoryCache(state.promotionHistoryCache);
-  }, [setPrograms, setProgramsLoaded, resetProgramScope, resetBeltTestResourceScope, resetStaffScope, destructivelyResetScheduleCoordinator, setSessions, updateCurrentLadderId]);
+  }, [setStudentsLoaded, setPrograms, setProgramsLoaded, resetProgramScope, resetBeltTestResourceScope, resetStaffScope, destructivelyResetScheduleCoordinator, setSessions, updateCurrentLadderId]);
 
   const resetLiveStudioState = useCallback(() => {
     invalidateAccessIdentity();
@@ -850,7 +871,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     destructivelyResetScheduleCoordinator();
     setScheduleLoadError(restored.scheduleLoadError);
     setScheduleStatus(restored.scheduleStatus);
-  }, [setProgramsLoaded, destructivelyResetScheduleCoordinator]);
+  }, [setStudentsLoaded, setProgramsLoaded, destructivelyResetScheduleCoordinator]);
 
   // Home reads one payload. This returns it without storing it: `useHome` owns
   // Home's state. Preview mode is selected here and nowhere else.
@@ -999,6 +1020,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setLeads([]);
     setLeadsLoaded(true);
     setLeadsLoadError(null);
+    beltMetadataRevisionRef.current += 1;
+    beltLaddersLoadedRef.current = true;
+    beltLaddersRef.current = [];
     setBeltLaddersState([]);
     updateCurrentLadderId(null);
     setLadderNameState("");
@@ -1091,7 +1115,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     return () => {
       window.clearTimeout(timer);
     };
-  }, [setPrograms, setProgramsLoaded, applyLadderSelection, commitEligibilityRows, commitStudents, isPreviewMode, setSessions]);
+  }, [setStudentsLoaded, setPrograms, setProgramsLoaded, applyLadderSelection, commitEligibilityRows, commitStudents, isPreviewMode, setSessions]);
 
   const previewEligibilityForLadder = useCallback((ladderId?: string | null): EligibilityEntry[] => {
     return buildPreviewEligibilityForLadder({
@@ -1350,7 +1374,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           setStudioLoadError(null);
           markPerformance("workspace.identity_ready");
           const initialPath = pathnameRef.current;
-          const view = initialBootstrapView(initialPath);
+          const view = initialBootstrapView(initialPath, {
+            isPreviewMode,
+            pagedRosterEnabled: process.env.NEXT_PUBLIC_STUDENTS_PAGED_ROSTER !== "false",
+          });
           if (!view) return;
           const includedDatasets = bootstrapDatasets(view);
           // The protected shell is now usable. Only the route's feature payload
@@ -1610,7 +1637,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       bootstrapRequestRef.current?.controller.abort();
       authListener?.subscription.unsubscribe();
     };
-  }, [setPrograms, setProgramsLoaded, applyAuthoritativeNoStudioState, applyLadderSelection, applySubscriptionRequiredState, beginLiveAuthRequest, clearPromotionHistoryCache, commitAuthoritativeAuthProfile, commitEligibilityRows, commitStudents, destructivelyResetScheduleCoordinator, initializationAttempt, isPreviewMode, markSubscriptionRequired, reconcileSchedule, refreshSchedule, resetLiveStudioState, retireHomePreferencesOwner, router, supabase]);
+  }, [setStudentsLoaded, setPrograms, setProgramsLoaded, applyAuthoritativeNoStudioState, applyLadderSelection, applySubscriptionRequiredState, beginLiveAuthRequest, clearPromotionHistoryCache, commitAuthoritativeAuthProfile, commitEligibilityRows, commitStudents, destructivelyResetScheduleCoordinator, initializationAttempt, isPreviewMode, markSubscriptionRequired, reconcileSchedule, refreshSchedule, resetLiveStudioState, retireHomePreferencesOwner, router, supabase]);
 
   // ── Persist helpers (for preview mode) ──
   const persistStudents = useCallback((next: Student[]) => {
@@ -1798,7 +1825,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     promoteStudent,
     setBeltRanks,
     setCurrentLadder,
-    refreshBeltLadders,
+    refreshBeltLadders: readBeltLadders,
   } = useStoreBeltActions({
     applyLadderSelection,
     beginLiveAuthRequest,
@@ -1821,6 +1848,49 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     studentsRef,
     subRankTerm,
   });
+
+  const refreshBeltLadders = useCallback(async (options?: { ifNeeded?: boolean }): Promise<{ ladders: readonly BeltLadder[] }> => {
+    if (isPreviewMode) return readBeltLadders();
+    const owner = beginLiveAuthRequest();
+    const pending = beltLaddersReadRef.current;
+    if (pending?.isCurrent()) return pending.promise;
+    if (options?.ifNeeded && beltLaddersLoadedRef.current) {
+      return Promise.resolve({ ladders: beltLaddersRef.current });
+    }
+    const revision = beltMetadataRevisionRef.current;
+    const promise = readBeltLadders().then(result => {
+      if (!owner.isSameIdentity()) throw new Error("Your workspace changed. Reload the belt choices.");
+      if (revision === beltMetadataRevisionRef.current) {
+        beltMetadataRevisionRef.current += 1;
+        const ladders = [...result.ladders];
+        const previousLadders = new Map(beltLaddersRef.current.map(ladder => [ladder.id, ladder]));
+        // The list carries each ladder's ranks, so a rank-only edit by another
+        // staff member must count as a change, not just names and terms.
+        const ladderSignature = (ladder: BeltLadder) => JSON.stringify([
+          ladder.name, ladder.sub_rank_term, ladder.updated_at ?? null, ladder.ranks ?? [],
+        ]);
+        if (ladders.length !== beltLaddersRef.current.length || ladders.some(ladder => {
+          const previous = previousLadders.get(ladder.id);
+          return !previous || ladderSignature(previous) !== ladderSignature(ladder);
+        })) {
+          // Metadata does not reconcile the selected plan's ranks and labels.
+          // Its normal route refresh must verify that snapshot on the next visit.
+          beltsHydratedRef.current = false;
+        }
+        beltLaddersLoadedRef.current = true;
+        beltLaddersRef.current = ladders;
+        setBeltLaddersState(ladders);
+        setBeltLaddersLoadError(null);
+      }
+      return result;
+    });
+    beltLaddersReadRef.current = { isCurrent: owner.isSameIdentity, promise };
+    const clear = () => {
+      if (beltLaddersReadRef.current?.promise === promise) beltLaddersReadRef.current = null;
+    };
+    void promise.then(clear, clear);
+    return promise;
+  }, [beginLiveAuthRequest, isPreviewMode, readBeltLadders]);
 
   // ── Schedule ──
   const {
@@ -1926,7 +1996,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       if (["/leads", "/reports"].includes(pathname) && !leadsLoaded && !leadsLoadError) {
         void refreshLeads().catch(() => undefined);
       }
-      const needsPrograms = ["/dashboard", "/settings", "/leads", "/reports", "/schedule", "/belt-tracker"].includes(pathname)
+      const needsPrograms = ["/settings", "/leads", "/reports", "/schedule", "/belt-tracker"].includes(pathname)
         || pathname === "/students" || pathname.startsWith("/students/");
       if (needsPrograms && !programsLoaded && !programsLoadError) {
         void refreshPrograms({ includeArchived: true }).catch(() => undefined);
@@ -1981,10 +2051,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         if (pathnameRef.current === "/belt-tracker"
           || (pathnameRef.current.startsWith("/students/") && pathnameRef.current !== "/students/import")) {
           const owner = request;
-          void Promise.resolve(refreshBeltsRef.current?.()).then(async () => {
-            if (disposed || !owner.isSameIdentity()) return;
-            if (pathnameRef.current === "/belt-tracker") await loadEligibilityForLadder(currentLadderIdRef.current, { force: true, retainCurrent: true });
-          }).catch(() => {
+          void Promise.resolve(refreshBeltsRef.current?.(undefined, {
+            retainCurrent: true,
+            requireEligibility: pathnameRef.current === "/belt-tracker",
+          })).catch(() => {
             if (!disposed && owner.isSameIdentity()) setBeltLaddersLoadError("Belt plans could not be refreshed. Please retry.");
           });
         }
@@ -2019,7 +2089,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     window.addEventListener(APP_RESUME_EVENT, onResume);
     return () => { disposed = true; unsubscribe(); window.removeEventListener(APP_RESUME_EVENT, onResume); };
   }, [beginLiveAuthRequest, commitAuthoritativeAuthProfile, identityReady, isPreviewMode,
-    clearSubscriptionRequired, loadEligibilityForLadder, markSubscriptionRequired,
+    clearSubscriptionRequired, markSubscriptionRequired,
     resetLiveStudioState, retryInitialization, router, subscriptionRequired]);
 
   // These confirmed business commands affect dashboard facts. Billing commands
