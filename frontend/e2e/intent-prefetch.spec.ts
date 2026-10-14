@@ -17,11 +17,17 @@ test.beforeEach(async ({ page }) => {
 check(
   "a warmed static Billing navigation and local tab changes make no document or RSC requests",
   async ({ page }) => {
-    const warm = page.waitForResponse(
-      (response) =>
+    const warm = page.waitForResponse((response) => {
+      const headers = response.request().headers();
+      const segment = headers["next-router-segment-prefetch"];
+      // Route-tree metadata can finish before the page payload even starts.
+      // Warm the page itself before measuring navigation requests.
+      return (
         new URL(response.url()).pathname === "/billing" &&
-        response.request().headers()["next-router-prefetch"] === "1",
-    );
+        headers["next-router-prefetch"] === "1" &&
+        (!segment || segment.endsWith("/billing/__PAGE__"))
+      );
+    });
     await page.goto(`${origin}/dashboard`);
     await expect(page.locator("html")).toHaveAttribute(
       "data-koaryu-data-plane",
