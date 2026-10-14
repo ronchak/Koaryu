@@ -1850,6 +1850,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       if (revision === beltMetadataRevisionRef.current) {
         beltMetadataRevisionRef.current += 1;
         const ladders = [...result.ladders];
+        const previousLadders = new Map(beltLaddersRef.current.map(ladder => [ladder.id, ladder]));
+        if (ladders.length !== beltLaddersRef.current.length || ladders.some(ladder => {
+          const previous = previousLadders.get(ladder.id);
+          return !previous || previous.name !== ladder.name || previous.sub_rank_term !== ladder.sub_rank_term;
+        })) {
+          // Metadata does not reconcile the selected plan's ranks and labels.
+          // Its normal route refresh must verify that snapshot on the next visit.
+          beltsHydratedRef.current = false;
+        }
         beltLaddersLoadedRef.current = true;
         beltLaddersRef.current = ladders;
         setBeltLaddersState(ladders);

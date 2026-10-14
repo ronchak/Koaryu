@@ -246,3 +246,62 @@ test("a newer ladder selection supersedes an older metadata read", async (t) => 
   assert.equal(await page.evaluate(() => fixture.store.beltLadders[0]?.id), "selected");
   assert.equal(await page.evaluate(() => fixture.store.currentLadderId), "selected");
 });
+
+for (const change of ["unchanged", "id", "name", "sub_rank_term"]) {
+  test(`metadata ${change} ${change === "unchanged" ? "reuses" : "invalidates"} the Belt Tracker route snapshot`, async (t) => {
+    const page = await mount(t);
+    await page.evaluate(() => {
+      fixture.original = { id: "ladder-one", name: "Karate", sub_rank_term: "Stripe", ranks: [] };
+      fixture.metadata[0].resolve([fixture.original]);
+    });
+    await page.waitForFunction(() => !fixture.detail.isLoadingBeltData);
+    await page.evaluate(() => {
+      fixture.unmountDetail();
+      fixture.pathname = "/belt-tracker";
+      window.dispatchEvent(new Event("fixture:navigate"));
+    });
+    await page.waitForFunction(() => fixture.metadata.length === 2);
+    await page.evaluate(() => fixture.metadata[1].resolve([fixture.original]));
+    await page.waitForFunction(() => fixture.store.eligibilityLadderId === "ladder-one");
+    await page.evaluate(() => {
+      fixture.pathname = "/students/student-1";
+      window.dispatchEvent(new Event("fixture:navigate"));
+      fixture.refresh = fixture.store.refreshBeltLadders();
+    });
+    await page.waitForFunction(() => fixture.metadata.length === 3);
+    await page.evaluate((change) => {
+      fixture.updated = {
+        ...fixture.original,
+        ...(change === "unchanged" ? {} : { [change]: "Changed" }),
+      };
+      fixture.metadata[2].resolve([fixture.updated]);
+    }, change);
+    await page.evaluate(() => fixture.refresh);
+    const before = await page.evaluate(
+      () => fixture.requests.filter((r) => r.path.startsWith("/belts/eligibility")).length,
+    );
+    await page.evaluate(() => {
+      fixture.pathname = "/belt-tracker";
+      window.dispatchEvent(new Event("fixture:navigate"));
+    });
+    if (change === "unchanged") {
+      await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 100)));
+      assert.equal(await page.evaluate(() => fixture.metadata.length), 3);
+    } else {
+      await page.waitForFunction(() => fixture.metadata.length === 4);
+      await page.evaluate(() => fixture.metadata[3].resolve([fixture.updated]));
+      await page.waitForFunction(
+        () =>
+          fixture.store.currentLadderId === fixture.updated.id &&
+          fixture.store.ladderName === fixture.updated.name &&
+          fixture.store.subRankTerm === fixture.updated.sub_rank_term,
+      );
+      await page.waitForFunction(
+        (before) =>
+          fixture.requests.filter((r) => r.path.startsWith("/belts/eligibility")).length ===
+          before + 1,
+        before,
+      );
+    }
+  });
+}
