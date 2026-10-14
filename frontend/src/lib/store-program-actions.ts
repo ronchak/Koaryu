@@ -1,3 +1,4 @@
+import { getPreviewAdapter } from "@/lib/preview-adapter-loader";
 import { useCallback, useRef, type Dispatch, type SetStateAction } from "react";
 
 import { api } from "@/lib/api";
@@ -16,7 +17,6 @@ import {
 } from "@/lib/store-action-types";
 import { beginResourceMutation, type ResourceScope } from "@/lib/store-resource-scope";
 import { KEYS, load, localId } from "@/lib/store-storage";
-import { MOCK_PROGRAMS } from "@/lib/preview-studio-data";
 import type { BeltLadder, Program, ProgramCreate, ProgramUpdate } from "@/types";
 
 interface UseStoreProgramActionsOptions {
@@ -59,7 +59,7 @@ export function useStoreProgramActions({
   const refreshPrograms = useCallback(
     async (options?: { includeArchived?: boolean; force?: boolean }): Promise<Program[]> => {
       if (isPreviewMode) {
-        const stored = load(KEYS.programs, MOCK_PROGRAMS);
+        const stored = load(KEYS.programs, getPreviewAdapter().MOCK_PROGRAMS);
         persistPrograms(stored);
         setProgramsUsageLoaded(true);
         setProgramsUsageLoadError(null);

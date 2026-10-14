@@ -1,14 +1,6 @@
 import type * as ApiContracts from "../../types/generated/api-contracts";
-import {
-  MOCK_ATTENDANCE,
-  MOCK_BELT_LADDER,
-  MOCK_CLASS_TEMPLATES,
-  MOCK_ELIGIBILITY,
-  MOCK_LEADS,
-  MOCK_SESSIONS,
-  MOCK_STUDENTS,
-} from "../mock-data.ts";
-import { DEMO_STUDIO_NAME, MOCK_BELT_LADDERS, MOCK_PROGRAMS } from "../preview-studio-data.ts";
+type PreviewHomeFixtures = typeof import("../mock-data.ts") &
+  typeof import("../preview-studio-data.ts");
 import { buildPreviewEligibilityForLadder } from "../preview-belt-eligibility.ts";
 import { buildEligibilityGroups, isEligibilityEntryReady } from "../belt-tracker-page-model.ts";
 import { buildStudentInactivityRows, isStudentOnHoldNow } from "../student-insights.ts";
@@ -16,11 +8,26 @@ import { shiftDateKey } from "../date.ts";
 
 type DashboardHome = ApiContracts.ApiDashboardHomeResponse;
 
-export function buildPreviewHomePayload(input: {
-  today: string;
-  role: "admin" | "front_desk" | "instructor";
-  now?: Date;
-}): DashboardHome {
+export function buildPreviewHomePayload(
+  input: {
+    today: string;
+    role: "admin" | "front_desk" | "instructor";
+    now?: Date;
+  },
+  fixtures: PreviewHomeFixtures,
+): DashboardHome {
+  const {
+    MOCK_ATTENDANCE,
+    MOCK_BELT_LADDER,
+    MOCK_CLASS_TEMPLATES,
+    MOCK_ELIGIBILITY,
+    MOCK_LEADS,
+    MOCK_SESSIONS,
+    MOCK_STUDENTS,
+    DEMO_STUDIO_NAME,
+    MOCK_BELT_LADDERS,
+    MOCK_PROGRAMS,
+  } = fixtures;
   const { today, role } = input;
   const now = input.now ?? new Date();
   const checkedInBySession = new Map<string, number>();

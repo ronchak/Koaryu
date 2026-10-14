@@ -9,7 +9,7 @@ import { pendingCommands, subscribePendingCommands } from "@/lib/pending-command
 import { markDashboardFactsChanged } from "@/lib/dashboard-freshness";
 import { beginResourceMutation, createResourceScope } from "@/lib/store-resource-scope";
 
-import React, { useState, useEffect, useLayoutEffect, useCallback, useRef, useMemo, type ReactNode } from "react";
+import React, { useState, useEffect, useLayoutEffect, useCallback, useRef, useMemo, use, Suspense, type ReactNode } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { clearActiveStudioIdCookie, getActiveStudioIdCookie } from "@/lib/studio-state-cookie";
@@ -56,7 +56,7 @@ import type {
   StaffMember,
   StaffLegalNameResponse, StaffRoleName, DashboardHome,
 } from "@/types";
-import { buildPreviewHomePayload } from "@/lib/dashboard/preview-home-payload";
+import { loadPreviewAdapter, type PreviewAdapter } from "@/lib/preview-adapter-loader";
 import { homeRoleClass } from "@/lib/dashboard/home-model";
 import {
   purgeHomePreferencesScope,
@@ -67,20 +67,6 @@ import {
   type HomePreferencesScope,
   type HomePreferencesWire,
 } from "@/lib/dashboard/home-preferences";
-import {
-  MOCK_STUDENTS,
-  MOCK_SESSIONS,
-  MOCK_CLASS_TEMPLATES,
-  MOCK_ATTENDANCE,
-  MOCK_BELT_LADDER,
-  MOCK_ELIGIBILITY,
-  MOCK_LEADS,
-} from "@/lib/mock-data";
-import {
-  MOCK_BELT_LADDERS,
-  MOCK_PROGRAMS,
-  MOCK_STAFF_MEMBERS,
-} from "@/lib/preview-studio-data";
 import {
   createScheduleReconciliationQueue,
   createScheduleCoordinatorState,
@@ -190,6 +176,18 @@ const bulkStudentCommandIds = (studentIds: string[]) => normalizeStudentIds(stud
 
 // ── Provider ─────────────────────────────────────────────────────────────────
 export function StoreProvider({ children }: { children: ReactNode }) {
+  if (process.env.NEXT_PUBLIC_PREVIEW_MODE === "true") {
+    return <Suspense fallback={null}><PreviewStoreProvider>{children}</PreviewStoreProvider></Suspense>;
+  }
+  return <StoreProviderBody>{children}</StoreProviderBody>;
+}
+
+function PreviewStoreProvider({ children }: { children: ReactNode }) {
+  const preview = use(loadPreviewAdapter());
+  return <StoreProviderBody preview={preview}>{children}</StoreProviderBody>;
+}
+
+function StoreProviderBody({ children, preview }: { children: ReactNode; preview?: PreviewAdapter }) {
   const isPreviewMode = process.env.NEXT_PUBLIC_PREVIEW_MODE === "true";
   const [hydrated, setHydrated] = useState(false);
   const [subscriptionRequired, setSubscriptionRequired] = useState(false);
@@ -232,7 +230,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   // ── State ──
   const [students, setStudents] = useState<Student[]>(() =>
-    isPreviewMode ? MOCK_STUDENTS : []
+    isPreviewMode ? preview!.MOCK_STUDENTS : []
   );
   const [studentsLoaded, setStudentsLoadedState] = useState(isPreviewMode);
   const studentsLoadedRef = useRef(isPreviewMode);
@@ -251,7 +249,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const studentRosterRequestSequenceRef = useRef(0);
   const previewStudentPhotoUrlsRef = useRef<Record<string, string>>({});
   const [programs, setProgramRows] = useState<Program[]>(() =>
-    isPreviewMode ? MOCK_PROGRAMS : []
+    isPreviewMode ? preview!.MOCK_PROGRAMS : []
   );
   const [programsLoaded, setProgramsLoadedState] = useState(isPreviewMode);
   const programsLoadedRef = useRef(isPreviewMode);
@@ -273,7 +271,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [programsUsageLoaded, setProgramsUsageLoaded] = useState(isPreviewMode);
   const [programsUsageLoadError, setProgramsUsageLoadError] = useState<string | null>(null);
   const [leads, setLeads] = useState<Lead[]>(() =>
-    isPreviewMode ? MOCK_LEADS : []
+    isPreviewMode ? preview!.MOCK_LEADS : []
   );
   const [leadsLoaded, setLeadsLoaded] = useState(isPreviewMode);
   const [leadsLoadError, setLeadsLoadError] = useState<string | null>(null);
@@ -286,7 +284,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const leadMutationScopeRef = useRef(createResourceScope());
   const beginLeadMutation = useCallback(() => beginResourceMutation(leadMutationScopeRef.current), []);
   const [beltLadders, setBeltLaddersState] = useState<BeltLadder[]>(() =>
-    isPreviewMode ? MOCK_BELT_LADDERS : []
+    isPreviewMode ? preview!.MOCK_BELT_LADDERS : []
   );
   const beltsHydratedRef = useRef(false);
   const [beltRefreshGeneration, setBeltRefreshGeneration] = useState(0);
@@ -303,12 +301,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const beltLaddersRef = useRef<BeltLadder[]>(beltLadders);
   const beltMetadataRevisionRef = useRef(0);
   const [beltRanks, setBeltRanksState] = useState<BeltRank[]>(() =>
-    isPreviewMode ? MOCK_BELT_LADDER.ranks : []
+    isPreviewMode ? preview!.MOCK_BELT_LADDER.ranks : []
   );
   const beltRanksRef = useRef<BeltRank[]>(beltRanks);
   const refreshBeltsRef = useRef<((preferredLadderId?: string | null, options?: RefreshBeltsOptions) => Promise<void>) | null>(null);
   const [sessions, setSessionsState] = useState<ClassSession[]>(() =>
-    isPreviewMode ? MOCK_SESSIONS : []
+    isPreviewMode ? preview!.MOCK_SESSIONS : []
   );
   const sessionsRef = useRef<ClassSession[]>(sessions);
   const setSessions = useCallback((update: ClassSession[] | ((current: ClassSession[]) => ClassSession[])) => {
@@ -317,11 +315,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setSessionsState(next);
   }, []);
   const [templates, setTemplates] = useState<ClassTemplate[]>(() =>
-    isPreviewMode ? MOCK_CLASS_TEMPLATES : []
+    isPreviewMode ? preview!.MOCK_CLASS_TEMPLATES : []
   );
   const templatesRef = useRef<ClassTemplate[]>(templates);
   const [attendance, setAttendance] = useState<AttendanceRecord[]>(() =>
-    isPreviewMode ? MOCK_ATTENDANCE : []
+    isPreviewMode ? preview!.MOCK_ATTENDANCE : []
   );
   const attendanceRef = useRef<AttendanceRecord[]>(attendance);
   const scheduleCoordinatorRef = useRef(createScheduleCoordinatorState());
@@ -348,7 +346,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   );
   const [currentUser, setCurrentUser] = useState<AuthUserProfile | null>(() =>
     isPreviewMode
-      ? { id: "preview-user", email: "demo@koaryu.local", full_name: "Demo User" }
+      ? preview!.currentUser
       : null
   );
   const authUserIdRef = useRef<string | null>(isPreviewMode ? "preview-user" : null);
@@ -362,7 +360,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const currentRoleRef = useRef(currentRole);
   const [staffProfilesAvailable, setStaffProfilesAvailable] = useState(false);
   const [staffMembers, setStaffMembers] = useState<StaffMember[]>(() =>
-    isPreviewMode ? MOCK_STAFF_MEMBERS : []
+    isPreviewMode ? preview!.MOCK_STAFF_MEMBERS : []
   );
   const staffMembersRef = useRef<StaffMember[]>(staffMembers);
   const staffScopeRef = useRef(createResourceScope());
@@ -374,24 +372,24 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [staffLoaded, setStaffLoaded] = useState(isPreviewMode);
   const [staffLoadError, setStaffLoadError] = useState<string | null>(null);
   const [subRankTerm, setSubRankTermState] = useState(() =>
-    isPreviewMode ? MOCK_BELT_LADDER.sub_rank_term || "Stripe" : "Stripe"
+    isPreviewMode ? preview!.MOCK_BELT_LADDER.sub_rank_term || "Stripe" : "Stripe"
   );
   const [ladderName, setLadderNameState] = useState(() =>
-    isPreviewMode ? MOCK_BELT_LADDER.name : ""
+    isPreviewMode ? preview!.MOCK_BELT_LADDER.name : ""
   );
   const [currentLadderId, setCurrentLadderIdState] = useState<string | null>(null);
   const currentLadderIdRef = useRef<string | null>(null);
   const [eligibility, setEligibility] = useState<EligibilityEntry[]>(() =>
-    isPreviewMode ? MOCK_ELIGIBILITY : []
+    isPreviewMode ? preview!.MOCK_ELIGIBILITY : []
   );
   const eligibilityRef = useRef<EligibilityEntry[]>(eligibility);
   const [eligibilityLadderId, setEligibilityLadderId] = useState<string | null>(() =>
-    isPreviewMode ? MOCK_BELT_LADDER.id : null
+    isPreviewMode ? preview!.MOCK_BELT_LADDER.id : null
   );
   const [eligibilityPendingLadderId, setEligibilityPendingLadderId] = useState<string | null>(null);
   const [eligibilityLoadError, setEligibilityLoadError] = useState<string | null>(null);
   const eligibilityCacheRef = useRef<Record<string, EligibilityEntry[]>>(
-    isPreviewMode ? { [MOCK_BELT_LADDER.id]: MOCK_ELIGIBILITY } : {}
+    isPreviewMode ? { [preview!.MOCK_BELT_LADDER.id]: preview!.MOCK_ELIGIBILITY } : {}
   );
   const eligibilityRequestSeqRef = useRef(0);
   const [promotionHistoryCache, setPromotionHistoryCache] = useState<PromotionHistoryCache>(() =>
@@ -891,7 +889,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     if (isPreviewMode) {
       const role = currentRoleRef.current;
       if (!role) throw new Error("Home is not available until studio access is verified.");
-      const payload = buildPreviewHomePayload({ today: businessDateRef.current, role });
+      const payload = preview!.buildPreviewHomePayload({ today: businessDateRef.current, role });
       stampHomeRead(payload, startHomeRead());
       return payload;
     }
@@ -929,7 +927,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       }
       throw error;
     }
-  }, [beginLiveAuthRequest, isPreviewMode, markSubscriptionRequired]);
+  }, [beginLiveAuthRequest, isPreviewMode, markSubscriptionRequired, preview]);
 
   // Home preferences: one PUT for the identity the caller saves for, never another.
   // It changes no studio facts, so it never marks them changed (no fresh re-read).
@@ -1063,10 +1061,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const timer = window.setTimeout(() => {
       const hydrationDefaults = resolvePreviewLadderHydrationDefaults(
         {
-          storedLadders: load(KEYS.beltLadders, MOCK_BELT_LADDERS),
+          storedLadders: load(KEYS.beltLadders, preview!.MOCK_BELT_LADDERS),
           currentLadderId: currentLadderIdRef.current,
-          fallbackLadders: MOCK_BELT_LADDERS,
-          fallbackLadder: MOCK_BELT_LADDER,
+          fallbackLadders: preview!.MOCK_BELT_LADDERS,
+          fallbackLadder: preview!.MOCK_BELT_LADDER,
         }
       );
       const hydratedLadderState = buildPreviewHydratedLadderState({
@@ -1075,10 +1073,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         storedRanks: load(KEYS.beltRanks, hydrationDefaults.defaultRanks),
         storedSubRankTerm: load(KEYS.subRankTerm, hydrationDefaults.defaultSubRankTerm),
         storedLadderName: load(KEYS.ladderName, hydrationDefaults.defaultLadderName),
-        primaryEligibilityLadderId: MOCK_BELT_LADDER.id,
-        primaryEligibilityRows: MOCK_ELIGIBILITY,
+        primaryEligibilityLadderId: preview!.MOCK_BELT_LADDER.id,
+        primaryEligibilityRows: preview!.MOCK_ELIGIBILITY,
       });
-      const hydratedStudents = load(KEYS.students, MOCK_STUDENTS);
+      const hydratedStudents = load(KEYS.students, preview!.MOCK_STUDENTS);
       const hydratedPromotionHistory = load(KEYS.promotionHistory, {});
       const hydratedEligibility = buildPreviewEligibilityForLadder({
         ladderId: hydratedLadderState.eligibilityLadderId,
@@ -1095,10 +1093,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       commitStudents(hydratedStudents);
       promotionHistoryCacheRef.current = hydratedPromotionHistory;
       setPromotionHistoryCache(hydratedPromotionHistory);
-      setPrograms(load(KEYS.programs, MOCK_PROGRAMS));
+      setPrograms(load(KEYS.programs, preview!.MOCK_PROGRAMS));
       setProgramsLoaded(true);
       setProgramsLoadError(null);
-      setLeads(load(KEYS.leads, MOCK_LEADS));
+      setLeads(load(KEYS.leads, preview!.MOCK_LEADS));
       setLeadsLoaded(true);
       setLeadsLoadError(null);
       applyLadderSelection(hydratedLadderState.hydratedLadders, hydratedLadderState.eligibilityLadderId);
@@ -1108,9 +1106,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       );
       setEligibilityPendingLadderId(null);
       setEligibilityLoadError(null);
-      setTemplates(load(KEYS.templates, MOCK_CLASS_TEMPLATES));
-      setSessions(load(KEYS.sessions, MOCK_SESSIONS).sort(compareSessions));
-      setAttendance(load(KEYS.attendance, MOCK_ATTENDANCE));
+      setTemplates(load(KEYS.templates, preview!.MOCK_CLASS_TEMPLATES));
+      setSessions(load(KEYS.sessions, preview!.MOCK_SESSIONS).sort(compareSessions));
+      setAttendance(load(KEYS.attendance, preview!.MOCK_ATTENDANCE));
       setStudentsLoaded(true);
       setStudentsLoadError(null);
       setCurrentUser((current) => current ? {
@@ -1127,7 +1125,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     return () => {
       window.clearTimeout(timer);
     };
-  }, [setStudentsLoaded, setPrograms, setProgramsLoaded, applyLadderSelection, commitEligibilityRows, commitStudents, isPreviewMode, setSessions]);
+  }, [setStudentsLoaded, setPrograms, setProgramsLoaded, applyLadderSelection, commitEligibilityRows, commitStudents, isPreviewMode, preview, setSessions]);
 
   const previewEligibilityForLadder = useCallback((ladderId?: string | null): EligibilityEntry[] => {
     return buildPreviewEligibilityForLadder({
@@ -1135,10 +1133,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       beltLadders: beltLaddersRef.current,
       beltRanks: beltRanksRef.current,
       students: studentsRef.current,
-      seedRows: ladderId === MOCK_BELT_LADDER.id ? MOCK_ELIGIBILITY : [],
+      seedRows: ladderId === preview!.MOCK_BELT_LADDER.id ? preview!.MOCK_ELIGIBILITY : [],
       promotionHistoryByStudent: toPromotionHistoryByStudent(promotionHistoryCacheRef.current),
     });
-  }, []);
+  }, [preview]);
 
   const beltTests = useStoreBeltTestActions({
     scope: identityReady && !subscriptionRequired && activeUserId && currentStudioId && currentRole === "admin"

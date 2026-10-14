@@ -1,22 +1,8 @@
+import { getPreviewAdapter } from "@/lib/preview-adapter-loader";
 import { useCallback, type Dispatch, type SetStateAction } from "react";
 
 import { CommandOutcomeUnknown } from "@/lib/command-outcome";
 import { api } from "@/lib/api";
-import {
-  MOCK_ATTENDANCE,
-  MOCK_BELT_LADDER,
-  MOCK_CLASS_TEMPLATES,
-  MOCK_ELIGIBILITY,
-  MOCK_LEADS,
-  MOCK_SESSIONS,
-  MOCK_STUDENTS,
-} from "@/lib/mock-data";
-import {
-  DEMO_STUDIO_NAME,
-  MOCK_BELT_LADDERS,
-  MOCK_PROGRAMS,
-  MOCK_STAFF_MEMBERS,
-} from "@/lib/preview-studio-data";
 import type { AuthUserProfile } from "@/lib/store-bootstrap-model";
 import {
   canCommitLiveMutation,
@@ -213,35 +199,35 @@ export function useStoreStudioActions({
     if (isPreviewMode) {
       clearPreviewStorage();
       const previewResponse = buildPreviewDemoResetResponse({
-        studioName: DEMO_STUDIO_NAME,
+        studioName: getPreviewAdapter().DEMO_STUDIO_NAME,
         automation: { ...PREVIEW_AUTOMATION_CLEAR_EFFECTS },
-        programs: MOCK_PROGRAMS,
-        students: MOCK_STUDENTS,
-        leads: MOCK_LEADS,
-        beltLadders: MOCK_BELT_LADDERS,
-        primaryBeltLadder: MOCK_BELT_LADDER,
-        eligibility: MOCK_ELIGIBILITY,
-        templates: MOCK_CLASS_TEMPLATES,
-        sessions: MOCK_SESSIONS,
-        attendance: MOCK_ATTENDANCE,
+        programs: getPreviewAdapter().MOCK_PROGRAMS,
+        students: getPreviewAdapter().MOCK_STUDENTS,
+        leads: getPreviewAdapter().MOCK_LEADS,
+        beltLadders: getPreviewAdapter().MOCK_BELT_LADDERS,
+        primaryBeltLadder: getPreviewAdapter().MOCK_BELT_LADDER,
+        eligibility: getPreviewAdapter().MOCK_ELIGIBILITY,
+        templates: getPreviewAdapter().MOCK_CLASS_TEMPLATES,
+        sessions: getPreviewAdapter().MOCK_SESSIONS,
+        attendance: getPreviewAdapter().MOCK_ATTENDANCE,
       });
 
       save(KEYS.studioName, previewResponse.studio_name);
       save(KEYS.students, previewResponse.students);
-      save(KEYS.programs, MOCK_PROGRAMS);
-      save(KEYS.beltLadders, MOCK_BELT_LADDERS);
+      save(KEYS.programs, getPreviewAdapter().MOCK_PROGRAMS);
+      save(KEYS.beltLadders, getPreviewAdapter().MOCK_BELT_LADDERS);
       save(KEYS.leads, previewResponse.leads);
-      save(KEYS.beltRanks, MOCK_BELT_LADDER.ranks);
+      save(KEYS.beltRanks, getPreviewAdapter().MOCK_BELT_LADDER.ranks);
       save(KEYS.sessions, previewResponse.sessions);
       save(KEYS.templates, previewResponse.templates);
       save(KEYS.attendance, previewResponse.attendance);
-      save(KEYS.subRankTerm, MOCK_BELT_LADDER.sub_rank_term || "Stripe");
-      save(KEYS.ladderName, MOCK_BELT_LADDER.name);
+      save(KEYS.subRankTerm, getPreviewAdapter().MOCK_BELT_LADDER.sub_rank_term || "Stripe");
+      save(KEYS.ladderName, getPreviewAdapter().MOCK_BELT_LADDER.name);
       resetStaffScope();
-      setStaffMembers(MOCK_STAFF_MEMBERS);
+      setStaffMembers(getPreviewAdapter().MOCK_STAFF_MEMBERS);
       setStaffLoaded(true);
       setStaffLoadError(null);
-      persistPrograms(MOCK_PROGRAMS);
+      persistPrograms(getPreviewAdapter().MOCK_PROGRAMS);
 
       applyDemoResetResponse(previewResponse);
       return previewResponse;

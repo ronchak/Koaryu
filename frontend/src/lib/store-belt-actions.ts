@@ -1,5 +1,7 @@
 "use client";
 
+import { getPreviewAdapter } from "@/lib/preview-adapter-loader";
+
 import { useCallback, useEffect, useRef } from "react";
 import { api } from "@/lib/api";
 import {
@@ -33,7 +35,6 @@ import {
   type RankTransitionKind,
 } from "@/lib/rank-transition-operation";
 import { localId } from "@/lib/store-storage";
-import { MOCK_BELT_LADDER } from "@/lib/mock-data";
 import {
   canCommitLiveMutation,
   withCurrentLiveAuthRead,
@@ -242,7 +243,7 @@ export function useStoreBeltActions({
         const previousRanks = beltRanksRef.current;
         const nextPreviewLadder = buildPreviewBeltLadderFromRanks(beltLaddersRef.current, ranks, {
           preferredLadderId: ladder.id,
-          fallbackLadder: MOCK_BELT_LADDER,
+          fallbackLadder: getPreviewAdapter().MOCK_BELT_LADDER,
           ladderName,
           subRankTerm,
           requestedSubRankTerm: options?.subRankTerm,
