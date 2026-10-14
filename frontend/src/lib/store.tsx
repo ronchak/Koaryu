@@ -1364,7 +1364,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           setStudioLoadError(null);
           markPerformance("workspace.identity_ready");
           const initialPath = pathnameRef.current;
-          const view = initialBootstrapView(initialPath);
+          const view = initialBootstrapView(initialPath, {
+            isPreviewMode,
+            pagedRosterEnabled: process.env.NEXT_PUBLIC_STUDENTS_PAGED_ROSTER !== "false",
+          });
           if (!view) return;
           const includedDatasets = bootstrapDatasets(view);
           // The protected shell is now usable. Only the route's feature payload
@@ -1978,7 +1981,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       if (["/leads", "/reports"].includes(pathname) && !leadsLoaded && !leadsLoadError) {
         void refreshLeads().catch(() => undefined);
       }
-      const needsPrograms = ["/dashboard", "/settings", "/leads", "/reports", "/schedule", "/belt-tracker"].includes(pathname)
+      const needsPrograms = ["/settings", "/leads", "/reports", "/schedule", "/belt-tracker"].includes(pathname)
         || pathname === "/students" || pathname.startsWith("/students/");
       if (needsPrograms && !programsLoaded && !programsLoadError) {
         void refreshPrograms({ includeArchived: true }).catch(() => undefined);

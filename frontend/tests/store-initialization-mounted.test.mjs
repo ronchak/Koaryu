@@ -1526,16 +1526,12 @@ for (const failedDataset of ["leads", "students", "programs", "belts", "studio"]
           { pathname, failedDataset, payload: homePayload() },
         );
         await page.addScriptTag({
-          content: buildBundle("production", { homePage: pathname === "/dashboard" }),
+          content: buildBundle("production", {
+            homePage: pathname === "/dashboard",
+            pagedRoster: failedDataset !== "students",
+          }),
         });
-        await page.waitForFunction(
-          () =>
-            fixture.store?.identityReady &&
-            fixture.requests.some((p) => p.startsWith("/dashboard/bootstrap")),
-        );
-        await page.waitForFunction(
-          () => fixture.store.programsLoaded || fixture.store.programsLoadError,
-        );
+        await page.waitForFunction(() => fixture.store?.identityReady);
         assert.equal(await page.evaluate(() => fixture.store.identityLoadError), null);
         if (pathname === "/dashboard") {
           await page.waitForFunction(() => fixture.home?.status === "ready");
@@ -1544,12 +1540,13 @@ for (const failedDataset of ["leads", "students", "programs", "belts", "studio"]
           assert.equal(await page.evaluate(() => fixture.store.beltLaddersLoadError), null);
           assert.deepEqual(
             await page.evaluate(() => fixture.requests.map((p) => p.split("?")[0]).sort()),
-            ["/dashboard/bootstrap", "/dashboard/home", "/dashboard/workspace"],
+            ["/dashboard/home", "/dashboard/workspace"],
           );
-          assert.ok(
-            await page.evaluate(() => fixture.requests.some((p) => p.includes("view=home"))),
-          );
+          assert.equal(await page.evaluate(() => fixture.store.programsLoaded), false);
         } else {
+          await page.waitForFunction(
+            () => fixture.store.programsLoaded || fixture.store.programsLoadError,
+          );
           const field = {
             students: "studentsLoadError",
             leads: "leadsLoadError",

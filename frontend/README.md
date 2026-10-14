@@ -189,12 +189,14 @@ See [docs/performance-rollout.md](../docs/performance-rollout.md) before enablin
 The store initializes once per identity scope. Committing a role does not restart
 bootstrap or the Auth subscription. Token renewal preserves the identity and
 reconciles schedule reads; account/profile scope changes discard the old data.
-An unavailable bootstrap shows a retryable identity error. It does not fan out
-into legacy dataset requests. Deploy a backend with `/dashboard/bootstrap`
+An unavailable workspace read shows a retryable identity error. Feature bootstrap
+failures remain scoped to their datasets and do not fan out into legacy reads. Deploy a backend with `/dashboard/bootstrap`
 before this frontend; mixed versions without that endpoint are unsupported.
 
-Home uses bootstrap's `home` view for studio and programs, and reads one
-payload from `/dashboard/home`, including promotions and preferences. It has
+Home uses `/dashboard/workspace` for the shell and makes no bootstrap or
+program-list request. It reads one payload from `/dashboard/home`, including
+promotions and preferences. Live paged Students uses the metadata-only `home`
+bootstrap view; preview and the full-roster fallback keep `view=students`. It has
 one loading, error or ready state; panels do not fetch independently. Preview
 mode supplies the same payload shape locally. See Dashboard loading below for
 retained paint, revalidation and readiness markers.
@@ -371,8 +373,8 @@ is excluded from production metric collection.
 The authenticated dashboard capture records allowlisted HTTP and browser resource
 timings for `/dashboard/workspace`, `/dashboard/bootstrap`, and `/dashboard/home`
 without retaining URLs, identifiers, or query values. Workspace does not emit
-`Server-Timing`, so its HTTP and resource timings are diagnostics only. Bootstrap
-and Home require successful responses, resource entries, and allowlisted
+`Server-Timing`, so its HTTP and resource timings are diagnostics only. Home
+requires a successful response, a resource entry, and allowlisted
 `Server-Timing` measurements (Home's are the `koaryu_home_*` stages). Saving
 the layout through `/dashboard/home/preferences` is not counted as Home's payload.
 
@@ -443,7 +445,7 @@ reserve the same columns and rails as the loaded view. The `koaryu-skeleton-reve
 holds placeholder space immediately and delays its appearance by 220 milliseconds.
 
 Home at `/dashboard` renders its bands from one `/dashboard/home` payload after
-workspace access is verified. The `home` bootstrap view loads studio and programs.
+workspace access is verified. Home does not request bootstrap or a program list.
 `useHome` retains successful payloads by user, studio, role and business date
 for immediate revisit paint.
 It revalidates on mount, focus, return to a visible tab, each visible minute,

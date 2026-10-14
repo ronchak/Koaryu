@@ -391,7 +391,7 @@ test("a command on Home makes exactly one payload revalidation request", async (
     );
     assert.deepEqual(
       await page.evaluate(() => window.fixture.requests.map((r) => r.path.split("?")[0])),
-      ["/dashboard/workspace", "/dashboard/bootstrap", "/dashboard/home", "/dashboard/home"],
+      ["/dashboard/workspace", "/dashboard/home", "/dashboard/home"],
     );
     await deliver(page, homePayload(), 1);
     await page.evaluate(() => window.fixture.command);
