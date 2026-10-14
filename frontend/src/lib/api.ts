@@ -108,7 +108,7 @@ function buildRequestHeaders({
   }
 
   if (typeof window !== "undefined") {
-    const activeStudioId = getActiveStudioIdCookie();
+    const activeStudioId = omitStudioHeader || USE_API_PROXY ? null : getActiveStudioIdCookie();
     headers = applyBrowserStudioHeader(headers, activeStudioId, {
       omitStudioHeader,
       useApiProxy: USE_API_PROXY,

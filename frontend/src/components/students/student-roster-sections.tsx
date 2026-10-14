@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { memo, useCallback, useLayoutEffect, useMemo, useRef } from "react";
 import { ProgramBadge } from "@/components/programs/program-picker";
 import { StatusBadge } from "@/components/students/status-badge";
 import { BeltSwatch } from "@/components/students/student-belt-swatch";
@@ -11,7 +11,6 @@ import { ModalFrame } from "@/components/ui/modal-frame";
 import { RevealText } from "@/components/ui/reveal-text";
 import {
   buildStudentRosterEmptyState,
-  formatDate,
   type SortDir,
   type SortKey,
   type StudentRosterRow,
@@ -341,6 +340,153 @@ export function StudentRosterEmptyState({
   );
 }
 
+const rosterDateFormatter = new Intl.DateTimeFormat("en-US", {
+  month: "short",
+  day: "numeric",
+  year: "numeric",
+});
+
+function formatRosterDate(value?: string | null) {
+  if (!value) return "—";
+  const date = new Date(/^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T12:00:00` : value);
+  return Number.isNaN(date.getTime()) ? "Invalid Date" : rosterDateFormatter.format(date);
+}
+
+type StudentRosterTableRowProps = {
+  row: StudentRosterRow;
+  programs: Program[];
+  rankById: RankLookup;
+  canManageRoster: boolean;
+  isSelected: boolean;
+  isBulkCommandPending: boolean;
+  inactivity: string | null;
+  onOpenStudent: (studentId: string) => void;
+  onPrefetchStudent: (studentId: string) => void;
+  toggleSelect: (studentId: string) => void;
+};
+
+// Row data stays stable while search changes; pass per-row state rather than sets or maps.
+const StudentRosterTableRow = memo(function StudentRosterTableRow({
+  row,
+  programs,
+  rankById,
+  canManageRoster,
+  isSelected,
+  isBulkCommandPending,
+  inactivity,
+  onOpenStudent,
+  onPrefetchStudent,
+  toggleSelect,
+}: StudentRosterTableRowProps) {
+  const { student } = row;
+  const studentName = getStudentName(row);
+  const guardianName = student.is_minor ? primaryGuardianName(student) : null;
+  const tags = [...row.visibleTags];
+  const moreTags = row.hiddenTagCount;
+  const hiddenTags = student.tags.slice(tags.length);
+  const belts = rosterBelts(row, programs, rankById);
+  const firstRankColor = belts.find((belt) => belt.rankColor)?.rankColor ?? null;
+  return (
+    <tr
+      data-student-id={student.id}
+      data-state={student.status}
+      onFocusCapture={() => onPrefetchStudent?.(student.id)}
+      onPointerEnter={() => onPrefetchStudent?.(student.id)}
+      onClick={() => onOpenStudent(student.id)}
+      className={styles.rosterRow}
+      data-selected={isSelected || undefined}
+    >
+      {canManageRoster ? (
+        <td data-cell="select" className="p-0">
+          <label className={styles.checkboxTarget} onClick={stopStudentSelectionPropagation}>
+            <input
+              type="checkbox"
+              checked={isSelected}
+              onClick={stopStudentSelectionPropagation}
+              onChange={() => toggleSelect(student.id)}
+              disabled={isBulkCommandPending}
+              className={styles.checkboxControl}
+            />
+            <span className="sr-only">
+              {isSelected ? `Deselect ${studentName}` : `Select ${studentName}`}
+            </span>
+          </label>
+        </td>
+      ) : null}
+      <th scope="row" data-cell="name" className={styles.studentCell}>
+        <button
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation();
+            onOpenStudent(student.id);
+          }}
+          data-open-student
+          aria-label={`Open ${studentName} profile`}
+          className={styles.studentIdentityButton}
+        >
+          <StudentAvatar student={student} size="sm" ringColor={firstRankColor} />
+          <span className={styles.studentIdentityCopy}>
+            <span className={styles.studentName}>
+              {student.preferred_name || student.legal_first_name} {student.legal_last_name}
+            </span>
+            <PhoneBeltLine belts={belts} row={row} programs={programs} />
+            {student.is_minor || tags.length > 0 ? (
+              <span className={styles.studentMeta}>
+                {student.is_minor ? (
+                  // A named guardian already says this is a minor.
+                  <span className={styles.studentGuardian}>
+                    {guardianName ? `Guardian ${guardianName}` : "Minor"}
+                  </span>
+                ) : null}
+                {tags.map((tag) => (
+                  <RevealText key={tag} className={styles.rosterTag} title={tag}>
+                    {tag}
+                  </RevealText>
+                ))}
+                {moreTags > 0 ? (
+                  <span className={styles.overflowCount} title={hiddenTags.join(", ") || undefined}>
+                    +{moreTags}
+                  </span>
+                ) : null}
+              </span>
+            ) : null}
+          </span>
+        </button>
+      </th>
+      <td data-cell="programs" className={styles.programCell}>
+        <BeltSummary belts={belts} row={row} programs={programs} />
+      </td>
+      <td data-cell="status" className={styles.statusCell}>
+        <StatusBadge status={student.status} />
+      </td>
+      <td
+        data-cell="contact"
+        className={styles.contactCell}
+        title={row.contact === "—" ? undefined : row.contact}
+      >
+        {row.contact === "—" ? (
+          <span className={styles.quietValue}>No contact on file</span>
+        ) : (
+          <RevealText className={styles.contactText}>
+            <ContactText value={row.contact} />
+          </RevealText>
+        )}
+      </td>
+      <td data-cell="since" className={styles.memberSinceCell}>
+        {formatRosterDate(student.membership_start_date)}
+      </td>
+      {inactivity ? (
+        <td data-cell="inactive" className={styles.inactiveCell}>
+          <ToneTag tone="warn">{inactivity} days</ToneTag>
+        </td>
+      ) : null}
+      <td data-cell="open" className={styles.openCell} aria-hidden="true">
+        <ChevronRight className="h-4 w-4" />
+      </td>
+    </tr>
+  );
+});
+
 export function StudentRosterTable({
   allSelected,
   beltRanks,
@@ -379,6 +525,15 @@ export function StudentRosterTable({
   toggleSelect: (studentId: string) => void;
   toggleSelectAll: () => void;
 }) {
+  // The controller creates fresh handlers. Forward to the latest committed ones
+  // without forcing every unchanged row to render on a search keystroke.
+  const handlers = useRef({ onOpenStudent, onPrefetchStudent, toggleSelect });
+  useLayoutEffect(() => {
+    handlers.current = { onOpenStudent, onPrefetchStudent, toggleSelect };
+  }, [onOpenStudent, onPrefetchStudent, toggleSelect]);
+  const openStudent = useCallback((id: string) => handlers.current.onOpenStudent(id), []);
+  const prefetchStudent = useCallback((id: string) => handlers.current.onPrefetchStudent?.(id), []);
+  const selectStudent = useCallback((id: string) => handlers.current.toggleSelect(id), []);
   const rankById = useMemo<RankLookup>(
     () => new Map((beltRanks ?? []).map((rank) => [rank.id, rank])),
     [beltRanks],
@@ -499,126 +654,25 @@ export function StudentRosterTable({
             <td data-cell="open" />
           </tr>
         ))}
-        {filtered.map((row) => {
-          const { student } = row;
-          const isSelected = selectedIds.has(student.id);
-          const studentName = getStudentName(row);
-          const guardianName = student.is_minor ? primaryGuardianName(student) : null;
-          const tags = [...row.visibleTags];
-          const moreTags = row.hiddenTagCount;
-          const hiddenTags = student.tags.slice(tags.length);
-          const belts = rosterBelts(row, programs, rankById);
-          const firstRankColor = belts.find((belt) => belt.rankColor)?.rankColor ?? null;
-          const inactivity = inactivityThreshold
-            ? inactivityByStudentId.get(student.id) || `${inactivityThreshold}+`
-            : null;
-          return (
-            <tr
-              key={student.id}
-              data-student-id={student.id}
-              data-state={student.status}
-              onFocusCapture={() => onPrefetchStudent?.(student.id)}
-              onPointerEnter={() => onPrefetchStudent?.(student.id)}
-              onClick={() => onOpenStudent(student.id)}
-              className={styles.rosterRow}
-              data-selected={isSelected || undefined}
-            >
-              {canManageRoster ? (
-                <td data-cell="select" className="p-0">
-                  <label
-                    className={styles.checkboxTarget}
-                    onClick={stopStudentSelectionPropagation}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={isSelected}
-                      onClick={stopStudentSelectionPropagation}
-                      onChange={() => toggleSelect(student.id)}
-                      disabled={isBulkCommandPending}
-                      className={styles.checkboxControl}
-                    />
-                    <span className="sr-only">
-                      {isSelected ? `Deselect ${studentName}` : `Select ${studentName}`}
-                    </span>
-                  </label>
-                </td>
-              ) : null}
-              <th scope="row" data-cell="name" className={styles.studentCell}>
-                <button
-                  type="button"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    onOpenStudent(student.id);
-                  }}
-                  data-open-student
-                  aria-label={`Open ${studentName} profile`}
-                  className={styles.studentIdentityButton}
-                >
-                  <StudentAvatar student={student} size="sm" ringColor={firstRankColor} />
-                  <span className={styles.studentIdentityCopy}>
-                    <span className={styles.studentName}>
-                      {student.preferred_name || student.legal_first_name} {student.legal_last_name}
-                    </span>
-                    <PhoneBeltLine belts={belts} row={row} programs={programs} />
-                    {student.is_minor || tags.length > 0 ? (
-                      <span className={styles.studentMeta}>
-                        {student.is_minor ? (
-                          // A named guardian already says this is a minor.
-                          <span className={styles.studentGuardian}>
-                            {guardianName ? `Guardian ${guardianName}` : "Minor"}
-                          </span>
-                        ) : null}
-                        {tags.map((tag) => (
-                          <RevealText key={tag} className={styles.rosterTag} title={tag}>
-                            {tag}
-                          </RevealText>
-                        ))}
-                        {moreTags > 0 ? (
-                          <span
-                            className={styles.overflowCount}
-                            title={hiddenTags.join(", ") || undefined}
-                          >
-                            +{moreTags}
-                          </span>
-                        ) : null}
-                      </span>
-                    ) : null}
-                  </span>
-                </button>
-              </th>
-              <td data-cell="programs" className={styles.programCell}>
-                <BeltSummary belts={belts} row={row} programs={programs} />
-              </td>
-              <td data-cell="status" className={styles.statusCell}>
-                <StatusBadge status={student.status} />
-              </td>
-              <td
-                data-cell="contact"
-                className={styles.contactCell}
-                title={row.contact === "—" ? undefined : row.contact}
-              >
-                {row.contact === "—" ? (
-                  <span className={styles.quietValue}>No contact on file</span>
-                ) : (
-                  <RevealText className={styles.contactText}>
-                    <ContactText value={row.contact} />
-                  </RevealText>
-                )}
-              </td>
-              <td data-cell="since" className={styles.memberSinceCell}>
-                {formatDate(student.membership_start_date)}
-              </td>
-              {inactivity ? (
-                <td data-cell="inactive" className={styles.inactiveCell}>
-                  <ToneTag tone="warn">{inactivity} days</ToneTag>
-                </td>
-              ) : null}
-              <td data-cell="open" className={styles.openCell} aria-hidden="true">
-                <ChevronRight className="h-4 w-4" />
-              </td>
-            </tr>
-          );
-        })}
+        {filtered.map((row) => (
+          <StudentRosterTableRow
+            key={row.student.id}
+            row={row}
+            programs={programs}
+            rankById={rankById}
+            canManageRoster={canManageRoster}
+            isSelected={selectedIds.has(row.student.id)}
+            isBulkCommandPending={isBulkCommandPending}
+            inactivity={
+              inactivityThreshold
+                ? inactivityByStudentId.get(row.student.id) || `${inactivityThreshold}+`
+                : null
+            }
+            onOpenStudent={openStudent}
+            onPrefetchStudent={prefetchStudent}
+            toggleSelect={selectStudent}
+          />
+        ))}
       </tbody>
     </table>
   );
