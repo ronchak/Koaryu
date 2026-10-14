@@ -373,8 +373,9 @@ this browser or another same-origin tab bypass cached facts for 60 seconds.
 Invoice and payment page GETs are fact-neutral and do not start that window.
 Other Billing reads still mark facts at dispatch and settlement: plans can create
 an account row, and landing/status verification can reconcile provider state.
-Returning to a current build verifies workspace access before refreshing the
-visible route; drafts remain mounted.
+Returning to a current build checks its version and workspace access concurrently.
+Visible data refreshes once only after both permit it; an unavailable or changed
+version does not refresh page data. Drafts remain mounted.
 
 Sampled production navigation timings and Web Vitals use the existing Vercel logs
 through `/api/performance`. The schema accepts fixed route labels and numeric

@@ -2019,10 +2019,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     let queued = false;
     let running = false;
     let refreshDataAllowed = true;
+    let versionAllowsRefresh: Promise<boolean> = Promise.resolve(true);
     async function drain() {
       if (disposed || running || !queued || pendingCommands()) return;
       queued = false;
       running = true;
+      const versionDecision = versionAllowsRefresh;
+      const mayRefreshData = refreshDataAllowed;
       let request: ReturnType<typeof beginLiveAuthRequest> | null = null;
       try {
         request = beginLiveAuthRequest();
@@ -2053,7 +2056,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         setStudioTimezone(workspace.studio?.timezone ?? "UTC");
         setStudioLoadError(null);
         syncStoredStudioSessionCookies(profile.user.id, profile.studio_id, profile.membership_status);
-        if (!refreshDataAllowed) return;
+        const versionAccepted = await versionDecision;
+        if (disposed || !request.isSameIdentity()) return;
+        if (pendingCommands() || queued) { queued = true; return; }
+        if (!mayRefreshData || !versionAccepted) return;
         if (pathnameRef.current === "/belt-tracker"
           || (pathnameRef.current.startsWith("/students/") && pathnameRef.current !== "/students/import")) {
           const owner = request;
@@ -2088,6 +2094,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
     const onResume = (event: Event) => {
       refreshDataAllowed = !(event instanceof CustomEvent && event.detail?.refreshData === false);
+      versionAllowsRefresh = event instanceof CustomEvent && event.detail?.versionAllowsRefresh
+        ? event.detail.versionAllowsRefresh : Promise.resolve(true);
       queued = true;
       void drain();
     };

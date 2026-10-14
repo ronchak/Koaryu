@@ -3666,3 +3666,125 @@ test("conversion at 2500 students navigates without roster reads and destination
     await browser.close();
   }
 });
+
+for (const scenario of [
+  "version-first",
+  "workspace-first",
+  "version-failure",
+  "version-malformed",
+  "version-other-environment",
+  "version-update",
+  "workspace-denied",
+  "workspace-unavailable",
+]) {
+  test(`resume overlaps one version and workspace check: ${scenario}`, async (t) => {
+    const browser = await chromium.launch();
+    try {
+      const page = await fixturePage(browser, { resumeGuard: true });
+      await page.evaluate(() => {
+        fixture.resumeVersionReads = 0;
+        fixture.resumeWorkspaceReads = 0;
+        fixture.refreshes = 0;
+        fixture.resumeStarted = performance.now();
+        window.addEventListener("koaryu:data-refresh", () => {
+          fixture.refreshes++;
+          fixture.refreshedAt = performance.now();
+        });
+        window.fetch = () => {
+          fixture.resumeVersionReads++;
+          fixture.versionStarted = performance.now();
+          return new Promise((resolve, reject) => {
+            fixture.versionResult = { resolve, reject };
+          });
+        };
+        const get = fixture.api.get;
+        fixture.api.get = (path, ...args) =>
+          path === "/dashboard/workspace"
+            ? (fixture.resumeWorkspaceReads++,
+              (fixture.workspaceStarted = performance.now()),
+              new Promise((resolve, reject) => {
+                fixture.workspaceResult = { resolve, reject };
+              }))
+            : get(path, ...args);
+        window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true }));
+        window.dispatchEvent(new Event("online"));
+      });
+      await page.waitForFunction(() => fixture.versionResult && fixture.workspaceResult);
+      assert.deepEqual(
+        await page.evaluate(() => [
+          fixture.resumeVersionReads,
+          fixture.resumeWorkspaceReads,
+          fixture.refreshes,
+        ]),
+        [1, 1, 0],
+      );
+      await page.evaluate((scenario) => {
+        fixture.finishVersion = () => {
+          if (scenario === "version-failure") fixture.versionResult.reject(Error("Offline"));
+          else
+            fixture.versionResult.resolve(
+              Response.json(
+                scenario === "version-malformed"
+                  ? {}
+                  : {
+                      service: "koaryu-frontend",
+                      environment:
+                        scenario === "version-other-environment" ? "staging" : "production",
+                      commit_sha: (scenario === "version-update" ? "b" : "a").repeat(40),
+                    },
+              ),
+            );
+        };
+        fixture.finishWorkspace = () => {
+          if (scenario === "workspace-denied")
+            fixture.workspaceResult.reject(Object.assign(Error("Denied"), { status: 401 }));
+          else if (scenario === "workspace-unavailable")
+            fixture.workspaceResult.reject(Error("Offline"));
+          else
+            fixture.workspaceResult.resolve({
+              auth: fixture.auth,
+              studio: { name: "Resumed", timezone: "UTC" },
+            });
+        };
+        if (scenario === "workspace-first") fixture.finishWorkspace();
+        else fixture.finishVersion();
+      }, scenario);
+      await flush(page);
+      assert.equal(
+        await page.evaluate(() => fixture.refreshes),
+        0,
+        "one result alone cannot refresh",
+      );
+      await page.evaluate((scenario) => {
+        if (scenario === "workspace-first") fixture.finishVersion();
+        else fixture.finishWorkspace();
+      }, scenario);
+      if (scenario === "version-first" || scenario === "workspace-first")
+        await page.waitForFunction(() => fixture.refreshes === 1);
+      else if (scenario === "workspace-denied")
+        await page.waitForFunction(() => fixture.redirects?.includes("/login"));
+      else if (scenario === "workspace-unavailable")
+        await page.waitForFunction(() => Boolean(fixture.store.studioLoadError));
+      else await flush(page);
+      await flush(page);
+      const counts = await page.evaluate(() => ({
+        version: fixture.resumeVersionReads,
+        workspace: fixture.resumeWorkspaceReads,
+        refresh: fixture.refreshes,
+        overlap: Math.abs(fixture.workspaceStarted - fixture.versionStarted),
+        duration: fixture.refreshedAt ? fixture.refreshedAt - fixture.resumeStarted : null,
+      }));
+      assert.equal(counts.version, 1);
+      assert.equal(counts.workspace, 1);
+      assert.equal(counts.refresh, ["version-first", "workspace-first"].includes(scenario) ? 1 : 0);
+      if (scenario === "version-update")
+        await page.getByRole("status").filter({ hasText: "Koaryu has been updated" }).waitFor();
+      t.diagnostic(
+        `synthetic resume: ${JSON.stringify(counts)}; both reads begin before either resolves`,
+      );
+      await page.evaluate(() => fixture.root.unmount());
+    } finally {
+      await browser.close();
+    }
+  });
+}
