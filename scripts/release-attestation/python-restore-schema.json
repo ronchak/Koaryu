@@ -898,6 +898,23 @@
       "state": "v58",
       "query": "V58_AUTOMATION_FUNCTION_STATE_SQL",
       "expected": "EXPECTED_V58_AUTOMATION_FUNCTION_STATE"
+    },
+    "readiness-v59": {
+      "kind": "readiness",
+      "state": "v59"
+    },
+    "tables-v59": {
+      "kind": "export",
+      "state": "v59",
+      "query": "V59_TIMEZONE_TABLE_STATE_SQL",
+      "expected": "EXPECTED_V59_TIMEZONE_TABLE_STATE",
+      "restored": "EXPECTED_V59_RESTORED_TIMEZONE_TABLE_STATE"
+    },
+    "functions-v59": {
+      "kind": "export",
+      "state": "v59",
+      "query": "V59_TIMEZONE_FUNCTION_STATE_SQL",
+      "expected": "EXPECTED_V59_TIMEZONE_FUNCTION_STATE"
     }
   },
   "cases": {
@@ -4353,6 +4370,54 @@
       "semanticManifests": [],
       "passLines": [
         "[restored V58] PASS canonical/restored retained expired pilot history, legacy recovery denial, ungranted quiet studios and complete GA bootstrap continuation"
+      ]
+    },
+    "v59": {
+      "format": "forward",
+      "base": "844e0e7f",
+      "constraintPairs": "v57-restore-constraint-pairs.json",
+      "docstring": "Prove V58 rows survive V59 timezone reference installation and logical restore with unchanged timezone decisions.",
+      "exports": [
+        [
+          "readiness-v58.query",
+          "readiness-v58.expected"
+        ],
+        [
+          "catalog-v58.query",
+          "catalog-v58.expected",
+          "catalog-v58.restored"
+        ],
+        [
+          "readiness-v59.query",
+          "readiness-v59.expected"
+        ],
+        [
+          "tables-v59.query",
+          "tables-v59.expected",
+          "tables-v59.restored"
+        ],
+        [
+          "functions-v59.query",
+          "functions-v59.expected"
+        ]
+      ],
+      "predecessor": [
+        "readiness-v58",
+        "catalog-v58"
+      ],
+      "checks": [
+        "readiness-v59",
+        "tables-v59",
+        "functions-v59"
+      ],
+      "absentFunctions": [
+        "private.timezone_name_known(text)",
+        "private.timezone_name_or_utc(text)"
+      ],
+      "semanticManifests": [],
+      "upgradeSnapshotCheck": "require_v59_snapshot",
+      "passLines": [
+        "[restored V59] PASS retained V58 rows, exact canonical/restored readiness and timezone continuation"
       ]
     }
   }

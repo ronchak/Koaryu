@@ -485,7 +485,7 @@ const expectedMigrationFiles = [
   "20260930192626_converted_lead_enrollment_v55.sql",
   "20261004220435_missed_class_automation_v56.sql",
   "20261005105341_automation_workflow_graph_v57.sql",
-  "20261013013243_live_billing_authority_repairs_v58.sql",
+  "20261013013243_live_billing_authority_repairs_v58.sql", "20261014083106_timezone_names_reference_v59.sql"
 ];
 const migrationBoundaries = new Map([
   ["pre", "20260814043325_default_program_memberships_to_starting_belt.sql"],
@@ -1681,7 +1681,7 @@ describe("studio-comp migration rollout guard", () => {
       "operational_readiness",
       EXPECTED_OPERATIONAL_READINESS,
     );
-    assert.match(quotedReadiness, /^operational_readiness\n"true\|153\|/);
+    assert.match(quotedReadiness, /^operational_readiness\n"true\|154\|/);
     assert.equal(
       parseSingleValueCsv(quotedReadiness, "operational_readiness"),
       EXPECTED_OPERATIONAL_READINESS,
@@ -1718,7 +1718,7 @@ describe("studio-comp migration rollout guard", () => {
     }
   });
 
-  it("derives an exact 100-to-153 packet through V58 and the Payments predecessors", () => {
+  it("derives an exact 100-to-154 packet through V59 and the Payments predecessors", () => {
     const packet = candidatePacket();
     assert.equal(packet.candidateSha, candidateSha);
     assert.equal(ROLLOUT.scheduleV25MigrationCount, 119);
@@ -1736,7 +1736,7 @@ describe("studio-comp migration rollout guard", () => {
       ],
     );
     assert.equal(ROLLOUT.v26MigrationCount, 121);
-    assert.equal(packet.migrationCount, 153);
+    assert.equal(packet.migrationCount, 154);
     assert.match(packet.intermediateHistory, /^101:[0-9a-f]{32}$/);
     assert.match(packet.recoveryHistory, /^102:[0-9a-f]{32}$/);
     assert.match(packet.convergenceHistory, /^103:[0-9a-f]{32}$/);
@@ -3510,7 +3510,7 @@ describe("studio-comp migration rollout guard", () => {
       ["v54", "20260930192626_converted_lead_enrollment_v55.sql", "fc6bfd9b249ec888ae860d4f0d2952e0dc5a18f4801dd8f1049c2c2f33e9e573", "v55"],
       ["v55", "20261004220435_missed_class_automation_v56.sql", "9e85608dcbd14e5eb5a19ff4d1ffd4851659f44b3460239a7f008d6e79efd92f", "v56"],
       ["v56", "20261005105341_automation_workflow_graph_v57.sql", "3445656d0ab5e221f5c0c9a0b8222769422f48e025c8c15ae9cc073b875dd26d", "v57"],
-      ["v57", "20261013013243_live_billing_authority_repairs_v58.sql", "a8bec5910057664712432695e00c877cb4e290534c3a7590014bf31692fdf5f8", "post"],
+      ["v57", "20261013013243_live_billing_authority_repairs_v58.sql", "a8bec5910057664712432695e00c877cb4e290534c3a7590014bf31692fdf5f8", "v58"],
     ];
     for (const [state, filename, manifestSha256, expectedAfterState] of transitions) {
       const selected = oneMigrationPacket(packet, state);
@@ -4023,7 +4023,7 @@ describe("studio-comp migration rollout guard", () => {
       const remainingPacket = testCase.bulkBlocked
         ? packetForAcceptedState(packet, testCase.beforeState)
         : oneMigrationPacket(packet, testCase.beforeState);
-      if (testCase.bulkBlocked) assert.equal(remainingPacket.pendingMigrations.length, 20);
+      if (testCase.bulkBlocked) assert.equal(remainingPacket.pendingMigrations.length, 21);
       else assert.equal(remainingPacket.pendingMigrations.length, 1);
       const plannedVersions = remainingPacket.pendingMigrations.map((filename) => filename.slice(0, 14));
       const sharedEvidence = {
@@ -4228,7 +4228,7 @@ describe("V52 lead command migration cutover with retained predecessors", () => 
   it("keeps exact V55 canonical/restored and selects only V56", () => {
     const packet = candidatePacket();
     assert.equal(ROLLOUT.v55MigrationCount, 150);
-    assert.deepEqual(packetForAcceptedState(packet, "v55").pendingMigrations, ["20261004220435_missed_class_automation_v56.sql", "20261005105341_automation_workflow_graph_v57.sql", "20261013013243_live_billing_authority_repairs_v58.sql"]);
+    assert.deepEqual(packetForAcceptedState(packet, "v55").pendingMigrations, ["20261004220435_missed_class_automation_v56.sql", "20261005105341_automation_workflow_graph_v57.sql", "20261013013243_live_billing_authority_repairs_v58.sql", "20261014083106_timezone_names_reference_v59.sql"]);
     for (const catalogState of [EXPECTED_V55_CATALOG_STATE, EXPECTED_V55_RESTORED_CATALOG_STATE]) {
       assert.deepEqual(classifyStateSnapshot(v55Snapshot(packet, { catalogState }), packet), { state: "v55", providerFingerprint: null });
     }
@@ -4256,7 +4256,7 @@ describe("V52 lead command migration cutover with retained predecessors", () => 
     const predecessor = v52Snapshot(packet);
     assert.deepEqual(classifyStateSnapshot(predecessor, packet), { state: "v52", providerFingerprint: null });
     assert.deepEqual(packetForAcceptedState(packet, "v52").pendingMigrations,
-      ["20260929152445_dashboard_roster_inactivity_v53.sql", "20260930024404_student_profile_qa_v54.sql", "20260930192626_converted_lead_enrollment_v55.sql", "20261004220435_missed_class_automation_v56.sql", "20261005105341_automation_workflow_graph_v57.sql", "20261013013243_live_billing_authority_repairs_v58.sql"]);
+      ["20260929152445_dashboard_roster_inactivity_v53.sql", "20260930024404_student_profile_qa_v54.sql", "20260930192626_converted_lead_enrollment_v55.sql", "20261004220435_missed_class_automation_v56.sql", "20261005105341_automation_workflow_graph_v57.sql", "20261013013243_live_billing_authority_repairs_v58.sql", "20261014083106_timezone_names_reference_v59.sql"]);
     for (const change of [
       { v52ReleaseManifest: null },
       { v51CompatibilityReadiness: null },
@@ -4275,7 +4275,7 @@ describe("V52 lead command migration cutover with retained predecessors", () => 
     const packet = candidatePacket();
     assert.deepEqual(classifyStateSnapshot(v53Snapshot(packet), packet), { state: "v53", providerFingerprint: null });
     assert.deepEqual(packetForAcceptedState(packet, "v53").pendingMigrations,
-      ["20260930024404_student_profile_qa_v54.sql", "20260930192626_converted_lead_enrollment_v55.sql", "20261004220435_missed_class_automation_v56.sql", "20261005105341_automation_workflow_graph_v57.sql", "20261013013243_live_billing_authority_repairs_v58.sql"]);
+      ["20260930024404_student_profile_qa_v54.sql", "20260930192626_converted_lead_enrollment_v55.sql", "20261004220435_missed_class_automation_v56.sql", "20261005105341_automation_workflow_graph_v57.sql", "20261013013243_live_billing_authority_repairs_v58.sql", "20261014083106_timezone_names_reference_v59.sql"]);
     for (const change of [
       { operationalReadiness: EXPECTED_OPERATIONAL_READINESS },
       { v53ReleaseManifest: null },
@@ -4298,7 +4298,7 @@ describe("V52 lead command migration cutover with retained predecessors", () => 
     assert.equal(ROLLOUT.v54MigrationCount, 149);
     assert.deepEqual(classifyStateSnapshot(v54Snapshot(packet), packet), { state: "v54", providerFingerprint: null });
     assert.deepEqual(classifyStateSnapshot(v54Snapshot(packet, { catalogState: EXPECTED_V54_RESTORED_CATALOG_STATE }), packet), { state: "v54", providerFingerprint: null });
-    assert.deepEqual(packetForAcceptedState(packet, "v54").pendingMigrations, ["20260930192626_converted_lead_enrollment_v55.sql", "20261004220435_missed_class_automation_v56.sql", "20261005105341_automation_workflow_graph_v57.sql", "20261013013243_live_billing_authority_repairs_v58.sql"]);
+    assert.deepEqual(packetForAcceptedState(packet, "v54").pendingMigrations, ["20260930192626_converted_lead_enrollment_v55.sql", "20261004220435_missed_class_automation_v56.sql", "20261005105341_automation_workflow_graph_v57.sql", "20261013013243_live_billing_authority_repairs_v58.sql", "20261014083106_timezone_names_reference_v59.sql"]);
     for (const change of [
       { operationalReadiness: EXPECTED_OPERATIONAL_READINESS },
       { v54StudentProfileState: null },

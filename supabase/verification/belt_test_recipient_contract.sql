@@ -29,11 +29,11 @@ $$;
 CREATE FUNCTION pg_temp.recipient_bad(x JSONB,recipients JSONB,code TEXT,message TEXT,label TEXT,revision BIGINT DEFAULT 1,operation UUID DEFAULT gen_random_uuid()) RETURNS VOID LANGUAGE sql AS $$
  SELECT pg_temp.recipient_error(format('SELECT pg_temp.recipient_approve(%L,%L,%L,%L)',x,recipients,operation,revision),code,message,label,(x->>'studio')::uuid)
 $$;
-CREATE FUNCTION pg_temp.recipient_fixture() RETURNS JSONB LANGUAGE plpgsql AS $$
+CREATE FUNCTION pg_temp.recipient_fixture(zone TEXT DEFAULT 'UTC') RETURNS JSONB LANGUAGE plpgsql AS $$
 DECLARE actor UUID:=gen_random_uuid(); owner UUID:=gen_random_uuid(); studio UUID:=gen_random_uuid(); program UUID:=gen_random_uuid(); ladder UUID:=gen_random_uuid(); rank0 UUID:=gen_random_uuid(); rank1 UUID:=gen_random_uuid(); rank2 UUID:=gen_random_uuid(); student UUID:=gen_random_uuid(); membership UUID:=gen_random_uuid(); session UUID:=gen_random_uuid(); attendance UUID:=gen_random_uuid(); event UUID:=gen_random_uuid();
 BEGIN
 INSERT INTO auth.users(id,email,email_confirmed_at) VALUES(actor,actor::text||'@example.invalid',clock_timestamp()),(owner,owner::text||'@example.invalid',clock_timestamp());
-INSERT INTO public.studios(id,name,slug,owner_id,timezone) VALUES(studio,'Recipient race',studio,owner,'UTC');
+INSERT INTO public.studios(id,name,slug,owner_id,timezone) VALUES(studio,'Recipient race',studio,owner,zone);
 INSERT INTO public.staff_roles(studio_id,user_id,role) VALUES(studio,actor,'admin'),(studio,owner,'admin');
 INSERT INTO public.studio_subscriptions(studio_id,status,comped) VALUES(studio,'active',false);
 INSERT INTO public.programs(id,studio_id,name) VALUES(program,studio,'Program');
@@ -407,6 +407,17 @@ BEGIN
     SET LOCAL ROLE service_role;
     PERFORM pg_temp.recipient_bad(x,req,'P0001','AUTOMATION_STATE_CONFLICT','unrecognized studio zone uses UTC hold day');
     RESET ROLE;
+END $$;
+ALTER TABLE public.studios ALTER COLUMN timezone DROP NOT NULL;
+DO $$
+DECLARE zone TEXT; x JSONB; result JSONB;
+BEGIN
+    FOREACH zone IN ARRAY ARRAY['America/Los_Angeles','Unknown/Timezone',NULL] LOOP
+        x:=pg_temp.recipient_fixture(zone);
+        result:=pg_temp.recipient_approve(x);
+        PERFORM pg_temp.recipient_check(jsonb_array_length(result#>'{payload,items}')=1,
+            'approval timezone '||coalesce(zone,'NULL'));
+    END LOOP;
 END $$;
 SELECT count(*)||' belt recipient assertions passed' AS result FROM pg_temp.recipient_checks;
 ROLLBACK;

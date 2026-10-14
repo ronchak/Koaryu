@@ -48,3 +48,19 @@ bootstrap rows, then tests GA authority and onboarding continuation on canonical
 logical-restored copies. V58 uses the existing V57 CHECK normalization pairs. The
 complete table facts change only the bootstrap checkpoint column's nullability;
 canonical, restored and Supabase profile pins remain separate.
+
+V59 installs `private.timezone_names` with PostgreSQL's accepted names at migration
+execution. Stable invoker helpers use its primary key; PostgreSQL still supplies
+live conversion rules. The 12 current SQL callers preserve their UTC fallback or
+validation rejection, including onboarding's New York default for NULL and the
+workflow validator's syntax and namespace restrictions. Inventory reconciliation
+runs in `timezone_names_reference_contract.sql`, never in routine readiness. A
+future PostgreSQL timezone-name addition/removal requires an additive reference
+refresh and the same disposable reconciliation proof. V59's full preflight V40
+retains V58-shaped success rows through the generated V39 compatibility bridge.
+Its forward restore case binds V58 and V59 independently and permits only the
+named V31 expectation singleton to change among retained rows.
+V59 preserves the four separate table profiles. The existing Supabase canonical
+V58 table pin was reproduced locally with the Supabase ALL-table-grant bootstrap;
+V59's Supabase canonical and logical-restored pins come from that same disposable
+profile. This does not inspect or authorize a hosted database.

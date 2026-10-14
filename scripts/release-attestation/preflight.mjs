@@ -50,8 +50,8 @@ export function renderPreflight(state) {
     }),
     ...checks,
   ], { separateTerminator: state.id === "v39" || state.id === "v40" });
-  if (["v57", "v58"].includes(state.id)) {
+  if (["v57", "v58", "v59"].includes(state.id)) {
     rendered = rendered.replace(" SET search_path TO 'pg_catalog'\nAS", " SET search_path TO 'pg_catalog'\n SET TimeZone TO 'UTC'\n SET DateStyle TO 'ISO, YMD'\n SET IntervalStyle TO 'postgres'\nAS");
   }
-  return ["v52", "v53", "v56", "v57", "v58"].includes(state.id) ? rendered.replace(/^[ \t]+$/gm, "") : rendered;
+  return ["v52", "v53", "v56", "v57", "v58", "v59"].includes(state.id) ? rendered.replace(/^[ \t]+$/gm, "") : rendered;
 }

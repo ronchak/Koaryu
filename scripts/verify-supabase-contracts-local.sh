@@ -211,12 +211,12 @@ if [[ ${#verification_files[@]} -eq 0 ]]; then
   echo "ERROR: No contract files found in $VERIFICATION_DIR" >&2
   exit 1
 fi
-if [[ ${#migration_files[@]} -ne 153 ]]; then
-  echo "ERROR: Expected the canonical 153-migration chain, found ${#migration_files[@]}." >&2
+if [[ ${#migration_files[@]} -ne 154 ]]; then
+  echo "ERROR: Expected the canonical 154-migration chain, found ${#migration_files[@]}." >&2
   exit 1
 fi
-if [[ ${#verification_files[@]} -ne 76 ]]; then
-  echo "ERROR: Expected the canonical 76-contract inventory, found ${#verification_files[@]}." >&2
+if [[ ${#verification_files[@]} -ne 77 ]]; then
+  echo "ERROR: Expected the canonical 77-contract inventory, found ${#verification_files[@]}." >&2
   exit 1
 fi
 if [[ ! -f "$VERIFICATION_DIR/schedule_window_read_contract.sql" ]]; then
@@ -2303,7 +2303,9 @@ verification_index=0
 for verification_file in "${verification_files[@]}"; do
   verification_index=$((verification_index + 1))
   verification_filename="$(basename "$verification_file")"
-  if [[ "$verification_filename" == "live_billing_ga_contract.sql" ]]; then continue; fi
+  case "$verification_filename" in
+    live_billing_ga_contract.sql|timezone_names_reference_contract.sql|belt_test_recipient_contract.sql|workflow_current_facts_contract.sql|workflow_invoice_episode_contract.sql|workflow_advance_contract.sql) continue ;;
+  esac
 
   echo "[contract $verification_index/$verification_total] RUN $verification_filename"
   if run_interruptible "$PSQL" "${psql_args[@]}" --file="$verification_file"; then
@@ -2343,10 +2345,29 @@ run_interruptible python3 "$ROOT_DIR/scripts/verify-v57-v58-restore-contract.py"
 run_interruptible "$PSQL" "${psql_args[@]}" --single-transaction \
   --file="$MIGRATION_DIR/20261013013243_live_billing_authority_repairs_v58.sql" \
   --command="INSERT INTO supabase_migrations.schema_migrations(version,name) VALUES('20261013013243','live_billing_authority_repairs_v58');"
-final_readiness="$({ cd "$ROOT_DIR"; node --input-type=module --eval "import { FINAL_OPERATIONAL_READINESS_SQL } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(FINAL_OPERATIONAL_READINESS_SQL);"; } | "$PSQL" "${psql_args[@]}" --tuples-only --no-align)"
-(cd "$ROOT_DIR" && node --input-type=module --eval "import { validateOperationalReadiness } from './scripts/studio-comp-migration-rollout.mjs'; validateOperationalReadiness(process.argv[1]);" "$final_readiness")
+v58_readiness="$({ cd "$ROOT_DIR"; node --input-type=module --eval "import { V58_OPERATIONAL_READINESS_SQL } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(V58_OPERATIONAL_READINESS_SQL);"; } | "$PSQL" "${psql_args[@]}" --tuples-only --no-align)"
+(cd "$ROOT_DIR" && node --input-type=module --eval "import { EXPECTED_V58_OPERATIONAL_READINESS } from './scripts/studio-comp-migration-rollout.mjs'; if (process.argv[1] !== EXPECTED_V58_OPERATIONAL_READINESS) throw new Error('V58 readiness mismatch');" "$v58_readiness")
 run_interruptible "$PSQL" "${psql_args[@]}" --file="$VERIFICATION_DIR/live_billing_ga_contract.sql"
 echo "[V58 readiness] PASS complete GA catalog and authority"
+
+echo "[V59 upgrade/restore] RUN retained V58 rows and timezone continuation"
+run_interruptible python3 "$ROOT_DIR/scripts/verify-v58-v59-restore-contract.py" \
+  "$PG_DUMP" "$PG_RESTORE" "$CREATEDB" "$PSQL" "$SOCKET_DIR" "$PG_PORT" "$TEMP_DIR" "$ROOT_DIR"
+run_interruptible "$PSQL" "${psql_args[@]}" --single-transaction \
+  --file="$MIGRATION_DIR/20261014083106_timezone_names_reference_v59.sql" \
+  --command="INSERT INTO supabase_migrations.schema_migrations(version,name) VALUES('20261014083106','timezone_names_reference_v59');"
+final_readiness="$({ cd "$ROOT_DIR"; node --input-type=module --eval "import { FINAL_OPERATIONAL_READINESS_SQL } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(FINAL_OPERATIONAL_READINESS_SQL);"; } | "$PSQL" "${psql_args[@]}" --tuples-only --no-align)"
+(cd "$ROOT_DIR" && node --input-type=module --eval "import { validateOperationalReadiness } from './scripts/studio-comp-migration-rollout.mjs'; validateOperationalReadiness(process.argv[1]);" "$final_readiness")
+run_interruptible "$PSQL" "${psql_args[@]}" --file="$VERIFICATION_DIR/timezone_names_reference_contract.sql"
+for verification_filename in belt_test_recipient_contract.sql workflow_current_facts_contract.sql workflow_invoice_episode_contract.sql workflow_advance_contract.sql; do
+  echo "[V59 contract] RUN $verification_filename"
+  run_interruptible "$PSQL" "${psql_args[@]}" --file="$VERIFICATION_DIR/$verification_filename"
+  echo "[V59 contract] PASS $verification_filename"
+done
+echo "[V59 readiness] PASS exact catalog, V58 compatibility and timezone behavior"
+echo "[V59 timing] RUN old catalog predicate and cached lookup"
+run_interruptible "$PSQL" "${psql_args[@]}" --command="EXPLAIN ANALYZE SELECT 1 FROM pg_catalog.pg_timezone_names WHERE name='America/Los_Angeles'; EXPLAIN ANALYZE SELECT private.timezone_name_known('America/Los_Angeles');"
+
 
 echo "[concurrency] RUN billing command ownership and lock ordering"
 run_interruptible python3 "$ROOT_DIR/scripts/verify-billing-command-concurrency.py" "$PSQL" "$SOCKET_DIR" "$PG_PORT"
