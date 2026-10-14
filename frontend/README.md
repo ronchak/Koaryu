@@ -328,6 +328,11 @@ Changing a form cannot turn that unresolved request into a new refund. Generic
 tab refresh and cohort totals are not proof that the refunded payment is fresh.
 See [refund completion verification](../docs/remediation/refund-completion-verification.md).
 
+Lead conversion navigates as soon as the command returns the student id. It marks
+the roster partial and invalidates eligibility; the student detail, next roster
+visit and next Belt Tracker visit read their own current data. Conversion does
+not start a full roster refresh in the background.
+
 ## Navigation authentication recovery
 
 Password sign-in synchronizes redirect cookies before navigating; the destination

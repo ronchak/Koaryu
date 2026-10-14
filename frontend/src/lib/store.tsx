@@ -1243,7 +1243,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   // Belt Tracker owns its initial eligibility read.
   useEffect(() => {
-    if (pathname !== "/belt-tracker" || !identityReady || !currentLadderId
+    if (pathname !== "/belt-tracker" || !identityReady || !beltsHydratedRef.current || !currentLadderId
       || eligibilityLadderId === currentLadderId || eligibilityPendingLadderId
       || eligibilityLoadError) return;
     let current = true;
@@ -1785,6 +1785,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     studentsRef,
   });
 
+  const invalidateConvertedStudent = useCallback(() => {
+    // Conversion returns a lead receipt, not a complete roster snapshot.
+    // Fence older reads and let the destination routes verify their own data.
+    studentMutationEpochRef.current += 1;
+    studentRosterRequestSequenceRef.current += 1;
+    setStudentsMayBePartial(true);
+    setStudentsLastLoadedAt(null);
+    beltsHydratedRef.current = false;
+    clearEligibilityState();
+  }, [clearEligibilityState]);
+
   const {
     addLead,
     leadCreate,
@@ -1811,7 +1822,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     persistLeads,
     persistStudents,
     programsRef,
-    refreshStudents,
+    invalidateConvertedStudent,
     setLeads,
     setLeadsLoaded,
     setLeadsLoadError,

@@ -3274,9 +3274,9 @@ test("follow-up recovery enrollment uses the current row for navigation without 
     await page.evaluate(() => fixture.rowReads[0].resolve(fixture.currentLead));
     await page.waitForFunction(() => !fixture.leadController.pendingLeadIds.has("lead-1"));
     assert.deepEqual(await page.evaluate(() => fixture.redirects), ["/students/student-current"]);
-    await page.waitForFunction(() => Boolean(fixture.rejectReplayRoster));
-    await page.evaluate(() => fixture.rejectReplayRoster(Error("Roster refresh unavailable")));
     await flush(page);
+    assert.equal(await page.evaluate(() => Boolean(fixture.rejectReplayRoster)), false);
+    assert.equal(await page.evaluate(() => fixture.store.studentsMayBePartial), true);
     assert.equal(await page.evaluate(() => fixture.leadController.leadActionError), null);
     await page.evaluate(() => fixture.root.unmount());
   } finally {
@@ -3369,50 +3369,30 @@ test("follow-up recovery remains saved and reserved after bounded token-renewal 
   }
 });
 
-test("follow-up recovery keeps confirmed enrollment roster reconciliation running when the row read fails", async () => {
+test("follow-up recovery invalidates enrollment even when its row read fails", async () => {
   const browser = await chromium.launch();
   try {
     const page = await prepareFollowUpReplay(browser, { enroll: true });
-    await page.evaluate(() => {
-      const get = fixture.api.get;
-      fixture.api.get = (path, token) =>
-        path.startsWith("/students?")
-          ? new Promise((resolve) => {
-              fixture.resolveReplayRoster = resolve;
-            })
-          : get(path, token);
-    });
+    const before = await page.evaluate(
+      () => fixture.requests.filter((r) => r.path.startsWith("/students?")).length,
+    );
     await confirmFollowUpReplay(page);
     assert.equal(await page.evaluate(() => fixture.rowReads.length), 1);
-    await page.waitForFunction(() => Boolean(fixture.resolveReplayRoster));
     await page.evaluate(() => fixture.rowReads[0].reject(Error("Row read unavailable")));
     await page.getByRole("button", { name: "Refresh lead details", exact: true }).waitFor();
+    assert.equal(await page.evaluate(() => fixture.store.studentsMayBePartial), true);
+    assert.equal(
+      await page.evaluate(
+        () => fixture.requests.filter((r) => r.path.startsWith("/students?")).length,
+      ),
+      before,
+    );
     assert.equal(
       await page.evaluate(() => fixture.leadController.pendingLeadIds.has("lead-1")),
       true,
     );
     assert.deepEqual(await page.evaluate(() => fixture.redirects ?? []), []);
-    await page.evaluate(() =>
-      fixture.resolveReplayRoster({
-        items: [{ ...fixture.student, legal_first_name: "Reconciled enrollment" }],
-        total: 1,
-        page_size: 200,
-        page_ordinal: 1,
-        has_next: false,
-        has_previous: false,
-      }),
-    );
-    await page.waitForFunction(() =>
-      fixture.store.students.some(
-        (student) => student.legal_first_name === "Reconciled enrollment",
-      ),
-    );
-    assert.equal(
-      await page.evaluate(() => fixture.leadController.pendingLeadIds.has("lead-1")),
-      true,
-    );
     assert.match(await page.locator("aside").innerText(), /Follow-up saved/);
-    assert.equal(await page.evaluate(() => fixture.commandWrites.length), 2);
     await page.evaluate(() => fixture.root.unmount());
   } finally {
     await browser.close();
@@ -3578,3 +3558,111 @@ for (const status of [403, 404, 503])
       await browser.close();
     }
   });
+
+test("conversion at 2500 students navigates without roster reads and destinations reverify", async (t) => {
+  const browser = await chromium.launch();
+  try {
+    const page = await fixturePage(browser, {
+      path: "/leads",
+      leadController: true,
+      detailController: true,
+      rosterController: true,
+      pagedRoster: true,
+    });
+    await page.evaluate(async () => {
+      fixture.ladder = { id: "ladder-1", name: "Test", sub_rank_term: "Stripe", ranks: [] };
+      await fixture.store.setCurrentLadder("ladder-1");
+      fixture.rosterRows = Array.from({ length: 2500 }, (_, i) => ({
+        ...fixture.student,
+        id: `student-${i}`,
+      }));
+      const get = fixture.api.get;
+      fixture.api.get = async (path, ...args) => {
+        if (path.startsWith("/students?")) {
+          fixture.requests.push({ path, atMs: performance.now() });
+          const q = new URL(path, "http://fixture.local").searchParams;
+          const page = Number(q.get("page") ?? 1);
+          return {
+            items: fixture.rosterRows.slice((page - 1) * 200, page * 200),
+            total: fixture.rosterRows.length,
+            page_size: 200,
+            page_ordinal: page,
+            has_next: page * 200 < fixture.rosterRows.length,
+            has_previous: page > 1,
+            next_cursor: "page-" + (page + 1),
+          };
+        }
+        return get(path, ...args);
+      };
+      fixture.api.post = async (path) => {
+        fixture.requests.push({ path, atMs: performance.now() });
+        const student = { ...fixture.student, id: "student-new", legal_first_name: "Converted" };
+        fixture.rosterRows.unshift(student);
+        fixture.useNewEligibility = true;
+        return { ...fixture.lead, stage: "enrolled", converted_student_id: student.id };
+      };
+      fixture.started = performance.now();
+      fixture.beforeRoster = fixture.requests.filter((r) => r.path.startsWith("/students?")).length;
+      fixture.beforeEligibility = fixture.eligibilityReads;
+      fixture.convert = fixture.leadController.handleConvertLead(fixture.store.leads[0]);
+    });
+    await page.waitForFunction(() => fixture.redirects?.includes("/students/student-new"));
+    const immediate = await page.evaluate(() => ({
+      elapsed: performance.now() - fixture.started,
+      reads:
+        fixture.requests.filter((r) => r.path.startsWith("/students?")).length -
+        fixture.beforeRoster,
+      eligibility: fixture.eligibilityReads - fixture.beforeEligibility,
+      partial: fixture.store.studentsMayBePartial,
+    }));
+    assert.equal(immediate.reads, 0);
+    assert.equal(immediate.eligibility, 0);
+    assert.equal(immediate.partial, true);
+    await page.evaluate(() => {
+      fixture.studentId = "student-new";
+      const get = fixture.api.get;
+      fixture.api.get = (path, ...args) =>
+        path === "/students/student-new"
+          ? (fixture.requests.push({ path }), Promise.resolve(fixture.rosterRows[0]))
+          : get(path, ...args);
+      fixture.navigate("/students/student-new");
+      fixture.mountDetail();
+    });
+    await page.waitForFunction(
+      () => fixture.detail?.student?.id === "student-new" && !fixture.detail?.isLoadingStudent,
+    );
+    assert.equal(
+      await page.evaluate(
+        () => fixture.requests.filter((r) => r.path === "/students/student-new").length,
+      ),
+      1,
+    );
+    await page.evaluate(() => {
+      fixture.unmountDetail();
+      fixture.navigate("/students");
+      fixture.mountRoster();
+    });
+    await page.waitForFunction(() =>
+      fixture.roster?.filtered?.some((s) => s.student.id === "student-new"),
+    );
+    assert.equal(
+      await page.evaluate(
+        () =>
+          fixture.requests.filter((r) => r.path.startsWith("/students?")).length -
+          fixture.beforeRoster,
+      ),
+      1,
+    );
+    await page.evaluate(() => {
+      fixture.unmountRoster();
+      fixture.navigate("/belt-tracker");
+    });
+    await page.waitForFunction(() => fixture.eligibilityReads === fixture.beforeEligibility + 1);
+    t.diagnostic(
+      `synthetic conversion to navigation: ${immediate.elapsed.toFixed(1)}ms; 2500-row roster: 0 reads before navigation (previous full load: 13 pages); next roster: 1 page; detail: 1; eligibility: 1 on visit`,
+    );
+    await page.evaluate(() => fixture.root.unmount());
+  } finally {
+    await browser.close();
+  }
+});
