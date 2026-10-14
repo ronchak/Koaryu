@@ -34,13 +34,16 @@ function bundle() {
     const process={env:{NODE_ENV:'production'}},modules=[${modules.join(",")}],cache={};
     function require(id){if(cache[id])return cache[id].exports;const m=cache[id]={exports:{}};modules[id](m,m.exports,require);return m.exports;}
     const React=require(${react}),root=require(${dom}).createRoot(document.getElementById('root'));
-    const Roster=require(${roster}).StudentRosterPageContent,Ledger=require(${ledger}).LeadPipelineBoard,Strip=require(${strip}).LeadStageStrip,noop=()=>{};
-    function Students({input}){
+    const Roster=require(${roster}).StudentRosterPageContent,Ledger=require(${ledger}).LeadPipelineBoard,Strip=require(${strip}).LeadStageStrip,noop=()=>{},noPrograms=[];
+    function Students({input:initialInput}){
+      const [input,setInput]=React.useState(initialInput);
+      const [search,setSearch]=React.useState('');
       const [selectedIds,setSelectedIds]=React.useState(new Set());
+      window.fixture.updateStudents=patch=>setInput(previous=>({...previous,...patch}));
       const filtered=input.filtered,allSelected=filtered.length>0&&filtered.every(row=>selectedIds.has(row.student.id));
       return React.createElement(Roster,{
         actionMessage:null,activeBulkPanel:null,activeLoadError:null,bulkActionError:null,bulkStatus:'active',deleteError:null,
-        canCreateStudents:false,canManageRoster:true,filtered,programs:[],programFilter:'',search:'',statusFilter:'',sortKey:'name',sortDir:'asc',
+        canCreateStudents:false,canManageRoster:true,filtered,programs:noPrograms,programFilter:'',search,statusFilter:'',sortKey:'name',sortDir:'asc',
         fullRosterRequested:false,hasActiveFilters:false,hasNextPage:false,hasPreviousPage:false,hasNewStudentFilter:false,
         inactivityThreshold:null,inactivityByStudentId:new Map(),isAdding:false,isAddingTags:false,isBulkCommandPending:false,isDeleting:false,
         isInitialRosterLoading:false,isNewStudentYtd:false,isPagedLoading:false,isRosterRefreshing:false,isUpdatingStatus:false,
@@ -48,8 +51,8 @@ function bundle() {
         showForm:false,studentsCount:filtered.length,tagInput:'',totalPages:1,usesDerivedRosterFilters:true,visibleTotal:filtered.length,
         onAddStudent:noop,onAddStudentSubmit:noop,onAddTags:noop,onBulkStatusChange:noop,onBulkStatusUpdate:noop,onCancelDelete:noop,
         onCancelStatus:noop,onCancelTags:noop,onClearFilters:noop,onCloseStudentForm:noop,onDeleteSelected:noop,onDismissActionMessage:noop,
-        onDismissRosterQueryNotice:()=>window.fixture.dismissed++,onImportCsv:noop,onNextPage:noop,onOpenStudent:noop,onPrefetchStudent:noop,
-        onPreviousPage:noop,onProgramFilterChange:noop,onRetryRosterLoad:noop,onSearchChange:noop,onSort:noop,onStatusFilterChange:noop,
+        onDismissRosterQueryNotice:()=>window.fixture.dismissed++,onImportCsv:noop,onNextPage:noop,onOpenStudent:id=>window.fixture.opened.push([id,search]),onPrefetchStudent:id=>window.fixture.prefetched.push([id,search]),
+        onPreviousPage:noop,onProgramFilterChange:noop,onRetryRosterLoad:noop,onSearchChange:setSearch,onSort:noop,onStatusFilterChange:noop,
         onTagInputChange:noop,onToggleBulkPanel:noop,...input,selectedIds,selectedCount:selectedIds.size,allSelected,
         onToggleSelect:id=>setSelectedIds(previous=>{const next=new Set(previous);next.has(id)?next.delete(id):next.add(id);return next;}),
         onToggleSelectAll:()=>setSelectedIds(allSelected?new Set():new Set(filtered.map(row=>row.student.id)))
@@ -129,7 +132,7 @@ async function mount(t, kind, input = {}, width = 1440) {
   });
   await page.setContent(`<style>*{box-sizing:border-box}${styles}</style><main id="root"></main>`);
   await page.evaluate(() => {
-    window.fixture = { dismissed: 0, moves: [] };
+    window.fixture = { dismissed: 0, moves: [], opened: [], prefetched: [] };
   });
   await page.addScriptTag({ content: source });
   const props = kind === "students" ? { filtered: students, ...input } : { leads, today, ...input };
@@ -243,6 +246,94 @@ test("roster changes from phone rows at 640 to table at 641 and reserves twelve 
   const loading = await mount(t, "students", { isInitialRosterLoading: true });
   await expect(loading.locator("tbody tr")).toHaveCount(12);
   await expect(loading.locator("[data-student-id]")).toHaveCount(0);
+});
+
+test("unchanged rows keep their DOM and text observers while search handlers stay current", async (t) => {
+  const page = await mount(t, "students");
+  await page.evaluate(() => {
+    window.fixture.rowNodes = [...document.querySelectorAll("[data-student-id]")];
+    window.fixture.rowObserverObservations = 0;
+    const NativeResizeObserver = window.ResizeObserver;
+    window.ResizeObserver = class extends NativeResizeObserver {
+      observe(element, options) {
+        if (element.closest("[data-student-id]")) window.fixture.rowObserverObservations++;
+        super.observe(element, options);
+      }
+    };
+  });
+  const search = page.getByPlaceholder("Search students", { exact: true });
+  await search.pressSequentially("Ada");
+  await expect(search).toHaveValue("Ada");
+  await page.evaluate(
+    () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+  );
+  assert.equal(await page.evaluate(() => window.fixture.rowObserverObservations), 0);
+  assert.equal(
+    await page.evaluate(() =>
+      window.fixture.rowNodes.every(
+        (node) => node === document.querySelector(`[data-student-id="${node.dataset.studentId}"]`),
+      ),
+    ),
+    true,
+  );
+  const row = page.locator('[data-student-id="ada"]');
+  await row.getByRole("button", { name: "Open Ada Student profile", exact: true }).click();
+  assert.deepEqual(await page.evaluate(() => window.fixture.opened), [["ada", "Ada"]]);
+  assert.equal(
+    await page.evaluate(() =>
+      window.fixture.prefetched.some(([id, query]) => id === "ada" && query === "Ada"),
+    ),
+    true,
+  );
+  await row.getByRole("checkbox").check();
+  await expect(row).toHaveAttribute("data-selected", "true");
+  await expect(
+    row.getByRole("checkbox", { name: "Deselect Ada Student", exact: true }),
+  ).toBeChecked();
+  await page.evaluate(() => window.fixture.updateStudents({ isBulkCommandPending: true }));
+  await expect(row.getByRole("checkbox")).toBeDisabled();
+  await page.evaluate(() =>
+    window.fixture.updateStudents({ isBulkCommandPending: false, canManageRoster: false }),
+  );
+  await expect(row.getByRole("checkbox")).toHaveCount(0);
+  await expect(page.locator("table")).toHaveAttribute("data-selectable", "false");
+});
+
+test("roster row data and date formatting update without changing row identity", async (t) => {
+  const page = await mount(t, "students");
+  const row = page.locator('[data-student-id="ada"]');
+  await expect(row.locator('[data-cell="since"]')).toHaveText("Jan 2, 2026");
+  await page.evaluate(() => {
+    window.fixture.adaRow = document.querySelector('[data-student-id="ada"]');
+  });
+  const updated = students.map((row) => ({
+    ...row,
+    contact: "new@example.test",
+    student: {
+      ...row.student,
+      preferred_name: "Updated",
+      status: "on_hold",
+      membership_start_date: "invalid",
+    },
+  }));
+  await page.evaluate((filtered) => window.fixture.updateStudents({ filtered }), updated);
+  await expect(row).toHaveAttribute("data-state", "on_hold");
+  await expect(
+    row.getByRole("button", { name: "Open Updated Student profile", exact: true }),
+  ).toBeVisible();
+  await expect(row.locator('[data-cell="contact"]')).toHaveText("new@example.test");
+  await expect(row.locator('[data-cell="since"]')).toHaveText("Invalid Date");
+  assert.equal(
+    await page.evaluate(
+      () => window.fixture.adaRow === document.querySelector('[data-student-id="ada"]'),
+    ),
+    true,
+  );
+  await page.evaluate(
+    (filtered) => window.fixture.updateStudents({ filtered }),
+    updated.map((row) => ({ ...row, student: { ...row.student, membership_start_date: null } })),
+  );
+  await expect(row.locator('[data-cell="since"]')).toHaveText("—");
 });
 
 test("each of five lead strip tiles toggles its stage or No owner focus", async (t) => {
