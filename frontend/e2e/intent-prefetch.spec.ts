@@ -6,13 +6,82 @@ if (enabled && !["localhost", "127.0.0.1"].includes(new URL(origin).hostname))
   throw new Error("Prefetch tests require loopback preview.");
 const check = enabled ? test : test.skip;
 
-for (const intent of ["hover", "focus"] as const) {
+check(
+  "a warmed static Billing navigation and local tab changes make no document or RSC requests",
+  async ({ page }) => {
+    const warm = page.waitForResponse(
+      (response) =>
+        new URL(response.url()).pathname === "/billing" &&
+        response.request().headers()["next-router-prefetch"] === "1",
+    );
+    await page.goto(`${origin}/dashboard`);
+    await expect(page.locator("html")).toHaveAttribute(
+      "data-koaryu-data-plane",
+      "disposable-preview",
+    );
+    const response = await warm;
+    expect(response.status()).toBe(200);
+    await response.finished();
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+        ),
+    );
+    const requests: string[] = [];
+    page.on("request", (request) => {
+      if (
+        request.isNavigationRequest() ||
+        (new URL(request.url()).pathname === "/billing" && request.headers().rsc === "1")
+      )
+        requests.push(request.url());
+    });
+    await page
+      .getByRole("link", { name: "Billing", exact: true })
+      .filter({ visible: true })
+      .click();
+    await expect(page).toHaveURL(`${origin}/billing`);
+    await expect(page.getByRole("heading", { name: "Billing", exact: true })).toBeVisible();
+    for (const [name, tab] of [
+      ["Tuition Plans", "plans"],
+      ["Invoices", "invoices"],
+      ["Setup", ""],
+    ]) {
+      const button = page
+        .getByRole("navigation", { name: "Billing views" })
+        .getByRole("button", { name, exact: true });
+      await button.click();
+      await expect(button).toHaveAttribute("aria-pressed", "true");
+      expect(new URL(page.url()).searchParams.get("tab") ?? "").toBe(tab);
+    }
+    expect(requests).toEqual([]);
+  },
+);
+
+for (const connection of [
+  { saveData: true, effectiveType: "4g" },
+  { saveData: false, effectiveType: "2g" },
+]) {
   check(
-    `production navigation prefetches Billing on ${intent} without navigating`,
+    `constrained connection ${JSON.stringify(connection)} skips automatic and intent requests but allows a forced miss`,
     async ({ page }) => {
-      const requests: string[] = [];
+      await page.addInitScript(
+        (connection) =>
+          Object.defineProperty(navigator, "connection", { configurable: true, value: connection }),
+        connection,
+      );
+      const requests: {
+        prefetch: string | undefined;
+        rsc: string | undefined;
+        document: boolean;
+      }[] = [];
       page.on("request", (request) => {
-        if (new URL(request.url()).pathname === "/billing") requests.push(request.url());
+        if (new URL(request.url()).pathname === "/billing")
+          requests.push({
+            prefetch: request.headers()["next-router-prefetch"],
+            rsc: request.headers().rsc,
+            document: request.isNavigationRequest(),
+          });
       });
       await page.goto(`${origin}/dashboard`);
       await expect(page.locator("html")).toHaveAttribute(
@@ -22,34 +91,19 @@ for (const intent of ["hover", "focus"] as const) {
       const link = page
         .getByRole("link", { name: "Billing", exact: true })
         .filter({ visible: true });
-      await expect(link).toBeVisible();
+      await link.hover();
+      await link.focus();
+      await page.waitForTimeout(500);
       expect(requests).toHaveLength(0);
-      if (intent === "hover") await link.hover();
-      else await link.focus();
-      await expect.poll(() => requests.length).toBeGreaterThan(0);
-      expect(requests.every((url) => new URL(url).searchParams.has("_rsc"))).toBe(true);
-      await expect(page).toHaveURL(`${origin}/dashboard`);
+      await link.click();
+      await expect(page).toHaveURL(`${origin}/billing`);
+      await expect(page.getByRole("heading", { name: "Billing", exact: true })).toBeVisible();
+      expect(requests.length).toBeGreaterThan(0);
+      expect(
+        requests.every(
+          (request) => request.prefetch === undefined && request.rsc === "1" && !request.document,
+        ),
+      ).toBe(true);
     },
   );
 }
-
-check("data-saving mode skips speculative Billing requests", async ({ page }) => {
-  await page.addInitScript(() =>
-    Object.defineProperty(navigator, "connection", {
-      configurable: true,
-      value: { saveData: true, effectiveType: "4g" },
-    }),
-  );
-  const requests: string[] = [];
-  page.on("request", (request) => {
-    if (new URL(request.url()).pathname === "/billing") requests.push(request.url());
-  });
-  await page.goto(`${origin}/dashboard`);
-  await expect(page.locator("html")).toHaveAttribute(
-    "data-koaryu-data-plane",
-    "disposable-preview",
-  );
-  await page.getByRole("link", { name: "Billing", exact: true }).filter({ visible: true }).hover();
-  await page.waitForTimeout(500);
-  expect(requests).toHaveLength(0);
-});

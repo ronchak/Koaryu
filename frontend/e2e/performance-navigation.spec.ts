@@ -13,6 +13,13 @@ for (const placement of ["side", "collapsed", "top", "mobile"] as const) {
     check(
       `navigation stays stable in ${placement} layout with motion ${reducedMotion}`,
       async ({ page }) => {
+        // Force a cache miss so this case continues to measure pending feedback.
+        await page.addInitScript(() =>
+          Object.defineProperty(navigator, "connection", {
+            configurable: true,
+            value: { saveData: true, effectiveType: "4g" },
+          }),
+        );
         await page.emulateMedia({ reducedMotion });
         await page.setViewportSize({ width: placement === "mobile" ? 390 : 1280, height: 900 });
         await page.addInitScript(

@@ -339,6 +339,11 @@ The backend shares an in-progress signing-key refresh across authentication
 requests. Followers await completion asynchronously for at most three seconds,
 then verify their own tokens. Expired keys are never reused to grant access.
 
+Navigation links use Next's default prefetch. Marked prefetch requests skip the
+session proxy; document and ordinary RSC navigations retain it. Automatic link
+prefetch stays off on save-data and 2G connections. Login warms Dashboard once
+on the first input focus or change; record-route intent prefetch remains in place.
+
 ### Navigation recovery
 
 Temporary auth-provider errors retain the session and offer a retry of the original
