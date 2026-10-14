@@ -326,8 +326,10 @@ See [refund completion verification](../docs/remediation/refund-completion-verif
 
 ## Navigation authentication recovery
 
-Navigation checks `/auth/me` when studio state needs refreshing and for billing
-access checks. These reads retry once on network failures or HTTP 502/503/504,
+Navigation checks `/auth/me` when studio state needs refreshing and for Billing
+Connect access checks. Ordinary Billing uses the verified workspace role for its
+restricted view; billing endpoints enforce access on every request. Billing tab
+changes use native history and do not request a new server route. These reads retry once on network failures or HTTP 502/503/504,
 with a four-second deadline per attempt including the response body. A short
 `Retry-After` is honored; longer waits return the unavailable page without an
 early retry. Invalid credentials, denied access, and malformed membership data

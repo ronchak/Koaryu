@@ -373,28 +373,12 @@ describe("payer collection facts", () => {
 });
 
 describe("billing cold-load frame", () => {
-  it("matches the Suspense fallback to every requested tab and handles invalid or repeated tab parameters", async () => {
-    for (const requested of [
-      "overview",
-      "plans",
-      "families",
-      "enrollments",
-      "invoices",
-      "reports",
-      "unknown",
-      ["reports", "plans"],
-      undefined,
-    ]) {
-      const view = await BillingPage({ searchParams: Promise.resolve({ tab: requested }) });
-      const html = renderToStaticMarkup(view);
-      const activeTab = Array.isArray(requested)
-        ? requested[0]
-        : requested === "unknown" || requested === undefined
-          ? "overview"
-          : requested;
-      assert.match(html, new RegExp(`data-billing-placeholder="${activeTab}"`));
-      assert.equal((html.match(/koaryu-skeleton-reveal/g) ?? []).length, 1);
-    }
+  it("renders a synchronous static page with a query-independent Suspense fallback", () => {
+    const view = BillingPage();
+    assert.equal(typeof view.then, "undefined");
+    const html = renderToStaticMarkup(view);
+    assert.match(html, /data-billing-placeholder="overview"/);
+    assert.equal((html.match(/koaryu-skeleton-reveal/g) ?? []).length, 1);
   });
   it("renders the real header, review and tab bar with one delayed placeholder and a neutral count", () => {
     const html = renderToStaticMarkup(React.createElement(BillingPageFallback));

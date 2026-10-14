@@ -266,7 +266,9 @@ export async function updateSession(request: NextRequest) {
     }
   }
 
-  if (isBillingRoute(pathname)) {
+  // Ordinary Billing verifies its role in the workspace/controller and API.
+  // Connect redirects still need the server-side admin gate on full loads.
+  if (isBillingRoute(pathname) && pathname !== "/billing" && pathname !== "/billing/") {
     if (!apiBaseUrl) {
       return serviceUnavailable();
     }
