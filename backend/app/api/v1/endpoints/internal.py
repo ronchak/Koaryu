@@ -296,7 +296,7 @@ async def acknowledge_operational_alert(
             status_code=status.HTTP_403_FORBIDDEN, detail="Invalid internal secret."
         )
 
-    async def _provider_operation(client):
+    def _provider_operation(client):
         result = OperationalAlertService(client).acknowledge(
             environment=environment,
             episode_id=episode_id,

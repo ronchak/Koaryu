@@ -73,7 +73,7 @@ def test_unverifiable_subscription_preserves_diagnostics_without_financial_query
 
 def test_endpoint_resolves_membership_once_and_does_not_blanket_gate_subscription():
     async def run(provider, operation, **kwargs):
-        return await operation(provider)
+        return operation(provider)
 
     with (
         patch("app.api.v1.endpoints.billing.run_supabase_operation", side_effect=run),
