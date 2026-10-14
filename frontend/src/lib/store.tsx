@@ -290,6 +290,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   );
   const beltsHydratedRef = useRef(false);
   const [beltRefreshGeneration, setBeltRefreshGeneration] = useState(0);
+  const requestedBeltRefreshGenerationRef = useRef(0);
   // Hydration tracks attempted route loads; metadata readiness requires success,
   // including an authoritative empty result.
   const beltLaddersLoadedRef = useRef(isPreviewMode);
@@ -1254,15 +1255,19 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   // Belt Tracker owns its initial eligibility read.
   useEffect(() => {
-    if (pathname !== "/belt-tracker" || !identityReady || !beltsHydratedRef.current || !currentLadderId
+    if (pathname !== "/belt-tracker" || !identityReady || !beltsHydratedRef.current
+      || requestedBeltRefreshGenerationRef.current !== beltRefreshGeneration || !currentLadderId
       || eligibilityLadderId === currentLadderId || eligibilityPendingLadderId
       || eligibilityLoadError) return;
     let current = true;
     queueMicrotask(() => {
-      if (current) void loadEligibilityForLadder(currentLadderId).catch(() => undefined);
+      if (current && beltsHydratedRef.current
+        && requestedBeltRefreshGenerationRef.current === beltRefreshGeneration) {
+        void loadEligibilityForLadder(currentLadderId).catch(() => undefined);
+      }
     });
     return () => { current = false; };
-  }, [pathname, identityReady, currentLadderId, eligibilityLadderId,
+  }, [beltRefreshGeneration, pathname, identityReady, currentLadderId, eligibilityLadderId,
     eligibilityPendingLadderId, eligibilityLoadError, loadEligibilityForLadder]);
 
   // Authentication and Data Fetching
@@ -2030,7 +2035,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (isPreviewMode || !identityReady || !currentStudioId || !currentRole || subscriptionRequired || initialFeaturePending) return;
     const timer = window.setTimeout(() => {
-      if (pathname === "/belt-tracker" && !beltsHydratedRef.current) {
+      if (pathname === "/belt-tracker" && (!beltsHydratedRef.current
+        || requestedBeltRefreshGenerationRef.current !== beltRefreshGeneration)) {
+        // A bootstrap may hydrate metadata without consuming a conversion invalidation.
+        requestedBeltRefreshGenerationRef.current = beltRefreshGeneration;
         beltsHydratedRef.current = true;
         void refreshBeltsRef.current?.().catch(() => setBeltLaddersLoadError("Belt plans could not be loaded. Please retry."));
       }
