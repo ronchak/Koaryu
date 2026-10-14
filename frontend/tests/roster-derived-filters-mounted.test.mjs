@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { after, before, test } from "node:test";
 import { chromium } from "@playwright/test";
 import { createCommonJsPacker } from "./helpers/store-browser-harness.mjs";
@@ -7,7 +8,7 @@ import { createCommonJsPacker } from "./helpers/store-browser-harness.mjs";
 function bundle(pagedRoster = true) {
   const cssModule = `exports.__esModule=true;exports.default=new Proxy({},{get:(_target,name)=>String(name)});`;
   const { add, modules } = createCommonJsPacker({
-    "next/navigation": `const router={replace(){},push(){}};exports.useRouter=()=>router;exports.useSearchParams=()=>new URLSearchParams(window.location.search);`,
+    "next/navigation": `const router={replace(){},push(href){history.pushState(null,'',href);window.dispatchEvent(new Event('fixture:navigate'));}};exports.useRouter=()=>router;exports.useSearchParams=()=>new URLSearchParams(window.location.search);`,
     "next/dynamic": `exports.__esModule=true;exports.default=()=>()=>null;`,
     "next/link": `exports.__esModule=true;exports.default=({children,href,prefetch,...props})=>require('react').createElement('a',{href:typeof href==='string'?href:href.pathname,...props},children);`,
     "@/lib/use-resume-refresh": `exports.useResumeRefresh=()=>{};`,
@@ -26,7 +27,7 @@ function bundle(pagedRoster = true) {
   const dom = add("react-dom/client");
   const controller = add("@/lib/students-page-controller");
   const content = add("@/components/students/student-roster-page-content");
-  return `(()=>{const process={env:{NODE_ENV:'production',NEXT_PUBLIC_STUDENTS_PAGED_ROSTER:'${pagedRoster}'}};const modules=[${modules.join(",")}],cache={};function require(id){if(cache[id])return cache[id].exports;const m=cache[id]={exports:{}};modules[id](m,m.exports,require);return m.exports;}const React=require(${react});const f=window.fixture;function Roster(){const c=require(${controller}).useStudentsPageController({config:f.config,programsStore:f.programsStore,scheduleStore:f.scheduleStore,studentsStore:f.studentsStore,studioStore:f.studioStore});f.roster=c.contentProps;return React.createElement(require(${content}).StudentRosterPageContent,c.contentProps);}require(${dom}).createRoot(document.getElementById('root')).render(React.createElement(Roster));})();`;
+  return `(()=>{const process={env:{NODE_ENV:'production',NEXT_PUBLIC_STUDENTS_PAGED_ROSTER:'${pagedRoster}'}};const modules=[${modules.join(",")}],cache={};function require(id){if(cache[id])return cache[id].exports;const m=cache[id]={exports:{}};modules[id](m,m.exports,require);return m.exports;}const React=require(${react});const f=window.fixture;function Roster(){const c=require(${controller}).useStudentsPageController({config:f.config,programsStore:f.programsStore,scheduleStore:f.scheduleStore,studentsStore:f.studentsStore,studioStore:f.studioStore});f.roster=c.contentProps;return React.createElement(require(${content}).StudentRosterPageContent,c.contentProps);}function Navigation(){const [path,setPath]=React.useState(location.pathname);React.useEffect(()=>{const update=()=>setPath(location.pathname);window.addEventListener('fixture:navigate',update);window.addEventListener('popstate',update);return ()=>{window.removeEventListener('fixture:navigate',update);window.removeEventListener('popstate',update);};},[]);return path==='/students'?React.createElement(Roster):React.createElement('button',{onClick:()=>history.back()},'Back to students');}require(${dom}).createRoot(document.getElementById('root')).render(React.createElement(Navigation));})();`;
 }
 
 const sources = { paged: bundle(), fallback: bundle(false) };
@@ -38,7 +39,7 @@ after(async () => {
   await browser?.close();
 });
 
-async function mount({ preview = true, paged = true, query = "" } = {}) {
+async function mount({ preview = true, paged = true, query = "", longRoster = false } = {}) {
   const page = await browser.newPage();
   page.setDefaultTimeout(6000);
   const errors = [];
@@ -50,66 +51,85 @@ async function mount({ preview = true, paged = true, query = "" } = {}) {
       : route.abort(),
   );
   await page.goto(url);
-  await page.evaluate((preview) => {
-    const student = (id, first) => ({
-      id,
-      studio_id: "studio-a",
-      legal_first_name: first,
-      legal_last_name: "Lane",
-      email: `${first.toLowerCase()}@example.invalid`,
-      status: "active",
-      membership_start_date: "2026-01-01",
-      guardians: [],
-      program_memberships: [],
-      tags: [],
-      created_at: "2026-01-01T00:00:00Z",
+  await page.evaluate(
+    ({ preview, longRoster }) => {
+      const student = (id, first) => ({
+        id,
+        studio_id: "studio-a",
+        legal_first_name: first,
+        legal_last_name: "Lane",
+        email: `${first.toLowerCase()}@example.invalid`,
+        status: "active",
+        membership_start_date: "2026-01-01",
+        guardians: [],
+        program_memberships: [],
+        tags: [],
+        created_at: "2026-01-01T00:00:00Z",
+      });
+      const students = longRoster
+        ? Array.from({ length: 50 }, (_, index) =>
+            student(`student-${index}`, `Student ${String(index).padStart(2, "0")}`),
+          )
+        : [student("student-a", "Ari"), student("student-b", "Bo")];
+      const f = (window.fixture = { pageReads: [], scheduleReads: [] });
+      f.config = {
+        businessDate: "2026-10-05",
+        currentRole: "admin",
+        isPreviewMode: preview,
+        token: preview ? null : "synthetic-token",
+      };
+      f.programsStore = {
+        programs: [],
+        programsLoadError: null,
+        programsLoaded: true,
+        refreshPrograms: async () => {},
+      };
+      f.scheduleStore = {
+        sessions: [{ id: "recent-class", date: "2026-10-04" }],
+        attendance: [{ student_id: "student-b", session_id: "recent-class", status: "present" }],
+        refreshScheduleRange: (...args) =>
+          new Promise((resolve, reject) => f.scheduleReads.push({ args, resolve, reject })),
+      };
+      f.studioStore = {
+        currentStudioId: "studio-a",
+        identityGeneration: 1,
+        currentUserId: "user-a",
+      };
+      f.studentsStore = {
+        addStudent: async () => {},
+        bulkAddTagsToStudents: async () => {},
+        bulkUpdateStudentStatus: async () => {},
+        deleteStudents: async () => {},
+        listStudentsPage: async (query) => {
+          f.pageReads.push(query);
+          return {
+            items: longRoster ? students : [students[0]],
+            total: longRoster ? students.length : 1,
+            page_ordinal: 1,
+            has_next: false,
+            has_previous: false,
+            next_cursor: null,
+            previous_cursor: null,
+          };
+        },
+        refreshStudents: async () => {},
+        students,
+        studentsLastLoadedAt: Date.now(),
+        studentsLoadError: null,
+        studentsLoaded: true,
+        studentsMayBePartial: false,
+      };
+    },
+    { preview, longRoster },
+  );
+  if (longRoster) {
+    await page.addStyleTag({
+      content: readFileSync(
+        new URL("../src/components/students/student-records.module.css", import.meta.url),
+        "utf8",
+      ),
     });
-    const students = [student("student-a", "Ari"), student("student-b", "Bo")];
-    const f = (window.fixture = { pageReads: [], scheduleReads: [] });
-    f.config = {
-      businessDate: "2026-10-05",
-      currentRole: "admin",
-      isPreviewMode: preview,
-      token: preview ? null : "synthetic-token",
-    };
-    f.programsStore = {
-      programs: [],
-      programsLoadError: null,
-      programsLoaded: true,
-      refreshPrograms: async () => {},
-    };
-    f.scheduleStore = {
-      sessions: [{ id: "recent-class", date: "2026-10-04" }],
-      attendance: [{ student_id: "student-b", session_id: "recent-class", status: "present" }],
-      refreshScheduleRange: (...args) =>
-        new Promise((resolve, reject) => f.scheduleReads.push({ args, resolve, reject })),
-    };
-    f.studioStore = { currentStudioId: "studio-a", identityGeneration: 1, currentUserId: "user-a" };
-    f.studentsStore = {
-      addStudent: async () => {},
-      bulkAddTagsToStudents: async () => {},
-      bulkUpdateStudentStatus: async () => {},
-      deleteStudents: async () => {},
-      listStudentsPage: async (query) => {
-        f.pageReads.push(query);
-        return {
-          items: [students[0]],
-          total: 1,
-          page_ordinal: 1,
-          has_next: false,
-          has_previous: false,
-          next_cursor: null,
-          previous_cursor: null,
-        };
-      },
-      refreshStudents: async () => {},
-      students,
-      studentsLastLoadedAt: Date.now(),
-      studentsLoadError: null,
-      studentsLoaded: true,
-      studentsMayBePartial: false,
-    };
-  }, preview);
+  }
   await page.addScriptTag({ content: sources[paged ? "paged" : "fallback"] });
   await page.waitForFunction(() => Boolean(window.fixture.roster));
   return { page, errors };
@@ -214,6 +234,32 @@ test("live paged inactivity remains server-owned with normalized search and no s
       })),
       { search: "Ari", inactivityDays: 14, scheduleReads: 0, derived: false },
     );
+    assert.deepEqual(errors, []);
+  } finally {
+    await page.close();
+  }
+});
+
+test("returning from a lower roster row restores document scroll and row focus", async () => {
+  const { page, errors } = await mount({ preview: false, longRoster: true });
+  try {
+    await page.waitForFunction(
+      () => fixture.roster.filtered.length === 50 && !fixture.roster.isInitialRosterLoading,
+    );
+    const row = page.locator('[data-student-id="student-35"]');
+    const open = row.locator("button[data-open-student]");
+    await open.scrollIntoViewIfNeeded();
+    const offset = await page.evaluate(() => document.scrollingElement.scrollTop);
+    assert.ok(offset > 500, `Expected a real document scroll, got ${offset}`);
+    await open.click();
+    await page.getByRole("button", { name: "Back to students", exact: true }).waitFor();
+    assert.equal(new URL(page.url()).pathname, "/students/student-35");
+    await page.getByRole("button", { name: "Back to students", exact: true }).click();
+    await page.waitForFunction(
+      () =>
+        document.activeElement?.closest("[data-student-id]")?.dataset.studentId === "student-35",
+    );
+    assert.ok(Math.abs((await page.evaluate(() => window.scrollY)) - offset) <= 1);
     assert.deepEqual(errors, []);
   } finally {
     await page.close();

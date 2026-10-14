@@ -372,19 +372,6 @@ export function useStudentsPageController({
   const incomingRosterHref = safeStudentsReturn(`/students?${searchParams}`);
   const lastRosterHrefRef = useRef(incomingRosterHref);
 
-  useEffect(() => {
-    const saved = initialReturnRef.current;
-    if (!saved || (!pagedLoaded && !usesDerivedRosterFilters)) return;
-    const frame = requestAnimationFrame(() => {
-      const row = document.querySelector(`[data-student-id="${CSS.escape(saved.focusId)}"]`);
-      row?.querySelector<HTMLElement>("button[data-open-student]")?.focus({ preventScroll: true });
-      document.getElementById("main-content")?.scrollTo({ top: saved.scroll });
-      consumeRosterReturn(saved);
-      initialReturnRef.current = null;
-    });
-    return () => cancelAnimationFrame(frame);
-  }, [pagedLoaded, usesDerivedRosterFilters]);
-
   const newStudents = useMemo<StudentRosterNewStudentWindow | undefined>(() => {
     if (isNewStudentYtd) {
       return "ytd";
@@ -858,6 +845,20 @@ export function useStudentsPageController({
     usesDerivedRosterFilters,
   });
 
+  useEffect(() => {
+    const saved = initialReturnRef.current;
+    if (!saved || isInitialRosterLoading || (!pagedLoaded && !usesDerivedRosterFilters)) return;
+    const frame = requestAnimationFrame(() => {
+      const row = document.querySelector(`[data-student-id="${CSS.escape(saved.focusId)}"]`);
+      if (!row) return;
+      row.querySelector<HTMLElement>("button[data-open-student]")?.focus({ preventScroll: true });
+      window.scrollTo({ top: saved.scroll, behavior: "instant" });
+      consumeRosterReturn(saved);
+      initialReturnRef.current = null;
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [filtered, isInitialRosterLoading, pagedLoaded, usesDerivedRosterFilters]);
+
   function acquireBulkCommand(command: StudentRosterBulkCommand) {
     if (bulkCommandOwnerRef.current?.scope === command.scope) return false;
     bulkCommandOwnerRef.current = command;
@@ -1240,7 +1241,7 @@ export function useStudentsPageController({
           page: pageRef.current,
           cursor: pagedCursorRef.current,
           history: [...cursorHistoryRef.current],
-          scroll: document.getElementById("main-content")?.scrollTop ?? 0,
+          scroll: document.scrollingElement?.scrollTop ?? window.scrollY,
           focusId: studentId,
           savedAt: Date.now(),
         });
