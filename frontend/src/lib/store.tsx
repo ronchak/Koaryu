@@ -1788,6 +1788,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const invalidateConvertedStudent = useCallback(() => {
     // Conversion returns a lead receipt, not a complete roster snapshot.
     // Fence older reads and let the destination routes verify their own data.
+    studentsRevisionRef.current += 1;
     studentMutationEpochRef.current += 1;
     studentRosterRequestSequenceRef.current += 1;
     setStudentsMayBePartial(true);
