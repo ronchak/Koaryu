@@ -157,13 +157,9 @@ async function executeApiRequest<T>(
   let dispatched = false;
   const isCommand = !["GET", "HEAD", "OPTIONS"].includes(init.method ?? "GET");
   const finishCommand = isCommand ? beginPendingCommand() : undefined;
-  // Only these two GETs use the bounded SELECT-only billing page reader.
-  // Plans may ensure an account row; landing/status may reconcile provider state.
-  const factNeutralBillingPage =
-    (init.method ?? "GET") === "GET" &&
-    /^\/billing\/(?:invoices|payments)\/page(?:\?|$)/.test(path);
-  const changesFacts =
-    marksDashboardFacts && (isCommand || (path.startsWith("/billing/") && !factNeutralBillingPage));
+  // Billing authorization can repair subscription access before reading rows.
+  // Home verifies that same access, so page GETs retain dispatch/settlement marks.
+  const changesFacts = marksDashboardFacts && (isCommand || path.startsWith("/billing/"));
   if (changesFacts) markDashboardFactsChanged();
   try {
     dispatched = !controller.signal.aborted;

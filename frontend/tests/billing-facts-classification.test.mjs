@@ -25,11 +25,10 @@ for (const path of [
     assert.equal(needsFreshDashboardFacts(), false);
     const started = performance.now();
     await api.get(path, "synthetic");
-    const neutral = /^\/billing\/(invoices|payments)\/page(?:\?|$)/.test(path);
-    assert.equal(marks, neutral ? 0 : 2);
-    assert.equal(needsFreshDashboardFacts(), !neutral);
+    assert.equal(marks, 2);
+    assert.equal(needsFreshDashboardFacts(), true);
     t.diagnostic(
-      `synthetic read settled in ${(performance.now() - started).toFixed(1)}ms; facts marks: ${marks}; next Home fresh: ${!neutral}`,
+      `synthetic read settled in ${(performance.now() - started).toFixed(1)}ms; facts marks: ${marks}; next Home fresh: true`,
     );
   });
 }

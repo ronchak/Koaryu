@@ -331,7 +331,9 @@ See [refund completion verification](../docs/remediation/refund-completion-verif
 Lead conversion navigates as soon as the command returns the student id. It marks
 the roster partial and invalidates eligibility; the student detail, next roster
 visit and next Belt Tracker visit read their own current data. Conversion does
-not start a full roster refresh in the background.
+not start a full roster refresh in the background. A mounted Belt Tracker
+re-verifies through its existing read owner. A full roster read already in flight
+may retry its stale snapshot once rather than being cancelled by conversion.
 
 ## Navigation authentication recovery
 
@@ -339,7 +341,11 @@ Password sign-in synchronizes redirect cookies before navigating; the destinatio
 verifies workspace access without an extra route refresh. The active studio-state
 cookie lasts 12 hours; archived and no-studio states expire after five minutes.
 Every workspace response re-syncs this hint. It only chooses redirects and never
-grants access: workspace and endpoint checks remain authoritative.
+grants access: workspace and endpoint checks remain authoritative. If workspace
+rejects an active selector with generic 403, initialization clears that selector
+and reads the profile once without it. Removed or archived membership corrects
+the hint and redirects; an active profile permits one more workspace attempt.
+The profile alone never restores access.
 
 Navigation checks `/auth/me` when studio state needs refreshing and for Billing
 Connect access checks. Ordinary Billing uses the verified workspace role for its
@@ -375,12 +381,20 @@ never clears access refusals. A pending Home read is still joined so its result
 reaches the remounted page. Focus, timed and explicit revalidation still run.
 Explicit refresh and post-command reconciliation remain fresh. Commands in
 this browser or another same-origin tab bypass cached facts for 60 seconds.
-Invoice and payment page GETs are fact-neutral and do not start that window.
-Other Billing reads still mark facts at dispatch and settlement: plans can create
-an account row, and landing/status verification can reconcile provider state.
+All Billing reads, including invoice and payment pages, mark facts at dispatch
+and settlement. Their row readers select data, but manager authorization with
+`require_platform_subscription=True` can repair `studio_subscriptions` through
+`PlatformBillingService.get_access_status_row`. Home's
+`DashboardHomeService.resolve_context_sync` verifies that same subscription
+access before assembling its payload. This authorization path is not treated
+as a fact-neutral read. Plans can also create an account row; landing/status
+verification can reconcile provider state.
 Returning to a current build checks its version and workspace access concurrently.
 Visible data refreshes once only after both permit it; an unavailable or changed
-version does not refresh page data. Drafts remain mounted.
+version does not refresh page data. Access loss is applied immediately, while
+resume-triggered feature reinitialization and recovery navigation wait for the
+version decision. A newer explicit retry or identity invalidates deferred recovery.
+Drafts remain mounted while access remains valid.
 
 Sampled production navigation timings and Web Vitals use the existing Vercel logs
 through `/api/performance`. The schema accepts fixed route labels and numeric
