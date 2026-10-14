@@ -51,7 +51,6 @@ export default function LoginPage() {
     if (process.env.NEXT_PUBLIC_PREVIEW_MODE === "true") {
       setTimeout(() => {
         router.push("/dashboard");
-        router.refresh();
       }, 500);
       return;
     }
@@ -92,7 +91,6 @@ export default function LoginPage() {
           ? "/dashboard"
           : "/onboarding";
       router.push(destination);
-      router.refresh();
     } catch (postLoginError) {
       const message =
         postLoginError instanceof Error
