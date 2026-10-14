@@ -236,11 +236,11 @@ class DashboardBootstrapService:
         ):
             if label not in context.datasets:
                 return None
+            # Dependency failures belong to the studio projection. No students
+            # operation has run yet, so do not classify them as students faults.
+            studio = await studio_task if studio_task is not None else None
             started = time.perf_counter()
             try:
-                # Student ages use the studio clock. Wait outside the lane so
-                # no worker/client is held while another dataset completes.
-                studio = await studio_task if studio_task is not None else None
 
                 def operation(client):
                     service = cls(client)

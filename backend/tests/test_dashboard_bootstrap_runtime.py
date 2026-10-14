@@ -21,7 +21,7 @@ from tests.test_dashboard_bootstrap_service import METHOD_LABELS, patch_fetches
 
 
 class BootstrapFixture:
-    def __init__(self, *, blocked=()):
+    def __init__(self, *, blocked=(), config=None):
         self.clients = []
         self.events = []
         self.blocked = blocked
@@ -51,7 +51,8 @@ class BootstrapFixture:
                 return super().table(name)
 
         self.factory = Client
-        config = SupabaseLaneConfig(3, 3, 0.1, 2.0)
+        config = config or SupabaseLaneConfig(3, 3, 0.1, 2.0)
+        self.workers = config.max_workers
         self.runtime = SupabaseProviderRuntime(
             config,
             config,
@@ -61,14 +62,16 @@ class BootstrapFixture:
         )
 
     async def warm(self):
-        barrier = threading.Barrier(3)
+        barrier = threading.Barrier(self.workers)
 
         def operation(client):
             client.touch("warm")
             barrier.wait(2)
 
-        await asyncio.gather(*(self.runtime.run_interactive(operation) for _ in range(3)))
-        assert len(self.clients) == 3
+        await asyncio.gather(
+            *(self.runtime.run_interactive(operation) for _ in range(self.workers))
+        )
+        assert len(self.clients) == self.workers
 
     def auth(self, service, *_args):
         service.supabase.touch("auth")
@@ -276,4 +279,132 @@ def test_bootstrap_dataset_wait_uses_original_request_deadline(bootstrap_fixture
             await fixture.close()
 
     with bootstrap_fixture(fixture):
+        asyncio.run(scenario())
+
+
+def test_bootstrap_burst_saturates_production_lane_and_drains(bootstrap_fixture):
+    from app.main import INTERACTIVE_PROVIDER_CONFIG
+
+    assert (INTERACTIVE_PROVIDER_CONFIG.max_workers, INTERACTIVE_PROVIDER_CONFIG.max_queue) == (
+        4,
+        16,
+    )
+    fixture = BootstrapFixture(blocked=("studio", "programs"), config=INTERACTIVE_PROVIDER_CONFIG)
+
+    async def scenario():
+        requests = []
+        try:
+            await fixture.warm()
+            token = request_deadline.set(time.monotonic() + 0.5)
+            try:
+                requests.append(asyncio.create_task(fixture.call()))
+                for event in fixture.started.values():
+                    assert await asyncio.to_thread(event.wait, 1)
+                requests.extend(asyncio.create_task(fixture.call()) for _ in range(30))
+                results = await asyncio.gather(*requests, return_exceptions=True)
+                assert all(isinstance(result, HTTPException) for result in results)
+                statuses = {result.status_code for result in results}
+                assert statuses == {503, 504}
+                assert all(
+                    result.detail
+                    in {
+                        "Provider capacity is temporarily unavailable.",
+                        "Provider operation timed out.",
+                    }
+                    for result in results
+                )
+                assert all(result.headers == {"Retry-After": "1"} for result in results)
+                held = fixture.runtime.interactive_snapshot()
+                assert held.active == 4 and held.admitted == 20 and held.waiting == 0
+                assert held.saturated > 0 and held.timed_out > 0
+                fixture.release.set()
+                await fixture.drain()
+                drained = fixture.runtime.interactive_snapshot()
+                assert drained.active == drained.admitted == drained.waiting == 0
+            finally:
+                request_deadline.reset(token)
+        finally:
+            for request in requests:
+                request.cancel()
+            await asyncio.gather(*requests, return_exceptions=True)
+            await fixture.close()
+
+    with bootstrap_fixture(fixture):
+        asyncio.run(scenario())
+
+
+def test_bootstrap_cancelled_before_dataset_admission_never_runs_it(bootstrap_fixture):
+    from app.main import INTERACTIVE_PROVIDER_CONFIG
+
+    fixture = BootstrapFixture(config=INTERACTIVE_PROVIDER_CONFIG)
+
+    async def context_boundary(provider, operation, **kwargs):
+        result = await run_supabase_operation(provider, operation, **kwargs)
+        # Let the older admission waiter fill the context's released slot
+        # before the endpoint can submit either dataset.
+        async with asyncio.timeout(1):
+            while fixture.runtime.interactive_snapshot().admitted != 20:
+                await asyncio.sleep(0.001)
+        return result
+
+    async def scenario():
+        context_entered = threading.Event()
+        context_release = threading.Event()
+        blockers_release = threading.Event()
+        blockers = []
+        request = None
+        original_auth = fixture.auth
+
+        def auth(service, *args):
+            context_entered.set()
+            assert context_release.wait(2)
+            return original_auth(service, *args)
+
+        try:
+            await fixture.warm()
+            fixture.auth = auth
+            request = asyncio.create_task(fixture.call())
+            assert await asyncio.to_thread(context_entered.wait, 1)
+
+            # The context owns one admission; fill all 19 remaining admissions
+            # with unrelated work, then use the context's released slot too.
+            def block(_client):
+                assert blockers_release.wait(2)
+
+            blockers = [
+                asyncio.create_task(fixture.runtime.run_interactive(block)) for _ in range(20)
+            ]
+            async with asyncio.timeout(1):
+                while fixture.runtime.interactive_snapshot().waiting != 1:
+                    await asyncio.sleep(0.001)
+            context_release.set()
+            async with asyncio.timeout(1):
+                while fixture.runtime.interactive_snapshot().waiting != 2:
+                    await asyncio.sleep(0.001)
+            assert not any(event[0] in {"studio", "programs"} for event in fixture.events)
+            request.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await request
+            assert fixture.runtime.interactive_snapshot().waiting == 0
+            blockers_release.set()
+            await asyncio.gather(*blockers)
+            await fixture.drain()
+            assert not any(event[0] in {"studio", "programs"} for event in fixture.events)
+            drained = fixture.runtime.interactive_snapshot()
+            assert drained.admitted == drained.active == drained.waiting == 0
+        finally:
+            context_release.set()
+            blockers_release.set()
+            if request is not None:
+                request.cancel()
+                await asyncio.gather(request, return_exceptions=True)
+            await asyncio.gather(*blockers, return_exceptions=True)
+            await fixture.close()
+
+    with (
+        bootstrap_fixture(fixture),
+        patch(
+            "app.api.v1.endpoints.dashboard.run_supabase_operation", side_effect=context_boundary
+        ),
+    ):
         asyncio.run(scenario())

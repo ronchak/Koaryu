@@ -185,6 +185,7 @@ def partial_bootstrap_case(
     enrichment_failure=False,
     allow_partial=True,
     student_dob=None,
+    fetch_labels=None,
 ):
     supabase = SimpleNamespace(options=SimpleNamespace(postgrest_client_timeout=10.0))
     service = DashboardBootstrapService(supabase)
@@ -220,6 +221,8 @@ def partial_bootstrap_case(
 
     def fetch(service, method_name, studio_id):
         label = METHOD_LABELS[method_name]
+        if fetch_labels is not None:
+            fetch_labels.append(label)
         assert studio_id == "partial-studio"
         if label == failed:
             raise failure if failure is not None else TimeoutError("private provider detail")
@@ -358,14 +361,23 @@ def test_projection_provider_access_failures_remain_fatal(allow_partial, code):
 
 @pytest.mark.parametrize("allow_partial", [False, True])
 def test_missing_studio_remains_fatal(allow_partial):
-    with pytest.raises(HTTPException) as error:
+    labels = []
+    with (
+        patch("app.services.dashboard_bootstrap_service.logger.warning") as warning,
+        patch("app.services.dashboard_bootstrap_service.DashboardBootstrapResponse") as response,
+        pytest.raises(HTTPException) as error,
+    ):
         partial_bootstrap_case(
             failed="studio",
             failure=HTTPException(404),
             allow_partial=allow_partial,
             view="students",
+            fetch_labels=labels,
         )
     assert error.value.status_code == 404
+    assert "students" not in labels
+    warning.assert_not_called()
+    response.assert_not_called()  # No partial response or dataset_errors is recorded.
 
 
 def test_partial_projection_opt_in_is_off_by_default_in_endpoint_and_service():

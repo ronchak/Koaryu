@@ -119,7 +119,11 @@ def test_bootstrap_reuses_owned_transport_and_drains_before_capacity_returns(
             config, config, client_factory=factory, client_closer=closer
         )
         try:
-            parent_id = await runtime.run_interactive(lambda client: id(client))
+            loop = asyncio.get_running_loop()
+            warm_clock = loop.time()
+            # Cold SDK construction is setup, outside the short fault budget.
+            with patch.object(loop, "time", return_value=warm_clock):
+                parent_id = await runtime.run_interactive(lambda client: id(client))
             before = len(created)
             response = Response()
             call = get_dashboard_bootstrap(
@@ -226,3 +230,70 @@ def test_isolated_live_authorization_stall_fails_closed_before_stripe_can_run(ne
     assert created == [0.1]
     assert closed == [True]
     assert nested_provider.requests == 1
+
+
+@pytest.mark.parametrize("view", ["students", "leads", "training"])
+@pytest.mark.parametrize("transport", [0.08, 0.23])
+def test_each_bootstrap_dataset_uses_configured_lane_transport(nested_provider, view, transport):
+    # Leave the runtime's default factory intact: it must pass the lane's
+    # timeout into the actual Supabase SDK client, independently of this test.
+    original_factory = create_supabase_client
+    constructed = []
+    observed = {}
+
+    def factory(**options):
+        constructed.append(options)
+        return original_factory(**options)
+
+    methods = {
+        "studio": "_fetch_studio_summary",
+        "students": "_fetch_students",
+        "programs": "_fetch_programs",
+        "leads": "_fetch_leads",
+        "belts": "_fetch_belt_ladders",
+    }
+    originals = {label: getattr(DashboardBootstrapService, name) for label, name in methods.items()}
+
+    def fetch(service, label, studio_id):
+        observed[label] = service.supabase.postgrest.session.timeout.read
+        return originals[label](service, studio_id)
+
+    async def scenario():
+        config = SupabaseLaneConfig(1, 3, 0.1, 2, postgrest_client_timeout=transport)
+        runtime = SupabaseProviderRuntime(config, lane())
+        try:
+            await get_dashboard_bootstrap(
+                Response(),
+                user_id="user-1",
+                supabase=runtime,
+                view=view,
+            )
+            assert observed == {label: transport for label in BOOTSTRAP_VIEW_DATASETS[view]}
+            assert constructed == [{"postgrest_client_timeout": transport}]
+        finally:
+            await asyncio.to_thread(runtime.shutdown)
+
+    from contextlib import ExitStack
+
+    with ExitStack() as stack:
+        stack.enter_context(
+            patch("app.core.provider_runtime.create_supabase_client", side_effect=factory)
+        )
+        stack.enter_context(
+            patch(
+                "app.services.dashboard_bootstrap_service.AuthService._get_user_profile_sync",
+                return_value=bootstrap_auth(),
+            )
+        )
+        stack.enter_context(
+            patch("app.services.dashboard_bootstrap_service.ensure_platform_subscription_access")
+        )
+        for label, name in methods.items():
+            stack.enter_context(
+                patch.object(
+                    DashboardBootstrapService,
+                    name,
+                    new=lambda service, studio_id, label=label: fetch(service, label, studio_id),
+                )
+            )
+        asyncio.run(scenario())

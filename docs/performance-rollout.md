@@ -285,13 +285,58 @@ upstream deadline is 34 seconds for ordinary requests and 125 seconds for bulk
 requests, with cancellation when the caller or response consumer stops.
 
 The interactive PostgREST transport uses a 10-second per-I/O timeout and the bulk
-transport uses 30 seconds. Bootstrap’s short-lived clients (one per dataset its
-view loads, at most three) inherit their parent client’s budget; the isolated Stripe authorization read has a 10-second
-budget. These are not total multi-query deadlines. Existing
+transport uses 30 seconds. Bootstrap resolves context in one interactive-lane
+operation, then submits one short operation per selected dataset on its owning
+worker's persistent client, for `1 + N` admissions. Student mapping and membership
+enrichment stay inside the students operation. Students await the studio result
+on the ASGI loop before admission. Fatal failures and request cancellation cancel
+and join sibling tasks; already-admitted work stays accounted for until it drains.
+The isolated Stripe authorization read has a 10-second budget. These are not
+total multi-query deadlines. Existing
 caller waits and worker/queue capacity remain unchanged at 30 seconds with 4+16
 interactive slots and 120 seconds with 1+2 bulk slots. Capacity returns only when
 provider work ends, even after a caller stops waiting. No automatic money retry
 or rollback-on-abort assumption was added.
+
+Bootstrap dataset Server-Timing labels include fetching and projection work and
+exclude client construction. The successful `students` duration also excludes
+its ASGI-side wait for studio metadata and its lane queue. `total` starts before
+context admission and includes the complete orchestration. Historical dataset
+timings included client construction and closure and need that distinction when
+compared with current timings.
+
+Ignoring client setup, old per-request lane worker occupancy was approximately
+context plus the longest dataset read, with dataset reads on side threads. New
+aggregate lane worker occupancy is context plus the sum of dataset work, offset
+by removing per-dataset client construction and fresh TLS connections. This can
+increase lane demand under bursts; it does not establish a throughput improvement.
+After the frontend bootstrap changes, the typical live bootstrap is the metadata
+view containing studio and programs; Home itself does not request bootstrap.
+
+The warm fake-provider probe is reproducible from `backend/` with
+`venv/bin/python tests/performance/measure_bootstrap_lanes.py`. It compares the
+pre-U5 implementation at `12ecccab` with the current implementation using the
+real 4-worker, 16-queue runtime. It takes ten requests per view and variant.
+Synthetic costs are 2 ms for context, 8 ms for studio, 12 ms for programs,
+20 ms for students and 3 ms for membership enrichment. The old fake client
+factory simulates the audited 14.3 ms setup cost; no TLS or network is measured.
+These medians include scheduling overhead and are not production throughput data.
+
+| View | Measurement, ms | Before | After |
+| --- | --- | ---: | ---: |
+| home | studio label | 116.840 | 30.425 |
+| home | programs label | 137.624 | 93.280 |
+| home | total label | 164.896 | 100.361 |
+| home | aggregate lane worker occupancy | 166.595 | 121.966 |
+| students | studio label | 102.151 | 28.120 |
+| students | programs label | 143.785 | 91.189 |
+| students | students label | 150.299 | 128.243 |
+| students | total label | 201.867 | 164.326 |
+| students | aggregate lane worker occupancy | 203.079 | 203.532 |
+
+New client constructions per warm request fell from 2 to 0 for `home` and from
+3 to 0 for `students`. The students workload's aggregate worker demand stayed
+about the same in this probe even though its response finished sooner.
 
 The lane emits bounded aggregate metrics at most once a minute while work is
 active. Queue wait, operation duration, active work, saturation, caller timeout
