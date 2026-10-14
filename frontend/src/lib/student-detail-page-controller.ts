@@ -23,7 +23,7 @@ import type {
 } from "@/lib/store-contexts";
 import { hasStaffPermission } from "@/lib/staff-permissions";
 import { STUDENT_COMMAND_BUSY_MESSAGE } from "@/lib/store";
-import type { BeltLadder, Promotion, Student, StudentUpdate } from "@/types";
+import type { Promotion, Student, StudentUpdate } from "@/types";
 
 const EMPTY_PROMOTION_HISTORY: Promotion[] = [];
 
@@ -32,7 +32,7 @@ type StudentCommandKind = "archive" | "photo" | "profile";
 type StudentDetailPageControllerOptions = {
   beltStore: Pick<
     BeltsStoreContextValue,
-    "beltLadders" | "loadPromotionHistory" | "promotionHistoryByStudent"
+    "beltLadders" | "refreshBeltLadders" | "loadPromotionHistory" | "promotionHistoryByStudent"
   >;
   studioStore: Pick<StudioStoreContextValue, "identityGeneration">;
   config: Pick<ConfigStoreContextValue, "businessDate" | "currentRole" | "isPreviewMode" | "token">;
@@ -77,7 +77,8 @@ export function useStudentDetailPageController({
   } = studentsStore;
   const { programs } = programsStore;
   const {
-    beltLadders: storeBeltLadders,
+    beltLadders,
+    refreshBeltLadders,
     loadPromotionHistory: loadPromotionHistoryForStudent,
     promotionHistoryByStudent,
   } = beltStore;
@@ -117,12 +118,11 @@ export function useStudentDetailPageController({
   useResumeRefresh(() => setRetryNonce((value) => value + 1));
   const [isLoadingStudent, setIsLoadingStudent] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [fallbackBeltLadders, setFallbackBeltLadders] = useState<BeltLadder[]>([]);
   const [promotionHistoryState, setPromotionHistoryState] = useRetainedState<{
     studentId: string;
     items: Promotion[];
   } | null>(`students:promotions:${id}`, null);
-  const [isLoadingFallbackBeltLadders, setIsLoadingFallbackBeltLadders] = useState(false);
+  const [isLoadingBeltLadders, setIsLoadingBeltLadders] = useState(false);
   const [isLoadingPromotionHistory, setIsLoadingPromotionHistory] = useState(false);
   const [beltLoadError, setBeltLoadError] = useState<string | null>(null);
   const [deleteConfirmScope, setDeleteConfirmScope] = useState<string | null>(null);
@@ -247,38 +247,36 @@ export function useStudentDetailPageController({
   useEffect(() => {
     let mounted = true;
 
-    async function loadFallbackBeltLadders() {
-      if (isPreviewMode || !token || storeBeltLadders.length > 0) {
+    async function loadBeltLadders() {
+      if (isPreviewMode || !token) {
         if (mounted) {
-          setIsLoadingFallbackBeltLadders(false);
+          setIsLoadingBeltLadders(false);
         }
         return;
       }
 
-      setIsLoadingFallbackBeltLadders(true);
+      setIsLoadingBeltLadders(true);
       setBeltLoadError(null);
 
       try {
-        const laddersResult = await api.get<BeltLadder[]>("/belts/ladders", token);
-        if (!mounted) return;
-        setFallbackBeltLadders(laddersResult);
+        await refreshBeltLadders({ ifNeeded: true });
       } catch (error) {
         if (mounted) {
           setBeltLoadError(error instanceof Error ? error.message : "Failed to load belt ladder");
         }
       } finally {
         if (mounted) {
-          setIsLoadingFallbackBeltLadders(false);
+          setIsLoadingBeltLadders(false);
         }
       }
     }
 
-    void loadFallbackBeltLadders();
+    void loadBeltLadders();
 
     return () => {
       mounted = false;
     };
-  }, [isPreviewMode, storeBeltLadders.length, token]);
+  }, [isPreviewMode, refreshBeltLadders, scope, token]);
 
   useEffect(() => {
     let mounted = true;
@@ -351,9 +349,8 @@ export function useStudentDetailPageController({
   const recordComplete = Boolean(student) && (Boolean(hydratedStudent) || listStudentComplete);
   const promotionHistory =
     promotionHistoryState?.studentId === id ? promotionHistoryState.items : EMPTY_PROMOTION_HISTORY;
-  const beltLadders = storeBeltLadders.length > 0 ? storeBeltLadders : fallbackBeltLadders;
   const isLoadingBeltData =
-    isLoadingPromotionHistory || (beltLadders.length === 0 && isLoadingFallbackBeltLadders);
+    isLoadingPromotionHistory || (beltLadders.length === 0 && isLoadingBeltLadders);
   const detail = useMemo(
     () =>
       student

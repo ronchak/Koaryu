@@ -274,6 +274,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     isPreviewMode ? MOCK_BELT_LADDERS : []
   );
   const beltsHydratedRef = useRef(false);
+  // Hydration tracks attempted route loads; metadata readiness requires success,
+  // including an authoritative empty result.
+  const beltLaddersLoadedRef = useRef(isPreviewMode);
+  const beltLaddersReadRef = useRef<{
+    isCurrent: () => boolean;
+    promise: Promise<{ ladders: readonly BeltLadder[] }>;
+  } | null>(null);
   const [beltLaddersLoadError, setBeltLaddersLoadError] = useState<string | null>(null);
   const [studioLoadError, setStudioLoadError] = useState<string | null>(null);
   const beltLaddersRef = useRef<BeltLadder[]>(beltLadders);
@@ -589,6 +596,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       preferredLadderId ?? currentLadderIdRef.current
     );
 
+    beltLaddersLoadedRef.current = true;
+    beltLaddersRef.current = orderedLadders;
     setBeltLaddersState(orderedLadders);
     updateCurrentLadderId(selectedLadder?.id ?? null);
     setLadderNameState(selectedLadder?.name || "");
@@ -665,6 +674,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const applyLiveStudioDataResetState = useCallback((state: LiveStudioDataResetState) => {
     resetBeltTestResourceScope();
     beltsHydratedRef.current = false;
+    beltLaddersLoadedRef.current = false;
+    beltLaddersReadRef.current = null;
     resetProgramScope();
     resetStaffScope();
     leadMutationScopeRef.current.settle();
@@ -999,6 +1010,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setLeads([]);
     setLeadsLoaded(true);
     setLeadsLoadError(null);
+    beltMetadataRevisionRef.current += 1;
+    beltLaddersLoadedRef.current = true;
+    beltLaddersRef.current = [];
     setBeltLaddersState([]);
     updateCurrentLadderId(null);
     setLadderNameState("");
@@ -1798,7 +1812,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     promoteStudent,
     setBeltRanks,
     setCurrentLadder,
-    refreshBeltLadders,
+    refreshBeltLadders: readBeltLadders,
   } = useStoreBeltActions({
     applyLadderSelection,
     beginLiveAuthRequest,
@@ -1821,6 +1835,35 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     studentsRef,
     subRankTerm,
   });
+
+  const refreshBeltLadders = useCallback(async (options?: { ifNeeded?: boolean }): Promise<{ ladders: readonly BeltLadder[] }> => {
+    if (isPreviewMode) return readBeltLadders();
+    const owner = beginLiveAuthRequest();
+    const pending = beltLaddersReadRef.current;
+    if (pending?.isCurrent()) return pending.promise;
+    if (options?.ifNeeded && beltLaddersLoadedRef.current) {
+      return Promise.resolve({ ladders: beltLaddersRef.current });
+    }
+    const revision = beltMetadataRevisionRef.current;
+    const promise = readBeltLadders().then(result => {
+      if (!owner.isSameIdentity()) throw new Error("Your workspace changed. Reload the belt choices.");
+      if (revision === beltMetadataRevisionRef.current) {
+        beltMetadataRevisionRef.current += 1;
+        const ladders = [...result.ladders];
+        beltLaddersLoadedRef.current = true;
+        beltLaddersRef.current = ladders;
+        setBeltLaddersState(ladders);
+        setBeltLaddersLoadError(null);
+      }
+      return result;
+    });
+    beltLaddersReadRef.current = { isCurrent: owner.isSameIdentity, promise };
+    const clear = () => {
+      if (beltLaddersReadRef.current?.promise === promise) beltLaddersReadRef.current = null;
+    };
+    void promise.then(clear, clear);
+    return promise;
+  }, [beginLiveAuthRequest, isPreviewMode, readBeltLadders]);
 
   // ── Schedule ──
   const {
