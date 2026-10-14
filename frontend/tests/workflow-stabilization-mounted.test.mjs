@@ -3788,3 +3788,54 @@ for (const scenario of [
     }
   });
 }
+
+test("conversion settling on mounted Belt Tracker starts one replacement eligibility read", async (t) => {
+  const browser = await chromium.launch();
+  try {
+    const page = await fixturePage(browser, {
+      path: "/leads",
+      beltPage: "eligibility",
+      formProgram: true,
+    });
+    await page.evaluate(() => {
+      fixture.ladder = {
+        id: "ladder-1",
+        program_id: "program-1",
+        name: "Test",
+        sub_rank_term: "Stripe",
+        ranks: [],
+      };
+      fixture.conversion = fixture.store.convertLeadToStudent(fixture.store.leads[0].id);
+    });
+    await page.waitForFunction(() => fixture.writes.length === 1);
+    await page.evaluate(() => fixture.navigate("/belt-tracker"));
+    await page.waitForFunction(
+      () =>
+        fixture.store.eligibilityLadderId === "ladder-1" &&
+        !fixture.store.eligibilityPendingLadderId,
+    );
+    const before = await page.evaluate(() => fixture.eligibilityReads);
+    await page.evaluate(async () => {
+      fixture.useNewEligibility = true;
+      fixture.writes[0].resolve({
+        ...fixture.lead,
+        stage: "enrolled",
+        converted_student_id: "student-new",
+      });
+      await fixture.conversion;
+    });
+    await page.waitForFunction(
+      () =>
+        fixture.store.eligibility.some((row) => row.student_id === "student-new") &&
+        !fixture.store.eligibilityPendingLadderId,
+    );
+    await flush(page);
+    assert.equal(await page.evaluate(() => fixture.eligibilityReads), before + 1);
+    assert.equal(await page.evaluate(() => fixture.store.eligibilityLadderId), "ladder-1");
+    assert.equal(await page.locator("#belt-panel-eligibility").getAttribute("aria-busy"), "false");
+    t.diagnostic("mounted Belt Tracker: exactly 1 replacement eligibility read after conversion");
+    await page.evaluate(() => fixture.root.unmount());
+  } finally {
+    await browser.close();
+  }
+});

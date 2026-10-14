@@ -172,10 +172,13 @@ export function bundle(
           "next/link": `exports.__esModule=true;exports.default=({children,href,prefetch,...props})=>require('react').createElement('a',{href:typeof href==='string'?href:href.pathname,...props},children);`,
         }
       : {}),
-    ...(beltPage === "editor"
+    ...(beltPage === "editor" || beltPage === "eligibility"
       ? {
           "@/components/header": `exports.Header=()=>null;`,
-          "@/components/belt-tracker/eligibility-panel": `exports.EligibilityPanel=exports.EligibilityLoading=()=>null;`,
+          "@/components/belt-tracker/eligibility-panel":
+            beltPage === "eligibility"
+              ? `exports.EligibilityLoading=()=>null;exports.EligibilityPanel=props=>require('react').createElement('div',{id:'belt-panel-eligibility','aria-busy':props.isEligibilityLoading});`
+              : `exports.EligibilityPanel=exports.EligibilityLoading=()=>null;`,
           "@/components/icons/martial-arts-belt": `exports.MartialArtsBelt=()=>null;`,
           "./belt-tracker.module.css": `module.exports={};`,
           "./sliding-segmented-control.module.css": `module.exports={};`,

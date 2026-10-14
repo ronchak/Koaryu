@@ -279,6 +279,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     isPreviewMode ? MOCK_BELT_LADDERS : []
   );
   const beltsHydratedRef = useRef(false);
+  const [beltRefreshGeneration, setBeltRefreshGeneration] = useState(0);
   // Hydration tracks attempted route loads; metadata readiness requires success,
   // including an authoritative empty result.
   const beltLaddersLoadedRef = useRef(isPreviewMode);
@@ -1790,10 +1791,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     // Fence older reads and let the destination routes verify their own data.
     studentsRevisionRef.current += 1;
     studentMutationEpochRef.current += 1;
-    studentRosterRequestSequenceRef.current += 1;
     setStudentsMayBePartial(true);
     setStudentsLastLoadedAt(null);
     beltsHydratedRef.current = false;
+    setBeltRefreshGeneration(generation => generation + 1);
     clearEligibilityState();
   }, [clearEligibilityState]);
 
@@ -2010,7 +2011,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       }
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [identityReady, initialFeaturePending, isPreviewMode, pathname, subscriptionRequired,
+  }, [beltRefreshGeneration, identityReady, initialFeaturePending, isPreviewMode, pathname, subscriptionRequired,
     studentsLoaded, studentsLoadError, leadsLoaded, leadsLoadError, programsLoaded, programsLoadError,
     refreshStudents, refreshLeads, refreshPrograms, refreshSchedule, scheduleStatus]);
 
