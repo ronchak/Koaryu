@@ -41,7 +41,9 @@ class ScheduleService:
     @staticmethod
     def _parse_date(value: str) -> date:
         try:
-            return datetime.strptime(value, "%Y-%m-%d").date()
+            if not isinstance(value, str) or len(value) != 10 or value[4] != "-" or value[7] != "-":
+                raise ValueError("Date must use YYYY-MM-DD format")
+            return date.fromisoformat(value)
         except ValueError as exc:
             raise HTTPException(
                 status_code=500,
@@ -51,7 +53,9 @@ class ScheduleService:
     @staticmethod
     def _parse_query_date(value: str, field_name: str) -> date:
         try:
-            return datetime.strptime(value, "%Y-%m-%d").date()
+            if not isinstance(value, str) or len(value) != 10 or value[4] != "-" or value[7] != "-":
+                raise ValueError("Date must use YYYY-MM-DD format")
+            return date.fromisoformat(value)
         except ValueError as exc:
             raise HTTPException(
                 status_code=400,
