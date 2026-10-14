@@ -1,4 +1,4 @@
-"""Nested provider clients retain bounded I/O and their own thread ownership."""
+"""Bootstrap lanes and isolated live authorization retain bounded owned I/O."""
 
 import asyncio
 import json
@@ -13,6 +13,8 @@ import pytest
 from fastapi import HTTPException
 
 from app.core.deps import run_supabase_operation
+from app.api.v1.endpoints.dashboard import get_dashboard_bootstrap
+from fastapi import Response
 from app.core.provider_runtime import SupabaseLaneConfig, SupabaseProviderRuntime
 from app.db.supabase import close_supabase_client, create_supabase_client
 from app.schemas.auth import AuthResponse, UserProfile
@@ -89,95 +91,87 @@ def bootstrap_auth():
     )
 
 
-# Between them these three views load all five datasets, three clients each.
+# These views still load three datasets each, using one persistent lane client.
 @pytest.mark.parametrize("view", ["students", "leads", "training"])
 @pytest.mark.parametrize("stalled", [False, True])
 @pytest.mark.parametrize("allow_partial", [False, True])
-def test_every_bootstrap_client_inherits_budget_and_drains_before_capacity_returns(
+def test_bootstrap_reuses_owned_transport_and_drains_before_capacity_returns(
     nested_provider, stalled, allow_partial, view
 ):
     nested_provider.stall = stalled
-    datasets = BOOTSTRAP_VIEW_DATASETS[view]
     created = []
     closed = []
-    clients = []
-    lock = threading.Lock()
 
-    def factory(**options):
-        client = create_supabase_client(**options)
-        with lock:
-            clients.append(client)
-            created.append(
-                (id(client), threading.get_ident(), client.postgrest.session.timeout.read)
-            )
+    def factory():
+        client = create_supabase_client(postgrest_client_timeout=0.15)
+        created.append((id(client), threading.get_ident(), client.postgrest.session.timeout.read))
         return client
 
     def closer(client):
         close_supabase_client(client)
-        with lock:
-            closed.append((id(client), threading.get_ident()))
+        closed.append((id(client), threading.get_ident()))
 
     async def scenario():
-        runtime = SupabaseProviderRuntime(lane(caller=0.04 if stalled else 2), lane())
+        config = SupabaseLaneConfig(
+            1, 3, 0.02, 0.04 if stalled else 2, postgrest_client_timeout=0.15
+        )
+        runtime = SupabaseProviderRuntime(
+            config, config, client_factory=factory, client_closer=closer
+        )
         try:
-            # Initialize the parent client independently of the nested fault.
-            parent_id = await runtime.run_interactive(lambda client: id(client))
-            completed_payloads = []
-
-            async def operation(client):
-                result = await DashboardBootstrapService(client).get_dashboard_bootstrap(
-                    "user-1", provider_owned=True, allow_partial=allow_partial, view=view
-                )
-                completed_payloads.append(result[0])
-                return result
-
-            if stalled:
-                started = time.monotonic()
+            loop = asyncio.get_running_loop()
+            warm_clock = loop.time()
+            # Cold SDK construction is setup, outside the short fault budget.
+            with patch.object(loop, "time", return_value=warm_clock):
+                parent_id = await runtime.run_interactive(lambda client: id(client))
+            before = len(created)
+            response = Response()
+            call = get_dashboard_bootstrap(
+                response,
+                user_id="user-1",
+                requested_studio_id="studio-1",
+                supabase=runtime,
+                view=view,
+                allow_partial=allow_partial,
+            )
+            if stalled and not allow_partial:
                 with pytest.raises(HTTPException) as error:
-                    await run_supabase_operation(runtime, operation)
+                    await call
                 assert error.value.status_code == 504
-                snapshot = runtime.interactive_snapshot()
-                assert snapshot.admitted == snapshot.active == 1
-                assert snapshot.timed_out == 1
-                with pytest.raises(HTTPException) as overloaded:
-                    await run_supabase_operation(runtime, lambda _client: None)
-                assert overloaded.value.status_code == 503
-                while runtime.interactive_snapshot().admitted:
-                    assert time.monotonic() - started < 2
-                    await asyncio.sleep(0.005)
-                assert runtime.interactive_snapshot().transport_timed_out == (
-                    0 if allow_partial else 1
-                )
-                if allow_partial:
-                    assert len(completed_payloads) == 1
-                    assert (
-                        set(completed_payloads[0].dataset_errors.model_dump(exclude_none=True))
-                        == datasets
-                    )
-                    assert completed_payloads[0].students_total is None
             else:
-                response, _timings = await run_supabase_operation(runtime, operation)
-                assert response.studio.id == "studio-1"
-                assert response.students_total == (0 if "students" in datasets else None)
-            assert len(created) == len(closed) == len(datasets) == 3
-            assert len({identity for identity, _thread, _timeout in created}) == 3
-            assert all(
-                identity != parent_id and timeout == 0.15 for identity, _thread, timeout in created
-            )
-            assert sorted(closed) == sorted(
-                (identity, thread) for identity, thread, _timeout in created
-            )
-            assert nested_provider.requests == 3
-            assert runtime.interactive_snapshot().active == 0
+                payload = await call
+                if stalled:
+                    assert (
+                        set(payload.dataset_errors.model_dump(exclude_none=True))
+                        == BOOTSTRAP_VIEW_DATASETS[view]
+                    )
+                    assert payload.students_total is None
+                else:
+                    assert payload.studio.id == "studio-1"
+                    assert payload.students_total == (0 if view == "students" else None)
+            assert len(created) - before == 0
+            assert len(created) == 1
+            assert created[0][0] == parent_id and created[0][2] == 0.15
+            assert closed == []  # Persistent transports close at runtime shutdown.
+            if stalled:
+                snapshot = runtime.interactive_snapshot()
+                assert snapshot.active == 1 and snapshot.admitted >= 1
+                assert snapshot.timed_out >= 1
+            started = time.monotonic()
+            while runtime.interactive_snapshot().admitted:
+                assert time.monotonic() - started < 2
+                await asyncio.sleep(0.005)
+            snapshot = runtime.interactive_snapshot()
+            assert snapshot.active == 0
+            assert snapshot.transport_timed_out == (nested_provider.requests if stalled else 0)
+            assert nested_provider.requests >= 2 if stalled else nested_provider.requests == 3
             assert await runtime.run_interactive(lambda _client: "recovered") == "recovered"
+            assert len(created) == 1
         finally:
             await asyncio.to_thread(runtime.shutdown)
+        assert closed == [(identity, thread) for identity, thread, _timeout in created]
 
     with (
-        patch(
-            "app.services.dashboard_bootstrap_service.create_supabase_client", side_effect=factory
-        ),
-        patch("app.services.dashboard_bootstrap_service.close_supabase_client", side_effect=closer),
         patch(
             "app.services.dashboard_bootstrap_service.AuthService._get_user_profile_sync",
             return_value=bootstrap_auth(),
@@ -236,3 +230,70 @@ def test_isolated_live_authorization_stall_fails_closed_before_stripe_can_run(ne
     assert created == [0.1]
     assert closed == [True]
     assert nested_provider.requests == 1
+
+
+@pytest.mark.parametrize("view", ["students", "leads", "training"])
+@pytest.mark.parametrize("transport", [0.08, 0.23])
+def test_each_bootstrap_dataset_uses_configured_lane_transport(nested_provider, view, transport):
+    # Leave the runtime's default factory intact: it must pass the lane's
+    # timeout into the actual Supabase SDK client, independently of this test.
+    original_factory = create_supabase_client
+    constructed = []
+    observed = {}
+
+    def factory(**options):
+        constructed.append(options)
+        return original_factory(**options)
+
+    methods = {
+        "studio": "_fetch_studio_summary",
+        "students": "_fetch_students",
+        "programs": "_fetch_programs",
+        "leads": "_fetch_leads",
+        "belts": "_fetch_belt_ladders",
+    }
+    originals = {label: getattr(DashboardBootstrapService, name) for label, name in methods.items()}
+
+    def fetch(service, label, studio_id):
+        observed[label] = service.supabase.postgrest.session.timeout.read
+        return originals[label](service, studio_id)
+
+    async def scenario():
+        config = SupabaseLaneConfig(1, 3, 0.1, 2, postgrest_client_timeout=transport)
+        runtime = SupabaseProviderRuntime(config, lane())
+        try:
+            await get_dashboard_bootstrap(
+                Response(),
+                user_id="user-1",
+                supabase=runtime,
+                view=view,
+            )
+            assert observed == {label: transport for label in BOOTSTRAP_VIEW_DATASETS[view]}
+            assert constructed == [{"postgrest_client_timeout": transport}]
+        finally:
+            await asyncio.to_thread(runtime.shutdown)
+
+    from contextlib import ExitStack
+
+    with ExitStack() as stack:
+        stack.enter_context(
+            patch("app.core.provider_runtime.create_supabase_client", side_effect=factory)
+        )
+        stack.enter_context(
+            patch(
+                "app.services.dashboard_bootstrap_service.AuthService._get_user_profile_sync",
+                return_value=bootstrap_auth(),
+            )
+        )
+        stack.enter_context(
+            patch("app.services.dashboard_bootstrap_service.ensure_platform_subscription_access")
+        )
+        for label, name in methods.items():
+            stack.enter_context(
+                patch.object(
+                    DashboardBootstrapService,
+                    name,
+                    new=lambda service, studio_id, label=label: fetch(service, label, studio_id),
+                )
+            )
+        asyncio.run(scenario())

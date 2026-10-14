@@ -3,9 +3,10 @@ from __future__ import annotations
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
-from threading import Barrier, Event, Lock
+from threading import Barrier, Event, Lock, get_ident
 from unittest import TestCase
-from unittest.mock import patch
+from unittest.mock import Mock, patch
+from types import SimpleNamespace
 
 from fastapi import HTTPException
 
@@ -13,8 +14,11 @@ from app.services import platform_billing_service, studio_scope
 from app.services.platform_billing_service import (
     ACCESS_REPAIR_FAILURE_BACKOFF_SECONDS,
     AccessRepairInFlight,
+    AccessStatusUnavailable,
     PlatformBillingService,
 )
+from app.services.dashboard_home_service import DashboardHomeService
+from tests.test_auth_service import FakeAuthSupabase
 from app.core.deps import run_supabase_operation
 from app.core.provider_runtime import SupabaseLaneConfig, SupabaseProviderRuntime
 
@@ -48,7 +52,13 @@ class ThreadSafeAccessRepairService(PlatformBillingService):
         self._rows = {row["studio_id"]: deepcopy(row) for row in rows}
         self._row_lock = Lock()
         self.reads = 0
+        self.pre_reads = 0
         self.settings = type("Settings", (), {"ENVIRONMENT": "production"})()
+
+    def _select_subscription_result(self, studio_id):
+        with self._row_lock:
+            self.pre_reads += 1
+            return SimpleNamespace(data=deepcopy(self._rows[studio_id]))
 
     def _ensure_subscription_row(self, studio_id):
         with self._row_lock:
@@ -157,8 +167,7 @@ class SingleFlightTest(TestCase):
                 start.wait(5)
                 self.assertTrue(BlockingStripe.started.wait(5))
                 self.assertEqual(BlockingStripe.calls, 1)
-                # Coordination is before the first subscription read: only the
-                # leader has read while the provider call is blocked.
+                # Only the leader rereads for repair while Stripe is blocked.
                 self.assertEqual(service.reads, 1)
                 BlockingStripe.release.set()
                 results = [future.result(timeout=5) for future in futures]
@@ -172,6 +181,28 @@ class SingleFlightTest(TestCase):
         self._assert_no_completed_flights()
         with platform_billing_service._access_repair_metadata_lock:
             self.assertIn("studio_1", platform_billing_service._access_repair_retry_after)
+
+    def test_pending_row_claims_one_flight_and_follower_raises(self):
+        BlockingStripe.reset()
+        service = ThreadSafeAccessRepairService([self._row()])
+        with (
+            patch.object(platform_billing_service, "StripeService", BlockingStripe),
+            ThreadPoolExecutor(max_workers=1) as executor,
+        ):
+            leader = executor.submit(service.get_access_status_row, "studio_1", strict_repairs=True)
+            try:
+                self.assertTrue(BlockingStripe.started.wait(5))
+                with self.assertRaises(AccessRepairInFlight) as follower:
+                    service.get_access_status_row("studio_1", strict_repairs=True)
+                self.assertFalse(follower.exception.completion.done())
+                self.assertEqual(service.pre_reads, 2)
+                self.assertEqual(service.reads, 1)
+                self.assertEqual(BlockingStripe.calls, 1)
+            finally:
+                BlockingStripe.release.set()
+            self.assertEqual(leader.result(timeout=5), self._row())
+            self.assertTrue(follower.exception.completion.done())
+        self._assert_no_completed_flights()
 
     def test_provider_failure_opens_window_before_followers_resume_and_stays_503_neutral(self):
         FailingStripe.reset()
@@ -415,3 +446,140 @@ class SingleFlightTest(TestCase):
         self.assertEqual(results, [self._row()] * 4)
         self.assertEqual(BlockingStripe.calls, 1)
         self.assertEqual(runtime.interactive_snapshot().admitted, 0)
+
+
+class HealthyHomeContextTest(TestCase):
+    def setUp(self):
+        SingleFlightTest._clear_coordination()
+
+    def tearDown(self):
+        SingleFlightTest._clear_coordination()
+
+    def test_healthy_row_discards_matching_window_without_claiming_flight(self):
+        row = {**SingleFlightTest._row(), "status": "comped", "comped": True}
+        service = ThreadSafeAccessRepairService([row])
+        service._open_access_repair_window("studio_1", 60, replay_fault=True, row=row)
+        with patch.object(
+            service,
+            "_get_access_status_row_uncoordinated",
+            side_effect=AssertionError("repair ran"),
+        ):
+            self.assertEqual(service.get_access_status_row("studio_1", strict_repairs=True), row)
+        self.assertNotIn("studio_1", platform_billing_service._access_repair_retry_after)
+        self.assertEqual(platform_billing_service._access_repair_flights, {})
+        self.assertEqual(service.reads, 0)
+
+    def test_healthy_row_does_not_discard_replacement_window(self):
+        row = {**SingleFlightTest._row(), "status": "comped", "comped": True}
+        service = ThreadSafeAccessRepairService([row])
+        service._open_access_repair_window("studio_1", 60, replay_fault=True, row=row)
+        previous = platform_billing_service._access_repair_retry_after["studio_1"]
+        service._open_access_repair_window("studio_1", 60, replay_fault=True, row=row)
+        replacement = platform_billing_service._access_repair_retry_after["studio_1"]
+        with patch.object(service, "_active_access_repair_window", return_value=previous):
+            self.assertEqual(service.get_access_status_row("studio_1", strict_repairs=True), row)
+        self.assertIs(platform_billing_service._access_repair_retry_after["studio_1"], replacement)
+
+    def test_healthy_row_still_requires_valid_access_fields(self):
+        row = {**SingleFlightTest._row(), "status": "unknown", "comped": True}
+        service = ThreadSafeAccessRepairService([row])
+        with self.assertRaises(AccessStatusUnavailable):
+            service.get_access_status_row("studio_1", strict_repairs=True)
+        self.assertEqual(platform_billing_service._access_repair_flights, {})
+
+    def test_concurrent_comped_home_contexts_do_not_retry_identity_reads(self):
+        clients = []
+        select_started = Event()
+        follower_attempted = Event()
+        first_thread = None
+        in_flight_errors = []
+        original_select = PlatformBillingService._select_subscription_result
+        original_access = PlatformBillingService.get_access_status_row
+
+        def create_client():
+            client = FakeAuthSupabase(
+                staff_roles=[
+                    {
+                        "user_id": "user-1",
+                        "studio_id": "studio_1",
+                        "role": "admin",
+                        "created_at": "2026-01-01T00:00:00Z",
+                    }
+                ],
+            )
+            client.tables["studio_subscriptions"] = [
+                {**SingleFlightTest._row(), "status": "comped", "comped": True}
+            ]
+            client.tables["studios"] = [{"id": "studio_1", "timezone": "UTC"}]
+            client.auth.admin.get_user_by_id = Mock(wraps=client.auth.admin.get_user_by_id)
+            clients.append(client)
+            return client
+
+        def select(service, studio_id):
+            nonlocal first_thread
+            if not select_started.is_set():
+                first_thread = get_ident()
+                select_started.set()
+                if not follower_attempted.wait(5):
+                    raise AssertionError("second Home context did not reach access resolution")
+            return original_select(service, studio_id)
+
+        def access(service, *args, **kwargs):
+            try:
+                return original_access(service, *args, **kwargs)
+            except AccessRepairInFlight as exc:
+                in_flight_errors.append(exc)
+                raise
+            finally:
+                if get_ident() != first_thread:
+                    follower_attempted.set()
+
+        config = SupabaseLaneConfig(
+            max_workers=2,
+            max_queue=0,
+            queue_wait_timeout=0.1,
+            operation_wait_timeout=5.0,
+        )
+        runtime = SupabaseProviderRuntime(
+            config,
+            config,
+            client_factory=create_client,
+            client_closer=lambda _client: None,
+            thread_name_prefix="healthy-home-test",
+        )
+
+        async def exercise():
+            def resolve(client):
+                return DashboardHomeService(client).resolve_context_sync("user-1", "studio_1")
+
+            leader = asyncio.create_task(run_supabase_operation(runtime, resolve))
+            self.assertTrue(await asyncio.to_thread(select_started.wait, 2))
+            follower = asyncio.create_task(run_supabase_operation(runtime, resolve))
+            return await asyncio.gather(leader, follower)
+
+        try:
+            with (
+                patch.object(PlatformBillingService, "_select_subscription_result", select),
+                patch.object(PlatformBillingService, "get_access_status_row", access),
+            ):
+                contexts = asyncio.run(exercise())
+        finally:
+            follower_attempted.set()
+            runtime.shutdown()
+
+        counts = {
+            "auth": sum(client.auth.admin.get_user_by_id.call_count for client in clients),
+            **{
+                table: sum(
+                    query["table"] == table for client in clients for query in client.query_log
+                )
+                for table in ("staff_roles", "staff_profiles")
+            },
+        }
+        self.assertEqual(counts, {"auth": 2, "staff_roles": 2, "staff_profiles": 2})
+        self.assertEqual(
+            [client.auth.admin.get_user_by_id.call_count for client in clients], [1, 1]
+        )
+        self.assertEqual(in_flight_errors, [])
+        self.assertEqual([context.auth.studio_id for context in contexts], ["studio_1"] * 2)
+        self.assertEqual(platform_billing_service._access_repair_flights, {})

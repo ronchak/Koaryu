@@ -154,7 +154,7 @@ async def get_billing_landing(
     response.headers["Cache-Control"] = "no-store"
     deadline = asyncio.get_running_loop().time() + BILLING_LANDING_REQUEST_TIMEOUT_SECONDS
 
-    async def _provider_operation(client):
+    def _provider_operation(client):
         return resolve_billing_manager_staff_role_for_user(client, user_id, requested_studio_id)
 
     membership_timeout = asyncio.timeout_at(deadline)

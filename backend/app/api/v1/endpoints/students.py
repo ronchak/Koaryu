@@ -139,7 +139,7 @@ async def list_students(
             },
         )
 
-    async def _provider_operation(client):
+    def _provider_operation(client):
         service = StudentService(client)
         try:
             return service.list_roster_page(
@@ -509,7 +509,7 @@ async def parse_csv_headers(
     """
     content = await read_csv_import_upload(file)
 
-    async def _provider_operation(client):
+    def _provider_operation(client):
         service = StudentService(client)
         headers, rows = service.parse_csv(content)
         auto_mapping = service.auto_map_headers(headers)
@@ -539,7 +539,7 @@ async def validate_csv_import(
     """Validate a CSV file against a confirmed column mapping. Returns errors per row."""
     content = await read_csv_import_upload(file)
 
-    async def _provider_operation(client):
+    def _provider_operation(client):
         service = StudentService(client)
         headers, rows = service.parse_csv(content)
         try:

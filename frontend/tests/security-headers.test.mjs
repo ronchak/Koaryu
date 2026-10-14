@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import nextConfig from "../next.config.ts";
 
 import {
   buildContentSecurityPolicy,
@@ -15,6 +16,23 @@ const PRODUCTION = {
   nodeEnv: "production",
   vercelEnv: "production",
 };
+
+describe("Next response headers", () => {
+  it("bounds marketing asset caching while retaining the global security rule", async () => {
+    const rules = await nextConfig.headers();
+    const security = rules.find((rule) => rule.source === "/:path*");
+    assert.deepEqual(security.headers, securityHeadersFromProcessEnv());
+    assert.ok(security.headers.some((header) => header.key === "X-Content-Type-Options"));
+    const marketing = rules.find((rule) => rule.source === "/marketing/:path*");
+    assert.deepEqual(marketing.headers, [
+      { key: "Cache-Control", value: "public, max-age=3600, stale-while-revalidate=86400" },
+    ]);
+    assert.equal(
+      rules.filter((rule) => rule.headers.some((header) => header.key === "Cache-Control")).length,
+      1,
+    );
+  });
+});
 
 function directive(policy, name) {
   const found = policy
