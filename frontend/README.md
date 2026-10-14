@@ -202,7 +202,9 @@ mode supplies the same payload shape locally. See Dashboard loading below for
 retained paint, revalidation and readiness markers.
 Settings refreshes usage when opened, shows loading or unavailable usage
 explicitly, and retains successful usage while refreshing. Bootstrap rows never
-establish paginated roster authority.
+establish paginated roster authority. Mutations preserve an incomplete roster's
+partial status; only an explicit complete read clears it. Billing Enrollments
+waits for that complete read before using the roster.
 
 Schedule initialization and visible calendar ranges use the same reconciliation
 queue. New ranges remain pending until their materialization completes. Refresh
