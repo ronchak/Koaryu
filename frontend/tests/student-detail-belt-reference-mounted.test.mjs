@@ -253,7 +253,7 @@ test("a newer ladder selection supersedes an older metadata read", async (t) => 
   assert.equal(await page.evaluate(() => fixture.store.currentLadderId), "selected");
 });
 
-for (const change of ["unchanged", "id", "name", "sub_rank_term"]) {
+for (const change of ["unchanged", "id", "name", "sub_rank_term", "ranks", "updated_at"]) {
   test(`metadata ${change} ${change === "unchanged" ? "reuses" : "invalidates"} the Belt Tracker route snapshot`, async (t) => {
     const page = await mount(t);
     await page.evaluate(() => {
@@ -278,7 +278,11 @@ for (const change of ["unchanged", "id", "name", "sub_rank_term"]) {
     await page.evaluate((change) => {
       fixture.updated = {
         ...fixture.original,
-        ...(change === "unchanged" ? {} : { [change]: "Changed" }),
+        ...(change === "unchanged"
+          ? {}
+          : change === "ranks"
+            ? { ranks: [{ id: "rank-1", ladder_id: fixture.original.id, name: "White", order: 1 }] }
+            : { [change]: "Changed" }),
       };
       fixture.metadata[2].resolve([fixture.updated]);
     }, change);

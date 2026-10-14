@@ -58,7 +58,10 @@ class StudentResponseBuilder:
 
         result = (
             self.supabase.table("student_guardians")
-            .select("student_id, guardian_id, guardians(*)")
+            .select(
+                "student_id, guardian_id, "
+                "guardians(id, studio_id, first_name, last_name, email, phone, relation, is_primary_contact)"
+            )
             .in_("student_id", ordered_student_ids)
             .execute()
         )

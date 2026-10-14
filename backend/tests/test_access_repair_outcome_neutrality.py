@@ -615,6 +615,19 @@ class CompedRepairPreservationTest(unittest.TestCase):
         with (
             guard_patch,
             projection_patch,
+            patch.object(
+                platform_billing_service,
+                "ACCESS_REPAIR_STEPS",
+                tuple(
+                    (
+                        guard_without_comp
+                        if legacy_period_repair and guard is original_guard
+                        else guard,
+                        repair,
+                    )
+                    for guard, repair in platform_billing_service.ACCESS_REPAIR_STEPS
+                ),
+            ),
             patch("app.services.platform_billing_service.StripeService", stripe_cls),
             patch(
                 "app.services.platform_billing_service.get_settings",

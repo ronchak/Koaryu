@@ -22,6 +22,13 @@ const nextConfig: NextConfig = {
         source: "/:path*",
         headers: [...securityHeadersFromProcessEnv()],
       },
+      {
+        source: "/marketing/:path*",
+        // These filenames are not hashed, so changed artwork must revalidate.
+        headers: [
+          { key: "Cache-Control", value: "public, max-age=3600, stale-while-revalidate=86400" },
+        ],
+      },
     ];
   },
   async redirects() {

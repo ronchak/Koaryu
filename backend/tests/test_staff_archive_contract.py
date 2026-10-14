@@ -791,7 +791,7 @@ class StaffArchiveAuthAndExportTest(unittest.TestCase):
 
         with patch.object(
             DashboardBootstrapService,
-            "_timed_fetch_with_isolated_client",
+            "_fetch_studio_summary",
         ) as tenant_fetch:
             payload, _ = asyncio.run(
                 DashboardBootstrapService(supabase).get_dashboard_bootstrap("user-1")

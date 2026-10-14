@@ -1,6 +1,6 @@
 import { SOCIAL_PREVIEW_IMAGE } from "@/lib/social-preview";
 import type { Metadata, Viewport } from "next";
-import { Inter, JetBrains_Mono } from "next/font/google";
+import { Inter } from "next/font/google";
 import { ThemeProvider } from "@/components/theme-provider";
 import { WebVitals } from "@/components/web-vitals";
 import { AppResumeGuard } from "@/components/app-resume-guard";
@@ -12,12 +12,7 @@ const inter = Inter({
   variable: "--font-inter",
   subsets: ["latin"],
   display: "swap",
-});
-
-const jetbrainsMono = JetBrains_Mono({
-  variable: "--font-jetbrains-mono",
-  subsets: ["latin"],
-  display: "swap",
+  preload: false,
 });
 
 const appTitle = `${APP_NAME} — Martial Arts Studio OS`;
@@ -87,7 +82,7 @@ export default function RootLayout({
       }
       data-theme="light"
       suppressHydrationWarning
-      className={`${inter.variable} ${jetbrainsMono.variable} h-full`}
+      className={`${inter.variable} h-full`}
     >
       <body className="min-h-full flex flex-col font-sans antialiased">
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />

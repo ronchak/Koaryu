@@ -124,8 +124,13 @@
   --color-warning: var(--warning);
   --color-danger: var(--danger);
 
-  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+  /* Match the shell on Apple; retain the bundled Inter fallback elsewhere. */
+  --font-sans:
+    -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", var(--font-inter), "Inter",
+    "Segoe UI", Roboto, ui-sans-serif, system-ui, sans-serif;
+  --font-mono:
+    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New",
+    "JetBrains Mono", monospace;
 }
 
 /* ---- Base ---- */
