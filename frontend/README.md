@@ -367,8 +367,13 @@ replacing drafts, and blocks that refresh while API saves are pending. See
 [the navigation follow-up](../docs/verification/navigation-reliability-followup.md)
 for lifecycle behavior and the release browser checks.
 
-Ordinary Dashboard revisits may reuse facts for up to the backend cache's 15-second
-TTL. Explicit refresh and post-command reconciliation remain fresh. Commands in
+Home skips mount revalidation when its retained snapshot is less than 15 seconds
+old and belongs to the current facts generation. Pending commands or the
+60-second facts-freshness window always bypass this shortcut. The snapshot records
+the read's freshness and generation; reuse never renews its age or read order, and
+never clears access refusals. A pending Home read is still joined so its result
+reaches the remounted page. Focus, timed and explicit revalidation still run.
+Explicit refresh and post-command reconciliation remain fresh. Commands in
 this browser or another same-origin tab bypass cached facts for 60 seconds.
 Invoice and payment page GETs are fact-neutral and do not start that window.
 Other Billing reads still mark facts at dispatch and settlement: plans can create

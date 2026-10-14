@@ -331,7 +331,7 @@ test("Home greeting remains stable after payload refresh and a studio clock chan
     await page.close();
   }
 });
-test("Home revisit paints retained facts in the first commit and makes one Home request", async () => {
+test("Home revisit paints recent retained facts in the first commit without another request", async () => {
   const { page, errors } = await mount();
   try {
     await deliver(page, homePayload("admin", { rich: true }));
@@ -345,13 +345,10 @@ test("Home revisit paints retained facts in the first commit and makes one Home 
       status: "ready",
       placeholders: 0,
     });
-    assert.equal(await homeCount(page), count + 1);
+    assert.equal(await homeCount(page), count);
     assert.deepEqual(
-      await page.evaluate(
-        (offset) => window.fixture.requests.slice(offset).map((r) => r.path.split("?")[0]),
-        offset,
-      ),
-      ["/dashboard/home"],
+      await page.evaluate((offset) => window.fixture.requests.slice(offset), offset),
+      [],
     );
     assert.equal(await root(page).getAttribute("data-koaryu-dashboard-data-ready"), "true");
     assert.deepEqual(errors, []);
