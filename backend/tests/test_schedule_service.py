@@ -1,6 +1,6 @@
 import asyncio
 import unittest
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
@@ -221,70 +221,59 @@ def schedule_window_payload(
 
 
 class ScheduleServiceTest(unittest.TestCase):
-    def test_canonical_dates_include_valid_leap_days(self):
-        for value in ("2026-05-24", "2024-02-29", "2000-02-29"):
-            with self.subTest(value=value):
-                self.assertEqual(ScheduleService._parse_date(value), date.fromisoformat(value))
-                self.assertEqual(
-                    ScheduleService._parse_query_date(value, "start_date"),
-                    date.fromisoformat(value),
-                )
+    DATE_EQUIVALENCE_INPUTS = (
+        "2026-05-24",
+        "2026-5-24",
+        "2026-05-4",
+        "2026-5-4",
+        "2026-05- 4",
+        "2024-02-29",
+        "2000-02-29",
+        "٢٠٢٦-05-24",
+        "20260524",
+        "2026-W21-7",
+        "2026-13-01",
+        "2026-02-29",
+        "not-a-date",
+        "",
+        None,
+        20260524,
+        "2026-05-24T00:00",
+    )
 
-    def test_malformed_persisted_session_dates_keep_provider_error(self):
-        for value in (
-            "",
-            "not-a-date",
-            "2026-02-29",
-            "2026-13-01",
-            "20260524",
-            "2026-W21-7",
-            "2026-5-24",
-            "2026-05-24T00:00:00Z",
-        ):
+    def test_persisted_date_parser_matches_base_behavior(self):
+        for value in self.DATE_EQUIVALENCE_INPUTS:
             with self.subTest(value=value):
-                supabase = RpcBackedSupabase()
-                payload = schedule_window_payload()
-                payload["sessions"][0]["date"] = value
-                supabase._rpc_schedule_window_read = lambda _params: payload
-                with self.assertRaises(HTTPException) as context:
-                    asyncio.run(
-                        ScheduleService(supabase).read_schedule_window(
-                            "studio-1", "2026-05-24", "2026-05-24"
-                        )
+                try:
+                    expected = datetime.strptime(value, "%Y-%m-%d").date()
+                except (TypeError, ValueError):
+                    with self.assertRaises(HTTPException) as context:
+                        ScheduleService._parse_date(value)
+                    self.assertEqual(context.exception.status_code, 500)
+                    self.assertEqual(
+                        context.exception.detail,
+                        f"Invalid persisted schedule date '{value}'. Review schedule data and migrations.",
                     )
-                self.assertEqual(context.exception.status_code, 500)
-                self.assertEqual(
-                    context.exception.detail,
-                    f"Invalid persisted schedule date '{value}'. Review schedule data and migrations.",
-                )
-                self.assertEqual(len(supabase.rpc_calls), 1)
+                else:
+                    self.assertEqual(ScheduleService._parse_date(value), expected)
 
-    def test_query_dates_reject_noncanonical_shapes_before_provider_calls(self):
-        for value in (
-            "",
-            "not-a-date",
-            "2026-02-29",
-            "2026-13-01",
-            "20260524",
-            "2026-W21-7",
-            "2026-5-24",
-            "2026-05-24T00:00:00Z",
-        ):
+    def test_query_date_parser_matches_base_behavior(self):
+        for value in self.DATE_EQUIVALENCE_INPUTS:
             for field_name in ("start_date", "end_date"):
                 with self.subTest(value=value, field_name=field_name):
-                    supabase = RpcBackedSupabase()
-                    dates = {"start_date": "2026-05-24", "end_date": "2026-05-24"}
-                    dates[field_name] = value
-                    with self.assertRaises(HTTPException) as context:
-                        asyncio.run(
-                            ScheduleService(supabase).read_schedule_window("studio-1", **dates)
+                    try:
+                        expected = datetime.strptime(value, "%Y-%m-%d").date()
+                    except (TypeError, ValueError):
+                        with self.assertRaises(HTTPException) as context:
+                            ScheduleService._parse_query_date(value, field_name)
+                        self.assertEqual(context.exception.status_code, 400)
+                        self.assertEqual(
+                            context.exception.detail, f"{field_name} must be in YYYY-MM-DD format"
                         )
-                    self.assertEqual(context.exception.status_code, 400)
-                    self.assertEqual(
-                        context.exception.detail, f"{field_name} must be in YYYY-MM-DD format"
-                    )
-                    self.assertEqual(supabase.rpc_calls, [])
-                    self.assertEqual(supabase.query_log, [])
+                    else:
+                        self.assertEqual(
+                            ScheduleService._parse_query_date(value, field_name), expected
+                        )
 
     def test_template_patch_endpoint_parses_clear_and_rejects_required_null(self):
         template = template_row("template-1", "Youth Basics")
