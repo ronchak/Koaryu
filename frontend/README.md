@@ -330,6 +330,12 @@ See [refund completion verification](../docs/remediation/refund-completion-verif
 
 ## Navigation authentication recovery
 
+Password sign-in synchronizes redirect cookies before navigating; the destination
+verifies workspace access without an extra route refresh. The active studio-state
+cookie lasts 12 hours; archived and no-studio states expire after five minutes.
+Every workspace response re-syncs this hint. It only chooses redirects and never
+grants access: workspace and endpoint checks remain authoritative.
+
 Navigation checks `/auth/me` when studio state needs refreshing and for Billing
 Connect access checks. Ordinary Billing uses the verified workspace role for its
 restricted view; billing endpoints enforce access on every request. Billing tab
