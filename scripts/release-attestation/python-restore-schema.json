@@ -915,6 +915,19 @@
       "state": "v59",
       "query": "V59_TIMEZONE_FUNCTION_STATE_SQL",
       "expected": "EXPECTED_V59_TIMEZONE_FUNCTION_STATE"
+    },
+    "catalog-v59": {
+      "kind": "export",
+      "state": "v59",
+      "query": "V59_CATALOG_STATE_SQL",
+      "expected": "EXPECTED_V59_CATALOG_STATE",
+      "restored": "EXPECTED_V59_RESTORED_CATALOG_STATE"
+    },
+    "release-v59": {
+      "kind": "export",
+      "state": "v59",
+      "query": "V59_RELEASE_MANIFEST_SQL",
+      "expected": "EXPECTED_V59_RELEASE_MANIFEST"
     }
   },
   "cases": {
@@ -4399,6 +4412,15 @@
         [
           "functions-v59.query",
           "functions-v59.expected"
+        ],
+        [
+          "catalog-v59.query",
+          "catalog-v59.expected",
+          "catalog-v59.restored"
+        ],
+        [
+          "release-v59.query",
+          "release-v59.expected"
         ]
       ],
       "predecessor": [
@@ -4408,7 +4430,9 @@
       "checks": [
         "readiness-v59",
         "tables-v59",
-        "functions-v59"
+        "functions-v59",
+        "catalog-v59",
+        "release-v59"
       ],
       "absentFunctions": [
         "private.timezone_name_known(text)",

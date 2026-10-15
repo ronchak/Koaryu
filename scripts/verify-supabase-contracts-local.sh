@@ -2358,6 +2358,10 @@ run_interruptible "$PSQL" "${psql_args[@]}" --single-transaction \
   --command="INSERT INTO supabase_migrations.schema_migrations(version,name) VALUES('20261014083106','timezone_names_reference_v59');"
 final_readiness="$({ cd "$ROOT_DIR"; node --input-type=module --eval "import { FINAL_OPERATIONAL_READINESS_SQL } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(FINAL_OPERATIONAL_READINESS_SQL);"; } | "$PSQL" "${psql_args[@]}" --tuples-only --no-align)"
 (cd "$ROOT_DIR" && node --input-type=module --eval "import { validateOperationalReadiness } from './scripts/studio-comp-migration-rollout.mjs'; validateOperationalReadiness(process.argv[1]);" "$final_readiness")
+v58_compatibility="$({ cd "$ROOT_DIR"; node --input-type=module --eval "import { V58_OPERATIONAL_READINESS_SQL } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(V58_OPERATIONAL_READINESS_SQL);"; } | "$PSQL" "${psql_args[@]}" --tuples-only --no-align)"
+(cd "$ROOT_DIR" && node --input-type=module --eval "import assert from 'node:assert/strict'; import { EXPECTED_V58_OPERATIONAL_READINESS } from './scripts/studio-comp-migration-rollout.mjs'; assert.equal(process.argv[1], EXPECTED_V58_OPERATIONAL_READINESS);" "$v58_compatibility")
+echo "[V59 compatibility] PASS installed V39 returns exact V58 success rows"
+run_interruptible python3 "$ROOT_DIR/scripts/check-timezone-names-parity.py" "$PSQL" "$SOCKET_DIR" "$PG_PORT" postgres
 run_interruptible "$PSQL" "${psql_args[@]}" --file="$VERIFICATION_DIR/timezone_names_reference_contract.sql"
 for verification_filename in belt_test_recipient_contract.sql workflow_current_facts_contract.sql workflow_invoice_episode_contract.sql workflow_advance_contract.sql; do
   echo "[V59 contract] RUN $verification_filename"
