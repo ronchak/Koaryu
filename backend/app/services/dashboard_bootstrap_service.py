@@ -115,6 +115,7 @@ class DashboardBootstrapService:
         # The empty inner embed keeps only ladders of this studio's active,
         # non-system programs (a NULL is_system counts as false) without
         # returning program fields. A failed join reports belts unavailable.
+        # Ordered as BeltService.list_ladders: the id breaks created_at ties.
         return (
             self.supabase.table("belt_ladders")
             .select("*, belt_ranks(*), programs!inner()")
@@ -123,6 +124,7 @@ class DashboardBootstrapService:
             .is_("programs.archived_at", "null")
             .not_.is_("programs.is_system", "true")
             .order("created_at")
+            .order("id")
             .execute()
         )
 

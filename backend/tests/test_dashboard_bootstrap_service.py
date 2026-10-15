@@ -690,7 +690,7 @@ TRAINING_BELT_QUERY = [
     ("programs.studio_id", "eq.studio-1"),
     ("programs.archived_at", "is.null"),
     ("programs.is_system", "not.is.true"),
-    ("order", "created_at"),
+    ("order", "created_at,id"),
 ]
 
 

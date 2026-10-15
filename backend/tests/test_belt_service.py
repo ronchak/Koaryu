@@ -12,6 +12,7 @@ from app.schemas.belt import BeltLadderSyncRequest
 from app.services import belt_eligibility
 from app.services.belt_eligibility import BeltEligibilityCalculator
 from app.services.belt_service import BeltService
+from app.services.dashboard_bootstrap_service import DashboardBootstrapService
 from tests.fakes.supabase import FakeTableQuery, RpcBackedSupabase
 
 
@@ -226,7 +227,7 @@ def primary_ladder_tables():
             [rank_row("r-unscoped", "lad-unscoped", 1)],
         ),
         ladder_row("lad-primary", "prog-visible", "2025-02-01T00:00:00Z", primary_ranks),
-        # Same created_at as the primary: provider order decides.
+        # Same created_at as the primary: the smaller id comes first.
         ladder_row(
             "lad-second",
             "prog-second",
@@ -280,6 +281,17 @@ def primary_ladder_tables():
             attendance_row("st-white", "2026-03-16T12:00:00Z", "prog-second"),
         ],
     }
+
+
+def with_training_join(tables):
+    """Flatten each ladder's program onto it, where Training's inner join filters it."""
+    programs = {program["id"]: program for program in tables["programs"]}
+    for ladder in tables["belt_ladders"]:
+        program = programs.get(ladder["program_id"]) or {}
+        ladder["programs.studio_id"] = program.get("studio_id")
+        ladder["programs.archived_at"] = program.get("archived_at")
+        # The fake compares the not.is.true filter as text.
+        ladder["programs.is_system"] = "true" if program.get("is_system") else None
 
 
 def eligibility_outcome(supabase, ladder_id, **kwargs):
@@ -731,17 +743,51 @@ class BeltServiceTest(unittest.TestCase):
             {"st-archived", "st-system", "st-unscoped"}, {entry.student_id for entry in narrowed}
         )
 
-    def test_primary_ladder_keeps_provider_order_for_same_created_at(self):
-        tables = primary_ladder_tables()
-        ladders = tables["belt_ladders"]
-        ladders[-2], ladders[-1] = ladders[-1], ladders[-2]
-        service = BeltService(FakeSupabase(tables))
+    def test_home_belt_tracker_and_training_share_the_created_at_id_primary(self):
+        for provider_order in ("id order", "reversed ties"):
+            with self.subTest(provider_order=provider_order):
+                tables = primary_ladder_tables()
+                ladders = tables["belt_ladders"]
+                if provider_order == "reversed ties":
+                    ladders[-2], ladders[-1] = ladders[-1], ladders[-2]
+                # Created later but with the smallest id: created_at still comes first.
+                tables["programs"].append(program_row("prog-later"))
+                later = ladder_row(
+                    "lad-aaa-later",
+                    "prog-later",
+                    "2025-03-01T00:00:00Z",
+                    [rank_row("later-white", "lad-aaa-later", 1)],
+                )
+                ladders.insert(0, later)
+                tables["belt_ranks"].extend(later["belt_ranks"])
+                with_training_join(tables)
+                supabase = FakeSupabase(tables)
+                belts = BeltService(supabase)
+                training = DashboardBootstrapService(supabase)
 
-        listed = asyncio.run(service.list_ladders(STUDIO_ID))
-        primary, _entries = asyncio.run(service.get_primary_ladder_eligibility(STUDIO_ID))
+                listed = asyncio.run(belts.list_ladders(STUDIO_ID))
+                primary, _entries = asyncio.run(belts.get_primary_ladder_eligibility(STUDIO_ID))
+                trained = [
+                    training._build_ladder_response(row)
+                    for row in training._fetch_belt_ladders(STUDIO_ID).data
+                ]
 
-        self.assertEqual(primary.id, "lad-second")
-        self.assertEqual(primary.model_dump(), listed[0].model_dump())
+                expected = ["lad-primary", "lad-second", "lad-aaa-later"]
+                self.assertEqual([ladder.id for ladder in listed], expected)
+                self.assertEqual([ladder.id for ladder in trained], expected)
+                self.assertEqual(primary.model_dump(), listed[0].model_dump())
+                # Embedded rank order is unchanged on both responses.
+                for ladder in (primary, trained[0]):
+                    self.assertEqual(
+                        [rank.id for rank in ladder.ranks], ["p-white", "p-z", "p-a", "p-top"]
+                    )
+                self.assertTrue(
+                    all(
+                        read["orders"] == (("created_at", False), ("id", False))
+                        for read in supabase.query_log
+                        if read["table"] == "belt_ladders"
+                    )
+                )
 
     def test_primary_ladder_eligibility_without_visible_ladder_reads_no_facts(self):
         no_visible_program = primary_ladder_tables()
@@ -827,8 +873,7 @@ class BeltServiceTest(unittest.TestCase):
             [(entry.student_id, entry.current_rank_id, entry.next_rank_id) for entry in entries],
             [("st-unranked", None, "p-white"), ("st-white", "p-white", "p-top")],
         )
-        # A full first page is discarded: the visible query picks the primary
-        # and the metadata is re-read from offset 0 in a unique order.
+        # One uniquely ordered ladder query, paged from offset 0.
         self.assertEqual(
             [
                 (read["columns"], read["filters"], read["orders"], read["range"])
@@ -839,24 +884,10 @@ class BeltServiceTest(unittest.TestCase):
                 (
                     "*, belt_ranks(*)",
                     (("eq", "studio_id", STUDIO_ID),),
-                    (("created_at", False),),
-                    (0, 999),
-                ),
-                (
-                    "*, belt_ranks(*)",
-                    (("eq", "studio_id", STUDIO_ID), ("in", "program_id", {"prog-visible"})),
-                    (("created_at", False),),
-                    None,
-                ),
-                *[
-                    (
-                        "id, name, program_id, studio_id",
-                        (("eq", "studio_id", STUDIO_ID),),
-                        (("created_at", False), ("id", False)),
-                        page,
-                    )
-                    for page in ((0, 999), (1000, 1999))
-                ],
+                    (("created_at", False), ("id", False)),
+                    page,
+                )
+                for page in ((0, 999), (1000, 1999))
             ],
         )
         self.assertEqual(
