@@ -35,7 +35,7 @@ after(async () => {
 
 // The browser calendar is days ahead of the studio calendar, so a browser-derived
 // window cannot pass for the studio window.
-async function mountReports(businessDate) {
+async function mountReports(businessDate, programsLoadError = null) {
   const context = await browser.newContext({ timezoneId: "UTC" });
   const page = await context.newPage();
   page.setDefaultTimeout(6000);
@@ -44,54 +44,60 @@ async function mountReports(businessDate) {
   page.on("pageerror", (error) => errors.push(error.message));
   await page.route("**/*", (route) => route.abort());
   await page.setContent('<div id="root"></div>');
-  await page.evaluate((initialBusinessDate) => {
-    const listeners = new Set();
-    const f = (window.fixture = { reads: [], readiness: [] });
-    const notify = () => listeners.forEach((listener) => listener());
-    f.subscribe = (listener) => {
-      listeners.add(listener);
-      return () => listeners.delete(listener);
-    };
-    // Like the real store, a settled range read merges its sessions into shared state.
-    const refreshScheduleRange = (startDate, endDate, intent) =>
-      new Promise((resolve, reject) => {
-        f.reads.push({
-          args: [startDate, endDate, intent],
-          resolve: (sessions) => {
-            const byId = new Map(f.state.schedule.sessions.map((s) => [s.id, s]));
-            sessions.forEach((s) => byId.set(s.id, s));
-            f.state = {
-              ...f.state,
-              schedule: { ...f.state.schedule, sessions: [...byId.values()] },
-            };
-            notify();
-            resolve();
-          },
-          reject,
+  await page.evaluate(
+    ({ initialBusinessDate, programsLoadError }) => {
+      const listeners = new Set();
+      const f = (window.fixture = { reads: [], readiness: [], programCalls: [] });
+      const notify = () => listeners.forEach((listener) => listener());
+      f.subscribe = (listener) => {
+        listeners.add(listener);
+        return () => listeners.delete(listener);
+      };
+      // Like the real store, a settled range read merges its sessions into shared state.
+      const refreshScheduleRange = (startDate, endDate, intent) =>
+        new Promise((resolve, reject) => {
+          f.reads.push({
+            args: [startDate, endDate, intent],
+            resolve: (sessions) => {
+              const byId = new Map(f.state.schedule.sessions.map((s) => [s.id, s]));
+              sessions.forEach((s) => byId.set(s.id, s));
+              f.state = {
+                ...f.state,
+                schedule: { ...f.state.schedule, sessions: [...byId.values()] },
+              };
+              notify();
+              resolve();
+            },
+            reject,
+          });
         });
-      });
-    f.state = {
-      config: { businessDate: initialBusinessDate, isPreviewMode: false, token: "token-a" },
-      schedule: { attendance: [], refreshScheduleRange, sessions: [] },
-    };
-    f.setBusinessDate = (businessDate) => {
-      f.state = { ...f.state, config: { ...f.state.config, businessDate } };
-      notify();
-    };
-    f.leadStore = {
-      leads: [],
-      leadsLoadError: null,
-      leadsLoaded: true,
-      refreshLeads: async () => {},
-    };
-    f.programStore = {
-      programs: [],
-      programsLoadError: null,
-      programsLoaded: true,
-      refreshPrograms: async () => {},
-    };
-    f.studioStore = { currentRole: "admin", identityGeneration: 1, identityReady: true };
-  }, businessDate);
+      f.state = {
+        config: { businessDate: initialBusinessDate, isPreviewMode: false, token: "token-a" },
+        schedule: { attendance: [], refreshScheduleRange, sessions: [] },
+      };
+      f.setBusinessDate = (businessDate) => {
+        f.state = { ...f.state, config: { ...f.state.config, businessDate } };
+        notify();
+      };
+      f.leadStore = {
+        leads: [],
+        leadsLoadError: null,
+        leadsLoaded: true,
+        refreshLeads: async () => {},
+      };
+      f.programStore = {
+        programs: [],
+        programsLoadError,
+        programsLoaded: true,
+        refreshPrograms: async (options) => {
+          f.programCalls.push(options);
+          return [];
+        },
+      };
+      f.studioStore = { currentRole: "admin", identityGeneration: 1, identityReady: true };
+    },
+    { initialBusinessDate: businessDate, programsLoadError },
+  );
   await page.addScriptTag({ content: source });
   return { context, errors, page };
 }
@@ -250,6 +256,7 @@ test("reports retain their layout and data across remount, resume, failed refres
   await page.getByTestId("reports-error").waitFor();
   assert.deepEqual(await displayedReport(page), original);
 
+  assert.deepEqual(await page.evaluate(() => fixture.programCalls), []);
   await page.getByRole("button", { name: "Retry reports" }).click();
   await page.waitForFunction(() => fixture.reads.length === 3);
   assert.deepEqual(await displayedReport(page), original);
@@ -259,6 +266,11 @@ test("reports retain their layout and data across remount, resume, failed refres
   await page.waitForFunction(() => fixture.reads.length === 4);
   assert.deepEqual(await displayedReport(page), original);
   await expect(page.locator('[data-reports-loading="true"]')).toHaveCount(0);
+  // Retry and resume refresh program names and archive state, not usage counts.
+  assert.deepEqual(await page.evaluate(() => fixture.programCalls), [
+    { includeArchived: true, includeUsage: false },
+    { includeArchived: true, includeUsage: false },
+  ]);
 
   await page.evaluate(() => fixture.setMounted(false));
   await expect(page.locator("article")).toHaveCount(0);
@@ -274,6 +286,22 @@ test("reports retain their layout and data across remount, resume, failed refres
   await expect(page.locator('[data-reports-loading="true"]')).toHaveCount(1);
   await page.evaluate((sessions) => fixture.reads[4].resolve(sessions), firstWindowSessions);
   await expect(page.locator('[data-reports-loading="true"]')).toHaveCount(0);
+  assert.deepEqual(errors, []);
+  await context.close();
+});
+
+test("a retained program metadata error keeps the report and offers a metadata retry", async () => {
+  const { context, errors, page } = await mountReports("2026-09-29", "Metadata failed");
+  await page.waitForFunction(() => fixture.reads.length === 1);
+  await page.evaluate((sessions) => fixture.reads[0].resolve(sessions), firstWindowSessions);
+  await page.getByTestId("reports-error").waitFor();
+  assert.match(await page.getByTestId("reports-error").textContent(), /Programs: Metadata failed/);
+  assert.equal((await displayedReport(page)).window, "Aug 31 – Sep 29");
+  await page.getByRole("button", { name: "Retry reports" }).click();
+  await page.waitForFunction(() => fixture.reads.length === 2);
+  assert.deepEqual(await page.evaluate(() => fixture.programCalls), [
+    { includeArchived: true, includeUsage: false },
+  ]);
   assert.deepEqual(errors, []);
   await context.close();
 });

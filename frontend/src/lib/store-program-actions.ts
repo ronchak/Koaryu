@@ -38,6 +38,15 @@ interface UseStoreProgramActionsOptions {
   setProgramsLoadError: Dispatch<SetStateAction<string | null>>;
 }
 
+interface ProgramRead {
+  identity: object;
+  promise: Promise<Program[]>;
+  isCurrent: () => boolean;
+  ownsRead: () => boolean;
+  includeArchived: boolean;
+  includeUsage: boolean;
+}
+
 export function useStoreProgramActions({
   applyLadderSelection,
   beginLiveAuthRequest,
@@ -53,11 +62,13 @@ export function useStoreProgramActions({
   setProgramsUsageLoadError,
   setProgramsLoadError,
 }: UseStoreProgramActionsOptions) {
-  const usageRequestsRef = useRef(
-    new Map<string, { identity: object; promise: Promise<Program[]>; isCurrent: () => boolean }>(),
-  );
+  const programReadsRef = useRef(new Map<string, ProgramRead>());
   const refreshPrograms = useCallback(
-    async (options?: { includeArchived?: boolean; force?: boolean }): Promise<Program[]> => {
+    async (options?: {
+      includeArchived?: boolean;
+      force?: boolean;
+      includeUsage?: boolean;
+    }): Promise<Program[]> => {
       if (isPreviewMode) {
         const stored = load(KEYS.programs, MOCK_PROGRAMS);
         persistPrograms(stored);
@@ -66,19 +77,42 @@ export function useStoreProgramActions({
         return stored;
       }
 
-      const owner = beginLiveAuthRequest();
+      const includeArchived = options?.includeArchived === true;
+      const includeUsage = options?.includeUsage !== false;
+      let owner = beginLiveAuthRequest();
       const scope = programScopeRef.current;
-      const key = `${owner.token}:${options?.includeArchived === true}`;
-      const retainedRequest = usageRequestsRef.current.get(key);
-      if (!options?.force && retainedRequest?.isCurrent()) return retainedRequest.promise;
+      let key = `${owner.token}:${includeArchived}:${includeUsage}`;
+      for (;;) {
+        const retainedRequest = programReadsRef.current.get(key);
+        if (!options?.force && retainedRequest?.isCurrent()) return retainedRequest.promise;
+        if (includeUsage) break;
+        // Metadata never supersedes a usage read, including one replaying after
+        // token renewal. It adopts an equivalent read or starts once that settles.
+        const usageRead = [...programReadsRef.current.values()].find(
+          (read) => read.includeUsage && read.ownsRead(),
+        );
+        if (!usageRead) break;
+        if (!options?.force && usageRead.includeArchived === includeArchived) {
+          return usageRead.promise;
+        }
+        await usageRead.promise.catch(() => undefined);
+        if (programScopeRef.current !== scope || !canCommitLiveMutation(owner)) return [];
+        owner = beginLiveAuthRequest();
+        key = `${owner.token}:${includeArchived}:${includeUsage}`;
+      }
       const sequence = ++scope.sequence;
       const ownsRead = () =>
         programScopeRef.current === scope &&
         scope.sequence === sequence &&
         canCommitLiveMutation(owner);
       let revision = scope.revision;
-      setProgramsUsageLoadError(null);
+      if (includeUsage) setProgramsUsageLoadError(null);
       if (!programsLoadedRef.current) setProgramsLoadError(null);
+      // Metadata errors belong to rows; usage readiness and errors stay with usage reads.
+      const reportError = (message: string) => {
+        if (includeUsage) setProgramsUsageLoadError(message);
+        if (!includeUsage || !programsLoadedRef.current) setProgramsLoadError(message);
+      };
 
       const identity = {};
       const pending = (async () => {
@@ -90,13 +124,26 @@ export function useStoreProgramActions({
           revision = scope.revision;
           try {
             const result = await api.get<Program[]>(
-              `/programs?include_archived=${options?.includeArchived ? "true" : "false"}`,
+              `/programs?include_archived=${includeArchived ? "true" : "false"}${includeUsage ? "" : "&include_usage=false"}`,
               request.token,
             );
             if (!ownsRead()) return result;
             if (request.canRetryAfterTokenChange?.()) continue;
             if (!request.isCurrent()) return result;
             if (revision !== scope.revision || scope.pending) continue;
+            if (!includeUsage) {
+              // Metadata usage is a zero placeholder. Keep each program's verified
+              // usage; a program without it leaves usage unverified until a usage read.
+              const usageById = new Map(programsRef.current.map((p) => [p.id, p.usage]));
+              const merged = result.map((program) => {
+                const usage = usageById.get(program.id);
+                return usage ? { ...program, usage } : program;
+              });
+              persistPrograms(merged);
+              if (result.some((program) => !usageById.has(program.id)))
+                setProgramsUsageLoaded(false);
+              return merged;
+            }
             persistPrograms(result);
             setProgramsUsageLoaded(true);
             setProgramsUsageLoadError(null);
@@ -105,10 +152,7 @@ export function useStoreProgramActions({
             if (ownsRead() && request.canRetryAfterTokenChange?.()) continue;
             if (ownsRead() && request.isCurrent()) {
               if (revision !== scope.revision || scope.pending) continue;
-              const message =
-                error instanceof Error ? error.message : "Programs could not be loaded.";
-              setProgramsUsageLoadError(message);
-              if (!programsLoadedRef.current) setProgramsLoadError(message);
+              reportError(error instanceof Error ? error.message : "Programs could not be loaded.");
             }
             throw error;
           }
@@ -116,19 +160,19 @@ export function useStoreProgramActions({
         const error = new Error(
           "Programs changed while loading. Refresh to see the latest records.",
         );
-        if (ownsRead()) {
-          setProgramsUsageLoadError(error.message);
-          if (!programsLoadedRef.current) setProgramsLoadError(error.message);
-        }
+        if (ownsRead()) reportError(error.message);
         throw error;
       })().finally(() => {
-        if (usageRequestsRef.current.get(key)?.identity === identity)
-          usageRequestsRef.current.delete(key);
+        if (programReadsRef.current.get(key)?.identity === identity)
+          programReadsRef.current.delete(key);
       });
-      usageRequestsRef.current.set(key, {
+      programReadsRef.current.set(key, {
         identity,
         promise: pending,
         isCurrent: () => ownsRead() && owner.isCurrent() && revision === scope.revision,
+        ownsRead,
+        includeArchived,
+        includeUsage,
       });
       return pending;
     },
@@ -138,6 +182,7 @@ export function useStoreProgramActions({
       persistPrograms,
       programScopeRef,
       programsLoadedRef,
+      programsRef,
       setProgramsLoadError,
       setProgramsUsageLoaded,
       setProgramsUsageLoadError,

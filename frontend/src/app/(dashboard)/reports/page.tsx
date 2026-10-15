@@ -102,7 +102,7 @@ export default function ReportsPage() {
     Promise.allSettled([
       refreshReportSchedule(),
       refreshLeads(),
-      refreshPrograms({ includeArchived: true }),
+      refreshPrograms({ includeArchived: true, includeUsage: false }),
     ]),
   );
 
@@ -146,7 +146,7 @@ export default function ReportsPage() {
   const isLoadingReport = !hasReportData && datasetReadiness.status === "loading";
   const retryReportsDatasets = useCallback(() => {
     void Promise.allSettled([
-      refreshPrograms({ includeArchived: true }),
+      refreshPrograms({ includeArchived: true, includeUsage: false }),
       refreshLeads(),
       refreshReportSchedule(),
     ]);
