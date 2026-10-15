@@ -41,11 +41,14 @@ refreshes preserve retained counters without certifying new programs' usage.
 Home promotion cache misses reuse all studio ladder metadata, including hidden
 ladders that own current ranks. The ordinary fixture drops from eight reads to
 seven. Ladders and canonical ranks are paged on this path; larger inventories
-can require more requests and hidden ladders add embedded-rank payload. Training
+can require more requests and hidden ladders add embedded-rank payload. At 1,000
+or more ladders, a separate visible selector preserves primary ordering while
+metadata pages use unique `(created_at, id)` ordering. Training
 bootstrap filters visible programs through an inner join, reducing its program
 and belt reads from three to two while keeping projection failures independent.
 An empty studio with a failed ladder join now reports unavailable belts. These
 are business-read counts, excluding authorization, not hosted latency results.
+These read optimizations require no migration.
 
 ### Release order and rollback
 
