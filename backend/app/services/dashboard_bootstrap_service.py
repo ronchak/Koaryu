@@ -112,24 +112,16 @@ class DashboardBootstrapService:
         )
 
     def _fetch_belt_ladders(self, studio_id: str):
-        visible_programs = (
-            self.supabase.table("programs")
-            .select("id, is_system, archived_at")
-            .eq("studio_id", studio_id)
-            .execute()
-        )
-        visible_program_ids = [
-            row["id"]
-            for row in (visible_programs.data or [])
-            if row.get("id") and not row.get("is_system") and not row.get("archived_at")
-        ]
-        if not visible_program_ids:
-            return SimpleNamespace(data=[])
+        # The empty inner embed keeps only ladders of this studio's active,
+        # non-system programs (a NULL is_system counts as false) without
+        # returning program fields. A failed join reports belts unavailable.
         return (
             self.supabase.table("belt_ladders")
-            .select("*, belt_ranks(*)")
+            .select("*, belt_ranks(*), programs!inner()")
             .eq("studio_id", studio_id)
-            .in_("program_id", visible_program_ids)
+            .eq("programs.studio_id", studio_id)
+            .is_("programs.archived_at", "null")
+            .not_.is_("programs.is_system", "true")
             .order("created_at")
             .execute()
         )

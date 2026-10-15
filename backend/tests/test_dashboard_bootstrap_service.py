@@ -1,13 +1,20 @@
 import asyncio
+import threading
 import unittest
+from collections import Counter
 from contextlib import ExitStack, contextmanager
 from datetime import date
+from importlib.metadata import version
 from types import SimpleNamespace
 from typing import get_args
 from unittest.mock import AsyncMock, patch
 
+import httpx
 import pytest
 from fastapi import HTTPException
+from postgrest import SyncPostgrestClient
+from postgrest.exceptions import APIError
+from postgrest.utils import SyncClient
 
 from app.schemas.program import ProgramResponse
 from app.schemas.student import StudentResponse
@@ -553,3 +560,201 @@ def test_bootstrap_omits_unrelated_route_queries(view, expected):
         assert result.leads == []
         assert result.belt_ladders == []
         assert result.primary_belt_ladder is None
+
+
+class SyntheticPostgrestClient(SyncPostgrestClient):
+    """Keep the pinned SDK's real builders, replacing only HTTP transport."""
+
+    def __init__(self, handler):
+        self.handler = handler
+        super().__init__("https://synthetic.invalid/rest/v1")
+
+    def create_session(self, base_url, headers, timeout, verify=True, proxy=None):
+        return SyncClient(
+            base_url=base_url,
+            headers=headers,
+            timeout=timeout,
+            transport=httpx.MockTransport(self.handler),
+            trust_env=False,
+        )
+
+
+def training_ladder(ladder_id, created_at, rank_orders):
+    return {
+        "id": ladder_id,
+        "studio_id": "studio-1",
+        "name": ladder_id,
+        "program_id": "program-1",
+        "sub_rank_term": None,
+        "created_at": created_at,
+        "updated_at": created_at,
+        "belt_ranks": [
+            {
+                "id": f"{ladder_id}-{order}",
+                "ladder_id": ladder_id,
+                "studio_id": "studio-1",
+                "name": f"Rank {order}",
+                "color_hex": "#FFFFFF",
+                "display_order": order,
+                "min_classes": 0,
+                "min_months": 0,
+                "requires_approval": False,
+                "created_at": created_at,
+            }
+            for order in rank_orders
+        ],
+    }
+
+
+class TrainingProvider:
+    """Answer training bootstrap reads in server order and record each request."""
+
+    def __init__(self, *, programs=None, ladders=None, failures=None):
+        self.programs = (
+            programs
+            if programs is not None
+            else [
+                {
+                    "id": "program-1",
+                    "studio_id": "studio-1",
+                    "name": "Kids",
+                    "is_system": None,
+                    "archived_at": None,
+                    "created_at": "2026-01-01T00:00:00Z",
+                }
+            ]
+        )
+        self.ladders = (
+            ladders
+            if ladders is not None
+            else [
+                training_ladder("ladder-early", "2026-01-01T00:00:00Z", [2, 0, 1]),
+                training_ladder("ladder-late", "2026-02-01T00:00:00Z", [0]),
+            ]
+        )
+        self.failures = failures or {}
+        self.requests = []
+
+    def __call__(self, request):
+        table = request.url.path.rsplit("/", 1)[-1]
+        self.requests.append((request.method, table, request.url.params, threading.get_ident()))
+        if table in self.failures:
+            status_code, code = self.failures[table]
+            return httpx.Response(
+                status_code,
+                json={
+                    "code": code,
+                    "message": "private provider detail",
+                    "details": "",
+                    "hint": "",
+                },
+            )
+        if table == "studios":
+            return httpx.Response(
+                200,
+                json={"id": "studio-1", "name": "Fixture", "slug": "fixture", "timezone": "UTC"},
+            )
+        return httpx.Response(200, json=self.programs if table == "programs" else self.ladders)
+
+
+def training_profile():
+    return AuthResponse(
+        user=UserProfile(id="user-1", email="fixture@example.test"),
+        staff_profiles_available=True,
+        membership_status="active",
+        studio_id="studio-1",
+        role="admin",
+    )
+
+
+def training_bootstrap(provider, *, allow_partial=True):
+    with (
+        patch(
+            "app.services.dashboard_bootstrap_service.AuthService._get_user_profile_sync",
+            return_value=training_profile(),
+        ),
+        patch("app.services.dashboard_bootstrap_service.ensure_platform_subscription_access"),
+        SyntheticPostgrestClient(provider) as client,
+    ):
+        payload, _timings = asyncio.run(
+            DashboardBootstrapService(client).get_dashboard_bootstrap(
+                "user-1", "studio-1", allow_partial=allow_partial, view="training"
+            )
+        )
+    return payload
+
+
+TRAINING_BELT_QUERY = [
+    ("select", "*, belt_ranks(*), programs!inner()"),
+    ("studio_id", "eq.studio-1"),
+    ("programs.studio_id", "eq.studio-1"),
+    ("programs.archived_at", "is.null"),
+    ("programs.is_system", "not.is.true"),
+    ("order", "created_at"),
+]
+
+
+def test_training_belts_use_one_scoped_join_beside_independent_programs_read():
+    assert version("postgrest") == "0.17.2"
+    provider = TrainingProvider()
+    payload = training_bootstrap(provider)
+
+    # Belts no longer preread programs: two program/belt reads instead of three.
+    assert Counter((method, table) for method, table, *_ in provider.requests) == {
+        ("GET", "studios"): 1,
+        ("GET", "programs"): 1,
+        ("GET", "belt_ladders"): 1,
+    }
+    belt_query = next(
+        params for _, table, params, _ in provider.requests if table == "belt_ladders"
+    )
+    # Both studio scopes, archived and NOT (is_system IS TRUE), so NULL stays visible.
+    assert sorted(belt_query.multi_items()) == sorted(TRAINING_BELT_QUERY)
+    assert not payload.dataset_errors.model_dump(exclude_none=True)
+    assert [program.id for program in payload.programs] == ["program-1"]
+    assert [ladder.id for ladder in payload.belt_ladders] == ["ladder-early", "ladder-late"]
+    assert payload.primary_belt_ladder.id == "ladder-early"
+    assert [rank.display_order for rank in payload.primary_belt_ladder.ranks] == [0, 1, 2]
+
+
+@pytest.mark.parametrize("failed,label", [("programs", "programs"), ("belt_ladders", "belts")])
+def test_training_programs_and_belts_fail_independently(failed, label):
+    payload = training_bootstrap(TrainingProvider(failures={failed: (500, "XX000")}))
+    assert payload.dataset_errors.model_dump(exclude_none=True).keys() == {label}
+    assert "private" not in payload.model_dump_json()
+    if label == "programs":
+        assert payload.programs == []
+        assert payload.primary_belt_ladder.id == "ladder-early"
+    else:
+        assert payload.belt_ladders == [] and payload.primary_belt_ladder is None
+        assert payload.programs[0].id == "program-1"
+    with pytest.raises(APIError) as error:
+        training_bootstrap(TrainingProvider(failures={failed: (500, "XX000")}), allow_partial=False)
+    assert error.value.code == "XX000"
+
+
+@pytest.mark.parametrize("allow_partial", [False, True])
+@pytest.mark.parametrize("code", ["42501", "28000", "28P01", "PGRST301", "PGRST302", "PGRST303"])
+def test_training_belt_join_access_failures_remain_fatal(allow_partial, code):
+    with pytest.raises(APIError) as error:
+        training_bootstrap(
+            TrainingProvider(failures={"belt_ladders": (403, code)}), allow_partial=allow_partial
+        )
+    assert error.value.code == code
+
+
+def test_training_without_visible_programs_is_empty_and_failed_join_is_unavailable():
+    provider = TrainingProvider(programs=[], ladders=[])
+    payload = training_bootstrap(provider)
+    assert [table for _, table, *_ in provider.requests].count("belt_ladders") == 1
+    assert payload.belt_ladders == [] and payload.primary_belt_ladder is None
+    assert not payload.dataset_errors.model_dump(exclude_none=True)
+
+    # Accepted fail-closed edge: the old preread skipped the ladder request for an
+    # empty studio, so this failure used to be an empty success.
+    failed = TrainingProvider(programs=[], ladders=[], failures={"belt_ladders": (400, "PGRST200")})
+    payload = training_bootstrap(failed)
+    assert payload.dataset_errors.model_dump(exclude_none=True).keys() == {"belts"}
+    assert payload.belt_ladders == [] and payload.programs == []
+    with pytest.raises(APIError):
+        training_bootstrap(failed, allow_partial=False)
