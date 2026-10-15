@@ -406,11 +406,12 @@ for (const mode of ["production", "development"]) {
       assert.equal(
         await page.evaluate(
           () =>
-            fixture.requests.at(-1).path.startsWith("/schedule/window/materialize") &&
+            // No recurring templates leave slots ungenerated, so the window is only read.
+            fixture.requests.at(-1).path.startsWith("/schedule/window?") &&
             fixture.requests.at(-1).token === "calendar-initial-renewal",
         ),
         true,
-        "renewal preserves calendar materialization intent",
+        "renewal preserves the calendar's initial window read",
       );
 
       // Navigation, token renewal, and a pending attendance write share one queue.
