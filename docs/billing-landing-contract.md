@@ -63,6 +63,15 @@ owner cannot update `pg_catalog.pg_index`; the portable contract needs no such g
 
 System diagnostics, platform status and financial access fail independently in landing composition. A diagnostic failure cannot hide the administrator's platform subscription recovery. The normal composition reuses the reporter's Connect account; only a failed reporter attempts the standalone Connect status read.
 
+Within each system-status response, the refreshed Connect account and one atomic
+payment-eligibility check supply the outbound-mutation diagnostic,
+`live_payments_authorized` and the Connect payment capability. This removes two
+repeated account reads and two repeated eligibility RPCs. The connected live-mode
+regression fixture goes from 14 sequential database calls to 10. This is a query
+count, not a production page-load measurement; Stripe refresh and the remaining
+queries can still delay the response. Eligibility is checked again on every
+status request, and payment mutations still obtain their own fresh permits.
+
 Landing has one 30-second deadline covering membership resolution and all
 projections. After membership succeeds, financial data, administrator-only
 platform recovery and diagnostics run independently on the bounded interactive
