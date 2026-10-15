@@ -89,7 +89,7 @@ def verify_v59_backup(local, source, snapshot, pinned, pg_dump, pg_restore, crea
                 'Restored V59 readiness differs')
         require(local.sql(restored, pinned['V58_OPERATIONAL_READINESS_SQL']) == pinned['EXPECTED_V58_OPERATIONAL_READINESS'],
                 'Restored V39 compatibility does not return exact V58 success rows')
-        checker = [str(root / 'backend/venv/bin/python'), str(root / 'scripts/check-timezone-names-parity.py'),
+        checker = [sys.executable, str(root / 'scripts/check-timezone-names-parity.py'),
                    local.psql, str(local.socket), '5432', restored]
         local.run(checker)
         # Metadata readiness deliberately does not reconcile names. Release inspection must.

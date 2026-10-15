@@ -85,7 +85,9 @@ upgrade and refresh using the normal backup, disposable restore and production
 apply gates. This worktree has no production authority.
 
 Refresh only as the reference owner in one transaction during a quiesced application
-write window, with a bounded lock wait. Lock the business tables against writes
+write window, with a bounded lock wait and a bounded transaction lifetime: PostgreSQL 17's
+`transaction_timeout` and `idle_in_transaction_session_timeout` roll the refresh back and
+release its locks if the session stalls or idles after acquiring them. Lock the business tables against writes
 before locking the reference and checking stored zones; this also excludes direct
 studio updates that do not call a timezone helper. A lock timeout or deadlock
 refuses the whole transaction; resolve active writers before retrying.
@@ -95,6 +97,8 @@ normal application owners before retrying. Do not disable their CHECKs.
 
 ```sql
 BEGIN;
+SET LOCAL transaction_timeout = '120s';
+SET LOCAL idle_in_transaction_session_timeout = '15s';
 SET LOCAL lock_timeout = '5s';
 SET LOCAL statement_timeout = '60s';
 SET LOCAL koaryu.timezone_names_refresh = 'approved-runtime-upgrade';
