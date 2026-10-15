@@ -5,9 +5,9 @@ from tests.performance.dashboard_home_fixture import build_tables, load_manifest
 
 # Measured at the manifest's creation; the budgets allow one more query and row.
 EXPECTED_QUERIES_AND_ROWS = {
-    "small": (72, 750),
-    "medium": (93, 19818),
-    "large": (282, 107184),
+    "small": (69, 747),
+    "medium": (90, 19815),
+    "large": (279, 107181),
 }
 # Machine-dependent metrics; the gate still enforces their ceilings.
 ENVIRONMENT_METRICS = {"total_duration_ms", "max_stage_duration_ms", "peak_rss_bytes"}

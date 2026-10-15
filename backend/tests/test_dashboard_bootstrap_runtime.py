@@ -17,7 +17,13 @@ from app.core.request_deadline import request_deadline
 from app.schemas.auth import AuthResponse, UserProfile
 from app.services.dashboard_bootstrap_service import BOOTSTRAP_VIEW_DATASETS
 from tests.fakes.supabase import TableBackedSupabase
-from tests.test_dashboard_bootstrap_service import METHOD_LABELS, patch_fetches
+from tests.test_dashboard_bootstrap_service import (
+    METHOD_LABELS,
+    SyntheticPostgrestClient,
+    TrainingProvider,
+    patch_fetches,
+    training_profile,
+)
 
 
 class BootstrapFixture:
@@ -229,6 +235,59 @@ def test_fake_client_bootstrap_operations_run_inline(bootstrap_fixture):
     assert result.students_total == 1
     assert len(fixture.clients) == 1
     assert all(event[2] == threading.get_ident() for event in fixture.events)
+
+
+def test_training_sdk_reads_run_on_the_worker_owning_each_client():
+    provider = TrainingProvider()
+    owners = []
+
+    def client_factory():
+        owner = threading.get_ident()
+        owners.append(owner)
+
+        def handler(request):
+            assert threading.get_ident() == owner
+            return provider(request)
+
+        return SyntheticPostgrestClient(handler)
+
+    async def scenario():
+        config = SupabaseLaneConfig(3, 3, 0.1, 2.0)
+        runtime = SupabaseProviderRuntime(
+            config,
+            config,
+            client_factory=client_factory,
+            client_closer=lambda client: client.session.close(),
+            thread_name_prefix="bootstrap-sdk-test",
+        )
+        try:
+            return await get_dashboard_bootstrap(
+                Response(),
+                user_id="user-1",
+                requested_studio_id="studio-1",
+                supabase=runtime,
+                view="training",
+                allow_partial=False,
+            )
+        finally:
+            await asyncio.to_thread(runtime.shutdown)
+
+    with (
+        patch(
+            "app.services.dashboard_bootstrap_service.AuthService._get_user_profile_sync",
+            return_value=training_profile(),
+        ),
+        patch("app.services.dashboard_bootstrap_service.ensure_platform_subscription_access"),
+    ):
+        payload = asyncio.run(scenario())
+    assert payload.primary_belt_ladder.id == "ladder-early"
+    assert sorted(table for _, table, *_ in provider.requests) == [
+        "belt_ladders",
+        "programs",
+        "studios",
+    ]
+    assert threading.get_ident() not in owners
+    assert {request[3] for request in provider.requests} <= set(owners)
 
 
 def test_bootstrap_cancellation_accounts_for_each_retained_dataset(bootstrap_fixture):

@@ -33,6 +33,29 @@ list. Financial tab reads start on activation. See
 [billing-landing-contract.md](billing-landing-contract.md) for the field access
 matrix, retention, aggregate formulas, deployment order and rollback window.
 
+Schedule resume and Reports resume/retry request program metadata with
+`include_usage=false`, avoiding four usage reads for nonempty program lists.
+Cold bootstrap already uses metadata. Settings keeps full usage reads; metadata
+refreshes preserve retained counters without certifying new programs' usage.
+
+Home promotion cache misses reuse all studio ladder metadata, including hidden
+ladders that own current ranks. The ordinary fixture drops from eight reads to
+seven. Ladders and canonical ranks are paged on this path; larger inventories
+can require more requests and hidden ladders add embedded-rank payload. Home,
+`BeltService.list_ladders`, Training bootstrap and the Belt Tracker's client
+re-sort after a save order ladders by `(created_at, id)`: the earliest ladder is
+primary, the id settles equal timestamps the same way on every path, and ladder
+pages stay stable. An explicitly selected ladder still wins. Training
+bootstrap filters visible programs through an inner join, reducing its program
+and belt reads from three to two while keeping projection failures independent.
+The belt list uses that same join, reducing two reads to one and avoiding a URL
+that grows with program IDs. Home pages its visible-program lookup separately
+to retain hidden ladder context. Empty studios still return an empty list on a
+successful join; a failed join now reports unavailable belts in Training or
+raises from the belt-list endpoint. These
+are business-read counts, excluding authorization, not hosted latency results.
+These read optimizations require no migration.
+
 ### Release order and rollback
 
 For the performance candidate, apply `20260905022339_billing_landing_aggregates.sql`

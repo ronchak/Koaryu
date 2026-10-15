@@ -30,7 +30,13 @@ export function selectBeltLadder(
 }
 
 export function sortBeltLadders(ladders: BeltLadder[]): BeltLadder[] {
-  return [...ladders].sort((left, right) => left.created_at.localeCompare(right.created_at));
+  // The API's ladder order: earliest first, with the id (compared as the
+  // database orders UUIDs) breaking created_at ties, so the primary survives writes.
+  return [...ladders].sort(
+    (left, right) =>
+      left.created_at.localeCompare(right.created_at) ||
+      (left.id < right.id ? -1 : left.id > right.id ? 1 : 0),
+  );
 }
 
 export function upsertBeltLadder(ladders: BeltLadder[], nextLadder: BeltLadder): BeltLadder[] {
