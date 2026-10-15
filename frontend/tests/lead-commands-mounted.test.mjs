@@ -27,7 +27,7 @@ function bundle() {
     f.setScope=setScope;f.setToken=setToken;f.setLeads=setLeads; f.scope=scope;
     const leadsRef=React.useRef(leads);leadsRef.current=leads;
     const studentsRef=React.useRef([]), scopeRef=React.useRef(require(${resource}).createResourceScope());
-    const a=require(${actions}).useStoreLeadActions({leadsRef,studentsRef,leadMutationScopeRef:scopeRef,businessDateRef:{current:'2026-09-26'},beginLeadMutation:()=>require(${resource}).beginResourceMutation(scopeRef.current),beginLiveAuthRequest:()=>({token,isCurrent:()=>f.scope===scope,isSameIdentity:()=>f.scope===scope}),beltLaddersRef:{current:[]},beltRanksRef:{current:[]},isPreviewMode:f.preview,programsRef:{current:[]},persistLeads:setLeads,persistStudents:v=>{studentsRef.current=v;f.students=v;},onStudentMutation:()=>f.studentMutations++,refreshStudents:async()=>{f.refreshes++;if(f.failRefresh)throw Error('refresh failed');return [];},setLeads,setLeadsLoaded:()=>{},setLeadsLoadError:()=>{}});
+    const a=require(${actions}).useStoreLeadActions({leadsRef,studentsRef,leadMutationScopeRef:scopeRef,businessDateRef:{current:'2026-09-26'},beginLeadMutation:()=>require(${resource}).beginResourceMutation(scopeRef.current),beginLiveAuthRequest:()=>({token,isCurrent:()=>f.scope===scope,isSameIdentity:()=>f.scope===scope}),beltLaddersRef:{current:[]},beltRanksRef:{current:[]},isPreviewMode:f.preview,programsRef:{current:[]},persistLeads:setLeads,persistStudents:v=>{studentsRef.current=v;f.students=v;},onStudentMutation:()=>f.studentMutations++,invalidateConvertedStudent:()=>{f.invalidations++;},setLeads,setLeadsLoaded:()=>{},setLeadsLoadError:()=>{}});
     const c=require(${hook}).useLeadsPageController({...a,baseLeads:leads,currentRole:'admin',identityGeneration:scope,identityReady:true,isPreviewMode:f.preview,programs:[],today:'2026-09-26',token});f.c=c;f.actions=a;f.leads=leads;
     const selected=c.model.selectedLead;
     return React.createElement(React.Fragment,null,
@@ -57,7 +57,7 @@ async function mount(browser, { preview = false, stage = "inquiry" } = {}) {
           );
         },
         writes: [],
-        refreshes: 0,
+        invalidations: 0,
         studentMutations: 0,
         initialLeads: ["a", "b"].map((id) => ({
           id,
@@ -237,7 +237,7 @@ test("old access completion cannot clear a new owner, show notices or navigate",
   }
 });
 
-test("completion for A does not close selected B and renewal preserves confirmed enrollment despite refresh failure", async () => {
+test("completion for A keeps B selected and renewal preserves enrollment with invalidation", async () => {
   const browser = await chromium.launch();
   try {
     const p = await mount(browser, { stage: "offer_sent" });
@@ -245,7 +245,6 @@ test("completion for A does not close selected B and renewal preserves confirmed
     await p.getByRole("button", { name: "Convert now", exact: true }).click();
     await p.locator('[data-lead-id="b"]').click();
     await p.evaluate(() => {
-      f.failRefresh = true;
       f.setToken("renewed");
     });
     await flush(p);
@@ -253,7 +252,7 @@ test("completion for A does not close selected B and renewal preserves confirmed
     assert.equal(await p.evaluate(() => f.c.model.selectedLead.id), "b");
     assert.deepEqual(await p.evaluate(() => f.navigation), []);
     assert.equal(await p.evaluate(() => f.leads[0].stage), "enrolled");
-    assert.equal(await p.evaluate(() => f.refreshes), 1);
+    assert.equal(await p.evaluate(() => f.invalidations), 1);
     assert.equal(await p.evaluate(() => f.c.leadActionError), null);
   } finally {
     await browser.close();

@@ -157,7 +157,8 @@ async function executeApiRequest<T>(
   let dispatched = false;
   const isCommand = !["GET", "HEAD", "OPTIONS"].includes(init.method ?? "GET");
   const finishCommand = isCommand ? beginPendingCommand() : undefined;
-  // Some Billing status GETs reconcile provider state. Treat their facts as changed too.
+  // Billing authorization can repair subscription access before reading rows.
+  // Home verifies that same access, so page GETs retain dispatch/settlement marks.
   const changesFacts = marksDashboardFacts && (isCommand || path.startsWith("/billing/"));
   if (changesFacts) markDashboardFactsChanged();
   try {

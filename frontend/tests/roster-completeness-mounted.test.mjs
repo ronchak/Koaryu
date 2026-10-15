@@ -112,12 +112,13 @@ async function mount(t, mode) {
           };
         if (path.startsWith("/students?")) {
           f.rosterReads++;
+          const items = structuredClone(f.rows);
           if (f.holdRoster)
             await new Promise((resolve) => {
               f.releaseRoster = resolve;
             });
           return {
-            items: structuredClone(f.rows),
+            items,
             total: f.rows.length,
             has_next: false,
             has_previous: false,
@@ -261,4 +262,53 @@ test("an explicit complete load clears mutation partialness and stays complete t
   await page.evaluate(() => fixture.navigate("/billing?tab=enrollments"));
   await verifyBillingChoices(page);
   assert.equal(await page.evaluate(() => fixture.rosterReads), 1);
+});
+
+test("conversion lets the newest Enrollments roster read retry its stale snapshot", async (t) => {
+  const page = await mount(t, "partial");
+  await page.evaluate(async () => {
+    const f = fixture,
+      get = f.api.get;
+    f.lead = { id: "lead", first_name: "New", last_name: "Student", stage: "inquiry" };
+    f.api.get = (path, ...args) =>
+      path === "/leads" ? Promise.resolve([f.lead]) : get(path, ...args);
+    await f.store.refreshLeads();
+  });
+  await page.waitForFunction(() => fixture.store.leads.length === 1);
+  await page.evaluate(() => {
+    const f = fixture,
+      post = f.api.post;
+    f.api.post = (path, ...args) =>
+      path === "/leads/lead/convert"
+        ? new Promise((resolve) => {
+            f.finishConversion = () => {
+              f.rows.push({ ...f.rows[0], id: "converted", legal_first_name: "Converted" });
+              resolve({ ...f.lead, stage: "enrolled", converted_student_id: "converted" });
+            };
+          })
+        : post(path, ...args);
+    f.conversion = f.store.convertLeadToStudent("lead");
+    f.holdRoster = true;
+    f.navigate("/billing?tab=enrollments");
+  });
+  await page.waitForFunction(
+    () => fixture.rosterReads === 1 && fixture.releaseRoster && fixture.finishConversion,
+  );
+  await page.evaluate(async () => {
+    fixture.finishConversion();
+    await fixture.conversion;
+  });
+  assert.equal(await page.evaluate(() => fixture.store.studentsMayBePartial), true);
+  assert.equal(await page.evaluate(() => fixture.rosterReads), 1);
+  await page.evaluate(() => {
+    fixture.holdRoster = false;
+    fixture.releaseRoster();
+  });
+  await page.waitForFunction(
+    () => fixture.store.studentsLoaded && !fixture.store.studentsMayBePartial,
+  );
+  await verifyBillingChoices(page);
+  assert.equal(await page.evaluate(() => fixture.rosterReads), 2);
+  assert.equal(await page.locator('li[data-student="converted"]').count(), 1);
+  t.diagnostic("Enrollments: 1 stale full read + 1 retry; complete roster includes conversion");
 });

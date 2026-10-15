@@ -199,3 +199,40 @@ for (const pathname of ["/billing", "/billing/"]) {
     assert.match(response.headers.get("cache-control"), /private.*no-store/);
   });
 }
+
+for (const status of ["active", "archived", "none"]) {
+  test(`middleware caches ${status} redirect state for ${status === "active" ? 43200 : 300} seconds`, async () => {
+    const oldPreview = process.env.NEXT_PUBLIC_PREVIEW_MODE;
+    const oldApi = process.env.NEXT_PUBLIC_API_URL;
+    const oldFetch = globalThis.fetch;
+    process.env.NEXT_PUBLIC_PREVIEW_MODE = "false";
+    process.env.NEXT_PUBLIC_API_URL = "http://127.0.0.1:45679/api/v1";
+    let reads = 0;
+    globalThis.fetch = async () => {
+      reads++;
+      return Response.json({
+        user: { id: "synthetic-user" },
+        studio_id: status === "active" ? "studio-1" : null,
+        membership_status: status,
+        role: "admin",
+      });
+    };
+    try {
+      const user = { id: "synthetic-user" };
+      const response = await loadMiddleware(user)(
+        new NextRequest("https://example.test/dashboard"),
+      );
+      assert.equal(
+        response.cookies.get(studioCookies.STUDIO_STATE_COOKIE).maxAge,
+        status === "active" ? 43200 : 300,
+      );
+      assert.equal(reads, 1);
+    } finally {
+      globalThis.fetch = oldFetch;
+      if (oldPreview === undefined) delete process.env.NEXT_PUBLIC_PREVIEW_MODE;
+      else process.env.NEXT_PUBLIC_PREVIEW_MODE = oldPreview;
+      if (oldApi === undefined) delete process.env.NEXT_PUBLIC_API_URL;
+      else process.env.NEXT_PUBLIC_API_URL = oldApi;
+    }
+  });
+}

@@ -34,6 +34,7 @@ import type { DashboardHome } from "@/types";
  */
 
 export const HOME_REVALIDATE_INTERVAL_MS = 60_000;
+export const HOME_REVISIT_FRESH_MS = 15_000;
 export const HOME_FACTS_DEBOUNCE_MS = 300;
 // Focus and visibility often fire together or in bursts; one read covers them.
 export const HOME_FOCUS_THROTTLE_MS = 5_000;
@@ -46,6 +47,8 @@ export type HomeLoader = (options: { fresh: boolean }) => Promise<DashboardHome>
 export type HomeSnapshot = {
   payload: DashboardHome;
   receivedAt: number;
+  factsGeneration: number;
+  fresh: boolean;
   scope: string;
   order: number;
 };
@@ -83,8 +86,13 @@ export function isHomeAccessError(error: unknown): boolean {
 // date and fact generation. A plain read joins a fresh read already in flight;
 // a fresh read never joins a plain one; no read joins one started before the
 // latest fact change. Each flight records its start order across the page.
-export type HomeFlight = { promise: Promise<DashboardHome>; order: number };
-type HomeFlightEntry = HomeFlight & { fresh: boolean; factsGeneration: number };
+export type HomeFlight = {
+  promise: Promise<DashboardHome>;
+  order: number;
+  fresh: boolean;
+  factsGeneration: number;
+};
+type HomeFlightEntry = HomeFlight;
 let factsGeneration = 0;
 let tracksFactsGeneration = false;
 const flightsByLoader = new WeakMap<HomeLoader, Map<string, HomeFlightEntry[]>>();
@@ -241,6 +249,7 @@ export function useHome(): HomeState {
 
   const scopeRef = useRef(scope);
   const retainedKeyRef = useRef(retainedKey);
+  const retainedRef = useRef(retained);
   const mountedRef = useRef(false);
   const attemptsRef = useRef<{
     latest: number;
@@ -252,7 +261,8 @@ export function useHome(): HomeState {
   useLayoutEffect(() => {
     scopeRef.current = scope;
     retainedKeyRef.current = retainedKey;
-  }, [scope, retainedKey]);
+    retainedRef.current = retained;
+  }, [scope, retainedKey, retained]);
   useEffect(() => {
     mountedRef.current = true;
     return () => {
@@ -263,6 +273,28 @@ export function useHome(): HomeState {
   const revalidate = useCallback(
     (trigger: HomeRevalidationTrigger) => {
       if (scope === null || retainedKey === null || flightKey === null) return;
+      trackFactsGeneration();
+      const fresh = needsFreshDashboardFacts();
+      const cached = retainedStore?.get<HomeSnapshot | null>(retainedKey) ?? retainedRef.current;
+      const cutoff = Math.max(
+        latestRefusal(loadDashboardHome, scope),
+        latestHomeAccessRefusal(loadDashboardHome, scope),
+      );
+      const age = cached ? Date.now() - cached.receivedAt : Infinity;
+      if (
+        trigger === "mount" &&
+        cached?.scope === scope &&
+        cached.order > cutoff &&
+        cached.factsGeneration === factsGeneration &&
+        age >= 0 &&
+        age < HOME_REVISIT_FRESH_MS &&
+        !fresh &&
+        pendingCommands() === 0 &&
+        !hasHomeFlight(loadDashboardHome, flightKey)
+      ) {
+        // Reuse presentation only. Do not renew its age/order or clear a refusal.
+        return;
+      }
       const attempts = attemptsRef.current;
       const startedAt = Date.now();
       if (
@@ -272,15 +304,12 @@ export function useHome(): HomeState {
         return;
       }
       attempts.lastStartedAt = startedAt;
-      const { promise, order } = requestHomePayload(
-        loadDashboardHome,
-        flightKey,
-        needsFreshDashboardFacts(),
-        Math.max(
-          latestRefusal(loadDashboardHome, scope),
-          latestHomeAccessRefusal(loadDashboardHome, scope),
-        ),
-      );
+      const {
+        promise,
+        order,
+        fresh: readFresh,
+        factsGeneration: readGeneration,
+      } = requestHomePayload(loadDashboardHome, flightKey, fresh, cutoff);
       if (promise === attempts.pending) return;
       attempts.latest = Math.max(attempts.latest, order);
       attempts.pending = promise;
@@ -316,7 +345,14 @@ export function useHome(): HomeState {
             if (mounted && (scopeRef.current !== scope || order <= attempts.applied)) return;
             if (admitOutcome(loadDashboardHome, scope, order, false) === null) return;
             // A read that lands after navigation still serves the next visit.
-            const snapshot = { payload, receivedAt: Date.now(), scope, order };
+            const snapshot = {
+              payload,
+              receivedAt: Date.now(),
+              scope,
+              order,
+              fresh: readFresh,
+              factsGeneration: readGeneration,
+            };
             retainUnderKey(snapshot);
             if (!mounted) return;
             attempts.applied = order;

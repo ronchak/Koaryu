@@ -5,7 +5,7 @@ import {
   parseStudioStateCookie,
   serializeStudioStateCookie,
   STUDIO_STATE_COOKIE,
-  STUDIO_STATE_COOKIE_MAX_AGE_SECONDS,
+  studioStateCookieMaxAge,
   type StudioMembershipStatus,
 } from "@/lib/studio-state-cookie";
 import { canAccessBillingRoute, isBillingRoute } from "@/lib/billing-route-access";
@@ -29,7 +29,7 @@ function setStudioStateCookie(
     serializeStudioStateCookie(userId, hasStudio, membershipStatus),
     {
       path: "/",
-      maxAge: STUDIO_STATE_COOKIE_MAX_AGE_SECONDS,
+      maxAge: studioStateCookieMaxAge(membershipStatus),
       sameSite: "lax",
       secure: request.nextUrl.protocol === "https:",
     },

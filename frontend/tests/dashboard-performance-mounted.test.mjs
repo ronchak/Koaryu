@@ -307,14 +307,13 @@ test("Home synthetic request and payload measurements", async (t) => {
       await settle(page);
       const offset = await page.evaluate(() => fixture.requests.length);
       await page.evaluate(() => fixture.mountHome());
-      await page.waitForFunction((start) => fixture.requests.length > start, offset);
       await settle(page);
       assert.deepEqual(
         await page.evaluate(
           (start) => fixture.requests.slice(start).map((r) => r.path.split("?")[0]),
           offset,
         ),
-        ["/dashboard/home"],
+        [],
       );
       t.diagnostic(
         JSON.stringify({

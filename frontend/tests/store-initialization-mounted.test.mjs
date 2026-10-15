@@ -1661,6 +1661,7 @@ for (const operation of ["add", "update", "delete", "convert"]) {
                     studio_name: "Lead race studio",
                     leads,
                     students: [],
+                    students_may_be_partial: false,
                     programs: [],
                     belt_ladders: [],
                     primary_belt_ladder: null,
@@ -1734,7 +1735,10 @@ for (const operation of ["add", "update", "delete", "convert"]) {
             fixture.pathname = "/leads";
           });
           await page.addScriptTag({
-            content: (operation === "add" ? buildBundle : bundle)("production", { layout: true }),
+            content: (operation === "add" || operation === "convert" ? buildBundle : bundle)(
+              "production",
+              { layout: true, pagedRoster: operation !== "convert" },
+            ),
           });
           await page.waitForFunction(
             () => fixture.store?.identityReady && fixture.store.leadsLoaded,
@@ -1743,10 +1747,14 @@ for (const operation of ["add", "update", "delete", "convert"]) {
             await page.evaluate(() => fixture.startMutation());
             await page.waitForFunction(() => fixture.mutationCalls === 1);
           }
-          await page.evaluate(() => {
+          await page.evaluate((operation) => {
             fixture.holdBootstrap = true;
+            if (operation === "convert") {
+              fixture.pathname = "/students";
+              window.dispatchEvent(new Event("fixture:navigate"));
+            }
             fixture.store.retryInitialization();
-          });
+          }, operation);
           await page.waitForFunction(
             () => fixture.bootstrapCalls === 2 && Boolean(fixture.releaseBootstrap),
           );
@@ -1795,10 +1803,33 @@ for (const operation of ["add", "update", "delete", "convert"]) {
             );
             assert.equal(
               await page.evaluate(() =>
+                fixture.requests.some((path) => path.includes("view=students")),
+              ),
+              true,
+            );
+            assert.equal(
+              await page.evaluate(() => fixture.store.studentsMayBePartial),
+              true,
+              "stale complete bootstrap cannot certify the converted roster",
+            );
+            assert.equal(
+              await page.evaluate(
+                () => fixture.requests.filter((path) => path.startsWith("/students?")).length,
+              ),
+              0,
+              "conversion invalidates instead of loading the roster",
+            );
+            await page.evaluate(() => fixture.store.refreshStudents());
+            assert.equal(
+              await page.evaluate(() =>
                 fixture.store.students.some((student) => student.id === "converted-student"),
               ),
               true,
-              "student revision protection survives the lead guard",
+            );
+            assert.equal(
+              await page.evaluate(() => fixture.store.studentsMayBePartial),
+              false,
+              "an explicit complete read clears invalidation",
             );
           }
           if (
@@ -1827,6 +1858,8 @@ for (const operation of ["add", "update", "delete", "convert"]) {
           );
           await page.evaluate(() => {
             fixture.holdBootstrap = false;
+            fixture.pathname = "/leads";
+            window.dispatchEvent(new Event("fixture:navigate"));
             fixture.store.retryInitialization();
           });
           await page.waitForFunction(

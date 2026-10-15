@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import { chromium } from "@playwright/test";
 import { bundle } from "./helpers/store-browser-harness.mjs";
+import { until } from "./helpers/home-hook-mounted.mjs";
 
 let browser;
 before(async () => {
@@ -106,7 +107,8 @@ async function mount(t) {
   await page.addScriptTag({ content: source });
   await page.waitForFunction(() => fixture.store?.identityReady);
   await page.evaluate(() => fixture.mountDetail());
-  await page.waitForFunction(() => fixture.metadata.length === 1);
+  // Wait for the consumer's loading commit before injecting its request outcome.
+  await until(page, () => fixture.metadata.length === 1 && fixture.detail?.isLoadingBeltData);
   return page;
 }
 
@@ -187,7 +189,11 @@ for (const empty of [false, true]) {
 test("shared belt metadata retries failed display loads and fences renewed tokens and replaced identities", async (t) => {
   const page = await mount(t);
   await page.evaluate(() => fixture.metadata[0].reject(Error("Synthetic metadata failure")));
-  await page.waitForFunction(() => fixture.detail.beltLoadError === "Synthetic metadata failure");
+  await until(
+    page,
+    () => fixture.detail.beltLoadError === "Synthetic metadata failure",
+    "the current detail consumer did not receive its rejected metadata read",
+  );
   await page.evaluate(() => {
     fixture.unmountDetail();
   });

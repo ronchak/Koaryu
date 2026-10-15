@@ -3274,9 +3274,9 @@ test("follow-up recovery enrollment uses the current row for navigation without 
     await page.evaluate(() => fixture.rowReads[0].resolve(fixture.currentLead));
     await page.waitForFunction(() => !fixture.leadController.pendingLeadIds.has("lead-1"));
     assert.deepEqual(await page.evaluate(() => fixture.redirects), ["/students/student-current"]);
-    await page.waitForFunction(() => Boolean(fixture.rejectReplayRoster));
-    await page.evaluate(() => fixture.rejectReplayRoster(Error("Roster refresh unavailable")));
     await flush(page);
+    assert.equal(await page.evaluate(() => Boolean(fixture.rejectReplayRoster)), false);
+    assert.equal(await page.evaluate(() => fixture.store.studentsMayBePartial), true);
     assert.equal(await page.evaluate(() => fixture.leadController.leadActionError), null);
     await page.evaluate(() => fixture.root.unmount());
   } finally {
@@ -3369,50 +3369,30 @@ test("follow-up recovery remains saved and reserved after bounded token-renewal 
   }
 });
 
-test("follow-up recovery keeps confirmed enrollment roster reconciliation running when the row read fails", async () => {
+test("follow-up recovery invalidates enrollment even when its row read fails", async () => {
   const browser = await chromium.launch();
   try {
     const page = await prepareFollowUpReplay(browser, { enroll: true });
-    await page.evaluate(() => {
-      const get = fixture.api.get;
-      fixture.api.get = (path, token) =>
-        path.startsWith("/students?")
-          ? new Promise((resolve) => {
-              fixture.resolveReplayRoster = resolve;
-            })
-          : get(path, token);
-    });
+    const before = await page.evaluate(
+      () => fixture.requests.filter((r) => r.path.startsWith("/students?")).length,
+    );
     await confirmFollowUpReplay(page);
     assert.equal(await page.evaluate(() => fixture.rowReads.length), 1);
-    await page.waitForFunction(() => Boolean(fixture.resolveReplayRoster));
     await page.evaluate(() => fixture.rowReads[0].reject(Error("Row read unavailable")));
     await page.getByRole("button", { name: "Refresh lead details", exact: true }).waitFor();
+    assert.equal(await page.evaluate(() => fixture.store.studentsMayBePartial), true);
+    assert.equal(
+      await page.evaluate(
+        () => fixture.requests.filter((r) => r.path.startsWith("/students?")).length,
+      ),
+      before,
+    );
     assert.equal(
       await page.evaluate(() => fixture.leadController.pendingLeadIds.has("lead-1")),
       true,
     );
     assert.deepEqual(await page.evaluate(() => fixture.redirects ?? []), []);
-    await page.evaluate(() =>
-      fixture.resolveReplayRoster({
-        items: [{ ...fixture.student, legal_first_name: "Reconciled enrollment" }],
-        total: 1,
-        page_size: 200,
-        page_ordinal: 1,
-        has_next: false,
-        has_previous: false,
-      }),
-    );
-    await page.waitForFunction(() =>
-      fixture.store.students.some(
-        (student) => student.legal_first_name === "Reconciled enrollment",
-      ),
-    );
-    assert.equal(
-      await page.evaluate(() => fixture.leadController.pendingLeadIds.has("lead-1")),
-      true,
-    );
     assert.match(await page.locator("aside").innerText(), /Follow-up saved/);
-    assert.equal(await page.evaluate(() => fixture.commandWrites.length), 2);
     await page.evaluate(() => fixture.root.unmount());
   } finally {
     await browser.close();
@@ -3578,3 +3558,568 @@ for (const status of [403, 404, 503])
       await browser.close();
     }
   });
+
+test("conversion at 2500 students navigates without roster reads and destinations reverify", async (t) => {
+  const browser = await chromium.launch();
+  try {
+    const page = await fixturePage(browser, {
+      path: "/leads",
+      leadController: true,
+      detailController: true,
+      rosterController: true,
+      pagedRoster: true,
+    });
+    await page.evaluate(async () => {
+      fixture.ladder = { id: "ladder-1", name: "Test", sub_rank_term: "Stripe", ranks: [] };
+      await fixture.store.setCurrentLadder("ladder-1");
+      fixture.rosterRows = Array.from({ length: 2500 }, (_, i) => ({
+        ...fixture.student,
+        id: `student-${i}`,
+      }));
+      const get = fixture.api.get;
+      fixture.api.get = async (path, ...args) => {
+        if (path.startsWith("/students?")) {
+          fixture.requests.push({ path, atMs: performance.now() });
+          const q = new URL(path, "http://fixture.local").searchParams;
+          const page = Number(q.get("page") ?? 1);
+          return {
+            items: fixture.rosterRows.slice((page - 1) * 200, page * 200),
+            total: fixture.rosterRows.length,
+            page_size: 200,
+            page_ordinal: page,
+            has_next: page * 200 < fixture.rosterRows.length,
+            has_previous: page > 1,
+            next_cursor: "page-" + (page + 1),
+          };
+        }
+        return get(path, ...args);
+      };
+      fixture.api.post = async (path) => {
+        fixture.requests.push({ path, atMs: performance.now() });
+        const student = { ...fixture.student, id: "student-new", legal_first_name: "Converted" };
+        fixture.rosterRows.unshift(student);
+        fixture.useNewEligibility = true;
+        return { ...fixture.lead, stage: "enrolled", converted_student_id: student.id };
+      };
+      fixture.started = performance.now();
+      fixture.beforeRoster = fixture.requests.filter((r) => r.path.startsWith("/students?")).length;
+      fixture.beforeEligibility = fixture.eligibilityReads;
+      fixture.convert = fixture.leadController.handleConvertLead(fixture.store.leads[0]);
+    });
+    await page.waitForFunction(() => fixture.redirects?.includes("/students/student-new"));
+    const immediate = await page.evaluate(() => ({
+      elapsed: performance.now() - fixture.started,
+      reads:
+        fixture.requests.filter((r) => r.path.startsWith("/students?")).length -
+        fixture.beforeRoster,
+      eligibility: fixture.eligibilityReads - fixture.beforeEligibility,
+      partial: fixture.store.studentsMayBePartial,
+    }));
+    assert.equal(immediate.reads, 0);
+    assert.equal(immediate.eligibility, 0);
+    assert.equal(immediate.partial, true);
+    await page.evaluate(() => {
+      fixture.studentId = "student-new";
+      const get = fixture.api.get;
+      fixture.api.get = (path, ...args) =>
+        path === "/students/student-new"
+          ? (fixture.requests.push({ path }), Promise.resolve(fixture.rosterRows[0]))
+          : get(path, ...args);
+      fixture.navigate("/students/student-new");
+      fixture.mountDetail();
+    });
+    await page.waitForFunction(
+      () => fixture.detail?.student?.id === "student-new" && !fixture.detail?.isLoadingStudent,
+    );
+    assert.equal(
+      await page.evaluate(
+        () => fixture.requests.filter((r) => r.path === "/students/student-new").length,
+      ),
+      1,
+    );
+    await page.evaluate(() => {
+      fixture.unmountDetail();
+      fixture.navigate("/students");
+      fixture.mountRoster();
+    });
+    await page.waitForFunction(() =>
+      fixture.roster?.filtered?.some((s) => s.student.id === "student-new"),
+    );
+    assert.equal(
+      await page.evaluate(
+        () =>
+          fixture.requests.filter((r) => r.path.startsWith("/students?")).length -
+          fixture.beforeRoster,
+      ),
+      1,
+    );
+    await page.evaluate(() => {
+      fixture.unmountRoster();
+      fixture.navigate("/belt-tracker");
+    });
+    await page.waitForFunction(() => fixture.eligibilityReads === fixture.beforeEligibility + 1);
+    t.diagnostic(
+      `synthetic conversion to navigation: ${immediate.elapsed.toFixed(1)}ms; 2500-row roster: 0 reads before navigation (previous full load: 13 pages); next roster: 1 page; detail: 1; eligibility: 1 on visit`,
+    );
+    await page.evaluate(() => fixture.root.unmount());
+  } finally {
+    await browser.close();
+  }
+});
+
+for (const scenario of [
+  "version-first",
+  "workspace-first",
+  "version-failure",
+  "version-malformed",
+  "version-other-environment",
+  "version-update",
+  "workspace-denied",
+  "workspace-unavailable",
+]) {
+  test(`resume overlaps one version and workspace check: ${scenario}`, async (t) => {
+    const browser = await chromium.launch();
+    try {
+      const page = await fixturePage(browser, { resumeGuard: true });
+      await page.evaluate(() => {
+        fixture.resumeVersionReads = 0;
+        fixture.resumeWorkspaceReads = 0;
+        fixture.refreshes = 0;
+        fixture.resumeStarted = performance.now();
+        window.addEventListener("koaryu:data-refresh", () => {
+          fixture.refreshes++;
+          fixture.refreshedAt = performance.now();
+        });
+        window.fetch = () => {
+          fixture.resumeVersionReads++;
+          fixture.versionStarted = performance.now();
+          return new Promise((resolve, reject) => {
+            fixture.versionResult = { resolve, reject };
+          });
+        };
+        const get = fixture.api.get;
+        fixture.api.get = (path, ...args) =>
+          path === "/dashboard/workspace"
+            ? (fixture.resumeWorkspaceReads++,
+              (fixture.workspaceStarted = performance.now()),
+              new Promise((resolve, reject) => {
+                fixture.workspaceResult = { resolve, reject };
+              }))
+            : get(path, ...args);
+        window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true }));
+        window.dispatchEvent(new Event("online"));
+      });
+      await page.waitForFunction(() => fixture.versionResult && fixture.workspaceResult);
+      assert.deepEqual(
+        await page.evaluate(() => [
+          fixture.resumeVersionReads,
+          fixture.resumeWorkspaceReads,
+          fixture.refreshes,
+        ]),
+        [1, 1, 0],
+      );
+      await page.evaluate((scenario) => {
+        fixture.finishVersion = () => {
+          if (scenario === "version-failure") fixture.versionResult.reject(Error("Offline"));
+          else
+            fixture.versionResult.resolve(
+              Response.json(
+                scenario === "version-malformed"
+                  ? {}
+                  : {
+                      service: "koaryu-frontend",
+                      environment:
+                        scenario === "version-other-environment" ? "staging" : "production",
+                      commit_sha: (scenario === "version-update" ? "b" : "a").repeat(40),
+                    },
+              ),
+            );
+        };
+        fixture.finishWorkspace = () => {
+          if (scenario === "workspace-denied")
+            fixture.workspaceResult.reject(Object.assign(Error("Denied"), { status: 401 }));
+          else if (scenario === "workspace-unavailable")
+            fixture.workspaceResult.reject(Error("Offline"));
+          else
+            fixture.workspaceResult.resolve({
+              auth: fixture.auth,
+              studio: { name: "Resumed", timezone: "UTC" },
+            });
+        };
+        if (scenario === "workspace-first") fixture.finishWorkspace();
+        else fixture.finishVersion();
+      }, scenario);
+      await flush(page);
+      assert.equal(
+        await page.evaluate(() => fixture.refreshes),
+        0,
+        "one result alone cannot refresh",
+      );
+      await page.evaluate((scenario) => {
+        if (scenario === "workspace-first") fixture.finishVersion();
+        else fixture.finishWorkspace();
+      }, scenario);
+      if (scenario === "version-first" || scenario === "workspace-first")
+        await page.waitForFunction(() => fixture.refreshes === 1);
+      else if (scenario === "workspace-denied")
+        await page.waitForFunction(() => fixture.redirects?.includes("/login"));
+      else if (scenario === "workspace-unavailable")
+        await page.waitForFunction(() => Boolean(fixture.store.studioLoadError));
+      else await flush(page);
+      await flush(page);
+      const counts = await page.evaluate(() => ({
+        version: fixture.resumeVersionReads,
+        workspace: fixture.resumeWorkspaceReads,
+        refresh: fixture.refreshes,
+        overlap: Math.abs(fixture.workspaceStarted - fixture.versionStarted),
+        duration: fixture.refreshedAt ? fixture.refreshedAt - fixture.resumeStarted : null,
+      }));
+      assert.equal(counts.version, 1);
+      assert.equal(counts.workspace, 1);
+      assert.equal(counts.refresh, ["version-first", "workspace-first"].includes(scenario) ? 1 : 0);
+      if (scenario === "version-update")
+        await page.getByRole("status").filter({ hasText: "Koaryu has been updated" }).waitFor();
+      t.diagnostic(
+        `synthetic resume: ${JSON.stringify(counts)}; both reads begin before either resolves`,
+      );
+      await page.evaluate(() => fixture.root.unmount());
+    } finally {
+      await browser.close();
+    }
+  });
+}
+
+for (const pendingBootstrap of [false, true])
+  test(`conversion settling on mounted Belt Tracker starts one replacement eligibility read${pendingBootstrap ? " with a pending training bootstrap" : ""}`, async (t) => {
+    const browser = await chromium.launch();
+    try {
+      const page = await fixturePage(browser, {
+        path: "/leads",
+        beltPage: "eligibility",
+        formProgram: true,
+      });
+      await page.evaluate(() => {
+        fixture.ladder = {
+          id: "ladder-1",
+          program_id: "program-1",
+          name: "Test",
+          sub_rank_term: "Stripe",
+          ranks: [],
+        };
+        fixture.conversion = fixture.store.convertLeadToStudent(fixture.store.leads[0].id);
+      });
+      await page.waitForFunction(() => fixture.writes.length === 1);
+      await page.evaluate(() => fixture.navigate("/belt-tracker"));
+      await page.waitForFunction(
+        () =>
+          fixture.store.eligibilityLadderId === "ladder-1" &&
+          !fixture.store.eligibilityPendingLadderId,
+      );
+      const before = await page.evaluate(() => fixture.eligibilityReads);
+      if (pendingBootstrap) {
+        await page.evaluate(() => {
+          fixture.holdFeature = true;
+          fixture.store.retryInitialization();
+        });
+        await page.waitForFunction(() => fixture.featureWaiters?.length === 1);
+      }
+      await page.evaluate(async () => {
+        fixture.useNewEligibility = true;
+        fixture.writes[0].resolve({
+          ...fixture.lead,
+          stage: "enrolled",
+          converted_student_id: "student-new",
+        });
+        await fixture.conversion;
+      });
+      if (pendingBootstrap) {
+        await page.waitForFunction(() => fixture.store.eligibilityLadderId === null);
+        await page.evaluate(() => {
+          fixture.holdFeature = false;
+          fixture.releaseFeature({
+            auth: fixture.auth,
+            studio_name: "Test",
+            students: [],
+            leads: [],
+            programs: fixture.programRows,
+            belt_ladders: [fixture.ladder],
+            primary_belt_ladder: fixture.ladder,
+          });
+        });
+      }
+      await page.waitForFunction(
+        () =>
+          fixture.store.eligibility.some((row) => row.student_id === "student-new") &&
+          !fixture.store.eligibilityPendingLadderId,
+      );
+      await flush(page);
+      assert.equal(await page.evaluate(() => fixture.eligibilityReads), before + 1);
+      assert.equal(await page.evaluate(() => fixture.store.eligibilityLadderId), "ladder-1");
+      assert.equal(
+        await page.locator("#belt-panel-eligibility").getAttribute("aria-busy"),
+        "false",
+      );
+      t.diagnostic("mounted Belt Tracker: exactly 1 replacement eligibility read after conversion");
+      await page.evaluate(() => fixture.root.unmount());
+    } finally {
+      await browser.close();
+    }
+  });
+
+for (const kind of ["membership", "subscription", "subscription-features", "denied"]) {
+  for (const accepted of [false, true]) {
+    test(`resume ${kind} recovery waits for ${accepted ? "accepted" : "rejected"} version`, async (t) => {
+      const browser = await chromium.launch();
+      try {
+        const page = await fixturePage(browser, {
+          path: "/leads",
+          resumeGuard: true,
+          pagedRoster: false,
+        });
+        await page.waitForFunction(() => fixture.store.leadsLoaded);
+        if (kind.startsWith("subscription")) {
+          await page.evaluate((kind) => {
+            fixture.store.markSubscriptionRequired();
+            if (kind === "subscription") fixture.navigate("/subscription-required");
+          }, kind);
+          await page.waitForFunction(() => fixture.store.subscriptionRequired);
+        }
+        await page.evaluate((kind) => {
+          fixture.baseline = fixture.requests.length;
+          fixture.baselineRedirects = (fixture.redirects ?? []).length;
+          fixture.versionReads = 0;
+          window.fetch = () => {
+            fixture.versionReads++;
+            return new Promise((resolve) => (fixture.finishVersion = resolve));
+          };
+          if (kind === "membership") fixture.auth = { ...fixture.auth, role: "instructor" };
+          if (kind === "denied") {
+            const get = fixture.api.get;
+            let denied = false;
+            fixture.api.get = (path, ...args) => {
+              if (path === "/dashboard/workspace" && !denied) {
+                denied = true;
+                fixture.requests.push({ path });
+                return Promise.reject(Object.assign(Error("Denied"), { status: 403 }));
+              }
+              return get(path, ...args);
+            };
+          }
+          window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true }));
+          window.dispatchEvent(new Event("online"));
+        }, kind);
+        await page.waitForFunction(
+          () =>
+            fixture.finishVersion &&
+            fixture.requests.slice(fixture.baseline).some((r) => r.path === "/dashboard/workspace"),
+        );
+        if (kind === "membership" || kind === "denied")
+          await page.waitForFunction(
+            () => !fixture.store.identityReady && Boolean(fixture.store.identityLoadError),
+          );
+        await flush(page);
+        assert.equal(await page.evaluate(() => fixture.versionReads), 1);
+        assert.equal(
+          await page.evaluate(
+            () =>
+              fixture.requests
+                .slice(fixture.baseline)
+                .filter((r) => r.path === "/dashboard/workspace").length,
+          ),
+          1,
+        );
+        assert.equal(
+          await page.evaluate(
+            () =>
+              fixture.requests
+                .slice(fixture.baseline)
+                .filter((r) => r.path.startsWith("/dashboard/bootstrap")).length,
+          ),
+          0,
+        );
+        assert.equal(
+          await page.evaluate(
+            () =>
+              fixture.redirects?.slice(fixture.baselineRedirects).includes("/dashboard") ?? false,
+          ),
+          false,
+        );
+        await page.evaluate(
+          (accepted) =>
+            fixture.finishVersion(
+              Response.json({
+                service: "koaryu-frontend",
+                environment: "production",
+                commit_sha: (accepted ? "a" : "b").repeat(40),
+              }),
+            ),
+          accepted,
+        );
+        if (accepted)
+          await page.waitForFunction(
+            () =>
+              fixture.store.identityReady &&
+              !fixture.store.subscriptionRequired &&
+              fixture.requests
+                .slice(fixture.baseline)
+                .filter((r) => r.path === "/dashboard/workspace").length === 2,
+          );
+        else await flush(page);
+        await flush(page);
+        assert.equal(
+          await page.evaluate(
+            () =>
+              fixture.requests
+                .slice(fixture.baseline)
+                .filter((r) => r.path === "/dashboard/workspace").length,
+          ),
+          accepted ? 2 : 1,
+        );
+        if (kind === "subscription")
+          assert.equal(
+            await page.evaluate(() =>
+              (fixture.redirects ?? []).slice(fixture.baselineRedirects).includes("/dashboard"),
+            ),
+            accepted,
+          );
+        else if (accepted)
+          await page.waitForFunction(
+            () =>
+              fixture.requests
+                .slice(fixture.baseline)
+                .filter((r) => r.path.startsWith("/dashboard/bootstrap")).length === 1,
+          );
+        else
+          assert.equal(
+            await page.evaluate(
+              () =>
+                fixture.requests
+                  .slice(fixture.baseline)
+                  .filter((r) => r.path.startsWith("/dashboard/bootstrap")).length,
+            ),
+            0,
+          );
+        if (!accepted && kind.startsWith("subscription"))
+          assert.equal(await page.evaluate(() => fixture.store.subscriptionRequired), true);
+        t.diagnostic(
+          `resume ${kind}: 1 version, ${accepted ? 2 : 1} workspace reads; feature reads before version: 0`,
+        );
+        await page.evaluate(() => fixture.root.unmount());
+      } finally {
+        await browser.close();
+      }
+    });
+  }
+}
+
+for (const status of ["none", "archived"]) {
+  test(`resume revoked ${status} membership redirects without features on rejected version`, async (t) => {
+    const browser = await chromium.launch();
+    try {
+      const page = await fixturePage(browser, { path: "/leads", resumeGuard: true });
+      await page.waitForFunction(() => fixture.store.leadsLoaded);
+      await page.evaluate((status) => {
+        fixture.baseline = fixture.requests.length;
+        fixture.auth = { ...fixture.auth, membership_status: status, studio_id: null, role: null };
+        window.fetch = () => new Promise((resolve) => (fixture.finishVersion = resolve));
+        window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true }));
+      }, status);
+      const target = status === "none" ? "/onboarding" : "/account-archived";
+      await page.waitForFunction((target) => fixture.redirects?.includes(target), target);
+      await flush(page);
+      assert.deepEqual(
+        await page.evaluate(() => fixture.requests.slice(fixture.baseline).map((r) => r.path)),
+        ["/dashboard/workspace"],
+      );
+      await page.evaluate(() =>
+        fixture.finishVersion(
+          Response.json({
+            service: "koaryu-frontend",
+            environment: "production",
+            commit_sha: "b".repeat(40),
+          }),
+        ),
+      );
+      await flush(page);
+      assert.equal(await page.evaluate(() => fixture.store.currentStudioId), null);
+      assert.deepEqual(
+        await page.evaluate(() => fixture.requests.slice(fixture.baseline).map((r) => r.path)),
+        ["/dashboard/workspace"],
+      );
+      t.diagnostic(
+        `revoked ${status}: 1 workspace request, 0 feature reads; redirect before version settles`,
+      );
+      await page.evaluate(() => fixture.root.unmount());
+    } finally {
+      await browser.close();
+    }
+  });
+}
+
+for (const supersedes of ["retry", "sign-out"]) {
+  test(`a newer ${supersedes} supersedes deferred resume initialization`, async () => {
+    const browser = await chromium.launch();
+    try {
+      const page = await fixturePage(browser, { path: "/leads", resumeGuard: true });
+      await page.waitForFunction(() => fixture.store.leadsLoaded);
+      await page.evaluate(() => {
+        fixture.baseline = fixture.requests.length;
+        fixture.auth = { ...fixture.auth, role: "instructor" };
+        window.fetch = () => new Promise((resolve) => (fixture.finishVersion = resolve));
+        const get = fixture.api.get;
+        let reads = 0;
+        fixture.api.get = (path, ...args) => {
+          if (path === "/dashboard/workspace" && ++reads === 2) {
+            fixture.requests.push({ path });
+            return new Promise((resolve) => (fixture.releaseManualWorkspace = resolve));
+          }
+          return get(path, ...args);
+        };
+        window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true }));
+      });
+      await page.waitForFunction(
+        () => !fixture.store.identityReady && Boolean(fixture.store.identityLoadError),
+      );
+      if (supersedes === "retry") {
+        await page.evaluate(() => fixture.store.retryInitialization());
+        await page.waitForFunction(() => Boolean(fixture.releaseManualWorkspace));
+      } else await page.evaluate(() => fixture.emit("SIGNED_OUT", null));
+      await page.evaluate(() =>
+        fixture.finishVersion(
+          Response.json({
+            service: "koaryu-frontend",
+            environment: "production",
+            commit_sha: "a".repeat(40),
+          }),
+        ),
+      );
+      await flush(page);
+      assert.equal(
+        await page.evaluate(
+          () =>
+            fixture.requests
+              .slice(fixture.baseline)
+              .filter((r) => r.path === "/dashboard/workspace").length,
+        ),
+        supersedes === "retry" ? 2 : 1,
+      );
+      if (supersedes === "retry") {
+        await page.evaluate(() =>
+          fixture.releaseManualWorkspace({
+            auth: fixture.auth,
+            studio: { name: "Test", timezone: "UTC" },
+          }),
+        );
+        await page.waitForFunction(
+          () => fixture.store.identityReady && fixture.store.currentRole === "instructor",
+        );
+      } else {
+        assert.equal(await page.evaluate(() => fixture.store.identityReady), false);
+        assert.ok(await page.evaluate(() => fixture.redirects.includes("/login")));
+      }
+      await page.evaluate(() => fixture.root.unmount());
+    } finally {
+      await browser.close();
+    }
+  });
+}

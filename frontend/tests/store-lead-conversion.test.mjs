@@ -5,7 +5,7 @@ import { createCommonJsPacker } from "./helpers/store-browser-harness.mjs";
 // Exercise the real action orchestration without mounting React. Browser-control
 // and lifecycle coverage lives in lead-commands-mounted.test.mjs.
 function actionsFixture({ preview, converted = true, currentIdentity = true } = {}) {
-  const f = { writes: [], studentWrites: 0, refreshes: 0, mutations: 0, finishes: 0 };
+  const f = { writes: [], studentWrites: 0, invalidations: 0, mutations: 0, finishes: 0 };
   const { add, modules } = createCommonJsPacker({
     react: `exports.useCallback=fn=>fn;exports.useRef=value=>({current:value});exports.useMemo=fn=>fn();exports.useState=value=>[typeof value==='function'?value():value,()=>{}];exports.useLayoutEffect=()=>{};exports.useSyncExternalStore=(_,get)=>get();`,
     "@/lib/api": `exports.api=f.api;exports.ApiError=class extends Error{};`,
@@ -82,9 +82,8 @@ function actionsFixture({ preview, converted = true, currentIdentity = true } = 
     onStudentMutation: () => {
       f.mutations++;
     },
-    refreshStudents: async () => {
-      f.refreshes++;
-      return studentsRef.current;
+    invalidateConvertedStudent: () => {
+      f.invalidations++;
     },
   });
   return { f, actions, leadsRef, studentsRef };
@@ -104,7 +103,7 @@ for (const preview of [true, false]) {
       assert.equal(f.studentWrites, 0);
     }
     assert.equal(f.writes.length, preview ? 0 : 3);
-    assert.equal(f.refreshes, preview ? 0 : 3);
+    assert.equal(f.invalidations, preview ? 0 : 3);
     assert.equal(f.finishes, preview ? 0 : 3);
     assert.ok(f.writes.every((write) => write.path === "/leads/lead-a/convert"));
   });
@@ -135,6 +134,6 @@ test("restoration response from a previous identity does not publish into the cu
   const { f, actions, leadsRef } = actionsFixture({ preview: false, currentIdentity: false });
   await actions.convertLeadToStudent("lead-a");
   assert.equal(leadsRef.current[0].stage, "offer_sent");
-  assert.equal(f.refreshes, 0);
+  assert.equal(f.invalidations, 0);
   assert.equal(f.finishes, 1);
 });
