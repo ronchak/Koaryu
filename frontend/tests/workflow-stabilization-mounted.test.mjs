@@ -1564,15 +1564,28 @@ test("a confirmed recurring class closes its form when the follow-up refresh fai
     assert.match(created.scheduleLoadError, /created, but its visible sessions could not refresh/i);
     assert.equal(created.templatePosts, 1);
 
-    const beforeRetry = await page.evaluate(() => {
-      fixture.failWindow = false;
-      const index = fixture.windowRequests.length;
-      fixture.controller.onRetryRange();
-      return index;
-    });
+    // Retry reads the window first. The synthetic read returns the created template
+    // with no generated sessions, as the live read would, so the page then
+    // materializes the window once, behind the painted calendar.
+    const beforeRetry = await page.evaluate(
+      (template) => {
+        fixture.failWindow = false;
+        const get = fixture.api.get;
+        fixture.api.get = async (path, ...rest) => {
+          const result = await get(path, ...rest);
+          return path.startsWith("/schedule/window")
+            ? { ...result, templates: [template] }
+            : result;
+        };
+        const index = fixture.windowRequests.length;
+        fixture.controller.onRetryRange();
+        return index;
+      },
+      syntheticWeeklyTemplate(await page.evaluate(() => fixture.store.businessDate)),
+    );
     await page.waitForFunction(
       (index) =>
-        fixture.windowRequests.length > index &&
+        fixture.windowRequests.length > index + 1 &&
         fixture.controller.scheduleLoadError === null &&
         !fixture.controller.isRefreshingRange,
       beforeRetry,
@@ -1580,8 +1593,8 @@ test("a confirmed recurring class closes its form when the follow-up refresh fai
     await settle(page);
     assert.deepEqual(
       (await windowCallsSince(page, beforeRetry)).map((request) => request.call),
-      ["POST /schedule/window/materialize"],
-      "Retry materializes the visible range",
+      ["GET /schedule/window", "POST /schedule/window/materialize"],
+      "Retry reads the window, then materializes the created class's slots once",
     );
     assert.equal(
       await page.evaluate(

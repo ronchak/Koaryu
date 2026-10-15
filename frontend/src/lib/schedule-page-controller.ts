@@ -126,10 +126,10 @@ export function useSchedulePageController({
   const [createClassError, setCreateClassError] = useState<string | null>(null);
   const [rangeLoadAttempt, setRangeLoadAttempt] = useState(0);
   const [attendanceRefreshAttempt, setAttendanceRefreshAttempt] = useState(0);
-  // The read of a window that has settled, as `${rangeKey}#${attempt}`; recurring
-  // slots it left ungenerated are materialized once per such read.
+  // The read of a window that has settled, as `${rangeKey}#${attempt}`. Whether
+  // it left recurring slots ungenerated is decided once, as it settles.
   const [settledReadToken, setSettledReadToken] = useState<string | null>(null);
-  const materializedTokenRef = useRef<string | null>(null);
+  const decidedReadTokenRef = useRef<string | null>(null);
   // The read and the materialization of one window overlap with navigation; the
   // window reads as refreshing while any request for it is in flight.
   const refreshCountsRef = useRef(new Map<string, number>());
@@ -287,18 +287,19 @@ export function useSchedulePageController({
   ]);
 
   // Only a window whose read left recurring slots ungenerated materializes them,
-  // once per read, behind the painted calendar. Staff who cannot manage the
-  // schedule read only; a later Retry or resume reads again and reconsiders.
+  // behind the painted calendar. The decision is made once, as the read settles:
+  // later store changes belong to their own owners (a create's finish
+  // reconciles through the store), and a Retry or resume reads again and
+  // decides again. Staff who cannot manage the schedule read only.
   const hasUnmaterializedSlots = useMemo(
     () => countUnmaterializedRecurringSlots({ range: loadRange, sessions, templates }) > 0,
     [loadRange, sessions, templates],
   );
-  const shouldMaterialize =
-    settledReadToken === loadToken && canManageSchedule && hasUnmaterializedSlots;
 
   useEffect(() => {
-    if (!shouldMaterialize || materializedTokenRef.current === loadToken) return;
-    materializedTokenRef.current = loadToken;
+    if (settledReadToken !== loadToken || decidedReadTokenRef.current === loadToken) return;
+    decidedReadTokenRef.current = loadToken;
+    if (!canManageSchedule || !hasUnmaterializedSlots) return;
     let cancelled = false;
 
     async function materializeRange() {
@@ -323,13 +324,15 @@ export function useSchedulePageController({
     };
   }, [
     beginRangeRefresh,
+    canManageSchedule,
     endRangeRefresh,
+    hasUnmaterializedSlots,
     loadRange.end,
     loadRange.start,
     loadRangeKey,
     loadToken,
     refreshScheduleRange,
-    shouldMaterialize,
+    settledReadToken,
   ]);
 
   useEffect(() => {

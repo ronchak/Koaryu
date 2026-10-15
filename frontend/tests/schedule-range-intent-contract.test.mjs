@@ -48,16 +48,17 @@ describe("schedule range intent contracts", () => {
       /refreshScheduleRange\(loadRange\.start, loadRange\.end, "read"\)/,
     );
     // The POST follows that read only when the window still shows recurring
-    // placeholders, once per read, and never for staff who cannot manage the schedule.
+    // placeholders, decided once as the read settles, and never for staff who
+    // cannot manage the schedule. Later store changes belong to their owners.
+    assert.match(scheduleControllerSource, /decidedReadTokenRef\.current === loadToken\) return;/);
     assert.match(
       scheduleControllerSource,
-      /settledReadToken === loadToken && canManageSchedule && hasUnmaterializedSlots/,
+      /if \(!canManageSchedule \|\| !hasUnmaterializedSlots\) return;/,
     );
     assert.match(
       scheduleControllerSource,
       /countUnmaterializedRecurringSlots\(\{ range: loadRange/,
     );
-    assert.match(scheduleControllerSource, /materializedTokenRef\.current === loadToken\) return;/);
     assert.match(
       scheduleControllerSource,
       /refreshScheduleRange\(loadRange\.start, loadRange\.end, "materialize"\)/,
