@@ -451,11 +451,10 @@ test("320px tools and sample modal fit without overflow and keep 44px controls",
           .map((node) => node.textContent),
       );
     assert.deepEqual(small, []);
+    await expect(button(page, "Keep reviewing")).toBeFocused();
     await page.keyboard.press("Escape");
-    assert.equal(
-      await button(page, "Send sample email").evaluate((node) => document.activeElement === node),
-      true,
-    );
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(button(page, "Send sample email")).toBeFocused();
   }));
 
 for (const state of ["queued", "sending"])
@@ -494,10 +493,15 @@ for (const close of ["Escape", "Keep reviewing", "backdrop"])
           (node) => node.textContent === "Send sample email",
         );
       });
+      await expect(page.getByRole("dialog")).toBeVisible();
+      // The dialog handles Escape only once it owns focus (one frame after it opens).
+      if (close === "Escape") await expect(button(page, "Keep reviewing")).toBeFocused();
       if (close === "Escape") await page.keyboard.press("Escape");
       else if (close === "backdrop")
         await page.locator(".koaryu-modal-backdrop").click({ position: { x: 2, y: 2 } });
       else await button(page, close).click();
+      await expect(page.getByRole("dialog")).toHaveCount(0);
+      await expect(button(page, "Send sample email")).toBeFocused();
       assert.equal(
         await page.evaluate(
           () => document.activeElement === window.openerProbe && window.openerProbe.isConnected,
