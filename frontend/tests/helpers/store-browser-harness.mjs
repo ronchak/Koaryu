@@ -164,7 +164,7 @@ export function bundle(
           "@/components/header": `exports.Header=()=>null;`,
           "@/components/operations/operations-surface": `exports.OperationsSurface=({children})=>require('react').createElement('section',{'data-recovery-page':'true'},children);`,
           "@/components/ui/button": `exports.Button=({children,onClick,disabled})=>require('react').createElement('button',{onClick,disabled},children);`,
-          "@/components/logo": `exports.Logo=()=>null;`,
+          "@/components/logo": `exports.Logo=()=>null;exports.KoaryuMark=()=>null;`,
           "./dashboard-shell.module.css": `module.exports={};`,
           "lucide-react": `for (const name of ['ArrowUpRight','CheckCircle2','CreditCard','Loader2','ShieldCheck']) exports[name]=()=>null;`,
         }
