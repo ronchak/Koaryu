@@ -23,6 +23,8 @@ from app.services.belt_promotions import BeltPromotionRecorder
 from app.services.studio_scope import ensure_studio_record
 from app.services.program_service import ProgramService
 
+LADDER_PAGE_SIZE = 1000
+
 
 class BeltService:
     def __init__(self, supabase: Client):
@@ -123,20 +125,29 @@ class BeltService:
             if row.get("id") and not row.get("is_system") and not row.get("archived_at")
         }
 
+    def _ladders_query(self, studio_id: str, columns: str = "*, belt_ranks(*)") -> Any:
+        return self.supabase.table("belt_ladders").select(columns).eq("studio_id", studio_id)
+
+    def _visible_ladder_rows(
+        self, studio_id: str, visible_program_ids: set[str]
+    ) -> list[dict[str, Any]]:
+        result = (
+            self._ladders_query(studio_id)
+            .in_("program_id", list(visible_program_ids))
+            .order("created_at")
+            .execute()
+        )
+        return result.data or []
+
     async def list_ladders(self, studio_id: str) -> list[BeltLadderResponse]:
         visible_program_ids = self._visible_program_ids(studio_id)
         if not visible_program_ids:
             return []
 
-        result = (
-            self.supabase.table("belt_ladders")
-            .select("*, belt_ranks(*)")
-            .eq("studio_id", studio_id)
-            .in_("program_id", list(visible_program_ids))
-            .order("created_at")
-            .execute()
-        )
-        return [self._build_ladder_response(row) for row in (result.data or [])]
+        return [
+            self._build_ladder_response(row)
+            for row in self._visible_ladder_rows(studio_id, visible_program_ids)
+        ]
 
     async def list_promotions(
         self,
@@ -494,7 +505,7 @@ class BeltService:
     async def get_primary_ladder_eligibility(
         self, studio_id: str
     ) -> Optional[tuple[BeltLadderResponse, list[EligibilityEntry]]]:
-        """``list_ladders()[0]`` and its eligibility, reading the ladders once.
+        """``list_ladders()[0]`` and its eligibility, usually reading the ladders once.
 
         Every ladder in the studio is read: the visible ones pick the primary,
         and all of them are the calculator's ladder metadata, because a hidden
@@ -504,21 +515,37 @@ class BeltService:
         if not visible_program_ids:
             return None
 
-        ladder_rows = self._fetch_paged(
-            lambda: (
-                self.supabase.table("belt_ladders")
-                .select("*, belt_ranks(*)")
-                .eq("studio_id", studio_id)
-                .order("created_at")
-            )
+        first_page = (
+            self._ladders_query(studio_id)
+            .order("created_at")
+            .range(0, LADDER_PAGE_SIZE - 1)
+            .execute()
+        ).data or []
+        complete = len(first_page) < LADDER_PAGE_SIZE
+        # Offset pages are only consistent under a unique order, and adding one
+        # here would change which tied ladder is primary. A full first page is
+        # discarded: list_ladders' query picks the primary, and the metadata is
+        # re-read from offset 0 in (created_at, id) order.
+        visible_rows = (
+            [row for row in first_page if row.get("program_id") in visible_program_ids]
+            if complete
+            else self._visible_ladder_rows(studio_id, visible_program_ids)
         )
-        ladders = [
-            self._build_ladder_response(row)
-            for row in ladder_rows
-            if row.get("program_id") in visible_program_ids
-        ]
+        ladders = [self._build_ladder_response(row) for row in visible_rows]
         if not ladders:
             return None
+        ladder_rows = (
+            first_page
+            if complete
+            else self._fetch_paged(
+                lambda: (
+                    self._ladders_query(studio_id, "id, name, program_id, studio_id")
+                    .order("created_at")
+                    .order("id")
+                ),
+                LADDER_PAGE_SIZE,
+            )
+        )
         primary = ladders[0]
         entries = await BeltEligibilityCalculator(self.supabase).get_eligibility(
             studio_id, primary.id, ladder_rows=ladder_rows

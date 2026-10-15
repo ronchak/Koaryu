@@ -2,6 +2,7 @@ import asyncio
 import copy
 import unittest
 from datetime import UTC, datetime
+from itertools import groupby
 from unittest.mock import patch
 
 from fastapi import HTTPException
@@ -76,6 +77,27 @@ class CappedSupabase(FakeSupabase):
 
     def table(self, name: str):
         return CappedTableQuery(self, name)
+
+
+class TiePermutingTableQuery(CappedTableQuery):
+    def _bounded_rows(self, rows):
+        offset = self.range_bounds[0] if self.range_bounds else 0
+        if offset and "id" not in {key for key, _desc in self.orders}:
+            permuted = []
+            for _key, ties in groupby(
+                rows, key=lambda row: tuple(row.get(key) for key, _desc in self.orders)
+            ):
+                ties = list(ties)
+                permuted.extend([*ties[1:], *ties[:1]])
+            rows = permuted
+        return super()._bounded_rows(rows)
+
+
+class TiePermutingSupabase(CappedSupabase):
+    """Without a unique order, later offset pages may legally reorder equal keys."""
+
+    def table(self, name: str):
+        return TiePermutingTableQuery(self, name)
 
 
 def rank_row(rank_id, ladder_id, display_order, *, studio_id=STUDIO_ID, **changes):
@@ -805,11 +827,42 @@ class BeltServiceTest(unittest.TestCase):
             [(entry.student_id, entry.current_rank_id, entry.next_rank_id) for entry in entries],
             [("st-unranked", None, "p-white"), ("st-white", "p-white", "p-top")],
         )
-        for table in ("belt_ladders", "belt_ranks"):
-            self.assertEqual(
-                [read["range"] for read in supabase.query_log if read["table"] == table],
-                [(0, 999), (1000, 1999)],
-            )
+        # A full first page is discarded: the visible query picks the primary
+        # and the metadata is re-read from offset 0 in a unique order.
+        self.assertEqual(
+            [
+                (read["columns"], read["filters"], read["orders"], read["range"])
+                for read in supabase.query_log
+                if read["table"] == "belt_ladders"
+            ],
+            [
+                (
+                    "*, belt_ranks(*)",
+                    (("eq", "studio_id", STUDIO_ID),),
+                    (("created_at", False),),
+                    (0, 999),
+                ),
+                (
+                    "*, belt_ranks(*)",
+                    (("eq", "studio_id", STUDIO_ID), ("in", "program_id", {"prog-visible"})),
+                    (("created_at", False),),
+                    None,
+                ),
+                *[
+                    (
+                        "id, name, program_id, studio_id",
+                        (("eq", "studio_id", STUDIO_ID),),
+                        (("created_at", False), ("id", False)),
+                        page,
+                    )
+                    for page in ((0, 999), (1000, 1999))
+                ],
+            ],
+        )
+        self.assertEqual(
+            [read["range"] for read in supabase.query_log if read["table"] == "belt_ranks"],
+            [(0, 999), (1000, 1999)],
+        )
         rank_reads = [read for read in supabase.query_log if read["table"] == "belt_ranks"]
         self.assertTrue(
             all(
@@ -825,6 +878,52 @@ class BeltServiceTest(unittest.TestCase):
                 for read in rank_reads
             )
         )
+
+    def test_primary_ladder_metadata_survives_tied_created_at_across_pages(self):
+        # Every ladder shares created_at: the visible primary is row 0, and the
+        # hidden ladder owning st-hidden's rank is row 1000, on the second page.
+        ladders = [
+            ladder_row(f"lad-{index:04d}", "prog-archived", "2025-01-01T00:00:00Z")
+            for index in range(2 * PROVIDER_MAX_ROWS)
+        ]
+        ladders[0] = ladder_row(
+            "lad-0000", "prog-visible", "2025-01-01T00:00:00Z", [rank_row("p-white", "lad-0000", 1)]
+        )
+        ladders[1000] = ladder_row(
+            "lad-1000",
+            "prog-archived",
+            "2025-01-01T00:00:00Z",
+            [rank_row("r-hidden", "lad-1000", 1)],
+        )
+        supabase = TiePermutingSupabase(
+            {
+                "programs": [
+                    program_row("prog-visible"),
+                    program_row("prog-archived", archived_at="2026-01-01T00:00:00Z"),
+                ],
+                **with_ranks(ladders),
+                "students": [
+                    student_row("st-unranked", "prog-visible", None),
+                    student_row("st-hidden", "prog-visible", "r-hidden"),
+                ],
+                "student_program_memberships": [],
+                "promotions": [],
+                "attendance": [],
+            }
+        )
+        calculate = BeltEligibilityCalculator.get_eligibility
+
+        with patch.object(
+            BeltEligibilityCalculator, "get_eligibility", autospec=True, side_effect=calculate
+        ) as calculator:
+            primary, entries = asyncio.run(
+                BeltService(supabase).get_primary_ladder_eligibility(STUDIO_ID)
+            )
+
+        self.assertEqual(primary.id, "lad-0000")
+        self.assertEqual([entry.student_id for entry in entries], ["st-unranked"])
+        snapshot_ids = [row["id"] for row in calculator.call_args.kwargs["ladder_rows"]]
+        self.assertEqual(sorted(snapshot_ids), [row["id"] for row in ladders])
 
     def test_calculator_ladder_rows_match_its_own_ladder_read(self):
         def tables(ladders, students):
