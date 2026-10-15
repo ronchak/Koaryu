@@ -106,7 +106,7 @@ see [Deployment triggers](#deployment-triggers).
   — pinned in `backend/app/core/config.py` as the only frontend origin a staging
   backend will accept.
 
-Configuration lives in `frontend/vercel.json`. The candidate pins Vercel Functions
+Configuration lives in `frontend/vercel.json`. It pins Vercel Functions
 to Portland (`pdx1`), near the existing Oregon backend and database. Deployment
 readback must confirm the region; Routing Middleware may have separate placement.
 
@@ -239,8 +239,8 @@ Both refs are pinned in `backend/app/core/config.py`. The backend refuses to boo
 if `ENVIRONMENT` and `SUPABASE_URL` disagree, so a staging process cannot be
 pointed at production data by editing one variable.
 
-Production database access is read-only except for the guarded rollout described
-in [Cutover Gates](cutover-gates.md#database-changes).
+Production database access is read-only except for the guarded rollout and its
+temporary backup role, described in [Cutover Gates](cutover-gates.md#database-changes).
 
 ## Stripe — payments
 
