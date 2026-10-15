@@ -329,10 +329,21 @@ class BeltEligibilityCalculator:
         return attendance_counts
 
     async def get_eligibility(
-        self, studio_id: str, ladder_id: Optional[str] = None
+        self,
+        studio_id: str,
+        ladder_id: Optional[str] = None,
+        *,
+        ladder_rows: Optional[list[dict[str, Any]]] = None,
     ) -> list[EligibilityEntry]:
-        """Compute promotion eligibility for all active students."""
-        return await self._get_eligibility(studio_id, ladder_id)
+        """Compute promotion eligibility for all active students.
+
+        A caller that has just read every ladder in this studio, ordered by
+        ``created_at``, may pass those rows to skip the duplicate metadata read.
+        They must include hidden-program and unscoped ladders, which still own
+        current ranks. Rows from another studio are ignored. Every rank is then
+        read page by page, so a snapshot past the provider's row cap stays whole.
+        """
+        return await self._get_eligibility(studio_id, ladder_id, ladder_rows=ladder_rows)
 
     async def get_event_candidates(
         self, studio_id: str, event: BeltTestEventResponse
@@ -357,19 +368,24 @@ class BeltEligibilityCalculator:
         *,
         event: BeltTestEventResponse | None = None,
         reference_time: datetime | None = None,
+        ladder_rows: list[dict[str, Any]] | None = None,
     ) -> list[EligibilityEntry]:
-        ladders_query = (
-            self.supabase.table("belt_ladders")
-            .select("id, name, program_id, studio_id" if event else "id, name, program_id")
-            .eq("studio_id", studio_id)
-            .order("created_at")
-        )
-        if event:
-            ladders_query = ladders_query.eq("id", ladder_id)
-        ladders_result = ladders_query.execute()
-        ladder_rows = self._read_rows(
-            ladders_result, ("id", "name", "program_id", "studio_id") if event else ()
-        )
+        ladder_snapshot = ladder_rows is not None
+        if ladder_rows is None:
+            ladders_query = (
+                self.supabase.table("belt_ladders")
+                .select("id, name, program_id, studio_id" if event else "id, name, program_id")
+                .eq("studio_id", studio_id)
+                .order("created_at")
+            )
+            if event:
+                ladders_query = ladders_query.eq("id", ladder_id)
+            ladders_result = ladders_query.execute()
+            ladder_rows = self._read_rows(
+                ladders_result, ("id", "name", "program_id", "studio_id") if event else ()
+            )
+        else:
+            ladder_rows = [row for row in ladder_rows if row.get("studio_id") == studio_id]
         ladder_meta = {row["id"]: row for row in ladder_rows if row.get("id")}
 
         current_program_ids: set[str] = set()
@@ -411,33 +427,39 @@ class BeltEligibilityCalculator:
         if ladder_id and ladder_id not in ladder_meta:
             raise HTTPException(status_code=404, detail="Belt ladder not found")
 
-        ranks_query = (
-            self.supabase.table("belt_ranks")
-            .select("*")
-            .eq("studio_id", studio_id)
-            .order("ladder_id")
-            .order("display_order")
-            .order("created_at")
-            .order("id")
-        )
-        if event:
-            ranks_query = ranks_query.eq("ladder_id", ladder_id)
-        ranks_result = ranks_query.execute()
-        ranks = self._read_rows(
-            ranks_result,
-            (
-                "id",
-                "studio_id",
-                "ladder_id",
-                "name",
-                "color_hex",
-                "min_classes",
-                "min_months",
-                "requires_approval",
+        def build_ranks_query() -> Any:
+            ranks_query = (
+                self.supabase.table("belt_ranks")
+                .select("*")
+                .eq("studio_id", studio_id)
+                .order("ladder_id")
+                .order("display_order")
+                .order("created_at")
+                .order("id")
             )
-            if event
-            else (),
-        )
+            if event:
+                ranks_query = ranks_query.eq("ladder_id", ladder_id)
+            return ranks_query
+
+        if ladder_snapshot:
+            # A complete ladder snapshot needs every rank, past the provider's row cap.
+            ranks = self._fetch_paged(build_ranks_query)
+        else:
+            ranks = self._read_rows(
+                build_ranks_query().execute(),
+                (
+                    "id",
+                    "studio_id",
+                    "ladder_id",
+                    "name",
+                    "color_hex",
+                    "min_classes",
+                    "min_months",
+                    "requires_approval",
+                )
+                if event
+                else (),
+            )
 
         if not ladder_meta or not ranks:
             return []

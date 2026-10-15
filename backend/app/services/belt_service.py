@@ -110,27 +110,44 @@ class BeltService:
         result = query.execute()
         return [BeltRankResponse(**rank) for rank in (result.data or [])]
 
-    async def list_ladders(self, studio_id: str) -> list[BeltLadderResponse]:
-        active_program_rows = (
-            self.supabase.table("programs")
-            .select("id, is_system, archived_at")
-            .eq("studio_id", studio_id)
-            .execute()
+    def _visible_program_ids(self, studio_id: str) -> set[str]:
+        # Home's visible programs, paged in id order: a program past the
+        # provider's row cap still makes its ladder visible, as in the joined reads.
+        active_program_rows = self._fetch_paged(
+            lambda: (
+                self.supabase.table("programs")
+                .select("id, is_system, archived_at")
+                .eq("studio_id", studio_id)
+                .order("id")
+            )
         )
-        visible_program_ids = {
+        return {
             row["id"]
-            for row in (active_program_rows.data or [])
+            for row in active_program_rows
             if row.get("id") and not row.get("is_system") and not row.get("archived_at")
         }
-        if not visible_program_ids:
-            return []
 
-        result = (
+    def _ladders_query(self, studio_id: str, columns: str = "*, belt_ranks(*)") -> Any:
+        # Earliest ladder first, with the id breaking created_at ties, so every
+        # page is stable and Home, the Belt Tracker and Training share a primary.
+        return (
             self.supabase.table("belt_ladders")
-            .select("*, belt_ranks(*)")
+            .select(columns)
             .eq("studio_id", studio_id)
-            .in_("program_id", list(visible_program_ids))
             .order("created_at")
+            .order("id")
+        )
+
+    async def list_ladders(self, studio_id: str) -> list[BeltLadderResponse]:
+        # Training's join: the empty inner embed keeps only ladders of this
+        # studio's active, non-system programs (a NULL is_system counts as
+        # false), with no program read or id list. An empty studio now sends
+        # this query too, so a failed join raises instead of returning [].
+        result = (
+            self._ladders_query(studio_id, "*, belt_ranks(*), programs!inner()")
+            .eq("programs.studio_id", studio_id)
+            .is_("programs.archived_at", "null")
+            .not_.is_("programs.is_system", "true")
             .execute()
         )
         return [self._build_ladder_response(row) for row in (result.data or [])]
@@ -487,6 +504,33 @@ class BeltService:
         self, studio_id: str, ladder_id: Optional[str] = None
     ) -> list[EligibilityEntry]:
         return await BeltEligibilityCalculator(self.supabase).get_eligibility(studio_id, ladder_id)
+
+    async def get_primary_ladder_eligibility(
+        self, studio_id: str
+    ) -> Optional[tuple[BeltLadderResponse, list[EligibilityEntry]]]:
+        """``list_ladders()[0]`` and its eligibility, reading the ladders once.
+
+        Every ladder in the studio is read: the visible ones pick the primary,
+        and all of them are the calculator's ladder metadata, because a hidden
+        or unscoped ladder still owns its ranks. None when no ladder is visible.
+        """
+        visible_program_ids = self._visible_program_ids(studio_id)
+        if not visible_program_ids:
+            return None
+
+        ladder_rows = self._fetch_paged(lambda: self._ladders_query(studio_id))
+        ladders = [
+            self._build_ladder_response(row)
+            for row in ladder_rows
+            if row.get("program_id") in visible_program_ids
+        ]
+        if not ladders:
+            return None
+        primary = ladders[0]
+        entries = await BeltEligibilityCalculator(self.supabase).get_eligibility(
+            studio_id, primary.id, ladder_rows=ladder_rows
+        )
+        return primary, entries
 
     async def promote_student(
         self, data: PromoteStudent, studio_id: str, actor_id: str

@@ -46,12 +46,18 @@ async function mountSchedule() {
   await page.evaluate(() => {
     const listeners = new Set();
     const noop = async () => {};
-    const f = (window.fixture = { reads: [] });
+    const f = (window.fixture = { reads: [], programCalls: [] });
     f.subscribe = (listener) => {
       listeners.add(listener);
       return () => listeners.delete(listener);
     };
-    f.programs = { programs: [], refreshPrograms: noop };
+    f.programs = {
+      programs: [],
+      refreshPrograms: async (options) => {
+        f.programCalls.push(options);
+        return [];
+      },
+    };
     f.students = {
       students: [],
       studentsLoaded: true,
@@ -149,9 +155,15 @@ test("Schedule reuses loaded ranges and classes on revisit and keeps them during
     await expect(month.getByRole("button", { name: /Karate/ })).toBeVisible();
     await page.evaluate(() => fixture.reads[2].resolve());
     await page.waitForFunction(() => !fixture.controller.isRefreshingRange);
+    // Cold load, remount and range Retry leave programs to the store.
+    assert.deepEqual(await page.evaluate(() => fixture.programCalls), []);
     await page.evaluate(() => window.dispatchEvent(new Event("koaryu:data-refresh")));
     await page.waitForFunction(() => fixture.reads.length === 4);
     assert.equal(await page.evaluate(() => fixture.reads[3].args[2]), "read");
+    // Resume needs program labels and choices, not usage counts.
+    assert.deepEqual(await page.evaluate(() => fixture.programCalls), [
+      { includeArchived: true, includeUsage: false },
+    ]);
     await expect(page.locator(".koaryu-skeleton-reveal")).toHaveCount(0);
     await expect(label).toHaveText("September 2026");
     await expect(month.getByText("Karate", { exact: true })).toHaveCount(1);
