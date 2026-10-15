@@ -48,7 +48,7 @@ FROZEN_NOW = datetime(2026, 5, 20, 19, 0, tzinfo=UTC)
 PROGRAM_ID = "fixture-program"
 LADDER_ID = "fixture-ladder"
 MATERIALIZE_RPC_NAME = "materialize_recurring_class_sessions"
-# BeltService.list_ladders' embedded read runs exactly once per promotions load.
+# The embedded belt ladder read runs exactly once per promotions load.
 PROMOTION_LOAD_COLUMNS = "*, belt_ranks(*)"
 # Every studio-owned table Home reads must be filtered by studio.
 TENANT_TABLES = (

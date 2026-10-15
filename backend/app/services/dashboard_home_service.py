@@ -314,13 +314,11 @@ class DashboardHomeService:
     async def fetch_promotions(self, studio_id: str) -> DashboardHomePromotions:
         """Ready students on the primary ladder: the first the bootstrap would pick."""
 
-        belts = BeltService(self.supabase)
-        ladders = await belts.list_ladders(studio_id)
-        if not ladders:
+        primary = await BeltService(self.supabase).get_primary_ladder_eligibility(studio_id)
+        if primary is None:
             return EMPTY_DASHBOARD_HOME_PROMOTIONS
-        primary = ladders[0]
-        entries = await belts.get_eligibility(studio_id, primary.id)
-        return build_promotions(entries, [rank.id for rank in primary.ranks])
+        ladder, entries = primary
+        return build_promotions(entries, [rank.id for rank in ladder.ranks])
 
     # ---- Assembly ----
 

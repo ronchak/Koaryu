@@ -110,18 +110,21 @@ class BeltService:
         result = query.execute()
         return [BeltRankResponse(**rank) for rank in (result.data or [])]
 
-    async def list_ladders(self, studio_id: str) -> list[BeltLadderResponse]:
+    def _visible_program_ids(self, studio_id: str) -> set[str]:
         active_program_rows = (
             self.supabase.table("programs")
             .select("id, is_system, archived_at")
             .eq("studio_id", studio_id)
             .execute()
         )
-        visible_program_ids = {
+        return {
             row["id"]
             for row in (active_program_rows.data or [])
             if row.get("id") and not row.get("is_system") and not row.get("archived_at")
         }
+
+    async def list_ladders(self, studio_id: str) -> list[BeltLadderResponse]:
+        visible_program_ids = self._visible_program_ids(studio_id)
         if not visible_program_ids:
             return []
 
@@ -487,6 +490,40 @@ class BeltService:
         self, studio_id: str, ladder_id: Optional[str] = None
     ) -> list[EligibilityEntry]:
         return await BeltEligibilityCalculator(self.supabase).get_eligibility(studio_id, ladder_id)
+
+    async def get_primary_ladder_eligibility(
+        self, studio_id: str
+    ) -> Optional[tuple[BeltLadderResponse, list[EligibilityEntry]]]:
+        """``list_ladders()[0]`` and its eligibility, reading the ladders once.
+
+        Every ladder in the studio is read: the visible ones pick the primary,
+        and all of them are the calculator's ladder metadata, because a hidden
+        or unscoped ladder still owns its ranks. None when no ladder is visible.
+        """
+        visible_program_ids = self._visible_program_ids(studio_id)
+        if not visible_program_ids:
+            return None
+
+        ladder_rows = self._fetch_paged(
+            lambda: (
+                self.supabase.table("belt_ladders")
+                .select("*, belt_ranks(*)")
+                .eq("studio_id", studio_id)
+                .order("created_at")
+            )
+        )
+        ladders = [
+            self._build_ladder_response(row)
+            for row in ladder_rows
+            if row.get("program_id") in visible_program_ids
+        ]
+        if not ladders:
+            return None
+        primary = ladders[0]
+        entries = await BeltEligibilityCalculator(self.supabase).get_eligibility(
+            studio_id, primary.id, ladder_rows=ladder_rows
+        )
+        return primary, entries
 
     async def promote_student(
         self, data: PromoteStudent, studio_id: str, actor_id: str

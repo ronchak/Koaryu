@@ -329,10 +329,20 @@ class BeltEligibilityCalculator:
         return attendance_counts
 
     async def get_eligibility(
-        self, studio_id: str, ladder_id: Optional[str] = None
+        self,
+        studio_id: str,
+        ladder_id: Optional[str] = None,
+        *,
+        ladder_rows: Optional[list[dict[str, Any]]] = None,
     ) -> list[EligibilityEntry]:
-        """Compute promotion eligibility for all active students."""
-        return await self._get_eligibility(studio_id, ladder_id)
+        """Compute promotion eligibility for all active students.
+
+        A caller that has just read every ladder in this studio, ordered by
+        ``created_at``, may pass those rows to skip the duplicate metadata read.
+        They must include hidden-program and unscoped ladders, which still own
+        current ranks. Rows from another studio are ignored.
+        """
+        return await self._get_eligibility(studio_id, ladder_id, ladder_rows=ladder_rows)
 
     async def get_event_candidates(
         self, studio_id: str, event: BeltTestEventResponse
@@ -357,19 +367,23 @@ class BeltEligibilityCalculator:
         *,
         event: BeltTestEventResponse | None = None,
         reference_time: datetime | None = None,
+        ladder_rows: list[dict[str, Any]] | None = None,
     ) -> list[EligibilityEntry]:
-        ladders_query = (
-            self.supabase.table("belt_ladders")
-            .select("id, name, program_id, studio_id" if event else "id, name, program_id")
-            .eq("studio_id", studio_id)
-            .order("created_at")
-        )
-        if event:
-            ladders_query = ladders_query.eq("id", ladder_id)
-        ladders_result = ladders_query.execute()
-        ladder_rows = self._read_rows(
-            ladders_result, ("id", "name", "program_id", "studio_id") if event else ()
-        )
+        if ladder_rows is None:
+            ladders_query = (
+                self.supabase.table("belt_ladders")
+                .select("id, name, program_id, studio_id" if event else "id, name, program_id")
+                .eq("studio_id", studio_id)
+                .order("created_at")
+            )
+            if event:
+                ladders_query = ladders_query.eq("id", ladder_id)
+            ladders_result = ladders_query.execute()
+            ladder_rows = self._read_rows(
+                ladders_result, ("id", "name", "program_id", "studio_id") if event else ()
+            )
+        else:
+            ladder_rows = [row for row in ladder_rows if row.get("studio_id") == studio_id]
         ladder_meta = {row["id"]: row for row in ladder_rows if row.get("id")}
 
         current_program_ids: set[str] = set()

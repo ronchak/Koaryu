@@ -12,6 +12,7 @@ from postgrest.exceptions import APIError
 from app.api.v1.endpoints import dashboard
 from app.schemas.auth import AuthResponse, UserProfile
 from app.services import dashboard_home_service as home
+from app.services.belt_eligibility import BeltEligibilityCalculator
 from app.services.dashboard_home_sections import build_promotions, validate_dashboard_home_facts
 from app.services.dashboard_summary_cache import (
     DashboardSummaryFactCache,
@@ -320,7 +321,7 @@ def wire_request(client, role="admin", *, fresh=False, raise_server_exceptions=T
 
 
 def promotion_load_count(client):
-    # Eligibility also reads ladder metadata; count only list_ladders' query.
+    # Each load reads every studio ladder, with embedded ranks, exactly once.
     return sum(
         query["table"] == "belt_ladders" and query["columns"] == "*, belt_ranks(*)"
         for query in client.query_log
@@ -718,29 +719,281 @@ def test_failed_contact_lookup_drops_only_student_id():
 
 
 def test_promotions_pick_first_ladder_from_service_order(monkeypatch):
-    first = SimpleNamespace(id="primary", ranks=[SimpleNamespace(id="white")])
-    second = SimpleNamespace(id="secondary", ranks=[])
-    ladders = AsyncMock(return_value=[first, second])
-    entries = AsyncMock(
-        return_value=[eligibility("approval-only", needs_approval=True, is_eligible=False)]
+    primary = SimpleNamespace(
+        id="primary", ranks=[SimpleNamespace(id="yellow"), SimpleNamespace(id="white")]
     )
-    monkeypatch.setattr(home.BeltService, "list_ladders", ladders)
-    monkeypatch.setattr(home.BeltService, "get_eligibility", entries)
+    entries = [
+        eligibility("approval-only", needs_approval=True, is_eligible=False),
+        eligibility("on-yellow", rank="yellow"),
+    ]
+    load = AsyncMock(return_value=(primary, entries))
+    monkeypatch.setattr(home.BeltService, "get_primary_ladder_eligibility", load)
     wire, _ = request(HomeSupabase())
-    ladders.assert_awaited_once_with(STUDIO)
-    entries.assert_awaited_once_with(STUDIO, "primary")
-    assert wire["stats"]["promotions"] == {"ready_count": 1, "needs_approval": 1}
+    load.assert_awaited_once_with(STUDIO)
+    assert wire["stats"]["promotions"] == {"ready_count": 2, "needs_approval": 1}
+    # Groups follow the primary ladder's rank order.
+    assert [row["student_id"] for row in wire["ready_to_promote"]["rows"]] == [
+        "on-yellow",
+        "approval-only",
+    ]
 
 
 def test_no_ladder_returns_present_empty_promotions_without_eligibility_read(monkeypatch):
     client = HomeSupabase()
     client.tables["belt_ladders"] = []
     entries = AsyncMock(side_effect=AssertionError("No ladder must not trigger eligibility"))
-    monkeypatch.setattr(home.BeltService, "get_eligibility", entries)
+    monkeypatch.setattr(BeltEligibilityCalculator, "get_eligibility", entries)
     wire, _ = request(client)
     assert wire["stats"]["promotions"] == {"ready_count": 0, "needs_approval": 0}
     assert wire["ready_to_promote"] == {"rows": []}
     entries.assert_not_awaited()
+    assert not any(
+        query["table"] in {"belt_ranks", "student_program_memberships", "promotions", "attendance"}
+        for query in client.query_log
+    )
+
+
+def belt_rank(rank_id, ladder_id, name, display_order, *, studio_id=STUDIO):
+    return {
+        "id": rank_id,
+        "ladder_id": ladder_id,
+        "studio_id": studio_id,
+        "name": name,
+        "color_hex": "#000000",
+        "display_order": display_order,
+        "min_classes": 0,
+        "min_months": 0,
+        "requires_approval": False,
+        "is_tip": False,
+        "created_at": "2026-01-01T00:00:00+00:00",
+    }
+
+
+def add_ladder(data, ladder_id, program_id, created_at, ranks, *, studio_id=STUDIO):
+    data["belt_ladders"].append(
+        {
+            "id": ladder_id,
+            "studio_id": studio_id,
+            "name": ladder_id,
+            "program_id": program_id,
+            "sub_rank_term": "Stripe",
+            "created_at": created_at,
+            "updated_at": created_at,
+            "belt_ranks": ranks,
+        }
+    )
+    data["belt_ranks"] = [*data["belt_ranks"], *ranks]
+
+
+def add_program(data, program_id, *, studio_id=STUDIO, is_system=False, archived_at=None):
+    data["programs"].append(
+        {
+            "id": program_id,
+            "studio_id": studio_id,
+            "is_system": is_system,
+            "archived_at": archived_at,
+        }
+    )
+
+
+def student(data, student_id):
+    return next(row for row in data["students"] if row["id"] == student_id)
+
+
+def hidden_rank_parent(program_id, **program):
+    """An older hidden ladder owns st-1's current rank; st-1 stays in prog-1."""
+
+    def mutate(data):
+        if program_id:
+            add_program(data, program_id, **program)
+        add_ladder(
+            data,
+            "lad-hidden",
+            program_id,
+            "2025-12-01T00:00:00+00:00",
+            [belt_rank("r-hidden", "lad-hidden", "Hidden", 1)],
+        )
+        student(data, "st-1")["current_belt_rank_id"] = "r-hidden"
+
+    return mutate
+
+
+def membership_rank_parents(data):
+    hidden_rank_parent("prog-archived", archived_at="2026-02-01T00:00:00+00:00")(data)
+    student(data, "st-1")["current_belt_rank_id"] = None
+    data["student_program_memberships"] = [
+        {
+            "id": "m-hidden",
+            "studio_id": STUDIO,
+            "student_id": "st-1",
+            "program_id": "prog-1",
+            "status": "active",
+            "ended_at": None,
+            "started_at": "2026-01-01",
+            "current_belt_rank_id": "r-hidden",
+        },
+        {
+            "id": "m-paused",
+            "studio_id": STUDIO,
+            "student_id": "st-2",
+            "program_id": "prog-1",
+            "status": "paused",
+            "ended_at": None,
+            "started_at": "2026-01-01",
+            "current_belt_rank_id": "r-white",
+        },
+    ]
+
+
+def foreign_studio_ladder(data):
+    add_program(data, "prog-foreign", studio_id="other")
+    add_ladder(
+        data,
+        "lad-foreign",
+        "prog-foreign",
+        "2025-01-01T00:00:00+00:00",
+        [belt_rank("r-foreign", "lad-foreign", "Foreign", 1, studio_id="other")],
+        studio_id="other",
+    )
+    student(data, "st-1")["current_belt_rank_id"] = "r-foreign"
+
+
+def older_visible_ladder(data):
+    add_program(data, "prog-0")
+    add_ladder(
+        data,
+        "lad-0",
+        "prog-0",
+        "2025-12-01T00:00:00+00:00",
+        [belt_rank("r-zero", "lad-0", "Zero", 1)],
+    )
+
+
+def equal_rank_order(data):
+    # Amber sorts before Yellow canonically (same order and time, smaller id),
+    # but the embedded payload lists Yellow first.
+    white, yellow, orange = data["belt_ranks"]
+    amber = {**belt_rank("r-amber", "lad-1", "Amber", 2), "created_at": yellow["created_at"]}
+    data["belt_ladders"][0]["belt_ranks"] = [white, yellow, amber, orange]
+    data["belt_ranks"] = [white, yellow, amber, orange]
+    data["students"].append(
+        {
+            **student(data, "st-3"),
+            "id": "st-5",
+            "legal_first_name": "Eve",
+            "current_belt_rank_id": "r-amber",
+        }
+    )
+
+
+def no_visible_program(data):
+    data["programs"][0]["archived_at"] = "2026-02-01T00:00:00+00:00"
+
+
+def only_hidden_ladders(data):
+    add_program(data, "prog-archived", archived_at="2026-02-01T00:00:00+00:00")
+    data["belt_ladders"][0]["program_id"] = "prog-archived"
+
+
+def promotion_trace(client, start):
+    return [(query["table"], query["columns"]) for query in client.query_log[start:]]
+
+
+@pytest.mark.parametrize(
+    "mutate,ready_ids",
+    [
+        (lambda data: None, ["st-1", "st-2", "st-3"]),
+        (
+            hidden_rank_parent("prog-archived", archived_at="2026-02-01T00:00:00+00:00"),
+            ["st-2", "st-3"],
+        ),
+        (hidden_rank_parent("prog-system", is_system=True), ["st-2", "st-3"]),
+        (hidden_rank_parent(None), ["st-2", "st-3"]),
+        (membership_rank_parents, ["st-2", "st-3"]),
+        (foreign_studio_ladder, ["st-1", "st-2", "st-3"]),
+        (older_visible_ladder, []),
+        (equal_rank_order, ["st-1", "st-2", "st-3", "st-5"]),
+        (no_visible_program, []),
+        (only_hidden_ladders, []),
+    ],
+    ids=[
+        "single-visible",
+        "archived-parent",
+        "system-parent",
+        "unscoped-parent",
+        "membership-parents",
+        "foreign-studio",
+        "older-visible-primary",
+        "equal-rank-order",
+        "no-visible-program",
+        "only-hidden-ladders",
+    ],
+)
+def test_promotions_match_list_ladders_then_eligibility_with_one_fewer_ladder_read(
+    mutate, ready_ids
+):
+    client = HomeSupabase()
+    mutate(client.tables)
+
+    async def previous_projection():
+        belts = home.BeltService(client)
+        ladders = await belts.list_ladders(STUDIO)
+        if not ladders:
+            return home.EMPTY_DASHBOARD_HOME_PROMOTIONS
+        entries = await belts.get_eligibility(STUDIO, ladders[0].id)
+        return build_promotions(entries, [rank.id for rank in ladders[0].ranks])
+
+    previous = asyncio.run(previous_projection())
+    previous_trace = promotion_trace(client, 0)
+    start = len(client.query_log)
+    current = asyncio.run(home.DashboardHomeService(client).fetch_promotions(STUDIO))
+    trace = promotion_trace(client, start)
+
+    assert current == previous
+    assert [row.student_id for row in current.ready_to_promote.rows] == ready_ids
+    # Only the calculator's flat ladder metadata read is gone, whenever it ran.
+    flat_ladder_read = ("belt_ladders", "id, name, program_id")
+    assert previous_trace.count(flat_ladder_read) == (("belt_ranks", "*") in previous_trace)
+    assert trace == [read for read in previous_trace if read != flat_ladder_read]
+    ladder_reads = [query for query in client.query_log[start:] if query["table"] == "belt_ladders"]
+    assert all(query["filters"] == (("eq", "studio_id", STUDIO),) for query in ladder_reads)
+
+
+def test_fresh_promotion_load_reads_each_ladder_table_once():
+    client = HomeSupabase()
+    asyncio.run(home.DashboardHomeService(client).fetch_promotions(STUDIO))
+    assert [query["table"] for query in client.query_log] == [
+        "programs",
+        "belt_ladders",
+        "belt_ranks",
+        "students",
+        "student_program_memberships",
+        "promotions",
+        "attendance",
+    ]
+    ranks_read = client.query_log[2]
+    assert ranks_read["orders"] == (
+        ("ladder_id", False),
+        ("display_order", False),
+        ("created_at", False),
+        ("id", False),
+    )
+
+
+def test_equal_rank_order_groups_by_embedded_order_and_steps_by_canonical_order():
+    client = HomeSupabase()
+    equal_rank_order(client.tables)
+    promotions = asyncio.run(home.DashboardHomeService(client).fetch_promotions(STUDIO))
+    rows = {row.student_id: row for row in promotions.ready_to_promote.rows}
+    # Embedded order groups Yellow before Amber.
+    assert list(rows) == ["st-1", "st-2", "st-3", "st-5"]
+    # Canonical (display_order, created_at, id) order steps White to Amber to Yellow.
+    assert [rows[student_id].to.name for student_id in rows] == [
+        "White",
+        "Amber",
+        "Orange",
+        "Yellow",
+    ]
 
 
 @pytest.mark.parametrize(
