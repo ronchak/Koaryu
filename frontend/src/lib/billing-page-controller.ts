@@ -39,17 +39,8 @@ import {
   enabledBillingWorkflowIds,
 } from "@/lib/billing-workflow-capabilities";
 import { subscriptionPeriodCopy } from "@/lib/billing-period";
-import {
-  PREVIEW_CONNECT,
-  PREVIEW_BILLING_METRICS_AS_OF,
-  PREVIEW_ENROLLMENTS,
-  PREVIEW_INVOICES,
-  PREVIEW_PAYERS,
-  PREVIEW_PAYMENTS,
-  PREVIEW_PLANS,
-  PREVIEW_PLATFORM,
-  PREVIEW_SUBSCRIPTIONS,
-} from "@/lib/billing-preview-data";
+import { getPreviewAdapter } from "@/lib/preview-adapter-loader";
+import type { BillingSubscription } from "@/types";
 import type {
   ConfigStoreContextValue,
   ProgramsStoreContextValue,
@@ -74,7 +65,7 @@ type BillingPageControllerOptions = {
   >;
 };
 
-const LIVE_SUBSCRIPTIONS_NOT_READ: typeof PREVIEW_SUBSCRIPTIONS = [];
+const LIVE_SUBSCRIPTIONS_NOT_READ: BillingSubscription[] = [];
 
 export function useBillingPageController({
   config,
@@ -85,6 +76,7 @@ export function useBillingPageController({
   const router = useRouter();
   const searchParams = useSearchParams();
   const { isPreviewMode, token, markSubscriptionRequired } = config;
+  const preview = isPreviewMode ? getPreviewAdapter() : null;
   const { currentRole, currentStudioId, currentUserId, identityGeneration } = studioStore;
   const { programs } = programsStore;
   const {
@@ -106,9 +98,9 @@ export function useBillingPageController({
   const changeBillingTab = useCallback((tab: BillingTab) => {
     const currentSearch = searchParams.toString();
     if (getBillingTabFromSearch(currentSearch) !== tab) {
-      router.replace(getBillingUrlForTab(currentSearch, tab), { scroll: false });
+      window.history.replaceState(null, "", getBillingUrlForTab(currentSearch, tab));
     }
-  }, [router, searchParams]);
+  }, [searchParams]);
 
   const canManageKoaryuSubscription = currentRole === "admin";
   const canViewStudioBilling = currentRole === "admin" || currentRole === "front_desk";
@@ -205,15 +197,15 @@ export function useBillingPageController({
   useEffect(() => {
     if (!viewReady && hasVisibleTabData && auxiliaryReadiness.status === "ready") setViewReady(true);
   }, [auxiliaryReadiness.status, hasVisibleTabData, setViewReady, viewReady]);
-  const billingPlatform = isPreviewMode ? PREVIEW_PLATFORM : platformBilling;
-  const billingConnect = isPreviewMode ? PREVIEW_CONNECT : paymentAccount;
-  const billingPlans = isPreviewMode ? PREVIEW_PLANS : plans;
-  const billingPayers = isPreviewMode ? PREVIEW_PAYERS : payers;
+  const billingPlatform = isPreviewMode ? preview!.PREVIEW_PLATFORM : platformBilling;
+  const billingConnect = isPreviewMode ? preview!.PREVIEW_CONNECT : paymentAccount;
+  const billingPlans = isPreviewMode ? preview!.PREVIEW_PLANS : plans;
+  const billingPayers = isPreviewMode ? preview!.PREVIEW_PAYERS : payers;
   // Live subscription totals come from the landing aggregates; the capped list is not read.
-  const billingSubscriptions = isPreviewMode ? PREVIEW_SUBSCRIPTIONS : LIVE_SUBSCRIPTIONS_NOT_READ;
-  const billingEnrollments = isPreviewMode ? PREVIEW_ENROLLMENTS : enrollments;
-  const billingInvoices = isPreviewMode ? PREVIEW_INVOICES : invoices;
-  const billingPayments = isPreviewMode ? PREVIEW_PAYMENTS : payments;
+  const billingSubscriptions = isPreviewMode ? preview!.PREVIEW_SUBSCRIPTIONS : LIVE_SUBSCRIPTIONS_NOT_READ;
+  const billingEnrollments = isPreviewMode ? preview!.PREVIEW_ENROLLMENTS : enrollments;
+  const billingInvoices = isPreviewMode ? preview!.PREVIEW_INVOICES : invoices;
+  const billingPayments = isPreviewMode ? preview!.PREVIEW_PAYMENTS : payments;
   const billingActions = useBillingActionController({
     billingConnect,
     canManageRoutineBilling: canManageRoutineBillingActions,
@@ -277,7 +269,7 @@ export function useBillingPageController({
   );
   const billingPageModel = useMemo(() => buildBillingPageModel({
     billingLandingAggregates: landing?.aggregates,
-    billingMetricsAsOf: isPreviewMode ? PREVIEW_BILLING_METRICS_AS_OF : undefined,
+    billingMetricsAsOf: isPreviewMode ? preview!.PREVIEW_BILLING_METRICS_AS_OF : undefined,
     billingPaymentCohortSummary: isPreviewMode ? null : paymentCohortSummary,
     billingConnect,
     billingEnrollments,
@@ -287,7 +279,7 @@ export function useBillingPageController({
     billingPlans,
     billingSubscriptions,
     isPreviewMode,
-    previewEnrollments: PREVIEW_ENROLLMENTS,
+    previewEnrollments: preview?.PREVIEW_ENROLLMENTS ?? [],
     programs,
     students,
   }), [
@@ -301,6 +293,7 @@ export function useBillingPageController({
     billingPlans,
     billingSubscriptions,
     isPreviewMode,
+    preview,
     programs,
     students,
   ]);
@@ -519,7 +512,7 @@ export function useBillingPageController({
         activeSubscriptionCount,
         activeTab,
         billingConnect,
-        billingObservedAt: isPreviewMode ? PREVIEW_BILLING_METRICS_AS_OF.toISOString() : landing?.observed_at ?? null,
+        billingObservedAt: isPreviewMode ? preview!.PREVIEW_BILLING_METRICS_AS_OF.toISOString() : landing?.observed_at ?? null,
         billingEnrollments,
         billingInvoices,
         billingPayers,

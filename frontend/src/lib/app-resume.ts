@@ -20,12 +20,14 @@ export function createResumeCheck({
   loaded,
   readVersion,
   onCurrent,
+  onCheck,
   onUpdate,
   now = Date.now,
 }: {
   loaded: AppVersion;
   readVersion: () => Promise<unknown>;
   onCurrent: () => void;
+  onCheck?: (versionAllowsRefresh: Promise<boolean>) => void;
   onUpdate: () => void;
   now?: () => number;
 }) {
@@ -37,25 +39,36 @@ export function createResumeCheck({
       if (disposed) return Promise.resolve();
       if (pending) return pending;
       if (now() - lastCheck < RESUME_STALE_MS) return Promise.resolve();
-      pending = (async () => {
+      const versionAllowsRefresh = (async () => {
         if (!loaded.commit_sha) {
           lastCheck = now();
           if (!disposed) onCurrent();
-          return;
+          return !disposed;
         }
         try {
           const current = await readVersion();
           if (disposed || !validAppVersion(current) || current.environment !== loaded.environment)
-            return;
+            return false;
           lastCheck = now();
-          if (current.commit_sha !== loaded.commit_sha) onUpdate();
-          else onCurrent();
+          if (current.commit_sha !== loaded.commit_sha) {
+            onUpdate();
+            return false;
+          }
+          onCurrent();
+          return true;
         } catch {
           // Offline restoration keeps the current workspace and permits a later check.
+          return false;
         }
-      })().finally(() => {
-        pending = null;
-      });
+      })();
+      // Begin access verification without waiting for the version response.
+      // A failed or changed version still permits checking access, never data refresh.
+      pending = versionAllowsRefresh
+        .then(() => {})
+        .finally(() => {
+          pending = null;
+        });
+      onCheck?.(versionAllowsRefresh);
       return pending;
     },
     dispose() {

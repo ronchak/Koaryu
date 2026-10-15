@@ -16,6 +16,35 @@ const flush = (page) =>
   page.evaluate(
     () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
   );
+const METADATA = { includeArchived: true, includeUsage: false };
+const programState = (page) =>
+  page.evaluate(() => ({
+    rows: Object.fromEntries(
+      fixture.store.programs.map((p) => [p.id, [p.name, p.usage.student_count]]),
+    ),
+    flags: [
+      fixture.store.programsLoaded,
+      fixture.store.programsUsageLoaded,
+      fixture.store.programsLoadError,
+      fixture.store.programsUsageLoadError,
+    ],
+  }));
+// Starts a refresh and settles read `index` once it exists. A string rejects it.
+async function settleRefresh(page, options, index, outcome = null) {
+  await page.evaluate((options) => {
+    fixture.refresh = fixture.store.refreshPrograms(options).catch((error) => error.message);
+  }, options);
+  await page.waitForFunction((index) => fixture.reads.length === index + 1, index);
+  return page.evaluate(
+    async ({ index, outcome }) => {
+      const read = fixture.reads[index];
+      if (typeof outcome === "string") read.reject(new Error(outcome));
+      else read.resolve(read.snapshot);
+      return fixture.refresh;
+    },
+    { index, outcome },
+  );
+}
 
 async function fixturePage({ holdBootstrap = false, showPrograms = false } = {}) {
   const page = await browser.newPage();
@@ -29,6 +58,7 @@ async function fixturePage({ holdBootstrap = false, showPrograms = false } = {})
   await page.evaluate(
     ({ holdBootstrap }) => {
       const f = (window.fixture = {
+        pathname: "/settings",
         observations: [],
         requests: [],
         reads: [],
@@ -120,6 +150,9 @@ async function fixturePage({ holdBootstrap = false, showPrograms = false } = {})
           }
           if (path.startsWith("/programs?")) {
             const snapshot = structuredClone(f.rows);
+            // Like the API, metadata reads return schema-default usage.
+            if (path.includes("include_usage=false"))
+              snapshot.forEach((row) => (row.usage = f.program(row.id).usage));
             return new Promise((resolve, reject) =>
               f.reads.push({ path, token, snapshot, resolve, reject }),
             );
@@ -204,6 +237,11 @@ test("a submitted program draft stays fixed through success and rejection", asyn
     await page.waitForFunction(() => fixture.reads.length === 2);
     await page.evaluate(() => fixture.reads[1].resolve(fixture.reads[1].snapshot));
     await page.getByText("Program updated.", { exact: true }).waitFor();
+    assert.deepEqual(
+      await page.evaluate(() => fixture.reads.map((read) => read.path)),
+      ["/programs?include_archived=true", "/programs?include_archived=true"],
+      "Settings mount and saves keep usage-bearing reads",
+    );
     assert.equal(await name.inputValue(), "");
     assert.equal(await description.inputValue(), "");
     assert.equal(await page.getByRole("button", { name: "Edit", exact: true }).count(), 2);
@@ -608,5 +646,528 @@ test("data clear and identity replacement prevent old program reads or write ack
     } finally {
       await page.close();
     }
+  }
+});
+
+test("metadata refresh keeps verified usage, flags new programs and reports only row errors", async () => {
+  const page = await fixturePage();
+  try {
+    await settleRefresh(page, METADATA, 0);
+    assert.equal(
+      await page.evaluate(() => fixture.reads[0].path),
+      "/programs?include_archived=true&include_usage=false",
+    );
+    assert.deepEqual(
+      (await programState(page)).flags,
+      [true, false, null, null],
+      "metadata after a metadata bootstrap cannot certify usage",
+    );
+
+    await page.evaluate(() => {
+      fixture.rows = fixture.rows.map((row, index) => ({
+        ...row,
+        usage: Object.fromEntries(Object.keys(row.usage).map((key) => [key, index + 3])),
+      }));
+    });
+    await settleRefresh(page, { includeArchived: true }, 1);
+    assert.equal(
+      await page.evaluate(() => fixture.reads[1].path),
+      "/programs?include_archived=true",
+    );
+    assert.deepEqual(await programState(page), {
+      rows: { p1: ["p1", 3], p2: ["p2", 4] },
+      flags: [true, true, null, null],
+    });
+
+    await page.evaluate(() => {
+      fixture.rows[0] = { ...fixture.rows[0], name: "Renamed" };
+    });
+    const merged = await settleRefresh(page, METADATA, 2);
+    assert.deepEqual(
+      merged.map((p) => [p.id, p.usage.student_count]),
+      [
+        ["p1", 3],
+        ["p2", 4],
+      ],
+      "the caller receives the committed rows, not metadata zeroes",
+    );
+    assert.deepEqual(
+      await programState(page),
+      { rows: { p1: ["Renamed", 3], p2: ["p2", 4] }, flags: [true, true, null, null] },
+      "metadata zeroes cannot erase verified usage or its readiness",
+    );
+
+    await settleRefresh(page, { includeArchived: true }, 3, "Usage failed");
+    await page.evaluate(() => fixture.rows.push(fixture.program("p3", "Created elsewhere")));
+    await settleRefresh(page, METADATA, 4);
+    assert.deepEqual(
+      await programState(page),
+      {
+        rows: { p1: ["Renamed", 3], p2: ["p2", 4], p3: ["Created elsewhere", 0] },
+        flags: [true, false, null, "Usage failed"],
+      },
+      "a new program leaves usage unverified and the usage error remains",
+    );
+
+    assert.equal(await settleRefresh(page, METADATA, 5, "Metadata failed"), "Metadata failed");
+    assert.deepEqual(
+      await programState(page),
+      {
+        rows: { p1: ["Renamed", 3], p2: ["p2", 4], p3: ["Created elsewhere", 0] },
+        flags: [true, false, "Metadata failed", "Usage failed"],
+      },
+      "a warm metadata failure is a retained row error, never a usage error",
+    );
+    await settleRefresh(page, METADATA, 6);
+    assert.deepEqual((await programState(page)).flags, [true, false, null, "Usage failed"]);
+    await settleRefresh(page, { includeArchived: true }, 7);
+    assert.deepEqual((await programState(page)).flags, [true, true, null, null]);
+  } finally {
+    await page.close();
+  }
+});
+
+test("metadata reads share or wait for usage reads and never retire one", async () => {
+  // Equivalent metadata requests share one transport; usage never joins metadata.
+  let page = await fixturePage();
+  try {
+    await page.evaluate((options) => {
+      fixture.first = fixture.store.refreshPrograms(options);
+      fixture.second = fixture.store.refreshPrograms(options);
+      fixture.full = fixture.store.refreshPrograms({ includeArchived: true });
+    }, METADATA);
+    await page.waitForFunction(() => fixture.reads.length === 2);
+    assert.deepEqual(await page.evaluate(() => fixture.reads.map((read) => read.path)), [
+      "/programs?include_archived=true&include_usage=false",
+      "/programs?include_archived=true",
+    ]);
+  } finally {
+    await page.close();
+  }
+
+  // Same archive scope adopts the usage read; other scopes and forced reads wait for it,
+  // including through its failure.
+  for (const [options, outcome] of [
+    [METADATA, null],
+    [{ includeArchived: false, includeUsage: false }, null],
+    [{ ...METADATA, force: true }, "Usage failed"],
+  ]) {
+    page = await fixturePage();
+    try {
+      await page.evaluate((options) => {
+        fixture.full = fixture.store
+          .refreshPrograms({ includeArchived: true })
+          .catch((error) => error.message);
+        fixture.meta = fixture.store.refreshPrograms(options);
+      }, options);
+      await page.waitForFunction(() => fixture.reads.length === 1);
+      await flush(page);
+      assert.equal(await page.evaluate(() => fixture.reads.length), 1);
+      await page.evaluate(async (outcome) => {
+        if (outcome) fixture.reads[0].reject(new Error(outcome));
+        else fixture.reads[0].resolve(fixture.reads[0].snapshot);
+        await fixture.full;
+      }, outcome);
+      const adopted = options === METADATA;
+      if (!adopted) {
+        await page.waitForFunction(() => fixture.reads.length === 2);
+        assert.equal(
+          await page.evaluate(() => fixture.reads[1].path),
+          `/programs?include_archived=${options.includeArchived}&include_usage=false`,
+        );
+        await page.evaluate(() => fixture.reads[1].resolve(fixture.reads[1].snapshot));
+      }
+      await page.evaluate(() => fixture.meta);
+      await flush(page);
+      assert.equal(await page.evaluate(() => fixture.reads.length), adopted ? 1 : 2);
+      assert.deepEqual(
+        (await programState(page)).flags,
+        outcome ? [true, false, null, outcome] : [true, true, null, null],
+      );
+    } finally {
+      await page.close();
+    }
+  }
+
+  // A usage read replaying after token renewal still owns the snapshot.
+  page = await fixturePage();
+  try {
+    await page.evaluate(() => {
+      fixture.full = fixture.store.refreshPrograms({ includeArchived: true });
+    });
+    await page.waitForFunction(() => fixture.reads.length === 1);
+    await page.evaluate(() =>
+      fixture.emit("TOKEN_REFRESHED", { ...fixture.session, access_token: "token-b" }),
+    );
+    await page.waitForFunction(() => fixture.store.token === "token-b");
+    await page.evaluate((options) => {
+      fixture.meta = fixture.store.refreshPrograms(options);
+      fixture.reads[0].resolve(fixture.reads[0].snapshot);
+    }, METADATA);
+    await page.waitForFunction(() => fixture.reads.length === 2);
+    await page.evaluate(async () => {
+      fixture.reads[1].resolve(fixture.reads[1].snapshot);
+      await Promise.all([fixture.full, fixture.meta]);
+    });
+    await flush(page);
+    assert.deepEqual(
+      await page.evaluate(() => fixture.reads.map((read) => [read.path, read.token])),
+      [
+        ["/programs?include_archived=true", "token-a"],
+        ["/programs?include_archived=true", "token-b"],
+      ],
+    );
+    assert.deepEqual((await programState(page)).flags, [true, true, null, null]);
+  } finally {
+    await page.close();
+  }
+
+  // A later usage read supersedes metadata in either completion order.
+  for (const usageFirst of [false, true]) {
+    for (const metadataOutcome of ["stale", "Obsolete metadata failure"]) {
+      page = await fixturePage();
+      try {
+        await page.evaluate((options) => {
+          fixture.meta = fixture.store.refreshPrograms(options).catch((error) => error.message);
+          fixture.full = fixture.store.refreshPrograms({ includeArchived: true });
+        }, METADATA);
+        await page.waitForFunction(() => fixture.reads.length === 2);
+        const settleMetadata = () =>
+          page.evaluate(async (outcome) => {
+            const read = fixture.reads[0];
+            if (outcome === "stale")
+              read.resolve(read.snapshot.map((p) => ({ ...p, name: "Stale" })));
+            else read.reject(new Error(outcome));
+            await fixture.meta;
+          }, metadataOutcome);
+        if (!usageFirst) await settleMetadata();
+        await flush(page);
+        assert.deepEqual((await programState(page)).flags, [true, false, null, null]);
+        await page.evaluate(async () => {
+          fixture.reads[1].resolve(fixture.reads[1].snapshot);
+          await fixture.full;
+        });
+        if (usageFirst) await settleMetadata();
+        await flush(page);
+        assert.deepEqual(await programState(page), {
+          rows: { p1: ["p1", 0], p2: ["p2", 0] },
+          flags: [true, true, null, null],
+        });
+      } finally {
+        await page.close();
+      }
+    }
+  }
+});
+
+test("metadata reads keep write fencing and bootstrap order and stop on clear or identity change", async () => {
+  let page = await fixturePage();
+  try {
+    await page.evaluate((options) => {
+      fixture.meta = fixture.store.refreshPrograms(options);
+      fixture.archive = fixture.store.archiveProgram("p1");
+    }, METADATA);
+    await page.waitForFunction(() => fixture.reads.length === 1 && fixture.writes.length === 1);
+    await page.evaluate(() => fixture.reads[0].resolve(fixture.reads[0].snapshot));
+    await flush(page);
+    await page.evaluate(async () => {
+      fixture.rows[0] = { ...fixture.rows[0], archived_at: "2026-09-08T00:00:00Z" };
+      fixture.writes[0].resolve(structuredClone(fixture.rows[0]));
+      await fixture.archive;
+    });
+    await page.waitForFunction(() => fixture.reads.length === 2);
+    await page.evaluate(async () => {
+      fixture.reads[1].resolve(fixture.reads[1].snapshot);
+      await fixture.meta;
+    });
+    await flush(page);
+    assert.equal(
+      await page.evaluate(() => fixture.store.programs.find((p) => p.id === "p1").archived_at),
+      "2026-09-08T00:00:00Z",
+    );
+    assert.deepEqual((await programState(page)).flags, [true, false, null, null]);
+  } finally {
+    await page.close();
+  }
+
+  for (const outcome of ["success", "dataset-error"]) {
+    page = await fixturePage({ holdBootstrap: true });
+    try {
+      await page.evaluate(() => fixture.rows.push(fixture.program("p3", "Newer")));
+      await settleRefresh(page, METADATA, 0);
+      await page.evaluate((outcome) => {
+        const old = fixture.features[0];
+        old.resolve(
+          outcome === "dataset-error"
+            ? { ...old.snapshot, dataset_errors: { programs: "Old program error" } }
+            : old.snapshot,
+        );
+      }, outcome);
+      await flush(page);
+      assert.deepEqual(await programState(page), {
+        rows: { p1: ["p1", 0], p2: ["p2", 0], p3: ["Newer", 0] },
+        flags: [true, false, null, null],
+      });
+    } finally {
+      await page.close();
+    }
+  }
+
+  for (const replaceIdentity of [false, true]) {
+    page = await fixturePage();
+    try {
+      await page.evaluate(() => {
+        fixture.full = fixture.store
+          .refreshPrograms({ includeArchived: true })
+          .catch((error) => error.message);
+        fixture.meta = fixture.store.refreshPrograms({
+          includeArchived: false,
+          includeUsage: false,
+        });
+      });
+      await page.waitForFunction(() => fixture.reads.length === 1);
+      if (replaceIdentity) {
+        await page.evaluate(() => {
+          fixture.rows = [];
+          fixture.auth = { ...fixture.auth, studio_id: "studio-b" };
+          fixture.emit("USER_UPDATED", fixture.session);
+        });
+        await page.waitForFunction(
+          () => fixture.store.currentStudioId === "studio-b" && fixture.store.programsLoaded,
+        );
+      } else {
+        await page.evaluate(() => {
+          fixture.clear = fixture.store.clearStudioData();
+        });
+        await page.waitForFunction(() => fixture.writes.length === 1);
+        await page.evaluate(async () => {
+          fixture.rows = [];
+          fixture.writes[0].resolve({
+            studio_name: "Cleared Studio",
+            automation: {
+              workflows_paused: 0,
+              workflow_runs_cancelled: 0,
+              workflow_cancellation_intents_added: 0,
+              attendance_deliveries_cancelled: 0,
+              belt_test_events_deleted: 0,
+              belt_test_recipients_deleted: 0,
+              sending_attempts_preserved: 0,
+              unknown_attempts_preserved: 0,
+              attendance_rule_paused: false,
+            },
+          });
+          await fixture.clear;
+        });
+      }
+      await page.evaluate(async () => {
+        fixture.reads[0].resolve(fixture.reads[0].snapshot);
+        await Promise.all([fixture.full, fixture.meta]);
+      });
+      await flush(page);
+      assert.deepEqual(await page.evaluate(() => fixture.store.programs), []);
+      assert.equal(
+        await page.evaluate(() => fixture.reads.length),
+        1,
+        "a waiting metadata read cannot start after its scope or identity ends",
+      );
+    } finally {
+      await page.close();
+    }
+  }
+});
+
+// Starts a usage read and a metadata read that adopts it; returns the shared read index.
+async function adoptUsageRead(page) {
+  const index = await page.evaluate((options) => {
+    fixture.full = fixture.store
+      .refreshPrograms({ includeArchived: true })
+      .catch((error) => error.message);
+    fixture.meta = fixture.store.refreshPrograms(options).catch((error) => error.message);
+    return fixture.reads.length - 1;
+  }, METADATA);
+  await flush(page);
+  assert.equal(await page.evaluate(() => fixture.reads.length), index + 1);
+  return index;
+}
+const rejectRead = (page, index, message) =>
+  page.evaluate(
+    async ({ index, message }) => {
+      fixture.reads[index].reject(new Error(message));
+      return Promise.all([fixture.full, fixture.meta]);
+    },
+    { index, message },
+  );
+
+test("an adopted usage read failure becomes a row error only while it still owns the rows", async () => {
+  // Warm rows: the metadata caller sees the failure, and a metadata retry clears it
+  // without certifying usage, erasing the usage error or its retained counts.
+  let page = await fixturePage();
+  try {
+    await page.evaluate(() => {
+      fixture.rows = fixture.rows.map((row, index) => ({
+        ...row,
+        usage: Object.fromEntries(Object.keys(row.usage).map((key) => [key, index + 3])),
+      }));
+    });
+    await settleRefresh(page, { includeArchived: true }, 0);
+    await page.evaluate(() => fixture.rows.push(fixture.program("p3", "Created elsewhere")));
+    const index = await adoptUsageRead(page);
+    assert.deepEqual(await rejectRead(page, index, "Usage failed"), [
+      "Usage failed",
+      "Usage failed",
+    ]);
+    assert.deepEqual(await programState(page), {
+      rows: { p1: ["p1", 3], p2: ["p2", 4] },
+      flags: [true, true, "Usage failed", "Usage failed"],
+    });
+    await settleRefresh(page, METADATA, 2);
+    assert.deepEqual(await programState(page), {
+      rows: { p1: ["p1", 3], p2: ["p2", 4], p3: ["Created elsewhere", 0] },
+      flags: [true, false, null, "Usage failed"],
+    });
+  } finally {
+    await page.close();
+  }
+
+  // A newer usage or metadata outcome owns the rows before the adopted read fails late.
+  for (const newer of ["usage", "metadata"]) {
+    page = await fixturePage();
+    try {
+      await adoptUsageRead(page);
+      await page.evaluate(() => {
+        fixture.forced = fixture.store
+          .refreshPrograms({ includeArchived: true, force: true })
+          .catch((error) => error.message);
+      });
+      await page.waitForFunction(() => fixture.reads.length === 2);
+      await page.evaluate(async (newer) => {
+        if (newer === "usage") fixture.reads[1].resolve(fixture.reads[1].snapshot);
+        else fixture.reads[1].reject(new Error("Newer usage failed"));
+        await fixture.forced;
+      }, newer);
+      if (newer === "metadata") await settleRefresh(page, METADATA, 2);
+      const expected = await programState(page);
+      assert.deepEqual(
+        expected.flags,
+        newer === "usage" ? [true, true, null, null] : [true, false, null, "Newer usage failed"],
+      );
+      assert.deepEqual(await rejectRead(page, 0, "Obsolete failure"), [
+        "Obsolete failure",
+        "Obsolete failure",
+      ]);
+      await flush(page);
+      assert.deepEqual(await programState(page), expected, "an old failure cannot clobber");
+    } finally {
+      await page.close();
+    }
+  }
+
+  // Data clear, identity replacement or a write fence the adopted read's failure.
+  for (const change of ["clear", "identity", "write"]) {
+    page = await fixturePage();
+    try {
+      await adoptUsageRead(page);
+      if (change === "identity") {
+        await page.evaluate(() => {
+          fixture.rows = [];
+          fixture.auth = { ...fixture.auth, studio_id: "studio-b" };
+          fixture.emit("USER_UPDATED", fixture.session);
+        });
+        await page.waitForFunction(
+          () => fixture.store.currentStudioId === "studio-b" && fixture.store.programsLoaded,
+        );
+      } else if (change === "clear") {
+        await page.evaluate(() => {
+          fixture.clear = fixture.store.clearStudioData();
+        });
+        await page.waitForFunction(() => fixture.writes.length === 1);
+        await page.evaluate(async () => {
+          fixture.rows = [];
+          fixture.writes[0].resolve({
+            studio_name: "Cleared Studio",
+            automation: {
+              workflows_paused: 0,
+              workflow_runs_cancelled: 0,
+              workflow_cancellation_intents_added: 0,
+              attendance_deliveries_cancelled: 0,
+              belt_test_events_deleted: 0,
+              belt_test_recipients_deleted: 0,
+              sending_attempts_preserved: 0,
+              unknown_attempts_preserved: 0,
+              attendance_rule_paused: false,
+            },
+          });
+          await fixture.clear;
+        });
+      } else {
+        await page.evaluate(() => {
+          fixture.archive = fixture.store.archiveProgram("p1");
+        });
+        await page.waitForFunction(() => fixture.writes.length === 1);
+      }
+      await page.evaluate(() => fixture.reads[0].reject(new Error("Fenced failure")));
+      await flush(page);
+      assert.deepEqual(
+        (await programState(page)).flags.slice(2),
+        [null, null],
+        "a fenced failure cannot appear as a row or usage error",
+      );
+      if (change === "write") {
+        await page.evaluate(async () => {
+          fixture.rows[0] = { ...fixture.rows[0], archived_at: "2026-09-08T00:00:00Z" };
+          fixture.writes[0].resolve(structuredClone(fixture.rows[0]));
+          await fixture.archive;
+        });
+        await page.waitForFunction(() => fixture.reads.length === 2);
+        await page.evaluate(async () => {
+          fixture.reads[1].resolve(fixture.reads[1].snapshot);
+          await Promise.all([fixture.full, fixture.meta]);
+        });
+        await flush(page);
+        assert.deepEqual((await programState(page)).flags, [true, true, null, null]);
+      } else {
+        await page.evaluate(() => Promise.all([fixture.full, fixture.meta]));
+        assert.deepEqual(await page.evaluate(() => fixture.store.programs), []);
+        assert.equal(await page.evaluate(() => fixture.reads.length), 1);
+      }
+    } finally {
+      await page.close();
+    }
+  }
+
+  // A usage read replaying after token renewal still reports its owned failure to rows.
+  page = await fixturePage();
+  try {
+    await page.evaluate(() => {
+      fixture.full = fixture.store
+        .refreshPrograms({ includeArchived: true })
+        .catch((error) => error.message);
+    });
+    await page.waitForFunction(() => fixture.reads.length === 1);
+    await page.evaluate(() =>
+      fixture.emit("TOKEN_REFRESHED", { ...fixture.session, access_token: "token-b" }),
+    );
+    await page.waitForFunction(() => fixture.store.token === "token-b");
+    await page.evaluate((options) => {
+      fixture.meta = fixture.store.refreshPrograms(options).catch((error) => error.message);
+      fixture.reads[0].reject(new Error("Old token failure"));
+    }, METADATA);
+    await page.waitForFunction(() => fixture.reads.length === 2);
+    assert.deepEqual(await rejectRead(page, 1, "Usage failed"), ["Usage failed", "Usage failed"]);
+    assert.deepEqual(
+      await page.evaluate(() => fixture.reads.map((read) => [read.path, read.token])),
+      [
+        ["/programs?include_archived=true", "token-a"],
+        ["/programs?include_archived=true", "token-b"],
+      ],
+    );
+    assert.deepEqual((await programState(page)).flags, [
+      true,
+      false,
+      "Usage failed",
+      "Usage failed",
+    ]);
+  } finally {
+    await page.close();
   }
 });

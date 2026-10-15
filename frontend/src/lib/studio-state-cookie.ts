@@ -1,9 +1,16 @@
 export const STUDIO_STATE_COOKIE = "koaryu-studio-state";
 export const STUDIO_STATE_COOKIE_MAX_AGE_SECONDS = 300;
+export const ACTIVE_STUDIO_STATE_COOKIE_MAX_AGE_SECONDS = 12 * 60 * 60;
 export const ACTIVE_STUDIO_COOKIE = "koaryu-active-studio";
 export const ACTIVE_STUDIO_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 30;
 
 export type StudioMembershipStatus = "none" | "active" | "archived";
+
+export function studioStateCookieMaxAge(status: StudioMembershipStatus): number {
+  return status === "active"
+    ? ACTIVE_STUDIO_STATE_COOKIE_MAX_AGE_SECONDS
+    : STUDIO_STATE_COOKIE_MAX_AGE_SECONDS;
+}
 
 type ParsedStudioStateCookie = {
   userId: string;
@@ -72,7 +79,7 @@ export function setStudioStateCookie(
       serializeStudioStateCookie(userId, hasStudio, membershipStatus),
     )}`,
     "Path=/",
-    `Max-Age=${STUDIO_STATE_COOKIE_MAX_AGE_SECONDS}`,
+    `Max-Age=${studioStateCookieMaxAge(membershipStatus)}`,
     "SameSite=Lax",
   ];
 

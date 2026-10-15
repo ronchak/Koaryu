@@ -26,7 +26,7 @@ function mounted(name, run, options = {}) {
       await page.close();
       assert.deepEqual(errors, [], "unexpected browser errors");
     });
-    await run(page);
+    await run(page, t);
   });
 }
 async function coldReady(page) {
@@ -66,7 +66,7 @@ for (const mode of ["production", "development"]) {
       assert.equal(await homeCount(page), 1);
       assert.deepEqual(
         await page.evaluate(() => window.fixture.requests.map((r) => r.path.split("?")[0])),
-        ["/dashboard/workspace", "/dashboard/bootstrap", "/dashboard/home"],
+        ["/dashboard/workspace", "/dashboard/home"],
       );
     },
     { mode, holdSession: true },
@@ -119,11 +119,12 @@ mounted("fresh=true lasts strictly less than 60 seconds after a facts mark", asy
 });
 
 mounted(
-  "revisit paints retained ready immediately, revalidates once, swaps in place",
+  "expired revisit paints retained ready immediately, revalidates once, swaps in place",
   async (page) => {
     await coldReady(page);
     await page.evaluate(() => window.fixture.unmountHome());
     await flush(page);
+    await tick(page, 15000);
     const offset = await page.evaluate(() => window.fixture.homeRenders.length);
     await page.evaluate(() => window.fixture.mountHome());
     await until(page, () => window.fixture.homeReads.length === 2);
@@ -152,7 +153,8 @@ mounted("success landing after unmount is retained for the next mount", async (p
   await resolveHome(page, 0, "landed away");
   const offset = await page.evaluate(() => window.fixture.homeRenders.length);
   await page.evaluate(() => window.fixture.mountHome());
-  await until(page, () => window.fixture.homeReads.length === 2);
+  await flush(page);
+  assert.equal(await homeCount(page), 1);
   assert.equal((await state(page)).name, "landed away");
   assert.equal(
     await page.evaluate((offset) => window.fixture.homeRenders[offset].status, offset),
@@ -775,7 +777,8 @@ mounted("joined refusal handlers hide once and permit later verification", async
   await page.evaluate(() => window.fixture.unmountHome());
   await flush(page);
   await page.evaluate(() => window.fixture.mountHome());
-  await until(page, () => window.fixture.homeReads.length === 4);
+  await flush(page);
+  assert.equal(await homeCount(page), 3, "verified recovery stays recent");
   assert.equal((await state(page)).name, "later verification");
 });
 
@@ -817,7 +820,8 @@ for (const sameOwner of [false, true]) {
       await page.evaluate(() => window.fixture.unmountHome());
       await flush(page);
       await page.evaluate(() => window.fixture.mountHome());
-      await until(page, () => window.fixture.homeReads.length === 4);
+      await flush(page);
+      assert.equal(await homeCount(page), 3, "obsolete denial cannot expire current retention");
       assert.equal(
         (await state(page)).name,
         "new identity verification",
@@ -826,3 +830,82 @@ for (const sameOwner of [false, true]) {
     },
   );
 }
+
+mounted(
+  "revisits within 15 seconds skip only mount and never extend snapshot age or order",
+  async (page, t) => {
+    await coldReady(page);
+    const snapshotKey = "home:user-a:studio-a:admin:2026-10-10";
+    const before = await page.evaluate((key) => fixture.homeRetainedStore.get(key), snapshotKey);
+    assert.equal(before.fresh, false);
+    await page.evaluate(() => fixture.unmountHome());
+    await flush(page);
+    await tick(page, 14999);
+    const start = performance.now();
+    await page.evaluate(() => fixture.mountHome());
+    await flush(page);
+    assert.equal(await homeCount(page), 1);
+    assert.deepEqual(
+      await page.evaluate((key) => fixture.homeRetainedStore.get(key), snapshotKey),
+      before,
+    );
+    t.diagnostic(
+      `synthetic recent Home mount to retained ready: ${(performance.now() - start).toFixed(1)}ms; mount requests: 0 (previously 1)`,
+    );
+    assert.equal((await state(page)).name, "initial");
+    assert.equal((await state(page)).isRevalidating, false);
+    await page.evaluate(() => fixture.unmountHome());
+    await flush(page);
+    await tick(page, 1);
+    await page.evaluate(() => fixture.mountHome());
+    await until(page, () => fixture.homeReads.length === 2);
+    await resolveHome(page, 1, "expired read");
+    const after = await page.evaluate((key) => fixture.homeRetainedStore.get(key), snapshotKey);
+    assert.equal(after.order, before.order + 1, "mount reuse must not renew read order");
+    await retry(page);
+    assert.equal(await homeCount(page), 3, "explicit retry always revalidates");
+  },
+);
+
+for (const cause of ["command", "facts", "expired-mark", "in-flight-generation"]) {
+  mounted(`recent Home bypasses mount shortcut after ${cause}`, async (page) => {
+    if (cause === "in-flight-generation") {
+      await until(page, () => fixture.homeReads.length === 1);
+      await page.evaluate(() => fixture.unmountHome());
+      await flush(page);
+      await page.evaluate(() => fixture.markFacts(Date.now() - 61000));
+      await resolveHome(page, 0, "older generation");
+      // The response is recent, but its read began before the mark.
+    } else {
+      await coldReady(page);
+      await page.evaluate(() => fixture.unmountHome());
+      await flush(page);
+      if (cause === "command")
+        await page.evaluate(() => (fixture.finishCommand = fixture.beginPendingCommand()));
+      else if (cause === "expired-mark") {
+        // An old timestamp changes the generation without starting the fresh window.
+        await page.evaluate(() => fixture.markFacts(Date.now() - 61000));
+      } else await page.evaluate(() => fixture.markFacts());
+    }
+    await page.evaluate(() => fixture.mountHome());
+    await until(page, () => fixture.homeReads.length === 2);
+    if (cause === "facts")
+      assert.match(await page.evaluate(() => fixture.homeReads[1].path), /fresh=true/);
+    if (cause === "command") await page.evaluate(() => fixture.finishCommand());
+  });
+}
+
+mounted("recent revisit joins a pending retry and receives its newer payload", async (page) => {
+  await coldReady(page);
+  await retry(page);
+  assert.equal(await homeCount(page), 2);
+  await page.evaluate(() => fixture.unmountHome());
+  await flush(page);
+  await page.evaluate(() => fixture.mountHome());
+  await flush(page);
+  assert.equal(await homeCount(page), 2, "joining must not add a request");
+  assert.equal((await state(page)).name, "initial");
+  await resolveHome(page, 1, "newer retry result");
+  await until(page, () => fixture.home.payload?.studio.name === "newer retry result");
+  assert.equal(await homeCount(page), 2);
+});

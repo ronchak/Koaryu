@@ -208,7 +208,7 @@ export function useSchedulePageController({
     resumedRangeRef.current = visibleRangeKey;
     setRangeLoadAttempt((value) => value + 1);
     setAttendanceRefreshAttempt((value) => value + 1);
-    void refreshPrograms({ includeArchived: true }).catch(() => undefined);
+    void refreshPrograms({ includeArchived: true, includeUsage: false }).catch(() => undefined);
     if (selectedSession) {
       setIsRefreshingStudentRoster(true);
       setStudentRosterLoadError(null);

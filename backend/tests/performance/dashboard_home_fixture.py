@@ -48,7 +48,7 @@ FROZEN_NOW = datetime(2026, 5, 20, 19, 0, tzinfo=UTC)
 PROGRAM_ID = "fixture-program"
 LADDER_ID = "fixture-ladder"
 MATERIALIZE_RPC_NAME = "materialize_recurring_class_sessions"
-# BeltService.list_ladders' embedded read runs exactly once per promotions load.
+# The embedded belt ladder read runs exactly once per promotions load.
 PROMOTION_LOAD_COLUMNS = "*, belt_ranks(*)"
 # Every studio-owned table Home reads must be filtered by studio.
 TENANT_TABLES = (
@@ -405,7 +405,9 @@ def build_tables(cardinalities: dict[str, int]) -> dict[str, list[dict[str, Any]
         "staff_profiles": [
             {"user_id": USER_ID, "legal_first_name": "Fixture", "legal_last_name": "User"}
         ],
-        "studio_subscriptions": [{"studio_id": STUDIO_ID, "status": "comped", "comped": True}],
+        "studio_subscriptions": [
+            {"studio_id": STUDIO_ID, "status": "comped", "comped": True, "trial_end": None}
+        ],
         "studios": [{"id": STUDIO_ID, "name": "Fixture Studio", "timezone": TIMEZONE}],
     }
 

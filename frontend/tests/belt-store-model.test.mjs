@@ -79,6 +79,47 @@ describe("belt store model", () => {
     );
   });
 
+  it("breaks created_at ties by id like the API, through upserts, unless one is preferred", () => {
+    const tied = "2026-05-01T00:00:00.000Z";
+    const first = ladder("0a3f5c1e-0000-4000-8000-000000000001", { created_at: tied });
+    const second = ladder("9b11d2c4-0000-4000-8000-000000000002", { created_at: tied });
+    const third = ladder("f00d0000-0000-4000-8000-000000000003", { created_at: tied });
+    // The smallest id, created later: the date still decides first.
+    const later = ladder("00000000-0000-4000-8000-000000000000", {
+      created_at: "2026-05-02T00:00:00.000Z",
+    });
+    const reversed = [later, third, second, first];
+    const reversedBefore = structuredClone(reversed);
+    const expected = [first.id, second.id, third.id, later.id];
+
+    const sorted = sortBeltLadders(reversed);
+    assert.deepEqual(
+      sorted.map((item) => item.id),
+      expected,
+    );
+    assert.deepEqual(reversed, reversedBefore);
+    assert.equal(selectBeltLadder(sorted)?.id, first.id);
+
+    // Saving a tied ladder removes and appends it; the sort puts it back in place.
+    for (const saved of [first, second]) {
+      const upserted = upsertBeltLadder(sorted, { ...saved, name: "Updated" });
+      assert.deepEqual(
+        upserted.map((item) => item.id),
+        expected,
+      );
+      assert.equal(upserted.find((item) => item.id === saved.id)?.name, "Updated");
+      assert.equal(selectBeltLadder(upserted)?.id, first.id);
+    }
+    assert.deepEqual(
+      sorted.map((item) => [item.id, item.name]),
+      expected.map((id) => [id, id]),
+    );
+
+    // An explicit selection still wins over the shared primary.
+    assert.equal(selectBeltLadder(sorted, third.id)?.id, third.id);
+    assert.equal(selectBeltLadder(sorted, "missing")?.id, first.id);
+  });
+
   it("builds the preview ladder rank update from selected or fallback ladder state", () => {
     const builtFromSelected = buildPreviewBeltLadderFromRanks(
       [

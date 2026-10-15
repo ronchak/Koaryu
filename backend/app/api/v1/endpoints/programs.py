@@ -23,11 +23,16 @@ router = APIRouter(prefix="/programs", tags=["programs"])
 @router.get("", response_model=list[ProgramResponse])
 async def list_programs(
     include_archived: bool = Query(False),
+    include_usage: bool = Query(True),
     studio_id: str = Depends(get_current_studio_id),
     supabase: ProviderDependency = Depends(get_supabase),
 ):
-    async def _provider_operation(client):
-        return ProgramService(client).list_programs_sync(studio_id, include_archived)
+    def _provider_operation(client):
+        service = ProgramService(client)
+        if not include_usage:
+            # Usage keeps schema defaults here; clients must treat it as unknown.
+            return service.list_programs_metadata_sync(studio_id, include_archived)
+        return service.list_programs_sync(studio_id, include_archived)
 
     return await run_supabase_operation(
         supabase,

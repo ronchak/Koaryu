@@ -3,7 +3,8 @@ import { test } from "node:test";
 import { chromium } from "@playwright/test";
 import { bundle } from "./helpers/store-browser-harness.mjs";
 
-const source = bundle("production", { realApi: true });
+// These command tests exercise the full-roster fallback, not cursor bootstrap.
+const source = bundle("production", { realApi: true, pagedRoster: false });
 
 async function mountedRankFixture(browser) {
   const page = await browser.newPage();

@@ -12,7 +12,7 @@ function bundle({
   retained = false,
 } = {}) {
   const stubs = {
-    "next/navigation": `exports.usePathname=()=>'/dashboard'; const router={replace(){}}; exports.useRouter=()=>router; const searches=new Map(); exports.useSearchParams=()=>{const query=window.fixture.search??'tab=reports';if(!searches.has(query))searches.set(query,new URLSearchParams(query));return searches.get(query);};`,
+    "next/navigation": `exports.usePathname=()=>'/dashboard'; const router={replace(path){(window.fixture.routerReplaces??=[]).push(path)}}; exports.useRouter=()=>router; const searches=new Map(); exports.useSearchParams=()=>{const query=require('react').useSyncExternalStore(cb=>{window.addEventListener('fixture:history',cb);return()=>window.removeEventListener('fixture:history',cb)},()=>window.fixture.search??'tab=reports');if(!searches.has(query))searches.set(query,new URLSearchParams(query));return searches.get(query);};`,
     "@/lib/store": `exports.useConfigStore=()=>window.fixture.pageOptions.config;exports.useProgramStore=()=>window.fixture.pageOptions.programsStore;exports.useStudentStore=()=>window.fixture.pageOptions.studentsStore;exports.useStudioStore=()=>window.fixture.pageOptions.studioStore;`,
     "@/lib/supabase/client": `exports.createClient=()=>window.fixture.supabase;`,
     "@/lib/api": `class ApiError extends Error { constructor(message,status,detail){super(message);this.status=status;this.detail=detail;} } exports.ApiError=window.fixture.ApiError=ApiError; exports.api=window.fixture.api; exports.isSubscriptionRequiredError=e=>e.status===402; exports.isStaffArchivedError=e=>e.status===403&&/archived/i.test(e.message);`,
@@ -37,6 +37,7 @@ function bundle({
   const controller = add("@/lib/billing-data-controller");
   const retainedState = retained ? add("@/lib/retained-state") : null;
   const pageHook = pageController ? add("@/lib/billing-page-controller") : null;
+  const previewLoader = pageController ? add("@/lib/preview-adapter-loader") : null;
   const pageContent = pageController ? add("@/components/billing/billing-page-content") : null;
   const refund = refunds ? add("@/lib/billing-refund-controller") : null;
   const reports = refunds ? add("@/components/billing/billing-reports-tab") : null;
@@ -52,7 +53,7 @@ function bundle({
   const mounted = retained
     ? `function App(){const [instance,setInstance]=React.useState(0);window.fixture.remount=()=>setInstance(n=>n+1);const studio=window.fixture.pageOptions?.studioStore;const scope=studio?[studio.currentUserId,studio.currentStudioId,studio.identityGeneration].join(':'):window.fixture.options.identityKey;return React.createElement(require(${retainedState}).RetainedStateProvider,{scope},React.createElement(Observer,{key:instance}));}window.fixture.root=require(${dom}).createRoot(document.getElementById('root'));window.fixture.render=()=>window.fixture.root.render(React.createElement(App));window.fixture.render();`
     : `window.fixture.root=require(${dom}).createRoot(document.getElementById('root'));window.fixture.render=()=>window.fixture.root.render(React.createElement(Observer));window.fixture.remount=()=>{window.fixture.root.unmount();window.fixture.root=require(${dom}).createRoot(document.getElementById('root'));window.fixture.render();};window.fixture.render();`;
-  return `(()=>{const process={env:{NODE_ENV:'production'}};const modules=[${modules.join(",")}],cache={};function require(id){if(cache[id])return cache[id].exports;const module=cache[id]={exports:{}};modules[id](module,module.exports,require);return module.exports;}const React=require(${react});const {useBillingDataController}=require(${controller});${observer}${mounted}})();`;
+  return `(async()=>{const process={env:{NODE_ENV:'production',NEXT_PUBLIC_PREVIEW_MODE:window.fixture.pageOptions?.config.isPreviewMode?'true':'false'}};const modules=[${modules.join(",")}],cache={};function require(id){if(cache[id])return cache[id].exports;const module=cache[id]={exports:{}};modules[id](module,module.exports,require);return module.exports;}const React=require(${react});const {useBillingDataController}=require(${controller});${previewLoader === null ? "" : `if(process.env.NEXT_PUBLIC_PREVIEW_MODE==='true')await require(${previewLoader}).loadPreviewAdapter();`}${observer}${mounted}})();`;
 }
 
 async function mountBillingFixture(browser, { retained = false } = {}) {
@@ -2873,6 +2874,41 @@ test("Enrollments waits for the complete roster and refreshes it on manual and r
       }
       await page.close();
     }
+  } finally {
+    await browser.close();
+  }
+});
+
+test("Billing tab switching updates native history and query consumers without route navigation", async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await mountExternalPaymentFixture(browser, {
+      preview: true,
+      search: "tab=plans&keep=value",
+    });
+    await page.evaluate(() => {
+      const replace = history.replaceState.bind(history);
+      replace(null, "", "/billing?tab=plans&keep=value");
+      fixture.originalHistoryLength = history.length;
+      history.replaceState = (...args) => {
+        replace(...args);
+        fixture.search = location.search.slice(1);
+        window.dispatchEvent(new Event("fixture:history"));
+      };
+    });
+    const requests = [];
+    page.on("request", (request) => requests.push(request.url()));
+    for (const tab of ["invoices", "families", "overview"]) {
+      await page.evaluate((tab) => fixture.page.onChangeTab(tab), tab);
+      await page.waitForFunction((tab) => fixture.page.activeTab === tab, tab);
+      const url = new URL(page.url());
+      assert.equal(url.pathname, "/billing");
+      assert.equal(url.searchParams.get("keep"), "value");
+      assert.equal(url.searchParams.get("tab"), tab === "overview" ? null : tab);
+    }
+    assert.deepEqual(await page.evaluate(() => fixture.routerReplaces ?? []), []);
+    assert.equal(await page.evaluate(() => history.length === fixture.originalHistoryLength), true);
+    assert.deepEqual(requests, []);
   } finally {
     await browser.close();
   }

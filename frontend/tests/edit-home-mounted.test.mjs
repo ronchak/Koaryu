@@ -294,9 +294,13 @@ test("server preferences are adopted without pending edits and an older retained
     await page.evaluate(() => window.fixture.unmountHome());
     await flush(page);
     await page.evaluate(() => window.fixture.mountHome());
+    await flush(page);
+    assert.equal(await page.evaluate(() => window.fixture.homeReads.length), 1);
+    assert.deepEqual(await ids(panels(page)), ["newStudents", "promotions"]);
+    await page.evaluate(() => window.fixture.home.retry());
     await until(page, () => window.fixture.homeReads.length === 2);
     assert.deepEqual(await ids(panels(page)), ["newStudents", "promotions"]);
-    // The revisit's own read started after the save, so the server already has it.
+    // Explicit revalidation starts after the save, so the server already has it.
     await deliver(page, "admin", setHomePanelShown(server, "follow_ups", false), 1);
     assert.deepEqual(await ids(panels(page)), ["newStudents", "promotions"]);
   });

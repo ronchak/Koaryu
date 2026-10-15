@@ -1,5 +1,7 @@
 "use client";
 
+import { getPreviewAdapter } from "@/lib/preview-adapter-loader";
+
 import { useCallback, useEffect, useRef } from "react";
 import { api } from "@/lib/api";
 import {
@@ -33,7 +35,6 @@ import {
   type RankTransitionKind,
 } from "@/lib/rank-transition-operation";
 import { localId } from "@/lib/store-storage";
-import { MOCK_BELT_LADDER } from "@/lib/mock-data";
 import {
   canCommitLiveMutation,
   withCurrentLiveAuthRead,
@@ -50,6 +51,11 @@ import type {
   Student,
 } from "@/types";
 
+export type RefreshBeltsOptions = {
+  requireEligibility?: boolean;
+  retainCurrent?: boolean;
+};
+
 interface UseStoreBeltActionsArgs {
   applyLadderSelection: (
     ladders: BeltLadder[],
@@ -64,14 +70,16 @@ interface UseStoreBeltActionsArgs {
   ladderName: string;
   loadEligibilityForLadder: (
     ladderId?: string | null,
-    options?: { force?: boolean },
+    options?: { force?: boolean; retainCurrent?: boolean },
   ) => Promise<EligibilityEntry[]>;
   persistBeltRanks: (next: BeltRank[]) => void;
   persistStudents: (next: Student[]) => void;
   promotionHistoryCacheRef: StoreRef<PromotionHistoryCache>;
   promotionHistoryGenerationRef: StoreRef<number>;
   promotionHistoryRequestsRef: StoreRef<PromotionHistoryRequests>;
-  refreshBeltsRef: StoreRef<((preferredLadderId?: string | null) => Promise<void>) | null>;
+  refreshBeltsRef: StoreRef<
+    ((preferredLadderId?: string | null, options?: RefreshBeltsOptions) => Promise<void>) | null
+  >;
   refreshStudents: () => Promise<unknown>;
   setEligibilityLoadError: (error: string | null) => void;
   setEligibilityPendingLadderId: (ladderId: string | null) => void;
@@ -155,7 +163,7 @@ export function useStoreBeltActions({
   }, [beginLiveAuthRequest, isPreviewMode]);
 
   const refreshBelts = useCallback(
-    async (preferredLadderId?: string | null, options?: { requireEligibility?: boolean }) => {
+    async (preferredLadderId?: string | null, options?: RefreshBeltsOptions) => {
       if (isPreviewMode) {
         return;
       }
@@ -172,6 +180,7 @@ export function useStoreBeltActions({
           );
           const eligibilityRefresh = loadEligibilityForLadder(selectedLadder?.id ?? null, {
             force: true,
+            retainCurrent: options?.retainCurrent,
           });
           if (options?.requireEligibility) {
             await eligibilityRefresh;
@@ -234,7 +243,7 @@ export function useStoreBeltActions({
         const previousRanks = beltRanksRef.current;
         const nextPreviewLadder = buildPreviewBeltLadderFromRanks(beltLaddersRef.current, ranks, {
           preferredLadderId: ladder.id,
-          fallbackLadder: MOCK_BELT_LADDER,
+          fallbackLadder: getPreviewAdapter().MOCK_BELT_LADDER,
           ladderName,
           subRankTerm,
           requestedSubRankTerm: options?.subRankTerm,

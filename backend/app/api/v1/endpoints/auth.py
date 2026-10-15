@@ -15,7 +15,7 @@ async def get_me(
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
     supabase: ProviderDependency = Depends(get_supabase),
 ):
-    async def _provider_operation(client):
+    def _provider_operation(client):
         """Get the current authenticated user's profile and studio association."""
         service = AuthService(client)
         return service._get_user_profile_sync(user_id, requested_studio_id)

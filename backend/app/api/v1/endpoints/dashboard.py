@@ -67,21 +67,16 @@ async def get_dashboard_bootstrap(
         "training",
     ] = "home",
 ):
-    async def _provider_operation(client):
-        """Return the critical initial dashboard payload in a single request."""
-        service = DashboardBootstrapService(client)
-        return await service.get_dashboard_bootstrap(
-            user_id,
-            requested_studio_id,
-            provider_owned=True,
-            allow_partial=allow_partial,
-            view=view,
-        )
-
-    payload, timings = await run_supabase_operation(
+    total_started = time.perf_counter()
+    context = await run_supabase_operation(
         supabase,
-        _provider_operation,
+        lambda client: DashboardBootstrapService(client).resolve_context_sync(
+            user_id, requested_studio_id, view=view
+        ),
         lane="interactive",
+    )
+    payload, timings = await DashboardBootstrapService.get_dashboard_bootstrap_from_context(
+        supabase, context, allow_partial=allow_partial, total_started=total_started
     )
     server_timing = DashboardBootstrapService.server_timing_value(timings)
     _set_private_dashboard_headers(response, server_timing)

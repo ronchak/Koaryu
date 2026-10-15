@@ -1,16 +1,29 @@
 import asyncio
+import copy
 import unittest
+from datetime import UTC, datetime
+from itertools import groupby
+from unittest.mock import patch
 
 from fastapi import HTTPException
 from postgrest.exceptions import APIError as PostgrestAPIError
 
 from app.schemas.belt import BeltLadderSyncRequest
+from app.services import belt_eligibility
 from app.services.belt_eligibility import BeltEligibilityCalculator
 from app.services.belt_service import BeltService
-from tests.fakes.supabase import RpcBackedSupabase
+from app.services.dashboard_bootstrap_service import DashboardBootstrapService
+from tests.fakes.supabase import FakeTableQuery, RpcBackedSupabase
+from tests.test_dashboard_bootstrap_service import (
+    TRAINING_BELT_QUERY,
+    SyntheticPostgrestClient,
+    TrainingProvider,
+    training_ladder,
+)
 
 
 STUDIO_ID = "11111111-1111-1111-1111-111111111111"
+OTHER_STUDIO_ID = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"
 STUDENT_ID = "22222222-2222-2222-2222-222222222222"
 PROGRAM_ID = "33333333-3333-3333-3333-333333333333"
 SECOND_PROGRAM_ID = "44444444-4444-4444-8444-444444444444"
@@ -21,7 +34,42 @@ TO_RANK_ID = "77777777-7777-7777-7777-777777777777"
 ACTOR_ID = "88888888-8888-8888-8888-888888888888"
 
 
+class ProgramJoinTableQuery(FakeTableQuery):
+    """Resolves ``programs.*`` through each row's program, as ``programs!inner()`` does."""
+
+    def _matched_rows(self, rows):
+        matched = super()._matched_rows(rows)
+        if "programs!inner()" not in self.columns:
+            return matched
+        return [row for row in matched if self._program(row) is not None]
+
+    def _program(self, row):
+        return next(
+            (
+                program
+                for program in self.supabase.tables.get("programs", [])
+                if program.get("id") == row.get("program_id")
+            ),
+            None,
+        )
+
+    def _value_for_key(self, row, key):
+        if key.startswith("programs."):
+            return (self._program(row) or {}).get(key.removeprefix("programs."))
+        return super()._value_for_key(row, key)
+
+    def _matches(self, row, op, key, value):
+        # PostgREST's is.true compares a boolean; NULL is not true.
+        if op in {"is", "not_is"} and value in {"true", "false"}:
+            matched = self._value_for_key(row, key) is (value == "true")
+            return matched if op == "is" else not matched
+        return super()._matches(row, op, key, value)
+
+
 class FakeSupabase(RpcBackedSupabase):
+    def table(self, name: str):
+        return ProgramJoinTableQuery(self, name)
+
     def _rpc_sync_belt_ladder_ranks_v2(self, params: dict):
         ladder = next(
             row
@@ -49,6 +97,246 @@ class FakeSupabase(RpcBackedSupabase):
             }
         )
         return {**ladder, "ranks": ranks}
+
+
+FROZEN_NOW = datetime(2026, 5, 20, 19, 0, tzinfo=UTC)
+PROVIDER_MAX_ROWS = 1000
+
+
+class _FrozenDatetime(datetime):
+    @classmethod
+    def now(cls, tz=None):
+        return FROZEN_NOW if tz is None else FROZEN_NOW.astimezone(tz)
+
+
+class CappedTableQuery(ProgramJoinTableQuery):
+    def _bounded_rows(self, rows):
+        return super()._bounded_rows(rows)[:PROVIDER_MAX_ROWS]
+
+
+class CappedSupabase(FakeSupabase):
+    """Every response stops at the provider's row cap, as PostgREST max-rows does."""
+
+    def table(self, name: str):
+        return CappedTableQuery(self, name)
+
+
+class TiePermutingTableQuery(CappedTableQuery):
+    def _bounded_rows(self, rows):
+        offset = self.range_bounds[0] if self.range_bounds else 0
+        if offset and "id" not in {key for key, _desc in self.orders}:
+            permuted = []
+            for _key, ties in groupby(
+                rows, key=lambda row: tuple(row.get(key) for key, _desc in self.orders)
+            ):
+                ties = list(ties)
+                permuted.extend([*ties[1:], *ties[:1]])
+            rows = permuted
+        return super()._bounded_rows(rows)
+
+
+class TiePermutingSupabase(CappedSupabase):
+    """Without a unique order, later offset pages may legally reorder equal keys."""
+
+    def table(self, name: str):
+        return TiePermutingTableQuery(self, name)
+
+
+def rank_row(rank_id, ladder_id, display_order, *, studio_id=STUDIO_ID, **changes):
+    return {
+        "id": rank_id,
+        "studio_id": studio_id,
+        "ladder_id": ladder_id,
+        "name": rank_id,
+        "color_hex": "#ffffff",
+        "display_order": display_order,
+        "min_classes": 0,
+        "min_months": 0,
+        "requires_approval": False,
+        "is_tip": False,
+        "created_at": "2025-01-01T00:00:00Z",
+        **changes,
+    }
+
+
+def ladder_row(ladder_id, program_id, created_at, ranks=(), *, studio_id=STUDIO_ID):
+    return {
+        "id": ladder_id,
+        "studio_id": studio_id,
+        "name": ladder_id,
+        "program_id": program_id,
+        "sub_rank_term": "Stripe",
+        "created_at": created_at,
+        "updated_at": created_at,
+        "belt_ranks": list(ranks),
+    }
+
+
+def program_row(program_id, *, studio_id=STUDIO_ID, is_system=False, archived_at=None):
+    return {
+        "id": program_id,
+        "studio_id": studio_id,
+        "is_system": is_system,
+        "archived_at": archived_at,
+    }
+
+
+def student_row(student_id, program_id, rank_id, *, studio_id=STUDIO_ID):
+    return {
+        "id": student_id,
+        "studio_id": studio_id,
+        "legal_first_name": student_id,
+        "legal_last_name": "Student",
+        "preferred_name": None,
+        "membership_start_date": "2026-01-01T00:00:00Z",
+        "program_id": program_id,
+        "current_belt_rank_id": rank_id,
+        "status": "active",
+        "deleted_at": None,
+    }
+
+
+def membership_row(
+    membership_id, student_id, program_id, rank_id, *, status="active", ended_at=None
+):
+    return {
+        "id": membership_id,
+        "studio_id": STUDIO_ID,
+        "student_id": student_id,
+        "program_id": program_id,
+        "status": status,
+        "ended_at": ended_at,
+        "started_at": "2026-01-01T00:00:00Z",
+        "current_belt_rank_id": rank_id,
+    }
+
+
+def attendance_row(student_id, checked_in_at, program_id):
+    return {
+        "studio_id": STUDIO_ID,
+        "student_id": student_id,
+        "status": "present",
+        "counts_toward_eligibility": True,
+        "checked_in_at": checked_in_at,
+        "class_sessions": {"program_id": program_id},
+        "class_sessions.status": "completed",
+        "class_sessions.deleted_at": None,
+    }
+
+
+def with_ranks(ladders):
+    return {
+        "belt_ladders": ladders,
+        "belt_ranks": [rank for ladder in ladders for rank in ladder["belt_ranks"]],
+    }
+
+
+def primary_ladder_tables():
+    """Hidden, unscoped and foreign ladders own current ranks beside the primary."""
+
+    # Equal display order: embedded payload lists p-z first; canonical order is p-a first.
+    primary_ranks = [
+        rank_row("p-white", "lad-primary", 1),
+        rank_row("p-z", "lad-primary", 2),
+        rank_row("p-a", "lad-primary", 2),
+        rank_row("p-top", "lad-primary", 3),
+    ]
+    ladders = [
+        ladder_row(
+            "lad-foreign",
+            "prog-foreign",
+            "2024-12-01T00:00:00Z",
+            [rank_row("r-foreign", "lad-foreign", 1, studio_id=OTHER_STUDIO_ID)],
+            studio_id=OTHER_STUDIO_ID,
+        ),
+        ladder_row(
+            "lad-archived",
+            "prog-archived",
+            "2025-01-02T00:00:00Z",
+            [rank_row("r-archived", "lad-archived", 1)],
+        ),
+        ladder_row(
+            "lad-system",
+            "prog-system",
+            "2025-01-03T00:00:00Z",
+            [rank_row("r-system", "lad-system", 1)],
+        ),
+        ladder_row(
+            "lad-unscoped",
+            None,
+            "2025-01-04T00:00:00Z",
+            [rank_row("r-unscoped", "lad-unscoped", 1)],
+        ),
+        ladder_row("lad-primary", "prog-visible", "2025-02-01T00:00:00Z", primary_ranks),
+        # Same created_at as the primary: the smaller id comes first.
+        ladder_row(
+            "lad-second",
+            "prog-second",
+            "2025-02-01T00:00:00Z",
+            [rank_row("s-white", "lad-second", 1)],
+        ),
+    ]
+    return {
+        "programs": [
+            program_row("prog-visible"),
+            program_row("prog-second"),
+            program_row("prog-archived", archived_at="2026-01-01T00:00:00Z"),
+            program_row("prog-system", is_system=True),
+            program_row("prog-foreign", studio_id=OTHER_STUDIO_ID),
+        ],
+        **with_ranks(ladders),
+        "students": [
+            student_row("st-unranked", "prog-visible", None),
+            student_row("st-white", "prog-visible", "p-white"),
+            student_row("st-z", "prog-visible", "p-z"),
+            student_row("st-a", "prog-visible", "p-a"),
+            student_row("st-top", "prog-visible", "p-top"),
+            student_row("st-archived", "prog-visible", "r-archived"),
+            student_row("st-system", "prog-visible", "r-system"),
+            student_row("st-unscoped", "prog-visible", "r-unscoped"),
+            student_row("st-foreign-rank", "prog-visible", "r-foreign"),
+            student_row("st-no-program", None, None),
+            student_row("st-second", "prog-second", None),
+            student_row("st-members", "prog-visible", None),
+            student_row("st-other-studio", "prog-foreign", None, studio_id=OTHER_STUDIO_ID),
+        ],
+        "student_program_memberships": [
+            membership_row("m-hidden", "st-members", "prog-visible", "r-archived"),
+            membership_row("m-paused", "st-members", "prog-visible", "p-white", status="paused"),
+            membership_row(
+                "m-ended", "st-members", "prog-visible", None, ended_at="2026-02-01T00:00:00Z"
+            ),
+        ],
+        "promotions": [
+            {
+                "studio_id": STUDIO_ID,
+                "student_id": "st-white",
+                "student_program_membership_id": None,
+                "program_id": "prog-visible",
+                "promoted_at": "2026-03-01T00:00:00Z",
+            }
+        ],
+        "attendance": [
+            attendance_row("st-white", "2026-02-15T12:00:00Z", "prog-visible"),
+            attendance_row("st-white", "2026-03-15T12:00:00Z", "prog-visible"),
+            attendance_row("st-white", "2026-03-16T12:00:00Z", "prog-second"),
+        ],
+    }
+
+
+def eligibility_outcome(supabase, ladder_id, **kwargs):
+    try:
+        entries = asyncio.run(
+            BeltEligibilityCalculator(supabase).get_eligibility(STUDIO_ID, ladder_id, **kwargs)
+        )
+    except HTTPException as exc:
+        return ("error", exc.status_code, exc.detail)
+    return [entry.model_dump() for entry in entries]
+
+
+def studio_ladder_snapshot(tables):
+    rows = [row for row in tables["belt_ladders"] if row["studio_id"] == STUDIO_ID]
+    return sorted(rows, key=lambda row: row["created_at"])
 
 
 class BeltServiceTest(unittest.TestCase):
@@ -153,6 +441,39 @@ class BeltServiceTest(unittest.TestCase):
         )
 
         self.assertEqual(ladders, [])
+
+    def test_list_ladders_sends_trainings_joined_query_without_a_program_read(self):
+        ladders = [
+            {**training_ladder(ladder_id, created_at, orders), "sub_rank_term": "Stripe"}
+            for ladder_id, created_at, orders in (
+                ("ladder-early", "2026-01-01T00:00:00Z", [2, 0, 1]),
+                ("ladder-late", "2026-02-01T00:00:00Z", [0]),
+            )
+        ]
+        provider = TrainingProvider(ladders=ladders)
+        with SyntheticPostgrestClient(provider) as client:
+            listed = asyncio.run(BeltService(client).list_ladders("studio-1"))
+
+        self.assertEqual(
+            [(method, table) for method, table, *_ in provider.requests],
+            [("GET", "belt_ladders")],
+        )
+        self.assertEqual(sorted(provider.requests[0][2].multi_items()), sorted(TRAINING_BELT_QUERY))
+        self.assertEqual([ladder.id for ladder in listed], ["ladder-early", "ladder-late"])
+        self.assertEqual([rank.display_order for rank in listed[0].ranks], [0, 1, 2])
+
+        # Like Training, an empty studio now sends the join: empty on success,
+        # raised on failure, where the old program preread returned [] first.
+        empty = TrainingProvider(programs=[], ladders=[])
+        with SyntheticPostgrestClient(empty) as client:
+            self.assertEqual(asyncio.run(BeltService(client).list_ladders("studio-1")), [])
+        self.assertEqual([table for _, table, *_ in empty.requests], ["belt_ladders"])
+        failed = TrainingProvider(
+            programs=[], ladders=[], failures={"belt_ladders": (400, "PGRST200")}
+        )
+        with SyntheticPostgrestClient(failed) as client:
+            with self.assertRaises(PostgrestAPIError):
+                asyncio.run(BeltService(client).list_ladders("studio-1"))
 
     def test_unfiltered_eligibility_fetches_full_history_for_unpromoted_program(self):
         second_from_rank_id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
@@ -419,6 +740,545 @@ class BeltServiceTest(unittest.TestCase):
                 <= 100
                 for entry in membership_queries
             )
+        )
+
+    def test_primary_ladder_eligibility_matches_list_ladders_then_eligibility(self):
+        supabase = FakeSupabase(primary_ladder_tables())
+        service = BeltService(supabase)
+
+        with patch.object(belt_eligibility, "datetime", _FrozenDatetime):
+            ladders = asyncio.run(service.list_ladders(STUDIO_ID))
+            previous = asyncio.run(service.get_eligibility(STUDIO_ID, ladders[0].id))
+            start = len(supabase.query_log)
+            primary, entries = asyncio.run(service.get_primary_ladder_eligibility(STUDIO_ID))
+
+        self.assertEqual(primary.model_dump(), ladders[0].model_dump())
+        self.assertEqual(
+            [entry.model_dump() for entry in entries], [entry.model_dump() for entry in previous]
+        )
+        self.assertEqual(primary.id, "lad-primary")
+        # Embedded order is the response's; the calculator steps in canonical order.
+        self.assertEqual([rank.id for rank in primary.ranks], ["p-white", "p-z", "p-a", "p-top"])
+        self.assertEqual(
+            [
+                (
+                    entry.student_id,
+                    entry.student_program_membership_id,
+                    entry.current_rank_id,
+                    entry.next_rank_id,
+                )
+                for entry in entries
+            ],
+            [
+                ("st-unranked", None, None, "p-white"),
+                ("st-white", None, "p-white", "p-a"),
+                ("st-z", None, "p-z", "p-top"),
+                ("st-a", None, "p-a", "p-z"),
+                ("st-foreign-rank", None, None, "p-white"),
+                ("st-members", "m-paused", "p-white", "p-a"),
+            ],
+        )
+        self.assertEqual(
+            next(entry for entry in entries if entry.student_id == "st-white").classes_since_promo,
+            1,
+        )
+        reads = supabase.query_log[start:]
+        self.assertEqual(
+            [(read["table"], read["columns"]) for read in reads[:3]],
+            [
+                ("programs", "id, is_system, archived_at"),
+                ("belt_ladders", "*, belt_ranks(*)"),
+                ("belt_ranks", "*"),
+            ],
+        )
+        self.assertEqual(sum(read["table"] == "belt_ladders" for read in reads), 1)
+        self.assertEqual(reads[1]["filters"], (("eq", "studio_id", STUDIO_ID),))
+
+        # Visible ladders alone would turn hidden-rank students into unranked candidates.
+        visible = [row for row in supabase.tables["belt_ladders"] if row["id"] == "lad-primary"]
+        with patch.object(belt_eligibility, "datetime", _FrozenDatetime):
+            narrowed = asyncio.run(
+                BeltEligibilityCalculator(supabase).get_eligibility(
+                    STUDIO_ID, "lad-primary", ladder_rows=visible
+                )
+            )
+        self.assertLessEqual(
+            {"st-archived", "st-system", "st-unscoped"}, {entry.student_id for entry in narrowed}
+        )
+
+    def test_home_belt_tracker_and_training_share_the_created_at_id_primary(self):
+        for provider_order in ("id order", "reversed ties"):
+            with self.subTest(provider_order=provider_order):
+                tables = primary_ladder_tables()
+                ladders = tables["belt_ladders"]
+                if provider_order == "reversed ties":
+                    ladders[-2], ladders[-1] = ladders[-1], ladders[-2]
+                # Created later but with the smallest id: created_at still comes first.
+                tables["programs"].append(program_row("prog-later"))
+                later = ladder_row(
+                    "lad-aaa-later",
+                    "prog-later",
+                    "2025-03-01T00:00:00Z",
+                    [rank_row("later-white", "lad-aaa-later", 1)],
+                )
+                ladders.insert(0, later)
+                tables["belt_ranks"].extend(later["belt_ranks"])
+                supabase = FakeSupabase(tables)
+                belts = BeltService(supabase)
+                training = DashboardBootstrapService(supabase)
+
+                listed = asyncio.run(belts.list_ladders(STUDIO_ID))
+                primary, _entries = asyncio.run(belts.get_primary_ladder_eligibility(STUDIO_ID))
+                trained = [
+                    training._build_ladder_response(row)
+                    for row in training._fetch_belt_ladders(STUDIO_ID).data
+                ]
+
+                expected = ["lad-primary", "lad-second", "lad-aaa-later"]
+                self.assertEqual([ladder.id for ladder in listed], expected)
+                self.assertEqual([ladder.id for ladder in trained], expected)
+                self.assertEqual(primary.model_dump(), listed[0].model_dump())
+                # Embedded rank order is unchanged on both responses.
+                for ladder in (primary, trained[0]):
+                    self.assertEqual(
+                        [rank.id for rank in ladder.ranks], ["p-white", "p-z", "p-a", "p-top"]
+                    )
+                self.assertTrue(
+                    all(
+                        read["orders"] == (("created_at", False), ("id", False))
+                        for read in supabase.query_log
+                        if read["table"] == "belt_ladders"
+                    )
+                )
+
+    def test_server_primary_paths_page_programs_past_the_provider_cap(self):
+        # 1004 studio programs in id order: prog-zz-first, whose NULL-system
+        # program owns the earliest visible ladder, is on the second page.
+        fillers = [
+            program_row(
+                f"prog-fill-{index:04d}",
+                is_system=None if index % 3 == 2 else index % 3 == 1,
+                archived_at="2026-01-01T00:00:00Z" if index % 3 == 0 else None,
+            )
+            for index in range(PROVIDER_MAX_ROWS)
+        ]
+        programs = [
+            program_row("prog-a-second"),
+            *fillers,
+            program_row("prog-zz-archived", archived_at="2026-01-01T00:00:00Z"),
+            program_row("prog-zz-first", is_system=None),
+            program_row("prog-zz-system", is_system=True),
+            program_row("prog-foreign", studio_id=OTHER_STUDIO_ID),
+        ]
+        # Older hidden, unscoped and foreign ladders precede the visible ones.
+        ladders = [
+            ladder_row(
+                "lad-cross-studio",
+                "prog-foreign",
+                "2023-12-01T00:00:00Z",
+                [rank_row("r-cross-studio", "lad-cross-studio", 1)],
+            ),
+            ladder_row(
+                "lad-foreign",
+                "prog-foreign",
+                "2024-01-01T00:00:00Z",
+                [rank_row("r-foreign", "lad-foreign", 1, studio_id=OTHER_STUDIO_ID)],
+                studio_id=OTHER_STUDIO_ID,
+            ),
+            ladder_row(
+                "lad-unscoped",
+                None,
+                "2024-02-01T00:00:00Z",
+                [rank_row("r-unscoped", "lad-unscoped", 1)],
+            ),
+            ladder_row(
+                "lad-archived",
+                "prog-zz-archived",
+                "2024-03-01T00:00:00Z",
+                [rank_row("r-archived", "lad-archived", 1)],
+            ),
+            ladder_row(
+                "lad-system",
+                "prog-zz-system",
+                "2024-04-01T00:00:00Z",
+                [rank_row("r-system", "lad-system", 1)],
+            ),
+            ladder_row(
+                "lad-first",
+                "prog-zz-first",
+                "2025-01-01T00:00:00Z",
+                [rank_row("f-white", "lad-first", 1), rank_row("f-top", "lad-first", 2)],
+            ),
+            ladder_row(
+                "lad-second",
+                "prog-a-second",
+                "2025-02-01T00:00:00Z",
+                [rank_row("s-white", "lad-second", 1)],
+            ),
+        ]
+        tables = {
+            "programs": programs,
+            **with_ranks(ladders),
+            "students": [
+                student_row("st-first", "prog-zz-first", None),
+                student_row("st-archived-rank", "prog-zz-first", "r-archived"),
+            ],
+            "student_program_memberships": [],
+            "promotions": [],
+            "attendance": [],
+        }
+        supabase = CappedSupabase(tables)
+        belts = BeltService(supabase)
+        training = DashboardBootstrapService(supabase)
+
+        listed = asyncio.run(belts.list_ladders(STUDIO_ID))
+        primary, entries = asyncio.run(belts.get_primary_ladder_eligibility(STUDIO_ID))
+        trained = training._fetch_belt_ladders(STUDIO_ID).data
+
+        expected = ["lad-first", "lad-second"]
+        self.assertEqual([ladder.id for ladder in listed], expected)
+        self.assertEqual([row["id"] for row in trained], expected)
+        self.assertEqual(primary.model_dump(), listed[0].model_dump())
+        self.assertEqual(
+            [(entry.student_id, entry.current_rank_id, entry.next_rank_id) for entry in entries],
+            [("st-first", None, "f-white")],
+        )
+        program_reads = [read for read in supabase.query_log if read["table"] == "programs"]
+        # Only Home pages programs; list_ladders and Training filter them in the join.
+        self.assertEqual(
+            [
+                (read["columns"], read["filters"], read["orders"], read["range"])
+                for read in program_reads
+            ],
+            [
+                (
+                    "id, is_system, archived_at",
+                    (("eq", "studio_id", STUDIO_ID),),
+                    (("id", False),),
+                    page,
+                )
+                for page in ((0, 999), (1000, 1999))
+            ],
+        )
+        # No program id list reaches a ladder URL, however many programs exist.
+        self.assertFalse(
+            any(
+                op == "in"
+                for read in supabase.query_log
+                if read["table"] == "belt_ladders"
+                for op, _key, _value in read["filters"]
+            )
+        )
+
+    def test_primary_ladder_eligibility_without_visible_ladder_reads_no_facts(self):
+        no_visible_program = primary_ladder_tables()
+        for program in no_visible_program["programs"]:
+            program["archived_at"] = "2026-01-01T00:00:00Z"
+        only_hidden_ladders = primary_ladder_tables()
+        only_hidden_ladders["belt_ladders"] = [
+            row
+            for row in only_hidden_ladders["belt_ladders"]
+            if row["id"] not in {"lad-primary", "lad-second"}
+        ]
+
+        for tables, reads in (
+            (no_visible_program, ["programs"]),
+            (only_hidden_ladders, ["programs", "belt_ladders"]),
+        ):
+            with self.subTest(reads=reads):
+                supabase = FakeSupabase(tables)
+                self.assertIsNone(
+                    asyncio.run(BeltService(supabase).get_primary_ladder_eligibility(STUDIO_ID))
+                )
+                self.assertEqual([read["table"] for read in supabase.query_log], reads)
+
+    def test_primary_ladder_eligibility_pages_ladders_and_ranks_past_the_provider_cap(self):
+        # Each older hidden ladder owns a rank, so the primary's ranks and the
+        # later hidden ladder's rank sort onto the second rank page.
+        older = [
+            ladder_row(
+                f"lad-old-{index:04d}",
+                "prog-archived",
+                "2024-01-01T00:00:00Z",
+                [rank_row(f"lad-old-{index:04d}-1", f"lad-old-{index:04d}", 1)],
+            )
+            for index in range(PROVIDER_MAX_ROWS)
+        ]
+        later = [
+            ladder_row(
+                "lad-zz-hidden",
+                "prog-archived",
+                "2025-01-02T00:00:00Z",
+                [rank_row("r-late", "lad-zz-hidden", 1)],
+            ),
+            ladder_row(
+                "lad-primary",
+                "prog-visible",
+                "2025-02-01T00:00:00Z",
+                [rank_row("p-white", "lad-primary", 1), rank_row("p-top", "lad-primary", 2)],
+            ),
+        ]
+        tables = {
+            "programs": [
+                program_row("prog-visible"),
+                program_row("prog-archived", archived_at="2026-01-01T00:00:00Z"),
+            ],
+            **with_ranks([*older, *later]),
+            "students": [
+                student_row("st-unranked", "prog-visible", None),
+                student_row("st-white", "prog-visible", "p-white"),
+                student_row("st-top", "prog-visible", "p-top"),
+                student_row("st-late", "prog-visible", "r-late"),
+                student_row("st-old", "prog-visible", "lad-old-0000-1"),
+            ],
+            "student_program_memberships": [],
+            "promotions": [],
+            "attendance": [],
+        }
+        supabase = CappedSupabase(copy.deepcopy(tables))
+        uncapped = BeltService(FakeSupabase(copy.deepcopy(tables)))
+
+        with patch.object(belt_eligibility, "datetime", _FrozenDatetime):
+            primary, entries = asyncio.run(
+                BeltService(supabase).get_primary_ladder_eligibility(STUDIO_ID)
+            )
+            ladders = asyncio.run(uncapped.list_ladders(STUDIO_ID))
+            complete = asyncio.run(uncapped.get_eligibility(STUDIO_ID, ladders[0].id))
+
+        self.assertEqual(primary.model_dump(), ladders[0].model_dump())
+        self.assertEqual(
+            [entry.model_dump() for entry in entries], [entry.model_dump() for entry in complete]
+        )
+        # Hidden ladders on either page still own their ranks; p-top has no next rank.
+        self.assertEqual(
+            [(entry.student_id, entry.current_rank_id, entry.next_rank_id) for entry in entries],
+            [("st-unranked", None, "p-white"), ("st-white", "p-white", "p-top")],
+        )
+        # One uniquely ordered ladder query, paged from offset 0.
+        self.assertEqual(
+            [
+                (read["columns"], read["filters"], read["orders"], read["range"])
+                for read in supabase.query_log
+                if read["table"] == "belt_ladders"
+            ],
+            [
+                (
+                    "*, belt_ranks(*)",
+                    (("eq", "studio_id", STUDIO_ID),),
+                    (("created_at", False), ("id", False)),
+                    page,
+                )
+                for page in ((0, 999), (1000, 1999))
+            ],
+        )
+        self.assertEqual(
+            [read["range"] for read in supabase.query_log if read["table"] == "belt_ranks"],
+            [(0, 999), (1000, 1999)],
+        )
+        rank_reads = [read for read in supabase.query_log if read["table"] == "belt_ranks"]
+        self.assertTrue(
+            all(
+                read["columns"] == "*"
+                and read["filters"] == (("eq", "studio_id", STUDIO_ID),)
+                and read["orders"]
+                == (
+                    ("ladder_id", False),
+                    ("display_order", False),
+                    ("created_at", False),
+                    ("id", False),
+                )
+                for read in rank_reads
+            )
+        )
+
+    def test_primary_ladder_metadata_survives_tied_created_at_across_pages(self):
+        # Every ladder shares created_at: the visible primary is row 0, and the
+        # hidden ladder owning st-hidden's rank is row 1000, on the second page.
+        ladders = [
+            ladder_row(f"lad-{index:04d}", "prog-archived", "2025-01-01T00:00:00Z")
+            for index in range(2 * PROVIDER_MAX_ROWS)
+        ]
+        ladders[0] = ladder_row(
+            "lad-0000", "prog-visible", "2025-01-01T00:00:00Z", [rank_row("p-white", "lad-0000", 1)]
+        )
+        ladders[1000] = ladder_row(
+            "lad-1000",
+            "prog-archived",
+            "2025-01-01T00:00:00Z",
+            [rank_row("r-hidden", "lad-1000", 1)],
+        )
+        supabase = TiePermutingSupabase(
+            {
+                "programs": [
+                    program_row("prog-visible"),
+                    program_row("prog-archived", archived_at="2026-01-01T00:00:00Z"),
+                ],
+                **with_ranks(ladders),
+                "students": [
+                    student_row("st-unranked", "prog-visible", None),
+                    student_row("st-hidden", "prog-visible", "r-hidden"),
+                ],
+                "student_program_memberships": [],
+                "promotions": [],
+                "attendance": [],
+            }
+        )
+        calculate = BeltEligibilityCalculator.get_eligibility
+
+        with patch.object(
+            BeltEligibilityCalculator, "get_eligibility", autospec=True, side_effect=calculate
+        ) as calculator:
+            primary, entries = asyncio.run(
+                BeltService(supabase).get_primary_ladder_eligibility(STUDIO_ID)
+            )
+
+        self.assertEqual(primary.id, "lad-0000")
+        self.assertEqual([entry.student_id for entry in entries], ["st-unranked"])
+        snapshot_ids = [row["id"] for row in calculator.call_args.kwargs["ladder_rows"]]
+        self.assertEqual(sorted(snapshot_ids), [row["id"] for row in ladders])
+
+    def test_calculator_ladder_rows_match_its_own_ladder_read(self):
+        def tables(ladders, students):
+            return {
+                "programs": [],
+                **with_ranks(ladders),
+                "students": students,
+                "student_program_memberships": [],
+                "promotions": [],
+                "attendance": [],
+            }
+
+        def unscoped(ladder_id, created_at):
+            return ladder_row(
+                ladder_id, None, created_at, [rank_row(f"{ladder_id}-1", ladder_id, 1)]
+            )
+
+        def scoped(ladder_id, program_id, created_at, ranks=True):
+            return ladder_row(
+                ladder_id,
+                program_id,
+                created_at,
+                [rank_row(f"{ladder_id}-1", ladder_id, 1), rank_row(f"{ladder_id}-2", ladder_id, 2)]
+                if ranks
+                else [],
+            )
+
+        students = [
+            student_row("st-no-program", None, None),
+            student_row("st-program", PROGRAM_ID, None),
+            student_row("st-unladdered-program", SECOND_PROGRAM_ID, None),
+            student_row("st-ranked", PROGRAM_ID, "lad-p-1"),
+            student_row("st-unknown-rank", None, "missing-rank"),
+        ]
+        scenarios = {
+            "single-unscoped": tables([unscoped("lad-u", "2025-01-01T00:00:00Z")], students),
+            "sole-unscoped-among-programs": tables(
+                [
+                    scoped("lad-p", PROGRAM_ID, "2025-01-01T00:00:00Z"),
+                    unscoped("lad-u", "2025-01-02T00:00:00Z"),
+                    scoped("lad-q", "33333333-0000-4000-8000-000000000000", "2025-01-03T00:00:00Z"),
+                ],
+                students,
+            ),
+            "multiple-unscoped": tables(
+                [
+                    unscoped("lad-u", "2025-01-01T00:00:00Z"),
+                    unscoped("lad-v", "2025-01-02T00:00:00Z"),
+                    scoped("lad-p", PROGRAM_ID, "2025-01-03T00:00:00Z"),
+                ],
+                students,
+            ),
+            "ladder-without-ranks": tables(
+                [
+                    scoped("lad-p", PROGRAM_ID, "2025-01-01T00:00:00Z"),
+                    scoped("lad-empty", SECOND_PROGRAM_ID, "2025-01-02T00:00:00Z", ranks=False),
+                ],
+                students,
+            ),
+            "no-ladders": tables([], students),
+        }
+        outcomes = {}
+
+        for name, scenario in scenarios.items():
+            ladder_ids = [None, *(row["id"] for row in scenario["belt_ladders"]), "unknown"]
+            for ladder_id in ladder_ids:
+                with self.subTest(scenario=name, ladder_id=ladder_id):
+                    own_supabase = FakeSupabase(copy.deepcopy(scenario))
+                    supplied_supabase = FakeSupabase(copy.deepcopy(scenario))
+                    with patch.object(belt_eligibility, "datetime", _FrozenDatetime):
+                        own = eligibility_outcome(own_supabase, ladder_id)
+                        supplied = eligibility_outcome(
+                            supplied_supabase,
+                            ladder_id,
+                            ladder_rows=studio_ladder_snapshot(scenario),
+                        )
+                    self.assertEqual(supplied, own)
+                    outcomes[name, ladder_id] = own
+                    self.assertEqual(
+                        [
+                            read["columns"]
+                            for read in own_supabase.query_log
+                            if read["table"] == "belt_ladders"
+                        ],
+                        ["id, name, program_id"],
+                    )
+                    # Without a snapshot, ranks stay one unpaged read.
+                    self.assertTrue(
+                        all(
+                            read["range"] is None
+                            for read in own_supabase.query_log
+                            if read["table"] == "belt_ranks"
+                        )
+                    )
+                    self.assertFalse(
+                        any(read["table"] == "belt_ladders" for read in supplied_supabase.query_log)
+                    )
+
+        def students_in(outcome):
+            return [entry["student_id"] for entry in outcome]
+
+        # The comparisons above cover each fallback, not only empty results.
+        self.assertIn("st-no-program", students_in(outcomes["single-unscoped", None]))
+        self.assertIn("st-no-program", students_in(outcomes["sole-unscoped-among-programs", None]))
+        self.assertNotIn("st-no-program", students_in(outcomes["multiple-unscoped", None]))
+        self.assertIn("st-ranked", students_in(outcomes["sole-unscoped-among-programs", None]))
+        self.assertEqual(outcomes["ladder-without-ranks", "lad-empty"], [])
+        self.assertEqual(outcomes["no-ladders", None], [])
+        self.assertEqual(
+            outcomes["single-unscoped", "unknown"], ("error", 404, "Belt ladder not found")
+        )
+
+    def test_calculator_ignores_ladder_rows_from_another_studio(self):
+        tables = {
+            **with_ranks(
+                [
+                    ladder_row(
+                        "lad-u", None, "2025-01-01T00:00:00Z", [rank_row("lad-u-1", "lad-u", 1)]
+                    )
+                ]
+            ),
+            "students": [student_row("st-no-program", None, None)],
+            "student_program_memberships": [],
+            "promotions": [],
+            "attendance": [],
+        }
+        snapshot = [
+            ladder_row("lad-foreign", None, "2024-01-01T00:00:00Z", studio_id=OTHER_STUDIO_ID),
+            *studio_ladder_snapshot(tables),
+        ]
+        supabase = FakeSupabase(tables)
+
+        # A foreign unscoped ladder would end the studio's single-ladder fallback.
+        self.assertEqual(
+            [
+                entry["student_id"]
+                for entry in eligibility_outcome(supabase, None, ladder_rows=snapshot)
+            ],
+            ["st-no-program"],
+        )
+        self.assertEqual(
+            eligibility_outcome(supabase, "lad-foreign", ladder_rows=snapshot),
+            ("error", 404, "Belt ladder not found"),
         )
 
 

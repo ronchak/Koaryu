@@ -128,7 +128,7 @@ for (const scenario of [
   { name: "persistent outage", status: 503, target: "/503" },
   { name: "staff billing denial", status: 200, target: "/access-denied", role: "instructor" },
 ]) {
-  test(`billing navigation preserves ${scenario.name} handling`, async (t) => {
+  test(`Connect navigation preserves ${scenario.name} handling`, async (t) => {
     const previous = process.env.NEXT_PUBLIC_API_URL;
     process.env.NEXT_PUBLIC_API_URL = "https://api.example.test/api/v1";
     const fetch = t.mock.method(globalThis, "fetch", async () =>
@@ -142,7 +142,7 @@ for (const scenario of [
     );
     t.mock.method(console, "error", () => {});
     try {
-      const request = new NextRequest("https://example.test/billing");
+      const request = new NextRequest("https://example.test/billing/connect/refresh");
       request.cookies.set(
         studioCookies.STUDIO_STATE_COOKIE,
         studioCookies.serializeStudioStateCookie("synthetic-user", true, "active"),
@@ -150,7 +150,7 @@ for (const scenario of [
       const response = await loadMiddleware({ id: "synthetic-user" })(request);
       assert.equal(
         response.headers.get("location"),
-        `https://example.test${scenario.target}${scenario.target === "/503" ? "?returnTo=%2Fbilling" : ""}`,
+        `https://example.test${scenario.target}${scenario.target === "/503" ? "?returnTo=%2Fbilling%2Fconnect%2Frefresh" : ""}`,
       );
       assert.equal(fetch.mock.callCount(), 1);
       assert.equal(response.cookies.get("session-part-1")?.value, "synthetic-first");
@@ -179,5 +179,60 @@ for (const failure of [
     assert.equal(response.cookies.get(studioCookies.STUDIO_STATE_COOKIE), undefined);
     assert.equal(response.cookies.get(studioCookies.ACTIVE_STUDIO_COOKIE), undefined);
     assert.match(response.headers.get("cache-control"), /private.*no-store/);
+  });
+}
+
+for (const pathname of ["/billing", "/billing/"]) {
+  test(`ordinary ${pathname} keeps session auth without an unconditional backend role read`, async (t) => {
+    const fetch = t.mock.method(globalThis, "fetch", () => {
+      throw Error("Unexpected backend auth read");
+    });
+    const request = new NextRequest(`https://example.test${pathname}`);
+    request.cookies.set(
+      studioCookies.STUDIO_STATE_COOKIE,
+      studioCookies.serializeStudioStateCookie("synthetic-user", true, "active"),
+    );
+    const response = await loadMiddleware({ id: "synthetic-user" })(request);
+    assert.equal(response.status, 200);
+    assert.equal(fetch.mock.callCount(), 0);
+    assert.equal(response.cookies.get("session-part-1")?.value, "synthetic-first");
+    assert.match(response.headers.get("cache-control"), /private.*no-store/);
+  });
+}
+
+for (const status of ["active", "archived", "none"]) {
+  test(`middleware caches ${status} redirect state for ${status === "active" ? 43200 : 300} seconds`, async () => {
+    const oldPreview = process.env.NEXT_PUBLIC_PREVIEW_MODE;
+    const oldApi = process.env.NEXT_PUBLIC_API_URL;
+    const oldFetch = globalThis.fetch;
+    process.env.NEXT_PUBLIC_PREVIEW_MODE = "false";
+    process.env.NEXT_PUBLIC_API_URL = "http://127.0.0.1:45679/api/v1";
+    let reads = 0;
+    globalThis.fetch = async () => {
+      reads++;
+      return Response.json({
+        user: { id: "synthetic-user" },
+        studio_id: status === "active" ? "studio-1" : null,
+        membership_status: status,
+        role: "admin",
+      });
+    };
+    try {
+      const user = { id: "synthetic-user" };
+      const response = await loadMiddleware(user)(
+        new NextRequest("https://example.test/dashboard"),
+      );
+      assert.equal(
+        response.cookies.get(studioCookies.STUDIO_STATE_COOKIE).maxAge,
+        status === "active" ? 43200 : 300,
+      );
+      assert.equal(reads, 1);
+    } finally {
+      globalThis.fetch = oldFetch;
+      if (oldPreview === undefined) delete process.env.NEXT_PUBLIC_PREVIEW_MODE;
+      else process.env.NEXT_PUBLIC_PREVIEW_MODE = oldPreview;
+      if (oldApi === undefined) delete process.env.NEXT_PUBLIC_API_URL;
+      else process.env.NEXT_PUBLIC_API_URL = oldApi;
+    }
   });
 }

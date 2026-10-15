@@ -9,9 +9,10 @@ import { pendingCommands, subscribePendingCommands } from "@/lib/pending-command
 import { markDashboardFactsChanged } from "@/lib/dashboard-freshness";
 import { beginResourceMutation, createResourceScope } from "@/lib/store-resource-scope";
 
-import React, { useState, useEffect, useLayoutEffect, useCallback, useRef, useMemo, type ReactNode } from "react";
+import React, { useState, useEffect, useLayoutEffect, useCallback, useRef, useMemo, use, Suspense, type ReactNode } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { clearActiveStudioIdCookie, getActiveStudioIdCookie } from "@/lib/studio-state-cookie";
 import { api, ApiError, isStaffArchivedError, isSubscriptionRequiredError } from "@/lib/api";
 import { markPerformance, measurePerformance } from "@/lib/performance";
 import {
@@ -55,7 +56,7 @@ import type {
   StaffMember,
   StaffLegalNameResponse, StaffRoleName, DashboardHome,
 } from "@/types";
-import { buildPreviewHomePayload } from "@/lib/dashboard/preview-home-payload";
+import { loadPreviewAdapter, type PreviewAdapter } from "@/lib/preview-adapter-loader";
 import { homeRoleClass } from "@/lib/dashboard/home-model";
 import {
   purgeHomePreferencesScope,
@@ -66,20 +67,6 @@ import {
   type HomePreferencesScope,
   type HomePreferencesWire,
 } from "@/lib/dashboard/home-preferences";
-import {
-  MOCK_STUDENTS,
-  MOCK_SESSIONS,
-  MOCK_CLASS_TEMPLATES,
-  MOCK_ATTENDANCE,
-  MOCK_BELT_LADDER,
-  MOCK_ELIGIBILITY,
-  MOCK_LEADS,
-} from "@/lib/mock-data";
-import {
-  MOCK_BELT_LADDERS,
-  MOCK_PROGRAMS,
-  MOCK_STAFF_MEMBERS,
-} from "@/lib/preview-studio-data";
 import {
   createScheduleReconciliationQueue,
   createScheduleCoordinatorState,
@@ -98,7 +85,7 @@ import {
   shouldPreserveScheduleMutationsOnAuthChange,
   type ScheduleRangeRefreshIntent,
 } from "@/lib/schedule-store-model";
-import { useStoreBeltActions } from "@/lib/store-belt-actions";
+import { useStoreBeltActions, type RefreshBeltsOptions } from "@/lib/store-belt-actions";
 import { useStoreBeltTestActions } from "@/lib/store-belt-test-actions";
 import { useStoreLeadActions } from "@/lib/store-lead-actions";
 import { useStoreProgramActions } from "@/lib/store-program-actions";
@@ -189,6 +176,18 @@ const bulkStudentCommandIds = (studentIds: string[]) => normalizeStudentIds(stud
 
 // ── Provider ─────────────────────────────────────────────────────────────────
 export function StoreProvider({ children }: { children: ReactNode }) {
+  if (process.env.NEXT_PUBLIC_PREVIEW_MODE === "true") {
+    return <Suspense fallback={null}><PreviewStoreProvider>{children}</PreviewStoreProvider></Suspense>;
+  }
+  return <StoreProviderBody>{children}</StoreProviderBody>;
+}
+
+function PreviewStoreProvider({ children }: { children: ReactNode }) {
+  const preview = use(loadPreviewAdapter());
+  return <StoreProviderBody preview={preview}>{children}</StoreProviderBody>;
+}
+
+function StoreProviderBody({ children, preview }: { children: ReactNode; preview?: PreviewAdapter }) {
   const isPreviewMode = process.env.NEXT_PUBLIC_PREVIEW_MODE === "true";
   const [hydrated, setHydrated] = useState(false);
   const [subscriptionRequired, setSubscriptionRequired] = useState(false);
@@ -206,7 +205,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const authoritativeStudioIdRef = useRef<string | null>(null);
   const identityEpochRef = useRef(0);
   const [initializationAttempt, setInitializationAttempt] = useState(0);
-  const retryInitialization = useCallback(() => setInitializationAttempt((value) => value + 1), []);
+  const initializationAttemptRef = useRef(0);
+  const [resumeInitialization, setResumeInitialization] = useState<{
+    epoch: number;
+    attempt: number;
+    versionDecision: Promise<boolean>;
+  } | null>(null);
+  const retryInitialization = useCallback(() => {
+    initializationAttemptRef.current += 1;
+    setInitializationAttempt(value => value + 1);
+  }, []);
   const [token, setToken] = useState<string | null>(null);
   const tokenRef = useRef<string | null>(null);
   const authGenerationRef = useRef(0);
@@ -222,9 +230,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   // ── State ──
   const [students, setStudents] = useState<Student[]>(() =>
-    isPreviewMode ? MOCK_STUDENTS : []
+    isPreviewMode ? preview!.MOCK_STUDENTS : []
   );
-  const [studentsLoaded, setStudentsLoaded] = useState(isPreviewMode);
+  const [studentsLoaded, setStudentsLoadedState] = useState(isPreviewMode);
+  const studentsLoadedRef = useRef(isPreviewMode);
+  const setStudentsLoaded = useCallback((loaded: boolean) => {
+    studentsLoadedRef.current = loaded;
+    setStudentsLoadedState(loaded);
+  }, []);
   const [studentsLoadError, setStudentsLoadError] = useState<string | null>(null);
   const [studentsLastLoadedAt, setStudentsLastLoadedAt] = useState<number | null>(() =>
     isPreviewMode ? Date.now() : null
@@ -236,7 +249,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const studentRosterRequestSequenceRef = useRef(0);
   const previewStudentPhotoUrlsRef = useRef<Record<string, string>>({});
   const [programs, setProgramRows] = useState<Program[]>(() =>
-    isPreviewMode ? MOCK_PROGRAMS : []
+    isPreviewMode ? preview!.MOCK_PROGRAMS : []
   );
   const [programsLoaded, setProgramsLoadedState] = useState(isPreviewMode);
   const programsLoadedRef = useRef(isPreviewMode);
@@ -258,7 +271,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [programsUsageLoaded, setProgramsUsageLoaded] = useState(isPreviewMode);
   const [programsUsageLoadError, setProgramsUsageLoadError] = useState<string | null>(null);
   const [leads, setLeads] = useState<Lead[]>(() =>
-    isPreviewMode ? MOCK_LEADS : []
+    isPreviewMode ? preview!.MOCK_LEADS : []
   );
   const [leadsLoaded, setLeadsLoaded] = useState(isPreviewMode);
   const [leadsLoadError, setLeadsLoadError] = useState<string | null>(null);
@@ -271,20 +284,29 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const leadMutationScopeRef = useRef(createResourceScope());
   const beginLeadMutation = useCallback(() => beginResourceMutation(leadMutationScopeRef.current), []);
   const [beltLadders, setBeltLaddersState] = useState<BeltLadder[]>(() =>
-    isPreviewMode ? MOCK_BELT_LADDERS : []
+    isPreviewMode ? preview!.MOCK_BELT_LADDERS : []
   );
   const beltsHydratedRef = useRef(false);
+  const [beltRefreshGeneration, setBeltRefreshGeneration] = useState(0);
+  const requestedBeltRefreshGenerationRef = useRef(0);
+  // Hydration tracks attempted route loads; metadata readiness requires success,
+  // including an authoritative empty result.
+  const beltLaddersLoadedRef = useRef(isPreviewMode);
+  const beltLaddersReadRef = useRef<{
+    isCurrent: () => boolean;
+    promise: Promise<{ ladders: readonly BeltLadder[] }>;
+  } | null>(null);
   const [beltLaddersLoadError, setBeltLaddersLoadError] = useState<string | null>(null);
   const [studioLoadError, setStudioLoadError] = useState<string | null>(null);
   const beltLaddersRef = useRef<BeltLadder[]>(beltLadders);
   const beltMetadataRevisionRef = useRef(0);
   const [beltRanks, setBeltRanksState] = useState<BeltRank[]>(() =>
-    isPreviewMode ? MOCK_BELT_LADDER.ranks : []
+    isPreviewMode ? preview!.MOCK_BELT_LADDER.ranks : []
   );
   const beltRanksRef = useRef<BeltRank[]>(beltRanks);
-  const refreshBeltsRef = useRef<((preferredLadderId?: string | null) => Promise<void>) | null>(null);
+  const refreshBeltsRef = useRef<((preferredLadderId?: string | null, options?: RefreshBeltsOptions) => Promise<void>) | null>(null);
   const [sessions, setSessionsState] = useState<ClassSession[]>(() =>
-    isPreviewMode ? MOCK_SESSIONS : []
+    isPreviewMode ? preview!.MOCK_SESSIONS : []
   );
   const sessionsRef = useRef<ClassSession[]>(sessions);
   const setSessions = useCallback((update: ClassSession[] | ((current: ClassSession[]) => ClassSession[])) => {
@@ -293,11 +315,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setSessionsState(next);
   }, []);
   const [templates, setTemplates] = useState<ClassTemplate[]>(() =>
-    isPreviewMode ? MOCK_CLASS_TEMPLATES : []
+    isPreviewMode ? preview!.MOCK_CLASS_TEMPLATES : []
   );
   const templatesRef = useRef<ClassTemplate[]>(templates);
   const [attendance, setAttendance] = useState<AttendanceRecord[]>(() =>
-    isPreviewMode ? MOCK_ATTENDANCE : []
+    isPreviewMode ? preview!.MOCK_ATTENDANCE : []
   );
   const attendanceRef = useRef<AttendanceRecord[]>(attendance);
   const scheduleCoordinatorRef = useRef(createScheduleCoordinatorState());
@@ -324,7 +346,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   );
   const [currentUser, setCurrentUser] = useState<AuthUserProfile | null>(() =>
     isPreviewMode
-      ? { id: "preview-user", email: "demo@koaryu.local", full_name: "Demo User" }
+      ? preview!.currentUser
       : null
   );
   const authUserIdRef = useRef<string | null>(isPreviewMode ? "preview-user" : null);
@@ -338,7 +360,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const currentRoleRef = useRef(currentRole);
   const [staffProfilesAvailable, setStaffProfilesAvailable] = useState(false);
   const [staffMembers, setStaffMembers] = useState<StaffMember[]>(() =>
-    isPreviewMode ? MOCK_STAFF_MEMBERS : []
+    isPreviewMode ? preview!.MOCK_STAFF_MEMBERS : []
   );
   const staffMembersRef = useRef<StaffMember[]>(staffMembers);
   const staffScopeRef = useRef(createResourceScope());
@@ -350,24 +372,24 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [staffLoaded, setStaffLoaded] = useState(isPreviewMode);
   const [staffLoadError, setStaffLoadError] = useState<string | null>(null);
   const [subRankTerm, setSubRankTermState] = useState(() =>
-    isPreviewMode ? MOCK_BELT_LADDER.sub_rank_term || "Stripe" : "Stripe"
+    isPreviewMode ? preview!.MOCK_BELT_LADDER.sub_rank_term || "Stripe" : "Stripe"
   );
   const [ladderName, setLadderNameState] = useState(() =>
-    isPreviewMode ? MOCK_BELT_LADDER.name : ""
+    isPreviewMode ? preview!.MOCK_BELT_LADDER.name : ""
   );
   const [currentLadderId, setCurrentLadderIdState] = useState<string | null>(null);
   const currentLadderIdRef = useRef<string | null>(null);
   const [eligibility, setEligibility] = useState<EligibilityEntry[]>(() =>
-    isPreviewMode ? MOCK_ELIGIBILITY : []
+    isPreviewMode ? preview!.MOCK_ELIGIBILITY : []
   );
   const eligibilityRef = useRef<EligibilityEntry[]>(eligibility);
   const [eligibilityLadderId, setEligibilityLadderId] = useState<string | null>(() =>
-    isPreviewMode ? MOCK_BELT_LADDER.id : null
+    isPreviewMode ? preview!.MOCK_BELT_LADDER.id : null
   );
   const [eligibilityPendingLadderId, setEligibilityPendingLadderId] = useState<string | null>(null);
   const [eligibilityLoadError, setEligibilityLoadError] = useState<string | null>(null);
   const eligibilityCacheRef = useRef<Record<string, EligibilityEntry[]>>(
-    isPreviewMode ? { [MOCK_BELT_LADDER.id]: MOCK_ELIGIBILITY } : {}
+    isPreviewMode ? { [preview!.MOCK_BELT_LADDER.id]: preview!.MOCK_ELIGIBILITY } : {}
   );
   const eligibilityRequestSeqRef = useRef(0);
   const [promotionHistoryCache, setPromotionHistoryCache] = useState<PromotionHistoryCache>(() =>
@@ -589,6 +611,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       preferredLadderId ?? currentLadderIdRef.current
     );
 
+    beltLaddersLoadedRef.current = true;
+    beltLaddersRef.current = orderedLadders;
     setBeltLaddersState(orderedLadders);
     updateCurrentLadderId(selectedLadder?.id ?? null);
     setLadderNameState(selectedLadder?.name || "");
@@ -613,10 +637,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       next: Student[] | ((current: Student[]) => Student[]),
       options?: { mayBePartial?: boolean }
     ) => {
+      const wasLoaded = studentsLoadedRef.current;
       setStudentsLoaded(true);
       setStudentsLoadError(null);
       setStudentsLastLoadedAt(Date.now());
-      setStudentsMayBePartial(Boolean(options?.mayBePartial));
+      // Updaters publish mutations, not authoritative roster snapshots. A
+      // single record cannot certify an unloaded or partial list as complete.
+      setStudentsMayBePartial(wasPartial => typeof next === "function"
+        ? wasPartial || !wasLoaded || Boolean(options?.mayBePartial)
+        : Boolean(options?.mayBePartial));
       setStudents((current) => {
         const resolved = typeof next === "function"
           ? (next as (current: Student[]) => Student[])(current)
@@ -625,7 +654,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         return resolved;
       });
     },
-    []
+    [setStudentsLoaded]
   );
 
   useSyncedRefValue(leadsRef, leads);
@@ -665,6 +694,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const applyLiveStudioDataResetState = useCallback((state: LiveStudioDataResetState) => {
     resetBeltTestResourceScope();
     beltsHydratedRef.current = false;
+    beltLaddersLoadedRef.current = false;
+    beltLaddersReadRef.current = null;
     resetProgramScope();
     resetStaffScope();
     leadMutationScopeRef.current.settle();
@@ -723,7 +754,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setEligibilityLoadError(state.eligibilityLoadError);
     promotionHistoryGenerationRef.current += 1;
     setPromotionHistoryCache(state.promotionHistoryCache);
-  }, [setPrograms, setProgramsLoaded, resetProgramScope, resetBeltTestResourceScope, resetStaffScope, destructivelyResetScheduleCoordinator, setSessions, updateCurrentLadderId]);
+  }, [setStudentsLoaded, setPrograms, setProgramsLoaded, resetProgramScope, resetBeltTestResourceScope, resetStaffScope, destructivelyResetScheduleCoordinator, setSessions, updateCurrentLadderId]);
 
   const resetLiveStudioState = useCallback(() => {
     invalidateAccessIdentity();
@@ -850,7 +881,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     destructivelyResetScheduleCoordinator();
     setScheduleLoadError(restored.scheduleLoadError);
     setScheduleStatus(restored.scheduleStatus);
-  }, [setProgramsLoaded, destructivelyResetScheduleCoordinator]);
+  }, [setStudentsLoaded, setProgramsLoaded, destructivelyResetScheduleCoordinator]);
 
   // Home reads one payload. This returns it without storing it: `useHome` owns
   // Home's state. Preview mode is selected here and nowhere else.
@@ -858,7 +889,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     if (isPreviewMode) {
       const role = currentRoleRef.current;
       if (!role) throw new Error("Home is not available until studio access is verified.");
-      const payload = buildPreviewHomePayload({ today: businessDateRef.current, role });
+      const payload = preview!.buildPreviewHomePayload({ today: businessDateRef.current, role });
       stampHomeRead(payload, startHomeRead());
       return payload;
     }
@@ -896,7 +927,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       }
       throw error;
     }
-  }, [beginLiveAuthRequest, isPreviewMode, markSubscriptionRequired]);
+  }, [beginLiveAuthRequest, isPreviewMode, markSubscriptionRequired, preview]);
 
   // Home preferences: one PUT for the identity the caller saves for, never another.
   // It changes no studio facts, so it never marks them changed (no fresh re-read).
@@ -999,6 +1030,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setLeads([]);
     setLeadsLoaded(true);
     setLeadsLoadError(null);
+    beltMetadataRevisionRef.current += 1;
+    beltLaddersLoadedRef.current = true;
+    beltLaddersRef.current = [];
     setBeltLaddersState([]);
     updateCurrentLadderId(null);
     setLadderNameState("");
@@ -1027,10 +1061,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const timer = window.setTimeout(() => {
       const hydrationDefaults = resolvePreviewLadderHydrationDefaults(
         {
-          storedLadders: load(KEYS.beltLadders, MOCK_BELT_LADDERS),
+          storedLadders: load(KEYS.beltLadders, preview!.MOCK_BELT_LADDERS),
           currentLadderId: currentLadderIdRef.current,
-          fallbackLadders: MOCK_BELT_LADDERS,
-          fallbackLadder: MOCK_BELT_LADDER,
+          fallbackLadders: preview!.MOCK_BELT_LADDERS,
+          fallbackLadder: preview!.MOCK_BELT_LADDER,
         }
       );
       const hydratedLadderState = buildPreviewHydratedLadderState({
@@ -1039,10 +1073,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         storedRanks: load(KEYS.beltRanks, hydrationDefaults.defaultRanks),
         storedSubRankTerm: load(KEYS.subRankTerm, hydrationDefaults.defaultSubRankTerm),
         storedLadderName: load(KEYS.ladderName, hydrationDefaults.defaultLadderName),
-        primaryEligibilityLadderId: MOCK_BELT_LADDER.id,
-        primaryEligibilityRows: MOCK_ELIGIBILITY,
+        primaryEligibilityLadderId: preview!.MOCK_BELT_LADDER.id,
+        primaryEligibilityRows: preview!.MOCK_ELIGIBILITY,
       });
-      const hydratedStudents = load(KEYS.students, MOCK_STUDENTS);
+      const hydratedStudents = load(KEYS.students, preview!.MOCK_STUDENTS);
       const hydratedPromotionHistory = load(KEYS.promotionHistory, {});
       const hydratedEligibility = buildPreviewEligibilityForLadder({
         ladderId: hydratedLadderState.eligibilityLadderId,
@@ -1059,10 +1093,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       commitStudents(hydratedStudents);
       promotionHistoryCacheRef.current = hydratedPromotionHistory;
       setPromotionHistoryCache(hydratedPromotionHistory);
-      setPrograms(load(KEYS.programs, MOCK_PROGRAMS));
+      setPrograms(load(KEYS.programs, preview!.MOCK_PROGRAMS));
       setProgramsLoaded(true);
       setProgramsLoadError(null);
-      setLeads(load(KEYS.leads, MOCK_LEADS));
+      setLeads(load(KEYS.leads, preview!.MOCK_LEADS));
       setLeadsLoaded(true);
       setLeadsLoadError(null);
       applyLadderSelection(hydratedLadderState.hydratedLadders, hydratedLadderState.eligibilityLadderId);
@@ -1072,9 +1106,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       );
       setEligibilityPendingLadderId(null);
       setEligibilityLoadError(null);
-      setTemplates(load(KEYS.templates, MOCK_CLASS_TEMPLATES));
-      setSessions(load(KEYS.sessions, MOCK_SESSIONS).sort(compareSessions));
-      setAttendance(load(KEYS.attendance, MOCK_ATTENDANCE));
+      setTemplates(load(KEYS.templates, preview!.MOCK_CLASS_TEMPLATES));
+      setSessions(load(KEYS.sessions, preview!.MOCK_SESSIONS).sort(compareSessions));
+      setAttendance(load(KEYS.attendance, preview!.MOCK_ATTENDANCE));
       setStudentsLoaded(true);
       setStudentsLoadError(null);
       setCurrentUser((current) => current ? {
@@ -1091,7 +1125,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     return () => {
       window.clearTimeout(timer);
     };
-  }, [setPrograms, setProgramsLoaded, applyLadderSelection, commitEligibilityRows, commitStudents, isPreviewMode, setSessions]);
+  }, [setStudentsLoaded, setPrograms, setProgramsLoaded, applyLadderSelection, commitEligibilityRows, commitStudents, isPreviewMode, preview, setSessions]);
 
   const previewEligibilityForLadder = useCallback((ladderId?: string | null): EligibilityEntry[] => {
     return buildPreviewEligibilityForLadder({
@@ -1099,10 +1133,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       beltLadders: beltLaddersRef.current,
       beltRanks: beltRanksRef.current,
       students: studentsRef.current,
-      seedRows: ladderId === MOCK_BELT_LADDER.id ? MOCK_ELIGIBILITY : [],
+      seedRows: ladderId === preview!.MOCK_BELT_LADDER.id ? preview!.MOCK_ELIGIBILITY : [],
       promotionHistoryByStudent: toPromotionHistoryByStudent(promotionHistoryCacheRef.current),
     });
-  }, []);
+  }, [preview]);
 
   const beltTests = useStoreBeltTestActions({
     scope: identityReady && !subscriptionRequired && activeUserId && currentStudioId && currentRole === "admin"
@@ -1219,15 +1253,19 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   // Belt Tracker owns its initial eligibility read.
   useEffect(() => {
-    if (pathname !== "/belt-tracker" || !identityReady || !currentLadderId
+    if (pathname !== "/belt-tracker" || !identityReady || !beltsHydratedRef.current
+      || requestedBeltRefreshGenerationRef.current !== beltRefreshGeneration || !currentLadderId
       || eligibilityLadderId === currentLadderId || eligibilityPendingLadderId
       || eligibilityLoadError) return;
     let current = true;
     queueMicrotask(() => {
-      if (current) void loadEligibilityForLadder(currentLadderId).catch(() => undefined);
+      if (current && beltsHydratedRef.current
+        && requestedBeltRefreshGenerationRef.current === beltRefreshGeneration) {
+        void loadEligibilityForLadder(currentLadderId).catch(() => undefined);
+      }
     });
     return () => { current = false; };
-  }, [pathname, identityReady, currentLadderId, eligibilityLadderId,
+  }, [beltRefreshGeneration, pathname, identityReady, currentLadderId, eligibilityLadderId,
     eligibilityPendingLadderId, eligibilityLoadError, loadEligibilityForLadder]);
 
   // Authentication and Data Fetching
@@ -1317,10 +1355,33 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         markPerformance("workspace.started");
         // Allow the server's 30s interactive budget plus response transfer time.
         const legalNameRead = { revision: selfLegalNameRevisionRef.current, epoch: identityEpochRef.current };
-        const workspaceData = await api.get<ApiDashboardWorkspaceResponse>("/dashboard/workspace", sessionToken, {
+        const readWorkspace = () => api.get<ApiDashboardWorkspaceResponse>("/dashboard/workspace", tokenRef.current ?? sessionToken, {
           timeoutMs: 35_000,
           timeoutMessage: "Workspace loading timed out. Please retry.",
         });
+        let workspaceData: ApiDashboardWorkspaceResponse;
+        try {
+          workspaceData = await readWorkspace();
+        } catch (error) {
+          const selectorDenied = error && typeof error === "object" && "status" in error
+            && Number(error.status) === 403 && !isStaffArchivedError(error);
+          if (!isInitializationCurrent() || !selectorDenied || !getActiveStudioIdCookie()) throw error;
+          // A redirect hint cannot prove that this selector is still a membership.
+          // Resolve once without it; only a verified workspace can restore access.
+          // The API proxy also reads this cookie, so omitting a browser header alone is insufficient.
+          clearActiveStudioIdCookie();
+          const profile = parseAuthProfileResponse(await api.get<unknown>(
+            "/auth/me", tokenRef.current ?? sessionToken, { omitStudioHeader: true }
+          ));
+          if (!isInitializationCurrent()) return;
+          if (profile.user.id !== session.user.id) throw new Error("Studio access could not be verified. Please retry.");
+          if (profile.membership_status !== "active" || !profile.studio_id) {
+            applyAuthoritativeNoStudioState(profile, session.user);
+            return;
+          }
+          syncStoredStudioSessionCookies(session.user.id, profile.studio_id, profile.membership_status);
+          workspaceData = await readWorkspace();
+        }
         markPerformance("workspace.finished");
         measurePerformance(
           "workspace.duration",
@@ -1350,7 +1411,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           setStudioLoadError(null);
           markPerformance("workspace.identity_ready");
           const initialPath = pathnameRef.current;
-          const view = initialBootstrapView(initialPath);
+          const view = initialBootstrapView(initialPath, {
+            isPreviewMode,
+            pagedRosterEnabled: process.env.NEXT_PUBLIC_STUDENTS_PAGED_ROSTER !== "false",
+          });
           if (!view) return;
           const includedDatasets = bootstrapDatasets(view);
           // The protected shell is now usable. Only the route's feature payload
@@ -1610,7 +1674,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       bootstrapRequestRef.current?.controller.abort();
       authListener?.subscription.unsubscribe();
     };
-  }, [setPrograms, setProgramsLoaded, applyAuthoritativeNoStudioState, applyLadderSelection, applySubscriptionRequiredState, beginLiveAuthRequest, clearPromotionHistoryCache, commitAuthoritativeAuthProfile, commitEligibilityRows, commitStudents, destructivelyResetScheduleCoordinator, initializationAttempt, isPreviewMode, markSubscriptionRequired, reconcileSchedule, refreshSchedule, resetLiveStudioState, retireHomePreferencesOwner, router, supabase]);
+  }, [setStudentsLoaded, setPrograms, setProgramsLoaded, applyAuthoritativeNoStudioState, applyLadderSelection, applySubscriptionRequiredState, beginLiveAuthRequest, clearPromotionHistoryCache, commitAuthoritativeAuthProfile, commitEligibilityRows, commitStudents, destructivelyResetScheduleCoordinator, initializationAttempt, isPreviewMode, markSubscriptionRequired, reconcileSchedule, refreshSchedule, resetLiveStudioState, retireHomePreferencesOwner, router, supabase]);
 
   // ── Persist helpers (for preview mode) ──
   const persistStudents = useCallback((next: Student[]) => {
@@ -1758,6 +1822,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     studentsRef,
   });
 
+  const invalidateConvertedStudent = useCallback(() => {
+    // Conversion returns a lead receipt, not a complete roster snapshot.
+    // Fence older reads and let the destination routes verify their own data.
+    studentsRevisionRef.current += 1;
+    studentMutationEpochRef.current += 1;
+    setStudentsMayBePartial(true);
+    setStudentsLastLoadedAt(null);
+    beltsHydratedRef.current = false;
+    setBeltRefreshGeneration(generation => generation + 1);
+    clearEligibilityState();
+  }, [clearEligibilityState]);
+
   const {
     addLead,
     leadCreate,
@@ -1784,7 +1860,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     persistLeads,
     persistStudents,
     programsRef,
-    refreshStudents,
+    invalidateConvertedStudent,
     setLeads,
     setLeadsLoaded,
     setLeadsLoadError,
@@ -1798,7 +1874,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     promoteStudent,
     setBeltRanks,
     setCurrentLadder,
-    refreshBeltLadders,
+    refreshBeltLadders: readBeltLadders,
   } = useStoreBeltActions({
     applyLadderSelection,
     beginLiveAuthRequest,
@@ -1821,6 +1897,49 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     studentsRef,
     subRankTerm,
   });
+
+  const refreshBeltLadders = useCallback(async (options?: { ifNeeded?: boolean }): Promise<{ ladders: readonly BeltLadder[] }> => {
+    if (isPreviewMode) return readBeltLadders();
+    const owner = beginLiveAuthRequest();
+    const pending = beltLaddersReadRef.current;
+    if (pending?.isCurrent()) return pending.promise;
+    if (options?.ifNeeded && beltLaddersLoadedRef.current) {
+      return Promise.resolve({ ladders: beltLaddersRef.current });
+    }
+    const revision = beltMetadataRevisionRef.current;
+    const promise = readBeltLadders().then(result => {
+      if (!owner.isSameIdentity()) throw new Error("Your workspace changed. Reload the belt choices.");
+      if (revision === beltMetadataRevisionRef.current) {
+        beltMetadataRevisionRef.current += 1;
+        const ladders = [...result.ladders];
+        const previousLadders = new Map(beltLaddersRef.current.map(ladder => [ladder.id, ladder]));
+        // The list carries each ladder's ranks, so a rank-only edit by another
+        // staff member must count as a change, not just names and terms.
+        const ladderSignature = (ladder: BeltLadder) => JSON.stringify([
+          ladder.name, ladder.sub_rank_term, ladder.updated_at ?? null, ladder.ranks ?? [],
+        ]);
+        if (ladders.length !== beltLaddersRef.current.length || ladders.some(ladder => {
+          const previous = previousLadders.get(ladder.id);
+          return !previous || ladderSignature(previous) !== ladderSignature(ladder);
+        })) {
+          // Metadata does not reconcile the selected plan's ranks and labels.
+          // Its normal route refresh must verify that snapshot on the next visit.
+          beltsHydratedRef.current = false;
+        }
+        beltLaddersLoadedRef.current = true;
+        beltLaddersRef.current = ladders;
+        setBeltLaddersState(ladders);
+        setBeltLaddersLoadError(null);
+      }
+      return result;
+    });
+    beltLaddersReadRef.current = { isCurrent: owner.isSameIdentity, promise };
+    const clear = () => {
+      if (beltLaddersReadRef.current?.promise === promise) beltLaddersReadRef.current = null;
+    };
+    void promise.then(clear, clear);
+    return promise;
+  }, [beginLiveAuthRequest, isPreviewMode, readBeltLadders]);
 
   // ── Schedule ──
   const {
@@ -1917,25 +2036,43 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   });
 
   useEffect(() => {
-    if (isPreviewMode || !identityReady || subscriptionRequired || initialFeaturePending) return;
+    if (isPreviewMode || !identityReady || !currentStudioId || !currentRole || subscriptionRequired || initialFeaturePending) return;
     const timer = window.setTimeout(() => {
-      if (pathname === "/belt-tracker" && !beltsHydratedRef.current) {
+      if (pathname === "/belt-tracker" && (!beltsHydratedRef.current
+        || requestedBeltRefreshGenerationRef.current !== beltRefreshGeneration)) {
+        // A bootstrap may hydrate metadata without consuming a conversion invalidation.
+        requestedBeltRefreshGenerationRef.current = beltRefreshGeneration;
         beltsHydratedRef.current = true;
         void refreshBeltsRef.current?.().catch(() => setBeltLaddersLoadError("Belt plans could not be loaded. Please retry."));
       }
       if (["/leads", "/reports"].includes(pathname) && !leadsLoaded && !leadsLoadError) {
         void refreshLeads().catch(() => undefined);
       }
-      const needsPrograms = ["/dashboard", "/settings", "/leads", "/reports", "/schedule", "/belt-tracker"].includes(pathname)
+      const needsPrograms = ["/settings", "/leads", "/reports", "/schedule", "/belt-tracker"].includes(pathname)
         || pathname === "/students" || pathname.startsWith("/students/");
       if (needsPrograms && !programsLoaded && !programsLoadError) {
         void refreshPrograms({ includeArchived: true }).catch(() => undefined);
       }
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [identityReady, initialFeaturePending, isPreviewMode, pathname, subscriptionRequired,
+  }, [beltRefreshGeneration, currentStudioId, currentRole, identityReady, initialFeaturePending, isPreviewMode, pathname, subscriptionRequired,
     studentsLoaded, studentsLoadError, leadsLoaded, leadsLoadError, programsLoaded, programsLoadError,
     refreshStudents, refreshLeads, refreshPrograms, refreshSchedule, scheduleStatus]);
+
+  // Access revocation disposes the resume listener immediately. Its version
+  // decision may authorize recovery later, only for the epoch that was cleared.
+  useEffect(() => {
+    if (!resumeInitialization) return;
+    let current = true;
+    const recovery = resumeInitialization;
+    void recovery.versionDecision.then(accepted => {
+      if (!current) return;
+      setResumeInitialization(value => value === recovery ? null : value);
+      if (accepted && initializationAttemptRef.current === recovery.attempt
+        && identityEpochRef.current === recovery.epoch) retryInitialization();
+    });
+    return () => { current = false; };
+  }, [resumeInitialization, retryInitialization]);
 
   useEffect(() => {
     if (isPreviewMode || !identityReady) return;
@@ -1943,10 +2080,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     let queued = false;
     let running = false;
     let refreshDataAllowed = true;
+    let versionAllowsRefresh: Promise<boolean> = Promise.resolve(true);
     async function drain() {
       if (disposed || running || !queued || pendingCommands()) return;
       queued = false;
       running = true;
+      const versionDecision = versionAllowsRefresh;
+      const mayRefreshData = refreshDataAllowed;
       let request: ReturnType<typeof beginLiveAuthRequest> | null = null;
       try {
         request = beginLiveAuthRequest();
@@ -1959,14 +2099,23 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         const profile = parseAuthProfileResponse(workspace.auth);
         if (profile.user.id !== authUserIdRef.current || profile.studio_id !== authoritativeStudioIdRef.current
           || profile.role !== currentRoleRef.current || profile.membership_status !== "active") {
-          // A changed access scope cannot reuse any of the previous scope's records.
-          clearStoredStudioSessionCookies();
-          resetLiveStudioState();
-          retryInitialization();
+          // Clear obsolete access immediately; a rejected build cannot start features.
+          if (profile.user.id === authUserIdRef.current
+            && (profile.membership_status !== "active" || !profile.studio_id)) {
+            applyAuthoritativeNoStudioState(profile, profile.user);
+          } else {
+            clearStoredStudioSessionCookies();
+            resetLiveStudioState();
+            setIdentityLoadError("Workspace access changed. Please retry.");
+            setResumeInitialization({ epoch: identityEpochRef.current, attempt: initializationAttemptRef.current, versionDecision });
+          }
           return;
         }
         if (pendingCommands() || queued) { queued = true; return; }
         if (subscriptionRequired) {
+          const versionAccepted = await versionDecision;
+          if (disposed || !request.isSameIdentity() || !versionAccepted) return;
+          if (pendingCommands() || queued) { queued = true; return; }
           clearSubscriptionRequired();
           retryInitialization();
           if (pathnameRef.current === "/subscription-required") router.replace("/dashboard");
@@ -1977,14 +2126,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         setStudioTimezone(workspace.studio?.timezone ?? "UTC");
         setStudioLoadError(null);
         syncStoredStudioSessionCookies(profile.user.id, profile.studio_id, profile.membership_status);
-        if (!refreshDataAllowed) return;
+        const versionAccepted = await versionDecision;
+        if (disposed || !request.isSameIdentity()) return;
+        if (pendingCommands() || queued) { queued = true; return; }
+        if (!mayRefreshData || !versionAccepted) return;
         if (pathnameRef.current === "/belt-tracker"
           || (pathnameRef.current.startsWith("/students/") && pathnameRef.current !== "/students/import")) {
           const owner = request;
-          void Promise.resolve(refreshBeltsRef.current?.()).then(async () => {
-            if (disposed || !owner.isSameIdentity()) return;
-            if (pathnameRef.current === "/belt-tracker") await loadEligibilityForLadder(currentLadderIdRef.current, { force: true, retainCurrent: true });
-          }).catch(() => {
+          void Promise.resolve(refreshBeltsRef.current?.(undefined, {
+            retainCurrent: true,
+            requireEligibility: pathnameRef.current === "/belt-tracker",
+          })).catch(() => {
             if (!disposed && owner.isSameIdentity()) setBeltLaddersLoadError("Belt plans could not be refreshed. Please retry.");
           });
         }
@@ -2001,7 +2153,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         } else if (isStaffArchivedError(error) || (error && typeof error === "object" && "status" in error && Number(error.status) === 403)) {
           clearStoredStudioSessionCookies();
           resetLiveStudioState();
-          retryInitialization();
+          setIdentityLoadError("Workspace access could not be verified. Please retry.");
+          setResumeInitialization({ epoch: identityEpochRef.current, attempt: initializationAttemptRef.current, versionDecision });
         } else {
           setStudioLoadError("Workspace refresh is unavailable. Your current work is retained. Please retry when connected.");
         }
@@ -2012,6 +2165,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
     const onResume = (event: Event) => {
       refreshDataAllowed = !(event instanceof CustomEvent && event.detail?.refreshData === false);
+      versionAllowsRefresh = event instanceof CustomEvent && event.detail?.versionAllowsRefresh
+        ? Promise.resolve(event.detail.versionAllowsRefresh).catch(() => false) : Promise.resolve(true);
       queued = true;
       void drain();
     };
@@ -2019,8 +2174,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     window.addEventListener(APP_RESUME_EVENT, onResume);
     return () => { disposed = true; unsubscribe(); window.removeEventListener(APP_RESUME_EVENT, onResume); };
   }, [beginLiveAuthRequest, commitAuthoritativeAuthProfile, identityReady, isPreviewMode,
-    clearSubscriptionRequired, loadEligibilityForLadder, markSubscriptionRequired,
-    resetLiveStudioState, retryInitialization, router, subscriptionRequired]);
+    clearSubscriptionRequired, markSubscriptionRequired,
+    applyAuthoritativeNoStudioState, resetLiveStudioState, retryInitialization, router, subscriptionRequired]);
 
   // These confirmed business commands affect dashboard facts. Billing commands
   // live outside this store. Home revalidates itself from the facts-changed mark.

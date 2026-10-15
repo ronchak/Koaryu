@@ -5,6 +5,8 @@ import { fileURLToPath } from "node:url";
 import ts from "typescript";
 // Mount the real provider and action hooks in Chromium. Only external I/O is replaced.
 // A tiny CommonJS packer avoids adding a second frontend build or test runtime.
+// TypeScript preserves import() timing as a deferred require, so preview mounts
+// exercise the real adapter promise and initialization gate without Next chunks.
 const require = createRequire(import.meta.url);
 const frontend = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 
@@ -67,6 +69,7 @@ export function createCommonJsPacker(stubs) {
 export function bundle(
   mode,
   {
+    resumeGuard = false,
     identityLifecycle = false,
     preview = false,
     pagedRoster = true,
@@ -171,10 +174,13 @@ export function bundle(
           "next/link": `exports.__esModule=true;exports.default=({children,href,prefetch,...props})=>require('react').createElement('a',{href:typeof href==='string'?href:href.pathname,...props},children);`,
         }
       : {}),
-    ...(beltPage === "editor"
+    ...(beltPage === "editor" || beltPage === "eligibility"
       ? {
           "@/components/header": `exports.Header=()=>null;`,
-          "@/components/belt-tracker/eligibility-panel": `exports.EligibilityPanel=exports.EligibilityLoading=()=>null;`,
+          "@/components/belt-tracker/eligibility-panel":
+            beltPage === "eligibility"
+              ? `exports.EligibilityLoading=()=>null;exports.EligibilityPanel=props=>require('react').createElement('div',{id:'belt-panel-eligibility','aria-busy':props.isEligibilityLoading});`
+              : `exports.EligibilityPanel=exports.EligibilityLoading=()=>null;`,
           "@/components/icons/martial-arts-belt": `exports.MartialArtsBelt=()=>null;`,
           "./belt-tracker.module.css": `module.exports={};`,
           "./sliding-segmented-control.module.css": `module.exports={};`,
@@ -330,6 +336,7 @@ window.fixture.renderStudentDetailSkeleton = (props) => {
   const react = add("react");
   const dom = add("react-dom/client");
   const store = add("@/lib/store");
+  const resume = resumeGuard ? add("@/components/app-resume-guard") : null;
   const pendingCommands = add("@/lib/pending-commands");
   const leads = leadsPage ? add("@/app/(dashboard)/leads/page") : null;
   const programs = programsSection ? add("@/components/settings/programs-section") : null;
@@ -349,7 +356,7 @@ window.fixture.renderStudentDetailSkeleton = (props) => {
   const homeObserver =
     home === null
       ? ""
-      : `window.fixture.markFacts=require(${add("@/lib/dashboard-freshness")}).markDashboardFactsChanged;function HomeObserver(){${homePage ? `React.useLayoutEffect(()=>{(window.fixture.homeFirstFrames??=[]).push({status:document.querySelector('[data-home-status]')?.dataset.homeStatus,placeholders:document.querySelectorAll('[data-home-placeholder]').length});},[]);` : ""}${homePage ? `return React.createElement(require(${homePageModule}).HomePage);` : `const state=require(${home}).useHome();window.fixture.home=state;window.fixture.homeRenders.push({status:state.status,payload:state.payload,error:state.error,asOf:state.asOf,isRevalidating:state.isRevalidating});return null;`}}function HomeMount(){const store=useStore();const [mounted,setMounted]=React.useState(window.fixture.homeMounted!==false);window.fixture.mountHome=()=>setMounted(true);window.fixture.unmountHome=()=>setMounted(false);const scope=store.identityReady?store.identityGeneration+':'+store.currentUserId+':'+store.currentStudioId:null;return React.createElement(require(${add("@/lib/retained-state")}).RetainedStateProvider,{scope},mounted${homePage ? "&&store.identityReady" : ""}?React.createElement(HomeObserver):null);}`;
+      : `window.fixture.markFacts=require(${add("@/lib/dashboard-freshness")}).markDashboardFactsChanged;function HomeObserver(){window.fixture.homeRetainedStore=require(${add("@/lib/retained-state")}).useRetainedStore();${homePage ? `React.useLayoutEffect(()=>{(window.fixture.homeFirstFrames??=[]).push({status:document.querySelector('[data-home-status]')?.dataset.homeStatus,placeholders:document.querySelectorAll('[data-home-placeholder]').length});},[]);` : ""}${homePage ? `return React.createElement(require(${homePageModule}).HomePage);` : `const state=require(${home}).useHome();window.fixture.home=state;window.fixture.homeRenders.push({status:state.status,payload:state.payload,error:state.error,asOf:state.asOf,isRevalidating:state.isRevalidating});return null;`}}function HomeMount(){const store=useStore();const [mounted,setMounted]=React.useState(window.fixture.homeMounted!==false);window.fixture.mountHome=()=>setMounted(true);window.fixture.unmountHome=()=>setMounted(false);const scope=store.identityReady?store.identityGeneration+':'+store.currentUserId+':'+store.currentStudioId:null;return React.createElement(require(${add("@/lib/retained-state")}).RetainedStateProvider,{scope},mounted${homePage ? "&&store.identityReady" : ""}?React.createElement(HomeObserver):null);}`;
   const belt = beltPage ? add("@/app/(dashboard)/belt-tracker/page") : null;
   const leadHook = leadController ? add("@/lib/leads-page-controller") : null;
   const leadModal = leadController ? add("@/components/leads/add-lead-modal") : null;
@@ -387,5 +394,5 @@ selected?React.createElement(require(${leadInspector}).LeadDetailInspector,{lead
     legacyBootstrapFixture && !realApi && !preview
       ? `const originalGet=window.fixture.api.get.bind(window.fixture.api);let projected;window.fixture.api.get=async(path,...args)=>{if(path==='/dashboard/workspace'){projected=await originalGet('/dashboard/bootstrap?allow_partial=true',...args);return projected;}if(path.startsWith('/dashboard/bootstrap?'))return projected;return originalGet(path,...args);};`
       : "";
-  return `(()=>{${legacyAdapter}const process={env:{NODE_ENV:${mode === "development" ? '"development"' : '"production"'},NEXT_PUBLIC_STUDENTS_PAGED_ROSTER:${pagedRoster ? '"true"' : '"false"'},NEXT_PUBLIC_PREVIEW_MODE:${preview ? '"true"' : '"false"'}}};const modules=[${modules.join(",")}],cache={};function require(id){if(cache[id])return cache[id].exports;const module=cache[id]={exports:{}};modules[id](module,module.exports,require);return module.exports;}const React=require(${react});window.fixture.beginPendingCommand=require(${pendingCommands}).beginPendingCommand;const {StoreProvider,useStore}=require(${store});${scheduleObserver}${homeObserver}${detailObserver}${rosterObserver}${formObserver}${leadObserver}function Observer(){const store=useStore();window.fixture.store=store;React.useEffect(()=>{window.fixture.observations.push({role:store.currentRole,ready:store.staffProfilesAvailable,user:store.currentUserId,studio:store.currentStudioId});});return React.createElement('output',null,store.staffProfilesAvailable?'ready':'pending');}window.fixture.root=require(${dom}).createRoot(document.getElementById('root'));window.fixture.root.render(React.createElement(${mode === "development" ? "React.StrictMode" : "React.Fragment"},null,React.createElement(${provider},null,React.createElement(Observer),${leads === null ? "null" : `React.createElement(require(${leads}).default)`},${programs === null ? "null" : `React.createElement(require(${programs}).ProgramsSection)`},${staff === null ? "null" : `React.createElement(require(${staff}).StaffRolesSection)`},${subscription === null ? "null" : `React.createElement(require(${subscription}).default)`},${schedule === null ? "null" : "React.createElement(ScheduleMount)"},${home === null ? "null" : "React.createElement(HomeMount)"},${leadHook === null ? "null" : "React.createElement(LeadControllerFixture)"},${form === null ? "null" : "React.createElement(StudentFormFixture)"},${roster === null ? "null" : "React.createElement(RosterMount)"},${detail === null ? "null" : "React.createElement(DetailMount)"},${belt === null ? "null" : `React.createElement(require(${belt}).default)`})));})();`;
+  return `(()=>{${legacyAdapter}const process={env:{NODE_ENV:${mode === "development" ? '"development"' : '"production"'},NEXT_PUBLIC_STUDENTS_PAGED_ROSTER:${pagedRoster ? '"true"' : '"false"'},NEXT_PUBLIC_PREVIEW_MODE:${preview ? '"true"' : '"false"'}}};const modules=[${modules.join(",")}],cache={};function require(id){if(cache[id])return cache[id].exports;const module=cache[id]={exports:{}};modules[id](module,module.exports,require);return module.exports;}const React=require(${react});window.fixture.beginPendingCommand=require(${pendingCommands}).beginPendingCommand;const {StoreProvider,useStore}=require(${store});${scheduleObserver}${homeObserver}${detailObserver}${rosterObserver}${formObserver}${leadObserver}function Observer(){const store=useStore();window.fixture.store=store;React.useEffect(()=>{window.fixture.observations.push({role:store.currentRole,ready:store.staffProfilesAvailable,user:store.currentUserId,studio:store.currentStudioId});});return React.createElement('output',null,store.staffProfilesAvailable?'ready':'pending');}window.fixture.root=require(${dom}).createRoot(document.getElementById('root'));window.fixture.root.render(React.createElement(${mode === "development" ? "React.StrictMode" : "React.Fragment"},null,React.createElement(${provider},null,React.createElement(Observer),${resume === null ? "null" : `React.createElement(require(${resume}).AppResumeGuard,{loaded:{environment:"production",commit_sha:"a".repeat(40)}})`},${leads === null ? "null" : `React.createElement(require(${leads}).default)`},${programs === null ? "null" : `React.createElement(require(${programs}).ProgramsSection)`},${staff === null ? "null" : `React.createElement(require(${staff}).StaffRolesSection)`},${subscription === null ? "null" : `React.createElement(require(${subscription}).default)`},${schedule === null ? "null" : "React.createElement(ScheduleMount)"},${home === null ? "null" : "React.createElement(HomeMount)"},${leadHook === null ? "null" : "React.createElement(LeadControllerFixture)"},${form === null ? "null" : "React.createElement(StudentFormFixture)"},${roster === null ? "null" : "React.createElement(RosterMount)"},${detail === null ? "null" : "React.createElement(DetailMount)"},${belt === null ? "null" : `React.createElement(require(${belt}).default)`})));})();`;
 }

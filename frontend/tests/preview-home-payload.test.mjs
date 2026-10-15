@@ -4,7 +4,9 @@ import { describe, it } from "node:test";
 
 register("./helpers/path-alias-loader.mjs", import.meta.url);
 
-const { buildPreviewHomePayload } = await import("../src/lib/dashboard/preview-home-payload.ts");
+const {
+  previewAdapter: { buildPreviewHomePayload },
+} = await import("../src/lib/preview-adapter.ts");
 const {
   MOCK_ATTENDANCE,
   MOCK_CLASS_TEMPLATES,

@@ -79,3 +79,33 @@ describe("studio state cookie membership status", () => {
     }
   });
 });
+
+for (const status of ["active", "archived", "none"]) {
+  it(`browser expires ${status} redirect state after ${status === "active" ? "12 hours" : "5 minutes"}`, () => {
+    const writes = [];
+    let now = 0;
+    let expires = 0;
+    let stored = "";
+    globalThis.window = { location: { protocol: "https:" } };
+    globalThis.document = {};
+    Object.defineProperty(document, "cookie", {
+      get: () => (now < expires ? stored : ""),
+      set: (value) => {
+        writes.push(value);
+        expires = now + Number(value.match(/Max-Age=(\d+)/)[1]) * 1000;
+        stored = value.split(";")[0];
+      },
+    });
+    try {
+      setStudioStateCookie("user-1", status === "active", status);
+      assert.match(writes[0], new RegExp(`Max-Age=${status === "active" ? 43200 : 300}(?:;|$)`));
+      now = 300000;
+      assert.equal(Boolean(document.cookie), status === "active");
+      now = 43200000;
+      assert.equal(document.cookie, "");
+    } finally {
+      delete globalThis.document;
+      delete globalThis.window;
+    }
+  });
+}

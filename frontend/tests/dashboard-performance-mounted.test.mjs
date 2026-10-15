@@ -296,29 +296,24 @@ test("Home synthetic request and payload measurements", async (t) => {
       const paths = await page.evaluate(() => fixture.requests.map((r) => r.path));
       assert.deepEqual(
         paths.map((path) => path.split("?")[0]),
-        ["/dashboard/workspace", "/dashboard/bootstrap", "/dashboard/home"],
+        ["/dashboard/workspace", "/dashboard/home"],
       );
-      assert.equal(new URL(paths[1], "http://fixture.local").searchParams.get("view"), "home");
       assert.equal(cold.eligibility_reads, 0);
       assert.equal(cold.students_in_store, 0);
       assert.equal(cold.leads_in_store, 0);
       assert.ok(cold.serialized_response_bytes > 0);
-      assert.ok(
-        cold.bootstrap_response_bytes < 2000,
-        "Home bootstrap carries metadata, not full rosters",
-      );
+      assert.equal(cold.bootstrap_response_bytes, null, "Home requests no bootstrap payload");
       await page.evaluate(() => fixture.unmountHome());
       await settle(page);
       const offset = await page.evaluate(() => fixture.requests.length);
       await page.evaluate(() => fixture.mountHome());
-      await page.waitForFunction((start) => fixture.requests.length > start, offset);
       await settle(page);
       assert.deepEqual(
         await page.evaluate(
           (start) => fixture.requests.slice(start).map((r) => r.path.split("?")[0]),
           offset,
         ),
-        ["/dashboard/home"],
+        [],
       );
       t.diagnostic(
         JSON.stringify({
@@ -360,7 +355,7 @@ regression("Home defers full lead collection until navigation to Leads", async (
     assert.equal(await page.evaluate(() => fixture.store.leadsLoaded), false);
     assert.deepEqual(
       await page.evaluate(() => fixture.requests.map((request) => request.path.split("?")[0])),
-      ["/dashboard/workspace", "/dashboard/bootstrap", "/dashboard/home"],
+      ["/dashboard/workspace", "/dashboard/home"],
     );
     const offset = await page.evaluate(() => fixture.requests.length);
     await page.evaluate(() => fixture.navigate("/leads"));
@@ -371,7 +366,7 @@ regression("Home defers full lead collection until navigation to Leads", async (
         (start) => fixture.requests.slice(start).map((request) => request.path.split("?")[0]),
         offset,
       ),
-      ["/leads"],
+      ["/leads", "/programs"],
     );
     assert.equal((await stats(page)).full_lead_reads, 1);
     assert.equal(await page.evaluate(() => fixture.store.leads.length), 5000);

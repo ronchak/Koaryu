@@ -67,7 +67,10 @@ export interface StoreContextValue {
   identityLoadError: string | null;
   studioLoadError: string | null;
   beltLaddersLoadError: string | null;
-  refreshBeltLadders: () => Promise<{ ladders: readonly BeltLadder[] }>;
+  /** Metadata only. Reuse successful metadata for display when ifNeeded is true. */
+  refreshBeltLadders: (options?: {
+    ifNeeded?: boolean;
+  }) => Promise<{ ladders: readonly BeltLadder[] }>;
   retryInitialization: () => void;
   subscriptionRequired: boolean;
   markSubscriptionRequired: () => void;
@@ -122,7 +125,12 @@ export interface StoreContextValue {
   programsUsageLoaded: boolean;
   programsUsageLoadError: string | null;
   programsLoadError: string | null;
-  refreshPrograms: (options?: { includeArchived?: boolean; force?: boolean }) => Promise<Program[]>;
+  // includeUsage false refreshes rows only; it never certifies usage readiness.
+  refreshPrograms: (options?: {
+    includeArchived?: boolean;
+    force?: boolean;
+    includeUsage?: boolean;
+  }) => Promise<Program[]>;
   createProgram: (data: ProgramCreate) => Promise<Program>;
   updateProgram: (id: string, data: ProgramUpdate) => Promise<Program>;
   archiveProgram: (id: string) => Promise<Program>;

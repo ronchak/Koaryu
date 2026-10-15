@@ -67,7 +67,7 @@ interface UseStoreLeadActionsOptions {
   persistLeads: (next: Lead[]) => void;
   persistStudents: (next: Student[]) => void;
   programsRef: StoreRef<Program[]>;
-  refreshStudents: () => Promise<Student[]>;
+  invalidateConvertedStudent: () => void;
   setLeads: Dispatch<SetStateAction<Lead[]>>;
   setLeadsLoaded: Dispatch<SetStateAction<boolean>>;
   setLeadsLoadError: Dispatch<SetStateAction<string | null>>;
@@ -88,7 +88,7 @@ export function useStoreLeadActions({
   persistLeads,
   persistStudents,
   programsRef,
-  refreshStudents,
+  invalidateConvertedStudent,
   setLeads,
   setLeadsLoaded,
   setLeadsLoadError,
@@ -498,12 +498,7 @@ export function useStoreLeadActions({
         }
 
         publishLead(leadId, result);
-        try {
-          await refreshStudents();
-        } catch (error) {
-          console.error("Failed to refresh students after lead conversion", error);
-        }
-        onStudentMutation();
+        invalidateConvertedStudent();
 
         return {
           lead: result,
@@ -526,7 +521,7 @@ export function useStoreLeadActions({
       persistStudents,
       programsRef,
       publishLead,
-      refreshStudents,
+      invalidateConvertedStudent,
       studentsRef,
     ],
   );
@@ -561,17 +556,8 @@ export function useStoreLeadActions({
           liveRequest.token,
         );
         if (!ownsMutation()) return { lead: result, reconciliation: "stale" };
-        const refreshConvertedStudents = async () => {
-          if (!ownsMutation()) return;
-          try {
-            await refreshStudents();
-          } catch (error) {
-            console.error("Failed to refresh students after lead follow-up", error);
-          }
-          if (ownsMutation()) onStudentMutation();
-        };
+        if (command.next_stage === "enrolled") invalidateConvertedStudent();
         if (options?.replay) {
-          if (command.next_stage === "enrolled") void refreshConvertedStudents();
           // A receipt is historical. Read this row after confirmation while the
           // mutation fence keeps list snapshots out. This GET does not wait for
           // unrelated lead mutations, and a read failure is not a failed write.
@@ -622,7 +608,6 @@ export function useStoreLeadActions({
           }
         }
         publishLead(leadId, result);
-        if (command.next_stage === "enrolled") await refreshConvertedStudents();
         return { lead: result, currentLead: result, reconciliation: "ready" };
       } finally {
         finishMutation();
@@ -635,10 +620,9 @@ export function useStoreLeadActions({
       isPreviewMode,
       leadMutationScopeRef,
       leadsRef,
-      onStudentMutation,
       persistLeads,
       publishLead,
-      refreshStudents,
+      invalidateConvertedStudent,
     ],
   );
 
