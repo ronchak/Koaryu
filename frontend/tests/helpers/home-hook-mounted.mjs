@@ -207,6 +207,19 @@ export async function mountHome(browser, options = {}) {
     });
   await page.addScriptTag({ content: sources.get(key) });
   await flush(page);
+  if (preview) {
+    // The adapter suspends before the store mounts. React's Suspense retry uses
+    // a timer, so let the paused fixture clock run until the provider exists.
+    // Observe a committed effect: a render can publish store before Suspense reveals it.
+    for (let attempt = 0; attempt < 40; attempt++) {
+      if (await page.evaluate(() => window.fixture.observations.length > 0)) break;
+      await tick(page, 25);
+    }
+    assert.ok(
+      await page.evaluate(() => window.fixture.observations.length > 0),
+      "preview provider did not commit",
+    );
+  }
   return { page, errors };
 }
 

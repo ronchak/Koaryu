@@ -37,6 +37,7 @@ function bundle({
   const controller = add("@/lib/billing-data-controller");
   const retainedState = retained ? add("@/lib/retained-state") : null;
   const pageHook = pageController ? add("@/lib/billing-page-controller") : null;
+  const previewLoader = pageController ? add("@/lib/preview-adapter-loader") : null;
   const pageContent = pageController ? add("@/components/billing/billing-page-content") : null;
   const refund = refunds ? add("@/lib/billing-refund-controller") : null;
   const reports = refunds ? add("@/components/billing/billing-reports-tab") : null;
@@ -52,7 +53,7 @@ function bundle({
   const mounted = retained
     ? `function App(){const [instance,setInstance]=React.useState(0);window.fixture.remount=()=>setInstance(n=>n+1);const studio=window.fixture.pageOptions?.studioStore;const scope=studio?[studio.currentUserId,studio.currentStudioId,studio.identityGeneration].join(':'):window.fixture.options.identityKey;return React.createElement(require(${retainedState}).RetainedStateProvider,{scope},React.createElement(Observer,{key:instance}));}window.fixture.root=require(${dom}).createRoot(document.getElementById('root'));window.fixture.render=()=>window.fixture.root.render(React.createElement(App));window.fixture.render();`
     : `window.fixture.root=require(${dom}).createRoot(document.getElementById('root'));window.fixture.render=()=>window.fixture.root.render(React.createElement(Observer));window.fixture.remount=()=>{window.fixture.root.unmount();window.fixture.root=require(${dom}).createRoot(document.getElementById('root'));window.fixture.render();};window.fixture.render();`;
-  return `(()=>{const process={env:{NODE_ENV:'production'}};const modules=[${modules.join(",")}],cache={};function require(id){if(cache[id])return cache[id].exports;const module=cache[id]={exports:{}};modules[id](module,module.exports,require);return module.exports;}const React=require(${react});const {useBillingDataController}=require(${controller});${observer}${mounted}})();`;
+  return `(async()=>{const process={env:{NODE_ENV:'production',NEXT_PUBLIC_PREVIEW_MODE:window.fixture.pageOptions?.config.isPreviewMode?'true':'false'}};const modules=[${modules.join(",")}],cache={};function require(id){if(cache[id])return cache[id].exports;const module=cache[id]={exports:{}};modules[id](module,module.exports,require);return module.exports;}const React=require(${react});const {useBillingDataController}=require(${controller});${previewLoader === null ? "" : `if(process.env.NEXT_PUBLIC_PREVIEW_MODE==='true')await require(${previewLoader}).loadPreviewAdapter();`}${observer}${mounted}})();`;
 }
 
 async function mountBillingFixture(browser, { retained = false } = {}) {

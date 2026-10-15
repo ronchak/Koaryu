@@ -5,6 +5,8 @@ import { fileURLToPath } from "node:url";
 import ts from "typescript";
 // Mount the real provider and action hooks in Chromium. Only external I/O is replaced.
 // A tiny CommonJS packer avoids adding a second frontend build or test runtime.
+// TypeScript preserves import() timing as a deferred require, so preview mounts
+// exercise the real adapter promise and initialization gate without Next chunks.
 const require = createRequire(import.meta.url);
 const frontend = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 

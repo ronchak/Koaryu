@@ -25,6 +25,8 @@ Required variables:
 - `ACCOUNT_DELETION_WORKER_SECRET`: server-only secret used by the Vercel Cron route when it calls the protected Render account-deletion worker
 - `NEXT_PUBLIC_USE_API_PROXY` (optional): set to `true` only when browser API calls should go through the Next.js proxy route instead of directly using `NEXT_PUBLIC_API_URL`
 - `NEXT_PUBLIC_PREVIEW_MODE` (optional): set to `true` for static preview/demo data instead of live auth and backend bootstrapping
+
+Preview fixtures, including Billing, load through one adapter before the preview store initializes. The literal build-time flag guards its dynamic import; live builds omit the adapter and sample records. Home builds its preview payload from that adapter's fixtures. Mounted tests preserve the asynchronous import boundary in the CommonJS packer; standalone Billing fixtures explicitly await the same adapter before mounting. The paused Home harness advances its controlled clock through the Suspense retry until the provider commits.
 - `NEXT_PUBLIC_STUDENTS_PAGED_ROSTER` (optional): defaults to `true`; set to `false` as a rollback switch for the backend-paginated Students roster
 - `NEXT_PUBLIC_KOARYU_PERFORMANCE_DEBUG` (optional): set to `true` temporarily to log Koaryu performance marks and Web Vitals in production
 
