@@ -5,8 +5,13 @@ import unittest
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
+from fastapi import HTTPException
+
 from app.schemas.billing import StudioPaymentAccountResponse
+from app.services.billing_connect_accounts import BillingConnectAccountStore
 from app.services.billing_system_status import BillingSystemStatusReporter
+from app.services.stripe_mutation_policy import StripeMutationPolicy
+from app.services.studio_live_billing_authorizations import StudioLiveBillingAuthorizationStore
 from tests.fakes.billing_reads import (
     BillingReadSupabase as RpcBackedSupabase,
     BillingReadSupabase as TableBackedSupabase,
@@ -96,6 +101,7 @@ def _settings(
             "STRIPE_MODE": stripe_mode,
             "LIVE_BILLING_ENABLED": live_billing_enabled,
             "CORE_SELF_CHECKOUT_ENABLED": core_self_checkout_enabled,
+            "BILLING_PLATFORM_FEE_BPS": 0,
             "STRIPE_SECRET_KEY": secret_key,
             "STRIPE_KOARYU_CORE_PRICE_ID": "price_core",
             "STRIPE_PLATFORM_WEBHOOK_SECRET": "whsec_platform",
@@ -131,6 +137,109 @@ def _processed_event(
 
 
 class BillingSystemStatusReporterTest(unittest.TestCase):
+    def query_budget_reporter(self):
+        supabase = _LiveGrantSupabase(
+            {
+                "studio_payment_accounts": [_ready_account().model_dump()],
+                "studio_live_billing_authorizations": [
+                    {
+                        "studio_id": "studio_1",
+                        "scope": "connect_payments",
+                        "enabled": True,
+                        "allowed_operations": [
+                            "connected_capability.readiness",
+                            "connected_refund.create",
+                        ],
+                    }
+                ],
+                "stripe_events": [],
+            },
+            begin=False,
+        )
+        settings = _settings(live_billing_enabled=True)
+        accounts = BillingConnectAccountStore(supabase, settings=settings)
+
+        async def load_account(studio_id):
+            return accounts.response(accounts.ensure_row(studio_id))
+
+        return BillingSystemStatusReporter(
+            supabase,
+            settings=settings,
+            connect_accounts=accounts,
+            payment_account_loader=load_account,
+        )
+
+    def test_live_status_reads_account_once_and_probes_payment_eligibility_once(self):
+        reporter = self.query_budget_reporter()
+        with patch.dict("os.environ", {"RENDER_GIT_COMMIT": "a" * 40}, clear=False):
+            response = asyncio.run(reporter.get_system_status("studio_1"))
+
+        self.assertTrue(response.live_payments_authorized)
+        self.assertTrue(response.mutation_capabilities.connect_payments)
+        self.assertEqual(
+            next(c.status for c in response.checks if c.name == "Stripe outbound mutations"),
+            "pass",
+        )
+        # The account load and the separate connectivity probe are the only
+        # table reads. All three payment UI fields share one atomic RPC result.
+        self.assertEqual(
+            [(q["table"], q["columns"]) for q in reporter.supabase.query_log],
+            [("studio_payment_accounts", "*"), ("studio_payment_accounts", "studio_id")],
+        )
+        readiness = [
+            params
+            for name, params in reporter.supabase.rpc_calls
+            if name == "authorize_studio_live_billing_mutation_atomic"
+            and params["p_operation"] == "connected_capability.readiness"
+        ]
+        self.assertEqual(len(readiness), 1)
+        self.assertEqual(readiness[0]["p_studio_id"], "studio_1")
+        self.assertEqual(readiness[0]["p_stripe_connected_account_id"], "acct_1")
+
+    def test_eligibility_is_rechecked_for_next_status_and_actual_mutation(self):
+        reporter = self.query_budget_reporter()
+        with patch.dict("os.environ", {"RENDER_GIT_COMMIT": "a" * 40}, clear=False):
+            first = asyncio.run(reporter.get_system_status("studio_1"))
+            reporter.supabase.tables["studio_live_billing_authorizations"] = []
+            policy = StripeMutationPolicy(
+                reporter.settings,
+                authorization_store=StudioLiveBillingAuthorizationStore(reporter.supabase),
+            )
+            with self.assertRaises(HTTPException):
+                policy.issue_permit(
+                    "connected_refund.create", studio_id="studio_1", account_id="acct_1"
+                )
+            second = asyncio.run(reporter.get_system_status("studio_1"))
+
+        self.assertTrue(first.live_payments_authorized)
+        self.assertFalse(second.live_payments_authorized)
+        self.assertFalse(second.mutation_capabilities.connect_payments)
+        self.assertFalse(second.ready_for_live_payments)
+        self.assertEqual(
+            next(c.status for c in second.checks if c.name == "Stripe outbound mutations"),
+            "fail",
+        )
+
+    def test_eligibility_uses_refreshed_account_mapping(self):
+        reporter = self.query_budget_reporter()
+
+        async def refresh_account(studio_id):
+            row = reporter.supabase.tables["studio_payment_accounts"][0]
+            row["stripe_connected_account_id"] = "acct_refreshed"
+            return reporter.connect_accounts.response(row)
+
+        reporter.payment_account_loader = refresh_account
+        with patch.dict("os.environ", {"RENDER_GIT_COMMIT": "a" * 40}, clear=False):
+            response = asyncio.run(reporter.get_system_status("studio_1"))
+        readiness = [
+            params["p_stripe_connected_account_id"]
+            for name, params in reporter.supabase.rpc_calls
+            if name == "authorize_studio_live_billing_mutation_atomic"
+            and params["p_operation"] == "connected_capability.readiness"
+        ]
+        self.assertEqual(readiness, ["acct_refreshed"])
+        self.assertEqual(response.payment_account.stripe_connected_account_id, "acct_refreshed")
+
     def reporter(
         self, tables: dict, *, secret_key: str = TEST_STRIPE_LIVE_KEY
     ) -> BillingSystemStatusReporter:

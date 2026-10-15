@@ -71,8 +71,6 @@ class BillingSystemStatusReporter:
                 )
             )
 
-        self._add_configuration_checks(add_check, studio_id=studio_id)
-
         try:
             account_response = await self.payment_account_loader(studio_id)
             account_failed = False
@@ -106,6 +104,25 @@ class BillingSystemStatusReporter:
                     f"Could not read the stored Stripe Connect account. Reference: {fallback_error_id}",
                 )
 
+        stripe_mode = configured_stripe_mode(self.settings)
+        account_id = account_response.stripe_connected_account_id
+        authorization_store = StudioLiveBillingAuthorizationStore(self.supabase)
+        mutation_policy = StripeMutationPolicy(
+            self.settings,
+            authorization_store=authorization_store,
+        )
+        # One fresh eligibility check serves this response's diagnostic and UI
+        # fields. Reuse the account just loaded/refreshed, not two more SELECTs.
+        # Nothing survives this call; provider mutations still issue their own permits.
+        connect_payments_authorized = self._mutation_authorized(
+            mutation_policy,
+            "connected_capability.readiness",
+            studio_id,
+            account_id,
+        )
+        live_payments_authorized = stripe_mode == "live" and connect_payments_authorized
+        self._add_configuration_checks(add_check, live_payments_authorized=live_payments_authorized)
+
         if not account_failed:
             self._add_connect_account_checks(add_check, account_response)
 
@@ -132,18 +149,7 @@ class BillingSystemStatusReporter:
         )
         self._add_webhook_checks(add_check, platform_webhooks, connect_webhooks)
 
-        stripe_mode = configured_stripe_mode(self.settings)
         ready_for_configured_mode = all(check.status == "pass" for check in checks)
-        authorization_store = StudioLiveBillingAuthorizationStore(self.supabase)
-        live_payments_authorized = StripeMutationPolicy(
-            self.settings,
-            authorization_store=authorization_store,
-        ).live_payments_authorized(studio_id=studio_id)
-        account_id = account_response.stripe_connected_account_id
-        mutation_policy = StripeMutationPolicy(
-            self.settings,
-            authorization_store=authorization_store,
-        )
         onboarding_authorization_store = authorization_store
         live_billing_enabled = getattr(self.settings, "LIVE_BILLING_ENABLED", False) is True
         onboarding_preflight_state = (
@@ -180,12 +186,7 @@ class BillingSystemStatusReporter:
                 None,
             ),
             connect_onboarding=connect_onboarding_authorized,
-            connect_payments=self._mutation_authorized(
-                mutation_policy,
-                "connected_capability.readiness",
-                studio_id,
-                account_id,
-            ),
+            connect_payments=connect_payments_authorized,
         )
         allowed_operations = (
             authorization_store.supported_operations(studio_id=studio_id)
@@ -293,7 +294,9 @@ class BillingSystemStatusReporter:
         platform, connected = self.webhook_health_pair(account_id)
         return connected if account_id else platform
 
-    def _add_configuration_checks(self, add_check: Callable[..., None], *, studio_id: str) -> None:
+    def _add_configuration_checks(
+        self, add_check: Callable[..., None], *, live_payments_authorized: bool
+    ) -> None:
         stripe_mode = configured_stripe_mode(self.settings)
         add_check(
             "Stripe mode and API key",
@@ -302,10 +305,6 @@ class BillingSystemStatusReporter:
             if stripe_mode is not None
             else "STRIPE_MODE is missing or does not match STRIPE_SECRET_KEY.",
         )
-        live_payments_authorized = StripeMutationPolicy(
-            self.settings,
-            authorization_store=StudioLiveBillingAuthorizationStore(self.supabase),
-        ).live_payments_authorized(studio_id=studio_id)
         mutations_authorized = stripe_mode == "test" or (
             stripe_mode == "live" and live_payments_authorized
         )
