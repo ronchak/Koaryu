@@ -2,18 +2,20 @@
 
 import { useResumeRefresh } from "@/lib/use-resume-refresh";
 
-import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { toLocalDateKey } from "@/lib/date";
 import { useRetainedState } from "@/lib/retained-state";
 import type { ClassFormInitialValues, ClassFormSubmitPayload } from "@/lib/class-form-model";
 import {
   beginSessionAttendanceRefresh,
   clearSessionAttendanceRefresh,
+  countUnmaterializedRecurringSlots,
   DEFAULT_SCHEDULE_PAGE_VIEW,
   getActiveScheduleStudents,
   createAttendanceToggleQueue,
+  getScheduleLoadRange,
   getScheduleSessionAttendance,
-  getVisibleScheduleRange,
+  resolveScheduleLoadRange,
   isCompleteScheduleRoster,
   isSessionAttendanceReady,
   navigateScheduleDate,
@@ -124,8 +126,29 @@ export function useSchedulePageController({
   const [createClassError, setCreateClassError] = useState<string | null>(null);
   const [rangeLoadAttempt, setRangeLoadAttempt] = useState(0);
   const [attendanceRefreshAttempt, setAttendanceRefreshAttempt] = useState(0);
-  const resumedRangeRef = useRef<string | null>(null);
+  // The read of a window that has settled, as `${rangeKey}#${attempt}`; recurring
+  // slots it left ungenerated are materialized once per such read.
+  const [settledReadToken, setSettledReadToken] = useState<string | null>(null);
+  const materializedTokenRef = useRef<string | null>(null);
+  // The read and the materialization of one window overlap with navigation; the
+  // window reads as refreshing while any request for it is in flight.
+  const refreshCountsRef = useRef(new Map<string, number>());
   const [refreshingRangeKey, setRefreshingRangeKey] = useState<string | null>(null);
+  const beginRangeRefresh = useCallback((key: string) => {
+    const counts = refreshCountsRef.current;
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+    setRefreshingRangeKey(key);
+  }, []);
+  const endRangeRefresh = useCallback((key: string) => {
+    const counts = refreshCountsRef.current;
+    const remaining = (counts.get(key) ?? 1) - 1;
+    if (remaining > 0) {
+      counts.set(key, remaining);
+      return;
+    }
+    counts.delete(key);
+    setRefreshingRangeKey((current) => (current === key ? null : current));
+  }, []);
   const [scheduleLoadError, setScheduleLoadError] = useState<string | null>(null);
   const [attendanceError, setAttendanceError] = useState<string | null>(null);
   const [studentRosterLoadError, setStudentRosterLoadError] = useState<string | null>(null);
@@ -154,18 +177,21 @@ export function useSchedulePageController({
     }
   }
 
-  const visibleRange = useMemo(
-    () => getVisibleScheduleRange(currentDate, view),
-    [currentDate, view],
-  );
+  // The page loads the month grid around its date and keeps that window while
+  // the view stays inside it, so Day and Week steps and view switches there,
+  // even across a month boundary, never wait on a request.
+  const [storedLoadRange, setStoredLoadRange] = useState(() => getScheduleLoadRange(currentDate));
+  const loadRange = resolveScheduleLoadRange(storedLoadRange, currentDate, view);
+  if (loadRange !== storedLoadRange) setStoredLoadRange(loadRange);
 
-  const visibleRangeKey = `${visibleRange.start}:${visibleRange.end}`;
-  const [rangeReadiness, setRangeReadiness] = useRetainedState(
-    `schedule:range:${visibleRangeKey}`,
-    { key: visibleRangeKey, loaded: false },
-  );
-  const hasLoadedRange = rangeReadiness.key === visibleRangeKey && rangeReadiness.loaded;
-  const currentRangeKeyRef = useRef(visibleRangeKey);
+  const loadRangeKey = `${loadRange.start}:${loadRange.end}`;
+  const loadToken = `${loadRangeKey}#${rangeLoadAttempt}`;
+  const [rangeReadiness, setRangeReadiness] = useRetainedState(`schedule:range:${loadRangeKey}`, {
+    key: loadRangeKey,
+    loaded: false,
+  });
+  const hasLoadedRange = rangeReadiness.key === loadRangeKey && rangeReadiness.loaded;
+  const currentRangeKeyRef = useRef(loadRangeKey);
 
   // A linked session opens only after a successful load of a range holding its
   // date, through the same path as its "Take attendance" button. It settles once:
@@ -201,11 +227,10 @@ export function useSchedulePageController({
   }, [pendingRouteSession, seenRouteTarget]);
 
   useEffect(() => {
-    currentRangeKeyRef.current = visibleRangeKey;
-  }, [visibleRangeKey]);
+    currentRangeKeyRef.current = loadRangeKey;
+  }, [loadRangeKey]);
 
   useResumeRefresh(() => {
-    resumedRangeRef.current = visibleRangeKey;
     setRangeLoadAttempt((value) => value + 1);
     setAttendanceRefreshAttempt((value) => value + 1);
     void refreshPrograms({ includeArchived: true, includeUsage: false }).catch(() => undefined);
@@ -218,21 +243,22 @@ export function useSchedulePageController({
     }
   });
 
+  // A window paints from its read: one GET on the interactive lane. Recurring
+  // classes it has not generated yet show as placeholders meanwhile.
   useEffect(() => {
     let cancelled = false;
 
-    async function loadRange() {
-      const intent = resumedRangeRef.current === visibleRangeKey ? "read" : "materialize";
-      resumedRangeRef.current = null;
+    async function readRange() {
       setScheduleLoadError(null);
-      setRefreshingRangeKey(visibleRangeKey);
+      beginRangeRefresh(loadRangeKey);
       try {
-        const loaded = await refreshScheduleRange(visibleRange.start, visibleRange.end, intent);
+        const loaded = await refreshScheduleRange(loadRange.start, loadRange.end, "read");
         if (!cancelled) {
           setRangeReadiness((current) =>
-            current.key === visibleRangeKey ? { key: visibleRangeKey, loaded: true } : current,
+            current.key === loadRangeKey ? { key: loadRangeKey, loaded: true } : current,
           );
-          settleRouteSession(visibleRangeKey, visibleRange.start, visibleRange.end, loaded);
+          settleRouteSession(loadRangeKey, loadRange.start, loadRange.end, loaded);
+          setSettledReadToken(loadToken);
         }
       } catch (error) {
         if (!cancelled) {
@@ -240,22 +266,70 @@ export function useSchedulePageController({
           setScheduleLoadError("Could not load this calendar range. Please try again.");
         }
       } finally {
-        if (!cancelled) setRefreshingRangeKey(null);
+        endRangeRefresh(loadRangeKey);
       }
     }
 
-    void loadRange();
+    void readRange();
 
     return () => {
       cancelled = true;
     };
   }, [
-    rangeLoadAttempt,
+    beginRangeRefresh,
+    endRangeRefresh,
+    loadRange.end,
+    loadRange.start,
+    loadRangeKey,
+    loadToken,
     refreshScheduleRange,
     setRangeReadiness,
-    visibleRange.end,
-    visibleRange.start,
-    visibleRangeKey,
+  ]);
+
+  // Only a window whose read left recurring slots ungenerated materializes them,
+  // once per read, behind the painted calendar. Staff who cannot manage the
+  // schedule read only; a later Retry or resume reads again and reconsiders.
+  const hasUnmaterializedSlots = useMemo(
+    () => countUnmaterializedRecurringSlots({ range: loadRange, sessions, templates }) > 0,
+    [loadRange, sessions, templates],
+  );
+  const shouldMaterialize =
+    settledReadToken === loadToken && canManageSchedule && hasUnmaterializedSlots;
+
+  useEffect(() => {
+    if (!shouldMaterialize || materializedTokenRef.current === loadToken) return;
+    materializedTokenRef.current = loadToken;
+    let cancelled = false;
+
+    async function materializeRange() {
+      beginRangeRefresh(loadRangeKey);
+      try {
+        await refreshScheduleRange(loadRange.start, loadRange.end, "materialize");
+      } catch (error) {
+        if (cancelled) return;
+        console.error("Failed to generate recurring classes for the schedule range", error);
+        setScheduleLoadError(
+          "Recurring classes for this range could not be generated. Retry to load them.",
+        );
+      } finally {
+        endRangeRefresh(loadRangeKey);
+      }
+    }
+
+    void materializeRange();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    beginRangeRefresh,
+    endRangeRefresh,
+    loadRange.end,
+    loadRange.start,
+    loadRangeKey,
+    loadToken,
+    refreshScheduleRange,
+    shouldMaterialize,
   ]);
 
   useEffect(() => {
@@ -304,7 +378,7 @@ export function useSchedulePageController({
     createClassInFlightRef.current = true;
     setCreateClassError(null);
     setIsCreatingClass(true);
-    const rangeKey = visibleRangeKey;
+    const rangeKey = loadRangeKey;
     let createdTemplate: ScheduleTemplateCreateResult | null = null;
 
     try {
@@ -464,10 +538,10 @@ export function useSchedulePageController({
       programFilter,
       programs,
       routeTargetNotice:
-        routeTargetNotice?.rangeKey === visibleRangeKey ? routeTargetNotice.message : null,
+        routeTargetNotice?.rangeKey === loadRangeKey ? routeTargetNotice.message : null,
       scheduleLoadError,
       hasLoadedRange,
-      isRefreshingRange: refreshingRangeKey === visibleRangeKey,
+      isRefreshingRange: refreshingRangeKey === loadRangeKey,
       selectedSession,
       selectedSessionAttendance,
       studentRosterLoadError,

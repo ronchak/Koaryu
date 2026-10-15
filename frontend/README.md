@@ -212,10 +212,17 @@ establish paginated roster authority. Mutations preserve an incomplete roster's
 partial status; only an explicit complete read clears it. Billing Enrollments
 waits for that complete read before using the roster.
 
-Schedule initialization and visible calendar ranges use the same reconciliation
-queue. New ranges remain pending until their materialization completes. Refresh
-keeps the current range visible, and obsolete range responses cannot replace a
-newer window or attendance mutation.
+Schedule initialization and calendar windows use the same reconciliation
+queue. Every view loads the week-aligned month grid around its date, so Day and
+Week steps and view switches inside that window make no request, and a window
+loaded earlier in the session paints from retained state while it re-reads. A
+window paints as soon as its `GET /schedule/window` read settles; recurring
+classes not generated yet show as placeholders. Only when that read leaves such
+placeholders, and the role can manage the schedule, does the page call
+`POST /schedule/window/materialize` for the window, once per read, behind the
+painted calendar; a failed materialization keeps the calendar and offers Retry.
+Refresh keeps the current window visible, and obsolete range responses cannot
+replace a newer window or attendance mutation.
 
 The default frontend test suite includes a mounted StoreProvider test in
 Chromium using synthetic external I/O. Install its browser with
