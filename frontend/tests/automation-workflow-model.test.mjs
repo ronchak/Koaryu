@@ -6,6 +6,7 @@ import {
   automaticWorkflowLayout,
   canonicalWorkflowDraft,
   commitWorkflowPosition,
+  compareWorkflowNodeIds,
   createWorkflowHistory,
   defaultWorkflowConfig,
   editWorkflow,
@@ -18,6 +19,7 @@ import {
   truncateWorkflowText,
   undoWorkflow,
   validateWorkflow,
+  workflowNodeLabels,
   workflowSteps,
   workflowTextLength,
 } from "../src/lib/automation-workflow-model.ts";
@@ -227,9 +229,14 @@ test("node addition, config updates and completed moves isolate caller data", ()
   node.config.value.push("mutated");
   assert.deepEqual(nodeById(added.draft, "node_1").config.value, ["new"]);
   assert.equal(nextWorkflowId(added.draft.graph, "node"), "node_2");
+  // IDs count past the highest existing number so a deletion never renames later steps.
   assert.equal(
     nextWorkflowId({ ...draft.graph, edges: [{ id: "edge_1" }, { id: "edge_3" }] }, "edge"),
-    "edge_2",
+    "edge_4",
+  );
+  assert.equal(
+    nextWorkflowId({ ...draft.graph, nodes: [{ id: "node_9" }, { id: "node_10" }] }, "node"),
+    "node_11",
   );
   const updated = editWorkflow(draft, {
     kind: "update_config",
@@ -875,4 +882,166 @@ test("scalar null, false and zero survive canonical history after generated outp
     assert.equal(nodeById(restored.present, "condition").config.value, value);
     assert.equal(nodeById(redoWorkflow(restored).present, "condition").config.value, "inquiry");
   }
+});
+
+test("step names come from kind and creation order, so adding a step never renames another", () => {
+  const draft = branched();
+  const before = workflowNodeLabels(draft.graph);
+  assert.equal(before.trigger, "Trigger 1");
+  assert.equal(before.yes, "Email 1");
+  assert.equal(before.no, "Lead follow-up 1");
+  const first = editWorkflow(draft, {
+    kind: "add_node",
+    node: {
+      id: nextWorkflowId(draft.graph, "node"),
+      type: "email",
+      config: defaultWorkflowConfig("email"),
+    },
+  });
+  assert.equal(first.ok, true);
+  const second = editWorkflow(first.draft, {
+    kind: "add_node",
+    node: {
+      id: nextWorkflowId(first.draft.graph, "node"),
+      type: "email",
+      config: defaultWorkflowConfig("email"),
+    },
+  });
+  assert.equal(second.ok, true);
+  const after = workflowNodeLabels(second.draft.graph);
+  for (const [id, label] of Object.entries(before)) assert.equal(after[id], label);
+  assert.equal(after.node_1, "Email 2");
+  assert.equal(after.node_2, "Email 3");
+  // Generated IDs order numerically, not alphabetically, so node_10 follows node_9.
+  const many = {
+    ...draft.graph,
+    nodes: [
+      ...draft.graph.nodes,
+      ...Array.from({ length: 10 }, (_, index) => ({
+        id: `node_${index + 1}`,
+        type: "delay",
+        config: { mode: "duration", minutes: 1 },
+      })),
+    ],
+  };
+  const numbered = workflowNodeLabels(many);
+  assert.equal(numbered.node_9, "Delay 9");
+  assert.equal(numbered.node_10, "Delay 10");
+  assert.equal(compareWorkflowNodeIds("__proto__", "node_1") < 0, true);
+  assert.equal(
+    Object.hasOwn(
+      workflowNodeLabels({ ...draft.graph, nodes: [{ id: "__proto__", type: "end", config: {} }] }),
+      "__proto__",
+    ),
+    true,
+  );
+});
+
+test("insert_node splices a step into a connection in one operation and keeps the route whole", () => {
+  const draft = branched();
+  const id = nextWorkflowId(draft.graph, "node");
+  const result = editWorkflow(draft, {
+    kind: "insert_node",
+    node: { id, type: "delay", config: defaultWorkflowConfig("delay") },
+    after: { node_id: "condition", port: "yes" },
+  });
+  assert.equal(result.ok, true);
+  const edges = result.draft.graph.edges;
+  assert.equal(
+    edges.some((edge) => edge.source === "condition" && edge.port === "yes" && edge.target === id),
+    true,
+  );
+  assert.equal(
+    edges.some((edge) => edge.source === id && edge.port === "next" && edge.target === "yes"),
+    true,
+  );
+  assert.equal(
+    edges.some((edge) => edge.source === "condition" && edge.target === "yes"),
+    false,
+  );
+  assert.equal(edges.length, draft.graph.edges.length + 1);
+  assert.equal(validateWorkflow(result.draft.graph).valid, false);
+  // The inserted delay only lacks a duration; the topology stays executable.
+  assert.deepEqual(codes(validateWorkflow(result.draft.graph)), ["incomplete_config"]);
+  const position = result.draft.layout.positions[id];
+  assert.equal(Number.isFinite(position.x) && Number.isFinite(position.y), true);
+  assert.equal(
+    Object.values(result.draft.layout.positions).filter(
+      (other) =>
+        other !== position &&
+        Math.abs(other.x - position.x) < 200 &&
+        Math.abs(other.y - position.y) < 150,
+    ).length,
+    0,
+  );
+  const labels = workflowNodeLabels(result.draft.graph);
+  assert.equal(labels.yes, "Email 1");
+  assert.equal(labels[id], "Delay 1");
+
+  // A check inserted mid-chain continues on both paths until one is repointed.
+  const check = editWorkflow(draft, {
+    kind: "insert_node",
+    node: { id, type: "condition", config: defaultWorkflowConfig("condition") },
+    after: { node_id: "trigger", port: "next" },
+  });
+  assert.equal(check.ok, true);
+  const ports = check.draft.graph.edges
+    .filter((edge) => edge.source === id)
+    .map((edge) => [edge.port, edge.target])
+    .sort();
+  assert.deepEqual(ports, [
+    ["no", "condition"],
+    ["yes", "condition"],
+  ]);
+
+  // An open port simply gains the step; an end may only close an open branch.
+  const opened = editWorkflow(draft, { kind: "disconnect", edge_id: "e4" }).draft;
+  const closed = editWorkflow(opened, {
+    kind: "insert_node",
+    node: { id, type: "end", config: {} },
+    after: { node_id: "yes", port: "next" },
+  });
+  assert.equal(closed.ok, true);
+  assert.equal(
+    closed.draft.graph.edges.some((edge) => edge.source === "yes" && edge.target === id),
+    true,
+  );
+  assert.equal(
+    editWorkflow(draft, {
+      kind: "insert_node",
+      node: { id, type: "end", config: {} },
+      after: { node_id: "yes", port: "next" },
+    }).ok,
+    false,
+  );
+  for (const bad of [
+    {
+      node: { id, type: "trigger", config: defaultWorkflowConfig("trigger") },
+      after: { node_id: "trigger", port: "next" },
+    },
+    {
+      node: { id, type: "email", config: defaultWorkflowConfig("email") },
+      after: { node_id: "missing", port: "next" },
+    },
+    {
+      node: { id, type: "email", config: defaultWorkflowConfig("email") },
+      after: { node_id: "trigger", port: "yes" },
+    },
+    {
+      node: { id: "trigger", type: "email", config: defaultWorkflowConfig("email") },
+      after: { node_id: "trigger", port: "next" },
+    },
+  ]) {
+    const refused = editWorkflow(draft, { kind: "insert_node", ...bad });
+    assert.equal(refused.ok, false);
+    assert.equal(refused.draft, draft);
+  }
+  // History records the insertion as one undoable step.
+  const history = editWorkflowHistory(createWorkflowHistory(draft), {
+    kind: "insert_node",
+    node: { id, type: "delay", config: defaultWorkflowConfig("delay") },
+    after: { node_id: "condition", port: "yes" },
+  });
+  assert.equal(history.ok && history.history.past.length, 1);
+  assert.deepEqual(undoWorkflow(history.history).present, createWorkflowHistory(draft).present);
 });

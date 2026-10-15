@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ApiError } from "@/lib/api";
+import { workflowNodeLabels } from "@/lib/automation-workflow-model";
 import type {
   WorkflowActivity,
   WorkflowActivityRead,
@@ -28,9 +29,13 @@ export type WorkflowSimulationPanelProps = {
   isCurrent(): boolean;
   preview: boolean;
 };
+type Branches = Readonly<Record<string, "yes" | "no">>;
+/** What the reviewer chose to assume for one walk; shown beside the trace it produced. */
+type Assumptions = { waits: boolean; branches: Branches };
 type Simulation = {
   read: Extract<WorkflowActivityRead<WorkflowSimulationResponse>, { status: "ready" }>;
   selection: WorkflowSimulationSelection;
+  assumptions: Assumptions;
 };
 
 const activityTimeFormat = new Intl.DateTimeFormat("en-US", {
@@ -44,6 +49,7 @@ const activityTime = (value: string) => (
   </time>
 );
 const plainReason = (value: string) => value.replaceAll("_", " ");
+const pathWord = (outcome: "yes" | "no") => (outcome === "yes" ? "Yes" : "No");
 
 export function WorkflowSimulationPanel({
   activity,
@@ -59,6 +65,8 @@ export function WorkflowSimulationPanel({
   const [result, setResult] = useState<Simulation | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [assumeWaits, setAssumeWaits] = useState(false);
+  const [branches, setBranches] = useState<Branches>({});
   const serial = useRef(0);
   const active = useRef(true);
   const latest = useRef({ selection, isCurrent });
@@ -78,7 +86,25 @@ export function WorkflowSimulationPanel({
   const event = trigger?.config.event_type;
   const metadata =
     event && catalog && Object.hasOwn(catalog.triggers, event) ? catalog.triggers[event] : null;
-  const simulate = async () => {
+  const labels = useMemo(() => workflowNodeLabels(graph), [graph]);
+  const nodeById = (id: string) => graph.nodes.find((item) => item.id === id);
+  const nodeLabel = (id: string) => {
+    const node = nodeById(id);
+    if (node?.type === "trigger" && metadata?.label) return metadata.label;
+    return Object.hasOwn(labels, id) ? labels[id] : id;
+  };
+  // Only conditions still in the graph can be assumed; a deleted step drops out of the request.
+  const activeBranches = (forced: Branches): Branches =>
+    Object.fromEntries(Object.entries(forced).filter(([id]) => nodeById(id)?.type === "condition"));
+  const simulate = async (next?: Partial<Assumptions>) => {
+    const assumptions: Assumptions = {
+      waits: next?.waits ?? assumeWaits,
+      branches: activeBranches(next?.branches ?? branches),
+    };
+    if (next) {
+      setAssumeWaits(assumptions.waits);
+      setBranches(assumptions.branches);
+    }
     if (preview || !workflowId || !selection || !selection.isCurrent() || !isCurrent() || loading)
       return;
     const request = ++serial.current,
@@ -93,9 +119,15 @@ export function WorkflowSimulationPanel({
     setError(null);
     setResult(null);
     try {
-      const read = await activity.simulate(workflowId, graph, captured.context);
+      const read = await activity.simulate(workflowId, graph, captured.context, {
+        assume_waits_elapsed: assumptions.waits,
+        branch_assumptions: Object.entries(assumptions.branches).map(([node_id, outcome]) => ({
+          node_id,
+          outcome,
+        })),
+      });
       if (current() && read.status === "ready" && read.isCurrent())
-        setResult({ read, selection: captured });
+        setResult({ read, selection: captured, assumptions });
     } catch (failure) {
       if (current())
         setError(
@@ -113,14 +145,14 @@ export function WorkflowSimulationPanel({
     result.selection.isCurrent() &&
     result.read.isCurrent() &&
     isCurrent()
-      ? result.read.value
+      ? result
       : null;
-  const nodeLabel = (id: string) => {
-    const node = graph.nodes.find((item) => item.id === id);
-    if (node?.type === "trigger") return metadata?.label || "Trigger";
-    return node ? node.type.replaceAll("_", " ") : id;
-  };
-  const waiting = output?.trace.find((step) => step.outcome === "waiting");
+  const trace = output?.read.value;
+  const waiting = trace?.trace.find((step) => step.outcome === "waiting");
+  const waitingNode = waiting ? nodeById(waiting.node_id) : undefined;
+  const hypothetical =
+    output && (output.assumptions.waits || Object.keys(output.assumptions.branches).length > 0);
+  const canRun = Boolean(workflowId) && Boolean(selection?.isCurrent()) && !loading && isCurrent();
   return (
     <section className={`${styles.sheet} ${styles.toolPanel}`} aria-label="Workflow simulation">
       <h2>Simulate workflow</h2>
@@ -140,13 +172,17 @@ export function WorkflowSimulationPanel({
             disabled={!workflowId || !isCurrent()}
           />
           {!workflowId ? <p>Save this workflow before simulating it.</p> : null}
+          <label className={styles.checkbox}>
+            <input
+              type="checkbox"
+              checked={assumeWaits}
+              disabled={!workflowId}
+              onChange={(event) => setAssumeWaits(event.target.checked)}
+            />
+            Assume every wait has passed, so later steps show too
+          </label>
           <div className={styles.actions}>
-            <button
-              disabled={
-                !workflowId || !selection || !selection.isCurrent() || loading || !isCurrent()
-              }
-              onClick={() => void simulate()}
-            >
+            <button disabled={!canRun} onClick={() => void simulate()}>
               Simulate
             </button>
           </div>
@@ -160,17 +196,37 @@ export function WorkflowSimulationPanel({
           context.
         </p>
       ) : null}
-      {output ? (
+      {output && trace ? (
         <div className={styles.toolStack}>
-          <p>Reference time: {activityTime(output.reference_time)}</p>
+          <p>Reference time: {activityTime(trace.reference_time)}</p>
+          {hypothetical ? (
+            <div className={styles.notice} data-tone="sample" role="status">
+              <p>
+                <strong>Hypothetical trace.</strong>{" "}
+                {output.assumptions.waits ? "Waits are assumed to have passed. " : ""}
+                {Object.keys(output.assumptions.branches).length
+                  ? "Marked conditions take the path you chose. "
+                  : ""}
+                A real run waits and rechecks the facts at each step.
+              </p>
+              <div className={styles.actions}>
+                <button
+                  disabled={!canRun}
+                  onClick={() => void simulate({ waits: false, branches: {} })}
+                >
+                  Use real timing and facts
+                </button>
+              </div>
+            </div>
+          ) : null}
           <p>
-            {output.valid
+            {trace.valid
               ? "Graph checks passed for this simulation."
               : "This graph needs changes before it can run."}
           </p>
-          {output.issues.length ? (
+          {trace.issues.length ? (
             <ul>
-              {output.issues.map((issue, index) => (
+              {trace.issues.map((issue, index) => (
                 <li key={index}>
                   {issue.node_id ? (
                     <button onClick={() => onSelectNode(issue.node_id!)}>{issue.message}</button>
@@ -183,8 +239,13 @@ export function WorkflowSimulationPanel({
           ) : null}
           <h3>Visited path</h3>
           <ol className={styles.trace}>
-            {output.trace.map((step, index) => {
+            {trace.trace.map((step, index) => {
               const edge = graph.edges.find((item) => item.id === step.edge_id);
+              const node = nodeById(step.node_id);
+              const assumedBranch = Object.hasOwn(output.assumptions.branches, step.node_id)
+                ? output.assumptions.branches[step.node_id]
+                : undefined;
+              const decided = step.outcome === "matched" || step.outcome === "not_matched";
               return (
                 <li key={`${step.node_id}:${index}`}>
                   <button onClick={() => onSelectNode(step.node_id)}>
@@ -193,6 +254,33 @@ export function WorkflowSimulationPanel({
                   {step.edge_id ? <p>Selected branch: {edge?.port ?? step.edge_id}</p> : null}
                   {step.reason ? <p>Reason: {plainReason(step.reason)}</p> : null}
                   {step.scheduled_at ? <p>Scheduled: {activityTime(step.scheduled_at)}</p> : null}
+                  {node?.type === "delay" &&
+                  step.outcome === "entered" &&
+                  output.assumptions.waits ? (
+                    <p className={styles.assumed}>Assumed to have passed.</p>
+                  ) : null}
+                  {node?.type === "condition" && (decided || step.outcome === "waiting") ? (
+                    <div className={styles.actions}>
+                      {assumedBranch ? (
+                        <p className={styles.assumed}>Assumed {pathWord(assumedBranch)} path.</p>
+                      ) : null}
+                      {(decided ? [step.outcome === "matched" ? "no" : "yes"] : ["yes", "no"]).map(
+                        (choice) => (
+                          <button
+                            key={choice}
+                            disabled={!canRun}
+                            onClick={() =>
+                              void simulate({
+                                branches: { ...branches, [step.node_id]: choice as "yes" | "no" },
+                              })
+                            }
+                          >
+                            {decided ? "Try" : "Assume"} the {pathWord(choice as "yes" | "no")} path
+                          </button>
+                        ),
+                      )}
+                    </div>
+                  ) : null}
                   {step.rendered_subject !== null ? (
                     <div className={styles.sampleText}>
                       <strong>Subject</strong>
@@ -210,20 +298,29 @@ export function WorkflowSimulationPanel({
             })}
           </ol>
           {waiting ? (
-            <p className={styles.notice}>
-              The trace stops at the first wait.
-              {waiting.scheduled_at ? (
-                <> Scheduled for {activityTime(waiting.scheduled_at)}.</>
-              ) : (
-                " Its scheduled time is unavailable."
-              )}{" "}
-              Future conditions will be checked later.
-            </p>
+            <div className={styles.notice}>
+              <p>
+                The trace stops at the first wait.
+                {waiting.scheduled_at ? (
+                  <> Scheduled for {activityTime(waiting.scheduled_at)}.</>
+                ) : (
+                  " Its scheduled time is unavailable."
+                )}{" "}
+                Future conditions will be checked later.
+              </p>
+              {waitingNode?.type === "delay" ? (
+                <div className={styles.actions}>
+                  <button disabled={!canRun} onClick={() => void simulate({ waits: true })}>
+                    Continue past this wait
+                  </button>
+                </div>
+              ) : null}
+            </div>
           ) : null}
           <h3>Next actions returned</h3>
-          {output.next_actions.length ? (
+          {trace.next_actions.length ? (
             <ul className={styles.toolRows}>
-              {output.next_actions.map((action, index) => (
+              {trace.next_actions.map((action, index) => (
                 <li key={`${action.node_id}:${index}`}>
                   <button onClick={() => onSelectNode(action.node_id)}>
                     {nodeLabel(action.node_id)} · {action.action_kind.replaceAll("_", " ")}

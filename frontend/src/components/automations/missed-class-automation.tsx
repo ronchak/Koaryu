@@ -45,7 +45,8 @@ const readinessReasons: Record<string, string> = {
   unavailable: "Email readiness is unavailable. Refresh settings before enabling.",
 };
 
-export function MissedClassAutomation() {
+/** `headless` drops the panel's own title and lede when the page header already says them. */
+export function MissedClassAutomation({ headless = false }: { headless?: boolean } = {}) {
   const { token, isPreviewMode } = useConfigStore();
   const { currentRole, currentStudioId, currentUserId, identityGeneration, identityReady } =
     useStudioStore();
@@ -74,11 +75,20 @@ export function MissedClassAutomation() {
       key={JSON.stringify([isPreviewMode, currentStudioId, currentUserId, identityGeneration])}
       token={token}
       isDemo={isPreviewMode}
+      headless={headless}
     />
   );
 }
 
-function ScopedEditor({ token, isDemo }: { token: string | null; isDemo: boolean }) {
+function ScopedEditor({
+  token,
+  isDemo,
+  headless,
+}: {
+  token: string | null;
+  isDemo: boolean;
+  headless: boolean;
+}) {
   const [settings, setSettings] = useRetainedState<MissedClassSettingsResponse | null>(
     `automations:missed-class:settings:${isDemo ? "preview" : "live"}`,
     isDemo ? DEMO_SETTINGS : null,
@@ -389,16 +399,20 @@ function ScopedEditor({ token, isDemo }: { token: string | null; isDemo: boolean
       data-missed-class-editor="true"
     >
       <div className={styles.head}>
-        <span className={kit.chip} data-tone={status.tone} aria-hidden="true">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <rect x="3" y="4.5" width="18" height="16" rx="2.5" />
-            <path d="M3 9.5h18M8 2.5v4M16 2.5v4M10 13.5l4 4M14 13.5l-4 4" />
-          </svg>
-        </span>
+        {headless ? null : (
+          <span className={kit.chip} data-tone={status.tone} aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <rect x="3" y="4.5" width="18" height="16" rx="2.5" />
+              <path d="M3 9.5h18M8 2.5v4M16 2.5v4M10 13.5l4 4M14 13.5l-4 4" />
+            </svg>
+          </span>
+        )}
         <div className={styles.titles}>
-          <p className={styles.eyebrow}>Attendance follow-up</p>
+          {headless ? null : <p className={styles.eyebrow}>Attendance follow-up</p>}
           <div className={styles.titleRow}>
-            <h2 id="missed-class-title">Missed-class nudges</h2>
+            <h2 id="missed-class-title" className={headless ? "sr-only" : undefined}>
+              {headless ? "Rule" : "Missed-class nudges"}
+            </h2>
             <span className={kit.tag} data-tone={status.tone} data-dot="true">
               {status.label}
             </span>
@@ -409,10 +423,12 @@ function ScopedEditor({ token, isDemo }: { token: string | null; isDemo: boolean
               → one check-in email to them, or to their guardian.
             </p>
           ) : null}
-          <p className={styles.lede}>
-            Send a friendly check-in after time away from class. Each student receives one message
-            per absence period. A return to class starts a new period.
-          </p>
+          {headless ? null : (
+            <p className={styles.lede}>
+              Send a friendly check-in after time away from class. Each student receives one message
+              per absence period. A return to class starts a new period.
+            </p>
+          )}
         </div>
       </div>
 

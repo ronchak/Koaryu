@@ -301,9 +301,15 @@ p.notice {
   padding: 0;
   border: 0;
   background: transparent;
+  color: var(--product-ink, var(--text-primary));
   font-size: 0.9375rem;
   font-weight: 700;
   text-align: left;
+  text-decoration: none;
+}
+.catalog a.rowName:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 .catalog .rowName:hover:not(:disabled) {
   background: transparent;
@@ -601,9 +607,10 @@ p.notice {
   margin-top: 0.2rem;
   accent-color: var(--product-wood, var(--accent));
 }
+/* The steps take the full width until a step is selected; then its settings dock beside them. */
 @media (min-width: 1100px) {
-  .editorGrid {
-    grid-template-columns: minmax(0, 1fr) minmax(300px, 350px);
+  .editorGrid[data-selected="true"]:not(:has([data-workflow-view="graph"])) {
+    grid-template-columns: minmax(0, 1fr) minmax(320px, 380px);
   }
   .metadata {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr);
@@ -781,6 +788,12 @@ p.notice {
   justify-self: start;
   text-align: left;
   text-transform: capitalize;
+}
+.assumed {
+  margin: 0;
+  color: var(--product-straw, var(--text-primary));
+  font-size: 0.8125rem;
+  font-weight: 700;
 }
 .sampleText {
   display: grid;

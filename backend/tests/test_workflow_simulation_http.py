@@ -346,7 +346,7 @@ def test_openapi_contains_only_exact_public_dtos_and_required_fields(api):
     document = api.client.get("/openapi.json").json()
     schemas = document["components"]["schemas"]
     expected = {
-        "WorkflowSimulationRequest": {"graph", "context"},
+        "WorkflowSimulationBranchAssumption": {"node_id", "outcome"},
         "WorkflowSimulationSyntheticContext": {"kind"},
         "WorkflowSimulationEntityContext": {"kind", "entity_type", "entity_id"},
         "WorkflowSimulationResponse": {
@@ -373,6 +373,18 @@ def test_openapi_contains_only_exact_public_dtos_and_required_fields(api):
         model = schemas[name]
         assert model["additionalProperties"] is False
         assert set(model["properties"]) == fields == set(model["required"])
+    # The hypothetical controls are optional on the wire and default to a plain walk.
+    request = schemas["WorkflowSimulationRequest"]
+    assert request["additionalProperties"] is False
+    assert set(request["properties"]) == {
+        "graph",
+        "context",
+        "assume_waits_elapsed",
+        "branch_assumptions",
+    }
+    assert set(request["required"]) == {"graph", "context"}
+    assert request["properties"]["assume_waits_elapsed"]["default"] is False
+    assert request["properties"]["branch_assumptions"]["maxItems"] == 40
     assert (
         schemas["WorkflowSimulationResponse"]["properties"]["future_conditions_rechecked"]["const"]
         is True

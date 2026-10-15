@@ -788,9 +788,9 @@ export function createWorkflowActivityOwner(
       live();
       simulationGeneration++;
     },
-    simulate(workflowId, graph, context) {
+    simulate(workflowId, graph, context, assumptions = {}) {
       const workflow = editorGraph(workflowId, graph),
-        body = buildWorkflowSimulationRequest(graph, context),
+        body = buildWorkflowSimulationRequest(graph, context, assumptions),
         generation = ++simulationGeneration;
       return publicRead(
         "simulation",

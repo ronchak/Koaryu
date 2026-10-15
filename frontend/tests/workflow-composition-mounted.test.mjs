@@ -43,6 +43,8 @@ const draftRoute = `/automations/new?draft=${ids.draft}`;
 const savedRoute = `/automations/${ids.workflow}`;
 const name = (page) => page.getByRole("textbox", { name: /^Workflow name/ });
 const count = (page) => page.evaluate(() => fixture.requests.length);
+// Steps is the default view on every width; canvas checks switch to Graph first.
+const openGraph = (page) => page.getByRole("button", { name: "Graph", exact: true }).click();
 const graphViewport = (page) =>
   page.locator(".react-flow__viewport").evaluate((element) => {
     const matrix = new DOMMatrixReadOnly(getComputedStyle(element).transform);
@@ -96,7 +98,7 @@ const flush = (page) =>
 for (const mode of ["production", "development"])
   test(`catalog composes actual presets, editable pending save and retained history (${mode})`, async () => {
     await mount({ mode }, async (page) => {
-      await expect(page.getByRole("heading", { name: "Build your next workflow" })).toBeVisible();
+      await expect(page.getByRole("heading", { name: "Start from a template" })).toBeVisible();
       const title = await page.evaluate(() => fixture.catalog.presets[0].name);
       await page.getByRole("button", { name: `Use ${title}`, exact: true }).click();
       await expect(name(page)).toHaveValue(title);
@@ -176,7 +178,7 @@ test("admin boundary and preview perform no protected I/O", async () => {
 
 test("published status, independent loads, cursor recovery and explicit dirty switch", async () => {
   await mount({}, async (page) => {
-    await expect(page.getByRole("heading", { name: "Build your next workflow" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Start from a template" })).toBeVisible();
     await page.evaluate(() => {
       const current = fixture.current;
       fixture.list = {
@@ -210,11 +212,11 @@ test("published status, independent loads, cursor recovery and explicit dirty sw
     await expect(page.getByText(/Published version 3/)).toBeVisible();
     await page.getByRole("button", { name: "Back to first page" }).click();
     await expect(page.getByRole("button", { name: "Retry page" })).toHaveCount(0);
-    await page.getByRole("button", { name: "New workflow", exact: true }).click();
+    await page.getByRole("button", { name: "Start blank workflow", exact: true }).click();
     await expect(name(page)).toHaveValue("Untitled workflow");
     await name(page).fill("Keep this draft");
     await page.getByRole("button", { name: "All workflows" }).click();
-    await page.getByRole("button", { name: "New workflow", exact: true }).click();
+    await page.getByRole("button", { name: "Start blank workflow", exact: true }).click();
     await expect(page.getByRole("dialog", { name: "Discard your unsaved changes?" })).toBeVisible();
     await page.getByRole("button", { name: "Keep editing", exact: true }).click();
     await page.getByRole("button", { name: "Continue editing Keep this draft" }).click();
@@ -780,7 +782,7 @@ test("a cold missing workflow offers the catalog and does not invent a retained 
     ).toHaveCount(0);
     assert.equal(await page.evaluate(() => fixture.owner().getSnapshot().editor), null);
     await page.getByRole("button", { name: "Back to catalog", exact: true }).click();
-    await expect(page.getByRole("heading", { name: "Build your next workflow" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Start from a template" })).toBeVisible();
   });
 });
 
@@ -904,6 +906,7 @@ for (const mode of ["production", "development"])
       assert.ok(preset.graph.edges.some((edge) => edge.port === "no"));
       await page.getByRole("button", { name: "Use " + preset.name, exact: true }).click();
       await expect(name(page)).toHaveValue(preset.name);
+      await openGraph(page);
       await assertReadableGraphStart(
         page,
         preset.graph.nodes.find((node) => node.type === "trigger").id,
@@ -978,6 +981,7 @@ for (const mode of ["production", "development"])
         fixture.router.push("/automations/" + fixture.current.id);
       }, graph);
       await expect(name(page)).toBeVisible();
+      await openGraph(page);
       await assertReadableGraphStart(page, "start");
       await assertFiniteGraphEdges(page, 39);
       const editor = await page.evaluate(() => fixture.owner().getSnapshot().editor);
@@ -1020,6 +1024,7 @@ for (const [id, position] of [
         { id, position },
       );
       await expect(name(page)).toBeVisible();
+      await openGraph(page);
       await assertReadableGraphStart(page, id);
       await assertFiniteGraphEdges(page, JSON.parse(draft).graph.edges.length);
       const current = await page.evaluate(() =>
@@ -1058,6 +1063,7 @@ for (const empty of [false, true])
         fixture.router.push("/automations/" + fixture.current.id);
       }, empty);
       await expect(name(page)).toBeVisible();
+      await openGraph(page);
       if (empty) await expect.poll(() => graphViewport(page)).toEqual({ x: 0, y: 0, zoom: 0.9 });
       else await assertReadableGraphStart(page, "a_first");
       await assertFiniteGraphEdges(page, 0);
@@ -1086,6 +1092,7 @@ test("manual camera survives edits, history and resize, and a new canvas mount r
     );
     await page.getByRole("button", { name: "Use " + preset.name, exact: true }).click();
     const trigger = preset.graph.nodes.find((node) => node.type === "trigger").id;
+    await openGraph(page);
     await assertReadableGraphStart(page, trigger);
     await page.getByRole("button", { name: "Zoom Out", exact: true }).click();
     await expect.poll(async () => (await graphViewport(page)).zoom).toBeCloseTo(0.75, 6);
@@ -1119,6 +1126,7 @@ test("manual camera survives edits, history and resize, and a new canvas mount r
     );
     await page.getByRole("button", { name: "All workflows" }).click();
     await page.getByRole("button", { name: "Continue editing Manual camera retained" }).click();
+    await openGraph(page);
     await assertReadableGraphStart(page, trigger);
     assert.deepEqual(
       await page.evaluate(() => structuredClone(fixture.owner().getSnapshot().editor.history)),
@@ -1171,25 +1179,93 @@ test("saved prototype-named operators keep their exact IDs in Graph and Steps", 
 });
 
 for (const width of [390, 1280])
-  test(`cold workflow uses the canvas and inspector frame at ${width}px`, async () => {
+  test(`cold workflow uses the full-width steps frame at ${width}px`, async () => {
     await mount({ route: savedRoute, width, hold: { detail: true } }, async (page) => {
       await page.waitForFunction(() => fixture.held.some((read) => read.key === "detail"));
       const placeholder = page.getByRole("status", {
-        name: "Loading workflow canvas",
+        name: "Loading workflow steps",
         exact: true,
       });
       await expect(placeholder).toHaveClass(/koaryu-skeleton-reveal/);
       await expect(page.getByRole("button", { name: "All workflows" })).toBeVisible();
       assert.equal(await page.getByText("Loading workflow...", { exact: true }).count(), 0);
       assert.equal(await page.getByText("Opening workflows...", { exact: true }).count(), 0);
-      const region = width < 768 ? ".c1_editor" : ".c1_canvas";
-      if (width < 768) assert.equal(await placeholder.locator(".c1_steps").count(), 1);
-      const before = await placeholder.locator(region).boundingBox();
+      // Steps is the view on every width, and nothing is selected yet, so the editor is full width.
+      assert.equal(await placeholder.locator(".c1_steps").count(), 1);
+      const before = await placeholder.locator(".c1_editor").boundingBox();
       await page.evaluate(() => fixture.readyHeld("detail", fixture.current));
       await expect(name(page)).toBeVisible();
-      const after = await page.locator(region).boundingBox();
+      const after = await page.locator(".c1_editor").boundingBox();
       assert.equal(before.width, after.width);
-      if (width >= 768) assert.equal(before.height, after.height);
+      assert.equal(before.x, after.x);
       assert.equal(await placeholder.count(), 0);
+      assert.equal(await page.getByRole("complementary").count(), 0);
     });
   });
+
+test("a workflow check row names its step and setting, selects the step and focuses the field", async () => {
+  await mount({ width: 1280 }, async (page) => {
+    await page.evaluate(() => {
+      const detail = fixture.details[fixture.current.id] ?? fixture.current;
+      fixture.details[fixture.current.id] = {
+        ...detail,
+        validation_issues: [
+          {
+            code: "incomplete_config",
+            message: "Choose a value before running this workflow.",
+            node_id: "trigger_1",
+            edge_id: null,
+            field: "config.event_type",
+          },
+          {
+            code: "incomplete_config",
+            message: "Choose a value before running this workflow.",
+            node_id: "trigger_1",
+            edge_id: null,
+            field: "config.program_id",
+          },
+          {
+            code: "incomplete_config",
+            message: "Choose a value before running this workflow.",
+            node_id: "trigger_1",
+            edge_id: null,
+            field: "config.program_id",
+          },
+        ],
+      };
+      fixture.router.push("/automations/" + fixture.current.id);
+    });
+    await expect(name(page)).toBeVisible();
+    const checks = page.getByRole("region", { name: "Workflow checks" });
+    await expect(checks).toContainText("2 to fix");
+    assert.equal(await checks.getByRole("listitem").count(), 2);
+    const row = checks.getByRole("button", { name: /^Trigger 1 · Trigger event/ });
+    await expect(row).toContainText("Choose what starts this workflow.");
+    await expect(checks.getByRole("button", { name: /Program filter/ })).toContainText(
+      "Choose a value before running this workflow. (2)",
+    );
+    assert.equal(await page.getByRole("complementary").count(), 0);
+    await row.click();
+    await expect(page.getByRole("complementary")).toBeVisible();
+    await expect(page.getByRole("combobox", { name: "Trigger event" })).toBeFocused();
+    await expect(page.getByRole("region", { name: "Step issues" })).toContainText("Trigger event");
+    await expect(page.locator('[data-workflow-step="trigger_1"]')).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    const stepsBounds = await page.locator('[data-workflow-view="steps"]').boundingBox();
+    const dockedBounds = await page.getByRole("complementary").boundingBox();
+    assert.ok(dockedBounds.x >= stepsBounds.x + stepsBounds.width);
+    await openGraph(page);
+    const graph = page.locator('[data-workflow-view="graph"]');
+    const graphBounds = await graph.boundingBox();
+    const gridBounds = await graph.locator("..").boundingBox();
+    const settingsBounds = await page.getByRole("complementary").boundingBox();
+    assert.equal(graphBounds.width, gridBounds.width);
+    assert.ok(settingsBounds.y >= graphBounds.y + graphBounds.height);
+    await page.getByRole("button", { name: "Steps", exact: true }).click();
+    await page.getByRole("button", { name: "Close settings" }).click();
+    assert.equal(await page.getByRole("complementary").count(), 0);
+    assert.equal(await count(page), 0);
+  });
+});

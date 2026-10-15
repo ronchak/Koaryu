@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useRef, type ReactNode } from "react";
+import { useEffect, useId, useMemo, useRef, type ReactNode } from "react";
 import {
   defaultWorkflowConfig,
   truncateWorkflowText,
@@ -8,6 +8,8 @@ import {
   type WorkflowEdit,
   type WorkflowSnapshot,
 } from "@/lib/automation-workflow-model";
+import { describeWorkflowIssues } from "@/lib/automation-workflow-issues";
+import type { WorkflowIssueRow } from "@/lib/automation-workflow-issues";
 import type { ValidationIssue, WorkflowNodeUpdate } from "@/lib/automation-workflow-types";
 import {
   addConditionMember,
@@ -30,6 +32,8 @@ import {
 } from "@/lib/automation-workflow-catalog";
 import styles from "./workflow-node-inspector.module.css";
 
+/** A request to move focus to one setting of the selected step; `token` makes repeats distinct. */
+export type WorkflowFieldFocus = { nodeId: string; field: string; token: number };
 type Props = {
   draft: WorkflowSnapshot;
   selectedNodeId: string | null;
@@ -39,32 +43,31 @@ type Props = {
   onClose: () => void;
   disabled?: boolean;
   issues: ValidationIssue[];
+  focusField?: WorkflowFieldFocus | null;
+  /** Beside the steps on wide screens, the panel sticks while the list scrolls. */
+  docked?: boolean;
 };
 type FieldAttributes = {
   id: string;
   "aria-describedby": string | undefined;
   "aria-invalid": true | undefined;
+  "data-workflow-field": string;
 };
 function Field({
   label,
   name,
-  issues,
+  rows,
   hint,
   children,
 }: {
   label: string;
   name: string;
-  issues: ValidationIssue[];
+  rows: WorkflowIssueRow[];
   hint?: ReactNode;
   children: (attributes: FieldAttributes) => ReactNode;
 }) {
   const id = useId();
-  const matching = issues.filter(
-    (issue) =>
-      issue.field === name ||
-      issue.field === `config.${name}` ||
-      issue.field?.startsWith(`config.${name}[`),
-  );
+  const matching = rows.filter((row) => row.field === name);
   return (
     <div className={styles.field}>
       <label htmlFor={id}>{label}</label>
@@ -72,13 +75,14 @@ function Field({
         id,
         "aria-describedby": hint || matching.length ? `${id}-help` : undefined,
         "aria-invalid": matching.length ? true : undefined,
+        "data-workflow-field": name,
       })}
       {hint || matching.length ? (
         <div id={`${id}-help`} className={styles.help}>
           {hint}
-          {matching.map((issue, index) => (
-            <p className={styles.warning} key={index}>
-              {issue.message}
+          {matching.map((row) => (
+            <p className={styles.warning} key={row.key}>
+              {row.message}
             </p>
           ))}
         </div>
@@ -150,17 +154,44 @@ export function WorkflowNodeInspector({
   onClose,
   disabled = false,
   issues,
+  focusField = null,
+  docked = false,
 }: Props) {
+  const root = useRef<HTMLElement>(null);
   const heading = useRef<HTMLHeadingElement>(null);
   const headingId = useId();
   const node = draft.graph.nodes.find((item) => item.id === selectedNodeId);
+  // A check row lands on its setting; any other selection lands on the heading.
   useEffect(() => {
-    if (selectedNodeId) heading.current?.focus();
-  }, [selectedNodeId]);
+    if (!selectedNodeId) return;
+    if (focusField && focusField.nodeId === selectedNodeId) {
+      const control = root.current?.querySelector<HTMLElement>(
+        `[data-workflow-field="${focusField.field}"]`,
+      );
+      if (control) {
+        control.focus();
+        control.scrollIntoView?.({ block: "center" });
+        return;
+      }
+    }
+    heading.current?.focus();
+  }, [selectedNodeId, focusField]);
   const applicable = workflowApplicability(draft, catalog);
-  const nodeIssues = issues.filter(
-    (issue) => issue.node_id === selectedNodeId && selectedNodeId !== null,
+  const nodeRows = useMemo(
+    () =>
+      selectedNodeId === null
+        ? []
+        : describeWorkflowIssues(issues, draft.graph).filter(
+            (row) => row.node_id === selectedNodeId,
+          ),
+    [issues, draft.graph, selectedNodeId],
   );
+  const focusSetting = (field: string | null) => {
+    const control = field
+      ? root.current?.querySelector<HTMLElement>(`[data-workflow-field="${field}"]`)
+      : null;
+    (control ?? heading.current)?.focus();
+  };
   const edit = (update: WorkflowNodeUpdate) => {
     if (node && !disabled) onEdit({ kind: "update_config", node_id: node.id, update });
   };
@@ -174,7 +205,7 @@ export function WorkflowNodeInspector({
     const { offset_minutes: savedOffset, ...withoutOffset } = config;
     form = (
       <>
-        <Field label="Trigger event" name="event_type" issues={nodeIssues}>
+        <Field label="Trigger event" name="event_type" rows={nodeRows}>
           {(attrs) => (
             <Choice
               {...attrs}
@@ -192,7 +223,7 @@ export function WorkflowNodeInspector({
             <Field
               label="Program filter"
               name="program_id"
-              issues={nodeIssues}
+              rows={nodeRows}
               hint={
                 !trigger ? (
                   <p>{applicable.reason} The saved filter stays unchanged.</p>
@@ -241,7 +272,7 @@ export function WorkflowNodeInspector({
           <Field
             label="Minutes before event"
             name="offset_minutes"
-            issues={nodeIssues}
+            rows={nodeRows}
             hint={<p>Choose 1 to 129600 minutes before the event. Leave blank while unfinished.</p>}
           >
             {(attrs) => (
@@ -267,7 +298,7 @@ export function WorkflowNodeInspector({
           <Field
             label="Saved upcoming offset"
             name="offset_minutes"
-            issues={nodeIssues}
+            rows={nodeRows}
             hint={
               <p>
                 {trigger ? "This event does not support an upcoming offset." : applicable.reason}{" "}
@@ -314,7 +345,7 @@ export function WorkflowNodeInspector({
         choices.some((choice) => choice.value === config.value));
     form = (
       <>
-        <Field label="Comparison field" name="field" issues={nodeIssues}>
+        <Field label="Comparison field" name="field" rows={nodeRows}>
           {(attrs) => (
             <Choice
               {...attrs}
@@ -347,7 +378,7 @@ export function WorkflowNodeInspector({
             Choose another field or clear the comparison.
           </p>
         ) : null}
-        <Field label="Comparison operator" name="operator" issues={nodeIssues}>
+        <Field label="Comparison operator" name="operator" rows={nodeRows}>
           {(attrs) => (
             <Choice
               {...attrs}
@@ -370,7 +401,7 @@ export function WorkflowNodeInspector({
         <Field
           label={membership ? "Add comparison value" : "Comparison value"}
           name="value"
-          issues={nodeIssues}
+          rows={nodeRows}
           hint={
             <>
               {!hasValue ? <p>Choose a value to finish this comparison.</p> : null}
@@ -484,7 +515,7 @@ export function WorkflowNodeInspector({
     const config = node.config;
     form = (
       <>
-        <Field label="Delay mode" name="mode" issues={nodeIssues}>
+        <Field label="Delay mode" name="mode" rows={nodeRows}>
           {(attrs) => (
             <select
               {...attrs}
@@ -508,7 +539,7 @@ export function WorkflowNodeInspector({
           <Field
             label="Duration in minutes"
             name="minutes"
-            issues={nodeIssues}
+            rows={nodeRows}
             hint={<p>Use 0 to 129600 minutes. Leave blank while unfinished.</p>}
           >
             {(attrs) => (
@@ -535,7 +566,7 @@ export function WorkflowNodeInspector({
             <Field
               label="Event time"
               name="field"
-              issues={nodeIssues}
+              rows={nodeRows}
               hint={
                 !applicable.delayFields.length ? (
                   <p>
@@ -564,7 +595,7 @@ export function WorkflowNodeInspector({
                 Clear event time
               </button>
             ) : null}
-            <Field label="Timing" name="offset_minutes" issues={nodeIssues}>
+            <Field label="Timing" name="offset_minutes" rows={nodeRows}>
               {(attrs) => (
                 <select
                   {...attrs}
@@ -597,7 +628,7 @@ export function WorkflowNodeInspector({
               <Field
                 label="Offset in minutes"
                 name="offset_minutes"
-                issues={nodeIssues}
+                rows={nodeRows}
                 hint={<p>Use 0 to 129600 minutes. Clearing returns to At event time.</p>}
               >
                 {(attrs) => (
@@ -648,7 +679,7 @@ export function WorkflowNodeInspector({
           <Field
             label={label}
             name={name}
-            issues={nodeIssues}
+            rows={nodeRows}
             hint={
               unsupported.length ? (
                 <p className={styles.warning}>
@@ -725,7 +756,7 @@ export function WorkflowNodeInspector({
     };
     form = (
       <>
-        <Field label="Recipient policy" name="recipient" issues={nodeIssues}>
+        <Field label="Recipient policy" name="recipient" rows={nodeRows}>
           {(attrs) => (
             <Choice
               {...attrs}
@@ -765,7 +796,7 @@ export function WorkflowNodeInspector({
         <Field
           label="Reply-to email"
           name="reply_to_email"
-          issues={nodeIssues}
+          rows={nodeRows}
           hint={<p>Leave blank to use the sender default.</p>}
         >
           {(attrs) => (
@@ -800,7 +831,7 @@ export function WorkflowNodeInspector({
         <Field
           label="Follow-up due in days"
           name="due_in_days"
-          issues={nodeIssues}
+          rows={nodeRows}
           hint={<p>Use 0 to 90 days. An earlier existing follow-up date stays in place.</p>}
         >
           {(attrs) => (
@@ -822,7 +853,7 @@ export function WorkflowNodeInspector({
             />
           )}
         </Field>
-        <Field label="Follow-up note" name="note" issues={nodeIssues}>
+        <Field label="Follow-up note" name="note" rows={nodeRows}>
           {(attrs) => (
             <textarea
               {...attrs}
@@ -842,7 +873,12 @@ export function WorkflowNodeInspector({
   } else if (node?.type === "end") form = <p>This branch finishes when it reaches this step.</p>;
 
   return (
-    <aside className={styles.inspector} aria-labelledby={headingId}>
+    <aside
+      ref={root}
+      className={styles.inspector}
+      aria-labelledby={headingId}
+      data-docked={docked ? "true" : undefined}
+    >
       <header className={styles.header}>
         <h2 id={headingId} ref={heading} tabIndex={-1}>
           {node ? `${names[node.type]} settings` : "Step settings"}
@@ -855,12 +891,24 @@ export function WorkflowNodeInspector({
         <p>Select a step to configure it.</p>
       ) : (
         <>
-          {nodeIssues.length ? (
+          {nodeRows.length ? (
             <section aria-label="Step issues" className={styles.issueSummary}>
               <h3>Review this step</h3>
               <ul>
-                {nodeIssues.map((issue, index) => (
-                  <li key={index}>{issue.message}</li>
+                {nodeRows.map((row) => (
+                  <li key={row.key}>
+                    {row.setting ? (
+                      <button
+                        type="button"
+                        className={styles.issueLink}
+                        onClick={() => focusSetting(row.field)}
+                      >
+                        <strong>{row.setting}</strong> {row.message}
+                      </button>
+                    ) : (
+                      row.message
+                    )}
+                  </li>
                 ))}
               </ul>
             </section>

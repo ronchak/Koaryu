@@ -67,7 +67,10 @@ export const workflowActivityApi = {
     signal?: AbortSignal,
   ) => {
     const workflow = id(workflowId);
-    const body = buildWorkflowSimulationRequest(request.graph, request.context);
+    const body = buildWorkflowSimulationRequest(request.graph, request.context, {
+      assume_waits_elapsed: request.assume_waits_elapsed,
+      branch_assumptions: request.branch_assumptions,
+    });
     const graph = body.graph;
     const value = await workflowApi.simulate(workflow, { ...body, graph }, token, signal);
     if (!isWorkflowSimulationResponse(value, graph)) unavailable();

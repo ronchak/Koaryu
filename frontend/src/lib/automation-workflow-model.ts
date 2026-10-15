@@ -480,15 +480,64 @@ export function serializeWorkflowDraft(draft: WorkflowSnapshot): string {
   return JSON.stringify(canonicalWorkflowDraft(draft));
 }
 
+/**
+ * Editor-generated IDs count upward from the highest existing number, so a step added
+ * after a deletion never takes an earlier number and the step names below stay put.
+ */
 export function nextWorkflowId(graph: WorkflowSnapshot["graph"], kind: "node" | "edge"): string {
-  const used = new Set((kind === "node" ? graph.nodes : graph.edges).map(({ id }) => id));
-  let index = 1;
+  const ids = (kind === "node" ? graph.nodes : graph.edges).map(({ id }) => id);
+  const used = new Set(ids);
+  const pattern = new RegExp(`^${kind}_(\\d{1,15})$`);
+  let highest = 0;
+  for (const id of ids) {
+    const match = pattern.exec(id);
+    if (match) highest = Math.max(highest, Number(match[1]));
+  }
+  let index = highest + 1;
   while (used.has(`${kind}_${index}`)) index += 1;
   return `${kind}_${index}`;
 }
 
+export const WORKFLOW_KIND_LABELS: Record<WorkflowNodeType, string> = {
+  trigger: "Trigger",
+  condition: "Condition",
+  delay: "Delay",
+  email: "Email",
+  lead_follow_up: "Lead follow-up",
+  end: "End",
+};
+const GENERATED_NODE_ID = /^node_(\d{1,15})$/;
+/**
+ * Named steps (templates, saved drafts) keep their alphabetical order; steps the editor
+ * generated sort after them in creation order. A newly added step therefore always takes
+ * the next number of its kind instead of renaming the steps that were already there.
+ */
+export function compareWorkflowNodeIds(a: string, b: string): number {
+  const left = GENERATED_NODE_ID.exec(a);
+  const right = GENERATED_NODE_ID.exec(b);
+  if (left && right) return Number(left[1]) - Number(right[1]) || compareIds({ id: a }, { id: b });
+  if (left) return 1;
+  if (right) return -1;
+  return compareIds({ id: a }, { id: b });
+}
+/** User-visible step names: the kind and a number, such as "Email 2". */
+export function workflowNodeLabels(graph: WorkflowSnapshot["graph"]): Record<string, string> {
+  const counts = new Map<WorkflowNodeType, number>();
+  return Object.fromEntries(
+    [...graph.nodes]
+      .sort((left, right) => compareWorkflowNodeIds(left.id, right.id))
+      .map((node) => {
+        const ordinal = (counts.get(node.type) ?? 0) + 1;
+        counts.set(node.type, ordinal);
+        return [node.id, `${WORKFLOW_KIND_LABELS[node.type]} ${ordinal}`];
+      }),
+  );
+}
+
+export type WorkflowInsertion = { node_id: string; port: WorkflowPort };
 export type WorkflowEdit =
   | { kind: "add_node"; node: WorkflowNode; position?: WorkflowPosition }
+  | { kind: "insert_node"; node: WorkflowNode; after: WorkflowInsertion }
   | { kind: "update_config"; node_id: string; update: WorkflowNodeUpdate }
   | { kind: "remove_node"; node_id: string }
   | { kind: "connect"; edge: WorkflowEdge }
@@ -525,6 +574,70 @@ export function editWorkflow(draft: WorkflowSnapshot, edit: WorkflowEdit): Workf
           configurable: true,
         });
       break;
+    case "insert_node": {
+      // One deliberate operation: the new step takes the anchor's outgoing connection and
+      // hands it on, so the route around it stays whole and no other step is renamed.
+      const anchor = graph.nodes.find(({ id }) => id === edit.after.node_id);
+      if (!anchor) return fail("Choose an existing step to insert after.");
+      if (edit.node.type === "trigger") return fail("A trigger cannot follow another step.");
+      if (!workflowPorts(anchor.type).includes(edit.after.port))
+        return fail("This step does not have that outgoing port.");
+      if (graph.nodes.some(({ id }) => id === edit.node.id))
+        return fail("Node IDs must be unique.");
+      const existing = graph.edges.find(
+        (edge) => edge.source === anchor.id && edge.port === edit.after.port,
+      );
+      const continuation = existing
+        ? graph.nodes.find(({ id }) => id === existing.target)
+        : undefined;
+      if (existing && !continuation)
+        return fail("Remove the unattached connection before inserting a step.");
+      const onward = workflowPorts(edit.node.type);
+      if (existing && !onward.length)
+        return fail("An end cannot sit between two steps. Add it on an open branch instead.");
+      graph.nodes.push(structuredClone(edit.node));
+      graph.edges = graph.edges.filter((edge) => edge !== existing);
+      graph.edges.push({
+        id: nextWorkflowId(graph, "edge"),
+        source: anchor.id,
+        target: edit.node.id,
+        port: edit.after.port,
+      });
+      // A check keeps the chain whole on both paths until the user points one elsewhere.
+      if (existing)
+        for (const port of onward)
+          graph.edges.push({
+            id: nextWorkflowId(graph, "edge"),
+            source: edit.node.id,
+            target: existing.target,
+            port,
+          });
+      if (Object.hasOwn(layout.positions, anchor.id)) {
+        const from = layout.positions[anchor.id];
+        const placed = Object.entries(layout.positions).map(([, position]) => position);
+        const position = { x: from.x + 300, y: from.y };
+        for (
+          let attempt = 0;
+          attempt < 40 &&
+          placed.some(
+            (other) => Math.abs(other.x - position.x) < 200 && Math.abs(other.y - position.y) < 150,
+          );
+          attempt += 1
+        )
+          position.y += 180;
+        if (
+          Math.abs(position.x) <= WORKFLOW_LIMITS.position &&
+          Math.abs(position.y) <= WORKFLOW_LIMITS.position
+        )
+          Object.defineProperty(layout.positions, edit.node.id, {
+            value: position,
+            enumerable: true,
+            writable: true,
+            configurable: true,
+          });
+      }
+      break;
+    }
     case "update_config":
       if (node!.type !== edit.update.type)
         return fail("Configuration updates must keep the node type.");
