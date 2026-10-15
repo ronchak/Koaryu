@@ -162,13 +162,14 @@ export function AccountMenu({
     canViewSubscription,
   );
 
+  // In the side rail the trigger is a row like the links above it: a 48px slot
+  // for the avatar, then the words. Collapsing narrows the row to the slot.
   const triggerClasses = compact
     ? "inline-flex min-h-11 min-w-11 items-center gap-2 rounded-[10px] px-2 py-1.5 text-left hover:bg-surface-raised focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--product-focus)] focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
     : `
-        flex h-11 w-full cursor-pointer items-center rounded-[10px] text-left transition-[background-color,color,border-color] duration-150 ease-out
+        flex h-11 w-full cursor-pointer items-center overflow-hidden rounded-[10px] text-left transition-[background-color,color,border-color] duration-150 ease-out
         hover:bg-surface-raised focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--product-focus)] focus-visible:ring-offset-2
         focus-visible:ring-offset-surface motion-reduce:transition-none
-        ${collapsed ? "justify-center px-0" : "gap-3 px-3"}
       `;
 
   return (
@@ -182,17 +183,28 @@ export function AccountMenu({
         className={triggerClasses}
         title={collapsed ? displayName : undefined}
       >
-        <span
-          className={`
-            flex flex-shrink-0 items-center justify-center rounded-full bg-accent/20 text-xs font-medium text-accent
-            ${collapsed ? "h-8 w-8" : compact ? "h-11 w-11" : "h-7 w-7"}
-          `}
-          aria-hidden="true"
-        >
-          {letter}
-        </span>
-        {!collapsed && (
-          <>
+        {compact ? (
+          <span
+            className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-full bg-accent/20 text-xs font-medium text-accent"
+            aria-hidden="true"
+          >
+            {letter}
+          </span>
+        ) : (
+          <span
+            className="flex h-11 w-12 flex-shrink-0 items-center justify-center"
+            aria-hidden="true"
+          >
+            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-accent/20 text-xs font-medium text-accent">
+              {letter}
+            </span>
+          </span>
+        )}
+        {!compact && (
+          <span
+            className={`flex min-w-0 flex-1 items-center gap-3 pr-3 transition-opacity duration-150 ease-out motion-reduce:transition-none ${collapsed ? "opacity-0" : "opacity-100"}`}
+            aria-hidden={collapsed || undefined}
+          >
             <span className="min-w-0 flex-1 overflow-hidden">
               <span className="block truncate text-sm text-text-primary">{displayName}</span>
               <span className="block truncate text-xs text-muted">{displayEmail}</span>
@@ -202,7 +214,7 @@ export function AccountMenu({
             ) : (
               <ChevronRight className="h-4 w-4 flex-shrink-0 text-muted" />
             )}
-          </>
+          </span>
         )}
       </button>
 

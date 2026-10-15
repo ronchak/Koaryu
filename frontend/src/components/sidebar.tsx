@@ -6,10 +6,10 @@ import { usePathname } from "next/navigation";
 import {
   BarChart3,
   Calendar,
+  ChevronLeft,
+  ChevronRight,
   CreditCard,
   LayoutDashboard,
-  PanelLeftClose,
-  PanelLeftOpen,
   Settings,
   UserPlus,
   Users,
@@ -20,8 +20,8 @@ import { AccountMenu } from "@/components/account-menu";
 import { NavigationPending } from "@/components/navigation-pending";
 import { MartialArtsBelt } from "@/components/icons/martial-arts-belt";
 import type { NavigationPlacement } from "@/components/theme-provider";
-import { Logo } from "./logo";
-import { NAV_ITEMS } from "@/lib/constants";
+import { KoaryuMark, Logo } from "./logo";
+import { APP_NAME, NAV_ITEMS } from "@/lib/constants";
 import { formatDashboardRole } from "@/lib/dashboard-shell-route";
 import styles from "./dashboard-shell.module.css";
 
@@ -61,7 +61,15 @@ const NAV_ICONS: Record<string, LucideIcon> = {
   Workflow,
 };
 
-function NavigationLinks({ pathname, role }: { pathname: string; role?: string | null }) {
+function NavigationLinks({
+  pathname,
+  role,
+  collapsed = false,
+}: {
+  pathname: string;
+  role?: string | null;
+  collapsed?: boolean;
+}) {
   return NAV_ITEMS.filter((item) => role && (!item.roles || item.roles.includes(role))).map(
     (item) => {
       const isActive = isActiveRoute(pathname, item.href);
@@ -74,7 +82,8 @@ function NavigationLinks({ pathname, role }: { pathname: string; role?: string |
             prefetch={item.prefetch}
             aria-current={isActive ? "page" : undefined}
             aria-label={item.label}
-            title={item.label}
+            // The label is visible when expanded; a tooltip then would only repeat it.
+            title={collapsed ? item.label : undefined}
             className={styles.navLink}
           >
             <span className={styles.navIconSlot}>
@@ -102,8 +111,9 @@ export function Sidebar({
 }: SidebarProps) {
   const pathname = usePathname();
   const displayName = userName || "User";
-  const ToggleIcon = isCollapsed ? PanelLeftOpen : PanelLeftClose;
+  const ToggleIcon = isCollapsed ? ChevronRight : ChevronLeft;
   const toggleLabel = isCollapsed ? "Expand product spine" : "Collapse product spine";
+  const roleLabel = formatDashboardRole(role);
 
   return (
     <>
@@ -154,10 +164,19 @@ export function Sidebar({
           </div>
         </header>
       ) : (
+        /*
+         * The spine is one column of 48px slots. Every row (brand, studio, each
+         * link, the account trigger) puts its mark in that slot and its words to
+         * the right, so collapsing only narrows the rail to the slot: nothing
+         * moves, the words fade, and the handle on the edge stays where it was.
+         */
         <aside className={styles.spine} data-collapsed={isCollapsed ? "true" : "false"}>
           <div className={styles.brandBand}>
             <Link href="/" aria-label="Go to Koaryu homepage" className={styles.brandLink}>
-              <Logo size="md" showText={!isCollapsed} />
+              <span className={styles.railSlot}>
+                <KoaryuMark size="lg" />
+              </span>
+              <span className={styles.brandWord}>{APP_NAME}</span>
             </Link>
             {onToggleCollapsed ? (
               <button
@@ -168,38 +187,29 @@ export function Sidebar({
                 title={toggleLabel}
                 className={styles.spineToggle}
               >
-                <ToggleIcon aria-hidden="true" size={18} />
+                <ToggleIcon aria-hidden="true" size={14} strokeWidth={2.2} />
               </button>
             ) : null}
           </div>
-          {!isCollapsed && studioName ? (
-            <div className={styles.studioCard}>
-              <span className={styles.studioMark} aria-hidden="true">
-                {studioInitials(studioName)}
+          {studioName ? (
+            <div
+              className={styles.studioCard}
+              title={isCollapsed ? `${studioName} · ${roleLabel}` : undefined}
+            >
+              <span className={styles.railSlot}>
+                <span className={styles.studioMark} aria-hidden="true">
+                  {studioInitials(studioName)}
+                </span>
               </span>
               <span className={styles.studioText}>
                 <strong>{studioName}</strong>
-                <small>{formatDashboardRole(role)}</small>
+                <small>{roleLabel}</small>
               </span>
             </div>
           ) : null}
           <nav className={styles.spineNav} aria-label="Product navigation">
             <ul className={styles.spineList}>
-              {isCollapsed && onToggleCollapsed ? (
-                <li>
-                  <button
-                    type="button"
-                    onClick={onToggleCollapsed}
-                    aria-label={toggleLabel}
-                    aria-expanded={false}
-                    title={toggleLabel}
-                    className={styles.spineToggle}
-                  >
-                    <ToggleIcon aria-hidden="true" size={18} />
-                  </button>
-                </li>
-              ) : null}
-              <NavigationLinks pathname={pathname} role={role} />
+              <NavigationLinks pathname={pathname} role={role} collapsed={isCollapsed} />
             </ul>
           </nav>
           <div className={styles.accountBand}>

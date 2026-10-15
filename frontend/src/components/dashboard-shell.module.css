@@ -15,6 +15,8 @@
   --product-motion-settle-duration: 180ms;
   --product-motion-change-duration: 120ms;
   --product-motion-ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --spine-width: 224px;
+  --spine-rail-width: 72px;
 
   --bg: var(--product-ground);
   --surface: var(--product-paper);
@@ -182,13 +184,11 @@
   color: var(--product-ink);
 }
 
-.shellRoot[data-surface="horizon"] .navLink,
-.shellRoot[data-surface="horizon"] .spineToggle {
+.shellRoot[data-surface="horizon"] .navLink {
   color: var(--hz-rail-meta);
 }
 
-.shellRoot[data-surface="horizon"] .navLink:hover,
-.shellRoot[data-surface="horizon"] .spineToggle:hover {
+.shellRoot[data-surface="horizon"] .navLink:hover {
   background: var(--hz-rail-active);
   color: var(--hz-rail-ink);
 }
@@ -196,7 +196,10 @@
 .shellRoot[data-surface="horizon"] .navLink[aria-current="page"] {
   background: var(--hz-rail-active);
   color: var(--hz-rail-ink);
-  box-shadow: inset 2px 0 0 var(--hz-rail-mark);
+}
+
+.shellRoot[data-surface="horizon"] .navLink[aria-current="page"] .navIcon {
+  color: var(--hz-rail-mark);
 }
 
 .shellRoot[data-surface="horizon"] .main {
@@ -204,34 +207,49 @@
 }
 
 .studioCard {
-  display: flex;
+  display: grid;
+  height: 48px;
   min-width: 0;
+  grid-template-columns: var(--rail-slot) minmax(0, 1fr);
   align-items: center;
-  gap: 0.625rem;
-  margin: 0.25rem 0.6rem 0.75rem;
-  padding: 0.6rem 0.65rem;
-  border: 1px solid var(--hz-rail-line, var(--product-rule-soft));
+  margin: 0.5rem var(--rail-inset) 0;
+  overflow: hidden;
   border-radius: 12px;
   background: color-mix(in srgb, var(--hz-rail-ink, var(--product-ink)) 6%, transparent);
+  box-shadow: inset 0 0 0 1px var(--hz-rail-line, var(--product-rule-soft));
+  transition:
+    background-color var(--product-motion-travel-duration) var(--product-motion-ease),
+    box-shadow var(--product-motion-travel-duration) var(--product-motion-ease);
+}
+
+.spine[data-collapsed="true"] .studioCard {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px transparent;
 }
 
 .studioMark {
   display: grid;
-  width: 30px;
-  height: 30px;
-  flex: 0 0 30px;
+  width: 32px;
+  height: 32px;
   place-items: center;
-  border-radius: 8px;
+  border-radius: 9px;
   background: var(--hz-rail-mark, var(--product-wood));
   color: var(--hz-rail, var(--product-paper));
   font-size: 0.75rem;
   font-weight: 760;
+  letter-spacing: 0.02em;
 }
 
 .studioText {
   display: grid;
   min-width: 0;
+  padding-right: 0.75rem;
   line-height: 1.25;
+  transition: opacity var(--product-motion-travel-duration) var(--product-motion-ease);
+}
+
+.spine[data-collapsed="true"] .studioText {
+  opacity: 0;
 }
 
 .studioText strong {
@@ -245,6 +263,7 @@
 .studioText small {
   color: var(--hz-rail-meta, var(--product-meta));
   font-size: 0.6875rem;
+  white-space: nowrap;
 }
 
 .skipLink {
@@ -273,13 +292,13 @@
 .main {
   min-width: 0;
   min-height: 100dvh;
-  margin-left: 224px;
+  margin-left: var(--spine-width);
   background: var(--product-ground);
   transition: margin-left var(--product-motion-travel-duration) var(--product-motion-ease);
 }
 
 .shellRoot[data-spine-collapsed="true"] .main {
-  margin-left: 72px;
+  margin-left: var(--spine-rail-width);
 }
 
 .shellRoot[data-navigation-placement="top"] .main {
@@ -408,68 +427,111 @@
 }
 
 .spine {
+  /* Every row is a 48px slot for its mark plus words to the right. The rail
+     inset is the same in both states, so marks never move when it collapses. */
+  --rail-inset: 12px;
+  --rail-slot: 48px;
+
   position: fixed;
   inset: 0 auto 0 0;
   z-index: 30;
   display: flex;
-  width: 224px;
+  width: var(--spine-width);
   flex-direction: column;
-  overflow: hidden;
   transition: width var(--product-motion-travel-duration) var(--product-motion-ease);
 }
 
 .spine[data-collapsed="true"] {
-  width: 72px;
+  width: var(--spine-rail-width);
+}
+
+.railSlot {
+  display: grid;
+  width: var(--rail-slot);
+  height: 100%;
+  place-items: center;
 }
 
 .brandBand {
-  display: flex;
-  min-height: 64px;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-  padding: 0.6rem 0.75rem 0.6rem 1rem;
-}
-
-.spine[data-collapsed="true"] .brandBand {
-  justify-content: center;
-  padding-inline: 0.5rem;
+  padding: 0.75rem var(--rail-inset) 0;
 }
 
 .brandLink,
-.spineToggle,
 .mobileBrand {
+  min-width: 44px;
+  min-height: 44px;
   color: inherit;
 }
 
-.brandLink,
 .mobileBrand {
   display: inline-flex;
-  min-width: 44px;
-  min-height: 44px;
   align-items: center;
   border-radius: 10px;
 }
 
+.brandLink {
+  display: grid;
+  height: 48px;
+  grid-template-columns: var(--rail-slot) minmax(0, 1fr);
+  align-items: center;
+  overflow: hidden;
+  border-radius: 12px;
+  text-decoration: none;
+}
+
+.brandWord {
+  overflow: hidden;
+  padding-right: 0.75rem;
+  font-family:
+    -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", Inter, "Segoe UI",
+    Roboto, sans-serif;
+  font-size: 1.0625rem;
+  font-weight: 760;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  transition: opacity var(--product-motion-travel-duration) var(--product-motion-ease);
+}
+
+.spine[data-collapsed="true"] .brandWord {
+  opacity: 0;
+}
+
+/* The collapse control is a handle on the rail's edge, level with the brand.
+   It rides the edge as the rail resizes instead of jumping into the list. */
 .spineToggle {
-  display: inline-grid;
-  width: 44px;
-  height: 44px;
-  flex: 0 0 44px;
+  position: absolute;
+  top: 1.375rem;
+  right: -14px;
+  z-index: 1;
+  display: grid;
+  width: 28px;
+  height: 28px;
   place-items: center;
-  border: 1px solid transparent;
-  border-radius: 10px;
-  background: transparent;
-  color: var(--product-soft-ink);
+  border: 1px solid var(--product-rule);
+  border-radius: 50%;
+  background: var(--product-paper);
+  color: var(--product-ink);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 14%);
   cursor: pointer;
   transition:
     background-color var(--product-motion-change-duration) ease-out,
+    border-color var(--product-motion-change-duration) ease-out,
     color var(--product-motion-change-duration) ease-out;
 }
 
+/* A 44px hit area around a 28px handle. */
+.spineToggle::before {
+  content: "";
+  position: absolute;
+  inset: -8px;
+  border-radius: 50%;
+}
+
 .spineToggle:hover {
-  background: color-mix(in srgb, var(--product-paper) 72%, transparent);
-  color: var(--product-ink);
+  border-color: var(--product-wood);
+  background: var(--product-card-stock);
+  color: var(--product-wood-deep);
 }
 
 .spineToggle:focus-visible,
@@ -481,15 +543,20 @@
   outline-offset: 2px;
 }
 
+.spineToggle:focus-visible {
+  outline-color: var(--product-wood);
+}
+
 .spineNav {
   flex: 1;
-  overflow-y: auto;
-  padding: 0.5rem 0.55rem;
+  overflow: hidden auto;
+  padding: 0.75rem var(--rail-inset) 0.5rem;
+  scrollbar-width: thin;
 }
 
 .spineList {
   display: grid;
-  gap: 0.25rem;
+  gap: 0.125rem;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -510,6 +577,13 @@
     color var(--product-motion-change-duration) ease-out;
 }
 
+.spine .navLink {
+  grid-template-columns: var(--rail-slot) minmax(0, 1fr);
+  gap: 0;
+  overflow: hidden;
+  padding: 0;
+}
+
 .navLink:hover {
   background: color-mix(in srgb, var(--product-paper) 68%, transparent);
   color: var(--product-ink);
@@ -523,6 +597,7 @@
 .navIcon {
   justify-self: center;
   opacity: 0.78;
+  transition: color var(--product-motion-change-duration) ease-out;
 }
 
 .navLink[aria-current="page"] .navIcon {
@@ -537,26 +612,17 @@
   white-space: nowrap;
 }
 
-.spine[data-collapsed="true"] .navLink {
-  grid-template-columns: 1fr;
-  justify-items: center;
-  padding-inline: 0.4rem;
+.spine .navLabel {
+  padding-right: 0.75rem;
+  transition: opacity var(--product-motion-travel-duration) var(--product-motion-ease);
 }
 
-.spine[data-collapsed="true"] .navLabel,
-.spine[data-collapsed="true"] .brandLink,
-.spine[data-collapsed="true"] .brandBand > .spineToggle {
-  display: none;
-}
-
-.spine[data-collapsed="true"] .spineNav > .spineList > li:first-child {
-  display: grid;
-  place-items: center;
-  margin-bottom: 0.4rem;
+.spine[data-collapsed="true"] .navLabel {
+  opacity: 0;
 }
 
 .accountBand {
-  padding: 0.75rem 0.6rem;
+  padding: 0.5rem var(--rail-inset) 0.75rem;
 }
 
 .mobileSpine {
