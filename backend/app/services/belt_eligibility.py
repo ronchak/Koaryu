@@ -340,7 +340,8 @@ class BeltEligibilityCalculator:
         A caller that has just read every ladder in this studio, ordered by
         ``created_at``, may pass those rows to skip the duplicate metadata read.
         They must include hidden-program and unscoped ladders, which still own
-        current ranks. Rows from another studio are ignored.
+        current ranks. Rows from another studio are ignored. Every rank is then
+        read page by page, so a snapshot past the provider's row cap stays whole.
         """
         return await self._get_eligibility(studio_id, ladder_id, ladder_rows=ladder_rows)
 
@@ -369,6 +370,7 @@ class BeltEligibilityCalculator:
         reference_time: datetime | None = None,
         ladder_rows: list[dict[str, Any]] | None = None,
     ) -> list[EligibilityEntry]:
+        ladder_snapshot = ladder_rows is not None
         if ladder_rows is None:
             ladders_query = (
                 self.supabase.table("belt_ladders")
@@ -425,33 +427,39 @@ class BeltEligibilityCalculator:
         if ladder_id and ladder_id not in ladder_meta:
             raise HTTPException(status_code=404, detail="Belt ladder not found")
 
-        ranks_query = (
-            self.supabase.table("belt_ranks")
-            .select("*")
-            .eq("studio_id", studio_id)
-            .order("ladder_id")
-            .order("display_order")
-            .order("created_at")
-            .order("id")
-        )
-        if event:
-            ranks_query = ranks_query.eq("ladder_id", ladder_id)
-        ranks_result = ranks_query.execute()
-        ranks = self._read_rows(
-            ranks_result,
-            (
-                "id",
-                "studio_id",
-                "ladder_id",
-                "name",
-                "color_hex",
-                "min_classes",
-                "min_months",
-                "requires_approval",
+        def build_ranks_query() -> Any:
+            ranks_query = (
+                self.supabase.table("belt_ranks")
+                .select("*")
+                .eq("studio_id", studio_id)
+                .order("ladder_id")
+                .order("display_order")
+                .order("created_at")
+                .order("id")
             )
-            if event
-            else (),
-        )
+            if event:
+                ranks_query = ranks_query.eq("ladder_id", ladder_id)
+            return ranks_query
+
+        if ladder_snapshot:
+            # A complete ladder snapshot needs every rank, past the provider's row cap.
+            ranks = self._fetch_paged(build_ranks_query)
+        else:
+            ranks = self._read_rows(
+                build_ranks_query().execute(),
+                (
+                    "id",
+                    "studio_id",
+                    "ladder_id",
+                    "name",
+                    "color_hex",
+                    "min_classes",
+                    "min_months",
+                    "requires_approval",
+                )
+                if event
+                else (),
+            )
 
         if not ladder_meta or not ranks:
             return []

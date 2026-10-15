@@ -743,52 +743,87 @@ class BeltServiceTest(unittest.TestCase):
                 )
                 self.assertEqual([read["table"] for read in supabase.query_log], reads)
 
-    def test_primary_ladder_eligibility_pages_every_ladder_past_the_provider_cap(self):
+    def test_primary_ladder_eligibility_pages_ladders_and_ranks_past_the_provider_cap(self):
+        # Each older hidden ladder owns a rank, so the primary's ranks and the
+        # later hidden ladder's rank sort onto the second rank page.
         older = [
-            ladder_row(f"lad-old-{index:04d}", "prog-archived", "2024-01-01T00:00:00Z")
+            ladder_row(
+                f"lad-old-{index:04d}",
+                "prog-archived",
+                "2024-01-01T00:00:00Z",
+                [rank_row(f"lad-old-{index:04d}-1", f"lad-old-{index:04d}", 1)],
+            )
             for index in range(PROVIDER_MAX_ROWS)
         ]
         later = [
             ladder_row(
-                "lad-archived",
+                "lad-zz-hidden",
                 "prog-archived",
                 "2025-01-02T00:00:00Z",
-                [rank_row("r-archived", "lad-archived", 1)],
+                [rank_row("r-late", "lad-zz-hidden", 1)],
             ),
             ladder_row(
                 "lad-primary",
                 "prog-visible",
                 "2025-02-01T00:00:00Z",
-                [rank_row("p-white", "lad-primary", 1)],
+                [rank_row("p-white", "lad-primary", 1), rank_row("p-top", "lad-primary", 2)],
             ),
         ]
-        supabase = CappedSupabase(
-            {
-                "programs": [
-                    program_row("prog-visible"),
-                    program_row("prog-archived", archived_at="2026-01-01T00:00:00Z"),
-                ],
-                **with_ranks([*older, *later]),
-                "students": [
-                    student_row("st-unranked", "prog-visible", None),
-                    student_row("st-archived", "prog-visible", "r-archived"),
-                ],
-                "student_program_memberships": [],
-                "promotions": [],
-                "attendance": [],
-            }
-        )
+        tables = {
+            "programs": [
+                program_row("prog-visible"),
+                program_row("prog-archived", archived_at="2026-01-01T00:00:00Z"),
+            ],
+            **with_ranks([*older, *later]),
+            "students": [
+                student_row("st-unranked", "prog-visible", None),
+                student_row("st-white", "prog-visible", "p-white"),
+                student_row("st-top", "prog-visible", "p-top"),
+                student_row("st-late", "prog-visible", "r-late"),
+                student_row("st-old", "prog-visible", "lad-old-0000-1"),
+            ],
+            "student_program_memberships": [],
+            "promotions": [],
+            "attendance": [],
+        }
+        supabase = CappedSupabase(copy.deepcopy(tables))
+        uncapped = BeltService(FakeSupabase(copy.deepcopy(tables)))
 
-        primary, entries = asyncio.run(
-            BeltService(supabase).get_primary_ladder_eligibility(STUDIO_ID)
-        )
+        with patch.object(belt_eligibility, "datetime", _FrozenDatetime):
+            primary, entries = asyncio.run(
+                BeltService(supabase).get_primary_ladder_eligibility(STUDIO_ID)
+            )
+            ladders = asyncio.run(uncapped.list_ladders(STUDIO_ID))
+            complete = asyncio.run(uncapped.get_eligibility(STUDIO_ID, ladders[0].id))
 
-        self.assertEqual(primary.id, "lad-primary")
-        # The second page's hidden ladder still owns st-archived's current rank.
-        self.assertEqual([entry.student_id for entry in entries], ["st-unranked"])
+        self.assertEqual(primary.model_dump(), ladders[0].model_dump())
         self.assertEqual(
-            [read["range"] for read in supabase.query_log if read["table"] == "belt_ladders"],
-            [(0, 999), (1000, 1999)],
+            [entry.model_dump() for entry in entries], [entry.model_dump() for entry in complete]
+        )
+        # Hidden ladders on either page still own their ranks; p-top has no next rank.
+        self.assertEqual(
+            [(entry.student_id, entry.current_rank_id, entry.next_rank_id) for entry in entries],
+            [("st-unranked", None, "p-white"), ("st-white", "p-white", "p-top")],
+        )
+        for table in ("belt_ladders", "belt_ranks"):
+            self.assertEqual(
+                [read["range"] for read in supabase.query_log if read["table"] == table],
+                [(0, 999), (1000, 1999)],
+            )
+        rank_reads = [read for read in supabase.query_log if read["table"] == "belt_ranks"]
+        self.assertTrue(
+            all(
+                read["columns"] == "*"
+                and read["filters"] == (("eq", "studio_id", STUDIO_ID),)
+                and read["orders"]
+                == (
+                    ("ladder_id", False),
+                    ("display_order", False),
+                    ("created_at", False),
+                    ("id", False),
+                )
+                for read in rank_reads
+            )
         )
 
     def test_calculator_ladder_rows_match_its_own_ladder_read(self):
@@ -875,6 +910,14 @@ class BeltServiceTest(unittest.TestCase):
                             if read["table"] == "belt_ladders"
                         ],
                         ["id, name, program_id"],
+                    )
+                    # Without a snapshot, ranks stay one unpaged read.
+                    self.assertTrue(
+                        all(
+                            read["range"] is None
+                            for read in own_supabase.query_log
+                            if read["table"] == "belt_ranks"
+                        )
                     )
                     self.assertFalse(
                         any(read["table"] == "belt_ladders" for read in supplied_supabase.query_log)
