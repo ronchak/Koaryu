@@ -19,6 +19,7 @@ from app.services.dashboard_summary_cache import (
     invalidate_dashboard_fact_caches,
 )
 from tests.fakes.supabase import RpcBackedSupabase
+from tests.test_belt_service import ProgramJoinTableQuery
 from tests.test_dashboard_home_sections import STUDIO, TODAY, eligibility, home_key, rpc_facts
 
 
@@ -258,6 +259,10 @@ class HomeSupabase(RpcBackedSupabase):
         self.required_eq_filters = {
             name: {"studio_id"} for name in ("leads", "students", "belt_ladders", "programs")
         }
+
+    def table(self, name):
+        # The Belt Tracker's ladder list filters programs through an inner join.
+        return ProgramJoinTableQuery(self, name)
 
     def _rpc_dashboard_summary_facts(self, params):
         if self.facts_error:
@@ -951,10 +956,16 @@ def test_promotions_match_list_ladders_then_eligibility_with_one_fewer_ladder_re
 
     assert current == previous
     assert [row.student_id for row in current.ready_to_promote.rows] == ready_ids
-    # Only the calculator's flat ladder metadata read is gone, whenever it ran.
-    flat_ladder_read = ("belt_ladders", "id, name, program_id")
-    assert previous_trace.count(flat_ladder_read) == (("belt_ranks", "*") in previous_trace)
-    assert trace == [read for read in previous_trace if read != flat_ladder_read]
+    # The Belt Tracker's list is one joined read. Home reads programs and, when
+    # one is visible, one all-ladder snapshot, then the calculator's reads
+    # without its own flat ladder metadata read.
+    assert previous_trace[0] == ("belt_ladders", "*, belt_ranks(*), programs!inner()")
+    snapshot = [("belt_ladders", "*, belt_ranks(*)")] if mutate is not no_visible_program else []
+    assert trace == [
+        ("programs", "id, is_system, archived_at"),
+        *snapshot,
+        *[read for read in previous_trace if read[0] != "belt_ladders"],
+    ]
     ladder_reads = [query for query in client.query_log[start:] if query["table"] == "belt_ladders"]
     assert all(query["filters"] == (("eq", "studio_id", STUDIO),) for query in ladder_reads)
 

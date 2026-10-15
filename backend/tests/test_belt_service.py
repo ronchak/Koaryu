@@ -14,6 +14,12 @@ from app.services.belt_eligibility import BeltEligibilityCalculator
 from app.services.belt_service import BeltService
 from app.services.dashboard_bootstrap_service import DashboardBootstrapService
 from tests.fakes.supabase import FakeTableQuery, RpcBackedSupabase
+from tests.test_dashboard_bootstrap_service import (
+    TRAINING_BELT_QUERY,
+    SyntheticPostgrestClient,
+    TrainingProvider,
+    training_ladder,
+)
 
 
 STUDIO_ID = "11111111-1111-1111-1111-111111111111"
@@ -28,7 +34,42 @@ TO_RANK_ID = "77777777-7777-7777-7777-777777777777"
 ACTOR_ID = "88888888-8888-8888-8888-888888888888"
 
 
+class ProgramJoinTableQuery(FakeTableQuery):
+    """Resolves ``programs.*`` through each row's program, as ``programs!inner()`` does."""
+
+    def _matched_rows(self, rows):
+        matched = super()._matched_rows(rows)
+        if "programs!inner()" not in self.columns:
+            return matched
+        return [row for row in matched if self._program(row) is not None]
+
+    def _program(self, row):
+        return next(
+            (
+                program
+                for program in self.supabase.tables.get("programs", [])
+                if program.get("id") == row.get("program_id")
+            ),
+            None,
+        )
+
+    def _value_for_key(self, row, key):
+        if key.startswith("programs."):
+            return (self._program(row) or {}).get(key.removeprefix("programs."))
+        return super()._value_for_key(row, key)
+
+    def _matches(self, row, op, key, value):
+        # PostgREST's is.true compares a boolean; NULL is not true.
+        if op in {"is", "not_is"} and value in {"true", "false"}:
+            matched = self._value_for_key(row, key) is (value == "true")
+            return matched if op == "is" else not matched
+        return super()._matches(row, op, key, value)
+
+
 class FakeSupabase(RpcBackedSupabase):
+    def table(self, name: str):
+        return ProgramJoinTableQuery(self, name)
+
     def _rpc_sync_belt_ladder_ranks_v2(self, params: dict):
         ladder = next(
             row
@@ -68,7 +109,7 @@ class _FrozenDatetime(datetime):
         return FROZEN_NOW if tz is None else FROZEN_NOW.astimezone(tz)
 
 
-class CappedTableQuery(FakeTableQuery):
+class CappedTableQuery(ProgramJoinTableQuery):
     def _bounded_rows(self, rows):
         return super()._bounded_rows(rows)[:PROVIDER_MAX_ROWS]
 
@@ -283,17 +324,6 @@ def primary_ladder_tables():
     }
 
 
-def with_training_join(tables):
-    """Flatten each ladder's program onto it, where Training's inner join filters it."""
-    programs = {program["id"]: program for program in tables["programs"]}
-    for ladder in tables["belt_ladders"]:
-        program = programs.get(ladder["program_id"]) or {}
-        ladder["programs.studio_id"] = program.get("studio_id")
-        ladder["programs.archived_at"] = program.get("archived_at")
-        # The fake compares the not.is.true filter as text.
-        ladder["programs.is_system"] = "true" if program.get("is_system") else None
-
-
 def eligibility_outcome(supabase, ladder_id, **kwargs):
     try:
         entries = asyncio.run(
@@ -411,6 +441,39 @@ class BeltServiceTest(unittest.TestCase):
         )
 
         self.assertEqual(ladders, [])
+
+    def test_list_ladders_sends_trainings_joined_query_without_a_program_read(self):
+        ladders = [
+            {**training_ladder(ladder_id, created_at, orders), "sub_rank_term": "Stripe"}
+            for ladder_id, created_at, orders in (
+                ("ladder-early", "2026-01-01T00:00:00Z", [2, 0, 1]),
+                ("ladder-late", "2026-02-01T00:00:00Z", [0]),
+            )
+        ]
+        provider = TrainingProvider(ladders=ladders)
+        with SyntheticPostgrestClient(provider) as client:
+            listed = asyncio.run(BeltService(client).list_ladders("studio-1"))
+
+        self.assertEqual(
+            [(method, table) for method, table, *_ in provider.requests],
+            [("GET", "belt_ladders")],
+        )
+        self.assertEqual(sorted(provider.requests[0][2].multi_items()), sorted(TRAINING_BELT_QUERY))
+        self.assertEqual([ladder.id for ladder in listed], ["ladder-early", "ladder-late"])
+        self.assertEqual([rank.display_order for rank in listed[0].ranks], [0, 1, 2])
+
+        # Like Training, an empty studio now sends the join: empty on success,
+        # raised on failure, where the old program preread returned [] first.
+        empty = TrainingProvider(programs=[], ladders=[])
+        with SyntheticPostgrestClient(empty) as client:
+            self.assertEqual(asyncio.run(BeltService(client).list_ladders("studio-1")), [])
+        self.assertEqual([table for _, table, *_ in empty.requests], ["belt_ladders"])
+        failed = TrainingProvider(
+            programs=[], ladders=[], failures={"belt_ladders": (400, "PGRST200")}
+        )
+        with SyntheticPostgrestClient(failed) as client:
+            with self.assertRaises(PostgrestAPIError):
+                asyncio.run(BeltService(client).list_ladders("studio-1"))
 
     def test_unfiltered_eligibility_fetches_full_history_for_unpromoted_program(self):
         second_from_rank_id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
@@ -760,7 +823,6 @@ class BeltServiceTest(unittest.TestCase):
                 )
                 ladders.insert(0, later)
                 tables["belt_ranks"].extend(later["belt_ranks"])
-                with_training_join(tables)
                 supabase = FakeSupabase(tables)
                 belts = BeltService(supabase)
                 training = DashboardBootstrapService(supabase)
@@ -811,6 +873,12 @@ class BeltServiceTest(unittest.TestCase):
         # Older hidden, unscoped and foreign ladders precede the visible ones.
         ladders = [
             ladder_row(
+                "lad-cross-studio",
+                "prog-foreign",
+                "2023-12-01T00:00:00Z",
+                [rank_row("r-cross-studio", "lad-cross-studio", 1)],
+            ),
+            ladder_row(
                 "lad-foreign",
                 "prog-foreign",
                 "2024-01-01T00:00:00Z",
@@ -859,7 +927,6 @@ class BeltServiceTest(unittest.TestCase):
             "promotions": [],
             "attendance": [],
         }
-        with_training_join(tables)
         supabase = CappedSupabase(tables)
         belts = BeltService(supabase)
         training = DashboardBootstrapService(supabase)
@@ -877,7 +944,7 @@ class BeltServiceTest(unittest.TestCase):
             [("st-first", None, "f-white")],
         )
         program_reads = [read for read in supabase.query_log if read["table"] == "programs"]
-        # list_ladders and Home each page programs; Training filters them in its join.
+        # Only Home pages programs; list_ladders and Training filter them in the join.
         self.assertEqual(
             [
                 (read["columns"], read["filters"], read["orders"], read["range"])
@@ -891,20 +958,16 @@ class BeltServiceTest(unittest.TestCase):
                     page,
                 )
                 for page in ((0, 999), (1000, 1999))
-            ]
-            * 2,
+            ],
         )
-        listed_programs = next(
-            value
-            for read in supabase.query_log
-            if read["table"] == "belt_ladders"
-            for op, key, value in read["filters"]
-            if op == "in"
-        )
-        self.assertEqual(
-            listed_programs,
-            {"prog-a-second", "prog-zz-first"}
-            | {row["id"] for row in fillers if row["is_system"] is None},
+        # No program id list reaches a ladder URL, however many programs exist.
+        self.assertFalse(
+            any(
+                op == "in"
+                for read in supabase.query_log
+                if read["table"] == "belt_ladders"
+                for op, _key, _value in read["filters"]
+            )
         )
 
     def test_primary_ladder_eligibility_without_visible_ladder_reads_no_facts(self):

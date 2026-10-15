@@ -111,8 +111,8 @@ class BeltService:
         return [BeltRankResponse(**rank) for rank in (result.data or [])]
 
     def _visible_program_ids(self, studio_id: str) -> set[str]:
-        # Paged in id order: a program past the provider's row cap still makes
-        # its ladder visible, as in Training's joined read.
+        # Home's visible programs, paged in id order: a program past the
+        # provider's row cap still makes its ladder visible, as in the joined reads.
         active_program_rows = self._fetch_paged(
             lambda: (
                 self.supabase.table("programs")
@@ -127,24 +127,28 @@ class BeltService:
             if row.get("id") and not row.get("is_system") and not row.get("archived_at")
         }
 
-    def _ladders_query(self, studio_id: str) -> Any:
+    def _ladders_query(self, studio_id: str, columns: str = "*, belt_ranks(*)") -> Any:
         # Earliest ladder first, with the id breaking created_at ties, so every
         # page is stable and Home, the Belt Tracker and Training share a primary.
         return (
             self.supabase.table("belt_ladders")
-            .select("*, belt_ranks(*)")
+            .select(columns)
             .eq("studio_id", studio_id)
             .order("created_at")
             .order("id")
         )
 
     async def list_ladders(self, studio_id: str) -> list[BeltLadderResponse]:
-        visible_program_ids = self._visible_program_ids(studio_id)
-        if not visible_program_ids:
-            return []
-
+        # Training's join: the empty inner embed keeps only ladders of this
+        # studio's active, non-system programs (a NULL is_system counts as
+        # false), with no program read or id list. An empty studio now sends
+        # this query too, so a failed join raises instead of returning [].
         result = (
-            self._ladders_query(studio_id).in_("program_id", list(visible_program_ids)).execute()
+            self._ladders_query(studio_id, "*, belt_ranks(*), programs!inner()")
+            .eq("programs.studio_id", studio_id)
+            .is_("programs.archived_at", "null")
+            .not_.is_("programs.is_system", "true")
+            .execute()
         )
         return [self._build_ladder_response(row) for row in (result.data or [])]
 

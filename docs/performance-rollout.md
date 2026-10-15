@@ -48,7 +48,11 @@ primary, the id settles equal timestamps the same way on every path, and ladder
 pages stay stable. An explicitly selected ladder still wins. Training
 bootstrap filters visible programs through an inner join, reducing its program
 and belt reads from three to two while keeping projection failures independent.
-An empty studio with a failed ladder join now reports unavailable belts. These
+The belt list uses that same join, reducing two reads to one and avoiding a URL
+that grows with program IDs. Home pages its visible-program lookup separately
+to retain hidden ladder context. Empty studios still return an empty list on a
+successful join; a failed join now reports unavailable belts in Training or
+raises from the belt-list endpoint. These
 are business-read counts, excluding authorization, not hosted latency results.
 These read optimizations require no migration.
 
