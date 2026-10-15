@@ -789,6 +789,124 @@ class BeltServiceTest(unittest.TestCase):
                     )
                 )
 
+    def test_server_primary_paths_page_programs_past_the_provider_cap(self):
+        # 1004 studio programs in id order: prog-zz-first, whose NULL-system
+        # program owns the earliest visible ladder, is on the second page.
+        fillers = [
+            program_row(
+                f"prog-fill-{index:04d}",
+                is_system=None if index % 3 == 2 else index % 3 == 1,
+                archived_at="2026-01-01T00:00:00Z" if index % 3 == 0 else None,
+            )
+            for index in range(PROVIDER_MAX_ROWS)
+        ]
+        programs = [
+            program_row("prog-a-second"),
+            *fillers,
+            program_row("prog-zz-archived", archived_at="2026-01-01T00:00:00Z"),
+            program_row("prog-zz-first", is_system=None),
+            program_row("prog-zz-system", is_system=True),
+            program_row("prog-foreign", studio_id=OTHER_STUDIO_ID),
+        ]
+        # Older hidden, unscoped and foreign ladders precede the visible ones.
+        ladders = [
+            ladder_row(
+                "lad-foreign",
+                "prog-foreign",
+                "2024-01-01T00:00:00Z",
+                [rank_row("r-foreign", "lad-foreign", 1, studio_id=OTHER_STUDIO_ID)],
+                studio_id=OTHER_STUDIO_ID,
+            ),
+            ladder_row(
+                "lad-unscoped",
+                None,
+                "2024-02-01T00:00:00Z",
+                [rank_row("r-unscoped", "lad-unscoped", 1)],
+            ),
+            ladder_row(
+                "lad-archived",
+                "prog-zz-archived",
+                "2024-03-01T00:00:00Z",
+                [rank_row("r-archived", "lad-archived", 1)],
+            ),
+            ladder_row(
+                "lad-system",
+                "prog-zz-system",
+                "2024-04-01T00:00:00Z",
+                [rank_row("r-system", "lad-system", 1)],
+            ),
+            ladder_row(
+                "lad-first",
+                "prog-zz-first",
+                "2025-01-01T00:00:00Z",
+                [rank_row("f-white", "lad-first", 1), rank_row("f-top", "lad-first", 2)],
+            ),
+            ladder_row(
+                "lad-second",
+                "prog-a-second",
+                "2025-02-01T00:00:00Z",
+                [rank_row("s-white", "lad-second", 1)],
+            ),
+        ]
+        tables = {
+            "programs": programs,
+            **with_ranks(ladders),
+            "students": [
+                student_row("st-first", "prog-zz-first", None),
+                student_row("st-archived-rank", "prog-zz-first", "r-archived"),
+            ],
+            "student_program_memberships": [],
+            "promotions": [],
+            "attendance": [],
+        }
+        with_training_join(tables)
+        supabase = CappedSupabase(tables)
+        belts = BeltService(supabase)
+        training = DashboardBootstrapService(supabase)
+
+        listed = asyncio.run(belts.list_ladders(STUDIO_ID))
+        primary, entries = asyncio.run(belts.get_primary_ladder_eligibility(STUDIO_ID))
+        trained = training._fetch_belt_ladders(STUDIO_ID).data
+
+        expected = ["lad-first", "lad-second"]
+        self.assertEqual([ladder.id for ladder in listed], expected)
+        self.assertEqual([row["id"] for row in trained], expected)
+        self.assertEqual(primary.model_dump(), listed[0].model_dump())
+        self.assertEqual(
+            [(entry.student_id, entry.current_rank_id, entry.next_rank_id) for entry in entries],
+            [("st-first", None, "f-white")],
+        )
+        program_reads = [read for read in supabase.query_log if read["table"] == "programs"]
+        # list_ladders and Home each page programs; Training filters them in its join.
+        self.assertEqual(
+            [
+                (read["columns"], read["filters"], read["orders"], read["range"])
+                for read in program_reads
+            ],
+            [
+                (
+                    "id, is_system, archived_at",
+                    (("eq", "studio_id", STUDIO_ID),),
+                    (("id", False),),
+                    page,
+                )
+                for page in ((0, 999), (1000, 1999))
+            ]
+            * 2,
+        )
+        listed_programs = next(
+            value
+            for read in supabase.query_log
+            if read["table"] == "belt_ladders"
+            for op, key, value in read["filters"]
+            if op == "in"
+        )
+        self.assertEqual(
+            listed_programs,
+            {"prog-a-second", "prog-zz-first"}
+            | {row["id"] for row in fillers if row["is_system"] is None},
+        )
+
     def test_primary_ladder_eligibility_without_visible_ladder_reads_no_facts(self):
         no_visible_program = primary_ladder_tables()
         for program in no_visible_program["programs"]:

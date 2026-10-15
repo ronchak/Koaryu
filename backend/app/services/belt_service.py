@@ -111,15 +111,19 @@ class BeltService:
         return [BeltRankResponse(**rank) for rank in (result.data or [])]
 
     def _visible_program_ids(self, studio_id: str) -> set[str]:
-        active_program_rows = (
-            self.supabase.table("programs")
-            .select("id, is_system, archived_at")
-            .eq("studio_id", studio_id)
-            .execute()
+        # Paged in id order: a program past the provider's row cap still makes
+        # its ladder visible, as in Training's joined read.
+        active_program_rows = self._fetch_paged(
+            lambda: (
+                self.supabase.table("programs")
+                .select("id, is_system, archived_at")
+                .eq("studio_id", studio_id)
+                .order("id")
+            )
         )
         return {
             row["id"]
-            for row in (active_program_rows.data or [])
+            for row in active_program_rows
             if row.get("id") and not row.get("is_system") and not row.get("archived_at")
         }
 
