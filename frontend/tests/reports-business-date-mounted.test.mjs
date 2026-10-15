@@ -3,11 +3,15 @@ import { after, before, test } from "node:test";
 import { chromium, expect } from "@playwright/test";
 import { createCommonJsPacker } from "./helpers/store-browser-harness.mjs";
 
+// The real program actions behind the program store; only their transport is synthetic.
+const liveProgramStore = `exports.useProgramStore=()=>{const f=window.fixture;const {useStoreProgramActions}=require("@/lib/store-program-actions");const [programs,setRows]=React.useState(f.initialPrograms),[loaded,setLoaded]=React.useState(true),[loadError,setLoadError]=React.useState(null),[usageLoaded,setUsageLoaded]=React.useState(true),[usageError,setUsageError]=React.useState(null);const refs=React.useRef(null);refs.current??={programs:{current:programs},loaded:{current:true},scope:{current:require("@/lib/store-resource-scope").createResourceScope()},ladders:{current:[]},ladder:{current:null},belts:{current:null}};const persistPrograms=React.useCallback((rows)=>{refs.current.programs.current=rows;refs.current.loaded.current=true;setRows(rows);setLoaded(true);setLoadError(null);},[]);const begin=React.useCallback(()=>({token:"token-a",isCurrent:()=>true,isSameIdentity:()=>true,canRetryAfterTokenChange:()=>false}),[]);const {refreshPrograms}=useStoreProgramActions({applyLadderSelection:()=>null,beginLiveAuthRequest:begin,beltLaddersRef:refs.current.ladders,currentLadderIdRef:refs.current.ladder,isPreviewMode:false,persistPrograms,programsRef:refs.current.programs,programScopeRef:refs.current.scope,programsLoadedRef:refs.current.loaded,refreshBeltsRef:refs.current.belts,setProgramsUsageLoaded:setUsageLoaded,setProgramsUsageLoadError:setUsageError,setProgramsLoadError:setLoadError});return (f.programStore={programs,programsLoaded:loaded,programsLoadError:loadError,programsUsageLoaded:usageLoaded,programsUsageLoadError:usageError,refreshPrograms});};`;
+
 // The real reports route and report model. The stores, readiness marker and page chrome
 // are synthetic; each schedule range read settles when the test says.
-function bundle() {
+function bundle({ realPrograms = false } = {}) {
   const { add, modules } = createCommonJsPacker({
-    "@/lib/store": `const React=require("react");const use=(pick)=>React.useSyncExternalStore(window.fixture.subscribe,()=>pick(window.fixture.state));exports.useConfigStore=()=>use((s)=>s.config);exports.useScheduleStore=()=>use((s)=>s.schedule);exports.useLeadStore=()=>window.fixture.leadStore;exports.useProgramStore=()=>window.fixture.programStore;exports.useStudioStore=()=>window.fixture.studioStore;`,
+    "@/lib/store": `const React=require("react");const use=(pick)=>React.useSyncExternalStore(window.fixture.subscribe,()=>pick(window.fixture.state));exports.useConfigStore=()=>use((s)=>s.config);exports.useScheduleStore=()=>use((s)=>s.schedule);exports.useLeadStore=()=>window.fixture.leadStore;exports.useProgramStore=()=>window.fixture.programStore;exports.useStudioStore=()=>window.fixture.studioStore;${realPrograms ? liveProgramStore : ""}`,
+    ...(realPrograms ? { "@/lib/api": `exports.api=window.fixture.api;` } : {}),
     "@/lib/performance": `exports.markDashboardReadiness=(_page,_generation,value)=>{window.fixture.readiness.push(value);};`,
     "lucide-react": `module.exports=new Proxy({},{get:()=>()=>null});`,
     "@/components/header": `const React=require("react");exports.Header=({title})=>React.createElement("h1",null,title);`,
@@ -25,6 +29,7 @@ function bundle() {
 }
 
 const source = bundle();
+const liveProgramSource = bundle({ realPrograms: true });
 let browser;
 before(async () => {
   browser = await chromium.launch();
@@ -35,7 +40,7 @@ after(async () => {
 
 // The browser calendar is days ahead of the studio calendar, so a browser-derived
 // window cannot pass for the studio window.
-async function mountReports(businessDate, programsLoadError = null) {
+async function mountReports(businessDate, programsLoadError = null, script = source) {
   const context = await browser.newContext({ timezoneId: "UTC" });
   const page = await context.newPage();
   page.setDefaultTimeout(6000);
@@ -95,10 +100,37 @@ async function mountReports(businessDate, programsLoadError = null) {
         },
       };
       f.studioStore = { currentRole: "admin", identityGeneration: 1, identityReady: true };
+      // Used only by the live program store: warm rows with verified usage.
+      f.programReads = [];
+      f.api = {
+        get: (path, token) =>
+          new Promise((resolve, reject) => f.programReads.push({ path, token, resolve, reject })),
+      };
+      f.programRow = (count) => ({
+        id: "p1",
+        studio_id: "studio-a",
+        name: "Karate",
+        description: null,
+        color_hex: "#64748B",
+        sort_order: 0,
+        is_system: false,
+        archived_at: null,
+        usage: {
+          student_count: count,
+          active_student_count: count,
+          class_count: count,
+          active_class_count: count,
+          lead_count: count,
+          belt_ladder_count: count,
+        },
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-01-01T00:00:00Z",
+      });
+      f.initialPrograms = [f.programRow(3)];
     },
     { initialBusinessDate: businessDate, programsLoadError },
   );
-  await page.addScriptTag({ content: source });
+  await page.addScriptTag({ content: script });
   return { context, errors, page };
 }
 
@@ -302,6 +334,61 @@ test("a retained program metadata error keeps the report and offers a metadata r
   assert.deepEqual(await page.evaluate(() => fixture.programCalls), [
     { includeArchived: true, includeUsage: false },
   ]);
+  assert.deepEqual(errors, []);
+  await context.close();
+});
+
+test("a failed usage read adopted on resume shows a Reports retry that metadata clears", async () => {
+  const { context, errors, page } = await mountReports("2026-09-29", null, liveProgramSource);
+  await page.waitForFunction(() => fixture.reads.length === 1);
+  await page.evaluate((sessions) => fixture.reads[0].resolve(sessions), firstWindowSessions);
+  await expect(page.locator('[data-reports-loading="true"]')).toHaveCount(0);
+  const original = await displayedReport(page);
+  const programState = () =>
+    page.evaluate(() => [
+      fixture.programStore.programsLoadError,
+      fixture.programStore.programsUsageLoaded,
+      fixture.programStore.programsUsageLoadError,
+      fixture.programStore.programs.map((p) => [p.name, p.usage.student_count]),
+    ]);
+
+  // A usage read (as Settings starts) is in flight when Reports resumes and adopts it.
+  await page.evaluate(() => {
+    fixture.usageRead = fixture.programStore
+      .refreshPrograms({ includeArchived: true })
+      .catch((error) => error.message);
+    window.dispatchEvent(new Event("koaryu:data-refresh"));
+  });
+  await page.waitForFunction(() => fixture.reads.length === 2);
+  await page.evaluate((sessions) => fixture.reads[1].resolve(sessions), firstWindowSessions);
+  assert.deepEqual(await page.evaluate(() => fixture.programReads.map((read) => read.path)), [
+    "/programs?include_archived=true",
+  ]);
+  await page.evaluate(async () => {
+    fixture.programReads[0].reject(new Error("Usage failed"));
+    await fixture.usageRead;
+  });
+  await page.getByTestId("reports-error").waitFor();
+  assert.match(await page.getByTestId("reports-error").textContent(), /Programs: Usage failed/);
+  assert.deepEqual(await displayedReport(page), original);
+  assert.deepEqual(await programState(), ["Usage failed", true, "Usage failed", [["Karate", 3]]]);
+
+  await page.getByRole("button", { name: "Retry reports" }).click();
+  await page.waitForFunction(() => fixture.programReads.length === 2 && fixture.reads.length === 3);
+  assert.equal(
+    await page.evaluate(() => fixture.programReads[1].path),
+    "/programs?include_archived=true&include_usage=false",
+  );
+  await page.evaluate((sessions) => {
+    fixture.reads[2].resolve(sessions);
+    fixture.programReads[1].resolve([{ ...fixture.programRow(0), name: "Karate Kids" }]);
+  }, firstWindowSessions);
+  await expect(page.getByTestId("reports-error")).toHaveCount(0);
+  assert.deepEqual(
+    await programState(),
+    [null, true, "Usage failed", [["Karate Kids", 3]]],
+    "the metadata retry clears the row error and keeps usage, its readiness and its error",
+  );
   assert.deepEqual(errors, []);
   await context.close();
 });

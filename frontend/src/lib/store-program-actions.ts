@@ -45,6 +45,7 @@ interface ProgramRead {
   ownsRead: () => boolean;
   includeArchived: boolean;
   includeUsage: boolean;
+  reportRowErrors: () => void;
 }
 
 export function useStoreProgramActions({
@@ -93,6 +94,7 @@ export function useStoreProgramActions({
         );
         if (!usageRead) break;
         if (!options?.force && usageRead.includeArchived === includeArchived) {
+          usageRead.reportRowErrors();
           return usageRead.promise;
         }
         await usageRead.promise.catch(() => undefined);
@@ -109,9 +111,12 @@ export function useStoreProgramActions({
       if (includeUsage) setProgramsUsageLoadError(null);
       if (!programsLoadedRef.current) setProgramsLoadError(null);
       // Metadata errors belong to rows; usage readiness and errors stay with usage reads.
+      // A usage read adopted by metadata also owes its own failure to the rows. The
+      // ownership checks below still decide whether that failure may be reported.
+      let reportsRowErrors = !includeUsage;
       const reportError = (message: string) => {
         if (includeUsage) setProgramsUsageLoadError(message);
-        if (!includeUsage || !programsLoadedRef.current) setProgramsLoadError(message);
+        if (reportsRowErrors || !programsLoadedRef.current) setProgramsLoadError(message);
       };
 
       const identity = {};
@@ -173,6 +178,9 @@ export function useStoreProgramActions({
         ownsRead,
         includeArchived,
         includeUsage,
+        reportRowErrors: () => {
+          reportsRowErrors = true;
+        },
       });
       return pending;
     },
