@@ -22,7 +22,7 @@ function bundle() {
   const retained = add("@/lib/retained-state");
   return `(()=>{const process={env:{NODE_ENV:'production'}};const modules=[${modules.join(",")}],cache={};function require(id){if(cache[id])return cache[id].exports;const m=cache[id]={exports:{}};modules[id](m,m.exports,require);return m.exports;}
 const React=require(${react});const root=require(${dom}).createRoot(document.getElementById('root'));
-function Fixture(){const state=React.useSyncExternalStore(window.f.subscribe,window.f.getState);return React.createElement(require(${retained}).RetainedStateProvider,{scope:JSON.stringify([state.isPreviewMode,state.currentUserId,state.currentStudioId])},React.createElement('div',null,React.createElement(require(${button}).NewWorkflowButton),React.createElement('ul',null,React.createElement(require(${row}).MissedClassSummaryRow))));}
+function Fixture(){const [shown,setShown]=React.useState(true);window.f.show=setShown;const state=React.useSyncExternalStore(window.f.subscribe,window.f.getState);return React.createElement(require(${retained}).RetainedStateProvider,{scope:JSON.stringify([state.isPreviewMode,state.currentUserId,state.currentStudioId])},React.createElement('div',null,React.createElement(require(${button}).NewWorkflowButton),React.createElement('ul',null,shown?React.createElement(require(${row}).MissedClassSummaryRow):null)));}
 root.render(React.createElement(Fixture));})();`;
 }
 
@@ -152,4 +152,23 @@ test("New workflow opens a fresh draft address for admins and stays out of other
     state: { isPreviewMode: true, token: null, identityReady: false },
   });
   assert.equal(await sample.getByRole("button", { name: "New workflow" }).isDisabled(), false);
+});
+
+test("catalog revisit paints retained status then refreshes changes made elsewhere", async (t) => {
+  const page = await mount(t);
+  const row = page.locator('[data-built-in-automation="missed-class"]');
+  await row.getByText("Paused", { exact: true }).waitFor();
+  await page.evaluate(() => f.show(false));
+  await row.waitFor({ state: "detached" });
+  await page.evaluate(() => {
+    f.hold = true;
+    f.settings.rule = { ...f.settings.rule, enabled: true, inactivity_days: 30 };
+    f.show(true);
+  });
+  await page.waitForFunction(() => f.reads.length === 1);
+  await row.getByText("Paused", { exact: true }).waitFor();
+  await page.evaluate(() => f.reads[0].resolve(structuredClone(f.settings)));
+  await row.getByText("Enabled", { exact: true }).waitFor();
+  await row.getByText("30 days", { exact: false }).waitFor();
+  assert.equal(await page.evaluate(() => f.calls.length), 2);
 });

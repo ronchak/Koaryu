@@ -1045,3 +1045,19 @@ test("insert_node splices a step into a connection in one operation and keeps th
   assert.equal(history.ok && history.history.past.length, 1);
   assert.deepEqual(undoWorkflow(history.history).present, createWorkflowHistory(draft).present);
 });
+
+test("insertion refuses an ambiguous source port without rewiring either destination", () => {
+  const draft = branched();
+  draft.graph.edges.push({ id: "duplicate", source: "condition", port: "yes", target: "end" });
+  assert.equal(validateWorkflow(draft.graph, draft.layout, "draft").valid, true);
+  const before = structuredClone(draft);
+  const result = editWorkflow(draft, {
+    kind: "insert_node",
+    node: { id: "node_1", type: "delay", config: defaultWorkflowConfig("delay") },
+    after: { node_id: "condition", port: "yes" },
+  });
+  assert.equal(result.ok, false);
+  assert.match(result.reason, /Disconnect duplicate paths/);
+  assert.deepEqual(draft, before);
+  assert.equal(result.draft, draft);
+});

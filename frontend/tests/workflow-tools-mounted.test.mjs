@@ -752,3 +752,28 @@ test("continuing past a wait and trying the other branch send explicit assumptio
     await expect(simulation(page)).not.toContainText("Assumed No path.");
     assert.equal(await page.evaluate(() => window.fixture.requests.length), 0);
   }));
+
+for (const change of ["context", "graph"])
+  test(`simulation assumptions reset when the ${change} changes`, () =>
+    mountTools(async (page) => {
+      const region = simulation(page);
+      await region.getByRole("checkbox", { name: /Assume every wait/ }).check();
+      await button(page, "Simulate").click();
+      await region.getByRole("button", { name: "Try the No path" }).click();
+      await expect(region).toContainText("Hypothetical trace");
+      if (change === "context") {
+        await button(page, "Choose real record").click();
+        await button(page, "Use synthetic sample").click();
+      } else {
+        await changeEmail(page, "Changed subject");
+      }
+      await expect(region.getByRole("checkbox", { name: /Assume every wait/ })).not.toBeChecked();
+      await button(page, "Simulate").click();
+      await expect(region.getByRole("heading", { name: "Visited path" })).toBeVisible();
+      assert.deepEqual(
+        await page.evaluate(() => Object.keys(window.fixture.simulations.at(-1).body).sort()),
+        ["context", "graph"],
+      );
+      await expect(region).not.toContainText("Hypothetical trace");
+      assert.equal(await page.evaluate(() => window.fixture.requests.length), 0);
+    }));

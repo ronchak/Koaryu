@@ -511,7 +511,7 @@ test("role revocation hides existing preview and activity without another reques
   assert.equal(await page.evaluate(() => window.f.calls.length), count);
 });
 
-test("retained saved rule and activity render on revisit while reads are pending", async (t) => {
+test("unsaved draft and activity survive a revisit and failed refresh", async (t) => {
   const page = await mount(t);
   await loaded(page);
   await page.getByText("Activity Alex", { exact: true }).waitFor();
@@ -528,7 +528,7 @@ test("retained saved rule and activity render on revisit while reads are pending
   await page.waitForFunction(() => f.reads.length === 1 && f.activityReads.length === 1);
   assert.equal(
     await page.getByLabel("Subject", { exact: true }).inputValue(),
-    "Hello {{student_first_name}}",
+    "Unsaved local subject",
   );
   assert.equal(await page.getByText("Activity Alex", { exact: true }).count(), 1);
   assert.equal(await page.getByRole("status", { name: "Loading settings" }).count(), 0);
@@ -540,7 +540,7 @@ test("retained saved rule and activity render on revisit while reads are pending
   await page.getByText("Settings unavailable", { exact: true }).waitFor();
   assert.equal(
     await page.getByLabel("Subject", { exact: true }).inputValue(),
-    "Hello {{student_first_name}}",
+    "Unsaved local subject",
   );
   assert.equal(await page.getByText("Activity Alex", { exact: true }).count(), 1);
 });
@@ -612,4 +612,26 @@ test("edits made while a retained rule refreshes require explicit readback befor
   await page.getByRole("button", { name: "Save paused rule" }).click();
   assert.equal(await page.evaluate(() => f.saves[0].body.expected_revision), 9);
   assert.equal(await page.evaluate(() => f.saves[0].body.subject_template), "Changed elsewhere");
+});
+
+test("returning to an edited rule preserves its original revision and requires conflict readback", async (t) => {
+  const page = await mount(t);
+  await loaded(page);
+  await page.getByLabel("Subject", { exact: true }).fill("Keep this draft");
+  await page.evaluate(() => f.show(false));
+  await page.locator("[data-missed-class-editor]").waitFor({ state: "detached" });
+  await page.evaluate(() => {
+    f.settings.rule = { ...f.settings.rule, subject_template: "Changed elsewhere", revision: 9 };
+    f.show(true);
+  });
+  await page.getByRole("button", { name: "Check saved rule" }).waitFor();
+  assert.equal(await page.getByLabel("Subject", { exact: true }).inputValue(), "Keep this draft");
+  assert.equal(await page.getByRole("button", { name: "Save paused rule" }).isDisabled(), true);
+  assert.equal(await page.getByRole("button", { name: "Enable automation" }).isDisabled(), true);
+  assert.equal(await page.evaluate(() => f.saves.length), 0);
+  await page.getByRole("button", { name: "Check saved rule" }).click();
+  await page.getByText("Saved rule checked.", { exact: false }).waitFor();
+  await page.getByRole("button", { name: "Save paused rule" }).click();
+  assert.equal(await page.evaluate(() => f.saves[0].body.expected_revision), 9);
+  assert.equal(await page.evaluate(() => f.saves[0].body.subject_template), "Keep this draft");
 });

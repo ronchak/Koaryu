@@ -584,9 +584,12 @@ export function editWorkflow(draft: WorkflowSnapshot, edit: WorkflowEdit): Workf
         return fail("This step does not have that outgoing port.");
       if (graph.nodes.some(({ id }) => id === edit.node.id))
         return fail("Node IDs must be unique.");
-      const existing = graph.edges.find(
+      const connections = graph.edges.filter(
         (edge) => edge.source === anchor.id && edge.port === edit.after.port,
       );
+      if (connections.length > 1)
+        return fail("Disconnect duplicate paths from this port before inserting a step.");
+      const existing = connections[0];
       const continuation = existing
         ? graph.nodes.find(({ id }) => id === existing.target)
         : undefined;

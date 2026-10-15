@@ -298,7 +298,7 @@ function PortControl({
               after={after}
               anchorLabel={label}
               connected
-              disabled={disabled}
+              disabled={disabled || connections.length > 1}
               submit={submit}
               onInserted={onInserted}
             />

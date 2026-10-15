@@ -65,8 +65,19 @@ export function WorkflowSimulationPanel({
   const [result, setResult] = useState<Simulation | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [assumeWaits, setAssumeWaits] = useState(false);
-  const [branches, setBranches] = useState<Branches>({});
+  const graphKey = JSON.stringify(graph);
+  const [assumptionState, setAssumptionState] = useState({
+    selection,
+    graphKey,
+    waits: false,
+    branches: {} as Branches,
+  });
+  let scopedAssumptions = assumptionState;
+  if (assumptionState.selection !== selection || assumptionState.graphKey !== graphKey) {
+    scopedAssumptions = { selection, graphKey, waits: false, branches: {} };
+    setAssumptionState(scopedAssumptions);
+  }
+  const { waits: assumeWaits, branches } = scopedAssumptions;
   const serial = useRef(0);
   const active = useRef(true);
   const latest = useRef({ selection, isCurrent });
@@ -102,8 +113,7 @@ export function WorkflowSimulationPanel({
       branches: activeBranches(next?.branches ?? branches),
     };
     if (next) {
-      setAssumeWaits(assumptions.waits);
-      setBranches(assumptions.branches);
+      setAssumptionState({ selection, graphKey, ...assumptions });
     }
     if (preview || !workflowId || !selection || !selection.isCurrent() || !isCurrent() || loading)
       return;
@@ -177,7 +187,9 @@ export function WorkflowSimulationPanel({
               type="checkbox"
               checked={assumeWaits}
               disabled={!workflowId}
-              onChange={(event) => setAssumeWaits(event.target.checked)}
+              onChange={(event) =>
+                setAssumptionState({ ...scopedAssumptions, waits: event.target.checked })
+              }
             />
             Assume every wait has passed, so later steps show too
           </label>

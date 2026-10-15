@@ -93,9 +93,16 @@ function ScopedEditor({
     `automations:missed-class:settings:${isDemo ? "preview" : "live"}`,
     isDemo ? DEMO_SETTINGS : null,
   );
-  const [draft, setDraft] = useState<MissedClassPreviewRequest | null>(() =>
-    settings ? ruleDraft(settings.rule) : null,
-  );
+  const [retainedDraft, setRetainedDraft] = useRetainedState<{
+    value: MissedClassPreviewRequest | null;
+    edited: boolean;
+    revision: number | null;
+  }>(`automations:missed-class:draft:${isDemo ? "preview" : "live"}`, () => ({
+    value: settings ? ruleDraft(settings.rule) : null,
+    edited: false,
+    revision: settings?.rule.revision ?? null,
+  }));
+  const draft = retainedDraft.value;
   const [settingsLoading, setSettingsLoading] = useState(!isDemo);
   const [reloading, setReloading] = useState(false);
   const [settingsError, setSettingsError] = useState<string | null>(null);
@@ -117,8 +124,8 @@ function ScopedEditor({
   const lifetime = useRef<AbortController | null>(null);
   const draftRef = useRef(draft);
   const draftGeneration = useRef(0);
-  const draftEdited = useRef(false);
-  const draftRevision = useRef(settings?.rule.revision ?? null);
+  const draftEdited = useRef(retainedDraft.edited);
+  const draftRevision = useRef(retainedDraft.revision);
   const previewGeneration = useRef<number | null>(null);
   const previewRequest = useRef(0);
   const settingsRequest = useRef(0);
@@ -126,6 +133,14 @@ function ScopedEditor({
   const mutationLock = useRef(false);
   const settingsLock = useRef(false);
   const readbackLock = useRef(false);
+
+  const retainDraft = useCallback(() => {
+    setRetainedDraft({
+      value: draftRef.current,
+      edited: draftEdited.current,
+      revision: draftRevision.current,
+    });
+  }, [setRetainedDraft]);
 
   useLayoutEffect(() => {
     latestToken.current = token;
@@ -167,10 +182,10 @@ function ScopedEditor({
           draftRef.current = ruleDraft(result.rule);
           draftEdited.current = false;
           draftRevision.current = result.rule.revision;
-          setDraft(draftRef.current);
         } else if (checkedDraft) {
           draftRevision.current = result.rule.revision;
         }
+        retainDraft();
         if (readbackLock.current) {
           setMessage(
             `Saved rule checked. It is ${result.rule.enabled ? "enabled" : "paused"}. Your draft is still here; review it before saving again.`,
@@ -196,7 +211,7 @@ function ScopedEditor({
         }
       }
     },
-    [invalidatePreview, isDemo, setSettings],
+    [invalidatePreview, isDemo, setSettings, retainDraft],
   );
 
   const loadActivity = useCallback(async () => {
@@ -224,8 +239,11 @@ function ScopedEditor({
     const controller = new AbortController();
     lifetime.current = controller;
     settingsLock.current = false;
-    void loadSettings();
-    void loadActivity();
+    queueMicrotask(() => {
+      if (controller.signal.aborted) return;
+      void loadSettings();
+      void loadActivity();
+    });
     return () => {
       controller.abort();
     };
@@ -235,7 +253,7 @@ function ScopedEditor({
     if (!draftRef.current || mutationLock.current || reloading) return;
     draftEdited.current = true;
     draftRef.current = { ...draftRef.current, ...patch };
-    setDraft(draftRef.current);
+    retainDraft();
     invalidatePreview();
     setMessage(null);
     if (!readbackLock.current) setActionError(null);
@@ -337,8 +355,8 @@ function ScopedEditor({
       if (action !== "pause") {
         draftRef.current = ruleDraft(result.rule);
         draftEdited.current = false;
-        setDraft(draftRef.current);
       }
+      retainDraft();
       invalidatePreview();
       setMessage(
         action === "pause"

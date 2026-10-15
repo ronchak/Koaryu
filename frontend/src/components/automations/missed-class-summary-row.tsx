@@ -28,18 +28,21 @@ export function MissedClassSummaryRow() {
   );
   const [unavailable, setUnavailable] = useState(false);
   useEffect(() => {
-    if (isPreviewMode || !token || settings) return;
+    if (isPreviewMode || !token) return;
     const controller = new AbortController();
     missedClassApi
       .settings(token, controller.signal)
       .then((value) => {
-        if (!controller.signal.aborted) setSettings(value);
+        if (!controller.signal.aborted) {
+          setSettings(value);
+          setUnavailable(false);
+        }
       })
       .catch(() => {
         if (!controller.signal.aborted) setUnavailable(true);
       });
     return () => controller.abort();
-  }, [isPreviewMode, token, settings, setSettings]);
+  }, [isPreviewMode, token, setSettings]);
   const rule = settings?.rule;
   const status = isPreviewMode
     ? { label: "Sample", tone: "neutral" as const }

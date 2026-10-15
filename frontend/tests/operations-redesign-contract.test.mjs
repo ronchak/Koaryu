@@ -786,19 +786,22 @@ describe("operations behavior proof", () => {
     );
   });
 
-  it("mounts the missed-class editor and the workflow catalog beside live queues", () => {
+  it("lists the built-in rule beside workflows and opens its editor on a separate route", () => {
     const automations = source("src/app/(dashboard)/automations/page.tsx");
 
     assert.doesNotMatch(
       automations,
       /<form|<input|<select|<textarea|onChange=|type="checkbox"|role="switch"|\bfetch\s*\(|\bapi\.|\baxios\b|process\.env|isPreviewMode|useEffect|useState/,
     );
-    assert.match(automations, /<MissedClassAutomation \/>/);
+    assert.match(automations, /<NewWorkflowButton \/>/);
+    const missedClass = source("src/app/(dashboard)/automations/missed-class/page.tsx");
+    assert.match(missedClass, /<MissedClassAutomation headless \/>/);
+    assert.match(missedClass, /href="\/automations"/);
     assert.doesNotMatch(
       automations,
       /data-automations-readonly|No automation builder is live|five-proposals/,
     );
-    assert.match(automations, /<WorkflowCatalogPanel \/>/);
+    assert.match(automations, /<WorkflowCatalogPanel builtIn=\{<MissedClassSummaryRow \/>\} \/>/);
     assert.match(automations, /data-automation-live-list="four-destinations"/);
     assert.doesNotMatch(automations, /FUTURE_WORKFLOWS|four-proposals/);
   });
