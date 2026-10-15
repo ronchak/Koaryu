@@ -305,27 +305,53 @@ export function getVisibleScheduleRange(currentDate: Date, view: SchedulePageVie
   };
 }
 
-export function getVisibleScheduleSummary({
-  currentDate,
-  view,
+/**
+ * The window the page loads for a date: the month grid holding it. The grid is
+ * week-aligned, so it also holds the date's week and covers every view of it.
+ */
+export function getScheduleLoadRange(currentDate: Date) {
+  return getVisibleScheduleRange(currentDate, "month");
+}
+
+/**
+ * The loaded window stays while it still covers what is in view, so Day and
+ * Week steps and view switches inside it cost no request, even across a month
+ * boundary. Only a view that reaches outside it loads the grid around its date.
+ */
+export function resolveScheduleLoadRange(
+  previous: { start: string; end: string } | null,
+  currentDate: Date,
+  view: SchedulePageView,
+) {
+  const visible = getVisibleScheduleRange(currentDate, view);
+  if (previous && visible.start >= previous.start && visible.end <= previous.end) {
+    return previous;
+  }
+  return getScheduleLoadRange(currentDate);
+}
+
+/**
+ * Recurring occurrences the calendar shows as placeholders because no session
+ * exists for them yet. Generated sessions, including cancellations, already
+ * occupy their slot. Zero means a read of the range is complete on its own.
+ */
+export function countUnmaterializedRecurringSlots({
+  range,
   sessions,
   templates,
 }: {
-  currentDate: Date;
-  view: SchedulePageView;
+  range: { start: string; end: string };
   sessions: ClassSession[];
   templates: ClassTemplate[];
 }) {
-  const range = getVisibleScheduleRange(currentDate, view);
-  const visibleSessions = sessions.filter(
-    (session) => session.date >= range.start && session.date <= range.end,
-  );
-  const sessionsByDate = groupSessionsByDate(visibleSessions);
   const templatesByDay = groupTemplatesByDay(templates);
+  if (templatesByDay.size === 0) {
+    return 0;
+  }
+  const sessionsByDate = groupSessionsByDate(
+    sessions.filter((session) => session.date >= range.start && session.date <= range.end),
+  );
   let recurringSlots = 0;
-
-  // Count the same unmaterialized recurring occurrences the calendar displays.
-  // Generated sessions, including cancellations, already occupy their slot.
   for (
     const date = parseCalendarDate(range.start);
     formatScheduleDateKey(date) <= range.end;
@@ -338,8 +364,28 @@ export function getVisibleScheduleSummary({
       showTemplatePlaceholders: true,
     }).filter((entry) => entry.kind === "template").length;
   }
+  return recurringSlots;
+}
 
-  return { scheduled: visibleSessions.length, recurringSlots };
+export function getVisibleScheduleSummary({
+  currentDate,
+  view,
+  sessions,
+  templates,
+}: {
+  currentDate: Date;
+  view: SchedulePageView;
+  sessions: ClassSession[];
+  templates: ClassTemplate[];
+}) {
+  const range = getVisibleScheduleRange(currentDate, view);
+  const scheduled = sessions.filter(
+    (session) => session.date >= range.start && session.date <= range.end,
+  ).length;
+  return {
+    scheduled,
+    recurringSlots: countUnmaterializedRecurringSlots({ range, sessions, templates }),
+  };
 }
 
 export function navigateScheduleDate(currentDate: Date, view: SchedulePageView, direction: number) {

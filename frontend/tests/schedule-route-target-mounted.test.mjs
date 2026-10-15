@@ -4,6 +4,8 @@ import { chromium, expect } from "@playwright/test";
 import { createCommonJsPacker } from "./helpers/store-browser-harness.mjs";
 
 const date = "2026-10-10";
+// The window loaded for a date is the month grid around it, whatever the view.
+const window = ["2026-09-27", "2026-11-07"];
 const sessionId = "abcdef01-2345-6789-abcd-ef0123456789";
 const session = (id = sessionId, extra = {}) => ({
   id,
@@ -139,6 +141,11 @@ async function resolveRange(page, index = 0, sessions = [session()]) {
   await page.waitForFunction(() => !fixture.controller.isRefreshingRange);
   await flush(page);
 }
+// Days inside the loaded window never request; these dates leave it and return.
+const leaveWindow = (page) =>
+  page.evaluate(() => fixture.controller.onSelectDate(new Date(2026, 10, 20, 12)));
+const returnToWindow = (page) =>
+  page.evaluate(() => fixture.controller.onSelectDate(new Date(2026, 9, 10, 12)));
 const state = (page) =>
   page.evaluate(() => ({
     view: fixture.controller.view,
@@ -153,11 +160,11 @@ const state = (page) =>
     href: location.pathname + location.search + location.hash,
   }));
 
-test("Schedule target starts Day view on its date and requests that day first", async (t) => {
+test("Schedule target starts Day view on its date and reads its month window first", async (t) => {
   const page = await mount(t);
   assert.equal((await state(page)).view, "day");
   assert.equal((await state(page)).date, date);
-  assert.deepEqual(await page.evaluate(() => fixture.reads[0].args), [date, date, "materialize"]);
+  assert.deepEqual(await page.evaluate(() => fixture.reads[0].args), [...window, "read"]);
   assert.equal(
     (await state(page)).selected,
     null,
@@ -181,7 +188,7 @@ test("Schedule without a target keeps the business-date Month view", async (t) =
   assert.deepEqual(await page.evaluate(() => fixture.reads[0].args), [
     "2026-08-30",
     "2026-10-10",
-    "materialize",
+    "read",
   ]);
   await resolveRange(page);
   assert.equal((await state(page)).selected, null);
@@ -236,11 +243,16 @@ for (const [label, loaded, notice] of [
     await expect(page.getByText(notice, { exact: true })).toHaveCount(1);
     assert.deepEqual(await page.evaluate(() => fixture.attendanceReads), []);
     assert.equal((await state(page)).href, "/schedule?keep=one&keep=two#day");
+    // A day step inside the loaded window keeps the notice without a request.
     await page.evaluate(() => fixture.controller.onNavigate(1));
+    await flush(page);
+    assert.equal((await state(page)).notice, notice);
+    assert.equal(await page.evaluate(() => fixture.reads.length), 1);
+    await leaveWindow(page);
     await page.waitForFunction(() => fixture.reads.length === 2);
     assert.equal((await state(page)).notice, null);
     await resolveRange(page, 1, []);
-    await page.evaluate(() => fixture.controller.onNavigate(-1));
+    await returnToWindow(page);
     await page.waitForFunction(() => fixture.reads.length === 3);
     assert.equal(
       (await state(page)).notice,
@@ -274,7 +286,7 @@ for (const recovery of ["Retry", "resume"])
 
 test("moving to another range before loading drops the target quietly", async (t) => {
   const page = await mount(t);
-  await page.getByRole("button", { name: "Next day", exact: true }).click();
+  await leaveWindow(page);
   await page.waitForFunction(() => fixture.reads.length === 2);
   await page.evaluate(
     ({ date, sessionId }) =>
@@ -291,7 +303,7 @@ test("moving to another range before loading drops the target quietly", async (t
   assert.equal((await state(page)).selected, null);
   assert.equal((await state(page)).notice, null);
   assert.equal((await state(page)).href, "/schedule?keep=one&keep=two#day");
-  await page.evaluate(() => fixture.controller.onNavigate(-1));
+  await returnToWindow(page);
   await page.waitForFunction(() => fixture.reads.length === 3);
   await resolveRange(page, 2);
   assert.equal((await state(page)).selected, null);
@@ -328,10 +340,10 @@ test("a settled target opens once across close, resume and later range loads", a
   await page.waitForFunction(() => fixture.reads.length === 2);
   await resolveRange(page, 1);
   assert.equal((await state(page)).selected, null);
-  await page.evaluate(() => fixture.controller.onNavigate(1));
+  await leaveWindow(page);
   await page.waitForFunction(() => fixture.reads.length === 3);
   await resolveRange(page, 2, []);
-  await page.evaluate(() => fixture.controller.onNavigate(-1));
+  await returnToWindow(page);
   await page.waitForFunction(() => fixture.reads.length === 4);
   await resolveRange(page, 3);
   assert.equal((await state(page)).selected, null);
@@ -352,10 +364,8 @@ test("a changed route target while mounted applies the new date and session", as
   await page.waitForFunction(() => fixture.reads.length === 2);
   assert.equal((await state(page)).date, next.date);
   assert.equal((await state(page)).view, "day");
-  assert.deepEqual(await page.evaluate(() => fixture.reads[1].args.slice(0, 2)), [
-    next.date,
-    next.date,
-  ]);
+  // The linked day is inside the loaded window; a linked session still reloads it.
+  assert.deepEqual(await page.evaluate(() => fixture.reads[1].args), [...window, "read"]);
   await resolveRange(page, 1, [next]);
   assert.equal((await state(page)).selected, next.id);
   assert.equal((await state(page)).href, "/schedule?keep=new#next");

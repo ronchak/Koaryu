@@ -27,6 +27,15 @@ POST. `POST /schedule/window/materialize` performs the existing write RPC, then
 calls the same read RPC. The two database operations are deliberate: the write
 commits recurring occurrences, and the read returns one validated page model.
 
+The Schedule page keeps that POST off the navigation path. It loads the month
+grid around the viewed date for every view, so Day and Week steps inside the
+window cost no request, and it paints from the `GET` read first. It materializes
+a window only when that read still shows ungenerated recurring slots, once per
+read, in the background, and never for roles without `manage_schedule`. The POST
+runs on the backend's single-worker bulk lane, so a materialization on every
+calendar step serialized behind imports and exports; the read uses the
+interactive lane.
+
 Billing Overview uses one `/billing/landing` request for diagnostic status and
 complete database aggregates. It does not load the full student roster or invoice
 list. Financial tab reads start on activation. See

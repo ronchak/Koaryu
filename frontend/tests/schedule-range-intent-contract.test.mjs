@@ -35,27 +35,43 @@ describe("schedule range intent contracts", () => {
     assert.match(storeSource, /reconcileSchedule\("read"\)\.catch/);
   });
 
-  it("keeps calendar and attendance workflows explicitly materializing recurring sessions", () => {
+  it("paints the calendar from a read and materializes only windows with ungenerated slots", () => {
+    // Every view loads the month grid around its date, kept while it covers the
+    // view, from one GET first.
+    assert.match(
+      scheduleControllerSource,
+      /resolveScheduleLoadRange\(storedLoadRange, currentDate, view\)/,
+    );
+    assert.doesNotMatch(scheduleControllerSource, /getVisibleScheduleRange/);
+    assert.match(
+      scheduleControllerSource,
+      /refreshScheduleRange\(loadRange\.start, loadRange\.end, "read"\)/,
+    );
+    // The POST follows that read only when the window still shows recurring
+    // placeholders, decided once as the read settles, and never for staff who
+    // cannot manage the schedule. Later store changes belong to their owners.
+    assert.match(scheduleControllerSource, /decidedReadTokenRef\.current === loadToken\) return;/);
+    assert.match(
+      scheduleControllerSource,
+      /if \(!canManageSchedule \|\| !hasUnmaterializedSlots\) return;/,
+    );
+    assert.match(
+      scheduleControllerSource,
+      /countUnmaterializedRecurringSlots\(\{ range: loadRange/,
+    );
+    assert.match(
+      scheduleControllerSource,
+      /refreshScheduleRange\(loadRange\.start, loadRange\.end, "materialize"\)/,
+    );
+    assert.equal(scheduleControllerSource.match(/"materialize"/g)?.length, 1);
     // Post-create materialization belongs to the store's mutation finish, not a second
     // controller refresh. The controller observes that owner's outcome instead.
-    assert.doesNotMatch(
-      scheduleControllerSource,
-      /refreshScheduleRange\([\s\S]*?"materialize"\s*\)/,
-    );
     assert.match(
       scheduleActionsSource,
       /scheduleRefresh: mutation\.finish\(\{ awaitSharedRefresh: true \}\)/,
     );
     assert.match(scheduleControllerSource, /await createdTemplate\.scheduleRefresh;/);
     assert.match(scheduleControllerSource, /scheduleRefresh === "failed"/);
-    assert.match(
-      scheduleControllerSource,
-      /resumedRangeRef\.current === visibleRangeKey \? "read" : "materialize"/,
-    );
-    assert.match(
-      scheduleControllerSource,
-      /refreshScheduleRange\(visibleRange\.start, visibleRange\.end, intent\)/,
-    );
     assert.match(scheduleActionsSource, /await reconcileSchedule\("materialize"\)/);
     assert.match(rangeRefreshSource, /await reconcileSchedule\(intent\)/);
   });

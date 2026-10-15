@@ -8,8 +8,11 @@ import {
   DEFAULT_SCHEDULE_PAGE_VIEW,
   formatScheduleDateKey,
   getActiveScheduleStudents,
+  countUnmaterializedRecurringSlots,
   getScheduleCanvasRange,
+  getScheduleLoadRange,
   getScheduleTimeCanvasBounds,
+  resolveScheduleLoadRange,
   getScheduleSessionAttendance,
   getScheduleWeekDates,
   getVisibleScheduleRange,
@@ -388,6 +391,108 @@ describe("schedule canvas range", () => {
     assert.deepEqual(
       getScheduleCanvasRange([{ id: "zero-duration", start_time: "16:00", end_time: "16:00" }]),
       { startMinute: 16 * 60, endMinute: 22 * 60 },
+    );
+  });
+});
+
+describe("schedule load window", () => {
+  const template = (overrides = {}) => ({
+    id: "tpl-tue",
+    name: "Karate",
+    day_of_week: 2,
+    start_time: "18:00",
+    end_time: "19:30",
+    start_date: "2026-09-01",
+    end_date: null,
+    is_active: true,
+    ...overrides,
+  });
+  const generated = (date, overrides = {}) => ({
+    id: `session-${date}`,
+    template_id: "tpl-tue",
+    name: "Karate",
+    date,
+    start_time: "18:00",
+    end_time: "19:30",
+    status: "scheduled",
+    ...overrides,
+  });
+
+  it("loads the week-aligned month grid for every view so steps inside it need no request", () => {
+    const base = new Date(2026, 4, 20, 15);
+    const window = getScheduleLoadRange(base);
+    assert.deepEqual(window, { start: "2026-04-26", end: "2026-06-06" });
+    for (const view of ["day", "week", "month"]) {
+      const visible = getVisibleScheduleRange(base, view);
+      assert.ok(visible.start >= window.start && visible.end <= window.end, view);
+    }
+    // The first and last days of a month keep their whole week inside the window.
+    for (const day of [1, 31]) {
+      const edge = new Date(2026, 4, day, 12);
+      const edgeWindow = getScheduleLoadRange(edge);
+      const week = getVisibleScheduleRange(edge, "week");
+      assert.ok(week.start >= edgeWindow.start && week.end <= edgeWindow.end, String(day));
+    }
+  });
+
+  it("keeps the loaded window while the view stays inside it, across a month boundary", () => {
+    const september = { start: "2026-08-30", end: "2026-10-10" };
+    // Day steps from September 30 into October stay in the September grid.
+    assert.equal(resolveScheduleLoadRange(september, new Date(2026, 9, 1, 12), "day"), september);
+    assert.equal(resolveScheduleLoadRange(september, new Date(2026, 9, 10, 12), "day"), september);
+    assert.equal(resolveScheduleLoadRange(september, new Date(2026, 9, 6, 12), "week"), september);
+    // The October month view reaches past the window, so its own grid loads.
+    assert.deepEqual(resolveScheduleLoadRange(september, new Date(2026, 9, 1, 12), "month"), {
+      start: "2026-09-27",
+      end: "2026-11-07",
+    });
+    assert.deepEqual(resolveScheduleLoadRange(september, new Date(2026, 9, 11, 12), "day"), {
+      start: "2026-09-27",
+      end: "2026-11-07",
+    });
+    assert.deepEqual(resolveScheduleLoadRange(null, new Date(2026, 9, 1, 12), "day"), {
+      start: "2026-09-27",
+      end: "2026-11-07",
+    });
+  });
+
+  it("counts recurring slots that no generated session occupies, inside the window only", () => {
+    const range = { start: "2026-09-27", end: "2026-10-10" };
+    // Tuesdays in range: Sep 29 and Oct 6.
+    assert.equal(countUnmaterializedRecurringSlots({ range, sessions: [], templates: [] }), 0);
+    assert.equal(
+      countUnmaterializedRecurringSlots({ range, sessions: [], templates: [template()] }),
+      2,
+    );
+    assert.equal(
+      countUnmaterializedRecurringSlots({
+        range,
+        sessions: [generated("2026-09-29"), generated("2026-10-06", { status: "canceled" })],
+        templates: [template()],
+      }),
+      0,
+      "generated sessions, including cancellations, occupy their slot",
+    );
+    assert.equal(
+      countUnmaterializedRecurringSlots({
+        range,
+        sessions: [generated("2026-10-13")],
+        templates: [template()],
+      }),
+      2,
+      "a session outside the window does not stand in for one inside it",
+    );
+    assert.equal(
+      countUnmaterializedRecurringSlots({
+        range,
+        sessions: [],
+        templates: [
+          template({ is_active: false }),
+          template({ id: "later", start_date: "2026-10-20" }),
+        ],
+      }),
+      0,
+      "inactive templates and templates starting after the window have no slots in it",
     );
   });
 });
