@@ -176,10 +176,10 @@ Render service resume can build the current tracked branch even when auto-deploy
 off. Pin and inspect that branch before resuming, then verify the actual deployed
 SHA; do not assume resume restores the previously serving artifact.
 
-The two web services track **different branches**. Deploy each from the exact
-reviewed commit and read back that deployed SHA. Keep the staging cron suspended
-until the exact-candidate backend is deployed and `/health/ready` succeeds against
-the migrated staging database.
+The two web services track **different branches**. Deploy both web services and
+the staging billing cron from the exact reviewed commit and read back each deployed
+SHA. Keep the staging cron suspended until the exact-candidate backend is deployed
+and `/health/ready` succeeds against the migrated staging database.
 
 Vercel staging is different: `frontend/vercel.json` builds `refs/heads/staging`
 automatically, so moving that ref deploys the staging frontend. Move it last, after
