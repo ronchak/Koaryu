@@ -52,3 +52,31 @@ test("profile warns for a known minor with no guardian and does not infer minor 
   assert.match(render({ is_minor: true, guardians: [], tags: [] }), /does not have a guardian/);
   assert.doesNotMatch(render({ is_minor: false, guardians: [], tags: [] }), /Primary guardian/);
 });
+
+test("student, guardian, and emergency phone links preserve extensions without changing display text", () => {
+  const html = render(
+    {
+      is_minor: false,
+      guardians: [],
+      tags: [],
+      phone: "+1 206-555-0100 ext 42",
+      emergency_contact_name: "Synthetic Contact",
+      emergency_contact_phone: "+1 206-555-0101 x007",
+    },
+    { ...guardian, phone: "+1 206-555-0102 extension 9" },
+  );
+  assert.match(html, /href="tel:\+12065550100;ext=42"[^>]*>\+1 206-555-0100 ext 42</);
+  assert.match(html, /href="tel:\+12065550101;ext=007"[^>]*>\+1 206-555-0101 x007</);
+  assert.match(html, /href="tel:\+12065550102;ext=9"[^>]*>\+1 206-555-0102 extension 9</);
+});
+
+test("ambiguous phone notes remain readable without offering a guessed dial target", () => {
+  const html = render({
+    is_minor: false,
+    guardians: [],
+    tags: [],
+    phone: "206-555-0100 or 206-555-0101",
+  });
+  assert.match(html, /206-555-0100 or 206-555-0101/);
+  assert.doesNotMatch(html, /href="tel:/);
+});

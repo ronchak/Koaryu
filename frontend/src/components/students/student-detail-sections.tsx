@@ -7,6 +7,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { CalmState, HorizonPanel, ToneChip, type HorizonTone } from "@/components/ui/horizon";
 import type { Promotion, Student } from "@/types";
+import { phoneHref } from "@/lib/phone-link";
 import {
   Award,
   CalendarClock,
@@ -50,10 +51,6 @@ function formatDateTime(d?: string | null) {
     day: "numeric",
     year: "numeric",
   });
-}
-
-function telHref(phone: string) {
-  return `tel:${phone.replace(/[^\d+]/g, "")}`;
 }
 
 /** One labelled fact. Empty facts are left out; a whole empty panel says so once. */
@@ -172,9 +169,12 @@ export function buildStudentNextSteps({
       tone: "neutral",
       icon: <CalendarClock />,
       title: "On hold",
-      detail: student.hold_end_date
-        ? `Back on ${formatDate(student.hold_end_date)}.`
-        : "No return date is set.",
+      detail:
+        student.status === "paused"
+          ? "Update their status and hold dates when they return."
+          : student.hold_end_date
+            ? `On hold through ${formatDate(student.hold_end_date)}.`
+            : "No hold end date is set.",
       action: { kind: "edit", label: "Edit hold" },
     });
   }
@@ -360,7 +360,7 @@ export function StudentDetailSections({
               <InfoRow
                 label="Phone"
                 value={student.phone}
-                href={student.phone ? telHref(student.phone) : undefined}
+                href={student.phone ? phoneHref(student.phone) : undefined}
               />
               <InfoRow label="Full address" value={address || undefined} />
             </dl>
@@ -390,7 +390,7 @@ export function StudentDetailSections({
                 <InfoRow
                   label="Phone"
                   value={primaryGuardian.phone}
-                  href={primaryGuardian.phone ? telHref(primaryGuardian.phone) : undefined}
+                  href={primaryGuardian.phone ? phoneHref(primaryGuardian.phone) : undefined}
                 />
               </dl>
             ) : (
@@ -411,7 +411,7 @@ export function StudentDetailSections({
                 value={student.emergency_contact_phone}
                 href={
                   student.emergency_contact_phone
-                    ? telHref(student.emergency_contact_phone)
+                    ? phoneHref(student.emergency_contact_phone)
                     : undefined
                 }
               />
