@@ -92,8 +92,10 @@ before locking the reference and checking stored zones; this also excludes direc
 studio updates that do not call a timezone helper. A lock timeout or deadlock
 refuses the whole transaction; resolve active writers before retrying.
 The operator must set the explicit approval flag shown below. Refuse removal of a
-zone still stored by a studio, trial or belt event; resolve those rows through the
-normal application owners before retrying. Do not disable their CHECKs.
+zone still stored by a studio, trial, belt event or open invoice collection episode
+(which keeps the zone frozen when it opened, even if the studio later changes zone);
+resolve those rows through the normal application owners before retrying. Do not
+disable their CHECKs.
 
 ```sql
 BEGIN;
@@ -102,7 +104,8 @@ SET LOCAL idle_in_transaction_session_timeout = '15s';
 SET LOCAL lock_timeout = '5s';
 SET LOCAL statement_timeout = '60s';
 SET LOCAL koaryu.timezone_names_refresh = 'approved-runtime-upgrade';
-LOCK TABLE public.studios, public.lead_trial_appointments, public.belt_test_events IN SHARE MODE;
+LOCK TABLE public.studios, public.lead_trial_appointments, public.belt_test_events,
+  private.workflow_invoice_collection_episodes IN SHARE MODE;
 LOCK TABLE private.timezone_names IN ACCESS EXCLUSIVE MODE;
 DO $refresh_guard$
 BEGIN
@@ -115,6 +118,8 @@ BEGIN
       SELECT timezone FROM public.studios
       UNION SELECT timezone FROM public.lead_trial_appointments
       UNION SELECT timezone FROM public.belt_test_events
+      UNION SELECT frozen_timezone FROM private.workflow_invoice_collection_episodes
+        WHERE closed_at IS NULL
     ) stored
     WHERE timezone IS NOT NULL AND NOT EXISTS (
       SELECT 1 FROM pg_catalog.pg_timezone_names runtime WHERE runtime.name = stored.timezone
