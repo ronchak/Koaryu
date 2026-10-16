@@ -124,20 +124,12 @@
   font-size: 13px;
   font-weight: 650;
 }
-.help,
-.selectedText {
+.help {
   margin: 10px 0;
   color: var(--product-meta, var(--text-secondary));
   font-size: 13px;
   line-height: 1.55;
   overflow-wrap: anywhere;
-}
-.selectedText {
-  margin-bottom: 0;
-  color: var(--product-soft-ink, var(--text-secondary));
-}
-.selectedText strong {
-  color: var(--product-ink, var(--text-primary));
 }
 .notice {
   min-height: 24px;
