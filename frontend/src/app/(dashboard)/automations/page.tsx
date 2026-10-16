@@ -1,11 +1,12 @@
 import { IntentPrefetchLink as Link } from "@/components/intent-prefetch-link";
-import { ArrowRight, Award, BellRing, Clock3, CreditCard, PhoneCall } from "lucide-react";
+import { ArrowRight, Award, Clock3, CreditCard, LayoutTemplate, PhoneCall } from "lucide-react";
 import { Header } from "@/components/header";
 import { OperationsSurface } from "@/components/operations/operations-surface";
 import { Button } from "@/components/ui/button";
 import { HorizonPage, HorizonPanel, ToneChip } from "@/components/ui/horizon";
 import { WorkflowCatalogPanel } from "@/components/automations/workflow-catalog-panel";
-import { MissedClassAutomation } from "@/components/automations/missed-class-automation";
+import { MissedClassSummaryRow } from "@/components/automations/missed-class-summary-row";
+import { NewWorkflowButton } from "@/components/automations/new-workflow-button";
 import { crmLinkPrefetch } from "@/lib/constants";
 import styles from "./automations-page.module.css";
 
@@ -44,18 +45,17 @@ export default function AutomationsPage() {
         description="Follow-ups that run on their own. Each one says what starts it, what it does, and whether it is on."
       >
         <Button asChild variant="secondary" size="lg">
-          <Link href="/dashboard" prefetch={crmLinkPrefetch("/dashboard")}>
-            <BellRing className="h-4 w-4" />
-            Open today&apos;s work
-          </Link>
+          <a href="#workflow-templates">
+            <LayoutTemplate className="h-4 w-4" aria-hidden="true" />
+            Templates
+          </a>
         </Button>
+        <NewWorkflowButton />
       </Header>
 
-      <div className={styles.body} data-automation-catalog="live-queues-and-workflows">
+      <div className={styles.body} data-automation-catalog="automations-and-live-queues">
         <HorizonPage className={styles.page}>
-          <MissedClassAutomation />
-
-          <WorkflowCatalogPanel />
+          <WorkflowCatalogPanel builtIn={<MissedClassSummaryRow />} />
 
           <HorizonPanel
             title="Live queues"

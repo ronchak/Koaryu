@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import type { WorkflowWorkspace as Owner } from "@/lib/automation-workflow-workspace-controller";
 import {
@@ -69,14 +69,15 @@ const editedDate = (value: string) => {
   return Number.isNaN(date.getTime()) ? "recently" : editedFormat.format(date);
 };
 
-export function WorkflowCatalogPanel() {
+/** `builtIn` is the page's fixed rule, shown as the first row of the same list. */
+export function WorkflowCatalogPanel({ builtIn }: { builtIn?: ReactNode } = {}) {
   return (
     <section className={styles.catalog} aria-label="Workflow catalog" data-workflow-catalog="true">
-      <WorkflowAccess>{(owner) => <CatalogView owner={owner} />}</WorkflowAccess>
+      <WorkflowAccess>{(owner) => <CatalogView owner={owner} builtIn={builtIn} />}</WorkflowAccess>
     </section>
   );
 }
-function CatalogView({ owner }: { owner: Owner }) {
+function CatalogView({ owner, builtIn }: { owner: Owner; builtIn?: ReactNode }) {
   const state = useWorkflowSnapshot(owner);
   const router = useRouter();
   const [pending, setPending] = useState<(() => void) | null>(null);
@@ -219,11 +220,11 @@ function CatalogView({ owner }: { owner: Owner }) {
       >
         <div className={styles.panelHead}>
           <div className={styles.panelTitles}>
-            <h2>{preview ? "Sample workflows" : "Saved workflows"}</h2>
+            <h2>{preview ? "Sample automations" : "Your automations"}</h2>
             <p className={styles.panelNote}>
               {state.list && items.length
                 ? `${workflowTally(items)}${state.list.has_more || cursor ? " on this page" : ""}`
-                : "What starts each workflow and whether it is on."}
+                : "What starts each one, what it does, and whether it is on."}
             </p>
           </div>
           <button
@@ -248,87 +249,87 @@ function CatalogView({ owner }: { owner: Owner }) {
             </div>
           </div>
         ) : null}
-        {state.list ? (
-          items.length ? (
-            <ul className={styles.workflowList}>
-              {items.map((workflow) => {
-                const event = workflow.published_version_number
-                  ? workflow.trigger_event_type
-                  : workflow.draft_trigger_event_type;
-                const trigger = event
-                  ? ((state.catalog && catalogEntry(state.catalog.triggers, event)?.label) ?? event)
-                  : null;
-                const status = workflowStatus[workflow.status] ?? {
-                  label: workflow.status,
-                  tone: "neutral" as const,
-                };
-                return (
-                  <li className={styles.workflowRow} key={workflow.id} data-tone={status.tone}>
-                    <div className={styles.rowMain}>
-                      <div className={styles.rowTitle}>
-                        <h3>
-                          <button
-                            className={styles.rowName}
-                            disabled={copying}
-                            onClick={() => router.push(workflowAddress(workflow.id))}
-                          >
-                            {workflow.name}
-                          </button>
-                        </h3>
-                        <span className={kit.tag} data-tone={status.tone} data-dot="true">
-                          {status.label}
-                        </span>
-                      </div>
-                      <p className={styles.rowSentence}>
-                        <span className={styles.when}>When</span>{" "}
-                        {trigger ?? "No trigger chosen yet"}
-                        {workflow.published_version_number ? null : (
-                          <span className={styles.rowAside}> · draft trigger</span>
-                        )}
-                      </p>
-                      {workflow.description ? (
-                        <p className={styles.rowDescription}>{workflow.description}</p>
-                      ) : null}
-                      <p className={styles.rowMeta}>
-                        <span>
-                          {workflow.published_version_number
-                            ? `Published version ${workflow.published_version_number}`
-                            : "Not published yet"}
-                        </span>
-                        <span>
-                          {workflow.pending_run_count} waiting · {workflow.sending_run_count}{" "}
-                          sending
-                        </span>
-                        <span>Edited {editedDate(workflow.updated_at)}</span>
-                      </p>
-                      {workflow.has_unpublished_changes && workflow.published_version_number ? (
-                        <p className={styles.rowFlag}>Saved changes are not published</p>
-                      ) : null}
+        {builtIn || (state.list && items.length) ? (
+          <ul className={styles.workflowList}>
+            {builtIn}
+            {items.map((workflow) => {
+              const event = workflow.published_version_number
+                ? workflow.trigger_event_type
+                : workflow.draft_trigger_event_type;
+              const trigger = event
+                ? ((state.catalog && catalogEntry(state.catalog.triggers, event)?.label) ?? event)
+                : null;
+              const status = workflowStatus[workflow.status] ?? {
+                label: workflow.status,
+                tone: "neutral" as const,
+              };
+              return (
+                <li className={styles.workflowRow} key={workflow.id} data-tone={status.tone}>
+                  <div className={styles.rowMain}>
+                    <div className={styles.rowTitle}>
+                      <h3>
+                        <button
+                          className={styles.rowName}
+                          disabled={copying}
+                          onClick={() => router.push(workflowAddress(workflow.id))}
+                        >
+                          {workflow.name}
+                        </button>
+                      </h3>
+                      <span className={kit.tag} data-tone={status.tone} data-dot="true">
+                        {status.label}
+                      </span>
                     </div>
-                    <div className={styles.rowActions}>
-                      <button
-                        data-variant="quiet"
-                        disabled={copying}
-                        onClick={() => duplicate(workflow.id)}
-                      >
-                        Duplicate<span className={styles.srOnly}> {workflow.name}</span>
-                      </button>
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
-          ) : (
-            <div className={`${kit.calm} ${styles.calm}`}>
-              <div className={kit.calmText}>
-                <strong>No saved workflows yet</strong>
-                <span>Choose a template or start with an empty draft.</span>
-              </div>
-              <a className={styles.textLink} href="#workflow-templates">
-                Browse templates
-              </a>
+                    <p className={styles.rowSentence}>
+                      <span className={styles.when}>When</span> {trigger ?? "No trigger chosen yet"}
+                      {workflow.published_version_number ? null : (
+                        <span className={styles.rowAside}> · draft trigger</span>
+                      )}
+                    </p>
+                    {workflow.description ? (
+                      <p className={styles.rowDescription}>{workflow.description}</p>
+                    ) : null}
+                    <p className={styles.rowMeta}>
+                      <span>
+                        {workflow.published_version_number
+                          ? `Published version ${workflow.published_version_number}`
+                          : "Not published yet"}
+                      </span>
+                      <span>
+                        {workflow.pending_run_count} waiting · {workflow.sending_run_count} sending
+                      </span>
+                      <span>Edited {editedDate(workflow.updated_at)}</span>
+                    </p>
+                    {workflow.has_unpublished_changes && workflow.published_version_number ? (
+                      <p className={styles.rowFlag}>Saved changes are not published</p>
+                    ) : null}
+                  </div>
+                  <div className={styles.rowActions}>
+                    <button
+                      data-variant="quiet"
+                      disabled={copying}
+                      onClick={() => duplicate(workflow.id)}
+                    >
+                      Duplicate<span className={styles.srOnly}> {workflow.name}</span>
+                    </button>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        ) : null}
+        {state.list && !items.length ? (
+          <div className={`${kit.calm} ${styles.calm}`}>
+            <div className={kit.calmText}>
+              <strong>No saved workflows yet</strong>
+              <span>
+                Start blank or from a template below. New workflow is at the top of the page.
+              </span>
             </div>
-          )
+            <a className={styles.textLink} href="#workflow-templates">
+              Browse templates
+            </a>
+          </div>
         ) : null}
         {cursor || (state.list?.has_more && !state.reads.list.error) ? (
           <div className={styles.pager}>
@@ -355,24 +356,13 @@ function CatalogView({ owner }: { owner: Owner }) {
       >
         <div className={styles.panelHead}>
           <div className={styles.panelTitles}>
-            <p className={styles.eyebrow}>{preview ? "Sample catalog" : "Custom workflows"}</p>
-            <h2 id="workflow-catalog-title">Build your next workflow</h2>
+            <h2 id="workflow-catalog-title">Start from a template</h2>
             <p className={styles.panelNote}>
               Each choice opens a local draft. It is saved only when you choose Save draft.
             </p>
           </div>
-          <button
-            data-variant="primary"
-            disabled={copying}
-            onClick={() =>
-              create({ name: "Untitled workflow", description: "", ...initialWorkflowDraft() })
-            }
-          >
-            New workflow
-          </button>
         </div>
         <section aria-label="Workflow templates">
-          <h3 className={styles.subhead}>Start from a template</h3>
           {state.reads.catalog.loading && !state.catalog ? (
             <p role="status" className={styles.panelStatus}>
               Loading templates...
@@ -392,6 +382,26 @@ function CatalogView({ owner }: { owner: Owner }) {
           ) : null}
           {state.catalog ? (
             <div className={styles.templates}>
+              <article className={styles.card} data-template="blank">
+                <p className={styles.templateWhen}>
+                  <span className={styles.when}>When</span> you decide
+                </p>
+                <h4>Blank workflow</h4>
+                <p>A trigger and an end. Add the steps between them.</p>
+                <button
+                  className={styles.useTemplate}
+                  disabled={copying}
+                  onClick={() =>
+                    create({
+                      name: "Untitled workflow",
+                      description: "",
+                      ...initialWorkflowDraft(),
+                    })
+                  }
+                >
+                  Start blank<span className={styles.srOnly}> workflow</span>
+                </button>
+              </article>
               {state.catalog.presets.map((preset) => {
                 const recipe = presetRecipe(preset.graph);
                 const trigger = recipe.trigger

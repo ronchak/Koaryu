@@ -34,11 +34,12 @@ import { WorkflowSimulationPanel } from "./workflow-simulation-panel";
 import { WorkflowRunHistory } from "./workflow-run-history";
 import { WorkflowTestEmailPanel } from "./workflow-test-email-panel";
 import type { WorkflowSimulationSelection } from "./workflow-simulation-context-picker";
-import { WorkflowGraphEditor, useWorkflowDefaultView } from "./workflow-graph-editor";
+import { WorkflowGraphEditor } from "./workflow-graph-editor";
+import type { WorkflowChecks } from "./workflow-graph-editor";
 import { WorkflowNodeInspector } from "./workflow-node-inspector";
+import type { WorkflowFieldFocus } from "./workflow-node-inspector";
 import styles from "./workflow-workspace.module.css";
 import graphStyles from "./workflow-graph-editor.module.css";
-import inspectorStyles from "./workflow-node-inspector.module.css";
 
 export const validWorkflowId = (value: unknown): value is string =>
   typeof value === "string" &&
@@ -144,12 +145,11 @@ function BrowserOwner({
 }
 
 function WorkflowEditorPlaceholder() {
-  const view = useWorkflowDefaultView();
   return (
     <div
       className={`${styles.editorGrid} koaryu-skeleton-reveal`}
       role="status"
-      aria-label="Loading workflow canvas"
+      aria-label="Loading workflow steps"
       aria-busy="true"
     >
       <div className={graphStyles.editor} aria-hidden="true">
@@ -157,28 +157,14 @@ function WorkflowEditorPlaceholder() {
           <h2>Workflow steps</h2>
         </div>
         <div className="mb-4 h-11 rounded bg-surface-raised" />
-        {view === "graph" ? (
-          <div className={`${graphStyles.canvas} bg-surface-raised`} />
-        ) : (
-          <ol className={graphStyles.steps}>
-            {[0, 1, 2].map((row) => (
-              <li key={row} className={graphStyles.step}>
-                <div className="h-4 w-24 rounded bg-surface-hover" />
-                <div className="mt-2 h-3 w-3/4 rounded bg-surface-hover" />
-              </li>
-            ))}
-          </ol>
-        )}
-      </div>
-      <div className={inspectorStyles.inspector} aria-hidden="true">
-        <div className={inspectorStyles.header}>
-          <h2>Step settings</h2>
-        </div>
-        <div className={inspectorStyles.fields}>
-          {[0, 1, 2].map((field) => (
-            <div key={field} className="h-16 rounded bg-surface-raised" />
+        <ol className={graphStyles.steps}>
+          {[0, 1, 2].map((row) => (
+            <li key={row} className={graphStyles.step}>
+              <div className="h-4 w-24 rounded bg-surface-hover" />
+              <div className="mt-2 h-3 w-3/4 rounded bg-surface-hover" />
+            </li>
           ))}
-        </div>
+        </ol>
       </div>
     </div>
   );
@@ -359,6 +345,16 @@ function WorkspaceView({
   const state = useWorkflowSnapshot(owner);
   const router = useRouter();
   const [selected, setSelected] = useState<string | null>(null);
+  const [focusField, setFocusField] = useState<WorkflowFieldFocus | null>(null);
+  const focusToken = useRef(0);
+  const select = useCallback((id: string | null) => {
+    setFocusField(null);
+    setSelected(id);
+  }, []);
+  const focusSetting = useCallback((nodeId: string, field: string) => {
+    setSelected(nodeId);
+    setFocusField({ nodeId, field, token: ++focusToken.current });
+  }, []);
   const [opening, setOpening] = useState(true);
   const [switchRequired, setSwitchRequired] = useState(false);
   const [confirmation, setConfirmation] = useState<WorkflowCommand | "reload" | "duplicate" | null>(
@@ -559,6 +555,20 @@ function WorkspaceView({
       );
     }
   };
+  const checks: WorkflowChecks = {
+    loading: state.reads.validation.loading,
+    error: Boolean(state.reads.validation.error),
+    passed: editor.validation?.result.valid === true,
+    onCheck: preview
+      ? undefined
+      : () => {
+          const generation = lifetime.current;
+          void owner.validate().catch(() => {
+            if (generation === lifetime.current && ownsEditor())
+              setNotice("Validation is unavailable. Your draft is unchanged.");
+          });
+        },
+  };
   const duplicate = () => {
     if (!ownsEditor()) return;
     const id = crypto.randomUUID();
@@ -648,18 +658,6 @@ function WorkspaceView({
               onClick={() => submit(editor.workflowId ? "workflow.save" : "workflow.create")}
             >
               Save draft
-            </button>
-            <button
-              disabled={preview || state.reads.validation.loading}
-              onClick={() => {
-                const generation = lifetime.current;
-                void owner.validate().catch(() => {
-                  if (generation === lifetime.current && ownsEditor())
-                    setNotice("Validation is unavailable. Your draft is unchanged.");
-                });
-              }}
-            >
-              Check workflow
             </button>
             <button
               disabled={!canCommand || !editor.workflowId || dirty}
@@ -776,7 +774,10 @@ function WorkspaceView({
         <EditorBody
           owner={owner}
           selected={selected}
-          onSelect={setSelected}
+          onSelect={select}
+          focusField={focusField}
+          onFocusField={focusSetting}
+          checks={checks}
           issues={issues}
           disabled={Boolean(archived)}
         />
@@ -792,7 +793,7 @@ function WorkspaceView({
             catalog={state.catalog}
             selection={context.value}
             onSelectionChange={selectContext}
-            onSelectNode={setSelected}
+            onSelectNode={select}
             isCurrent={toolsCurrent}
             preview={preview}
           />
@@ -817,38 +818,6 @@ function WorkspaceView({
           />
         </div>
       ) : null}
-      <section className={`${styles.sheet} ${styles.checks}`} aria-label="Workflow checks">
-        <div className={styles.sectionHeading}>
-          <h2>Workflow checks</h2>
-          {issues.length || editor.validation?.result.valid ? (
-            <span className={kit.tag} data-tone={issues.length ? "warn" : "calm"} data-dot="true">
-              {issues.length ? `${issues.length} to review` : "Passed"}
-            </span>
-          ) : null}
-        </div>
-        {state.reads.validation.error ? (
-          <p role="alert">Checks could not be completed. Try Check workflow again.</p>
-        ) : null}
-        {issues.length ? (
-          <ul className={styles.issueList}>
-            {issues.map((issue, index) => (
-              <li key={index}>
-                {issue.node_id ? (
-                  <button onClick={() => setSelected(issue.node_id)}>{issue.message}</button>
-                ) : (
-                  issue.message
-                )}
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p>
-            {editor.validation?.result.valid
-              ? "Workflow checks passed."
-              : "Save an incomplete draft at any time. Check the workflow before publishing."}
-          </p>
-        )}
-      </section>
       {confirmation ? (
         <WorkflowConfirmation
           title={
@@ -950,12 +919,18 @@ function EditorBody({
   owner,
   selected,
   onSelect,
+  focusField,
+  onFocusField,
+  checks,
   issues,
   disabled,
 }: {
   owner: Owner;
   selected: string | null;
   onSelect: (id: string | null) => void;
+  focusField: WorkflowFieldFocus | null;
+  onFocusField: (nodeId: string, field: string) => void;
+  checks: WorkflowChecks;
   issues: Parameters<typeof WorkflowGraphEditor>[0]["issues"];
   disabled: boolean;
 }) {
@@ -1042,6 +1017,8 @@ function EditorBody({
         "promotion.rank_id": ranks,
       };
   const editor = state.editor!;
+  const selectedNode =
+    selected !== null && editor.history.present.graph.nodes.some((node) => node.id === selected);
   const edit: Owner["edit"] = (change) => {
     const current = owner.getSnapshot().editor;
     if (
@@ -1080,7 +1057,7 @@ function EditorBody({
           </div>
         </div>
       ) : null}
-      <div className={styles.editorGrid}>
+      <div className={styles.editorGrid} data-selected={selectedNode ? "true" : "false"}>
         <WorkflowGraphEditor
           draft={editor.history.present}
           selectedNodeId={selected}
@@ -1092,18 +1069,24 @@ function EditorBody({
           canRedo={editor.history.future.length > 0}
           disabled={disabled}
           issues={issues}
+          checks={checks}
+          onFocusField={onFocusField}
           presentation={{ catalog: state.catalog!, references }}
         />
-        <WorkflowNodeInspector
-          draft={editor.history.present}
-          selectedNodeId={selected}
-          onClose={() => onSelect(null)}
-          onEdit={edit}
-          disabled={disabled}
-          issues={issues}
-          catalog={state.catalog!}
-          references={references}
-        />
+        {selectedNode ? (
+          <WorkflowNodeInspector
+            draft={editor.history.present}
+            selectedNodeId={selected}
+            onClose={() => onSelect(null)}
+            onEdit={edit}
+            disabled={disabled}
+            issues={issues}
+            focusField={focusField}
+            docked
+            catalog={state.catalog!}
+            references={references}
+          />
+        ) : null}
       </div>
     </>
   );

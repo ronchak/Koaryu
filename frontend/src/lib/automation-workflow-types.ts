@@ -59,6 +59,14 @@ export type WorkflowOperationResponse = ApiWorkflowOperationResponse;
 export type WorkflowCatalogResponse = ApiWorkflowCatalogResponse;
 
 export type WorkflowSimulationContext = ApiWorkflowSimulationRequest["context"];
+/** Explicit hypotheticals for a review walk: skip waits, force a condition's path. */
+export type WorkflowSimulationAssumptions = Pick<
+  ApiWorkflowSimulationRequest,
+  "assume_waits_elapsed" | "branch_assumptions"
+>;
+export type WorkflowBranchAssumption = NonNullable<
+  ApiWorkflowSimulationRequest["branch_assumptions"]
+>[number];
 export type WorkflowSimulationEntityType = Extract<
   WorkflowSimulationContext,
   { kind: "entity" }

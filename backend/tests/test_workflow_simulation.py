@@ -1401,3 +1401,151 @@ def test_pinned_sdk_protocol_and_provider_failures_are_safe(status, body):
         WorkflowSimulationService(client).simulate(STUDIO, ACTOR, UUID(WORKFLOW), request_for())
     assert error.value.status_code == 503 and error.value.detail == UNAVAILABLE_DETAIL
     assert len(calls) == 1
+
+
+def hypothetical(graph, **controls):
+    return WorkflowSimulationRequest.model_validate(
+        {"graph": graph, "context": {"kind": "synthetic"}, **controls}
+    )
+
+
+def test_assumed_waits_continue_past_every_delay_as_an_explicit_hypothetical():
+    graph = graph_for(
+        "lead.created",
+        email(),
+        node("wait", "delay", mode="duration", minutes=60),
+        email("later", subject="Later {{recipient_name}}", body="{{studio_name}}"),
+    )
+    stopped = simulate(hypothetical(graph))
+    assert [row.outcome for row in stopped.trace] == ["entered", "would_send", "waiting"]
+    advanced = simulate(hypothetical(graph, assume_waits_elapsed=True))
+    assert [row.outcome for row in advanced.trace] == [
+        "entered",
+        "would_send",
+        "entered",
+        "would_send",
+        "completed",
+    ]
+    delay = advanced.trace[2]
+    assert delay.scheduled_at == NOW + timedelta(minutes=60)
+    assert delay.edge_id == "wait_next" and delay.reason is None
+    assert [action.node_id for action in advanced.next_actions] == ["mail", "later"]
+    assert advanced.future_conditions_rechecked is True
+    advanced.validate_graph_path(hypothetical(graph).graph)
+    # A plain request implies nothing hypothetical.
+    plain = hypothetical(graph).model_dump(mode="json")
+    assert plain["assume_waits_elapsed"] is False and plain["branch_assumptions"] == []
+
+
+def test_assumed_waits_still_walk_when_the_anchor_is_unavailable():
+    graph = graph_for(
+        "trial.scheduled",
+        node("wait", "delay", mode="until", field="trial.starts_at", offset_minutes=-30),
+        email(recipient="lead_or_guardian"),
+    )
+    context = {
+        "kind": "entity",
+        "entity_type": CATALOG["triggers"]["trial.scheduled"]["simulation_entity_type"],
+        "entity_id": ENTITY,
+    }
+    request = WorkflowSimulationRequest.model_validate(
+        {"graph": graph, "context": context, "assume_waits_elapsed": True}
+    )
+    facts = wire_facts()
+    stopped = simulate(
+        WorkflowSimulationRequest.model_validate({"graph": graph, "context": context}),
+        facts=facts,
+    )
+    assert [row.outcome for row in stopped.trace] == ["entered", "waiting"]
+    assert stopped.trace[1].reason == "facts_unavailable"
+    result = simulate(request, facts=facts)
+    assert [row.outcome for row in result.trace] == [
+        "entered",
+        "entered",
+        "would_send",
+        "completed",
+    ]
+    assert result.trace[1].scheduled_at is None and result.trace[1].reason is None
+    result.validate_graph_path(request.graph)
+
+
+def test_branch_assumptions_force_one_condition_without_reading_its_fact():
+    graph = graph_for(
+        "lead.created",
+        node("check", "condition", field="lead.source", operator="eq", value="website"),
+        email(),
+    )
+    default = simulate(hypothetical(graph))
+    assert [row.outcome for row in default.trace] == [
+        "entered",
+        "matched",
+        "would_send",
+        "completed",
+    ]
+    request = hypothetical(graph, branch_assumptions=[{"node_id": "check", "outcome": "no"}])
+    forced = simulate(request)
+    assert [row.outcome for row in forced.trace] == ["entered", "not_matched", "completed"]
+    assert forced.trace[1].edge_id == "check_no"
+    assert forced.next_actions == []
+    forced.validate_graph_path(request.graph)
+    # An assumption also carries a condition whose fact is unavailable.
+    facts = wire_facts()
+    facts["condition_facts"] = {}
+    waiting = simulate(
+        WorkflowSimulationRequest.model_validate(
+            {
+                "graph": graph,
+                "context": {
+                    "kind": "entity",
+                    "entity_type": "lead",
+                    "entity_id": ENTITY,
+                },
+            }
+        ),
+        facts=facts,
+    )
+    assert [row.outcome for row in waiting.trace] == ["entered", "waiting"]
+    assumed = simulate(
+        WorkflowSimulationRequest.model_validate(
+            {
+                "graph": graph,
+                "context": {
+                    "kind": "entity",
+                    "entity_type": "lead",
+                    "entity_id": ENTITY,
+                },
+                "branch_assumptions": [{"node_id": "check", "outcome": "yes"}],
+            }
+        ),
+        facts=facts,
+    )
+    assert [row.outcome for row in assumed.trace] == [
+        "entered",
+        "matched",
+        "would_send",
+        "completed",
+    ]
+
+
+@pytest.mark.parametrize(
+    "assumptions",
+    [
+        [{"node_id": "mail", "outcome": "yes"}],
+        [{"node_id": "missing", "outcome": "no"}],
+        [{"node_id": "check", "outcome": "yes"}, {"node_id": "check", "outcome": "no"}],
+        [{"node_id": "check", "outcome": "maybe"}],
+        [{"node_id": "check"}],
+    ],
+)
+def test_branch_assumptions_must_name_distinct_condition_nodes(assumptions):
+    graph = graph_for(
+        "lead.created",
+        node("check", "condition", field="lead.source", operator="eq", value="website"),
+        email(),
+    )
+    with pytest.raises(ValidationError):
+        hypothetical(graph, branch_assumptions=assumptions)
+    with pytest.raises(ValidationError):
+        hypothetical(graph, assume_waits_elapsed="yes")
+    with pytest.raises(ValidationError):
+        hypothetical(graph, advance_time=True)
