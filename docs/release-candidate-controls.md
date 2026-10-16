@@ -14,8 +14,8 @@ The selector picks one database scope, set by the most demanding changed path:
 | Scope | Changed paths | Database jobs |
 | --- | --- | --- |
 | `skip` | Ordinary Markdown under `docs/`, root AGENTS/CLAUDE/README, the frontend AGENTS/CLAUDE/README, backend AGENTS/README and Supabase AGENTS; regular files under `frontend/` and `performance/` | None |
-| `current` | Regular files under `backend/app/`, `backend/tests/` and `supabase/verification/`, except the history inputs listed in the selector | Assembled stage, `current` and `drift` parts |
-| `full` | Everything else, including migrations, Supabase config, scripts, dependencies, the workflow, history inputs, symlinks and unknown paths | Assembled stage, `current`, `drift` and `history` parts |
+| `current` | Regular files under `backend/app/` and `backend/tests/`, except the history inputs listed in the selector | Assembled stage, `current` and `drift` parts |
+| `full` | Everything else, including migrations, contract SQL, Supabase config, scripts, dependencies, the workflow, history inputs, symlinks and unknown paths | Assembled stage, `current`, `drift` and `history` parts |
 
 Markdown qualifies only as an ordinary non-executable file. Unavailable or
 non-ancestor comparisons, empty diffs and manual runs select `full`. Pushes to
@@ -45,8 +45,8 @@ result instead of repeating the suite locally.
 
 When a new release adds an upgrade/restore proof, gate the previous newest proof
 with `part_enabled history` so `current` keeps only the latest. Add any file a
-history proof reads outside `supabase/migrations/` and `scripts/` to the
-selector's history inputs; a selector test checks this for the replay loop.
+history proof reads outside `supabase/`, `scripts/` and the backend history input
+to the selector's history inputs; a selector test checks this for the replay loop.
 
 ## Required checks
 

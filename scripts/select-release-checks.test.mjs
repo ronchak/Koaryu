@@ -127,11 +127,10 @@ test("frontend and performance-fixture changes skip the database suite", (t) => 
   assert.equal(r.select({ eventName: "push" }).database, "skip");
 });
 
-test("backend code, backend tests and contract SQL run current database proofs", (t) => {
+test("backend code and backend tests run current database proofs", (t) => {
   for (const name of [
     "backend/app/services/student_service.py",
     "backend/tests/test_students.py",
-    "supabase/verification/new_contract.sql",
   ]) {
     const r = changes(t, [name, "frontend/src/page.tsx", "docs/notes.md"]);
     assert.equal(r.select().database, "current", name);
@@ -147,6 +146,10 @@ test("migrations, history inputs, tooling, dependencies, workflow and unknown pa
     "supabase/verification/billing_payer_balance_v41.sql",
     "supabase/verification/billing_subscription_terms.sql",
     "supabase/verification/missed_class_automation_contract.sql",
+    "supabase/verification/student_import_row_atomic_contract.sql",
+    "supabase/verification/worker_claim_rpc_contract.sql",
+    "supabase/verification/refund_projection_recovery_contract.sql",
+    "supabase/verification/new_contract.sql",
     "backend/requirements.txt",
     "backend/pyproject.toml",
     "package.json",
@@ -173,6 +176,9 @@ test("every file a released-predecessor restore proof reads selects the full sui
       inputs.add(input);
   }
   assert.ok(inputs.size > 0);
+  // Some proofs build contract paths from segments, so every contract file counts.
+  for (const name of fs.readdirSync(new URL("../supabase/verification/", import.meta.url)))
+    inputs.add(`supabase/verification/${name}`);
   for (const input of inputs) {
     assert.equal(isCurrentDatabasePath(input), false, input);
     assert.equal(isApplicationOnlyPath(input), false, input);
@@ -302,7 +308,7 @@ test("malformed or truncated raw comparisons run the full suite", () => {
     assert.equal(isDocumentationPath(name), false, name);
   for (const name of ["frontend/../supabase/migrations/a.sql", "frontend//a.ts", "frontend", "frontendx/a.ts"])
     assert.equal(isApplicationOnlyPath(name), false, name);
-  for (const name of ["backend/app/../../supabase/migrations/a.sql", "backend/app", "backend/application/a.py"])
+  for (const name of ["backend/app/../../supabase/migrations/a.sql", "backend/app", "backend/application/a.py", "supabase/verification/a.sql"])
     assert.equal(isCurrentDatabasePath(name), false, name);
 });
 
@@ -346,6 +352,7 @@ test("actual workflow uses a regular trusted base selector for each scope", (t) 
     ["docs/change.md", "skip", fullParts],
     ["frontend/src/page.tsx", "skip", fullParts],
     ["backend/app/query.py", "current", currentParts],
+    ["supabase/verification/new_contract.sql", "full", fullParts],
     ["supabase/migrations/change.sql", "full", fullParts],
   ]) {
     const r = changes(t, [name], {

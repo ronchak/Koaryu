@@ -18,13 +18,10 @@ const guidePaths = new Set([
   "supabase/AGENTS.md",
 ]);
 
-// Released-predecessor restore proofs read these files besides migrations and
-// scripts. A change to any of them runs the historical restore sweep.
+// Released-predecessor restore proofs read this backend file besides
+// migrations, contract SQL and scripts, so it runs the historical sweep.
 const historyInputs = new Set([
   "backend/app/services/generated_release_readiness.py",
-  "supabase/verification/billing_payer_balance_v41.sql",
-  "supabase/verification/billing_subscription_terms.sql",
-  "supabase/verification/missed_class_automation_contract.sql",
 ]);
 const scopeRank = { skip: 0, current: 1, full: 2 };
 
@@ -46,11 +43,12 @@ export function isApplicationOnlyPath(path) {
   return /^(frontend|performance)\/[^\n\0]+$/.test(path) && isPlainPath(path);
 }
 
-// Current database proofs import backend code and run contract SQL; only the
-// listed history inputs also feed the released-predecessor restore proofs.
+// Current database proofs import backend code; only the listed history inputs
+// also feed the released-predecessor restore proofs. Restore proofs also run
+// contract SQL by constructed paths, so supabase/verification is always full.
 export function isCurrentDatabasePath(path) {
   return (
-    /^(backend\/app|backend\/tests|supabase\/verification)\/[^\n\0]+$/.test(path) &&
+    /^backend\/(app|tests)\/[^\n\0]+$/.test(path) &&
     isPlainPath(path) &&
     !historyInputs.has(path)
   );
@@ -83,7 +81,7 @@ function pathScope(path, before, after, status) {
 const reasons = {
   skip: "only documentation, frontend or performance-fixture files changed",
   current:
-    "backend or contract changes need current database proofs, not the historical restore sweep",
+    "backend changes need current database proofs, not the historical restore sweep",
   full: "migrations, database tooling, dependencies, workflow or unknown paths changed",
 };
 
