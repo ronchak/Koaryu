@@ -184,11 +184,13 @@
   color: var(--product-ink);
 }
 
-.shellRoot[data-surface="horizon"] .navLink {
+.shellRoot[data-surface="horizon"] .navLink,
+.shellRoot[data-surface="horizon"] .spineToggle {
   color: var(--hz-rail-meta);
 }
 
-.shellRoot[data-surface="horizon"] .navLink:hover {
+.shellRoot[data-surface="horizon"] .navLink:hover,
+.shellRoot[data-surface="horizon"] .spineToggle:hover {
   background: var(--hz-rail-active);
   color: var(--hz-rail-ink);
 }
@@ -452,8 +454,15 @@
   place-items: center;
 }
 
+/* The top row is the toggle in the icon column with the wordmark beside it.
+   The toggle sits exactly where it is in both states, styled like the rows
+   below it, so it reads as part of the rail rather than a control on top. */
 .brandBand {
-  padding: 0.75rem var(--rail-inset) 0;
+  display: grid;
+  height: 48px;
+  grid-template-columns: var(--rail-slot) minmax(0, 1fr);
+  align-items: center;
+  margin: 0.75rem var(--rail-inset) 0;
 }
 
 .brandLink,
@@ -470,68 +479,53 @@
 }
 
 .brandLink {
-  display: grid;
-  height: 48px;
-  grid-template-columns: var(--rail-slot) minmax(0, 1fr);
+  display: flex;
   align-items: center;
+  justify-self: start;
   overflow: hidden;
-  border-radius: 12px;
-  text-decoration: none;
-}
-
-.brandWord {
-  overflow: hidden;
-  padding-right: 0.75rem;
+  padding: 0 0.5rem 0 0.125rem;
+  border-radius: 10px;
   font-family:
     -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", Inter, "Segoe UI",
     Roboto, sans-serif;
   font-size: 1.0625rem;
   font-weight: 760;
   letter-spacing: 0.28em;
+  text-decoration: none;
   text-transform: uppercase;
   white-space: nowrap;
-  transition: opacity var(--product-motion-travel-duration) var(--product-motion-ease);
+  transition:
+    opacity var(--product-motion-travel-duration) var(--product-motion-ease),
+    visibility 0s;
 }
 
-.spine[data-collapsed="true"] .brandWord {
+/* Hidden once faded, so the collapsed rail has no invisible link to tab to. */
+.spine[data-collapsed="true"] .brandLink {
+  visibility: hidden;
   opacity: 0;
+  transition:
+    opacity var(--product-motion-travel-duration) var(--product-motion-ease),
+    visibility 0s linear var(--product-motion-travel-duration);
 }
 
-/* The collapse control is a handle on the rail's edge, level with the brand.
-   It rides the edge as the rail resizes instead of jumping into the list. */
 .spineToggle {
-  position: absolute;
-  top: 1.375rem;
-  right: -14px;
-  z-index: 1;
   display: grid;
-  width: 28px;
-  height: 28px;
+  width: 44px;
+  height: 44px;
   place-items: center;
-  border: 1px solid var(--product-rule);
-  border-radius: 50%;
-  background: var(--product-paper);
-  color: var(--product-ink);
-  box-shadow: 0 1px 2px rgb(0 0 0 / 14%);
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--product-soft-ink);
   cursor: pointer;
   transition:
     background-color var(--product-motion-change-duration) ease-out,
-    border-color var(--product-motion-change-duration) ease-out,
     color var(--product-motion-change-duration) ease-out;
 }
 
-/* A 44px hit area around a 28px handle. */
-.spineToggle::before {
-  content: "";
-  position: absolute;
-  inset: -8px;
-  border-radius: 50%;
-}
-
 .spineToggle:hover {
-  border-color: var(--product-wood);
-  background: var(--product-card-stock);
-  color: var(--product-wood-deep);
+  background: color-mix(in srgb, var(--product-paper) 68%, transparent);
+  color: var(--product-ink);
 }
 
 .spineToggle:focus-visible,
@@ -541,10 +535,6 @@
 .mobileBrand:focus-visible {
   outline: 2px solid var(--product-focus);
   outline-offset: 2px;
-}
-
-.spineToggle:focus-visible {
-  outline-color: var(--product-wood);
 }
 
 .spineNav {

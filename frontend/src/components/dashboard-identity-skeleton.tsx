@@ -1,5 +1,5 @@
 import type { NavigationPlacement } from "@/components/theme-provider";
-import { KoaryuMark, Logo } from "@/components/logo";
+import { Logo } from "@/components/logo";
 import { APP_NAME } from "@/lib/constants";
 import styles from "./dashboard-shell.module.css";
 
@@ -31,12 +31,8 @@ export function DashboardIdentitySkeleton({
       ) : (
         <div className={styles.spine} aria-hidden="true">
           <div className={styles.brandBand}>
-            <span className={styles.brandLink}>
-              <span className={styles.railSlot}>
-                <KoaryuMark size="lg" />
-              </span>
-              <span className={styles.brandWord}>{APP_NAME}</span>
-            </span>
+            <span className={styles.railSlot} />
+            <span className={styles.brandLink}>{APP_NAME}</span>
           </div>
           <div className={styles.spineNav}>{placeholders}</div>
         </div>

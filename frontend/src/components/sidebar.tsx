@@ -6,10 +6,9 @@ import { usePathname } from "next/navigation";
 import {
   BarChart3,
   Calendar,
-  ChevronLeft,
-  ChevronRight,
   CreditCard,
   LayoutDashboard,
+  PanelLeft,
   Settings,
   UserPlus,
   Users,
@@ -20,7 +19,7 @@ import { AccountMenu } from "@/components/account-menu";
 import { NavigationPending } from "@/components/navigation-pending";
 import { MartialArtsBelt } from "@/components/icons/martial-arts-belt";
 import type { NavigationPlacement } from "@/components/theme-provider";
-import { KoaryuMark, Logo } from "./logo";
+import { Logo } from "./logo";
 import { APP_NAME, NAV_ITEMS } from "@/lib/constants";
 import { formatDashboardRole } from "@/lib/dashboard-shell-route";
 import styles from "./dashboard-shell.module.css";
@@ -111,7 +110,6 @@ export function Sidebar({
 }: SidebarProps) {
   const pathname = usePathname();
   const displayName = userName || "User";
-  const ToggleIcon = isCollapsed ? ChevronRight : ChevronLeft;
   const toggleLabel = isCollapsed ? "Expand product spine" : "Collapse product spine";
   const roleLabel = formatDashboardRole(role);
 
@@ -165,31 +163,36 @@ export function Sidebar({
         </header>
       ) : (
         /*
-         * The spine is one column of 48px slots. Every row (brand, studio, each
-         * link, the account trigger) puts its mark in that slot and its words to
-         * the right, so collapsing only narrows the rail to the slot: nothing
-         * moves, the words fade, and the handle on the edge stays where it was.
+         * The spine is one column of 48px slots. Every row (the toggle, studio,
+         * each link, the account trigger) puts its mark in that slot and its
+         * words to the right, so collapsing only narrows the rail to the slot:
+         * nothing moves and the words fade.
          */
         <aside className={styles.spine} data-collapsed={isCollapsed ? "true" : "false"}>
           <div className={styles.brandBand}>
-            <Link href="/" aria-label="Go to Koaryu homepage" className={styles.brandLink}>
-              <span className={styles.railSlot}>
-                <KoaryuMark size="lg" />
-              </span>
-              <span className={styles.brandWord}>{APP_NAME}</span>
+            <span className={styles.railSlot}>
+              {onToggleCollapsed ? (
+                <button
+                  type="button"
+                  onClick={onToggleCollapsed}
+                  aria-label={toggleLabel}
+                  aria-expanded={!isCollapsed}
+                  title={toggleLabel}
+                  className={styles.spineToggle}
+                >
+                  <PanelLeft aria-hidden="true" size={17} strokeWidth={1.8} />
+                </button>
+              ) : null}
+            </span>
+            <Link
+              href="/"
+              aria-label="Go to Koaryu homepage"
+              aria-hidden={isCollapsed || undefined}
+              tabIndex={isCollapsed ? -1 : undefined}
+              className={styles.brandLink}
+            >
+              {APP_NAME}
             </Link>
-            {onToggleCollapsed ? (
-              <button
-                type="button"
-                onClick={onToggleCollapsed}
-                aria-label={toggleLabel}
-                aria-expanded={!isCollapsed}
-                title={toggleLabel}
-                className={styles.spineToggle}
-              >
-                <ToggleIcon aria-hidden="true" size={14} strokeWidth={2.2} />
-              </button>
-            ) : null}
           </div>
           {studioName ? (
             <div
