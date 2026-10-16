@@ -481,8 +481,10 @@ export function serializeWorkflowDraft(draft: WorkflowSnapshot): string {
 }
 
 /**
- * Editor-generated IDs count upward from the highest existing number, so a step added
- * after a deletion never takes an earlier number and the step names below stay put.
+ * Editor-generated IDs count upward from the highest existing number, so adding a step
+ * never takes a number below an existing one and never renames the steps already there.
+ * Deleting a step still renumbers later steps of the same kind, because names are
+ * recomputed from the surviving steps.
  */
 export function nextWorkflowId(graph: WorkflowSnapshot["graph"], kind: "node" | "edge"): string {
   const ids = (kind === "node" ? graph.nodes : graph.edges).map(({ id }) => id);

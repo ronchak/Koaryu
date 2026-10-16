@@ -166,7 +166,7 @@ export function WorkflowSimulationPanel({
   return (
     <section className={`${styles.sheet} ${styles.toolPanel}`} aria-label="Workflow simulation">
       <h2>Simulate workflow</h2>
-      <p>Walk through the current graph without sending email or creating follow-ups.</p>
+      <p>See what this workflow would do, without sending email or creating follow-ups.</p>
       {preview ? (
         <p className={styles.notice}>
           Simulation is available in your live studio. Preview uses sample workflows and does not
@@ -214,8 +214,8 @@ export function WorkflowSimulationPanel({
           {hypothetical ? (
             <div className={styles.notice} data-tone="sample" role="status">
               <p>
-                <strong>Hypothetical trace.</strong>{" "}
-                {output.assumptions.waits ? "Waits are assumed to have passed. " : ""}
+                <strong>Preview with assumptions.</strong>{" "}
+                {output.assumptions.waits ? "Every wait is assumed to have passed. " : ""}
                 {Object.keys(output.assumptions.branches).length
                   ? "Marked conditions take the path you chose. "
                   : ""}
@@ -226,7 +226,7 @@ export function WorkflowSimulationPanel({
                   disabled={!canRun}
                   onClick={() => void simulate({ waits: false, branches: {} })}
                 >
-                  Use real timing and facts
+                  Reset assumptions
                 </button>
               </div>
             </div>
@@ -311,46 +311,38 @@ export function WorkflowSimulationPanel({
           </ol>
           {waiting ? (
             <div className={styles.notice}>
-              <p>
-                The trace stops at the first wait.
-                {waiting.scheduled_at ? (
-                  <> Scheduled for {activityTime(waiting.scheduled_at)}.</>
-                ) : (
-                  " Its scheduled time is unavailable."
-                )}{" "}
-                Future conditions will be checked later.
-              </p>
               {waitingNode?.type === "delay" ? (
+                <p>
+                  The preview stops at this wait.
+                  {waiting.scheduled_at ? (
+                    <> It would continue on {activityTime(waiting.scheduled_at)}.</>
+                  ) : (
+                    " Its time is not known yet."
+                  )}{" "}
+                  Later conditions are checked when the wait ends.
+                </p>
+              ) : (
+                <p>
+                  The preview stops here:{" "}
+                  {waiting.reason === "facts_unavailable"
+                    ? "a fact this step needs is not available yet."
+                    : waiting.reason
+                      ? `${plainReason(waiting.reason)}.`
+                      : "this step cannot be decided yet."}
+                  {waitingNode?.type === "condition"
+                    ? " Choose a path above to continue the preview."
+                    : ""}
+                </p>
+              )}
+              {waitingNode?.type === "delay" && !output.assumptions.waits ? (
                 <div className={styles.actions}>
                   <button disabled={!canRun} onClick={() => void simulate({ waits: true })}>
-                    Continue past this wait
+                    Continue as if every wait had passed
                   </button>
                 </div>
               ) : null}
             </div>
           ) : null}
-          <h3>Next actions returned</h3>
-          {trace.next_actions.length ? (
-            <ul className={styles.toolRows}>
-              {trace.next_actions.map((action, index) => (
-                <li key={`${action.node_id}:${index}`}>
-                  <button onClick={() => onSelectNode(action.node_id)}>
-                    {nodeLabel(action.node_id)} · {action.action_kind.replaceAll("_", " ")}
-                  </button>
-                  <p>
-                    {action.scheduled_at ? (
-                      <>Scheduled for {activityTime(action.scheduled_at)}</>
-                    ) : (
-                      "No future scheduled time returned"
-                    )}
-                  </p>
-                  {action.reason ? <p>{plainReason(action.reason)}</p> : null}
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p>No next actions returned.</p>
-          )}
         </div>
       ) : null}
       <p className={styles.muted}>
