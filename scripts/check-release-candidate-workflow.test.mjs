@@ -158,24 +158,30 @@ test("release-candidate workflow rejects a missing aggregate performance asserti
   );
 });
 
-test("database skips require the repository-owned documentation selection", () => {
+test("database skips and parts require the repository-owned selection", () => {
   for (const [before, after] of [
     ["    needs: repository-controls\n", ""],
     [
-      "    if: ${{ needs.repository-controls.outputs.docs-only != 'true' }}",
+      "    if: ${{ needs.repository-controls.outputs.database-scope != 'skip' }}",
       "    if: false",
     ],
-    ["docs-only: ${{ steps.scope.outputs.docs-only }}", "docs-only: true"],
+    ["database-scope: ${{ steps.scope.outputs.database-scope }}", "database-scope: skip"],
+    ["database-parts: ${{ steps.scope.outputs.database-parts }}", "database-parts: '[\"current\"]'"],
+    [
+      "        part: ${{ fromJSON(needs.repository-controls.outputs.database-parts) }}",
+      "        part: [current]",
+    ],
     [
       "BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}",
       "BASE_SHA: main",
     ],
-    ['true) test "$DATABASE_RESULT" = skipped ;;', "true) true ;;"],
-    ['false) test "$DATABASE_RESULT" = success ;;', "false) true ;;"],
+    ['test "$DATABASE_PARTS" = "$expected_parts"', "true"],
+    ['test "$DATABASE_ISOLATED_RESULT" = skipped', "true"],
     ["*) exit 1 ;;", "*) true ;;"],
     ['git show "$BASE_SHA:scripts/select-release-checks.mjs"', 'git show "HEAD:scripts/select-release-checks.mjs"'],
     ['GITHUB_OUTPUT="$scope_output" node "$scope_script"', 'node scripts/select-release-checks.mjs'],
-    ['selected=false', 'selected=true'],
+    ["selected=full", "selected=skip"],
+    ["KOARYU_DB_SUITE_PART: ${{ matrix.part }}", "KOARYU_DB_SUITE_PART: all"],
   ]) {
     assert.notEqual(workflow.replace(before, after), workflow, before);
     assert.notDeepEqual(
@@ -214,14 +220,18 @@ const aggregateRun = workflow
   .filter((line) => line.startsWith("          "))
   .map((line) => line.slice(10))
   .join("\n");
+const fullParts = '["current","drift","history"]';
+const currentParts = '["current","drift"]';
 function gate(overrides = {}) {
   const env = {
     PATH: process.env.PATH,
-    DOCS_ONLY: "false",
+    DATABASE_SCOPE: "full",
+    DATABASE_PARTS: fullParts,
     REPOSITORY_RESULT: "success",
     FRONTEND_RESULT: "success",
     BACKEND_RESULT: "success",
     DATABASE_RESULT: "success",
+    DATABASE_ISOLATED_RESULT: "success",
     PERFORMANCE_REGRESSION_RESULT: "success",
     STATIC_ANALYSIS_RESULT: "success",
     ...overrides,
@@ -230,22 +240,39 @@ function gate(overrides = {}) {
     env,
   }).status;
 }
+const skipped = {
+  DATABASE_SCOPE: "skip",
+  DATABASE_RESULT: "skipped",
+  DATABASE_ISOLATED_RESULT: "skipped",
+};
 
-test("actual aggregate accepts full checks or only the explicitly selected database skip", () => {
+test("actual aggregate accepts full or current checks and only the explicitly selected database skip", () => {
   assert.equal(gate(), 0);
-  assert.equal(gate({ DOCS_ONLY: "true", DATABASE_RESULT: "skipped" }), 0);
+  assert.equal(gate({ DATABASE_SCOPE: "current", DATABASE_PARTS: currentParts }), 0);
+  assert.equal(gate(skipped), 0);
 });
 
-test("actual aggregate refuses missing/unknown selection and failed, canceled or unexpected database outcomes", () => {
-  for (const value of ["", "unknown", "TRUE"])
-    assert.notEqual(gate({ DOCS_ONLY: value }), 0);
-  for (const result of ["skipped", "failure", "cancelled", ""])
-    assert.notEqual(gate({ DATABASE_RESULT: result }), 0);
-  for (const result of ["success", "failure", "cancelled", ""])
-    assert.notEqual(gate({ DOCS_ONLY: "true", DATABASE_RESULT: result }), 0);
+test("actual aggregate refuses missing/unknown selection, mismatched parts and failed, canceled or unexpected database outcomes", () => {
+  for (const value of ["", "unknown", "FULL", "docs-only"])
+    assert.notEqual(gate({ DATABASE_SCOPE: value }), 0, value);
+  assert.notEqual(gate({ DATABASE_PARTS: currentParts }), 0);
+  assert.notEqual(gate({ DATABASE_SCOPE: "current" }), 0);
+  assert.notEqual(gate({ DATABASE_PARTS: "" }), 0);
+  for (const name of ["DATABASE", "DATABASE_ISOLATED"]) {
+    for (const result of ["skipped", "failure", "cancelled", ""]) {
+      assert.notEqual(gate({ [`${name}_RESULT`]: result }), 0, `${name}=${result}`);
+      assert.notEqual(
+        gate({ DATABASE_SCOPE: "current", DATABASE_PARTS: currentParts, [`${name}_RESULT`]: result }),
+        0,
+        `current ${name}=${result}`,
+      );
+    }
+    for (const result of ["success", "failure", "cancelled", ""])
+      assert.notEqual(gate({ ...skipped, [`${name}_RESULT`]: result }), 0, `skip ${name}=${result}`);
+  }
 });
 
-test("actual documentation gate still refuses any other failed, skipped or canceled suite", () => {
+test("actual database-skip gate still refuses any other failed, skipped or canceled suite", () => {
   for (const name of [
     "REPOSITORY",
     "FRONTEND",
@@ -255,11 +282,7 @@ test("actual documentation gate still refuses any other failed, skipped or cance
   ]) {
     for (const result of ["failure", "skipped", "cancelled", ""]) {
       assert.notEqual(
-        gate({
-          DOCS_ONLY: "true",
-          DATABASE_RESULT: "skipped",
-          [`${name}_RESULT`]: result,
-        }),
+        gate({ ...skipped, [`${name}_RESULT`]: result }),
         0,
         `${name}=${result}`,
       );

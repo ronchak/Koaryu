@@ -38,7 +38,7 @@ to choose checks; it applies across packages.
 
 The actual required GitHub checks still control merging. Do not bypass them or
 label unrun checks as passed. See [current CI enforcement](docs/release-candidate-controls.md#current-ci-and-the-transition)
-for the documentation-only database fast path and full-suite fallback. While waiting, use a bounded watcher
+for database scope selection (skip, current or full). While waiting, use a bounded watcher
 instead of repeated reasoning or review; report a new result, failure or blocker.
 If the client requires updates, keep them brief.
 

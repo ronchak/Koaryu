@@ -20,7 +20,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     outputs:
-      docs-only: ${{ steps.scope.outputs.docs-only }}
+      database-scope: ${{ steps.scope.outputs.database-scope }}
+      database-parts: ${{ steps.scope.outputs.database-parts }}
 
     steps:
       - name: Check out exact candidate head
@@ -45,7 +46,7 @@ jobs:
           EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: |
-          selected=false
+          selected=full
           scope_dir="$(mktemp -d "$RUNNER_TEMP/koaryu-release-scope.XXXXXX")"
           scope_script="$scope_dir/selector.mjs"
           scope_output="$scope_dir/output"
@@ -55,14 +56,17 @@ jobs:
               if GITHUB_OUTPUT="$scope_output" node "$scope_script"; then
                 selection="$(cat "$scope_output" 2>/dev/null || true)"
                 case "$selection" in
-                  docs-only=true) selected=true ;;
-                  docs-only=false) selected=false ;;
+                  database-scope=skip) selected=skip ;;
+                  database-scope=current) selected=current ;;
                 esac
               fi
             fi
           fi
-          echo "docs-only=$selected" >> "$GITHUB_OUTPUT"
-          echo "Database selection from pinned base: docs-only=$selected" >> "$GITHUB_STEP_SUMMARY"
+          parts='["current","drift","history"]'
+          if [[ "$selected" == current ]]; then parts='["current","drift"]'; fi
+          echo "database-scope=$selected" >> "$GITHUB_OUTPUT"
+          echo "database-parts=$parts" >> "$GITHUB_OUTPUT"
+          echo "Database selection from pinned base: $selected $parts" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Verify candidate workflow coverage
         run: npm run check:release-workflow
@@ -206,43 +210,20 @@ jobs:
   database:
     name: Supabase migration and contract suite
     runs-on: ubuntu-latest
-    # V55 isolated suite ~105 min + prior 30-min assembled Supabase budget + installation, runner, and future restore margin.
-    timeout-minutes: 180
+    timeout-minutes: 30
     needs: repository-controls
-    if: ${{ needs.repository-controls.outputs.docs-only != 'true' }}
+    if: ${{ needs.repository-controls.outputs.database-scope != 'skip' }}
 
     steps:
       - name: Check out exact candidate head
         uses: actions/checkout@v7
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
-          fetch-depth: 0
 
       - name: Assert exact candidate head
         env:
           EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
-
-      - name: Install PostgreSQL 17 for disposable restore proofs
-        run: |
-          sudo install -d /usr/share/postgresql-common/pgdg
-          sudo curl --fail --silent --show-error -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc
-          . /etc/os-release
-          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt ${VERSION_CODENAME}-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
-          sudo apt-get update
-          sudo apt-get install -y postgresql-17 postgresql-client-17
-
-      - name: Set up Python for installed SDK composition proofs
-        uses: actions/setup-python@v6
-        with:
-          python-version: "3.11"
-          cache: pip
-          cache-dependency-path: |
-            backend/requirements.txt
-            backend/requirements-dev.txt
-
-      - name: Install pinned backend test runtime for offline SDK proofs
-        run: python -m pip install -r backend/requirements-dev.txt
 
       - name: Set up Supabase CLI
         id: supabase-cli
@@ -277,9 +258,55 @@ jobs:
         if: ${{ always() && steps.supabase-cli.outcome == 'success' }}
         run: supabase stop --no-backup
 
+  database-isolated:
+    name: Supabase isolated proofs (${{ matrix.part }})
+    runs-on: ubuntu-latest
+    # Each part replays migrations (~2 min) then runs ~25-35 min of proofs.
+    timeout-minutes: 75
+    needs: repository-controls
+    if: ${{ needs.repository-controls.outputs.database-scope != 'skip' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        part: ${{ fromJSON(needs.repository-controls.outputs.database-parts) }}
+
+    steps:
+      - name: Check out exact candidate head
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+
+      - name: Assert exact candidate head
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+
+      - name: Install PostgreSQL 17 for disposable restore proofs
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl --fail --silent --show-error -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          . /etc/os-release
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt ${VERSION_CODENAME}-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update
+          sudo apt-get install -y postgresql-17 postgresql-client-17
+
+      - name: Set up Python for installed SDK composition proofs
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: |
+            backend/requirements.txt
+            backend/requirements-dev.txt
+
+      - name: Install pinned backend test runtime for offline SDK proofs
+        run: python -m pip install -r backend/requirements-dev.txt
+
       - name: Run isolated migration, restore, and concurrency proofs
         env:
           KOARYU_PG_BIN_DIR: /usr/lib/postgresql/17/bin
+          KOARYU_DB_SUITE_PART: ${{ matrix.part }}
         run: npm run check:supabase-contracts-local
 
   performance-regression:
@@ -386,26 +413,38 @@ jobs:
       - frontend
       - backend
       - database
+      - database-isolated
       - performance-regression
       - static-analysis
 
     steps:
       - name: Require every candidate suite
         env:
-          DOCS_ONLY: ${{ needs.repository-controls.outputs.docs-only }}
+          DATABASE_SCOPE: ${{ needs.repository-controls.outputs.database-scope }}
+          DATABASE_PARTS: ${{ needs.repository-controls.outputs.database-parts }}
           REPOSITORY_RESULT: ${{ needs.repository-controls.result }}
           FRONTEND_RESULT: ${{ needs.frontend.result }}
           BACKEND_RESULT: ${{ needs.backend.result }}
           DATABASE_RESULT: ${{ needs.database.result }}
+          DATABASE_ISOLATED_RESULT: ${{ needs.database-isolated.result }}
           PERFORMANCE_REGRESSION_RESULT: ${{ needs.performance-regression.result }}
           STATIC_ANALYSIS_RESULT: ${{ needs.static-analysis.result }}
         run: |
           test "$REPOSITORY_RESULT" = success
           test "$FRONTEND_RESULT" = success
           test "$BACKEND_RESULT" = success
-          case "$DOCS_ONLY" in
-            true) test "$DATABASE_RESULT" = skipped ;;
-            false) test "$DATABASE_RESULT" = success ;;
+          case "$DATABASE_SCOPE" in
+            skip)
+              test "$DATABASE_RESULT" = skipped
+              test "$DATABASE_ISOLATED_RESULT" = skipped
+              ;;
+            current | full)
+              expected_parts='["current","drift","history"]'
+              if [[ "$DATABASE_SCOPE" == current ]]; then expected_parts='["current","drift"]'; fi
+              test "$DATABASE_PARTS" = "$expected_parts"
+              test "$DATABASE_RESULT" = success
+              test "$DATABASE_ISOLATED_RESULT" = success
+              ;;
             *) exit 1 ;;
           esac
           test "$PERFORMANCE_REGRESSION_RESULT" = success

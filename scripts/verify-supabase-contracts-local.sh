@@ -22,6 +22,22 @@ PG_RESTORE=""
 CREATEDB=""
 PG_PORT=5432
 
+# CI runs the suite as parallel parts on separate runners. Every part replays the
+# same migrations. "history" adds the released-predecessor restore proofs inside
+# the replay, "drift" runs the rolled-back catalog drift refusals and "current"
+# runs everything else. The default runs every part in one cluster.
+SUITE_PART="${KOARYU_DB_SUITE_PART:-all}"
+case "$SUITE_PART" in
+  all | current | drift | history) ;;
+  *)
+    echo "ERROR: KOARYU_DB_SUITE_PART must be all, current, drift or history." >&2
+    exit 2
+    ;;
+esac
+part_enabled() {
+  [[ "$SUITE_PART" == all || "$SUITE_PART" == "$1" ]]
+}
+
 cleanup() {
   local original_status=$?
   local cleanup_failed=0
@@ -432,7 +448,7 @@ for migration_file in "${migration_files[@]}"; do
   migration_version="${BASH_REMATCH[1]}"
   migration_name="${BASH_REMATCH[2]}"
 
-  if [[ "$migration_filename" == "20260825042838_schedule_window_read_rpc.sql" ]]; then
+  if part_enabled history && [[ "$migration_filename" == "20260825042838_schedule_window_read_rpc.sql" ]]; then
     echo "[restored Payments V25] RUN V24 dump/restore then schedule migrations 118-119 and Payments migration 120"
     if run_interruptible bash \
       "$ROOT_DIR/scripts/verify-v24-v25-restore-contract.sh" \
@@ -591,20 +607,22 @@ SQL
       exit "$status"
     fi
 
-    echo "[restored V26] RUN V25 dump/restore then migration 121"
-    if run_interruptible bash \
-      "$ROOT_DIR/scripts/verify-v25-v26-restore-contract.sh" \
-      "$PG_DUMP" "$PG_RESTORE" "$CREATEDB" "$PSQL" \
-      "$SOCKET_DIR" "$PG_PORT" "$TEMP_DIR" "$ROOT_DIR"; then
-      echo "[restored V26] PASS V25 dump/restore then migration 121"
-    else
-      status=$?
-      echo "[restored V26] FAIL V25 dump/restore then migration 121 (exit $status)" >&2
-      exit "$status"
+    if part_enabled history; then
+      echo "[restored V26] RUN V25 dump/restore then migration 121"
+      if run_interruptible bash \
+        "$ROOT_DIR/scripts/verify-v25-v26-restore-contract.sh" \
+        "$PG_DUMP" "$PG_RESTORE" "$CREATEDB" "$PSQL" \
+        "$SOCKET_DIR" "$PG_PORT" "$TEMP_DIR" "$ROOT_DIR"; then
+        echo "[restored V26] PASS V25 dump/restore then migration 121"
+      else
+        status=$?
+        echo "[restored V26] FAIL V25 dump/restore then migration 121 (exit $status)" >&2
+        exit "$status"
+      fi
     fi
   fi
 
-  if [[ "$migration_filename" == "20260826051527_billing_provider_operations_and_payer_consent.sql" ]]; then
+  if part_enabled history && [[ "$migration_filename" == "20260826051527_billing_provider_operations_and_payer_consent.sql" ]]; then
     echo "[restored V27] RUN V26 dump/restore then migration 122"
     if run_interruptible bash \
       "$ROOT_DIR/scripts/verify-v26-v27-restore-contract.sh" \
@@ -618,7 +636,7 @@ SQL
     fi
   fi
 
-  if [[ "$migration_filename" == "20260826073728_billing_provider_operation_steps.sql" ]]; then
+  if part_enabled history && [[ "$migration_filename" == "20260826073728_billing_provider_operation_steps.sql" ]]; then
     echo "[restored V28] RUN V27 dump/restore then migration 123"
     if run_interruptible bash \
       "$ROOT_DIR/scripts/verify-v27-v28-restore-contract.sh" \
@@ -632,7 +650,7 @@ SQL
     fi
   fi
 
-  if [[ "$migration_filename" == "20260826102840_enrollment_period_safe_transitions.sql" ]]; then
+  if part_enabled history && [[ "$migration_filename" == "20260826102840_enrollment_period_safe_transitions.sql" ]]; then
     echo "[restored V29] RUN V28 dump/restore then migration 124"
     if run_interruptible bash \
       "$ROOT_DIR/scripts/verify-v28-v29-restore-contract.sh" \
@@ -646,7 +664,7 @@ SQL
     fi
   fi
 
-  if [[ "$migration_filename" == "20260826155911_payments_workflow_catalog_and_replay_repairs.sql" ]]; then
+  if part_enabled history && [[ "$migration_filename" == "20260826155911_payments_workflow_catalog_and_replay_repairs.sql" ]]; then
     echo "[restored V30] RUN V29 dump/restore then migration 125"
     if run_interruptible bash \
       "$ROOT_DIR/scripts/verify-v29-v30-restore-contract.sh" \
@@ -660,7 +678,7 @@ SQL
     fi
   fi
 
-  if [[ "$migration_filename" == "20260826185651_payment_refund_payer_sync_resource_ownership.sql" ]]; then
+  if part_enabled history && [[ "$migration_filename" == "20260826185651_payment_refund_payer_sync_resource_ownership.sql" ]]; then
     echo "[restored V31-V37] RUN one V31 business proof with declared forward continuation"
     if run_interruptible bash \
       "$ROOT_DIR/scripts/verify-v30-v37-restore-contract.sh" \
@@ -674,91 +692,91 @@ SQL
     fi
   fi
 
-  if [[ "$migration_filename" == "20260908080420_student_membership_preservation_v39.sql" ]]; then
+  if part_enabled history && [[ "$migration_filename" == "20260908080420_student_membership_preservation_v39.sql" ]]; then
     run_interruptible python3 "$ROOT_DIR/scripts/verify-v38-v39-restore-contract.py" \
       "$PG_DUMP" "$PG_RESTORE" "$CREATEDB" "$PSQL" \
       "$SOCKET_DIR" "$PG_PORT" "$TEMP_DIR" "$ROOT_DIR"
   fi
 
-  if [[ "$migration_filename" == "20260908133504_rank_history_command_ownership_v40.sql" ]]; then
+  if part_enabled history && [[ "$migration_filename" == "20260908133504_rank_history_command_ownership_v40.sql" ]]; then
     run_interruptible python3 "$ROOT_DIR/scripts/verify-v39-v40-restore-contract.py" \
       "$PG_DUMP" "$PG_RESTORE" "$CREATEDB" "$PSQL" \
       "$SOCKET_DIR" "$PG_PORT" "$TEMP_DIR" "$ROOT_DIR"
   fi
 
-  if [[ "$migration_filename" == "20260908183744_serialize_billing_payer_balance_v41.sql" ]]; then
+  if part_enabled history && [[ "$migration_filename" == "20260908183744_serialize_billing_payer_balance_v41.sql" ]]; then
     run_interruptible python3 "$ROOT_DIR/scripts/verify-v40-v41-restore-contract.py" \
       "$PG_DUMP" "$PG_RESTORE" "$CREATEDB" "$PSQL" \
       "$SOCKET_DIR" "$PG_PORT" "$TEMP_DIR" "$ROOT_DIR"
   fi
 
-  if [[ "$migration_filename" == "20260910084231_independent_program_joining_dates_v42.sql" ]]; then
+  if part_enabled history && [[ "$migration_filename" == "20260910084231_independent_program_joining_dates_v42.sql" ]]; then
     run_interruptible python3 "$ROOT_DIR/scripts/verify-v41-v42-restore-contract.py" \
       "$PG_DUMP" "$PG_RESTORE" "$CREATEDB" "$PSQL" \
       "$SOCKET_DIR" "$PG_PORT" "$TEMP_DIR" "$ROOT_DIR"
   fi
 
-  if [[ "$migration_filename" == "20260910093958_external_payment_command_ownership_v43.sql" ]]; then
+  if part_enabled history && [[ "$migration_filename" == "20260910093958_external_payment_command_ownership_v43.sql" ]]; then
     run_interruptible python3 "$ROOT_DIR/scripts/verify-v42-v43-restore-contract.py" \
       "$PG_DUMP" "$PG_RESTORE" "$CREATEDB" "$PSQL" \
       "$SOCKET_DIR" "$PG_PORT" "$TEMP_DIR" "$ROOT_DIR"
   fi
 
-  if [[ "$migration_filename" == "20260910135133_local_plan_write_ownership_v44.sql" ]]; then
+  if part_enabled history && [[ "$migration_filename" == "20260910135133_local_plan_write_ownership_v44.sql" ]]; then
     run_interruptible python3 "$ROOT_DIR/scripts/verify-v43-v44-restore-contract.py" \
       "$PG_DUMP" "$PG_RESTORE" "$CREATEDB" "$PSQL" \
       "$SOCKET_DIR" "$PG_PORT" "$TEMP_DIR" "$ROOT_DIR"
   fi
 
-  if [[ "$migration_filename" == "20260910185031_student_import_retry_ownership_v45.sql" ]]; then
+  if part_enabled history && [[ "$migration_filename" == "20260910185031_student_import_retry_ownership_v45.sql" ]]; then
     run_interruptible python3 "$ROOT_DIR/scripts/verify-v44-v45-restore-contract.py" \
       "$PG_DUMP" "$PG_RESTORE" "$CREATEDB" "$PSQL" \
       "$SOCKET_DIR" "$PG_PORT" "$TEMP_DIR" "$ROOT_DIR"
   fi
 
-  if [[ "$migration_filename" == "20260914033337_refund_projection_recovery_v46.sql" ]]; then
+  if part_enabled history && [[ "$migration_filename" == "20260914033337_refund_projection_recovery_v46.sql" ]]; then
     run_interruptible python3 "$ROOT_DIR/scripts/verify-v45-v46-restore-contract.py" \
       "$PG_DUMP" "$PG_RESTORE" "$CREATEDB" "$PSQL" "$SOCKET_DIR" "$PG_PORT" "$TEMP_DIR" "$ROOT_DIR"
   fi
 
-  if [[ "$migration_filename" == "20260914055301_refund_completion_locking_v47.sql" ]]; then
+  if part_enabled history && [[ "$migration_filename" == "20260914055301_refund_completion_locking_v47.sql" ]]; then
     run_interruptible python3 "$ROOT_DIR/scripts/verify-v46-v47-restore-contract.py" \
       "$PG_DUMP" "$PG_RESTORE" "$CREATEDB" "$PSQL" "$SOCKET_DIR" "$PG_PORT" "$TEMP_DIR" "$ROOT_DIR"
   fi
 
-  if [[ "$migration_filename" == "20260920035023_enrollment_activation_execution_v48.sql" ]]; then
+  if part_enabled history && [[ "$migration_filename" == "20260920035023_enrollment_activation_execution_v48.sql" ]]; then
     run_interruptible python3 "$ROOT_DIR/scripts/verify-v47-v48-restore-contract.py" \
       "$PG_DUMP" "$PG_RESTORE" "$CREATEDB" "$PSQL" "$SOCKET_DIR" "$PG_PORT" "$TEMP_DIR" "$ROOT_DIR"
   fi
-  if [[ "$migration_filename" == "20260920052705_subscription_unknown_terms_v49.sql" ]]; then
+  if part_enabled history && [[ "$migration_filename" == "20260920052705_subscription_unknown_terms_v49.sql" ]]; then
     run_interruptible python3 "$ROOT_DIR/scripts/verify-v48-v49-restore-contract.py" \
       "$PG_DUMP" "$PG_RESTORE" "$CREATEDB" "$PSQL" "$SOCKET_DIR" "$PG_PORT" "$TEMP_DIR" "$ROOT_DIR"
   fi
-  if [[ "$migration_filename" == "20260920154441_billing_due_date_facts_v50.sql" ]]; then
+  if part_enabled history && [[ "$migration_filename" == "20260920154441_billing_due_date_facts_v50.sql" ]]; then
     run_interruptible python3 "$ROOT_DIR/scripts/verify-v49-v50-restore-contract.py" \
       "$PG_DUMP" "$PG_RESTORE" "$CREATEDB" "$PSQL" "$SOCKET_DIR" "$PG_PORT" "$TEMP_DIR" "$ROOT_DIR"
   fi
-  if [[ "$migration_filename" == "20260925030000_invoice_closeout_lock_order_v51.sql" ]]; then
+  if part_enabled history && [[ "$migration_filename" == "20260925030000_invoice_closeout_lock_order_v51.sql" ]]; then
     run_interruptible python3 "$ROOT_DIR/scripts/verify-v50-v51-restore-contract.py" \
       "$PG_DUMP" "$PG_RESTORE" "$CREATEDB" "$PSQL" "$SOCKET_DIR" "$PG_PORT" "$TEMP_DIR" "$ROOT_DIR"
   fi
-  if [[ "$migration_filename" == "20260926194918_lead_commands_v52.sql" ]]; then
+  if part_enabled history && [[ "$migration_filename" == "20260926194918_lead_commands_v52.sql" ]]; then
     run_interruptible python3 "$ROOT_DIR/scripts/verify-v51-v52-restore-contract.py" \
       "$PG_DUMP" "$PG_RESTORE" "$CREATEDB" "$PSQL" "$SOCKET_DIR" "$PG_PORT" "$TEMP_DIR" "$ROOT_DIR"
   fi
-  if [[ "$migration_filename" == "20260929152445_dashboard_roster_inactivity_v53.sql" ]]; then
+  if part_enabled history && [[ "$migration_filename" == "20260929152445_dashboard_roster_inactivity_v53.sql" ]]; then
     run_interruptible python3 "$ROOT_DIR/scripts/verify-v52-v53-restore-contract.py" \
       "$PG_DUMP" "$PG_RESTORE" "$CREATEDB" "$PSQL" "$SOCKET_DIR" "$PG_PORT" "$TEMP_DIR" "$ROOT_DIR"
   fi
-  if [[ "$migration_filename" == "20260930024404_student_profile_qa_v54.sql" ]]; then
+  if part_enabled history && [[ "$migration_filename" == "20260930024404_student_profile_qa_v54.sql" ]]; then
     run_interruptible python3 "$ROOT_DIR/scripts/verify-v53-v54-restore-contract.py" \
       "$PG_DUMP" "$PG_RESTORE" "$CREATEDB" "$PSQL" "$SOCKET_DIR" "$PG_PORT" "$TEMP_DIR" "$ROOT_DIR"
   fi
-  if [[ "$migration_filename" == "20260930192626_converted_lead_enrollment_v55.sql" ]]; then
+  if part_enabled history && [[ "$migration_filename" == "20260930192626_converted_lead_enrollment_v55.sql" ]]; then
     run_interruptible python3 "$ROOT_DIR/scripts/verify-v54-v55-restore-contract.py" \
       "$PG_DUMP" "$PG_RESTORE" "$CREATEDB" "$PSQL" "$SOCKET_DIR" "$PG_PORT" "$TEMP_DIR" "$ROOT_DIR"
   fi
-  if [[ "$migration_filename" == "20261004220435_missed_class_automation_v56.sql" ]]; then
+  if part_enabled history && [[ "$migration_filename" == "20261004220435_missed_class_automation_v56.sql" ]]; then
     run_interruptible python3 "$ROOT_DIR/scripts/verify-v55-v56-restore-contract.py" \
       "$PG_DUMP" "$PG_RESTORE" "$CREATEDB" "$PSQL" "$SOCKET_DIR" "$PG_PORT" "$TEMP_DIR" "$ROOT_DIR"
   fi
@@ -941,6 +959,11 @@ SQL
     fi
   fi
 done
+
+if [[ "$SUITE_PART" == history ]]; then
+  echo "PASS: history part verified every released-predecessor restore proof through V56 on ephemeral PostgreSQL 17."
+  exit 0
+fi
 
 echo "[V33 hash parity] RUN Python stable_hash versus SQL canonical bytes"
 v33_sql_hashes="$($PSQL "${psql_args[@]}" --tuples-only --no-align --command="
@@ -1126,6 +1149,9 @@ if [[ "$v56_release_manifest" != "$expected_v56_release_manifest" ]]; then
 fi
 echo "[V56 release] PASS exact read definitions and privileges"
 
+# Drift refusals mutate the catalog only inside rolled-back transactions, so the
+# remaining checks see the same database whether or not this block runs.
+if part_enabled drift; then
 assert_history_index_rejects() {
   local label="$1"
   local mutation_sql="$2"
@@ -1267,16 +1293,17 @@ readiness_snapshot_sql="SELECT jsonb_build_array(
   (SELECT to_jsonb(r) FROM public.koaryu_release_schema_preflight_v19() r),
   (SELECT to_jsonb(r) FROM public.koaryu_release_schema_preflight_v18() r));"
 readiness_before="$($PSQL "${psql_args[@]}" --tuples-only --no-align --quiet --command="$readiness_snapshot_sql")"
-current_readiness_sql="SELECT to_jsonb(r) FROM public.koaryu_release_schema_preflight_v37() r;"
-current_readiness_before="$($PSQL "${psql_args[@]}" --tuples-only --no-align --quiet --command="$current_readiness_sql")"
+# Compatibility readiness forwards the current failure key, so the full V18-V37
+# chain is proven once per key; every mutation still checks V37 and raw facts.
+# Each mutation rolls back, so readiness is compared once after all of them.
+compatibility_proven_keys=" "
 assert_payment_writer_rejects() {
   local label="$1" mutation_sql="$2" writer_query="$3" expected_writer="$4" expected_failure="$5"
-  local check_compatibility="${6:-true}"
-  local snapshot_sql="$current_readiness_sql" snapshot_before="$current_readiness_before"
-  local raw="" after="" readiness_after=""
-  if [[ "$check_compatibility" == true ]]; then
-    snapshot_sql="$readiness_snapshot_sql"
-    snapshot_before="$readiness_before"
+  local check_compatibility=false
+  local raw="" after=""
+  if [[ "$compatibility_proven_keys" != *" $expected_failure "* ]]; then
+    check_compatibility=true
+    compatibility_proven_keys+="$expected_failure "
   fi
   echo "[payment writer negative] RUN $label"
   raw="$({
@@ -1304,9 +1331,8 @@ SQL
     exit 1
   fi
   after="$(printf '%s\n' "$writer_query" | "$PSQL" "${psql_args[@]}" --tuples-only --no-align --quiet)"
-  readiness_after="$($PSQL "${psql_args[@]}" --tuples-only --no-align --quiet --command="$snapshot_sql")"
-  if [[ "$after" != "$expected_writer" || "$readiness_after" != "$snapshot_before" ]]; then
-    echo "[payment writer negative] FAIL $label did not restore the exact raw/readiness baseline" >&2
+  if [[ "$after" != "$expected_writer" ]]; then
+    echo "[payment writer negative] FAIL $label did not restore the exact raw baseline" >&2
     exit 1
   fi
   echo "[payment writer negative] PASS $label"
@@ -1322,11 +1348,7 @@ while IFS='|' read -r writer_name writer_rpc query_export expected_export failur
     exit 1
   fi
   while IFS='|' read -r mutation_name mutation_sql; do
-    # Compatibility forwards the same current failure. Prove that chain once
-    # per routine; every mutation still checks current readiness and raw facts.
-    check_compatibility=false
-    if [[ "$mutation_name" == "missing function" ]]; then check_compatibility=true; fi
-    assert_payment_writer_rejects "$writer_name: $mutation_name" "$mutation_sql" "$writer_query" "$expected_writer" "$failure_key" "$check_compatibility"
+    assert_payment_writer_rejects "$writer_name: $mutation_name" "$mutation_sql" "$writer_query" "$expected_writer" "$failure_key"
   done <<MUTATIONS
 missing function|DROP FUNCTION $writer_rpc;
 incorrect volatility|ALTER FUNCTION $writer_rpc $wrong_volatility;
@@ -1379,7 +1401,7 @@ AUTOMATION_TABLE_NEGATIVES
 automation_function_query="$(cd "$ROOT_DIR" && node --input-type=module --eval "import { V56_AUTOMATION_FUNCTION_STATE_SQL as q } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(q);")"
 automation_function_expected="$(cd "$ROOT_DIR" && node --input-type=module --eval "import { EXPECTED_V56_AUTOMATION_FUNCTION_STATE as q } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(q);")"
 while IFS= read -r signature; do
-  assert_payment_writer_rejects "automation body: $signature" "UPDATE pg_proc SET prosrc=prosrc||chr(10)||'-- injected drift' WHERE oid='$signature'::regprocedure;" "$automation_function_query" "$automation_function_expected" automation_functions_v56 false
+  assert_payment_writer_rejects "automation body: $signature" "UPDATE pg_proc SET prosrc=prosrc||chr(10)||'-- injected drift' WHERE oid='$signature'::regprocedure;" "$automation_function_query" "$automation_function_expected" automation_functions_v56
  done <<'AUTOMATION_FUNCTIONS'
 private.automation_delivery_immutable()
 private.automation_normalize_email(text)
@@ -1437,6 +1459,10 @@ for term in currency billing_interval; do
     "ALTER TABLE public.billing_subscriptions ALTER COLUMN $term SET NOT NULL;" \
     "$terms_query" "$expected_terms" subscription_terms_v49
 done
+if [[ "$($PSQL "${psql_args[@]}" --tuples-only --no-align --quiet --command="$readiness_snapshot_sql")" != "$readiness_before" ]]; then
+  echo "[payment writer negative] FAIL rollback did not restore the exact V18-V37 readiness baseline" >&2
+  exit 1
+fi
 
 # New receipt immutability, legacy markers and the private Auth helper must fail closed.
 while IFS='|' read -r label failure_key mutation_sql; do
@@ -2128,6 +2154,12 @@ assert_attestation_rejects \
   "CREATE POLICY koaryu_harness_forbidden_permissive_policy ON public.studio_live_billing_authorizations AS PERMISSIVE FOR SELECT TO anon USING (true);" \
   "f"
 
+fi
+if [[ "$SUITE_PART" == drift ]]; then
+  echo "PASS: drift part verified every rolled-back catalog drift refusal on ephemeral PostgreSQL 17."
+  exit 0
+fi
+
 echo "[concurrency] RUN Core checkout acceptance/reservation serialization"
 if run_interruptible bash \
   "$ROOT_DIR/scripts/verify-core-checkout-accept-reserve-concurrency.sh" \
@@ -2376,4 +2408,4 @@ run_interruptible "$PSQL" "${psql_args[@]}" --command="EXPLAIN ANALYZE SELECT 1 
 echo "[concurrency] RUN billing command ownership and lock ordering"
 run_interruptible python3 "$ROOT_DIR/scripts/verify-billing-command-concurrency.py" "$PSQL" "$SOCKET_DIR" "$PG_PORT"
 
-echo "PASS: $migration_total migrations and $verification_total Supabase contracts verified on ephemeral PostgreSQL 17."
+echo "PASS: $migration_total migrations and $verification_total Supabase contracts verified ($SUITE_PART part) on ephemeral PostgreSQL 17."

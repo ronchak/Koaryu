@@ -9,26 +9,44 @@ with a complete Git diff, including file modes and both sides of renames. A chan
 candidate selector cannot approve its own changes. Missing/non-regular base selectors
 or failed/invalid output select the full database suite, including initial bootstrap.
 
-Ordinary Markdown under `docs/`, root AGENTS/CLAUDE/README, the frontend
-AGENTS/CLAUDE/README, backend AGENTS/README and Supabase AGENTS qualify for the
-**documentation-only database fast path**. They skip the database job. Application,
-performance, repository and security checks still run. A database skip is accepted
-only when repository controls succeed and emit the explicit documentation selection;
-missing/invalid selection and unexpected skipped, failed or canceled jobs fail the gate.
+The selector picks one database scope, set by the most demanding changed path:
 
-Every other path or file mode, mixed change, unavailable/non-ancestor comparison,
-empty diff and manual workflow run selects the full database suite. Changes to the
-selector, workflow, dependencies, SQL or test machinery also run the full suite.
-The selector records its choice and reason in the job summary. Do not use `[skip ci]`,
-labels or manual successful statuses to substitute for selection.
+| Scope | Changed paths | Database jobs |
+| --- | --- | --- |
+| `skip` | Ordinary Markdown under `docs/`, root AGENTS/CLAUDE/README, the frontend AGENTS/CLAUDE/README, backend AGENTS/README and Supabase AGENTS; regular files under `frontend/` and `performance/` | None |
+| `current` | Regular files under `backend/app/` and `backend/tests/`, except the history inputs listed in the selector | Assembled stage, `current` and `drift` parts |
+| `full` | Everything else, including migrations, contract SQL, Supabase config, scripts, dependencies, the workflow, history inputs, symlinks and unknown paths | Assembled stage, `current`, `drift` and `history` parts |
 
-When selected, the database job runs assembled Supabase startup, migrations, lint,
-contracts and races, stops that disposable stack, then runs the exhaustive
-PostgreSQL 17 replay, historical restore and concurrency suite. Both stages must
-pass. Use this CI result instead of also repeating the suite locally.
+Markdown qualifies only as an ordinary non-executable file. Unavailable or
+non-ancestor comparisons, empty diffs and manual runs select `full`. Pushes to
+`main` upgrade `current` to `full`, so every merged database-relevant change also
+gets the historical sweep. The selector records its choice and reason in the job
+summary. Do not use `[skip ci]`, labels or manual successful statuses to substitute
+for selection.
 
-Further selection for application changes is separate work. Unknown dependencies
-must continue to run broader checks; no general evidence-cache framework is required.
+Selected database checks run as parallel jobs. The assembled job runs Supabase
+startup, migrations, lint, contracts and races. The isolated job runs
+`npm run check:supabase-contracts-local` once per selected part with
+`KOARYU_DB_SUITE_PART`. Each part replays every migration on its own PostgreSQL 17
+cluster:
+
+- `history` adds the released-predecessor restore proofs inside the replay
+  (through V56).
+- `drift` runs the rolled-back catalog, privilege and readiness drift refusals.
+  Payment-writer cases prove the V18-V37 compatibility chain once per failure key
+  and compare readiness once after the rolled-back batch.
+- `current` runs everything else, including the newest upgrade/restore proofs,
+  contracts and concurrency.
+
+The gate accepts a database skip only when repository controls emit `skip`.
+Otherwise both database jobs must succeed with exactly the parts for the selected
+scope; unexpected skipped, failed or canceled jobs fail the gate. Use this CI
+result instead of repeating the suite locally.
+
+When a new release adds an upgrade/restore proof, gate the previous newest proof
+with `part_enabled history` so `current` keeps only the latest. Add any file a
+history proof reads outside `supabase/`, `scripts/` and the backend history input
+to the selector's history inputs; a selector test checks this for the replay loop.
 
 ## Required checks
 
