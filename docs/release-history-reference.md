@@ -108,6 +108,11 @@ billing-index migration. Its ordinary index builds hold write locks that can del
 billing and webhook writes until that transaction finishes. Plan that write pause
 for a separately authorized rollout; its hosted duration has not been measured.
 
+Crossing V45, including a restore or replay from a pre-V45 state, requires stopping
+old import callers before the migration. The
+[V45 migration](../supabase/migrations/20260910185031_student_import_retry_ownership_v45.sql)
+makes the legacy claim path return `unsupported_run` for new work.
+
 Migration 119 keeps the historical V24 response. The Payments chain retains its
 version-bound compatibility consumers. V47 adds full preflight V28 and makes V27
 return the V46 tuple only after the complete new state verifies. The existing chain

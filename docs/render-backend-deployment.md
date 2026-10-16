@@ -166,10 +166,9 @@ and it still expires before the next five-minute invocation. Timed-out or failed
 work is retried through the durable transition intent and provider idempotency key.
 `BILLING_TRANSITION_SCHEDULER_ENABLED` keeps the public scheduling
 route and capability closed unless that environment's worker is intentionally active.
-The production value remains `false`, and no production cron may be created in the
-staging release task. After separate production approval, mirror the staging cron with
-the production origin and production web-service secret, prove one manual run, then
-enable the production flag. Never share one environment's secret with another.
+Production runs due transitions with the in-process
+[billing-transition timer](#billing-transition-timer) instead of a cron. Never share
+one environment's secret with another.
 
 For a manual staging verification, call the same protected endpoint directly:
 
@@ -203,6 +202,46 @@ curl -X PATCH \
 ```
 
 Use `docs/support-triage.md` as the runbook. Do not post full ticket details, page URLs with query strings, user agents, or browser context into broad notification channels.
+
+### Billing-transition timer
+
+With `BILLING_TRANSITION_SCHEDULER_ENABLED=true`, each web process starts a timer
+immediately and runs it every 300 seconds without incoming requests. Each tick
+processes at most 25 transitions through one call to the existing billing service
+with `limit=25`. The workflow checks shutdown and the effective flag before claiming
+work and before each intent. Deferred readbacks let later claimed intents run; an
+attention result stops further processing. Empty work or an unavailable result ends
+the tick. Each process admits one batch at a time with no queue, and missed ticks
+are skipped; database claims and provider idempotency coordinate other processes and
+the protected cron endpoint.
+
+The application default and local examples keep the flag false. The production
+manifest and its environment guard require `true`. Disabling the flag stops new
+batches without canceling submitted work. A completed pass logs only validated
+integer counts for claimed, completed, reconciliation-required and failed
+transitions, including a zero-work pass. Nonzero failure or reconciliation counts
+also emit an attention warning.
+
+A batch gets one isolated client owned by a non-daemon thread through completion and
+cleanup. The timer waits at most 120 seconds, matching the bulk lane waiter, and the
+asynchronous shutdown waiter returns within 30 seconds. These are waiter limits, not
+work deadlines. The owner finishes the current unit and cleanup, then stops before
+attempting another intent. Unattempted claims keep their leases and become eligible
+again through the existing expired-lease checks. Ordinary interpreter exit waits for
+that thread even after the async shutdown waiter returns. Neither waiter timeout
+cancels submitted provider work or releases the active slot early.
+
+[Render sends SIGKILL](https://render.com/docs/deploys#graceful-shutdown) when the
+shutdown grace expires. Its default is 30 seconds; `render.yaml` declares the
+[Blueprint maximum](https://render.com/docs/blueprint-spec#maxshutdowndelayseconds)
+of 300 seconds for both web services. The paid production service has it; the free
+staging plan rejects it. The grace covers the whole shutdown, including HTTP
+draining, so an unusually slow unit can still be killed. Existing idempotency,
+provider readback and reconciliation rules still apply; the grace does not make
+ambiguous provider mutations safe to retry. Before deploying or activating the timer,
+read back the effective production value. Under release authorization, set it with
+Render CLI 2.26 `render services update <service-id> --max-shutdown-delay 300 --output json`
+and read it back again.
 
 ## Verify Render
 

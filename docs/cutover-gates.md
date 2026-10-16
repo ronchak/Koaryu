@@ -40,7 +40,8 @@ schema-ACL configuration; local PostgreSQL proof does not establish provider set
   set/manifest. A code, state or remainder change invalidates that approval.
 - Production apply requires explicit owner authorization for the named coordinator,
   `--release-authorization ronchak:<candidate-sha>`, `--release-operator <executor>`
-  and the exact state-bound `--confirmation-phrase`. CLI labels record attribution;
+  and the exact state-bound `--confirmation-phrase`. It does not need the PR138
+  comment; a supplied comment is fully validated. CLI labels record attribution;
   they do not create authorization. Subagents have no production authority.
 - Require the current staging fingerprint and a fresh production backup with a
   verified disposable restore. The backup helper's source/image mappings must match
