@@ -4,7 +4,11 @@ import type {
   ApiWorkflowTestEmailResponse,
   ApiWorkflowSimulationResponse,
 } from "../types/generated/api-contracts";
-import type { WorkflowGraph, WorkflowSimulationContext } from "./automation-workflow-types.ts";
+import type {
+  WorkflowGraph,
+  WorkflowSimulationAssumptions,
+  WorkflowSimulationContext,
+} from "./automation-workflow-types.ts";
 
 export type WorkflowActivityTarget =
   | Readonly<{ kind: "run"; workflowId: string; runId: string }>
@@ -54,6 +58,7 @@ export interface WorkflowActivity {
     workflowId: string,
     graph: WorkflowGraph,
     context: WorkflowSimulationContext,
+    assumptions?: WorkflowSimulationAssumptions,
   ): Promise<WorkflowActivityRead<ApiWorkflowSimulationResponse>>;
   listRuns(
     workflowId: string,

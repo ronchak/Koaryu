@@ -31,6 +31,8 @@ async function mount(
   await page.addScriptTag({ content: bundles.get(bundleKey) });
   await page.waitForFunction(() => window.workflowFixture);
   if (width >= 768) {
+    // Steps is the default on every width; these tests exercise the canvas.
+    await page.getByRole("button", { name: "Graph", exact: true }).click();
     try {
       await page.locator(".react-flow").waitFor({ timeout: 5000 });
     } catch (error) {
@@ -47,6 +49,14 @@ const snapshot = async (page) =>
 const count = (page) => page.evaluate(() => workflowFixture.actions.length);
 const node = (page, id) => page.locator(`[data-testid="rf__node-${id}"]`);
 const step = (page, id) => page.locator(`[data-workflow-step="${id}"]`);
+const stepLabels = (page) =>
+  page
+    .locator("[data-workflow-step]")
+    .evaluateAll((steps) =>
+      Object.fromEntries(
+        steps.map((el) => [el.dataset.workflowStep, el.querySelector("strong").textContent]),
+      ),
+    );
 async function fitAll(page) {
   await page.getByRole("button", { name: "Fit View", exact: true }).click();
   await expect
@@ -622,7 +632,10 @@ test("initial camera is readable and explicit Fit View shows all six nodes witho
       JSON.stringify(margin),
     );
     await fitAll(page);
-    await expect.poll(async () => (await viewport()).zoom).toBeLessThan(0.9);
+    // A full-width, taller canvas may fit these six nodes near 1:1; Fit View still moves the
+    // camera off the start view and never zooms past readable 1:1.
+    await expect.poll(async () => (await viewport()).zoom).not.toBe(0.9);
+    assert.ok((await viewport()).zoom <= 1);
     const inside = await page.locator(".react-flow__node").evaluateAll((nodes) =>
       nodes.every((element) => {
         const node = element.getBoundingClientRect(),
@@ -1036,6 +1049,119 @@ test("same-ID constructor email-to-condition replacement refreshes both branch h
       await page.locator(".react-flow__viewport").evaluate((element) => element.style.transform),
       camera,
     );
+    assert.deepEqual(errors, []);
+  } finally {
+    await browser.close();
+  }
+});
+
+test("steps view inserts between connected steps in one operation and keeps existing names", async () => {
+  const browser = await chromium.launch();
+  try {
+    const { page, errors } = await mount(browser, { width: 600 });
+    await expect(page.getByRole("button", { name: "Steps", exact: true })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    const before = await stepLabels(page);
+    const original = await snapshot(page);
+    const row = step(page, "trigger").locator("..");
+    await row.getByRole("button", { name: "Insert step after Trigger 1 (Then)" }).click();
+    await row
+      .getByRole("group", { name: "Step to insert after Trigger 1 (Then)" })
+      .getByRole("button", { name: "Email", exact: true })
+      .click();
+    const inserted = await snapshot(page);
+    const added = inserted.graph.nodes.find((n) => n.id.startsWith("node_") && n.type === "email");
+    assert.ok(added);
+    assert.ok(
+      inserted.graph.edges.some(
+        (e) => e.source === "trigger" && e.target === added.id && e.port === "next",
+      ),
+    );
+    assert.ok(
+      inserted.graph.edges.some(
+        (e) => e.source === added.id && e.target === "condition" && e.port === "next",
+      ),
+    );
+    assert.ok(
+      !inserted.graph.edges.some((e) => e.source === "trigger" && e.target === "condition"),
+    );
+    assert.equal(inserted.graph.edges.length, initialGraph.graph.edges.length + 1);
+    const after = await stepLabels(page);
+    for (const [id, label] of Object.entries(before)) assert.equal(after[id], label);
+    assert.equal(after[added.id], "Email 2");
+    await expect(page.locator('section [role="status"]')).toHaveText(
+      "Inserted Email 2 after Trigger 1.",
+    );
+    await expect(step(page, added.id)).toHaveAttribute("aria-pressed", "true");
+    assert.equal(await count(page), 1);
+    await page.getByRole("button", { name: "Undo", exact: true }).click();
+    assert.deepEqual(await snapshot(page), original);
+    await page.getByRole("button", { name: "Redo", exact: true }).click();
+    assert.deepEqual(await snapshot(page), inserted);
+
+    // An open branch adds a step there; End is only offered where nothing follows.
+    const conditionRow = step(page, "condition").locator("..");
+    await conditionRow.getByRole("button", { name: "Add step after Condition 1 (Yes)" }).click();
+    const group = conditionRow.getByRole("group", { name: "Step to add after Condition 1 (Yes)" });
+    await expect(group.getByRole("button", { name: "End", exact: true })).toBeVisible();
+    await group.getByRole("button", { name: "Delay", exact: true }).click();
+    const branched = await snapshot(page);
+    const delay = branched.graph.nodes.find((n) => n.id.startsWith("node_") && n.type === "delay");
+    assert.ok(
+      branched.graph.edges.some(
+        (e) => e.source === "condition" && e.port === "yes" && e.target === delay.id,
+      ),
+    );
+    assert.deepEqual(await stepLabels(page).then((labels) => labels.delay), "Delay 1");
+    assert.equal((await stepLabels(page))[delay.id], "Delay 2");
+    await expect(
+      row.getByRole("group", { name: "Step to insert after Trigger 1 (Then)" }),
+    ).toHaveCount(0);
+    await step(page, added.id)
+      .locator("..")
+      .getByRole("button", { name: "Insert step after Email 2 (Then)" })
+      .click();
+    await expect(
+      step(page, added.id)
+        .locator("..")
+        .getByRole("group", { name: "Step to insert after Email 2 (Then)" })
+        .getByRole("button", { name: "End", exact: true }),
+    ).toHaveCount(0);
+    await page.keyboard.press("Escape");
+    await expect(
+      step(page, added.id)
+        .locator("..")
+        .getByRole("button", { name: "Insert step after Email 2 (Then)" }),
+    ).toBeFocused();
+
+    // Add step from the toolbar goes right after the selected step when it has one path on.
+    await step(page, "email").click();
+    await page.getByLabel("Step type").selectOption("lead_follow_up");
+    await expect(page.getByText("after Email 1", { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Add step", exact: true }).click();
+    const withFollowUp = await snapshot(page);
+    const followUp = withFollowUp.graph.nodes.find(
+      (n) => n.id.startsWith("node_") && n.type === "lead_follow_up",
+    );
+    assert.ok(
+      withFollowUp.graph.edges.some((e) => e.source === "email" && e.target === followUp.id),
+    );
+    assert.ok(withFollowUp.graph.edges.some((e) => e.source === followUp.id && e.target === "end"));
+    assert.ok(!withFollowUp.graph.edges.some((e) => e.source === "email" && e.target === "end"));
+    await expect(page.locator('section [role="status"]')).toHaveText(
+      "Added Lead follow-up 2 after Email 1.",
+    );
+    const tooSmall = await page
+      .locator("section button, section select")
+      .evaluateAll(
+        (controls) =>
+          controls.filter(
+            (el) => el.offsetParent !== null && el.getBoundingClientRect().height < 44,
+          ).length,
+      );
+    assert.equal(tooSmall, 0);
     assert.deepEqual(errors, []);
   } finally {
     await browser.close();

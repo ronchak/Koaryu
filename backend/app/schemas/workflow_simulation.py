@@ -45,9 +45,33 @@ SimulationIssues = Annotated[
 ActionKind = Literal["email", "lead_follow_up"]
 
 
+class WorkflowSimulationBranchAssumption(WorkflowManagementModel):
+    """Force one condition's outcome so the reviewer can walk the other path."""
+
+    node_id: GraphId
+    outcome: Literal["yes", "no"]
+
+
 class WorkflowSimulationRequest(WorkflowRequest):
     graph: WorkflowGraph
     context: SimulationContext
+    # Hypothetical controls. Neither reaches SQL; both only change the pure walk.
+    assume_waits_elapsed: StrictBool = False
+    branch_assumptions: Annotated[
+        list[WorkflowSimulationBranchAssumption], Field(strict=True, max_length=40)
+    ] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def applicable_assumptions(self) -> WorkflowSimulationRequest:
+        conditions = {node.id for node in self.graph.nodes if node.type == "condition"}
+        seen: set[str] = set()
+        for assumption in self.branch_assumptions:
+            if assumption.node_id not in conditions or assumption.node_id in seen:
+                raise ValueError(
+                    "Branch assumptions must name distinct condition nodes in this graph."
+                )
+            seen.add(assumption.node_id)
+        return self
 
 
 class WorkflowSimulationTrace(WorkflowManagementModel):

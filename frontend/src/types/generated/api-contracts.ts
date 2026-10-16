@@ -2424,6 +2424,11 @@ export interface ApiWorkflowSimulationAction {
   reason: string | null;
 }
 
+export interface ApiWorkflowSimulationBranchAssumption {
+  node_id: string;
+  outcome: "yes" | "no";
+}
+
 export interface ApiWorkflowSimulationEntityContext {
   kind: "entity";
   entity_type: "student" | "promotion" | "lead" | "trial_appointment" | "invoice" | "payment" | "belt_test_recipient";
@@ -2433,6 +2438,8 @@ export interface ApiWorkflowSimulationEntityContext {
 export interface ApiWorkflowSimulationRequest {
   graph: ApiWorkflowGraph_Input;
   context: ApiWorkflowSimulationSyntheticContext | ApiWorkflowSimulationEntityContext;
+  assume_waits_elapsed?: boolean;
+  branch_assumptions?: ApiWorkflowSimulationBranchAssumption[];
 }
 
 export interface ApiWorkflowSimulationResponse {

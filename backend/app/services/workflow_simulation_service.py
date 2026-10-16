@@ -7,6 +7,7 @@ delivery permission and stops before any future condition would be evaluated.
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from typing import Annotated, Any, Literal
@@ -313,8 +314,16 @@ def build_synthetic_workflow_facts(
 
 
 def _walk(
-    graph: WorkflowGraph, event_type: str, facts: WorkflowSimulationFacts, reference_time: datetime
+    graph: WorkflowGraph,
+    event_type: str,
+    facts: WorkflowSimulationFacts,
+    reference_time: datetime,
+    *,
+    assume_waits_elapsed: bool = False,
+    branch_assumptions: Mapping[str, str] | None = None,
 ) -> list[WorkflowSimulationTrace]:
+    """Walk one path. Assumptions are explicit hypotheticals; they never read or write facts."""
+    assumptions = branch_assumptions or {}
     nodes = {node.id: node for node in graph.nodes}
     edges = {(edge.source, edge.port): edge for edge in graph.edges}
     node = next(node for node in graph.nodes if node.type == "trigger")
@@ -339,6 +348,10 @@ def _walk(
                     reason=facts.source_reason,
                 )
                 stop = True
+        elif node.type == "condition" and node.id in assumptions:
+            matched = assumptions[node.id] == "yes"
+            row["outcome"] = "matched" if matched else "not_matched"
+            port = "yes" if matched else "no"
         elif node.type == "condition":
             actual = facts.condition_facts.get(node.config.field, MISSING)
             if not condition_fact_available(node.config.field, actual):
@@ -361,7 +374,7 @@ def _walk(
             except OverflowError:
                 due = None
             row["scheduled_at"] = due
-            if due is None or due > reference_time:
+            if not assume_waits_elapsed and (due is None or due > reference_time):
                 row.update(outcome="waiting", reason="facts_unavailable" if due is None else None)
                 stop = True
         elif node.type == "email":
@@ -498,7 +511,17 @@ class WorkflowSimulationService:
                         recipient_ids=recipient_ids,
                     )
                 )
-                trace = _walk(graph, event_type, facts, payload.reference_time)
+                trace = _walk(
+                    graph,
+                    event_type,
+                    facts,
+                    payload.reference_time,
+                    assume_waits_elapsed=data.assume_waits_elapsed,
+                    branch_assumptions={
+                        assumption.node_id: assumption.outcome
+                        for assumption in data.branch_assumptions
+                    },
+                )
             response = WorkflowSimulationResponse(
                 valid=not issues,
                 issues=list(issues.values()),

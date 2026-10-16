@@ -45,7 +45,7 @@ configuration and required account-type tests are in
 
 ## Development
 
-Admins can configure the missed-class email rule at `/automations`. Preview the
+Admins can configure the missed-class email rule at `/automations/missed-class`; the Automations catalog lists it as the first row and refreshes its retained status on each visit. Unsaved rule edits survive navigation in the same studio session, together with their original saved revision. Returning refreshes the saved rule and requires explicit readback if that revision changed; recipient previews must be requested again. Preview the
 current draft before enabling or saving an enabled rule. Paused rules can be
 saved before email setup; pausing keeps the saved message and any unsaved draft.
 Delivery readiness distinguishes disabled, approved-recipient test, and live
@@ -456,7 +456,9 @@ For manual review, run `node tests/helpers/belt-test-fixture.mjs /tmp/koaryu-bel
 
 ## Workflow editor
 
-Admins can open the workflow catalog at `/automations`, choose a template, or start an empty draft. Template and duplicate actions allocate a local draft address before navigation. A backend workflow is created only by Save draft. Unsaved edits and Undo history survive client navigation in the same browser page; reloading the page does not preserve unsaved content. A pending action retains only its recovery marker so Check result can resolve it without repeating the command.
+Admins can open the workflow catalog at `/automations`. The page header's New workflow button and the Blank workflow card both open an empty local draft; template and duplicate actions allocate a local draft address before navigation. The catalog's first list row is the built-in missed-class rule, which opens its own page.
+
+The editor opens in Steps view on every width: a readable list from the trigger down, each step naming where it goes next (Then, Yes, No). Insert step (on a connected path) and Add step here (on an open path) add a step after that step in one operation; duplicate paths on a port must be disconnected before insertion. On a single path, the surrounding route stays connected and adding a step preserves existing step names, because generated IDs count upward and names follow creation order (`workflowNodeLabels`). The toolbar's Add step inserts after the selected step when it has one outgoing path. Graph is the map view, one tap away, with a full-width canvas; step settings dock beside the steps only while a step is selected. Workflow checks live inside the steps panel: one deduplicated row per step and setting (`describeWorkflowIssues`), and each row selects the step and focuses the named field. A backend workflow is created only by Save draft. Unsaved edits and Undo history survive client navigation in the same browser page; reloading the page does not preserve unsaved content. A pending action retains only its recovery marker so Check result can resolve it without repeating the command.
 
 Preview uses the actual pure backend catalog copied into `src/lib/generated/workflow-preview-catalog.json`, with sample workflow and reference records and all live capabilities disabled. Regenerate it with `npm run generate:workflow-preview-catalog` from the repository root after changing `backend/app/services/workflow_catalog.py`, then run `npm run check:workflow-preview-catalog`. These commands use `backend/venv/bin/python`, with Python 3.11 or newer. They need no installed backend dependencies, settings, credentials, or network.
 
@@ -474,7 +476,7 @@ The browser workflow workspace owns activity reads, simulations, and recovery fo
 node --experimental-strip-types --test tests/workflow-activity-state.test.mjs tests/workflow-activity-owner.test.mjs tests/workflow-activity-mounted.test.mjs
 ```
 
-Workflow tools simulate the current saved workflow's graph with a synthetic sample or an explicitly selected current record. Run history preserves published version context and pending cancellation recovery. Select an email node to request a synthetic sample for your verified account, then use Check result for an uncertain outcome.
+Workflow tools simulate the current saved workflow's graph with a synthetic sample or an explicitly selected current record. A trace that stops at a wait offers Continue past this wait, and each decided condition offers the other path; both send explicit hypotheticals (`assume_waits_elapsed`, `branch_assumptions`) that only change the pure walk, never a fact read, and the trace is labelled hypothetical until Use real timing and facts clears them. Changing the simulation context or graph also clears assumptions. Run history preserves published version context and pending cancellation recovery. Select an email node to request a synthetic sample for your verified account, then use Check result for an uncertain outcome.
 
 Local presentation proof: `node --experimental-strip-types --test tests/workflow-tools-mounted.test.mjs tests/workflow-context-picker-mounted.test.mjs`. Manual synthetic fixture: `PORT=4338 node --experimental-strip-types tests/helpers/workflow-tools-fixture.mjs --serve`; it binds to `127.0.0.1` and closes with Ctrl-C. Add `--preview` to inspect the live-only explanations without activity or record I/O.
 

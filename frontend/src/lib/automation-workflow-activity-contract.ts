@@ -2,7 +2,11 @@ import { ApiError } from "./api.ts";
 import { checkedWorkflowBody } from "./automation-workflow-api.ts";
 import { canonicalWorkflowDraft, workflowTextLength } from "./automation-workflow-model.ts";
 import { isAppointmentInstant } from "./appointment-time.ts";
-import type { WorkflowGraph, WorkflowSimulationContext } from "./automation-workflow-types.ts";
+import type {
+  WorkflowGraph,
+  WorkflowSimulationAssumptions,
+  WorkflowSimulationContext,
+} from "./automation-workflow-types.ts";
 import type {
   ApiRunCancelOperationResponse,
   ApiTestEmailOperationResponse,
@@ -198,13 +202,49 @@ export function isWorkflowSimulationContext(value: unknown): value is WorkflowSi
       uuid(value.entity_id))
   );
 }
+export function isWorkflowSimulationAssumptions(
+  value: unknown,
+  graph: WorkflowGraph,
+): value is WorkflowSimulationAssumptions {
+  if (!record(value)) return false;
+  const keys = Object.keys(value).filter(
+    (key) => !["assume_waits_elapsed", "branch_assumptions"].includes(key),
+  );
+  if (keys.length) return false;
+  if (value.assume_waits_elapsed !== undefined && typeof value.assume_waits_elapsed !== "boolean")
+    return false;
+  if (value.branch_assumptions === undefined) return true;
+  if (!Array.isArray(value.branch_assumptions) || value.branch_assumptions.length > 40)
+    return false;
+  const conditions = new Set(
+    graph.nodes.filter((node) => node.type === "condition").map((node) => node.id),
+  );
+  const seen = new Set<string>();
+  return value.branch_assumptions.every((entry) => {
+    if (
+      !shape(entry, "node_id outcome") ||
+      typeof entry.node_id !== "string" ||
+      !conditions.has(entry.node_id) ||
+      seen.has(entry.node_id) ||
+      !oneOf(entry.outcome, ["yes", "no"])
+    )
+      return false;
+    seen.add(entry.node_id);
+    return true;
+  });
+}
 export function buildWorkflowSimulationRequest(
   graph: WorkflowGraph,
   context: WorkflowSimulationContext,
+  assumptions: WorkflowSimulationAssumptions = {},
 ): ApiWorkflowSimulationRequest & { graph: WorkflowGraph } {
   if (!isWorkflowSimulationContext(context)) throw new ApiError("Invalid simulation context.", 422);
+  const requested = requestGraph(graph);
+  if (!isWorkflowSimulationAssumptions(assumptions, requested))
+    throw new ApiError("Invalid simulation assumptions.", 422);
+  // Defaults stay off the wire so a plain walk sends the plain body.
   return checkedWorkflowBody({
-    graph: requestGraph(graph),
+    graph: requested,
     context:
       context.kind === "synthetic"
         ? { kind: "synthetic" }
@@ -213,6 +253,15 @@ export function buildWorkflowSimulationRequest(
             entity_type: context.entity_type,
             entity_id: context.entity_id.toLowerCase(),
           },
+    ...(assumptions.assume_waits_elapsed ? { assume_waits_elapsed: true } : {}),
+    ...(assumptions.branch_assumptions?.length
+      ? {
+          branch_assumptions: assumptions.branch_assumptions.map(({ node_id, outcome }) => ({
+            node_id,
+            outcome,
+          })),
+        }
+      : {}),
   });
 }
 function simulationTrace(value: unknown): value is ApiWorkflowSimulationTrace {

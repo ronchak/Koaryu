@@ -22,9 +22,14 @@ recovery proofs, or operator evidence.
 
 `enrollment.cancel.period_end.schedule` has an additional runtime prerequisite:
 `BILLING_TRANSITION_SCHEDULER_ENABLED` must be true for that environment. The public
-route also enforces the same interlock and returns 503 while it is false. Staging sets
-the flag only with the repository-declared five-minute Render Cron Job; production
-remains false until its separately approved scheduler exists. Revocation stays
+route also enforces the same interlock and returns 503 while it is false. Production
+enables `BILLING_TRANSITION_SCHEDULER_ENABLED` and runs due transitions with the
+in-process [billing-transition timer](render-backend-deployment.md#billing-transition-timer).
+The staging manifest also declares the flag true; its five-minute Render Cron Job
+stays suspended outside a deliberate proof. Before deploying a timer-capable build
+to staging, disable its hosted flag as described in
+[Render backend configuration](services.md#render--backend). Read the effective flag
+value from the provider before acting. Revocation stays
 available so an existing scheduled intent can still be withdrawn if the worker is
 disabled.
 

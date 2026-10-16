@@ -427,7 +427,19 @@ export const workflowApi = {
           };
     return api.post<WorkflowSimulationResponse>(
       `${path(id)}/simulate`,
-      checkedWorkflowBody({ graph, context }),
+      checkedWorkflowBody({
+        graph,
+        context,
+        ...(request.assume_waits_elapsed ? { assume_waits_elapsed: true } : {}),
+        ...(request.branch_assumptions?.length
+          ? {
+              branch_assumptions: request.branch_assumptions.map(({ node_id, outcome }) => ({
+                node_id,
+                outcome,
+              })),
+            }
+          : {}),
+      }),
       token,
       {
         signal,

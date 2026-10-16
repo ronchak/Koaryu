@@ -18,7 +18,9 @@ Koaryu sends no email to students, families or leads; before
 [Microsoft automation mail](#microsoft-automation-mail) is enabled, update its
 Emails section, its provider table and the landing FAQ's limits answer.
 
-Inventory baseline: 2026-08-24. The last completed release verification, October 1, 2026 Pacific, recorded production and staging frontend/backend pairs at `0cf345be94f31eefbfa80be80bed3a8670680bf2` and both databases at exact V55, 150 migrations, head `20260930192626`. Both web services were active with auto-deploy off; the staging billing cron was restored to its original branch and five-minute schedule and suspended. See [the October 1 release record](remediation/october-1-release-verification.md). This documentation refresh did not repeat hosted verification. Reinspect live state for future releases and follow [Cutover Gates](cutover-gates.md).
+This file records what exists and how it is configured, not which release is live.
+Read served SHAs, schema versions and effective flags from the providers before
+acting, and follow [Cutover Gates](cutover-gates.md).
 
 ## Quick map
 
@@ -30,7 +32,7 @@ Inventory baseline: 2026-08-24. The last completed release verification, October
 | Payments | Stripe live mode | Stripe test mode |
 | `LIVE_BILLING_ENABLED` | `true` (global interlock only) | `false` |
 | `CORE_SELF_CHECKOUT_ENABLED` | `true` (Koaryu Core only) | `false` |
-| Period-end billing worker | hosted disabled; candidate source declares timer enabled | Manifest flag true; cron suspended; disable hosted flag before candidate deploy |
+| Billing-transition timer | Enabled in the web service | Manifest flag `true`; disable it before deploying a timer build ([why](#render--backend)) |
 | `OPERATIONAL_ALERTS_ENABLED` | `false` | `false` |
 
 Neither production surface auto-deploys. Both require an explicit owner-authorized release —
@@ -77,23 +79,15 @@ see [Deployment triggers](#deployment-triggers).
   enrollment also uses `openid` and `profile`.
 - Enrollment uses confidential Web OAuth with PKCE and the exact callback
   `http://localhost:8400/oauth/callback`. The app secret expires April 2, 2027.
-- October 4, 2026 setup verified the signed OIDC identity and exact Graph `/me`
-  mailbox. The root coordinator's single synthetic message from and to that
-  mailbox passed a forced token refresh through a private encrypted local
-  compare-and-swap adapter and received Graph `202`. The setup agent verified the
-  matching message in the Outlook inbox. This does not prove hosted database or
-  scheduled worker execution. No student or customer mail was sent.
-  Enrollment and rotated credentials stay private; see
-  [missed-class setup](missed-class-automation.md).
-- This candidate declares disabled mail and worker configuration for both Render
-  web services. It does not record a hosted deployment or activation. No new
-  Microsoft Business subscription, Teams license, Azure service, or paid sending
-  resource is part of this setup. The Outlook sender needs no `koaryu.app` DNS
-  changes.
 - Runtime credentials are encrypted in a private, service-role-only database
   table after an authorized initial import. Mail app secrets and the encryption
   key stay backend-only. Scheduled work also needs a dedicated shared worker
-  secret on the frontend server. Both send and worker switches default to false.
+  secret on the frontend server. The send switch and both worker switches
+  default to false; turning them on needs its own owner authorization.
+- No Microsoft Business subscription, Teams license, Azure service, or paid
+  sending resource is involved. The Outlook sender needs no `koaryu.app` DNS
+  changes. Setup, verification and controls are in
+  [missed-class automation](missed-class-automation.md).
 
 ## GitHub
 
@@ -112,7 +106,7 @@ see [Deployment triggers](#deployment-triggers).
   — pinned in `backend/app/core/config.py` as the only frontend origin a staging
   backend will accept.
 
-Configuration lives in `frontend/vercel.json`. The candidate pins Vercel Functions
+Configuration lives in `frontend/vercel.json`. It pins Vercel Functions
 to Portland (`pdx1`), near the existing Oregon backend and database. Deployment
 readback must confirm the region; Routing Middleware may have separate placement.
 
@@ -124,38 +118,18 @@ are included. See `docs/verification/navigation-reliability-followup.md`.
 
 ### Vercel cron jobs
 
-The manifest declares the two existing jobs and the disabled missed-class
-candidate below. Vercel executes scheduled jobs only on production deployments,
-whose frontend forwards them to the backend. Their cadence is enforced by
+Vercel executes scheduled jobs only on production deployments, whose frontend
+forwards them to the backend. Their cadence is enforced by
 `scripts/check-env-examples.mjs`.
 
 | Path | Schedule (UTC) | Purpose |
 | --- | --- | --- |
 | `/api/cron/account-deletions/process-due` | `0 8 * * *` | Processes account deletions that have passed their grace period |
 | `/api/cron/operational-alerts/evaluate` | `0 9 * * *` | Evaluates operational alert conditions |
-| `/api/cron/automations/process-due` | `0 18 * * *` | Daily automation recovery bridge; source defaults disabled |
+| `/api/cron/automations/process-due` | `0 18 * * *` | Daily recovery bridge for the automation scheduler; disabled by default |
 
-The automation bridge keeps its daily `0 18 * * *` schedule and 60-second
-function limit. It calls the protected combined backend scheduler route with a
-55-second local budget, at most three sequential batches, a 30-second timeout
-per call, and at least 30 seconds remaining before each call. Its response
-preserves the confirmed batches and the last batch's backlog hint, including
-null engines that were not invoked. Up to 75 occurrence pair decisions can be
-made across three scans, with separate attendance and workflow counters of at
-most 10 per engine per batch. These are not delivered-email counts. A deferred,
-failed, unknown, busy, or malformed result stops further calls; a lost reply is
-never automatically replayed.
-
-When enabled, each Render web process owns an immediate-start, 60-second
-scheduler loop with one active batch and no queue. The daily Vercel bridge is a
-recovery caller to that same local scheduler. SQL retains ownership across
-replicas and the legacy direct missed-class route. The staging free service
-sleeps, so its loop cannot guarantee minute-level execution precision. Each
-batch uses one 25-second deadline and the scheduler bounds its own waiter and
-stop to 30 seconds; that does not bound total provider-runtime shutdown or
-cancel submitted mail. Both worker flags and the send flag remain false in
-source. This composition is source-only evidence, not a hosted activation or
-readiness claim. See
+The automation bridge backs up a per-process scheduler in each Render web service.
+Both are described in
 [automation scheduling](missed-class-automation.md#scheduled-work-and-pause-controls).
 
 ## Render — backend
@@ -173,116 +147,67 @@ Both web services and the staging billing-transition cron are declared in
 | Region | Oregon | Oregon |
 | Plan | `starter` (paid) | `free` |
 | Auto-deploy | off | off |
+| Shutdown grace | 300 seconds | Render default (30 seconds) |
 | Health check | `/health/ready` | `/health/ready` |
 | `ENVIRONMENT` | `production` | `staging` |
 | Stripe mode | `live` | `test` |
 
+`render.yaml` declares the 300-second shutdown grace for both web services, but
+the free staging plan rejects it. See
+[the billing-transition timer](render-backend-deployment.md#billing-transition-timer)
+for why the grace matters and how to read it back.
+
+With `BILLING_TRANSITION_SCHEDULER_ENABLED=true`, each web process runs due billing
+transitions on a five-minute timer. Production runs it; no production cron exists.
+The staging manifest also sets the flag true, and suspending the staging cron does
+not stop the in-process timer. Before deploying a timer-capable build to staging,
+inspect due transition intents, set the hosted staging flag false and read it back.
+Re-enabling it is a separate step after exact-candidate deployment is verified. The
+sleeping free service cannot keep the timer's cadence anyway.
+
 `koaryu-billing-transitions-staging` is a starter Render Cron Job that tracks the
 `staging` branch, runs every five minutes, and calls only the protected staging
-transition endpoint. It reuses the staging web service's worker secret through a
-Render service reference. Each run claims at most 25 transitions and waits up to 130
-seconds, beyond the backend bulk lane's 120-second deadline but below the five-minute
-cadence. A lost or failed response is safe to retry because the transition intent and
-provider mutation keep their durable idempotency identity. Render bills cron execution by runtime with a $1 monthly
-minimum for the service. No production cron is provisioned. The candidate's
-`render.yaml` declares `BILLING_TRANSITION_SCHEDULER_ENABLED=true` as the desired
-final production setting. The effective hosted production flag remains false
-until the named root coordinator verifies the exact deployed candidate, inspects
-due transition intents, and explicitly enables it under owner authorization.
-This source declaration does not record a hosted activation.
+transition endpoint with the staging web service's worker secret. It stays
+suspended outside a deliberate manual proof. Render bills cron execution by runtime
+with a $1 monthly minimum. Details are in
+[internal operations](render-backend-deployment.md#internal-operations).
 
-The candidate backend also includes a billing-transition timer in each web
-process. With `BILLING_TRANSITION_SCHEDULER_ENABLED=true`, it starts immediately
-and runs every 300 seconds without incoming requests. Each tick processes at most
-25 transitions through one call to the existing billing service with `limit=25`.
-The workflow checks shutdown and the effective enable flag before claiming work
-and before each intent. Deferred readbacks allow later claimed intents to run;
-an attention result stops further processing. Empty work or an unavailable result
-ends the tick. Each process admits one batch at a time with no queue; database
-claims and provider idempotency still coordinate other processes and the existing
-protected cron endpoint. Missed ticks are skipped.
+Render service resume can build the current tracked branch even when auto-deploy is
+off. Pin and inspect that branch before resuming, then verify the actual deployed
+SHA; do not assume resume restores the previously serving artifact.
 
-A batch gets one isolated client owned by a non-daemon thread through completion
-and cleanup. The timer waits at most 120 seconds, matching the bulk lane waiter,
-and the asynchronous shutdown waiter returns within 30 seconds. These are waiter
-limits, not work deadlines. The owner finishes the current unit and cleanup, then
-stops before attempting another intent. Unattempted claims keep their leases and
-become eligible again through the existing expired-lease checks. Ordinary Python
-interpreter exit waits for that thread even after the async shutdown waiter
-returns. Neither waiter timeout cancels submitted provider work or releases the
-active slot early.
+The two web services track **different branches**. Deploy both web services and
+the staging billing cron from the exact reviewed commit and read back each deployed
+SHA. Keep the staging cron suspended until the exact-candidate backend is deployed
+and `/health/ready` succeeds against the migrated staging database.
 
-Both web services now declare `maxShutdownDelaySeconds: 300` in `render.yaml`.
-[Render's shutdown policy](https://render.com/docs/deploys#graceful-shutdown)
-sends SIGKILL when the configured grace period expires; its default is 30 seconds
-and the declared 300 seconds is the maximum supported by the
-[Blueprint setting](https://render.com/docs/blueprint-spec#maxshutdowndelayseconds).
-The grace period covers the whole process shutdown, including HTTP draining and
-other cleanup. An unusually slow current unit can still be terminated. Existing
-idempotency, provider readback and explicit reconciliation rules remain required;
-this change does not make ambiguous provider mutations safe to retry.
-
-The root coordinator's release packet must inspect, apply if needed, and verify
-the effective 300-second shutdown delay on both web services before candidate
-deployment or timer activation. Under the existing owner authorization and
-announce/pause gates, the verified Render CLI 2.26 command is
-`render services update <service-id> --max-shutdown-delay 300 --output json`.
-Read back each effective service setting after any update. This source declaration
-does not claim a hosted configuration change or add a paid service.
-
-The application default and reusable local/examples keep the flag false. The
-production manifest and its environment guard now require true as the intended
-final setting. The timer checks the effective flag before admission and before
-processing; disabling it stops new batches without canceling submitted work.
-A completed pass logs only validated integer counts for claimed, completed,
-reconciliation-required and failed transitions, including a zero-work pass.
-Nonzero failures or reconciliation counts also emit an attention warning.
-
-The staging manifest already sets the flag true. With this candidate, that starts
-the in-process timer even while the old Render cron is suspended. Before deploying
-or proving the candidate on staging, the named root coordinator must inspect due
-transition intents and disable the effective hosted staging flag, then verify
-that it is false. Any staging timer activation requires a separate explicit step
-after that inspection and exact-candidate deployment verification. Suspending the
-cron does not pause the in-process timer. The always-on production backend can
-run the timer; the sleeping free staging service cannot guarantee its cadence.
-
-Render service resume can build the current tracked branch even when auto-deploy is off. Pin and inspect that branch before resuming, then verify the actual deployed SHA. The September 29 production resume built the intended release from `main`; do not assume resume restores the previously serving artifact.
-
-The two web services track **different branches**. Render auto-deploy is off for the
-staging web service and cron, so deploy each from the exact reviewed commit and read
-back that deployed SHA. Keep the cron suspended until the exact-candidate backend is
-deployed and `/health/ready` succeeds against the migrated staging database.
-
-Vercel staging is different: `frontend/vercel.json` enables automatic deployment from
-`refs/heads/staging`. Move that ref only after the database, backend readiness, and
-manual cron proof are complete, so the frontend is last. As observed on 2026-08-28,
-`refs/remotes/origin/staging` is
-`ee6137a709e4215efac1319dedd0e55ed2b60e1c`. That is context, not an execution
-assumption. The operator must fetch the current old SHA and candidate ref, bind the
-update to the observed old SHA with `--force-with-lease`, and read the remote ref back
-immediately:
+Vercel staging is different: `frontend/vercel.json` builds `refs/heads/staging`
+automatically, so moving that ref deploys the staging frontend. Move it last, after
+the database, backend readiness and manual cron proof. The stable staging alias can
+need explicit assignment to the new build, and may intentionally serve an
+owner-approved preview; check what it serves before and after. Bind the move to the
+observed old SHA and read it back:
 
 ```bash
-PR_HEAD_SHA='<PR_HEAD_SHA>'
+CANDIDATE_BRANCH='<candidate-branch>'
+CANDIDATE_SHA='<reviewed-full-sha>'
 git fetch origin \
   refs/heads/staging:refs/remotes/origin/staging \
-  refs/heads/codex/koaryu-payments-live:refs/remotes/origin/codex/koaryu-payments-live
+  "refs/heads/${CANDIDATE_BRANCH}:refs/remotes/origin/${CANDIDATE_BRANCH}"
 OLD_STAGING_SHA="$(git rev-parse refs/remotes/origin/staging)"
-test "$(git rev-parse refs/remotes/origin/codex/koaryu-payments-live)" = "${PR_HEAD_SHA}"
+test "$(git rev-parse "refs/remotes/origin/${CANDIDATE_BRANCH}")" = "${CANDIDATE_SHA}"
 git push origin \
-  "${PR_HEAD_SHA}:refs/heads/staging" \
+  "${CANDIDATE_SHA}:refs/heads/staging" \
   --force-with-lease=refs/heads/staging:"${OLD_STAGING_SHA}"
-test "$(git ls-remote --heads origin refs/heads/staging | awk '{print $1}')" = "${PR_HEAD_SHA}"
+test "$(git ls-remote --heads origin refs/heads/staging | awk '{print $1}')" = "${CANDIDATE_SHA}"
 ```
 
 Abort if any command fails or the readback differs. Never use unchecked `--force`.
 If Render cannot deploy the exact candidate before this move, stop and prove another
 safe provider route. Do not move staging early to make Render see the candidate.
 
-The Render API reported both live services in Oregon on 2026-08-24. Render does
-not support changing an existing service's region. The Oregon declarations in
-`render.yaml` record the existing immutable placement; they do not move or
+Render does not support changing an existing service's region. The Oregon
+declarations in `render.yaml` record the existing placement; they do not move or
 replace either service.
 
 The staging service is on the free plan, which sleeps after roughly 15 minutes of
@@ -301,12 +226,6 @@ The production service ID is hardcoded in `scripts/merge-release-pr.sh:14`,
 which reads live auto-deploy state from `https://api.render.com/v1/services/<id>`
 before permitting a release merge. That readback needs `RENDER_API_KEY`.
 
-The completed V50 release, immutable migration hash and recovery limits are recorded in [the production packet](remediation/PRODUCTION-RELEASE.md) and [verification](remediation/production-release-verification.md). Future releases require a new exact-candidate packet and fresh target/backup evidence. Completed apply commands are history, not authority to run them again. Readiness compatibility does not authorize older backends after new activation receipts or unknown subscription terms have been written.
-
-V41 payer-balance, V43 external-payment and V44 local-plan guarantees require old
-split callers to drain. V45 requires stopping old import callers before migration.
-No historical financial backfill or live billing activation is included.
-
 ## Supabase — database, auth, storage
 
 | | Production | Staging |
@@ -320,7 +239,8 @@ Both refs are pinned in `backend/app/core/config.py`. The backend refuses to boo
 if `ENVIRONMENT` and `SUPABASE_URL` disagree, so a staging process cannot be
 pointed at production data by editing one variable.
 
-Production inspection is read-only. Only the named coordinating agent or operator may apply migrations through `scripts/studio-comp-migration-rollout.mjs` under explicit owner authorization and the [announce-and-pause protocol](cutover-gates.md#owner-authorized-release-execution). Backup, restore, source and target gates remain mandatory. Production may use explicit operating-session owner authorization without a GitHub comment; a supplied comment is fully validated. Subagents have no production authority; contract SQL is never allowed against production.
+Production database access is read-only except for the guarded rollout and its
+temporary backup role, described in [Cutover Gates](cutover-gates.md#database-changes).
 
 ## Stripe — payments
 
@@ -348,6 +268,7 @@ posts to a primary and backup webhook whose URLs are secrets
 (`OPERATIONAL_ALERT_PRIMARY_URL`, `OPERATIONAL_ALERT_BACKUP_URL`), never
 committed. See `docs/operational-alerts.md`.
 
+
 ## Deployment triggers
 
 Nothing reaches production automatically. Both gates are enforced by tests, so
@@ -359,13 +280,9 @@ neither can be relaxed by accident.
 | Frontend | `git.deploymentEnabled.main: false` | `frontend/vercel.json` | `check-env-examples.mjs` |
 
 `git.deploymentEnabled.staging` stays `true`: the staging frontend is meant to
-track its branch automatically. `git.deploymentEnabled["codex/missed-class-automations-20261004"]`
-is explicitly `false` so pushing the draft candidate does not trigger a deployment;
-[unspecified branches default to enabled](https://vercel.com/docs/project-configuration/git-configuration#gitdeploymentenabled).
-The automation graph
-candidate also declares `git.deploymentEnabled["codex/automation-graph-20261005"]`
-`false` in source control. Main, staging, prior candidate branches, regions, and
-cron schedules keep their existing settings.
+track its branch automatically.
+[Unlisted branches build preview deployments](https://vercel.com/docs/project-configuration/git-configuration#gitdeploymentenabled);
+a candidate branch that must not build is listed as `false`.
 
 **A push to `main` therefore deploys nothing.** Production frontend and backend
 are each released explicitly after the database is migrated. If production looks
@@ -382,9 +299,9 @@ vault.
 | Supabase service role / JWT secret | Render dashboard env vars, `sync: false` |
 | Stripe keys and webhook secrets | Render dashboard env vars, `sync: false` |
 | Automation Microsoft enrollment | Private `/Users/openclaw/.config/koaryu/secrets/microsoft-automation-client.json` and `microsoft-automation-token.json`; never a hosted token-file adapter |
-| Automation app credential and Fernet key | Declared backend-only Render variables with `sync: false`; hosted provisioning pending |
-| Automation runtime refresh/access tokens | Encrypted private database credential table after authorized import; revision-based compare-and-swap renewal |
-| Automation worker secret | Declared Render `sync: false` and frontend server-only variable; provisioning pending, distinct from other worker secrets |
+| Automation app credential and Fernet key | Backend-only Render variables, `sync: false` |
+| Automation runtime refresh/access tokens | Encrypted private database credential table; revision-based compare-and-swap renewal |
+| Automation worker secret | Render `sync: false` and a frontend server-only variable, distinct from other worker secrets |
 | Studio-user sign-in material | Private owner authentication guidance outside the repository |
 | Non-secret account references | Obsidian vault, `Codex Memory/` |
 
@@ -396,10 +313,8 @@ printing its value:
 export RENDER_API_KEY="$(</Users/openclaw/.config/koaryu/secrets/render-api-key)"
 ```
 
-The owner confirmed this location on 2026-09-06. The previously documented Keychain
-entry, service `com.koaryu.render.api-key`, was absent on this Mac. Other machines
-may still use that Keychain entry; do not assume it exists or copy credentials into
-the repository.
+Other machines may use the Keychain entry `com.koaryu.render.api-key` instead. Do
+not assume either exists, and never copy credentials into the repository.
 
 ## Known gaps
 
@@ -407,6 +322,8 @@ the repository.
   `render.yaml` now, but confirm its dashboard environment variables match that
   declaration — adding a service to the blueprint does not retroactively adopt an
   existing one.
+- `render.yaml` declares a 300-second shutdown grace for the free staging service,
+  which Render rejects. Manifest, guard and docs parity is an open follow-up.
 - `frontend/vercel.json` pins the staging frontend by branch, but no Vercel
   project ID or service ID is recorded for it separately; it is the same project
   as production, deployed from the `staging` branch.

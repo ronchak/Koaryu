@@ -1,13 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { expect } from "@playwright/test";
-import {
-  mountTools,
-  flush,
-  selectEmail,
-  emailNode,
-  ids,
-} from "./helpers/workflow-tools-fixture.mjs";
+import { mountTools, flush, selectEmail, ids } from "./helpers/workflow-tools-fixture.mjs";
 
 const button = (page, name) => page.getByRole("button", { name, exact: true });
 const simulation = (page) => page.getByRole("region", { name: "Workflow simulation", exact: true });
@@ -92,7 +86,9 @@ test("synthetic is default, loads no records, and displays the exact ordered tra
     assert.equal(request.path, `/automations/workflows/${ids.workflow}/simulate`);
     assert.deepEqual(request.body.context, { kind: "synthetic" });
     assert.equal(await page.evaluate(() => window.fixture.requests.length), 0);
-    await simulation(page).getByRole("button", { name: "email · would send", exact: true }).click();
+    await simulation(page)
+      .getByRole("button", { name: "Email 1 · would send", exact: true })
+      .click();
     await expect(sample(page)).toContainText("Selected email: Hi");
   }));
 
@@ -117,6 +113,8 @@ test("waiting stops at the returned step and rendered subject/body remain escape
     });
     await button(page, "Simulate").click();
     await expect(simulation(page)).toContainText("trace stops at the first wait");
+    // The fixture's condition ID is "constructor", which must not inherit an assumption.
+    await expect(simulation(page)).not.toContainText("Assumed No path.");
     assert.equal(await simulation(page).locator("ol > li").count(), 3);
     await readableTimes(simulation(page), [
       "2026-10-05T12:00:00.123456Z",
@@ -451,11 +449,10 @@ test("320px tools and sample modal fit without overflow and keep 44px controls",
           .map((node) => node.textContent),
       );
     assert.deepEqual(small, []);
+    await expect(button(page, "Keep reviewing")).toBeFocused();
     await page.keyboard.press("Escape");
-    assert.equal(
-      await button(page, "Send sample email").evaluate((node) => document.activeElement === node),
-      true,
-    );
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(button(page, "Send sample email")).toBeFocused();
   }));
 
 for (const state of ["queued", "sending"])
@@ -494,10 +491,15 @@ for (const close of ["Escape", "Keep reviewing", "backdrop"])
           (node) => node.textContent === "Send sample email",
         );
       });
+      await expect(page.getByRole("dialog")).toBeVisible();
+      // The dialog handles Escape only once it owns focus (one frame after it opens).
+      if (close === "Escape") await expect(button(page, "Keep reviewing")).toBeFocused();
       if (close === "Escape") await page.keyboard.press("Escape");
       else if (close === "backdrop")
         await page.locator(".koaryu-modal-backdrop").click({ position: { x: 2, y: 2 } });
       else await button(page, close).click();
+      await expect(page.getByRole("dialog")).toHaveCount(0);
+      await expect(button(page, "Send sample email")).toBeFocused();
       assert.equal(
         await page.evaluate(
           () => document.activeElement === window.openerProbe && window.openerProbe.isConnected,
@@ -706,3 +708,76 @@ test("an unrelated lead-cache failure preserves a valid recent-history selection
     await expect(simulation(page)).toContainText("Context: Synthetic 🥋 lead");
     assert.equal(await page.evaluate(() => window.fixture.simulations.length), 1);
   }));
+
+test("continuing past a wait and trying the other branch send explicit assumptions and label the trace", () =>
+  mountTools(async (page) => {
+    await page.evaluate(() => {
+      window.fixture.simulationIndex = 3;
+    });
+    await button(page, "Simulate").click();
+    await expect(simulation(page)).toContainText("trace stops at the first wait");
+    assert.deepEqual(
+      await page.evaluate(() => Object.keys(window.fixture.simulations[0].body).sort()),
+      ["context", "graph"],
+    );
+    await page.evaluate(() => {
+      window.fixture.simulationIndex = 0;
+    });
+    await simulation(page).getByRole("button", { name: "Continue past this wait" }).click();
+    await expect(simulation(page)).toContainText("Hypothetical trace");
+    await expect(simulation(page)).toContainText("Assumed to have passed.");
+    assert.equal(await page.evaluate(() => window.fixture.simulations.length), 2);
+    assert.deepEqual(
+      await page.evaluate(() => window.fixture.simulations[1].body.assume_waits_elapsed),
+      true,
+    );
+    assert.equal(
+      await page.evaluate(() =>
+        Object.hasOwn(window.fixture.simulations[1].body, "branch_assumptions"),
+      ),
+      false,
+    );
+    await expect(
+      simulation(page).getByRole("checkbox", { name: /Assume every wait has passed/ }),
+    ).toBeChecked();
+    await simulation(page).getByRole("button", { name: "Try the No path" }).click();
+    await expect(simulation(page)).toContainText("Marked conditions take the path you chose.");
+    assert.deepEqual(
+      await page.evaluate(() => window.fixture.simulations[2].body.branch_assumptions),
+      [{ node_id: "constructor", outcome: "no" }],
+    );
+    await expect(simulation(page)).toContainText("Assumed No path.");
+    await simulation(page).getByRole("button", { name: "Use real timing and facts" }).click();
+    assert.deepEqual(
+      await page.evaluate(() => Object.keys(window.fixture.simulations[3].body).sort()),
+      ["context", "graph"],
+    );
+    await expect(simulation(page)).not.toContainText("Hypothetical trace");
+    await expect(simulation(page)).not.toContainText("Assumed No path.");
+    assert.equal(await page.evaluate(() => window.fixture.requests.length), 0);
+  }));
+
+for (const change of ["context", "graph"])
+  test(`simulation assumptions reset when the ${change} changes`, () =>
+    mountTools(async (page) => {
+      const region = simulation(page);
+      await region.getByRole("checkbox", { name: /Assume every wait/ }).check();
+      await button(page, "Simulate").click();
+      await region.getByRole("button", { name: "Try the No path" }).click();
+      await expect(region).toContainText("Hypothetical trace");
+      if (change === "context") {
+        await button(page, "Choose real record").click();
+        await button(page, "Use synthetic sample").click();
+      } else {
+        await changeEmail(page, "Changed subject");
+      }
+      await expect(region.getByRole("checkbox", { name: /Assume every wait/ })).not.toBeChecked();
+      await button(page, "Simulate").click();
+      await expect(region.getByRole("heading", { name: "Visited path" })).toBeVisible();
+      assert.deepEqual(
+        await page.evaluate(() => Object.keys(window.fixture.simulations.at(-1).body).sort()),
+        ["context", "graph"],
+      );
+      await expect(region).not.toContainText("Hypothetical trace");
+      assert.equal(await page.evaluate(() => window.fixture.requests.length), 0);
+    }));
