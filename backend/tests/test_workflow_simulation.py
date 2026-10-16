@@ -1549,3 +1549,75 @@ def test_branch_assumptions_must_name_distinct_condition_nodes(assumptions):
         hypothetical(graph, assume_waits_elapsed="yes")
     with pytest.raises(ValidationError):
         hypothetical(graph, advance_time=True)
+
+
+def test_assumed_waits_carry_a_forward_only_virtual_clock():
+    graph = graph_for(
+        "lead.created",
+        node("first", "delay", mode="duration", minutes=120),
+        node("second", "delay", mode="duration", minutes=60),
+        email(),
+    )
+    result = simulate(hypothetical(graph, assume_waits_elapsed=True))
+    assert [row.outcome for row in result.trace] == [
+        "entered",
+        "entered",
+        "entered",
+        "would_send",
+        "completed",
+    ]
+    # The second wait starts when the first one is assumed to have ended, never earlier.
+    assert result.trace[1].scheduled_at == NOW + timedelta(minutes=120)
+    assert result.trace[2].scheduled_at == NOW + timedelta(minutes=180)
+    result.validate_graph_path(hypothetical(graph).graph)
+    # Without the assumption the first wait still stops the walk at its original due time.
+    stopped = simulate(hypothetical(graph))
+    assert [row.outcome for row in stopped.trace] == ["entered", "waiting"]
+    assert stopped.trace[1].scheduled_at == NOW + timedelta(minutes=120)
+
+
+def test_virtual_clock_never_moves_backward_and_leaves_unknown_anchors_alone():
+    graph = graph_for(
+        "trial.scheduled",
+        node("later", "delay", mode="duration", minutes=240),
+        node("past", "delay", mode="until", field="trial.starts_at", offset_minutes=-30),
+        node("after", "delay", mode="duration", minutes=30),
+        email(recipient="lead_or_guardian"),
+    )
+    context = {
+        "kind": "entity",
+        "entity_type": CATALOG["triggers"]["trial.scheduled"]["simulation_entity_type"],
+        "entity_id": ENTITY,
+    }
+    facts = wire_facts()
+    # The trial starts two hours after the reference time, so its anchor is earlier than
+    # the clock once the first wait has been assumed to pass.
+    facts["anchors"] = {"trial.starts_at": (NOW + timedelta(hours=2)).isoformat()}
+    request = WorkflowSimulationRequest.model_validate(
+        {"graph": graph, "context": context, "assume_waits_elapsed": True}
+    )
+    result = simulate(request, facts=facts)
+    assert [row.outcome for row in result.trace] == [
+        "entered",
+        "entered",
+        "entered",
+        "entered",
+        "would_send",
+        "completed",
+    ]
+    assert result.trace[1].scheduled_at == NOW + timedelta(minutes=240)
+    assert result.trace[2].scheduled_at == NOW + timedelta(minutes=90)
+    assert result.trace[3].scheduled_at == NOW + timedelta(minutes=270)
+    result.validate_graph_path(request.graph)
+    # An unknown anchor keeps the clock where it was; the next duration still counts forward.
+    unknown = simulate(request, facts=wire_facts())
+    assert [row.outcome for row in unknown.trace] == [
+        "entered",
+        "entered",
+        "entered",
+        "entered",
+        "would_send",
+        "completed",
+    ]
+    assert unknown.trace[2].scheduled_at is None
+    assert unknown.trace[3].scheduled_at == NOW + timedelta(minutes=270)

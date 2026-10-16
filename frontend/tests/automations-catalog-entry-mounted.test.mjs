@@ -19,10 +19,11 @@ function bundle() {
   const dom = add("react-dom/client");
   const row = add("@/components/automations/missed-class-summary-row");
   const button = add("@/components/automations/new-workflow-button");
+  const refresh = add("@/components/automations/catalog-refresh-context");
   const retained = add("@/lib/retained-state");
   return `(()=>{const process={env:{NODE_ENV:'production'}};const modules=[${modules.join(",")}],cache={};function require(id){if(cache[id])return cache[id].exports;const m=cache[id]={exports:{}};modules[id](m,m.exports,require);return m.exports;}
 const React=require(${react});const root=require(${dom}).createRoot(document.getElementById('root'));
-function Fixture(){const [shown,setShown]=React.useState(true);window.f.show=setShown;const state=React.useSyncExternalStore(window.f.subscribe,window.f.getState);return React.createElement(require(${retained}).RetainedStateProvider,{scope:JSON.stringify([state.isPreviewMode,state.currentUserId,state.currentStudioId])},React.createElement('div',null,React.createElement(require(${button}).NewWorkflowButton),React.createElement('ul',null,shown?React.createElement(require(${row}).MissedClassSummaryRow):null)));}
+function Fixture(){const [shown,setShown]=React.useState(true);window.f.show=setShown;const state=React.useSyncExternalStore(window.f.subscribe,window.f.getState);return React.createElement(require(${retained}).RetainedStateProvider,{scope:JSON.stringify([state.isPreviewMode,state.currentUserId,state.currentStudioId])},React.createElement('div',null,React.createElement(require(${button}).NewWorkflowButton),React.createElement(require(${refresh}).CatalogRefreshContext.Provider,{value:state.refreshGeneration??0},React.createElement('ul',null,shown?React.createElement(require(${row}).MissedClassSummaryRow):null))));}
 root.render(React.createElement(Fixture));})();`;
 }
 
@@ -171,4 +172,20 @@ test("catalog revisit paints retained status then refreshes changes made elsewhe
   await row.getByText("Enabled", { exact: true }).waitFor();
   await row.getByText("30 days", { exact: false }).waitFor();
   assert.equal(await page.evaluate(() => f.calls.length), 2);
+});
+
+test("the catalog's refresh re-reads the built-in row and clears an earlier failure", async (t) => {
+  const page = await mount(t, { fail: true });
+  await page.getByText("Current status could not be loaded. Open the rule to retry.").waitFor();
+  assert.equal(await page.evaluate(() => window.f.calls.length), 1);
+  await page.evaluate(() => {
+    window.f.fail = false;
+    window.f.settings.rule.enabled = true;
+    window.f.setState({ refreshGeneration: 1 });
+  });
+  await page.locator('[data-built-in-automation="missed-class"]').getByText("Enabled").waitFor();
+  await page
+    .getByText("Current status could not be loaded. Open the rule to retry.")
+    .waitFor({ state: "detached" });
+  assert.equal(await page.evaluate(() => window.f.calls.length), 2);
 });

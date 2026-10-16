@@ -1,7 +1,16 @@
 "use client";
 
 import { memo, useCallback, useMemo, useState } from "react";
-import { Background, Controls, Handle, MarkerType, Position, ReactFlow } from "@xyflow/react";
+import {
+  Background,
+  ControlButton,
+  Controls,
+  Handle,
+  MarkerType,
+  Position,
+  ReactFlow,
+  useReactFlow,
+} from "@xyflow/react";
 import type {
   Connection,
   Edge,
@@ -96,6 +105,37 @@ const WorkflowCard = memo(function WorkflowCard({
 });
 const nodeTypes: NodeTypes = { workflow: WorkflowCard };
 const fitOptions = { padding: 0.18, maxZoom: 1 };
+
+/**
+ * Zoom and fit from React Flow, plus a true-size zoom and a taller canvas. Fit View keeps
+ * fitting the whole graph; Expand only changes the canvas height, so the camera stays put.
+ */
+function CanvasControls({ expanded, onExpand }: { expanded: boolean; onExpand: () => void }) {
+  const { zoomTo } = useReactFlow();
+  return (
+    <Controls showInteractive={false} fitViewOptions={fitOptions}>
+      <ControlButton
+        onClick={() => void zoomTo(1, { duration: 200 })}
+        aria-label="Zoom to 100%"
+        title="Zoom to 100%"
+      >
+        <span className={styles.controlText} aria-hidden="true">
+          1:1
+        </span>
+      </ControlButton>
+      <ControlButton
+        onClick={onExpand}
+        aria-label={expanded ? "Shrink graph" : "Expand graph"}
+        aria-pressed={expanded}
+        title={expanded ? "Shrink graph" : "Expand graph"}
+      >
+        <span className={styles.controlText} aria-hidden="true">
+          {expanded ? "⤡" : "⤢"}
+        </span>
+      </ControlButton>
+    </Controls>
+  );
+}
 const ariaLabels = {
   "node.a11yDescription.default":
     "Press Enter or Space to select, arrow keys to move, Delete to remove, or Escape to clear selection. Use Steps view to connect branches with the keyboard.",
@@ -150,6 +190,7 @@ export default function WorkflowCanvas({
     positions: Record<string, WorkflowPosition>;
   } | null>(null);
   const [selectedEdge, setSelectedEdge] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState(false);
   const [measurements, setMeasurements] = useState<ReadonlyMap<string, WorkflowMeasurement>>(
     () => new Map(),
   );
@@ -337,6 +378,7 @@ export default function WorkflowCanvas({
       <div
         className={styles.canvas}
         aria-label="Workflow graph"
+        data-expanded={expanded ? "true" : undefined}
         onKeyDown={(event) => {
           const target = event.target as HTMLElement;
           if (
@@ -383,7 +425,7 @@ export default function WorkflowCanvas({
           ariaLabelConfig={disabled ? disabledAriaLabels : ariaLabels}
         >
           <Background gap={20} />
-          <Controls showInteractive={false} fitViewOptions={fitOptions} />
+          <CanvasControls expanded={expanded} onExpand={() => setExpanded((value) => !value)} />
         </ReactFlow>
       </div>
     </div>

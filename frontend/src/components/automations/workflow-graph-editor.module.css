@@ -197,7 +197,6 @@
 }
 .editor .checkButton {
   margin-left: auto;
-  min-height: 40px;
   padding: 6px 12px;
 }
 .issueRows {
@@ -366,12 +365,6 @@
   margin-top: 10px;
   font-size: 13px;
 }
-.port label {
-  display: block;
-  margin-bottom: 6px;
-  color: var(--product-soft-ink, var(--text-secondary));
-  overflow-wrap: anywhere;
-}
 .connection > span {
   flex: 1 1 160px;
   overflow-wrap: anywhere;
@@ -390,6 +383,20 @@
 .canvas {
   width: 100%;
   height: clamp(480px, 72vh, 760px);
+  transition: height 160ms ease-out;
+}
+.canvas[data-expanded="true"] {
+  height: clamp(640px, 90vh, 1100px);
+}
+.controlText {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+.canvas :global(.react-flow__controls-button[aria-pressed="true"]) {
+  background: var(--hz-tile, var(--surface-hover));
+}
+.canvas {
   min-width: 0;
   overflow: hidden;
   border: 1px solid var(--product-rule-soft, var(--border));

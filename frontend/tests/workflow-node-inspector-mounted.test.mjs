@@ -58,7 +58,7 @@ for (const mode of ["production", "development"])
   test(`all six node forms are controlled, labeled and fit 320px (${mode})`, async () => {
     await withFixture(
       async (page, panel) => {
-        await expect(panel.getByRole("heading", { name: "Condition settings" })).toBeFocused();
+        await expect(panel.getByRole("heading", { name: "Condition 1 settings" })).toBeFocused();
         await panel
           .getByLabel("Comparison field", { exact: true })
           .selectOption("lead.unconverted");
@@ -90,7 +90,7 @@ for (const mode of ["production", "development"])
           ["end", "End"],
         ]) {
           await page.locator(`[data-workflow-step="${id}"]`).click();
-          await expect(panel.getByRole("heading", { name: `${title} settings` })).toBeFocused();
+          await expect(panel.getByRole("heading", { name: `${title} 1 settings` })).toBeFocused();
           assert.equal(
             await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
             true,
@@ -262,7 +262,7 @@ test("trigger changes preserve downstream stale config, program filter and offse
     await expect(panel.getByLabel("Message", { exact: true })).toHaveValue(
       "See you {{trial_start}} {{constructor}}",
     );
-    await panel.getByLabel("Recipient policy").selectOption("invoice_payer");
+    await panel.getByLabel("Send to").selectOption("invoice_payer");
     await panel.getByLabel("Insert variable into subject").selectOption("invoice_number");
     assert.ok((await config(page, "email")).subject_template.endsWith("{{invoice_number}}"));
     await panel.getByLabel("Reply-to email").fill("reply@example.test");
@@ -401,9 +401,9 @@ test("issues attach to fields and summary; disabled retains navigation and close
     const value = panel.getByLabel("Comparison value", { exact: true });
     await expect(value).toHaveAttribute("aria-invalid", "true");
     await expect(value).toHaveAccessibleDescription(/Select a comparison value before validation/);
-    await expect(panel.getByRole("region", { name: "Step issues" })).toContainText(
-      "Select a comparison value before validation.",
-    );
+    // The checks list beside the steps and the field's own help say it; no third copy here.
+    assert.equal(await panel.getByRole("region", { name: "Step issues" }).count(), 0);
+    assert.equal(await panel.getByText("Select a comparison value before validation.").count(), 1);
     await page.getByLabel("Disable editing", { exact: true }).check();
     const before = await actions(page);
     for (const id of ["trigger", "condition", "delay", "email", "follow", "end"]) {
@@ -574,7 +574,7 @@ test("known unavailable choices retain readable labels and their IDs when the tr
       ["condition", "Comparison field", "program.id", "Program"],
       ["condition", "Comparison operator", "eq", "Is"],
       ["condition", "Comparison value", JSON.stringify(program), "Junior program"],
-      ["email", "Recipient policy", "lead_or_guardian", "Lead or guardian"],
+      ["email", "Send to", "lead_or_guardian", "Lead or guardian"],
       ["delay", "Event time", "trial.starts_at", "Trial start"],
     ];
     for (const [id, label, value, knownLabel] of cases) {
@@ -623,7 +623,7 @@ test("unknown saved IDs stay identifiable and clearable without borrowing anothe
       ["condition", "Comparison field", "constructor"],
       ["condition", "Comparison operator", "__proto__"],
       ["condition", "Comparison value", missing],
-      ["email", "Recipient policy", "constructor"],
+      ["email", "Send to", "constructor"],
       ["delay", "Event time", "toString"],
     ]) {
       await select(page, id);
@@ -639,7 +639,7 @@ test("unknown saved IDs stay identifiable and clearable without borrowing anothe
     await panel.getByRole("button", { name: "Clear comparison" }).click();
     assert.deepEqual(await config(page), { field: null, operator: null });
     await select(page, "email");
-    await panel.getByLabel("Recipient policy").selectOption("");
+    await panel.getByLabel("Send to").selectOption("");
     assert.equal((await config(page, "email")).recipient, null);
     await select(page, "delay");
     await panel.getByRole("button", { name: "Clear event time" }).click();

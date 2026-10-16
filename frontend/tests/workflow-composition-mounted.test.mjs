@@ -778,7 +778,7 @@ test("a cold missing workflow offers the catalog and does not invent a retained 
   await mount({ route: "/automations/30000000-0000-4000-8000-000000000099" }, async (page) => {
     await expect(page.getByRole("alert")).toHaveText("This workflow could not be opened.");
     await expect(
-      page.getByRole("button", { name: "Return to retained draft", exact: true }),
+      page.getByRole("button", { name: "Return to your draft", exact: true }),
     ).toHaveCount(0);
     assert.equal(await page.evaluate(() => fixture.owner().getSnapshot().editor), null);
     await page.getByRole("button", { name: "Back to catalog", exact: true }).click();
@@ -803,7 +803,7 @@ test("a failed detail request offers the draft that is actually retained", async
       "This workflow could not be opened. Your retained draft is still available.",
     );
     await expect(page.getByRole("button", { name: "Back to catalog", exact: true })).toHaveCount(0);
-    await page.getByRole("button", { name: "Return to retained draft", exact: true }).click();
+    await page.getByRole("button", { name: "Return to your draft", exact: true }).click();
     await expect(name(page)).toHaveValue("Retained working draft");
     assert.equal(await page.evaluate(() => fixture.route), draftRoute);
     assert.deepEqual(
@@ -1248,7 +1248,11 @@ test("a workflow check row names its step and setting, selects the step and focu
     await row.click();
     await expect(page.getByRole("complementary")).toBeVisible();
     await expect(page.getByRole("combobox", { name: "Trigger event" })).toBeFocused();
-    await expect(page.getByRole("region", { name: "Step issues" })).toContainText("Trigger event");
+    assert.equal(await page.getByRole("region", { name: "Step issues" }).count(), 0);
+    await expect(page.getByRole("combobox", { name: "Trigger event" })).toHaveAccessibleDescription(
+      /Choose what starts this workflow\./,
+    );
+    await expect(page.getByRole("complementary")).toContainText("Trigger 1 settings");
     await expect(page.locator('[data-workflow-step="trigger_1"]')).toHaveAttribute(
       "aria-pressed",
       "true",
@@ -1266,6 +1270,121 @@ test("a workflow check row names its step and setting, selects the step and focu
     await page.getByRole("button", { name: "Steps", exact: true }).click();
     await page.getByRole("button", { name: "Close settings" }).click();
     assert.equal(await page.getByRole("complementary").count(), 0);
+    assert.equal(await count(page), 0);
+  });
+});
+
+test("a six-node branched workflow reads at the retest viewport, and the graph can expand or show true size", async () => {
+  await mount({ width: 1180 }, async (page) => {
+    await page.setViewportSize({ width: 1180, height: 757 });
+    const preset = await page.evaluate(() =>
+      fixture.catalog.presets.find((preset) => preset.id === "new_lead_follow_up"),
+    );
+    assert.equal(preset.graph.nodes.length, 6);
+    await page.getByRole("button", { name: "Use " + preset.name, exact: true }).click();
+    await expect(name(page)).toHaveValue(preset.name);
+    const steps = page.getByRole("list", { name: "Workflow steps" });
+    await expect(steps.getByRole("listitem")).toHaveCount(6);
+    const titles = await steps.locator("[data-workflow-step] strong").evaluateAll((elements) =>
+      elements.map((element) => ({
+        text: element.textContent,
+        px: parseFloat(getComputedStyle(element).fontSize),
+        visible: element.getClientRects().length > 0,
+      })),
+    );
+    assert.equal(titles.length, 6);
+    for (const title of titles) assert.ok(title.px >= 13 && title.visible, JSON.stringify(title));
+    const condition = steps.locator("li[data-kind='condition']");
+    await expect(condition).toContainText("Lead follow-up 1");
+    await expect(condition).toContainText("End 1");
+    assert.deepEqual(
+      await condition
+        .locator("[data-port]")
+        .evaluateAll((ports) => ports.map((p) => p.dataset.port)),
+      ["yes", "no"],
+    );
+    assert.equal(
+      await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
+      true,
+    );
+    // Selecting a step docks its settings beside the full list.
+    await page.locator("[data-workflow-step]").first().click();
+    await expect(page.getByRole("complementary")).toBeVisible();
+    const columns = await page
+      .locator('div[data-selected="true"]')
+      .evaluate((grid) => getComputedStyle(grid).gridTemplateColumns.split(" ").length);
+    assert.equal(columns, 2);
+    await page.getByRole("button", { name: "Close settings" }).click();
+    await expect(page.locator("[data-workflow-step]").first()).toBeFocused();
+    assert.equal(await page.getByRole("complementary").count(), 0);
+    // Graph: Expand changes only the canvas height and 100% is a true-size zoom.
+    await openGraph(page);
+    const canvas = page.locator('[aria-label="Workflow graph"]');
+    await expect(page.locator(".react-flow__node")).toHaveCount(6);
+    const before = await canvas.boundingBox();
+    const camera = await graphViewport(page);
+    await page.getByRole("button", { name: "Expand graph", exact: true }).click();
+    await expect
+      .poll(async () => (await canvas.boundingBox()).height)
+      .toBeGreaterThan(before.height);
+    assert.deepEqual(await graphViewport(page), camera);
+    await expect(page.getByRole("button", { name: "Shrink graph", exact: true })).toBeFocused();
+    await page.getByRole("button", { name: "Zoom Out", exact: true }).click();
+    await expect.poll(async () => (await graphViewport(page)).zoom).toBeLessThan(0.9);
+    await page.getByRole("button", { name: "Zoom to 100%", exact: true }).click();
+    await expect.poll(async () => (await graphViewport(page)).zoom).toBeCloseTo(1, 6);
+    await page.getByRole("button", { name: "Shrink graph", exact: true }).click();
+    await expect.poll(async () => (await canvas.boundingBox()).height).toBe(before.height);
+    assert.equal(await count(page), 0);
+  });
+});
+
+test("a check on a setting that cannot be changed yet lands on the first setting that can", async () => {
+  await mount({ width: 1280 }, async (page) => {
+    await page.evaluate(() => {
+      const detail = fixture.details[fixture.current.id] ?? fixture.current;
+      fixture.details[fixture.current.id] = {
+        ...detail,
+        draft_graph: {
+          schema_version: 1,
+          nodes: [
+            {
+              id: "trigger_1",
+              type: "trigger",
+              config: { event_type: "lead.created", program_id: null },
+            },
+            { id: "check", type: "condition", config: { field: null, operator: null } },
+            { id: "end_1", type: "end", config: {} },
+          ],
+          edges: [
+            { id: "e1", source: "trigger_1", target: "check", port: "next" },
+            { id: "e2", source: "check", target: "end_1", port: "yes" },
+            { id: "e3", source: "check", target: "end_1", port: "no" },
+          ],
+        },
+        draft_layout: { positions: {} },
+        validation_issues: [
+          {
+            code: "incomplete_config",
+            message: "Choose a value before running this workflow.",
+            node_id: "check",
+            edge_id: null,
+            field: "config.value",
+          },
+        ],
+      };
+      fixture.router.push("/automations/" + fixture.current.id);
+    });
+    await expect(name(page)).toBeVisible();
+    const checks = page.getByRole("region", { name: "Workflow checks" });
+    await checks.getByRole("button", { name: /^Condition 1 · Comparison value/ }).click();
+    await expect(page.getByRole("complementary")).toContainText("Condition 1 settings");
+    await expect(
+      page.getByRole("combobox", { name: "Comparison value", exact: true }),
+    ).toBeDisabled();
+    await expect(
+      page.getByRole("combobox", { name: "Comparison field", exact: true }),
+    ).toBeFocused();
     assert.equal(await count(page), 0);
   });
 });

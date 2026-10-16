@@ -324,6 +324,9 @@ def _walk(
 ) -> list[WorkflowSimulationTrace]:
     """Walk one path. Assumptions are explicit hypotheticals; they never read or write facts."""
     assumptions = branch_assumptions or {}
+    # The clock is the hypothetical "now" along the path. It starts at the reference time
+    # and only moves forward, and only when the reviewer assumed a known wait has passed.
+    clock = reference_time
     nodes = {node.id: node for node in graph.nodes}
     edges = {(edge.source, edge.port): edge for edge in graph.edges}
     node = next(node for node in graph.nodes if node.type == "trigger")
@@ -365,7 +368,7 @@ def _walk(
                 port = "yes" if matched else "no"
         elif node.type == "delay":
             if node.config.mode == "duration":
-                anchor, minutes = reference_time, node.config.minutes
+                anchor, minutes = clock, node.config.minutes
             else:
                 anchor = facts.anchors.get(node.config.field)
                 minutes = node.config.offset_minutes
@@ -374,9 +377,14 @@ def _walk(
             except OverflowError:
                 due = None
             row["scheduled_at"] = due
-            if not assume_waits_elapsed and (due is None or due > reference_time):
-                row.update(outcome="waiting", reason="facts_unavailable" if due is None else None)
-                stop = True
+            if due is None or due > clock:
+                if not assume_waits_elapsed:
+                    row.update(
+                        outcome="waiting", reason="facts_unavailable" if due is None else None
+                    )
+                    stop = True
+                elif due is not None:
+                    clock = due
         elif node.type == "email":
             recipient = facts.recipients.get(node.config.recipient)
             if recipient is None or recipient.decision == "unavailable":
