@@ -305,3 +305,25 @@ Applied changes insert one `audit_logs` row in the same transaction as the subsc
 A dry run predicts the execute path exactly: a request that would be a true `no_change` shows no provenance block and no audit action, and a revoke that would leave an entitling status prints the same access warning the execute path does.
 
 Dry runs and `no_change` outcomes write no audit row. `list`, `status`, and `drift` are paginated, strictly read-only commands.
+
+The disposable contract runner's application-composition checks require Python
+3.11 and the installed backend dependencies. On this Mac, select the existing
+backend virtualenv without installing packages:
+
+```sh
+PATH="$PWD/backend/venv/bin:$PATH" \
+  KOARYU_PG_BIN_DIR=/Users/openclaw/Applications/Postgres-17.app/Contents/Versions/17/bin \
+  npm run check:supabase-contracts-local
+```
+
+The V58 clone installer stays bound to V58 when the candidate advances. The
+current application-composition checks upgrade their owned V57 clones through
+V58 and V59 before using the backend's generated V40 readiness RPC.
+
+The timed-enrollment verifier allows ten minutes for its complete multi-statement
+SQL contract. Each statement keeps the contract's existing 90-second timeout;
+other local PostgreSQL subprocesses keep their two-minute limit.
+
+Student-payment capture's fresh-install barrier allows two minutes for the full
+V57 migration to reach the held transaction. Its ordinary race barriers keep ten
+seconds, and statements keep their existing 20-second timeout.

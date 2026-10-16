@@ -48,3 +48,104 @@ bootstrap rows, then tests GA authority and onboarding continuation on canonical
 logical-restored copies. V58 uses the existing V57 CHECK normalization pairs. The
 complete table facts change only the bootstrap checkpoint column's nullability;
 canonical, restored and Supabase profile pins remain separate.
+
+V59 installs `private.timezone_names` with PostgreSQL's accepted names at migration
+execution. Stable invoker helpers use its primary key; PostgreSQL still supplies
+live conversion rules. The 12 current SQL callers preserve their UTC fallback or
+validation rejection, including onboarding's New York default for NULL and the
+workflow validator's syntax and namespace restrictions. Inventory reconciliation
+runs in `timezone_names_reference_contract.sql` and guarded release inspection,
+never in routine readiness. Deliberate runtime inventory changes use the guarded
+transactional refresh procedure below and the same disposable parity proof. V59's full preflight V40
+retains V58-shaped success rows through the generated V39 compatibility bridge.
+Its forward restore case binds V58 and V59 independently and permits only the
+named V31 expectation singleton to change among retained rows.
+V59 preserves the four separate table profiles. The existing Supabase canonical
+V58 table pin was reproduced locally with the Supabase ALL-table-grant bootstrap;
+V59's Supabase canonical and logical-restored pins come from that same disposable
+profile. This does not inspect or authorize a hosted database.
+
+V59 rollout inspection reads the V59 catalog, complete table/function states,
+release manifest and exact V58 compatibility response. It also compares the
+stored names with the target runtime's catalog and refuses missing or surplus
+names. This read-only enumeration runs during guarded release inspection, where
+runtime changes matter; routine preflight/readiness remains a cached lookup.
+The standalone check uses the same SQL and validator on a disposable restore:
+
+```sh
+backend/venv/bin/python scripts/check-timezone-names-parity.py \
+  "$KOARYU_PG_BIN_DIR/psql" /tmp/koaryu-pg.<owned>/socket 5432 <owned_database>
+```
+
+Before a deliberate PostgreSQL/tzdata upgrade, restore a fresh backup under the
+proposed runtime and run parity plus the populated V59 round-trip proof. Review
+missing and surplus names. Rule/offset changes for retained names need no refresh.
+If inventory changes are intentional, the named owner must authorize the runtime
+upgrade and refresh using the normal backup, disposable restore and production
+apply gates. This worktree has no production authority.
+
+Refresh only as the reference owner in one transaction during a quiesced application
+write window, with a bounded lock wait and a bounded transaction lifetime: PostgreSQL 17's
+`transaction_timeout` and `idle_in_transaction_session_timeout` roll the refresh back and
+release its locks if the session stalls or idles after acquiring them. Lock the business tables against writes
+before locking the reference and checking stored zones; this also excludes direct
+studio updates that do not call a timezone helper. A lock timeout or deadlock
+refuses the whole transaction; resolve active writers before retrying.
+The operator must set the explicit approval flag shown below. Refuse removal of a
+zone still stored by a studio, trial, belt event or open invoice collection episode
+(which keeps the zone frozen when it opened, even if the studio later changes zone);
+resolve those rows through the normal application owners before retrying. Do not
+disable their CHECKs.
+
+```sql
+BEGIN;
+SET LOCAL transaction_timeout = '120s';
+SET LOCAL idle_in_transaction_session_timeout = '15s';
+SET LOCAL lock_timeout = '5s';
+SET LOCAL statement_timeout = '60s';
+SET LOCAL koaryu.timezone_names_refresh = 'approved-runtime-upgrade';
+LOCK TABLE public.studios, public.lead_trial_appointments, public.belt_test_events,
+  private.workflow_invoice_collection_episodes IN SHARE MODE;
+LOCK TABLE private.timezone_names IN ACCESS EXCLUSIVE MODE;
+DO $refresh_guard$
+BEGIN
+  IF current_setting('koaryu.timezone_names_refresh', true)
+       IS DISTINCT FROM 'approved-runtime-upgrade' THEN
+    RAISE EXCEPTION 'Explicit runtime-upgrade refresh approval required';
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM (
+      SELECT timezone FROM public.studios
+      UNION SELECT timezone FROM public.lead_trial_appointments
+      UNION SELECT timezone FROM public.belt_test_events
+      UNION SELECT frozen_timezone FROM private.workflow_invoice_collection_episodes
+        WHERE closed_at IS NULL
+    ) stored
+    WHERE timezone IS NOT NULL AND NOT EXISTS (
+      SELECT 1 FROM pg_catalog.pg_timezone_names runtime WHERE runtime.name = stored.timezone
+    )
+  ) THEN
+    RAISE EXCEPTION 'Stored timezone absent from proposed runtime; resolve before refresh';
+  END IF;
+END;
+$refresh_guard$;
+DELETE FROM private.timezone_names stored
+WHERE NOT EXISTS (SELECT 1 FROM pg_catalog.pg_timezone_names runtime WHERE runtime.name = stored.name);
+INSERT INTO private.timezone_names(name)
+SELECT name FROM pg_catalog.pg_timezone_names ON CONFLICT DO NOTHING;
+DO $parity$
+BEGIN
+  IF EXISTS (SELECT name FROM pg_catalog.pg_timezone_names EXCEPT SELECT name FROM private.timezone_names)
+     OR EXISTS (SELECT name FROM private.timezone_names EXCEPT SELECT name FROM pg_catalog.pg_timezone_names) THEN
+    RAISE EXCEPTION 'Timezone refresh parity failed';
+  END IF;
+END;
+$parity$;
+COMMIT;
+```
+
+After committing, repeat guarded inspection and service-role lookups. Refresh
+changes reference rows only; ownership, grants, RLS and readiness declarations
+stay fixed. The populated backup proof restores ordinary trial/belt CHECKs without
+changing the dump order or bypassing validation, then compares names and security
+and exercises service-role lookups and both drift directions.

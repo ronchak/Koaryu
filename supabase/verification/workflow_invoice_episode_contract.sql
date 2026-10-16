@@ -18,12 +18,12 @@ BEGIN
     PERFORM pg_temp.episode_check(true,label);
 END $$;
 -- fixture owners start. The runner copies only this named helper block.
-CREATE FUNCTION pg_temp.episode_fixture(due DATE DEFAULT CURRENT_DATE+2,finish BOOLEAN DEFAULT true,metadata JSONB DEFAULT '{"connect_account_generation":1}',with_staff BOOLEAN DEFAULT true)
+CREATE FUNCTION pg_temp.episode_fixture(due DATE DEFAULT CURRENT_DATE+2,finish BOOLEAN DEFAULT true,metadata JSONB DEFAULT '{"connect_account_generation":1}',with_staff BOOLEAN DEFAULT true,zone TEXT DEFAULT 'UTC')
 RETURNS JSONB LANGUAGE plpgsql AS $$
 DECLARE s UUID:=gen_random_uuid(); a UUID:=gen_random_uuid(); y UUID:=gen_random_uuid(); i UUID:=gen_random_uuid();
 BEGIN
     INSERT INTO auth.users(id,email,email_confirmed_at) VALUES(a,a||'@example.invalid',clock_timestamp());
-    INSERT INTO public.studios(id,name,slug,owner_id,timezone) VALUES(s,'Invoice episode proof',s::TEXT,a,'UTC');
+    INSERT INTO public.studios(id,name,slug,owner_id,timezone) VALUES(s,'Invoice episode proof',s::TEXT,a,zone);
     IF with_staff THEN INSERT INTO public.staff_roles(studio_id,user_id,role) VALUES(s,a,'admin'); END IF;
     INSERT INTO public.studio_subscriptions(studio_id,status,comped) VALUES(s,'active',false);
     INSERT INTO public.studio_payment_accounts(studio_id,stripe_connected_account_id,metadata)
@@ -401,6 +401,20 @@ BEGIN
     PERFORM private.workflow_finalize_invoice_episodes_v1();
     PERFORM pg_temp.episode_check(NOT EXISTS(SELECT 1 FROM public.billing_invoices WHERE id=invoice)
         AND (SELECT ever_removed AND current_episode_id IS NULL FROM private.workflow_invoice_episode_state WHERE invoice_id=invoice),'actual clear preserves logical closed history');
+END $$;
+-- Freeze the same known/unknown/legacy-NULL studio zone in identity and finalization.
+ALTER TABLE public.studios ALTER COLUMN timezone DROP NOT NULL;
+DO $$
+DECLARE zone TEXT; expected TEXT; x JSONB; episode private.workflow_invoice_collection_episodes;
+BEGIN
+    FOREACH zone IN ARRAY ARRAY['America/Los_Angeles','Unknown/Timezone',NULL] LOOP
+        expected:=CASE WHEN zone='America/Los_Angeles' THEN zone ELSE 'UTC' END;
+        x:=pg_temp.episode_fixture(CURRENT_DATE+2,true,'{"connect_account_generation":1}',true,zone);
+        SELECT * INTO episode FROM private.workflow_invoice_collection_episodes WHERE invoice_id=(x->>'invoice')::UUID;
+        PERFORM pg_temp.episode_check(episode.frozen_timezone=expected
+            AND episode.threshold_at=(CURRENT_DATE+3)::TIMESTAMP AT TIME ZONE expected,
+            'invoice identity/finalizer timezone '||coalesce(zone,'NULL'));
+    END LOOP;
 END $$;
 SELECT count(*) AS invoice_episode_assertions FROM pg_temp.episode_checks;
 ROLLBACK;

@@ -309,8 +309,8 @@ OR (n.nspname='public' AND p.proname IN ('write_student_profile_atomic','write_s
             {},
         )
 
-    def ready(item):
-        deadline = time.monotonic() + 10
+    def ready(item, *, timeout=10):
+        deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             try:
                 if item["events"].get(timeout=0.05) == "RESULT_READY":
@@ -441,7 +441,8 @@ OR (n.nspname='public' AND p.proname IN ('write_student_profile_atomic','write_s
             hold=True,
             role="postgres",
         )
-        ready(installer)
+        # The full migration runs many guards before reaching the held barrier.
+        ready(installer, timeout=120)
         following_writer = session("payment_after_install", payment(after_install))
         blocked(installer, following_writer)
         release(installer)

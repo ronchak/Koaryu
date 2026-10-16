@@ -103,16 +103,16 @@ class LocalPostgres:
                 and target["listen"] == "" and target["address"] is None,
                 "Connected server is not the caller's isolated PostgreSQL 17 cluster")
 
-    def run(self, command, text=None):
+    def run(self, command, text=None, *, timeout=120):
         result = subprocess.run(command, input=text, text=True, capture_output=True,
-                                env=self.env, timeout=120)
+                                env=self.env, timeout=timeout)
         require(result.returncode == 0, f"Local PostgreSQL command failed: {result.stderr[-3000:]}")
         return result.stdout.strip()
 
-    def sql(self, database, statement):
+    def sql(self, database, statement, *, timeout=120):
         require(re.fullmatch(r"[a-z_][a-z0-9_]*", database) is not None, "Invalid local database name")
         return self.run([self.psql, *self.connection, f"--dbname={database}", "--no-psqlrc",
-                         "--set=ON_ERROR_STOP=1", "--quiet", "--tuples-only", "--no-align"], statement)
+                         "--set=ON_ERROR_STOP=1", "--quiet", "--tuples-only", "--no-align"], statement, timeout=timeout)
 
     def require_pg17(self, *binaries):
         versions = {Path(binary).name: self.run([binary, "--version"]) for binary in binaries}
@@ -144,23 +144,43 @@ def require_final_v57(local, database, root):
 
 
 def install_final_v58(local, database, root):
-    """Upgrade the caller's verified V57 clone for current application composition."""
+    """Upgrade a verified V57 clone and attest the version-bound V58 state."""
     root = Path(root)
-    metadata = runpy.run_path(str(root / "backend/app/services/generated_release_readiness.py"))
-    require(metadata["RELEASE_PREFLIGHT_RPC"] == "koaryu_release_schema_preflight_v39"
-            and metadata["EXPECTED_RELEASE_MIGRATION_COUNT"] == 153
-            and metadata["EXPECTED_RELEASE_MIGRATION_HEAD"] == "20261013013243"
-            and metadata["EXPECTED_RELEASE_MANIFEST_VERSION"] == "release-db-attestation-v58",
-            "Application composition requires the declared V58 candidate")
+    versions = sorted(p.name[:14] for p in (root / "supabase/migrations").glob("*.sql")
+                      if p.name[:14] <= "20261013013243")
     migration = root / "supabase/migrations/20261013013243_live_billing_authority_repairs_v58.sql"
     local.run([local.psql, *local.connection, f"--dbname={database}", "--no-psqlrc",
                "--set=ON_ERROR_STOP=1", "--quiet", "--single-transaction", f"--file={migration}",
                "--command=INSERT INTO supabase_migrations.schema_migrations(version,name) "
                "VALUES('20261013013243','live_billing_authority_repairs_v58');"])
     row = json.loads(local.sql(database, "SELECT row_to_json(p) FROM public.koaryu_release_schema_preflight_v39() p;"))
+    require(row == {"ready": True, "migration_count": 153,
+                    "migration_head": "20261013013243",
+                    "pending_versions": [v for v in versions if v >= "20260727100000"],
+                    "security_failures": [], "manifest_version": "release-db-attestation-v58"},
+            "Complete installed V58 schema differs: " + json.dumps(row))
+    return row
+
+
+def install_final_v59(local, database, root):
+    """Upgrade a V57 clone through V58 to the current V59 application schema."""
+    root = Path(root)
+    metadata = runpy.run_path(str(root / "backend/app/services/generated_release_readiness.py"))
+    require(metadata["RELEASE_PREFLIGHT_RPC"] == "koaryu_release_schema_preflight_v40"
+            and metadata["EXPECTED_RELEASE_MIGRATION_COUNT"] == 154
+            and metadata["EXPECTED_RELEASE_MIGRATION_HEAD"] == "20261014083106"
+            and metadata["EXPECTED_RELEASE_MANIFEST_VERSION"] == "release-db-attestation-v59",
+            "Application composition requires the declared V59 candidate")
+    install_final_v58(local, database, root)
+    migration = root / "supabase/migrations/20261014083106_timezone_names_reference_v59.sql"
+    local.run([local.psql, *local.connection, f"--dbname={database}", "--no-psqlrc",
+               "--set=ON_ERROR_STOP=1", "--quiet", "--single-transaction", f"--file={migration}",
+               "--command=INSERT INTO supabase_migrations.schema_migrations(version,name) "
+               "VALUES('20261014083106','timezone_names_reference_v59');"])
+    row = json.loads(local.sql(database, "SELECT row_to_json(p) FROM public.koaryu_release_schema_preflight_v40() p;"))
     require(row == {"ready": True, "migration_count": metadata["EXPECTED_RELEASE_MIGRATION_COUNT"],
                     "migration_head": metadata["EXPECTED_RELEASE_MIGRATION_HEAD"],
                     "pending_versions": metadata["EXPECTED_RELEASE_PENDING_VERSIONS"],
                     "security_failures": [], "manifest_version": metadata["EXPECTED_RELEASE_MANIFEST_VERSION"]},
-            "Complete installed V58 application schema differs: " + json.dumps(row))
+            "Complete installed V59 application schema differs: " + json.dumps(row))
     return row

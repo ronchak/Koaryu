@@ -447,5 +447,20 @@ BEGIN
     PERFORM pg_temp.advance_error(format('SELECT pg_temp.advance_call(%L)',x),'P0001','AUTOMATION_STATE_CONFLICT','older incompatible visited edge refuses');
     PERFORM pg_temp.advance_check(pg_temp.advance_snapshot(x)=before,'older incompatible history refusal atomic');
 END $$;
+ALTER TABLE public.studios ALTER COLUMN timezone DROP NOT NULL;
+DO $$
+DECLARE zone TEXT; expected TEXT; x JSONB; got JSONB; action private.automation_workflow_follow_up_actions;
+BEGIN
+    FOREACH zone IN ARRAY ARRAY['America/Los_Angeles','Unknown/Timezone',NULL] LOOP
+        expected:=CASE WHEN zone='America/Los_Angeles' THEN zone ELSE 'UTC' END;
+        x:=pg_temp.advance_seed(pg_temp.advance_fixture(),'lead.created',pg_temp.advance_path('lead.created','lead_follow_up','{"due_in_days":2,"note":"Timezone proof"}'));
+        UPDATE public.studios SET timezone=zone WHERE id=(x->>'studio')::UUID;
+        x:=pg_temp.advance_claim(x);
+        got:=pg_temp.advance_call(x,2);
+        SELECT * INTO action FROM private.automation_workflow_follow_up_actions WHERE run_id=(x->>'run')::UUID;
+        PERFORM pg_temp.advance_check(action.due_date=(action.created_at AT TIME ZONE expected)::DATE+2,
+            'workflow follow-up timezone '||coalesce(zone,'NULL'));
+    END LOOP;
+END $$;
 SELECT count(*) AS workflow_advance_assertions FROM pg_temp.advance_checks;
 ROLLBACK;

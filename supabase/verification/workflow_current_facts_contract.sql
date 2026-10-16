@@ -542,5 +542,43 @@ BEGIN
     UPDATE public.billing_invoices SET due_date=NULL WHERE id=base.id;
     PERFORM pg_temp.fact_check(pg_temp.fact_private(x,'invoice.overdue',captured)#>>'{facts,source_reason}'='invoice_not_overdue','known null current due date remains terminal');
 END $$;
+ALTER TABLE public.studios ALTER COLUMN timezone DROP NOT NULL;
+DO $$
+DECLARE zone TEXT; x JSONB; decision TEXT;
+BEGIN
+    FOREACH zone IN ARRAY ARRAY['America/Los_Angeles','Unknown/Timezone',NULL] LOOP
+        x:=pg_temp.fact_fixture();
+        UPDATE public.studios SET timezone=zone WHERE id=(x->>'studio')::UUID;
+        UPDATE public.students SET hold_start_date='2026-10-13',hold_end_date='2026-10-13' WHERE id=(x->>'student')::UUID;
+        decision:=pg_temp.fact_private(x,'student.enrolled',NULL,NULL,'2026-10-14T01:00:00Z')#>>'{facts,source_decision}';
+        PERFORM pg_temp.fact_check(decision=CASE WHEN zone='America/Los_Angeles' THEN 'ineligible' ELSE 'eligible' END,
+            'source facts timezone '||coalesce(zone,'NULL'));
+    END LOOP;
+END $$;
+-- Model invalid retained source records only inside this rollback fixture.
+ALTER TABLE public.lead_trial_appointments DROP CONSTRAINT lead_trial_appointments_timezone_check;
+ALTER TABLE public.lead_trial_appointments ALTER COLUMN timezone DROP NOT NULL;
+ALTER TABLE public.belt_test_events DROP CONSTRAINT belt_test_events_timezone_check;
+ALTER TABLE public.belt_test_events ALTER COLUMN timezone DROP NOT NULL;
+DO $$
+DECLARE zone TEXT; x JSONB; got JSONB; expected TEXT;
+BEGIN
+    FOREACH zone IN ARRAY ARRAY['America/Los_Angeles','Unknown/Timezone',NULL] LOOP
+        x:=pg_temp.fact_fixture();
+        expected:=CASE WHEN zone='America/Los_Angeles' THEN 'eligible' ELSE 'unavailable' END;
+        UPDATE public.lead_trial_appointments SET timezone=zone WHERE id=(x->>'trial_appointment')::UUID;
+        got:=pg_temp.fact_private(x,'trial.scheduled');
+        PERFORM pg_temp.fact_check(got#>>'{facts,source_decision}'=expected
+            AND CASE WHEN zone='America/Los_Angeles' THEN got#>>'{facts,template_facts,trial_start,timezone}'=zone
+                ELSE NOT (got#>'{facts,template_facts}' ? 'trial_start') END,
+            'stored trial timezone '||coalesce(zone,'NULL'));
+        UPDATE public.belt_test_events SET timezone=zone WHERE id=(x->>'event')::UUID;
+        got:=pg_temp.fact_private(x,'belt_test.approved');
+        PERFORM pg_temp.fact_check(got#>>'{facts,source_decision}'=expected
+            AND CASE WHEN zone='America/Los_Angeles' THEN got#>>'{facts,template_facts,event_start,timezone}'=zone
+                ELSE NOT (got#>'{facts,template_facts}' ? 'event_start') END,
+            'stored belt event timezone '||coalesce(zone,'NULL'));
+    END LOOP;
+END $$;
 SELECT count(*) AS current_fact_contract_assertions FROM pg_temp.current_fact_checks;
 ROLLBACK;

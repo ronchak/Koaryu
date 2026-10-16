@@ -144,8 +144,8 @@ def main(arguments):
     owned, dump_owned = False, False
     children, cases, lifetimes = [], [], []
 
-    def sql(statement):
-        return local.sql(database, "SET TIME ZONE 'UTC';\n" + statement)
+    def sql(statement, *, timeout=120):
+        return local.sql(database, "SET TIME ZONE 'UTC';\n" + statement, timeout=timeout)
 
     def value(statement):
         return json.loads(sql(statement))
@@ -453,7 +453,9 @@ def main(arguments):
             "unaffected retained definitions and complete function ACL ownership and settings identical",
             functions=len(retained),
         )
-        contract_output = sql(contract)
+        # This multi-statement contract retains its 90-second SQL statement limit.
+        # Allow the complete contract to finish on a loaded disposable server.
+        contract_output = sql(contract, timeout=600)
         passed("complete timed SQL contract", output=contract_output)
         helpers()
         require(version("postgrest") == "0.17.2", "Pinned PostgREST client required")

@@ -1,3 +1,5 @@
+import { EXPECTED_V59_CATALOG_STATE, EXPECTED_V59_RESTORED_CATALOG_STATE, EXPECTED_V59_AUTOMATION_TABLE_STATE, EXPECTED_V59_RESTORED_AUTOMATION_TABLE_STATE, EXPECTED_V59_PLATFORM_AUTOMATION_TABLE_STATE, EXPECTED_V59_RESTORED_PLATFORM_AUTOMATION_TABLE_STATE, EXPECTED_V59_AUTOMATION_FUNCTION_STATE, EXPECTED_V59_RELEASE_MANIFEST, V59_RELEASE_MANIFEST_SQL, V59_AUTOMATION_TABLE_STATE_SQL, V59_AUTOMATION_FUNCTION_STATE_SQL, EXPECTED_V58_OPERATIONAL_READINESS } from "./studio-comp-migration-rollout.mjs";
+import { TIMEZONE_NAMES_PARITY_SQL, EXPECTED_TIMEZONE_NAMES_PARITY, validateTimezoneNameParity } from "./release-attestation/timezone-names.mjs";
 import { createHash } from "node:crypto";
 import { EXPECTED_V57_OPERATIONAL_READINESS, V57_RELEASE_MANIFEST_SQL, EXPECTED_V57_RELEASE_MANIFEST, EXPECTED_V57_CATALOG_STATE, EXPECTED_V57_RESTORED_CATALOG_STATE, EXPECTED_V57_AUTOMATION_TABLE_STATE, EXPECTED_V57_RESTORED_AUTOMATION_TABLE_STATE, EXPECTED_V57_AUTOMATION_FUNCTION_STATE, V58_RELEASE_MANIFEST_SQL, EXPECTED_V58_RELEASE_MANIFEST, V58_AUTOMATION_TABLE_STATE_SQL, V58_AUTOMATION_FUNCTION_STATE_SQL, EXPECTED_V58_CATALOG_STATE, EXPECTED_V58_RESTORED_CATALOG_STATE, EXPECTED_V58_AUTOMATION_TABLE_STATE, EXPECTED_V58_RESTORED_AUTOMATION_TABLE_STATE, EXPECTED_V58_PLATFORM_AUTOMATION_TABLE_STATE, EXPECTED_V58_RESTORED_PLATFORM_AUTOMATION_TABLE_STATE, EXPECTED_V58_AUTOMATION_FUNCTION_STATE, EXPECTED_V56_OPERATIONAL_READINESS } from "./studio-comp-migration-rollout.mjs";
 import { V56_RELEASE_MANIFEST_SQL, EXPECTED_V56_V55_COMPATIBILITY_SHA256, EXPECTED_V55_OPERATIONAL_READINESS, EXPECTED_V56_CATALOG_STATE, EXPECTED_V56_RESTORED_CATALOG_STATE, EXPECTED_V56_CRITICAL_SURFACE_MANIFEST, EXPECTED_V56_OPERATIONAL_MANIFEST_V10, EXPECTED_V56_OPERATIONAL_MANIFEST_V11, EXPECTED_V56_V30_REPLAY_REPAIRS_MANIFEST, EXPECTED_V56_V30_OPERATIONAL_CONTRACT, EXPECTED_V56_EXPECTATION_STATE, EXPECTED_V56_RESOURCE_OWNERSHIP_MANIFEST, EXPECTED_V56_OPERATIONAL_CONTRACT, EXPECTED_V56_OPERATIONAL_MANIFEST_V12, EXPECTED_V56_RELEASE_MANIFEST, EXPECTED_V56_AUTOMATION_TABLE_STATE, EXPECTED_V56_AUTOMATION_FUNCTION_STATE } from "./studio-comp-migration-rollout.mjs";
@@ -485,7 +487,7 @@ const expectedMigrationFiles = [
   "20260930192626_converted_lead_enrollment_v55.sql",
   "20261004220435_missed_class_automation_v56.sql",
   "20261005105341_automation_workflow_graph_v57.sql",
-  "20261013013243_live_billing_authority_repairs_v58.sql",
+  "20261013013243_live_billing_authority_repairs_v58.sql", "20261014083106_timezone_names_reference_v59.sql"
 ];
 const migrationBoundaries = new Map([
   ["pre", "20260814043325_default_program_memberships_to_starting_belt.sql"],
@@ -544,7 +546,7 @@ function expectedRemaining(state) {
   return expectedMigrationFiles.slice(first);
 }
 
-const validCatalogState = EXPECTED_V58_CATALOG_STATE;
+const validCatalogState = EXPECTED_V59_CATALOG_STATE;
 // Measured from an actual logical restore upgraded from V47, retained here so a
 // runtime constant cannot silently move both accepted catalog fixtures together.
 const expectedV49RestoredCatalogState =
@@ -586,10 +588,10 @@ const validV56RestoredFingerprint = validV56Fingerprint.replace(
   `catalog=${EXPECTED_V56_CATALOG_STATE}`,
   `catalog=${EXPECTED_V56_RESTORED_CATALOG_STATE}`,
 );
-const validFingerprint = `v58_catalog=${EXPECTED_V58_CATALOG_STATE};v58_tables=${EXPECTED_V58_AUTOMATION_TABLE_STATE};v58_functions=${EXPECTED_V58_AUTOMATION_FUNCTION_STATE};v58_release=${EXPECTED_V58_RELEASE_MANIFEST};v57_compat=${createHash("sha256").update(EXPECTED_V57_OPERATIONAL_READINESS).digest("hex")}`;
-const validRestoredFingerprint = validFingerprint.replace(EXPECTED_V58_CATALOG_STATE,EXPECTED_V58_RESTORED_CATALOG_STATE).replace(EXPECTED_V58_AUTOMATION_TABLE_STATE,EXPECTED_V58_RESTORED_AUTOMATION_TABLE_STATE);
-const validPlatformFingerprint = validFingerprint.replace(EXPECTED_V58_AUTOMATION_TABLE_STATE,EXPECTED_V58_PLATFORM_AUTOMATION_TABLE_STATE);
-const validRestoredPlatformFingerprint = validRestoredFingerprint.replace(EXPECTED_V58_RESTORED_AUTOMATION_TABLE_STATE,EXPECTED_V58_RESTORED_PLATFORM_AUTOMATION_TABLE_STATE);
+const validFingerprint = `v59_catalog=${EXPECTED_V59_CATALOG_STATE};v59_tables=${EXPECTED_V59_AUTOMATION_TABLE_STATE};v59_functions=${EXPECTED_V59_AUTOMATION_FUNCTION_STATE};v59_release=${EXPECTED_V59_RELEASE_MANIFEST};v58_compat=${createHash("sha256").update(EXPECTED_V58_OPERATIONAL_READINESS).digest("hex")}`;
+const validRestoredFingerprint = validFingerprint.replace(EXPECTED_V59_CATALOG_STATE,EXPECTED_V59_RESTORED_CATALOG_STATE).replace(EXPECTED_V59_AUTOMATION_TABLE_STATE,EXPECTED_V59_RESTORED_AUTOMATION_TABLE_STATE);
+const validPlatformFingerprint = validFingerprint.replace(EXPECTED_V59_AUTOMATION_TABLE_STATE,EXPECTED_V59_PLATFORM_AUTOMATION_TABLE_STATE);
+const validRestoredPlatformFingerprint = validRestoredFingerprint.replace(EXPECTED_V59_RESTORED_AUTOMATION_TABLE_STATE,EXPECTED_V59_RESTORED_PLATFORM_AUTOMATION_TABLE_STATE);
 
 function historyColumn(column_name, data_type, udt_name, overrides = {}) {
   return {
@@ -653,7 +655,7 @@ function preSnapshot(overrides = {}) {
 }
 
 function snapshotQueryValues(snapshot) {
-  const headers = { v57AutomationTableState: "automation_table_state", v57AutomationFunctionState: "automation_function_state", v58AutomationTableState: "automation_table_state", v58AutomationFunctionState: "automation_function_state", v56AutomationTableState: "automation_table_state", v56AutomationFunctionState: "automation_function_state", history: "history_state", v40RankCommandState: "rank_command_state", v41PayerBalanceState: "payer_balance_state", v43ExternalPaymentState: "external_payment_state", v44LocalPlanState: "local_plan_state", v44ClearState: "clear_state", v48ActivationState: "activation_state", v49SubscriptionTermsState: "subscription_terms_state", v50CollectionFactsState: "collection_facts_state", v50PayerReadState: "payer_read_state", v50LandingState: "landing_state", v50InvoiceFactsState: "invoice_facts_state", v50AttentionState: "attention_state", v51CloseoutState: "closeout_state", v52LeadUpdateState: "lead_update_state", v52LeadFollowUpState: "lead_follow_up_state", v52LeadReceiptState: "lead_receipt_state", v53DashboardDefinitionState: "dashboard_definition_state", v55StudentProfileState: "student_profile_state", v54StudentProfileState: "student_profile_state", v55LeadConversionState: "lead_conversion_state", v55LeadFollowUpState: "lead_follow_up_state" };
+  const headers = { v59AutomationTableState: "automation_table_state", v59AutomationFunctionState: "automation_function_state", timezoneNameParity: "timezone_names_parity", v57AutomationTableState: "automation_table_state", v57AutomationFunctionState: "automation_function_state", v58AutomationTableState: "automation_table_state", v58AutomationFunctionState: "automation_function_state", v56AutomationTableState: "automation_table_state", v56AutomationFunctionState: "automation_function_state", history: "history_state", v40RankCommandState: "rank_command_state", v41PayerBalanceState: "payer_balance_state", v43ExternalPaymentState: "external_payment_state", v44LocalPlanState: "local_plan_state", v44ClearState: "clear_state", v48ActivationState: "activation_state", v49SubscriptionTermsState: "subscription_terms_state", v50CollectionFactsState: "collection_facts_state", v50PayerReadState: "payer_read_state", v50LandingState: "landing_state", v50InvoiceFactsState: "invoice_facts_state", v50AttentionState: "attention_state", v51CloseoutState: "closeout_state", v52LeadUpdateState: "lead_update_state", v52LeadFollowUpState: "lead_follow_up_state", v52LeadReceiptState: "lead_receipt_state", v53DashboardDefinitionState: "dashboard_definition_state", v55StudentProfileState: "student_profile_state", v54StudentProfileState: "student_profile_state", v55LeadConversionState: "lead_conversion_state", v55LeadFollowUpState: "lead_follow_up_state" };
   return Object.fromEntries(Object.entries(snapshot).map(([key, value]) => [
     headers[key] ?? key.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`),
     key === "historyColumns" ? JSON.stringify(value) : value,
@@ -884,17 +886,35 @@ function v56Snapshot(packet, overrides = {}) {
   });
 }
 
-function postSnapshot(packet, overrides = {}) {
-  return v56Snapshot(packet, {
-    history: packet.postHistory, targetHistory: packet.postTargetHistory,
-    operationalReadiness: EXPECTED_OPERATIONAL_READINESS,
+function v58Snapshot(packet, overrides = {}) {
+  return {
+    historyColumns: minimalHistoryColumns,
+    objectCounts: "3:1",
+    history: packet.v58History, targetHistory: packet.v58TargetHistory,
+    operationalReadiness: EXPECTED_V58_OPERATIONAL_READINESS,
     catalogState: EXPECTED_V58_CATALOG_STATE,
     v58ReleaseManifest: EXPECTED_V58_RELEASE_MANIFEST,
     v58AutomationTableState: EXPECTED_V58_AUTOMATION_TABLE_STATE,
     v58AutomationFunctionState: EXPECTED_V58_AUTOMATION_FUNCTION_STATE,
     v57CompatibilityReadiness: EXPECTED_V57_OPERATIONAL_READINESS,
     ...overrides,
-  });
+  };
+}
+
+function postSnapshot(packet, overrides = {}) {
+  return {
+    historyColumns: minimalHistoryColumns,
+    objectCounts: "3:1",
+    history: packet.postHistory, targetHistory: packet.postTargetHistory,
+    operationalReadiness: EXPECTED_OPERATIONAL_READINESS,
+    catalogState: EXPECTED_V59_CATALOG_STATE,
+    v59ReleaseManifest: EXPECTED_V59_RELEASE_MANIFEST,
+    v59AutomationTableState: EXPECTED_V59_AUTOMATION_TABLE_STATE,
+    v59AutomationFunctionState: EXPECTED_V59_AUTOMATION_FUNCTION_STATE,
+    v58CompatibilityReadiness: EXPECTED_V58_OPERATIONAL_READINESS,
+    timezoneNameParity: EXPECTED_TIMEZONE_NAMES_PARITY,
+    ...overrides,
+  };
 }
 
 function v50Snapshot(packet, overrides = {}) {
@@ -1681,7 +1701,7 @@ describe("studio-comp migration rollout guard", () => {
       "operational_readiness",
       EXPECTED_OPERATIONAL_READINESS,
     );
-    assert.match(quotedReadiness, /^operational_readiness\n"true\|153\|/);
+    assert.match(quotedReadiness, /^operational_readiness\n"true\|154\|/);
     assert.equal(
       parseSingleValueCsv(quotedReadiness, "operational_readiness"),
       EXPECTED_OPERATIONAL_READINESS,
@@ -1718,7 +1738,7 @@ describe("studio-comp migration rollout guard", () => {
     }
   });
 
-  it("derives an exact 100-to-153 packet through V58 and the Payments predecessors", () => {
+  it("derives an exact 100-to-154 packet through V59 and the Payments predecessors", () => {
     const packet = candidatePacket();
     assert.equal(packet.candidateSha, candidateSha);
     assert.equal(ROLLOUT.scheduleV25MigrationCount, 119);
@@ -1736,7 +1756,7 @@ describe("studio-comp migration rollout guard", () => {
       ],
     );
     assert.equal(ROLLOUT.v26MigrationCount, 121);
-    assert.equal(packet.migrationCount, 153);
+    assert.equal(packet.migrationCount, 154);
     assert.match(packet.intermediateHistory, /^101:[0-9a-f]{32}$/);
     assert.match(packet.recoveryHistory, /^102:[0-9a-f]{32}$/);
     assert.match(packet.convergenceHistory, /^103:[0-9a-f]{32}$/);
@@ -2162,7 +2182,7 @@ describe("studio-comp migration rollout guard", () => {
     });
     assert.deepEqual(
       classifyStateSnapshot(
-        postSnapshot(packet, { catalogState: EXPECTED_V58_RESTORED_CATALOG_STATE, v58AutomationTableState: EXPECTED_V58_RESTORED_AUTOMATION_TABLE_STATE }),
+        postSnapshot(packet, { catalogState: EXPECTED_V59_RESTORED_CATALOG_STATE, v59AutomationTableState: EXPECTED_V59_RESTORED_AUTOMATION_TABLE_STATE }),
         packet,
         validFingerprint,
       ),
@@ -2264,13 +2284,13 @@ describe("studio-comp migration rollout guard", () => {
     );
     assert.throws(
       () => classifyStateSnapshot(
-        postSnapshot(packet, { v58AutomationFunctionState: "0".repeat(64) }),
+        postSnapshot(packet, { v59AutomationFunctionState: "0".repeat(64) }),
         packet,
       ),
-      /V58 complete catalog/,
+      /V59 complete catalog/,
     );
     assert.throws(
-      () => classifyStateSnapshot(postSnapshot(packet), packet, validFingerprint.replace(EXPECTED_V58_AUTOMATION_FUNCTION_STATE,"0".repeat(64))),
+      () => classifyStateSnapshot(postSnapshot(packet), packet, validFingerprint.replace(EXPECTED_V59_AUTOMATION_FUNCTION_STATE,"0".repeat(64))),
       /exact canonical staging evidence/,
     );
     assert.throws(
@@ -2280,7 +2300,7 @@ describe("studio-comp migration rollout guard", () => {
         }),
         packet,
       ),
-      /V58 complete catalog/,
+      /V59 complete catalog/,
     );
     assert.throws(
       () => classifyStateSnapshot(
@@ -2289,16 +2309,16 @@ describe("studio-comp migration rollout guard", () => {
         }),
         packet,
       ),
-      /V58 complete catalog/,
+      /V59 complete catalog/,
     );
     assert.throws(
       () => classifyStateSnapshot(
         postSnapshot(packet, {
-          v58AutomationFunctionState: "0".repeat(64),
+          v59AutomationFunctionState: "0".repeat(64),
         }),
         packet,
       ),
-      /V58 complete catalog/,
+      /V59 complete catalog/,
     );
     assert.throws(
       () => classifyStateSnapshot(preSnapshot({ history: "85:unexpected" }), packet),
@@ -2631,11 +2651,11 @@ describe("studio-comp migration rollout guard", () => {
     );
     assert.deepEqual(post, { state: "post", providerFingerprint: validFingerprint });
     assert.ok(postSql.includes(FINAL_OPERATIONAL_READINESS_SQL));
-    assert.ok(postSql.includes(V58_RELEASE_MANIFEST_SQL));
-    assert.ok(postSql.includes(V58_AUTOMATION_TABLE_STATE_SQL));
-    assert.ok(postSql.includes(V58_AUTOMATION_FUNCTION_STATE_SQL));
+    assert.ok(postSql.includes(V59_RELEASE_MANIFEST_SQL));
+    assert.ok(postSql.includes(V59_AUTOMATION_TABLE_STATE_SQL));
+    assert.ok(postSql.includes(V59_AUTOMATION_FUNCTION_STATE_SQL));
 
-    const v37Values = new Map(postValues);
+    const v37Values = new Map(Object.entries(snapshotQueryValues(v56Snapshot(packet))));
     v37Values.set("catalog_state", EXPECTED_V37_CATALOG_STATE);
     v37Values.set("critical_surface_manifest", EXPECTED_CRITICAL_SURFACE_MANIFEST);
     v37Values.set("v29_operational_manifest", EXPECTED_V37_COMPAT_V29_OPERATIONAL_MANIFEST);
@@ -3458,7 +3478,7 @@ describe("studio-comp migration rollout guard", () => {
     assert.equal(packet.integrationComplete, false);
     assert.throws(
       () => classifyStateSnapshot(postSnapshot(packet), packet),
-      /V58 requires the exact candidate history/,
+      /V59 requires the exact candidate history/,
     );
   });
 
@@ -3488,7 +3508,7 @@ describe("studio-comp migration rollout guard", () => {
       "edbad08cc2cb60c853ac22d4f03b7e031b2254681963b973f7721d1977f225a5");
   });
 
-  it("selects each declared V38 through V58 step with its exact singleton hash", () => {
+  it("selects each declared V38 through V59 step with its exact singleton hash", () => {
     const packet = candidatePacket();
     const transitions = [
       ["v38", "20260908080420_student_membership_preservation_v39.sql", "be36dc10bf498d6003e542eab9cf5b45603415236e311005c69fcfa0541d6131", "v39"],
@@ -3510,7 +3530,8 @@ describe("studio-comp migration rollout guard", () => {
       ["v54", "20260930192626_converted_lead_enrollment_v55.sql", "fc6bfd9b249ec888ae860d4f0d2952e0dc5a18f4801dd8f1049c2c2f33e9e573", "v55"],
       ["v55", "20261004220435_missed_class_automation_v56.sql", "9e85608dcbd14e5eb5a19ff4d1ffd4851659f44b3460239a7f008d6e79efd92f", "v56"],
       ["v56", "20261005105341_automation_workflow_graph_v57.sql", "3445656d0ab5e221f5c0c9a0b8222769422f48e025c8c15ae9cc073b875dd26d", "v57"],
-      ["v57", "20261013013243_live_billing_authority_repairs_v58.sql", "a8bec5910057664712432695e00c877cb4e290534c3a7590014bf31692fdf5f8", "post"],
+      ["v57", "20261013013243_live_billing_authority_repairs_v58.sql", "a8bec5910057664712432695e00c877cb4e290534c3a7590014bf31692fdf5f8", "v58"],
+      ["v58", "20261014083106_timezone_names_reference_v59.sql", "18af040ee03474ba4def5d887fb02d1b330ca77d8c3453545decd1a7c173e878", "post"],
     ];
     for (const [state, filename, manifestSha256, expectedAfterState] of transitions) {
       const selected = oneMigrationPacket(packet, state);
@@ -3520,7 +3541,7 @@ describe("studio-comp migration rollout guard", () => {
       assert.equal(selected.expectedAfterState, expectedAfterState, state);
     }
     for (const state of ["pre", "v37", "post", null]) {
-      assert.throws(() => oneMigrationPacket(packet, state), /declared V38 through V58 chain/);
+      assert.throws(() => oneMigrationPacket(packet, state), /declared V38 through V59 chain/);
     }
   });
 
@@ -3969,8 +3990,8 @@ describe("studio-comp migration rollout guard", () => {
     });
     // Syntactically valid stale or duplicated evidence must fail before apply.
     for (const fingerprint of [
-      validFingerprint.replace(EXPECTED_V58_AUTOMATION_FUNCTION_STATE,"0".repeat(64)),
-      validFingerprint.replace(";v58_tables=", ";v58_tables=unexpected;v58_tables="),
+      validFingerprint.replace(EXPECTED_V59_AUTOMATION_FUNCTION_STATE,"0".repeat(64)),
+      validFingerprint.replace(";v59_tables=", ";v58_tables=unexpected;v59_tables="),
     ]) assert.throws(() => validateApplyAuthorization({
       ...config, expectedProviderFingerprint: fingerprint,
     }), /exact canonical staging evidence/);
@@ -4023,7 +4044,7 @@ describe("studio-comp migration rollout guard", () => {
       const remainingPacket = testCase.bulkBlocked
         ? packetForAcceptedState(packet, testCase.beforeState)
         : oneMigrationPacket(packet, testCase.beforeState);
-      if (testCase.bulkBlocked) assert.equal(remainingPacket.pendingMigrations.length, 20);
+      if (testCase.bulkBlocked) assert.equal(remainingPacket.pendingMigrations.length, 21);
       else assert.equal(remainingPacket.pendingMigrations.length, 1);
       const plannedVersions = remainingPacket.pendingMigrations.map((filename) => filename.slice(0, 14));
       const sharedEvidence = {
@@ -4228,7 +4249,7 @@ describe("V52 lead command migration cutover with retained predecessors", () => 
   it("keeps exact V55 canonical/restored and selects only V56", () => {
     const packet = candidatePacket();
     assert.equal(ROLLOUT.v55MigrationCount, 150);
-    assert.deepEqual(packetForAcceptedState(packet, "v55").pendingMigrations, ["20261004220435_missed_class_automation_v56.sql", "20261005105341_automation_workflow_graph_v57.sql", "20261013013243_live_billing_authority_repairs_v58.sql"]);
+    assert.deepEqual(packetForAcceptedState(packet, "v55").pendingMigrations, ["20261004220435_missed_class_automation_v56.sql", "20261005105341_automation_workflow_graph_v57.sql", "20261013013243_live_billing_authority_repairs_v58.sql", "20261014083106_timezone_names_reference_v59.sql"]);
     for (const catalogState of [EXPECTED_V55_CATALOG_STATE, EXPECTED_V55_RESTORED_CATALOG_STATE]) {
       assert.deepEqual(classifyStateSnapshot(v55Snapshot(packet, { catalogState }), packet), { state: "v55", providerFingerprint: null });
     }
@@ -4256,7 +4277,7 @@ describe("V52 lead command migration cutover with retained predecessors", () => 
     const predecessor = v52Snapshot(packet);
     assert.deepEqual(classifyStateSnapshot(predecessor, packet), { state: "v52", providerFingerprint: null });
     assert.deepEqual(packetForAcceptedState(packet, "v52").pendingMigrations,
-      ["20260929152445_dashboard_roster_inactivity_v53.sql", "20260930024404_student_profile_qa_v54.sql", "20260930192626_converted_lead_enrollment_v55.sql", "20261004220435_missed_class_automation_v56.sql", "20261005105341_automation_workflow_graph_v57.sql", "20261013013243_live_billing_authority_repairs_v58.sql"]);
+      ["20260929152445_dashboard_roster_inactivity_v53.sql", "20260930024404_student_profile_qa_v54.sql", "20260930192626_converted_lead_enrollment_v55.sql", "20261004220435_missed_class_automation_v56.sql", "20261005105341_automation_workflow_graph_v57.sql", "20261013013243_live_billing_authority_repairs_v58.sql", "20261014083106_timezone_names_reference_v59.sql"]);
     for (const change of [
       { v52ReleaseManifest: null },
       { v51CompatibilityReadiness: null },
@@ -4275,7 +4296,7 @@ describe("V52 lead command migration cutover with retained predecessors", () => 
     const packet = candidatePacket();
     assert.deepEqual(classifyStateSnapshot(v53Snapshot(packet), packet), { state: "v53", providerFingerprint: null });
     assert.deepEqual(packetForAcceptedState(packet, "v53").pendingMigrations,
-      ["20260930024404_student_profile_qa_v54.sql", "20260930192626_converted_lead_enrollment_v55.sql", "20261004220435_missed_class_automation_v56.sql", "20261005105341_automation_workflow_graph_v57.sql", "20261013013243_live_billing_authority_repairs_v58.sql"]);
+      ["20260930024404_student_profile_qa_v54.sql", "20260930192626_converted_lead_enrollment_v55.sql", "20261004220435_missed_class_automation_v56.sql", "20261005105341_automation_workflow_graph_v57.sql", "20261013013243_live_billing_authority_repairs_v58.sql", "20261014083106_timezone_names_reference_v59.sql"]);
     for (const change of [
       { operationalReadiness: EXPECTED_OPERATIONAL_READINESS },
       { v53ReleaseManifest: null },
@@ -4298,7 +4319,7 @@ describe("V52 lead command migration cutover with retained predecessors", () => 
     assert.equal(ROLLOUT.v54MigrationCount, 149);
     assert.deepEqual(classifyStateSnapshot(v54Snapshot(packet), packet), { state: "v54", providerFingerprint: null });
     assert.deepEqual(classifyStateSnapshot(v54Snapshot(packet, { catalogState: EXPECTED_V54_RESTORED_CATALOG_STATE }), packet), { state: "v54", providerFingerprint: null });
-    assert.deepEqual(packetForAcceptedState(packet, "v54").pendingMigrations, ["20260930192626_converted_lead_enrollment_v55.sql", "20261004220435_missed_class_automation_v56.sql", "20261005105341_automation_workflow_graph_v57.sql", "20261013013243_live_billing_authority_repairs_v58.sql"]);
+    assert.deepEqual(packetForAcceptedState(packet, "v54").pendingMigrations, ["20260930192626_converted_lead_enrollment_v55.sql", "20261004220435_missed_class_automation_v56.sql", "20261005105341_automation_workflow_graph_v57.sql", "20261013013243_live_billing_authority_repairs_v58.sql", "20261014083106_timezone_names_reference_v59.sql"]);
     for (const change of [
       { operationalReadiness: EXPECTED_OPERATIONAL_READINESS },
       { v54StudentProfileState: null },
@@ -4318,35 +4339,43 @@ describe("V52 lead command migration cutover with retained predecessors", () => 
     ]) assert.throws(() => classifyStateSnapshot(v56Snapshot(packet, change), packet), JSON.stringify(change));
   });
 
-  it("certifies complete V58 while retaining V57 as verified compatibility", () => {
+  it("certifies complete V59 while retaining V58 as verified compatibility", () => {
     const packet = candidatePacket();
     assert.deepEqual(classifyStateSnapshot(postSnapshot(packet), packet), {state:"post",providerFingerprint:validFingerprint});
     assert.deepEqual(classifyStateSnapshot(v56Snapshot(packet), packet), {state:"v56",providerFingerprint:null});
     assert.deepEqual(approvedProviderFingerprintVariants(validFingerprint), [validFingerprint,validRestoredFingerprint,validPlatformFingerprint,validRestoredPlatformFingerprint]);
-    for (const change of [{v58ReleaseManifest:null},{v58AutomationTableState:null},{v58AutomationFunctionState:null},
-                         {v57CompatibilityReadiness:null},{v57CompatibilityReadiness:EXPECTED_OPERATIONAL_READINESS}]) {
+    for (const change of [{v59ReleaseManifest:null},{v59AutomationTableState:null},{v59AutomationFunctionState:null},
+                         {v58CompatibilityReadiness:null},{v58CompatibilityReadiness:EXPECTED_OPERATIONAL_READINESS}]) {
       assert.throws(()=>classifyStateSnapshot(postSnapshot(packet,change),packet));
     }
   });
-  it("accepts only the four exact V58 table profiles with matching catalog and approval evidence", () => {
+  it("accepts only the four exact V59 table profiles with matching catalog and approval evidence", () => {
     const packet = candidatePacket();
     const profiles = [
-      [EXPECTED_V58_CATALOG_STATE, EXPECTED_V58_AUTOMATION_TABLE_STATE, validFingerprint],
-      [EXPECTED_V58_RESTORED_CATALOG_STATE, EXPECTED_V58_RESTORED_AUTOMATION_TABLE_STATE, validRestoredFingerprint],
-      [EXPECTED_V58_CATALOG_STATE, EXPECTED_V58_PLATFORM_AUTOMATION_TABLE_STATE, validPlatformFingerprint],
-      [EXPECTED_V58_RESTORED_CATALOG_STATE, EXPECTED_V58_RESTORED_PLATFORM_AUTOMATION_TABLE_STATE, validRestoredPlatformFingerprint],
+      [EXPECTED_V59_CATALOG_STATE, EXPECTED_V59_AUTOMATION_TABLE_STATE, validFingerprint],
+      [EXPECTED_V59_RESTORED_CATALOG_STATE, EXPECTED_V59_RESTORED_AUTOMATION_TABLE_STATE, validRestoredFingerprint],
+      [EXPECTED_V59_CATALOG_STATE, EXPECTED_V59_PLATFORM_AUTOMATION_TABLE_STATE, validPlatformFingerprint],
+      [EXPECTED_V59_RESTORED_CATALOG_STATE, EXPECTED_V59_RESTORED_PLATFORM_AUTOMATION_TABLE_STATE, validRestoredPlatformFingerprint],
     ];
-    for (const [catalogState, v58AutomationTableState, providerFingerprint] of profiles) {
-      assert.deepEqual(classifyStateSnapshot(postSnapshot(packet, { catalogState, v58AutomationTableState }), packet, validPlatformFingerprint),
+    for (const [catalogState, v59AutomationTableState, providerFingerprint] of profiles) {
+      assert.deepEqual(classifyStateSnapshot(postSnapshot(packet, { catalogState, v59AutomationTableState }), packet, validPlatformFingerprint),
         { state: "post", providerFingerprint });
+      const values = new Map(Object.entries(snapshotQueryValues(postSnapshot(packet, {catalogState, v59AutomationTableState}))));
+      const queries = [];
+      assert.deepEqual(readRemoteState(repositoryRoot, packet, {}, validPlatformFingerprint, (_root, sql, header) => {
+        queries.push(sql);
+        assert.ok(values.has(header), `Unexpected V59 observation ${header}`);
+        return values.get(header);
+      }), {state:"post", providerFingerprint});
+      assert.ok(queries.includes(TIMEZONE_NAMES_PARITY_SQL));
       assert.throws(() => classifyStateSnapshot(postSnapshot(packet, {
-        catalogState, v58AutomationTableState: v58AutomationTableState.slice(0, -1) + "z",
-      }), packet), /V58 complete catalog/);
+        catalogState, v59AutomationTableState: v59AutomationTableState.slice(0, -1) + "z",
+      }), packet), /V59 complete catalog/);
     }
-    for (const [catalogState, v58AutomationTableState] of [
-      [EXPECTED_V58_CATALOG_STATE, EXPECTED_V58_RESTORED_PLATFORM_AUTOMATION_TABLE_STATE],
-      [EXPECTED_V58_RESTORED_CATALOG_STATE, EXPECTED_V58_PLATFORM_AUTOMATION_TABLE_STATE],
-    ]) assert.throws(() => classifyStateSnapshot(postSnapshot(packet, { catalogState, v58AutomationTableState }), packet), /V58 complete catalog/);
+    for (const [catalogState, v59AutomationTableState] of [
+      [EXPECTED_V59_CATALOG_STATE, EXPECTED_V59_RESTORED_PLATFORM_AUTOMATION_TABLE_STATE],
+      [EXPECTED_V59_RESTORED_CATALOG_STATE, EXPECTED_V59_PLATFORM_AUTOMATION_TABLE_STATE],
+    ]) assert.throws(() => classifyStateSnapshot(postSnapshot(packet, { catalogState, v59AutomationTableState }), packet), /V59 complete catalog/);
     assert.deepEqual(approvedProviderFingerprintVariants(validPlatformFingerprint), profiles.map(row => row[2]));
     assert.throws(() => approvedProviderFingerprintVariants(validRestoredPlatformFingerprint), /exact canonical staging evidence/);
   });
@@ -4605,4 +4634,54 @@ it("accepts exact V57 predecessor and selects only the V58 migration", () => {
   assert.equal(next.pendingMigrations.length, 1);
   assert.equal(next.pendingMigrations[0], "20261013013243_live_billing_authority_repairs_v58.sql");
   assert.throws(() => classifyStateSnapshot({ ...snapshot, v57AutomationFunctionState: "0".repeat(64) }, packet), /V57 complete catalog/);
+});
+
+it("accepts exact V58 predecessor and selects only the V59 migration", () => {
+  const packet = candidatePacket();
+  assert.deepEqual(classifyStateSnapshot(v58Snapshot(packet), packet), { state: "v58", providerFingerprint: null });
+  const next = oneMigrationPacket(packet, "v58");
+  assert.deepEqual(next.pendingMigrations, ["20261014083106_timezone_names_reference_v59.sql"]);
+  assert.equal(next.expectedAfterState, "post");
+  for (const field of ["operationalReadiness", "v58ReleaseManifest", "v58AutomationTableState", "v58AutomationFunctionState", "v57CompatibilityReadiness"]) {
+    assert.throws(() => classifyStateSnapshot(v58Snapshot(packet, { [field]: null }), packet));
+  }
+});
+it("rejects mixed V58/V59 final-state evidence", () => {
+  const packet = candidatePacket();
+  const mixed = { ...v58Snapshot(packet), history: packet.postHistory, targetHistory: packet.postTargetHistory, operationalReadiness: EXPECTED_OPERATIONAL_READINESS };
+  assert.throws(() => classifyStateSnapshot(mixed, packet), /V59 complete catalog/);
+  for (const change of [
+    {v59AutomationTableState: EXPECTED_V58_AUTOMATION_TABLE_STATE},
+    {v59AutomationFunctionState: EXPECTED_V58_AUTOMATION_FUNCTION_STATE}, {v59ReleaseManifest: EXPECTED_V58_RELEASE_MANIFEST},
+    {v58CompatibilityReadiness: EXPECTED_OPERATIONAL_READINESS},
+  ]) assert.throws(() => classifyStateSnapshot(postSnapshot(packet, change), packet));
+});
+it("accepts timezone name parity and refuses missing or surplus runtime names", () => {
+  const packet = candidatePacket();
+  assert.equal(validateTimezoneNameParity(EXPECTED_TIMEZONE_NAMES_PARITY), EXPECTED_TIMEZONE_NAMES_PARITY);
+  for (const drift of [{missing:["America/Los_Angeles"],surplus:[]},{missing:[],surplus:["Invalid/Surplus"]}]) {
+    const raw = JSON.stringify(drift);
+    assert.throws(() => validateTimezoneNameParity(raw), /TIMEZONE_NAMES_DRIFT missing=.* surplus=/);
+    assert.throws(() => classifyStateSnapshot(postSnapshot(packet, {timezoneNameParity:raw}), packet), /TIMEZONE_NAMES_DRIFT/);
+  }
+  for (const raw of [null, 'null', '{}', '{"missing":[],"surplus":[],"extra":true}']) assert.throws(() => validateTimezoneNameParity(raw));
+});
+
+it("inspects exact V58 predecessor observations without querying V59-only objects", () => {
+  const packet = candidatePacket();
+  for (const [catalogState, v58AutomationTableState] of [
+    [EXPECTED_V58_CATALOG_STATE,EXPECTED_V58_AUTOMATION_TABLE_STATE],
+    [EXPECTED_V58_RESTORED_CATALOG_STATE,EXPECTED_V58_RESTORED_AUTOMATION_TABLE_STATE],
+    [EXPECTED_V58_CATALOG_STATE,EXPECTED_V58_PLATFORM_AUTOMATION_TABLE_STATE],
+    [EXPECTED_V58_RESTORED_CATALOG_STATE,EXPECTED_V58_RESTORED_PLATFORM_AUTOMATION_TABLE_STATE],
+  ]) {
+    const values = new Map(Object.entries(snapshotQueryValues(v58Snapshot(packet,{catalogState,v58AutomationTableState}))));
+    const queried = [];
+    assert.deepEqual(readRemoteState(repositoryRoot,packet,{},null,(_root,sql,header)=>{
+      queried.push(sql); assert.ok(values.has(header), `Unexpected V58 observation ${header}`); return values.get(header);
+    }),{state:"v58",providerFingerprint:null});
+    assert.ok(queried.includes(V58_RELEASE_MANIFEST_SQL));
+    assert.ok(!queried.includes(TIMEZONE_NAMES_PARITY_SQL));
+    assert.ok(!queried.includes(V59_RELEASE_MANIFEST_SQL));
+  }
 });

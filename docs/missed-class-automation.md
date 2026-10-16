@@ -291,3 +291,10 @@ contract have local source and controlled-callback coverage. Those tests do not
 prove actual SQL, provider transport, hosted cadence, or release readiness. The
 final assembled candidate still needs its owned SQL/readiness checks and exact
 application/transport composition proof before release or activation.
+
+SQL timezone membership checks use the private V59 name reference populated from
+PostgreSQL during migration. Unknown or NULL stored studio zones still fall back
+to UTC for missed-class dates. Workflow timezone requests still reject unknown,
+NULL and restricted namespace values. `AT TIME ZONE` continues to use PostgreSQL's
+live rules; the reference stores names only. The disposable timezone contract
+checks exact name reconciliation when PostgreSQL's timezone inventory changes.

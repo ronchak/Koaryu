@@ -641,3 +641,13 @@ export const render_live_billing_functions_v58 = check =>
 export const render_preflight_security_v58 = () => render_preflight_security_v57()
   .replaceAll("koaryu_release_schema_preflight_v38", "koaryu_release_schema_preflight_v39")
   .replaceAll("preflight_security_v57", "preflight_security_v58");
+
+// V59 retains the exact application inventory and the V58 compatibility bridge.
+export const render_timezone_functions_v59 = check =>
+  render_automation_functions_v57(check).replace(
+    "p.oid <> pg_catalog.to_regprocedure('public.koaryu_release_schema_preflight_v38()')",
+    "p.oid <> pg_catalog.to_regprocedure('public.koaryu_release_schema_preflight_v40()')"
+  );
+export const render_preflight_security_v59 = () => render_preflight_security_v57()
+  .replaceAll("koaryu_release_schema_preflight_v38", "koaryu_release_schema_preflight_v40")
+  .replaceAll("preflight_security_v57", "preflight_security_v59");
