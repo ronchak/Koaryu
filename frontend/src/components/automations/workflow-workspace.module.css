@@ -81,20 +81,6 @@
   margin: 0;
   color: var(--product-soft-ink, var(--text-secondary));
 }
-.eyebrow {
-  margin: 0 0 2px;
-  color: var(--product-meta, var(--text-secondary));
-  font-size: 0.6875rem;
-  font-weight: 760;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-}
-.subhead {
-  margin: 4px 0 12px;
-  color: var(--product-soft-ink, var(--text-secondary));
-  font-size: 0.8125rem;
-  font-weight: 700;
-}
 .when {
   margin-right: 2px;
   color: var(--product-meta, var(--text-secondary));

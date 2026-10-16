@@ -1388,3 +1388,33 @@ test("a check on a setting that cannot be changed yet lands on the first setting
     assert.equal(await count(page), 0);
   });
 });
+
+test("on an archived workflow a check row lands on the settings heading, since nothing can be changed", async () => {
+  await mount({ width: 1280 }, async (page) => {
+    await page.evaluate(() => {
+      const detail = fixture.details[fixture.current.id] ?? fixture.current;
+      fixture.details[fixture.current.id] = {
+        ...detail,
+        status: "archived",
+        validation_issues: [
+          {
+            code: "incomplete_config",
+            message: "Choose a value before running this workflow.",
+            node_id: "trigger_1",
+            edge_id: null,
+            field: "config.event_type",
+          },
+        ],
+      };
+      fixture.router.push("/automations/" + fixture.current.id);
+    });
+    await expect(name(page)).toBeDisabled();
+    await page
+      .getByRole("region", { name: "Workflow checks" })
+      .getByRole("button", { name: /^Trigger 1 · Trigger event/ })
+      .click();
+    await expect(page.getByRole("combobox", { name: "Trigger event" })).toBeDisabled();
+    await expect(page.getByRole("heading", { name: "Trigger 1 settings" })).toBeFocused();
+    assert.equal(await count(page), 0);
+  });
+});

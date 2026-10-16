@@ -80,6 +80,14 @@ test("synthetic is default, loads no records, and displays the exact ordered tra
     await button(page, "Simulate").click();
     await expect(simulation(page).getByRole("heading", { name: "Visited path" })).toBeVisible();
     assert.equal(await simulation(page).locator("ol > li").count(), 6);
+    // Both actions read in the visited path itself; there is no second list of them.
+    assert.equal(
+      await simulation(page)
+        .locator("ol > li")
+        .filter({ hasText: /would send|would follow up/ })
+        .count(),
+      2,
+    );
     assert.equal(await simulation(page).getByText("Next actions returned").count(), 0);
     await expect(simulation(page)).toContainText("Selected branch: yes");
     const request = await page.evaluate(() => window.fixture.simulations[0]);

@@ -171,8 +171,9 @@ export function WorkflowNodeInspector({
     const named = field
       ? panel?.querySelector<HTMLElement>(`[data-workflow-field="${field}"]`)
       : null;
+    // :disabled also covers controls disabled through an enclosing fieldset (archived workflows).
     const enabled = (element: HTMLElement | null | undefined) =>
-      element && !(element as HTMLInputElement).disabled ? element : null;
+      element && !element.matches(":disabled") ? element : null;
     const target =
       enabled(named) ??
       enabled(
