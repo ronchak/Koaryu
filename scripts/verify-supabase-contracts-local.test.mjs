@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
+import { fileURLToPath } from "node:url";
 import { V52_LEAD_RECEIPT_STATE_SQL, V52_LEAD_UPDATE_STATE_SQL } from "./studio-comp-migration-rollout.mjs";
 import { CURRENT_RELEASE, releaseState } from "./release-attestation/states.mjs";
 import { MIGRATION_VERSIONS } from "./release-attestation/generated-history.mjs";
@@ -48,10 +49,7 @@ fi
       const harness = `set -euo pipefail
 PSQL="$COMPOSITION_DIR/psql"
 psql_args=(--no-psqlrc)
-readiness_snapshot_sql=baseline
-readiness_before=baseline
-current_readiness_sql=baseline
-current_readiness_before=baseline
+compatibility_proven_keys=" "
 ${helper}
 query="$(cat "$COMPOSITION_DIR/query.sql")"
 assert_payment_writer_rejects test "SELECT 1;" "$query" expected required_failure
@@ -125,4 +123,41 @@ test("V59 exercises rewritten callers after installing the timezone migration", 
   assert.match(verifier, /V58_OPERATIONAL_READINESS_SQL/);
   assert.match(verifier, /verify-v58-v59-restore-contract\.py/);
   assert.match(verifier, /EXPLAIN ANALYZE SELECT private\.timezone_name_known/);
+});
+
+test("CI parts gate every in-loop restore proof to history and stop after their own checks", () => {
+  const historyExit = verifier.indexOf('if [[ "$SUITE_PART" == history ]]; then');
+  assert.ok(historyExit > 0);
+  const lines = verifier.slice(0, historyExit).split("\n");
+  let proofs = 0;
+  lines.forEach((line, index) => {
+    if (!/scripts\/verify-v\d+-v\d+-restore-contract\./.test(line)) return;
+    proofs += 1;
+    const opener = lines.slice(0, index).reverse().find((candidate) => /^\s+if (part_enabled|\[\[)/.test(candidate));
+    assert.match(opener, /part_enabled history/, line);
+  });
+  assert.equal(proofs, 25);
+  const driftStart = verifier.indexOf("if part_enabled drift; then\nassert_history_index_rejects() {");
+  const driftExit = verifier.indexOf('fi\nif [[ "$SUITE_PART" == drift ]]; then');
+  assert.ok(historyExit < driftStart && driftStart < driftExit);
+  assert.ok(verifier.indexOf("[concurrency] RUN Core checkout") > driftExit);
+  assert.ok(verifier.indexOf("[payment writer negative] RUN") > driftStart);
+  assert.ok(verifier.indexOf("[payment writer negative] RUN") < driftExit);
+});
+
+test("an unknown CI part is refused before any database work", () => {
+  const result = spawnSync("bash", [fileURLToPath(new URL("./verify-supabase-contracts-local.sh", import.meta.url))], {
+    env: { PATH: process.env.PATH, KOARYU_DB_SUITE_PART: "everything" },
+    encoding: "utf8",
+  });
+  assert.equal(result.status, 2);
+  assert.match(result.stderr, /must be all, current, drift or history/);
+});
+
+test("payment writer negatives prove the compatibility chain once per failure key and readiness once after rollback", () => {
+  assert.match(helper, /compatibility_proven_keys" != \*" \$expected_failure "\*/);
+  assert.ok(!helper.includes("readiness_after"));
+  const finalCheck = verifier.indexOf("[payment writer negative] FAIL rollback did not restore the exact V18-V37 readiness baseline");
+  const lastCaller = verifier.lastIndexOf("assert_payment_writer_rejects \"$term refuses unknown\"");
+  assert.ok(lastCaller > 0 && finalCheck > lastCaller);
 });

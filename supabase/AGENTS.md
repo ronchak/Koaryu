@@ -36,8 +36,10 @@ restore machinery, database versions or dependencies invalidate it.
   account/support changes use `SUPABASE_DB_TARGET=local scripts/verify-supabase-account-support.sh`.
 - `npm run check:supabase-contracts-local` is the exhaustive PostgreSQL 17 runner.
   It includes migration replay, historical restores, contracts and real-session
-  races. It has no selective mode: if a needed proof cannot be exercised separately,
-  use it once or rely on its required CI run. Do not invent skip flags.
+  races. CI runs it as parallel parts with `KOARYU_DB_SUITE_PART=current|drift|history`;
+  the default runs every part. To reproduce one failed CI part, set the same value.
+  If a needed proof cannot be exercised separately, use the runner once or rely on
+  its required CI run. Do not add other skip flags.
 - Use assembled Supabase checks when behavior depends on the platform. Do not
   repeat all ordinary PostgreSQL checks locally merely for a second environment.
   Database checks remain mandatory for database/code/tooling changes; CI selection is described in [release controls](../docs/release-candidate-controls.md#current-ci-and-the-transition).

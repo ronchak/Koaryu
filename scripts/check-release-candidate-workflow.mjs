@@ -9,11 +9,13 @@ const requiredSnippets = [
   "Frontend tests, lint, build, and audit",
   "Backend tests, contracts, and audit",
   "Supabase migration and contract suite",
+  "Supabase isolated proofs (${{ matrix.part }})",
   "Deterministic performance regression gate",
   "Static and secret analysis",
   "Release candidate gate",
   "scripts/verify-supabase-contracts.sh",
   "npm run check:supabase-contracts-local",
+  "KOARYU_DB_SUITE_PART: ${{ matrix.part }}",
   "scripts/verify-connect-identity-concurrency.sh",
   "scripts/verify-core-checkout-accept-reserve-concurrency.sh",
   "scripts/verify-student-profile-rank-plan-concurrency.sh",
@@ -39,9 +41,11 @@ const candidateJobs = [
   { job: "frontend", variable: "FRONTEND" },
   { job: "backend", variable: "BACKEND" },
   { job: "database", variable: "DATABASE" },
+  { job: "database-isolated", variable: "DATABASE_ISOLATED" },
   { job: "performance-regression", variable: "PERFORMANCE_REGRESSION" },
   { job: "static-analysis", variable: "STATIC_ANALYSIS" },
 ];
+const databaseJobs = new Set(["database", "database-isolated"]);
 
 function jobBlock(source, jobName) {
   const start = source.indexOf(`  ${jobName}:`);
@@ -116,55 +120,75 @@ export function validateReleaseCandidateWorkflow(source) {
     const assertion = `test "$${variable}_RESULT" = success`;
     if (
       !aggregateBlock.includes(envLine) ||
-      (job !== "database" && !aggregateBlock.includes(assertion))
+      (!databaseJobs.has(job) && !aggregateBlock.includes(assertion))
     ) {
       errors.push(`The aggregate gate must fail closed on ${job}.`);
     }
-    if (job !== "database" && /^    if:/m.test(jobBlock(source, job) ?? "")) {
+    if (!databaseJobs.has(job) && /^    if:/m.test(jobBlock(source, job) ?? "")) {
       errors.push(`The ${job} job must remain unconditional.`);
     }
   }
 
-  const databaseBlock = jobBlock(source, "database") ?? "";
+  for (const job of databaseJobs) {
+    const databaseBlock = jobBlock(source, job) ?? "";
+    if (
+      !databaseBlock.includes("    needs: repository-controls") ||
+      !databaseBlock.includes(
+        "    if: ${{ needs.repository-controls.outputs.database-scope != 'skip' }}",
+      )
+    ) {
+      errors.push(
+        `The ${job} job must depend on successful repository controls and only the database-scope output.`,
+      );
+    }
+  }
   if (
-    !databaseBlock.includes("    needs: repository-controls") ||
-    !databaseBlock.includes(
-      "    if: ${{ needs.repository-controls.outputs.docs-only != 'true' }}",
+    !(jobBlock(source, "database-isolated") ?? "").includes(
+      "        part: ${{ fromJSON(needs.repository-controls.outputs.database-parts) }}",
     )
   ) {
-    errors.push(
-      "Database selection must depend on successful repository controls and only the docs-only output.",
-    );
+    errors.push("Isolated database parts must come from repository controls.");
   }
   const requiredSelectionControls = [
-    "docs-only: ${{ steps.scope.outputs.docs-only }}",
+    "database-scope: ${{ steps.scope.outputs.database-scope }}",
+    "database-parts: ${{ steps.scope.outputs.database-parts }}",
     "id: scope",
     "EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}",
     "BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}",
-    "          selected=false\n",
+    "          selected=full\n",
     'git merge-base --is-ancestor "$BASE_SHA" "$EXPECTED_HEAD_SHA"',
     'git ls-tree "$BASE_SHA" -- scripts/select-release-checks.mjs',
     '"$selector_entry" == "100644 blob "*',
     'git show "$BASE_SHA:scripts/select-release-checks.mjs" > "$scope_script"',
     'GITHUB_OUTPUT="$scope_output" node "$scope_script"',
-    'docs-only=true) selected=true ;;',
-    'echo "docs-only=$selected" >> "$GITHUB_OUTPUT"',
+    "database-scope=skip) selected=skip ;;",
+    "database-scope=current) selected=current ;;",
+    "parts='[\"current\",\"drift\",\"history\"]'",
+    "if [[ \"$selected\" == current ]]; then parts='[\"current\",\"drift\"]'; fi",
+    'echo "database-scope=$selected" >> "$GITHUB_OUTPUT"',
+    'echo "database-parts=$parts" >> "$GITHUB_OUTPUT"',
   ];
   for (const snippet of requiredSelectionControls) {
     if (!repositoryControlsBlock.includes(snippet)) {
       errors.push(
-        `Repository controls must bind documentation selection: ${snippet}`,
+        `Repository controls must bind database selection: ${snippet}`,
       );
     }
   }
   if (/node scripts\/select-release-checks\.mjs/.test(repositoryControlsBlock)) {
-    errors.push("Documentation selection must not execute the candidate's selector.");
+    errors.push("Database selection must not execute the candidate's selector.");
   }
   const requiredDatabaseAssertions = [
-    "DOCS_ONLY: ${{ needs.repository-controls.outputs.docs-only }}",
-    'case "$DOCS_ONLY" in',
-    'true) test "$DATABASE_RESULT" = skipped ;;',
-    'false) test "$DATABASE_RESULT" = success ;;',
+    "DATABASE_SCOPE: ${{ needs.repository-controls.outputs.database-scope }}",
+    "DATABASE_PARTS: ${{ needs.repository-controls.outputs.database-parts }}",
+    'case "$DATABASE_SCOPE" in',
+    "            skip)\n              test \"$DATABASE_RESULT\" = skipped\n              test \"$DATABASE_ISOLATED_RESULT\" = skipped\n              ;;",
+    "            current | full)\n",
+    "expected_parts='[\"current\",\"drift\",\"history\"]'",
+    "if [[ \"$DATABASE_SCOPE\" == current ]]; then expected_parts='[\"current\",\"drift\"]'; fi",
+    'test "$DATABASE_PARTS" = "$expected_parts"',
+    'test "$DATABASE_RESULT" = success',
+    'test "$DATABASE_ISOLATED_RESULT" = success',
     "*) exit 1 ;;",
     "esac",
   ];

@@ -18,41 +18,95 @@ const guidePaths = new Set([
   "supabase/AGENTS.md",
 ]);
 
+// Released-predecessor restore proofs read these files besides migrations and
+// scripts. A change to any of them runs the historical restore sweep.
+const historyInputs = new Set([
+  "backend/app/services/generated_release_readiness.py",
+  "supabase/verification/billing_payer_balance_v41.sql",
+  "supabase/verification/billing_subscription_terms.sql",
+  "supabase/verification/missed_class_automation_contract.sql",
+]);
+const scopeRank = { skip: 0, current: 1, full: 2 };
+
+function isPlainPath(path) {
+  return !path
+    .split("/")
+    .some((part) => part === "." || part === ".." || part === "");
+}
+
 export function isDocumentationPath(path) {
   return (
     guidePaths.has(path) ||
-    (/^docs\/[A-Za-z0-9_./-]+\.md$/.test(path) &&
-      !path
-        .split("/")
-        .some((part) => part === "." || part === ".." || part === ""))
+    (/^docs\/[A-Za-z0-9_./-]+\.md$/.test(path) && isPlainPath(path))
   );
 }
+
+// No database job reads the frontend or the performance fixture.
+export function isApplicationOnlyPath(path) {
+  return /^(frontend|performance)\/[^\n\0]+$/.test(path) && isPlainPath(path);
+}
+
+// Current database proofs import backend code and run contract SQL; only the
+// listed history inputs also feed the released-predecessor restore proofs.
+export function isCurrentDatabasePath(path) {
+  return (
+    /^(backend\/app|backend\/tests|supabase\/verification)\/[^\n\0]+$/.test(path) &&
+    isPlainPath(path) &&
+    !historyInputs.has(path)
+  );
+}
+
+function pathScope(path, before, after, status) {
+  const modes = {
+    A: [["000000"], ["100644", "100755"]],
+    D: [["100644", "100755"], ["000000"]],
+    M: [["100644", "100755"], ["100644", "100755"]],
+  };
+  const documentationModes = {
+    A: ["000000", "100644"],
+    D: ["100644", "000000"],
+    M: ["100644", "100644"],
+  };
+  if (isDocumentationPath(path)) {
+    const [expectedBefore, expectedAfter] = documentationModes[status];
+    return before === expectedBefore && after === expectedAfter
+      ? "skip"
+      : "full";
+  }
+  const regular =
+    modes[status][0].includes(before) && modes[status][1].includes(after);
+  if (regular && isApplicationOnlyPath(path)) return "skip";
+  if (regular && isCurrentDatabasePath(path)) return "current";
+  return "full";
+}
+
+const reasons = {
+  skip: "only documentation, frontend or performance-fixture files changed",
+  current:
+    "backend or contract changes need current database proofs, not the historical restore sweep",
+  full: "migrations, database tooling, dependencies, workflow or unknown paths changed",
+};
 
 // --no-renames exposes both paths when a file moves. Raw modes prevent a
 // symlink or executable named *.md from qualifying as ordinary documentation.
 export function classifyDiff(raw) {
   const fields = raw.toString("utf8").split("\0");
   if (fields.pop() !== "" || fields.length === 0 || fields.length % 2 !== 0) {
-    return { docsOnly: false, reason: "empty or invalid comparison" };
+    return { database: "full", reason: "empty or invalid comparison" };
   }
+  let database = "skip";
   for (let index = 0; index < fields.length; index += 2) {
     const match = fields[index].match(
       /^:(\d{6}) (\d{6}) [0-9a-f]{40} [0-9a-f]{40} ([AMD])$/,
     );
-    if (!match || !isDocumentationPath(fields[index + 1])) {
-      return { docsOnly: false, reason: "non-documentation or unknown change" };
+    if (!match) {
+      return { database: "full", reason: "invalid comparison entry" };
     }
     const [, before, after, status] = match;
-    const modes = {
-      A: ["000000", "100644"],
-      D: ["100644", "000000"],
-      M: ["100644", "100644"],
-    };
-    if (before !== modes[status][0] || after !== modes[status][1]) {
-      return { docsOnly: false, reason: "non-regular documentation change" };
-    }
+    const scope = pathScope(fields[index + 1], before, after, status);
+    if (scopeRank[scope] > scopeRank[database]) database = scope;
   }
-  return { docsOnly: true, reason: "only ordinary documentation changed" };
+  return { database, reason: reasons[database] };
 }
 
 export function selectReleaseChecks({ cwd, eventName, baseSha, headSha }) {
@@ -73,11 +127,12 @@ export function selectReleaseChecks({ cwd, eventName, baseSha, headSha }) {
     !shaPattern.test(baseSha ?? "") ||
     /^0+$/.test(baseSha)
   ) {
-    return { docsOnly: false, reason: "no supported comparison metadata" };
+    return { database: "full", reason: "no supported comparison metadata" };
   }
+  let selection;
   try {
     git("merge-base", "--is-ancestor", baseSha, headSha);
-    return classifyDiff(
+    selection = classifyDiff(
       git(
         "diff",
         "--raw",
@@ -92,10 +147,15 @@ export function selectReleaseChecks({ cwd, eventName, baseSha, headSha }) {
     );
   } catch {
     return {
-      docsOnly: false,
+      database: "full",
       reason: "comparison unavailable; run full checks",
     };
   }
+  // Pushes to main are the post-merge backstop for the historical sweep.
+  if (eventName === "push" && selection.database === "current") {
+    return { database: "full", reason: "main push runs the historical restore sweep" };
+  }
+  return selection;
 }
 
 if (
@@ -112,9 +172,9 @@ if (
   if (!process.env.GITHUB_OUTPUT) throw new Error("GITHUB_OUTPUT is required.");
   fs.appendFileSync(
     process.env.GITHUB_OUTPUT,
-    `docs-only=${selection.docsOnly}\n`,
+    `database-scope=${selection.database}\n`,
   );
-  const message = `Database checks: ${selection.docsOnly ? "not selected" : "full suite"}. ${selection.reason}.\n`;
+  const message = `Database checks: ${selection.database}. ${selection.reason}.\n`;
   process.stdout.write(message);
   if (process.env.GITHUB_STEP_SUMMARY)
     fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, message);
