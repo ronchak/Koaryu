@@ -80,7 +80,15 @@ test("synthetic is default, loads no records, and displays the exact ordered tra
     await button(page, "Simulate").click();
     await expect(simulation(page).getByRole("heading", { name: "Visited path" })).toBeVisible();
     assert.equal(await simulation(page).locator("ol > li").count(), 6);
-    assert.equal(await simulation(page).locator("ul").last().locator("li").count(), 2);
+    // Both actions read in the visited path itself; there is no second list of them.
+    assert.equal(
+      await simulation(page)
+        .locator("ol > li")
+        .filter({ hasText: /would send|would follow up/ })
+        .count(),
+      2,
+    );
+    assert.equal(await simulation(page).getByText("Next actions returned").count(), 0);
     await expect(simulation(page)).toContainText("Selected branch: yes");
     const request = await page.evaluate(() => window.fixture.simulations[0]);
     assert.equal(request.path, `/automations/workflows/${ids.workflow}/simulate`);
@@ -112,7 +120,7 @@ test("waiting stops at the returned step and rendered subject/body remain escape
       window.fixture.simulationIndex = 3;
     });
     await button(page, "Simulate").click();
-    await expect(simulation(page)).toContainText("trace stops at the first wait");
+    await expect(simulation(page)).toContainText("stops at this wait");
     // The fixture's condition ID is "constructor", which must not inherit an assumption.
     await expect(simulation(page)).not.toContainText("Assumed No path.");
     assert.equal(await simulation(page).locator("ol > li").count(), 3);
@@ -715,7 +723,7 @@ test("continuing past a wait and trying the other branch send explicit assumptio
       window.fixture.simulationIndex = 3;
     });
     await button(page, "Simulate").click();
-    await expect(simulation(page)).toContainText("trace stops at the first wait");
+    await expect(simulation(page)).toContainText("stops at this wait");
     assert.deepEqual(
       await page.evaluate(() => Object.keys(window.fixture.simulations[0].body).sort()),
       ["context", "graph"],
@@ -723,8 +731,10 @@ test("continuing past a wait and trying the other branch send explicit assumptio
     await page.evaluate(() => {
       window.fixture.simulationIndex = 0;
     });
-    await simulation(page).getByRole("button", { name: "Continue past this wait" }).click();
-    await expect(simulation(page)).toContainText("Hypothetical trace");
+    await simulation(page)
+      .getByRole("button", { name: "Continue as if every wait had passed" })
+      .click();
+    await expect(simulation(page)).toContainText("Preview with assumptions");
     await expect(simulation(page)).toContainText("Assumed to have passed.");
     assert.equal(await page.evaluate(() => window.fixture.simulations.length), 2);
     assert.deepEqual(
@@ -747,12 +757,12 @@ test("continuing past a wait and trying the other branch send explicit assumptio
       [{ node_id: "constructor", outcome: "no" }],
     );
     await expect(simulation(page)).toContainText("Assumed No path.");
-    await simulation(page).getByRole("button", { name: "Use real timing and facts" }).click();
+    await simulation(page).getByRole("button", { name: "Reset assumptions" }).click();
     assert.deepEqual(
       await page.evaluate(() => Object.keys(window.fixture.simulations[3].body).sort()),
       ["context", "graph"],
     );
-    await expect(simulation(page)).not.toContainText("Hypothetical trace");
+    await expect(simulation(page)).not.toContainText("Preview with assumptions");
     await expect(simulation(page)).not.toContainText("Assumed No path.");
     assert.equal(await page.evaluate(() => window.fixture.requests.length), 0);
   }));
@@ -764,7 +774,7 @@ for (const change of ["context", "graph"])
       await region.getByRole("checkbox", { name: /Assume every wait/ }).check();
       await button(page, "Simulate").click();
       await region.getByRole("button", { name: "Try the No path" }).click();
-      await expect(region).toContainText("Hypothetical trace");
+      await expect(region).toContainText("Preview with assumptions");
       if (change === "context") {
         await button(page, "Choose real record").click();
         await button(page, "Use synthetic sample").click();
@@ -778,6 +788,6 @@ for (const change of ["context", "graph"])
         await page.evaluate(() => Object.keys(window.fixture.simulations.at(-1).body).sort()),
         ["context", "graph"],
       );
-      await expect(region).not.toContainText("Hypothetical trace");
+      await expect(region).not.toContainText("Preview with assumptions");
       assert.equal(await page.evaluate(() => window.fixture.requests.length), 0);
     }));

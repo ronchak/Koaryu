@@ -1,20 +1,8 @@
 "use client";
 
-import {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-  useSyncExternalStore,
-  type ReactNode,
-} from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useBeltStore, useConfigStore, useProgramStore, useStudioStore } from "@/lib/store";
-import {
-  getBrowserWorkflowWorkspace,
-  type WorkflowWorkspace as Owner,
-} from "@/lib/automation-workflow-workspace-controller";
+import type { WorkflowWorkspace as Owner } from "@/lib/automation-workflow-workspace-controller";
 import {
   workflowDraftAddress,
   workflowEditorContent,
@@ -23,12 +11,7 @@ import {
   type WorkflowContent,
 } from "@/lib/automation-workflow-workspace-state";
 import { truncateWorkflowText, workflowTextLength } from "@/lib/automation-workflow-model";
-import {
-  workflowPreviewSource,
-  workflowPreviewReferences,
-} from "@/lib/automation-workflow-preview";
-import type { WorkflowCommand, WorkflowSummary } from "@/lib/automation-workflow-types";
-import type { WorkflowReferenceChoices } from "@/lib/automation-workflow-catalog";
+import type { WorkflowCommand } from "@/lib/automation-workflow-types";
 import kit from "@/components/ui/horizon.module.css";
 import { WorkflowSimulationPanel } from "./workflow-simulation-panel";
 import { WorkflowRunHistory } from "./workflow-run-history";
@@ -38,280 +21,17 @@ import { WorkflowGraphEditor } from "./workflow-graph-editor";
 import type { WorkflowChecks } from "./workflow-graph-editor";
 import { WorkflowNodeInspector } from "./workflow-node-inspector";
 import type { WorkflowFieldFocus } from "./workflow-node-inspector";
+import {
+  WorkflowAccess,
+  WorkflowEditorPlaceholder,
+  WorkflowOpeningPlaceholder,
+  useWorkflowSnapshot,
+  workflowAddress,
+  workflowStatus,
+} from "./workflow-access";
+import { WorkflowConfirmation } from "./workflow-confirmation";
+import { useWorkflowReferences } from "./use-workflow-references";
 import styles from "./workflow-workspace.module.css";
-import graphStyles from "./workflow-graph-editor.module.css";
-
-export const validWorkflowId = (value: unknown): value is string =>
-  typeof value === "string" &&
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
-export const workflowAddress = (id: string) => {
-  if (!validWorkflowId(id)) throw new Error("This workflow address is unavailable.");
-  return `/automations/${id}`;
-};
-/** Status words for a workflow; the words carry the state and the tone only reinforces it. */
-export const workflowStatus: Record<
-  WorkflowSummary["status"],
-  { label: string; tone: "alert" | "warn" | "calm" | "neutral" }
-> = {
-  active: { label: "Active", tone: "calm" },
-  paused: { label: "Paused", tone: "warn" },
-  draft: { label: "Draft", tone: "neutral" },
-  archived: { label: "Archived", tone: "neutral" },
-};
-export const useWorkflowSnapshot = (owner: Owner) =>
-  useSyncExternalStore(owner.subscribe, owner.getSnapshot, owner.getSnapshot);
-
-// The browser registry owns commands. A route owns only this subscription and its presentation.
-export function WorkflowAccess({
-  children,
-  editor = false,
-}: {
-  children: (owner: Owner) => ReactNode;
-  editor?: boolean;
-}) {
-  const { isPreviewMode, token, subscriptionRequired } = useConfigStore();
-  const { identityReady, identityGeneration, currentRole, currentStudioId, currentUserId } =
-    useStudioStore();
-  if (!isPreviewMode && (!identityReady || subscriptionRequired))
-    return <p role="status">Checking studio access...</p>;
-  if (!isPreviewMode && currentRole !== "admin")
-    return <p className={styles.notice}>An Admin can create and manage workflows.</p>;
-  if (!isPreviewMode && (!token || !currentStudioId || !currentUserId))
-    return <p role="status">Waiting for your studio...</p>;
-  return (
-    <BrowserOwner
-      key={JSON.stringify([
-        isPreviewMode,
-        currentUserId,
-        currentStudioId,
-        currentRole,
-        identityGeneration,
-      ])}
-      preview={isPreviewMode}
-      token={token ?? ""}
-      userId={currentUserId}
-      studioId={currentStudioId ?? ""}
-      editor={editor}
-    >
-      {children}
-    </BrowserOwner>
-  );
-}
-function BrowserOwner({
-  preview,
-  token,
-  userId,
-  studioId,
-  editor,
-  children,
-}: {
-  preview: boolean;
-  token: string;
-  userId: string;
-  studioId: string;
-  editor: boolean;
-  children: (owner: Owner) => ReactNode;
-}) {
-  const [owner, setOwner] = useState<Owner | null>(null);
-  const [failed, setFailed] = useState(false);
-  const initialToken = useRef(token);
-  useEffect(() => {
-    try {
-      setOwner(
-        getBrowserWorkflowWorkspace(
-          preview
-            ? { mode: "preview", source: workflowPreviewSource }
-            : {
-                mode: "live",
-                owner: { userId, studioId, role: "admin" },
-                token: initialToken.current,
-              },
-        ),
-      );
-    } catch {
-      setFailed(true);
-    }
-  }, [preview, studioId, userId]);
-  useLayoutEffect(() => {
-    owner?.updateToken(token);
-  }, [owner, token]);
-  if (failed)
-    return <p role="alert">Verify your current studio access before opening workflows.</p>;
-  return owner ? (
-    <CurrentOwner owner={owner}>{children}</CurrentOwner>
-  ) : (
-    <WorkflowOpeningPlaceholder editor={editor} />
-  );
-}
-
-function WorkflowEditorPlaceholder() {
-  return (
-    <div
-      className={`${styles.editorGrid} koaryu-skeleton-reveal`}
-      role="status"
-      aria-label="Loading workflow steps"
-      aria-busy="true"
-    >
-      <div className={graphStyles.editor} aria-hidden="true">
-        <div className={graphStyles.heading}>
-          <h2>Workflow steps</h2>
-        </div>
-        <div className="mb-4 h-11 rounded bg-surface-raised" />
-        <ol className={graphStyles.steps}>
-          {[0, 1, 2].map((row) => (
-            <li key={row} className={graphStyles.step}>
-              <div className="h-4 w-24 rounded bg-surface-hover" />
-              <div className="mt-2 h-3 w-3/4 rounded bg-surface-hover" />
-            </li>
-          ))}
-        </ol>
-      </div>
-    </div>
-  );
-}
-
-function WorkflowOpeningPlaceholder({ editor }: { editor: boolean }) {
-  const router = useRouter();
-  const { isPreviewMode } = useConfigStore();
-  if (!editor)
-    return (
-      <div
-        className={`${styles.catalog} koaryu-skeleton-reveal`}
-        role="status"
-        aria-label="Opening workflows"
-        aria-busy="true"
-      >
-        <div className={styles.templates} aria-hidden="true">
-          {[0, 1, 2].map((card) => (
-            <div key={card} className={`${styles.card} h-48 bg-surface-raised`} />
-          ))}
-        </div>
-      </div>
-    );
-  return (
-    <div className={styles.workspace}>
-      <div className={styles.topline}>
-        <button data-variant="back" onClick={() => router.push("/automations")}>
-          ← All workflows
-        </button>
-        <span className={kit.tag}>{isPreviewMode ? "Sample workspace" : "Workflow editor"}</span>
-      </div>
-      {isPreviewMode ? (
-        <p className={styles.notice} data-tone="sample">
-          Sample only. Explore and edit these examples here. Saving, publishing, and sending are
-          unavailable.
-        </p>
-      ) : null}
-      <section
-        className={`${styles.sheet} koaryu-skeleton-reveal`}
-        role="status"
-        aria-label="Loading workflow"
-        aria-busy="true"
-      >
-        <div className={styles.metadata} aria-hidden="true">
-          <div className="space-y-2">
-            <div className="h-5 w-32 rounded bg-surface-raised" />
-            <div className="h-11 rounded bg-surface-raised" />
-            <div className="h-4 w-28 rounded bg-surface-raised" />
-          </div>
-          <div className="space-y-2">
-            <div className="h-5 w-32 rounded bg-surface-raised" />
-            <div className="h-[70px] rounded bg-surface-raised" />
-            <div className="h-4 w-28 rounded bg-surface-raised" />
-          </div>
-        </div>
-        <div className="h-7 w-2/3 rounded bg-surface-raised" aria-hidden="true" />
-        <div className="h-5 w-48 rounded bg-surface-raised" aria-hidden="true" />
-        {[0, 1].map((row) => (
-          <div key={row} className={styles.actions} aria-hidden="true">
-            {[0, 1, 2].map((button) => (
-              <div key={button} className="h-11 w-32 rounded bg-surface-raised" />
-            ))}
-          </div>
-        ))}
-      </section>
-      <WorkflowEditorPlaceholder />
-    </div>
-  );
-}
-function CurrentOwner({
-  owner,
-  children,
-}: {
-  owner: Owner;
-  children: (owner: Owner) => ReactNode;
-}) {
-  const state = useWorkflowSnapshot(owner);
-  return state.accessible ? (
-    children(owner)
-  ) : (
-    <p role="alert">Your studio access changed. Reload this page to continue.</p>
-  );
-}
-
-export function WorkflowConfirmation({
-  title,
-  children,
-  confirmLabel,
-  onConfirm,
-  onCancel,
-  disabled = false,
-}: {
-  title: string;
-  children: ReactNode;
-  confirmLabel: string;
-  onConfirm: () => void;
-  onCancel: () => void;
-  disabled?: boolean;
-}) {
-  const dialog = useRef<HTMLDialogElement>(null);
-  useEffect(() => {
-    const element = dialog.current;
-    const opener = document.activeElement;
-    element?.showModal();
-    return () => {
-      element?.close();
-      if (opener instanceof HTMLElement && opener.isConnected) opener.focus();
-    };
-  }, []);
-  return (
-    <dialog
-      ref={dialog}
-      className={styles.dialog}
-      aria-label={title}
-      onCancel={(event) => {
-        event.preventDefault();
-        dialog.current?.close();
-        onCancel();
-      }}
-    >
-      <h2>{title}</h2>
-      <div className={styles.dialogBody}>{children}</div>
-      <div className={styles.actions}>
-        <button
-          type="button"
-          onClick={() => {
-            dialog.current?.close();
-            onCancel();
-          }}
-          autoFocus
-        >
-          Keep editing
-        </button>
-        <button
-          type="button"
-          disabled={disabled}
-          onClick={() => {
-            dialog.current?.close();
-            onConfirm();
-          }}
-        >
-          {confirmLabel}
-        </button>
-      </div>
-    </dialog>
-  );
-}
 
 export function WorkflowWorkspace({
   workflowId,
@@ -506,7 +226,7 @@ function WorkspaceView({
           Reload workflow
         </button>
         <button onClick={returnToRetained}>
-          {editor ? "Return to retained draft" : "Back to catalog"}
+          {editor ? "Return to your draft" : "Back to catalog"}
         </button>
       </div>
     );
@@ -935,90 +655,27 @@ function EditorBody({
   disabled: boolean;
 }) {
   const state = useWorkflowSnapshot(owner);
-  const { programs, programsLoaded, programsLoadError, programsUsageLoadError, refreshPrograms } =
-    useProgramStore();
-  const { refreshBeltLadders } = useBeltStore();
-  const [ranks, setRanks] = useState<NonNullable<WorkflowReferenceChoices["promotion.rank_id"]>>({
-    status: "loading",
-    choices: [],
-  });
-  const [programRead, setProgramRead] = useState<"idle" | "loading" | "unavailable">("idle");
-  const requestedPrograms = useRef(false);
-  const sequence = useRef(0);
   const preview = state.mode === "preview";
-  const loadRanks = useCallback(() => {
-    if (!owner.isCurrent()) return Promise.resolve();
-    const request = ++sequence.current;
-    return refreshBeltLadders()
-      .then((result) => {
-        if (request !== sequence.current || !owner.isCurrent()) return;
-        setRanks({
-          status: "ready",
-          choices: result.ladders.flatMap((ladder) =>
-            ladder.ranks.map((rank) => ({ id: rank.id, label: `${ladder.name}: ${rank.name}` })),
-          ),
-        });
-      })
-      .catch(() => {
-        if (request === sequence.current && owner.isCurrent())
-          setRanks((previous) => ({ ...previous, status: "unavailable" }));
-      });
-  }, [owner, refreshBeltLadders]);
-  useEffect(() => {
-    if (!preview) void loadRanks();
-    return () => {
-      sequence.current += 1;
-    };
-  }, [preview, loadRanks]);
-  const programLifetime = useRef(0);
-  useEffect(() => {
-    programLifetime.current += 1;
-    return () => {
-      programLifetime.current += 1;
-    };
-  }, []);
-  const loadPrograms = useCallback(async () => {
-    if (!owner.isCurrent()) return;
-    const generation = programLifetime.current;
-    setProgramRead("loading");
-    try {
-      await refreshPrograms({ includeArchived: true, force: true });
-      if (generation === programLifetime.current && owner.isCurrent()) setProgramRead("idle");
-    } catch {
-      if (generation === programLifetime.current && owner.isCurrent())
-        setProgramRead("unavailable");
-    }
-  }, [owner, refreshPrograms]);
-  useEffect(() => {
-    if (!preview && !programsLoaded && !programsLoadError && !requestedPrograms.current) {
-      requestedPrograms.current = true;
-      void loadPrograms();
-    }
-    return () => {
-      requestedPrograms.current = false;
-    };
-  }, [preview, programsLoaded, programsLoadError, loadPrograms]);
-  const references: WorkflowReferenceChoices = preview
-    ? workflowPreviewReferences
-    : {
-        "program.id": {
-          status:
-            programRead === "loading"
-              ? "loading"
-              : programsLoadError || programsUsageLoadError || programRead === "unavailable"
-                ? "unavailable"
-                : programsLoaded
-                  ? "ready"
-                  : "loading",
-          choices: programs
-            .filter((program) => !program.archived_at)
-            .map((program) => ({ id: program.id, label: program.name })),
-        },
-        "promotion.rank_id": ranks,
-      };
+  const { references, reloadRanks, reloadPrograms } = useWorkflowReferences(owner, preview);
   const editor = state.editor!;
   const selectedNode =
     selected !== null && editor.history.present.graph.nodes.some((node) => node.id === selected);
+  // Closing settings unmounts the panel; focus goes back to the step it described.
+  const grid = useRef<HTMLDivElement>(null);
+  const closeSettings = () => {
+    const id = selected;
+    onSelect(null);
+    requestAnimationFrame(() => {
+      const root = grid.current;
+      if (!root) return;
+      const target =
+        (id &&
+          (root.querySelector<HTMLElement>(`[data-workflow-step="${id}"]`) ??
+            root.querySelector<HTMLElement>(`[data-testid="rf__node-${id}"]`))) ||
+        root.querySelector<HTMLElement>('[aria-label="Editor view"] button[aria-pressed="true"]');
+      target?.focus();
+    });
+  };
   const edit: Owner["edit"] = (change) => {
     const current = owner.getSnapshot().editor;
     if (
@@ -1031,33 +688,21 @@ function EditorBody({
   return (
     <>
       {!preview &&
-      (ranks.status === "unavailable" || references["program.id"]?.status === "unavailable") ? (
+      (references["promotion.rank_id"]?.status === "unavailable" ||
+        references["program.id"]?.status === "unavailable") ? (
         <div className={styles.notice} role="alert">
           Some program or rank choices could not be loaded. Saved choices remain in the draft.
           <div className={styles.actions}>
-            {ranks.status === "unavailable" ? (
-              <button
-                onClick={() => {
-                  setRanks((previous) => ({ ...previous, status: "loading" }));
-                  void loadRanks();
-                }}
-              >
-                Reload ranks
-              </button>
+            {references["promotion.rank_id"]?.status === "unavailable" ? (
+              <button onClick={reloadRanks}>Reload ranks</button>
             ) : null}
             {references["program.id"]?.status === "unavailable" ? (
-              <button
-                onClick={() => {
-                  void loadPrograms();
-                }}
-              >
-                Reload programs
-              </button>
+              <button onClick={reloadPrograms}>Reload programs</button>
             ) : null}
           </div>
         </div>
       ) : null}
-      <div className={styles.editorGrid} data-selected={selectedNode ? "true" : "false"}>
+      <div ref={grid} className={styles.editorGrid} data-selected={selectedNode ? "true" : "false"}>
         <WorkflowGraphEditor
           draft={editor.history.present}
           selectedNodeId={selected}
@@ -1077,7 +722,7 @@ function EditorBody({
           <WorkflowNodeInspector
             draft={editor.history.present}
             selectedNodeId={selected}
-            onClose={() => onSelect(null)}
+            onClose={closeSettings}
             onEdit={edit}
             disabled={disabled}
             issues={issues}

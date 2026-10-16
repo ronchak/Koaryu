@@ -40,8 +40,7 @@
   gap: 14px;
 }
 .panelHead,
-.topline,
-.sectionHeading {
+.topline {
   display: flex;
   min-width: 0;
   flex-wrap: wrap;
@@ -81,20 +80,6 @@
 .panelStatus {
   margin: 0;
   color: var(--product-soft-ink, var(--text-secondary));
-}
-.eyebrow {
-  margin: 0 0 2px;
-  color: var(--product-meta, var(--text-secondary));
-  font-size: 0.6875rem;
-  font-weight: 760;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-}
-.subhead {
-  margin: 4px 0 12px;
-  color: var(--product-soft-ink, var(--text-secondary));
-  font-size: 0.8125rem;
-  font-weight: 700;
 }
 .when {
   margin-right: 2px;
@@ -536,25 +521,6 @@ p.notice {
 }
 .editorGrid > * {
   min-width: 0;
-}
-.checks ul,
-.issueList {
-  display: grid;
-  gap: 6px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-.issueList button {
-  justify-content: flex-start;
-  width: 100%;
-  border-color: transparent;
-  background: var(--hz-warn-wash, var(--surface-hover));
-  text-align: left;
-}
-.checks > p {
-  margin: 0;
-  color: var(--product-soft-ink, var(--text-secondary));
 }
 
 /* Confirmation dialog */

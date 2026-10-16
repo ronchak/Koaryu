@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useContext, useEffect, useState } from "react";
+import { CatalogRefreshContext } from "./catalog-refresh-context";
 import { IntentPrefetchLink as Link } from "@/components/intent-prefetch-link";
 import { useConfigStore } from "@/lib/store";
 import { useRetainedState } from "@/lib/retained-state";
@@ -27,6 +28,8 @@ export function MissedClassSummaryRow() {
     isPreviewMode ? DEMO_SETTINGS : null,
   );
   const [unavailable, setUnavailable] = useState(false);
+  // "Refresh list" in the catalog re-reads this row too, so its state matches the list's.
+  const refreshGeneration = useContext(CatalogRefreshContext);
   useEffect(() => {
     if (isPreviewMode || !token) return;
     const controller = new AbortController();
@@ -42,7 +45,7 @@ export function MissedClassSummaryRow() {
         if (!controller.signal.aborted) setUnavailable(true);
       });
     return () => controller.abort();
-  }, [isPreviewMode, token, setSettings]);
+  }, [isPreviewMode, token, setSettings, refreshGeneration]);
   const rule = settings?.rule;
   const status = isPreviewMode
     ? { label: "Sample", tone: "neutral" as const }

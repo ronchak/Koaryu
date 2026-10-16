@@ -121,40 +121,6 @@
   font-weight: 600;
   line-height: 1.5;
 }
-.issueSummary {
-  margin-bottom: 16px;
-  padding: 10px 12px;
-  border-radius: 12px;
-  background: var(--hz-alert-wash, transparent);
-  box-shadow: inset 3px 0 0 var(--product-vermilion, var(--danger, var(--text-primary)));
-}
-.issueSummary h3 {
-  margin: 0 0 4px;
-  font-size: 14px;
-  font-weight: 700;
-}
-.issueSummary ul {
-  display: grid;
-  gap: 4px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-.inspector .issueLink {
-  min-height: 36px;
-  padding: 4px 8px;
-  border-color: transparent;
-  background: transparent;
-  color: var(--product-ink, var(--text-primary));
-  font-weight: 500;
-  text-align: left;
-}
-.inspector .issueLink strong {
-  font-weight: 700;
-}
-.inspector .issueLink:hover:not(:disabled) {
-  background: var(--product-paper, var(--surface));
-}
 /* Beside the steps, the panel keeps pace with the selected step while the list scrolls. */
 @media (min-width: 1100px) {
   .inspector[data-docked="true"] {

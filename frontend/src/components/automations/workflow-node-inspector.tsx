@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useId, useMemo, useRef, type ReactNode } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, type ReactNode } from "react";
 import {
   defaultWorkflowConfig,
   truncateWorkflowText,
+  workflowNodeLabels,
   workflowTextLength,
   type WorkflowEdit,
   type WorkflowSnapshot,
@@ -161,21 +162,34 @@ export function WorkflowNodeInspector({
   const heading = useRef<HTMLHeadingElement>(null);
   const headingId = useId();
   const node = draft.graph.nodes.find((item) => item.id === selectedNodeId);
-  // A check row lands on its setting; any other selection lands on the heading.
+  const label = node ? workflowNodeLabels(draft.graph)[node.id] : null;
+  // A check row lands on its setting. A disabled setting (a comparison value before its
+  // field and operator exist) hands focus to the first setting that can be changed, which
+  // is the prerequisite in every form here. Anything else lands on the heading.
+  const focusSetting = useCallback((field: string | null) => {
+    const panel = root.current;
+    const named = field
+      ? panel?.querySelector<HTMLElement>(`[data-workflow-field="${field}"]`)
+      : null;
+    // :disabled also covers controls disabled through an enclosing fieldset (archived workflows).
+    const enabled = (element: HTMLElement | null | undefined) =>
+      element && !element.matches(":disabled") ? element : null;
+    const target =
+      enabled(named) ??
+      enabled(
+        panel?.querySelector<HTMLElement>(
+          "fieldset :is(input, select, textarea, button):not(:disabled)",
+        ),
+      ) ??
+      heading.current;
+    target?.focus();
+    target?.scrollIntoView?.({ block: "center" });
+  }, []);
   useEffect(() => {
     if (!selectedNodeId) return;
-    if (focusField && focusField.nodeId === selectedNodeId) {
-      const control = root.current?.querySelector<HTMLElement>(
-        `[data-workflow-field="${focusField.field}"]`,
-      );
-      if (control) {
-        control.focus();
-        control.scrollIntoView?.({ block: "center" });
-        return;
-      }
-    }
-    heading.current?.focus();
-  }, [selectedNodeId, focusField]);
+    if (focusField && focusField.nodeId === selectedNodeId) focusSetting(focusField.field);
+    else heading.current?.focus();
+  }, [selectedNodeId, focusField, focusSetting]);
   const applicable = workflowApplicability(draft, catalog);
   const nodeRows = useMemo(
     () =>
@@ -186,12 +200,6 @@ export function WorkflowNodeInspector({
           ),
     [issues, draft.graph, selectedNodeId],
   );
-  const focusSetting = (field: string | null) => {
-    const control = field
-      ? root.current?.querySelector<HTMLElement>(`[data-workflow-field="${field}"]`)
-      : null;
-    (control ?? heading.current)?.focus();
-  };
   const edit = (update: WorkflowNodeUpdate) => {
     if (node && !disabled) onEdit({ kind: "update_config", node_id: node.id, update });
   };
@@ -404,7 +412,9 @@ export function WorkflowNodeInspector({
           rows={nodeRows}
           hint={
             <>
-              {!hasValue ? <p>Choose a value to finish this comparison.</p> : null}
+              {!hasValue && !nodeRows.some((row) => row.field === "value") ? (
+                <p>Choose a value to finish this comparison.</p>
+              ) : null}
               {reference && reference.status !== "ready" ? (
                 <p>
                   Reference choices are {reference.status}. Saved values stay visible until you
@@ -756,14 +766,14 @@ export function WorkflowNodeInspector({
     };
     form = (
       <>
-        <Field label="Recipient policy" name="recipient" rows={nodeRows}>
+        <Field label="Send to" name="recipient" rows={nodeRows}>
           {(attrs) => (
             <Choice
               {...attrs}
               value={config.recipient}
               choices={applicable.recipients}
               unavailableLabel={catalogEntry(catalog.recipients, config.recipient)?.label}
-              placeholder="Choose a recipient policy"
+              placeholder="Choose who receives it"
               onChange={(recipient) => edit({ type: "email", config: { ...config, recipient } })}
             />
           )}
@@ -881,7 +891,7 @@ export function WorkflowNodeInspector({
     >
       <header className={styles.header}>
         <h2 id={headingId} ref={heading} tabIndex={-1}>
-          {node ? `${names[node.type]} settings` : "Step settings"}
+          {node ? `${label ?? names[node.type]} settings` : "Step settings"}
         </h2>
         <button type="button" onClick={onClose}>
           Close settings
@@ -891,28 +901,6 @@ export function WorkflowNodeInspector({
         <p>Select a step to configure it.</p>
       ) : (
         <>
-          {nodeRows.length ? (
-            <section aria-label="Step issues" className={styles.issueSummary}>
-              <h3>Review this step</h3>
-              <ul>
-                {nodeRows.map((row) => (
-                  <li key={row.key}>
-                    {row.setting ? (
-                      <button
-                        type="button"
-                        className={styles.issueLink}
-                        onClick={() => focusSetting(row.field)}
-                      >
-                        <strong>{row.setting}</strong> {row.message}
-                      </button>
-                    ) : (
-                      row.message
-                    )}
-                  </li>
-                ))}
-              </ul>
-            </section>
-          ) : null}
           {applicable.reason && node.type !== "end" ? (
             <p className={styles.warning}>{applicable.reason}</p>
           ) : null}

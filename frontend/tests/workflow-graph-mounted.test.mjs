@@ -463,11 +463,13 @@ test("step names stay stable through branching, disconnect, movement, view and h
       .click();
     assert.deepEqual(await labels(), before);
     await expect(status).toHaveText(`Disconnected yes from ${before.condition}.`);
-    for (const action of ["Undo", "Redo", "Undo", "Auto layout"]) {
+    for (const action of ["Undo", "Redo", "Undo"]) {
       await page.getByRole("button", { name: action, exact: true }).click();
       assert.deepEqual(await labels(), before);
     }
+    assert.equal(await page.getByRole("button", { name: "Auto layout", exact: true }).count(), 0);
     await page.getByRole("button", { name: "Graph", exact: true }).click();
+    await page.getByRole("button", { name: "Auto layout", exact: true }).click();
     await expect(node(page, "condition")).toBeVisible();
     for (const [id, label] of Object.entries(before)) {
       assert.ok((await node(page, id).getAttribute("aria-label")).startsWith(`${label}.`));

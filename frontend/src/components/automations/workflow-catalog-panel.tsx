@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { CatalogRefreshContext } from "./catalog-refresh-context";
 import { useRouter } from "next/navigation";
 import type { WorkflowWorkspace as Owner } from "@/lib/automation-workflow-workspace-controller";
 import {
@@ -19,11 +20,11 @@ import type { WorkflowGraph, WorkflowSummary } from "@/lib/automation-workflow-t
 import kit from "@/components/ui/horizon.module.css";
 import {
   WorkflowAccess,
-  WorkflowConfirmation,
   useWorkflowSnapshot,
   workflowAddress,
   workflowStatus,
-} from "./workflow-workspace";
+} from "./workflow-access";
+import { WorkflowConfirmation } from "./workflow-confirmation";
 import styles from "./workflow-workspace.module.css";
 
 const stepWords: Partial<Record<WorkflowGraph["nodes"][number]["type"], string>> = {
@@ -86,6 +87,7 @@ function CatalogView({ owner, builtIn }: { owner: Owner; builtIn?: ReactNode }) 
   const [attemptedCursor, setAttemptedCursor] = useState<string | undefined>();
   const pageSequence = useRef(0);
   const [copying, setCopying] = useState(false);
+  const [refreshGeneration, setRefreshGeneration] = useState(0);
   const lifetime = useRef(0);
   useEffect(() => {
     lifetime.current += 1;
@@ -223,14 +225,17 @@ function CatalogView({ owner, builtIn }: { owner: Owner; builtIn?: ReactNode }) 
             <h2>{preview ? "Sample automations" : "Your automations"}</h2>
             <p className={styles.panelNote}>
               {state.list && items.length
-                ? `${workflowTally(items)}${state.list.has_more || cursor ? " on this page" : ""}`
+                ? `${builtIn ? "Custom workflows: " : ""}${workflowTally(items)}${state.list.has_more || cursor ? " on this page" : ""}`
                 : "What starts each one, what it does, and whether it is on."}
             </p>
           </div>
           <button
             data-variant="quiet"
             disabled={state.reads.list.loading || preview}
-            onClick={() => page()}
+            onClick={() => {
+              setRefreshGeneration((generation) => generation + 1);
+              page();
+            }}
           >
             Refresh list
           </button>
@@ -251,7 +256,9 @@ function CatalogView({ owner, builtIn }: { owner: Owner; builtIn?: ReactNode }) 
         ) : null}
         {builtIn || (state.list && items.length) ? (
           <ul className={styles.workflowList}>
-            {builtIn}
+            <CatalogRefreshContext.Provider value={refreshGeneration}>
+              {builtIn}
+            </CatalogRefreshContext.Provider>
             {items.map((workflow) => {
               const event = workflow.published_version_number
                 ? workflow.trigger_event_type
@@ -321,10 +328,8 @@ function CatalogView({ owner, builtIn }: { owner: Owner; builtIn?: ReactNode }) 
         {state.list && !items.length ? (
           <div className={`${kit.calm} ${styles.calm}`}>
             <div className={kit.calmText}>
-              <strong>No saved workflows yet</strong>
-              <span>
-                Start blank or from a template below. New workflow is at the top of the page.
-              </span>
+              <strong>{builtIn ? "No custom workflows yet" : "No saved workflows yet"}</strong>
+              <span>Start blank or from a template below.</span>
             </div>
             <a className={styles.textLink} href="#workflow-templates">
               Browse templates
@@ -384,10 +389,10 @@ function CatalogView({ owner, builtIn }: { owner: Owner; builtIn?: ReactNode }) 
             <div className={styles.templates}>
               <article className={styles.card} data-template="blank">
                 <p className={styles.templateWhen}>
-                  <span className={styles.when}>When</span> you decide
+                  <span className={styles.when}>When</span> something you choose happens
                 </p>
                 <h4>Blank workflow</h4>
-                <p>A trigger and an end. Add the steps between them.</p>
+                <p>Choose what starts it, then add your steps.</p>
                 <button
                   className={styles.useTemplate}
                   disabled={copying}
