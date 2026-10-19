@@ -117,6 +117,43 @@ class StudentRosterQueryTest(unittest.TestCase):
         self.assertIsNotNone(result.next_cursor)
         self.assertEqual(result.items[0].guardian_email, None)
 
+    def test_previous_scan_at_first_page_ignores_rows_before_its_anchor(self):
+        # A concurrent insert can make the SQL previous scan report more rows
+        # even though the signed cursor is returning us to logical page one.
+        anchor = {"id": STUDENT_ID, "revision": "revision-a"}
+        payload = {
+            "items": [roster_item()],
+            "total": 3,
+            "has_next": True,
+            "has_previous": True,
+            "next_anchor": anchor,
+            "previous_anchor": anchor,
+            "cursor_error": None,
+        }
+        with patch("app.services.student_roster_query.get_settings", return_value=self.settings):
+            for ordinal in (1, 2):
+                with self.subTest(ordinal=ordinal):
+                    client = FakeSupabase([payload])
+                    cursor = encode_roster_cursor(
+                        self.query, ordinal=ordinal, direction="previous", anchor=anchor
+                    )
+                    result = fetch_student_roster_page(client, self.query, cursor=cursor)
+                    self.assertEqual(result.page_ordinal, ordinal)
+                    self.assertEqual(result.has_previous, ordinal > 1)
+                    if ordinal == 1:
+                        self.assertIsNone(result.previous_cursor)
+                    else:
+                        previous = decode_roster_cursor(result.previous_cursor, self.query)
+                        self.assertEqual(previous["ordinal"], 1)
+                        self.assertEqual(previous["direction"], "previous")
+                    self.assertTrue(result.has_next)
+                    next_page = decode_roster_cursor(result.next_cursor, self.query)
+                    self.assertEqual(next_page["ordinal"], ordinal + 1)
+                    self.assertEqual(result.total, 3)
+                    self.assertEqual(len(result.items), 1)
+                    self.assertEqual(len(client.calls), 1)
+                    self.assertEqual(client.calls[0][1]["p_cursor_direction"], "previous")
+
     def test_paged_roster_replaces_stored_minor_flag_after_fetch(self):
         from app.services.student_service import StudentService
 
