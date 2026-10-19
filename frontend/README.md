@@ -208,8 +208,10 @@ routes' fallback loads and shell retries use `include_usage=false`, as do
 Belt Tracker's fallback, Schedule resume and Reports resume/Retry: they keep
 each program's last verified usage, mark usage unverified when a new program
 appears, report failures as program load errors, and wait for or reuse an
-in-flight usage read instead of replacing it. Bootstrap rows never
-establish paginated roster authority. Mutations preserve an incomplete roster's
+in-flight usage read instead of replacing it.
+An outstanding usage failure makes the shell retry include usage, even after
+navigation, so that successful recovery clears the original failure too.
+Bootstrap rows never establish paginated roster authority. Mutations preserve an incomplete roster's
 partial status; only an explicit complete read clears it. Billing Enrollments
 waits for that complete read before using the roster.
 

@@ -24,7 +24,8 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
   const [isSigningOut, setIsSigningOut] = useState(false);
   const [signOutError, setSignOutError] = useState("");
   const { navigationPlacement } = useTheme();
-  const { programsLoaded, programsLoadError, refreshPrograms } = useProgramStore();
+  const { programsLoaded, programsLoadError, programsUsageLoadError, refreshPrograms } =
+    useProgramStore();
   const {
     currentRole,
     currentStudioId,
@@ -142,7 +143,7 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
                   onClick={() =>
                     void refreshPrograms({
                       includeArchived: true,
-                      includeUsage: pathname === "/settings",
+                      includeUsage: pathname === "/settings" || Boolean(programsUsageLoadError),
                     }).catch(() => undefined)
                   }
                   className="mt-2 rounded border border-border px-3 py-2"

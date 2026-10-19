@@ -6,6 +6,7 @@ import { bundle } from "./helpers/store-browser-harness.mjs";
 const source = bundle("production");
 const programSource = bundle("production", { programsSection: true });
 const layoutSource = bundle("production", { layout: true });
+const leadsLayoutSource = bundle("production", { layout: true, leadsPage: true });
 let browser;
 before(async () => {
   browser = await chromium.launch();
@@ -51,6 +52,7 @@ async function fixturePage({
   holdBootstrap = false,
   showPrograms = false,
   showLayout = false,
+  showLeads = false,
   pathname = "/settings",
 } = {}) {
   const page = await browser.newPage();
@@ -67,6 +69,7 @@ async function fixturePage({
         pathname,
         observations: [],
         identityObservations: [],
+        readiness: [],
         requests: [],
         reads: [],
         writes: [],
@@ -166,6 +169,7 @@ async function fixturePage({
           }
           if (path.startsWith("/belts/ladders")) return [];
           if (path === "/leads") return [];
+          if (path === "/staff") return [];
           if (path.startsWith("/students?"))
             return { items: [], has_next: false, page_ordinal: 1, page_size: 200, total: 0 };
           if (path.startsWith("/schedule/window"))
@@ -181,7 +185,13 @@ async function fixturePage({
     { holdBootstrap, pathname },
   );
   await page.addScriptTag({
-    content: showPrograms ? programSource : showLayout ? layoutSource : source,
+    content: showPrograms
+      ? programSource
+      : showLeads
+        ? leadsLayoutSource
+        : showLayout
+          ? layoutSource
+          : source,
   });
   await page.waitForFunction(() => fixture.store?.identityReady);
   if (holdBootstrap) await page.waitForFunction(() => fixture.features.length === 1);
@@ -320,6 +330,64 @@ test("shell program retry keeps the route's data requirement through token renew
         await page.close();
       }
     });
+  }
+});
+
+test("Leads shell retry recovers the preceding Settings usage failure and page readiness", async () => {
+  const page = await fixturePage({ pathname: "/dashboard", showLeads: true });
+  try {
+    await page.evaluate(() => {
+      fixture.pathname = "/settings";
+      window.dispatchEvent(new Event("fixture:navigate"));
+    });
+    await page.waitForFunction(() => fixture.reads.length === 1);
+    assert.equal(
+      await page.evaluate(() => fixture.reads[0].path),
+      "/programs?include_archived=true",
+    );
+    await page.evaluate(() => fixture.reads[0].reject(new Error("Usage unavailable")));
+    await page.waitForFunction(
+      () => fixture.store.programsLoadError && fixture.store.programsUsageLoadError,
+    );
+    assert.deepEqual((await programState(page)).flags, [
+      false,
+      false,
+      "Usage unavailable",
+      "Usage unavailable",
+    ]);
+
+    await page.evaluate(() => {
+      fixture.pathname = "/leads";
+      window.dispatchEvent(new Event("fixture:navigate"));
+    });
+    await page.waitForFunction(() => fixture.store.leadsLoaded && fixture.store.staffLoaded);
+    await flush(page);
+    assert.equal(await page.evaluate(() => fixture.readiness.at(-1).complete), false);
+    await page.getByRole("button", { name: "Retry programs", exact: true }).click();
+    await page.waitForFunction(() => fixture.reads.length === 2);
+    assert.equal(
+      await page.evaluate(() => fixture.reads[1].path),
+      "/programs?include_archived=true",
+      "recovery must include the usage request that failed before navigation",
+    );
+    // Let the route fallback join the held retry before its response arrives.
+    await flush(page);
+    await page.evaluate(() => fixture.reads[1].resolve(fixture.reads[1].snapshot));
+    await page.waitForFunction(() => fixture.store.programsUsageLoaded);
+    await page.waitForFunction(() => fixture.readiness.at(-1).complete === true);
+    assert.deepEqual((await programState(page)).flags, [true, true, null, null]);
+    assert.equal(
+      await page.getByRole("button", { name: "Retry programs", exact: true }).count(),
+      0,
+    );
+    await flush(page);
+    assert.equal(
+      await page.evaluate(() => fixture.reads.length),
+      2,
+      await page.evaluate(() => fixture.reads.map((read) => read.path).join("\n")),
+    );
+  } finally {
+    await page.close();
   }
 });
 
