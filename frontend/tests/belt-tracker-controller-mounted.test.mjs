@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { chromium } from "@playwright/test";
 import { createCommonJsPacker } from "./helpers/store-browser-harness.mjs";
 
-function bundle({ programsLoaded = true, programsLoadError = null } = {}) {
+function bundle() {
   const { add, modules } = createCommonJsPacker({
     "next/navigation": `const router={push:href=>history.pushState(null,'',href)};exports.useRouter=()=>router;`,
   });
@@ -12,7 +12,8 @@ function bundle({ programsLoaded = true, programsLoadError = null } = {}) {
   const controller = add("@/lib/belt-tracker-page-controller");
   return `(()=>{const process={env:{NODE_ENV:'production'}},modules=[${modules.join(",")}],cache={};function require(id){if(cache[id])return cache[id].exports;const m=cache[id]={exports:{}};modules[id](m,m.exports,require);return m.exports;}const React=require(${react}),noop=()=>{};
     const beltStore={beltLadders:[],beltRanks:[],currentLadderId:null,eligibility:[],eligibilityLadderId:null,eligibilityPendingLadderId:null,subRankTerm:'Stripe',loadEligibilityForLadder:async()=>[],setCurrentLadder:noop};
-    window.programReads=[];const programsStore={programs:[],programsLoaded:${programsLoaded},programsLoadError:${JSON.stringify(programsLoadError)},refreshPrograms:async options=>{window.programReads.push(options);return [];}};
+    const {programsLoaded=true,programsLoadError=null}=window.programFixtureOptions??{};
+    window.programReads=[];const programsStore={programs:[],programsLoaded,programsLoadError,refreshPrograms:async options=>{window.programReads.push(options);return [];}};
     function Fixture(){const c=require(${controller}).useBeltTrackerPageController({beltStore,config:{currentRole:'admin'},programsStore});return React.createElement('button',{onClick:c.eligibilityPanelProps.onViewStudents},'View students');}
     require(${dom}).createRoot(document.getElementById('root')).render(React.createElement(Fixture));})();`;
 }
@@ -31,7 +32,10 @@ test("Belt Tracker's missing-program fallback reads metadata without retrying a 
           route.fulfill({ contentType: "text/html", body: '<div id="root"></div>' }),
         );
         await page.goto("http://fixture.local/belt-tracker");
-        await page.addScriptTag({ content: bundle(options) });
+        await page.evaluate((options) => {
+          window.programFixtureOptions = options;
+        }, options);
+        await page.addScriptTag({ content: bundle() });
         await page.getByRole("button", { name: "View students" }).waitFor();
         await page.evaluate(
           () =>
