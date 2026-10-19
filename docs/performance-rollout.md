@@ -56,6 +56,11 @@ raises from the belt-list endpoint. These
 are business-read counts, excluding authorization, not hosted latency results.
 These read optimizations require no migration.
 
+Promotion matching groups already-fetched history by student while preserving
+provider order and membership/program/legacy matching. Unsupported row shapes
+use the original lazy scan, so a later malformed row does not invalidate an
+earlier match. Queries, pagination and strict page validation stay unchanged.
+
 ### Release order and rollback
 
 For the performance candidate, apply `20260905022339_billing_landing_aggregates.sql`
