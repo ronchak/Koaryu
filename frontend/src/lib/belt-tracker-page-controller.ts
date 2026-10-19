@@ -102,7 +102,7 @@ export function useBeltTrackerPageController({
 
   useEffect(() => {
     if (!programsLoaded && !programsLoadError) {
-      void refreshPrograms().catch(() => undefined);
+      void refreshPrograms({ includeUsage: false }).catch(() => undefined);
     }
   }, [programsLoaded, programsLoadError, refreshPrograms]);
 

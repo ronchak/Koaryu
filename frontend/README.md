@@ -203,8 +203,9 @@ one loading, error or ready state; panels do not fetch independently. Preview
 mode supplies the same payload shape locally. See Dashboard loading below for
 retained paint, revalidation and readiness markers.
 Settings refreshes usage when opened, shows loading or unavailable usage
-explicitly, and retains successful usage while refreshing. Schedule resume and
-Reports resume/Retry refresh program rows with `include_usage=false`: they keep
+explicitly, and retains successful usage while refreshing. Other dashboard
+routes' fallback loads and shell retries use `include_usage=false`, as do
+Belt Tracker's fallback, Schedule resume and Reports resume/Retry: they keep
 each program's last verified usage, mark usage unverified when a new program
 appears, report failures as program load errors, and wait for or reuse an
 in-flight usage read instead of replacing it. Bootstrap rows never

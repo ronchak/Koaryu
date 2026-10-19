@@ -2051,7 +2051,7 @@ function StoreProviderBody({ children, preview }: { children: ReactNode; preview
       const needsPrograms = ["/settings", "/leads", "/reports", "/schedule", "/belt-tracker"].includes(pathname)
         || pathname === "/students" || pathname.startsWith("/students/");
       if (needsPrograms && !programsLoaded && !programsLoadError) {
-        void refreshPrograms({ includeArchived: true }).catch(() => undefined);
+        void refreshPrograms({ includeArchived: true, includeUsage: pathname === "/settings" }).catch(() => undefined);
       }
     }, 0);
     return () => window.clearTimeout(timer);

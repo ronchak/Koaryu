@@ -1,6 +1,6 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { clearStoredStudioSessionCookies } from "@/lib/store-session-cookies";
 import { DashboardRouteTransition } from "@/components/dashboard-route-transition";
@@ -17,6 +17,7 @@ import { useState } from "react";
 import styles from "@/components/dashboard-shell.module.css";
 
 function DashboardInner({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
   const router = useRouter();
   const [supabase] = useState(() => createClient());
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
@@ -139,7 +140,10 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
                 <button
                   type="button"
                   onClick={() =>
-                    void refreshPrograms({ includeArchived: true }).catch(() => undefined)
+                    void refreshPrograms({
+                      includeArchived: true,
+                      includeUsage: pathname === "/settings",
+                    }).catch(() => undefined)
                   }
                   className="mt-2 rounded border border-border px-3 py-2"
                 >

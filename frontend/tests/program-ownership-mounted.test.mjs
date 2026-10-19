@@ -5,6 +5,7 @@ import { bundle } from "./helpers/store-browser-harness.mjs";
 
 const source = bundle("production");
 const programSource = bundle("production", { programsSection: true });
+const layoutSource = bundle("production", { layout: true });
 let browser;
 before(async () => {
   browser = await chromium.launch();
@@ -46,7 +47,12 @@ async function settleRefresh(page, options, index, outcome = null) {
   );
 }
 
-async function fixturePage({ holdBootstrap = false, showPrograms = false } = {}) {
+async function fixturePage({
+  holdBootstrap = false,
+  showPrograms = false,
+  showLayout = false,
+  pathname = "/settings",
+} = {}) {
   const page = await browser.newPage();
   page.setDefaultTimeout(6000);
   await page.route("**/*", (route) =>
@@ -56,10 +62,11 @@ async function fixturePage({ holdBootstrap = false, showPrograms = false } = {})
   );
   await page.goto("http://fixture.local/");
   await page.evaluate(
-    ({ holdBootstrap }) => {
+    ({ holdBootstrap, pathname }) => {
       const f = (window.fixture = {
-        pathname: "/settings",
+        pathname,
         observations: [],
+        identityObservations: [],
         requests: [],
         reads: [],
         writes: [],
@@ -158,6 +165,7 @@ async function fixturePage({ holdBootstrap = false, showPrograms = false } = {})
             );
           }
           if (path.startsWith("/belts/ladders")) return [];
+          if (path === "/leads") return [];
           if (path.startsWith("/students?"))
             return { items: [], has_next: false, page_ordinal: 1, page_size: 200, total: 0 };
           if (path.startsWith("/schedule/window"))
@@ -170,12 +178,14 @@ async function fixturePage({ holdBootstrap = false, showPrograms = false } = {})
         postForm: (path, body, token) => f.pendingWrite("FORM", path, null, token),
       };
     },
-    { holdBootstrap },
+    { holdBootstrap, pathname },
   );
-  await page.addScriptTag({ content: showPrograms ? programSource : source });
+  await page.addScriptTag({
+    content: showPrograms ? programSource : showLayout ? layoutSource : source,
+  });
   await page.waitForFunction(() => fixture.store?.identityReady);
   if (holdBootstrap) await page.waitForFunction(() => fixture.features.length === 1);
-  else
+  else if (pathname !== "/dashboard")
     await page.waitForFunction(
       () => fixture.store.programsLoaded && fixture.store.programs.length === 2,
     );
@@ -187,6 +197,131 @@ async function fixturePage({ holdBootstrap = false, showPrograms = false } = {})
   }
   return page;
 }
+
+test("navigation from Home loads only program metadata outside Settings", async (t) => {
+  for (const pathname of [
+    "/students",
+    "/students/student-1",
+    "/students/import",
+    "/schedule",
+    "/leads",
+    "/reports",
+    "/belt-tracker",
+  ]) {
+    await t.test(pathname, async () => {
+      const page = await fixturePage({ pathname: "/dashboard", showLayout: true });
+      try {
+        await flush(page);
+        assert.equal(await page.evaluate(() => fixture.reads.length), 0);
+        await page.evaluate((pathname) => {
+          fixture.pathname = pathname;
+          window.dispatchEvent(new Event("fixture:navigate"));
+        }, pathname);
+        await page.waitForFunction(() => fixture.reads.length === 1);
+        assert.equal(
+          await page.evaluate(() => fixture.reads[0].path),
+          "/programs?include_archived=true&include_usage=false",
+        );
+        assert.equal(await page.evaluate(() => fixture.store.programsLoaded), false);
+        await page.evaluate(() => fixture.reads[0].resolve(fixture.reads[0].snapshot));
+        await page.waitForFunction(() => fixture.store.programsLoaded);
+        assert.deepEqual(await programState(page), {
+          rows: { p1: ["p1", 0], p2: ["p2", 0] },
+          flags: [true, false, null, null],
+        });
+        await flush(page);
+        assert.equal(await page.evaluate(() => fixture.reads.length), 1);
+      } finally {
+        await page.close();
+      }
+    });
+  }
+});
+
+test("Settings navigation and its program section still request actual usage", async () => {
+  const page = await fixturePage({ pathname: "/dashboard", showLayout: true });
+  try {
+    await page.evaluate(() => {
+      fixture.rows[0].usage.student_count = 7;
+      fixture.pathname = "/settings";
+      window.dispatchEvent(new Event("fixture:navigate"));
+    });
+    await page.waitForFunction(() => fixture.reads.length === 1);
+    assert.equal(
+      await page.evaluate(() => fixture.reads[0].path),
+      "/programs?include_archived=true",
+    );
+    await page.evaluate(() => fixture.reads[0].resolve(fixture.reads[0].snapshot));
+    await page.waitForFunction(() => fixture.store.programsUsageLoaded);
+    assert.deepEqual(await programState(page), {
+      rows: { p1: ["p1", 7], p2: ["p2", 0] },
+      flags: [true, true, null, null],
+    });
+  } finally {
+    await page.close();
+  }
+
+  const settings = await fixturePage({ showPrograms: true });
+  try {
+    assert.equal(
+      await settings.evaluate(() => fixture.reads[0].path),
+      "/programs?include_archived=true",
+      "Settings still enriches already loaded metadata with usage",
+    );
+    assert.equal(await settings.evaluate(() => fixture.store.programsUsageLoaded), true);
+  } finally {
+    await settings.close();
+  }
+});
+
+test("shell program retry keeps the route's data requirement through token renewal", async (t) => {
+  for (const pathname of ["/students", "/settings"]) {
+    await t.test(pathname, async () => {
+      const page = await fixturePage({ pathname: "/dashboard", showLayout: true });
+      try {
+        await page.evaluate((pathname) => {
+          fixture.pathname = pathname;
+          window.dispatchEvent(new Event("fixture:navigate"));
+        }, pathname);
+        await page.waitForFunction(() => fixture.reads.length === 1);
+        await page.evaluate(() => fixture.reads[0].reject(new Error("Programs failed")));
+        await page.getByRole("button", { name: "Retry programs", exact: true }).click();
+        await page.waitForFunction(() => fixture.reads.length === 2);
+        const expectedPath =
+          pathname === "/settings"
+            ? "/programs?include_archived=true"
+            : "/programs?include_archived=true&include_usage=false";
+        assert.equal(await page.evaluate(() => fixture.reads[1].path), expectedPath);
+        await page.evaluate(() => {
+          fixture.rows[0].name = "After renewal";
+          fixture.emit("TOKEN_REFRESHED", { ...fixture.session, access_token: "renewed-token" });
+        });
+        await page.waitForFunction(() => fixture.store.token === "renewed-token");
+        await page.evaluate(() => {
+          fixture.reads[1].resolve(fixture.reads[1].snapshot);
+        });
+        await page.waitForFunction(() => fixture.reads.length === 3);
+        assert.equal(await page.evaluate(() => fixture.store.programsLoaded), false);
+        assert.deepEqual(
+          await page.evaluate(() => [fixture.reads[2].path, fixture.reads[2].token]),
+          [expectedPath, "renewed-token"],
+        );
+        await page.evaluate(() => fixture.reads[2].resolve(fixture.reads[2].snapshot));
+        await page.waitForFunction(() => fixture.store.programsLoaded);
+        assert.deepEqual(await programState(page), {
+          rows: { p1: ["After renewal", 0], p2: ["p2", 0] },
+          flags: [true, pathname === "/settings", null, null],
+        });
+        assert.equal(
+          await page.getByRole("button", { name: "Retry programs", exact: true }).count(),
+          0,
+        );
+      } finally {
+        await page.close();
+      }
+    });
+  }
+});
 
 test("a submitted program draft stays fixed through success and rejection", async () => {
   const page = await fixturePage({ showPrograms: true });
