@@ -148,14 +148,34 @@ class BeltEligibilityCalculator:
                 ),
             )
 
+            chunk_ids = set(student_id_chunk)
+            # Keep provider order within each student. Unsupported rows use the
+            # original lazy scan: an early match may never visit a malformed row.
+            groupable = all(
+                isinstance(row, dict)
+                and (row.get("student_id") is None or isinstance(row.get("student_id"), str))
+                for row in promotion_rows
+            )
+            rows_by_student: dict[Optional[str], list[dict[str, Any]]] = {}
+            if groupable:
+                for row in promotion_rows:
+                    rows_by_student.setdefault(row.get("student_id"), []).append(row)
+
             for context in eligibility_contexts:
                 context_key = context["context_key"]
                 student_id = context["student"]["id"]
-                if student_id not in student_id_chunk or context_key in latest_promotions:
+                if (
+                    not student_id
+                    or student_id not in chunk_ids
+                    or context_key in latest_promotions
+                ):
                     continue
                 membership_id = context.get("membership_id")
                 program_id = context.get("program_id")
-                for row in promotion_rows:
+                candidate_rows = (
+                    rows_by_student.get(student_id, []) if groupable else promotion_rows
+                )
+                for row in candidate_rows:
                     if row.get("student_id") != student_id:
                         continue
                     if membership_id and row.get("student_program_membership_id") == membership_id:
