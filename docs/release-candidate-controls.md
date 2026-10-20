@@ -55,6 +55,10 @@ backend tests, dependency/audit/API contracts; database checks; the deterministi
 Home performance gate; secret scanning and static analysis. Inspect the workflow
 for its exact commands instead of maintaining a second inventory here.
 
+The frontend job pins Ubuntu 24.04 because the locked Playwright 1.60 browser
+installer rejects Ubuntu 26.04. Keep that runner compatible with the installed
+browser tooling when updating either; all frontend checks still run.
+
 For release-process or workflow edits, run `npm run check:release-workflow`.
 Use [the verification matrix](pr-verification-matrix.md) for other local checks and
 review. Keep failed or incomplete checks explicit; resolve material findings and

@@ -296,7 +296,9 @@ def fetch_student_roster_page(
         raise RuntimeError("Roster RPC returned an invalid page projection.")
     page_ordinal = int(cursor_payload["ordinal"]) if cursor_payload else 1
     has_next = bool(row.get("has_next"))
-    has_previous = bool(row.get("has_previous"))
+    # Concurrent inserts can leave rows before a previous-scan anchor even
+    # when this cursor has returned to logical page one. Never emit page zero.
+    has_previous = page_ordinal > 1 and bool(row.get("has_previous"))
     next_anchor = _anchor_from_row(row.get("next_anchor"))
     previous_anchor = _anchor_from_row(row.get("previous_anchor"))
 
