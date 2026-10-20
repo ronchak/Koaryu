@@ -257,7 +257,13 @@ function StoreProviderBody({ children, preview }: { children: ReactNode; preview
     programsLoadedRef.current = loaded;
     setProgramsLoadedState(loaded);
   }, []);
-  const [programsLoadError, setProgramsLoadError] = useState<string | null>(null);
+  const [programsLoadError, setProgramsLoadErrorState] = useState<string | null>(null);
+  const programsLoadErrorRef = useRef<string | null>(null);
+  const setProgramsLoadError = useCallback((update: React.SetStateAction<string | null>) => {
+    const next = typeof update === "function" ? update(programsLoadErrorRef.current) : update;
+    programsLoadErrorRef.current = next;
+    setProgramsLoadErrorState(next);
+  }, []);
   const programsRef = useRef<Program[]>(programs);
   const programScopeRef = useRef(createResourceScope());
   const resetProgramScope = useCallback(() => {
@@ -754,7 +760,7 @@ function StoreProviderBody({ children, preview }: { children: ReactNode; preview
     setEligibilityLoadError(state.eligibilityLoadError);
     promotionHistoryGenerationRef.current += 1;
     setPromotionHistoryCache(state.promotionHistoryCache);
-  }, [setStudentsLoaded, setPrograms, setProgramsLoaded, resetProgramScope, resetBeltTestResourceScope, resetStaffScope, destructivelyResetScheduleCoordinator, setSessions, updateCurrentLadderId]);
+  }, [setStudentsLoaded, setPrograms, setProgramsLoaded, setProgramsLoadError, resetProgramScope, resetBeltTestResourceScope, resetStaffScope, destructivelyResetScheduleCoordinator, setSessions, updateCurrentLadderId]);
 
   const resetLiveStudioState = useCallback(() => {
     invalidateAccessIdentity();
@@ -881,7 +887,7 @@ function StoreProviderBody({ children, preview }: { children: ReactNode; preview
     destructivelyResetScheduleCoordinator();
     setScheduleLoadError(restored.scheduleLoadError);
     setScheduleStatus(restored.scheduleStatus);
-  }, [setStudentsLoaded, setProgramsLoaded, destructivelyResetScheduleCoordinator]);
+  }, [setStudentsLoaded, setProgramsLoaded, setProgramsLoadError, destructivelyResetScheduleCoordinator]);
 
   // Home reads one payload. This returns it without storing it: `useHome` owns
   // Home's state. Preview mode is selected here and nowhere else.
@@ -1004,7 +1010,7 @@ function StoreProviderBody({ children, preview }: { children: ReactNode; preview
     setSessions(data.sessions.sort(compareSessions));
     setAttendance(data.attendance);
     clearPromotionHistoryCache();
-  }, [setPrograms, setProgramsLoaded, resetProgramScope, resetBeltTestResourceScope, applyLadderSelection, clearPromotionHistoryCache, commitEligibilityRows, commitStudents, destructivelyResetScheduleCoordinator, setSessions]);
+  }, [setPrograms, setProgramsLoaded, setProgramsLoadError, resetProgramScope, resetBeltTestResourceScope, applyLadderSelection, clearPromotionHistoryCache, commitEligibilityRows, commitStudents, destructivelyResetScheduleCoordinator, setSessions]);
 
   const applyClearedStudioData = useCallback((studioNameValue?: string) => {
     resetBeltTestResourceScope();
@@ -1043,7 +1049,7 @@ function StoreProviderBody({ children, preview }: { children: ReactNode; preview
     setAttendance([]);
     clearEligibilityState();
     clearPromotionHistoryCache();
-  }, [setPrograms, setProgramsLoaded, resetProgramScope, resetBeltTestResourceScope,
+  }, [setPrograms, setProgramsLoaded, setProgramsLoadError, resetProgramScope, resetBeltTestResourceScope,
     clearEligibilityState,
     clearPromotionHistoryCache,
     commitStudents,
@@ -1125,7 +1131,7 @@ function StoreProviderBody({ children, preview }: { children: ReactNode; preview
     return () => {
       window.clearTimeout(timer);
     };
-  }, [setStudentsLoaded, setPrograms, setProgramsLoaded, applyLadderSelection, commitEligibilityRows, commitStudents, isPreviewMode, preview, setSessions]);
+  }, [setStudentsLoaded, setPrograms, setProgramsLoaded, setProgramsLoadError, applyLadderSelection, commitEligibilityRows, commitStudents, isPreviewMode, preview, setSessions]);
 
   const previewEligibilityForLadder = useCallback((ladderId?: string | null): EligibilityEntry[] => {
     return buildPreviewEligibilityForLadder({
@@ -1674,7 +1680,7 @@ function StoreProviderBody({ children, preview }: { children: ReactNode; preview
       bootstrapRequestRef.current?.controller.abort();
       authListener?.subscription.unsubscribe();
     };
-  }, [setStudentsLoaded, setPrograms, setProgramsLoaded, applyAuthoritativeNoStudioState, applyLadderSelection, applySubscriptionRequiredState, beginLiveAuthRequest, clearPromotionHistoryCache, commitAuthoritativeAuthProfile, commitEligibilityRows, commitStudents, destructivelyResetScheduleCoordinator, initializationAttempt, isPreviewMode, markSubscriptionRequired, reconcileSchedule, refreshSchedule, resetLiveStudioState, retireHomePreferencesOwner, router, supabase]);
+  }, [setStudentsLoaded, setPrograms, setProgramsLoaded, setProgramsLoadError, applyAuthoritativeNoStudioState, applyLadderSelection, applySubscriptionRequiredState, beginLiveAuthRequest, clearPromotionHistoryCache, commitAuthoritativeAuthProfile, commitEligibilityRows, commitStudents, destructivelyResetScheduleCoordinator, initializationAttempt, isPreviewMode, markSubscriptionRequired, reconcileSchedule, refreshSchedule, resetLiveStudioState, retireHomePreferencesOwner, router, supabase]);
 
   // ── Persist helpers (for preview mode) ──
   const persistStudents = useCallback((next: Student[]) => {
@@ -1689,7 +1695,7 @@ function StoreProviderBody({ children, preview }: { children: ReactNode; preview
     setProgramsLoaded(true);
     setProgramsLoadError(null);
     if (isPreviewMode) save(KEYS.programs, sorted);
-  }, [setPrograms, setProgramsLoaded, isPreviewMode]);
+  }, [setPrograms, setProgramsLoaded, setProgramsLoadError, isPreviewMode]);
 
   const persistLeads = useCallback((next: Lead[]) => {
     setLeads(next);
@@ -2050,8 +2056,9 @@ function StoreProviderBody({ children, preview }: { children: ReactNode; preview
       }
       const needsPrograms = ["/settings", "/leads", "/reports", "/schedule", "/belt-tracker"].includes(pathname)
         || pathname === "/students" || pathname.startsWith("/students/");
-      if (needsPrograms && !programsLoaded && !programsLoadError) {
-        void refreshPrograms({ includeArchived: true }).catch(() => undefined);
+      // A retry may succeed or fail before this queued route fallback runs.
+      if (needsPrograms && !programsLoadedRef.current && !programsLoadErrorRef.current) {
+        void refreshPrograms({ includeArchived: true, includeUsage: pathname === "/settings" }).catch(() => undefined);
       }
     }, 0);
     return () => window.clearTimeout(timer);
