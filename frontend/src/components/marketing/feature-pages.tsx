@@ -146,8 +146,8 @@ export function FeatureIndexPage() {
                 follow-ups and convert a lead into a student record when they enroll.
               </p>
               <p className={styles.roleNote}>
-                Admin and Front Desk manage leads. A stage change does not send an offer or a
-                message to the family.
+                Admin and Front Desk manage leads. A stage change sends nothing by itself; an
+                automation an Admin has published can email the family.
               </p>
             </section>
             <section>
@@ -174,11 +174,26 @@ export function FeatureIndexPage() {
               </div>
               <p>
                 Review recent attendance, class utilization, and lead-stage totals. The dashboard
-                flags attendance gaps for staff to investigate; it does not contact students.
+                flags attendance gaps for staff to investigate. The missed-class email can also
+                reach the family on its own, if an Admin turns it on.
               </p>
               <p className={styles.roleNote}>
                 CSV export access depends on the report and staff role. Front Desk can export
                 attendance, schedules, programs, and ranks. Broader exports require Admin access.
+              </p>
+            </section>
+            <section>
+              <div>
+                <h3>Email automations</h3>
+                <TextLink href="/features/automations">Missed-class emails and workflows</TextLink>
+              </div>
+              <p>
+                Email a student or their guardian when they stop coming to class. Set up emails for
+                a new lead, a scheduled or missed trial, an approved belt test, or a failed payment.
+              </p>
+              <p className={styles.roleNote}>
+                Admin sets up automations and previews who each email reaches before turning it on.
+                Automations send email only, not text messages.
               </p>
             </section>
           </div>
@@ -664,6 +679,11 @@ function AttendancePage() {
             <TextLink href="/use-cases/student-retention">
               Reviewing and following up on attendance gaps
             </TextLink>
+            <p>
+              An Admin can also turn on the missed-class email. It counts from the first class a
+              student misses, so a studio closure does not count against anyone.
+            </p>
+            <TextLink href="/features/automations">How the missed-class email works</TextLink>
           </div>
         </div>
       </section>
@@ -815,11 +835,93 @@ function BillingPage() {
   );
 }
 
+function AutomationsPage() {
+  return (
+    <>
+      <PageHeading title="Email families automatically">
+        In Automations, an Admin sets up emails that go out on their own: a check-in when a student
+        stops coming, or a workflow that runs when something happens in Koaryu. You see who each
+        email would reach before it goes live.
+      </PageHeading>
+
+      <section
+        className={`${styles.section} ${styles.twoColumns}`}
+        aria-labelledby="automation-kinds-heading"
+      >
+        <div>
+          <h2 id="automation-kinds-heading">Missed-class email</h2>
+          <p>
+            Choose how many days without a visit should send the email (14 by default), then write
+            the subject and message. The preview lists who would receive it today and why anyone
+            else is skipped. Turn it on when it looks right; pause it at any time.
+          </p>
+        </div>
+        <div>
+          <h2>Workflows</h2>
+          <p>
+            Start from an event: a student enrolls or is promoted, a lead is created or changes
+            stage, a trial is scheduled, completed, missed, or coming up, a belt test is approved or
+            coming up, an invoice becomes overdue, or a payment fails. Add waits, yes-or-no
+            conditions, emails, and lead follow-up tasks, then walk through it with sample data
+            before you publish.
+          </p>
+        </div>
+      </section>
+
+      <section
+        className={`${styles.section} ${styles.twoColumns}`}
+        aria-labelledby="recipient-heading"
+      >
+        <div>
+          <h2 id="recipient-heading">Who receives it</h2>
+          <p>
+            An adult student receives the missed-class email at their own address. For a minor, it
+            goes to their guardian, but only when one guardian email is clearly the one to use.
+            Otherwise the student is skipped and shown in the preview so staff can fix the record.
+            Students who are inactive, on hold, or have never attended are skipped.
+          </p>
+        </div>
+        <div>
+          <h2>When it goes out</h2>
+          <p>
+            The count starts at the first class a student misses, so a studio closure does not count
+            against anyone. Someone gone for more than 60 days past your setting is skipped rather
+            than sent a late note. Each stretch of absence gets one email; the next waits until the
+            student has come back and stopped again.
+          </p>
+        </div>
+      </section>
+
+      <section
+        className={`${styles.section} ${styles.twoColumns}`}
+        aria-labelledby="unsubscribe-heading"
+      >
+        <div>
+          <h2 id="unsubscribe-heading">Unsubscribe and replies</h2>
+          <p>
+            Each email to a student or family has an unsubscribe link. Anyone who unsubscribes
+            receives no more automated email from your studio. Replies go to your studio&apos;s
+            reply address.
+          </p>
+        </div>
+        <div>
+          <h2>How often</h2>
+          <p>
+            No one receives more than one automated email an hour, or three a day, from your studio.
+            Automations send email only, not text messages.
+          </p>
+        </div>
+      </section>
+    </>
+  );
+}
+
 const detailPages: Record<string, () => ReactNode> = {
   "student-management": StudentManagementPage,
   "belt-tracking": BeltTrackingPage,
   attendance: AttendancePage,
   billing: BillingPage,
+  automations: AutomationsPage,
 };
 
 export function FeatureDetailPage({

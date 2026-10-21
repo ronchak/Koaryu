@@ -12,6 +12,7 @@ const routes = [
   "/features/belt-tracking",
   "/features/attendance",
   "/features/billing",
+  "/features/automations",
   "/use-cases",
   "/use-cases/spreadsheets-to-studio-crm",
   "/use-cases/student-retention",

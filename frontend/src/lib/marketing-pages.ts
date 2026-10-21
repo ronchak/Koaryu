@@ -22,7 +22,8 @@ interface MarketingPageBase {
     | "file-spreadsheet"
     | "heart-pulse"
     | "user-plus"
-    | "clipboard-check";
+    | "clipboard-check"
+    | "mail";
   primaryAction: string;
   sections: Array<{
     title: string;
@@ -236,6 +237,46 @@ const featurePageDrafts: MarketingPageDraft[] = [
       },
     ],
   },
+  {
+    slug: "automations",
+    title: "Email Automations for Martial Arts Studios",
+    eyebrow: "Automations",
+    metaTitle: "Martial Arts Email Automations and Missed-Class Emails | Koaryu",
+    description:
+      "Send a missed-class email when a student stops coming, and set up emails for new leads, trials, belt tests, promotions and failed payments. Preview who receives each email before it goes live.",
+    summary:
+      "An Admin turns on a missed-class email or publishes a workflow. Koaryu sends each email on its own, with an unsubscribe link and limits on how often anyone hears from your studio.",
+    icon: "mail",
+    primaryAction: "Read the automations guide",
+    sections: [
+      {
+        title: "Email Automations for Martial Arts Studios",
+        description:
+          "An Admin turns on a missed-class email or publishes a workflow. Koaryu sends each email on its own, with an unsubscribe link and limits on how often anyone hears from your studio.",
+        bullets: [
+          "The missed-class email goes to an adult student, or to a minor's guardian, after the number of days you choose.",
+          "The count starts at the first class a student misses, so a studio closure does not count against anyone.",
+          "Workflows start from events such as a new lead, a scheduled or missed trial, an approved belt test or a failed payment.",
+          "Automations send email only, not text messages.",
+        ],
+      },
+    ],
+    proof: [],
+    related: [
+      {
+        kind: "feature",
+        slug: "attendance",
+      },
+      {
+        kind: "feature",
+        slug: "student-management",
+      },
+      {
+        kind: "feature",
+        slug: "billing",
+      },
+    ],
+  },
 ];
 
 const useCasePageDrafts: MarketingPageDraft[] = [
@@ -298,7 +339,7 @@ const useCasePageDrafts: MarketingPageDraft[] = [
         bullets: [
           "A long gap can mean a planned break, missing attendance, or a student who needs a check-in.",
           "Verify imported or incomplete attendance history before interpreting a gap.",
-          "Staff send outreach themselves; this guide does not send messages.",
+          "This guide covers personal outreach. For an automatic check-in, an Admin can turn on the missed-class email.",
           "Admin and Front Desk can record a dated update in student notes after contact.",
         ],
       },
@@ -336,7 +377,7 @@ const useCasePageDrafts: MarketingPageDraft[] = [
         description:
           "After creation, staff can change stage, assignee, and follow-up date, mark contact, mark lost, or convert. Initial contact details, program, and notes are displayed without edit controls in the inspector.",
         bullets: [
-          "Stage changes track progress. They do not book a class or send an offer.",
+          "Stage changes track progress. They do not book a class, and they send nothing unless an Admin has published an automation for that stage.",
           "Mark contacted clears the follow-up date. Reschedule when the family still needs a decision.",
           "Conversion copies name, email, phone, selected program, and initial notes into an active student record.",
           "A guardian record is created for a minor lead when a guardian name is present.",

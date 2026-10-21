@@ -363,6 +363,11 @@ const faqGroups: readonly FaqGroup[] = [
           "Admin and Front Desk staff. Instructors work with student profiles, attendance and rank history, and cannot access billing. Admins manage staff roles.",
       },
       {
+        question: "Can Koaryu email families for us?",
+        answer:
+          "Yes. An Admin can turn on a missed-class email that goes out when a student stops coming, or set up emails for moments like a new lead, a scheduled trial, an approved belt test or a failed payment. You preview who receives each email before turning it on, and families can unsubscribe from any of them.",
+      },
+      {
         question: "Is there a mobile app?",
         answer:
           "Koaryu runs in the browser on phones, tablets and computers, so there is nothing to install.",
@@ -380,7 +385,7 @@ const faqGroups: readonly FaqGroup[] = [
       {
         question: `What does ${formatPublicPlatformPrice()} a month include?`,
         answer:
-          "One studio's students, ranks, leads, scheduling, attendance, reports and billing records. There are no per-student tiers.",
+          "One studio's students, ranks, leads, scheduling, attendance, email automations, reports and billing records. There are no per-student tiers.",
       },
       {
         question: "Can families pay tuition through Koaryu?",
@@ -395,7 +400,7 @@ const faqGroups: readonly FaqGroup[] = [
       {
         question: "What doesn't Koaryu do yet?",
         answer:
-          "It is built for one studio, with no multi-location dashboard. It doesn't send automated email or SMS reminders; staff work from the follow-up queue and contact families themselves. Import does not bring over past attendance, promotions or billing, and new billing exports are unavailable.",
+          "It is built for one studio, with no multi-location dashboard. Automations send email only, not text messages. Import does not bring over past attendance, promotions or billing, and new billing exports are unavailable.",
       },
       {
         question: "How do I get support?",
