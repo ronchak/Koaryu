@@ -159,6 +159,15 @@ exactly one valid guardian when there is no primary; ambiguous routing is skippe
 The worker checks current entitlement, contact, attendance, hold, and opt-out
 state again before dispatch.
 
+Since V60 the gap counts missed classes, not closed days. The clock starts on the
+first class day after the student's last visit: a studio date on which anyone
+checked in (present or late) to a class that had already started and was not
+canceled or deleted. A closure with no classes does not count, so reopening day is
+day 0 for everyone who last came before it. Students more than 60 days past the
+rule's threshold are skipped as inactive instead of receiving a late first email.
+`{{days_absent}}` still reports calendar days since the last visit. A queued row
+that stops qualifying before sending stays queued and is rechecked hourly.
+
 Preview does not queue or send messages. The subject and plain-text body support
 `{{student_first_name}}`, `{{studio_name}}`, and `{{days_absent}}`. The renderer
 escapes HTML and adds an unsubscribe link to actual sends.

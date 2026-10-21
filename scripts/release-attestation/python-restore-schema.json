@@ -928,6 +928,36 @@
       "state": "v59",
       "query": "V59_RELEASE_MANIFEST_SQL",
       "expected": "EXPECTED_V59_RELEASE_MANIFEST"
+    },
+    "readiness-v60": {
+      "kind": "readiness",
+      "state": "v60"
+    },
+    "tables-v60": {
+      "kind": "export",
+      "state": "v60",
+      "query": "V60_AUTOMATION_TABLE_STATE_SQL",
+      "expected": "EXPECTED_V60_AUTOMATION_TABLE_STATE",
+      "restored": "EXPECTED_V60_RESTORED_AUTOMATION_TABLE_STATE"
+    },
+    "functions-v60": {
+      "kind": "export",
+      "state": "v60",
+      "query": "V60_AUTOMATION_FUNCTION_STATE_SQL",
+      "expected": "EXPECTED_V60_AUTOMATION_FUNCTION_STATE"
+    },
+    "catalog-v60": {
+      "kind": "export",
+      "state": "v60",
+      "query": "V60_CATALOG_STATE_SQL",
+      "expected": "EXPECTED_V60_CATALOG_STATE",
+      "restored": "EXPECTED_V60_RESTORED_CATALOG_STATE"
+    },
+    "release-v60": {
+      "kind": "export",
+      "state": "v60",
+      "query": "V60_RELEASE_MANIFEST_SQL",
+      "expected": "EXPECTED_V60_RELEASE_MANIFEST"
     }
   },
   "cases": {
@@ -4442,6 +4472,61 @@
       "upgradeSnapshotCheck": "require_v59_snapshot",
       "passLines": [
         "[restored V59] PASS retained V58 rows, exact canonical/restored readiness and timezone continuation"
+      ]
+    },
+    "v60": {
+      "format": "forward",
+      "base": "26c91747",
+      "constraintPairs": "v57-restore-constraint-pairs.json",
+      "docstring": "Prove V59 rows survive the V60 missed-class gap guards and logical restore with exact readiness and V59 compatibility.",
+      "exports": [
+        [
+          "readiness-v59.query",
+          "readiness-v59.expected"
+        ],
+        [
+          "catalog-v59.query",
+          "catalog-v59.expected",
+          "catalog-v59.restored"
+        ],
+        [
+          "readiness-v60.query",
+          "readiness-v60.expected"
+        ],
+        [
+          "tables-v60.query",
+          "tables-v60.expected",
+          "tables-v60.restored"
+        ],
+        [
+          "functions-v60.query",
+          "functions-v60.expected"
+        ],
+        [
+          "catalog-v60.query",
+          "catalog-v60.expected",
+          "catalog-v60.restored"
+        ],
+        [
+          "release-v60.query",
+          "release-v60.expected"
+        ]
+      ],
+      "predecessor": [
+        "readiness-v59",
+        "catalog-v59"
+      ],
+      "checks": [
+        "readiness-v60",
+        "tables-v60",
+        "functions-v60",
+        "catalog-v60",
+        "release-v60"
+      ],
+      "absentFunctions": [],
+      "semanticManifests": [],
+      "passLines": [
+        "[restored V60] PASS retained V59 rows, exact canonical/restored readiness, gap rules and V59 compatibility"
       ]
     }
   }

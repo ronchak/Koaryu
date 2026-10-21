@@ -149,3 +149,18 @@ changes reference rows only; ownership, grants, RLS and readiness declarations
 stay fixed. The populated backup proof restores ordinary trial/belt CHECKs without
 changing the dump order or bypassing validation, then compares names and security
 and exercises service-role lookups and both drift directions.
+
+V60 replaces only `private.missed_class_automation_candidates`: the absence clock
+starts at the first class day after a visit and stops 60 days past the threshold.
+No table, type, reason value or privilege changes. Its full preflight V41 replaces
+`timezone_functions_v59` with `missed_class_functions_v60` (the same inventory plus
+the V40 bridge, excluding V41) and advances only the `automation_functions_v56`
+override. Every other V59 pin, the V31 expectation singleton and the table and
+catalog profiles are unchanged; the canonical pins were measured on a replayed
+V59 upgrade and the restored ones by the generated V59-to-V60 restore proof. V41
+retains V59-shaped success rows through the generated V40 compatibility bridge.
+The forward restore case permits no retained-row change and probes the new gaps
+at explicit references. Guarded inspection accepts an exact V59 predecessor,
+including timezone name parity, and V60 post-state evidence with V59
+compatibility. The private backup helper needs reviewed `(154,'20261014083106')
+-> 40` and `(155,'20261021093000') -> 41` mappings before backing up V59 or V60.
