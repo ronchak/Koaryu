@@ -5,7 +5,8 @@ from types import SimpleNamespace
 import pytest
 from fastapi import HTTPException
 
-from app.schemas.student import CsvImportOptions, CsvImportResult
+from app.schemas.student import CsvImportDuplicateDecision, CsvImportOptions, CsvImportResult
+from app.services.student_import_ids import deterministic_import_uuid
 from app.services.student_import_executor import StudentImportExecutor
 from app.services.student_service import StudentService
 from tests.fakes.supabase import TableBackedSupabase
@@ -17,10 +18,12 @@ OTHER = "33333333-3333-4333-8333-333333333334"
 MAPPING = {
     "First": "legal_first_name",
     "Last": "legal_last_name",
+    "DOB": "date_of_birth",
     "Program": "program_id",
     "Status": "status",
     "Belt": "current_belt_rank_id",
 }
+EXISTING = "77777777-7777-4777-8777-777777777777"
 
 
 class ScriptedImportDb(TableBackedSupabase):
@@ -35,6 +38,10 @@ class ScriptedImportDb(TableBackedSupabase):
                 ],
                 "belt_ladders": [],
                 "belt_ranks": [],
+                "students": [],
+                "student_guardians": [],
+                "guardians": [],
+                "studios": [{"id": STUDIO, "timezone": "America/New_York"}],
             }
         )
         self.responses = []
@@ -51,10 +58,16 @@ class ScriptedImportDb(TableBackedSupabase):
 
         return SimpleNamespace(execute=execute)
 
-    def execute_import(self, rows, **options):
+    def execute_import(self, rows, decisions=None, **options):
         return asyncio.run(
             StudentImportExecutor(self).execute_import(
-                rows, MAPPING, CsvImportOptions(**options), STUDIO, "actor", "same-key"
+                rows,
+                MAPPING,
+                CsvImportOptions(**options),
+                STUDIO,
+                "actor",
+                "same-key",
+                duplicate_decisions=decisions,
             )
         )
 
@@ -326,3 +339,195 @@ def test_setup_batches_requested_belts_and_excludes_rejected_rows():
     assert result.created_belts == ["White (BJJ)", "Blue (BJJ)"]
     assert result.imported_count == 2 and result.error_rows == 1 and not db.responses
     assert sum(query["table"] == "programs" for query in db.query_log) == 1
+
+
+def existing_student(student_id=EXISTING, first="Ava", last="Nguyen", dob="2014-06-03", **extra):
+    return {
+        "id": student_id,
+        "studio_id": STUDIO,
+        "legal_first_name": first,
+        "legal_last_name": last,
+        "preferred_name": None,
+        "date_of_birth": dob,
+        "email": None,
+        "phone": None,
+        "deleted_at": None,
+        **extra,
+    }
+
+
+def test_preview_flags_existing_and_in_file_duplicates_with_plain_reasons_only():
+    db = ScriptedImportDb()
+    db.tables["students"] = [
+        existing_student(email="family@example.net", phone="415-555-0100"),
+        existing_student(
+            "88888888-8888-4888-8888-888888888888",
+            "Mina",
+            "Nguyen",
+            "2016-01-02",
+            deleted_at="2026-01-01T00:00:00Z",
+        ),
+        {
+            **existing_student(
+                "99999999-9999-4999-8999-999999999999", "Other", "Studio", "2014-06-03"
+            ),
+            "studio_id": "another-studio",
+        },
+    ]
+    rows = [
+        {"First": "Ava", "Last": "Nguyen", "DOB": "2014-06-03"},
+        {"First": "Mina", "Last": "Nguyen", "DOB": "2016-01-02"},
+        {"First": "Ava", "Last": "Nguyen", "DOB": "2014-06-03"},
+        {"First": "Other", "Last": "Studio", "DOB": "2014-06-03"},
+        {"First": "Sam", "Last": "Nguyen"},
+    ]
+    preview = StudentService(db).validate_import_rows(rows, MAPPING, CsvImportOptions(), STUDIO)
+    assert preview.valid_rows == 5 and preview.error_rows == 0
+    assert preview.duplicate_flagged_rows == 3 and preview.skipped_rows == 0
+    reviews = {row.row_number: row.duplicate_review for row in preview.rows}
+    assert reviews[2].suggested_action == "skip"
+    assert reviews[2].candidates[0].model_dump() == {
+        "student_id": EXISTING,
+        "of_row": None,
+        "display_name": "Ava Nguyen",
+        "archived": False,
+        "confidence": "strong",
+        "reasons": ["same name", "same birth date"],
+    }
+    assert reviews[3].suggested_action == "decide" and reviews[3].candidates[0].archived is True
+    assert reviews[4].suggested_action == "skip"
+    assert [(c.of_row, c.student_id) for c in reviews[4].candidates] == [
+        (2, None),
+        (None, EXISTING),
+    ]
+    assert 5 not in reviews and 6 not in reviews
+    serialized = preview.model_dump_json()
+    assert "family@example.net" not in serialized and "415-555-0100" not in serialized
+    roster_queries = [q for q in db.query_log if q["table"] == "students"]
+    assert roster_queries and all(
+        ("eq", "studio_id", STUDIO) in q["filters"] for q in roster_queries
+    )
+    assert not db.calls
+
+
+def test_execution_honours_skip_refuses_unreviewed_strong_matches_and_counts_outcomes():
+    db = ScriptedImportDb()
+    db.tables["programs"][0]["name"] = "Unassigned"
+    db.tables["students"] = [
+        existing_student(),
+        existing_student("88888888-8888-4888-8888-888888888888", "Mina", "Nguyen", "2016-01-02"),
+        existing_student("66666666-6666-4666-8666-666666666666", "Leo", "Nguyen", None),
+    ]
+    rows = [
+        {"First": "Ava", "Last": "Nguyen", "DOB": "2014-06-03"},  # skip, named correctly
+        {"First": "Mina", "Last": "Nguyen", "DOB": "2016-01-02"},  # strong, no decision -> refused
+        {"First": "Leo", "Last": "Nguyen"},  # possible, skip naming the wrong student -> created
+        {"First": "Ava", "Last": "Nguyen", "DOB": "2014-06-03"},  # in-file repeat of row 2 -> skip
+        {"First": "Sam", "Last": "Nguyen"},  # plain create
+    ]
+    decisions = {
+        "2": CsvImportDuplicateDecision(action="skip", matched_student_id=EXISTING),
+        "4": CsvImportDuplicateDecision(action="skip", matched_student_id="not-the-one"),
+        "5": CsvImportDuplicateDecision(action="skip", of_row=2),
+    }
+    db.responses = [
+        ("claim_student_import_run_v2", claim()),
+        ("prepare_student_import_program_v1", selected_program(PROGRAM, "Unassigned")),
+        ("import_student_row_atomic", row_success),
+        ("import_student_row_atomic", row_success),
+        ("finish_student_import_run", finish),
+    ]
+    result = db.execute_import(rows, decisions=decisions)
+    writes = [params for name, params in db.calls if name == "import_student_row_atomic"]
+    assert [params["p_row_number"] for params in writes] == [4, 6]
+    assert result.imported_count == 2 and result.skipped_rows == 2 and result.error_rows == 1
+    assert result.valid_rows == 4 and result.total_rows == 5
+    by_row = {row.row_number: row for row in result.rows}
+    assert [issue.code for issue in by_row[2].issues] == ["duplicate_skipped"]
+    assert by_row[2].warnings == ["Skipped: already in Koaryu as Ava Nguyen."]
+    assert [issue.code for issue in by_row[3].issues] == ["duplicate_review_required"]
+    assert by_row[3].is_valid is False
+    assert [issue.code for issue in by_row[5].issues] == ["duplicate_skipped"]
+    assert 4 in by_row and by_row[4].is_valid and by_row[4].duplicate_review is not None
+    claims = [params for name, params in db.calls if name == "claim_student_import_run_v2"]
+    assert claims[0]["p_request_hash"] != __import__(
+        "app.services.student_import_runs", fromlist=["StudentImportRunStore"]
+    ).StudentImportRunStore.compute_request_hash(rows, MAPPING, CsvImportOptions())
+    assert not db.responses
+
+
+def test_in_file_skip_is_refused_when_its_original_row_was_blocked():
+    db = ScriptedImportDb()
+    db.tables["programs"][0]["name"] = "Unassigned"
+    db.tables["students"] = [existing_student()]
+    rows = [
+        {"First": "Ava", "Last": "Nguyen", "DOB": "2014-06-03"},  # strong, no decision -> refused
+        {"First": "Ava", "Last": "Nguyen", "DOB": "2014-06-03"},  # skip of row 2 -> refused too
+    ]
+    db.responses = [
+        ("claim_student_import_run_v2", claim()),
+        ("finish_student_import_run", finish),
+    ]
+    result = db.execute_import(
+        rows, decisions={"3": CsvImportDuplicateDecision(action="skip", of_row=2)}
+    )
+    assert result.imported_count == 0 and result.skipped_rows == 0 and result.error_rows == 2
+    assert all(
+        [issue.code for issue in row.issues] == ["duplicate_review_required"] for row in result.rows
+    )
+    assert [name for name, _ in db.calls] == [
+        "claim_student_import_run_v2",
+        "finish_student_import_run",
+    ]
+
+
+def test_retry_keeps_completed_receipts_and_treats_their_students_as_in_file_rows():
+    db = ScriptedImportDb()
+    db.tables["programs"][0]["name"] = "Unassigned"
+    first_id = deterministic_import_uuid(RUN, "student-row", "2")
+    # The first attempt committed row 2; its student is now in the roster.
+    db.tables["students"] = [existing_student(first_id)]
+    rows = [
+        {"First": "Ava", "Last": "Nguyen", "DOB": "2014-06-03"},
+        {"First": "Ava", "Last": "Nguyen", "DOB": "2014-06-03"},
+        {"First": "Sam", "Last": "Nguyen"},
+    ]
+    receipt = {
+        "kind": "student",
+        "key": "2",
+        "result": {
+            "student_id": first_id,
+            "guardian_imported": False,
+            "outcome": {
+                "row_number": 2,
+                "is_valid": True,
+                "issues": [],
+                "data": {},
+                "imported_without_belt": False,
+            },
+        },
+    }
+    db.responses = [
+        (
+            "claim_student_import_run_v2",
+            claim(
+                [
+                    receipt,
+                    {
+                        "kind": "program",
+                        "key": "__unassigned__",
+                        "result": selected_program(PROGRAM, "Unassigned"),
+                    },
+                ]
+            ),
+        ),
+        ("import_student_row_atomic", row_success),
+        ("finish_student_import_run", finish),
+    ]
+    result = db.execute_import(
+        rows, decisions={"3": CsvImportDuplicateDecision(action="skip", of_row=2)}
+    )
+    writes = [params for name, params in db.calls if name == "import_student_row_atomic"]
+    assert [params["p_row_number"] for params in writes] == [4]
+    assert result.imported_count == 2 and result.skipped_rows == 1 and result.error_rows == 0
+    assert not db.responses

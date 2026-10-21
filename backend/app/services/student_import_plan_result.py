@@ -4,6 +4,7 @@ from typing import Any
 
 from app.schemas.student import (
     CsvImportActionOptions,
+    CsvImportDuplicateReview,
     CsvImportResult,
     CsvImportRow,
     CsvImportSetupIssue,
@@ -32,13 +33,23 @@ def build_import_result(
         "ambiguous_belt_ladder": {"row_numbers": [], "values": set(), "severity": "error"},
     }
 
+    skipped_rows = 0
+    duplicate_flagged_rows = 0
     for row in rows:
         if row["is_valid"]:
             valid_rows += 1
         else:
             error_rows += 1
+        if row.get("skipped"):
+            skipped_rows += 1
 
-        if row["issues"]:
+        review_payload = row.get("duplicate_review")
+        review = CsvImportDuplicateReview.model_validate(review_payload) if review_payload else None
+        match = row.get("match")
+        if match is not None and getattr(match, "is_flagged", False):
+            duplicate_flagged_rows += 1
+
+        if row["issues"] or review is not None:
             error_messages = [issue.message for issue in row["issues"] if issue.severity == "error"]
             warning_messages = [
                 issue.message for issue in row["issues"] if issue.severity == "warning"
@@ -51,6 +62,7 @@ def build_import_result(
                     errors=error_messages,
                     warnings=warning_messages,
                     is_valid=row["is_valid"],
+                    duplicate_review=review,
                 )
             )
 
@@ -234,4 +246,6 @@ def build_import_result(
         actions_available=actions_available,
         imported_without_belt_count=len(unresolved_belt_rows),
         normalized_status_count=len(normalized_status_rows),
+        skipped_rows=skipped_rows,
+        duplicate_flagged_rows=duplicate_flagged_rows,
     )

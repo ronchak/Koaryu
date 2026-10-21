@@ -4,7 +4,7 @@ import uuid
 import pytest
 from fastapi import HTTPException
 
-from app.schemas.student import CsvImportOptions, CsvImportResult
+from app.schemas.student import CsvImportDuplicateDecision, CsvImportOptions, CsvImportResult
 from app.services.student_import_runs import StudentImportRunStore
 
 
@@ -42,6 +42,17 @@ def test_request_identity_preserves_keys_and_distinguishes_changed_inputs():
         (rows, mapping, CsvImportOptions(create_missing_programs=True)),
     ]:
         assert store.compute_request_hash(*changed) != original
+    # Absent or empty decisions keep the historical identity; any decision changes it.
+    assert store.compute_request_hash(rows, mapping, options, {}) == original
+    skip = {"2": CsvImportDuplicateDecision(action="skip", matched_student_id="s1")}
+    create = {"2": CsvImportDuplicateDecision(action="create", matched_student_id="s1")}
+    assert store.compute_request_hash(rows, mapping, options, skip) != original
+    assert store.compute_request_hash(rows, mapping, options, skip) != store.compute_request_hash(
+        rows, mapping, options, create
+    )
+    assert store.compute_request_hash(rows, mapping, options, skip) == store.compute_request_hash(
+        rows, mapping, options, dict(skip)
+    )
 
 
 def test_claim_translates_v2_envelopes_without_reimplementing_database_claims():

@@ -425,6 +425,8 @@ export function buildPreviewStudentImportResult({
       imported_without_belt_count: 0,
       normalized_status_count: normalizedStatusCount,
       imported_count: importedStudents.length,
+      skipped_rows: 0,
+      duplicate_flagged_rows: 0,
       reused_result: false,
       execution_status: "completed",
       non_critical_errors: [],

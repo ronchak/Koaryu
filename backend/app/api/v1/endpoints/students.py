@@ -585,6 +585,7 @@ async def execute_csv_import(
             studio_id,
             user_id,
             request.idempotency_key or request_idempotency_key,
+            duplicate_decisions=request.duplicate_decisions,
         )
 
     return await run_supabase_operation(supabase, _provider_operation, lane="bulk")

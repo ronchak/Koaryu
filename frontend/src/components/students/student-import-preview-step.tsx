@@ -5,11 +5,19 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   buildCsvImportIssueGroups,
+  buildDuplicateDecision,
   buildPreflightSummary,
+  countDuplicateSkips,
+  describeDuplicateCandidate,
   formatRowNumbers,
+  getDuplicateReviewRows,
+  hasUnresolvedDuplicateDecisions,
+  pluralize,
+  type DuplicateDecisionMap,
+  type DuplicateReviewRow,
 } from "@/lib/student-import-page-model";
-import type { CsvImportOptions, CsvImportResult } from "@/types";
-import { AlertCircle, ExternalLink, Info } from "lucide-react";
+import type { CsvImportDuplicateDecision, CsvImportOptions, CsvImportResult } from "@/types";
+import { AlertCircle, ExternalLink, Info, Users } from "lucide-react";
 import { StudentImportSectionCard } from "./student-import-panels";
 import styles from "./student-records.module.css";
 
@@ -20,11 +28,13 @@ type ImportOptionChangeHandler = <K extends keyof CsvImportOptions>(
 
 interface StudentImportPreviewStepProps {
   activeImportKey: string | null;
+  duplicateDecisions: DuplicateDecisionMap;
   importKeyError: string | null;
   importOptions: CsvImportOptions;
   isLoading: boolean;
   validationResult: CsvImportResult;
   onBackToMapping: () => void;
+  onDuplicateDecisionChange: (rowNumber: number, decision: CsvImportDuplicateDecision) => void;
   onImport: () => Promise<void> | void;
   onOpenBeltTracker: (href: string) => void;
   onOptionToggle: ImportOptionChangeHandler;
@@ -32,16 +42,25 @@ interface StudentImportPreviewStepProps {
 
 export function StudentImportPreviewStep({
   activeImportKey,
+  duplicateDecisions,
   importKeyError,
   importOptions,
   isLoading,
   validationResult,
   onBackToMapping,
+  onDuplicateDecisionChange,
   onImport,
   onOpenBeltTracker,
   onOptionToggle,
 }: StudentImportPreviewStepProps) {
   const issueRows = validationResult.rows || [];
+  const duplicateRows = getDuplicateReviewRows(validationResult);
+  const skipCount = countDuplicateSkips(validationResult, duplicateDecisions);
+  const unresolvedDuplicates = hasUnresolvedDuplicateDecisions(
+    validationResult,
+    duplicateDecisions,
+  );
+  const importCount = Math.max(validationResult.valid_rows - skipCount, 0);
   const blockingRows = issueRows.filter((row) =>
     row.issues.some((issue) => issue.severity === "error"),
   );
@@ -82,6 +101,15 @@ export function StudentImportPreviewStep({
         onOpenBeltTracker={onOpenBeltTracker}
         onOptionToggle={onOptionToggle}
       />
+
+      {duplicateRows.length > 0 ? (
+        <StudentImportDuplicateReview
+          decisions={duplicateDecisions}
+          isLoading={isLoading}
+          rows={duplicateRows}
+          onDecisionChange={onDuplicateDecisionChange}
+        />
+      ) : null}
 
       {validationResult.setup_issues.length > 0 ? (
         <StudentImportSetupIssues validationResult={validationResult} />
@@ -124,19 +152,26 @@ export function StudentImportPreviewStep({
             variant="primary"
             size="md"
             isLoading={isLoading}
-            disabled={isLoading || !activeImportKey}
+            disabled={isLoading || !activeImportKey || unresolvedDuplicates || importCount === 0}
             onClick={() => void onImport()}
           >
-            Import {validationResult.valid_rows} students
+            Import {importCount} {pluralize(importCount, "student")}
           </Button>
         ) : null}
       </div>
       {validationResult.valid_rows > 0 ? (
         importKeyError ? (
           <p className="text-xs text-danger text-right">{importKeyError}</p>
+        ) : unresolvedDuplicates ? (
+          <p className="text-xs text-warning text-right">
+            Choose Skip or Create for each student who may already be in Koaryu.
+          </p>
         ) : (
           <p className="text-xs text-muted text-right">
-            If the connection drops, retry with this exact file and the same options. Koaryu will
+            {skipCount > 0
+              ? `${skipCount} ${pluralize(skipCount, "row")} will be skipped as already in Koaryu. `
+              : ""}
+            If the connection drops, retry with this exact file and the same choices. Koaryu will
             recognize the retry and avoid duplicate students.
           </p>
         )
@@ -272,6 +307,112 @@ function StudentImportReviewCard({
             </Button>
           ) : null}
         </div>
+      </div>
+    </StudentImportSectionCard>
+  );
+}
+
+function StudentImportDuplicateReview({
+  decisions,
+  isLoading,
+  rows,
+  onDecisionChange,
+}: {
+  decisions: DuplicateDecisionMap;
+  isLoading: boolean;
+  rows: DuplicateReviewRow[];
+  onDecisionChange: (rowNumber: number, decision: CsvImportDuplicateDecision) => void;
+}) {
+  const choiceRows = rows.filter((row) => row.needsChoice);
+  const contextRows = rows.filter((row) => !row.needsChoice);
+
+  return (
+    <StudentImportSectionCard
+      title="Looks like they may already be in Koaryu"
+      description="Skipping keeps the student who is already in Koaryu exactly as they are. Nothing is merged or overwritten either way."
+      icon={<Users className="w-4 h-4 text-accent mt-0.5" />}
+    >
+      <div className="space-y-3">
+        {choiceRows.map((row) => {
+          const decision = decisions[String(row.rowNumber)];
+          const groupName = `duplicate-decision-${row.rowNumber}`;
+          return (
+            <div
+              key={row.rowNumber}
+              className="border border-border rounded-[14px] p-3"
+              data-testid={`duplicate-row-${row.rowNumber}`}
+            >
+              <div className="flex items-start justify-between gap-3 flex-wrap">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-text-primary">
+                    Row {row.rowNumber}: {row.rowName}
+                  </p>
+                  {row.review.candidates
+                    .filter((candidate) => candidate.confidence !== "different_person")
+                    .map((candidate) => (
+                      <p
+                        key={`${row.rowNumber}-${candidate.student_id ?? candidate.of_row}`}
+                        className="text-xs text-text-secondary mt-1"
+                      >
+                        Matches {describeDuplicateCandidate(candidate)}
+                        {candidate.archived ? (
+                          <Badge variant="warning" className="ml-2">
+                            Archived
+                          </Badge>
+                        ) : null}
+                      </p>
+                    ))}
+                  {row.review.family_context.map((note) => (
+                    <p key={note} className="text-xs text-muted mt-1">
+                      {note}
+                    </p>
+                  ))}
+                </div>
+                {row.decisionRequired && !decision ? (
+                  <Badge variant="warning">Choose one</Badge>
+                ) : null}
+              </div>
+              <div className="mt-2 flex flex-wrap gap-4" role="radiogroup" aria-label={groupName}>
+                <label className="flex items-center gap-2 text-sm text-text-secondary">
+                  <input
+                    type="radio"
+                    name={groupName}
+                    checked={decision?.action === "skip"}
+                    disabled={isLoading}
+                    onChange={() =>
+                      onDecisionChange(row.rowNumber, buildDuplicateDecision(row.review, "skip"))
+                    }
+                  />
+                  Skip, already in Koaryu
+                </label>
+                <label className="flex items-center gap-2 text-sm text-text-secondary">
+                  <input
+                    type="radio"
+                    name={groupName}
+                    checked={decision?.action === "create"}
+                    disabled={isLoading}
+                    onChange={() =>
+                      onDecisionChange(row.rowNumber, buildDuplicateDecision(row.review, "create"))
+                    }
+                  />
+                  Create as a new student
+                </label>
+              </div>
+            </div>
+          );
+        })}
+        {contextRows.length > 0 ? (
+          <div className="border border-border rounded-[14px] p-3">
+            <p className="text-sm font-medium text-text-primary">Same name, different person</p>
+            {contextRows.map((row) => (
+              <p key={row.rowNumber} className="text-xs text-muted mt-1">
+                Row {row.rowNumber}: {row.rowName} shares a name with{" "}
+                {row.primary ? describeDuplicateCandidate(row.primary) : "an existing student"}.
+                Treated as a different student.
+              </p>
+            ))}
+          </div>
+        ) : null}
       </div>
     </StudentImportSectionCard>
   );
