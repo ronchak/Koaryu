@@ -99,7 +99,7 @@ def test_twins_and_siblings_are_never_the_same_student():
     assert all(m.of_existing_key is None and m.of_row is None for m in matches)
     assert matches[0].guardian_class == "link_existing"
     assert matches[0].guardian_of_existing_key == "g1"
-    assert matches[0].guardian_reasons == ["email", "first_name", "last_name"]
+    assert matches[0].guardian_reasons == ["email", "first_name"]
     # Row 3 shares its guardian with row 2 first (earlier rows compare first); the roster
     # guardian stays in the candidate list but the RowMatch names one source only.
     assert matches[1].guardian_class == "in_file_shared"

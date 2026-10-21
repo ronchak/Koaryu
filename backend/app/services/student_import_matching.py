@@ -251,12 +251,8 @@ def compare_guardians(
     same_name = same_first and same_last
     if candidate.email and candidate.email == other.email:
         if same_first or same_last:
-            reasons = ["email"]
-            if same_first:
-                reasons.append("first_name")
-            if same_last:
-                reasons.append("last_name")
-            return "link", reasons
+            # One name part is enough for a link; first name wins when both agree.
+            return "link", ["email", "first_name" if same_first else "last_name"]
         return "separate", ["email", "name_mismatch"]
     if same_name and candidate.phone and candidate.phone == other.phone:
         return "link", ["name", "phone"]
