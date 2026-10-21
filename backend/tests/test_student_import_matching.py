@@ -100,10 +100,14 @@ def test_twins_and_siblings_are_never_the_same_student():
     assert matches[0].guardian_class == "link_existing"
     assert matches[0].guardian_of_existing_key == "g1"
     assert matches[0].guardian_reasons == ["email", "first_name", "last_name"]
-    # Row 3 shares its guardian with row 2 first (earlier rows compare first) and with the roster.
+    # Row 3 shares its guardian with row 2 first (earlier rows compare first); the roster
+    # guardian stays in the candidate list but the RowMatch names one source only.
     assert matches[1].guardian_class == "in_file_shared"
     assert matches[1].guardian_of_row == 2
-    assert matches[1].guardian_of_existing_key == "g1"
+    assert matches[1].guardian_of_existing_key is None
+    assert [c.existing_key for c in matches[1].guardian_candidates if c.source == "existing"] == [
+        "g1"
+    ]
 
 
 def test_step_siblings_with_different_surnames_share_a_guardian_but_stay_separate_students():
@@ -137,8 +141,9 @@ def test_senior_and_junior_with_different_birth_dates_are_different_people():
     ]
     (match,) = match_rows(rows, roster)
     assert match.duplicate_class == "different_person"
-    assert match.reasons == ["name", "birth_date_conflict"]
-    assert match.of_existing_key == "s1"
+    assert match.reasons == []
+    assert match.of_existing_key == "s1" and match.of_row is None
+    assert match.candidates[0].reasons == ["name", "birth_date_conflict"]
     assert not match.is_flagged and not match.requires_decision
 
 
@@ -247,7 +252,7 @@ def test_in_file_repeat_with_different_formatting_points_at_the_earliest_row():
     assert matches[3].suggested_action == "skip"
 
 
-def test_in_file_match_names_the_class_when_roster_also_matches_and_keeps_both_references():
+def test_in_file_match_names_the_class_when_roster_also_matches_and_keeps_the_other_candidate():
     roster = [existing("s1", "Ava", "Nguyen", date_of_birth="2014-06-03")]
     rows = [
         planned(2, legal_first_name="Ava", legal_last_name="Nguyen", date_of_birth="2014-06-03"),
@@ -256,7 +261,16 @@ def test_in_file_match_names_the_class_when_roster_also_matches_and_keeps_both_r
     matches = match_rows(rows, roster)
     assert matches[0].duplicate_class == "existing_strong" and matches[0].of_existing_key == "s1"
     assert matches[1].duplicate_class == "in_file_strong"
-    assert matches[1].of_row == 2 and matches[1].of_existing_key == "s1"
+    assert matches[1].of_row == 2 and matches[1].of_existing_key is None
+    assert [(c.source, c.row_number, c.existing_key) for c in matches[1].candidates] == [
+        ("row", 2, None),
+        ("existing", None, "s1"),
+    ]
+    review = build_duplicate_review(matches[1])
+    assert [(c["of_row"], c["student_id"]) for c in review["candidates"]] == [
+        (2, None),
+        (None, "s1"),
+    ]
 
 
 def test_rows_completed_by_receipt_match_later_rows_through_their_import_row_number():
@@ -343,6 +357,32 @@ def test_guardian_name_and_phone_link_and_name_only_stays_separate():
     assert fresh.guardian_class == "new" and build_duplicate_review(fresh) is None
 
 
+def test_guardian_class_is_none_without_a_guardian_and_new_without_a_match():
+    roster = [
+        existing(
+            "s1", "Mia", "Lopez", guardians=[guardian("g1", "Maria", "Lopez", "m@example.com")]
+        )
+    ]
+    matches = match_rows(
+        [
+            planned(2, legal_first_name="Diego", legal_last_name="Ortiz"),
+            planned(
+                3,
+                legal_first_name="Diego",
+                legal_last_name="Ortiz",
+                guardian_name="Ana Ruiz",
+                guardian_email="ana@example.org",
+            ),
+        ],
+        roster,
+    )
+    assert matches[0].guardian_class == "none"
+    assert matches[0].guardian_of_row is None and matches[0].guardian_of_existing_key is None
+    assert matches[0].guardian_reasons == []
+    assert matches[1].guardian_class == "new" and matches[1].guardian_reasons == []
+    assert matches[1].duplicate_class == "in_file_possible" and matches[1].of_row == 2
+
+
 def test_guardian_signals_alone_never_identify_a_student_and_preferred_name_is_ignored():
     roster = [
         existing(
@@ -392,14 +432,15 @@ def test_rows_without_names_or_with_unparsed_birth_dates_do_not_match_or_crash()
     "decision, expected",
     [
         (None, False),
-        (Decision("skip", matched_student_id="s1"), True),
-        (Decision("skip", matched_student_id="s2"), False),
+        (Decision("skip", matched_student_id="s1"), False),
+        (Decision("skip", matched_student_id="s1", of_row=2), True),
         (Decision("skip", of_row=2), True),
         (Decision("skip", of_row=9), False),
-        (Decision("create", matched_student_id="s1"), True),
+        (Decision("create", matched_student_id="s1", of_row=2), True),
     ],
 )
 def test_decision_must_name_what_execution_found(decision, expected):
+    """Row 3 repeats row 2, so the match names the in-file row, not the roster student."""
     roster = [existing("s1", "Ava", "Nguyen", date_of_birth="2014-06-03")]
     rows = [
         planned(2, legal_first_name="Ava", legal_last_name="Nguyen", date_of_birth="2014-06-03"),

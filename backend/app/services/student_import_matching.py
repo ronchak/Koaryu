@@ -14,8 +14,9 @@ Identity rules (students):
   exactly what siblings look like.
 * Earlier rows in the same file are compared first; ``of_row`` is the earliest
   matching row. Existing students are compared second. When both match at the
-  same confidence, the in-file match names the class and both references are
-  kept.
+  same confidence, the in-file match names the class. A ``RowMatch`` describes
+  the best overall match only, so exactly one of ``of_row`` and
+  ``of_existing_key`` is set; the other source stays in ``candidates``.
 
 Identity rules (guardians) mirror the database row writer: the guardian name is
 split on the first space. Guardian matches are family context only in A1; the
@@ -291,19 +292,18 @@ def _candidate_sort_key(candidate: MatchCandidate) -> tuple[int, int, int, int]:
 
 
 def _class_for(candidate: MatchCandidate) -> tuple[str, list[str]]:
+    """Class and reasons for the best candidate; different_person carries no reasons."""
+    if candidate.confidence == "different_person":
+        return "different_person", []
     if candidate.source == "row":
         if candidate.confidence == "strong":
             return "in_file_strong", list(candidate.reasons)
-        if candidate.confidence == "possible":
-            return "in_file_possible", list(candidate.reasons)
-        return "different_person", list(candidate.reasons)
-    if candidate.archived and candidate.confidence != "different_person":
+        return "in_file_possible", list(candidate.reasons)
+    if candidate.archived:
         return "archived_match", [*candidate.reasons, candidate.confidence]
     if candidate.confidence == "strong":
         return "existing_strong", list(candidate.reasons)
-    if candidate.confidence == "possible":
-        return "existing_possible", list(candidate.reasons)
-    return "different_person", list(candidate.reasons)
+    return "existing_possible", list(candidate.reasons)
 
 
 CANDIDATE_CAP = 3
@@ -544,17 +544,13 @@ def match_rows(
         candidates.sort(key=_candidate_sort_key)
         match.candidates = candidates
         if candidates:
+            # The RowMatch describes the best overall match only; the other
+            # source stays available in ``candidates`` for display and decisions.
             best = candidates[0]
             match.duplicate_class, match.reasons = _class_for(best)
-            best_row = next((c for c in candidates if c.source == "row"), None)
-            best_existing = next((c for c in candidates if c.source == "existing"), None)
-            if best_row and best_row.confidence != "different_person":
-                match.of_row = best_row.row_number
-            elif best.source == "row":
+            if best.source == "row":
                 match.of_row = best.row_number
-            if best_existing and best_existing.confidence != "different_person":
-                match.of_existing_key = best_existing.existing_key
-            elif best.source == "existing":
+            else:
                 match.of_existing_key = best.existing_key
 
         if guardian.present:
@@ -602,30 +598,10 @@ def match_rows(
                 else:
                     match.guardian_class = "separate_contact"
                 match.guardian_reasons = list(best_guardian.reasons)
-                row_link = next(
-                    (c for c in guardian_candidates if c.source == "row" and c.strength == "link"),
-                    None,
-                )
-                existing_link = next(
-                    (
-                        c
-                        for c in guardian_candidates
-                        if c.source == "existing" and c.strength == "link"
-                    ),
-                    None,
-                )
-                match.guardian_of_row = (
-                    row_link.row_number
-                    if row_link
-                    else (best_guardian.row_number if best_guardian.source == "row" else None)
-                )
-                match.guardian_of_existing_key = (
-                    existing_link.existing_key
-                    if existing_link
-                    else (
-                        best_guardian.existing_key if best_guardian.source == "existing" else None
-                    )
-                )
+                if best_guardian.source == "row":
+                    match.guardian_of_row = best_guardian.row_number
+                else:
+                    match.guardian_of_existing_key = best_guardian.existing_key
             else:
                 match.guardian_class = "new"
 

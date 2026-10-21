@@ -234,10 +234,10 @@ class StudentImportExecutor:
                         if (
                             candidate.existing_key is not None
                             and candidate.existing_key == match.of_existing_key
-                            and decision.matched_student_id == candidate.existing_key
                         )
                         or (
-                            candidate.row_number is not None and candidate.row_number == skip_of_row
+                            candidate.row_number is not None
+                            and candidate.row_number == match.of_row
                         )
                     ),
                     "a student already in Koaryu",
