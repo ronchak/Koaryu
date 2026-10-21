@@ -187,9 +187,10 @@ def test_interlocks_do_not_load_credentials_or_create_http_client(changes, recip
     assert transport.send(message(to_address=recipient)).error_code == code
 
 
-def test_explicit_empty_allowlist_allows_live_actual_address():
+@pytest.mark.parametrize("live", ["", "*"])
+def test_explicit_live_allowlist_allows_live_actual_address(live):
     transport, _, _, requests, _ = transport_case(
-        lambda request: httpx.Response(202), settings=email_settings(EMAIL_ALLOWED_RECIPIENTS="")
+        lambda request: httpx.Response(202), settings=email_settings(EMAIL_ALLOWED_RECIPIENTS=live)
     )
     assert transport.send(message(to_address="customer@example.com")).outcome == "accepted"
     assert (
