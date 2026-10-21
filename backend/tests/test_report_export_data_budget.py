@@ -156,7 +156,15 @@ class ReportExportDataBudgetTest(unittest.TestCase):
             report.id
             for report in catalog.values()
             if report.custom_builder
-            and report.id not in {"studio_overview", "guardian_contacts", "staff_roles"}
+            and report.id
+            not in {
+                "studio_overview",
+                "guardian_contacts",
+                "staff_roles",
+                "billing_invoice_ledger",
+                "billing_payment_ledger",
+                "billing_enrollment_ledger",
+            }
         }
         self.assertEqual(expected_ids, intelligence_ids)
 

@@ -22,6 +22,7 @@ from app.services.staff_service import (
 
 EXPORT_PAGE_SIZE = 1000
 FILTER_VALUE_BATCH_SIZE = 200
+EXPORT_FILTER_OPERATORS = frozenset({"gte", "lt", "is_"})
 
 
 def _columns(*values: str) -> tuple[str, ...]:
@@ -656,6 +657,7 @@ class ReportExportDataFetcher:
         studio_id: str,
         *,
         order_by: tuple[tuple[str, bool], ...] = (),
+        filters: tuple[tuple[str, str, Any], ...] = (),
     ) -> list[dict[str, Any]]:
         def query_factory() -> Any:
             query = (
@@ -663,9 +665,17 @@ class ReportExportDataFetcher:
                 .select(", ".join(columns) if isinstance(columns, tuple) else columns)
                 .eq("studio_id", studio_id)
             )
+            query = self._apply_filters(query, filters)
             return self._apply_export_order(query, order_by, columns)
 
         return self._paged_rows(query_factory)
+
+    def _apply_filters(self, query: Any, filters: tuple[tuple[str, str, Any], ...]) -> Any:
+        for operator, column, value in filters:
+            if operator not in EXPORT_FILTER_OPERATORS:
+                raise RuntimeError(f"Unsupported report export filter: {operator}")
+            query = getattr(query, operator)(column, value)
+        return query
 
     def _fetch_rows_by_values(
         self,
@@ -675,16 +685,18 @@ class ReportExportDataFetcher:
         values: list[str],
         *,
         order_by: tuple[tuple[str, bool], ...] = (),
+        studio_id: str | None = None,
     ) -> list[dict[str, Any]]:
         rows: list[dict[str, Any]] = []
         for value_batch in self._chunks(values, FILTER_VALUE_BATCH_SIZE):
 
             def query_factory(value_batch: list[str] = value_batch) -> Any:
-                query = (
-                    self.supabase.table(table)
-                    .select(", ".join(columns) if isinstance(columns, tuple) else columns)
-                    .in_(filter_column, value_batch)
+                query = self.supabase.table(table).select(
+                    ", ".join(columns) if isinstance(columns, tuple) else columns
                 )
+                if studio_id is not None:
+                    query = query.eq("studio_id", studio_id)
+                query = query.in_(filter_column, value_batch)
                 return self._apply_export_order(query, order_by, columns)
 
             rows.extend(self._paged_rows(query_factory))
