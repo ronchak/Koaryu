@@ -966,6 +966,44 @@ class BillingLedgerEndpointTest(unittest.TestCase):
         )
         self.assertEqual(len(supabase.tables["audit_logs"]), 1)
 
+    def test_extreme_dates_are_plain_400s_before_any_read(self):
+        cases = (
+            ("America/Los_Angeles", {"date_to": "9999-12-31"}),
+            ("Asia/Tokyo", {"date_from": "0001-01-01"}),
+            ("Asia/Tokyo", {"date_from": "1899-12-31"}),
+            ("Asia/Tokyo", {"date_to": "2201-01-01"}),
+        )
+        for timezone_name, params in cases:
+            for report_id in ("billing_invoice_ledger", "billing_payment_ledger"):
+                with self.subTest(timezone=timezone_name, report_id=report_id, params=params):
+                    supabase = TableBackedSupabase(billing_fixture(timezone_name))
+                    with self.assertRaises(HTTPException) as context:
+                        admin_export(supabase, report_id, **params)
+
+                    self.assertEqual(context.exception.status_code, 400)
+                    self.assertEqual(
+                        context.exception.detail,
+                        "Dates must be between 1900-01-01 and 2200-12-31.",
+                    )
+                    self.assertEqual(supabase.log, [])
+                    self.assertEqual(supabase.tables["audit_logs"], [])
+
+    def test_tokyo_ranges_at_and_inside_the_limits_export(self):
+        for params, expected in (
+            ({"date_from": "1900-01-01", "date_to": "2200-12-31"}, 6),
+            ({"date_from": "2026-03-01", "date_to": "2026-03-05"}, 4),
+        ):
+            with self.subTest(params=params):
+                supabase = TableBackedSupabase(billing_fixture("Asia/Tokyo"))
+                response = admin_export(supabase, "billing_invoice_ledger", **params)
+                body = asyncio.run(consume(response)).decode("utf-8")
+
+                rows = list(csv.DictReader(StringIO(body)))
+                self.assertEqual(len(rows), expected)
+                self.assertEqual(
+                    supabase.tables["audit_logs"][0]["metadata"]["row_count"], expected
+                )
+
     def test_service_refuses_a_range_for_reports_without_one(self):
         supabase = TableBackedSupabase(billing_fixture())
         with self.assertRaises(HTTPException) as context:

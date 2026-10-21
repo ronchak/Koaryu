@@ -50,6 +50,9 @@ EXPORT_STREAM_CHUNK_BYTES = 64 * 1024
 REPORT_DATE_PATTERN = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}")
 REPORT_DATE_RANGE_UNSUPPORTED_DETAIL = "This report does not take a date range."
 REPORT_DATE_RANGE_ORDER_DETAIL = "The from date must be on or before the to date."
+REPORT_DATE_RANGE_MIN = date(1900, 1, 1)
+REPORT_DATE_RANGE_MAX = date(2200, 12, 31)
+REPORT_DATE_RANGE_LIMIT_DETAIL = "Dates must be between 1900-01-01 and 2200-12-31."
 
 
 @dataclass(frozen=True)
@@ -221,6 +224,10 @@ def resolve_report_date_range(
         raise _report_date_range_error(REPORT_DATE_RANGE_UNSUPPORTED_DETAIL)
     start = _parse_report_date("from", date_from) if date_from is not None else None
     end = _parse_report_date("to", date_to) if date_to is not None else None
+    # Far-off dates overflow when converted to UTC bounds; no ledger needs them.
+    for bound in (start, end):
+        if bound is not None and not REPORT_DATE_RANGE_MIN <= bound <= REPORT_DATE_RANGE_MAX:
+            raise _report_date_range_error(REPORT_DATE_RANGE_LIMIT_DETAIL)
     if start is not None and end is not None and start > end:
         raise _report_date_range_error(REPORT_DATE_RANGE_ORDER_DETAIL)
     return ReportDateRange(start=start, end=end)
