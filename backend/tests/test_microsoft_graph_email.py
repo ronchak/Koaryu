@@ -106,6 +106,29 @@ def test_one_submission_and_conservative_response_mapping(status, outcome, code)
     assert [name for name, _ in database.calls] == ["get_automation_email_credential_v1"]
 
 
+@pytest.mark.parametrize(
+    "status, logged",
+    [
+        (401, "automation_sender_auth_rejected status=401"),
+        (403, "automation_sender_auth_rejected status=403"),
+        (429, "automation_sender_throttled"),
+        (400, None),
+        (202, None),
+    ],
+)
+def test_mailbox_wide_stops_log_fixed_codes_only(caplog, status, logged):
+    transport, _, _, _, _ = transport_case(
+        lambda request: httpx.Response(
+            status, headers={"request-id": REQUEST_ID}, content=b"synthetic provider body"
+        )
+    )
+    with caplog.at_level("WARNING", logger="app.services.microsoft_graph_email"):
+        transport.send(message())
+    records = [r for r in caplog.records if r.name == "app.services.microsoft_graph_email"]
+    assert [record.getMessage() for record in records] == ([logged] if logged else [])
+    assert "synthetic" not in caplog.text and REQUEST_ID not in caplog.text
+
+
 def test_graph_payload_uses_separate_sender_reply_and_recipient():
     transport, _, _, requests, _ = transport_case(lambda request: httpx.Response(202))
     assert transport.send(message(to_address=" KOARYU@OUTLOOK.COM ")).outcome == "accepted"
@@ -295,12 +318,20 @@ def test_refresh_keeps_previous_refresh_token_when_provider_omits_it():
         ),
     ],
 )
-def test_refresh_failure_sends_nothing_and_uses_safe_results(response, outcome, code):
+def test_refresh_failure_sends_nothing_and_uses_safe_results(caplog, response, outcome, code):
     transport, database, _, requests, _ = transport_case(
         lambda request: response, state=credential_state(expires_at=0)
     )
-    result = transport.send(message())
+    with caplog.at_level("WARNING", logger="app.services.microsoft_graph_email"):
+        result = transport.send(message())
     assert (result.outcome, result.error_code) == (outcome, code)
+    assert [
+        r.getMessage() for r in caplog.records if r.name == "app.services.microsoft_graph_email"
+    ] == (
+        ["automation_sender_auth_required source=token_refresh"]
+        if code == "authentication_required"
+        else []
+    )
     assert len(requests) == 1
     assert str(requests[0].url) != GRAPH_SEND_URL
     assert database.revision == 1

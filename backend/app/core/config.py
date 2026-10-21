@@ -277,7 +277,7 @@ class Settings(BaseSettings):
     EMAIL_FROM_ADDRESS: str = "koaryu@outlook.com"
     EMAIL_FROM_NAME: str = "Koaryu"
     EMAIL_REPLY_TO: str = "koaryu@outlook.com"
-    # A nonempty list limits actual recipients; empty explicitly selects live mode.
+    # A nonempty list limits actual recipients; empty or "*" explicitly selects live mode.
     EMAIL_ALLOWED_RECIPIENTS: str = "koaryu@outlook.com"
     EMAIL_GRAPH_CLIENT_ID: str = ""
     EMAIL_GRAPH_CLIENT_SECRET: str = Field(default="", repr=False)

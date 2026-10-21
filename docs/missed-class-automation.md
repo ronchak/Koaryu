@@ -40,7 +40,7 @@ command arguments, logs, or frontend variables.
 | `EMAIL_SEND_ENABLED` | Global send switch, default `false`. |
 | `EMAIL_FROM_ADDRESS`, `EMAIL_FROM_NAME` | Default sender `koaryu@outlook.com`, name `Koaryu`. The enrolled mailbox must match the address. |
 | `EMAIL_REPLY_TO` | Default `koaryu@outlook.com`; blank falls back to the sender. Studio rules can choose their own valid reply address. |
-| `EMAIL_ALLOWED_RECIPIENTS` | Default `koaryu@outlook.com`. Nonempty selects test mode and restricts actual recipients. Explicitly empty selects live mode. |
+| `EMAIL_ALLOWED_RECIPIENTS` | Default `koaryu@outlook.com`. Nonempty selects test mode and restricts actual recipients. Explicitly empty or exactly `*` selects live mode. Render cannot store an empty value, so hosted services use `*`. |
 | `EMAIL_GRAPH_CLIENT_ID`, `EMAIL_GRAPH_CLIENT_SECRET` | Dedicated mail app credentials, held server-side. |
 | `EMAIL_GRAPH_TENANT` | Default `consumers`; only `common`, `organizations`, `consumers`, or a tenant UUID is accepted. |
 | `EMAIL_TOKEN_ENCRYPTION_KEY` | Private Fernet key for durable token encryption. |
@@ -51,7 +51,7 @@ command arguments, logs, or frontend variables.
 Disabled mode sends nothing. Rules can still be drafted and previewed. Test mode
 only allows the approved Outlook mailbox as an actual recipient. It never sends
 a student's message to a replacement test address. Use synthetic student details
-for the root coordinator's test message. Live mode requires an explicitly empty
+for the root coordinator's test message. Live mode requires an explicitly empty (or `*`)
 recipient allowlist and a ready, enabled sender. Rule enablement also checks
 the stored credential's app and mailbox binding.
 
@@ -247,6 +247,12 @@ between studios, and claim priority advances before entitlement checks. Historic
 attempt facts remain intact. An uncertain deferral write stops the worker; it
 does not pretend the row was released. The processor uses the fresh deferral
 result for `has_more`.
+
+A token refresh or stored credential that needs reauthorization, a Graph 401/403,
+or a Graph 429 stops sending for every studio. The backend logs a fixed warning
+for each (`automation_sender_auth_required`, `automation_sender_auth_rejected`,
+`automation_sender_throttled`) with no addresses or provider text. Watch for them
+in Render logs while operational alerts are off.
 
 Pause an individual studio rule in Automations. For a global pause, set
 `EMAIL_SEND_ENABLED=false` on the backend and disable

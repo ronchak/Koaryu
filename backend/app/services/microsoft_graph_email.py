@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import math
 import re
 import time
@@ -130,6 +131,10 @@ def _valid_message(message: EmailMessage) -> bool:
     )
 
 
+# Mailbox-wide stops log fixed codes only, never addresses or provider text.
+logger = logging.getLogger(__name__)
+
+
 def _not_submitted(
     outcome: Literal["retryable_failure", "permanent_failure"],
     error_code: str,
@@ -234,6 +239,7 @@ class MicrosoftGraphEmailTransport:
                     "unauthorized_client",
                 }
             ) or response.status_code in (401, 403):
+                logger.warning("automation_sender_auth_required source=token_refresh")
                 return _not_submitted(
                     "permanent_failure", "authentication_required", scope="sender_auth"
                 )
@@ -345,6 +351,7 @@ class MicrosoftGraphEmailTransport:
         except CredentialError as exc:
             if exc.code == "credential_store_unavailable":
                 return _not_submitted("retryable_failure", "credential_store_unavailable")
+            logger.warning("automation_sender_auth_required source=credential")
             return _not_submitted(
                 "permanent_failure", "authentication_required", scope="sender_auth"
             )
@@ -456,6 +463,7 @@ class MicrosoftGraphEmailTransport:
                 credential_revision=revision,
             )
         if response.status_code == 429:
+            logger.warning("automation_sender_throttled")
             return DeliveryResult(
                 "retryable_failure",
                 "provider_throttled",
@@ -466,6 +474,8 @@ class MicrosoftGraphEmailTransport:
                 revision,
             )
         if 400 <= response.status_code < 500 and response.status_code != 408:
+            if response.status_code in (401, 403):
+                logger.warning("automation_sender_auth_rejected status=%d", response.status_code)
             return DeliveryResult(
                 "permanent_failure",
                 "authentication_required" if response.status_code == 401 else "provider_rejected",
