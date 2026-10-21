@@ -25,8 +25,8 @@ export default function AccountDataPage() {
           <div className="space-y-4">
             <p className="text-sm leading-relaxed text-text-secondary">
               Operational exports live in Reports because they are studio-level records, not just
-              personal account records. Use Reports for student, billing, attendance, staff, and
-              audit CSVs.
+              personal account records. Use Reports for student, billing ledger, attendance, staff,
+              and audit log CSVs.
             </p>
             <Button asChild variant="secondary" size="sm">
               <Link href="/reports">

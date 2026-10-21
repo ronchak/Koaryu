@@ -179,6 +179,34 @@ Local plan writes and external-payment writes commit their domain record and ori
 - Audit metadata contains stable references and action-relevant fields, never secrets, full card data, signed URLs, or raw webhook payloads.
 - Replayed external payments do not produce duplicate actor audits. Read-only page loads do not require actor audits.
 
+## For studio owners: reading the billing ledgers
+
+Admins can download three billing CSVs from Reports, under Data Exports > Billing
+Ledgers: Invoices; Payments, Refunds and Disputes; and Billing Enrollments. The invoice
+and payment files take optional From and To dates. Both days are included and dates
+follow the studio's time zone. Each download is recorded in the audit log. Amounts
+appear twice, as stored integer cents and as a two-decimal copy.
+
+- **Invoices are not payments.** An invoice row says what was billed and where that
+  invoice stands. Money received is in the payment file. An invoice's
+  `amount_paid_cents` is the stored invoice figure, not a sum of payment rows, and a
+  payment can exist without an invoice.
+- **Payer balance is not in these files and cannot be rebuilt from them.** Koaryu
+  stores each payer's balance as a snapshot, recalculated by its billing rules when
+  invoices change. Do not add up rows here to get it; see current balances under
+  Billing > Families.
+- **Refunds and disputes are separate rows.** Each carries its own amount, the
+  `payment_id` of its payment, and that payment's payer, invoice and currency. The
+  payment row keeps its original `amount_cents`; its stored
+  `net_collected_amount_cents` already subtracts succeeded refunds and
+  balance-reversing disputes, so do not subtract those rows from it again.
+- **No revenue recognition is implied.** Rows record billing events and their current
+  status, not earned or deferred revenue, payouts or tax.
+- **No fees are calculated.** The Koaryu Payments application fee appears only where it
+  is already stored, on Koaryu's payment records and in Stripe. It is not a column in
+  these files and no amount here has a fee added or removed. Stripe processing fees are
+  not included either.
+
 ## Independent production approvals and live activation gate
 
 Application deployment, production migration, and live Stripe activation are three independent approvals. On 2026-08-04, the product owner approved live Koaryu Core Checkout and Customer Portal activation. On 2026-08-13, the product owner approved production self-service Core checkout for newly registered studios. On 2026-08-14, the product owner directed the release to continue through production with Core self-checkout and signup enabled. That release authorization includes the two bounded compensating operations required to make Core checkout fail closed: expiring a newly created session that loses its database reservation, and canceling the exact subscription from a Checkout completion whose reservation was invalidated. It does not authorize generic subscription cancellation, refunds, Connect onboarding, Connect payments, tuition collection, or other Stripe mutations.
