@@ -553,6 +553,10 @@ const RAW_CSV_ALIASES: Record<string, string> = {
   "parent name": "guardian_name",
   "parent full name": "guardian_name",
   "parent guardian name": "guardian_name",
+  "parent or guardian": "guardian_name",
+  "parent guardian": "guardian_name",
+  guardian: "guardian_name",
+  parent: "guardian_name",
   "guardian email": "guardian_email",
   "parent email": "guardian_email",
   "guardian phone": "guardian_phone",
@@ -625,6 +629,8 @@ export function isPaymentStatusHeader(header: string) {
   );
 }
 
+const BARE_GUARDIAN_TOKENS = new Set(["parent", "guardian", "or", "and", "primary", "main"]);
+
 function inferFieldFromTokens(tokens: Set<string>): string {
   if (tokens.size === 0 || tokens.has("hold")) return "";
 
@@ -641,6 +647,8 @@ function inferFieldFromTokens(tokens: Set<string>): string {
     }
     if (tokens.has("relation") || tokens.has("relationship")) return "guardian_relation";
     if (tokens.has("name") || tokens.has("contact")) return "guardian_name";
+    // "Parent or Guardian", "Parent/Guardian": a bare parent/guardian column holds the name.
+    if ([...tokens].every((token) => BARE_GUARDIAN_TOKENS.has(token))) return "guardian_name";
   }
 
   if (tokens.has("emergency")) {

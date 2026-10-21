@@ -465,4 +465,26 @@ describe("student import page model", () => {
       "Ava Nguyen",
     );
   });
+  it("maps bare parent or guardian columns to the guardian name", () => {
+    assert.deepEqual(
+      autoMap([
+        "Parent or Guardian",
+        "Parent/Guardian",
+        "Parent Guardian",
+        "Primary Guardian",
+        "Parent or Guardian Email",
+        "Parent/Guardian Phone",
+        "Guardian Notes",
+      ]),
+      {
+        "Parent or Guardian": "guardian_name",
+        "Parent/Guardian": "guardian_name",
+        "Parent Guardian": "guardian_name",
+        "Primary Guardian": "guardian_name",
+        "Parent or Guardian Email": "guardian_email",
+        "Parent/Guardian Phone": "guardian_phone",
+        "Guardian Notes": "notes",
+      },
+    );
+  });
 });
