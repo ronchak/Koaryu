@@ -530,6 +530,27 @@ class BillingLedgerRowsTest(unittest.TestCase):
         self.assertNotIn("Countess", body)
         self.assertNotIn("inv-other-studio", body)
 
+    def test_negative_amounts_stay_numeric_without_a_formula_apostrophe(self):
+        fixture = billing_fixture()
+        fixture["billing_invoices"] = [
+            invoice(
+                "inv-credit",
+                "2026-03-02T12:00:00+00:00",
+                amount_due_cents=1200,
+                amount_paid_cents=0,
+                amount_remaining_cents=-1200,
+            )
+        ]
+        rows, body = build(TableBackedSupabase(fixture), "billing_invoice_ledger")
+
+        self.assertEqual(rows[0]["amount_due"], "12.00")
+        self.assertEqual(rows[0]["amount_paid"], "0.00")
+        self.assertEqual(rows[0]["amount_remaining_cents"], "-1200")
+        self.assertEqual(rows[0]["amount_remaining"], "-12.00")
+        self.assertIn(",1200,12.00,0,0.00,-1200,-12.00,", body)
+        self.assertNotIn("'-12.00", body)
+        self.assertNotIn("'-1200", body)
+
     def test_payment_ledger_lists_refunds_and_disputes_as_their_own_rows(self):
         rows, body = build(TableBackedSupabase(billing_fixture()), "billing_payment_ledger")
 

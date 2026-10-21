@@ -173,6 +173,7 @@ PLAN_COLUMNS = ("id", "name", "amount_cents", "billing_interval")
 
 _NEWEST_FIRST = (("created_at", True),)
 _OLDEST_INSTANT = datetime.min.replace(tzinfo=timezone.utc)
+_CENT = Decimal("0.01")
 
 
 @dataclass(frozen=True)
@@ -257,14 +258,15 @@ def parse_instant(value: Any) -> Optional[datetime]:
     return instant
 
 
-def cents_to_amount(value: Any) -> Optional[str]:
+def cents_to_amount(value: Any) -> Optional[Decimal]:
+    # A Decimal, not text, so the CSV formula guard leaves "-12.00" as a number.
     if value is None or isinstance(value, bool):
         return None
     try:
         cents = Decimal(int(value))
     except (TypeError, ValueError):
         return None
-    return f"{cents / 100:.2f}"
+    return (cents / 100).quantize(_CENT)
 
 
 def student_name(student: Optional[dict[str, Any]]) -> Optional[str]:
