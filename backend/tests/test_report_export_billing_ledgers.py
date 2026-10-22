@@ -668,6 +668,43 @@ class BillingLedgerRowsTest(unittest.TestCase):
         self.assertEqual(enrolled["plan_amount_cents"], "12950")
         self.assertEqual(enrolled["plan_amount"], "129.50")
 
+    def test_payment_processed_between_the_two_ranged_reads_is_not_lost(self):
+        """A webhook can set processed_at after one read and before the other.
+        Reading unprocessed payments first means the payment is still caught."""
+
+        class CompletesCashPaymentBetweenReads(TableBackedSupabase):
+            payment_reads = 0
+
+            def table(self, name):
+                query = super().table(name)
+                if name != "billing_payments":
+                    return query
+                run = query.execute
+
+                def execute():
+                    result = run()
+                    self.payment_reads += 1
+                    if self.payment_reads == 1:
+                        for row in self.tables["billing_payments"]:
+                            if row["id"] == "pay-cash":
+                                row["processed_at"] = "2026-03-08T08:00:00+00:00"
+                    return result
+
+                query.execute = execute
+                return query
+
+        supabase = CompletesCashPaymentBetweenReads(billing_fixture())
+        rows, _ = build(
+            supabase,
+            "billing_payment_ledger",
+            date_range=ReportDateRange(date(2026, 3, 1), date(2026, 3, 8)),
+        )
+        self.assertGreaterEqual(supabase.payment_reads, 2)
+        cash = [row for row in rows if row["record_id"] == "pay-cash"]
+        self.assertEqual(len(cash), 1)
+        self.assertEqual(cash[0]["processed_at"], "2026-03-08T08:00:00+00:00")
+        self.assertEqual(cash[0]["event_date_local"], "2026-03-08")
+
     def test_every_ledger_read_is_filtered_to_the_callers_studio(self):
         for report_id in LEDGER_IDS:
             for date_range in (None, ReportDateRange(date(2026, 3, 1), date(2026, 3, 8))):
@@ -803,7 +840,8 @@ class BillingLedgerDateRangeTest(unittest.TestCase):
         self.assertEqual(old_refund["amount_cents"], "500")
 
         payment_queries = queries(supabase, "billing_payments")
-        processed, unprocessed, parents = payment_queries
+        # Unprocessed first, so a payment processed between the reads is not lost.
+        unprocessed, processed, parents = payment_queries
         self.assertIn(("gte", "processed_at", "2026-03-01T08:00:00+00:00"), processed["filters"])
         self.assertIn(("lt", "processed_at", "2026-03-09T07:00:00+00:00"), processed["filters"])
         self.assertIn(("is", "processed_at", "null"), unprocessed["filters"])
