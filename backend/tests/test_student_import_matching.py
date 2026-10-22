@@ -561,7 +561,7 @@ def test_archived_match_is_surfaced_beside_an_active_plain_name_match():
     assert [c.existing_key for c in unacknowledged_candidates(match, None)] == ["old"]
 
 
-def test_review_lists_every_required_acknowledgement_beyond_the_display_cap():
+def test_review_shows_every_required_acknowledgement_beyond_the_display_cap():
     rows = [
         planned(n, legal_first_name="Ava", legal_last_name="Nguyen", date_of_birth="2014-06-03")
         for n in range(2, 10)
@@ -570,11 +570,55 @@ def test_review_lists_every_required_acknowledgement_beyond_the_display_cap():
     last = matches[-1]
     assert last.duplicate_class == "in_file_strong" and last.of_row == 2
     review = build_duplicate_review(last)
-    assert len(review["candidates"]) == 5
+    # Seven strong in-file matches all need acknowledging, so all seven are shown
+    # even though the display cap is five: a decision never names an unseen row.
+    assert [candidate["of_row"] for candidate in review["candidates"]] == [2, 3, 4, 5, 6, 7, 8]
     assert review["acknowledge_rows"] == [2, 3, 4, 5, 6, 7, 8]
     assert review["acknowledge_student_ids"] == []
     decision = Decision("skip", of_row=2, acknowledged_rows=review["acknowledge_rows"])
     assert unacknowledged_candidates(last, decision) == []
+
+
+def test_archived_match_behind_five_active_possibles_is_still_shown():
+    """Active records outrank archived ones, but an archived match that must be
+    acknowledged is never pushed off screen by the display cap."""
+    # Five active records share the row's name and phone with different birth
+    # dates (a shared-signal bucket is never truncated); one archived record
+    # shares only the name and sorts last.
+    roster = [
+        existing(f"active{n}", "Ava", "Nguyen", date_of_birth=f"201{n}-01-01", phone="555-010-0100")
+        for n in range(5)
+    ] + [existing("old", "Ava", "Nguyen", archived=True)]
+    (match,) = match_rows(
+        [planned(2, legal_first_name="Ava", legal_last_name="Nguyen", phone="(555) 010-0100")],
+        roster,
+    )
+    assert [candidate.confidence for candidate in match.candidates] == ["possible"] * 6
+    review = build_duplicate_review(match)
+    shown = [(candidate["student_id"], candidate["archived"]) for candidate in review["candidates"]]
+    # The cap still holds at five, but the archived record takes one of the
+    # slots instead of being pushed off the end by the fifth active record.
+    assert len(shown) == 5
+    assert shown[-1] == ("old", True)
+    assert {student_id for student_id, _ in shown[:4]} == {f"active{n}" for n in range(4)}
+    assert review["acknowledge_student_ids"] == ["old"]
+    assert review["suggested_action"] == "decide"
+
+
+def test_display_cap_still_trims_candidates_that_need_no_acknowledgement():
+    roster = [
+        existing(f"active{n}", "Ava", "Nguyen", date_of_birth=f"201{n}-01-01", phone="555-010-0100")
+        for n in range(7)
+    ]
+    (match,) = match_rows(
+        [planned(2, legal_first_name="Ava", legal_last_name="Nguyen", phone="(555) 010-0100")],
+        roster,
+    )
+    assert [candidate.confidence for candidate in match.candidates] == ["possible"] * 7
+    review = build_duplicate_review(match)
+    assert len(review["candidates"]) == 5
+    assert review["acknowledge_student_ids"] == []
+    assert review["suggested_action"] == "create"
 
 
 def test_every_archived_same_name_record_reaches_enforcement():
