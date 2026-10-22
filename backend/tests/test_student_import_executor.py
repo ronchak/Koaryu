@@ -722,9 +722,12 @@ def browser_default_decisions(preview):
     return decisions
 
 
-def test_skip_never_falls_back_to_the_adult_when_the_child_row_was_blocked():
-    """Astra's scenario: the child's first row is blocked, its repeat must not be skipped
-    against the adult who merely shares the family email."""
+def test_repeat_of_a_blocked_child_row_imports_and_is_never_skipped_against_the_adult():
+    """Astra's scenario: the child's first row is blocked and an adult shares the
+    family email. The blocked row is never a target, so the repeat is not
+    refused for pointing at it; its best match is the adult at possible
+    confidence, so the default is Create and the child is imported, never
+    skipped against the adult."""
     db = ScriptedImportDb()
     db.tables["programs"][0]["name"] = "Unassigned"
     db.tables["students"] = [existing_student(dob="1980-02-02", email="family@example.net")]
@@ -741,32 +744,20 @@ def test_skip_never_falls_back_to_the_adult_when_the_child_row_was_blocked():
     preview = StudentService(db).validate_import_rows(rows, MAPPING, CsvImportOptions(), STUDIO)
     assert preview.error_rows == 1
     review = {row.row_number: row.duplicate_review for row in preview.rows}[3]
-    assert review.suggested_action == "skip" and review.acknowledge_rows == [2]
+    assert review.suggested_action == "create" and review.acknowledge_rows == []
     assert [(c.of_row, c.student_id, c.confidence) for c in review.candidates] == [
-        (2, None, "strong"),
         (None, EXISTING, "possible"),
     ]
     default = browser_default_decisions(preview)["3"]
-    assert default.matched_student_id == EXISTING and default.of_row == 2
+    assert default.action == "create"
 
-    db.responses = [
-        ("claim_student_import_run_v2", claim()),
-        ("finish_student_import_run", finish),
-    ]
-    result = db.execute_import(rows, decisions={"3": default})
-    assert result.imported_count == 0 and result.skipped_rows == 0 and result.error_rows == 2
-    by_row = {row.row_number: row for row in result.rows}
-    assert [issue.code for issue in by_row[3].issues] == ["duplicate_review_required"]
-    assert "row 2" in by_row[3].errors[0] and "not imported" in by_row[3].errors[0]
-
-    create = default.model_copy(update={"action": "create"})
     db.responses = [
         ("claim_student_import_run_v2", claim()),
         ("prepare_student_import_program_v1", selected_program(PROGRAM, "Unassigned")),
         ("import_student_row_atomic", row_success),
         ("finish_student_import_run", finish),
     ]
-    result = db.execute_import(rows, decisions={"3": create})
+    result = db.execute_import(rows, decisions={"3": default})
     assert result.imported_count == 1 and result.skipped_rows == 0 and result.error_rows == 1
     writes = [params for name, params in db.calls if name == "import_student_row_atomic"]
     assert [params["p_row_number"] for params in writes] == [3]
@@ -924,13 +915,13 @@ def test_skipped_rows_add_nothing_to_status_belt_or_setup_totals():
     )
 
 
-def _decide_with_browser_defaults(rows, roster):
+def _decide_with_browser_defaults(rows, roster, invalid_rows=()):
     """Match rows, build the browser's default decisions from the review
     payloads and apply them, as preview and execution do with no changes."""
     from app.services.student_import_matching import build_duplicate_review, match_rows
 
     planned_rows = [
-        {"row_number": number, "data": data, "is_valid": True, "issues": []}
+        {"row_number": number, "data": data, "is_valid": number not in invalid_rows, "issues": []}
         for number, data in rows
     ]
     decisions = {}
@@ -1014,3 +1005,10 @@ def test_direct_reference_check_ignores_later_rows_and_different_people():
     assert candidate_for_reference(second, ("row", 2)) is None  # different person
     assert candidate_for_reference(third, ("row", 3)).confidence == "strong"
     assert candidate_for_reference(third, ("existing", "missing")) is None
+
+
+def test_valid_copy_of_a_blocked_row_imports_instead_of_being_refused():
+    ava = {"legal_first_name": "Ava", "legal_last_name": "Nguyen", "date_of_birth": "2014-06-03"}
+    by_row = _decide_with_browser_defaults([(2, ava), (3, ava)], [], invalid_rows={2})
+    assert not by_row[2]["is_valid"]
+    assert by_row[3]["is_valid"] and not by_row[3].get("skipped")

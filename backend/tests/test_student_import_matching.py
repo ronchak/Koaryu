@@ -759,3 +759,29 @@ def test_every_archived_same_name_record_reaches_enforcement():
     assert [c.existing_key for c in unacknowledged_candidates(match, only_first)] == ["s2"]
     both = Decision("create", matched_student_id="s1", acknowledged_student_ids=["s1", "s2"])
     assert unacknowledged_candidates(match, both) == []
+
+
+def test_blocked_rows_are_never_a_target_for_later_rows():
+    """A row that fails validation is never imported, so a later valid copy of
+    the same person must not default to skipping against it."""
+    blocked = planned(
+        2,
+        legal_first_name="Ava",
+        legal_last_name="Nguyen",
+        date_of_birth="2014-06-03",
+        guardian_name="Jordan Nguyen",
+        guardian_email="jordan@example.test",
+    )
+    blocked["is_valid"] = False
+    later = planned(
+        3,
+        legal_first_name="Ava",
+        legal_last_name="Nguyen",
+        date_of_birth="2014-06-03",
+        guardian_name="Jordan Nguyen",
+        guardian_email="jordan@example.test",
+    )
+    first, second = match_rows([blocked, later], [])
+    assert second.duplicate_class == "none" and second.candidates == []
+    assert second.guardian_class == "new"
+    assert build_duplicate_review(second) is None
