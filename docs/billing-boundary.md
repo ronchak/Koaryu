@@ -185,7 +185,9 @@ Admins can download three billing CSVs from Reports, under Data Exports > Billin
 Ledgers: Invoices; Payments, Refunds and Disputes; and Billing Enrollments. The invoice
 and payment files take optional From and To dates. Both days are included and dates
 follow the studio's time zone. Each download is recorded in the audit log. Amounts
-appear twice, as stored integer cents and as a two-decimal copy.
+appear twice, as stored integer cents and as a two-decimal copy, always next to the
+currency they are stored in. Older records may be in a currency other than USD; amounts
+in different currencies must not be added together.
 
 - **Invoices are not payments.** An invoice row says what was billed and where that
   invoice stands. Money received is in the payment file. An invoice's

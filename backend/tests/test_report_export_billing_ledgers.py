@@ -637,6 +637,7 @@ class BillingLedgerRowsTest(unittest.TestCase):
                 "payer_display_name": "Lovelace Family",
                 "billing_plan_id": "plan-1",
                 "plan_name": "Little Dragons",
+                "plan_currency": "usd",
                 "plan_amount_cents": "12950",
                 "plan_amount": "129.50",
                 "plan_billing_interval": "monthly",
@@ -653,6 +654,19 @@ class BillingLedgerRowsTest(unittest.TestCase):
         self.assertEqual(rows[1]["student_name"], "Grace Hopper")
         self.assertNotIn("sub_1", body)
         self.assertNotIn("enr-other", body)
+
+    def test_enrollment_ledger_carries_the_plan_currency(self):
+        """Older plans may be stored in a currency other than USD; the amount is
+        never exported without the currency it is stored in."""
+        fixture = billing_fixture()
+        for plan in fixture["billing_plans"]:
+            if plan["id"] == "plan-1":
+                plan["currency"] = "cad"
+        rows, _ = build(TableBackedSupabase(fixture), "billing_enrollment_ledger")
+        enrolled = next(row for row in rows if row["enrollment_id"] == "enr-1")
+        self.assertEqual(enrolled["plan_currency"], "cad")
+        self.assertEqual(enrolled["plan_amount_cents"], "12950")
+        self.assertEqual(enrolled["plan_amount"], "129.50")
 
     def test_every_ledger_read_is_filtered_to_the_callers_studio(self):
         for report_id in LEDGER_IDS:
