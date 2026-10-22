@@ -6,6 +6,7 @@ import { api } from "@/lib/api";
 import {
   CSV_IMPORT_MAX_BYTES,
   areCsvImportKeyInputsEqual,
+  areCsvImportValidationInputsEqual,
   buildStableImportKey,
   formatCsvImportFileSizeLimit,
   hashCsvImportFile,
@@ -15,16 +16,24 @@ import { splitCsvImportFullName } from "@/lib/csv-import-mapping";
 import {
   DEFAULT_IMPORT_OPTIONS,
   autoMap,
+  buildDefaultDuplicateDecisions,
   buildPreviewValidationResult,
   getCsvImportFileRejection,
   getStudentImportErrorMessage,
+  hasUnresolvedDuplicateDecisions,
   mockParseCSV,
   type ActiveStudentImportOperation,
+  type DuplicateDecisionMap,
   type StudentImportStage,
 } from "@/lib/student-import-page-model";
 import type { ConfigStoreContextValue, StudentsStoreContextValue } from "@/lib/store-contexts";
 import { hasStaffPermission } from "@/lib/staff-permissions";
-import type { CsvImportOptions, CsvImportResult, CsvParseResponse } from "@/types";
+import type {
+  CsvImportDuplicateDecision,
+  CsvImportOptions,
+  CsvImportResult,
+  CsvParseResponse,
+} from "@/types";
 
 type StudentImportPageControllerOptions = {
   config: Pick<ConfigStoreContextValue, "currentRole" | "isPreviewMode" | "token">;
@@ -57,6 +66,7 @@ export function useStudentImportPageController({
   } | null>(null);
   const [importResult, setImportResult] = useState<CsvImportResult | null>(null);
   const [importOptions, setImportOptions] = useState<CsvImportOptions>(DEFAULT_IMPORT_OPTIONS);
+  const [duplicateDecisions, setDuplicateDecisions] = useState<DuplicateDecisionMap>({});
   const [submittedImportOptions, setSubmittedImportOptions] =
     useState<CsvImportOptions>(DEFAULT_IMPORT_OPTIONS);
   const [importKeyState, setImportKeyState] = useState<{
@@ -89,6 +99,7 @@ export function useStudentImportPageController({
     setImportResult(null);
     setImportOptions(DEFAULT_IMPORT_OPTIONS);
     setSubmittedImportOptions(DEFAULT_IMPORT_OPTIONS);
+    setDuplicateDecisions({});
     setImportKeyState(null);
     setActiveOperation(null);
     setDragOver(false);
@@ -105,15 +116,18 @@ export function useStudentImportPageController({
       mapping,
       options: importOptions,
       contentHash: fileContentHash,
+      decisions: duplicateDecisions,
     };
-  }, [file, fileContentHash, importOptions, mapping, rowCount]);
+  }, [duplicateDecisions, file, fileContentHash, importOptions, mapping, rowCount]);
   const activeImportKey = areCsvImportKeyInputsEqual(importKeyState?.input, importKeyInput)
     ? (importKeyState?.key ?? null)
     : null;
   const importKeyError = areCsvImportKeyInputsEqual(importKeyState?.input, importKeyInput)
     ? (importKeyState?.error ?? null)
     : null;
-  const validationResult = areCsvImportKeyInputsEqual(validationState?.input, importKeyInput)
+  // Validation depends on the file, mapping and options; choosing Skip or Create
+  // for a flagged row changes the import key but never the validation result.
+  const validationResult = areCsvImportValidationInputsEqual(validationState?.input, importKeyInput)
     ? (validationState?.result ?? null)
     : null;
 
@@ -167,6 +181,7 @@ export function useStudentImportPageController({
     setErrorMessage(null);
     setValidationState(null);
     setImportResult(null);
+    setDuplicateDecisions({});
     setFileContentHash(null);
     setImportKeyState(null);
 
@@ -253,6 +268,7 @@ export function useStudentImportPageController({
     setErrorMessage(null);
     setValidationState(null);
     setImportResult(null);
+    setDuplicateDecisions({});
 
     try {
       if (!requestFile || !requestInput) {
@@ -270,6 +286,7 @@ export function useStudentImportPageController({
           return;
         }
         setValidationState({ input: requestInput, result });
+        setDuplicateDecisions(buildDefaultDuplicateDecisions(result));
       } else {
         if (!token) {
           throw new Error("You need to be signed in before importing students.");
@@ -300,6 +317,7 @@ export function useStudentImportPageController({
           return;
         }
         setValidationState({ input: requestInput, result });
+        setDuplicateDecisions(buildDefaultDuplicateDecisions(result));
       }
 
       setStage("preview");
@@ -328,6 +346,7 @@ export function useStudentImportPageController({
     const requestOptions = importOptions;
     const requestImportKey = activeImportKey;
     const requestValidationResult = validationResult;
+    const requestDecisions = duplicateDecisions;
 
     if (!requestFile) {
       setErrorMessage("Choose a CSV file before importing.");
@@ -345,6 +364,12 @@ export function useStudentImportPageController({
       setErrorMessage("Validate this CSV before importing.");
       return;
     }
+    if (hasUnresolvedDuplicateDecisions(requestValidationResult, requestDecisions)) {
+      setErrorMessage(
+        "Choose Skip or Create for each student who may already be in Koaryu before importing.",
+      );
+      return;
+    }
 
     const requestId = (importRequestRef.current += 1);
     setActiveOperation("import");
@@ -358,6 +383,7 @@ export function useStudentImportPageController({
         requestOptions,
         {
           importKey: requestImportKey,
+          duplicateDecisions: requestDecisions,
         },
       );
       if (importRequestRef.current !== requestId) {
@@ -366,6 +392,7 @@ export function useStudentImportPageController({
       setSubmittedImportOptions(requestOptions);
       setImportResult(result);
       setValidationState(null);
+      setDuplicateDecisions({});
       setImportKeyState(null);
       setStage("done");
     } catch (error) {
@@ -391,6 +418,7 @@ export function useStudentImportPageController({
     const nextOptions = { ...importOptions, [key]: value };
     setValidationState(null);
     setImportResult(null);
+    setDuplicateDecisions({});
     setImportKeyState(null);
     setImportOptions(nextOptions);
     if (stage === "preview" && file) {
@@ -406,6 +434,7 @@ export function useStudentImportPageController({
     setActiveOperation(null);
     setValidationState(null);
     setImportResult(null);
+    setDuplicateDecisions({});
     setImportKeyState(null);
     setMapping((current) => ({ ...current, [header]: field }));
   }
@@ -418,7 +447,16 @@ export function useStudentImportPageController({
     setActiveOperation(null);
     setValidationState(null);
     setImportResult(null);
+    setDuplicateDecisions({});
     setStage("map");
+  }
+
+  function handleDuplicateDecisionChange(rowNumber: number, decision: CsvImportDuplicateDecision) {
+    if (activeOperation !== null) {
+      return;
+    }
+    setErrorMessage(null);
+    setDuplicateDecisions((current) => ({ ...current, [String(rowNumber)]: decision }));
   }
 
   return {
@@ -426,6 +464,7 @@ export function useStudentImportPageController({
       activeImportKey,
       canManageRoster,
       dragOver,
+      duplicateDecisions,
       errorMessage,
       fileInputRef,
       fileName: file?.name,
@@ -446,6 +485,7 @@ export function useStudentImportPageController({
       onBackToMapping: handleBackToMapping,
       onDismissError: () => setErrorMessage(null),
       onDragOverChange: setDragOver,
+      onDuplicateDecisionChange: handleDuplicateDecisionChange,
       onFileSelect: handleFile,
       onImport: handleImport,
       onImportAnother: resetImportState,

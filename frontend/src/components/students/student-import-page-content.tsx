@@ -16,7 +16,7 @@ import {
   getStudentImportStageIndex,
   type StudentImportStage,
 } from "@/lib/student-import-page-model";
-import type { CsvImportOptions, CsvImportResult } from "@/types";
+import type { CsvImportDuplicateDecision, CsvImportOptions, CsvImportResult } from "@/types";
 import { ArrowLeft, Lock } from "lucide-react";
 import styles from "./student-records.module.css";
 
@@ -29,6 +29,7 @@ type StudentImportPageContentProps = {
   activeImportKey: string | null;
   canManageRoster: boolean;
   dragOver: boolean;
+  duplicateDecisions: Record<string, CsvImportDuplicateDecision>;
   errorMessage: string | null;
   fileInputRef: RefObject<HTMLInputElement | null>;
   fileName?: string;
@@ -47,6 +48,7 @@ type StudentImportPageContentProps = {
   onBackToMapping: () => void;
   onDismissError: () => void;
   onDragOverChange: (isDragOver: boolean) => void;
+  onDuplicateDecisionChange: (rowNumber: number, decision: CsvImportDuplicateDecision) => void;
   onFileSelect: (file: File) => Promise<void> | void;
   onImport: () => Promise<void> | void;
   onImportAnother: () => void;
@@ -62,6 +64,7 @@ export function StudentImportPageContent({
   activeImportKey,
   canManageRoster,
   dragOver,
+  duplicateDecisions,
   errorMessage,
   fileInputRef,
   fileName,
@@ -80,6 +83,7 @@ export function StudentImportPageContent({
   onBackToMapping,
   onDismissError,
   onDragOverChange,
+  onDuplicateDecisionChange,
   onFileSelect,
   onImport,
   onImportAnother,
@@ -190,11 +194,13 @@ export function StudentImportPageContent({
             {stage === "preview" && validationResult ? (
               <StudentImportPreviewStep
                 activeImportKey={activeImportKey}
+                duplicateDecisions={duplicateDecisions}
                 importKeyError={importKeyError}
                 importOptions={importOptions}
                 isLoading={isLoading}
                 validationResult={validationResult}
                 onBackToMapping={onBackToMapping}
+                onDuplicateDecisionChange={onDuplicateDecisionChange}
                 onImport={onImport}
                 onOpenBeltTracker={onOpenBeltTracker}
                 onOptionToggle={onOptionToggle}

@@ -23,6 +23,7 @@ import type {
   ClassSessionDeleteScope,
   ClassTemplate,
   ClassTemplateCreate,
+  CsvImportDuplicateDecision,
   CsvImportOptions,
   CsvImportResult,
   DashboardHome,
@@ -112,7 +113,10 @@ export interface StoreContextValue {
     rows: Record<string, string>[],
     mapping: Record<string, string>,
     options: CsvImportOptions,
-    request?: { importKey?: string },
+    request?: {
+      importKey?: string;
+      duplicateDecisions?: Record<string, CsvImportDuplicateDecision>;
+    },
   ) => Promise<CsvImportResult>;
   refreshStudents: () => Promise<Student[]>;
   listStudentsPage: (

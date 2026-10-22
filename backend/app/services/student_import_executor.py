@@ -4,8 +4,14 @@ from typing import Any, Optional
 from fastapi import HTTPException, status
 from supabase import Client
 
-from app.schemas.student import CsvImportOptions, CsvImportResult
+from app.schemas.student import CsvImportDuplicateDecision, CsvImportOptions, CsvImportResult
+from app.services.student_import_csv import make_import_issue
 from app.services.student_import_ids import deterministic_import_uuid
+from app.services.student_import_matching import (
+    candidate_for_reference,
+    skip_target,
+    unacknowledged_candidates,
+)
 from app.services.student_import_planner import StudentImportPlanner
 from app.services.student_import_plan_rows import append_import_note
 from app.services.student_import_runs import StudentImportRunStore
@@ -35,8 +41,10 @@ class StudentImportExecutor:
         studio_id: str,
         actor_id: str,
         idempotency_key: Optional[str] = None,
+        duplicate_decisions: Optional[dict[str, CsvImportDuplicateDecision]] = None,
     ) -> CsvImportResult:
         effective_options = options or CsvImportOptions()
+        decisions = duplicate_decisions or {}
         import_runs = StudentImportRunStore(self.supabase)
         import_run, cached_result, effective_idempotency_key, processing_token = import_runs.claim(
             studio_id=studio_id,
@@ -45,6 +53,7 @@ class StudentImportExecutor:
             mapping=mapping,
             options=effective_options,
             idempotency_key=idempotency_key,
+            duplicate_decisions=decisions,
         )
 
         if cached_result is not None:
@@ -56,9 +65,20 @@ class StudentImportExecutor:
             receipts: dict[str, dict[str, Any]] = {}
             for receipt in import_run["receipts"]:
                 receipts.setdefault(receipt["kind"], {})[receipt["key"]] = receipt["result"]
+            # The roster is read again here, at execution start, so decisions
+            # are honoured only against students that still exist and strong
+            # matches that appeared since preview are refused, not created.
+            # Residual window: a student created concurrently after this point
+            # is not seen; the A2 migration closes that inside the row RPC.
             _, planned_rows = self.planner.prepare_import(
-                rows, mapping, studio_id, effective_options, receipts
+                rows,
+                mapping,
+                studio_id,
+                effective_options,
+                receipts,
+                import_run_id=import_run["id"],
             )
+            self._apply_duplicate_decisions(planned_rows, decisions)
             self.setup_writer.prepare(
                 planned_rows,
                 studio_id=studio_id,
@@ -66,6 +86,10 @@ class StudentImportExecutor:
                 processing_token=processing_token,
                 receipts=receipts,
             )
+            # Setup can still refuse an original row (for example a ladder that
+            # disappeared since the first attempt); a skip pointing at it would
+            # otherwise claim the student exists.
+            self._reverify_skip_dependencies(planned_rows)
             created_programs = [
                 value["name"] for value in receipts.get("program", {}).values() if value["created"]
             ]
@@ -86,7 +110,7 @@ class StudentImportExecutor:
                 )
             )
 
-            imported, imported_without_belt = self._import_valid_rows(
+            imported, imported_without_belt, skipped = self._import_valid_rows(
                 planned_rows=planned_rows,
                 studio_id=studio_id,
                 import_run_id=import_run["id"],
@@ -101,6 +125,7 @@ class StudentImportExecutor:
                 created_belts=created_belts,
                 imported_without_belt_count=imported_without_belt,
                 imported_count=imported,
+                skipped_rows=skipped,
                 idempotency_key=effective_idempotency_key,
             )
             result = import_runs.apply_result_execution_metadata(
@@ -146,6 +171,132 @@ class StudentImportExecutor:
                 detail=STUDENT_IMPORT_FAILED_DETAIL,
             ) from exc
 
+    @staticmethod
+    def _refuse(row: dict[str, Any], message: str) -> None:
+        row["issues"].append(
+            make_import_issue(
+                "duplicate_review_required",
+                message,
+                field="legal_last_name",
+                suggested_action="Validate the file again and decide for this row.",
+            )
+        )
+        row["is_valid"] = False
+
+    @staticmethod
+    def _apply_duplicate_decisions(
+        planned_rows: list[dict[str, Any]],
+        decisions: dict[str, CsvImportDuplicateDecision],
+    ) -> None:
+        """Turn the owner's decisions into per-row outcomes before any write.
+
+        Rules, applied in row order:
+        * Every strong or archived candidate found now, in the file or in the
+          roster, must be named by the decision; otherwise the row is refused
+          with ``duplicate_review_required`` and nothing is created.
+        * A skip must point at a student or earlier row found again. A skip of
+          an earlier row resolves to the student that row retained: its own new
+          student when it imported, or the student it was skipped against. The
+          skip is honoured only if this row itself matches that student at
+          strong or possible confidence; a refused original refuses the skip.
+        * Everything else creates. Skips never merge, overwrite or delete.
+        Rows already completed by receipt are never re-evaluated.
+        """
+        outcomes: dict[int, dict[str, Any]] = {}
+        for row in planned_rows:
+            row_number = int(row["row_number"])
+            if row.get("completed"):
+                outcomes[row_number] = {"state": "imported", "retained": ("row", row_number)}
+                continue
+            if not row["is_valid"]:
+                outcomes[row_number] = {"state": "rejected", "retained": None}
+                continue
+            match = row.get("match")
+            decision = decisions.get(str(row_number))
+            if match is None:
+                outcomes[row_number] = {"state": "imported", "retained": ("row", row_number)}
+                continue
+            unacknowledged = unacknowledged_candidates(match, decision)
+            if unacknowledged:
+                who = unacknowledged[0].display_name
+                StudentImportExecutor._refuse(
+                    row,
+                    f"This row looks like {who}, who is already in Koaryu. Review the duplicate and choose Skip or Create before importing it.",
+                )
+                outcomes[row_number] = {"state": "rejected", "retained": None}
+                continue
+            if decision is None or decision.action != "skip":
+                outcomes[row_number] = {"state": "imported", "retained": ("row", row_number)}
+                continue
+
+            target = skip_target(match, decision)
+            if target is None:
+                StudentImportExecutor._refuse(
+                    row,
+                    "This row was set to skip, but the student it pointed at was not found again. Review the duplicate and choose again.",
+                )
+                outcomes[row_number] = {"state": "rejected", "retained": None}
+                continue
+            retained = target
+            if target[0] == "row":
+                original = outcomes.get(target[1]) or {"state": "rejected", "retained": None}
+                if original["state"] == "rejected":
+                    StudentImportExecutor._refuse(
+                        row,
+                        f"This row was set to skip as a repeat of row {target[1]}, but that row was not imported. Review both rows and choose again.",
+                    )
+                    outcomes[row_number] = {"state": "rejected", "retained": None}
+                    continue
+                retained = original["retained"]
+                if original["state"] == "skipped" and (
+                    candidate_for_reference(match, retained) is None
+                ):
+                    StudentImportExecutor._refuse(
+                        row,
+                        f"This row was set to skip as a repeat of row {target[1]}, but row {target[1]} was itself skipped as someone this row does not match. Review both rows and choose again.",
+                    )
+                    outcomes[row_number] = {"state": "rejected", "retained": None}
+                    continue
+            retained_candidate = candidate_for_reference(match, retained)
+            who = (
+                f"{retained_candidate.display_name} (archived)"
+                if retained_candidate and retained_candidate.archived
+                else (retained_candidate.display_name if retained_candidate else None)
+            ) or "a student already in Koaryu"
+            row["issues"].append(
+                make_import_issue(
+                    "duplicate_skipped",
+                    f"Skipped: already in Koaryu as {who}.",
+                    severity="warning",
+                    field="legal_last_name",
+                )
+            )
+            row["skipped"] = True
+            row["skip_retained"] = retained
+            outcomes[row_number] = {"state": "skipped", "retained": retained}
+
+    @staticmethod
+    def _reverify_skip_dependencies(planned_rows: list[dict[str, Any]]) -> None:
+        """After setup, a skip whose retained row was refused becomes a review."""
+        valid_rows = {
+            int(row["row_number"])
+            for row in planned_rows
+            if row["is_valid"] and not row.get("skipped")
+        }
+        for row in planned_rows:
+            retained = row.get("skip_retained")
+            if not row.get("skipped") or not retained or retained[0] != "row":
+                continue
+            if retained[1] in valid_rows:
+                continue
+            row["issues"] = [issue for issue in row["issues"] if issue.code != "duplicate_skipped"]
+            row["skipped"] = False
+            row.pop("skip_retained", None)
+            StudentImportExecutor._refuse(
+                row,
+                f"This row was set to skip as a repeat of row {retained[1]}, but that row was not imported. Review both rows and choose again.",
+            )
+
     def _import_valid_rows(
         self,
         *,
@@ -153,9 +304,10 @@ class StudentImportExecutor:
         studio_id: str,
         import_run_id: str,
         processing_token: str,
-    ) -> tuple[int, int]:
+    ) -> tuple[int, int, int]:
         imported = 0
         imported_without_belt = 0
+        skipped = 0
 
         for row in planned_rows:
             if not row["is_valid"]:
@@ -163,6 +315,9 @@ class StudentImportExecutor:
             if row.get("completed"):
                 imported += 1
                 imported_without_belt += int(row["imported_without_belt"])
+                continue
+            if row.get("skipped"):
+                skipped += 1
                 continue
 
             mapped = dict(row["data"])
@@ -223,7 +378,7 @@ class StudentImportExecutor:
             if row_imported_without_belt:
                 imported_without_belt += 1
 
-        return imported, imported_without_belt
+        return imported, imported_without_belt, skipped
 
     def _import_student_row_atomic(
         self,

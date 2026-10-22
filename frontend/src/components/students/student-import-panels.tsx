@@ -159,10 +159,14 @@ export function StudentImportDonePanel({
   onViewStudents: () => void;
 }) {
   const importedCount = importResult.imported_count ?? 0;
-  const importedAllValidatedRows = importedCount > 0 && importResult.valid_rows === importedCount;
+  const skippedCount = importResult.skipped_rows ?? 0;
+  const importedAllValidatedRows =
+    importedCount > 0 && importResult.valid_rows === importedCount + skippedCount;
   const doneTitle =
     importedCount === 0
-      ? "No students were imported"
+      ? skippedCount > 0 && importResult.error_rows === 0
+        ? "Nothing new to import"
+        : "No students were imported"
       : importedAllValidatedRows
         ? "Import complete"
         : "Import finished with follow-up items";
@@ -191,10 +195,17 @@ export function StudentImportDonePanel({
         <span className="tabular-nums font-bold text-text-primary">{importResult.valid_rows}</span>{" "}
         validated rows were imported.
       </p>
+      {skippedCount > 0 ? (
+        <p className="text-sm text-text-secondary">
+          <span className="tabular-nums font-bold text-text-primary">{skippedCount}</span>{" "}
+          {pluralize(skippedCount, "row")} {skippedCount === 1 ? "was" : "were"} skipped because the
+          student is already in Koaryu. Nothing was merged or overwritten.
+        </p>
+      ) : null}
       {importResult.error_rows > 0 ? (
         <p className="text-sm text-text-secondary">
           <span className="text-danger tabular-nums">{importResult.error_rows}</span> rows still
-          have blockers and were skipped.
+          have blockers and were not imported.
         </p>
       ) : null}
       {importResult.created_programs.length > 0 ? (

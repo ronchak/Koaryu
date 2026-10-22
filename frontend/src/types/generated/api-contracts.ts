@@ -868,6 +868,31 @@ export interface ApiCsvImportActionOptions {
   belt_tracker_href?: string | null;
 }
 
+export interface ApiCsvImportDuplicateCandidate {
+  student_id?: string | null;
+  of_row?: number | null;
+  display_name: string;
+  archived: boolean;
+  confidence: "strong" | "possible" | "different_person";
+  reasons: string[];
+}
+
+export interface ApiCsvImportDuplicateDecision {
+  action: "skip" | "create";
+  matched_student_id?: string | null;
+  of_row?: number | null;
+  acknowledged_student_ids: string[];
+  acknowledged_rows: number[];
+}
+
+export interface ApiCsvImportDuplicateReview {
+  candidates: ApiCsvImportDuplicateCandidate[];
+  suggested_action: "skip" | "create" | "decide";
+  family_context: string[];
+  acknowledge_student_ids: string[];
+  acknowledge_rows: number[];
+}
+
 export interface ApiCsvImportIssue {
   code: string;
   severity: "error" | "warning";
@@ -888,6 +913,7 @@ export interface ApiCsvImportRequest {
   mapping: Record<string, string>;
   options?: ApiCsvImportOptions;
   idempotency_key?: string | null;
+  duplicate_decisions?: Record<string, ApiCsvImportDuplicateDecision>;
 }
 
 export interface ApiCsvImportResult {
@@ -905,6 +931,8 @@ export interface ApiCsvImportResult {
   imported_without_belt_count: number;
   normalized_status_count: number;
   imported_count: number;
+  skipped_rows: number;
+  duplicate_flagged_rows: number;
   idempotency_key?: string | null;
   reused_result: boolean;
   execution_status: "completed" | "completed_with_warnings" | "reused";
@@ -918,6 +946,7 @@ export interface ApiCsvImportRow {
   errors: string[];
   warnings: string[];
   is_valid: boolean;
+  duplicate_review?: ApiCsvImportDuplicateReview | null;
 }
 
 export interface ApiCsvImportSetupIssue {

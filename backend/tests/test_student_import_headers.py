@@ -67,3 +67,20 @@ class StudentImportHeaderTests(unittest.TestCase):
                 self.assertTrue(plan["is_valid"])
                 self.assertEqual(plan["data"]["legal_first_name"], "Alex")
                 self.assertEqual(plan["data"]["legal_last_name"], "Rivera")
+
+    def test_bare_parent_or_guardian_columns_hold_the_guardian_name(self):
+        for header in (
+            "Parent or Guardian",
+            "Parent/Guardian",
+            "Parent Guardian",
+            "Primary Guardian",
+            "Guardian",
+            "Parent",
+        ):
+            with self.subTest(header=header):
+                self.assertEqual(auto_map_csv_header(header), "guardian_name")
+        # Descriptive guardian columns keep their specific fields.
+        self.assertEqual(auto_map_csv_header("Parent or Guardian Email"), "guardian_email")
+        self.assertEqual(auto_map_csv_header("Parent/Guardian Phone"), "guardian_phone")
+        self.assertEqual(auto_map_csv_header("Parent Guardian Relationship"), "guardian_relation")
+        self.assertEqual(auto_map_csv_header("Guardian Notes"), "notes")

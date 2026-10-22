@@ -118,6 +118,9 @@ export type CsvImportActionOptions = ApiContracts.ApiCsvImportActionOptions;
 export type CsvImportOptions = ApiContracts.ApiCsvImportOptions;
 export type CsvImportRequest = ApiContracts.ApiCsvImportRequest;
 export type CsvImportResult = ApiContracts.ApiCsvImportResult;
+export type CsvImportDuplicateCandidate = ApiContracts.ApiCsvImportDuplicateCandidate;
+export type CsvImportDuplicateDecision = ApiContracts.ApiCsvImportDuplicateDecision;
+export type CsvImportDuplicateReview = ApiContracts.ApiCsvImportDuplicateReview;
 export type CsvMappingSuggestion = ApiContracts.ApiCsvMappingSuggestion;
 export type CsvParseResponse = ApiContracts.ApiCsvParseResponse;
 

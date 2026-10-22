@@ -105,6 +105,10 @@ RAW_CSV_FIELD_ALIASES: dict[str, str] = {
     "parent name": "guardian_name",
     "parent full name": "guardian_name",
     "parent guardian name": "guardian_name",
+    "parent or guardian": "guardian_name",
+    "parent guardian": "guardian_name",
+    "guardian": "guardian_name",
+    "parent": "guardian_name",
     "guardian email": "guardian_email",
     "parent email": "guardian_email",
     "guardian phone": "guardian_phone",
@@ -166,6 +170,10 @@ def infer_csv_field_from_tokens(tokens: set[str]) -> str:
         if {"relation", "relationship"} & tokens:
             return "guardian_relation"
         if {"name", "contact"} & tokens:
+            return "guardian_name"
+        # "Parent or Guardian", "Parent/Guardian", "Primary Guardian": a bare
+        # parent/guardian column holds the guardian's name.
+        if not tokens - {"parent", "guardian", "or", "and", "primary", "main"}:
             return "guardian_name"
 
     if "emergency" in tokens:

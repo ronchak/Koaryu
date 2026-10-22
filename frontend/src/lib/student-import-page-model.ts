@@ -1,4 +1,12 @@
-import type { CsvImportOptions, CsvImportResult, StudentStatus } from "@/types";
+import type {
+  CsvImportDuplicateCandidate,
+  CsvImportDuplicateDecision,
+  CsvImportDuplicateReview,
+  CsvImportOptions,
+  CsvImportResult,
+  CsvImportRow,
+  StudentStatus,
+} from "@/types";
 
 export type StudentImportStage = "upload" | "map" | "preview" | "done";
 export type ActiveStudentImportOperation = "file" | "validation" | "import" | null;
@@ -259,10 +267,161 @@ export function buildPreviewValidationResult(
     imported_without_belt_count: 0,
     normalized_status_count: normalizedStatusCount,
     imported_count: 0,
+    skipped_rows: 0,
+    duplicate_flagged_rows: 0,
     reused_result: false,
     execution_status: "completed",
     non_critical_errors: [],
   };
+}
+
+// ---- Duplicate review ----
+
+export type DuplicateDecisionMap = Record<string, CsvImportDuplicateDecision>;
+
+export interface DuplicateReviewRow {
+  rowNumber: number;
+  rowName: string;
+  review: CsvImportDuplicateReview;
+  primary: CsvImportDuplicateCandidate | null;
+  /** Strong, possible and archived matches get a Skip/Create choice. */
+  needsChoice: boolean;
+  /** Archived matches start with no selection and block import until chosen. */
+  decisionRequired: boolean;
+}
+
+export function getRowStudentName(row: Pick<CsvImportRow, "data">): string {
+  const first = getRowDisplayValue(row.data?.legal_first_name ?? "").trim();
+  const last = getRowDisplayValue(row.data?.legal_last_name ?? "").trim();
+  return [first, last].filter((part) => part && part !== "\u2014").join(" ") || "This row";
+}
+
+export function getDuplicateReviewRows(result: CsvImportResult): DuplicateReviewRow[] {
+  // Blocked rows are never imported, so their duplicates need no choice and
+  // must not hold up the import of the remaining valid rows.
+  return (result.rows || [])
+    .filter(
+      (row) => row.is_valid && row.duplicate_review && row.duplicate_review.candidates.length > 0,
+    )
+    .map((row) => {
+      const review = row.duplicate_review as CsvImportDuplicateReview;
+      const primary = review.candidates[0] ?? null;
+      const needsChoice = Boolean(primary && primary.confidence !== "different_person");
+      return {
+        rowNumber: row.row_number,
+        rowName: getRowStudentName(row),
+        review,
+        primary,
+        needsChoice,
+        decisionRequired: needsChoice && review.suggested_action === "decide",
+      };
+    })
+    .sort((left, right) => left.rowNumber - right.rowNumber);
+}
+
+export function buildDuplicateDecision(
+  review: CsvImportDuplicateReview,
+  action: CsvImportDuplicateDecision["action"],
+): CsvImportDuplicateDecision {
+  // The leads are the best in-file row and existing student the server showed.
+  // The acknowledgement lists come from the server and are never capped, so a
+  // strong match the owner did not see refuses the row at execution.
+  const inFile = review.candidates.find(
+    (candidate) => candidate.of_row != null && candidate.confidence !== "different_person",
+  );
+  const existing = review.candidates.find(
+    (candidate) => candidate.student_id && candidate.confidence !== "different_person",
+  );
+  return {
+    action,
+    matched_student_id: existing?.student_id ?? null,
+    of_row: inFile?.of_row ?? null,
+    acknowledged_student_ids: [...(review.acknowledge_student_ids ?? [])],
+    acknowledged_rows: [...(review.acknowledge_rows ?? [])],
+  };
+}
+
+export function buildDefaultDuplicateDecisions(result: CsvImportResult): DuplicateDecisionMap {
+  const decisions: DuplicateDecisionMap = {};
+  for (const row of getDuplicateReviewRows(result)) {
+    if (!row.needsChoice || row.decisionRequired) continue;
+    const action = row.review.suggested_action === "skip" ? "skip" : "create";
+    decisions[String(row.rowNumber)] = buildDuplicateDecision(row.review, action);
+  }
+  return decisions;
+}
+
+export function countDuplicateSkips(result: CsvImportResult, decisions: DuplicateDecisionMap) {
+  return getDuplicateReviewRows(result).filter(
+    (row) => row.needsChoice && decisions[String(row.rowNumber)]?.action === "skip",
+  ).length;
+}
+
+export function hasUnresolvedDuplicateDecisions(
+  result: CsvImportResult,
+  decisions: DuplicateDecisionMap,
+) {
+  return getDuplicateReviewRows(result).some(
+    (row) => row.decisionRequired && !decisions[String(row.rowNumber)],
+  );
+}
+
+export interface ImportActionState {
+  importCount: number;
+  skipCount: number;
+  label: string;
+  disabled: boolean;
+  /** Set when the button is disabled because a choice is still open. */
+  reason: "unresolved" | "nothing" | null;
+}
+
+/** What the primary button does: import new students, or finish an all-skip re-upload. */
+export function getImportActionState(
+  result: CsvImportResult,
+  decisions: DuplicateDecisionMap,
+): ImportActionState {
+  const skipCount = countDuplicateSkips(result, decisions);
+  const importCount = Math.max(result.valid_rows - skipCount, 0);
+  if (hasUnresolvedDuplicateDecisions(result, decisions)) {
+    return {
+      importCount,
+      skipCount,
+      label: `Import ${importCount} ${pluralize(importCount, "student")}`,
+      disabled: true,
+      reason: "unresolved",
+    };
+  }
+  if (importCount === 0 && skipCount === 0) {
+    return {
+      importCount,
+      skipCount,
+      label: "Import 0 students",
+      disabled: true,
+      reason: "nothing",
+    };
+  }
+  if (importCount === 0) {
+    return {
+      importCount,
+      skipCount,
+      label: `Finish, skip ${skipCount} already in Koaryu`,
+      disabled: false,
+      reason: null,
+    };
+  }
+  return {
+    importCount,
+    skipCount,
+    label: `Import ${importCount} ${pluralize(importCount, "student")}`,
+    disabled: false,
+    reason: null,
+  };
+}
+
+export function describeDuplicateCandidate(candidate: CsvImportDuplicateCandidate): string {
+  const where = candidate.of_row != null ? `row ${candidate.of_row}, ` : "";
+  const reasons = candidate.reasons.length > 0 ? ` · ${candidate.reasons.join(", ")}` : "";
+  return `${where}${candidate.display_name}${reasons}`;
 }
 
 export function buildPreflightSummary(result: CsvImportResult): string {
@@ -454,6 +613,10 @@ const RAW_CSV_ALIASES: Record<string, string> = {
   "parent name": "guardian_name",
   "parent full name": "guardian_name",
   "parent guardian name": "guardian_name",
+  "parent or guardian": "guardian_name",
+  "parent guardian": "guardian_name",
+  guardian: "guardian_name",
+  parent: "guardian_name",
   "guardian email": "guardian_email",
   "parent email": "guardian_email",
   "guardian phone": "guardian_phone",
@@ -526,6 +689,8 @@ export function isPaymentStatusHeader(header: string) {
   );
 }
 
+const BARE_GUARDIAN_TOKENS = new Set(["parent", "guardian", "or", "and", "primary", "main"]);
+
 function inferFieldFromTokens(tokens: Set<string>): string {
   if (tokens.size === 0 || tokens.has("hold")) return "";
 
@@ -542,6 +707,8 @@ function inferFieldFromTokens(tokens: Set<string>): string {
     }
     if (tokens.has("relation") || tokens.has("relationship")) return "guardian_relation";
     if (tokens.has("name") || tokens.has("contact")) return "guardian_name";
+    // "Parent or Guardian", "Parent/Guardian": a bare parent/guardian column holds the name.
+    if ([...tokens].every((token) => BARE_GUARDIAN_TOKENS.has(token))) return "guardian_name";
   }
 
   if (tokens.has("emergency")) {
