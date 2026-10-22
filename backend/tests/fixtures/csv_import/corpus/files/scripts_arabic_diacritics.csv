@@ -1,0 +1,11 @@
+Student First Name (Required),Student Last Name (Required),Student Birthday,Student ID,Preferred Name,Student Email (Optional),Mobile Number,Status,Program,Current Belt,Parent Full Name,Guardian Email,Guardian Phone,Notes
+تَجْرِيبَا,خَيَالِي,2014-09-03,SYN-850005-00000,تَجْرِيبَا,synthetic.850005.0@example.com,(202) 555-0100,Active,Moon Forms,White Belt,,,,"Synthetic only; “curly quotes”, café; line one
+line two"
+تجريبا,خيالي,2014-09-03,SYN-850005-00001,تجريبا,synthetic.850005.1@example.net,202.555.0101,Active,moon forms,WHITE,,,,"Synthetic only; “curly quotes”, café; line one
+line two"
+测试备用三,虚构,1973-12-24,SYN-850005-00002,测试备用三,synthetic.850005.2@example.org,+1 202 555 0102,Active,Moon-Forms,Yellow Belt,,,,"Synthetic only; “curly quotes”, café; line one
+line two"
+测试备用四,虚构,1974-01-25,SYN-850005-00003,测试备用四,synthetic.850005.3@example.invalid,2025550103,Active,MOON FORMS!,20000000-0000-4000-8000-000000000002,,,,"Synthetic only; “curly quotes”, café; line one
+line two"
+测试备用五,虚构,1975-02-26,SYN-850005-00004,测试备用五,synthetic.850005.4@example.com,202-555-0104,Active,10000000-0000-4000-8000-000000000001,,,,,"Synthetic only; “curly quotes”, café; line one
+line two"

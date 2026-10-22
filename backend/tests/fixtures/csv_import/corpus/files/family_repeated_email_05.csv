@@ -1,0 +1,25 @@
+Student First Name (Required),Student Last Name (Required),Student Birthday,Student ID,Preferred Name,Student Email (Optional),Mobile Number,Status,Program,Current Belt,Parent Full Name,Guardian Email,Guardian Phone,Notes
+Testarden,Quillfen,2014-09-03,SYN-700046-00000,UnrelatedPreferred,one@example.invalid,(202) 555-0100,Active,Moon Forms,White Belt,,,,"Synthetic only; “curly quotes”, café; line one
+line two"
+Testarden,Quillfen,2014-09-03,SYN-700046-00001,UnrelatedPreferred,two@example.invalid,202.555.0101,Active,moon forms,WHITE,,,,"Synthetic only; “curly quotes”, café; line one
+line two"
+Chloélune00002,Velquill III,1962-01-13,SYN-700046-00002,Chloélune00002,synthetic.700046.2@example.org,+1 202 555 0102,Active,Moon-Forms,Yellow Belt,,,,"Synthetic only; “curly quotes”, café; line one
+line two"
+Évarin00003,Quillfen,1963-02-14,SYN-700046-00003,Zee,synthetic.700046.3@example.invalid,2025550103,Active,MOON FORMS!,20000000-0000-4000-8000-000000000002,,,,"Synthetic only; “curly quotes”, café; line one
+line two"
+Ava-Grace00004,de la Vey,1964-03-15,SYN-700046-00004,Ava-Grace00004,synthetic.700046.4@example.com,202-555-0104,Active,10000000-0000-4000-8000-000000000001,,,,,"Synthetic only; “curly quotes”, café; line one
+line two"
+Téoquin00005,van Lumen,1965-04-16,SYN-700046-00005,Zee,synthetic.700046.5@example.net,(202) 555-0105,Active,,White Belt,,,,"Synthetic only; “curly quotes”, café; line one
+line two"
+Iñara00006,O'Vel,1966-05-17,SYN-700046-00006,Iñara00006,synthetic.700046.6@example.org,202.555.0106,Active,Moon Forms,WHITE,,,,"Synthetic only; “curly quotes”, café; line one
+line two"
+Zelava00007,Solquill Jr,1967-06-18,SYN-700046-00007,Zee,synthetic.700046.7@example.invalid,+1 202 555 0107,Active,moon forms,Yellow Belt,,,,"Synthetic only; “curly quotes”, café; line one
+line two"
+Mioren00008,Rivfen Sr,1968-07-19,SYN-700046-00008,Mioren00008,synthetic.700046.8@example.com,2025550108,Active,Moon-Forms,20000000-0000-4000-8000-000000000002,,,,"Synthetic only; “curly quotes”, café; line one
+line two"
+Chloélune00009,Velquill III,1969-08-20,SYN-700046-00009,Zee,synthetic.700046.9@example.net,202-555-0109,Active,MOON FORMS!,,,,,"Synthetic only; “curly quotes”, café; line one
+line two"
+Évarin00010,Quillfen,1970-09-21,SYN-700046-00010,Évarin00010,synthetic.700046.10@example.org,(202) 555-0110,Active,10000000-0000-4000-8000-000000000001,White Belt,,,,"Synthetic only; “curly quotes”, café; line one
+line two"
+Ava-Grace00011,de la Vey,1971-10-22,SYN-700046-00011,Zee,synthetic.700046.11@example.invalid,202.555.0111,Active,,WHITE,,,,"Synthetic only; “curly quotes”, café; line one
+line two"

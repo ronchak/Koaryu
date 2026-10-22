@@ -1,0 +1,41 @@
+﻿Student First Name (Required),Student Last Name (Required),Student Birthday,Student ID,Preferred Name,Student Email (Optional),Mobile Number,Status,Program,Current Belt,Parent Full Name,Guardian Email,Guardian Phone,Notes
+测试曦一,虚构,1994-09-17,SYN-86000-00000,更正一,synthetic.86000.0@example.com,(202) 555-0100,Paused,Moon Forms,White Belt,测试监护一 虚构,scripts.guardian.0@example.invalid,202.555.0131,合成更正
+测试曦二,虚构,1995-10-18,SYN-86000-00001,更正二,synthetic.86000.1@example.net,202.555.0101,Paused,moon forms,WHITE,测试监护二 虚构,scripts.guardian.1@example.invalid,+1 202 555 0132,合成更正
+测试曦三,虚构,1996-11-19,SYN-86000-00002,更正三,synthetic.86000.2@example.org,+1 202 555 0102,Paused,Moon-Forms,Yellow Belt,测试监护三 虚构,scripts.guardian.2@example.invalid,2025550133,合成更正
+测试曦四,虚构,1997-12-20,SYN-86000-00003,更正四,synthetic.86000.3@example.invalid,2025550103,Paused,MOON FORMS!,20000000-0000-4000-8000-000000000002,测试监护四 虚构,scripts.guardian.3@example.invalid,202-555-0134,合成更正
+测试曦五,虚构,1998-01-21,SYN-86000-00004,更正五,synthetic.86000.4@example.com,202-555-0104,Paused,10000000-0000-4000-8000-000000000001,,测试监护五 虚构,scripts.guardian.4@example.invalid,(202) 555-0135,合成更正
+测试曦六,虚构,1999-02-22,SYN-86000-00005,更正六,synthetic.86000.5@example.net,(202) 555-0105,Paused,,White Belt,测试监护六 虚构,scripts.guardian.5@example.invalid,202.555.0136,合成更正
+测试曦七,虚构,03/23/2000,SYN-86000-00006,测试曦七,SYNTHETIC.86000.6@EXAMPLE.ORG,+1 2025550106,Active,Moon Forms,WHITE,测试监护七 虚构,scripts.guardian.6@example.invalid,+1 202 555 0137,"Synthetic only; “curly quotes”, café; line one
+line two"
+测试曦八,虚构,04/24/2001,SYN-86000-00007,测试曦八,SYNTHETIC.86000.7@EXAMPLE.INVALID,+1 2025550107,Active,moon forms,Yellow Belt,测试监护八 虚构,scripts.guardian.7@example.invalid,2025550138,"Synthetic only; “curly quotes”, café; line one
+line two"
+测试曦九,虚构,05/25/2002,SYN-86000-00008,测试曦九,SYNTHETIC.86000.8@EXAMPLE.COM,+1 2025550108,Active,Moon-Forms,20000000-0000-4000-8000-000000000002,测试监护九 虚构,scripts.guardian.8@example.invalid,202-555-0139,"Synthetic only; “curly quotes”, café; line one
+line two"
+测试曦十,虚构,06/26/2003,SYN-86000-00009,测试曦十,SYNTHETIC.86000.9@EXAMPLE.NET,+1 2025550109,Active,MOON FORMS!,,测试监护十 虚构,scripts.guardian.9@example.invalid,(202) 555-0140,"Synthetic only; “curly quotes”, café; line one
+line two"
+测试曦十一,虚构,07/27/2004,SYN-86000-00010,测试曦十一,SYNTHETIC.86000.10@EXAMPLE.ORG,+1 2025550110,Active,10000000-0000-4000-8000-000000000001,White Belt,测试监护十一 虚构,scripts.guardian.10@example.invalid,202.555.0141,"Synthetic only; “curly quotes”, café; line one
+line two"
+测试曦十二,虚构,08/28/2005,SYN-86000-00011,测试曦十二,SYNTHETIC.86000.11@EXAMPLE.INVALID,+1 2025550111,Active,,WHITE,测试监护十二 虚构,scripts.guardian.11@example.invalid,+1 202 555 0142,"Synthetic only; “curly quotes”, café; line one
+line two"
+测试曦十三,虚构,2006-09-01,SYN-86000-00012,测试曦十三,synthetic.86000.12@example.com,+1 202 555 0112,Active,Moon Forms,Yellow Belt,测试监护十三 虚构,scripts.guardian.12@example.invalid,2025550143,"Synthetic only; “curly quotes”, café; line one
+line two"
+测试曦十四,虚构,2007-10-02,SYN-86000-00013,测试曦十四,synthetic.86000.13@example.net,2025550113,Active,moon forms,20000000-0000-4000-8000-000000000002,测试监护十四 虚构,scripts.guardian.13@example.invalid,202-555-0144,"Synthetic only; “curly quotes”, café; line one
+line two"
+测试曦十五,虚构,2008-11-03,SYN-86000-00014,测试曦十五,synthetic.86000.14@example.org,202-555-0114,Active,Moon-Forms,,测试监护十五 虚构,scripts.guardian.14@example.invalid,(202) 555-0145,"Synthetic only; “curly quotes”, café; line one
+line two"
+测试曦十六,虚构,2009-12-04,SYN-86000-00015,测试曦十六,synthetic.86000.15@example.invalid,(202) 555-0115,Active,MOON FORMS!,White Belt,测试监护十六 虚构,scripts.guardian.15@example.invalid,202.555.0146,"Synthetic only; “curly quotes”, café; line one
+line two"
+测试曦十七,虚构,2010-01-05,SYN-86000-00016,测试曦十七,synthetic.86000.16@example.com,202.555.0116,Active,10000000-0000-4000-8000-000000000001,WHITE,测试监护十七 虚构,scripts.guardian.16@example.invalid,+1 202 555 0147,"Synthetic only; “curly quotes”, café; line one
+line two"
+测试曦十八,虚构,2011-02-06,SYN-86000-00017,测试曦十八,synthetic.86000.17@example.net,+1 202 555 0117,Active,,Yellow Belt,测试监护十八 虚构,scripts.guardian.17@example.invalid,2025550148,"Synthetic only; “curly quotes”, café; line one
+line two"
+测试曦十九,虚构,2012-03-07,SYN-86000-00018,测试曦十九,synthetic.86000.18@example.org,2025550118,Active,Moon Forms,20000000-0000-4000-8000-000000000002,测试监护十九 虚构,scripts.guardian.18@example.invalid,202-555-0149,"Synthetic only; “curly quotes”, café; line one
+line two"
+测试曦二十,虚构,2013-04-08,SYN-86000-00019,测试曦二十,synthetic.86000.19@example.invalid,202-555-0119,Active,moon forms,,测试监护二十 虚构,scripts.guardian.19@example.invalid,(202) 555-0150,"Synthetic only; “curly quotes”, café; line one
+line two"
+测试曦二十一,虚构,2014-05-09,SYN-86000-00020,测试曦二十一,synthetic.86000.20@example.com,(202) 555-0120,Active,Moon-Forms,White Belt,测试监护二十一 虚构,scripts.guardian.20@example.invalid,202.555.0151,"Synthetic only; “curly quotes”, café; line one
+line two"
+测试曦二十五,虚构,2018-09-13,SYN-86000-00024,测试曦二十五,synthetic.86000.24@example.com,202-555-0124,Active,Moon Forms,,测试监护二十五 虚构,scripts.guardian.24@example.invalid,(202) 555-0155,"Synthetic only; “curly quotes”, café; line one
+line two"
+测试曦二十六,虚构,2019-10-14,SYN-86000-00025,测试曦二十六,synthetic.86000.25@example.net,(202) 555-0125,Active,moon forms,White Belt,测试监护二十六 虚构,scripts.guardian.25@example.invalid,202.555.0156,"Synthetic only; “curly quotes”, café; line one
+line two"

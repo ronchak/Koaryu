@@ -1,0 +1,41 @@
+﻿Student Full Name,DOB,Legacy Account #,Preferred Name,Email,Phone Number,Status,Program,Current Belt,Parent Guardian Name,Guardian Email,Guardian Phone,Notes,Monthly Tuition,Payment Status,Balance
+"""Zee"" Quillfen",2019-10-14,SYN-700105-00000,Zelava00000,synthetic.700105.0@example.com,(202) 555-0100,Active,Moon Forms,White Belt,Testjordan00000 Quillfen,guardian.700105.0@example.invalid,202.555.0131,"Synthetic only; “curly quotes”, café; line one
+line two",123.45,Overdue,12.34
+"Mioren00001 ""Zee""",11/15/2020,SYN-700105-00001,Zee,synthetic.700105.1@example.net,202.555.0101,Current,moon forms,WHITE,Testjordan00001 Quillfen,guardian.700105.1@example.invalid,+1 202 555 0132,"Synthetic only; “curly quotes”, café; line one
+line two",123.45,Overdue,12.34
+"Chloélune00002 ""Zee"" van Lumen",12/16/19,SYN-700105-00002,Chloélune00002,synthetic.700105.2@example.org,+1 202 555 0102,Trial,Moon-Forms,Yellow Belt,Testjordan00002 Quillfen,guardian.700105.2@example.invalid,2025550133,"Synthetic only; “curly quotes”, café; line one
+line two",123.45,Overdue,12.34
+"Évarin00003 ""Zee"" O'Vel",01.17.2022,SYN-700105-00003,Zee,synthetic.700105.3@example.invalid,2025550103,Frozen,MOON FORMS!,20000000-0000-4000-8000-000000000002,Testjordan00003 Quillfen,guardian.700105.3@example.invalid,202-555-0134,"Synthetic only; “curly quotes”, café; line one
+line two",123.45,Overdue,12.34
+"Ava-Grace00004 ""Zee"" Solquill Jr","February 18, 2023",SYN-700105-00004,Ava-Grace00004,synthetic.700105.4@example.com,202-555-0104,On Hold,10000000-0000-4000-8000-000000000001,,Testjordan00004 Quillfen,guardian.700105.4@example.invalid,(202) 555-0135,"Synthetic only; “curly quotes”, café; line one
+line two",123.45,Overdue,12.34
+"Téoquin00005 ""Zee"" Rivfen Sr",45370,SYN-700105-00005,Zee,synthetic.700105.5@example.net,(202) 555-0105,Overdue,,White Belt,Testjordan00005 Quillfen,guardian.700105.5@example.invalid,202.555.0136,"Synthetic only; “curly quotes”, café; line one
+line two",123.45,Overdue,12.34
+"Iñara00006 ""Zee"" Velquill III",2025-04-20T12:34:56Z,SYN-700105-00006,Iñara00006,synthetic.700105.6@example.org,202.555.0106,Cancelled,Moon Forms,WHITE,Testjordan00006 Quillfen,guardian.700105.6@example.invalid,+1 202 555 0137,"Synthetic only; “curly quotes”, café; line one
+line two",123.45,Overdue,12.34
+"Zelava00007 ""Zee"" Quillfen",,SYN-700105-00007,Zee,synthetic.700105.7@example.invalid,+1 202 555 0107,Uncharted,moon forms,Yellow Belt,Testjordan00007 Quillfen,guardian.700105.7@example.invalid,2025550138,"Synthetic only; “curly quotes”, café; line one
+line two",123.45,Overdue,12.34
+"Mioren00008 ""Zee"" de la Vey",2014,SYN-700105-00008,Mioren00008,synthetic.700105.8@example.com,2025550108,Active,Moon-Forms,20000000-0000-4000-8000-000000000002,Testjordan00008 Quillfen,guardian.700105.8@example.invalid,202-555-0139,"Synthetic only; “curly quotes”, café; line one
+line two",123.45,Overdue,12.34
+"Chloélune00009 ""Zee"" van Lumen",2014-13-03,SYN-700105-00009,Zee,synthetic.700105.9@example.net,202-555-0109,Current,MOON FORMS!,,Testjordan00009 Quillfen,guardian.700105.9@example.invalid,(202) 555-0140,"Synthetic only; “curly quotes”, café; line one
+line two",123.45,Overdue,12.34
+"Évarin00010 ""Zee"" O'Vel",2026-12-31,SYN-700105-00010,Évarin00010,synthetic.700105.10@example.org,(202) 555-0110,Trial,10000000-0000-4000-8000-000000000001,White Belt,Testjordan00010 Quillfen,guardian.700105.10@example.invalid,202.555.0141,"Synthetic only; “curly quotes”, café; line one
+line two",123.45,Overdue,12.34
+"Ava-Grace00011 ""Zee"" Solquill Jr",1950-01-01,SYN-700105-00011,Zee,synthetic.700105.11@example.invalid,202.555.0111,Frozen,,WHITE,Testjordan00011 Quillfen,guardian.700105.11@example.invalid,+1 202 555 0142,"Synthetic only; “curly quotes”, café; line one
+line two",123.45,Overdue,12.34
+"Téoquin00012 ""Zee"" Rivfen Sr",1955-10-26,SYN-700105-00012,Téoquin00012,synthetic.700105.12@example.com,+1 202 555 0112,On Hold,Moon Forms,Yellow Belt,Testjordan00012 Quillfen,guardian.700105.12@example.invalid,2025550143,"Synthetic only; “curly quotes”, café; line one
+line two",123.45,Overdue,12.34
+"Iñara00013 ""Zee"" Velquill III",11/27/1956,SYN-700105-00013,Zee,synthetic.700105.13@example.net,2025550113,Overdue,moon forms,20000000-0000-4000-8000-000000000002,Testjordan00013 Quillfen,guardian.700105.13@example.invalid,202-555-0144,"Synthetic only; “curly quotes”, café; line one
+line two",123.45,Overdue,12.34
+"Zelava00014 ""Zee"" Quillfen",12/28/05,SYN-700105-00014,Zelava00014,synthetic.700105.14@example.org,202-555-0114,Cancelled,Moon-Forms,,Testjordan00014 Quillfen,guardian.700105.14@example.invalid,(202) 555-0145,"Synthetic only; “curly quotes”, café; line one
+line two",123.45,Overdue,12.34
+"Mioren00015 ""Zee"" de la Vey",01.01.1958,SYN-700105-00015,Zee,synthetic.700105.15@example.invalid,(202) 555-0115,Uncharted,MOON FORMS!,White Belt,Testjordan00015 Quillfen,guardian.700105.15@example.invalid,202.555.0146,"Synthetic only; “curly quotes”, café; line one
+line two",123.45,Overdue,12.34
+"Chloélune00016 ""Zee"" van Lumen","February 2, 1959",SYN-700105-00016,Chloélune00016,synthetic.700105.16@example.com,202.555.0116,Active,10000000-0000-4000-8000-000000000001,WHITE,Testjordan00016 Quillfen,guardian.700105.16@example.invalid,+1 202 555 0147,"Synthetic only; “curly quotes”, café; line one
+line two",123.45,Overdue,12.34
+"Évarin00017 ""Zee"" O'Vel",21978,SYN-700105-00017,Zee,synthetic.700105.17@example.net,+1 202 555 0117,Current,,Yellow Belt,Testjordan00017 Quillfen,guardian.700105.17@example.invalid,2025550148,"Synthetic only; “curly quotes”, café; line one
+line two",123.45,Overdue,12.34
+"Ava-Grace00018 ""Zee"" Solquill Jr",1961-04-04T12:34:56Z,SYN-700105-00018,Ava-Grace00018,synthetic.700105.18@example.org,2025550118,Trial,Moon Forms,20000000-0000-4000-8000-000000000002,Testjordan00018 Quillfen,guardian.700105.18@example.invalid,202-555-0149,"Synthetic only; “curly quotes”, café; line one
+line two",123.45,Overdue,12.34
+"Téoquin00019 ""Zee"" Rivfen Sr",,SYN-700105-00019,Zee,synthetic.700105.19@example.invalid,202-555-0119,Frozen,moon forms,,Testjordan00019 Quillfen,guardian.700105.19@example.invalid,(202) 555-0150,"Synthetic only; “curly quotes”, café; line one
+line two",123.45,Overdue,12.34

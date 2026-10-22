@@ -1,0 +1,21 @@
+﻿Child,Surname,Birthdate,Legacy Account #,Nickname,Student Email,Cell Phone,Status,Membership Program,Rank,Guardian Name,Guardian Email,Guardian Phone,Notes
+,Rivfen Sr,1995-10-18,SYN-700005-00000,Zelava00000,synthetic.700005.0@example.com,(202) 555-0100,Active,Moon Forms,White Belt,Testjordan00000 Quillfen,guardian.700005.0@example.invalid,202.555.0131,"Synthetic only; “curly quotes”, café; line one
+line two"
+Mioren00001,,11/19/1996,SYN-700005-00001,Zee,synthetic.700005.1@example.net,202.555.0101,Current,moon forms,WHITE,Testjordan00001 Quillfen,guardian.700005.1@example.invalid,+1 202 555 0132,"Synthetic only; “curly quotes”, café; line one
+line two"
+Chloélune00002,Quillfen,12/20/21,SYN-700005-00002,Chloélune00002,synthetic.700005.2@example.org,+1 202 555 0102,Trial,Moon-Forms,Yellow Belt,Testjordan00002 Quillfen,guardian.700005.2@example.invalid,2025550133,"Synthetic only; “curly quotes”, café; line one
+line two"
+Évarin00003,de la Vey,01.21.1998,SYN-700005-00003,Zee,synthetic.700005.3@example.invalid,2025550103,Frozen,MOON FORMS!,20000000-0000-4000-8000-000000000002,Testjordan00003 Quillfen,guardian.700005.3@example.invalid,202-555-0134,"Synthetic only; “curly quotes”, café; line one
+line two"
+Ava-Grace00004,van Lumen,"February 22, 1999",SYN-700005-00004,Ava-Grace00004,synthetic.700005.4@example.com,202-555-0104,On Hold,10000000-0000-4000-8000-000000000001,,Testjordan00004 Quillfen,guardian.700005.4@example.invalid,(202) 555-0135,"Synthetic only; “curly quotes”, café; line one
+line two"
+Téoquin00005,O'Vel,36608,SYN-700005-00005,Zee,synthetic.700005.5@example.net,(202) 555-0105,Overdue,,White Belt,Testjordan00005 Quillfen,guardian.700005.5@example.invalid,202.555.0136,"Synthetic only; “curly quotes”, café; line one
+line two"
+Iñara00006,Solquill Jr,2001-04-24T12:34:56Z,SYN-700005-00006,Iñara00006,synthetic.700005.6@example.org,202.555.0106,Cancelled,Moon Forms,WHITE,Testjordan00006 Quillfen,guardian.700005.6@example.invalid,+1 202 555 0137,"Synthetic only; “curly quotes”, café; line one
+line two"
+Zelava00007,Rivfen Sr,,SYN-700005-00007,Zee,synthetic.700005.7@example.invalid,+1 202 555 0107,Uncharted,moon forms,Yellow Belt,Testjordan00007 Quillfen,guardian.700005.7@example.invalid,2025550138,"Synthetic only; “curly quotes”, café; line one
+line two"
+Mioren00008,Velquill III,2014,SYN-700005-00008,Mioren00008,synthetic.700005.8@example.com,2025550108,Active,Moon-Forms,20000000-0000-4000-8000-000000000002,Testjordan00008 Quillfen,guardian.700005.8@example.invalid,202-555-0139,"Synthetic only; “curly quotes”, café; line one
+line two"
+Chloélune00009,Quillfen,2014-13-03,SYN-700005-00009,Zee,synthetic.700005.9@example.net,202-555-0109,Current,MOON FORMS!,,Testjordan00009 Quillfen,guardian.700005.9@example.invalid,(202) 555-0140,"Synthetic only; “curly quotes”, café; line one
+line two"
