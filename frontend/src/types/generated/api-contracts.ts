@@ -881,6 +881,8 @@ export interface ApiCsvImportDuplicateDecision {
   action: "skip" | "create";
   matched_student_id?: string | null;
   of_row?: number | null;
+  acknowledged_student_ids: string[];
+  acknowledged_rows: number[];
 }
 
 export interface ApiCsvImportDuplicateReview {

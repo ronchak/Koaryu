@@ -306,6 +306,14 @@ class CsvImportDuplicateDecision(BaseModel):
     action: CsvImportDuplicateAction
     matched_student_id: Optional[str] = None
     of_row: Optional[int] = None
+    acknowledged_student_ids: list[str] = Field(
+        default_factory=list,
+        description="Every existing student the owner saw for this row. A strong or archived match found at execution that is not listed refuses the row.",
+    )
+    acknowledged_rows: list[int] = Field(
+        default_factory=list,
+        description="Every earlier CSV row the owner saw for this row.",
+    )
 
 
 class CsvImportIssue(BaseModel):

@@ -60,12 +60,14 @@ ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
 def name_key(value: Any) -> str:
-    """Casefolded, accent-stripped, alphanumeric-only name with a trailing suffix dropped."""
+    """Casefolded, accent-stripped name of any script with a trailing suffix dropped."""
     if value is None:
         return ""
     text = unicodedata.normalize("NFKD", str(value))
     text = "".join(ch for ch in text if not unicodedata.combining(ch)).casefold()
-    tokens = re.findall(r"[a-z0-9]+", text)
+    # Letters and digits of any script survive; punctuation, spaces and
+    # underscores do not, so "O'Neill", "Ava-Grace" and CJK names all key.
+    tokens = re.findall(r"[^\W_]+", text)
     if len(tokens) > 1 and tokens[-1] in NAME_SUFFIX_TOKENS:
         tokens = tokens[:-1]
     return "".join(tokens)
@@ -302,15 +304,19 @@ def _class_for(candidate: MatchCandidate) -> tuple[str, list[str]]:
     return "existing_possible", list(candidate.reasons)
 
 
-CANDIDATE_CAP = 3
+DISPLAY_CANDIDATE_CAP = 5
 
 
 class _StudentIndex:
-    """Keyed lookup so each row compares against a bounded set of candidates.
+    """Keyed lookup so each row compares only against records that can match.
 
     Insertion order is preserved in every bucket, so the first entry is the
-    earliest row (or the first roster entry). ``compare_students`` remains the
-    single classification rule; the index only decides which records to compare.
+    earliest row (or the first roster entry). Buckets keyed by a shared signal
+    are never truncated: every record that could be a strong match is compared,
+    because execution refuses a row whose strong matches were not acknowledged.
+    Only the plain-name bucket uses representatives, since a name alone can
+    yield at most a possible or different-person outcome. ``compare_students``
+    remains the single classification rule.
     """
 
     def __init__(self) -> None:
@@ -342,11 +348,11 @@ class _StudentIndex:
         name = (identity.first, identity.last)
         pool: list[Any] = []
         if identity.date_of_birth:
-            pool.extend(self.by_name_dob.get((*name, identity.date_of_birth), [])[:CANDIDATE_CAP])
+            pool.extend(self.by_name_dob.get((*name, identity.date_of_birth), []))
         if identity.email:
-            pool.extend(self.by_name_email.get((*name, identity.email), [])[:CANDIDATE_CAP])
+            pool.extend(self.by_name_email.get((*name, identity.email), []))
         if identity.phone:
-            pool.extend(self.by_name_phone.get((*name, identity.phone), [])[:CANDIDATE_CAP])
+            pool.extend(self.by_name_phone.get((*name, identity.phone), []))
         if identity.date_of_birth:
             representative = self.first_missing_dob_by_name.get(name)
             if representative is not None:
@@ -391,20 +397,16 @@ class _GuardianIndex:
         pool: list[Any] = []
         if guardian.email:
             if guardian.first:
-                pool.extend(
-                    self.by_email_first.get((guardian.email, guardian.first), [])[:CANDIDATE_CAP]
-                )
+                pool.extend(self.by_email_first.get((guardian.email, guardian.first), []))
             if guardian.last:
-                pool.extend(
-                    self.by_email_last.get((guardian.email, guardian.last), [])[:CANDIDATE_CAP]
-                )
+                pool.extend(self.by_email_last.get((guardian.email, guardian.last), []))
             representative = self.first_by_email.get(guardian.email)
             if representative is not None:
                 pool.append(representative)
         if guardian.first and guardian.last:
             name = (guardian.first, guardian.last)
             if guardian.phone:
-                pool.extend(self.by_name_phone.get((*name, guardian.phone), [])[:CANDIDATE_CAP])
+                pool.extend(self.by_name_phone.get((*name, guardian.phone), []))
             representative = self.first_by_name.get(name)
             if representative is not None:
                 pool.append(representative)
@@ -615,6 +617,7 @@ def build_duplicate_review(match: RowMatch) -> Optional[dict[str, Any]]:
         "separate_contact",
     }:
         return None
+    # Enforcement sees every candidate; the preview shows the strongest few.
     candidates = [
         {
             "student_id": candidate.existing_key,
@@ -624,7 +627,7 @@ def build_duplicate_review(match: RowMatch) -> Optional[dict[str, Any]]:
             "confidence": candidate.confidence,
             "reasons": reason_words(candidate.reasons),
         }
-        for candidate in match.candidates
+        for candidate in match.candidates[:DISPLAY_CANDIDATE_CAP]
     ]
     family_context: list[str] = []
     for candidate in match.guardian_candidates[:3]:
@@ -645,14 +648,81 @@ def build_duplicate_review(match: RowMatch) -> Optional[dict[str, Any]]:
     }
 
 
-def decision_names_match(decision: Optional[Any], match: RowMatch) -> bool:
-    """True when the owner's decision points at the same student or row found now."""
-    if decision is None:
+def needs_acknowledgement(candidate: MatchCandidate) -> bool:
+    """Strong matches and any archived match must be named before a row is written."""
+    if candidate.confidence == "different_person":
         return False
-    matched_student_id = getattr(decision, "matched_student_id", None)
+    return candidate.confidence == "strong" or candidate.archived
+
+
+def named_references(decision: Optional[Any]) -> tuple[set[str], set[int]]:
+    """Existing student ids and earlier rows the owner's decision names."""
+    if decision is None:
+        return set(), set()
+    students = {
+        str(value)
+        for value in [
+            getattr(decision, "matched_student_id", None),
+            *(getattr(decision, "acknowledged_student_ids", None) or []),
+        ]
+        if value
+    }
+    rows = {
+        int(value)
+        for value in [
+            getattr(decision, "of_row", None),
+            *(getattr(decision, "acknowledged_rows", None) or []),
+        ]
+        if value is not None
+    }
+    return students, rows
+
+
+def unacknowledged_candidates(match: RowMatch, decision: Optional[Any]) -> list[MatchCandidate]:
+    """Strong or archived candidates found now that the decision does not name."""
+    students, rows = named_references(decision)
+    return [
+        candidate
+        for candidate in match.candidates
+        if needs_acknowledgement(candidate)
+        and (
+            (candidate.source == "existing" and candidate.existing_key not in students)
+            or (candidate.source == "row" and candidate.row_number not in rows)
+        )
+    ]
+
+
+def candidate_for_reference(
+    match: RowMatch, reference: tuple[str, Any]
+) -> Optional[MatchCandidate]:
+    """The row's own strong or possible candidate for ("existing", key) or ("row", n)."""
+    kind, value = reference
+    for candidate in match.candidates:
+        if candidate.confidence not in {"strong", "possible"}:
+            continue
+        if (
+            kind == "existing"
+            and candidate.source == "existing"
+            and candidate.existing_key == str(value)
+        ):
+            return candidate
+        if kind == "row" and candidate.source == "row" and candidate.row_number == int(value):
+            return candidate
+    return None
+
+
+def skip_target(match: RowMatch, decision: Optional[Any]) -> Optional[tuple[str, Any]]:
+    """What a skip decision points at, if execution found it again.
+
+    The existing student wins when the decision names one that is still a
+    strong or possible candidate; otherwise the named earlier row, if it is.
+    """
+    if decision is None:
+        return None
+    matched = getattr(decision, "matched_student_id", None)
+    if matched and candidate_for_reference(match, ("existing", matched)) is not None:
+        return ("existing", str(matched))
     of_row = getattr(decision, "of_row", None)
-    if match.of_existing_key is not None and matched_student_id == match.of_existing_key:
-        return True
-    if match.of_row is not None and of_row is not None and int(of_row) == match.of_row:
-        return True
-    return False
+    if of_row is not None and candidate_for_reference(match, ("row", int(of_row))) is not None:
+        return ("row", int(of_row))
+    return None

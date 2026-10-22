@@ -442,9 +442,27 @@ describe("student import page model", () => {
 
     const defaults = buildDefaultDuplicateDecisions(result);
     assert.deepEqual(defaults, {
-      2: { action: "skip", matched_student_id: "s1", of_row: null },
-      4: { action: "create", matched_student_id: "s3", of_row: null },
-      5: { action: "skip", matched_student_id: "s1", of_row: 2 },
+      2: {
+        action: "skip",
+        matched_student_id: "s1",
+        of_row: null,
+        acknowledged_student_ids: ["s1"],
+        acknowledged_rows: [],
+      },
+      4: {
+        action: "create",
+        matched_student_id: "s3",
+        of_row: null,
+        acknowledged_student_ids: ["s3"],
+        acknowledged_rows: [],
+      },
+      5: {
+        action: "skip",
+        matched_student_id: "s1",
+        of_row: 2,
+        acknowledged_student_ids: ["s1"],
+        acknowledged_rows: [2],
+      },
     });
     assert.equal(hasUnresolvedDuplicateDecisions(result, defaults), true);
     assert.equal(countDuplicateSkips(result, defaults), 2);
@@ -453,7 +471,13 @@ describe("student import page model", () => {
       ...defaults,
       3: buildDuplicateDecision(rows[1].review, "create"),
     };
-    assert.deepEqual(resolved[3], { action: "create", matched_student_id: "s2", of_row: null });
+    assert.deepEqual(resolved[3], {
+      action: "create",
+      matched_student_id: "s2",
+      of_row: null,
+      acknowledged_student_ids: ["s2"],
+      acknowledged_rows: [],
+    });
     assert.equal(hasUnresolvedDuplicateDecisions(result, resolved), false);
     assert.equal(countDuplicateSkips(result, resolved), 2);
     assert.equal(
@@ -486,5 +510,50 @@ describe("student import page model", () => {
         "Guardian Notes": "notes",
       },
     );
+  });
+  it("ignores duplicates on blocked rows so they never hold up the valid ones", () => {
+    const archivedReview = {
+      candidates: [
+        {
+          student_id: "s9",
+          of_row: null,
+          display_name: "Mina Nguyen",
+          archived: true,
+          confidence: "strong",
+          reasons: ["same name", "same birth date"],
+        },
+      ],
+      suggested_action: "decide",
+      family_context: [],
+    };
+    const result = importResult({
+      valid_rows: 1,
+      error_rows: 1,
+      rows: [
+        {
+          row_number: 2,
+          data: { legal_first_name: "Mina" },
+          issues: [{ code: "missing_last_name", severity: "error", message: "Missing" }],
+          is_valid: false,
+          duplicate_review: archivedReview,
+        },
+        {
+          row_number: 3,
+          data: { legal_first_name: "Ava", legal_last_name: "Nguyen" },
+          issues: [],
+          is_valid: true,
+          duplicate_review: { ...archivedReview, suggested_action: "skip" },
+        },
+      ],
+    });
+
+    assert.deepEqual(
+      getDuplicateReviewRows(result).map((row) => row.rowNumber),
+      [3],
+    );
+    const defaults = buildDefaultDuplicateDecisions(result);
+    assert.deepEqual(Object.keys(defaults), ["3"]);
+    assert.equal(hasUnresolvedDuplicateDecisions(result, defaults), false);
+    assert.equal(countDuplicateSkips(result, defaults), 1);
   });
 });

@@ -4,11 +4,12 @@ import pytest
 
 from app.services.student_import_matching import (
     build_duplicate_review,
-    decision_names_match,
     email_key,
     match_rows,
     name_key,
     phone_key,
+    skip_target,
+    unacknowledged_candidates,
 )
 
 
@@ -37,10 +38,19 @@ def guardian(key: str, first: str, last: str, email=None, phone=None):
 
 
 class Decision:
-    def __init__(self, action, matched_student_id=None, of_row=None):
+    def __init__(
+        self,
+        action,
+        matched_student_id=None,
+        of_row=None,
+        acknowledged_student_ids=(),
+        acknowledged_rows=(),
+    ):
         self.action = action
         self.matched_student_id = matched_student_id
         self.of_row = of_row
+        self.acknowledged_student_ids = list(acknowledged_student_ids)
+        self.acknowledged_rows = list(acknowledged_rows)
 
 
 def test_keys_normalize_accents_punctuation_suffixes_emails_and_phones():
@@ -428,23 +438,100 @@ def test_rows_without_names_or_with_unparsed_birth_dates_do_not_match_or_crash()
     assert matches[1].duplicate_class == "existing_possible" and matches[1].reasons == ["name"]
 
 
-@pytest.mark.parametrize(
-    "decision, expected",
-    [
-        (None, False),
-        (Decision("skip", matched_student_id="s1"), False),
-        (Decision("skip", matched_student_id="s1", of_row=2), True),
-        (Decision("skip", of_row=2), True),
-        (Decision("skip", of_row=9), False),
-        (Decision("create", matched_student_id="s1", of_row=2), True),
-    ],
-)
-def test_decision_must_name_what_execution_found(decision, expected):
-    """Row 3 repeats row 2, so the match names the in-file row, not the roster student."""
+def test_names_of_any_script_key_the_same_way():
+    assert name_key("明 王") == name_key("明\u3000王") == name_key("明王") == "明王"
+    assert name_key("Иван") == name_key("ИВАН") == name_key("иван")
+    assert name_key("José 王") == name_key("jose王")
+    assert name_key("Nguyễn") == name_key("Nguyen")
+    roster = [existing("s1", "明", "王", date_of_birth="2014-06-03")]
+    (cjk,) = match_rows(
+        [planned(2, legal_first_name="明", legal_last_name="王", date_of_birth="2014-06-03")],
+        roster,
+    )
+    assert cjk.duplicate_class == "existing_strong" and cjk.reasons == ["name", "date_of_birth"]
+    (cyrillic,) = match_rows(
+        [planned(2, legal_first_name="ИВАН", legal_last_name="Петров", email="ivan@example.net")],
+        [existing("s2", "Иван", "петров", email="IVAN@example.net")],
+    )
+    assert cyrillic.duplicate_class == "existing_strong" and cyrillic.reasons == ["name", "email"]
+
+
+def test_strong_match_is_found_behind_several_same_name_conflicts():
+    """No lookup used for enforcement may be truncated."""
+    roster = [
+        existing("c1", "Ava", "Nguyen", date_of_birth="2001-01-01", email="ava@example.net"),
+        existing("c2", "Ava", "Nguyen", date_of_birth="2002-02-02", email="ava@example.net"),
+        existing("c3", "Ava", "Nguyen", date_of_birth="2003-03-03", email="ava@example.net"),
+        existing("other", "Ava", "Nguyen", email="someone@example.org"),
+        existing("s4", "Ava", "Nguyen", email="ava@example.net"),
+    ]
+    (match,) = match_rows(
+        [
+            planned(
+                2,
+                legal_first_name="Ava",
+                legal_last_name="Nguyen",
+                date_of_birth="2014-06-03",
+                email="ava@example.net",
+            )
+        ],
+        roster,
+    )
+    assert match.duplicate_class == "existing_strong" and match.of_existing_key == "s4"
+    assert match.reasons == ["name", "email"]
+    assert {c.existing_key for c in match.candidates} == {"c1", "c2", "c3", "other", "s4"}
+    review = build_duplicate_review(match)
+    assert review["candidates"][0]["student_id"] == "s4"
+    assert len(review["candidates"]) == 5
+
+
+def test_every_strong_or_archived_candidate_must_be_acknowledged():
+    roster = [
+        existing("s1", "Ava", "Nguyen", date_of_birth="2014-06-03"),
+        existing("old", "Ava", "Nguyen", date_of_birth="2014-06-03", archived=True),
+        existing("maybe", "Ava", "Nguyen"),
+    ]
+    rows = [
+        planned(2, legal_first_name="Ava", legal_last_name="Nguyen", date_of_birth="2014-06-03"),
+        planned(3, legal_first_name="Ava", legal_last_name="Nguyen", date_of_birth="2014-06-03"),
+    ]
+    match = match_rows(rows, roster)[1]
+    assert {(c.source, c.row_number or c.existing_key) for c in match.candidates} == {
+        ("row", 2),
+        ("existing", "s1"),
+        ("existing", "old"),
+        ("existing", "maybe"),
+    }
+    assert [c.existing_key or c.row_number for c in unacknowledged_candidates(match, None)] == [
+        2,
+        "s1",
+        "old",
+    ]
+    partial = Decision("create", matched_student_id="s1", of_row=2)
+    assert [c.existing_key for c in unacknowledged_candidates(match, partial)] == ["old"]
+    full = Decision("create", matched_student_id="s1", of_row=2, acknowledged_student_ids=["old"])
+    assert unacknowledged_candidates(match, full) == []
+    # "maybe" is only a possible match; it never needs acknowledgement.
+
+
+def test_skip_target_prefers_the_named_existing_student_then_the_named_row():
     roster = [existing("s1", "Ava", "Nguyen", date_of_birth="2014-06-03")]
     rows = [
         planned(2, legal_first_name="Ava", legal_last_name="Nguyen", date_of_birth="2014-06-03"),
         planned(3, legal_first_name="Ava", legal_last_name="Nguyen", date_of_birth="2014-06-03"),
     ]
     match = match_rows(rows, roster)[1]
-    assert decision_names_match(decision, match) is expected
+    assert skip_target(match, None) is None
+    assert skip_target(match, Decision("skip", matched_student_id="s1", of_row=2)) == (
+        "existing",
+        "s1",
+    )
+    assert skip_target(match, Decision("skip", of_row=2)) == ("row", 2)
+    assert skip_target(match, Decision("skip", matched_student_id="nobody")) is None
+    assert skip_target(match, Decision("skip", of_row=9)) is None
+    different = match_rows(
+        [planned(2, legal_first_name="Ava", legal_last_name="Nguyen", date_of_birth="1980-01-01")],
+        roster,
+    )[0]
+    assert different.duplicate_class == "different_person"
+    assert skip_target(different, Decision("skip", matched_student_id="s1")) is None

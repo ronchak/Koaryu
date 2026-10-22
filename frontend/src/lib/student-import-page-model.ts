@@ -297,8 +297,12 @@ export function getRowStudentName(row: Pick<CsvImportRow, "data">): string {
 }
 
 export function getDuplicateReviewRows(result: CsvImportResult): DuplicateReviewRow[] {
+  // Blocked rows are never imported, so their duplicates need no choice and
+  // must not hold up the import of the remaining valid rows.
   return (result.rows || [])
-    .filter((row) => row.duplicate_review && row.duplicate_review.candidates.length > 0)
+    .filter(
+      (row) => row.is_valid && row.duplicate_review && row.duplicate_review.candidates.length > 0,
+    )
     .map((row) => {
       const review = row.duplicate_review as CsvImportDuplicateReview;
       const primary = review.candidates[0] ?? null;
@@ -319,17 +323,21 @@ export function buildDuplicateDecision(
   review: CsvImportDuplicateReview,
   action: CsvImportDuplicateDecision["action"],
 ): CsvImportDuplicateDecision {
-  // Name both what the server found: the earliest in-file row and the existing student.
-  const inFile = review.candidates.find(
+  // Name everything the server showed: the earliest in-file row and existing
+  // student lead, and every other candidate is acknowledged. A strong match
+  // that appears later, unseen by the owner, then refuses the row.
+  const inFile = review.candidates.filter(
     (candidate) => candidate.of_row != null && candidate.confidence !== "different_person",
   );
-  const existing = review.candidates.find(
+  const existing = review.candidates.filter(
     (candidate) => candidate.student_id && candidate.confidence !== "different_person",
   );
   return {
     action,
-    matched_student_id: existing?.student_id ?? null,
-    of_row: inFile?.of_row ?? null,
+    matched_student_id: existing[0]?.student_id ?? null,
+    of_row: inFile[0]?.of_row ?? null,
+    acknowledged_student_ids: existing.map((candidate) => candidate.student_id as string),
+    acknowledged_rows: inFile.map((candidate) => candidate.of_row as number),
   };
 }
 
