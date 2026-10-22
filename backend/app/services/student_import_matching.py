@@ -576,7 +576,9 @@ def match_rows(
     string when parsed, ``email``, ``phone``, ``guardian_name``,
     ``guardian_email``, ``guardian_phone``). Rows flagged ``completed`` are
     receipt replays without row data; they are matched through the roster entry
-    that carries their ``import_row_number`` instead.
+    that carries their ``import_row_number`` instead. Rows with ``is_valid``
+    false are matched themselves but never become a target for later rows,
+    because they are never imported.
 
     ``existing_roster`` entries carry ``key``, ``legal_first_name``,
     ``legal_last_name``, ``preferred_name``, ``date_of_birth``, ``email``,
@@ -739,6 +741,10 @@ def match_rows(
             else:
                 match.guardian_class = "new"
 
+        if not row.get("is_valid", True):
+            # A blocked row is never imported, so a later row cannot repeat it
+            # or share its guardian; it is matched itself but never a target.
+            continue
         record = _RunRecord(row_number, identity, guardian, row_name)
         run_students.add(identity, record)
         run_guardians.add(guardian, record)
