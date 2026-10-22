@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 
 import {
   areCsvImportKeyInputsEqual,
+  areCsvImportValidationInputsEqual,
   buildStableImportKey,
   formatCsvImportFileSizeLimit,
   resolvePreviewImportBeltRankId,
@@ -107,6 +108,49 @@ describe("buildStableImportKey", () => {
     });
 
     assert.equal(left, right);
+  });
+
+  it("changes when a duplicate decision changes and ignores empty decision maps", async () => {
+    const base = {
+      rowCount: 2,
+      contentHash: "sha256:abc",
+      mapping: { "First Name": "legal_first_name" },
+      options: {},
+    };
+    const plain = await buildStableImportKey(base);
+    const emptyDecisions = await buildStableImportKey({ ...base, decisions: {} });
+    const skip = await buildStableImportKey({
+      ...base,
+      decisions: { 4: { action: "skip", matched_student_id: "s1", of_row: null } },
+    });
+    const create = await buildStableImportKey({
+      ...base,
+      decisions: { 4: { action: "create", matched_student_id: "s1", of_row: null } },
+    });
+
+    assert.equal(emptyDecisions, plain);
+    assert.notEqual(skip, plain);
+    assert.notEqual(skip, create);
+  });
+
+  it("keeps validation results while decisions change but refreshes the import key", () => {
+    const left = {
+      rowCount: 2,
+      contentHash: "sha256:abc",
+      mapping: { "First Name": "legal_first_name" },
+      options: {},
+    };
+    const right = {
+      ...left,
+      decisions: { 4: { action: "skip", matched_student_id: "s1", of_row: null } },
+    };
+
+    assert.equal(areCsvImportValidationInputsEqual(left, right), true);
+    assert.equal(areCsvImportKeyInputsEqual(left, right), false);
+    assert.equal(
+      areCsvImportValidationInputsEqual(left, { ...right, contentHash: "sha256:def" }),
+      false,
+    );
   });
 
   it("compares import request inputs with the same canonical rules as idempotency keys", () => {

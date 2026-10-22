@@ -1,0 +1,11 @@
+Child,Surname,Birthdate,Legacy Account #,Nickname,Student Email,Cell Phone,Status,Membership Program,Rank,Guardian Name,Guardian Email,Guardian Phone,Notes
+测试曦,虚构,2014-09-03,SYN-850008-00000,测试曦,scripts.same.person@example.invalid,2025550198,Active,Moon Forms,White Belt,,,,"Synthetic only; “curly quotes”, café; line one
+line two"
+CeshiXi,Xugou,2014-09-03,SYN-850008-00001,CeshiXi,scripts.same.person@example.invalid,2025550198,Active,moon forms,WHITE,,,,"Synthetic only; “curly quotes”, café; line one
+line two"
+测试备用三,虚构,1976-03-27,SYN-850008-00002,测试备用三,synthetic.850008.2@example.org,+1 202 555 0102,Active,Moon-Forms,Yellow Belt,,,,"Synthetic only; “curly quotes”, café; line one
+line two"
+测试备用四,虚构,1977-04-28,SYN-850008-00003,测试备用四,synthetic.850008.3@example.invalid,2025550103,Active,MOON FORMS!,20000000-0000-4000-8000-000000000002,,,,"Synthetic only; “curly quotes”, café; line one
+line two"
+测试备用五,虚构,1978-05-01,SYN-850008-00004,测试备用五,synthetic.850008.4@example.com,202-555-0104,Active,10000000-0000-4000-8000-000000000001,,,,,"Synthetic only; “curly quotes”, café; line one
+line two"

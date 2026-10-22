@@ -6,12 +6,25 @@ from typing import Any, Optional
 from fastapi import HTTPException, status
 from supabase import Client
 
-from app.schemas.student import CsvImportOptions, CsvImportResult
+from app.schemas.student import CsvImportDuplicateDecision, CsvImportOptions, CsvImportResult
 from app.services.supabase_rpc import execute_required_rpc, first_rpc_row
 
 IMPORT_RUN_OPERATION = "students_csv_execute"
 IMPORT_RUN_STALE_AFTER_SECONDS = 45
 MAX_IDEMPOTENCY_KEY_LENGTH = 255
+
+
+def serialize_duplicate_decision(decision: CsvImportDuplicateDecision) -> dict[str, Any]:
+    """Hash shape for a decision: the original fields, plus acknowledgements only when present.
+
+    Decisions recorded before the acknowledgement fields existed must keep
+    hashing identically, so empty lists are omitted rather than serialised.
+    """
+    payload = decision.model_dump(mode="json")
+    for key in ("acknowledged_student_ids", "acknowledged_rows"):
+        if not payload.get(key):
+            payload.pop(key, None)
+    return payload
 
 
 class StudentImportRunStore:
@@ -41,13 +54,22 @@ class StudentImportRunStore:
         rows: list[dict[str, Any]],
         mapping: dict[str, str],
         options: CsvImportOptions,
+        duplicate_decisions: Optional[dict[str, CsvImportDuplicateDecision]] = None,
     ) -> str:
-        payload = {
+        payload: dict[str, Any] = {
             "operation": IMPORT_RUN_OPERATION,
             "rows": rows,
             "mapping": mapping,
             "options": options.model_dump(mode="json"),
         }
+        # Decisions are part of the import identity: a changed decision is a new
+        # run, never a silent mutation of an earlier one. Absent decisions keep
+        # the historical hash so existing runs stay replayable.
+        if duplicate_decisions:
+            payload["duplicate_decisions"] = {
+                str(row_number): serialize_duplicate_decision(decision)
+                for row_number, decision in sorted(duplicate_decisions.items())
+            }
         serialized = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
         return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
 
@@ -96,8 +118,9 @@ class StudentImportRunStore:
         mapping: dict[str, str],
         options: CsvImportOptions,
         idempotency_key: Optional[str],
+        duplicate_decisions: Optional[dict[str, CsvImportDuplicateDecision]] = None,
     ) -> tuple[dict[str, Any], Optional[CsvImportResult], str, Optional[str]]:
-        request_hash = self.compute_request_hash(rows, mapping, options)
+        request_hash = self.compute_request_hash(rows, mapping, options, duplicate_decisions)
         effective_key = self.normalize_idempotency_key(idempotency_key) or f"auto:{request_hash}"
         claim_token = str(uuid.uuid4())
         return self._claim_with_rpc(

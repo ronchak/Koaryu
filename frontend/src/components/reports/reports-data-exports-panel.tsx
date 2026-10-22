@@ -6,6 +6,7 @@ import { captureAccessIdentity } from "@/lib/access-identity";
 import { Download } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { PanelHeader, StatBadge } from "@/components/reports/reports-page-sections";
 import { ToneTag } from "@/components/ui/horizon";
 import styles from "./reports.module.css";
@@ -18,13 +19,19 @@ type ExportReport = {
   id: string;
   title: string;
   description: string;
+  acceptsDateRange?: boolean;
 };
 
 type ExportGroup = {
   title: string;
   emphasis?: boolean;
+  dateRangeNote?: string;
   reports: ExportReport[];
 };
+
+type ExportDateRange = { from: string; to: string };
+
+const EMPTY_DATE_RANGE: ExportDateRange = { from: "", to: "" };
 
 export const EXPORT_GROUPS: ExportGroup[] = [
   {
@@ -50,6 +57,15 @@ export const EXPORT_GROUPS: ExportGroup[] = [
       { id: "students", title: "Students", description: "Roster, contact details, holds, tags, notes, photos, and soft-delete state." },
       { id: "guardian_contacts", title: "Guardians and Contacts", description: "Guardian records linked back to each student relationship." },
       { id: "student_program_memberships", title: "Program Enrollments", description: "Per-student program memberships and current rank assignments." },
+    ],
+  },
+  {
+    title: "Billing Ledgers",
+    dateRangeNote: "Optional. Applies to invoices and payments, using your studio's time zone. Leave blank for all dates.",
+    reports: [
+      { id: "billing_invoice_ledger", title: "Invoices", description: "One row per invoice: payer, student, plan, amounts due, paid and remaining, and key dates.", acceptsDateRange: true },
+      { id: "billing_payment_ledger", title: "Payments, Refunds and Disputes", description: "One row per payment, refund or dispute, each with its own amount and the payment it belongs to.", acceptsDateRange: true },
+      { id: "billing_enrollment_ledger", title: "Billing Enrollments", description: "One row per student billing enrollment: payer, plan and price, status, and billing dates." },
     ],
   },
   {
@@ -110,14 +126,22 @@ function ExportGroupRegister({
   exportingReportId,
   isPreviewMode,
   currentRole,
+  dateRange,
+  onDateRangeChange,
   onDownload,
 }: {
   group: ExportGroup;
   exportingReportId: string | null;
   isPreviewMode: boolean;
   currentRole: StaffRoleName | null;
+  dateRange: ExportDateRange;
+  onDateRangeChange: (range: ExportDateRange) => void;
   onDownload: (report: ExportReport) => void;
 }) {
+  const showDateRange = group.reports.some(
+    (report) => report.acceptsDateRange && canRunReportExport(currentRole, report.id),
+  );
+
   return (
     <section className={styles.exportGroup} data-export-group={group.title}>
       <div className={styles.exportHead}>
@@ -126,6 +150,47 @@ function ExportGroupRegister({
           {group.reports.length} CSV
         </ToneTag>
       </div>
+
+      {showDateRange ? (
+        <div className="mb-3" data-export-date-range>
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="w-[168px]">
+              <Input
+                label="From"
+                type="date"
+                value={dateRange.from}
+                max={dateRange.to || undefined}
+                disabled={Boolean(exportingReportId)}
+                onChange={(event) => onDateRangeChange({ ...dateRange, from: event.target.value })}
+              />
+            </div>
+            <div className="w-[168px]">
+              <Input
+                label="To"
+                type="date"
+                value={dateRange.to}
+                min={dateRange.from || undefined}
+                disabled={Boolean(exportingReportId)}
+                onChange={(event) => onDateRangeChange({ ...dateRange, to: event.target.value })}
+              />
+            </div>
+            {dateRange.from || dateRange.to ? (
+              <Button
+                type="button"
+                size="md"
+                variant="ghost"
+                disabled={Boolean(exportingReportId)}
+                onClick={() => onDateRangeChange(EMPTY_DATE_RANGE)}
+              >
+                Clear dates
+              </Button>
+            ) : null}
+          </div>
+          {group.dateRangeNote ? (
+            <p className={styles.exportDescription}>{group.dateRangeNote}</p>
+          ) : null}
+        </div>
+      ) : null}
 
       <div className={styles.exportList}>
         {group.reports.map((report) => {
@@ -183,6 +248,7 @@ export function ReportsDataExportsPanel({
   const [exportingReportId, setExportingReportId] = useState<string | null>(null);
   const [exportMessage, setExportMessage] = useState("");
   const [exportError, setExportError] = useState("");
+  const [dateRange, setDateRange] = useState<ExportDateRange>(EMPTY_DATE_RANGE);
 
   const mounted = useRef(true);
   const activeDownload = useRef<ReturnType<typeof captureAccessIdentity> | null>(null);
@@ -212,6 +278,18 @@ export function ReportsDataExportsPanel({
       return;
     }
 
+    const query = new URLSearchParams();
+    if (report.acceptsDateRange) {
+      if (dateRange.from && dateRange.to && dateRange.from > dateRange.to) {
+        setExportError("The From date must be on or before the To date.");
+        return;
+      }
+      if (dateRange.from) query.set("from", dateRange.from);
+      if (dateRange.to) query.set("to", dateRange.to);
+    }
+    const queryString = query.toString();
+    const exportPath = `/reports/exports/${report.id}${queryString ? `?${queryString}` : ""}`;
+
     let owner: ReturnType<typeof captureAccessIdentity> | null = null;
     try {
       owner = captureAccessIdentity({ userId: currentUserId, studioId: currentStudioId, role: currentRole }, () => {
@@ -224,7 +302,7 @@ export function ReportsDataExportsPanel({
       activeDownload.current = owner;
       if (!owner.isCurrent()) return;
       setExportingReportId(report.id);
-      const { blob, filename } = await api.download(`/reports/exports/${report.id}`, token, {
+      const { blob, filename } = await api.download(exportPath, token, {
         signal: owner.signal,
         timeoutMs: 60000,
         timeoutMessage: "CSV export is taking longer than expected. Please try again.",
@@ -276,6 +354,8 @@ export function ReportsDataExportsPanel({
             exportingReportId={exportingReportId}
             isPreviewMode={isPreviewMode}
             currentRole={currentRole}
+            dateRange={dateRange}
+            onDateRangeChange={setDateRange}
             onDownload={(report) => void handleDownloadReport(report)}
           />
         ))}

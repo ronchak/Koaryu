@@ -1,0 +1,11 @@
+Given,Family Name,Birthday,Member #,Preferred Name,Email Address,Mobile,Student Status,Program,Current Belt,Parent Name,Parent Email,Parent Phone,Notes
+Тестмира,Вымышленная,2012-09-03,SYN-850003-00000,Тестмира,synthetic.850003.0@example.com,(202) 555-0100,Active,Moon Forms,White Belt,Тестродитель Вымышленная,scripts.siblings@example.invalid,2025550198,"Synthetic only; “curly quotes”, café; line one
+line two"
+Тестлюна,Вымышленная,2013-09-03,SYN-850003-00001,Тестлюна,synthetic.850003.1@example.net,202.555.0101,Active,moon forms,WHITE,Тестродитель Вымышленная,scripts.siblings@example.invalid,2025550198,"Synthetic only; “curly quotes”, café; line one
+line two"
+测试备用三,虚构,1971-10-22,SYN-850003-00002,测试备用三,synthetic.850003.2@example.org,+1 202 555 0102,Active,Moon-Forms,Yellow Belt,,,,"Synthetic only; “curly quotes”, café; line one
+line two"
+测试备用四,虚构,1972-11-23,SYN-850003-00003,测试备用四,synthetic.850003.3@example.invalid,2025550103,Active,MOON FORMS!,20000000-0000-4000-8000-000000000002,,,,"Synthetic only; “curly quotes”, café; line one
+line two"
+测试备用五,虚构,1973-12-24,SYN-850003-00004,测试备用五,synthetic.850003.4@example.com,202-555-0104,Active,10000000-0000-4000-8000-000000000001,,,,,"Synthetic only; “curly quotes”, café; line one
+line two"

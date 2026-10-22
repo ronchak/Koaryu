@@ -1,3 +1,4 @@
+import json
 import unittest
 from unittest.mock import AsyncMock, patch
 
@@ -94,6 +95,8 @@ AFFECTED_ROUTE_DEPENDENCIES = {
         ("POST", "/students/bulk/tags"),
         ("POST", "/students/bulk/status"),
         ("POST", "/students/bulk/archive"),
+        ("POST", "/students/import/parse"),
+        ("POST", "/students/import/validate"),
         ("POST", "/students/import/execute"),
         ("POST", "/schedule/templates"),
         ("PATCH", "/schedule/templates/{template_id}"),
@@ -371,6 +374,57 @@ class StaffPermissionPolicyTest(unittest.TestCase):
         service_class.assert_not_called()
         self.assertEqual(supabase.tables["audit_logs"], [])
         _assert_no_mutation(self, supabase)
+
+    def test_import_preview_routes_require_roster_manager_roles(self):
+        """Preview discloses roster facts, so parse and validate follow execute's roles."""
+        csv_bytes = b"First Name,Last Name\nAiko,Tanaka\n"
+        payload = json.dumps(
+            {"mapping": {"First Name": "legal_first_name", "Last Name": "legal_last_name"}}
+        )
+        for role, expected in (("instructor", 403), ("admin", 200), ("front_desk", 200)):
+            with self.subTest(role=role):
+                supabase = _supabase(
+                    _staff_role(role),
+                    extra_tables={
+                        "studio_subscriptions": [
+                            {
+                                "studio_id": "studio-a",
+                                "status": "active",
+                                "comped": False,
+                                "trial_end": None,
+                            }
+                        ],
+                        "programs": [],
+                        "belt_ladders": [],
+                        "belt_ranks": [],
+                        "students": [],
+                        "student_guardians": [],
+                        "guardians": [],
+                    },
+                )
+                test_app = FastAPI()
+                test_app.include_router(students.router)
+                test_app.dependency_overrides[get_current_user_id] = lambda: "user-1"
+                test_app.dependency_overrides[get_supabase] = lambda: supabase
+                client = TestClient(test_app)
+                parse_response = client.post(
+                    "/students/import/parse",
+                    headers={"X-Studio-Id": "studio-a"},
+                    files={"file": ("roster.csv", csv_bytes, "text/csv")},
+                )
+                validate_response = client.post(
+                    "/students/import/validate",
+                    headers={"X-Studio-Id": "studio-a"},
+                    files={"file": ("roster.csv", csv_bytes, "text/csv")},
+                    data={"payload": payload},
+                )
+                self.assertEqual(parse_response.status_code, expected, parse_response.text)
+                self.assertEqual(validate_response.status_code, expected, validate_response.text)
+                if expected == 200:
+                    self.assertEqual(parse_response.json()["total_rows"], 1)
+                    self.assertEqual(validate_response.json()["valid_rows"], 1)
+                self.assertEqual(supabase.tables["audit_logs"], [])
+                _assert_no_mutation(self, supabase)
 
     def test_instructor_can_update_ordinary_student_profile_fields(self):
         supabase = _supabase(

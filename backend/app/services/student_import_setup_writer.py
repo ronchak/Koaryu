@@ -31,7 +31,11 @@ class StudentImportSetupWriter:
         processing_token: str,
         receipts: dict[str, dict[str, Any]],
     ) -> None:
-        unfinished = [row for row in planned_rows if row["is_valid"] and not row.get("completed")]
+        unfinished = [
+            row
+            for row in planned_rows
+            if row["is_valid"] and not row.get("completed") and not row.get("skipped")
+        ]
         programs = receipts.setdefault("program", {})
         requested: dict[str, tuple[str, str | None]] = {}
         for row in unfinished:

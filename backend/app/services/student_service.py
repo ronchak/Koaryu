@@ -8,6 +8,7 @@ from app.schemas.student import (
     StudentResponse,
     StudentListResponse,
     GuardianResponse,
+    CsvImportDuplicateDecision,
     CsvImportOptions,
     CsvImportResult,
     BulkTagUpdate,
@@ -340,6 +341,7 @@ class StudentService:
         studio_id: str,
         actor_id: str,
         idempotency_key: Optional[str] = None,
+        duplicate_decisions: Optional[dict[str, CsvImportDuplicateDecision]] = None,
     ) -> CsvImportResult:
         """Execute the import for all valid rows."""
         return await self._import_executor().execute_import(
@@ -349,4 +351,5 @@ class StudentService:
             studio_id,
             actor_id,
             idempotency_key=idempotency_key,
+            duplicate_decisions=duplicate_decisions,
         )

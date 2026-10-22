@@ -11,14 +11,24 @@ from app.schemas.student import (
     CsvImportResult,
 )
 from app.services.student_import_csv import (
+    make_import_issue,
     normalize_header,
     validate_csv_import_mapping,
+)
+from app.services.student_import_ids import deterministic_import_uuid
+from app.services.student_import_matching import (
+    ROSTER_MATCH_LIMIT,
+    build_duplicate_review,
+    match_rows,
 )
 from app.services.student_import_plan_result import build_import_result
 from app.services.student_import_plan_rows import (
     build_import_row_plan,
 )
 from app.services.studio_business_date import studio_today_for_studio
+
+ROSTER_PAGE_SIZE = 1000
+ROSTER_FILTER_BATCH_SIZE = 200
 
 
 class StudentImportPlanner:
@@ -148,6 +158,101 @@ class StudentImportPlanner:
             "ladder_count": len(ladder_meta),
         }
 
+    def build_existing_roster(
+        self,
+        studio_id: str,
+        *,
+        completed_student_ids: Optional[dict[str, int]] = None,
+    ) -> list[dict[str, Any]]:
+        """Studio-scoped roster facts used only for duplicate review.
+
+        Every query carries the studio filter. ``student_guardians`` has no
+        studio column, so its links are selected by the studio's own student
+        ids and the guardians are filtered by studio again. Archived students
+        stay in the roster so a returning student is surfaced as a decision
+        rather than silently created twice.
+        """
+        students: list[dict[str, Any]] = []
+        offset = 0
+        while True:
+            page = (
+                self.supabase.table("students")
+                .select(
+                    "id, legal_first_name, legal_last_name, preferred_name, date_of_birth, "
+                    "email, phone, deleted_at"
+                )
+                .eq("studio_id", studio_id)
+                .order("id")
+                .range(offset, offset + ROSTER_PAGE_SIZE - 1)
+                .execute()
+            )
+            batch = [row for row in (page.data or []) if row.get("id")]
+            students.extend(batch)
+            if len(batch) < ROSTER_PAGE_SIZE:
+                break
+            offset += ROSTER_PAGE_SIZE
+
+        guardian_ids_by_student: dict[str, list[str]] = defaultdict(list)
+        student_ids = [str(row["id"]) for row in students]
+        for start in range(0, len(student_ids), ROSTER_FILTER_BATCH_SIZE):
+            chunk = student_ids[start : start + ROSTER_FILTER_BATCH_SIZE]
+            links = (
+                self.supabase.table("student_guardians")
+                .select("student_id, guardian_id")
+                .in_("student_id", chunk)
+                .execute()
+            )
+            for link in links.data or []:
+                if link.get("student_id") and link.get("guardian_id"):
+                    guardian_ids_by_student[str(link["student_id"])].append(
+                        str(link["guardian_id"])
+                    )
+
+        guardians: dict[str, dict[str, Any]] = {}
+        guardian_ids = sorted({gid for ids in guardian_ids_by_student.values() for gid in ids})
+        for start in range(0, len(guardian_ids), ROSTER_FILTER_BATCH_SIZE):
+            chunk = guardian_ids[start : start + ROSTER_FILTER_BATCH_SIZE]
+            result = (
+                self.supabase.table("guardians")
+                .select("id, first_name, last_name, email, phone")
+                .eq("studio_id", studio_id)
+                .in_("id", chunk)
+                .execute()
+            )
+            for guardian in result.data or []:
+                if guardian.get("id"):
+                    guardians[str(guardian["id"])] = guardian
+
+        completed = completed_student_ids or {}
+        roster: list[dict[str, Any]] = []
+        for row in students:
+            student_id = str(row["id"])
+            entry: dict[str, Any] = {
+                "key": student_id,
+                "legal_first_name": row.get("legal_first_name"),
+                "legal_last_name": row.get("legal_last_name"),
+                "preferred_name": row.get("preferred_name"),
+                "date_of_birth": row.get("date_of_birth"),
+                "email": row.get("email"),
+                "phone": row.get("phone"),
+                "archived": bool(row.get("deleted_at")),
+                "guardians": [
+                    {
+                        "key": gid,
+                        "first_name": guardians[gid].get("first_name"),
+                        "last_name": guardians[gid].get("last_name"),
+                        "email": guardians[gid].get("email"),
+                        "phone": guardians[gid].get("phone"),
+                    }
+                    for gid in guardian_ids_by_student.get(student_id, [])
+                    if gid in guardians
+                ],
+            }
+            if student_id in completed:
+                entry["import_row_number"] = completed[student_id]
+            roster.append(entry)
+        return roster
+
     def prepare_import(
         self,
         rows: list[dict],
@@ -155,6 +260,8 @@ class StudentImportPlanner:
         studio_id: Optional[str],
         options: CsvImportOptions,
         receipts: Optional[dict[str, dict[str, Any]]] = None,
+        *,
+        import_run_id: Optional[str] = None,
     ) -> tuple[CsvImportResult, list[dict[str, Any]]]:
         validate_csv_import_mapping(mapping)
         receipts = receipts or {}
@@ -208,7 +315,57 @@ class StudentImportPlanner:
             row_plan["row_number"] = i
             planned_rows.append(row_plan)
 
+        if unfinished:
+            self.attach_duplicate_review(
+                planned_rows, studio_id=studio_id, import_run_id=import_run_id
+            )
+
         return build_import_result(planned_rows, total_rows=len(rows)), planned_rows
+
+    def attach_duplicate_review(
+        self,
+        planned_rows: list[dict[str, Any]],
+        *,
+        studio_id: Optional[str],
+        import_run_id: Optional[str] = None,
+    ) -> list[dict[str, Any]]:
+        """Run duplicate review over the rows and attach the outcome to each row.
+
+        In-file review needs no studio. Existing-student review loads the roster
+        fresh on every call, so execution sees what is there at execution start
+        rather than what preview saw.
+        """
+        roster: list[dict[str, Any]] = []
+        if studio_id and self.supabase is not None:
+            completed_ids: dict[str, int] = {}
+            if import_run_id:
+                for row in planned_rows:
+                    if row.get("completed"):
+                        completed_ids[
+                            deterministic_import_uuid(
+                                import_run_id, "student-row", str(row["row_number"])
+                            )
+                        ] = int(row["row_number"])
+            roster = self.build_existing_roster(studio_id, completed_student_ids=completed_ids)
+        matches = {match.row_number: match for match in match_rows(planned_rows, roster)}
+        for row in planned_rows:
+            if row.get("completed"):
+                continue
+            match = matches[int(row["row_number"])]
+            row["match"] = match
+            row["duplicate_review"] = build_duplicate_review(match)
+            if match.roster_overflow and row["is_valid"]:
+                row["issues"].append(
+                    make_import_issue(
+                        "too_many_existing_matches",
+                        f"This student matches more than {ROSTER_MATCH_LIMIT} students already "
+                        "in Koaryu, including archived ones, which is too many to review in an "
+                        "import. Add this student by hand instead.",
+                        field="legal_last_name",
+                    )
+                )
+                row["is_valid"] = False
+        return roster
 
     def hydrate_import_result(
         self,
@@ -220,6 +377,7 @@ class StudentImportPlanner:
         created_belts: Optional[list[str]] = None,
         imported_without_belt_count: int = 0,
         imported_count: int = 0,
+        skipped_rows: int = 0,
         idempotency_key: Optional[str] = None,
     ) -> CsvImportResult:
         result = build_import_result(planned_rows, total_rows=total_rows)
@@ -228,5 +386,6 @@ class StudentImportPlanner:
         result.created_belts = created_belts or []
         result.imported_without_belt_count = imported_without_belt_count
         result.imported_count = imported_count
+        result.skipped_rows = skipped_rows
         result.idempotency_key = idempotency_key
         return result

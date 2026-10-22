@@ -268,6 +268,62 @@ class CsvImportRow(BaseModel):
     errors: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     is_valid: bool = True
+    duplicate_review: Optional["CsvImportDuplicateReview"] = None
+
+
+CsvImportDuplicateConfidence = Literal["strong", "possible", "different_person"]
+CsvImportDuplicateAction = Literal["skip", "create"]
+
+
+class CsvImportDuplicateCandidate(BaseModel):
+    """An existing student or an earlier CSV row that may be the same person.
+
+    Carries display words only. The existing student's email and phone text
+    never leave the server through this payload.
+    """
+
+    student_id: Optional[str] = None
+    of_row: Optional[int] = None
+    display_name: str
+    archived: bool = False
+    confidence: CsvImportDuplicateConfidence
+    reasons: list[str] = Field(default_factory=list)
+
+
+class CsvImportDuplicateReview(BaseModel):
+    candidates: list[CsvImportDuplicateCandidate] = Field(
+        default_factory=list, description="Strongest candidates first; display may be capped."
+    )
+    suggested_action: Literal["skip", "create", "decide"] = "create"
+    family_context: list[str] = Field(default_factory=list)
+    acknowledge_student_ids: list[str] = Field(
+        default_factory=list,
+        description="Every existing student that must be acknowledged before this row is written, never capped.",
+    )
+    acknowledge_rows: list[int] = Field(
+        default_factory=list,
+        description="Every earlier row that must be acknowledged before this row is written, never capped.",
+    )
+
+
+class CsvImportDuplicateDecision(BaseModel):
+    """The owner's explicit choice for one flagged row.
+
+    A skip is honoured only when it names the same student (or earlier row)
+    that execution finds again; it never merges, overwrites or deletes.
+    """
+
+    action: CsvImportDuplicateAction
+    matched_student_id: Optional[str] = None
+    of_row: Optional[int] = None
+    acknowledged_student_ids: list[str] = Field(
+        default_factory=list,
+        description="Every existing student the owner saw for this row. A strong or archived match found at execution that is not listed refuses the row.",
+    )
+    acknowledged_rows: list[int] = Field(
+        default_factory=list,
+        description="Every earlier CSV row the owner saw for this row.",
+    )
 
 
 class CsvImportIssue(BaseModel):
@@ -333,6 +389,10 @@ class CsvImportRequest(BaseModel):
     mapping: dict[str, str]
     options: CsvImportOptions = Field(default_factory=CsvImportOptions)
     idempotency_key: Optional[str] = None
+    duplicate_decisions: dict[str, CsvImportDuplicateDecision] = Field(
+        default_factory=dict,
+        description="Per-row duplicate decisions keyed by CSV row number. Part of the import identity.",
+    )
 
 
 class CsvImportResult(BaseModel):
@@ -350,6 +410,8 @@ class CsvImportResult(BaseModel):
     imported_without_belt_count: int = 0
     normalized_status_count: int = 0
     imported_count: int = 0
+    skipped_rows: int = 0
+    duplicate_flagged_rows: int = 0
     idempotency_key: Optional[str] = None
     reused_result: bool = False
     execution_status: Literal["completed", "completed_with_warnings", "reused"] = "completed"

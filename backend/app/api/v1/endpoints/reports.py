@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Annotated, Optional
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
 from app.core.deps import ProviderDependency, run_supabase_operation
 
@@ -11,6 +11,7 @@ from app.services.report_export_service import (
     ReportExportArtifactLease,
     ReportExportService,
     require_report_export_access,
+    resolve_report_date_range,
 )
 from app.services.studio_scope import resolve_staff_role_for_user
 
@@ -37,6 +38,20 @@ async def export_report_csv(
     user_id: str = Depends(get_current_user_id),
     requested_studio_id: Optional[str] = Depends(get_requested_studio_id),
     supabase: ProviderDependency = Depends(get_supabase),
+    date_from: Annotated[
+        Optional[str],
+        Query(
+            alias="from",
+            description="Optional first studio-local date (YYYY-MM-DD), inclusive.",
+        ),
+    ] = None,
+    date_to: Annotated[
+        Optional[str],
+        Query(
+            alias="to",
+            description="Optional last studio-local date (YYYY-MM-DD), inclusive.",
+        ),
+    ] = None,
 ):
     lease = ReportExportArtifactLease()
 
@@ -53,9 +68,14 @@ async def export_report_csv(
             studio_id = membership["studio_id"]
             report = service.get_report(report_id)
             require_report_export_access(report, membership.get("role") or "")
+            date_range = resolve_report_date_range(report, date_from, date_to)
             service.budget.check_elapsed()
 
-            artifact = await service.build_csv_artifact_for_report(report, studio_id)
+            artifact = await service.build_csv_artifact_for_report(
+                report,
+                studio_id,
+                date_range=date_range,
+            )
             service.budget.admit_provider_call()
             client.table("audit_logs").insert(
                 {
@@ -65,6 +85,7 @@ async def export_report_csv(
                     "entity_type": "report",
                     "entity_id": None,
                     "metadata": {
+                        **({"date_range": date_range.as_metadata()} if date_range else {}),
                         "report_id": report.id,
                         "filename": report.filename,
                         "contains_sensitive_data": report.contains_sensitive_data,

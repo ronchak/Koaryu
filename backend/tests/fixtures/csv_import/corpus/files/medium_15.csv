@@ -1,0 +1,877 @@
+"Student Name (Last, First)",Date of Birth,Legacy Account #,Preferred Name,Email,Phone,Membership Status,Program Track,Rank/Belt,Guardian Name,Guardian Email,Guardian Phone,Notes
+"Quillfen, Zelava00000",2004-07-27,SYN-700014-00000,Zelava00000,synthetic.700014.0@example.com,(202) 555-0100,Active,Moon Forms,White Belt,Testjordan00000 Quillfen,guardian.700014.0@example.invalid,202.555.0131,"Synthetic only; “curly quotes”, café; line one
+line two"
+"de la Vey, Mioren00001",2005-08-28,SYN-700014-00001,Zee,synthetic.700014.1@example.net,202.555.0101,Active,moon forms,WHITE,Testjordan00001 Quillfen,guardian.700014.1@example.invalid,+1 202 555 0132,"Synthetic only; “curly quotes”, café; line one
+line two"
+"van Lumen, Chloélune00002",2006-09-01,SYN-700014-00002,Chloélune00002,synthetic.700014.2@example.org,+1 202 555 0102,Active,Moon-Forms,Yellow Belt,Testjordan00002 Quillfen,guardian.700014.2@example.invalid,2025550133,"Synthetic only; “curly quotes”, café; line one
+line two"
+"O'Vel, Évarin00003",2007-10-02,SYN-700014-00003,Zee,synthetic.700014.3@example.invalid,2025550103,Active,MOON FORMS!,20000000-0000-4000-8000-000000000002,Testjordan00003 Quillfen,guardian.700014.3@example.invalid,202-555-0134,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Solquill Jr, Ava-Grace00004",2008-11-03,SYN-700014-00004,Ava-Grace00004,synthetic.700014.4@example.com,202-555-0104,Active,10000000-0000-4000-8000-000000000001,,Testjordan00004 Quillfen,guardian.700014.4@example.invalid,(202) 555-0135,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Rivfen Sr, Téoquin00005",2009-12-04,SYN-700014-00005,Zee,synthetic.700014.5@example.net,(202) 555-0105,Active,,White Belt,Testjordan00005 Quillfen,guardian.700014.5@example.invalid,202.555.0136,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Velquill III, Iñara00006",2010-01-05,SYN-700014-00006,Iñara00006,synthetic.700014.6@example.org,202.555.0106,Active,Moon Forms,WHITE,Testjordan00006 Quillfen,guardian.700014.6@example.invalid,+1 202 555 0137,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Quillfen, Zelava00007",2011-02-06,SYN-700014-00007,Zee,synthetic.700014.7@example.invalid,+1 202 555 0107,Active,moon forms,Yellow Belt,Testjordan00007 Quillfen,guardian.700014.7@example.invalid,2025550138,"Synthetic only; “curly quotes”, café; line one
+line two"
+"de la Vey, Mioren00008",2012-03-07,SYN-700014-00008,Mioren00008,synthetic.700014.8@example.com,2025550108,Active,Moon-Forms,20000000-0000-4000-8000-000000000002,Testjordan00008 Quillfen,guardian.700014.8@example.invalid,202-555-0139,"Synthetic only; “curly quotes”, café; line one
+line two"
+"van Lumen, Chloélune00009",2013-04-08,SYN-700014-00009,Zee,synthetic.700014.9@example.net,202-555-0109,Active,MOON FORMS!,,Testjordan00009 Quillfen,guardian.700014.9@example.invalid,(202) 555-0140,"Synthetic only; “curly quotes”, café; line one
+line two"
+"O'Vel, Évarin00010",2014-05-09,SYN-700014-00010,Évarin00010,synthetic.700014.10@example.org,(202) 555-0110,Active,10000000-0000-4000-8000-000000000001,White Belt,Testjordan00010 Quillfen,guardian.700014.10@example.invalid,202.555.0141,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Solquill Jr, Ava-Grace00011",2015-06-10,SYN-700014-00011,Zee,synthetic.700014.11@example.invalid,202.555.0111,Active,,WHITE,Testjordan00011 Quillfen,guardian.700014.11@example.invalid,+1 202 555 0142,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Rivfen Sr, Téoquin00012",2016-07-11,SYN-700014-00012,Téoquin00012,synthetic.700014.12@example.com,+1 202 555 0112,Active,Moon Forms,Yellow Belt,Testjordan00012 Quillfen,guardian.700014.12@example.invalid,2025550143,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Velquill III, Iñara00013",2017-08-12,SYN-700014-00013,Zee,synthetic.700014.13@example.net,2025550113,Active,moon forms,20000000-0000-4000-8000-000000000002,Testjordan00013 Quillfen,guardian.700014.13@example.invalid,202-555-0144,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Quillfen, Zelava00014",2018-09-13,SYN-700014-00014,Zelava00014,synthetic.700014.14@example.org,202-555-0114,Active,Moon-Forms,,Testjordan00014 Quillfen,guardian.700014.14@example.invalid,(202) 555-0145,"Synthetic only; “curly quotes”, café; line one
+line two"
+"de la Vey, Mioren00015",2019-10-14,SYN-700014-00015,Zee,synthetic.700014.15@example.invalid,(202) 555-0115,Active,MOON FORMS!,White Belt,Testjordan00015 Quillfen,guardian.700014.15@example.invalid,202.555.0146,"Synthetic only; “curly quotes”, café; line one
+line two"
+"van Lumen, Chloélune00016",2020-11-15,SYN-700014-00016,Chloélune00016,synthetic.700014.16@example.com,202.555.0116,Active,10000000-0000-4000-8000-000000000001,WHITE,Testjordan00016 Quillfen,guardian.700014.16@example.invalid,+1 202 555 0147,"Synthetic only; “curly quotes”, café; line one
+line two"
+"O'Vel, Évarin00017",2021-12-16,SYN-700014-00017,Zee,synthetic.700014.17@example.net,+1 202 555 0117,Active,,Yellow Belt,Testjordan00017 Quillfen,guardian.700014.17@example.invalid,2025550148,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Solquill Jr, Ava-Grace00018",2022-01-17,SYN-700014-00018,Ava-Grace00018,synthetic.700014.18@example.org,2025550118,Active,Moon Forms,20000000-0000-4000-8000-000000000002,Testjordan00018 Quillfen,guardian.700014.18@example.invalid,202-555-0149,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Rivfen Sr, Téoquin00019",2023-02-18,SYN-700014-00019,Zee,synthetic.700014.19@example.invalid,202-555-0119,Active,moon forms,,Testjordan00019 Quillfen,guardian.700014.19@example.invalid,(202) 555-0150,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Velquill III, Iñara00020",2024-03-19,SYN-700014-00020,Iñara00020,synthetic.700014.20@example.com,(202) 555-0120,Active,Moon-Forms,White Belt,Testjordan00020 Quillfen,guardian.700014.20@example.invalid,202.555.0151,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Quillfen, Zelava00021",2025-04-20,SYN-700014-00021,Zee,synthetic.700014.21@example.net,202.555.0121,Active,MOON FORMS!,WHITE,Testjordan00021 Quillfen,guardian.700014.21@example.invalid,+1 202 555 0152,"Synthetic only; “curly quotes”, café; line one
+line two"
+"de la Vey, Mioren00022",1950-05-21,SYN-700014-00022,Mioren00022,synthetic.700014.22@example.org,+1 202 555 0122,Active,10000000-0000-4000-8000-000000000001,Yellow Belt,Testjordan00022 Quillfen,guardian.700014.22@example.invalid,2025550153,"Synthetic only; “curly quotes”, café; line one
+line two"
+"van Lumen, Chloélune00023",1951-06-22,SYN-700014-00023,Zee,synthetic.700014.23@example.invalid,2025550123,Active,,20000000-0000-4000-8000-000000000002,Testjordan00023 Quillfen,guardian.700014.23@example.invalid,202-555-0154,"Synthetic only; “curly quotes”, café; line one
+line two"
+"O'Vel, Évarin00024",1952-07-23,SYN-700014-00024,Évarin00024,synthetic.700014.24@example.com,202-555-0124,Active,Moon Forms,,Testjordan00024 Quillfen,guardian.700014.24@example.invalid,(202) 555-0155,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Solquill Jr, Ava-Grace00025",1953-08-24,SYN-700014-00025,Zee,synthetic.700014.25@example.net,(202) 555-0125,Active,moon forms,White Belt,Testjordan00025 Quillfen,guardian.700014.25@example.invalid,202.555.0156,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Rivfen Sr, Téoquin00026",1954-09-25,SYN-700014-00026,Téoquin00026,synthetic.700014.26@example.org,202.555.0126,Active,Moon-Forms,WHITE,Testjordan00026 Quillfen,guardian.700014.26@example.invalid,+1 202 555 0157,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Velquill III, Iñara00027",1955-10-26,SYN-700014-00027,Zee,synthetic.700014.27@example.invalid,+1 202 555 0127,Active,MOON FORMS!,Yellow Belt,Testjordan00027 Quillfen,guardian.700014.27@example.invalid,2025550158,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Quillfen, Zelava00028",1956-11-27,SYN-700014-00028,Zelava00028,synthetic.700014.28@example.com,2025550128,Active,10000000-0000-4000-8000-000000000001,20000000-0000-4000-8000-000000000002,Testjordan00028 Quillfen,guardian.700014.28@example.invalid,202-555-0159,"Synthetic only; “curly quotes”, café; line one
+line two"
+"de la Vey, Mioren00029",1957-12-28,SYN-700014-00029,Zee,synthetic.700014.29@example.net,202-555-0129,Active,,,Testjordan00029 Quillfen,guardian.700014.29@example.invalid,(202) 555-0160,"Synthetic only; “curly quotes”, café; line one
+line two"
+"van Lumen, Chloélune00030",1958-01-01,SYN-700014-00030,Chloélune00030,synthetic.700014.30@example.org,(202) 555-0130,Active,Moon Forms,White Belt,Testjordan00030 Quillfen,guardian.700014.30@example.invalid,202.555.0161,"Synthetic only; “curly quotes”, café; line one
+line two"
+"O'Vel, Évarin00031",1959-02-02,SYN-700014-00031,Zee,synthetic.700014.31@example.invalid,202.555.0131,Active,moon forms,WHITE,Testjordan00031 Quillfen,guardian.700014.31@example.invalid,+1 202 555 0162,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Solquill Jr, Ava-Grace00032",1960-03-03,SYN-700014-00032,Ava-Grace00032,synthetic.700014.32@example.com,+1 202 555 0132,Active,Moon-Forms,Yellow Belt,Testjordan00032 Quillfen,guardian.700014.32@example.invalid,2025550163,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Rivfen Sr, Téoquin00033",1961-04-04,SYN-700014-00033,Zee,synthetic.700014.33@example.net,2025550133,Active,MOON FORMS!,20000000-0000-4000-8000-000000000002,Testjordan00033 Quillfen,guardian.700014.33@example.invalid,202-555-0164,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Velquill III, Iñara00034",1962-05-05,SYN-700014-00034,Iñara00034,synthetic.700014.34@example.org,202-555-0134,Active,10000000-0000-4000-8000-000000000001,,Testjordan00034 Quillfen,guardian.700014.34@example.invalid,(202) 555-0165,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Quillfen, Zelava00035",1963-06-06,SYN-700014-00035,Zee,synthetic.700014.35@example.invalid,(202) 555-0135,Active,,White Belt,Testjordan00035 Quillfen,guardian.700014.35@example.invalid,202.555.0166,"Synthetic only; “curly quotes”, café; line one
+line two"
+"de la Vey, Mioren00036",1964-07-07,SYN-700014-00036,Mioren00036,synthetic.700014.36@example.com,202.555.0136,Active,Moon Forms,WHITE,Testjordan00036 Quillfen,guardian.700014.36@example.invalid,+1 202 555 0167,"Synthetic only; “curly quotes”, café; line one
+line two"
+"van Lumen, Chloélune00037",1965-08-08,SYN-700014-00037,Zee,synthetic.700014.37@example.net,+1 202 555 0137,Active,moon forms,Yellow Belt,Testjordan00037 Quillfen,guardian.700014.37@example.invalid,2025550168,"Synthetic only; “curly quotes”, café; line one
+line two"
+"O'Vel, Évarin00038",1966-09-09,SYN-700014-00038,Évarin00038,synthetic.700014.38@example.org,2025550138,Active,Moon-Forms,20000000-0000-4000-8000-000000000002,Testjordan00038 Quillfen,guardian.700014.38@example.invalid,202-555-0169,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Solquill Jr, Ava-Grace00039",1967-10-10,SYN-700014-00039,Zee,synthetic.700014.39@example.invalid,202-555-0139,Active,MOON FORMS!,,Testjordan00039 Quillfen,guardian.700014.39@example.invalid,(202) 555-0170,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Rivfen Sr, Téoquin00040",1968-11-11,SYN-700014-00040,Téoquin00040,synthetic.700014.40@example.com,(202) 555-0140,Active,10000000-0000-4000-8000-000000000001,White Belt,Testjordan00040 Quillfen,guardian.700014.40@example.invalid,202.555.0171,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Velquill III, Iñara00041",1969-12-12,SYN-700014-00041,Zee,synthetic.700014.41@example.net,202.555.0141,Active,,WHITE,Testjordan00041 Quillfen,guardian.700014.41@example.invalid,+1 202 555 0172,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Quillfen, Zelava00042",1970-01-13,SYN-700014-00042,Zelava00042,synthetic.700014.42@example.org,+1 202 555 0142,Active,Moon Forms,Yellow Belt,Testjordan00042 Quillfen,guardian.700014.42@example.invalid,2025550173,"Synthetic only; “curly quotes”, café; line one
+line two"
+"de la Vey, Mioren00043",1971-02-14,SYN-700014-00043,Zee,synthetic.700014.43@example.invalid,2025550143,Active,moon forms,20000000-0000-4000-8000-000000000002,Testjordan00043 Quillfen,guardian.700014.43@example.invalid,202-555-0174,"Synthetic only; “curly quotes”, café; line one
+line two"
+"van Lumen, Chloélune00044",1972-03-15,SYN-700014-00044,Chloélune00044,synthetic.700014.44@example.com,202-555-0144,Active,Moon-Forms,,Testjordan00044 Quillfen,guardian.700014.44@example.invalid,(202) 555-0175,"Synthetic only; “curly quotes”, café; line one
+line two"
+"O'Vel, Évarin00045",1973-04-16,SYN-700014-00045,Zee,synthetic.700014.45@example.net,(202) 555-0145,Active,MOON FORMS!,White Belt,Testjordan00045 Quillfen,guardian.700014.45@example.invalid,202.555.0176,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Solquill Jr, Ava-Grace00046",1974-05-17,SYN-700014-00046,Ava-Grace00046,synthetic.700014.46@example.org,202.555.0146,Active,10000000-0000-4000-8000-000000000001,WHITE,Testjordan00046 Quillfen,guardian.700014.46@example.invalid,+1 202 555 0177,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Rivfen Sr, Téoquin00047",1975-06-18,SYN-700014-00047,Zee,synthetic.700014.47@example.invalid,+1 202 555 0147,Active,,Yellow Belt,Testjordan00047 Quillfen,guardian.700014.47@example.invalid,2025550178,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Velquill III, Iñara00048",1976-07-19,SYN-700014-00048,Iñara00048,synthetic.700014.48@example.com,2025550148,Active,Moon Forms,20000000-0000-4000-8000-000000000002,Testjordan00048 Quillfen,guardian.700014.48@example.invalid,202-555-0179,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Quillfen, Zelava00049",1977-08-20,SYN-700014-00049,Zee,synthetic.700014.49@example.net,202-555-0149,Active,moon forms,,Testjordan00049 Quillfen,guardian.700014.49@example.invalid,(202) 555-0180,"Synthetic only; “curly quotes”, café; line one
+line two"
+"de la Vey, Mioren00050",1978-09-21,SYN-700014-00050,Mioren00050,synthetic.700014.50@example.org,(202) 555-0150,Active,Moon-Forms,White Belt,Testjordan00050 Quillfen,guardian.700014.50@example.invalid,202.555.0181,"Synthetic only; “curly quotes”, café; line one
+line two"
+"van Lumen, Chloélune00051",1979-10-22,SYN-700014-00051,Zee,synthetic.700014.51@example.invalid,202.555.0151,Active,MOON FORMS!,WHITE,Testjordan00051 Quillfen,guardian.700014.51@example.invalid,+1 202 555 0182,"Synthetic only; “curly quotes”, café; line one
+line two"
+"O'Vel, Évarin00052",1980-11-23,SYN-700014-00052,Évarin00052,synthetic.700014.52@example.com,+1 202 555 0152,Active,10000000-0000-4000-8000-000000000001,Yellow Belt,Testjordan00052 Quillfen,guardian.700014.52@example.invalid,2025550183,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Solquill Jr, Ava-Grace00053",1981-12-24,SYN-700014-00053,Zee,synthetic.700014.53@example.net,2025550153,Active,,20000000-0000-4000-8000-000000000002,Testjordan00053 Quillfen,guardian.700014.53@example.invalid,202-555-0184,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Rivfen Sr, Téoquin00054",1982-01-25,SYN-700014-00054,Téoquin00054,synthetic.700014.54@example.org,202-555-0154,Active,Moon Forms,,Testjordan00054 Quillfen,guardian.700014.54@example.invalid,(202) 555-0185,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Velquill III, Iñara00055",1983-02-26,SYN-700014-00055,Zee,synthetic.700014.55@example.invalid,(202) 555-0155,Active,moon forms,White Belt,Testjordan00055 Quillfen,guardian.700014.55@example.invalid,202.555.0186,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Quillfen, Zelava00056",1984-03-27,SYN-700014-00056,Zelava00056,synthetic.700014.56@example.com,202.555.0156,Active,Moon-Forms,WHITE,Testjordan00056 Quillfen,guardian.700014.56@example.invalid,+1 202 555 0187,"Synthetic only; “curly quotes”, café; line one
+line two"
+"de la Vey, Mioren00057",1985-04-28,SYN-700014-00057,Zee,synthetic.700014.57@example.net,+1 202 555 0157,Active,MOON FORMS!,Yellow Belt,Testjordan00057 Quillfen,guardian.700014.57@example.invalid,2025550188,"Synthetic only; “curly quotes”, café; line one
+line two"
+"van Lumen, Chloélune00058",1986-05-01,SYN-700014-00058,Chloélune00058,synthetic.700014.58@example.org,2025550158,Active,10000000-0000-4000-8000-000000000001,20000000-0000-4000-8000-000000000002,Testjordan00058 Quillfen,guardian.700014.58@example.invalid,202-555-0189,"Synthetic only; “curly quotes”, café; line one
+line two"
+"O'Vel, Évarin00059",1987-06-02,SYN-700014-00059,Zee,synthetic.700014.59@example.invalid,202-555-0159,Active,,,Testjordan00059 Quillfen,guardian.700014.59@example.invalid,(202) 555-0190,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Solquill Jr, Ava-Grace00060",1988-07-03,SYN-700014-00060,Ava-Grace00060,synthetic.700014.60@example.com,(202) 555-0160,Active,Moon Forms,White Belt,Testjordan00060 Quillfen,guardian.700014.60@example.invalid,202.555.0191,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Rivfen Sr, Téoquin00061",1989-08-04,SYN-700014-00061,Zee,synthetic.700014.61@example.net,202.555.0161,Active,moon forms,WHITE,Testjordan00061 Quillfen,guardian.700014.61@example.invalid,+1 202 555 0192,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Velquill III, Iñara00062",1990-09-05,SYN-700014-00062,Iñara00062,synthetic.700014.62@example.org,+1 202 555 0162,Active,Moon-Forms,Yellow Belt,Testjordan00062 Quillfen,guardian.700014.62@example.invalid,2025550193,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Quillfen, Zelava00063",1991-10-06,SYN-700014-00063,Zee,synthetic.700014.63@example.invalid,2025550163,Active,MOON FORMS!,20000000-0000-4000-8000-000000000002,Testjordan00063 Quillfen,guardian.700014.63@example.invalid,202-555-0194,"Synthetic only; “curly quotes”, café; line one
+line two"
+"de la Vey, Mioren00064",1992-11-07,SYN-700014-00064,Mioren00064,synthetic.700014.64@example.com,202-555-0164,Active,10000000-0000-4000-8000-000000000001,,Testjordan00064 Quillfen,guardian.700014.64@example.invalid,(202) 555-0195,"Synthetic only; “curly quotes”, café; line one
+line two"
+"van Lumen, Chloélune00065",1993-12-08,SYN-700014-00065,Zee,synthetic.700014.65@example.net,(202) 555-0165,Active,,White Belt,Testjordan00065 Quillfen,guardian.700014.65@example.invalid,202.555.0196,"Synthetic only; “curly quotes”, café; line one
+line two"
+"O'Vel, Évarin00066",1994-01-09,SYN-700014-00066,Évarin00066,synthetic.700014.66@example.org,202.555.0166,Active,Moon Forms,WHITE,Testjordan00066 Quillfen,guardian.700014.66@example.invalid,+1 202 555 0197,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Solquill Jr, Ava-Grace00067",1995-02-10,SYN-700014-00067,Zee,synthetic.700014.67@example.invalid,+1 202 555 0167,Active,moon forms,Yellow Belt,Testjordan00067 Quillfen,guardian.700014.67@example.invalid,2025550198,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Rivfen Sr, Téoquin00068",1996-03-11,SYN-700014-00068,Téoquin00068,synthetic.700014.68@example.com,2025550168,Active,Moon-Forms,20000000-0000-4000-8000-000000000002,Testjordan00068 Quillfen,guardian.700014.68@example.invalid,202-555-0199,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Velquill III, Iñara00069",1997-04-12,SYN-700014-00069,Zee,synthetic.700014.69@example.net,202-555-0169,Active,MOON FORMS!,,Testjordan00069 Quillfen,guardian.700014.69@example.invalid,(202) 555-0100,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Quillfen, Zelava00070",1998-05-13,SYN-700014-00070,Zelava00070,synthetic.700014.70@example.org,(202) 555-0170,Active,10000000-0000-4000-8000-000000000001,White Belt,Testjordan00070 Quillfen,guardian.700014.70@example.invalid,202.555.0101,"Synthetic only; “curly quotes”, café; line one
+line two"
+"de la Vey, Mioren00071",1999-06-14,SYN-700014-00071,Zee,synthetic.700014.71@example.invalid,202.555.0171,Active,,WHITE,Testjordan00071 Quillfen,guardian.700014.71@example.invalid,+1 202 555 0102,"Synthetic only; “curly quotes”, café; line one
+line two"
+"van Lumen, Chloélune00072",2000-07-15,SYN-700014-00072,Chloélune00072,synthetic.700014.72@example.com,+1 202 555 0172,Active,Moon Forms,Yellow Belt,Testjordan00072 Quillfen,guardian.700014.72@example.invalid,2025550103,"Synthetic only; “curly quotes”, café; line one
+line two"
+"O'Vel, Évarin00073",2001-08-16,SYN-700014-00073,Zee,synthetic.700014.73@example.net,2025550173,Active,moon forms,20000000-0000-4000-8000-000000000002,Testjordan00073 Quillfen,guardian.700014.73@example.invalid,202-555-0104,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Solquill Jr, Ava-Grace00074",2002-09-17,SYN-700014-00074,Ava-Grace00074,synthetic.700014.74@example.org,202-555-0174,Active,Moon-Forms,,Testjordan00074 Quillfen,guardian.700014.74@example.invalid,(202) 555-0105,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Rivfen Sr, Téoquin00075",2003-10-18,SYN-700014-00075,Zee,synthetic.700014.75@example.invalid,(202) 555-0175,Active,MOON FORMS!,White Belt,Testjordan00075 Quillfen,guardian.700014.75@example.invalid,202.555.0106,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Velquill III, Iñara00076",2004-11-19,SYN-700014-00076,Iñara00076,synthetic.700014.76@example.com,202.555.0176,Active,10000000-0000-4000-8000-000000000001,WHITE,Testjordan00076 Quillfen,guardian.700014.76@example.invalid,+1 202 555 0107,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Quillfen, Zelava00077",2005-12-20,SYN-700014-00077,Zee,synthetic.700014.77@example.net,+1 202 555 0177,Active,,Yellow Belt,Testjordan00077 Quillfen,guardian.700014.77@example.invalid,2025550108,"Synthetic only; “curly quotes”, café; line one
+line two"
+"de la Vey, Mioren00078",2006-01-21,SYN-700014-00078,Mioren00078,synthetic.700014.78@example.org,2025550178,Active,Moon Forms,20000000-0000-4000-8000-000000000002,Testjordan00078 Quillfen,guardian.700014.78@example.invalid,202-555-0109,"Synthetic only; “curly quotes”, café; line one
+line two"
+"van Lumen, Chloélune00079",2007-02-22,SYN-700014-00079,Zee,synthetic.700014.79@example.invalid,202-555-0179,Active,moon forms,,Testjordan00079 Quillfen,guardian.700014.79@example.invalid,(202) 555-0110,"Synthetic only; “curly quotes”, café; line one
+line two"
+"O'Vel, Évarin00080",2008-03-23,SYN-700014-00080,Évarin00080,synthetic.700014.80@example.com,(202) 555-0180,Active,Moon-Forms,White Belt,Testjordan00080 Quillfen,guardian.700014.80@example.invalid,202.555.0111,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Solquill Jr, Ava-Grace00081",2009-04-24,SYN-700014-00081,Zee,synthetic.700014.81@example.net,202.555.0181,Active,MOON FORMS!,WHITE,Testjordan00081 Quillfen,guardian.700014.81@example.invalid,+1 202 555 0112,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Rivfen Sr, Téoquin00082",2010-05-25,SYN-700014-00082,Téoquin00082,synthetic.700014.82@example.org,+1 202 555 0182,Active,10000000-0000-4000-8000-000000000001,Yellow Belt,Testjordan00082 Quillfen,guardian.700014.82@example.invalid,2025550113,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Velquill III, Iñara00083",2011-06-26,SYN-700014-00083,Zee,synthetic.700014.83@example.invalid,2025550183,Active,,20000000-0000-4000-8000-000000000002,Testjordan00083 Quillfen,guardian.700014.83@example.invalid,202-555-0114,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Quillfen, Zelava00084",2012-07-27,SYN-700014-00084,Zelava00084,synthetic.700014.84@example.com,202-555-0184,Active,Moon Forms,,Testjordan00084 Quillfen,guardian.700014.84@example.invalid,(202) 555-0115,"Synthetic only; “curly quotes”, café; line one
+line two"
+"de la Vey, Mioren00085",2013-08-28,SYN-700014-00085,Zee,synthetic.700014.85@example.net,(202) 555-0185,Active,moon forms,White Belt,Testjordan00085 Quillfen,guardian.700014.85@example.invalid,202.555.0116,"Synthetic only; “curly quotes”, café; line one
+line two"
+"van Lumen, Chloélune00086",2014-09-01,SYN-700014-00086,Chloélune00086,synthetic.700014.86@example.org,202.555.0186,Active,Moon-Forms,WHITE,Testjordan00086 Quillfen,guardian.700014.86@example.invalid,+1 202 555 0117,"Synthetic only; “curly quotes”, café; line one
+line two"
+"O'Vel, Évarin00087",2015-10-02,SYN-700014-00087,Zee,synthetic.700014.87@example.invalid,+1 202 555 0187,Active,MOON FORMS!,Yellow Belt,Testjordan00087 Quillfen,guardian.700014.87@example.invalid,2025550118,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Solquill Jr, Ava-Grace00088",2016-11-03,SYN-700014-00088,Ava-Grace00088,synthetic.700014.88@example.com,2025550188,Active,10000000-0000-4000-8000-000000000001,20000000-0000-4000-8000-000000000002,Testjordan00088 Quillfen,guardian.700014.88@example.invalid,202-555-0119,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Rivfen Sr, Téoquin00089",2017-12-04,SYN-700014-00089,Zee,synthetic.700014.89@example.net,202-555-0189,Active,,,Testjordan00089 Quillfen,guardian.700014.89@example.invalid,(202) 555-0120,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Velquill III, Iñara00090",2018-01-05,SYN-700014-00090,Iñara00090,synthetic.700014.90@example.org,(202) 555-0190,Active,Moon Forms,White Belt,Testjordan00090 Quillfen,guardian.700014.90@example.invalid,202.555.0121,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Quillfen, Zelava00091",2019-02-06,SYN-700014-00091,Zee,synthetic.700014.91@example.invalid,202.555.0191,Active,moon forms,WHITE,Testjordan00091 Quillfen,guardian.700014.91@example.invalid,+1 202 555 0122,"Synthetic only; “curly quotes”, café; line one
+line two"
+"de la Vey, Mioren00092",2020-03-07,SYN-700014-00092,Mioren00092,synthetic.700014.92@example.com,+1 202 555 0192,Active,Moon-Forms,Yellow Belt,Testjordan00092 Quillfen,guardian.700014.92@example.invalid,2025550123,"Synthetic only; “curly quotes”, café; line one
+line two"
+"van Lumen, Chloélune00093",2021-04-08,SYN-700014-00093,Zee,synthetic.700014.93@example.net,2025550193,Active,MOON FORMS!,20000000-0000-4000-8000-000000000002,Testjordan00093 Quillfen,guardian.700014.93@example.invalid,202-555-0124,"Synthetic only; “curly quotes”, café; line one
+line two"
+"O'Vel, Évarin00094",2022-05-09,SYN-700014-00094,Évarin00094,synthetic.700014.94@example.org,202-555-0194,Active,10000000-0000-4000-8000-000000000001,,Testjordan00094 Quillfen,guardian.700014.94@example.invalid,(202) 555-0125,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Solquill Jr, Ava-Grace00095",2023-06-10,SYN-700014-00095,Zee,synthetic.700014.95@example.invalid,(202) 555-0195,Active,,White Belt,Testjordan00095 Quillfen,guardian.700014.95@example.invalid,202.555.0126,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Rivfen Sr, Téoquin00096",2024-07-11,SYN-700014-00096,Téoquin00096,synthetic.700014.96@example.com,202.555.0196,Active,Moon Forms,WHITE,Testjordan00096 Quillfen,guardian.700014.96@example.invalid,+1 202 555 0127,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Velquill III, Iñara00097",2025-08-12,SYN-700014-00097,Zee,synthetic.700014.97@example.net,+1 202 555 0197,Active,moon forms,Yellow Belt,Testjordan00097 Quillfen,guardian.700014.97@example.invalid,2025550128,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Quillfen, Zelava00098",1950-09-13,SYN-700014-00098,Zelava00098,synthetic.700014.98@example.org,2025550198,Active,Moon-Forms,20000000-0000-4000-8000-000000000002,Testjordan00098 Quillfen,guardian.700014.98@example.invalid,202-555-0129,"Synthetic only; “curly quotes”, café; line one
+line two"
+"de la Vey, Mioren00099",1951-10-14,SYN-700014-00099,Zee,synthetic.700014.99@example.invalid,202-555-0199,Active,MOON FORMS!,,Testjordan00099 Quillfen,guardian.700014.99@example.invalid,(202) 555-0130,"Synthetic only; “curly quotes”, café; line one
+line two"
+"van Lumen, Chloélune00100",1952-11-15,SYN-700014-00100,Chloélune00100,synthetic.700014.100@example.com,(202) 555-0100,Active,10000000-0000-4000-8000-000000000001,White Belt,Testjordan00100 Quillfen,guardian.700014.100@example.invalid,202.555.0131,"Synthetic only; “curly quotes”, café; line one
+line two"
+"O'Vel, Évarin00101",1953-12-16,SYN-700014-00101,Zee,synthetic.700014.101@example.net,202.555.0101,Active,,WHITE,Testjordan00101 Quillfen,guardian.700014.101@example.invalid,+1 202 555 0132,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Solquill Jr, Ava-Grace00102",1954-01-17,SYN-700014-00102,Ava-Grace00102,synthetic.700014.102@example.org,+1 202 555 0102,Active,Moon Forms,Yellow Belt,Testjordan00102 Quillfen,guardian.700014.102@example.invalid,2025550133,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Rivfen Sr, Téoquin00103",1955-02-18,SYN-700014-00103,Zee,synthetic.700014.103@example.invalid,2025550103,Active,moon forms,20000000-0000-4000-8000-000000000002,Testjordan00103 Quillfen,guardian.700014.103@example.invalid,202-555-0134,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Velquill III, Iñara00104",1956-03-19,SYN-700014-00104,Iñara00104,synthetic.700014.104@example.com,202-555-0104,Active,Moon-Forms,,Testjordan00104 Quillfen,guardian.700014.104@example.invalid,(202) 555-0135,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Quillfen, Zelava00105",1957-04-20,SYN-700014-00105,Zee,synthetic.700014.105@example.net,(202) 555-0105,Active,MOON FORMS!,White Belt,Testjordan00105 Quillfen,guardian.700014.105@example.invalid,202.555.0136,"Synthetic only; “curly quotes”, café; line one
+line two"
+"de la Vey, Mioren00106",1958-05-21,SYN-700014-00106,Mioren00106,synthetic.700014.106@example.org,202.555.0106,Active,10000000-0000-4000-8000-000000000001,WHITE,Testjordan00106 Quillfen,guardian.700014.106@example.invalid,+1 202 555 0137,"Synthetic only; “curly quotes”, café; line one
+line two"
+"van Lumen, Chloélune00107",1959-06-22,SYN-700014-00107,Zee,synthetic.700014.107@example.invalid,+1 202 555 0107,Active,,Yellow Belt,Testjordan00107 Quillfen,guardian.700014.107@example.invalid,2025550138,"Synthetic only; “curly quotes”, café; line one
+line two"
+"O'Vel, Évarin00108",1960-07-23,SYN-700014-00108,Évarin00108,synthetic.700014.108@example.com,2025550108,Active,Moon Forms,20000000-0000-4000-8000-000000000002,Testjordan00108 Quillfen,guardian.700014.108@example.invalid,202-555-0139,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Solquill Jr, Ava-Grace00109",1961-08-24,SYN-700014-00109,Zee,synthetic.700014.109@example.net,202-555-0109,Active,moon forms,,Testjordan00109 Quillfen,guardian.700014.109@example.invalid,(202) 555-0140,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Rivfen Sr, Téoquin00110",1962-09-25,SYN-700014-00110,Téoquin00110,synthetic.700014.110@example.org,(202) 555-0110,Active,Moon-Forms,White Belt,Testjordan00110 Quillfen,guardian.700014.110@example.invalid,202.555.0141,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Velquill III, Iñara00111",1963-10-26,SYN-700014-00111,Zee,synthetic.700014.111@example.invalid,202.555.0111,Active,MOON FORMS!,WHITE,Testjordan00111 Quillfen,guardian.700014.111@example.invalid,+1 202 555 0142,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Quillfen, Zelava00112",1964-11-27,SYN-700014-00112,Zelava00112,synthetic.700014.112@example.com,+1 202 555 0112,Active,10000000-0000-4000-8000-000000000001,Yellow Belt,Testjordan00112 Quillfen,guardian.700014.112@example.invalid,2025550143,"Synthetic only; “curly quotes”, café; line one
+line two"
+"de la Vey, Mioren00113",1965-12-28,SYN-700014-00113,Zee,synthetic.700014.113@example.net,2025550113,Active,,20000000-0000-4000-8000-000000000002,Testjordan00113 Quillfen,guardian.700014.113@example.invalid,202-555-0144,"Synthetic only; “curly quotes”, café; line one
+line two"
+"van Lumen, Chloélune00114",1966-01-01,SYN-700014-00114,Chloélune00114,synthetic.700014.114@example.org,202-555-0114,Active,Moon Forms,,Testjordan00114 Quillfen,guardian.700014.114@example.invalid,(202) 555-0145,"Synthetic only; “curly quotes”, café; line one
+line two"
+"O'Vel, Évarin00115",1967-02-02,SYN-700014-00115,Zee,synthetic.700014.115@example.invalid,(202) 555-0115,Active,moon forms,White Belt,Testjordan00115 Quillfen,guardian.700014.115@example.invalid,202.555.0146,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Solquill Jr, Ava-Grace00116",1968-03-03,SYN-700014-00116,Ava-Grace00116,synthetic.700014.116@example.com,202.555.0116,Active,Moon-Forms,WHITE,Testjordan00116 Quillfen,guardian.700014.116@example.invalid,+1 202 555 0147,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Rivfen Sr, Téoquin00117",1969-04-04,SYN-700014-00117,Zee,synthetic.700014.117@example.net,+1 202 555 0117,Active,MOON FORMS!,Yellow Belt,Testjordan00117 Quillfen,guardian.700014.117@example.invalid,2025550148,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Velquill III, Iñara00118",1970-05-05,SYN-700014-00118,Iñara00118,synthetic.700014.118@example.org,2025550118,Active,10000000-0000-4000-8000-000000000001,20000000-0000-4000-8000-000000000002,Testjordan00118 Quillfen,guardian.700014.118@example.invalid,202-555-0149,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Quillfen, Zelava00119",1971-06-06,SYN-700014-00119,Zee,synthetic.700014.119@example.invalid,202-555-0119,Active,,,Testjordan00119 Quillfen,guardian.700014.119@example.invalid,(202) 555-0150,"Synthetic only; “curly quotes”, café; line one
+line two"
+"de la Vey, Mioren00120",1972-07-07,SYN-700014-00120,Mioren00120,synthetic.700014.120@example.com,(202) 555-0120,Active,Moon Forms,White Belt,Testjordan00120 Quillfen,guardian.700014.120@example.invalid,202.555.0151,"Synthetic only; “curly quotes”, café; line one
+line two"
+"van Lumen, Chloélune00121",1973-08-08,SYN-700014-00121,Zee,synthetic.700014.121@example.net,202.555.0121,Active,moon forms,WHITE,Testjordan00121 Quillfen,guardian.700014.121@example.invalid,+1 202 555 0152,"Synthetic only; “curly quotes”, café; line one
+line two"
+"O'Vel, Évarin00122",1974-09-09,SYN-700014-00122,Évarin00122,synthetic.700014.122@example.org,+1 202 555 0122,Active,Moon-Forms,Yellow Belt,Testjordan00122 Quillfen,guardian.700014.122@example.invalid,2025550153,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Solquill Jr, Ava-Grace00123",1975-10-10,SYN-700014-00123,Zee,synthetic.700014.123@example.invalid,2025550123,Active,MOON FORMS!,20000000-0000-4000-8000-000000000002,Testjordan00123 Quillfen,guardian.700014.123@example.invalid,202-555-0154,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Rivfen Sr, Téoquin00124",1976-11-11,SYN-700014-00124,Téoquin00124,synthetic.700014.124@example.com,202-555-0124,Active,10000000-0000-4000-8000-000000000001,,Testjordan00124 Quillfen,guardian.700014.124@example.invalid,(202) 555-0155,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Velquill III, Iñara00125",1977-12-12,SYN-700014-00125,Zee,synthetic.700014.125@example.net,(202) 555-0125,Active,,White Belt,Testjordan00125 Quillfen,guardian.700014.125@example.invalid,202.555.0156,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Quillfen, Zelava00126",1978-01-13,SYN-700014-00126,Zelava00126,synthetic.700014.126@example.org,202.555.0126,Active,Moon Forms,WHITE,Testjordan00126 Quillfen,guardian.700014.126@example.invalid,+1 202 555 0157,"Synthetic only; “curly quotes”, café; line one
+line two"
+"de la Vey, Mioren00127",1979-02-14,SYN-700014-00127,Zee,synthetic.700014.127@example.invalid,+1 202 555 0127,Active,moon forms,Yellow Belt,Testjordan00127 Quillfen,guardian.700014.127@example.invalid,2025550158,"Synthetic only; “curly quotes”, café; line one
+line two"
+"van Lumen, Chloélune00128",1980-03-15,SYN-700014-00128,Chloélune00128,synthetic.700014.128@example.com,2025550128,Active,Moon-Forms,20000000-0000-4000-8000-000000000002,Testjordan00128 Quillfen,guardian.700014.128@example.invalid,202-555-0159,"Synthetic only; “curly quotes”, café; line one
+line two"
+"O'Vel, Évarin00129",1981-04-16,SYN-700014-00129,Zee,synthetic.700014.129@example.net,202-555-0129,Active,MOON FORMS!,,Testjordan00129 Quillfen,guardian.700014.129@example.invalid,(202) 555-0160,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Solquill Jr, Ava-Grace00130",1982-05-17,SYN-700014-00130,Ava-Grace00130,synthetic.700014.130@example.org,(202) 555-0130,Active,10000000-0000-4000-8000-000000000001,White Belt,Testjordan00130 Quillfen,guardian.700014.130@example.invalid,202.555.0161,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Rivfen Sr, Téoquin00131",1983-06-18,SYN-700014-00131,Zee,synthetic.700014.131@example.invalid,202.555.0131,Active,,WHITE,Testjordan00131 Quillfen,guardian.700014.131@example.invalid,+1 202 555 0162,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Velquill III, Iñara00132",1984-07-19,SYN-700014-00132,Iñara00132,synthetic.700014.132@example.com,+1 202 555 0132,Active,Moon Forms,Yellow Belt,Testjordan00132 Quillfen,guardian.700014.132@example.invalid,2025550163,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Quillfen, Zelava00133",1985-08-20,SYN-700014-00133,Zee,synthetic.700014.133@example.net,2025550133,Active,moon forms,20000000-0000-4000-8000-000000000002,Testjordan00133 Quillfen,guardian.700014.133@example.invalid,202-555-0164,"Synthetic only; “curly quotes”, café; line one
+line two"
+"de la Vey, Mioren00134",1986-09-21,SYN-700014-00134,Mioren00134,synthetic.700014.134@example.org,202-555-0134,Active,Moon-Forms,,Testjordan00134 Quillfen,guardian.700014.134@example.invalid,(202) 555-0165,"Synthetic only; “curly quotes”, café; line one
+line two"
+"van Lumen, Chloélune00135",1987-10-22,SYN-700014-00135,Zee,synthetic.700014.135@example.invalid,(202) 555-0135,Active,MOON FORMS!,White Belt,Testjordan00135 Quillfen,guardian.700014.135@example.invalid,202.555.0166,"Synthetic only; “curly quotes”, café; line one
+line two"
+"O'Vel, Évarin00136",1988-11-23,SYN-700014-00136,Évarin00136,synthetic.700014.136@example.com,202.555.0136,Active,10000000-0000-4000-8000-000000000001,WHITE,Testjordan00136 Quillfen,guardian.700014.136@example.invalid,+1 202 555 0167,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Solquill Jr, Ava-Grace00137",1989-12-24,SYN-700014-00137,Zee,synthetic.700014.137@example.net,+1 202 555 0137,Active,,Yellow Belt,Testjordan00137 Quillfen,guardian.700014.137@example.invalid,2025550168,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Rivfen Sr, Téoquin00138",1990-01-25,SYN-700014-00138,Téoquin00138,synthetic.700014.138@example.org,2025550138,Active,Moon Forms,20000000-0000-4000-8000-000000000002,Testjordan00138 Quillfen,guardian.700014.138@example.invalid,202-555-0169,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Velquill III, Iñara00139",1991-02-26,SYN-700014-00139,Zee,synthetic.700014.139@example.invalid,202-555-0139,Active,moon forms,,Testjordan00139 Quillfen,guardian.700014.139@example.invalid,(202) 555-0170,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Quillfen, Zelava00140",1992-03-27,SYN-700014-00140,Zelava00140,synthetic.700014.140@example.com,(202) 555-0140,Active,Moon-Forms,White Belt,Testjordan00140 Quillfen,guardian.700014.140@example.invalid,202.555.0171,"Synthetic only; “curly quotes”, café; line one
+line two"
+"de la Vey, Mioren00141",1993-04-28,SYN-700014-00141,Zee,synthetic.700014.141@example.net,202.555.0141,Active,MOON FORMS!,WHITE,Testjordan00141 Quillfen,guardian.700014.141@example.invalid,+1 202 555 0172,"Synthetic only; “curly quotes”, café; line one
+line two"
+"van Lumen, Chloélune00142",1994-05-01,SYN-700014-00142,Chloélune00142,synthetic.700014.142@example.org,+1 202 555 0142,Active,10000000-0000-4000-8000-000000000001,Yellow Belt,Testjordan00142 Quillfen,guardian.700014.142@example.invalid,2025550173,"Synthetic only; “curly quotes”, café; line one
+line two"
+"O'Vel, Évarin00143",1995-06-02,SYN-700014-00143,Zee,synthetic.700014.143@example.invalid,2025550143,Active,,20000000-0000-4000-8000-000000000002,Testjordan00143 Quillfen,guardian.700014.143@example.invalid,202-555-0174,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Solquill Jr, Ava-Grace00144",1996-07-03,SYN-700014-00144,Ava-Grace00144,synthetic.700014.144@example.com,202-555-0144,Active,Moon Forms,,Testjordan00144 Quillfen,guardian.700014.144@example.invalid,(202) 555-0175,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Rivfen Sr, Téoquin00145",1997-08-04,SYN-700014-00145,Zee,synthetic.700014.145@example.net,(202) 555-0145,Active,moon forms,White Belt,Testjordan00145 Quillfen,guardian.700014.145@example.invalid,202.555.0176,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Velquill III, Iñara00146",1998-09-05,SYN-700014-00146,Iñara00146,synthetic.700014.146@example.org,202.555.0146,Active,Moon-Forms,WHITE,Testjordan00146 Quillfen,guardian.700014.146@example.invalid,+1 202 555 0177,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Quillfen, Zelava00147",1999-10-06,SYN-700014-00147,Zee,synthetic.700014.147@example.invalid,+1 202 555 0147,Active,MOON FORMS!,Yellow Belt,Testjordan00147 Quillfen,guardian.700014.147@example.invalid,2025550178,"Synthetic only; “curly quotes”, café; line one
+line two"
+"de la Vey, Mioren00148",2000-11-07,SYN-700014-00148,Mioren00148,synthetic.700014.148@example.com,2025550148,Active,10000000-0000-4000-8000-000000000001,20000000-0000-4000-8000-000000000002,Testjordan00148 Quillfen,guardian.700014.148@example.invalid,202-555-0179,"Synthetic only; “curly quotes”, café; line one
+line two"
+"van Lumen, Chloélune00149",2001-12-08,SYN-700014-00149,Zee,synthetic.700014.149@example.net,202-555-0149,Active,,,Testjordan00149 Quillfen,guardian.700014.149@example.invalid,(202) 555-0180,"Synthetic only; “curly quotes”, café; line one
+line two"
+"O'Vel, Évarin00150",2002-01-09,SYN-700014-00150,Évarin00150,synthetic.700014.150@example.org,(202) 555-0150,Active,Moon Forms,White Belt,Testjordan00150 Quillfen,guardian.700014.150@example.invalid,202.555.0181,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Solquill Jr, Ava-Grace00151",2003-02-10,SYN-700014-00151,Zee,synthetic.700014.151@example.invalid,202.555.0151,Active,moon forms,WHITE,Testjordan00151 Quillfen,guardian.700014.151@example.invalid,+1 202 555 0182,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Rivfen Sr, Téoquin00152",2004-03-11,SYN-700014-00152,Téoquin00152,synthetic.700014.152@example.com,+1 202 555 0152,Active,Moon-Forms,Yellow Belt,Testjordan00152 Quillfen,guardian.700014.152@example.invalid,2025550183,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Velquill III, Iñara00153",2005-04-12,SYN-700014-00153,Zee,synthetic.700014.153@example.net,2025550153,Active,MOON FORMS!,20000000-0000-4000-8000-000000000002,Testjordan00153 Quillfen,guardian.700014.153@example.invalid,202-555-0184,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Quillfen, Zelava00154",2006-05-13,SYN-700014-00154,Zelava00154,synthetic.700014.154@example.org,202-555-0154,Active,10000000-0000-4000-8000-000000000001,,Testjordan00154 Quillfen,guardian.700014.154@example.invalid,(202) 555-0185,"Synthetic only; “curly quotes”, café; line one
+line two"
+"de la Vey, Mioren00155",2007-06-14,SYN-700014-00155,Zee,synthetic.700014.155@example.invalid,(202) 555-0155,Active,,White Belt,Testjordan00155 Quillfen,guardian.700014.155@example.invalid,202.555.0186,"Synthetic only; “curly quotes”, café; line one
+line two"
+"van Lumen, Chloélune00156",2008-07-15,SYN-700014-00156,Chloélune00156,synthetic.700014.156@example.com,202.555.0156,Active,Moon Forms,WHITE,Testjordan00156 Quillfen,guardian.700014.156@example.invalid,+1 202 555 0187,"Synthetic only; “curly quotes”, café; line one
+line two"
+"O'Vel, Évarin00157",2009-08-16,SYN-700014-00157,Zee,synthetic.700014.157@example.net,+1 202 555 0157,Active,moon forms,Yellow Belt,Testjordan00157 Quillfen,guardian.700014.157@example.invalid,2025550188,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Solquill Jr, Ava-Grace00158",2010-09-17,SYN-700014-00158,Ava-Grace00158,synthetic.700014.158@example.org,2025550158,Active,Moon-Forms,20000000-0000-4000-8000-000000000002,Testjordan00158 Quillfen,guardian.700014.158@example.invalid,202-555-0189,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Rivfen Sr, Téoquin00159",2011-10-18,SYN-700014-00159,Zee,synthetic.700014.159@example.invalid,202-555-0159,Active,MOON FORMS!,,Testjordan00159 Quillfen,guardian.700014.159@example.invalid,(202) 555-0190,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Velquill III, Iñara00160",2012-11-19,SYN-700014-00160,Iñara00160,synthetic.700014.160@example.com,(202) 555-0160,Active,10000000-0000-4000-8000-000000000001,White Belt,Testjordan00160 Quillfen,guardian.700014.160@example.invalid,202.555.0191,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Quillfen, Zelava00161",2013-12-20,SYN-700014-00161,Zee,synthetic.700014.161@example.net,202.555.0161,Active,,WHITE,Testjordan00161 Quillfen,guardian.700014.161@example.invalid,+1 202 555 0192,"Synthetic only; “curly quotes”, café; line one
+line two"
+"de la Vey, Mioren00162",2014-01-21,SYN-700014-00162,Mioren00162,synthetic.700014.162@example.org,+1 202 555 0162,Active,Moon Forms,Yellow Belt,Testjordan00162 Quillfen,guardian.700014.162@example.invalid,2025550193,"Synthetic only; “curly quotes”, café; line one
+line two"
+"van Lumen, Chloélune00163",2015-02-22,SYN-700014-00163,Zee,synthetic.700014.163@example.invalid,2025550163,Active,moon forms,20000000-0000-4000-8000-000000000002,Testjordan00163 Quillfen,guardian.700014.163@example.invalid,202-555-0194,"Synthetic only; “curly quotes”, café; line one
+line two"
+"O'Vel, Évarin00164",2016-03-23,SYN-700014-00164,Évarin00164,synthetic.700014.164@example.com,202-555-0164,Active,Moon-Forms,,Testjordan00164 Quillfen,guardian.700014.164@example.invalid,(202) 555-0195,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Solquill Jr, Ava-Grace00165",2017-04-24,SYN-700014-00165,Zee,synthetic.700014.165@example.net,(202) 555-0165,Active,MOON FORMS!,White Belt,Testjordan00165 Quillfen,guardian.700014.165@example.invalid,202.555.0196,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Rivfen Sr, Téoquin00166",2018-05-25,SYN-700014-00166,Téoquin00166,synthetic.700014.166@example.org,202.555.0166,Active,10000000-0000-4000-8000-000000000001,WHITE,Testjordan00166 Quillfen,guardian.700014.166@example.invalid,+1 202 555 0197,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Velquill III, Iñara00167",2019-06-26,SYN-700014-00167,Zee,synthetic.700014.167@example.invalid,+1 202 555 0167,Active,,Yellow Belt,Testjordan00167 Quillfen,guardian.700014.167@example.invalid,2025550198,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Quillfen, Zelava00168",2020-07-27,SYN-700014-00168,Zelava00168,synthetic.700014.168@example.com,2025550168,Active,Moon Forms,20000000-0000-4000-8000-000000000002,Testjordan00168 Quillfen,guardian.700014.168@example.invalid,202-555-0199,"Synthetic only; “curly quotes”, café; line one
+line two"
+"de la Vey, Mioren00169",2021-08-28,SYN-700014-00169,Zee,synthetic.700014.169@example.net,202-555-0169,Active,moon forms,,Testjordan00169 Quillfen,guardian.700014.169@example.invalid,(202) 555-0100,"Synthetic only; “curly quotes”, café; line one
+line two"
+"van Lumen, Chloélune00170",2022-09-01,SYN-700014-00170,Chloélune00170,synthetic.700014.170@example.org,(202) 555-0170,Active,Moon-Forms,White Belt,Testjordan00170 Quillfen,guardian.700014.170@example.invalid,202.555.0101,"Synthetic only; “curly quotes”, café; line one
+line two"
+"O'Vel, Évarin00171",2023-10-02,SYN-700014-00171,Zee,synthetic.700014.171@example.invalid,202.555.0171,Active,MOON FORMS!,WHITE,Testjordan00171 Quillfen,guardian.700014.171@example.invalid,+1 202 555 0102,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Solquill Jr, Ava-Grace00172",2024-11-03,SYN-700014-00172,Ava-Grace00172,synthetic.700014.172@example.com,+1 202 555 0172,Active,10000000-0000-4000-8000-000000000001,Yellow Belt,Testjordan00172 Quillfen,guardian.700014.172@example.invalid,2025550103,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Rivfen Sr, Téoquin00173",2025-12-04,SYN-700014-00173,Zee,synthetic.700014.173@example.net,2025550173,Active,,20000000-0000-4000-8000-000000000002,Testjordan00173 Quillfen,guardian.700014.173@example.invalid,202-555-0104,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Velquill III, Iñara00174",1950-01-05,SYN-700014-00174,Iñara00174,synthetic.700014.174@example.org,202-555-0174,Active,Moon Forms,,Testjordan00174 Quillfen,guardian.700014.174@example.invalid,(202) 555-0105,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Quillfen, Zelava00175",1951-02-06,SYN-700014-00175,Zee,synthetic.700014.175@example.invalid,(202) 555-0175,Active,moon forms,White Belt,Testjordan00175 Quillfen,guardian.700014.175@example.invalid,202.555.0106,"Synthetic only; “curly quotes”, café; line one
+line two"
+"de la Vey, Mioren00176",1952-03-07,SYN-700014-00176,Mioren00176,synthetic.700014.176@example.com,202.555.0176,Active,Moon-Forms,WHITE,Testjordan00176 Quillfen,guardian.700014.176@example.invalid,+1 202 555 0107,"Synthetic only; “curly quotes”, café; line one
+line two"
+"van Lumen, Chloélune00177",1953-04-08,SYN-700014-00177,Zee,synthetic.700014.177@example.net,+1 202 555 0177,Active,MOON FORMS!,Yellow Belt,Testjordan00177 Quillfen,guardian.700014.177@example.invalid,2025550108,"Synthetic only; “curly quotes”, café; line one
+line two"
+"O'Vel, Évarin00178",1954-05-09,SYN-700014-00178,Évarin00178,synthetic.700014.178@example.org,2025550178,Active,10000000-0000-4000-8000-000000000001,20000000-0000-4000-8000-000000000002,Testjordan00178 Quillfen,guardian.700014.178@example.invalid,202-555-0109,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Solquill Jr, Ava-Grace00179",1955-06-10,SYN-700014-00179,Zee,synthetic.700014.179@example.invalid,202-555-0179,Active,,,Testjordan00179 Quillfen,guardian.700014.179@example.invalid,(202) 555-0110,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Rivfen Sr, Téoquin00180",1956-07-11,SYN-700014-00180,Téoquin00180,synthetic.700014.180@example.com,(202) 555-0180,Active,Moon Forms,White Belt,Testjordan00180 Quillfen,guardian.700014.180@example.invalid,202.555.0111,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Velquill III, Iñara00181",1957-08-12,SYN-700014-00181,Zee,synthetic.700014.181@example.net,202.555.0181,Active,moon forms,WHITE,Testjordan00181 Quillfen,guardian.700014.181@example.invalid,+1 202 555 0112,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Quillfen, Zelava00182",1958-09-13,SYN-700014-00182,Zelava00182,synthetic.700014.182@example.org,+1 202 555 0182,Active,Moon-Forms,Yellow Belt,Testjordan00182 Quillfen,guardian.700014.182@example.invalid,2025550113,"Synthetic only; “curly quotes”, café; line one
+line two"
+"de la Vey, Mioren00183",1959-10-14,SYN-700014-00183,Zee,synthetic.700014.183@example.invalid,2025550183,Active,MOON FORMS!,20000000-0000-4000-8000-000000000002,Testjordan00183 Quillfen,guardian.700014.183@example.invalid,202-555-0114,"Synthetic only; “curly quotes”, café; line one
+line two"
+"van Lumen, Chloélune00184",1960-11-15,SYN-700014-00184,Chloélune00184,synthetic.700014.184@example.com,202-555-0184,Active,10000000-0000-4000-8000-000000000001,,Testjordan00184 Quillfen,guardian.700014.184@example.invalid,(202) 555-0115,"Synthetic only; “curly quotes”, café; line one
+line two"
+"O'Vel, Évarin00185",1961-12-16,SYN-700014-00185,Zee,synthetic.700014.185@example.net,(202) 555-0185,Active,,White Belt,Testjordan00185 Quillfen,guardian.700014.185@example.invalid,202.555.0116,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Solquill Jr, Ava-Grace00186",1962-01-17,SYN-700014-00186,Ava-Grace00186,synthetic.700014.186@example.org,202.555.0186,Active,Moon Forms,WHITE,Testjordan00186 Quillfen,guardian.700014.186@example.invalid,+1 202 555 0117,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Rivfen Sr, Téoquin00187",1963-02-18,SYN-700014-00187,Zee,synthetic.700014.187@example.invalid,+1 202 555 0187,Active,moon forms,Yellow Belt,Testjordan00187 Quillfen,guardian.700014.187@example.invalid,2025550118,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Velquill III, Iñara00188",1964-03-19,SYN-700014-00188,Iñara00188,synthetic.700014.188@example.com,2025550188,Active,Moon-Forms,20000000-0000-4000-8000-000000000002,Testjordan00188 Quillfen,guardian.700014.188@example.invalid,202-555-0119,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Quillfen, Zelava00189",1965-04-20,SYN-700014-00189,Zee,synthetic.700014.189@example.net,202-555-0189,Active,MOON FORMS!,,Testjordan00189 Quillfen,guardian.700014.189@example.invalid,(202) 555-0120,"Synthetic only; “curly quotes”, café; line one
+line two"
+"de la Vey, Mioren00190",1966-05-21,SYN-700014-00190,Mioren00190,synthetic.700014.190@example.org,(202) 555-0190,Active,10000000-0000-4000-8000-000000000001,White Belt,Testjordan00190 Quillfen,guardian.700014.190@example.invalid,202.555.0121,"Synthetic only; “curly quotes”, café; line one
+line two"
+"van Lumen, Chloélune00191",1967-06-22,SYN-700014-00191,Zee,synthetic.700014.191@example.invalid,202.555.0191,Active,,WHITE,Testjordan00191 Quillfen,guardian.700014.191@example.invalid,+1 202 555 0122,"Synthetic only; “curly quotes”, café; line one
+line two"
+"O'Vel, Évarin00192",1968-07-23,SYN-700014-00192,Évarin00192,synthetic.700014.192@example.com,+1 202 555 0192,Active,Moon Forms,Yellow Belt,Testjordan00192 Quillfen,guardian.700014.192@example.invalid,2025550123,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Solquill Jr, Ava-Grace00193",1969-08-24,SYN-700014-00193,Zee,synthetic.700014.193@example.net,2025550193,Active,moon forms,20000000-0000-4000-8000-000000000002,Testjordan00193 Quillfen,guardian.700014.193@example.invalid,202-555-0124,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Rivfen Sr, Téoquin00194",1970-09-25,SYN-700014-00194,Téoquin00194,synthetic.700014.194@example.org,202-555-0194,Active,Moon-Forms,,Testjordan00194 Quillfen,guardian.700014.194@example.invalid,(202) 555-0125,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Velquill III, Iñara00195",1971-10-26,SYN-700014-00195,Zee,synthetic.700014.195@example.invalid,(202) 555-0195,Active,MOON FORMS!,White Belt,Testjordan00195 Quillfen,guardian.700014.195@example.invalid,202.555.0126,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Quillfen, Zelava00196",1972-11-27,SYN-700014-00196,Zelava00196,synthetic.700014.196@example.com,202.555.0196,Active,10000000-0000-4000-8000-000000000001,WHITE,Testjordan00196 Quillfen,guardian.700014.196@example.invalid,+1 202 555 0127,"Synthetic only; “curly quotes”, café; line one
+line two"
+"de la Vey, Mioren00197",1973-12-28,SYN-700014-00197,Zee,synthetic.700014.197@example.net,+1 202 555 0197,Active,,Yellow Belt,Testjordan00197 Quillfen,guardian.700014.197@example.invalid,2025550128,"Synthetic only; “curly quotes”, café; line one
+line two"
+"van Lumen, Chloélune00198",1974-01-01,SYN-700014-00198,Chloélune00198,synthetic.700014.198@example.org,2025550198,Active,Moon Forms,20000000-0000-4000-8000-000000000002,Testjordan00198 Quillfen,guardian.700014.198@example.invalid,202-555-0129,"Synthetic only; “curly quotes”, café; line one
+line two"
+"O'Vel, Évarin00199",1975-02-02,SYN-700014-00199,Zee,synthetic.700014.199@example.invalid,202-555-0199,Active,moon forms,,Testjordan00199 Quillfen,guardian.700014.199@example.invalid,(202) 555-0130,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Solquill Jr, Ava-Grace00200",1976-03-03,SYN-700014-00200,Ava-Grace00200,synthetic.700014.200@example.com,(202) 555-0100,Active,Moon-Forms,White Belt,Testjordan00200 Quillfen,guardian.700014.200@example.invalid,202.555.0131,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Rivfen Sr, Téoquin00201",1977-04-04,SYN-700014-00201,Zee,synthetic.700014.201@example.net,202.555.0101,Active,MOON FORMS!,WHITE,Testjordan00201 Quillfen,guardian.700014.201@example.invalid,+1 202 555 0132,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Velquill III, Iñara00202",1978-05-05,SYN-700014-00202,Iñara00202,synthetic.700014.202@example.org,+1 202 555 0102,Active,10000000-0000-4000-8000-000000000001,Yellow Belt,Testjordan00202 Quillfen,guardian.700014.202@example.invalid,2025550133,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Quillfen, Zelava00203",1979-06-06,SYN-700014-00203,Zee,synthetic.700014.203@example.invalid,2025550103,Active,,20000000-0000-4000-8000-000000000002,Testjordan00203 Quillfen,guardian.700014.203@example.invalid,202-555-0134,"Synthetic only; “curly quotes”, café; line one
+line two"
+"de la Vey, Mioren00204",1980-07-07,SYN-700014-00204,Mioren00204,synthetic.700014.204@example.com,202-555-0104,Active,Moon Forms,,Testjordan00204 Quillfen,guardian.700014.204@example.invalid,(202) 555-0135,"Synthetic only; “curly quotes”, café; line one
+line two"
+"van Lumen, Chloélune00205",1981-08-08,SYN-700014-00205,Zee,synthetic.700014.205@example.net,(202) 555-0105,Active,moon forms,White Belt,Testjordan00205 Quillfen,guardian.700014.205@example.invalid,202.555.0136,"Synthetic only; “curly quotes”, café; line one
+line two"
+"O'Vel, Évarin00206",1982-09-09,SYN-700014-00206,Évarin00206,synthetic.700014.206@example.org,202.555.0106,Active,Moon-Forms,WHITE,Testjordan00206 Quillfen,guardian.700014.206@example.invalid,+1 202 555 0137,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Solquill Jr, Ava-Grace00207",1983-10-10,SYN-700014-00207,Zee,synthetic.700014.207@example.invalid,+1 202 555 0107,Active,MOON FORMS!,Yellow Belt,Testjordan00207 Quillfen,guardian.700014.207@example.invalid,2025550138,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Rivfen Sr, Téoquin00208",1984-11-11,SYN-700014-00208,Téoquin00208,synthetic.700014.208@example.com,2025550108,Active,10000000-0000-4000-8000-000000000001,20000000-0000-4000-8000-000000000002,Testjordan00208 Quillfen,guardian.700014.208@example.invalid,202-555-0139,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Velquill III, Iñara00209",1985-12-12,SYN-700014-00209,Zee,synthetic.700014.209@example.net,202-555-0109,Active,,,Testjordan00209 Quillfen,guardian.700014.209@example.invalid,(202) 555-0140,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Quillfen, Zelava00210",1986-01-13,SYN-700014-00210,Zelava00210,synthetic.700014.210@example.org,(202) 555-0110,Active,Moon Forms,White Belt,Testjordan00210 Quillfen,guardian.700014.210@example.invalid,202.555.0141,"Synthetic only; “curly quotes”, café; line one
+line two"
+"de la Vey, Mioren00211",1987-02-14,SYN-700014-00211,Zee,synthetic.700014.211@example.invalid,202.555.0111,Active,moon forms,WHITE,Testjordan00211 Quillfen,guardian.700014.211@example.invalid,+1 202 555 0142,"Synthetic only; “curly quotes”, café; line one
+line two"
+"van Lumen, Chloélune00212",1988-03-15,SYN-700014-00212,Chloélune00212,synthetic.700014.212@example.com,+1 202 555 0112,Active,Moon-Forms,Yellow Belt,Testjordan00212 Quillfen,guardian.700014.212@example.invalid,2025550143,"Synthetic only; “curly quotes”, café; line one
+line two"
+"O'Vel, Évarin00213",1989-04-16,SYN-700014-00213,Zee,synthetic.700014.213@example.net,2025550113,Active,MOON FORMS!,20000000-0000-4000-8000-000000000002,Testjordan00213 Quillfen,guardian.700014.213@example.invalid,202-555-0144,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Solquill Jr, Ava-Grace00214",1990-05-17,SYN-700014-00214,Ava-Grace00214,synthetic.700014.214@example.org,202-555-0114,Active,10000000-0000-4000-8000-000000000001,,Testjordan00214 Quillfen,guardian.700014.214@example.invalid,(202) 555-0145,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Rivfen Sr, Téoquin00215",1991-06-18,SYN-700014-00215,Zee,synthetic.700014.215@example.invalid,(202) 555-0115,Active,,White Belt,Testjordan00215 Quillfen,guardian.700014.215@example.invalid,202.555.0146,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Velquill III, Iñara00216",1992-07-19,SYN-700014-00216,Iñara00216,synthetic.700014.216@example.com,202.555.0116,Active,Moon Forms,WHITE,Testjordan00216 Quillfen,guardian.700014.216@example.invalid,+1 202 555 0147,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Quillfen, Zelava00217",1993-08-20,SYN-700014-00217,Zee,synthetic.700014.217@example.net,+1 202 555 0117,Active,moon forms,Yellow Belt,Testjordan00217 Quillfen,guardian.700014.217@example.invalid,2025550148,"Synthetic only; “curly quotes”, café; line one
+line two"
+"de la Vey, Mioren00218",1994-09-21,SYN-700014-00218,Mioren00218,synthetic.700014.218@example.org,2025550118,Active,Moon-Forms,20000000-0000-4000-8000-000000000002,Testjordan00218 Quillfen,guardian.700014.218@example.invalid,202-555-0149,"Synthetic only; “curly quotes”, café; line one
+line two"
+"van Lumen, Chloélune00219",1995-10-22,SYN-700014-00219,Zee,synthetic.700014.219@example.invalid,202-555-0119,Active,MOON FORMS!,,Testjordan00219 Quillfen,guardian.700014.219@example.invalid,(202) 555-0150,"Synthetic only; “curly quotes”, café; line one
+line two"
+"O'Vel, Évarin00220",1996-11-23,SYN-700014-00220,Évarin00220,synthetic.700014.220@example.com,(202) 555-0120,Active,10000000-0000-4000-8000-000000000001,White Belt,Testjordan00220 Quillfen,guardian.700014.220@example.invalid,202.555.0151,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Solquill Jr, Ava-Grace00221",1997-12-24,SYN-700014-00221,Zee,synthetic.700014.221@example.net,202.555.0121,Active,,WHITE,Testjordan00221 Quillfen,guardian.700014.221@example.invalid,+1 202 555 0152,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Rivfen Sr, Téoquin00222",1998-01-25,SYN-700014-00222,Téoquin00222,synthetic.700014.222@example.org,+1 202 555 0122,Active,Moon Forms,Yellow Belt,Testjordan00222 Quillfen,guardian.700014.222@example.invalid,2025550153,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Velquill III, Iñara00223",1999-02-26,SYN-700014-00223,Zee,synthetic.700014.223@example.invalid,2025550123,Active,moon forms,20000000-0000-4000-8000-000000000002,Testjordan00223 Quillfen,guardian.700014.223@example.invalid,202-555-0154,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Quillfen, Zelava00224",2000-03-27,SYN-700014-00224,Zelava00224,synthetic.700014.224@example.com,202-555-0124,Active,Moon-Forms,,Testjordan00224 Quillfen,guardian.700014.224@example.invalid,(202) 555-0155,"Synthetic only; “curly quotes”, café; line one
+line two"
+"de la Vey, Mioren00225",2001-04-28,SYN-700014-00225,Zee,synthetic.700014.225@example.net,(202) 555-0125,Active,MOON FORMS!,White Belt,Testjordan00225 Quillfen,guardian.700014.225@example.invalid,202.555.0156,"Synthetic only; “curly quotes”, café; line one
+line two"
+"van Lumen, Chloélune00226",2002-05-01,SYN-700014-00226,Chloélune00226,synthetic.700014.226@example.org,202.555.0126,Active,10000000-0000-4000-8000-000000000001,WHITE,Testjordan00226 Quillfen,guardian.700014.226@example.invalid,+1 202 555 0157,"Synthetic only; “curly quotes”, café; line one
+line two"
+"O'Vel, Évarin00227",2003-06-02,SYN-700014-00227,Zee,synthetic.700014.227@example.invalid,+1 202 555 0127,Active,,Yellow Belt,Testjordan00227 Quillfen,guardian.700014.227@example.invalid,2025550158,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Solquill Jr, Ava-Grace00228",2004-07-03,SYN-700014-00228,Ava-Grace00228,synthetic.700014.228@example.com,2025550128,Active,Moon Forms,20000000-0000-4000-8000-000000000002,Testjordan00228 Quillfen,guardian.700014.228@example.invalid,202-555-0159,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Rivfen Sr, Téoquin00229",2005-08-04,SYN-700014-00229,Zee,synthetic.700014.229@example.net,202-555-0129,Active,moon forms,,Testjordan00229 Quillfen,guardian.700014.229@example.invalid,(202) 555-0160,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Velquill III, Iñara00230",2006-09-05,SYN-700014-00230,Iñara00230,synthetic.700014.230@example.org,(202) 555-0130,Active,Moon-Forms,White Belt,Testjordan00230 Quillfen,guardian.700014.230@example.invalid,202.555.0161,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Quillfen, Zelava00231",2007-10-06,SYN-700014-00231,Zee,synthetic.700014.231@example.invalid,202.555.0131,Active,MOON FORMS!,WHITE,Testjordan00231 Quillfen,guardian.700014.231@example.invalid,+1 202 555 0162,"Synthetic only; “curly quotes”, café; line one
+line two"
+"de la Vey, Mioren00232",2008-11-07,SYN-700014-00232,Mioren00232,synthetic.700014.232@example.com,+1 202 555 0132,Active,10000000-0000-4000-8000-000000000001,Yellow Belt,Testjordan00232 Quillfen,guardian.700014.232@example.invalid,2025550163,"Synthetic only; “curly quotes”, café; line one
+line two"
+"van Lumen, Chloélune00233",2009-12-08,SYN-700014-00233,Zee,synthetic.700014.233@example.net,2025550133,Active,,20000000-0000-4000-8000-000000000002,Testjordan00233 Quillfen,guardian.700014.233@example.invalid,202-555-0164,"Synthetic only; “curly quotes”, café; line one
+line two"
+"O'Vel, Évarin00234",2010-01-09,SYN-700014-00234,Évarin00234,synthetic.700014.234@example.org,202-555-0134,Active,Moon Forms,,Testjordan00234 Quillfen,guardian.700014.234@example.invalid,(202) 555-0165,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Solquill Jr, Ava-Grace00235",2011-02-10,SYN-700014-00235,Zee,synthetic.700014.235@example.invalid,(202) 555-0135,Active,moon forms,White Belt,Testjordan00235 Quillfen,guardian.700014.235@example.invalid,202.555.0166,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Rivfen Sr, Téoquin00236",2012-03-11,SYN-700014-00236,Téoquin00236,synthetic.700014.236@example.com,202.555.0136,Active,Moon-Forms,WHITE,Testjordan00236 Quillfen,guardian.700014.236@example.invalid,+1 202 555 0167,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Velquill III, Iñara00237",2013-04-12,SYN-700014-00237,Zee,synthetic.700014.237@example.net,+1 202 555 0137,Active,MOON FORMS!,Yellow Belt,Testjordan00237 Quillfen,guardian.700014.237@example.invalid,2025550168,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Quillfen, Zelava00238",2014-05-13,SYN-700014-00238,Zelava00238,synthetic.700014.238@example.org,2025550138,Active,10000000-0000-4000-8000-000000000001,20000000-0000-4000-8000-000000000002,Testjordan00238 Quillfen,guardian.700014.238@example.invalid,202-555-0169,"Synthetic only; “curly quotes”, café; line one
+line two"
+"de la Vey, Mioren00239",2015-06-14,SYN-700014-00239,Zee,synthetic.700014.239@example.invalid,202-555-0139,Active,,,Testjordan00239 Quillfen,guardian.700014.239@example.invalid,(202) 555-0170,"Synthetic only; “curly quotes”, café; line one
+line two"
+"van Lumen, Chloélune00240",2016-07-15,SYN-700014-00240,Chloélune00240,synthetic.700014.240@example.com,(202) 555-0140,Active,Moon Forms,White Belt,Testjordan00240 Quillfen,guardian.700014.240@example.invalid,202.555.0171,"Synthetic only; “curly quotes”, café; line one
+line two"
+"O'Vel, Évarin00241",2017-08-16,SYN-700014-00241,Zee,synthetic.700014.241@example.net,202.555.0141,Active,moon forms,WHITE,Testjordan00241 Quillfen,guardian.700014.241@example.invalid,+1 202 555 0172,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Solquill Jr, Ava-Grace00242",2018-09-17,SYN-700014-00242,Ava-Grace00242,synthetic.700014.242@example.org,+1 202 555 0142,Active,Moon-Forms,Yellow Belt,Testjordan00242 Quillfen,guardian.700014.242@example.invalid,2025550173,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Rivfen Sr, Téoquin00243",2019-10-18,SYN-700014-00243,Zee,synthetic.700014.243@example.invalid,2025550143,Active,MOON FORMS!,20000000-0000-4000-8000-000000000002,Testjordan00243 Quillfen,guardian.700014.243@example.invalid,202-555-0174,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Velquill III, Iñara00244",2020-11-19,SYN-700014-00244,Iñara00244,synthetic.700014.244@example.com,202-555-0144,Active,10000000-0000-4000-8000-000000000001,,Testjordan00244 Quillfen,guardian.700014.244@example.invalid,(202) 555-0175,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Quillfen, Zelava00245",2021-12-20,SYN-700014-00245,Zee,synthetic.700014.245@example.net,(202) 555-0145,Active,,White Belt,Testjordan00245 Quillfen,guardian.700014.245@example.invalid,202.555.0176,"Synthetic only; “curly quotes”, café; line one
+line two"
+"de la Vey, Mioren00246",2022-01-21,SYN-700014-00246,Mioren00246,synthetic.700014.246@example.org,202.555.0146,Active,Moon Forms,WHITE,Testjordan00246 Quillfen,guardian.700014.246@example.invalid,+1 202 555 0177,"Synthetic only; “curly quotes”, café; line one
+line two"
+"van Lumen, Chloélune00247",2023-02-22,SYN-700014-00247,Zee,synthetic.700014.247@example.invalid,+1 202 555 0147,Active,moon forms,Yellow Belt,Testjordan00247 Quillfen,guardian.700014.247@example.invalid,2025550178,"Synthetic only; “curly quotes”, café; line one
+line two"
+"O'Vel, Évarin00248",2024-03-23,SYN-700014-00248,Évarin00248,synthetic.700014.248@example.com,2025550148,Active,Moon-Forms,20000000-0000-4000-8000-000000000002,Testjordan00248 Quillfen,guardian.700014.248@example.invalid,202-555-0179,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Solquill Jr, Ava-Grace00249",2025-04-24,SYN-700014-00249,Zee,synthetic.700014.249@example.net,202-555-0149,Active,MOON FORMS!,,Testjordan00249 Quillfen,guardian.700014.249@example.invalid,(202) 555-0180,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Rivfen Sr, Téoquin00250",1950-05-25,SYN-700014-00250,Téoquin00250,synthetic.700014.250@example.org,(202) 555-0150,Active,10000000-0000-4000-8000-000000000001,White Belt,Testjordan00250 Quillfen,guardian.700014.250@example.invalid,202.555.0181,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Velquill III, Iñara00251",1951-06-26,SYN-700014-00251,Zee,synthetic.700014.251@example.invalid,202.555.0151,Active,,WHITE,Testjordan00251 Quillfen,guardian.700014.251@example.invalid,+1 202 555 0182,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Quillfen, Zelava00252",1952-07-27,SYN-700014-00252,Zelava00252,synthetic.700014.252@example.com,+1 202 555 0152,Active,Moon Forms,Yellow Belt,Testjordan00252 Quillfen,guardian.700014.252@example.invalid,2025550183,"Synthetic only; “curly quotes”, café; line one
+line two"
+"de la Vey, Mioren00253",1953-08-28,SYN-700014-00253,Zee,synthetic.700014.253@example.net,2025550153,Active,moon forms,20000000-0000-4000-8000-000000000002,Testjordan00253 Quillfen,guardian.700014.253@example.invalid,202-555-0184,"Synthetic only; “curly quotes”, café; line one
+line two"
+"van Lumen, Chloélune00254",1954-09-01,SYN-700014-00254,Chloélune00254,synthetic.700014.254@example.org,202-555-0154,Active,Moon-Forms,,Testjordan00254 Quillfen,guardian.700014.254@example.invalid,(202) 555-0185,"Synthetic only; “curly quotes”, café; line one
+line two"
+"O'Vel, Évarin00255",1955-10-02,SYN-700014-00255,Zee,synthetic.700014.255@example.invalid,(202) 555-0155,Active,MOON FORMS!,White Belt,Testjordan00255 Quillfen,guardian.700014.255@example.invalid,202.555.0186,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Solquill Jr, Ava-Grace00256",1956-11-03,SYN-700014-00256,Ava-Grace00256,synthetic.700014.256@example.com,202.555.0156,Active,10000000-0000-4000-8000-000000000001,WHITE,Testjordan00256 Quillfen,guardian.700014.256@example.invalid,+1 202 555 0187,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Rivfen Sr, Téoquin00257",1957-12-04,SYN-700014-00257,Zee,synthetic.700014.257@example.net,+1 202 555 0157,Active,,Yellow Belt,Testjordan00257 Quillfen,guardian.700014.257@example.invalid,2025550188,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Velquill III, Iñara00258",1958-01-05,SYN-700014-00258,Iñara00258,synthetic.700014.258@example.org,2025550158,Active,Moon Forms,20000000-0000-4000-8000-000000000002,Testjordan00258 Quillfen,guardian.700014.258@example.invalid,202-555-0189,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Quillfen, Zelava00259",1959-02-06,SYN-700014-00259,Zee,synthetic.700014.259@example.invalid,202-555-0159,Active,moon forms,,Testjordan00259 Quillfen,guardian.700014.259@example.invalid,(202) 555-0190,"Synthetic only; “curly quotes”, café; line one
+line two"
+"de la Vey, Mioren00260",1960-03-07,SYN-700014-00260,Mioren00260,synthetic.700014.260@example.com,(202) 555-0160,Active,Moon-Forms,White Belt,Testjordan00260 Quillfen,guardian.700014.260@example.invalid,202.555.0191,"Synthetic only; “curly quotes”, café; line one
+line two"
+"van Lumen, Chloélune00261",1961-04-08,SYN-700014-00261,Zee,synthetic.700014.261@example.net,202.555.0161,Active,MOON FORMS!,WHITE,Testjordan00261 Quillfen,guardian.700014.261@example.invalid,+1 202 555 0192,"Synthetic only; “curly quotes”, café; line one
+line two"
+"O'Vel, Évarin00262",1962-05-09,SYN-700014-00262,Évarin00262,synthetic.700014.262@example.org,+1 202 555 0162,Active,10000000-0000-4000-8000-000000000001,Yellow Belt,Testjordan00262 Quillfen,guardian.700014.262@example.invalid,2025550193,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Solquill Jr, Ava-Grace00263",1963-06-10,SYN-700014-00263,Zee,synthetic.700014.263@example.invalid,2025550163,Active,,20000000-0000-4000-8000-000000000002,Testjordan00263 Quillfen,guardian.700014.263@example.invalid,202-555-0194,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Rivfen Sr, Téoquin00264",1964-07-11,SYN-700014-00264,Téoquin00264,synthetic.700014.264@example.com,202-555-0164,Active,Moon Forms,,Testjordan00264 Quillfen,guardian.700014.264@example.invalid,(202) 555-0195,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Velquill III, Iñara00265",1965-08-12,SYN-700014-00265,Zee,synthetic.700014.265@example.net,(202) 555-0165,Active,moon forms,White Belt,Testjordan00265 Quillfen,guardian.700014.265@example.invalid,202.555.0196,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Quillfen, Zelava00266",1966-09-13,SYN-700014-00266,Zelava00266,synthetic.700014.266@example.org,202.555.0166,Active,Moon-Forms,WHITE,Testjordan00266 Quillfen,guardian.700014.266@example.invalid,+1 202 555 0197,"Synthetic only; “curly quotes”, café; line one
+line two"
+"de la Vey, Mioren00267",1967-10-14,SYN-700014-00267,Zee,synthetic.700014.267@example.invalid,+1 202 555 0167,Active,MOON FORMS!,Yellow Belt,Testjordan00267 Quillfen,guardian.700014.267@example.invalid,2025550198,"Synthetic only; “curly quotes”, café; line one
+line two"
+"van Lumen, Chloélune00268",1968-11-15,SYN-700014-00268,Chloélune00268,synthetic.700014.268@example.com,2025550168,Active,10000000-0000-4000-8000-000000000001,20000000-0000-4000-8000-000000000002,Testjordan00268 Quillfen,guardian.700014.268@example.invalid,202-555-0199,"Synthetic only; “curly quotes”, café; line one
+line two"
+"O'Vel, Évarin00269",1969-12-16,SYN-700014-00269,Zee,synthetic.700014.269@example.net,202-555-0169,Active,,,Testjordan00269 Quillfen,guardian.700014.269@example.invalid,(202) 555-0100,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Solquill Jr, Ava-Grace00270",1970-01-17,SYN-700014-00270,Ava-Grace00270,synthetic.700014.270@example.org,(202) 555-0170,Active,Moon Forms,White Belt,Testjordan00270 Quillfen,guardian.700014.270@example.invalid,202.555.0101,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Rivfen Sr, Téoquin00271",1971-02-18,SYN-700014-00271,Zee,synthetic.700014.271@example.invalid,202.555.0171,Active,moon forms,WHITE,Testjordan00271 Quillfen,guardian.700014.271@example.invalid,+1 202 555 0102,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Velquill III, Iñara00272",1972-03-19,SYN-700014-00272,Iñara00272,synthetic.700014.272@example.com,+1 202 555 0172,Active,Moon-Forms,Yellow Belt,Testjordan00272 Quillfen,guardian.700014.272@example.invalid,2025550103,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Quillfen, Zelava00273",1973-04-20,SYN-700014-00273,Zee,synthetic.700014.273@example.net,2025550173,Active,MOON FORMS!,20000000-0000-4000-8000-000000000002,Testjordan00273 Quillfen,guardian.700014.273@example.invalid,202-555-0104,"Synthetic only; “curly quotes”, café; line one
+line two"
+"de la Vey, Mioren00274",1974-05-21,SYN-700014-00274,Mioren00274,synthetic.700014.274@example.org,202-555-0174,Active,10000000-0000-4000-8000-000000000001,,Testjordan00274 Quillfen,guardian.700014.274@example.invalid,(202) 555-0105,"Synthetic only; “curly quotes”, café; line one
+line two"
+"van Lumen, Chloélune00275",1975-06-22,SYN-700014-00275,Zee,synthetic.700014.275@example.invalid,(202) 555-0175,Active,,White Belt,Testjordan00275 Quillfen,guardian.700014.275@example.invalid,202.555.0106,"Synthetic only; “curly quotes”, café; line one
+line two"
+"O'Vel, Évarin00276",1976-07-23,SYN-700014-00276,Évarin00276,synthetic.700014.276@example.com,202.555.0176,Active,Moon Forms,WHITE,Testjordan00276 Quillfen,guardian.700014.276@example.invalid,+1 202 555 0107,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Solquill Jr, Ava-Grace00277",1977-08-24,SYN-700014-00277,Zee,synthetic.700014.277@example.net,+1 202 555 0177,Active,moon forms,Yellow Belt,Testjordan00277 Quillfen,guardian.700014.277@example.invalid,2025550108,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Rivfen Sr, Téoquin00278",1978-09-25,SYN-700014-00278,Téoquin00278,synthetic.700014.278@example.org,2025550178,Active,Moon-Forms,20000000-0000-4000-8000-000000000002,Testjordan00278 Quillfen,guardian.700014.278@example.invalid,202-555-0109,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Velquill III, Iñara00279",1979-10-26,SYN-700014-00279,Zee,synthetic.700014.279@example.invalid,202-555-0179,Active,MOON FORMS!,,Testjordan00279 Quillfen,guardian.700014.279@example.invalid,(202) 555-0110,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Quillfen, Zelava00280",1980-11-27,SYN-700014-00280,Zelava00280,synthetic.700014.280@example.com,(202) 555-0180,Active,10000000-0000-4000-8000-000000000001,White Belt,Testjordan00280 Quillfen,guardian.700014.280@example.invalid,202.555.0111,"Synthetic only; “curly quotes”, café; line one
+line two"
+"de la Vey, Mioren00281",1981-12-28,SYN-700014-00281,Zee,synthetic.700014.281@example.net,202.555.0181,Active,,WHITE,Testjordan00281 Quillfen,guardian.700014.281@example.invalid,+1 202 555 0112,"Synthetic only; “curly quotes”, café; line one
+line two"
+"van Lumen, Chloélune00282",1982-01-01,SYN-700014-00282,Chloélune00282,synthetic.700014.282@example.org,+1 202 555 0182,Active,Moon Forms,Yellow Belt,Testjordan00282 Quillfen,guardian.700014.282@example.invalid,2025550113,"Synthetic only; “curly quotes”, café; line one
+line two"
+"O'Vel, Évarin00283",1983-02-02,SYN-700014-00283,Zee,synthetic.700014.283@example.invalid,2025550183,Active,moon forms,20000000-0000-4000-8000-000000000002,Testjordan00283 Quillfen,guardian.700014.283@example.invalid,202-555-0114,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Solquill Jr, Ava-Grace00284",1984-03-03,SYN-700014-00284,Ava-Grace00284,synthetic.700014.284@example.com,202-555-0184,Active,Moon-Forms,,Testjordan00284 Quillfen,guardian.700014.284@example.invalid,(202) 555-0115,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Rivfen Sr, Téoquin00285",1985-04-04,SYN-700014-00285,Zee,synthetic.700014.285@example.net,(202) 555-0185,Active,MOON FORMS!,White Belt,Testjordan00285 Quillfen,guardian.700014.285@example.invalid,202.555.0116,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Velquill III, Iñara00286",1986-05-05,SYN-700014-00286,Iñara00286,synthetic.700014.286@example.org,202.555.0186,Active,10000000-0000-4000-8000-000000000001,WHITE,Testjordan00286 Quillfen,guardian.700014.286@example.invalid,+1 202 555 0117,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Quillfen, Zelava00287",1987-06-06,SYN-700014-00287,Zee,synthetic.700014.287@example.invalid,+1 202 555 0187,Active,,Yellow Belt,Testjordan00287 Quillfen,guardian.700014.287@example.invalid,2025550118,"Synthetic only; “curly quotes”, café; line one
+line two"
+"de la Vey, Mioren00288",1988-07-07,SYN-700014-00288,Mioren00288,synthetic.700014.288@example.com,2025550188,Active,Moon Forms,20000000-0000-4000-8000-000000000002,Testjordan00288 Quillfen,guardian.700014.288@example.invalid,202-555-0119,"Synthetic only; “curly quotes”, café; line one
+line two"
+"van Lumen, Chloélune00289",1989-08-08,SYN-700014-00289,Zee,synthetic.700014.289@example.net,202-555-0189,Active,moon forms,,Testjordan00289 Quillfen,guardian.700014.289@example.invalid,(202) 555-0120,"Synthetic only; “curly quotes”, café; line one
+line two"
+"O'Vel, Évarin00290",1990-09-09,SYN-700014-00290,Évarin00290,synthetic.700014.290@example.org,(202) 555-0190,Active,Moon-Forms,White Belt,Testjordan00290 Quillfen,guardian.700014.290@example.invalid,202.555.0121,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Solquill Jr, Ava-Grace00291",1991-10-10,SYN-700014-00291,Zee,synthetic.700014.291@example.invalid,202.555.0191,Active,MOON FORMS!,WHITE,Testjordan00291 Quillfen,guardian.700014.291@example.invalid,+1 202 555 0122,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Rivfen Sr, Téoquin00292",1992-11-11,SYN-700014-00292,Téoquin00292,synthetic.700014.292@example.com,+1 202 555 0192,Active,10000000-0000-4000-8000-000000000001,Yellow Belt,Testjordan00292 Quillfen,guardian.700014.292@example.invalid,2025550123,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Velquill III, Iñara00293",1993-12-12,SYN-700014-00293,Zee,synthetic.700014.293@example.net,2025550193,Active,,20000000-0000-4000-8000-000000000002,Testjordan00293 Quillfen,guardian.700014.293@example.invalid,202-555-0124,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Quillfen, Zelava00294",1994-01-13,SYN-700014-00294,Zelava00294,synthetic.700014.294@example.org,202-555-0194,Active,Moon Forms,,Testjordan00294 Quillfen,guardian.700014.294@example.invalid,(202) 555-0125,"Synthetic only; “curly quotes”, café; line one
+line two"
+"de la Vey, Mioren00295",1995-02-14,SYN-700014-00295,Zee,synthetic.700014.295@example.invalid,(202) 555-0195,Active,moon forms,White Belt,Testjordan00295 Quillfen,guardian.700014.295@example.invalid,202.555.0126,"Synthetic only; “curly quotes”, café; line one
+line two"
+"van Lumen, Chloélune00296",1996-03-15,SYN-700014-00296,Chloélune00296,synthetic.700014.296@example.com,202.555.0196,Active,Moon-Forms,WHITE,Testjordan00296 Quillfen,guardian.700014.296@example.invalid,+1 202 555 0127,"Synthetic only; “curly quotes”, café; line one
+line two"
+"O'Vel, Évarin00297",1997-04-16,SYN-700014-00297,Zee,synthetic.700014.297@example.net,+1 202 555 0197,Active,MOON FORMS!,Yellow Belt,Testjordan00297 Quillfen,guardian.700014.297@example.invalid,2025550128,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Solquill Jr, Ava-Grace00298",1998-05-17,SYN-700014-00298,Ava-Grace00298,synthetic.700014.298@example.org,2025550198,Active,10000000-0000-4000-8000-000000000001,20000000-0000-4000-8000-000000000002,Testjordan00298 Quillfen,guardian.700014.298@example.invalid,202-555-0129,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Rivfen Sr, Téoquin00299",1999-06-18,SYN-700014-00299,Zee,synthetic.700014.299@example.invalid,202-555-0199,Active,,,Testjordan00299 Quillfen,guardian.700014.299@example.invalid,(202) 555-0130,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Velquill III, Iñara00300",2000-07-19,SYN-700014-00300,Iñara00300,synthetic.700014.300@example.com,(202) 555-0100,Active,Moon Forms,White Belt,Testjordan00300 Quillfen,guardian.700014.300@example.invalid,202.555.0131,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Quillfen, Zelava00301",2001-08-20,SYN-700014-00301,Zee,synthetic.700014.301@example.net,202.555.0101,Active,moon forms,WHITE,Testjordan00301 Quillfen,guardian.700014.301@example.invalid,+1 202 555 0132,"Synthetic only; “curly quotes”, café; line one
+line two"
+"de la Vey, Mioren00302",2002-09-21,SYN-700014-00302,Mioren00302,synthetic.700014.302@example.org,+1 202 555 0102,Active,Moon-Forms,Yellow Belt,Testjordan00302 Quillfen,guardian.700014.302@example.invalid,2025550133,"Synthetic only; “curly quotes”, café; line one
+line two"
+"van Lumen, Chloélune00303",2003-10-22,SYN-700014-00303,Zee,synthetic.700014.303@example.invalid,2025550103,Active,MOON FORMS!,20000000-0000-4000-8000-000000000002,Testjordan00303 Quillfen,guardian.700014.303@example.invalid,202-555-0134,"Synthetic only; “curly quotes”, café; line one
+line two"
+"O'Vel, Évarin00304",2004-11-23,SYN-700014-00304,Évarin00304,synthetic.700014.304@example.com,202-555-0104,Active,10000000-0000-4000-8000-000000000001,,Testjordan00304 Quillfen,guardian.700014.304@example.invalid,(202) 555-0135,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Solquill Jr, Ava-Grace00305",2005-12-24,SYN-700014-00305,Zee,synthetic.700014.305@example.net,(202) 555-0105,Active,,White Belt,Testjordan00305 Quillfen,guardian.700014.305@example.invalid,202.555.0136,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Rivfen Sr, Téoquin00306",2006-01-25,SYN-700014-00306,Téoquin00306,synthetic.700014.306@example.org,202.555.0106,Active,Moon Forms,WHITE,Testjordan00306 Quillfen,guardian.700014.306@example.invalid,+1 202 555 0137,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Velquill III, Iñara00307",2007-02-26,SYN-700014-00307,Zee,synthetic.700014.307@example.invalid,+1 202 555 0107,Active,moon forms,Yellow Belt,Testjordan00307 Quillfen,guardian.700014.307@example.invalid,2025550138,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Quillfen, Zelava00308",2008-03-27,SYN-700014-00308,Zelava00308,synthetic.700014.308@example.com,2025550108,Active,Moon-Forms,20000000-0000-4000-8000-000000000002,Testjordan00308 Quillfen,guardian.700014.308@example.invalid,202-555-0139,"Synthetic only; “curly quotes”, café; line one
+line two"
+"de la Vey, Mioren00309",2009-04-28,SYN-700014-00309,Zee,synthetic.700014.309@example.net,202-555-0109,Active,MOON FORMS!,,Testjordan00309 Quillfen,guardian.700014.309@example.invalid,(202) 555-0140,"Synthetic only; “curly quotes”, café; line one
+line two"
+"van Lumen, Chloélune00310",2010-05-01,SYN-700014-00310,Chloélune00310,synthetic.700014.310@example.org,(202) 555-0110,Active,10000000-0000-4000-8000-000000000001,White Belt,Testjordan00310 Quillfen,guardian.700014.310@example.invalid,202.555.0141,"Synthetic only; “curly quotes”, café; line one
+line two"
+"O'Vel, Évarin00311",2011-06-02,SYN-700014-00311,Zee,synthetic.700014.311@example.invalid,202.555.0111,Active,,WHITE,Testjordan00311 Quillfen,guardian.700014.311@example.invalid,+1 202 555 0142,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Solquill Jr, Ava-Grace00312",2012-07-03,SYN-700014-00312,Ava-Grace00312,synthetic.700014.312@example.com,+1 202 555 0112,Active,Moon Forms,Yellow Belt,Testjordan00312 Quillfen,guardian.700014.312@example.invalid,2025550143,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Rivfen Sr, Téoquin00313",2013-08-04,SYN-700014-00313,Zee,synthetic.700014.313@example.net,2025550113,Active,moon forms,20000000-0000-4000-8000-000000000002,Testjordan00313 Quillfen,guardian.700014.313@example.invalid,202-555-0144,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Velquill III, Iñara00314",2014-09-05,SYN-700014-00314,Iñara00314,synthetic.700014.314@example.org,202-555-0114,Active,Moon-Forms,,Testjordan00314 Quillfen,guardian.700014.314@example.invalid,(202) 555-0145,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Quillfen, Zelava00315",2015-10-06,SYN-700014-00315,Zee,synthetic.700014.315@example.invalid,(202) 555-0115,Active,MOON FORMS!,White Belt,Testjordan00315 Quillfen,guardian.700014.315@example.invalid,202.555.0146,"Synthetic only; “curly quotes”, café; line one
+line two"
+"de la Vey, Mioren00316",2016-11-07,SYN-700014-00316,Mioren00316,synthetic.700014.316@example.com,202.555.0116,Active,10000000-0000-4000-8000-000000000001,WHITE,Testjordan00316 Quillfen,guardian.700014.316@example.invalid,+1 202 555 0147,"Synthetic only; “curly quotes”, café; line one
+line two"
+"van Lumen, Chloélune00317",2017-12-08,SYN-700014-00317,Zee,synthetic.700014.317@example.net,+1 202 555 0117,Active,,Yellow Belt,Testjordan00317 Quillfen,guardian.700014.317@example.invalid,2025550148,"Synthetic only; “curly quotes”, café; line one
+line two"
+"O'Vel, Évarin00318",2018-01-09,SYN-700014-00318,Évarin00318,synthetic.700014.318@example.org,2025550118,Active,Moon Forms,20000000-0000-4000-8000-000000000002,Testjordan00318 Quillfen,guardian.700014.318@example.invalid,202-555-0149,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Solquill Jr, Ava-Grace00319",2019-02-10,SYN-700014-00319,Zee,synthetic.700014.319@example.invalid,202-555-0119,Active,moon forms,,Testjordan00319 Quillfen,guardian.700014.319@example.invalid,(202) 555-0150,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Rivfen Sr, Téoquin00320",2020-03-11,SYN-700014-00320,Téoquin00320,synthetic.700014.320@example.com,(202) 555-0120,Active,Moon-Forms,White Belt,Testjordan00320 Quillfen,guardian.700014.320@example.invalid,202.555.0151,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Velquill III, Iñara00321",2021-04-12,SYN-700014-00321,Zee,synthetic.700014.321@example.net,202.555.0121,Active,MOON FORMS!,WHITE,Testjordan00321 Quillfen,guardian.700014.321@example.invalid,+1 202 555 0152,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Quillfen, Zelava00322",2022-05-13,SYN-700014-00322,Zelava00322,synthetic.700014.322@example.org,+1 202 555 0122,Active,10000000-0000-4000-8000-000000000001,Yellow Belt,Testjordan00322 Quillfen,guardian.700014.322@example.invalid,2025550153,"Synthetic only; “curly quotes”, café; line one
+line two"
+"de la Vey, Mioren00323",2023-06-14,SYN-700014-00323,Zee,synthetic.700014.323@example.invalid,2025550123,Active,,20000000-0000-4000-8000-000000000002,Testjordan00323 Quillfen,guardian.700014.323@example.invalid,202-555-0154,"Synthetic only; “curly quotes”, café; line one
+line two"
+"van Lumen, Chloélune00324",2024-07-15,SYN-700014-00324,Chloélune00324,synthetic.700014.324@example.com,202-555-0124,Active,Moon Forms,,Testjordan00324 Quillfen,guardian.700014.324@example.invalid,(202) 555-0155,"Synthetic only; “curly quotes”, café; line one
+line two"
+"O'Vel, Évarin00325",2025-08-16,SYN-700014-00325,Zee,synthetic.700014.325@example.net,(202) 555-0125,Active,moon forms,White Belt,Testjordan00325 Quillfen,guardian.700014.325@example.invalid,202.555.0156,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Solquill Jr, Ava-Grace00326",1950-09-17,SYN-700014-00326,Ava-Grace00326,synthetic.700014.326@example.org,202.555.0126,Active,Moon-Forms,WHITE,Testjordan00326 Quillfen,guardian.700014.326@example.invalid,+1 202 555 0157,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Rivfen Sr, Téoquin00327",1951-10-18,SYN-700014-00327,Zee,synthetic.700014.327@example.invalid,+1 202 555 0127,Active,MOON FORMS!,Yellow Belt,Testjordan00327 Quillfen,guardian.700014.327@example.invalid,2025550158,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Velquill III, Iñara00328",1952-11-19,SYN-700014-00328,Iñara00328,synthetic.700014.328@example.com,2025550128,Active,10000000-0000-4000-8000-000000000001,20000000-0000-4000-8000-000000000002,Testjordan00328 Quillfen,guardian.700014.328@example.invalid,202-555-0159,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Quillfen, Zelava00329",1953-12-20,SYN-700014-00329,Zee,synthetic.700014.329@example.net,202-555-0129,Active,,,Testjordan00329 Quillfen,guardian.700014.329@example.invalid,(202) 555-0160,"Synthetic only; “curly quotes”, café; line one
+line two"
+"de la Vey, Mioren00330",1954-01-21,SYN-700014-00330,Mioren00330,synthetic.700014.330@example.org,(202) 555-0130,Active,Moon Forms,White Belt,Testjordan00330 Quillfen,guardian.700014.330@example.invalid,202.555.0161,"Synthetic only; “curly quotes”, café; line one
+line two"
+"van Lumen, Chloélune00331",1955-02-22,SYN-700014-00331,Zee,synthetic.700014.331@example.invalid,202.555.0131,Active,moon forms,WHITE,Testjordan00331 Quillfen,guardian.700014.331@example.invalid,+1 202 555 0162,"Synthetic only; “curly quotes”, café; line one
+line two"
+"O'Vel, Évarin00332",1956-03-23,SYN-700014-00332,Évarin00332,synthetic.700014.332@example.com,+1 202 555 0132,Active,Moon-Forms,Yellow Belt,Testjordan00332 Quillfen,guardian.700014.332@example.invalid,2025550163,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Solquill Jr, Ava-Grace00333",1957-04-24,SYN-700014-00333,Zee,synthetic.700014.333@example.net,2025550133,Active,MOON FORMS!,20000000-0000-4000-8000-000000000002,Testjordan00333 Quillfen,guardian.700014.333@example.invalid,202-555-0164,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Rivfen Sr, Téoquin00334",1958-05-25,SYN-700014-00334,Téoquin00334,synthetic.700014.334@example.org,202-555-0134,Active,10000000-0000-4000-8000-000000000001,,Testjordan00334 Quillfen,guardian.700014.334@example.invalid,(202) 555-0165,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Velquill III, Iñara00335",1959-06-26,SYN-700014-00335,Zee,synthetic.700014.335@example.invalid,(202) 555-0135,Active,,White Belt,Testjordan00335 Quillfen,guardian.700014.335@example.invalid,202.555.0166,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Quillfen, Zelava00336",1960-07-27,SYN-700014-00336,Zelava00336,synthetic.700014.336@example.com,202.555.0136,Active,Moon Forms,WHITE,Testjordan00336 Quillfen,guardian.700014.336@example.invalid,+1 202 555 0167,"Synthetic only; “curly quotes”, café; line one
+line two"
+"de la Vey, Mioren00337",1961-08-28,SYN-700014-00337,Zee,synthetic.700014.337@example.net,+1 202 555 0137,Active,moon forms,Yellow Belt,Testjordan00337 Quillfen,guardian.700014.337@example.invalid,2025550168,"Synthetic only; “curly quotes”, café; line one
+line two"
+"van Lumen, Chloélune00338",1962-09-01,SYN-700014-00338,Chloélune00338,synthetic.700014.338@example.org,2025550138,Active,Moon-Forms,20000000-0000-4000-8000-000000000002,Testjordan00338 Quillfen,guardian.700014.338@example.invalid,202-555-0169,"Synthetic only; “curly quotes”, café; line one
+line two"
+"O'Vel, Évarin00339",1963-10-02,SYN-700014-00339,Zee,synthetic.700014.339@example.invalid,202-555-0139,Active,MOON FORMS!,,Testjordan00339 Quillfen,guardian.700014.339@example.invalid,(202) 555-0170,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Solquill Jr, Ava-Grace00340",1964-11-03,SYN-700014-00340,Ava-Grace00340,synthetic.700014.340@example.com,(202) 555-0140,Active,10000000-0000-4000-8000-000000000001,White Belt,Testjordan00340 Quillfen,guardian.700014.340@example.invalid,202.555.0171,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Rivfen Sr, Téoquin00341",1965-12-04,SYN-700014-00341,Zee,synthetic.700014.341@example.net,202.555.0141,Active,,WHITE,Testjordan00341 Quillfen,guardian.700014.341@example.invalid,+1 202 555 0172,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Velquill III, Iñara00342",1966-01-05,SYN-700014-00342,Iñara00342,synthetic.700014.342@example.org,+1 202 555 0142,Active,Moon Forms,Yellow Belt,Testjordan00342 Quillfen,guardian.700014.342@example.invalid,2025550173,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Quillfen, Zelava00343",1967-02-06,SYN-700014-00343,Zee,synthetic.700014.343@example.invalid,2025550143,Active,moon forms,20000000-0000-4000-8000-000000000002,Testjordan00343 Quillfen,guardian.700014.343@example.invalid,202-555-0174,"Synthetic only; “curly quotes”, café; line one
+line two"
+"de la Vey, Mioren00344",1968-03-07,SYN-700014-00344,Mioren00344,synthetic.700014.344@example.com,202-555-0144,Active,Moon-Forms,,Testjordan00344 Quillfen,guardian.700014.344@example.invalid,(202) 555-0175,"Synthetic only; “curly quotes”, café; line one
+line two"
+"van Lumen, Chloélune00345",1969-04-08,SYN-700014-00345,Zee,synthetic.700014.345@example.net,(202) 555-0145,Active,MOON FORMS!,White Belt,Testjordan00345 Quillfen,guardian.700014.345@example.invalid,202.555.0176,"Synthetic only; “curly quotes”, café; line one
+line two"
+"O'Vel, Évarin00346",1970-05-09,SYN-700014-00346,Évarin00346,synthetic.700014.346@example.org,202.555.0146,Active,10000000-0000-4000-8000-000000000001,WHITE,Testjordan00346 Quillfen,guardian.700014.346@example.invalid,+1 202 555 0177,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Solquill Jr, Ava-Grace00347",1971-06-10,SYN-700014-00347,Zee,synthetic.700014.347@example.invalid,+1 202 555 0147,Active,,Yellow Belt,Testjordan00347 Quillfen,guardian.700014.347@example.invalid,2025550178,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Rivfen Sr, Téoquin00348",1972-07-11,SYN-700014-00348,Téoquin00348,synthetic.700014.348@example.com,2025550148,Active,Moon Forms,20000000-0000-4000-8000-000000000002,Testjordan00348 Quillfen,guardian.700014.348@example.invalid,202-555-0179,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Velquill III, Iñara00349",1973-08-12,SYN-700014-00349,Zee,synthetic.700014.349@example.net,202-555-0149,Active,moon forms,,Testjordan00349 Quillfen,guardian.700014.349@example.invalid,(202) 555-0180,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Quillfen, Zelava00350",1974-09-13,SYN-700014-00350,Zelava00350,synthetic.700014.350@example.org,(202) 555-0150,Active,Moon-Forms,White Belt,Testjordan00350 Quillfen,guardian.700014.350@example.invalid,202.555.0181,"Synthetic only; “curly quotes”, café; line one
+line two"
+"de la Vey, Mioren00351",1975-10-14,SYN-700014-00351,Zee,synthetic.700014.351@example.invalid,202.555.0151,Active,MOON FORMS!,WHITE,Testjordan00351 Quillfen,guardian.700014.351@example.invalid,+1 202 555 0182,"Synthetic only; “curly quotes”, café; line one
+line two"
+"van Lumen, Chloélune00352",1976-11-15,SYN-700014-00352,Chloélune00352,synthetic.700014.352@example.com,+1 202 555 0152,Active,10000000-0000-4000-8000-000000000001,Yellow Belt,Testjordan00352 Quillfen,guardian.700014.352@example.invalid,2025550183,"Synthetic only; “curly quotes”, café; line one
+line two"
+"O'Vel, Évarin00353",1977-12-16,SYN-700014-00353,Zee,synthetic.700014.353@example.net,2025550153,Active,,20000000-0000-4000-8000-000000000002,Testjordan00353 Quillfen,guardian.700014.353@example.invalid,202-555-0184,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Solquill Jr, Ava-Grace00354",1978-01-17,SYN-700014-00354,Ava-Grace00354,synthetic.700014.354@example.org,202-555-0154,Active,Moon Forms,,Testjordan00354 Quillfen,guardian.700014.354@example.invalid,(202) 555-0185,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Rivfen Sr, Téoquin00355",1979-02-18,SYN-700014-00355,Zee,synthetic.700014.355@example.invalid,(202) 555-0155,Active,moon forms,White Belt,Testjordan00355 Quillfen,guardian.700014.355@example.invalid,202.555.0186,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Velquill III, Iñara00356",1980-03-19,SYN-700014-00356,Iñara00356,synthetic.700014.356@example.com,202.555.0156,Active,Moon-Forms,WHITE,Testjordan00356 Quillfen,guardian.700014.356@example.invalid,+1 202 555 0187,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Quillfen, Zelava00357",1981-04-20,SYN-700014-00357,Zee,synthetic.700014.357@example.net,+1 202 555 0157,Active,MOON FORMS!,Yellow Belt,Testjordan00357 Quillfen,guardian.700014.357@example.invalid,2025550188,"Synthetic only; “curly quotes”, café; line one
+line two"
+"de la Vey, Mioren00358",1982-05-21,SYN-700014-00358,Mioren00358,synthetic.700014.358@example.org,2025550158,Active,10000000-0000-4000-8000-000000000001,20000000-0000-4000-8000-000000000002,Testjordan00358 Quillfen,guardian.700014.358@example.invalid,202-555-0189,"Synthetic only; “curly quotes”, café; line one
+line two"
+"van Lumen, Chloélune00359",1983-06-22,SYN-700014-00359,Zee,synthetic.700014.359@example.invalid,202-555-0159,Active,,,Testjordan00359 Quillfen,guardian.700014.359@example.invalid,(202) 555-0190,"Synthetic only; “curly quotes”, café; line one
+line two"
+"O'Vel, Évarin00360",1984-07-23,SYN-700014-00360,Évarin00360,synthetic.700014.360@example.com,(202) 555-0160,Active,Moon Forms,White Belt,Testjordan00360 Quillfen,guardian.700014.360@example.invalid,202.555.0191,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Solquill Jr, Ava-Grace00361",1985-08-24,SYN-700014-00361,Zee,synthetic.700014.361@example.net,202.555.0161,Active,moon forms,WHITE,Testjordan00361 Quillfen,guardian.700014.361@example.invalid,+1 202 555 0192,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Rivfen Sr, Téoquin00362",1986-09-25,SYN-700014-00362,Téoquin00362,synthetic.700014.362@example.org,+1 202 555 0162,Active,Moon-Forms,Yellow Belt,Testjordan00362 Quillfen,guardian.700014.362@example.invalid,2025550193,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Velquill III, Iñara00363",1987-10-26,SYN-700014-00363,Zee,synthetic.700014.363@example.invalid,2025550163,Active,MOON FORMS!,20000000-0000-4000-8000-000000000002,Testjordan00363 Quillfen,guardian.700014.363@example.invalid,202-555-0194,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Quillfen, Zelava00364",1988-11-27,SYN-700014-00364,Zelava00364,synthetic.700014.364@example.com,202-555-0164,Active,10000000-0000-4000-8000-000000000001,,Testjordan00364 Quillfen,guardian.700014.364@example.invalid,(202) 555-0195,"Synthetic only; “curly quotes”, café; line one
+line two"
+"de la Vey, Mioren00365",1989-12-28,SYN-700014-00365,Zee,synthetic.700014.365@example.net,(202) 555-0165,Active,,White Belt,Testjordan00365 Quillfen,guardian.700014.365@example.invalid,202.555.0196,"Synthetic only; “curly quotes”, café; line one
+line two"
+"van Lumen, Chloélune00366",1990-01-01,SYN-700014-00366,Chloélune00366,synthetic.700014.366@example.org,202.555.0166,Active,Moon Forms,WHITE,Testjordan00366 Quillfen,guardian.700014.366@example.invalid,+1 202 555 0197,"Synthetic only; “curly quotes”, café; line one
+line two"
+"O'Vel, Évarin00367",1991-02-02,SYN-700014-00367,Zee,synthetic.700014.367@example.invalid,+1 202 555 0167,Active,moon forms,Yellow Belt,Testjordan00367 Quillfen,guardian.700014.367@example.invalid,2025550198,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Solquill Jr, Ava-Grace00368",1992-03-03,SYN-700014-00368,Ava-Grace00368,synthetic.700014.368@example.com,2025550168,Active,Moon-Forms,20000000-0000-4000-8000-000000000002,Testjordan00368 Quillfen,guardian.700014.368@example.invalid,202-555-0199,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Rivfen Sr, Téoquin00369",1993-04-04,SYN-700014-00369,Zee,synthetic.700014.369@example.net,202-555-0169,Active,MOON FORMS!,,Testjordan00369 Quillfen,guardian.700014.369@example.invalid,(202) 555-0100,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Velquill III, Iñara00370",1994-05-05,SYN-700014-00370,Iñara00370,synthetic.700014.370@example.org,(202) 555-0170,Active,10000000-0000-4000-8000-000000000001,White Belt,Testjordan00370 Quillfen,guardian.700014.370@example.invalid,202.555.0101,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Quillfen, Zelava00371",1995-06-06,SYN-700014-00371,Zee,synthetic.700014.371@example.invalid,202.555.0171,Active,,WHITE,Testjordan00371 Quillfen,guardian.700014.371@example.invalid,+1 202 555 0102,"Synthetic only; “curly quotes”, café; line one
+line two"
+"de la Vey, Mioren00372",1996-07-07,SYN-700014-00372,Mioren00372,synthetic.700014.372@example.com,+1 202 555 0172,Active,Moon Forms,Yellow Belt,Testjordan00372 Quillfen,guardian.700014.372@example.invalid,2025550103,"Synthetic only; “curly quotes”, café; line one
+line two"
+"van Lumen, Chloélune00373",1997-08-08,SYN-700014-00373,Zee,synthetic.700014.373@example.net,2025550173,Active,moon forms,20000000-0000-4000-8000-000000000002,Testjordan00373 Quillfen,guardian.700014.373@example.invalid,202-555-0104,"Synthetic only; “curly quotes”, café; line one
+line two"
+"O'Vel, Évarin00374",1998-09-09,SYN-700014-00374,Évarin00374,synthetic.700014.374@example.org,202-555-0174,Active,Moon-Forms,,Testjordan00374 Quillfen,guardian.700014.374@example.invalid,(202) 555-0105,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Solquill Jr, Ava-Grace00375",1999-10-10,SYN-700014-00375,Zee,synthetic.700014.375@example.invalid,(202) 555-0175,Active,MOON FORMS!,White Belt,Testjordan00375 Quillfen,guardian.700014.375@example.invalid,202.555.0106,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Rivfen Sr, Téoquin00376",2000-11-11,SYN-700014-00376,Téoquin00376,synthetic.700014.376@example.com,202.555.0176,Active,10000000-0000-4000-8000-000000000001,WHITE,Testjordan00376 Quillfen,guardian.700014.376@example.invalid,+1 202 555 0107,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Velquill III, Iñara00377",2001-12-12,SYN-700014-00377,Zee,synthetic.700014.377@example.net,+1 202 555 0177,Active,,Yellow Belt,Testjordan00377 Quillfen,guardian.700014.377@example.invalid,2025550108,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Quillfen, Zelava00378",2002-01-13,SYN-700014-00378,Zelava00378,synthetic.700014.378@example.org,2025550178,Active,Moon Forms,20000000-0000-4000-8000-000000000002,Testjordan00378 Quillfen,guardian.700014.378@example.invalid,202-555-0109,"Synthetic only; “curly quotes”, café; line one
+line two"
+"de la Vey, Mioren00379",2003-02-14,SYN-700014-00379,Zee,synthetic.700014.379@example.invalid,202-555-0179,Active,moon forms,,Testjordan00379 Quillfen,guardian.700014.379@example.invalid,(202) 555-0110,"Synthetic only; “curly quotes”, café; line one
+line two"
+"van Lumen, Chloélune00380",2004-03-15,SYN-700014-00380,Chloélune00380,synthetic.700014.380@example.com,(202) 555-0180,Active,Moon-Forms,White Belt,Testjordan00380 Quillfen,guardian.700014.380@example.invalid,202.555.0111,"Synthetic only; “curly quotes”, café; line one
+line two"
+"O'Vel, Évarin00381",2005-04-16,SYN-700014-00381,Zee,synthetic.700014.381@example.net,202.555.0181,Active,MOON FORMS!,WHITE,Testjordan00381 Quillfen,guardian.700014.381@example.invalid,+1 202 555 0112,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Solquill Jr, Ava-Grace00382",2006-05-17,SYN-700014-00382,Ava-Grace00382,synthetic.700014.382@example.org,+1 202 555 0182,Active,10000000-0000-4000-8000-000000000001,Yellow Belt,Testjordan00382 Quillfen,guardian.700014.382@example.invalid,2025550113,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Rivfen Sr, Téoquin00383",2007-06-18,SYN-700014-00383,Zee,synthetic.700014.383@example.invalid,2025550183,Active,,20000000-0000-4000-8000-000000000002,Testjordan00383 Quillfen,guardian.700014.383@example.invalid,202-555-0114,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Velquill III, Iñara00384",2008-07-19,SYN-700014-00384,Iñara00384,synthetic.700014.384@example.com,202-555-0184,Active,Moon Forms,,Testjordan00384 Quillfen,guardian.700014.384@example.invalid,(202) 555-0115,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Quillfen, Zelava00385",2009-08-20,SYN-700014-00385,Zee,synthetic.700014.385@example.net,(202) 555-0185,Active,moon forms,White Belt,Testjordan00385 Quillfen,guardian.700014.385@example.invalid,202.555.0116,"Synthetic only; “curly quotes”, café; line one
+line two"
+"de la Vey, Mioren00386",2010-09-21,SYN-700014-00386,Mioren00386,synthetic.700014.386@example.org,202.555.0186,Active,Moon-Forms,WHITE,Testjordan00386 Quillfen,guardian.700014.386@example.invalid,+1 202 555 0117,"Synthetic only; “curly quotes”, café; line one
+line two"
+"van Lumen, Chloélune00387",2011-10-22,SYN-700014-00387,Zee,synthetic.700014.387@example.invalid,+1 202 555 0187,Active,MOON FORMS!,Yellow Belt,Testjordan00387 Quillfen,guardian.700014.387@example.invalid,2025550118,"Synthetic only; “curly quotes”, café; line one
+line two"
+"O'Vel, Évarin00388",2012-11-23,SYN-700014-00388,Évarin00388,synthetic.700014.388@example.com,2025550188,Active,10000000-0000-4000-8000-000000000001,20000000-0000-4000-8000-000000000002,Testjordan00388 Quillfen,guardian.700014.388@example.invalid,202-555-0119,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Solquill Jr, Ava-Grace00389",2013-12-24,SYN-700014-00389,Zee,synthetic.700014.389@example.net,202-555-0189,Active,,,Testjordan00389 Quillfen,guardian.700014.389@example.invalid,(202) 555-0120,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Rivfen Sr, Téoquin00390",2014-01-25,SYN-700014-00390,Téoquin00390,synthetic.700014.390@example.org,(202) 555-0190,Active,Moon Forms,White Belt,Testjordan00390 Quillfen,guardian.700014.390@example.invalid,202.555.0121,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Velquill III, Iñara00391",2015-02-26,SYN-700014-00391,Zee,synthetic.700014.391@example.invalid,202.555.0191,Active,moon forms,WHITE,Testjordan00391 Quillfen,guardian.700014.391@example.invalid,+1 202 555 0122,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Quillfen, Zelava00392",2016-03-27,SYN-700014-00392,Zelava00392,synthetic.700014.392@example.com,+1 202 555 0192,Active,Moon-Forms,Yellow Belt,Testjordan00392 Quillfen,guardian.700014.392@example.invalid,2025550123,"Synthetic only; “curly quotes”, café; line one
+line two"
+"de la Vey, Mioren00393",2017-04-28,SYN-700014-00393,Zee,synthetic.700014.393@example.net,2025550193,Active,MOON FORMS!,20000000-0000-4000-8000-000000000002,Testjordan00393 Quillfen,guardian.700014.393@example.invalid,202-555-0124,"Synthetic only; “curly quotes”, café; line one
+line two"
+"van Lumen, Chloélune00394",2018-05-01,SYN-700014-00394,Chloélune00394,synthetic.700014.394@example.org,202-555-0194,Active,10000000-0000-4000-8000-000000000001,,Testjordan00394 Quillfen,guardian.700014.394@example.invalid,(202) 555-0125,"Synthetic only; “curly quotes”, café; line one
+line two"
+"O'Vel, Évarin00395",2019-06-02,SYN-700014-00395,Zee,synthetic.700014.395@example.invalid,(202) 555-0195,Active,,White Belt,Testjordan00395 Quillfen,guardian.700014.395@example.invalid,202.555.0126,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Solquill Jr, Ava-Grace00396",2020-07-03,SYN-700014-00396,Ava-Grace00396,synthetic.700014.396@example.com,202.555.0196,Active,Moon Forms,WHITE,Testjordan00396 Quillfen,guardian.700014.396@example.invalid,+1 202 555 0127,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Rivfen Sr, Téoquin00397",2021-08-04,SYN-700014-00397,Zee,synthetic.700014.397@example.net,+1 202 555 0197,Active,moon forms,Yellow Belt,Testjordan00397 Quillfen,guardian.700014.397@example.invalid,2025550128,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Velquill III, Iñara00398",2022-09-05,SYN-700014-00398,Iñara00398,synthetic.700014.398@example.org,2025550198,Active,Moon-Forms,20000000-0000-4000-8000-000000000002,Testjordan00398 Quillfen,guardian.700014.398@example.invalid,202-555-0129,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Quillfen, Zelava00399",2023-10-06,SYN-700014-00399,Zee,synthetic.700014.399@example.invalid,202-555-0199,Active,MOON FORMS!,,Testjordan00399 Quillfen,guardian.700014.399@example.invalid,(202) 555-0130,"Synthetic only; “curly quotes”, café; line one
+line two"
+"de la Vey, Mioren00400",2024-11-07,SYN-700014-00400,Mioren00400,synthetic.700014.400@example.com,(202) 555-0100,Active,10000000-0000-4000-8000-000000000001,White Belt,Testjordan00400 Quillfen,guardian.700014.400@example.invalid,202.555.0131,"Synthetic only; “curly quotes”, café; line one
+line two"
+"van Lumen, Chloélune00401",2025-12-08,SYN-700014-00401,Zee,synthetic.700014.401@example.net,202.555.0101,Active,,WHITE,Testjordan00401 Quillfen,guardian.700014.401@example.invalid,+1 202 555 0132,"Synthetic only; “curly quotes”, café; line one
+line two"
+"O'Vel, Évarin00402",1950-01-09,SYN-700014-00402,Évarin00402,synthetic.700014.402@example.org,+1 202 555 0102,Active,Moon Forms,Yellow Belt,Testjordan00402 Quillfen,guardian.700014.402@example.invalid,2025550133,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Solquill Jr, Ava-Grace00403",1951-02-10,SYN-700014-00403,Zee,synthetic.700014.403@example.invalid,2025550103,Active,moon forms,20000000-0000-4000-8000-000000000002,Testjordan00403 Quillfen,guardian.700014.403@example.invalid,202-555-0134,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Rivfen Sr, Téoquin00404",1952-03-11,SYN-700014-00404,Téoquin00404,synthetic.700014.404@example.com,202-555-0104,Active,Moon-Forms,,Testjordan00404 Quillfen,guardian.700014.404@example.invalid,(202) 555-0135,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Velquill III, Iñara00405",1953-04-12,SYN-700014-00405,Zee,synthetic.700014.405@example.net,(202) 555-0105,Active,MOON FORMS!,White Belt,Testjordan00405 Quillfen,guardian.700014.405@example.invalid,202.555.0136,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Quillfen, Zelava00406",1954-05-13,SYN-700014-00406,Zelava00406,synthetic.700014.406@example.org,202.555.0106,Active,10000000-0000-4000-8000-000000000001,WHITE,Testjordan00406 Quillfen,guardian.700014.406@example.invalid,+1 202 555 0137,"Synthetic only; “curly quotes”, café; line one
+line two"
+"de la Vey, Mioren00407",1955-06-14,SYN-700014-00407,Zee,synthetic.700014.407@example.invalid,+1 202 555 0107,Active,,Yellow Belt,Testjordan00407 Quillfen,guardian.700014.407@example.invalid,2025550138,"Synthetic only; “curly quotes”, café; line one
+line two"
+"van Lumen, Chloélune00408",1956-07-15,SYN-700014-00408,Chloélune00408,synthetic.700014.408@example.com,2025550108,Active,Moon Forms,20000000-0000-4000-8000-000000000002,Testjordan00408 Quillfen,guardian.700014.408@example.invalid,202-555-0139,"Synthetic only; “curly quotes”, café; line one
+line two"
+"O'Vel, Évarin00409",1957-08-16,SYN-700014-00409,Zee,synthetic.700014.409@example.net,202-555-0109,Active,moon forms,,Testjordan00409 Quillfen,guardian.700014.409@example.invalid,(202) 555-0140,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Solquill Jr, Ava-Grace00410",1958-09-17,SYN-700014-00410,Ava-Grace00410,synthetic.700014.410@example.org,(202) 555-0110,Active,Moon-Forms,White Belt,Testjordan00410 Quillfen,guardian.700014.410@example.invalid,202.555.0141,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Rivfen Sr, Téoquin00411",1959-10-18,SYN-700014-00411,Zee,synthetic.700014.411@example.invalid,202.555.0111,Active,MOON FORMS!,WHITE,Testjordan00411 Quillfen,guardian.700014.411@example.invalid,+1 202 555 0142,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Velquill III, Iñara00412",1960-11-19,SYN-700014-00412,Iñara00412,synthetic.700014.412@example.com,+1 202 555 0112,Active,10000000-0000-4000-8000-000000000001,Yellow Belt,Testjordan00412 Quillfen,guardian.700014.412@example.invalid,2025550143,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Quillfen, Zelava00413",1961-12-20,SYN-700014-00413,Zee,synthetic.700014.413@example.net,2025550113,Active,,20000000-0000-4000-8000-000000000002,Testjordan00413 Quillfen,guardian.700014.413@example.invalid,202-555-0144,"Synthetic only; “curly quotes”, café; line one
+line two"
+"de la Vey, Mioren00414",1962-01-21,SYN-700014-00414,Mioren00414,synthetic.700014.414@example.org,202-555-0114,Active,Moon Forms,,Testjordan00414 Quillfen,guardian.700014.414@example.invalid,(202) 555-0145,"Synthetic only; “curly quotes”, café; line one
+line two"
+"van Lumen, Chloélune00415",1963-02-22,SYN-700014-00415,Zee,synthetic.700014.415@example.invalid,(202) 555-0115,Active,moon forms,White Belt,Testjordan00415 Quillfen,guardian.700014.415@example.invalid,202.555.0146,"Synthetic only; “curly quotes”, café; line one
+line two"
+"O'Vel, Évarin00416",1964-03-23,SYN-700014-00416,Évarin00416,synthetic.700014.416@example.com,202.555.0116,Active,Moon-Forms,WHITE,Testjordan00416 Quillfen,guardian.700014.416@example.invalid,+1 202 555 0147,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Solquill Jr, Ava-Grace00417",1965-04-24,SYN-700014-00417,Zee,synthetic.700014.417@example.net,+1 202 555 0117,Active,MOON FORMS!,Yellow Belt,Testjordan00417 Quillfen,guardian.700014.417@example.invalid,2025550148,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Rivfen Sr, Téoquin00418",1966-05-25,SYN-700014-00418,Téoquin00418,synthetic.700014.418@example.org,2025550118,Active,10000000-0000-4000-8000-000000000001,20000000-0000-4000-8000-000000000002,Testjordan00418 Quillfen,guardian.700014.418@example.invalid,202-555-0149,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Velquill III, Iñara00419",1967-06-26,SYN-700014-00419,Zee,synthetic.700014.419@example.invalid,202-555-0119,Active,,,Testjordan00419 Quillfen,guardian.700014.419@example.invalid,(202) 555-0150,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Quillfen, Zelava00420",1968-07-27,SYN-700014-00420,Zelava00420,synthetic.700014.420@example.com,(202) 555-0120,Active,Moon Forms,White Belt,Testjordan00420 Quillfen,guardian.700014.420@example.invalid,202.555.0151,"Synthetic only; “curly quotes”, café; line one
+line two"
+"de la Vey, Mioren00421",1969-08-28,SYN-700014-00421,Zee,synthetic.700014.421@example.net,202.555.0121,Active,moon forms,WHITE,Testjordan00421 Quillfen,guardian.700014.421@example.invalid,+1 202 555 0152,"Synthetic only; “curly quotes”, café; line one
+line two"
+"van Lumen, Chloélune00422",1970-09-01,SYN-700014-00422,Chloélune00422,synthetic.700014.422@example.org,+1 202 555 0122,Active,Moon-Forms,Yellow Belt,Testjordan00422 Quillfen,guardian.700014.422@example.invalid,2025550153,"Synthetic only; “curly quotes”, café; line one
+line two"
+"O'Vel, Évarin00423",1971-10-02,SYN-700014-00423,Zee,synthetic.700014.423@example.invalid,2025550123,Active,MOON FORMS!,20000000-0000-4000-8000-000000000002,Testjordan00423 Quillfen,guardian.700014.423@example.invalid,202-555-0154,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Solquill Jr, Ava-Grace00424",1972-11-03,SYN-700014-00424,Ava-Grace00424,synthetic.700014.424@example.com,202-555-0124,Active,10000000-0000-4000-8000-000000000001,,Testjordan00424 Quillfen,guardian.700014.424@example.invalid,(202) 555-0155,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Rivfen Sr, Téoquin00425",1973-12-04,SYN-700014-00425,Zee,synthetic.700014.425@example.net,(202) 555-0125,Active,,White Belt,Testjordan00425 Quillfen,guardian.700014.425@example.invalid,202.555.0156,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Velquill III, Iñara00426",1974-01-05,SYN-700014-00426,Iñara00426,synthetic.700014.426@example.org,202.555.0126,Active,Moon Forms,WHITE,Testjordan00426 Quillfen,guardian.700014.426@example.invalid,+1 202 555 0157,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Quillfen, Zelava00427",1975-02-06,SYN-700014-00427,Zee,synthetic.700014.427@example.invalid,+1 202 555 0127,Active,moon forms,Yellow Belt,Testjordan00427 Quillfen,guardian.700014.427@example.invalid,2025550158,"Synthetic only; “curly quotes”, café; line one
+line two"
+"de la Vey, Mioren00428",1976-03-07,SYN-700014-00428,Mioren00428,synthetic.700014.428@example.com,2025550128,Active,Moon-Forms,20000000-0000-4000-8000-000000000002,Testjordan00428 Quillfen,guardian.700014.428@example.invalid,202-555-0159,"Synthetic only; “curly quotes”, café; line one
+line two"
+"van Lumen, Chloélune00429",1977-04-08,SYN-700014-00429,Zee,synthetic.700014.429@example.net,202-555-0129,Active,MOON FORMS!,,Testjordan00429 Quillfen,guardian.700014.429@example.invalid,(202) 555-0160,"Synthetic only; “curly quotes”, café; line one
+line two"
+"O'Vel, Évarin00430",1978-05-09,SYN-700014-00430,Évarin00430,synthetic.700014.430@example.org,(202) 555-0130,Active,10000000-0000-4000-8000-000000000001,White Belt,Testjordan00430 Quillfen,guardian.700014.430@example.invalid,202.555.0161,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Solquill Jr, Ava-Grace00431",1979-06-10,SYN-700014-00431,Zee,synthetic.700014.431@example.invalid,202.555.0131,Active,,WHITE,Testjordan00431 Quillfen,guardian.700014.431@example.invalid,+1 202 555 0162,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Rivfen Sr, Téoquin00432",1980-07-11,SYN-700014-00432,Téoquin00432,synthetic.700014.432@example.com,+1 202 555 0132,Active,Moon Forms,Yellow Belt,Testjordan00432 Quillfen,guardian.700014.432@example.invalid,2025550163,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Velquill III, Iñara00433",1981-08-12,SYN-700014-00433,Zee,synthetic.700014.433@example.net,2025550133,Active,moon forms,20000000-0000-4000-8000-000000000002,Testjordan00433 Quillfen,guardian.700014.433@example.invalid,202-555-0164,"Synthetic only; “curly quotes”, café; line one
+line two"
+"Quillfen, Zelava00434",1982-09-13,SYN-700014-00434,Zelava00434,synthetic.700014.434@example.org,202-555-0134,Active,Moon-Forms,,Testjordan00434 Quillfen,guardian.700014.434@example.invalid,(202) 555-0165,"Synthetic only; “curly quotes”, café; line one
+line two"
+"de la Vey, Mioren00435",1983-10-14,SYN-700014-00435,Zee,synthetic.700014.435@example.invalid,(202) 555-0135,Active,MOON FORMS!,White Belt,Testjordan00435 Quillfen,guardian.700014.435@example.invalid,202.555.0166,"Synthetic only; “curly quotes”, café; line one
+line two"
+"van Lumen, Chloélune00436",1984-11-15,SYN-700014-00436,Chloélune00436,synthetic.700014.436@example.com,202.555.0136,Active,10000000-0000-4000-8000-000000000001,WHITE,Testjordan00436 Quillfen,guardian.700014.436@example.invalid,+1 202 555 0167,"Synthetic only; “curly quotes”, café; line one
+line two"
+"O'Vel, Évarin00437",1985-12-16,SYN-700014-00437,Zee,synthetic.700014.437@example.net,+1 202 555 0137,Active,,Yellow Belt,Testjordan00437 Quillfen,guardian.700014.437@example.invalid,2025550168,"Synthetic only; “curly quotes”, café; line one
+line two"
