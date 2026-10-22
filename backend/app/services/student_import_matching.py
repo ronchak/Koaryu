@@ -652,6 +652,24 @@ def match_rows(
     return results
 
 
+def displayed_candidates(match: RowMatch) -> list[MatchCandidate]:
+    """Every candidate the owner must acknowledge, then the strongest others up to the cap.
+
+    A decision copies the acknowledgement lists, so a record that needs
+    acknowledging must always be on screen; the cap only trims the rest.
+    """
+    required = sum(1 for candidate in match.candidates if needs_acknowledgement(candidate))
+    optional_slots = max(0, DISPLAY_CANDIDATE_CAP - required)
+    shown: list[MatchCandidate] = []
+    for candidate in match.candidates:
+        if needs_acknowledgement(candidate):
+            shown.append(candidate)
+        elif optional_slots > 0:
+            shown.append(candidate)
+            optional_slots -= 1
+    return shown
+
+
 def build_duplicate_review(match: RowMatch) -> Optional[dict[str, Any]]:
     """Serialisable review payload for one row, or None when nothing was found."""
     if not match.candidates and match.guardian_class not in {
@@ -660,7 +678,8 @@ def build_duplicate_review(match: RowMatch) -> Optional[dict[str, Any]]:
         "separate_contact",
     }:
         return None
-    # Enforcement sees every candidate; the preview shows the strongest few.
+    # Enforcement sees every candidate; the preview shows every one that needs
+    # acknowledging plus the strongest few of the rest.
     candidates = [
         {
             "student_id": candidate.existing_key,
@@ -670,7 +689,7 @@ def build_duplicate_review(match: RowMatch) -> Optional[dict[str, Any]]:
             "confidence": candidate.confidence,
             "reasons": reason_words(candidate.reasons),
         }
-        for candidate in match.candidates[:DISPLAY_CANDIDATE_CAP]
+        for candidate in displayed_candidates(match)
     ]
     family_context: list[str] = []
     for candidate in match.guardian_candidates[:3]:

@@ -779,7 +779,9 @@ def test_eight_identical_rows_with_browser_defaults_import_once_and_skip_the_res
     preview = StudentService(db).validate_import_rows(rows, MAPPING, CsvImportOptions(), STUDIO)
     assert preview.duplicate_flagged_rows == 7
     reviews = {row.row_number: row.duplicate_review for row in preview.rows}
-    assert len(reviews[9].candidates) == 5 and reviews[9].acknowledge_rows == [2, 3, 4, 5, 6, 7, 8]
+    # Every row that must be acknowledged is shown, so the display cap does not apply here.
+    assert [c.of_row for c in reviews[9].candidates] == [2, 3, 4, 5, 6, 7, 8]
+    assert reviews[9].acknowledge_rows == [2, 3, 4, 5, 6, 7, 8]
     decisions = browser_default_decisions(preview)
     assert sorted(decisions) == [str(n) for n in range(3, 10)]
     assert all(d.action == "skip" and d.of_row == 2 for d in decisions.values())
