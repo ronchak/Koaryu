@@ -166,6 +166,13 @@ class RowMatch:
     guardian_reasons: list[str] = field(default_factory=list)
     candidates: list[MatchCandidate] = field(default_factory=list)
     guardian_candidates: list[GuardianCandidate] = field(default_factory=list)
+    # The row's own identity and a lookup shared by every row of one
+    # ``match_rows`` call, so a reference that the bounded candidate list does
+    # not hold can still be compared directly (see ``candidate_for_reference``).
+    identity: Optional["StudentIdentity"] = field(default=None, repr=False, compare=False)
+    references: dict[tuple[str, Any], "_Reference"] = field(
+        default_factory=dict, repr=False, compare=False
+    )
 
     @property
     def is_flagged(self) -> bool:
@@ -538,6 +545,13 @@ class _RunRecord:
 
 
 @dataclass
+class _Reference:
+    identity: StudentIdentity
+    display_name: str
+    archived: bool = False
+
+
+@dataclass
 class _ExistingRecord:
     entry: dict[str, Any]
     identity: StudentIdentity
@@ -589,6 +603,7 @@ def match_rows(
     # Existing students stay uncapped: enforcement needs every strong match.
     existing_students = _StudentIndex()
     existing_guardians = _GuardianIndex(cap=MATCH_BUCKET_CAP)
+    references: dict[tuple[str, Any], _Reference] = {}
 
     for entry in existing_roster:
         identity = student_identity_from_existing(entry)
@@ -602,7 +617,11 @@ def match_rows(
             record = _RunRecord(import_row, identity, guardian, student_name)
             run_students.add(identity, record)
             run_guardians.add(guardian, record)
+            references[("row", import_row)] = _Reference(identity, student_name)
             continue
+        references[("existing", str(entry.get("key")))] = _Reference(
+            identity, student_name, archived=bool(entry.get("archived"))
+        )
         existing_students.add(
             identity,
             _ExistingRecord(entry, identity, student_name),
@@ -625,6 +644,8 @@ def match_rows(
         identity = student_identity_from_row(data)
         guardian = guardian_identity_from_row(data)
         row_name = display_name_for_row(data)
+        match.identity = identity
+        match.references = references
 
         candidates: list[MatchCandidate] = []
         for record in run_students.lookup(identity):
@@ -721,6 +742,7 @@ def match_rows(
         record = _RunRecord(row_number, identity, guardian, row_name)
         run_students.add(identity, record)
         run_guardians.add(guardian, record)
+        references[("row", row_number)] = _Reference(identity, row_name)
     return results
 
 
@@ -831,7 +853,14 @@ def unacknowledged_candidates(match: RowMatch, decision: Optional[Any]) -> list[
 def candidate_for_reference(
     match: RowMatch, reference: tuple[str, Any]
 ) -> Optional[MatchCandidate]:
-    """The row's own strong or possible candidate for ("existing", key) or ("row", n)."""
+    """The row's own strong or possible match with ("existing", key) or ("row", n).
+
+    The candidate list is bounded for earlier rows and uses representatives for
+    plain-name matches, so a student retained through a skip chain may be
+    missing from it. A reference that is not listed is compared directly with
+    the same rule (``compare_students``); only earlier rows and studio students
+    seen by this ``match_rows`` call can be compared.
+    """
     kind, value = reference
     for candidate in match.candidates:
         if candidate.confidence not in {"strong", "possible"}:
@@ -844,7 +873,26 @@ def candidate_for_reference(
             return candidate
         if kind == "row" and candidate.source == "row" and candidate.row_number == int(value):
             return candidate
-    return None
+    if match.identity is None:
+        return None
+    key: tuple[str, Any] = ("existing", str(value)) if kind == "existing" else ("row", int(value))
+    if kind == "row" and key[1] >= match.row_number:
+        return None
+    target = match.references.get(key)
+    if target is None:
+        return None
+    outcome = compare_students(match.identity, target.identity)
+    if outcome is None or outcome[0] not in {"strong", "possible"}:
+        return None
+    return MatchCandidate(
+        "existing" if kind == "existing" else "row",
+        outcome[0],
+        outcome[1],
+        row_number=key[1] if kind == "row" else None,
+        existing_key=key[1] if kind == "existing" else None,
+        archived=target.archived,
+        display_name=target.display_name,
+    )
 
 
 def skip_target(match: RowMatch, decision: Optional[Any]) -> Optional[tuple[str, Any]]:
