@@ -59,9 +59,12 @@ BEGIN
         (guardian2,studio,'Wrong','Invalid','invalid email',false),
         (foreign_guardian,other,'Foreign','Guardian','foreign.guardian@example.invalid',true);
     INSERT INTO public.student_guardians(student_id,guardian_id) VALUES(minor,guardian),(minor,guardian2);
-    INSERT INTO public.class_sessions(id,studio_id,name,date,start_time,end_time) VALUES(session_id,studio,'Older class',today-14,'00:00','01:00');
+    INSERT INTO public.class_sessions(id,studio_id,name,date,start_time,end_time) VALUES(session_id,studio,'Older class',today-15,'00:00','01:00');
     INSERT INTO public.attendance(studio_id,session_id,student_id,status,checked_in_at)
-        SELECT studio,session_id,id,'present',now()-INTERVAL '14 days' FROM public.students s WHERE s.studio_id=studio AND s.id<>never AND s.id<>recent;
+        SELECT studio,session_id,id,'present',now()-INTERVAL '15 days' FROM public.students s WHERE s.studio_id=studio AND s.id<>never AND s.id<>recent;
+    -- The absence clock starts at the first class day after a visit; recent attends it.
+    INSERT INTO public.class_sessions(studio_id,name,date,start_time,end_time) VALUES(studio,'Next class',today-14,'00:00','01:00') RETURNING id INTO delivery;
+    INSERT INTO public.attendance(studio_id,session_id,student_id,status,checked_in_at) VALUES(studio,delivery,recent,'present',now()-INTERVAL '14 days');
     -- Avoid PL/pgSQL variable/column ambiguity in fixture queries below.
     INSERT INTO public.class_sessions(studio_id,name,date,start_time,end_time) VALUES(studio,'Recent class',today-13,'00:00','01:00') RETURNING id INTO delivery;
     INSERT INTO public.attendance(studio_id,session_id,student_id,status,checked_in_at) VALUES(studio,delivery,recent,'late',now()-INTERVAL '13 days');
@@ -234,6 +237,7 @@ DECLARE
     studio UUID:=gen_random_uuid(); actor UUID:=gen_random_uuid(); student UUID:=gen_random_uuid();
     old_session UUID:=gen_random_uuid(); next_session UUID:=gen_random_uuid(); old_attendance UUID:=gen_random_uuid();
     next_attendance UUID:=gen_random_uuid(); delivery UUID:=gen_random_uuid(); token UUID; c RECORD; j JSONB; today DATE;
+    peer UUID:=gen_random_uuid(); peer_session UUID:=gen_random_uuid();
 BEGIN
     INSERT INTO auth.users(id,email) VALUES(actor,actor::text||'@example.invalid');
     INSERT INTO public.studios(id,name,slug,owner_id,timezone) VALUES(studio,'Episode fixture',studio::text,actor,'UTC');
@@ -241,6 +245,10 @@ BEGIN
     INSERT INTO public.studio_subscriptions(studio_id,status,comped) VALUES(studio,'active',false);
     today:=public.student_business_date(studio);
     INSERT INTO public.students(id,studio_id,legal_first_name,legal_last_name,email) VALUES(student,studio,'Episode','Fixture','episode@example.invalid');
+    -- A peer's class supplies the class day after every visit tested below.
+    INSERT INTO public.students(id,studio_id,legal_first_name,legal_last_name,email) VALUES(peer,studio,'Episode','Peer','episode.peer@example.invalid');
+    INSERT INTO public.class_sessions(id,studio_id,name,date,start_time,end_time) VALUES(peer_session,studio,'Peer class',today-14,'00:00','01:00');
+    INSERT INTO public.attendance(studio_id,session_id,student_id,checked_in_at) VALUES(studio,peer_session,peer,now()-INTERVAL '14 days');
     INSERT INTO public.class_sessions(id,studio_id,name,date,start_time,end_time) VALUES
         (old_session,studio,'Old class',today-30,'00:00','01:00'),(next_session,studio,'Return class',today-25,'00:00','01:00');
     INSERT INTO public.attendance(id,studio_id,session_id,student_id,checked_in_at) VALUES(old_attendance,studio,old_session,student,now()-INTERVAL '30 days');
@@ -338,6 +346,7 @@ DO $bounds$
 #variable_conflict use_variable
 DECLARE studio UUID:=gen_random_uuid(); actor UUID:=gen_random_uuid(); session_id UUID:=gen_random_uuid(); student UUID;
     j JSONB; c RECORD; i INTEGER; token UUID; delivery UUID; other UUID:=gen_random_uuid();
+    peer UUID:=gen_random_uuid(); peer_session UUID:=gen_random_uuid();
 BEGIN
     INSERT INTO auth.users(id,email) VALUES(actor,actor::text||'@example.invalid');
     INSERT INTO public.studios(id,name,slug,owner_id) VALUES(studio,'Bounds fixture',studio::text,actor),(other,'Foreign fixture',other::text,actor);
@@ -348,8 +357,11 @@ BEGIN
         INSERT INTO public.students(studio_id,legal_first_name,legal_last_name,email) VALUES(studio,'Bound',lpad(i::text,3,'0'),i::text||'@example.invalid') RETURNING id INTO student;
         INSERT INTO public.attendance(studio_id,session_id,student_id,checked_in_at) VALUES(studio,session_id,student,now()-INTERVAL '20 days');
     END LOOP;
+    INSERT INTO public.students(id,studio_id,legal_first_name,legal_last_name,email) VALUES(peer,studio,'Bound','Peer','peer@example.invalid');
+    INSERT INTO public.class_sessions(id,studio_id,name,date,start_time,end_time) VALUES(peer_session,studio,'Peer class',current_date-15,'00:00','01:00');
+    INSERT INTO public.attendance(studio_id,session_id,student_id,checked_in_at) VALUES(studio,peer_session,peer,now()-INTERVAL '15 days');
     j:=public.preview_missed_class_automation_v1(studio,actor,14);
-    PERFORM pg_temp.assert_automation((j->>'eligible_count')::int=105 AND (j->>'skipped_count')::int=0 AND jsonb_array_length(j->'recipients')=100 AND (j->>'truncated')::bool,'preview capped with truthful totals');
+    PERFORM pg_temp.assert_automation((j->>'eligible_count')::int=105 AND (j->>'skipped_count')::int=1 AND jsonb_array_length(j->'recipients')=100 AND (j->>'truncated')::bool,'preview capped with truthful totals');
     PERFORM public.save_missed_class_automation_rule_v1(studio,actor,0,true,14,'Bound','Bound','reply@example.invalid');
     -- Seed more than a batch of disallowed queue entries before the allowed one.
     PERFORM public.enqueue_missed_class_automations_v1(10);PERFORM public.enqueue_missed_class_automations_v1(10);
@@ -379,7 +391,7 @@ BEGIN
 END $bounds$;
 DO $fairness$
 DECLARE owner_id UUID:=gen_random_uuid(); studio UUID; student UUID:=gen_random_uuid(); session_id UUID:=gen_random_uuid();
-    prefix TEXT:=left(gen_random_uuid()::text,24); i INTEGER; j JSONB;
+    prefix TEXT:=left(gen_random_uuid()::text,24); i INTEGER; j JSONB; peer UUID:=gen_random_uuid(); peer_session UUID:=gen_random_uuid();
 BEGIN
     UPDATE public.automation_rules SET enabled=false;
     INSERT INTO auth.users(id,email) VALUES(owner_id,owner_id::text||'@example.invalid');
@@ -393,6 +405,9 @@ BEGIN
     INSERT INTO public.students(id,studio_id,legal_first_name,legal_last_name,email) VALUES(student,studio,'Last','Studio','last@example.invalid');
     INSERT INTO public.class_sessions(id,studio_id,name,date,start_time,end_time) VALUES(session_id,studio,'Old class',current_date-20,'00:00','01:00');
     INSERT INTO public.attendance(studio_id,session_id,student_id,checked_in_at) VALUES(studio,session_id,student,now()-INTERVAL '20 days');
+    INSERT INTO public.students(id,studio_id,legal_first_name,legal_last_name,email) VALUES(peer,studio,'Last','Peer','last.peer@example.invalid');
+    INSERT INTO public.class_sessions(id,studio_id,name,date,start_time,end_time) VALUES(peer_session,studio,'Peer class',current_date-15,'00:00','01:00');
+    INSERT INTO public.attendance(studio_id,session_id,student_id,checked_in_at) VALUES(studio,peer_session,peer,now()-INTERVAL '15 days');
     j:=public.enqueue_missed_class_automations_v1(1);
     PERFORM pg_temp.assert_automation((j->>'enqueued')::int=0 AND (j->>'has_more')::bool,'unvisited eligible studio still has_more');
     j:=public.enqueue_missed_class_automations_v1(1);
@@ -403,6 +418,7 @@ END $fairness$;
 DO $rollover$
 DECLARE studio UUID:=gen_random_uuid(); actor UUID:=gen_random_uuid(); student UUID:=gen_random_uuid();
     guardian UUID:=gen_random_uuid(); old_session UUID:=gen_random_uuid(); new_session UUID:=gen_random_uuid();
+    peer UUID:=gen_random_uuid(); peer_session UUID:=gen_random_uuid();
     before_midnight TIMESTAMPTZ:='2020-01-15 07:59:59+00'; after_midnight TIMESTAMPTZ:='2020-01-15 08:00:01+00';
     before_row RECORD; after_row RECORD; j JSONB;
 BEGIN
@@ -418,8 +434,13 @@ BEGIN
         VALUES(old_session,studio,'Previous class','2019-12-31','00:00','01:00');
     INSERT INTO public.attendance(studio_id,session_id,student_id,checked_in_at)
         VALUES(studio,old_session,student,'2019-12-31 08:00:00+00');
-    SELECT * INTO before_row FROM private.missed_class_automation_candidates(studio,14,student,NULL,before_midnight);
-    SELECT * INTO after_row FROM private.missed_class_automation_candidates(studio,14,student,NULL,after_midnight);
+    -- A peer's class on 2020-01-01 is the first missed class day, 13 days before the
+    -- reference, so this case uses a 13-day rule. days_absent still counts calendar days.
+    INSERT INTO public.students(id,studio_id,legal_first_name,legal_last_name,email) VALUES(peer,studio,'Rollover','Peer','rollover.peer@example.invalid');
+    INSERT INTO public.class_sessions(id,studio_id,name,date,start_time,end_time) VALUES(peer_session,studio,'Peer class','2020-01-01','10:00','11:00');
+    INSERT INTO public.attendance(studio_id,session_id,student_id,checked_in_at) VALUES(studio,peer_session,peer,'2020-01-01 18:00:00+00');
+    SELECT * INTO before_row FROM private.missed_class_automation_candidates(studio,13,student,NULL,before_midnight);
+    SELECT * INTO after_row FROM private.missed_class_automation_candidates(studio,13,student,NULL,after_midnight);
     PERFORM pg_temp.assert_automation(before_row.reference_date='2020-01-14' AND before_row.days_absent=14
         AND before_row.recipient_email='guardian@example.invalid' AND before_row.recipient_kind='guardian'
         AND before_row.skip_reason IS NULL,'one reference before midnight governs age gap and future hold');
@@ -444,8 +465,8 @@ BEGIN
         AND NOT EXISTS(SELECT 1 FROM private.missed_class_automation_candidates(studio,14,student,NULL,'infinity')),
         'null and nonfinite internal reference fail closed');
     -- Even an empty preview gets a wall-clock date without the legacy helper.
-    DELETE FROM public.attendance WHERE student_id=student;
-    DELETE FROM public.students WHERE id=student;
+    DELETE FROM public.attendance WHERE student_id IN (student,peer);
+    DELETE FROM public.students WHERE id IN (student,peer);
     j:=public.preview_missed_class_automation_v1(studio,actor,14);
     PERFORM pg_temp.assert_automation(j->>'reference_date'=(clock_timestamp() AT TIME ZONE 'America/Los_Angeles')::date::text
         AND j->'recipients'='[]'::jsonb,'empty preview has current reference date');
@@ -455,7 +476,7 @@ DO $dispatch_deferral$
 DECLARE studio UUID:=gen_random_uuid(); actor UUID:=gen_random_uuid(); session_id UUID:=gen_random_uuid();
     student UUID; j JSONB; rule_before JSONB; row_before JSONB; row_after JSONB; first_id UUID; second_id UUID;
     first_token UUID; second_token UUID; until_at TIMESTAMPTZ; before_until TIMESTAMPTZ; n INTEGER; failed BOOLEAN;
-    recipient TEXT; outcome TEXT;
+    recipient TEXT; outcome TEXT; peer UUID:=gen_random_uuid(); peer_session UUID:=gen_random_uuid();
 BEGIN
     UPDATE public.automation_rules SET enabled=false;
     INSERT INTO auth.users(id,email) VALUES(actor,actor::text||'@example.invalid');
@@ -468,6 +489,9 @@ BEGIN
             VALUES(studio,'Deferral',n::text,'defer'||n||'@example.invalid') RETURNING id INTO student;
         INSERT INTO public.attendance(studio_id,session_id,student_id,checked_in_at) VALUES(studio,session_id,student,now()-INTERVAL '20 days');
     END LOOP;
+    INSERT INTO public.students(id,studio_id,legal_first_name,legal_last_name,email) VALUES(peer,studio,'Deferral','Peer','defer.peer@example.invalid');
+    INSERT INTO public.class_sessions(id,studio_id,name,date,start_time,end_time) VALUES(peer_session,studio,'Peer class',current_date-15,'00:00','01:00');
+    INSERT INTO public.attendance(studio_id,session_id,student_id,checked_in_at) VALUES(studio,peer_session,peer,now()-INTERVAL '15 days');
     SET LOCAL ROLE service_role;
     PERFORM pg_temp.recover_legacy_sender(studio);
     rule_before:=public.save_missed_class_automation_rule_v1(studio,actor,0,true,14,'Subject','Body','reply@example.invalid');
@@ -550,4 +574,103 @@ BEGIN
     END LOOP;
     RESET ROLE;
 END $dispatch_deferral$;
+-- V60: the absence clock starts at the first class day after a visit (a studio date on
+-- which anyone checked in to a class that already happened) and stops counting 60 days
+-- past the threshold. days_absent keeps calendar days since the visit.
+DO $gap_guards$
+#variable_conflict use_variable
+DECLARE
+    studio UUID:=gen_random_uuid(); quiet UUID:=gen_random_uuid(); actor UUID:=gen_random_uuid();
+    peer UUID:=gen_random_uuid(); inside UUID:=gen_random_uuid(); beyond UUID:=gen_random_uuid(); closed UUID:=gen_random_uuid();
+    quiet_student UUID:=gen_random_uuid(); quiet_peer UUID:=gen_random_uuid();
+    inside_session UUID; session_id UUID; evidence UUID; today DATE; c RECORD; j JSONB; delivery UUID; token UUID;
+BEGIN
+    UPDATE public.automation_rules SET enabled=false;
+    INSERT INTO auth.users(id,email) VALUES(actor,actor::text||'@example.invalid');
+    INSERT INTO public.studios(id,name,slug,owner_id,timezone) VALUES(studio,'Gap fixture',studio::text,actor,'UTC'),(quiet,'Quiet fixture',quiet::text,actor,'UTC');
+    INSERT INTO public.staff_roles(studio_id,user_id,role) VALUES(studio,actor,'admin');
+    INSERT INTO public.studio_subscriptions(studio_id,status,comped) VALUES(studio,'active',false);
+    today:=public.student_business_date(studio);
+    INSERT INTO public.students(id,studio_id,legal_first_name,legal_last_name,email) VALUES
+        (peer,studio,'Gap','Peer','gap.peer@example.invalid'),(inside,studio,'Gap','Inside','gap.inside@example.invalid'),
+        (beyond,studio,'Gap','Beyond','gap.beyond@example.invalid'),(closed,studio,'Gap','Closed','gap.closed@example.invalid'),
+        (quiet_student,quiet,'Quiet','Student','quiet.student@example.invalid'),(quiet_peer,quiet,'Quiet','Peer','quiet.peer@example.invalid');
+    INSERT INTO public.class_sessions(studio_id,name,date,start_time,end_time) VALUES(studio,'Inside visit',today-74,'00:00','01:00') RETURNING id INTO inside_session;
+    INSERT INTO public.attendance(studio_id,session_id,student_id,checked_in_at) VALUES(studio,inside_session,inside,now()-INTERVAL '74 days');
+    INSERT INTO public.class_sessions(studio_id,name,date,start_time,end_time) VALUES(studio,'Beyond visit',today-75,'00:00','01:00') RETURNING id INTO session_id;
+    INSERT INTO public.attendance(studio_id,session_id,student_id,checked_in_at) VALUES(studio,session_id,beyond,now()-INTERVAL '75 days');
+    INSERT INTO public.class_sessions(studio_id,name,date,start_time,end_time) VALUES(studio,'Peer class',today-20,'00:00','01:00') RETURNING id INTO session_id;
+    INSERT INTO public.attendance(studio_id,session_id,student_id,checked_in_at) VALUES(studio,session_id,peer,now()-INTERVAL '20 days');
+    -- Closed's last visit is just before a closure in which nobody attends.
+    INSERT INTO public.class_sessions(studio_id,name,date,start_time,end_time) VALUES(studio,'Before closure',today-14,'00:00','01:00') RETURNING id INTO session_id;
+    INSERT INTO public.attendance(studio_id,session_id,student_id,checked_in_at) VALUES(studio,session_id,closed,now()-INTERVAL '14 days');
+
+    SELECT * INTO c FROM private.missed_class_automation_candidates(studio,14,inside);
+    PERFORM pg_temp.assert_automation(c.skip_reason IS NULL AND c.days_absent=74,'gap exactly 60 days past the threshold remains eligible');
+    SELECT * INTO c FROM private.missed_class_automation_candidates(studio,14,beyond);
+    PERFORM pg_temp.assert_automation(c.skip_reason='inactive' AND c.days_absent=75,'gap beyond the lookback cap is skipped as inactive');
+    SELECT * INTO c FROM private.missed_class_automation_candidates(studio,14,closed);
+    PERFORM pg_temp.assert_automation(c.skip_reason='recent_attendance' AND c.days_absent=14,'closure days with no classes do not count');
+    -- Reopening day: a class has already happened today, but closed has missed nothing yet.
+    INSERT INTO public.class_sessions(studio_id,name,date,start_time,end_time) VALUES(studio,'Reopening class',today,'00:00','01:00') RETURNING id INTO session_id;
+    INSERT INTO public.attendance(studio_id,session_id,student_id,checked_in_at) VALUES(studio,session_id,peer,now());
+    SELECT * INTO c FROM private.missed_class_automation_candidates(studio,14,closed);
+    PERFORM pg_temp.assert_automation(c.skip_reason='recent_attendance','reopening day starts the absence clock');
+    SELECT * INTO c FROM private.missed_class_automation_candidates(studio,14,closed,NULL,clock_timestamp()+INTERVAL '13 days');
+    PERFORM pg_temp.assert_automation(c.skip_reason='recent_attendance','thirteen days after reopening is still recent');
+    SELECT * INTO c FROM private.missed_class_automation_candidates(studio,14,closed,NULL,clock_timestamp()+INTERVAL '14 days');
+    PERFORM pg_temp.assert_automation(c.skip_reason IS NULL AND c.days_absent=28,'threshold days of missed classes after reopening is eligible');
+
+    -- Only present or late check-ins at held, undeleted classes that already happened are class days.
+    INSERT INTO public.class_sessions(studio_id,name,date,start_time,end_time) VALUES(quiet,'Quiet visit',today-30,'00:00','01:00') RETURNING id INTO session_id;
+    INSERT INTO public.attendance(studio_id,session_id,student_id,checked_in_at) VALUES(quiet,session_id,quiet_student,now()-INTERVAL '30 days');
+    INSERT INTO public.class_sessions(studio_id,name,date,start_time,end_time,status) VALUES(quiet,'Canceled',today-20,'00:00','01:00','canceled') RETURNING id INTO session_id;
+    INSERT INTO public.attendance(studio_id,session_id,student_id,checked_in_at) VALUES(quiet,session_id,quiet_peer,now()-INTERVAL '20 days');
+    INSERT INTO public.class_sessions(studio_id,name,date,start_time,end_time) VALUES(quiet,'Deleted',today-19,'00:00','01:00') RETURNING id INTO session_id;
+    INSERT INTO public.attendance(studio_id,session_id,student_id,checked_in_at) VALUES(quiet,session_id,quiet_peer,now()-INTERVAL '19 days');
+    UPDATE public.class_sessions SET deleted_at=now() WHERE id=session_id;
+    INSERT INTO public.class_sessions(studio_id,name,date,start_time,end_time) VALUES(quiet,'Excused',today-18,'00:00','01:00') RETURNING id INTO evidence;
+    INSERT INTO public.attendance(studio_id,session_id,student_id,status,checked_in_at) VALUES(quiet,evidence,quiet_peer,'excused',now()-INTERVAL '18 days');
+    INSERT INTO public.class_sessions(studio_id,name,date,start_time,end_time) VALUES(quiet,'Absent',today-17,'00:00','01:00') RETURNING id INTO session_id;
+    INSERT INTO public.attendance(studio_id,session_id,student_id,status,checked_in_at) VALUES(quiet,session_id,quiet_peer,'absent',now()-INTERVAL '17 days');
+    INSERT INTO public.class_sessions(studio_id,name,date,start_time,end_time) VALUES(quiet,'Future check-in',today-16,'00:00','01:00') RETURNING id INTO session_id;
+    INSERT INTO public.attendance(studio_id,session_id,student_id,checked_in_at) VALUES(quiet,session_id,quiet_peer,now()+INTERVAL '1 day');
+    SELECT * INTO c FROM private.missed_class_automation_candidates(quiet,14,quiet_student);
+    PERFORM pg_temp.assert_automation(c.skip_reason='recent_attendance' AND c.days_absent=30,'canceled deleted excused absent and future check-ins are not class days');
+    UPDATE public.attendance a SET status='late' WHERE a.session_id=evidence;
+    SELECT * INTO c FROM private.missed_class_automation_candidates(quiet,14,quiet_student);
+    PERFORM pg_temp.assert_automation(c.skip_reason IS NULL,'a late check-in by anyone is a class day');
+    UPDATE public.class_sessions SET status='canceled' WHERE id=evidence;
+    SELECT * INTO c FROM private.missed_class_automation_candidates(quiet,14,quiet_student);
+    PERFORM pg_temp.assert_automation(c.skip_reason='recent_attendance','canceling the only class day removes it');
+
+    -- Preview, enqueue, claim and begin use the same rules.
+    SET LOCAL ROLE service_role;
+    j:=public.preview_missed_class_automation_v1(studio,actor,14);
+    PERFORM pg_temp.assert_automation((j->>'eligible_count')::int=1 AND (j->>'skipped_count')::int=3
+        AND EXISTS(SELECT 1 FROM jsonb_array_elements(j->'recipients') r WHERE r->>'student_id'=inside::text AND r->>'skip_reason' IS NULL)
+        AND EXISTS(SELECT 1 FROM jsonb_array_elements(j->'recipients') r WHERE r->>'student_id'=beyond::text AND r->>'skip_reason'='inactive')
+        AND EXISTS(SELECT 1 FROM jsonb_array_elements(j->'recipients') r WHERE r->>'student_id'=closed::text AND r->>'skip_reason'='recent_attendance'),
+        'preview counts honor the lookback cap and class days');
+    PERFORM public.save_missed_class_automation_rule_v1(studio,actor,0,true,14,'Gap','Gap','reply@example.invalid');
+    j:=public.enqueue_missed_class_automations_v1(10);
+    PERFORM pg_temp.assert_automation((j->>'enqueued')::int=1
+        AND (SELECT array_agg(student_id)=ARRAY[inside] FROM public.automation_deliveries WHERE studio_id=studio),'enqueue honors both rules');
+    PERFORM pg_temp.assert_automation((public.enqueue_missed_class_automations_v1(10)->>'enqueued')::int=0,'duplicate queue prevention unchanged');
+    j:=public.claim_missed_class_automations_v1(1);
+    delivery:=(j#>>'{items,0,id}')::uuid;token:=(j#>>'{items,0,claim_token}')::uuid;
+    PERFORM pg_temp.assert_automation(delivery IS NOT NULL,'eligible gap claimed');
+    -- A row that falls past the cap before sending waits instead of sending or spinning.
+    RESET ROLE;
+    UPDATE public.class_sessions SET date=today-80 WHERE id=inside_session;
+    PERFORM pg_temp.recover_legacy_sender(studio);
+    SET LOCAL ROLE service_role;
+    j:=public.begin_missed_class_automation_v1(delivery,token);
+    PERFORM pg_temp.assert_automation(NOT (j->>'ready')::bool AND j->>'state'='queued' AND j->>'reason'='inactive'
+        AND (SELECT attempts=0 AND attempted_at IS NULL AND next_attempt_at>=clock_timestamp()+INTERVAL '59 minutes'
+            FROM public.automation_deliveries WHERE id=delivery),'capped row stays queued for an hour without an attempt');
+    PERFORM pg_temp.assert_automation(public.claim_missed_class_automations_v1(10)='{"items":[],"has_more":false}'::jsonb,
+        'capped queued row is neither reclaimed early nor reported as more work');
+    RESET ROLE;
+END $gap_guards$;
 ROLLBACK;

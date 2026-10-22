@@ -43,8 +43,13 @@ export const legalDocuments: Record<LegalDocumentKey, LegalDocumentEntry> = {
   privacy: {
     href: "/privacy",
     title: "Privacy Policy",
-    effective: "2026-10-08",
+    effective: "2026-10-21",
     history: [
+      {
+        date: "2026-10-21",
+        summary:
+          "Added automated studio emails, Microsoft's processing of recipient addresses and message content, and unsubscribe choices.",
+      },
       {
         date: "2026-10-08",
         summary:

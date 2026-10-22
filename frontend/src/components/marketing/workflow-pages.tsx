@@ -407,9 +407,9 @@ function TrialGuide() {
         <p>
           The stages are Inquiry, Trial Scheduled, Trial Completed, Offer Sent, and Enrolled. Trial
           Scheduled does not book a class. There is no separate trial-date field; keep the booking
-          in your scheduling process. Offer Sent does not send an offer. Changing to Enrolled
-          performs the student conversion. Closed Lost records a declined or ended inquiry with a
-          reason.
+          in your scheduling process. Offer Sent does not send an offer by itself, though an Admin
+          can publish an automation that emails the family at a stage. Changing to Enrolled performs
+          the student conversion. Closed Lost records a declined or ended inquiry with a reason.
         </p>
       </section>
       <section className={styles.section} aria-labelledby="conversion-heading">

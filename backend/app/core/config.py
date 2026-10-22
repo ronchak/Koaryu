@@ -277,7 +277,7 @@ class Settings(BaseSettings):
     EMAIL_FROM_ADDRESS: str = "koaryu@outlook.com"
     EMAIL_FROM_NAME: str = "Koaryu"
     EMAIL_REPLY_TO: str = "koaryu@outlook.com"
-    # A nonempty list limits actual recipients; empty explicitly selects live mode.
+    # A nonempty list limits actual recipients; empty or "*" explicitly selects live mode.
     EMAIL_ALLOWED_RECIPIENTS: str = "koaryu@outlook.com"
     EMAIL_GRAPH_CLIENT_ID: str = ""
     EMAIL_GRAPH_CLIENT_SECRET: str = Field(default="", repr=False)
@@ -378,6 +378,7 @@ class Settings(BaseSettings):
         """Validate configuration only; never read credentials or contact a provider."""
         from app.services.automation_email import (
             APPROVED_TEST_RECIPIENT,
+            LIVE_RECIPIENTS,
             normalize_email_address,
             validate_public_api_url,
         )
@@ -404,14 +405,15 @@ class Settings(BaseSettings):
                     normalize_email_address(value)
                     for value in self.EMAIL_ALLOWED_RECIPIENTS.split(",")
                 }
-                if self.EMAIL_ALLOWED_RECIPIENTS
+                if self.EMAIL_ALLOWED_RECIPIENTS not in {"", LIVE_RECIPIENTS}
                 else set()
             )
             if allowed and allowed != {APPROVED_TEST_RECIPIENT}:
                 raise ValueError
         except ValueError:
             refuse(
-                "EMAIL_ALLOWED_RECIPIENTS", "must be the approved test mailbox or explicitly empty"
+                "EMAIL_ALLOWED_RECIPIENTS",
+                "must be the approved test mailbox, *, or explicitly empty",
             )
 
         tenant = self.EMAIL_GRAPH_TENANT

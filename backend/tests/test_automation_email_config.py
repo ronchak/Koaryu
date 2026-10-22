@@ -61,12 +61,12 @@ def test_enabled_configuration_requires_no_network_or_token_store_at_startup(ena
         Settings(_env_file=None, **enabled_mail).validate_runtime_configuration()
 
 
-@pytest.mark.parametrize("allowed", ["koaryu@outlook.com", " KOARYU@OUTLOOK.COM ", ""])
+@pytest.mark.parametrize("allowed", ["koaryu@outlook.com", " KOARYU@OUTLOOK.COM ", "", "*"])
 def test_actual_recipient_allowlist_and_explicit_live_mode(enabled_mail, allowed):
     settings = Settings(_env_file=None, **{**enabled_mail, "EMAIL_ALLOWED_RECIPIENTS": allowed})
     settings.validate_automation_email_configuration()
     assert delivery_configuration(settings).allowed_recipients == (
-        frozenset({"koaryu@outlook.com"}) if allowed else frozenset()
+        frozenset() if allowed in {"", "*"} else frozenset({"koaryu@outlook.com"})
     )
 
 
@@ -98,6 +98,8 @@ def test_valid_tenant_forms(enabled_mail, tenant):
         ("EMAIL_ALLOWED_RECIPIENTS", "koaryu@outlook.com,victim@example.com"),
         ("EMAIL_ALLOWED_RECIPIENTS", " "),
         ("EMAIL_ALLOWED_RECIPIENTS", "koaryu@outlook.com,"),
+        ("EMAIL_ALLOWED_RECIPIENTS", " * "),
+        ("EMAIL_ALLOWED_RECIPIENTS", "*,koaryu@outlook.com"),
         ("EMAIL_GRAPH_TENANT", "consumers/../../evil"),
         ("EMAIL_GRAPH_TENANT", "https://evil.example.com"),
         ("EMAIL_GRAPH_CLIENT_SECRET", "synthetic\ncredential"),

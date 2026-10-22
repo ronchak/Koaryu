@@ -19,6 +19,8 @@ DEFAULT_MISSED_CLASS_BODY = (
     "Reply if we can help with getting back to class or updating our records.\n\n{{studio_name}}"
 )
 APPROVED_TEST_RECIPIENT = "koaryu@outlook.com"
+# Render cannot store an empty value, so hosted live mode is spelled "*".
+LIVE_RECIPIENTS = "*"
 _TOKEN = re.compile(r"\{\{(student_first_name|studio_name|days_absent)\}\}")
 _CONTROL = re.compile(r"[\x00-\x1f\x7f-\x9f]")
 _BODY_CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]")
@@ -298,6 +300,8 @@ def delivery_configuration(settings: Any) -> DeliveryConfiguration:
     raw_allowed = getattr(settings, "EMAIL_ALLOWED_RECIPIENTS", APPROVED_TEST_RECIPIENT)
     if not isinstance(raw_allowed, str):
         raise ValueError("invalid_email_configuration")  # noqa: TRY004 - Public validation contract.
+    if raw_allowed == LIVE_RECIPIENTS:
+        raw_allowed = ""
     allowed = frozenset(
         normalize_email_address(address) for address in raw_allowed.split(",") if address.strip()
     )
@@ -390,17 +394,16 @@ def email_delivery_status(settings: Any, supabase_client: Any) -> dict[str, Any]
         sender = normalize_email_address(getattr(settings, "EMAIL_FROM_ADDRESS", ""))
     except ValueError:
         pass
-    raw_allowed = getattr(settings, "EMAIL_ALLOWED_RECIPIENTS", APPROVED_TEST_RECIPIENT)
+    live = getattr(settings, "EMAIL_ALLOWED_RECIPIENTS", APPROVED_TEST_RECIPIENT) in {
+        "",
+        LIVE_RECIPIENTS,
+    }
     status: dict[str, Any] = {
-        "mode": "disabled"
-        if not enabled or provider == "disabled"
-        else "live"
-        if raw_allowed == ""
-        else "test",
+        "mode": "disabled" if not enabled or provider == "disabled" else "live" if live else "test",
         "configured": False,
         "can_enable": False,
         "sender": sender,
-        "test_recipient": APPROVED_TEST_RECIPIENT if raw_allowed else None,
+        "test_recipient": None if live else APPROVED_TEST_RECIPIENT,
         "reason": "setup_required",
     }
     if provider != "microsoft_graph":

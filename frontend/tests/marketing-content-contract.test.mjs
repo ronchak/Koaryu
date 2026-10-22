@@ -139,7 +139,7 @@ describe("marketing content contract", () => {
       landingPageContent.faq.groups.map((group) => [group.id, group.items.length]),
       [
         ["faq-fit", 3],
-        ["faq-daily", 3],
+        ["faq-daily", 4],
         ["faq-pricing", 3],
         ["faq-limits", 2],
       ],
@@ -162,7 +162,8 @@ describe("marketing content contract", () => {
     assert.match(serialized, /0\.5% per successful charge, plus Stripe fees/);
     assert.match(serialized, /cannot access billing/);
     assert.match(serialized, /no multi-location dashboard/);
-    assert.match(serialized, /doesn't send automated email or SMS reminders/);
+    assert.match(serialized, /Automations send email only, not text messages/);
+    assert.doesNotMatch(serialized, /doesn't send automated email/);
     assert.match(serialized, /new billing exports are unavailable/);
     assert.match(serialized, /shown with sample studio data/);
     assert.doesNotMatch(serialized, /already sorted|Koaryu’s now|web-first|Very convenient/);

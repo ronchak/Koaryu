@@ -247,9 +247,10 @@ def test_status_requires_decryptable_bound_stored_state_and_never_refreshes():
     assert email_delivery_status(settings, database)["configured"] is True
     assert email_delivery_status(settings, database)["can_enable"] is False
     settings.EMAIL_SEND_ENABLED = True
-    settings.EMAIL_ALLOWED_RECIPIENTS = ""
-    assert email_delivery_status(settings, database)["mode"] == "live"
-    assert email_delivery_status(settings, database)["test_recipient"] is None
+    for live in ("", "*"):
+        settings.EMAIL_ALLOWED_RECIPIENTS = live
+        assert email_delivery_status(settings, database)["mode"] == "live"
+        assert email_delivery_status(settings, database)["test_recipient"] is None
     settings.EMAIL_FROM_ADDRESS = "other@example.com"
     assert email_delivery_status(settings, database)["configured"] is False
 
