@@ -79,6 +79,7 @@ ENROLLMENT_LEDGER_COLUMNS = (
     "payer_display_name",
     "billing_plan_id",
     "plan_name",
+    "plan_currency",
     "plan_amount_cents",
     "plan_amount",
     "plan_billing_interval",
@@ -169,7 +170,7 @@ ENROLLMENT_SOURCE_COLUMNS = (
 INVOICE_ENROLLMENT_COLUMNS = ("id", "billing_plan_id")
 PAYER_COLUMNS = ("id", "display_name")
 STUDENT_COLUMNS = ("id", "legal_first_name", "legal_last_name", "preferred_name")
-PLAN_COLUMNS = ("id", "name", "amount_cents", "billing_interval")
+PLAN_COLUMNS = ("id", "name", "currency", "amount_cents", "billing_interval")
 
 _NEWEST_FIRST = (("created_at", True),)
 _OLDEST_INSTANT = datetime.min.replace(tzinfo=timezone.utc)
@@ -609,6 +610,7 @@ def build_enrollment_ledger_rows(
                 "payer_display_name": _payer_name(payers, enrollment.get("payer_id")),
                 "billing_plan_id": enrollment.get("billing_plan_id"),
                 "plan_name": plan.get("name"),
+                "plan_currency": plan.get("currency"),
                 "plan_amount_cents": plan.get("amount_cents"),
                 "plan_amount": cents_to_amount(plan.get("amount_cents")),
                 "plan_billing_interval": plan.get("billing_interval"),
