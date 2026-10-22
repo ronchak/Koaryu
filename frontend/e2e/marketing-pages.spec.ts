@@ -119,14 +119,12 @@ test("mobile document navigation dismisses, restores focus, and follows routes",
 }) => {
   await page.setViewportSize({ width: 320, height: 568 });
   await openDocument(page, "/features");
-  await expect(
-    page.locator("header").getByRole("link", { name: "Sign in", exact: true }),
-  ).toBeVisible();
   // Summary semantics differ between engines; use the native element as the stable target.
   const summary = page.locator('summary[aria-label="Navigation menu"]');
   const menu = page.getByRole("navigation", { name: "Mobile navigation" });
   await summary.click();
   await expect(menu).toBeVisible();
+  await expect(menu.getByRole("link", { name: "Sign in", exact: true })).toBeVisible();
   const box = await summary.boundingBox();
   expect(box?.height).toBeGreaterThanOrEqual(44);
   expect(box?.width).toBeGreaterThanOrEqual(44);
