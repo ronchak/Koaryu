@@ -30,9 +30,10 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from bisect import insort
 from collections import defaultdict
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 NAME_SUFFIX_TOKENS = {"jr", "sr", "ii", "iii", "iv"}
 STRONG_CLASSES = {"in_file_strong", "existing_strong"}
@@ -334,23 +335,68 @@ def _class_for(candidate: MatchCandidate) -> tuple[str, list[str]]:
 
 
 DISPLAY_CANDIDATE_CAP = 5
+# Earlier rows of the same file kept per signal bucket, and guardian records
+# kept per guardian bucket. A file that repeats one person thousands of times
+# would otherwise compare every row with every earlier row and send every pair
+# to the browser (1,000 identical rows produced an 80 MB preview).
+MATCH_BUCKET_CAP = 5
+
+
+def _bounded_add(
+    bucket: list[Any], record: Any, cap: Optional[int], order: Optional[Callable[[Any], int]]
+) -> None:
+    """Append, or keep only the ``cap`` records that sort first by ``order``.
+
+    Without ``order`` the earliest inserted records are kept.
+    """
+    if cap is None:
+        bucket.append(record)
+    elif order is not None:
+        insort(bucket, record, key=order)
+        del bucket[cap:]
+    elif len(bucket) < cap:
+        bucket.append(record)
+
+
+def _keep_first(
+    mapping: dict[Any, Any], key: Any, record: Any, order: Optional[Callable[[Any], int]]
+) -> None:
+    current = mapping.get(key)
+    if current is None or (order is not None and order(record) < order(current)):
+        mapping[key] = record
 
 
 class _StudentIndex:
     """Keyed lookup so each row compares only against records that can match.
 
-    Insertion order is preserved in every bucket, so the first entry is the
-    earliest row (or the first roster entry). Buckets keyed by a shared signal
-    are never truncated: every record that could be a strong match is compared,
-    because execution refuses a row whose strong matches were not acknowledged.
-    Only the plain-name bucket uses representatives, since a name alone can
+    The roster index (``order`` absent) keeps insertion order and never
+    truncates a bucket keyed by a shared signal: every existing student that
+    could be a strong match is compared, because execution refuses a row whose
+    strong matches were not acknowledged.
+
+    The in-file index (``order`` = row number) keeps only the ``cap`` earliest
+    rows per bucket, whatever order rows arrive in (receipt-backed rows of a
+    retried run arrive first). The earliest strong match is never dropped: a
+    row with a birth date is strong against rows with the same birth date
+    (``by_name_dob``) or with none and the same email (``by_name_email_no_dob``),
+    and a row without one is strong against every row with the same email
+    (``by_name_email``); each of those buckets keeps its earliest rows. Every
+    row that repeats an earlier person therefore still needs a decision naming
+    the earliest copies, and the work stays linear in the file size.
+
+    Only the plain-name buckets use representatives, since a name alone can
     yield at most a possible or different-person outcome. ``compare_students``
     remains the single classification rule.
     """
 
-    def __init__(self) -> None:
+    def __init__(
+        self, *, cap: Optional[int] = None, order: Optional[Callable[[Any], int]] = None
+    ) -> None:
+        self.cap = cap
+        self.order = order
         self.by_name_dob: dict[tuple[str, str, str], list[Any]] = defaultdict(list)
         self.by_name_email: dict[tuple[str, str, str], list[Any]] = defaultdict(list)
+        self.by_name_email_no_dob: dict[tuple[str, str, str], list[Any]] = defaultdict(list)
         self.by_name_phone: dict[tuple[str, str, str], list[Any]] = defaultdict(list)
         # Active records collapse to plain-name representatives, because a
         # plain-name match on an active record can only be possible or
@@ -365,20 +411,23 @@ class _StudentIndex:
         if not identity.has_name:
             return
         name = (identity.first, identity.last)
+        cap, order = self.cap, self.order
         if identity.date_of_birth:
-            self.by_name_dob[(*name, identity.date_of_birth)].append(record)
+            _bounded_add(self.by_name_dob[(*name, identity.date_of_birth)], record, cap, order)
         if identity.email:
-            self.by_name_email[(*name, identity.email)].append(record)
+            _bounded_add(self.by_name_email[(*name, identity.email)], record, cap, order)
+            if not identity.date_of_birth:
+                _bounded_add(self.by_name_email_no_dob[(*name, identity.email)], record, cap, order)
         if identity.phone:
-            self.by_name_phone[(*name, identity.phone)].append(record)
+            _bounded_add(self.by_name_phone[(*name, identity.phone)], record, cap, order)
         if archived:
             self.archived_by_name[name].append(record)
             return
-        self.first_by_name.setdefault(name, record)
+        _keep_first(self.first_by_name, name, record, order)
         if identity.date_of_birth:
-            self.first_by_name_and_dob[name].setdefault(identity.date_of_birth, record)
+            _keep_first(self.first_by_name_and_dob[name], identity.date_of_birth, record, order)
         else:
-            self.first_missing_dob_by_name.setdefault(name, record)
+            _keep_first(self.first_missing_dob_by_name, name, record, order)
 
     def lookup(self, identity: StudentIdentity) -> list[Any]:
         if not identity.has_name:
@@ -389,6 +438,8 @@ class _StudentIndex:
             pool.extend(self.by_name_dob.get((*name, identity.date_of_birth), []))
         if identity.email:
             pool.extend(self.by_name_email.get((*name, identity.email), []))
+            if identity.date_of_birth:
+                pool.extend(self.by_name_email_no_dob.get((*name, identity.email), []))
         if identity.phone:
             pool.extend(self.by_name_phone.get((*name, identity.phone), []))
         if identity.date_of_birth:
@@ -408,7 +459,16 @@ class _StudentIndex:
 
 
 class _GuardianIndex:
-    def __init__(self) -> None:
+    """Guardian lookups only describe family context and never gate a write,
+    so every bucket keeps at most ``cap`` records (the earliest rows for the
+    in-file index, the first roster entries otherwise). A placeholder guardian
+    shared by the whole roster and the whole file stays linear."""
+
+    def __init__(
+        self, *, cap: Optional[int] = None, order: Optional[Callable[[Any], int]] = None
+    ) -> None:
+        self.cap = cap
+        self.order = order
         self.by_email_first: dict[tuple[str, str], list[Any]] = defaultdict(list)
         self.by_email_last: dict[tuple[str, str], list[Any]] = defaultdict(list)
         self.first_by_email: dict[str, Any] = {}
@@ -418,17 +478,22 @@ class _GuardianIndex:
     def add(self, guardian: GuardianIdentity, record: Any) -> None:
         if not guardian.present:
             return
+        cap, order = self.cap, self.order
         if guardian.email:
-            self.first_by_email.setdefault(guardian.email, record)
+            _keep_first(self.first_by_email, guardian.email, record, order)
             if guardian.first:
-                self.by_email_first[(guardian.email, guardian.first)].append(record)
+                _bounded_add(
+                    self.by_email_first[(guardian.email, guardian.first)], record, cap, order
+                )
             if guardian.last:
-                self.by_email_last[(guardian.email, guardian.last)].append(record)
+                _bounded_add(
+                    self.by_email_last[(guardian.email, guardian.last)], record, cap, order
+                )
         if guardian.first and guardian.last:
             name = (guardian.first, guardian.last)
-            self.first_by_name.setdefault(name, record)
+            _keep_first(self.first_by_name, name, record, order)
             if guardian.phone:
-                self.by_name_phone[(*name, guardian.phone)].append(record)
+                _bounded_add(self.by_name_phone[(*name, guardian.phone)], record, cap, order)
 
     def lookup(self, guardian: GuardianIdentity) -> list[Any]:
         if not guardian.present:
@@ -508,15 +573,22 @@ def match_rows(
 
     Candidates come from keyed indexes (name plus birth date, email or phone
     for students; email plus a name part, or name plus phone, for guardians)
-    with one representative per plain-name bucket, so a 10,000-row file against
-    a large roster stays close to linear even with repeated names.
+    with one representative per plain-name bucket. Earlier rows of the file and
+    guardian records are bounded per bucket (``MATCH_BUCKET_CAP``), so a
+    10,000-row file against a large roster stays linear even when one person or
+    one placeholder guardian repeats on every row.
     """
 
     ordered = sorted(planned_rows, key=lambda row: int(row["row_number"]))
-    run_students = _StudentIndex()
-    run_guardians = _GuardianIndex()
+
+    def by_row(record: _RunRecord) -> int:
+        return record.row_number
+
+    run_students = _StudentIndex(cap=MATCH_BUCKET_CAP, order=by_row)
+    run_guardians = _GuardianIndex(cap=MATCH_BUCKET_CAP, order=by_row)
+    # Existing students stay uncapped: enforcement needs every strong match.
     existing_students = _StudentIndex()
-    existing_guardians = _GuardianIndex()
+    existing_guardians = _GuardianIndex(cap=MATCH_BUCKET_CAP)
 
     for entry in existing_roster:
         identity = student_identity_from_existing(entry)

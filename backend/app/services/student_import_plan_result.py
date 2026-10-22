@@ -66,6 +66,10 @@ def build_import_result(
                 )
             )
 
+        if row.get("skipped"):
+            # A skipped row writes nothing, so it adds nothing to the status,
+            # belt or setup totals; its own row diagnostics stay above.
+            continue
         for issue in row["issues"]:
             if issue.code == "normalized_status":
                 normalized_status_rows.append(row["row_number"])
@@ -122,6 +126,7 @@ def build_import_result(
             or row.get("belt_creation_requires_new_ladder")
         )
         for row in rows
+        if not row.get("skipped")
     )
     if setup_buckets["missing_program"]["row_numbers"]:
         severity = setup_buckets["missing_program"]["severity"]

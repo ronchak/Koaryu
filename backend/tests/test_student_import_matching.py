@@ -561,7 +561,7 @@ def test_archived_match_is_surfaced_beside_an_active_plain_name_match():
     assert [c.existing_key for c in unacknowledged_candidates(match, None)] == ["old"]
 
 
-def test_review_shows_every_required_acknowledgement_beyond_the_display_cap():
+def test_repeated_rows_name_only_the_earliest_copies():
     rows = [
         planned(n, legal_first_name="Ava", legal_last_name="Nguyen", date_of_birth="2014-06-03")
         for n in range(2, 10)
@@ -570,13 +570,127 @@ def test_review_shows_every_required_acknowledgement_beyond_the_display_cap():
     last = matches[-1]
     assert last.duplicate_class == "in_file_strong" and last.of_row == 2
     review = build_duplicate_review(last)
-    # Seven strong in-file matches all need acknowledging, so all seven are shown
-    # even though the display cap is five: a decision never names an unseen row.
-    assert [candidate["of_row"] for candidate in review["candidates"]] == [2, 3, 4, 5, 6, 7, 8]
-    assert review["acknowledge_rows"] == [2, 3, 4, 5, 6, 7, 8]
+    # Earlier copies are bounded to the earliest few; each later copy was itself
+    # reviewed against them, and the decision names exactly what was shown.
+    assert [candidate["of_row"] for candidate in review["candidates"]] == [2, 3, 4, 5, 6]
+    assert review["acknowledge_rows"] == [2, 3, 4, 5, 6]
     assert review["acknowledge_student_ids"] == []
     decision = Decision("skip", of_row=2, acknowledged_rows=review["acknowledge_rows"])
     assert unacknowledged_candidates(last, decision) == []
+    assert skip_target(last, decision) == ("row", 2)
+
+
+def test_review_shows_every_required_roster_match_beyond_the_display_cap():
+    """Existing students are never bounded: every strong one is shown and named."""
+    roster = [existing(f"s{n}", "Ava", "Nguyen", date_of_birth="2014-06-03") for n in range(7)]
+    (match,) = match_rows(
+        [planned(2, legal_first_name="Ava", legal_last_name="Nguyen", date_of_birth="2014-06-03")],
+        roster,
+    )
+    review = build_duplicate_review(match)
+    expected = [f"s{n}" for n in range(7)]
+    assert [candidate["student_id"] for candidate in review["candidates"]] == expected
+    assert review["acknowledge_student_ids"] == expected
+
+
+def test_repeated_person_and_shared_guardian_stay_linear():
+    """One person repeated on every row, sharing one placeholder guardian with a
+    roster that also uses it everywhere, keeps per-row work and payload bounded."""
+    count = 3000
+    roster = [
+        existing(
+            f"s{n}",
+            f"Kid{n}",
+            "Roster",
+            guardians=[guardian(f"g{n}", "Front", "Desk", email="office@dojo.test")],
+        )
+        for n in range(count)
+    ]
+    rows = [
+        planned(
+            n,
+            legal_first_name="Ava",
+            legal_last_name="Nguyen",
+            date_of_birth="2014-06-03",
+            email="ava@example.test",
+            guardian_name="Front Desk",
+            guardian_email="office@dojo.test",
+        )
+        for n in range(2, count + 2)
+    ]
+    matches = match_rows(rows, roster)
+    assert max(len(match.candidates) for match in matches) <= 5
+    assert max(len(match.guardian_candidates) for match in matches) <= 10
+    reviews = [build_duplicate_review(match) for match in matches]
+    assert max(len(review["acknowledge_rows"]) for review in reviews if review) <= 5
+    assert all(match.of_row == 2 for match in matches[1:])
+
+
+def test_strong_match_without_birth_date_is_not_crowded_out():
+    """Earlier rows with a conflicting birth date fill the email bucket; a later
+    row with the same email and no birth date is still found as strong."""
+    rows = [
+        planned(
+            n,
+            legal_first_name="Ava",
+            legal_last_name="Nguyen",
+            date_of_birth="2010-01-01",
+            email="ava@example.test",
+        )
+        for n in range(2, 9)
+    ]
+    rows.append(planned(9, legal_first_name="Ava", legal_last_name="Nguyen", email="other@x.test"))
+    rows.append(
+        planned(10, legal_first_name="Ava", legal_last_name="Nguyen", email="ava@example.test")
+    )
+    rows.append(
+        planned(
+            11,
+            legal_first_name="Ava",
+            legal_last_name="Nguyen",
+            date_of_birth="2014-06-03",
+            email="ava@example.test",
+        )
+    )
+    last = match_rows(rows, [])[-1]
+    strong = [c.row_number for c in last.candidates if c.confidence == "strong"]
+    assert strong == [10]
+    assert last.duplicate_class == "in_file_strong" and last.of_row == 10
+    assert build_duplicate_review(last)["acknowledge_rows"] == [10]
+
+
+def test_retry_keeps_the_earliest_rows_whatever_order_receipts_arrive_in():
+    """Receipt-backed rows of a retried run reach the index first and in roster
+    order; the bounded index still keeps the earliest rows."""
+    receipt_rows = [12, 7, 11, 4, 9, 2, 10, 5, 8, 6]
+    roster = [
+        existing(
+            f"run{n}",
+            "Ava",
+            "Nguyen",
+            date_of_birth="2014-06-03",
+            import_row_number=n,
+        )
+        for n in receipt_rows
+    ]
+    (retried,) = [
+        match
+        for match in match_rows(
+            [
+                {"row_number": n, "completed": True, "data": {}, "is_valid": True, "issues": []}
+                for n in receipt_rows
+            ]
+            + [
+                planned(
+                    3, legal_first_name="Ava", legal_last_name="Nguyen", date_of_birth="2014-06-03"
+                )
+            ],
+            roster,
+        )
+        if match.row_number == 3
+    ]
+    assert [c.row_number for c in retried.candidates] == [2]
+    assert retried.duplicate_class == "in_file_strong" and retried.of_row == 2
 
 
 def test_archived_match_behind_five_active_possibles_is_still_shown():
