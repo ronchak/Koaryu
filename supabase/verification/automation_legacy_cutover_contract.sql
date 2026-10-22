@@ -58,6 +58,7 @@ END $catalog$;
 DO $contract$
 #variable_conflict use_variable
 DECLARE actor UUID:=gen_random_uuid(); studio UUID:=gen_random_uuid(); student UUID; session UUID:=gen_random_uuid();
+    held_session UUID:=gen_random_uuid(); class_attendee UUID:=gen_random_uuid();
     delivery UUID; token UUID; prep JSONB; result JSONB; begun JSONB; settled JSONB; replay JSONB; evidence JSONB;
     attempt UUID; revision BIGINT; generation BIGINT; n INTEGER; failure TEXT; failed BOOLEAN; optout TEXT;
 BEGIN
@@ -66,6 +67,14 @@ BEGIN
     INSERT INTO public.staff_roles(studio_id,user_id,role) VALUES(studio,actor,'admin');
     INSERT INTO public.studio_subscriptions(studio_id,status,comped) VALUES(studio,'active',false);
     INSERT INTO public.class_sessions(id,studio_id,name,date,start_time,end_time) VALUES(session,studio,'Old class',current_date-20,'00:00','01:00');
+    -- Each delivery student missed this held class after their last visit. Keep
+    -- its attendee outside the eligible queue and retain the evidence across deletes.
+    INSERT INTO public.students(id,studio_id,legal_first_name,legal_last_name,status)
+        VALUES(class_attendee,studio,'Class','Attendee','paused');
+    INSERT INTO public.class_sessions(id,studio_id,name,date,start_time,end_time)
+        VALUES(held_session,studio,'Missed held class',current_date-19,'00:00','01:00');
+    INSERT INTO public.attendance(studio_id,session_id,student_id,status,checked_in_at)
+        VALUES(studio,held_session,class_attendee,'present',now()-INTERVAL '19 days');
     PERFORM public.save_missed_class_automation_rule_v1(studio,actor,0,true,14,'Subject','Body','reply@example.invalid');
     INSERT INTO private.automation_email_credentials(provider_key,encrypted_credentials,revision)
         VALUES('microsoft_graph:primary','synthetic-local-only',1) ON CONFLICT DO NOTHING;
@@ -78,7 +87,9 @@ BEGIN
             VALUES(student,studio,'Synthetic','Student',student::TEXT||'@example.invalid');
         INSERT INTO public.attendance(studio_id,session_id,student_id,checked_in_at) VALUES(studio,session,student,now()-INTERVAL '20 days');
         result:=public.enqueue_missed_class_automations_v1(1,ARRAY[student::TEXT||'@example.invalid']);
+        PERFORM pg_temp.assert_legacy((result->>'enqueued')::INTEGER=1,'one eligible delivery enqueued');
         result:=public.claim_missed_class_automations_v1(1,ARRAY[student::TEXT||'@example.invalid']);
+        PERFORM pg_temp.assert_legacy(jsonb_array_length(result->'items')=1,'one eligible delivery claimed');
         delivery:=(result#>>'{items,0,id}')::UUID; token:=(result#>>'{items,0,claim_token}')::UUID;
         prep:=public.claim_automation_sender_preparation_v1('microsoft_graph:primary',gen_random_uuid(),repeat('a',64))->'payload';
         result:=public.settle_automation_sender_preparation_v1((prep->>'preparation_id')::UUID,(prep->>'preparation_token')::UUID,
