@@ -1,0 +1,13 @@
+﻿Given,Family Name,Birthday,Member #,Preferred Name,Email Address,Mobile,Student Status,Program,Current Belt,Parent Name,Parent Email,Parent Phone,Notes
+,Rivfen Sr,1975-02-26,SYN-700061-00000,Zelava00000,synthetic.700061.0@example.com,(202) 555-0100,Active,Moon Forms,White Belt,Testjordan00000 Quillfen,guardian.700061.0@example.invalid,202.555.0131,"Synthetic only; “curly quotes”, café; line one
+line two"
+Mioren00001,,03/27/1976,SYN-700061-00001,Zee,synthetic.700061.1@example.net,202.555.0101,Current,moon forms,WHITE,Testjordan00001 Quillfen,guardian.700061.1@example.invalid,+1 202 555 0132,"Synthetic only; “curly quotes”, café; line one
+line two"
+Chloélune00002,Quillfen,04/28/01,SYN-700061-00002,Chloélune00002,synthetic.700061.2@example.org,+1 202 555 0102,Trial,Moon-Forms,Yellow Belt,Testjordan00002 Quillfen,guardian.700061.2@example.invalid,2025550133,"Synthetic only; “curly quotes”, café; line one
+line two"
+Évarin00003,de la Vey,05.01.1978,SYN-700061-00003,Zee,synthetic.700061.3@example.invalid,2025550103,Frozen,MOON FORMS!,20000000-0000-4000-8000-000000000002,Testjordan00003 Quillfen,guardian.700061.3@example.invalid,202-555-0134,"Synthetic only; “curly quotes”, café; line one
+line two"
+Ava-Grace00004,van Lumen,"June 2, 1979",SYN-700061-00004,Ava-Grace00004,synthetic.700061.4@example.com,202-555-0104,On Hold,10000000-0000-4000-8000-000000000001,,Testjordan00004 Quillfen,guardian.700061.4@example.invalid,(202) 555-0135,"Synthetic only; “curly quotes”, café; line one
+line two"
+Téoquin00005,O'Vel,29405,SYN-700061-00005,Zee,synthetic.700061.5@example.net,(202) 555-0105,Overdue,,White Belt,Testjordan00005 Quillfen,guardian.700061.5@example.invalid,202.555.0136,"Synthetic only; “curly quotes”, café; line one
+line two"

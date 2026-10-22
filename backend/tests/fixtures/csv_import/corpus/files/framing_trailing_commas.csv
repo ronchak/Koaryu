@@ -1,0 +1,13 @@
+First Name,Last Name,DOB,Student ID,Preferred Name,Email,Phone,Status,Program,Current Belt,Guardian Name,Guardian Email,Guardian Phone,Notes
+Zelava00000,van Lumen,1992-07-15,SYN-700002-00000,Zelava00000,synthetic.700002.0@example.com,(202) 555-0100,Active,Moon Forms,White Belt,Testjordan00000 Quillfen,guardian.700002.0@example.invalid,,
+Mioren00001,O'Vel,08/16/1993,SYN-700002-00001,Zee,synthetic.700002.1@example.net,202.555.0101,Current,moon forms,WHITE,Testjordan00001 Quillfen,guardian.700002.1@example.invalid,,
+Chloélune00002,Solquill Jr,09/17/18,SYN-700002-00002,Chloélune00002,synthetic.700002.2@example.org,+1 202 555 0102,Trial,Moon-Forms,Yellow Belt,Testjordan00002 Quillfen,guardian.700002.2@example.invalid,,
+Évarin00003,Rivfen Sr,10.18.1995,SYN-700002-00003,Zee,synthetic.700002.3@example.invalid,2025550103,Frozen,MOON FORMS!,20000000-0000-4000-8000-000000000002,Testjordan00003 Quillfen,guardian.700002.3@example.invalid,,
+Ava-Grace00004,Velquill III,"November 19, 1996",SYN-700002-00004,Ava-Grace00004,synthetic.700002.4@example.com,202-555-0104,On Hold,10000000-0000-4000-8000-000000000001,,Testjordan00004 Quillfen,guardian.700002.4@example.invalid,,
+Téoquin00005,Quillfen,35784,SYN-700002-00005,Zee,synthetic.700002.5@example.net,(202) 555-0105,Overdue,,White Belt,Testjordan00005 Quillfen,guardian.700002.5@example.invalid,,
+Iñara00006,de la Vey,1998-01-21T12:34:56Z,SYN-700002-00006,Iñara00006,synthetic.700002.6@example.org,202.555.0106,Cancelled,Moon Forms,WHITE,Testjordan00006 Quillfen,guardian.700002.6@example.invalid,,
+Zelava00007,van Lumen,,SYN-700002-00007,Zee,synthetic.700002.7@example.invalid,+1 202 555 0107,Uncharted,moon forms,Yellow Belt,Testjordan00007 Quillfen,guardian.700002.7@example.invalid,,
+Mioren00008,O'Vel,2014,SYN-700002-00008,Mioren00008,synthetic.700002.8@example.com,2025550108,Active,Moon-Forms,20000000-0000-4000-8000-000000000002,Testjordan00008 Quillfen,guardian.700002.8@example.invalid,,
+Chloélune00009,Solquill Jr,2014-13-03,SYN-700002-00009,Zee,synthetic.700002.9@example.net,202-555-0109,Current,MOON FORMS!,,Testjordan00009 Quillfen,guardian.700002.9@example.invalid,,
+Évarin00010,Rivfen Sr,2026-12-31,SYN-700002-00010,Évarin00010,synthetic.700002.10@example.org,(202) 555-0110,Trial,10000000-0000-4000-8000-000000000001,White Belt,Testjordan00010 Quillfen,guardian.700002.10@example.invalid,,
+Ava-Grace00011,Velquill III,1950-01-01,SYN-700002-00011,Zee,synthetic.700002.11@example.invalid,202.555.0111,Frozen,,WHITE,Testjordan00011 Quillfen,guardian.700002.11@example.invalid,,
