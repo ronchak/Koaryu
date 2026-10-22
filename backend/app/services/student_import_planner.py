@@ -11,11 +11,16 @@ from app.schemas.student import (
     CsvImportResult,
 )
 from app.services.student_import_csv import (
+    make_import_issue,
     normalize_header,
     validate_csv_import_mapping,
 )
 from app.services.student_import_ids import deterministic_import_uuid
-from app.services.student_import_matching import build_duplicate_review, match_rows
+from app.services.student_import_matching import (
+    ROSTER_MATCH_LIMIT,
+    build_duplicate_review,
+    match_rows,
+)
 from app.services.student_import_plan_result import build_import_result
 from app.services.student_import_plan_rows import (
     build_import_row_plan,
@@ -349,6 +354,17 @@ class StudentImportPlanner:
             match = matches[int(row["row_number"])]
             row["match"] = match
             row["duplicate_review"] = build_duplicate_review(match)
+            if match.roster_overflow and row["is_valid"]:
+                row["issues"].append(
+                    make_import_issue(
+                        "too_many_existing_matches",
+                        f"This student matches more than {ROSTER_MATCH_LIMIT} students already "
+                        "in Koaryu, including archived ones, which is too many to review in an "
+                        "import. Add this student by hand instead.",
+                        field="legal_last_name",
+                    )
+                )
+                row["is_valid"] = False
         return roster
 
     def hydrate_import_result(
