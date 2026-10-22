@@ -779,9 +779,9 @@ def test_eight_identical_rows_with_browser_defaults_import_once_and_skip_the_res
     preview = StudentService(db).validate_import_rows(rows, MAPPING, CsvImportOptions(), STUDIO)
     assert preview.duplicate_flagged_rows == 7
     reviews = {row.row_number: row.duplicate_review for row in preview.rows}
-    # Every row that must be acknowledged is shown, so the display cap does not apply here.
-    assert [c.of_row for c in reviews[9].candidates] == [2, 3, 4, 5, 6, 7, 8]
-    assert reviews[9].acknowledge_rows == [2, 3, 4, 5, 6, 7, 8]
+    # Earlier copies are bounded to the earliest five, all shown and all named.
+    assert [c.of_row for c in reviews[9].candidates] == [2, 3, 4, 5, 6]
+    assert reviews[9].acknowledge_rows == [2, 3, 4, 5, 6]
     decisions = browser_default_decisions(preview)
     assert sorted(decisions) == [str(n) for n in range(3, 10)]
     assert all(d.action == "skip" and d.of_row == 2 for d in decisions.values())
@@ -869,3 +869,56 @@ def test_create_must_acknowledge_every_archived_same_name_student():
         },
     )
     assert result.imported_count == 1 and result.error_rows == 0 and result.skipped_rows == 0
+
+
+def test_skipped_rows_add_nothing_to_status_belt_or_setup_totals():
+    from app.schemas.student import CsvImportIssue
+    from app.services.student_import_plan_result import build_import_result
+
+    def plan(row_number, *, skipped):
+        return {
+            "row_number": row_number,
+            "data": {"legal_first_name": "Ava", "legal_last_name": f"Row{row_number}"},
+            "is_valid": True,
+            "skipped": skipped,
+            "unresolved_belt_value": "Purple",
+            "belt_creation_requires_new_ladder": True,
+            "issues": [
+                CsvImportIssue(
+                    code="normalized_status",
+                    severity="warning",
+                    field="status",
+                    value="Current",
+                    message="Status will be normalized.",
+                ),
+                CsvImportIssue(
+                    code="missing_program",
+                    severity="warning",
+                    field="program",
+                    value="Kids BJJ",
+                    message="Program does not exist yet.",
+                ),
+                CsvImportIssue(
+                    code="missing_belt",
+                    severity="warning",
+                    field="current_belt_rank_id",
+                    value="Purple",
+                    message="Belt does not exist yet.",
+                ),
+            ],
+        }
+
+    only_skipped = build_import_result([plan(2, skipped=True)], total_rows=1)
+    assert only_skipped.skipped_rows == 1
+    assert only_skipped.normalized_status_count == 0
+    assert only_skipped.warnings == [] and only_skipped.setup_issues == []
+    # The skipped row keeps its own diagnostics for the review screen.
+    assert [row.row_number for row in only_skipped.rows] == [2]
+
+    mixed = build_import_result([plan(2, skipped=True), plan(3, skipped=False)], total_rows=2)
+    assert mixed.normalized_status_count == 1
+    assert all(warning.row_numbers == [3] for warning in mixed.warnings)
+    assert {issue.code for issue in mixed.setup_issues} >= {"missing_program"}
+    assert all(
+        3 in issue.row_numbers and 2 not in issue.row_numbers for issue in mixed.setup_issues
+    )
