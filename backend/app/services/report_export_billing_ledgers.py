@@ -432,14 +432,10 @@ def build_payment_ledger_rows(
     else:
         # A payment's ledger date is processed_at, or created_at until it is
         # processed. PostgREST cannot filter on that fallback, so read the two
-        # cases separately.
-        processed = data._fetch_rows(
-            "billing_payments",
-            PAYMENT_SOURCE_COLUMNS,
-            studio_id,
-            order_by=_NEWEST_FIRST,
-            filters=clock.range_filters("processed_at", date_range),
-        )
+        # cases separately: unprocessed first, then processed. processed_at is
+        # only ever set, never cleared, so a payment processed between the two
+        # reads is caught by at least one of them (read in the other order it
+        # would match neither). A payment found by both keeps its processed row.
         unprocessed = data._fetch_rows(
             "billing_payments",
             PAYMENT_SOURCE_COLUMNS,
@@ -450,7 +446,14 @@ def build_payment_ledger_rows(
                 *clock.range_filters("created_at", date_range),
             ),
         )
-        payments = list({row["id"]: row for row in processed + unprocessed}.values())
+        processed = data._fetch_rows(
+            "billing_payments",
+            PAYMENT_SOURCE_COLUMNS,
+            studio_id,
+            order_by=_NEWEST_FIRST,
+            filters=clock.range_filters("processed_at", date_range),
+        )
+        payments = list({row["id"]: row for row in unprocessed + processed}.values())
     payments = _within(clock, date_range, payments, _payment_timestamp)
     refunds = _within(
         clock,
