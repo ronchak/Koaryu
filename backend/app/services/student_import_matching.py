@@ -352,27 +352,33 @@ class _StudentIndex:
         self.by_name_dob: dict[tuple[str, str, str], list[Any]] = defaultdict(list)
         self.by_name_email: dict[tuple[str, str, str], list[Any]] = defaultdict(list)
         self.by_name_phone: dict[tuple[str, str, str], list[Any]] = defaultdict(list)
-        # Plain-name representatives are kept separately for active and archived
-        # records, so an archived match is never hidden behind an active one.
-        self.first_by_name: dict[tuple[str, str, bool], Any] = {}
-        self.first_missing_dob_by_name: dict[tuple[str, str, bool], Any] = {}
-        self.first_by_name_and_dob: dict[tuple[str, str, bool], dict[str, Any]] = defaultdict(dict)
+        # Active records collapse to plain-name representatives, because a
+        # plain-name match on an active record can only be possible or
+        # different-person, which never needs acknowledgement.
+        self.first_by_name: dict[tuple[str, str], Any] = {}
+        self.first_missing_dob_by_name: dict[tuple[str, str], Any] = {}
+        self.first_by_name_and_dob: dict[tuple[str, str], dict[str, Any]] = defaultdict(dict)
+        # Archived records never collapse: every one must reach enforcement.
+        self.archived_by_name: dict[tuple[str, str], list[Any]] = defaultdict(list)
 
     def add(self, identity: StudentIdentity, record: Any, *, archived: bool = False) -> None:
         if not identity.has_name:
             return
         name = (identity.first, identity.last)
-        flagged = (*name, archived)
-        self.first_by_name.setdefault(flagged, record)
         if identity.date_of_birth:
             self.by_name_dob[(*name, identity.date_of_birth)].append(record)
-            self.first_by_name_and_dob[flagged].setdefault(identity.date_of_birth, record)
-        else:
-            self.first_missing_dob_by_name.setdefault(flagged, record)
         if identity.email:
             self.by_name_email[(*name, identity.email)].append(record)
         if identity.phone:
             self.by_name_phone[(*name, identity.phone)].append(record)
+        if archived:
+            self.archived_by_name[name].append(record)
+            return
+        self.first_by_name.setdefault(name, record)
+        if identity.date_of_birth:
+            self.first_by_name_and_dob[name].setdefault(identity.date_of_birth, record)
+        else:
+            self.first_missing_dob_by_name.setdefault(name, record)
 
     def lookup(self, identity: StudentIdentity) -> list[Any]:
         if not identity.has_name:
@@ -385,20 +391,19 @@ class _StudentIndex:
             pool.extend(self.by_name_email.get((*name, identity.email), []))
         if identity.phone:
             pool.extend(self.by_name_phone.get((*name, identity.phone), []))
-        for archived in (False, True):
-            flagged = (*name, archived)
-            if identity.date_of_birth:
-                representative = self.first_missing_dob_by_name.get(flagged)
-                if representative is not None:
-                    pool.append(representative)
-                for dob, record in self.first_by_name_and_dob.get(flagged, {}).items():
-                    if dob != identity.date_of_birth:
-                        pool.append(record)
-                        break
-            else:
-                representative = self.first_by_name.get(flagged)
-                if representative is not None:
-                    pool.append(representative)
+        if identity.date_of_birth:
+            representative = self.first_missing_dob_by_name.get(name)
+            if representative is not None:
+                pool.append(representative)
+            for dob, record in self.first_by_name_and_dob.get(name, {}).items():
+                if dob != identity.date_of_birth:
+                    pool.append(record)
+                    break
+        else:
+            representative = self.first_by_name.get(name)
+            if representative is not None:
+                pool.append(representative)
+        pool.extend(self.archived_by_name.get(name, []))
         return _unique_records(pool)
 
 

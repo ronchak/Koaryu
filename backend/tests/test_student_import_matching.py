@@ -575,3 +575,29 @@ def test_review_lists_every_required_acknowledgement_beyond_the_display_cap():
     assert review["acknowledge_student_ids"] == []
     decision = Decision("skip", of_row=2, acknowledged_rows=review["acknowledge_rows"])
     assert unacknowledged_candidates(last, decision) == []
+
+
+def test_every_archived_same_name_record_reaches_enforcement():
+    """Archived records never collapse to a representative."""
+    roster = [
+        existing("s1", "Ava", "Nguyen", archived=True),
+        existing("s2", "Ava", "Nguyen", archived=True),
+        existing("s3", "Ava", "Nguyen", date_of_birth="2001-01-01", archived=True),
+        existing("live", "Ava", "Nguyen"),
+    ]
+    (match,) = match_rows(
+        [planned(2, legal_first_name="Ava", legal_last_name="Nguyen", date_of_birth="2014-06-03")],
+        roster,
+    )
+    assert [(c.existing_key, c.archived, c.confidence) for c in match.candidates] == [
+        ("live", False, "possible"),
+        ("s1", True, "possible"),
+        ("s2", True, "possible"),
+        ("s3", True, "different_person"),
+    ]
+    assert match.suggested_action == "decide"
+    assert build_duplicate_review(match)["acknowledge_student_ids"] == ["s1", "s2"]
+    only_first = Decision("create", matched_student_id="s1", acknowledged_student_ids=["s1"])
+    assert [c.existing_key for c in unacknowledged_candidates(match, only_first)] == ["s2"]
+    both = Decision("create", matched_student_id="s1", acknowledged_student_ids=["s1", "s2"])
+    assert unacknowledged_candidates(match, both) == []

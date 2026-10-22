@@ -821,3 +821,49 @@ def test_archived_possible_match_beside_an_active_one_requires_a_decision():
     ]
     assert review.acknowledge_student_ids == ["66666666-6666-4666-8666-666666666666"]
     assert browser_default_decisions(preview) == {}
+
+
+def test_create_must_acknowledge_every_archived_same_name_student():
+    """S2 was archived after preview; a Create that names only S1 is refused."""
+    db = ScriptedImportDb()
+    db.tables["programs"][0]["name"] = "Unassigned"
+    s1, s2 = "88888888-8888-4888-8888-888888888888", "66666666-6666-4666-8666-666666666666"
+    db.tables["students"] = [
+        existing_student(s1, "Ava", "Nguyen", None, deleted_at="2026-01-01T00:00:00Z"),
+        existing_student(s2, "Ava", "Nguyen", None, deleted_at="2026-02-01T00:00:00Z"),
+    ]
+    rows = [{"First": "Ava", "Last": "Nguyen", "DOB": "2014-06-03"}]
+    db.responses = [
+        ("claim_student_import_run_v2", claim()),
+        ("finish_student_import_run", finish),
+    ]
+    result = db.execute_import(
+        rows,
+        decisions={
+            "2": CsvImportDuplicateDecision(
+                action="create", matched_student_id=s1, acknowledged_student_ids=[s1]
+            )
+        },
+    )
+    assert result.imported_count == 0 and result.error_rows == 1
+    assert [issue.code for issue in result.rows[0].issues] == ["duplicate_review_required"]
+    assert [name for name, _ in db.calls] == [
+        "claim_student_import_run_v2",
+        "finish_student_import_run",
+    ]
+
+    db.responses = [
+        ("claim_student_import_run_v2", claim()),
+        ("prepare_student_import_program_v1", selected_program(PROGRAM, "Unassigned")),
+        ("import_student_row_atomic", row_success),
+        ("finish_student_import_run", finish),
+    ]
+    result = db.execute_import(
+        rows,
+        decisions={
+            "2": CsvImportDuplicateDecision(
+                action="create", matched_student_id=s1, acknowledged_student_ids=[s1, s2]
+            )
+        },
+    )
+    assert result.imported_count == 1 and result.error_rows == 0 and result.skipped_rows == 0
