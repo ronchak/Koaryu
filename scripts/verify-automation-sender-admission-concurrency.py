@@ -32,7 +32,9 @@ ROOT = Path(__file__).resolve().parents[1]
 BASE = "35561d6b8f851ea0309723637e0996a064ba4c82"
 BASE_HASH = "cab98ab987acf0c24a383be94f3e0499c6d891b922d7fd1de217e788c2a339b5"
 ACCEPTED_DEPENDENCY_BASELINES = {
-    "backend/app/services/automation_email.py": "35693d25429678ae77f3a7b5bddd6f3d352c5e5b",
+    # Accept only the reviewed live-recipient spelling and fixed sender-stop logs.
+    "backend/app/services/automation_email.py": "184a3ffd99d5e089dc96f58ca660e13966dc4ae1",
+    "backend/app/services/microsoft_graph_email.py": "26c9174798fe833dd636a2934c53b61398182f25",
 }
 MIGRATION = ROOT / "supabase/migrations/20261005105341_automation_workflow_graph_v57.sql"
 CONTRACT = ROOT / "supabase/verification/automation_sender_admission_contract.sql"
