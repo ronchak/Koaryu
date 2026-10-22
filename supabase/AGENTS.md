@@ -34,12 +34,20 @@ restore machinery, database versions or dependencies invalidate it.
 - Run the focused local helper or relevant SQL with `psql` and `ON_ERROR_STOP=1`.
   Policy/tenant changes use `SUPABASE_DB_TARGET=local scripts/verify-supabase-rls.sh`;
   account/support changes use `SUPABASE_DB_TARGET=local scripts/verify-supabase-account-support.sh`.
+- Use the Supabase CLI version pinned in `.github/workflows/release-candidate.yml`,
+  currently `2.111.0`, for assembled local checks. `npx --yes supabase@2.111.0`
+  runs that version without replacing the installed CLI. The older `2.95.4` starts
+  image `17.6.1.106`, which crashes on anonymous function permission denials due to
+  [supautils #214](https://github.com/supabase/supautils/issues/214). Keep the denial
+  assertions and use the matching CLI/image.
 - `npm run check:supabase-contracts-local` is the exhaustive PostgreSQL 17 runner.
   It includes migration replay, historical restores, contracts and real-session
   races. CI runs it as parallel parts with `KOARYU_DB_SUITE_PART=current|drift|history`;
   the default runs every part. To reproduce one failed CI part, set the same value.
   If a needed proof cannot be exercised separately, use the runner once or rely on
   its required CI run. Do not add other skip flags.
+  Put Python 3.11+ and the backend dependencies on PATH first, for example from the
+  repository root: `PATH="$PWD/backend/venv/bin:$PATH" npm run check:supabase-contracts-local`.
 - Use assembled Supabase checks when behavior depends on the platform. Do not
   repeat all ordinary PostgreSQL checks locally merely for a second environment.
   Database checks remain mandatory for database/code/tooling changes; CI selection is described in [release controls](../docs/release-candidate-controls.md#current-ci-and-the-transition).
