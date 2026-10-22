@@ -922,3 +922,95 @@ def test_skipped_rows_add_nothing_to_status_belt_or_setup_totals():
     assert all(
         3 in issue.row_numbers and 2 not in issue.row_numbers for issue in mixed.setup_issues
     )
+
+
+def _decide_with_browser_defaults(rows, roster):
+    """Match rows, build the browser's default decisions from the review
+    payloads and apply them, as preview and execution do with no changes."""
+    from app.services.student_import_matching import build_duplicate_review, match_rows
+
+    planned_rows = [
+        {"row_number": number, "data": data, "is_valid": True, "issues": []}
+        for number, data in rows
+    ]
+    decisions = {}
+    for row, match in zip(planned_rows, match_rows(planned_rows, roster)):
+        row["match"] = match
+        review = build_duplicate_review(match)
+        if review is None or review["suggested_action"] == "decide":
+            continue
+        choice = [c for c in review["candidates"] if c["confidence"] != "different_person"]
+        if not choice:
+            continue
+        existing = next((c for c in choice if c["student_id"]), None)
+        in_file = next((c for c in choice if c["of_row"] is not None), None)
+        decisions[str(row["row_number"])] = CsvImportDuplicateDecision(
+            action="skip" if review["suggested_action"] == "skip" else "create",
+            matched_student_id=existing["student_id"] if existing else None,
+            of_row=in_file["of_row"] if in_file else None,
+            acknowledged_student_ids=review["acknowledge_student_ids"],
+            acknowledged_rows=review["acknowledge_rows"],
+        )
+    StudentImportExecutor._apply_duplicate_decisions(planned_rows, decisions)
+    return {row["row_number"]: row for row in planned_rows}
+
+
+def test_skip_chain_keeps_its_retained_row_when_the_bounded_list_drops_it():
+    """Astra's reproduction: row 10 skips to row 9, which skipped to row 8.
+    Rows 3-7 fill row 10's phone bucket, so row 8 is not a listed candidate;
+    row 10 still matches row 8 (same name and phone) and the skip holds."""
+    ava = {"legal_first_name": "Ava", "legal_last_name": "Nguyen"}
+    rows = [(2, {**ava, "email": "z@x.test"})]
+    rows += [
+        (n, {**ava, "date_of_birth": "2010-01-01", "email": "x@x.test", "phone": "4155550101"})
+        for n in range(3, 8)
+    ]
+    rows += [
+        (8, {**ava, "email": "y@x.test", "phone": "4155550101"}),
+        (9, {**ava, "date_of_birth": "2014-01-01", "email": "y@x.test"}),
+        (10, {**ava, "date_of_birth": "2014-01-01", "email": "w@x.test", "phone": "4155550101"}),
+    ]
+    by_row = _decide_with_browser_defaults(rows, [])
+    assert 8 not in {c.row_number for c in by_row[10]["match"].candidates}
+    assert not by_row[8].get("skipped") and by_row[8]["is_valid"]
+    assert by_row[9]["skipped"] and by_row[9]["skip_retained"] == ("row", 8)
+    assert by_row[10]["is_valid"] and by_row[10]["skipped"]
+    assert by_row[10]["skip_retained"] == ("row", 8)
+
+
+def test_skip_chain_reaches_a_roster_student_behind_the_plain_name_representative():
+    """Row 3 strongly repeats row 2, which skipped against roster student X.
+    Row 3 matches X by name only and X is not the plain-name representative
+    (an earlier same-name student is), so X was never a listed candidate."""
+    from tests.test_student_import_matching import existing
+
+    roster = [
+        existing("other", "Ava", "Nguyen"),
+        existing("x", "Ava", "Nguyen", date_of_birth="2014-06-03"),
+    ]
+    ava = {"legal_first_name": "Ava", "legal_last_name": "Nguyen"}
+    rows = [
+        (2, {**ava, "date_of_birth": "2014-06-03", "email": "ava@example.test"}),
+        (3, {**ava, "email": "ava@example.test"}),
+    ]
+    by_row = _decide_with_browser_defaults(rows, roster)
+    assert by_row[2]["skipped"] and by_row[2]["skip_retained"] == ("existing", "x")
+    assert "x" not in {c.existing_key for c in by_row[3]["match"].candidates}
+    assert by_row[3]["is_valid"] and by_row[3]["skipped"]
+    assert by_row[3]["skip_retained"] == ("existing", "x")
+
+
+def test_direct_reference_check_ignores_later_rows_and_different_people():
+    from app.services.student_import_matching import candidate_for_reference, match_rows
+
+    ava = {"legal_first_name": "Ava", "legal_last_name": "Nguyen"}
+    planned_rows = [
+        {"row_number": 2, "data": {**ava, "date_of_birth": "2010-01-01"}, "is_valid": True},
+        {"row_number": 3, "data": {**ava, "date_of_birth": "2014-06-03"}, "is_valid": True},
+        {"row_number": 4, "data": {**ava, "date_of_birth": "2014-06-03"}, "is_valid": True},
+    ]
+    second, third = match_rows(planned_rows, [])[1:]
+    assert candidate_for_reference(second, ("row", 4)) is None  # later row
+    assert candidate_for_reference(second, ("row", 2)) is None  # different person
+    assert candidate_for_reference(third, ("row", 3)).confidence == "strong"
+    assert candidate_for_reference(third, ("existing", "missing")) is None
