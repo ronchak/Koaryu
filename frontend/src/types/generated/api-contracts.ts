@@ -889,6 +889,8 @@ export interface ApiCsvImportDuplicateReview {
   candidates: ApiCsvImportDuplicateCandidate[];
   suggested_action: "skip" | "create" | "decide";
   family_context: string[];
+  acknowledge_student_ids: string[];
+  acknowledge_rows: number[];
 }
 
 export interface ApiCsvImportIssue {

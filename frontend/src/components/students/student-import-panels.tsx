@@ -164,7 +164,9 @@ export function StudentImportDonePanel({
     importedCount > 0 && importResult.valid_rows === importedCount + skippedCount;
   const doneTitle =
     importedCount === 0
-      ? "No students were imported"
+      ? skippedCount > 0 && importResult.error_rows === 0
+        ? "Nothing new to import"
+        : "No students were imported"
       : importedAllValidatedRows
         ? "Import complete"
         : "Import finished with follow-up items";

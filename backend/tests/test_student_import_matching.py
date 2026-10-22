@@ -514,24 +514,64 @@ def test_every_strong_or_archived_candidate_must_be_acknowledged():
     # "maybe" is only a possible match; it never needs acknowledgement.
 
 
-def test_skip_target_prefers_the_named_existing_student_then_the_named_row():
+def test_skip_target_follows_the_best_overall_match_and_never_falls_back():
     roster = [existing("s1", "Ava", "Nguyen", date_of_birth="2014-06-03")]
     rows = [
         planned(2, legal_first_name="Ava", legal_last_name="Nguyen", date_of_birth="2014-06-03"),
         planned(3, legal_first_name="Ava", legal_last_name="Nguyen", date_of_birth="2014-06-03"),
     ]
-    match = match_rows(rows, roster)[1]
-    assert skip_target(match, None) is None
-    assert skip_target(match, Decision("skip", matched_student_id="s1", of_row=2)) == (
-        "existing",
-        "s1",
-    )
-    assert skip_target(match, Decision("skip", of_row=2)) == ("row", 2)
-    assert skip_target(match, Decision("skip", matched_student_id="nobody")) is None
-    assert skip_target(match, Decision("skip", of_row=9)) is None
+    first, second = match_rows(rows, roster)
+    # Row 3's best match is the in-file row; naming only the roster student is no target.
+    assert second.of_row == 2 and second.of_existing_key is None
+    assert skip_target(second, None) is None
+    assert skip_target(second, Decision("skip", matched_student_id="s1")) is None
+    assert skip_target(second, Decision("skip", of_row=2)) == ("row", 2)
+    assert skip_target(second, Decision("skip", matched_student_id="s1", of_row=2)) == ("row", 2)
+    assert skip_target(second, Decision("skip", acknowledged_rows=[2])) == ("row", 2)
+    assert skip_target(second, Decision("skip", of_row=9)) is None
+    # Row 2's best match is the roster student.
+    assert skip_target(first, Decision("skip", matched_student_id="s1")) == ("existing", "s1")
+    assert skip_target(first, Decision("skip", of_row=2)) is None
     different = match_rows(
         [planned(2, legal_first_name="Ava", legal_last_name="Nguyen", date_of_birth="1980-01-01")],
         roster,
     )[0]
     assert different.duplicate_class == "different_person"
     assert skip_target(different, Decision("skip", matched_student_id="s1")) is None
+
+
+def test_archived_match_is_surfaced_beside_an_active_plain_name_match():
+    roster = [
+        existing("live", "Ava", "Nguyen"),
+        existing("old", "Ava", "Nguyen", archived=True),
+    ]
+    (match,) = match_rows(
+        [planned(2, legal_first_name="Ava", legal_last_name="Nguyen", date_of_birth="2014-06-03")],
+        roster,
+    )
+    assert match.duplicate_class == "existing_possible" and match.of_existing_key == "live"
+    assert [(c.existing_key, c.archived, c.confidence) for c in match.candidates] == [
+        ("live", False, "possible"),
+        ("old", True, "possible"),
+    ]
+    assert match.suggested_action == "decide"
+    review = build_duplicate_review(match)
+    assert review["suggested_action"] == "decide"
+    assert review["acknowledge_student_ids"] == ["old"]
+    assert [c.existing_key for c in unacknowledged_candidates(match, None)] == ["old"]
+
+
+def test_review_lists_every_required_acknowledgement_beyond_the_display_cap():
+    rows = [
+        planned(n, legal_first_name="Ava", legal_last_name="Nguyen", date_of_birth="2014-06-03")
+        for n in range(2, 10)
+    ]
+    matches = match_rows(rows, [])
+    last = matches[-1]
+    assert last.duplicate_class == "in_file_strong" and last.of_row == 2
+    review = build_duplicate_review(last)
+    assert len(review["candidates"]) == 5
+    assert review["acknowledge_rows"] == [2, 3, 4, 5, 6, 7, 8]
+    assert review["acknowledge_student_ids"] == []
+    decision = Decision("skip", of_row=2, acknowledged_rows=review["acknowledge_rows"])
+    assert unacknowledged_candidates(last, decision) == []

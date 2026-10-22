@@ -698,3 +698,126 @@ def test_skip_of_a_row_refused_by_setup_becomes_a_review():
         "claim_student_import_run_v2",
         "finish_student_import_run",
     ]
+
+
+def browser_default_decisions(preview):
+    """Mirror of the browser's default decisions built from the preview payload."""
+    decisions = {}
+    for row in preview.rows:
+        review = row.duplicate_review
+        if review is None or not row.is_valid or review.suggested_action == "decide":
+            continue
+        choice = [c for c in review.candidates if c.confidence != "different_person"]
+        if not choice:
+            continue
+        existing = next((c for c in choice if c.student_id), None)
+        in_file = next((c for c in choice if c.of_row is not None), None)
+        decisions[str(row.row_number)] = CsvImportDuplicateDecision(
+            action="skip" if review.suggested_action == "skip" else "create",
+            matched_student_id=existing.student_id if existing else None,
+            of_row=in_file.of_row if in_file else None,
+            acknowledged_student_ids=list(review.acknowledge_student_ids),
+            acknowledged_rows=list(review.acknowledge_rows),
+        )
+    return decisions
+
+
+def test_skip_never_falls_back_to_the_adult_when_the_child_row_was_blocked():
+    """Astra's scenario: the child's first row is blocked, its repeat must not be skipped
+    against the adult who merely shares the family email."""
+    db = ScriptedImportDb()
+    db.tables["programs"][0]["name"] = "Unassigned"
+    db.tables["students"] = [existing_student(dob="1980-02-02", email="family@example.net")]
+    rows = [
+        {
+            "First": "Ava",
+            "Last": "Nguyen",
+            "DOB": "2014-06-03",
+            "Email": "family@example.net",
+            "Program": "Unknown",
+        },
+        {"First": "Ava", "Last": "Nguyen", "DOB": "2014-06-03", "Email": "family@example.net"},
+    ]
+    preview = StudentService(db).validate_import_rows(rows, MAPPING, CsvImportOptions(), STUDIO)
+    assert preview.error_rows == 1
+    review = {row.row_number: row.duplicate_review for row in preview.rows}[3]
+    assert review.suggested_action == "skip" and review.acknowledge_rows == [2]
+    assert [(c.of_row, c.student_id, c.confidence) for c in review.candidates] == [
+        (2, None, "strong"),
+        (None, EXISTING, "possible"),
+    ]
+    default = browser_default_decisions(preview)["3"]
+    assert default.matched_student_id == EXISTING and default.of_row == 2
+
+    db.responses = [
+        ("claim_student_import_run_v2", claim()),
+        ("finish_student_import_run", finish),
+    ]
+    result = db.execute_import(rows, decisions={"3": default})
+    assert result.imported_count == 0 and result.skipped_rows == 0 and result.error_rows == 2
+    by_row = {row.row_number: row for row in result.rows}
+    assert [issue.code for issue in by_row[3].issues] == ["duplicate_review_required"]
+    assert "row 2" in by_row[3].errors[0] and "not imported" in by_row[3].errors[0]
+
+    create = default.model_copy(update={"action": "create"})
+    db.responses = [
+        ("claim_student_import_run_v2", claim()),
+        ("prepare_student_import_program_v1", selected_program(PROGRAM, "Unassigned")),
+        ("import_student_row_atomic", row_success),
+        ("finish_student_import_run", finish),
+    ]
+    result = db.execute_import(rows, decisions={"3": create})
+    assert result.imported_count == 1 and result.skipped_rows == 0 and result.error_rows == 1
+    writes = [params for name, params in db.calls if name == "import_student_row_atomic"]
+    assert [params["p_row_number"] for params in writes] == [3]
+
+
+def test_eight_identical_rows_with_browser_defaults_import_once_and_skip_the_rest():
+    db = ScriptedImportDb()
+    db.tables["programs"][0]["name"] = "Unassigned"
+    rows = [{"First": "Ava", "Last": "Nguyen", "DOB": "2014-06-03"} for _ in range(8)]
+    preview = StudentService(db).validate_import_rows(rows, MAPPING, CsvImportOptions(), STUDIO)
+    assert preview.duplicate_flagged_rows == 7
+    reviews = {row.row_number: row.duplicate_review for row in preview.rows}
+    assert len(reviews[9].candidates) == 5 and reviews[9].acknowledge_rows == [2, 3, 4, 5, 6, 7, 8]
+    decisions = browser_default_decisions(preview)
+    assert sorted(decisions) == [str(n) for n in range(3, 10)]
+    assert all(d.action == "skip" and d.of_row == 2 for d in decisions.values())
+    db.responses = [
+        ("claim_student_import_run_v2", claim()),
+        ("prepare_student_import_program_v1", selected_program(PROGRAM, "Unassigned")),
+        ("import_student_row_atomic", row_success),
+        ("finish_student_import_run", finish),
+    ]
+    result = db.execute_import(rows, decisions=decisions)
+    assert result.imported_count == 1 and result.skipped_rows == 7 and result.error_rows == 0
+    writes = [params for name, params in db.calls if name == "import_student_row_atomic"]
+    assert [params["p_row_number"] for params in writes] == [2]
+
+
+def test_archived_possible_match_beside_an_active_one_requires_a_decision():
+    db = ScriptedImportDb()
+    db.tables["students"] = [
+        existing_student("88888888-8888-4888-8888-888888888888", "Ava", "Nguyen", None),
+        existing_student(
+            "66666666-6666-4666-8666-666666666666",
+            "Ava",
+            "Nguyen",
+            None,
+            deleted_at="2026-01-01T00:00:00Z",
+        ),
+    ]
+    preview = StudentService(db).validate_import_rows(
+        [{"First": "Ava", "Last": "Nguyen", "DOB": "2014-06-03"}],
+        MAPPING,
+        CsvImportOptions(),
+        STUDIO,
+    )
+    review = preview.rows[0].duplicate_review
+    assert review.suggested_action == "decide"
+    assert [(c.student_id, c.archived) for c in review.candidates] == [
+        ("88888888-8888-4888-8888-888888888888", False),
+        ("66666666-6666-4666-8666-666666666666", True),
+    ]
+    assert review.acknowledge_student_ids == ["66666666-6666-4666-8666-666666666666"]
+    assert browser_default_decisions(preview) == {}

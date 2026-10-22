@@ -7,11 +7,10 @@ import {
   buildCsvImportIssueGroups,
   buildDuplicateDecision,
   buildPreflightSummary,
-  countDuplicateSkips,
   describeDuplicateCandidate,
   formatRowNumbers,
   getDuplicateReviewRows,
-  hasUnresolvedDuplicateDecisions,
+  getImportActionState,
   pluralize,
   type DuplicateDecisionMap,
   type DuplicateReviewRow,
@@ -55,12 +54,9 @@ export function StudentImportPreviewStep({
 }: StudentImportPreviewStepProps) {
   const issueRows = validationResult.rows || [];
   const duplicateRows = getDuplicateReviewRows(validationResult);
-  const skipCount = countDuplicateSkips(validationResult, duplicateDecisions);
-  const unresolvedDuplicates = hasUnresolvedDuplicateDecisions(
-    validationResult,
-    duplicateDecisions,
-  );
-  const importCount = Math.max(validationResult.valid_rows - skipCount, 0);
+  const importAction = getImportActionState(validationResult, duplicateDecisions);
+  const skipCount = importAction.skipCount;
+  const unresolvedDuplicates = importAction.reason === "unresolved";
   const blockingRows = issueRows.filter((row) =>
     row.issues.some((issue) => issue.severity === "error"),
   );
@@ -152,10 +148,10 @@ export function StudentImportPreviewStep({
             variant="primary"
             size="md"
             isLoading={isLoading}
-            disabled={isLoading || !activeImportKey || unresolvedDuplicates || importCount === 0}
+            disabled={isLoading || !activeImportKey || importAction.disabled}
             onClick={() => void onImport()}
           >
-            Import {importCount} {pluralize(importCount, "student")}
+            {importAction.label}
           </Button>
         ) : null}
       </div>

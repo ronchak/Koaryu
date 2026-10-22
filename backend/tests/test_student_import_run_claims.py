@@ -55,6 +55,57 @@ def test_request_identity_preserves_keys_and_distinguishes_changed_inputs():
     )
 
 
+def test_decisions_recorded_before_acknowledgements_existed_hash_identically():
+    import hashlib
+    import json
+
+    rows, mapping = (
+        [{"First": "Ava", "Last": "Nguyen"}],
+        {"First": "legal_first_name", "Last": "legal_last_name"},
+    )
+    options = CsvImportOptions()
+    legacy_shape = {"2": {"action": "skip", "matched_student_id": "s1", "of_row": None}}
+    expected = hashlib.sha256(
+        json.dumps(
+            {
+                "operation": "students_csv_execute",
+                "rows": rows,
+                "mapping": mapping,
+                "options": options.model_dump(mode="json"),
+                "duplicate_decisions": legacy_shape,
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=True,
+        ).encode("utf-8")
+    ).hexdigest()
+    from_legacy = {"2": CsvImportDuplicateDecision.model_validate(legacy_shape["2"])}
+    with_defaults = {
+        "2": CsvImportDuplicateDecision(
+            action="skip",
+            matched_student_id="s1",
+            of_row=None,
+            acknowledged_student_ids=[],
+            acknowledged_rows=[],
+        )
+    }
+    assert (
+        StudentImportRunStore.compute_request_hash(rows, mapping, options, from_legacy) == expected
+    )
+    assert (
+        StudentImportRunStore.compute_request_hash(rows, mapping, options, with_defaults)
+        == expected
+    )
+    acknowledged = {
+        "2": CsvImportDuplicateDecision(
+            action="skip", matched_student_id="s1", acknowledged_student_ids=["s1"]
+        )
+    }
+    assert (
+        StudentImportRunStore.compute_request_hash(rows, mapping, options, acknowledged) != expected
+    )
+
+
 def test_claim_translates_v2_envelopes_without_reimplementing_database_claims():
     payload = dict(
         studio_id="studio",

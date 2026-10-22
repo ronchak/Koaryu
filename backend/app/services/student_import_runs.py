@@ -14,6 +14,19 @@ IMPORT_RUN_STALE_AFTER_SECONDS = 45
 MAX_IDEMPOTENCY_KEY_LENGTH = 255
 
 
+def serialize_duplicate_decision(decision: CsvImportDuplicateDecision) -> dict[str, Any]:
+    """Hash shape for a decision: the original fields, plus acknowledgements only when present.
+
+    Decisions recorded before the acknowledgement fields existed must keep
+    hashing identically, so empty lists are omitted rather than serialised.
+    """
+    payload = decision.model_dump(mode="json")
+    for key in ("acknowledged_student_ids", "acknowledged_rows"):
+        if not payload.get(key):
+            payload.pop(key, None)
+    return payload
+
+
 class StudentImportRunStore:
     """Persistence boundary for CSV import idempotency and worker claims."""
 
@@ -54,7 +67,7 @@ class StudentImportRunStore:
         # the historical hash so existing runs stay replayable.
         if duplicate_decisions:
             payload["duplicate_decisions"] = {
-                str(row_number): decision.model_dump(mode="json")
+                str(row_number): serialize_duplicate_decision(decision)
                 for row_number, decision in sorted(duplicate_decisions.items())
             }
         serialized = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True)

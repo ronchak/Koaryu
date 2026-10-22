@@ -11,6 +11,7 @@ import {
   countDuplicateSkips,
   describeDuplicateCandidate,
   getDuplicateReviewRows,
+  getImportActionState,
   hasUnresolvedDuplicateDecisions,
   formatRowNumbers,
   getCsvImportFileRejection,
@@ -367,6 +368,12 @@ describe("student import page model", () => {
       candidates,
       suggested_action,
       family_context: [],
+      acknowledge_student_ids: candidates
+        .filter((c) => c.student_id && (c.confidence === "strong" || c.archived))
+        .map((c) => c.student_id),
+      acknowledge_rows: candidates
+        .filter((c) => c.of_row != null && (c.confidence === "strong" || c.archived))
+        .map((c) => c.of_row),
     });
     const result = importResult({
       valid_rows: 6,
@@ -453,7 +460,7 @@ describe("student import page model", () => {
         action: "create",
         matched_student_id: "s3",
         of_row: null,
-        acknowledged_student_ids: ["s3"],
+        acknowledged_student_ids: [],
         acknowledged_rows: [],
       },
       5: {
@@ -555,5 +562,110 @@ describe("student import page model", () => {
     assert.deepEqual(Object.keys(defaults), ["3"]);
     assert.equal(hasUnresolvedDuplicateDecisions(result, defaults), false);
     assert.equal(countDuplicateSkips(result, defaults), 1);
+  });
+  it("requires a decision when any possible match is archived and sizes the primary button", () => {
+    const archivedReview = {
+      candidates: [
+        {
+          student_id: "live",
+          of_row: null,
+          display_name: "Ava Nguyen",
+          archived: false,
+          confidence: "possible",
+          reasons: ["same name"],
+        },
+        {
+          student_id: "old",
+          of_row: null,
+          display_name: "Ava Nguyen",
+          archived: true,
+          confidence: "possible",
+          reasons: ["same name"],
+        },
+      ],
+      suggested_action: "decide",
+      family_context: [],
+      acknowledge_student_ids: ["old"],
+      acknowledge_rows: [],
+    };
+    const strongReview = {
+      candidates: [
+        {
+          student_id: "s1",
+          of_row: null,
+          display_name: "Leo Nguyen",
+          archived: false,
+          confidence: "strong",
+          reasons: ["same name", "same birth date"],
+        },
+      ],
+      suggested_action: "skip",
+      family_context: [],
+      acknowledge_student_ids: ["s1"],
+      acknowledge_rows: [],
+    };
+    const result = importResult({
+      valid_rows: 2,
+      rows: [
+        {
+          row_number: 2,
+          data: { legal_first_name: "Ava", legal_last_name: "Nguyen" },
+          issues: [],
+          is_valid: true,
+          duplicate_review: archivedReview,
+        },
+        {
+          row_number: 3,
+          data: { legal_first_name: "Leo", legal_last_name: "Nguyen" },
+          issues: [],
+          is_valid: true,
+          duplicate_review: strongReview,
+        },
+      ],
+    });
+
+    const defaults = buildDefaultDuplicateDecisions(result);
+    assert.deepEqual(Object.keys(defaults), ["3"]);
+    assert.equal(hasUnresolvedDuplicateDecisions(result, defaults), true);
+    assert.deepEqual(getImportActionState(result, defaults), {
+      importCount: 1,
+      skipCount: 1,
+      label: "Import 1 student",
+      disabled: true,
+      reason: "unresolved",
+    });
+
+    const chosen = { ...defaults, 2: buildDuplicateDecision(archivedReview, "skip") };
+    assert.deepEqual(chosen[2], {
+      action: "skip",
+      matched_student_id: "live",
+      of_row: null,
+      acknowledged_student_ids: ["old"],
+      acknowledged_rows: [],
+    });
+    assert.equal(hasUnresolvedDuplicateDecisions(result, chosen), false);
+    assert.deepEqual(getImportActionState(result, chosen), {
+      importCount: 0,
+      skipCount: 2,
+      label: "Finish, skip 2 already in Koaryu",
+      disabled: false,
+      reason: null,
+    });
+
+    const created = { ...chosen, 2: buildDuplicateDecision(archivedReview, "create") };
+    assert.deepEqual(getImportActionState(result, created), {
+      importCount: 1,
+      skipCount: 1,
+      label: "Import 1 student",
+      disabled: false,
+      reason: null,
+    });
+    assert.deepEqual(getImportActionState(importResult(), {}), {
+      importCount: 0,
+      skipCount: 0,
+      label: "Import 0 students",
+      disabled: true,
+      reason: "nothing",
+    });
   });
 });

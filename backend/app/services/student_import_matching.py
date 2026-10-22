@@ -175,12 +175,41 @@ class RowMatch:
         return self.duplicate_class in STRONG_CLASSES or self.duplicate_class == "archived_match"
 
     @property
+    def has_archived_candidate(self) -> bool:
+        return any(
+            candidate.archived and candidate.confidence in {"strong", "possible"}
+            for candidate in self.candidates
+        )
+
+    @property
     def suggested_action(self) -> str:
-        if self.duplicate_class == "archived_match":
+        # Any archived strong or possible candidate needs the owner's call,
+        # even when an active match outranks it.
+        if self.duplicate_class == "archived_match" or self.has_archived_candidate:
             return "decide"
         if self.duplicate_class in STRONG_CLASSES:
             return "skip"
         return "create"
+
+    @property
+    def acknowledge_student_ids(self) -> list[str]:
+        return [
+            candidate.existing_key
+            for candidate in self.candidates
+            if candidate.source == "existing"
+            and candidate.existing_key is not None
+            and needs_acknowledgement(candidate)
+        ]
+
+    @property
+    def acknowledge_rows(self) -> list[int]:
+        return [
+            candidate.row_number
+            for candidate in self.candidates
+            if candidate.source == "row"
+            and candidate.row_number is not None
+            and needs_acknowledgement(candidate)
+        ]
 
 
 def student_identity_from_row(data: dict[str, Any]) -> StudentIdentity:
@@ -323,20 +352,23 @@ class _StudentIndex:
         self.by_name_dob: dict[tuple[str, str, str], list[Any]] = defaultdict(list)
         self.by_name_email: dict[tuple[str, str, str], list[Any]] = defaultdict(list)
         self.by_name_phone: dict[tuple[str, str, str], list[Any]] = defaultdict(list)
-        self.first_by_name: dict[tuple[str, str], Any] = {}
-        self.first_missing_dob_by_name: dict[tuple[str, str], Any] = {}
-        self.first_by_name_and_dob: dict[tuple[str, str], dict[str, Any]] = defaultdict(dict)
+        # Plain-name representatives are kept separately for active and archived
+        # records, so an archived match is never hidden behind an active one.
+        self.first_by_name: dict[tuple[str, str, bool], Any] = {}
+        self.first_missing_dob_by_name: dict[tuple[str, str, bool], Any] = {}
+        self.first_by_name_and_dob: dict[tuple[str, str, bool], dict[str, Any]] = defaultdict(dict)
 
-    def add(self, identity: StudentIdentity, record: Any) -> None:
+    def add(self, identity: StudentIdentity, record: Any, *, archived: bool = False) -> None:
         if not identity.has_name:
             return
         name = (identity.first, identity.last)
-        self.first_by_name.setdefault(name, record)
+        flagged = (*name, archived)
+        self.first_by_name.setdefault(flagged, record)
         if identity.date_of_birth:
             self.by_name_dob[(*name, identity.date_of_birth)].append(record)
-            self.first_by_name_and_dob[name].setdefault(identity.date_of_birth, record)
+            self.first_by_name_and_dob[flagged].setdefault(identity.date_of_birth, record)
         else:
-            self.first_missing_dob_by_name.setdefault(name, record)
+            self.first_missing_dob_by_name.setdefault(flagged, record)
         if identity.email:
             self.by_name_email[(*name, identity.email)].append(record)
         if identity.phone:
@@ -353,18 +385,20 @@ class _StudentIndex:
             pool.extend(self.by_name_email.get((*name, identity.email), []))
         if identity.phone:
             pool.extend(self.by_name_phone.get((*name, identity.phone), []))
-        if identity.date_of_birth:
-            representative = self.first_missing_dob_by_name.get(name)
-            if representative is not None:
-                pool.append(representative)
-            for dob, record in self.first_by_name_and_dob.get(name, {}).items():
-                if dob != identity.date_of_birth:
-                    pool.append(record)
-                    break
-        else:
-            representative = self.first_by_name.get(name)
-            if representative is not None:
-                pool.append(representative)
+        for archived in (False, True):
+            flagged = (*name, archived)
+            if identity.date_of_birth:
+                representative = self.first_missing_dob_by_name.get(flagged)
+                if representative is not None:
+                    pool.append(representative)
+                for dob, record in self.first_by_name_and_dob.get(flagged, {}).items():
+                    if dob != identity.date_of_birth:
+                        pool.append(record)
+                        break
+            else:
+                representative = self.first_by_name.get(flagged)
+                if representative is not None:
+                    pool.append(representative)
         return _unique_records(pool)
 
 
@@ -492,7 +526,11 @@ def match_rows(
             run_students.add(identity, record)
             run_guardians.add(guardian, record)
             continue
-        existing_students.add(identity, _ExistingRecord(entry, identity, student_name))
+        existing_students.add(
+            identity,
+            _ExistingRecord(entry, identity, student_name),
+            archived=bool(entry.get("archived")),
+        )
         for guardian_entry in entry.get("guardians") or []:
             guardian = guardian_identity_from_existing(guardian_entry)
             existing_guardians.add(
@@ -645,6 +683,8 @@ def build_duplicate_review(match: RowMatch) -> Optional[dict[str, Any]]:
         "candidates": candidates,
         "suggested_action": match.suggested_action if match.is_flagged else "create",
         "family_context": family_context,
+        "acknowledge_student_ids": match.acknowledge_student_ids,
+        "acknowledge_rows": match.acknowledge_rows,
     }
 
 
@@ -712,17 +752,17 @@ def candidate_for_reference(
 
 
 def skip_target(match: RowMatch, decision: Optional[Any]) -> Optional[tuple[str, Any]]:
-    """What a skip decision points at, if execution found it again.
+    """What a skip decision points at: the row's best overall match, if named.
 
-    The existing student wins when the decision names one that is still a
-    strong or possible candidate; otherwise the named earlier row, if it is.
+    The target is exactly the reference the top-level class describes
+    (``of_row`` or ``of_existing_key``). A decision that does not name that
+    reference has no target; a skip never falls back to a weaker candidate.
     """
-    if decision is None:
+    if decision is None or not match.is_flagged:
         return None
-    matched = getattr(decision, "matched_student_id", None)
-    if matched and candidate_for_reference(match, ("existing", matched)) is not None:
-        return ("existing", str(matched))
-    of_row = getattr(decision, "of_row", None)
-    if of_row is not None and candidate_for_reference(match, ("row", int(of_row))) is not None:
-        return ("row", int(of_row))
+    students, rows = named_references(decision)
+    if match.of_row is not None:
+        return ("row", match.of_row) if match.of_row in rows else None
+    if match.of_existing_key is not None:
+        return ("existing", match.of_existing_key) if match.of_existing_key in students else None
     return None

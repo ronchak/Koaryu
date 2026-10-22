@@ -323,21 +323,21 @@ export function buildDuplicateDecision(
   review: CsvImportDuplicateReview,
   action: CsvImportDuplicateDecision["action"],
 ): CsvImportDuplicateDecision {
-  // Name everything the server showed: the earliest in-file row and existing
-  // student lead, and every other candidate is acknowledged. A strong match
-  // that appears later, unseen by the owner, then refuses the row.
-  const inFile = review.candidates.filter(
+  // The leads are the best in-file row and existing student the server showed.
+  // The acknowledgement lists come from the server and are never capped, so a
+  // strong match the owner did not see refuses the row at execution.
+  const inFile = review.candidates.find(
     (candidate) => candidate.of_row != null && candidate.confidence !== "different_person",
   );
-  const existing = review.candidates.filter(
+  const existing = review.candidates.find(
     (candidate) => candidate.student_id && candidate.confidence !== "different_person",
   );
   return {
     action,
-    matched_student_id: existing[0]?.student_id ?? null,
-    of_row: inFile[0]?.of_row ?? null,
-    acknowledged_student_ids: existing.map((candidate) => candidate.student_id as string),
-    acknowledged_rows: inFile.map((candidate) => candidate.of_row as number),
+    matched_student_id: existing?.student_id ?? null,
+    of_row: inFile?.of_row ?? null,
+    acknowledged_student_ids: [...(review.acknowledge_student_ids ?? [])],
+    acknowledged_rows: [...(review.acknowledge_rows ?? [])],
   };
 }
 
@@ -364,6 +364,58 @@ export function hasUnresolvedDuplicateDecisions(
   return getDuplicateReviewRows(result).some(
     (row) => row.decisionRequired && !decisions[String(row.rowNumber)],
   );
+}
+
+export interface ImportActionState {
+  importCount: number;
+  skipCount: number;
+  label: string;
+  disabled: boolean;
+  /** Set when the button is disabled because a choice is still open. */
+  reason: "unresolved" | "nothing" | null;
+}
+
+/** What the primary button does: import new students, or finish an all-skip re-upload. */
+export function getImportActionState(
+  result: CsvImportResult,
+  decisions: DuplicateDecisionMap,
+): ImportActionState {
+  const skipCount = countDuplicateSkips(result, decisions);
+  const importCount = Math.max(result.valid_rows - skipCount, 0);
+  if (hasUnresolvedDuplicateDecisions(result, decisions)) {
+    return {
+      importCount,
+      skipCount,
+      label: `Import ${importCount} ${pluralize(importCount, "student")}`,
+      disabled: true,
+      reason: "unresolved",
+    };
+  }
+  if (importCount === 0 && skipCount === 0) {
+    return {
+      importCount,
+      skipCount,
+      label: "Import 0 students",
+      disabled: true,
+      reason: "nothing",
+    };
+  }
+  if (importCount === 0) {
+    return {
+      importCount,
+      skipCount,
+      label: `Finish, skip ${skipCount} already in Koaryu`,
+      disabled: false,
+      reason: null,
+    };
+  }
+  return {
+    importCount,
+    skipCount,
+    label: `Import ${importCount} ${pluralize(importCount, "student")}`,
+    disabled: false,
+    reason: null,
+  };
 }
 
 export function describeDuplicateCandidate(candidate: CsvImportDuplicateCandidate): string {

@@ -291,9 +291,19 @@ class CsvImportDuplicateCandidate(BaseModel):
 
 
 class CsvImportDuplicateReview(BaseModel):
-    candidates: list[CsvImportDuplicateCandidate] = Field(default_factory=list)
+    candidates: list[CsvImportDuplicateCandidate] = Field(
+        default_factory=list, description="Strongest candidates first; display may be capped."
+    )
     suggested_action: Literal["skip", "create", "decide"] = "create"
     family_context: list[str] = Field(default_factory=list)
+    acknowledge_student_ids: list[str] = Field(
+        default_factory=list,
+        description="Every existing student that must be acknowledged before this row is written, never capped.",
+    )
+    acknowledge_rows: list[int] = Field(
+        default_factory=list,
+        description="Every earlier row that must be acknowledged before this row is written, never capped.",
+    )
 
 
 class CsvImportDuplicateDecision(BaseModel):
