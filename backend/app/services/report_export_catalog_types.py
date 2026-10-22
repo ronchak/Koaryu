@@ -98,6 +98,7 @@ class CsvReport:
     min_role: str = "admin"
     contains_sensitive_data: bool = True
     availability: ReportAvailability = "available"
+    supports_date_range: bool = False
 
 
 def _report(
@@ -113,6 +114,7 @@ def _report(
     min_role: str = "admin",
     contains_sensitive_data: bool = True,
     availability: ReportAvailability = "available",
+    supports_date_range: bool = False,
 ) -> CsvReport:
     return CsvReport(
         id=id,
@@ -126,4 +128,5 @@ def _report(
         min_role=min_role,
         contains_sensitive_data=contains_sensitive_data,
         availability=availability,
+        supports_date_range=supports_date_range,
     )

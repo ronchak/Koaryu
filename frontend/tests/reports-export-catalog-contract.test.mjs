@@ -56,6 +56,18 @@ describe("report export catalog", () => {
     assert.doesNotMatch(panelSource, /minimumRole\??:/);
   });
 
+  it("offers the date range only on the invoice and payment ledgers", () => {
+    const dateRangeIds = [
+      ...panelSource.matchAll(/\{ id: "([a-z0-9_]+)", title:[^\n]*acceptsDateRange: true/g),
+    ].map((match) => match[1]);
+
+    assert.deepEqual(dateRangeIds.sort(), ["billing_invoice_ledger", "billing_payment_ledger"]);
+    const handler = panelSource.slice(panelSource.indexOf("async function handleDownloadReport"));
+    assert.ok(handler.indexOf("report.acceptsDateRange") < handler.indexOf("api.download"));
+    assert.match(handler, /query\.set\("from", dateRange\.from\)/);
+    assert.match(handler, /query\.set\("to", dateRange\.to\)/);
+  });
+
   it("checks per-row authorization before preview, token, or download work", () => {
     const handler = panelSource.slice(panelSource.indexOf("async function handleDownloadReport"));
     assert.ok(handler.indexOf("canRunReportExport") < handler.indexOf("isPreviewMode"));

@@ -96,7 +96,7 @@ class ReportExportContractTest(unittest.TestCase):
             [entry["id"] for entry in EXPECTED_MANIFEST if entry["availability"] == "available"],
             list(live),
         )
-        self.assertEqual(29, len(live))
+        self.assertEqual(32, len(live))
         self.assertEqual(11, len(complete) - len(live))
 
         service = ReportExportService(None)
