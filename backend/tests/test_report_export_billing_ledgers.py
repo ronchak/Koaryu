@@ -498,7 +498,7 @@ class BillingLedgerRowsTest(unittest.TestCase):
                 "student_id": "student-ada",
                 "student_name": "Ada Lovelace",
                 "enrollment_id": "enr-1",
-                "plan_name": "Little Dragons",
+                "enrollment_current_plan_name": "Little Dragons",
                 "currency": "usd",
                 "amount_due_cents": "12950",
                 "amount_due": "129.50",
@@ -521,7 +521,7 @@ class BillingLedgerRowsTest(unittest.TestCase):
         self.assertEqual(archived["payer_display_name"], "")
         blank = next(row for row in rows if row["invoice_id"] == "inv-blank-name")
         self.assertEqual(blank["student_name"], "Kiddo")
-        self.assertEqual(blank["plan_name"], "")
+        self.assertEqual(blank["enrollment_current_plan_name"], "")
         self.assertEqual(blank["payer_display_name"], '\'=HYPERLINK("x")')
         self.assertEqual(
             next(row for row in rows if row["invoice_id"] == "inv-before")["created_date_local"],
@@ -599,7 +599,7 @@ class BillingLedgerRowsTest(unittest.TestCase):
                 "refunded_amount_cents": "",
                 "disputed_amount_cents": "",
                 "net_collected_amount_cents": "",
-                "reconciliation_required": "",
+                "reconciliation_required": "false",
                 "reconciliation_reason_code": "",
                 "processed_at": "",
                 "created_at": "2026-03-03T18:00:00+00:00",
@@ -722,8 +722,22 @@ class BillingLedgerRowsTest(unittest.TestCase):
         cash = next(r for r in rows if r["record_id"] == "pay-cash")
         self.assertEqual(cash["reconciliation_required"], "false")
         self.assertEqual(cash["reconciliation_reason_code"], "")
-        refund = next(r for r in rows if r["record_type"] == "refund")
-        self.assertEqual(refund["reconciliation_required"], "")
+
+    def test_refund_and_dispute_rows_carry_their_own_reconciliation_flags(self):
+        """An adjustment can need reconciliation on its own, for example when its
+        payment identity did not match, even if its payment is fine or absent."""
+        fixture = billing_fixture()
+        for refund in fixture["billing_refunds"]:
+            refund["reconciliation_required"] = True
+            refund["reconciliation_reason_code"] = "payment_identity_mismatch"
+        rows, _ = build(TableBackedSupabase(fixture), "billing_payment_ledger")
+        refunds = [r for r in rows if r["record_type"] == "refund"]
+        self.assertTrue(refunds)
+        for refund in refunds:
+            self.assertEqual(refund["reconciliation_required"], "true")
+            self.assertEqual(refund["reconciliation_reason_code"], "payment_identity_mismatch")
+        dispute = next(r for r in rows if r["record_type"] == "dispute")
+        self.assertEqual(dispute["reconciliation_required"], "false")
 
     def test_every_ledger_read_is_filtered_to_the_callers_studio(self):
         for report_id in LEDGER_IDS:

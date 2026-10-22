@@ -204,11 +204,14 @@ in different currencies must not be added together.
   balance-reversing disputes, so do not subtract those rows from it again. When a
   payment's `reconciliation_required` is `true`, its refunded, disputed and net
   figures are known to need reconciliation (`reconciliation_reason_code` says why)
-  and must not be read as settled.
+  and must not be read as settled. Refund and dispute rows carry their own flag, which
+  can be set even when their payment's is not.
 - **Enrollment plan columns show the plan as it is now.** Enrollments store no price
   of their own, and a subscription keeps its original price until it is moved to a new
   one, so `current_plan_amount` can differ from what an existing subscription is billed.
-  Billed amounts are in the invoice file.
+  Billed amounts are in the invoice file. Likewise the invoice file's
+  `enrollment_current_plan_name` is the enrollment's plan now; an enrollment can move
+  to another plan, so it is not necessarily the plan an older invoice billed.
 - **No revenue recognition is implied.** Rows record billing events and their current
   status, not earned or deferred revenue, payouts or tax.
 - **No fees are calculated.** The Koaryu Payments application fee appears only where it

@@ -27,7 +27,7 @@ INVOICE_LEDGER_COLUMNS = (
     "student_id",
     "student_name",
     "enrollment_id",
-    "plan_name",
+    "enrollment_current_plan_name",
     "currency",
     "amount_due_cents",
     "amount_due",
@@ -144,6 +144,8 @@ REFUND_SOURCE_COLUMNS = (
     "status",
     "reason",
     "amount_cents",
+    "reconciliation_required",
+    "reconciliation_reason_code",
     "created_at",
     "stripe_refund_id",
 )
@@ -154,6 +156,8 @@ DISPUTE_SOURCE_COLUMNS = (
     "state_category",
     "reason",
     "amount_cents",
+    "reconciliation_required",
+    "reconciliation_reason_code",
     "created_at",
     "stripe_dispute_id",
 )
@@ -403,7 +407,9 @@ def build_invoice_ledger_rows(
                 "student_id": invoice.get("student_id"),
                 "student_name": student_name(students.get(invoice.get("student_id"))),
                 "enrollment_id": invoice.get("enrollment_id"),
-                "plan_name": plan.get("name"),
+                # The enrollment's plan as it is now; an enrollment can move to
+                # another plan, so this is not necessarily what the invoice billed.
+                "enrollment_current_plan_name": plan.get("name"),
                 "currency": invoice.get("currency"),
                 "amount_due_cents": invoice.get("amount_due_cents"),
                 "amount_due": cents_to_amount(invoice.get("amount_due_cents")),
@@ -556,6 +562,8 @@ def build_payment_ledger_rows(
                         "reason": record.get("reason"),
                         "amount_cents": record.get("amount_cents"),
                         "amount": cents_to_amount(record.get("amount_cents")),
+                        "reconciliation_required": bool(record.get("reconciliation_required")),
+                        "reconciliation_reason_code": record.get("reconciliation_reason_code"),
                         "created_at": record.get("created_at"),
                         "event_date_local": _date_text(clock.local_date(record.get("created_at"))),
                         "stripe_refund_id": record.get("stripe_refund_id"),
