@@ -166,6 +166,9 @@ class RowMatch:
     guardian_reasons: list[str] = field(default_factory=list)
     candidates: list[MatchCandidate] = field(default_factory=list)
     guardian_candidates: list[GuardianCandidate] = field(default_factory=list)
+    # More studio students match than ROSTER_MATCH_LIMIT allows reviewing; the
+    # planner blocks the row and it is never a target for later rows.
+    roster_overflow: bool = False
     # The row's own identity and a lookup shared by every row of one
     # ``match_rows`` call, so a reference that the bounded candidate list does
     # not hold can still be compared directly (see ``candidate_for_reference``).
@@ -347,22 +350,34 @@ DISPLAY_CANDIDATE_CAP = 5
 # would otherwise compare every row with every earlier row and send every pair
 # to the browser (1,000 identical rows produced an 80 MB preview).
 MATCH_BUCKET_CAP = 5
+# Studio students kept per roster bucket. Up to this many, every student that
+# could need acknowledging is compared and must be named by the decision. A row
+# whose acknowledgement buckets hold more (a studio that already has the same
+# person many times over) is blocked instead, so the work stays linear and a row
+# is never written past a match nobody could review.
+ROSTER_MATCH_LIMIT = 25
 
 
 def _bounded_add(
     bucket: list[Any], record: Any, cap: Optional[int], order: Optional[Callable[[Any], int]]
-) -> None:
+) -> bool:
     """Append, or keep only the ``cap`` records that sort first by ``order``.
 
-    Without ``order`` the earliest inserted records are kept.
+    Without ``order`` the earliest inserted records are kept. Returns True when
+    a record had to be dropped.
     """
     if cap is None:
         bucket.append(record)
-    elif order is not None:
+        return False
+    if order is not None:
         insort(bucket, record, key=order)
+        dropped = len(bucket) > cap
         del bucket[cap:]
-    elif len(bucket) < cap:
+        return dropped
+    if len(bucket) < cap:
         bucket.append(record)
+        return False
+    return True
 
 
 def _keep_first(
@@ -411,24 +426,32 @@ class _StudentIndex:
         self.first_by_name: dict[tuple[str, str], Any] = {}
         self.first_missing_dob_by_name: dict[tuple[str, str], Any] = {}
         self.first_by_name_and_dob: dict[tuple[str, str], dict[str, Any]] = defaultdict(dict)
-        # Archived records never collapse: every one must reach enforcement.
+        # Archived records never collapse to a representative: every one up to
+        # the cap must reach enforcement.
         self.archived_by_name: dict[tuple[str, str], list[Any]] = defaultdict(list)
+        # (bucket, key) pairs that dropped a record because they were full.
+        self.dropped: set[tuple[str, tuple[str, ...]]] = set()
 
     def add(self, identity: StudentIdentity, record: Any, *, archived: bool = False) -> None:
         if not identity.has_name:
             return
         name = (identity.first, identity.last)
         cap, order = self.cap, self.order
+
+        def put(label: str, buckets: dict[Any, list[Any]], key: tuple[str, ...]) -> None:
+            if _bounded_add(buckets[key], record, cap, order):
+                self.dropped.add((label, key))
+
         if identity.date_of_birth:
-            _bounded_add(self.by_name_dob[(*name, identity.date_of_birth)], record, cap, order)
+            put("dob", self.by_name_dob, (*name, identity.date_of_birth))
         if identity.email:
-            _bounded_add(self.by_name_email[(*name, identity.email)], record, cap, order)
+            put("email", self.by_name_email, (*name, identity.email))
             if not identity.date_of_birth:
-                _bounded_add(self.by_name_email_no_dob[(*name, identity.email)], record, cap, order)
+                put("email_no_dob", self.by_name_email_no_dob, (*name, identity.email))
         if identity.phone:
-            _bounded_add(self.by_name_phone[(*name, identity.phone)], record, cap, order)
+            put("phone", self.by_name_phone, (*name, identity.phone))
         if archived:
-            self.archived_by_name[name].append(record)
+            put("archived", self.archived_by_name, name)
             return
         _keep_first(self.first_by_name, name, record, order)
         if identity.date_of_birth:
@@ -463,6 +486,23 @@ class _StudentIndex:
                 pool.append(representative)
         pool.extend(self.archived_by_name.get(name, []))
         return _unique_records(pool)
+
+    def overflowed(self, identity: StudentIdentity) -> bool:
+        """True when a full bucket may have dropped a record this identity would
+        need to acknowledge: a strong match (same birth date; or same email
+        where a birth date is missing) or any archived same-name record. Full
+        buckets that can only hide possible matches do not count."""
+        if not identity.has_name or not self.dropped:
+            return False
+        name = (identity.first, identity.last)
+        keys: list[tuple[str, tuple[str, ...]]] = [("archived", name)]
+        if identity.date_of_birth:
+            keys.append(("dob", (*name, identity.date_of_birth)))
+            if identity.email:
+                keys.append(("email_no_dob", (*name, identity.email)))
+        elif identity.email:
+            keys.append(("email", (*name, identity.email)))
+        return any(key in self.dropped for key in keys)
 
 
 class _GuardianIndex:
@@ -590,9 +630,11 @@ def match_rows(
     Candidates come from keyed indexes (name plus birth date, email or phone
     for students; email plus a name part, or name plus phone, for guardians)
     with one representative per plain-name bucket. Earlier rows of the file and
-    guardian records are bounded per bucket (``MATCH_BUCKET_CAP``), so a
-    10,000-row file against a large roster stays linear even when one person or
-    one placeholder guardian repeats on every row.
+    guardian records are bounded per bucket (``MATCH_BUCKET_CAP``), and studio
+    students per bucket (``ROSTER_MATCH_LIMIT``, with ``roster_overflow`` set
+    when a bucket that could hide a match needing acknowledgement is full), so a
+    10,000-row file stays linear even when one person or one placeholder
+    guardian repeats on every row or many times over in the studio.
     """
 
     ordered = sorted(planned_rows, key=lambda row: int(row["row_number"]))
@@ -602,8 +644,9 @@ def match_rows(
 
     run_students = _StudentIndex(cap=MATCH_BUCKET_CAP, order=by_row)
     run_guardians = _GuardianIndex(cap=MATCH_BUCKET_CAP, order=by_row)
-    # Existing students stay uncapped: enforcement needs every strong match.
-    existing_students = _StudentIndex()
+    # Studio students are compared in full up to ROSTER_MATCH_LIMIT per bucket;
+    # a row whose acknowledgement buckets overflow is blocked, never written.
+    existing_students = _StudentIndex(cap=ROSTER_MATCH_LIMIT)
     existing_guardians = _GuardianIndex(cap=MATCH_BUCKET_CAP)
     references: dict[tuple[str, Any], _Reference] = {}
 
@@ -648,6 +691,11 @@ def match_rows(
         row_name = display_name_for_row(data)
         match.identity = identity
         match.references = references
+        if existing_students.overflowed(identity):
+            # Blocked by the planner: no candidates are built, no review is sent
+            # and the row is never a target, so the cost per row stays constant.
+            match.roster_overflow = True
+            continue
 
         candidates: list[MatchCandidate] = []
         for record in run_students.lookup(identity):
@@ -753,15 +801,22 @@ def match_rows(
 
 
 def displayed_candidates(match: RowMatch) -> list[MatchCandidate]:
-    """Every candidate the owner must acknowledge, then the strongest others up to the cap.
+    """The best match, every candidate the owner must acknowledge, then the
+    strongest others up to the cap.
 
     A decision copies the acknowledgement lists, so a record that needs
-    acknowledging must always be on screen; the cap only trims the rest.
+    acknowledging must always be on screen. The best match is the only one a
+    Skip can target, so it is always on screen too, first. The cap only trims
+    the rest.
     """
+    if not match.candidates:
+        return []
+    best = match.candidates[0]
     required = sum(1 for candidate in match.candidates if needs_acknowledgement(candidate))
-    optional_slots = max(0, DISPLAY_CANDIDATE_CAP - required)
-    shown: list[MatchCandidate] = []
-    for candidate in match.candidates:
+    reserved = 0 if needs_acknowledgement(best) else 1
+    optional_slots = max(0, DISPLAY_CANDIDATE_CAP - required - reserved)
+    shown: list[MatchCandidate] = [best]
+    for candidate in match.candidates[1:]:
         if needs_acknowledgement(candidate):
             shown.append(candidate)
         elif optional_slots > 0:

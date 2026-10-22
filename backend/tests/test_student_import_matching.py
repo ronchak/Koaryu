@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 from app.services.student_import_matching import (
+    ROSTER_MATCH_LIMIT,
     build_duplicate_review,
     email_key,
     match_rows,
@@ -785,3 +786,101 @@ def test_blocked_rows_are_never_a_target_for_later_rows():
     assert second.duplicate_class == "none" and second.candidates == []
     assert second.guardian_class == "new"
     assert build_duplicate_review(second) is None
+
+
+def _copies(count, **extra):
+    return [
+        existing(f"copy{n:04d}", "Ava", "Nguyen", date_of_birth="2014-06-03", **extra)
+        for n in range(count)
+    ]
+
+
+AVA_ROW = {"legal_first_name": "Ava", "legal_last_name": "Nguyen", "date_of_birth": "2014-06-03"}
+
+
+def test_roster_matches_up_to_the_limit_are_all_listed_and_named():
+    (match,) = match_rows([planned(2, **AVA_ROW)], _copies(ROSTER_MATCH_LIMIT))
+    assert not match.roster_overflow
+    review = build_duplicate_review(match)
+    assert len(review["acknowledge_student_ids"]) == ROSTER_MATCH_LIMIT
+    assert len(review["candidates"]) == ROSTER_MATCH_LIMIT
+
+
+def test_more_roster_copies_than_the_limit_block_the_row_with_bounded_work():
+    (match,) = match_rows([planned(2, **AVA_ROW)], _copies(ROSTER_MATCH_LIMIT + 1))
+    assert match.roster_overflow
+    assert len(match.candidates) <= ROSTER_MATCH_LIMIT
+
+
+def test_a_copy_added_after_preview_trips_the_limit_instead_of_slipping_through():
+    """Preview saw exactly the limit and the decision named all of them; one
+    more copy created before execution must block the row, never be written past."""
+    roster = _copies(ROSTER_MATCH_LIMIT)
+    (preview,) = match_rows([planned(2, **AVA_ROW)], roster)
+    assert not preview.roster_overflow
+    roster.append(existing("late", "Ava", "Nguyen", date_of_birth="2014-06-03"))
+    (execution,) = match_rows([planned(2, **AVA_ROW)], roster)
+    assert execution.roster_overflow
+
+
+def test_too_many_archived_same_name_records_block_the_row():
+    roster = [
+        existing(f"old{n:04d}", "Ava", "Nguyen", archived=True)
+        for n in range(ROSTER_MATCH_LIMIT + 1)
+    ]
+    (match,) = match_rows([planned(2, **AVA_ROW)], roster)
+    assert match.roster_overflow
+
+
+def test_a_full_bucket_of_possible_matches_does_not_block_the_row():
+    """Many same-name students sharing a phone but with other birth dates can
+    only be possible matches, which need no acknowledgement."""
+    roster = [
+        existing(
+            f"p{n:04d}",
+            "Ava",
+            "Nguyen",
+            date_of_birth=f"19{50 + n:02d}-01-01",
+            phone="4155550100",
+        )
+        for n in range(ROSTER_MATCH_LIMIT + 5)
+    ]
+    (match,) = match_rows([planned(2, **AVA_ROW, phone="(415) 555-0100")], roster)
+    assert not match.roster_overflow
+
+
+def test_rows_blocked_by_roster_overflow_are_never_in_file_targets():
+    rows = [planned(2, **AVA_ROW), planned(3, **AVA_ROW)]
+    first, second = match_rows(rows, _copies(ROSTER_MATCH_LIMIT + 1))
+    assert first.roster_overflow and second.roster_overflow
+    assert all(candidate.source == "existing" for candidate in second.candidates)
+
+
+def test_identical_roster_and_file_copies_stay_linear():
+    count = 1000
+    matches = match_rows([planned(n, **AVA_ROW) for n in range(2, count + 2)], _copies(count))
+    assert all(match.roster_overflow for match in matches)
+    assert max(len(match.candidates) for match in matches) <= ROSTER_MATCH_LIMIT
+
+
+def test_the_best_match_stays_on_screen_when_archived_matches_fill_the_cap():
+    """An active possible match outranks five archived possible matches that all
+    need acknowledging; it is the only valid skip target, so it is shown first."""
+    roster = [existing("active", "Ava", "Nguyen")] + [
+        existing(f"old{n}", "Ava", "Nguyen", archived=True) for n in range(5)
+    ]
+    (match,) = match_rows([planned(2, legal_first_name="Ava", legal_last_name="Nguyen")], roster)
+    assert match.of_existing_key == "active" and match.suggested_action == "decide"
+    review = build_duplicate_review(match)
+    assert review["candidates"][0]["student_id"] == "active"
+    assert {c["student_id"] for c in review["candidates"]} == {"active"} | {
+        f"old{n}" for n in range(5)
+    }
+    first_shown = review["candidates"][0]["student_id"]
+    decision = Decision(
+        "skip",
+        matched_student_id=first_shown,
+        acknowledged_student_ids=review["acknowledge_student_ids"],
+    )
+    assert unacknowledged_candidates(match, decision) == []
+    assert skip_target(match, decision) == ("existing", "active")

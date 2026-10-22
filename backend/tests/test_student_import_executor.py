@@ -1012,3 +1012,27 @@ def test_valid_copy_of_a_blocked_row_imports_instead_of_being_refused():
     by_row = _decide_with_browser_defaults([(2, ava), (3, ava)], [], invalid_rows={2})
     assert not by_row[2]["is_valid"]
     assert by_row[3]["is_valid"] and not by_row[3].get("skipped")
+
+
+def test_preview_and_execution_block_a_row_with_too_many_roster_copies():
+    from app.services.student_import_matching import ROSTER_MATCH_LIMIT
+
+    db = ScriptedImportDb()
+    db.tables["programs"][0]["name"] = "Unassigned"
+    db.tables["students"] = [
+        existing_student(f"99999999-9999-4999-8999-{n:012d}") for n in range(ROSTER_MATCH_LIMIT + 1)
+    ]
+    rows = [{"First": "Ava", "Last": "Nguyen", "DOB": "2014-06-03"}]
+    preview = StudentService(db).validate_import_rows(rows, MAPPING, CsvImportOptions(), STUDIO)
+    assert preview.error_rows == 1 and preview.valid_rows == 0
+    (row,) = preview.rows
+    assert [issue.code for issue in row.issues] == ["too_many_existing_matches"]
+    assert "Add this student by hand" in row.errors[0]
+
+    db.responses = [
+        ("claim_student_import_run_v2", claim()),
+        ("finish_student_import_run", finish),
+    ]
+    result = db.execute_import(rows, decisions={})
+    assert result.imported_count == 0 and result.error_rows == 1
+    assert not [name for name, _ in db.calls if name == "import_student_row_atomic"]
