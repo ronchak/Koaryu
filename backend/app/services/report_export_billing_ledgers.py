@@ -62,6 +62,8 @@ PAYMENT_LEDGER_COLUMNS = (
     "refunded_amount_cents",
     "disputed_amount_cents",
     "net_collected_amount_cents",
+    "reconciliation_required",
+    "reconciliation_reason_code",
     "processed_at",
     "created_at",
     "event_date_local",
@@ -80,9 +82,9 @@ ENROLLMENT_LEDGER_COLUMNS = (
     "billing_plan_id",
     "plan_name",
     "plan_currency",
-    "plan_amount_cents",
-    "plan_amount",
-    "plan_billing_interval",
+    "current_plan_amount_cents",
+    "current_plan_amount",
+    "current_plan_billing_interval",
     "status",
     "billing_status",
     "collection_mode",
@@ -128,6 +130,8 @@ PAYMENT_SOURCE_COLUMNS = (
     "refunded_amount_cents",
     "disputed_amount_cents",
     "net_collected_amount_cents",
+    "adjustment_reconciliation_required",
+    "adjustment_reconciliation_reason_code",
     "processed_at",
     "created_at",
     "stripe_payment_intent_id",
@@ -521,6 +525,14 @@ def build_payment_ledger_rows(
                     "refunded_amount_cents": payment.get("refunded_amount_cents"),
                     "disputed_amount_cents": payment.get("disputed_amount_cents"),
                     "net_collected_amount_cents": payment.get("net_collected_amount_cents"),
+                    # When true the refunded, disputed and net figures are known to
+                    # need reconciliation and must not be read as settled.
+                    "reconciliation_required": bool(
+                        payment.get("adjustment_reconciliation_required")
+                    ),
+                    "reconciliation_reason_code": payment.get(
+                        "adjustment_reconciliation_reason_code"
+                    ),
                     "processed_at": payment.get("processed_at"),
                     "created_at": payment.get("created_at"),
                     "event_date_local": _date_text(clock.local_date(_payment_timestamp(payment))),
@@ -614,9 +626,12 @@ def build_enrollment_ledger_rows(
                 "billing_plan_id": enrollment.get("billing_plan_id"),
                 "plan_name": plan.get("name"),
                 "plan_currency": plan.get("currency"),
-                "plan_amount_cents": plan.get("amount_cents"),
-                "plan_amount": cents_to_amount(plan.get("amount_cents")),
-                "plan_billing_interval": plan.get("billing_interval"),
+                # The plan as it is now. Enrollments store no price of their own,
+                # and a subscription keeps its original Stripe price until it is
+                # moved, so billed amounts come from the invoice ledger.
+                "current_plan_amount_cents": plan.get("amount_cents"),
+                "current_plan_amount": cents_to_amount(plan.get("amount_cents")),
+                "current_plan_billing_interval": plan.get("billing_interval"),
                 "status": enrollment.get("status"),
                 "billing_status": enrollment.get("billing_status"),
                 "collection_mode": enrollment.get("collection_mode"),

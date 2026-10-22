@@ -599,6 +599,8 @@ class BillingLedgerRowsTest(unittest.TestCase):
                 "refunded_amount_cents": "",
                 "disputed_amount_cents": "",
                 "net_collected_amount_cents": "",
+                "reconciliation_required": "",
+                "reconciliation_reason_code": "",
                 "processed_at": "",
                 "created_at": "2026-03-03T18:00:00+00:00",
                 "event_date_local": "2026-03-03",
@@ -638,9 +640,9 @@ class BillingLedgerRowsTest(unittest.TestCase):
                 "billing_plan_id": "plan-1",
                 "plan_name": "Little Dragons",
                 "plan_currency": "usd",
-                "plan_amount_cents": "12950",
-                "plan_amount": "129.50",
-                "plan_billing_interval": "monthly",
+                "current_plan_amount_cents": "12950",
+                "current_plan_amount": "129.50",
+                "current_plan_billing_interval": "monthly",
                 "status": "active",
                 "billing_status": "current",
                 "collection_mode": "autopay",
@@ -665,8 +667,8 @@ class BillingLedgerRowsTest(unittest.TestCase):
         rows, _ = build(TableBackedSupabase(fixture), "billing_enrollment_ledger")
         enrolled = next(row for row in rows if row["enrollment_id"] == "enr-1")
         self.assertEqual(enrolled["plan_currency"], "cad")
-        self.assertEqual(enrolled["plan_amount_cents"], "12950")
-        self.assertEqual(enrolled["plan_amount"], "129.50")
+        self.assertEqual(enrolled["current_plan_amount_cents"], "12950")
+        self.assertEqual(enrolled["current_plan_amount"], "129.50")
 
     def test_payment_processed_between_the_two_ranged_reads_is_not_lost(self):
         """A webhook can set processed_at after one read and before the other.
@@ -704,6 +706,24 @@ class BillingLedgerRowsTest(unittest.TestCase):
         self.assertEqual(len(cash), 1)
         self.assertEqual(cash[0]["processed_at"], "2026-03-08T08:00:00+00:00")
         self.assertEqual(cash[0]["event_date_local"], "2026-03-08")
+
+    def test_payment_rows_say_when_their_totals_need_reconciliation(self):
+        fixture = billing_fixture()
+        for payment in fixture["billing_payments"]:
+            if payment["id"] == "pay-card":
+                payment["adjustment_reconciliation_required"] = True
+                payment["adjustment_reconciliation_reason_code"] = "unknown_dispute_status"
+        rows, _ = build(TableBackedSupabase(fixture), "billing_payment_ledger")
+        card = next(
+            r for r in rows if r["record_type"] == "payment" and r["record_id"] == "pay-card"
+        )
+        self.assertEqual(card["reconciliation_required"], "true")
+        self.assertEqual(card["reconciliation_reason_code"], "unknown_dispute_status")
+        cash = next(r for r in rows if r["record_id"] == "pay-cash")
+        self.assertEqual(cash["reconciliation_required"], "false")
+        self.assertEqual(cash["reconciliation_reason_code"], "")
+        refund = next(r for r in rows if r["record_type"] == "refund")
+        self.assertEqual(refund["reconciliation_required"], "")
 
     def test_every_ledger_read_is_filtered_to_the_callers_studio(self):
         for report_id in LEDGER_IDS:

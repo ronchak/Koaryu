@@ -201,7 +201,14 @@ in different currencies must not be added together.
   `payment_id` of its payment, and that payment's payer, invoice and currency. The
   payment row keeps its original `amount_cents`; its stored
   `net_collected_amount_cents` already subtracts succeeded refunds and
-  balance-reversing disputes, so do not subtract those rows from it again.
+  balance-reversing disputes, so do not subtract those rows from it again. When a
+  payment's `reconciliation_required` is `true`, its refunded, disputed and net
+  figures are known to need reconciliation (`reconciliation_reason_code` says why)
+  and must not be read as settled.
+- **Enrollment plan columns show the plan as it is now.** Enrollments store no price
+  of their own, and a subscription keeps its original price until it is moved to a new
+  one, so `current_plan_amount` can differ from what an existing subscription is billed.
+  Billed amounts are in the invoice file.
 - **No revenue recognition is implied.** Rows record billing events and their current
   status, not earned or deferred revenue, payouts or tax.
 - **No fees are calculated.** The Koaryu Payments application fee appears only where it
