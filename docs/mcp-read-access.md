@@ -116,7 +116,7 @@ For Claude Code, add the HTTPS endpoint as a remote HTTP MCP server and complete
 
 ## Real native OAuth proof
 
-For a repeatable assembled check without Docker, supply trusted native Supabase Auth and PostgREST binaries plus PostgreSQL17. Use the existing backend development environment. The check accepts no hosted database URL or real account credentials, refuses an occupied local Supabase port, creates a fresh Unix-only database and synthetic ES256 keys, applies native Auth and Koaryu migrations, and runs the actual backend. It cleans up its own servers and cluster on completion.
+For a repeatable assembled check without Docker, supply trusted native Supabase Auth and PostgREST binaries plus PostgreSQL17. Use the existing backend development environment. The check accepts no hosted database URL or real account credentials, reserves the local Supabase port exclusively through server startup, creates a fresh Unix-only database and synthetic ES256 keys, applies native Auth and Koaryu migrations, and runs the actual backend. It cleans up its own servers and cluster on completion.
 
 ```sh
 backend/venv/bin/python scripts/verify-mcp-oauth-native.py \
