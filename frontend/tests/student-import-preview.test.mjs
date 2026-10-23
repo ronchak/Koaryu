@@ -20,11 +20,11 @@ const { StudentImportPreviewStep } = runInNewContext(
 })()`,
   { React },
 );
-function render(review) {
+function render(review, duplicateDecisions = {}) {
   return renderToStaticMarkup(
     createElement(StudentImportPreviewStep, {
       activeImportKey: "key",
-      duplicateDecisions: {},
+      duplicateDecisions,
       isLoading: false,
       importOptions: {},
       validationResult: {
@@ -71,6 +71,19 @@ test("in-file contact line names the earlier row", () => {
   });
   assert.match(html, /Will share the contact from row 2/);
   assert.doesNotMatch(html, /type="radio"/);
+});
+test("a shared contact line says a separate contact is created when the earlier row is skipped", () => {
+  const html = render(
+    {
+      ...review,
+      candidates: [],
+      family_context: [],
+      guardian_outcome: { kind: "in_file_shared", display_name: "Jordan Smith", of_row: 2 },
+    },
+    { 2: { action: "skip", matched_student_id: "student-1", of_row: null } },
+  );
+  assert.match(html, /A separate contact will be created because row 2 is skipped/);
+  assert.doesNotMatch(html, /Will share the contact from row 2/);
 });
 test("student duplicate choices also display their guardian outcome", () => {
   const html = render({

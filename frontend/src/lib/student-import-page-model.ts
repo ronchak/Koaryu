@@ -324,12 +324,20 @@ export function getDuplicateReviewRows(result: CsvImportResult): DuplicateReview
     .sort((left, right) => left.rowNumber - right.rowNumber);
 }
 
-export function describeGuardianOutcome(review: CsvImportDuplicateReview): string | null {
+export function describeGuardianOutcome(
+  review: CsvImportDuplicateReview,
+  decisions: DuplicateDecisionMap = {},
+): string | null {
   const outcome = review.guardian_outcome;
   if (!outcome) return null;
-  return outcome.kind === "in_file_shared"
-    ? `Will share the contact from row ${outcome.of_row}`
-    : `Will be linked to the existing contact ${outcome.display_name}`;
+  if (outcome.kind === "in_file_shared") {
+    // A skipped row creates no contact, so the import gives this row its own.
+    if (outcome.of_row != null && decisions[String(outcome.of_row)]?.action === "skip") {
+      return `A separate contact will be created because row ${outcome.of_row} is skipped`;
+    }
+    return `Will share the contact from row ${outcome.of_row}`;
+  }
+  return `Will be linked to the existing contact ${outcome.display_name}`;
 }
 
 export function buildDuplicateDecision(

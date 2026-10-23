@@ -11,6 +11,7 @@ import {
   countDuplicateSkips,
   describeDuplicateCandidate,
   getDuplicateReviewRows,
+  describeGuardianOutcome,
   getImportActionState,
   hasUnresolvedDuplicateDecisions,
   formatRowNumbers,
@@ -714,4 +715,31 @@ it("shows guardian-only family context without a duplicate decision or skip", ()
   assert.deepEqual(buildDefaultDuplicateDecisions(result), {});
   assert.equal(hasUnresolvedDuplicateDecisions(result, {}), false);
   assert.equal(countDuplicateSkips(result, {}), 0);
+});
+
+it("the guardian line follows the owner's choice for the row it shares a contact with", () => {
+  const shared = {
+    candidates: [],
+    family_context: [],
+    suggested_action: "create",
+    guardian_outcome: { kind: "in_file_shared", display_name: "Jordan Smith", of_row: 2 },
+  };
+  const linked = {
+    ...shared,
+    guardian_outcome: { kind: "link_existing", display_name: "Jordan Smith", of_row: null },
+  };
+  assert.equal(describeGuardianOutcome(shared), "Will share the contact from row 2");
+  assert.equal(
+    describeGuardianOutcome(shared, { 2: { action: "create" } }),
+    "Will share the contact from row 2",
+  );
+  assert.equal(
+    describeGuardianOutcome(shared, { 2: { action: "skip" } }),
+    "A separate contact will be created because row 2 is skipped",
+  );
+  assert.equal(
+    describeGuardianOutcome(linked, { 2: { action: "skip" } }),
+    "Will be linked to the existing contact Jordan Smith",
+  );
+  assert.equal(describeGuardianOutcome({ ...shared, guardian_outcome: null }), null);
 });

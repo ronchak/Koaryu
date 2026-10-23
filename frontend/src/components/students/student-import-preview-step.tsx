@@ -369,9 +369,9 @@ function StudentImportDuplicateReview({
                         ) : null}
                       </p>
                     ))}
-                  {describeGuardianOutcome(row.review) ? (
+                  {describeGuardianOutcome(row.review, decisions) ? (
                     <p className="text-xs text-text-secondary mt-1">
-                      {describeGuardianOutcome(row.review)}
+                      {describeGuardianOutcome(row.review, decisions)}
                     </p>
                   ) : null}
                   {row.review.family_context.map((note) => (
@@ -433,9 +433,9 @@ function StudentImportDuplicateReview({
                 {note}
               </p>
             ))}
-            {describeGuardianOutcome(row.review) ? (
+            {describeGuardianOutcome(row.review, decisions) ? (
               <p className="text-xs text-text-secondary mt-1">
-                {describeGuardianOutcome(row.review)}
+                {describeGuardianOutcome(row.review, decisions)}
               </p>
             ) : null}
           </div>
