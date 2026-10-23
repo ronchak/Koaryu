@@ -18,7 +18,7 @@ const helper = verifier.slice(start, end);
 test("direct CI student/rank race accepts the declared current release and retained predecessors", () => {
   const race = fs.readFileSync(new URL("./verify-student-profile-rank-plan-concurrency.sh", import.meta.url), "utf8");
   const profiles = [...race.matchAll(/(?:IF|ELSIF) history_count=(\d+) AND history_head='(\d+)'\s+AND to_regprocedure\('[^']+'\) IS (?:NOT )?NULL THEN\s+phase:='(v\d+)'; preflight:='([^']+)';/g)];
-  const expected = [...new Set(["v56", "v57", "v58", "v59", CURRENT_RELEASE])].map(id => {
+  const expected = [...new Set(["v56", "v57", "v58", "v59", "v60", CURRENT_RELEASE])].map(id => {
     const state = releaseState(id, MIGRATION_VERSIONS);
     return [String(state.count), state.head, id, state.preflight];
   });
@@ -67,7 +67,7 @@ assert_payment_writer_rejects test "SELECT 1;" "$query" expected required_failur
 
 
 test("V56 keeps all restore steps, exact inventory and the complete readiness/lead probes", () => {
-  assert.match(verifier, /migration_files\[@\].*-ne 155/);
+  assert.match(verifier, /migration_files\[@\].*-ne 156/);
   assert.match(verifier, /verification_files\[@\].*-ne 77/);
   for (const text of [
     "verify-v53-v54-restore-contract.py", "verify-v54-v55-restore-contract.py", "verify-v55-v56-restore-contract.py",
@@ -171,4 +171,66 @@ test("payment writer negatives prove the compatibility chain once per failure ke
   const finalCheck = verifier.indexOf("[payment writer negative] FAIL rollback did not restore the exact V18-V37 readiness baseline");
   const lastCaller = verifier.lastIndexOf("assert_payment_writer_rejects \"$term refuses unknown\"");
   assert.ok(lastCaller > 0 && finalCheck > lastCaller);
+});
+
+
+test("V61 runs the complete import proof after upgrade and gates the former newest restore to history", () => {
+  const installed = verifier.indexOf('--file="$MIGRATION_DIR/20261022190000_student_import_identity_guard_v61.sql"');
+  assert.ok(installed > verifier.indexOf('verify-v60-v61-restore-contract.py'));
+  assert.ok(verifier.indexOf('--file="$VERIFICATION_DIR/student_import_row_atomic_contract.sql"', installed) > installed);
+  assert.ok(verifier.indexOf('--file="$VERIFICATION_DIR/release_ui_atomic_contract.sql"', installed) > installed);
+  assert.match(verifier, /if part_enabled history; then\n  echo "\[V60 upgrade\/restore\] RUN[^\n]*\n  run_interruptible python3 "\$ROOT_DIR\/scripts\/verify-v59-v60-restore-contract.py"/);
+  assert.match(verifier, /V61_OPERATIONAL_READINESS_SQL/);
+});
+
+test("history branch reaches the retained V60 proof before its early exit", () => {
+  const start = verifier.indexOf('if [[ "$SUITE_PART" == history ]]; then');
+  const end = verifier.indexOf('\necho "[V33 hash parity]', start);
+  assert.ok(start >= 0 && end > start);
+  const branch = verifier.slice(start, end);
+  const temporary = fs.mkdtempSync(path.join(os.tmpdir(), "koaryu-history-dispatch-"));
+  try {
+    for (const part of ["history", "current", "all"]) {
+      const trace = path.join(temporary, part);
+      const harness = `set -euo pipefail
+SUITE_PART="${part}"
+ROOT_DIR=/candidate
+MIGRATION_DIR=/candidate/supabase/migrations
+PSQL=psql
+PG_DUMP=pg_dump
+PG_RESTORE=pg_restore
+CREATEDB=createdb
+SOCKET_DIR=/owned/socket
+PG_PORT=5432
+TEMP_DIR=/owned
+psql_args=(--no-psqlrc)
+run_interruptible() { printf '%s\\n' "$*" >> "$DISPATCH_TRACE"; }
+${branch}
+printf 'non-history dispatch\\n'
+`;
+      const output = execFileSync("bash", ["-c", harness], {
+        env: { ...process.env, DISPATCH_TRACE: trace }, encoding: "utf8",
+      });
+      if (part !== "history") {
+        assert.equal(output.trim(), "non-history dispatch");
+        assert.ok(!fs.existsSync(trace));
+        continue;
+      }
+      const calls = fs.readFileSync(trace, "utf8").trim().split("\n");
+      const migrations = [
+        ["20261005105341", "automation_workflow_graph_v57"],
+        ["20261013013243", "live_billing_authority_repairs_v58"],
+        ["20261014083106", "timezone_names_reference_v59"],
+      ];
+      assert.equal(calls.length, 4);
+      migrations.forEach(([version, name], index) => {
+        assert.ok(calls[index].includes(`--file=/candidate/supabase/migrations/${version}_${name}.sql`));
+        assert.ok(calls[index].includes(`VALUES('${version}','${name}')`));
+      });
+      assert.equal(calls[3], "python3 /candidate/scripts/verify-v59-v60-restore-contract.py pg_dump pg_restore createdb psql /owned/socket 5432 /owned /candidate");
+      assert.ok(!output.includes("non-history dispatch"));
+    }
+  } finally {
+    fs.rmSync(temporary, { recursive: true, force: true });
+  }
 });

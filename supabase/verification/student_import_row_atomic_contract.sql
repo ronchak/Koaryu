@@ -1,13 +1,17 @@
 BEGIN;
 -- Preserve the historical guardian ID mapping; this vector does not establish general UUIDv5 parity.
 DO $$
+DECLARE writer REGPROCEDURE := COALESCE(
+    to_regprocedure('public.import_student_row_atomic(jsonb,uuid,uuid,text,integer,text,text,text,text,uuid[],uuid[],uuid,text,text)'),
+    to_regprocedure('public.import_student_row_atomic(jsonb,uuid,uuid,text,integer,text,text,text,text,uuid[])'));
 BEGIN
+    IF writer IS NULL THEN RAISE EXCEPTION 'Import writer is missing'; END IF;
     IF private.deterministic_import_uuid('6ba7b810-9dad-11d1-80b4-00c04fd430c8', 'python.org')
        IS DISTINCT FROM '886313e1-3b8a-5372-9b90-0c9aee199e5d'::UUID THEN
         RAISE EXCEPTION 'Retained guardian-ID reference vector changed';
     END IF;
-    IF has_function_privilege('anon','public.import_student_row_atomic(jsonb,uuid,uuid,text,integer,text,text,text,text,uuid[])','EXECUTE')
-       OR has_function_privilege('authenticated','public.import_student_row_atomic(jsonb,uuid,uuid,text,integer,text,text,text,text,uuid[])','EXECUTE') THEN
+    IF has_function_privilege('anon',writer,'EXECUTE')
+       OR has_function_privilege('authenticated',writer,'EXECUTE') THEN
         RAISE EXCEPTION 'Browser roles can execute the import writer';
     END IF;
 END;
@@ -87,6 +91,66 @@ BEGIN
  IF NOT EXISTS(SELECT 1 FROM public.student_program_memberships WHERE student_id=sid AND current_belt_rank_id=white)
     OR NOT EXISTS(SELECT 1 FROM public.students WHERE id=sid AND current_belt_rank_id=white) THEN RAISE EXCEPTION 'first rank state incorrect'; END IF;
  gid := private.deterministic_import_uuid(runid,'guardian-row:2');
+ IF to_regprocedure('public.koaryu_release_schema_preflight_v42()') IS NOT NULL THEN
+ IF NOT EXISTS(SELECT 1 FROM public.students WHERE id=sid AND import_run_id=runid AND source_system IS NULL AND source_id IS NULL)
+    OR NOT EXISTS(SELECT 1 FROM public.guardians WHERE id=gid AND import_run_id=runid) THEN
+   RAISE EXCEPTION 'Old-shape import did not stamp student and guardian provenance';
+ END IF;
+
+ -- V61 reserves the skipped kind; it does not emit skipped receipts yet.
+ INSERT INTO private.student_import_receipts(import_run_id,kind,key,result_json)
+ VALUES(runid,'skipped','schema-proof','{}');
+ rejected := false;
+ BEGIN
+   INSERT INTO private.student_import_receipts(import_run_id,kind,key,result_json)
+   VALUES(runid,'unknown','schema-proof','{}');
+ EXCEPTION WHEN check_violation THEN
+   GET STACKED DIAGNOSTICS conflict_constraint = CONSTRAINT_NAME;
+   IF conflict_constraint IS DISTINCT FROM 'student_import_receipts_kind_check' THEN RAISE; END IF;
+   rejected := true;
+ END;
+ IF NOT rejected THEN RAISE EXCEPTION 'Unknown receipt kind was accepted'; END IF;
+
+ FOR r IN SELECT * FROM (VALUES
+   ('system'::text,NULL::text,'students_source_pair_check'),
+   (NULL::text,'id'::text,'students_source_pair_check'),
+   ('   '::text,'id'::text,'students_source_system_length_check'),
+   ('system'::text,''::text,'students_source_id_length_check'),
+   ('system'::text,'   '::text,'students_source_id_length_check'),
+   (repeat('x',121),'id'::text,'students_source_system_length_check'),
+   ('system'::text,repeat('x',121),'students_source_id_length_check')
+ ) cases(system,id,expected_constraint) LOOP
+   rejected := false;
+   BEGIN
+     UPDATE public.students SET source_system=r.system,source_id=r.id WHERE id=sid;
+   EXCEPTION WHEN check_violation THEN
+     GET STACKED DIAGNOSTICS conflict_constraint = CONSTRAINT_NAME;
+     IF conflict_constraint IS DISTINCT FROM r.expected_constraint THEN RAISE; END IF;
+     rejected := true;
+   END;
+   IF NOT rejected THEN RAISE EXCEPTION 'Invalid source identity accepted: %',row_to_json(r); END IF;
+ END LOOP;
+ UPDATE public.students SET source_system='legacy',source_id='shared',deleted_at=now() WHERE id=sid;
+ rejected := false;
+ BEGIN
+   INSERT INTO public.students(id,studio_id,legal_first_name,legal_last_name,source_system,source_id)
+   VALUES('57000000-0000-4000-8000-000000000061',studio,'Duplicate','Identity','legacy','shared');
+ EXCEPTION WHEN unique_violation THEN
+   GET STACKED DIAGNOSTICS conflict_constraint = CONSTRAINT_NAME;
+   IF conflict_constraint IS DISTINCT FROM 'students_studio_source_identity_unique' THEN RAISE; END IF;
+   rejected := true;
+ END;
+ IF NOT rejected THEN RAISE EXCEPTION 'Duplicate source identity accepted, including archived student'; END IF;
+ INSERT INTO public.students(id,studio_id,legal_first_name,legal_last_name,source_system,source_id)
+ VALUES('57000000-0000-4000-8000-000000000062',foreign_studio,'Other','Studio','legacy','shared');
+ -- Both nulls stay valid and multiple unkeyed students remain possible.
+ UPDATE public.students SET source_system=NULL,source_id=NULL,deleted_at=NULL WHERE id=sid;
+ IF NOT EXISTS(SELECT 1 FROM pg_catalog.pg_indexes WHERE schemaname='public'
+   AND indexname='students_studio_normalized_legal_name_idx'
+   AND indexdef='CREATE INDEX students_studio_normalized_legal_name_idx ON public.students USING btree (studio_id, lower(btrim(legal_last_name)), lower(btrim(legal_first_name)))') THEN
+   RAISE EXCEPTION 'Normalized name index must cover archived students';
+ END IF;
+ END IF; -- V61 schema proof; this shared fixture also runs on historical V45/V57.
  UPDATE public.students SET phone='staff-phone',membership_start_date='2021-02-03' WHERE id=sid;
  UPDATE public.guardians SET phone='staff-guardian',email='staff@example.invalid' WHERE id=gid;
  UPDATE public.student_program_memberships SET started_at='2023-04-05',status='paused',current_belt_rank_id=green WHERE student_id=sid;

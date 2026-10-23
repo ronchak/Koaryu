@@ -17,6 +17,24 @@
         "signature": "private.import_student_row_atomic(jsonb, uuid, uuid, text, integer, text, text, text, text, uuid[])",
         "result": "TABLE(student_id uuid, guardian_imported boolean)"
       }
+    ],
+    "student-writer-returns-v61": [
+      {
+        "signature": "public.write_student_profile_atomic(uuid, uuid, uuid, jsonb, uuid[], jsonb, boolean, text)",
+        "result": "students"
+      },
+      {
+        "signature": "private.write_student_profile_atomic(uuid, uuid, uuid, jsonb, uuid[], jsonb, boolean, text)",
+        "result": "students"
+      },
+      {
+        "signature": "public.import_student_row_atomic(jsonb, uuid, uuid, text, integer, text, text, text, text, uuid[], uuid[], uuid, text, text)",
+        "result": "TABLE(student_id uuid, guardian_imported boolean)"
+      },
+      {
+        "signature": "private.import_student_row_atomic(jsonb, uuid, uuid, text, integer, text, text, text, text, uuid[], uuid[], uuid, text, text)",
+        "result": "TABLE(student_id uuid, guardian_imported boolean)"
+      }
     ]
   },
   "artifacts": [
@@ -153,6 +171,16 @@
       "expectedParent": "0:d1f6f4860761c34c91500447eb7efa014b1d35c87a338e2bdcd188805edcb1b8",
       "format": "catalog",
       "sourceSha256": "6a7efe0cbb4bdbc187e02ad467caebc233017af859c33ea1ec1483cdad5562c9"
+    },
+    {
+      "kind": "rank-return",
+      "path": "supabase/migrations/20261022190000_student_import_identity_guard_v61.sql",
+      "signature": "private.koaryu_release_student_rank_writer_manifest_v13()",
+      "functionSet": "student-writer-returns-v61",
+      "parent": "private.koaryu_release_student_rank_writer_manifest_v11()",
+      "expectedParent": "0:ba87ebe636731c03e3f6562a856d0ad42e77fc538fad55aea8717d926c82d3ae",
+      "format": "catalog",
+      "sourceSha256": "fee38d09317502711c2f18157410506e78b049488fc60be4cf1895e43117052e"
     }
   ]
 }

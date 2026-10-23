@@ -164,3 +164,27 @@ at explicit references. Guarded inspection accepts an exact V59 predecessor,
 including timezone name parity, and V60 post-state evidence with V59
 compatibility. The private backup helper needs reviewed `(154,'20261014083106')
 -> 40` and `(155,'20261021093000') -> 41` mappings before backing up V59 or V60.
+
+
+V61 installs nullable student/guardian import provenance, paired source identity
+fields and indexes, the reserved `skipped` receipt kind, and four appended optional
+row-import arguments. The arguments are accepted but unused; imports only gain
+provenance stamps. Both old function signatures are removed. The V11 security
+manifest and generated V13 return manifest bind the replacement signatures.
+Preflight V42 inherits V60, replaces the changed RPC/receipt and complete catalog
+facts, and retains exact V60 readiness through the V41 compatibility bridge.
+
+The V60-to-V61 forward proof uses `student-import-v61.mjs` for version-bound
+observations. A forward case can select a `module` under this directory; historical
+cases keep the rollout module. V61's four table profiles were measured separately
+on disposable PostgreSQL 17 canonical and logical-restored databases, with CRUD
+and Supabase ALL-table-default ACL bootstraps. Only students, guardians and receipt
+constraints differ from V60. Its snapshot comparison permits the new NULL columns
+and the exact guarded V31 expectation correction, preserving every other retained
+field. Continuation uses the deployed ten-argument call, checks provenance and a
+receipt, then compares rows and physical tuple identities across replay.
+
+The local runner's `history` branch advances its V56 database through V59 before
+running the retained V60 restore proof. The `all` path runs that proof later once;
+`current` keeps the new V61 proof. A focused dispatch test checks the history
+migration order and proves that its restore call is reachable before early exit.

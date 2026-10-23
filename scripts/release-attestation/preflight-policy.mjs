@@ -661,3 +661,13 @@ export const render_missed_class_functions_v60 = check =>
 export const render_preflight_security_v60 = () => render_preflight_security_v57()
   .replaceAll("koaryu_release_schema_preflight_v38", "koaryu_release_schema_preflight_v41")
   .replaceAll("preflight_security_v57", "preflight_security_v60");
+
+// V61 retains the complete inventory, including the V41 compatibility bridge.
+export const render_student_import_functions_v61 = check =>
+  render_missed_class_functions_v60(check).replace(
+    "p.oid <> pg_catalog.to_regprocedure('public.koaryu_release_schema_preflight_v41()')",
+    "p.oid <> pg_catalog.to_regprocedure('public.koaryu_release_schema_preflight_v42()')"
+  );
+export const render_preflight_security_v61 = () => render_preflight_security_v60()
+  .replaceAll('preflight_v41', 'preflight_v42')
+  .replaceAll('preflight_security_v60', 'preflight_security_v61');
