@@ -2,7 +2,7 @@
   "guards": [
     [
       "public.koaryu_release_schema_preflight_v41()",
-      "e344758d8c081b717f7d7382c1cf50b96506e9faa7d8e8db604fef71d62b75ed",
+      "93c7e01794cb719736a0c286d50b692d0d53da9e002b36147c6932b3331f21ab",
       "plpgsql",
       true,
       "search_path=pg_catalog",
@@ -11,7 +11,7 @@
     ],
     [
       "public.koaryu_release_schema_preflight_v42()",
-      "c5795c48d2931a49c74dd65145a5f757a16f3b976c367b489204599951829b85",
+      "7f390f7a2fc429d24b099eb64541d87270689960327c14dafc2ce0a145ef86f4",
       "plpgsql",
       true,
       "search_path=pg_catalog,TimeZone=UTC,DateStyle=ISO, YMD,IntervalStyle=postgres",

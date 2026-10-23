@@ -83,6 +83,8 @@ def main(arguments):
         "FINAL_OPERATIONAL_READINESS_SQL", "EXPECTED_OPERATIONAL_READINESS",
         "V61_MCP_TABLE_STATE_SQL", "EXPECTED_V61_MCP_TABLE_STATE", "EXPECTED_V61_RESTORED_MCP_TABLE_STATE",
         "V61_MCP_FUNCTION_STATE_SQL", "EXPECTED_V61_MCP_FUNCTION_STATE",
+        "V61_CATALOG_STATE_SQL", "EXPECTED_V60_CATALOG_STATE", "EXPECTED_V60_RESTORED_CATALOG_STATE",
+        "V61_RELEASE_MANIFEST_SQL", "EXPECTED_V61_RELEASE_MANIFEST",
     ]
     module = (root / "scripts/studio-comp-migration-rollout.mjs").as_uri()
     pinned = json.loads(local.run(["node", "--input-type=module", "--eval",
@@ -164,6 +166,8 @@ def main(arguments):
                 ("FINAL_OPERATIONAL_READINESS_SQL", "EXPECTED_OPERATIONAL_READINESS"),
                 ("V61_MCP_TABLE_STATE_SQL", "EXPECTED_V61_RESTORED_MCP_TABLE_STATE" if is_restored else "EXPECTED_V61_MCP_TABLE_STATE"),
                 ("V61_MCP_FUNCTION_STATE_SQL", "EXPECTED_V61_MCP_FUNCTION_STATE"),
+                ("V61_CATALOG_STATE_SQL", "EXPECTED_V60_RESTORED_CATALOG_STATE" if is_restored else "EXPECTED_V60_CATALOG_STATE"),
+                ("V61_RELEASE_MANIFEST_SQL", "EXPECTED_V61_RELEASE_MANIFEST"),
             ]
             values = {query: check(database, query, expected) for query, expected in checks}
             upgraded = snapshot(database)
