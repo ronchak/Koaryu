@@ -108,10 +108,10 @@ test("final V56 semantics uses only V55 pins for changed lead/student definition
 });
 
 
-test("current-candidate billing concurrency runs once after complete V58 readiness", () => {
+test("current-candidate billing concurrency runs once after complete V61 readiness", () => {
   const invocation = 'run_interruptible python3 "$ROOT_DIR/scripts/verify-billing-command-concurrency.py" "$PSQL" "$SOCKET_DIR" "$PG_PORT"';
   assert.equal(verifier.split(invocation).length - 1, 1);
-  const readiness = verifier.indexOf('echo "[V58 readiness] PASS complete GA catalog and authority"');
+  const readiness = verifier.indexOf('echo "[V61 readiness] PASS exact MCP catalog, native token hook and V60 compatibility"');
   const billing = verifier.indexOf(invocation);
   assert.ok(readiness >= 0 && readiness < billing);
 });

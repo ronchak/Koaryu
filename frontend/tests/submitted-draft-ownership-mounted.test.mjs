@@ -5,6 +5,7 @@ import { createCommonJsPacker } from "./helpers/store-browser-harness.mjs";
 
 function bundle(moduleName) {
   const { add, modules } = createCommonJsPacker({
+    "next/link": `exports.__esModule=true;exports.default=({children,href,prefetch,...props})=>require('react').createElement('a',{href:typeof href==='string'?href:href.pathname,...props},children);`,
     "@/lib/store": `exports.useConfigStore=()=>window.fixture.config;exports.useStudioStore=()=>window.fixture.studio;exports.useProgramStore=()=>window.fixture.programs;`,
     "@/lib/api": `exports.api=window.fixture.api;`,
     "@/lib/use-resume-refresh": `exports.useResumeRefresh=()=>{};`,
