@@ -1,4 +1,4 @@
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from typing import Literal, Optional, get_args
 from datetime import date
 from uuid import UUID
@@ -395,6 +395,13 @@ class CsvImportOptions(BaseModel):
     create_missing_belts: bool = False
     import_without_unresolved_belt: bool = True
     status_alias_mode: Literal["strict", "normalize"] = "normalize"
+
+    @field_validator("source_system", mode="before")
+    @classmethod
+    def _trim_source_system(cls, value: object) -> object:
+        # One namespace per spelling: " csv " must match, hash and store as "csv",
+        # because matching and the per-studio unique index compare it exactly.
+        return value.strip() if isinstance(value, str) else value
 
 
 class CsvImportRequest(BaseModel):

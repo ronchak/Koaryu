@@ -215,6 +215,23 @@ def test_source_system_changes_request_hash():
     )
 
 
+def test_source_system_is_trimmed_before_matching_hashing_and_storage():
+    from pydantic import ValidationError
+
+    from app.services.student_import_runs import StudentImportRunStore
+
+    assert CsvImportOptions(source_system="  csv ").source_system == "csv"
+    rows = [{"First": "Testava", "ID": "00042"}]
+    mapping = {"First": "legal_first_name", "ID": "source_id"}
+    assert StudentImportRunStore.compute_request_hash(
+        rows, mapping, CsvImportOptions(source_system=" old-roster ")
+    ) == StudentImportRunStore.compute_request_hash(
+        rows, mapping, CsvImportOptions(source_system="old-roster")
+    )
+    with pytest.raises(ValidationError):
+        CsvImportOptions(source_system="   ")
+
+
 @pytest.mark.parametrize(
     "decisions,expected",
     [
