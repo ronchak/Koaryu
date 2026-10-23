@@ -2455,7 +2455,9 @@ v61_readiness="$({ cd "$ROOT_DIR"; node --input-type=module --eval "import { V61
 (cd "$ROOT_DIR" && node --input-type=module --eval "import assert from 'node:assert/strict'; import { EXPECTED_V61_OPERATIONAL_READINESS } from './scripts/release-attestation/generated-readiness.mjs'; assert.equal(process.argv[1], EXPECTED_V61_OPERATIONAL_READINESS);" "$v61_readiness")
 run_interruptible "$PSQL" "${psql_args[@]}" --file="$VERIFICATION_DIR/student_import_row_atomic_contract.sql"
 run_interruptible "$PSQL" "${psql_args[@]}" --file="$VERIFICATION_DIR/release_ui_atomic_contract.sql"
-echo "[V61 readiness] PASS schema, old-shape provenance, source constraints, receipts and V60 compatibility"
+echo "[V61 readiness] PASS identity guard, guardian reuse, skipped receipts, legacy calls and V60 compatibility"
+echo "[import identity concurrency] RUN competing V61 imports"
+run_interruptible python3 "$ROOT_DIR/scripts/verify-student-import-identity-concurrency.py" "$PSQL" "$SOCKET_DIR" "$PG_PORT"
 
 
 echo "[concurrency] RUN billing command ownership and lock ordering"

@@ -4589,7 +4589,7 @@
       "semanticManifests": [],
       "upgradeSnapshotCheck": "require_v61_snapshot",
       "passLines": [
-        "[restored V61] PASS retained import rows, canonical/restored readiness, provenance and write-free replay"
+        "[restored V61] PASS retained rows, canonical/restored readiness, identity guard, guardian reuse and skipped replay"
       ]
     }
   }

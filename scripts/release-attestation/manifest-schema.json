@@ -178,9 +178,9 @@
       "signature": "private.koaryu_release_student_rank_writer_manifest_v13()",
       "functionSet": "student-writer-returns-v61",
       "parent": "private.koaryu_release_student_rank_writer_manifest_v11()",
-      "expectedParent": "0:ba87ebe636731c03e3f6562a856d0ad42e77fc538fad55aea8717d926c82d3ae",
+      "expectedParent": "0:853352745bfe609f4b959e3aba16cc6fbda240f90bf891244325b8c7a64c10d3",
       "format": "catalog",
-      "sourceSha256": "fee38d09317502711c2f18157410506e78b049488fc60be4cf1895e43117052e"
+      "sourceSha256": "be86cd544b5f9e94ffd25845c828317726d821a384c357a912dc2a9d8843ff75"
     }
   ]
 }

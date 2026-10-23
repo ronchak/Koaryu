@@ -168,8 +168,16 @@ compatibility. The private backup helper needs reviewed `(154,'20261014083106')
 
 V61 installs nullable student/guardian import provenance, paired source identity
 fields and indexes, the reserved `skipped` receipt kind, and four appended optional
-row-import arguments. The arguments are accepted but unused; imports only gain
-provenance stamps. Both old function signatures are removed. The V11 security
+row-import arguments. A non-NULL acknowledgement list enables the same-spelling
+strong-identity guard after receipt replay and before writes. A studio/name advisory
+lock serializes competing imports; P0409 reports unacknowledged matches and source
+identity collisions. NULL acknowledgements retain legacy behavior. A supplied studio
+guardian is linked without changing its row or primary-contact flag; inserted contacts
+retain provenance. Both old function signatures are removed. The service-only
+`record_student_import_skip_v1` RPC uses the same worker lock/token, records the
+retained target and diagnostics, and replays without writes. Claim already returns
+all receipt kinds. The application restores completed skips without rematching and
+tracks imported guardian choices in server-side receipt outcomes. The V11 security
 manifest and generated V13 return manifest bind the replacement signatures.
 Preflight V42 inherits V60, replaces the changed RPC/receipt and complete catalog
 facts, and retains exact V60 readiness through the V41 compatibility bridge.

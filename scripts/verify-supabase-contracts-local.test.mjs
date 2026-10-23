@@ -186,6 +186,7 @@ test("V61 runs the complete import proof after upgrade and gates the former newe
   assert.ok(verifier.indexOf('--file="$VERIFICATION_DIR/release_ui_atomic_contract.sql"', installed) > installed);
   assert.match(verifier, /if part_enabled history; then\n  echo "\[V60 upgrade\/restore\] RUN[^\n]*\n  run_interruptible python3 "\$ROOT_DIR\/scripts\/verify-v59-v60-restore-contract.py"/);
   assert.match(verifier, /V61_OPERATIONAL_READINESS_SQL/);
+  assert.ok(verifier.indexOf('verify-student-import-identity-concurrency.py', installed) > installed);
 });
 
 test("history branch reaches the V60 and V61 proofs before its early exit", () => {

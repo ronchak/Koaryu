@@ -33,6 +33,7 @@ BEGIN;
 SET LOCAL ROLE service_role;
 DO $continue$
 DECLARE runid UUID; payload JSONB; first_result JSONB; replay_result JSONB; before_replay JSONB; after_replay JSONB;
+ rejected BOOLEAN; reused_gid UUID; original_contact JSONB; skip JSONB; skipped_receipt JSONB; original_run JSONB;
 BEGIN
  SELECT id INTO STRICT runid FROM public.student_import_runs WHERE idempotency_key='v61-retained';
  payload := jsonb_build_object('id','00000000-0000-4000-8000-000000006105','studio_id','00000000-0000-4000-8000-000000006102',
@@ -54,6 +55,47 @@ BEGIN
  SELECT jsonb_build_object('students',(SELECT jsonb_agg(jsonb_build_array(to_jsonb(t),t.ctid::text) ORDER BY t.id) FROM public.students t),'guardians',(SELECT jsonb_agg(jsonb_build_array(to_jsonb(t),t.ctid::text) ORDER BY t.id) FROM public.guardians t),'student_guardians',(SELECT jsonb_agg(jsonb_build_array(to_jsonb(t),t.ctid::text) ORDER BY t.id) FROM public.student_guardians t),'student_program_memberships',(SELECT jsonb_agg(jsonb_build_array(to_jsonb(t),t.ctid::text) ORDER BY t.id) FROM public.student_program_memberships t),'student_import_runs',(SELECT jsonb_agg(jsonb_build_array(to_jsonb(t),t.ctid::text) ORDER BY t.id) FROM public.student_import_runs t),'receipts',(SELECT jsonb_agg(jsonb_build_array(to_jsonb(t),t.ctid::text) ORDER BY t.import_run_id,t.kind,t.key) FROM private.student_import_receipts t)) INTO after_replay;
  IF replay_result IS DISTINCT FROM first_result OR before_replay IS DISTINCT FROM after_replay THEN
   RAISE EXCEPTION 'V61 replay changed rows or physical tuples';
+ END IF;
+ -- The guarded call and reused guardian also continue on logical restores.
+ payload:=payload||jsonb_build_object('id','00000000-0000-4000-8000-000000006106',
+   'legal_first_name','Guarded','date_of_birth','2014-06-03',
+   '_import_outcome',jsonb_set(payload->'_import_outcome','{row_number}','4'));
+ PERFORM public.import_student_row_atomic(payload,'00000000-0000-4000-8000-000000006102',runid,'v61-token',4,
+   NULL,NULL,NULL,NULL,ARRAY['00000000-0000-4000-8000-000000006103'::UUID],ARRAY[]::UUID[]);
+ payload:=payload||jsonb_build_object('id','00000000-0000-4000-8000-000000006107',
+   '_import_outcome',jsonb_set(payload->'_import_outcome','{row_number}','5'));
+ rejected:=false;
+ BEGIN
+   PERFORM public.import_student_row_atomic(payload,'00000000-0000-4000-8000-000000006102',runid,'v61-token',5,
+     NULL,NULL,NULL,NULL,ARRAY['00000000-0000-4000-8000-000000006103'::UUID],ARRAY[]::UUID[]);
+ EXCEPTION WHEN SQLSTATE 'P0409' THEN
+   IF SQLERRM IS DISTINCT FROM 'student_import_duplicate_review_required' THEN RAISE; END IF;
+   rejected:=true;
+ END;
+ IF NOT rejected OR EXISTS(SELECT 1 FROM public.students WHERE id='00000000-0000-4000-8000-000000006107')
+ OR EXISTS(SELECT 1 FROM private.student_import_receipts WHERE import_run_id=runid AND key='5') THEN
+   RAISE EXCEPTION 'Restored identity guard did not refuse the duplicate atomically';
+ END IF;
+ reused_gid:=private.deterministic_import_uuid(runid,'guardian-row:3');
+ SELECT jsonb_build_array(to_jsonb(g),g.ctid::TEXT) INTO original_contact FROM public.guardians g WHERE id=reused_gid;
+ payload:=payload||jsonb_build_object('legal_first_name','Sibling');
+ PERFORM public.import_student_row_atomic(payload,'00000000-0000-4000-8000-000000006102',runid,'v61-token',5,
+   'Ignored Contact',NULL,NULL,NULL,ARRAY['00000000-0000-4000-8000-000000006103'::UUID],ARRAY[]::UUID[],reused_gid);
+ IF original_contact IS DISTINCT FROM (SELECT jsonb_build_array(to_jsonb(g),g.ctid::TEXT) FROM public.guardians g WHERE id=reused_gid)
+ OR NOT EXISTS(SELECT 1 FROM public.student_guardians WHERE student_id='00000000-0000-4000-8000-000000006107' AND guardian_id=reused_gid)
+ OR EXISTS(SELECT 1 FROM public.guardians WHERE id=private.deterministic_import_uuid(runid,'guardian-row:5')) THEN
+   RAISE EXCEPTION 'Restored guardian reuse altered or copied the contact';
+ END IF;
+ skip:=jsonb_build_object('action','skip','retained_kind','row','retained_id_or_row',5,
+  'outcome',jsonb_build_object('row_number',6,'is_valid',true,'issues','[]'::JSONB,'data','{}'::JSONB));
+ PERFORM public.record_student_import_skip_v1('00000000-0000-4000-8000-000000006102',runid,'v61-token',6,skip);
+ SELECT jsonb_build_array(to_jsonb(r),r.ctid::TEXT) INTO skipped_receipt FROM private.student_import_receipts r
+ WHERE r.import_run_id=runid AND r.kind='skipped' AND r.key='6';
+ SELECT jsonb_build_array(to_jsonb(r),r.ctid::TEXT) INTO original_run FROM public.student_import_runs r WHERE id=runid;
+ IF public.record_student_import_skip_v1('00000000-0000-4000-8000-000000006102',runid,'v61-token',6,'{}') IS DISTINCT FROM skip
+ OR skipped_receipt IS DISTINCT FROM (SELECT jsonb_build_array(to_jsonb(r),r.ctid::TEXT) FROM private.student_import_receipts r WHERE r.import_run_id=runid AND r.kind='skipped' AND r.key='6')
+ OR original_run IS DISTINCT FROM (SELECT jsonb_build_array(to_jsonb(r),r.ctid::TEXT) FROM public.student_import_runs r WHERE id=runid) THEN
+   RAISE EXCEPTION 'Restored skipped receipt replay changed the row or run';
  END IF;
 END;
 $continue$;
@@ -77,6 +119,6 @@ def require_v61_snapshot(before, after):
     require(len(rows) == len(prior) == 1
             and prior[0]['expectation_key'] == rows[0]['expectation_key'] == 'operational_contract_v31'
             and prior[0]['expected_sha256'] == '1513ff10defced0c619f85c7927259165f6c9eb7ef1400be076f567fd39c85b3'
-            and rows[0]['expected_sha256'] == 'd3a761bf90deab756233941b2cbcd99e687b055202365413893714cb6865298a', 'V61 expectation correction differs')
+            and rows[0]['expected_sha256'] == '07b11682181bce027a3434161a54cd9426d45ee1ecd0a9f663d15601ad8b0880', 'V61 expectation correction differs')
     rows[0]['expected_sha256'] = prior[0]['expected_sha256']
     return normalized == before
