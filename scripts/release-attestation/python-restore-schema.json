@@ -931,21 +931,51 @@
     },
     "readiness-v60": {
       "kind": "readiness",
-      "state": "v60",
-      "finalAlias": true
+      "state": "v60"
     },
     "tables-v60": {
       "kind": "export",
       "state": "v60",
-      "query": "V60_MCP_TABLE_STATE_SQL",
-      "expected": "EXPECTED_V60_MCP_TABLE_STATE",
-      "restored": "EXPECTED_V60_RESTORED_MCP_TABLE_STATE"
+      "query": "V60_AUTOMATION_TABLE_STATE_SQL",
+      "expected": "EXPECTED_V60_AUTOMATION_TABLE_STATE",
+      "restored": "EXPECTED_V60_RESTORED_AUTOMATION_TABLE_STATE"
     },
     "functions-v60": {
       "kind": "export",
       "state": "v60",
-      "query": "V60_MCP_FUNCTION_STATE_SQL",
-      "expected": "EXPECTED_V60_MCP_FUNCTION_STATE"
+      "query": "V60_AUTOMATION_FUNCTION_STATE_SQL",
+      "expected": "EXPECTED_V60_AUTOMATION_FUNCTION_STATE"
+    },
+    "catalog-v60": {
+      "kind": "export",
+      "state": "v60",
+      "query": "V60_CATALOG_STATE_SQL",
+      "expected": "EXPECTED_V60_CATALOG_STATE",
+      "restored": "EXPECTED_V60_RESTORED_CATALOG_STATE"
+    },
+    "release-v60": {
+      "kind": "export",
+      "state": "v60",
+      "query": "V60_RELEASE_MANIFEST_SQL",
+      "expected": "EXPECTED_V60_RELEASE_MANIFEST"
+    },
+    "readiness-v61": {
+      "kind": "readiness",
+      "state": "v61",
+      "finalAlias": true
+    },
+    "tables-v61": {
+      "kind": "export",
+      "state": "v61",
+      "query": "V61_MCP_TABLE_STATE_SQL",
+      "expected": "EXPECTED_V61_MCP_TABLE_STATE",
+      "restored": "EXPECTED_V61_RESTORED_MCP_TABLE_STATE"
+    },
+    "functions-v61": {
+      "kind": "export",
+      "state": "v61",
+      "query": "V61_MCP_FUNCTION_STATE_SQL",
+      "expected": "EXPECTED_V61_MCP_FUNCTION_STATE"
     }
   },
   "cases": {
@@ -4464,18 +4494,18 @@
     },
     "v60": {
       "format": "forward",
-      "base": "d7c88abed01e171f1ae2d46cf8e54d355bda5136",
+      "base": "26c91747",
       "constraintPairs": "v57-restore-constraint-pairs.json",
-      "docstring": "Prove V59 records survive read-only MCP authorization installation and restored connections retain their access boundary.",
+      "docstring": "Prove V59 rows survive the V60 missed-class gap guards and logical restore with exact readiness and V59 compatibility.",
       "exports": [
         [
           "readiness-v59.query",
           "readiness-v59.expected"
         ],
         [
-          "tables-v59.query",
-          "tables-v59.expected",
-          "tables-v59.restored"
+          "catalog-v59.query",
+          "catalog-v59.expected",
+          "catalog-v59.restored"
         ],
         [
           "readiness-v60.query",
@@ -4489,25 +4519,80 @@
         [
           "functions-v60.query",
           "functions-v60.expected"
+        ],
+        [
+          "catalog-v60.query",
+          "catalog-v60.expected",
+          "catalog-v60.restored"
+        ],
+        [
+          "release-v60.query",
+          "release-v60.expected"
         ]
       ],
       "predecessor": [
         "readiness-v59",
-        "tables-v59"
+        "catalog-v59"
       ],
       "checks": [
         "readiness-v60",
         "tables-v60",
-        "functions-v60"
+        "functions-v60",
+        "catalog-v60",
+        "release-v60"
+      ],
+      "absentFunctions": [],
+      "semanticManifests": [],
+      "passLines": [
+        "[restored V60] PASS retained V59 rows, exact canonical/restored readiness, gap rules and V59 compatibility"
+      ]
+    },
+    "v61": {
+      "format": "forward",
+      "base": "48220f447608e7c4c7cfd196e2bfd70a33d4c704",
+      "constraintPairs": "v57-restore-constraint-pairs.json",
+      "docstring": "Prove V60 records survive read-only MCP authorization installation and restored connections retain their access boundary.",
+      "exports": [
+        [
+          "readiness-v60.query",
+          "readiness-v60.expected"
+        ],
+        [
+          "tables-v60.query",
+          "tables-v60.expected",
+          "tables-v60.restored"
+        ],
+        [
+          "readiness-v61.query",
+          "readiness-v61.expected"
+        ],
+        [
+          "tables-v61.query",
+          "tables-v61.expected",
+          "tables-v61.restored"
+        ],
+        [
+          "functions-v61.query",
+          "functions-v61.expected"
+        ]
+      ],
+      "predecessor": [
+        "readiness-v60",
+        "tables-v60"
+      ],
+      "checks": [
+        "readiness-v61",
+        "tables-v61",
+        "functions-v61"
       ],
       "absentFunctions": [
         "public.mcp_access_token_hook(jsonb)",
         "public.authorize_mcp_connection(uuid,uuid,uuid,text,uuid,text[],text,timestamp with time zone)"
       ],
       "semanticManifests": [],
-      "upgradeSnapshotCheck": "require_v60_snapshot",
+      "upgradeSnapshotCheck": "require_v61_snapshot",
       "passLines": [
-        "[restored V60] PASS retained V59 rows, exact readiness and read-only connection continuation"
+        "[restored V61] PASS retained V60 rows, exact readiness and read-only connection continuation"
       ]
     }
   }

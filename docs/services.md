@@ -13,10 +13,10 @@ The [Privacy Policy](https://koaryu.app/privacy#sharing) names every provider th
 processes personal information, with what it does and where. When a provider that
 touches user, studio or payer data is added, removed or moves region, update the
 service-provider table in `frontend/src/app/(legal)/privacy/page.tsx` in the same change and
-add a revision in `frontend/src/lib/legal-documents.ts`. The policy currently says
-Koaryu sends no email to students, families or leads; before
-[Microsoft automation mail](#microsoft-automation-mail) is enabled, update its
-Emails section, its provider table and the landing FAQ's limits answer.
+add a revision in `frontend/src/lib/legal-documents.ts`. Before
+[Microsoft automation mail](#microsoft-automation-mail) is enabled, publish the
+October 21 policy revision describing studio emails, Microsoft's mail processing
+and unsubscribe choices, together with the updated landing FAQ.
 
 This file records what exists and how it is configured, not which release is live.
 Read served SHAs, schema versions and effective flags from the providers before
@@ -46,7 +46,7 @@ It adds no hosted service or separate auth provider. `MCP_ENABLED` defaults to
 exact backend HTTPS `/mcp` resource before activation. Hosted OAuth configuration
 has not been changed by this feature branch.
 
-Activation requires the V60 migration, native Supabase OAuth Server, its custom
+Activation requires the V61 migration, native Supabase OAuth Server, its custom
 access-token hook, and `/connect/authorize` on the existing frontend. Owners pick
 permissions and expiry and can revoke access in Settings. Chosen assistants
 receive the selected studio data under their own terms. Setup, synthetic testing

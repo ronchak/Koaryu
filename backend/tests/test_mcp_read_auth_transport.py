@@ -88,7 +88,8 @@ def settings():
 
 def token(settings, **overrides):
     claims = {
-        "sub": USER,
+        "sub": f"urn:koaryu:mcp:{CONNECTION}",
+        "scope": "offline_access",
         "role": "authenticated",
         "aud": settings.MCP_PUBLIC_URL,
         "iss": settings.SUPABASE_URL + "/auth/v1",
@@ -319,3 +320,13 @@ def test_transport_refuses_wrong_origin_and_oversized_body(client, settings):
         client, settings, "tools/call", {"name": "query_data", "arguments": {"extra": "a" * 70_000}}
     )
     assert response.status_code == 413
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [{"sub": USER}, {"scope": "openid"}, {"scope": "openid offline_access"}, {"scope": "profile"}],
+)
+def test_connector_refuses_account_subjects_and_identity_scopes(settings, db, overrides):
+    _, claims = token(settings, **overrides)
+    with pytest.raises(HTTPException):
+        authorize_read(db, claims, settings.MCP_PUBLIC_URL)

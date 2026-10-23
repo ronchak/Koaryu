@@ -1,8 +1,10 @@
             upgraded = snapshot(database)
-            result = local.sql(database, (root / 'supabase/verification/mcp_read_connections_contract.sql').read_text())
-            require(result == 'MCP connection ownership, audience, sessions, revocation and deletion passed', 'MCP continuation failed')
-            require(snapshot(database) == upgraded, 'MCP continuation changed retained rows')
+            probes = json.loads(local.sql(database, V60_GAP_PROBES_SQL))
+            require(probes == V60_EXPECTED_GAP_PROBES, 'V60 retained gaps differ: ' + json.dumps(probes))
+            require(snapshot(database) == upgraded, 'Gap probes changed retained rows')
+            outcomes[('restored_' if is_restored else 'canonical_') + 'gap_rules'] = probes
             check(database, 'V59_OPERATIONAL_READINESS_SQL', 'EXPECTED_V59_OPERATIONAL_READINESS')
-            if not is_restored:
-                verify_populated_mcp_restore(local, database, pg_dump, pg_restore, createdb, temporary)
-            outcomes[('restored_' if is_restored else 'canonical_')+'mcp_continuation'] = result
+            refused = local.sql(database, V60_COMPATIBILITY_DRIFT_SQL)
+            require(refused == 'compatibility drift refused', 'V40 drift-refusal proof failed')
+            check(database, 'V59_OPERATIONAL_READINESS_SQL', 'EXPECTED_V59_OPERATIONAL_READINESS')
+            print('[V60 compatibility] PASS exact V59 success rows and V40 drift refusal on ' + ('restored' if is_restored else 'canonical'), flush=True)

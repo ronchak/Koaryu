@@ -104,8 +104,18 @@ $inventory$;
 -- disposable transaction's NOT NULL, then roll the complete fixture back.
 ALTER TABLE public.studios ALTER COLUMN timezone DROP NOT NULL;
 DO $compatibility$
-DECLARE old RECORD; current RECORD;
+DECLARE old RECORD; current RECORD; history_count INTEGER; history_head TEXT; failure_key TEXT;
 BEGIN
+    SELECT count(*),max(version) INTO history_count,history_head FROM supabase_migrations.schema_migrations;
+    IF history_count=154 AND history_head='20261014083106'
+       AND to_regprocedure('public.koaryu_release_schema_preflight_v41()') IS NULL THEN
+        failure_key:='timezone_functions_v59';
+    ELSIF history_count=155 AND history_head='20261021093000'
+       AND to_regprocedure('public.koaryu_release_schema_preflight_v41()') IS NOT NULL THEN
+        failure_key:='missed_class_functions_v60';
+    ELSE
+        RAISE EXCEPTION 'Timezone compatibility contract requires exact V59 or V60 history';
+    END IF;
     SELECT * INTO old FROM public.koaryu_release_schema_preflight_v39();
     PERFORM pg_temp.timezone_check(old.ready IS TRUE AND old.migration_count=153
         AND old.migration_head='20261013013243' AND old.manifest_version='release-db-attestation-v58'
@@ -114,12 +124,14 @@ BEGIN
     GRANT EXECUTE ON FUNCTION private.timezone_name_known(TEXT) TO anon;
     SELECT * INTO old FROM public.koaryu_release_schema_preflight_v39();
     SELECT * INTO current FROM public.koaryu_release_schema_preflight_v40();
-    PERFORM pg_temp.timezone_check(old.ready IS FALSE AND current.ready IS FALSE, 'V39 refuses V59 helper ACL drift');
-    PERFORM pg_temp.timezone_check(old.security_failures=ARRAY['timezone_functions_v59']::TEXT[]
-        AND old.security_failures=current.security_failures, 'V39 preserves exact V59 drift failures');
-    PERFORM pg_temp.timezone_check(old.migration_count=154 AND old.migration_head='20261014083106'
-        AND old.pending_versions=current.pending_versions AND old.manifest_version='release-db-attestation-v58',
-        'V39 drift refusal exposes observed V59 history');
+    PERFORM pg_temp.timezone_check(old.ready IS FALSE AND current.ready IS FALSE, 'V39 refuses installed helper ACL drift');
+    PERFORM pg_temp.timezone_check(old.security_failures=ARRAY[failure_key]::TEXT[]
+        AND old.security_failures=current.security_failures, 'V39 preserves exact installed drift failures');
+    PERFORM pg_temp.timezone_check(old.migration_count=history_count AND old.migration_head=history_head
+        AND current.migration_count=history_count AND current.migration_head=history_head
+        AND old.pending_versions=current.pending_versions AND old.manifest_version='release-db-attestation-v58'
+        AND current.manifest_version='release-db-attestation-v59',
+        'V39 and V40 drift refusals expose observed history with their own manifests');
     REVOKE EXECUTE ON FUNCTION private.timezone_name_known(TEXT) FROM anon;
     SELECT * INTO old FROM public.koaryu_release_schema_preflight_v39();
     PERFORM pg_temp.timezone_check(old.ready IS TRUE AND old.migration_count=153

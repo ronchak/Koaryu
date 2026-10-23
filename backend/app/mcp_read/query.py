@@ -167,7 +167,9 @@ class Source:
     def page(self, name, columns, predicates, *, offset, size, order=()):
         query = self._query(name, columns, predicates)
         for item in order:
-            query = query.order(item.field, desc=item.direction == "desc", nullsfirst=False)
+            # postgrest-py 0.16 omits a nulls modifier when nullsfirst=False.
+            # These identifiers/directions were validated against the catalog.
+            query = query.order(f"{item.field}.{item.direction}.nullslast")
         if not any(item.field == "id" for item in order):
             query = query.order("id")
         return self._execute(query.range(offset, offset + size - 1), columns)
@@ -258,6 +260,11 @@ class Source:
             include_deleted=True,
         )
         occupied = {(r["template_id"], r["date"]) for r in stored if r.get("template_id")}
+        legacy_occupied = {
+            (r["name"], r["start_time"], r["end_time"], r["date"])
+            for r in stored
+            if not r.get("template_id")
+        }
         result = [{**r, "is_projected": False} for r in stored if r.get("deleted_at") is None]
         templates = self.all(
             "class_templates",
@@ -274,6 +281,8 @@ class Source:
                     and day >= template["start_date"]
                     and (not template["end_date"] or day <= template["end_date"])
                     and (template["id"], day) not in occupied
+                    and (template["name"], template["start_time"], template["end_time"], day)
+                    not in legacy_occupied
                 ):
                     row = {key: template.get(key) for key in session_columns}
                     row.update(

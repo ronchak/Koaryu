@@ -11,6 +11,7 @@ import { fetchAllStudents } from "@/lib/store-student-pages";
 import type {
   BeltLadder,
   BeltRank,
+  CsvImportDuplicateDecision,
   CsvImportOptions,
   CsvImportRequest,
   CsvImportResult,
@@ -64,7 +65,10 @@ export function useStoreStudentImportActions({
       rows: Record<string, string>[],
       mapping: Record<string, string>,
       options: CsvImportOptions,
-      request?: { importKey?: string },
+      request?: {
+        importKey?: string;
+        duplicateDecisions?: Record<string, CsvImportDuplicateDecision>;
+      },
     ): Promise<CsvImportResult> => {
       if (isPreviewMode) {
         const execution = buildPreviewStudentImportResult({
@@ -88,11 +92,15 @@ export function useStoreStudentImportActions({
       studentMutationEpochRef.current += 1;
       const liveRequest = beginLiveAuthRequest();
       const importKey = request?.importKey?.trim();
+      const duplicateDecisions = request?.duplicateDecisions ?? {};
       const formData = new FormData();
       const requestPayload: CsvImportRequest = {
         mapping,
         options,
         ...(importKey ? { idempotency_key: importKey } : {}),
+        ...(Object.keys(duplicateDecisions).length > 0
+          ? { duplicate_decisions: duplicateDecisions }
+          : {}),
       };
 
       formData.append("file", file);

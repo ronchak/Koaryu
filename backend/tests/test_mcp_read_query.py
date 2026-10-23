@@ -67,7 +67,10 @@ class Select:
         return self
 
     def order(self, field, desc=False, **kwargs):
-        self.orders.append((field, desc))
+        parts = field.split(".")
+        field = parts[0]
+        desc = desc or "desc" in parts
+        self.orders.append((field, desc, "nullslast" in parts))
         return self
 
     def range(self, start, end):
@@ -79,8 +82,10 @@ class Select:
 
     def execute(self):
         rows = [r for r in self.db.data.get(self.table_name, []) if all(f(r) for f in self.filters)]
-        for key, desc in reversed(self.orders):
+        for key, desc, nullslast in reversed(self.orders):
             rows.sort(key=lambda r: (r.get(key) is None, r.get(key)), reverse=desc)
+            if nullslast:
+                rows.sort(key=lambda r: r.get(key) is None)
         if self.window:
             rows = rows[slice(*self.window)]
         return SimpleNamespace(data=[{col: row.get(col) for col in self.columns} for row in rows])
@@ -500,3 +505,69 @@ def test_aggregate_alias_sort_uses_result_type(data):
         )
     )
     assert [r["first"] for r in result["rows"]] == ["Zara", "Ari"]
+
+
+def test_descending_paging_places_nulls_last_in_actual_postgrest_request(data):
+    from postgrest import SyncPostgrestClient
+
+    from app.mcp_read.schemas import Sort
+
+    with SyncPostgrestClient("https://placeholder.invalid/rest/v1") as client:
+        source = Source(client, A, Budget())
+
+        def capture(query, columns):
+            assert query.params.get("order") == "legal_first_name.desc.nullslast,id"
+            return []
+
+        source._execute = capture
+        source.page(
+            "students",
+            {"legal_first_name"},
+            [],
+            offset=0,
+            size=10,
+            order=[Sort(field="legal_first_name", direction="desc")],
+        )
+    data["students"].append({"id": "null-name", "studio_id": A, "legal_first_name": None})
+    result = reader(data).query(
+        Query(
+            dataset="students",
+            select=["legal_first_name"],
+            order_by=[{"field": "legal_first_name", "direction": "desc"}],
+        )
+    )
+    assert result["rows"][-1] == {"legal_first_name": None}
+
+
+def test_projection_reuses_unlinked_legacy_occurrences(data):
+    data["class_templates"] = [
+        {
+            "id": "t1",
+            "studio_id": A,
+            "name": "Legacy class",
+            "day_of_week": 2,
+            "start_time": "16:00:00",
+            "end_time": "17:00:00",
+            "start_date": "2026-01-01",
+            "is_active": True,
+        }
+    ]
+    data["class_sessions"] = [
+        {
+            "id": "old",
+            "studio_id": A,
+            "name": "Legacy class",
+            "date": "2026-11-03",
+            "start_time": "16:00:00",
+            "end_time": "17:00:00",
+            "status": "scheduled",
+        }
+    ]
+    result = reader(data).query(
+        Query(
+            dataset="upcoming_classes",
+            select=["id", "is_projected"],
+            where=[{"field": "date", "op": "eq", "value": "2026-11-03"}],
+        )
+    )
+    assert result["rows"] == [{"id": "old", "is_projected": False}]

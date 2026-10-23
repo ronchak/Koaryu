@@ -21,6 +21,7 @@ from app.mcp_read.connections import (
     list_connections,
     oauth_request,
     owner,
+    require_connector_scope,
     revoke_connection,
     revoke_native_grant,
     save_consent,
@@ -113,6 +114,7 @@ async def authorization(
             raise ValueError()
     except (KeyError, TypeError, ValueError):
         raise HTTPException(400, "Invalid connection request.") from None
+    require_connector_scope(data)
     # Client metadata is self-declared. Never fetch its logo, site, or callback.
     return {
         "authorization_id": str(authorization_id),

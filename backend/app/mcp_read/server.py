@@ -102,7 +102,7 @@ class Verifier:
                         await asyncio.shield(asyncio.wrap_future(pending.completion))
             if claims.get("role") != "authenticated" or claims.get("aud") != self.resource:
                 return None
-            for key in ("sub", "client_id", "session_id", "koaryu_connection_id"):
+            for key in ("client_id", "session_id", "koaryu_connection_id"):
                 UUID(claims[key])
             self.runtime.admit(claims["koaryu_connection_id"])
             await self.runtime.run(lambda client: authorize_read(client, claims, self.resource))
@@ -120,7 +120,7 @@ class Verifier:
             token=token,
             client_id=claims["client_id"],
             subject=claims["sub"],
-            scopes=["openid"],
+            scopes=["offline_access"],
             expires_at=claims["exp"],
             resource=self.resource,
             claims=claims,
@@ -176,7 +176,7 @@ def build_server(settings, runtime):
         auth=AuthSettings(
             issuer_url=AnyHttpUrl(settings.SUPABASE_URL + "/auth/v1"),
             resource_server_url=AnyHttpUrl(resource),
-            required_scopes=["openid"],
+            required_scopes=["offline_access"],
             validate_token_resource=True,
         ),
     )

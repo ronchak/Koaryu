@@ -22,7 +22,7 @@ DETAILS = {
     "user": {"id": USER},
     "client": {"id": CLIENT, "name": "Synthetic assistant"},
     "redirect_uri": "https://assistant.example.invalid/callback",
-    "scope": "openid",
+    "scope": "offline_access",
 }
 
 
@@ -216,3 +216,15 @@ def test_native_error_does_not_expose_provider_body(monkeypatch):
     with pytest.raises(HTTPException) as error:
         asyncio.run(connections.oauth_request(settings, "synthetic-owner", AUTHORIZATION))
     assert "private provider" not in error.value.detail
+
+
+def test_identity_scopes_cannot_enable_native_id_tokens(consent_client, monkeypatch):
+    monkeypatch.setattr(routes, "owner", Mock())
+    monkeypatch.setattr(
+        routes,
+        "oauth_request",
+        AsyncMock(return_value={**DETAILS, "scope": "openid offline_access"}),
+    )
+    assert consent_client.get(f"/mcp/authorizations/{AUTHORIZATION}").status_code == 400
+    with pytest.raises(HTTPException):
+        connections.require_connector_scope({**DETAILS, "scope": "openid"})

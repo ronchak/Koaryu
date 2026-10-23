@@ -150,7 +150,8 @@ export function AiConsent({ authorizationId }: { authorizationId: string | null 
               </p>
               {details.identity_scope && (
                 <p className="text-sm text-text-secondary">
-                  Account information requested by the assistant: {details.identity_scope}.
+                  Connection scope: {details.identity_scope}. This lets the assistant renew its read
+                  connection until it expires or you disconnect.
                 </p>
               )}
               <fieldset disabled={busy} className="space-y-3">

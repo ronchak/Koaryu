@@ -36,16 +36,14 @@ async function signedIn(page: Page) {
       created_at: "2026-01-01T00:00:00Z",
     },
   };
-  await page
-    .context()
-    .addCookies([
-      {
-        name: "sb-placeholder-auth-token",
-        value: "base64-" + Buffer.from(JSON.stringify(session)).toString("base64url"),
-        url: origin,
-        sameSite: "Lax",
-      },
-    ]);
+  await page.context().addCookies([
+    {
+      name: "sb-placeholder-auth-token",
+      value: "base64-" + Buffer.from(JSON.stringify(session)).toString("base64url"),
+      url: origin,
+      sameSite: "Lax",
+    },
+  ]);
   await page.route("https://placeholder.supabase.co/**", (route) =>
     route.fulfill({ status: 200, json: session.user }),
   );
@@ -70,7 +68,7 @@ async function mockConsent(page: Page, decision: "approve" | "deny", fail = fals
           authorization_id: authorization,
           client_name: "Synthetic assistant",
           redirect_uri: `${origin}/mcp-test-return`,
-          identity_scope: "openid",
+          identity_scope: "offline_access",
           permissions,
           default_permissions: ["students", "schedule"],
         },

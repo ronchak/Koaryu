@@ -85,9 +85,10 @@ def main(arguments):
     predecessor("postgres")
     hashes = {p.name: hashlib.sha256(p.read_bytes()).hexdigest()
               for p in sorted((root / "supabase/migrations").glob("*.sql"))}
-    require(len(hashes) == 155 and list(hashes)[-4:] == [
+    require(len(hashes) == 156 and list(hashes)[-5:] == [
         "20261005105341_automation_workflow_graph_v57.sql", MIGRATION,
         "20261014083106_timezone_names_reference_v59.sql",
+        "20261021093000_missed_class_gap_guards_v60.sql",
         "20261022233855_flexible_read_mcp.sql"], "Unexpected migration inventory")
     migration = root / "supabase/migrations" / MIGRATION
     mapping_bytes = Path(__file__).with_name("v57-restore-constraint-pairs.json").read_bytes()

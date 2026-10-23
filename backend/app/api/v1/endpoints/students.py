@@ -501,7 +501,7 @@ async def bulk_archive_students(
 async def parse_csv_headers(
     file: UploadFile = File(...),
     supabase: ProviderDependency = Depends(get_supabase),
-    studio_id: str = Depends(get_current_studio_id),
+    studio_id: str = Depends(get_roster_schedule_manager_studio_id),
 ):
     """
     Upload a CSV file. Returns headers and auto-suggested column mapping.
@@ -534,9 +534,13 @@ async def validate_csv_import(
     ),
     options: Optional[str] = Query(None, description="Legacy JSON string of import options"),
     supabase: ProviderDependency = Depends(get_supabase),
-    studio_id: str = Depends(get_current_studio_id),
+    studio_id: str = Depends(get_roster_schedule_manager_studio_id),
 ):
-    """Validate a CSV file against a confirmed column mapping. Returns errors per row."""
+    """Validate a CSV file against a confirmed column mapping. Returns errors per row.
+
+    Preview discloses roster facts (archived students, birth-date matches), so
+    it is limited to the roles that can execute the import.
+    """
     content = await read_csv_import_upload(file)
 
     def _provider_operation(client):
@@ -585,6 +589,7 @@ async def execute_csv_import(
             studio_id,
             user_id,
             request.idempotency_key or request_idempotency_key,
+            duplicate_decisions=request.duplicate_decisions,
         )
 
     return await run_supabase_operation(supabase, _provider_operation, lane="bulk")

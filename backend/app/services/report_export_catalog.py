@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.services.report_export_catalog_billing_ledgers import build_billing_ledger_report_catalog
 from app.services.report_export_catalog_billing_tables import build_billing_table_report_catalog
 from app.services.report_export_catalog_core_tables import build_core_table_report_catalog
 from app.services.report_export_catalog_intelligence import build_intelligence_report_catalog
@@ -13,6 +14,7 @@ def build_complete_report_catalog(report_service_cls: Any) -> dict[str, CsvRepor
     return {
         **build_intelligence_report_catalog(report_service_cls),
         **build_core_table_report_catalog(report_service_cls),
+        **build_billing_ledger_report_catalog(report_service_cls),
         **build_billing_table_report_catalog(report_service_cls),
         **build_operations_report_catalog(report_service_cls),
     }

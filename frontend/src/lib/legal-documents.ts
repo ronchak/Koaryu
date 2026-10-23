@@ -45,7 +45,16 @@ export const legalDocuments: Record<LegalDocumentKey, LegalDocumentEntry> = {
     title: "Privacy Policy",
     effective: "2026-10-22",
     history: [
-      { date: "2026-10-22", summary: "Added optional AI connections, owner-selected data sharing, connection metadata and the limits of disconnection." },
+      {
+        date: "2026-10-22",
+        summary:
+          "Added optional AI connections, owner-selected data sharing, connection metadata and the limits of disconnection.",
+      },
+      {
+        date: "2026-10-21",
+        summary:
+          "Added automated studio emails, Microsoft's processing of recipient addresses and message content, and unsubscribe choices.",
+      },
       {
         date: "2026-10-08",
         summary:

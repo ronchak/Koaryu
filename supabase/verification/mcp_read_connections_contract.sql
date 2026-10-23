@@ -40,14 +40,27 @@ BEGIN
     RESET ROLE;
 
     event := jsonb_build_object('user_id',actor,'authentication_method','oauth_provider/authorization_code',
-        'claims',jsonb_build_object('sub',actor,'aud','authenticated','role','authenticated','client_id',client_id,'session_id',session_id));
+        'claims',jsonb_build_object('sub',actor,'aud','authenticated','role','authenticated','scope','offline_access','email','owner@example.invalid','phone','1234','user_metadata',jsonb_build_object('private','value'),'app_metadata',jsonb_build_object('private','value'),'client_id',client_id,'session_id',session_id));
     SET LOCAL ROLE supabase_auth_admin;
     minted := public.mcp_access_token_hook(event);
     IF minted#>>'{claims,aud}' IS DISTINCT FROM 'https://mcp.example.invalid/mcp'
        OR minted#>>'{claims,koaryu_connection_id}' IS DISTINCT FROM connection->>'id'
+       OR minted#>>'{claims,sub}' IS DISTINCT FROM 'urn:koaryu:mcp:' || (connection->>'id')
+       OR minted#>>'{claims,email}' IS DISTINCT FROM '' OR minted#>>'{claims,phone}' IS DISTINCT FROM ''
+       OR (minted->'claims') ? 'user_metadata' OR (minted->'claims') ? 'app_metadata'
        OR minted#>>'{claims,session_id}' IS DISTINCT FROM session_id::text THEN
         RAISE EXCEPTION 'Token hook failed to bind resource, grant and session';
     END IF;
+    denied := false;
+    BEGIN
+        PERFORM public.mcp_access_token_hook(jsonb_set(event,'{claims,scope}','"openid offline_access"'));
+    EXCEPTION WHEN insufficient_privilege THEN denied := true; END;
+    IF denied IS DISTINCT FROM true THEN RAISE EXCEPTION 'OpenID scope could mint an owner identity token'; END IF;
+    denied := false;
+    BEGIN
+        PERFORM (minted#>>'{claims,sub}')::uuid;
+    EXCEPTION WHEN invalid_text_representation THEN denied := true; END;
+    IF denied IS DISTINCT FROM true THEN RAISE EXCEPTION 'Connector subject can resolve as an Auth user UUID'; END IF;
     event := jsonb_set(event,'{authentication_method}','"token_refresh"');
     minted := public.mcp_access_token_hook(event);
     IF minted#>>'{claims,koaryu_connection_id}' IS DISTINCT FROM connection->>'id' THEN RAISE EXCEPTION 'Valid refresh lost its grant'; END IF;

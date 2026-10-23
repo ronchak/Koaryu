@@ -1,5 +1,6 @@
 import csv
 import json
+import re
 import tempfile
 import threading
 from dataclasses import dataclass
@@ -15,6 +16,12 @@ from app.services.report_export_budget import (
     EXPORT_MAX_OUTPUT_BYTES,
     ReportExportBudget,
     ReportExportBudgetSnapshot,
+)
+from app.services.report_export_billing_ledgers import (
+    ReportDateRange,
+    build_enrollment_ledger_rows,
+    build_invoice_ledger_rows,
+    build_payment_ledger_rows,
 )
 from app.services.report_export_data import INTELLIGENCE_INPUT_COLUMNS, ReportExportDataFetcher
 from app.services.report_intelligence import (
@@ -40,6 +47,12 @@ REPORT_EXPORT_ROLE_RANK = {
 }
 EXPORT_SPOOL_MAX_MEMORY_BYTES = 1 * 1024 * 1024
 EXPORT_STREAM_CHUNK_BYTES = 64 * 1024
+REPORT_DATE_PATTERN = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}")
+REPORT_DATE_RANGE_UNSUPPORTED_DETAIL = "This report does not take a date range."
+REPORT_DATE_RANGE_ORDER_DETAIL = "The from date must be on or before the to date."
+REPORT_DATE_RANGE_MIN = date(1900, 1, 1)
+REPORT_DATE_RANGE_MAX = date(2200, 12, 31)
+REPORT_DATE_RANGE_LIMIT_DETAIL = "Dates must be between 1900-01-01 and 2200-12-31."
 
 
 @dataclass(frozen=True)
@@ -187,6 +200,39 @@ def require_report_export_access(report: CsvReport, role: str) -> None:
         )
 
 
+def _report_date_range_error(detail: str) -> HTTPException:
+    return HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=detail)
+
+
+def _parse_report_date(name: str, value: str) -> date:
+    if REPORT_DATE_PATTERN.fullmatch(value):
+        try:
+            return date.fromisoformat(value)
+        except ValueError:
+            pass
+    raise _report_date_range_error(f"The {name} date must be a real date written as YYYY-MM-DD.")
+
+
+def resolve_report_date_range(
+    report: CsvReport,
+    date_from: Optional[str],
+    date_to: Optional[str],
+) -> Optional[ReportDateRange]:
+    if date_from is None and date_to is None:
+        return None
+    if not report.supports_date_range:
+        raise _report_date_range_error(REPORT_DATE_RANGE_UNSUPPORTED_DETAIL)
+    start = _parse_report_date("from", date_from) if date_from is not None else None
+    end = _parse_report_date("to", date_to) if date_to is not None else None
+    # Far-off dates overflow when converted to UTC bounds; no ledger needs them.
+    for bound in (start, end):
+        if bound is not None and not REPORT_DATE_RANGE_MIN <= bound <= REPORT_DATE_RANGE_MAX:
+            raise _report_date_range_error(REPORT_DATE_RANGE_LIMIT_DETAIL)
+    if start is not None and end is not None and start > end:
+        raise _report_date_range_error(REPORT_DATE_RANGE_ORDER_DETAIL)
+    return ReportDateRange(start=start, end=end)
+
+
 class ReportExportService:
     def __init__(
         self,
@@ -201,6 +247,7 @@ class ReportExportService:
         self.budget = budget or ReportExportBudget()
         self._active_report: Optional[CsvReport] = None
         self._intelligence_calendar: Optional[_ReportCalendar] = None
+        self._active_date_range: Optional[ReportDateRange] = None
 
     def list_reports(self) -> list[CsvReport]:
         return list(REPORTS.values())
@@ -221,20 +268,29 @@ class ReportExportService:
     def budget_snapshot(self) -> ReportExportBudgetSnapshot:
         return self.budget.snapshot()
 
-    async def build_csv(self, report_id: str, studio_id: str) -> tuple[str, str]:
+    async def build_csv(
+        self,
+        report_id: str,
+        studio_id: str,
+        *,
+        date_range: Optional[ReportDateRange] = None,
+    ) -> tuple[str, str]:
         report = self.get_report(report_id)
-        return await self.build_csv_for_report(report, studio_id)
+        return await self.build_csv_for_report(report, studio_id, date_range=date_range)
 
     async def build_csv_artifact_for_report(
         self,
         report: CsvReport,
         studio_id: str,
+        *,
+        date_range: Optional[ReportDateRange] = None,
     ) -> ReportExportArtifact:
         # Keep the legacy method as the compatibility seam used by existing
         # internal tests. The endpoint selects the artifact return path.
         artifact = await self.build_csv_for_report(
             report,
             studio_id,
+            date_range=date_range,
             _return_artifact=True,
         )
         if not isinstance(artifact, ReportExportArtifact):
@@ -246,9 +302,14 @@ class ReportExportService:
         report: CsvReport,
         studio_id: str,
         *,
+        date_range: Optional[ReportDateRange] = None,
         _return_artifact: bool = False,
     ) -> tuple[str, str] | ReportExportArtifact:
-        artifact = await self._build_csv_artifact_for_report(report, studio_id)
+        artifact = await self._build_csv_artifact_for_report(
+            report,
+            studio_id,
+            date_range=date_range,
+        )
         if _return_artifact:
             return artifact
         try:
@@ -264,7 +325,11 @@ class ReportExportService:
         self,
         report: CsvReport,
         studio_id: str,
+        *,
+        date_range: Optional[ReportDateRange] = None,
     ) -> ReportExportArtifact:
+        if date_range is not None and not report.supports_date_range:
+            raise _report_date_range_error(REPORT_DATE_RANGE_UNSUPPORTED_DETAIL)
         self.budget.check_elapsed()
         calendar = None
         if report.id in INTELLIGENCE_INPUT_COLUMNS:
@@ -281,8 +346,10 @@ class ReportExportService:
         )
         previous_report = self._active_report
         previous_calendar = self._intelligence_calendar
+        previous_date_range = self._active_date_range
         self._active_report = report
         self._intelligence_calendar = calendar
+        self._active_date_range = date_range
         try:
             rows = (
                 report.custom_builder(self, studio_id)
@@ -295,6 +362,7 @@ class ReportExportService:
         finally:
             self._active_report = previous_report
             self._intelligence_calendar = previous_calendar
+            self._active_date_range = previous_date_range
 
         try:
             self.budget.check_elapsed()
@@ -406,6 +474,15 @@ class ReportExportService:
             else None
         )
         return build_data_hygiene_readiness(data, reference_date)
+
+    def _build_billing_invoice_ledger_rows(self, studio_id: str) -> list[dict[str, Any]]:
+        return build_invoice_ledger_rows(self._report_data(), studio_id, self._active_date_range)
+
+    def _build_billing_payment_ledger_rows(self, studio_id: str) -> list[dict[str, Any]]:
+        return build_payment_ledger_rows(self._report_data(), studio_id, self._active_date_range)
+
+    def _build_billing_enrollment_ledger_rows(self, studio_id: str) -> list[dict[str, Any]]:
+        return build_enrollment_ledger_rows(self._report_data(), studio_id)
 
     def _report_today(self) -> date:
         return self._intelligence_calendar.today if self._intelligence_calendar else self.today

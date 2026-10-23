@@ -28,15 +28,18 @@ def owner(client: Any, user_id: str, studio_id: str | None = None, *, require_su
 def authorize_read(client: Any, claims: dict, resource: str) -> dict:
     """No writes, provider repairs, Stripe calls or authorization cache."""
     try:
-        user_id = str(UUID(claims["sub"]))
         connection_id = str(UUID(claims["koaryu_connection_id"]))
         session_id = str(UUID(claims["session_id"]))
         client_id = str(UUID(claims["client_id"]))
+        if (
+            claims.get("sub") != f"urn:koaryu:mcp:{connection_id}"
+            or claims.get("scope") != "offline_access"
+        ):
+            raise ValueError()
         rows = (
             client.table("mcp_connections")
             .select(CONNECTION_COLUMNS)
             .eq("id", connection_id)
-            .eq("user_id", user_id)
             .eq("client_id", client_id)
             .limit(1)
             .execute()
@@ -54,7 +57,7 @@ def authorize_read(client: Any, claims: dict, resource: str) -> dict:
             or claims.get("aud") != resource
         ):
             raise ValueError()
-        owner(client, user_id, connection["studio_id"])
+        owner(client, str(UUID(connection["user_id"])), connection["studio_id"])
         permissions = connection["permissions"]
         if (
             not isinstance(permissions, list)
@@ -162,6 +165,7 @@ def save_consent(
     resource: str,
 ):
     membership = owner(client, user_id)
+    require_connector_scope(details)
     if not permissions or any(p not in PERMISSIONS for p in permissions):
         raise HTTPException(422, "Choose at least one supported data permission.")
     try:
@@ -212,3 +216,11 @@ def revoke_connection(client, user_id: str, connection_id: UUID):
     if not rows:
         raise HTTPException(404, "Connection not found.")
     return public_connection(rows[0])
+
+
+def require_connector_scope(details: dict):
+    if details.get("scope") != "offline_access":
+        raise HTTPException(
+            400,
+            "This connector requires only the offline_access OAuth scope. Restart the connection without OpenID, profile, email or phone scopes.",
+        )

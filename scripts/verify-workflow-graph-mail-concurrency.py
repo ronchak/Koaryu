@@ -11,7 +11,7 @@ from pathlib import Path
 from uuid import uuid4
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from local_postgres_verification import LocalPostgres, require, install_final_v57, install_final_v59
+from local_postgres_verification import LocalPostgres, require, install_final_v57, install_final_v60
 ROOT = Path(__file__).resolve().parents[1]
 BASE = '35561d6b8f851ea0309723637e0996a064ba4c82'
 BASE_HASH = 'cab98ab987acf0c24a383be94f3e0499c6d891b922d7fd1de217e788c2a339b5'
@@ -56,8 +56,8 @@ def main(args):
         readiness = install_final_v57(local, database, ROOT)
         passed('complete final catalog body security ACL overload and genuine history', readiness=readiness)
         contract=sql(CONTRACT.read_text()); passed('focused SQL contract',output=contract)
-        current_readiness = install_final_v59(local, database, ROOT)
-        passed('complete current V59 guard before application composition', readiness=current_readiness)
+        current_readiness = install_final_v60(local, database, ROOT)
+        passed('complete current V60 guard before application composition', readiness=current_readiness)
         installed = value(INVENTORY)
         # Reuse the accepted comprehensive fixture bytes, with a private proof schema.
         fixtures=(ROOT/'supabase/verification/workflow_advance_contract.sql').read_text().split('-- fixture owners start.')[1].split('-- fixture owners end.')[0]

@@ -227,8 +227,8 @@ if [[ ${#verification_files[@]} -eq 0 ]]; then
   echo "ERROR: No contract files found in $VERIFICATION_DIR" >&2
   exit 1
 fi
-if [[ ${#migration_files[@]} -ne 155 ]]; then
-  echo "ERROR: Expected the canonical 155-migration chain, found ${#migration_files[@]}." >&2
+if [[ ${#migration_files[@]} -ne 156 ]]; then
+  echo "ERROR: Expected the canonical 156-migration chain, found ${#migration_files[@]}." >&2
   exit 1
 fi
 if [[ ${#verification_files[@]} -ne 78 ]]; then
@@ -331,14 +331,14 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN
     CREATE ROLE authenticated NOLOGIN NOINHERIT;
   END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'supabase_auth_admin') THEN
+    CREATE ROLE supabase_auth_admin NOLOGIN NOINHERIT;
+  END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'service_role') THEN
     CREATE ROLE service_role NOLOGIN NOINHERIT BYPASSRLS;
   END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticator') THEN
     CREATE ROLE authenticator NOLOGIN NOINHERIT;
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'supabase_auth_admin') THEN
-    CREATE ROLE supabase_auth_admin NOLOGIN NOINHERIT;
   END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'supabase_admin') THEN
     CREATE ROLE supabase_admin NOLOGIN NOINHERIT;
@@ -2339,7 +2339,7 @@ for verification_file in "${verification_files[@]}"; do
   verification_index=$((verification_index + 1))
   verification_filename="$(basename "$verification_file")"
   case "$verification_filename" in
-    live_billing_ga_contract.sql|timezone_names_reference_contract.sql|mcp_read_connections_contract.sql|belt_test_recipient_contract.sql|workflow_current_facts_contract.sql|workflow_invoice_episode_contract.sql|workflow_advance_contract.sql) continue ;;
+    live_billing_ga_contract.sql|timezone_names_reference_contract.sql|mcp_read_connections_contract.sql|belt_test_recipient_contract.sql|workflow_current_facts_contract.sql|workflow_invoice_episode_contract.sql|workflow_advance_contract.sql|missed_class_automation_contract.sql) continue ;;
   esac
 
   echo "[contract $verification_index/$verification_total] RUN $verification_filename"
@@ -2391,8 +2391,8 @@ run_interruptible python3 "$ROOT_DIR/scripts/verify-v58-v59-restore-contract.py"
 run_interruptible "$PSQL" "${psql_args[@]}" --single-transaction \
   --file="$MIGRATION_DIR/20261014083106_timezone_names_reference_v59.sql" \
   --command="INSERT INTO supabase_migrations.schema_migrations(version,name) VALUES('20261014083106','timezone_names_reference_v59');"
-final_readiness="$({ cd "$ROOT_DIR"; node --input-type=module --eval "import { V59_OPERATIONAL_READINESS_SQL } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(V59_OPERATIONAL_READINESS_SQL);"; } | "$PSQL" "${psql_args[@]}" --tuples-only --no-align)"
-(cd "$ROOT_DIR" && node --input-type=module --eval "import { EXPECTED_V59_OPERATIONAL_READINESS } from './scripts/studio-comp-migration-rollout.mjs'; if (process.argv[1] !== EXPECTED_V59_OPERATIONAL_READINESS) throw new Error('V59 readiness mismatch');" "$final_readiness")
+v59_readiness="$({ cd "$ROOT_DIR"; node --input-type=module --eval "import { V59_OPERATIONAL_READINESS_SQL } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(V59_OPERATIONAL_READINESS_SQL);"; } | "$PSQL" "${psql_args[@]}" --tuples-only --no-align)"
+(cd "$ROOT_DIR" && node --input-type=module --eval "import { EXPECTED_V59_OPERATIONAL_READINESS } from './scripts/studio-comp-migration-rollout.mjs'; if (process.argv[1] !== EXPECTED_V59_OPERATIONAL_READINESS) throw new Error('V59 readiness mismatch');" "$v59_readiness")
 v58_compatibility="$({ cd "$ROOT_DIR"; node --input-type=module --eval "import { V58_OPERATIONAL_READINESS_SQL } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(V58_OPERATIONAL_READINESS_SQL);"; } | "$PSQL" "${psql_args[@]}" --tuples-only --no-align)"
 (cd "$ROOT_DIR" && node --input-type=module --eval "import assert from 'node:assert/strict'; import { EXPECTED_V58_OPERATIONAL_READINESS } from './scripts/studio-comp-migration-rollout.mjs'; assert.equal(process.argv[1], EXPECTED_V58_OPERATIONAL_READINESS);" "$v58_compatibility")
 echo "[V59 compatibility] PASS installed V39 returns exact V58 success rows"
@@ -2407,12 +2407,29 @@ echo "[V59 readiness] PASS exact catalog, V58 compatibility and timezone behavio
 echo "[V59 timing] RUN old catalog predicate and cached lookup"
 run_interruptible "$PSQL" "${psql_args[@]}" --command="EXPLAIN ANALYZE SELECT 1 FROM pg_catalog.pg_timezone_names WHERE name='America/Los_Angeles'; EXPLAIN ANALYZE SELECT private.timezone_name_known('America/Los_Angeles');"
 
+echo "[V60 upgrade/restore] RUN retained V59 rows and missed-class gap continuation"
+run_interruptible python3 "$ROOT_DIR/scripts/verify-v59-v60-restore-contract.py" \
+  "$PG_DUMP" "$PG_RESTORE" "$CREATEDB" "$PSQL" "$SOCKET_DIR" "$PG_PORT" "$TEMP_DIR" "$ROOT_DIR"
+run_interruptible "$PSQL" "${psql_args[@]}" --single-transaction \
+  --file="$MIGRATION_DIR/20261021093000_missed_class_gap_guards_v60.sql" \
+  --command="INSERT INTO supabase_migrations.schema_migrations(version,name) VALUES('20261021093000','missed_class_gap_guards_v60');"
+final_readiness="$({ cd "$ROOT_DIR"; node --input-type=module --eval "import { V60_OPERATIONAL_READINESS_SQL } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(V60_OPERATIONAL_READINESS_SQL);"; } | "$PSQL" "${psql_args[@]}" --tuples-only --no-align)"
+(cd "$ROOT_DIR" && node --input-type=module --eval "import { EXPECTED_V60_OPERATIONAL_READINESS } from './scripts/studio-comp-migration-rollout.mjs'; if (process.argv[1] !== EXPECTED_V60_OPERATIONAL_READINESS) throw new Error('V60 readiness mismatch');" "$final_readiness")
+v59_compatibility="$({ cd "$ROOT_DIR"; node --input-type=module --eval "import { V59_OPERATIONAL_READINESS_SQL } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(V59_OPERATIONAL_READINESS_SQL);"; } | "$PSQL" "${psql_args[@]}" --tuples-only --no-align)"
+(cd "$ROOT_DIR" && node --input-type=module --eval "import assert from 'node:assert/strict'; import { EXPECTED_V59_OPERATIONAL_READINESS } from './scripts/studio-comp-migration-rollout.mjs'; assert.equal(process.argv[1], EXPECTED_V59_OPERATIONAL_READINESS);" "$v59_compatibility")
+echo "[V60 compatibility] PASS installed V40 returns exact V59 success rows"
+echo "[V60 contract] RUN missed_class_automation_contract.sql"
+run_interruptible "$PSQL" "${psql_args[@]}" --file="$VERIFICATION_DIR/missed_class_automation_contract.sql"
+echo "[V60 contract] PASS missed_class_automation_contract.sql"
+echo "[V60 readiness] PASS exact catalog, V59 compatibility and missed-class gap rules"
+
 
 echo "[concurrency] RUN billing command ownership and lock ordering"
 run_interruptible python3 "$ROOT_DIR/scripts/verify-billing-command-concurrency.py" "$PSQL" "$SOCKET_DIR" "$PG_PORT"
 
-echo "[V60 upgrade/restore] RUN retained V59 rows and MCP connection continuation"
-run_interruptible python3 "$ROOT_DIR/scripts/verify-v59-v60-restore-contract.py" \
+
+echo "[V61 upgrade/restore] RUN retained V60 rows and MCP connection continuation"
+run_interruptible python3 "$ROOT_DIR/scripts/verify-v60-v61-restore-contract.py" \
   "$PG_DUMP" "$PG_RESTORE" "$CREATEDB" "$PSQL" "$SOCKET_DIR" "$PG_PORT" "$TEMP_DIR" "$ROOT_DIR"
 run_interruptible "$PSQL" "${psql_args[@]}" --single-transaction \
   --file="$MIGRATION_DIR/20261022233855_flexible_read_mcp.sql" \
@@ -2420,6 +2437,6 @@ run_interruptible "$PSQL" "${psql_args[@]}" --single-transaction \
 run_interruptible "$PSQL" "${psql_args[@]}" --file="$VERIFICATION_DIR/mcp_read_connections_contract.sql"
 final_readiness="$({ cd "$ROOT_DIR"; node --input-type=module --eval "import { FINAL_OPERATIONAL_READINESS_SQL } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(FINAL_OPERATIONAL_READINESS_SQL);"; } | "$PSQL" "${psql_args[@]}" --tuples-only --no-align)"
 (cd "$ROOT_DIR" && node --input-type=module --eval "import { validateOperationalReadiness } from './scripts/studio-comp-migration-rollout.mjs'; validateOperationalReadiness(process.argv[1]);" "$final_readiness")
-echo "[V60 readiness] PASS exact MCP catalog, native token hook and V59 compatibility"
+echo "[V61 readiness] PASS exact MCP catalog, native token hook and V60 compatibility"
 
 echo "PASS: $migration_total migrations and $verification_total Supabase contracts verified ($SUITE_PART part) on ephemeral PostgreSQL 17."

@@ -284,8 +284,13 @@ const sections: readonly LegalSection[] = [
               "United States and other countries where Stripe operates",
             ],
             [
-              "Google and Microsoft",
+              "Google",
               "Optional sign-in, only if you choose it",
+              "United States and other countries",
+            ],
+            [
+              "Microsoft",
+              "Optional sign-in and delivery of automated studio emails through Outlook and Microsoft Graph, including recipient addresses and message content",
               "United States and other countries",
             ],
           ]}
@@ -371,9 +376,16 @@ const sections: readonly LegalSection[] = [
           contact you about your account, a support request, security or changes to our terms.
         </p>
         <p>
-          Koaryu does not send marketing email or text messages, and it does not message students,
-          families or leads on a studio&rsquo;s behalf. If we ever offer marketing email, it will
-          include a way to unsubscribe.
+          When a studio Admin enables an email automation, Koaryu can send emails to students,
+          guardians, leads or Payers on that studio&rsquo;s behalf. These include missed-class
+          reminders and emails triggered by studio events. Microsoft processes the recipient address
+          and message content to deliver these emails through Outlook and Microsoft Graph.
+        </p>
+        <p>
+          Each automated studio email includes an unsubscribe link. Unsubscribing stops automated
+          emails from that studio to that address; it does not stop account or Stripe billing
+          emails. Contact the studio about its messages or use of your information. Koaryu does not
+          send text messages.
         </p>
       </>
     ),
@@ -608,12 +620,12 @@ const sections: readonly LegalSection[] = [
             [
               "Identifiers",
               "Name, email, phone, address, account and Stripe references, IP address",
-              "Hosting, database and payment providers",
+              "Hosting, database, payment and email delivery providers",
             ],
             [
               "Customer records",
               "Contact, emergency contact and billing details",
-              "Hosting, database and payment providers",
+              "Hosting, database, payment and email delivery providers",
             ],
             [
               "Protected characteristics",
@@ -623,7 +635,7 @@ const sections: readonly LegalSection[] = [
             [
               "Commercial information",
               "Subscriptions, invoices, payments, refunds and disputes",
-              "Hosting, database and payment providers",
+              "Hosting, database, payment and email delivery providers",
             ],
             ["Internet activity", "Request and error logs, audit records", "Hosting providers"],
             ["Visual information", "Student photos", "Database and storage provider"],

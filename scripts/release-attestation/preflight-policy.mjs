@@ -652,7 +652,8 @@ export const render_preflight_security_v59 = () => render_preflight_security_v57
   .replaceAll("koaryu_release_schema_preflight_v38", "koaryu_release_schema_preflight_v40")
   .replaceAll("preflight_security_v57", "preflight_security_v59");
 
-export const render_mcp_functions_v60 = check =>
+// V60 retains V59's inventory, now including the V40 compatibility bridge.
+export const render_missed_class_functions_v60 = check =>
   render_automation_functions_v57(check).replace(
     "p.oid <> pg_catalog.to_regprocedure('public.koaryu_release_schema_preflight_v38()')",
     "p.oid <> pg_catalog.to_regprocedure('public.koaryu_release_schema_preflight_v41()')"
@@ -660,3 +661,12 @@ export const render_mcp_functions_v60 = check =>
 export const render_preflight_security_v60 = () => render_preflight_security_v57()
   .replaceAll("koaryu_release_schema_preflight_v38", "koaryu_release_schema_preflight_v41")
   .replaceAll("preflight_security_v57", "preflight_security_v60");
+
+export const render_mcp_functions_v61 = check =>
+  render_automation_functions_v57(check).replace(
+    "p.oid <> pg_catalog.to_regprocedure('public.koaryu_release_schema_preflight_v38()')",
+    "p.oid <> pg_catalog.to_regprocedure('public.koaryu_release_schema_preflight_v42()')"
+  );
+export const render_preflight_security_v61 = () => render_preflight_security_v57()
+  .replaceAll("koaryu_release_schema_preflight_v38", "koaryu_release_schema_preflight_v42")
+  .replaceAll("preflight_security_v57", "preflight_security_v61");

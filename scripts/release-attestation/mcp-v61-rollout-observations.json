@@ -1,0 +1,22 @@
+{
+  "guards": [
+    [
+      "public.koaryu_release_schema_preflight_v41()",
+      "e344758d8c081b717f7d7382c1cf50b96506e9faa7d8e8db604fef71d62b75ed",
+      "plpgsql",
+      true,
+      "search_path=pg_catalog",
+      "TABLE(ready boolean, migration_count integer, migration_head text, pending_versions text[], security_failures text[], manifest_version text)",
+      ""
+    ],
+    [
+      "public.koaryu_release_schema_preflight_v42()",
+      "c5795c48d2931a49c74dd65145a5f757a16f3b976c367b489204599951829b85",
+      "plpgsql",
+      true,
+      "search_path=pg_catalog,TimeZone=UTC,DateStyle=ISO, YMD,IntervalStyle=postgres",
+      "TABLE(ready boolean, migration_count integer, migration_head text, pending_versions text[], security_failures text[], manifest_version text)",
+      ""
+    ]
+  ]
+}

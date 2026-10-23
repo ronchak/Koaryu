@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-import mcpV60Observations from "./release-attestation/mcp-v60-rollout-observations.json" with { type: "json" };
-import { V60_MCP_TABLE_STATE_SQL, EXPECTED_V60_MCP_TABLE_STATE, EXPECTED_V60_RESTORED_MCP_TABLE_STATE, V60_MCP_FUNCTION_STATE_SQL, EXPECTED_V60_MCP_FUNCTION_STATE } from "./release-attestation/mcp-v60.mjs";
+import mcpV61Observations from "./release-attestation/mcp-v61-rollout-observations.json" with { type: "json" };
+import { V61_MCP_TABLE_STATE_SQL, EXPECTED_V61_MCP_TABLE_STATE, EXPECTED_V61_RESTORED_MCP_TABLE_STATE, V61_MCP_FUNCTION_STATE_SQL, EXPECTED_V61_MCP_FUNCTION_STATE } from "./release-attestation/mcp-v61.mjs";
 
 import { createHash } from "node:crypto";
 import fs from "node:fs";
@@ -15,10 +15,12 @@ import { CURRENT_RELEASE, RELEASE_STATES, readinessTuple, releaseState } from ".
 import { MIGRATION_VERSIONS } from "./release-attestation/generated-history.mjs";
 import { RELEASE_READINESS, V56_OPERATIONAL_READINESS_SQL, EXPECTED_V56_OPERATIONAL_READINESS, V41_OPERATIONAL_READINESS_SQL, EXPECTED_V41_OPERATIONAL_READINESS, V42_OPERATIONAL_READINESS_SQL, EXPECTED_V42_OPERATIONAL_READINESS, V43_OPERATIONAL_READINESS_SQL, EXPECTED_V43_OPERATIONAL_READINESS, V44_OPERATIONAL_READINESS_SQL, EXPECTED_V44_OPERATIONAL_READINESS, V45_OPERATIONAL_READINESS_SQL, EXPECTED_V45_OPERATIONAL_READINESS, V46_OPERATIONAL_READINESS_SQL, EXPECTED_V46_OPERATIONAL_READINESS, V47_OPERATIONAL_READINESS_SQL, EXPECTED_V47_OPERATIONAL_READINESS, V48_OPERATIONAL_READINESS_SQL, EXPECTED_V48_OPERATIONAL_READINESS, V49_OPERATIONAL_READINESS_SQL, EXPECTED_V49_OPERATIONAL_READINESS, V50_OPERATIONAL_READINESS_SQL, EXPECTED_V50_OPERATIONAL_READINESS, V51_OPERATIONAL_READINESS_SQL, EXPECTED_V51_OPERATIONAL_READINESS, V52_OPERATIONAL_READINESS_SQL, EXPECTED_V52_OPERATIONAL_READINESS, V53_OPERATIONAL_READINESS_SQL, EXPECTED_V53_OPERATIONAL_READINESS, V54_OPERATIONAL_READINESS_SQL, EXPECTED_V54_OPERATIONAL_READINESS, V55_OPERATIONAL_READINESS_SQL, EXPECTED_V55_OPERATIONAL_READINESS } from "./release-attestation/generated-readiness.mjs";
 export * from "./release-attestation/generated-readiness.mjs";
+export * from "./release-attestation/mcp-v61.mjs";
 export * from "./release-attestation/timezone-v59.mjs";
-export * from "./release-attestation/mcp-v60.mjs";
 import { EXPECTED_V59_CATALOG_STATE, EXPECTED_V59_RESTORED_CATALOG_STATE, V59_GUARD_ROWS, V59_AUTOMATION_TABLE_STATE_SQL, EXPECTED_V59_AUTOMATION_TABLE_STATE, EXPECTED_V59_RESTORED_AUTOMATION_TABLE_STATE, EXPECTED_V59_PLATFORM_AUTOMATION_TABLE_STATE, EXPECTED_V59_RESTORED_PLATFORM_AUTOMATION_TABLE_STATE, V59_AUTOMATION_FUNCTION_STATE_SQL, EXPECTED_V59_AUTOMATION_FUNCTION_STATE } from "./release-attestation/timezone-v59.mjs";
 import { TIMEZONE_NAMES_PARITY_SQL, validateTimezoneNameParity } from "./release-attestation/timezone-names.mjs";
+export * from "./release-attestation/missed-class-v60.mjs";
+import { EXPECTED_V60_CATALOG_STATE, EXPECTED_V60_RESTORED_CATALOG_STATE, V60_GUARD_ROWS, V60_AUTOMATION_TABLE_STATE_SQL, EXPECTED_V60_AUTOMATION_TABLE_STATE, EXPECTED_V60_RESTORED_AUTOMATION_TABLE_STATE, EXPECTED_V60_PLATFORM_AUTOMATION_TABLE_STATE, EXPECTED_V60_RESTORED_PLATFORM_AUTOMATION_TABLE_STATE, V60_AUTOMATION_FUNCTION_STATE_SQL, EXPECTED_V60_AUTOMATION_FUNCTION_STATE } from "./release-attestation/missed-class-v60.mjs";
 
 const STATES = Object.freeze(Object.fromEntries(
   Object.keys(RELEASE_STATES).map(id => [id, releaseState(id, MIGRATION_VERSIONS)]),
@@ -85,6 +87,7 @@ export const ROLLOUT = Object.freeze({
   v57MigrationCount: STATES["v57"].count,
   v58MigrationCount: STATES["v58"].count,
   v59MigrationCount: STATES["v59"].count,
+  v60MigrationCount: STATES["v60"].count,
   finalMigrationCount: STATES[CURRENT_RELEASE].count,
   finalMigrationVersion: STATES[CURRENT_RELEASE].head,
   releasePendingVersions: Object.freeze(STATES[CURRENT_RELEASE].history.filter(version => version > STATES.v7.head)),
@@ -1354,24 +1357,41 @@ function v59ProviderFingerprint(catalog, tables) {
   return `v59_catalog=${catalog};v59_tables=${tables};v59_functions=${EXPECTED_V59_AUTOMATION_FUNCTION_STATE};v59_release=${EXPECTED_V59_RELEASE_MANIFEST};v58_compat=${digest("sha256", RELEASE_READINESS.v58.expected)}`;
 }
 
-
-// V60 adds only the MCP control table/functions. Its independently observed
-// retained catalog is identical to V59; complete table/function pins bind the
-// additions and the changed compatibility bridge.
+// V60 pins are measured on canonical and logical-restored V59 upgrades.
 const V60_TABLE_PROFILES = Object.freeze([
-  { name: "postgres-canonical", catalog: EXPECTED_V59_CATALOG_STATE, tables: EXPECTED_V60_MCP_TABLE_STATE },
-  { name: "postgres-restored", catalog: EXPECTED_V59_RESTORED_CATALOG_STATE, tables: EXPECTED_V60_RESTORED_MCP_TABLE_STATE },
-  { name: "supabase-canonical", catalog: EXPECTED_V59_CATALOG_STATE, tables: preflightSchema.checks.mcp_tables_v60.platformExpected },
-  { name: "supabase-restored", catalog: EXPECTED_V59_RESTORED_CATALOG_STATE, tables: preflightSchema.checks.mcp_tables_v60.platformRestoredExpected },
+  { name: "postgres-canonical", catalog: EXPECTED_V60_CATALOG_STATE, tables: EXPECTED_V60_AUTOMATION_TABLE_STATE },
+  { name: "postgres-restored", catalog: EXPECTED_V60_RESTORED_CATALOG_STATE, tables: EXPECTED_V60_RESTORED_AUTOMATION_TABLE_STATE },
+  { name: "supabase-canonical", catalog: EXPECTED_V60_CATALOG_STATE, tables: EXPECTED_V60_PLATFORM_AUTOMATION_TABLE_STATE },
+  { name: "supabase-restored", catalog: EXPECTED_V60_RESTORED_CATALOG_STATE, tables: EXPECTED_V60_RESTORED_PLATFORM_AUTOMATION_TABLE_STATE },
 ].map(profile => Object.freeze(profile)));
 const V60_FUNCTIONS = Object.freeze([
-  ...V59_FUNCTIONS.map(row => mcpV60Observations.guards.find(guard => guard[0] === row[0]) ?? row),
-  mcpV60Observations.guards.find(row => row[0] === "public.koaryu_release_schema_preflight_v41()"),
+  ...V59_FUNCTIONS.map(row => V60_GUARD_ROWS.find(guard => guard[0] === row[0]) ?? row),
+  V60_GUARD_ROWS.find(row => row[0] === "public.koaryu_release_schema_preflight_v41()"),
 ]);
 export const EXPECTED_V60_RELEASE_MANIFEST = releaseManifest(V60_FUNCTIONS);
 export const V60_RELEASE_MANIFEST_SQL = releaseManifestSql(V60_FUNCTIONS, "v60_release_manifest");
 function v60ProviderFingerprint(catalog, tables) {
-  return `v60_catalog=${catalog};v60_tables=${tables};v60_functions=${EXPECTED_V60_MCP_FUNCTION_STATE};v60_release=${EXPECTED_V60_RELEASE_MANIFEST};v59_compat=${digest("sha256", RELEASE_READINESS.v59.expected)}`;
+  return `v60_catalog=${catalog};v60_tables=${tables};v60_functions=${EXPECTED_V60_AUTOMATION_FUNCTION_STATE};v60_release=${EXPECTED_V60_RELEASE_MANIFEST};v59_compat=${digest("sha256", RELEASE_READINESS.v59.expected)}`;
+}
+
+
+// V61 adds only the MCP control table/functions. Its independently observed
+// retained catalog is identical to V60; complete table/function pins bind the
+// additions and the changed compatibility bridge.
+const V61_TABLE_PROFILES = Object.freeze([
+  { name: "postgres-canonical", catalog: EXPECTED_V60_CATALOG_STATE, tables: EXPECTED_V61_MCP_TABLE_STATE },
+  { name: "postgres-restored", catalog: EXPECTED_V60_RESTORED_CATALOG_STATE, tables: EXPECTED_V61_RESTORED_MCP_TABLE_STATE },
+  { name: "supabase-canonical", catalog: EXPECTED_V60_CATALOG_STATE, tables: preflightSchema.checks.mcp_tables_v61.platformExpected },
+  { name: "supabase-restored", catalog: EXPECTED_V60_RESTORED_CATALOG_STATE, tables: preflightSchema.checks.mcp_tables_v61.platformRestoredExpected },
+].map(profile => Object.freeze(profile)));
+const V61_FUNCTIONS = Object.freeze([
+  ...V60_FUNCTIONS.map(row => mcpV61Observations.guards.find(guard => guard[0] === row[0]) ?? row),
+  mcpV61Observations.guards.find(row => row[0] === "public.koaryu_release_schema_preflight_v42()"),
+]);
+export const EXPECTED_V61_RELEASE_MANIFEST = releaseManifest(V61_FUNCTIONS);
+export const V61_RELEASE_MANIFEST_SQL = releaseManifestSql(V61_FUNCTIONS, "v61_release_manifest");
+function v61ProviderFingerprint(catalog, tables) {
+  return `v61_catalog=${catalog};v61_tables=${tables};v61_functions=${EXPECTED_V61_MCP_FUNCTION_STATE};v61_release=${EXPECTED_V61_RELEASE_MANIFEST};v60_compat=${digest("sha256", RELEASE_READINESS.v60.expected)}`;
 }
 
 
@@ -2961,6 +2981,7 @@ export const V57_CATALOG_STATE_SQL = V55_CATALOG_STATE_SQL;
 export const V58_CATALOG_STATE_SQL = V57_CATALOG_STATE_SQL;
 export const V59_CATALOG_STATE_SQL = V58_CATALOG_STATE_SQL;
 export const V60_CATALOG_STATE_SQL = V59_CATALOG_STATE_SQL;
+export const V61_CATALOG_STATE_SQL = V60_CATALOG_STATE_SQL;
 
 // Independent raw facts for the changed rank owner, including all deletion FKs.
 export const V40_RANK_COMMAND_STATE_SQL = `
@@ -3797,7 +3818,7 @@ export function parseArguments(argv) {
   }
   if (
     result.expectedProviderFingerprint !== null &&
-    !/^(?:functions=3:[0-9a-f]{32}:0;trigger=1:[0-9a-f]{32}:0;catalog=[a-z0-9_=;:|]+;critical_surface=0:[0-9a-f]{64}|v59_catalog=[a-z0-9_=;:|]+;v59_tables=[0-9a-f]{64};v59_functions=[0-9a-f]{64};v59_release=[0-9]+:[0-9a-f]{64}:0;v58_compat=[0-9a-f]{64}|v60_catalog=[a-z0-9_=;:|]+;v60_tables=[0-9a-f]{64};v60_functions=[0-9a-f]{64};v60_release=[0-9]+:[0-9a-f]{64}:0;v59_compat=[0-9a-f]{64})$/.test(
+    !/^(?:functions=3:[0-9a-f]{32}:0;trigger=1:[0-9a-f]{32}:0;catalog=[a-z0-9_=;:|]+;critical_surface=0:[0-9a-f]{64}|v60_catalog=[a-z0-9_=;:|]+;v60_tables=[0-9a-f]{64};v60_functions=[0-9a-f]{64};v60_release=[0-9]+:[0-9a-f]{64}:0;v59_compat=[0-9a-f]{64}|v61_catalog=[a-z0-9_=;:|]+;v61_tables=[0-9a-f]{64};v61_functions=[0-9a-f]{64};v61_release=[0-9]+:[0-9a-f]{64}:0;v60_compat=[0-9a-f]{64})$/.test(
       result.expectedProviderFingerprint,
     )
   ) {
@@ -3886,7 +3907,7 @@ export function validateApplyAuthorization(config) {
     );
   }
   // Refuse stale or mismatched staging evidence before an irreversible apply.
-  if (!config.expectedProviderFingerprint.startsWith("v60_catalog=")) {
+  if (!config.expectedProviderFingerprint.startsWith("v61_catalog=")) {
     throw new RolloutError("Approved provider fingerprint is not the exact canonical staging evidence shape.");
   }
   approvedProviderFingerprintVariants(config.expectedProviderFingerprint);
@@ -4034,6 +4055,7 @@ const PREDECESSOR_MIGRATION_COUNTS = Object.freeze({
   "v57": ROLLOUT.v57MigrationCount,
   "v58": ROLLOUT.v58MigrationCount,
   "v59": ROLLOUT.v59MigrationCount,
+  "v60": ROLLOUT.v60MigrationCount,
 });
 
 function isAcceptedPredecessor(state) {
@@ -4159,6 +4181,7 @@ export function verifySourceTree(sourceRoot, candidateSha, commandRunner = runCo
   const v57History = historyAt(ROLLOUT.v57MigrationCount);
   const v58History = historyAt(ROLLOUT.v58MigrationCount);
   const v59History = historyAt(ROLLOUT.v59MigrationCount);
+  const v60History = historyAt(ROLLOUT.v60MigrationCount);
   if (preHistory !== ROLLOUT.preHistory) {
     throw new RolloutError(
       `Candidate's first ${ROLLOUT.baselineMigrationCount} migration names do not match the production baseline.`,
@@ -4247,6 +4270,7 @@ export function verifySourceTree(sourceRoot, candidateSha, commandRunner = runCo
     v57History,
     v58History,
     v59History,
+    v60History,
     preTargetHistory: targetAt(ROLLOUT.baselineMigrationCount),
     postTargetHistory: targetAt(filenames.length),
     intermediateTargetHistory: targetAt(ROLLOUT.intermediateMigrationCount),
@@ -4298,6 +4322,7 @@ export function verifySourceTree(sourceRoot, candidateSha, commandRunner = runCo
     v57TargetHistory: targetAt(ROLLOUT.v57MigrationCount),
     v58TargetHistory: targetAt(ROLLOUT.v58MigrationCount),
     v59TargetHistory: targetAt(ROLLOUT.v59MigrationCount),
+    v60TargetHistory: targetAt(ROLLOUT.v60MigrationCount),
     pendingMigrations,
     integrationComplete:
       filenames.length === ROLLOUT.finalMigrationCount &&
@@ -4330,12 +4355,12 @@ export function packetForAcceptedState(packet, state) {
 }
 
 const ONE_MIGRATION_PREDECESSORS = Object.freeze([
-  "v38", "v39", "v40", "v41", "v42", "v43", "v44", "v45", "v46", "v47", "v48", "v49", "v50", "v51", "v52", "v53", "v54", "v55", "v56", "v57", "v58", "v59",
+  "v38", "v39", "v40", "v41", "v42", "v43", "v44", "v45", "v46", "v47", "v48", "v49", "v50", "v51", "v52", "v53", "v54", "v55", "v56", "v57", "v58", "v59", "v60",
 ]);
 
 export function oneMigrationPacket(packet, state) {
   if (!ONE_MIGRATION_PREDECESSORS.includes(state)) {
-    throw new RolloutError("--one-migration supports only the declared V38 through V60 chain.");
+    throw new RolloutError("--one-migration supports only the declared V38 through V61 chain.");
   }
   const successorReleaseState = Object.values(RELEASE_STATES).find(
     candidate => candidate.predecessor === state,
@@ -4508,23 +4533,39 @@ export function classifyStateSnapshot(snapshot, packet, expectedProviderFingerpr
   }
   if (history === packet.postHistory) {
     if (!packet.integrationComplete || targetHistory !== packet.postTargetHistory || objectCounts !== "3:1") {
-      throw new RolloutError("V60 requires the exact candidate history and installed studio-comp objects.");
+      throw new RolloutError("V61 requires the exact candidate history and installed studio-comp objects.");
     }
     validateOperationalReadiness(operationalReadiness);
-    if (![EXPECTED_V59_CATALOG_STATE, EXPECTED_V59_RESTORED_CATALOG_STATE].includes(catalogState)
+    if (![EXPECTED_V60_CATALOG_STATE, EXPECTED_V60_RESTORED_CATALOG_STATE].includes(catalogState)
+        || snapshot.v61ReleaseManifest !== EXPECTED_V61_RELEASE_MANIFEST
+        || snapshot.v61McpFunctionState !== EXPECTED_V61_MCP_FUNCTION_STATE
+        || snapshot.v60CompatibilityReadiness !== RELEASE_READINESS.v60.expected
+        || !V61_TABLE_PROFILES.some(profile => profile.catalog === catalogState
+          && profile.tables === snapshot.v61McpTableState)) {
+      throw new RolloutError("V61 complete catalog, definitions, security, ACLs or V60 compatibility differ.");
+    }
+    validateTimezoneNameParity(snapshot.timezoneNameParity);
+    const providerFingerprint = v61ProviderFingerprint(catalogState, snapshot.v61McpTableState);
+    if (expectedProviderFingerprint && !approvedProviderFingerprintVariants(expectedProviderFingerprint).includes(providerFingerprint)) {
+      throw new RolloutError("V61 provider fingerprint differs from approved exact evidence.");
+    }
+    return { state: "post", providerFingerprint };
+  }
+  if (history === packet.v60History) {
+    if (targetHistory !== packet.v60TargetHistory || objectCounts !== "3:1") {
+      throw new RolloutError("V60 requires the exact candidate history and installed studio-comp objects.");
+    }
+    if (operationalReadiness !== RELEASE_READINESS.v60.expected) throw new RolloutError("V60 predecessor readiness differs.");
+    if (![EXPECTED_V60_CATALOG_STATE, EXPECTED_V60_RESTORED_CATALOG_STATE].includes(catalogState)
         || snapshot.v60ReleaseManifest !== EXPECTED_V60_RELEASE_MANIFEST
-        || snapshot.v60McpFunctionState !== EXPECTED_V60_MCP_FUNCTION_STATE
+        || snapshot.v60AutomationFunctionState !== EXPECTED_V60_AUTOMATION_FUNCTION_STATE
         || snapshot.v59CompatibilityReadiness !== RELEASE_READINESS.v59.expected
         || !V60_TABLE_PROFILES.some(profile => profile.catalog === catalogState
-          && profile.tables === snapshot.v60McpTableState)) {
+          && profile.tables === snapshot.v60AutomationTableState)) {
       throw new RolloutError("V60 complete catalog, definitions, security, ACLs or V59 compatibility differ.");
     }
     validateTimezoneNameParity(snapshot.timezoneNameParity);
-    const providerFingerprint = v60ProviderFingerprint(catalogState, snapshot.v60McpTableState);
-    if (expectedProviderFingerprint && !approvedProviderFingerprintVariants(expectedProviderFingerprint).includes(providerFingerprint)) {
-      throw new RolloutError("V60 provider fingerprint differs from approved exact evidence.");
-    }
-    return { state: "post", providerFingerprint };
+    return { state: "v60", providerFingerprint: null };
   }
   if (history === packet.v59History) {
     if (targetHistory !== packet.v59TargetHistory || objectCounts !== "3:1") {
@@ -5333,7 +5374,9 @@ export function validateCatalogState(catalogState) {
     catalogState !== EXPECTED_V58_CATALOG_STATE &&
     catalogState !== EXPECTED_V58_RESTORED_CATALOG_STATE &&
     catalogState !== EXPECTED_V59_CATALOG_STATE &&
-    catalogState !== EXPECTED_V59_RESTORED_CATALOG_STATE
+    catalogState !== EXPECTED_V59_RESTORED_CATALOG_STATE &&
+    catalogState !== EXPECTED_V60_CATALOG_STATE &&
+    catalogState !== EXPECTED_V60_RESTORED_CATALOG_STATE
   ) {
     throw new RolloutError(
       `Repository-pinned raw catalog manifest mismatch: ${catalogState}.`,
@@ -5354,8 +5397,14 @@ export function validateV27CatalogState(catalogState) {
 }
 
 export function approvedProviderFingerprintVariants(stagingFingerprint) {
+  if (typeof stagingFingerprint === "string" && stagingFingerprint.startsWith("v61_catalog=")) {
+    const canonical = V61_TABLE_PROFILES.filter(profile => profile.catalog === EXPECTED_V60_CATALOG_STATE)
+      .map(profile => v61ProviderFingerprint(profile.catalog, profile.tables));
+    if (!canonical.includes(stagingFingerprint)) throw new RolloutError("Approved provider fingerprint is not the exact canonical staging evidence shape.");
+    return V61_TABLE_PROFILES.map(profile => v61ProviderFingerprint(profile.catalog, profile.tables));
+  }
   if (typeof stagingFingerprint === "string" && stagingFingerprint.startsWith("v60_catalog=")) {
-    const canonical = V60_TABLE_PROFILES.filter(profile => profile.catalog === EXPECTED_V59_CATALOG_STATE)
+    const canonical = V60_TABLE_PROFILES.filter(profile => profile.catalog === EXPECTED_V60_CATALOG_STATE)
       .map(profile => v60ProviderFingerprint(profile.catalog, profile.tables));
     if (!canonical.includes(stagingFingerprint)) throw new RolloutError("Approved provider fingerprint is not the exact canonical staging evidence shape.");
     return V60_TABLE_PROFILES.map(profile => v60ProviderFingerprint(profile.catalog, profile.tables));
@@ -5697,17 +5746,26 @@ export function readRemoteState(
       writerReturnContractState: null,
     };
     if (snapshot.history === packet.postHistory && snapshot.objectCounts === "3:1") {
-      snapshot.catalogState = query(sourceRoot, V60_CATALOG_STATE_SQL, "catalog_state", env);
+      snapshot.catalogState = query(sourceRoot, V61_CATALOG_STATE_SQL, "catalog_state", env);
       snapshot.operationalReadiness = query(sourceRoot, FINAL_OPERATIONAL_READINESS_SQL, "operational_readiness", env);
+      snapshot.v61ReleaseManifest = query(sourceRoot, V61_RELEASE_MANIFEST_SQL, "v61_release_manifest", env);
+      snapshot.v61McpTableState = query(sourceRoot, V61_MCP_TABLE_STATE_SQL, "mcp_table_state", env);
+      snapshot.v61McpFunctionState = query(sourceRoot, V61_MCP_FUNCTION_STATE_SQL, "mcp_function_state", env);
+      snapshot.v60CompatibilityReadiness = query(sourceRoot, RELEASE_READINESS.v59.query.replace("as operational_readiness", "as v60_compatibility_readiness"), "v60_compatibility_readiness", env);
+      snapshot.timezoneNameParity = query(sourceRoot, TIMEZONE_NAMES_PARITY_SQL, "timezone_names_parity", env);
+    }
+    if (snapshot.history === packet.v60History && snapshot.objectCounts === "3:1") {
+      snapshot.catalogState = query(sourceRoot, V60_CATALOG_STATE_SQL, "catalog_state", env);
+      snapshot.operationalReadiness = query(sourceRoot, RELEASE_READINESS.v60.sql, "operational_readiness", env);
       snapshot.v60ReleaseManifest = query(sourceRoot, V60_RELEASE_MANIFEST_SQL, "v60_release_manifest", env);
-      snapshot.v60McpTableState = query(sourceRoot, V60_MCP_TABLE_STATE_SQL, "mcp_table_state", env);
-      snapshot.v60McpFunctionState = query(sourceRoot, V60_MCP_FUNCTION_STATE_SQL, "mcp_function_state", env);
-      snapshot.v59CompatibilityReadiness = query(sourceRoot, RELEASE_READINESS.v58.query.replace("as operational_readiness", "as v59_compatibility_readiness"), "v59_compatibility_readiness", env);
+      snapshot.v60AutomationTableState = query(sourceRoot, V60_AUTOMATION_TABLE_STATE_SQL, "automation_table_state", env);
+      snapshot.v60AutomationFunctionState = query(sourceRoot, V60_AUTOMATION_FUNCTION_STATE_SQL, "automation_function_state", env);
+      snapshot.v59CompatibilityReadiness = query(sourceRoot, RELEASE_READINESS.v59.query.replace("as operational_readiness", "as v59_compatibility_readiness"), "v59_compatibility_readiness", env);
       snapshot.timezoneNameParity = query(sourceRoot, TIMEZONE_NAMES_PARITY_SQL, "timezone_names_parity", env);
     }
     if (snapshot.history === packet.v59History && snapshot.objectCounts === "3:1") {
       snapshot.catalogState = query(sourceRoot, V59_CATALOG_STATE_SQL, "catalog_state", env);
-      snapshot.operationalReadiness = query(sourceRoot, RELEASE_READINESS.v59.sql, "operational_readiness", env);
+      snapshot.operationalReadiness = query(sourceRoot, RELEASE_READINESS.v59.query, "operational_readiness", env);
       snapshot.v59ReleaseManifest = query(sourceRoot, V59_RELEASE_MANIFEST_SQL, "v59_release_manifest", env);
       snapshot.v59AutomationTableState = query(sourceRoot, V59_AUTOMATION_TABLE_STATE_SQL, "automation_table_state", env);
       snapshot.v59AutomationFunctionState = query(sourceRoot, V59_AUTOMATION_FUNCTION_STATE_SQL, "automation_function_state", env);

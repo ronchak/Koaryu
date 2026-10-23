@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prove V59 records survive read-only MCP authorization installation and restored connections retain their access boundary."""
+"""Prove V59 rows survive the V60 missed-class gap guards and logical restore with exact readiness and V59 compatibility."""
 import hashlib
 import json
 import os
@@ -9,63 +9,69 @@ import sys
 
 from local_postgres_verification import ACL_SQL, CONSTRAINT_SQL, PAIR_PATH, LocalPostgres, normalization_plan, require
 
-MIGRATION = "20261022233855_flexible_read_mcp.sql"
+MIGRATION = "20261021093000_missed_class_gap_guards_v60.sql"
 SEED_SQL = r"""
 BEGIN;
-INSERT INTO auth.users(id,aud,role,email,raw_app_meta_data,raw_user_meta_data,email_confirmed_at,created_at,updated_at)
-VALUES('00000000-0000-4000-8000-000000006101','authenticated','authenticated','mcp-retained@example.invalid','{}','{}',now(),now(),now());
+INSERT INTO auth.users(id,aud,role,email,raw_app_meta_data,raw_user_meta_data,created_at,updated_at)
+VALUES('00000000-0000-4000-8000-000000006001','authenticated','authenticated',
+       'v60-restore@example.invalid','{}','{}',now(),now());
 INSERT INTO public.studios(id,name,slug,owner_id,timezone)
-VALUES('00000000-0000-4000-8000-000000006102','MCP retained studio','mcp-retained-studio','00000000-0000-4000-8000-000000006101','America/Los_Angeles');
-INSERT INTO public.staff_roles(user_id,studio_id,role)
-VALUES('00000000-0000-4000-8000-000000006101','00000000-0000-4000-8000-000000006102','admin') ON CONFLICT DO NOTHING;
+VALUES('00000000-0000-4000-8000-000000006002','V60 retained gaps','v60-retained-gaps',
+       '00000000-0000-4000-8000-000000006001','UTC');
+INSERT INTO public.students(id,studio_id,legal_first_name,legal_last_name,email) VALUES
+    ('00000000-0000-4000-8000-000000006003','00000000-0000-4000-8000-000000006002','Closure','Student','closure@example.invalid'),
+    ('00000000-0000-4000-8000-000000006004','00000000-0000-4000-8000-000000006002','Capped','Student','capped@example.invalid'),
+    ('00000000-0000-4000-8000-000000006005','00000000-0000-4000-8000-000000006002','Peer','Student','peer@example.invalid');
+INSERT INTO public.class_sessions(id,studio_id,name,date,start_time,end_time) VALUES
+    ('00000000-0000-4000-8000-000000006011','00000000-0000-4000-8000-000000006002','Capped visit','2019-12-01','10:00','11:00'),
+    ('00000000-0000-4000-8000-000000006012','00000000-0000-4000-8000-000000006002','Peer class','2020-02-20','10:00','11:00'),
+    ('00000000-0000-4000-8000-000000006013','00000000-0000-4000-8000-000000006002','Closure visit','2020-03-01','10:00','11:00'),
+    ('00000000-0000-4000-8000-000000006014','00000000-0000-4000-8000-000000006002','Reopening class','2020-03-20','10:00','11:00');
+INSERT INTO public.attendance(studio_id,session_id,student_id,checked_in_at) VALUES
+    ('00000000-0000-4000-8000-000000006002','00000000-0000-4000-8000-000000006011','00000000-0000-4000-8000-000000006004','2019-12-01 10:05+00'),
+    ('00000000-0000-4000-8000-000000006002','00000000-0000-4000-8000-000000006012','00000000-0000-4000-8000-000000006005','2020-02-20 10:05+00'),
+    ('00000000-0000-4000-8000-000000006002','00000000-0000-4000-8000-000000006013','00000000-0000-4000-8000-000000006003','2020-03-01 10:05+00'),
+    ('00000000-0000-4000-8000-000000006002','00000000-0000-4000-8000-000000006014','00000000-0000-4000-8000-000000006005','2020-03-20 10:05+00');
 COMMIT;
 SELECT 'seeded';
 """
 
-
-def require_v60_snapshot(before, after):
-    expected = json.loads(json.dumps(before))
-    rows = expected['private.koaryu_release_v31_expectations']
-    require(len(rows) == 1 and rows[0]['expectation_key'] == 'operational_contract_v31'
-            and rows[0]['expected_sha256'] == '1513ff10defced0c619f85c7927259165f6c9eb7ef1400be076f567fd39c85b3',
-            'V60 requires the exact V59 expectation singleton')
-    rows[0]['expected_sha256'] = '5ffe9cc634eadd091b227bdb2e291bc3be209a4cd6de9f4448e29c8ba701f50c'
-    return after == expected
-
-
-MCP_GRANT_SEED = r"""
-SELECT public.authorize_mcp_connection(
- '00000000-0000-4000-8000-000000006101','00000000-0000-4000-8000-000000006102',
- '00000000-0000-4000-8000-000000006105','Restore assistant','00000000-0000-4000-8000-000000006106',
- ARRAY['schedule','students'],'https://mcp.example.invalid/mcp',now()+interval '1 day');
-SET ROLE supabase_auth_admin;
-SELECT public.mcp_access_token_hook('{"user_id":"00000000-0000-4000-8000-000000006101","authentication_method":"oauth_provider/authorization_code","claims":{"sub":"00000000-0000-4000-8000-000000006101","aud":"authenticated","role":"authenticated","client_id":"00000000-0000-4000-8000-000000006105","session_id":"00000000-0000-4000-8000-000000006107"}}');
-RESET ROLE;
+# Retained rows decide V60's gaps at explicit references, without the wall clock.
+V60_GAP_PROBES_SQL = r"""
+SELECT jsonb_build_object(
+ 'closure_before_reopening',(SELECT jsonb_build_array(skip_reason,days_absent) FROM private.missed_class_automation_candidates(
+     '00000000-0000-4000-8000-000000006002',14,'00000000-0000-4000-8000-000000006003',NULL,'2020-03-19 12:00+00')),
+ 'closure_after_missed_classes',(SELECT jsonb_build_array(skip_reason,days_absent) FROM private.missed_class_automation_candidates(
+     '00000000-0000-4000-8000-000000006002',14,'00000000-0000-4000-8000-000000006003',NULL,'2020-04-03 12:00+00')),
+ 'beyond_lookback',(SELECT jsonb_build_array(skip_reason,days_absent) FROM private.missed_class_automation_candidates(
+     '00000000-0000-4000-8000-000000006002',14,'00000000-0000-4000-8000-000000006004',NULL,'2020-04-03 12:00+00')));
 """
-
-
-def verify_populated_mcp_restore(local, database, pg_dump, pg_restore, createdb, temporary):
-    source = f'koaryu_mcp_backup_source_{os.getpid()}'
-    restored = f'koaryu_mcp_backup_restored_{os.getpid()}'
-    dump = temporary / f'mcp-populated-{os.getpid()}.dump'
-    owned = []
-    try:
-        local.run([createdb, *local.connection, '--template='+database, source]); owned.append(source)
-        local.sql(source, MCP_GRANT_SEED)
-        before = local.sql(source, 'SELECT jsonb_agg(to_jsonb(c) ORDER BY id) FROM public.mcp_connections c;')
-        local.run([pg_dump, *local.connection, '--dbname='+source, '--format=custom', '--file='+str(dump)])
-        local.run([createdb, *local.connection, restored]); owned.append(restored)
-        local.run([pg_restore, *local.connection, '--dbname='+restored, '--exit-on-error', str(dump)])
-        require(local.sql(restored, 'SELECT jsonb_agg(to_jsonb(c) ORDER BY id) FROM public.mcp_connections c;') == before,
-                'Logical restore changed a connection, grant, expiry or session binding')
-        refreshed = local.sql(restored, MCP_GRANT_SEED[MCP_GRANT_SEED.index('SET ROLE'):].replace('oauth_provider/authorization_code', 'token_refresh'))
-        require('https://mcp.example.invalid/mcp' in refreshed and 'koaryu_connection_id' in refreshed,
-                'Restored native Auth hook cannot refresh the retained connection')
-        print('[V60 populated restore] PASS connection and session preservation', flush=True)
-    finally:
-        for name in reversed(owned):
-            local.sql('postgres', f'DROP DATABASE {name} WITH (FORCE);')
-        dump.unlink(missing_ok=True)
+V60_EXPECTED_GAP_PROBES = {
+    'closure_before_reopening': ['recent_attendance', 18],
+    'closure_after_missed_classes': [None, 33],
+    'beyond_lookback': ['inactive', 124],
+}
+V60_COMPATIBILITY_DRIFT_SQL = """
+BEGIN;
+GRANT EXECUTE ON FUNCTION private.missed_class_automation_candidates(UUID,INTEGER,UUID,UUID,TIMESTAMPTZ) TO anon;
+DO $compatibility$
+DECLARE old RECORD; current RECORD;
+BEGIN
+    SELECT * INTO old FROM public.koaryu_release_schema_preflight_v40();
+    SELECT * INTO current FROM public.koaryu_release_schema_preflight_v41();
+    IF old.ready IS DISTINCT FROM FALSE OR current.ready IS DISTINCT FROM FALSE
+       OR old.security_failures IS DISTINCT FROM ARRAY['automation_functions_v56','missed_class_functions_v60']::TEXT[]
+       OR old.security_failures IS DISTINCT FROM current.security_failures
+       OR old.migration_count IS DISTINCT FROM 155 OR old.migration_head IS DISTINCT FROM '20261021093000'
+       OR old.pending_versions IS DISTINCT FROM current.pending_versions
+       OR old.manifest_version IS DISTINCT FROM 'release-db-attestation-v59' THEN
+        RAISE EXCEPTION 'V40 compatibility did not refuse V60 drift: %',row_to_json(old);
+    END IF;
+END;
+$compatibility$;
+ROLLBACK;
+SELECT 'compatibility drift refused';
+"""
 
 
 def main(arguments):
@@ -79,10 +85,12 @@ def main(arguments):
     shared_hash = hashlib.sha256(shared.read_bytes()).hexdigest()
     names = [
         "V59_OPERATIONAL_READINESS_SQL", "EXPECTED_V59_OPERATIONAL_READINESS",
-        "V59_TIMEZONE_TABLE_STATE_SQL", "EXPECTED_V59_TIMEZONE_TABLE_STATE", "EXPECTED_V59_RESTORED_TIMEZONE_TABLE_STATE",
-        "FINAL_OPERATIONAL_READINESS_SQL", "EXPECTED_OPERATIONAL_READINESS",
-        "V60_MCP_TABLE_STATE_SQL", "EXPECTED_V60_MCP_TABLE_STATE", "EXPECTED_V60_RESTORED_MCP_TABLE_STATE",
-        "V60_MCP_FUNCTION_STATE_SQL", "EXPECTED_V60_MCP_FUNCTION_STATE",
+        "V59_CATALOG_STATE_SQL", "EXPECTED_V59_CATALOG_STATE", "EXPECTED_V59_RESTORED_CATALOG_STATE",
+        "V60_OPERATIONAL_READINESS_SQL", "EXPECTED_V60_OPERATIONAL_READINESS",
+        "V60_AUTOMATION_TABLE_STATE_SQL", "EXPECTED_V60_AUTOMATION_TABLE_STATE", "EXPECTED_V60_RESTORED_AUTOMATION_TABLE_STATE",
+        "V60_AUTOMATION_FUNCTION_STATE_SQL", "EXPECTED_V60_AUTOMATION_FUNCTION_STATE",
+        "V60_CATALOG_STATE_SQL", "EXPECTED_V60_CATALOG_STATE", "EXPECTED_V60_RESTORED_CATALOG_STATE",
+        "V60_RELEASE_MANIFEST_SQL", "EXPECTED_V60_RELEASE_MANIFEST",
     ]
     module = (root / "scripts/studio-comp-migration-rollout.mjs").as_uri()
     pinned = json.loads(local.run(["node", "--input-type=module", "--eval",
@@ -99,23 +107,24 @@ def main(arguments):
     def snapshot(database):
         tables = json.loads(local.sql(database, "SELECT jsonb_agg(n.nspname||'.'||c.relname ORDER BY n.nspname,c.relname) "
             "FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE c.relkind='r' "
-            "AND n.nspname IN ('public','private','auth') AND n.nspname||'.'||c.relname<>'public.mcp_connections';"))
+            "AND n.nspname IN ('public','private','auth') AND c.oid<>coalesce(to_regclass('private.timezone_names'),0);"))
         fields = ["SELECT '" + table + "' AS name,(SELECT coalesce(jsonb_agg(to_jsonb(t) ORDER BY to_jsonb(t)::TEXT COLLATE \"C\"),'[]') FROM " + table + " t) AS rows" for table in tables]
         return json.loads(local.sql(database, "SET TIME ZONE 'UTC'; SELECT jsonb_object_agg(name,rows) FROM (" + " UNION ALL ".join(fields) + ") retained;"))
 
     def predecessor(database, restored=False):
         check(database, "V59_OPERATIONAL_READINESS_SQL", "EXPECTED_V59_OPERATIONAL_READINESS")
-        check(database, "V59_TIMEZONE_TABLE_STATE_SQL", "EXPECTED_V59_RESTORED_TIMEZONE_TABLE_STATE" if restored else "EXPECTED_V59_TIMEZONE_TABLE_STATE")
+        check(database, "V59_CATALOG_STATE_SQL", "EXPECTED_V59_RESTORED_CATALOG_STATE" if restored else "EXPECTED_V59_CATALOG_STATE")
         require(local.sql(database, "SELECT count(*)=154 AND max(version)='20261014083106' FROM supabase_migrations.schema_migrations;") == "t",
                 "Restore requires the actual V59 history")
-        require(local.sql(database, "SELECT to_regprocedure('public.koaryu_release_schema_preflight_v41()') IS NULL AND to_regprocedure('public.mcp_access_token_hook(jsonb)') IS NULL AND to_regprocedure('public.authorize_mcp_connection(uuid,uuid,uuid,text,uuid,text[],text,timestamp with time zone)') IS NULL;") == "t",
+        require(local.sql(database, "SELECT to_regprocedure('public.koaryu_release_schema_preflight_v41()') IS NULL;") == "t",
                 "Restore predecessor already contains V60 functions")
 
     predecessor("postgres")
     hashes = {p.name: hashlib.sha256(p.read_bytes()).hexdigest()
               for p in sorted((root / "supabase/migrations").glob("*.sql"))}
-    require(len(hashes) == 155 and list(hashes)[-2:] == [
-        "20261014083106_timezone_names_reference_v59.sql", MIGRATION], "Unexpected migration inventory")
+    require(len(hashes) == 156 and list(hashes)[-3:] == [
+        "20261014083106_timezone_names_reference_v59.sql", MIGRATION,
+        "20261022233855_flexible_read_mcp.sql"], "Unexpected migration inventory")
     migration = root / "supabase/migrations" / MIGRATION
     mapping_bytes = Path(__file__).with_name("v57-restore-constraint-pairs.json").read_bytes()
     pairs = json.loads(mapping_bytes)
@@ -131,9 +140,9 @@ def main(arguments):
             local.sql(database, f'ALTER DATABASE {database} SET search_path TO "$user",public,extensions;')
         seed = local.sql(source, SEED_SQL)
         before = snapshot(source)
-        require(seed == 'seeded', 'MCP predecessor fixture did not seed')
-        require(any(row['id'] == '00000000-0000-4000-8000-000000006102' for row in before['public.studios']),
-                'MCP restore requires a retained studio')
+        require(seed == 'seeded', 'V60 source fixture did not seed')
+        require(len(before['public.attendance']) >= 4 and any(row['id'] == '00000000-0000-4000-8000-000000006002'
+                for row in before['public.studios']), 'V60 requires retained attendance gaps')
         predecessor(source)
         constraints, acls = json.loads(local.sql(source, CONSTRAINT_SQL)), json.loads(local.sql(source, ACL_SQL))
         local.run([pg_dump, *local.connection, f"--dbname={source}", "--format=custom", f"--file={dump}"])
@@ -159,21 +168,25 @@ def main(arguments):
             local.run([psql, *local.connection, f"--dbname={database}", "--no-psqlrc", "--set=ON_ERROR_STOP=1", "--quiet",
                        "--single-transaction", f"--file={migration}",
                        f"--command=INSERT INTO supabase_migrations.schema_migrations(version,name) VALUES('{version}','{name}');"])
-            require(require_v60_snapshot(before, snapshot(database)), "Migration changed retained rows before continuation")
+            require(snapshot(database) == before, "Migration changed retained rows before continuation")
             checks = [
-                ("FINAL_OPERATIONAL_READINESS_SQL", "EXPECTED_OPERATIONAL_READINESS"),
-                ("V60_MCP_TABLE_STATE_SQL", "EXPECTED_V60_RESTORED_MCP_TABLE_STATE" if is_restored else "EXPECTED_V60_MCP_TABLE_STATE"),
-                ("V60_MCP_FUNCTION_STATE_SQL", "EXPECTED_V60_MCP_FUNCTION_STATE"),
+                ("V60_OPERATIONAL_READINESS_SQL", "EXPECTED_V60_OPERATIONAL_READINESS"),
+                ("V60_AUTOMATION_TABLE_STATE_SQL", "EXPECTED_V60_RESTORED_AUTOMATION_TABLE_STATE" if is_restored else "EXPECTED_V60_AUTOMATION_TABLE_STATE"),
+                ("V60_AUTOMATION_FUNCTION_STATE_SQL", "EXPECTED_V60_AUTOMATION_FUNCTION_STATE"),
+                ("V60_CATALOG_STATE_SQL", "EXPECTED_V60_RESTORED_CATALOG_STATE" if is_restored else "EXPECTED_V60_CATALOG_STATE"),
+                ("V60_RELEASE_MANIFEST_SQL", "EXPECTED_V60_RELEASE_MANIFEST"),
             ]
             values = {query: check(database, query, expected) for query, expected in checks}
             upgraded = snapshot(database)
-            result = local.sql(database, (root / 'supabase/verification/mcp_read_connections_contract.sql').read_text())
-            require(result == 'MCP connection ownership, audience, sessions, revocation and deletion passed', 'MCP continuation failed')
-            require(snapshot(database) == upgraded, 'MCP continuation changed retained rows')
+            probes = json.loads(local.sql(database, V60_GAP_PROBES_SQL))
+            require(probes == V60_EXPECTED_GAP_PROBES, 'V60 retained gaps differ: ' + json.dumps(probes))
+            require(snapshot(database) == upgraded, 'Gap probes changed retained rows')
+            outcomes[('restored_' if is_restored else 'canonical_') + 'gap_rules'] = probes
             check(database, 'V59_OPERATIONAL_READINESS_SQL', 'EXPECTED_V59_OPERATIONAL_READINESS')
-            if not is_restored:
-                verify_populated_mcp_restore(local, database, pg_dump, pg_restore, createdb, temporary)
-            outcomes[('restored_' if is_restored else 'canonical_')+'mcp_continuation'] = result
+            refused = local.sql(database, V60_COMPATIBILITY_DRIFT_SQL)
+            require(refused == 'compatibility drift refused', 'V40 drift-refusal proof failed')
+            check(database, 'V59_OPERATIONAL_READINESS_SQL', 'EXPECTED_V59_OPERATIONAL_READINESS')
+            print('[V60 compatibility] PASS exact V59 success rows and V40 drift refusal on ' + ('restored' if is_restored else 'canonical'), flush=True)
             require({query: check(database, query, expected) for query, expected in checks} == values,
                     "Continuation changed the attested state")
             outcomes["restored" if is_restored else "canonical"] = values
@@ -193,7 +206,7 @@ def main(arguments):
             "constraint_pairs": len(pairs), "billing_replays": 6, "acl_representations": len(statements) - 6,
         }
         (temporary / "v59-v60-restore-evidence.json").write_text(json.dumps(evidence, indent=2) + "\n")
-        print("[restored V60] PASS retained V59 rows, exact readiness and read-only connection continuation", flush=True)
+        print("[restored V60] PASS retained V59 rows, exact canonical/restored readiness, gap rules and V59 compatibility", flush=True)
     finally:
         errors = []
         for database in reversed(owned):

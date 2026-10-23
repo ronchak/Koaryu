@@ -2,13 +2,21 @@ import { CSV_IMPORT_MAX_BYTES } from "./request-body-limits.ts";
 
 export { CSV_IMPORT_MAX_BYTES };
 
-import type { BeltLadder, BeltRank, CsvImportResult, Program } from "../types";
+import type {
+  BeltLadder,
+  BeltRank,
+  CsvImportDuplicateDecision,
+  CsvImportResult,
+  Program,
+} from "../types";
 
 export type CsvImportKeyInput = {
   rowCount: number;
   mapping: Record<string, string>;
   options: object;
   contentHash: string;
+  /** Duplicate decisions are part of the import identity; a changed decision is a new run. */
+  decisions?: Record<string, CsvImportDuplicateDecision>;
 };
 
 export type CsvImportRefreshWarningTarget = {
@@ -38,13 +46,21 @@ function canonicalStringify(value: unknown) {
 }
 
 function buildImportKeyFingerprint(params: CsvImportKeyInput) {
-  const { rowCount, mapping, options, contentHash } = params;
+  const { rowCount, mapping, options, contentHash, decisions } = params;
+  const hasDecisions = Boolean(decisions && Object.keys(decisions).length > 0);
   return canonicalStringify({
     rowCount,
     contentHash,
     mapping,
     options,
+    // Absent decisions keep the historical key so earlier runs stay recognisable.
+    ...(hasDecisions ? { decisions } : {}),
   });
+}
+
+function withoutDecisions(params: CsvImportKeyInput): CsvImportKeyInput {
+  const { rowCount, mapping, options, contentHash } = params;
+  return { rowCount, mapping, options, contentHash };
 }
 
 async function digestTextSha256(value: string) {
@@ -241,6 +257,18 @@ export function areCsvImportKeyInputsEqual(
   }
 
   return buildImportKeyFingerprint(left) === buildImportKeyFingerprint(right);
+}
+
+/** Validation results depend on the file, mapping and options, not on duplicate decisions. */
+export function areCsvImportValidationInputsEqual(
+  left: CsvImportKeyInput | null | undefined,
+  right: CsvImportKeyInput | null | undefined,
+) {
+  if (!left || !right) {
+    return left === right;
+  }
+
+  return areCsvImportKeyInputsEqual(withoutDecisions(left), withoutDecisions(right));
 }
 
 export function withCsvImportRefreshWarning<T extends CsvImportRefreshWarningTarget>(
