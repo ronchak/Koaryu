@@ -55,6 +55,13 @@ def main():
     candidate = subprocess.check_output(
         ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True
     ).strip()
+    dirty = bool(
+        subprocess.check_output(
+            ["git", "status", "--porcelain", "--untracked-files=normal"],
+            cwd=ROOT,
+            text=True,
+        ).strip()
+    )
     binaries = {
         name: hashlib.sha256(path.resolve(strict=True).read_bytes()).hexdigest()
         for name, path in (
@@ -62,7 +69,12 @@ def main():
             ("postgrest", args.postgrest_binary),
         )
     }
-    print("Starting owned native OAuth verification for " + candidate, flush=True)
+    print(
+        "Starting owned native OAuth verification for "
+        + candidate
+        + (" with uncommitted changes" if dirty else " with a clean source tree"),
+        flush=True,
+    )
     try:
         with NativeStack(
             args.auth_binary, args.postgrest_binary, args.postgres_bin, evidence
@@ -71,6 +83,7 @@ def main():
                 stack.evidence / "candidate.json",
                 {
                     "sha": candidate,
+                    "working_tree_dirty": dirty,
                     "auth_source_revision": args.auth_source_revision,
                     "binary_sha256": binaries,
                     "boundary": "real native Auth/PostgREST/Koaryu backend on owned Unix-only PG17",
