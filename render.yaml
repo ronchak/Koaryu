@@ -11,6 +11,10 @@ services:
     maxShutdownDelaySeconds: 300
     autoDeployTrigger: 'off'
     envVars:
+      - key: MCP_ENABLED
+        value: "false"
+      - key: MCP_PUBLIC_URL
+        value: https://koaryu.onrender.com/mcp
       - key: FRONTEND_URL
         value: https://koaryu.app
       - key: ENVIRONMENT
@@ -137,6 +141,10 @@ services:
       # and the process refuses to boot against anything else.
       - key: ENVIRONMENT
         value: staging
+      - key: MCP_ENABLED
+        value: "false"
+      - key: MCP_PUBLIC_URL
+        value: https://koaryu-staging.onrender.com/mcp
       - key: FRONTEND_URL
         value: https://koaryu-git-staging-ronakchak2569-8303s-projects.vercel.app
       - key: API_V1_PREFIX

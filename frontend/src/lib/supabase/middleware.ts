@@ -14,6 +14,7 @@ import type { AuthProfileResponse } from "@/lib/store-bootstrap-model";
 import { AuthProfileRequestError, requestAuthProfile } from "@/lib/auth-profile-request";
 import { requestAuthUser } from "@/lib/auth-user-request";
 import { navigationRecoveryPath } from "@/lib/navigation-recovery";
+import { resolveAuthCallbackNextPath } from "@/lib/auth-callback";
 
 const PUBLIC_STATUS_ROUTES = new Set(["/404", "/500", "/502", "/503", "/504"]);
 
@@ -151,6 +152,14 @@ export async function updateSession(request: NextRequest) {
     url.pathname = path;
     if (options?.clearSearch) {
       url.search = "";
+    }
+    if (isAuthRoute && path === "/dashboard") {
+      const next = resolveAuthCallbackNextPath(request.nextUrl.searchParams.get("next"));
+      if (next.startsWith("/connect/authorize?")) {
+        const destination = new URL(next, url.origin);
+        url.pathname = destination.pathname;
+        url.search = destination.search;
+      }
     }
     const response = NextResponse.redirect(url);
     copyResponseCookies(supabaseResponse, response);

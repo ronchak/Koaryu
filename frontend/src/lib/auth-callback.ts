@@ -22,6 +22,12 @@ export function resolveAuthCallbackNextPath(requestedNextPath: string | null) {
   }
 
   const nextPath = parsed.pathname;
+  if (nextPath === "/connect/authorize") {
+    const id = parsed.searchParams.get("authorization_id");
+    return id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)
+      ? `/connect/authorize?authorization_id=${id}`
+      : DEFAULT_AUTH_CALLBACK_PATH;
+  }
   return AUTH_CALLBACK_ALLOWED_NEXT_PATHS.has(nextPath)
     ? `${nextPath}${parsed.search}${parsed.hash}`
     : DEFAULT_AUTH_CALLBACK_PATH;

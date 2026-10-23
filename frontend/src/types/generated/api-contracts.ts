@@ -861,6 +861,11 @@ export interface ApiConnectOnboardingLinkResponse {
   delivery_receipt?: string | null;
 }
 
+export interface ApiConsent {
+  permissions: string[];
+  expires_days?: number;
+}
+
 export interface ApiCsvImportActionOptions {
   can_create_missing_programs: boolean;
   can_create_missing_belts: boolean;

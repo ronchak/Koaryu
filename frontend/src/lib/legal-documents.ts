@@ -43,8 +43,9 @@ export const legalDocuments: Record<LegalDocumentKey, LegalDocumentEntry> = {
   privacy: {
     href: "/privacy",
     title: "Privacy Policy",
-    effective: "2026-10-08",
+    effective: "2026-10-22",
     history: [
+      { date: "2026-10-22", summary: "Added optional AI connections, owner-selected data sharing, connection metadata and the limits of disconnection." },
       {
         date: "2026-10-08",
         summary:

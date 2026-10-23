@@ -18,7 +18,7 @@ const helper = verifier.slice(start, end);
 test("direct CI student/rank race accepts the declared current release and retained predecessors", () => {
   const race = fs.readFileSync(new URL("./verify-student-profile-rank-plan-concurrency.sh", import.meta.url), "utf8");
   const profiles = [...race.matchAll(/(?:IF|ELSIF) history_count=(\d+) AND history_head='(\d+)'\s+AND to_regprocedure\('[^']+'\) IS (?:NOT )?NULL THEN\s+phase:='(v\d+)'; preflight:='([^']+)';/g)];
-  const expected = [...new Set(["v56", "v57", "v58", CURRENT_RELEASE])].map(id => {
+  const expected = [...new Set(["v56", "v57", "v58", "v59", CURRENT_RELEASE])].map(id => {
     const state = releaseState(id, MIGRATION_VERSIONS);
     return [String(state.count), state.head, id, state.preflight];
   });
@@ -27,7 +27,7 @@ test("direct CI student/rank race accepts the declared current release and retai
   assert.match(race, /readiness\.migration_count IS DISTINCT FROM history_count/);
   assert.match(race, /readiness\.migration_head IS DISTINCT FROM history_head/);
   assert.match(race, /readiness\.security_failures IS DISTINCT FROM ARRAY\[\]::TEXT\[\]/);
-  assert.match(race, /v57\|v58\|v59\) expected_delete_error="ERROR:  AUTOMATION_STUDIO_BUSY"/);
+  assert.match(race, /v57\|v58\|v59\|v60\) expected_delete_error="ERROR:  AUTOMATION_STUDIO_BUSY"/);
 });
 
 for (const [name, query] of [["unterminated receipt query", V52_LEAD_RECEIPT_STATE_SQL], ["terminated writer query", V52_LEAD_UPDATE_STATE_SQL]]) {
@@ -67,8 +67,8 @@ assert_payment_writer_rejects test "SELECT 1;" "$query" expected required_failur
 
 
 test("V56 keeps all restore steps, exact inventory and the complete readiness/lead probes", () => {
-  assert.match(verifier, /migration_files\[@\].*-ne 154/);
-  assert.match(verifier, /verification_files\[@\].*-ne 77/);
+  assert.match(verifier, /migration_files\[@\].*-ne 155/);
+  assert.match(verifier, /verification_files\[@\].*-ne 78/);
   for (const text of [
     "verify-v53-v54-restore-contract.py", "verify-v54-v55-restore-contract.py", "verify-v55-v56-restore-contract.py",
     "[V56 readiness]", "[V56 release]", "[V56 semantics]",

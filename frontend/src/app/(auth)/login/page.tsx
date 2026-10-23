@@ -8,6 +8,7 @@ import { createClient } from "@/lib/supabase/client";
 import { api } from "@/lib/api";
 import { canPrefetchOnConnection, getPrefetchConnection } from "@/lib/intent-prefetch";
 import { getAuthCallbackUrl } from "@/lib/auth-redirect";
+import { resolveAuthCallbackNextPath } from "@/lib/auth-callback";
 import { ACCOUNT_ARCHIVED_ROUTE } from "@/lib/auth-route-model";
 import { parseAuthProfileResponse } from "@/lib/store-bootstrap-model";
 import { syncStoredStudioSessionCookies } from "@/lib/store-session-cookies";
@@ -88,7 +89,7 @@ export default function LoginPage() {
       const destination = authProfile.membership_status === "archived"
         ? ACCOUNT_ARCHIVED_ROUTE
         : authProfile.membership_status === "active"
-          ? "/dashboard"
+          ? resolveAuthCallbackNextPath(new URLSearchParams(window.location.search).get("next"))
           : "/onboarding";
       router.push(destination);
     } catch (postLoginError) {

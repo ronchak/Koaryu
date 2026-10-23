@@ -5,6 +5,8 @@
     "node": ">=22.13.0"
   },
   "scripts": {
+    "mcp:demo": "backend/venv/bin/python backend/scripts/mcp_demo.py",
+    "mcp:check-demo": "backend/venv/bin/python backend/scripts/check_mcp_demo.py",
     "dev:frontend": "npm --prefix frontend run dev",
     "dev:backend": "sh -c 'cd backend && venv/bin/python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8001'",
     "dev:up": "sh ./scripts/dev-up.sh",

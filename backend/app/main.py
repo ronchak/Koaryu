@@ -16,6 +16,14 @@ from app.services.billing_transition_scheduler import BillingTransitionScheduler
 
 settings = get_settings()
 settings.validate_runtime_configuration()
+mcp_runtime = None
+mcp_server = None
+mcp_application = None
+if settings.MCP_ENABLED:
+    from app.mcp_read.server import Runtime, build_server
+
+    mcp_runtime = Runtime()
+    mcp_server, mcp_application = build_server(settings, mcp_runtime)
 frontend_origin = settings.validated_frontend_origin()
 allowed_origins = {frontend_origin}
 
@@ -53,6 +61,8 @@ async def _lifespan(application: FastAPI):
     scheduler = None
     billing_scheduler = None
     try:
+        if mcp_runtime is not None:
+            mcp_runtime.start()
         if settings.AUTOMATION_WORKER_ENABLED is True:
             scheduler = AutomationScheduler(settings)
             application.state.automation_scheduler = scheduler
@@ -61,7 +71,11 @@ async def _lifespan(application: FastAPI):
             billing_scheduler = BillingTransitionScheduler(settings)
             application.state.billing_transition_scheduler = billing_scheduler
             await billing_scheduler.start()
-        yield
+        if mcp_server is not None:
+            async with mcp_server.session_manager.run():
+                yield
+        else:
+            yield
     finally:
         try:
             try:
@@ -73,7 +87,11 @@ async def _lifespan(application: FastAPI):
         finally:
             # Scheduler stops bound their own waiters only. Provider shutdown may
             # still wait for provider work and must stay off the ASGI event loop.
-            await asyncio.to_thread(runtime.shutdown)
+            try:
+                if mcp_runtime is not None:
+                    await mcp_runtime.close()
+            finally:
+                await asyncio.to_thread(runtime.shutdown)
 
 
 # The schema still builds in process for type generation and contract tests, but
@@ -130,3 +148,9 @@ async def root_health_live(response: Response):
 @app.api_route("/health/ready", methods=["GET", "HEAD"], include_in_schema=False)
 async def root_health_ready(response: Response):
     return await health_ready(response)
+
+
+# Mount after normal API/health routes. The SDK also owns protected-resource
+# discovery under /.well-known/oauth-protected-resource/mcp.
+if mcp_application is not None:
+    app.mount("/", mcp_application)
