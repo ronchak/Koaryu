@@ -8,6 +8,7 @@ import {
   buildDuplicateDecision,
   buildPreflightSummary,
   describeDuplicateCandidate,
+  describeGuardianOutcome,
   formatRowNumbers,
   getDuplicateReviewRows,
   getImportActionState,
@@ -324,8 +325,18 @@ function StudentImportDuplicateReview({
 
   return (
     <StudentImportSectionCard
-      title="Looks like they may already be in Koaryu"
-      description="Skipping keeps the student who is already in Koaryu exactly as they are. Nothing is merged or overwritten either way."
+      title={
+        choiceRows.length > 0
+          ? "Looks like they may already be in Koaryu"
+          : contextRows.some((row) => row.primary)
+            ? "Student and family matches"
+            : "Family contacts"
+      }
+      description={
+        choiceRows.length > 0
+          ? "Skipping keeps the student who is already in Koaryu exactly as they are. Nothing is merged or overwritten either way."
+          : "Contact and name matches provide context for these students. No duplicate choice is needed."
+      }
       icon={<Users className="w-4 h-4 text-accent mt-0.5" />}
     >
       <div className="space-y-3">
@@ -358,6 +369,11 @@ function StudentImportDuplicateReview({
                         ) : null}
                       </p>
                     ))}
+                  {describeGuardianOutcome(row.review) ? (
+                    <p className="text-xs text-text-secondary mt-1">
+                      {describeGuardianOutcome(row.review)}
+                    </p>
+                  ) : null}
                   {row.review.family_context.map((note) => (
                     <p key={note} className="text-xs text-muted mt-1">
                       {note}
@@ -397,18 +413,33 @@ function StudentImportDuplicateReview({
             </div>
           );
         })}
-        {contextRows.length > 0 ? (
-          <div className="border border-border rounded-[14px] p-3">
-            <p className="text-sm font-medium text-text-primary">Same name, different person</p>
-            {contextRows.map((row) => (
-              <p key={row.rowNumber} className="text-xs text-muted mt-1">
-                Row {row.rowNumber}: {row.rowName} shares a name with{" "}
-                {row.primary ? describeDuplicateCandidate(row.primary) : "an existing student"}.
-                Treated as a different student.
+        {contextRows.map((row) => (
+          <div
+            key={row.rowNumber}
+            className="border border-border rounded-[14px] p-3"
+            data-testid={`family-context-row-${row.rowNumber}`}
+          >
+            <p className="text-sm font-medium text-text-primary">
+              Row {row.rowNumber}: {row.rowName}
+            </p>
+            {row.primary ? (
+              <p className="text-xs text-muted mt-1">
+                Shares a name with {describeDuplicateCandidate(row.primary)}. Treated as a different
+                student.
+              </p>
+            ) : null}
+            {row.review.family_context.map((note) => (
+              <p key={note} className="text-xs text-muted mt-1">
+                {note}
               </p>
             ))}
+            {describeGuardianOutcome(row.review) ? (
+              <p className="text-xs text-text-secondary mt-1">
+                {describeGuardianOutcome(row.review)}
+              </p>
+            ) : null}
           </div>
-        ) : null}
+        ))}
       </div>
     </StudentImportSectionCard>
   );

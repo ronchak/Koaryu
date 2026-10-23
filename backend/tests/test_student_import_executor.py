@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 from fastapi import HTTPException
+from postgrest.exceptions import APIError
 
 from app.schemas.student import CsvImportDuplicateDecision, CsvImportOptions, CsvImportResult
 from app.services.student_import_ids import deterministic_import_uuid
@@ -441,6 +442,8 @@ def test_execution_honours_skip_refuses_unreviewed_strong_matches_and_counts_out
     db.responses = [
         ("claim_student_import_run_v2", claim()),
         ("prepare_student_import_program_v1", selected_program(PROGRAM, "Unassigned")),
+        ("record_student_import_skip_v1", lambda p: p["p_result"]),
+        ("record_student_import_skip_v1", lambda p: p["p_result"]),
         ("import_student_row_atomic", row_success),
         ("finish_student_import_run", finish),
     ]
@@ -530,6 +533,7 @@ def test_retry_keeps_completed_receipts_and_treats_their_students_as_in_file_row
                 ]
             ),
         ),
+        ("record_student_import_skip_v1", lambda p: p["p_result"]),
         ("import_student_row_atomic", row_success),
         ("finish_student_import_run", finish),
     ]
@@ -593,6 +597,7 @@ def test_acknowledged_roster_matches_allow_create_and_skip_names_the_retained_st
         ("claim_student_import_run_v2", claim()),
         ("prepare_student_import_program_v1", selected_program(PROGRAM, "Unassigned")),
         ("import_student_row_atomic", row_success),
+        ("record_student_import_skip_v1", lambda p: p["p_result"]),
         ("finish_student_import_run", finish),
     ]
     result = db.execute_import(rows, decisions=decisions)
@@ -619,6 +624,7 @@ def test_skip_chain_resolves_to_the_retained_student_and_refuses_a_mismatch():
     }
     db.responses = [
         ("claim_student_import_run_v2", claim()),
+        ("record_student_import_skip_v1", lambda p: p["p_result"]),
         ("finish_student_import_run", finish),
     ]
     result = db.execute_import(rows, decisions=decisions)
@@ -629,6 +635,7 @@ def test_skip_chain_resolves_to_the_retained_student_and_refuses_a_mismatch():
     assert "row 2 was itself skipped" in by_row[3].errors[0]
     assert [name for name, _ in db.calls] == [
         "claim_student_import_run_v2",
+        "record_student_import_skip_v1",
         "finish_student_import_run",
     ]
 
@@ -654,6 +661,8 @@ def test_skip_chain_is_honoured_when_the_row_matches_the_retained_student():
     }
     db.responses = [
         ("claim_student_import_run_v2", claim()),
+        ("record_student_import_skip_v1", lambda p: p["p_result"]),
+        ("record_student_import_skip_v1", lambda p: p["p_result"]),
         ("finish_student_import_run", finish),
     ]
     result = db.execute_import(rows, decisions=decisions)
@@ -780,6 +789,13 @@ def test_eight_identical_rows_with_browser_defaults_import_once_and_skip_the_res
         ("claim_student_import_run_v2", claim()),
         ("prepare_student_import_program_v1", selected_program(PROGRAM, "Unassigned")),
         ("import_student_row_atomic", row_success),
+        ("record_student_import_skip_v1", lambda p: p["p_result"]),
+        ("record_student_import_skip_v1", lambda p: p["p_result"]),
+        ("record_student_import_skip_v1", lambda p: p["p_result"]),
+        ("record_student_import_skip_v1", lambda p: p["p_result"]),
+        ("record_student_import_skip_v1", lambda p: p["p_result"]),
+        ("record_student_import_skip_v1", lambda p: p["p_result"]),
+        ("record_student_import_skip_v1", lambda p: p["p_result"]),
         ("finish_student_import_run", finish),
     ]
     result = db.execute_import(rows, decisions=decisions)
@@ -1036,3 +1052,398 @@ def test_preview_and_execution_block_a_row_with_too_many_roster_copies():
     result = db.execute_import(rows, decisions={})
     assert result.imported_count == 0 and result.error_rows == 1
     assert not [name for name, _ in db.calls if name == "import_student_row_atomic"]
+
+
+def test_database_race_refusal_continues_and_only_acknowledges_successful_rows():
+    db = ScriptedImportDb()
+    db.tables["programs"][0]["name"] = "Unassigned"
+    rows = [{"First": "Ava", "Last": "Nguyen", "DOB": "2014-06-03"} for _ in range(3)]
+    decisions = {
+        "3": CsvImportDuplicateDecision(action="create", of_row=2, acknowledged_rows=[2]),
+        "4": CsvImportDuplicateDecision(action="create", acknowledged_rows=[2, 3]),
+    }
+    db.responses = [
+        ("claim_student_import_run_v2", claim()),
+        ("prepare_student_import_program_v1", selected_program(PROGRAM, "Unassigned")),
+        (
+            "import_student_row_atomic",
+            APIError(
+                {
+                    "code": "P0409",
+                    "message": "student_import_duplicate_review_required",
+                    "details": None,
+                    "hint": None,
+                }
+            ),
+        ),
+        ("import_student_row_atomic", row_success),
+        ("import_student_row_atomic", row_success),
+        ("finish_student_import_run", finish),
+    ]
+    result = db.execute_import(rows, decisions)
+    assert result.imported_count == 2 and result.error_rows == 1
+    assert result.errors[0].errors == [
+        "A matching student was added while this import was running. Review the duplicate and choose again."
+    ]
+    writes = [p for n, p in db.calls if n == "import_student_row_atomic"]
+    assert [p["p_acknowledged_student_ids"] for p in writes] == [
+        [],
+        [],
+        [deterministic_import_uuid(RUN, "student-row", "3")],
+    ]
+
+
+def test_acknowledgements_include_roster_ids_and_completed_row_receipts():
+    db = ScriptedImportDb()
+    completed_id = deterministic_import_uuid(RUN, "student-row", "2")
+    receipt = {
+        "kind": "student",
+        "key": "2",
+        "result": {
+            "student_id": completed_id,
+            "guardian_imported": False,
+            "outcome": {
+                "row_number": 2,
+                "is_valid": True,
+                "issues": [],
+                "data": {},
+                "imported_without_belt": False,
+            },
+        },
+    }
+    db.responses = [
+        ("claim_student_import_run_v2", claim([receipt])),
+        ("prepare_student_import_program_v1", selected_program(PROGRAM, "Unassigned")),
+        ("import_student_row_atomic", row_success),
+        ("finish_student_import_run", finish),
+    ]
+    db.execute_import(
+        [{"First": "Ava", "Last": "Nguyen"}, {"First": "Mina", "Last": "Nguyen"}],
+        {
+            "3": CsvImportDuplicateDecision(
+                action="create",
+                matched_student_id=EXISTING,
+                acknowledged_student_ids=[EXISTING, OTHER],
+                of_row=2,
+                acknowledged_rows=[2, 999],
+            )
+        },
+    )
+    write = next(p for n, p in db.calls if n == "import_student_row_atomic")
+    assert write["p_acknowledged_student_ids"] == sorted([EXISTING, OTHER, completed_id])
+
+
+@pytest.mark.parametrize("code", ["23505", "22023", "P0001"])
+def test_other_database_errors_abort_the_attempt(code):
+    db = ScriptedImportDb()
+    db.responses = [
+        ("claim_student_import_run_v2", claim()),
+        ("prepare_student_import_program_v1", selected_program(PROGRAM, "Unassigned")),
+        (
+            "import_student_row_atomic",
+            APIError(
+                {"code": code, "message": "private database error", "details": None, "hint": None}
+            ),
+        ),
+        ("finish_student_import_run", [{"updated": True}]),
+    ]
+    with pytest.raises(HTTPException) as error:
+        db.execute_import([{"First": "Ava", "Last": "Nguyen"}])
+    assert error.value.status_code == 500
+    assert db.calls[-1][1]["p_status"] == "failed"
+
+
+def test_skipped_receipt_survives_unknown_failure_and_retry_without_rematching():
+    db = ScriptedImportDb()
+    db.tables["students"] = [existing_student()]
+    rows = [
+        {"First": "Ava", "Last": "Nguyen", "DOB": "2014-06-03"},
+        {"First": "Mina", "Last": "Nguyen"},
+    ]
+    decisions = {"2": CsvImportDuplicateDecision(action="skip", matched_student_id=EXISTING)}
+    db.responses = [
+        ("claim_student_import_run_v2", claim()),
+        ("prepare_student_import_program_v1", selected_program(PROGRAM, "Unassigned")),
+        ("record_student_import_skip_v1", lambda p: p["p_result"]),
+        ("import_student_row_atomic", RuntimeError("lost response")),
+        ("finish_student_import_run", [{"updated": True}]),
+    ]
+    with pytest.raises(HTTPException):
+        db.execute_import(rows, decisions)
+    skip = next(p for n, p in db.calls if n == "record_student_import_skip_v1")
+    assert (
+        skip["p_result"]["retained_kind"] == "existing"
+        and skip["p_result"]["retained_id_or_row"] == EXISTING
+    )
+    db.tables["students"] = []
+    db.calls.clear()
+    db.responses = [
+        (
+            "claim_student_import_run_v2",
+            claim([{"kind": "skipped", "key": "2", "result": skip["p_result"]}]),
+        ),
+        ("prepare_student_import_program_v1", selected_program(PROGRAM, "Unassigned")),
+        ("import_student_row_atomic", row_success),
+        ("finish_student_import_run", finish),
+    ]
+    result = db.execute_import(rows, decisions)
+    assert result.skipped_rows == 1 and result.imported_count == 1 and result.error_rows == 0
+    assert result.rows[0].warnings == ["Skipped: already in Koaryu as Ava Nguyen."]
+    assert not any(n == "record_student_import_skip_v1" for n, _ in db.calls)
+
+
+def test_skip_of_row_refused_by_database_is_not_receipted():
+    db = ScriptedImportDb()
+    rows = [{"First": "Ava", "Last": "Nguyen", "DOB": "2014-06-03"}] * 2
+    db.responses = [
+        ("claim_student_import_run_v2", claim()),
+        ("prepare_student_import_program_v1", selected_program(PROGRAM, "Unassigned")),
+        (
+            "import_student_row_atomic",
+            APIError(
+                {
+                    "code": "P0409",
+                    "message": "student_import_duplicate_review_required",
+                    "details": None,
+                    "hint": None,
+                }
+            ),
+        ),
+        ("finish_student_import_run", finish),
+    ]
+    result = db.execute_import(rows, {"3": CsvImportDuplicateDecision(action="skip", of_row=2)})
+    assert result.error_rows == 2 and result.skipped_rows == 0 and result.imported_count == 0
+
+
+@pytest.mark.parametrize(
+    "first_outcome",
+    ["created", "linked", "separate_contact", "refused", "no_guardian", "completed_linked"],
+)
+def test_guardian_choice_tracks_actual_earlier_import_outcome(first_outcome):
+    db = ScriptedImportDb()
+    db.tables["programs"][0]["name"] = "Unassigned"
+    gid = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+    rows = [
+        {
+            "First": "Mina",
+            "Last": "Nguyen",
+            "Guardian": "Jordan Smith",
+            "GuardianEmail": "private@example.invalid",
+        },
+        {
+            "First": "Sam",
+            "Last": "Nguyen",
+            "Guardian": "Jordan Smith",
+            "GuardianEmail": "private@example.invalid",
+        },
+    ]
+    MAPPING.update({"Guardian": "guardian_name", "GuardianEmail": "guardian_email"})
+    if first_outcome == "no_guardian":
+        rows[0].pop("Guardian")
+        rows[0].pop("GuardianEmail")
+    if first_outcome in {"linked", "separate_contact"}:
+        db.tables["students"] = [existing_student()]
+        db.tables["guardians"] = [
+            {
+                "id": gid,
+                "studio_id": STUDIO,
+                "first_name": "Jordan",
+                "last_name": "Smith",
+                "email": "private@example.invalid",
+                "phone": "secret",
+            }
+        ]
+        db.tables["student_guardians"] = [{"student_id": EXISTING, "guardian_id": gid}]
+    if first_outcome == "separate_contact":
+        db.tables["guardians"][0]["email"] = "different@example.invalid"
+    receipts = []
+    if first_outcome == "completed_linked":
+        sid = deterministic_import_uuid(RUN, "student-row", "2")
+        db.tables["students"] = [existing_student(sid, "Mina", "Nguyen", None)]
+        db.tables["guardians"] = [
+            {
+                "id": gid,
+                "studio_id": STUDIO,
+                "first_name": "Jordan",
+                "last_name": "Smith",
+                "email": "private@example.invalid",
+            }
+        ]
+        db.tables["student_guardians"] = [{"student_id": sid, "guardian_id": gid}]
+        receipts = [
+            {
+                "kind": "student",
+                "key": "2",
+                "result": {
+                    "student_id": sid,
+                    "guardian_imported": True,
+                    "outcome": {
+                        "row_number": 2,
+                        "is_valid": True,
+                        "issues": [],
+                        "data": {},
+                        "imported_without_belt": False,
+                        "guardian_id": gid,
+                    },
+                },
+            }
+        ]
+    db.responses = [
+        ("claim_student_import_run_v2", claim(receipts)),
+        ("prepare_student_import_program_v1", selected_program(PROGRAM, "Unassigned")),
+    ]
+    if not receipts:
+        response = (
+            APIError(
+                {
+                    "code": "P0409",
+                    "message": "student_import_duplicate_review_required",
+                    "details": None,
+                    "hint": None,
+                }
+            )
+            if first_outcome == "refused"
+            else row_success
+        )
+        db.responses.append(("import_student_row_atomic", response))
+    db.responses.extend(
+        [("import_student_row_atomic", row_success), ("finish_student_import_run", finish)]
+    )
+    try:
+        result = db.execute_import(rows)
+    finally:
+        MAPPING.pop("Guardian", None)
+        MAPPING.pop("GuardianEmail", None)
+    writes = [p for n, p in db.calls if n == "import_student_row_atomic"]
+    expected = {
+        "created": deterministic_import_uuid(RUN, "guardian-row", "2"),
+        "separate_contact": deterministic_import_uuid(RUN, "guardian-row", "2"),
+        "linked": gid,
+        "completed_linked": gid,
+    }.get(first_outcome)
+    assert writes[-1]["p_guardian_id"] == expected
+    assert result.imported_count == (1 if first_outcome == "refused" else 2)
+    if first_outcome == "linked":
+        assert writes[0]["p_guardian_id"] == gid
+
+
+def test_family_only_preview_displays_contact_without_exposing_guardian_identity():
+    db = ScriptedImportDb()
+    db.tables["students"] = [existing_student()]
+    gid = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+    db.tables["guardians"] = [
+        {
+            "id": gid,
+            "studio_id": STUDIO,
+            "first_name": "Jordan",
+            "last_name": "Smith",
+            "email": "private@example.invalid",
+            "phone": "secret",
+        }
+    ]
+    db.tables["student_guardians"] = [{"student_id": EXISTING, "guardian_id": gid}]
+    mapping = {**MAPPING, "Guardian": "guardian_name", "GuardianEmail": "guardian_email"}
+    rows = [
+        {
+            "First": "Mina",
+            "Last": "Nguyen",
+            "Guardian": "Jordan Smith",
+            "GuardianEmail": "PRIVATE@example.invalid",
+        },
+        {
+            "First": "Sam",
+            "Last": "Nguyen",
+            "Guardian": "Jordan Smith",
+            "GuardianEmail": "PRIVATE@example.invalid",
+        },
+    ]
+    preview = StudentService(db).validate_import_rows(rows, mapping, CsvImportOptions(), STUDIO)
+    assert preview.duplicate_flagged_rows == 0
+    first, second = preview.rows
+    assert first.duplicate_review.candidates == [] and first.duplicate_review.family_context
+    assert first.duplicate_review.guardian_outcome.model_dump() == {
+        "kind": "link_existing",
+        "display_name": "Jordan Smith",
+        "of_row": None,
+    }
+    assert second.duplicate_review.guardian_outcome.model_dump() == {
+        "kind": "in_file_shared",
+        "display_name": "Jordan Smith",
+        "of_row": 2,
+    }
+    payload = first.duplicate_review.model_dump_json()
+    assert (
+        gid not in payload and "private@example.invalid" not in payload and "secret" not in payload
+    )
+
+
+@pytest.mark.parametrize("contact", ["Jordan", "Taylor"])
+def test_completed_guardian_matching_uses_the_receipted_contact_not_link_order(contact):
+    db = ScriptedImportDb()
+    sid = deterministic_import_uuid(RUN, "student-row", "2")
+    stored_gid = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+    added_gid = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+    db.tables["students"] = [existing_student(sid, "Mina", "Nguyen", None)]
+    db.tables["guardians"] = [
+        {
+            "id": added_gid,
+            "studio_id": STUDIO,
+            "first_name": "Taylor",
+            "last_name": "Jones",
+            "email": "taylor@example.invalid",
+        },
+        {
+            "id": stored_gid,
+            "studio_id": STUDIO,
+            "first_name": "Jordan",
+            "last_name": "Smith",
+            "email": "jordan@example.invalid",
+        },
+    ]
+    db.tables["student_guardians"] = [
+        {"student_id": sid, "guardian_id": gid} for gid in (added_gid, stored_gid)
+    ]
+    receipt = {
+        "kind": "student",
+        "key": "2",
+        "result": {
+            "student_id": sid,
+            "guardian_imported": True,
+            "outcome": {
+                "row_number": 2,
+                "is_valid": True,
+                "issues": [],
+                "data": {},
+                "imported_without_belt": False,
+                "guardian_id": stored_gid,
+            },
+        },
+    }
+    db.responses = [
+        ("claim_student_import_run_v2", claim([receipt])),
+        ("prepare_student_import_program_v1", selected_program(PROGRAM, "Unassigned")),
+        ("import_student_row_atomic", row_success),
+        ("finish_student_import_run", finish),
+    ]
+    mapping = {**MAPPING, "Guardian": "guardian_name", "GuardianEmail": "guardian_email"}
+    result = asyncio.run(
+        StudentImportExecutor(db).execute_import(
+            [
+                {"First": "Mina", "Last": "Nguyen"},
+                {
+                    "First": "Sam",
+                    "Last": "Nguyen",
+                    "Guardian": "Jordan Smith" if contact == "Jordan" else "Taylor Jones",
+                    "GuardianEmail": f"{contact.lower()}@example.invalid",
+                },
+            ],
+            mapping,
+            CsvImportOptions(),
+            STUDIO,
+            "actor",
+            "same-key",
+        )
+    )
+    write = next(p for n, p in db.calls if n == "import_student_row_atomic")
+    assert write["p_guardian_id"] == (stored_gid if contact == "Jordan" else added_gid)
+    assert result.imported_count == 2

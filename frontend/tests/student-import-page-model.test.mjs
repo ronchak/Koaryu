@@ -669,3 +669,49 @@ describe("student import page model", () => {
     });
   });
 });
+
+it("shows guardian-only family context without a duplicate decision or skip", () => {
+  const result = {
+    valid_rows: 2,
+    total_rows: 2,
+    error_rows: 0,
+    duplicate_flagged_rows: 0,
+    rows: [
+      {
+        row_number: 2,
+        is_valid: true,
+        data: { legal_first_name: "Mina", legal_last_name: "Nguyen" },
+        issues: [],
+        duplicate_review: {
+          candidates: [],
+          family_context: ["Shares a guardian with Ava Nguyen; likely family"],
+          suggested_action: "create",
+          guardian_outcome: { kind: "link_existing", display_name: "Jordan Smith", of_row: null },
+        },
+      },
+      {
+        row_number: 3,
+        is_valid: true,
+        data: { legal_first_name: "Sam", legal_last_name: "Nguyen" },
+        issues: [],
+        duplicate_review: {
+          candidates: [],
+          family_context: [],
+          suggested_action: "create",
+          guardian_outcome: { kind: "in_file_shared", display_name: "Jordan Smith", of_row: 2 },
+        },
+      },
+    ],
+  };
+  const rows = getDuplicateReviewRows(result);
+  assert.deepEqual(
+    rows.map((r) => [r.rowNumber, r.needsChoice, r.decisionRequired]),
+    [
+      [2, false, false],
+      [3, false, false],
+    ],
+  );
+  assert.deepEqual(buildDefaultDuplicateDecisions(result), {});
+  assert.equal(hasUnresolvedDuplicateDecisions(result, {}), false);
+  assert.equal(countDuplicateSkips(result, {}), 0);
+});

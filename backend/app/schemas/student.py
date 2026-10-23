@@ -290,7 +290,16 @@ class CsvImportDuplicateCandidate(BaseModel):
     reasons: list[str] = Field(default_factory=list)
 
 
+class CsvImportGuardianOutcome(BaseModel):
+    """Contact display only; private guardian identities never leave the server."""
+
+    kind: Literal["link_existing", "in_file_shared"]
+    display_name: str
+    of_row: Optional[int] = None
+
+
 class CsvImportDuplicateReview(BaseModel):
+    guardian_outcome: Optional[CsvImportGuardianOutcome] = None
     candidates: list[CsvImportDuplicateCandidate] = Field(
         default_factory=list, description="Strongest candidates first; display may be capped."
     )

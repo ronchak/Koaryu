@@ -19,8 +19,8 @@ Identity rules (students):
   ``of_existing_key`` is set; the other source stays in ``candidates``.
 
 Identity rules (guardians) mirror the database row writer: the guardian name is
-split on the first space. Guardian matches are family context only in A1; the
-import row RPC does not reuse guardians until the A2 migration.
+split on the first space. Strong guardian matches link contacts in V61 and remain family context,
+never a student identity signal.
 
 Row numbers are the parser's compacted numbers (first data row is 2, blank
 lines are not counted), exactly as receipts use them.
@@ -151,6 +151,7 @@ class GuardianCandidate:
     row_number: Optional[int] = None
     existing_key: Optional[str] = None
     student_display_name: str = ""
+    guardian_display_name: str = ""
 
 
 @dataclass
@@ -582,6 +583,7 @@ class _RunRecord:
     identity: StudentIdentity
     guardian: GuardianIdentity
     display_name: str
+    guardian_display_name: str = ""
 
 
 @dataclass
@@ -656,10 +658,38 @@ def match_rows(
         import_row = entry.get("import_row_number")
         if isinstance(import_row, int):
             guardian = GuardianIdentity("", "", None, None)
+            chosen_entry = None
             for guardian_entry in entry.get("guardians") or []:
-                guardian = guardian_identity_from_existing(guardian_entry)
-                break
-            record = _RunRecord(import_row, identity, guardian, student_name)
+                selected = (
+                    guardian_entry.get("key") == entry["import_guardian_key"]
+                    if "import_guardian_key" in entry
+                    else chosen_entry is None
+                )
+                if selected:
+                    chosen_entry = guardian_entry
+                    guardian = guardian_identity_from_existing(guardian_entry)
+                else:
+                    # Other contacts attached after the import are roster
+                    # matches, never the contact retained by this earlier row.
+                    existing_guardians.add(
+                        guardian_identity_from_existing(guardian_entry),
+                        _ExistingGuardianRecord(
+                            guardian_entry,
+                            guardian_identity_from_existing(guardian_entry),
+                            student_name,
+                        ),
+                    )
+            record = _RunRecord(
+                import_row,
+                identity,
+                guardian,
+                student_name,
+                " ".join(
+                    str(chosen_entry.get(k) or "").strip() for k in ("first_name", "last_name")
+                ).strip()
+                if chosen_entry
+                else "",
+            )
             run_students.add(identity, record)
             run_guardians.add(guardian, record)
             references[("row", import_row)] = _Reference(identity, student_name)
@@ -751,6 +781,7 @@ def match_rows(
                             outcome[1],
                             row_number=record.row_number,
                             student_display_name=record.display_name,
+                            guardian_display_name=record.guardian_display_name,
                         )
                     )
             for record in existing_guardians.lookup(guardian):
@@ -763,6 +794,10 @@ def match_rows(
                             outcome[1],
                             existing_key=str(record.entry.get("key")),
                             student_display_name=record.student_display_name,
+                            guardian_display_name=" ".join(
+                                str(record.entry.get(k) or "").strip()
+                                for k in ("first_name", "last_name")
+                            ).strip(),
                         )
                     )
             guardian_candidates.sort(
@@ -793,7 +828,9 @@ def match_rows(
             # A blocked row is never imported, so a later row cannot repeat it
             # or share its guardian; it is matched itself but never a target.
             continue
-        record = _RunRecord(row_number, identity, guardian, row_name)
+        record = _RunRecord(
+            row_number, identity, guardian, row_name, str(data.get("guardian_name") or "").strip()
+        )
         run_students.add(identity, record)
         run_guardians.add(guardian, record)
         references[("row", row_number)] = _Reference(identity, row_name)
@@ -858,7 +895,16 @@ def build_duplicate_review(match: RowMatch) -> Optional[dict[str, Any]]:
             family_context.append(
                 f"Guardian details partly match {who} ({where}); treated as a separate contact"
             )
+    guardian_outcome = None
+    if match.guardian_class in {"link_existing", "in_file_shared"}:
+        best = match.guardian_candidates[0]
+        guardian_outcome = {
+            "kind": match.guardian_class,
+            "display_name": best.guardian_display_name,
+            "of_row": match.guardian_of_row,
+        }
     return {
+        "guardian_outcome": guardian_outcome,
         "candidates": candidates,
         "suggested_action": match.suggested_action if match.is_flagged else "create",
         "family_context": family_context,

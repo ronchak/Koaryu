@@ -163,6 +163,7 @@ class StudentImportPlanner:
         studio_id: str,
         *,
         completed_student_ids: Optional[dict[str, int]] = None,
+        completed_guardian_ids: Optional[dict[str, Optional[str]]] = None,
     ) -> list[dict[str, Any]]:
         """Studio-scoped roster facts used only for duplicate review.
 
@@ -250,6 +251,8 @@ class StudentImportPlanner:
             }
             if student_id in completed:
                 entry["import_row_number"] = completed[student_id]
+                if completed_guardian_ids is not None:
+                    entry["import_guardian_key"] = completed_guardian_ids.get(student_id)
             roster.append(entry)
         return roster
 
@@ -265,7 +268,10 @@ class StudentImportPlanner:
     ) -> tuple[CsvImportResult, list[dict[str, Any]]]:
         validate_csv_import_mapping(mapping)
         receipts = receipts or {}
-        unfinished = any(str(i) not in receipts.get("student", {}) for i in range(2, len(rows) + 2))
+        unfinished = any(
+            str(i) not in receipts.get("student", {}) and str(i) not in receipts.get("skipped", {})
+            for i in range(2, len(rows) + 2)
+        )
         has_birth_dates = any(
             field == "date_of_birth" and any(row.get(column) for row in rows)
             for column, field in mapping.items()
@@ -295,13 +301,26 @@ class StudentImportPlanner:
 
         planned_rows: list[dict[str, Any]] = []
         for i, raw_row in enumerate(rows, start=2):
-            completed = receipts.get("student", {}).get(str(i))
+            skipped = receipts.get("skipped", {}).get(str(i))
+            completed = receipts.get("student", {}).get(str(i)) or skipped
             if completed is not None:
                 outcome = dict(completed["outcome"])
                 outcome["issues"] = [
                     CsvImportIssue.model_validate(issue) for issue in outcome["issues"]
                 ]
                 outcome["completed"] = True
+                if skipped is not None:
+                    outcome["skipped"] = True
+                    outcome["skip_retained"] = (
+                        skipped["retained_kind"],
+                        skipped["retained_id_or_row"],
+                    )
+                elif "guardian_id" not in outcome:
+                    outcome["guardian_id"] = (
+                        deterministic_import_uuid(import_run_id, "guardian-row", str(i))
+                        if import_run_id and completed.get("guardian_imported")
+                        else None
+                    )
                 planned_rows.append(outcome)
                 continue
             row_plan = build_import_row_plan(
@@ -338,15 +357,20 @@ class StudentImportPlanner:
         roster: list[dict[str, Any]] = []
         if studio_id and self.supabase is not None:
             completed_ids: dict[str, int] = {}
+            completed_guardians: dict[str, Optional[str]] = {}
             if import_run_id:
                 for row in planned_rows:
-                    if row.get("completed"):
-                        completed_ids[
-                            deterministic_import_uuid(
-                                import_run_id, "student-row", str(row["row_number"])
-                            )
-                        ] = int(row["row_number"])
-            roster = self.build_existing_roster(studio_id, completed_student_ids=completed_ids)
+                    if row.get("completed") and not row.get("skipped"):
+                        student_id = deterministic_import_uuid(
+                            import_run_id, "student-row", str(row["row_number"])
+                        )
+                        completed_ids[student_id] = int(row["row_number"])
+                        completed_guardians[student_id] = row.get("guardian_id")
+            roster = self.build_existing_roster(
+                studio_id,
+                completed_student_ids=completed_ids,
+                completed_guardian_ids=completed_guardians,
+            )
         matches = {match.row_number: match for match in match_rows(planned_rows, roster)}
         for row in planned_rows:
             if row.get("completed"):

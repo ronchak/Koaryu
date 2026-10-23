@@ -301,7 +301,12 @@ export function getDuplicateReviewRows(result: CsvImportResult): DuplicateReview
   // must not hold up the import of the remaining valid rows.
   return (result.rows || [])
     .filter(
-      (row) => row.is_valid && row.duplicate_review && row.duplicate_review.candidates.length > 0,
+      (row) =>
+        row.is_valid &&
+        row.duplicate_review &&
+        (row.duplicate_review.candidates.length > 0 ||
+          row.duplicate_review.family_context.length > 0 ||
+          row.duplicate_review.guardian_outcome),
     )
     .map((row) => {
       const review = row.duplicate_review as CsvImportDuplicateReview;
@@ -317,6 +322,14 @@ export function getDuplicateReviewRows(result: CsvImportResult): DuplicateReview
       };
     })
     .sort((left, right) => left.rowNumber - right.rowNumber);
+}
+
+export function describeGuardianOutcome(review: CsvImportDuplicateReview): string | null {
+  const outcome = review.guardian_outcome;
+  if (!outcome) return null;
+  return outcome.kind === "in_file_shared"
+    ? `Will share the contact from row ${outcome.of_row}`
+    : `Will be linked to the existing contact ${outcome.display_name}`;
 }
 
 export function buildDuplicateDecision(

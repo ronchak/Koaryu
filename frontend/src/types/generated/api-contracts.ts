@@ -886,11 +886,18 @@ export interface ApiCsvImportDuplicateDecision {
 }
 
 export interface ApiCsvImportDuplicateReview {
+  guardian_outcome?: ApiCsvImportGuardianOutcome | null;
   candidates: ApiCsvImportDuplicateCandidate[];
   suggested_action: "skip" | "create" | "decide";
   family_context: string[];
   acknowledge_student_ids: string[];
   acknowledge_rows: number[];
+}
+
+export interface ApiCsvImportGuardianOutcome {
+  kind: "link_existing" | "in_file_shared";
+  display_name: string;
+  of_row?: number | null;
 }
 
 export interface ApiCsvImportIssue {
