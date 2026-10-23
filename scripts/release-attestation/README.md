@@ -206,3 +206,11 @@ proves that both history restore calls are reachable before early exit.
 `install_final_v61`, which validates the generated application readiness metadata,
 upgrades through V60, and installs V61. Historical V57 setup callers stay bound
 to V57; only the graph-mail and test-email application composition callers advance.
+
+The guarded V61 rollout retains V60 as a version-bound predecessor and selects
+only V61 for its next step. It binds the widened import signatures in an additive
+raw-catalog query, complete table/function facts, V41/V42 guard rows, the release
+manifest and exact V60 compatibility. Canonical and logical-restored PostgreSQL
+and Supabase ALL-table-grant profiles are measured separately in
+`v61-rollout-observations.json`; provider approval must name current V61 canonical
+evidence, and post-state acceptance keeps each catalog/table tuple paired.
