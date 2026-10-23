@@ -111,10 +111,14 @@ BEGIN
        AND to_regprocedure('public.koaryu_release_schema_preflight_v41()') IS NULL THEN
         failure_key:='timezone_functions_v59';
     ELSIF history_count=155 AND history_head='20261021093000'
-       AND to_regprocedure('public.koaryu_release_schema_preflight_v41()') IS NOT NULL THEN
+       AND to_regprocedure('public.koaryu_release_schema_preflight_v41()') IS NOT NULL
+       AND to_regprocedure('public.koaryu_release_schema_preflight_v42()') IS NULL THEN
         failure_key:='missed_class_functions_v60';
+    ELSIF history_count=156 AND history_head='20261022190000'
+       AND to_regprocedure('public.koaryu_release_schema_preflight_v42()') IS NOT NULL THEN
+        failure_key:='student_import_functions_v61';
     ELSE
-        RAISE EXCEPTION 'Timezone compatibility contract requires exact V59 or V60 history';
+        RAISE EXCEPTION 'Timezone compatibility contract requires exact V59, V60 or V61 history';
     END IF;
     SELECT * INTO old FROM public.koaryu_release_schema_preflight_v39();
     PERFORM pg_temp.timezone_check(old.ready IS TRUE AND old.migration_count=153
