@@ -382,5 +382,5 @@ test("the shared shell supports skip navigation and identifies the current page"
   await expect(page.locator("main")).toBeFocused();
   await expect(
     page.getByRole("navigation", { name: "Footer navigation" }).getByRole("link"),
-  ).toHaveCount(4);
+  ).toHaveCount(6);
 });
