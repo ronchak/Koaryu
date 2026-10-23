@@ -41,6 +41,18 @@ def free_port() -> int:
         return probe.getsockname()[1]
 
 
+def reserve_gateway_socket(port: int = 54321) -> socket.socket:
+    # On macOS SO_REUSEADDR can shadow an existing wildcard listener. Keep an
+    # exclusive socket bound until the gateway inherits it and through cleanup.
+    listener = socket.socket()
+    try:
+        listener.bind(("127.0.0.1", port))
+    except OSError as exc:
+        listener.close()
+        raise RuntimeError(f"Port {port} is occupied; leave that stack alone") from exc
+    return listener
+
+
 def process_environment(extra: dict[str, str]) -> dict[str, str]:
     # Do not inherit provider credentials, proxy settings, or a developer dotenv.
     return {
@@ -66,6 +78,7 @@ class NativeStack:
         self.local: LocalPostgres | None = None
         self.context: dict = {}
         self.keys: dict = {}
+        self.gateway_socket: socket.socket | None = None
 
     def _command(self, command: list, *, environment=None, timeout=180) -> str:
         result = subprocess.run(
@@ -82,7 +95,7 @@ class NativeStack:
         )
         return result.stdout.strip()
 
-    def _start(self, name, command, environment, *, cwd):
+    def _start(self, name, command, environment, *, cwd, pass_fds=()):
         log = (self.evidence / f"{name}.log").open("w")
         self.logs.append(log)
         process = subprocess.Popen(
@@ -91,6 +104,7 @@ class NativeStack:
             env=process_environment(environment),
             stdout=log,
             stderr=subprocess.STDOUT,
+            pass_fds=pass_fds,
         )
         self.children.append((name, process))
 
@@ -105,14 +119,7 @@ class NativeStack:
     def _setup(self):
         # The application's privileged-target guard deliberately accepts only
         # this canonical local Supabase URL. Refuse a developer's existing stack.
-        with socket.socket() as probe:
-            probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            try:
-                probe.bind(("127.0.0.1", 54321))
-            except OSError as exc:
-                raise RuntimeError(
-                    "Port 54321 is occupied; leave that stack alone"
-                ) from exc
+        self.gateway_socket = reserve_gateway_socket()
         self.evidence.mkdir(parents=True, mode=0o700)
         self.temporary = Path("/tmp/koaryu-pg." + secrets.token_hex(6))
         self.temporary.mkdir(mode=0o700)
@@ -338,9 +345,15 @@ class NativeStack:
         context_environment = {CONTEXT_ENV: str(self.context_path)}
         self._start(
             "gateway",
-            [*common, "mcp_oauth_native_stack:gateway", "--port", "54321"],
+            [
+                *common,
+                "mcp_oauth_native_stack:gateway",
+                "--fd",
+                str(self.gateway_socket.fileno()),
+            ],
             context_environment,
             cwd=ROOT,
+            pass_fds=(self.gateway_socket.fileno(),),
         )
         backend_environment = {
             **context_environment,
@@ -450,6 +463,9 @@ class NativeStack:
                 process.wait(timeout=5)
         for log in self.logs:
             log.close()
+        if self.gateway_socket is not None:
+            self.gateway_socket.close()
+            self.gateway_socket = None
         if (
             self.temporary is not None
             and (self.temporary / "data/postmaster.pid").exists()
