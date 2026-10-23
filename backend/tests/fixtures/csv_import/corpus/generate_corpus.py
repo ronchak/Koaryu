@@ -19,6 +19,16 @@ from datetime import date
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
+SOURCE_ID_ALIASES = [
+    "Student ID",
+    "Member ID",
+    "Member #",
+    "Member Number",
+    "Legacy Account #",
+    "Account #",
+    "Account Number",
+    "ID",
+]
 FIRST_NAMES = ["Zelava", "Mioren", "Chloélune", "Évarin", "Ava-Grace", "Téoquin", "Iñara"]
 LAST_NAMES = [
     "Quillfen",
@@ -48,6 +58,8 @@ DATE_STYLES = [
     "earliest",
 ]
 IDENTITY_FIELDS = (
+    "source_system",
+    "source_id",
     "legal_first_name",
     "legal_last_name",
     "preferred_name",
@@ -467,7 +479,37 @@ def script_records(spec):
     return rows, roster
 
 
+def source_id_records(spec):
+    rows = [record(i, spec["seed"], mixed=False) for i in range(3)]
+    roster = []
+    variant = spec["variant"]
+    if variant == "corrected":
+        old = student("Testformer", "Fixturequill")
+        old.update(source_system="csv", source_id=rows[0]["source_id"])
+        roster = [old]
+        rows[0].update(first="Testcorrected", last="Newquill")
+    elif variant == "repeated":
+        rows[1]["source_id"] = rows[0]["source_id"]
+    elif variant == "absent":
+        old = student("Testother", "Fixturequill")
+        old.update(source_system="csv", source_id="SYN-absent")
+        roster = [old]
+    elif variant == "partial":
+        rows[1]["source_id"] = "  "
+        rows[2]["source_id"] = ""
+    elif variant == "multiple":
+        for row in rows:
+            row["other_id"] = "OTHER-" + row["source_id"]
+    elif variant == "overlong":
+        rows[0]["source_id"] = "X" * 121
+        rows[1]["source_id"] = "Y" * 120
+        rows[2]["source_id"] = "  trimmed-id  "
+    return rows, roster
+
+
 def records_for(spec):
+    if spec["scenario"] == "source_identity":
+        return source_id_records(spec)
     if spec["scenario"] == "family_scripts":
         return script_records(spec)
     if spec["scenario"] in {"family_identity", "identity_controls"}:
@@ -510,6 +552,15 @@ def records_for(spec):
 def columns_for(spec, catalogue):
     dialect = catalogue["dialects"][spec["dialect"]]
     columns = [list(c) for c in dialect["columns"]]
+    if spec["scenario"] == "source_identity":
+        columns = [["First Name", "first"], ["Last Name", "last"], ["DOB", "dob"]]
+        if spec["variant"] == "multiple":
+            columns += [
+                [alias, "source_id" if alias == "Student ID" else "other_id"]
+                for alias in reversed(SOURCE_ID_ALIASES)
+            ]
+        else:
+            columns.append([SOURCE_ID_ALIASES[spec["alias_index"]], "source_id"])
     if spec.get("variant") == "large":
         columns = [
             ["First Name", "first"],
@@ -736,6 +787,8 @@ def truth_data_for(spec, catalogue):
                     mapped[target] = aliases.get(value.lower(), value.lower())
                 else:
                     mapped[target] = value
+        if mapped.get("source_id"):
+            mapped["source_system"] = "csv"
         result.append(mapped)
     return result
 
@@ -856,7 +909,14 @@ def imported_roster(plans):
 
 def student_candidate(row, other, *, of_row=None, of_existing=None):
     # Callers index candidates by legal names. Preferred names never enter it.
-    if (name_key(row.get("legal_first_name")), name_key(row.get("legal_last_name"))) != (
+    same_source_id = bool(row.get("source_system") and row.get("source_id")) and (
+        row.get("source_system"),
+        row.get("source_id"),
+    ) == (other.get("source_system"), other.get("source_id"))
+    if not same_source_id and (
+        name_key(row.get("legal_first_name")),
+        name_key(row.get("legal_last_name")),
+    ) != (
         name_key(other.get("legal_first_name")),
         name_key(other.get("legal_last_name")),
     ):
@@ -865,7 +925,9 @@ def student_candidate(row, other, *, of_row=None, of_existing=None):
     same_email = email_key(row.get("email")) is not None and email_key(
         row.get("email")
     ) == email_key(other.get("email"))
-    if left and right:
+    if same_source_id:
+        confidence, reasons = "strong", ["source_id"]
+    elif left and right:
         if left == right:
             confidence, reasons = "strong", ["name", "date_of_birth"]
         elif same_email:
@@ -880,7 +942,7 @@ def student_candidate(row, other, *, of_row=None, of_existing=None):
         confidence, reasons = "possible", ["name", "phone"]
     else:
         confidence, reasons = "possible", ["name"]
-    rank = {"strong": 3, "possible": 2, "different_person": 1}[confidence]
+    rank = 4 if same_source_id else {"strong": 3, "possible": 2, "different_person": 1}[confidence]
     if other.get("archived") and confidence != "different_person":
         label, reasons = "archived_match", reasons + [confidence]
     elif confidence == "different_person":
@@ -917,11 +979,14 @@ def guardian_candidate(row, other, *, of_row=None, of_existing=None):
 
 def labels_for(plans, roster):
     students = defaultdict(list)
+    source_ids = defaultdict(list)
     contacts_email, contacts_name = defaultdict(list), defaultdict(list)
 
     def add_student(value, row=None, key=None):
         names = (name_key(value.get("legal_first_name")), name_key(value.get("legal_last_name")))
         students[names].append((value, row, key))
+        if value.get("source_system") and value.get("source_id"):
+            source_ids[(value["source_system"], value["source_id"])].append((value, row, key))
 
     def add_contact(value, row=None, key=None):
         candidate = (value, row, key)
@@ -939,6 +1004,11 @@ def labels_for(plans, roster):
         row = identity(plan)
         row_number = plan["row_number"]
         candidates = students[(name_key(row["legal_first_name"]), name_key(row["legal_last_name"]))]
+        candidates = candidates + [
+            item
+            for item in source_ids.get((row.get("source_system"), row.get("source_id")), [])
+            if item not in candidates
+        ]
         # Earlier rows first, in ascending row number. Stable max preserves ties.
         ordered = sorted(candidates, key=lambda c: (c[1] is None, c[1] or 0))
         in_file, existing = [], []
@@ -993,7 +1063,8 @@ def labels_for(plans, roster):
                 **({"notes": plan["notes"]} if plan.get("notes") else {}),
             }
         )
-        add_student(row, row=row_number)
+        if plan["valid"]:
+            add_student(row, row=row_number)
     return labels
 
 

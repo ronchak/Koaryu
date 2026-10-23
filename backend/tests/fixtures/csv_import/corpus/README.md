@@ -101,7 +101,7 @@ diff -rq "$corpus_a" "$corpus_b"
 
 ## Coverage
 
-There are 510 logical CSV files, of which 506 are materialised. Most contain
+There are 546 logical CSV files, of which 542 are materialised. Most contain
 5 to 60 rows. Twenty medium files have 200 to 1,000 rows. Six have 2,000 to
 9,999 rows. Exactly one has 10,000 rows, one has 10,001 rows and one exceeds
 10 MiB. The committed CSV payload stays below 8 MB.
@@ -117,10 +117,11 @@ There are 510 logical CSV files, of which 506 are materialised. Most contain
 | `size_boundary` | 9 |
 | `identity_controls` | 6 |
 | `mapping_reproduction` | 2 |
+| `source_identity` | 36 |
 
 | Dialect | Files |
 | --- | ---: |
-| `dialect_01_member_id_style` | 93 |
+| `dialect_01_member_id_style` | 129 |
 | `dialect_02_given_family` | 60 |
 | `dialect_03_last_first` | 58 |
 | `dialect_04_full_student` | 56 |
@@ -132,6 +133,18 @@ There are 510 logical CSV files, of which 506 are materialised. Most contain
 | `dialect_10_billing_nickname` | 21 |
 | `dialect_11_address_middle` | 20 |
 | `dialect_12_semicolon` | 20 |
+
+The `source_identity` family has six files each for corrected legal names with the
+same ID, repeated IDs in one file, IDs absent from the roster, IDs on some rows,
+all eight candidate ID columns in reverse priority order, and IDs over 120
+characters. It covers every alias and UTF-8, UTF-8 with BOM and UTF-16. Over-long
+cases also prove the 120-character boundary and trimming.
+
+Source-ID mapping selects one column, independent of column order, in this
+priority: Student ID, Member ID, Member #, Member Number, Legacy Account #,
+Account #, Account Number, ID. Other candidates stay unmapped. The mapped ID is
+trimmed and saved with source system `csv`. Empty IDs stay absent. Other mapping
+rules, including duplicate-target rejections, are unchanged.
 
 The grid varies names, middle names, quoted nicknames, preferred names, particles,
 suffixes, dates, status aliases, invalid statuses, program/belt references,
@@ -288,7 +301,7 @@ Instead those rows have
 `"notes": ["future_date_of_birth_if_business_date"]`, relative to the fixed
 business date above. A focused test supplies that date and proves the issue.
 
-Existing students carry legal names, preferred name, ISO birth date or null,
+Existing students carry source system and ID when mapped, legal names, preferred name, ISO birth date or null,
 email, phone, `archived`, `key` and a `guardians` array. Re-upload roster entries
 also preserve all other mapped planner data. Guardians carry `key`,
 `first_name`, `last_name`, email and phone.
@@ -303,8 +316,11 @@ transliteration or tatweel removal is inferred.
 
 Student labels use `none`, `in_file_strong`, `in_file_possible`,
 `existing_strong`, `existing_possible`, `different_person` or `archived_match`.
-They reference an earlier compacted row or an existing student key. Strong
-matches take precedence over possible matches, then different-person evidence.
+They reference an earlier compacted row or an existing student key. Source-ID
+strong matches take precedence over name strong matches, then possible matches
+and different-person evidence. Source-ID candidates have reasons `["source_id"]`
+and allow only Skip, including archived matches. Different or missing IDs leave
+the name rules unchanged. Invalid rows never become student match targets.
 Earlier rows win equal-confidence ties; the earliest row at that confidence is
 used. When both sources match, `in_file` and `existing` sub-objects retain each
 source's best evidence as well as the best overall fields. Archived matches
@@ -337,5 +353,5 @@ earlier numbered rule in the supplied specification.
 - `framing_utf8_plain`, row 8, records `Cancelled` as `invalid_status`. Current
   code recognises `Canceled`, with one L, rather than this spelling.
 
-Production code is unchanged. These observations are preserved as current
-behaviour, rather than silently repaired during generation.
+These observations describe behavior outside the source-ID amendment. They
+remain covered by the fixtures.
