@@ -303,6 +303,21 @@ const sections: readonly LegalSection[] = [
           </a>
           .
         </p>
+        <h3>AI assistants you connect</h3>
+        <p>
+          Where AI connections are enabled, a studio admin can authorize an assistant to read
+          selected categories of studio information. Koaryu sends permitted information when the
+          assistant requests it. The AI service you choose processes that information under its own
+          terms, privacy policy and account settings. Consider the sensitivity of student, family,
+          financial and free-text information before sharing it.
+        </p>
+        <p>
+          You can disconnect an assistant in Settings to stop future access. This cannot remove
+          information the assistant has already received. Koaryu stores the connection identity,
+          permissions, expiry and latest access metadata. It does not store returned customer
+          records in a separate connector activity log. AI connections cannot change studio records
+          or send messages.
+        </p>
         <h3>Other situations</h3>
         <ul>
           <li>

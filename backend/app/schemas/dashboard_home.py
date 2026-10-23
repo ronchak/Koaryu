@@ -209,6 +209,15 @@ class DashboardHomePreferences(BaseModel):
         max_length=DASHBOARD_HOME_PREFERENCES_LIST_LIMIT
     )
 
+    @field_validator("version", mode="before")
+    @classmethod
+    def _strict_version(cls, value):
+        # Pydantic 2.12's Literal validator accepts True/1.0 as equal to 1.
+        # Preserve the existing JSON integer-only request contract.
+        if type(value) is not int or value != 1:
+            raise ValueError("version must be the integer 1")
+        return value
+
     @field_validator("order", "hidden")
     @classmethod
     def _unique_panels(cls, panels: list[str]) -> list[str]:

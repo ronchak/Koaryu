@@ -38,6 +38,21 @@ acting, and follow [Cutover Gates](cutover-gates.md).
 Neither production surface auto-deploys. Both require an explicit owner-authorized release —
 see [Deployment triggers](#deployment-triggers).
 
+## AI assistant connections
+
+The flexible read MCP uses the existing Render backend and Supabase Auth/database.
+It adds no hosted service or separate auth provider. `MCP_ENABLED` defaults to
+`false` in the application and provider manifest; `MCP_PUBLIC_URL` must name the
+exact backend HTTPS `/mcp` resource before activation. Hosted OAuth configuration
+has not been changed by this feature branch.
+
+Activation requires the V61 migration, native Supabase OAuth Server, its custom
+access-token hook, and `/connect/authorize` on the existing frontend. Owners pick
+permissions and expiry and can revoke access in Settings. Chosen assistants
+receive the selected studio data under their own terms. Setup, synthetic testing
+and the required native OAuth smoke check are in [MCP read access](mcp-read-access.md).
+Public ChatGPT distribution is a later submission step.
+
 ## Google identity provider
 
 - Google Cloud project: `Koaryu` (`koaryu-auth-20260920`), created September 20, 2026.

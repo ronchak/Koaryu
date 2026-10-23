@@ -958,6 +958,37 @@
       "state": "v60",
       "query": "V60_RELEASE_MANIFEST_SQL",
       "expected": "EXPECTED_V60_RELEASE_MANIFEST"
+    },
+    "readiness-v61": {
+      "kind": "readiness",
+      "state": "v61",
+      "finalAlias": true
+    },
+    "tables-v61": {
+      "kind": "export",
+      "state": "v61",
+      "query": "V61_MCP_TABLE_STATE_SQL",
+      "expected": "EXPECTED_V61_MCP_TABLE_STATE",
+      "restored": "EXPECTED_V61_RESTORED_MCP_TABLE_STATE"
+    },
+    "functions-v61": {
+      "kind": "export",
+      "state": "v61",
+      "query": "V61_MCP_FUNCTION_STATE_SQL",
+      "expected": "EXPECTED_V61_MCP_FUNCTION_STATE"
+    },
+    "catalog-v61": {
+      "kind": "export",
+      "state": "v61",
+      "query": "V61_CATALOG_STATE_SQL",
+      "expected": "EXPECTED_V60_CATALOG_STATE",
+      "restored": "EXPECTED_V60_RESTORED_CATALOG_STATE"
+    },
+    "release-v61": {
+      "kind": "export",
+      "state": "v61",
+      "query": "V61_RELEASE_MANIFEST_SQL",
+      "expected": "EXPECTED_V61_RELEASE_MANIFEST"
     }
   },
   "cases": {
@@ -4527,6 +4558,65 @@
       "semanticManifests": [],
       "passLines": [
         "[restored V60] PASS retained V59 rows, exact canonical/restored readiness, gap rules and V59 compatibility"
+      ]
+    },
+    "v61": {
+      "format": "forward",
+      "base": "48220f447608e7c4c7cfd196e2bfd70a33d4c704",
+      "constraintPairs": "v57-restore-constraint-pairs.json",
+      "docstring": "Prove V60 records survive read-only MCP authorization installation and restored connections retain their access boundary.",
+      "exports": [
+        [
+          "readiness-v60.query",
+          "readiness-v60.expected"
+        ],
+        [
+          "tables-v60.query",
+          "tables-v60.expected",
+          "tables-v60.restored"
+        ],
+        [
+          "readiness-v61.query",
+          "readiness-v61.expected"
+        ],
+        [
+          "tables-v61.query",
+          "tables-v61.expected",
+          "tables-v61.restored"
+        ],
+        [
+          "functions-v61.query",
+          "functions-v61.expected"
+        ],
+        [
+          "catalog-v61.query",
+          "catalog-v61.expected",
+          "catalog-v61.restored"
+        ],
+        [
+          "release-v61.query",
+          "release-v61.expected"
+        ]
+      ],
+      "predecessor": [
+        "readiness-v60",
+        "tables-v60"
+      ],
+      "checks": [
+        "readiness-v61",
+        "tables-v61",
+        "functions-v61",
+        "catalog-v61",
+        "release-v61"
+      ],
+      "absentFunctions": [
+        "public.mcp_access_token_hook(jsonb)",
+        "public.authorize_mcp_connection(uuid,uuid,uuid,text,uuid,text[],text,timestamp with time zone)"
+      ],
+      "semanticManifests": [],
+      "upgradeSnapshotCheck": "require_v61_snapshot",
+      "passLines": [
+        "[restored V61] PASS retained V60 rows, exact readiness and read-only connection continuation"
       ]
     }
   }

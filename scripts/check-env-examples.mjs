@@ -42,6 +42,8 @@ const backendSecretKeys = [
 ];
 
 const backendPublicKeys = [
+  "MCP_ENABLED",
+  "MCP_PUBLIC_URL",
   "SUPABASE_URL",
   "SUPABASE_DEVELOPMENT_PROJECT_REF",
   "SUPABASE_ALLOW_LEGACY_HS256",

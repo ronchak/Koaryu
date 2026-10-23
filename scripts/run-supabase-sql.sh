@@ -42,8 +42,18 @@ case "$db_target" in
       exit 1
     fi
 
+    # The MCP contract exercises the native Auth role with SET ROLE. The CLI's
+    # postgres login is not a member of supabase_auth_admin. Use the bootstrap
+    # administrator only for this local contract; do not grant new memberships.
+    local_sql_user=postgres
+    repository_dir="$(cd "$script_dir/.." && pwd)"
+    contract_path="$(cd "$(dirname "$sql_file")" && pwd)/$(basename "$sql_file")"
+    if [[ "$contract_path" == "$repository_dir/supabase/verification/mcp_read_connections_contract.sql" ]]; then
+      local_sql_user=supabase_admin
+    fi
+
     docker exec -i "$db_container" psql \
-      -U postgres \
+      -U "$local_sql_user" \
       -d postgres \
       --no-psqlrc \
       --set=ON_ERROR_STOP=1 \

@@ -9,6 +9,7 @@ import { CalmState, HorizonPage, HorizonPanel, ToneChip } from "@/components/ui/
 import { ModalFrame } from "@/components/ui/modal-frame";
 import { OperationsSurface } from "@/components/operations/operations-surface";
 import { ProgramsSection } from "@/components/settings/programs-section";
+import { AiConnectionsSection } from "@/components/settings/ai-connections";
 import { SettingsIndex } from "@/components/settings/settings-index";
 import { StaffRolesSection } from "@/components/settings/staff-roles-section";
 import styles from "@/components/settings/settings.module.css";
@@ -214,6 +215,7 @@ function AdminSettingsContent() {
             label="Settings section index"
             items={[
               { href: "#studio", label: "Studio", meta: studioName || "Name not set" },
+              { href: "#ai-connections", label: "AI connections", meta: "Read access" },
               {
                 href: "#programs",
                 label: "Programs",
@@ -235,6 +237,7 @@ function AdminSettingsContent() {
             ]}
           />
           <div className={styles.sections}>
+            <div id="ai-connections"><AiConnectionsSection /></div>
             <div id="studio" data-settings-owner="studio-admin">
               <HorizonPanel
                 title="Studio"

@@ -90,7 +90,8 @@ jobs:
     name: Frontend tests, lint, build, and audit
     # Playwright 1.60's Chromium dependencies support Ubuntu 24.04, not 26.04.
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    # A cold Chromium/system dependency install took 11m; keep room for all tests, builds and browser checks.
+    timeout-minutes: 40
     defaults:
       run:
         working-directory: frontend

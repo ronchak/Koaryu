@@ -250,3 +250,9 @@ Recent deployment-readiness work in this repo tightened live-mode persistence an
 ## License
 
 Proprietary. All rights reserved.
+
+## AI assistant read access
+
+The optional MCP connector supports permission-controlled studio queries. See
+[MCP setup and local demo](docs/mcp-read-access.md) for `npm run mcp:demo`,
+client testing and the hosted activation prerequisites. It defaults to disabled.

@@ -18,7 +18,7 @@ const helper = verifier.slice(start, end);
 test("direct CI student/rank race accepts the declared current release and retained predecessors", () => {
   const race = fs.readFileSync(new URL("./verify-student-profile-rank-plan-concurrency.sh", import.meta.url), "utf8");
   const profiles = [...race.matchAll(/(?:IF|ELSIF) history_count=(\d+) AND history_head='(\d+)'\s+AND to_regprocedure\('[^']+'\) IS (?:NOT )?NULL THEN\s+phase:='(v\d+)'; preflight:='([^']+)';/g)];
-  const expected = [...new Set(["v56", "v57", "v58", "v59", CURRENT_RELEASE])].map(id => {
+  const expected = [...new Set(["v56", "v57", "v58", "v59", "v60", CURRENT_RELEASE])].map(id => {
     const state = releaseState(id, MIGRATION_VERSIONS);
     return [String(state.count), state.head, id, state.preflight];
   });
@@ -27,7 +27,7 @@ test("direct CI student/rank race accepts the declared current release and retai
   assert.match(race, /readiness\.migration_count IS DISTINCT FROM history_count/);
   assert.match(race, /readiness\.migration_head IS DISTINCT FROM history_head/);
   assert.match(race, /readiness\.security_failures IS DISTINCT FROM ARRAY\[\]::TEXT\[\]/);
-  assert.match(race, /v57\|v58\|v59\|v60\) expected_delete_error="ERROR:  AUTOMATION_STUDIO_BUSY"/);
+  assert.match(race, /v57\|v58\|v59\|v60\|v61\) expected_delete_error="ERROR:  AUTOMATION_STUDIO_BUSY"/);
 });
 
 for (const [name, query] of [["unterminated receipt query", V52_LEAD_RECEIPT_STATE_SQL], ["terminated writer query", V52_LEAD_UPDATE_STATE_SQL]]) {
@@ -67,8 +67,8 @@ assert_payment_writer_rejects test "SELECT 1;" "$query" expected required_failur
 
 
 test("V56 keeps all restore steps, exact inventory and the complete readiness/lead probes", () => {
-  assert.match(verifier, /migration_files\[@\].*-ne 155/);
-  assert.match(verifier, /verification_files\[@\].*-ne 77/);
+  assert.match(verifier, /migration_files\[@\].*-ne 156/);
+  assert.match(verifier, /verification_files\[@\].*-ne 78/);
   for (const text of [
     "verify-v53-v54-restore-contract.py", "verify-v54-v55-restore-contract.py", "verify-v55-v56-restore-contract.py",
     "[V56 readiness]", "[V56 release]", "[V56 semantics]",
@@ -108,10 +108,10 @@ test("final V56 semantics uses only V55 pins for changed lead/student definition
 });
 
 
-test("current-candidate billing concurrency runs once after complete V58 readiness", () => {
+test("current-candidate billing concurrency runs once after complete V61 readiness", () => {
   const invocation = 'run_interruptible python3 "$ROOT_DIR/scripts/verify-billing-command-concurrency.py" "$PSQL" "$SOCKET_DIR" "$PG_PORT"';
   assert.equal(verifier.split(invocation).length - 1, 1);
-  const readiness = verifier.indexOf('echo "[V58 readiness] PASS complete GA catalog and authority"');
+  const readiness = verifier.indexOf('echo "[V61 readiness] PASS exact MCP catalog, native token hook and V60 compatibility"');
   const billing = verifier.indexOf(invocation);
   assert.ok(readiness >= 0 && readiness < billing);
 });
@@ -171,4 +171,14 @@ test("payment writer negatives prove the compatibility chain once per failure ke
   const finalCheck = verifier.indexOf("[payment writer negative] FAIL rollback did not restore the exact V18-V37 readiness baseline");
   const lastCaller = verifier.lastIndexOf("assert_payment_writer_rejects \"$term refuses unknown\"");
   assert.ok(lastCaller > 0 && finalCheck > lastCaller);
+});
+
+
+test("V61 installs MCP after V60 and includes the native Auth role", () => {
+  const installed = verifier.indexOf('--file="$MIGRATION_DIR/20261022233855_flexible_read_mcp.sql"');
+  assert.ok(installed > verifier.indexOf('--file="$MIGRATION_DIR/20261021093000_missed_class_gap_guards_v60.sql"'));
+  assert.ok(verifier.indexOf('--file="$VERIFICATION_DIR/mcp_read_connections_contract.sql"') > installed);
+  assert.ok(verifier.includes("CREATE ROLE supabase_auth_admin NOLOGIN NOINHERIT;"));
+  assert.ok(verifier.includes("verify-v60-v61-restore-contract.py"));
+  assert.ok(verifier.indexOf('echo "PASS: $migration_total') > installed);
 });

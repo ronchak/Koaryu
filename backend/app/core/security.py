@@ -190,6 +190,7 @@ def _decode_supabase_token_payload(
     issuer: str,
     jwt_secret: str,
     allow_legacy_hs256: bool,
+    audience: str = SUPABASE_AUTH_AUDIENCE,
 ) -> dict[str, Any]:
     try:
         header = jwt.get_unverified_header(token)
@@ -206,7 +207,7 @@ def _decode_supabase_token_payload(
             token,
             jwt_secret,
             algorithms=["HS256"],
-            audience=SUPABASE_AUTH_AUDIENCE,
+            audience=audience,
             issuer=issuer,
             options=SUPABASE_AUTH_JWT_OPTIONS,
         )
@@ -224,7 +225,7 @@ def _decode_supabase_token_payload(
             token,
             verification_key,
             algorithms=[alg],
-            audience=SUPABASE_AUTH_AUDIENCE,
+            audience=audience,
             issuer=issuer,
             options=SUPABASE_AUTH_JWT_OPTIONS,
         )
@@ -233,6 +234,8 @@ def _decode_supabase_token_payload(
 
 
 def _extract_authenticated_user_id(payload: dict[str, Any]) -> str:
+    if "client_id" in payload or "koaryu_connection_id" in payload:
+        raise _invalid_auth_token_exception()
     user_id = payload.get("sub")
     if not isinstance(user_id, str) or not user_id:
         raise _invalid_auth_token_exception()
@@ -278,6 +281,15 @@ def get_user_id_from_token(token: str) -> str:
             headers={"WWW-Authenticate": "Bearer"},
         )
     except JWTError:
+        # A connector token with a different audience must never be rescued by
+        # the development-only Auth fallback. Unverified claims are used only
+        # to refuse access, never to authenticate a caller.
+        try:
+            claims = jwt.decode(token, options={"verify_signature": False})
+        except JWTError:
+            claims = {}
+        if "client_id" in claims or "koaryu_connection_id" in claims:
+            raise _invalid_auth_token_exception()
         if _is_production_environment(settings):
             raise _invalid_auth_token_exception()
         try:

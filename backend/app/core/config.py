@@ -242,6 +242,8 @@ class Settings(BaseSettings):
     SUPABASE_JWT_SECRET: str = "placeholder-secret"
     SUPABASE_ALLOW_LEGACY_HS256: bool = False
     FRONTEND_URL: str = "http://localhost:4000"
+    MCP_ENABLED: bool = False
+    MCP_PUBLIC_URL: str = ""
     ENVIRONMENT: str = "development"
     DEMO_RESET_ENABLED: bool = False
     DEMO_RESET_STUDIO_IDS: str = ""
@@ -373,6 +375,37 @@ class Settings(BaseSettings):
 
     def validated_frontend_origin(self) -> str:
         return validate_frontend_origin(self.FRONTEND_URL, self.ENVIRONMENT)
+
+    def validated_mcp_url(self) -> str:
+        """A configured resource identity, never inferred from request headers."""
+        url = self.MCP_PUBLIC_URL
+        parsed = urlparse(url)
+        try:
+            port = parsed.port
+        except ValueError:
+            port = -1
+        if (
+            not url
+            or url != url.strip()
+            or any(ord(c) < 33 for c in url)
+            or parsed.path != "/mcp"
+            or parsed.query
+            or parsed.fragment
+            or parsed.params
+            or parsed.username
+            or parsed.password
+            or not parsed.hostname
+            or port == -1
+        ):
+            raise RuntimeError("MCP_PUBLIC_URL must be a canonical URL ending in /mcp")
+        local = parsed.hostname in {"localhost", "127.0.0.1"}
+        if parsed.scheme != "https" and not (
+            self.ENVIRONMENT in PERMISSIVE_ENVIRONMENTS and local and parsed.scheme == "http"
+        ):
+            raise RuntimeError("MCP_PUBLIC_URL must use HTTPS except on local development")
+        if self.ENVIRONMENT in STRICT_ENVIRONMENTS and local:
+            raise RuntimeError("Hosted MCP_PUBLIC_URL cannot use a local host")
+        return url
 
     def validate_automation_email_configuration(self) -> None:
         """Validate configuration only; never read credentials or contact a provider."""
@@ -517,6 +550,8 @@ class Settings(BaseSettings):
         )
         self.validate_automation_email_configuration()
         self.validated_frontend_origin()
+        if self.MCP_ENABLED:
+            self.validated_mcp_url()
         self.validate_supabase_service_role_configuration()
         if self.CORE_SELF_CHECKOUT_ENABLED and environment != "production":
             raise RuntimeError(

@@ -882,6 +882,49 @@ class StripeMutationPolicyTest(unittest.TestCase):
                 "httpx.post",
             )
         )
+        # Native OAuth consent/revocation calls go only to the pinned Supabase
+        # Auth host as the signed-in owner. Keep them in this source-wide HTTP
+        # mutation inventory; they do not grant any Stripe mutation authority.
+        expected_raw_calls.update(
+            {
+                ("backend/app/mcp_read/connections.py", "oauth_request", "transport.post"),
+                ("backend/app/mcp_read/connections.py", "revoke_native_grant", "transport.delete"),
+            }
+        )
+        # The assembled native verifier accepts no hosted URL or real account.
+        # These reviewed HTTP mutations reach only its newly owned loopback Auth,
+        # backend and synthetic MCP fixture. Keep every call site inventoried.
+        expected_raw_calls.update(
+            {
+                ("scripts/mcp_oauth_native_scenarios.py", "approve", "self.client.post"),
+                ("scripts/mcp_oauth_native_scenarios.py", "denied_mcp", "self.client.post"),
+                ("scripts/mcp_oauth_native_scenarios.py", "exchange", "self.client.post"),
+                ("scripts/mcp_oauth_native_scenarios.py", "lifecycle", "self.client.delete"),
+                ("scripts/mcp_oauth_native_scenarios.py", "lifecycle", "self.client.post"),
+                ("scripts/mcp_oauth_native_scenarios.py", "login", "self.client.post"),
+                (
+                    "scripts/mcp_oauth_native_scenarios.py",
+                    "native_account_boundary",
+                    "self.client.post",
+                ),
+                (
+                    "scripts/mcp_oauth_native_scenarios.py",
+                    "native_account_boundary",
+                    "self.client.put",
+                ),
+                ("scripts/mcp_oauth_native_scenarios.py", "new_owner", "self.client.post"),
+                ("scripts/mcp_oauth_native_scenarios.py", "openid_bypass", "self.client.post"),
+                (
+                    "scripts/mcp_oauth_native_scenarios.py",
+                    "owner_access_changes",
+                    "self.client.post",
+                ),
+                ("scripts/mcp_oauth_native_scenarios.py", "refresh", "self.client.post"),
+                ("scripts/mcp_oauth_native_scenarios.py", "register", "self.client.post"),
+                ("scripts/mcp_oauth_native_scenarios.py", "run", "self.client.post"),
+                ("scripts/mcp_oauth_native_scenarios.py", "seed", "self.client.post"),
+            }
+        )
         expected_raw_sink_callers = {
             (f"backend/app/services/{path}", function, call)
             for path, function, call in {

@@ -307,7 +307,7 @@ class ProcessRSSObservabilityTest(unittest.TestCase):
                 WARNING_THRESHOLD_BYTES,
             )
 
-            assert uvicorn.__version__ == "0.30.0"
+            assert uvicorn.__version__ == "0.31.1"
 
             class Clock:
                 value = 0.0

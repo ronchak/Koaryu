@@ -13,6 +13,7 @@ from app.api.v1.endpoints import (
     health,
     internal,
     leads,
+    mcp_connections,
     platform_billing,
     programs,
     reports,
@@ -32,6 +33,7 @@ from app.api.v1.endpoints import (
 router = APIRouter()
 
 router.include_router(account.router)
+router.include_router(mcp_connections.router)
 router.include_router(health.router)
 router.include_router(internal.router)
 router.include_router(auth.router)
