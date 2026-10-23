@@ -885,10 +885,12 @@ class StripeMutationPolicyTest(unittest.TestCase):
         # Native OAuth consent/revocation calls go only to the pinned Supabase
         # Auth host as the signed-in owner. Keep them in this source-wide HTTP
         # mutation inventory; they do not grant any Stripe mutation authority.
-        expected_raw_calls.update({
-            ("backend/app/mcp_read/connections.py", "oauth_request", "transport.post"),
-            ("backend/app/mcp_read/connections.py", "revoke_native_grant", "transport.delete"),
-        })
+        expected_raw_calls.update(
+            {
+                ("backend/app/mcp_read/connections.py", "oauth_request", "transport.post"),
+                ("backend/app/mcp_read/connections.py", "revoke_native_grant", "transport.delete"),
+            }
+        )
         expected_raw_sink_callers = {
             (f"backend/app/services/{path}", function, call)
             for path, function, call in {

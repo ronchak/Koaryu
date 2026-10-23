@@ -314,9 +314,9 @@ const sections: readonly LegalSection[] = [
         <p>
           You can disconnect an assistant in Settings to stop future access. This cannot remove
           information the assistant has already received. Koaryu stores the connection identity,
-          permissions, expiry and latest access metadata. It does not store returned customer records
-          in a separate connector activity log. AI connections cannot change studio records or send
-          messages.
+          permissions, expiry and latest access metadata. It does not store returned customer
+          records in a separate connector activity log. AI connections cannot change studio records
+          or send messages.
         </p>
         <h3>Other situations</h3>
         <ul>
