@@ -962,7 +962,7 @@ done
 
 if [[ "$SUITE_PART" == history ]]; then
   # The component/race path below intentionally starts at V56. Bring only this
-  # owned history database forward so the former newest restore remains reachable.
+  # owned history database forward so the V60 and V61 restores remain reachable.
   for history_migration in \
     20261005105341_automation_workflow_graph_v57.sql \
     20261013013243_live_billing_authority_repairs_v58.sql \
@@ -977,7 +977,13 @@ if [[ "$SUITE_PART" == history ]]; then
   echo "[V60 history upgrade/restore] RUN retained V59 rows and missed-class gap continuation"
   run_interruptible python3 "$ROOT_DIR/scripts/verify-v59-v60-restore-contract.py" \
     "$PG_DUMP" "$PG_RESTORE" "$CREATEDB" "$PSQL" "$SOCKET_DIR" "$PG_PORT" "$TEMP_DIR" "$ROOT_DIR"
-  echo "PASS: history part verified released-predecessor restore proofs through V56 and the retained V60 proof on ephemeral PostgreSQL 17."
+  run_interruptible "$PSQL" "${psql_args[@]}" --single-transaction \
+    --file="$MIGRATION_DIR/20261021093000_missed_class_gap_guards_v60.sql" \
+    --command="INSERT INTO supabase_migrations.schema_migrations(version,name) VALUES('20261021093000','missed_class_gap_guards_v60');"
+  echo "[V61 history upgrade/restore] RUN retained V60 import rows and provenance/replay continuation"
+  run_interruptible python3 "$ROOT_DIR/scripts/verify-v60-v61-restore-contract.py" \
+    "$PG_DUMP" "$PG_RESTORE" "$CREATEDB" "$PSQL" "$SOCKET_DIR" "$PG_PORT" "$TEMP_DIR" "$ROOT_DIR"
+  echo "PASS: history part verified released-predecessor restore proofs through V56 and the V60/V61 proofs on ephemeral PostgreSQL 17."
   exit 0
 fi
 
@@ -2428,8 +2434,8 @@ fi
 run_interruptible "$PSQL" "${psql_args[@]}" --single-transaction \
   --file="$MIGRATION_DIR/20261021093000_missed_class_gap_guards_v60.sql" \
   --command="INSERT INTO supabase_migrations.schema_migrations(version,name) VALUES('20261021093000','missed_class_gap_guards_v60');"
-final_readiness="$({ cd "$ROOT_DIR"; node --input-type=module --eval "import { FINAL_OPERATIONAL_READINESS_SQL } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(FINAL_OPERATIONAL_READINESS_SQL);"; } | "$PSQL" "${psql_args[@]}" --tuples-only --no-align)"
-(cd "$ROOT_DIR" && node --input-type=module --eval "import { validateOperationalReadiness } from './scripts/studio-comp-migration-rollout.mjs'; validateOperationalReadiness(process.argv[1]);" "$final_readiness")
+v60_readiness="$({ cd "$ROOT_DIR"; node --input-type=module --eval "import { V60_OPERATIONAL_READINESS_SQL } from './scripts/release-attestation/generated-readiness.mjs'; process.stdout.write(V60_OPERATIONAL_READINESS_SQL);"; } | "$PSQL" "${psql_args[@]}" --tuples-only --no-align)"
+(cd "$ROOT_DIR" && node --input-type=module --eval "import assert from 'node:assert/strict'; import { EXPECTED_V60_OPERATIONAL_READINESS } from './scripts/release-attestation/generated-readiness.mjs'; assert.equal(process.argv[1], EXPECTED_V60_OPERATIONAL_READINESS);" "$v60_readiness")
 v59_compatibility="$({ cd "$ROOT_DIR"; node --input-type=module --eval "import { V59_OPERATIONAL_READINESS_SQL } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(V59_OPERATIONAL_READINESS_SQL);"; } | "$PSQL" "${psql_args[@]}" --tuples-only --no-align)"
 (cd "$ROOT_DIR" && node --input-type=module --eval "import assert from 'node:assert/strict'; import { EXPECTED_V59_OPERATIONAL_READINESS } from './scripts/studio-comp-migration-rollout.mjs'; assert.equal(process.argv[1], EXPECTED_V59_OPERATIONAL_READINESS);" "$v59_compatibility")
 echo "[V60 compatibility] PASS installed V40 returns exact V59 success rows"

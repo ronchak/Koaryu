@@ -185,6 +185,12 @@ field. Continuation uses the deployed ten-argument call, checks provenance and a
 receipt, then compares rows and physical tuple identities across replay.
 
 The local runner's `history` branch advances its V56 database through V59 before
-running the retained V60 restore proof. The `all` path runs that proof later once;
-`current` keeps the new V61 proof. A focused dispatch test checks the history
-migration order and proves that its restore call is reachable before early exit.
+running the retained V60 restore proof. It then applies V60 and runs the V61
+restore proof before exiting. The `all` path runs these proofs later once each;
+`current` runs the V61 proof. A focused dispatch test checks migration order and
+proves that both history restore calls are reachable before early exit.
+
+`install_final_v60` is version-bound to V60. Current application composition uses
+`install_final_v61`, which validates the generated application readiness metadata,
+upgrades through V60, and installs V61. Historical V57 setup callers stay bound
+to V57; only the graph-mail and test-email application composition callers advance.

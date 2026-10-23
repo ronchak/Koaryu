@@ -27,7 +27,7 @@ test("direct CI student/rank race accepts the declared current release and retai
   assert.match(race, /readiness\.migration_count IS DISTINCT FROM history_count/);
   assert.match(race, /readiness\.migration_head IS DISTINCT FROM history_head/);
   assert.match(race, /readiness\.security_failures IS DISTINCT FROM ARRAY\[\]::TEXT\[\]/);
-  assert.match(race, /v57\|v58\|v59\|v60\) expected_delete_error="ERROR:  AUTOMATION_STUDIO_BUSY"/);
+  assert.match(race, /v57\|v58\|v59\|v60\|v61\) expected_delete_error="ERROR:  AUTOMATION_STUDIO_BUSY"/);
 });
 
 for (const [name, query] of [["unterminated receipt query", V52_LEAD_RECEIPT_STATE_SQL], ["terminated writer query", V52_LEAD_UPDATE_STATE_SQL]]) {
@@ -126,14 +126,19 @@ test("V59 exercises rewritten callers after installing the timezone migration", 
 });
 
 test("V60 runs the missed-class contract only after installing the gap guards", () => {
-  const installed = verifier.indexOf('--file="$MIGRATION_DIR/20261021093000_missed_class_gap_guards_v60.sql"');
+  const installed = verifier.lastIndexOf('--file="$MIGRATION_DIR/20261021093000_missed_class_gap_guards_v60.sql"');
   const contract = verifier.indexOf('--file="$VERIFICATION_DIR/missed_class_automation_contract.sql"');
   assert.ok(installed >= 0 && contract > installed);
   assert.equal(verifier.split('--file="$VERIFICATION_DIR/missed_class_automation_contract.sql"').length - 1, 1);
   assert.match(verifier, /workflow_advance_contract\.sql\|missed_class_automation_contract\.sql\) continue ;;/);
   assert.match(verifier, /verify-v59-v60-restore-contract\.py/);
   assert.ok(verifier.indexOf("V59_OPERATIONAL_READINESS_SQL") < installed);
-  assert.ok(verifier.indexOf("FINAL_OPERATIONAL_READINESS_SQL", installed) > installed);
+  const nextRelease = verifier.indexOf('echo "[V61 upgrade/restore]', installed);
+  const checkpoint = verifier.slice(installed, nextRelease);
+  assert.ok(checkpoint.includes("V60_OPERATIONAL_READINESS_SQL"));
+  assert.ok(checkpoint.includes("EXPECTED_V60_OPERATIONAL_READINESS"));
+  assert.ok(!checkpoint.includes("FINAL_OPERATIONAL_READINESS_SQL"));
+  assert.ok(!checkpoint.includes("validateOperationalReadiness"));
 });
 
 test("CI parts gate every in-loop restore proof to history and stop after their own checks", () => {
@@ -183,7 +188,7 @@ test("V61 runs the complete import proof after upgrade and gates the former newe
   assert.match(verifier, /V61_OPERATIONAL_READINESS_SQL/);
 });
 
-test("history branch reaches the retained V60 proof before its early exit", () => {
+test("history branch reaches the V60 and V61 proofs before its early exit", () => {
   const start = verifier.indexOf('if [[ "$SUITE_PART" == history ]]; then');
   const end = verifier.indexOf('\necho "[V33 hash parity]', start);
   assert.ok(start >= 0 && end > start);
@@ -222,12 +227,15 @@ printf 'non-history dispatch\\n'
         ["20261013013243", "live_billing_authority_repairs_v58"],
         ["20261014083106", "timezone_names_reference_v59"],
       ];
-      assert.equal(calls.length, 4);
+      assert.equal(calls.length, 6);
       migrations.forEach(([version, name], index) => {
         assert.ok(calls[index].includes(`--file=/candidate/supabase/migrations/${version}_${name}.sql`));
         assert.ok(calls[index].includes(`VALUES('${version}','${name}')`));
       });
       assert.equal(calls[3], "python3 /candidate/scripts/verify-v59-v60-restore-contract.py pg_dump pg_restore createdb psql /owned/socket 5432 /owned /candidate");
+      assert.ok(calls[4].includes('--file=/candidate/supabase/migrations/20261021093000_missed_class_gap_guards_v60.sql'));
+      assert.ok(calls[4].includes("VALUES('20261021093000','missed_class_gap_guards_v60')"));
+      assert.equal(calls[5], "python3 /candidate/scripts/verify-v60-v61-restore-contract.py pg_dump pg_restore createdb psql /owned/socket 5432 /owned /candidate");
       assert.ok(!output.includes("non-history dispatch"));
     }
   } finally {
