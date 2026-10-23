@@ -8,7 +8,8 @@ execution start so decisions are honoured only against what is actually there.
 
 Identity rules (students):
 
-* Only normalised legal names plus date of birth or the student's own email or
+* Exact source system and ID identify a student before any name rule.
+* Normalised legal names plus date of birth or the student's own email or
   phone identify a student. Preferred name never participates. Guardian email,
   guardian phone and surname alone never identify a student, because that is
   exactly what siblings look like.
@@ -46,6 +47,7 @@ FLAGGED_CLASSES = {
 }
 CONFIDENCE_RANK = {"strong": 3, "possible": 2, "different_person": 1}
 REASON_WORDS = {
+    "source_id": "same member ID",
     "name": "same name",
     "date_of_birth": "same birth date",
     "email": "same email",
@@ -114,6 +116,8 @@ class StudentIdentity:
     date_of_birth: Optional[str]
     email: Optional[str]
     phone: Optional[str]
+    source_system: Optional[str] = None
+    source_id: Optional[str] = None
 
     @property
     def has_name(self) -> bool:
@@ -194,7 +198,13 @@ class RowMatch:
         )
 
     @property
+    def skip_only(self) -> bool:
+        return bool(self.candidates and self.candidates[0].reasons == ["source_id"])
+
+    @property
     def suggested_action(self) -> str:
+        if self.skip_only:
+            return "skip"
         # Any archived strong or possible candidate needs the owner's call,
         # even when an active match outranks it.
         if self.duplicate_class == "archived_match" or self.has_archived_candidate:
@@ -231,6 +241,8 @@ def student_identity_from_row(data: dict[str, Any]) -> StudentIdentity:
         date_of_birth=date_key(data.get("date_of_birth")),
         email=email_key(data.get("email")),
         phone=phone_key(data.get("phone")),
+        source_system=data.get("source_system"),
+        source_id=str(data.get("source_id") or "").strip() or None,
     )
 
 
@@ -241,6 +253,8 @@ def student_identity_from_existing(entry: dict[str, Any]) -> StudentIdentity:
         date_of_birth=date_key(entry.get("date_of_birth")),
         email=email_key(entry.get("email")),
         phone=phone_key(entry.get("phone")),
+        source_system=entry.get("source_system"),
+        source_id=str(entry.get("source_id") or "").strip() or None,
     )
 
 
@@ -266,6 +280,13 @@ def guardian_identity_from_existing(entry: dict[str, Any]) -> GuardianIdentity:
 def compare_students(
     candidate: StudentIdentity, other: StudentIdentity
 ) -> Optional[tuple[str, list[str]]]:
+    if (
+        candidate.source_system
+        and candidate.source_id
+        and candidate.source_system == other.source_system
+        and candidate.source_id == other.source_id
+    ):
+        return "strong", ["source_id"]
     if not candidate.has_name or not other.has_name:
         return None
     if candidate.first != other.first or candidate.last != other.last:
@@ -321,8 +342,9 @@ def reason_words(reasons: list[str]) -> list[str]:
     return [REASON_WORDS.get(reason, reason.replace("_", " ")) for reason in reasons]
 
 
-def _candidate_sort_key(candidate: MatchCandidate) -> tuple[int, int, int, int]:
+def _candidate_sort_key(candidate: MatchCandidate) -> tuple[int, ...]:
     return (
+        -int(candidate.reasons == ["source_id"]),
         -CONFIDENCE_RANK[candidate.confidence],
         1 if candidate.archived else 0,
         0 if candidate.source == "row" else 1,
@@ -398,7 +420,8 @@ class _StudentIndex:
     strong matches were not acknowledged.
 
     The in-file index (``order`` = row number) keeps only the ``cap`` earliest
-    rows per bucket, whatever order rows arrive in (receipt-backed rows of a
+    rows per bucket, including the source-system/ID bucket, whatever order
+    rows arrive in (receipt-backed rows of a
     retried run arrive first). The earliest strong match is never dropped: a
     row with a birth date is strong against rows with the same birth date
     (``by_name_dob``) or with none and the same email (``by_name_email_no_dob``),
@@ -417,6 +440,7 @@ class _StudentIndex:
     ) -> None:
         self.cap = cap
         self.order = order
+        self.by_source_id: dict[tuple[str, str], list[Any]] = defaultdict(list)
         self.by_name_dob: dict[tuple[str, str, str], list[Any]] = defaultdict(list)
         self.by_name_email: dict[tuple[str, str, str], list[Any]] = defaultdict(list)
         self.by_name_email_no_dob: dict[tuple[str, str, str], list[Any]] = defaultdict(list)
@@ -434,10 +458,14 @@ class _StudentIndex:
         self.dropped: set[tuple[str, tuple[str, ...]]] = set()
 
     def add(self, identity: StudentIdentity, record: Any, *, archived: bool = False) -> None:
+        cap, order = self.cap, self.order
+        if identity.source_system and identity.source_id:
+            key = (identity.source_system, identity.source_id)
+            if _bounded_add(self.by_source_id[key], record, cap, order):
+                self.dropped.add(("source_id", key))
         if not identity.has_name:
             return
         name = (identity.first, identity.last)
-        cap, order = self.cap, self.order
 
         def put(label: str, buckets: dict[Any, list[Any]], key: tuple[str, ...]) -> None:
             if _bounded_add(buckets[key], record, cap, order):
@@ -461,10 +489,12 @@ class _StudentIndex:
             _keep_first(self.first_missing_dob_by_name, name, record, order)
 
     def lookup(self, identity: StudentIdentity) -> list[Any]:
+        pool: list[Any] = list(
+            self.by_source_id.get((identity.source_system, identity.source_id), [])
+        )
         if not identity.has_name:
-            return []
+            return pool
         name = (identity.first, identity.last)
-        pool: list[Any] = []
         if identity.date_of_birth:
             pool.extend(self.by_name_dob.get((*name, identity.date_of_birth), []))
         if identity.email:
@@ -490,9 +520,12 @@ class _StudentIndex:
 
     def overflowed(self, identity: StudentIdentity) -> bool:
         """True when a full bucket may have dropped a record this identity would
-        need to acknowledge: a strong match (same birth date; or same email
+        need to acknowledge: an exact source ID, a strong name match (same
+        birth date; or same email
         where a birth date is missing) or any archived same-name record. Full
         buckets that can only hide possible matches do not count."""
+        if ("source_id", (identity.source_system, identity.source_id)) in self.dropped:
+            return True
         if not identity.has_name or not self.dropped:
             return False
         name = (identity.first, identity.last)
@@ -629,7 +662,8 @@ def match_rows(
     marks a student this very import already created, so a later row matching
     it is reported as an in-file match of that row.
 
-    Candidates come from keyed indexes (name plus birth date, email or phone
+    Candidates come from keyed indexes (source system plus ID, or name plus
+    birth date, email or phone
     for students; email plus a name part, or name plus phone, for guardians)
     with one representative per plain-name bucket. Earlier rows of the file and
     guardian records are bounded per bucket (``MATCH_BUCKET_CAP``), and studio
@@ -885,6 +919,7 @@ def build_duplicate_review(match: RowMatch) -> Optional[dict[str, Any]]:
     # acknowledging plus the strongest few of the rest.
     candidates = [
         {
+            "source_id": match.identity.source_id if "source_id" in candidate.reasons else None,
             "student_id": candidate.existing_key,
             "of_row": candidate.row_number,
             "display_name": candidate.display_name,
@@ -915,6 +950,7 @@ def build_duplicate_review(match: RowMatch) -> Optional[dict[str, Any]]:
             "of_row": match.guardian_of_row,
         }
     return {
+        "skip_only": match.skip_only,
         "guardian_outcome": guardian_outcome,
         "candidates": candidates,
         "suggested_action": match.suggested_action if match.is_flagged else "create",

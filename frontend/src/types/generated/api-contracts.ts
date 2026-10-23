@@ -869,6 +869,7 @@ export interface ApiCsvImportActionOptions {
 }
 
 export interface ApiCsvImportDuplicateCandidate {
+  source_id?: string | null;
   student_id?: string | null;
   of_row?: number | null;
   display_name: string;
@@ -886,6 +887,7 @@ export interface ApiCsvImportDuplicateDecision {
 }
 
 export interface ApiCsvImportDuplicateReview {
+  skip_only: boolean;
   guardian_outcome?: ApiCsvImportGuardianOutcome | null;
   candidates: ApiCsvImportDuplicateCandidate[];
   suggested_action: "skip" | "create" | "decide";
@@ -910,6 +912,7 @@ export interface ApiCsvImportIssue {
 }
 
 export interface ApiCsvImportOptions {
+  source_system?: string;
   create_missing_programs?: boolean;
   create_missing_belts?: boolean;
   import_without_unresolved_belt?: boolean;

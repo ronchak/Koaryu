@@ -361,7 +361,8 @@ function StudentImportDuplicateReview({
                         key={`${row.rowNumber}-${candidate.student_id ?? candidate.of_row}`}
                         className="text-xs text-text-secondary mt-1"
                       >
-                        Matches {describeDuplicateCandidate(candidate)}
+                        {candidate.source_id ? "" : "Matches "}
+                        {describeDuplicateCandidate(candidate)}
                         {candidate.archived ? (
                           <Badge variant="warning" className="ml-2">
                             Archived
@@ -397,18 +398,23 @@ function StudentImportDuplicateReview({
                   />
                   Skip, already in Koaryu
                 </label>
-                <label className="flex items-center gap-2 text-sm text-text-secondary">
-                  <input
-                    type="radio"
-                    name={groupName}
-                    checked={decision?.action === "create"}
-                    disabled={isLoading}
-                    onChange={() =>
-                      onDecisionChange(row.rowNumber, buildDuplicateDecision(row.review, "create"))
-                    }
-                  />
-                  Create as a new student
-                </label>
+                {!row.review.skip_only ? (
+                  <label className="flex items-center gap-2 text-sm text-text-secondary">
+                    <input
+                      type="radio"
+                      name={groupName}
+                      checked={decision?.action === "create"}
+                      disabled={isLoading}
+                      onChange={() =>
+                        onDecisionChange(
+                          row.rowNumber,
+                          buildDuplicateDecision(row.review, "create"),
+                        )
+                      }
+                    />
+                    Create as a new student
+                  </label>
+                ) : null}
               </div>
             </div>
           );

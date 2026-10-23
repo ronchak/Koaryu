@@ -287,3 +287,20 @@ describe("preview CSV import id resolution", () => {
     );
   });
 });
+
+it("includes source system in the browser import key with a csv default", async () => {
+  const input = {
+    rowCount: 1,
+    mapping: { ID: "source_id" },
+    contentHash: "synthetic",
+    options: {},
+  };
+  assert.equal(
+    await buildStableImportKey(input),
+    await buildStableImportKey({ ...input, options: { source_system: "csv" } }),
+  );
+  assert.notEqual(
+    await buildStableImportKey(input),
+    await buildStableImportKey({ ...input, options: { source_system: "old-roster" } }),
+  );
+});

@@ -225,6 +225,13 @@ class StudentImportExecutor:
             if match is None:
                 outcomes[row_number] = {"state": "imported", "retained": ("row", row_number)}
                 continue
+            if match.skip_only and (decision is None or decision.action != "skip"):
+                StudentImportExecutor._refuse(
+                    row,
+                    f"This member ID already belongs to {match.candidates[0].display_name}. Skip this row.",
+                )
+                outcomes[row_number] = {"state": "rejected", "retained": None}
+                continue
             unacknowledged = unacknowledged_candidates(match, decision)
             if unacknowledged:
                 who = unacknowledged[0].display_name
@@ -524,6 +531,11 @@ class StudentImportExecutor:
                 "p_program_ids": program_ids,
                 "p_acknowledged_student_ids": acknowledged_student_ids,
                 "p_guardian_id": guardian_id,
+                **(
+                    {"p_source_system": mapped["source_system"], "p_source_id": mapped["source_id"]}
+                    if mapped.get("source_id")
+                    else {}
+                ),
             },
         )
         row = first_rpc_row(result) or {}

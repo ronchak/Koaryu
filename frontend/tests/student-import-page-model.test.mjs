@@ -743,3 +743,111 @@ it("the guardian line follows the owner's choice for the row it shares a contact
   );
   assert.equal(describeGuardianOutcome({ ...shared, guardian_outcome: null }), null);
 });
+
+it("auto-maps exactly the highest priority ID alias and preserves other mappings", () => {
+  const aliases = [
+    "Student ID",
+    "Member ID",
+    "Member #",
+    "Member Number",
+    "Legacy Account #",
+    "Account #",
+    "Account Number",
+    "ID",
+  ];
+  const other = ["First Name", "Last Name", "Email", "Student Email", "Account Status"];
+  const unchanged = autoMap(other);
+  for (let i = 0; i < aliases.length; i++) {
+    const remaining = aliases.slice(i).reverse();
+    const mapping = autoMap([...remaining, ...other]);
+    assert.equal(mapping[aliases[i]], "source_id");
+    assert.equal(Object.values(mapping).filter((target) => target === "source_id").length, 1);
+    for (const header of other) assert.equal(mapping[header], unchanged[header]);
+  }
+});
+
+it("defaults source ID matches to Skip and prevents model Create decisions", () => {
+  const review = {
+    skip_only: true,
+    suggested_action: "skip",
+    family_context: [],
+    candidates: [
+      {
+        student_id: "s1",
+        display_name: "Testformer Fixturequill",
+        source_id: "00042",
+        confidence: "strong",
+        reasons: ["same member ID"],
+      },
+    ],
+  };
+  const result = importResult({
+    valid_rows: 1,
+    rows: [{ row_number: 2, is_valid: true, data: {}, duplicate_review: review }],
+  });
+  assert.equal(buildDefaultDuplicateDecisions(result)["2"].action, "skip");
+  assert.equal(buildDuplicateDecision(review, "create").action, "skip");
+  assert.equal(
+    describeDuplicateCandidate(review.candidates[0]),
+    "Already in Koaryu as Testformer Fixturequill (member ID 00042)",
+  );
+  assert.equal(
+    describeDuplicateCandidate({ ...review.candidates[0], student_id: null, of_row: 2 }),
+    "Same member ID as row 2 (member ID 00042)",
+  );
+});
+
+it("rejects source IDs above 120 characters in both preview planners", () => {
+  const rows = [
+    { "First Name": "Testava", "Last Name": "Fixturequill", "Member ID": ` ${"x".repeat(121)} ` },
+  ];
+  const mapping = autoMap(Object.keys(rows[0]));
+  const result = buildPreviewValidationResult(
+    rows,
+    mapping,
+    DEFAULT_PREVIEW_OPTIONS,
+    splitCsvImportFullName,
+  );
+  assert.equal(result.error_rows, 1);
+  assert.equal(result.rows[0].issues[0].code, "source_id_too_long");
+  assert.equal(result.rows[0].data.source_id.length, 121);
+  const store = buildPreviewStudentImportResult({
+    rows,
+    mapping,
+    options: DEFAULT_PREVIEW_OPTIONS,
+    programs: [],
+    beltLadders: [],
+    fallbackRanks: [],
+    existingStudents: [],
+    idFactory: () => "synthetic",
+  });
+  assert.equal(store.result.error_rows, 1);
+  assert.equal(store.result.rows[0].issues[0].code, "source_id_too_long");
+});
+
+it("counts non-BMP member IDs as characters at the 120-character boundary", () => {
+  for (const length of [120, 121]) {
+    const rows = [
+      { "First Name": "Testava", "Last Name": "Fixturequill", "Member ID": "𠮷".repeat(length) },
+    ];
+    const mapping = autoMap(Object.keys(rows[0]));
+    const result = buildPreviewValidationResult(
+      rows,
+      mapping,
+      DEFAULT_PREVIEW_OPTIONS,
+      splitCsvImportFullName,
+    );
+    assert.equal(result.error_rows, length === 121 ? 1 : 0);
+    const store = buildPreviewStudentImportResult({
+      rows,
+      mapping,
+      options: DEFAULT_PREVIEW_OPTIONS,
+      programs: [],
+      beltLadders: [],
+      fallbackRanks: [],
+      existingStudents: [],
+      idFactory: () => "synthetic",
+    });
+    assert.equal(store.result.error_rows, length === 121 ? 1 : 0);
+  }
+});

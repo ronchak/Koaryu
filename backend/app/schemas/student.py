@@ -282,6 +282,7 @@ class CsvImportDuplicateCandidate(BaseModel):
     never leave the server through this payload.
     """
 
+    source_id: Optional[str] = None
     student_id: Optional[str] = None
     of_row: Optional[int] = None
     display_name: str
@@ -299,6 +300,7 @@ class CsvImportGuardianOutcome(BaseModel):
 
 
 class CsvImportDuplicateReview(BaseModel):
+    skip_only: bool = False
     guardian_outcome: Optional[CsvImportGuardianOutcome] = None
     candidates: list[CsvImportDuplicateCandidate] = Field(
         default_factory=list, description="Strongest candidates first; display may be capped."
@@ -388,6 +390,7 @@ class CsvParseResponse(BaseModel):
 
 
 class CsvImportOptions(BaseModel):
+    source_system: str = Field(default="csv", min_length=1, max_length=120, pattern=r"\S")
     create_missing_programs: bool = False
     create_missing_belts: bool = False
     import_without_unresolved_belt: bool = True

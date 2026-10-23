@@ -35,7 +35,21 @@ def is_payment_status_header(header: str) -> bool:
     )
 
 
+# Priority is across the whole header row, independent of column order.
+SOURCE_ID_ALIASES = (
+    "Student ID",
+    "Member ID",
+    "Member #",
+    "Member Number",
+    "Legacy Account #",
+    "Account #",
+    "Account Number",
+    "ID",
+)
+SOURCE_ID_PRIORITY = {compact_header(alias): rank for rank, alias in enumerate(SOURCE_ID_ALIASES)}
+
 RAW_CSV_FIELD_ALIASES: dict[str, str] = {
+    **{alias: "source_id" for alias in SOURCE_ID_ALIASES},
     "first name": "legal_first_name",
     "first_names": "legal_first_name",
     "student first name": "legal_first_name",
@@ -274,3 +288,14 @@ def auto_map_csv_header(header: str) -> str:
         return COMPACT_CSV_FIELD_ALIASES[compacted]
 
     return infer_csv_field_from_tokens(set(normalized.split()))
+
+
+def auto_map_csv_headers(headers: list[str]) -> dict[str, str]:
+    mapping = {header: auto_map_csv_header(header) for header in headers}
+    candidates = [header for header in headers if mapping[header] == "source_id"]
+    if candidates:
+        selected = min(candidates, key=lambda header: SOURCE_ID_PRIORITY[compact_header(header)])
+        for header in candidates:
+            if header != selected:
+                mapping[header] = ""
+    return mapping

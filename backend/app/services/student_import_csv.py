@@ -16,6 +16,7 @@ from app.core.upload_limits import (
 from app.schemas.student import CsvImportIssue, STUDENT_STATUSES
 from app.services.student_import_headers import (
     auto_map_csv_header,
+    auto_map_csv_headers,
     is_payment_status_header,
     normalize_header,
 )
@@ -74,6 +75,7 @@ COMMON_IMPORT_DATE_FORMATS = (
 )
 CSV_IMPORT_ENCODINGS = ("utf-8-sig", "cp1252")
 CSV_IMPORT_TARGET_FIELDS = {
+    "source_id",
     "full_name",
     "legal_first_name",
     "legal_last_name",

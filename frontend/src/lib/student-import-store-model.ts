@@ -123,7 +123,7 @@ function buildMappedImportRow(
       mapped.notes = [mapped.notes, `${csvCol}: ${row[csvCol]}`].filter(Boolean).join("\n");
       continue;
     }
-    mapped[koaryuField] = row[csvCol];
+    mapped[koaryuField] = koaryuField === "source_id" ? row[csvCol].trim() : row[csvCol];
   }
 
   return mapped;
@@ -290,6 +290,15 @@ export function buildPreviewStudentImportResult({
   for (const [index, row] of rows.entries()) {
     const mapped = buildMappedImportRow(row, mapping, targetCounts);
     const rowIssues: PreviewImportRowIssue[] = [];
+    if (mapped.source_id && Array.from(mapped.source_id).length > 120) {
+      rowIssues.push({
+        code: "source_id_too_long",
+        severity: "error",
+        field: "source_id",
+        message: "Member ID must be 120 characters or fewer.",
+        value: mapped.source_id,
+      });
+    }
     const parsedBirthDate = mapped.date_of_birth
       ? parseStudentImportBirthDate(mapped.date_of_birth)
       : undefined;

@@ -23,6 +23,7 @@ export const KOARYU_FIELDS: { value: string; label: string; required?: boolean }
   { value: "full_name", label: "Full Name" },
   { value: "legal_first_name", label: "First Name", required: true },
   { value: "legal_last_name", label: "Last Name", required: true },
+  { value: "source_id", label: "Member ID from your old system" },
   { value: "preferred_name", label: "Preferred Name" },
   { value: "date_of_birth", label: "Date of Birth" },
   { value: "email", label: "Email" },
@@ -51,6 +52,7 @@ export const REQUIRED_FIELDS = KOARYU_FIELDS.filter((field) => field.required).m
 );
 
 export const DEFAULT_IMPORT_OPTIONS: CsvImportOptions = {
+  source_system: "csv",
   create_missing_programs: false,
   create_missing_belts: false,
   import_without_unresolved_belt: true,
@@ -165,10 +167,19 @@ export function buildPreviewValidationResult(
         mapped.notes = [existingNotes, `${csvCol}: ${row[csvCol]}`].filter(Boolean).join("\n");
         return;
       }
-      mapped[koaryuField] = row[csvCol];
+      mapped[koaryuField] = koaryuField === "source_id" ? row[csvCol].trim() : row[csvCol];
     });
 
     const issues: CsvImportResult["rows"][number]["issues"] = [];
+    if (typeof mapped.source_id === "string" && Array.from(mapped.source_id).length > 120) {
+      issues.push({
+        code: "source_id_too_long",
+        severity: "error",
+        field: "source_id",
+        message: "Member ID must be 120 characters or fewer.",
+        value: mapped.source_id,
+      });
+    }
     const rawStatus = typeof mapped.status === "string" ? mapped.status.trim().toLowerCase() : "";
     const statusValue = typeof mapped.status === "string" ? mapped.status : "";
 
@@ -318,7 +329,7 @@ export function getDuplicateReviewRows(result: CsvImportResult): DuplicateReview
         review,
         primary,
         needsChoice,
-        decisionRequired: needsChoice && review.suggested_action === "decide",
+        decisionRequired: needsChoice && !review.skip_only && review.suggested_action === "decide",
       };
     })
     .sort((left, right) => left.rowNumber - right.rowNumber);
@@ -354,7 +365,7 @@ export function buildDuplicateDecision(
     (candidate) => candidate.student_id && candidate.confidence !== "different_person",
   );
   return {
-    action,
+    action: review.skip_only ? "skip" : action,
     matched_student_id: existing?.student_id ?? null,
     of_row: inFile?.of_row ?? null,
     acknowledged_student_ids: [...(review.acknowledge_student_ids ?? [])],
@@ -366,7 +377,8 @@ export function buildDefaultDuplicateDecisions(result: CsvImportResult): Duplica
   const decisions: DuplicateDecisionMap = {};
   for (const row of getDuplicateReviewRows(result)) {
     if (!row.needsChoice || row.decisionRequired) continue;
-    const action = row.review.suggested_action === "skip" ? "skip" : "create";
+    const action =
+      row.review.skip_only || row.review.suggested_action === "skip" ? "skip" : "create";
     decisions[String(row.rowNumber)] = buildDuplicateDecision(row.review, action);
   }
   return decisions;
@@ -440,6 +452,11 @@ export function getImportActionState(
 }
 
 export function describeDuplicateCandidate(candidate: CsvImportDuplicateCandidate): string {
+  if (candidate.source_id) {
+    return candidate.of_row != null
+      ? `Same member ID as row ${candidate.of_row} (member ID ${candidate.source_id})`
+      : `Already in Koaryu as ${candidate.display_name} (member ID ${candidate.source_id})`;
+  }
   const where = candidate.of_row != null ? `row ${candidate.of_row}, ` : "";
   const reasons = candidate.reasons.length > 0 ? ` · ${candidate.reasons.join(", ")}` : "";
   return `${where}${candidate.display_name}${reasons}`;
@@ -829,6 +846,17 @@ function inferFieldFromTokens(tokens: Set<string>): string {
   return "";
 }
 
+const SOURCE_ID_ALIASES = [
+  "Student ID",
+  "Member ID",
+  "Member #",
+  "Member Number",
+  "Legacy Account #",
+  "Account #",
+  "Account Number",
+  "ID",
+];
+
 export function autoMap(headers: string[]): Record<string, string> {
   const mapping: Record<string, string> = {};
   headers.forEach((header) => {
@@ -838,6 +866,14 @@ export function autoMap(headers: string[]): Record<string, string> {
     const inferredMatch = inferFieldFromTokens(new Set(normalized.split(/\s+/).filter(Boolean)));
     mapping[header] = aliasMatch ?? compactMatch ?? inferredMatch ?? "";
   });
+  const sourceHeader = SOURCE_ID_ALIASES.map((alias) =>
+    headers.find((header) => compactHeader(header) === compactHeader(alias)),
+  ).find((header) => header !== undefined);
+  for (const header of headers) {
+    if (SOURCE_ID_ALIASES.some((alias) => compactHeader(header) === compactHeader(alias))) {
+      mapping[header] = header === sourceHeader ? "source_id" : "";
+    }
+  }
   return mapping;
 }
 

@@ -884,3 +884,91 @@ def test_the_best_match_stays_on_screen_when_archived_matches_fill_the_cap():
     )
     assert unacknowledged_candidates(match, decision) == []
     assert skip_target(match, decision) == ("existing", "active")
+
+
+@pytest.mark.parametrize("archived", [False, True])
+def test_source_id_outranks_name_and_defaults_to_skip_even_when_archived(archived):
+    rows = [
+        planned(
+            2,
+            legal_first_name="Testnew",
+            legal_last_name="Fixture",
+            date_of_birth="2014-01-01",
+            source_system="csv",
+            source_id="00042",
+        )
+    ]
+    roster = [
+        existing("name", "Testnew", "Fixture", date_of_birth="2014-01-01"),
+        existing(
+            "id", "Testformer", "Other", source_system="csv", source_id="00042", archived=archived
+        ),
+    ]
+    match = match_rows(rows, roster)[0]
+    assert match.of_existing_key == "id"
+    assert match.reasons == (["source_id", "strong"] if archived else ["source_id"])
+    review = build_duplicate_review(match)
+    assert review["skip_only"] and review["suggested_action"] == "skip"
+    assert review["candidates"][0]["source_id"] == "00042"
+
+
+@pytest.mark.parametrize(
+    "other_system,other_id", [("different", "00042"), ("csv", "other"), (None, None)]
+)
+def test_differing_source_identity_preserves_name_rules(other_system, other_id):
+    row = planned(
+        2,
+        legal_first_name="Testava",
+        legal_last_name="Fixture",
+        date_of_birth="2014-01-01",
+        source_system="csv",
+        source_id="00042",
+    )
+    other = existing(
+        "s1",
+        "Testava",
+        "Fixture",
+        date_of_birth="2014-01-01",
+        source_system=other_system,
+        source_id=other_id,
+    )
+    match = match_rows([row], [other])[0]
+    assert match.reasons == ["name", "date_of_birth"] and not match.skip_only
+
+
+def test_source_id_bounded_index_earliest_reference_fallback_and_invalid_targets():
+    from app.services.student_import_matching import MATCH_BUCKET_CAP, candidate_for_reference
+
+    rows = [
+        planned(
+            n,
+            legal_first_name=f"Test{n}",
+            legal_last_name="Fixture",
+            source_system="csv",
+            source_id="same",
+        )
+        for n in range(2, MATCH_BUCKET_CAP + 10)
+    ]
+    matches = match_rows(rows, [])
+    assert matches[-1].of_row == 2 and matches[-1].reasons == ["source_id"]
+    assert len(matches[-1].candidates) <= MATCH_BUCKET_CAP
+    fallback = candidate_for_reference(matches[-1], ("row", rows[-2]["row_number"]))
+    assert fallback.reasons == ["source_id"]
+    rows[0]["is_valid"] = False
+    assert match_rows(rows, [])[1].duplicate_class == "none"
+
+
+def test_source_id_roster_overflow_blocks_different_names():
+    row = planned(
+        2,
+        legal_first_name="Testnew",
+        legal_last_name="Fixture",
+        source_system="csv",
+        source_id="same",
+    )
+    roster = [
+        existing(f"s{i}", f"Test{i}", "Other", source_system="csv", source_id="same", archived=True)
+        for i in range(ROSTER_MATCH_LIMIT + 1)
+    ]
+    match = match_rows([row], roster)[0]
+    assert match.roster_overflow

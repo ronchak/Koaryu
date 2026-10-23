@@ -104,3 +104,52 @@ test("student duplicate choices also display their guardian outcome", () => {
   assert.match(html, /type="radio"/);
   assert.match(html, /Choose one/);
 });
+
+for (const archived of [false, true]) {
+  test(`source ID match displays the ID and offers only Skip, archived=${archived}`, () => {
+    const html = render(
+      {
+        ...review,
+        skip_only: true,
+        suggested_action: "skip",
+        family_context: [],
+        candidates: [
+          {
+            student_id: "s1",
+            display_name: "Testformer Fixturequill",
+            source_id: "00042",
+            archived,
+            confidence: "strong",
+            reasons: ["same member ID"],
+          },
+        ],
+      },
+      { 3: { action: "skip", matched_student_id: "s1" } },
+    );
+    assert.match(html, /Already in Koaryu as Testformer Fixturequill \(member ID 00042\)/);
+    assert.match(html, /Skip, already in Koaryu/);
+    assert.equal((html.match(/type="radio"/g) || []).length, 1);
+    assert.doesNotMatch(html, /Create as a new student|Choose one/);
+    assert.match(html, /checked=""/);
+  });
+}
+
+test("in-file source ID match identifies its earlier row", () => {
+  const html = render({
+    ...review,
+    skip_only: true,
+    suggested_action: "skip",
+    family_context: [],
+    candidates: [
+      {
+        of_row: 2,
+        display_name: "Testformer Fixturequill",
+        source_id: "00042",
+        confidence: "strong",
+        reasons: ["same member ID"],
+      },
+    ],
+  });
+  assert.match(html, /Same member ID as row 2 \(member ID 00042\)/);
+  assert.doesNotMatch(html, /Create as a new student/);
+});

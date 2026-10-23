@@ -202,3 +202,14 @@ def test_finish_returns_authoritative_result_and_preserves_failure_boundary():
         "p_error_message": "x" * 1000,
     }
     assert not store.mark_failed("run", "stale", "failed")
+
+
+def test_source_system_changes_request_hash():
+    from app.services.student_import_runs import StudentImportRunStore
+
+    rows = [{"First": "Testava", "ID": "00042"}]
+    mapping = {"First": "legal_first_name", "ID": "source_id"}
+    first = StudentImportRunStore.compute_request_hash(rows, mapping, CsvImportOptions())
+    assert first != StudentImportRunStore.compute_request_hash(
+        rows, mapping, CsvImportOptions(source_system="old-roster")
+    )

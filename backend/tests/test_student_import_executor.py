@@ -389,6 +389,7 @@ def test_preview_flags_existing_and_in_file_duplicates_with_plain_reasons_only()
     reviews = {row.row_number: row.duplicate_review for row in preview.rows}
     assert reviews[2].suggested_action == "skip"
     assert reviews[2].candidates[0].model_dump() == {
+        "source_id": None,
         "student_id": EXISTING,
         "of_row": None,
         "display_name": "Ava Nguyen",
@@ -1592,3 +1593,78 @@ def test_completed_skip_stays_an_in_file_target_and_retains_x_on_retry():
     assert skip["p_row_number"] == 3
     assert skip["p_result"]["retained_id_or_row"] == x
     assert result.skipped_rows == 2 and result.error_rows == 0
+
+
+@pytest.mark.parametrize("archived", [False, True])
+def test_source_id_preview_scoped_skip_only_and_create_refusal(archived):
+    db = ScriptedImportDb()
+    db.tables["students"] = [
+        existing_student(
+            source_system="csv",
+            source_id="00042",
+            deleted_at="2026-01-01T00:00:00Z" if archived else None,
+            email="private@example.invalid",
+            phone="202-555-0198",
+        )
+    ]
+    mapping = {**MAPPING, "Member ID": "source_id"}
+    rows = [{"First": "Testcorrected", "Last": "Newquill", "Member ID": " 00042 "}]
+    preview = StudentService(db).validate_import_rows(rows, mapping, CsvImportOptions(), STUDIO)
+    review = preview.rows[0].duplicate_review
+    assert review.skip_only and review.suggested_action == "skip"
+    assert review.candidates[0].source_id == "00042"
+    assert "private@example.invalid" not in preview.model_dump_json()
+    assert "202-555-0198" not in preview.model_dump_json()
+    db.responses = [("claim_student_import_run_v2", claim()), ("finish_student_import_run", finish)]
+    result = asyncio.run(
+        StudentImportExecutor(db).execute_import(
+            rows,
+            mapping,
+            CsvImportOptions(),
+            STUDIO,
+            "actor",
+            "key",
+            {"2": CsvImportDuplicateDecision(action="create", matched_student_id=EXISTING)},
+        )
+    )
+    assert result.imported_count == 0 and result.error_rows == 1
+    assert result.rows[0].issues[0].code == "duplicate_review_required"
+    assert (
+        result.rows[0].issues[0].message
+        == "This member ID already belongs to Ava Nguyen. Skip this row."
+    )
+    assert not db.responses
+
+
+def test_source_id_rpc_only_when_present_and_in_file_skip():
+    db = ScriptedImportDb()
+    mapping = {**MAPPING, "Member ID": "source_id"}
+    rows = [
+        {"First": "Testava", "Last": "Fixturequill", "Program": "Karate", "Member ID": " 00042 "},
+        {"First": "Testcorrected", "Last": "Otherquill", "Member ID": "00042"},
+        {"First": "Testnew", "Last": "Thirdquill", "Program": "Karate", "Member ID": " "},
+    ]
+    db.responses = [
+        ("claim_student_import_run_v2", claim()),
+        ("prepare_student_import_program_v1", [selected_program(PROGRAM, "Karate")]),
+        ("import_student_row_atomic", row_success),
+        ("record_student_import_skip_v1", lambda p: p["p_result"]),
+        ("import_student_row_atomic", row_success),
+        ("finish_student_import_run", finish),
+    ]
+    result = asyncio.run(
+        StudentImportExecutor(db).execute_import(
+            rows,
+            mapping,
+            CsvImportOptions(source_system="old-roster"),
+            STUDIO,
+            "actor",
+            "key",
+            {"3": CsvImportDuplicateDecision(action="skip", of_row=2)},
+        )
+    )
+    assert result.imported_count == 2 and result.skipped_rows == 1 and result.error_rows == 0
+    writes = [p for name, p in db.calls if name == "import_student_row_atomic"]
+    assert writes[0]["p_source_id"] == "00042" and writes[0]["p_source_system"] == "old-roster"
+    assert "p_source_id" not in writes[1] and "p_source_system" not in writes[1]
+    assert not db.responses

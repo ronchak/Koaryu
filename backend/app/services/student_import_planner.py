@@ -183,7 +183,7 @@ class StudentImportPlanner:
                 self.supabase.table("students")
                 .select(
                     "id, legal_first_name, legal_last_name, preferred_name, date_of_birth, "
-                    "email, phone, deleted_at"
+                    "email, phone, deleted_at, source_system, source_id"
                 )
                 .eq("studio_id", studio_id)
                 .order("id")
@@ -239,6 +239,8 @@ class StudentImportPlanner:
                 "date_of_birth": row.get("date_of_birth"),
                 "email": row.get("email"),
                 "phone": row.get("phone"),
+                "source_system": row.get("source_system"),
+                "source_id": row.get("source_id"),
                 "archived": bool(row.get("deleted_at")),
                 "guardians": [
                     {

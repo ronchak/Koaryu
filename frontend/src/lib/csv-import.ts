@@ -13,7 +13,7 @@ import type {
 export type CsvImportKeyInput = {
   rowCount: number;
   mapping: Record<string, string>;
-  options: object;
+  options: object & { source_system?: string };
   contentHash: string;
   /** Duplicate decisions are part of the import identity; a changed decision is a new run. */
   decisions?: Record<string, CsvImportDuplicateDecision>;
@@ -52,7 +52,7 @@ function buildImportKeyFingerprint(params: CsvImportKeyInput) {
     rowCount,
     contentHash,
     mapping,
-    options,
+    options: { ...options, source_system: options.source_system ?? "csv" },
     // Absent decisions keep the historical key so earlier runs stay recognisable.
     ...(hasDecisions ? { decisions } : {}),
   });
