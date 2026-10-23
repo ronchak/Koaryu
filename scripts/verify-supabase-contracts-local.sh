@@ -2424,9 +2424,6 @@ echo "[V60 contract] PASS missed_class_automation_contract.sql"
 echo "[V60 readiness] PASS exact catalog, V59 compatibility and missed-class gap rules"
 
 
-echo "[concurrency] RUN billing command ownership and lock ordering"
-run_interruptible python3 "$ROOT_DIR/scripts/verify-billing-command-concurrency.py" "$PSQL" "$SOCKET_DIR" "$PG_PORT"
-
 
 echo "[V61 upgrade/restore] RUN retained V60 rows and MCP connection continuation"
 run_interruptible python3 "$ROOT_DIR/scripts/verify-v60-v61-restore-contract.py" \
@@ -2438,5 +2435,9 @@ run_interruptible "$PSQL" "${psql_args[@]}" --file="$VERIFICATION_DIR/mcp_read_c
 final_readiness="$({ cd "$ROOT_DIR"; node --input-type=module --eval "import { FINAL_OPERATIONAL_READINESS_SQL } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(FINAL_OPERATIONAL_READINESS_SQL);"; } | "$PSQL" "${psql_args[@]}" --tuples-only --no-align)"
 (cd "$ROOT_DIR" && node --input-type=module --eval "import { validateOperationalReadiness } from './scripts/studio-comp-migration-rollout.mjs'; validateOperationalReadiness(process.argv[1]);" "$final_readiness")
 echo "[V61 readiness] PASS exact MCP catalog, native token hook and V60 compatibility"
+
+# This proof consumes generated CURRENT readiness, so install V61 first.
+echo "[concurrency] RUN billing command ownership and lock ordering"
+run_interruptible python3 "$ROOT_DIR/scripts/verify-billing-command-concurrency.py" "$PSQL" "$SOCKET_DIR" "$PG_PORT"
 
 echo "PASS: $migration_total migrations and $verification_total Supabase contracts verified ($SUITE_PART part) on ephemeral PostgreSQL 17."

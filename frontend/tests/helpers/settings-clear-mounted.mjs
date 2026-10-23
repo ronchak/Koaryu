@@ -39,10 +39,11 @@ export async function mountSettings(browser, { preview = false, holdCapability =
   };
   await mountLeadCreateFixture({ newPage: async () => capture }, { preview });
   scripts.push(`f.capabilities=[];f.dataWrites=[];
-const originalGet=f.api.get;f.api.get=async(path,token)=>{if(path==='/demo/capabilities'){const read={token};f.capabilities.push(read);return ${holdCapability ? "new Promise(resolve=>read.resolve=resolve)" : "{enabled:true}"};}return originalGet(path,token);};
+const originalGet=f.api.get;f.api.get=async(path,token)=>{if(path==='/mcp/connections')return {enabled:false,server_url:null,permissions:{},connections:[]};if(path==='/demo/capabilities'){const read={token};f.capabilities.push(read);return ${holdCapability ? "new Promise(resolve=>read.resolve=resolve)" : "{enabled:true}"};}return originalGet(path,token);};
 f.api.post=(path,body,token,options)=>new Promise((resolve,reject)=>f.dataWrites.push({method:'POST',path,body,token,options,resolve,reject}));
 f.api.delete=(path,token,options)=>new Promise((resolve,reject)=>f.dataWrites.push({method:'DELETE',path,token,options,resolve,reject}));`);
   const stubs = {
+    "next/link": `exports.__esModule=true;exports.default=({children,href,prefetch,...props})=>require('react').createElement('a',{href:typeof href==='string'?href:href.pathname,...props},children);`,
     "next/navigation": `exports.usePathname=()=>'/settings';exports.useSearchParams=()=>new URLSearchParams();const router={push:p=>f.redirects.push(p),replace:p=>f.redirects.push(p)};exports.useRouter=()=>router;`,
     "@/lib/supabase/client": `exports.createClient=()=>f.supabase;`,
     "@/lib/api": `class ApiError extends Error{constructor(message,status,detail){super(message);this.status=status;this.detail=detail;}}exports.ApiError=ApiError;f.ApiError=ApiError;exports.api=f.api;exports.isSubscriptionRequiredError=e=>e?.status===402;exports.isStaffArchivedError=()=>false;`,
