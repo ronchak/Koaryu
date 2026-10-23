@@ -56,11 +56,15 @@ class StudentImportRunStore:
         options: CsvImportOptions,
         duplicate_decisions: Optional[dict[str, CsvImportDuplicateDecision]] = None,
     ) -> str:
+        serialized_options = options.model_dump(mode="json")
+        # An unset source system must preserve pre-source-ID request hashes and receipts.
+        if options.source_system is None:
+            serialized_options.pop("source_system", None)
         payload: dict[str, Any] = {
             "operation": IMPORT_RUN_OPERATION,
             "rows": rows,
             "mapping": mapping,
-            "options": options.model_dump(mode="json"),
+            "options": serialized_options,
         }
         # Decisions are part of the import identity: a changed decision is a new
         # run, never a silent mutation of an earlier one. Absent decisions keep

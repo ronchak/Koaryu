@@ -11,6 +11,7 @@ import {
   countDuplicateSkips,
   describeDuplicateCandidate,
   getDuplicateReviewRows,
+  describeGuardianOutcome,
   getImportActionState,
   hasUnresolvedDuplicateDecisions,
   formatRowNumbers,
@@ -668,4 +669,185 @@ describe("student import page model", () => {
       reason: "nothing",
     });
   });
+});
+
+it("shows guardian-only family context without a duplicate decision or skip", () => {
+  const result = {
+    valid_rows: 2,
+    total_rows: 2,
+    error_rows: 0,
+    duplicate_flagged_rows: 0,
+    rows: [
+      {
+        row_number: 2,
+        is_valid: true,
+        data: { legal_first_name: "Mina", legal_last_name: "Nguyen" },
+        issues: [],
+        duplicate_review: {
+          candidates: [],
+          family_context: ["Shares a guardian with Ava Nguyen; likely family"],
+          suggested_action: "create",
+          guardian_outcome: { kind: "link_existing", display_name: "Jordan Smith", of_row: null },
+        },
+      },
+      {
+        row_number: 3,
+        is_valid: true,
+        data: { legal_first_name: "Sam", legal_last_name: "Nguyen" },
+        issues: [],
+        duplicate_review: {
+          candidates: [],
+          family_context: [],
+          suggested_action: "create",
+          guardian_outcome: { kind: "in_file_shared", display_name: "Jordan Smith", of_row: 2 },
+        },
+      },
+    ],
+  };
+  const rows = getDuplicateReviewRows(result);
+  assert.deepEqual(
+    rows.map((r) => [r.rowNumber, r.needsChoice, r.decisionRequired]),
+    [
+      [2, false, false],
+      [3, false, false],
+    ],
+  );
+  assert.deepEqual(buildDefaultDuplicateDecisions(result), {});
+  assert.equal(hasUnresolvedDuplicateDecisions(result, {}), false);
+  assert.equal(countDuplicateSkips(result, {}), 0);
+});
+
+it("the guardian line follows the owner's choice for the row it shares a contact with", () => {
+  const shared = {
+    candidates: [],
+    family_context: [],
+    suggested_action: "create",
+    guardian_outcome: { kind: "in_file_shared", display_name: "Jordan Smith", of_row: 2 },
+  };
+  const linked = {
+    ...shared,
+    guardian_outcome: { kind: "link_existing", display_name: "Jordan Smith", of_row: null },
+  };
+  assert.equal(describeGuardianOutcome(shared), "Will share the contact from row 2");
+  assert.equal(
+    describeGuardianOutcome(shared, { 2: { action: "create" } }),
+    "Will share the contact from row 2",
+  );
+  assert.equal(
+    describeGuardianOutcome(shared, { 2: { action: "skip" } }),
+    "A separate contact will be created because row 2 is skipped",
+  );
+  assert.equal(
+    describeGuardianOutcome(linked, { 2: { action: "skip" } }),
+    "Will be linked to the existing contact Jordan Smith",
+  );
+  assert.equal(describeGuardianOutcome({ ...shared, guardian_outcome: null }), null);
+});
+
+it("auto-maps exactly the highest priority ID alias and preserves other mappings", () => {
+  const aliases = [
+    "Student ID",
+    "Member ID",
+    "Member #",
+    "Member Number",
+    "Legacy Account #",
+    "Account #",
+    "Account Number",
+    "ID",
+  ];
+  const other = ["First Name", "Last Name", "Email", "Student Email", "Account Status"];
+  const unchanged = autoMap(other);
+  for (let i = 0; i < aliases.length; i++) {
+    const remaining = aliases.slice(i).reverse();
+    const mapping = autoMap([...remaining, ...other]);
+    assert.equal(mapping[aliases[i]], "source_id");
+    assert.equal(Object.values(mapping).filter((target) => target === "source_id").length, 1);
+    for (const header of other) assert.equal(mapping[header], unchanged[header]);
+  }
+});
+
+it("defaults source ID matches to Skip and prevents model Create decisions", () => {
+  const review = {
+    skip_only: true,
+    suggested_action: "skip",
+    family_context: [],
+    candidates: [
+      {
+        student_id: "s1",
+        display_name: "Testformer Fixturequill",
+        source_id: "00042",
+        confidence: "strong",
+        reasons: ["same member ID"],
+      },
+    ],
+  };
+  const result = importResult({
+    valid_rows: 1,
+    rows: [{ row_number: 2, is_valid: true, data: {}, duplicate_review: review }],
+  });
+  assert.equal(buildDefaultDuplicateDecisions(result)["2"].action, "skip");
+  assert.equal(buildDuplicateDecision(review, "create").action, "skip");
+  assert.equal(
+    describeDuplicateCandidate(review.candidates[0]),
+    "Already in Koaryu as Testformer Fixturequill (member ID 00042)",
+  );
+  assert.equal(
+    describeDuplicateCandidate({ ...review.candidates[0], student_id: null, of_row: 2 }),
+    "Same member ID as row 2 (member ID 00042)",
+  );
+});
+
+it("rejects source IDs above 120 characters in both preview planners", () => {
+  const rows = [
+    { "First Name": "Testava", "Last Name": "Fixturequill", "Member ID": ` ${"x".repeat(121)} ` },
+  ];
+  const mapping = autoMap(Object.keys(rows[0]));
+  const result = buildPreviewValidationResult(
+    rows,
+    mapping,
+    DEFAULT_PREVIEW_OPTIONS,
+    splitCsvImportFullName,
+  );
+  assert.equal(result.error_rows, 1);
+  assert.equal(result.rows[0].issues[0].code, "source_id_too_long");
+  assert.equal(result.rows[0].data.source_id.length, 121);
+  const store = buildPreviewStudentImportResult({
+    rows,
+    mapping,
+    options: DEFAULT_PREVIEW_OPTIONS,
+    programs: [],
+    beltLadders: [],
+    fallbackRanks: [],
+    existingStudents: [],
+    idFactory: () => "synthetic",
+  });
+  assert.equal(store.result.error_rows, 1);
+  assert.equal(store.result.rows[0].issues[0].code, "source_id_too_long");
+});
+
+it("counts non-BMP member IDs as characters at the 120-character boundary", () => {
+  for (const length of [120, 121]) {
+    const rows = [
+      { "First Name": "Testava", "Last Name": "Fixturequill", "Member ID": "𠮷".repeat(length) },
+    ];
+    const mapping = autoMap(Object.keys(rows[0]));
+    const result = buildPreviewValidationResult(
+      rows,
+      mapping,
+      DEFAULT_PREVIEW_OPTIONS,
+      splitCsvImportFullName,
+    );
+    assert.equal(result.error_rows, length === 121 ? 1 : 0);
+    const store = buildPreviewStudentImportResult({
+      rows,
+      mapping,
+      options: DEFAULT_PREVIEW_OPTIONS,
+      programs: [],
+      beltLadders: [],
+      fallbackRanks: [],
+      existingStudents: [],
+      idFactory: () => "synthetic",
+    });
+    assert.equal(store.result.error_rows, length === 121 ? 1 : 0);
+  }
 });

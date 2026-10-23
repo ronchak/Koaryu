@@ -394,6 +394,7 @@ class StudentImportCsvParsingTests(unittest.TestCase):
             "stress_billing_style.csv": {
                 "mapped": {
                     "Full Student Name": "full_name",
+                    "Legacy Account #": "source_id",
                     "Program Track": "program_id",
                     "Belt/Rank": "current_belt_rank_id",
                     "Parent 1 Mobile": "guardian_phone",
@@ -406,7 +407,6 @@ class StudentImportCsvParsingTests(unittest.TestCase):
                     "Payment Status",
                     "Monthly Fee",
                     "Last Paid",
-                    "Legacy Account #",
                     "Parent 1",
                 },
             },

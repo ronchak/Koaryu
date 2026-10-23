@@ -227,8 +227,8 @@ if [[ ${#verification_files[@]} -eq 0 ]]; then
   echo "ERROR: No contract files found in $VERIFICATION_DIR" >&2
   exit 1
 fi
-if [[ ${#migration_files[@]} -ne 155 ]]; then
-  echo "ERROR: Expected the canonical 155-migration chain, found ${#migration_files[@]}." >&2
+if [[ ${#migration_files[@]} -ne 156 ]]; then
+  echo "ERROR: Expected the canonical 156-migration chain, found ${#migration_files[@]}." >&2
   exit 1
 fi
 if [[ ${#verification_files[@]} -ne 77 ]]; then
@@ -961,7 +961,29 @@ SQL
 done
 
 if [[ "$SUITE_PART" == history ]]; then
-  echo "PASS: history part verified every released-predecessor restore proof through V56 on ephemeral PostgreSQL 17."
+  # The component/race path below intentionally starts at V56. Bring only this
+  # owned history database forward so the V60 and V61 restores remain reachable.
+  for history_migration in \
+    20261005105341_automation_workflow_graph_v57.sql \
+    20261013013243_live_billing_authority_repairs_v58.sql \
+    20261014083106_timezone_names_reference_v59.sql; do
+    history_version="${history_migration%%_*}"
+    history_name="${history_migration#*_}"
+    history_name="${history_name%.sql}"
+    run_interruptible "$PSQL" "${psql_args[@]}" --single-transaction \
+      --file="$MIGRATION_DIR/$history_migration" \
+      --command="INSERT INTO supabase_migrations.schema_migrations(version,name) VALUES('$history_version','$history_name');"
+  done
+  echo "[V60 history upgrade/restore] RUN retained V59 rows and missed-class gap continuation"
+  run_interruptible python3 "$ROOT_DIR/scripts/verify-v59-v60-restore-contract.py" \
+    "$PG_DUMP" "$PG_RESTORE" "$CREATEDB" "$PSQL" "$SOCKET_DIR" "$PG_PORT" "$TEMP_DIR" "$ROOT_DIR"
+  run_interruptible "$PSQL" "${psql_args[@]}" --single-transaction \
+    --file="$MIGRATION_DIR/20261021093000_missed_class_gap_guards_v60.sql" \
+    --command="INSERT INTO supabase_migrations.schema_migrations(version,name) VALUES('20261021093000','missed_class_gap_guards_v60');"
+  echo "[V61 history upgrade/restore] RUN retained V60 import rows and provenance/replay continuation"
+  run_interruptible python3 "$ROOT_DIR/scripts/verify-v60-v61-restore-contract.py" \
+    "$PG_DUMP" "$PG_RESTORE" "$CREATEDB" "$PSQL" "$SOCKET_DIR" "$PG_PORT" "$TEMP_DIR" "$ROOT_DIR"
+  echo "PASS: history part verified released-predecessor restore proofs through V56 and the V60/V61 proofs on ephemeral PostgreSQL 17."
   exit 0
 fi
 
@@ -2404,14 +2426,16 @@ echo "[V59 readiness] PASS exact catalog, V58 compatibility and timezone behavio
 echo "[V59 timing] RUN old catalog predicate and cached lookup"
 run_interruptible "$PSQL" "${psql_args[@]}" --command="EXPLAIN ANALYZE SELECT 1 FROM pg_catalog.pg_timezone_names WHERE name='America/Los_Angeles'; EXPLAIN ANALYZE SELECT private.timezone_name_known('America/Los_Angeles');"
 
-echo "[V60 upgrade/restore] RUN retained V59 rows and missed-class gap continuation"
-run_interruptible python3 "$ROOT_DIR/scripts/verify-v59-v60-restore-contract.py" \
-  "$PG_DUMP" "$PG_RESTORE" "$CREATEDB" "$PSQL" "$SOCKET_DIR" "$PG_PORT" "$TEMP_DIR" "$ROOT_DIR"
+if part_enabled history; then
+  echo "[V60 upgrade/restore] RUN retained V59 rows and missed-class gap continuation"
+  run_interruptible python3 "$ROOT_DIR/scripts/verify-v59-v60-restore-contract.py" \
+    "$PG_DUMP" "$PG_RESTORE" "$CREATEDB" "$PSQL" "$SOCKET_DIR" "$PG_PORT" "$TEMP_DIR" "$ROOT_DIR"
+fi
 run_interruptible "$PSQL" "${psql_args[@]}" --single-transaction \
   --file="$MIGRATION_DIR/20261021093000_missed_class_gap_guards_v60.sql" \
   --command="INSERT INTO supabase_migrations.schema_migrations(version,name) VALUES('20261021093000','missed_class_gap_guards_v60');"
-final_readiness="$({ cd "$ROOT_DIR"; node --input-type=module --eval "import { FINAL_OPERATIONAL_READINESS_SQL } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(FINAL_OPERATIONAL_READINESS_SQL);"; } | "$PSQL" "${psql_args[@]}" --tuples-only --no-align)"
-(cd "$ROOT_DIR" && node --input-type=module --eval "import { validateOperationalReadiness } from './scripts/studio-comp-migration-rollout.mjs'; validateOperationalReadiness(process.argv[1]);" "$final_readiness")
+v60_readiness="$({ cd "$ROOT_DIR"; node --input-type=module --eval "import { V60_OPERATIONAL_READINESS_SQL } from './scripts/release-attestation/generated-readiness.mjs'; process.stdout.write(V60_OPERATIONAL_READINESS_SQL);"; } | "$PSQL" "${psql_args[@]}" --tuples-only --no-align)"
+(cd "$ROOT_DIR" && node --input-type=module --eval "import assert from 'node:assert/strict'; import { EXPECTED_V60_OPERATIONAL_READINESS } from './scripts/release-attestation/generated-readiness.mjs'; assert.equal(process.argv[1], EXPECTED_V60_OPERATIONAL_READINESS);" "$v60_readiness")
 v59_compatibility="$({ cd "$ROOT_DIR"; node --input-type=module --eval "import { V59_OPERATIONAL_READINESS_SQL } from './scripts/studio-comp-migration-rollout.mjs'; process.stdout.write(V59_OPERATIONAL_READINESS_SQL);"; } | "$PSQL" "${psql_args[@]}" --tuples-only --no-align)"
 (cd "$ROOT_DIR" && node --input-type=module --eval "import assert from 'node:assert/strict'; import { EXPECTED_V59_OPERATIONAL_READINESS } from './scripts/studio-comp-migration-rollout.mjs'; assert.equal(process.argv[1], EXPECTED_V59_OPERATIONAL_READINESS);" "$v59_compatibility")
 echo "[V60 compatibility] PASS installed V40 returns exact V59 success rows"
@@ -2419,6 +2443,21 @@ echo "[V60 contract] RUN missed_class_automation_contract.sql"
 run_interruptible "$PSQL" "${psql_args[@]}" --file="$VERIFICATION_DIR/missed_class_automation_contract.sql"
 echo "[V60 contract] PASS missed_class_automation_contract.sql"
 echo "[V60 readiness] PASS exact catalog, V59 compatibility and missed-class gap rules"
+
+
+echo "[V61 upgrade/restore] RUN retained V60 import rows and provenance/replay continuation"
+run_interruptible python3 "$ROOT_DIR/scripts/verify-v60-v61-restore-contract.py" \
+  "$PG_DUMP" "$PG_RESTORE" "$CREATEDB" "$PSQL" "$SOCKET_DIR" "$PG_PORT" "$TEMP_DIR" "$ROOT_DIR"
+run_interruptible "$PSQL" "${psql_args[@]}" --single-transaction \
+  --file="$MIGRATION_DIR/20261022190000_student_import_identity_guard_v61.sql" \
+  --command="INSERT INTO supabase_migrations.schema_migrations(version,name) VALUES('20261022190000','student_import_identity_guard_v61');"
+v61_readiness="$({ cd "$ROOT_DIR"; node --input-type=module --eval "import { V61_OPERATIONAL_READINESS_SQL } from './scripts/release-attestation/generated-readiness.mjs'; process.stdout.write(V61_OPERATIONAL_READINESS_SQL);"; } | "$PSQL" "${psql_args[@]}" --tuples-only --no-align)"
+(cd "$ROOT_DIR" && node --input-type=module --eval "import assert from 'node:assert/strict'; import { EXPECTED_V61_OPERATIONAL_READINESS } from './scripts/release-attestation/generated-readiness.mjs'; assert.equal(process.argv[1], EXPECTED_V61_OPERATIONAL_READINESS);" "$v61_readiness")
+run_interruptible "$PSQL" "${psql_args[@]}" --file="$VERIFICATION_DIR/student_import_row_atomic_contract.sql"
+run_interruptible "$PSQL" "${psql_args[@]}" --file="$VERIFICATION_DIR/release_ui_atomic_contract.sql"
+echo "[V61 readiness] PASS identity guard, guardian reuse, skipped receipts, legacy calls and V60 compatibility"
+echo "[import identity concurrency] RUN competing V61 imports"
+run_interruptible python3 "$ROOT_DIR/scripts/verify-student-import-identity-concurrency.py" "$PSQL" "$SOCKET_DIR" "$PG_PORT"
 
 
 echo "[concurrency] RUN billing command ownership and lock ordering"

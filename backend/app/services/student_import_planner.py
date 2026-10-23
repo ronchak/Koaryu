@@ -19,6 +19,9 @@ from app.services.student_import_ids import deterministic_import_uuid
 from app.services.student_import_matching import (
     ROSTER_MATCH_LIMIT,
     build_duplicate_review,
+    compare_guardians,
+    guardian_identity_from_row,
+    guardian_identity_from_existing,
     match_rows,
 )
 from app.services.student_import_plan_result import build_import_result
@@ -163,6 +166,7 @@ class StudentImportPlanner:
         studio_id: str,
         *,
         completed_student_ids: Optional[dict[str, int]] = None,
+        completed_guardian_ids: Optional[dict[str, Optional[str]]] = None,
     ) -> list[dict[str, Any]]:
         """Studio-scoped roster facts used only for duplicate review.
 
@@ -179,7 +183,7 @@ class StudentImportPlanner:
                 self.supabase.table("students")
                 .select(
                     "id, legal_first_name, legal_last_name, preferred_name, date_of_birth, "
-                    "email, phone, deleted_at"
+                    "email, phone, deleted_at, source_system, source_id"
                 )
                 .eq("studio_id", studio_id)
                 .order("id")
@@ -235,6 +239,8 @@ class StudentImportPlanner:
                 "date_of_birth": row.get("date_of_birth"),
                 "email": row.get("email"),
                 "phone": row.get("phone"),
+                "source_system": row.get("source_system"),
+                "source_id": row.get("source_id"),
                 "archived": bool(row.get("deleted_at")),
                 "guardians": [
                     {
@@ -250,6 +256,8 @@ class StudentImportPlanner:
             }
             if student_id in completed:
                 entry["import_row_number"] = completed[student_id]
+                if completed_guardian_ids is not None:
+                    entry["import_guardian_key"] = completed_guardian_ids.get(student_id)
             roster.append(entry)
         return roster
 
@@ -265,7 +273,10 @@ class StudentImportPlanner:
     ) -> tuple[CsvImportResult, list[dict[str, Any]]]:
         validate_csv_import_mapping(mapping)
         receipts = receipts or {}
-        unfinished = any(str(i) not in receipts.get("student", {}) for i in range(2, len(rows) + 2))
+        unfinished = any(
+            str(i) not in receipts.get("student", {}) and str(i) not in receipts.get("skipped", {})
+            for i in range(2, len(rows) + 2)
+        )
         has_birth_dates = any(
             field == "date_of_birth" and any(row.get(column) for row in rows)
             for column, field in mapping.items()
@@ -295,13 +306,32 @@ class StudentImportPlanner:
 
         planned_rows: list[dict[str, Any]] = []
         for i, raw_row in enumerate(rows, start=2):
-            completed = receipts.get("student", {}).get(str(i))
+            skipped = receipts.get("skipped", {}).get(str(i))
+            completed = receipts.get("student", {}).get(str(i)) or skipped
             if completed is not None:
                 outcome = dict(completed["outcome"])
                 outcome["issues"] = [
                     CsvImportIssue.model_validate(issue) for issue in outcome["issues"]
                 ]
                 outcome["completed"] = True
+                if skipped is not None:
+                    # A completed skip has no roster student to stand in for it.
+                    # Reconstruct only matching facts from the resent file; its
+                    # saved diagnostic and retained target remain authoritative.
+                    outcome["match_data"] = build_import_row_plan(
+                        raw_row, mapping, options=options
+                    )["data"]
+                    outcome["skipped"] = True
+                    outcome["skip_retained"] = (
+                        skipped["retained_kind"],
+                        skipped["retained_id_or_row"],
+                    )
+                elif "guardian_id" not in outcome:
+                    outcome["guardian_id"] = (
+                        deterministic_import_uuid(import_run_id, "guardian-row", str(i))
+                        if import_run_id and completed.get("guardian_imported")
+                        else None
+                    )
                 planned_rows.append(outcome)
                 continue
             row_plan = build_import_row_plan(
@@ -338,21 +368,58 @@ class StudentImportPlanner:
         roster: list[dict[str, Any]] = []
         if studio_id and self.supabase is not None:
             completed_ids: dict[str, int] = {}
+            completed_guardians: dict[str, Optional[str]] = {}
             if import_run_id:
                 for row in planned_rows:
-                    if row.get("completed"):
-                        completed_ids[
-                            deterministic_import_uuid(
-                                import_run_id, "student-row", str(row["row_number"])
-                            )
-                        ] = int(row["row_number"])
-            roster = self.build_existing_roster(studio_id, completed_student_ids=completed_ids)
+                    if row.get("completed") and not row.get("skipped"):
+                        student_id = deterministic_import_uuid(
+                            import_run_id, "student-row", str(row["row_number"])
+                        )
+                        completed_ids[student_id] = int(row["row_number"])
+                        completed_guardians[student_id] = row.get("guardian_id")
+            roster = self.build_existing_roster(
+                studio_id,
+                completed_student_ids=completed_ids,
+                completed_guardian_ids=completed_guardians,
+            )
+        guardians = {
+            guardian["key"]: guardian_identity_from_existing(guardian)
+            for entry in roster
+            for guardian in entry.get("guardians", [])
+        }
         matches = {match.row_number: match for match in match_rows(planned_rows, roster)}
+        retained_guardians = {}
         for row in planned_rows:
             if row.get("completed"):
+                if not row.get("skipped"):
+                    row["guardian_identity"] = guardians.get(row.get("guardian_id"))
+                    retained_guardians[int(row["row_number"])] = row["guardian_identity"]
                 continue
             match = matches[int(row["row_number"])]
             row["match"] = match
+            retained = None
+            if match.guardian_class == "link_existing":
+                retained = guardians.get(match.guardian_of_existing_key)
+                row["guardian_identity"] = retained
+            elif match.guardian_class == "in_file_shared":
+                retained = retained_guardians.get(match.guardian_of_row)
+                comparison = (
+                    compare_guardians(guardian_identity_from_row(row["data"]), retained)
+                    if retained is not None
+                    else None
+                )
+                if not comparison or comparison[0] != "link":
+                    # The CSV match is not transitive through a linked contact.
+                    # Preview the same separate-contact fallback as execution.
+                    match.guardian_class = "separate_contact"
+                    match.guardian_candidates[0].strength = "separate"
+                    retained = None
+            if row["is_valid"]:
+                retained_guardians[int(row["row_number"])] = retained or (
+                    guardian_identity_from_row(row["data"])
+                    if (row["data"].get("guardian_name") or "").strip()
+                    else None
+                )
             row["duplicate_review"] = build_duplicate_review(match)
             if match.roster_overflow and row["is_valid"]:
                 row["issues"].append(

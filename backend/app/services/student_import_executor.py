@@ -3,12 +3,16 @@ from typing import Any, Optional
 
 from fastapi import HTTPException, status
 from supabase import Client
+from postgrest.exceptions import APIError as PostgrestAPIError
 
 from app.schemas.student import CsvImportDuplicateDecision, CsvImportOptions, CsvImportResult
 from app.services.student_import_csv import make_import_issue
 from app.services.student_import_ids import deterministic_import_uuid
 from app.services.student_import_matching import (
     candidate_for_reference,
+    compare_guardians,
+    guardian_identity_from_row,
+    named_references,
     skip_target,
     unacknowledged_candidates,
 )
@@ -68,8 +72,8 @@ class StudentImportExecutor:
             # The roster is read again here, at execution start, so decisions
             # are honoured only against students that still exist and strong
             # matches that appeared since preview are refused, not created.
-            # Residual window: a student created concurrently after this point
-            # is not seen; the A2 migration closes that inside the row RPC.
+            # The row RPC checks concurrent same-spelling strong matches again
+            # under the database identity lock before writing.
             _, planned_rows = self.planner.prepare_import(
                 rows,
                 mapping,
@@ -79,6 +83,8 @@ class StudentImportExecutor:
                 import_run_id=import_run["id"],
             )
             self._apply_duplicate_decisions(planned_rows, decisions)
+            for row in planned_rows:
+                row["decision"] = decisions.get(str(row["row_number"]))
             self.setup_writer.prepare(
                 planned_rows,
                 studio_id=studio_id,
@@ -206,7 +212,10 @@ class StudentImportExecutor:
         for row in planned_rows:
             row_number = int(row["row_number"])
             if row.get("completed"):
-                outcomes[row_number] = {"state": "imported", "retained": ("row", row_number)}
+                outcomes[row_number] = {
+                    "state": "skipped" if row.get("skipped") else "imported",
+                    "retained": row.get("skip_retained", ("row", row_number)),
+                }
                 continue
             if not row["is_valid"]:
                 outcomes[row_number] = {"state": "rejected", "retained": None}
@@ -215,6 +224,13 @@ class StudentImportExecutor:
             decision = decisions.get(str(row_number))
             if match is None:
                 outcomes[row_number] = {"state": "imported", "retained": ("row", row_number)}
+                continue
+            if match.skip_only and (decision is None or decision.action != "skip"):
+                StudentImportExecutor._refuse(
+                    row,
+                    f"This member ID already belongs to {match.candidates[0].display_name}. Skip this row.",
+                )
+                outcomes[row_number] = {"state": "rejected", "retained": None}
                 continue
             unacknowledged = unacknowledged_candidates(match, decision)
             if unacknowledged:
@@ -285,7 +301,12 @@ class StudentImportExecutor:
         }
         for row in planned_rows:
             retained = row.get("skip_retained")
-            if not row.get("skipped") or not retained or retained[0] != "row":
+            if (
+                row.get("completed")
+                or not row.get("skipped")
+                or not retained
+                or retained[0] != "row"
+            ):
                 continue
             if retained[1] in valid_rows:
                 continue
@@ -308,20 +329,100 @@ class StudentImportExecutor:
         imported = 0
         imported_without_belt = 0
         skipped = 0
+        imported_rows = {
+            int(row["row_number"])
+            for row in planned_rows
+            if row.get("completed") and not row.get("skipped")
+        }
+        guardian_ids: dict[int, Optional[str]] = {
+            int(row["row_number"]): row.get("guardian_id")
+            for row in planned_rows
+            if row.get("completed") and not row.get("skipped")
+        }
+
+        guardian_identities = {
+            int(row["row_number"]): row.get("guardian_identity")
+            for row in planned_rows
+            if row.get("completed") and not row.get("skipped")
+        }
 
         for row in planned_rows:
             if not row["is_valid"]:
                 continue
+            number = int(row["row_number"])
             if row.get("completed"):
-                imported += 1
-                imported_without_belt += int(row["imported_without_belt"])
+                if row.get("skipped"):
+                    skipped += 1
+                else:
+                    imported += 1
+                    imported_without_belt += int(row["imported_without_belt"])
+                    imported_rows.add(number)
+                    guardian_ids[number] = row.get("guardian_id")
                 continue
             if row.get("skipped"):
+                retained = row["skip_retained"]
+                if retained[0] == "row" and retained[1] not in imported_rows:
+                    row["skipped"] = False
+                    row["issues"] = [i for i in row["issues"] if i.code != "duplicate_skipped"]
+                    self._refuse(
+                        row,
+                        f"This row was set to skip as a repeat of row {retained[1]}, but that row was not imported. Review both rows and choose again.",
+                    )
+                    continue
+                result = {
+                    "action": "skip",
+                    "retained_kind": retained[0],
+                    "retained_id_or_row": retained[1],
+                    "outcome": {
+                        "row_number": number,
+                        "is_valid": True,
+                        "issues": [issue.model_dump(mode="json") for issue in row["issues"]],
+                        "data": row["data"],
+                    },
+                }
+                execute_required_rpc(
+                    self.supabase,
+                    "record_student_import_skip_v1",
+                    {
+                        "p_studio_id": studio_id,
+                        "p_import_run_id": import_run_id,
+                        "p_processing_token": processing_token,
+                        "p_row_number": number,
+                        "p_result": result,
+                    },
+                )
                 skipped += 1
                 continue
 
             mapped = dict(row["data"])
             guardian_fields = self._pop_guardian_fields(mapped)
+            match = row.get("match")
+            guardian_id = None
+            retained_guardian_identity = None
+            if match and match.guardian_class == "link_existing":
+                guardian_id = match.guardian_of_existing_key
+                retained_guardian_identity = row.get("guardian_identity")
+            elif match and match.guardian_class == "in_file_shared":
+                actual_identity = guardian_identities.get(match.guardian_of_row)
+                comparison = (
+                    compare_guardians(guardian_identity_from_row(row["data"]), actual_identity)
+                    if actual_identity is not None
+                    else None
+                )
+                if comparison and comparison[0] == "link":
+                    guardian_id = guardian_ids.get(match.guardian_of_row)
+                    retained_guardian_identity = actual_identity
+            chosen_guardian_id = guardian_id or (
+                deterministic_import_uuid(import_run_id, "guardian-row", str(number))
+                if (guardian_fields["guardian_name"] or "").strip()
+                else None
+            )
+            students, references = named_references(row.get("decision"))
+            students.update(
+                deterministic_import_uuid(import_run_id, "student-row", str(n))
+                for n in references
+                if n in imported_rows
+            )
             program_ids = [row["resolved_program_id"]]
             mapped["program_id"] = program_ids[0]
 
@@ -351,6 +452,7 @@ class StudentImportExecutor:
             # diagnostics need no duplicate profile data in their receipt.
             mapped["_import_outcome"] = {
                 "row_number": row["row_number"],
+                "guardian_id": chosen_guardian_id,
                 "is_valid": True,
                 "issues": [issue.model_dump(mode="json") for issue in row["issues"]],
                 "data": row["data"] if row["issues"] else {},
@@ -364,14 +466,34 @@ class StudentImportExecutor:
             }
             # Unknown failures abort this attempt. The same key recovers any
             # committed receipt instead of caching the failure as bad input.
-            self._import_student_row_atomic(
-                mapped=mapped,
-                studio_id=studio_id,
-                import_run_id=import_run_id,
-                processing_token=processing_token,
-                row_number=row["row_number"],
-                guardian_fields=guardian_fields,
-                program_ids=program_ids,
+            try:
+                self._import_student_row_atomic(
+                    mapped=mapped,
+                    studio_id=studio_id,
+                    import_run_id=import_run_id,
+                    processing_token=processing_token,
+                    row_number=row["row_number"],
+                    guardian_fields=guardian_fields,
+                    program_ids=program_ids,
+                    acknowledged_student_ids=sorted(students),
+                    guardian_id=guardian_id,
+                )
+            except PostgrestAPIError as exc:
+                if exc.code != "P0409":
+                    raise
+                self._refuse(
+                    row,
+                    "A matching student was added while this import was running. Review the duplicate and choose again.",
+                )
+                continue
+            imported_rows.add(number)
+            guardian_ids[number] = chosen_guardian_id
+            guardian_identities[number] = (
+                retained_guardian_identity
+                if guardian_id
+                else guardian_identity_from_row(row["data"])
+                if chosen_guardian_id
+                else None
             )
 
             imported += 1
@@ -390,6 +512,8 @@ class StudentImportExecutor:
         row_number: int,
         guardian_fields: dict[str, Any],
         program_ids: list[str],
+        acknowledged_student_ids: list[str],
+        guardian_id: Optional[str],
     ) -> str:
         result = execute_required_rpc(
             self.supabase,
@@ -405,6 +529,16 @@ class StudentImportExecutor:
                 "p_guardian_phone": guardian_fields["guardian_phone"],
                 "p_guardian_relation": guardian_fields["guardian_relation"],
                 "p_program_ids": program_ids,
+                "p_acknowledged_student_ids": acknowledged_student_ids,
+                "p_guardian_id": guardian_id,
+                **(
+                    {
+                        "p_source_system": mapped.get("source_system") or "csv",
+                        "p_source_id": mapped["source_id"],
+                    }
+                    if mapped.get("source_id")
+                    else {}
+                ),
             },
         )
         row = first_rpc_row(result) or {}

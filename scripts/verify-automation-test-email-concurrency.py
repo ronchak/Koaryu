@@ -18,7 +18,7 @@ from uuid import UUID, uuid4
 
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from local_postgres_verification import LocalPostgres, require, install_final_v57, install_final_v60
+from local_postgres_verification import LocalPostgres, require, install_final_v57, install_final_v61
 
 ROOT = Path(__file__).resolve().parents[1]
 BASE = '35561d6b8f851ea0309723637e0996a064ba4c82'
@@ -84,8 +84,8 @@ def main(args):
         readiness = install_final_v57(local, database, ROOT)
         passed('complete final catalog body security ACL overload and genuine history', readiness=readiness)
         passed('focused SQL contract', output=sql(CONTRACT.read_text()))
-        current_readiness = install_final_v60(local, database, ROOT)
-        passed('complete current V60 guard before application composition', readiness=current_readiness)
+        current_readiness = install_final_v61(local, database, ROOT)
+        passed('complete current V61 guard before application composition', readiness=current_readiness)
         installed = value(INVENTORY)
         fixtures = CONTRACT.read_text().split('-- fixture owners start.')[1].split('-- fixture owners end.')[0]
         sql('CREATE SCHEMA test_email_proof;\n' + fixtures.replace('pg_temp.', 'test_email_proof.')
@@ -119,7 +119,7 @@ def main(args):
                   'contract_sha256': hashlib.sha256(CONTRACT.read_bytes()).hexdigest(),
                   'verifier_sha256': hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
                   'cases': cases, 'diagnostics': diagnostics, 'elapsed_seconds': round(time.monotonic() - start, 3),
-                  'boundary': 'internal service/SQL/SDK/render/Graph MockTransport; verified V57 contract and complete current V60 guard',
+                  'boundary': 'internal service/SQL/SDK/render/Graph MockTransport; verified V57 contract and complete current V61 guard',
                   'cleanup': {'clone_absent': absent, 'template_unchanged': True, 'postmaster_pid': pid}}
         with evidence.open('x') as out:
             os.chmod(evidence, 0o600)

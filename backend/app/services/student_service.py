@@ -25,7 +25,7 @@ from app.schemas.student import (
 from app.services.student_bulk_actions import StudentBulkActions
 from app.services.student_crud_actions import StudentCrudActions
 from app.services.student_import_csv import (
-    auto_map_csv_header,
+    auto_map_csv_headers,
     parse_student_csv,
 )
 from app.services.student_import_executor import StudentImportExecutor
@@ -314,10 +314,7 @@ class StudentService:
 
     def auto_map_headers(self, headers: list[str]) -> dict[str, str]:
         """Return a dict mapping CSV header → Koaryu field name using known aliases."""
-        mapping: dict[str, str] = {}
-        for h in headers:
-            mapping[h] = auto_map_csv_header(h)
-        return mapping
+        return auto_map_csv_headers(headers)
 
     def validate_import_rows(
         self,

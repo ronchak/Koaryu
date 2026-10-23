@@ -1,0 +1,50 @@
+{
+  "tableProfiles": {
+    "expected": "911ef82cb6caebfd422c6361d0983ca2274a9f3716947b51df4bfcc7926669ca",
+    "restoredExpected": "f97b54e8ed453182481472a38841e917031ddcdcd36421b775e17e6178a40ce7",
+    "platformExpected": "bf4921349a0a58063aa95cd495fce9b3207ce09f8aacaa12dc812f7a84606c59",
+    "platformRestoredExpected": "50d10eefddc4b7445c4105ba8ec49132e9b692be2f5cf3c7c4c393a206c8a0b6"
+  },
+  "functionState": "2702b9c3b60cd2a185457e2c6fcba18e5577f62c61e7aff11d5524abcb4b0946",
+  "changedTableFacts": {
+    "private.student_import_receipts": [
+      "constraints"
+    ],
+    "public.guardians": [
+      "columns",
+      "constraints"
+    ],
+    "public.students": [
+      "columns",
+      "indexes",
+      "constraints"
+    ]
+  },
+  "manifestOverrides": {
+    "resource_ownership_manifest_v31": {
+      "expected": "0:ee9562e624a9c7c7814ac8efabcaa97965339c8dadc36497625a428926ba007c"
+    },
+    "operational_manifest_v12": {
+      "expected": "8ecda9b56d227a6c1116e00b9419e3959155071bafbf04638332a808e72e16f0"
+    },
+    "import_rank_manifest_v45": {
+      "expected": "0:64bf06a566a99ad423ade03ca985ce3f5e58d47fbe0e4a325d4667cfd417d602"
+    },
+    "import_rank_manifest_definition_v45": {
+      "expected": "179d8ed37d7bf557c26b183e21f2ed483df075485ff107dd8b7b6450a77a03d9"
+    }
+  },
+  "expansionSince": "712cb4b8",
+  "changedFunctionFacts": [
+    "private.import_student_row_atomic(jsonb,uuid,uuid,text,integer,text,text,text,text,uuid[],uuid[],uuid,text,text)",
+    "private.koaryu_release_student_rank_writer_manifest_v13()",
+    "private.record_student_import_skip_v1(uuid,uuid,text,integer,jsonb)",
+    "public.record_student_import_skip_v1(uuid,uuid,text,integer,jsonb)"
+  ],
+  "expansionChangedTables": [],
+  "correctionSince": "2c130ee2",
+  "correctionChangedFunctions": [
+    "private.import_student_row_atomic(jsonb,uuid,uuid,text,integer,text,text,text,text,uuid[],uuid[],uuid,text,text)",
+    "private.koaryu_release_student_rank_writer_manifest_v13()"
+  ]
+}

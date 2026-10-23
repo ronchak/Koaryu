@@ -84,3 +84,63 @@ class StudentImportHeaderTests(unittest.TestCase):
         self.assertEqual(auto_map_csv_header("Parent/Guardian Phone"), "guardian_phone")
         self.assertEqual(auto_map_csv_header("Parent Guardian Relationship"), "guardian_relation")
         self.assertEqual(auto_map_csv_header("Guardian Notes"), "notes")
+
+
+def test_source_id_alias_priority_is_independent_of_order_and_preserves_other_headers():
+    from app.services.student_import_headers import SOURCE_ID_ALIASES, auto_map_csv_headers
+
+    ordinary = ["First Name", "Last Name", "Email", "Student Email", "Account Status", "Notes"]
+    unchanged = {header: auto_map_csv_header(header) for header in ordinary}
+    for index, selected in enumerate(SOURCE_ID_ALIASES):
+        candidates = list(SOURCE_ID_ALIASES[index:])
+        for headers in (ordinary + candidates, list(reversed(candidates)) + ordinary):
+            mapping = auto_map_csv_headers(headers)
+            assert {header: mapping[header] for header in ordinary} == unchanged
+            assert mapping[selected] == "source_id"
+            assert sum(target == "source_id" for target in mapping.values()) == 1
+            assert all(mapping[header] == "" for header in candidates[1:])
+
+
+def test_source_id_manual_mapping_trim_blank_and_length_validation():
+    from app.services.student_import_headers import auto_map_csv_headers
+
+    headers = ["First Name", "Last Name", "Member ID", "Student ID"]
+    mapping = auto_map_csv_headers(headers)
+    mapping.update({"Student ID": "", "Member ID": "source_id"})
+    validate_csv_import_mapping(mapping, headers=headers)
+    for value, expected, valid in [
+        ("  00042  ", "00042", True),
+        ("  ", None, True),
+        ("x" * 120, "x" * 120, True),
+        ("x" * 121, "x" * 121, False),
+    ]:
+        plan = build_import_row_plan(
+            {"First Name": "Testava", "Last Name": "Fixturequill", "Member ID": value},
+            mapping,
+            options=CsvImportOptions(source_system="old-roster"),
+        )
+        assert plan["is_valid"] == valid
+        assert plan["data"].get("source_id") == expected
+        assert plan["data"].get("source_system") == ("old-roster" if expected else None)
+        assert [issue.code for issue in plan["issues"]] == ([] if valid else ["source_id_too_long"])
+
+
+def test_source_system_unset_is_effectively_csv_only_for_rows_with_ids():
+    for source_id in ("00042", " "):
+        plan = build_import_row_plan(
+            {"First": "Ava", "Last": "Nguyen", "ID": source_id},
+            {"First": "legal_first_name", "Last": "legal_last_name", "ID": "source_id"},
+            options=CsvImportOptions(),
+        )
+        assert plan["is_valid"]
+        assert plan["data"].get("source_system") == ("csv" if source_id.strip() else None)
+
+
+def test_optional_source_system_retains_validation_when_set():
+    import pytest
+    from pydantic import ValidationError
+
+    assert CsvImportOptions(source_system=None).source_system is None
+    for value in ("", " ", "x" * 121):
+        with pytest.raises(ValidationError):
+            CsvImportOptions(source_system=value)

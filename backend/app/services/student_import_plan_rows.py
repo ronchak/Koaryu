@@ -380,6 +380,18 @@ def build_import_row_plan(
             continue
         mapped[koaryu_field] = value
 
+    if mapped.get("source_id"):
+        mapped["source_system"] = options.source_system or "csv"
+        if len(mapped["source_id"]) > 120:
+            row_issues.append(
+                make_import_issue(
+                    "source_id_too_long",
+                    "Member ID must be 120 characters or fewer.",
+                    field="source_id",
+                    value=mapped["source_id"],
+                )
+            )
+
     if not mapped.get("legal_first_name"):
         row_issues.append(
             make_import_issue(

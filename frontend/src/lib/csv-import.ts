@@ -13,7 +13,7 @@ import type {
 export type CsvImportKeyInput = {
   rowCount: number;
   mapping: Record<string, string>;
-  options: object;
+  options: object & { source_system?: string | null };
   contentHash: string;
   /** Duplicate decisions are part of the import identity; a changed decision is a new run. */
   decisions?: Record<string, CsvImportDuplicateDecision>;
@@ -48,11 +48,14 @@ function canonicalStringify(value: unknown) {
 function buildImportKeyFingerprint(params: CsvImportKeyInput) {
   const { rowCount, mapping, options, contentHash, decisions } = params;
   const hasDecisions = Boolean(decisions && Object.keys(decisions).length > 0);
+  const keyOptions = { ...options };
+  // Unset source systems preserve keys issued before source IDs were supported.
+  if (keyOptions.source_system == null) delete keyOptions.source_system;
   return canonicalStringify({
     rowCount,
     contentHash,
     mapping,
-    options,
+    options: keyOptions,
     // Absent decisions keep the historical key so earlier runs stay recognisable.
     ...(hasDecisions ? { decisions } : {}),
   });

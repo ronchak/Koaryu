@@ -100,6 +100,9 @@ ${balance ? "" : "    run, sql, connection = local.run, local.sql, local.connect
 }
 
 function pinnedExports(spec, versions) {
+  if (spec.module && !/^scripts\/release-attestation\/[a-z0-9-]+\.mjs$/.test(spec.module)) {
+    throw new Error("Invalid version-bound restore module");
+  }
   const membership = spec.format === "membership";
   const balance = paired(spec);
   const variable = balance ? "names" : "exports";
@@ -108,7 +111,7 @@ function pinnedExports(spec, versions) {
     ? `    names = [\n${rows.map(row => `        ${row},`).join("\n")}\n    ]`
     : `    exports = [${rows.join(membership ? ",\n               " : ",\n        ")}]`;
   const indent = membership ? "                            " : "        ";
-  return declaration + `\n    module = (root / "scripts/studio-comp-migration-rollout.mjs").as_uri()
+  return declaration + `\n    module = (root / ${quote(spec.module ?? "scripts/studio-comp-migration-rollout.mjs")}).as_uri()
     pinned = json.loads(${balance ? "local." : ""}run(["node", "--input-type=module", "--eval",
 ${indent}f"import * as m from {json.dumps(module)}; console.log(JSON.stringify(Object.fromEntries("
 ${indent}f"{json.dumps(${variable})}.map(k=>[k,m[k]]))));"]))`

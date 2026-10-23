@@ -958,6 +958,23 @@
       "state": "v60",
       "query": "V60_RELEASE_MANIFEST_SQL",
       "expected": "EXPECTED_V60_RELEASE_MANIFEST"
+    },
+    "readiness-v61": {
+      "kind": "readiness",
+      "state": "v61"
+    },
+    "tables-v61": {
+      "kind": "export",
+      "state": "v61",
+      "query": "V61_TABLES_STATE_SQL",
+      "expected": "EXPECTED_V61_TABLES_STATE",
+      "restored": "EXPECTED_V61_RESTORED_TABLES_STATE"
+    },
+    "functions-v61": {
+      "kind": "export",
+      "state": "v61",
+      "query": "V61_FUNCTIONS_STATE_SQL",
+      "expected": "EXPECTED_V61_FUNCTIONS_STATE"
     }
   },
   "cases": {
@@ -4527,6 +4544,52 @@
       "semanticManifests": [],
       "passLines": [
         "[restored V60] PASS retained V59 rows, exact canonical/restored readiness, gap rules and V59 compatibility"
+      ]
+    },
+    "v61": {
+      "format": "forward",
+      "base": "48220f447608e7c4c7cfd196e2bfd70a33d4c704",
+      "constraintPairs": "v57-restore-constraint-pairs.json",
+      "docstring": "Prove V60 imports survive V61 and logical restore, then continue and replay with provenance.",
+      "module": "scripts/release-attestation/student-import-v61.mjs",
+      "exports": [
+        [
+          "readiness-v60.query",
+          "readiness-v60.expected"
+        ],
+        [
+          "tables-v60.query",
+          "tables-v60.expected",
+          "tables-v60.restored"
+        ],
+        [
+          "readiness-v61.query",
+          "readiness-v61.expected"
+        ],
+        [
+          "tables-v61.query",
+          "tables-v61.expected",
+          "tables-v61.restored"
+        ],
+        [
+          "functions-v61.query",
+          "functions-v61.expected"
+        ]
+      ],
+      "predecessor": [
+        "readiness-v60",
+        "tables-v60"
+      ],
+      "checks": [
+        "readiness-v61",
+        "tables-v61",
+        "functions-v61"
+      ],
+      "absentFunctions": [],
+      "semanticManifests": [],
+      "upgradeSnapshotCheck": "require_v61_snapshot",
+      "passLines": [
+        "[restored V61] PASS retained rows, canonical/restored readiness, identity guard, guardian reuse and skipped replay"
       ]
     }
   }

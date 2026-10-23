@@ -307,7 +307,7 @@ def test_corpus_matcher(planned_case):
 def test_catalogue_coverage_and_budget():
     entries = MANIFEST["files"]
     assert MANIFEST["version"] == 1 and MANIFEST["synthetic"] is True
-    assert len(entries) == 510 == len(SPECS)
+    assert len(entries) == 546 == len(SPECS)
     assert len(ENTRIES) == len(entries)
     assert len({e["dialect"] for e in entries}) == 12
     assert len([e for e in entries if e.get("pair_of")]) == 51
@@ -344,9 +344,6 @@ def test_catalogue_coverage_and_budget():
         )
         for header, target in entry["expected"]["auto_mapping"].items():
             if header in {
-                "Student ID",
-                "Member #",
-                "Legacy Account #",
                 "Monthly Tuition",
                 "Payment Status",
                 "Balance",
@@ -354,6 +351,10 @@ def test_catalogue_coverage_and_budget():
                 "Classes Last 30",
             }:
                 assert target == ""
+    assert len([entry for entry in entries if entry["scenario"] == "source_identity"]) == 36
+    for entry in entries:
+        mapping = entry["expected"]["auto_mapping"]
+        assert sum(target == "source_id" for target in mapping.values()) <= 1
     codes = {code for e in entries for row in e["expected"]["rows"] for code in row["error_codes"]}
     assert {
         "missing_first_name",

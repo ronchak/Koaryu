@@ -1,4 +1,4 @@
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from typing import Literal, Optional, get_args
 from datetime import date
 from uuid import UUID
@@ -282,6 +282,7 @@ class CsvImportDuplicateCandidate(BaseModel):
     never leave the server through this payload.
     """
 
+    source_id: Optional[str] = None
     student_id: Optional[str] = None
     of_row: Optional[int] = None
     display_name: str
@@ -290,7 +291,17 @@ class CsvImportDuplicateCandidate(BaseModel):
     reasons: list[str] = Field(default_factory=list)
 
 
+class CsvImportGuardianOutcome(BaseModel):
+    """Contact display only; private guardian identities never leave the server."""
+
+    kind: Literal["link_existing", "in_file_shared"]
+    display_name: str
+    of_row: Optional[int] = None
+
+
 class CsvImportDuplicateReview(BaseModel):
+    skip_only: bool = False
+    guardian_outcome: Optional[CsvImportGuardianOutcome] = None
     candidates: list[CsvImportDuplicateCandidate] = Field(
         default_factory=list, description="Strongest candidates first; display may be capped."
     )
@@ -379,10 +390,18 @@ class CsvParseResponse(BaseModel):
 
 
 class CsvImportOptions(BaseModel):
+    source_system: Optional[str] = Field(default=None, min_length=1, max_length=120, pattern=r"\S")
     create_missing_programs: bool = False
     create_missing_belts: bool = False
     import_without_unresolved_belt: bool = True
     status_alias_mode: Literal["strict", "normalize"] = "normalize"
+
+    @field_validator("source_system", mode="before")
+    @classmethod
+    def _trim_source_system(cls, value: object) -> object:
+        # One namespace per spelling: " csv " must match, hash and store as "csv",
+        # because matching and the per-studio unique index compare it exactly.
+        return value.strip() if isinstance(value, str) else value
 
 
 class CsvImportRequest(BaseModel):

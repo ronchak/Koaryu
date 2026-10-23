@@ -164,3 +164,53 @@ at explicit references. Guarded inspection accepts an exact V59 predecessor,
 including timezone name parity, and V60 post-state evidence with V59
 compatibility. The private backup helper needs reviewed `(154,'20261014083106')
 -> 40` and `(155,'20261021093000') -> 41` mappings before backing up V59 or V60.
+
+
+V61 installs nullable student/guardian import provenance, paired source identity
+fields and indexes, the reserved `skipped` receipt kind, and four appended optional
+row-import arguments. A non-NULL acknowledgement list enables the same-spelling
+strong-identity guard after receipt replay and before writes. It excludes students
+from the same import run and names with no alphanumeric matcher key. A studio/name advisory
+lock serializes competing imports; P0409 reports unacknowledged matches and source
+identity collisions. NULL acknowledgements retain legacy behavior. A supplied studio
+guardian is linked without changing its row or primary-contact flag; inserted contacts
+retain provenance. Both old function signatures are removed. The service-only
+`record_student_import_skip_v1` RPC uses the same worker lock/token, records the
+retained target and diagnostics, and replays without writes. Claim already returns
+all receipt kinds. The application restores completed skips without rematching and
+tracks imported guardian choices in server-side receipt outcomes. In-file sharing
+rechecks the actual retained contact under the shared guardian rule; the rule is
+not transitive. Completed skips remain in-file identity targets from resent file
+data while their saved outcome stays authoritative. The V11 security
+manifest and generated V13 return manifest bind the replacement signatures.
+Preflight V42 inherits V60, replaces the changed RPC/receipt and complete catalog
+facts, and retains exact V60 readiness through the V41 compatibility bridge.
+
+The V60-to-V61 forward proof uses `student-import-v61.mjs` for version-bound
+observations. A forward case can select a `module` under this directory; historical
+cases keep the rollout module. V61's four table profiles were measured separately
+on disposable PostgreSQL 17 canonical and logical-restored databases, with CRUD
+and Supabase ALL-table-default ACL bootstraps. Only students, guardians and receipt
+constraints differ from V60. Its snapshot comparison permits the new NULL columns
+and the exact guarded V31 expectation correction, preserving every other retained
+field. Continuation uses the deployed ten-argument call, checks provenance and a
+receipt, then compares rows and physical tuple identities across replay.
+
+The local runner's `history` branch advances its V56 database through V59 before
+running the retained V60 restore proof. It then applies V60 and runs the V61
+restore proof before exiting. The `all` path runs these proofs later once each;
+`current` runs the V61 proof. A focused dispatch test checks migration order and
+proves that both history restore calls are reachable before early exit.
+
+`install_final_v60` is version-bound to V60. Current application composition uses
+`install_final_v61`, which validates the generated application readiness metadata,
+upgrades through V60, and installs V61. Historical V57 setup callers stay bound
+to V57; only the graph-mail and test-email application composition callers advance.
+
+The guarded V61 rollout retains V60 as a version-bound predecessor and selects
+only V61 for its next step. It binds the widened import signatures in an additive
+raw-catalog query, complete table/function facts, V41/V42 guard rows, the release
+manifest and exact V60 compatibility. Canonical and logical-restored PostgreSQL
+and Supabase ALL-table-grant profiles are measured separately in
+`v61-rollout-observations.json`; provider approval must name current V61 canonical
+evidence, and post-state acceptance keeps each catalog/table tuple paired.
