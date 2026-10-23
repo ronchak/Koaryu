@@ -874,3 +874,25 @@ def test_pinned_postgrest_malformed_error_identity_is_unavailable(rpc, field, id
     assert isinstance(error.value.__context__, APIError)
     assert len(requests) == 1
     assert requests[0].url.path == f"/rest/v1/rpc/{rpc}"
+
+
+def test_iana_timezone_aliases_work_without_system_timezone_files():
+    # Match slim/Windows runtimes and Linux images without tzdata-legacy.
+    # The first-party tzdata package must supply the data, not the host OS.
+    import os
+    import subprocess
+    import sys
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "from zoneinfo import ZoneInfo; from app.schemas.trial_appointment import _iana_zone; assert _iana_zone('US/Pacific') == 'US/Pacific'; assert ZoneInfo('US/Pacific').key == 'US/Pacific'; assert _iana_zone('America/Los_Angeles') == 'America/Los_Angeles'",
+        ],
+        env={**os.environ, "PYTHONTZPATH": ""},
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    assert result.returncode == 0, result.stderr

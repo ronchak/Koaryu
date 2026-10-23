@@ -12,3 +12,6 @@ cryptography==50.0.0
 python-multipart==0.0.32
 stripe==11.1.0
 mcp==2.3.0
+
+# First-party fallback for slim images and systems missing legacy IANA aliases.
+tzdata==2026.5
