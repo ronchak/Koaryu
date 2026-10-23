@@ -761,7 +761,7 @@ class Scenarios:
             flush=True,
         )
 
-    def run(self):
+    def run(self, *, large_fixture=False):
         try:
             self.seed()
             ordinary = self.login(self.owners[0])
@@ -821,6 +821,11 @@ class Scenarios:
             current = self.openid_bypass(registered["client_id"], current)
             self.lifecycle(registered, current)
             asyncio.run(self.sdk_oauth())
+            load_result = None
+            if large_fixture:
+                from mcp_oauth_native_load import run_large_fixture
+
+                load_result = run_large_fixture(self)
             private_json(
                 self.stack.evidence / "result.json",
                 {
@@ -829,6 +834,7 @@ class Scenarios:
                     "ordinary_login_refresh": True,
                     "tenant_isolation": True,
                     "connector_business_writes": False,
+                    **({"large_fixture": load_result} if load_result else {}),
                 },
             )
             return len(self.cases)

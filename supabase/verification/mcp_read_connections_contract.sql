@@ -20,10 +20,22 @@ BEGIN
     VALUES(studio,'MCP A','mcp-contract-a',actor),(other_studio,'MCP B','mcp-contract-b',other_actor);
     INSERT INTO public.staff_roles(user_id,studio_id,role) VALUES(actor,studio,'admin'),(other_actor,other_studio,'admin') ON CONFLICT DO NOTHING;
 
-    IF has_table_privilege('anon','public.mcp_connections','SELECT') OR has_table_privilege('authenticated','public.mcp_connections','SELECT')
+    IF has_table_privilege('anon','public.mcp_connections','SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER') OR has_table_privilege('authenticated','public.mcp_connections','SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER')
        OR has_function_privilege('authenticated','public.authorize_mcp_connection(uuid,uuid,uuid,text,uuid,text[],text,timestamptz)','EXECUTE')
        OR has_function_privilege('service_role','public.mcp_access_token_hook(jsonb)','EXECUTE') THEN
         RAISE EXCEPTION 'Connection controls are exposed to an unauthorized role';
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_catalog.pg_policy
+        WHERE polrelid='public.mcp_connections'::regclass
+          AND polname='reject_ambiguous_staff_membership_access'
+          AND NOT polpermissive AND polcmd='*'
+          AND (SELECT oid FROM pg_catalog.pg_roles WHERE rolname='authenticated')=ANY(polroles)
+    ) THEN RAISE EXCEPTION 'MCP controls lack the standard restrictive tenant guard'; END IF;
+    IF has_any_column_privilege('anon','public.mcp_connections','SELECT,INSERT,UPDATE,REFERENCES')
+       OR has_any_column_privilege('authenticated','public.mcp_connections','SELECT,INSERT,UPDATE,REFERENCES') THEN
+        RAISE EXCEPTION 'Connection controls expose a client column privilege';
     END IF;
 
     SET LOCAL ROLE service_role;

@@ -38,6 +38,7 @@ CREATE TABLE public.mcp_connections (
     CHECK (expires_at > authorized_at AND expires_at <= authorized_at + interval '91 days')
 );
 ALTER TABLE public.mcp_connections ENABLE ROW LEVEL SECURITY;
+CREATE POLICY reject_ambiguous_staff_membership_access ON public.mcp_connections AS RESTRICTIVE FOR ALL TO authenticated USING ((SELECT private.has_unambiguous_studio_membership())) WITH CHECK ((SELECT private.has_unambiguous_studio_membership()));
 REVOKE ALL ON public.mcp_connections FROM PUBLIC, anon, authenticated, service_role;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.mcp_connections TO service_role;
 
@@ -139,7 +140,7 @@ GRANT EXECUTE ON FUNCTION public.mcp_access_token_hook(jsonb) TO supabase_auth_a
 DO $expectation$
 BEGIN
     UPDATE private.koaryu_release_v31_expectations
-       SET expected_sha256='5ffe9cc634eadd091b227bdb2e291bc3be209a4cd6de9f4448e29c8ba701f50c'
+       SET expected_sha256='1342c31c572b55e977835860937038c3486d090be917c9415a3afb2ea0cd9bf3'
      WHERE expectation_key='operational_contract_v31'
        AND expected_sha256='1513ff10defced0c619f85c7927259165f6c9eb7ef1400be076f567fd39c85b3';
     IF NOT FOUND THEN RAISE EXCEPTION 'Unexpected V60 operational expectation'; END IF;
@@ -188,7 +189,7 @@ BEGIN
         v_failures := array_append(v_failures, 'migration_history_sequence_v30');
     END IF;
     IF private.koaryu_release_resource_ownership_manifest_v31()
-       IS DISTINCT FROM '0:32766afc9b25876cb96a1b241b95073ac04dca4aa6f8cff924da837672ba9749' THEN
+       IS DISTINCT FROM '0:47d5dccf7b0f8bedfff9556fde0a66542c719dba5066db3e88633cb82b246084' THEN
         v_failures := array_append(v_failures, 'resource_ownership_manifest_v31');
     END IF;
     IF private.koaryu_release_schedule_window_manifest_v1()
@@ -397,7 +398,7 @@ BEGIN
         v_failures := array_append(v_failures, 'operational_manifest_v11_function');
     END IF;
     IF private.koaryu_release_operational_manifest_v11()
-       <> 'd7fa3a9dcb562c7164f84e40ec306aef45bd088f5129b385305b12493e235296' THEN
+       <> 'cf66ef0a2111e01bd71e353627bf63c15242a6583a256d48b391cf9f4a532c2b' THEN
         v_failures := array_append(v_failures, 'operational_manifest_v11');
     END IF;
     IF private.koaryu_release_provider_operation_steps_manifest_v28()
@@ -496,7 +497,7 @@ BEGIN
         );
     END IF;
     IF private.koaryu_release_operational_manifest_v12()
-       IS DISTINCT FROM '340d9422751735238c166259207be92f3fcc03387a2d2694a35857635d5a5077' THEN
+       IS DISTINCT FROM 'ccde2e2c4299603bf5aaf0549e628a563d141fbd98245d4d2230fa020dc608e4' THEN
         v_failures := array_append(v_failures, 'operational_manifest_v12');
     END IF;
     IF encode(extensions.digest(convert_to(pg_get_functiondef(
@@ -1485,7 +1486,7 @@ FROM (VALUES ('private.automation_command_operations'),
     ('public.support_ticket_events'),
     ('public.support_tickets')) required(name)
 LEFT JOIN pg_catalog.pg_class c ON c.oid=pg_catalog.to_regclass(required.name))::TEXT,'UTF8'),'sha256'),'hex'))
-       NOT IN ('c44f13c95281c540448c8411fe6f075cb2c9a909bed6bbf22a404138a06105e6','353a79523dc5e297bf2b3b58027f2c1afe196702df9f5f77d74f6aa3674318e5','5a6614e670e620ceb58765543c589b0c3046e0c326b611a53b77d6ab8b6668c9','b822107de8d70870a834042d647862d098b2cabfef614c7763db60f772a03bef')
+       NOT IN ('c0fef2ba6142ad0fd4509bab7924ca754be5677c1dd59b38bcbd9cb3b0464ad4','f8a91c499d9ca26f9f2435ee348bd153d5a7eeb08a4cbebcbe4b4272619f5d29','b21ea0685d75611f72f7041593e50519a9022ffe6ff6104b23bbd6bca91f91bb','9165047da85bf333679dc37ec2e7ae72c21ff54ab57e400ad467511a5ef03439')
        OR (SELECT array_agg(n.nspname||'.'||c.relname ORDER BY (n.nspname||'.'||c.relname) COLLATE "C")
            FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace
            WHERE n.nspname IN ('public','private') AND c.relkind IN ('r','p'))

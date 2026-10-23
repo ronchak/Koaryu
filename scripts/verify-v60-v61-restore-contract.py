@@ -29,7 +29,7 @@ def require_v61_snapshot(before, after):
     require(len(rows) == 1 and rows[0]['expectation_key'] == 'operational_contract_v31'
             and rows[0]['expected_sha256'] == '1513ff10defced0c619f85c7927259165f6c9eb7ef1400be076f567fd39c85b3',
             'V61 requires the exact V60 expectation singleton')
-    rows[0]['expected_sha256'] = '5ffe9cc634eadd091b227bdb2e291bc3be209a4cd6de9f4448e29c8ba701f50c'
+    rows[0]['expected_sha256'] = '1342c31c572b55e977835860937038c3486d090be917c9415a3afb2ea0cd9bf3'
     return after == expected
 
 
