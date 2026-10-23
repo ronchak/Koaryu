@@ -972,3 +972,12 @@ def test_source_id_roster_overflow_blocks_different_names():
     ]
     match = match_rows([row], roster)[0]
     assert match.roster_overflow
+
+
+@pytest.mark.parametrize("roster_system", [None, "csv", "other-roster"])
+def test_source_identity_uses_csv_when_system_is_unset(roster_system):
+    row = planned(2, legal_first_name="Testcorrected", legal_last_name="Fixture", source_id="00042")
+    roster = [existing("s1", "Testformer", "Other", source_id="00042", source_system=roster_system)]
+    match = match_rows([row], roster)[0]
+    assert match.reasons == (["source_id"] if roster_system in (None, "csv") else [])
+    assert match.skip_only == (roster_system in (None, "csv"))

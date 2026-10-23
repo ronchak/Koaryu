@@ -123,3 +123,24 @@ def test_source_id_manual_mapping_trim_blank_and_length_validation():
         assert plan["data"].get("source_id") == expected
         assert plan["data"].get("source_system") == ("old-roster" if expected else None)
         assert [issue.code for issue in plan["issues"]] == ([] if valid else ["source_id_too_long"])
+
+
+def test_source_system_unset_is_effectively_csv_only_for_rows_with_ids():
+    for source_id in ("00042", " "):
+        plan = build_import_row_plan(
+            {"First": "Ava", "Last": "Nguyen", "ID": source_id},
+            {"First": "legal_first_name", "Last": "legal_last_name", "ID": "source_id"},
+            options=CsvImportOptions(),
+        )
+        assert plan["is_valid"]
+        assert plan["data"].get("source_system") == ("csv" if source_id.strip() else None)
+
+
+def test_optional_source_system_retains_validation_when_set():
+    import pytest
+    from pydantic import ValidationError
+
+    assert CsvImportOptions(source_system=None).source_system is None
+    for value in ("", " ", "x" * 121):
+        with pytest.raises(ValidationError):
+            CsvImportOptions(source_system=value)

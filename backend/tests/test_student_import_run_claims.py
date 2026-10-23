@@ -71,7 +71,7 @@ def test_decisions_recorded_before_acknowledgements_existed_hash_identically():
                 "operation": "students_csv_execute",
                 "rows": rows,
                 "mapping": mapping,
-                "options": options.model_dump(mode="json"),
+                "options": options.model_dump(mode="json", exclude={"source_system"}),
                 "duplicate_decisions": legacy_shape,
             },
             sort_keys=True,
@@ -212,4 +212,44 @@ def test_source_system_changes_request_hash():
     first = StudentImportRunStore.compute_request_hash(rows, mapping, CsvImportOptions())
     assert first != StudentImportRunStore.compute_request_hash(
         rows, mapping, CsvImportOptions(source_system="old-roster")
+    )
+
+
+@pytest.mark.parametrize(
+    "decisions,expected",
+    [
+        (None, "60b32df1b2b9c957b81a2d2ac5618d3bd6352158c2eec4868fd44d8c75bcf1a8"),
+        (
+            {"2": CsvImportDuplicateDecision(action="skip", matched_student_id="s1")},
+            "63b06b56cd7aa61a5a43d4d58efbcad5e3280609e80b2389eb7e16238ddba8a6",
+        ),
+    ],
+)
+def test_unset_source_system_preserves_pre_a2b_request_hash(decisions, expected):
+    # Pins obtained from git archive b72536930c1aaf7e6380e60c8abbb757ff2445a2
+    # backend/app into a temporary checkout, running its CsvImportOptions() and
+    # StudentImportRunStore.compute_request_hash with these exact inputs.
+    rows = [{"First": "Ava", "Last": "Nguyen"}]
+    mapping = {"First": "legal_first_name", "Last": "legal_last_name"}
+    assert CsvImportOptions().source_system is None
+    for options in (CsvImportOptions(), CsvImportOptions(source_system=None)):
+        assert (
+            StudentImportRunStore.compute_request_hash(rows, mapping, options, decisions)
+            == expected
+        )
+        assert (
+            StudentImportRunStore.compute_request_hash(
+                rows, mapping, CsvImportOptions(source_system="csv"), decisions
+            )
+            != expected
+        )
+
+
+def test_mapped_id_changes_request_identity_even_with_unset_source_system():
+    rows = [{"First": "Ava", "Last": "Nguyen", "ID": "00042"}]
+    names = {"First": "legal_first_name", "Last": "legal_last_name"}
+    assert StudentImportRunStore.compute_request_hash(
+        rows, {**names, "ID": ""}, CsvImportOptions()
+    ) != StudentImportRunStore.compute_request_hash(
+        rows, {**names, "ID": "source_id"}, CsvImportOptions()
     )

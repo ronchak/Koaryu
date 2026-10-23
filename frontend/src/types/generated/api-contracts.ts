@@ -912,7 +912,7 @@ export interface ApiCsvImportIssue {
 }
 
 export interface ApiCsvImportOptions {
-  source_system?: string;
+  source_system?: string | null;
   create_missing_programs?: boolean;
   create_missing_belts?: boolean;
   import_without_unresolved_belt?: boolean;

@@ -288,19 +288,55 @@ describe("preview CSV import id resolution", () => {
   });
 });
 
-it("includes source system in the browser import key with a csv default", async () => {
+it("includes source system in the browser import key only when set", async () => {
   const input = {
     rowCount: 1,
     mapping: { ID: "source_id" },
     contentHash: "synthetic",
     options: {},
   };
-  assert.equal(
+  assert.notEqual(
     await buildStableImportKey(input),
     await buildStableImportKey({ ...input, options: { source_system: "csv" } }),
   );
   assert.notEqual(
     await buildStableImportKey(input),
     await buildStableImportKey({ ...input, options: { source_system: "old-roster" } }),
+  );
+});
+
+it("preserves browser keys issued before source IDs were supported", async () => {
+  // Pins obtained by git archive b72536930c1aaf7e6380e60c8abbb757ff2445a2
+  // frontend/src/lib/{csv-import,request-body-limits}.ts into a temporary checkout,
+  // then calling that buildStableImportKey with Node --experimental-strip-types.
+  // contentHash is SHA-256 of the exact bytes "First,Last\nAva,Nguyen\n".
+  const { DEFAULT_IMPORT_OPTIONS } = await import("../src/lib/student-import-page-model.ts");
+  const input = {
+    rowCount: 1,
+    contentHash: "ca2aad72014479d29655d8e7d9e2be2ba67d8593154469283e8094b71d951cbd",
+    mapping: { First: "legal_first_name", Last: "legal_last_name" },
+    options: DEFAULT_IMPORT_OPTIONS,
+  };
+  const expected =
+    "student-import:sha256:10df2938ecd4ad9b1ab47cd552abd746976653d1599aa9ec5e0a6fc08ed1727b";
+  assert.equal(await buildStableImportKey(input), expected);
+  assert.equal(
+    await buildStableImportKey({ ...input, options: { ...input.options, source_system: null } }),
+    expected,
+  );
+  assert.notEqual(
+    await buildStableImportKey({ ...input, options: { ...input.options, source_system: "csv" } }),
+    expected,
+  );
+  assert.equal(
+    await buildStableImportKey({
+      ...input,
+      decisions: { 2: { action: "skip", matched_student_id: "s1", of_row: null } },
+    }),
+    "student-import:sha256:a4ca6b168daed9dd6f596a7a29b29414fcba30e4d07884a5e748dbd0ce00854e",
+  );
+  assert.notEqual(
+    await buildStableImportKey({ ...input, mapping: { ...input.mapping, ID: "source_id" } }),
+    expected,
   );
 });

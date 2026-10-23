@@ -52,7 +52,6 @@ export const REQUIRED_FIELDS = KOARYU_FIELDS.filter((field) => field.required).m
 );
 
 export const DEFAULT_IMPORT_OPTIONS: CsvImportOptions = {
-  source_system: "csv",
   create_missing_programs: false,
   create_missing_belts: false,
   import_without_unresolved_belt: true,

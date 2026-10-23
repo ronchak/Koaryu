@@ -532,7 +532,10 @@ class StudentImportExecutor:
                 "p_acknowledged_student_ids": acknowledged_student_ids,
                 "p_guardian_id": guardian_id,
                 **(
-                    {"p_source_system": mapped["source_system"], "p_source_id": mapped["source_id"]}
+                    {
+                        "p_source_system": mapped.get("source_system") or "csv",
+                        "p_source_id": mapped["source_id"],
+                    }
                     if mapped.get("source_id")
                     else {}
                 ),

@@ -381,7 +381,7 @@ def build_import_row_plan(
         mapped[koaryu_field] = value
 
     if mapped.get("source_id"):
-        mapped["source_system"] = options.source_system
+        mapped["source_system"] = options.source_system or "csv"
         if len(mapped["source_id"]) > 120:
             row_issues.append(
                 make_import_issue(

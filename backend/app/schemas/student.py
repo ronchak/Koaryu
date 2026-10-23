@@ -390,7 +390,7 @@ class CsvParseResponse(BaseModel):
 
 
 class CsvImportOptions(BaseModel):
-    source_system: str = Field(default="csv", min_length=1, max_length=120, pattern=r"\S")
+    source_system: Optional[str] = Field(default=None, min_length=1, max_length=120, pattern=r"\S")
     create_missing_programs: bool = False
     create_missing_belts: bool = False
     import_without_unresolved_belt: bool = True

@@ -1636,7 +1636,8 @@ def test_source_id_preview_scoped_skip_only_and_create_refusal(archived):
     assert not db.responses
 
 
-def test_source_id_rpc_only_when_present_and_in_file_skip():
+@pytest.mark.parametrize("source_system", [None, "csv", "old-roster"])
+def test_source_id_rpc_only_when_present_and_in_file_skip(source_system):
     db = ScriptedImportDb()
     mapping = {**MAPPING, "Member ID": "source_id"}
     rows = [
@@ -1656,7 +1657,7 @@ def test_source_id_rpc_only_when_present_and_in_file_skip():
         StudentImportExecutor(db).execute_import(
             rows,
             mapping,
-            CsvImportOptions(source_system="old-roster"),
+            CsvImportOptions(source_system=source_system),
             STUDIO,
             "actor",
             "key",
@@ -1665,6 +1666,8 @@ def test_source_id_rpc_only_when_present_and_in_file_skip():
     )
     assert result.imported_count == 2 and result.skipped_rows == 1 and result.error_rows == 0
     writes = [p for name, p in db.calls if name == "import_student_row_atomic"]
-    assert writes[0]["p_source_id"] == "00042" and writes[0]["p_source_system"] == "old-roster"
+    assert writes[0]["p_source_id"] == "00042" and writes[0]["p_source_system"] == (
+        source_system or "csv"
+    )
     assert "p_source_id" not in writes[1] and "p_source_system" not in writes[1]
     assert not db.responses

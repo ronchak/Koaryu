@@ -241,7 +241,7 @@ def student_identity_from_row(data: dict[str, Any]) -> StudentIdentity:
         date_of_birth=date_key(data.get("date_of_birth")),
         email=email_key(data.get("email")),
         phone=phone_key(data.get("phone")),
-        source_system=data.get("source_system"),
+        source_system=data.get("source_system") or "csv",
         source_id=str(data.get("source_id") or "").strip() or None,
     )
 
@@ -253,7 +253,7 @@ def student_identity_from_existing(entry: dict[str, Any]) -> StudentIdentity:
         date_of_birth=date_key(entry.get("date_of_birth")),
         email=email_key(entry.get("email")),
         phone=phone_key(entry.get("phone")),
-        source_system=entry.get("source_system"),
+        source_system=entry.get("source_system") or "csv",
         source_id=str(entry.get("source_id") or "").strip() or None,
     )
 
