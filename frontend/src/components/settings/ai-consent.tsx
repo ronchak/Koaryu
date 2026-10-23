@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { api } from "@/lib/api";
-import { safeAiRedirect, type AiAuthorization } from "@/lib/mcp-connections";
+import { isAiAuthorizationId, safeAiRedirect, type AiAuthorization } from "@/lib/mcp-connections";
 import { Button } from "@/components/ui/button";
 
 export function AiConsent({ authorizationId }: { authorizationId: string | null }) {
@@ -18,9 +18,7 @@ export function AiConsent({ authorizationId }: { authorizationId: string | null 
   const pending = useRef(false);
   const generation = useRef(0);
   const details = loaded?.token === token ? loaded.details : null;
-  const valid =
-    authorizationId !== null &&
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(authorizationId);
+  const valid = isAiAuthorizationId(authorizationId);
 
   useEffect(() => {
     let active = true;

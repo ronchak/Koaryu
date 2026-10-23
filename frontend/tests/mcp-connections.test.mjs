@@ -1,10 +1,14 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { connectionStatus, safeAiRedirect } from "../src/lib/mcp-connections.ts";
+import {
+  connectionStatus,
+  isAiAuthorizationId,
+  safeAiRedirect,
+} from "../src/lib/mcp-connections.ts";
 import { resolveAuthCallbackNextPath } from "../src/lib/auth-callback.ts";
 
 test("OAuth return path preserves only a valid authorization identifier", () => {
-  const id = "12345678-1234-1234-1234-123456789abc";
+  const id = "Zx14S8n6GCa2Wp5Bu9kDv0T3RYeA7Qmj";
   assert.equal(
     resolveAuthCallbackNextPath(
       `/connect/authorize?authorization_id=${id}&redirect=https://evil.example#fragment`,
@@ -50,4 +54,35 @@ test("connection status prioritizes disconnection and expiry", () => {
     connectionStatus({ ...connection, revoked_at: "2026-09-01" }, Date.parse("2026-10-01")),
     "Disconnected",
   );
+});
+
+test("native opaque authorization IDs survive login without permitting URL path injection", () => {
+  for (const id of [
+    "Zx14S8n6GCa2Wp5Bu9kDv0T3RYeA7Qmj",
+    "a".repeat(128),
+    "12345678-1234-1234-1234-123456789abc",
+  ]) {
+    assert.equal(isAiAuthorizationId(id), true);
+    assert.equal(
+      resolveAuthCallbackNextPath(`/connect/authorize?authorization_id=${id}`),
+      `/connect/authorize?authorization_id=${id}`,
+    );
+  }
+  for (const id of [
+    null,
+    "short",
+    "a".repeat(129),
+    "validRequestId123/../../user",
+    "a".repeat(20) + "?client=other",
+    "a".repeat(20) + "\n",
+  ]) {
+    assert.equal(isAiAuthorizationId(id), false);
+    if (typeof id === "string")
+      assert.equal(
+        resolveAuthCallbackNextPath(
+          `/connect/authorize?authorization_id=${encodeURIComponent(id)}`,
+        ),
+        "/dashboard",
+      );
+  }
 });

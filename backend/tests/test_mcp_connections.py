@@ -15,7 +15,7 @@ from test_mcp_read_auth_transport import CLIENT, CONNECTION, USER
 from app.api.v1.endpoints import mcp_connections as routes
 from app.mcp_read import connections
 
-AUTHORIZATION = UUID("10000000-0000-4000-8000-000000000001")
+AUTHORIZATION = "Zx14S8n6GCa2Wp5Bu9kDv0T3RYeA7Qmj"
 RESOURCE = "https://backend.example.invalid/mcp"
 DETAILS = {
     "authorization_id": str(AUTHORIZATION),
@@ -228,3 +228,64 @@ def test_identity_scopes_cannot_enable_native_id_tokens(consent_client, monkeypa
     assert consent_client.get(f"/mcp/authorizations/{AUTHORIZATION}").status_code == 400
     with pytest.raises(HTTPException):
         connections.require_connector_scope({**DETAILS, "scope": "openid"})
+
+
+def test_native_opaque_request_id_is_accepted(consent_client, monkeypatch):
+    monkeypatch.setattr(routes, "owner", Mock())
+    native = AsyncMock(return_value=DETAILS)
+    monkeypatch.setattr(routes, "oauth_request", native)
+    result = consent_client.get(f"/mcp/authorizations/{AUTHORIZATION}")
+    assert result.status_code == 200 and result.json()["authorization_id"] == AUTHORIZATION
+    assert native.await_args.args[2] == AUTHORIZATION
+
+
+def test_opaque_requests_use_stable_scoped_internal_consent_ids(monkeypatch):
+    monkeypatch.setattr(connections, "owner", Mock(return_value={"studio_id": CONNECTION}))
+    seen = []
+
+    def rpc(name, params):
+        assert name == "authorize_mcp_connection"
+        UUID(params["p_consent_id"])
+        seen.append(params)
+        return SimpleNamespace(execute=lambda: SimpleNamespace(data={"id": CONNECTION}))
+
+    client = SimpleNamespace(rpc=rpc)
+    for authorization in [AUTHORIZATION, AUTHORIZATION, "N" * 32]:
+        connections.save_consent(
+            client,
+            USER,
+            {**DETAILS, "authorization_id": authorization},
+            authorization,
+            ["students"],
+            7,
+            RESOURCE,
+        )
+    assert seen[0]["p_consent_id"] == seen[1]["p_consent_id"]
+    assert seen[0]["p_consent_id"] != seen[2]["p_consent_id"]
+    assert seen[0]["p_consent_id"] != AUTHORIZATION
+    other_client = "60000000-0000-0000-0000-000000000002"
+    connections.save_consent(
+        client,
+        USER,
+        {**DETAILS, "client": {"id": other_client}},
+        AUTHORIZATION,
+        ["students"],
+        7,
+        RESOURCE,
+    )
+    assert seen[0]["p_consent_id"] != seen[-1]["p_consent_id"]
+
+
+@pytest.mark.parametrize(
+    "authorization",
+    [
+        "short",
+        "a" * 129,
+        "validAuthorizationId/../../user",
+        "validAuthorizationId?other=1",
+        "a" * 20 + "\n",
+    ],
+)
+def test_opaque_request_id_rejects_path_injection(authorization):
+    with pytest.raises(HTTPException):
+        connections.validate_authorization_id(authorization)

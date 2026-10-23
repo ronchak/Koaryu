@@ -4,7 +4,7 @@ from typing import Annotated
 from urllib.parse import urlparse
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Path, Response
 from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import Field
 
@@ -26,9 +26,12 @@ from app.mcp_read.connections import (
     revoke_native_grant,
     save_consent,
 )
-from app.mcp_read.schemas import Contract
+from app.mcp_read.schemas import AUTHORIZATION_ID_PATTERN, Contract
 
 router = APIRouter(prefix="/mcp", tags=["AI connections"])
+AuthorizationId = Annotated[
+    str, Path(pattern=AUTHORIZATION_ID_PATTERN, min_length=16, max_length=128)
+]
 
 
 class Consent(Contract):
@@ -93,7 +96,7 @@ async def connections(
 
 @router.get("/authorizations/{authorization_id}")
 async def authorization(
-    authorization_id: UUID,
+    authorization_id: AuthorizationId,
     response: Response,
     user_id: Annotated[str, Depends(get_current_user_id)],
     provider: Annotated[ProviderDependency, Depends(get_supabase)],
@@ -106,7 +109,7 @@ async def authorization(
     if "redirect_url" in data:
         return safe_redirect(data)
     try:
-        if data["user"]["id"] != user_id or data["authorization_id"] != str(authorization_id):
+        if data["user"]["id"] != user_id or data["authorization_id"] != authorization_id:
             raise ValueError()
         UUID(data["client"]["id"])
         client_name = data["client"].get("name") or "AI assistant"
@@ -128,7 +131,7 @@ async def authorization(
 
 @router.post("/authorizations/{authorization_id}/approve")
 async def approve(
-    authorization_id: UUID,
+    authorization_id: AuthorizationId,
     consent: Consent,
     response: Response,
     user_id: Annotated[str, Depends(get_current_user_id)],
@@ -160,7 +163,7 @@ async def approve(
 
 @router.post("/authorizations/{authorization_id}/deny")
 async def deny(
-    authorization_id: UUID,
+    authorization_id: AuthorizationId,
     response: Response,
     user_id: Annotated[str, Depends(get_current_user_id)],
     credentials: Annotated[HTTPAuthorizationCredentials, Depends(security)],

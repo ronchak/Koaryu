@@ -50,3 +50,13 @@ export function safeAiRedirect(value: unknown): string | null {
   }
   return null;
 }
+
+// Supabase exposes an opaque browser request ID, separate from its database UUID.
+export function isAiAuthorizationId(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    value.length >= 16 &&
+    value.length <= 128 &&
+    !/[^A-Za-z0-9_-]/.test(value)
+  );
+}

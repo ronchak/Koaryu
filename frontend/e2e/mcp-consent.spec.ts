@@ -4,7 +4,7 @@ const origin = process.env.KOARYU_E2E_FRONTEND_URL || "http://127.0.0.1:4000";
 if (!["localhost", "127.0.0.1", "[::1]"].includes(new URL(origin).hostname)) {
   throw new Error("MCP consent checks may run only against loopback.");
 }
-const authorization = "10000000-0000-4000-8000-000000000001";
+const authorization = "Zx14S8n6GCa2Wp5Bu9kDv0T3RYeA7Qmj";
 const path = `/connect/authorize?authorization_id=${authorization}`;
 const permissions = {
   students: "Student roster and program memberships",

@@ -13,6 +13,8 @@ from pydantic import (
     model_validator,
 )
 
+AUTHORIZATION_ID_PATTERN = r"^[A-Za-z0-9_-]{16,128}$"
+
 Name = Annotated[str, Field(pattern=r"^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)?$", max_length=96)]
 Scalar = StrictStr | StrictInt | StrictFloat | StrictBool | None
 

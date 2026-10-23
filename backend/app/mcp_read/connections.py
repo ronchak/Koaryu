@@ -1,13 +1,15 @@
 """Connection ownership, live authorization and native Supabase OAuth consent."""
 
+import re
 from datetime import UTC, datetime, timedelta
 from typing import Any
-from uuid import UUID
+from uuid import NAMESPACE_URL, UUID, uuid5
 
 import httpx
 from fastapi import HTTPException
 
 from app.mcp_read.catalog import PERMISSIONS
+from app.mcp_read.schemas import AUTHORIZATION_ID_PATTERN
 from app.services.studio_scope import (
     ensure_platform_subscription_access,
     resolve_staff_role_for_user,
@@ -126,8 +128,9 @@ async def revoke_native_grant(settings, token: str, client_id: str) -> bool:
             return False
 
 
-async def oauth_request(settings, token: str, authorization_id: UUID, *, decision=None):
+async def oauth_request(settings, token: str, authorization_id: str, *, decision=None):
     """Call only the pinned project's Auth service as the signed-in owner."""
+    authorization_id = validate_authorization_id(authorization_id)
     settings.validate_supabase_service_role_configuration()
     url = f"{settings.SUPABASE_URL}/auth/v1/oauth/authorizations/{authorization_id}"
     headers = {"Authorization": f"Bearer {token}", "apikey": settings.SUPABASE_SERVICE_ROLE_KEY}
@@ -159,20 +162,18 @@ def save_consent(
     client,
     user_id: str,
     details: dict,
-    authorization_id: UUID,
+    authorization_id: str,
     permissions: list[str],
     expires_days: int,
     resource: str,
 ):
+    authorization_id = validate_authorization_id(authorization_id)
     membership = owner(client, user_id)
     require_connector_scope(details)
     if not permissions or any(p not in PERMISSIONS for p in permissions):
         raise HTTPException(422, "Choose at least one supported data permission.")
     try:
-        if (
-            str(details["authorization_id"]) != str(authorization_id)
-            or str(details["user"]["id"]) != user_id
-        ):
+        if details["authorization_id"] != authorization_id or str(details["user"]["id"]) != user_id:
             raise ValueError()
         client_id = str(UUID(details["client"]["id"]))
         name = details["client"].get("name") or "AI assistant"
@@ -188,7 +189,15 @@ def save_consent(
                 "p_studio_id": membership["studio_id"],
                 "p_client_id": client_id,
                 "p_client_name": name,
-                "p_consent_id": str(authorization_id),
+                # Supabase's browser request ID is an opaque string, not its
+                # internal UUID. Preserve stable consent replay semantics without
+                # storing or interpreting that external identifier as a UUID.
+                "p_consent_id": str(
+                    uuid5(
+                        NAMESPACE_URL,
+                        f"koaryu:mcp:consent:{user_id}:{client_id}:{authorization_id}",
+                    )
+                ),
                 "p_permissions": sorted(set(permissions)),
                 "p_resource": resource,
                 "p_expires_at": (datetime.now(UTC) + timedelta(days=expires_days)).isoformat(),
@@ -224,3 +233,9 @@ def require_connector_scope(details: dict):
             400,
             "This connector requires only the offline_access OAuth scope. Restart the connection without OpenID, profile, email or phone scopes.",
         )
+
+
+def validate_authorization_id(value: str) -> str:
+    if not isinstance(value, str) or re.fullmatch(AUTHORIZATION_ID_PATTERN, value) is None:
+        raise HTTPException(400, "Invalid connection authorization request.")
+    return value
