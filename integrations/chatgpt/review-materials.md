@@ -6,16 +6,17 @@ Listing text, real icons, the four tool schemas and five positive/three negative
 
 | Verification | State | Evidence or dependency |
 | --- | --- | --- |
-| Native OAuth/permissions lifecycle | Passed locally | Real disposable native Auth + PostgREST + all156 migrations + backend + official SDK;54 cases |
+| Native OAuth/permissions lifecycle | Passed locally | Real disposable native Auth + PostgREST + all156 migrations + backend + official SDK;73 cases including two larger studios and blocked-read isolation |
 | Styled owner connection flow | Passed locally | Real native password login, mobile consent/PKCE, permission edit, disconnect; eight checks |
 | Source schemas and archive safety | Local checks | `npm run check:mcp-package-source` and `scripts/test_prepare_chatgpt_package.py` |
+| Five listing query shapes and programmatic boundaries | Passed locally | Separate real native fixture: filtered roster/record, monthly attendance, overdue leads, projected schedule and per-currency invoices; unchanged business hashes. Not a language-model test. |
 | Five positive language prompts | Not run in ChatGPT | Requires intended host development connection and complete synthetic fixture |
 | Three unsupported-action prompts | Not run in ChatGPT | Same intended host requirement; transport refusals alone do not prove model behavior |
 | Hosted ordinary sign-in and isolation | Blocked on activation | Named owner-authorized hosted setup and exact Auth/ACL verification |
 | Recording and reviewer-accessible URL | Not created | Requires actual ChatGPT development connection, sample data and permitted hosting |
 | Publisher/domain, scans and attestations | Not completed | Owner's intended organization and final portal workflow |
 
-Local OAuth/browser proof does not substitute for a ChatGPT walkthrough or the eight natural-language cases. Never mark those prompts passed merely because direct tool calls pass. Record the packaged version, tool arguments, user-visible answer and evidence when running each case.
+Local OAuth/browser/direct-query proof does not substitute for a ChatGPT walkthrough or the eight natural-language cases. Never mark those prompts passed merely because direct tool calls pass. Record the packaged version, tool arguments, user-visible answer and evidence when running each case.
 
 ## Dedicated fixture
 
