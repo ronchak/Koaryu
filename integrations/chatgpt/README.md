@@ -62,6 +62,8 @@ OpenAI's [tool guidelines](https://developers.openai.com/plugins/plugin-guidelin
 
 This is our implementation rationale, not a guarantee that the directory will accept the design. The actual host scan and public review must decide. If a scan flags the generic read interface, preserve the owner's flexible questions and address the concrete finding; do not quietly narrow the product to a few fixed workflows or claim acceptance based on local tests.
 
+Optional access to dates of birth, home addresses (including minors’ information) and free-text notes also needs explicit evaluation against the public directory’s data policies. Owner consent alone does not prove public-review eligibility; this remains an open review question without narrowing the private read product.
+
 `readOnlyHint=true`, `destructiveHint=false` and `openWorldHint=false` describe the bounded private-studio reads. Latest-access operational metadata is recorded without retaining query contents or returned records. The package does not register a separate app identity or bundle a hidden app binding.
 
 ## Remaining review setup

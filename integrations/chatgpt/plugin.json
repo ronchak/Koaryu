@@ -16,7 +16,10 @@
           "Show my upcoming classes for the next two weeks."
         ],
         "logo": "./assets/logo.png",
-        "composerIcon": "./assets/composer-icon.png"
+        "composerIcon": "./assets/composer-icon.png",
+        "capabilities": [
+          "Read"
+        ]
       },
       "review": {
         "prompts": [

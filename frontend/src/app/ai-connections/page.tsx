@@ -40,7 +40,7 @@ export default function AssistantConnectionsPage() {
         <p>
           Sign in as a studio admin, check the assistant’s name and return address, then select the
           information it may read and when access expires. Contact details, dates of birth, home
-          addresses and free-text notes each need your explicit selection.
+          addresses and free-text notes require explicit selection.
         </p>
         <p>
           Selected information goes to the AI service you connect. Notes can contain sensitive

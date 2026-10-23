@@ -301,12 +301,15 @@ def verify_public(manifest, mcp):
         require("koaryu" in content, f"{field} does not identify Koaryu.")
         if field == "supportURL":
             require(
-                "mailto:koaryu@outlook.com" in content,
-                "Support page must show the actual support inbox.",
+                "mailto:koaryu@outlook.com" in content
+                and re.search(r"<h1\b[^>]*>\s*get help with koaryu\.\s*</h1>", content),
+                "Support page must identify Koaryu support and show the actual support inbox.",
             )
         if field == "privacyPolicyURL":
             require(
-                "ai connections" in content and "assistant" in content,
+                re.search(
+                    r"<h[1-6]\b[^>]*>\s*ai assistants you connect\s*</h[1-6]>", content
+                ),
                 "Published privacy page does not cover the connector yet.",
             )
     # A 200 video URL alone does not prove playback, permissions or coverage.
@@ -335,6 +338,10 @@ def verify_public(manifest, mcp):
     require(status == 200, "Protected-resource discovery failed.")
     resource = json.loads(body)
     require(
+        isinstance(resource, dict),
+        "Protected-resource discovery must be a JSON object.",
+    )
+    require(
         resource.get("resource") == endpoint,
         "Discovery resource does not match the exact MCP audience.",
     )
@@ -357,15 +364,22 @@ def verify_public(manifest, mcp):
             break
     require(
         isinstance(authorization, dict)
-        and authorization.get("issuer", "").rstrip("/") == issuer,
+        and isinstance(authorization.get("issuer"), str)
+        and authorization["issuer"].rstrip("/") == issuer,
         "Native OAuth issuer discovery failed.",
     )
+    scopes = authorization.get("scopes_supported")
     require(
-        "offline_access" in authorization.get("scopes_supported", []),
+        isinstance(scopes, list)
+        and all(isinstance(scope, str) for scope in scopes)
+        and "offline_access" in scopes,
         "Native server must support offline_access.",
     )
+    challenges = authorization.get("code_challenge_methods_supported")
     require(
-        "S256" in authorization.get("code_challenge_methods_supported", []),
+        isinstance(challenges, list)
+        and all(isinstance(challenge, str) for challenge in challenges)
+        and "S256" in challenges,
         "Native OAuth must support PKCE S256.",
     )
     for field in ["authorization_endpoint", "token_endpoint", "registration_endpoint"]:

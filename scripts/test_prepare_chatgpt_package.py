@@ -142,7 +142,7 @@ class PackageTest(unittest.TestCase):
             return (
                 200,
                 {"Content-Type": "text/html"},
-                b"Koaryu AI connections assistant mailto:koaryu@outlook.com",
+                b"Koaryu <h3>AI assistants you connect</h3><h1>Get help with Koaryu.</h1> mailto:koaryu@outlook.com",
             )
 
         with (
@@ -150,6 +150,90 @@ class PackageTest(unittest.TestCase):
             self.assertRaisesRegex(ValueError, "exact MCP audience"),
         ):
             package.verify_public(manifest, mcp)
+
+    def test_footer_copy_cannot_substitute_for_policy_or_support_content(self):
+        manifest, mcp = package.complete_manifest(self.manifest, self.facts)
+        for field, body in [
+            (
+                "privacyPolicyURL",
+                b"Koaryu AI connections assistant mailto:koaryu@outlook.com",
+            ),
+            (
+                "supportURL",
+                b"Koaryu <h3>AI assistants you connect</h3> mailto:koaryu@outlook.com",
+            ),
+        ]:
+
+            def response(url, body=body, field=field, **kwargs):
+                content = (
+                    body
+                    if url == self.facts["urls"][field]
+                    else b"Koaryu <h3>AI assistants you connect</h3><h1>Get help with Koaryu.</h1> mailto:koaryu@outlook.com"
+                )
+                return 200, {"Content-Type": "text/html"}, content
+
+            with (
+                self.subTest(field=field),
+                patch.object(package, "fetch", side_effect=response),
+                self.assertRaises(ValueError),
+            ):
+                package.verify_public(manifest, mcp)
+
+    def test_malformed_discovery_fails_cleanly(self):
+        manifest, mcp = package.complete_manifest(self.manifest, self.facts)
+        for resource, authorization in [
+            ([], {}),
+            (
+                {
+                    "resource": self.facts["mcp_url"],
+                    "authorization_servers": ["https://auth.koaryu.app"],
+                },
+                [],
+            ),
+            (
+                {
+                    "resource": self.facts["mcp_url"],
+                    "authorization_servers": ["https://auth.koaryu.app"],
+                },
+                {"issuer": 123},
+            ),
+            (
+                {
+                    "resource": self.facts["mcp_url"],
+                    "authorization_servers": ["https://auth.koaryu.app"],
+                },
+                {
+                    "issuer": "https://auth.koaryu.app",
+                    "scopes_supported": "offline_access",
+                },
+            ),
+        ]:
+
+            def response(url, resource=resource, authorization=authorization, **kwargs):
+                if url == self.facts["mcp_url"]:
+                    return (
+                        401,
+                        {
+                            "WWW-Authenticate": 'Bearer resource_metadata="https://mcp.koaryu.app/.well-known/oauth-protected-resource/mcp"'
+                        },
+                        b"",
+                    )
+                if "oauth-protected-resource" in url:
+                    return 200, {}, json.dumps(resource).encode()
+                if "oauth-authorization-server" in url:
+                    return 200, {}, json.dumps(authorization).encode()
+                return (
+                    200,
+                    {"Content-Type": "text/html"},
+                    b"Koaryu <h3>AI assistants you connect</h3><h1>Get help with Koaryu.</h1> mailto:koaryu@outlook.com",
+                )
+
+            with (
+                self.subTest(resource=resource, authorization=authorization),
+                patch.object(package, "fetch", side_effect=response),
+                self.assertRaises(ValueError),
+            ):
+                package.verify_public(manifest, mcp)
 
     def test_final_zip_has_only_manifest_mcp_and_real_assets(self):
         manifest, mcp = package.complete_manifest(self.manifest, self.facts)
