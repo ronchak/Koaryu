@@ -11,7 +11,7 @@
     ],
     [
       "public.koaryu_release_schema_preflight_v42()",
-      "7f390f7a2fc429d24b099eb64541d87270689960327c14dafc2ce0a145ef86f4",
+      "32c7c15651d37c9c5e4d34a8dd08a4fab232fd3a874abbc91c33cbcc781933f9",
       "plpgsql",
       true,
       "search_path=pg_catalog,TimeZone=UTC,DateStyle=ISO, YMD,IntervalStyle=postgres",

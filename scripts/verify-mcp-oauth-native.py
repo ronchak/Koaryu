@@ -14,6 +14,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+import traceback
 from pathlib import Path
 
 from mcp_oauth_native_scenarios import Scenarios
@@ -33,6 +34,11 @@ def main():
     parser.add_argument(
         "--auth-source-revision",
         help="Source revision supplied with the native Auth build",
+    )
+    parser.add_argument(
+        "--large-fixture",
+        action="store_true",
+        help="Also exercise two 1000-student/25000-attendance studios and actual blocked read isolation.",
     )
     args = parser.parse_args()
     evidence = args.evidence_dir or Path(tempfile.gettempdir()) / (
@@ -70,7 +76,7 @@ def main():
                     "boundary": "real native Auth/PostgREST/Koaryu backend on owned Unix-only PG17",
                 },
             )
-            count = Scenarios(stack).run()
+            count = Scenarios(stack).run(large_fixture=args.large_fixture)
     except KeyboardInterrupt:
         print(
             "Native OAuth verification stopped; owned resources cleaned up",
@@ -78,6 +84,11 @@ def main():
         )
         return 130
     except Exception as exc:  # noqa: BLE001 - report CLI failures after owned cleanup.
+        if evidence.is_dir():
+            private_json(
+                evidence / "exception.json",
+                {"traceback": "".join(traceback.format_exception(exc))},
+            )
         print(
             f"FAIL native OAuth verification: {type(exc).__name__}: {exc}",
             file=sys.stderr,
