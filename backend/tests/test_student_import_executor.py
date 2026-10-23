@@ -1480,6 +1480,12 @@ def test_shared_csv_guardian_must_match_the_actual_contact_on_first_run_and_retr
             "GuardianEmail": "shared@example.invalid",
         },
     ]
+    preview = StudentService(db).validate_import_rows(rows, mapping, CsvImportOptions(), STUDIO)
+    by_row = {row.row_number: row.duplicate_review for row in preview.rows}
+    assert by_row[2].guardian_outcome.kind == "link_existing"
+    assert by_row[2].guardian_outcome.display_name == "Jane Smith"
+    assert by_row[3].guardian_outcome is None
+    assert any("separate contact" in note for note in by_row[3].family_context)
     db.responses = [
         ("claim_student_import_run_v2", claim()),
         ("prepare_student_import_program_v1", selected_program(PROGRAM, "Unassigned")),

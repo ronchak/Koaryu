@@ -19,6 +19,8 @@ from app.services.student_import_ids import deterministic_import_uuid
 from app.services.student_import_matching import (
     ROSTER_MATCH_LIMIT,
     build_duplicate_review,
+    compare_guardians,
+    guardian_identity_from_row,
     guardian_identity_from_existing,
     match_rows,
 )
@@ -384,15 +386,38 @@ class StudentImportPlanner:
             for guardian in entry.get("guardians", [])
         }
         matches = {match.row_number: match for match in match_rows(planned_rows, roster)}
+        retained_guardians = {}
         for row in planned_rows:
             if row.get("completed"):
                 if not row.get("skipped"):
                     row["guardian_identity"] = guardians.get(row.get("guardian_id"))
+                    retained_guardians[int(row["row_number"])] = row["guardian_identity"]
                 continue
             match = matches[int(row["row_number"])]
             row["match"] = match
+            retained = None
             if match.guardian_class == "link_existing":
-                row["guardian_identity"] = guardians.get(match.guardian_of_existing_key)
+                retained = guardians.get(match.guardian_of_existing_key)
+                row["guardian_identity"] = retained
+            elif match.guardian_class == "in_file_shared":
+                retained = retained_guardians.get(match.guardian_of_row)
+                comparison = (
+                    compare_guardians(guardian_identity_from_row(row["data"]), retained)
+                    if retained is not None
+                    else None
+                )
+                if not comparison or comparison[0] != "link":
+                    # The CSV match is not transitive through a linked contact.
+                    # Preview the same separate-contact fallback as execution.
+                    match.guardian_class = "separate_contact"
+                    match.guardian_candidates[0].strength = "separate"
+                    retained = None
+            if row["is_valid"]:
+                retained_guardians[int(row["row_number"])] = retained or (
+                    guardian_identity_from_row(row["data"])
+                    if (row["data"].get("guardian_name") or "").strip()
+                    else None
+                )
             row["duplicate_review"] = build_duplicate_review(match)
             if match.roster_overflow and row["is_valid"]:
                 row["issues"].append(
