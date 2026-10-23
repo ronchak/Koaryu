@@ -33,7 +33,7 @@ BEGIN;
 SET LOCAL ROLE service_role;
 DO $continue$
 DECLARE runid UUID; payload JSONB; first_result JSONB; replay_result JSONB; before_replay JSONB; after_replay JSONB;
- rejected BOOLEAN; reused_gid UUID; original_contact JSONB; skip JSONB; skipped_receipt JSONB; original_run JSONB;
+ rejected BOOLEAN; guard_runid UUID; reused_gid UUID; original_contact JSONB; skip JSONB; skipped_receipt JSONB; original_run JSONB;
 BEGIN
  SELECT id INTO STRICT runid FROM public.student_import_runs WHERE idempotency_key='v61-retained';
  payload := jsonb_build_object('id','00000000-0000-4000-8000-000000006105','studio_id','00000000-0000-4000-8000-000000006102',
@@ -57,10 +57,13 @@ BEGIN
   RAISE EXCEPTION 'V61 replay changed rows or physical tuples';
  END IF;
  -- The guarded call and reused guardian also continue on logical restores.
+ SELECT (claim.run_row->>'id')::UUID INTO guard_runid FROM public.claim_student_import_run_v2(
+  '00000000-0000-4000-8000-000000006102','00000000-0000-4000-8000-000000006101',
+  'students_csv_execute','v61-guard-other','v61-guard-hash','guard-token',45) claim;
  payload:=payload||jsonb_build_object('id','00000000-0000-4000-8000-000000006106',
    'legal_first_name','Guarded','date_of_birth','2014-06-03',
    '_import_outcome',jsonb_set(payload->'_import_outcome','{row_number}','4'));
- PERFORM public.import_student_row_atomic(payload,'00000000-0000-4000-8000-000000006102',runid,'v61-token',4,
+ PERFORM public.import_student_row_atomic(payload,'00000000-0000-4000-8000-000000006102',guard_runid,'guard-token',4,
    NULL,NULL,NULL,NULL,ARRAY['00000000-0000-4000-8000-000000006103'::UUID],ARRAY[]::UUID[]);
  payload:=payload||jsonb_build_object('id','00000000-0000-4000-8000-000000006107',
    '_import_outcome',jsonb_set(payload->'_import_outcome','{row_number}','5'));
@@ -119,6 +122,6 @@ def require_v61_snapshot(before, after):
     require(len(rows) == len(prior) == 1
             and prior[0]['expectation_key'] == rows[0]['expectation_key'] == 'operational_contract_v31'
             and prior[0]['expected_sha256'] == '1513ff10defced0c619f85c7927259165f6c9eb7ef1400be076f567fd39c85b3'
-            and rows[0]['expected_sha256'] == '07b11682181bce027a3434161a54cd9426d45ee1ecd0a9f663d15601ad8b0880', 'V61 expectation correction differs')
+            and rows[0]['expected_sha256'] == '3189e1eac13e9b18668ab2977b7a092a828265cd4e81529bb0ace18dce6a6afb', 'V61 expectation correction differs')
     rows[0]['expected_sha256'] = prior[0]['expected_sha256']
     return normalized == before

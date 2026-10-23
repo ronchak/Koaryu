@@ -174,7 +174,11 @@ BEGIN
                WHERE r.import_run_id=p_import_run_id AND r.kind='skipped' AND r.key=p_row_number::TEXT) THEN
         RAISE EXCEPTION 'Student import row was already skipped.' USING ERRCODE='22023';
     END IF;
-    IF p_acknowledged_student_ids IS NOT NULL THEN
+    IF p_acknowledged_student_ids IS NOT NULL
+       AND v_student.legal_first_name ~ '[[:alnum:]]'
+       AND v_student.legal_last_name ~ '[[:alnum:]]' THEN
+        -- Same-run duplicates are governed by file decisions and the run lock.
+        -- Only names with matcher keys can have reviewable strong candidates.
         -- Dedicated two-int namespace. Other import/rank/workflow users use the
         -- disjoint bigint namespace; the two-int onboarding/alert namespaces differ.
         -- JSON array encoding keeps name boundaries unambiguous.
@@ -185,6 +189,7 @@ BEGIN
         IF EXISTS (
             SELECT 1 FROM public.students existing
             WHERE existing.studio_id=p_studio_id
+              AND existing.import_run_id IS DISTINCT FROM p_import_run_id
               AND lower(btrim(existing.legal_last_name))=lower(btrim(v_student.legal_last_name))
               AND lower(btrim(existing.legal_first_name))=lower(btrim(v_student.legal_first_name))
               AND ((existing.date_of_birth IS NOT NULL AND v_student.date_of_birth IS NOT NULL
@@ -728,7 +733,7 @@ invalid AS (
         ) +
         count(*) FILTER (
             WHERE manifest.v11_manifest IS DISTINCT FROM
-              '0:853352745bfe609f4b959e3aba16cc6fbda240f90bf891244325b8c7a64c10d3'
+              '0:e8119653f389d5a06abc05b243b6601b639a3400ad6b6efd4bf17da907591791'
         ) AS invalid_count
     FROM function_compared function
     CROSS JOIN manifest_state manifest
@@ -755,15 +760,14 @@ GROUP BY invalid.invalid_count, manifest.v11_manifest;
 $function$
 ;
 
-
 -- Only the named inherited expectation changes; all business rows remain untouched.
 DO $expectation$
 DECLARE changed INTEGER;
 BEGIN
-    IF private.koaryu_release_operational_contract_v31() IS DISTINCT FROM '0:07b11682181bce027a3434161a54cd9426d45ee1ecd0a9f663d15601ad8b0880' THEN
+    IF private.koaryu_release_operational_contract_v31() IS DISTINCT FROM '0:3189e1eac13e9b18668ab2977b7a092a828265cd4e81529bb0ace18dce6a6afb' THEN
         RAISE EXCEPTION 'V61 inherited operational contract did not match reviewed facts.';
     END IF;
-    UPDATE private.koaryu_release_v31_expectations SET expected_sha256='07b11682181bce027a3434161a54cd9426d45ee1ecd0a9f663d15601ad8b0880'
+    UPDATE private.koaryu_release_v31_expectations SET expected_sha256='3189e1eac13e9b18668ab2977b7a092a828265cd4e81529bb0ace18dce6a6afb'
     WHERE expectation_key='operational_contract_v31' AND expected_sha256='1513ff10defced0c619f85c7927259165f6c9eb7ef1400be076f567fd39c85b3';
     GET DIAGNOSTICS changed = ROW_COUNT;
     IF changed <> 1 OR (SELECT count(*) FROM private.koaryu_release_v31_expectations) <> 1 THEN
@@ -814,7 +818,7 @@ BEGIN
         v_failures := array_append(v_failures, 'migration_history_sequence_v30');
     END IF;
     IF private.koaryu_release_resource_ownership_manifest_v31()
-       IS DISTINCT FROM '0:a1cbe02ca722dd6903bbc1e47b03a171908e3d22525a024dfac682f6e64e9d2c' THEN
+       IS DISTINCT FROM '0:ee9562e624a9c7c7814ac8efabcaa97965339c8dadc36497625a428926ba007c' THEN
         v_failures := array_append(v_failures, 'resource_ownership_manifest_v31');
     END IF;
     IF private.koaryu_release_schedule_window_manifest_v1()
@@ -1122,7 +1126,7 @@ BEGIN
         );
     END IF;
     IF private.koaryu_release_operational_manifest_v12()
-       IS DISTINCT FROM '3782ef46a8a7dfd9ff0486c0320271f2cc1e0fde207a044bcf02f8cf8624d646' THEN
+       IS DISTINCT FROM '8ecda9b56d227a6c1116e00b9419e3959155071bafbf04638332a808e72e16f0' THEN
         v_failures := array_append(v_failures, 'operational_manifest_v12');
     END IF;
     IF encode(extensions.digest(convert_to(pg_get_functiondef(
@@ -1323,7 +1327,7 @@ BEGIN
           AND p.prorettype='record'::REGTYPE AND p.proretset
           AND p.proconfig=ARRAY['search_path=public, pg_temp']::TEXT[]
           AND encode(extensions.digest(convert_to(pg_catalog.pg_get_functiondef(p.oid),'UTF8'),'sha256'),'hex')
-              = '003a8a502feba36e59d83af4de6a18550eec3ea102509e34af6b33cab8208bbe'
+              = 'e55a8207ef28d186201ee76c555ca536690b50b5268abace0cee43754ed8ba9e'
           AND (SELECT jsonb_agg(jsonb_build_array(
                 CASE WHEN a.grantee=0 THEN 'PUBLIC' ELSE pg_catalog.pg_get_userbyid(a.grantee)::TEXT END,
                 pg_catalog.pg_get_userbyid(a.grantor)::TEXT,a.privilege_type,a.is_grantable)
@@ -1565,13 +1569,13 @@ BEGIN
         v_failures:=array_append(v_failures,'import_receipts_v61');
     END IF;
     IF private.koaryu_release_student_rank_writer_manifest_v13()
-       IS DISTINCT FROM '0:e6878b6d40f5b4a83e0a61526b20c7c838f0d27ec5e1f9646d8495e0af17de74' THEN
+       IS DISTINCT FROM '0:64bf06a566a99ad423ade03ca985ce3f5e58d47fbe0e4a325d4667cfd417d602' THEN
         v_failures := array_append(v_failures, 'import_rank_manifest_v45');
     END IF;
     IF encode(extensions.digest(convert_to(pg_get_functiondef(
         'private.koaryu_release_student_rank_writer_manifest_v13()'::REGPROCEDURE
     ), 'UTF8'), 'sha256'), 'hex')
-       <> 'e05b48659eabb9481dac3a805f5a31035fd6e91b426a4cdf2d8d52a47376a076' THEN
+       <> '179d8ed37d7bf557c26b183e21f2ed483df075485ff107dd8b7b6450a77a03d9' THEN
         v_failures := array_append(v_failures, 'import_rank_manifest_definition_v45');
     END IF;
     IF (SELECT count(*) FROM pg_catalog.pg_proc p
@@ -2696,7 +2700,7 @@ FROM (VALUES ('private.assert_billing_enrollment_transition_current_v1(public.bi
     ('public.write_student_profile_v2_atomic(uuid,uuid,uuid,jsonb,uuid[],jsonb,boolean,text)')) required(signature)
 LEFT JOIN pg_catalog.pg_proc p ON p.oid=pg_catalog.to_regprocedure(required.signature)
 LEFT JOIN pg_catalog.pg_language l ON l.oid=p.prolang)::TEXT,'UTF8'),'sha256'),'hex'))
-       IS DISTINCT FROM '01c812d272398ae6e0189ea12f5f68b6c039d2fb3955f043cf6c7314adc7439b'
+       IS DISTINCT FROM '2702b9c3b60cd2a185457e2c6fcba18e5577f62c61e7aff11d5524abcb4b0946'
        OR (SELECT array_agg(p.oid::REGPROCEDURE::TEXT ORDER BY p.oid::REGPROCEDURE::TEXT COLLATE "C")
            FROM pg_catalog.pg_proc p JOIN pg_catalog.pg_namespace n ON n.oid=p.pronamespace
            WHERE n.nspname IN ('public','private') AND p.prokind='f'

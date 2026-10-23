@@ -10,6 +10,8 @@ from app.services.student_import_csv import make_import_issue
 from app.services.student_import_ids import deterministic_import_uuid
 from app.services.student_import_matching import (
     candidate_for_reference,
+    compare_guardians,
+    guardian_identity_from_row,
     named_references,
     skip_target,
     unacknowledged_candidates,
@@ -331,6 +333,12 @@ class StudentImportExecutor:
             if row.get("completed") and not row.get("skipped")
         }
 
+        guardian_identities = {
+            int(row["row_number"]): row.get("guardian_identity")
+            for row in planned_rows
+            if row.get("completed") and not row.get("skipped")
+        }
+
         for row in planned_rows:
             if not row["is_valid"]:
                 continue
@@ -383,10 +391,20 @@ class StudentImportExecutor:
             guardian_fields = self._pop_guardian_fields(mapped)
             match = row.get("match")
             guardian_id = None
+            retained_guardian_identity = None
             if match and match.guardian_class == "link_existing":
                 guardian_id = match.guardian_of_existing_key
+                retained_guardian_identity = row.get("guardian_identity")
             elif match and match.guardian_class == "in_file_shared":
-                guardian_id = guardian_ids.get(match.guardian_of_row)
+                actual_identity = guardian_identities.get(match.guardian_of_row)
+                comparison = (
+                    compare_guardians(guardian_identity_from_row(row["data"]), actual_identity)
+                    if actual_identity is not None
+                    else None
+                )
+                if comparison and comparison[0] == "link":
+                    guardian_id = guardian_ids.get(match.guardian_of_row)
+                    retained_guardian_identity = actual_identity
             chosen_guardian_id = guardian_id or (
                 deterministic_import_uuid(import_run_id, "guardian-row", str(number))
                 if (guardian_fields["guardian_name"] or "").strip()
@@ -463,6 +481,13 @@ class StudentImportExecutor:
                 continue
             imported_rows.add(number)
             guardian_ids[number] = chosen_guardian_id
+            guardian_identities[number] = (
+                retained_guardian_identity
+                if guardian_id
+                else guardian_identity_from_row(row["data"])
+                if chosen_guardian_id
+                else None
+            )
 
             imported += 1
             if row_imported_without_belt:

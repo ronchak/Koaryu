@@ -5,7 +5,7 @@
     "platformExpected": "bf4921349a0a58063aa95cd495fce9b3207ce09f8aacaa12dc812f7a84606c59",
     "platformRestoredExpected": "50d10eefddc4b7445c4105ba8ec49132e9b692be2f5cf3c7c4c393a206c8a0b6"
   },
-  "functionState": "01c812d272398ae6e0189ea12f5f68b6c039d2fb3955f043cf6c7314adc7439b",
+  "functionState": "2702b9c3b60cd2a185457e2c6fcba18e5577f62c61e7aff11d5524abcb4b0946",
   "changedTableFacts": {
     "private.student_import_receipts": [
       "constraints"
@@ -22,16 +22,16 @@
   },
   "manifestOverrides": {
     "resource_ownership_manifest_v31": {
-      "expected": "0:a1cbe02ca722dd6903bbc1e47b03a171908e3d22525a024dfac682f6e64e9d2c"
+      "expected": "0:ee9562e624a9c7c7814ac8efabcaa97965339c8dadc36497625a428926ba007c"
     },
     "operational_manifest_v12": {
-      "expected": "3782ef46a8a7dfd9ff0486c0320271f2cc1e0fde207a044bcf02f8cf8624d646"
+      "expected": "8ecda9b56d227a6c1116e00b9419e3959155071bafbf04638332a808e72e16f0"
     },
     "import_rank_manifest_v45": {
-      "expected": "0:e6878b6d40f5b4a83e0a61526b20c7c838f0d27ec5e1f9646d8495e0af17de74"
+      "expected": "0:64bf06a566a99ad423ade03ca985ce3f5e58d47fbe0e4a325d4667cfd417d602"
     },
     "import_rank_manifest_definition_v45": {
-      "expected": "e05b48659eabb9481dac3a805f5a31035fd6e91b426a4cdf2d8d52a47376a076"
+      "expected": "179d8ed37d7bf557c26b183e21f2ed483df075485ff107dd8b7b6450a77a03d9"
     }
   },
   "expansionSince": "712cb4b8",
@@ -41,5 +41,10 @@
     "private.record_student_import_skip_v1(uuid,uuid,text,integer,jsonb)",
     "public.record_student_import_skip_v1(uuid,uuid,text,integer,jsonb)"
   ],
-  "expansionChangedTables": []
+  "expansionChangedTables": [],
+  "correctionSince": "2c130ee2",
+  "correctionChangedFunctions": [
+    "private.import_student_row_atomic(jsonb,uuid,uuid,text,integer,text,text,text,text,uuid[],uuid[],uuid,text,text)",
+    "private.koaryu_release_student_rank_writer_manifest_v13()"
+  ]
 }

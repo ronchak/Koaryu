@@ -714,6 +714,17 @@ def match_rows(
         match = RowMatch(row_number=row_number)
         results.append(match)
         if row.get("completed"):
+            if row.get("skipped"):
+                # Keep its file identity as a target, without re-matching the
+                # completed decision or pretending it created a guardian.
+                data = row.get("match_data", row.get("data") or {})
+                identity = student_identity_from_row(data)
+                name = display_name_for_row(data)
+                run_students.add(
+                    identity,
+                    _RunRecord(row_number, identity, GuardianIdentity("", "", None, None), name),
+                )
+                references[("row", row_number)] = _Reference(identity, name)
             continue
         data = row.get("data") or {}
         identity = student_identity_from_row(data)

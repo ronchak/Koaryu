@@ -19,6 +19,7 @@ from app.services.student_import_ids import deterministic_import_uuid
 from app.services.student_import_matching import (
     ROSTER_MATCH_LIMIT,
     build_duplicate_review,
+    guardian_identity_from_existing,
     match_rows,
 )
 from app.services.student_import_plan_result import build_import_result
@@ -310,6 +311,12 @@ class StudentImportPlanner:
                 ]
                 outcome["completed"] = True
                 if skipped is not None:
+                    # A completed skip has no roster student to stand in for it.
+                    # Reconstruct only matching facts from the resent file; its
+                    # saved diagnostic and retained target remain authoritative.
+                    outcome["match_data"] = build_import_row_plan(
+                        raw_row, mapping, options=options
+                    )["data"]
                     outcome["skipped"] = True
                     outcome["skip_retained"] = (
                         skipped["retained_kind"],
@@ -371,12 +378,21 @@ class StudentImportPlanner:
                 completed_student_ids=completed_ids,
                 completed_guardian_ids=completed_guardians,
             )
+        guardians = {
+            guardian["key"]: guardian_identity_from_existing(guardian)
+            for entry in roster
+            for guardian in entry.get("guardians", [])
+        }
         matches = {match.row_number: match for match in match_rows(planned_rows, roster)}
         for row in planned_rows:
             if row.get("completed"):
+                if not row.get("skipped"):
+                    row["guardian_identity"] = guardians.get(row.get("guardian_id"))
                 continue
             match = matches[int(row["row_number"])]
             row["match"] = match
+            if match.guardian_class == "link_existing":
+                row["guardian_identity"] = guardians.get(match.guardian_of_existing_key)
             row["duplicate_review"] = build_duplicate_review(match)
             if match.roster_overflow and row["is_valid"]:
                 row["issues"].append(

@@ -272,7 +272,7 @@ DECLARE
  foreign_studio UUID := '52000000-0000-4000-8000-000000000002';
  actor UUID := '51000000-0000-4000-8000-000000000001';
  program UUID := '53000000-0000-4000-8000-000000000002';
- runid UUID; reference_id UUID; incoming_id UUID; reused_gid UUID; foreign_gid UUID;
+ runid UUID; other_runid UUID; reference_id UUID; incoming_id UUID; reused_gid UUID; foreign_gid UUID;
  c RECORD; r RECORD; payload JSONB; ack UUID[]; before_state JSONB; original_guardian JSONB;
  result JSONB; replay JSONB; skip JSONB; rejected BOOLEAN; original_link JSONB; retained_link_id UUID;
 BEGIN
@@ -321,6 +321,44 @@ BEGIN
      RAISE EXCEPTION 'V61 permitted identity case % did not import',r.n;
    END IF;
  END LOOP;
+ -- Bounded file acknowledgements do not limit an owner's same-run Create choices.
+ FOR r IN SELECT generate_series(50,56) n LOOP
+   payload:=jsonb_build_object('id',gen_random_uuid(),'studio_id',studio,
+     'legal_first_name','SameRun','legal_last_name','Family','date_of_birth','2014-06-03',
+     '_import_outcome',jsonb_build_object('row_number',r.n,'is_valid',true,'issues','[]'::JSONB,'data','{}'::JSONB,'imported_without_belt',false));
+   PERFORM public.import_student_row_atomic(payload,studio,runid,'v61-token',r.n,NULL,NULL,NULL,NULL,ARRAY[program],ARRAY[]::UUID[]);
+ END LOOP;
+ IF (SELECT count(*) FROM public.students WHERE studio_id=studio AND import_run_id=runid AND legal_first_name='SameRun' AND legal_last_name='Family')<>7 THEN
+   RAISE EXCEPTION 'Same-run Create choices were limited by the exhaustive SQL guard';
+ END IF;
+ -- Matches imported by another run remain guarded, as do direct inserts above.
+ SELECT * INTO c FROM public.claim_student_import_run_v2(studio,actor,'students_csv_execute','v61-other-identity','v61-other-hash','other-token',45);
+ other_runid:=(c.run_row->>'id')::UUID;
+ payload:=jsonb_build_object('id',gen_random_uuid(),'studio_id',studio,
+   'legal_first_name','OtherRun','legal_last_name','Family','date_of_birth','2014-06-03',
+   '_import_outcome',jsonb_build_object('row_number',60,'is_valid',true,'issues','[]'::JSONB,'data','{}'::JSONB,'imported_without_belt',false));
+ PERFORM public.import_student_row_atomic(payload,studio,other_runid,'other-token',60,NULL,NULL,NULL,NULL,ARRAY[program],ARRAY[]::UUID[]);
+ payload:=payload||jsonb_build_object('id',gen_random_uuid(),'_import_outcome',jsonb_set(payload->'_import_outcome','{row_number}','61'));
+ before_state:=pg_temp.import_domain_snapshot(); rejected:=false;
+ BEGIN
+   PERFORM public.import_student_row_atomic(payload,studio,runid,'v61-token',61,NULL,NULL,NULL,NULL,ARRAY[program],ARRAY[]::UUID[]);
+ EXCEPTION WHEN SQLSTATE 'P0409' THEN
+   IF SQLERRM IS DISTINCT FROM 'student_import_duplicate_review_required' THEN RAISE; END IF;
+   rejected:=true;
+ END;
+ IF NOT rejected OR pg_temp.import_domain_snapshot() IS DISTINCT FROM before_state THEN
+   RAISE EXCEPTION 'A strong match from another run was not refused atomically';
+ END IF;
+ -- Punctuation-only name keys cannot be shown by the matcher and must not block.
+ INSERT INTO public.students(studio_id,legal_first_name,legal_last_name,date_of_birth)
+ VALUES(studio,'-','Nguyen','2014-06-03');
+ payload:=payload||jsonb_build_object('id',gen_random_uuid(),'legal_first_name','-','legal_last_name','Nguyen',
+   '_import_outcome',jsonb_set(payload->'_import_outcome','{row_number}','57'));
+ PERFORM public.import_student_row_atomic(payload,studio,runid,'v61-token',57,NULL,NULL,NULL,NULL,ARRAY[program],ARRAY[]::UUID[]);
+ IF NOT EXISTS(SELECT 1 FROM public.students WHERE id=(payload->>'id')::UUID AND import_run_id=runid) THEN
+   RAISE EXCEPTION 'A name without a matcher key was refused by the guard';
+ END IF;
+
  -- Source identity is accepted and stored when provided, but is not an app matcher signal yet.
  incoming_id:=gen_random_uuid();
  payload:=jsonb_build_object('id',incoming_id,'studio_id',studio,'legal_first_name','Source','legal_last_name','First',
