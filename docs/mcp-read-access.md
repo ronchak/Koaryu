@@ -145,4 +145,6 @@ KOARYU_E2E_FRONTEND_URL=http://127.0.0.1:4100 npx playwright test e2e/mcp-consen
 
 The browser test expects a loopback frontend built with `NEXT_PUBLIC_SUPABASE_URL=https://placeholder.supabase.co`, `NEXT_PUBLIC_SUPABASE_ANON_KEY=placeholder-key`, `NEXT_PUBLIC_API_URL=http://127.0.0.1:8102/api/v1`, `NEXT_PUBLIC_SITE_URL=http://127.0.0.1:4100`, and preview mode disabled. It intercepts synthetic Auth and API traffic and covers sign-in return paths, consent, sensitive-field opt-in, expiry, decline, failure and mobile layout.
 
+The Supabase CLI runs the MCP SQL contract as its disposable local bootstrap administrator so the contract can switch to the actual Auth role; it adds no role memberships or production grants. Other local contracts keep their existing runner role.
+
 Database verification uses `supabase/verification/mcp_read_connections_contract.sql` in the disposable local verifier, plus `scripts/verify-v60-v61-restore-contract.py` for the populated upgrade/restore continuation. Follow the database verification policy before choosing a local suite. Normal generation checks are `npm run check:api-types`, `npm run check:release-attestation`, `npm run check:release-workflow` and `npm run check:env-examples`.

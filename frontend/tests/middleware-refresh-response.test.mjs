@@ -7,6 +7,7 @@ import * as studioCookies from "../src/lib/studio-state-cookie.ts";
 import * as billingRoutes from "../src/lib/billing-route-access.ts";
 import * as authProfileRequest from "../src/lib/auth-profile-request.ts";
 import * as authRoutes from "../src/lib/auth-route-model.ts";
+import * as authCallback from "../src/lib/auth-callback.ts";
 import * as authUserRequest from "../src/lib/auth-user-request.ts";
 import * as navigationRecovery from "../src/lib/navigation-recovery.ts";
 const require = createRequire(import.meta.url);
@@ -55,6 +56,7 @@ function loadMiddleware(user, error = null) {
     "@/lib/studio-state-cookie": studioCookies,
     "@/lib/billing-route-access": billingRoutes,
     "@/lib/auth-route-model": authRoutes,
+    "@/lib/auth-callback": authCallback,
     "@/lib/store-bootstrap-model": {
       parseAuthProfileResponse: () => {
         throw new Error("Unexpected profile request");
