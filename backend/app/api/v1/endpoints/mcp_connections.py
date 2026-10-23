@@ -6,7 +6,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Response
 from fastapi.security import HTTPAuthorizationCredentials
-from pydantic import Field
+from pydantic import AwareDatetime, Field
 
 from app.core.config import get_settings
 from app.core.deps import (
@@ -18,6 +18,7 @@ from app.core.deps import (
 )
 from app.mcp_read.catalog import DEFAULT_PERMISSIONS, PERMISSIONS
 from app.mcp_read.connections import (
+    change_access,
     list_connections,
     oauth_request,
     owner,
@@ -37,6 +38,12 @@ AuthorizationId = Annotated[
 class Consent(Contract):
     permissions: Annotated[list[str], Field(min_length=1, max_length=9)]
     expires_days: Annotated[int, Field(strict=True, ge=1, le=90)] = 30
+
+
+class AccessChange(Contract):
+    permissions: Annotated[list[str], Field(min_length=1, max_length=9)]
+    expected_authorized_at: AwareDatetime
+    expires_days: Annotated[int, Field(strict=True, ge=1, le=90)] | None = None
 
 
 def enabled():
@@ -192,3 +199,26 @@ async def revoke(
         settings, credentials.credentials, result["client_id"]
     )
     return result
+
+
+@router.post("/connections/{connection_id}/access")
+async def update_access(
+    connection_id: UUID,
+    change: AccessChange,
+    response: Response,
+    user_id: Annotated[str, Depends(get_current_user_id)],
+    provider: Annotated[ProviderDependency, Depends(get_supabase)],
+):
+    enabled()
+    response.headers["Cache-Control"] = "no-store"
+    return await run_supabase_operation(
+        provider,
+        lambda client: change_access(
+            client,
+            user_id,
+            connection_id,
+            change.permissions,
+            change.expected_authorized_at,
+            change.expires_days,
+        ),
+    )

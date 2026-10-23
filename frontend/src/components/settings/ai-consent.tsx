@@ -7,29 +7,41 @@ import { api } from "@/lib/api";
 import { isAiAuthorizationId, safeAiRedirect, type AiAuthorization } from "@/lib/mcp-connections";
 import { Button } from "@/components/ui/button";
 
+type ConsentOperation = { token: string; authorizationId: string };
+
 export function AiConsent({ authorizationId }: { authorizationId: string | null }) {
   const [token, setToken] = useState<string | null>(null);
   const [sessionReady, setSessionReady] = useState(false);
-  const [loaded, setLoaded] = useState<{ token: string; details: AiAuthorization } | null>(null);
+  const [loaded, setLoaded] = useState<{
+    token: string;
+    authorizationId: string;
+    details: AiAuthorization;
+  } | null>(null);
   const [permissions, setPermissions] = useState<string[]>([]);
   const [days, setDays] = useState(30);
-  const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
-  const pending = useRef(false);
+  const [error, setError] = useState<(ConsentOperation & { message: string }) | null>(null);
+  const [operation, setOperation] = useState<ConsentOperation | null>(null);
+  const pending = useRef<ConsentOperation | null>(null);
   const generation = useRef(0);
-  const details = loaded?.token === token ? loaded.details : null;
+  const details =
+    loaded?.token === token && loaded.authorizationId === authorizationId ? loaded.details : null;
   const valid = isAiAuthorizationId(authorizationId);
+  const busy = operation?.token === token && operation.authorizationId === authorizationId;
+  const message =
+    error?.token === token && error.authorizationId === authorizationId ? error.message : "";
 
   useEffect(() => {
     let active = true;
+    let authEventSeen = false;
     const supabase = createClient();
     void supabase.auth.getSession().then(({ data }) => {
-      if (active) {
+      if (active && !authEventSeen) {
         setToken(data.session?.access_token ?? null);
         setSessionReady(true);
       }
     });
     const { data } = supabase.auth.onAuthStateChange((_event, session) => {
+      authEventSeen = true;
       if (active) {
         setToken(session?.access_token ?? null);
         setSessionReady(true);
@@ -44,7 +56,7 @@ export function AiConsent({ authorizationId }: { authorizationId: string | null 
   useEffect(() => {
     const current = ++generation.current;
     const abort = new AbortController();
-    if (token && valid) {
+    if (token && authorizationId && valid) {
       void api
         .get<AiAuthorization | { redirect_url: string }>(
           `/mcp/authorizations/${authorizationId}`,
@@ -57,15 +69,18 @@ export function AiConsent({ authorizationId }: { authorizationId: string | null 
             leave(result.redirect_url);
             return;
           }
-          setLoaded({ token, details: result });
+          setLoaded({ token, authorizationId, details: result });
           setPermissions(result.default_permissions);
-          setError("");
+          setError(null);
         })
         .catch((err) => {
           if (!abort.signal.aborted && generation.current === current)
-            setError(
-              err instanceof Error ? err.message : "Could not load this connection request.",
-            );
+            setError({
+              token,
+              authorizationId,
+              message:
+                err instanceof Error ? err.message : "Could not load this connection request.",
+            });
         });
     }
     return () => {
@@ -81,10 +96,17 @@ export function AiConsent({ authorizationId }: { authorizationId: string | null 
   }
 
   async function decide(approve: boolean) {
-    if (pending.current || !token || !details) return;
-    pending.current = true;
-    setBusy(true);
-    setError("");
+    if (
+      !token ||
+      !authorizationId ||
+      !details ||
+      (pending.current?.token === token && pending.current.authorizationId === authorizationId)
+    )
+      return;
+    const currentOperation = { token, authorizationId };
+    pending.current = currentOperation;
+    setOperation(currentOperation);
+    setError(null);
     const current = generation.current;
     try {
       const result = await api.post<{ redirect_url: string }>(
@@ -96,14 +118,16 @@ export function AiConsent({ authorizationId }: { authorizationId: string | null 
       if (generation.current === current) leave(result.redirect_url);
     } catch (err) {
       if (generation.current === current)
-        setError(
-          err instanceof Error
-            ? err.message
-            : "Could not complete authorization. Start the connection again in your assistant.",
-        );
+        setError({
+          ...currentOperation,
+          message:
+            err instanceof Error
+              ? err.message
+              : "Could not complete authorization. Start the connection again in your assistant.",
+        });
     } finally {
-      pending.current = false;
-      setBusy(false);
+      if (pending.current === currentOperation) pending.current = null;
+      if (generation.current === current) setOperation(null);
     }
   }
 
@@ -131,16 +155,19 @@ export function AiConsent({ authorizationId }: { authorizationId: string | null 
               </Link>
             </div>
           )}
-          {token && !details && !error && <p className="mt-5">Loading connection request…</p>}
-          {error && (
+          {token && !details && !message && <p className="mt-5">Loading connection request…</p>}
+          {message && (
             <p role="alert" className="mt-5 text-danger">
-              {error}
+              {message}
             </p>
           )}
           {details && (
             <div className="mt-6 space-y-6">
-              <p>
-                <strong>{details.client_name}</strong> is requesting read access to your studio.
+              <p className="[overflow-wrap:anywhere]">
+                <strong>
+                  <bdi>{details.client_name}</bdi>
+                </strong>{" "}
+                is requesting read access to your studio.
               </p>
               <p className="text-sm text-text-secondary">
                 The assistant supplied this name. Check that it matches the connection you started.

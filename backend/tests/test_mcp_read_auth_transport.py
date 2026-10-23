@@ -71,6 +71,9 @@ class FixtureRuntime(Runtime):
     async def run(self, operation):
         return operation(self.db)
 
+    async def run_auth(self, operation):
+        return operation(self.db)
+
 
 @pytest.fixture
 def settings():
@@ -330,3 +333,50 @@ def test_connector_refuses_account_subjects_and_identity_scopes(settings, db, ov
     _, claims = token(settings, **overrides)
     with pytest.raises(HTTPException):
         authorize_read(db, claims, settings.MCP_PUBLIC_URL)
+
+
+@pytest.mark.parametrize("change", ["permissions", "version"])
+def test_changed_consent_during_a_read_does_not_return_previously_authorized_fields(
+    client,
+    settings,
+    db,
+    monkeypatch,
+    change,
+):
+    db.data["mcp_connections"][0]["permissions"].append("contacts")
+    db.data["students"][0]["email"] = "private-inflight@example.invalid"
+    original_table = db.table
+
+    def table(name):
+        query = original_table(name)
+        if name == "students":
+            execute = query.execute
+
+            def changed_execute():
+                result = execute()
+                if change == "permissions":
+                    db.data["mcp_connections"][0]["permissions"].remove("contacts")
+                else:
+                    db.data["mcp_connections"][0]["authorized_at"] = datetime.now(UTC).isoformat()
+                return result
+
+            query.execute = changed_execute
+        return query
+
+    monkeypatch.setattr(db, "table", table)
+    response = rpc(
+        client,
+        settings,
+        "tools/call",
+        {
+            "name": "query_data",
+            "arguments": {
+                "query": {"dataset": "students", "select": ["email"]},
+            },
+        },
+    )
+    assert response.status_code == 200
+    assert response.json()["result"]["isError"] is True
+    assert "private-inflight@example.invalid" not in response.text
+    assert "changed while reading" in response.text
+    assert db.operational_writes == 0

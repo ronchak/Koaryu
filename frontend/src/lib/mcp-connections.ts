@@ -10,6 +10,7 @@ export type AiConnection = {
   last_tool: string | null;
   last_dataset: string | null;
   last_row_count: number | null;
+  session_ready?: boolean;
 };
 
 export type AiConnections = {
@@ -31,7 +32,8 @@ export type AiAuthorization = {
 
 export function connectionStatus(connection: AiConnection, now = Date.now()) {
   if (connection.revoked_at) return "Disconnected";
-  return Date.parse(connection.expires_at) <= now ? "Expired" : "Connected";
+  if (Date.parse(connection.expires_at) <= now) return "Expired";
+  return connection.session_ready === false ? "Awaiting assistant" : "Connected";
 }
 
 export function safeAiRedirect(value: unknown): string | null {

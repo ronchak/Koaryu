@@ -34,8 +34,15 @@ from app.mcp_read.connections import authorize_read
 from app.mcp_read.query import Budget, Reader, ReadError, Source
 from app.mcp_read.schemas import Query
 
-LANE = SupabaseLaneConfig(
-    max_workers=1,
+AUTH_LANE = SupabaseLaneConfig(
+    max_workers=2,
+    max_queue=8,
+    queue_wait_timeout=0.25,
+    operation_wait_timeout=15.0,
+    postgrest_client_timeout=2.0,
+)
+READ_LANE = SupabaseLaneConfig(
+    max_workers=2,
     max_queue=2,
     queue_wait_timeout=0.25,
     operation_wait_timeout=20.0,
@@ -51,7 +58,11 @@ class Runtime:
         self.windows = OrderedDict()
 
     def start(self):
-        self.provider = SupabaseProviderRuntime(LANE, LANE, thread_name_prefix="mcp-provider")
+        # Keep credential/grant checks responsive while bounded aggregate reads
+        # occupy their workers. Both lanes remain separate from the dashboard.
+        self.provider = SupabaseProviderRuntime(
+            AUTH_LANE, READ_LANE, thread_name_prefix="mcp-provider"
+        )
 
     async def close(self):
         if self.provider is not None:
@@ -59,6 +70,11 @@ class Runtime:
             self.provider = None
 
     async def run(self, operation):
+        if self.provider is None:
+            raise RuntimeError("Connector is not running")
+        return await self.provider.run_bulk(operation)
+
+    async def run_auth(self, operation):
         if self.provider is None:
             raise RuntimeError("Connector is not running")
         return await self.provider.run_interactive(operation)
@@ -105,7 +121,9 @@ class Verifier:
             for key in ("client_id", "session_id", "koaryu_connection_id"):
                 UUID(claims[key])
             self.runtime.admit(claims["koaryu_connection_id"])
-            await self.runtime.run(lambda client: authorize_read(client, claims, self.resource))
+            await self.runtime.run_auth(
+                lambda client: authorize_read(client, claims, self.resource)
+            )
         except (jwt.InvalidTokenError, KeyError, ValueError, TypeError):
             return None
         except HTTPException as exc:
@@ -191,6 +209,7 @@ def build_server(settings, runtime):
 
         def operation(client):
             connection = authorize_read(client, token.claims, resource)
+            consent_version = (connection.get("authorized_at"), tuple(connection["permissions"]))
             studio_id = connection["studio_id"]
             rows = (
                 client.table("studios")
@@ -210,7 +229,9 @@ def build_server(settings, runtime):
             )
             result = action(reader, studio, connection)
             # Do not return newly fetched data after discovering a revoked grant.
-            authorize_read(client, token.claims, resource)
+            latest = authorize_read(client, token.claims, resource)
+            if (latest.get("authorized_at"), tuple(latest["permissions"])) != consent_version:
+                raise ReadError("Connection access changed while reading. Retry your request.")
             # Operational metadata only. No query text, filter values, or returned
             # customer records are persisted by the connector.
             client.table("mcp_connections").update(

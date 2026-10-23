@@ -61,6 +61,25 @@ export default function AiConnectionsHelp() {
           </p>
         </div>
       </AccountSection>
+      <AccountSection title="Manage or renew access">
+        <div className="space-y-3 text-sm leading-6 text-text-secondary">
+          <p>
+            In Settings → AI connections, choose Edit access to change the information an assistant
+            may read. Keeping the current expiration changes permissions immediately without
+            extending access. Choose a new duration only when you want to renew it.
+          </p>
+          <p>
+            For an expired connection, choose Renew access and review the selected information
+            before saving. A connection marked Awaiting assistant still needs its sign-in completed
+            in that assistant. Disconnect resets an unfinished or unwanted connection.
+          </p>
+          <p>
+            If sign-in still loops after renewal, disconnect in Koaryu and start a fresh connection
+            in your assistant. A disconnected connection needs a new sign-in; editing it cannot
+            restore access. Your assistant can retain information it already received.
+          </p>
+        </div>
+      </AccountSection>
       <AccountSection title="Ask your own questions">
         <ul className="list-disc space-y-2 pl-5 text-sm leading-6 text-text-secondary">
           <li>Compare attendance by program and month.</li>

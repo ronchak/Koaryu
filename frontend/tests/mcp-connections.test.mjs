@@ -86,3 +86,13 @@ test("native opaque authorization IDs survive login without permitting URL path 
       );
   }
 });
+
+test("pending sessions have an explicit state and do not override expiry or revocation", () => {
+  const connection = { revoked_at: null, expires_at: "2035-01-01T00:00:00Z", session_ready: false };
+  assert.equal(connectionStatus(connection, Date.parse("2026-10-23")), "Awaiting assistant");
+  assert.equal(connectionStatus(connection, Date.parse("2036-01-01")), "Expired");
+  assert.equal(
+    connectionStatus({ ...connection, revoked_at: "2026-10-22" }, Date.parse("2026-10-23")),
+    "Disconnected",
+  );
+});

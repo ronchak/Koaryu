@@ -2,7 +2,7 @@
 
 Koaryu exposes a read-only MCP server at the backend's `/mcp` endpoint. An assistant can discover the owner's authorized datasets, combine filters and relationship fields, group records, and calculate totals. It can answer new questions without adding a tool for each question.
 
-V1 supports studio admins with an active Koaryu subscription or studio comp. The owner selects data permissions and an expiry of up to 90 days, and can disconnect in Settings → AI connections. No customer API key or personal access token is needed. The server defaults to disabled. This branch does not enable or deploy it on any hosted environment.
+V1 supports studio admins with an active Koaryu subscription or studio comp. The owner selects data permissions and an expiry of up to 90 days. In Settings → AI connections they can edit permissions, explicitly renew access or disconnect. Permission-only edits preserve the existing expiration. Revoked connections cannot be revived by editing them. No customer API key or personal access token is needed. The server defaults to disabled. This branch does not enable or deploy it on any hosted environment.
 
 ## Try the synthetic demo now
 
@@ -92,7 +92,7 @@ The official Python MCP SDK supplies Streamable HTTP and protected-resource disc
 
 The backend uses its existing service-role PostgREST access. Tenant scoping and field allowlists are enforced by the reader, not by a prompt. `student_guardians` checks ownership of both parent records. There are no customer-data write tools. Operational writes are limited to consent/session/revocation and latest-access metadata in `mcp_connections`; query text, values and results are not persisted there. Logs must not record Bearer tokens or MCP request/response bodies.
 
-The connector has its own bounded provider lane and a per-process rate limit of 60 authenticated requests per minute per connection. It does not use the dashboard's provider capacity. Multi-process rate limits are independent. The initial single-worker lane suits a gated pilot; a slow aggregate can make other studios receive retryable 503 responses. Before broad multi-studio rollout, load-test competing aggregate and discovery calls, size isolated authentication/read capacity, and add a shared gateway limit if needed.
+The connector has separate bounded authentication and read lanes, independent of dashboard capacity. Authentication has two workers and eight queued slots; reads have two workers and two queued slots. Slow or cancelled reads retain their actual worker capacity but cannot occupy authentication workers. Saturated work fails with a retryable error. A per-process limit allows 60 authenticated requests per minute per connection. Multi-process rate limits are independent; load-test the intended deployment and use a shared gateway limit where required.
 
 ## Enable on an authorized test environment
 
@@ -103,7 +103,7 @@ These are deployment prerequisites, not actions performed by this branch. Follow
 3. Enable the custom access-token hook `public.mcp_access_token_hook`. If the project already has a custom access-token hook, review and compose its behavior before activation; Supabase exposes one hook of this type. The migration explicitly grants `supabase_auth_admin` public-schema usage and function/table access. Immediately verify ordinary email, Google and Microsoft sign-in and refresh. If any fails, disable the hook before continuing.
 4. Set backend `MCP_PUBLIC_URL` to the exact canonical HTTPS address ending in `/mcp`, without a trailing slash, query or fragment. Set `MCP_ENABLED=true` only after the schema and hook are ready. Keep the existing backend frontend-origin and Supabase settings. No new secret is required.
 5. Verify `/.well-known/oauth-protected-resource/mcp`, its advertised authorization server, and the native server's OAuth discovery. An unauthenticated MCP request must return 401 with discovery information. A normal Koaryu user token must not read MCP data, and a connector token must not access normal app APIs. Using a disposable test account, verify connector tokens are refused on Supabase Auth's `GET/PUT /auth/v1/user`, `/factors`, `/logout` and `/user/oauth/grants`, including account mutation attempts. Verify the ordinary `/auth/v1/token?grant_type=refresh_token` endpoint refuses the connector refresh token without matching OAuth client authentication, and that `/oauth/token` returns no owner user object or ID token. A read-only connector must not inherit account-management authority. If those checks fail, keep activation disabled and resolve that boundary before offering the connector. Pre-register clients during evaluation; do not enable public dynamic registration until this proof passes.
-6. Connect the MCP client, complete Koaryu login, approve a limited permission selection and run the prompts above against the intended synthetic test studio. Confirm contact/notes refusal, studio isolation, expiry, refresh, disconnect, and reconnect with changed permissions. Verify that an old session remains refused after reconnect. Capture the hook's authentication-method value for a real refresh and confirm it cannot enter the fresh authorization-code branch. Exercise an expired connection, native auto-approval, refused refresh, and the client's re-authentication prompt. If native consent skips the screen after expiry, Disconnect in Koaryu first, then start a new connection.
+6. Connect the MCP client, complete Koaryu login, approve a limited permission selection and run the prompts above against the intended synthetic test studio. Confirm contact/notes refusal, studio isolation, expiry, refresh, disconnect, and reconnect with changed permissions. Verify that an old session remains refused after reconnect. Capture the hook's authentication-method value for a real refresh and confirm it cannot enter the fresh authorization-code branch. Exercise an expired connection, native auto-approval, refused refresh, and the client's re-authentication prompt. For an expired connection, choose Renew access in Koaryu settings and explicitly select a duration. If you want a fresh sign-in or native consent skips a needed screen, Disconnect in Koaryu first, then start a new connection.
 7. Keep hosted activation disabled until a real native OAuth authorization-code exchange and refresh have passed on the intended environment. Local verification has exercised a real disposable native Auth authorization-code exchange and refresh with the actual backend and PostgREST, including the official MCP OAuth client. This does not claim an exchange has run against the intended hosted Auth version.
 
 The native behavior was inspected in [Supabase Auth source c3348e8](https://github.com/supabase/auth/tree/c3348e8f1cb31454e9783e4eb9eab1e71ad9652f). Its Auth middleware loads subjects as user UUIDs, while its custom-hook schema permits a string subject. Its OAuth refresh path uses `token_refresh` and binds refreshes to the OAuth client. These source checks explain the connection-principal design; they do not replace smoke tests against the deployed Auth version.
@@ -114,16 +114,32 @@ For ChatGPT, create a custom MCP connection in the account/workspace's developer
 
 For Claude Code, add the HTTPS endpoint as a remote HTTP MCP server and complete its OAuth login. Use its MCP connection screen to retry authorization or remove the client. In Koaryu, Settings → AI connections controls access regardless of the assistant's local connection state.
 
+## Real native OAuth proof
+
+For a repeatable assembled check without Docker, supply trusted native Supabase Auth and PostgREST binaries plus PostgreSQL17. Use the existing backend development environment. The check accepts no hosted database URL or real account credentials, refuses an occupied local Supabase port, creates a fresh Unix-only database and synthetic ES256 keys, applies native Auth and Koaryu migrations, and runs the actual backend. It cleans up its own servers and cluster on completion.
+
+```sh
+backend/venv/bin/python scripts/verify-mcp-oauth-native.py \
+  --auth-binary /absolute/path/to/auth \
+  --postgrest-binary /absolute/path/to/postgrest \
+  --postgres-bin /absolute/path/to/postgresql17/bin \
+  --evidence-dir /absolute/private/path/to/new-evidence
+```
+
+The initial implementation was exercised with native Auth source `c3348e8f1cb31454e9783e4eb9eab1e71ad9652f`, PostgREST14.18 and PostgreSQL17.11. The tool records binary hashes and the candidate. Build native Auth from the [official source instructions](https://github.com/supabase/auth#quick-start); use a verified [official PostgREST binary](https://github.com/PostgREST/postgrest/releases). These are optional development tools, not additional Koaryu runtime services.
+
+The proof covers discovery, DCR, PKCE and a wrong verifier, native consent, ordinary login/refresh, connector account-endpoint refusal, identity-token bypass refusal, real MCP reads and field grants, unchanged business records, expiry, access editing, explicit renewal, disconnect and reconnect. Native hook rejection currently surfaces as a native500 for some refused token exchanges; this is recorded as a refusal, not a successful token response. Activation still requires checking the deployed Auth version and a real ChatGPT/Claude client.
+
 ## Verification
 
 ```sh
 cd backend
-venv/bin/python -m pytest tests/test_mcp_read_query.py tests/test_mcp_read_auth_transport.py tests/test_mcp_connections.py -q
+venv/bin/python -m pytest tests/test_mcp_read_query.py tests/test_mcp_read_auth_transport.py tests/test_mcp_connections.py tests/test_mcp_connection_access.py tests/test_mcp_read_capacity.py -q
 ```
 
 ```sh
 cd frontend
-node --experimental-strip-types --test tests/mcp-connections.test.mjs tests/auth-callback.test.mjs tests/google-auth.test.mjs
+node --experimental-strip-types --test tests/mcp-connections.test.mjs tests/mcp-connections-mounted.test.mjs tests/auth-callback.test.mjs tests/google-auth.test.mjs
 KOARYU_E2E_FRONTEND_URL=http://127.0.0.1:4100 npx playwright test e2e/mcp-consent.spec.ts --workers=1
 ```
 

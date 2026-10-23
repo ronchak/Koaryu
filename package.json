@@ -29,6 +29,7 @@
     "generate:remediation-ledger": "node scripts/remediation-ledger-counts.mjs --write",
     "check:remediation-ledger": "node --test scripts/remediation-ledger-counts.test.mjs && node scripts/remediation-ledger-counts.mjs --check",
     "generate:workflow-preview-catalog": "backend/venv/bin/python scripts/generate-workflow-preview-catalog.py",
-    "check:workflow-preview-catalog": "backend/venv/bin/python scripts/generate-workflow-preview-catalog.py --check"
+    "check:workflow-preview-catalog": "backend/venv/bin/python scripts/generate-workflow-preview-catalog.py --check",
+    "check:mcp-oauth-native": "backend/venv/bin/python scripts/verify-mcp-oauth-native.py"
   }
 }

@@ -90,7 +90,7 @@ def list_connections(client: Any, user_id: str) -> list[dict]:
 
 
 def public_connection(row: dict):
-    return {
+    public = {
         key: row.get(key)
         for key in (
             "id",
@@ -106,6 +106,76 @@ def public_connection(row: dict):
             "last_row_count",
         )
     }
+    public["session_ready"] = row.get("session_id") is not None
+    return public
+
+
+def change_access(
+    client,
+    user_id: str,
+    connection_id: UUID,
+    permissions: list[str],
+    expected_authorized_at: datetime,
+    expires_days: int | None,
+):
+    """Owner-only consent metadata; never extend access as a side effect of edits."""
+    membership = owner(client, user_id)
+    if not permissions or any(permission not in PERMISSIONS for permission in permissions):
+        raise HTTPException(422, "Choose at least one supported data permission.")
+    rows = (
+        client.table("mcp_connections")
+        .select(CONNECTION_COLUMNS)
+        .eq("id", str(connection_id))
+        .eq("user_id", user_id)
+        .eq("studio_id", membership["studio_id"])
+        .limit(1)
+        .execute()
+        .data
+    )
+    if not rows:
+        raise HTTPException(404, "Connection not found.")
+    current = rows[0]
+    if current["revoked_at"] is not None:
+        raise HTTPException(
+            409, "Disconnected connections must be connected again in your assistant."
+        )
+    if current["session_id"] is None:
+        raise HTTPException(409, "Finish connecting in your assistant before editing access.")
+    if datetime.fromisoformat(current["authorized_at"]) != expected_authorized_at:
+        raise HTTPException(409, "Connection access changed. Refresh and review it before saving.")
+    now = datetime.now(UTC)
+    # This timestamp is also the optimistic consent version. Keep it moving
+    # forward even if the API and database clocks differ slightly.
+    authorized_at = max(now, expected_authorized_at + timedelta(microseconds=1))
+    expiry = datetime.fromisoformat(current["expires_at"])
+    if expires_days is not None:
+        if type(expires_days) is not int or not 1 <= expires_days <= 90:
+            raise HTTPException(422, "Choose an access duration from 1 through 90 days.")
+        expiry = now + timedelta(days=expires_days)
+    elif expiry <= now:
+        raise HTTPException(409, "This connection expired. Choose a duration to renew it.")
+    if expiry <= authorized_at:
+        raise HTTPException(409, "This connection expired. Choose a duration to renew it.")
+    result = (
+        client.table("mcp_connections")
+        .update(
+            {
+                "permissions": sorted(set(permissions)),
+                "authorized_at": authorized_at.isoformat(),
+                "expires_at": expiry.isoformat(),
+            }
+        )
+        .eq("id", str(connection_id))
+        .eq("user_id", user_id)
+        .eq("studio_id", membership["studio_id"])
+        .eq("authorized_at", expected_authorized_at.isoformat())
+        .is_("revoked_at", "null")
+        .execute()
+        .data
+    )
+    if not result:
+        raise HTTPException(409, "Connection access changed. Refresh and review it before saving.")
+    return public_connection(result[0])
 
 
 async def revoke_native_grant(settings, token: str, client_id: str) -> bool:
