@@ -6,12 +6,22 @@ import os
 import secrets
 import socket
 import tempfile
+from contextlib import contextmanager
 from pathlib import Path
 
 import uvicorn
 
 from .server import build_app
 from .store import Store, ensure
+
+
+@contextmanager
+def reserve_loopback_port(port):
+    # Keep exclusive ownership through Uvicorn startup. SO_REUSEADDR can let a
+    # specific-address bind shadow another service's wildcard listener on macOS.
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
+        listener.bind(("127.0.0.1", port))
+        yield listener
 
 
 def main():
@@ -34,38 +44,37 @@ def main():
         422,
         "Keep synthetic credentials outside the worktree.",
     )
-    with socket.socket() as listener:
-        listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        listener.bind(("127.0.0.1", args.port))
-    store = Store.create(directory)
-    fixtures = store.seed()
-    descriptor = os.open(
-        directory / "synthetic-credentials.json",
-        os.O_WRONLY | os.O_CREAT | os.O_EXCL,
-        0o600,
-    )
-    with os.fdopen(descriptor, "w") as output:
-        json.dump(fixtures, output, indent=2)
-        output.write("\n")
-    origin = f"http://127.0.0.1:{args.port}"
-    print(
-        "Synthetic action lab only. No Koaryu, Supabase, Stripe or customer data is used.",
-        flush=True,
-    )
-    print("Owner review: " + origin + "/owner", flush=True)
-    print("Fixed-bearer MCP: " + origin + "/mcp", flush=True)
-    print(
-        "Private synthetic credentials and target IDs: "
-        + str(directory / "synthetic-credentials.json"),
-        flush=True,
-    )
-    uvicorn.run(
-        build_app(store, origin),
-        host="127.0.0.1",
-        port=args.port,
-        access_log=False,
-        log_level="warning",
-    )
+    with reserve_loopback_port(args.port) as listener:
+        store = Store.create(directory)
+        fixtures = store.seed()
+        descriptor = os.open(
+            directory / "synthetic-credentials.json",
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+            0o600,
+        )
+        with os.fdopen(descriptor, "w") as output:
+            json.dump(fixtures, output, indent=2)
+            output.write("\n")
+        origin = f"http://127.0.0.1:{args.port}"
+        print(
+            "Synthetic action lab only. No Koaryu, Supabase, Stripe or customer data is used.",
+            flush=True,
+        )
+        print("Owner review: " + origin + "/owner", flush=True)
+        print("Fixed-bearer MCP: " + origin + "/mcp", flush=True)
+        print(
+            "Private synthetic credentials and target IDs: "
+            + str(directory / "synthetic-credentials.json"),
+            flush=True,
+        )
+        config = uvicorn.Config(
+            build_app(store, origin),
+            host="127.0.0.1",
+            port=args.port,
+            access_log=False,
+            log_level="warning",
+        )
+        uvicorn.Server(config).run(sockets=[listener])
 
 
 if __name__ == "__main__":

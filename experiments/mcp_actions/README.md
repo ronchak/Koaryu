@@ -12,7 +12,7 @@ Use the repository's existing backend development environment, then run from the
 backend/venv/bin/python -m experiments.mcp_actions.demo
 ```
 
-The server binds only to `http://127.0.0.1:8110`, leaving the read demo on8101 alone. It creates a new private temporary directory with mode0700, a SQLite database and `synthetic-credentials.json` with mode0600. The console prints their location without printing passwords or bearer keys. A custom `--state-directory` must be new and outside the worktree. An occupied port is refused; the demo never replaces another process.
+The server reserves its socket through startup and binds only to `http://127.0.0.1:8110`, leaving the read demo on8101 alone. It creates a new private temporary directory with mode0700, a SQLite database and `synthetic-credentials.json` with mode0600. The console prints their location without printing passwords or bearer keys. A custom `--state-directory` must be new and outside the worktree. An occupied port is refused; the demo never replaces another process.
 
 The file contains two fully synthetic studios. Pick one array entry and use its own `assistant_token`, `student_id`, `lead_id`, username and password together. Do not use a Koaryu account, a read-connector token, a provider key or customer data. This is fixed-bearer test authentication, not native OAuth or ChatGPT host verification.
 
@@ -46,6 +46,6 @@ It checks actual socket initialization/tool discovery, preview/refusal before ap
 
 ## Boundaries before a real alpha
 
-SQLite's whole-database write lock and toy owner sessions are local demonstration choices. They are not the production multi-studio capacity or account system. Production requires real native action authorization, current membership/subscription checks, protected owner confirmation, monotonic row/grant authority across all writers, and an atomic approval/business-command/audit/receipt wrapper on Postgres. Existing services cannot be called after an unlocked preview check.
+SQLite's whole-database write lock and toy owner sessions are local demonstration choices. Password hashing currently holds that write lock briefly, so login spam from another local process can delay this synthetic lab. Browsers also share cookies across ports on127.0.0.1; other local services must be trusted. Exact Origin checks still reject cross-port form actions. These choices must be replaced by the real account and capacity systems before an alpha. They are not the production multi-studio capacity or account system. Production requires real native action authorization, current membership/subscription checks, protected owner confirmation, monotonic row/grant authority across all writers, and an atomic approval/business-command/audit/receipt wrapper on Postgres. Existing services cannot be called after an unlocked preview check.
 
 That release also needs actual ACL/race/restore verification, trigger and workflow-effect inspection, owner-facing action consent, audit retention/privacy decisions, capacity checks, independent review and normal release authorization. No flag, migration, hosted setup or deployment for that release is included here. Customer sending, payments/refunds, conversion, stage changes, arbitrary SQL and bulk deletion remain outside this prototype.

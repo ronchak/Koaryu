@@ -10,7 +10,7 @@ import re
 import secrets
 import sqlite3
 import time
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 from datetime import date
 from pathlib import Path
 from uuid import UUID, uuid4
@@ -102,7 +102,9 @@ class Store:
             500,
             "Use the prototype's private state database.",
         )
-        with sqlite3.connect(self.path.as_uri() + "?mode=ro", uri=True) as connection:
+        with closing(
+            sqlite3.connect(self.path.as_uri() + "?mode=ro", uri=True)
+        ) as connection:
             row = connection.execute("SELECT purpose FROM metadata").fetchone()
             ensure(
                 row and row[0] == PURPOSE,
@@ -117,9 +119,10 @@ class Store:
         path = directory / "actions.sqlite3"
         descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         os.close(descriptor)
-        with sqlite3.connect(path) as connection:
+        with closing(sqlite3.connect(path)) as connection:
             connection.executescript(SCHEMA)
             connection.execute("INSERT INTO metadata VALUES (?)", (PURPOSE,))
+            connection.commit()
         return cls(path, clock=clock)
 
     @contextmanager
