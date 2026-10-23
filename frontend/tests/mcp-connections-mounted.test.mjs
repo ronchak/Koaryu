@@ -86,6 +86,14 @@ async function openFixture(browser, options = {}) {
       get: async (path, token) => {
         f.requests.push({ method: "GET", path, token });
         if (path === "/mcp/connections") {
+          if (token === "token-a" && f.holdNextAList) {
+            f.holdNextAList = false;
+            const previous = structuredClone(f.server[token]);
+            await new Promise((resolve) => {
+              f.releaseOldRefresh = resolve;
+            });
+            return previous;
+          }
           if (token === "token-b" && f.holdB)
             await new Promise((resolve) => {
               f.releaseB = resolve;
@@ -282,5 +290,29 @@ test("stale consent can be refreshed and reviewed without silently overwriting c
   assert.equal(
     await page.getByRole("checkbox", { name: "Classes and attendance", exact: true }).isChecked(),
     true,
+  );
+});
+
+test("a slow refresh cannot overwrite the result of a newer access edit", async (t) => {
+  const page = await withPage(t);
+  await waitText(page, "Assistant A");
+  await page.evaluate(() => {
+    window.fixture.holdNextAList = true;
+  });
+  await page.getByRole("button", { name: "Refresh connections", exact: true }).click();
+  await page.waitForFunction(() => typeof window.fixture.releaseOldRefresh === "function");
+  await page.getByRole("button", { name: "Edit access", exact: true }).click();
+  await page.getByRole("checkbox", { name: "Contact details", exact: true }).check();
+  await page.getByRole("button", { name: "Save permissions", exact: true }).click();
+  await page
+    .getByText("Student roster; Classes and attendance; Contact details", { exact: true })
+    .waitFor();
+  await page.evaluate(() => window.fixture.releaseOldRefresh());
+  await page.evaluate(
+    () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+  );
+  assert.match(
+    await page.locator("#root").innerText(),
+    /Student roster; Classes and attendance; Contact details/,
   );
 });

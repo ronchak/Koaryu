@@ -19,6 +19,7 @@ export function AiConnectionsSection() {
   const [editing, setEditing] = useState<Operation | null>(null);
   const pending = useRef<Operation | null>(null);
   const generation = useRef(0);
+  const listSequence = useRef(0);
   const state = loaded?.token === token ? loaded.data : null;
   const busyId = busy?.token === token ? busy.id : null;
   const editingId = editing?.token === token ? editing.id : null;
@@ -26,6 +27,7 @@ export function AiConnectionsSection() {
 
   useEffect(() => {
     const current = ++generation.current;
+    const request = ++listSequence.current;
     const abort = new AbortController();
     if (!isPreviewMode && token) {
       void api
@@ -34,13 +36,17 @@ export function AiConnectionsSection() {
           omitStudioHeader: true,
         })
         .then((data) => {
-          if (generation.current === current) {
+          if (generation.current === current && listSequence.current === request) {
             setLoaded({ token, data });
             setError(null);
           }
         })
         .catch((err) => {
-          if (!abort.signal.aborted && generation.current === current)
+          if (
+            !abort.signal.aborted &&
+            generation.current === current &&
+            listSequence.current === request
+          )
             setError({
               token,
               message: err instanceof Error ? err.message : "Could not load AI connections.",
@@ -61,6 +67,7 @@ export function AiConnectionsSection() {
     const operation = { token, id: connection.id };
     const current = generation.current;
     pending.current = operation;
+    ++listSequence.current;
     setBusy(operation);
     setError(null);
     try {
@@ -86,10 +93,11 @@ export function AiConnectionsSection() {
       }
       if (generation.current !== current) return;
       setEditing(null);
+      const request = ++listSequence.current;
       const data = await api.get<AiConnections>("/mcp/connections", token, {
         omitStudioHeader: true,
       });
-      if (generation.current !== current) return;
+      if (generation.current !== current || listSequence.current !== request) return;
       setLoaded({ token, data });
       if (!nativeConsentRemoved)
         setError({
@@ -122,18 +130,19 @@ export function AiConnectionsSection() {
   }
 
   async function refresh() {
-    if (!token) return;
+    if (!token || pending.current?.token === token) return;
     const current = generation.current;
+    const request = ++listSequence.current;
     try {
       const data = await api.get<AiConnections>("/mcp/connections", token, {
         omitStudioHeader: true,
       });
-      if (generation.current === current) {
+      if (generation.current === current && listSequence.current === request) {
         setLoaded({ token, data });
         setError(null);
       }
     } catch (err) {
-      if (generation.current === current)
+      if (generation.current === current && listSequence.current === request)
         setError({
           token,
           message: err instanceof Error ? err.message : "Could not refresh connections.",
@@ -210,7 +219,11 @@ export function AiConnectionsSection() {
                 const status = connectionStatus(connection);
                 const canEdit = !connection.revoked_at && connection.session_ready !== false;
                 return (
-                  <div key={connection.id} className="border-t border-border pt-4">
+                  <div
+                    key={connection.id}
+                    data-ai-connection={connection.id}
+                    className="border-t border-border pt-4"
+                  >
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <div className="min-w-0">
                         <p className="font-medium [overflow-wrap:anywhere]">
