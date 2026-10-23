@@ -220,7 +220,7 @@ async def read_workload(proof, owners, tokens, owner_headers):
             require(
                 result.is_error
                 and result.structured_content is None
-                and "partial totals" in str(result.content),
+                and "Query data limit reached" in str(result.content),
                 "Oversized all-time history returned partial totals or an unrelated failure",
             )
         checks.append(
