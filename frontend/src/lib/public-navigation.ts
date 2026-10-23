@@ -11,6 +11,8 @@ export const publicNavLinks: PublicNavigationLink[] = [
 ];
 
 export const publicFooterLinks: PublicNavigationLink[] = [
+  { href: "/ai-connections", label: "AI connections" },
+  { href: "/support", label: "Support" },
   { href: "/features", label: "Features" },
   { href: "/use-cases", label: "Workflows" },
   { href: "/terms", label: "Terms of Service" },

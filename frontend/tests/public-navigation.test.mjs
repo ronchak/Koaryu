@@ -14,7 +14,7 @@ describe("public navigation", () => {
   it("keeps footer public routes in one exported list", () => {
     assert.deepEqual(
       publicFooterLinks.map((link) => link.href),
-      ["/features", "/use-cases", "/terms", "/privacy"],
+      ["/ai-connections", "/support", "/features", "/use-cases", "/terms", "/privacy"],
     );
   });
 });

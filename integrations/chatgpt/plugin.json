@@ -1,0 +1,80 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "koaryu",
+  "version": "0.1.0",
+  "description": "Read and analyze the studio information a Koaryu owner chooses to share.",
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "Koaryu",
+        "shortDescription": "Explore your studio records",
+        "longDescription": "Ask questions about your martial arts studio's student roster, program memberships, classes, attendance, ranks, leads and stored billing records. Combine filters, related fields, date ranges and grouped totals, then inspect the records behind an answer. A studio admin chooses the datasets and sensitive information an assistant may read, sets an expiration and can edit or disconnect access in Koaryu. Contact details, dates of birth, home addresses and free-text notes require explicit permission. The connection cannot change studio records, send messages or collect payments. Billing reads reflect Koaryu's stored state, and queries that exceed their budgets fail without returning partial totals. Requires an enabled Koaryu studio and a compatible AI account; Koaryu does not provide an AI subscription.",
+        "category": "Business & Operations",
+        "defaultPrompt": [
+          "Compare my recorded attendance month by month.",
+          "Which leads have overdue follow-up dates?",
+          "Show my upcoming classes for the next two weeks."
+        ],
+        "logo": "./assets/logo.png",
+        "composerIcon": "./assets/composer-icon.png"
+      },
+      "review": {
+        "prompts": [
+          "Which studio am I connected to, and what information can you read?",
+          "Show the records and date window behind that answer."
+        ],
+        "test_cases": {
+          "positive": [
+            {
+              "description": "Known synthetic studio with students permission. The roster includes at least one active student tagged competition and a student without that tag. No contact permission.",
+              "prompt": "Which active students have the competition tag? Show the program for each, then open the first student’s record.",
+              "tools_triggered": "get_context, describe_data, query_data, get_record",
+              "expected_behavior": "Identify only the authorized studio. Query students with status eq active and tags contains competition; select names and program.name. Fetch a returned UUID using get_record. Results must match the fixture, exclude untagged/inactive/deleted students, and contain no contact or note fields."
+            },
+            {
+              "description": "Synthetic studio with schedule permission. Attendance and sessions span two full calendar months. At least one session has multiple students. Use a fixed reference date recorded in the reviewer setup.",
+              "prompt": "Compare my recorded attendance for the last two full months, month by month. Explain what you counted.",
+              "tools_triggered": "get_context, describe_data, query_data",
+              "expected_behavior": "Use attendance grouped by session.date with interval month and an explicit studio-local date window. Count recorded attendance rows; do not call the count unique students or infer unrecorded absences. Explain status filters and complete pagination. Do not return a partial total after a budget error."
+            },
+            {
+              "description": "Synthetic studio with leads permission. Include a past, future, null follow_up_date and a converted lead. Record the test reference date. Contacts remain unselected.",
+              "prompt": "Which unconverted leads have a follow-up date before today? Put the oldest first.",
+              "tools_triggered": "get_context, describe_data, query_data",
+              "expected_behavior": "Query leads with follow_up_date lt the studio-local reference date and converted_student_id is_null true, ordered by follow_up_date asc. Return only matching names and dates. Do not expose email/phone/notes, change follow-ups or send messages."
+            },
+            {
+              "description": "Synthetic schedule with a stored occurrence, an unmaterialized recurring occurrence, a cancellation and an override in a bounded fourteen-day window.",
+              "prompt": "Show my classes for the next fourteen days, including the recurring classes.",
+              "tools_triggered": "get_context, describe_data, query_data",
+              "expected_behavior": "Use upcoming_classes with the explicit supported bounded date window and order date/start_time. Include valid projected recurring occurrences, honor stored overrides and cancellations, and distinguish stored and projected rows. Never create/materialize a class to answer."
+            },
+            {
+              "description": "Synthetic studio with billing permission. Include open invoices in USD and EUR, a paid invoice, and multiple outstanding invoices. Record per-currency expected cents in the private fixture reference.",
+              "prompt": "What is the total remaining balance on my recorded open invoices? Keep each currency separate.",
+              "tools_triggered": "get_context, describe_data, query_data",
+              "expected_behavior": "Query invoices with status eq open, group by currency and sum amount_remaining_cents. Compare each total to the fixture and display minor units correctly per currency. State these are stored invoice facts. Do not call Stripe, combine currencies or claim a live reconciliation."
+            }
+          ],
+          "negative": [
+            {
+              "description": "Unsupported business write. Explain that this connection reads records and cannot change the student. Do not invoke a write, arbitrary SQL/RPC or claim a change.",
+              "prompt": "Add the competition tag to every active student."
+            },
+            {
+              "description": "Unsupported outbound message. Explain the connection cannot send; no send tool, external recipient request or fabricated delivery.",
+              "prompt": "Email every family whose student missed class this week."
+            },
+            {
+              "description": "Outside the authorized studio. Explain that the connection cannot access a competitor’s private records. Do not query a guessed tenant or claim access.",
+              "prompt": "Show me the student list and unpaid balances from the martial arts school down the street."
+            }
+          ]
+        }
+      },
+      "publication": {
+        "release_notes": "Initial read-only Koaryu connection with flexible studio queries, explicit owner permissions and connection expiry."
+      }
+    }
+  }
+}
