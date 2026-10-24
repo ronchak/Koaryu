@@ -135,13 +135,17 @@ export function ScheduleSessionDetailModal({
     rosterComplete: isStudentRosterComplete,
     rosterLoading: isLoadingStudentRoster,
   });
-  const attendanceCommitCopy = !attendanceCountersReady
-    ? "Attendance unavailable until the complete roster and class records load."
-    : pendingAttendanceStudentIds.size > 0
-      ? `Saving ${pendingAttendanceStudentIds.size} ${pendingAttendanceStudentIds.size === 1 ? "student" : "students"}…`
-      : attendanceError
-        ? "Last attendance change rolled back. Review the error, then try that row again."
-        : "Saved as marked. Each row saves immediately.";
+  const isCanceled = activeSession.status === "canceled";
+  const canRecordAttendance = attendanceCountersReady && !isCanceled;
+  const attendanceCommitCopy = isCanceled
+    ? "Attendance is unavailable for canceled classes."
+    : !attendanceCountersReady
+      ? "Attendance unavailable until the complete roster and class records load."
+      : pendingAttendanceStudentIds.size > 0
+        ? `Saving ${pendingAttendanceStudentIds.size} ${pendingAttendanceStudentIds.size === 1 ? "student" : "students"}…`
+        : attendanceError
+          ? "Last attendance change rolled back. Review the error, then try that row again."
+          : "Saved as marked. Each row saves immediately.";
   const isRecurring = Boolean(activeSession.template_id);
   const canDeleteSeries = Boolean(isRecurring && onDeleteSeries);
   const isDeleting = deleteInFlight !== null;
@@ -184,7 +188,7 @@ export function ScheduleSessionDetailModal({
               type="button"
               data-attendance-student-id={student.id}
               data-status={status ?? "unmarked"}
-              disabled={!attendanceCountersReady || pendingAttendanceStudentIds.has(student.id)}
+              disabled={!canRecordAttendance || pendingAttendanceStudentIds.has(student.id)}
               onClick={async () => {
                 await onToggleAttendance(activeSession.id, student.id, studentName);
               }}
@@ -358,18 +362,20 @@ export function ScheduleSessionDetailModal({
                   role="status"
                   aria-live="polite"
                   data-attendance-commit-state={
-                    !attendanceCountersReady
-                      ? "unavailable"
-                      : pendingAttendanceStudentIds.size > 0
-                        ? "saving"
-                        : attendanceError
-                          ? "rollback-error"
-                          : "saved"
+                    isCanceled
+                      ? "canceled"
+                      : !attendanceCountersReady
+                        ? "unavailable"
+                        : pendingAttendanceStudentIds.size > 0
+                          ? "saving"
+                          : attendanceError
+                            ? "rollback-error"
+                            : "saved"
                   }
                 >
                   {attendanceCommitCopy}
                 </p>
-                {attendanceCountersReady ? (
+                {canRecordAttendance ? (
                   <p className={styles.hint}>
                     Tap a student to check them in. Tap again for late, absent, then clear.
                   </p>
