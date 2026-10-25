@@ -651,6 +651,7 @@ describe("combined automation cron", () => {
     assert.deepEqual(manifest.git.deploymentEnabled, {
       main: false,
       staging: true,
+      "codex/bughunt-oct25": false,
       "codex/launch-readiness-candidate": false,
       "codex/missed-class-automations-20261004": false,
       "codex/automation-graph-20261005": false,
