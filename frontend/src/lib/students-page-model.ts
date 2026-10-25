@@ -14,6 +14,7 @@ export interface StudentRosterRow {
     legalLastName: string;
     preferredName: string;
     email: string;
+    phone: string;
     programs: string;
   };
   contact: string;
@@ -301,6 +302,7 @@ export function buildStudentRows(
         legalLastName: student.legal_last_name.toLowerCase(),
         preferredName: student.preferred_name?.toLowerCase() || "",
         email: student.email?.toLowerCase() || "",
+        phone: student.phone?.toLowerCase() || "",
         programs: activeMemberships
           .map((membership) => membership.program_name || "")
           .join(" ")
@@ -343,6 +345,7 @@ export function filterStudentRows(
         row.searchFields.legalLastName.includes(q) ||
         row.searchFields.preferredName.includes(q) ||
         row.searchFields.email.includes(q) ||
+        row.searchFields.phone.includes(q) ||
         row.searchFields.programs.includes(q),
     );
   }

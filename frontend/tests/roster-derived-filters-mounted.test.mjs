@@ -59,6 +59,7 @@ async function mount({ preview = true, paged = true, query = "", longRoster = fa
         legal_first_name: first,
         legal_last_name: "Lane",
         email: `${first.toLowerCase()}@example.invalid`,
+        phone: id === "student-a" ? "206-555-0142" : null,
         status: "active",
         membership_start_date: "2026-01-01",
         guardians: [],
@@ -191,6 +192,37 @@ for (const preview of [true, false]) {
       await page.getByLabel("Search students").fill("   ");
       await page.waitForFunction(() => fixture.roster.filtered.length === 2);
       assert.equal(await page.locator("[data-student-id]").count(), 2);
+      assert.deepEqual(errors, []);
+    } finally {
+      await page.close();
+    }
+  });
+
+  test(`${preview ? "preview" : "live fallback"} search finds phone matches without remote reads`, async () => {
+    const { page, errors } = await mount({ preview, paged: preview });
+    try {
+      await page.waitForFunction(() => !window.fixture.roster.isInitialRosterLoading);
+      for (const search of ["206-555-0142", "555-0142", " 206-555-0142 "]) {
+        await page.getByLabel("Search students").fill(search);
+        await page.waitForFunction((search) => fixture.roster.search === search, search);
+        assert.deepEqual(
+          await page.evaluate(() => fixture.roster.filtered.map((row) => row.student.id)),
+          ["student-a"],
+          `Search ${JSON.stringify(search)} should find the student's phone`,
+        );
+        assert.equal(await page.locator('[data-student-id="student-a"]').count(), 1);
+        assert.equal(await page.locator('[data-student-id="student-b"]').count(), 0);
+      }
+      await page.getByLabel("Search students").fill("555-0188");
+      await page.waitForFunction(() => fixture.roster.filtered.length === 0);
+      assert.equal(await page.locator("[data-student-id]").count(), 0);
+      await page.getByLabel("Search students").fill("");
+      await page.waitForFunction(() => fixture.roster.filtered.length === 2);
+      assert.equal(await page.locator("[data-student-id]").count(), 2);
+      assert.deepEqual(
+        await page.evaluate(() => [fixture.pageReads.length, fixture.scheduleReads.length]),
+        [0, 0],
+      );
       assert.deepEqual(errors, []);
     } finally {
       await page.close();
