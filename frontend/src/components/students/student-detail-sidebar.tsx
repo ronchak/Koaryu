@@ -72,7 +72,7 @@ function trainingFor(start: string | null | undefined, businessDate: string) {
     (to.getFullYear() - from.getFullYear()) * 12 +
     (to.getMonth() - from.getMonth()) -
     (to.getDate() < from.getDate() ? 1 : 0);
-  if (months < 1) return "New this month";
+  if (months < 1) return "Less than a month training";
   if (months < 12) return `${months} ${months === 1 ? "month" : "months"} training`;
   const years = Math.floor(months / 12);
   return `${years} ${years === 1 ? "year" : "years"} training`;
