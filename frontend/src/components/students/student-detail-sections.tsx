@@ -148,8 +148,8 @@ export function buildStudentNextSteps({
       id: "reach",
       tone: "warn",
       icon: <Phone />,
-      title: "No way to reach them",
-      detail: "There is no email or phone for this student or a guardian.",
+      title: "Contact details missing",
+      detail: "Add an email or phone for this student or their primary guardian.",
       action: { kind: "edit", label: "Add details" },
     });
   }

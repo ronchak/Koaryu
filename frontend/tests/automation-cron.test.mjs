@@ -654,6 +654,7 @@ describe("combined automation cron", () => {
       "codex/launch-readiness-candidate": false,
       "codex/missed-class-automations-20261004": false,
       "codex/automation-graph-20261005": false,
+      "codex/bughunt-oct27": false,
     });
   });
 });
