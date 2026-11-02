@@ -241,8 +241,49 @@ describe("leads page model", () => {
     assert.equal(model.dueTodayCount, 1);
     assert.equal(model.overdueCount, 1);
     assert.equal(model.upcomingFollowUps, 0);
-    assert.equal(model.totalActive, 3);
+    assert.equal(model.totalActive, 2);
     assert.equal(model.enrolledCount, 1);
+  });
+
+  it("keeps active, enrolled, and lost counts disjoint across optimistic stage changes", () => {
+    const stages = [
+      "inquiry",
+      "trial_scheduled",
+      "trial_completed",
+      "offer_sent",
+      "enrolled",
+      "closed_lost",
+    ];
+    const baseLeads = stages.map((stage) => lead({ id: stage, stage }));
+    const summarize = (optimisticLeads = {}, records = baseLeads) =>
+      buildLeadsDatasetModel({
+        baseLeads: records,
+        optimisticLeads,
+        programs: [],
+        today: "2026-11-02",
+      });
+    const counts = (model) => [model.totalActive, model.enrolledCount, model.lostLeads.length];
+    const baseline = summarize();
+    assert.deepEqual(counts(baseline), [4, 1, 1]);
+    assert.equal(
+      baseline.totalActive + baseline.enrolledCount + baseline.lostLeads.length,
+      baseLeads.length,
+    );
+    assert.deepEqual(
+      counts(summarize({ inquiry: lead({ id: "inquiry", stage: "enrolled" }) })),
+      [3, 2, 1],
+    );
+    assert.deepEqual(
+      counts(summarize({ enrolled: lead({ id: "enrolled", stage: "offer_sent" }) })),
+      [5, 0, 1],
+    );
+    assert.deepEqual(
+      counts(summarize({ inquiry: lead({ id: "inquiry", stage: "closed_lost" }) })),
+      [3, 1, 2],
+    );
+    assert.deepEqual(counts(summarize({}, [])), [0, 0, 0]);
+    assert.deepEqual(counts(summarize({}, [lead({ stage: "enrolled" })])), [0, 1, 0]);
+    assert.deepEqual(counts(summarize()), [4, 1, 1]);
   });
 
   it("keeps lead page draft and optimistic update helpers deterministic", () => {

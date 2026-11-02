@@ -212,7 +212,8 @@ export function buildLeadsDatasetModel({
     lostLeads,
     overdueCount: followUpQueue.length - dueTodayCount,
     programById,
-    totalActive: leads.filter((lead) => lead.stage !== "closed_lost").length,
+    totalActive: leads.filter((lead) => lead.stage !== "closed_lost" && lead.stage !== "enrolled")
+      .length,
     upcomingFollowUps: getUpcomingFollowUpCount(leads, today),
   };
 }
