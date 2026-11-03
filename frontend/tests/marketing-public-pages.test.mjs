@@ -16,7 +16,7 @@ describe("public document navigation", () => {
   it("provides product recovery and legal destinations in the footer", () => {
     assert.deepEqual(
       publicFooterLinks.map(({ href }) => href),
-      ["/features", "/use-cases", "/terms", "/privacy"],
+      ["/ai-connections", "/support", "/features", "/use-cases", "/terms", "/privacy"],
     );
     assert.equal(new Set(publicFooterLinks.map(({ href }) => href)).size, publicFooterLinks.length);
     for (const { href, label } of [...publicFooterLinks, ...publicNavLinks]) {

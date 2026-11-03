@@ -30,6 +30,9 @@
     "check:remediation-ledger": "node --test scripts/remediation-ledger-counts.test.mjs && node scripts/remediation-ledger-counts.mjs --check",
     "generate:workflow-preview-catalog": "backend/venv/bin/python scripts/generate-workflow-preview-catalog.py",
     "check:workflow-preview-catalog": "backend/venv/bin/python scripts/generate-workflow-preview-catalog.py --check",
-    "check:mcp-oauth-native": "backend/venv/bin/python scripts/verify-mcp-oauth-native.py"
+    "check:mcp-oauth-native": "backend/venv/bin/python scripts/verify-mcp-oauth-native.py",
+    "generate:mcp-review-contract": "backend/venv/bin/python scripts/generate-mcp-review-contract.py",
+    "check:mcp-package-source": "backend/venv/bin/python scripts/generate-mcp-review-contract.py --check && python3 scripts/prepare-chatgpt-package.py --check-source",
+    "build:mcp-package": "python3 scripts/prepare-chatgpt-package.py"
   }
 }

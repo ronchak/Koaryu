@@ -15,7 +15,16 @@ export function buildPublicSitemap({
   publicContentLastModified: Date;
   useCasePages: SitemapPage[];
 }): MetadataRoute.Sitemap {
-  const staticRoutes = ["", "/try", "/features", "/use-cases", "/privacy", "/terms"];
+  const staticRoutes = [
+    "",
+    "/try",
+    "/features",
+    "/use-cases",
+    "/privacy",
+    "/terms",
+    "/support",
+    "/ai-connections",
+  ];
   const featureRoutes = featurePages.map((page) => `/features/${page.slug}`);
   const useCaseRoutes = useCasePages.map((page) => `/use-cases/${page.slug}`);
 

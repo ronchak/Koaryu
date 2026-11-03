@@ -1,0 +1,417 @@
+{
+  "datasets": [
+    "attendance",
+    "belt_test_recipients",
+    "belt_tests",
+    "billing_enrollments",
+    "billing_plans",
+    "class_templates",
+    "guardians",
+    "invoices",
+    "ladders",
+    "lead_activities",
+    "leads",
+    "memberships",
+    "payers",
+    "payments",
+    "programs",
+    "promotions",
+    "ranks",
+    "sessions",
+    "student_guardians",
+    "students",
+    "trials",
+    "upcoming_classes",
+    "workflows"
+  ],
+  "tools": [
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true
+      },
+      "description": "Identify the connected studio, timezone, read permissions and connection expiry.",
+      "inputSchema": {
+        "properties": {},
+        "title": "get_contextArguments",
+        "type": "object"
+      },
+      "name": "get_context",
+      "outputSchema": {
+        "additionalProperties": true,
+        "title": "get_contextDictOutput",
+        "type": "object"
+      }
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true
+      },
+      "description": "Discover authorized datasets, fields, meanings and many-to-one relationship fields. Pass a dataset to narrow the schema.",
+      "inputSchema": {
+        "properties": {
+          "dataset": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Dataset"
+          }
+        },
+        "title": "describe_dataArguments",
+        "type": "object"
+      },
+      "name": "describe_data",
+      "outputSchema": {
+        "additionalProperties": true,
+        "title": "describe_dataDictOutput",
+        "type": "object"
+      }
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true
+      },
+      "description": "Read or aggregate studio data using AND filters, optional relationship.field selections, grouping, sorting and pagination. No SQL. Discover schema first. Monetary sums/averages require grouping or filtering by currency. Over-budget queries fail without returning partial totals.",
+      "inputSchema": {
+        "$defs": {
+          "Aggregate": {
+            "additionalProperties": false,
+            "properties": {
+              "alias": {
+                "maxLength": 40,
+                "pattern": "^[a-z][a-z0-9_]*$",
+                "title": "Alias",
+                "type": "string"
+              },
+              "field": {
+                "anyOf": [
+                  {
+                    "maxLength": 96,
+                    "pattern": "^[a-z][a-z0-9_]*(?:\\.[a-z][a-z0-9_]*)?$",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Field"
+              },
+              "op": {
+                "enum": [
+                  "count",
+                  "count_distinct",
+                  "sum",
+                  "avg",
+                  "min",
+                  "max"
+                ],
+                "title": "Op",
+                "type": "string"
+              }
+            },
+            "required": [
+              "op",
+              "alias"
+            ],
+            "title": "Aggregate",
+            "type": "object"
+          },
+          "Filter": {
+            "additionalProperties": false,
+            "properties": {
+              "field": {
+                "maxLength": 96,
+                "pattern": "^[a-z][a-z0-9_]*(?:\\.[a-z][a-z0-9_]*)?$",
+                "title": "Field",
+                "type": "string"
+              },
+              "op": {
+                "enum": [
+                  "eq",
+                  "ne",
+                  "in",
+                  "gt",
+                  "gte",
+                  "lt",
+                  "lte",
+                  "contains",
+                  "is_null"
+                ],
+                "title": "Op",
+                "type": "string"
+              },
+              "value": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "items": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "integer"
+                        },
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "boolean"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "maxItems": 100,
+                    "type": "array"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Value"
+              }
+            },
+            "required": [
+              "field",
+              "op"
+            ],
+            "title": "Filter",
+            "type": "object"
+          },
+          "Group": {
+            "additionalProperties": false,
+            "properties": {
+              "field": {
+                "maxLength": 96,
+                "pattern": "^[a-z][a-z0-9_]*(?:\\.[a-z][a-z0-9_]*)?$",
+                "title": "Field",
+                "type": "string"
+              },
+              "interval": {
+                "anyOf": [
+                  {
+                    "enum": [
+                      "day",
+                      "week",
+                      "month",
+                      "year"
+                    ],
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Interval"
+              }
+            },
+            "required": [
+              "field"
+            ],
+            "title": "Group",
+            "type": "object"
+          },
+          "Query": {
+            "additionalProperties": false,
+            "properties": {
+              "aggregates": {
+                "items": {
+                  "$ref": "#/$defs/Aggregate"
+                },
+                "maxItems": 10,
+                "title": "Aggregates",
+                "type": "array"
+              },
+              "dataset": {
+                "maxLength": 60,
+                "pattern": "^[a-z][a-z0-9_]*$",
+                "title": "Dataset",
+                "type": "string"
+              },
+              "group_by": {
+                "items": {
+                  "$ref": "#/$defs/Group"
+                },
+                "maxItems": 3,
+                "title": "Group By",
+                "type": "array"
+              },
+              "limit": {
+                "default": 50,
+                "maximum": 200,
+                "minimum": 1,
+                "title": "Limit",
+                "type": "integer"
+              },
+              "offset": {
+                "default": 0,
+                "maximum": 50000,
+                "minimum": 0,
+                "title": "Offset",
+                "type": "integer"
+              },
+              "order_by": {
+                "items": {
+                  "$ref": "#/$defs/Sort"
+                },
+                "maxItems": 5,
+                "title": "Order By",
+                "type": "array"
+              },
+              "select": {
+                "anyOf": [
+                  {
+                    "items": {
+                      "maxLength": 96,
+                      "pattern": "^[a-z][a-z0-9_]*(?:\\.[a-z][a-z0-9_]*)?$",
+                      "type": "string"
+                    },
+                    "maxItems": 40,
+                    "type": "array"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Select"
+              },
+              "where": {
+                "items": {
+                  "$ref": "#/$defs/Filter"
+                },
+                "maxItems": 20,
+                "title": "Where",
+                "type": "array"
+              }
+            },
+            "required": [
+              "dataset"
+            ],
+            "title": "Query",
+            "type": "object"
+          },
+          "Sort": {
+            "additionalProperties": false,
+            "properties": {
+              "direction": {
+                "default": "asc",
+                "enum": [
+                  "asc",
+                  "desc"
+                ],
+                "title": "Direction",
+                "type": "string"
+              },
+              "field": {
+                "maxLength": 96,
+                "pattern": "^[a-z][a-z0-9_]*(?:\\.[a-z][a-z0-9_]*)?$",
+                "title": "Field",
+                "type": "string"
+              }
+            },
+            "required": [
+              "field"
+            ],
+            "title": "Sort",
+            "type": "object"
+          }
+        },
+        "properties": {
+          "query": {
+            "$ref": "#/$defs/Query"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "title": "query_dataArguments",
+        "type": "object"
+      },
+      "name": "query_data",
+      "outputSchema": {
+        "additionalProperties": true,
+        "title": "query_dataDictOutput",
+        "type": "object"
+      }
+    },
+    {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true
+      },
+      "description": "Fetch an authorized record by its UUID. select may include declared relationship.field values.",
+      "inputSchema": {
+        "properties": {
+          "dataset": {
+            "title": "Dataset",
+            "type": "string"
+          },
+          "record_id": {
+            "title": "Record Id",
+            "type": "string"
+          },
+          "select": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Select"
+          }
+        },
+        "required": [
+          "dataset",
+          "record_id"
+        ],
+        "title": "get_recordArguments",
+        "type": "object"
+      },
+      "name": "get_record",
+      "outputSchema": {
+        "additionalProperties": true,
+        "title": "get_recordDictOutput",
+        "type": "object"
+      }
+    }
+  ]
+}
