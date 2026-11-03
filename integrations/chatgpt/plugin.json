@@ -7,8 +7,9 @@
     "com.openai": {
       "interface": {
         "displayName": "Koaryu",
+        "developerName": "Koaryu Limited",
         "shortDescription": "Explore your studio records",
-        "longDescription": "Ask questions about your martial arts studio's student roster, program memberships, classes, attendance, ranks, leads and stored billing records. Combine filters, related fields, date ranges and grouped totals, then inspect the records behind an answer. A studio admin chooses the datasets and sensitive information an assistant may read, sets an expiration and can edit or disconnect access in Koaryu. Contact details, dates of birth, home addresses and free-text notes require explicit permission. The connection cannot change studio records, send messages or collect payments. Billing reads reflect Koaryu's stored state, and queries that exceed their budgets fail without returning partial totals. Requires an enabled Koaryu studio and a compatible AI account; Koaryu does not provide an AI subscription.",
+        "longDescription": "Ask questions about your martial arts studio's student roster, program memberships, classes, attendance, ranks, leads and stored billing records. Combine filters, related fields, date ranges and grouped totals, then inspect the records behind an answer. A studio admin chooses the datasets and sensitive information an assistant may read, sets an expiration and can edit or disconnect access in Koaryu. Contact details, dates of birth, home addresses and free-text notes require explicit permission. The connection cannot change studio records, send messages or collect payments. Billing reads reflect Koaryu's stored state, and queries that exceed their budgets fail without returning partial totals. Included with Koaryu at no additional connector fee. Requires an enabled Koaryu studio and a compatible AI account; Koaryu does not provide an AI subscription.",
         "category": "Business & Operations",
         "defaultPrompt": [
           "Compare my recorded attendance month by month.",
@@ -22,6 +23,8 @@
         ]
       },
       "review": {
+        "commerce": false,
+        "commerce_description": "Included with Koaryu at no additional connector fee. Requires an existing Koaryu studio account. This read-only connector does not sell products, initiate subscriptions, process payments or offer purchases through ChatGPT. Koaryu account billing is managed outside ChatGPT.",
         "prompts": [
           "Which studio am I connected to, and what information can you read?",
           "Show the records and date window behind that answer."
@@ -76,6 +79,10 @@
         }
       },
       "publication": {
+        "countries": [
+          "US",
+          "CA"
+        ],
         "release_notes": "Initial read-only Koaryu connection with flexible studio queries, explicit owner permissions and connection expiry."
       }
     }

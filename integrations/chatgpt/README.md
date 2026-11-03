@@ -18,18 +18,20 @@ python3 -m unittest discover -s scripts -p test_prepare_chatgpt_package.py -v
 
 The source check verifies the draft listing, three starter prompts, five positive/three negative cases, exact read tools and contained square PNGs. The icons are copies of Koaryu's existing 512px and 192px brand assets. They have been inspected on light and dark backgrounds.
 
-## Finish the facts before packaging
+## Listing decisions and remaining setup
 
-The owner has not yet supplied a verified publisher identity, country targeting or the connector's commerce/pricing declaration. Keep these values absent from the source. A business name in the app is not proof of the selected verified publisher.
+The owner selected **Koaryu Limited** as the intended publisher and the **United States and Canada** as the supported countries. The draft uses `developerName: "Koaryu Limited"` and `countries: ["US", "CA"]`. Publisher verification in the intended portal is still pending; the supplied name is not evidence that verification has completed.
 
-Create a JSON settings file outside Git with exactly these keys once each fact is confirmed:
+For this release, the owner delegated the commerce choice. The connector is included with Koaryu at no additional connector fee and requires an existing Koaryu studio account. It offers no purchases, subscription signup, upgrades or payment processing through ChatGPT. `review.commerce` is `false`, with the account requirement and external Koaryu billing explained in `commerce_description`. This draft changes no actual Koaryu plan, price or billing configuration.
+
+Create a JSON settings file outside Git with exactly these keys once the remaining activation and review evidence is available. Carry the selected listing values below into that file:
 
 | Key | Required value |
 | --- | --- |
-| `developer_name` | The selected verified individual or business name, at most 80 characters |
-| `countries` | Explicit uppercase country-code list; use `[]` only for an explicit choice of all available countries. Confirm codes and platform availability in the portal. |
-| `commerce` | Explicit boolean declaration about this connector's commerce behavior |
-| `commerce_description` | What users buy, if anything, and where payment takes place. Do not infer this from Koaryu's existing subscription. |
+| `developer_name` | `Koaryu Limited`; complete publisher verification in the intended portal before submission |
+| `countries` | `["US", "CA"]`; confirm platform availability in the portal |
+| `commerce` | `false`, because this connector offers no commerce |
+| `commerce_description` | Copy the declaration from `plugin.json`: included with Koaryu, no additional connector fee or ChatGPT purchases, existing studio account required, Koaryu billing managed outside ChatGPT |
 | `demo_recording_url` | Actual reviewer-accessible recording of the packaged version operating in ChatGPT, with readable real prompts and results |
 | `urls` | Object containing all four actual published URLs: `websiteURL`, `supportURL`, `privacyPolicyURL`, `termsOfServiceURL` |
 | `mcp_url` | The exact activated canonical public HTTPS `/mcp` endpoint |

@@ -2,7 +2,7 @@
 
 ## Status
 
-Listing text, real icons, the four tool schemas and five positive/three negative cases are drafted in `plugin.json`. The public endpoint is not activated. Publisher identity, country targeting and commerce facts await the owner. No public ZIP, host walkthrough recording, reviewer account or portal draft has been created.
+Listing text, real icons, the four tool schemas and five positive/three negative cases are drafted in `plugin.json`. On November 2, 2026, the owner selected Koaryu Limited and availability in the United States and Canada, and delegated the commerce choice. The draft includes the connector with Koaryu at no additional connector fee, requires an existing studio account and offers no purchases through ChatGPT. These choices are in the manifest; publisher verification remains pending. The public endpoint is not activated. No public ZIP, host walkthrough recording, reviewer account or portal draft has been created.
 
 | Verification | State | Evidence or dependency |
 | --- | --- | --- |

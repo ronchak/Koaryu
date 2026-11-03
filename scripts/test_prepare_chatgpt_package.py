@@ -33,11 +33,16 @@ class PackageTest(unittest.TestCase):
             "mcp_url": "https://mcp.koaryu.app/mcp",
         }
 
-    def test_source_does_not_invent_publisher_or_public_server(self):
+    def test_source_has_selected_listing_details_without_public_evidence(self):
         extension = self.manifest["extensions"]["com.openai"]
-        self.assertNotIn("developerName", extension["interface"])
-        self.assertNotIn("countries", extension["publication"])
-        self.assertNotIn("commerce", extension["review"])
+        self.assertEqual(extension["interface"]["developerName"], "Koaryu Limited")
+        self.assertEqual(extension["publication"]["countries"], ["US", "CA"])
+        self.assertIs(extension["review"]["commerce"], False)
+        self.assertIn(
+            "no additional connector fee", extension["review"]["commerce_description"]
+        )
+        self.assertNotIn("demo_recording_url", extension["review"])
+        self.assertTrue(package.URL_FIELDS.isdisjoint(extension["interface"]))
         self.assertFalse((package.SOURCE / "mcp.json").exists())
 
     def test_missing_facts_fail_without_creating_archive(self):
@@ -62,8 +67,9 @@ class PackageTest(unittest.TestCase):
                 "oidcEnabled": False,
             },
         )
-        self.assertNotIn(
-            "developerName", self.manifest["extensions"]["com.openai"]["interface"]
+        self.assertEqual(
+            self.manifest["extensions"]["com.openai"]["interface"]["developerName"],
+            "Koaryu Limited",
         )
 
     def test_all_available_countries_is_explicit_not_default(self):
