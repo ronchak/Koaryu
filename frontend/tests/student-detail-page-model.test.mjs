@@ -148,6 +148,30 @@ describe("student detail page model", () => {
     assert.deepEqual(getActiveStudentProgramIds(student({ program_id: "legacy" })), ["legacy"]);
   });
 
+  it("shows the first program rank next for an unranked student", () => {
+    const configuredLadder = ladder("ladder-1", {
+      program_id: "kids",
+      ranks: [rank("white", { display_order: 0 }), rank("blue", { display_order: 1 })],
+    });
+    for (const [currentRankId, beltLadders, expectedNextRankId] of [
+      [null, [configuredLadder], "white"],
+      [null, [], undefined],
+      [null, [ladder("empty", { program_id: "kids" })], undefined],
+      ["white", [configuredLadder], "blue"],
+      ["blue", [configuredLadder], undefined],
+      ["unavailable-rank", [configuredLadder], undefined],
+    ]) {
+      const detail = buildStudentDetailModel({
+        beltLadders,
+        promotionHistory: [],
+        student: student({ current_belt_rank_id: currentRankId }),
+        today: "2026-11-04",
+      });
+
+      assert.equal(detail.nextRank?.id, expectedNextRankId, `current rank: ${currentRankId}`);
+    }
+  });
+
   it("builds the derived student detail model and edit initial data", () => {
     const detail = buildStudentDetailModel({
       beltLadders: [
