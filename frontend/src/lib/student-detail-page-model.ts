@@ -133,9 +133,11 @@ export function buildStudentDetailModel({
     ? currentLadderRanks.findIndex((rank) => rank.id === currentRank.id)
     : -1;
   const nextRank =
-    currentRankIndex >= 0 && currentRankIndex < currentLadderRanks.length - 1
-      ? currentLadderRanks[currentRankIndex + 1]
-      : undefined;
+    student.current_belt_rank_id == null
+      ? currentLadderRanks[0]
+      : currentRankIndex >= 0 && currentRankIndex < currentLadderRanks.length - 1
+        ? currentLadderRanks[currentRankIndex + 1]
+        : undefined;
 
   return {
     activeProgramIds,
